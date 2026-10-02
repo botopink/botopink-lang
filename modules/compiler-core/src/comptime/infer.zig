@@ -4462,6 +4462,7 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     defer env.fnGenericMap = savedFnGenericMap;
     env.returnBareIsVoid = env.returnTarget != null and (eff == null or eff.? == .result or eff.? == .task);
 
+    try refuseRedeclaredBindings(env, f.body, try paramNames(env, f.params));
     try inferBodyStmts(env, f.body);
     try refuseFallingOffTheEnd(env, f, retType);
 
@@ -4619,6 +4620,7 @@ fn inferTypeMethods(
         // the block does, so it is collected here and restored below.
         var narrowed: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
         defer narrowed.deinit(env.arena);
+        try refuseRedeclaredBindings(env, body, try paramNames(env, m.params));
         for (body) |stmt| {
             const typed = try inferExprTyped(env, stmt.expr);
             try narrowAfterEarlyExit(env, stmt.expr, &narrowed);
@@ -7529,7 +7531,58 @@ fn makeTypedPtr(env: *Env, node: TypedExpr) !*TypedExpr {
 /// early-exit narrowing the same way `inferStmtsTyped` does: `if (x == null) {
 /// return …; }` narrows `x` for the REST of the block, and a body walked with a
 /// bare `for` loop would have been the one shape where it did not.
+/// Decision 152 (01c-d) — a name is bound once per block: a second `val` /
+/// `var` (or destructured name) among the statements of ONE block is
+/// `binding-redeclared` at the second, naming the first; a parameter of the
+/// function whose body the block is counts as the first (`params`). A block
+/// nested in it (an `if` branch, a loop body, a lambda) is a new scope and
+/// may shadow — each block runs this over its own statements. erlang rebound
+/// the name and commonJS refused to load (`already declared`).
+fn refuseRedeclaredBindings(env: *Env, stmts: []const ast.Stmt, params: []const []const u8) InferError!void {
+    var seen: std.StringHashMapUnmanaged(?ast.Loc) = .empty;
+    defer seen.deinit(env.arena);
+    for (params) |p| {
+        if (p.len == 0 or std.mem.eql(u8, p, "_")) continue;
+        try seen.put(env.arena, p, null);
+    }
+    for (stmts) |st| {
+        if (st.expr != .binding) continue;
+        const b = st.expr.binding;
+        switch (b.kind) {
+            .localBind => |lb| try noteBlockBinding(env, &seen, lb.name, b.loc),
+            .localBindDestruct => |lb| switch (lb.pattern) {
+                .names => |n| for (n.fields) |f| try noteBlockBinding(env, &seen, f.bind_name, b.loc),
+                .tuple_ => |t| for (t) |name| try noteBlockBinding(env, &seen, name, b.loc),
+                else => {},
+            },
+            else => {},
+        }
+    }
+}
+
+fn noteBlockBinding(env: *Env, seen: *std.StringHashMapUnmanaged(?ast.Loc), name: []const u8, loc: ast.Loc) InferError!void {
+    if (name.len == 0 or std.mem.eql(u8, name, "_")) return;
+    if (seen.get(name)) |first| {
+        const msg = if (first) |f|
+            try std.fmt.allocPrint(env.arena, "{s}: `{s}` is already bound in this block, by the binding at {d}:{d}", .{ diagnostics.binding_redeclared, name, f.line, f.col })
+        else
+            try std.fmt.allocPrint(env.arena, "{s}: `{s}` is already bound in this body, as a parameter", .{ diagnostics.binding_redeclared, name });
+        const hint = try std.fmt.allocPrint(env.arena, "A name is bound once per block. Give the second binding its own name, or make the first a `var` and assign it: `{s} = …;`.", .{name});
+        env.lastError = TypeError.custom(msg, hint).withLoc(loc);
+        return error.TypeError;
+    }
+    try seen.put(env.arena, name, loc);
+}
+
+/// The names of a parameter list, for `refuseRedeclaredBindings`.
+fn paramNames(env: *Env, params: []const ast.Param) InferError![]const []const u8 {
+    const out = try env.arena.alloc([]const u8, params.len);
+    for (params, 0..) |p, i| out[i] = p.name;
+    return out;
+}
+
 fn inferBodyStmts(env: *Env, body: []const ast.Stmt) InferError!void {
+    try refuseRedeclaredBindings(env, body, &.{});
     var narrowed: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
     defer narrowed.deinit(env.arena);
     for (body) |stmt| {
@@ -7540,6 +7593,7 @@ fn inferBodyStmts(env: *Env, body: []const ast.Stmt) InferError!void {
 }
 
 fn inferStmtsTyped(env: *Env, stmts: []const ast.Stmt) InferError![]TypedStmt {
+    try refuseRedeclaredBindings(env, stmts, &.{});
     const out = try env.arena.alloc(TypedStmt, stmts.len);
     // The early-exit narrowing (`narrowAfterEarlyExit`) outlives the `if` that
     // states it, so this is where it is applied and where it ends: a name
@@ -14168,6 +14222,7 @@ fn inferFunctionExprExpected(
         env.returnBareIsVoid = false;
         env.returnWhole = null;
     }
+    try refuseRedeclaredBindings(env, fk.body, fk.params);
     const bodyTyped = try inferStmtsTyped(env, fk.body);
     // The lambda's return type is its tail expression's type; an explicit
     // `return expr` tail types as void, so use the returned value's type.

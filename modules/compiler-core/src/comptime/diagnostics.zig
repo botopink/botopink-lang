@@ -203,6 +203,10 @@ pub const label_on_function_value: []const u8 = "label-on-function-value";
 /// `language-gaps.md`: it used to answer the value's own type, and the
 /// backends failed at run time (`g is not a function`, `{badfun, …}`).
 pub const callee_not_a_function: []const u8 = "callee-not-a-function";
+/// A second `val` / `var` of one name in one block, a parameter counting as
+/// the first (decision 152, 01c-d). A binding in an inner block is a new
+/// scope and may shadow.
+pub const binding_redeclared: []const u8 = "binding-redeclared";
 /// A use of an imported name the import resolved to two different
 /// declarations (`00 · 01-std`: the refusal of a duplicate `pub` name belongs
 /// to the consumer's unqualified use).
@@ -411,6 +415,7 @@ pub const all_codes = [_][]const u8{
     type_alias_recursive,
     type_alias_name_taken,
     callee_not_a_function,
+    binding_redeclared,
 };
 
 test "every reserved code has a stable, non-empty spelling" {

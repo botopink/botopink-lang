@@ -1224,6 +1224,17 @@ that is the type itself (a constructor reached by its own name), a function-type
 (`h.f(2)`, a method-call path) and an imported `pub val` alike follow the rule
 (`reject/call_of_record_value`, `modules/call_of_imported_record_value`).
 
+## A name is bound once per block (decision 152, 01c-d)
+
+`refuseRedeclaredBindings` runs over the statements of every block before they are inferred
+(`inferBodyStmts`, `inferStmtsTyped`) and, with the parameter names, over a fn's, a method's and a
+lambda's body: a second `val` / `var` / destructured name among ONE block's own statements is
+`binding-redeclared` at the second, naming the first (its `line:col`, or "as a parameter"). The
+check is syntactic and per block — a block nested in another (an `if` branch, a loop body, a lambda)
+starts its own set, so an inner `val` may shadow an outer one, as before. erlang used to rebind
+the name (`N@k`) and commonJS refused to load (`already declared`)
+(`reject/binding_redeclared_in_body`, `reject/binding_shadows_parameter`).
+
 ## A call whose callee is an expression (01 handover 15, front 15's handover)
 
 `adder(3)(4)` and `.Circle(radius: 1)` both reach `inferCallExpr` with `callee == ""` and the callee in

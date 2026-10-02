@@ -133,6 +133,11 @@ Step 4 (row 32) adds `reject/call_of_record_value` (`val g = G(a: "x"); g()` is
 `callee-not-a-function` at `g(`, beside a constructor and a function-typed field that still check)
 and `modules/call_of_imported_record_value` (the same through a sibling's `pub val`, by
 `<target>.expect` on all four); both were accepted by the parent binary.
+Step 5 (decision 152) adds `reject/binding_redeclared_in_body` (a second `var n` in one body) and
+`reject/binding_shadows_parameter` (`val x` over the parameter `x`), both `binding-redeclared` at the
+second binding and both accepted by the parent binary. An inner block's `val` shadowing an outer one
+stays legal in the checker; it has no `run/` cell, because erlang (`unsafe in 'case'`), wasm (the
+inner value leaks out of the block) and beam (`unassigned`) miscompile it — the backends' rows.
 Decision 141 adds `run/external_template_refused_on_beam` — an `@External.Erlang` template with a
 macro runs on erlang and is a located build error on beam naming the construct (`.beam.expect`); beam
 no longer evaluates a template it cannot compile from source at run time.
