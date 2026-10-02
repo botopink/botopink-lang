@@ -59,7 +59,7 @@ add(A, B) ->
         ok ->
             io:format("  ok   ~ts~n", [Name]),
             ok;
-        {fail, FMsg, FLoc} when is_binary(FMsg) ->
+        {fail, FMsg, FLoc} when erlang:is_binary(FMsg) ->
             io:format("  FAIL ~ts  (~ts)  at ~ts~n", [Name, FMsg, FLoc]),
             fail;
         {fail, FMsg, FLoc} ->
@@ -77,14 +77,14 @@ add(A, B) ->
         _ -> [T || {N, _, _} = T <- Tests, binary:match(N, Filter) =/= nomatch]
     end,
     Results = ['__bp_run_one'(T) || T <- Selected],
-    Failed = length([R || R <- Results, R =:= fail]),
-    Passed = length(Results) - Failed,
+    Failed = erlang:length([R || R <- Results, R =:= fail]),
+    Passed = erlang:length(Results) - Failed,
     io:format("~p passed, ~p failed~n", [Passed, Failed]),
-    case Failed > 0 of true -> halt(1); false -> ok end.
+    case Failed > 0 of true -> erlang:halt(1); false -> ok end.
 
 main(Args) ->
     Filter = case Args of
-        [F | _] -> list_to_binary(F);
+        [F | _] -> erlang:list_to_binary(F);
         _ -> none
     end,
     '__bp_run_tests'(Filter).

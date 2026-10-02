@@ -43,9 +43,9 @@ pipeline() ->
 -module(test@main@@IoError).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
-'__bp_get'(V, path) -> element(2, V).
+'__bp_get'(V, path) -> erlang:element(2, V).
 
-'__bp_format'(V) -> {record, "IoError", [{"path", element(2, V)}]}.
+'__bp_format'(V) -> {record, "IoError", [{"path", erlang:element(2, V)}]}.
 ```
 
 ----- RUN LOG -----

@@ -37,9 +37,9 @@ compute() ->
 -module(test@main@@CalcError).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
-'__bp_get'(V, msg) -> element(2, V).
+'__bp_get'(V, msg) -> erlang:element(2, V).
 
-'__bp_format'(V) -> {record, "CalcError", [{"msg", element(2, V)}]}.
+'__bp_format'(V) -> {record, "CalcError", [{"msg", erlang:element(2, V)}]}.
 ```
 
 ----- RUN LOG -----

@@ -964,11 +964,10 @@ codegen/
   loop's value: a `break <v>` or a `yield` belongs to the nearest generator
   scope (§ Loops above), which collects under its own key, and the variable
   group a loop threads is only the variables its body reassigns.
-- **The two embedded preludes are parsed once per process, not once per
-  emission** (`prelude_cache`). `collectPrimErlangDispatch` re-lexed and
-  re-parsed `primitives.bp`, and `noAutoImportRefs`'s catalog re-parsed
-  `std/erlang`, on **every** `emitErlangModule` — both are comptime-embedded
-  strings, so it was the same bytes and the same parse each time. Memoising them
+- **The embedded `primitives.bp` prelude is parsed once per process, not once
+  per emission** (`prelude_cache`). `collectPrimErlangDispatch` re-lexed and
+  re-parsed it on **every** `emitErlangModule` — a comptime-embedded string, so
+  it was the same bytes and the same parse each time. Memoising them
   in an arena of their own (over the page allocator, so no caller's allocator and
   no test-allocator leak) takes `collectPrimErlangDispatch` from **4.615 ms to
   2.380 ms** per call (20 calls, Debug) and `botopink build --target erlang` over
@@ -976,10 +975,24 @@ codegen/
   per-emitter deep copy of the triples it keeps, which is by design. It is safe
   because nothing writes to the cached AST: the nodes borrow only comptime source,
   `collectIfaceErlangDispatch` copies every triple into the emitter's own
-  allocator, and the BIF table is read-only. The lock is a spin over
+  allocator. The lock is a spin over
   `std.atomic.Mutex.tryLock` — zig 0.16 has no blocking mutex outside `std.Io`,
   the test runner compiles on several threads, and after the first parse there is
   nothing to contend for. Handed over by `14-comptime-on-beam`.
+- **Every BIF the backend calls is `erlang:<name>(…)`** (language-gaps T13).
+  `auto_imported_bifs` is OTP's own auto-import list (`erl_internal:bif/2`);
+  a user fn whose name and arity are on it gets
+  `-compile({no_auto_import,[f/N, …]})` (`noAutoImportRefs`; a type module's
+  over its exports, `noAutoImportRefsOf`), so the user's own bare calls reach
+  the user's fn — and every call the codegen writes for itself (a field read
+  `erlang:element/2`, a guard `erlang:is_tuple/1`, `erlang:length/1`, the print
+  helpers' `erlang:apply/3`, a numeric conversion `erlang:trunc/1`) is
+  qualified, so a module declaring `fn element(…)` never captures a field read.
+  A host template is author text written for every module: in a module whose
+  `no_auto_import` names `length`, its bare `length(…)` is written
+  `erlang:length(…)` (`qualifyShadowedBifs`, over the template's text segments —
+  strings, quoted atoms, `$c` and comments skipped); elsewhere it is unchanged.
+  `run/module_fn_named_like_bif` pins it on four targets.
 - **Modules are `erl_ast` forms**: `emitErlangModule` builds every form in one
   arena and renders them with `erl_emitter.writeForms`: `-module`
   (`crossModule.erlAtom(module_path)` — the path joined with `@`),

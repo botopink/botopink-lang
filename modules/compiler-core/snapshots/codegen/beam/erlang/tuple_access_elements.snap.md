@@ -10,7 +10,7 @@ fn getFirst(t: #(i32, string)) -> i32 {
 -module(test@main).
 
 getFirst(T) ->
-    element(1, T).
+    erlang:element(1, T).
 ```
 
 ----- RUN LOG -----

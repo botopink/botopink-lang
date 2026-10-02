@@ -39,38 +39,38 @@ fn main() {
 
 nameOf(V) ->
     case V of
-        Person when ((is_tuple(Person) andalso (tuple_size(Person) =:= 3)) andalso (element(1, Person) =:= test@main@@Person)) ->
+        Person when ((erlang:is_tuple(Person) andalso (erlang:tuple_size(Person) =:= 3)) andalso (erlang:element(1, Person) =:= test@main@@Person)) ->
             <<"person">>;
-        Vec when ((is_tuple(Vec) andalso (tuple_size(Vec) =:= 3)) andalso (element(1, Vec) =:= test@main@@Vec)) ->
+        Vec when ((erlang:is_tuple(Vec) andalso (erlang:tuple_size(Vec) =:= 3)) andalso (erlang:element(1, Vec) =:= test@main@@Vec)) ->
             <<"vec">>
     end.
 
 main() ->
     U = {test@main@@Vec, <<"Ana">>, 30},
-    '__bp_print'([((is_tuple(U) andalso (tuple_size(U) =:= 3)) andalso (element(1, U) =:= test@main@@Vec))]),
-    '__bp_print'([((is_tuple(U) andalso (tuple_size(U) =:= 3)) andalso (element(1, U) =:= test@main@@Person))]),
+    '__bp_print'([((erlang:is_tuple(U) andalso (erlang:tuple_size(U) =:= 3)) andalso (erlang:element(1, U) =:= test@main@@Vec))]),
+    '__bp_print'([((erlang:is_tuple(U) andalso (erlang:tuple_size(U) =:= 3)) andalso (erlang:element(1, U) =:= test@main@@Person))]),
     S = {test@main@@Shape__v__circle, 4},
-    '__bp_print'([((S =:= test@main@@Shape__v__dot) orelse ((is_tuple(S) andalso (tuple_size(S) =:= 2)) andalso (element(1, S) =:= test@main@@Shape__v__circle)))]),
+    '__bp_print'([((S =:= test@main@@Shape__v__dot) orelse ((erlang:is_tuple(S) andalso (erlang:tuple_size(S) =:= 2)) andalso (erlang:element(1, S) =:= test@main@@Shape__v__circle)))]),
     D = test@main@@Shape__v__dot,
-    '__bp_print'([((D =:= test@main@@Shape__v__dot) orelse ((is_tuple(D) andalso (tuple_size(D) =:= 2)) andalso (element(1, D) =:= test@main@@Shape__v__circle)))]),
+    '__bp_print'([((D =:= test@main@@Shape__v__dot) orelse ((erlang:is_tuple(D) andalso (erlang:tuple_size(D) =:= 2)) andalso (erlang:element(1, D) =:= test@main@@Shape__v__circle)))]),
     '__bp_print'([nameOf({test@main@@Person, <<"Ana">>, 30})]),
     '__bp_print'([nameOf({test@main@@Vec, <<"Ana">>, 30})]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
 
-'__bp_show'(V, true) when is_binary(V) -> V;
-'__bp_show'(V, _) when is_binary(V) -> [$", [case C of $" -> "\\\""; $\\ -> "\\\\"; $\n -> "\\n"; $\r -> "\\r"; $\t -> "\\t"; _ -> C end || C <- unicode:characters_to_list(V)], $"];
-'__bp_show'(V, _) when is_list(V) -> [$[, lists:join(", ", ['__bp_show'(E, false) || E <- V]), $]];
-'__bp_show'(V, _) when is_tuple(V), tuple_size(V) > 0, is_atom(element(1, V)), element(1, V) =/= true, element(1, V) =/= false, element(1, V) =/= undefined -> '__bp_tagged'(element(1, V), V);
-'__bp_show'(V, _) when is_tuple(V) -> ["#(", lists:join(", ", ['__bp_show'(E, false) || E <- tuple_to_list(V)]), $)];
+'__bp_show'(V, true) when erlang:is_binary(V) -> V;
+'__bp_show'(V, _) when erlang:is_binary(V) -> [$", [case C of $" -> "\\\""; $\\ -> "\\\\"; $\n -> "\\n"; $\r -> "\\r"; $\t -> "\\t"; _ -> C end || C <- unicode:characters_to_list(V)], $"];
+'__bp_show'(V, _) when erlang:is_list(V) -> [$[, lists:join(", ", ['__bp_show'(E, false) || E <- V]), $]];
+'__bp_show'(V, _) when erlang:is_tuple(V), erlang:tuple_size(V) > 0, erlang:is_atom(erlang:element(1, V)), erlang:element(1, V) =/= true, erlang:element(1, V) =/= false, erlang:element(1, V) =/= undefined -> '__bp_tagged'(erlang:element(1, V), V);
+'__bp_show'(V, _) when erlang:is_tuple(V) -> ["#(", lists:join(", ", ['__bp_show'(E, false) || E <- erlang:tuple_to_list(V)]), $)];
 '__bp_show'(undefined, _) -> "null";
-'__bp_show'(V, _) when is_atom(V), V =/= true, V =/= false, V =/= undefined -> '__bp_tagged'(V, V);
+'__bp_show'(V, _) when erlang:is_atom(V), V =/= true, V =/= false, V =/= undefined -> '__bp_tagged'(V, V);
 '__bp_show'(V, _) -> io_lib:format("~p", [V]).
 
 '__bp_tagged'(A, V) ->
-    M = case string:split(atom_to_list(A), "__v__") of [P, _] -> list_to_atom(P); _ -> A end,
-    case code:ensure_loaded(M) =:= {module, M} andalso erlang:function_exported(M, '__bp_format', 1) of true -> '__bp_render'(apply(M, '__bp_format', [V])); false -> io_lib:format("~p", [V]) end.
+    M = case string:split(erlang:atom_to_list(A), "__v__") of [P, _] -> erlang:list_to_atom(P); _ -> A end,
+    case code:ensure_loaded(M) =:= {module, M} andalso erlang:function_exported(M, '__bp_format', 1) of true -> '__bp_render'(erlang:apply(M, '__bp_format', [V])); false -> io_lib:format("~p", [V]) end.
 
 '__bp_render'({text, T}) -> T;
 '__bp_render'({variant, N, []}) -> N;
@@ -88,10 +88,10 @@ main(_Args) ->
 -module(test@main@@Person).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
-'__bp_get'(V, name) -> element(2, V);
-'__bp_get'(V, age) -> element(3, V).
+'__bp_get'(V, name) -> erlang:element(2, V);
+'__bp_get'(V, age) -> erlang:element(3, V).
 
-'__bp_format'(V) -> {record, "Person", [{"name", element(2, V)}, {"age", element(3, V)}]}.
+'__bp_format'(V) -> {record, "Person", [{"name", erlang:element(2, V)}, {"age", erlang:element(3, V)}]}.
 ```
 
 ----- ERLANG -- test@main@@Vec.erl
@@ -99,10 +99,10 @@ main(_Args) ->
 -module(test@main@@Vec).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
-'__bp_get'(V, name) -> element(2, V);
-'__bp_get'(V, age) -> element(3, V).
+'__bp_get'(V, name) -> erlang:element(2, V);
+'__bp_get'(V, age) -> erlang:element(3, V).
 
-'__bp_format'(V) -> {record, "Vec", [{"name", element(2, V)}, {"age", element(3, V)}]}.
+'__bp_format'(V) -> {record, "Vec", [{"name", erlang:element(2, V)}, {"age", erlang:element(3, V)}]}.
 ```
 
 ----- ERLANG -- test@main@@Shape.erl

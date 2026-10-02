@@ -25,15 +25,15 @@ val Invoice = type(
 -export([total/1, validate/1, '__bp_get'/2, '__bp_format'/1]).
 
 total(Self) ->
-    (element(2, Self) + (element(2, Self) * element(3, Self))).
+    (erlang:element(2, Self) + (erlang:element(2, Self) * erlang:element(3, Self))).
 
 validate(Self) ->
     erlang:throw(<<"invalid invoice">>).
 
-'__bp_get'(V, subtotal) -> element(2, V);
-'__bp_get'(V, taxRate) -> element(3, V).
+'__bp_get'(V, subtotal) -> erlang:element(2, V);
+'__bp_get'(V, taxRate) -> erlang:element(3, V).
 
-'__bp_format'(V) -> {record, "Invoice", [{"subtotal", element(2, V)}, {"taxRate", element(3, V)}]}.
+'__bp_format'(V) -> {record, "Invoice", [{"subtotal", erlang:element(2, V)}, {"taxRate", erlang:element(3, V)}]}.
 ```
 
 ----- RUN LOG -----

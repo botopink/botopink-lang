@@ -35,9 +35,9 @@ f() ->
 -module(test@main@@Error).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
-'__bp_get'(V, msg) -> element(2, V).
+'__bp_get'(V, msg) -> erlang:element(2, V).
 
-'__bp_format'(V) -> {record, "Error", [{"msg", element(2, V)}]}.
+'__bp_format'(V) -> {record, "Error", [{"msg", erlang:element(2, V)}]}.
 ```
 
 ----- RUN LOG -----

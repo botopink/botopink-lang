@@ -1105,7 +1105,7 @@ test "erlang: case ---- a tuple under `..` is a tuple_size guard, not a fixed ar
         \\  val t = #(4, 5, 6);
         \\  case t { #(a, ..) { @print(a) } };
         \\}
-    , "4\n", &.{ "when is_tuple(", "tuple_size(", ") >= 1) ->", "= element(1, " });
+    , "4\n", &.{ "when erlang:is_tuple(", "erlang:tuple_size(", ") >= 1) ->", "= erlang:element(1, " });
 }
 
 test "erlang: case ---- a primitive type pattern is a guard, not a binder" {
@@ -1119,7 +1119,7 @@ test "erlang: case ---- a primitive type pattern is a guard, not a binder" {
         \\  case v { i32 { @print("int") } string { @print("str") } };
         \\}
         \\fn main() { show(3); show("abcd"); }
-    , "int\nstr\n", &.{ "I32 when is_number(I32), (I32 == trunc(I32))", "String when is_binary(String) ->" });
+    , "int\nstr\n", &.{ "I32 when erlang:is_number(I32), (I32 == erlang:trunc(I32))", "String when erlang:is_binary(String) ->" });
 }
 
 // ── front 03-beam: `case` patterns in BEAM assembly (C-06, C-07 D4) ──────────
@@ -1863,9 +1863,9 @@ test "erlang: unknown ---- `is`, type arms and `==` answer by value" {
         "    A = 2.0,",
         "(A == 2), (A /= 2), (C == 2)",
         "(I =:= J)",
-        "N = trunc(I32)",
-        "F = float(F64)",
-        "A@1 = trunc(A)",
+        "N = erlang:trunc(I32)",
+        "F = erlang:float(F64)",
+        "A@1 = erlang:trunc(A)",
     });
 }
 

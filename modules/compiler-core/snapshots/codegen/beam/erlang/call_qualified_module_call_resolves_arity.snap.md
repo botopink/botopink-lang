@@ -30,9 +30,9 @@ type Pipeline(
 map(Items, F) ->
     lists:map(F, Items).
 
-'__bp_get'(V, tag) -> element(2, V).
+'__bp_get'(V, tag) -> erlang:element(2, V).
 
-'__bp_format'(V) -> {record, "List", [{"tag", element(2, V)}]}.
+'__bp_format'(V) -> {record, "List", [{"tag", erlang:element(2, V)}]}.
 ```
 
 ----- ERLANG -- test@main@@Pipeline.erl
@@ -41,11 +41,11 @@ map(Items, F) ->
 -export([run/2, '__bp_get'/2, '__bp_format'/1]).
 
 run(Self, F) ->
-    test@main@@List:map(element(2, Self), F).
+    test@main@@List:map(erlang:element(2, Self), F).
 
-'__bp_get'(V, items) -> element(2, V).
+'__bp_get'(V, items) -> erlang:element(2, V).
 
-'__bp_format'(V) -> {record, "Pipeline", [{"items", element(2, V)}]}.
+'__bp_format'(V) -> {record, "Pipeline", [{"items", erlang:element(2, V)}]}.
 ```
 
 ----- RUN LOG -----

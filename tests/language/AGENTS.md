@@ -383,6 +383,16 @@ against 225/0 on erlang from one source), and `narrowing_*` (the same front's
 file: a parse error is the blast radius, so nine `#[@External]` declarations in one file mean one
 unparseable annotation hides the other eight.
 
+### The erlang backend's cells (1.0.11-beta `01-compiler/02-erlang`)
+
+Each was run with the parent binary and fails there as its row describes.
+
+- `run/module_fn_named_like_bif` (language-gaps T13): a module declaring `element/2`, `apply/2`,
+  `length/1` and `hd/1` reads a record field, calls each of its own fns, prints a record and reads
+  `Array.at` past the end — on all four targets. The erlang module did not compile (`element/2`
+  is illegal in the print helper's guard once it is the module's own fn) and, before the
+  `no_auto_import` directive, read `p.y` through the module's `element/2`.
+
 ### `narrowing_*`
 
 Four cells of 1.0.10-beta's `00 · 01-checker` (`fix/null-narrowing`), and the reason they are a group

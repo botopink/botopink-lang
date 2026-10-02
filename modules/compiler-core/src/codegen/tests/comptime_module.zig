@@ -63,10 +63,10 @@ test "comptime module: `+` and `.len` dispatch at runtime, rebinding versions th
     try expectContains(out, "Msg@1 = '__bp_add'(Msg, maps:get(name, Decl))");
     try expectContains(out, "('__bp_len'(maps:get(fields, Decl), len) > 5)");
     try expectContains(out, "fail(Decl, Msg@1)");
-    try expectContains(out, "'__bp_add'(A, B) when is_binary(A), is_binary(B) -> <<A/binary, B/binary>>;");
+    try expectContains(out, "'__bp_add'(A, B) when erlang:is_binary(A), erlang:is_binary(B) -> <<A/binary, B/binary>>;");
     try expectContains(out, "'__bp_len'(X, Field) -> maps:get(Field, X).");
     try expectContains(out, "'__bp_json'(undefined) -> null;");
-    try expectContains(out, "'__bp_text'(Value) when is_binary(Value) -> Value;");
+    try expectContains(out, "'__bp_text'(Value) when erlang:is_binary(Value) -> Value;");
 }
 
 test "comptime module: forEach with a mutated var fuses into a fold" {
@@ -252,26 +252,26 @@ test "comptime module: template body primitive methods dispatch through shims" {
     try expectContains(out, "'__bp_prim_at'(All, 0)");
     try expectContains(out, "'__bp_prim_join'(All, <<\",\">>)");
     // Shims: one guarded clause per answering kind, from the typed table.
-    try expectContains(out, "'__bp_prim_split'(Recv, Arg0) when is_binary(Recv) ->\n    (fun(__S, <<>>) -> [<<__C/utf8>> || <<__C/utf8>> <= __S]; (__S, __X) -> string:split(__S, __X, all) end)(Recv, Arg0);");
-    try expectContains(out, "'__bp_prim_trim'(Recv) when is_binary(Recv) ->\n    string:trim(Recv);");
-    try expectContains(out, "'__bp_prim_toUpper'(Recv) when is_binary(Recv) ->\n    string:uppercase(Recv);");
-    try expectContains(out, "'__bp_prim_map'(Recv, Arg0) when is_list(Recv) ->\n    lists:map(Arg0, Recv);");
-    try expectContains(out, "'__bp_prim_reverse'(Recv) when is_list(Recv) ->\n    lists:reverse(Recv);");
-    try expectContains(out, "'__bp_prim_append'(Recv, Arg0) when is_list(Recv) ->\n    (Recv ++ Arg0);");
-    try expectContains(out, "'__bp_prim_startsWith'(Recv, Arg0) when is_binary(Recv) ->\n    (string:prefix(Recv, Arg0) =/= nomatch);");
+    try expectContains(out, "'__bp_prim_split'(Recv, Arg0) when erlang:is_binary(Recv) ->\n    (fun(__S, <<>>) -> [<<__C/utf8>> || <<__C/utf8>> <= __S]; (__S, __X) -> string:split(__S, __X, all) end)(Recv, Arg0);");
+    try expectContains(out, "'__bp_prim_trim'(Recv) when erlang:is_binary(Recv) ->\n    string:trim(Recv);");
+    try expectContains(out, "'__bp_prim_toUpper'(Recv) when erlang:is_binary(Recv) ->\n    string:uppercase(Recv);");
+    try expectContains(out, "'__bp_prim_map'(Recv, Arg0) when erlang:is_list(Recv) ->\n    lists:map(Arg0, Recv);");
+    try expectContains(out, "'__bp_prim_reverse'(Recv) when erlang:is_list(Recv) ->\n    lists:reverse(Recv);");
+    try expectContains(out, "'__bp_prim_append'(Recv, Arg0) when erlang:is_list(Recv) ->\n    (Recv ++ Arg0);");
+    try expectContains(out, "'__bp_prim_startsWith'(Recv, Arg0) when erlang:is_binary(Recv) ->\n    (string:prefix(Recv, Arg0) =/= nomatch);");
     // `indexOf` / `contains` exist on both strings and arrays.
-    try expectContains(out, "'__bp_prim_indexOf'(Recv, Arg0) when is_list(Recv) ->");
-    try expectContains(out, "'__bp_prim_indexOf'(Recv, Arg0) when is_binary(Recv) ->\n    (fun(__S, __X) -> case __X of <<>> -> 0; _ -> case binary:match(__S, __X) of nomatch -> -1; {__P, _} -> __P end end end)(Recv, Arg0);");
-    try expectContains(out, "'__bp_prim_contains'(Recv, Arg0) when is_list(Recv) ->\n    lists:member(Arg0, Recv);");
-    try expectContains(out, "'__bp_prim_contains'(Recv, Arg0) when is_binary(Recv) ->\n    (string:find(Recv, Arg0) =/= nomatch);");
-    try expectContains(out, "'__bp_prim_at'(Recv, Arg0) when is_list(Recv) ->\n    (fun(__L, __I) ->");
+    try expectContains(out, "'__bp_prim_indexOf'(Recv, Arg0) when erlang:is_list(Recv) ->");
+    try expectContains(out, "'__bp_prim_indexOf'(Recv, Arg0) when erlang:is_binary(Recv) ->\n    (fun(__S, __X) -> case __X of <<>> -> 0; _ -> case binary:match(__S, __X) of nomatch -> -1; {__P, _} -> __P end end end)(Recv, Arg0);");
+    try expectContains(out, "'__bp_prim_contains'(Recv, Arg0) when erlang:is_list(Recv) ->\n    lists:member(Arg0, Recv);");
+    try expectContains(out, "'__bp_prim_contains'(Recv, Arg0) when erlang:is_binary(Recv) ->\n    (string:find(Recv, Arg0) =/= nomatch);");
+    try expectContains(out, "'__bp_prim_at'(Recv, Arg0) when erlang:is_list(Recv) ->\n    (fun(__L, __I) ->");
     // A kind nothing answers ends in a raise naming the method.
     try expectContains(out, "'__bp_prim_split'(Recv, _) ->\n    erlang:error({bp_unsupported_method, <<\"split\">>, 1, Recv}).");
     // `slice` is a bodied `default fn` (no host annotation): the shim reaches the
     // prelude's body, filling the omitted `end` from its declared default.
-    try expectContains(out, "'__bp_prim_slice'(Recv, Arg0, Arg1) when is_binary(Recv) ->\n    string_slice(Recv, Arg0, Arg1);");
-    try expectContains(out, "'__bp_prim_slice'(Recv, Arg0) when is_list(Recv) ->\n    array_slice(Recv, Arg0, undefined);");
-    try expectContains(out, "'__bp_prim_slice'(Recv, Arg0) when is_binary(Recv) ->\n    string_slice(Recv, Arg0, undefined);");
+    try expectContains(out, "'__bp_prim_slice'(Recv, Arg0, Arg1) when erlang:is_binary(Recv) ->\n    string_slice(Recv, Arg0, Arg1);");
+    try expectContains(out, "'__bp_prim_slice'(Recv, Arg0) when erlang:is_list(Recv) ->\n    array_slice(Recv, Arg0, undefined);");
+    try expectContains(out, "'__bp_prim_slice'(Recv, Arg0) when erlang:is_binary(Recv) ->\n    string_slice(Recv, Arg0, undefined);");
     try expectContains(out, "string_slice(Self, Start, End) ->");
     try expectContains(out, "string:slice(Self, Start, ((End) - (Start)))");
     try expectContains(out, "array_slice(Self, Start, End) ->");
@@ -289,7 +289,7 @@ test "comptime module: decorator body primitive methods dispatch through shims" 
     try expectContains(out, "Names = '__bp_prim_map'(maps:get(fields, Decl), fun(F) ->");
     try expectContains(out, "'__bp_prim_startsWith'(maps:get(name, Decl), <<\"_\">>)");
     try expectContains(out, "fail(Decl, '__bp_add'(<<\"private: \">>, '__bp_prim_join'(Names, <<\", \">>)))");
-    try expectContains(out, "'__bp_prim_join'(Recv, Arg0) when is_list(Recv) ->\n    iolist_to_binary(lists:join(Arg0,");
+    try expectContains(out, "'__bp_prim_join'(Recv, Arg0) when erlang:is_list(Recv) ->\n    iolist_to_binary(lists:join(Arg0,");
 }
 
 test "comptime module: a method named like an auto-imported BIF dispatches on the receiver" {
@@ -310,11 +310,11 @@ test "comptime module: a method named like an auto-imported BIF dispatches on th
     try expectContains(out, "'__bp_prim_round'(B)");
     try expectContains(out, "'__bp_prim_floor'(C)");
     try expectContains(out, "'__bp_prim_ceil'(A)");
-    try expectContains(out, "'__bp_prim_length'(Recv) when is_list(Recv) ->\n    erlang:length(Recv);");
-    try expectContains(out, "'__bp_prim_length'(Recv) when is_binary(Recv) ->\n    string:length(Recv);");
+    try expectContains(out, "'__bp_prim_length'(Recv) when erlang:is_list(Recv) ->\n    erlang:length(Recv);");
+    try expectContains(out, "'__bp_prim_length'(Recv) when erlang:is_binary(Recv) ->\n    string:length(Recv);");
     // `abs` is declared on `Signed` and `Float`; an int receiver's controller
     // interface is `Integer` (as on the typed path), so only floats answer it.
-    try expectContains(out, "'__bp_prim_abs'(Recv) when is_float(Recv) ->");
+    try expectContains(out, "'__bp_prim_abs'(Recv) when erlang:is_float(Recv) ->");
     // No bare BIF call survives in the body.
     try std.testing.expect(std.mem.indexOf(u8, out, " = length(") == null);
 }
