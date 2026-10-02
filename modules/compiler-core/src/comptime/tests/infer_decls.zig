@@ -334,6 +334,176 @@ test "infer: net-new ---- two imported libs activating the same method are ambig
     try std.testing.expect(sawAmbiguous);
 }
 
+/// The two declarers of `NotFound` every test below imports from: a page per
+/// folder of an application.
+const same_name_pages = [_]Module{
+    .{ .path = "app/not_found", .source =
+    \\pub fn NotFound() -> string {
+    \\    return "app";
+    \\}
+    },
+    .{ .path = "app/blog/not_found", .source =
+    \\pub fn NotFound() -> string {
+    \\    return "blog";
+    \\}
+    },
+};
+
+/// Compile `same_name_pages` and `consumer` (at module path `path`); the
+/// consumer's type error rendered, or null when it infers.
+fn consumerTypeError(path: []const u8, consumer: []const u8, comptime scratch: []const u8) !?[]u8 {
+    const io = std.testing.io;
+    const modules = [_]Module{ same_name_pages[0], same_name_pages[1], .{ .path = path, .source = consumer } };
+    var session = try comptimeMod.compile(std.testing.allocator, &modules, io, test_scratch.path(io, scratch), null);
+    defer session.deinit(std.testing.allocator);
+    for (session.outputs.items) |out| {
+        if (!std.mem.eql(u8, out.name, path)) continue;
+        return switch (out.outcome) {
+            .ok => null,
+            .typeError => |te| try te.message(std.testing.allocator),
+            else => error.ConsumerDidNotReachInference,
+        };
+    }
+    return error.ConsumerNotCompiled;
+}
+
+// An import that names its module says which declaration a name is. The
+// dotted spelling of a nested module path (`from "app.not_found"`) used to be
+// compared byte for byte with the module's `/` path, so it named nothing and
+// every lookup widened to the whole program — where the second `NotFound`
+// made the import `ambiguous-import-use`. The consumer is a route table: one
+// aliased import per page, in a module that is not the program's entry.
+test "infer: import source ---- a dotted module path names its module among same-named pub fns" {
+    const err = try consumerTypeError("routes",
+        \\import {NotFound as appNotFound} from "app.not_found";
+        \\import {NotFound as blogNotFound} from "app.blog.not_found";
+        \\pub fn pages() -> string {
+        \\    return appNotFound() + blogNotFound();
+        \\}
+    , "comptime/import_source_dotted_aliases");
+    defer if (err) |e| std.testing.allocator.free(e);
+    try std.testing.expectEqual(@as(?[]u8, null), err);
+}
+
+// The same inside a package that is somebody's dependency: its modules are
+// keyed `<package>/…`, and one of them names a sibling by the path below the
+// package's own root.
+test "infer: import source ---- a module path below the importer's package names its module" {
+    const io = std.testing.io;
+    const modules = [_]Module{
+        .{ .path = "site/app/not_found", .source = same_name_pages[0].source },
+        .{ .path = "site/app/blog/not_found", .source = same_name_pages[1].source },
+        .{ .path = "site/routes", .source =
+        \\import {NotFound} from "app.blog.not_found";
+        \\pub fn page() -> string {
+        \\    return NotFound();
+        \\}
+        },
+    };
+    var session = try comptimeMod.compile(std.testing.allocator, &modules, io, test_scratch.path(io, "comptime/import_source_below_package"), null);
+    defer session.deinit(std.testing.allocator);
+    for (session.outputs.items) |out| try std.testing.expect(out.outcome == .ok);
+}
+
+// The full path is read first: a project's own `app/not_found` is the one a
+// `from "app/not_found"` names, although a dependency's module has the same
+// path below its package and declares the name too.
+test "infer: import source ---- a project's own module wins over a dependency's of the same relative path" {
+    const io = std.testing.io;
+    const modules = [_]Module{
+        same_name_pages[0],
+        .{ .path = "site/app/not_found", .source =
+        \\pub fn NotFound() -> i32 {
+        \\    return 404;
+        \\}
+        },
+        .{ .path = "routes", .source =
+        \\import {NotFound} from "app/not_found";
+        \\pub fn page() -> string {
+        \\    return NotFound();
+        \\}
+        },
+    };
+    var session = try comptimeMod.compile(std.testing.allocator, &modules, io, test_scratch.path(io, "comptime/import_source_own_module_first"), null);
+    defer session.deinit(std.testing.allocator);
+    for (session.outputs.items) |out| try std.testing.expect(out.outcome == .ok);
+}
+
+// The refusal that stays: a bare `import {NotFound};` names no module, the
+// name reaches both declarations, and the use is refused naming both.
+test "infer: import source ---- a bare import over same-named pub fns is ambiguous at its use" {
+    const err = (try consumerTypeError("routes",
+        \\import {NotFound};
+        \\pub fn page() -> string {
+        \\    return NotFound();
+        \\}
+    , "comptime/import_source_bare_ambiguous")) orelse return error.ExpectedAmbiguousImportUse;
+    defer std.testing.allocator.free(err);
+    try std.testing.expectEqualStrings(
+        "ambiguous-import-use: `NotFound` is imported from two declarations — declared `pub` by `app/blog/not_found` and by `app/not_found` — and this use does not say which",
+        err,
+    );
+}
+
+// What a source's text names (`ast.ImportSource`): `.` and `/` both separate
+// the segments of a module path. A module is named by its full path or its
+// last segment (pass 0); across a package boundary (pass 1) the source is a
+// package's handle, or a module path below a package's root.
+test "infer: import source ---- namesModule and inPackage read the source as a path" {
+    const ImportSource = @import("../../ast.zig").ImportSource;
+    const dotted: ImportSource = .{ .module = "app.blog.not_found" };
+    try std.testing.expect(dotted.namesModule("app/blog/not_found"));
+    try std.testing.expect(!dotted.namesModule("app/not_found"));
+    try std.testing.expect(!dotted.namesModule("site/app/blog/not_found"));
+    // Below a package's root: the second reading, whole segments only.
+    try std.testing.expect(dotted.inPackage("site/app/blog/not_found"));
+    try std.testing.expect(!dotted.inPackage("app/blog/not_found"));
+    try std.testing.expect(!dotted.inPackage("myapp/blog/not_found"));
+    try std.testing.expect(!dotted.inPackage("site/blog/not_found"));
+    const slashed: ImportSource = .{ .module = "app/not_found" };
+    try std.testing.expect(slashed.namesModule("app/not_found"));
+    try std.testing.expect(!slashed.namesModule("site/app/not_found"));
+    try std.testing.expect(slashed.inPackage("site/app/not_found"));
+    try std.testing.expect(!slashed.inPackage("site/app/blog/not_found"));
+    // The full path is the first pass, so a project's own module is found
+    // before a dependency's module of the same relative path is looked at.
+    try std.testing.expect(slashed.admits("app/not_found", 0));
+    try std.testing.expect(!slashed.admits("site/app/not_found", 0));
+    try std.testing.expect(slashed.admits("site/app/not_found", 1));
+    // A `/` of the source is never a `.` of the path, and one segment still
+    // names a module by its last segment only.
+    try std.testing.expect(!slashed.namesModule("app.not_found"));
+    const leaf: ImportSource = .{ .module = "not_found" };
+    try std.testing.expect(leaf.namesModule("app/not_found"));
+    try std.testing.expect(!leaf.namesModule("app/is_not_found"));
+    try std.testing.expect(!leaf.namesModule("not_found/page"));
+    // A folder is a package of the modules below it, however it is spelled.
+    const folder: ImportSource = .{ .module = "site.app" };
+    try std.testing.expect(folder.inPackage("site/app/not_found"));
+    try std.testing.expect(folder.inPackage("site/app/blog/not_found"));
+    try std.testing.expect(!folder.inPackage("site/app"));
+    try std.testing.expect(!folder.inPackage("site/apps/not_found"));
+    const root: ImportSource = .root;
+    try std.testing.expect(!root.namesModule("app/not_found"));
+    try std.testing.expect(!root.inPackage("site/app/not_found"));
+}
+
+// A qualified item under a dotted source composes one `/` path: the registry
+// key of the module the item's prefix (or, with `whole`, the item itself)
+// names. `a.b/c` was the key of nothing, so `import {c} from "a.b"` bound no
+// namespace and `c.f()` was an unbound variable.
+test "infer: import source ---- leafSource composes a slashed path under a dotted source" {
+    const astMod = @import("../../ast.zig");
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const decl: astMod.ImportDecl = .{ .imports = &.{}, .source = .{ .module = "site.app" } };
+    const item: astMod.ImportPath = .{ .segments = &.{ "blog", "not_found" }, .alias = null };
+    try std.testing.expectEqualStrings("site/app/blog", (try decl.leafSource(item, arena.allocator(), false)).module);
+    try std.testing.expectEqualStrings("site/app/blog/not_found", (try decl.leafSource(item, arena.allocator(), true)).module);
+    const single: astMod.ImportPath = .{ .segments = &.{"not_found"}, .alias = null };
+    try std.testing.expectEqualStrings("site.app", (try decl.leafSource(single, arena.allocator(), false)).module);
+}
+
 // Precedence: when a record has an inherent method and an interface
 // implementation declares the SAME method name, the inherent method wins (it is
 // always available, so `t.label()` resolves without ambiguity).

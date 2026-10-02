@@ -1,0 +1,18 @@
+//// A dependency's module imports a type and two functions from a sibling by
+//// its path (`from "sort/queue"`, `kit/sort/queue` in this build), and the
+//// program also loads a std module declaring the same three names
+//// (`std/collections`: `Queue`, `lt`, `reverse`). The import names its module,
+//// so it says which declarations it means. A path of several segments below
+//// the importer's package used to name nothing — only a full path or a last
+//// segment did — and the dependency was refused: "`Queue` is declared `pub` by
+//// `std/collections` and by `kit/sort/queue`, and this import does not say
+//// which". Both answers are here: the dependency's own three, and std's
+//// through its namespace.
+
+import {collections} from "std";
+import {report} from "kit";
+
+pub fn main() {
+    @print(report());
+    @print(collections.toInt(collections.lt()));
+}

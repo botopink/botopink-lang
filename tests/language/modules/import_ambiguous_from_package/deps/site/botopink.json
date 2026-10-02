@@ -1,0 +1,1 @@
+{ "name": "site", "version": "0.0.1", "src": "src/", "entry": "root.bp", "files": ["root.bp", "app/mod.bp", "app/not_found.bp", "app/blog/mod.bp", "app/blog/not_found.bp"] }
