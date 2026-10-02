@@ -2804,7 +2804,7 @@ fn tupleIndexMember(member: []const u8) ?[]const u8 {
 }
 
 /// §A5 annotation-driven prim-method dispatch entry: the host module + symbol +
-/// optional ordered arg names parsed from `@external(erlang, "mod", "sym(args)")`.
+/// optional ordered arg names parsed from `#[@External.Erlang("mod", "sym(args)")]`.
 /// `args == null` means "bare symbol" — emit in declaration order.
 ///
 /// `prim-op-annotation` arity branches (`when($argc == N): "..."`) live in
@@ -2979,7 +2979,7 @@ const Emitter = struct {
     external_record_returns: std.StringHashMap([]const u8),
     /// §A2 user-fn per-callee template dispatch (erlang twin of the
     /// commonJS `user_node_templates`): a `declare fn` whose
-    /// `@external(erlang, …)` symbol is a template (contains `$0`/`$1`/…)
+    /// `#[@External.Erlang(…)]` symbol is a template (contains `$0`/`$1`/…)
     /// or whose annotation list carries `when(argc == N): "..."` branches.
     /// The decl emits no `module:symbol` reference at the top level — the
     /// template renders inline at every call site, matching how the
@@ -3228,14 +3228,14 @@ const Emitter = struct {
     needs_add_helper: bool = false,
     /// §A5 annotation-driven prim-method dispatch: `<Iface>.<method>` →
     /// `(host module, host symbol, ordered arg names)` parsed from
-    /// `@external(erlang, "mod", "sym(args)")` on a primitive interface method.
+    /// `#[@External.Erlang("mod", "sym(args)")]` on a primitive interface method.
     /// Populated by `collectPrimErlangDispatch`. `primMethodNode` consults this
     /// map FIRST and emits `mod:sym(...)` with the args rendered in the template
     /// order (`self` resolves to the receiver expression); the inline allow-list
     /// catches irreducible cases (list ops, custom comparisons, BIF aliases).
     prim_erlang_dispatch: std.StringHashMap(PrimErlangCall),
     /// `prim-op-annotation` builtin dispatch: top-level `fn` callees from
-    /// `builtins.d.bp` carrying `@external(erlang, …)` annotations, keyed by
+    /// `builtins.d.bp` carrying `#[@External.Erlang(…)]` annotations, keyed by
     /// callee name (`todo`, `panic`, …). `builtinAnnotationNode` consults
     /// this map before the hardcoded `@todo`/`@panic`/`@block`/`@print`
     /// switches in `if (cc.is_builtin)`.
@@ -3390,7 +3390,7 @@ const Emitter = struct {
     }
 
     /// `prim-op-annotation`: index top-level `fn` decls in `builtins.d.bp`
-    /// carrying `@external(erlang, …)` — the dispatch map is keyed by the bare
+    /// carrying `#[@External.Erlang(…)]` — the dispatch map is keyed by the bare
     /// callee name (`todo`, `panic`, …). `builtinAnnotationNode` consults
     /// this in the `if (cc.is_builtin)` branch before the hardcoded switches.
     ///
@@ -3488,7 +3488,7 @@ const Emitter = struct {
         });
     }
 
-    /// A `@builtin(...)` call rendered from its `@external(erlang, …)` template,
+    /// A `@builtin(...)` call rendered from its `#[@External.Erlang(…)]` template,
     /// or null when no template is registered (the caller falls through to
     /// `@block`, the `__bp_*` ops and the plain call).
     fn builtinAnnotationNode(this: *Emitter, b: Ast.Builder, callee: []const u8, cc: anytype) anyerror!?Ast.Expr {
@@ -3583,7 +3583,7 @@ const Emitter = struct {
         return .{ .seq = ctx.parts.items };
     }
 
-    /// §A5: index interface methods carrying `@external(erlang, "mod", "sym[(args)]")`
+    /// §A5: index interface methods carrying `#[@External.Erlang("mod", "sym[(args)]")]`
     /// — the lookup key is `<Iface>.<method>` so the prim-method dispatch can find
     /// it without re-scanning. The symbol/args are owned by the emitter's
     /// allocator so they outlive the parser arena (the original annotation lexemes
@@ -3625,7 +3625,7 @@ const Emitter = struct {
         try this.prim_iface_chain.put(child, parent);
     }
 
-    /// Collect the `@external(erlang, …)` annotations on one interface's
+    /// Collect the `#[@External.Erlang(…)]` annotations on one interface's
     /// methods. Caller is the dispatch builder; this both handles the
     /// `program.decls` interfaces and the reparsed `primitives.bp` ones with
     /// the same shape. A key already present wins on first-write (the in-program
@@ -3635,7 +3635,7 @@ const Emitter = struct {
         var slots: [16][]const u8 = undefined;
         for (iface.methods) |m| {
             // `prim-op-annotation` arity-branch form takes precedence: when the
-            // method's `@external(erlang, …)` carries one or more
+            // method's `#[@External.Erlang(…)]` carries one or more
             // `when($argc == N): "..."` clauses, store every branch and skip
             // the ref read (arity-branch annotations may carry 3+ args).
             if (ast.externalHasArityBranches(m.annotations, "erlang")) {
@@ -3700,7 +3700,7 @@ const Emitter = struct {
         }
     }
 
-    /// A primitive method call rendered from its `@external(erlang, …)`
+    /// A primitive method call rendered from its `#[@External.Erlang(…)]`
     /// annotation, or null when none is registered for `<iface>.<method>`
     /// (callers fall through to the inline lowerings for irreducible cases).
     /// `primIfaceForKind` maps a `PrimKind` to its interface (`.array` →
@@ -3725,7 +3725,7 @@ const Emitter = struct {
         var args: std.ArrayListUnmanaged(Ast.Expr) = .empty;
         if (call.args) |names| {
             // Template order: `self` ⇒ the receiver; any other slot ⇒ the next
-            // positional argument (the parser drops `@external(…)` arg labels,
+            // positional argument (the parser drops `#[@External.Erlang(…)]` arg labels,
             // so the binding is positional, in source order).
             var next_arg: usize = 0;
             for (names) |name| {
@@ -3744,7 +3744,7 @@ const Emitter = struct {
         return try b.remote(call.module, call.symbol, args.items);
     }
 
-    /// §A2 erlang twin: a top-level user `declare fn` whose `@external(erlang, …)`
+    /// §A2 erlang twin: a top-level user `declare fn` whose `#[@External.Erlang(…)]`
     /// annotation is a template (`$0`/`$N`) or arity-branched, rendered at the
     /// call site instead of `module:symbol(args)` (which does not fit
     /// chained-host-call shapes). Null when no template matches.
@@ -7635,7 +7635,7 @@ const Emitter = struct {
         return node;
     }
 
-    /// `@name(...)`: the builtin's `@external(erlang, …)` template when it has
+    /// `@name(...)`: the builtin's `#[@External.Erlang(…)]` template when it has
     /// one (`todo`/`panic`/`print`/`println`/`debug`), `@block`, the lowered
     /// `__bp_*` result/option ops, else a local call.
     fn builtinCallNode(this: *Emitter, b: Ast.Builder, cc: anytype) anyerror!Ast.Expr {
@@ -7725,7 +7725,7 @@ const Emitter = struct {
             if (this.in_iface_default) {
                 if (try this.preludeHelperNode(b, cc.callee, cc)) |node| return node;
             }
-            // `#[@external(erlang, "module", "symbol")]` fn → `module:symbol(…)`.
+            // `#[@External.Erlang("module", "symbol")]` fn → `module:symbol(…)`.
             if (this.externals.get(cc.callee)) |ref| {
                 return this.adoptHostResult(b, cc.callee, try b.remote(ref.module, ref.symbol, try this.callArgs(b, null, cc)));
             }
@@ -9435,7 +9435,7 @@ const Emitter = struct {
 
     /// A builtin-primitive instance method lowered to its erlang host operation
     /// (arrays are lists, strings binaries, numbers/bools native). Most methods
-    /// are annotation-driven (`primitives.bp` `@external(erlang, …)`
+    /// are annotation-driven (`primitives.bp` `#[@External.Erlang(…)]`
     /// templates); the inline cases below don't reduce to a template. An
     /// unmapped method is a bare local `m(Recv, args)` call (a clear runtime
     /// error if truly unsupported) rather than invalid `Recv:m(args)` syntax.
@@ -9450,7 +9450,7 @@ const Emitter = struct {
         return b.call(callee, args.items);
     }
 
-    /// The host-op half of `primMethodNode`: the `@external(erlang, …)`
+    /// The host-op half of `primMethodNode`: the `#[@External.Erlang(…)]`
     /// annotation, the inline cases and the Array fallbacks — null when none
     /// answers (an instance `default fn` or nothing).
     fn primHostMethodNode(this: *Emitter, b: Ast.Builder, k: envMod.PrimKind, callee: []const u8, recv: *const ast.Expr, cc: anytype) anyerror!?Ast.Expr {
