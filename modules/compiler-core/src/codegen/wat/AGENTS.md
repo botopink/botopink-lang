@@ -615,6 +615,39 @@ tests no literal in a list pattern and answers a function for a brace arm
 over one (`04-js`); erlang binds `true` (`02-erlang`); beam leaves list
 binders unresolved (`03-beam`).
 
+## A binding in an inner block is a local of its own (decision 152)
+
+Decision 152 refuses a second binding of one name in one body and keeps one in
+an inner block legal — a block is a new scope. A wasm function is ONE local
+namespace, so `val x = 2` inside an `if` wrote the outer `$x`, and `x` read
+after the block answered `2` at exit 0 (the pre-pass `emitLocalDecls` also
+registered the inner binding's shape under the shared name, so an outer `k`
+printed as the string an inner `val k = "lambda"` held). Now:
+
+- `bindTarget` gives a `val` / `var`, a `for` binder (`lowerCollectionLoop`,
+  `lowerRangeLoop`) and a HOF binder (`lowerArrayHof`) the name itself, or a
+  fresh `<name>__sh<n>` when a parameter (`isParamLocal`) or a binding of an
+  enclosing, still open statement list (`bound_names`) holds it;
+  `installShadow` aliases the name to it once the value is lowered
+  (`val x = x + 1` reads the outer one);
+- `scopeMark` / `scopeRestore` undo both at the end of each statement list
+  (`emitBody`, `emitBranchValue`, `emitIterationBody`, `inlineLambdaBody`,
+  `lowerArmBody`, the two loops and `lowerArrayHof`), so a sibling block's
+  binding reuses its local exactly as before — no snapshot moved;
+- a `case` binder over such a name goes through `bindName`, which aliases it
+  too; an arm's binders are undone by restoring the aliases as they were
+  before the arm (`restoreAliases`) instead of clearing every alias, which
+  also dropped a re-binding around the `case`;
+- `emitLocalDecls` registers nothing for a re-binding — its lowering (`emitStmtRaw`) does,
+  under its own local.
+
+`tests/wat.zig` `a binding in an inner block shadows the outer one only inside
+it` pins the shapes, its RUN LOG commonJS's (erlang and beam refuse the
+program today). A `case` arm's binder over an in-scope name answers the arm
+with the binder and leaves the outer name alone on wasm; commonJS reads the
+outer name inside the arm and erlang / beam rebind the outer one — which of
+the three the language means is the open question this backend reported.
+
 ## Function values, and the lowering that is not there
 
 **This backend has function values.** A lambda used as a value is lifted into

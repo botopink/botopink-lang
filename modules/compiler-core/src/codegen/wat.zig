@@ -647,6 +647,12 @@ const GenericFn = struct {
 
 /// A method of a generic `type`, its owner and the owner's type parameters,
 /// and the per-module maps its body is lowered under.
+/// A name a block re-bound, and the alias it had before (`Emitter.shadow_log`).
+/// What a statement list did to a name, undone at its end: bound it first
+/// (`prev` unused — the name leaves `bound_names`), or aliased it over an
+/// enclosing binding (`prev` the alias it had before).
+const Shadow = struct { name: []const u8, prev: ?[]const u8, aliased: bool };
+
 const GenericMethod = struct {
     owner: []const u8,
     tparams: []const ast.GenericParam,
@@ -1407,6 +1413,13 @@ const Emitter = struct {
     /// substitution — `self.left == self.right` over `Pair<string>`
     /// compared WORDS while the fields read as `A` (`run/generic_string_equality`).
     field_subs_owner: []const u8 = "",
+    /// The names a `val` / `var` of the function being emitted has bound so
+    /// far (`bindTarget`), and the aliases a re-binding of one installed,
+    /// undone at the end of the statement list it stands in (`scopeRestore`).
+    /// Both in `reg_arena`, cleared per function.
+    bound_names: std.StringHashMapUnmanaged(void) = .empty,
+    shadow_log: std.ArrayListUnmanaged(Shadow) = .empty,
+    shadow_seq: u32 = 0,
     /// The names a tuple pattern bound (`bindTuplePattern`), whose element
     /// type `primKindAt` reads when inference recorded no lowering. In `reg_arena`.
     tuple_binders: std.StringHashMapUnmanaged(void) = .empty,
@@ -2808,6 +2821,8 @@ const Emitter = struct {
 
     fn resetFnState(self: *Emitter, result_type: ?[]const u8) void {
         self.locals.clearRetainingCapacity();
+        self.bound_names.clearRetainingCapacity();
+        self.shadow_log.clearRetainingCapacity();
         self.local_types.clearRetainingCapacity();
         self.str_locals.clearRetainingCapacity();
         self.arr_locals.clearRetainingCapacity();
@@ -2845,6 +2860,63 @@ const Emitter = struct {
     /// Register a local for the current function. Idempotent, and the *only*
     /// way a `(local …)` reaches the output: the declaration goes into the
     /// function node, which is the one place WAT accepts it.
+    /// The local a `val` / `var` (or a loop's, a HOF's binder) named `name`
+    /// binds: `name` itself, or a fresh `<name>__sh<n>` when a parameter or a
+    /// binding of an enclosing, still open statement list holds it — a
+    /// sibling block's binding has ended and its local is reused, as before. One function is one wasm local
+    /// namespace, so an inner block's `val x = 2` wrote the outer `$x`, and
+    /// `x` after the block read `2` at exit 0 where node answers the outer
+    /// value (decision 152: a block is a new scope).
+    fn bindTarget(self: *Emitter, name: []const u8) ![]const u8 {
+        const ra = self.reg_arena.allocator();
+        if (!self.bound_names.contains(name) and !self.isParamLocal(name)) {
+            try self.bound_names.put(ra, name, {});
+            try self.shadow_log.append(ra, .{ .name = name, .prev = null, .aliased = false });
+            return name;
+        }
+        const alias = try std.fmt.allocPrint(ra, "{s}__sh{d}", .{ name, self.shadow_seq });
+        self.shadow_seq += 1;
+        return alias;
+    }
+
+    /// After the binding's value is lowered — `val x = x + 1` reads the outer
+    /// `x` — the name means the alias until its statement list ends.
+    fn installShadow(self: *Emitter, name: []const u8, target: []const u8) void {
+        if (std.mem.eql(u8, name, target)) return;
+        self.shadow_log.append(self.reg_arena.allocator(), .{ .name = name, .prev = self.aliases.get(name), .aliased = true }) catch return;
+        self.aliases.put(name, target) catch {};
+    }
+
+    /// A parameter is in `locals` without a `pending_locals` declaration.
+    fn isParamLocal(self: *Emitter, name: []const u8) bool {
+        if (!self.locals.contains(name)) return false;
+        for (self.pending_locals.items) |l| if (std.mem.eql(u8, l.name, name)) return false;
+        return true;
+    }
+
+    /// An arm's pattern binders alias names only for the arm: the aliases are
+    /// put back as they were before it — a block's re-binding around the
+    /// `case` stays (clearing them all lost it).
+    fn restoreAliases(self: *Emitter, saved: std.StringHashMap([]const u8)) void {
+        self.aliases.deinit();
+        self.aliases = saved;
+    }
+
+    fn scopeMark(self: *Emitter) usize {
+        return self.shadow_log.items.len;
+    }
+
+    /// The end of a statement list: every name it re-bound means what it
+    /// meant before the list again.
+    fn scopeRestore(self: *Emitter, mark: usize) void {
+        while (self.shadow_log.items.len > mark) {
+            const sh = self.shadow_log.pop().?;
+            if (!sh.aliased) {
+                _ = self.bound_names.remove(sh.name);
+            } else if (sh.prev) |p| self.aliases.put(sh.name, p) catch {} else _ = self.aliases.remove(sh.name);
+        }
+    }
+
     fn declareLocal(self: *Emitter, name: []const u8, ty: []const u8) !void {
         if (self.locals.contains(name)) return;
         try self.locals.put(name, ty);
@@ -3699,6 +3771,14 @@ const Emitter = struct {
             switch (stmt.expr) {
                 .binding => |b| switch (b.kind) {
                     .localBind => |lb| {
+                        // A re-binding of a name already declared here is a
+                        // local of its own (`bindTarget`), registered when it
+                        // is lowered: registering its shape under the shared
+                        // name here marked the OUTER `x` a string too.
+                        if (self.locals.contains(lb.name)) {
+                            try self.declareNestedLocals(lb.value.*);
+                            continue;
+                        }
                         // An `unknown` / union slot holds the box's pointer,
                         // whatever the value's own shape.
                         if (lb.typeAnnotation) |ta| if (isUnknownTypeRef(ta)) {
@@ -4241,6 +4321,8 @@ const Emitter = struct {
     /// or an `(if (result …))` branch). The returned `Tail` reports what the
     /// stack actually looks like afterwards, so nested contexts can normalise.
     fn emitBody(self: *Emitter, body: []const ast.Stmt, keep_value: bool) anyerror!Tail {
+        const scope_mark = self.scopeMark();
+        defer self.scopeRestore(scope_mark);
         if (body.len == 0) {
             if (keep_value) {
                 try self.pushZero();
@@ -4356,7 +4438,13 @@ const Emitter = struct {
                 },
             },
             .binding => |b| switch (b.kind) {
-                .localBind => |lb| {
+                .localBind => |lb0| {
+                    // A second binding of a name — a block's `val x` over an
+                    // outer `x` (decision 152 keeps that legal: a new scope)
+                    // — is a fresh local, aliased until the block ends.
+                    var lb = lb0;
+                    lb.name = try self.bindTarget(lb0.name);
+                    defer self.installShadow(lb0.name, lb.name);
                     if (lb.typeAnnotation) |ta| if (isUnknownTypeRef(ta)) {
                         try self.declareLocal(lb.name, "i32");
                         try self.local_typerefs.put(lb.name, ta);
@@ -5493,6 +5581,8 @@ const Emitter = struct {
     /// `return` tail is unwrapped to its value (a bare `return` opcode would
     /// exit the *enclosing* function, not the inlined closure).
     fn inlineLambdaBody(self: *Emitter, body: []const ast.Stmt) anyerror!void {
+        const scope_mark = self.scopeMark();
+        defer self.scopeRestore(scope_mark);
         if (body.len == 0) {
             try self.emit(zero);
             return;
@@ -5830,6 +5920,7 @@ const Emitter = struct {
             break :blk self.patternIsIrrefutable(arm.pattern);
         };
         if (irrefutable) {
+            const arm_aliases = try self.aliases.clone();
             try self.bindPattern(arm.pattern, subj);
             // A guard makes even `_` refutable: a failing guard falls through
             // to the next arm (§5.3), so there is still a chain to emit.
@@ -5838,7 +5929,7 @@ const Emitter = struct {
             } else {
                 try self.lowerArmBody(arm.body, subj);
             }
-            self.aliases.clearRetainingCapacity();
+            self.restoreAliases(arm_aliases);
             return;
         }
         try self.emitPatternTest(arm.pattern, subj, arm.patternLoc);
@@ -5890,6 +5981,8 @@ const Emitter = struct {
 
     /// The arm's value, coerced to the case's result type.
     fn lowerArmBody(self: *Emitter, body: ast.Expr, subj: []const u8) anyerror!void {
+        const scope_mark = self.scopeMark();
+        defer self.scopeRestore(scope_mark);
         const unbox = self.arm_unbox;
         self.arm_unbox = null;
         const lam = armLambda(body) orelse {
@@ -6408,7 +6501,11 @@ const Emitter = struct {
     /// alias the arm's uses resolve to (until `emitCaseArms` drops it).
     fn bindName(self: *Emitter, n: []const u8, ty: []const u8) ![]const u8 {
         if (self.locals.get(n)) |existing| {
-            if (!std.mem.eql(u8, existing, ty) and !self.pattern_locals.contains(n)) {
+            // A binder over a name an enclosing statement list (or a
+            // parameter) binds is a local of its own too: `case 5 { n -> … }`
+            // under a `val n` wrote the outer `$n`.
+            const shadows = self.bound_names.contains(n) or self.isParamLocal(n);
+            if (shadows or (!std.mem.eql(u8, existing, ty) and !self.pattern_locals.contains(n))) {
                 const alias = try std.fmt.allocPrint(self.arena(), "{s}__{d}", .{ n, self.alias_seq });
                 self.alias_seq += 1;
                 try self.declareLocal(alias, ty);
@@ -6548,8 +6645,8 @@ const Emitter = struct {
                 if (sub == .ident and self.unknown_subjects.contains(local) and primTestOf(.{ .named = sub.ident }) != null) continue;
                 try self.bindPattern(sub, local);
             },
-            .ident => |n| if (!isBoolLitName(n) and !isVariantPath(n) and self.findVariant(n) == null) {
-                try self.declareLocal(n, "i32");
+            .ident => |n0| if (!isBoolLitName(n0) and !isVariantPath(n0) and self.findVariant(n0) == null) {
+                const n = try self.bindName(n0, "i32");
                 if (self.str_locals.contains(subj)) try self.str_locals.put(n, {});
                 try self.emit(.{ .local_get = subj });
                 try self.emit(.{ .local_set = n });
@@ -6655,13 +6752,14 @@ const Emitter = struct {
 
         var then_c: Capture = .{};
         self.open(&then_c);
+        const arm_aliases = try self.aliases.clone();
         try self.bindPattern(arms[idx].pattern, subj);
         if (arms[idx].guard) |g| {
             try self.emitGuardChain(arms, subj, idx, g);
         } else {
             try self.lowerArmBody(body, subj);
         }
-        self.aliases.clearRetainingCapacity();
+        self.restoreAliases(arm_aliases);
         const then_seq = self.seal(&then_c, .{ .value = ty });
 
         var else_c: Capture = .{};
@@ -7887,6 +7985,8 @@ const Emitter = struct {
     /// `[len][e0][e1]…` blob with the lambda's parameters bound to locals and
     /// its body inlined per element. `hof` is `lowerArrayMethod`'s `Hof`.
     fn lowerArrayHof(self: *Emitter, hof: u8, recv: ast.Expr, lam: LambdaView, init_expr: ?ast.Expr) anyerror!void {
+        const scope_mark = self.scopeMark();
+        defer self.scopeRestore(scope_mark);
         const map = 0;
         const filter = 1;
         const for_each = 2;
@@ -7911,10 +8011,15 @@ const Emitter = struct {
         const elem_kind = self.elemKindOf(recv);
         const elem_ty: []const u8 = if (elem_kind == .f32) "f32" else "i32";
         // fold binds (acc, item); the others bind (item).
-        const acc_param: ?[]const u8 = if (hof == fold and lam.params.len > 0) lam.params[0] else null;
-        const elem_param: ?[]const u8 = if (hof == fold)
+        const acc_param0: ?[]const u8 = if (hof == fold and lam.params.len > 0) lam.params[0] else null;
+        const elem_param0: ?[]const u8 = if (hof == fold)
             (if (lam.params.len > 1) lam.params[1] else null)
         else if (lam.params.len > 0) lam.params[0] else null;
+        // A binder over a name the function already binds (`val e = 5;
+        // xs.forEach({ e -> … })`) is a local of its own — read `e` after the
+        // walk and it answered the last element.
+        const acc_param: ?[]const u8 = if (acc_param0) |p| try self.bindTarget(p) else null;
+        const elem_param: ?[]const u8 = if (elem_param0) |p| try self.bindTarget(p) else null;
         const acc_ty: []const u8 = if (hof == fold) (if (init_expr) |i| self.wasmTypeOf(i) else "i32") else "i32";
         try self.declareLocal(acc, acc_ty);
         if (hof == map or hof == filter) try self.declareLocal(out, "i32");
@@ -7937,6 +8042,8 @@ const Emitter = struct {
 
         try self.lowerCoerced(recv, "i32");
         try self.emit(.{ .local_set = base });
+        if (elem_param0) |p| self.installShadow(p, elem_param.?);
+        if (acc_param0) |p| self.installShadow(p, acc_param.?);
         try self.emit(.{ .local_get = base });
         try self.emitC(.{ .load = .{} }, "element count");
         try self.emit(.{ .local_set = len });
@@ -11120,7 +11227,10 @@ const Emitter = struct {
         try self.declareLocal(cur, "i32");
         try self.declareLocal(len, "i32");
 
-        const elem = if (lp.params.len > 0) lp.params[0] else "__it";
+        const scope_mark = self.scopeMark();
+        defer self.scopeRestore(scope_mark);
+        const elem0 = if (lp.params.len > 0) lp.params[0] else "__it";
+        const elem = try self.bindTarget(elem0);
         const elem_kind = self.elemKindOf(lp.iter.*);
         // A float element is an f32 slot: loading it as an i32 read its bits
         // as an integer (`[2.0, 4.0, 9.0]` averaged to `1082480000`).
@@ -11137,6 +11247,7 @@ const Emitter = struct {
 
         try self.lowerCoerced(lp.iter.*, "i32");
         try self.emit(.{ .local_set = base });
+        self.installShadow(elem0, elem);
         try self.emit(.{ .local_get = base });
         try self.emitC(.{ .load = .{} }, "element count");
         try self.emit(.{ .local_set = len });
@@ -11172,6 +11283,8 @@ const Emitter = struct {
     /// `(block $__next …)` so the jump lands on the step; `loop_depth` lets
     /// `break`/`continue` branch at all.
     fn emitIterationBody(self: *Emitter, body: []const ast.Stmt) anyerror!void {
+        const scope_mark = self.scopeMark();
+        defer self.scopeRestore(scope_mark);
         self.loop_depth += 1;
         defer self.loop_depth -= 1;
         if (!bodyContinues(body)) {
@@ -11371,11 +11484,15 @@ const Emitter = struct {
     }
 
     fn lowerRangeLoop(self: *Emitter, params: []const []const u8, body: []const ast.Stmt, r: anytype, result: ?[]const u8) anyerror!void {
-        const param = if (params.len > 0) params[0] else "__i";
+        const scope_mark = self.scopeMark();
+        defer self.scopeRestore(scope_mark);
+        const param0 = if (params.len > 0) params[0] else "__i";
+        const param = try self.bindTarget(param0);
         try self.declareLocal(param, "i32");
 
         try self.lowerCoerced(r.start.*, "i32");
         try self.emit(.{ .local_set = param });
+        self.installShadow(param0, param);
 
         var loop_c: Capture = .{};
         self.open(&loop_c);
@@ -11951,6 +12068,8 @@ const Emitter = struct {
     /// One arm of an `if` whose value type is its own (`ifValueType`): the
     /// arm's tail converted to `ty`, a zero of `ty` where it yields nothing.
     fn emitBranchValue(self: *Emitter, body: []const ast.Stmt, ty: []const u8) anyerror!Tail {
+        const scope_mark = self.scopeMark();
+        defer self.scopeRestore(scope_mark);
         if (body.len == 0) {
             try self.emit(constOf(ty, "0"));
             return .value;

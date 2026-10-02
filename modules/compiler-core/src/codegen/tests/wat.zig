@@ -1472,3 +1472,85 @@ test "wat: case ---- a list pattern tests its length and literals and binds the 
         \\
     );
 }
+
+// Decision 152 keeps a binding in an inner block legal — a block is a new
+// scope — and refuses only a second binding in one body. One wasm function is
+// one local namespace, so `val x = 2` inside the `if` wrote the outer `$x` and
+// every read after the block answered the inner value at exit 0 (`2`,
+// `inner`, `lambda` where node answers `1`, `outer`, `5`; the pre-pass also
+// marked the outer `k` a string). A re-binding is a local of its own
+// (`bindTarget`, `<name>__sh<n>`), aliased until its statement list ends
+// (`scopeRestore`) — a `val`, a loop's and a HOF's binder, a `case` binder.
+// The RUN LOG is commonJS's; erlang (`unsafe in 'case'`) and beam (`{unassigned,
+// …}`) refuse the program today, `02-erlang`'s and `03-beam`'s rows.
+test "wat: scope ---- a binding in an inner block shadows the outer one only inside it" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\fn pick(flag: bool) -> i32 {
+        \\    val x = 1;
+        \\    if (flag) {
+        \\        val x = 2;
+        \\        @print(x);
+        \\    }
+        \\    return x;
+        \\}
+        \\fn main() {
+        \\    val x = 1;
+        \\    if (x > 0) {
+        \\        val x = 2;
+        \\        @print(x);
+        \\    }
+        \\    @print(x);
+        \\    val s = "outer";
+        \\    for (0..1) { i ->
+        \\        val s = "inner";
+        \\        @print(s);
+        \\    }
+        \\    @print(s);
+        \\    val k = 5;
+        \\    [1].forEach({ e ->
+        \\        val k = "lambda";
+        \\        @print(k);
+        \\    });
+        \\    @print(k);
+        \\    val c = 7;
+        \\    val r = case c {
+        \\        7 {
+        \\            val c = 70;
+        \\            c + 1;
+        \\        }
+        \\        _ { 0 }
+        \\    };
+        \\    @print(r);
+        \\    @print(c);
+        \\    @print(pick(true));
+        \\    val e = 5;
+        \\    [1, 2].forEach({ e -> @print(e) });
+        \\    @print(e);
+        \\    val i = 9;
+        \\    for (0..2) { i -> @print(i) }
+        \\    @print(i);
+        \\    if (true) { val t = 1; @print(t); }
+        \\    if (true) { val t = "two"; @print(t); }
+        \\}
+    ,
+        \\2
+        \\1
+        \\inner
+        \\outer
+        \\lambda
+        \\5
+        \\71
+        \\7
+        \\2
+        \\1
+        \\1
+        \\2
+        \\5
+        \\0
+        \\1
+        \\9
+        \\1
+        \\two
+        \\
+    );
+}
