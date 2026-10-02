@@ -1,0 +1,24 @@
+//// `Array.chunked(n)` cuts consecutive slices of `n` elements, the last one
+//// shorter; `sliding(n)` answers one slice of `n` per start offset. `n <= 0`
+//// answers no slice, and `sliding` over fewer than `n` elements answers none.
+//// The slices print, index and measure as arrays. wasm trapped on both
+//// (`01-compiler/05-wasm` step 1).
+
+pub fn main() {
+    @print([1, 2, 3, 4, 5].chunked(2));
+    @print([1, 2, 3].chunked(5));
+    @print([1, 2, 3].chunked(0));
+    @print(["a", "b", "c"].chunked(2));
+    @print([1, 2, 3].sliding(2));
+    @print([1, 2, 3].sliding(4));
+    @print([1, 2, 3].sliding(-1));
+    @print(["a", "b", "c"].sliding(2));
+    val ch = [1, 2, 3].chunked(2);
+    @print(ch.length);
+    @print(ch.at(1));
+    @print(ch[0]);
+    @print(ch[0][1]);
+    for ([4, 5, 6].sliding(2)) { w ->
+        @print(w.length);
+    }
+}

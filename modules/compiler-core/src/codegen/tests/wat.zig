@@ -682,10 +682,11 @@ test "wat: index ---- a float array element is reinterpreted, not read as bits" 
 // receiver, which the checker lets flow), a slice's length, and a tuple
 // element.
 //
-// commonJS and erlang answer everything, modulo §7's separator. The two that do
-// not are named in this section's header and are the libraries' methods on
-// those targets, not the index: on wasm `rows.at(1)` is a heap address and
-// `rows.at(0).length` is `0`; on beam the module does not assemble, because
+// commonJS and erlang answer everything, modulo §7's separator (commonJS
+// prints `ps[1]` as `[2, "b"]`, `04-js`'s row). wasm answers erlang's text:
+// `rows[1]` and `ps[1]` print by the element's shape (`OptInfo.shape`) — they
+// printed the row's and the tuple's heap address at exit 0 until
+// `01-compiler/05-wasm` step 1. On beam the module does not assemble, because
 // `String_slice/3` comes out with unresolved labels.
 test "wat: index ---- a nested index, a slice's length and a tuple element" {
     try h.assertJsSingle(std.testing.allocator, @src(),
@@ -757,11 +758,11 @@ test "wat: loop ---- a search leaves its answer in a var and ends at break" {
 
 // §6 T6 — a tuple is positional at run time and `==` compares its elements;
 // T5 — labels take no part. Both sides are pointers into the bump heap, so the
-// `i32.eq` this backend emitted answered `false` for two equal tuples. The
-// shape is static (`(is)`), so the comparison is emitted element by element:
-// a string element through `$__str_eq` (comparing the words would compare
-// addresses), a float as the `f32` its slot holds, a nested tuple by recursing
-// through the pointer.
+// `i32.eq` this backend emitted answered `false` for two equal tuples. Since
+// decision 210 each tuple type compares through its generated
+// `$__eq_Tuple<n>_…`: a string element through `$__str_eq` (comparing the
+// words would compare addresses), a float as the `f32` its slot holds, a nested
+// tuple through its own equality.
 test "wat: tuple ---- equality compares elements, and labels take no part" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
@@ -1112,29 +1113,62 @@ test "wat: prim method ---- the String and Float members step 6's audit lowered"
     );
 }
 
-// The rest of step 6's audit: every primitive method `primitives.bp` declares
-// that has NO wasm lowering traps (`prim method not lowered on wasm`) rather
-// than answering — one program per method, so a lowering that lands later
-// fails here and has to move its row into the test above. `words`/`lines`
-// split on a character class, and the rest are `default fn`s whose bodies call a function value the inlined HOF
-// path does not reach (`flatMap`) or grow an array through
-// `append` (`flatten`, `flat`, `chunked`, `sliding`, `fill`, `unique`).
-test "wat: prim method ---- a primitive method with no wasm lowering traps, never answers" {
+// `01-compiler/05-wasm` step 1: the primitive methods step 6's audit left
+// trapping each have a lowering — `$__str_lines` / `$__str_words`, and the
+// array helpers `$__arr_unique`, `$__arr_flatten` (`flatMap` is `map` then
+// it, as `primitives.bp`'s body is), `$__arr_chunked`, `$__arr_sliding`,
+// `$__arr_fill`. The answers are commonJS's, erlang's and beam's for the same
+// program (`tests/language/run/string_lines_words.bp`, `array_unique.bp`,
+// `array_flat_forms.bp`, `array_windows.bp`, `array_fill.bp`).
+test "wat: prim method ---- the methods that trapped lower: lines, words, unique, the flat forms, the windows, fill" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\fn main() {
+        \\    @print("a b\tc\n d".words());
+        \\    @print("a\nb\r\nc\r".lines());
+        \\    @print([3, 1, 1, 3].unique());
+        \\    @print(["a", "a", "b"].unique());
+        \\    @print([true, true, false].unique());
+        \\    @print([[1], [2, 3]].flatten());
+        \\    @print([["a"], ["b"]].flat());
+        \\    @print([1, 2].flatMap({ x -> [x, x] }));
+        \\    @print([1, 2, 3].chunked(2));
+        \\    @print([1, 2, 3].sliding(2));
+        \\    @print([1, 2].fill(0));
+        \\}
+    ,
+        \\["a", "b", "c", "d"]
+        \\["a", "b", "c\r"]
+        \\[3, 1, 3]
+        \\["a", "b"]
+        \\[true, false]
+        \\[1, 2, 3]
+        \\["a", "b"]
+        \\[1, 1, 2, 2]
+        \\[[1, 2], [3]]
+        \\[[1, 2], [2, 3]]
+        \\[0, 0]
+        \\
+    );
+}
+
+// What is left of the class traps by name rather than answering: `unique`
+// over records (commonJS answers `2` and erlang `1` for the program below —
+// the backends disagree on `!=` between two records, so no wasm answer is
+// right), `flatMap` whose function answers a scalar (node flattens nothing,
+// erlang fails), and `flatten` over elements no shape says are arrays.
+test "wat: prim method ---- unique over records and flatMap over a scalar trap, never answer" {
     const trap = "RUNTIME TRAP (wasmtime):\nwasm trap: wasm `unreachable` instruction executed\n";
-    const calls = [_][]const u8{
-        "\"a b\".words()",
-        "\"a\\nb\".lines()",
-        "[3, 1, 3].unique()",
-        "[[1], [2, 3]].flatten()",
-        "[[1], [2, 3]].flat()",
-        "[1, 2].flatMap({ x -> [x, x] })",
-        "[1, 2, 3].chunked(2)",
-        "[1, 2, 3].sliding(2)",
-        "[1, 2].fill(0)",
-    };
-    inline for (calls) |c| {
-        try h.assertWasmRunLog(std.testing.allocator, "fn main() {\n    @print(" ++ c ++ ");\n}\n", trap);
-    }
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\type P(x: i32)
+        \\fn main() {
+        \\    @print([P(x: 1), P(x: 1)].unique().length);
+        \\}
+    , trap);
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\fn main() {
+        \\    @print([1, 2].flatMap({ x -> x + 1 }));
+        \\}
+    , trap);
 }
 
 // `Array.pop` and `Array.lastIndexOf` left the trap list: `pop` answers the
@@ -1246,4 +1280,312 @@ test "wat: slice ---- a null end, written or at run time, is the end" {
         \\bcdef
         \\
     );
+}
+
+// `01-compiler/05-wasm` step 3 — C-07's wasm twins, one fixture per pattern
+// shape of decision 8 §5, each RUN LOG the value erlang and beam answer for
+// the same program (and commonJS, where it answers; the rows it does not are
+// named at the fixture). Before this step a tuple pattern in a `case` was
+// refused (`` `` names no variant``), every list pattern matched every array
+// (`[x]` took a `[]` arm), and `true` / `false` inside a tuple pattern were
+// binders, so every arm matched — the last two a wrong value at exit 0.
+
+// §5.1 P6: a tuple pattern is positional; a literal inside it is tested, a
+// name binds the element by its own shape (a string prints as text), and a
+// labelled tuple type is still matched by position.
+test "wat: case ---- a tuple pattern tests its literals and binds its elements" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\fn classify(p: #(i32, string)) -> string {
+        \\    return case p {
+        \\        #(0, s) { "zero " + s }
+        \\        #(n, "x") { "x " + n.toString() }
+        \\        #(_, s) { s }
+        \\    };
+        \\}
+        \\fn capital(r: #(name: string, pop: i32)) -> string {
+        \\    return case r {
+        \\        #("SP", p) { "capital " + p.toString() }
+        \\        #(n, _) { n }
+        \\    };
+        \\}
+        \\fn nested(t: #(#(i32, i32), string)) -> string {
+        \\    return case t {
+        \\        #(#(0, b), s) { s + b.toString() }
+        \\        #(#(a, _), s) { s + "!" + a.toString() }
+        \\    };
+        \\}
+        \\fn main() {
+        \\    @print(classify(#(0, "a")));
+        \\    @print(classify(#(7, "x")));
+        \\    @print(classify(#(7, "y")));
+        \\    @print(capital(#("SP", 12)));
+        \\    @print(capital(#("Rio", 6)));
+        \\    @print(nested(#(#(0, 7), "z")));
+        \\    @print(nested(#(#(5, 7), "z")));
+        \\}
+    ,
+        \\zero a
+        \\x 7
+        \\y
+        \\capital 12
+        \\Rio
+        \\z7
+        \\z!5
+        \\
+    );
+}
+
+// §5.1 P7: `..` ignores the rest — of a tuple, a variant's fields and a
+// record's — and `true` / `false` in a pattern are the bool literals. commonJS
+// emits `const true = _s[2]` for the last (a SyntaxError, `04-js`'s row), and
+// erlang binds it (`names(#("a", "b", false))` answers `ba`, `02-erlang`'s).
+test "wat: case ---- `..` skips the rest and a bool literal in a tuple pattern is tested" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\type Shape {
+        \\    Circle(radius: i32),
+        \\    Rect(w: i32, h: i32),
+        \\    Dot,
+        \\}
+        \\type Point(x: i32, y: i32)
+        \\fn first(t: #(i32, i32, i32)) -> i32 {
+        \\    return case t {
+        \\        #(a, ..) { a }
+        \\    };
+        \\}
+        \\fn width(s: Shape) -> i32 {
+        \\    return case s {
+        \\        Shape.Rect(w: w, ..) { w }
+        \\        Shape.Circle(..) { -1 }
+        \\        _ { 0 }
+        \\    };
+        \\}
+        \\fn px(p: Point) -> i32 {
+        \\    return case p {
+        \\        Point(x: 0, ..) { 0 }
+        \\        Point(x: x, ..) { x }
+        \\    };
+        \\}
+        \\fn names(t: #(string, string, bool)) -> string {
+        \\    return case t {
+        \\        #(a, b, true) { b + a }
+        \\        #(a, ..) { a }
+        \\    };
+        \\}
+        \\fn main() {
+        \\    @print(first(#(4, 5, 6)));
+        \\    @print(width(Shape.Rect(w: 4, h: 5)));
+        \\    @print(width(Shape.Circle(radius: 1)));
+        \\    @print(width(Shape.Dot));
+        \\    @print(px(Point(x: 0, y: 1)));
+        \\    @print(px(Point(x: 3, y: 1)));
+        \\    @print(names(#("a", "b", true)));
+        \\    @print(names(#("a", "b", false)));
+        \\}
+    ,
+        \\4
+        \\4
+        \\-1
+        \\0
+        \\0
+        \\3
+        \\ba
+        \\a
+        \\
+    );
+}
+
+// §5.2: an arm naming a type is chosen by the value — a primitive over an
+// `unknown` subject by its box (binding the unboxed payload), a record and an
+// enum by the value's header. commonJS answers `other` for `Shape { … }` over
+// a variant, where erlang and beam answer `shape` (`04-js`'s row).
+test "wat: case ---- a type pattern is chosen by the value" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\type Shape {
+        \\    Rect(w: i32, h: i32),
+        \\    Dot,
+        \\}
+        \\type Point(x: i32, y: i32)
+        \\fn kind(v: unknown) -> string {
+        \\    return case v {
+        \\        i32 { n -> "int " + n.toString() }
+        \\        string { s -> "string " + s }
+        \\        bool { "bool" }
+        \\        Point { "point" }
+        \\        Shape { "shape" }
+        \\        _ { "other" }
+        \\    };
+        \\}
+        \\fn main() {
+        \\    @print(kind(1));
+        \\    @print(kind("a"));
+        \\    @print(kind(true));
+        \\    @print(kind(Point(x: 1, y: 2)));
+        \\    @print(kind(Shape.Rect(w: 1, h: 1)));
+        \\    @print(kind(2.5));
+        \\}
+    ,
+        \\int 1
+        \\string a
+        \\bool
+        \\point
+        \\shape
+        \\other
+        \\
+    );
+}
+
+// §5.1 list patterns: the length — exactly the elements written, or at least
+// them with a spread — then each literal; a binder by the element's shape and
+// a named spread bound to the rest. erlang answers the same; commonJS tests no
+// literal (`pick([2, 9])` answers `9`) and a brace arm answers a function
+// (`04-js`'s rows); beam leaves the binders unresolved (`03-beam`'s).
+test "wat: case ---- a list pattern tests its length and literals and binds the rest" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\fn head(xs: string[]) -> string {
+        \\    return case xs {
+        \\        [] -> "none";
+        \\        [a, ..rest] -> a + "+" + rest.length.toString();
+        \\    };
+        \\}
+        \\fn pick(xs: i32[]) -> i32 {
+        \\    return case xs {
+        \\        [1, b] -> b;
+        \\        [_, _, c, ..] -> c;
+        \\        [..] -> -1;
+        \\    };
+        \\}
+        \\fn main() {
+        \\    @print(head([]));
+        \\    @print(head(["x"]));
+        \\    @print(head(["x", "y", "z"]));
+        \\    @print(pick([1, 9]));
+        \\    @print(pick([2, 9]));
+        \\    @print(pick([5, 6, 7, 8]));
+        \\}
+    ,
+        \\none
+        \\x+0
+        \\x+2
+        \\9
+        \\-1
+        \\7
+        \\
+    );
+}
+
+// Decision 152 keeps a binding in an inner block legal — a block is a new
+// scope — and refuses only a second binding in one body. One wasm function is
+// one local namespace, so `val x = 2` inside the `if` wrote the outer `$x` and
+// every read after the block answered the inner value at exit 0 (`2`,
+// `inner`, `lambda` where node answers `1`, `outer`, `5`; the pre-pass also
+// marked the outer `k` a string). A re-binding is a local of its own
+// (`bindTarget`, `<name>__sh<n>`), aliased until its statement list ends
+// (`scopeRestore`) — a `val`, a loop's and a HOF's binder, a `case` binder.
+// The RUN LOG is commonJS's; erlang (`unsafe in 'case'`) and beam (`{unassigned,
+// …}`) refuse the program today, `02-erlang`'s and `03-beam`'s rows.
+test "wat: scope ---- a binding in an inner block shadows the outer one only inside it" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\fn pick(flag: bool) -> i32 {
+        \\    val x = 1;
+        \\    if (flag) {
+        \\        val x = 2;
+        \\        @print(x);
+        \\    }
+        \\    return x;
+        \\}
+        \\fn main() {
+        \\    val x = 1;
+        \\    if (x > 0) {
+        \\        val x = 2;
+        \\        @print(x);
+        \\    }
+        \\    @print(x);
+        \\    val s = "outer";
+        \\    for (0..1) { i ->
+        \\        val s = "inner";
+        \\        @print(s);
+        \\    }
+        \\    @print(s);
+        \\    val k = 5;
+        \\    [1].forEach({ e ->
+        \\        val k = "lambda";
+        \\        @print(k);
+        \\    });
+        \\    @print(k);
+        \\    val c = 7;
+        \\    val r = case c {
+        \\        7 {
+        \\            val c = 70;
+        \\            c + 1;
+        \\        }
+        \\        _ { 0 }
+        \\    };
+        \\    @print(r);
+        \\    @print(c);
+        \\    @print(pick(true));
+        \\    val e = 5;
+        \\    [1, 2].forEach({ e -> @print(e) });
+        \\    @print(e);
+        \\    val i = 9;
+        \\    for (0..2) { i -> @print(i) }
+        \\    @print(i);
+        \\    if (true) { val t = 1; @print(t); }
+        \\    if (true) { val t = "two"; @print(t); }
+        \\}
+    ,
+        \\2
+        \\1
+        \\inner
+        \\outer
+        \\lambda
+        \\5
+        \\71
+        \\7
+        \\2
+        \\1
+        \\1
+        \\2
+        \\5
+        \\0
+        \\1
+        \\9
+        \\1
+        \\two
+        \\
+    );
+}
+
+// Decision 214 — the NaN half of `f64`'s total-order `==`, which the
+// four-target cell `run/f64_equality_total_order.bp` cannot carry (erlang and
+// beam never produce a NaN): `NaN == NaN` is `true` bare and inside a record,
+// a tuple, an array and a variant, `NaN != NaN` is `false`, and NaN against a
+// number is unequal. `<` stays IEEE (`NaN < 1.0` is `false`).
+test "wat: f64 ---- NaN equals NaN under ==, bare and inside composites" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\type F(x: f64)
+        \\type V {
+        \\    W(x: f64),
+        \\    Z,
+        \\}
+        \\fn zero() -> f64 {
+        \\    return 0.0;
+        \\}
+        \\fn main() {
+        \\    val z = zero();
+        \\    val nan = z / z;
+        \\    @print(nan == nan);
+        \\    @print(nan != nan);
+        \\    @print(nan == 1.0);
+        \\    @print(nan < 1.0);
+        \\    @print(F(x: nan) == F(x: z / z));
+        \\    val ta = #(nan, 1);
+        \\    val tb = #(z / z, 1);
+        \\    @print(ta == tb);
+        \\    val xs = [nan];
+        \\    val ys = [z / z];
+        \\    @print(xs == ys);
+        \\    @print(V.W(x: nan) == V.W(x: z / z));
+        \\    @print(F(x: nan) == F(x: 1.0));
+        \\}
+    , "true\nfalse\nfalse\nfalse\ntrue\ntrue\ntrue\ntrue\nfalse\n");
 }

@@ -41,7 +41,7 @@ model exists so none of them can be written again:
 | `wat_ast.zig` | **Types**: `ValType` (`i32`/`i64`/`f32`/`f64`, with `parse` for the backend's spelled type names), `Stack` (`none`/`value`/`terminated`, with `fits(?ValType)`), `Width` (`full`/`byte` — `…8_u` / `…8`), `MemArg` (`ty`, `width`, `offset`). **Instructions**: `Instr` (`const` with the numeral as spelled, `local_get`/`local_set`/`local_tee`, `global_get`/`global_set`, `op` = `<ty>.<name>`, `convert` (a fully-spelled conversion opcode), `load`/`store`, `call`, `call_indirect` (an inline `FuncType`), `br`/`br_if`, `drop`, `return`, `unreachable`, `memory_copy`, `if`, `block` (`block` or `loop`), `comment`). **Layout**: `Line` (instruction + `indent` + trailing `;; comment` + `folded`), `Seq` (lines + stack), `If.Arm.Layout` (`block` vs one-line `inline_`). **Forms**: `Param`, `Local`, `Func` (name, exports, params, result, `locals` as *lines* so a helper can group several, body), `Global`, `FuncType`/`Import`, `Memory`, `DataSegment` (offset + length prefix + raw bytes), `Item` (import/memory/start/table/data/global/func/comment — `table` is `(table funcref (elem $f …))`, each name checked against the module's functions), `Module` (items). **Invariants**: `Invalid`, `validateFunc`, `validateModule`, `declaresCall`. **Helpers**: `Helper` (every symbol is `__<tag>`; `group`), `HelperGroup` (`deps` — the groups a group's functions call into), `HelperSet` (an `EnumSet`; `require` closes over `deps`). **`Builder`**: arena + `seq`/`param`/`localLines`/`func` (which validates) + `helper`. |
 | `wat_emitter.zig` | `renderModule` (validates, then `(module …)`; there is no bare-form entry point). Owns: the two-space item column, the four-space body column and each construct's arm columns, `$`-prefixing, folded (`(call $main)`) vs flat form, inline `(then i32.const 0 return)` arms, `offset=` suppressed when zero, and the data-segment escaping (four little-endian length bytes as `\xx`, then `\n`/`"`/`\`/`\t`/`\r`/`\xx` for control bytes). |
 | `wasm_binary_emitter.zig` | `encodeModule(alloc, Module) → []u8`: the binary format of the module the text emitter renders — validated first (`validateModule`), then sections type · import · function · table · memory · global · export · start · element · code · data, LEB128, one type per distinct signature (imports' and functions' types first, then each `call_indirect`'s), locals as runs of one type, no custom section. Every name the text spells is resolved to an index — functions (imports first, then definitions, in item order), globals, locals (params then declared), branch labels (depth, every `if` counted) — and a name that resolves to nothing (`UnknownName`), an operator the MVP table (`opcodes`: numeric, conversions, sign extension, `trunc_sat`) does not know (`UnknownOp`) or a numeral that does not parse (`BadNumeral`, the text format's spellings: sign, `0x`, `_`, `inf`/`nan`) is an error, never a guess. `wat.zig`'s `emitWat` renders both from one `Module` (`GenerateResult.js` the text, `.wasm` the binary); `codegen/runtime.zig`'s `executeWat` runs the **binary**, so every wasm RUN LOG is the binary emitter's answer checked against the recorded fixture. The browser build's page instantiates the same bytes. `Encoder` (with `typeIndex`/`funcIndex`/`funcBody`), `Bytes`, `section`, `uleb`/`sleb`, `name`, `valType`, `funcType` and `constInstr` are public for `comptime/runtime/wat/link.zig`, which pre-seeds an `Encoder` with a prebuilt module's index spaces and encodes a lowered comptime program's functions against the merged numbering. |
-| `wat_prelude.zig` | The runtime helpers wasm has no opcode for, as `Func` nodes: `print` (`$__write_bytes`, `$__print_nl`, `$__print_sp`, `$__print_i32`, `$__print_i32_raw`, `$__memmove`), `print_str` (`$__print_str_raw` traps on a pointer below the data floor — decision 67, § below), `print_bool`, `print_f64`, `arr_at`, `str_concat`, `str_eq`, `str_slice` (transcribed line by line), then — one helper per group, built with the comptime constructors at the bottom of the file (`func`, `loop`, `when`, `whenElse`, `get`/`set`/`op`/…; `func` assigns each line the column its nesting puts it at) — `alloc` (bump, 4-byte aligned), `mem_eq`, `i32_abs`/`i32_min`/`i32_max`, `i32_to_str`, `f64_to_str` (float param — `typedFunc`), `str_case` (ASCII shift of a byte range), `str_index_of`, `str_starts_with`, `str_ends_with`, `str_at` (`s.at(i)` as a `?string`: a negative `i` first counted from the end (`i + len`, decision 139, as in `$__arr_at` / `$__arr_at_box`), then `$__str_slice(s, i, i + 1)`, or `0` — absence — when `i32.ge_u` puts `i` outside `0..len`, which catches a still-negative index in the one compare `$__arr_at` needs two for), `str_trim` (mode bits: 1 start, 2 end), `str_split`, `str_repeat`, `str_char_code`, `str_last_index_of`, `str_pad`, `str_replace` (§ The primitive method table), `arr_new`, `arr_slice` (host bound rules), `arr_reverse`, `arr_prepend`, `arr_push`, `arr_concat`, `arr_zip`, `arr_index_of_i32`/`_str`, `arr_join_str`/`_i32`, `print_arr_i32`, `print_arr_f32` (+`_raw`), `box_i32`, `arr_at_box`, `print_opt` (`$__print_null` — the bytes of `null`, decision 47's one spelling of absent, through scratch `176..180` — and `$__print_opt_i32`/`_bool`/`_str` +`_raw`), `assert_fail` (`$__write_err` — `fd_write` to fd 2 — and `$__assert_fail`, its literal text through scratch `188..208`), `print_shaped` (`$__print_quoted_raw` — a nested string, quoted with the source escapes — and `$__print_shaped_raw(v, shape, go)`, which walks a shape string — `i`/`f`/`b`/`s`, `[X`, `(XY…)` — writing `[a, b]` / `#(a, b)` and answering the address past the shape; `go = 0` only measures), `print_opt_tagged` (`$__print_opt_tagged` +`_raw` — a `?T` whose `T` is a record: `null` for `0`, `$__print_tagged_raw` otherwise; its own group, because the tagged printer reads a header four bytes behind the value and absence has to be answered before it is called), `display_of` (`$__display_of(v)` answering `0` — the `Display` hook `$__print_tagged_raw` calls first, which `wat.zig` replaces with the module's dispatch, § below), `unknown`, `print_unknown`, and `arr_last_index_of_i32`/`_str`. `items(group)` returns a group's forms, `order` the order a module appends them in (declaration order, so the transcribed groups keep their place), `fd_write_import` the one host import the print group needs. Scratch layout below the data section (which starts at 256): `0..8` the WASI iovec, `8` the newline byte — and `9` the space of §7's `, ` separator (`putSep`), written beside it so the two bytes leave in one `fd_write` —, `16..32` the bool text, `32..64` the float fraction, `64..128` the i32 digits, `128..160` the digits `$__i32_to_str` writes backwards, `168..174` the fraction digits of `$__f64_to_str`. |
+| `wat_prelude.zig` | The runtime helpers wasm has no opcode for, as `Func` nodes: `print` (`$__write_bytes`, `$__print_nl`, `$__print_sp`, `$__print_i32`, `$__print_i32_raw`, `$__memmove`), `print_str` (`$__print_str_raw` traps on a pointer below the data floor — decision 67, § below), `print_bool`, `print_f64`, `arr_at`, `str_concat`, `str_eq`, `str_slice` (transcribed line by line), then — one helper per group, built with the comptime constructors at the bottom of the file (`func`, `loop`, `when`, `whenElse`, `get`/`set`/`op`/…; `func` assigns each line the column its nesting puts it at) — `alloc` (bump, 4-byte aligned), `mem_eq`, `i32_abs`/`i32_min`/`i32_max`, `i32_to_str`, `f64_to_str` (float param — `typedFunc`), `str_case` (ASCII shift of a byte range), `str_index_of`, `str_starts_with`, `str_ends_with`, `str_at` (`s.at(i)` as a `?string`: a negative `i` first counted from the end (`i + len`, decision 139, as in `$__arr_at` / `$__arr_at_box`), then `$__str_slice(s, i, i + 1)`, or `0` — absence — when `i32.ge_u` puts `i` outside `0..len`, which catches a still-negative index in the one compare `$__arr_at` needs two for), `str_trim` (mode bits: 1 start, 2 end), `str_split`, `str_repeat`, `str_char_code`, `str_last_index_of`, `str_pad`, `str_replace` (§ The primitive method table), `arr_new`, `arr_slice` (host bound rules), `arr_reverse`, `arr_prepend`, `arr_push`, `arr_concat`, `arr_zip`, `arr_index_of_i32`/`_str`, `arr_join_str`/`_i32`, `print_arr_i32`, `print_arr_f32` (+`_raw`), `box_i32`, `arr_at_box`, `print_opt` (`$__print_null` — the bytes of `null`, decision 47's one spelling of absent, through scratch `176..180` — and `$__print_opt_i32`/`_bool`/`_str` +`_raw`), `assert_fail` (`$__write_err` — `fd_write` to fd 2 — and `$__assert_fail`, its literal text through scratch `188..208`), `print_shaped` (`$__print_quoted_raw` — a nested string, quoted with the source escapes — and `$__print_shaped_raw(v, shape, go)`, which walks a shape string — `i`/`f`/`b`/`s`, `[X`, `(XY…)` — writing `[a, b]` / `#(a, b)` and answering the address past the shape; `go = 0` only measures), `print_opt_tagged` (`$__print_opt_tagged` +`_raw` — a `?T` whose `T` is a record: `null` for `0`, `$__print_tagged_raw` otherwise; its own group, because the tagged printer reads a header four bytes behind the value and absence has to be answered before it is called), `display_of` (`$__display_of(v)` answering `0` — the `Display` hook `$__print_tagged_raw` calls first, which `wat.zig` replaces with the module's dispatch, § below), `unknown`, `print_unknown`, `arr_last_index_of_i32`/`_str`, and the five groups `01-compiler/05-wasm` step 1 added (§ The primitive method table): `str_lines`, `str_words`, `arr_unique`, `arr_flatten`, `arr_chunked`, `arr_sliding`, `arr_fill`. `items(group)` returns a group's forms, `order` the order a module appends them in (declaration order, so the transcribed groups keep their place), `fd_write_import` the one host import the print group needs. Scratch layout below the data section (which starts at 256): `0..8` the WASI iovec, `8` the newline byte — and `9` the space of §7's `, ` separator (`putSep`), written beside it so the two bytes leave in one `fd_write` —, `16..32` the bool text, `32..64` the float fraction, `64..128` the i32 digits, `128..160` the digits `$__i32_to_str` writes backwards, `168..174` the fraction digits of `$__f64_to_str`. |
 
 ## Consumers
 
@@ -196,11 +196,44 @@ the declaration with them substituted in every written type
 the body calls a method on a value of the parameter (`x.toString()`,
 `xs.at(0)`, `callsMethodOn`) whatever it binds: inference saw a type variable
 there and recorded no lowering, so inside a copy (`in_spec`) `primKindAt`
-reads the receiver's substituted type. A call whose arguments say nothing
-keeps the one generic body, and with it the limit: `==` between two
-type-parameter values compares WORDS, and `elemKindOfTypeRef` reads a type
-parameter as `.i32` (`run/generic_body_specialized.bp`,
-`modules/method_on_unimported_type`).
+reads the receiver's substituted type. `01-compiler/05-wasm` step 2 closed
+the shapes that bound a string and still reached the one body:
+
+- **a method copy reads its owner's fields by the substitution**
+  (`field_subs` / `fieldSub`, set from `GenericMethod.subs` while
+  `emitPendingFns` emits it): `self.left == self.right` in
+  `Pair<string>.matched` compared words while `left: A` read as `A`;
+- **a constructor of a generic record answers its type arguments**
+  (`ctorTypeRef`, `record_generics`): `Pair(left: s, right: "ab").matched()`,
+  a local bound to one, an array literal of them (`typeRefOf`'s `arrayLit`
+  arm) and a HOF's element parameter over such an array specialise like a
+  written `Pair<string>`;
+- **a parameter written `Pair<T>`** binds `T` from its argument's type
+  arguments (`bindParam`), and a field read through a receiver typed
+  `Pair<string>` is a `string` (`recvTypeArg`): `eqPair(Pair(left: s, …))`;
+- **a generic fn NAMED as an argument** whose parameter is written as a
+  function type, or **bound** to a `val` written with one, is the copy that
+  type binds (`specializeByFnType`, `specCopy`): `apply(same, s, "ab")`
+  against `f: fn(a: string, b: string) -> bool` called a trampoline over the
+  generic body, and `val held: fn(…) -> bool = same` too (its call also
+  prints as a bool now — `isBoolExpr` reads a function value's declared
+  return).
+
+`run/generic_string_equality.bp` pins every way a type parameter gets a
+string bound on four targets, `modules/method_on_unimported_type` (`Dict.at`
+with a key `split` built) included — it already passed at the open, through
+`specializeMethod`. **What stays**: a call whose arguments and context say
+nothing about the type keeps the one generic body — a generic fn stored in
+a field or bound with no written type, a parameter type `bindParam` does not
+read (it reads a bare `T`, `T[]` / `Array<T>` and a generic record's direct
+type arguments) — and there `==` between two
+type-parameter values compares words (a composite bound where the body
+compares with `==` IS specialised, § Structural equality) and `elemKindOfTypeRef` reads a type
+parameter as `.i32`. A string carries no header (it is a bare
+`[len][bytes]` blob), so a body cannot ask the value what it is: the copy is
+the only cure, and `run/generic_body_specialized.bp` pins the shapes that
+reach it. `fieldSub` is owner-wide: inside a copy of `Pair<string>`'s method,
+a `Pair` of another instantiation reads its fields as `string` too.
 
 **A tuple element is printed by its own shape, not by its address**
 (`tupleElemShapeOf`). This was the last silent wrong-answer class the directory
@@ -244,9 +277,11 @@ printed a record or a variant**, which is why the trap above re-recorded no
 existing file — the addresses §7 owes were only ever in the language cells. Any
 new fixture whose log holds such a number is worth re-reading against this table.
 
-What is left in this class is the **generic-parameter limit** above, which is a
-different cause: there the declared type is a type parameter, so no shape exists
-to slice — and one more, reported on `fix/wasm-refusals` and not fixed there:
+What is left in this class is the **generic-parameter limit** above — the
+calls nothing specialises, a narrower set since `01-compiler/05-wasm` step 2 —,
+which is a different cause: there the declared type is a type parameter, so no
+shape exists to slice — and one more, reported on `fix/wasm-refusals` and not
+fixed there:
 
 **`$__print_str_raw` guards its own null** (`00 · 05-wasm`, 1.0.10-beta). A
 string here is a length-prefixed blob in a data segment or on the heap, and both
@@ -549,6 +584,71 @@ function answering nothing was `(if (result i32)` around two `f64`s — the
 module refused (`run/if_value_float.bp`; `testing.asserts.approxEquals` binds
 one).
 
+## Decision 8 §5's pattern shapes (`01-compiler/05-wasm` step 3, C-07's wasm twins)
+
+Three pattern shapes had no wasm test, and two of them answered at exit 0:
+
+| Shape | Was | Is |
+|---|---|---|
+| a tuple pattern in a `case` (`#(0, s)`, `#(a, ..)`, `#(#(0, b), s)`) | refused — `` `` names no variant `` | `emitTuplePatternTest` / `bindTuplePattern`: each element that tests something is loaded from its slot (`i * 4`, no header) and tested in the chain a variant's payload literals use; a binder takes the element's shape (`noteTupleElemLocal`: a string prints as text, a float slot is read as `f32`); `..` skips the rest |
+| a list pattern (`[]`, `[x]`, `[1, b]`, `[a, ..rest]`) | **irrefutable** — `[x]` took a `[]` arm, exit 0 | `emitListPatternTest`: the length (exactly the elements, or at least them with a spread), then each number literal; `bindListPattern` binds each element by the array's element shape and a named spread to `$__arr_slice(xs, n, …)`. Only `[..]` / `[..rest]` is irrefutable (`patternIsIrrefutable`) |
+| `true` / `false` inside a pattern | a **binder** named `true` — every arm matched, exit 0 | the bool literal (`isBoolLitName`): `subj == 1` / `subj == 0` |
+
+The subject local carries what the patterns read (`noteSubjectShape`, in
+`lowerCase` and `lowerAssertPattern`): a tuple's or an array's print shape,
+an array's element kind. A tuple pattern over a subject whose element types
+nothing knows, and a float element or list element against a literal, are
+refused by name. A tuple or list binder has no instance lowering from
+inference at its loc, so `primKindAt` reads its declared element type
+(`tuple_binders`) — `#(n, "x") { n.toString() }` was an `unresolved call`
+trap. Five `val assert [..] = …` / `case_list_patterns_*` wasm snapshots moved
+(their text — the length test and the binders — not a RUN LOG; each program
+re-run with prints, answering erlang's values).
+
+The fixtures are `tests/wat.zig`'s `a tuple pattern tests its literals and
+binds its elements`, `` `..` skips the rest and a bool literal in a tuple
+pattern is tested ``, `a type pattern is chosen by the value` and `a list
+pattern tests its length and literals and binds the rest`, each RUN LOG
+erlang's and beam's for the program. The rows another backend answers
+differently are named at the fixture: commonJS emits `const true = …` for a
+bool in a tuple pattern, answers `other` for an enum type arm over a variant,
+tests no literal in a list pattern and answers a function for a brace arm
+over one (`04-js`); erlang binds `true` (`02-erlang`); beam leaves list
+binders unresolved (`03-beam`).
+
+## A binding in an inner block is a local of its own (decision 152)
+
+Decision 152 refuses a second binding of one name in one body and keeps one in
+an inner block legal — a block is a new scope. A wasm function is ONE local
+namespace, so `val x = 2` inside an `if` wrote the outer `$x`, and `x` read
+after the block answered `2` at exit 0 (the pre-pass `emitLocalDecls` also
+registered the inner binding's shape under the shared name, so an outer `k`
+printed as the string an inner `val k = "lambda"` held). Now:
+
+- `bindTarget` gives a `val` / `var`, a `for` binder (`lowerCollectionLoop`,
+  `lowerRangeLoop`) and a HOF binder (`lowerArrayHof`) the name itself, or a
+  fresh `<name>__sh<n>` when a parameter (`isParamLocal`) or a binding of an
+  enclosing, still open statement list (`bound_names`) holds it;
+  `installShadow` aliases the name to it once the value is lowered
+  (`val x = x + 1` reads the outer one);
+- `scopeMark` / `scopeRestore` undo both at the end of each statement list
+  (`emitBody`, `emitBranchValue`, `emitIterationBody`, `inlineLambdaBody`,
+  `lowerArmBody`, the two loops and `lowerArrayHof`), so a sibling block's
+  binding reuses its local exactly as before — no snapshot moved;
+- a `case` binder over such a name goes through `bindName`, which aliases it
+  too; an arm's binders are undone by restoring the aliases as they were
+  before the arm (`restoreAliases`) instead of clearing every alias, which
+  also dropped a re-binding around the `case`;
+- `emitLocalDecls` registers nothing for a re-binding — its lowering (`emitStmtRaw`) does,
+  under its own local.
+
+`tests/wat.zig` `a binding in an inner block shadows the outer one only inside
+it` pins the shapes, its RUN LOG commonJS's (erlang and beam refuse the
+program today). A `case` arm's binder over an in-scope name answers the arm
+with the binder and leaves the outer name alone on wasm; commonJS reads the
+outer name inside the arm and erlang / beam rebind the outer one — which of
+the three the language means is the open question this backend reported.
+
 ## Function values, and the lowering that is not there
 
 **This backend has function values.** A lambda used as a value is lifted into
@@ -687,21 +787,55 @@ answered, and each was a red wasm cell of `tests/language`:
   in source order with the named `val`s (`deferred_stmts`); it was dropped. A
   synthetic statement that only calls `main()` is skipped, as on the BEAM.
 
-## The primitive method table (`00 · 05-wasm` step 6)
+## The primitive method table (`00 · 05-wasm` step 6, `01-compiler/05-wasm` step 1)
 
 `primCallRes` is the table of what a primitive method lowers to; a method it
 does not list traps (`prim method not lowered on wasm`). Audited against every
-member `libs/std/src/primitives.bp` declares:
+member `libs/std/src/primitives.bp` declares — **every member is listed now**:
 
-| Family | Lowered | Traps (pinned one program each by `tests/wat.zig` `a primitive method with no wasm lowering traps, never answers`) |
-|---|---|---|
-| `String` | every member but two — `charCodeAt` (`$__str_char_code`: the code point at code-point index `i`, decoded from the UTF-8 sequence it walks to; `-1` out of range), `lastIndexOf` (`$__str_last_index_of`), `padStart`/`padEnd` (`$__str_pad`, the pad cycled), `replace`/`replaceAll` (`$__str_replace`; an empty pattern matches before every byte) and `chars` (`$__str_split` on `""`, which cuts before every UTF-8 codepoint, as `split("")` does) since this row | `lines`, `words` — a split on a character class |
-| `Array` | the rest — `find` (`filter` then `at(0)`, the `?T` `at` answers) since this row; `lastIndexOf` (`$__arr_last_index_of_i32` / `_str`, `indexOf`'s equality from the last slot down); `pop` on a local or a global (the `?T` `at(-1)` answers, then the name rebound to `$__arr_slice(xs, 0, len - 1)` — a blob is a value, as `push` rebinds it to a grown copy) | `flatMap` (a function value the inlined HOF path does not reach), `flatten`, `flat`, `chunked`, `sliding`, `fill`, `unique` (grow through `append`) |
-| `Integer`, `Bool` | all | — |
-| `Float` | all — `toString` (`$__f64_to_str`, `5.0` → `5` as on node) since this row | — |
+| Family | Lowered |
+|---|---|
+| `String` | every member — `charCodeAt` (`$__str_char_code`: the code point at code-point index `i`, decoded from the UTF-8 sequence it walks to; `-1` out of range), `lastIndexOf` (`$__str_last_index_of`), `padStart`/`padEnd` (`$__str_pad`, the pad cycled), `replace`/`replaceAll` (`$__str_replace`; an empty pattern matches before every byte), `chars` (`$__str_split` on `""`, which cuts before every UTF-8 codepoint, as `split("")` does), `lines` (`$__str_lines`: cut at `\n`, a `\r` right before it dropped — node's `/\r?\n/`, erlang's `[<<"\r\n">>, <<"\n">>]` —, the last line keeping a trailing `\r`, `""` one empty line) and `words` (`$__str_words`: the runs of bytes that are not ` `/`\t`/`\n`/`\r`) |
+| `Array` | every member — `find` (`filter` then `at(0)`, the `?T` `at` answers); `lastIndexOf` (`$__arr_last_index_of_i32` / `_str`, `indexOf`'s equality from the last slot down); `pop` on a local or a global (the `?T` `at(-1)` answers, then the name rebound to `$__arr_slice(xs, 0, len - 1)` — a blob is a value, as `push` rebinds it to a grown copy); `unique` (`$__arr_unique(xs, mode)`: consecutive duplicates dropped, `primitives.bp`'s body, compared by the element's word (`0` — an integer, a bool, an all-unit enum's ordinal), its `f32` (`1`) or a string's content (`2`), `uniqueMode` reading the receiver's shape); `flatten` / `flat` (`$__arr_flatten`, over a receiver whose shape is `[[…`); `flatMap(f)` (`map(f)` inlined, then `$__arr_flatten` — the body `primitives.bp` writes — when `f`'s tail is an array, `lambdaTailShape`); `chunked` / `sliding` (`$__arr_chunked` / `$__arr_sliding`, arrays of `$__arr_slice`s; `n <= 0` none); `fill(v)` (`$__arr_fill(len, v)`, `Array.repeat(v, xs.length)`, a float stored as its `f32` bits) |
+| `Integer`, `Bool` | all |
+| `Float` | all — `toString` (`$__f64_to_str`, `5.0` → `5` as on node) |
+
+**What still traps, by name** (`tests/wat.zig` `unique over records and
+flatMap over a scalar trap, never answer`): `unique` over records, arrays or
+tuples (`unique over elements with no wasm equality`) — decision 210 now gives
+`[P(x: 1), P(x: 1)].unique().length` one answer, `1` on commonJS, erlang and
+beam, and this row is still a trap here: `$__arr_unique` compares words and
+strings, and calling `$__eq_<T>` from it is open; `flatMap` whose function answers no array known here
+(node keeps the scalar, erlang fails); `flatten` / `flat` over elements no
+shape says are arrays.
+
+`newArrShape` is what these results ARE to every shape predicate —
+`printShapeOf`, `elemKindOf`, `elemIsPointer`: `unique` keeps its receiver's
+shape, `flatten` drops one `[`, `flatMap` is its function's array, `chunked` /
+`sliding` add one, `fill` is `[` plus its value's shape, and `map` is `[` plus
+its function's tail when that is a bool (`[b`) or a container. So
+`[1, 2, 3].chunked(2).at(1)` prints `[3]` and not the row's address.
 
 Byte-level, like every string helper here but `charCodeAt`: an ASCII string
 answers as the other backends do, a multi-byte one by bytes.
+
+## Shapes a container carries (`01-compiler/05-wasm` step 1)
+
+The step-1 cells ran into five more places where a container's element was
+printed or compared as the word its slot holds — each a wrong value at exit 0,
+each fixed where the shape is decided:
+
+| Written | Was | Is | Where |
+|---|---|---|---|
+| `@print([true, false])`, `bs.reverse()`, `for (bs) { b -> @print(b) }` | `[1, 0]`, `1` | `[true, false]`, `true` | `printShapeOf` answers `[b` for an array of bools (a literal, a written `bool[]`); `arrayElemOpt` boxes the element as a bool (`bs.at(0)` → `true`); `elemIsBool` marks a loop's and a HOF's binder |
+| `rows.at(1)`, `rows[0]`, `ps[1]` over `[[1, 2], [3]]` / `[#(1, "a"), …]` | `280`, `268`, `376` | `[3]`, `[1, 2]`, `#(2, "b")` | `OptInfo.shape`: a `?T` whose payload is an array or a tuple prints `null` or by its shape (`lowerPrintArg`) |
+| `[[1], [2]].reverse()`, `bs.filter(…)` | the rows' addresses | `[[2], [1]]` | `printShapeOf` reads a `keepsElements` method's receiver |
+| `var names: string[] = []; names.push("a")`, `var rows: i32[][] = []` | `[256]`, `[280]` | `["a"]`, `[[1]]` | `noteAnnotatedArray`: a written array type decides a local's shape, element kind and record over what the initialiser suggested — `[]` says nothing. It moved std's `Dict.display` (`var parts: string[] = []` … `parts.join(", ")`) from `$__arr_join_i32` to `_str`: three `std_package_*` wasm snapshots' text, no RUN LOG |
+| `xs.map({ x -> x > 1 })` | `[0, 1]` | `[false, true]` | `newArrShape`'s `map` arm |
+
+`snapshots/codegen/{beam,wat}/wasm/index_a_nested_index_a_slice_s_length_and_a_tuple_element`
+recorded `304` and `376` for `rows[1]` and `ps[1]`; it records `[3, 4]` and
+`#(2, "b")`, erlang's text.
 
 ## Self-recursion in tail position (`00 · 05-wasm` step 9)
 
@@ -717,6 +851,66 @@ function's text moves. Only the explicit `return f(…)` spelling is recognised
 (reached through `if` arms and loop bodies, never through a lambda); a method, a
 lifted lambda, a destructured parameter and an accumulating (generator) body
 keep `call`. `tests/language/run/tail_self_call.bp` pins it on four targets.
+
+## Structural equality (decision 210)
+
+`==` compares by value: two values are equal when they have the same type and
+their fields are equal, field by field and recursively; `!=` is the negation, and
+`==` never calls user code — a method named `equals` has no role (decision 211).
+Before it, two equal records answered `false` here (two heap pointers, `i32.eq`),
+and so did two equal arrays, two payload variants and two allocated unit variants
+(`Shape.Dot` is a fresh one-slot cell). `lowerBinOp` asks `lowerStructuralEq`
+after its null, `unknown`, boxed-optional and string rows, so none of those moved:
+
+| Operands (`eqTypeOf`) | Lowering |
+|---|---|
+| a primitive — a scalar, a bool, a string, an all-unit enum's ordinal, `?` of one — or a type nothing recovers on both sides | the instruction it always had |
+| both one composite type — a record, a payload enum, a tuple, an array, `?` of one — or one side that and the other unrecovered | `call $__eq_<T>` (`i32.eqz` after it for `!=`) |
+| two different types, either composite | both operands run and are dropped, then `i32.const 0` (`1` for `!=`) |
+
+`eqTypeOf` reads the static type the way the rest of this backend does — a name
+`eq_local_types` recorded for a `val` (`val t = #(P(x: 1), 2)`), `recordTypeOfExpr`,
+a variant constructor or a unit variant read off its enum (`eqEnumOf`),
+`unitEnumOf`, `typeRefOf`, a tuple or array literal of recovered elements, and the
+print shape (`eqTypeOfShape`: `i` `f` `b` `s` `[X` `(…)`).
+
+`$__eq_<T>` is requested the first time the module compares a `T`
+(`eq_requests`) and written after lowering, after the behavior dispatchers; each
+may request the equality of a part. The symbol is prefix notation with each
+constructor's arity (`__eq_Person`, `__eq_Array_Person`, `__eq_Tuple2_i32_string`,
+`__eq_Opt_Node`, `__eq_Box_string`). Its first test is the pointers — `a == b`
+answers `1` at once — then the parts in order, each `i32.eqz` → `return 0`, so
+the first difference ends it, and `1` past the last:
+
+| `T` | parts |
+|---|---|
+| record | each field at `i * 4`: a string by `$__str_eq`, an `f64` by `$__f64_eq` over its box (`storeBoxedF64`), an integer, bool or all-unit enum by `i32.eq`, a composite by its own `$__eq_<T>`, a field written as one of the record's type parameters by the argument `T` spells (`Box<string>`), or as a word when it spells none |
+| payload enum | the ordinals at slot 0 (`i32.ne` → `0`), then the matching variant's payload at `(i + 1) * 4` — a float is the `f32` the slot holds; a unit variant is equal on its ordinal |
+| tuple | each element at `i * 4`, a float as its `f32` slot |
+| array | the lengths, then a `$brk`/`$cont` loop over `4 + i * 4` (locals `$n`, `$i`) |
+| `?X` | both absent is `a == b` above; one absent answers `0`; a pointer payload (a record, a variant, a container, a string) is compared directly, a box's payload by the payload's own compare |
+
+**A float under `==` is a total order** (decision 214, Java's `Double.compare` and
+Kotlin's data class): NaN equals NaN and `0.0` differs from `-0.0`, bare and as a
+part alike. `lowerBinOp`'s float `==` / `!=` and every float part call
+`$__f64_eq` (a record field's boxed `f64`) or `$__f32_eq` (a tuple element, a
+variant payload, an array element — the `f32` slot), written only when called:
+both NaN (`x != x`, which canonicalises every NaN payload) `or` the same bits
+(`i64.reinterpret_f64` / `i32.reinterpret_f32`, then `eq`). `<`, `>`, `<=`, `>=`
+keep the IEEE `f64.lt` family. `tests/language/run/f64_equality_total_order.bp`
+pins the zeros on four targets; the NaN half is `tests/wat.zig`'s `f64 ---- NaN
+equals NaN under ==` RUN LOG, since erlang and beam never produce a NaN. No hash is
+computed at construction, nothing is interned, and there is no global table.
+
+**A generic `T`**: one body here answers every type, each type parameter an `i32`
+word, so a body cannot compare two `T` values by value — a string has no header
+and an integer is not a pointer. A call whose argument binds `T` to a composite,
+to a function whose body compares with `==` / `!=` (`comparesValues`), calls a
+copy with `T` written as the composite (`eqBindParam`, `specializeFor`): the
+copy's `a == b` is `call $__eq_<T>`. `same(Person(…), Person(…))` is
+`same__T_Person`, `same(#(1, "a"), …)` `same__T_Tuple2_i32_string`. What stays is
+the **What stays** limit above (§ Where this backend refuses to answer): a call nothing specialises keeps the one body and
+compares words. `tests/language/run/record_structural_equality.bp`.
 
 ## Rules
 

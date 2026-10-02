@@ -63,26 +63,6 @@ fn main() {
     (local $f1 i32)
     (local $f2 i32)
     (local $f3 i32)
-    (local $_res0 i32)
-    (local $_res1 i32)
-    (local $_res2 i32)
-    (local $_res3 i32)
-    (local $_res4 i32)
-    (local $_res5 i32)
-    (local $_res6 i32)
-    (local $_res7 i32)
-    (local $_res8 i32)
-    (local $_res9 i32)
-    (local $_res10 i32)
-    (local $_res11 i32)
-    (local $_res12 i32)
-    (local $_res13 i32)
-    (local $_res14 i32)
-    (local $_res15 i32)
-    (local $_res16 i32)
-    (local $_res17 i32)
-    (local $_res18 i32)
-    (local $_res19 i32)
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
@@ -112,36 +92,12 @@ fn main() {
     local.get $__mem1
     local.set $b
     local.get $a
-    local.set $_res0
     local.get $b
-    local.set $_res1
-    local.get $_res0
-    i32.load
-    local.get $_res1
-    i32.load
-    i32.eq
-    local.get $_res0
-    i32.load offset=4
-    local.get $_res1
-    i32.load offset=4
-    call $__str_eq
-    i32.and
+    call $__eq_Tuple2_i32_string
     call $__print_bool
     local.get $a
-    local.set $_res2
     local.get $b
-    local.set $_res3
-    local.get $_res2
-    i32.load
-    local.get $_res3
-    i32.load
-    i32.eq
-    local.get $_res2
-    i32.load offset=4
-    local.get $_res3
-    i32.load offset=4
-    call $__str_eq
-    i32.and
+    call $__eq_Tuple2_i32_string
     i32.eqz
     call $__print_bool
     global.get $__heap_ptr
@@ -159,20 +115,8 @@ fn main() {
     local.get $__mem2
     local.set $c
     local.get $a
-    local.set $_res4
     local.get $c
-    local.set $_res5
-    local.get $_res4
-    i32.load
-    local.get $_res5
-    i32.load
-    i32.eq
-    local.get $_res4
-    i32.load offset=4
-    local.get $_res5
-    i32.load offset=4
-    call $__str_eq
-    i32.and
+    call $__eq_Tuple2_i32_string
     call $__print_bool
     i32.const 272
     local.set $name
@@ -207,20 +151,8 @@ fn main() {
     local.get $__mem4
     local.set $plain
     local.get $labeled
-    local.set $_res6
     local.get $plain
-    local.set $_res7
-    local.get $_res6
-    i32.load
-    local.get $_res7
-    i32.load
-    call $__str_eq
-    local.get $_res6
-    i32.load offset=4
-    local.get $_res7
-    i32.load offset=4
-    i32.eq
-    i32.and
+    call $__eq_Tuple2_string_i32
     call $__print_bool
     global.get $__heap_ptr
     local.set $__mem5
@@ -301,60 +233,12 @@ fn main() {
     local.get $__mem9
     local.set $n3
     local.get $n1
-    local.set $_res8
     local.get $n2
-    local.set $_res9
-    local.get $_res8
-    i32.load
-    local.set $_res10
-    local.get $_res9
-    i32.load
-    local.set $_res11
-    local.get $_res10
-    i32.load
-    local.get $_res11
-    i32.load
-    i32.eq
-    local.get $_res10
-    i32.load offset=4
-    local.get $_res11
-    i32.load offset=4
-    i32.eq
-    i32.and
-    local.get $_res8
-    i32.load offset=4
-    local.get $_res9
-    i32.load offset=4
-    call $__str_eq
-    i32.and
+    call $__eq_Tuple2_Tuple2_i32_i32_string
     call $__print_bool
     local.get $n1
-    local.set $_res12
     local.get $n3
-    local.set $_res13
-    local.get $_res12
-    i32.load
-    local.set $_res14
-    local.get $_res13
-    i32.load
-    local.set $_res15
-    local.get $_res14
-    i32.load
-    local.get $_res15
-    i32.load
-    i32.eq
-    local.get $_res14
-    i32.load offset=4
-    local.get $_res15
-    i32.load offset=4
-    i32.eq
-    i32.and
-    local.get $_res12
-    i32.load offset=4
-    local.get $_res13
-    i32.load offset=4
-    call $__str_eq
-    i32.and
+    call $__eq_Tuple2_Tuple2_i32_i32_string
     call $__print_bool
     global.get $__heap_ptr
     local.set $__mem11
@@ -402,40 +286,166 @@ fn main() {
     local.get $__mem13
     local.set $f3
     local.get $f1
-    local.set $_res16
     local.get $f2
-    local.set $_res17
-    local.get $_res16
-    f32.load
-    local.get $_res17
-    f32.load
-    f32.eq
-    local.get $_res16
-    i32.load offset=4
-    local.get $_res17
-    i32.load offset=4
-    i32.eq
-    i32.and
+    call $__eq_Tuple2_f64_bool
     call $__print_bool
     local.get $f1
-    local.set $_res18
     local.get $f3
-    local.set $_res19
-    local.get $_res18
-    f32.load
-    local.get $_res19
-    f32.load
-    f32.eq
-    local.get $_res18
-    i32.load offset=4
-    local.get $_res19
-    i32.load offset=4
-    i32.eq
-    i32.and
+    call $__eq_Tuple2_f64_bool
     call $__print_bool
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
+  )
+  (func $__eq_Tuple2_i32_string (param $a i32) (param $b i32) (result i32)
+    local.get $a
+    local.get $b
+    i32.eq
+    (if
+      (then i32.const 1 return)
+    )
+    local.get $a
+    i32.load
+    local.get $b
+    i32.load
+    i32.eq
+    i32.eqz
+    (if
+      (then i32.const 0 return)
+    )
+    local.get $a
+    i32.load offset=4
+    local.get $b
+    i32.load offset=4
+    call $__str_eq
+    i32.eqz
+    (if
+      (then i32.const 0 return)
+    )
+    i32.const 1
+  )
+  (func $__eq_Tuple2_string_i32 (param $a i32) (param $b i32) (result i32)
+    local.get $a
+    local.get $b
+    i32.eq
+    (if
+      (then i32.const 1 return)
+    )
+    local.get $a
+    i32.load
+    local.get $b
+    i32.load
+    call $__str_eq
+    i32.eqz
+    (if
+      (then i32.const 0 return)
+    )
+    local.get $a
+    i32.load offset=4
+    local.get $b
+    i32.load offset=4
+    i32.eq
+    i32.eqz
+    (if
+      (then i32.const 0 return)
+    )
+    i32.const 1
+  )
+  (func $__eq_Tuple2_Tuple2_i32_i32_string (param $a i32) (param $b i32) (result i32)
+    local.get $a
+    local.get $b
+    i32.eq
+    (if
+      (then i32.const 1 return)
+    )
+    local.get $a
+    i32.load
+    local.get $b
+    i32.load
+    call $__eq_Tuple2_i32_i32
+    i32.eqz
+    (if
+      (then i32.const 0 return)
+    )
+    local.get $a
+    i32.load offset=4
+    local.get $b
+    i32.load offset=4
+    call $__str_eq
+    i32.eqz
+    (if
+      (then i32.const 0 return)
+    )
+    i32.const 1
+  )
+  (func $__eq_Tuple2_f64_bool (param $a i32) (param $b i32) (result i32)
+    local.get $a
+    local.get $b
+    i32.eq
+    (if
+      (then i32.const 1 return)
+    )
+    local.get $a
+    f32.load
+    local.get $b
+    f32.load
+    call $__f32_eq
+    i32.eqz
+    (if
+      (then i32.const 0 return)
+    )
+    local.get $a
+    i32.load offset=4
+    local.get $b
+    i32.load offset=4
+    i32.eq
+    i32.eqz
+    (if
+      (then i32.const 0 return)
+    )
+    i32.const 1
+  )
+  (func $__eq_Tuple2_i32_i32 (param $a i32) (param $b i32) (result i32)
+    local.get $a
+    local.get $b
+    i32.eq
+    (if
+      (then i32.const 1 return)
+    )
+    local.get $a
+    i32.load
+    local.get $b
+    i32.load
+    i32.eq
+    i32.eqz
+    (if
+      (then i32.const 0 return)
+    )
+    local.get $a
+    i32.load offset=4
+    local.get $b
+    i32.load offset=4
+    i32.eq
+    i32.eqz
+    (if
+      (then i32.const 0 return)
+    )
+    i32.const 1
+  )
+  (func $__f32_eq (param $a f32) (param $b f32) (result i32)
+    local.get $a
+    local.get $a
+    f32.ne
+    local.get $b
+    local.get $b
+    f32.ne
+    i32.and ;; both NaN
+    local.get $a
+    i32.reinterpret_f32
+    local.get $b
+    i32.reinterpret_f32
+    i32.eq ;; the same bits
+    i32.or
   )
   ;; Scratch layout below the data section (which starts at 256):
   ;;   0..8  WASI iovec   8  newline byte

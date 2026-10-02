@@ -461,6 +461,19 @@ pub const HelperGroup = enum {
     /// last index of `x` by `indexOf`'s equality, `-1` when absent.
     arr_last_index_of_i32,
     arr_last_index_of_str,
+    /// `$__str_lines(s)` / `$__str_words(s)` — `s.lines()` / `s.words()`.
+    str_lines,
+    str_words,
+    /// `$__arr_unique(xs, mode)` — `xs.unique()`, consecutive duplicates
+    /// dropped by the slot's word (`0`), its `f32` (`1`) or a string's content (`2`).
+    arr_unique,
+    /// `$__arr_flatten(xs)` — `flatten` / `flat`, and `flatMap` after its `map`.
+    arr_flatten,
+    /// `$__arr_chunked(xs, m)` / `$__arr_sliding(xs, m)` — arrays of slices.
+    arr_chunked,
+    arr_sliding,
+    /// `$__arr_fill(n, v)` — `xs.fill(v)` as `Array.repeat(v, xs.length)`.
+    arr_fill,
 
     /// The groups `g`'s functions call into.
     pub fn deps(g: HelperGroup) []const HelperGroup {
@@ -490,6 +503,10 @@ pub const HelperGroup = enum {
             .str_replace => &.{ .alloc, .str_concat, .str_slice, .str_index_of },
             .unknown => &.{.str_eq},
             .print_unknown => &.{ .print, .print_bool, .print_f64, .print_str, .print_opt, .print_shaped, .unknown },
+            .str_lines, .str_words => &.{ .arr_new, .str_slice },
+            .arr_unique => &.{ .arr_new, .str_eq },
+            .arr_flatten, .arr_fill => &.{.arr_new},
+            .arr_chunked, .arr_sliding => &.{ .arr_new, .arr_slice },
             else => &.{},
         };
     }
@@ -578,6 +595,13 @@ pub const Helper = enum {
     print_unknown_raw,
     arr_last_index_of_i32,
     arr_last_index_of_str,
+    str_lines,
+    str_words,
+    arr_unique,
+    arr_flatten,
+    arr_chunked,
+    arr_sliding,
+    arr_fill,
 
     pub fn symbol(h: Helper) []const u8 {
         return switch (h) {
