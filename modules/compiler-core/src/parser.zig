@@ -272,6 +272,10 @@ pub const ParseErrorType = enum {
     /// level; inside a body a function is a value bound with `val` (front 15
     /// step 3). Located at the `fn`.
     nestedFnDecl,
+    /// `fn m(self: Self) { … }` inside an enum section's braces — a section
+    /// holds leaves and nested sections only; a method is the enum's, declared
+    /// in the enum's own body (decision 151). Located at the `fn`.
+    sectionBodyMethod,
     /// `[...a, 3]` — `...` is a pattern's inclusive range; the spread of an
     /// array literal is `..` (front 15 step 3). Located at the `...`.
     listSpreadDotDotDot,

@@ -9325,7 +9325,11 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
             env.lastError = try unboundAt(env, name, loc);
             return error.TypeError;
         },
-        .dotIdent => |name| {
+        .dotIdent => |written| {
+            // A numeric section leaf (`.50`, row 22) is declared under the F1
+            // mangling `__50`; it resolves by the expected section like an
+            // identifier leaf, and only that way.
+            const name = if (looksNumeric(written)) try std.fmt.allocPrint(env.arena, "__{s}", .{written}) else written;
             // 01 step 12 — a leading-dot variant takes its enum from the
             // position's expected type (as `.Circle(…)` does), spliced in as
             // `Enum.Variant` so the backends see the qualified form. Without
@@ -9339,17 +9343,17 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
                 try env.indexRewrites.put(loc, qualified);
                 return inferExprTyped(env, qualified.*);
             }
-            if (env.lookup(name)) |ty| {
+            if (name.ptr == written.ptr) if (env.lookup(name)) |ty| {
                 try refuseAmbiguousVariant(env, name, ty, loc);
                 return TypedExpr{ .identifier = .{ .loc = loc, .type_ = ty, .kind = .{ .dotIdent = name } } };
-            }
+            };
             // A section leaf has a leading-dot shorthand only where the
             // position's type is that section (`val b: Token.Layout.Break =
             // .Zeta;`); anywhere else it is named for what it is, not
             // reported as a variable nobody declared.
             if (try sectionOwningLeaf(env, name)) |section| {
-                const msg = try std.fmt.allocPrint(env.arena, "`.{s}` is a leaf of the section `{s}`, and nothing here says the position is that section", .{ name, section });
-                const hint = try std.fmt.allocPrint(env.arena, "Give the position the section's type (`val v: {s} = .{s};`, a typed parameter) or write the full path.", .{ section, name });
+                const msg = try std.fmt.allocPrint(env.arena, "`.{s}` is a leaf of the section `{s}`, and nothing here says the position is that section", .{ written, section });
+                const hint = try std.fmt.allocPrint(env.arena, "Give the position the section's type (`val v: {s} = .{s};`, a typed parameter) or write the full path.", .{ section, written });
                 env.lastError = TypeError.custom(msg, hint).withLoc(loc);
                 return error.TypeError;
             }
@@ -12690,7 +12694,18 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
             // C-04 — the callee's parameters AS WRITTEN, read once here and
             // used twice: 00 · 01-checker's expectation just below, and the
             // default fill the arity arm plans further down.
-            const declParamsAst: ?[]const ast.Param = calleeParams(env, call.callee);
+            // A qualified variant constructor (`Tok.Size(percent: .100)`,
+            // row 22) names its variant under `Enum.Variant`; its fields are
+            // the parameters an argument is inferred under, as a plain call's.
+            const qualifiedCtor: ?[]const u8 = blk: {
+                if (call.is_builtin) break :blk null;
+                const r = call.receiver orelse break :blk null;
+                if (r.* != .identifier or r.identifier.kind != .ident) break :blk null;
+                const qn = try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ r.identifier.kind.ident, call.callee });
+                if (!env.variantCtors.contains(qn)) break :blk null;
+                break :blk qn;
+            };
+            const declParamsAst: ?[]const ast.Param = if (qualifiedCtor) |qn| env.ctorParams.get(qn) else calleeParams(env, call.callee);
 
             // 00 · 01-checker — the DECLARED parameter types of a plain call,
             // read only as the expectation an argument is inferred under
@@ -12698,6 +12713,10 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
             // parameter's enum). Nothing is unified from here — the arm that
             // types the call still unifies each argument with its parameter.
             const declParamTypes: ?[]*T.Type = blk: {
+                if (qualifiedCtor) |qn| {
+                    const d = env.variantCtors.get(qn).?.deref();
+                    break :blk if (d.* == .func) d.func.params else null;
+                }
                 if (call.receiver != null or call.is_builtin) break :blk null;
                 const calleeTy = env.lookup(call.callee) orelse break :blk null;
                 const d = calleeTy.deref();

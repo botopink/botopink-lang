@@ -92,6 +92,12 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .caretCaption = "bind a lambda instead",
             .hint = "Inside a body a function is a value: `val inner = { x -> x + 1 };` — or move the declaration to module level.",
         },
+        .sectionBodyMethod => .{
+            .code = "section-body-method",
+            .message = "a section of an enum holds variants, not methods",
+            .caretCaption = "declare it in the enum's own body",
+            .hint = "A method belongs to the enum and is declared in the enum's own body, beside its variants and sections: `type Tok { Alpha { A, B } fn m(self: Self) -> string { … } }`. A section has no method list of its own.",
+        },
         .listSpreadDotDotDot => .{
             .code = "list-spread-dot-dot-dot",
             .message = "`...` is a pattern's inclusive range, not a spread",

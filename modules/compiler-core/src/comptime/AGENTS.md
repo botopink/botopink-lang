@@ -1490,6 +1490,16 @@ mangled with a `__` prefix (`500` → `__500`) — a single `_` would trip
 commonJS's `tupleIndexMember` heuristic (`t._N` → `t[N]`). Inner enums live in
 the type-def table only; their variant names are not bound at top level.
 
+A numeric leaf stands alone (`language-gaps.md` row 22, 1.0.11-beta `01-checker` step 3): the parser
+reads `.50` as a `dotIdent` named `50`, and `inferIdentifierExpr` looks it up under the mangled
+`__50` — by the position's expected section only (`expectedEnumDeclaring`), never through the flat
+table; with nothing expected it is `sectionOwningLeaf`'s refusal naming the section, as an identifier
+leaf is. A qualified variant constructor (`Tok.Size(percent: .100, …)`) infers its arguments under
+the variant's field types (`env.variantCtors` / `env.ctorParams` under `Enum.Variant`, labels
+honoured), so a payload variant may declare a section-typed field and take a leading-dot leaf. A
+`.50` **pattern** is not built (the pattern grammar and the backends' match on the mangled name are
+not this row); compare with `==` or read through a function.
+
 Path access (`.Color.Red.500`): `tryResolveEnumSectionPath` collects a
 `dotIdent`-rooted chain (≥ 2 segments) and `resolveSectionPathInEnum` walks
 registered enums through `_inner` fields, returning qualified nested ctor calls

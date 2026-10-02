@@ -1,0 +1,17 @@
+//// Decision 151 (01c-c) — a `fn` inside an enum section's braces is refused
+//// by name: a section holds leaves and nested sections, and a method is
+//// declared in the enum's own body. `EnumSection` has no method slot.
+
+type Tok {
+    Alpha {
+        A,
+        B,
+        fn m(self: Self) -> string {
+            return "x";
+        }
+    }
+}
+
+pub fn main() {
+    @print(1);
+}

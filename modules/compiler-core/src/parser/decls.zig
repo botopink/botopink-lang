@@ -990,6 +990,11 @@ fn parseEnumItem(
                 sectionBodyComments = subLeading;
                 break;
             }
+            // Decision 151 — a section holds leaves and nested sections; a
+            // `fn` here is refused by name, pointing at the enum's own body.
+            if (this.check(.@"fn") or (this.check(.@"pub") and this.peekAt(1).kind == .@"fn")) {
+                return failAt(this, .sectionBodyMethod, if (this.check(.@"fn")) this.peek() else this.peekAt(1));
+            }
             _ = try parseEnumItem(this, alloc, &sub_variants, &sub_sections, true, subLeading);
         }
         _ = try this.consume(.rightBrace);

@@ -1167,6 +1167,13 @@ fn parseExplicitTypeArgs(this: *This, alloc: std.mem.Allocator, nameTok: token.T
     return try items.toOwnedSlice(alloc);
 }
 
+/// A numeric section leaf's spelling: decimal digits and nothing else.
+fn isDigitsOnly(s: []const u8) bool {
+    if (s.len == 0) return false;
+    for (s) |c| if (!std.ascii.isDigit(c)) return false;
+    return true;
+}
+
 /// Whether the tokens from `i` — just after a `{` — are a lambda's head:
 /// `->` (no parameters) or `a, b ->`. The one test `parsePrimary`'s lambda arm
 /// and a `case` arm's value (`A(x) -> { item -> f(item) }`) share.
@@ -1508,7 +1515,10 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
     // identifier and numeric segments after a `.`.
     if (this.check(.dot)) {
         const dotTok = this.advance();
-        const memberTok = try this.consume(.identifier);
+        // A numeric section leaf stands alone too (`val a: Tok.Alpha = .50;`,
+        // row 22): a pure-digit leaf after the dot is the leaf's name, which
+        // the expected type resolves as it resolves `.Red`.
+        const memberTok = if (this.check(.numberLiteral) and isDigitsOnly(this.peek().lexeme)) this.advance() else try this.consume(.identifier);
         const head = Expr{ .identifier = .{ .loc = locFromToken(dotTok), .kind = .{ .dotIdent = memberTok.lexeme } } };
         return parsePostfixChain(this, alloc, head);
     }

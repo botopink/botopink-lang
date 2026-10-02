@@ -514,6 +514,7 @@ reaches**, never per arm:
 | `type P(…)` then `implement A for P { … }` | `implementClauseFor` | `types.zig` `parseImplementClause`, at the `for` — the bodyless type took `implement A` as its clause |
 | `total + try r`, `-try x`, `(try r).len`, `!await t` | `tryAwaitOperand` | `parsePrimary`'s `try` / `await` arm and the group's `(` — at the keyword (decision 137; § *`try` and `await` begin an expression*) |
 | `1 + if (c) { 2 } else { 3 }`, `-if (c) 1 else 2`, `(if (c) a else b).v` | `ifOperand` | `parsePrimary`'s `if` arm and the group's `(` — at the `if` (decision 137's reading applied to `if`; § *`try` and `await` begin an expression*) |
+| `fn m(self: Self) { … }` inside an enum section's braces | `sectionBodyMethod` | `decls.zig`'s section body loop (`parseEnumItem`), at the `fn` — decision 151: a section holds leaves and nested sections, a method is the enum's |
 | `#(x: 1, y: 2)` | `tupleLiteralLabel` | `parseTupleLitExpr`, at the label — the labeled construction is `01-checker`'s §6, and this replaces `novalBinding` at the value |
 
 **The infix refusals are hoisted the way the chain links are.** Every receiver
@@ -715,7 +716,9 @@ that uses none of them dumps exactly as it did before they existed.
   on the enum shape of the `TypeDecl` (`TypeShape.enum_.sections`) alongside the flat `variants` slot. Sections nest
   arbitrarily deep; inside a section body, pure-digit tokens (`100`, `4`) are
   permitted as terminal variant leaves (`EnumVariant.numeric = true`) — they
-  cannot open further sections nor carry payload. Top-level enum bodies reject
+  cannot open further sections nor carry payload. In expression position the
+  leading-dot form takes one too (`.50`, `parsePrimary`'s dot arm, a token of
+  decimal digits only), resolved by the expected section. Top-level enum bodies reject
   digit names. Disambiguation is single-token (`{` after a name = section,
   `(` = payload, `,`/`}` = bare). The comptime desugars the tree into the
   enum-of-enum form with mangled inner names; the parser only records the
