@@ -728,7 +728,10 @@ location. Cells: `tests/language/run/std_unsupported_names_the_call`,
 
 `inferLiteralExpr` types an integer literal as the integer type `env.expectedType` names (through
 one `?T`, `expectedIntegerType`), `i32` when nothing asks — so `val k: i64 = 1000;` and an `i64`
-parameter take a literal. `inferExprTypedInner` lets `.literal`, `.unaryOp` and `.binaryOp` keep the
+parameter take a literal. The default of `unwrapOr` is inferred under the payload of the `?T` /
+`@Result<T, E>` it is called on (`unwrapOrDefaultExpected`, read before the call's arguments are
+inferred), so `delay(n).unwrapOr(0)` over `?i64` types the `0` as `i64`
+(`tests/language/run/unwrap_or_literal_width`). `inferExprTypedInner` lets `.literal`, `.unaryOp` and `.binaryOp` keep the
 expectation; `inferBinaryOpExpr` hands it on only to the operands of an arithmetic operator
 (`3 * 86400000` passed to an `i64`), and types a literal operand of an arithmetic or comparison
 operator from the other operand (`n * 1000`, `1000 - n`, `x > 0`). The arithmetic `unify` of the

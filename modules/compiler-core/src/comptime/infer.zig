@@ -11617,6 +11617,19 @@ fn inferResultOptionMethod(
     } } } };
 }
 
+/// The expectation of `unwrapOr`'s default: the payload of the `?T` /
+/// `@Result<T, E>` it is called on, so an integer literal takes the payload's
+/// width (`delay(n).unwrapOr(0)` over `?i64`) as it does as an argument of a
+/// declared parameter or a field (`inferLiteralExpr`).
+fn unwrapOrDefaultExpected(recv: ?*ast.TypedExpr, callee: []const u8) ?*T.Type {
+    if (!std.mem.eql(u8, callee, "unwrapOr")) return null;
+    const r = recv orelse return null;
+    const t = r.getType().deref();
+    if (t.* != .named or t.named.args.len < 1) return null;
+    if (!std.mem.eql(u8, t.named.name, "optional") and !std.mem.eql(u8, t.named.name, "Result")) return null;
+    return t.named.args[0];
+}
+
 /// Resolve a compiler-provided template method (expr-templates F4):
 /// `text`/`parts`/`lookup`/`fail`/`failAt` on an `expr` receiver, plus
 /// `ref()` on a `Binding`.
@@ -12838,7 +12851,7 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                         i;
                     if (pi >= ps.len) break :blk null;
                     break :blk ps[pi];
-                } else null;
+                } else if (i == 0) unwrapOrDefaultExpected(typedReceiver, call.callee) else null;
                 const val = if (expected != null and arg.value.* == .function)
                     try inferFunctionExprExpected(env, arg.value.*.function, arg.value.*.function.loc, expected.?, true)
                 else
