@@ -529,6 +529,96 @@ test "comptime: runtime template body ---- parts() with a hole splices the calle
     try h.assertComptimeAstSingle(std.testing.allocator, @src(), src);
 }
 
+// ── the term round trip, per shape (front 14 step 3) ──────────────────────────
+//
+// A capture reaches the body as `main/1`'s argument, an external term
+// (`runtime/etf.zig`); each fixture reads the shape back in the body, answers
+// it in the reply, and requires the reply byte-identical on the BEAM and the
+// wat runtime (`h.repliesIdenticalAcrossRuntimes`) beside the per-runtime
+// exchange snapshots (`comptime/runtime/{beam,wat}/`).
+
+test "comptime: round trip ---- a holed template's parts carry a record, an array and an optional" {
+    const src =
+        \\pub type Point(x: i32, y: i32)
+        \\pub fn holes<T>(comptime q: @Expr<string>) -> @Expr<T> {
+        \\    var codes: Array<string> = [];
+        \\    var texts = "";
+        \\    var spans = "";
+        \\    for (q.parts()) { p ->
+        \\        if (p.kind == "Interp") { codes.push(p.code); };
+        \\        if (p.kind == "Text") { texts = texts + p.text; };
+        \\        spans = spans + p.span.start.toString() + "-" + p.span.end.toString() + ";";
+        \\    };
+        \\    return q.build("#(" + codes.join(", ") + ", \"" + texts + "\", \"" + spans + "\")");
+        \\}
+        \\val origin = Point(x: 3, y: 4);
+        \\val xs = [1, 2, 3];
+        \\val maybe: ?i32 = null;
+        \\val got = holes """p=${origin} xs=${xs} m=${maybe}""";
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const replies = try h.repliesIdenticalAcrossRuntimes(std.testing.allocator, arena.allocator(), @src(), &.{.{ .path = "", .source = src }});
+    try std.testing.expectEqual(@as(usize, 1), replies.len);
+    // Three holes, each its placeholder in order, the text between them, and
+    // every part's span — the capture's `parts` list survived the trip whole.
+    try std.testing.expectEqualStrings(
+        \\{"kind":"code","source":"#(__bp_hole_q_0, __bp_hole_q_1, __bp_hole_q_2, \"p= xs= m=\", \"0-2;2-15;15-19;19-32;32-35;35-48;\")"}
+    , replies[0]);
+    try h.assertComptimeAstSingle(std.testing.allocator, @src(), src);
+}
+
+test "comptime: round trip ---- an @ExprCustom reference tree names a declaration of another module" {
+    const shapes =
+        \\pub type Item(id: i32)
+    ;
+    const main =
+        \\import {Item} from "shapes";
+        \\pub fn dsl<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
+        \\    val code = e.build("41");
+        \\    val leaf = CustomNode(kind: "field", span: Span(7, 9, 1), label: "property", ref: e.lookup("Item"), children: []);
+        \\    val root = CustomNode(kind: "select", span: Span(0, 6, 1), label: "keyword", ref: null, children: [leaf]);
+        \\    return e.custom(root, code);
+        \\}
+        \\val rows = dsl "select id";
+    ;
+    const modules: []const @import("../../module.zig").Module = &.{
+        .{ .path = "shapes", .source = shapes },
+        .{ .path = "", .source = main },
+    };
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const replies = try h.repliesIdenticalAcrossRuntimes(std.testing.allocator, arena.allocator(), @src(), modules);
+    try std.testing.expectEqual(@as(usize, 1), replies.len);
+    // The leaf's `ref` is the binding `lookup` answered at the call site: the
+    // declaration's own name and identity in `shapes`, and the name the call
+    // site spells.
+    try std.testing.expect(std.mem.indexOf(u8, replies[0], "\"identity\":\"shapes@@Item\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, replies[0], "\"kind\":\"custom\"") != null);
+
+    const io = std.testing.io;
+    var session = try comptimeMod.compile(std.testing.allocator, modules, io, h.buildRootPathFromSrc(io, @src()), null);
+    defer session.deinit(std.testing.allocator);
+    const out = session.outputs.items[session.outputs.items.len - 1];
+    try std.testing.expect(out.outcome == .ok);
+    const entries = out.outcome.ok.custom_ast;
+    try std.testing.expectEqual(@as(usize, 1), entries.len);
+    const root = entries[0].root;
+    try std.testing.expectEqualStrings("select", root.kind);
+    try std.testing.expect(root.ref == null);
+    try std.testing.expectEqual(@as(usize, 1), root.children.len);
+    const ref = root.children[0].ref orelse return error.TestExpectedRef;
+    try std.testing.expectEqualStrings("Item", ref.name);
+    // `ref.kind` is not asserted: an imported record reads as `Fn` here (the
+    // import binds its constructor) where a local one reads `Record_` — the
+    // scope snapshot's classification, not the round trip (reported to 01).
+    try std.testing.expectEqualStrings("shapes@@Item", ref.identity);
+    try std.testing.expectEqualStrings("Item", ref.local);
+    try std.testing.expectEqual(@as(usize, 7), root.children[0].span.start);
+
+    try h.assertComptimeAst(std.testing.allocator, @src(), modules);
+}
+
 // ── @ExprCustom carrier (expr-custom) ─────────────────────────────────────────
 
 test "infer: a fn returning @ExprCustom<T> is recognized as a template fn" {

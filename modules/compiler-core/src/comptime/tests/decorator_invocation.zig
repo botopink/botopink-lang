@@ -107,6 +107,82 @@ test "decorator invocation: a method nothing answers is the compiler's message, 
     , "the decorator `check` calls `.frobnicate(…)` with 2 argument(s) at 3:15, which no primitive type (string, array, int, float, bool) and no decorator host function provides", .{ 6, 3 });
 }
 
+test "decorator invocation: round trip ---- a @Decl handle carries fields, methods, variants and annotations" {
+    // Front 14 step 3: the handle reaches the body as `main/1`'s argument (an
+    // external term); the body reads every part back and emits it, and the reply
+    // is byte-identical on the BEAM and the wat runtime.
+    const src =
+        \\fn column(comptime decl: @Decl, name: string) { }
+        \\fn describe(comptime decl: @Decl, label: string) {
+        \\    var out = decl.name + "[" + label + "]";
+        \\    for (decl.annotations) { a -> out = out + " @" + a.name + "(" + a.args.join(",") + ")"; };
+        \\    for (decl.fields) { f ->
+        \\        out = out + " field " + f.name + ":" + f.typeName;
+        \\        for (f.annotations) { a -> out = out + " @" + a.name + "(" + a.args.join(",") + ")"; };
+        \\    };
+        \\    for (decl.variants) { v -> out = out + " variant " + v; };
+        \\    for (decl.methods) { m ->
+        \\        var ps = "";
+        \\        for (m.params) { p -> ps = ps + p.name + ":" + p.typeName + ";"; };
+        \\        out = out + " method " + m.name + "(" + ps + ")->" + m.returnType;
+        \\    };
+        \\    @emit("pub fn describe" + decl.name + "() -> string { return \"\"\"" + out + "\"\"\"; }");
+        \\}
+        \\#[describe("record")]
+        \\type Point(#[column("px")] x: i32, y: ?i32) {
+        \\    fn scaled(self: Self, by: i32) -> Point {
+        \\        return Point(x: self.x * by, y: self.y);
+        \\    }
+        \\}
+        \\#[describe("enum")]
+        \\type Mode {
+        \\    Fast,
+        \\    Slow,
+        \\    fn label(self: Self) -> string {
+        \\        return "mode";
+        \\    }
+        \\}
+        \\val p = describePoint();
+        \\val m = describeMode();
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const replies = try h.repliesIdenticalAcrossRuntimes(std.testing.allocator, arena.allocator(), @src(), &.{.{ .path = "", .source = src }});
+    // `#[describe]` twice (the record, the enum) and `#[column]` once, whose
+    // body is empty and answers no contribution.
+    var record: ?[]const u8 = null;
+    var enumeration: ?[]const u8 = null;
+    for (replies) |r| {
+        if (std.mem.indexOf(u8, r, "describePoint") != null) record = r;
+        if (std.mem.indexOf(u8, r, "describeMode") != null) enumeration = r;
+    }
+    const rec = record orelse return error.TestExpectedReply;
+    const en = enumeration orelse return error.TestExpectedReply;
+    // Annotations with their raw argument lexemes, fields with their types and
+    // their own annotations, methods with their parameters and return type.
+    for ([_][]const u8{
+        "Point[record] @describe(\\\"record\\\")",
+        " field x:i32 @column(\\\"px\\\")",
+        " field y:?i32",
+        " method scaled(self:Self;by:i32;)->Point",
+    }) |needle| {
+        if (std.mem.indexOf(u8, rec, needle) == null) {
+            std.debug.print("\nexpected {s} in:\n{s}\n", .{ needle, rec });
+            return error.TestExpectedContains;
+        }
+    }
+    // Variants (and no field) on the enum-shaped type.
+    for ([_][]const u8{
+        "Mode[enum] @describe(\\\"enum\\\") variant Fast variant Slow method label(self:Self;)->string",
+    }) |needle| {
+        if (std.mem.indexOf(u8, en, needle) == null) {
+            std.debug.print("\nexpected {s} in:\n{s}\n", .{ needle, en });
+            return error.TestExpectedContains;
+        }
+    }
+    try h.assertComptimeAstSingle(std.testing.allocator, @src(), src);
+}
+
 test "decorator invocation: method placement accepted" {
     try assertAccepts(@src(),
         \\fn getMapping(comptime decl: @Decl, path: string) {
