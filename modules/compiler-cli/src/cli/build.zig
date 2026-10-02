@@ -7,6 +7,7 @@ const sources = @import("./sources.zig");
 const libs = @import("./libs.zig");
 const diagnostics = @import("./diagnostics.zig");
 const arglist = @import("./arglist.zig");
+const otp = @import("./otp.zig");
 
 const Module = bp.Module;
 
@@ -44,6 +45,9 @@ pub fn run(
         reportUnsupportedTarget(proj.target);
         return 1;
     };
+    // erlang and beam: the `erl` on PATH runs the OTP release the compiler
+    // emits for, or nothing is built (decision 228, `otp.zig`).
+    if ((target == .erlang or target == .beam) and !try otp.check(arena, io)) return 1;
 
     // Resolve project source files through the explicit module tree.
     // (`sources.load` reports resolution errors itself.)

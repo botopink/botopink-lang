@@ -17,7 +17,8 @@ compiler-cli/
 │   │                          rows, and a built erlang / beam program loading
 │   │                          its `.erl` sidecar under `erl -pa out/<target>`,
 │   │                          and 1 200 modules under a deep `--out` within a
-│   │                          1 MiB ARG_MAX)
+│   │                          1 MiB ARG_MAX, and the OTP release rows: `--version`,
+│   │                          an `erl` shim answering 29 / 28, a manifest `"otp"`)
 │   │                          against the real binary
 │   ├── mutual_recursion.sh  ← forward-ref + mutual recursion runs on every backend
 │   ├── mutual_recursion/    ← fixture project for the script above
@@ -381,6 +382,15 @@ Cross-command rules:
   located at the entry in the dependency's `botopink.json`
   (`--> <lib>/botopink.json:L:C`), and the commands add nothing after it.
   Pinned by `tests/cli_contract.sh`.
+- **One OTP release** (decision 228 of 1.0.11-beta). `botopink --version` prints
+  `otp: 28` (`manifest.OTP_RELEASE`); `build`/`run`/`test` on erlang or beam ask
+  the `erl` on PATH for its release first (`cli/otp.zig`) and refuse another —
+  exit 1, nothing written, the refusal naming both releases; a manifest `"otp"`
+  other than 28 is a located manifest error, and a closure whose packages pin two
+  releases is refused at the later pin naming the first manifest. Pinned by
+  `tests/cli_contract.sh` with `erl` shims answering 29 and 28 (every other call
+  handed to the real `erl`). On a machine whose `erl` is another release, every
+  erlang / beam row of the CLI suites is refused — that is the decision.
 - **Workspaces and the dependency object.** Pinned by `tests/cli_contract.sh`:
   a member builds and tests against a sibling declared `{ "workspace": true }`
   with no root export; a library member without `files` fails its own `test`

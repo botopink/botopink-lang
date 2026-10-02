@@ -55,17 +55,39 @@ jobs:
 
       # `zig build` now runs `erlc` (front 18, decision 83): the three resident
       # comptime modules are compiled at build time and embedded in the binary,
-      # so every release runner needs Erlang/OTP 28 before the cross-build.
-      # OTP 28 is the floor the embedded .beam files are stamped for (decision 86).
+      # so every release runner needs Erlang/OTP before the cross-build — the
+      # release the compiler emits for (decision 228: `OTP_RELEASE` in
+      # modules/manifest/src/root.zig, read from the source because nothing is
+      # built yet), which the embedded .beam files are stamped for (decision 86).
+      - name: Read the Erlang/OTP release the compiler emits for
+        id: otp
+        shell: bash
+        run: |
+          release="$(sed -n 's/^pub const OTP_RELEASE = "\([0-9][0-9]*\)";$/\1/p' modules/manifest/src/root.zig)"
+          [ -n "$release" ] || { echo "modules/manifest/src/root.zig declares no OTP_RELEASE (decision 228)"; exit 1; }
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+
       - name: Install Erlang/OTP (linux, windows)
         if: runner.os != 'macOS'
         uses: erlef/setup-beam@v1
         with:
-          otp-version: '28'
+          otp-version: ${{ steps.otp.outputs.release }}
 
       - name: Install Erlang/OTP (macos)
         if: runner.os == 'macOS'
-        run: brew install erlang
+        env:
+          OTP: ${{ steps.otp.outputs.release }}
+        run: |
+          brew install "erlang@$OTP" && brew link --force "erlang@$OTP"
+          echo "$(brew --prefix "erlang@$OTP")/bin" >> "$GITHUB_PATH"
+
+      - name: Assert Erlang/OTP
+        shell: bash
+        env:
+          OTP: ${{ steps.otp.outputs.release }}
+        run: |
+          otp="$(erl -noshell -eval 'io:format("~s",[erlang:system_info(otp_release)]),halt().')"
+          [ "$otp" = "$OTP" ] || { echo "Erlang/OTP is '$otp', not $OTP (decisions 227, 228)"; exit 1; }
 
       - name: Print build identity
         shell: bash

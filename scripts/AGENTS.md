@@ -116,7 +116,12 @@ failing stage (stages 4b–11 run side by side and are reported in this order �
 § Where the gate's time goes): staged-file checks (`--staged`: conflict markers, `zig fmt
 --check` on staged `.zig`, no staged `*.snap.new` / `*.snap.md.new` candidate) and, every run,
 `zig fmt --check modules` (a `.zig` file red anywhere fails the gate, staged or not — the
-whole-tree check is the stage; the staged one is a commit's fast path), `zig build -Doptimize=ReleaseSafe` (§ Build mode), `scripts/format-check.sh` (`botopink
+whole-tree check is the stage; the staged one is a commit's fast path), then the
+`erl` on PATH against the release the compiler emits for (decision 228: `OTP_RELEASE`,
+read from `modules/manifest/src/root.zig` because nothing is built yet — another release,
+or an `erl` that does not answer, stops the gate there with the compiler's message,
+`` botopink emits Erlang for OTP 28, and `erl` on PATH is OTP 29 — install OTP 28 and put it
+on PATH ``), `zig build -Doptimize=ReleaseSafe` (§ Build mode), `scripts/format-check.sh` (`botopink
 format --check` over the compiler's canonical `.bp` trees — decision 66's
 caller), `zig build test` (`--cold` deletes
 `modules/compiler-core/.botopinkbuild/runtime-cache` first),

@@ -105,6 +105,11 @@ the compiler — the renderer's module root has to be compiler-core's `src/`, so
   caller's hint for it names `PATH` (`erl` only, now: `erlc` left the run-time
   path with decision 83 — a machine that builds the compiler needs it, a machine
   that runs it does not).
+- **Another release.** Before the node spawns, `../../otp.zig` asks the `erl` on
+  PATH for its release (once per process) and refuses anything but the release
+  the compiler emits for (decision 228): `error.OtpReleaseRefused`, the message
+  in `lastTransportError`. Decision 84 keeps commonJS and wasm builds on the wat
+  runtime, so only an erlang / beam evaluation reaches it.
 - **Below the floor.** An `erl` older than OTP 28 is refused by the bootstrap
   before any module is loaded, with both releases in the message
   (`error.PersistentErlBelowFloor`, carried by `lastTransportError`). The

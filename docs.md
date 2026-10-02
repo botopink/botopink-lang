@@ -2448,6 +2448,19 @@ workspace). A manifest with `"workspaces": ["modules/*", "examples/*"]` is a
 workspace: it declares members and is not a package. Every field, both forms
 and every refusal are in [`docs/botopink-json.md`](docs/botopink-json.md).
 
+The compiler emits Erlang for one Erlang/OTP release — `botopink --version`
+prints it (`otp: 28`) — and `botopink build`, `run` and `test` on `erlang` or
+`beam` refuse an `erl` on `PATH` of another release before writing anything.
+A manifest may pin the release too, inside what the compiler supports:
+
+```json
+{ "name": "rakun", "otp": "28" }
+```
+
+Another value (`"otp": "26"`) is a manifest error located at the value, and
+every package of a build's closure that declares `otp` must declare the same
+release; a workspace member without one inherits its workspace's.
+
 ## Migrating from the effect annotations
 
 1.0.10-beta replaced the effect annotations with the return type (decisions

@@ -149,7 +149,26 @@ pub fn load(arena: std.mem.Allocator, io: std.Io) LoadError!ProjectConfig {
         },
         error.OutOfMemory => return error.OutOfMemory,
     };
+    // A member without `"otp"` has its workspace's (`manifest.expand` refused
+    // a member naming another).
+    if (cfg.manifest.otp == null) {
+        if (cfg.workspace) |ws| cfg.manifest.otp = ws.manifest.otp;
+    }
+    try refuseUnsupportedOtp(arena, cfg.manifest, &err);
     return cfg;
+}
+
+/// The project's `"otp"` names the release the compiler emits for, or the
+/// manifest is refused, located at the value (decision 228) — whatever the
+/// command and the target: a manifest error is not a property of a target.
+fn refuseUnsupportedOtp(arena: std.mem.Allocator, m: manifest.Manifest, out_err: *?manifest.Located) LoadError!void {
+    _ = manifest.closureOtp(arena, &.{m}, out_err) catch |e| switch (e) {
+        error.Invalid => {
+            out_err.*.?.print();
+            return error.ConfigInvalid;
+        },
+        error.OutOfMemory => return error.OutOfMemory,
+    };
 }
 
 /// Parse a botopink.json blob from memory, printing a refusal. Splits out the
@@ -177,6 +196,10 @@ pub fn parseLocated(arena: std.mem.Allocator, data: []const u8, path: []const u8
         out_err.* = locatedAtWorkspaces(m, WORKSPACE_NOT_A_PACKAGE);
         return error.ConfigInvalid;
     }
+    _ = manifest.closureOtp(arena, &.{m}, out_err) catch |e| switch (e) {
+        error.Invalid => return error.ConfigInvalid,
+        error.OutOfMemory => return error.OutOfMemory,
+    };
     return fromManifest(m);
 }
 
@@ -292,6 +315,22 @@ test "parse: object form with path-only, and workspace: true" {
     try testing.expectEqualStrings("../local-lib", spec.path.?);
     try testing.expect(spec.ref == .none);
     try testing.expect(cfg.dependencies[1].spec.workspace);
+}
+
+test "parseLocated: an \"otp\" the compiler does not emit for is ConfigInvalid, located at the value (228)" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+    var err: ?manifest.Located = null;
+    try testing.expectError(error.ConfigInvalid, parseLocated(arena,
+        \\{ "name": "p", "otp": "26" }
+    , "botopink.json", &err));
+    try testing.expectEqualStrings("botopink emits Erlang for OTP 28; \"otp\" names 26", err.?.message);
+    try testing.expectEqual(@as(usize, 23), err.?.col);
+    const cfg = try parse(arena,
+        \\{ "name": "p", "otp": "28" }
+    );
+    try testing.expectEqualStrings("28", cfg.manifest.otp.?.release);
 }
 
 test "parseLocated: the string-array dependencies form is ConfigInvalid, located (76)" {
