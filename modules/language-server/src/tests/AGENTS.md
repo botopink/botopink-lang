@@ -16,7 +16,7 @@ tests/
 ├── snapshot.zig          ← snapshot read/write + the per-request renderers
 ├── snapshot_test.zig     ← unit tests for `snapshot.appendSourceWithCursor`
 ├── messages.zig          ← JSON-RPC frame reader (`messages.readMessage`)
-├── diagnostics.zig       ← publishDiagnostics
+├── diagnostics.zig       ← publishDiagnostics (a checker warning: `snapshot.assertDiagnostics`)
 ├── formatting.zig        ← textDocument/formatting
 ├── hover.zig             ← textDocument/hover
 ├── definition.zig        ← textDocument/definition

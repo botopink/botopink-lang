@@ -250,8 +250,11 @@ Cross-command rules:
   entry at all is named too). No command re-runs the comptime pipeline to
   explain a failure. A checker **warning** (decision 57 — `OkData.warnings`)
   fails nothing: `check` renders each one like an error under `warning:`
-  (`renderOutcome`'s `.ok` arm, `renderLocatedAs`); `build` and `test` do not
-  print them yet, since `codegen.generateWith`'s result does not carry them.
+  (`renderOutcome`'s `.ok` arm, `renderLocatedAs`), and the language server
+  publishes each as a diagnostic of severity Warning; `build` and `test` do not
+  print them yet: `codegen.generateWith` drops the comptime session (and its
+  `OkData.warnings`) before it returns, and `ModuleOutput` carries no warnings
+  — a compiler-core field, not this package's.
 - **Orphans.** A `.bp` file that **nothing** reaches is warned per file and
   counted once (`N module(s) not reached by any `mod` path were not compiled`).
   A module has two routes into a build and reachability means either: a `mod`

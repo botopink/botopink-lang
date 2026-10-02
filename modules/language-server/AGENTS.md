@@ -30,7 +30,10 @@ zig build test          # includes the LSP feature tests + snapshots
 The server handles `initialize` / `shutdown`, `didOpen` / `didChange` /
 `didClose`, and these `textDocument/*` methods:
 
-- `publishDiagnostics` (with `$/progress`), `formatting`,
+- `publishDiagnostics` (with `$/progress`; a checker warning — decision 57's
+  `OkData.warnings`, e.g. `var out = [];` born with no element type — is a
+  diagnostic of severity Warning, `compiler.zig` `diagnosticsFor`, snapshot
+  `diagnostics_checker_warning`), `formatting`,
   `hover` (full signature + doc comments, incl. qualified `std` members and
   builtin interface methods on primitives/arrays/strings; for a fn whose return
   is `@Task` / `@Component` / `@Iterator` / `@Stream`, a footer naming what the

@@ -6,6 +6,7 @@ const bp = @import("botopink");
 const h = @import("./helpers.zig");
 const proto = @import("../protocol.zig");
 const engine = @import("../engine.zig");
+const snap = @import("./snapshot.zig");
 
 // ── D1 — empty file ────────────────────────────────────────────────────────
 
@@ -164,4 +165,24 @@ test "diagnostics: a comptime @external misuse surfaces a typeError diagnostic" 
         if (std.mem.indexOf(u8, msg, "external") != null) found = true;
     }
     try std.testing.expect(found);
+}
+
+// ── D11 — a checker warning is a diagnostic of severity Warning ─────────────
+//
+// Decision 57: `OkData.warnings` fail nothing; `botopink check` prints them
+// under `warning:`, and the editor shows the same one as a Warning.
+
+test "diagnostics: a checker warning surfaces with severity Warning" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\pub fn main() {
+        \\    var out = [];
+        \\    @print("x");
+        \\}
+    ;
+    var result = try engine.diagnose(gpa, std.testing.io, h.TEST_URI, source, null, &.{});
+    defer result.deinit(gpa);
+    try std.testing.expect(result.diagnostics.len > 0);
+    for (result.diagnostics) |d| try std.testing.expectEqual(@as(?u32, proto.DiagnosticSeverity.Warning), d.severity);
+    try snap.assertDiagnostics(gpa, "diagnostics_checker_warning", source, result.diagnostics);
 }
