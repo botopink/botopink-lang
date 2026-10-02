@@ -9,6 +9,7 @@
   "files": [
     "root.bp",
     "lexical.bp",
-    "cookie.bp"
+    "cookie.bp",
+    "accept.bp"
   ]
 }

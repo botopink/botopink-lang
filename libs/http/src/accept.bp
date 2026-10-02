@@ -1,0 +1,319 @@
+//// http/accept — proactive negotiation (RFC 9110 § 12): `Accept`,
+//// `Accept-Encoding` and `Accept-Language`.
+////
+//// A quality is read in THOUSANDTHS (`q=0.5` is 500), so every comparison is
+//// integral, by ONE grammar (decision 182): `qvalue = ( "0" [ "." 0*3DIGIT ] )
+//// / ( "1" [ "." 0*3("0") ] )` — at most three decimals, digits only, no sign,
+//// no whitespace inside; anything malformed reads as 0, so a range the client
+//// did not clearly accept is never chosen. An element without a `q` weighs
+//// 1000.
+////
+//// A list element that does not parse — a media range that is not
+//// `type/subtype` tokens (`*/html` included), a parameter that is not
+//// `token=token` or `token="quoted"`, a coding that is not a token, a
+//// language range outside RFC 4647 § 2.1 — is dropped, never repaired.
+
+import {charOf, sub, isToken, isAlpha, allIn, alphaChars, digitChars, digitsValue, trimOws} from "lexical";
+
+// One element of an `Accept` header. `mainType` and `subType` are
+// lowercase (`*` for a wildcard); `params` are the media-type parameters
+// before the weight, names lowercase, values unquoted (a `charset` value
+// lowercase); `q` is per mille.
+pub type MediaRange(
+    mainType: string,
+    subType: string,
+    params: Array<#(string, string)>,
+    q: i32,
+)
+
+// One element of an `Accept-Language` header: the range as written (case is
+// not normalised here — the locale grammar is the `i18n` package's) and its
+// weight per mille.
+pub type LanguageRange(tag: string, q: i32)
+
+// ── the weight ──────────────────────────────────────────────────────────────
+
+// The per-mille value of a `qvalue` text: `1` → 1000, `0.8` → 800,
+// `0.125` → 125, `1.000` → 1000. Malformed — ``, ` 0.5`, `.5`, `0.1234`,
+// `1.5`, `2`, `0.5a`, `-0` — is 0.
+pub fn qValue(text: string) -> i32 {
+    val n = text.length();
+    val whole = charOf(text, 0);
+    val wholeOk = (whole == "0") || (whole == "1");
+    if ((n == 0) || (wholeOk == false)) return 0;
+    if (n == 1) return if (whole == "1") 1000 else 0;
+    if (charOf(text, 1) != ".") return 0;
+    val frac = sub(text, 2, n);
+    if ((frac.length() > 3) || (allIn(frac, digitChars()) == false)) return 0;
+    val thousandths = digitsValue((frac + "000").slice(0, 3));
+    if (whole == "1") return if (thousandths == 0) 1000 else 0;
+    return thousandths;
+}
+
+// ── parameters ──────────────────────────────────────────────────────────────
+
+// One parsed parameter; `ok` is false when the text does not parse.
+type Parameter(name: string, value: string, ok: bool)
+
+fn refused() -> Parameter {
+    return Parameter(name: "", value: "", ok: false);
+}
+
+// `token=token` or `token="quoted"` → the lowercase name and the value.
+// A quoted value may not hold `"` or `\` (no quoted-pair: the stricter
+// reading).
+fn parameterOf(raw: string) -> Parameter {
+    val t = trimOws(raw);
+    val eq = t.indexOf("=");
+    if (eq <= 0) return refused();
+    val name = sub(t, 0, eq);
+    val value = sub(t, eq + 1, t.length());
+    if (isToken(name) == false) return refused();
+    if (isToken(value))
+        return Parameter(name: name.toLower(), value: value, ok: true);
+    val quoted = (value.length() >= 2)
+        && value.startsWith("\"")
+        && value.endsWith("\"");
+    if (quoted == false) return refused();
+    val inner = sub(value, 1, value.length() - 1);
+    if ((inner.indexOf("\"") >= 0) || (inner.indexOf("\\") >= 0))
+        return refused();
+    return Parameter(name: name.toLower(), value: inner, ok: true);
+}
+
+// The weight among `pieces` (the parameters of one element), the first `q`
+// deciding; `-1` when a parameter does not parse. Parameters after `q` are
+// accept-ext and only checked for shape.
+fn weightOf(pieces: Array<string>) -> i32 {
+    var q = 1000;
+    var seenQ = false;
+    var bad = false;
+    for (pieces) { piece ->
+        val p = parameterOf(piece);
+        if (p.ok == false) bad = true;
+        if ((seenQ == false) && (p.name == "q")) {
+            q = qValue(p.value);
+            seenQ = true;
+        }
+    }
+    return if (bad) 0 - 1 else q;
+}
+
+// The media-type parameters among `pieces`: those before the `q`.
+fn mediaParamsOf(pieces: Array<string>) -> Array<#(string, string)> {
+    var out: Array<#(string, string)> = [];
+    var done = false;
+    for (pieces) { piece ->
+        val p = parameterOf(piece);
+        if (p.name == "q") done = true;
+        if ((done == false) && p.ok) {
+            val value = if (p.name == "charset") p.value.toLower() else p.value;
+            out.push(#(p.name, value));
+        }
+    }
+    return out;
+}
+
+// ── Accept ──────────────────────────────────────────────────────────────────
+
+fn mediaRangeOf(element: string) -> ?MediaRange {
+    val pieces = element.split(";");
+    val base = trimOws(pieces.at(0).unwrapOr("")).toLower();
+    val slash = base.indexOf("/");
+    if (slash <= 0) return null;
+    val mainType = sub(base, 0, slash);
+    val subType = sub(base, slash + 1, base.length());
+    if ((isToken(mainType) == false) || (isToken(subType) == false))
+        return null;
+    if ((mainType == "*") && (subType != "*")) return null;
+    val rest = pieces.slice(1, pieces.length);
+    val q = weightOf(rest);
+    if (q < 0) return null;
+    return MediaRange(
+        mainType: mainType,
+        subType: subType,
+        params: mediaParamsOf(rest),
+        q: q,
+    );
+}
+
+// The media ranges of an `Accept` header, in header order, without the ones
+// that do not parse.
+pub fn parseAccept(header: string) -> Array<MediaRange> {
+    var out: Array<MediaRange> = [];
+    for (header.split(",")) { element ->
+        if (trimOws(element) != "") {
+            val r: ?MediaRange = mediaRangeOf(element);
+            if (r != null)
+                out.push(
+                    r ?? MediaRange(
+                        mainType: "",
+                        subType: "",
+                        params: [],
+                        q: 0,
+                    ),
+                );
+        }
+    }
+    return out;
+}
+
+fn hasParam(params: Array<#(string, string)>, kv: #(string, string)) -> bool {
+    return params.filter({ p -> (p.0 == kv.0) && (p.1 == kv.1) }).length > 0;
+}
+
+// How specifically `r` matches the media type `t` (itself parsed as a
+// range): 0 for no match, else 1 for `*/*`, 2 for `type/*`, 3 for
+// `type/subtype`, plus 10 for each parameter of the range — every one of
+// which `t` must carry with the same value.
+fn specificity(r: MediaRange, t: MediaRange) -> i32 {
+    val mainOk = (r.mainType == "*") || (r.mainType == t.mainType);
+    val subOk = (r.subType == "*") || (r.subType == t.subType);
+    if ((mainOk == false) || (subOk == false)) return 0;
+    val missing = r.params.filter(
+        { p -> hasParam(t.params, p) == false },
+    ).length;
+    if (missing > 0) return 0;
+    val level = if (r.mainType == "*") 1 else if (r.subType == "*") 2 else 3;
+    return level + 10 * r.params.length;
+}
+
+// The weight `accept` gives `mediaType` (`text/html`,
+// `text/plain;format=flowed`), through its most specific matching range — the
+// first of equally specific ones. An empty header is `*/*` (RFC 9110 § 12.5.1:
+// no `Accept` accepts anything); a `mediaType` that is not one is 0.
+pub fn mediaQuality(accept: string, mediaType: string) -> i32 {
+    val wanted: ?MediaRange = mediaRangeOf(mediaType);
+    if (wanted == null) return 0;
+    val t = wanted ?? MediaRange(mainType: "", subType: "", params: [], q: 0);
+    if ((t.mainType == "*") || (t.subType == "*")) return 0;
+    if (trimOws(accept) == "") return 1000;
+    var best = 0;
+    var q = 0;
+    for (parseAccept(accept)) { r ->
+        val s = specificity(r, t);
+        if (s > best) {
+            best = s;
+            q = r.q;
+        }
+    }
+    return q;
+}
+
+// The media type of `offered` that `accept` weighs highest, ties going to the
+// order of `offered`; `""` when it accepts none of them (every weight 0).
+pub fn negotiateMedia(accept: string, offered: Array<string>) -> string {
+    var chosen = "";
+    var bestQ = 0;
+    for (offered) { m ->
+        val q = mediaQuality(accept, m);
+        if (q > bestQ) {
+            chosen = m;
+            bestQ = q;
+        }
+    }
+    return chosen;
+}
+
+// ── Accept-Encoding (and any token list) ────────────────────────────────────
+
+// One element of a token list as `name` and weight; the name is `""` when
+// the element does not parse.
+type TokenEntry(name: string, q: i32)
+
+fn tokenEntryOf(element: string) -> TokenEntry {
+    val pieces = element.split(";");
+    val name = trimOws(pieces.at(0).unwrapOr("")).toLower();
+    val q = weightOf(pieces.slice(1, pieces.length));
+    if ((isToken(name) == false) || (q < 0)) return TokenEntry(name: "", q: 0);
+    return TokenEntry(name: name, q: q);
+}
+
+// The weight a token list (`Accept-Encoding`) gives `token`, compared
+// case-insensitively: its own element, else `*`, else 0 — except `identity`,
+// which RFC 9110 § 12.5.3 makes acceptable (1000) unless the header excludes
+// it (`identity;q=0`, or `*;q=0` without an `identity` element). An empty
+// header therefore accepts `identity` only.
+pub fn tokenQuality(header: string, token: string) -> i32 {
+    val want = token.toLower();
+    var own = 0 - 1;
+    var star = 0 - 1;
+    for (header.split(",")) { element ->
+        if (trimOws(element) != "") {
+            val e = tokenEntryOf(element);
+            if ((own < 0) && (e.name == want)) own = e.q;
+            if ((star < 0) && (e.name == "*")) star = e.q;
+        }
+    }
+    if (own >= 0) return own;
+    if (star >= 0) return star;
+    return if (want == "identity") 1000 else 0;
+}
+
+// The token of `offered` the header weighs highest, ties going to the order
+// of `offered`; `""` when every weight is 0.
+pub fn negotiateToken(header: string, offered: Array<string>) -> string {
+    var chosen = "";
+    var bestQ = 0;
+    for (offered) { t ->
+        val q = tokenQuality(header, t);
+        if (q > bestQ) {
+            chosen = t;
+            bestQ = q;
+        }
+    }
+    return chosen;
+}
+
+// ── Accept-Language ─────────────────────────────────────────────────────────
+
+// RFC 4647 § 2.1: `*`, or 1–8 letters then any number of `-` and 1–8 letters
+// or digits.
+fn isLanguageRange(tag: string) -> bool {
+    if (tag == "*") return true;
+    val parts = tag.split("-");
+    var ok = true;
+    var i = 0;
+    while (i < parts.length) {
+        val p = parts.at(i).unwrapOr("");
+        val sizeOk = (p.length() >= 1) && (p.length() <= 8);
+        val charsOk = if (i == 0)
+            isAlpha(p)
+        else
+            allIn(p, alphaChars() + digitChars());
+        if ((sizeOk == false) || (charsOk == false)) ok = false;
+        i = i + 1;
+    }
+    return ok;
+}
+
+fn languageRangeOf(element: string) -> ?LanguageRange {
+    val pieces = element.split(";");
+    val tag = trimOws(pieces.at(0).unwrapOr(""));
+    if (isLanguageRange(tag) == false) return null;
+    val q = weightOf(pieces.slice(1, pieces.length));
+    if (q < 0) return null;
+    return LanguageRange(tag: tag, q: q);
+}
+
+// The ranges of an `Accept-Language` header, highest weight first and header
+// order among equal weights. A range weighing 0 is kept — it excludes — and
+// the caller skips it when choosing.
+pub fn parseAcceptLanguage(header: string) -> Array<LanguageRange> {
+    var entries: Array<LanguageRange> = [];
+    for (header.split(",")) { element ->
+        if (trimOws(element) != "") {
+            val r: ?LanguageRange = languageRangeOf(element);
+            if (r != null) entries.push(r ?? LanguageRange(tag: "", q: 0));
+        }
+    }
+    var out: Array<LanguageRange> = [];
+    var level = 1000;
+    while (level >= 0) {
+        for (entries) { e ->
+            if (e.q == level) out.push(e);
+        }
+        level = level - 1;
+    }
+    return out;
+}

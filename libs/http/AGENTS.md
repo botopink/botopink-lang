@@ -26,19 +26,22 @@ inline `#[@External]` template on both targets. It imports `std` (`encoding`) on
 http/
 ├── botopink.json      "name": "http", "target": "erlang", "targets": ["erlang", "commonJS"]
 ├── AGENTS.md
-├── src/root.bp        mod lexical; pub mod cookie;
+├── src/root.bp        mod lexical; pub mod cookie; pub mod accept;
 ├── src/lexical.bp     internal: ASCII character classes (token, cookie-octet, printable), charOf/sub, digits, trimOws, idiv, wide
 ├── src/cookie.bp      CookieAttributes, parse, get, serialize, formatHeader
-└── test/              cookie_test (suite `http:`)
+├── src/accept.bp      MediaRange, LanguageRange, qValue, parseAccept, mediaQuality, negotiateMedia, tokenQuality, negotiateToken, parseAcceptLanguage
+└── test/              cookie_test · accept_test (suite `http:`)
 ```
 
-Consumers: `import {cookie} from "http";` then `cookie.get(header, "SID")`.
+Consumers: `import {cookie, accept} from "http";` then `cookie.get(header, "SID")`,
+`accept.negotiateMedia(req.header("accept"), offered)`.
 
 ## Surface and rules
 
 | Module | Surface | Rules |
 |---|---|---|
 | `cookie` | `type CookieAttributes(path, domain, maxAge: ?i32, httpOnly, secure, sameSite)`; `parse(header) -> Array<#(string, string)>`; `get(header, name) -> ?string`; `serialize(name, value, attrs) -> string`; `formatHeader(pairs) -> string` | **Reading**: split on `;`, SP/HTAB trimmed, empty chunks skipped, a chunk without `=` is no cookie. A pair needs a token name (case-sensitive) and an RFC 6265 `cookie-value` (cookie-octets, one optional `"…"` pair stripped) whose escapes are all `%XX` and none a control character (`%00`–`%1F`, `%7F`); it is then percent-decoded (std `encoding.percentDecode`). Anything else is REFUSED — and a refused chunk still claims its name, so the first occurrence decides (`a=%zz; a=2` reads `a` absent; `a=1; a=2` reads `1`). `parse` answers each name once, in header order, refused ones left out. **Writing**: `name=<percentEncode(value)>; Path; Domain; Max-Age; HttpOnly; Secure; SameSite`, each only when set (`maxAge: null` omits `Max-Age` — a session cookie). Raises on: a non-token name, a value or attribute outside printable ASCII (no byte type — encode it first), a `Path` with `;`, a `Domain` outside letters/digits/`-`/`.`, a `SameSite` other than `Strict`/`Lax`/`None`, `SameSite=None` without `Secure`, `__Secure-` without `Secure`, `__Host-` without `Secure` + `Path=/` + no `Domain`. `formatHeader` writes a request `Cookie` header (`a=1; b=x%20y`) that `parse` reads back |
+| `accept` | `type MediaRange(mainType, subType, params: Array<#(string, string)>, q)`; `type LanguageRange(tag, q)`; `qValue(text) -> i32`; `parseAccept(header) -> Array<MediaRange>`; `mediaQuality(accept, mediaType) -> i32`; `negotiateMedia(accept, offered) -> string`; `tokenQuality(header, token) -> i32`; `negotiateToken(header, offered) -> string`; `parseAcceptLanguage(header) -> Array<LanguageRange>` | Weights per mille. `qValue` is decision 182's grammar exactly — `0[.ddd]` / `1[.000]`, at most three decimals, digits only, no whitespace — and anything else is 0. An element without `q` weighs 1000. An element that does not parse (not `type/subtype` tokens, `*/x`, a parameter not `token=token` / `token="…"` without `"` or `\` inside, a coding not a token, a language range outside RFC 4647 § 2.1) is dropped. `mediaQuality`: the most specific matching range decides (`type/subtype` > `type/*` > `*/*`, each range parameter adding specificity and having to be present with the same value in the media type), the first of equally specific ones; an empty header weighs 1000. `negotiate*`: highest weight above 0, ties to the order of `offered`, `""` for none. `tokenQuality`: own element, else `*`, else 0 — `identity` is 1000 unless excluded (RFC 9110 § 12.5.3), so an empty `Accept-Encoding` accepts identity only. `parseAcceptLanguage`: weight descending, header order among equals, zero weights kept (they exclude), tags as written |
 
 ## Testing
 
