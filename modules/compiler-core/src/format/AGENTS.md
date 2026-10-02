@@ -202,7 +202,7 @@ form has always done that); whether it should is a question, recorded in
 directories, `node_modules`, a `reject/<n>.bp` beside its `<n>.expect` and a `modules/<cell>/` file
 the cell's `<target>.expect` names that does not lex or parse (decisions 66 and 67;
 `modules/compiler-cli/src/cli/format_cmd.zig`). `scripts/format-check.sh`, stage 3 of the gate, calls
-it over every `.bp` tree of this checkout — `examples`, `libs/std`, the three bundled libraries,
+it over every `.bp` tree of this checkout — `examples`, `libs/std`, the bundled libraries (`TREES` names each),
 `modules/compiler-cli/tests`, `modules/manifest/tests` and `tests/language` — and all of them are
 canonical: a red tree is a red gate. Measured with that walk on 2026-10-01 (1.0.11-beta front 112), each tree formatted as a
 scratch copy and checked again: every file re-parses and a second pass moves **0** files, in this
