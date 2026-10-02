@@ -165,6 +165,10 @@ Step 11 (T11) adds `run/nullish_tuple_operand` (a tuple literal on the right of 
 `run/postfix_on_grouped_nullish` (`(xs.at(0) ?? d)._1`), four targets, integer elements because wasm
 reads a `string` element of a tuple through `??` as its address (`05-wasm`'s row); both refused by
 the parent binary at the `#`.
+Step 8 (decision 45) adds `reject/tuple_label_on_optional` (`rs.at(0).b` names `?.`) and
+`run/tuple_label_through_optional` (`rs.at(0)?.b` reads the label through the optional, four
+targets); both pass on the parent binary — the checker half landed with decision 45 — and pin it. The
+absent half (`?.b` on a `null`) traps on wasm and raises `badarg` on beam (the backends' rows).
 Decision 141 adds `run/external_template_refused_on_beam` — an `@External.Erlang` template with a
 macro runs on erlang and is a located build error on beam naming the construct (`.beam.expect`); beam
 no longer evaluates a template it cannot compile from source at run time.
