@@ -24,7 +24,7 @@ test "§6 tuples as array elements" {
     for (pairs) { p ->
         total = total + p.0;
         text = text + p.1;
-    };
+    }
     assert pairs.length == 3;
     assert total == 6;
     assert text == "abc";

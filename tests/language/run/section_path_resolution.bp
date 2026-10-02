@@ -18,25 +18,61 @@ pub type Ns {
 }
 
 pub type Token {
-    Layout { Break { Zeta, Eta } },
-    Color { Hex(v: string), Red },
-    Text { Bold, Italic },
+    Layout {
+        Break {
+            Zeta,
+            Eta,
+        }
+    }
+    Color {
+        Hex(v: string),
+        Red,
+    }
+    Text {
+        Bold,
+        Italic,
+    }
     Zeta(n: i32),
 }
 
 fn breakName(b: Token.Layout.Break) -> string {
-    return case b { .Zeta { "zeta" } .Eta { "eta" } };
+    return case b {
+        .Zeta {
+            "zeta";
+        }
+        .Eta {
+            "eta";
+        }
+    };
 }
 
 fn colorOf(t: Token) -> string {
     return case t {
-        Color(inner) { case inner { .Hex(v) { v } .Red { "red" } } }
-        _ { "other" }
+        Color(inner) {
+            case inner {
+                .Hex(v) {
+                    v;
+                }
+                .Red {
+                    "red";
+                }
+            }
+        }
+        _ {
+            "other";
+        }
     };
 }
 
 fn textOf(t: Token.Text) -> string {
-    return case t { .Bold { "bold" } .Italic { "italic" } };
+    return case t {
+        .Bold {
+            "bold";
+        }
+        .Italic {
+            "italic";
+        }
+    };
 }
 
 pub fn main() {

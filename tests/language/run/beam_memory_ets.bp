@@ -6,7 +6,7 @@
 //// (decision 40). The per-request reads are not printed: their order is the
 //// scheduler's.
 
-import { async } from "std";
+import {async} from "std";
 
 #[@BeamMemory.Ets]
 var hits: i32 = 0;
@@ -19,7 +19,15 @@ fn request() -> @Task<i32> {
 }
 
 pub fn main() -> @Task<void> {
-    val done = await async.runAll([{ -> request() }, { -> request() }, { -> request() }, { -> request() }, { -> request() }]);
+    val done = await async.runAll(
+        [
+            { -> request() },
+            { -> request() },
+            { -> request() },
+            { -> request() },
+            { -> request() },
+        ],
+    );
     @print(done.length());
     @print(hits);
 }

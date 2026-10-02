@@ -16,19 +16,39 @@ fn guard(label: string) -> i32 {
 fn proxied(comptime decl: @Decl) {
     var methods: string[] = [];
     decl.methods.forEach({ m ->
-        methods.push("pub fn " + m.name + "(self: Self) -> string {\n        val _g = guard(\"" + decl.name + "\");\n        return \"sec \" + self.inner." + m.name + "();\n    }");
+        methods.push(
+            "pub fn "
+                + m.name
+                + "(self: Self) -> string {\n        val _g = guard(\""
+                + decl.name
+                + "\");\n        return \"sec \" + self.inner."
+                + m.name
+                + "();\n    }",
+        );
     });
-    @emit("pub type " + decl.name + "Sec(inner: " + decl.name + ") {\n    " + methods.join("\n    ") + "\n}");
+    @emit(
+        "pub type "
+            + decl.name
+            + "Sec(inner: "
+            + decl.name
+            + ") {\n    "
+            + methods.join("\n    ")
+            + "\n}",
+    );
 }
 
 #[proxied]
 type Ledger(id: i32) {
-    pub fn status(self: Self) -> string { return "ledger status"; }
+    pub fn status(self: Self) -> string {
+        return "ledger status";
+    }
 }
 
 #[proxied]
 type Runbook(id: i32) {
-    pub fn read(self: Self) -> string { return "runbook steps"; }
+    pub fn read(self: Self) -> string {
+        return "runbook steps";
+    }
 }
 
 pub fn main() {

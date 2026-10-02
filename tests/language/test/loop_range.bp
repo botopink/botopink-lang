@@ -3,20 +3,26 @@
 
 test "§10 loop over a range" {
     var sum = 0;
-    for (0..4) { i -> sum = sum + i; };
+    for (0..4) { i ->
+        sum = sum + i;
+    }
     assert sum == 6;
 }
 
 test "§10 an empty range runs no iteration" {
     var n = 0;
-    for (3..3) { i -> n = n + 1; };
+    for (3..3) { i ->
+        n = n + 1;
+    }
     assert n == 0;
 }
 
 test "§10 an index read off a range over the length" {
     val xs = [10, 20, 30];
     var weighted = 0;
-    for (0..xs.length) { i -> weighted = weighted + (xs[i] ?? 0) * (i + 1); };
+    for (0..xs.length) { i ->
+        weighted = weighted + (xs[i] ?? 0) * (i + 1);
+    }
     assert weighted == 140;
 }
 
@@ -24,9 +30,9 @@ test "§10 a counter the body reassigns survives every iteration" {
     var first = "";
     var count = 0;
     for (["x", "y"]) { s ->
-        if (count == 0) { first = s; };
+        if (count == 0) first = s;
         count = count + 1;
-    };
+    }
     assert first == "x";
     assert count == 2;
 }

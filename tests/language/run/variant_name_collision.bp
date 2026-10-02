@@ -28,15 +28,23 @@ pub type Hole {
 
 pub fn holeOf(h: Hole) -> string {
     return case h {
-        Hole.Circle { "hole-circle" }
-        Hole.Slot { "hole-slot" }
+        Hole.Circle {
+            "hole-circle";
+        }
+        Hole.Slot {
+            "hole-slot";
+        }
     };
 }
 
 pub fn shapeOf(s: Shape) -> string {
     return case s {
-        Shape.Circle { "shape-circle" }
-        Shape.Square { "shape-square" }
+        Shape.Circle {
+            "shape-circle";
+        }
+        Shape.Square {
+            "shape-square";
+        }
     };
 }
 

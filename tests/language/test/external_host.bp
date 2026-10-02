@@ -10,6 +10,10 @@ declare fn hostMax(a: i32, b: i32) -> i32;
 #[@External.Erlang("string", "uppercase")]
 declare fn hostUpper(s: string) -> string;
 
-test "§8 a two-target external answers the same on every backend" { assert hostMax(2, 7) == 7; }
+test "§8 a two-target external answers the same on every backend" {
+    assert hostMax(2, 7) == 7;
+}
 
-test "§8 positional markers follow the declared parameters" { assert hostUpper("ab") == "AB"; }
+test "§8 positional markers follow the declared parameters" {
+    assert hostUpper("ab") == "AB";
+}

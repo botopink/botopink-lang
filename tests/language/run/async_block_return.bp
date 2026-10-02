@@ -10,7 +10,7 @@ type Holder(t: @Task<string>)
 
 fn pick(n: i32) -> Holder {
     val t = async {
-        if (n > 0) { return "positive"; };
+        if (n > 0) return "positive";
         return "not positive";
     };
     @print("after the block");
@@ -24,4 +24,6 @@ fn run() -> @Task<void> {
     @print(await b.t);
 }
 
-pub fn main() { run(); }
+pub fn main() {
+    run();
+}

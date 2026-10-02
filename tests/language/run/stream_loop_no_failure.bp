@@ -17,15 +17,19 @@ fn ticks(limit: i32) -> Ticker {
     var i = 0;
     val s = stream loop {
         i = i + 1;
-        if (i > limit) { break; };
+        if (i > limit) break;
         yield await tick(i);
     };
     return Ticker(s: s);
 }
 
 fn run() -> @Task<void> {
-    for await (ticks(3).s) { v -> @print(v); };
+    for await (ticks(3).s) { v ->
+        @print(v);
+    }
     @print("done");
 }
 
-pub fn main() { run(); }
+pub fn main() {
+    run();
+}

@@ -14,9 +14,9 @@
 type Page(users: Array<string>, next: string)
 
 fn fetchPage(url: string) -> @Task<@Result<Page, string>> {
-    if (url == "p1") { return Page(users: ["ana", "bia"], next: "p2"); };
-    if (url == "p2") { return Page(users: ["caio"], next: "p3"); };
-    if (url == "q1") { return Page(users: ["dani"], next: ""); };
+    if (url == "p1") return Page(users: ["ana", "bia"], next: "p2");
+    if (url == "p2") return Page(users: ["caio"], next: "p3");
+    if (url == "q1") return Page(users: ["dani"], next: "");
     throw url + ": 503";
 }
 
@@ -26,7 +26,7 @@ fn pages(url: string) -> @Stream<@Result<Array<string>, string>> {
         val page = try await fetchPage(next);
         yield page.users;
         next = page.next;
-    };
+    }
 }
 
 fn countUsers(url: string) -> @Task<@Result<i32, string>> {
@@ -34,7 +34,7 @@ fn countUsers(url: string) -> @Task<@Result<i32, string>> {
     for await (pages(url)) { batch ->
         val users = try batch;
         n = n + users.length;
-    };
+    }
     return n;
 }
 
@@ -43,8 +43,8 @@ fn walk(url: string) -> @Task<void> {
         case r {
             Ok(users) -> @print("batch " + users.join(","));
             Error(e) -> @print("error " + e);
-        };
-    };
+        }
+    }
     @print("end of " + url);
 }
 
@@ -52,7 +52,7 @@ fn show(r: @Result<i32, string>) {
     case r {
         Ok(n) -> @print("count " + n.toString());
         Error(e) -> @print("count failed: " + e);
-    };
+    }
 }
 
 fn run() -> @Task<void> {
@@ -61,4 +61,6 @@ fn run() -> @Task<void> {
     await walk("p1");
 }
 
-pub fn main() { run(); }
+pub fn main() {
+    run();
+}

@@ -22,9 +22,7 @@ pub fn main() {
     @print(xs);
     @print(xs.pop());
     @print(xs.length());
-    if (xs.length() > 0) {
-        xs.pop();
-    }
+    if (xs.length() > 0) xs.pop();
     @print(xs);
     @print(xs.pop());
     @print(drain([4, 5, 6]));

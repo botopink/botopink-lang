@@ -14,11 +14,18 @@ type Order { Lt, Eq, Gt }
 type Shape { Circle(r: i32), Square(side: i32) }
 
 fn sign(o: Order) -> i32 {
-    return case o { Lt -> -1; Eq -> 0; _ -> 1; };
+    return case o {
+        Lt -> -1;
+        Eq -> 0;
+        _ -> 1;
+    };
 }
 
 fn area(s: Shape) -> i32 {
-    return case s { Circle(r) -> 3 * r * r; Square(side) -> side * side; };
+    return case s {
+        Circle(r) -> 3 * r * r;
+        Square(side) -> side * side;
+    };
 }
 
 test "an arrow arm answers per variant" {
@@ -26,7 +33,9 @@ test "an arrow arm answers per variant" {
     assert sign(Order.Eq) == 0;
 }
 
-test "a wildcard arm covers the rest" { assert sign(Order.Gt) == 1; }
+test "a wildcard arm covers the rest" {
+    assert sign(Order.Gt) == 1;
+}
 
 test "an arrow arm binds a payload" {
     assert area(Shape.Circle(r: 2)) == 12;
@@ -35,6 +44,10 @@ test "an arrow arm binds a payload" {
 
 test "case over a literal answers per value" {
     val n = 2;
-    val name = case n { 1 -> "one"; 2 -> "two"; _ -> "many"; };
+    val name = case n {
+        1 -> "one";
+        2 -> "two";
+        _ -> "many";
+    };
     assert name == "two";
 }

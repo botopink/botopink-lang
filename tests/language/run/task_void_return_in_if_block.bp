@@ -6,22 +6,18 @@
 //// block still ran, so `early(true)` printed `after`.
 
 fn early(stop: bool) -> @Task<void> {
-    if (stop) {
-        return;
-    };
+    if (stop) return;
     @print("after");
 }
 
 fn deeper(a: bool, b: bool) -> @Task<void> {
     if (a) {
-        if (b) {
-            return;
-        };
+        if (b) return;
         @print("a, not b");
     } else {
         @print("not a");
         return;
-    };
+    }
     @print("end of deeper");
 }
 
@@ -37,4 +33,6 @@ fn run() -> @Task<void> {
     await deeper(false, true);
 }
 
-pub fn main() { run(); }
+pub fn main() {
+    run();
+}

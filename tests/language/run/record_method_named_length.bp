@@ -7,9 +7,15 @@
 //// `element/2`.
 
 type Rows(items: string[], title: string) {
-    pub fn length(self: Self) -> i32 { return self.items.length; }
-    pub fn rowCount(self: Self) -> i32 { return self.items.length(); }
-    pub fn titleLength(self: Self) -> i32 { return self.title.length(); }
+    pub fn length(self: Self) -> i32 {
+        return self.items.length;
+    }
+    pub fn rowCount(self: Self) -> i32 {
+        return self.items.length();
+    }
+    pub fn titleLength(self: Self) -> i32 {
+        return self.title.length();
+    }
 }
 
 pub fn main() {

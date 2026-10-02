@@ -6,13 +6,21 @@
 //// listed in `expected-failures.txt`.
 
 type Warm { Red, Orange }
+
 type Cool { Blue, Red }
 
 fn coolName(c: Cool) -> string {
-    return case c { Blue -> "blue"; Red -> "cool red"; };
+    return case c {
+        Blue -> "blue";
+        Red -> "cool red";
+    };
 }
+
 fn warmName(c: Warm) -> string {
-    return case c { Orange -> "orange"; Red -> "warm red"; };
+    return case c {
+        Orange -> "orange";
+        Red -> "warm red";
+    };
 }
 
 pub fn main() {

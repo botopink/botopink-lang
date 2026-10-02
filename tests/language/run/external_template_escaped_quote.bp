@@ -5,17 +5,17 @@
 //// into the `.js`, backslash and all — `SyntaxError: Invalid or unexpected
 //// token` before anything ran. Not scheduled on wasm: no host binding there.
 
-#[@External.Node("(\"say \" + $0)"),
-  @External.Erlang("<<\"say \", $0/binary>>")]
+#[@External.Node("(\"say \" + $0)")]
+#[@External.Erlang("<<\"say \", $0/binary>>")]
 declare fn say(s: string) -> string;
 
-#[@External.Node("JSON.stringify({ k: $0 })"),
-  @External.Erlang("<<\"{\", 34, \"k\", 34, \":\", 34, $0/binary, 34, \"}\">>")]
+#[@External.Node("JSON.stringify({ k: $0 })")]
+#[@External.Erlang("<<\"{\", 34, \"k\", 34, \":\", 34, $0/binary, 34, \"}\">>")]
 declare fn enc(s: string) -> string;
 
 type Box(label: string) {
-    #[@External.Node("(\"[\" + $0.label + \"]\")"),
-      @External.Erlang("<<\"[\", (element(2, $0))/binary, \"]\">>")]
+    #[@External.Node("(\"[\" + $0.label + \"]\")")]
+    #[@External.Erlang("<<\"[\", (element(2, $0))/binary, \"]\">>")]
     declare fn framed(self: Self) -> string;
 }
 

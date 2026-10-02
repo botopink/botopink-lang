@@ -8,12 +8,16 @@
 
 fn wire(comptime decl: @Decl) {
     @emit("pub fn wiredSize() -> i32 { return 99; }");
-    if (decl.kind != DeclKind.Type) { decl.fail("#[wire] must annotate a type"); }
+    if (decl.kind != DeclKind.Type) decl.fail("#[wire] must annotate a type");
 }
 
 #[wire]
 type UserService(name: string)
 
-test "@emit splices a referenceable top-level declaration" { assert wiredSize() == 99; }
+test "@emit splices a referenceable top-level declaration" {
+    assert wiredSize() == 99;
+}
 
-test "the decorated type is unchanged" { assert UserService(name: "a").name == "a"; }
+test "the decorated type is unchanged" {
+    assert UserService(name: "a").name == "a";
+}

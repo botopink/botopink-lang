@@ -20,7 +20,7 @@ fn countdown(n: i32) -> @Stream<i32> {
     while (i > 0) {
         yield i;
         i = i - 1;
-    };
+    }
 }
 
 fn stepText(s: YieldStep<i32>) -> string {
@@ -37,7 +37,7 @@ fn firstThree(it: @Iterator<i32>) -> string {
     while (i < 3) {
         acc = acc + stepText(it.next()) + ";";
         i = i + 1;
-    };
+    }
     return acc;
 }
 

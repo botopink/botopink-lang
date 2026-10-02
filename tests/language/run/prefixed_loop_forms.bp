@@ -9,14 +9,16 @@
 fn line(it: @Iterator<i32>) -> string {
     var acc = "";
     for (it) { x ->
-        if (acc == "") { acc = x.toString(); } else { acc = acc + " " + x.toString(); };
-    };
+        if (acc == "") acc = x.toString() else acc = acc + " " + x.toString();
+    }
     return acc;
 }
 
 fn sum(it: @Iterator<i32>) -> i32 {
     var total = 0;
-    for (it) { x -> total = total + x; };
+    for (it) { x ->
+        total = total + x;
+    }
     return total;
 }
 
@@ -24,7 +26,7 @@ pub fn main() {
     var n = 0;
     val doubled = iter loop {
         n = n + 1;
-        if (n > 3) { break; };
+        if (n > 3) break;
         yield n * 2;
     };
     @print(line(doubled));
@@ -36,8 +38,16 @@ pub fn main() {
     };
     @print(line(countdown));
 
-    val evens = iter for ([1, 2, 3, 4]) { x -> if (x % 2 == 0) { yield x; }; };
+    val evens = iter for ([1, 2, 3, 4]) { x ->
+        if (x % 2 == 0) yield x;
+    };
     @print(line(evens));
 
-    @print(sum(iter for ([1, 2, 3]) { x -> yield x * x; }));
+    @print(
+        sum(
+            iter for ([1, 2, 3]) { x ->
+                yield x * x;
+            },
+        ),
+    );
 }

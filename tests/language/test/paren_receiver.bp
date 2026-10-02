@@ -10,12 +10,22 @@
 //// No step of `04-js` names that defect, so it is reported to the maintainer
 //// rather than listed here against an invented row.
 
-test "a method on a parenthesised string literal" { assert ("ab").length == 2; }
+test "a method on a parenthesised string literal" {
+    assert ("ab").length == 2;
+}
 
-test "a method on a parenthesised comparison" { assert (1 == 2).toString() == "false"; }
+test "a method on a parenthesised comparison" {
+    assert (1 == 2).toString() == "false";
+}
 
-test "a method on a parenthesised comparison that holds" { assert (2 == 2).toString() == "true"; }
+test "a method on a parenthesised comparison that holds" {
+    assert (2 == 2).toString() == "true";
+}
 
-test "a method on a parenthesised arithmetic expression" { assert (1 + 2).toString() == "3"; }
+test "a method on a parenthesised arithmetic expression" {
+    assert (1 + 2).toString() == "3";
+}
 
-test "a method chain off a parenthesised receiver" { assert ("a,b,c").split(",").length == 3; }
+test "a method chain off a parenthesised receiver" {
+    assert ("a,b,c").split(",").length == 3;
+}

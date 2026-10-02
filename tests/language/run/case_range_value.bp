@@ -19,9 +19,54 @@
 //// erlang and beam are unchanged; their lines name `C-06 (<backend> half not landed)`.
 
 pub fn main() {
-    @print(case 5 { 1...9 { 1 } _ { 0 } });
-    @print(case 1 { 1...9 { 1 } _ { 0 } });
-    @print(case 9 { 1...9 { 1 } _ { 0 } });
-    @print(case 0 { 1...9 { 1 } _ { 0 } });
-    @print(case 10 { 1...9 { 1 } _ { 0 } });
+    @print(
+        case 5 {
+            1...9 {
+                1;
+            }
+            _ {
+                0;
+            }
+        },
+    );
+    @print(
+        case 1 {
+            1...9 {
+                1;
+            }
+            _ {
+                0;
+            }
+        },
+    );
+    @print(
+        case 9 {
+            1...9 {
+                1;
+            }
+            _ {
+                0;
+            }
+        },
+    );
+    @print(
+        case 0 {
+            1...9 {
+                1;
+            }
+            _ {
+                0;
+            }
+        },
+    );
+    @print(
+        case 10 {
+            1...9 {
+                1;
+            }
+            _ {
+                0;
+            }
+        },
+    );
 }

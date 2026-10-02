@@ -10,7 +10,9 @@
 type P(x: i32, y: string)
 
 type Q(n: i32) {
-    pub fn pick(self: Self, a: i32, b: string) -> string { return b; }
+    pub fn pick(self: Self, a: i32, b: string) -> string {
+        return b;
+    }
 }
 
 fn diff(a: i32, b: i32) -> i32 {
@@ -18,7 +20,7 @@ fn diff(a: i32, b: i32) -> i32 {
 }
 
 fn sum(acc: i32, n: i32) -> i32 {
-    if (n == 0) { return acc; };
+    if (n == 0) return acc;
     return sum(n: n - 1, acc: acc + n);
 }
 

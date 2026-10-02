@@ -8,8 +8,6 @@ import {erlang} from "std";
 
 pub fn main() {
     val first = erlang.element(1, #(7, "x"));
-    if (first is i32) {
-        @print(first + 1);
-    }
+    if (first is i32) @print(first + 1);
     @print(erlang.abs(-3));
 }

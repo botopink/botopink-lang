@@ -8,6 +8,7 @@
 //// library.
 
 type Element(count: i32, name: string) implement @Context<Element>
+
 type State(value: i32, name: string)
 
 // `state` yields its initial value.
@@ -23,7 +24,10 @@ fn pair(a: i32, b: i32) -> @Component<Element, #(i32, i32)> {
 // A hook whose `R` is a tuple with a fn element — step 3 binds each name to
 // its element (`shown : i32`, `push : fn(action: i32) -> i32`), so `push(shown)`
 // types with no annotation on the binding.
-fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Component<Element, #(i32, fn(action: i32) -> i32)> {
+fn optimistic(
+    base: i32,
+    f: fn(current: i32, action: i32) -> i32,
+) -> @Component<Element, #(i32, fn(action: i32) -> i32)> {
     val push = { action -> f(base, action) };
     return #(base, push);
 }
@@ -47,7 +51,7 @@ fn Widget(n: i32) -> @Component<Element, Element> {
 }
 
 fn Fields() -> @Component<Element, Element> {
-    val {value, name} = use state(5);
+    val { value, name } = use state(5);
     return Element(count: value, name: name);
 }
 
@@ -62,7 +66,9 @@ fn Positional() -> @Component<Element, Element> {
 }
 
 fn Effectful() -> @Component<Element, Element> {
-    use effect({ -> return 9; });
+    use effect({ ->
+        return 9;
+    });
     val c = use state(1);
     return Element(count: c.value, name: "effect");
 }

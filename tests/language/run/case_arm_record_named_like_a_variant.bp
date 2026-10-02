@@ -10,14 +10,17 @@
 //// the other half honest: over `Token.Layout` the same spelling is the variant.
 
 type Block(size: i32)
+
 type Vec(x: i32)
 
 type Token {
     Layout {
-        Block, Inline
+        Block,
+        Inline,
     }
     Shape {
-        Vec(n: i32), Dot
+        Vec(n: i32),
+        Dot,
     }
 }
 

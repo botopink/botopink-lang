@@ -18,10 +18,24 @@
 
 pub fn main() {
     val x: ?i32 = 5;
-    val a = case x { null { "absent" } v { "present " + v.toString() } };
+    val a = case x {
+        null {
+            "absent";
+        }
+        v {
+            "present " + v.toString();
+        }
+    };
     @print(a);
 
     val y: ?i32 = null;
-    val b = case y { null { "absent" } v { "present " + v.toString() } };
+    val b = case y {
+        null {
+            "absent";
+        }
+        v {
+            "present " + v.toString();
+        }
+    };
     @print(b);
 }

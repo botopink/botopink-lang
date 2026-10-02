@@ -7,7 +7,9 @@ test "split cuts on the separator" {
     assert "a,b,c".split(",").at(1) == "b";
 }
 
-test "trim drops the surrounding blanks" { assert "  x ".trim() == "x"; }
+test "trim drops the surrounding blanks" {
+    assert "  x ".trim() == "x";
+}
 
 test "startsWith and endsWith read the ends" {
     assert "abc".startsWith("ab");

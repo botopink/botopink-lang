@@ -6,7 +6,7 @@
 //// A failing `try` or a `throw` emits `Error(e)` and ends the sequence.
 
 fn check(n: i32) -> @Result<i32, string> {
-    if (n < 0) { throw "negative " + n.toString(); };
+    if (n < 0) throw "negative " + n.toString();
     return n;
 }
 
@@ -15,19 +15,21 @@ fn walk(name: string, it: @Iterator<@Result<i32, string>>) {
         case r {
             Ok(v) -> @print(name + " ok " + v.toString());
             Error(e) -> @print(name + " error " + e);
-        };
-    };
+        }
+    }
     @print(name + " done");
 }
 
 pub fn main() {
-    val checked = iter for ([1, -2, 3]) { x -> yield try check(x); };
+    val checked = iter for ([1, -2, 3]) { x ->
+        yield try check(x);
+    };
     walk("try", checked);
 
     var k = 0;
     val limited = iter loop {
         k = k + 1;
-        if (k > 2) { throw "stop at " + k.toString(); };
+        if (k > 2) throw "stop at " + k.toString();
         yield k;
     };
     walk("throw", limited);

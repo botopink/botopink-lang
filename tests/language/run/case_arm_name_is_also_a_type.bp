@@ -27,15 +27,23 @@
 //// `00 · 05-wasm` (a variant reached through its enum is the enum's).
 
 type Block(size: i32)
+
 type Vec(x: i32)
+
 type Size(px: i32)
 
 type Token {
     Layout {
-        Block, Inline
-        Size { Small, Large }
+        Block,
+        Inline,
+        Size {
+            Small,
+            Large,
+        }
     }
-    Text { Bold }
+    Text {
+        Bold,
+    }
 }
 
 fn layoutSizeCss(s: Token.Layout.Size) -> string {

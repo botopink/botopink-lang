@@ -37,5 +37,7 @@ pub fn main() {
     @print(describe(Route.Page(slug: "b")));
     @print(describe(Route.Home));
     val rs: Array<Req> = [Route.Home, Route.Page(slug: "c")];
-    for (rs) { r -> @print(r.path()); }
+    for (rs) { r ->
+        @print(r.path());
+    }
 }

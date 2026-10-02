@@ -13,13 +13,21 @@ behavior Request {
 }
 
 type Page(route: string) implement Request {
-    fn path(self: Self) -> string { return self.route; }
-    fn weight(self: Self, factor: i32) -> i32 { return factor; }
+    fn path(self: Self) -> string {
+        return self.route;
+    }
+    fn weight(self: Self, factor: i32) -> i32 {
+        return factor;
+    }
 }
 
 type Api(version: i32) implement Request {
-    fn path(self: Self) -> string { return "/api/v" + self.version.toString(); }
-    fn weight(self: Self, factor: i32) -> i32 { return self.version * factor; }
+    fn path(self: Self) -> string {
+        return "/api/v" + self.version.toString();
+    }
+    fn weight(self: Self, factor: i32) -> i32 {
+        return self.version * factor;
+    }
 }
 
 fn describe(req: Request) -> string {

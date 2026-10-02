@@ -6,7 +6,7 @@
 //// explicit `try x`, so it returns `@Task<@Result<…>>`.
 
 fn parse(n: i32) -> @Result<i32, string> {
-    if (n < 0) { throw "negative"; };
+    if (n < 0) throw "negative";
     return n;
 }
 
@@ -17,12 +17,18 @@ fn fetch(n: i32) -> @Task<@Result<i32, string>> {
 fn stream(n: i32) -> @Stream<@Result<i32, string>> {
     val limit = try parse(n);
     var i = try await fetch(0);
-    while (i < limit) { yield i; i = i + 1; };
+    while (i < limit) {
+        yield i;
+        i = i + 1;
+    }
 }
 
 fn collect(n: i32) -> @Task<@Result<string, string>> {
     var acc = "";
-    for await (stream(n)) { x -> val v = try x; acc = acc + v.toString(); };
+    for await (stream(n)) { x ->
+        val v = try x;
+        acc = acc + v.toString();
+    }
     return acc;
 }
 

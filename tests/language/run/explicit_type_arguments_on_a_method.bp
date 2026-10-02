@@ -21,11 +21,11 @@ type Box<V>(value: V) {
 
 pub fn main() {
     val c = Ctx(n: 1);
-    val s: string = c.resolve<string>("a");
+    val s: string = c.resolve("a");
     @print(s);
-    val nothing = c.none<i32>();
+    val nothing = c.none();
     @print(nothing == null);
-    val p = Box(value: 2).pair<bool>(true);
+    val p = Box(value: 2).pair(true);
     val flag: bool = p._1;
     @print(flag);
     val a = 1;

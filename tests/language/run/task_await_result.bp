@@ -8,7 +8,7 @@
 //// in the value (decision 121). Printed from inside `run`.
 
 fn fetchUser(id: i32) -> @Task<@Result<string, string>> {
-    if (id <= 0) { throw "user " + id.toString() + " does not exist"; };
+    if (id <= 0) throw "user " + id.toString() + " does not exist";
     return "user" + id.toString();
 }
 
@@ -25,7 +25,7 @@ fn show(r: @Result<string, string>) {
     case r {
         Ok(v) -> @print("ok " + v);
         Error(e) -> @print("error " + e);
-    };
+    }
 }
 
 fn run() -> @Task<void> {
@@ -39,4 +39,6 @@ fn run() -> @Task<void> {
     @print(await nameOr(0));
 }
 
-pub fn main() { run(); }
+pub fn main() {
+    run();
+}

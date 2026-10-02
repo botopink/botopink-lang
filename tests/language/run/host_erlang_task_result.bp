@@ -15,7 +15,7 @@ fn show(r: @Result<i32, string>) {
     case r {
         Ok(v) -> @print("ok " + v.toString());
         Error(e) -> @print("error " + e);
-    };
+    }
 }
 
 fn run() -> @Task<void> {
@@ -27,4 +27,6 @@ fn run() -> @Task<void> {
     @print(sum);
 }
 
-pub fn main() { run(); }
+pub fn main() {
+    run();
+}

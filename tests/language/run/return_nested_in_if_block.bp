@@ -13,20 +13,18 @@ fn pick(n: i32) -> string {
     if (n > 0) {
         val m: i32 = n * 2;
         if (m > 2) return "big";
-    };
+    }
     return "small";
 }
 
 fn deep(n: i32) -> string {
     if (n > 0) {
         if (n > 1) {
-            if (n > 2) {
-                return "three";
-            };
+            if (n > 2) return "three";
             @print("not three");
-        };
+        }
         @print("not two");
-    };
+    }
     return "low";
 }
 
@@ -35,15 +33,13 @@ type Scale(limit: i32) {
         if (n > 0) {
             val doubled: i32 = n * 2;
             if (doubled > self.limit) return "over";
-        };
+        }
         return "under";
     }
 }
 
 fn check(n: i32) -> @Result<i32, string> {
-    if (n > 0) {
-        if (n > 10) throw "too big";
-    };
+    if (n > 0) if (n > 10) throw "too big";
     return n;
 }
 

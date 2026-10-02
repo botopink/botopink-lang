@@ -25,8 +25,12 @@ fn load(n: i32) -> @Result<string, string> {
 
 fn describe(r: @Result<string, string>) -> string {
     return case r {
-        Ok(v) { "ok " + v }
-        Error(e) { "error " + e }
+        Ok(v) {
+            "ok " + v;
+        }
+        Error(e) {
+            "error " + e;
+        }
     };
 }
 
@@ -36,11 +40,33 @@ pub fn main() {
     @print(describe(failed));
     @print(describe(load(1)));
     case load(-2) {
-        Error(e) { @print("statement " + e); }
-        Ok(v) { @print("statement " + v); }
-    };
+        Error(e) {
+            @print("statement " + e);
+        }
+        Ok(v) {
+            @print("statement " + v);
+        }
+    }
     val assert Error(message) = load(-3);
     @print(message);
-    @print(case Level.Error { Info { "info" } Error { "level error" } });
-    @print(case Status.Ok { Ok { "status ok" } Down { "down" } });
+    @print(
+        case Level.Error {
+            Info {
+                "info";
+            }
+            Error {
+                "level error";
+            }
+        },
+    );
+    @print(
+        case Status.Ok {
+            Ok {
+                "status ok";
+            }
+            Down {
+                "down";
+            }
+        },
+    );
 }

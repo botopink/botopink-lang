@@ -10,17 +10,22 @@
 //// still emitted.
 
 fn check(n: i32) -> @Result<i32, string> {
-    if (n < 0) { throw "negative " + n.toString(); };
+    if (n < 0) throw "negative " + n.toString();
     return n;
 }
 
 fn parseAll(xs: i32[]) -> @Iterator<@Result<i32, string>> {
-    for (xs) { x -> yield check(x); };
+    for (xs) { x ->
+        yield check(x);
+    }
 }
 
 fn sum(xs: i32[]) -> @Result<i32, string> {
     var total = 0;
-    for (parseAll(xs)) { r -> val v = try r; total = total + v; };
+    for (parseAll(xs)) { r ->
+        val v = try r;
+        total = total + v;
+    }
     return total;
 }
 
@@ -29,15 +34,15 @@ fn printAll(xs: i32[]) {
         case r {
             Ok(v) -> @print(v);
             Error(e) -> @print("error: " + e);
-        };
-    };
+        }
+    }
 }
 
 fn show(r: @Result<i32, string>) {
     case r {
         Ok(v) -> @print("sum " + v.toString());
         Error(e) -> @print("sum failed: " + e);
-    };
+    }
 }
 
 pub fn main() {

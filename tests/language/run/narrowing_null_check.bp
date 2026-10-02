@@ -38,40 +38,42 @@
 //// addresses grew (`256`/`364`/`401` → `276`/`388`/`425`) and the narrowed
 //// name is read off the box exactly as before. Re-measured at that merge.
 
-type Entry(key: string) {}
+type Entry(key: string)
 
 pub fn main() {
     // A `?Record` whose field is read — the shape that crashed commonJS.
     val es = [Entry(key: "abc")];
     val first = es.at(0);
-    if (first != null) { @print(first.key.length().toString()); };
+    if (first != null) @print(first.key.length().toString());
 
     // A `?string`.
     val ws = ["alpha", "be"];
     val w = ws.at(1);
-    if (w != null) { @print(w.length().toString()); };
+    if (w != null) @print(w.length().toString());
 
     // A `?T[]`.
     val rows = [[1, 2, 3]];
     val row = rows.at(0);
-    if (row != null) { @print(row.length().toString()); };
+    if (row != null) @print(row.length().toString());
 
     // A `?i32`, where what the narrowing buys is the arithmetic.
     val ns = [7];
     val n = ns.at(0);
-    if (n != null) { @print((n + 1).toString()); };
+    if (n != null) @print((n + 1).toString());
 
     // Either operand order is the same test.
-    if (null != first) { @print(first.key.length().toString()); };
+    if (null != first) @print(first.key.length().toString());
 
     // `&&` holds only when both halves do, so both names narrow.
-    if (first != null && w != null) {
+    if (first != null && w != null)
         @print(first.key.length().toString() + "/" + w.length().toString());
-    };
 
     // `== null` is the same rule read from the other side: the ELSE branch is
     // where the value is.
-    if (first == null) { @print("absent"); } else { @print(first.key.length().toString()); };
+    if (first == null)
+        @print("absent")
+    else
+        @print(first.key.length().toString());
 
     // And the narrowing ends with the branch: out here `first` is `?Entry`
     // again, which is what gives `??` something to default.

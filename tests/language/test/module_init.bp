@@ -14,15 +14,16 @@
 //// was never evaluated at all (`Warning: function '_registered'/0 is unused`).
 //// A library whose model is module-load self-registration had no way to work.
 
-#[@External.Node("(globalThis.__bpMarks = globalThis.__bpMarks || [], globalThis.__bpMarks.push($0), globalThis.__bpMarks.length)"),
-  @External.Erlang("(begin erlang:put(bp_marks, (case erlang:get(bp_marks) of undefined -> []; L -> L end) ++ [$0]), erlang:length(erlang:get(bp_marks)) end)")]
+#[@External.Node("(globalThis.__bpMarks = globalThis.__bpMarks || [], globalThis.__bpMarks.push($0), globalThis.__bpMarks.length)")]
+#[@External.Erlang("(begin erlang:put(bp_marks, (case erlang:get(bp_marks) of undefined -> []; L -> L end) ++ [$0]), erlang:length(erlang:get(bp_marks)) end)")]
 declare fn mark(tag: string) -> i32;
 
-#[@External.Node("((globalThis.__bpMarks || []).join(','))"),
-  @External.Erlang("(iolist_to_binary(lists:join($,, case erlang:get(bp_marks) of undefined -> []; L -> L end)))")]
+#[@External.Node("((globalThis.__bpMarks || []).join(','))")]
+#[@External.Erlang("(iolist_to_binary(lists:join($,, case erlang:get(bp_marks) of undefined -> []; L -> L end)))")]
 declare fn marks() -> string;
 
 val first = mark("first");
+
 val _registered = mark("registered");
 
 test "a module-level val runs at module load, before the first test" {

@@ -11,7 +11,7 @@
 //// eagerly; inside one body the order is the same everywhere.
 
 fn check(n: i32) -> @Result<i32, string> {
-    if (n < 0) { throw "negative"; };
+    if (n < 0) throw "negative";
     return n;
 }
 
@@ -31,7 +31,7 @@ fn show(label: string, r: @Result<i32, string>) {
     case r {
         Ok(v) -> @print(label + " ok " + v.toString());
         Error(e) -> @print(label + " error " + e);
-    };
+    }
 }
 
 fn run() -> @Task<void> {
@@ -41,4 +41,6 @@ fn run() -> @Task<void> {
     show("task", await layerTask(layerValue(3)));
 }
 
-pub fn main() { run(); }
+pub fn main() {
+    run();
+}

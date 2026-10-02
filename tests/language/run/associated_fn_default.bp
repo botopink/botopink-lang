@@ -11,9 +11,7 @@ behavior Scale {
 
 behavior Pick<A> {
     default fn either(value: A, fallback: A, useFallback: bool = false) -> A {
-        if (useFallback) {
-            return fallback;
-        }
+        if (useFallback) return fallback;
         return value;
     }
 }

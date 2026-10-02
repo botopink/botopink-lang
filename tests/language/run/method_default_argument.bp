@@ -2,10 +2,14 @@
 //// result, on a local, and not when the call writes it.
 
 type Jar(n: i32) {
-    pub fn put(self: Self, name: string, value: string = "dflt") -> string { return name + "=" + value; }
+    pub fn put(self: Self, name: string, value: string = "dflt") -> string {
+        return name + "=" + value;
+    }
 }
 
-fn cookies() -> Jar { return Jar(n: 1); }
+fn cookies() -> Jar {
+    return Jar(n: 1);
+}
 
 pub fn main() {
     @print(cookies().put("x"));

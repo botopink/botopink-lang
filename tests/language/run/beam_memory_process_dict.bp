@@ -5,7 +5,7 @@
 //// the whole program, so the cell is the BEAM's (`.targets`); decision 43 makes
 //// the annotation a no-op there, which `test/beam_memory_noop` pins.
 
-import { async } from "std";
+import {async} from "std";
 
 #[@BeamMemory.ProcessDict]
 var scratch: i32 = 0;

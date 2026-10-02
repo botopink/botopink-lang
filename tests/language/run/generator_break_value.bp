@@ -14,7 +14,10 @@
 
 fn upto(n: i32) -> @Iterator<i32> {
     var i = 0;
-    while (i < n) { yield i; i = i + 1; };
+    while (i < n) {
+        yield i;
+        i = i + 1;
+    }
     break 7;
 }
 
@@ -33,7 +36,9 @@ fn last() -> @Iterator<i32> {
 // A plain `fn` iterates a `@Iterator<T>`.
 fn plainDigits(g: @Iterator<i32>) -> string {
     var acc = "";
-    for (g) { x -> acc = acc + x.toString(); };
+    for (g) { x ->
+        acc = acc + x.toString();
+    }
     return acc;
 }
 

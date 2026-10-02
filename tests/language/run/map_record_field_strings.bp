@@ -17,7 +17,7 @@
 //// fails; here `ks.at(1) ?? "none"` comes first and resolves the element type
 //// for the checker, which is what lets commonJS answer the last line too.
 
-type Entry(key: string) {}
+type Entry(key: string)
 
 pub fn main() {
     val es = [Entry(key: "abc"), Entry(key: "de")];

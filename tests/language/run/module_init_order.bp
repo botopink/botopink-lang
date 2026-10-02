@@ -13,6 +13,7 @@ fn note(tag: string) -> i32 {
 }
 
 val first = note("first");
+
 val _second = note("second");
 
 pub fn main() {

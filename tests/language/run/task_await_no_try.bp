@@ -21,4 +21,6 @@ fn run() -> @Task<void> {
     @print("end");
 }
 
-pub fn main() { run(); }
+pub fn main() {
+    run();
+}

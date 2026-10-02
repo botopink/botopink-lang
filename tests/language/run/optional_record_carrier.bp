@@ -33,8 +33,9 @@
 //// that is `run/optional_chain_method.bp`'s, a gap of its own and not the
 //// carrier's.
 
-type Entry(key: string) {}
-type Table(rows: Entry[]) {}
+type Entry(key: string)
+
+type Table(rows: Entry[])
 
 pub fn main() {
     val es = [Entry(key: "abc"), Entry(key: "de")];
@@ -52,7 +53,7 @@ pub fn main() {
         val k: string = first.key;
         @print(k);
         @print(first.key.length());
-    };
+    }
 
     // `??` with a record default — the result is a record, and its field is a
     // declared `string`.
@@ -66,5 +67,5 @@ pub fn main() {
     // An element that is itself an array is a pointer for the same reason.
     val grid = [[1, 2, 3], [4]];
     val row = grid.at(0);
-    if (row != null) { @print(row.length()); };
+    if (row != null) @print(row.length());
 }

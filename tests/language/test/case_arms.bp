@@ -9,32 +9,54 @@ type Order {
 
 fn toInt(o: Order) -> i32 {
     return case o {
-        .Lt { -1 }
-        .Eq { 0 }
-        .Gt { 1 }
+        .Lt {
+            -1;
+        }
+        .Eq {
+            0;
+        }
+        .Gt {
+            1;
+        }
     };
 }
 
 fn describe(n: i32) -> string {
     return case n {
-        0 { "zero" }
-        1...9 { "digit" }
-        _ { v -> "big " + v.toString() }
+        0 {
+            "zero";
+        }
+        1...9 {
+            "digit";
+        }
+        _ { v ->
+            "big " + v.toString();
+        }
     };
 }
 
 fn yesNo(b: bool) -> string {
     return case b {
-        true { "yes" }
-        false { "no" }
+        true {
+            "yes";
+        }
+        false {
+            "no";
+        }
     };
 }
 
 fn code(s: string) -> i32 {
     return case s {
-        "a" { 1 }
-        "b" { 2 }
-        _ { 0 }
+        "a" {
+            1;
+        }
+        "b" {
+            2;
+        }
+        _ {
+            0;
+        }
     };
 }
 
@@ -42,7 +64,7 @@ fn doubledPlusOne(n: i32) -> i32 {
     return case n {
         i32 { m ->
             val d = m * 2;
-            d + 1
+            d + 1;
         }
     };
 }
@@ -80,9 +102,15 @@ test "§5.1 P3 a multi-statement body yields its last expression" {
 test "§5.1 case is an expression bound to a val" {
     val o = Order.Eq;
     val label = case o {
-        .Lt { "less" }
-        .Eq { "equal" }
-        .Gt { "greater" }
+        .Lt {
+            "less";
+        }
+        .Eq {
+            "equal";
+        }
+        .Gt {
+            "greater";
+        }
     };
     assert label == "equal";
 }

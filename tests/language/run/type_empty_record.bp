@@ -5,11 +5,17 @@
 pub type Marker()
 
 type MathOps() {
-    fn double(self: Self, x: i32) -> i32 { return x * 2; }
-    fn name(self: Self) -> string { return "ops"; }
+    fn double(self: Self, x: i32) -> i32 {
+        return x * 2;
+    }
+    fn name(self: Self) -> string {
+        return "ops";
+    }
 }
 
-fn describe(m: Marker) -> string { return "marker"; }
+fn describe(m: Marker) -> string {
+    return "marker";
+}
 
 pub fn main() {
     val ops = MathOps();

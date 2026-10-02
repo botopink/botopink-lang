@@ -12,17 +12,17 @@
 //// Three receivers, one rule: the item itself, a field of the item, and a
 //// `val` bound from the item inside the body.
 
-type Entry(key: string, value: string) {}
+type Entry(key: string, value: string)
 
 pub fn main() {
     val es = [Entry(key: "aa", value: "x"), Entry(key: "b", value: "yy")];
     for (es) { e ->
         @print(e.key.length());
-    };
+    }
     val words = ["alpha", "be"];
     for (words) { w ->
         val t = w.trim();
         @print(w.length());
         @print(t.length());
-    };
+    }
 }

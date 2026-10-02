@@ -4,12 +4,17 @@
 //// from `case` rather than from `is`.
 
 type Person(name: string, age: i32)
+
 type Vec(name: string, age: i32)
 
 fn nameOf(v: Person | Vec) -> string {
     return case v {
-        Person { "person" }
-        Vec { "vec" }
+        Person {
+            "person";
+        }
+        Vec {
+            "vec";
+        }
     };
 }
 

@@ -8,7 +8,7 @@
 //// taken for the array/string PROPERTY rename and called. That half is
 //// `00 · 04-js`'s, pinned in `expected-failures.txt`.
 
-type Entry(key: string) {}
+type Entry(key: string)
 
 pub fn main() {
     val es = [Entry(key: "abc"), Entry(key: "de")];

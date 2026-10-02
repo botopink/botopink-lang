@@ -6,6 +6,7 @@
 //// `test` body runs in a future context, so it awaits the component.
 
 type Element(count: i32) implement @Context<Element>
+
 type Request(code: i32)
 
 // A hook anchored at `Element`.

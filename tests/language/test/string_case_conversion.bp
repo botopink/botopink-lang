@@ -2,6 +2,10 @@
 //// backend. The host spellings (`toUpperCase`) are not methods of `string`:
 //// `reject/primitive_method_undeclared.bp` pins the refusal.
 
-test "toUpper raises every letter" { assert "abc".toUpper() == "ABC"; }
+test "toUpper raises every letter" {
+    assert "abc".toUpper() == "ABC";
+}
 
-test "toLower lowers every letter" { assert "ABC".toLower() == "abc"; }
+test "toLower lowers every letter" {
+    assert "ABC".toLower() == "abc";
+}

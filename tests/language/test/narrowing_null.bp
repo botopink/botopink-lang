@@ -8,20 +8,25 @@
 //// — or only lowers correctly — once the `?T` is gone: a record field, and a
 //// primitive method whose commonJS lowering depends on the receiver's type.
 
-type Entry(key: string) {}
+type Entry(key: string)
 
-fn entries() -> Entry[] { return [Entry(key: "abc")]; }
+fn entries() -> Entry[] {
+    return [Entry(key: "abc")];
+}
 
 test "a != null branch narrows the name it tests" {
     val first = entries().at(0);
     var got = 0;
-    if (first != null) { got = first.key.length(); };
+    if (first != null) got = first.key.length();
     assert got == 3;
 }
 
 test "a == null guard clause narrows the rest of the block" {
     val first = entries().at(0);
-    if (first == null) { assert false; return; };
+    if (first == null) {
+        assert false;
+        return;
+    }
     assert first.key.length() == 3;
 }
 
@@ -29,7 +34,7 @@ test "the else branch of == null narrows" {
     val ws = ["alpha"];
     val w = ws.at(0);
     var got = 0;
-    if (w == null) { got = 0; } else { got = w.length(); };
+    if (w == null) got = 0 else got = w.length();
     assert got == 5;
 }
 
@@ -37,13 +42,13 @@ test "&& narrows both names it tests" {
     val first = entries().at(0);
     val w = ["be"].at(0);
     var got = 0;
-    if (first != null && w != null) { got = first.key.length() + w.length(); };
+    if (first != null && w != null) got = first.key.length() + w.length();
     assert got == 5;
 }
 
 test "the narrowing ends with the branch" {
     val first = entries().at(0);
-    if (first != null) { assert first.key.length() == 3; };
+    if (first != null) assert first.key.length() == 3;
     val back = first ?? Entry(key: "zz");
     assert back.key.length() == 3;
 }

@@ -7,28 +7,38 @@
 
 fn byCase(n: i32) -> string {
     case n {
-        1 { return "one"; }
-        _ { @print("other"); }
-    };
+        1 {
+            return "one";
+        }
+        _ {
+            @print("other");
+        }
+    }
     return "many";
 }
 
 fn nested(n: i32) -> string {
     case n {
-        0 { @print("zero"); }
+        0 {
+            @print("zero");
+        }
         _ {
-            if (n > 10) { return "big"; };
+            if (n > 10) return "big";
             @print("small");
         }
-    };
+    }
     return "done";
 }
 
 fn announce(n: i32) {
     case n {
-        0 { return; }
-        _ { @print("announce"); }
-    };
+        0 {
+            return;
+        }
+        _ {
+            @print("announce");
+        }
+    }
     @print(n);
 }
 

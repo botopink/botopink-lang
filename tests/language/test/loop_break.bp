@@ -5,8 +5,8 @@ test "§10 an unconditioned loop stops at break" {
     var n = 0;
     loop {
         n = n + 1;
-        if (n == 5) { break; };
-    };
+        if (n == 5) break;
+    }
     assert n == 5;
 }
 
@@ -18,8 +18,8 @@ test "§10 break leaves only the inner loop" {
         loop {
             inner = inner + 1;
             break;
-        };
-    };
+        }
+    }
     assert outer == 3;
     assert inner == 3;
 }
@@ -27,8 +27,8 @@ test "§10 break leaves only the inner loop" {
 test "§10 break inside a condition loop" {
     var i = 0;
     while (i < 100) {
-        if (i == 7) { break; };
+        if (i == 7) break;
         i = i + 1;
-    };
+    }
     assert i == 7;
 }

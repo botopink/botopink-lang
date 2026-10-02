@@ -19,15 +19,21 @@ import {async} from "std";
 type Batch(task: @Task<@Result<Array<string>, string>>)
 
 fn fetchUser(id: i32) -> @Task<@Result<string, string>> {
-    if (id <= 0) { throw "user " + id.toString() + " does not exist"; };
+    if (id <= 0) throw "user " + id.toString() + " does not exist";
     return "user" + id.toString();
 }
 
 fn launch(a: i32, b: i32) -> Batch {
-    val all = async.allOf([
-        async { return try await fetchUser(a); },
-        async { return try await fetchUser(b); },
-    ]);
+    val all = async.allOf(
+        [
+            async {
+                return try await fetchUser(a);
+            },
+            async {
+                return try await fetchUser(b);
+            },
+        ],
+    );
     return Batch(task: all);
 }
 
@@ -35,7 +41,7 @@ fn show(r: @Result<Array<string>, string>) {
     case r {
         Ok(names) -> @print("ok " + names.join(","));
         Error(e) -> @print("error " + e);
-    };
+    }
 }
 
 fn run() -> @Task<void> {
@@ -45,4 +51,6 @@ fn run() -> @Task<void> {
     show(await bad.task);
 }
 
-pub fn main() { run(); }
+pub fn main() {
+    run();
+}

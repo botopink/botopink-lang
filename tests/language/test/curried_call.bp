@@ -8,15 +8,23 @@
 //// binds `f` for exactly this reason) and is here so that a fix has both shapes
 //// to pass.
 
-fn adder(n: i32) -> fn(x: i32) -> i32 { return { x -> x + n }; }
+fn adder(n: i32) -> fn(x: i32) -> i32 {
+    return { x -> x + n };
+}
 
-fn pick(which: bool) -> fn(x: i32) -> i32 { return { x -> if (which) { x } else { 0 - x } }; }
+fn pick(which: bool) -> fn(x: i32) -> i32 {
+    return { x -> if (which) x else 0 - x };
+}
 
-test "calling the result of a call" { assert adder(3)(4) == 7; }
+test "calling the result of a call" {
+    assert adder(3)(4) == 7;
+}
 
 test "calling the result of a call, with the binding the suite works around it with" {
     val f = adder(3);
     assert f(4) == 7;
 }
 
-test "calling the result of a call whose result is chosen at run time" { assert pick(false)(5) == 0 - 5; }
+test "calling the result of a call whose result is chosen at run time" {
+    assert pick(false)(5) == 0 - 5;
+}

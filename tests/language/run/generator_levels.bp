@@ -7,7 +7,7 @@
 //// plain `fn`, with no level at all.
 
 fn parse(n: i32) -> @Result<i32, string> {
-    if (n < 0) { throw "negative"; };
+    if (n < 0) throw "negative";
     return n;
 }
 
@@ -15,25 +15,36 @@ fn parse(n: i32) -> @Result<i32, string> {
 fn upto(n: i32) -> @Iterator<@Result<i32, string>> {
     val limit = try parse(n);
     var i = 0;
-    while (i < limit) { yield i; i = i + 1; };
+    while (i < limit) {
+        yield i;
+        i = i + 1;
+    }
 }
 
 // The iterating body reads each `@Result`; `try r` propagates.
 fn digits(n: i32) -> @Result<string, string> {
     var acc = "";
-    for (upto(n)) { r -> val v = try r; acc = acc + v.toString(); };
+    for (upto(n)) { r ->
+        val v = try r;
+        acc = acc + v.toString();
+    }
     return acc;
 }
 
 fn nums(n: i32) -> @Iterator<i32> {
     var i = 0;
-    while (i < n) { yield i; i = i + 1; };
+    while (i < n) {
+        yield i;
+        i = i + 1;
+    }
 }
 
 // A plain `fn` iterates an iterator.
 fn total(n: i32) -> i32 {
     var acc = 0;
-    for (nums(n)) { x -> acc = acc + x; };
+    for (nums(n)) { x ->
+        acc = acc + x;
+    }
     return acc;
 }
 

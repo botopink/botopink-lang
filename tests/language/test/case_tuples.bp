@@ -3,22 +3,34 @@
 
 fn classify(p: #(i32, string)) -> string {
     return case p {
-        #(0, s) { "zero " + s }
-        #(n, "x") { "x " + n.toString() }
-        #(_, s) { s }
+        #(0, s) {
+            "zero " + s;
+        }
+        #(n, "x") {
+            "x " + n.toString();
+        }
+        #(_, s) {
+            s;
+        }
     };
 }
 
 fn first(t: #(i32, i32, i32)) -> i32 {
     return case t {
-        #(a, ..) { a }
+        #(a, ..) {
+            a;
+        }
     };
 }
 
 fn describeLabeled(r: #(name: string, pop: i32)) -> string {
     return case r {
-        #("SP", p) { "capital " + p.toString() }
-        #(n, _) { n }
+        #("SP", p) {
+            "capital " + p.toString();
+        }
+        #(n, _) {
+            n;
+        }
     };
 }
 

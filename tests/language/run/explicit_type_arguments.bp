@@ -4,7 +4,9 @@
 //// handover row 3) and `first<string>([], …)` never parsed.
 
 type Box<T>(value: T) {
-    pub fn get(self: Self<T>) -> T { return self.value; }
+    pub fn get(self: Self<T>) -> T {
+        return self.value;
+    }
 }
 
 fn first<T>(xs: T[], fallback: T) -> T {

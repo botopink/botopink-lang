@@ -29,7 +29,7 @@ pub fn main() {
     val tiny = Pt(x: 1e-320, n: 1);
     @print(tiny.x > 0.0);
     @print(p.scaled(0.5));
-    val {x, n} = p;
+    val { x, n } = p;
     @print(x * 3.0, n);
     val Pt(y, _) = origin();
     @print(y);

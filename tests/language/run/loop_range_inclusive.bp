@@ -3,9 +3,15 @@
 //// 1 2 3 4; an empty range runs no iteration.
 
 pub fn main() {
-    for (1..4) { i -> @print(i); };
-    for (1...4) { i -> @print(i); };
+    for (1..4) { i ->
+        @print(i);
+    }
+    for (1...4) { i ->
+        @print(i);
+    }
     var n = 0;
-    for (3...2) { i -> n = n + 1; };
+    for (3...2) { i ->
+        n = n + 1;
+    }
     @print(n);
 }

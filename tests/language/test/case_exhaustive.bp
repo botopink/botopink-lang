@@ -9,28 +9,42 @@ type Maybe<T> {
 
 fn size(v: i32 | string) -> i32 {
     return case v {
-        i32 { n -> n }
-        string { s -> s.length }
+        i32 { n ->
+            n;
+        }
+        string { s ->
+            s.length;
+        }
     };
 }
 
 fn orNone(m: Maybe<i32>) -> i32 | string {
     return case m {
-        .Some(value: n) { n }
-        .None { "none" }
+        .Some(value: n) {
+            n;
+        }
+        .None {
+            "none";
+        }
     };
 }
 
 fn wholeType(n: i32) -> i32 {
     return case n {
-        i32 { m -> m + 1 }
+        i32 { m ->
+            m + 1;
+        }
     };
 }
 
 fn innerSize(m: Maybe<i32 | string>) -> i32 {
     return case m {
-        .Some(value: v) { size(v) }
-        .None { 0 }
+        .Some(value: v) {
+            size(v);
+        }
+        .None {
+            0;
+        }
     };
 }
 
@@ -58,6 +72,6 @@ test "§3.2 arms of different types yield their union" {
 
 test "§3.2 an if with branches of different types yields a union" {
     val flag = true;
-    val v = if (flag) { 2 } else { "two" };
+    val v = if (flag) 2 else "two";
     assert size(v) == 2;
 }

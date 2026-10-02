@@ -10,6 +10,7 @@
 //// on commonJS and wasm (a reference and a pointer).
 
 type Person(name: string, age: i32)
+
 type Vec(name: string, age: i32)
 
 pub fn main() {

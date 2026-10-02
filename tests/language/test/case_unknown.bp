@@ -9,18 +9,32 @@ type Maybe<T> {
 
 fn describe(x: unknown) -> string {
     return case x {
-        i32 { n -> "number " + n.toString() }
-        string when (x == "") { "empty text" }
-        string { s -> "text " + s }
-        _ { "other" }
+        i32 { n ->
+            "number " + n.toString();
+        }
+        string when (x == "") {
+            "empty text";
+        }
+        string { s ->
+            "text " + s;
+        }
+        _ {
+            "other";
+        }
     };
 }
 
 fn innerLength(b: unknown) -> i32 {
     return case b {
-        Maybe.Some(value: v) when (v is string) { v.length }
-        Maybe.Some(value: v) { -1 }
-        _ { -2 }
+        Maybe.Some(value: v) when (v is string) {
+            v.length;
+        }
+        Maybe.Some(value: v) {
+            -1;
+        }
+        _ {
+            -2;
+        }
     };
 }
 
@@ -58,6 +72,6 @@ test "§5.3 is in a guard narrows a variable bound as unknown" {
 test "§4.1 if (x is i32) narrows and converts inside the block" {
     val a: unknown = 2.0;
     var got = 0;
-    if (a is i32) { got = a + 1; };
+    if (a is i32) got = a + 1;
     assert got == 3;
 }

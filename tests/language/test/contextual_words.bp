@@ -12,7 +12,9 @@ import {async} from "std";
 
 type Grid(cells: i32[]) {
     fn iter(self: Self) -> @Iterator<i32> {
-        for (self.cells) { c -> yield c; };
+        for (self.cells) { c ->
+            yield c;
+        }
     }
 }
 
@@ -27,7 +29,9 @@ type Feed(stream: string, iter: i32)
 test "decision 125 iter is a method name and for walks what it answers" {
     val g = Grid(cells: [1, 2, 3]);
     var total = 0;
-    for (g.iter()) { c -> total = total + c; };
+    for (g.iter()) { c ->
+        total = total + c;
+    }
     assert total == 6;
 }
 
@@ -49,7 +53,16 @@ test "decision 125 stream and iter are field names" {
 }
 
 test "decision 124 async names the std module beside an async block" {
-    val all = async.all([async { return 1; }, async { return 2; }]);
+    val all = async.all(
+        [
+            async {
+                return 1;
+            },
+            async {
+                return 2;
+            },
+        ],
+    );
     val tasks = [all];
     assert tasks.length == 1;
 }

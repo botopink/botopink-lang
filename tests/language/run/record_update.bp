@@ -6,8 +6,11 @@
 //// the first field and the third one missing, on all four targets.
 
 type Cfg(a: i32, revalidate: i32, name: string)
+
 type Inner(v: i32, w: string)
+
 type Outer(inner: Inner, n: i32)
+
 type Box<T>(value: T, tag: string)
 
 pub fn main() {

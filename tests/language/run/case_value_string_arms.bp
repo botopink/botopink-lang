@@ -17,13 +17,30 @@
 pub fn main() {
     val x = 5;
 
-    val braced = case x { 5 { "five" } _ { "other" } };
+    val braced = case x {
+        5 {
+            "five";
+        }
+        _ {
+            "other";
+        }
+    };
     @print(braced);
 
-    val arrowed = case x { 5 -> "five"; _ -> "other"; };
+    val arrowed = case x {
+        5 -> "five";
+        _ -> "other";
+    };
     @print(arrowed);
 
     val y = 7;
-    val other = case y { 5 { "five" } _ { "other" } };
+    val other = case y {
+        5 {
+            "five";
+        }
+        _ {
+            "other";
+        }
+    };
     @print(other);
 }

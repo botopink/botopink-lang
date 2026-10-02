@@ -7,12 +7,18 @@
 //// loop to `for`, which is the spelling here. The `;` AFTER the loop's `}` is
 //// decision 29's (C-13) and stays until that lands.
 
-fn f(x: i32) -> i32 { return x + 1; }
+fn f(x: i32) -> i32 {
+    return x + 1;
+}
 
 pub fn main() {
     val xs = [1, 2];
     var acc = 0;
-    for (xs) { x -> acc = acc + f(x) };
-    val ys = xs.map { x -> f(x) };
+    for (xs) { x ->
+        acc = acc + f(x);
+    }
+    val ys = xs.map { x ->
+        f(x);
+    };
     @print(acc.toString() + ys.length.toString());
 }

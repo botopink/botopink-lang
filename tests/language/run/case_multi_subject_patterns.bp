@@ -40,8 +40,8 @@ fn area(s: Shape, k: i32) -> i32 {
 
 fn guarded(a: i32, b: i32) -> string {
     return case a, b {
-        x, y when (x > y) -> "gt " + x.toString();
-        x, y when (x == y) -> "eq " + y.toString();
+        x, y if x > y -> "gt " + x.toString();
+        x, y if x == y -> "eq " + y.toString();
         _, y -> "lt " + y.toString();
     };
 }

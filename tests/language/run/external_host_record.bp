@@ -51,12 +51,17 @@ pub fn main() {
     @print(hostPoint().x);
 
     val m = hostMaybePoint();
-    if (m) { q -> @print(sum(q)); };
+    if (m) {
+        q ->
+        @print(sum(q));
+    }
 
     val ps = hostPoints();
     @print(ps.length);
     var total = 0;
-    for (ps) { q -> total = total + sum(q); };
+    for (ps) { q ->
+        total = total + sum(q);
+    }
     @print(total);
 
     @print(sum(hostTaggedPoint()));

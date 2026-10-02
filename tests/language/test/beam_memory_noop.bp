@@ -22,7 +22,9 @@ var hits: i32 = 0;
 #[@BeamMemory.PersistentTerm]
 var version: i32 = 101;
 
-fn bump() { hits = hits + 1; }
+fn bump() {
+    hits = hits + 1;
+}
 
 test "a bare var is one value for the program" {
     bare = bare + 1;

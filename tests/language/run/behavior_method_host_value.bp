@@ -15,11 +15,13 @@ behavior Greeter {
 }
 
 type Echo(word: string) {
-    pub fn greet(self: Self, who: string) -> string { return self.word + " " + who; }
+    pub fn greet(self: Self, who: string) -> string {
+        return self.word + " " + who;
+    }
 }
 
-#[@External.Node("({ greet: function (who) { return 'hi, ' + who; } })"),
-  @External.Erlang("#{greet => fun(_Self, Who) -> iolist_to_binary([<<\"hi, \">>, Who]) end}")]
+#[@External.Node("({ greet: function (who) { return 'hi, ' + who; } })")]
+#[@External.Erlang("#{greet => fun(_Self, Who) -> iolist_to_binary([<<\"hi, \">>, Who]) end}")]
 declare fn makeGreeter() -> Greeter;
 
 fn welcome(g: Greeter) -> string {

@@ -10,7 +10,7 @@
 type Job(title: string, outcome: @Result<i32, string>)
 
 fn check(n: i32) -> @Result<i32, string> {
-    if (n < 0) { throw "negative " + n.toString(); };
+    if (n < 0) throw "negative " + n.toString();
     return n;
 }
 
@@ -20,19 +20,47 @@ fn attempt(j: Job) -> @Result<string, string> {
 }
 
 pub fn main() {
-    case check(3) { Ok(v) -> @print("first " + v.toString()); Error(e) -> @print(e); };
-    case check(-4) { Ok(v) -> @print(v.toString()); Error(e) -> @print("second " + e); };
+    case check(3) {
+        Ok(v) -> @print("first " + v.toString());
+        Error(e) -> @print(e);
+    }
+    case check(-4) {
+        Ok(v) -> @print(v.toString());
+        Error(e) -> @print("second " + e);
+    }
     val r: @Result<i32, string> = check(-5);
-    case r { Ok(v) -> @print(v.toString()); Error(e) -> @print(e); };
-    for ([check(1), check(-7)]) { x -> case x { Ok(v) -> @print(v.toString()); Error(e) -> @print(e); }; };
+    case r {
+        Ok(v) -> @print(v.toString());
+        Error(e) -> @print(e);
+    }
+    for ([check(1), check(-7)]) { x ->
+        case x {
+            Ok(v) -> @print(v.toString());
+            Error(e) -> @print(e);
+        }
+    }
     for ([2, 3]) { n ->
         val v = n * 10;
-        for ([v, v + 1]) { e -> @print(e.toString()); };
-    };
+        for ([v, v + 1]) { e ->
+            @print(e.toString());
+        }
+    }
     val done = Job(title: "build", outcome: check(2));
     val failed = Job(title: "test", outcome: check(-8));
-    case done.outcome { Ok(v) -> @print(done.title + " " + v.toString()); Error(e) -> @print(e); };
-    case failed.outcome { Ok(v) -> @print(v.toString()); Error(e) -> @print(failed.title + ": " + e); };
-    case attempt(done) { Ok(s) -> @print(s); Error(e) -> @print(e); };
-    case attempt(failed) { Ok(s) -> @print(s); Error(e) -> @print("attempt: " + e); };
+    case done.outcome {
+        Ok(v) -> @print(done.title + " " + v.toString());
+        Error(e) -> @print(e);
+    }
+    case failed.outcome {
+        Ok(v) -> @print(v.toString());
+        Error(e) -> @print(failed.title + ": " + e);
+    }
+    case attempt(done) {
+        Ok(s) -> @print(s);
+        Error(e) -> @print(e);
+    }
+    case attempt(failed) {
+        Ok(s) -> @print(s);
+        Error(e) -> @print("attempt: " + e);
+    }
 }

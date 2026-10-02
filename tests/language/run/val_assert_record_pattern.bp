@@ -22,7 +22,10 @@ fn describe(p: Person | i32) -> string {
 }
 
 fn byLabel(p: Person | i32) -> string {
-    val assert Person(age: years, name: who) = p catch Person(name: "none", age: 0);
+    val assert Person(age: years, name: who) = p catch Person(
+        name: "none",
+        age: 0,
+    );
     return who + " is " + years.toString();
 }
 

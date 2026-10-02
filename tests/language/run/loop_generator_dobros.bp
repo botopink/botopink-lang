@@ -6,9 +6,11 @@ pub fn main() {
     var contador = 0;
     val dobros = iter loop {
         contador = contador + 1;
-        if (contador == 10) { break contador * 2; };
+        if (contador == 10) break contador * 2;
         yield contador * 2;
     };
-    for (dobros) { d -> @print(d); };
+    for (dobros) { d ->
+        @print(d);
+    }
     @print(contador);
 }

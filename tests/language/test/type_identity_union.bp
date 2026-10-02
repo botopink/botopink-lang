@@ -4,6 +4,7 @@
 //// assertions that need no union.
 
 type Person(name: string, age: i32)
+
 type Vec(name: string, age: i32)
 
 test "§4.2 `is` on a named type answers by the value, not by the annotation" {

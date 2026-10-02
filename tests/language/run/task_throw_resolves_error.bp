@@ -12,7 +12,7 @@
 //// beam and wasm run a Task eagerly and have no rejection to avoid.
 
 fn check(n: i32) -> @Task<@Result<i32, string>> {
-    if (n < 0) { throw "negative"; };
+    if (n < 0) throw "negative";
     return n;
 }
 
@@ -20,11 +20,14 @@ fn report(r: @Result<i32, string>) {
     case r {
         Ok(v) -> @print("resolved Ok " + v.toString());
         Error(e) -> @print("resolved Error " + e);
-    };
+    }
 }
 
 #[@External.Node("""$0.then((__r) => $1(__r), (__e) => console.log('rejected'))""")]
-declare fn observe(t: @Task<@Result<i32, string>>, onResolve: fn(r: @Result<i32, string>) -> void);
+declare fn observe(
+    t: @Task<@Result<i32, string>>,
+    onResolve: fn(r: @Result<i32, string>),
+);
 
 pub fn main() {
     observe(check(1), report);

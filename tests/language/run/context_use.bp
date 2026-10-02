@@ -9,6 +9,7 @@
 //// owner type is declared here (no library).
 
 type Element(count: i32) implement @Context<Element>
+
 type State(value: i32)
 
 fn state(initial: i32) -> @Component<Element, State> {
@@ -19,7 +20,10 @@ fn pair(a: i32, b: i32) -> @Component<Element, #(i32, i32)> {
     return #(a, b);
 }
 
-fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Component<Element, #(i32, fn(action: i32) -> i32)> {
+fn optimistic(
+    base: i32,
+    f: fn(current: i32, action: i32) -> i32,
+) -> @Component<Element, #(i32, fn(action: i32) -> i32)> {
     val push = { action -> f(base, action) };
     return #(base, push);
 }
@@ -39,7 +43,7 @@ fn Widget(n: i32) -> @Component<Element, Element> {
 }
 
 fn Fields() -> @Component<Element, Element> {
-    val {value} = use state(5);
+    val { value } = use state(5);
     return Element(count: value);
 }
 
@@ -54,7 +58,9 @@ fn Positional() -> @Component<Element, Element> {
 }
 
 fn Effectful() -> @Component<Element, Element> {
-    use effect({ -> return 9; });
+    use effect({ ->
+        return 9;
+    });
     val c = use state(1);
     return Element(count: c.value);
 }

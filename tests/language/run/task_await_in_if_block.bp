@@ -16,7 +16,7 @@ fn maybe(flag: bool) -> @Task<i32> {
     if (flag) {
         val got = await one();
         total = got;
-    };
+    }
     return total;
 }
 
@@ -26,12 +26,12 @@ fn nested(a: bool, b: bool) -> @Task<i32> {
         if (b) {
             val got = await one();
             total = total + got;
-        };
+        }
         total = total + 100;
     } else {
         val got = await one();
         total = total - got;
-    };
+    }
     return total;
 }
 
@@ -43,4 +43,6 @@ fn run() -> @Task<void> {
     @print(await nested(false, true));
 }
 
-pub fn main() { run(); }
+pub fn main() {
+    run();
+}

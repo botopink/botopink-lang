@@ -8,24 +8,40 @@ type Shape {
 
 fn sign(x: i32) -> string {
     return case x {
-        i32 when (x > 0) { "positive" }
-        i32 when (x < 0) { "negative" }
-        _ { "zero" }
+        i32 when (x > 0) {
+            "positive";
+        }
+        i32 when (x < 0) {
+            "negative";
+        }
+        _ {
+            "zero";
+        }
     };
 }
 
 fn kind(s: Shape) -> string {
     return case s {
-        .Rect(width: w, height: h) when (w == h) { "square" }
-        .Rect(..) { "rect" }
-        .Circle(..) { "circle" }
+        .Rect(width: w, height: h) when (w == h) {
+            "square";
+        }
+        .Rect(..) {
+            "rect";
+        }
+        .Circle(..) {
+            "circle";
+        }
     };
 }
 
 fn bucket(n: i32) -> string {
     return case n {
-        _ when (n % 2 == 0) { v -> "even " + v.toString() }
-        _ { v -> "odd " + v.toString() }
+        _ when (n % 2 == 0) { v ->
+            "even " + v.toString();
+        }
+        _ { v ->
+            "odd " + v.toString();
+        }
     };
 }
 

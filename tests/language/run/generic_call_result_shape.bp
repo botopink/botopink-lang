@@ -13,9 +13,7 @@ fn ident<T>(x: T) -> T {
 }
 
 fn pick<T>(c: bool, a: T, b: T) -> T {
-    if (c) {
-        return a;
-    }
+    if (c) return a;
     return b;
 }
 

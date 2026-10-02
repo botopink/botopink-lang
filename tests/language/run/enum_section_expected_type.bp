@@ -15,13 +15,19 @@
 
 type Token {
     Color {
-        Red { 100, 500 }
+        Red {
+            100,
+            500,
+        }
     }
 }
 
 type Border {
     Color {
-        Red { 100, 500 }
+        Red {
+            100,
+            500,
+        }
     }
 }
 

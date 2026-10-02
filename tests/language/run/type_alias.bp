@@ -8,12 +8,15 @@
 type ParseError { Empty }
 
 pub type Parser<T> = @Result<T, ParseError>;
+
 type Id = i32;
+
 type Pair<A, B> = #(A, B);
+
 type Ids = Id[];
 
 fn parsePort(s: string) -> @Result<i32, ParseError> {
-    if (s == "") { throw ParseError.Empty; };
+    if (s == "") throw ParseError.Empty;
     return 8080;
 }
 

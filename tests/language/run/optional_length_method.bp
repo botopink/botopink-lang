@@ -24,7 +24,7 @@
 //// (`comptime/AGENTS.md` § The null test narrows). This cell stays the receiver
 //// that was never tested at all.
 
-type Entry(key: string) {}
+type Entry(key: string)
 
 pub fn main() {
     val words = ["alpha", "be"];
@@ -32,5 +32,5 @@ pub fn main() {
     val es = [Entry(key: "abc")];
     @print(es.at(0)?.key.length());
     val maybe = words.at(1);
-    if (maybe != null) { @print(maybe.length()); };
+    if (maybe != null) @print(maybe.length());
 }

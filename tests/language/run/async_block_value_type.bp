@@ -9,18 +9,20 @@
 type Holder(t: @Task<i32>, r: @Task<@Result<i32, string>>, s: @Task<@Result<i32, string>>)
 
 fn check(n: i32) -> @Result<i32, string> {
-    if (n < 0) { throw "negative"; };
+    if (n < 0) throw "negative";
     return n;
 }
 
 fn make(n: i32) -> Holder {
-    val t: @Task<i32> = async { return n + 1; };
+    val t: @Task<i32> = async {
+        return n + 1;
+    };
     val r: @Task<@Result<i32, string>> = async {
         val v = try check(n);
         return v * 10;
     };
     val s = async {
-        if (n < 0) { throw "below zero"; };
+        if (n < 0) throw "below zero";
         return n;
     };
     return Holder(t: t, r: r, s: s);
@@ -30,7 +32,7 @@ fn show(r: @Result<i32, string>) {
     case r {
         Ok(v) -> @print("ok " + v.toString());
         Error(e) -> @print("error " + e);
-    };
+    }
 }
 
 fn run() -> @Task<void> {
@@ -44,4 +46,6 @@ fn run() -> @Task<void> {
     show(await k.s);
 }
 
-pub fn main() { run(); }
+pub fn main() {
+    run();
+}

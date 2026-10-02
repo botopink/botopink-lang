@@ -2,14 +2,18 @@
 
 test "§10 a condition loop repeats while true" {
     var attempts = 0;
-    while (attempts < 3) { attempts = attempts + 1; };
+    while (attempts < 3) {
+        attempts = attempts + 1;
+    }
     assert attempts == 3;
 }
 
 test "§10 a condition false on entry runs no iteration" {
     var n = 10;
     var runs = 0;
-    while (n < 3) { runs = runs + 1; };
+    while (n < 3) {
+        runs = runs + 1;
+    }
     assert runs == 0;
 }
 
@@ -19,7 +23,7 @@ test "§10 several outer vars reassigned inside a condition loop" {
     while (i < 4) {
         acc = acc + i.toString();
         i = i + 1;
-    };
+    }
     assert acc == "0123";
     assert i == 4;
 }

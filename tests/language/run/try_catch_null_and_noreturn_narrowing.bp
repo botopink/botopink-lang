@@ -11,7 +11,7 @@ pub type Post(title: string)
 
 fn loadPost(id: i32) -> @Task<@Result<Post, string>> {
     return async {
-        if (id == 1) { return Post(title: "hello"); };
+        if (id == 1) return Post(title: "hello");
         throw "missing";
     };
 }
@@ -22,13 +22,13 @@ fn notFound() -> noreturn {
 
 fn titleOf(id: i32) -> @Task<string> {
     val post = try await loadPost(id) catch null;
-    if (post == null) { return "none"; };
+    if (post == null) return "none";
     return post.title;
 }
 
 fn mustTitle(id: i32) -> @Task<string> {
     val post: ?Post = try await loadPost(id) catch null;
-    if (post == null) { notFound(); };
+    if (post == null) notFound();
     return post.title;
 }
 

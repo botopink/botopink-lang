@@ -41,25 +41,25 @@
 ////         Either one alone compiles and runs on beam; together they are
 ////         `UnknownFunction`.
 
-type Entry(key: string) {}
+type Entry(key: string)
 
 fn firstKeyLength(es: Entry[]) -> i32 {
     val first = es.at(0);
-    if (first == null) { return 0; };
+    if (first == null) return 0;
     return first.key.length();
 }
 
 fn pair(es: Entry[], ws: string[]) -> string {
     val e = es.at(0);
     val w = ws.at(0);
-    if (e == null || w == null) { return "none"; };
+    if (e == null || w == null) return "none";
     return e.key.length().toString() + "/" + w.length().toString();
 }
 
 type Row(cells: string[]) {
     fn widest(self: Self) -> i32 {
         val c = self.cells.at(0);
-        if (c == null) { return 0; };
+        if (c == null) return 0;
         return c.length();
     }
 }

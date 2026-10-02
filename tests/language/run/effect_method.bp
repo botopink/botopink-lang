@@ -24,7 +24,7 @@ type Box(items: Array<i32>) {
     fn each(self: Self) -> @Iterator<i32> {
         for (self.items) { x ->
             yield x;
-        };
+        }
     }
 }
 
@@ -34,7 +34,7 @@ type Tally(seed: i32) implement Tally {
         while (i < n) {
             yield i;
             i = i + 1;
-        };
+        }
     }
 
     fn total(self: Self, n: i32) -> @Task<i32> {
@@ -43,7 +43,7 @@ type Tally(seed: i32) implement Tally {
         while (i < n) {
             acc = acc + i;
             i = i + 1;
-        };
+        }
         @print(acc);
         return acc;
     }
@@ -58,7 +58,7 @@ type Shape {
         while (i < n) {
             yield i;
             i = i + 1;
-        };
+        }
     }
 }
 
@@ -66,7 +66,7 @@ fn digits(xs: @Iterator<i32>) -> i32 {
     var acc = 0;
     for (xs) { v ->
         acc = acc * 10 + v;
-    };
+    }
     return acc;
 }
 

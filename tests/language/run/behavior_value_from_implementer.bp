@@ -14,11 +14,15 @@ behavior Lookup {
 }
 
 type Memory(prefix: string) implement Lookup {
-    fn find(self: Self, key: string) -> string { return self.prefix + key; }
+    fn find(self: Self, key: string) -> string {
+        return self.prefix + key;
+    }
 }
 
 type Disk(root: string) implement Lookup {
-    fn find(self: Self, key: string) -> string { return self.root + "/" + key; }
+    fn find(self: Self, key: string) -> string {
+        return self.root + "/" + key;
+    }
 }
 
 fn memory() -> Memory {

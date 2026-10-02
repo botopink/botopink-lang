@@ -13,11 +13,11 @@
 //// that every argument is evaluated before any parameter is re-bound.
 
 fn count(n: i32, acc: i32) -> i32 {
-    if (n == 0) { return acc; } else { return count(n - 1, acc + 1); }
+    if (n == 0) return acc else return count(n - 1, acc + 1);
 }
 
 fn sumTo(n: i32, acc: i32) -> i32 {
-    if (n == 0) { return acc; };
+    if (n == 0) return acc;
     return sumTo(n - 1, acc + n);
 }
 

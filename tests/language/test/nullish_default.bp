@@ -13,15 +13,21 @@
 //// `test/optional.bp` does not see it: its optionals are explicit `null`s.
 
 fn find(n: i32) -> ?i32 {
-    if (n > 0) { return n; };
+    if (n > 0) return n;
     return null;
 }
 
-test "?? answers the fallback when the optional is null" { assert (find(-1) ?? 7) == 7; }
+test "?? answers the fallback when the optional is null" {
+    assert (find(-1) ?? 7) == 7;
+}
 
-test "?? answers the value when the optional carries one" { assert (find(5) ?? 7) == 5; }
+test "?? answers the value when the optional carries one" {
+    assert (find(5) ?? 7) == 5;
+}
 
-test "?? does not swallow a zero" { assert (find(0) ?? 7) == 7; }
+test "?? does not swallow a zero" {
+    assert (find(0) ?? 7) == 7;
+}
 
 test "?? chains after ?." {
     val o = Outer(inner: null);

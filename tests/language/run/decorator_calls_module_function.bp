@@ -8,7 +8,7 @@
 //// logic inline in the body.
 
 fn plural(n: i32, word: string) -> string {
-    return if (n == 1) { "1 " + word } else { n.toString() + " " + word + "s" };
+    return if (n == 1) "1 " + word else n.toString() + " " + word + "s";
 }
 
 fn fieldSummary(count: i32) -> string {
@@ -16,7 +16,13 @@ fn fieldSummary(count: i32) -> string {
 }
 
 fn sized(comptime decl: @Decl) {
-    @emit("pub fn summary() -> string { return \"" + decl.name + ": " + fieldSummary(decl.fields.length) + "\"; }");
+    @emit(
+        "pub fn summary() -> string { return \""
+            + decl.name
+            + ": "
+            + fieldSummary(decl.fields.length)
+            + "\"; }",
+    );
 }
 
 #[sized]

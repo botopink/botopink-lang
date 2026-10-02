@@ -25,10 +25,18 @@ fn labels(rs: #(a: i32, b: string)[]) -> i32 {
     return rs.length;
 }
 
-test "an array of labeled tuples is a type" { assert rows().length == 2; }
+test "an array of labeled tuples is a type" {
+    assert rows().length == 2;
+}
 
-test "an array of labeled tuples is a parameter type" { assert labels(rows()) == 2; }
+test "an array of labeled tuples is a parameter type" {
+    assert labels(rows()) == 2;
+}
 
-test "the suffix still applies to a generic type" { assert boxes().length == 3; }
+test "the suffix still applies to a generic type" {
+    assert boxes().length == 3;
+}
 
-test "an array of @Result is a return type" { assert attempts().length == 0; }
+test "an array of @Result is a return type" {
+    assert attempts().length == 0;
+}

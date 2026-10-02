@@ -18,15 +18,21 @@ pub behavior Source {
 }
 
 pub type Memory(prefix: string) implement Source {
-    fn query(self: Self, name: string) -> string { return self.prefix + ":" + name; }
+    fn query(self: Self, name: string) -> string {
+        return self.prefix + ":" + name;
+    }
 }
 
 pub type Disk(root: string) implement Source {
-    fn query(self: Self, name: string) -> string { return self.root + "/" + name; }
+    fn query(self: Self, name: string) -> string {
+        return self.root + "/" + name;
+    }
 }
 
 pub type Table(rows: string) {
-    pub fn query(self: Self, name: string) -> string { return "table " + self.rows + name; }
+    pub fn query(self: Self, name: string) -> string {
+        return "table " + self.rows + name;
+    }
 }
 
 fn read(s: Source) -> string {
@@ -34,9 +40,7 @@ fn read(s: Source) -> string {
 }
 
 fn open(disk: bool) -> Source {
-    if (disk) {
-        return Disk(root: "/var");
-    }
+    if (disk) return Disk(root: "/var");
     return Memory(prefix: "mem");
 }
 

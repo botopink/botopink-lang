@@ -6,11 +6,11 @@
 //// printed the float `0.0` an `if` answered as `0`.
 
 fn absF(x: f64) -> f64 {
-    return if (x < 0.0) { 0.0 - x } else { x };
+    return if (x < 0.0) 0.0 - x else x;
 }
 
 fn pick(c: bool) -> f64 {
-    val v = if (c) { 1.5 } else { 2.25 };
+    val v = if (c) 1.5 else 2.25;
     return v;
 }
 
@@ -20,7 +20,7 @@ pub fn main() {
     @print(pick(true));
     @print(pick(false));
     val d = 0.5 - 2.0;
-    val m = if (d < 0.0) { 0.0 - d } else { d };
+    val m = if (d < 0.0) 0.0 - d else d;
     @print(m);
-    @print(if (d > 0.0) { d } else { 0.0 });
+    @print(if (d > 0.0) d else 0.0);
 }

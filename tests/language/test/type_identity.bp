@@ -8,6 +8,7 @@
 //// its siblings `type_identity_unknown`, `_union` and `_case` carry the rest.
 
 type Person(name: string, age: i32)
+
 type Vec(name: string, age: i32)
 
 test "§4 two types with the same fields are different values" {

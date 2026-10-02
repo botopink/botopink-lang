@@ -2,7 +2,7 @@
 //// module loads (`-on_load`), and read from anywhere on the node: a process
 //// spawned afterwards reads `101`.
 
-import { async } from "std";
+import {async} from "std";
 
 #[@BeamMemory.PersistentTerm]
 var version: i32 = 101;

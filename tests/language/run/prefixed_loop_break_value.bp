@@ -8,8 +8,8 @@
 fn line(it: @Iterator<i32>) -> string {
     var acc = "";
     for (it) { x ->
-        if (acc == "") { acc = x.toString(); } else { acc = acc + " " + x.toString(); };
-    };
+        if (acc == "") acc = x.toString() else acc = acc + " " + x.toString();
+    }
     return acc;
 }
 
@@ -17,14 +17,14 @@ pub fn main() {
     var n = 0;
     val tens = iter loop {
         n = n + 1;
-        if (n == 4) { break n * 10; };
+        if (n == 4) break n * 10;
         yield n * 10;
     };
     @print(line(tens));
     @print(n);
 
     val untilNegative = iter for ([5, -1, 7]) { x ->
-        if (x < 0) { break x; };
+        if (x < 0) break x;
         yield x;
     };
     @print(line(untilNegative));

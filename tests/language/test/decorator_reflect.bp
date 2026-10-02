@@ -8,12 +8,20 @@
 fn describe(comptime decl: @Decl) {
     val isType = decl.kind == DeclKind.Type;
     @emit("pub fn describedName() -> string { return \"" + decl.name + "\"; }");
-    @emit("pub fn describedIsType() -> bool { return " + isType.toString() + "; }");
+    @emit(
+        "pub fn describedIsType() -> bool { return "
+            + isType.toString()
+            + "; }",
+    );
 }
 
 #[describe]
 type Account(id: i32, owner: string)
 
-test "the decorator reads the declaration's name" { assert describedName() == "Account"; }
+test "the decorator reads the declaration's name" {
+    assert describedName() == "Account";
+}
 
-test "the decorator reads the declaration's kind" { assert describedIsType(); }
+test "the decorator reads the declaration's kind" {
+    assert describedIsType();
+}

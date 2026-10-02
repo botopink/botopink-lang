@@ -9,7 +9,7 @@
 //// that the value it produces is the one the chain implies.
 
 fn parse(n: i32) -> @Result<i32, string> {
-    if (n < 0) { throw "negative"; };
+    if (n < 0) throw "negative";
     return n;
 }
 
@@ -28,7 +28,10 @@ fn load(n: i32) -> @Task<@Result<i32, string>> {
 fn upTo(n: i32) -> @Iterator<@Result<i32, string>> {
     val limit = try parse(n);
     var i = 0;
-    while (i < limit) { yield i; i = i + 1; };
+    while (i < limit) {
+        yield i;
+        i = i + 1;
+    }
 }
 
 test "decision 121 a Task body holds the `try` its @Result value grants" {
@@ -38,6 +41,9 @@ test "decision 121 a Task body holds the `try` its @Result value grants" {
 
 test "decision 121 an iterator body holds the `try` its @Result item grants" {
     var acc = "";
-    for (upTo(3)) { r -> val v = try r catch 0; acc = acc + v.toString(); };
+    for (upTo(3)) { r ->
+        val v = try r catch 0;
+        acc = acc + v.toString();
+    }
     assert acc == "012";
 }

@@ -13,7 +13,9 @@ fn connect(host: string, port: i32 = 80) -> string {
 }
 
 type P(x: i32 = 0, y: i32) {
-    pub fn bump(self: Self, by: i32 = 5) -> i32 { return self.y + by; }
+    pub fn bump(self: Self, by: i32 = 5) -> i32 {
+        return self.y + by;
+    }
 }
 
 pub fn main() {

@@ -8,21 +8,23 @@
 //// hand.
 
 fn check(n: i32) -> @Result<i32, string> {
-    if (n < 0) { throw "negative " + n.toString(); };
+    if (n < 0) throw "negative " + n.toString();
     return n;
 }
 
 fn checked(xs: i32[]) -> @Iterator<@Result<i32, string>> {
-    for (xs) { x -> yield try check(x); };
+    for (xs) { x ->
+        yield try check(x);
+    }
 }
 
 fn upTo(limit: i32) -> @Iterator<@Result<i32, string>> {
     var i = 0;
     loop {
-        if (i == limit) { throw "limit " + limit.toString(); };
+        if (i == limit) throw "limit " + limit.toString();
         yield i;
         i = i + 1;
-    };
+    }
 }
 
 fn asIs() -> @Iterator<@Result<i32, string>> {
@@ -36,8 +38,8 @@ fn walk(name: string, it: @Iterator<@Result<i32, string>>) {
         case r {
             Ok(v) -> @print(name + " ok " + v.toString());
             Error(e) -> @print(name + " error " + e);
-        };
-    };
+        }
+    }
     @print(name + " done");
 }
 
