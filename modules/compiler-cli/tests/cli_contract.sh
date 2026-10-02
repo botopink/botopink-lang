@@ -108,14 +108,14 @@ expect_code 1 "run after a failed build"
 expect_no_out "stale build v1" "run does not execute the stale artifact"
 
 # ── build does not execute the program it compiles ───────────────────────────
-# erlang and beam are the targets whose build spawns anything, and it is `erl`
-# both times — never running the program. Both first ask `erl` for its OTP
-# release (`otp.zig`, decision 228); the erlang build then compiles every
-# emitted `.erl` in memory with the OTP compiler (`build.zig`, `checkErlang`),
-# and both ask the Erlang code path about the host modules no shipped sidecar
-# answers (`libs.zig`, `shipErlSidecars`). With a failing `erl` first on PATH
-# the release probe is the one spawn, and the build fails rather than claim
-# what it did not check.
+# erlang and beam are the targets whose build spawns anything, and it is one
+# `erl` — never running the program: the command's session (`otp.zig`), which
+# first prints its OTP release (decision 228); in the same VM the erlang build
+# then compiles every emitted `.erl` in memory with the OTP compiler
+# (`build.zig`, `checkErlang`), and both ask the Erlang code path about the
+# host modules no shipped sidecar answers (`libs.zig`, `shipErlSidecars`).
+# With a failing `erl` first on PATH the session is the one spawn, and the
+# build fails rather than claim what it did not check.
 echo "==> build emits without running the program (no runtime spawn, no runtime cache)"
 SHIMS="$WORK/shims"; SPAWNED="$WORK/spawned.log"
 mkdir -p "$SHIMS"; : >"$SPAWNED"
@@ -144,26 +144,28 @@ for target in commonJS erlang beam wasm; do
     expect_code 0 "build --target $target with runtime shims on PATH"
   fi
 done
-# The OTP release probe (`erl -noshell -eval io:format(…otp_release…)`) is the
-# only spawn allowed: a failing `erl` stops the build there.
-OTP_PROBE='erl -noshell -eval io:format("~s",[erlang:system_info(otp_release)]),halt(). '
-OTHER="$(grep -vxF -e "$OTP_PROBE" "$SPAWNED" || true)"
-[[ -z "$OTHER" ]] && ok "no node/erl/erlc/escript/wasmtime spawned by build but the OTP release probe" || fail "build spawned a runtime: $(tr '\n' ';' <<<"$OTHER")"
-[[ "$(grep -cxF -e "$OTP_PROBE" "$SPAWNED")" -eq 2 ]] && ok "the erlang and the beam build each ran one release probe, and a failing erl stopped it there" || fail "the erlang and the beam build did not run one release probe each: $(grep -c '^erl ' "$SPAWNED") erl spawn(s)"
+# The session (`erl +sbwt none … +S <n>:1 -noshell -eval <SESSION_EVAL>`,
+# whose first act is to print `otp_release`) is the only spawn allowed: a
+# failing `erl` stops the build there.
+OTP_PROBE='^erl \+sbwt none \+sbwtdcpu none \+sbwtdio none \+S [0-9]+:1 -noshell -eval io:put_chars\(\[erlang:system_info\(otp_release\), '
+OTHER="$(grep -vE -e "$OTP_PROBE" "$SPAWNED" || true)"
+[[ -z "$OTHER" ]] && ok "no node/erl/erlc/escript/wasmtime spawned by build but the OTP session" || fail "build spawned a runtime: $(tr '\n' ';' <<<"$OTHER")"
+[[ "$(grep -cE -e "$OTP_PROBE" "$SPAWNED")" -eq 2 ]] && ok "the erlang and the beam build each started one session, and a failing erl stopped it there" || fail "the erlang and the beam build did not start one session each: $(grep -c '^erl ' "$SPAWNED") erl spawn(s)"
 
 # ── the OTP release the compiler emits for (decision 228) ────────────────────
 # `botopink --version` names the release; an erlang or beam build with another
 # `erl` first on PATH is refused before any `.erl` is written, and one with the
-# release builds. The shims answer the release probe and hand every other
-# `erl` call to the `erl` of the PATH the script started with.
+# release builds. The OTP 29 shim answers any `erl` that asks for
+# `otp_release` (the session's first line) with 29; the OTP 28 one, and every
+# other call, is the `erl` of the PATH the script started with.
 echo "==> the OTP release: --version names it, another erl on PATH is refused"
 run "$WORK" --version
 expect_code 0 "--version"
 expect_out "otp: 28" "--version prints the OTP release"
 for v in 28 29; do
   mkdir -p "$WORK/otp$v"
-  printf '#!/bin/sh\nif [ "$*" = %s ]; then printf %%s %s; exit 0; fi\nPATH=%s exec erl "$@"\n' \
-    "'-noshell -eval io:format(\"~s\",[erlang:system_info(otp_release)]),halt().'" "$v" "'$PATH'" >"$WORK/otp$v/erl"
+  if [[ $v == 29 ]]; then answer='case "$*" in *otp_release*) printf "29\n"; exit 0;; esac'; else answer=''; fi
+  printf '#!/bin/sh\n%s\nPATH=%s exec erl "$@"\n' "$answer" "'$PATH'" >"$WORK/otp$v/erl"
   chmod +x "$WORK/otp$v/erl"
 done
 for target in erlang beam; do

@@ -24,6 +24,7 @@ const manifest = @import("manifest");
 const config = @import("./config.zig");
 const diagnostics = @import("./diagnostics.zig");
 const arglist = @import("./arglist.zig");
+const otp = @import("./otp.zig");
 const resolver = @import("./resolver.zig");
 /// Test-only: the one way a test spells a path it writes to (per process, so a
 /// second `zig build test` over this checkout cannot empty it mid-test).
@@ -1563,21 +1564,15 @@ fn absentFromCodePath(arena: std.mem.Allocator, io: std.Io, atoms: []const []con
     // one above 128 KiB (`arglist.zig`).
     const list = try arglist.write(arena, io, atoms);
     defer arglist.remove(io, list);
+    // A job of the command's `erl` session (`otp.zig`) when one is open.
     const argv: []const []const u8 = &.{ "erl", "-noshell", "-noinput", "-eval", CODE_PATH_EVAL, "-extra", list };
-    const result = std.process.run(arena, io, .{
-        .argv = argv,
-        .stdout_limit = .limited(1024 * 1024),
-        .stderr_limit = .limited(1024 * 1024),
-    }) catch |err| {
+    const result = otp.job(arena, io, CODE_PATH_EVAL, argv[6..], 1) catch |err| {
         std.debug.print("\x1b[1m\x1b[31merror\x1b[0m: the emitted erlang calls host modules ({d}), and {s} to tell an OTP module from a missing sidecar\n", .{ atoms.len, arglist.spawnError(arena, "erl", argv, err) });
         return error.SidecarRefused;
     };
-    const ok = switch (result.term) {
-        .exited => |c| c == 0,
-        else => false,
-    };
-    if (!ok) {
-        std.debug.print("\x1b[1m\x1b[31merror\x1b[0m: `erl` failed while looking up the host modules the emitted erlang calls:\n{s}\n", .{result.stderr});
+    if (result.code != 0) {
+        // Its stderr is already printed, above this line.
+        std.debug.print("\x1b[1m\x1b[31merror\x1b[0m: `erl` failed while looking up the host modules the emitted erlang calls\n", .{});
         return error.SidecarRefused;
     }
     var out: std.ArrayListUnmanaged([]const u8) = .empty;

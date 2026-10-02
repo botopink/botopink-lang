@@ -37,8 +37,9 @@ runtime/
 `botopink_comptime_server.erl` (`server_source.source`), `bp_comptime_template.erl`
 and `bp_comptime_decorator.erl` (`prelude.modules`); `erlc +deterministic -o <dir>`
 compiles the three; the `.beam`s become anonymous imports of compiler-core and
-`persistent_beam.zig` `@embedFile`s them (`resident_beams`). At spawn, `erl -noshell
--eval <bootstrap>` receives one cmd-4 frame per module over stdin, `code:load_binary/3`s
+`persistent_beam.zig` `@embedFile`s them (`resident_beams`). At spawn, `erl
+<otp.QUIET_FLAGS> -noshell -eval <bootstrap>` (no scheduler busy wait; the default
+scheduler count, since the node evaluates user comptime code) receives one cmd-4 frame per module over stdin, `code:load_binary/3`s
 each, answers `ok` and calls `botopink_comptime_server:start()`. No `erlc` runs on a
 user's machine, no `-pa` directory exists, and `.botopinkbuild/tmp/persistent_beam/`
 holds only `erl.<id>.stderr.log`, one per process. `erlc` (OTP 28+) is therefore a dependency of **building**

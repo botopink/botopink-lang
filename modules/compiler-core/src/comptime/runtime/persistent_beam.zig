@@ -236,7 +236,9 @@ fn ensureSpawned(io: Io, allocator: std.mem.Allocator) !void {
             const stderr_log = try cwd.createFile(io, ensureStderrLogPath(io), .{});
             defer stderr_log.close(io);
             const child = try std.process.spawn(io, .{
-                .argv = &.{ "erl", "-noshell", "-eval", bootstrap_eval },
+                // No scheduler busy wait (`otp.QUIET_FLAGS`); the default
+                // scheduler count — the node evaluates user comptime code.
+                .argv = &([_][]const u8{"erl"} ++ otp.QUIET_FLAGS ++ [_][]const u8{ "-noshell", "-eval", bootstrap_eval }),
                 .stdin = .pipe,
                 .stdout = .pipe,
                 .stderr = .{ .file = stderr_log },

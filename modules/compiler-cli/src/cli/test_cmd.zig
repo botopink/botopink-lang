@@ -62,7 +62,9 @@ fn artifactIn(arena: std.mem.Allocator, test_out: []const u8, target: config.Tar
 }
 
 /// `erlc +from_asm -o <dir>` over every `.S` in `dir`; its exit status.
-fn assembleBeam(arena: std.mem.Allocator, io: std.Io, dir: []const u8) !u8 {
+/// `env`: the runners' environment; `erlc`'s VM gets the quiet flags and one
+/// scheduler on top (`otp.quietEnv`) — it assembles, and runs nothing.
+fn assembleBeam(arena: std.mem.Allocator, io: std.Io, dir: []const u8, env: *const std.process.Environ.Map) !u8 {
     var argv: std.ArrayListUnmanaged([]const u8) = .empty;
     try argv.appendSlice(arena, &.{ "erlc", "+from_asm", "-o", dir });
     var d = std.Io.Dir.cwd().openDir(io, dir, .{ .iterate = true }) catch return 1;
@@ -75,7 +77,7 @@ fn assembleBeam(arena: std.mem.Allocator, io: std.Io, dir: []const u8) !u8 {
         any = true;
     }
     if (!any) return 0;
-    var child = std.process.spawn(io, .{ .argv = argv.items }) catch |err| {
+    var child = std.process.spawn(io, .{ .argv = argv.items, .environ_map = try otp.quietEnv(arena, env, "+S 1:1") }) catch |err| {
         reporter.errMsg(try std.fmt.allocPrint(arena, "failed to spawn 'erlc': {s}", .{@errorName(err)}));
         return 1;
     };
@@ -229,7 +231,10 @@ fn testTmpEnv(
 /// or relocate is a miss. A hit refreshes the entry's mtime, and every run
 /// reaps one of the 256 shards at random: entries unused for 7 days, staging
 /// files older than a day (a writer that died between write and rename).
-fn precompileErlang(arena: std.mem.Allocator, io: std.Io, dir: []const u8, cache_dir: ?[]const u8) void {
+///
+/// It is a job of the command's `erl` session (`otp.zig`), `files` (the
+/// emitted modules) setting how many schedulers it brings online.
+fn precompileErlang(arena: std.mem.Allocator, io: std.Io, dir: []const u8, cache_dir: ?[]const u8, files: usize) void {
     const eval =
         \\[Dir | CacheArg] = init:get_plain_arguments(),
         \\Opts = [binary, return_errors, {i, Dir}],
@@ -372,11 +377,7 @@ fn precompileErlang(arena: std.mem.Allocator, io: std.Io, dir: []const u8, cache
         &.{ "erl", "-noshell", "-eval", eval, "-extra", dir, c }
     else
         &.{ "erl", "-noshell", "-eval", eval, "-extra", dir };
-    const result = std.process.run(arena, io, .{
-        .argv = argv,
-        .stdout_limit = .limited(1024 * 1024),
-        .stderr_limit = .limited(1024 * 1024),
-    }) catch return;
+    const result = otp.job(arena, io, eval, argv[5..], otp.onlineFor(files)) catch return;
     _ = result;
 }
 
@@ -545,7 +546,9 @@ pub fn run(
     const test_tmp = try testTmpDir(arena, test_out);
     std.Io.Dir.cwd().deleteTree(io, test_tmp) catch {};
     defer std.Io.Dir.cwd().deleteTree(io, test_tmp) catch {};
-    const child_env = try testTmpEnv(arena, io, test_tmp, env_map);
+    // The runners start with no scheduler busy wait (`otp.quietEnv`); their
+    // scheduler count stays the default — they run the user's tests.
+    const child_env = try otp.quietEnv(arena, try testTmpEnv(arena, io, test_tmp, env_map), "");
 
     const ext: []const u8 = switch (target) {
         .commonJS => ".js",
@@ -614,14 +617,14 @@ pub fn run(
         };
         // Every `.erl` of the run is now in place: compile each once, here,
         // instead of once per test module that loads it.
-        if (target == .erlang) precompileErlang(arena, io, test_out, beamCacheDir(arena, env_map));
+        if (target == .erlang) precompileErlang(arena, io, test_out, beamCacheDir(arena, env_map), outputs.items.len);
     }
     // beam: every module of the run assembled beside itself, once; each
     // runner's `'__bp_load_siblings'/0` compiles the host `.erl`s shipped
     // above (`codegen/beam_asm.zig`). A module the assembler refuses fails
     // the run with `erlc`'s own message.
     if (target == .beam) {
-        if (try assembleBeam(arena, io, test_out) != 0) return 1;
+        if (try assembleBeam(arena, io, test_out, child_env) != 0) return 1;
     }
 
     // commonJS: root-source imports (`import {x};`) emit `require("./module")`
