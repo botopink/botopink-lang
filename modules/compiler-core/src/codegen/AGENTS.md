@@ -1943,7 +1943,8 @@ codegen/
   (`=`, `+=`, `out.push(v)`, a mutating closure call, nested
   `if`/`loop`/`forEach`) lowers to `lists:foldl/3` with those names as the
   accumulator (one value, or a tuple), unpacked back into the caller's slots
-  (`unpackGroupFromX0`); `break`/`continue` return the group. A statement `out.push(v)` on a local Array stores the grown list back
+  (`unpackGroupFromX0`); `continue` returns the group, and a bare `break`
+  throws `{'__bp_break', Group}` out of the fun (below). A statement `out.push(v)` on a local Array stores the grown list back
   into its slot (`receiverMutation`), and on a module-level `var` through its
   memory (`moduleVarPush` → `emitMemoryWrite`). `xs.pop()` calls
   `'-bp_pop-'/1` (`primPop`, `ensurePopHelper`: `{Last, Rest}`, `{undefined,
@@ -1977,7 +1978,15 @@ codegen/
   eager list here), so one that reassigns outer names is the same `foldl`, and
   one whose body propagates a `try` (`bodyPropagates`: through member reads,
   `case` subjects, array/tuple literals too — `(try batch).length`) is called
-  inside `guardLoopCall`'s catch section; `while (cond) { … }` / `loop { … }` run
+  inside `guardLoopCall`'s catch section. A bare `break` of the loop's own
+  body (`bodyBreaksBare`: directly, under an `if`, in a `case` arm's block —
+  never a nested loop's or a lambda's) ends it: the fun throws
+  `{'__bp_break', V}` — the fold's group, else `ok` — and the call sits
+  inside `guardLoopBreak`'s catch section, which answers `V` (erlang's
+  `'__bp_cond_break'`; one y-slot counted by `countLocalsInExpr`). It returned
+  from the fun, so the next element still ran (`for ([1, 2, 3]) { x -> n = n
+  + 1; break; }` left `n` at 3). `emitLoopCall` puts the call inside the
+  sections the body needs; `while (cond) { … }` / `loop { … }` run
   in the enclosing frame (`lowerConditionLoop`): `{label, Top}`, the condition
   as a test jumping to `Exit`, the body, `{jump, {f, Top}}`, `{label, Exit}`.
   The variables it reassigns are this frame's registers, so nothing is

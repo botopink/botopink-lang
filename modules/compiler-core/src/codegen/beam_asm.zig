@@ -357,6 +357,42 @@ const CondLoop = struct { top: u32, exit: u32, out: *std.Io.Writer };
 /// pushed.
 const GenLoop = struct { acc: u32, exit: u32, out: *std.Io.Writer };
 
+/// The throw a bare `break` in a loop's fun ends the loop with
+/// (`guardLoopBreak` catches it at the loop's call site).
+const break_throw_signal = "__bp_break";
+
+/// True when `body` holds a bare `break` of the loop whose body it is —
+/// directly, under an `if`, or in a `case` arm's block (which runs in the
+/// same frame), never inside a nested loop or a lambda.
+fn bodyBreaksBare(body: []const ast.Stmt) bool {
+    for (body) |stmt| if (exprBreaksBare(stmt.expr)) return true;
+    return false;
+}
+
+fn exprBreaksBare(e: ast.Expr) bool {
+    return switch (e) {
+        .jump => |j| switch (j.kind) {
+            .@"break" => |b| b.value == null,
+            else => false,
+        },
+        .branch => |br| switch (br.kind) {
+            .if_ => |i| bodyBreaksBare(i.then_) or (if (i.else_) |els| bodyBreaksBare(els) else false),
+            .tryCatch => false,
+        },
+        .collection => |c| switch (c.kind) {
+            .case => |cs| for (cs.arms) |arm| {
+                const arm_breaks = switch (arm.body) {
+                    .function => |f| f.kind.syntax == .lambda and f.kind.params.len <= 1 and bodyBreaksBare(f.kind.body),
+                    else => exprBreaksBare(arm.body),
+                };
+                if (arm_breaks) break true;
+            } else false,
+            else => false,
+        },
+        else => false,
+    };
+}
+
 /// True for a `break` / `continue` statement.
 fn stmtIsLoopJump(stmt: ast.Stmt) bool {
     return switch (stmt.expr) {
@@ -1041,6 +1077,8 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
             // A loop whose fun may throw a propagating `try` is called inside
             // a catch section of this frame (`guardLoopCall`): its tag slot.
             if (lp.generator == null and !lp.condition and bodyPropagates(lp.body)) count.* += 1;
+            // …and one whose fun ends it with a bare `break` (`guardLoopBreak`).
+            if (lp.generator == null and !lp.condition and bodyBreaksBare(lp.body)) count.* += 1;
             // An annotated loop (decision 105) runs in this frame with its
             // item accumulator, and so does every `for` inside it that yields.
             if (lp.generator != null) {
@@ -5190,6 +5228,20 @@ const Emitter = struct {
                         try self.lowerExprIntoX0(v.*);
                     } else if (self.fold_group) |names| {
                         try self.emitGroupIntoX0(names);
+                    } else if (self.in_loop_lambda) {
+                        try beamEmitter.writeMoveOp(self.out, Op.atom("ok"), Dst.xr(0));
+                    }
+                    // A bare `break` in a loop's fun ENDS the loop: the fun
+                    // throws `{'__bp_break', V}` — the names a fold threads,
+                    // else `ok` — and the loop's call site answers `V`
+                    // (`guardLoopBreak`). Returning from the fun only ended the
+                    // iteration: `for ([1, 2, 3]) { x -> n = n + 1; break; }`
+                    // left `n` at 3 (erlang's `'__bp_cond_break'`).
+                    if (self.in_loop_lambda and br.value == null) {
+                        try beamEmitter.writeTestHeap(self.out, 3, 1);
+                        try beamEmitter.writePutTuple2(self.out, Dst.xr(0), &.{ Op.atom(break_throw_signal), Op.xr(0) });
+                        try beamEmitter.writeCall(self.out, .only, 1, .{ .ext = .{ .module = "erlang", .function = "throw" } }, 0);
+                        return;
                     }
                     if (self.in_loop_lambda) try self.emitReturn();
                 },
@@ -10633,11 +10685,7 @@ const Emitter = struct {
                 try beamEmitter.writeCall(em.out, .normal, 3, .{ .ext = .{ .module = "lists", .function = "foldl" } }, 0);
             }
         };
-        if (bodyPropagates(body)) {
-            const tag = self.next_y;
-            self.next_y += 1;
-            try self.guardLoopCall(tag, Call{});
-        } else try Call.emit(.{}, self);
+        try self.emitLoopCall(body, Call{});
         try self.unpackGroupFromX0(names.items);
         return true;
     }
@@ -10971,11 +11019,53 @@ const Emitter = struct {
                 try beamEmitter.writeCall(em.out, .normal, 2, .{ .ext = .{ .module = "lists", .function = c.name } }, 0);
             }
         };
-        if (bodyPropagates(lp.body)) {
+        try self.emitLoopCall(lp.body, Call{ .name = func });
+    }
+
+    /// A loop's `lists:` call (`call.emit`), inside the catch sections its
+    /// body needs: a propagating `try` / `return` (`guardLoopCall`) and a bare
+    /// `break` (`guardLoopBreak`). Each takes a tag slot `countLocalsInExpr`
+    /// reserves.
+    fn emitLoopCall(self: *Emitter, body: []const ast.Stmt, call: anytype) anyerror!void {
+        const Guarded = struct {
+            inner: @TypeOf(call),
+            body: []const ast.Stmt,
+            fn emit(g: @This(), em: *Emitter) anyerror!void {
+                if (bodyPropagates(g.body)) {
+                    const tag = em.next_y;
+                    em.next_y += 1;
+                    try em.guardLoopCall(tag, g.inner);
+                } else try g.inner.emit(em);
+            }
+        };
+        const guarded: Guarded = .{ .inner = call, .body = body };
+        if (bodyBreaksBare(body)) {
             const tag = self.next_y;
             self.next_y += 1;
-            try self.guardLoopCall(tag, Call{ .name = func });
-        } else try (Call{ .name = func }).emit(self);
+            try self.guardLoopBreak(tag, guarded);
+        } else try guarded.emit(self);
+    }
+
+    /// `call.emit` inside a catch section that ends the loop on its fun's
+    /// `throw({'__bp_break', V})` with `V` in `{x, 0}`; any other exception
+    /// is raised again.
+    fn guardLoopBreak(self: *Emitter, tag: u32, call: anytype) anyerror!void {
+        const caught = self.allocLabel();
+        const other = self.allocLabel();
+        const done = self.allocLabel();
+        try beamEmitter.writeTry(self.out, tag, caught);
+        try call.emit(self);
+        try beamEmitter.writeTryEnd(self.out, tag);
+        try beamEmitter.writeJump(self.out, done);
+        try beamEmitter.writeLabel(self.out, caught);
+        try beamEmitter.writeTryCase(self.out, tag);
+        try beamEmitter.writeTest(self.out, .is_eq_exact, other, &.{ Op.xr(0), Op.atom("throw") });
+        try beamEmitter.writeTest(self.out, .is_tagged_tuple, other, &.{ Op.xr(1), .{ .untagged = 2 }, Op.atom(break_throw_signal) });
+        try beamEmitter.writeGetTupleElement(self.out, Op.xr(1), 1, Dst.xr(0));
+        try beamEmitter.writeJump(self.out, done);
+        try beamEmitter.writeLabel(self.out, other);
+        try beamEmitter.writeBif(self.out, "raise", 0, &.{ Op.xr(2), Op.xr(1) }, Dst.xr(0));
+        try beamEmitter.writeLabel(self.out, done);
     }
 
     /// Emit a string literal's lexeme content as a BEAM binary into `{x, dest}`:

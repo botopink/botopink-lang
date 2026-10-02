@@ -13,15 +13,15 @@ fn main() {
 {module, test@main}.
 {exports, [{'_botopink_main', 0}, {main, 1}]}.
 {attributes, []}.
-{labels, 40}.
+{labels, 43}.
 
 {function, main, 0, 3}.
   {label, 2}.
     {line, [{location, "test@main.erl", 1}]}.
     {func_info, {atom, test@main}, {atom, main}, 0}.
   {label, 3}.
-    {allocate, 3, 0}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+    {allocate, 4, 0}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 0}}.
     {move, {integer, 3}, {x, 0}}.
@@ -64,14 +64,26 @@ fn main() {
     {move, {x, 0}, {x, 2}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 3}.
     {make_fun3, {f, 37}, 0, 0, {x, 0}, {list, []}}.
+    {'try', {y, 3}, {f, 40}}.
     {call_ext, 3, {extfunc, lists, foldl, 3}}.
+    {try_end, {y, 3}}.
+    {jump, {f, 42}}.
+  {label, 40}.
+    {try_case, {y, 3}}.
+    {test, is_eq_exact, {f, 41}, [{x, 0}, {atom, throw}]}.
+    {test, is_tagged_tuple, {f, 41}, [{x, 1}, 2, {atom, '__bp_break'}]}.
+    {get_tuple_element, {x, 1}, 1, {x, 0}}.
+    {jump, {f, 42}}.
+  {label, 41}.
+    {bif, raise, {f, 0}, [{x, 2}, {x, 1}], {x, 0}}.
+  {label, 42}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 11}}.
     {move, {atom, ok}, {x, 0}}.
-    {deallocate, 3}.
+    {deallocate, 4}.
     return.
 
 {function, '_botopink_main', 0, 5}.
@@ -347,8 +359,9 @@ fn main() {
     {gc_bif, '*', {f, 0}, 0, [{y, 0}, {integer, 10}], {x, 0}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {deallocate, 2}.
-    return.
+    {test_heap, 3, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, '__bp_break'}, {x, 0}]}}.
+    {call_ext_only, 1, {extfunc, erlang, throw, 1}}.
     {jump, {f, 39}}.
   {label, 38}.
   {label, 39}.

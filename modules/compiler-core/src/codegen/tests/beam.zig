@@ -212,3 +212,45 @@ test "beam: -x is the unary minus, so -0.0 is negative zero" {
         \\
     , &.{"{gc_bif, '-', {f, 0}, "});
 }
+
+// ── a bare `break` ends a `for` ──────────────────────────────────────────────
+
+test "beam: a bare break in a for's body ends the loop" {
+    // A loop's body is a fun (`lists:foldl` when it reassigns the frame's
+    // names, `lists:foreach` otherwise), and `break` returned from it: the
+    // next element ran, so `visited` reached 3 and the search answered the
+    // last match (`tests/language/test/loop_collection.bp`). The fun now
+    // throws `{'__bp_break', V}` and the call site answers `V`
+    // (`guardLoopBreak`).
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\fn main() {
+        \\    var doubled = 0;
+        \\    var visited = 0;
+        \\    for ([1, 2, 3]) { x ->
+        \\        visited = visited + 1;
+        \\        doubled = x * 2;
+        \\        break;
+        \\    }
+        \\    @print(visited);
+        \\    @print(doubled);
+        \\    var found = 0;
+        \\    for ([4, 5, 6, 7]) { y ->
+        \\        if (y > 5) {
+        \\            found = y;
+        \\            break;
+        \\        }
+        \\    }
+        \\    @print(found);
+        \\    for ([8, 9]) { z ->
+        \\        @print(z);
+        \\        break;
+        \\    }
+        \\}
+    ,
+        \\1
+        \\2
+        \\6
+        \\8
+        \\
+    , &.{"{atom, '__bp_break'}"});
+}
