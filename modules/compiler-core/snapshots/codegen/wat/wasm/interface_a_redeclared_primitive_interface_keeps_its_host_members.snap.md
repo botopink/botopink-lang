@@ -22,8 +22,19 @@ fn main() {
     (local $n i32)
     i32.const 50
     local.set $n
-    unreachable ;; prim method not lowered on wasm: int.clampTo/2
+    local.get $n
+    i32.const 0
+    i32.const 10
+    call $Number_clampTo__i32
     call $__print_i32
+  )
+  (func $Number_clampTo__i32 (param $self i32) (param $lo i32) (param $hi i32) (result i32)
+    local.get $self
+    local.get $lo
+    call $__i32_max
+    local.get $hi
+    call $__i32_min
+    return
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
@@ -208,11 +219,34 @@ fn main() {
       )
     )
   )
+  (func $__i32_min (param $a i32) (param $b i32) (result i32)
+    local.get $a
+    local.get $b
+    i32.lt_s
+    (if
+      (then
+        local.get $a
+        return
+      )
+    )
+    local.get $b
+  )
+  (func $__i32_max (param $a i32) (param $b i32) (result i32)
+    local.get $a
+    local.get $b
+    i32.gt_s
+    (if
+      (then
+        local.get $a
+        return
+      )
+    )
+    local.get $b
+  )
 )
 ```
 
 ----- RUN LOG -----
 ```logs
-RUNTIME TRAP (wasmtime):
-wasm trap: wasm `unreachable` instruction executed
+10
 ```
