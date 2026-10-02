@@ -1620,3 +1620,25 @@ test "wat: behavior ---- a program's default fn on Array<T> is called with its e
         \\}
     , "arr\n[7, 7]\n[\"b\", \"b\"]\n");
 }
+
+// A lambda stored in a generic record's field (`Box<T>(value: T)`) whose
+// parameter nothing types: the record goes through a generic fn and the
+// field is called on the result, so no call through the constructor's own
+// local and no written type reach the lambda. Its parameter's word may be a
+// string or an integer; the lambda TRAPS at entry
+// (`lambda parameter `s`: nothing gives it a type the wasm backend can see`)
+// instead of guessing — it printed `300?` for `"d" + "?"` at exit 0.
+// commonJS answers `x%`.
+test "wat: function value ---- a lambda in a generic field that nothing types traps, never guesses" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\type Box<T>(value: T)
+        \\fn keep<T>(b: Box<T>) -> Box<T> {
+        \\    return b;
+        \\}
+        \\fn main() {
+        \\    val esc = keep(Box(value: { s -> s + "%" }));
+        \\    val ef = esc.value;
+        \\    @print(ef("x"));
+        \\}
+    , "RUNTIME TRAP (wasmtime):\nwasm trap: wasm `unreachable` instruction executed\n");
+}

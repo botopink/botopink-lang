@@ -225,10 +225,24 @@ the shapes that bound a string and still reached the one body:
 local `val k = h.value` called, and the same through `wrap(shout)` over `fn
 wrap<T>(v: T) -> Box<T>` answer a string (a bool, …) — they printed its heap
 address (`320`) or a bool as `1`. A function type has no specialisation; only
-the result type is read. Not covered: a LAMBDA stored in the field
-(`Box(value: { s -> s + "?" })`) — its parameter is a word here, so the body
-converts it as an integer (`300?`), which is the lambda parameter typing
-`lowerLambdaValue` has no source for (`run/generic_field_fn_value.bp`).
+the result type is read.
+
+**A lambda in such a field is typed where it is used, or traps.** The field
+says nothing (`T`), so `lowerRecordCtor` leaves the lifted lambda's
+`param_known` false unless the constructor stands where a type is written for
+it (`expected_ctor`: a parameter `b: Box<fn(s: string) -> string>`, a `val`'s
+annotation, the function's return type — the lambda is then written against
+the type argument, `expected_fn`). A call through the field of the local the
+constructor is bound to (`lam.value("e")`) or through a local read from that
+field (`val lf = lam.value`) types it from its arguments, as a closure
+local's call does (`field_closures`, `fieldClosureOf`; `closureCallIsString`
+judges the result). A parameter the body reads that nothing typed makes the
+lambda TRAP at entry (`lambda parameter `s`: nothing gives it a type the wasm
+backend can see`) — the record passed through a generic fn and called on the
+result is that shape. It printed `300?` for `"d" + "?"` at exit 0. Any other
+lambda keeps `param_known` true: its slot types it, or an integer reading is
+what it always had (`run/generic_field_fn_value.bp`, `tests/wat.zig`'s trap
+fixture).
 
 `run/generic_string_equality.bp` pins every way a type parameter gets a
 string bound on four targets, `modules/method_on_unimported_type` (`Dict.at`
