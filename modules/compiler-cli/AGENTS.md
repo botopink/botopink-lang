@@ -14,7 +14,9 @@ compiler-cli/
 ├── tests/               ← end-to-end CLI scripts — `zig build test-cli` runs all four
 │   ├── cli_contract.sh      ← the command contract (rows C1–C13, plus the
 │   │                          build-does-not-execute and `new`-scaffold-prints
-│   │                          rows) against the real binary
+│   │                          rows, and a built erlang / beam program loading
+│   │                          its `.erl` sidecar under `erl -pa out/<target>`)
+│   │                          against the real binary
 │   ├── mutual_recursion.sh  ← forward-ref + mutual recursion runs on every backend
 │   ├── mutual_recursion/    ← fixture project for the script above
 │   ├── backend_exec.sh      ← backend execution parity (numeric / records /
@@ -130,6 +132,15 @@ them at start — `codegen/beam_asm.zig`). The beam build reads the same host
 modules out of BEAM assembly (`{extfunc, host, fn, N}`), and a host module that
 is neither shipped nor on the Erlang code path is the same located refusal on
 both targets.
+
+**A build is a program without `botopink run`.** `out/beam/` runs as
+`erlc +from_asm -o out/beam out/beam/*.S` and then `erl -noshell -pa out/beam
+-eval "'<entry atom>':main([]), halt()."` from any directory — the entry's
+loader compiles the shipped `.erl`. `out/erl/` runs the same way once **every**
+`.erl` in it is compiled (`erlc -o out/erl out/erl/*.erl`): a plain erlang build
+emits no sibling loader (the emitter's half, 02-erlang step 9), so compiling the
+entry alone leaves the sidecar `undef`. Pinned by `tests/cli_contract.sh` on
+`tests/language/modules/erlang_host_sidecar_shipped`.
 
 ### The erlang runner reaches one module
 

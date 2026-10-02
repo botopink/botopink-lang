@@ -714,6 +714,42 @@ expect_out "$PLIB/src/side.mjs" "names the last path it looked at"
 expect_out "botopink.json:2:21" "locates the dependency entry of the project manifest"
 [[ ! -e "$PAPP/out/side/side.mjs" ]] && ok "nothing half-shipped" || fail "a sidecar was written by the refused build"
 
+# ── a built erlang / beam program loads its `.erl` sidecar ───────────────────
+# `botopink run` is not the only way to start a build: `out/<target>/` is the
+# program, and `erl -pa out/<target>` has to run it from any directory. The
+# build ships the project's `src/sidecars/*.erl` beside the emitted modules
+# (`libs.shipErlSidecars`). On beam the assembled entry's
+# `'__bp_load_siblings'/0` compiles that `.erl` itself, so only the `.S` files
+# are assembled here; on erlang every `.erl` of `out/erl/` is compiled, because
+# a plain erlang build carries no sibling loader yet (02-erlang step 9).
+# The program is `tests/language/modules/erlang_host_sidecar_shipped`.
+echo "==> a built erlang / beam program loads its .erl sidecar under erl -pa"
+if have erl && have erlc; then
+  for T in erlang beam; do
+    P="$WORK/built-sidecar-$T"; rm -rf "$P"
+    cp -R "$REPO_ROOT/tests/language/modules/erlang_host_sidecar_shipped" "$P"
+    run "$P" build --target "$T"
+    expect_code 0 "build --target $T"
+    D="$P/out/$([[ "$T" == erlang ]] && echo erl || echo beam)"
+    [[ -f "$D/lt_greeter.erl" ]] && ok "$T: the sidecar is shipped into $(basename "$D")/" || fail "$T: $D/lt_greeter.erl was not shipped"
+    set +e
+    if [[ "$T" == erlang ]]; then
+      COMPILE="$(erlc -o "$D" "$D"/*.erl 2>&1)"
+    else
+      COMPILE="$(erlc +from_asm -o "$D" "$D"/*.S 2>&1)"
+    fi
+    CC=$?
+    OUT="$(cd "$WORK" && erl -noshell -pa "$D" -eval "'language_tests@main':main([]), halt()." 2>&1)"
+    CODE=$?
+    set -e
+    [[ "$CC" -eq 0 ]] && ok "$T: the emitted modules compile with the OTP tools" || { fail "$T: erlc refused the build"; echo "$COMPILE" | sed 's/^/      /' >&2; }
+    expect_code 0 "$T: erl -pa out runs the built program"
+    if [[ "$OUT" == "$(cat "$P/expected.out")" ]]; then ok "$T: prints expected.out"; else fail "$T: printed '$OUT'"; fi
+  done
+else
+  skip "built erlang / beam program (erl / erlc not on PATH)"
+fi
+
 echo
 if [[ "$failures" -gt 0 ]]; then
   echo "==> cli contract: $failures assertion(s) FAILED" >&2
