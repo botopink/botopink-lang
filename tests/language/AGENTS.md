@@ -118,6 +118,11 @@ naming the widening element) and `test/case_value_union` (a `case` whose arms di
 read back through `case` narrowing, beside the array literal's union). The `case` half is a `test/`
 cell because wasm traps on a union of primitives produced by a `case` (`05-wasm`'s row); each array
 cell was refused by the parent binary.
+Step 2 (rows 28 and 31) adds `run/case_function_typed_arms` (two arms answering `fn(string) -> string`
+join into that type and the result is applied, four targets), `reject/case_function_arms_arity` (arms
+whose arity differs are refused at the second) and `test/case_arm_lambda_value` (`A(x) -> { item ->
+f(item) }` is a lambda value; a `test/` cell because beam answers `{badfun, ok}` for a lambda a `case`
+arm produces — `03-beam`'s row). Each was refused by the parent binary.
 Decision 141 adds `run/external_template_refused_on_beam` — an `@External.Erlang` template with a
 macro runs on erlang and is a located build error on beam naming the construct (`.beam.expect`); beam
 no longer evaluates a template it cannot compile from source at run time.

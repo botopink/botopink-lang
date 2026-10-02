@@ -397,7 +397,7 @@ optional guard:
 | Form | Body |
 |---|---|
 | `Pattern { body }` — decision 8 §5.1 | a lambda body: `{ n -> … }` binds the whole matched value (P1), the last expression is the arm's value (P3), and the arm takes no `;` (P2) |
-| `pattern -> value;` — pre-decision-8 | unchanged; `libs/std` and the libraries are written this way, and 12 step 3 / 13 migrate them |
+| `pattern -> value;` — pre-decision-8 | unchanged; `libs/std` and the libraries are written this way, and 12 step 3 / 13 migrate them. A `{` after the `->` whose head is a lambda's (`->`, or `a, b ->` — `exprs.lambdaHeadAt`, the one test `parsePrimary`'s lambda arm uses) is the arm's VALUE, a lambda literal, wrapped as the one statement of a parameterless arm body (`A(x) -> { item -> f(item) }`, `language-gaps.md` row 28); any other `{` is the block arm body |
 
 The guard is `when (…)` (§5.3) or the older `if <expr>`. `when` is **not** a
 keyword: it is special only after an arm's pattern, matched by lexeme, so a

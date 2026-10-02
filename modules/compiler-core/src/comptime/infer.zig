@@ -13861,7 +13861,7 @@ fn arrayLiteralJoin(env: *Env, elems: []const ast.Expr, typed: []ast.TypedExpr) 
         const t = elem.getType();
         var merged = false;
         for (members.items) |m| {
-            if (joinTypesAgree(m, t)) {
+            if (caseArmTypesAgree(m, t)) {
                 try unifyAt(env, m, t, elem.getLoc());
                 merged = true;
                 break;
@@ -13888,22 +13888,18 @@ fn floatSpelling(env: *Env, text: []const u8) InferError!?[]const u8 {
     return try std.fmt.allocPrint(env.arena, "{d}.0", .{v});
 }
 
-/// Two joined types agree (and are unified, located at the second) when they
-/// are what `caseArmTypesAgree` accepts or both are function types: a
-/// function is never a union member beside another function, so two of them
-/// unify structurally — an arity or a parameter that differs is the located
-/// mismatch, not a `fn | fn` union nothing can call.
-fn joinTypesAgree(a: *T.Type, b: *T.Type) bool {
-    if (a.deref().* == .func and b.deref().* == .func) return true;
-    return caseArmTypesAgree(a, b);
-}
-
 /// Two arm types agree (and are unified) when either is still a type
-/// variable or both name the same type constructor with the same arity.
+/// variable, both name the same type constructor with the same arity, or both
+/// are function types — the join of `case` arms, `if` branches and array
+/// elements. A function is never a union member beside another function
+/// (nothing could call `fn | fn`), so two of them unify structurally: the
+/// same arity, unifiable parameters and return, and any difference is the
+/// located mismatch at the second (rows 28/31 of `language-gaps.md`).
 fn caseArmTypesAgree(a: *T.Type, b: *T.Type) bool {
     const da = a.deref();
     const db = b.deref();
     if (da.* == .typeVar or db.* == .typeVar) return true;
+    if (da.* == .func and db.* == .func) return true;
     if (da.* == .named and db.* == .named) {
         return std.mem.eql(u8, da.named.name, db.named.name) and da.named.args.len == db.named.args.len;
     }

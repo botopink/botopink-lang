@@ -887,9 +887,13 @@ element in `Env.unionOrigins` (kind `array element`, named by the refusal at the
 §3.2's one numeric rule — an integer **literal** fits `f64` when another element is an `f64`, typed
 `f64` and re-spelt as a float literal (`1` → `1.0`, `0xFF` → `255.0`) through `env.indexRewrites`,
 literal for literal, which `transform.zig` splices. Two function-typed elements always unify
-(`joinTypesAgree`), so an array of lambdas stays one element type. An expected behavior or union is the
+(`caseArmTypesAgree`, below), so an array of lambdas stays one element type. An expected behavior or union is the
 element type every element meets; any other expected element type keeps the old rule (each element
-unified with the first), so `total([1, 2.5])` against `f64[]` is still the mismatch at the `1`.
+unified with the first), so `total([1, 2.5])` against `f64[]` is still the mismatch at the `1`. Every join — `case` arms, `if` branches, array elements —
+asks `caseArmTypesAgree`, and two function types always agree there (rows 28/31 of `language-gaps.md`,
+1.0.11-beta `01-checker` step 2): a function is never a union member beside another, so two arms
+`fn(string) -> string` unify into one type, and two whose arity or parameters differ are the located
+mismatch at the second arm instead of a `fn | fn` union nothing can call.
 
 §3.3's use rule is `refuseUnknownUse`, shared with §2.2 (see above): a union receiver is refused at
 arithmetic, `+`, an ordering comparison, a field read and a method call. §3.3 allows a use every

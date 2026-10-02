@@ -1167,6 +1167,27 @@ fn parseExplicitTypeArgs(this: *This, alloc: std.mem.Allocator, nameTok: token.T
     return try items.toOwnedSlice(alloc);
 }
 
+/// Whether the tokens from `i` — just after a `{` — are a lambda's head:
+/// `->` (no parameters) or `a, b ->`. The one test `parsePrimary`'s lambda arm
+/// and a `case` arm's value (`A(x) -> { item -> f(item) }`) share.
+pub fn lambdaHeadAt(this: *This, start: usize) bool {
+    var i = start;
+    const toks = this.tokens;
+    const nextKind = if (i < toks.len) toks[i].kind else .endOfFile;
+    // Empty lambda: `{ -> }`
+    if (nextKind == .rightArrow) return true;
+    // Lambda with params: `{ ident, ident -> }`
+    if (nextKind != .identifier) return false;
+    i += 1;
+    while (i < toks.len and toks[i].kind == .comma) {
+        i += 1;
+        if (i >= toks.len or toks[i].kind != .identifier) return false;
+        i += 1;
+    }
+    const arrowKind = if (i < toks.len) toks[i].kind else .endOfFile;
+    return arrowKind == .rightArrow;
+}
+
 pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
     // `record { … }` ---- the removed anonymous record literal (1.0.3: a tuple).
     // `record` lexes as an identifier; followed by `{` it gets its targeted
@@ -1209,25 +1230,7 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         const braceTok = this.advance();
 
         // Check if this is a lambda by looking ahead for `->` or params followed by `->`
-        const isLambda = blk: {
-            var i = this.current;
-            const toks = this.tokens;
-            const nextKind = if (i < toks.len) toks[i].kind else .endOfFile;
-            // Empty lambda: `{ -> }`
-            if (nextKind == .rightArrow) break :blk true;
-            // Lambda with params: `{ ident, ident -> }`
-            if (nextKind == .identifier) {
-                i += 1;
-                while (i < toks.len and toks[i].kind == .comma) {
-                    i += 1;
-                    if (i >= toks.len or toks[i].kind != .identifier) break :blk false;
-                    i += 1;
-                }
-                const arrowKind = if (i < toks.len) toks[i].kind else .endOfFile;
-                break :blk arrowKind == .rightArrow;
-            }
-            break :blk false;
-        };
+        const isLambda = lambdaHeadAt(this, this.current);
 
         if (isLambda) {
             // Parse lambda: `{ params? -> body }`

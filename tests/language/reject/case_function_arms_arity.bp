@@ -1,0 +1,23 @@
+//// `language-gaps.md` row 31 — two function-typed `case` arms unify
+//// structurally, so arms whose arity differs are refused at the second arm,
+//// located (`run/case_function_typed_arms` is the accepted half).
+
+type Mode {
+    One,
+    Two,
+}
+
+fn one(x: string) -> string {
+    return x;
+}
+
+fn two(x: string, y: string) -> string {
+    return x + y;
+}
+
+pub fn main() {
+    val g = case Mode.Two {
+        One -> one;
+        Two -> two;
+    };
+}
