@@ -144,6 +144,16 @@ by the parent binary).
 `run/std_type_ctor_through_namespace` (another front's finding) — `url.Url(…)` after `import {url}
 from "std"` constructs the type through the module namespace, as the leaf `Url(…)` does (`this "std"
 module has no such public function` on the parent binary), four targets.
+Decision 170's type half (other fronts' findings) adds `run/std_namespace_beside_own_type` (a
+module's own `type Dict` beside `import {collections}` is the module's, four targets),
+`modules/std_namespace_beside_aliased_type` (`import {kit.store.Dict as OwnDict}` beside the same
+namespace reads `kit/store`'s fields; the cell builds the value through a function of `kit/store`,
+because commonJS emits `Dict(5)` without `new` for an imported record constructor beside a std
+namespace declaring the same name — `04-js`'s row),
+`reject/std_namespace_signature_names_shadowed_type` (a namespace call whose signature names the
+shadowed std type), `modules/import_two_types_one_name` and `reject/own_type_beside_std_type_import`
+(two types of one declared name in one module, aliased or not, are `import-name-collision`). Each
+was accepted wrongly or refused with the wrong type by the parent binary.
 Decision 141 adds `run/external_template_refused_on_beam` — an `@External.Erlang` template with a
 macro runs on erlang and is a located build error on beam naming the construct (`.beam.expect`); beam
 no longer evaluates a template it cannot compile from source at run time.

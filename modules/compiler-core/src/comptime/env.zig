@@ -888,6 +888,19 @@ pub const Env = struct {
     /// (`registerImportedTypeAlias`); a constructor call through the alias is
     /// renamed at the call so no backend sees the alias.
     importedTypeAliases: std.StringHashMapUnmanaged([]const u8) = .empty,
+    /// Decision 170 — the type names this module declares or imports by name
+    /// (`type Dict(…)`, `import {kit.store.Dict as OwnDict}` → `Dict`),
+    /// collected before any import is marked (`noteExplicitTypeNames`). A std
+    /// module NAMESPACE (`import {collections}`) registers its `pub` types
+    /// bare only where no such name is taken: the declaration the module
+    /// named wins over the one a namespace brings along implicitly.
+    explicitTypeNames: std.StringHashMapUnmanaged(void) = .empty,
+    /// A std module's `pub` type a namespace import did NOT register because
+    /// `explicitTypeNames` holds its name → the std module key. A call into
+    /// that namespace whose signature names the type is refused
+    /// (`refuseShadowedStdSignature`): types are nominal by name, and the
+    /// checker would read std's type as this module's.
+    shadowedStdTypes: std.StringHashMapUnmanaged([]const u8) = .empty,
     /// Decision 8 §1.3 — a top-level fn's declaration, for a call that writes
     /// its type arguments (`first<string>([])`): the generic parameters, the
     /// parameters and the return as written. Filled by `registerFnSignatures`.

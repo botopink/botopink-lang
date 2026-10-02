@@ -1216,6 +1216,28 @@ behavior's `extends` chain (`behaviorReaches`), and everything else goes to `uni
 target-first and only widens (implementer → behavior); a record that does not implement the behavior
 reds at the value. Cells: `infer_errors.zig` `behavior-typed field …`.
 
+## One type of a name per module, and a std namespace yields to it (decision 170)
+
+Types are nominal by their **declared** name in the checker and in every backend, so one module
+holds one type of a name. `noteExplicitTypeNames` (both program entries, before any import is
+marked) collects the names this module declares (`type`, a type alias, `behavior`) or imports by
+name from a module that is not std (the item's leaf — `import {kit.store.Dict as OwnDict}` names
+`Dict`) into `Env.explicitTypeNames`, and refuses a second SOURCE of one declared type name —
+`import {a.p.Policy as APolicy}; import {b.p.Policy as BPolicy};`, or a `type Dict(…)` beside
+`import {collections.Dict as D} from "std"` — as `import-name-collision` at the second import item,
+naming both (each used to resolve silently to whichever registered last;
+`modules/import_two_types_one_name`, `reject/own_type_beside_std_type_import`). Two FUNCTIONS of one
+name under two aliases stay legal: a function is bound by its local name.
+
+A std module **namespace** (`import {collections}`) registers its `pub` types bare only where
+`explicitTypeNames` does not hold the name (`markStdImports`): the declaration the module named wins
+over the one the namespace brings along implicitly, and the skipped type is noted in
+`Env.shadowedStdTypes`. A call through that namespace whose signature names the shadowed type
+(`collections.lt()` answering std's `Order` in a module with its own `type Order`) is refused at
+the call as `ambiguous-import-use` (`refuseShadowedStdSignature`), since the checker would read
+std's type as the module's (`run/std_namespace_beside_own_type`,
+`modules/std_namespace_beside_aliased_type`, `reject/std_namespace_signature_names_shadowed_type`).
+
 ## A record value is not callable (`language-gaps.md` row 32)
 
 A plain call `g(…)` whose callee is a binding of a **record, enum or primitive** type — a value,

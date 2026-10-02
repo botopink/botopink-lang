@@ -1,0 +1,22 @@
+//// Decision 170 — an import that names its module says which declaration it
+//// means. `import {kit.store.Dict as OwnDict}` beside the std namespace
+//// `import {collections}` (whose module also declares a `pub type Dict`) is
+//// the package's `Dict`: its field reads and its constructor's result type
+//// are `kit/store`'s, and the namespace's functions still answer. The
+//// namespace used to register std's `Dict` over it (`OwnDict has no
+//// parameter named initialMs`).
+
+pub mod kit;
+import {collections} from "std";
+import {kit.store.Dict as OwnDict, kit.store.make};
+
+fn delayOf(d: OwnDict) -> i32 {
+    return d.initialMs;
+}
+
+pub fn main() {
+    val d: OwnDict = make(5);
+    @print(delayOf(d));
+    @print(d.initialMs + 1);
+    @print(collections.toInt(collections.gt()));
+}

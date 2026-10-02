@@ -155,7 +155,21 @@ fn markStdImports(env: *Env, u: ast.ImportDecl) InferError!bool {
             // value bindings come along — construct via the module's fns
             // (`order.lt()`), not the bare constructors (codegen has no local decl).
             if (env.stdModuleTypes.get(whole)) |decls| {
-                for (decls) |d| try registerTypeDecl(env, d);
+                for (decls) |d| {
+                    // Decision 170 — a type the module declares or imports by
+                    // name is that declaration; the namespace's same-named
+                    // type stays reachable only as what it is not here.
+                    const tn: ?[]const u8 = switch (d) {
+                        .type_ => |t| t.name,
+                        .typeAlias => |a| a.name,
+                        else => null,
+                    };
+                    if (tn) |n| if (env.explicitTypeNames.contains(n)) {
+                        try env.shadowedStdTypes.put(env.arena, n, whole);
+                        continue;
+                    };
+                    try registerTypeDecl(env, d);
+                }
             }
             try gateStdTargetSupport(env, whole, imp.name(), imp.loc);
             continue;
@@ -213,6 +227,132 @@ fn markStdImports(env: *Env, u: ast.ImportDecl) InferError!bool {
         return error.TypeError;
     }
     return true;
+}
+
+/// Decision 170 — collect the type names this module declares (`type`, a
+/// type alias, `behavior`) or imports by name from a module that is not std
+/// (the item's leaf: `import {kit.store.Dict as OwnDict}` names `Dict`), into
+/// `env.explicitTypeNames`, before any std import is marked.
+///
+/// Types are nominal by their DECLARED name in the checker and the backends,
+/// so one module cannot hold two type declarations of one name, aliases or
+/// not: `import {a.p.Policy as APolicy}; import {b.p.Policy as BPolicy};`,
+/// a `type Dict(…)` beside `import {collections.Dict as D} from "std"`. Each
+/// used to resolve silently to whichever registered last; the second source
+/// is `import-name-collision` at its import item, naming both. (Two functions
+/// of one name under two aliases stay legal — a function is bound by its
+/// local name.)
+fn noteExplicitTypeNames(env: *Env, program: ast.Program) InferError!void {
+    // Declared name → where it comes from (a module path, or "" for this module).
+    var sources: std.StringHashMapUnmanaged([]const u8) = .empty;
+    defer sources.deinit(env.arena);
+    for (program.decls) |decl| switch (decl) {
+        .type_ => |t| try noteTypeSource(env, &sources, t.name, "", null),
+        .typeAlias => |a| try noteTypeSource(env, &sources, a.name, "", null),
+        .behavior => |b| try noteTypeSource(env, &sources, b.name, "", null),
+        else => {},
+    };
+    for (program.decls) |decl| switch (decl) {
+        .use => |u| {
+            const from_std = switch (u.source) {
+                .module => |m| std.mem.eql(u8, m, "std"),
+                .root => false,
+            };
+            for (u.imports) |imp| {
+                const leaf = imp.leaf();
+                if (leaf.len == 0 or !std.ascii.isUpper(leaf[0])) continue;
+                const prefix = try imp.prefixPath(env.arena);
+                if (from_std) {
+                    // A std leaf (`collections.Dict [as D]`) brings the type
+                    // in under its declared name.
+                    if (!imp.isQualified()) continue;
+                    if (!stdModuleDeclaresType(env, prefix, leaf)) continue;
+                    try noteTypeSource(env, &sources, leaf, try std.fmt.allocPrint(env.arena, "std/{s}", .{prefix}), imp);
+                    continue;
+                }
+                try env.explicitTypeNames.put(env.arena, leaf, {});
+                // Only an item that resolved to a TYPE is a type source.
+                const isType = if (imp.alias) |al| env.importedTypeAliases.contains(al) else env.lookupTypeDef(leaf) != null;
+                if (!isType) continue;
+                const src = switch (u.source) {
+                    .module => |m| try std.fmt.allocPrint(env.arena, "{s}:{s}", .{ m, prefix }),
+                    .root => prefix,
+                };
+                try noteTypeSource(env, &sources, leaf, src, imp);
+            }
+        },
+        else => {},
+    };
+}
+
+fn stdModuleDeclaresType(env: *Env, mod: []const u8, name: []const u8) bool {
+    const decls = env.stdModuleTypes.get(mod) orelse return false;
+    for (decls) |d| {
+        const tn = switch (d) {
+            .type_ => |t| t.name,
+            .typeAlias => |a| a.name,
+            else => continue,
+        };
+        if (std.mem.eql(u8, tn, name)) return true;
+    }
+    return false;
+}
+
+fn noteTypeSource(env: *Env, sources: *std.StringHashMapUnmanaged([]const u8), name: []const u8, src: []const u8, imp: ?ast.ImportPath) InferError!void {
+    if (sources.get(name)) |prev| {
+        if (std.mem.eql(u8, prev, src)) return;
+        const at = imp orelse return;
+        const first = if (prev.len == 0) "this module" else try std.fmt.allocPrint(env.arena, "`{s}`", .{prev});
+        const second = if (src.len == 0) "this module" else try std.fmt.allocPrint(env.arena, "`{s}`", .{src});
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: this module would hold two types declared `{s}` — {s}'s and {s}'s; a type is told apart by its declared name, so one module holds one type of a name, aliased or not", .{ diagnostics.import_name_collision, name, first, second });
+        env.lastError = TypeError.custom(msg, "Use one of the two in this module, and reach the other through a module that holds only it (a function there that takes or answers it).").withLoc(at.loc);
+        return error.TypeError;
+    }
+    try sources.put(env.arena, name, src);
+}
+
+/// Whether `t` names the nominal type `name` anywhere in it.
+fn typeNamesNominal(t: *T.Type, name: []const u8, depth: usize) bool {
+    if (depth > 32) return false;
+    const d = t.deref();
+    return switch (d.*) {
+        .named => |n| blk: {
+            if (std.mem.eql(u8, n.name, name)) break :blk true;
+            for (n.args) |a| if (typeNamesNominal(a, name, depth + 1)) break :blk true;
+            break :blk false;
+        },
+        .func => |f| blk: {
+            for (f.params) |p| if (typeNamesNominal(p, name, depth + 1)) break :blk true;
+            break :blk typeNamesNominal(f.ret, name, depth + 1);
+        },
+        .union_ => |us| blk: {
+            for (us) |u| if (typeNamesNominal(u, name, depth + 1)) break :blk true;
+            break :blk false;
+        },
+        .record => |fs| blk: {
+            for (fs) |f| if (typeNamesNominal(f.type_, name, depth + 1)) break :blk true;
+            break :blk false;
+        },
+        .typeVar => false,
+    };
+}
+
+/// Decision 170 — a call through a std namespace whose signature names a type
+/// the namespace could not bring in (`env.shadowedStdTypes`: this module's own
+/// or named import holds the name) is refused at the call. Types are nominal
+/// by name, so the checker would read std's type as this module's and accept
+/// a value of the wrong one.
+fn refuseShadowedStdSignature(env: *Env, ns: []const u8, stdKey: []const u8, callee: []const u8, fnTy: *T.Type, loc: ast.Loc) InferError!void {
+    var it = env.shadowedStdTypes.iterator();
+    while (it.next()) |e| {
+        if (!std.mem.eql(u8, e.value_ptr.*, stdKey)) continue;
+        const name = e.key_ptr.*;
+        if (!typeNamesNominal(fnTy, name, 0)) continue;
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}.{s}` names std/{s}'s `{s}`, and `{s}` in this module is another declaration", .{ diagnostics.ambiguous_import_use, ns, callee, stdKey, name, name });
+        const hint = try std.fmt.allocPrint(env.arena, "One module holds one type of a name: import std's `{s}` in a module that does not declare or import another, or rename this module's.", .{name});
+        env.lastError = TypeError.custom(msg, hint).withLoc(loc);
+        return error.TypeError;
+    }
 }
 
 /// Whether the std module `mod_name` declares the decorator `pub fn name`.
@@ -377,6 +517,7 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     env.testIndex = 0;
 
     try validateUniqueDefaults(env, program);
+    try noteExplicitTypeNames(env, program);
 
     // Pass 1: register type definitions and their constructors.
     try registerTypeAliases(env, program);
@@ -459,6 +600,7 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
     env.testIndex = 0;
 
     try validateUniqueDefaults(env, program);
+    try noteExplicitTypeNames(env, program);
 
     try registerTypeAliases(env, program);
     try checkSelfSpelling(env, program);
@@ -13016,6 +13158,7 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                                 env.lastError = e;
                                 return error.TypeError;
                             };
+                            try refuseShadowedStdSignature(env, recvName, std_key, call.callee, exported, loc);
                             var seen = std.AutoHashMap(*T.TypeCell, *T.Type).init(env.arena);
                             defer seen.deinit();
                             const instantiated = try instantiateType(env, exported, &seen, .allVars);
