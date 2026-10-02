@@ -653,6 +653,14 @@ erlang's `erlc` refuses the lambda's re-binding, `02-erlang`'s row). The
 inner-block and `case`-arm halves of the machinery stay, though a checked
 program no longer reaches them.
 
+**A lambda's bindings are its own** (decision 205: a lambda body is a
+function of its own). An inlined HOF body's `val k` and its parameter `e`
+over an enclosing `k` / `e` take the same `bindTarget` local and are undone at
+the body's end, so the enclosing names keep their values;
+`tests/language/run/lambda_binds_name_of_enclosing_fn.bp` (02-erlang's cell)
+pins it on four targets. A lifted lambda (`{ e -> e * 2 }` as a value) is a
+function of its own already.
+
 ## Function values, and the lowering that is not there
 
 **This backend has function values.** A lambda used as a value is lifted into
