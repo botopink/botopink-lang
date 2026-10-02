@@ -12,6 +12,7 @@ const config = @import("./config.zig");
 const resolver = @import("./resolver.zig");
 const scanner = @import("./scanner.zig");
 const reporter = @import("./reporter.zig");
+const diagnostics = @import("./diagnostics.zig");
 
 const Module = bp.Module;
 
@@ -140,6 +141,15 @@ fn reportDiag(arena: std.mem.Allocator, diag: resolver.Diagnostic) void {
             const origin = originOf(arena, diag);
             if (origin.len > 0) reporter.warnDetail("  at:", origin);
             reporter.hintMsg("declare it in the module tree (`mod <name>;`), or add it to `dependencies` in botopink.json");
+        },
+        resolver.Error.ModuleImportWithFrom => {
+            // Decision 206 — located at the source string, the fix written.
+            const message = std.fmt.allocPrint(arena, "\"{s}\" is a module of this package — write {s}", .{ diag.name, diag.fix }) catch diag.name;
+            const severity = std.fmt.allocPrint(arena, "error[{s}]", .{bp.comptime_pipeline.module_import_with_from}) catch "error";
+            var aw: std.Io.Writer.Allocating = .init(arena);
+            diagnostics.renderLocatedAs(&aw.writer, severity, message, diag.file, diag.source, diag.line, diag.col, diag.name.len + 2) catch {};
+            std.debug.print("{s}", .{aw.written()});
+            reporter.hintMsg("`from` names a package — std, a bundled package or a dependency; a module of this package is imported by its path inside the braces");
         },
         resolver.Error.UnexportedImport => {
             reporter.errMsg("imported symbol is not exported by the named module");

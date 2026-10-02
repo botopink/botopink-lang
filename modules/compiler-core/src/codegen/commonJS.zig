@@ -1758,8 +1758,11 @@ const Emitter = struct {
                     // `from "<mod>"` says which module's record this is, so
                     // the slot names a labelled constructor claims come from
                     // the declaration the import names and never from
-                    // whichever module the walk reached last.
-                    if (xc.picked(imp.name(), u.source, null)) |info| {
+                    // whichever module the walk reached last. A qualified
+                    // item names its module by its prefix
+                    // (`import {parser.Outcome};`, decision 206), so the
+                    // lookup is the leaf in the module its path names.
+                    if (xc.picked(imp.leaf(), try u.leafSource(imp, self.arena(), false), null)) |info| {
                         if (info.is_class) {
                             try self.class_names.put(imp.name(), {});
                             if (info.fields.len > 0) try self.record_fields.put(imp.name(), info.fields);
@@ -1815,7 +1818,7 @@ const Emitter = struct {
             .behavior => |i| try self.local_interfaces.put(i.name, i),
             .use => |u| if (self.cross) |xc| {
                 for (u.imports) |imp| {
-                    const info = xc.picked(imp.name(), u.source, null) orelse continue;
+                    const info = xc.picked(imp.leaf(), try u.leafSource(imp, self.arena(), false), null) orelse continue;
                     if (info.kind == .@"enum") try self.imported_enums.put(imp.name(), {});
                 }
             },

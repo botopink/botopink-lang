@@ -312,25 +312,30 @@ fn withImportTypeAliasesErased(arena: std.mem.Allocator, prog: ast.Program, env:
     return .{ .decls = decls };
 }
 
-/// Decision 170 — each shorthand item a bundled package also declares
-/// (`env.shorthandOwners`) leaves its `import { … };` for an import of its own
-/// that names the module it resolved to (`import {charOf} from "config";`), so
-/// the backends' name-keyed lookup reads the checker's answer instead of
-/// meeting the bundled package's declaration beside it.
-fn withShorthandSourcesNamed(arena: std.mem.Allocator, prog: ast.Program, env: *const envMod.Env) !ast.Program {
-    if (env.shorthandOwners.count() == 0) return prog;
+/// Each import item another module the backends would also read declares
+/// (`env.itemOwners` — a bundled package beside a shorthand, decision 170; a
+/// module of this package beside `from "<pkg>"` or a package beside a module
+/// path, decision 206) leaves its import for an import of its own that names
+/// the module it resolved to by its key (`import {charOf} from "config";`,
+/// `import {levelName} from "log/levels";`), the item reduced to its leaf and
+/// its alias, so the backends' name-keyed lookup reads the checker's answer
+/// instead of meeting the other declaration beside it.
+fn withImportSourcesNamed(arena: std.mem.Allocator, prog: ast.Program, env: *const envMod.Env) !ast.Program {
+    if (env.itemOwners.count() == 0) return prog;
     var out: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
     for (prog.decls) |d| switch (d) {
         .use => |u| {
-            if (u.source != .root or u.package != null) {
+            if (u.package != null or u.activationOnly) {
                 try out.append(arena, d);
                 continue;
             }
             var kept: std.ArrayListUnmanaged(ast.ImportPath) = .empty;
             for (u.imports) |imp| {
-                if (env.shorthandOwners.get(imp.loc)) |owner| {
+                if (env.itemOwners.get(imp.loc)) |owner| {
+                    var leaf = imp;
+                    leaf.segments = try arena.dupe([]const u8, &.{imp.leaf()});
                     var nu = u;
-                    nu.imports = try arena.dupe(ast.ImportPath, &.{imp});
+                    nu.imports = try arena.dupe(ast.ImportPath, &.{leaf});
                     nu.source = .{ .module = owner };
                     try out.append(arena, .{ .use = nu });
                 } else try kept.append(arena, imp);
@@ -810,6 +815,10 @@ pub const std_pkg_modules = @import("std_prelude").pkg_modules;
 pub const BundledPackage = @import("std_prelude").BundledPackage;
 pub const bundled_packages = @import("std_prelude").bundled_packages;
 
+/// Decision 206 — the code of the refusal of `from "<a module of this
+/// package>"`, for the driver that raises it (the CLI's module-tree resolver).
+pub const module_import_with_from = diagnostics.module_import_with_from;
+
 /// The bundled package called `name`, or null — `from "<name>"` resolves to it
 /// wherever the import is written.
 pub fn bundledPackage(name: []const u8) ?BundledPackage {
@@ -981,6 +990,28 @@ fn outsideShorthandReach(env: *envMod.Env, source: ast.ImportSource, path: []con
     if (bundledPackage(seg) == null) return false;
     const own = env.modulePath[0 .. std.mem.indexOfScalar(u8, env.modulePath, '/') orelse env.modulePath.len];
     return !std.mem.eql(u8, own, seg);
+}
+
+/// Decision 206 — the package an import `from "<pkg>"` is confined to: `pkg`
+/// when the program holds modules of it (`<pkg>/…`, a dependency or a bundled
+/// package), else null — the package is the one being compiled (a bundled
+/// library's own tests name it while its modules are the program's own), and
+/// the source reads as before. A module of the importing package named like
+/// the package (`log` beside the bundled `log`) is never in scope: `from`
+/// names a package, and the module is imported by its path inside the braces.
+fn packageScope(registry: anytype, source: ast.ImportSource) ?[]const u8 {
+    const pkg = source.packageName() orelse return null;
+    var it = registry.keyIterator();
+    while (it.next()) |k| {
+        if (ast.ImportSource.ofPackage(pkg, k.*)) return pkg;
+    }
+    return null;
+}
+
+/// True when `scope` confines a lookup and `path` is not a module of it.
+fn outOfScope(scope: ?[]const u8, path: []const u8) bool {
+    const pkg = scope orelse return false;
+    return !ast.ImportSource.ofPackage(pkg, path);
 }
 
 /// True when `path` is a "std" package registry key (`std/<module>`).
@@ -1172,6 +1203,10 @@ fn resolveImports(
                         if (registry.getPtr(pkg_owner)) |ex| try env.templateOwnerExports.put(env.arena, pkg_owner, ex);
                     }
                 }
+                // Decision 206 — `from "<pkg>"` names a package: its lookups
+                // admit only the package's modules (`<pkg>/…`), never a
+                // module of the importing package named like it.
+                const scope = packageScope(registry, u.source);
                 for (u.imports) |imp| {
                     if (from_std) {
                         // `import {bool} from "std"` — handled inside
@@ -1210,6 +1245,7 @@ fn resolveImports(
                         var sit = registry.iterator();
                         while (sit.next()) |e| {
                             if (isStdPkgPath(e.key_ptr.*)) continue;
+                            if (outOfScope(scope, e.key_ptr.*)) continue;
                             if (leaf_src.namesModule(e.key_ptr.*) and e.value_ptr.contains(name)) break :blk true;
                         }
                         break :blk false;
@@ -1258,7 +1294,7 @@ fn resolveImports(
                         var dit = typeDeclRegistry.iterator();
                         while (dit.next()) |e| {
                             if (isStdPkgPath(e.key_ptr.*)) continue;
-                            if (!leaf_src.admits(e.key_ptr.*, pass) or outsideShorthandReach(env, u.source, e.key_ptr.*)) continue;
+                            if (!leaf_src.admits(e.key_ptr.*, pass) or outsideShorthandReach(env, u.source, e.key_ptr.*) or outOfScope(scope, e.key_ptr.*)) continue;
                             if (e.value_ptr.get(name)) |type_decl| {
                                 // A behavior is not re-registered as a type:
                                 // its value binding below stays what it was,
@@ -1297,25 +1333,30 @@ fn resolveImports(
                         var oit = registry.iterator();
                         while (oit.next()) |e| {
                             if (isStdPkgPath(e.key_ptr.*)) continue;
-                            if (!leaf_src.admits(e.key_ptr.*, pass) or outsideShorthandReach(env, u.source, e.key_ptr.*)) continue;
+                            if (!leaf_src.admits(e.key_ptr.*, pass) or outsideShorthandReach(env, u.source, e.key_ptr.*) or outOfScope(scope, e.key_ptr.*)) continue;
                             if (e.value_ptr.contains(name)) {
                                 owner = e.key_ptr.*;
                                 break;
                             }
                         }
                     }
-                    // Decision 170 — a bundled package outside the shorthand's
-                    // reach declares the name too: the backends must be told
-                    // which module the item names.
-                    // A qualified item (`import {kit.store.Dict};`) names its
-                    // module already; std is never in a bare scan.
-                    if (u.source == .root and owner.len > 0 and !imp.isQualified()) {
+                    // Another module the backends' name-keyed lookup would also
+                    // read declares the name — one this lookup left out of
+                    // reach: a bundled package beside the shorthand (decision
+                    // 170), a module of this package beside `from "<pkg>"`, or
+                    // the package `log` beside the module path `log.levelName`
+                    // (decision 206). The backends must be told which module
+                    // the item names (`withImportSourcesNamed`); std is never
+                    // in such a scan.
+                    if (owner.len > 0) {
                         var xit = registry.iterator();
                         while (xit.next()) |e| {
-                            if (isStdPkgPath(e.key_ptr.*)) continue;
-                            if (!outsideShorthandReach(env, u.source, e.key_ptr.*)) continue;
+                            const k = e.key_ptr.*;
+                            if (isStdPkgPath(k) or std.mem.eql(u8, k, owner)) continue;
                             if (!e.value_ptr.contains(name)) continue;
-                            try env.shorthandOwners.put(env.arena, imp.loc, owner);
+                            const left_out = outsideShorthandReach(env, u.source, k) or outOfScope(scope, k);
+                            if (!left_out and !leaf_src.admits(k, 0) and !leaf_src.admits(k, 1)) continue;
+                            try env.itemOwners.put(env.arena, imp.loc, owner);
                             break;
                         }
                     }
@@ -1334,7 +1375,7 @@ fn resolveImports(
                             var ait = registry.iterator();
                             while (ait.next()) |e| {
                                 if (isStdPkgPath(e.key_ptr.*)) continue;
-                                if (!leaf_src.admits(e.key_ptr.*, pass) or outsideShorthandReach(env, u.source, e.key_ptr.*)) continue;
+                                if (!leaf_src.admits(e.key_ptr.*, pass) or outsideShorthandReach(env, u.source, e.key_ptr.*) or outOfScope(scope, e.key_ptr.*)) continue;
                                 if (e.value_ptr.contains(name)) try owners.append(env.arena, e.key_ptr.*);
                             }
                             if (owners.items.len == 0) continue;
@@ -1356,7 +1397,7 @@ fn resolveImports(
                             var it = registry.iterator();
                             while (it.next()) |e| {
                                 if (isStdPkgPath(e.key_ptr.*)) continue;
-                                if (!leaf_src.admits(e.key_ptr.*, pass) or outsideShorthandReach(env, u.source, e.key_ptr.*)) continue;
+                                if (!leaf_src.admits(e.key_ptr.*, pass) or outsideShorthandReach(env, u.source, e.key_ptr.*) or outOfScope(scope, e.key_ptr.*)) continue;
                                 if (e.value_ptr.get(name)) |ty| {
                                     try env.bind(local, ty);
                                     // The types its signature names come
@@ -1444,7 +1485,7 @@ fn resolveImports(
                     if (imp.activate) {
                         var eit = extensionRegistry.iterator();
                         while (eit.next()) |e| {
-                            if (isStdPkgPath(e.key_ptr.*)) continue;
+                            if (isStdPkgPath(e.key_ptr.*) or outOfScope(scope, e.key_ptr.*)) continue;
                             if (e.value_ptr.get(name)) |impl_decl| {
                                 try infer.registerImportedExtension(env, impl_decl);
                                 break;
@@ -1573,6 +1614,7 @@ fn addImportedTypeScope(
             }
             continue;
         }
+        const scope = packageScope(typeDeclRegistry, u.source);
         for (u.imports) |imp| {
             const name = imp.leaf();
             const leaf_src = try u.leafSource(imp, arena, false);
@@ -1582,7 +1624,7 @@ fn addImportedTypeScope(
                 var it = typeDeclRegistry.iterator();
                 while (it.next()) |e| {
                     if (isStdPkgPath(e.key_ptr.*)) continue;
-                    if (!leaf_src.admits(e.key_ptr.*, pass)) continue;
+                    if (!leaf_src.admits(e.key_ptr.*, pass) or outOfScope(scope, e.key_ptr.*)) continue;
                     const decl = e.value_ptr.get(name) orelse continue;
                     const key = try std.mem.concat(arena, u8, &.{ P, name });
                     if (!typeDecls.contains(key)) try typeDecls.put(key, decl);
@@ -2180,7 +2222,7 @@ pub fn compileTypesOnly(
                     const with_src = withSourceLocationDecl(arena_alloc, with_enums, &succ.env) catch with_enums;
                     const with_step = withYieldStepDecl(arena_alloc, with_src, &succ.env) catch with_src;
                     const erased = alias_erase.erase(arena_alloc, with_step, &succ.env.typeAliases) catch with_step;
-                    break :blk_t withShorthandSourcesNamed(arena_alloc, withImportTypeAliasesErased(arena_alloc, erased, &succ.env) catch erased, &succ.env) catch erased;
+                    break :blk_t withImportSourcesNamed(arena_alloc, withImportTypeAliasesErased(arena_alloc, erased, &succ.env) catch erased, &succ.env) catch erased;
                 };
 
                 var type_ids = std.StringHashMap(usize).init(arena_alloc);
@@ -2370,7 +2412,7 @@ pub fn compile(
                     @memcpy(new_decls[synth.items.len..], succ.program.decls);
                     break :blk ast.Program{ .decls = new_decls };
                 };
-                const transformed = try withShorthandSourcesNamed(arena_alloc, try withImportTypeAliasesErased(arena_alloc, try alias_erase.erase(arena_alloc, try withYieldStepDecl(arena_alloc, try withSourceLocationDecl(arena_alloc, try withSynthesisedEnumDecls(
+                const transformed = try withImportSourcesNamed(arena_alloc, try withImportTypeAliasesErased(arena_alloc, try alias_erase.erase(arena_alloc, try withYieldStepDecl(arena_alloc, try withSourceLocationDecl(arena_alloc, try withSynthesisedEnumDecls(
                     arena_alloc,
                     try withUsedAssocInterfaces(arena_alloc, try withTemplateHygiene(arena_alloc, try transform.transform(arena_alloc, program_for_transform, fn_decls, comptime_arrays, ct.comptime_vals, &succ.env.method_lowerings, &succ.env.templateExpansions, &succ.env.srcRewrites, &succ.env.result_jump_lowerings, &succ.env.stdArrayLowerings, &succ.env.enumSectionRewrites, &succ.env.indexRewrites, &succ.env.optionalNullCases, succ.env.ctorParams, &succ.env.defaultInjections, &succ.env.resultPatternLocs, &succ.env.namespaces), &succ.env, declaresTemplateFn(program_for_transform.decls)), &succ.env),
                     &succ.env,

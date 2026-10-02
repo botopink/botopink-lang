@@ -208,6 +208,30 @@ pub const ImportSource = union(enum) {
         return true;
     }
 
+    /// Decision 206 — the PACKAGE a `from "…"` names: its first segment (`log`
+    /// for `from "log"` and `from "log.levels"`). `from` names a package —
+    /// std, a bundled package or a declared dependency — and never a module of
+    /// the importing package, which is imported by its path inside the braces
+    /// (`import {log.logger};`). Null for `.root`.
+    pub fn packageName(this: ImportSource) ?[]const u8 {
+        const m = switch (this) {
+            .root => return null,
+            .module => |name| name,
+        };
+        const end = std.mem.indexOfAny(u8, m, "./") orelse m.len;
+        return m[0..end];
+    }
+
+    /// Whether `path` is a module of the package `pkg` — the registries key a
+    /// package's modules `<pkg>/<module>` (a dependency, a bundled package).
+    /// The checker's lookup under `from "<pkg>"` admits only those once the
+    /// program holds any (`comptime.packageScope`): a module of the importing
+    /// package keyed `log` is never what `from "log"` names, so a bundled
+    /// package added later never changes what an import means.
+    pub fn ofPackage(pkg: []const u8, path: []const u8) bool {
+        return path.len > pkg.len and path[pkg.len] == '/' and std.mem.startsWith(u8, path, pkg);
+    }
+
     /// The three widening passes of a name-keyed import lookup: 0 — the module
     /// the source names (`namesModule`), 1 — the source read across a package
     /// boundary (`inPackage`), 2 — the whole program.

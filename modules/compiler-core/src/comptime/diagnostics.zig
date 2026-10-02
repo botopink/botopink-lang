@@ -283,6 +283,14 @@ pub const std_unsupported_on_target: []const u8 = "std-unsupported-on-target";
 /// already imports) is not a collision.
 pub const import_name_collision: []const u8 = "import-name-collision";
 
+/// Decision 206 — `import {…} from "<name>"` where `<name>` is a module of the
+/// importing package and no package: `from` names a package (std, a bundled
+/// package, a declared dependency), and a module of this package is imported
+/// by its path inside the braces. Located at the source string; the fix-it is
+/// the brace form (`import {geometry.area};`). The CLI's module-tree resolver
+/// raises it — it is the one stage that knows which modules are the package's.
+pub const module_import_with_from: []const u8 = "module-import-with-from";
+
 /// Decision 107 — `as` on an activated item (`import {PatoNada* as Voa}`).
 /// An activation opts an extension in BY NAME (the dispatch rewrite emits
 /// `PatoNada.swim(donald)`), so a renamed binding would never be the one the
@@ -383,6 +391,7 @@ pub const all_codes = [_][]const u8{
     result_template_shape_mismatch,
     std_unsupported_on_target,
     import_name_collision,
+    module_import_with_from,
     import_alias_on_activation,
     std_root_imports_io,
     fn_param_default_trailing_only,

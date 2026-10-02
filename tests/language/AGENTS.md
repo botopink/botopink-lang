@@ -119,6 +119,17 @@ shorthand `import {splitPath};` resolves to the project's own `config` although 
 `routing` (loaded by a second import) declares `splitPath` in its internal module `routing/match`; it
 was `ambiguous-import-use` on the parent binary. `"targets"` excludes wasm, where `routing` reaches
 host functions with no wasm binding.
+Decision 206 (`from` names a package — std, a bundled package or a declared dependency — and a
+module of the importing package is imported by its path inside the braces) adds three `modules/`
+cells. `import_own_module_with_from` is the refusal: `import {area, perimeter as around} from
+"geometry";` over the package's own `geometry` is `error[module-import-with-from]` at the source
+string, writing the brace form, by `<target>.expect` on all four targets (it compiled and ran on the
+parent binary). `import_bundled_package_beside_own_module` — a package with a module `log` of its own
+imports `{Level, levelName} from "log"` and reaches the bundled `log`, and `log.levelName as
+ownLevelName` reaches its module; `"targets"` excludes wasm, where `log` reaches host functions with
+no wasm binding (refused on the parent binary: `Level` "not exported by the named module" `log`).
+`import_module_path_in_braces` — nested paths (`components.card.Card`,
+`reliability.policy.nextDelay as policyDelay`) beside a local `nextDelay`, on all four targets.
 Decision 141 adds `run/external_template_refused_on_beam` — an `@External.Erlang` template with a
 macro runs on erlang and is a located build error on beam naming the construct (`.beam.expect`); beam
 no longer evaluates a template it cannot compile from source at run time.
