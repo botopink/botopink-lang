@@ -56,6 +56,16 @@ libs/
   `AGENTS.md` in the same change that touches the package's layout or contents.
 - Library-specific code never goes into `modules/compiler-core` (enforced by the
   lib-agnostic gate in `zig build test`).
+- **A shared primitive lands in std first, and each copy is deleted by the
+  owner of the file it sits in.** What two libraries need — a string → number
+  parser, a reader over `json.Json`, a retry loop, a duration parser, a key
+  derivation — is written once in `libs/std` (decisions 115–116: what is
+  generic goes to std; `.bp` only, both targets, a `#[@External.<Target>]`
+  template where a host is needed), under its natural name (decision 170). A
+  library then calls std's and removes its own in a step of the front that owns
+  that file — never the std front editing a library, and never a library
+  growing a second copy while std lacks the first. A module that needs two
+  declarations of one name meanwhile imports them under an alias.
 
 ## See also
 
