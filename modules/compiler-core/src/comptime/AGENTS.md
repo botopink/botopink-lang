@@ -736,9 +736,11 @@ inferred), so `delay(n).unwrapOr(0)` over `?i64` types the `0` as `i64`
 position expects `f64` (`expectsFloat`, through one `?T`: a `val` annotation, an argument, a field,
 a return, an element of an expected `f64[]`, the other operand of an arithmetic or ordering
 operator) is typed `f64` and re-spelt as a float literal through `env.indexRewrites`, as the array
-join does; an `i32` value never widens. `==` / `!=` keep decision B2's exactness: an `f64` operand
-does not make the other side's literal a float (`equalityOperandExpectation`, `2.0 == 2` is false)
-(`run/integer_literal_fits_f64`, `reject/i32_value_never_widens`). `inferExprTypedInner` lets `.literal`, `.unaryOp` and `.binaryOp` keep the
+join does; an `i32` value never widens (`run/integer_literal_fits_f64`,
+`reject/i32_value_never_widens`). `==` / `!=` do not widen (`equalityOperandExpectation`): between
+an `f64` and an integer literal they are refused at the literal, `comparing f64 with an integer
+literal — write 2.0` (decision 215, `inferBinaryOpExpr`; `reject/f64_equals_integer_literal`,
+`reject/f64_not_equals_integer_literal` — the old B2 expectation `2.0 == 2` is `false`). `inferExprTypedInner` lets `.literal`, `.unaryOp` and `.binaryOp` keep the
 expectation; `inferBinaryOpExpr` hands it on only to the operands of an arithmetic operator
 (`3 * 86400000` passed to an `i64`), and types a literal operand of an arithmetic or comparison
 operator from the other operand (`n * 1000`, `1000 - n`, `x > 0`). The arithmetic `unify` of the

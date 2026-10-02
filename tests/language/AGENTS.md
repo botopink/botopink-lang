@@ -210,6 +210,10 @@ Decision 209 adds `run/integer_literal_fits_f64` (an integer literal under an ex
 `val`, an `f64[]` element, an argument, a return, an arithmetic operand — prints as the float, four
 targets; refused by the parent binary) and `reject/i32_value_never_widens` (an `i32` value passed to an
 `f64` parameter is the mismatch; it passes on the parent binary and pins the half that stays).
+Decision 215 adds `reject/f64_equals_integer_literal` (`x == 2` with `x: f64`) and
+`reject/f64_not_equals_integer_literal` (`3 != x`), refused at the literal naming the float to write;
+the beam codegen test `is and == read numbers by value …` no longer prints `2.0 == 2` (it answered
+`false`). Both accepted by the parent binary.
 Decision 141 adds `run/external_template_refused_on_beam` — an `@External.Erlang` template with a
 macro runs on erlang and is a located build error on beam naming the construct (`.beam.expect`); beam
 no longer evaluates a template it cannot compile from source at run time.

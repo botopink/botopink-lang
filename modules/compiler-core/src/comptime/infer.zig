@@ -9856,9 +9856,9 @@ fn expectedIntegerType(env: *Env) ?[]const u8 {
     return null;
 }
 
-/// Decision B2 — `==` / `!=` between two typed numbers is exact (`2.0 == 2`
-/// is false), so an `f64` operand does not make the other side's integer
-/// literal a float there (decision 209 reads every other position).
+/// `==` / `!=` do not widen an integer literal against an `f64` operand
+/// (decision 209 reads every other position): the comparison is refused at
+/// the literal instead (decision 215, `inferBinaryOpExpr`).
 fn equalityOperandExpectation(op: @FieldType(ast.BinOpExprOf(.untyped), "op"), other: *T.Type) ?*T.Type {
     if ((op == .eq or op == .ne) and other.deref().isNamed("f64")) return null;
     return other;
@@ -10302,6 +10302,24 @@ fn inferBinaryOpExpr(env: *Env, binop: ast.BinOpExprOf(.untyped), loc: ast.Loc) 
     // Restore after RHS inference.
     if (andSnapshots.items.len > 0) {
         try restorePatternBindings(env, andSnapshots.items);
+    }
+    // Decision 215 — `==` / `!=` between an `f64` and an integer literal is
+    // refused at the literal: the exact comparison (decision B2) and the
+    // literal's widening (decision 209) would read it two ways.
+    if (binop.op == .eq or binop.op == .ne) {
+        const litSide: ?ast.Expr = if (isIntegerLiteral(binop.lhs.*) and rhsTyped.getType().deref().isNamed("f64"))
+            binop.lhs.*
+        else if (isIntegerLiteral(binop.rhs.*) and lhsTyped.getType().deref().isNamed("f64"))
+            binop.rhs.*
+        else
+            null;
+        if (litSide) |lit| {
+            const text = lit.literal.kind.numberLit;
+            const fixed = (try floatSpelling(env, text)) orelse text;
+            const msg = try std.fmt.allocPrint(env.arena, "comparing f64 with an integer literal — write {s}", .{fixed});
+            env.lastError = TypeError.custom(msg, "`==` between numbers is exact and never widens; write the literal as the float it is compared with.").withLoc(lit.getLoc());
+            return error.TypeError;
+        }
     }
     const lhsPtr = try makeTypedPtr(env, lhsTyped);
     const rhsPtr = try makeTypedPtr(env, rhsTyped);
