@@ -2120,7 +2120,10 @@ test "addition works" {
 ```
 
 Test blocks are declared at module level. Run with `botopink test`
-(`--target`, `--filter <substring>`).
+(`--target`, `--filter <substring>`). A test that spawns the compiler — to
+build a fixture project — reads its path from the `BOTOPINK_BIN` environment
+variable: `botopink test` sets it to its own executable for the tests it runs,
+unless the caller already set it.
 
 A test body is a **fallible context**: a `try` whose operand is an `Error(e)`
 ends the test as `FAIL <name>  (<e>)  at <file>:<line>` — `e` is the message

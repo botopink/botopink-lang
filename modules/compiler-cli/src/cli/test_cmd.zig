@@ -90,9 +90,19 @@ fn makeTestOutDir(arena: std.mem.Allocator, io: std.Io, target: config.Target) !
 /// its `tmp/` is too, with nothing to reap.
 pub const TEST_TMPDIR_ENV = "BOTOPINK_TEST_TMPDIR";
 
+/// The environment variable that names "the compiler running me" to the tests
+/// a run executes: the absolute path of this `botopink` executable, set when
+/// the variable is not already in the environment (a value the caller set is
+/// the caller's choice and is passed through untouched). A test that builds a
+/// fixture project spawns the compiler it reads here, so it spawns the right
+/// one in every layout — a path relative to the library's checkout exists in
+/// one layout only.
+pub const TEST_BIN_ENV = "BOTOPINK_BIN";
+
 /// The runners' environment: this process's own plus `TEST_TMPDIR_ENV`, whose
-/// directory is created here. The absolute path is spelled from the process's
-/// cwd because a test may `cd` (a fixture build does) before it uses it.
+/// directory is created here, and `TEST_BIN_ENV` when it is unset. The absolute
+/// path is spelled from the process's cwd because a test may `cd` (a fixture
+/// build does) before it uses it.
 fn testTmpEnv(
     arena: std.mem.Allocator,
     io: std.Io,
@@ -111,6 +121,11 @@ fn testTmpEnv(
         for (m.keys(), m.values()) |k, v| try map.put(k, v);
     }
     try map.put(TEST_TMPDIR_ENV, abs);
+    if (map.get(TEST_BIN_ENV) == null) {
+        if (std.process.executablePathAlloc(io, arena)) |self_exe| {
+            try map.put(TEST_BIN_ENV, self_exe);
+        } else |_| {}
+    }
     return map;
 }
 

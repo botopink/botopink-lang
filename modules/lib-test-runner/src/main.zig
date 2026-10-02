@@ -4,17 +4,20 @@
 /// Usage:
 ///   botopink-lib-test [--target <t>[,<t>…] | --target all]
 ///                     [--lib <name>] [--filter <s>] [--strict] [--bin <path>]
-///                     [--include-unsupported] [--jobs <n>]
+///                     [--jobs <n>] [--json] [--list]
 ///
 /// It discovers every project carrying a `botopink.json` across the resolved root
 /// list (bundled `repository/botopink-lang/libs`, sibling `repository/`, legacy
 /// flat `libs/`) — and every **member** of a workspace found there (a manifest
 /// declaring `"workspaces"`, decision 75), examples included, one row per
 /// member — runs `botopink test --target <t>` with `cwd` set to each lib's own
-/// directory, and **exits non-zero iff any cell fails** — the missing CI gate
-/// for the lib ecosystem. It shells out to the installed `botopink` binary and
-/// touches no compiler internals (the std-only `manifest` module is the shared
-/// reading of `botopink.json`).
+/// directory, and **exits non-zero iff any cell fails or a restriction is not
+/// structural** — the missing CI gate for the lib ecosystem. The manifest
+/// decides the matrix: a target a lib's `"targets"` list excludes is not a
+/// cell, and the exclusion is audited on every run (`runner.captureAudit`) —
+/// no flag runs it or skips the audit. It shells out to the installed
+/// `botopink` binary and touches no compiler internals (the std-only
+/// `manifest` module is the shared reading of `botopink.json`).
 const std = @import("std");
 const args = @import("args.zig");
 const discovery = @import("discovery.zig");
@@ -42,11 +45,6 @@ const HELP =
     \\  --lib <name>          Restrict to one project by name across roots (default: all).
     \\  --filter <s>          Forwarded to `botopink test --filter`.
     \\  --strict              Treat an unsupported target as a failure, not a skip.
-    \\  --include-unsupported Run a cell the lib's botopink.json "targets" list
-    \\                        excludes, instead of skipping it, and mark it
-    \\                        "restricted":true in --json. Measures what a
-    \\                        restriction hides; scripts/test-libs.sh pins the
-    \\                        result in scripts/restricted-targets.txt.
     \\  --bin <path>          Path to the `botopink` binary (env: BOTOPINK_BIN;
     \\                        default: ./zig-out/bin/botopink, else PATH).
     \\  --lib-root <dir>      Extra root to scan; repeatable. Appended after env
@@ -58,7 +56,16 @@ const HELP =
     \\                        "lib"+"target" into every JSONL record, and emit
     \\                        per-cell + run summary JSON objects. Skips the
     \\                        text matrix. Schema in AGENTS.md (§T).
+    \\  --list                Print the plan and run nothing: one tab-separated
+    \\                        <lib> <target> <kind> line per pair. The `cell:*`
+    \\                        kinds are the cells the manifests declare.
     \\  -h, --help            Show this message.
+    \\
+    \\A lib's botopink.json "targets" list decides its cells: a target it
+    \\excludes is never run. Each excluded target `botopink test` can run is
+    \\audited instead — `botopink build --target <t>` must be refused for a
+    \\missing host binding (`has no #[@External.<Target>(…)]`). A lib that
+    \\builds there, or fails for another reason, fails the run.
     \\
 ;
 
@@ -151,9 +158,8 @@ fn run(init: std.process.Init) !u8 {
     }
 
     // Under `--json`, one `{"event":"lib","lib":…,"dir":…}` record per
-    // library first: the wrapper reads each library's directory from it to
-    // check a known-red line's pinned commit against the library's checkout.
-    if (opts.json) {
+    // library first: the directory each lib's cells run in.
+    if (opts.json and !opts.list) {
         for (libs) |lib| try runner.emitLibRecord(arena, io, lib.name, lib.dir);
     }
 
@@ -173,25 +179,25 @@ fn run(init: std.process.Init) !u8 {
         lib_names[r] = lib.name;
         cells[r] = try arena.alloc(matrix.Status, opts.targets.len);
         for (opts.targets, 0..) |target, c| {
-            // The lib's own `"targets"` whitelist excludes this target. The
-            // verdict is computed either way: it decides the skip below, and
-            // it is carried into every cell summary so a consumer can tell a
-            // restricted cell from an ordinary one (`scripts/test-libs.sh`
-            // reads those against `scripts/restricted-targets.txt`).
-            const restricted = !discovery.libSupportsTarget(lib, target.toString());
-            const kind: Cell.Kind = if (lib.problem != null)
-                .problem
-            else if (!discovery.libRunsTarget(lib, target.toString(), opts.include_unsupported))
-                .skipped
-            else if (!lib.has_tests and !lib.has_sources)
-                .nothing_to_compile
-            else if (!lib.has_tests)
-                .compile
-            else
-                .test_run;
-            if (kind == .compile or kind == .test_run) spawned += 1;
-            plan[r * opts.targets.len + c] = .{ .lib = lib, .target = target, .kind = kind, .restricted = restricted };
+            const kind = Cell.Kind.of(lib, target);
+            if (kind.spawns()) spawned += 1;
+            plan[r * opts.targets.len + c] = .{ .lib = lib, .target = target, .kind = kind };
         }
+    }
+
+    // `--list`: the plan is the answer. Nothing is spawned.
+    if (opts.list) {
+        var out: std.ArrayListUnmanaged(u8) = .empty;
+        for (plan) |cell| {
+            try out.appendSlice(arena, cell.lib.name);
+            try out.append(arena, '\t');
+            try out.appendSlice(arena, cell.target.toString());
+            try out.append(arena, '\t');
+            try out.appendSlice(arena, cell.kind.listName());
+            try out.append(arena, '\n');
+        }
+        std.Io.File.stdout().writeStreamingAll(io, out.items) catch {};
+        return if (doc_problems.len > 0) 1 else 0;
     }
 
     var pool: Pool = .{ .plan = plan, .io = io, .bin = bin, .opts = opts, .cpus = std.Thread.getCpuCount() catch 1 };
@@ -221,29 +227,34 @@ fn run(init: std.process.Init) !u8 {
                 // nothing is spawned. Stderr in both modes, so `--json` stdout
                 // stays pure JSONL.
                 std.debug.print("\n\x1b[36m── {s} · {s} ──\x1b[0m\n{s}", .{ lib.name, tname, lib.problem.? });
-                if (opts.json) try runner.emitCellSummaryFor(arena, io, lib.name, tname, .fail, cell.restricted);
+                if (opts.json) try runner.emitCellSummaryFor(arena, io, lib.name, tname, .fail);
                 break :blk .fail;
             },
-            .skipped => blk: {
-                // Lib's botopink.json `"targets": [...]` whitelist excludes
-                // this target — skip without spawning. Marks `~` in the matrix,
-                // never fails the run (even under --strict; the lib opted out
-                // explicitly, unlike a CLI-side unsupported target).
-                // `--include-unsupported` takes this arm away: the cell runs
-                // and is measured instead.
-                if (opts.json) try runner.emitCellSummaryFor(arena, io, lib.name, tname, .skipped_unsupported, cell.restricted);
-                break :blk .skipped_unsupported;
+            .not_runnable => blk: {
+                // The lib's `"targets"` list excludes a target `botopink test`
+                // cannot run at all (beam/wasm today). No cell could exist
+                // there, so the exclusion hides nothing and there is nothing
+                // to audit: the pair is reported as the CLI's own limit is —
+                // `~`, or a failure under `--strict` — without a spawn.
+                const st: matrix.Status = if (opts.strict) .fail else .skipped_unsupported;
+                if (opts.strict) std.debug.print("\n\x1b[36m── {s} · {s} ──\x1b[0m\n\x1b[1m\x1b[31merror\x1b[0m: `botopink test` cannot run the {s} target (--strict)\n", .{ lib.name, tname, tname });
+                if (opts.json) try runner.emitCellSummaryFor(arena, io, lib.name, tname, st);
+                break :blk st;
             },
             .nothing_to_compile => blk: {
                 // A manifest with no botopink source: nothing to compile.
-                if (opts.json) try runner.emitCellSummaryFor(arena, io, lib.name, tname, .no_tests, cell.restricted);
+                if (opts.json) try runner.emitCellSummaryFor(arena, io, lib.name, tname, .no_tests);
                 break :blk .no_tests;
             },
             // No `test` block: still compiled per target (`botopink
             // build`), so a test-less lib that does not compile fails
             // its cell; one that compiles is `–`.
-            .compile => try runner.emitCompile(arena, io, bin, lib.name, cell.target, opts.json, cell.restricted, pool.await(i)),
-            .test_run => try runner.emitTest(arena, io, bin, lib.name, cell.target, opts.json, cell.restricted, pool.await(i)),
+            .compile => try runner.emitCompile(arena, io, bin, lib.name, cell.target, opts.json, pool.await(i)),
+            .test_run => try runner.emitTest(arena, io, bin, lib.name, cell.target, opts.json, pool.await(i)),
+            // Not a cell: the manifest excludes the target. The exclusion is
+            // audited — `·` when it is structural, `!` (and a failed run)
+            // when it is not.
+            .audit => try runner.emitAudit(arena, io, bin, lib.name, cell.target, opts.json, pool.await(i)),
         };
         cells[r][c] = status;
         summary.tally(status);
@@ -262,24 +273,61 @@ fn run(init: std.process.Init) !u8 {
     const text = try matrix.render(arena, lib_names, opts.targets, cells_const, summary);
     std.Io.File.stdout().writeStreamingAll(io, text) catch {};
 
-    // Exit non-zero iff any cell failed (skips / no-tests do not), or a
-    // document's quote of the tool disagrees with it.
+    // Exit non-zero iff any cell failed (skips / no-tests do not), a
+    // restriction audit refused an exclusion, or a document's quote of the
+    // tool disagrees with it.
     if (doc_problems.len > 0) return 1;
     return summary.exitCode();
 }
 
-/// One (lib, target) cell of the plan. `kind` is decided up front from
-/// discovery alone; only `.compile` and `.test_run` spawn a child.
+/// One (lib, target) pair of the plan. `kind` is decided up front from
+/// discovery alone; only `.compile`, `.test_run` and `.audit` spawn a child.
 const Cell = struct {
     lib: discovery.Lib,
     target: args.Target,
     kind: Kind,
-    restricted: bool,
     /// Filled by the worker that ran the cell; valid once `done` is set.
     captured: runner.Captured = .{},
     done: std.Io.Event = .unset,
 
-    const Kind = enum { problem, skipped, nothing_to_compile, compile, test_run };
+    const Kind = enum {
+        problem,
+        not_runnable,
+        nothing_to_compile,
+        compile,
+        test_run,
+        audit,
+
+        /// The manifest decides, and nothing overrides it: a target the lib's
+        /// `"targets"` list excludes is never a cell. Such a pair is audited
+        /// when `botopink test` can run the target (a cell could have existed
+        /// there), and is the CLI's own limit when it cannot.
+        fn of(lib: discovery.Lib, target: args.Target) Kind {
+            if (lib.problem != null) return .problem;
+            if (!discovery.libSupportsTarget(lib, target.toString()))
+                return if (target.isSupported()) .audit else .not_runnable;
+            if (!lib.has_tests and !lib.has_sources) return .nothing_to_compile;
+            if (!lib.has_tests) return .compile;
+            return .test_run;
+        }
+
+        fn spawns(self: Kind) bool {
+            return self == .compile or self == .test_run or self == .audit;
+        }
+
+        /// The third column of `--list`. `cell:*` is a cell the manifests
+        /// declare; `audit` and `not-runnable` are excluded pairs.
+        fn listName(self: Kind) []const u8 {
+            return switch (self) {
+                .problem => "cell:problem",
+                .nothing_to_compile => "cell:nothing-to-compile",
+                .compile => "cell:compile",
+                .test_run => "cell:test",
+                .audit => "audit",
+                .not_runnable => "not-runnable",
+            };
+        }
+    };
 };
 
 /// The worker pool: each worker takes the next spawning cell in plan order,
@@ -307,7 +355,7 @@ const Pool = struct {
             const i = pool.next.fetchAdd(1, .monotonic);
             if (i >= pool.plan.len) return false;
             const cell = &pool.plan[i];
-            if (cell.kind != .compile and cell.kind != .test_run) continue;
+            if (!cell.kind.spawns()) continue;
             pool.admit();
             _ = pool.active.fetchAdd(1, .monotonic);
             defer _ = pool.active.fetchSub(1, .monotonic);
@@ -318,6 +366,7 @@ const Pool = struct {
             cell.captured = switch (cell.kind) {
                 .compile => runner.captureCompile(a, pool.io, pool.bin, cell.lib.dir, cell.target, pool.opts.strict),
                 .test_run => runner.captureTest(a, pool.io, pool.bin, cell.lib.dir, cell.target, pool.opts.filter, pool.opts.strict, pool.opts.json),
+                .audit => runner.captureAudit(a, pool.io, pool.bin, cell.lib.dir, cell.target),
                 else => unreachable,
             };
             cell.done.set(pool.io);
@@ -431,4 +480,42 @@ test {
     _ = matrix;
     _ = runner;
     _ = doc_quotes;
+}
+
+test "Cell.Kind.of: the manifest decides — an excluded target is never a cell" {
+    const only_erlang = [_][]const u8{"erlang"};
+    const lib: discovery.Lib = .{ .name = "host-bound", .dir = "/x", .has_tests = true, .targets = &only_erlang };
+    // Declared: a cell.
+    try std.testing.expectEqual(Cell.Kind.test_run, Cell.Kind.of(lib, .erlang));
+    // Excluded, and `botopink test` could have run it: audited, not run.
+    try std.testing.expectEqual(Cell.Kind.audit, Cell.Kind.of(lib, .commonJS));
+    // Excluded, and no cell can run there at all: the CLI's own limit.
+    try std.testing.expectEqual(Cell.Kind.not_runnable, Cell.Kind.of(lib, .beam));
+    try std.testing.expectEqual(Cell.Kind.not_runnable, Cell.Kind.of(lib, .wasm));
+
+    // An exclusion is audited whatever the lib holds: no tests, no sources.
+    const bare: discovery.Lib = .{ .name = "bare", .dir = "/x", .has_tests = false, .has_sources = false, .targets = &only_erlang };
+    try std.testing.expectEqual(Cell.Kind.audit, Cell.Kind.of(bare, .commonJS));
+    try std.testing.expectEqual(Cell.Kind.nothing_to_compile, Cell.Kind.of(bare, .erlang));
+
+    // No list: every requested target is a cell.
+    const open: discovery.Lib = .{ .name = "open", .dir = "/x", .has_tests = false, .targets = null };
+    try std.testing.expectEqual(Cell.Kind.compile, Cell.Kind.of(open, .commonJS));
+    try std.testing.expectEqual(Cell.Kind.compile, Cell.Kind.of(open, .beam));
+
+    // A lib that cannot be used fails every requested target, excluded or not.
+    const broken: discovery.Lib = .{ .name = "broken", .dir = "/x", .problem = "error: refused\n", .has_tests = true, .targets = &only_erlang };
+    try std.testing.expectEqual(Cell.Kind.problem, Cell.Kind.of(broken, .commonJS));
+}
+
+test "Cell.Kind: what spawns, and what --list calls a cell" {
+    try std.testing.expect(Cell.Kind.audit.spawns());
+    try std.testing.expect(Cell.Kind.test_run.spawns());
+    try std.testing.expect(Cell.Kind.compile.spawns());
+    try std.testing.expect(!Cell.Kind.problem.spawns());
+    try std.testing.expect(!Cell.Kind.not_runnable.spawns());
+    try std.testing.expect(!Cell.Kind.nothing_to_compile.spawns());
+    try std.testing.expectEqualStrings("audit", Cell.Kind.audit.listName());
+    try std.testing.expect(std.mem.startsWith(u8, Cell.Kind.test_run.listName(), "cell:"));
+    try std.testing.expect(!std.mem.startsWith(u8, Cell.Kind.not_runnable.listName(), "cell:"));
 }

@@ -106,26 +106,24 @@ the only way to name one. `zig build clean-tmp` reaps both at a 1-day TTL.
 checkout can see (`<ancestor>/repository/*` of the enclosing checkout — the meta
 workspace or a worktree of it, or the repos CI checks out) and in every **member** of a workspace among them (a `botopink.json`
 with `"workspaces"`, one row per member, examples included), and reports each cell as pass, FAIL (with the failing module's
-diagnostic), known red, restricted, skipped (with the reason) or no tests — a library with
+diagnostic) or no tests — a library with
 no `test` block is still compiled (`botopink build --target <t>`), so it fails
-its cell when it does not compile. A cell listed in
-[`scripts/known-red-libs.txt`](scripts/known-red-libs.txt) is named with its
-owning front and the library commit it was measured at, and does not fail the
-run while the library's checkout is at that commit; an unlisted failure does,
-and so does a listed cell that passes (delete its line) and a line whose
-library has moved (re-measure it). A workspace document that quotes the tool's
-member list is checked against the tool, and a stale `botopink` (its checkout's
-sources changed since it was built) is refused before any cell runs.
+its cell when it does not compile. **A cell that exists is green or the run
+fails**: no file lists a red cell away or pins a failed count, and no flag or
+environment variable changes a verdict (decision 67). A workspace document that
+quotes the tool's member list is checked against the tool, and a stale
+`botopink` (its checkout's sources changed since it was built) is refused
+before any cell runs.
 
-A member may exclude a backend with `"targets"` in its `botopink.json`. That
-used to make the cell invisible — skipped, `~`, failing nothing even under
-`--strict`. It no longer can: the wrapper passes `--include-unsupported`, so
-every restricted cell **runs**, and its failed-test count is pinned in
-[`scripts/restricted-targets.txt`](scripts/restricted-targets.txt), strict in
-both directions — an unlisted restriction fails, a line whose member no longer
-restricts fails, and a count that moves either way fails. Only the *failed*
-count is pinned, so a library adding a green test never has to touch this
-repository. It is **not** part of `zig build
+**The manifest decides the matrix.** A member may exclude a backend with
+`"targets"` in its `botopink.json`; an excluded target is not a cell and is
+never run. The exclusion is **audited on every run** instead: `botopink build
+--target <excluded>` must be refused, its first error the missing host binding
+(`has no #[@External.<Target>(…)]`) — the member structurally cannot run there.
+A member that builds on the target it excludes, or fails there for any other
+reason, fails the run by name ([`scripts/AGENTS.md`](scripts/AGENTS.md)
+§ test-libs.sh). `zig build test-libs -- --list` prints the plan — cells and
+audits — without running it. `test-libs` is **not** part of `zig build
 test` — it needs host runtimes on `PATH`:
 
 | Backend    | Tool                     | Install hint                                     |
@@ -167,7 +165,7 @@ does not mirror them. Entry points:
 
 | Workflow | Trigger | What |
 | --- | --- | --- |
-| `.github/workflows/test.yml` | push / PR to `main`, `feat` | job `test`: `zig build test` from a cold runtime cache, then `zig build test-cli`, `zig build test-language` (ubuntu + macos only — it needs `node` and `erl`) and `zig build test-docs`, on ubuntu-22.04 + macos-14 (hard gate) and windows-2022 (allowed to fail; OTP 28 is installed there too, because `zig build` runs `erlc`). Job `libs` (ubuntu, after `test`): checks out emilia/erika/jhonstart/onze/rakun at `feat` into `repository/<name>/` and runs `zig build test-libs` over every runnable target. |
+| `.github/workflows/test.yml` | push / PR to `main`, `feat` | job `test`, on ubuntu-22.04 + macos-14, every step of both rows hard: `zig fmt --check modules`, `zig build test` from a cold runtime cache, the comptime runtime parity audit, `zig build test-bpmp`, the beam export audit, `zig build test-cli`, `scripts/format-check.sh`, `zig build test-language`, `zig build test-docs` and `zig build test-web` — the local gate's stages minus the staged-file checks. There is no windows row (1.0.11-beta gate-f: a row that cannot fail measures nothing; it returns hard or not at all). Job `libs` (ubuntu, after `test`): checks out emilia/erika/jhonstart/onze/rakun at `feat` into `repository/<name>/` and runs `zig build test-libs` — every cell the manifests declare, every excluded target audited. |
 | `.github/workflows/release.yml` | tag push `v*` | 5-target matrix (`linux-{x86_64,aarch64}`, `macos-{x86_64,aarch64}`, `windows-x86_64`) → `scripts/release-pack.sh` writes `dist/<binary>-<tag>-<target>.<ext>` + `.sha256` → `softprops/action-gh-release@v2` uploads to one Release. Prerelease iff the tag contains `-`. |
 
 Asset naming (the contract bpmp and the install scripts rely on):
@@ -241,13 +239,6 @@ it and must not silently wait for it.
   (the return is the effect — there is no annotation; the base is always
   written). The checker holds the rule that **every `use` in one function
   resolves against the same base**.
-- **The libraries move to the return-is-the-effect surface** — front 24
-  (decisions 118–128). The compiler refuses `#[@result]` … `#[@futureGenerator]`,
-  `#[@use]`, `@Future`, `@Generator`, `@ResultGenerator`, `@FutureGenerator`,
-  `@Use` and `@Iterator<T, E>`; jhonstart, rakun and emilia (and their examples)
-  still write them, so their cells are listed in `scripts/known-red-libs.txt`
-  under `24-effects-by-return` until each library's sweep (`front/24-libs`,
-  `front/24-rakun`) lands and deletes its lines.
 
 ## Local gate
 
@@ -257,7 +248,7 @@ run is [`scripts/gate.sh`](scripts/gate.sh) — stages 1–4 one after the other
 4b–10 side by side and reported in this order, the first red one ending the run
 (`scripts/AGENTS.md` § Where the gate's time goes):
 
-1. `--staged`: conflict markers and `zig fmt --check` on staged files, and a staged snapshot candidate (`*.snap.new`, `*.snap.md.new` — `git add -f` gets past `.gitignore`) is refused;
+1. `--staged`: conflict markers and `zig fmt --check` on staged files, and a staged snapshot candidate (`*.snap.new`, `*.snap.md.new` — `git add -f` gets past `.gitignore`) is refused; then, on every run, `zig fmt --check modules` — a `.zig` file red anywhere in the tree fails the gate, staged or not;
 2. `zig build`;
 3. `scripts/format-check.sh` (`botopink format --check` over the compiler's canonical `.bp` trees — decision 66's caller; `TREES` in the script names them, and every tracked `.bp` is under one or structurally exempt);
 4. `zig build test` (compiler-core, language-server, CLI and lib-test-runner unit suites; `--cold` deletes `modules/compiler-core/.botopinkbuild/runtime-cache` first — required for the run that decides a merge);
@@ -265,7 +256,7 @@ run is [`scripts/gate.sh`](scripts/gate.sh) — stages 1–4 one after the other
 5. `zig build test-bpmp` (the package manager's unit suite);
 6. `scripts/beam_export_audit.sh` (every beam snapshot module assembles with every function exported);
 7. `zig build test-cli` (the CLI contract, test tooling, recursion and backend execution scripts);
-8. `zig build test-libs` (every visible library, known reds named; a library without tests is still compiled; every `"targets"`-restricted cell runs and is checked against `scripts/restricted-targets.txt`);
+8. `zig build test-libs` (every visible library on the targets its manifest declares — a cell that exists is green or the stage fails; a library without tests is still compiled; every target a `"targets"` list excludes is audited, and an exclusion that is not structural fails the stage);
 9. `zig build test-language` (tests/language on commonJS, erlang, wasm and beam — decision 8's `case`, tuples and `loop`; expected failures named; every `.targets` / manifest `"targets"` narrowing audited against the compiler's host-binding refusal, after the runner's own `--self-test`);
 10. `zig build test-docs` (every `botopink` fence of `docs.md` and `README.md` compiles).
 

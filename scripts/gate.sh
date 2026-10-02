@@ -29,10 +29,10 @@
 #   7. zig build test-cli   modules/compiler-cli/tests/*.sh — the command
 #                           contract, test tooling, recursion, backend parity
 #   8. zig build test-libs  every `.bp` library the checkout can see, per target
-#                           (a library without tests is still compiled);
-#                           known reds named by scripts/known-red-libs.txt, and
-#                           every cell a member's "targets" list excludes run
-#                           anyway and pinned by scripts/restricted-targets.txt
+#                           (a library without tests is still compiled); the
+#                           manifests decide the cells — one that exists is
+#                           green or the stage fails — and every target a
+#                           member's "targets" list excludes is audited
 #   9. zig build test-language  tests/language — decision 8's `case`, tuples and
 #                           `loop` in botopink, on commonJS and erlang; expected
 #                           failures named by tests/language/expected-failures.txt

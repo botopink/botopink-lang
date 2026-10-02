@@ -4,7 +4,7 @@
 > Parent: [`../AGENTS.md`](../AGENTS.md)
 
 Installers, the release packaging helper, the gate, the lib-test and
-vscode-test wrappers, the two library-cell ledgers, the snapshot audit tool, the user-docs fence checker, the comptime-path
+vscode-test wrappers, the snapshot audit tool, the user-docs fence checker, the comptime-path
 benchmark, and the tracked git hooks.
 
 ## Tree
@@ -17,9 +17,7 @@ scripts/
 ├── release-pack.sh    ← per-target archive + sha256 packer (used by release.yml)
 ├── gate.sh            ← the ordered local gate (staged checks + `zig fmt --check modules`, build, format-check, test, test-bpmp, beam export audit, test-cli, test-libs, test-language, test-docs)
 ├── format-check.sh    ← `botopink format --check` over the compiler's canonical `.bp` trees (`TREES`) — decision 66's caller
-├── test-libs.sh       ← runtime pre-flight + `botopink-lib-test` wrapper with known reds and the restricted-targets ledger (`zig build test-libs`)
-├── known-red-libs.txt ← library cells known red, each with its owning front
-├── restricted-targets.txt ← the ledger: every cell a member's `"targets"` list hides, with its measured failed count
+├── test-libs.sh       ← runtime pre-flight + `botopink-lib-test` wrapper: one line per cell and per audited exclusion, one summary line (`zig build test-libs`)
 ├── test-vscode.sh     ← locate the sibling vscode-extension, `npm ci` once, `npm test` (`zig build test-vscode`)
 ├── check-docs.sh      ← compiles every `botopink` fence of docs.md/README.md (`zig build test-docs`)
 ├── check-test-scratch.sh ← refuses a cwd-anchored `.botopinkbuild` path inside a `test` block or a `tests/` file (part of `zig build test`)
@@ -123,8 +121,8 @@ caller), `zig build test` (`--cold` deletes
 `snap_audit.sh --mode=runtime-parity` (front 18 step 4: the codegen tree under
 both comptime runtimes, pairs equal but for their listing sections), `zig build
 test-bpmp`, `scripts/beam_export_audit.sh`, `zig build test-cli`, `zig build
-test-libs` (every `"targets"`-restricted cell included, checked against
-`restricted-targets.txt`), `zig build test-language` (`tests/language/`, expected failures in
+test-libs` (every cell the manifests declare, and an audit of every target a
+manifest excludes — § test-libs.sh), `zig build test-language` (`tests/language/`, expected failures in
 `tests/language/expected-failures.txt`), `zig build test-docs`
 (`check-docs.sh`). CI (`.github/workflows/test.yml`) runs the same stages minus the
 staged checks. The pre-commit hook runs `--staged`; the run
@@ -247,88 +245,56 @@ own tracked hooks).
 Resolves the core dir (meta layout `repository/botopink-lang/` or this repo's
 root), exits `1` if `zig-out/bin/botopink-lib-test` is not built, warns (without
 gating) for each missing `node`/`escript`/`erlc`/`wasmtime`, then runs the runner
-in `--json --include-unsupported` mode — discovery is the runner's, workspace members included, so
-the script exports no root — and prints one line per cell — `pass`, `FAIL`, `known red — <front>
-<reason>`, `restricted — <n> failed, as pinned (<front> <reason>)` (or `does not build, as pinned`),
-`skipped — <reason>`, `no tests` (the library has no `test` block and
-compiled; one that does not compile is a `FAIL`) — after that cell's diagnostics, and a
-count summary. Exit `1` when an unlisted cell fails, a listed known red passes,
-a known-red line is stale (its library moved from the commit it pins, or it
-pins none — § known-red-libs.txt), a workspace document quotes the tool's
-member list and disagrees with it (`../modules/lib-test-runner/AGENTS.md`
-§ Documents that quote the tool), or the restricted-targets ledger is refused
-(§ below);
-otherwise `0` (or the runner's own error exit). An explicit `--json` argument
-bypasses all of this and execs the runner raw — without `--include-unsupported`,
-so a raw run still skips the restricted cells. `BOTOPINK_KNOWN_RED_LIBS`
-and `BOTOPINK_RESTRICTED_TARGETS` override the two list paths.
+in `--json` mode — discovery is the runner's, workspace members included, so
+the script exports no root — and prints one line per (library, target) pair
+after that pair's diagnostics, and one summary line.
 
-The script always passes `--include-unsupported`, so **no cell is skipped for
-being outside a member's `"targets"` list** — a restriction costs its cells'
-wall time on every run (measured: under a minute for the whole omitted matrix,
-of which rakun's erlang cell is ~18 s) and buys a measured line instead of
-silence.
+**The manifest decides the matrix.** A member runs on the targets its
+`botopink.json` declares and on no other: a target its `"targets"` list excludes
+is not a cell, and nothing runs it. **A cell that exists is green or the run
+fails** — there is no file that lists a red cell away or pins how many of its
+tests may fail, and **no flag or environment variable changes any of it**
+(decision 67; 1.0.11-beta gate-a). The two ledger files this script used to
+read, the variables that swapped them and the runner's flag that ran an excluded
+cell are deleted, not hidden.
 
-## known-red-libs.txt
+**A restriction is audited on every run** (gate-d). For each target a member
+excludes that `botopink test` can run, the runner spawns `botopink build
+--target <excluded>` in the member and accepts the exclusion only when the build
+is refused and its first error is the missing host binding (`` `f` has no
+`#[@External.<Target>(…)]` for the <backend> backend ``): the member structurally
+cannot run there. A member that builds on the target it excludes, or whose build
+fails there for any other reason, fails the run — the exclusion would hide a cell
+that could run, or a red that is somebody's to fix. The remedy is in the
+message: delete the `"targets"` line, or file the compiler row that makes the
+build refuse it. The rule is the runner's
+([`../modules/lib-test-runner/AGENTS.md`](../modules/lib-test-runner/AGENTS.md)
+§ The restriction audit); this script only prints its verdict.
 
-`<lib> <target> <commit> <owner> <reason…>` per line, `#` comments.
-`<commit>` is the library checkout's HEAD the red was **measured** at (12 or
-more hex digits of `git -C <library> rev-parse HEAD`). A line is a claim about
-one library commit made in this repository, and the two are never committed
-together — so between a library fix and the compiler-side deletion every
-`test-libs` run used to fail with "known reds that pass", owned by nobody. The
-wrapper now reads each library's directory from the runner's
-`{"event":"lib"}` records and asks git where the checkout is: when the library
-has moved from `<commit>`, the line is **stale** and fails the run, red or
-green, until it is re-measured — deleted when the cell passes, re-pinned when
-it is still red. A line that names no commit, a library with no git checkout
-to compare against, and (on an unfiltered run) a line whose cell does not
-exist fail the same way. At its pinned commit a listed red is counted and does
-not fail the run; a listed cell that passes does, until its line is deleted.
-**Live entries**: `rakun-data erlang` and `rakun-security erlang` (`03-rakun`:
-two tests assert a refusal `@Decl`'s spelled type names no longer make).
-
-## restricted-targets.txt
-
-`<lib> <target> <n-failed> <owner> <reason…>` per line, `#` comments. One line
-per cell a member's `botopink.json` `"targets"` list excludes — the cells that
-used to be `~`, `17 skipped`, failing nothing even under `--strict`. That
-silence is how a regression landed green: the erlang row of the largest library
-in the workspace was not tested at all.
-
-`<n-failed>` is the number of **failing tests**, or the token `build` when the
-cell does not compile (no test ran, so it has no count — reading that as "0
-failed" is the blindness the file closes). **Only the failed count is pinned,
-never the passed count**: a library that adds a green test moves nothing here,
-so an ordinary library commit never has to touch this repository. Writing a
-line is a measurement — run the cell
-(`zig build test-libs -- --lib <lib> --target <target>`) and copy what it
-prints.
-
-Three refusals, strict in both directions, no warning row (decision 67 —
-fail beats warn):
-
-| Refusal | Fires when | Fix |
+| Line | Meaning | Fails the run |
 |---|---|---|
-| **missing line** | a restricted cell has no line | measure the cell, then add the line — a new restriction cannot enter silently |
-| **stale line** | the cell ran *without* a restriction (the member widened its `targets`), or, on a run with no arguments, the cell does not exist at all | delete the line; the cell is an ordinary assert now |
-| **moved count** | the measured count ≠ the pinned count, **up or down** | up is a regression; down is a fix, banked by editing the number in the same commit |
+| `pass` | the library compiled and every test passed | no |
+| `FAIL` | a module did not compile or a test failed; the diagnostic is above the line | **yes** |
+| `no tests — …` | no `test` block; the `.bp` sources compiled (`botopink build`) — one that does not compile is a `FAIL` | no |
+| `excluded by "targets" — structural: <refusal> (<file>:<line>:<col>)` | not a cell; the audit quotes the refusal that proves the exclusion | no |
+| `NOT STRUCTURAL — excluded by "targets", and <what the audit found>` | not a cell; the audit refused the exclusion | **yes** |
+| `NOT RUNNABLE — …` | the target is one `botopink test` cannot run (beam, wasm); met only when such a target is asked for by name. Nothing ran, and a pair that did not run is never a pass | **yes** |
 
-A filtered run (`--lib`/`--target`/`--filter`) judges only the cells it ran, so
-the stale-line refusal's "no cell at all" arm is restricted to an unfiltered
-run. A restricted cell never consults `known-red-libs.txt`: its verdict is this
-file's alone. The ledger covers the targets `botopink test` can actually run: a
-restricted cell on a not-yet-runnable backend is reported as an unmeasured skip
-and asserts nothing — except under `--strict --target beam|wasm`, where the
-runner reports it as a plain failure and the ledger reads it as a `build` red.
-Nothing in the gate uses that combination (`--target all` expands to the
-runnable set).
+The summary is `test-libs: <P> passed, <F> failed, <N> without tests, <A>
+restrictions audited`, with `, <X> restrictions not structural` and `, <S> not
+runnable by botopink test` appended when they are not zero (each fails the run); `<P> + <F> + <N>` is
+the number of cells the manifests declare for the requested targets, and
+`--list` prints that plan without running it (`cell:*` lines are cells, `audit`
+lines the excluded pairs). Exit `1` when a cell fails, an exclusion is not
+structural, a requested target is one `botopink test` cannot run, or a workspace document quotes the tool's member list and disagrees
+with it (`../modules/lib-test-runner/AGENTS.md` § Documents that quote the
+tool); otherwise the runner's own exit (`0`, or its error exit for bad arguments
+or no library root). An explicit `--json` or `--list` argument execs the runner
+raw: its output, not a verdict.
 
-The `<owner>` is the front that owns the member's `targets` array in
-`specs/<milestone>/fronts.md` — the front that will delete the line by widening
-the array — not whoever measured it. Twenty-one cells are listed today, one
-per member, across three repositories (rakun's commonJS rows, two jhonstart
-examples and `erika-linq` on erlang).
+The audit costs one `botopink build` per excluded (member, target) pair — the
+dependency-closure compile the cell would have cost, and no test run. The pairs
+run on the same worker pool as the cells.
 
 ## check-docs.sh
 

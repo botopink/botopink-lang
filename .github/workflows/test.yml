@@ -1,7 +1,8 @@
 # Push/PR CI for botopink-lang — the same gate as the local one
 # (scripts/gate.sh), minus the staged-file checks.
 #
-#   test  `zig build test` from a cold runtime cache, `zig build test-bpmp`,
+#   test  `zig fmt --check modules` (the gate's stage 1, whole tree), `zig
+#         build test` from a cold runtime cache, `zig build test-bpmp`,
 #         `scripts/beam_export_audit.sh`, then `zig build test-cli` (the CLI
 #         command contract, test tooling, mutual recursion and backend
 #         execution parity scripts), `scripts/format-check.sh` (decision 66:
@@ -18,13 +19,14 @@
 #         (emilia, erika, jhonstart, onze, rakun at `feat`) plus libs/std,
 #         compiled and tested on every runnable target by `zig build test-libs`
 #         (a library without tests is still compiled).
-#         A failing library fails the job by name, with its diagnostic in the
-#         log; the cells listed in scripts/known-red-libs.txt are reported with
-#         their owning front and do not fail it until they pass. A cell a
-#         member's "targets" list excludes is NOT skipped: it runs, and its
-#         failed-test count must equal the one pinned in
-#         scripts/restricted-targets.txt — a restriction is a measured ledger
-#         line, never a silent opt-out.
+#         The manifest decides the matrix: a member runs on the targets its
+#         botopink.json declares and on no other, and a cell that exists is
+#         green or the job fails, by name, with its diagnostic in the log —
+#         no file lists a red cell away or pins a failed count. A target a
+#         member's "targets" list excludes is not a cell, and the exclusion
+#         is audited on every run: `botopink build --target <excluded>` must
+#         be refused for a missing host binding, or the job fails naming the
+#         member and the target (scripts/AGENTS.md § test-libs.sh).
 name: test
 
 on:
@@ -124,6 +126,12 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: '20'
+
+      # The gate's stage 1, whole tree: a `.zig` file `zig fmt` would rewrite
+      # fails the job and is listed. Needs only zig.
+      - name: zig fmt --check modules
+        shell: bash
+        run: zig fmt --check modules
 
       # The merge-deciding run is cold: a stale runtime-cache entry can hide a
       # backend that never ran. A fresh checkout has no cache; the delete makes

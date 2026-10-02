@@ -26,6 +26,9 @@ compiler-cli/
 │   │                          mixed pass/fail exit, the `.snap.new` candidate list;
 │   │                          `botopink-lib-test` compiles a test-less library,
 │   │                          and prints under `--jobs 4` what `--jobs 1` prints;
+│   │                          a `"targets"` exclusion is never run and is audited
+│   │                          (structural / builds / another error — runner and
+│   │                          `scripts/test-libs.sh`); `BOTOPINK_BIN` in a test;
 │   │                          a dependency's erlang host `.erl` is shipped and reached
 │   └── test_tooling/        ← pass + fail fixture projects
 └── src/
@@ -176,6 +179,8 @@ no "files"` (decision 75).
 | Variable              | Read by                                  | Effect                                                                 |
 | --------------------- | ---------------------------------------- | ---------------------------------------------------------------------- |
 | `BOTOPINK_LIB_ROOTS`  | `cli/libs.zig:resolveLibRoots`           | Prepends extra lib roots before the walk-up roots.                     |
+| `BOTOPINK_BIN`        | the tests `botopink test` runs — **set** by `cli/test_cmd.zig:testTmpEnv` (`TEST_BIN_ENV`) | "The compiler running me": the absolute path of this `botopink` executable, exported to every test runner when the variable is unset; a value the caller set passes through untouched. |
+| `BOTOPINK_TEST_TMPDIR` | the tests `botopink test` runs — **set** by `cli/test_cmd.zig:testTmpEnv` (`TEST_TMPDIR_ENV`) | The run's own scratch directory, absolute (§ below). |
 
 **`BOTOPINK_LIB_ROOTS` contract:**
 
@@ -318,6 +323,18 @@ Cross-command rules:
   Pinned by row C3c of `tests/cli_contract.sh` (two concurrent runs, two
   distinct absolute directories inside their runs, both removed), which reds
   against a pre-fix binary.
+- **A test spawns the compiler that is running it.** `botopink test` exports
+  `BOTOPINK_BIN` — the absolute path of its own executable
+  (`std.process.executablePathAlloc`) — to every runner it spawns, when the
+  variable is not already in the environment (`test_cmd.zig`, `TEST_BIN_ENV`);
+  a value the caller set is passed through untouched. A test that builds a
+  fixture project reads the compiler from there, so it spawns the right one in
+  every layout: a path relative to the library's checkout
+  (`../../../botopink-lang/zig-out/bin/botopink`) exists in the meta workspace
+  only, and a library's fixture-build tests would fail in CI's layout the day
+  CI ran them. Neither `botopink-lib-test` nor `scripts/test-libs.sh` sets the
+  variable. Pinned by the `[env]` rows of `tests/test_tooling.sh` (unset → the
+  running binary; pre-set → the pre-set value; commonJS and erlang).
 - **The scaffold runs.** `botopink new` writes a program whose `main` calls
   `@print`. A block's value is its `break` (semantics decision 2), so the old
   template — a body whose only statement was the literal `"Hello, world!"` —

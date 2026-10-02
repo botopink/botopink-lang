@@ -57,9 +57,10 @@ pub const Lib = struct {
     has_sources: bool = true,
     /// Per-lib supported-target whitelist from `botopink.json` `"targets":
     /// ["commonJS", …]`. `null` means "no whitelist, run every requested
-    /// target" — the historic default. A non-null list filters the runner:
-    /// cells whose target is not in the list become `skipped_unsupported`
-    /// without spawning `botopink test`. Owned by `gpa` (each element AND
+    /// target" — the historic default. A non-null list decides the matrix:
+    /// a (lib, target) pair whose target is not in the list is not a cell —
+    /// no `botopink test` is spawned for it, and the exclusion is audited
+    /// instead (`runner.captureAudit`). Owned by `gpa` (each element AND
     /// the outer slice). Set by `discover` when the manifest carries the
     /// field; the single-string `"target"` field (canonical build target)
     /// is left unchanged.
@@ -286,26 +287,15 @@ fn freeTargets(gpa: std.mem.Allocator, targets: []const []const u8) void {
 }
 
 /// True when `lib` has no `targets` whitelist OR the whitelist contains
-/// `target`. Comparison is case-sensitive (matches the on-disk `Target.toString`
-/// form: `"commonJS"`, `"erlang"`, `"beam"`, `"wasm"`).
+/// `target` — the one rule that says whether a (lib, target) pair is a cell.
+/// No flag or variable overrides it. Comparison is case-sensitive (matches the
+/// on-disk `Target.toString` form: `"commonJS"`, `"erlang"`, `"beam"`, `"wasm"`).
 pub fn libSupportsTarget(lib: Lib, target: []const u8) bool {
     const list = lib.targets orelse return true;
     for (list) |t| {
         if (std.mem.eql(u8, t, target)) return true;
     }
     return false;
-}
-
-/// True when the runner should spawn this `(lib, target)` cell.
-///
-/// The whitelist normally decides (`libSupportsTarget`). `include_unsupported`
-/// overrides it so a restricted cell runs anyway — the restriction is then
-/// *measured* rather than obeyed, which is what turns it into a ledger line
-/// (`scripts/restricted-targets.txt`) instead of a silent opt-out. The cell is
-/// still flagged `restricted` in the JSON so its verdict is read against the
-/// ledger and not against the ordinary pass/fail tally.
-pub fn libRunsTarget(lib: Lib, target: []const u8, include_unsupported: bool) bool {
-    return include_unsupported or libSupportsTarget(lib, target);
 }
 
 // ── "Has tests" detection ───────────────────────────────────────────────────────
@@ -429,7 +419,7 @@ test "libSupportsTarget: null whitelist accepts every target" {
 
 test "libSupportsTarget: whitelist filters out missing targets" {
     const list = [_][]const u8{"commonJS"};
-    const lib: Lib = .{ .name = "onze", .dir = "/x", .has_tests = true, .targets = &list };
+    const lib: Lib = .{ .name = "node-only", .dir = "/x", .has_tests = true, .targets = &list };
     try testing.expect(libSupportsTarget(lib, "commonJS"));
     try testing.expect(!libSupportsTarget(lib, "erlang"));
     try testing.expect(!libSupportsTarget(lib, "beam"));
@@ -441,25 +431,6 @@ test "libSupportsTarget: empty whitelist rejects every target" {
     const lib: Lib = .{ .name = "stub", .dir = "/x", .has_tests = true, .targets = &list };
     try testing.expect(!libSupportsTarget(lib, "commonJS"));
     try testing.expect(!libSupportsTarget(lib, "erlang"));
-}
-
-test "libRunsTarget: --include-unsupported runs what the whitelist excludes" {
-    const list = [_][]const u8{"commonJS"};
-    const lib: Lib = .{ .name = "rakun", .dir = "/x", .has_tests = true, .targets = &list };
-    // Default: the whitelist decides.
-    try testing.expect(libRunsTarget(lib, "commonJS", false));
-    try testing.expect(!libRunsTarget(lib, "erlang", false));
-    // Lifted: every requested target runs, and the whitelist verdict stays
-    // readable through `libSupportsTarget` so the cell can be marked restricted.
-    try testing.expect(libRunsTarget(lib, "commonJS", true));
-    try testing.expect(libRunsTarget(lib, "erlang", true));
-    try testing.expect(!libSupportsTarget(lib, "erlang"));
-}
-
-test "libRunsTarget: an unrestricted lib is unaffected by the flag" {
-    const lib: Lib = .{ .name = "std", .dir = "/x", .has_tests = true, .targets = null };
-    try testing.expect(libRunsTarget(lib, "erlang", false));
-    try testing.expect(libRunsTarget(lib, "erlang", true));
 }
 
 test "containsTestBlock detects named test" {
