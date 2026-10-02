@@ -250,18 +250,26 @@ fn buildModule(
         },
         .unsupported_method = unsupported,
     };
-    const code = erlang.emitComptimeModule(arena, placeholder_module, .{ .decls = decls }, config) catch |err|
-        return if (err == error.UnsupportedComptimeMethod) error.UnsupportedMethod else error.EvalFailed;
     const argument = try templateEval.argumentTerm(arena, plans);
-    // A2: `bp@comptime@<owner path>__dec__<decorator>__<16 hex>`; the Wyhash is
-    // unchanged, so content-addressing survives (see `template_eval.buildModule`).
-    const module = crossModule.erlDeclAtom(arena, try templateEval.ownerId(arena, owner), .dec, dfn.name, std.hash.Wyhash.hash(0, code)) catch |err| switch (err) {
-        error.OutOfMemory => return error.OutOfMemory,
-        else => return error.EvalFailed,
+    // Emitted once per decorator and plan, not once per annotated declaration
+    // (`template_eval` § one emit per declaration).
+    const key = try templateEval.emitKey(arena, "dec", owner, decls, plans);
+    const emitted: templateEval.Emitted = (if (key) |k| templateEval.cachedEmit(k) else null) orelse blk: {
+        const code = erlang.emitComptimeModule(arena, placeholder_module, .{ .decls = decls }, config) catch |err|
+            return if (err == error.UnsupportedComptimeMethod) error.UnsupportedMethod else error.EvalFailed;
+        // A2: `bp@comptime@<owner path>__dec__<decorator>__<16 hex>`; the Wyhash is
+        // unchanged, so content-addressing survives (see `template_eval.buildModule`).
+        const module = crossModule.erlDeclAtom(arena, try templateEval.ownerId(arena, owner), .dec, dfn.name, std.hash.Wyhash.hash(0, code)) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => return error.EvalFailed,
+        };
+        const header = "-module(" ++ placeholder_module ++ ").";
+        if (!std.mem.startsWith(u8, code, header)) return error.EvalFailed;
+        const fresh: templateEval.Emitted = .{ .module = module, .code = try std.fmt.allocPrint(arena, "-module({s}).{s}", .{ module, code[header.len..] }) };
+        break :blk if (key) |k| try templateEval.rememberEmit(k, fresh) else fresh;
     };
-    const header = "-module(" ++ placeholder_module ++ ").";
-    if (!std.mem.startsWith(u8, code, header)) return error.EvalFailed;
-    const renamed = try std.fmt.allocPrint(arena, "-module({s}).{s}", .{ module, code[header.len..] });
+    const module = emitted.module;
+    const renamed = emitted.code;
 
     // What snapshots show: the lowered body, `main/1` and the argument as a
     // comment. `resident` stays set: it decides where a method call lowers, so
