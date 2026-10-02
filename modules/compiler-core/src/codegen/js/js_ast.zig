@@ -510,6 +510,8 @@ pub const TsMember = union(enum) {
 pub const TsNamespace = struct {
     name: []const u8,
     items: []const TsNamespaceItem,
+    /// False for a module-private declaration (`TsDecl.exported`).
+    exported: bool = true,
 };
 
 pub const TsNamespaceItem = union(enum) {
@@ -525,20 +527,27 @@ pub const TsDecl = union(enum) {
     const_: struct { name: []const u8, type: TsType },
     /// `export declare function name(params): R;`
     func: struct { name: []const u8, params: []const TsParam, ret: TsType },
-    /// `export declare class Name { … }`
-    class: struct { name: []const u8, members: []const TsMember },
+    /// `export declare class Name { … }` — `declare class` when `exported` is
+    /// false: a module-private type a public signature names (`exported`
+    /// below).
+    class: struct { name: []const u8, members: []const TsMember, exported: bool = true },
     /// `export declare interface Name extends A, B { … }`
-    interface: struct { name: []const u8, extends: []const []const u8, members: []const TsMember },
+    interface: struct { name: []const u8, extends: []const []const u8, members: []const TsMember, exported: bool = true },
     /// `export declare enum Name { … }`
     enum_: struct { name: []const u8, members: []const TsMember },
     /// `export declare type Name = T;`
-    type_alias: struct { name: []const u8, type: TsType },
+    type_alias: struct { name: []const u8, type: TsType, exported: bool = true },
     /// `export declare namespace Name { … }`
     namespace_: TsNamespace,
     /// `import { a, b as c } from "src";` — a name is written as given.
     import: struct { names: []const []const u8, source: []const u8 },
     /// `import * as name from "src";` — a whole module bound to one name.
     import_namespace: struct { name: []const u8, source: []const u8 },
+    /// `export {};` — in a declaration file that holds a non-exported
+    /// declaration, it turns off TypeScript's implicit export of every
+    /// top-level declaration, so the file exports what the `.js` exports and
+    /// nothing more.
+    export_none,
     /// Several declarations with no blank line between them.
     group: []const TsDecl,
     /// Nothing at all — a binding with no `.d.ts` surface.

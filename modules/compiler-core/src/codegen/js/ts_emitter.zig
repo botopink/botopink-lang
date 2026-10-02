@@ -189,14 +189,14 @@ pub fn writeDecl(w: *Writer, d: Ast.TsDecl) Error!void {
             try w.writeAll(";\n");
         },
         .class => |c| {
-            try w.writeAll("export declare class ");
+            try w.writeAll(if (c.exported) "export declare class " else "declare class ");
             try w.writeAll(ident(c.name));
             try w.writeAll(" {\n");
             for (c.members) |m| try writeMember(w, m);
             try w.writeAll("}\n");
         },
         .interface => |i| {
-            try w.writeAll("export declare interface ");
+            try w.writeAll(if (i.exported) "export declare interface " else "declare interface ");
             try w.writeAll(ident(i.name));
             if (i.extends.len > 0) {
                 try w.writeAll(" extends ");
@@ -217,14 +217,14 @@ pub fn writeDecl(w: *Writer, d: Ast.TsDecl) Error!void {
             try w.writeAll("}\n");
         },
         .type_alias => |t| {
-            try w.writeAll("export declare type ");
+            try w.writeAll(if (t.exported) "export declare type " else "declare type ");
             try w.writeAll(t.name);
             try w.writeAll(" = ");
             try writeType(w, t.type);
             try w.writeAll(";\n");
         },
         .namespace_ => |ns| {
-            try w.writeAll("export declare namespace ");
+            try w.writeAll(if (ns.exported) "export declare namespace " else "declare namespace ");
             try w.writeAll(ident(ns.name));
             try w.writeAll(" {\n");
             try writeNamespaceItems(w, ns.items, 1);
@@ -247,6 +247,7 @@ pub fn writeDecl(w: *Writer, d: Ast.TsDecl) Error!void {
             try w.writeAll(i.source);
             try w.writeAll("\";\n");
         },
+        .export_none => try w.writeAll("export {};\n"),
         .group => |items| for (items) |item| try writeDecl(w, item),
     }
 }
@@ -314,6 +315,18 @@ test "ts_emitter: declarations" {
         .{ .method = .{ .name = "greet", .params = &.{}, .ret = .{ .name = "string" } } },
     } } });
     try expectDecl("import { a, b } from \"std\";\n", .{ .import = .{ .names = &.{ "a", "b" }, .source = "std" } });
+    // A module-private type a public signature names: declared, not exported,
+    // and the file's `export {};` turns TypeScript's implicit export off.
+    try expectDecl(
+        \\declare class Loc {
+        \\    readonly line: number;
+        \\}
+        \\
+    , .{ .class = .{ .name = "Loc", .exported = false, .members = &.{
+        .{ .field = .{ .modifier = "readonly ", .name = "line", .type = .{ .name = "number" } } },
+    } } });
+    try expectDecl("declare type Id = string;\n", .{ .type_alias = .{ .name = "Id", .type = .{ .name = "string" }, .exported = false } });
+    try expectDecl("export {};\n", .export_none);
     try expectDecl(
         \\export declare namespace Token {
         \\    interface Layout {

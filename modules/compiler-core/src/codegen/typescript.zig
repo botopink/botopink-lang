@@ -47,17 +47,25 @@ pub fn emitProgram(
     /// source is spelled relative to it, as the `.js` beside it spells its
     /// `require`.
     module_name: []const u8,
+    /// The declarations of the module's transformed program — the program the
+    /// `.js` beside this `.d.ts` is written from, so it also holds the
+    /// prelude records the comptime pass splices into a module that names
+    /// them (`SourceLocation`, `YieldStep`, `Declared`, private, no binding).
+    /// Its `type`s are, beside the bindings, where a private type a public
+    /// signature names is declared from (`Builder.localTypes`).
+    program_decls: []const ast.DeclKind,
 ) ![]u8 {
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
     var bld = Builder{ .b = .{ .arena = arena.allocator() }, .cross = cross, .type_exports = type_exports, .module_name = module_name };
 
-    const decls = try bld.b.arena.alloc(js.TsDecl, bindings.len);
-    for (bindings, 0..) |binding, i| decls[i] = try bld.binding(binding);
+    var decls: std.ArrayListUnmanaged(js.TsDecl) = .empty;
+    for (bindings) |binding| try decls.append(bld.b.arena, try bld.binding(binding));
+    try bld.localTypes(&decls, bindings, program_decls);
 
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
-    try tsEmitter.writeProgram(&aw.writer, decls);
+    try tsEmitter.writeProgram(&aw.writer, decls.items);
     return aw.toOwnedSlice();
 }
 
@@ -79,6 +87,194 @@ const Builder = struct {
     seen_import_names: std.ArrayListUnmanaged([]const u8) = .empty,
 
     const Error = anyerror;
+
+    // ── module-private types ─────────────────────────────────────────────────
+
+    /// A public signature may name a type the module keeps private — a
+    /// `type` written without `pub`, or a prelude record the comptime pass
+    /// spliced in (`pub fn path(loc: SourceLocation)` in std's
+    /// `testing/snapshots`). The `.js` defines its class and exports nothing
+    /// for it; the `.d.ts` named it and declared nothing, which `tsc` refuses
+    /// (`Cannot find name 'SourceLocation'`). Each such name — and, to a
+    /// fixpoint, each private type those declarations name in turn — is
+    /// declared without `export`, after the module's own declarations, and
+    /// the file then ends in `export {};`: without it TypeScript exports every
+    /// top-level declaration of a declaration file, and the `.d.ts` would
+    /// promise an export the `.js` does not have.
+    ///
+    /// The candidates are the module's own private declarations (its
+    /// bindings: a `type`, a `behavior`, a type alias, a delegate) and the
+    /// `type`s of the transformed program (the spliced prelude records). Not
+    /// the program's other declarations: the comptime pass also prepends the
+    /// std prelude's primitive behaviors a module calls into (`Array<T>`,
+    /// `Pair<A, B>`, `String` — `env.assocInterfaceDecls`), and `Array<K>` in
+    /// a signature is TypeScript's own `Array`, which a local `interface
+    /// Array<T>` would shadow.
+    fn localTypes(self: *Builder, decls: *std.ArrayListUnmanaged(js.TsDecl), bindings: []const comptimeMod.TypedBinding, program_decls: []const ast.DeclKind) Error!void {
+        var candidates: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
+        for (bindings) |bd| try candidates.append(self.b.arena, bd.decl);
+        for (program_decls) |pd| if (pd == .type_) try candidates.append(self.b.arena, pd);
+        var bound: std.StringHashMapUnmanaged(void) = .empty;
+        var named: std.StringHashMapUnmanaged(void) = .empty;
+        for (decls.items) |d| try self.scanDecl(d, &bound, &named);
+        var added = false;
+        var pass_start: usize = decls.items.len;
+        while (true) {
+            var progress = false;
+            for (candidates.items) |pd| {
+                const name = localTypeName(pd) orelse continue;
+                if (bound.contains(name) or !named.contains(name)) continue;
+                const d = try self.markPrivate(try self.privateDecl(pd));
+                if (d == .none) continue;
+                try bound.put(self.b.arena, name, {});
+                try decls.append(self.b.arena, d);
+                progress = true;
+                added = true;
+            }
+            if (!progress) break;
+            for (decls.items[pass_start..]) |d| try self.scanDecl(d, &bound, &named);
+            pass_start = decls.items.len;
+        }
+        if (added) try decls.append(self.b.arena, .export_none);
+    }
+
+    /// The name a declaration of the program binds as a TYPE in the `.d.ts`,
+    /// when it is not already public (a public one is a binding's).
+    fn localTypeName(d: ast.DeclKind) ?[]const u8 {
+        return switch (d) {
+            .type_ => |t| if (t.isPub) null else t.name,
+            .behavior => |b| if (b.isPub) null else b.name,
+            .typeAlias => |a| if (a.isPub) null else a.name,
+            .delegate => |dg| if (dg.isPub) null else dg.name,
+            else => null,
+        };
+    }
+
+    /// A private declaration built by the public path (`isPub` forced).
+    fn privateDecl(self: *Builder, d: ast.DeclKind) Error!js.TsDecl {
+        return switch (d) {
+            .type_ => |t| blk: {
+                var pt = t;
+                pt.isPub = true;
+                break :blk if (pt.isRecord()) try self.record(pt) else try self.enumDecl(pt);
+            },
+            .behavior => |b| blk: {
+                var pb = b;
+                pb.isPub = true;
+                break :blk try self.interface(pb);
+            },
+            .typeAlias => |a| blk: {
+                var pa = a;
+                pa.isPub = true;
+                break :blk try self.typeAlias(pa);
+            },
+            .delegate => |dg| blk: {
+                var pd = dg;
+                pd.isPub = true;
+                break :blk try self.delegate(pd);
+            },
+            else => .none,
+        };
+    }
+
+    /// `d` without its `export`.
+    fn markPrivate(self: *Builder, d: js.TsDecl) Error!js.TsDecl {
+        var out = d;
+        switch (out) {
+            .class => |*c| c.exported = false,
+            .interface => |*i| i.exported = false,
+            .type_alias => |*t| t.exported = false,
+            .namespace_ => |*ns| ns.exported = false,
+            // An enum with sections: its class and the namespace merged with
+            // it, both private.
+            .group => |items| {
+                const copy = try self.b.arena.alloc(js.TsDecl, items.len);
+                for (items, copy) |item, *c| c.* = try self.markPrivate(item);
+                out = .{ .group = copy };
+            },
+            else => {},
+        }
+        return out;
+    }
+
+    /// Records the names `d` binds (`bound`) and the type names it reads
+    /// (`named`): a qualified `Token.Layout` reads `Token`, and a generic
+    /// declaration's `Name<A>` binds `Name`.
+    fn scanDecl(self: *Builder, d: js.TsDecl, bound: *std.StringHashMapUnmanaged(void), named: *std.StringHashMapUnmanaged(void)) Error!void {
+        const a = self.b.arena;
+        switch (d) {
+            .none, .export_none => {},
+            .const_ => |c| {
+                try bound.put(a, baseName(c.name), {});
+                try self.scanType(c.type, named);
+            },
+            .func => |f| {
+                try bound.put(a, baseName(f.name), {});
+                for (f.params) |p| try self.scanType(p.type, named);
+                try self.scanType(f.ret, named);
+            },
+            .class => |c| {
+                try bound.put(a, baseName(c.name), {});
+                for (c.members) |m| try self.scanMember(m, named);
+            },
+            .interface => |i| {
+                try bound.put(a, baseName(i.name), {});
+                for (i.extends) |e| try named.put(a, baseName(e), {});
+                for (i.members) |m| try self.scanMember(m, named);
+            },
+            .enum_ => |e| try bound.put(a, baseName(e.name), {}),
+            .type_alias => |t| {
+                try bound.put(a, baseName(t.name), {});
+                try self.scanType(t.type, named);
+            },
+            .namespace_ => |ns| try bound.put(a, ns.name, {}),
+            .import => |i| for (i.names) |n| {
+                const as = std.mem.indexOf(u8, n, " as ");
+                try bound.put(a, if (as) |k| n[k + 4 ..] else n, {});
+            },
+            .import_namespace => |i| try bound.put(a, i.name, {}),
+            .group => |items| for (items) |item| try self.scanDecl(item, bound, named),
+        }
+    }
+
+    fn scanMember(self: *Builder, m: js.TsMember, named: *std.StringHashMapUnmanaged(void)) Error!void {
+        switch (m) {
+            .field => |f| try self.scanType(f.type, named),
+            .method => |f| {
+                for (f.params) |p| try self.scanType(p.type, named);
+                try self.scanType(f.ret, named);
+            },
+            .getter => |g| try self.scanType(g.type, named),
+            .setter => |st| for (st.params) |p| try self.scanType(p.type, named),
+            .ctor => |c| for (c.params) |p| try self.scanType(p.type, named),
+            .enum_member => {},
+        }
+    }
+
+    fn scanType(self: *Builder, t: js.TsType, named: *std.StringHashMapUnmanaged(void)) Error!void {
+        const a = self.b.arena;
+        switch (t) {
+            .name => |n| try named.put(a, baseName(n), {}),
+            .literal => {},
+            .generic => |g| {
+                try named.put(a, baseName(g.name), {});
+                for (g.args) |x| try self.scanType(x, named);
+            },
+            .array => |inner| try self.scanType(inner.*, named),
+            .tuple, .union_ => |ts| for (ts) |x| try self.scanType(x, named),
+            .func => |f| {
+                for (f.params) |p| try self.scanType(p.type, named);
+                try self.scanType(f.ret.*, named);
+            },
+            .object => |o| for (o.fields) |f| try self.scanType(f.type, named),
+        }
+    }
+
+    /// `Name` of `Name<A, B>` or of `Name.Section`.
+    fn baseName(n: []const u8) []const u8 {
+        const end = std.mem.indexOfAny(u8, n, "<.") orelse n.len;
+        return n[0..end];
+    }
 
     // ── declarations ─────────────────────────────────────────────────────────
 

@@ -89,3 +89,86 @@ test ".d.ts: a union is `A | B`, not `|<A, B>` (step 6 T3)" {
         &.{"|<"},
     );
 }
+
+// A public signature naming a type the module keeps private: a `type` written
+// without `pub`, and the prelude record `SourceLocation` the comptime pass
+// splices into a module that names it (std's `testing/snapshots` —
+// `pub fn path(loc: SourceLocation)`). The `.js` defines each class and
+// exports none of them; the `.d.ts` named them and declared nothing, which
+// `tsc --strict` refused (`Cannot find name 'SourceLocation'`). Each is
+// declared without `export` — `Inner`, named only by the private `Outer`, too
+// — and `export {};` keeps TypeScript from exporting them implicitly. The
+// private `Unused`, which no public signature names, stays out.
+test ".d.ts: a private type a public signature names is declared, not exported" {
+    try helpers.assertDtsContains(
+        std.testing.allocator,
+        \\type Inner(n: i32)
+        \\type Outer(inner: Inner)
+        \\type Unused(z: i32)
+        \\type Mode { Fast, Slow(by: i32) }
+        \\pub fn wrap(n: i32, m: Mode) -> Outer { return Outer(inner: Inner(n: n)); }
+        \\pub fn where(loc: SourceLocation) -> string { return loc.file; }
+    ,
+        &.{
+            "export declare function wrap(n: number, m: Mode): Outer;",
+            "export declare function where(loc: SourceLocation): string;",
+            \\declare class SourceLocation {
+            \\    readonly file: string;
+            \\    readonly line: number;
+            \\    readonly column: number;
+            \\    readonly fnName: string;
+            \\    constructor(file: string, line: number, column: number, fnName: string);
+            \\}
+            ,
+            \\declare class Outer {
+            \\    readonly inner: Inner;
+            ,
+            "declare class Inner {",
+            \\declare class Mode {
+            \\    readonly tag: "Fast" | "Slow";
+            ,
+            "\nexport {};\n",
+        },
+        &.{ "export declare class", "Unused" },
+    );
+}
+
+// A module whose public signatures name only public types keeps its `.d.ts`
+// as it was: no private declaration, no `export {};`.
+test ".d.ts: no private type named, no `export {}`" {
+    try helpers.assertDtsContains(
+        std.testing.allocator,
+        \\type Hidden(n: i32)
+        \\pub type Shown(n: i32)
+        \\pub fn make(n: i32) -> Shown { return Shown(n: n); }
+    ,
+        &.{ "export declare class Shown {", "export declare function make(n: number): Shown;" },
+        &.{ "Hidden", "export {}" },
+    );
+}
+
+// A private `behavior` a public signature names is declared the same way (a
+// type alias needs nothing: the checker erases it, so the signature spells its
+// target); the std prelude's `Array<T>` behavior, which the comptime pass
+// prepends to a module calling into it, is not — `Array<…>` in a signature is
+// TypeScript's own `Array`.
+test ".d.ts: a private behavior is declared; the prelude's Array is not" {
+    try helpers.assertDtsContains(
+        std.testing.allocator,
+        \\behavior Shape {
+        \\    fn area(self: Self) -> f64;
+        \\}
+        \\type Name = string;
+        \\pub fn names(xs: Array<Name>, s: Shape) -> Array<Name> { return xs.map(fn(x) { return x; }); }
+    ,
+        &.{
+            "export declare function names(xs: Array<string>, s: Shape): Array<string>;",
+            \\declare interface Shape {
+            \\    area(): number;
+            \\}
+            ,
+            "\nexport {};\n",
+        },
+        &.{ "interface Array", "Name" },
+    );
+}

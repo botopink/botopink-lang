@@ -117,7 +117,7 @@ pub fn codegenEmit(
 
                 // Generate TypeScript typedefs if configured.
                 const typedef: ?[]u8 = if (config.typeDefLanguage) |_|
-                    try emitTypeDef(alloc, ok.bindings, &cross, type_exports.items, ct.name)
+                    try emitTypeDef(alloc, ok.bindings, &cross, type_exports.items, ct.name, ok.transformed.decls)
                 else
                     null;
 
@@ -164,8 +164,9 @@ fn emitTypeDef(
     cross: *const CrossModule,
     type_exports: []const tsEmit.TypeExport,
     module_name: []const u8,
+    program_decls: []const ast.DeclKind,
 ) ![]u8 {
-    return try tsEmit.emitProgram(alloc, bindings, cross, type_exports, module_name);
+    return try tsEmit.emitProgram(alloc, bindings, cross, type_exports, module_name, program_decls);
 }
 
 // ── emit ──────────────────────────────────────────────────────────────────────
