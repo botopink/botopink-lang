@@ -44,7 +44,8 @@
 #  10. zig build test-docs  every `botopink` fence of docs.md and README.md is
 #                           compiled (scripts/check-docs.sh)
 #  11. tsc-check.sh         every `.d.ts` the commonJS backend emits for the
-#                           example projects and tests/language/modules passes
+#                           example projects, tests/language/modules and every
+#                           package under libs/ (std included) passes
 #                           `tsc --noEmit --strict` (needs `npx`, from node)
 #  12. zig build test-web   compiler-core built for wasm32-wasi (the browser
 #                           compiler) and modules/compiler-web/tests/smoke.js
