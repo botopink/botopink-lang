@@ -1,0 +1,158 @@
+//// log — the `Logger` over an injected sink (decision 195): the level check
+//// before the record is built, the record a sink receives, `logError`'s one
+//// record and its digest, and the default sink. The sink is global host
+//// state and outlives a test, so every test that sets one puts
+//// `defaultSink()` back before it asserts.
+
+import {testing.asserts} from "std";
+import {Level, levelName, levelRank} from "levels";
+import {LogRecord} from "formats";
+import {LogSink, setSink, defaultSink, currentSink} from "sink";
+import {Logger} from "logging";
+import {errorDigest} from "digest";
+
+#[@External.Node("""(function(){ globalThis.__bp_log_capture = []; return 0; })()""")]
+#[@External.Erlang("""(fun() -> put(lg_capture, []), 0 end)()""")]
+declare fn captureReset() -> i32;
+
+#[@External.Node("""(function(__T){ (globalThis.__bp_log_capture ||= []).push(__T); return 7; })($0)""")]
+#[@External.Erlang("""(fun(LgT__) -> put(lg_capture, [LgT__ | case get(lg_capture) of undefined -> []; LgL__ -> LgL__ end]), 7 end)($0)""")]
+declare fn capturePush(line: string) -> i32;
+
+#[@External.Node("""((globalThis.__bp_log_capture ||= []).join("\n"))""")]
+#[@External.Erlang("""(fun() -> iolist_to_binary(lists:join(<<"\n">>, lists:reverse(case get(lg_capture) of undefined -> []; LgL__ -> LgL__ end))) end)()""")]
+declare fn captureLines() -> string;
+
+fn describe(r: LogRecord) -> string {
+    var parts: string[] = [
+        levelName(r.level),
+        r.logger,
+        r.message,
+        "digest=" + r.digest,
+    ];
+    for (r.fields) { f ->
+        parts.push(f._0 + "=" + f._1);
+    }
+    return parts.join(" ");
+}
+
+// Debug and above, every record described on one captured line.
+fn capturing() -> LogSink {
+    return LogSink(
+        enabled: { logger, level -> levelRank(level) >= 1 },
+        write: { r -> capturePush(describe(r)) },
+    );
+}
+
+test "logging: a set sink receives every enabled record and answers the write" {
+    val _r = captureReset();
+    val _s = setSink(capturing());
+    val log = Logger(name: "app.billing");
+    val a = log.trace("dropped");
+    val b = log.debug("kept");
+    val c = log.infoWith("charging", [#("invoice.id", "7")]);
+    val d = log.log(Level.Warn, "declined", [#("code", "51")]);
+    val e = log.error("unreachable");
+    val lines = captureLines();
+    val _d = setSink(defaultSink());
+    try asserts.equals(a, 0);
+    try asserts.equals(b, 7);
+    try asserts.equals(c, 7);
+    try asserts.equals(d, 7);
+    try asserts.equals(e, 7);
+    try asserts.equals(
+        lines,
+        """debug app.billing kept digest=
+info app.billing charging digest= invoice.id=7
+warn app.billing declined digest= code=51
+error app.billing unreachable digest=""",
+    );
+}
+
+test "logging: a level that is off builds no message" {
+    val _r = captureReset();
+    val _s = setSink(capturing());
+    val log = Logger(name: "app.lazy");
+    val off = log.isEnabled(Level.Trace);
+    val on = log.isEnabled(Level.Debug);
+    val skipped = log.lazily(
+        Level.Trace,
+        { -> "@" + capturePush("built").toString() },
+    );
+    val written = log.lazily(Level.Info, { -> "built late" });
+    val lines = captureLines();
+    val _d = setSink(defaultSink());
+    try asserts.isFalse(off);
+    try asserts.isTrue(on);
+    try asserts.equals(skipped, 0);
+    try asserts.equals(written, 7);
+    try asserts.equals(lines, "info app.lazy built late digest=");
+}
+
+test "logging: logError writes one error record and answers its digest" {
+    val _r = captureReset();
+    val _s = setSink(capturing());
+    val frames = "InvoiceService.charge/2:88 InvoiceRepo.charge/2:41 rakun.core.router.dispatch/1:12 rakun.core.listener.loop/3:7";
+    val digest = Logger(name: "app.billing.invoices").logError(
+        "app.billing.invoices",
+        "gateway_declined",
+        "charge declined",
+        frames,
+        [#("amount", "1999")],
+    );
+    val lines = captureLines();
+    val _d = setSink(defaultSink());
+    try asserts.equals(digest, "90e4cc2a07abe1fb");
+    try asserts.equals(
+        digest,
+        errorDigest(
+            "app.billing.invoices",
+            "gateway_declined",
+            "charge declined",
+            frames,
+        ),
+    );
+    try asserts.equals(
+        lines,
+        "error app.billing.invoices charge declined digest=90e4cc2a07abe1fb error.module=app.billing.invoices error.type=gateway_declined error.stack_trace="
+            + frames
+            + " amount=1999",
+    );
+}
+
+test "logging: logError answers the digest when the sink takes no errors" {
+    val _r = captureReset();
+    val _s = setSink(
+        LogSink(
+            enabled: { logger, level -> false },
+            write: { r -> capturePush(describe(r)) },
+        ),
+    );
+    val none: Array<#(string, string)> = [];
+    val digest = Logger(name: "app.quiet").logError(
+        "m",
+        "c",
+        "boom",
+        "f:1",
+        none,
+    );
+    val lines = captureLines();
+    val _d = setSink(defaultSink());
+    try asserts.equals(digest, errorDigest("m", "c", "boom", "f"));
+    try asserts.equals(lines, "");
+}
+
+test "logging: the default sink takes info and above and writes through the host" {
+    val _d = setSink(defaultSink());
+    val sink = currentSink();
+    val enabled = sink.enabled;
+    try asserts.isFalse(enabled("x", Level.Trace));
+    try asserts.isFalse(enabled("x", Level.Debug));
+    try asserts.isTrue(enabled("x", Level.Info));
+    try asserts.isTrue(enabled("x", Level.Error));
+    try asserts.equals(Logger(name: "log.test").debug("not written"), 0);
+    try asserts.equals(
+        Logger(name: "log.test").error("written by the default sink"),
+        0,
+    );
+}
