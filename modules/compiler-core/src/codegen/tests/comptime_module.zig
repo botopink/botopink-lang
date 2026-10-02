@@ -332,7 +332,10 @@ test "comptime module: a method nothing answers is a located error, not an undef
     try std.testing.expectError(error.UnsupportedComptimeMethod, result);
     try std.testing.expectEqualStrings("frobnicate", unsupported.callee);
     try std.testing.expectEqual(@as(usize, 2), unsupported.argc);
+    // Located at the method name inside the body (`n.frobnicate` — line 3,
+    // column 15), not at the body or the declaration.
     try std.testing.expectEqual(@as(usize, 3), unsupported.loc.line);
+    try std.testing.expectEqual(@as(usize, 15), unsupported.loc.col);
 
     // A host form of that name/arity answers it: the bare local call stays.
     const hosted = try lower(arena_state.allocator(),

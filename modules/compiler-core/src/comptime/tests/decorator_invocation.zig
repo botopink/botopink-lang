@@ -92,6 +92,21 @@ test "decorator invocation: rejection points at the annotation" {
     , "must annotate a type with fields", .{ 5, 3 });
 }
 
+test "decorator invocation: a method nothing answers is the compiler's message, naming the call in the body" {
+    // 1.0.11 front 14 step 1: the refusal is the compiler's own (no runtime
+    // ran), the body's call is named by `line:col`, and the diagnostic is
+    // located at the annotation that ran the body.
+    try assertRejectsAt(@src(),
+        \\fn check(comptime decl: @Decl) {
+        \\    val n = decl.name;
+        \\    val x = n.frobnicate(1, 2);
+        \\}
+        \\
+        \\#[check]
+        \\type A(x: i32)
+    , "the decorator `check` calls `.frobnicate(…)` with 2 argument(s) at 3:15, which no primitive type (string, array, int, float, bool) and no decorator host function provides", .{ 6, 3 });
+}
+
 test "decorator invocation: method placement accepted" {
     try assertAccepts(@src(),
         \\fn getMapping(comptime decl: @Decl, path: string) {

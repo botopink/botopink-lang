@@ -51,9 +51,9 @@ When adding a test file here, register it in `../tests.zig` or it will not run.
 | `effect_future.zig` | `-> @Task` contract (decisions 119–121): `throw` / `return` in `@Task<@Result<…>>`, `try await`, `await` answering the `@Result`, the refusals of `throw` / `try` without a `@Result` layer and of `await` without a channel. The file keeps its historical name; the RF-codes left with `@Future`. |
 | `effect_generator.zig` | `-> @Iterator` contract (`yield`, labels, `break v`, `iter-mixed-yield-return`, `throw` without a `@Result` item). |
 | `generic_defaults.zig` | Default generic parameters (RG-codes). |
-| `templates.zig` | `@Expr` capture, scope snapshot, methods, expansion. |
+| `templates.zig` | `@Expr` capture, scope snapshot, methods, expansion. A template body calling a method its typed receiver lacks is `unknown-primitive-method` at the call in the body (front 14 step 1, the typed half). |
 | `decorators.zig` | Decorator recognition + argument validation. |
-| `decorator_invocation.zig` | Decorator body invocation + `fail` diagnostics. |
+| `decorator_invocation.zig` | Decorator body invocation + `fail` diagnostics. A body method call nothing answers is the evaluator's own refusal (no runtime runs), its whole message asserted — the call named by `line:col` in the body — and located at the annotation (front 14 step 1; `reject/comptime_method_nothing_answers` is the language twin). |
 | `decorator_regression.zig` | Decorator bodies with loops / conditionals / string concat / `@emit` / accumulator fold fusion. Each lowering has a rejecting fixture compared on the whole message and an accepting fixture that asserts the lowered Erlang (`OkData.comptime_traces`: `lists:foreach(`, `'__bp_len'(`, `'__bp_add'(`, `lists:foldl(`; the `@emit` reply exactly), so every row of `specs/1.0.4-beta/05-cli-residuals/mutation-matrix.md` (M1–M10) and a fold fusion that discards its accumulator reds a test. Run alone: `zig build test -Dtest-filter="decorator regression"`. |
 | `builtins_typeinfo.zig` | `@typeInfo` / `@TypeOf` / `@makeRecord` / `@RecordKeys` / `@Field` inference. |
 | `std_target_gating.zig` | `from "std"` imports rejected on targets without `@external` coverage. |

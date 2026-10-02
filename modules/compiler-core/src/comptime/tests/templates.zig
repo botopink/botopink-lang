@@ -411,6 +411,31 @@ fn assertCompilesOk(comptime loc: std.builtin.SourceLocation, src: []const u8) !
 
 // ── F6-full: runtime-backed template bodies ───────────────────────────────────
 
+test "comptime: runtime template body ---- a method nothing answers is refused at the call in the body" {
+    // 1.0.11 front 14 step 1, the template half: a template body is typed, so
+    // the checker refuses the call itself, located at the method name in the
+    // body — no runtime is asked. (A decorator body is untyped; its twin is
+    // `decorator invocation: a method nothing answers …`.)
+    const src =
+        \\pub fn shout(comptime q: @Expr<string>) -> @Expr<string> {
+        \\    val t = q.text();
+        \\    return q.build(t.frobnicate());
+        \\}
+        \\val s = shout "hey";
+    ;
+    const io = std.testing.io;
+    const build_root = h.buildRootPathFromSrc(io, @src());
+    var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, build_root, null);
+    defer session.deinit(std.testing.allocator);
+    const outcome = session.outputs.items[0].outcome;
+    try std.testing.expect(outcome == .typeError);
+    const message = try outcome.typeError.message(std.testing.allocator);
+    defer std.testing.allocator.free(message);
+    const at = outcome.typeError.loc orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqualStrings("unknown-primitive-method: `string` has no method `frobnicate`", message);
+    try std.testing.expectEqual([2]usize{ 3, 22 }, [2]usize{ at.line, at.col });
+}
+
 test "comptime: runtime template body ---- text() + build() end to end" {
     const src =
         \\pub fn shout(comptime q: @Expr<string>) -> @Expr<string> {

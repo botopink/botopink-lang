@@ -1,0 +1,2 @@
+the decorator `check` calls `.frobnicate(…)` with 2 argument(s) at 8:15, which no primitive type (string, array, int, float, bool) and no decorator host function provides
+11:3
