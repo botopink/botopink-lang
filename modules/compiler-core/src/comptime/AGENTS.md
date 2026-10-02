@@ -880,7 +880,16 @@ exactly the same member order.
 
 §3.2's inference sources: a `case` (`caseTypeFromArms`, already there since 06 C2a) and an `if`
 whose two branches both produce a value and disagree — that is a union now, not an error. Branches
-that agree still unify, so one branch pins the other's variables exactly as before.
+that agree still unify, so one branch pins the other's variables exactly as before. Decision 150 (D5) adds the array literal: with no element type expected (or an unbound
+variable), `arrayLiteralJoin` unifies the elements that agree and makes the disagreeing ones union
+members (`[1, "a"]` is `(i32 | string)[]`, `[1, null]` is `?i32[]`), records the first widening
+element in `Env.unionOrigins` (kind `array element`, named by the refusal at the use), and applies
+§3.2's one numeric rule — an integer **literal** fits `f64` when another element is an `f64`, typed
+`f64` and re-spelt as a float literal (`1` → `1.0`, `0xFF` → `255.0`) through `env.indexRewrites`,
+literal for literal, which `transform.zig` splices. Two function-typed elements always unify
+(`joinTypesAgree`), so an array of lambdas stays one element type. An expected behavior or union is the
+element type every element meets; any other expected element type keeps the old rule (each element
+unified with the first), so `total([1, 2.5])` against `f64[]` is still the mismatch at the `1`.
 
 §3.3's use rule is `refuseUnknownUse`, shared with §2.2 (see above): a union receiver is refused at
 arithmetic, `+`, an ordering comparison, a field read and a method call. §3.3 allows a use every

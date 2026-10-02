@@ -946,6 +946,14 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
             if (rewrite.* == .identifier) expr_ptr.* = rewrite.*;
         }
     }
+    // Decision 150 (§3.2) — an integer literal joined into an `f64[]`
+    // (`[1, 2.5]`): inference recorded its float spelling under its loc. Only
+    // a number literal replaces a number literal.
+    if (expr_ptr.* == .literal and expr_ptr.literal.kind == .numberLit) {
+        if (agg.index_rewrites.get(expr_ptr.literal.loc)) |rewrite| {
+            if (rewrite.* == .literal and rewrite.literal.kind == .numberLit) expr_ptr.* = rewrite.*;
+        }
+    }
     // Decision 110 rule 1 — an imported type's `as` alias in expression
     // position (`D` in `D.empty()`, a bare `P`): inference recorded the
     // declared name under the alias's loc. Only a plain name replaces a plain

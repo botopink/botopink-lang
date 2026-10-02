@@ -110,6 +110,14 @@ modules, by `<target>.expect` — the second import used to replace the first an
 `app` where erlang and wasm answered `blog`. `import_same_fn_name_std_and_package_aliases` — a package
 and `std/collections` both declare `lt` and `reverse`; one module imports each under an alias and
 calls the four (it passes on the parent binary; it pins the rule).
+1.0.11-beta `01-checker` step 1 (decision 150, D5) adds `run/array_literal_union` (`[1, "a"]` is
+`(i32 | string)[]`, an expected union takes its members; four targets), `run/array_literal_numeric_join`
+(`[1, 2.5]` is `f64[]` — the `1` is `1.0` on every target — and `[1, null]` is `?i32[]`),
+`reject/array_literal_union_misuse` (an element used as an `i32` without narrowing, refused at the use
+naming the widening element) and `test/case_value_union` (a `case` whose arms disagree is the union,
+read back through `case` narrowing, beside the array literal's union). The `case` half is a `test/`
+cell because wasm traps on a union of primitives produced by a `case` (`05-wasm`'s row); each array
+cell was refused by the parent binary.
 Decision 141 adds `run/external_template_refused_on_beam` — an `@External.Erlang` template with a
 macro runs on erlang and is a located build error on beam naming the construct (`.beam.expect`); beam
 no longer evaluates a template it cannot compile from source at run time.

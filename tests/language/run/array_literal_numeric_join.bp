@@ -1,0 +1,22 @@
+//// Decision 150 (D5, decision 8 §3.2) — an integer literal fits `f64`, so
+//// `[1, 2.5]` is `f64[]` and the `1` is the float `1.0` on every target; a
+//// `null` element makes the element optional, `[1, null]` is `?i32[]`.
+
+fn total(xs: f64[]) -> f64 {
+    var sum = 0.0;
+    xs.forEach({ x ->
+        sum = sum + x;
+    });
+    return sum;
+}
+
+pub fn main() {
+    val ys = [1, 2.5];
+    ys.forEach({ y -> @print(y * 2.0) });
+    val hs = [0x10, 0.5, 3];
+    @print(total(hs));
+    val zs = [1, null];
+    @print(zs.length);
+    val ns = [null, 7, 8];
+    @print(ns.at(1).unwrapOr(null) ?? 0);
+}

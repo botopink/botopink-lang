@@ -1,0 +1,49 @@
+//// Decision 150 (D5, decision 8 §3.2) — a `case` whose arms have different
+//// types is the union of the arm types, with no error, and so is an array
+//// literal whose elements disagree (`run/array_literal_union`); each value is
+//// read back member by member through `case` narrowing.
+
+type Shape {
+    Circle(r: i32),
+    Label(text: string),
+}
+
+fn describe(s: Shape) -> string {
+    val v = case s {
+        Circle(r) -> r * 2;
+        Label(text) -> text;
+    };
+    return case v {
+        i32 { n ->
+            "number ${n}";
+        }
+        string { t ->
+            "text ${t}";
+        }
+    };
+}
+
+fn size(v: i32 | string) -> i32 {
+    return case v {
+        i32 { n ->
+            n;
+        }
+        string { s ->
+            s.length;
+        }
+    };
+}
+
+test "a case whose arms disagree is the union of the arm types" {
+    assert describe(Shape.Circle(r: 4)) == "number 8";
+    assert describe(Shape.Label(text: "hi")) == "text hi";
+}
+
+test "an array literal whose elements disagree holds the union" {
+    val xs = [3, "abcd"];
+    var sum = 0;
+    xs.forEach({ x ->
+        sum = sum + size(x);
+    });
+    assert sum == 7;
+}

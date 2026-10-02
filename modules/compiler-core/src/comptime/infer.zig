@@ -8088,7 +8088,10 @@ fn refuseUnknownUse(env: *Env, ty: *T.Type, loc: ast.Loc, what: []const u8) Infe
         const rendered = try snapshotMod.typeNameOf(env.arena, t);
         // §3.2 — name the branch that widened it, when inference made it.
         const widened: []const u8 = if (env.unionOrigins.get(t)) |o|
-            try std.fmt.allocPrint(env.arena, " (the `{s}` at {d}:{d} made it one: its branches disagree)", .{ o.kind, o.loc.line, o.loc.col })
+            (if (std.mem.eql(u8, o.kind, "array element"))
+                try std.fmt.allocPrint(env.arena, " (the array element at {d}:{d} made it one: the literal's elements disagree)", .{ o.loc.line, o.loc.col })
+            else
+                try std.fmt.allocPrint(env.arena, " (the `{s}` at {d}:{d} made it one: its branches disagree)", .{ o.kind, o.loc.line, o.loc.col }))
         else
             "";
         var e = TypeError.custom(
@@ -13826,6 +13829,75 @@ fn caseTypeFromArms(env: *Env, arms: []const ast.CaseArmOf(.typed)) InferError!*
     return finishUnion(env, members.items);
 }
 
+/// Decision 150 (D5, decision 8 §3.2) — the element type of an array literal
+/// whose elements were inferred with nothing expected of them. Elements that
+/// agree unify (the first pins the others' variables, as before); the ones
+/// that do not stand beside each other as union members, so `[1, "a"]` is
+/// `(i32 | string)[]` and `[1, null]` is `?i32[]` (`finishUnion`'s optional
+/// absorption). §3.2's one numeric rule: an integer LITERAL fits `f64`, so
+/// `[1, 2.5]` is `f64[]` — the literal is typed `f64` and re-spelt as a float
+/// for the backends (`env.indexRewrites`, literal for literal). An `i32` that
+/// is not a literal does not widen. A union made here records its first
+/// disagreeing element in `env.unionOrigins`, which the refusal at a use names.
+fn arrayLiteralJoin(env: *Env, elems: []const ast.Expr, typed: []ast.TypedExpr) InferError!*T.Type {
+    const hasFloat = for (typed) |t| {
+        if (t.getType().deref().isNamed("f64")) break true;
+    } else false;
+    if (hasFloat) {
+        for (elems, 0..) |e, i| {
+            if (!isIntegerLiteral(e)) continue;
+            if (!typed[i].getType().deref().isNamed("i32")) continue;
+            const text = try floatSpelling(env, e.literal.kind.numberLit) orelse continue;
+            const lit = try env.arena.create(ast.Expr);
+            lit.* = .{ .literal = .{ .loc = e.literal.loc, .kind = .{ .numberLit = text } } };
+            if (env.indexRewrites.contains(e.literal.loc)) continue;
+            try env.indexRewrites.put(e.literal.loc, lit);
+            typed[i] = TypedExpr{ .literal = .{ .loc = e.literal.loc, .type_ = try env.namedType("f64"), .kind = .{ .numberLit = text } } };
+        }
+    }
+    var members: std.ArrayListUnmanaged(*T.Type) = .empty;
+    var widenedAt: ?ast.Loc = null;
+    for (typed) |elem| {
+        const t = elem.getType();
+        var merged = false;
+        for (members.items) |m| {
+            if (joinTypesAgree(m, t)) {
+                try unifyAt(env, m, t, elem.getLoc());
+                merged = true;
+                break;
+            }
+        }
+        if (!merged) {
+            if (members.items.len > 0 and widenedAt == null) widenedAt = elem.getLoc();
+            try members.append(env.arena, t);
+        }
+    }
+    const joined = try finishUnion(env, members.items);
+    if (widenedAt) |at| {
+        if (joined.deref().* == .union_) try env.unionOrigins.put(env.arena, joined.deref(), .{ .loc = at, .kind = "array element" });
+    }
+    return joined;
+}
+
+/// The float spelling of an integer literal's text (`1` → `1.0`, `0xFF` →
+/// `255.0`, `1_000` → `1000.0`); null when it does not parse.
+fn floatSpelling(env: *Env, text: []const u8) InferError!?[]const u8 {
+    var digits: std.ArrayListUnmanaged(u8) = .empty;
+    for (text) |c| if (c != '_') try digits.append(env.arena, c);
+    const v = std.fmt.parseInt(i128, digits.items, 0) catch return null;
+    return try std.fmt.allocPrint(env.arena, "{d}.0", .{v});
+}
+
+/// Two joined types agree (and are unified, located at the second) when they
+/// are what `caseArmTypesAgree` accepts or both are function types: a
+/// function is never a union member beside another function, so two of them
+/// unify structurally — an arity or a parameter that differs is the located
+/// mismatch, not a `fn | fn` union nothing can call.
+fn joinTypesAgree(a: *T.Type, b: *T.Type) bool {
+    if (a.deref().* == .func and b.deref().* == .func) return true;
+    return caseArmTypesAgree(a, b);
+}
+
 /// Two arm types agree (and are unified) when either is still a type
 /// variable or both name the same type constructor with the same arity.
 fn caseArmTypesAgree(a: *T.Type, b: *T.Type) bool {
@@ -14094,7 +14166,17 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
             // refused the second (`expected A, got B`). Any other expectation
             // stays a hint (it may be a scheme's generic variable).
             const behaviorElem: ?*T.Type = if (elemExpected) |ee| (if (isBehaviorType(env, ee)) ee else null) else null;
-            const elemType = behaviorElem orelse if (typedElems.len > 0) typedElems[0].getType() else try env.freshVar();
+            // An expected union is the element type: each element is one of
+            // its members (`val xs: (i32 | string)[] = [1, "a"];`).
+            const unionElem: ?*T.Type = if (elemExpected) |ee| (if (ee.deref().* == .union_) ee else null) else null;
+            // Decision 150 (D5, §3.2) — with nothing expected, elements that
+            // disagree make the union of their types, as a `case`'s arms do.
+            const joins = behaviorElem == null and unionElem == null and
+                (elemExpected == null or elemExpected.?.deref().* == .typeVar);
+            const elemType = if (joins and typedElems.len > 1)
+                try arrayLiteralJoin(env, al.elems, typedElems)
+            else
+                behaviorElem orelse unionElem orelse if (typedElems.len > 0) typedElems[0].getType() else try env.freshVar();
             for (typedElems) |elem| {
                 // Located at the element that disagrees (01 step 9).
                 try unifyArgument(env, elemType, elem.getType(), elem.getLoc());
