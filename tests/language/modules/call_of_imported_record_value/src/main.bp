@@ -1,0 +1,11 @@
+//// `language-gaps.md` row 32 through an import — a sibling's `pub val` of a
+//// record type is a value, and calling it is `callee-not-a-function` at the
+//// call on every target (`reject/call_of_record_value` is the one-module
+//// form).
+
+pub mod config;
+import {settings} from "config";
+
+pub fn main() {
+    @print(settings().name);
+}

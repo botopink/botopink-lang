@@ -198,6 +198,11 @@ pub const builtin_not_lowered: []const u8 = "builtin-not-lowered";
 /// A labelled argument in a call of a function VALUE (a parameter, a local, a
 /// field): its type is positional and names no parameter (01).
 pub const label_on_function_value: []const u8 = "label-on-function-value";
+/// A call whose callee is a VALUE of a record, enum or primitive type — not a
+/// function, not a constructor (`val g = G(a: "x"); g()`). Row 32 of
+/// `language-gaps.md`: it used to answer the value's own type, and the
+/// backends failed at run time (`g is not a function`, `{badfun, …}`).
+pub const callee_not_a_function: []const u8 = "callee-not-a-function";
 /// A use of an imported name the import resolved to two different
 /// declarations (`00 · 01-std`: the refusal of a duplicate `pub` name belongs
 /// to the consumer's unqualified use).
@@ -405,6 +410,7 @@ pub const all_codes = [_][]const u8{
     type_alias_arity,
     type_alias_recursive,
     type_alias_name_taken,
+    callee_not_a_function,
 };
 
 test "every reserved code has a stable, non-empty spelling" {

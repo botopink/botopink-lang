@@ -1213,6 +1213,17 @@ behavior's `extends` chain (`behaviorReaches`), and everything else goes to `uni
 target-first and only widens (implementer → behavior); a record that does not implement the behavior
 reds at the value. Cells: `infer_errors.zig` `behavior-typed field …`.
 
+## A record value is not callable (`language-gaps.md` row 32)
+
+A plain call `g(…)` whose callee is a binding of a **record, enum or primitive** type — a value,
+not a function and not a constructor — is `callee-not-a-function` at the call (`refuseCallOfValue`,
+the `.named` arm of the free-call switch), naming the value's type and, for a record, the field read
+the author likely meant (`g.a`). It used to answer the value's own type, so `val g = G(a: "x");
+g().a` checked and the backends failed at run time (`g is not a function`, `{badfun, …}`). A name
+that is the type itself (a constructor reached by its own name), a function-typed field
+(`h.f(2)`, a method-call path) and an imported `pub val` alike follow the rule
+(`reject/call_of_record_value`, `modules/call_of_imported_record_value`).
+
 ## A call whose callee is an expression (01 handover 15, front 15's handover)
 
 `adder(3)(4)` and `.Circle(radius: 1)` both reach `inferCallExpr` with `callee == ""` and the callee in

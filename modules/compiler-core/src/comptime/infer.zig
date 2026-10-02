@@ -11011,6 +11011,33 @@ fn isNamePath(e: ast.Expr) bool {
     };
 }
 
+/// Row 32 — a call whose callee is a value whose type is a record, an enum or
+/// a primitive (not a function, not a constructor) is `callee-not-a-function`
+/// at the call, naming the value's type and the read the author likely meant.
+/// A name that IS the type (a constructor reached by its own name) is not a
+/// value and passes.
+fn refuseCallOfValue(env: *Env, callee: []const u8, typeName: []const u8, loc: ast.Loc) InferError!void {
+    if (callee.len == 0) return;
+    if (std.mem.eql(u8, callee, typeName)) return;
+    if (env.lookupTypeDef(callee) != null) return;
+    const td = env.lookupTypeDef(typeName);
+    const isPrim = !std.mem.eql(u8, typeName, "void") and !std.mem.eql(u8, typeName, "noreturn") and for (scalar_type_names) |p| {
+        if (std.mem.eql(u8, p, typeName)) break true;
+    } else false;
+    if (td == null and !isPrim) return;
+    const field: ?[]const u8 = if (td) |t| switch (t) {
+        .record => |r| if (r.fields.len > 0) r.fields[0].name else null,
+        else => null,
+    } else null;
+    const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is a value of type `{s}`, not a function — it cannot be called", .{ diagnostics.callee_not_a_function, callee, typeName });
+    const hint = if (field) |f|
+        try std.fmt.allocPrint(env.arena, "Read the value without calling it: `{s}.{s}`. A function-typed field is called through the value (`{s}.f(…)`).", .{ callee, f, callee })
+    else
+        try std.fmt.allocPrint(env.arena, "Use `{s}` without `( … )`; only a function or a constructor is called.", .{callee});
+    env.lastError = TypeError.custom(msg, hint).withLoc(loc);
+    return error.TypeError;
+}
+
 /// A label on a call whose callee has a function TYPE and no declaration —
 /// a parameter, a local, a record's function-typed field, a tuple element —
 /// is `label-on-function-value`, at the labelled argument.
@@ -13513,7 +13540,10 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                     }
                     break :blk f.ret;
                 },
-                .named => resolved,
+                .named => |n| blk: {
+                    try refuseCallOfValue(env, call.callee, n.name, loc);
+                    break :blk resolved;
+                },
                 else => try env.freshVar(),
             };
             return TypedExpr{ .call = .{ .loc = loc, .type_ = retType, .kind = .{ .call = .{
