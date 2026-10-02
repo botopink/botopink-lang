@@ -56,26 +56,35 @@ pub declare fn equalsConstantTime(a: string, b: string) -> bool;
 test "hash.hmacSha256Base64Url matches the published HMAC-SHA256 vector" {
     // HMAC-SHA256("key", "The quick brown fox jumps over the lazy dog") is
     // f7bc83f4…2d1a3cd8 in hex; this is the same 32 bytes as base64url.
-    val mac = hmacSha256Base64Url("key", "The quick brown fox jumps over the lazy dog");
+    val mac = hmacSha256Base64Url(
+        "key",
+        "The quick brown fox jumps over the lazy dog",
+    );
     assert mac == "97yD9DBThCSxMpjmqm-xQ-9NWaFJRhdZl0edvC0aPNg";
     assert mac.length == 43;
 }
 
 test "hash.sha1Base64 reproduces the RFC 6455 accept key" {
-    val accept = sha1Base64("dGhlIHNhbXBsZSBub25jZQ==258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
+    val accept = sha1Base64(
+        "dGhlIHNhbXBsZSBub25jZQ==258EAFA5-E914-47DA-95CA-C5AB0DC85B11",
+    );
     assert accept == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=";
 }
 
 test "hash.sha256Base64Url of the empty string is the published digest" {
     assert sha256Base64Url("") == "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU";
-    assert sha256Base64Url("hello world") == "uU0nuZNNPgilLlLX2n2r-sSE7-N6U4DukIj3rOLvzek";
+    assert sha256Base64Url("hello world")
+        == "uU0nuZNNPgilLlLX2n2r-sSE7-N6U4DukIj3rOLvzek";
 }
 
 test "hash.equalsConstantTime compares a 43-character signature" {
     val sig = hmacSha256Base64Url("secret", "header.payload");
     assert sig.length == 43;
     assert equalsConstantTime(sig, sig);
-    assert equalsConstantTime(sig, hmacSha256Base64Url("secret", "header.payload"));
+    assert equalsConstantTime(
+        sig,
+        hmacSha256Base64Url("secret", "header.payload"),
+    );
 }
 
 test "hash.equalsConstantTime is false for a different value and never throws" {
@@ -111,12 +120,14 @@ pub declare fn hmacSha256(key: string, data: string) -> string;
 
 test "hash.sha256 matches the canonical 'hello world' vector" {
     val h = sha256("hello world");
-    assert h == "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9";
+    assert h
+        == "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9";
 }
 
 test "hash.sha256 of empty string is the well-known zero-length digest" {
     val h = sha256("");
-    assert h == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+    assert h
+        == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 }
 
 test "hash.md5 of 'hello' matches the canonical digest" {
@@ -302,8 +313,10 @@ test "hash.cacheKey of no parts is the hash of the empty frame" {
 }
 
 test "hash.strongCacheKey frames like cacheKey over the strong hash" {
-    assert strongCacheKey(["user:1", "profile"]) != strongCacheKey(["user", "1:profile"]);
-    assert strongCacheKey(["user:1", "profile"]) == strongHash("6:user:1|7:profile");
+    assert strongCacheKey(["user:1", "profile"])
+        != strongCacheKey(["user", "1:profile"]);
+    assert strongCacheKey(["user:1", "profile"])
+        == strongHash("6:user:1|7:profile");
     assert strongCacheKey(["user:1", "profile"]).length == 32;
 }
 

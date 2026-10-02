@@ -199,10 +199,10 @@ behavior String {
     // `Slice<string>.slice` — `end` is `?i32` so an open-ended `s[1..]` can
     // pass `null` in the second argument (there is no `Range` type to pass).
     default fn slice(self: Self, start: i32, end: ?i32 = null) -> string {
-        if (end != null) return stringSlice1(self, start, end) else return stringSlice0(
-            self,
-            start
-        );
+        if (end != null)
+            return stringSlice1(self, start, end)
+        else
+            return stringSlice0(self, start);
     }
 
     // `Index<i32, string>.at` — the reader `s[1]` rewrites to. It was spelled
@@ -397,10 +397,10 @@ behavior Array<T> {
     // `Slice<T[]>.slice` — `end` is `?i32` so an open-ended `xs[1..]` can pass
     // `null` in the second argument (there is no `Range` type to pass).
     default fn slice(self: Self<T>, start: i32, end: ?i32 = null) -> Self<T> {
-        if (end != null) return arraySlice1(self, start, end) else return arraySlice0(
-            self,
-            start
-        );
+        if (end != null)
+            return arraySlice1(self, start, end)
+        else
+            return arraySlice0(self, start);
     }
 
     #[@External.Erlang("""iolist_to_binary(lists:join($1, lists:map(fun(__E) -> if is_binary(__E) -> __E; is_integer(__E) -> integer_to_binary(__E); is_list(__E) -> __E; true -> $stringify(__E) end end, $0)))""")]
@@ -560,7 +560,10 @@ behavior Array<T> {
     }
 
     #[@External.Node("flatMap")]
-    default fn flatMap<U>(self: Self<T>, transform: fn(item: T) -> U) -> Array<U> {
+    default fn flatMap<U>(
+        self: Self<T>,
+        transform: fn(item: T) -> U,
+    ) -> Array<U> {
         return self.map(transform).flatten();
     }
 
@@ -649,9 +652,7 @@ behavior Array<T> {
             if (first) {
                 out = out.append([x]);
                 first = false;
-            } else if (prev != x) {
-                out = out.append([x]);
-            };
+            } else if (prev != x) out = out.append([x]);
             prev = x;
         });
         return out;

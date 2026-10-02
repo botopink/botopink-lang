@@ -37,7 +37,10 @@ any  [Method]  detail: fn any(self: Self<T>, pred: fn(item: T) -> bool) -> bool
 append  [Method]  detail: fn append(self: Self<T>, other: Self<T>) -> Self<T>
 prepend  [Method]  detail: fn prepend(self: Self<T>, item: T) -> Self<T>
 flatten  [Method]  detail: fn flatten<E>(self: Self<T>) -> Array<E>
-flatMap  [Method]  detail: fn flatMap<U>(self: Self<T>, transform: fn(item: T) -> U) -> Array<U>
+flatMap  [Method]  detail: fn flatMap<U>(
+        self: Self<T>,
+        transform: fn(item: T) -> U,
+    ) -> Array<U>
 toList  [Method]  detail: fn toList(self: Self<T>) -> Self<T>
 some  [Method]  detail: fn some(self: Self<T>, pred: fn(item: T) -> bool) -> bool
 every  [Method]  detail: fn every(self: Self<T>, pred: fn(item: T) -> bool) -> bool

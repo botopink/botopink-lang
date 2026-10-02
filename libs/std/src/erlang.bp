@@ -75,7 +75,10 @@ pub declare fn halt() -> unknown;
 pub declare fn haltWithStatus(status: unknown) -> unknown;
 
 #[@External.Erlang("erlang", "halt")]
-pub declare fn haltWithStatusAndOptions(status: unknown, options: unknown) -> unknown;
+pub declare fn haltWithStatusAndOptions(
+    status: unknown,
+    options: unknown,
+) -> unknown;
 
 #[@External.Erlang("erlang", "hd")]
 pub declare fn hd(list: unknown) -> unknown;
@@ -96,7 +99,11 @@ pub declare fn min(a: unknown, b: unknown) -> unknown;
 pub declare fn monitor(kind: unknown, item: unknown) -> unknown;
 
 #[@External.Erlang("erlang", "monitor")]
-pub declare fn monitorWithOptions(kind: unknown, item: unknown, options: unknown) -> unknown;
+pub declare fn monitorWithOptions(
+    kind: unknown,
+    item: unknown,
+    options: unknown,
+) -> unknown;
 
 #[@External.Erlang("erlang", "node")]
 pub declare fn node() -> unknown;
@@ -135,7 +142,11 @@ pub declare fn self() -> unknown;
 pub declare fn send(dest: unknown, msg: unknown) -> unknown;
 
 #[@External.Erlang("erlang", "send")]
-pub declare fn sendWithOptions(dest: unknown, msg: unknown, options: unknown) -> unknown;
+pub declare fn sendWithOptions(
+    dest: unknown,
+    msg: unknown,
+    options: unknown,
+) -> unknown;
 
 #[@External.Erlang("erlang", "size")]
 pub declare fn size(term: unknown) -> unknown;
@@ -150,7 +161,12 @@ pub declare fn spawnOnNode(node: unknown, fun: unknown) -> unknown;
 pub declare fn spawnMfa(m: unknown, f: unknown, a: unknown) -> unknown;
 
 #[@External.Erlang("erlang", "spawn")]
-pub declare fn spawnMfaOnNode(node: unknown, m: unknown, f: unknown, a: unknown) -> unknown;
+pub declare fn spawnMfaOnNode(
+    node: unknown,
+    m: unknown,
+    f: unknown,
+    a: unknown,
+) -> unknown;
 
 #[@External.Erlang("erlang", "statistics")]
 pub declare fn statistics(item: unknown) -> unknown;

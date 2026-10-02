@@ -43,11 +43,6 @@
 //// NO CANCELLATION. `raceOf`'s losers and `timeout`'s expired task keep
 //// running to completion; there is no cancellation surface in the language.
 ////
-//// DO NOT RUN `botopink format` ON THIS FILE. The formatter wraps a
-//// `declare fn` whose signature is over eighty columns and closes the wrapped
-//// parameter list with a TRAILING COMMA, and a trailing comma after a
-//// parameter whose type ends in a fn type is a parse error.
-////
 //// Reference:
 ////   Promise.all       — https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/all
 ////   Erlang processes  — https://www.erlang.org/doc/system/ref_man_processes.html
@@ -154,7 +149,9 @@ pub fn errorText<T>(settled: @Result<T, string>) -> string {
 // order. The tasks were started by the caller (`allOf([fetchUser(1),
 // fetchUser(2)])`), so on commonJS they run concurrently and this only waits;
 // on erlang they already ran. `allOf([])` answers `Ok([])`.
-pub fn allOf<T, E>(tasks: Array<@Task<@Result<T, E>>>) -> @Task<@Result<Array<T>, E>> {
+pub fn allOf<T, E>(
+    tasks: Array<@Task<@Result<T, E>>>,
+) -> @Task<@Result<Array<T>, E>> {
     var out: Array<T> = [];
     for (tasks) { t ->
         val v = try await t;
@@ -237,11 +234,16 @@ fn expireAfter<T>(millis: i32) -> @Task<@Result<T, string>> {
 // `Ok` (`Ok(Error(e))`): the budget and the task's outcome are two answers,
 // and neither hides the other. The task KEEPS RUNNING; the caller stops
 // waiting. Expressed over `raceOf` + `delay`.
-pub fn timeout<T>(task: fn() -> @Task<T>, millis: i32) -> @Task<@Result<T, string>> {
-    return await raceOf([
-        { -> answered(task) },
-        { -> expireAfter(millis) },
-    ]);
+pub fn timeout<T>(
+    task: fn() -> @Task<T>,
+    millis: i32,
+) -> @Task<@Result<T, string>> {
+    return await raceOf(
+        [
+            { -> answered(task) },
+            { -> expireAfter(millis) },
+        ],
+    );
 }
 
 // ── tests ────────────────────────────────────────────────────────────────────
@@ -324,10 +326,12 @@ test "async: failed ---- answers an Error value, it does not reject" {
 
 test "async: gate ---- a waiter answers once the gate opens, and later waiters at once" {
     val gate = newGate();
-    val values = await runAll([
-        { -> gated(gate, "waited") },
-        { -> handshake(gate, gate, "opened") },
-    ]);
+    val values = await runAll(
+        [
+            { -> gated(gate, "waited") },
+            { -> handshake(gate, gate, "opened") },
+        ],
+    );
     assert values.join(",") == "waited,opened";
     assert await awaitGate(gate, gateBudget);
 }
@@ -396,11 +400,13 @@ test "async: race ---- fastest on commonJS, element zero on erlang" {
 // ── runAll ───────────────────────────────────────────────────────────────────
 
 test "async: runAll ---- answers input order, not completion order" {
-    val values = await runAll([
-        { -> delay(60, "a") },
-        { -> delay(20, "b") },
-        { -> delay(40, "c") },
-    ]);
+    val values = await runAll(
+        [
+            { -> delay(60, "a") },
+            { -> delay(20, "b") },
+            { -> delay(40, "c") },
+        ],
+    );
     assert values.join(",") == "a,b,c";
 }
 
@@ -410,19 +416,23 @@ test "async: runAll ---- runs its tasks concurrently" {
     // has not opened yet, and it answers "gate never opened".
     val left = newGate();
     val right = newGate();
-    val values = await runAll([
-        { -> handshake(left, right, "a") },
-        { -> handshake(right, left, "b") },
-    ]);
+    val values = await runAll(
+        [
+            { -> handshake(left, right, "a") },
+            { -> handshake(right, left, "b") },
+        ],
+    );
     assert values.join(",") == "a,b";
 }
 
 test "async: runAll ---- a fallible task answers its @Result in its slot" {
-    val settled = await runAll([
-        { -> slowOk(40, "slow") },
-        { -> failed("broken") },
-        { -> slowOk(5, "fast") },
-    ]);
+    val settled = await runAll(
+        [
+            { -> slowOk(40, "slow") },
+            { -> failed("broken") },
+            { -> slowOk(5, "fast") },
+        ],
+    );
     assert settled.length == 3;
     val absent = errorProbe();
     assert errorText(settled.at(0).unwrapOr(absent)) == "";
@@ -443,10 +453,12 @@ test "async: raceOf ---- answers the fastest task, not the first" {
     // The first task in the list cannot answer before its gate opens, and the
     // gate opens only once the race is over.
     val gate = newGate();
-    val first = await raceOf([
-        { -> gated(gate, "slow") },
-        { -> delay(10, "fast") },
-    ]);
+    val first = await raceOf(
+        [
+            { -> gated(gate, "slow") },
+            { -> delay(10, "fast") },
+        ],
+    );
     openGate(gate);
     assert first == "fast";
 }
@@ -454,10 +466,12 @@ test "async: raceOf ---- answers the fastest task, not the first" {
 test "async: raceOf ---- a loser's answer is dropped, on purpose" {
     // There is no cancellation surface: the slow task runs to completion and
     // its value goes nowhere. Asserted rather than only written down.
-    val first = await raceOf([
-        { -> failed("slow failure") },
-        { -> slowOk(10, "winner") },
-    ]);
+    val first = await raceOf(
+        [
+            { -> failed("slow failure") },
+            { -> slowOk(10, "winner") },
+        ],
+    );
     assert first.isOk() || first.isError();
 }
 
@@ -501,10 +515,12 @@ test "async: timeout ---- an expired task cannot corrupt a later answer" {
     val ghostDone = newGate();
     val answered = await timeout({ -> ghost(release, ghostDone) }, 30);
     assert answered.isError();
-    val values = await runAll([
-        { -> handshake(release, ghostDone, "a") },
-        { -> answerNow("b") },
-    ]);
+    val values = await runAll(
+        [
+            { -> handshake(release, ghostDone, "a") },
+            { -> answerNow("b") },
+        ],
+    );
     assert values.join(",") == "a,b";
 }
 

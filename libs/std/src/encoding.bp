@@ -94,7 +94,9 @@ pub declare fn percentDecode(s: string) -> @Result<string, string>;
 // `querystring.stringify` writes the same text and refuses a control
 // character, which this does not.
 pub fn formStringify(pairs: Array<#(string, string)>) -> string {
-    return pairs.map({ p -> [percentEncode(p._0), "=", percentEncode(p._1)].join("") }).join("&");
+    return pairs
+        .map({ p -> [percentEncode(p._0), "=", percentEncode(p._1)].join("") })
+        .join("&");
 }
 
 // The inverse of `formStringify`, percent-aware: split on `&`, each field on

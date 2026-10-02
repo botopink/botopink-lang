@@ -58,10 +58,12 @@ fn scan(s: string, i: i32) -> string {
     if (c == "%") {
         val h1 = s.at(i + 1).unwrapOr("");
         val h2 = s.at(i + 2).unwrapOr("");
-        if ((isHexDigit(h1) && isHexDigit(h2)) == false) return "a `%` not followed by two hex digits";
-        if (isControlEscape(h1, h2)) return "an escape that decodes to a control character";
+        if ((isHexDigit(h1) && isHexDigit(h2)) == false)
+            return "a `%` not followed by two hex digits";
+        if (isControlEscape(h1, h2))
+            return "an escape that decodes to a control character";
         return scan(s, i + 3);
-    };
+    }
     if (isControl(c)) return "a control character";
     return scan(s, i + 1);
 }
@@ -72,12 +74,16 @@ fn decodeComponent(raw: string, form: bool) -> @Result<string, string> {
     val problem = scan(text, 0);
     if (problem != "") throw "querystring.parse: " + problem;
     val decoded = percentDecode(text);
-    if (decoded.isError()) throw "querystring.parse: an escape sequence that is not UTF-8";
+    if (decoded.isError())
+        throw "querystring.parse: an escape sequence that is not UTF-8";
     return decoded.unwrapOr("");
 }
 
 // One `name=value` field, split on its FIRST `=`.
-fn decodeField(field: string, form: bool) -> @Result<#(string, string), string> {
+fn decodeField(
+    field: string,
+    form: bool,
+) -> @Result<#(string, string), string> {
     val eq = field.indexOf("=");
     val rawName = if (eq < 0) field else field.slice(0, eq);
     val rawValue = if (eq < 0) "" else field.slice(eq + 1, field.length);
@@ -86,13 +92,21 @@ fn decodeField(field: string, form: bool) -> @Result<#(string, string), string> 
     return #(name, value);
 }
 
-fn decodeFields(fields: string[], i: i32, form: bool, acc: Array<#(string, string)>) -> @Result<Array<#(string, string)>, string> {
+fn decodeFields(
+    fields: string[],
+    i: i32,
+    form: bool,
+    acc: Array<#(string, string)>,
+) -> @Result<Array<#(string, string)>, string> {
     if (i >= fields.length) return acc;
     val pair = try decodeField(fields.at(i).unwrapOr(""), form);
     return try decodeFields(fields, i + 1, form, acc.append([pair]));
 }
 
-fn decodeBody(body: string, form: bool) -> @Result<Array<#(string, string)>, string> {
+fn decodeBody(
+    body: string,
+    form: bool,
+) -> @Result<Array<#(string, string)>, string> {
     val fields = body.split("&").filter({ chunk -> chunk != "" });
     val none: Array<#(string, string)> = [];
     return try decodeFields(fields, 0, form, none);
@@ -133,7 +147,9 @@ fn hasControl(s: string) -> bool {
 pub fn stringify(pairs: Array<#(string, string)>) -> @Result<string, string> {
     val bad = pairs.filter({ p -> hasControl(p._0) || hasControl(p._1) });
     if (bad.length > 0) throw "querystring.stringify: a control character";
-    return pairs.map({ p -> [percentEncode(p._0), "=", percentEncode(p._1)].join("") }).join("&");
+    return pairs
+        .map({ p -> [percentEncode(p._0), "=", percentEncode(p._1)].join("") })
+        .join("&");
 }
 
 // ── tests ────────────────────────────────────────────────────────────────────
@@ -176,7 +192,8 @@ test "querystring.parse percent-decodes names and values" {
     assert pairsOf(parse("?a=%20b&k%3Dx=%26%3D%25")) == "a=> b|k=x=>&=%";
     // Two escapes that are one UTF-8 character: U+00E9.
     assert pairsOf(parse("n=caf%C3%A9")) == pairsOf(parse("n=caf%c3%a9"));
-    assert parse("n=caf%C3%A9").unwrapOr([]).at(0).unwrapOr(#("", ""))._1 == ["caf", hexDecode("c3a9").unwrapOr("?")].join("");
+    assert parse("n=caf%C3%A9").unwrapOr([]).at(0).unwrapOr(#("", ""))._1
+        == ["caf", hexDecode("c3a9").unwrapOr("?")].join("");
 }
 
 test "querystring.parse keeps a plus sign, parseForm reads it as a space" {
@@ -186,41 +203,56 @@ test "querystring.parse keeps a plus sign, parseForm reads it as a space" {
 }
 
 test "querystring.parse refuses a malformed escape" {
-    assert problemOf(parse("a=%zz")) == "querystring.parse: a `%` not followed by two hex digits";
-    assert problemOf(parse("a=100%")) == "querystring.parse: a `%` not followed by two hex digits";
-    assert problemOf(parse("a%2=1")) == "querystring.parse: a `%` not followed by two hex digits";
-    assert problemOf(parseForm("a=%g0")) == "querystring.parse: a `%` not followed by two hex digits";
+    assert problemOf(parse("a=%zz"))
+        == "querystring.parse: a `%` not followed by two hex digits";
+    assert problemOf(parse("a=100%"))
+        == "querystring.parse: a `%` not followed by two hex digits";
+    assert problemOf(parse("a%2=1"))
+        == "querystring.parse: a `%` not followed by two hex digits";
+    assert problemOf(parseForm("a=%g0"))
+        == "querystring.parse: a `%` not followed by two hex digits";
 }
 
 test "querystring.parse refuses an escape that decodes to a control character" {
-    assert problemOf(parse("a=%0A")) == "querystring.parse: an escape that decodes to a control character";
-    assert problemOf(parse("a=x%0dy")) == "querystring.parse: an escape that decodes to a control character";
-    assert problemOf(parse("%00=a")) == "querystring.parse: an escape that decodes to a control character";
-    assert problemOf(parseForm("a=%7f")) == "querystring.parse: an escape that decodes to a control character";
+    assert problemOf(parse("a=%0A"))
+        == "querystring.parse: an escape that decodes to a control character";
+    assert problemOf(parse("a=x%0dy"))
+        == "querystring.parse: an escape that decodes to a control character";
+    assert problemOf(parse("%00=a"))
+        == "querystring.parse: an escape that decodes to a control character";
+    assert problemOf(parseForm("a=%7f"))
+        == "querystring.parse: an escape that decodes to a control character";
     assert parse("a=%7E%20%21").isOk();
 }
 
 test "querystring.parse refuses a raw control character" {
-    assert problemOf(parse("a=x\ny")) == "querystring.parse: a control character";
-    assert problemOf(parse("a\t=1")) == "querystring.parse: a control character";
+    assert problemOf(parse("a=x\ny"))
+        == "querystring.parse: a control character";
+    assert problemOf(parse("a\t=1"))
+        == "querystring.parse: a control character";
 }
 
 test "querystring.parse refuses an escape sequence that is not UTF-8" {
-    assert problemOf(parse("a=%C3")) == "querystring.parse: an escape sequence that is not UTF-8";
-    assert problemOf(parse("a=%FF%FE")) == "querystring.parse: an escape sequence that is not UTF-8";
+    assert problemOf(parse("a=%C3"))
+        == "querystring.parse: an escape sequence that is not UTF-8";
+    assert problemOf(parse("a=%FF%FE"))
+        == "querystring.parse: an escape sequence that is not UTF-8";
 }
 
 test "querystring.stringify percent-encodes names and values" {
     assert stringify([#("a", "1"), #("b", "2")]).unwrapOr("?") == "a=1&b=2";
-    assert stringify([#("a b", "c;d"), #("k=x", "&+%")]).unwrapOr("?") == "a%20b=c%3Bd&k%3Dx=%26%2B%25";
+    assert stringify([#("a b", "c;d"), #("k=x", "&+%")]).unwrapOr("?")
+        == "a%20b=c%3Bd&k%3Dx=%26%2B%25";
     assert stringify([#("-._~", "")]).unwrapOr("?") == "-._~=";
     val none: Array<#(string, string)> = [];
     assert stringify(none).unwrapOr("?") == "";
 }
 
 test "querystring.stringify refuses a control character" {
-    assert problemOf(stringify([#("a", "x\ny")])) == "querystring.stringify: a control character";
-    assert problemOf(stringify([#("a\u{7f}", "1")])) == "querystring.stringify: a control character";
+    assert problemOf(stringify([#("a", "x\ny")]))
+        == "querystring.stringify: a control character";
+    assert problemOf(stringify([#("a\u{7f}", "1")]))
+        == "querystring.stringify: a control character";
 }
 
 test "querystring.stringify reads back through parse and parseForm" {

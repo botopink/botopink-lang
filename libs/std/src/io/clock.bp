@@ -256,8 +256,10 @@ test "clock.parseIso8601 reads back formatIso8601 to the whole second" {
 
 test "clock.parseIso8601 reads a fixed timestamp with fraction and offset" {
     assert parseIso8601("1970-01-01T00:00:01Z").unwrapOr(wide(0)) == 1000;
-    assert parseIso8601("2024-02-29T12:34:56.789Z").unwrapOr(wide(0)) == 1709210096789;
-    assert parseIso8601("2024-02-29T14:34:56+02:00").unwrapOr(wide(0)) == 1709210096000;
+    assert parseIso8601("2024-02-29T12:34:56.789Z").unwrapOr(wide(0))
+        == 1709210096789;
+    assert parseIso8601("2024-02-29T14:34:56+02:00").unwrapOr(wide(0))
+        == 1709210096000;
 }
 
 test "clock.parseIso8601 refuses what is not an RFC 3339 timestamp" {

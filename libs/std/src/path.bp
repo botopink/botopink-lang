@@ -79,9 +79,10 @@ pub fn extname(path: string) -> string {
 // which lowers to a dead store on Erlang's immutable runtime (the same
 // trap `split` sidesteps).
 pub fn join(parts: string[]) -> string {
-    val isAbs = if (parts.length == 0) false else isAbsolute(parts.at(0).unwrapOr(
-            ""
-        ));
+    val isAbs = if (parts.length == 0)
+        false
+    else
+        isAbsolute(parts.at(0).unwrapOr(""));
     val collapsed = parts.map({ p -> split(p).join(separator) });
     val joined = collapsed.filter({ p -> p != "" }).join(separator);
     return if (isAbs) [separator, joined].join("") else joined;
@@ -97,7 +98,12 @@ pub fn normalize(path: string) -> string {
     val isAbs = isAbsolute(path);
     val pieces = split(path).filter({ p -> p != "." });
     val joined = pieces.join(separator);
-    return if (isAbs) [separator, joined].join("") else if (joined == "") "." else joined;
+    return if (isAbs)
+        [separator, joined].join("")
+    else if (joined == "")
+        "."
+    else
+        joined;
 }
 
 // Internal: count how many leading components two split paths share. Tail-
@@ -177,9 +183,18 @@ fn resolveAll(segments: string[], i: i32, state: PathAccum) -> PathAccum {
 // `path.resolve`); `..` pops one component; `.` drops out (already
 // filtered by `split`). The empty input resolves to ".".
 pub fn resolve(segments: string[]) -> string {
-    val finalState = resolveAll(segments, 0, PathAccum(isAbs: false, parts: []));
+    val finalState = resolveAll(
+        segments,
+        0,
+        PathAccum(isAbs: false, parts: []),
+    );
     val joined = finalState.parts.join(separator);
-    return if (finalState.isAbs) [separator, joined].join("") else if (joined == "") "." else joined;
+    return if (finalState.isAbs)
+        [separator, joined].join("")
+    else if (joined == "")
+        "."
+    else
+        joined;
 }
 
 // ── 1.0.10-beta front 01 additions ───────────────────────────────────────────

@@ -47,18 +47,14 @@
 
 // Fails when `condition` is false.
 pub fn isTrue(condition: bool) -> @Result<void, string> {
-    if (condition == false) {
-        throw "asserts.isTrue: condition was false";
-    }
+    if (condition == false) throw "asserts.isTrue: condition was false";
     return;
 }
 
 // Fails when `condition` is true — the dual of `isTrue`, for "this must not
 // happen" branches you would otherwise spell as `isTrue(!cond)`.
 pub fn isFalse(condition: bool) -> @Result<void, string> {
-    if (condition) {
-        throw "asserts.isFalse: condition was true";
-    }
+    if (condition) throw "asserts.isFalse: condition was true";
     return;
 }
 
@@ -66,29 +62,28 @@ pub fn isFalse(condition: bool) -> @Result<void, string> {
 
 // Fails when `actual != expected` (the language's `==`; see the docblock).
 pub fn equals<T>(actual: T, expected: T) -> @Result<void, string> {
-    if (actual != expected) {
-        throw "asserts.equals: values differ";
-    }
+    if (actual != expected) throw "asserts.equals: values differ";
     return;
 }
 
 // Fails when `actual == expected`.
 pub fn notEquals<T>(actual: T, expected: T) -> @Result<void, string> {
-    if (actual == expected) {
-        throw "asserts.notEquals: values match";
-    }
+    if (actual == expected) throw "asserts.notEquals: values match";
     return;
 }
 
 // Fails when `|actual - expected| > tolerance`. Pick a tolerance that fits the
 // operation's numerical budget, not `0.0`. The absolute value is an inline
 // `if` rather than `math.abs` — a std module does not import another.
-pub fn approxEquals(actual: f64, expected: f64, tolerance: f64) -> @Result<void, string> {
+pub fn approxEquals(
+    actual: f64,
+    expected: f64,
+    tolerance: f64,
+) -> @Result<void, string> {
     val diff = actual - expected;
     val absDiff = if (diff >= 0.0) diff else 0.0 - diff;
-    if (absDiff > tolerance) {
+    if (absDiff > tolerance)
         throw "asserts.approxEquals: values differ by more than tolerance";
-    }
     return;
 }
 
@@ -103,9 +98,8 @@ declare fn canonical<T>(v: T) -> string;
 // Fails when the two values differ structurally — arrays and records by
 // content, on every target. Needs Node or Erlang at run time (`canonical`).
 pub fn deepEquals<T>(actual: T, expected: T) -> @Result<void, string> {
-    if (canonical(actual) != canonical(expected)) {
+    if (canonical(actual) != canonical(expected))
         throw "asserts.deepEquals: values differ structurally";
-    }
     return;
 }
 
@@ -114,17 +108,13 @@ pub fn deepEquals<T>(actual: T, expected: T) -> @Result<void, string> {
 // Fails when the optional holds a value. `!= null`, never truthiness — on
 // commonJS `if (x)` is false for `0`.
 pub fn isNil<T>(value: ?T) -> @Result<void, string> {
-    if (value != null) {
-        throw "asserts.isNil: value was present";
-    }
+    if (value != null) throw "asserts.isNil: value was present";
     return;
 }
 
 // Fails when the optional is absent.
 pub fn isNotNil<T>(value: ?T) -> @Result<void, string> {
-    if (value == null) {
-        throw "asserts.isNotNil: value was null";
-    }
+    if (value == null) throw "asserts.isNotNil: value was null";
     return;
 }
 
@@ -133,18 +123,14 @@ pub fn isNotNil<T>(value: ?T) -> @Result<void, string> {
 // Fails when `result` is `Error`. Read the payload at the call site with the
 // builtin methods (`try equals(r.unwrapOr(0), 42);`).
 pub fn isOk<T, E>(result: @Result<T, E>) -> @Result<void, string> {
-    if (result.isError()) {
-        throw "asserts.isOk: result was Error";
-    }
+    if (result.isError()) throw "asserts.isOk: result was Error";
     return;
 }
 
 // Fails when `result` is `Ok`. To assert that a `@Result`-returning body
 // fails, this is the tool — `throws` is for a `@panic` or a host throw.
 pub fn isError<T, E>(result: @Result<T, E>) -> @Result<void, string> {
-    if (result.isOk()) {
-        throw "asserts.isError: result was Ok";
-    }
+    if (result.isOk()) throw "asserts.isError: result was Ok";
     return;
 }
 
@@ -152,33 +138,29 @@ pub fn isError<T, E>(result: @Result<T, E>) -> @Result<void, string> {
 
 // Fails when `needle` is not a substring of `actual`.
 pub fn contains(actual: string, needle: string) -> @Result<void, string> {
-    if (actual.contains(needle) == false) {
+    if (actual.contains(needle) == false)
         throw "asserts.contains: needle not in actual";
-    }
     return;
 }
 
 // Fails when `needle` is a substring of `actual`.
 pub fn notContains(actual: string, needle: string) -> @Result<void, string> {
-    if (actual.contains(needle)) {
+    if (actual.contains(needle))
         throw "asserts.notContains: needle found in actual";
-    }
     return;
 }
 
 // Fails when `actual` does not start with `prefix`.
 pub fn startsWith(actual: string, prefix: string) -> @Result<void, string> {
-    if (actual.startsWith(prefix) == false) {
+    if (actual.startsWith(prefix) == false)
         throw "asserts.startsWith: prefix does not match";
-    }
     return;
 }
 
 // Fails when `actual` does not end with `suffix`.
 pub fn endsWith(actual: string, suffix: string) -> @Result<void, string> {
-    if (actual.endsWith(suffix) == false) {
+    if (actual.endsWith(suffix) == false)
         throw "asserts.endsWith: suffix does not match";
-    }
     return;
 }
 
@@ -193,9 +175,8 @@ declare fn regexMatches(actual: string, pattern: string) -> bool;
 // does not match `actual`. Use `contains` for a literal needle. Needs Node or
 // Erlang at run time (`regexMatches`).
 pub fn matches(actual: string, pattern: string) -> @Result<void, string> {
-    if (regexMatches(actual, pattern) == false) {
+    if (regexMatches(actual, pattern) == false)
         throw "asserts.matches: pattern did not match";
-    }
     return;
 }
 
@@ -203,42 +184,34 @@ pub fn matches(actual: string, pattern: string) -> @Result<void, string> {
 
 // Fails when the array has elements.
 pub fn isEmpty<T>(actual: T[]) -> @Result<void, string> {
-    if (actual.length != 0) {
-        throw "asserts.isEmpty: array was not empty";
-    }
+    if (actual.length != 0) throw "asserts.isEmpty: array was not empty";
     return;
 }
 
 // Fails when the array is empty.
 pub fn isNotEmpty<T>(actual: T[]) -> @Result<void, string> {
-    if (actual.length == 0) {
-        throw "asserts.isNotEmpty: array was empty";
-    }
+    if (actual.length == 0) throw "asserts.isNotEmpty: array was empty";
     return;
 }
 
 // Fails when the array's length is not `expected`.
 pub fn lengthIs<T>(actual: T[], expected: i32) -> @Result<void, string> {
-    if (actual.length != expected) {
-        throw "asserts.lengthIs: length differs";
-    }
+    if (actual.length != expected) throw "asserts.lengthIs: length differs";
     return;
 }
 
 // Fails when no element `==` `element` (`Array.indexOf` — reference equality
 // for records on commonJS; extract with `.at(i)` and `deepEquals` instead).
 pub fn includes<T>(actual: T[], element: T) -> @Result<void, string> {
-    if (actual.indexOf(element) < 0) {
+    if (actual.indexOf(element) < 0)
         throw "asserts.includes: element not found";
-    }
     return;
 }
 
 // Fails when some element `==` `element`.
 pub fn notIncludes<T>(actual: T[], element: T) -> @Result<void, string> {
-    if (actual.indexOf(element) >= 0) {
+    if (actual.indexOf(element) >= 0)
         throw "asserts.notIncludes: element found";
-    }
     return;
 }
 
@@ -252,25 +225,19 @@ pub fn between(actual: i32, low: i32, high: i32) -> @Result<void, string> {
     // (the condition grammar stops at `||`; a `val` initialiser takes the
     // whole expression) — a parser gap, recorded by the front that owns it.
     val outside = actual < low || actual > high;
-    if (outside) {
-        throw "asserts.between: value out of range";
-    }
+    if (outside) throw "asserts.between: value out of range";
     return;
 }
 
 // Fails when `actual <= bound`.
 pub fn greaterThan(actual: i32, bound: i32) -> @Result<void, string> {
-    if (actual <= bound) {
-        throw "asserts.greaterThan: value not greater";
-    }
+    if (actual <= bound) throw "asserts.greaterThan: value not greater";
     return;
 }
 
 // Fails when `actual >= bound`.
 pub fn lessThan(actual: i32, bound: i32) -> @Result<void, string> {
-    if (actual >= bound) {
-        throw "asserts.lessThan: value not less";
-    }
+    if (actual >= bound) throw "asserts.lessThan: value not less";
     return;
 }
 
@@ -301,9 +268,7 @@ fn caughtMessage(r: @Result<i32, string>) -> string {
 // or Erlang at run time (`tryCatch`). End the body with `0;` (see `tryCatch`).
 pub fn throws(body: fn() -> i32) -> @Result<void, string> {
     val r = tryCatch(body);
-    if (r.isOk()) {
-        throw "asserts.throws: body did not raise";
-    }
+    if (r.isOk()) throw "asserts.throws: body did not raise";
     return;
 }
 
@@ -316,12 +281,9 @@ pub fn throws(body: fn() -> i32) -> @Result<void, string> {
 // (`error:badarg`).
 pub fn throwsWith(body: fn() -> i32, needle: string) -> @Result<void, string> {
     val r = tryCatch(body);
-    if (r.isOk()) {
-        throw "asserts.throwsWith: body did not raise";
-    }
-    if (caughtMessage(r).contains(needle) == false) {
+    if (r.isOk()) throw "asserts.throwsWith: body did not raise";
+    if (caughtMessage(r).contains(needle) == false)
         throw "asserts.throwsWith: message does not contain needle";
-    }
     return;
 }
 
@@ -351,9 +313,7 @@ pub fn errorText(r: @Result<void, string>) -> string {
 // through `errorText` (no host cell, no panic).
 
 fn parsePort(s: string) -> @Result<i32, string> {
-    if (s == "") {
-        throw "empty input";
-    }
+    if (s == "") throw "empty input";
     return 8080;
 }
 
@@ -419,7 +379,10 @@ test "asserts: approxEquals accepts a value inside the tolerance" {
 test "asserts: approxEquals fails outside the tolerance" {
     val r = approxEquals(1.0, 2.0, 0.5);
     try isError(r);
-    try equals(errorText(r), "asserts.approxEquals: values differ by more than tolerance");
+    try equals(
+        errorText(r),
+        "asserts.approxEquals: values differ by more than tolerance",
+    );
 }
 
 test "asserts: deepEquals compares arrays by content on every target" {
@@ -645,7 +608,10 @@ test "asserts: throwsWith matches a needle with a quote or a backslash on every 
         quoteRaiser();
         0;
     }, "withHeader(\\\"");
-    try equals(errorText(escaped), "asserts.throwsWith: message does not contain needle");
+    try equals(
+        errorText(escaped),
+        "asserts.throwsWith: message does not contain needle",
+    );
 }
 
 test "asserts: throwsWith fails when the body completes" {
@@ -662,7 +628,10 @@ test "asserts: throwsWith fails on a message without the needle" {
         0;
     }, "not in the message");
     try isError(r);
-    try equals(errorText(r), "asserts.throwsWith: message does not contain needle");
+    try equals(
+        errorText(r),
+        "asserts.throwsWith: message does not contain needle",
+    );
 }
 
 // utility

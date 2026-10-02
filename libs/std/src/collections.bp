@@ -32,7 +32,9 @@ pub type Dict<K, V>(
     // generic, so which is a string is asked of the value (`is`, decision 8 §4).
     pub fn display(self: Self<K, V>) -> string {
         var parts: string[] = [];
-        self.pairs.forEach({ p -> parts.push(shown(p._0) + ": " + shown(p._1)) });
+        self.pairs.forEach(
+            { p -> parts.push(shown(p._0) + ": " + shown(p._1)) },
+        );
         return "Dict(" + parts.join(", ") + ")";
     }
 
@@ -110,9 +112,7 @@ pub type Dict<K, V>(
 // One key or value of `Dict.display`: a string quoted, anything else as it
 // interpolates.
 fn shown<T>(x: T) -> string {
-    if (x is string) {
-        return "\"" + x + "\"";
-    };
+    if (x is string) return "\"" + x + "\"";
     return "${x}";
 }
 
@@ -263,9 +263,10 @@ pub type Set<T>(
     }
 
     pub fn insert(self: Self<T>, x: T) -> Set<T> {
-        return if (self.items.indexOf(x) != -1) self else Set(items: self.items.append(
-                [x]
-            ));
+        return if (self.items.indexOf(x) != -1)
+            self
+        else
+            Set(items: self.items.append([x]));
     }
 
     pub fn delete(self: Self<T>, x: T) -> Set<T> {
@@ -281,11 +282,15 @@ pub type Set<T>(
     }
 
     pub fn intersection(self: Self<T>, other: Set<T>) -> Set<T> {
-        return Set(items: self.items.filter({ x -> other.items.indexOf(x) != -1 }));
+        return Set(
+            items: self.items.filter({ x -> other.items.indexOf(x) != -1 }),
+        );
     }
 
     pub fn difference(self: Self<T>, other: Set<T>) -> Set<T> {
-        return Set(items: self.items.filter({ x -> other.items.indexOf(x) == -1 }));
+        return Set(
+            items: self.items.filter({ x -> other.items.indexOf(x) == -1 }),
+        );
     }
 
     pub fn empty() -> Set<T> {

@@ -260,7 +260,8 @@ test "random.uuidV4 has the version 4 layout" {
     assert groups.at(2).unwrapOr("").startsWith("4");
     val variant = groups.at(3).unwrapOr("").slice(0, 1);
     assert "89ab".contains(variant);
-    assert u.split("").filter({ c -> "0123456789abcdef-".contains(c) }).length == 36;
+    assert u.split("").filter({ c -> "0123456789abcdef-".contains(c) }).length
+        == 36;
     assert uuidV4() != u;
 }
 
