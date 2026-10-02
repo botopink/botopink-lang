@@ -1,0 +1,14 @@
+{
+  "name": "http",
+  "version": "0.0.1",
+  "description": "Bundled library — the codecs of HTTP semantics both frameworks read and write: cookies, content negotiation, MIME types, reason phrases, HTTP-dates, byte ranges and Cache-Control; pure .bp, erlang and commonJS",
+  "src": "src/",
+  "entry": "root.bp",
+  "target": "erlang",
+  "targets": ["erlang", "commonJS"],
+  "files": [
+    "root.bp",
+    "lexical.bp",
+    "cookie.bp"
+  ]
+}
