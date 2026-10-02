@@ -808,6 +808,7 @@ refusal lines are in the front's README):
 | `run/external_template_escaped_quote` | commonJS erlang beam | wasm — `say` |
 | `run/external_template_refused_on_beam` | erlang beam | commonJS, wasm — `moduleNamed` |
 | `run/host_array_slice_without_start` | commonJS | erlang, wasm, beam — `copyAll` |
+| `run/host_template_binding_inside_while` | erlang beam | commonJS, wasm — `bump` |
 | `run/host_erlang_task_result` | erlang beam | commonJS, wasm — `hostDouble` |
 | `run/host_node_task_result` | commonJS | erlang, wasm, beam — `hostDouble` |
 | `run/host_unknown_parameter` | erlang beam | commonJS, wasm — `std/erlang.element` |
@@ -816,7 +817,7 @@ refusal lines are in the front's README):
 | `run/task_throw_resolves_error` | commonJS | erlang, wasm, beam — `observe` |
 | `modules/manifest_targets_host_binding` | erlang beam (`"targets"`) | commonJS, wasm — `magnitude` |
 
-Thirty exclusions; the run prints `narrowings: 30 exclusions audited — each stands on a host binding
+Thirty-two exclusions; the run prints `narrowings: 32 exclusions audited — each stands on a host binding
 the target does not have`. No other `modules/` manifest carries `"targets"`: the field used to be
 boilerplate (`["commonJS", "erlang", "wasm"]` in 33 cells, `["commonJS", "erlang"]` in 14) that the
 runner ignored — honoured as written it would have taken beam away from 33 passing cells — and a
@@ -879,16 +880,16 @@ audited (§ Narrowing a cell); the report is two numbers (§ A red cell is red):
 ```
 $ tests/language/run.sh --target all
 self-test: 8 malformed or unbacked narrowings refused, 3 backed ones scheduled on their declared targets alone
-narrowings: 30 exclusions audited — each stands on a host binding the target does not have
-language tests: 1483 passed, 0 failed
+narrowings: 32 exclusions audited — each stands on a host binding the target does not have
+language tests: 1545 passed, 0 failed
 
 $ tests/language/run.sh --target beam
 narrowings: 3 exclusions audited — each stands on a host binding the target does not have
-language tests: 395 passed, 0 failed
+language tests: 408 passed, 0 failed
 ```
 
-Recounted on disk: `ls test/*.bp | wc -l` 64 · `ls run/*.bp | wc -l` 169 (17 with a `.targets`,
-25 `.<target>.expect` files) · `ls reject/*.bp | wc -l` 173 · `ls -d modules/*/ | wc -l` 60 (25
+Recounted on disk: `ls test/*.bp | wc -l` 65 · `ls run/*.bp | wc -l` 173 (18 with a `.targets`,
+25 `.<target>.expect` files) · `ls reject/*.bp | wc -l` 173 · `ls -d modules/*/ | wc -l` 69 (33
 `<target>.expect` files, one `"targets"`). Decision 146 on wasm (a function whose body calls a host
 function with no binding for the target is refused called or not, on every target) moved four cells
 and added one: `run/external_wrapper_keeps_refusal` passes on wasm by its `.wasm.expect`;
