@@ -439,7 +439,10 @@ fn main() {
 ```json
 {
   "contributions": [
-    "pub fn wireService() -> string { return \"Service(port: prop(port), name: makestring())\"; }"
+    {
+      "kind": "emit",
+      "source": "pub fn wireService() -> string { return \"Service(port: prop(port), name: makestring())\"; }"
+    }
   ],
   "kind": "ok"
 }

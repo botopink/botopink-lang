@@ -200,7 +200,7 @@ test "decorator regression: @emit in body" {
         \\type Service(x: i32)
         \\fn useHelper() -> i32 { return helper_Service(); }
     , "{extfunc, bp_comptime_decorator, '__bp_add', 2}",
-        \\{"kind":"ok","contributions":["pub fn helper_Service() -> i32 { return 42; }"]}
+        \\{"kind":"ok","contributions":[{"source":"pub fn helper_Service() -> i32 { return 42; }","kind":"emit"}]}
     );
 }
 

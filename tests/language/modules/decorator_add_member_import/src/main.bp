@@ -1,0 +1,16 @@
+//// Decision 216 (1) — members a decorator adds travel with the type: an
+//// importer calls `City.fromRow(r)` and `c.columns()` as if `models` had
+//// written them, through a plain import and through an alias.
+
+pub mod orm;
+pub mod models;
+import {City} from "models";
+import {City as Town} from "models";
+
+pub fn main() {
+    val c = City.fromRow(["re", "ci", "fe"]);
+    @print(c.name);
+    @print(c.size);
+    @print(City.table());
+    @print(Town.fromRow(["x"]).columns());
+}

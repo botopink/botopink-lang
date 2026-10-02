@@ -596,4 +596,15 @@ pub behavior Decl {
 
     fn fail(self: Self, message: string);
     fn failAt(self: Self, span: Span, message: string);
+
+    // Decision 216 (1) — give the annotated type a member, written as it would
+    // be in the type's body: one `fn`, an associated fn or a method
+    // (`decl.addMember("pub fn fromRow(r: Row) -> Self { … }")`). It is
+    // ordinary run-time code of the type and travels with it to every
+    // importer. From a field's or a method's decorator it joins the type that
+    // owns the field or method; from a function's it is refused
+    // (`decorator-member-without-type`), and so is a name the type already
+    // has (`decorator-member-duplicate`) or a source that is not one `fn`
+    // (`decorator-member-not-one-fn`).
+    fn addMember(self: Self, source: string);
 }

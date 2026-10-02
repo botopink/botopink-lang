@@ -519,6 +519,110 @@ fn parseAndMergeContributions(
     return ast.Program{ .decls = try merged.toOwnedSlice(arena) };
 }
 
+/// What `mergeMembers` answers: the program with every member in its type's
+/// body, or the refusal of the first member that cannot join it.
+const MemberMerge = union(enum) {
+    ok: ast.Program,
+    refused: validation.TypeError,
+};
+
+/// Decision 216 (1) — every `decl.addMember(source)` of pass 1, parsed as one
+/// member of its target type's body and appended to it, as if the type had
+/// been written with it. The member's tokens are placed after the module's own
+/// lines and after every `@emit` contribution (`first_line`, `first_offset`),
+/// so no two lowerings share a location (`parseAndMergeContributions`).
+///
+/// Refused at the annotation that ran the decorator: a source that is not
+/// exactly one `fn` (`decorator-member-not-one-fn`) and a name the type already
+/// has — a field, a variant, a member written by hand or added before
+/// (`decorator-member-duplicate`). A decorator adds; it never replaces.
+fn mergeMembers(
+    arena: std.mem.Allocator,
+    original: ast.Program,
+    members: []const envMod.MemberContribution,
+    first_line: usize,
+    first_offset: usize,
+) !MemberMerge {
+    const decls = try arena.dupe(ast.DeclKind, original.decls);
+    var line_shift = first_line;
+    var offset_shift = first_offset;
+    for (members) |m| {
+        const target_index = for (decls, 0..) |d, i| switch (d) {
+            .type_ => |t| if (std.mem.eql(u8, t.name, m.target)) break i,
+            .behavior => |b| if (std.mem.eql(u8, b.name, m.target)) break i,
+            else => {},
+        } else return error.MemberTargetMissing;
+        const is_behavior = decls[target_index] == .behavior;
+        const prefix = if (is_behavior) "behavior __bp_member {\n" else "type __bp_member() {\n";
+        const text = try std.fmt.allocPrint(arena, "{s}{s}\n}}", .{ prefix, m.source });
+
+        const refuse = struct {
+            fn at(a: std.mem.Allocator, mc: envMod.MemberContribution, comptime fmt: []const u8, args: anytype, hint: []const u8) !MemberMerge {
+                var e = validation.TypeError.custom(try std.fmt.allocPrint(a, fmt, args), hint);
+                if (mc.loc) |l| e = e.withLoc(l);
+                return .{ .refused = e };
+            }
+        }.at;
+        const not_one = "`decl.addMember(source)` takes one member: a single `fn` (an associated fn, or a method whose first parameter is `self: Self`) written as it would be in the type's body.";
+
+        const method: ast.BehaviorMethod = parsed: {
+            var lexer = Lexer.init(text);
+            const tokens = try arena.dupe(Token, lexer.scanAll(arena) catch
+                return refuse(arena, m, "{s}: `#[{s}]` added a member to `{s}` that does not lex: `{s}`", .{ diagnostics.decorator_member_not_one_fn, m.decorator, m.target, m.source }, not_one));
+            for (tokens) |*t| {
+                t.line += line_shift - 1;
+                t.offset = (t.offset + offset_shift) -| prefix.len;
+            }
+            var parser = Parser.init(tokens);
+            const program = parser.parse(arena) catch
+                return refuse(arena, m, "{s}: `#[{s}]` added a member to `{s}` that is not one `fn`: `{s}`", .{ diagnostics.decorator_member_not_one_fn, m.decorator, m.target, m.source }, not_one);
+            const methods: []const ast.BehaviorMethod, const extra: bool = if (program.decls.len != 1) .{ &.{}, true } else switch (program.decls[0]) {
+                .type_ => |t| .{ t.methods, t.recordFields().len != 0 },
+                .behavior => |b| .{ b.methods, b.fields.len != 0 },
+                else => .{ &.{}, true },
+            };
+            if (extra or methods.len != 1)
+                return refuse(arena, m, "{s}: `#[{s}]` added a member to `{s}` that is not one `fn`: `{s}`", .{ diagnostics.decorator_member_not_one_fn, m.decorator, m.target, m.source }, not_one);
+            break :parsed methods[0];
+        };
+        line_shift += std.mem.count(u8, m.source, "\n") + 1;
+        offset_shift += m.source.len + 1;
+
+        const taken = switch (decls[target_index]) {
+            .type_ => |t| taken: {
+                for (t.recordFields()) |f| if (std.mem.eql(u8, f.name, method.name)) break :taken "a field";
+                for (t.variants()) |v| if (std.mem.eql(u8, v.name, method.name)) break :taken "a variant";
+                for (t.methods) |mm| if (std.mem.eql(u8, mm.name, method.name)) break :taken "a member";
+                break :taken null;
+            },
+            .behavior => |b| taken: {
+                for (b.fields) |f| if (std.mem.eql(u8, f.name, method.name)) break :taken "a field";
+                for (b.methods) |mm| if (std.mem.eql(u8, mm.name, method.name)) break :taken "a member";
+                break :taken null;
+            },
+            else => unreachable,
+        };
+        if (taken) |what| return refuse(arena, m, "{s}: `#[{s}]` adds `{s}` to `{s}`, which already has {s} called `{s}`", .{ diagnostics.decorator_member_duplicate, m.decorator, method.name, m.target, what, method.name }, "A decorator adds members; it never replaces one. Rename the member the decorator writes, or the one already there.");
+
+        switch (decls[target_index]) {
+            .type_ => |*t| {
+                const grown = try arena.alloc(ast.BehaviorMethod, t.methods.len + 1);
+                @memcpy(grown[0..t.methods.len], t.methods);
+                grown[t.methods.len] = method;
+                t.methods = grown;
+            },
+            .behavior => |*b| {
+                const grown = try arena.alloc(ast.BehaviorMethod, b.methods.len + 1);
+                @memcpy(grown[0..b.methods.len], b.methods);
+                grown[b.methods.len] = method;
+                b.methods = grown;
+            },
+            else => unreachable,
+        }
+    }
+    return .{ .ok = .{ .decls = decls } };
+}
+
 /// The pass-2 env replaces pass 1's, where the decorators ran: carry their
 /// runtime traces over, ahead of any pass-2 (template) evaluations.
 fn keepPassOneTraces(pass_two: *Env, pass_one: *const Env) !void {
@@ -718,8 +822,26 @@ fn analyzeSource(
     // to the pass-1 program — skipping the re-lex/re-parse of the original
     // module bytes that the legacy text-splice path forced. Fallback to text
     // splicing only when a contribution fails to parse standalone.
-    if (!skip_invoke and env.contributions.items.len > 0) {
-        if (try parseAndMergeContributions(arena, source, program, env.contributions.items)) |merged_program| {
+    if (!skip_invoke and (env.contributions.items.len > 0 or env.memberContributions.items.len > 0)) {
+        // Decision 216 (1): the members join their types' bodies first, after
+        // every line the module and its `@emit` contributions occupy.
+        var with_members = program;
+        if (env.memberContributions.items.len > 0) {
+            var first_line: usize = std.mem.count(u8, source, "\n") + 1;
+            var first_offset: usize = source.len + 1;
+            for (env.contributions.items) |c| {
+                first_line += std.mem.count(u8, c, "\n") + 1;
+                first_offset += c.len + 1;
+            }
+            switch (try mergeMembers(arena, program, env.memberContributions.items, first_line, first_offset)) {
+                .ok => |p| with_members = p,
+                .refused => |te| {
+                    env.deinit();
+                    return .{ .typeError = te };
+                },
+            }
+        }
+        if (try parseAndMergeContributions(arena, source, with_members, env.contributions.items)) |merged_program| {
             var reanalysis = try analyzeMerged(arena, mod, merged_program, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, target_name);
             if (reanalysis == .success) {
                 try keepPassOneTraces(&reanalysis.success.env, &env);
@@ -844,6 +966,7 @@ const decl_reflection_src =
     \\    annotations: Annotation[]) {
     \\    declare fn fail(self: Self, message: string);
     \\    declare fn failAt(self: Self, span: Span, message: string);
+    \\    declare fn addMember(self: Self, source: string);
     \\}
 ;
 

@@ -398,7 +398,7 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     try refuseUnknownAnnotations(env, program);
     try validateExternalInline(env, program);
     try invokeDecorators(env, program);
-    if (env.contributions.items.len > 0) {
+    if (env.contributions.items.len > 0 or env.memberContributions.items.len > 0) {
         return list.toOwnedSlice(env.arena);
     }
 
@@ -482,7 +482,7 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
     try refuseUnknownAnnotations(env, program);
     try validateExternalInline(env, program);
     try invokeDecorators(env, program);
-    if (env.contributions.items.len > 0) {
+    if (env.contributions.items.len > 0 or env.memberContributions.items.len > 0) {
         // A decorator `@emit`ed code: the spliced re-analysis (`analyzeSource`)
         // does the real, full inference of the generated declarations. But the
         // LSP needs a useful binding list even when that spliced code can't
@@ -3548,11 +3548,15 @@ fn declTypeName(arena: std.mem.Allocator, tr: ast.TypeRef) std.mem.Allocator.Err
 }
 
 /// Run every body-carrying decorator applied to one declaration over its handle.
+/// `memberOwner` is the type a `decl.addMember` joins (decision 216): the
+/// annotated type itself, the type that owns an annotated field or method, and
+/// null for a function — which has no body a member could join.
 fn runDeclDecorators(
     env: *Env,
     ctx: envMod.TemplateEvalCtx,
     anns: []const ast.Annotation,
     handle: decoratorEval.DeclHandle,
+    memberOwner: ?[]const u8,
 ) InferError!void {
     for (anns) |a| {
         if (a.is_builtin) continue;
@@ -3590,9 +3594,18 @@ fn runDeclDecorators(
             return decoratorError(env, a, "the decorator evaluator failed to run", "Decorator bodies run in a persistent `erl` process at compile time — check that `erl` and `erlc` are on PATH.");
         };
         switch (outcome) {
-            .ok => |contributions| {
+            .ok => |contributions| for (contributions) |c| switch (c.kind) {
                 // `@emit(...)` sources — spliced into the module by `analyzeModule`.
-                for (contributions) |src| try env.contributions.append(env.arena, src);
+                .emit => try env.contributions.append(env.arena, c.source),
+                // `decl.addMember(source)` — parsed into the owner's body by
+                // `analyzeSource` (decision 216 (1)).
+                .member => {
+                    const target = memberOwner orelse {
+                        const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` on the function `{s}` calls `decl.addMember`, and a member belongs to a type", .{ diagnostics.decorator_member_without_type, a.name, handle.name });
+                        return decoratorError(env, a, msg, "`decl.addMember(source)` adds to the annotated `type` or `behavior` (or to the type that owns an annotated field or method); a function has no body to add to.");
+                    };
+                    try env.memberContributions.append(env.arena, .{ .target = target, .source = c.source, .loc = a.loc, .decorator = a.name });
+                },
             },
             .fail => |fl| return decoratorError(env, a, fl.message, "raised by the decorator via `fail`/`failAt`"),
             .err => |m| return decoratorError(env, a, m, "the decorator could not be evaluated"),
@@ -3632,7 +3645,7 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
                 .returnType = if (f.returnType) |rt| try declTypeName(env.arena, rt) else "",
                 .annotations = f.annotations,
             };
-            try runDeclDecorators(env, ctx, f.annotations, h);
+            try runDeclDecorators(env, ctx, f.annotations, h, null);
         },
         .type_ => |tdecl| switch (tdecl.shape) {
             .record => {
@@ -3652,7 +3665,7 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
                     .returnType = "",
                     .annotations = tdecl.annotations,
                 };
-                try runDeclDecorators(env, ctx, tdecl.annotations, h);
+                try runDeclDecorators(env, ctx, tdecl.annotations, h, tdecl.name);
                 for (tdecl.recordFields()) |fld| {
                     const fh = decoratorEval.DeclHandle{
                         .kind = "Field",
@@ -3662,7 +3675,7 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
                         .returnType = try declTypeName(env.arena, fld.typeRef),
                         .annotations = fld.annotations,
                     };
-                    try runDeclDecorators(env, ctx, fld.annotations, fh);
+                    try runDeclDecorators(env, ctx, fld.annotations, fh, tdecl.name);
                 }
                 for (tdecl.methods) |m| {
                     const mh = decoratorEval.DeclHandle{
@@ -3673,7 +3686,7 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
                         .returnType = if (m.returnType) |rt| try declTypeName(env.arena, rt) else "",
                         .annotations = m.annotations,
                     };
-                    try runDeclDecorators(env, ctx, m.annotations, mh);
+                    try runDeclDecorators(env, ctx, m.annotations, mh, tdecl.name);
                 }
             },
             .enum_ => {
@@ -3691,7 +3704,7 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
                     .returnType = "",
                     .annotations = tdecl.annotations,
                 };
-                try runDeclDecorators(env, ctx, tdecl.annotations, h);
+                try runDeclDecorators(env, ctx, tdecl.annotations, h, tdecl.name);
                 for (tdecl.methods) |m| {
                     const mh = decoratorEval.DeclHandle{
                         .kind = "Method",
@@ -3701,7 +3714,7 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
                         .returnType = if (m.returnType) |rt| try declTypeName(env.arena, rt) else "",
                         .annotations = m.annotations,
                     };
-                    try runDeclDecorators(env, ctx, m.annotations, mh);
+                    try runDeclDecorators(env, ctx, m.annotations, mh, tdecl.name);
                 }
             },
         },
@@ -3725,7 +3738,7 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
                 .returnType = "",
                 .annotations = i.annotations,
             };
-            try runDeclDecorators(env, ctx, i.annotations, h);
+            try runDeclDecorators(env, ctx, i.annotations, h, i.name);
             for (i.methods) |m| {
                 const mh = decoratorEval.DeclHandle{
                     .kind = "Method",
@@ -3735,7 +3748,7 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
                     .returnType = if (m.returnType) |rt| try declTypeName(env.arena, rt) else "",
                     .annotations = m.annotations,
                 };
-                try runDeclDecorators(env, ctx, m.annotations, mh);
+                try runDeclDecorators(env, ctx, m.annotations, mh, i.name);
             }
         },
         else => {},

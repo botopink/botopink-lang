@@ -578,7 +578,10 @@ fn main() {
 ```json
 {
   "contributions": [
-    "pub fn describeUser() -> string { return \"NAME_SECRET_AGE:hidden:Use:four\"; }"
+    {
+      "kind": "emit",
+      "source": "pub fn describeUser() -> string { return \"NAME_SECRET_AGE:hidden:Use:four\"; }"
+    }
   ],
   "kind": "ok"
 }

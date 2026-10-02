@@ -494,7 +494,12 @@ recognize → reflect → invoke → apply; marker meaning lives in the lib body
   (`ast.Annotation.loc`, via `decoratorError`; a `failAt` span is reported there
   too, since a declaration has no template text to map it onto) whose message
   carries the detail — for `err`, the Erlang compile/runtime diagnostic; `ok`
-  appends `@emit` sources to `env.contributions`. An
+  carries the body's outputs in call order (`decorator_eval.Contribution`, one
+  tagged map per call on the prelude's list): an `@emit` source goes to
+  `env.contributions`, a `decl.addMember(source)` (decision 216 (1)) to
+  `env.memberContributions` with its target — the annotated `type`/`behavior`,
+  or the type owning an annotated field or method; from a `fn`'s decorator it
+  is `decorator-member-without-type` at the annotation. An
   evaluator that cannot run at all (no `erl`/`erlc`) reports "the decorator
   evaluator failed to run".
 - **Order:** `validateDecorators` + `invokeDecorators` run in
@@ -506,7 +511,15 @@ recognize → reflect → invoke → apply; marker meaning lives in the lib body
   falling back to `spliceContributions` + a full re-analysis when a contribution
   does not parse standalone — with `skipDecoratorInvoke = true` (no loop). So an
   `@emit`ed decl is visible to any body (including `test {}` under
-  `botopink test`). In `types_only` (LSP) a failed re-analysis falls back to the
+  `botopink test`). Members join their type first: `comptime.zig`
+  `mergeMembers` parses each source inside a `type __bp_member() { … }` (or
+  `behavior`) wrapper, its tokens placed after the module's lines and every
+  `@emit` contribution, and appends the one `fn` to the target's `methods` — so
+  the member is the type's own to inference, to `registerExports` (it travels
+  with the type to every importer) and to every backend. A source that is not
+  exactly one `fn` is `decorator-member-not-one-fn`, a name the type already
+  has (field, variant, member) `decorator-member-duplicate`, both at the
+  annotation. In `types_only` (LSP) a failed re-analysis falls back to the
   pass-1 bindings; the full `compile` keeps the error.
 - Member-level annotations parse on record bodies (`parser/decls.zig
   parseRecordBody`): `RecordField`/methods carry `annotations`, so

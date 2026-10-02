@@ -1,0 +1,34 @@
+//// Decision 216 (1) — `decl.addMember(source)`: a decorator gives the type it
+//// annotates a member, written in the type's own body as if by hand. An
+//// associated fn (`City.columns()`, no `self`) and a method
+//// (`c.describe()`) are called through the type; the decorated type's own
+//// members stay beside them. A field's decorator adds to the type that owns
+//// the field (`#[label]` below).
+
+fn entity(comptime decl: @Decl) {
+    var names: string[] = [];
+    decl.fields.forEach({ f -> names.push(f.name); });
+    decl.addMember("pub fn columns() -> string { return \"" + names.join(",") + "\"; }");
+    decl.addMember(
+        "pub fn describe(self: Self) -> string { return \""
+            + decl.name
+            + "(\" + self.name + \", \" + self.size.toString() + \")\"; }",
+    );
+}
+
+fn label(comptime decl: @Decl) {
+    decl.addMember("pub fn " + decl.name + "Label() -> string { return \"the " + decl.name + "\"; }");
+}
+
+#[entity]
+type City(#[label] name: string, size: i32) {
+    pub fn bigger(self: Self, by: i32) -> City {
+        return City(name: self.name, size: self.size + by);
+    }
+}
+
+pub fn main() {
+    @print(City.columns());
+    @print(City(name: "Recife", size: 3).bigger(2).describe());
+    @print(City.nameLabel());
+}

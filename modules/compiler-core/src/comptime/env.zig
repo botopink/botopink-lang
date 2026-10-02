@@ -427,6 +427,19 @@ pub const SequenceKind = enum { iterator, stream };
 /// `pub fn d(comptime _: @Decl) { … }`. It is run over the annotated declaration
 /// at comptime (P2: placement/argument rules live in the body). `null` for a
 /// bodyless `declare fn` marker, which only gets argument validation.
+/// One member a decorator body added to a type (`decl.addMember`, decision 216).
+pub const MemberContribution = struct {
+    /// The type the member joins — its name in this module.
+    target: []const u8,
+    /// The member's botopink source, as the body wrote it.
+    source: []const u8,
+    /// The annotation that ran the decorator: every refusal about the member
+    /// is located here.
+    loc: ?ast.Loc,
+    /// The decorator as the annotation spells it (`entity`, `mocks.mock`).
+    decorator: []const u8,
+};
+
 pub const DecoratorSig = struct {
     params: []const ast.Param,
     fn_decl: ?ast.FnDecl = null,
@@ -866,6 +879,11 @@ pub const Env = struct {
     /// and re-analyzes it (a wiring decorator builds singletons / DI / router as
     /// ordinary code). Allocated in `arena`; no explicit deinit needed.
     contributions: std.ArrayListUnmanaged([]const u8) = .empty,
+    /// Decision 216 (1) — the members decorator bodies gave the types of this
+    /// module (`decl.addMember(source)`), in call order. `analyzeSource`
+    /// parses each into the target type's body and re-analyzes the module, as
+    /// it does with `contributions`. Allocated in `arena`.
+    memberContributions: std.ArrayListUnmanaged(MemberContribution) = .empty,
     /// Erlang sent to and replies received from the `erl` runtime by every
     /// decorator / template evaluation in this module, in order (snapshots).
     /// Allocated in `arena`.

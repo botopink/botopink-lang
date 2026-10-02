@@ -343,6 +343,19 @@ pub const type_alias_recursive: []const u8 = "type-alias-recursive";
 /// primitive's name): one name, one type.
 pub const type_alias_name_taken: []const u8 = "type-alias-name-taken";
 
+// ── decision 216 — what a decorator produces ───────────────────────────────
+
+/// `decl.addMember(source)` from a decorator on a `fn`: a member belongs to a
+/// type, and a function has no body to add it to.
+pub const decorator_member_without_type: []const u8 = "decorator-member-without-type";
+
+/// `decl.addMember` naming a member the type already has (written by hand or
+/// added by another decorator): a decorator adds, it never replaces.
+pub const decorator_member_duplicate: []const u8 = "decorator-member-duplicate";
+
+/// `decl.addMember(source)` whose source is not exactly one `fn` member.
+pub const decorator_member_not_one_fn: []const u8 = "decorator-member-not-one-fn";
+
 // ── Lookup table — every code (skipping aliases & reserved-empties) ─────────
 
 pub const all_codes = [_][]const u8{
@@ -405,6 +418,9 @@ pub const all_codes = [_][]const u8{
     type_alias_arity,
     type_alias_recursive,
     type_alias_name_taken,
+    decorator_member_without_type,
+    decorator_member_duplicate,
+    decorator_member_not_one_fn,
 };
 
 test "every reserved code has a stable, non-empty spelling" {

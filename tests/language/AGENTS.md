@@ -113,6 +113,14 @@ calls the four (it passes on the parent binary; it pins the rule).
 Decision 141 adds `run/external_template_refused_on_beam` — an `@External.Erlang` template with a
 macro runs on erlang and is a located build error on beam naming the construct (`.beam.expect`); beam
 no longer evaluates a template it cannot compile from source at run time.
+Decision 216 (front `130-decorator-outputs`, what a decorator produces) adds, for its first place —
+`decl.addMember(source)`, a member of the annotated type — `run/decorator_add_member` (an associated
+fn and a method added by a type's decorator and one added by a field's, beside a hand-written
+member) and `modules/decorator_add_member_import` (the members travel with the type: an importer
+calls `City.fromRow(r)` through a plain import and an alias), on all four targets, and three
+`reject/` cells at the annotation: `decorator_add_member_on_fn` (`decorator-member-without-type`),
+`decorator_add_member_duplicate` (`decorator-member-duplicate`) and `decorator_add_member_not_one`
+(`decorator-member-not-one-fn`).
 C-03's beam half adds `run/std_template_host_fns_across_modules` — std host functions whose
 `@External.Erlang` body is a template (`fs.exists`, `fs.readText`, `os.eol`, `process.platform`,
 `encoding.hexEncode`, `hash.sha256`, `json.quote`, `regex.matches`) called from the program's

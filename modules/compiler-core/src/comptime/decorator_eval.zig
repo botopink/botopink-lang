@@ -13,7 +13,8 @@
 ///
 /// The body is lowered by the regular Erlang backend (untyped mode), so every
 /// construct that backend supports works in a decorator. The host functions the
-/// body calls (`decl.fail`, `decl.failAt`, `@compilerError`, `@emit`) are plain
+/// body calls (`decl.fail`, `decl.failAt`, `@compilerError`, `@emit`,
+/// `decl.addMember` — decision 216) are plain
 /// Erlang functions resident in `bp_comptime_decorator`, built once at server
 /// warmup (`runtime/prelude.zig`) and reached by the `-import`
 /// `emitComptimeModule` writes; only `main/1` is generated, and it carries nothing
@@ -53,9 +54,20 @@ pub const FieldHandle = struct {
     annotations: []const ast.Annotation,
 };
 
+/// One output of a decorator body, in call order (decision 216): a loose
+/// `@emit` declaration, or a member `decl.addMember(source)` gives the
+/// annotated type.
+pub const Contribution = struct {
+    kind: Kind,
+    /// The botopink source the body wrote.
+    source: []const u8 = "",
+
+    pub const Kind = enum { emit, member };
+};
+
 pub const Outcome = union(enum) {
-    /// Accepted; `@emit(...)` sources in call order.
-    ok: []const []const u8,
+    /// Accepted; the body's outputs in call order.
+    ok: []const Contribution,
     /// Rejected by the body (`decl.fail` / `decl.failAt` / `@compilerError`).
     fail: struct { message: []const u8, span: ?template.Span },
     /// The evaluator itself failed (module did not compile, body raised, …).
@@ -382,10 +394,16 @@ fn annotationsToTerm(arena: std.mem.Allocator, anns: []const ast.Annotation) std
 
 // ── outcome ───────────────────────────────────────────────────────────────────
 
+/// One tagged map of the prelude's `'__bp_contribute'/1` list, as JSON.
+const ReplyItem = struct {
+    kind: []const u8,
+    source: []const u8 = "",
+};
+
 /// The JSON object `main/0` returns.
 const Reply = struct {
     kind: []const u8,
-    contributions: []const []const u8 = &.{},
+    contributions: []const ReplyItem = &.{},
     message: []const u8 = "",
     span: ?template.Span = null,
 };
@@ -396,7 +414,15 @@ fn parseOutcome(arena: std.mem.Allocator, stdout: []const u8) EvalError!Outcome 
         .allocate = .alloc_always,
     }) catch return .{ .err = try errorText(arena, "the decorator evaluator returned an unreadable result", stdout) };
 
-    if (std.mem.eql(u8, reply.kind, "ok")) return .{ .ok = reply.contributions };
+    if (std.mem.eql(u8, reply.kind, "ok")) {
+        const out = try arena.alloc(Contribution, reply.contributions.len);
+        for (reply.contributions, 0..) |item, i| {
+            const kind = std.meta.stringToEnum(Contribution.Kind, item.kind) orelse
+                return .{ .err = try errorText(arena, "the decorator evaluator returned an unknown output kind", item.kind) };
+            out[i] = .{ .kind = kind, .source = item.source };
+        }
+        return .{ .ok = out };
+    }
     if (std.mem.eql(u8, reply.kind, "fail")) return .{ .fail = .{
         .message = if (reply.message.len > 0) reply.message else "decorator rejected the declaration",
         .span = reply.span,
@@ -451,7 +477,7 @@ test "decorator module: lowered body, handle term and host glue" {
     // the host glue is imported rather than defined.
     const expected = [_][]const u8{
         "-export([main/1]).",
-        "-import(bp_comptime_decorator, [fail/2, failAt/3, compilerError/1, emit/1, '__bp_emitted'/0,",
+        "-import(bp_comptime_decorator, [fail/2, failAt/3, compilerError/1, emit/1, addMember/2,",
         "(maps:get(kind, Decl) =/= 'Method')",
         "fail(Decl, <<\"#[getMapping] must annotate a method\">>)",
         "main({Arg0, Arg1, _}) ->",
@@ -529,8 +555,10 @@ test "decorator outcome: ok / fail / error replies" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    const ok = try parseOutcome(arena, "{\"kind\":\"ok\",\"contributions\":[\"pub val x = 1;\"]}");
-    try std.testing.expectEqualStrings("pub val x = 1;", ok.ok[0]);
+    const ok = try parseOutcome(arena, "{\"kind\":\"ok\",\"contributions\":[{\"kind\":\"emit\",\"source\":\"pub val x = 1;\"},{\"kind\":\"member\",\"source\":\"pub fn f() {}\"}]}");
+    try std.testing.expectEqualStrings("pub val x = 1;", ok.ok[0].source);
+    try std.testing.expectEqual(Contribution.Kind.emit, ok.ok[0].kind);
+    try std.testing.expectEqual(Contribution.Kind.member, ok.ok[1].kind);
 
     const fail = try parseOutcome(arena, "{\"kind\":\"fail\",\"message\":\"no\",\"span\":null}");
     try std.testing.expectEqualStrings("no", fail.fail.message);
