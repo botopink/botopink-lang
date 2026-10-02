@@ -221,6 +221,10 @@ and redeclaring a std member is `behavior-member-redeclared`. `run/program_primi
 is its `run/` twin on all four targets (`botopink test` runs neither wasm nor beam), a
 `behavior Number` default beside it; wasm called no program-declared default fn of a primitive
 (it trapped) until `05-wasm`'s `lowerPrimDefault`. Both refused by the parent binary.
+`run/program_array_behavior_default` does the same for a program's `behavior Array<T>` — defaults
+calling std's `at` / `length` / `filter` / `all` / `contains` / `join` on `self`, taking a `T` and a
+`Self<T>`, answering `?T`, `T`, `Self<T>`, a bool and a string over integers, strings and records —
+on all four targets (wasm trapped: the copy did not substitute `Self<T>`).
 Decision 141 adds `run/external_template_refused_on_beam` — an `@External.Erlang` template with a
 macro runs on erlang and is a located build error on beam naming the construct (`.beam.expect`); beam
 no longer evaluates a template it cannot compile from source at run time.
