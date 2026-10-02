@@ -25,7 +25,7 @@ mk() ->
 
 main() ->
     C = mk(),
-    '__bp_print'([erlang:element(2, C)(9)]).
+    '__bp_print'([(erlang:element(2, C))(9)]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
