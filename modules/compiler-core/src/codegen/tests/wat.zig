@@ -1598,3 +1598,25 @@ test "wat: behavior ---- a program's default fn on a primitive behavior is calle
         \\}
     , "hi!\n42\n");
 }
+
+// A program's own `default fn` on `Array<T>`: the copy writes `Self<T>` as the
+// receiver's array type and `T` as its element (`ensurePrimDefault`). It
+// trapped (`prim method not lowered on wasm`). The RUN LOG is commonJS's and
+// erlang's for the program.
+test "wat: behavior ---- a program's default fn on Array<T> is called with its element type" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\behavior Array<T> {
+        \\    default fn tag(self: Self<T>) -> string {
+        \\        return "arr";
+        \\    }
+        \\    default fn pairUp(self: Self<T>, x: T) -> Self<T> {
+        \\        return [x, x];
+        \\    }
+        \\}
+        \\fn main() {
+        \\    @print([1, 2].tag());
+        \\    @print([1].pairUp(7));
+        \\    @print(["a"].pairUp("b"));
+        \\}
+    , "arr\n[7, 7]\n[\"b\", \"b\"]\n");
+}

@@ -755,8 +755,14 @@ answered, and each was a red wasm cell of `tests/language`:
   result is typed by what it answers (`typeRefOf`), so `self.max(lo).min(hi)`
   and `val tail = self.slice(1); tail.startsWith(…)` find their primitive.
   Every program-declared default of a primitive trapped (`prim method not
-  lowered on wasm`). `Array<T>`'s defaults are not covered: their `self` is
-  `Self<T>`, which no copy substitutes, and they keep the trap.
+  lowered on wasm`). An `Array<T>` default's copy writes `Self<T>` (and a
+  bare `Self`) as the receiver's array type and `T` as its element
+  (`ensurePrimDefault`, `primArrayElemName`: a record, a bool by its shape,
+  else the element kind — `Array_second__arr_string`); `substTypeParams`
+  replaces a generic `Self<…>` whole for it, `emitMemberFn` marks an array
+  `self` and, inside any copy, types each parameter by its written type, and
+  the call answers the copy's declared return (`typeRefOf`, so a `?T` result
+  is the optional its element makes).
 - **A primitive method on a call inside an adopted default** reads the
   callee's declared return (`primKindAt`'s fallback): inference typed the
   default's body against `Self`, so `self.twice().toString()` in `Sq`'s copy

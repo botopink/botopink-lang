@@ -649,7 +649,7 @@ const GenericFn = struct {
 /// and the per-module maps its body is lowered under.
 /// A program-declared `default fn` of a primitive behavior: the behavior that
 /// declares it and the method.
-const PrimDefault = struct { behavior: []const u8, method: ast.BehaviorMethod };
+const PrimDefault = struct { behavior: []const u8, method: ast.BehaviorMethod, tparams: []const ast.GenericParam = &.{} };
 
 /// A name a block re-bound, and the alias it had before (`Emitter.shadow_log`).
 /// What a statement list did to a name, undone at its end: bound it first
@@ -681,6 +681,11 @@ fn substTypeParams(comptime T: type, arena: std.mem.Allocator, value: T, subs: [
         .named => |n| {
             for (subs) |sub| if (std.mem.eql(u8, sub.name, n)) return sub.to;
             return value;
+        },
+        // `Self<T>` in a primitive `Array<T>` default's copy: the whole
+        // written array type (`lowerPrimDefault`), its arguments included.
+        .generic => |g| for (subs) |sub| {
+            if (std.mem.eql(u8, sub.name, g.name) and sub.to == .array) return sub.to;
         },
         else => {},
     };
@@ -1896,7 +1901,7 @@ const Emitter = struct {
                     // a primitive receiver reaches it (`lowerPrimDefault`).
                     for (primBehaviorKinds(i.name)) |k| {
                         const key = try std.fmt.allocPrint(ra, "{s}.{s}", .{ @tagName(k), m.name });
-                        if (!self.prim_defaults.contains(key)) try self.prim_defaults.put(ra, key, .{ .behavior = i.name, .method = m });
+                        if (!self.prim_defaults.contains(key)) try self.prim_defaults.put(ra, key, .{ .behavior = i.name, .method = m, .tparams = i.genericParams });
                     }
                     continue;
                 }
@@ -3403,7 +3408,7 @@ const Emitter = struct {
                 if (self.self_type) |st| try self.local_types.put("self", st);
                 // A primitive default's copy (`lowerPrimDefault`) writes
                 // `self: string`: the receiver's shape.
-                if (p.typeRef == .named and primKindOfName(p.typeRef.named) != null) {
+                if ((p.typeRef == .named and primKindOfName(p.typeRef.named) != null) or (p.typeRef == .array and self.self_type == null)) {
                     try self.noteParamShape("self", p.typeRef);
                     try self.local_typerefs.put("self", p.typeRef);
                 }
@@ -3412,6 +3417,9 @@ const Emitter = struct {
                 if (self.resolveRecordName(tn)) |rty|
                     try self.local_types.put(sym, rty);
                 try self.noteParamShape(sym, p.typeRef);
+                // In a copy the written type is concrete (`ys: i32[]` for
+                // `Self<T>`): `primKindAt` reads it for a method on the param.
+                if (self.in_spec) try self.local_typerefs.put(sym, p.typeRef);
             }
         }
         try self.declareScratch("_try", countTrys(body));
@@ -7441,7 +7449,8 @@ const Emitter = struct {
 
     /// The primitive kinds a behavior of `primitives.bp` covers — the ones a
     /// program's own `behavior <Name>` extends (01-checker). Arrays are not
-    /// here: `Array<T>`'s defaults take `Self<T>`, which no copy substitutes yet.
+    /// here as `.array`: its defaults' `Self<T>` is the receiver's written
+    /// array type in the copy (`primDefaultSelf`).
     fn primBehaviorKinds(name: []const u8) []const envMod.PrimKind {
         const eq = std.mem.eql;
         if (eq(u8, name, "String")) return &.{.string};
@@ -7449,6 +7458,7 @@ const Emitter = struct {
         if (eq(u8, name, "Number")) return &.{ .int, .float };
         for ([_][]const u8{ "Integer", "Signed", "I32", "I64", "U32", "U64" }) |n| if (eq(u8, name, n)) return &.{.int};
         for ([_][]const u8{ "Float", "F32", "F64" }) |n| if (eq(u8, name, n)) return &.{.float};
+        if (eq(u8, name, "Array")) return &.{.array};
         return &.{};
     }
 
@@ -7475,6 +7485,16 @@ const Emitter = struct {
         if (primCallRes(k, cc)) |r| return r;
         const pd = self.primDefaultOf(k, cc.callee) orelse return null;
         if (pd.method.params.len != cc.args.len + 1) return null;
+        if (k == .array) {
+            // The copy's declared return, `Self<T>` and `T` written in.
+            const sym = (self.ensurePrimDefault(k, pd, cc.receiver.?.*) catch return null);
+            const rt = self.fn_ret_typerefs.get(sym) orelse return .none;
+            return switch (rt) {
+                .array, .generic => .arr,
+                .named => |n| if (std.mem.eql(u8, n, "string")) .str else if (std.mem.eql(u8, n, "bool")) .bool_ else if (isFloatTypeName(n)) .f64 else .i32,
+                else => .i32,
+            };
+        }
         const rt = pd.method.returnType orelse return .none;
         const n = switch (rt) {
             .named => |n| n,
@@ -7495,14 +7515,45 @@ const Emitter = struct {
     /// (`prim method not lowered on wasm`) — every program-declared default
     /// of a primitive did.
     fn lowerPrimDefault(self: *Emitter, k: envMod.PrimKind, pd: PrimDefault, cc: anytype) anyerror!void {
+        const sym = try self.ensurePrimDefault(k, pd, cc.receiver.?.*);
+        const sig = self.fn_sigs.get(sym).?;
+        try self.lowerCoerced(cc.receiver.?.*, sig.params[0]);
+        try self.lowerCallArgs(cc.args, sig, 1);
+        try self.emit(.{ .call = sym });
+    }
+
+    /// The element type an `Array<T>` default's copy writes for `T`: the
+    /// receiver's record, a bool by its shape, else its element kind.
+    fn primArrayElemName(self: *Emitter, recv: ast.Expr) []const u8 {
+        if (self.elemRecordOf(recv)) |r| return r;
+        if (self.elemIsBool(recv) catch false) return "bool";
+        return switch (self.elemKindOf(recv)) {
+            .str => "string",
+            .f32 => "f32",
+            .i32 => "i32",
+        };
+    }
+
+    /// The copy of a program's primitive default for a receiver of kind `k`,
+    /// registered (its signature, its declared return) and queued once;
+    /// its symbol.
+    fn ensurePrimDefault(self: *Emitter, k: envMod.PrimKind, pd: PrimDefault, recv: ast.Expr) ![]const u8 {
         const ar = self.reg_arena.allocator();
-        const st = primSelfType(k);
+        const elem: []const u8 = if (k == .array) self.primArrayElemName(recv) else "";
+        const st = if (k == .array) try std.fmt.allocPrint(ar, "arr_{s}", .{elem}) else primSelfType(k);
         const mname = try std.fmt.allocPrint(ar, "{s}__{s}", .{ pd.method.name, st });
         const sym = try std.fmt.allocPrint(ar, "{s}_{s}", .{ pd.behavior, mname });
         if (!self.spec_names.contains(sym)) {
             try self.spec_names.put(self.alloc, sym, {});
-            const subs = [_]TypeSub{.{ .name = "Self", .to = .{ .named = st } }};
-            var m = try substTypeParams(ast.BehaviorMethod, ar, pd.method, &subs);
+            var subs_l: std.ArrayListUnmanaged(TypeSub) = .empty;
+            if (k == .array) {
+                const inner = try ar.create(ast.TypeRef);
+                inner.* = .{ .named = elem };
+                try subs_l.append(ar, .{ .name = "Self", .to = .{ .array = inner } });
+                for (pd.tparams) |gp| try subs_l.append(ar, .{ .name = gp.name, .to = .{ .named = elem } });
+            } else try subs_l.append(ar, .{ .name = "Self", .to = .{ .named = st } });
+            const subs = subs_l.items;
+            var m = try substTypeParams(ast.BehaviorMethod, ar, pd.method, subs);
             m.name = mname;
             // A method of the behavior, `self` its first parameter — the
             // member emission path (`emitMemberFn`) keeps it.
@@ -7516,10 +7567,7 @@ const Emitter = struct {
                 .renames = self.global_renames,
             });
         }
-        const sig = self.fn_sigs.get(sym).?;
-        try self.lowerCoerced(cc.receiver.?.*, sig.params[0]);
-        try self.lowerCallArgs(cc.args, sig, 1);
-        try self.emit(.{ .call = sym });
+        return sym;
     }
 
     fn primCallRes(k: envMod.PrimKind, cc: anytype) ?PrimRes {
@@ -9961,6 +10009,13 @@ const Emitter = struct {
                     // (`val tail = self.slice(1)`) find their primitive —
                     // inference recorded no lowering in a body it typed
                     // against a type variable or `Self`.
+                    // A program's `Array<T>` default answers its copy's declared
+                    // return (`?T` → `?string` …), which the optional and
+                    // print-shape readers take.
+                    if (cc.receiver != null) if (self.primKindAt(cc, c.loc)) |k| if (k == .array and primCallRes(k, cc) == null) if (self.primDefaultOf(k, cc.callee)) |pd| {
+                        const sym = self.ensurePrimDefault(k, pd, cc.receiver.?.*) catch break :blk null;
+                        break :blk self.fn_ret_typerefs.get(sym);
+                    };
                     if (self.in_spec and cc.receiver != null) if (self.primKindAt(cc, c.loc)) |k| if (self.primRes(k, cc)) |r| {
                         const t: ?[]const u8 = switch (r) {
                             .str => "string",
