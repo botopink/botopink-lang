@@ -176,7 +176,8 @@ echo "==> the erlang check's verdict cache: acceptances only, keyed by the bytes
 USER_CACHE="$WORK/user-home"
 mkdir -p "$USER_CACHE"
 bp_isolated() { HOME="$USER_CACHE" XDG_CACHE_HOME="$USER_CACHE/.cache" "$BP" "$@"; }
-user_cache_files() { find "$USER_CACHE/.cache/botopink" -type f 2>/dev/null | wc -l | tr -d " "; }
+# `botopink-lsp` too (decision 233): its old home was `~/.cache/botopink-lsp`.
+user_cache_files() { { find "$USER_CACHE/.cache/botopink" "$USER_CACHE/.cache/botopink-lsp" -type f 2>/dev/null || true; } | wc -l | tr -d " "; }
 P="$(project erlcache erlang)"
 printf 'pub fn main() {\n    @print("one");\n}\n' >"$P/src/main.bp"
 markers() { { find "$1/.botopinkbuild/cache/erlcheck" -name "*.ok" 2>/dev/null || true; } | wc -l | tr -d " "; }
@@ -224,6 +225,48 @@ run "$WS/modules/wsapp" clean
 expect_code 0 "clean in a member"
 [[ ! -e "$WS/.botopinkbuild/cache" && ! -e "$WS/modules/wsapp/.botopinkbuild" ]] && ok "clean deleted the member's .botopinkbuild/ and the workspace's cache" || fail "clean left a cache: $(find "$WS" -path '*/.botopinkbuild*' -maxdepth 4 | head -3 | tr '\n' ' ')"
 expect_out " $WS/.botopinkbuild/cache/" "clean names the workspace cache it deleted"
+
+# The language server keeps its state in the same root (decision 233): a
+# go-to-definition into an embedded std module writes it under the workspace
+# root's `.botopinkbuild/cache/lsp/std/`, nothing under the member and nothing
+# under HOME; a file outside every project gets no cache and writes nothing.
+echo "==> botopink-lsp caches under the project's .botopinkbuild/cache/lsp/, never under HOME"
+LSP="$(dirname "$BP")/botopink-lsp"
+if [[ ! -x "$LSP" ]]; then
+  skip "botopink-lsp not found beside $BP"
+else
+  lsp_frame() { printf 'Content-Length: %d\r\n\r\n%s' "$(LC_ALL=C; printf '%s' "$1" | wc -c | tr -d " ")" "$1"; }
+  # lsp_definition <file> <line> <character> — opens <file>, asks the
+  # definition at the position, prints the server's whole output.
+  lsp_definition() {
+    local text
+    text="$(sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' "$1" | awk '{ printf "%s\\n", $0 }')"
+    {
+      lsp_frame '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{}}}'
+      lsp_frame "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didOpen\",\"params\":{\"textDocument\":{\"uri\":\"file://$1\",\"languageId\":\"botopink\",\"version\":1,\"text\":\"$text\"}}}"
+      lsp_frame "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"textDocument/definition\",\"params\":{\"textDocument\":{\"uri\":\"file://$1\"},\"position\":{\"line\":$2,\"character\":$3}}}"
+      lsp_frame '{"jsonrpc":"2.0","id":3,"method":"shutdown"}'
+      lsp_frame '{"jsonrpc":"2.0","method":"exit"}'
+    } | HOME="$USER_CACHE" XDG_CACHE_HOME="$USER_CACHE/.cache" "$LSP" 2>/dev/null | tr -d '\r'
+  }
+  STD_SRC='import {collections} from "std";\nval n = collections.toInt(collections.lt());\n'
+  mkdir -p "$WS/modules/wsapp/src"
+  printf "$STD_SRC" >"$WS/modules/wsapp/src/main.bp"
+  OUT="$(lsp_definition "$WS/modules/wsapp/src/main.bp" 1 20)"
+  expect_out "$WS/.botopinkbuild/cache/lsp/std/collections.bp" "a member's std definition lands under the workspace root's .botopinkbuild/cache/lsp/std/"
+  [[ -f "$WS/.botopinkbuild/cache/lsp/std/collections.bp" ]] && ok "the std module is written there" || fail "no $WS/.botopinkbuild/cache/lsp/std/collections.bp"
+  [[ ! -e "$WS/modules/wsapp/.botopinkbuild" ]] && ok "nothing under the member's own .botopinkbuild/" || fail "the language server wrote under the member: $(find "$WS/modules/wsapp/.botopinkbuild" -type f | head -3 | tr '\n' ' ')"
+  rm -rf "$WS/.botopinkbuild"
+  OUT="$(lsp_definition "$WS/modules/wsapp/src/main.bp" 1 20)"
+  [[ -f "$WS/.botopinkbuild/cache/lsp/std/collections.bp" ]] && ok "after rm -rf .botopinkbuild the next request writes it again" || fail "the language server did not recreate its cache after rm -rf .botopinkbuild"
+  LOOSE="$WORK/lsploose"
+  rm -rf "$LOOSE"; mkdir -p "$LOOSE"
+  printf "$STD_SRC" >"$LOOSE/main.bp"
+  OUT="$(lsp_definition "$LOOSE/main.bp" 1 20)"
+  expect_out '"id":2,"result":null' "a file outside every project gets no std jump (no cache to write it to)"
+  [[ "$(find "$LOOSE" -type f | wc -l | tr -d " ")" -eq 1 ]] && ok "nothing written beside a file outside every project" || fail "the language server wrote beside a loose file: $(find "$LOOSE" -type f | tr '\n' ' ')"
+  [[ "$(user_cache_files)" -eq 0 ]] && ok "nothing under HOME/.cache/botopink-lsp" || fail "the language server wrote under HOME: $(find "$USER_CACHE/.cache" -type f | head -3 | tr '\n' ' ')"
+fi
 
 # ── C5 / C6 / C7 — check covers test/, lex and parse errors are located ──────
 echo "==> C6 a lex error renders with file, line and excerpt on build/check/test"

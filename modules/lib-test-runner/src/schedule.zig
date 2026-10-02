@@ -70,18 +70,18 @@ pub fn order(arena: std.mem.Allocator, keys: []const []const u8, history: *const
 
 /// The history file under `root` (`cacheRoot`).
 pub fn path(arena: std.mem.Allocator, root: []const u8) ![]const u8 {
-    return std.fs.path.join(arena, &.{ root, ".botopinkbuild", "cache", "lib-test", "durations.tsv" });
+    return std.fs.path.join(arena, &.{ try manifest.cacheDir(arena, root, "lib-test"), "durations.tsv" });
 }
 
 /// The cache root of the library in `lib_dir`: the workspace root it is a
 /// member of, else `lib_dir` itself — the root `botopink test` keeps that
-/// library's caches under (`compiler-cli` `libs.cacheRoot`). A workspace that
+/// library's caches under (`manifest.findCacheRoot`, the answer `compiler-cli`'s
+/// `libs.cacheRoot` and the language server give). A workspace that
 /// does not expand is the cell's own located failure; its time is then kept
 /// beside the library.
 pub fn cacheRoot(arena: std.mem.Allocator, io: std.Io, lib_dir: []const u8) []const u8 {
     var err: ?manifest.Located = null;
-    const ws = manifest.enclosingWorkspace(arena, io, lib_dir, &err) catch return lib_dir;
-    return if (ws) |w| w.dir else lib_dir;
+    return manifest.findCacheRoot(arena, io, lib_dir, &err) catch lib_dir;
 }
 
 /// Read the history; an absent or unreadable file is an empty one.

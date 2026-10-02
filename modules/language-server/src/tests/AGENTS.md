@@ -35,7 +35,8 @@ tests/
 ├── sublanguage.zig       ← `@ExprCustom` overlay: tokens + diagnostics + hover/def
 ├── lifecycle.zig         ← `files.FileCache` didOpen→didChange→didClose
 ├── cross_module.zig      ← project-index requests (references / rename / import-missing)
-└── project_graph.zig     ← project-graph compile + `ProjectGraph.resolveRoots`
+├── project_graph.zig     ← project-graph compile + `ProjectGraph.resolveRoots`
+└── lsp_cache.zig         ← the server's cache under `<cache root>/.botopinkbuild/cache/lsp/` (decision 233)
 ```
 
 `completion_server.zig` drives the server's own decision — compile, then complete
@@ -64,6 +65,13 @@ tests each). `scripts/check-test-scratch.sh` refuses a hand-spelled one.
   points a `ProjectIndex` at it via `setRoot`, and exercises
   `crossModuleReferences` / `crossModuleRename` / the import-missing
   `codeAction`. Each test pre-deletes and deletes its dir on exit.
+- `lsp_cache.zig` writes a workspace with one member (`lsp-cache-ws`), a lone
+  package (`lsp-cache-pkg`) and a file outside every project (`lsp-cache-loose`),
+  with `HOME` on a scratch directory: the member's
+  `materializeStdModule` lands under the workspace root's `.botopinkbuild/cache/lsp/`
+  and nothing under the member, a deleted `.botopinkbuild/` comes back holding only
+  the next write, and the loose file has no `lspCacheDir` and writes nothing —
+  the scratch `HOME` stays empty in every case.
 - `project_graph.zig` writes throwaway workspaces under `lsp-roots-*` for the
   `BOTOPINK_LIB_ROOTS` tests and `lsp-graph-*` for the graph-problem tests (a dependency no root
   carries, a `files` entry that cannot be read, a `.bp` of the project's own

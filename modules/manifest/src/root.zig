@@ -781,6 +781,31 @@ pub fn enclosingWorkspace(arena: std.mem.Allocator, io: std.Io, project_dir: []c
     }
 }
 
+/// Where every build cache lives, relative to its cache root (decision 225):
+/// deleting the root's `.botopinkbuild/` deletes them all.
+pub const CACHE_DIR = ".botopinkbuild/cache";
+
+/// The directory whose `.botopinkbuild/cache/` holds the caches of the package
+/// in `project_dir`: the root of `workspace` (the one it is a member of) — so
+/// the members of one library repository share one cache — else `project_dir`.
+pub fn cacheRoot(project_dir: []const u8, workspace: ?Workspace) []const u8 {
+    return if (workspace) |ws| ws.dir else project_dir;
+}
+
+/// `cacheRoot` for a caller that has not looked the workspace up: asks
+/// `enclosingWorkspace` for `project_dir` (absolute). A workspace that does not
+/// expand is its located error — the caller decides whether that is fatal.
+pub fn findCacheRoot(arena: std.mem.Allocator, io: std.Io, project_dir: []const u8, out_err: *?Located) Error![]const u8 {
+    return cacheRoot(project_dir, try enclosingWorkspace(arena, io, project_dir, out_err));
+}
+
+/// `<root>/.botopinkbuild/cache/<store>` — the home of one store under a cache
+/// root (`cacheRoot` / `findCacheRoot`). Nothing reads the environment: a cache
+/// in the user's home is one `rm -rf .botopinkbuild` cannot reach.
+pub fn cacheDir(arena: std.mem.Allocator, root: []const u8, store: []const u8) std.mem.Allocator.Error![]const u8 {
+    return std.fs.path.join(arena, &.{ root, CACHE_DIR, store });
+}
+
 /// A package is a library when its module tree is rooted at `root.bp` rather
 /// than `main.bp`: `entry` decides when set, else the presence of
 /// `<src>/main.bp`. A library member with no `files` ships nothing to a
@@ -1606,6 +1631,23 @@ test "enclosingWorkspace: a member finds its workspace; a package outside finds 
     try testing.expect(isWorkspaceDir(io, FIX ++ "/workspace"));
     try testing.expect(!isWorkspaceDir(io, FIX ++ "/roots/local"));
     try testing.expect(!isWorkspaceDir(io, FIX ++ "/nowhere"));
+}
+
+test "findCacheRoot: a member's caches live under its workspace, a package's under itself" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const a = arena_inst.allocator();
+    const io = testing.io;
+    var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const cwd_n = try std.process.currentPath(io, &cwd_buf);
+    const cwd = cwd_buf[0..cwd_n];
+    var err: ?Located = null;
+    const member = try std.fs.path.join(a, &.{ cwd, FIX ++ "/workspace/examples/acme-app" });
+    const ws_root = try findCacheRoot(a, io, member, &err);
+    try testing.expect(std.mem.endsWith(u8, ws_root, FIX ++ "/workspace"));
+    try testing.expect(std.mem.endsWith(u8, try cacheDir(a, ws_root, "lsp"), FIX ++ "/workspace/.botopinkbuild/cache/lsp"));
+    const outside = try std.fs.path.join(a, &.{ cwd, FIX ++ "/roots/local" });
+    try testing.expectEqualStrings(outside, try findCacheRoot(a, io, outside, &err));
 }
 
 test "Located.render: the CLI diagnostic shape, width-aware" {

@@ -23,5 +23,6 @@ comptime {
     _ = @import("./tests/lifecycle.zig");
     _ = @import("./tests/cross_module.zig");
     _ = @import("./tests/project_graph.zig");
+    _ = @import("./tests/lsp_cache.zig");
     _ = @import("./tests/snapshot_test.zig"); // unit tests for the snapshot renderers
 }
