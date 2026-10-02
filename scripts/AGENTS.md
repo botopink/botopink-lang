@@ -236,8 +236,10 @@ python3 scripts/codemod-import-without-from.py [--write] [--format <botopink>] <
   canonical form); a brace list carrying a comment is kept verbatim inside one
   group per path segment instead. Nothing outside the import changes.
 - **Which import names a module of the package.** A package is a
-  `botopink.json` that is not a workspace; its modules are its `src` tree
-  (`x/mod.bp` is `x`), plus the flat `test/` suite for a test file. The source
+  `botopink.json` that is not a workspace, or a test's fixture project (a
+  `src/` of `*.bp.fixture` sources whose manifest the test writes, rakun's
+  `test/fixtures/<name>/`); its modules are its `src` tree (`x/mod.bp` is
+  `x`), plus the flat `test/` suite for a test file. The source
   names a module by its full path, else by a last segment only one module
   has; it is the package's when that module exports every item (`pub fn` /
   `val` / `var` / `type` / `behavior` / `mod` / `implement` / `extend`, or a

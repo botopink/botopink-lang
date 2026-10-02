@@ -52,17 +52,29 @@ def load_manifest(path):
         return None
 
 
+SOURCE_EXTS = (".bp", ".bp.fixture")
+
+
+def is_fixture_project(d):
+    """A test's fixture project: `src/` holds `*.bp.fixture` sources and the
+    manifest is written when the test runs (rakun's `test/fixtures/<name>/`)."""
+    src = os.path.join(d, "src")
+    return os.path.isdir(src) and any(f.endswith(".bp.fixture") for f in os.listdir(src))
+
+
 def find_manifests(root):
     out = []
     for d, dirs, files in os.walk(root):
         dirs[:] = sorted(x for x in dirs if not x.startswith(".") and x not in SKIP_DIRS)
-        if "botopink.json" in files:
+        if "botopink.json" in files or is_fixture_project(d):
             out.append(d)
     return out
 
 
 def module_path_of(rel):
     """`shapes/circle.bp` -> `shapes/circle`; `shapes/mod.bp` -> `shapes`."""
+    if rel.endswith(".fixture"):
+        rel = rel[: -len(".fixture")]
     for ext in (".d.bp", ".bp"):
         if rel.endswith(ext):
             rel = rel[: -len(ext)]
@@ -106,7 +118,7 @@ class Package:
                 keep.append(x)
             dirs[:] = keep
             for f in sorted(files):
-                if f.endswith(".bp"):
+                if f.endswith(SOURCE_EXTS):
                     yield os.path.join(d, f)
 
     def _collect(self):
@@ -150,7 +162,7 @@ def discover(roots):
     dirs = sorted(set(dirs))
     pkgs = []
     for d in dirs:
-        m = load_manifest(os.path.join(d, "botopink.json"))
+        m = {} if is_fixture_project(d) else load_manifest(os.path.join(d, "botopink.json"))
         if m is None or "workspaces" in m:
             continue  # not a package: a workspace compiles nothing
         nested = {x for x in dirs if x != d and x.startswith(d + os.sep)}
