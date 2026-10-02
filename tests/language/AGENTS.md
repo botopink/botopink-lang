@@ -413,6 +413,10 @@ Each was run with the parent binary and fails there as its row describes.
   and erlang; the same table as a `run/` cell is red on beam (`#(i32, string)` holds for every
   tagged tuple — a record and a variant too) and traps on wasm — 03's and 05's rows. §11's
   "erlang stores nothing" is `codegen/tests/control_flow.zig`'s needle (`A = 2.0,`, no box).
+- `run/lambda_binds_name_of_enclosing_fn` (decision 205): a `forEach` body's `val k` over an outer
+  `k`, a lambda parameter `e` over an outer `e`, and a lambda value's parameter `e`; the outer names
+  keep their values. erlc refused the module on the parent binary (`K@1` unbound). **Red on wasm**
+  (`l l 1 2 6 2`: the inner bindings overwrite the outer ones) — 05's row.
 - `run/closure_capture_statement_position` (decision 148, lg-b): the two lambdas that may write a
   captured `var` — a `forEach` body and a local closure called at statement position — thread the
   write out on all four targets (a pin: green on the parent binary too). Every other lambda's

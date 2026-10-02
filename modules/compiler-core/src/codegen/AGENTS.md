@@ -1044,6 +1044,14 @@ codegen/
   of the returned `case` (or `if`) leaves the function, the `{ok, …}` goes
   into each tail that does not; a `return v` tail is `v`, a `throw e` tail
   `{error, E}`.
+- **A lambda's bindings are its own** (decision 205; `saveLocalScope` /
+  `restoreLocalScope` around a `.function` node). An erlang fun sees the
+  enclosing clause's variables, so a parameter or `val` of the lambda that
+  reuses an enclosing name takes a fresh version (`patternBindVar`), and the
+  enclosing function's locals, versions and kinds come back unchanged after the
+  fun — `val k = "l"` inside a `forEach` body made the outer `k` read `K@1`
+  (unbound), and a parameter `e` over an outer `e` left the outer one `E@1`.
+  `var_next` keeps counting. `run/lambda_binds_name_of_enclosing_fn`.
 - **Modules are `erl_ast` forms**: `emitErlangModule` builds every form in one
   arena and renders them with `erl_emitter.writeForms`: `-module`
   (`crossModule.erlAtom(module_path)` — the path joined with `@`),

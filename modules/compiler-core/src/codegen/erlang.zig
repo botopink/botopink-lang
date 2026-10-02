@@ -4150,6 +4150,45 @@ const Emitter = struct {
         _ = this.var_current.remove(name);
     }
 
+    /// The enclosing function's view of its names, set aside while a lambda
+    /// body is lowered (`saveLocalScope` / `restoreLocalScope`). `var_next`
+    /// is not part of it: versions keep counting up, so a fun never reuses a
+    /// variable the clause around it binds later.
+    const LocalScope = struct {
+        locals: std.StringHashMap(void),
+        var_current: std.StringHashMap(u32),
+        string_locals: std.StringHashMap(void),
+        nullable_locals: std.StringHashMap(void),
+        num_locals: std.StringHashMapUnmanaged(NumKind),
+        local_types: std.StringHashMapUnmanaged([]const u8),
+    };
+
+    fn saveLocalScope(this: *Emitter) !LocalScope {
+        return .{
+            .locals = try this.locals.clone(),
+            .var_current = try this.var_current.clone(),
+            .string_locals = try this.string_locals.clone(),
+            .nullable_locals = try this.nullable_locals.clone(),
+            .num_locals = try this.num_locals.clone(this.alloc),
+            .local_types = try this.local_types.clone(this.alloc),
+        };
+    }
+
+    fn restoreLocalScope(this: *Emitter, scope: *LocalScope) void {
+        this.locals.deinit();
+        this.locals = scope.locals;
+        this.var_current.deinit();
+        this.var_current = scope.var_current;
+        this.string_locals.deinit();
+        this.string_locals = scope.string_locals;
+        this.nullable_locals.deinit();
+        this.nullable_locals = scope.nullable_locals;
+        this.num_locals.deinit(this.alloc);
+        this.num_locals = scope.num_locals;
+        this.local_types.deinit(this.alloc);
+        this.local_types = scope.local_types;
+    }
+
     fn resetLocals(this: *Emitter) void {
         this.locals.clearRetainingCapacity();
         this.mutable_locals.clearRetainingCapacity();
@@ -7286,10 +7325,18 @@ const Emitter = struct {
                 const saved_top = this.fn_top_body;
                 this.fn_top_body = func.kind.body;
                 defer this.fn_top_body = saved_top;
+                // Decision 205: a lambda body is a function of its own, so a
+                // name it binds — a parameter, a `val` — is its own even where
+                // the enclosing function binds the same name. Erlang funs see
+                // the enclosing clause's variables, so each binding takes a
+                // fresh version (`patternBindVar`), and the enclosing
+                // function's names come back as they were after the fun:
+                // `val k = "l"` inside read `K@1` outside, unbound.
+                var scope = try this.saveLocalScope();
+                defer this.restoreLocalScope(&scope);
                 const params = try b.arena.alloc(Ast.Expr, func.kind.params.len);
                 for (func.kind.params, 0..) |p, i| {
-                    params[i] = V(try this.arenaVar(b, p));
-                    this.addLocal(p);
+                    params[i] = V(try this.patternBindVar(b, p));
                 }
                 const raw_fun_body = try this.bodyNode(b, func.kind.body, 0, this.indent + 1);
                 const fun_body = if (this.try_throw_used) try this.guardTry(b, raw_fun_body) else raw_fun_body;
