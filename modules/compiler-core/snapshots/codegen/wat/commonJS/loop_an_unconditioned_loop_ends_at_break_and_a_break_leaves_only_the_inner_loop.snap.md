@@ -64,7 +64,7 @@ function firstSquareOver(n) {
     let k = 0;
     while (true) {
     k = (k + 1);
-    if (((k * k) > n)) { break; }
+    if ((((k * k) + 0) > n)) { break; }
 }
     return k;
 }
@@ -79,7 +79,7 @@ function nested() {
     break;
 }
 }
-    return ((outer * 10) + inner);
+    return (((outer * 10) + 0) + inner);
 }
 
 function main() {

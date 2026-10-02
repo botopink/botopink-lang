@@ -45,7 +45,7 @@ function __bp_print() {
 }
 
 function double(x) {
-    return (x * 2);
+    return ((x * 2) + 0);
 }
 
 function inc(x) {

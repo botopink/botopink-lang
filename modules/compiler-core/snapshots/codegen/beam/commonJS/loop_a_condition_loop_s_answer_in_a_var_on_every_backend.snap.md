@@ -55,7 +55,7 @@ function main() {
     let i = 0;
     let found = 0;
     while ((i < 10)) {
-    if ((i === 4)) { found = (i * 2); break; }
+    if ((i === 4)) { found = ((i * 2) + 0); break; }
     i = (i + 1);
 }
     __bp_print(found);

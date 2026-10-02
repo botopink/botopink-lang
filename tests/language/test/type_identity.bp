@@ -17,9 +17,6 @@ test "§4 two types with the same fields are different values" {
     assert (p == v) == false;
 }
 
-//// Deliberately absent: `Person(name: "Ana") == Person(name: "Ana")`. Whether
-//// two values of the *same* type with the same fields are equal is structural
-//// equality, which no decision of this milestone legislates and no front owns —
-//// it answers `false` on commonJS (reference equality on the class instance)
-//// and `true` on erlang (one map). Reported to the maintainer rather than
-//// listed against an invented row.
+//// Two values of the SAME type with equal fields are equal on every target
+//// (decision 210, structural equality); `run/record_structural_equality.bp`
+//// pins that half on all four backends, since `botopink test` reaches only two.

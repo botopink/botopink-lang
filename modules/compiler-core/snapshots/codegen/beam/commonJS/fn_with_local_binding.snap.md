@@ -45,7 +45,7 @@ function __bp_print() {
 }
 
 function double(x) {
-    const result = (x * 2);
+    const result = ((x * 2) + 0);
     return result;
 }
 

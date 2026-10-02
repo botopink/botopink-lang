@@ -49,7 +49,7 @@ function __bp_print() {
 function doubles(arr) {
     let out = [];
     for (const x of arr) {
-    out.push((x * 2));
+    out.push(((x * 2) + 0));
 }
     return out;
 }

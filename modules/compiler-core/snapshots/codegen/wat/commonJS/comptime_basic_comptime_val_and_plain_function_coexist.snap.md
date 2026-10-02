@@ -21,7 +21,7 @@ ct_0: val x = comptime 1 + 2 → 3
 const x = 3;
 
 function double(n) {
-    return (n * 2);
+    return ((n * 2) + 0);
 }
 
 function main() {

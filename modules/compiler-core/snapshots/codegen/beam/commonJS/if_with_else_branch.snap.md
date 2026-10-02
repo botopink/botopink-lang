@@ -45,7 +45,7 @@ function __bp_print() {
 }
 
 function abs(n) {
-    const result = (() => { if ((n < 0)) { return (-n); } else { return n; } })();
+    const result = (() => { if ((n < 0)) { return ((-n) + 0); } else { return n; } })();
     return result;
 }
 

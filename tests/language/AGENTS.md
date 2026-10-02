@@ -70,10 +70,6 @@ Decision 138 (the empty record is `type Name()`) adds `run/type_empty_record` �
 `type MathOps() { … }` constructed and called on all four targets — and two `reject/` cells,
 `type_empty_braces` (`type Marker {}`) and `type_without_field_list` (`type MathOps { fn … }`), both
 `type-without-field-list` where the `()` belongs.
-1.0.11-beta `01-compiler/04-js` step 3 adds `run/number_method_call` — `42.toString()`, a literal
-receiver inside `+` and beside a `val`'s, on all four targets (JavaScript lexes `42.` as a float, so
-commonJS parenthesises the receiver). The same step's `scripts/tsc-check.sh` builds every `modules/`
-cell that runs on commonJS with `--typescript` and holds its `.d.ts` to `tsc --noEmit --strict`.
 Decision 139 (a negative index counts from the end) adds `run/index_negative_from_end` — `xs.at(-1)`,
 `xs.at(-3)`, `xs.at(-4)` / `xs.at(3)` absent, `xs[-2]`, a negative index held in a `val`, the same for
 `String.at` / `s[-2]`, and a string array — on all four targets.
@@ -240,6 +236,19 @@ module load — erlang and beam dropped the write), `run/index_answer_typed_opti
 `run/string_char_code_non_ascii` (wasm answered bytes), `run/val_assert_variant_pattern` (commonJS
 `ReferenceError`, beam `{unassigned, …}`) and `run/is_enum_variant` and
 `modules/renderer_record_field_shapes` (shapes the rows measured, which no longer reproduce — pinned).
+1.0.11's `01-compiler/05-wasm` step 1 adds one cell per primitive-method group wasm trapped on, each
+`.out` shared by four targets: `run/string_lines_words` (`lines` — `\r\n`, a trailing `\r` kept, `""`
+one empty line — and `words` over blanks), `run/array_flat_forms` (`flatten`, `flat`, `flatMap`
+over integers, strings, a local, a parameter and an annotated empty `i32[][]`), `run/array_windows`
+(`chunked`, `sliding`, `n <= 0`, a slice indexed and measured) and `run/array_fill` (a value of
+each primitive, an empty receiver). `pop` is `run/array_pop_removes`; `unique`'s cell is
+`02-erlang`'s `run/array_unique` (C-35).
+Step 2 adds `run/generic_string_equality` — `==` / `!=` between two type-parameter values bound
+to strings built at run time, by a call's arguments, an array's elements, a generic record's
+constructor and a generic call answering one, a parameter written `Pair<T>`, a variant's payload,
+an array of such records under `map`, and a generic fn handed to a `fn(a: string, b: string) ->
+bool` parameter or bound to a `val` of that type — on four targets; wasm compared words for the
+record, generic-result, `Pair<T>`, array and fn-value rows.
 `00 · 03-beam`'s split row adds `run/string_split_empty_separator` — `split("")` cuts into UTF-8
 codepoints (`"%0Aéz"` → 5 pieces, `""` → none) beside a non-empty separator and an empty separator
 held in a `val`, on all four targets (beam lowered it to `string:split/3`, wasm cut between bytes).
@@ -1164,13 +1173,38 @@ expected failures used for a certain front with a missing row. 1.0.10-beta gathe
 `C-06`, and since 2026-09-20 every 52/53/55 line names `C-06 (<backend> half not landed)`; wasm's
 half is the one that landed.
 
-**Structural equality of two values of the same type is not legislated, so no cell asserts it.**
-`Person(name: "Ana", age: 30) == Person(name: "Ana", age: 30)` answers `false` on commonJS (reference
-equality on the class instance) and `true` on erlang and BEAM (one term, now a tagged tuple). No
-decision of this milestone settles it and no front owns it, so `test/type_identity.bp` states the
-omission in a comment and asserts only what **is** settled — that two *different* types with the same
-fields are different values. Reported to the maintainer; a sentence would turn the comment into two
-assertions.
+**Structural equality is decision 210: `==` compares by value on every target.**
+`Person(name: "Ana", age: 30) == Person(name: "Ana", age: 30)` is `true` on all four:
+records, tuples, arrays and enum variants compare field by field, recursively, two
+values of different types are never equal (decision 21), and `!=` is the negation.
+Decision 211 adds that `==` never calls user code — a method named `equals` has no
+special role. erlang and BEAM compare one term (`=:=`); commonJS answered `false` (the
+class instance's reference) and wasm `false` (the pointer) until each lowered `==` by
+the operands' static type: a primitive keeps its instruction, a composite calls an
+equality generated per compared type (`codegen/js/AGENTS.md`, `codegen/wat/AGENTS.md`
+§ structural equality). `run/record_structural_equality.bp` pins it on four targets — a
+record, a nested record, a tuple, an array of records, enum variants with payloads,
+two types with the same fields, `!=`, a generic `same<T>` and an `equals` method `==`
+does not call. `test/type_identity.bp` keeps asserting the other half, two
+different types with the same fields.
+
+**`f64` under `==` is a total order — decision 214**, as Java's `Double.compare` and
+Kotlin's data class: `0.0 == -0.0` is `false` and `NaN == NaN` is `true`, bare and
+inside a record, tuple, array or variant, while `<`, `>`, `<=`, `>=` keep IEEE
+ordering. erlang and BEAM already separate the zeros (`=:=`); commonJS lowers a
+float `==` to `Object.is` and wasm to `$__f64_eq` / `$__f32_eq` (NaN canonicalised,
+then the bits). `run/f64_equality_total_order.bp` pins the zeros on all four
+targets, with `-0.0` built at run time as `zero() * -1.0`. **The NaN rows are not a
+`run/` cell**: erlang and BEAM never produce a NaN (`z / z` raises `badarith` at run
+time), and § Narrowing a cell lets a cell leave a target out only when the build
+refuses it on a host binding, which a division is not — a `.targets commonJS wasm`
+would fail the audit. Each backend that has NaN pins that half in a RUN LOG fixture of
+its own: `codegen/tests/commonjs.zig` and `codegen/tests/wat.zig`, `f64 ---- NaN
+equals NaN under ==`.
+`run/integer_never_negative_zero.bp` is the premise commonJS needs for it: an integer
+is never `-0` (`0 * -1`, `-x`, `-4 % 2` and `0 / -3` print `0` and compare equal to
+`0`), so a generic `same<T>` answers `true` for two integer zeros and `false` for
+`0.0` against `-0.0` on four targets — commonJS printed `-0` and answered `true`.
 
 **The identity is asserted on three backends and RUN on four.** `botopink test` refuses wasm,
 so a `test/` cell reaches commonJS, erlang and beam. `run/type_identity_equality.bp` is the same

@@ -38,7 +38,7 @@ function main() {
 
 function execute_$0(input) {
     let output = 0;
-    output = (input * 2);
+    output = ((input * 2) + 0);
     return output;
 }
 

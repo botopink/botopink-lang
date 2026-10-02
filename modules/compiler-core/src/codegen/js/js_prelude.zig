@@ -551,7 +551,7 @@ const print_as: ast.Stmt = .{ .function = .{
 
 /// ```js
 /// function __bp_eq(a, b, d) {
-///     if ((a === b)) {
+///     if (Object.is(a, b)) {
 ///         return true;
 ///     }
 ///     if ((((((d > 32) || (a === null)) || (b === null)) || (typeof a !== "object")) || (a.constructor !== b.constructor))) {
@@ -581,12 +581,18 @@ const print_as: ast.Stmt = .{ .function = .{
 /// stays because a value handed in by a `#[@External.Node(…)]` call carries no
 /// such promise, and a cheap bound is better than a stack overflow in a host's
 /// object graph.
+///
+/// Decision 214 — the first test is `Object.is`, the total order of `f64 ==`:
+/// two NaNs are equal and `0.0` differs from `-0.0`. A number of unknown type
+/// is safe to compare that way because an integer is never `-0` here — the
+/// integer lowering canonicalises `*`, `%`, `/` and unary `-`
+/// (`commonJS.zig` `intCanon`).
 const structural_eq: ast.Stmt = .{ .function = .{
     .name = "__bp_eq",
     .params = &.{ .{ .pattern = .{ .name = "a" } }, .{ .pattern = .{ .name = "b" } }, .{ .pattern = .{ .name = "d" } } },
     .body = .{ .stmts = &.{
         .{ .if_ = .{
-            .cond = .{ .binary = .{ .op = "===", .lhs = &eq_a, .rhs = &eq_b } },
+            .cond = .{ .call = .{ .callee = &.{ .name = "Object.is" }, .args = &.{ eq_a, eq_b } } },
             .then = &.{ .block = .{ .stmts = &.{.{ .return_ = .{ .name = "true" } }}, .layout = .indented, .indent = 1 } },
         } },
         .{ .if_ = .{
@@ -662,7 +668,7 @@ test "js_prelude: structural equality walks arrays and class instances" {
     try @import("js_emitter.zig").writeStmt(&aw.writer, decl(.structural_eq), 0);
     try std.testing.expectEqualStrings(
         \\function __bp_eq(a, b, d) {
-        \\    if ((a === b)) {
+        \\    if (Object.is(a, b)) {
         \\        return true;
         \\    }
         \\    if ((((((d > 32) || (a === null)) || (b === null)) || (typeof a !== "object")) || (a.constructor !== b.constructor))) {

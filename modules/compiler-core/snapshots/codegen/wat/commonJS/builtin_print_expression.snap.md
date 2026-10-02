@@ -42,7 +42,7 @@ function __bp_print() {
 
 function main() {
     const x = 10;
-    __bp_print((x * 2));
+    __bp_print(((x * 2) + 0));
 }
 
 function _botopink_main() {

@@ -74,3 +74,39 @@ test "js: primitive behavior default fn ---- return and throw build the @Result"
         \\
     );
 }
+
+// Decision 214 — the NaN half of `f64`'s total-order `==`, which the
+// four-target cell `run/f64_equality_total_order.bp` cannot carry (erlang and
+// beam never produce a NaN): `NaN == NaN` is `true` bare and inside a record,
+// a tuple, an array and a variant (`Object.is`, and the per-type equality's
+// field compare), `NaN != NaN` is `false`, and NaN against a number is
+// unequal. `<` stays IEEE (`NaN < 1.0` is `false`).
+test "js: f64 ---- NaN equals NaN under ==, bare and inside composites" {
+    try h.assertJsRunLog(std.testing.allocator,
+        \\type F(x: f64)
+        \\type V {
+        \\    W(x: f64),
+        \\    Z,
+        \\}
+        \\fn zero() -> f64 {
+        \\    return 0.0;
+        \\}
+        \\fn main() {
+        \\    val z = zero();
+        \\    val nan = z / z;
+        \\    @print(nan == nan);
+        \\    @print(nan != nan);
+        \\    @print(nan == 1.0);
+        \\    @print(nan < 1.0);
+        \\    @print(F(x: nan) == F(x: z / z));
+        \\    val ta = #(nan, 1);
+        \\    val tb = #(z / z, 1);
+        \\    @print(ta == tb);
+        \\    val xs = [nan];
+        \\    val ys = [z / z];
+        \\    @print(xs == ys);
+        \\    @print(V.W(x: nan) == V.W(x: z / z));
+        \\    @print(F(x: nan) == F(x: 1.0));
+        \\}
+    , "true\nfalse\nfalse\nfalse\ntrue\ntrue\ntrue\ntrue\nfalse\n");
+}

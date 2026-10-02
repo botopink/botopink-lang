@@ -65,7 +65,7 @@ function mergeRecords(a, b) {
 }
 
 function mapFields(n) {
-    return (n * 2);
+    return ((n * 2) + 0);
 }
 
 function main() {

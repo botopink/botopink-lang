@@ -828,6 +828,15 @@ an integer of the operands' type, on every target (`7 / 2` is `3`, `-7 / 2` is
 `-3`). With a float operand it is float division (`7.0 / 2.0` is `3.5`). A number
 literal with a `.` or an exponent is a float (`2.5`, `1e3`, `5e-324`).
 
+`==` compares by value on every target: two records, tuples, arrays or enum
+variants are equal when they have the same type and their fields are equal, field
+by field and recursively — `Person(name: "Ana", age: 30) == Person(name: "Ana",
+age: 30)` is `true`. Two values of different types are never equal, `!=` is the
+negation, and `==` never calls a method of the type (one named `equals` included).
+An `f64` compares as a total order under `==`, as Java's `Double.compare` does:
+`0.0 == -0.0` is `false` and `NaN == NaN` is `true`, bare or inside a composite;
+`<`, `>`, `<=` and `>=` keep the IEEE ordering (`-0.0 < 0.0` is `false`).
+
 ### Lambdas and method chains
 
 <!-- docs-check: body -->

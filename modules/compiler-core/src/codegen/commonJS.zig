@@ -602,6 +602,12 @@ fn emitProgramOptsX(
             try items.insert(arena_alloc, at, .{ .stmt = jsPrelude.decl(hp) });
             at += 1;
         }
+        // Decision 210 — the per-type equalities the module's `==` asked
+        // for, after the prelude helpers they may call (`__bp_eq`).
+        for (em.eq_fns.values()) |f| {
+            try items.insert(arena_alloc, at, .{ .stmt = f });
+            at += 1;
+        }
     }
 
     var aw: std.Io.Writer.Allocating = .init(alloc);
@@ -1354,6 +1360,23 @@ const Emitter = struct {
     /// Local / parameter name → the static print shape of its value, when it
     /// holds a tuple somewhere (`printShape`). Rebinding a name overwrites it.
     print_shapes: std.StringHashMap(js.Expr),
+    /// Decision 210 — local / parameter name → the static type its binding
+    /// gave it (`staticTypeOf`), for `==` over composites. Rebinding a name
+    /// overwrites it; a binding whose type is not known here removes it.
+    eq_types: std.StringHashMapUnmanaged(ast.TypeRef) = .empty,
+    /// Every record and enum this module declares, by name — the types a
+    /// per-type equality is generated for.
+    eq_decls: std.StringHashMapUnmanaged(ast.TypeDecl) = .empty,
+    /// The per-type equalities the module's comparisons asked for, by name,
+    /// in the order they were first asked for — written after the prelude
+    /// helpers, and only these.
+    eq_fns: std.StringArrayHashMapUnmanaged(js.Stmt) = .empty,
+    /// Top-level fns whose declared return names one of their own type
+    /// parameters — no one static type for `staticTypeOf`.
+    fn_generic_returns: std.StringHashMapUnmanaged(void) = .empty,
+    /// The record or enum whose methods are being built — what `Self` and
+    /// `self` are for `staticTypeOf`.
+    eq_self_type: ?[]const u8 = null,
     /// Cross-module link info (null in the standalone `emitProgram` path) —
     /// resolves a `from "<pkg>"` import to the file that emits each name.
     cross: ?*const CrossModule = null,
@@ -1776,9 +1799,16 @@ const Emitter = struct {
     /// sections are desugared into inner enums before codegen, so the
     /// top-level variant list is the whole surface.
     fn collectDeclIndexes(self: *Emitter, program: ast.Program) !void {
+        for (program.decls) |decl| if (decl == .type_) try self.eq_decls.put(self.arena(), decl.type_.name, decl.type_);
         for (program.decls) |decl| switch (decl) {
             .@"fn" => |f| {
-                if (f.returnType) |rt| try self.fn_return_types.put(f.name, rt);
+                if (f.returnType) |rt| {
+                    try self.fn_return_types.put(f.name, rt);
+                    for (f.genericParams) |gp| if (typeRefMentions(rt, gp.name)) {
+                        try self.fn_generic_returns.put(self.arena(), f.name, {});
+                        break;
+                    };
+                }
             },
             .type_ => |e| if (!e.isRecord()) {
                 for (e.variants()) |v| {
@@ -2300,6 +2330,9 @@ const Emitter = struct {
     }
 
     fn buildRecord(self: *Emitter, r: ast.TypeDecl) !js.Stmt {
+        const prev_self_type = self.eq_self_type;
+        self.eq_self_type = r.name;
+        defer self.eq_self_type = prev_self_type;
         var ctor: ?js.Class.Ctor = null;
         if (r.recordFields().len > 0) {
             const params = try self.arena().alloc(js.Param, r.recordFields().len);
@@ -2452,6 +2485,9 @@ const Emitter = struct {
     /// evaluated when the subclass declaration runs; the singletons follow the
     /// subclasses for the same reason.
     fn buildEnum(self: *Emitter, e: ast.TypeDecl) !js.Stmt {
+        const prev_self_type = self.eq_self_type;
+        self.eq_self_type = e.name;
+        defer self.eq_self_type = prev_self_type;
         var members: std.ArrayListUnmanaged(js.Class.ClassMember) = .empty;
         var tail: std.ArrayListUnmanaged(js.Stmt) = .empty;
 
@@ -3033,6 +3069,9 @@ const Emitter = struct {
 
     fn buildParams(self: *Emitter, params: []const ast.Param) ![]const js.Param {
         var out: std.ArrayListUnmanaged(js.Param) = .empty;
+        // A parameter list starts a function's own names (`eq_types`).
+        self.eq_types.clearRetainingCapacity();
+        if (self.eq_self_type) |n| try self.eq_types.put(self.arena(), "self", .{ .named = n });
         for (params) |p| {
             if (std.mem.eql(u8, p.name, "self")) continue;
             try out.append(self.arena(), try self.buildParam(p));
@@ -3042,6 +3081,7 @@ const Emitter = struct {
 
     fn buildParam(self: *Emitter, p: ast.Param) !js.Param {
         try self.notePrintShape(p.name, try self.typeShape(p.typeRef));
+        try self.noteEqType(p.name, if (p.destruct == null) p.typeRef else null);
         const d = p.destruct orelse return .{ .pattern = .{ .ident = p.name } };
         return switch (d) {
             // A destructuring parameter takes no default.
@@ -3272,6 +3312,7 @@ const Emitter = struct {
                 .localBind => |lb| {
                     const kw: js.Decl.Kw = if (lb.mutable) .let_ else .const_;
                     try self.notePrintShape(lb.name, if (lb.typeAnnotation) |ta| try self.typeShape(ta) else try self.printShape(lb.value.*));
+                    try self.noteEqType(lb.name, lb.typeAnnotation orelse try self.staticTypeOf(lb.value.*));
                     if (classifyTry(lb.value.*)) |form| {
                         return self.buildTryStmt(form, .{ .decl = .{ .kw = kw, .name = lb.name } });
                     }
@@ -3483,6 +3524,11 @@ const Emitter = struct {
         }
         const ps = try self.arena().alloc(js.Param, params.len);
         for (params, 0..) |p, i| ps[i] = .{ .pattern = .{ .ident = p } };
+        // The arrow's parameters carry no written type, and its body's
+        // names are its own: the enclosing names come back after it.
+        const prev_eq_types = try self.eq_types.clone(self.arena());
+        defer self.eq_types = prev_eq_types;
+        for (params) |p| _ = self.eq_types.remove(p);
         const prev_expr_try = self.expr_try_used;
         self.expr_try_used = false;
         defer self.expr_try_used = prev_expr_try;
@@ -3729,41 +3775,30 @@ const Emitter = struct {
             },
 
             .binaryOp => |bin| {
-                // Decision 8 §6 T6 — a tuple is positional at run time, so
-                // `==` compares its elements. A tuple is a JS array and `==`
-                // lowers to `===`, which compares references, so two equal
-                // tuples were unequal.
-                //
-                // The helper is structural for **every** composite value, not
-                // only for tuples (decision 35), but only a tuple reaches it
-                // today: this emitter walks the **untyped** AST
-                // (`buildExpr(e: ast.Expr)`), so the one thing it can know
-                // about an operand is the static print shape `printShape`
-                // already recovers — and that is exactly "this expression
-                // holds a tuple". Turning the row on for a record, an array or
-                // a variant needs the operand's type at the site, which means
-                // marking it in inference by `Loc` the way `method_lowerings`
-                // does; that crosses front 01 and is the maintainer's call.
-                // One side shaped is enough: the other is a tuple too, or the
-                // helper's constructor test answers `false` exactly as `===`
-                // did.
-                if ((bin.op == .eq or bin.op == .ne) and try self.isTupleShaped(bin.lhs.*, bin.rhs.*)) {
-                    const cmp = try self.b.call(self.helper(.structural_eq), &.{
-                        try self.buildExpr(bin.lhs.*),
-                        try self.buildExpr(bin.rhs.*),
-                        .{ .number = "0" },
-                    });
-                    return if (bin.op == .eq) cmp else self.b.unary("!", cmp, true);
-                }
+                // Decision 210 — `==` compares by value: a composite
+                // operand calls its type's equality (`buildEquality`); a
+                // primitive one keeps the instruction below.
+                if (bin.op == .eq or bin.op == .ne) if (try self.buildEquality(bin)) |cmp| return cmp;
                 // Onze F7 — `/` over integers truncates toward zero and
                 // answers an integer, as erlang's `div` does: `7 / 2` is `3`.
                 // A JS number division is a float one, so the quotient is
                 // truncated. Inference says which `/` this is (`.division`).
                 if (bin.op == .div) if (self.lowerings) |lw| if (lw.get(bin.loc)) |il| if (il == .division and il.division == .integer) {
-                    return self.b.call(.{ .name = "Math.trunc" }, &.{
+                    const q = try self.b.call(.{ .name = "Math.trunc" }, &.{
                         try self.b.binary("/", try self.buildExpr(bin.lhs.*), try self.buildExpr(bin.rhs.*)),
                     });
+                    // `0 / -3`, `-1 / 2`: the truncated quotient is `-0`.
+                    return if (mayBeNegZero(bin.lhs.*, bin.rhs.*)) self.intCanon(q) else q;
                 };
+                // Decision 214's premise — an integer is never `-0` (no such
+                // value on erlang, beam or wasm). JavaScript's `*` and `%` answer
+                // `-0` for `0 * -1` and `-4 % 2`, so an integer product or
+                // remainder is canonicalised (`intCanon`).
+                if ((bin.op == .mul or bin.op == .mod) and mayBeNegZero(bin.lhs.*, bin.rhs.*) and
+                    try self.isIntArith(bin.lhs.*, bin.rhs.*))
+                {
+                    return self.intCanon(try self.b.binary(if (bin.op == .mul) "*" else "%", try self.buildExpr(bin.lhs.*), try self.buildExpr(bin.rhs.*)));
+                }
                 const op: []const u8 = switch (bin.op) {
                     .add => "+",
                     .sub => "-",
@@ -3786,10 +3821,16 @@ const Emitter = struct {
                 return self.b.binary(op, try self.buildExpr(bin.lhs.*), try self.buildExpr(bin.rhs.*));
             },
 
-            .unaryOp => |un| return self.b.unary(switch (un.op) {
-                .not => "!",
-                .neg => "-",
-            }, try self.buildExpr(un.expr.*), true),
+            .unaryOp => |un| {
+                const out = try self.b.unary(switch (un.op) {
+                    .not => "!",
+                    .neg => "-",
+                }, try self.buildExpr(un.expr.*), true);
+                // `-x` with `x = 0` is `-0` in JavaScript; an integer never is.
+                // A nonzero literal (`-1`) cannot be.
+                if (un.op == .neg and !isNonzeroLiteral(un.expr.*) and (try self.numKind(un.expr.*)).isInt()) return self.intCanon(out);
+                return out;
+            },
 
             .jump => |j| switch (j.kind) {
                 // `return` / `break` / `continue` are statements that leave the
@@ -4216,6 +4257,7 @@ const Emitter = struct {
     /// `for…of` pattern (decision 105 has no index binder; the index is
     /// `for (0..xs.length) { i -> }`).
     fn loopHead(self: *Emitter, lp: anytype) !struct { pattern: js.Pattern, iter: js.Expr } {
+        try self.noteEqType(lp.params[0], if (try self.staticTypeOf(lp.iter.*)) |it| eqArrayElem(it) else null);
         return .{ .pattern = .{ .ident = lp.params[0] }, .iter = try self.buildExpr(lp.iter.*) };
     }
 
@@ -4496,6 +4538,504 @@ const Emitter = struct {
     fn isFloatShaped(self: *Emitter, e: ast.Expr) anyerror!bool {
         const sh = (try self.printShape(e)) orelse return false;
         return sh == .quoted and std.mem.eql(u8, sh.quoted, "f");
+    }
+
+    // ── an integer is never -0 (decision 214) ────────────────────────────────
+
+    /// What `numKind` knows of a number: a written integer literal (weak — it
+    /// takes a float's type in a float position), an operand typed as an
+    /// integer or a float, or nothing.
+    const NumKind = enum {
+        unknown,
+        int_lit,
+        int,
+        float,
+
+        fn isInt(k: NumKind) bool {
+            return k == .int or k == .int_lit;
+        }
+    };
+
+    fn isIntTypeName(n: []const u8) bool {
+        const ints = [_][]const u8{ "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "isize", "usize" };
+        for (ints) |i| if (std.mem.eql(u8, n, i)) return true;
+        return false;
+    }
+
+    fn numKind(self: *Emitter, e: ast.Expr) anyerror!NumKind {
+        switch (e) {
+            .literal => |lit| switch (lit.kind) {
+                .numberLit => |n| return if (isFloatLiteral(n)) .float else .int_lit,
+                else => return .unknown,
+            },
+            .unaryOp => |un| return if (un.op == .neg) self.numKind(un.expr.*) else .unknown,
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| return self.numKind(inner.*),
+                else => {},
+            },
+            .binaryOp => |bin| switch (bin.op) {
+                .add, .sub, .mul, .mod, .div => {
+                    if (bin.op == .div) if (self.lowerings) |lw| if (lw.get(bin.loc)) |il| if (il == .division)
+                        return if (il.division == .integer) .int else .float;
+                    const l = try self.numKind(bin.lhs.*);
+                    const r = try self.numKind(bin.rhs.*);
+                    if (l == .float or r == .float) return .float;
+                    if (l == .int or r == .int) return .int;
+                    if (l == .int_lit and r == .int_lit) return .int_lit;
+                    return .unknown;
+                },
+                else => return .unknown,
+            },
+            else => {},
+        }
+        const t = (try self.staticTypeOf(e)) orelse return .unknown;
+        return switch (t) {
+            .named => |n| if (isIntTypeName(n)) .int else if (eqIsFloat(t)) .float else .unknown,
+            else => .unknown,
+        };
+    }
+
+    /// Both operands integers: one typed as an integer and none a float, or
+    /// two integer literals.
+    fn isIntArith(self: *Emitter, lhs: ast.Expr, rhs: ast.Expr) anyerror!bool {
+        const l = try self.numKind(lhs);
+        const r = try self.numKind(rhs);
+        if (l == .float or r == .float) return false;
+        return l == .int or r == .int or (l == .int_lit and r == .int_lit);
+    }
+
+    /// A nonzero number literal, negated or not.
+    fn isNonzeroLiteral(e: ast.Expr) bool {
+        return switch (e) {
+            .literal => |lit| switch (lit.kind) {
+                .numberLit => |n| for (n) |c| {
+                    if (c != '0' and c != '.' and c != '_') break true;
+                } else false,
+                else => false,
+            },
+            .unaryOp => |un| un.op == .neg and isNonzeroLiteral(un.expr.*),
+            else => false,
+        };
+    }
+
+    /// False when the result cannot be `-0`: two nonnegative literals.
+    fn mayBeNegZero(lhs: ast.Expr, rhs: ast.Expr) bool {
+        return !(lhs == .literal and lhs.literal.kind == .numberLit and rhs == .literal and rhs.literal.kind == .numberLit);
+    }
+
+    /// `(e + 0)` — `-0 + 0` is `0`, and every other number is left exactly
+    /// itself (no 32-bit wrap, unlike `| 0`), so no integer answer moves.
+    fn intCanon(self: *Emitter, e: js.Expr) !js.Expr {
+        return self.b.binary("+", e, .{ .number = "0" });
+    }
+
+    // ── structural equality (decision 210) ───────────────────────────────────
+
+    /// The primitive type names whose `==` stays the instruction it always was
+    /// (`===`, or the loose `==` against a `null` literal).
+    fn isPrimTypeName(n: []const u8) bool {
+        const prims = [_][]const u8{
+            "i8",    "u8",    "i16", "u16", "i32",  "u32",    "i64",  "u64",
+            "isize", "usize", "f32", "f64", "bool", "string", "void", "char",
+        };
+        for (prims) |p| if (std.mem.eql(u8, n, p)) return true;
+        return false;
+    }
+
+    /// True when `t` is a primitive, or an optional of one: its `==` is `===`.
+    fn eqIsPrim(t: ast.TypeRef) bool {
+        return switch (t) {
+            .named => |n| isPrimTypeName(n),
+            .optional => |inner| eqIsPrim(inner.*),
+            else => false,
+        };
+    }
+
+    /// True when `t` is a float, or an optional of one: its `==` is
+    /// decision 214's total order, `Object.is` (`floatEq`).
+    fn eqIsFloat(t: ast.TypeRef) bool {
+        return switch (t) {
+            .named => |n| std.mem.eql(u8, n, "f64") or std.mem.eql(u8, n, "f32") or std.mem.eql(u8, n, "float"),
+            .optional => |inner| eqIsFloat(inner.*),
+            else => false,
+        };
+    }
+
+    /// Decision 214 — `==` over floats is a total order, as Java's
+    /// `Double.compare`: NaN equals NaN and `0.0` differs from `-0.0`, which
+    /// is `Object.is` exactly. `<`, `>`, `<=`, `>=` keep IEEE ordering.
+    fn floatEq(self: *Emitter, a: js.Expr, b: js.Expr) !js.Expr {
+        return self.b.call(.{ .name = "Object.is" }, &.{ a, b });
+    }
+
+    /// `Self` as the declaration it is written in, so `other: Self` and
+    /// `self` name the type a per-type equality is generated for.
+    fn eqResolve(self: *Emitter, t: ast.TypeRef) ast.TypeRef {
+        if (t.isSelf()) if (self.eq_self_type) |n| return .{ .named = n };
+        return t;
+    }
+
+    /// Records the static type of a name a binding introduces, or forgets the
+    /// name when the binding's type is not known here — a stale entry would
+    /// call another type's equality on it.
+    fn noteEqType(self: *Emitter, name: []const u8, t: ?ast.TypeRef) !void {
+        if (t) |ty| try self.eq_types.put(self.arena(), name, self.eqResolve(ty)) else _ = self.eq_types.remove(name);
+    }
+
+    fn eqNamed(n: []const u8) ast.TypeRef {
+        return .{ .named = n };
+    }
+
+    /// The element type of an array type (`T[]` or `Array<T>`), or null.
+    fn eqArrayElem(t: ast.TypeRef) ?ast.TypeRef {
+        return switch (t) {
+            .array => |inner| inner.*,
+            .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "Array")) g.args[0] else null,
+            else => null,
+        };
+    }
+
+    /// The declaration of a record or enum this module declares, by name —
+    /// the only types a per-type equality is generated for here.
+    fn eqDecl(self: *Emitter, t: ast.TypeRef) ?ast.TypeDecl {
+        const n = switch (t) {
+            .named => |n| n,
+            .generic => |g| if (g.is_builtin) return null else g.name,
+            else => return null,
+        };
+        return self.eq_decls.get(n);
+    }
+
+    /// The static type of `e` as far as this backend can read it from the
+    /// untyped tree — a literal, a local or parameter whose binding said, a
+    /// record or variant constructor, a field read of a record declared here,
+    /// a tuple or array literal, a top-level fn's declared return, a
+    /// primitive method's declared return, an arithmetic or logical operator.
+    /// Null when nothing here says, and a comparison over such operands asks
+    /// the run-time `__bp_eq` (`buildEquality`).
+    fn staticTypeOf(self: *Emitter, e: ast.Expr) anyerror!?ast.TypeRef {
+        return switch (e) {
+            .literal => |lit| switch (lit.kind) {
+                .numberLit => |n| eqNamed(if (isFloatLiteral(n)) "f64" else "i32"),
+                .stringLit, .stringTemplate => eqNamed("string"),
+                else => null,
+            },
+            .unaryOp => |un| switch (un.op) {
+                .not => eqNamed("bool"),
+                .neg => (try self.staticTypeOf(un.expr.*)) orelse eqNamed("i32"),
+            },
+            .binaryOp => |bin| switch (bin.op) {
+                .lt, .gt, .lte, .gte, .eq, .ne, .@"and", .@"or" => eqNamed("bool"),
+                // Arithmetic answers a number, `+` over strings a string —
+                // a primitive either way, which is all `==` asks.
+                .add, .sub, .mul, .div, .mod => blk: {
+                    const l = try self.staticTypeOf(bin.lhs.*);
+                    if (l) |lt| if (eqIsPrim(lt)) break :blk lt;
+                    const r = try self.staticTypeOf(bin.rhs.*);
+                    if (r) |rt| if (eqIsPrim(rt)) break :blk rt;
+                    break :blk eqNamed("i32");
+                },
+            },
+            .identifier => |id| switch (id.kind) {
+                .ident => |n| blk: {
+                    if (std.mem.eql(u8, n, "true") or std.mem.eql(u8, n, "false")) break :blk eqNamed("bool");
+                    if (self.eq_types.get(n)) |t| break :blk t;
+                    break :blk null;
+                },
+                .dotIdent => null,
+                .identAccess => |ia| blk: {
+                    // `Shape.Dot` — a unit variant read off its enum.
+                    if (ia.receiver.* == .identifier and ia.receiver.identifier.kind == .ident) {
+                        const rn = ia.receiver.identifier.kind.ident;
+                        if (!self.eq_types.contains(rn)) if (self.eq_decls.get(rn)) |d| {
+                            if (!d.isRecord()) break :blk eqNamed(d.name);
+                        };
+                    }
+                    // `xs.len` / `s.length` — a host length, an integer —
+                    // unless the receiver is a record declared here, whose
+                    // field of that name answers below.
+                    const is_len = std.mem.eql(u8, ia.member, "len") or std.mem.eql(u8, ia.member, "length");
+                    const rt = (try self.staticTypeOf(ia.receiver.*)) orelse break :blk if (is_len) eqNamed("i32") else null;
+                    if (tupleIndexMember(ia.member)) |digits| {
+                        const elems = rt.tupleElems() orelse break :blk null;
+                        const i = std.fmt.parseInt(usize, digits, 10) catch break :blk null;
+                        break :blk if (i < elems.len) elems[i] else null;
+                    }
+                    const d = self.eqDecl(rt) orelse break :blk if (is_len) eqNamed("i32") else null;
+                    if (!d.isRecord()) break :blk null;
+                    for (d.recordFields()) |f| if (std.mem.eql(u8, f.name, ia.member)) {
+                        break :blk if (self.eqMentionsParam(d, f.typeRef)) null else f.typeRef;
+                    };
+                    break :blk null;
+                },
+            },
+            .collection => |col| switch (col.kind) {
+                .tupleLit => |tl| blk: {
+                    const elems = try self.arena().alloc(ast.TypeRef, tl.elems.len);
+                    for (tl.elems, 0..) |el, i| elems[i] = (try self.staticTypeOf(el)) orelse eqNamed("__any");
+                    break :blk .{ .tuple_ = elems };
+                },
+                .arrayLit => |al| blk: {
+                    if (al.elems.len == 0 or al.spread != null or al.spreadExpr != null) break :blk null;
+                    const elem = (try self.staticTypeOf(al.elems[0])) orelse break :blk null;
+                    const p = try self.arena().create(ast.TypeRef);
+                    p.* = elem;
+                    break :blk .{ .array = p };
+                },
+                .grouped => |inner| self.staticTypeOf(inner.*),
+                else => null,
+            },
+            .call => |c| switch (c.kind) {
+                .call => |cc| blk: {
+                    if (cc.is_builtin or cc.calleeExpr != null) break :blk null;
+                    if (cc.receiver == null) {
+                        // A constructor of a record declared here.
+                        if (!self.eq_types.contains(cc.callee)) if (self.eq_decls.get(cc.callee)) |d| {
+                            if (d.isRecord()) break :blk eqNamed(d.name);
+                        };
+                        const rt = self.fn_return_types.get(cc.callee) orelse break :blk null;
+                        if (self.fn_generic_returns.contains(cc.callee)) break :blk null;
+                        break :blk rt;
+                    }
+                    // `Shape.Circle(r: 2)` — a payload variant's factory.
+                    const recv = cc.receiver.?.*;
+                    if (recv == .identifier and recv.identifier.kind == .ident) {
+                        const rn = recv.identifier.kind.ident;
+                        if (!self.eq_types.contains(rn)) if (self.eq_decls.get(rn)) |d| {
+                            if (!d.isRecord()) for (d.variants()) |v| {
+                                if (std.mem.eql(u8, v.name, cc.callee)) break :blk eqNamed(d.name);
+                            };
+                        };
+                    }
+                    // A primitive method's declared return, when it names no
+                    // type parameter of its behavior.
+                    const lw = self.lowerings orelse break :blk null;
+                    const iface_name: []const u8 = switch (lw.get(c.loc) orelse break :blk null) {
+                        .prim => |k| switch (k) {
+                            .array => "Array",
+                            .string => "String",
+                            .int, .float => "Number",
+                            .bool => "Bool",
+                        },
+                        else => break :blk null,
+                    };
+                    const iface = self.local_interfaces.get(iface_name) orelse break :blk null;
+                    for (iface.methods) |m| {
+                        if (!std.mem.eql(u8, m.name, cc.callee)) continue;
+                        const rt = m.returnType orelse break :blk null;
+                        break :blk if (eqIsPrim(rt)) rt else null;
+                    }
+                    break :blk null;
+                },
+                else => null,
+            },
+            else => null,
+        };
+    }
+
+    /// True when `t` names one of `d`'s own type parameters somewhere — such a
+    /// field has no one static type, so a read of it is not typed here.
+    fn eqMentionsParam(self: *Emitter, d: ast.TypeDecl, t: ast.TypeRef) bool {
+        _ = self;
+        for (d.genericParams) |gp| if (typeRefMentions(t, gp.name)) return true;
+        return false;
+    }
+
+    fn typeRefMentions(t: ast.TypeRef, name: []const u8) bool {
+        return switch (t) {
+            .named => |n| std.mem.eql(u8, n, name),
+            .array => |inner| typeRefMentions(inner.*, name),
+            .optional => |inner| typeRefMentions(inner.*, name),
+            .tuple_ => |elems| for (elems) |el| {
+                if (typeRefMentions(el, name)) break true;
+            } else false,
+            .labeledTuple => |lt| for (lt.elems) |el| {
+                if (typeRefMentions(el, name)) break true;
+            } else false,
+            .generic => |g| std.mem.eql(u8, g.name, name) or for (g.args) |a| {
+                if (typeRefMentions(a, name)) break true;
+            } else false,
+            .function => true,
+            .typeparam => true,
+        };
+    }
+
+    /// The suffix of a per-type equality's name — prefix notation with each
+    /// constructor's arity, so two types never share one: `Person`,
+    /// `Array_Person`, `Tuple2_i32_string`, `Opt_Team`. A part this backend
+    /// has no equality for is `Any` (it compares through `__bp_eq`).
+    fn eqMangle(self: *Emitter, t: ast.TypeRef, out: *std.ArrayListUnmanaged(u8)) anyerror!void {
+        const a = self.arena();
+        const r = self.eqResolve(t);
+        if (eqArrayElem(r)) |elem| {
+            try out.appendSlice(a, "Array_");
+            return self.eqMangle(elem, out);
+        }
+        switch (r) {
+            .named => |n| try out.appendSlice(a, if (isPrimTypeName(n) or self.eq_decls.contains(n)) n else "Any"),
+            .generic => |g| try out.appendSlice(a, if (!g.is_builtin and self.eq_decls.contains(g.name)) g.name else "Any"),
+            .optional => |inner| {
+                try out.appendSlice(a, "Opt_");
+                try self.eqMangle(inner.*, out);
+            },
+            .tuple_, .labeledTuple => {
+                const elems = r.tupleElems().?;
+                try out.print(a, "Tuple{d}", .{elems.len});
+                for (elems) |el| {
+                    try out.append(a, '_');
+                    try self.eqMangle(el, out);
+                }
+            },
+            else => try out.appendSlice(a, "Any"),
+        }
+    }
+
+    fn eqKey(self: *Emitter, t: ast.TypeRef) ![]const u8 {
+        var out: std.ArrayListUnmanaged(u8) = .empty;
+        try self.eqMangle(t, &out);
+        return out.items;
+    }
+
+    /// The per-type equality `__bp_eq_<T>` for a composite `t`, generated the
+    /// first time the program compares a `t` — or null when `t` is not a
+    /// composite this backend generates one for (a primitive, a type
+    /// parameter, a type declared in another module, a function, `unknown`).
+    fn eqFnFor(self: *Emitter, t0: ast.TypeRef) anyerror!?[]const u8 {
+        const t = self.eqResolve(t0);
+        if (eqIsPrim(t)) return null;
+        const supported = eqArrayElem(t) != null or t == .tuple_ or t == .labeledTuple or
+            (t == .optional) or self.eqDecl(t) != null;
+        if (!supported) return null;
+        if (t == .optional and eqIsPrim(t.optional.*)) return null;
+        const name = try std.fmt.allocPrint(self.arena(), "__bp_eq_{s}", .{try self.eqKey(t)});
+        if (self.eq_fns.contains(name)) return name;
+        // Claimed before the body is built: a recursive type (`next: ?Node`)
+        // names its own equality inside it.
+        try self.eq_fns.put(self.arena(), name, .{ .break_ = {} });
+        const body = try self.eqFnBody(t);
+        const a: js.Expr = .{ .name = "a" };
+        const b: js.Expr = .{ .name = "b" };
+        const stmts = try self.arena().alloc(js.Stmt, body.len + 1);
+        stmts[0] = try self.b.ifStmt(try self.b.binaryBare("===", a, b), .{ .return_ = .{ .name = "true" } });
+        @memcpy(stmts[1..], body);
+        self.eq_fns.getPtr(name).?.* = .{ .function = .{
+            .name = name,
+            .params = try self.b.params(&.{ .{ .pattern = .{ .name = "a" } }, .{ .pattern = .{ .name = "b" } } }),
+            .body = .{ .stmts = stmts, .indent = 0 },
+        } };
+        return name;
+    }
+
+    /// `a` equals `b` under the static type `t`: a primitive's `===`, the
+    /// per-type equality of a composite, or the run-time `__bp_eq` where
+    /// this backend generates none.
+    fn eqExpr(self: *Emitter, t: ast.TypeRef, a: js.Expr, b: js.Expr) anyerror!js.Expr {
+        if (eqIsFloat(t)) return self.floatEq(a, b);
+        if (eqIsPrim(t)) return self.b.binaryBare("===", a, b);
+        if (try self.eqFnFor(t)) |f| return self.b.call(.{ .name = f }, &.{ a, b });
+        return self.b.call(self.helper(.structural_eq), &.{ a, b, .{ .number = "0" } });
+    }
+
+    /// `e1 && e2 && …` (or `true` for none) — fields in order, stopping at
+    /// the first difference.
+    fn eqAll(self: *Emitter, parts: []const js.Expr) !js.Expr {
+        if (parts.len == 0) return .{ .name = "true" };
+        var acc = parts[0];
+        for (parts[1..]) |p| acc = try self.b.binaryBare("&&", acc, p);
+        return acc;
+    }
+
+    fn eqFieldsOf(self: *Emitter, d: ast.TypeDecl, fields: []const ast.Field) ![]const js.Expr {
+        const a: js.Expr = .{ .name = "a" };
+        const b: js.Expr = .{ .name = "b" };
+        const parts = try self.arena().alloc(js.Expr, fields.len);
+        for (fields, 0..) |f, i| {
+            const ft: ast.TypeRef = if (self.eqMentionsParam(d, f.typeRef)) eqNamed("__any") else f.typeRef;
+            parts[i] = try self.eqExpr(ft, try self.b.member(a, f.name), try self.b.member(b, f.name));
+        }
+        return parts;
+    }
+
+    /// The statements after `if (a === b) return true;` of `t`'s equality.
+    fn eqFnBody(self: *Emitter, t: ast.TypeRef) anyerror![]const js.Stmt {
+        const a: js.Expr = .{ .name = "a" };
+        const b: js.Expr = .{ .name = "b" };
+        if (eqArrayElem(t)) |elem| {
+            // Same length, then every element by its own type — `every`
+            // stops at the first `false`.
+            const e: js.Expr = .{ .name = "e" };
+            const bi = try self.b.index(b, .{ .name = "i" }, false);
+            const each = try self.b.arrowExpr(&.{ .{ .pattern = .{ .name = "e" } }, .{ .pattern = .{ .name = "i" } } }, try self.eqExpr(elem, e, bi));
+            const all = try self.b.call(try self.b.member(a, "every"), &.{each});
+            const len_eq = try self.b.binaryBare("===", try self.b.member(a, "length"), try self.b.member(b, "length"));
+            return self.b.stmts(&.{.{ .return_ = try self.b.binaryBare("&&", len_eq, all) }});
+        }
+        switch (t) {
+            .optional => |inner| {
+                // Absent on either side: equal only when both are absent
+                // (JavaScript's `undefined` is botopink's none too, decision 47).
+                const a_none = try self.b.binaryBare("==", a, .null_);
+                const b_none = try self.b.binaryBare("==", b, .null_);
+                return self.b.stmts(&.{
+                    try self.b.ifStmt(try self.b.binaryBare("||", a_none, b_none), .{ .return_ = try self.b.binaryBare("&&", a_none, b_none) }),
+                    .{ .return_ = try self.eqExpr(inner.*, a, b) },
+                });
+            },
+            .tuple_, .labeledTuple => {
+                const elems = t.tupleElems().?;
+                const parts = try self.arena().alloc(js.Expr, elems.len);
+                for (elems, 0..) |el, i| {
+                    const idx: js.Expr = .{ .number = try std.fmt.allocPrint(self.arena(), "{d}", .{i}) };
+                    parts[i] = try self.eqExpr(el, try self.b.index(a, idx, false), try self.b.index(b, idx, false));
+                }
+                return self.b.stmts(&.{.{ .return_ = try self.eqAll(parts) }});
+            },
+            else => {},
+        }
+        const d = self.eqDecl(t).?;
+        if (d.isRecord()) return self.b.stmts(&.{.{ .return_ = try self.eqAll(try self.eqFieldsOf(d, d.recordFields())) }});
+        // An enum: the same variant (its `tag`, on the variant's prototype),
+        // then that variant's payload fields in order. A unit variant is a
+        // singleton, already answered by `a === b`.
+        var out: std.ArrayListUnmanaged(js.Stmt) = .empty;
+        const tag_ne = try self.b.binaryBare("!==", try self.b.member(a, "tag"), try self.b.member(b, "tag"));
+        try out.append(self.arena(), try self.b.ifStmt(tag_ne, .{ .return_ = .{ .name = "false" } }));
+        for (d.variants()) |v| {
+            if (v.fields.len == 0) continue;
+            const is_v = try self.b.binaryBare("===", try self.b.member(a, "tag"), .{ .quoted = v.name });
+            try out.append(self.arena(), try self.b.ifStmt(is_v, .{ .return_ = try self.eqAll(try self.eqFieldsOf(d, v.fields)) }));
+        }
+        try out.append(self.arena(), .{ .return_ = .{ .name = "true" } });
+        return out.toOwnedSlice(self.arena());
+    }
+
+    /// Decision 210 — `==` / `!=` by the operands' static type. A primitive
+    /// on either side keeps today's instruction (null: the caller emits it);
+    /// two operands of one composite type call that type's equality; any
+    /// other pair — two different types, a type parameter, a type this
+    /// module does not declare, a type nothing here recovers — asks the
+    /// run-time `__bp_eq`, which compares constructors, then own fields
+    /// recursively, and so answers by value for whatever the value is.
+    fn buildEquality(self: *Emitter, bin: anytype) anyerror!?js.Expr {
+        if (isNullLiteral(bin.lhs.*) or isNullLiteral(bin.rhs.*)) return null;
+        const lt = try self.staticTypeOf(bin.lhs.*);
+        const rt = try self.staticTypeOf(bin.rhs.*);
+        // A float on either side: decision 214's total order.
+        if ((lt != null and eqIsFloat(lt.?)) or (rt != null and eqIsFloat(rt.?))) {
+            const cmp = try self.floatEq(try self.buildExpr(bin.lhs.*), try self.buildExpr(bin.rhs.*));
+            return if (bin.op == .eq) cmp else try self.b.unary("!", cmp, true);
+        }
+        if (lt) |t| if (eqIsPrim(t)) return null;
+        if (rt) |t| if (eqIsPrim(t)) return null;
+        const lhs = try self.buildExpr(bin.lhs.*);
+        const rhs = try self.buildExpr(bin.rhs.*);
+        const cmp = blk: {
+            if (lt != null and rt != null and std.mem.eql(u8, try self.eqKey(lt.?), try self.eqKey(rt.?))) {
+                if (try self.eqFnFor(lt.?)) |f| break :blk try self.b.call(.{ .name = f }, &.{ lhs, rhs });
+            }
+            break :blk try self.b.call(self.helper(.structural_eq), &.{ lhs, rhs, .{ .number = "0" } });
+        };
+        return if (bin.op == .eq) cmp else try self.b.unary("!", cmp, true);
     }
 
     /// The print shape a declared type spells (see `printShape`).
