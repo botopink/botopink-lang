@@ -109,7 +109,7 @@ test "throw check: multiple throw sites all match E" {
 test "throw check: throw inside nested fn does not check outer fn E" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\fn outer() -> @Result<i32, string> {
-        \\    val cb = fn() {
+        \\    val cb: fn() -> @Result<void, i32> = fn() {
         \\        throw 404;
         \\    };
         \\    throw "outer error";

@@ -114,11 +114,110 @@ modules, by `<target>.expect` — the second import used to replace the first an
 `app` where erlang and wasm answered `blog`. `import_same_fn_name_std_and_package_aliases` — a package
 and `std/collections` both declare `lt` and `reverse`; one module imports each under an alias and
 calls the four (it passes on the parent binary; it pins the rule).
+1.0.11-beta `01-checker` step 1 (decision 150, D5) adds `run/array_literal_union` (`[1, "a"]` is
+`(i32 | string)[]`, an expected union takes its members; four targets), `run/array_literal_numeric_join`
+(`[1, 2.5]` is `f64[]` — the `1` is `1.0` on every target — and `[1, null]` is `?i32[]`),
+`reject/array_literal_union_misuse` (an element used as an `i32` without narrowing, refused at the use
+naming the widening element) and `test/case_value_union` (a `case` whose arms disagree is the union,
+read back through `case` narrowing, beside the array literal's union). The `case` half is a `test/`
+cell because wasm traps on a union of primitives produced by a `case` (`05-wasm`'s row); each array
+cell was refused by the parent binary.
+Step 2 (rows 28 and 31) adds `run/case_function_typed_arms` (two arms answering `fn(string) -> string`
+join into that type and the result is applied, four targets), `reject/case_function_arms_arity` (arms
+whose arity differs are refused at the second) and `test/case_arm_lambda_value` (`A(x) -> { item ->
+f(item) }` is a lambda value; a `test/` cell because beam answers `{badfun, ok}` for a lambda a `case`
+arm produces — `03-beam`'s row). Each was refused by the parent binary.
+Step 3 (decision 151, row 22) adds `reject/section_body_method` (a `fn` in a section body is
+`section-body-method` at the `fn`), `run/section_numeric_leaf_standalone` (`val n: Tok.Percent =
+.50;`, a leaf argument, and a section-typed field of a payload variant built with `.100`, four
+targets) and `reject/section_numeric_leaf_without_expectation` (`.50` with nothing expected names its
+section). A section leaf prints as its mangled name (`__Tok__Percent.__50`) on every target, so the
+cell reads it through `==`. Each was refused by the parent binary.
+Step 4 (row 32) adds `reject/call_of_record_value` (`val g = G(a: "x"); g()` is
+`callee-not-a-function` at `g(`, beside a constructor and a function-typed field that still check)
+and `modules/call_of_imported_record_value` (the same through a sibling's `pub val`, by
+`<target>.expect` on all four); both were accepted by the parent binary.
+Step 5 (decision 152) adds `reject/binding_redeclared_in_body` (a second `var n` in one body) and
+`reject/binding_shadows_parameter` (`val x` over the parameter `x`), both `binding-redeclared` at the
+second binding and both accepted by the parent binary. Decision 205 (the body is the whole function)
+adds `reject/binding_shadows_in_inner_block` (an inner block's `val y` over the function's `y`) and
+`reject/case_arm_binder_reuses_name` (a `case` arm's `Square(s)` over the parameter `s`), both
+accepted by the parent binary.
+`run/unwrap_or_literal_width` (another front's finding) — an integer literal as `unwrapOr`'s default
+takes the payload's width over `?i64` and `@Result<i64, string>` (refused as `expected i32, got i64`
+by the parent binary).
+`run/std_type_ctor_through_namespace` (another front's finding) — `url.Url(…)` after `import {url}
+from "std"` constructs the type through the module namespace, as the leaf `Url(…)` does (`this "std"
+module has no such public function` on the parent binary), four targets.
+Decision 170's type half (other fronts' findings) adds `run/std_namespace_beside_own_type` (a
+module's own `type Dict` beside `import {collections}` is the module's, four targets),
+`modules/std_namespace_beside_aliased_type` (`import {kit.store.Dict as OwnDict}` beside the same
+namespace reads `kit/store`'s fields; the cell builds the value through a function of `kit/store`,
+because commonJS emits `Dict(5)` without `new` for an imported record constructor beside a std
+namespace declaring the same name — `04-js`'s row),
+`reject/std_namespace_signature_names_shadowed_type` (a namespace call whose signature names the
+shadowed std type), `modules/import_two_types_one_name` and `reject/own_type_beside_std_type_import`
+(two types of one declared name in one module, aliased or not, are `import-name-collision`). Each
+was accepted wrongly or refused with the wrong type by the parent binary.
+`reject/behavior_default_fn_body_checked` and `test/behavior_default_fn_result` (another front's
+finding) — a behavior's `default fn` body is checked (an unbound call is refused at it), and a
+`-> @Result` default fn wraps its `return` and `throw`, its adopted call answering the `@Result`; a
+`test/` cell because beam answers `{unresolved_method, …}` for any adopted default (`03-beam`'s row).
+Step 12 (T9) adds `reject/reserved_word_as_binding_name` — `val unknown: i32 = 1;` is
+`reserved-word-as-name` at the name; it passes on the parent binary too (the row closed before this
+front) and pins the rule.
+Step 11 (T11) adds `run/nullish_tuple_operand` (a tuple literal on the right of `??`) and
+`run/postfix_on_grouped_nullish` (`(xs.at(0) ?? d)._1`), four targets, integer elements because wasm
+reads a `string` element of a tuple through `??` as its address (`05-wasm`'s row); both refused by
+the parent binary at the `#`.
+Step 8 (decision 45) adds `reject/tuple_label_on_optional` (`rs.at(0).b` names `?.`) and
+`run/tuple_label_through_optional` (`rs.at(0)?.b` reads the label through the optional, four
+targets); both pass on the parent binary — the checker half landed with decision 45 — and pin it. The
+absent half (`?.b` on a `null`) traps on wasm and raises `badarg` on beam (the backends' rows).
+Step 15 (report L, R3) adds `modules/imported_type_field_closure` (package `a`'s `Client(life:
+Life, …)` with `Life` in a sibling module, imported by package `b` as `Client` alone and called from
+the root, four targets) and `modules/imported_declaration_error_location` (a type error inside the
+dependency's declaration is located at `a/client.bp`, by `<target>.expect`). Both pass on the parent
+binary — the row no longer reproduces at this base, and rakun-metrics' `export_test` passes with its
+`CacheLife` workaround removed — and pin it.
+Step 6 (decision 147) adds `reject/try_in_lambda_without_result` (`[1, 2].forEach({ x -> try
+bad(x); })` refused at the `try`) and `run/lambda_result_return_try` (a lambda under an expected
+`fn(x: i32) -> @Result<i32, string>` — a `val` annotation and a parameter — `try`s, `return`s and
+`throw`s, four targets); the parent binary accepted the first and refused the second. A
+`throw_in_case_arm_result` cell is not added: erlang answers `false` for `isError()` on the arm's
+`throw` (`02-erlang`'s row), the other three answer `true`.
 `modules/shorthand_import_beside_bundled_package` (decision 170, another front's finding) — the
 shorthand `import {splitPath};` resolves to the project's own `config` although the bundled
 `routing` (loaded by a second import) declares `splitPath` in its internal module `routing/match`; it
 was `ambiguous-import-use` on the parent binary. `"targets"` excludes wasm, where `routing` reaches
 host functions with no wasm binding.
+Step 7 (decision 148) adds `reject/captured_var_write_in_lambda` (`run({ -> n = n + 1; 1; }, 0)` is
+`captured-var-write` at `n =`; accepted by the parent binary) and `run/closure_capture_statement_position`
+(a `forEach` body, a local closure called as a statement — directly, in a `for` body and in a
+`forEach` body — and a module-level `var` written from any lambda, four targets; it passes on the
+parent binary too and pins the legal shapes).
+`reject/generic_index_answers_optional` and `run/generic_index_optional_return` (another front's
+finding) — `return xs[0];` under `-> T` is the type mismatch naming `T` and `?T` (it was `recursive type
+detected`), and the same functions declared `-> ?T` run on four targets.
+Decision 207 (an inline parameter type) adds `run/inline_param_type` (built from the call's labels in
+any order with a default left out, forwarded, beside an ordinary parameter, four targets), the parser's
+refusals `reject/inline_type_in_{return,field,val_annotation}` (`inline-type-outside-parameter`), the
+checker's `reject/inline_type_on_method_param`, `reject/inline_type_twice_on_one_fn`,
+`reject/inline_type_field_named_like_param` (`inline-type-position`), `reject/inline_type_missing_field`
+and `reject/inline_type_unknown_field` (named by the owner, ``the props of `link` ``), and
+`modules/inline_type_across_modules` (a call from another module that writes the fields is refused;
+the declaring module's own call runs). All sixteen fail on the parent binary.
+Decision 208 (`Ok` / `Error` are never constructors) adds `reject/result_ok_constructor` and
+`reject/result_error_constructor` — `unbound variable` at the name; both pass on the parent binary and
+pin the rule.
+Decision 209 adds `run/integer_literal_fits_f64` (an integer literal under an expected `f64` — a
+`val`, an `f64[]` element, an argument, a return, an arithmetic operand — prints as the float, four
+targets; refused by the parent binary) and `reject/i32_value_never_widens` (an `i32` value passed to an
+`f64` parameter is the mismatch; it passes on the parent binary and pins the half that stays).
+Decision 215 adds `reject/f64_equals_integer_literal` (`x == 2` with `x: f64`) and
+`reject/f64_not_equals_integer_literal` (`3 != x`), refused at the literal naming the float to write;
+the beam codegen test `is and == read numbers by value …` no longer prints `2.0 == 2` (it answered
+`false`). Both accepted by the parent binary.
 Decision 141 adds `run/external_template_refused_on_beam` — an `@External.Erlang` template with a
 macro runs on erlang and is a located build error on beam naming the construct (`.beam.expect`); beam
 no longer evaluates a template it cannot compile from source at run time.

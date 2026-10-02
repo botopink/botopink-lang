@@ -1167,6 +1167,34 @@ fn parseExplicitTypeArgs(this: *This, alloc: std.mem.Allocator, nameTok: token.T
     return try items.toOwnedSlice(alloc);
 }
 
+/// A numeric section leaf's spelling: decimal digits and nothing else.
+fn isDigitsOnly(s: []const u8) bool {
+    if (s.len == 0) return false;
+    for (s) |c| if (!std.ascii.isDigit(c)) return false;
+    return true;
+}
+
+/// Whether the tokens from `i` — just after a `{` — are a lambda's head:
+/// `->` (no parameters) or `a, b ->`. The one test `parsePrimary`'s lambda arm
+/// and a `case` arm's value (`A(x) -> { item -> f(item) }`) share.
+pub fn lambdaHeadAt(this: *This, start: usize) bool {
+    var i = start;
+    const toks = this.tokens;
+    const nextKind = if (i < toks.len) toks[i].kind else .endOfFile;
+    // Empty lambda: `{ -> }`
+    if (nextKind == .rightArrow) return true;
+    // Lambda with params: `{ ident, ident -> }`
+    if (nextKind != .identifier) return false;
+    i += 1;
+    while (i < toks.len and toks[i].kind == .comma) {
+        i += 1;
+        if (i >= toks.len or toks[i].kind != .identifier) return false;
+        i += 1;
+    }
+    const arrowKind = if (i < toks.len) toks[i].kind else .endOfFile;
+    return arrowKind == .rightArrow;
+}
+
 pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
     // `record { … }` ---- the removed anonymous record literal (1.0.3: a tuple).
     // `record` lexes as an identifier; followed by `{` it gets its targeted
@@ -1209,25 +1237,7 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         const braceTok = this.advance();
 
         // Check if this is a lambda by looking ahead for `->` or params followed by `->`
-        const isLambda = blk: {
-            var i = this.current;
-            const toks = this.tokens;
-            const nextKind = if (i < toks.len) toks[i].kind else .endOfFile;
-            // Empty lambda: `{ -> }`
-            if (nextKind == .rightArrow) break :blk true;
-            // Lambda with params: `{ ident, ident -> }`
-            if (nextKind == .identifier) {
-                i += 1;
-                while (i < toks.len and toks[i].kind == .comma) {
-                    i += 1;
-                    if (i >= toks.len or toks[i].kind != .identifier) break :blk false;
-                    i += 1;
-                }
-                const arrowKind = if (i < toks.len) toks[i].kind else .endOfFile;
-                break :blk arrowKind == .rightArrow;
-            }
-            break :blk false;
-        };
+        const isLambda = lambdaHeadAt(this, this.current);
 
         if (isLambda) {
             // Parse lambda: `{ params? -> body }`
@@ -1505,9 +1515,20 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
     // identifier and numeric segments after a `.`.
     if (this.check(.dot)) {
         const dotTok = this.advance();
-        const memberTok = try this.consume(.identifier);
+        // A numeric section leaf stands alone too (`val a: Tok.Alpha = .50;`,
+        // row 22): a pure-digit leaf after the dot is the leaf's name, which
+        // the expected type resolves as it resolves `.Red`.
+        const memberTok = if (this.check(.numberLiteral) and isDigitsOnly(this.peek().lexeme)) this.advance() else try this.consume(.identifier);
         const head = Expr{ .identifier = .{ .loc = locFromToken(dotTok), .kind = .{ .dotIdent = memberTok.lexeme } } };
         return parsePostfixChain(this, alloc, head);
+    }
+
+    // #(e1, e2, ...) ---- a tuple literal as an operand (T11): the right side
+    // of `??` (`hit.at(0) ?? #("", "")`), an operator's operand. The
+    // statement-start position reads it in `parseExpr` first.
+    if (this.check(.hash) and this.peekAt(1).kind == .leftParenthesis) {
+        const lit = Expr{ .collection = try this.parseTupleLitExpr(alloc) };
+        return parsePostfixChain(this, alloc, lit);
     }
 
     // [e1, e2, ...] or [e1, ..rest] ---- array literal with optional spread.

@@ -825,7 +825,7 @@ pub const Env = struct {
     /// module name. Populated by `registerStdlib` alongside `stdModuleTypes`.
     /// Consumed by `markStdImports` when `Env.target != null` to red
     /// `std-unsupported-on-target` on imports whose declares lack an
-    /// `@external(<target>, …)` match. Owns nothing — the FnDecl slices
+    /// `#[@External.<Target>(…)]` binding. Owns nothing — the FnDecl slices
     /// point into the arena where `registerStdlib` parsed them.
     stdModuleFns: std.StringHashMap([]const ast.FnDecl),
     /// STD-001 — a namespace import of a std module some of whose host-bound
@@ -893,6 +893,41 @@ pub const Env = struct {
     /// package's module it resolved to, which the transformed program names
     /// (`from "<module>"`) so the backends read the same answer.
     shorthandOwners: std.AutoHashMapUnmanaged(ast.Loc, []const u8) = .empty,
+    /// Decision 170 — the type names this module declares or imports by name
+    /// (`type Dict(…)`, `import {kit.store.Dict as OwnDict}` → `Dict`),
+    /// collected before any import is marked (`noteExplicitTypeNames`). A std
+    /// module NAMESPACE (`import {collections}`) registers its `pub` types
+    /// bare only where no such name is taken: the declaration the module
+    /// named wins over the one a namespace brings along implicitly.
+    explicitTypeNames: std.StringHashMapUnmanaged(void) = .empty,
+    /// Decision 147 (lg-a) — the body being inferred is a lambda's, whose
+    /// fallible channel is its EXPECTED return's: the refusal of a `try` /
+    /// `throw` there names the expected `fn(…) -> @Result<U, E>` form.
+    inLambdaBody: bool = false,
+    /// Decision 148 (lg-b) — how many lambda bodies enclose the expression
+    /// being inferred (a `case` arm's block is not one), and, for each local
+    /// a body bound, the depth it was bound at with the type it was bound to
+    /// (a module-level binding is never noted). A write to a name bound at a
+    /// shallower depth is a write to a captured `var`.
+    lambdaDepth: u32 = 0,
+    localDepth: std.StringHashMapUnmanaged(LocalDepth) = .empty,
+    /// The lambda body being inferred may write captured `var`s: a `forEach`
+    /// body, or a local closure called only at statement position.
+    captureWriteOk: bool = true,
+    /// Set by the site that infers the next lambda when that lambda is one of
+    /// the two exempt shapes; consumed by `inferFunctionExprExpected`.
+    nextLambdaExempt: bool = false,
+    /// The `val f = { … }` names of the block being inferred whose every later
+    /// use is a call at statement position (`f();`).
+    statementClosures: std.StringHashMapUnmanaged(void) = .empty,
+    /// An assignment's re-bind (narrowing restore) does not move a depth.
+    suppressDepthNote: bool = false,
+    /// A std module's `pub` type a namespace import did NOT register because
+    /// `explicitTypeNames` holds its name → the std module key. A call into
+    /// that namespace whose signature names the type is refused
+    /// (`refuseShadowedStdSignature`): types are nominal by name, and the
+    /// checker would read std's type as this module's.
+    shadowedStdTypes: std.StringHashMapUnmanaged([]const u8) = .empty,
     /// Decision 8 §1.3 — a top-level fn's declaration, for a call that writes
     /// its type arguments (`first<string>([])`): the generic parameters, the
     /// parameters and the return as written. Filled by `registerFnSignatures`.
@@ -1059,7 +1094,7 @@ pub const Env = struct {
     /// (level, jump lowerings, label stack, etc.) is freshly initialised.
     ///
     /// Avoids the ~83ms/call cost of re-parsing + re-inferring the stdlib
-    /// (`primitives.d.bp`, `@Decl` cluster, `CustomNode`, `builtins_fns.d.bp`)
+    /// (`primitives.bp`, `@Decl` cluster, `CustomNode`, `builtins_fns.d.bp`)
     /// on every `freshEnv`, which `registerStdlib` did unconditionally.
     /// Lex + parse + infer of the test snippet itself only costs ~µs.
     pub fn cloneFromTemplate(tmpl: *const Env, arena: std.mem.Allocator) !Env {
@@ -1303,6 +1338,23 @@ pub const Env = struct {
         try self.noteBind(name);
         try self.bindings.put(name, ty);
         _ = self.valNames.remove(name);
+        try self.noteLocalDepth(name, ty);
+    }
+
+    pub const LocalDepth = struct { depth: u32, ty: *T.Type };
+
+    fn noteLocalDepth(self: *Env, name: []const u8, ty: *T.Type) !void {
+        if (self.bodyScope == null or self.suppressDepthNote) return;
+        try self.localDepth.put(self.arena, name, .{ .depth = self.lambdaDepth, .ty = ty });
+    }
+
+    /// The lambda depth `name`'s current binding was made at, when it is a
+    /// local of a body (null for a module-level binding or an unknown name).
+    pub fn localBindDepth(self: *Env, name: []const u8) ?u32 {
+        const ld = self.localDepth.get(name) orelse return null;
+        const cur = self.bindings.get(name) orelse return null;
+        if (cur != ld.ty) return null;
+        return ld.depth;
     }
 
     /// 01 step 13 — one entry of a body's undo log: what `name` was bound to
@@ -1362,6 +1414,7 @@ pub const Env = struct {
         try self.noteBind(name);
         try self.bindings.put(name, ty);
         try self.valNames.put(name, {});
+        try self.noteLocalDepth(name, ty);
     }
 
     /// Was `name`'s most recent binder a `val`?
@@ -1606,6 +1659,16 @@ pub const Env = struct {
         // parser located (`-> unknown`, `x: unknown`) would otherwise be
         // reported as an undeclared type.
         if (std.mem.eql(u8, name, ast.unknown_type_name)) return self.namedType(name);
+        // Decision 207 — an inline `type(…)` the module pass did not declare:
+        // it stands on a parameter of something that is not a top-level `fn`.
+        if (std.mem.eql(u8, name, ast.inline_type_name)) {
+            const e = @import("error.zig").TypeError.custom(
+                @import("diagnostics.zig").inline_type_position ++ ": an inline `type(…)` is the type of a top-level `fn`'s parameter only — not a method's, a behavior member's or a host declaration's",
+                "Name the type (`type LinkProps(…)`) and write the name in this signature.",
+            );
+            self.lastError = if (self.typeRefLoc) |l| e.withLoc(l) else e;
+            return error.TypeError;
+        }
         // N28 — a section of an enum-shaped `type` is named by its path
         // (`Token.Text`, `Token.Text.Size`, decision 8 §5.3b). The section's
         // typedef is registered under the mangled `__Token__Text` form by

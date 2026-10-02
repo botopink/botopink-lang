@@ -4,7 +4,7 @@ type Shape { Circle(radius: f64), Square(side: f64) }
 fn area(s: Shape) -> f64 {
     return case s {
         Circle(r) -> 3.14 * r * r;
-        Square(s) -> s * s;
+        Square(side) -> side * side;
     };
 }
 fn main() {
@@ -23,8 +23,8 @@ fn main() {
   (global $__heap_ptr (mut i32) (i32.const 312))
   (func $area (param $s i32) (result f64)
     (local $r f64)
+    (local $side f64)
     (local $__case_0 i32)
-    (local $s__0 f64)
     local.get $s
     local.set $__case_0
     local.get $__case_0
@@ -53,9 +53,9 @@ fn main() {
     local.get $__case_0
     f32.load offset=4
     f64.promote_f32
-    local.set $s__0
-    local.get $s__0
-    local.get $s__0
+    local.set $side
+    local.get $side
+    local.get $side
     f64.mul
       )
       (else

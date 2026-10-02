@@ -18,7 +18,9 @@
 //!   added. A folder's folder goes one level deeper the same way.
 //! - `collections.Dict` (a module namespace, then a `pub type` of it) becomes
 //!   `Dict`, and the item `collections.Dict` is added — exactly the leaf form
-//!   `import {collections.Dict}` writes. A module declaring its own top-level
+//!   `import {collections.Dict}` writes; a constructor call through the
+//!   namespace (`url.Url(…)`) becomes the leaf call `Url(…)` the same way.
+//!   A module declaring its own top-level
 //!   `Dict` is left alone: the name would be bound twice, and the
 //!   `unbound variable 'collections'` the checker then reports is the refusal.
 //!
@@ -145,6 +147,7 @@ const Ctx = struct {
     /// Rewrite `e` in place when it is `<folder>.<module>` or
     /// `<module ns>.<pub type>`. Answers true when it did.
     fn rewrite(self: *Ctx, e: *ast.Expr) Error!bool {
+        if (e.* == .call and e.call.kind == .call) return self.rewriteCtorCall(e);
         if (e.* != .identifier) return false;
         const a = switch (e.identifier.kind) {
             .identAccess => |a| a,
@@ -185,6 +188,34 @@ const Ctx = struct {
         });
         e.* = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = a.member } } };
         return true;
+    }
+
+    /// `<module ns>.<pub type>(…)` — a type's constructor reached through
+    /// the module namespace (`clock.Duration(millis: 7)`) — becomes the leaf
+    /// call `Duration(…)` with the item `io.clock.Duration` added, as
+    /// `<ns>.<Type>.<member>` already does. Answers false (and leaves the call
+    /// to the walk) for anything else; the arguments are walked either way.
+    fn rewriteCtorCall(self: *Ctx, e: *ast.Expr) Error!bool {
+        const c = &e.call.kind.call;
+        const recv = c.receiver orelse return false;
+        if (recv.* != .identifier) return false;
+        const root = switch (recv.identifier.kind) {
+            .ident => |n| n,
+            else => return false,
+        };
+        const mod_key = switch (self.names.get(root) orelse return false) {
+            .module => |k| k,
+            .folder => return false,
+        };
+        if (c.callee.len == 0 or !std.ascii.isUpper(c.callee[0])) return false;
+        if (self.own.contains(c.callee)) return false;
+        if (!try self.declaresPubType(mod_key, c.callee)) return false;
+        if (!self.added.contains(c.callee)) try self.added.put(self.arena, c.callee, .{
+            .segments = try self.segmentsOf(mod_key, c.callee),
+            .loc = self.locs.get(root) orelse recv.identifier.loc,
+        });
+        c.receiver = null;
+        return false;
     }
 
     fn walk(self: *Ctx, comptime T: type, ptr: *T) Error!void {
@@ -334,4 +365,28 @@ test "std namespace: a folder leaf and a module's type reach the one-dot forms" 
     try std.testing.expectEqualStrings("io/fs", try imports[1].fullPath(arena));
     try std.testing.expectEqualStrings("Dict", imports[2].name());
     try std.testing.expectEqualStrings("collections/Dict", try imports[2].fullPath(arena));
+}
+
+test "std namespace: a module's type constructor called through the namespace is the leaf call" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const src =
+        \\import {io.clock} from "std";
+        \\fn main() {
+        \\    val d = clock.Duration(millis: 7);
+        \\}
+    ;
+    var lx = Lexer.init(src);
+    const tokens = try lx.scanAll(arena);
+    var p = Parser.init(tokens);
+    const program = try expand(arena, try p.parse(arena));
+    const imports = program.decls[0].use.imports;
+    try std.testing.expectEqual(@as(usize, 2), imports.len);
+    try std.testing.expectEqualStrings("Duration", imports[1].name());
+    try std.testing.expectEqualStrings("io/clock/Duration", try imports[1].fullPath(arena));
+    const body = program.decls[1].@"fn".body;
+    const call = body[0].expr.binding.kind.localBind.value.call.kind.call;
+    try std.testing.expect(call.receiver == null);
+    try std.testing.expectEqualStrings("Duration", call.callee);
 }

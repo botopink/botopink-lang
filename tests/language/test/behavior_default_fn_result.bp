@@ -1,0 +1,31 @@
+//// A `-> @Result` `default fn` of a behavior wraps its `return` and its
+//// `throw` like any fallible method (both used to reach the backends
+//// unwrapped), and a call of the adopted default on an implementer answers
+//// the declared `@Result` (it was an unknown type, so `.isOk()` found no
+//// lowering). A `test/` cell: beam answers `{unresolved_method, …}` for any
+//// adopted `default fn` (`03-beam`'s row).
+
+behavior Shape {
+    fn area(self: Self) -> i32;
+
+    default fn checked(self: Self) -> @Result<i32, string> {
+        val a = self.area();
+        if (a > 10) throw "too big";
+        return a;
+    }
+}
+
+type Sq(s: i32) implement Shape {
+    fn area(self: Self) -> i32 {
+        return self.s * self.s;
+    }
+}
+
+test "a default fn returning @Result wraps its return" {
+    assert Sq(s: 2).checked().isOk();
+    assert Sq(s: 3).checked().unwrapOr(0) == 9;
+}
+
+test "a default fn returning @Result wraps its throw" {
+    assert Sq(s: 5).checked().isError();
+}

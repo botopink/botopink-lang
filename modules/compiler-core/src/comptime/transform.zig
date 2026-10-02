@@ -299,6 +299,16 @@ pub fn transform(
                     for (m.body) |*stmt| rewriteStmt(&src_agg, empty_fn_decls, empty_ct_arrays, stmt) catch return error.OutOfMemory;
                 }
             }
+            // A behavior's `default fn` bodies are inferred like method bodies
+            // (`infer.inferBehaviorDefaultBodies`), and receive the same
+            // rewrites — a `-> @Result` default fn's `return` / `throw`.
+            if (decl.* == .behavior) {
+                for (decl.behavior.methods) |*m| {
+                    if (!m.is_default) continue;
+                    const body = m.body orelse continue;
+                    for (body) |*stmt| rewriteStmt(&src_agg, empty_fn_decls, empty_ct_arrays, stmt) catch return error.OutOfMemory;
+                }
+            }
         }
         if (decl.* == .val) {
             const val_decl = &decl.val;
@@ -944,6 +954,14 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
     if (expr_ptr.* == .identifier and expr_ptr.identifier.kind == .dotIdent) {
         if (agg.index_rewrites.get(expr_ptr.identifier.loc)) |rewrite| {
             if (rewrite.* == .identifier) expr_ptr.* = rewrite.*;
+        }
+    }
+    // Decision 150 (§3.2) — an integer literal joined into an `f64[]`
+    // (`[1, 2.5]`): inference recorded its float spelling under its loc. Only
+    // a number literal replaces a number literal.
+    if (expr_ptr.* == .literal and expr_ptr.literal.kind == .numberLit) {
+        if (agg.index_rewrites.get(expr_ptr.literal.loc)) |rewrite| {
+            if (rewrite.* == .literal and rewrite.literal.kind == .numberLit) expr_ptr.* = rewrite.*;
         }
     }
     // Decision 110 rule 1 — an imported type's `as` alias in expression

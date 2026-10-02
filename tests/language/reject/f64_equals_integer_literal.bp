@@ -1,0 +1,9 @@
+//// Decision 215 — `==` / `!=` between an `f64` and an integer literal is
+//// refused at the literal: the comparison is exact (decision B2, which used
+//// to answer `2.0 == 2` with `false`) and the literal's widening to `f64`
+//// (decision 209) would read it two ways. Write the float.
+
+pub fn main() {
+    val x = 2.0;
+    @print(x == 2);
+}

@@ -29,6 +29,7 @@ test {
     _ = @import("./std_namespace.zig");
     _ = @import("primOpTemplate.zig");
     _ = @import("./snapshot.zig");
+    _ = @import("./inline_types.zig");
     _ = @import("./diagnostics.zig");
     _ = @import("./eval.zig");
     _ = @import("./trace.zig");

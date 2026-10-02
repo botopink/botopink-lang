@@ -4,6 +4,7 @@
 const std = @import("std");
 const parser = @import("../parser.zig");
 const ast = @import("../ast.zig");
+const exprs = @import("exprs.zig");
 
 const This = parser.Parser;
 const ParseError = parser.ParseError;
@@ -122,6 +123,22 @@ pub fn parseCaseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Collectio
             break :blk Expr{ .function = try this.parseLambdaBody(alloc) };
         } else blk: {
             _ = try this.consume(.rightArrow);
+            // A lambda literal is the arm's VALUE (`A(x) -> { item -> f(item) }`,
+            // row 28): a `{` whose head is `->` or `a, b ->` is the lambda
+            // `parsePrimary` reads, wrapped as the one statement of a block arm
+            // body — a lambda body with a parameter would be §5.1's binder of
+            // the matched value instead.
+            if (this.check(.leftBrace) and exprs.lambdaHeadAt(this, this.current + 1)) {
+                const braceTok = this.peek();
+                const value = try this.parseExpr(alloc);
+                const stmts = try alloc.alloc(Stmt, 1);
+                stmts[0] = .{ .expr = value };
+                break :blk Expr{ .function = .{ .loc = locFromToken(braceTok), .kind = .{
+                    .syntax = .lambda,
+                    .params = &.{},
+                    .body = stmts,
+                } } };
+            }
             // A `{` starts a block arm body (zero-param lambda with semicolon-separated stmts).
             break :blk if (this.check(.leftBrace)) blk2: {
                 const braceTok = this.advance();

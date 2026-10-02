@@ -84,6 +84,10 @@ pub const ParseErrorType = enum {
     badInterpolation,
     /// Meta-kind parameter (`type` / `expr T`) without the `comptime` modifier
     metaKindRequiresComptime,
+    /// `type(…)` written as a type anywhere but a parameter's whole
+    /// annotation — a return, a field, a `val` annotation (decision 207).
+    /// Located at the `type`.
+    inlineTypeOutsideParameter,
     /// Anonymous `implement`/`extend` block (the name is required)
     anonymousImplExtend,
     /// Removed `*fn` prefix (use `#[@<effect>]` annotation instead).
@@ -150,7 +154,7 @@ pub const ParseErrorType = enum {
     fnParamPositionalAfterNamed,
     /// The retired `@[…]` annotation-block opener (spec 05 §5.12). Annotation
     /// blocks are written `#[…]`; the builtin marker `@` belongs on the
-    /// annotation name (`#[@external(…)]`), not on the block.
+    /// annotation name (`#[@External.Node(…)]`), not on the block.
     retiredAnnotationBlock,
     /// `type P(x: i32) { A }` — a field list and a variant in the same
     /// declaration: a `type` is a record (fields) or an enum (variants).
@@ -272,6 +276,10 @@ pub const ParseErrorType = enum {
     /// level; inside a body a function is a value bound with `val` (front 15
     /// step 3). Located at the `fn`.
     nestedFnDecl,
+    /// `fn m(self: Self) { … }` inside an enum section's braces — a section
+    /// holds leaves and nested sections only; a method is the enum's, declared
+    /// in the enum's own body (decision 151). Located at the `fn`.
+    sectionBodyMethod,
     /// `[...a, 3]` — `...` is a pattern's inclusive range; the spread of an
     /// array literal is `..` (front 15 step 3). Located at the `...`.
     listSpreadDotDotDot,

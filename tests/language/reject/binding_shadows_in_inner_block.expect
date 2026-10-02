@@ -1,0 +1,2 @@
+binding-redeclared: `y` is already bound in this function, by the binding at 8:5
+10:9

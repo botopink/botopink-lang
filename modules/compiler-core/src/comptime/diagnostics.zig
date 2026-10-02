@@ -198,6 +198,22 @@ pub const builtin_not_lowered: []const u8 = "builtin-not-lowered";
 /// A labelled argument in a call of a function VALUE (a parameter, a local, a
 /// field): its type is positional and names no parameter (01).
 pub const label_on_function_value: []const u8 = "label-on-function-value";
+/// A call whose callee is a VALUE of a record, enum or primitive type — not a
+/// function, not a constructor (`val g = G(a: "x"); g()`). Row 32 of
+/// `language-gaps.md`: it used to answer the value's own type, and the
+/// backends failed at run time (`g is not a function`, `{badfun, …}`).
+pub const callee_not_a_function: []const u8 = "callee-not-a-function";
+/// A second `val` / `var` of one name in one block, a parameter counting as
+/// the first (decision 152, 01c-d). A binding in an inner block is a new
+/// scope and may shadow.
+pub const binding_redeclared: []const u8 = "binding-redeclared";
+/// Decision 148 (lg-b) — a lambda that is neither a `forEach` body nor a
+/// local closure called at statement position writes a captured `var`.
+pub const captured_var_write: []const u8 = "captured-var-write";
+/// Decision 207 — an inline parameter type where only a top-level `fn`'s
+/// parameter takes one, or two of them on one function, or a field named
+/// like another parameter of its function.
+pub const inline_type_position: []const u8 = "inline-type-position";
 /// A use of an imported name the import resolved to two different
 /// declarations (`00 · 01-std`: the refusal of a duplicate `pub` name belongs
 /// to the consumer's unqualified use).
@@ -261,7 +277,7 @@ pub const generic_arg_skip_forbidden: []const u8 = "generic-arg-skip-forbidden";
 /// argument nothing reads is refused, not dropped).
 pub const generic_arg_count_exceeded: []const u8 = "generic-arg-count-exceeded";
 
-/// §A3 — a host `declare fn -> @Result<…>` whose `@external(<target>, "<template>")`
+/// §A3 — a host `declare fn -> @Result<…>` whose `#[@External.<Target>("<template>")]`
 /// body is missing the `ok` or `error` branch on at least one target.
 /// The template owns the wrapper shape — both branches must be present so
 /// callers see a complete `{ok, _} | {error, _}` lowering.
@@ -405,6 +421,10 @@ pub const all_codes = [_][]const u8{
     type_alias_arity,
     type_alias_recursive,
     type_alias_name_taken,
+    callee_not_a_function,
+    binding_redeclared,
+    captured_var_write,
+    inline_type_position,
 };
 
 test "every reserved code has a stable, non-empty spelling" {

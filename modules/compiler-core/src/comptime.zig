@@ -8,6 +8,7 @@ const infer = @import("./comptime/infer.zig");
 const transform = @import("./comptime/transform.zig");
 const alias_erase = @import("./comptime/alias_erase.zig");
 const std_namespace = @import("./comptime/std_namespace.zig");
+const inline_types = @import("./comptime/inline_types.zig");
 const evalMod = @import("./comptime/eval.zig");
 const format = @import("./format.zig");
 pub const trace = @import("./comptime/trace.zig");
@@ -602,7 +603,7 @@ fn analyzeMerged(
     };
     const bindings = infer.inferProgramTyped(&env, program) catch |err| switch (err) {
         error.TypeError => {
-            const te = env.lastError orelse validation.TypeError{ .kind = .{ .unboundVariable = "" } };
+            const te = inline_types.locatedAtCall(env.lastError orelse validation.TypeError{ .kind = .{ .unboundVariable = "" } });
             env.deinit();
             return .{ .typeError = te };
         },
@@ -722,7 +723,8 @@ fn analyzeSource(
     // Decisions 110 / 111 on the use side: `io.fs.f()` through a folder
     // namespace and `collections.Dict.empty()` through a module one reach the
     // checker and the backends as the one-dot forms they lower.
-    const program = try std_namespace.expand(arena, parsed);
+    // Decision 207: an inline parameter type becomes a record of the module.
+    const program = try inline_types.expand(arena, try std_namespace.expand(arena, parsed));
 
     if (validation.validateComptime(program)) |err_info| {
         env.deinit();
@@ -739,7 +741,7 @@ fn analyzeSource(
     };
     const bindings = infer.inferProgramTyped(&env, program) catch |err| switch (err) {
         error.TypeError => {
-            const te = env.lastError orelse validation.TypeError{ .kind = .{ .unboundVariable = "" } };
+            const te = inline_types.locatedAtCall(env.lastError orelse validation.TypeError{ .kind = .{ .unboundVariable = "" } });
             env.deinit();
             return .{ .typeError = te };
         },

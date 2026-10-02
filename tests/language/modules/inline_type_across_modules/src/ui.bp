@@ -1,0 +1,7 @@
+pub fn link(props: type(href: string, label: string = "home")) -> string {
+    return props.label + " <" + props.href + ">";
+}
+
+pub fn home() -> string {
+    return link(href: "/");
+}

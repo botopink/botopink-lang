@@ -990,6 +990,11 @@ fn parseEnumItem(
                 sectionBodyComments = subLeading;
                 break;
             }
+            // Decision 151 — a section holds leaves and nested sections; a
+            // `fn` here is refused by name, pointing at the enum's own body.
+            if (this.check(.@"fn") or (this.check(.@"pub") and this.peekAt(1).kind == .@"fn")) {
+                return failAt(this, .sectionBodyMethod, if (this.check(.@"fn")) this.peek() else this.peekAt(1));
+            }
             _ = try parseEnumItem(this, alloc, &sub_variants, &sub_sections, true, subLeading);
         }
         _ = try this.consume(.rightBrace);
@@ -1217,6 +1222,22 @@ pub fn parseParam(this: *This, alloc: std.mem.Allocator) ParseError!Param {
     // ── plain type (use full TypeRef to support arrays, optionals, etc.) ─
     // 06 N30 — where the annotation starts, so an unknown type name reds there.
     const typeTok = this.peek();
+    // Decision 207 — `name: type(field: T, …)`: an inline type, the field
+    // grammar of `type Name(…)`, standing as this parameter's whole type.
+    if (modifier == .none and this.check(.type) and this.peekAt(1).kind == .leftParenthesis) {
+        _ = this.advance(); // `type`
+        const fl = try parseFieldList(this, alloc);
+        var defaultInline: ?Expr = null;
+        if (this.match(.equal)) defaultInline = try this.parseBinaryExpr(alloc, prec.equality);
+        return Param{
+            .name = name,
+            .typeRef = .{ .named = ast.inline_type_name },
+            .typeName = ast.inline_type_name,
+            .default = defaultInline,
+            .typeLoc = parser.Parser.locFromToken(typeTok),
+            .inlineFields = fl.fields,
+        };
+    }
     var typeRef = try this.parseTypeRef(alloc);
     // Meta-kind params (`type`) only exist at compile time — require the
     // `comptime` modifier so the binding-time is visible in the signature.

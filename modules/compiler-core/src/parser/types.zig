@@ -297,6 +297,12 @@ fn parseBaseTypeRefArm(this: *This, alloc: std.mem.Allocator) ParseError!ast.Typ
     }
     // type [Constraint (| Constraint)*] — comptime type parameter (meta-kind)
     // with an optional `|`-separated constraint list. `type` alone is unconstrained.
+    // Decision 207 — `type(…)` is a type only as a parameter's whole
+    // annotation (`parseParam` reads it there before reaching here).
+    if (this.check(.type) and this.peekAt(1).kind == .leftParenthesis) {
+        this.parseError = ParseErrorInfo.fromToken(.inlineTypeOutsideParameter, this.peek());
+        return ParseError.UnexpectedToken;
+    }
     if (this.check(.type)) {
         _ = this.advance(); // consume 'type'
         var constraints: std.ArrayList(ast.TypeRef) = .empty;

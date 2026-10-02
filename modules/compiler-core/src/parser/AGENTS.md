@@ -281,6 +281,10 @@ A non-`syntax` `name: fn(…)` param is parsed through `parseTypeRef` (a
 `.field` / `?.field` / `.method(args)` / `(args)` links are parsed in **two**
 places, and the reason is trailing lambdas:
 
+- A tuple literal `#(…)` is an operand too (T11): `parsePrimary` reads it and
+  continues into `parsePostfixChain`, so the right side of `??`
+  (`hit.at(0) ?? #("", "")`) and an operator's operand take one; the
+  statement-start position still reads it in `parseExpr` first.
 - `parsePostfixChain` (`exprs.zig`) is the operand-position chain. It does
   **not** consume a trailing `{ … }` — in an operand a `{` belongs to the
   enclosing construct. Every literal receiver goes through it, the grouped
@@ -397,7 +401,7 @@ optional guard:
 | Form | Body |
 |---|---|
 | `Pattern { body }` — decision 8 §5.1 | a lambda body: `{ n -> … }` binds the whole matched value (P1), the last expression is the arm's value (P3), and the arm takes no `;` (P2) |
-| `pattern -> value;` — pre-decision-8 | unchanged; `libs/std` and the libraries are written this way, and 12 step 3 / 13 migrate them |
+| `pattern -> value;` — pre-decision-8 | unchanged; `libs/std` and the libraries are written this way, and 12 step 3 / 13 migrate them. A `{` after the `->` whose head is a lambda's (`->`, or `a, b ->` — `exprs.lambdaHeadAt`, the one test `parsePrimary`'s lambda arm uses) is the arm's VALUE, a lambda literal, wrapped as the one statement of a parameterless arm body (`A(x) -> { item -> f(item) }`, `language-gaps.md` row 28); any other `{` is the block arm body |
 
 The guard is `when (…)` (§5.3) or the older `if <expr>`. `when` is **not** a
 keyword: it is special only after an arm's pattern, matched by lexeme, so a
@@ -514,6 +518,8 @@ reaches**, never per arm:
 | `type P(…)` then `implement A for P { … }` | `implementClauseFor` | `types.zig` `parseImplementClause`, at the `for` — the bodyless type took `implement A` as its clause |
 | `total + try r`, `-try x`, `(try r).len`, `!await t` | `tryAwaitOperand` | `parsePrimary`'s `try` / `await` arm and the group's `(` — at the keyword (decision 137; § *`try` and `await` begin an expression*) |
 | `1 + if (c) { 2 } else { 3 }`, `-if (c) 1 else 2`, `(if (c) a else b).v` | `ifOperand` | `parsePrimary`'s `if` arm and the group's `(` — at the `if` (decision 137's reading applied to `if`; § *`try` and `await` begin an expression*) |
+| `fn m(self: Self) { … }` inside an enum section's braces | `sectionBodyMethod` | `decls.zig`'s section body loop (`parseEnumItem`), at the `fn` — decision 151: a section holds leaves and nested sections, a method is the enum's |
+| `type(…)` as a return, a field's or a `val`'s type | `inlineTypeOutsideParameter` | `types.zig` `parseBaseTypeRefArm`, at the `type` — decision 207: an inline type is a parameter's whole type, read by `decls.zig` `parseParam` into `Param.inlineFields` before `parseTypeRef` is reached |
 | `#(x: 1, y: 2)` | `tupleLiteralLabel` | `parseTupleLitExpr`, at the label — the labeled construction is `01-checker`'s §6, and this replaces `novalBinding` at the value |
 
 **The infix refusals are hoisted the way the chain links are.** Every receiver
@@ -715,7 +721,9 @@ that uses none of them dumps exactly as it did before they existed.
   on the enum shape of the `TypeDecl` (`TypeShape.enum_.sections`) alongside the flat `variants` slot. Sections nest
   arbitrarily deep; inside a section body, pure-digit tokens (`100`, `4`) are
   permitted as terminal variant leaves (`EnumVariant.numeric = true`) — they
-  cannot open further sections nor carry payload. Top-level enum bodies reject
+  cannot open further sections nor carry payload. In expression position the
+  leading-dot form takes one too (`.50`, `parsePrimary`'s dot arm, a token of
+  decimal digits only), resolved by the expected section. Top-level enum bodies reject
   digit names. Disambiguation is single-token (`{` after a name = section,
   `(` = payload, `,`/`}` = bare). The comptime desugars the tree into the
   enum-of-enum form with mangled inner names; the parser only records the

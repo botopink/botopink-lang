@@ -24,7 +24,8 @@ comptime/
 ├── specialize.zig     ← `SpecializedFn`, `SpecCache`, `specialize()`
 ├── transform.zig      ← `Aggregator` — drives the full transform pass
 ├── alias_erase.zig    ← type aliases erased for the backends (reflective `TypeRef` walk; a return alias of a wrapper stays)
-├── std_namespace.zig  ← decisions 110/111 on the use side: `io.fs.f()` through a std folder namespace and `collections.Dict.empty()` through a module one, rewritten on the parsed program into the one-dot forms (`analyzeSource`, `expandStdImports`)
+├── inline_types.zig   ← decision 207: a parameter's inline `type(…)` becomes a record `BpInline__<fn>__<param>` of the module, and a call's field labels its constructor call (`expand`, run by `analyzeSource` after `std_namespace`)
+├── std_namespace.zig  ← decisions 110/111 on the use side: `io.fs.f()` through a std folder namespace, `collections.Dict.empty()` and a type's constructor `url.Url(…)` through a module one, rewritten on the parsed program into the one-dot / leaf forms (`analyzeSource`, `expandStdImports`)
 ├── template.zig       ← `@Expr` templates: CapturedExpr, PlainArg, ScopeSnapshot, CustomNode, fail diagnostics
 ├── template_eval.zig  ← runtime-backed template body evaluation (through runtime/runtime.zig's dispatcher)
 ├── decorator_eval.zig ← runtime-backed decorator body invocation (erl; the same refusal)
@@ -728,7 +729,18 @@ location. Cells: `tests/language/run/std_unsupported_names_the_call`,
 
 `inferLiteralExpr` types an integer literal as the integer type `env.expectedType` names (through
 one `?T`, `expectedIntegerType`), `i32` when nothing asks — so `val k: i64 = 1000;` and an `i64`
-parameter take a literal. `inferExprTypedInner` lets `.literal`, `.unaryOp` and `.binaryOp` keep the
+parameter take a literal. The default of `unwrapOr` is inferred under the payload of the `?T` /
+`@Result<T, E>` it is called on (`unwrapOrDefaultExpected`, read before the call's arguments are
+inferred), so `delay(n).unwrapOr(0)` over `?i64` types the `0` as `i64`
+(`tests/language/run/unwrap_or_literal_width`). Decision 209 — an integer **literal** whose
+position expects `f64` (`expectsFloat`, through one `?T`: a `val` annotation, an argument, a field,
+a return, an element of an expected `f64[]`, the other operand of an arithmetic or ordering
+operator) is typed `f64` and re-spelt as a float literal through `env.indexRewrites`, as the array
+join does; an `i32` value never widens (`run/integer_literal_fits_f64`,
+`reject/i32_value_never_widens`). `==` / `!=` do not widen (`equalityOperandExpectation`): between
+an `f64` and an integer literal they are refused at the literal, `comparing f64 with an integer
+literal — write 2.0` (decision 215, `inferBinaryOpExpr`; `reject/f64_equals_integer_literal`,
+`reject/f64_not_equals_integer_literal` — the old B2 expectation `2.0 == 2` is `false`). `inferExprTypedInner` lets `.literal`, `.unaryOp` and `.binaryOp` keep the
 expectation; `inferBinaryOpExpr` hands it on only to the operands of an arithmetic operator
 (`3 * 86400000` passed to an `i64`), and types a literal operand of an arithmetic or comparison
 operator from the other operand (`n * 1000`, `1000 - n`, `x > 0`). The arithmetic `unify` of the
@@ -880,7 +892,20 @@ exactly the same member order.
 
 §3.2's inference sources: a `case` (`caseTypeFromArms`, already there since 06 C2a) and an `if`
 whose two branches both produce a value and disagree — that is a union now, not an error. Branches
-that agree still unify, so one branch pins the other's variables exactly as before.
+that agree still unify, so one branch pins the other's variables exactly as before. Decision 150 (D5) adds the array literal: with no element type expected (or an unbound
+variable), `arrayLiteralJoin` unifies the elements that agree and makes the disagreeing ones union
+members (`[1, "a"]` is `(i32 | string)[]`, `[1, null]` is `?i32[]`), records the first widening
+element in `Env.unionOrigins` (kind `array element`, named by the refusal at the use), and applies
+§3.2's one numeric rule — an integer **literal** fits `f64` when another element is an `f64`, typed
+`f64` and re-spelt as a float literal (`1` → `1.0`, `0xFF` → `255.0`) through `env.indexRewrites`,
+literal for literal, which `transform.zig` splices. Two function-typed elements always unify
+(`caseArmTypesAgree`, below), so an array of lambdas stays one element type. An expected behavior or union is the
+element type every element meets; any other expected element type keeps the old rule (each element
+unified with the first), so `total([1, 2.5])` against `f64[]` is still the mismatch at the `1`. Every join — `case` arms, `if` branches, array elements —
+asks `caseArmTypesAgree`, and two function types always agree there (rows 28/31 of `language-gaps.md`,
+1.0.11-beta `01-checker` step 2): a function is never a union member beside another, so two arms
+`fn(string) -> string` unify into one type, and two whose arity or parameters differ are the located
+mismatch at the second arm instead of a `fn | fn` union nothing can call.
 
 §3.3's use rule is `refuseUnknownUse`, shared with §2.2 (see above): a union receiver is refused at
 arithmetic, `+`, an ordering comparison, a field read and a method call. §3.3 allows a use every
@@ -1200,6 +1225,128 @@ behavior's `extends` chain (`behaviorReaches`), and everything else goes to `uni
 target-first and only widens (implementer → behavior); a record that does not implement the behavior
 reds at the value. Cells: `infer_errors.zig` `behavior-typed field …`.
 
+## One type of a name per module, and a std namespace yields to it (decision 170)
+
+Types are nominal by their **declared** name in the checker and in every backend, so one module
+holds one type of a name. `noteExplicitTypeNames` (both program entries, before any import is
+marked) collects the names this module declares (`type`, a type alias, `behavior`) or imports by
+name from a module that is not std (the item's leaf — `import {kit.store.Dict as OwnDict}` names
+`Dict`) into `Env.explicitTypeNames`, and refuses a second SOURCE of one declared type name —
+`import {a.p.Policy as APolicy}; import {b.p.Policy as BPolicy};`, or a `type Dict(…)` beside
+`import {collections.Dict as D} from "std"` — as `import-name-collision` at the second import item,
+naming both (each used to resolve silently to whichever registered last;
+`modules/import_two_types_one_name`, `reject/own_type_beside_std_type_import`). Two FUNCTIONS of one
+name under two aliases stay legal: a function is bound by its local name.
+
+A std module **namespace** (`import {collections}`) registers its `pub` types bare only where
+`explicitTypeNames` does not hold the name (`markStdImports`): the declaration the module named wins
+over the one the namespace brings along implicitly, and the skipped type is noted in
+`Env.shadowedStdTypes`. A call through that namespace whose signature names the shadowed type
+(`collections.lt()` answering std's `Order` in a module with its own `type Order`) is refused at
+the call as `ambiguous-import-use` (`refuseShadowedStdSignature`), since the checker would read
+std's type as the module's (`run/std_namespace_beside_own_type`,
+`modules/std_namespace_beside_aliased_type`, `reject/std_namespace_signature_names_shadowed_type`).
+
+## A behavior's `default fn` body is checked (another front's finding)
+
+The typed `.behavior` arm runs `inferBehaviorDefaultBodies`: every `default fn` that carries a body
+goes through `inferTypeMethods` against its own signature, `self` typed as the behavior (`Self`),
+so an unbound call or a mismatch inside one is refused (`reject/behavior_default_fn_body_checked`;
+nothing walked these bodies, and `inferTypeMethods`' doc named a strict pass that did not exist). A
+`-> @Result` default fn records its `return` / `throw` wrappings, and `transform.zig` walks
+`.behavior` default bodies with the method-body (`src_only`) aggregator, so every backend wraps
+them. The `.by_value` instance lowerings a `Self`-typed receiver records inside a default body are
+dropped again: the body is emitted once per implementer, which the backends dispatch statically. A
+call of an adopted default on an implementer answers the member's declared return
+(`adoptedDefaultCallType`, `Self` the receiver) instead of a fresh variable
+(`test/behavior_default_fn_result`). A bare `Ok(…)` in a default body is now `unbound variable
+'Ok'`, as in any body.
+
+## A lambda's fallible channel is its expected return's (decision 147, lg-a)
+
+`inferFunctionExprExpected` no longer gives a lambda body `throwContext = .unchecked`. Under an
+expected `fn(…) -> @Result<U, E>` the body's channel is `.result(E)` — `returnTarget` the payload
+`U`, `returnWhole` the `@Result`, so `return v` is wrapped `Ok(v)`, `throw e` `Error(e)` and `try`
+propagates, and a body ending in a `return` / `throw` has the expected `@Result` as its value; under
+any other expected return, or none, it is `.plain`, and a `try` / `throw` is
+`effect-try-without-fallible-channel` at the keyword, the message naming the lambda's expected
+return (`Env.inLambdaBody`, read by `fallibleChannelRefusal`). `inferExprTyped` keeps the
+expectation for a `.function` node and `inferFunctionExpr` reads it only when it is a fallible
+function type, so a lambda passed to a `fn(x: T) -> @Result<U, E>` parameter takes the channel; it
+clears the expectation before the body. A `case` arm's block body (`keepReturnTarget`) is not a
+lambda for this: it keeps the enclosing channel, so its `throw` is the function's (row 29 —
+`return case v { … _ -> { throw "x"; } }` answers `Error("x")` on commonJS, wasm and beam; erlang
+lowers the arm's throw as a raw `throw`, its backend's row). Cells: `reject/try_in_lambda_without_result`,
+`run/lambda_result_return_try`.
+
+## A lambda writes a captured `var` only in two shapes (decision 148, lg-b)
+
+`Env.lambdaDepth` counts the lambda bodies around the expression (a `case` arm's block is not one),
+and `Env.localDepth` records, for every local a body binds (`bind` / `bindVal` with a body scope
+open), the depth and the type it was bound to — so a module-level binding, or a name whose current
+binding is another one, is never matched. An assignment to a local bound at a shallower depth is
+`captured-var-write` at the write (`refuseCapturedVarWrite`, on every target: on the BEAM a closure
+gets a copy of what it captures), unless the lambda is one of the two shapes the site that infers it
+marks through `Env.nextLambdaExempt` → `Env.captureWriteOk`: a `forEach` body (an array receiver,
+or one whose type is still open) and a local closure (`val f = { … }`) whose every later use in its
+block is a call at statement position, also inside an `if`, a loop or a `forEach` body
+(`noteStatementClosures`, `onlyStatementCalls`, `usesName` — `ast.exprMentions` counts any lambda as
+a use). A counter shared across calls is a module-level `var`
+(`reject/captured_var_write_in_lambda`, `run/closure_capture_statement_position`).
+
+## The occurs check is named as the mismatch it is
+
+`unifyAt` turns `unify.zig`'s occurs-check failure (`recursiveType`) into `type mismatch: expected
+`T`, got `?T` — the second holds the first`, spelling a generic fn's type parameter by name
+(`genericSpelling` over `Env.fnGenericMap`) — `return xs[0];` under `fn first<T>(xs: T[]) -> T`
+answered `recursive type detected`, which named neither (an index is `?T`, decision 63;
+`reject/generic_index_answers_optional`, `run/generic_index_optional_return`). A declared type
+parameter is still a flexible variable inside its body: `fn f<T>(x: T) -> T { return 1; }` checks as
+`fn(i32) -> i32` and reds only at a call with another type.
+
+## An inline parameter type (decision 207)
+
+`fn link(props: type(href: string, label: string = "x"))` — the parser keeps the fields on
+`Param.inlineFields` (typeRef `ast.inline_type_name`); `inline_types.expand` declares the record
+`BpInline__link__props` before the fn (PascalCase: beam reads a constructor call by its first
+letter), points the parameter at it, and rewrites each call of the same module whose labels name
+fields of the inline type (and no parameter) into `link(props: BpInline__link__props(…))`, the
+constructor call at a synthetic column past any written one (`inline_types.locatedAtCall` takes it
+off a diagnostic again). Everything after that is an ordinary record. The checker's rules:
+`refuseInlineParamRules` (one inline parameter per fn; no field named like another parameter, each
+`inline-type-position` at the type), `refuseInlineFieldsAcrossModules` (a call from another module
+that writes the fields — the type is not exported), `Env.resolveTypeName` (an inline type the pass
+did not declare: a method's, a behavior member's or a host declaration's parameter), and a left-out
+field without a default named at the call (`missing field `label` of the props of `link``).
+`error.zig` `namedByOwner` spells every `BpInline__f__p` in a message as ``the p of `f` ``.
+
+## A record value is not callable (`language-gaps.md` row 32)
+
+A plain call `g(…)` whose callee is a binding of a **record, enum or primitive** type — a value,
+not a function and not a constructor — is `callee-not-a-function` at the call (`refuseCallOfValue`,
+the `.named` arm of the free-call switch), naming the value's type and, for a record, the field read
+the author likely meant (`g.a`). It used to answer the value's own type, so `val g = G(a: "x");
+g().a` checked and the backends failed at run time (`g is not a function`, `{badfun, …}`). A name
+that is the type itself (a constructor reached by its own name), a function-typed field
+(`h.f(2)`, a method-call path) and an imported `pub val` alike follow the rule
+(`reject/call_of_record_value`, `modules/call_of_imported_record_value`).
+
+## A name is bound once where it stands in its function (decisions 152, 205)
+
+`refuseRedeclaredBindings` walks a function's body once before it is inferred (a fn, a method, a
+`test`, a behavior's default fn, and a lambda — another function — on its own when it is inferred),
+with the parameters as the first bindings: a `val` / `var` / destructured name, an `if` binder, a
+loop binder or a `case` arm's binder that reuses a name an enclosing block of the same function (or
+a parameter) already bound is `binding-redeclared` at the second binding, naming the first (its
+`line:col`, or "as a parameter") — in every block and every `case` arm, a `case` arm's block body
+included (it is not a lambda). A sibling block's bindings end with it (`walkNestedBlock`), so two `if`
+branches may each bind `n`; the strictest reading of decision 205 (any name bound anywhere earlier
+in the function) is not applied — measured, it refuses 1 674 sites of `libs/std` and the libraries,
+and the reading is the maintainer's to confirm. erlang rebound a reused name (`N@k`), commonJS refused
+to load (`already declared`), and the backends miscompiled an inner shadow
+(`reject/binding_redeclared_in_body`, `reject/binding_shadows_parameter`,
+`reject/binding_shadows_in_inner_block`, `reject/case_arm_binder_reuses_name`).
+
 ## A call whose callee is an expression (01 handover 15, front 15's handover)
 
 `adder(3)(4)` and `.Circle(radius: 1)` both reach `inferCallExpr` with `callee == ""` and the callee in
@@ -1476,6 +1623,16 @@ recurses depth-first. Pure-digit variant names (`EnumVariant.numeric`) are
 mangled with a `__` prefix (`500` → `__500`) — a single `_` would trip
 commonJS's `tupleIndexMember` heuristic (`t._N` → `t[N]`). Inner enums live in
 the type-def table only; their variant names are not bound at top level.
+
+A numeric leaf stands alone (`language-gaps.md` row 22, 1.0.11-beta `01-checker` step 3): the parser
+reads `.50` as a `dotIdent` named `50`, and `inferIdentifierExpr` looks it up under the mangled
+`__50` — by the position's expected section only (`expectedEnumDeclaring`), never through the flat
+table; with nothing expected it is `sectionOwningLeaf`'s refusal naming the section, as an identifier
+leaf is. A qualified variant constructor (`Tok.Size(percent: .100, …)`) infers its arguments under
+the variant's field types (`env.variantCtors` / `env.ctorParams` under `Enum.Variant`, labels
+honoured), so a payload variant may declare a section-typed field and take a leading-dot leaf. A
+`.50` **pattern** is not built (the pattern grammar and the backends' match on the mangled name are
+not this row); compare with `==` or read through a function.
 
 Path access (`.Color.Red.500`): `tryResolveEnumSectionPath` collects a
 `dotIdent`-rooted chain (≥ 2 segments) and `resolveSectionPathInEnum` walks

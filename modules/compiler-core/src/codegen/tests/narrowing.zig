@@ -33,7 +33,7 @@ test "js: narrow ---- case enum area with print" {
         \\fn area(s: Shape) -> f64 {
         \\    return case s {
         \\        Circle(r) -> 3.14 * r * r;
-        \\        Square(s) -> s * s;
+        \\        Square(side) -> side * side;
         \\    };
         \\}
         \\fn main() {

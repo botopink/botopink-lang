@@ -92,6 +92,12 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .caretCaption = "bind a lambda instead",
             .hint = "Inside a body a function is a value: `val inner = { x -> x + 1 };` — or move the declaration to module level.",
         },
+        .sectionBodyMethod => .{
+            .code = "section-body-method",
+            .message = "a section of an enum holds variants, not methods",
+            .caretCaption = "declare it in the enum's own body",
+            .hint = "A method belongs to the enum and is declared in the enum's own body, beside its variants and sections: `type Tok { Alpha { A, B } fn m(self: Self) -> string { … } }`. A section has no method list of its own.",
+        },
         .listSpreadDotDotDot => .{
             .code = "list-spread-dot-dot-dot",
             .message = "`...` is a pattern's inclusive range, not a spread",
@@ -147,6 +153,12 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
         .useAfterBranch => .{
             .message = "`use` must be in static prefix",
             .hint = "Move all `use` statements to the top of the function body, before any `if`, `case`, `loop`, or `return`",
+        },
+        .inlineTypeOutsideParameter => .{
+            .code = "inline-type-outside-parameter",
+            .message = "an inline `type(…)` is written only as a parameter's type",
+            .caretCaption = "not a parameter's type",
+            .hint = "Name the type where it is declared — `type LinkProps(href: string)` — and write the name here; `fn link(props: type(href: string))` is the one place an unnamed type stands (decision 207).",
         },
         .metaKindRequiresComptime => .{
             .message = "A `type`/`expr` parameter must be marked `comptime`",

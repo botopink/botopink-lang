@@ -392,6 +392,17 @@ test "surface R10: a named fn inside a body is refused at the `fn`" {
     , .nestedFnDecl, 2, 5);
 }
 
+test "surface R10: a fn inside an enum section is refused at the `fn` (decision 151)" {
+    try expectErrorAt(
+        \\type Tok {
+        \\    Alpha {
+        \\        A,
+        \\        pub fn m(self: Self) -> string { return "x"; }
+        \\    }
+        \\}
+    , .sectionBodyMethod, 4, 13);
+}
+
 test "surface R10: the anonymous fn expression and the lambda still parse in a body" {
     try assertParser(std.testing.allocator, @src(),
         \\fn main() -> i32 {

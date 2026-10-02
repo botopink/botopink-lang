@@ -1,0 +1,37 @@
+//// `language-gaps.md` row 22 — a numeric section leaf stands alone where the
+//// position's type is its section: `val n: Tok.Percent = .50;`, an argument
+//// of a `Tok.Percent` parameter, and a field of that type in a payload
+//// variant's constructor (`Tok.Size(percent: .100, …)`). With no expected
+//// type the leaf is refused naming its section
+//// (`reject/section_numeric_leaf_without_expectation`).
+
+type Tok {
+    Percent {
+        50,
+        100,
+    }
+    Size(percent: Tok.Percent, label: string),
+}
+
+fn isHalf(p: Tok.Percent) -> bool {
+    val half: Tok.Percent = .50;
+    return p == half;
+}
+
+fn describe(t: Tok) -> string {
+    return case t {
+        Size(percent: p, label: l) -> if (isHalf(p))
+            "half " + l
+        else
+            "full " + l;
+        _ -> "other";
+    };
+}
+
+pub fn main() {
+    val n: Tok.Percent = .50;
+    @print(isHalf(n));
+    @print(isHalf(.100));
+    @print(describe(Tok.Size(percent: .100, label: "w")));
+    @print(describe(Tok.Size(percent: .50, label: "h")));
+}

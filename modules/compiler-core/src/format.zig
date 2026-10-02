@@ -355,7 +355,11 @@ pub const Formatter = struct {
         const typeDoc: *const Doc = if (p.modifier == .syntax) blk: {
             if (p.fnType) |ft| break :blk try this.fmtFnType(ft);
             break :blk try this.fmtTypeRef(p.typeRef);
-        } else try this.fmtTypeRef(p.typeRef);
+        } else if (p.inlineFields) |fs|
+            // Decision 207 — an inline parameter type prints as written.
+            try this.concat(try this.text("type"), try this.fmtFieldList(fs, false))
+        else
+            try this.fmtTypeRef(p.typeRef);
         const defaultDoc: *const Doc = if (p.default) |d|
             try this.concat(try this.text(" = "), try this.fmtExpr(d))
         else

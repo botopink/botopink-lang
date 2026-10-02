@@ -1,0 +1,33 @@
+//// Decision 148 (lg-b) — the two shapes that may write a captured `var`: a
+//// `forEach` body, and a local closure called only at statement position
+//// (here also from inside a loop and a `forEach` body). A counter shared
+//// across calls is a module-level `var`, which any lambda may write.
+
+var hits = 0;
+
+fn run(f: fn() -> i32, x: i32) -> i32 {
+    return f() + x;
+}
+
+pub fn main() {
+    var n = 0;
+    [1, 2, 3].forEach({ x ->
+        n = n + x;
+    });
+    val bump = { ->
+        n = n + 10;
+    };
+    bump();
+    for ([1, 2]) { i ->
+        bump();
+    }
+    [5].forEach({ v -> bump() });
+    @print(n);
+    @print(
+        run({ ->
+            hits = hits + 1;
+            1;
+        }, 0),
+    );
+    @print(hits);
+}

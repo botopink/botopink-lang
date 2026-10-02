@@ -1,0 +1,2 @@
+import-name-collision: this module would hold two types declared `Policy` — `a/p`'s and `b/p`'s
+src/main.bp:10:9

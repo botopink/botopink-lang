@@ -155,7 +155,21 @@ fn markStdImports(env: *Env, u: ast.ImportDecl) InferError!bool {
             // value bindings come along — construct via the module's fns
             // (`order.lt()`), not the bare constructors (codegen has no local decl).
             if (env.stdModuleTypes.get(whole)) |decls| {
-                for (decls) |d| try registerTypeDecl(env, d);
+                for (decls) |d| {
+                    // Decision 170 — a type the module declares or imports by
+                    // name is that declaration; the namespace's same-named
+                    // type stays reachable only as what it is not here.
+                    const tn: ?[]const u8 = switch (d) {
+                        .type_ => |t| t.name,
+                        .typeAlias => |a| a.name,
+                        else => null,
+                    };
+                    if (tn) |n| if (env.explicitTypeNames.contains(n)) {
+                        try env.shadowedStdTypes.put(env.arena, n, whole);
+                        continue;
+                    };
+                    try registerTypeDecl(env, d);
+                }
             }
             try gateStdTargetSupport(env, whole, imp.name(), imp.loc);
             continue;
@@ -215,6 +229,133 @@ fn markStdImports(env: *Env, u: ast.ImportDecl) InferError!bool {
     return true;
 }
 
+/// Decision 170 — collect the type names this module declares (`type`, a
+/// type alias, `behavior`) or imports by name from a module that is not std
+/// (the item's leaf: `import {kit.store.Dict as OwnDict}` names `Dict`), into
+/// `env.explicitTypeNames`, before any std import is marked.
+///
+/// Types are nominal by their DECLARED name in the checker and the backends,
+/// so one module cannot hold two type declarations of one name, aliases or
+/// not: `import {a.p.Policy as APolicy}; import {b.p.Policy as BPolicy};`,
+/// a `type Dict(…)` beside `import {collections.Dict as D} from "std"`. Each
+/// used to resolve silently to whichever registered last; the second source
+/// is `import-name-collision` at its import item, naming both. (Two functions
+/// of one name under two aliases stay legal — a function is bound by its
+/// local name.)
+fn noteExplicitTypeNames(env: *Env, program: ast.Program) InferError!void {
+    // Declared name → where it comes from (a module path, or "" for this module).
+    var sources: std.StringHashMapUnmanaged([]const u8) = .empty;
+    defer sources.deinit(env.arena);
+    for (program.decls) |decl| switch (decl) {
+        .type_ => |t| try noteTypeSource(env, &sources, t.name, "", null),
+        .typeAlias => |a| try noteTypeSource(env, &sources, a.name, "", null),
+        .behavior => |b| try noteTypeSource(env, &sources, b.name, "", null),
+        else => {},
+    };
+    for (program.decls) |decl| switch (decl) {
+        .use => |u| {
+            const from_std = switch (u.source) {
+                .module => |m| std.mem.eql(u8, m, "std"),
+                .root => false,
+            };
+            for (u.imports) |imp| {
+                const leaf = imp.leaf();
+                if (leaf.len == 0 or !std.ascii.isUpper(leaf[0])) continue;
+                const prefix = try imp.prefixPath(env.arena);
+                if (from_std) {
+                    // A std leaf (`collections.Dict [as D]`) brings the type
+                    // in under its declared name.
+                    if (!imp.isQualified()) continue;
+                    if (!stdModuleDeclaresType(env, prefix, leaf)) continue;
+                    try noteTypeSource(env, &sources, leaf, try std.fmt.allocPrint(env.arena, "std/{s}", .{prefix}), imp);
+                    continue;
+                }
+                try env.explicitTypeNames.put(env.arena, leaf, {});
+                // Only an item that resolved to a TYPE is a type source.
+                const isType = if (imp.alias) |al| env.importedTypeAliases.contains(al) else env.lookupTypeDef(leaf) != null;
+                if (!isType) continue;
+                const src = switch (u.source) {
+                    .module => |m| try std.fmt.allocPrint(env.arena, "{s}:{s}", .{ m, prefix }),
+                    .root => prefix,
+                };
+                try noteTypeSource(env, &sources, leaf, src, imp);
+            }
+        },
+        else => {},
+    };
+}
+
+fn stdModuleDeclaresType(env: *Env, mod: []const u8, name: []const u8) bool {
+    const decls = env.stdModuleTypes.get(mod) orelse return false;
+    for (decls) |d| {
+        const tn = switch (d) {
+            .type_ => |t| t.name,
+            .typeAlias => |a| a.name,
+            else => continue,
+        };
+        if (std.mem.eql(u8, tn, name)) return true;
+    }
+    return false;
+}
+
+fn noteTypeSource(env: *Env, sources: *std.StringHashMapUnmanaged([]const u8), name: []const u8, src: []const u8, imp: ?ast.ImportPath) InferError!void {
+    if (!std.mem.startsWith(u8, src, "std/")) try env.explicitTypeNames.put(env.arena, name, {});
+    if (sources.get(name)) |prev| {
+        if (std.mem.eql(u8, prev, src)) return;
+        const at = imp orelse return;
+        const first = if (prev.len == 0) "this module" else try std.fmt.allocPrint(env.arena, "`{s}`", .{prev});
+        const second = if (src.len == 0) "this module" else try std.fmt.allocPrint(env.arena, "`{s}`", .{src});
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: this module would hold two types declared `{s}` — {s}'s and {s}'s; a type is told apart by its declared name, so one module holds one type of a name, aliased or not", .{ diagnostics.import_name_collision, name, first, second });
+        env.lastError = TypeError.custom(msg, "Use one of the two in this module, and reach the other through a module that holds only it (a function there that takes or answers it).").withLoc(at.loc);
+        return error.TypeError;
+    }
+    try sources.put(env.arena, name, src);
+}
+
+/// Whether `t` names the nominal type `name` anywhere in it.
+fn typeNamesNominal(t: *T.Type, name: []const u8, depth: usize) bool {
+    if (depth > 32) return false;
+    const d = t.deref();
+    return switch (d.*) {
+        .named => |n| blk: {
+            if (std.mem.eql(u8, n.name, name)) break :blk true;
+            for (n.args) |a| if (typeNamesNominal(a, name, depth + 1)) break :blk true;
+            break :blk false;
+        },
+        .func => |f| blk: {
+            for (f.params) |p| if (typeNamesNominal(p, name, depth + 1)) break :blk true;
+            break :blk typeNamesNominal(f.ret, name, depth + 1);
+        },
+        .union_ => |us| blk: {
+            for (us) |u| if (typeNamesNominal(u, name, depth + 1)) break :blk true;
+            break :blk false;
+        },
+        .record => |fs| blk: {
+            for (fs) |f| if (typeNamesNominal(f.type_, name, depth + 1)) break :blk true;
+            break :blk false;
+        },
+        .typeVar => false,
+    };
+}
+
+/// Decision 170 — a call through a std namespace whose signature names a type
+/// the namespace could not bring in (`env.shadowedStdTypes`: this module's own
+/// or named import holds the name) is refused at the call. Types are nominal
+/// by name, so the checker would read std's type as this module's and accept
+/// a value of the wrong one.
+fn refuseShadowedStdSignature(env: *Env, ns: []const u8, stdKey: []const u8, callee: []const u8, fnTy: *T.Type, loc: ast.Loc) InferError!void {
+    var it = env.shadowedStdTypes.iterator();
+    while (it.next()) |e| {
+        if (!std.mem.eql(u8, e.value_ptr.*, stdKey)) continue;
+        const name = e.key_ptr.*;
+        if (!typeNamesNominal(fnTy, name, 0)) continue;
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}.{s}` names std/{s}'s `{s}`, and `{s}` in this module is another declaration", .{ diagnostics.ambiguous_import_use, ns, callee, stdKey, name, name });
+        const hint = try std.fmt.allocPrint(env.arena, "One module holds one type of a name: import std's `{s}` in a module that does not declare or import another, or rename this module's.", .{name});
+        env.lastError = TypeError.custom(msg, hint).withLoc(loc);
+        return error.TypeError;
+    }
+}
+
 /// Whether the std module `mod_name` declares the decorator `pub fn name`.
 fn stdDecoratorNamed(env: *Env, mod_name: []const u8, name: []const u8) bool {
     const fns = env.stdModuleFns.get(mod_name) orelse return false;
@@ -269,7 +410,7 @@ fn registerStdDecorators(env: *Env, mod_name: []const u8, handle: []const u8) In
 
 /// STD-001 — when an active target is set on this env (the CLI codegen
 /// path), red on imports of std modules whose declares lack an
-/// `@external(<target>, …)` match. Pure-bp `pub fn` (with body) ship
+/// `#[@External.<Target>(…)]` binding. Pure-bp `pub fn` (with body) ship
 /// on every target without a host binding, so they're skipped. Only
 /// host-bound `pub declare fn` are gated.
 ///
@@ -377,6 +518,7 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     env.testIndex = 0;
 
     try validateUniqueDefaults(env, program);
+    try noteExplicitTypeNames(env, program);
 
     // Pass 1: register type definitions and their constructors.
     try registerTypeAliases(env, program);
@@ -459,6 +601,7 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
     env.testIndex = 0;
 
     try validateUniqueDefaults(env, program);
+    try noteExplicitTypeNames(env, program);
 
     try registerTypeAliases(env, program);
     try checkSelfSpelling(env, program);
@@ -821,6 +964,7 @@ fn inferDeclTyped(env: *Env, decl: ast.DeclKind) InferError!?TypedBinding {
         .behavior => |d| {
             const typeName = try buildInterfaceDeclName(env, d);
             try registerInterfaceAssociatedFns(env, d);
+            try inferBehaviorDefaultBodies(env, d);
             return .{ .name = d.name, .type_ = try env.namedType(typeName), .typedExpr = null, .decl = decl };
         },
         // Handled in `inferProgramTyped` — each import name is looked up in env.
@@ -3210,6 +3354,7 @@ fn inferTestDecl(env: *Env, t: ast.TestDecl) InferError!void {
     };
     env.labelStack.shrinkRetainingCapacity(0);
 
+    try refuseRedeclaredBindings(env, t.body, &.{});
     try inferBodyStmts(env, t.body);
 }
 
@@ -3962,6 +4107,155 @@ fn instantiateGenericType(env: *Env, ty: *T.Type) InferError!*T.Type {
 /// Decision 38 — a `val` is **immutable**, local or module-level. `val x = 0;
 /// x = 1;` checked and then threw on node (`const`) and ran on the other three
 /// targets; the rule moves to compile time, and the error names `var`.
+/// Decision 148 (lg-b) — a write to a captured `var` (a local of an
+/// enclosing body, bound outside the lambda being inferred) from a lambda
+/// that is neither a `forEach` body nor a local closure called only at
+/// statement position is refused at the write, on every target: on the BEAM
+/// a closure gets a COPY of what it captures, so the write is lost, while
+/// commonJS writes the shared cell. A counter shared across calls is a
+/// module-level `var` with its `#[@BeamMemory]` mode.
+fn refuseCapturedVarWrite(env: *Env, name: []const u8, loc: ast.Loc) InferError!void {
+    if (env.lambdaDepth == 0 or env.captureWriteOk) return;
+    const d = env.localBindDepth(name) orelse return;
+    if (d >= env.lambdaDepth) return;
+    const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is a `var` of the enclosing body, and this lambda writes it — a lambda gets a copy of what it captures on the BEAM, so the write would not reach `{s}`", .{ diagnostics.captured_var_write, name, name });
+    env.lastError = TypeError.custom(msg, "Write it in a `forEach` body or a local closure called as a statement (`val bump = { -> n = n + 1; }; bump();`), return the new value from the lambda, or keep a counter shared across calls in a module-level `var` with its `#[@BeamMemory]` mode.").withLoc(loc);
+    return error.TypeError;
+}
+
+/// Whether `e` reads or calls the bare name `name` anywhere, a lambda body
+/// included (`ast.exprMentions` answers true for any lambda, which would make
+/// every closure passed to a call a use).
+fn usesName(e: ast.Expr, name: []const u8) bool {
+    return switch (e) {
+        .function => |f| stmtsUseName(f.kind.body, name),
+        .call => |c| switch (c.kind) {
+            .call => |cc| blk: {
+                if (cc.receiver) |r| if (usesName(r.*, name)) break :blk true;
+                if (cc.receiver == null and !cc.is_builtin and std.mem.eql(u8, cc.callee, name)) break :blk true;
+                if (cc.calleeExpr) |ce| if (usesName(ce.*, name)) break :blk true;
+                for (cc.args) |a| if (usesName(a.value.*, name)) break :blk true;
+                for (cc.trailing) |t| if (stmtsUseName(t.body, name)) break :blk true;
+                break :blk false;
+            },
+            .pipeline => |p| usesName(p.lhs.*, name) or usesName(p.rhs.*, name),
+        },
+        .jump => |j| switch (j.kind) {
+            .@"return", .throw_, .try_ => |v| if (v) |x| usesName(x.*, name) else false,
+            .await_ => |x| usesName(x.*, name),
+            .@"break" => |b| if (b.value) |x| usesName(x.*, name) else false,
+            .yield => |y| if (y.value) |x| usesName(x.*, name) else false,
+            .@"continue" => false,
+        },
+        .loop => |lp| usesName(lp.iter.*, name) or stmtsUseName(lp.body, name),
+        .branch => |b| switch (b.kind) {
+            .if_ => |i| usesName(i.cond.*, name) or stmtsUseName(i.then_, name) or
+                (if (i.else_) |els| stmtsUseName(els, name) else false),
+            .tryCatch => |tc| usesName(tc.expr.*, name) or usesName(tc.handler.*, name),
+        },
+        .binding => |b| switch (b.kind) {
+            .localBind => |lb| usesName(lb.value.*, name),
+            .localBindDestruct => |lb| usesName(lb.value.*, name),
+            .assign => |a| usesName(a.value.*, name) or switch (a.target) {
+                .name => |n| std.mem.eql(u8, n, name),
+                .fieldAccess => |fa| usesName(fa.receiver.*, name),
+            },
+        },
+        .collection => |c| switch (c.kind) {
+            .case => |cs| blk: {
+                for (cs.subjects) |x| if (usesName(x, name)) break :blk true;
+                for (cs.arms) |arm| {
+                    if (usesName(arm.body, name)) break :blk true;
+                    if (arm.guard) |g| if (usesName(g, name)) break :blk true;
+                }
+                break :blk false;
+            },
+            .arrayLit => |al| blk: {
+                for (al.elems) |x| if (usesName(x, name)) break :blk true;
+                if (al.spread) |sp| if (std.mem.eql(u8, sp, name)) break :blk true;
+                if (al.spreadExpr) |se| if (usesName(se.*, name)) break :blk true;
+                break :blk false;
+            },
+            .tupleLit => |tl| blk: {
+                for (tl.elems) |x| if (usesName(x, name)) break :blk true;
+                break :blk false;
+            },
+            .range => |r| usesName(r.start.*, name) or (if (r.end) |x| usesName(x.*, name) else false),
+            .grouped => |g| usesName(g.*, name),
+            else => true,
+        },
+        .useHook => |u| usesName(u.kind.inner.*, name),
+        else => ast.exprMentions(e, name),
+    };
+}
+
+/// Every use of `name` in `stmts` is a call at statement position (`f(…);`,
+/// its arguments not naming `f`) — in these statements or in the blocks of an
+/// `if`, a loop or a `case` arm among them.
+fn onlyStatementCalls(stmts: []const ast.Stmt, name: []const u8) bool {
+    for (stmts) |st| if (!stmtOnlyCalls(st.expr, name)) return false;
+    return true;
+}
+
+fn stmtOnlyCalls(e: ast.Expr, name: []const u8) bool {
+    switch (e) {
+        .call => |c| if (c.kind == .call) {
+            const cc = c.kind.call;
+            if (cc.receiver == null and cc.calleeExpr == null and !cc.is_builtin and std.mem.eql(u8, cc.callee, name)) {
+                for (cc.args) |a| if (usesName(a.value.*, name)) return false;
+                return cc.trailing.len == 0;
+            }
+            // `xs.forEach({ x -> f(x); })` — a `forEach` body is itself a
+            // statement-position scope (decision 148's first exempt shape).
+            if (std.mem.eql(u8, cc.callee, "forEach") and cc.receiver != null and cc.trailing.len == 0) {
+                if (usesName(cc.receiver.?.*, name)) return false;
+                for (cc.args) |a| {
+                    if (a.value.* == .function) {
+                        if (!onlyStatementCalls(a.value.function.kind.body, name)) return false;
+                    } else if (usesName(a.value.*, name)) return false;
+                }
+                return true;
+            }
+        },
+        .loop => |lp| return !usesName(lp.iter.*, name) and onlyStatementCalls(lp.body, name),
+        .branch => |b| if (b.kind == .if_) {
+            const i = b.kind.if_;
+            if (usesName(i.cond.*, name)) return false;
+            if (!onlyStatementCalls(i.then_, name)) return false;
+            return if (i.else_) |els| onlyStatementCalls(els, name) else true;
+        },
+        else => {},
+    }
+    return !usesName(e, name);
+}
+
+fn stmtsUseName(stmts: []const ast.Stmt, name: []const u8) bool {
+    for (stmts) |st| if (usesName(st.expr, name)) return true;
+    return false;
+}
+
+fn isArrayType(t: *T.Type) bool {
+    const d = t.deref();
+    return d.* == .named and (std.mem.eql(u8, d.named.name, "array") or std.mem.eql(u8, d.named.name, "Array"));
+}
+
+/// Decision 148 — the `val f = { … }` statements of a block whose every later
+/// use is a call at statement position (`f();`, its arguments not naming
+/// `f`): the lambda they bind may write a captured `var`.
+fn noteStatementClosures(env: *Env, stmts: []const ast.Stmt) InferError!void {
+    for (stmts, 0..) |st, i| {
+        if (st.expr != .binding) continue;
+        const lb = switch (st.expr.binding.kind) {
+            .localBind => |lb| lb,
+            else => continue,
+        };
+        if (lb.value.* != .function) continue;
+        const name = lb.name;
+        const ok = onlyStatementCalls(stmts[i + 1 ..], name);
+        if (ok) try env.statementClosures.put(env.arena, name, {}) else _ = env.statementClosures.remove(name);
+    }
+}
+
 fn refuseValAssign(env: *Env, name: []const u8, loc: ast.Loc) InferError!void {
     if (!env.isVal(name)) return;
     var e = TypeError.custom(
@@ -4462,6 +4756,8 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     defer env.fnGenericMap = savedFnGenericMap;
     env.returnBareIsVoid = env.returnTarget != null and (eff == null or eff.? == .result or eff.? == .task);
 
+    try refuseInlineParamRules(env, f);
+    try refuseRedeclaredBindings(env, f.body, try paramNames(env, f.params));
     try inferBodyStmts(env, f.body);
     try refuseFallingOffTheEnd(env, f, retType);
 
@@ -4497,17 +4793,52 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     return env.funcType(paramTypes, retType);
 }
 
+/// A behavior's `default fn` bodies are checked like any method body, against
+/// the member's own signature, with `self` typed as the behavior (`Self`):
+/// `inferTypeMethods` over the members that carry a body. They were never
+/// walked, so `return nothingHere(x) + true` checked clean and a `-> @Result`
+/// default fn's `return` / `throw` recorded no wrapping for any backend.
+fn inferBehaviorDefaultBodies(env: *Env, d: ast.BehaviorDecl) InferError!void {
+    var n: usize = 0;
+    for (d.methods) |m| {
+        if (m.is_default and m.body != null) n += 1;
+    }
+    if (n == 0) return;
+    const ms = try env.arena.alloc(ast.BehaviorMethod, n);
+    var i: usize = 0;
+    for (d.methods) |m| {
+        if (!m.is_default or m.body == null) continue;
+        ms[i] = m;
+        i += 1;
+    }
+    // A default body is emitted once per implementer, where `self` is that
+    // implementer: the backends dispatch its calls statically, so the
+    // `.by_value` instance lowerings a `Self`-typed (behavior) receiver records
+    // are dropped again — every other lowering (the `@Result` wrappings, the
+    // `@Option` methods) stays.
+    var before = std.AutoHashMap(ast.Loc, void).init(env.arena);
+    defer before.deinit();
+    var it = env.instanceLowerings.keyIterator();
+    while (it.next()) |k| try before.put(k.*, {});
+    try inferTypeMethods(env, d.name, d.genericParams, ms);
+    var added: std.ArrayListUnmanaged(ast.Loc) = .empty;
+    var it2 = env.instanceLowerings.iterator();
+    while (it2.next()) |e| {
+        if (before.contains(e.key_ptr.*)) continue;
+        try added.append(env.arena, e.key_ptr.*);
+    }
+    for (added.items) |k| _ = env.instanceLowerings.remove(k);
+}
+
 /// Walk the bodies of a type's instance/associated methods (record / struct /
 /// enum) to record the codegen instance-method lowerings (and type the calls
 /// inside). Their signatures are registered earlier, but the bodies were never
 /// walked — so a `self.xs.map(f)` call was neither typed nor recorded, and the
 /// non-JS backends had no way to lower it.
 ///
-/// This is BEST-EFFORT: a method whose body trips an inference gap is skipped
-/// (the lowerings recorded up to that point stand; the rest fall back to the
-/// backend default). Record method bodies are not part of the strict
-/// type-checking contract here — only `default fn` interface bodies are (see
-/// `inferInterfaceDefaultBodies`) — so a gap must not fail the whole compile.
+/// Strict (06 C9): a type error in a method body fails the compile. A
+/// behavior's `default fn` bodies come through here too
+/// (`inferBehaviorDefaultBodies`).
 fn inferTypeMethods(
     env: *Env,
     typeName: []const u8,
@@ -4619,6 +4950,8 @@ fn inferTypeMethods(
         // the block does, so it is collected here and restored below.
         var narrowed: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
         defer narrowed.deinit(env.arena);
+        try refuseRedeclaredBindings(env, body, try paramNames(env, m.params));
+        try noteStatementClosures(env, body);
         for (body) |stmt| {
             const typed = try inferExprTyped(env, stmt.expr);
             try narrowAfterEarlyExit(env, stmt.expr, &narrowed);
@@ -5889,10 +6222,56 @@ fn unifyAt(env: *Env, a: *T.Type, b: *T.Type, loc: ast.Loc) InferError!void {
     const ta = a.deref();
     const tb = b.deref();
     unifyUnlocated(env, a, b) catch |err| {
-        if (env.lastError) |*e| e.loc = loc;
+        if (env.lastError) |*e| {
+            // The occurs check answers a type that would contain itself —
+            // inside a generic fn, the declared `T` against a `?T` (`return
+            // xs[0];` under `-> T`, an index answering `?T`) or a `T[]`. Named
+            // as the mismatch it is, the type parameter spelled.
+            if (e.kind == .recursiveType) {
+                const msg = try std.fmt.allocPrint(env.arena, "type mismatch: expected `{s}`, got `{s}` — the second holds the first, so the two are never one type", .{ try genericSpelling(env, ta, 0), try genericSpelling(env, tb, 0) });
+                const optional = tb.* == .named and std.mem.eql(u8, tb.named.name, "optional");
+                env.lastError = TypeError.custom(msg, if (optional)
+                    "An index and `at` answer an optional (`?T`): unwrap it (`xs[0] ?? fallback`, `case`) or declare the type `?T`."
+                else
+                    "Give the position the type the value has, or a value of the type the position declares.");
+            }
+            env.lastError.?.loc = loc;
+        }
         return err;
     };
     try warnTupleLabelMismatch(env, ta, tb, loc);
+}
+
+/// A type as the source spells it, a generic fn's type parameter by its name
+/// (`fnGenericMap`) — for the occurs-check refusal, where a bare `?` would say
+/// nothing.
+fn genericSpelling(env: *Env, t: *T.Type, depth: usize) InferError![]const u8 {
+    const d = t.deref();
+    if (depth > 8) return "…";
+    switch (d.*) {
+        .typeVar => {
+            if (env.fnGenericMap) |gm| {
+                var it = gm.iterator();
+                while (it.next()) |e| if (e.value_ptr.*.deref() == d) return e.key_ptr.*;
+            }
+            return "?";
+        },
+        .named => |n| {
+            if (std.mem.eql(u8, n.name, "optional") and n.args.len == 1) return std.fmt.allocPrint(env.arena, "?{s}", .{try genericSpelling(env, n.args[0], depth + 1)});
+            if ((std.mem.eql(u8, n.name, "array") or std.mem.eql(u8, n.name, "Array")) and n.args.len == 1) return std.fmt.allocPrint(env.arena, "{s}[]", .{try genericSpelling(env, n.args[0], depth + 1)});
+            if (n.args.len == 0) return n.name;
+            var buf: std.ArrayListUnmanaged(u8) = .empty;
+            try buf.appendSlice(env.arena, n.name);
+            try buf.append(env.arena, '<');
+            for (n.args, 0..) |a, i| {
+                if (i > 0) try buf.appendSlice(env.arena, ", ");
+                try buf.appendSlice(env.arena, try genericSpelling(env, a, depth + 1));
+            }
+            try buf.append(env.arena, '>');
+            return buf.items;
+        },
+        else => return snapshotMod.typeNameOf(env.arena, d),
+    }
 }
 
 /// Decision 8 §6 T7 — a tuple built from variables lends their names as
@@ -7529,7 +7908,223 @@ fn makeTypedPtr(env: *Env, node: TypedExpr) !*TypedExpr {
 /// early-exit narrowing the same way `inferStmtsTyped` does: `if (x == null) {
 /// return …; }` narrows `x` for the REST of the block, and a body walked with a
 /// bare `for` loop would have been the one shape where it did not.
+/// Decisions 152 and 205 — no binding reuses a name already bound in the
+/// function where it stands: a second `val` / `var` / destructured name, an
+/// `if` binder, a loop binder or a `case` arm's binder whose name an
+/// enclosing block of the same function — or the function's parameters —
+/// already bound is `binding-redeclared` at the second binding, naming the
+/// first, in every block and every `case` arm. A sibling block's bindings
+/// ended with that block (`walkNestedBlock`), so two `if` branches may each
+/// bind `n`. A lambda is another function: it is
+/// checked on its own when it is inferred (`inferFunctionExprExpected`), and
+/// the walk does not enter it; a `case` arm's block body is not a lambda and
+/// is walked. erlang rebound a reused name and commonJS refused to load.
+fn refuseRedeclaredBindings(env: *Env, stmts: []const ast.Stmt, params: []const []const u8) InferError!void {
+    var seen: std.StringHashMapUnmanaged(?ast.Loc) = .empty;
+    defer seen.deinit(env.arena);
+    for (params) |p| {
+        if (p.len == 0 or std.mem.eql(u8, p, "_")) continue;
+        try seen.put(env.arena, p, null);
+    }
+    try walkBindingStmts(env, &seen, stmts);
+}
+
+const SeenNames = std.StringHashMapUnmanaged(?ast.Loc);
+
+fn walkBindingStmts(env: *Env, seen: *SeenNames, stmts: []const ast.Stmt) InferError!void {
+    for (stmts) |st| try walkBindingExpr(env, seen, st.expr);
+}
+
+/// A nested block: its bindings end with it (the visible-scope reading).
+fn walkNestedBlock(env: *Env, seen: *SeenNames, stmts: []const ast.Stmt) InferError!void {
+    var inner = try seen.clone(env.arena);
+    try walkBindingStmts(env, &inner, stmts);
+}
+
+fn walkBindingExpr(env: *Env, seen: *SeenNames, e: ast.Expr) InferError!void {
+    switch (e) {
+        .binding => |b| switch (b.kind) {
+            .localBind => |lb| {
+                try walkBindingExpr(env, seen, lb.value.*);
+                try noteBlockBinding(env, seen, lb.name, b.loc);
+            },
+            .localBindDestruct => |lb| {
+                try walkBindingExpr(env, seen, lb.value.*);
+                switch (lb.pattern) {
+                    .names => |n| for (n.fields) |f| try noteBlockBinding(env, seen, f.bind_name, b.loc),
+                    .tuple_ => |t| for (t) |name| try noteBlockBinding(env, seen, name, b.loc),
+                    .list, .ctor => |p| try notePatternBinders(env, seen, p, b.loc),
+                }
+            },
+            .assign => |a| try walkBindingExpr(env, seen, a.value.*),
+        },
+        .branch => |b| switch (b.kind) {
+            .if_ => |i| {
+                try walkBindingExpr(env, seen, i.cond.*);
+                // The binder of `if (x) { v -> … }` belongs to the then-block.
+                var thenSeen = try seen.clone(env.arena);
+                if (i.binding) |bn| if (!std.mem.eql(u8, bn, ast.nullish_binding_name)) try noteBlockBinding(env, &thenSeen, bn, b.loc);
+                try walkBindingStmts(env, &thenSeen, i.then_);
+                if (i.else_) |els| try walkNestedBlock(env, seen, els);
+            },
+            .tryCatch => |tc| {
+                try walkBindingExpr(env, seen, tc.expr.*);
+                try walkBindingExpr(env, seen, tc.handler.*);
+            },
+        },
+        .loop => |lp| {
+            try walkBindingExpr(env, seen, lp.iter.*);
+            var inner = try seen.clone(env.arena);
+            for (lp.params) |p| try noteBlockBinding(env, &inner, p, lp.loc);
+            try walkBindingStmts(env, &inner, lp.body);
+        },
+        .collection => |c| switch (c.kind) {
+            .case => |cs| {
+                for (cs.subjects) |x| try walkBindingExpr(env, seen, x);
+                for (cs.arms) |arm| {
+                    var armSeen = try seen.clone(env.arena);
+                    const sp = &armSeen;
+                    try notePatternBinders(env, sp, arm.pattern, arm.patternLoc);
+                    if (arm.guard) |g| try walkBindingExpr(env, sp, g);
+                    // A block arm (`Pattern { n -> … }`, `p -> { … }`) is the
+                    // arm's own block, not another function.
+                    if (arm.body == .function and arm.body.function.kind.syntax == .lambda) {
+                        for (arm.body.function.kind.params) |p| try noteBlockBinding(env, sp, p, arm.patternLoc);
+                        try walkBindingStmts(env, sp, arm.body.function.kind.body);
+                    } else try walkBindingExpr(env, sp, arm.body);
+                }
+            },
+            .arrayLit => |al| for (al.elems) |x| try walkBindingExpr(env, seen, x),
+            .tupleLit => |tl| for (tl.elems) |x| try walkBindingExpr(env, seen, x),
+            .grouped => |g| try walkBindingExpr(env, seen, g.*),
+            else => {},
+        },
+        .call => |c| switch (c.kind) {
+            .call => |cc| {
+                if (cc.receiver) |r| try walkBindingExpr(env, seen, r.*);
+                for (cc.args) |a| try walkBindingExpr(env, seen, a.value.*);
+            },
+            .pipeline => |pl| {
+                try walkBindingExpr(env, seen, pl.lhs.*);
+                try walkBindingExpr(env, seen, pl.rhs.*);
+            },
+        },
+        .binaryOp => |op| {
+            try walkBindingExpr(env, seen, op.lhs.*);
+            try walkBindingExpr(env, seen, op.rhs.*);
+        },
+        .unaryOp => |op| try walkBindingExpr(env, seen, op.expr.*),
+        .jump => |j| switch (j.kind) {
+            .@"return", .throw_, .try_ => |v| if (v) |x| try walkBindingExpr(env, seen, x.*),
+            .await_ => |x| try walkBindingExpr(env, seen, x.*),
+            .@"break" => |br| if (br.value) |x| try walkBindingExpr(env, seen, x.*),
+            .yield => |y| if (y.value) |x| try walkBindingExpr(env, seen, x.*),
+            .@"continue" => {},
+        },
+        // A lambda (another function), a literal, a name, a comptime value.
+        else => {},
+    }
+}
+
+/// The names a pattern binds (a lower-case bare name, a payload's field or
+/// whole-payload binder, a list element or rest); an `or` pattern's
+/// alternatives bind the same names, so the first one is read.
+fn notePatternBinders(env: *Env, seen: *SeenNames, p: ast.Pattern, loc: ast.Loc) InferError!void {
+    switch (p) {
+        .ident => |n| {
+            if (n.len == 0 or isVariantPath(n) or std.ascii.isUpper(n[0])) return;
+            if (std.mem.eql(u8, n, "true") or std.mem.eql(u8, n, "false") or std.mem.eql(u8, n, "null")) return;
+            try noteBlockBinding(env, seen, n, loc);
+        },
+        .variant => |v| switch (v.payload) {
+            .binding => |b| try noteBlockBinding(env, seen, b, loc),
+            .fields => |fs| for (fs) |f| try noteBlockBinding(env, seen, f, loc),
+            .literals => |ps| for (ps) |q| try notePatternBinders(env, seen, q, loc),
+        },
+        .list => |l| {
+            for (l.elems) |el| switch (el) {
+                .bind => |b| try noteBlockBinding(env, seen, b, loc),
+                else => {},
+            };
+            if (l.spread) |sp| if (sp.len > 0) try noteBlockBinding(env, seen, sp, loc);
+        },
+        .@"or" => |alts| if (alts.len > 0) try notePatternBinders(env, seen, alts[0], loc),
+        .multi => |ps| for (ps) |q| try notePatternBinders(env, seen, q, loc),
+        else => {},
+    }
+}
+
+fn noteBlockBinding(env: *Env, seen: *SeenNames, name: []const u8, loc: ast.Loc) InferError!void {
+    if (name.len == 0 or std.mem.eql(u8, name, "_") or std.mem.startsWith(u8, name, "__bp")) return;
+    if (seen.get(name)) |first| {
+        const msg = if (first) |f|
+            try std.fmt.allocPrint(env.arena, "{s}: `{s}` is already bound in this function, by the binding at {d}:{d}", .{ diagnostics.binding_redeclared, name, f.line, f.col })
+        else
+            try std.fmt.allocPrint(env.arena, "{s}: `{s}` is already bound in this function, as a parameter", .{ diagnostics.binding_redeclared, name });
+        const hint = try std.fmt.allocPrint(env.arena, "A name is bound once per function — an inner block and a `case` arm included. Give the second binding its own name, or make the first a `var` and assign it: `{s} = …;`.", .{name});
+        env.lastError = TypeError.custom(msg, hint).withLoc(loc);
+        return error.TypeError;
+    }
+    try seen.put(env.arena, name, loc);
+}
+
+/// Decision 207 — what keeps a call's labels one reading
+/// (`comptime/inline_types.zig`): one inline parameter type per function, and
+/// none of its fields named like another parameter of the function. Each
+/// refused at the inline type.
+fn refuseInlineParamRules(env: *Env, f: ast.FnDecl) InferError!void {
+    var seen: ?ast.Param = null;
+    for (f.params) |p| {
+        const fields = p.inlineFields orelse continue;
+        if (seen) |first| {
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` takes a second inline type (`{s}`) — one parameter of a function may have one, `{s}` already does", .{ diagnostics.inline_type_position, f.name, p.name, first.name });
+            env.lastError = TypeError.custom(msg, "Name one of the two types (`type Options(…)`), or merge their fields into the one inline type.").withLoc(p.typeLoc);
+            return error.TypeError;
+        }
+        seen = p;
+        for (fields) |fd| for (f.params) |other| {
+            if (std.mem.eql(u8, other.name, p.name) or !std.mem.eql(u8, other.name, fd.name)) continue;
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: the field `{s}` of the {s} of `{s}` is named like the parameter `{s}`, so `{s}({s}: …)` would mean two things", .{ diagnostics.inline_type_position, fd.name, p.name, f.name, other.name, f.name, fd.name });
+            env.lastError = TypeError.custom(msg, "Rename the field or the parameter.").withLoc(p.typeLoc);
+            return error.TypeError;
+        };
+    }
+}
+
+/// Decision 207 — a call's field labels build an inline parameter type only
+/// in the module that declares the function (`comptime/inline_types.zig`
+/// rewrites them there): the type is not exported, so a call from another
+/// module that writes the fields is refused by name rather than read as
+/// labels of the function.
+fn refuseInlineFieldsAcrossModules(env: *Env, callee: []const u8, params: []const ast.Param, args: []const ast.CallArgOf(.untyped), loc: ast.Loc) InferError!void {
+    for (params) |p| {
+        const fields = p.inlineFields orelse continue;
+        for (args) |a| {
+            const l = a.label orelse continue;
+            const isField = for (fields) |fd| {
+                if (std.mem.eql(u8, fd.name, l)) break true;
+            } else false;
+            if (!isField) continue;
+            const isParam = for (params) |q| {
+                if (std.mem.eql(u8, q.name, l)) break true;
+            } else false;
+            if (isParam) continue;
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}:` is a field of the {s} of `{s}`, an inline type built only in the module that declares `{s}`", .{ diagnostics.inline_type_position, l, p.name, callee, callee });
+            env.lastError = TypeError.custom(msg, "Call it through a function of that module, or name the type there (`pub type LinkProps(…)`) and build it here.").withLoc(loc);
+            return error.TypeError;
+        }
+    }
+}
+
+/// The names of a parameter list, for `refuseRedeclaredBindings`.
+fn paramNames(env: *Env, params: []const ast.Param) InferError![]const []const u8 {
+    const out = try env.arena.alloc([]const u8, params.len);
+    for (params, 0..) |p, i| out[i] = p.name;
+    return out;
+}
+
 fn inferBodyStmts(env: *Env, body: []const ast.Stmt) InferError!void {
+    try noteStatementClosures(env, body);
     var narrowed: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
     defer narrowed.deinit(env.arena);
     for (body) |stmt| {
@@ -7540,6 +8135,7 @@ fn inferBodyStmts(env: *Env, body: []const ast.Stmt) InferError!void {
 }
 
 fn inferStmtsTyped(env: *Env, stmts: []const ast.Stmt) InferError![]TypedStmt {
+    try noteStatementClosures(env, stmts);
     const out = try env.arena.alloc(TypedStmt, stmts.len);
     // The early-exit narrowing (`narrowAfterEarlyExit`) outlives the `if` that
     // states it, so this is where it is applied and where it ends: a name
@@ -7941,6 +8537,58 @@ fn behaviorMethodCallType(
     typedTrailing: []ast.TrailingLambdaOf(.typed),
 ) InferError!?*T.Type {
     const found = behaviorBodylessMethod(env, iface, method, 0) orelse return null;
+    return behaviorFoundCallType(env, found, recvPtr, typedArgs, typedTrailing);
+}
+
+/// The `default fn` `iface` — or anything it extends — declares under
+/// `method`, with the behavior that declares it.
+fn behaviorDefaultMethod(env: *Env, iface: []const u8, method: []const u8, depth: usize) ?BehaviorMethodFound {
+    if (depth >= 16) return null;
+    const decl = env.assocInterfaceDecls.get(iface) orelse env.importedBehaviorDecls.get(iface) orelse return null;
+    for (decl.methods) |m| {
+        if (std.mem.eql(u8, m.name, method)) {
+            if (!m.is_default or m.body == null) return null;
+            return .{ .decl = decl, .method = m };
+        }
+    }
+    for (decl.extends) |parent| {
+        if (behaviorDefaultMethod(env, parent, method, depth + 1)) |found| return found;
+    }
+    return null;
+}
+
+/// A call of a `default fn` a nominal type adopts from a behavior it
+/// implements answers the member's declared return, `Self` the receiver —
+/// as a call of a bodyless member does on a value of the behavior. It was a
+/// fresh variable, so `sq.checked().isOk()` on a `-> @Result` default fn
+/// found no `@Result` lowering.
+fn adoptedDefaultCallType(
+    env: *Env,
+    td: envMod.TypeDef,
+    recvPtr: *ast.TypedExpr,
+    method: []const u8,
+    typedArgs: []ast.CallArgOf(.typed),
+    typedTrailing: []ast.TrailingLambdaOf(.typed),
+) InferError!?*T.Type {
+    const implements: []const []const u8 = switch (td) {
+        .record => |r| r.implements,
+        .struct_ => |st| st.implements,
+        .enum_ => |e| e.implements,
+    };
+    for (implements) |iface| {
+        const found = behaviorDefaultMethod(env, iface, method, 0) orelse continue;
+        return behaviorFoundCallType(env, found, recvPtr, typedArgs, typedTrailing);
+    }
+    return null;
+}
+
+fn behaviorFoundCallType(
+    env: *Env,
+    found: BehaviorMethodFound,
+    recvPtr: *ast.TypedExpr,
+    typedArgs: []ast.CallArgOf(.typed),
+    typedTrailing: []ast.TrailingLambdaOf(.typed),
+) InferError!?*T.Type {
     const rt = found.method.returnType orelse return null;
     const params = found.method.params;
     const rest = if (params.len > 0 and std.mem.eql(u8, params[0].name, "self")) params[1..] else params;
@@ -8088,7 +8736,10 @@ fn refuseUnknownUse(env: *Env, ty: *T.Type, loc: ast.Loc, what: []const u8) Infe
         const rendered = try snapshotMod.typeNameOf(env.arena, t);
         // §3.2 — name the branch that widened it, when inference made it.
         const widened: []const u8 = if (env.unionOrigins.get(t)) |o|
-            try std.fmt.allocPrint(env.arena, " (the `{s}` at {d}:{d} made it one: its branches disagree)", .{ o.kind, o.loc.line, o.loc.col })
+            (if (std.mem.eql(u8, o.kind, "array element"))
+                try std.fmt.allocPrint(env.arena, " (the array element at {d}:{d} made it one: the literal's elements disagree)", .{ o.loc.line, o.loc.col })
+            else
+                try std.fmt.allocPrint(env.arena, " (the `{s}` at {d}:{d} made it one: its branches disagree)", .{ o.kind, o.loc.line, o.loc.col }))
         else
             "";
         var e = TypeError.custom(
@@ -9126,7 +9777,9 @@ pub fn inferExprTyped(env: *Env, expr: ast.Expr) InferError!TypedExpr {
         // literal's width (the literal takes the integer type its position
         // asks for — `val k: i64 = 1000;`, `n * 1000` with `n: i64`);
         // `inferBinaryOpExpr` hands it on only to arithmetic operands.
-        .identifier, .collection, .literal, .unaryOp, .binaryOp => {},
+        // `.function` reads a FALLIBLE function expectation (decision 147,
+        // `inferFunctionExpr`) and clears it before its body.
+        .identifier, .collection, .literal, .unaryOp, .binaryOp, .function => {},
         .call => |c| if (!isLeadingDotCall(c)) {
             env.expectedType = null;
         },
@@ -9203,6 +9856,21 @@ fn expectedIntegerType(env: *Env) ?[]const u8 {
     return null;
 }
 
+/// `==` / `!=` do not widen an integer literal against an `f64` operand
+/// (decision 209 reads every other position): the comparison is refused at
+/// the literal instead (decision 215, `inferBinaryOpExpr`).
+fn equalityOperandExpectation(op: @FieldType(ast.BinOpExprOf(.untyped), "op"), other: *T.Type) ?*T.Type {
+    if ((op == .eq or op == .ne) and other.deref().isNamed("f64")) return null;
+    return other;
+}
+
+/// Decision 209 — the position of a literal expects `f64` (through one `?T`).
+fn expectsFloat(env: *Env) bool {
+    var t = (env.expectedType orelse return false).deref();
+    if (t.* == .named and std.mem.eql(u8, t.named.name, "optional") and t.named.args.len == 1) t = t.named.args[0].deref();
+    return t.* == .named and t.named.args.len == 0 and std.mem.eql(u8, t.named.name, "f64");
+}
+
 /// True for an integer literal (`1000`), which takes its width from its
 /// position; false for everything else.
 fn isIntegerLiteral(e: ast.Expr) bool {
@@ -9260,6 +9928,21 @@ fn inferLiteralExpr(env: *Env, lit: ast.LiteralExprOf(.untyped), loc: ast.Loc) I
             // An integer literal takes the integer type its position asks for
             // (`val k: i64 = 1000;`, an `i64` parameter, the other operand of
             // an arithmetic or comparison operator); with nothing asking, `i32`.
+            // Decision 209 — an integer LITERAL checked against an expected
+            // `f64` is that `f64` (`val x: f64 = 1`, an `f64` argument, field
+            // or return, an element of an expected `f64[]`), re-spelt as a
+            // float for the backends (`env.indexRewrites`, literal for
+            // literal, as the array join does). An `i32` value never widens.
+            if (!isFloat and expectsFloat(env)) {
+                if (try floatSpelling(env, n)) |text| {
+                    if (!env.indexRewrites.contains(loc)) {
+                        const respelt = try env.arena.create(ast.Expr);
+                        respelt.* = .{ .literal = .{ .loc = loc, .kind = .{ .numberLit = text } } };
+                        try env.indexRewrites.put(loc, respelt);
+                    }
+                    break :blk TypedExpr{ .literal = .{ .loc = loc, .type_ = try env.namedType("f64"), .kind = .{ .numberLit = text } } };
+                }
+            }
             const width: []const u8 = if (isFloat) "f64" else (expectedIntegerType(env) orelse "i32");
             break :blk TypedExpr{ .literal = .{ .loc = loc, .type_ = try env.namedType(width), .kind = .{ .numberLit = n } } };
         },
@@ -9322,7 +10005,11 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
             env.lastError = try unboundAt(env, name, loc);
             return error.TypeError;
         },
-        .dotIdent => |name| {
+        .dotIdent => |written| {
+            // A numeric section leaf (`.50`, row 22) is declared under the F1
+            // mangling `__50`; it resolves by the expected section like an
+            // identifier leaf, and only that way.
+            const name = if (looksNumeric(written)) try std.fmt.allocPrint(env.arena, "__{s}", .{written}) else written;
             // 01 step 12 — a leading-dot variant takes its enum from the
             // position's expected type (as `.Circle(…)` does), spliced in as
             // `Enum.Variant` so the backends see the qualified form. Without
@@ -9336,17 +10023,17 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
                 try env.indexRewrites.put(loc, qualified);
                 return inferExprTyped(env, qualified.*);
             }
-            if (env.lookup(name)) |ty| {
+            if (name.ptr == written.ptr) if (env.lookup(name)) |ty| {
                 try refuseAmbiguousVariant(env, name, ty, loc);
                 return TypedExpr{ .identifier = .{ .loc = loc, .type_ = ty, .kind = .{ .dotIdent = name } } };
-            }
+            };
             // A section leaf has a leading-dot shorthand only where the
             // position's type is that section (`val b: Token.Layout.Break =
             // .Zeta;`); anywhere else it is named for what it is, not
             // reported as a variable nobody declared.
             if (try sectionOwningLeaf(env, name)) |section| {
-                const msg = try std.fmt.allocPrint(env.arena, "`.{s}` is a leaf of the section `{s}`, and nothing here says the position is that section", .{ name, section });
-                const hint = try std.fmt.allocPrint(env.arena, "Give the position the section's type (`val v: {s} = .{s};`, a typed parameter) or write the full path.", .{ section, name });
+                const msg = try std.fmt.allocPrint(env.arena, "`.{s}` is a leaf of the section `{s}`, and nothing here says the position is that section", .{ written, section });
+                const hint = try std.fmt.allocPrint(env.arena, "Give the position the section's type (`val v: {s} = .{s};`, a typed parameter) or write the full path.", .{ section, written });
                 env.lastError = TypeError.custom(msg, hint).withLoc(loc);
                 return error.TypeError;
             }
@@ -9568,7 +10255,7 @@ fn inferBinaryOpExpr(env: *Env, binop: ast.BinOpExprOf(.untyped), loc: ast.Loc) 
     const lhsIsLiteral = numericOp and isIntegerLiteral(binop.lhs.*) and !isIntegerLiteral(binop.rhs.*);
     const early_rhs: ?TypedExpr = if (lhsIsLiteral) try inferExprTypedExpecting(env, binop.rhs.*, env.expectedType) else null;
     const lhsTyped = if (early_rhs) |r|
-        try inferExprTypedExpecting(env, binop.lhs.*, r.getType())
+        try inferExprTypedExpecting(env, binop.lhs.*, equalityOperandExpectation(binop.op, r.getType()))
     else
         try inferExprTyped(env, binop.lhs.*);
 
@@ -9608,13 +10295,31 @@ fn inferBinaryOpExpr(env: *Env, binop: ast.BinOpExprOf(.untyped), loc: ast.Loc) 
     const rhsTyped = if (early_rhs) |r|
         r
     else if (binop.op == .eq or binop.op == .ne or (numericOp and isIntegerLiteral(binop.rhs.*)))
-        try inferExprTypedExpecting(env, binop.rhs.*, lhsTyped.getType())
+        try inferExprTypedExpecting(env, binop.rhs.*, equalityOperandExpectation(binop.op, lhsTyped.getType()))
     else
         try inferExprTyped(env, binop.rhs.*);
 
     // Restore after RHS inference.
     if (andSnapshots.items.len > 0) {
         try restorePatternBindings(env, andSnapshots.items);
+    }
+    // Decision 215 — `==` / `!=` between an `f64` and an integer literal is
+    // refused at the literal: the exact comparison (decision B2) and the
+    // literal's widening (decision 209) would read it two ways.
+    if (binop.op == .eq or binop.op == .ne) {
+        const litSide: ?ast.Expr = if (isIntegerLiteral(binop.lhs.*) and rhsTyped.getType().deref().isNamed("f64"))
+            binop.lhs.*
+        else if (isIntegerLiteral(binop.rhs.*) and lhsTyped.getType().deref().isNamed("f64"))
+            binop.rhs.*
+        else
+            null;
+        if (litSide) |lit| {
+            const text = lit.literal.kind.numberLit;
+            const fixed = (try floatSpelling(env, text)) orelse text;
+            const msg = try std.fmt.allocPrint(env.arena, "comparing f64 with an integer literal — write {s}", .{fixed});
+            env.lastError = TypeError.custom(msg, "`==` between numbers is exact and never widens; write the literal as the float it is compared with.").withLoc(lit.getLoc());
+            return error.TypeError;
+        }
     }
     const lhsPtr = try makeTypedPtr(env, lhsTyped);
     const rhsPtr = try makeTypedPtr(env, rhsTyped);
@@ -9759,6 +10464,11 @@ fn generatorScopeRefusal(env: *Env, code: []const u8, what: []const u8) ![]const
 /// Decision 121 — the refusal for `throw` / `try` in a body whose return
 /// carries no `@Result` layer, naming the return.
 fn fallibleChannelRefusal(env: *Env, what: []const u8) ![]const u8 {
+    if (env.inLambdaBody) return std.fmt.allocPrint(
+        env.arena,
+        "{s}: `{s}` in a lambda needs a `@Result` in the lambda's expected return — a lambda's return is the type its position expects, and this one has none",
+        .{ diagnostics.effect_try_without_fallible_channel, what },
+    );
     const shape: []const u8 = if (env.fnEffect) |e| switch (e) {
         .iterator, .stream => try std.fmt.allocPrint(env.arena, "the item of `@{s}<T>` has to be `@Result<T, E>` to use `throw` / `try`", .{e.returnWrapper()}),
         else => try std.fmt.allocPrint(env.arena, "this fn returns `@{s}<…>` with no `@Result` in it", .{e.returnWrapper()}),
@@ -10598,6 +11308,11 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
                 null;
             // Feed a `fn(...) -> ...` annotation into a lambda RHS so its
             // params are typed from context (mirrors `inferDeclTyped`).
+            // Decision 148 — a local closure called only at statement
+            // position (`val bump = { -> n = n + 1; }; bump();`) may write a
+            // captured `var`.
+            if (lb.value.* == .function and env.statementClosures.contains(lb.name)) env.nextLambdaExempt = true;
+            defer env.nextLambdaExempt = false;
             const valTyped = if (annType != null and lb.value.* == .function)
                 try inferFunctionExprExpected(env, lb.value.function, lb.value.function.loc, annType, false)
             else
@@ -10637,12 +11352,20 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
                                     if (env.lookup(name)) |ty| {
                                         try refuseValAssign(env, name, loc);
                                         try refuseMemoryWrite(env, name, a.op == .plusAssign, a.value, loc);
+                                        try refuseCapturedVarWrite(env, name, loc);
                                         // A narrowed `var` is assigned its DECLARED type, and
                                         // the assignment ends the narrowing.
                                         const declared = env.narrowedDecl.get(name);
                                         // A `var` typed by a behavior takes an implementer.
                                         try unifyArgument(env, declared orelse ty, valTyped.getType(), loc);
-                                        if (declared) |d| try env.bind(name, d);
+                                        if (declared) |d| {
+                                            const keepDepth = env.localDepth.get(name);
+                                            const prevSuppress = env.suppressDepthNote;
+                                            env.suppressDepthNote = true;
+                                            defer env.suppressDepthNote = prevSuppress;
+                                            try env.bind(name, d);
+                                            if (keepDepth) |kd| try env.localDepth.put(env.arena, name, .{ .depth = kd.depth, .ty = d });
+                                        }
                                     } else {
                                         env.lastError = try unboundAt(env, name, loc);
                                         return error.TypeError;
@@ -11002,6 +11725,33 @@ fn isNamePath(e: ast.Expr) bool {
         },
         else => false,
     };
+}
+
+/// Row 32 — a call whose callee is a value whose type is a record, an enum or
+/// a primitive (not a function, not a constructor) is `callee-not-a-function`
+/// at the call, naming the value's type and the read the author likely meant.
+/// A name that IS the type (a constructor reached by its own name) is not a
+/// value and passes.
+fn refuseCallOfValue(env: *Env, callee: []const u8, typeName: []const u8, loc: ast.Loc) InferError!void {
+    if (callee.len == 0) return;
+    if (std.mem.eql(u8, callee, typeName)) return;
+    if (env.lookupTypeDef(callee) != null) return;
+    const td = env.lookupTypeDef(typeName);
+    const isPrim = !std.mem.eql(u8, typeName, "void") and !std.mem.eql(u8, typeName, "noreturn") and for (scalar_type_names) |p| {
+        if (std.mem.eql(u8, p, typeName)) break true;
+    } else false;
+    if (td == null and !isPrim) return;
+    const field: ?[]const u8 = if (td) |t| switch (t) {
+        .record => |r| if (r.fields.len > 0) r.fields[0].name else null,
+        else => null,
+    } else null;
+    const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is a value of type `{s}`, not a function — it cannot be called", .{ diagnostics.callee_not_a_function, callee, typeName });
+    const hint = if (field) |f|
+        try std.fmt.allocPrint(env.arena, "Read the value without calling it: `{s}.{s}`. A function-typed field is called through the value (`{s}.f(…)`).", .{ callee, f, callee })
+    else
+        try std.fmt.allocPrint(env.arena, "Use `{s}` without `( … )`; only a function or a constructor is called.", .{callee});
+    env.lastError = TypeError.custom(msg, hint).withLoc(loc);
+    return error.TypeError;
 }
 
 /// A label on a call whose callee has a function TYPE and no declaration —
@@ -11529,6 +12279,19 @@ fn inferResultOptionMethod(
     } } } };
 }
 
+/// The expectation of `unwrapOr`'s default: the payload of the `?T` /
+/// `@Result<T, E>` it is called on, so an integer literal takes the payload's
+/// width (`delay(n).unwrapOr(0)` over `?i64`) as it does as an argument of a
+/// declared parameter or a field (`inferLiteralExpr`).
+fn unwrapOrDefaultExpected(recv: ?*ast.TypedExpr, callee: []const u8) ?*T.Type {
+    if (!std.mem.eql(u8, callee, "unwrapOr")) return null;
+    const r = recv orelse return null;
+    const t = r.getType().deref();
+    if (t.* != .named or t.named.args.len < 1) return null;
+    if (!std.mem.eql(u8, t.named.name, "optional") and !std.mem.eql(u8, t.named.name, "Result")) return null;
+    return t.named.args[0];
+}
+
 /// Resolve a compiler-provided template method (expr-templates F4):
 /// `text`/`parts`/`lookup`/`fail`/`failAt` on an `expr` receiver, plus
 /// `ref()` on a `Binding`.
@@ -11813,7 +12576,7 @@ fn primKindOfName(typeName: []const u8) ?envMod.PrimKind {
 }
 
 /// The return type of a builtin-primitive method call derived from its declared
-/// signature in `primitives.d.bp` (`Self` substitutes to the receiver, `T` to its
+/// signature in `primitives.bp` (`Self` substitutes to the receiver, `T` to its
 /// first type arg, and any method-level `<U>` becomes a fresh var). Lets a chained
 /// call keep tracking its type (`xs.filter(f).at(0)` → `?T`). Returns null when
 /// the method is unknown to the interface; the caller then types it permissively.
@@ -12065,7 +12828,7 @@ fn recordInstanceCall(env: *Env, loc: ast.Loc, typeName: []const u8) InferError!
     }
 }
 
-/// Map a primitive type name to its controller interface in `primitives.d.bp`.
+/// Map a primitive type name to its controller interface in `primitives.bp`.
 /// Numeric widths are intentionally excluded for now (their `default fn`s call
 /// host-backed `@[external]` methods that codegen doesn't materialize yet).
 fn primitiveInterfaceName(typeName: []const u8) ?[]const u8 {
@@ -12084,7 +12847,7 @@ fn primitiveInterfaceName(typeName: []const u8) ?[]const u8 {
     return null;
 }
 
-/// JS prototype-method rename driven by the 2-arg `@external(node, "X")`
+/// JS prototype-method rename driven by the bare-symbol `#[@External.Node("X")]`
 /// annotation on a primitive-receiver interface method. Returns the host
 /// symbol `X` when it differs from `callee` (the call site emits
 /// `recv.X(args)` instead of `recv.callee(args)`); returns null when there is
@@ -12197,7 +12960,7 @@ fn findInterfaceDefaultFn(env: *Env, ifaceName: []const u8, callee: []const u8) 
                 }
                 // A JS global namespace (`Math`) lowers as `Math.sym(self, …)`,
                 // dispatched through the stdlib lib path. The §A4 2-arg shorthand
-                // (`@external(node, "X")`, module empty) names a native prototype
+                // (`#[@External.Node("X")]`, module empty) names a native prototype
                 // method — that case is handled by the prim-block rename, NOT here.
                 if (ref.module.len == 0) continue;
                 const is_global = std.mem.indexOfScalar(u8, ref.module, '/') == null and
@@ -12687,7 +13450,19 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
             // C-04 — the callee's parameters AS WRITTEN, read once here and
             // used twice: 00 · 01-checker's expectation just below, and the
             // default fill the arity arm plans further down.
-            const declParamsAst: ?[]const ast.Param = calleeParams(env, call.callee);
+            // A qualified variant constructor (`Tok.Size(percent: .100)`,
+            // row 22) names its variant under `Enum.Variant`; its fields are
+            // the parameters an argument is inferred under, as a plain call's.
+            const qualifiedCtor: ?[]const u8 = blk: {
+                if (call.is_builtin) break :blk null;
+                const r = call.receiver orelse break :blk null;
+                if (r.* != .identifier or r.identifier.kind != .ident) break :blk null;
+                const qn = try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ r.identifier.kind.ident, call.callee });
+                if (!env.variantCtors.contains(qn)) break :blk null;
+                break :blk qn;
+            };
+            const declParamsAst: ?[]const ast.Param = if (qualifiedCtor) |qn| env.ctorParams.get(qn) else calleeParams(env, call.callee);
+            if (call.receiver == null) if (declParamsAst) |dps| try refuseInlineFieldsAcrossModules(env, call.callee, dps, call.args, loc);
 
             // 00 · 01-checker — the DECLARED parameter types of a plain call,
             // read only as the expectation an argument is inferred under
@@ -12695,6 +13470,10 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
             // parameter's enum). Nothing is unified from here — the arm that
             // types the call still unifies each argument with its parameter.
             const declParamTypes: ?[]*T.Type = blk: {
+                if (qualifiedCtor) |qn| {
+                    const d = env.variantCtors.get(qn).?.deref();
+                    break :blk if (d.* == .func) d.func.params else null;
+                }
                 if (call.receiver != null or call.is_builtin) break :blk null;
                 const calleeTy = env.lookup(call.callee) orelse break :blk null;
                 const d = calleeTy.deref();
@@ -12735,11 +13514,15 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                         i;
                     if (pi >= ps.len) break :blk null;
                     break :blk ps[pi];
-                } else null;
+                } else if (i == 0) unwrapOrDefaultExpected(typedReceiver, call.callee) else null;
+                // Decision 148 — a `forEach` body may write a captured `var`.
+                if (arg.value.* == .function and typedReceiver != null and std.mem.eql(u8, call.callee, "forEach") and (isArrayType(typedReceiver.?.getType()) or typedReceiver.?.getType().deref().* == .typeVar))
+                    env.nextLambdaExempt = true;
                 const val = if (expected != null and arg.value.* == .function)
                     try inferFunctionExprExpected(env, arg.value.*.function, arg.value.*.function.loc, expected.?, true)
                 else
                     try inferExprTypedExpecting(env, arg.value.*, argExpected);
+                env.nextLambdaExempt = false;
                 typedArgs[i] = .{ .label = arg.label, .value = try makeTypedPtr(env, val) };
             }
             const typedTrailing = try inferTrailingLambdasTyped(env, call.trailing);
@@ -12900,6 +13683,7 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                                 env.lastError = e;
                                 return error.TypeError;
                             };
+                            try refuseShadowedStdSignature(env, recvName, std_key, call.callee, exported, loc);
                             var seen = std.AutoHashMap(*T.TypeCell, *T.Type).init(env.arena);
                             defer seen.deinit();
                             const instantiated = try instantiateType(env, exported, &seen, .allVars);
@@ -13160,7 +13944,7 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                             try env.jsMethodRenames.put(loc, "length");
                         }
                         // §A4: per-call-site JS prototype rename driven by the
-                        // 2-arg `@external(node, "X")` annotation on the method
+                        // bare-symbol `#[@External.Node("X")]` annotation on the method
                         // (`String.contains` ⇒ `includes`, `Array.append` ⇒
                         // `concat`, …). When the annotated symbol equals the
                         // method name nothing is recorded — call site emits the
@@ -13250,6 +14034,18 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                     };
                 }
 
+                if (nominalName(recvPtr.getType())) |tn| if (env.lookupTypeDef(tn)) |td| {
+                    if (try adoptedDefaultCallType(env, td, recvPtr, call.callee, typedArgs, typedTrailing)) |ret| {
+                        return TypedExpr{ .call = .{ .loc = loc, .type_ = ret, .kind = .{ .call = .{
+                            .receiver = recvPtr,
+                            .callee = call.callee,
+                            .is_builtin = false,
+                            .args = typedArgs,
+                            .trailing = typedTrailing,
+                        } } } };
+                    }
+                };
+
                 // Other method calls (struct getters, activated extensions) are
                 // handled by sibling work — type them permissively as a fresh var
                 // so they don't error here.
@@ -13329,6 +14125,21 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                                 try unifyFilledArgs(env, fill, f.params, typedArgs);
                                 break :blk f.ret;
                             }
+                            // Decision 207 — an inline parameter type's
+                            // constructor is the call's labelled fields: name
+                            // the field left out.
+                            if (ast.ownerOfInlineType(call.callee) != null) if (declParamsAst) |declared| {
+                                for (declared) |dp| {
+                                    if (dp.default != null) continue;
+                                    const given = for (call.args) |a| {
+                                        if (a.label) |l| if (std.mem.eql(u8, l, dp.name)) break true;
+                                    } else false;
+                                    if (given) continue;
+                                    const msg = try std.fmt.allocPrint(env.arena, "missing field `{s}` of {s}", .{ dp.name, call.callee });
+                                    env.lastError = TypeError.custom(msg, "Write it as a labelled argument of the call, or give the field a default in the inline type.").withLoc(loc);
+                                    return error.TypeError;
+                                }
+                            };
                             // N2 — a missing REQUIRED argument is the arity
                             // error it has always been, word for word.
                             env.lastError = TypeError.arityMismatch(call.callee, f.params.len, call.args.len).withLoc(loc);
@@ -13491,7 +14302,10 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                     }
                     break :blk f.ret;
                 },
-                .named => resolved,
+                .named => |n| blk: {
+                    try refuseCallOfValue(env, call.callee, n.name, loc);
+                    break :blk resolved;
+                },
                 else => try env.freshVar(),
             };
             return TypedExpr{ .call = .{ .loc = loc, .type_ = retType, .kind = .{ .call = .{
@@ -13826,12 +14640,77 @@ fn caseTypeFromArms(env: *Env, arms: []const ast.CaseArmOf(.typed)) InferError!*
     return finishUnion(env, members.items);
 }
 
+/// Decision 150 (D5, decision 8 §3.2) — the element type of an array literal
+/// whose elements were inferred with nothing expected of them. Elements that
+/// agree unify (the first pins the others' variables, as before); the ones
+/// that do not stand beside each other as union members, so `[1, "a"]` is
+/// `(i32 | string)[]` and `[1, null]` is `?i32[]` (`finishUnion`'s optional
+/// absorption). §3.2's one numeric rule: an integer LITERAL fits `f64`, so
+/// `[1, 2.5]` is `f64[]` — the literal is typed `f64` and re-spelt as a float
+/// for the backends (`env.indexRewrites`, literal for literal). An `i32` that
+/// is not a literal does not widen. A union made here records its first
+/// disagreeing element in `env.unionOrigins`, which the refusal at a use names.
+fn arrayLiteralJoin(env: *Env, elems: []const ast.Expr, typed: []ast.TypedExpr) InferError!*T.Type {
+    const hasFloat = for (typed) |t| {
+        if (t.getType().deref().isNamed("f64")) break true;
+    } else false;
+    if (hasFloat) {
+        for (elems, 0..) |e, i| {
+            if (!isIntegerLiteral(e)) continue;
+            if (!typed[i].getType().deref().isNamed("i32")) continue;
+            const text = try floatSpelling(env, e.literal.kind.numberLit) orelse continue;
+            const lit = try env.arena.create(ast.Expr);
+            lit.* = .{ .literal = .{ .loc = e.literal.loc, .kind = .{ .numberLit = text } } };
+            if (env.indexRewrites.contains(e.literal.loc)) continue;
+            try env.indexRewrites.put(e.literal.loc, lit);
+            typed[i] = TypedExpr{ .literal = .{ .loc = e.literal.loc, .type_ = try env.namedType("f64"), .kind = .{ .numberLit = text } } };
+        }
+    }
+    var members: std.ArrayListUnmanaged(*T.Type) = .empty;
+    var widenedAt: ?ast.Loc = null;
+    for (typed) |elem| {
+        const t = elem.getType();
+        var merged = false;
+        for (members.items) |m| {
+            if (caseArmTypesAgree(m, t)) {
+                try unifyAt(env, m, t, elem.getLoc());
+                merged = true;
+                break;
+            }
+        }
+        if (!merged) {
+            if (members.items.len > 0 and widenedAt == null) widenedAt = elem.getLoc();
+            try members.append(env.arena, t);
+        }
+    }
+    const joined = try finishUnion(env, members.items);
+    if (widenedAt) |at| {
+        if (joined.deref().* == .union_) try env.unionOrigins.put(env.arena, joined.deref(), .{ .loc = at, .kind = "array element" });
+    }
+    return joined;
+}
+
+/// The float spelling of an integer literal's text (`1` → `1.0`, `0xFF` →
+/// `255.0`, `1_000` → `1000.0`); null when it does not parse.
+fn floatSpelling(env: *Env, text: []const u8) InferError!?[]const u8 {
+    var digits: std.ArrayListUnmanaged(u8) = .empty;
+    for (text) |c| if (c != '_') try digits.append(env.arena, c);
+    const v = std.fmt.parseInt(i128, digits.items, 0) catch return null;
+    return try std.fmt.allocPrint(env.arena, "{d}.0", .{v});
+}
+
 /// Two arm types agree (and are unified) when either is still a type
-/// variable or both name the same type constructor with the same arity.
+/// variable, both name the same type constructor with the same arity, or both
+/// are function types — the join of `case` arms, `if` branches and array
+/// elements. A function is never a union member beside another function
+/// (nothing could call `fn | fn`), so two of them unify structurally: the
+/// same arity, unifiable parameters and return, and any difference is the
+/// located mismatch at the second (rows 28/31 of `language-gaps.md`).
 fn caseArmTypesAgree(a: *T.Type, b: *T.Type) bool {
     const da = a.deref();
     const db = b.deref();
     if (da.* == .typeVar or db.* == .typeVar) return true;
+    if (da.* == .func and db.* == .func) return true;
     if (da.* == .named and db.* == .named) {
         return std.mem.eql(u8, da.named.name, db.named.name) and da.named.args.len == db.named.args.len;
     }
@@ -13841,7 +14720,18 @@ fn caseArmTypesAgree(a: *T.Type, b: *T.Type) bool {
 /// Infer type for function definition expressions (lambdas and anonymous functions)
 fn inferFunctionExpr(env: *Env, func: ast.FunctionExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
     if (func.kind.syntax == .asyncBlock) return inferAsyncBlock(env, func, loc);
-    return inferFunctionExprExpected(env, func, loc, null, false);
+    // Decision 147 — a lambda in a position that expects a FALLIBLE function
+    // (an argument of a `fn(x: T) -> @Result<U, E>` parameter) takes that
+    // channel; any other expectation stays the hint it was.
+    const fallibleExpected: ?*T.Type = blk: {
+        const e = env.expectedType orelse break :blk null;
+        const d = e.deref();
+        if (d.* != .func) break :blk null;
+        if (!isResultType(d.func.ret)) break :blk null;
+        break :blk e;
+    };
+    env.expectedType = null;
+    return inferFunctionExprExpected(env, func, loc, fallibleExpected, false);
 }
 
 /// Decision 124 — `async { … }`: a closed block worth `@Task<T>`, legal in any
@@ -13974,11 +14864,42 @@ fn inferFunctionExprExpected(
         defer env.expectedType = savedExpected;
         return inferAsyncBlock(env, func, loc);
     }
-    // A nested function expression has no declared return type, so `throw`
-    // inside it is not checked against the enclosing fn's `E`.
+    // Decision 147 (lg-a) — a lambda's return is its expected type's: its
+    // `try` / `throw` use the fallible channel of the EXPECTED return, and a
+    // lambda whose expected return carries no `@Result` (or that has no
+    // expected type) has none. A `case` arm's block body is not a lambda for
+    // this: its `throw` is the enclosing function's (row 29), so it keeps the
+    // enclosing context.
     const savedThrowCtx = env.throwContext;
-    env.throwContext = .unchecked;
     defer env.throwContext = savedThrowCtx;
+    const savedInLambda = env.inLambdaBody;
+    defer env.inLambdaBody = savedInLambda;
+    const armBlock = env.keepReturnTarget;
+    const lambdaErr: ?*T.Type = blk: {
+        const e = expected orelse break :blk null;
+        const d = e.deref();
+        if (d.* != .func or d.func.params.len != func.kind.params.len) break :blk null;
+        const r = d.func.ret.deref();
+        if (r.* != .named or !std.mem.eql(u8, r.named.name, "Result") or r.named.args.len < 2) break :blk null;
+        break :blk r.named.args[1];
+    };
+    if (!armBlock) {
+        env.throwContext = if (lambdaErr) |et| .{ .result = et } else .plain;
+        env.inLambdaBody = true;
+    }
+    // Decision 148 — one lambda deeper; its writes to captured `var`s are
+    // legal only in the two exempt shapes the site that infers it named.
+    const savedDepth = env.lambdaDepth;
+    const savedWriteOk = env.captureWriteOk;
+    defer {
+        env.lambdaDepth = savedDepth;
+        env.captureWriteOk = savedWriteOk;
+    }
+    if (!armBlock) {
+        env.lambdaDepth += 1;
+        env.captureWriteOk = env.nextLambdaExempt;
+    }
+    env.nextLambdaExempt = false;
 
     // A nested function gets its own async/label scope: it does not inherit
     // the enclosing fn's `await`/`yield`/label context.
@@ -14050,12 +14971,23 @@ fn inferFunctionExprExpected(
         env.returnTarget = expRet orelse try env.freshVar();
         env.returnBareIsVoid = false;
         env.returnWhole = null;
+        // A fallible lambda (`fn(x: T) -> @Result<U, E>` expected) returns
+        // its payload: `return v` is wrapped `Ok(v)`, as in a fn body.
+        if (lambdaErr != null) {
+            const whole = expected.?.deref().func.ret;
+            env.returnWhole = whole;
+            env.returnTarget = whole.deref().named.args[0];
+        }
     }
+    if (!armBlock) try refuseRedeclaredBindings(env, fk.body, fk.params);
     const bodyTyped = try inferStmtsTyped(env, fk.body);
     // The lambda's return type is its tail expression's type; an explicit
     // `return expr` tail types as void, so use the returned value's type.
     const retType = if (bodyTyped.len > 0) blk: {
         const tail = bodyTyped[bodyTyped.len - 1].expr;
+        // A fallible lambda's `return` / `throw` answer the expected
+        // `@Result` (wrapped by the transform); its value is that type.
+        if (lambdaErr != null and !keep and tail == .jump and (tail.jump.kind == .@"return" or tail.jump.kind == .throw_)) break :blk expected.?.deref().func.ret;
         if (tail == .jump and tail.jump.kind == .@"return") {
             break :blk if (tail.jump.kind.@"return") |rv| rv.getType() else try env.namedType("void");
         }
@@ -14094,7 +15026,17 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
             // refused the second (`expected A, got B`). Any other expectation
             // stays a hint (it may be a scheme's generic variable).
             const behaviorElem: ?*T.Type = if (elemExpected) |ee| (if (isBehaviorType(env, ee)) ee else null) else null;
-            const elemType = behaviorElem orelse if (typedElems.len > 0) typedElems[0].getType() else try env.freshVar();
+            // An expected union is the element type: each element is one of
+            // its members (`val xs: (i32 | string)[] = [1, "a"];`).
+            const unionElem: ?*T.Type = if (elemExpected) |ee| (if (ee.deref().* == .union_) ee else null) else null;
+            // Decision 150 (D5, §3.2) — with nothing expected, elements that
+            // disagree make the union of their types, as a `case`'s arms do.
+            const joins = behaviorElem == null and unionElem == null and
+                (elemExpected == null or elemExpected.?.deref().* == .typeVar);
+            const elemType = if (joins and typedElems.len > 1)
+                try arrayLiteralJoin(env, al.elems, typedElems)
+            else
+                behaviorElem orelse unionElem orelse if (typedElems.len > 0) typedElems[0].getType() else try env.freshVar();
             for (typedElems) |elem| {
                 // Located at the element that disagrees (01 step 9).
                 try unifyArgument(env, elemType, elem.getType(), elem.getLoc());

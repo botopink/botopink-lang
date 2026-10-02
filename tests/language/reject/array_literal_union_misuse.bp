@@ -1,0 +1,9 @@
+//// Decision 150 (D5, decision 8 §3.2) — `[1, "a"]` is `(i32 | string)[]`, and
+//// an element read as an `i32` without narrowing is refused at the use, naming
+//// the element that widened the literal (`run/array_literal_union` is the
+//// accepted half).
+
+pub fn main() {
+    val xs = [1, "a"];
+    xs.forEach({ x -> @print(x + 1); });
+}
