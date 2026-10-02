@@ -150,3 +150,31 @@ test "beam: a type adopts its behavior's default fns as methods of its module" {
         \\
     , &.{"{move, {atom, twice}, {x, 1}}"});
 }
+
+// ── `?.` through a tuple label ───────────────────────────────────────────────
+
+test "beam: ?. on an absent tuple element answers absent before the label is read" {
+    // Decision 45 rewrites `?.b` to the element's position (`._1`), and the
+    // tuple-index read came before the `?.` test: `es.at(0)?.b` read
+    // `element(2, undefined)` and raised `badarg`. (wasm traps on the absent
+    // half — `05-wasm`'s row — so this is a beam fixture.)
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\fn rows() -> #(a: i32, b: string)[] {
+        \\    return [#(1, "x"), #(2, "y")];
+        \\}
+        \\fn main() {
+        \\    val es: #(a: i32, b: string)[] = [];
+        \\    @print(es.at(0)?.b ?? "none");
+        \\    @print(es.at(3)?.a ?? 0);
+        \\    val rs = rows();
+        \\    @print(rs.at(1)?.b ?? "none");
+        \\    @print(rs.at(5)?.a ?? -1);
+        \\}
+    ,
+        \\none
+        \\0
+        \\y
+        \\-1
+        \\
+    , &.{"{extfunc, erlang, element, 2}"});
+}

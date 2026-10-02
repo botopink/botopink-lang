@@ -11034,10 +11034,23 @@ const Emitter = struct {
         // cross-module result), and `is_tuple` alone leaves the arity unknown, so
         // `get_tuple_element` fails the loader (`bad_type, needed t_tuple,1`).
         if (tupleIndexMember(ia.member)) |idx| {
+            // `rs.at(0)?.b` — decision 45 rewrote the label to its position,
+            // and the `?.` still short-circuits an absent receiver to
+            // `undefined` (the record/map arm below). It read
+            // `element(2, undefined)` and raised `badarg`.
+            const end_l: ?u32 = if (ia.optional) self.allocLabel() else null;
+            if (end_l) |end| {
+                const present_l = self.allocLabel();
+                try beamEmitter.writeTest(self.out, .is_eq, present_l, &.{ Op.xr(0), Op.atom("undefined") });
+                try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.xr(dest));
+                try beamEmitter.writeJump(self.out, end);
+                try beamEmitter.writeLabel(self.out, present_l);
+            }
             try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(1)); // tuple → x1
             try beamEmitter.writeMoveOp(self.out, Op.int(idx + 1), Dst.xr(0)); // index → x0
             try beamEmitter.writeCall(self.out, .normal, 2, .{ .ext = .{ .module = "erlang", .function = "element" } }, 0);
             if (dest != 0) try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(dest));
+            if (end_l) |end| try beamEmitter.writeLabel(self.out, end);
             return;
         }
 

@@ -1686,7 +1686,9 @@ codegen/
   (`lowerResultOptionOp`: `{ok, V}`/`{error, E}` and bare value / `undefined`,
   mirroring erlang), optional chaining (`lowerIdentAccess`: `is_eq` on
   `undefined`, then the tagged-tuple read below, or `is_map` +
-  `get_map_elements` for a receiver whose type this emit cannot place),
+  `get_map_elements` for a receiver whose type this emit cannot place; a
+  tuple label through `?.` — decision 45's `._N` — tests `undefined` before
+  its `element/2` read, which raised `badarg` on an absent element),
   `comptime` nodes
   (`lowerComptime`: a folded expression/block is its value), `await e` (eager:
   the value of `e`; `await e;` / `try e;` as a statement are the same lowering,
