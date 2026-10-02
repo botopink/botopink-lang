@@ -388,8 +388,26 @@ codegen/
   and whose native JS method disagrees with the declaration calls a helper
   instead — `s.at(i)` is `__bp_string_char_at(s, i)` (native `.at(i) ?? null`:
   a negative index counts from the end, decision 139; `null` out of range). An open-ended range is `__bp_range_from(start)`. `Emitter.helper` marks it, and only marked helpers are declared at
-  the top of the module. Interface default-fn bodies are not inferred, so a
-  `at` inside one stays native.
+  the top of the module. Interface default-fn bodies are not inferred: a call
+  on any other receiver inside one stays native.
+- **A `default fn` body is lowered untyped** (the checker does not type it —
+  `Emitter.unchecked_default`, set by `buildInterface` for a primitive
+  behavior's prototype patch and by `appendInterfaceDefaults` for a default
+  copied into a record). Two things are still known without inference. In a
+  prototype patch of a primitive behavior, `self` IS the behavior's primitive,
+  so a call on `self` lowers as the same call on a typed receiver
+  (`selfPrimitive`): the prelude helper (`self.at(0)` on `Array` is
+  `__bp_array_at(this, 0)`, `null` past the end — `Array.first` and
+  `Array.unique` returned JavaScript's `undefined`) and the method's plain
+  `#[@External.Node("<symbol>")]` as its rename, read from the patched
+  behavior or the std prelude's behavior of the same name (`selfHostMember`:
+  `self.length()` is the `length` PROPERTY — it was `self.length is not a
+  function`). And a bare `Ok(v)` / `Error(e)` (`Err(e)`) with no variant or
+  class of that name is the `@Result` this backend builds, `({ ok: v })` /
+  `({ error: e })`, as erlang and beam build their tuple — it was `ReferenceError:
+  Ok is not defined`. Both are pinned by `tests/commonjs.zig`; a call on any
+  other receiver of such a body stays untyped (02-erlang's C-35 is the typing
+  of these bodies on every backend).
 - **Duplicate test names**: two `test "x"` blocks in one module print
   `warning: duplicate test name "x" in <file>:<line>` to stderr; both run.
 - **Cross-module linking** (`crossModule.zig`): `from "<pkg>"` imports become
