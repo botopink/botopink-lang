@@ -38,10 +38,11 @@
 //// module only when the type is imported into the calling module, and without
 //// it `report.isValid()` lowers to an unqualified `isValid/1`.
 ////
-//// A DECORATOR BODY CANNOT CALL A SIBLING FUNCTION (each is lowered alone into
-//// the eval script), so the per-marker rule is written out inline here and the
-//// table grammar lives in `table.bp`, reached by the EMITTED code rather than
-//// by this body.
+//// THE PER-MARKER RULE IS WRITTEN OUT INLINE in `validated`, and the table
+//// grammar lives in `table.bp`, reached by the EMITTED code rather than by this
+//// body. A decorator body does call a bodied function of its module
+//// (`test/platform_test.bp`) — `#[schema]` at the end of this file is written
+//// that way.
 ////
 //// REFUSAL BEATS A CONSTRAINT THAT COULD NEVER FAIL. Decision 67. A marker on a
 //// field whose type it cannot check is a located compile error, not a row that
@@ -224,15 +225,15 @@ pub fn validated(comptime decl: @Decl) {
 // ── the constraint markers ──────────────────────────────────────────────────
 //
 // Thirteen near-identical bodies: placement, and — where the marker takes an
-// argument — what the argument may say. A decorator body cannot call a sibling
-// function, so the separator check is written out in each one, the same
-// duplication any comptime marker family carries.
+// argument — what the argument may say. The separator check is written out in
+// each one. It does not have to be: a decorator body calls a bodied function of
+// its module (`test/platform_test.bp`), which is how `#[schema]` below is
+// written.
 //
-// `#[sizeBetween]` takes BOTH bounds because a declared parameter default is
-// never applied at a call site (`docs.md:502-505`); Spring's single
-// `@Size(min = …, max = …)` with either half optional has no botopink spelling,
-// and pretending otherwise would produce a decorator that silently drops an
-// argument.
+// `#[sizeBetween]` takes BOTH bounds. A decorator parameter's default is
+// applied (`test/platform_test.bp`), so a one-bound spelling is expressible;
+// the two-bound form is what `#[validated]` reads today and what the constraint
+// table publishes.
 //
 // There is no `#[future]` in this module: the name reads as the `future`
 // effect annotation that decision 118 removed (a `-> @Task<…>` return replaced it),
@@ -335,4 +336,261 @@ pub fn constraint(comptime decl: @Decl, name: string) {
         decl.fail(
             "#[constraint]: a name may not contain a double quote - it is the argument's own delimiter in the reflected lexeme",
         );
+}
+
+// ── `#[schema]` ─────────────────────────────────────────────────────────────
+//
+// `#[schema]` on a record-shaped `type` emits its decoder — the function from a
+// `Json` document to the record that `validate<TypeName>` cannot be, because it
+// takes a record that already exists:
+//
+//     pub fn parse<TypeName>At(input: Json, at: string) -> @Result<TypeName, ValidationReport>
+//     pub fn parse<TypeName>(input: Json) -> @Result<TypeName, ValidationReport>
+//     pub fn decode<TypeName>(text: string) -> @Result<TypeName, ValidationReport>
+//     pub fn schemaOf<TypeName>() -> Schema<TypeName>
+//
+// THE NAMES ARE A CONTRACT, as `validate<TypeName>`'s are: a field whose type
+// is another `#[schema]` record is decoded by calling `parse<ThatType>At`, by
+// name — a decorator sees one declaration, and never needs a second.
+//
+// THE DECODER IS STRAIGHT-LINE CODE: one statement per field, every field
+// decoded, every violation collected, the record constructed only when there
+// are none. An undeclared key is a violation (`unrecognizedKey`).
+//
+// THE CHECKS ARE `#[validated]`'s. A type that carries constraint markers is
+// also `#[validated]`, and the emitted decoder calls `validate<TypeName>` on the
+// record it built — the marker table lives in one decorator. A marker on a
+// `#[schema]` type that is not `#[validated]` is refused: a check nothing runs
+// is the failure this module exists to design out.
+//
+// WHAT THE EMITTED CODE NEEDS IN SCOPE. The library is named through ONE
+// namespace, and the three types the signatures spell are leaves (a type cannot
+// be named through a namespace):
+//
+//     import {schemas, schemas.Schema, report.ValidationReport, report.Violation} from "validation";
+//     import {json.Json} from "std";
+
+fn schemaIsList(t: string) -> bool {
+    return (t.startsWith("Array<") && t.endsWith(">")) || t.endsWith("[]");
+}
+
+fn schemaItemOf(t: string) -> string {
+    if (t.endsWith("[]")) return t.slice(0, t.length() - 2);
+    return t.slice(6, t.length() - 1);
+}
+
+fn schemaIsName(t: string) -> bool {
+    if (t == "") return false;
+    val allowed = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_";
+    val head = t.slice(0, 1);
+    val startsUpper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".indexOf(head) >= 0;
+    val strange = t.split("").filter({ c -> allowed.indexOf(c) < 0 }).length;
+    return startsUpper && strange == 0;
+}
+
+fn schemaIsBuiltin(t: string) -> bool {
+    return t == "string"
+        || t == "i32"
+        || t == "i64"
+        || t == "f64"
+        || t == "bool"
+        || t == "Json";
+}
+
+// The type one wrapper holds: `T` of `?T`, the item of a list; `""` when `t`
+// is not a wrapper.
+fn schemaInner(t: string) -> string {
+    if (t.startsWith("?")) return t.slice(1, t.length());
+    if (schemaIsList(t)) return schemaItemOf(t);
+    return "";
+}
+
+fn schemaSupported(t: string) -> bool {
+    if (schemaIsBuiltin(t)) return true;
+    val inner = schemaInner(t);
+    if (inner != "") return schemaSupported(inner);
+    return schemaIsName(t);
+}
+
+// A DECODER HANDED TO A COMBINATOR IS A FUNCTION OF THE APPLICATION'S MODULE.
+// `schemas.optionalOf` and `schemas.decodeArrayOf` take the inner decoder as a
+// value, and a library function cannot be that value from emitted code: a
+// namespace member is resolved where it is CALLED, not where it is passed
+// (`schemas.decodeString` as an argument is "unbound variable 'schemas'"). A
+// lambda that calls it works in a consumer and not in a module of this package,
+// where the namespace is the bare `import {schemas};` (`schemas is not defined`
+// on node, `decodeString/3 undefined` on erlang) - and this library's own tests
+// are such modules. So each wrapper level below the field's own gets one
+// emitted function, named after the record, the field and the depth, whose body
+// is the call: a plain function of the module the record is declared in.
+fn schemaHelperName(owner: string, field: string, depth: i32) -> string {
+    return "__decode" + owner + "_" + field + "_" + [depth].join("");
+}
+
+fn schemaRef(t: string, owner: string, field: string, depth: i32) -> string {
+    if (schemaIsName(t) && schemaIsBuiltin(t) == false)
+        return "parse" + t + "At";
+    return schemaHelperName(owner, field, depth);
+}
+
+// The expression that decodes a value of type `t` read from `source` at `path`.
+fn schemaCall(
+    t: string,
+    source: string,
+    path: string,
+    owner: string,
+    field: string,
+    depth: i32,
+) -> string {
+    val tail = "(" + source + ", " + path;
+    if (t == "string") return "schemas.decodeString" + tail + ")";
+    if (t == "i32") return "schemas.decodeInt" + tail + ")";
+    if (t == "i64") return "schemas.decodeLong" + tail + ")";
+    if (t == "f64") return "schemas.decodeFloat" + tail + ")";
+    if (t == "bool") return "schemas.decodeBool" + tail + ")";
+    if (t == "Json") return "schemas.decodeJson" + tail + ")";
+    val inner = schemaInner(t);
+    if (inner == "") return "parse" + t + "At" + tail + ")";
+    val ref = schemaRef(inner, owner, field, depth + 1);
+    if (t.startsWith("?"))
+        return "schemas.optionalOf" + tail + ", " + ref + ")";
+    return "schemas.decodeArrayOf" + tail + ", " + ref + ")";
+}
+
+// The emitted functions the wrapper levels of one field need, outermost first;
+// `""` for a field with no wrapper around a builtin or another wrapper.
+fn schemaHelpers(
+    t: string,
+    owner: string,
+    field: string,
+    depth: i32,
+) -> string {
+    val inner = schemaInner(t);
+    if (inner == "") return "";
+    if (schemaIsName(inner) && schemaIsBuiltin(inner) == false) return "";
+    return "fn "
+        + schemaHelperName(owner, field, depth + 1)
+        + "(input: Json, at: string) -> @Result<"
+        + inner
+        + ", ValidationReport> {\n    return try "
+        + schemaCall(inner, "input", "at", owner, field, depth + 1)
+        + ";\n}\n"
+        + schemaHelpers(inner, owner, field, depth + 1);
+}
+
+fn schemaIsMarker(name: string) -> bool {
+    val markers = "|notNull|notBlank|notEmpty|sizeBetween|minValue|maxValue|positive|positiveOrZero|email|pattern|pastDate|futureDate|constraint|";
+    return markers.indexOf("|" + name + "|") >= 0;
+}
+
+pub fn schema(comptime decl: @Decl) {
+    var decoders: Array<string> = [];
+    var gathers: Array<string> = [];
+    var args: Array<string> = [];
+    var known: Array<string> = [];
+    var helpers: Array<string> = [];
+    var problem = "";
+    var marked = false;
+    decl.fields.forEach({ f ->
+        val source = "schemas.fieldOf(input, \"" + f.name + "\")";
+        val path = "schemas.memberPath(at, \"" + f.name + "\")";
+        val supported = schemaSupported(f.typeName);
+        val call = if (supported)
+            schemaCall(f.typeName, source, path, decl.name, f.name, 0)
+        else
+            "0";
+        if (supported)
+            helpers.push(schemaHelpers(f.typeName, decl.name, f.name, 0));
+        if (supported == false)
+            problem = "#[schema] on `"
+                + decl.name
+                + "`: field `"
+                + f.name
+                + "` is `"
+                + f.typeName
+                + "`, which this decorator does not decode - it reads string, i32, i64, f64, bool, Json, ?T, Array<T> and other #[schema] records";
+        f.annotations.forEach({ a ->
+            if (schemaIsMarker(a.name)) marked = true;
+        });
+        decoders.push("    val __r_" + f.name + " = " + call + ";");
+        gathers.push(
+            "    __vs = __vs.append(schemas.violationsOf(__r_" + f.name + "));",
+        );
+        args.push(f.name + ": try __r_" + f.name);
+        known.push("\"" + f.name + "\"");
+    });
+    val helperText = helpers.join("");
+    if (helperText != "") @emit(helperText);
+    val validated = decl.annotations.filter(
+        { a -> a.name == "validated" },
+    ).length
+        > 0;
+    val checks = if (validated)
+        "    val __checked = schemas.under(at, validate"
+            + decl.name
+            + "(__v));\n    if (__checked.violations.length > 0) { throw __checked; }\n"
+    else
+        "";
+    @emit(
+        "pub fn parse"
+            + decl.name
+            + "At(input: Json, at: string) -> @Result<"
+            + decl.name
+            + ", ValidationReport> {\n"
+            + "    val __shape = schemas.objectProblems(input, at);\n"
+            + "    if (__shape.length > 0) { throw ValidationReport(violations: __shape); }\n"
+            + decoders.join("\n")
+            + "\n    var __vs: Array<Violation> = [];\n"
+            + gathers.join("\n")
+            + "\n    __vs = __vs.append(schemas.unknownKeys(input, ["
+            + known.join(", ")
+            + "], at, \""
+            + decl.name
+            + "\"));\n"
+            + "    if (__vs.length > 0) { throw ValidationReport(violations: __vs); }\n"
+            + "    val __v = "
+            + decl.name
+            + "("
+            + args.join(", ")
+            + ");\n"
+            + checks
+            + "    return __v;\n}",
+    );
+    @emit(
+        "pub fn parse"
+            + decl.name
+            + "(input: Json) -> @Result<"
+            + decl.name
+            + ", ValidationReport> {\n    return try parse"
+            + decl.name
+            + "At(input, \"\");\n}",
+    );
+    @emit(
+        "pub fn decode"
+            + decl.name
+            + "(text: string) -> @Result<"
+            + decl.name
+            + ", ValidationReport> {\n    return try schemas.decodeText(text, parse"
+            + decl.name
+            + "At);\n}",
+    );
+    @emit(
+        "pub fn schemaOf"
+            + decl.name
+            + "() -> Schema<"
+            + decl.name
+            + "> {\n    return schemas.of(parse"
+            + decl.name
+            + "At);\n}",
+    );
+    if (problem != "") decl.fail(problem);
+    if (marked && validated == false)
+        decl.fail(
+            "#[schema] on `"
+                + decl.name
+                + "`: its fields carry constraint markers and the type is not #[validated], so nothing would run them - add #[validated]",
+        );
+    if (decl.kind != DeclKind.Type) decl.fail("#[schema] must annotate a type");
+    if (decl.variants.length > 0)
+        decl.fail("#[schema] must annotate a type with fields, not an enum");
 }

@@ -1,0 +1,144 @@
+//// validation — the decoder's boundary test.
+////
+//// `parity_test.bp` holds `validate<TypeName>` to one digest on both targets;
+//// this file does the same for `parse<TypeName>`. Twenty documents run through
+//// ONE emitted decoder on erlang and on commonJS and are compared against ONE
+//// expected digest, so a target that read a document differently reds here
+//// rather than passing its own half of a pair.
+////
+//// The digest carries, per document: the path, the code and the RESOLVED
+//// MESSAGE of every violation, in order — or the decoded record's own
+//// rendering when there is none. So it covers the structural refusals, their
+//// order, the paths, the number grammar (a fraction, the i32 and i64 edges),
+//// the built-in templates and the checks `#[validated]` runs afterwards, in one
+//// string.
+
+import {schema, validated, notBlank, minValue} from "decorators";
+import {vNotBlank, vMinValueI32} from "constraints";
+import {constraintTableJson} from "table";
+import {schemas};
+import {Schema} from "schemas";
+import {ValidationReport, Violation} from "report";
+import {setMessageSource, builtInOnly} from "messages";
+import {json.Json} from "std";
+
+#[schema]
+pub type Tag(label: string, weight: f64)
+
+#[schema]
+#[validated]
+pub type Entry(
+    #[notBlank] title: string,
+    #[minValue(1)] count: i32,
+    total: i64,
+    done: bool,
+    tag: ?Tag,
+    tags: Array<Tag>,
+    notes: ?Array<string>,
+)
+
+fn documents() -> Array<string> {
+    return [
+        """{"title": "a", "count": 1, "total": 2, "done": true, "tags": []}""",
+        """{"title": "a", "count": 1, "total": 2, "done": false, "tag": {"label": "x", "weight": 0.5}, "tags": [{"label": "y", "weight": 2}], "notes": ["n"]}""",
+        "{}",
+        "[]",
+        "null",
+        """"text" """,
+        """{"title": 1, "count": "1", "total": true, "done": "yes", "tags": {}}""",
+        """{"title": "a", "count": 1.5, "total": 2, "done": true, "tags": []}""",
+        """{"title": "a", "count": 2147483647, "total": 9007199254740991, "done": true, "tags": []}""",
+        """{"title": "a", "count": 2147483648, "total": 9007199254740992, "done": true, "tags": []}""",
+        """{"title": "a", "count": -2147483648, "total": -9007199254740991, "done": true, "tags": []}""",
+        """{"title": "a", "count": 1e2, "total": 1.0, "done": true, "tags": []}""",
+        """{"title": "  ", "count": 0, "total": 2, "done": true, "tags": []}""",
+        """{"title": "a", "count": 1, "total": 2, "done": true, "tag": null, "tags": [], "notes": null}""",
+        """{"title": "a", "count": 1, "total": 2, "done": true, "tag": {"label": 1}, "tags": [{"weight": "w"}, 7]}""",
+        """{"title": "a", "count": 1, "total": 2, "done": true, "tags": [], "notes": ["n", 2, null]}""",
+        """{"title": "a", "count": 1, "total": 2, "done": true, "tags": [], "extra": 1, "more": {}}""",
+        """{"title": "a", "count": 1, "total": 2, "done": true, "tags": [{"label": "x", "weight": 1, "color": "red"}]}""",
+        """{"title": "a", "count": 1, "total": 2, "done": true, "tags": [""",
+        """{"title": "a", "title": "b", "count": 1, "total": 2, "done": true, "tags": []}""",
+    ];
+}
+
+fn rendered(e: Entry) -> string {
+    val tag = if (e.tag == null) "-" else "tag";
+    val notes = if (e.notes == null) "-" else "notes";
+    return [
+        e.title,
+        [e.count].join(""),
+        [e.total].join(""),
+        [e.done].join(""),
+        tag,
+        [e.tags.length].join(""),
+        notes,
+    ].join("/");
+}
+
+fn digestOne(i: i32, r: @Result<Entry, ValidationReport>) -> string {
+    val body = case r {
+        Ok(entry) -> "ok " + rendered(entry);
+        Error(report) -> report.violations
+            .map({ v -> v.field + ":" + v.code + ":" + v.message })
+            .join("+");
+    };
+    return [i].join("") + "=" + body;
+}
+
+fn digest() -> string {
+    var out: Array<string> = [];
+    var i = 0;
+    val all = documents();
+    while (i < all.length) {
+        out.push(digestOne(i, decodeEntry(all.at(i).unwrapOr(""))));
+        i = i + 1;
+    }
+    return out.join(";\n");
+}
+
+// #8 and #9 are the two sides of both integer edges at once: 2^31 − 1 and
+// 2^53 − 1 decode, one past each is a wrong type. #10 is the lower edges, where
+// the DECODER accepts and the `#[minValue]` check then refuses — the digest is
+// sensitive to the order of the two. #18 and #19 are the reader's own refusals,
+// with its byte offset, so the two targets are held to one JSON grammar too.
+pub fn expectedDigest() -> string {
+    return "0=ok a/1/2/true/-/0/-;\n"
+        + "1=ok a/1/2/false/tag/1/notes;\n"
+        + "2=title:required:must be present+count:required:must be present+total:required:must be present+done:required:must be present+tags:required:must be present;\n"
+        + "3=:invalidType:must be an object, was a list;\n"
+        + "4=:required:must be present;\n"
+        + "5=:invalidType:must be an object, was text;\n"
+        + "6=title:invalidType:must be text, was a number+count:invalidType:must be a whole number, was text+total:invalidType:must be a whole number, was a boolean+done:invalidType:must be true or false, was text+tags:invalidType:must be a list, was an object;\n"
+        + "7=count:invalidType:must be a whole number, was a number;\n"
+        + "8=ok a/2147483647/9007199254740991/true/-/0/-;\n"
+        + "9=count:invalidType:must be a whole number, was a number+total:invalidType:must be a whole number, was a number;\n"
+        + "10=count:minValue:must be at least 1;\n"
+        + "11=ok a/100/1/true/-/0/-;\n"
+        + "12=title:notBlank:must not be blank+count:minValue:must be at least 1;\n"
+        + "13=ok a/1/2/true/-/0/-;\n"
+        + "14=tag.label:invalidType:must be text, was a number+tag.weight:required:must be present+tags[0].label:required:must be present+tags[0].weight:invalidType:must be a number, was text+tags[1]:invalidType:must be an object, was a number;\n"
+        + "15=notes[1]:invalidType:must be text, was a number+notes[2]:required:must be present;\n"
+        + "16=extra:unrecognizedKey:extra is not a field of Entry+more:unrecognizedKey:more is not a field of Entry;\n"
+        + "17=tags[0].color:unrecognizedKey:color is not a field of Tag;\n"
+        + "18=:invalidJson:is not a JSON document - json.decode: unexpected end of input at byte 62;\n"
+        + "19=:invalidJson:is not a JSON document - json.decode: duplicate member name `title` at byte 15";
+}
+
+test "validation: twenty documents, one decoder, one answer on both rows" {
+    val _c = setMessageSource(builtInOnly());
+    assert digest() == expectedDigest();
+}
+
+test "validation: the decoder's digest is not vacuous" {
+    val _c = setMessageSource(builtInOnly());
+    assert documents().length == 20;
+    assert digest().contains("0=ok ");
+    assert digest().contains("required");
+    assert digest().contains("invalidType");
+    assert digest().contains("unrecognizedKey");
+    assert digest().contains("invalidJson");
+    assert digest().contains("notBlank");
+    assert digest().contains("tags[1]");
+    assert digest().contains("\n19=");
+}
