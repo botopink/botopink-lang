@@ -1031,8 +1031,10 @@ refusal lines are in the front's README):
 | `run/task_throw_resolves_error` | commonJS | erlang, wasm, beam — `observe` |
 | `modules/manifest_targets_host_binding` | erlang beam (`"targets"`) | commonJS, wasm — `magnitude` |
 | `modules/erlang_host_sidecar_in_a_test` (test kind) | erlang beam (`"targets"`) | commonJS — `hello` |
+| `modules/import_bundled_package_beside_own_module` | commonJS erlang beam (`"targets"`) | wasm — `std/json.quote` |
+| `modules/shorthand_import_beside_bundled_package` | commonJS erlang beam (`"targets"`) | wasm — `std/encoding.base64Encode` |
 
-Thirty-three exclusions; the run prints `narrowings: 33 exclusions audited — each stands on a host binding
+Thirty-five exclusions; the run prints `narrowings: 35 exclusions audited — each stands on a host binding
 the target does not have`. No other `modules/` manifest carries `"targets"`: the field used to be
 boilerplate (`["commonJS", "erlang", "wasm"]` in 33 cells, `["commonJS", "erlang"]` in 14) that the
 runner ignored — honoured as written it would have taken beam away from 33 passing cells — and a
