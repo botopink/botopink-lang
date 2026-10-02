@@ -23,7 +23,8 @@ fn f() {
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_nil, {f, 5}, [{x, 0}]}.
+    {move, {x, 0}, {x, 1}}.
+    {test, is_nil, {f, 5}, [{x, 1}]}.
     {move, {y, 0}, {x, 0}}.
     {jump, {f, 4}}.
   {label, 5}.

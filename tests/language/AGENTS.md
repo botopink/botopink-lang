@@ -135,6 +135,9 @@ module load — erlang and beam dropped the write), `run/index_answer_typed_opti
 `00 · 03-beam`'s split row adds `run/string_split_empty_separator` — `split("")` cuts into UTF-8
 codepoints (`"%0Aéz"` → 5 pieces, `""` → none) beside a non-empty separator and an empty separator
 held in a `val`, on all four targets (beam lowered it to `string:split/3`, wasm cut between bytes).
+`01 · 03-beam` step 1 adds `run/ctor_pattern_in_val_binding` — `val Label(t, w) = Tag.Label(…)`, a
+one-variant type's constructor in binding position, prints `7` on all four targets (beam bound
+nothing: `{unresolved_identifier, t}`).
 01-std step 2 adds `run/std_asserts_on_every_target` — `import {testing.asserts}` and its pure
 assertions on commonJS, erlang and beam — and `run/std_asserts_host_cell_on_wasm` — `asserts.deepEquals`
 on the same three. wasm refuses both at the import (`.wasm.expect`): `deepEquals` calls `canonical`,

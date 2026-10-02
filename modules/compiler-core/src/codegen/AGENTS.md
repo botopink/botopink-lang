@@ -1788,11 +1788,17 @@ codegen/
   (`VariantShape.decl`) and a label (P4) the slot of the field it names
   (`variantSlotIndex`, the twin of erlang's `slotIndex`). `i32` / `string`
   / `f64` / `bool` in a pattern are `emitTypeTestBranchOn` tests and bind
-  nothing. A list, `|` or multi pattern NESTED inside a tuple or payload is
-  refused (`error.NestedPatternUnsupported`) instead of matching everything.
-  Every one of these used to match every subject and bind nothing
-  (`case 0 { 1...9 { 1 } _ { 0 } }` answered `1`). Pinned by the
-  `assertBeamRunLog` rows in `tests/control_flow.zig`.
+  nothing. A list pattern — an arm's or one nested in a tuple or payload — is
+  walked from a copy of its subject in the scratch base: one
+  `is_nonempty_list` + `get_list` per element, each head tested (a number) or
+  bound, then `is_nil` without a spread (the length is exact) or the remaining
+  tail bound to a named spread; the arm used to walk the elements without
+  binding or testing any of them and to accept any longer list (`[a] -> a`
+  was `{unresolved_identifier, a}`). A `|` or multi pattern NESTED inside a
+  tuple or payload is refused (`error.NestedPatternUnsupported`) instead of
+  matching everything. Every one of these used to match every subject and
+  bind nothing (`case 0 { 1...9 { 1 } _ { 0 } }` answered `1`). Pinned by the
+  `assertBeamRunLog` rows in `tests/control_flow.zig` and `tests/beam.zig`.
 - **Numbers by value** (decision 8 §4.1, §2.3; C-07 D1/D3): `x is f64` is
   `is_number`; `x is i32` (every integer spelling) is an integer, or a float
   equal to its `trunc`, within the range — `emitTypeTestBranchOn`, for `is`
@@ -1928,7 +1934,7 @@ codegen/
   where it tested a variant atom no value carries, and a `@Result` pattern
   (`Result.Error`) as the result's `{error, E}` even beside a user enum's
   `Error`. A pattern that binds nothing, or that `emitSubPattern` has no
-  lowering for (a list), is not matched again.
+  lowering for (an alternation), is not matched again.
 - **A `case` arm naming both a record and a variant** tests the variant's atom,
   else the record's tagged tuple (`lowerCase`'s `.ident` arm, and
   `emitSubPattern` one element down).
@@ -2139,8 +2145,7 @@ codegen/
   when the condition is not `true`; `val assert P = e [catch h]` is a two-arm
   case whose bindings stay visible (a y-register each). Its subject is still
   emitted twice — once as the case subject, once as the matched arm's body — so
-  an effectful subject runs twice; and a list pattern binds nothing, the same
-  gap `case` has on beam. `@todo`/`@panic` → `erlang:error/1`; `__bp_*` ops
+  an effectful subject runs twice. `@todo`/`@panic` → `erlang:error/1`; `__bp_*` ops
   at register level.
 - **Effects**: non-`@Result` effect fns get an eager body (decision 120: a
   failure is the `{error, E}` value, never a throw).
@@ -2811,6 +2816,13 @@ typed, not a backend lowering.
   with the record's own atom, `recordTagAtom`) and read off by position on beam
   (`emitDestructFromX0`'s `.ctor` arm, `isRecordCtorBind`); it lowered to the
   value alone on erlang (`variable 'Y' is unbound`) and to a comment on beam.
+  Any other constructor in binding position on beam — a one-variant type's
+  variant (`val Label(t, w) = Tag.Label(…)`, JS-4), a nested constructor — and
+  the spread-only list (`val [..rest] = xs`) are the `case` arm's walk
+  (`emitPatternDestruct` → `emitSubPattern`), whose fail edge raises
+  `{badmatch, V}` as erlang's `P = V` does; R5 admits only an irrefutable
+  pattern, so no well-typed value reaches it. `destructYSlots` reserves the
+  larger of the positional count and `patternYSlots`.
 
 ## Effects (the return is the effect — decisions 118–128)
 

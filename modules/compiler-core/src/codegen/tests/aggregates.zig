@@ -516,6 +516,10 @@ test "js: destructure ---- a constructor in binding position is a plain destruct
     ;
     try h.assertJsRunLog(std.testing.allocator, src, log);
     try h.assertWasmRunLog(std.testing.allocator, src, log);
+    // beam (03 step 1): a variant's constructor is the `case` arm's walk
+    // (`emitPatternDestruct`); it bound nothing and `t` was
+    // `{unresolved_identifier, t}`.
+    try h.assertBeamRunLog(std.testing.allocator, src, log, &.{});
 }
 
 test "js: call ---- the result of a call is called (curried)" {

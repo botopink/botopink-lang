@@ -38,12 +38,17 @@ fn f() {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_nonempty_list, {f, 5}, [{x, 0}]}.
-    {get_list, {x, 0}, {x, 1}, {x, 0}}.
-    {test, is_nonempty_list, {f, 5}, [{x, 0}]}.
-    {get_list, {x, 0}, {x, 1}, {x, 0}}.
-    {test, is_nonempty_list, {f, 5}, [{x, 0}]}.
-    {get_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {test, is_nonempty_list, {f, 5}, [{x, 1}]}.
+    {get_list, {x, 1}, {x, 2}, {x, 1}}.
+    {test, is_eq, {f, 5}, [{x, 2}, {integer, 1}]}.
+    {test, is_nonempty_list, {f, 5}, [{x, 1}]}.
+    {get_list, {x, 1}, {x, 2}, {x, 1}}.
+    {test, is_eq, {f, 5}, [{x, 2}, {integer, 2}]}.
+    {test, is_nonempty_list, {f, 5}, [{x, 1}]}.
+    {get_list, {x, 1}, {x, 2}, {x, 1}}.
+    {test, is_eq, {f, 5}, [{x, 2}, {integer, 3}]}.
+    {test, is_nil, {f, 5}, [{x, 1}]}.
     {move, {y, 1}, {x, 0}}.
     {jump, {f, 4}}.
   {label, 5}.

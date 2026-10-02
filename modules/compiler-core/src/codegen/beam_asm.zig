@@ -673,9 +673,15 @@ fn destructYSlots(pattern: ast.ParamDestruct) u32 {
         // `erlang:element/2` is called once per binding (a `call_ext` frees
         // every x-register, so an x-scratch would not survive the first one).
         .tuple_ => |bindings| @intCast(bindings.len + 1),
-        // `val Pt(y, m) = p;` — one slot per name, as `.names`.
-        .ctor => |pat| if (pat == .variant and pat.variant.payload == .literals) @intCast(pat.variant.payload.literals.len) else 0,
-        else => 0,
+        // `val Pt(y, m) = p;` over a record — one slot per position, as
+        // `.names`; any other constructor (a variant, a nested pattern) is
+        // `emitPatternDestruct`'s walk, one slot per binder. Which of the two
+        // runs depends on the module's records, so the larger is reserved.
+        .ctor => |pat| blk: {
+            const positional: u32 = if (pat == .variant and pat.variant.payload == .literals) @intCast(pat.variant.payload.literals.len) else 0;
+            break :blk @max(positional, patternYSlots(pat));
+        },
+        .list => |pat| patternYSlots(pat),
     };
 }
 
@@ -768,11 +774,11 @@ fn isOptionalChain(e: ast.Expr) bool {
     };
 }
 
-/// Whether `emitSubPattern` lowers `p` — every shape but a list, an
-/// alternation or a multi-subject pattern, at any depth.
+/// Whether `emitSubPattern` lowers `p` — every shape but an alternation or a
+/// multi-subject pattern, at any depth.
 fn subPatternLowered(p: ast.Pattern) bool {
     return switch (p) {
-        .list, .@"or", .multi => false,
+        .@"or", .multi => false,
         .variant => |v| switch (v.payload) {
             .literals => |ls| for (ls) |sp| {
                 if (!subPatternLowered(sp)) break false;
@@ -796,7 +802,17 @@ fn patternYSlots(p: ast.Pattern) u32 {
                 break :blk n;
             },
         },
-        .list => |lst| if (lst.spread) |s| (if (s.len > 0) @as(u32, 1) else 0) else 0,
+        // Every element binder and a named spread (`emitSubPattern`).
+        .list => |lst| blk: {
+            var n: u32 = 0;
+            for (lst.elems) |el| {
+                if (el == .bind and !std.mem.eql(u8, el.bind, "_")) n += 1;
+            }
+            if (lst.spread) |s| if (s.len > 0) {
+                n += 1;
+            };
+            break :blk n;
+        },
         // Lowered as the tuple pattern of its patterns (`lowerCase`), so
         // every binder at any depth takes a slot: `Shape.Circle(r), 1` binds
         // `r`, which counting the top-level names alone left unallocated
@@ -5317,10 +5333,15 @@ const Emitter = struct {
             // `.names`. It used to lower to a comment, and every name it bound
             // was an unknown register.
             .ctor => |pat| {
-                if (!self.isRecordCtorBind(pat)) {
-                    try beamEmitter.writeComment(self.out, "unsupported destructure pattern", .{});
-                    return;
-                }
+                // A variant's constructor (`val Label(t, w) = Tag.Label(…)`,
+                // the variant of a one-variant type) or a nested pattern
+                // (`val Outer(Inner(a), b) = …`) is the `case` arm's walk: the
+                // checker admits only an irrefutable pattern (01's R5), so the
+                // fail edge is a `badmatch` no well-typed value reaches. It
+                // used to lower to a comment, and every name it bound was an
+                // unknown register (`{unresolved_identifier, t}`, JS-4's beam
+                // twin).
+                if (!self.isRecordCtorBind(pat)) return self.emitPatternDestruct(pat);
                 const lits = pat.variant.payload.literals;
                 const type_name = bareVariantName(pat.variant.name);
                 const declared = self.record_fields.get(type_name).?;
@@ -5348,8 +5369,30 @@ const Emitter = struct {
                 }
                 try beamEmitter.writeLabel(self.out, done);
             },
-            else => try beamEmitter.writeComment(self.out, "unsupported destructure pattern", .{}),
+            // `val [..rest] = xs;` — the one list pattern R5 admits in a
+            // binding (a spread alone cannot fail); the `case` arm's walk.
+            .list => |pat| try self.emitPatternDestruct(pat),
         }
+    }
+
+    /// Bind the names of the irrefutable `pat` from the value in `{x, 0}` with
+    /// the `case` arm's walk (`emitSubPattern`); a value the pattern does not
+    /// match raises `{badmatch, V}`, as erlang's `P = V` does. `destructYSlots`
+    /// reserves `patternYSlots(pat)`.
+    fn emitPatternDestruct(self: *Emitter, pat: ast.Pattern) anyerror!void {
+        if (!subPatternLowered(pat)) return error.NestedPatternUnsupported;
+        const fail_l = self.allocLabel();
+        const ok_l = self.allocLabel();
+        const free = self.scratchBase();
+        const saved_live = self.raiseLive(free);
+        try self.emitSubPattern(0, pat, fail_l, free);
+        self.min_live = saved_live;
+        try beamEmitter.writeJump(self.out, ok_l);
+        try beamEmitter.writeLabel(self.out, fail_l);
+        try beamEmitter.writeTestHeap(self.out, 3, 1);
+        try beamEmitter.writePutTuple2(self.out, Dst.xr(0), &.{ Op.atom("badmatch"), Op.xr(0) });
+        try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "error" } }, 0);
+        try beamEmitter.writeLabel(self.out, ok_l);
     }
 
     /// A record constructor pattern written positionally with names and `_`
@@ -9620,10 +9663,50 @@ const Emitter = struct {
                     }
                 },
             },
-            // A list, `|` or multi-subject pattern nested inside a tuple or a
+            // `[]`, `[1, x]`, `[first, ..rest]`, `[4, ..]`: the list is walked
+            // from a copy in `{x, free}` (the subject stays intact for the
+            // next arm) — one `is_nonempty_list` + `get_list` per element,
+            // the head tested or bound from `{x, free + 1}`, then `is_nil`
+            // without a spread (the length is exact) or the remaining tail
+            // bound to a named one. The arm used to walk the elements without
+            // binding or testing any of them and to accept any longer list:
+            // `[a, b] -> a + b` answered `{unresolved_identifier, a}`.
+            .list => |lst| {
+                const cur = free;
+                const head = free + 1;
+                try beamEmitter.writeMoveOp(self.out, Op.xr(src), Dst.xr(cur));
+                const saved_live = self.raiseLive(free + 1);
+                defer self.min_live = saved_live;
+                for (lst.elems) |el| {
+                    try beamEmitter.writeTest(self.out, .is_nonempty_list, fail, &.{Op.xr(cur)});
+                    try beamEmitter.writeGetList(self.out, Op.xr(cur), Dst.xr(head), Dst.xr(cur));
+                    switch (el) {
+                        .wildcard => {},
+                        .numberLit => |n| try beamEmitter.writeTest(self.out, .is_eq, fail, &.{ Op.xr(head), Op.num(n) }),
+                        .bind => |name| if (!std.mem.eql(u8, name, "_")) {
+                            const y_idx = self.next_y;
+                            self.next_y += 1;
+                            try self.reg_map.put(name, .{ .y = y_idx });
+                            try beamEmitter.writeMoveOp(self.out, Op.xr(head), Dst.yr(y_idx));
+                        },
+                    }
+                }
+                if (lst.spread) |spread| {
+                    if (spread.len > 0) {
+                        const y_idx = self.next_y;
+                        self.next_y += 1;
+                        try self.reg_map.put(spread, .{ .y = y_idx });
+                        try beamEmitter.writeMoveOp(self.out, Op.xr(cur), Dst.yr(y_idx));
+                    } else if (lst.elems.len == 0) {
+                        // `[..]` alone: any list.
+                        try beamEmitter.writeTest(self.out, .is_list, fail, &.{Op.xr(cur)});
+                    }
+                } else try beamEmitter.writeTest(self.out, .is_nil, fail, &.{Op.xr(cur)});
+            },
+            // A `|` or multi-subject pattern nested inside a tuple or a
             // payload has no lowering here. Refused rather than matched
             // unconditionally, which is what it did before.
-            .list, .@"or", .multi => return error.NestedPatternUnsupported,
+            .@"or", .multi => return error.NestedPatternUnsupported,
         }
     }
 
@@ -9894,27 +9977,9 @@ const Emitter = struct {
                     },
                     .literals => unreachable, // `emitPatternArm` above
                 },
-                .list => |lst| {
-                    const next = self.allocLabel();
-                    if (lst.elems.len == 0 and lst.spread == null) {
-                        try beamEmitter.writeTest(self.out, .is_nil, next, &.{Op.xr(0)});
-                    } else {
-                        for (lst.elems) |_| {
-                            try beamEmitter.writeTest(self.out, .is_nonempty_list, next, &.{Op.xr(0)});
-                            try beamEmitter.writeGetList(self.out, Op.xr(0), Dst.xr(1), Dst.xr(0));
-                        }
-                        if (lst.spread) |spread_name| {
-                            if (spread_name.len > 0) {
-                                const y_idx = self.next_y;
-                                self.next_y += 1;
-                                try self.reg_map.put(spread_name, .{ .y = y_idx });
-                                try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(y_idx));
-                            }
-                        }
-                    }
-                    try self.emitArmTail(arm, subj_y, end_label);
-                    try beamEmitter.writeLabel(self.out, next);
-                },
+                // Every element is tested or bound, and the length is exact
+                // unless a spread follows (`emitSubPattern`'s `.list`).
+                .list => try self.emitPatternArm(arm, subj_y, end_label),
                 .multi => |pats| {
                     var tuple_arm = arm;
                     tuple_arm.pattern = .{ .variant = .{
