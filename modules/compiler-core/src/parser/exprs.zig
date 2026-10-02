@@ -1523,6 +1523,14 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         return parsePostfixChain(this, alloc, head);
     }
 
+    // #(e1, e2, ...) ---- a tuple literal as an operand (T11): the right side
+    // of `??` (`hit.at(0) ?? #("", "")`), an operator's operand. The
+    // statement-start position reads it in `parseExpr` first.
+    if (this.check(.hash) and this.peekAt(1).kind == .leftParenthesis) {
+        const lit = Expr{ .collection = try this.parseTupleLitExpr(alloc) };
+        return parsePostfixChain(this, alloc, lit);
+    }
+
     // [e1, e2, ...] or [e1, ..rest] ---- array literal with optional spread.
     // A literal receiver may chain methods directly (`[1, 2].map(f).len()`).
     if (this.check(.leftSquareBracket)) {

@@ -161,6 +161,10 @@ finding) — a behavior's `default fn` body is checked (an unbound call is refus
 Step 12 (T9) adds `reject/reserved_word_as_binding_name` — `val unknown: i32 = 1;` is
 `reserved-word-as-name` at the name; it passes on the parent binary too (the row closed before this
 front) and pins the rule.
+Step 11 (T11) adds `run/nullish_tuple_operand` (a tuple literal on the right of `??`) and
+`run/postfix_on_grouped_nullish` (`(xs.at(0) ?? d)._1`), four targets, integer elements because wasm
+reads a `string` element of a tuple through `??` as its address (`05-wasm`'s row); both refused by
+the parent binary at the `#`.
 Decision 141 adds `run/external_template_refused_on_beam` — an `@External.Erlang` template with a
 macro runs on erlang and is a located build error on beam naming the construct (`.beam.expect`); beam
 no longer evaluates a template it cannot compile from source at run time.

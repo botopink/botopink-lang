@@ -281,6 +281,10 @@ A non-`syntax` `name: fn(…)` param is parsed through `parseTypeRef` (a
 `.field` / `?.field` / `.method(args)` / `(args)` links are parsed in **two**
 places, and the reason is trailing lambdas:
 
+- A tuple literal `#(…)` is an operand too (T11): `parsePrimary` reads it and
+  continues into `parsePostfixChain`, so the right side of `??`
+  (`hit.at(0) ?? #("", "")`) and an operator's operand take one; the
+  statement-start position still reads it in `parseExpr` first.
 - `parsePostfixChain` (`exprs.zig`) is the operand-position chain. It does
   **not** consume a trailing `{ … }` — in an operand a `{` belongs to the
   enclosing construct. Every literal receiver goes through it, the grouped
