@@ -1036,6 +1036,14 @@ codegen/
   (`recordTagAtom`, decision 109), what the constructor builds — the bare
   `'Point'` of a variant matched no record and the `case` died
   `case_clause`. A name an enum declares as a variant keeps the variant's tag.
+- **A `throw` in a `case` arm of a `-> @Result` fn is that fn's error**
+  (`tailExits`, `okIntoTails`): `return case … { 0 -> throw "zero", 1 { throw
+  "one"; } _ -> n * 2 }` wrapped the whole `case` in `{ok, …}`, so the
+  transform's `{error, <<"zero">>}` came back as `{ok, {error, …}}` and the
+  block arm's (unrewritten) `throw` escaped as an erlang throw. When a tail
+  of the returned `case` (or `if`) leaves the function, the `{ok, …}` goes
+  into each tail that does not; a `return v` tail is `v`, a `throw e` tail
+  `{error, E}`.
 - **Modules are `erl_ast` forms**: `emitErlangModule` builds every form in one
   arena and renders them with `erl_emitter.writeForms`: `-module`
   (`crossModule.erlAtom(module_path)` — the path joined with `@`),

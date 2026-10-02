@@ -6926,7 +6926,16 @@ const Emitter = struct {
         const A = Ast.Expr.a;
         const recv = args[0].value;
         // Result constructors: `return v` / `throw e` in a `-> @Result<…>` fn.
-        if (eq(u8, callee, "__bp_ok")) return b.tuple(&.{ A("ok"), try this.exprNode(b, recv.*) });
+        if (eq(u8, callee, "__bp_ok")) {
+            // `return case … { 0 -> throw "zero", … }` in a `-> @Result` fn: an
+            // arm that leaves the function (`return`, `throw`) answers its own
+            // `{error, E}`, so the `{ok, …}` goes into the arms that do not —
+            // wrapped around the whole `case`, the throw's `{error, E}` came
+            // back as `{ok, {error, E}}` and a block-form `throw` escaped as an
+            // uncaught erlang throw.
+            if (tailExits(recv.*)) return this.exprNode(b, try okIntoTails(b.arena, recv.*));
+            return b.tuple(&.{ A("ok"), try this.exprNode(b, recv.*) });
+        }
         if (eq(u8, callee, "__bp_error")) return b.tuple(&.{ A("error"), try this.exprNode(b, recv.*) });
 
         // The fun's parameter and the payload variable are names no program
@@ -6985,6 +6994,101 @@ const Emitter = struct {
             try b.clause(&.{subject}, &.{}, &.{try b.caseInline(subject, &clauses)}),
         }) };
         return b.applyParen(fun, &.{try this.exprNode(b, recv.*)});
+    }
+
+    /// True when some tail of `e` — the value of a `case` arm or an `if` branch,
+    /// recursively — leaves the function (`return`, `throw`).
+    fn tailExits(e: ast.Expr) bool {
+        switch (e) {
+            .jump => |j| return j.kind == .@"return" or j.kind == .throw_,
+            .branch => |br| switch (br.kind) {
+                .if_ => |i| {
+                    const els = i.else_ orelse return false;
+                    return stmtsTailExits(i.then_) or stmtsTailExits(els);
+                },
+                else => return false,
+            },
+            .collection => |c| switch (c.kind) {
+                .case => |cs| {
+                    for (cs.arms) |arm| {
+                        if (arm.body == .function and arm.body.function.kind.syntax == .lambda) {
+                            if (stmtsTailExits(arm.body.function.kind.body)) return true;
+                        } else if (tailExits(arm.body)) return true;
+                    }
+                    return false;
+                },
+                else => return false,
+            },
+            else => return false,
+        }
+    }
+
+    fn stmtsTailExits(stmts: []const ast.Stmt) bool {
+        if (stmts.len == 0) return false;
+        return tailExits(stmts[stmts.len - 1].expr);
+    }
+
+    /// `e` with `__bp_ok(…)` around each tail that does not leave the
+    /// function: a `return v` tail is `v` (the function's own value, already
+    /// `__bp_error(…)` or `__bp_ok(…)`), a `throw e` tail is `__bp_error(e)` —
+    /// the `-> @Result` function's error — and every other tail its value
+    /// wrapped. Copies what it changes into `arena`.
+    fn okIntoTails(arena: std.mem.Allocator, e: ast.Expr) anyerror!ast.Expr {
+        switch (e) {
+            .jump => |j| switch (j.kind) {
+                .@"return" => |r| return if (r) |v| v.* else wrapBuiltin(arena, "__bp_ok", .{ .literal = .{ .loc = j.loc, .kind = .null_ } }, j.loc),
+                .throw_ => |t| return wrapBuiltin(arena, "__bp_error", if (t) |v| v.* else .{ .literal = .{ .loc = j.loc, .kind = .null_ } }, j.loc),
+                else => {},
+            },
+            .branch => |br| switch (br.kind) {
+                .if_ => |i| if (i.else_) |els| {
+                    var out = e;
+                    out.branch.kind.if_.then_ = try stmtsOkIntoTails(arena, i.then_);
+                    out.branch.kind.if_.else_ = try stmtsOkIntoTails(arena, els);
+                    return out;
+                },
+                else => {},
+            },
+            .collection => |c| switch (c.kind) {
+                .case => |cs| {
+                    const arms = try arena.dupe(ast.CaseArm, cs.arms);
+                    for (arms) |*arm| {
+                        if (arm.body == .function and arm.body.function.kind.syntax == .lambda) {
+                            arm.body.function.kind.body = try stmtsOkIntoTails(arena, arm.body.function.kind.body);
+                        } else arm.body = try okIntoTails(arena, arm.body);
+                    }
+                    var out = e;
+                    out.collection.kind.case.arms = arms;
+                    return out;
+                },
+                else => {},
+            },
+            else => {},
+        }
+        return wrapBuiltin(arena, "__bp_ok", e, e.getLoc());
+    }
+
+    fn stmtsOkIntoTails(arena: std.mem.Allocator, stmts: []ast.Stmt) anyerror![]ast.Stmt {
+        if (stmts.len == 0) return stmts;
+        const out = try arena.dupe(ast.Stmt, stmts);
+        out[out.len - 1].expr = try okIntoTails(arena, out[out.len - 1].expr);
+        return out;
+    }
+
+    /// The builtin call `@<callee>(value)` the transform writes for a
+    /// `@Result` constructor site.
+    fn wrapBuiltin(arena: std.mem.Allocator, callee: []const u8, value: ast.Expr, loc: ast.Loc) anyerror!ast.Expr {
+        const v = try arena.create(ast.Expr);
+        v.* = value;
+        const args = try arena.alloc(ast.CallArg, 1);
+        args[0] = .{ .label = null, .value = v };
+        return .{ .call = .{ .loc = loc, .kind = .{ .call = .{
+            .receiver = null,
+            .callee = callee,
+            .is_builtin = true,
+            .args = args,
+            .trailing = &.{},
+        } } } };
     }
 
     /// The fn/default argument of a `@Result`/`@Option` op (empty when absent).

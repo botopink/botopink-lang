@@ -156,3 +156,25 @@ test "erlang: a record's constructor pattern carries the record's own tag" {
         \\}
     , "5\n3\non y\non x\noff\n", &.{"{test@main@@Point, 0, _} ->"});
 }
+
+test "erlang: a throw in a case arm of a Result fn is that fn's error" {
+    // `return case n { 0 -> throw "zero", 1 { throw "one"; } _ -> n * 2 }`
+    // wrapped the whole `case` in `{ok, …}`: the arrow arm's `{error, <<"zero">>}`
+    // came back as `{ok, {error, …}}` and the block arm's throw escaped as an
+    // uncaught erlang `throw`. The arms that do not leave carry the `{ok, …}`.
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn parse(n: i32) -> @Result<i32, string> {
+        \\    return case n {
+        \\        0 -> throw "zero",
+        \\        1 { throw "one"; }
+        \\        _ -> n * 2,
+        \\    };
+        \\}
+        \\
+        \\pub fn main() {
+        \\    @print(parse(0).unwrapOr(-1));
+        \\    @print(parse(1).unwrapOr(-2));
+        \\    @print(parse(2).unwrapOr(-3));
+        \\}
+    , "-1\n-2\n4\n", &.{ "{error, <<\"one\">>};", "{ok, (N * 2)}" });
+}

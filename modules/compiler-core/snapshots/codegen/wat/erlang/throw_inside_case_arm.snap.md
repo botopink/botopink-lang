@@ -23,12 +23,12 @@ fn main() {
 %%   Fail
 
 check(S) ->
-    {ok, case S of
+    case S of
         test@main@@Status__v__ok ->
-            1;
+            {ok, 1};
         test@main@@Status__v__fail ->
             {error, <<"failed">>}
-    end}.
+    end.
 
 main() ->
     '__bp_print'([(fun(__BpR) -> case __BpR of {ok, _} -> true; _ -> false end end)(check(test@main@@Status__v__ok))]),
@@ -74,5 +74,5 @@ main(_Args) ->
 ----- RUN LOG -----
 ```logs
 true
-true
+false
 ```
