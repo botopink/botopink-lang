@@ -19,10 +19,11 @@ main() ->
     end,
     Add(10, 20).
 
-'__bp_add'(A, B) when is_binary(A), is_binary(B) -> <<A/binary, B/binary>>;
+'__bp_add'(A, B) when erlang:is_binary(A), erlang:is_binary(B) -> <<A/binary, B/binary>>;
 '__bp_add'(A, B) -> A + B.
 
 '_botopink_main'() ->
+    io:setopts(standard_io, [{encoding, unicode}]),
     main().
 
 main(_Args) ->

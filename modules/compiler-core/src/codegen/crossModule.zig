@@ -121,6 +121,13 @@ pub const Contested = struct {
 /// for symbols actually consumed elsewhere — single-module programs stay
 /// unchanged).
 pub const CrossModule = struct {
+    /// Some module of the build binds a BEAM host of its own — a `declare fn`
+    /// or a `type` (or one of its methods) carrying `#[@External.Erlang(…)]` /
+    /// `#[@External.Beam(…)]` — so an emitted call can name an `.erl` sidecar
+    /// the build ships, and an entry point loads its siblings first. Set by
+    /// the erlang driver (`erlang.zig`, `buildBindsErlangHost`); false for the
+    /// other backends, which do not read it.
+    binds_erlang_host: bool = false,
     exports: std.StringHashMap(ExportInfo),
     /// EVERY `pub` declaration of a name, in walk order — the population
     /// `exports` collapses to one entry. `pick` counts dissent over this, the

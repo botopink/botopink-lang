@@ -30,6 +30,7 @@ main() ->
     Status.
 
 '_botopink_main'() ->
+    io:setopts(standard_io, [{encoding, unicode}]),
     main().
 
 main(_Args) ->

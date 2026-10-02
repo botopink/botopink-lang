@@ -31,7 +31,7 @@ optimistic(Base, F) ->
     Push(Shown),
     {test@main@@Element}.
 
-'__bp_add'(A, B) when is_binary(A), is_binary(B) -> <<A/binary, B/binary>>;
+'__bp_add'(A, B) when erlang:is_binary(A), erlang:is_binary(B) -> <<A/binary, B/binary>>;
 '__bp_add'(A, B) -> A + B.
 ```
 

@@ -17,8 +17,8 @@ make() ->
     end}.
 
 apply(S) ->
-    (element(3, S))(element(2, S)),
-    element(2, S).
+    (erlang:element(3, S))(erlang:element(2, S)),
+    erlang:element(2, S).
 ```
 
 ----- ERLANG -- test@main@@State.erl
@@ -26,10 +26,10 @@ apply(S) ->
 -module(test@main@@State).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
-'__bp_get'(V, value) -> element(2, V);
-'__bp_get'(V, set) -> element(3, V).
+'__bp_get'(V, value) -> erlang:element(2, V);
+'__bp_get'(V, set) -> erlang:element(3, V).
 
-'__bp_format'(V) -> {record, "State", [{"value", element(2, V)}, {"set", element(3, V)}]}.
+'__bp_format'(V) -> {record, "State", [{"value", erlang:element(2, V)}, {"set", erlang:element(3, V)}]}.
 ```
 
 ----- RUN LOG -----

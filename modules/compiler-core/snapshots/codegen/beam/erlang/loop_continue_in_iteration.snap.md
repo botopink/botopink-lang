@@ -16,10 +16,10 @@ fn sumEvens(arr: i32[]) -> i32[] {
 
 sumEvens(Arr) ->
     Out = [],
-    Out@3 = (fun __Loop(__BpIter1, Out@1) ->
+    Out@3 = (fun __BpLoop(__BpIter1, Out@1) ->
         case __BpIter1 of
             [X | __BpRest1] ->
-                __Loop(__BpRest1, try
+                __BpLoop(__BpRest1, try
                     case ((X rem 2) =/= 0) of
                         true ->
                             erlang:throw({'__bp_cond_continue', Out@1});

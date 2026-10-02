@@ -60,6 +60,7 @@ codegen/
     ├── wat.zig                 ← WAT backend codegen
     ├── dts_skips_templates.zig ← `.d.ts` drops `@Expr`/`@ExprCustom` template fns
     ├── runtime_scratch.zig     ← pins the `.botopinkbuild/tmp/<hex>/` scratch layout
+    ├── erlang.zig              ← the erlang backend's own rows (`assertErlangRunLog`): prelude `default fn` bodies
     └── comptime_module.zig     ← `emitComptimeModule` (untyped lowerings, primitive-method shims, host enums, variable versioning)
 ```
 
@@ -664,7 +665,7 @@ codegen/
   `<<0>>` — so `"ç" == "\u{e7}"` held only by accident and
   `escape.jsString("f(x)")` answered `f x ` (01-std's handover).
 - **A `return` inside a loop's body leaves the function** (`returnNode`): the
-  body is a fun (`lists:foreach`, the named `__Loop`), whose value is not the
+  body is a fun (`lists:foreach`, the named `__BpLoop`), whose value is not the
   function's, so inside one (`in_loop_body`, reset by a lambda, whose `return`
   is its own) `return v` is `erlang:throw({'__bp_try', V})` and the function's
   `guardTry` answers `V` — the path a failing `try` with no rest to nest
@@ -854,6 +855,21 @@ codegen/
   `fn_typed_fields` (built in `collectTypeShapes`) carries the pairs, and the
   name-only set backs the untyped fallback, where inference records no lowering
   for a call on a field.
+- **A built entry point loads its siblings too** (`siblingLoaderForm`,
+  language-gaps T1). When some module of the build binds a BEAM host of its own
+  (`buildBindsErlangHost` — a `declare fn` or a `type` carrying
+  `#[@External.Erlang(…)]` / `#[@External.Beam(…)]`, the beam backend's rule,
+  kept in `CrossModule.binds_erlang_host`), `'_botopink_main'/0` calls
+  `'__bp_load_siblings'/0` right after setting `standard_io`: every `.erl`
+  beside the running module's `.beam` (`code:which(?MODULE)`) whose module is
+  not loadable is compiled and loaded, and one that does not compile refuses
+  the run, named. `botopink build` ships `src/sidecars/<host>.erl` into
+  `out/erl/`; a program started with only its entry compiled (`erlc` of one
+  file, `erl -pa out/erl`) called the sidecar `undef`. Under `botopink run`
+  every module is compiled already, so the loader costs one
+  `code:ensure_loaded/1` per file. Measured by hand on
+  `tests/language/modules/erlang_host_sidecar_shipped` until the CLI half
+  (26) runs a built program that way.
 - **Test mode loads its siblings.** `escript <module>.erl` compiles and loads
   that module only, so a cross-module call would be `undef` at run time: in test
   mode a module that reaches another one emits `'__bp_load_siblings'/0`, which
@@ -985,11 +1001,10 @@ codegen/
   loop's value: a `break <v>` or a `yield` belongs to the nearest generator
   scope (§ Loops above), which collects under its own key, and the variable
   group a loop threads is only the variables its body reassigns.
-- **The two embedded preludes are parsed once per process, not once per
-  emission** (`prelude_cache`). `collectPrimErlangDispatch` re-lexed and
-  re-parsed `primitives.bp`, and `noAutoImportRefs`'s catalog re-parsed
-  `std/erlang`, on **every** `emitErlangModule` — both are comptime-embedded
-  strings, so it was the same bytes and the same parse each time. Memoising them
+- **The embedded `primitives.bp` prelude is parsed once per process, not once
+  per emission** (`prelude_cache`). `collectPrimErlangDispatch` re-lexed and
+  re-parsed it on **every** `emitErlangModule` — a comptime-embedded string, so
+  it was the same bytes and the same parse each time. Memoising them
   in an arena of their own (over the page allocator, so no caller's allocator and
   no test-allocator leak) takes `collectPrimErlangDispatch` from **4.615 ms to
   2.380 ms** per call (20 calls, Debug) and `botopink build --target erlang` over
@@ -997,10 +1012,59 @@ codegen/
   per-emitter deep copy of the triples it keeps, which is by design. It is safe
   because nothing writes to the cached AST: the nodes borrow only comptime source,
   `collectIfaceErlangDispatch` copies every triple into the emitter's own
-  allocator, and the BIF table is read-only. The lock is a spin over
+  allocator. The lock is a spin over
   `std.atomic.Mutex.tryLock` — zig 0.16 has no blocking mutex outside `std.Io`,
   the test runner compiles on several threads, and after the first parse there is
   nothing to contend for. Handed over by `14-comptime-on-beam`.
+- **Every BIF the backend calls is `erlang:<name>(…)`** (language-gaps T13).
+  `auto_imported_bifs` is OTP's own auto-import list (`erl_internal:bif/2`);
+  a user fn whose name and arity are on it gets
+  `-compile({no_auto_import,[f/N, …]})` (`noAutoImportRefs`; a type module's
+  over its exports, `noAutoImportRefsOf`), so the user's own bare calls reach
+  the user's fn — and every call the codegen writes for itself (a field read
+  `erlang:element/2`, a guard `erlang:is_tuple/1`, `erlang:length/1`, the print
+  helpers' `erlang:apply/3`, a numeric conversion `erlang:trunc/1`) is
+  qualified, so a module declaring `fn element(…)` never captures a field read.
+  A host template is author text written for every module: in a module whose
+  `no_auto_import` names `length`, its bare `length(…)` is written
+  `erlang:length(…)` (`qualifyShadowedBifs`, over the template's text segments —
+  strings, quoted atoms, `$c` and comments skipped); elsewhere it is unchanged.
+  `run/module_fn_named_like_bif` pins it on four targets.
+- **A `default fn` body's locals have the kind its declared types give them**
+  (`defaultValueKind`, `default_kinds`). Inference records no lowering inside
+  an interface `default fn` body, so a method on one of its locals was the bare
+  local call (`unwrapOr(F, D)`, undefined) or a run-time dispatch shim. Inside
+  one (`in_iface_default`) a parameter's type, a `val`'s annotation and its
+  initialiser give the local a kind — a literal, `self` and a `-> Self` call on
+  it, a method of a primitive kind by the behavior method's declared return
+  type (`primMethodReturn`: `at` → `?T`, `slice` → `Self`), a prelude fn by its
+  own (`stringSlice0` → `string`), an `if` whose branches agree — and a method on
+  it is the primitive's (`primMethodNode`) or the `@Option` / `@Result` op
+  (`defaultWrapperMethodNode` → `resultOptionNode`). A local no rule answers
+  keeps the run-time shim. **A prelude body never reads inference's tables**: a
+  behavior whose text slices into the embedded `primitives.bp`
+  (`slicesIntoPrelude`, `IfaceDefault.from_prelude`) is lowered with empty
+  `instance_lowerings` and `rewrites`, because both are keyed by line and
+  column with no file — a lookup at a prelude body's location answered what
+  the consuming module recorded at the same place (a program's `s.trim()` at
+  `out.append`'s line and column made it `append(Out, …)`). Pinned by
+  `codegen/tests/erlang.zig`.
+- **`true` / `false` in a pattern are matched** (`patternNodeExtra`, and the
+  `..` tuple's element guard in `tuplePatternNode`): `#(true, n)` was
+  `{True, N}`, a binder, and the first arm took every tuple.
+- **A record's constructor pattern carries the record's tag**: `Point(x: 0, ..)`
+  and `Point(x: 0, y: y)` in a `case` are `{'<pkg>@<path>@@Point', 0, _}`
+  (`recordTagAtom`, decision 109), what the constructor builds — the bare
+  `'Point'` of a variant matched no record and the `case` died
+  `case_clause`. A name an enum declares as a variant keeps the variant's tag.
+- **A `throw` in a `case` arm of a `-> @Result` fn is that fn's error**
+  (`tailExits`, `okIntoTails`): `return case … { 0 -> throw "zero", 1 { throw
+  "one"; } _ -> n * 2 }` wrapped the whole `case` in `{ok, …}`, so the
+  transform's `{error, <<"zero">>}` came back as `{ok, {error, …}}` and the
+  block arm's (unrewritten) `throw` escaped as an erlang throw. When a tail
+  of the returned `case` (or `if`) leaves the function, the `{ok, …}` goes
+  into each tail that does not; a `return v` tail is `v`, a `throw e` tail
+  `{error, E}`.
 - **Modules are `erl_ast` forms**: `emitErlangModule` builds every form in one
   arena and renders them with `erl_emitter.writeForms`: `-module`
   (`crossModule.erlAtom(module_path)` — the path joined with `@`),
@@ -1013,6 +1077,14 @@ codegen/
   `val`s** below), the `'_botopink_main'/0` + `main/1` entrypoint wrapper and,
   in test mode, the runner (`testRunnerForms`: `'__bp_run_one'/1`,
   `'__bp_run_tests'/1`, `main/1`).
+- **An entry point sets its own `standard_io` to unicode** (`unicodeStdio`):
+  `io:setopts(standard_io, [{encoding, unicode}])` is the first statement of
+  `'_botopink_main'/0` and of the test runner's `main/1`. `erl` opens
+  `standard_io` in the encoding of the host's locale, so under `LANG=C`
+  `@print("é")` wrote the latin1 byte `0xE9` and `"\u{1F600}"` the text
+  `\x{1F600}`; the program fixes it rather than the runner pinning a locale,
+  which would hide it (decision 67). `run/string_literal_unicode_escape` run
+  under `LANG=C` is the measurement.
 - **Bodies are `erl_ast` nodes**: `emitBodyFrom` builds an `Ast.Body` with
   `bodyNode(b, body, start, indent)` and renders it with `erl_emitter.writeBody`.
   Statements (`stmtExpr`: `return`, `bindExpr` for `val`/`=`/`+=` with versioning,
@@ -1311,13 +1383,16 @@ codegen/
     (`recursiveLoopCall`, the condition loop's machinery), because a fold cannot
     be stopped from inside;
   - an open-ended range `for (x..)` → a named fun that counts up and recurses
-    (`fun __Loop(I) -> …, __Loop(I + 1) end`), since `lists:seq/2` has no `infinity`;
+    (`fun __BpLoop(I) -> …, __BpLoop(I + 1) end`), since `lists:seq/2` has no `infinity`;
   - `while (cond) { … }` / `loop { … }` → a named fun that tests, runs the body
-    and recurses (`conditionLoopNode`): `{Out@3, I@3} = (fun __Loop({Out@1, I@1})
-    -> case Cond of true -> …, __Loop({Out@2, I@2}); _ -> {Out@1, I@1} end
+    and recurses (`conditionLoopNode`): `{Out@3, I@3} = (fun __BpLoop({Out@1, I@1})
+    -> case Cond of true -> …, __BpLoop({Out@2, I@2}); _ -> {Out@1, I@1} end
     end)({Out, I})`, threading the variables the body reassigns (with none it
-    answers `ok`; a nested one is `__Loop1`, …; `loop`'s literal `true` is not
-    tested). Inside it (`cond_loop`, cleared behind a fun boundary) a bare
+    answers `ok`; a nested one is `__BpLoop1`, …; `loop`'s literal `true` is not
+    tested). The fun's name carries the backend's own `__Bp` prefix because a
+    host template is spliced into the same clause: a template binding `__Loop`
+    re-matched the bound fun (language-gaps T14,
+    `run/host_template_binding_inside_while`). Inside it (`cond_loop`, cleared behind a fun boundary) a bare
     `break` throws `{'__bp_cond_break', Group}` caught around the call, and a
     `continue` throws `{'__bp_cond_continue', Group}` caught around the body, so
     the recursion carries the variables at the jump; each loop's `catch` binds
@@ -1405,6 +1480,11 @@ codegen/
   runner's `main/1`, `testRunnerForms(…, import_inits, …)`) calls
   `<dep>:'_botopink_init'()` for each one that has a body (`moduleHasInit`)
   before its own, which is the order `require` gives commonJS.
+  The body is lowered BEFORE the runtime helpers are chosen (and written after
+  them): a helper only a module-level initialiser reaches — a dependency whose
+  one print is `val _x = @print("boot")` — was never defined, and the init
+  called an undefined `'__bp_print'/1` (C-34,
+  `modules/dependency_module_level_print`).
 - **A module-level `pub val` crosses modules** (decision 140): the owner exports
   its 0-arity reader `name/0` beside its `pub fn`s, and an importer reads it as
   `owner:name()` (`imported_vals`, keyed by the local name so an `as` alias
@@ -2767,12 +2847,10 @@ Primitive-receiver methods (`xs.map(f)`, `s.toUpper()`) are tagged `.prim` in
 **The table audited (02 step 7, 2026-09-26):** one call of every method
 `primitives.bp` declares on `Number`/`Integer`/`Signed`/`Float`/`Bool`/`String`/
 `Array` (82 calls, `Array.range`/`Array.repeat` included) compiles on erlang
-and on beam and prints the same 84 lines on both. One method answers on
-neither — nor on commonJS or wasm: **`Array.unique`**, whose prelude body calls
-`prev.unwrapOr(x)` on an option the untyped prelude body never had rewritten to
-`__bp_option_unwrapOr` (erlang `unwrapOr/2 undefined`, beam
-`{unresolved_method, unwrapOr, 2}`). That is how a prelude `default fn` body is
-typed, not a backend lowering.
+and on beam and prints the same 84 lines on both. `Array.unique` (drop
+consecutive duplicates) answers on erlang since std's body stopped calling a
+method on an optional and the erlang emitter types a `default fn` body's locals
+(§ erlang, "A `default fn` body's locals"); wasm traps on it (05's row).
 
 ## Quick-reference rules
 

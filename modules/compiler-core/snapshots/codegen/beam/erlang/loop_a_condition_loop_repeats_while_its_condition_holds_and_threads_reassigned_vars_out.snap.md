@@ -35,12 +35,12 @@ fn main() {
 count(Limit) ->
     I = 0,
     Acc = <<"">>,
-    {Acc@3, I@3} = (fun __Loop({Acc@1, I@1}) ->
+    {Acc@3, I@3} = (fun __BpLoop({Acc@1, I@1}) ->
         case (I@1 < Limit) of
             true ->
                 Acc@2 = <<Acc@1/binary, ('__bp_text'(erlang:integer_to_binary(I@1)))/binary>>,
                 I@2 = (I@1 + 1),
-                __Loop({Acc@2, I@2});
+                __BpLoop({Acc@2, I@2});
             _ -> {Acc@1, I@1}
         end
     end)({Acc, I}),
@@ -50,10 +50,10 @@ count(Limit) ->
 evens(Limit) ->
     I = 0,
     Sum = 0,
-    {I@3, Sum@3} = (fun __Loop({I@1, Sum@1}) ->
+    {I@3, Sum@3} = (fun __BpLoop({I@1, Sum@1}) ->
         case (I@1 < Limit) of
             true ->
-                __Loop(try
+                __BpLoop(try
                     I@2 = (I@1 + 1),
                     case ((I@2 rem 2) =:= 1) of
                         true ->
@@ -75,30 +75,31 @@ main() ->
     '__bp_print'([count(0)]),
     '__bp_print'([evens(6)]).
 
-'__bp_text'(Value) when is_binary(Value) -> Value;
-'__bp_text'(Value) -> iolist_to_binary(io_lib:format(<<"~p">>, [Value])).
+'__bp_text'(Value) when erlang:is_binary(Value) -> Value;
+'__bp_text'(Value) -> erlang:iolist_to_binary(io_lib:format(<<"~p">>, [Value])).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
 
-'__bp_show'(V, true) when is_binary(V) -> V;
-'__bp_show'(V, _) when is_binary(V) -> [$", [case C of $" -> "\\\""; $\\ -> "\\\\"; $\n -> "\\n"; $\r -> "\\r"; $\t -> "\\t"; _ -> C end || C <- unicode:characters_to_list(V)], $"];
-'__bp_show'(V, _) when is_list(V) -> [$[, lists:join(", ", ['__bp_show'(E, false) || E <- V]), $]];
-'__bp_show'(V, _) when is_tuple(V), tuple_size(V) > 0, is_atom(element(1, V)), element(1, V) =/= true, element(1, V) =/= false, element(1, V) =/= undefined -> '__bp_tagged'(element(1, V), V);
-'__bp_show'(V, _) when is_tuple(V) -> ["#(", lists:join(", ", ['__bp_show'(E, false) || E <- tuple_to_list(V)]), $)];
+'__bp_show'(V, true) when erlang:is_binary(V) -> V;
+'__bp_show'(V, _) when erlang:is_binary(V) -> [$", [case C of $" -> "\\\""; $\\ -> "\\\\"; $\n -> "\\n"; $\r -> "\\r"; $\t -> "\\t"; _ -> C end || C <- unicode:characters_to_list(V)], $"];
+'__bp_show'(V, _) when erlang:is_list(V) -> [$[, lists:join(", ", ['__bp_show'(E, false) || E <- V]), $]];
+'__bp_show'(V, _) when erlang:is_tuple(V), erlang:tuple_size(V) > 0, erlang:is_atom(erlang:element(1, V)), erlang:element(1, V) =/= true, erlang:element(1, V) =/= false, erlang:element(1, V) =/= undefined -> '__bp_tagged'(erlang:element(1, V), V);
+'__bp_show'(V, _) when erlang:is_tuple(V) -> ["#(", lists:join(", ", ['__bp_show'(E, false) || E <- erlang:tuple_to_list(V)]), $)];
 '__bp_show'(undefined, _) -> "null";
-'__bp_show'(V, _) when is_atom(V), V =/= true, V =/= false, V =/= undefined -> '__bp_tagged'(V, V);
+'__bp_show'(V, _) when erlang:is_atom(V), V =/= true, V =/= false, V =/= undefined -> '__bp_tagged'(V, V);
 '__bp_show'(V, _) -> io_lib:format("~p", [V]).
 
 '__bp_tagged'(A, V) ->
-    M = case string:split(atom_to_list(A), "__v__") of [P, _] -> list_to_atom(P); _ -> A end,
-    case code:ensure_loaded(M) =:= {module, M} andalso erlang:function_exported(M, '__bp_format', 1) of true -> '__bp_render'(apply(M, '__bp_format', [V])); false -> io_lib:format("~p", [V]) end.
+    M = case string:split(erlang:atom_to_list(A), "__v__") of [P, _] -> erlang:list_to_atom(P); _ -> A end,
+    case code:ensure_loaded(M) =:= {module, M} andalso erlang:function_exported(M, '__bp_format', 1) of true -> '__bp_render'(erlang:apply(M, '__bp_format', [V])); false -> io_lib:format("~p", [V]) end.
 
 '__bp_render'({text, T}) -> T;
 '__bp_render'({variant, N, []}) -> N;
 '__bp_render'({_, N, Fs}) -> [N, $(, lists:join(", ", [[K, ": ", '__bp_show'(Val, false)] || {K, Val} <- Fs]), $)].
 
 '_botopink_main'() ->
+    io:setopts(standard_io, [{encoding, unicode}]),
     main().
 
 main(_Args) ->

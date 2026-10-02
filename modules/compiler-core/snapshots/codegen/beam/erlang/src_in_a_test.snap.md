@@ -22,26 +22,26 @@ helper() ->
 
 '__bp_test_0'() ->
     Loc = {test@main@@SourceLocation, <<"main.bp">>, 3, 15, <<"src: in a test">>},
-    '__bp_print'([element(2, Loc), element(3, Loc), element(4, Loc), element(5, Loc)]).
+    '__bp_print'([erlang:element(2, Loc), erlang:element(3, Loc), erlang:element(4, Loc), erlang:element(5, Loc)]).
 
 '__bp_test_1'() ->
-    '__bp_print'([element(5, {test@main@@SourceLocation, <<"main.bp">>, 7, 12, <<"test_1">>})]).
+    '__bp_print'([erlang:element(5, {test@main@@SourceLocation, <<"main.bp">>, 7, 12, <<"test_1">>})]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
 
-'__bp_show'(V, true) when is_binary(V) -> V;
-'__bp_show'(V, _) when is_binary(V) -> [$", [case C of $" -> "\\\""; $\\ -> "\\\\"; $\n -> "\\n"; $\r -> "\\r"; $\t -> "\\t"; _ -> C end || C <- unicode:characters_to_list(V)], $"];
-'__bp_show'(V, _) when is_list(V) -> [$[, lists:join(", ", ['__bp_show'(E, false) || E <- V]), $]];
-'__bp_show'(V, _) when is_tuple(V), tuple_size(V) > 0, is_atom(element(1, V)), element(1, V) =/= true, element(1, V) =/= false, element(1, V) =/= undefined -> '__bp_tagged'(element(1, V), V);
-'__bp_show'(V, _) when is_tuple(V) -> ["#(", lists:join(", ", ['__bp_show'(E, false) || E <- tuple_to_list(V)]), $)];
+'__bp_show'(V, true) when erlang:is_binary(V) -> V;
+'__bp_show'(V, _) when erlang:is_binary(V) -> [$", [case C of $" -> "\\\""; $\\ -> "\\\\"; $\n -> "\\n"; $\r -> "\\r"; $\t -> "\\t"; _ -> C end || C <- unicode:characters_to_list(V)], $"];
+'__bp_show'(V, _) when erlang:is_list(V) -> [$[, lists:join(", ", ['__bp_show'(E, false) || E <- V]), $]];
+'__bp_show'(V, _) when erlang:is_tuple(V), erlang:tuple_size(V) > 0, erlang:is_atom(erlang:element(1, V)), erlang:element(1, V) =/= true, erlang:element(1, V) =/= false, erlang:element(1, V) =/= undefined -> '__bp_tagged'(erlang:element(1, V), V);
+'__bp_show'(V, _) when erlang:is_tuple(V) -> ["#(", lists:join(", ", ['__bp_show'(E, false) || E <- erlang:tuple_to_list(V)]), $)];
 '__bp_show'(undefined, _) -> "null";
-'__bp_show'(V, _) when is_atom(V), V =/= true, V =/= false, V =/= undefined -> '__bp_tagged'(V, V);
+'__bp_show'(V, _) when erlang:is_atom(V), V =/= true, V =/= false, V =/= undefined -> '__bp_tagged'(V, V);
 '__bp_show'(V, _) -> io_lib:format("~p", [V]).
 
 '__bp_tagged'(A, V) ->
-    M = case string:split(atom_to_list(A), "__v__") of [P, _] -> list_to_atom(P); _ -> A end,
-    case code:ensure_loaded(M) =:= {module, M} andalso erlang:function_exported(M, '__bp_format', 1) of true -> '__bp_render'(apply(M, '__bp_format', [V])); false -> io_lib:format("~p", [V]) end.
+    M = case string:split(erlang:atom_to_list(A), "__v__") of [P, _] -> erlang:list_to_atom(P); _ -> A end,
+    case code:ensure_loaded(M) =:= {module, M} andalso erlang:function_exported(M, '__bp_format', 1) of true -> '__bp_render'(erlang:apply(M, '__bp_format', [V])); false -> io_lib:format("~p", [V]) end.
 
 '__bp_render'({text, T}) -> T;
 '__bp_render'({variant, N, []}) -> N;
@@ -77,7 +77,7 @@ helper() ->
         ok ->
             io:format("  ok   ~ts~n", [Name]),
             ok;
-        {fail, FMsg, FLoc} when is_binary(FMsg) ->
+        {fail, FMsg, FLoc} when erlang:is_binary(FMsg) ->
             io:format("  FAIL ~ts  (~ts)  at ~ts~n", [Name, FMsg, FLoc]),
             fail;
         {fail, FMsg, FLoc} ->
@@ -95,15 +95,15 @@ helper() ->
         _ -> [T || {N, _, _} = T <- Tests, binary:match(N, Filter) =/= nomatch]
     end,
     Results = ['__bp_run_one'(T) || T <- Selected],
-    Failed = length([R || R <- Results, R =:= fail]),
-    Passed = length(Results) - Failed,
+    Failed = erlang:length([R || R <- Results, R =:= fail]),
+    Passed = erlang:length(Results) - Failed,
     io:format("~p passed, ~p failed~n", [Passed, Failed]),
-    case Failed > 0 of true -> halt(1); false -> ok end.
+    case Failed > 0 of true -> erlang:halt(1); false -> ok end.
 
 '__bp_load_siblings'() ->
     (fun() ->
         Dir = filename:dirname(filename:absname(escript:script_name())),
-        Self = atom_to_list(?MODULE) ++ ".erl",
+        Self = erlang:atom_to_list(?MODULE) ++ ".erl",
         Loaded = lists:foldl(fun(Src, Acc) ->
             case filename:basename(Src) =:= Self of
                 true -> Acc;
@@ -146,7 +146,7 @@ helper() ->
         Other ->
             io:format(standard_error, "  ~p~n", [Other])
     end,
-    halt(1).
+    erlang:halt(1).
 
 '__bp_error_text'(D) ->
     case D of
@@ -160,14 +160,15 @@ helper() ->
 '__bp_error_loc'(Loc) ->
     case Loc of
         {L, C} -> io_lib:format("~p:~p:", [L, C]);
-        L when is_integer(L) -> io_lib:format("~p:", [L]);
+        L when erlang:is_integer(L) -> io_lib:format("~p:", [L]);
         _ -> ""
     end.
 
 main(Args) ->
+    io:setopts(standard_io, [{encoding, unicode}]),
     '__bp_load_siblings'(),
     Filter = case Args of
-        [F | _] -> list_to_binary(F);
+        [F | _] -> erlang:list_to_binary(F);
         _ -> none
     end,
     '__bp_run_tests'(Filter).
@@ -178,12 +179,12 @@ main(Args) ->
 -module(test@main@@SourceLocation).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
-'__bp_get'(V, file) -> element(2, V);
-'__bp_get'(V, line) -> element(3, V);
-'__bp_get'(V, column) -> element(4, V);
-'__bp_get'(V, fnName) -> element(5, V).
+'__bp_get'(V, file) -> erlang:element(2, V);
+'__bp_get'(V, line) -> erlang:element(3, V);
+'__bp_get'(V, column) -> erlang:element(4, V);
+'__bp_get'(V, fnName) -> erlang:element(5, V).
 
-'__bp_format'(V) -> {record, "SourceLocation", [{"file", element(2, V)}, {"line", element(3, V)}, {"column", element(4, V)}, {"fnName", element(5, V)}]}.
+'__bp_format'(V) -> {record, "SourceLocation", [{"file", erlang:element(2, V)}, {"line", erlang:element(3, V)}, {"column", erlang:element(4, V)}, {"fnName", erlang:element(5, V)}]}.
 ```
 
 ----- RUN LOG -----

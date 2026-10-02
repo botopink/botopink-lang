@@ -24,6 +24,7 @@ main() ->
     end)(__BpV0); _ -> __BpR end end)(parseAge(<<"42">>)).
 
 '_botopink_main'() ->
+    io:setopts(standard_io, [{encoding, unicode}]),
     main().
 
 main(_Args) ->

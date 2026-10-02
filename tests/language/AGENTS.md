@@ -497,6 +497,41 @@ against 225/0 on erlang from one source), and `narrowing_*` (the same front's
 file: a parse error is the blast radius, so nine `#[@External]` declarations in one file mean one
 unparseable annotation hides the other eight.
 
+### The erlang backend's cells (1.0.11-beta `01-compiler/02-erlang`)
+
+Each was run with the parent binary and fails there as its row describes.
+
+- `run/module_fn_named_like_bif` (language-gaps T13): a module declaring `element/2`, `apply/2`,
+  `length/1` and `hd/1` reads a record field, calls each of its own fns, prints a record and reads
+  `Array.at` past the end — on all four targets. The erlang module did not compile (`element/2`
+  is illegal in the print helper's guard once it is the module's own fn) and, before the
+  `no_auto_import` directive, read `p.y` through the module's `element/2`.
+- `run/host_template_binding_inside_while` (language-gaps T14, `.targets` erlang beam — commonJS
+  and wasm lack `bump`): an `#[@External.Erlang]` template binding `__Loop`, called in a `while`
+  body and in a `for` body. Erlang's `while` recursed through a named fun `__Loop`, and the
+  template's `__Loop = …` re-matched it — `{badmatch, 1}`.
+- `modules/dependency_module_level_print` (C-34): a dependency's two modules print only from a
+  module-level `val`; `main` imports a value from one, its sibling `label` a type only from the
+  other, and both bodies run first, on all four targets. Erlang's `'_botopink_init'/0` called a
+  `'__bp_print'/1` the module never defined — `erlc` refused both dependency modules.
+- `run/string_literal_unicode_escape` (C-36, STD-11 and the locale row): a `\u{…}` escape above
+  U+00FF and a raw `ç` print as themselves, alone and inside an array, on all four targets. C-36's
+  emitter half (`writeStringFromLexeme` writes a code point's UTF-8 bytes) was already landed, so
+  the cell fails on the parent binary only under `LANG=C`, where erlang wrote `é` as `0xE9` and
+  `\x{1F600}` as text; beam still does there (03's twin). `.length()` of such a string is left
+  out: commonJS counts UTF-16 units (`2`) and wasm bytes (`4`) — 04's and 05's rows.
+- `test/is_truth_table` (C-07's erlang tail, decision 8 §4.1 × §4.2): each form that may follow
+  `is` — `i32`, `i8`, `u8`, `f64`, `string`, `bool`, a record, an enum type, `Box<unknown>`,
+  `#(i32, string)` — asked of the same ten `unknown` values, and §4.1's conversion inside
+  `if (a is i32)`. It passes on the parent binary (a pin, not a fix). A test cell runs on commonJS
+  and erlang; the same table as a `run/` cell is red on beam (`#(i32, string)` holds for every
+  tagged tuple — a record and a variant too) and traps on wasm — 03's and 05's rows. §11's
+  "erlang stores nothing" is `codegen/tests/control_flow.zig`'s needle (`A = 2.0,`, no box).
+- `run/captured_var_write_threaded` (decision 148, lg-b): the two lambdas that may write a
+  captured `var` — a `forEach` body and a local closure called at statement position — thread the
+  write out on all four targets (a pin: green on the parent binary too). Every other lambda's
+  write is the checker's refusal, so erlang lowers nothing more.
+
 ### `narrowing_*`
 
 Four cells of 1.0.10-beta's `00 · 01-checker` (`fix/null-narrowing`), and the reason they are a group
@@ -890,6 +925,7 @@ refusal lines are in the front's README):
 | `run/external_template_escaped_quote` | commonJS erlang beam | wasm — `say` |
 | `run/external_template_refused_on_beam` | erlang beam | commonJS, wasm — `moduleNamed` |
 | `run/host_array_slice_without_start` | commonJS | erlang, wasm, beam — `copyAll` |
+| `run/host_template_binding_inside_while` | erlang beam | commonJS, wasm — `bump` |
 | `run/host_erlang_task_result` | erlang beam | commonJS, wasm — `hostDouble` |
 | `run/host_node_task_result` | commonJS | erlang, wasm, beam — `hostDouble` |
 | `run/host_unknown_parameter` | erlang beam | commonJS, wasm — `std/erlang.element` |
@@ -898,7 +934,7 @@ refusal lines are in the front's README):
 | `run/task_throw_resolves_error` | commonJS | erlang, wasm, beam — `observe` |
 | `modules/manifest_targets_host_binding` | erlang beam (`"targets"`) | commonJS, wasm — `magnitude` |
 
-Thirty exclusions; the run prints `narrowings: 30 exclusions audited — each stands on a host binding
+Thirty-two exclusions; the run prints `narrowings: 32 exclusions audited — each stands on a host binding
 the target does not have`. No other `modules/` manifest carries `"targets"`: the field used to be
 boilerplate (`["commonJS", "erlang", "wasm"]` in 33 cells, `["commonJS", "erlang"]` in 14) that the
 runner ignored — honoured as written it would have taken beam away from 33 passing cells — and a
@@ -961,16 +997,16 @@ audited (§ Narrowing a cell); the report is two numbers (§ A red cell is red):
 ```
 $ tests/language/run.sh --target all
 self-test: 8 malformed or unbacked narrowings refused, 3 backed ones scheduled on their declared targets alone
-narrowings: 30 exclusions audited — each stands on a host binding the target does not have
-language tests: 1483 passed, 0 failed
+narrowings: 32 exclusions audited — each stands on a host binding the target does not have
+language tests: 1545 passed, 0 failed
 
 $ tests/language/run.sh --target beam
 narrowings: 3 exclusions audited — each stands on a host binding the target does not have
-language tests: 395 passed, 0 failed
+language tests: 408 passed, 0 failed
 ```
 
-Recounted on disk: `ls test/*.bp | wc -l` 64 · `ls run/*.bp | wc -l` 169 (17 with a `.targets`,
-25 `.<target>.expect` files) · `ls reject/*.bp | wc -l` 173 · `ls -d modules/*/ | wc -l` 60 (25
+Recounted on disk: `ls test/*.bp | wc -l` 65 · `ls run/*.bp | wc -l` 173 (18 with a `.targets`,
+25 `.<target>.expect` files) · `ls reject/*.bp | wc -l` 173 · `ls -d modules/*/ | wc -l` 69 (33
 `<target>.expect` files, one `"targets"`). Decision 146 on wasm (a function whose body calls a host
 function with no binding for the target is refused called or not, on every target) moved four cells
 and added one: `run/external_wrapper_keeps_refusal` passes on wasm by its `.wasm.expect`;

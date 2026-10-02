@@ -22,9 +22,9 @@ type Unimplemented(id: i32) {
 process(Self) ->
     erlang:error({todo, "not implemented"}).
 
-'__bp_get'(V, id) -> element(2, V).
+'__bp_get'(V, id) -> erlang:element(2, V).
 
-'__bp_format'(V) -> {record, "Unimplemented", [{"id", element(2, V)}]}.
+'__bp_format'(V) -> {record, "Unimplemented", [{"id", erlang:element(2, V)}]}.
 ```
 
 ----- RUN LOG -----

@@ -25,15 +25,15 @@ val Vec2 = type(
 -export([lengthSq/1, scale/2, '__bp_get'/2, '__bp_format'/1]).
 
 lengthSq(Self) ->
-    ((element(2, Self) * element(2, Self)) + (element(3, Self) * element(3, Self))).
+    ((erlang:element(2, Self) * erlang:element(2, Self)) + (erlang:element(3, Self) * erlang:element(3, Self))).
 
 scale(Self, Factor) ->
-    (element(2, Self) * Factor).
+    (erlang:element(2, Self) * Factor).
 
-'__bp_get'(V, x) -> element(2, V);
-'__bp_get'(V, y) -> element(3, V).
+'__bp_get'(V, x) -> erlang:element(2, V);
+'__bp_get'(V, y) -> erlang:element(3, V).
 
-'__bp_format'(V) -> {record, "Vec2", [{"x", element(2, V)}, {"y", element(3, V)}]}.
+'__bp_format'(V) -> {record, "Vec2", [{"x", erlang:element(2, V)}, {"y", erlang:element(3, V)}]}.
 ```
 
 ----- RUN LOG -----

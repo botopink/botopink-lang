@@ -1,0 +1,20 @@
+//// Decision 148 (lg-b): a lambda may write a `var` it captures in two shapes
+//// only — a `forEach` body, and a local closure called at statement
+//// position — and both thread the write out on every target. Any other
+//// lambda's write is refused at check time (01's refusal).
+
+pub fn main() {
+    var total = 0;
+    [1, 2, 3].forEach({ x ->
+        total = total + x;
+    });
+    @print(total);
+
+    var count = 0;
+    val bump = { ->
+        count = count + 1;
+    };
+    bump();
+    bump();
+    @print(count);
+}

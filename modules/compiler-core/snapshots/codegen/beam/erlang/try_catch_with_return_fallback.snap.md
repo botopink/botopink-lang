@@ -41,9 +41,9 @@ safe() ->
 -module(test@main@@NetError).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
-'__bp_get'(V, code) -> element(2, V).
+'__bp_get'(V, code) -> erlang:element(2, V).
 
-'__bp_format'(V) -> {record, "NetError", [{"code", element(2, V)}]}.
+'__bp_format'(V) -> {record, "NetError", [{"code", erlang:element(2, V)}]}.
 ```
 
 ----- RUN LOG -----

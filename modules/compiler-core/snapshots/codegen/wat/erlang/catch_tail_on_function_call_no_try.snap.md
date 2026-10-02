@@ -35,9 +35,9 @@ safe() ->
 -module(test@main@@RiskError).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
-'__bp_get'(V, level) -> element(2, V).
+'__bp_get'(V, level) -> erlang:element(2, V).
 
-'__bp_format'(V) -> {record, "RiskError", [{"level", element(2, V)}]}.
+'__bp_format'(V) -> {record, "RiskError", [{"level", erlang:element(2, V)}]}.
 ```
 
 ----- RUN LOG -----

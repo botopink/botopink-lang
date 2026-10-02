@@ -679,7 +679,7 @@ array_repeat(Value, Times) ->
 % interpolates.
 
 shown(X) ->
-    case is_binary(X) of
+    case erlang:is_binary(X) of
         true ->
             <<"\"", ('__bp_text'(X))/binary, "\"">>;
         _ ->
@@ -823,8 +823,8 @@ reverse(O) ->
 
 
 
-'__bp_text'(Value) when is_binary(Value) -> Value;
-'__bp_text'(Value) -> iolist_to_binary(io_lib:format(<<"~p">>, [Value])).
+'__bp_text'(Value) when erlang:is_binary(Value) -> Value;
+'__bp_text'(Value) -> erlang:iolist_to_binary(io_lib:format(<<"~p">>, [Value])).
 ```
 
 ----- ERLANG -- std@collections@@Dict.erl
@@ -835,9 +835,9 @@ reverse(O) ->
 
 display(Self) ->
     Parts = lists:foldl(fun(P, Parts) ->
-        (Parts ++ [<<(std@collections:shown(element(1, P)))/binary, ": ", (std@collections:shown(element(2, P)))/binary>>])
-    end, [], element(2, Self)),
-    <<"Dict(", ('__bp_text'(iolist_to_binary(lists:join(<<", ">>, lists:map(fun(__E) -> if is_binary(__E) -> __E; is_integer(__E) -> integer_to_binary(__E); is_list(__E) -> __E; true -> iolist_to_binary(io_lib:format("~p", [__E])) end end, Parts)))))/binary, ")">>.
+        (Parts ++ [<<(std@collections:shown(erlang:element(1, P)))/binary, ": ", (std@collections:shown(erlang:element(2, P)))/binary>>])
+    end, [], erlang:element(2, Self)),
+    <<"Dict(", ('__bp_text'(iolist_to_binary(lists:join(<<", ">>, lists:map(fun(__E) -> if is_binary(__E) -> __E; is_integer(__E) -> integer_to_binary(__E); is_list(__E) -> __E; true -> erlang:iolist_to_binary(io_lib:format("~p", [__E])) end end, Parts)))))/binary, ")">>.
 
 at(Self, Key) ->
     % NOTE: written with `forEach` + accumulator rather than
@@ -845,61 +845,61 @@ at(Self, Key) ->
     % not lowered yet (tracked in tasks/v0.beta.4 Part A: primitive/option
     % method dispatch). `.at(0)` here would type as array, not `?T`.
     Found = lists:foldl(fun(P, Found) ->
-        case (element(1, P) =:= Key) of
-            true -> element(2, P);
+        case (erlang:element(1, P) =:= Key) of
+            true -> erlang:element(2, P);
             _ -> Found
         end
-    end, undefined, element(2, Self)),
+    end, undefined, erlang:element(2, Self)),
     Found.
 
 hasKey(Self, Key) ->
     ((fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(lists:filter(fun(P) ->
-        (element(1, P) =:= Key)
-    end, element(2, Self)), 0) =/= undefined).
+        (erlang:element(1, P) =:= Key)
+    end, erlang:element(2, Self)), 0) =/= undefined).
 
 size(Self) ->
-    erlang:length(element(2, Self)).
+    erlang:length(erlang:element(2, Self)).
 
 isEmpty(Self) ->
-    (erlang:length(element(2, Self)) =:= 0).
+    (erlang:length(erlang:element(2, Self)) =:= 0).
 
 keys(Self) ->
     lists:map(fun(P) ->
-        element(1, P)
-    end, element(2, Self)).
+        erlang:element(1, P)
+    end, erlang:element(2, Self)).
 
 values(Self) ->
     lists:map(fun(P) ->
-        element(2, P)
-    end, element(2, Self)).
+        erlang:element(2, P)
+    end, erlang:element(2, Self)).
 
 insert(Self, Key, Value) ->
     Filtered = lists:filter(fun(P) ->
-        (element(1, P) =/= Key)
-    end, element(2, Self)),
+        (erlang:element(1, P) =/= Key)
+    end, erlang:element(2, Self)),
     {std@collections@@Dict, (Filtered ++ [{Key, Value}])}.
 
 delete(Self, Key) ->
     {std@collections@@Dict, lists:filter(fun(P) ->
-        (element(1, P) =/= Key)
-    end, element(2, Self))}.
+        (erlang:element(1, P) =/= Key)
+    end, erlang:element(2, Self))}.
 
 merge(Self, Other) ->
     Out = lists:foldl(fun(P, Out) ->
-        insert(Out, element(1, P), element(2, P))
-    end, Self, element(2, Other)),
+        insert(Out, erlang:element(1, P), erlang:element(2, P))
+    end, Self, erlang:element(2, Other)),
     Out.
 
 fold(Self, Initial, F) ->
     Acc = lists:foldl(fun(P, Acc) ->
-        F(Acc, element(1, P), element(2, P))
-    end, Initial, element(2, Self)),
+        F(Acc, erlang:element(1, P), erlang:element(2, P))
+    end, Initial, erlang:element(2, Self)),
     Acc.
 
 mapValues(Self, F) ->
     Out = lists:foldl(fun(P, Out) ->
-        (Out ++ [{element(1, P), F(element(2, P))}])
-    end, [], element(2, Self)),
+        (Out ++ [{erlang:element(1, P), F(erlang:element(2, P))}])
+    end, [], erlang:element(2, Self)),
     {std@collections@@Dict, Out}.
 
 empty() ->
@@ -907,16 +907,16 @@ empty() ->
 
 ofEntries(Entries) ->
     Out = lists:foldl(fun(E, Out) ->
-        insert(Out, element(1, E), element(2, E))
+        insert(Out, erlang:element(1, E), erlang:element(2, E))
     end, {std@collections@@Dict, []}, Entries),
     Out.
 
-'__bp_get'(V, pairs) -> element(2, V).
+'__bp_get'(V, pairs) -> erlang:element(2, V).
 
 '__bp_format'(V) -> {text, display(V)}.
 
-'__bp_text'(Value) when is_binary(Value) -> Value;
-'__bp_text'(Value) -> iolist_to_binary(io_lib:format(<<"~p">>, [Value])).
+'__bp_text'(Value) when erlang:is_binary(Value) -> Value;
+'__bp_text'(Value) -> erlang:iolist_to_binary(io_lib:format(<<"~p">>, [Value])).
 ```
 
 ----- ERLANG -- std@collections@@Set.erl
@@ -926,45 +926,45 @@ ofEntries(Entries) ->
 -export([contains/2, size/1, isEmpty/1, toList/1, insert/2, delete/2, union/2, intersection/2, difference/2, empty/0, fromList/1, '__bp_get'/2, '__bp_format'/1]).
 
 contains(Self, X) ->
-    ((fun(__L, __X) -> __Find = fun __F(__I, [__H | __T]) -> case (__H =:= __X) of true -> __I; false -> __F(__I + 1, __T) end; __F(_, []) -> -1 end, __Find(0, __L) end)(element(2, Self), X) =/= (-1)).
+    ((fun(__L, __X) -> __Find = fun __F(__I, [__H | __T]) -> case (__H =:= __X) of true -> __I; false -> __F(__I + 1, __T) end; __F(_, []) -> -1 end, __Find(0, __L) end)(erlang:element(2, Self), X) =/= (-1)).
 
 size(Self) ->
-    erlang:length(element(2, Self)).
+    erlang:length(erlang:element(2, Self)).
 
 isEmpty(Self) ->
-    (erlang:length(element(2, Self)) =:= 0).
+    (erlang:length(erlang:element(2, Self)) =:= 0).
 
 toList(Self) ->
-    element(2, Self).
+    erlang:element(2, Self).
 
 insert(Self, X) ->
-    case ((fun(__L, __X) -> __Find = fun __F(__I, [__H | __T]) -> case (__H =:= __X) of true -> __I; false -> __F(__I + 1, __T) end; __F(_, []) -> -1 end, __Find(0, __L) end)(element(2, Self), X) =/= (-1)) of
+    case ((fun(__L, __X) -> __Find = fun __F(__I, [__H | __T]) -> case (__H =:= __X) of true -> __I; false -> __F(__I + 1, __T) end; __F(_, []) -> -1 end, __Find(0, __L) end)(erlang:element(2, Self), X) =/= (-1)) of
         true ->
             Self;
         false ->
-            {std@collections@@Set, (element(2, Self) ++ [X])}
+            {std@collections@@Set, (erlang:element(2, Self) ++ [X])}
     end.
 
 delete(Self, X) ->
     {std@collections@@Set, lists:filter(fun(Item) ->
         (Item =/= X)
-    end, element(2, Self))}.
+    end, erlang:element(2, Self))}.
 
 union(Self, Other) ->
     Out = lists:foldl(fun(X, Out) ->
         insert(Out, X)
-    end, Self, element(2, Other)),
+    end, Self, erlang:element(2, Other)),
     Out.
 
 intersection(Self, Other) ->
     {std@collections@@Set, lists:filter(fun(X) ->
-        ((fun(__L, __X) -> __Find = fun __F(__I, [__H | __T]) -> case (__H =:= __X) of true -> __I; false -> __F(__I + 1, __T) end; __F(_, []) -> -1 end, __Find(0, __L) end)(element(2, Other), X) =/= (-1))
-    end, element(2, Self))}.
+        ((fun(__L, __X) -> __Find = fun __F(__I, [__H | __T]) -> case (__H =:= __X) of true -> __I; false -> __F(__I + 1, __T) end; __F(_, []) -> -1 end, __Find(0, __L) end)(erlang:element(2, Other), X) =/= (-1))
+    end, erlang:element(2, Self))}.
 
 difference(Self, Other) ->
     {std@collections@@Set, lists:filter(fun(X) ->
-        ((fun(__L, __X) -> __Find = fun __F(__I, [__H | __T]) -> case (__H =:= __X) of true -> __I; false -> __F(__I + 1, __T) end; __F(_, []) -> -1 end, __Find(0, __L) end)(element(2, Other), X) =:= (-1))
-    end, element(2, Self))}.
+        ((fun(__L, __X) -> __Find = fun __F(__I, [__H | __T]) -> case (__H =:= __X) of true -> __I; false -> __F(__I + 1, __T) end; __F(_, []) -> -1 end, __Find(0, __L) end)(erlang:element(2, Other), X) =:= (-1))
+    end, erlang:element(2, Self))}.
 
 empty() ->
     {std@collections@@Set, []}.
@@ -975,9 +975,9 @@ fromList(Xs) ->
     end, {std@collections@@Set, []}, Xs),
     Out.
 
-'__bp_get'(V, items) -> element(2, V).
+'__bp_get'(V, items) -> erlang:element(2, V).
 
-'__bp_format'(V) -> {record, "Set", [{"items", element(2, V)}]}.
+'__bp_format'(V) -> {record, "Set", [{"items", erlang:element(2, V)}]}.
 ```
 
 ----- ERLANG -- std@collections@@Queue.erl
@@ -987,24 +987,24 @@ fromList(Xs) ->
 -export([size/1, isEmpty/1, enqueue/2, dequeue/1, peek/1, toList/1, empty/0, fromList/1, '__bp_get'/2, '__bp_format'/1]).
 
 size(Self) ->
-    erlang:length(element(2, Self)).
+    erlang:length(erlang:element(2, Self)).
 
 isEmpty(Self) ->
-    (erlang:length(element(2, Self)) =:= 0).
+    (erlang:length(erlang:element(2, Self)) =:= 0).
 
 enqueue(Self, Item) ->
-    {std@collections@@Queue, (element(2, Self) ++ [Item])}.
+    {std@collections@@Queue, (erlang:element(2, Self) ++ [Item])}.
 
 dequeue(Self) ->
-    Head = (fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(element(2, Self), 0),
-    Rest = array_slice(element(2, Self), 1, erlang:length(element(2, Self))),
+    Head = (fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(erlang:element(2, Self), 0),
+    Rest = array_slice(erlang:element(2, Self), 1, erlang:length(erlang:element(2, Self))),
     {{std@collections@@Queue, Rest}, Head}.
 
 peek(Self) ->
-    (fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(element(2, Self), 0).
+    (fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(erlang:element(2, Self), 0).
 
 toList(Self) ->
-    element(2, Self).
+    erlang:element(2, Self).
 
 empty() ->
     {std@collections@@Queue, []}.
@@ -1012,9 +1012,9 @@ empty() ->
 fromList(Xs) ->
     {std@collections@@Queue, Xs}.
 
-'__bp_get'(V, items) -> element(2, V).
+'__bp_get'(V, items) -> erlang:element(2, V).
 
-'__bp_format'(V) -> {record, "Queue", [{"items", element(2, V)}]}.
+'__bp_format'(V) -> {record, "Queue", [{"items", erlang:element(2, V)}]}.
 
 array_slice(Self, Start, End) ->
     case (End =/= undefined) of
@@ -1083,24 +1083,25 @@ main() ->
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
 
-'__bp_show'(V, true) when is_binary(V) -> V;
-'__bp_show'(V, _) when is_binary(V) -> [$", [case C of $" -> "\\\""; $\\ -> "\\\\"; $\n -> "\\n"; $\r -> "\\r"; $\t -> "\\t"; _ -> C end || C <- unicode:characters_to_list(V)], $"];
-'__bp_show'(V, _) when is_list(V) -> [$[, lists:join(", ", ['__bp_show'(E, false) || E <- V]), $]];
-'__bp_show'(V, _) when is_tuple(V), tuple_size(V) > 0, is_atom(element(1, V)), element(1, V) =/= true, element(1, V) =/= false, element(1, V) =/= undefined -> '__bp_tagged'(element(1, V), V);
-'__bp_show'(V, _) when is_tuple(V) -> ["#(", lists:join(", ", ['__bp_show'(E, false) || E <- tuple_to_list(V)]), $)];
+'__bp_show'(V, true) when erlang:is_binary(V) -> V;
+'__bp_show'(V, _) when erlang:is_binary(V) -> [$", [case C of $" -> "\\\""; $\\ -> "\\\\"; $\n -> "\\n"; $\r -> "\\r"; $\t -> "\\t"; _ -> C end || C <- unicode:characters_to_list(V)], $"];
+'__bp_show'(V, _) when erlang:is_list(V) -> [$[, lists:join(", ", ['__bp_show'(E, false) || E <- V]), $]];
+'__bp_show'(V, _) when erlang:is_tuple(V), erlang:tuple_size(V) > 0, erlang:is_atom(erlang:element(1, V)), erlang:element(1, V) =/= true, erlang:element(1, V) =/= false, erlang:element(1, V) =/= undefined -> '__bp_tagged'(erlang:element(1, V), V);
+'__bp_show'(V, _) when erlang:is_tuple(V) -> ["#(", lists:join(", ", ['__bp_show'(E, false) || E <- erlang:tuple_to_list(V)]), $)];
 '__bp_show'(undefined, _) -> "null";
-'__bp_show'(V, _) when is_atom(V), V =/= true, V =/= false, V =/= undefined -> '__bp_tagged'(V, V);
+'__bp_show'(V, _) when erlang:is_atom(V), V =/= true, V =/= false, V =/= undefined -> '__bp_tagged'(V, V);
 '__bp_show'(V, _) -> io_lib:format("~p", [V]).
 
 '__bp_tagged'(A, V) ->
-    M = case string:split(atom_to_list(A), "__v__") of [P, _] -> list_to_atom(P); _ -> A end,
-    case code:ensure_loaded(M) =:= {module, M} andalso erlang:function_exported(M, '__bp_format', 1) of true -> '__bp_render'(apply(M, '__bp_format', [V])); false -> io_lib:format("~p", [V]) end.
+    M = case string:split(erlang:atom_to_list(A), "__v__") of [P, _] -> erlang:list_to_atom(P); _ -> A end,
+    case code:ensure_loaded(M) =:= {module, M} andalso erlang:function_exported(M, '__bp_format', 1) of true -> '__bp_render'(erlang:apply(M, '__bp_format', [V])); false -> io_lib:format("~p", [V]) end.
 
 '__bp_render'({text, T}) -> T;
 '__bp_render'({variant, N, []}) -> N;
 '__bp_render'({_, N, Fs}) -> [N, $(, lists:join(", ", [[K, ": ", '__bp_show'(Val, false)] || {K, Val} <- Fs]), $)].
 
 '_botopink_main'() ->
+    io:setopts(standard_io, [{encoding, unicode}]),
     main().
 
 main(_Args) ->

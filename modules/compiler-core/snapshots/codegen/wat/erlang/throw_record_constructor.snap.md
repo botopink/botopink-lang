@@ -27,10 +27,10 @@ validate(X) ->
 -module(test@main@@AppError).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
-'__bp_get'(V, code) -> element(2, V);
-'__bp_get'(V, msg) -> element(3, V).
+'__bp_get'(V, code) -> erlang:element(2, V);
+'__bp_get'(V, msg) -> erlang:element(3, V).
 
-'__bp_format'(V) -> {record, "AppError", [{"code", element(2, V)}, {"msg", element(3, V)}]}.
+'__bp_format'(V) -> {record, "AppError", [{"code", erlang:element(2, V)}, {"msg", erlang:element(3, V)}]}.
 ```
 
 ----- RUN LOG -----

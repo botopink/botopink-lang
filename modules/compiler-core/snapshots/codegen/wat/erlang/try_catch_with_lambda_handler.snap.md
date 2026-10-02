@@ -39,9 +39,9 @@ safe() ->
 -module(test@main@@FetchError).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
-'__bp_get'(V, url) -> element(2, V).
+'__bp_get'(V, url) -> erlang:element(2, V).
 
-'__bp_format'(V) -> {record, "FetchError", [{"url", element(2, V)}]}.
+'__bp_format'(V) -> {record, "FetchError", [{"url", erlang:element(2, V)}]}.
 ```
 
 ----- RUN LOG -----

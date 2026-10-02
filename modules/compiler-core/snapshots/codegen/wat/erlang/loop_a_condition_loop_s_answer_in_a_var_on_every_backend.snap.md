@@ -26,7 +26,7 @@ main() ->
     I = 0,
     Found = 0,
     {Found@4, I@3} = try
-        (fun __Loop({Found@1, I@1}) ->
+        (fun __BpLoop({Found@1, I@1}) ->
             case (I@1 < 10) of
                 true ->
                     Found@3 = case (I@1 =:= 4) of
@@ -38,7 +38,7 @@ main() ->
                             Found@1
                     end,
                     I@2 = (I@1 + 1),
-                    __Loop({Found@3, I@2});
+                    __BpLoop({Found@3, I@2});
                 _ -> {Found@1, I@1}
             end
         end)({Found, I})
@@ -50,7 +50,7 @@ main() ->
     K = 0,
     R = 0,
     {K@3, R@4} = try
-        (fun __Loop({K@1, R@1}) ->
+        (fun __BpLoop({K@1, R@1}) ->
             K@2 = (K@1 + 1),
             R@3 = case (K@2 > 2) of
                 true ->
@@ -60,7 +60,7 @@ main() ->
                 _ ->
                     R@1
             end,
-            __Loop({K@2, R@3})
+            __BpLoop({K@2, R@3})
         end)({K, R})
     catch
         throw:{'__bp_cond_break', __BpGroup2} -> __BpGroup2
@@ -69,7 +69,7 @@ main() ->
     N = 0,
     Never = 0,
     {Never@4, N@3} = try
-        (fun __Loop({Never@1, N@1}) ->
+        (fun __BpLoop({Never@1, N@1}) ->
             case (N@1 < 3) of
                 true ->
                     Never@3 = case (N@1 =:= 99) of
@@ -81,7 +81,7 @@ main() ->
                             Never@1
                     end,
                     N@2 = (N@1 + 1),
-                    __Loop({Never@3, N@2});
+                    __BpLoop({Never@3, N@2});
                 _ -> {Never@1, N@1}
             end
         end)({Never, N})
@@ -93,24 +93,25 @@ main() ->
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
 
-'__bp_show'(V, true) when is_binary(V) -> V;
-'__bp_show'(V, _) when is_binary(V) -> [$", [case C of $" -> "\\\""; $\\ -> "\\\\"; $\n -> "\\n"; $\r -> "\\r"; $\t -> "\\t"; _ -> C end || C <- unicode:characters_to_list(V)], $"];
-'__bp_show'(V, _) when is_list(V) -> [$[, lists:join(", ", ['__bp_show'(E, false) || E <- V]), $]];
-'__bp_show'(V, _) when is_tuple(V), tuple_size(V) > 0, is_atom(element(1, V)), element(1, V) =/= true, element(1, V) =/= false, element(1, V) =/= undefined -> '__bp_tagged'(element(1, V), V);
-'__bp_show'(V, _) when is_tuple(V) -> ["#(", lists:join(", ", ['__bp_show'(E, false) || E <- tuple_to_list(V)]), $)];
+'__bp_show'(V, true) when erlang:is_binary(V) -> V;
+'__bp_show'(V, _) when erlang:is_binary(V) -> [$", [case C of $" -> "\\\""; $\\ -> "\\\\"; $\n -> "\\n"; $\r -> "\\r"; $\t -> "\\t"; _ -> C end || C <- unicode:characters_to_list(V)], $"];
+'__bp_show'(V, _) when erlang:is_list(V) -> [$[, lists:join(", ", ['__bp_show'(E, false) || E <- V]), $]];
+'__bp_show'(V, _) when erlang:is_tuple(V), erlang:tuple_size(V) > 0, erlang:is_atom(erlang:element(1, V)), erlang:element(1, V) =/= true, erlang:element(1, V) =/= false, erlang:element(1, V) =/= undefined -> '__bp_tagged'(erlang:element(1, V), V);
+'__bp_show'(V, _) when erlang:is_tuple(V) -> ["#(", lists:join(", ", ['__bp_show'(E, false) || E <- erlang:tuple_to_list(V)]), $)];
 '__bp_show'(undefined, _) -> "null";
-'__bp_show'(V, _) when is_atom(V), V =/= true, V =/= false, V =/= undefined -> '__bp_tagged'(V, V);
+'__bp_show'(V, _) when erlang:is_atom(V), V =/= true, V =/= false, V =/= undefined -> '__bp_tagged'(V, V);
 '__bp_show'(V, _) -> io_lib:format("~p", [V]).
 
 '__bp_tagged'(A, V) ->
-    M = case string:split(atom_to_list(A), "__v__") of [P, _] -> list_to_atom(P); _ -> A end,
-    case code:ensure_loaded(M) =:= {module, M} andalso erlang:function_exported(M, '__bp_format', 1) of true -> '__bp_render'(apply(M, '__bp_format', [V])); false -> io_lib:format("~p", [V]) end.
+    M = case string:split(erlang:atom_to_list(A), "__v__") of [P, _] -> erlang:list_to_atom(P); _ -> A end,
+    case code:ensure_loaded(M) =:= {module, M} andalso erlang:function_exported(M, '__bp_format', 1) of true -> '__bp_render'(erlang:apply(M, '__bp_format', [V])); false -> io_lib:format("~p", [V]) end.
 
 '__bp_render'({text, T}) -> T;
 '__bp_render'({variant, N, []}) -> N;
 '__bp_render'({_, N, Fs}) -> [N, $(, lists:join(", ", [[K, ": ", '__bp_show'(Val, false)] || {K, Val} <- Fs]), $)].
 
 '_botopink_main'() ->
+    io:setopts(standard_io, [{encoding, unicode}]),
     main().
 
 main(_Args) ->

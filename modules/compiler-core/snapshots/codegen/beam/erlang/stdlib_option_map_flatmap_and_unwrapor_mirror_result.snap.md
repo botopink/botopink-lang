@@ -30,8 +30,8 @@ greet(P) ->
         <<"Hello ", ('__bp_text'(N))/binary>>
     end)(__BpV2) end end)(firstName(P)))).
 
-'__bp_text'(Value) when is_binary(Value) -> Value;
-'__bp_text'(Value) -> iolist_to_binary(io_lib:format(<<"~p">>, [Value])).
+'__bp_text'(Value) when erlang:is_binary(Value) -> Value;
+'__bp_text'(Value) -> erlang:iolist_to_binary(io_lib:format(<<"~p">>, [Value])).
 ```
 
 ----- ERLANG -- test@main@@Person.erl
@@ -39,9 +39,9 @@ greet(P) ->
 -module(test@main@@Person).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
-'__bp_get'(V, name) -> element(2, V).
+'__bp_get'(V, name) -> erlang:element(2, V).
 
-'__bp_format'(V) -> {record, "Person", [{"name", element(2, V)}]}.
+'__bp_format'(V) -> {record, "Person", [{"name", erlang:element(2, V)}]}.
 ```
 
 ----- RUN LOG -----

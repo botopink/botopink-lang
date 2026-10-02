@@ -19,7 +19,7 @@ span() ->
     {test@main@@Span, 4, 9, 2}.
 
 lineNo() ->
-    element(4, span()).
+    erlang:element(4, span()).
 ```
 
 ----- ERLANG -- test@main@@Span.erl
@@ -27,11 +27,11 @@ lineNo() ->
 -module(test@main@@Span).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
-'__bp_get'(V, start) -> element(2, V);
-'__bp_get'(V, 'end') -> element(3, V);
-'__bp_get'(V, line) -> element(4, V).
+'__bp_get'(V, start) -> erlang:element(2, V);
+'__bp_get'(V, 'end') -> erlang:element(3, V);
+'__bp_get'(V, line) -> erlang:element(4, V).
 
-'__bp_format'(V) -> {record, "Span", [{"start", element(2, V)}, {"end", element(3, V)}, {"line", element(4, V)}]}.
+'__bp_format'(V) -> {record, "Span", [{"start", erlang:element(2, V)}, {"end", erlang:element(3, V)}, {"line", erlang:element(4, V)}]}.
 ```
 
 ----- RUN LOG -----

@@ -22,6 +22,7 @@ test {
     _ = @import("tests/comptime_module.zig");
     _ = @import("tests/beam_templates.zig");
     _ = @import("tests/commonjs.zig");
+    _ = @import("tests/erlang.zig");
     _ = @import("js/js_ast.zig");
     _ = @import("js/js_emitter.zig");
     _ = @import("js/ts_emitter.zig");
