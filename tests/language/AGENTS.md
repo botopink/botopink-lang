@@ -396,6 +396,10 @@ Each was run with the parent binary and fails there as its row describes.
   and wasm lack `bump`): an `#[@External.Erlang]` template binding `__Loop`, called in a `while`
   body and in a `for` body. Erlang's `while` recursed through a named fun `__Loop`, and the
   template's `__Loop = …` re-matched it — `{badmatch, 1}`.
+- `modules/dependency_module_level_print` (C-34): a dependency's two modules print only from a
+  module-level `val`; `main` imports a value from one, its sibling `label` a type only from the
+  other, and both bodies run first, on all four targets. Erlang's `'_botopink_init'/0` called a
+  `'__bp_print'/1` the module never defined — `erlc` refused both dependency modules.
 
 ### `narrowing_*`
 

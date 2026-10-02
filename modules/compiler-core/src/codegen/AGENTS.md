@@ -1400,6 +1400,11 @@ codegen/
   runner's `main/1`, `testRunnerForms(…, import_inits, …)`) calls
   `<dep>:'_botopink_init'()` for each one that has a body (`moduleHasInit`)
   before its own, which is the order `require` gives commonJS.
+  The body is lowered BEFORE the runtime helpers are chosen (and written after
+  them): a helper only a module-level initialiser reaches — a dependency whose
+  one print is `val _x = @print("boot")` — was never defined, and the init
+  called an undefined `'__bp_print'/1` (C-34,
+  `modules/dependency_module_level_print`).
 - **A module-level `pub val` crosses modules** (decision 140): the owner exports
   its 0-arity reader `name/0` beside its `pub fn`s, and an importer reads it as
   `owner:name()` (`imported_vals`, keyed by the local name so an `as` alias

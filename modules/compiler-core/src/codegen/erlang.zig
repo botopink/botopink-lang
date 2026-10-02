@@ -2161,6 +2161,13 @@ fn emitErlangModule(
         decls_start -= 1;
     }
 
+    // The module body — `'_botopink_init'/0` — is lowered before the helpers
+    // are chosen, so a helper only a module-level initialiser reaches (a
+    // module whose one print is `val _x = @print(…)`) is defined (C-34). It is
+    // written after them, before the entrypoints that call it, in every mode.
+    var init_forms: Forms = .empty;
+    if (emit_init) try em.initForms(b, &init_forms, module_body.items);
+
     // Runtime helpers a lowering reached. A comptime module always carries
     // `'__bp_text'/1` (`comptime_helper_forms`); a listing renders no helper.
     const listing_only = if (comptime_module) |cm| cm.listing else false;
@@ -2197,9 +2204,7 @@ fn emitErlangModule(
         for (cm.forms) |form| try forms.appendSlice(b.arena, &.{ .blank, form });
     }
 
-    // The module body — `'_botopink_init'/0`. Emitted before the entrypoints
-    // that call it, in every mode.
-    if (emit_init) try em.initForms(b, &forms, module_body.items);
+    try forms.appendSlice(b.arena, init_forms.items);
 
     if (emit_entrypoint_wrapper) {
         // `'_botopink_main'() -> '_botopink_init'(), main().` — the module body
