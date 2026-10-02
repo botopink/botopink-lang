@@ -662,7 +662,7 @@ test "order case over Order" {
     i32.const 264
     local.get $parts
     i32.const 276
-    call $__arr_join_i32
+    call $__arr_join_str
     call $__str_concat
     i32.const 284
     call $__str_concat
@@ -2622,48 +2622,6 @@ test "order case over Order" {
     )
     local.get $p
   )
-  (func $__arr_join_i32 (param $xs i32) (param $sep i32) (result i32)
-    (local $n i32) (local $i i32) (local $t i32)
-    local.get $xs
-    i32.load
-    local.set $n
-    local.get $n
-    call $__arr_new
-    local.set $t
-    (block $brk
-      (loop $cont
-        local.get $i
-        local.get $n
-        i32.ge_u
-        br_if $brk
-        local.get $t
-        i32.const 4
-        i32.add
-        local.get $i
-        i32.const 4
-        i32.mul
-        i32.add
-        local.get $xs
-        i32.const 4
-        i32.add
-        local.get $i
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load
-        call $__i32_to_str
-        i32.store
-        local.get $i
-        i32.const 1
-        i32.add
-        local.set $i
-        br $cont
-      )
-    )
-    local.get $t
-    local.get $sep
-    call $__arr_join_str
-  )
   (func $__box_i32 (param $v i32) (result i32)
     (local $p i32)
     i32.const 4
@@ -2997,7 +2955,7 @@ fn main() {
     i32.const 264
     local.get $parts
     i32.const 276
-    call $__arr_join_i32
+    call $__arr_join_str
     call $__str_concat
     i32.const 284
     call $__str_concat
@@ -5248,48 +5206,6 @@ fn main() {
       )
     )
     local.get $p
-  )
-  (func $__arr_join_i32 (param $xs i32) (param $sep i32) (result i32)
-    (local $n i32) (local $i i32) (local $t i32)
-    local.get $xs
-    i32.load
-    local.set $n
-    local.get $n
-    call $__arr_new
-    local.set $t
-    (block $brk
-      (loop $cont
-        local.get $i
-        local.get $n
-        i32.ge_u
-        br_if $brk
-        local.get $t
-        i32.const 4
-        i32.add
-        local.get $i
-        i32.const 4
-        i32.mul
-        i32.add
-        local.get $xs
-        i32.const 4
-        i32.add
-        local.get $i
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load
-        call $__i32_to_str
-        i32.store
-        local.get $i
-        i32.const 1
-        i32.add
-        local.set $i
-        br $cont
-      )
-    )
-    local.get $t
-    local.get $sep
-    call $__arr_join_str
   )
   (func $__box_i32 (param $v i32) (result i32)
     (local $p i32)

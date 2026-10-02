@@ -132,6 +132,13 @@ module load — erlang and beam dropped the write), `run/index_answer_typed_opti
 `run/string_char_code_non_ascii` (wasm answered bytes), `run/val_assert_variant_pattern` (commonJS
 `ReferenceError`, beam `{unassigned, …}`) and `run/is_enum_variant` and
 `modules/renderer_record_field_shapes` (shapes the rows measured, which no longer reproduce — pinned).
+1.0.11's `01-compiler/05-wasm` step 1 adds one cell per primitive-method group wasm trapped on, each
+`.out` shared by four targets: `run/string_lines_words` (`lines` — `\r\n`, a trailing `\r` kept, `""`
+one empty line — and `words` over blanks), `run/array_flat_forms` (`flatten`, `flat`, `flatMap`
+over integers, strings, a local, a parameter and an annotated empty `i32[][]`), `run/array_windows`
+(`chunked`, `sliding`, `n <= 0`, a slice indexed and measured) and `run/array_fill` (a value of
+each primitive, an empty receiver). `pop` is `run/array_pop_removes`; `unique`'s cell is
+`02-erlang`'s `run/array_unique` (C-35).
 `00 · 03-beam`'s split row adds `run/string_split_empty_separator` — `split("")` cuts into UTF-8
 codepoints (`"%0Aéz"` → 5 pieces, `""` → none) beside a non-empty separator and an empty separator
 held in a `val`, on all four targets (beam lowered it to `string:split/3`, wasm cut between bytes).

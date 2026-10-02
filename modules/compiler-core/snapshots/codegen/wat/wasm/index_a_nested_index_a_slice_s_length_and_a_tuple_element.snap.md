@@ -21,9 +21,11 @@ fn main() {
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
   (data (i32.const 256) "\03\00\00\00[[i")
-  (data (i32.const 264) "\01\00\00\00a")
-  (data (i32.const 272) "\01\00\00\00b")
-  (global $__heap_ptr (mut i32) (i32.const 280))
+  (data (i32.const 264) "\02\00\00\00[i")
+  (data (i32.const 272) "\01\00\00\00a")
+  (data (i32.const 280) "\01\00\00\00b")
+  (data (i32.const 288) "\04\00\00\00(is)")
+  (global $__heap_ptr (mut i32) (i32.const 296))
   (func $main
     (local $__mem0 i32)
     (local $__mem1 i32)
@@ -37,6 +39,8 @@ fn main() {
     (local $xs i32)
     (local $sl i32)
     (local $ps i32)
+    (local $_res0 i32)
+    (local $_res1 i32)
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
@@ -93,7 +97,21 @@ fn main() {
     local.get $rows
     i32.const 1
     call $__arr_at
-    call $__print_i32
+    local.tee $_res0
+    i32.eqz
+    (if
+      (then
+    call $__print_null
+      )
+      (else
+    local.get $_res0
+    i32.const 268
+    i32.const 1
+    call $__print_shaped_raw
+    drop
+      )
+    )
+    call $__print_nl
     local.get $rows
     i32.const 1
     call $__arr_at
@@ -159,7 +177,7 @@ fn main() {
     i32.const 1
     i32.store
     local.get $__mem5
-    i32.const 264
+    i32.const 272
     i32.store offset=4
     local.get $__mem5
     i32.store offset=4
@@ -174,7 +192,7 @@ fn main() {
     i32.const 2
     i32.store
     local.get $__mem6
-    i32.const 272
+    i32.const 280
     i32.store offset=4
     local.get $__mem6
     i32.store offset=8
@@ -183,7 +201,21 @@ fn main() {
     local.get $ps
     i32.const 1
     call $__arr_at
-    call $__print_i32
+    local.tee $_res1
+    i32.eqz
+    (if
+      (then
+    call $__print_null
+      )
+      (else
+    local.get $_res1
+    i32.const 292
+    i32.const 1
+    call $__print_shaped_raw
+    drop
+      )
+    )
+    call $__print_nl
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
@@ -367,6 +399,28 @@ fn main() {
         br $loop
       )
     )
+  )
+  (func $__print_str_raw (param $s i32)
+    local.get $s
+    i32.const 256
+    i32.lt_u
+    (if
+      (then
+        ;; a pointer below the data floor is not a string
+        unreachable
+      )
+    )
+    local.get $s
+    i32.const 4
+    i32.add
+    local.get $s
+    i32.load
+    call $__write_bytes
+  )
+  (func $__print_str (param $s i32)
+    local.get $s
+    call $__print_str_raw
+    call $__print_nl
   )
   (func $__print_bool (param $b i32)
     local.get $b
@@ -660,6 +714,70 @@ fn main() {
     i32.mul
     memory.copy
     local.get $p
+  )
+  (func $__print_null
+    i32.const 176
+    i32.const 1819047278
+    i32.store
+    i32.const 176
+    i32.const 4
+    call $__write_bytes
+  )
+  (func $__print_opt_i32_raw (param $p i32)
+    local.get $p
+    i32.eqz
+    (if
+      (then
+        call $__print_null
+      )
+      (else
+        local.get $p
+        i32.load
+        call $__print_i32_raw
+      )
+    )
+  )
+  (func $__print_opt_i32 (param $p i32)
+    local.get $p
+    call $__print_opt_i32_raw
+    call $__print_nl
+  )
+  (func $__print_opt_bool_raw (param $p i32)
+    local.get $p
+    i32.eqz
+    (if
+      (then
+        call $__print_null
+      )
+      (else
+        local.get $p
+        i32.load
+        call $__print_bool_raw
+      )
+    )
+  )
+  (func $__print_opt_bool (param $p i32)
+    local.get $p
+    call $__print_opt_bool_raw
+    call $__print_nl
+  )
+  (func $__print_opt_str_raw (param $s i32)
+    local.get $s
+    i32.eqz
+    (if
+      (then
+        call $__print_null
+      )
+      (else
+        local.get $s
+        call $__print_str_raw
+      )
+    )
+  )
+  (func $__print_opt_str (param $s i32)
+    local.get $s
+    call $__print_opt_str_raw
+    call $__print_nl
   )
   (func $__print_quoted_raw (param $s i32)
     (local $n i32) (local $i i32) (local $ch i32) (local $e i32)
@@ -1258,10 +1376,10 @@ fn main() {
 ----- RUN LOG -----
 ```logs
 [[1, 2], [3, 4]]
-304
+[3, 4]
 3
 2
 2
 2
-376
+#(2, "b")
 ```

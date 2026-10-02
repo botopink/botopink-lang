@@ -4337,6 +4337,11 @@ const Emitter = struct {
                         if (std.mem.eql(u8, ta.named, "bool")) try self.bool_locals.put(lb.name, {});
                     };
                     try self.noteArrayLocal(lb.name, lb.value.*);
+                    // A written array type says what an empty literal cannot:
+                    // `var names: string[] = []` holds strings, and read off
+                    // `[]` its shape was `[i` — `names.push("a")` printed
+                    // `[256]`, the string's address, at exit 0.
+                    if (lb.typeAnnotation) |ta| try self.noteAnnotatedArray(lb.name, ta);
                     if (self.resultShapeOf(lb.value.*)) |shape| try self.result_shape_locals.put(lb.name, shape);
                     if (self.recordTypeOfExpr(lb.value.*)) |rty| try self.local_types.put(lb.name, rty);
                     // Coerce to the type the local was *actually* declared with:
@@ -5120,6 +5125,28 @@ const Emitter = struct {
                 else if (last) .print_arr_i32 else .print_arr_i32_raw));
                 const else_seq = self.seal(&else_c, .none);
                 try self.emit(.{ .@"if" = .{ .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
+                return;
+            };
+            if (!oi.boxed and !oi.str) if (oi.shape) |shape| {
+                const tmp = try self.declRes();
+                try self.lowerValue(arg);
+                try self.emit(.{ .local_tee = tmp });
+                try self.emit(opOf("i32", "eqz"));
+                var then_c: Capture = .{};
+                self.open(&then_c);
+                try self.emit(self.builder().helper(.print_null));
+                const then_seq = self.seal(&then_c, .none);
+                var else_c: Capture = .{};
+                self.open(&else_c);
+                try self.emit(.{ .local_get = tmp });
+                const seg = try self.internString(shape);
+                try self.emit(try self.constInt(seg.offset + 4));
+                try self.emit(try self.constInt(1));
+                try self.emit(self.builder().helper(.print_shaped_raw));
+                try self.emit(.drop);
+                const else_seq = self.seal(&else_c, .none);
+                try self.emit(.{ .@"if" = .{ .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
+                if (last) try self.emit(self.builder().helper(.print_nl));
                 return;
             };
             try self.lowerValue(arg);
@@ -6935,7 +6962,9 @@ const Emitter = struct {
                 .{ "forEach", 1, .none },   .{ "all", 1, .bool_ },     .{ "every", 1, .bool_ },
                 .{ "any", 1, .bool_ },      .{ "some", 1, .bool_ },    .{ "count", 1, .i32 },
                 .{ "findIndex", 1, .i32 },  .{ "fold", 2, .i32 },      .{ "lastIndexOf", 1, .i32 },
-                .{ "pop", 0, .i32 },
+                .{ "pop", 0, .i32 },        .{ "unique", 0, .arr },    .{ "flatten", 0, .arr },
+                .{ "flat", 0, .arr },       .{ "flatMap", 1, .arr },   .{ "chunked", 1, .arr },
+                .{ "sliding", 1, .arr },    .{ "fill", 1, .arr },
             },
             .string => &.{
                 .{ "length", 0, .i32 },     .{ "toUpper", 0, .str },      .{ "toLower", 0, .str },
@@ -6952,7 +6981,8 @@ const Emitter = struct {
                 // `String` that has a byte-level answer.
                         .{ "charCodeAt", 1, .i32 },   .{ "lastIndexOf", 1, .i32 },
                 .{ "padStart", 2, .str },   .{ "padEnd", 2, .str },       .{ "replace", 2, .str },
-                .{ "replaceAll", 2, .str }, .{ "chars", 0, .arr },
+                .{ "replaceAll", 2, .str }, .{ "chars", 0, .arr },        .{ "lines", 0, .arr },
+                .{ "words", 0, .arr },
             },
             .bool => &.{
                 .{ "negate", 0, .bool_ },      .{ "nor", 1, .bool_ },          .{ "nand", 1, .bool_ },
@@ -7032,6 +7062,101 @@ const Emitter = struct {
             .trailing = &.{},
         } } } } };
         return .{ .params = params, .body = body };
+    }
+
+    /// `$__arr_unique`'s equality for the elements of `recv`: `0` the slot's
+    /// word (an integer, a bool, an all-unit enum's ordinal), `1` its `f32`,
+    /// `2` a string's content. Null for an element whose `!=` this backend
+    /// has no lowering for — a record, an array, a tuple —, which traps.
+    fn uniqueMode(self: *Emitter, recv: ast.Expr) anyerror!?i32 {
+        if (self.elemRecordOf(recv) != null) return null;
+        if (try self.printShapeOf(recv)) |sh| {
+            if (sh.len < 2 or sh[0] != '[') return null;
+            return switch (sh[1]) {
+                'i', 'b', 'E' => 0,
+                'f' => 1,
+                's' => 2,
+                else => null,
+            };
+        }
+        return switch (self.elemKindOf(recv)) {
+            .i32 => 0,
+            .f32 => 1,
+            .str => 2,
+        };
+    }
+
+    /// The print shape of what a HOF lambda's body answers, asked with its
+    /// element parameter bound (as `elemKindOf`'s `map` arm asks).
+    fn lambdaTailShape(self: *Emitter, lam: LambdaView, recv: ast.Expr) anyerror!?[]const u8 {
+        if (lam.body.len == 0) return null;
+        const last = lam.body[lam.body.len - 1].expr;
+        const v = switch (last) {
+            .jump => |j| switch (j.kind) {
+                .@"return" => |r| if (r) |x| x.* else return null,
+                else => return null,
+            },
+            else => last,
+        };
+        const held = self.holdElemParam(lam, recv);
+        defer self.releaseElemParam(held);
+        return self.printShapeOf(v);
+    }
+
+    fn lambdaTailIsBool(self: *Emitter, lam: LambdaView, recv: ast.Expr) bool {
+        if (lam.body.len == 0) return false;
+        const last = lam.body[lam.body.len - 1].expr;
+        const v = switch (last) {
+            .jump => |j| switch (j.kind) {
+                .@"return" => |r| if (r) |x| x.* else return false,
+                else => return false,
+            },
+            else => last,
+        };
+        const held = self.holdElemParam(lam, recv);
+        defer self.releaseElemParam(held);
+        return self.isBoolExpr(v);
+    }
+
+    /// The print shape of the arrays `05-wasm` step 1's methods build, read
+    /// off their receiver: `unique` keeps it, `flatten`/`flat` drop one `[`,
+    /// `flatMap` is its function's array, `chunked`/`sliding` add one, `fill`
+    /// is an array of its value. Null for any other call.
+    fn newArrShape(self: *Emitter, cc: anytype, loc: ast.Loc) anyerror!?[]const u8 {
+        const k = self.primKindAt(cc, loc) orelse return null;
+        if (k != .array or cc.receiver == null) return null;
+        const recv = cc.receiver.?.*;
+        const eq = std.mem.eql;
+        const name: []const u8 = cc.callee;
+        if (primCallRes(k, cc) == null) return null;
+        // `xs.map(f)` answering a bool or a container: an array of it. A bool
+        // printed `1`, a nested array its rows' addresses.
+        if (eq(u8, name, "map")) {
+            const lam = lambdaAt(cc, 0) orelse return null;
+            if (try self.lambdaTailShape(lam, recv)) |sh| return try std.fmt.allocPrint(self.arena(), "[{s}", .{sh});
+            if (self.lambdaTailIsBool(lam, recv)) return "[b";
+            return null;
+        }
+        if (eq(u8, name, "unique")) return self.printShapeOf(recv);
+        if (eq(u8, name, "flatten") or eq(u8, name, "flat")) {
+            const sh = (try self.printShapeOf(recv)) orelse return null;
+            return if (sh.len >= 2 and sh[0] == '[' and sh[1] == '[') sh[1..] else null;
+        }
+        if (eq(u8, name, "flatMap")) {
+            const lam = lambdaAt(cc, 0) orelse return null;
+            const sh = (try self.lambdaTailShape(lam, recv)) orelse return null;
+            return if (sh[0] == '[') sh else null;
+        }
+        if (eq(u8, name, "chunked") or eq(u8, name, "sliding")) {
+            const inner = (try self.printShapeOf(recv)) orelse
+                try std.fmt.allocPrint(self.arena(), "[{c}", .{elemCode(self.elemKindOf(recv))});
+            return try std.fmt.allocPrint(self.arena(), "[{s}", .{inner});
+        }
+        if (eq(u8, name, "fill")) {
+            const v = callArg(cc, 0) orelse return null;
+            return try std.fmt.allocPrint(self.arena(), "[{s}", .{try self.valueShapeOf(v)});
+        }
+        return null;
     }
 
     fn primNotLowered(self: *Emitter, k: envMod.PrimKind, cc: anytype) !void {
@@ -7149,6 +7274,10 @@ const Emitter = struct {
             try self.emit(b.helper(.str_trim));
         } else if (eq(u8, name, "toString")) {
             // already the string
+        } else if (eq(u8, name, "lines")) {
+            try self.emit(b.helper(.str_lines));
+        } else if (eq(u8, name, "words")) {
+            try self.emit(b.helper(.str_words));
         } else if (eq(u8, name, "chars")) {
             // One fresh string per UTF-8 codepoint: `$__str_split` with an
             // empty separator cuts before every codepoint.
@@ -7219,6 +7348,63 @@ const Emitter = struct {
             try self.lowerArrayHof(@intFromEnum(Hof.filter), recv, lam, null);
             try self.emit(zero);
             try self.emit(b.helper(if (self.arrayElemOpt(recv).boxed) .arr_at_box else .arr_at));
+            return;
+        }
+        // `xs.flatMap(f)` is `primitives.bp`'s own body, `xs.map(f).flatten()`
+        // — when what `f` answers is known to be an array. Anything else has
+        // no flattening this backend can answer by: a trap, never a guess.
+        if (eq(u8, name, "flatMap")) {
+            const lam = (try self.hofLambdaAt(cc, 0, 1)) orelse {
+                try self.emitCf(.@"unreachable", "{s} needs a literal lambda on wasm (no function values)", .{name});
+                return;
+            };
+            const tail = (try self.lambdaTailShape(lam, recv)) orelse {
+                try self.emitC(.@"unreachable", "flatMap whose function answers no array known here");
+                return;
+            };
+            if (tail[0] != '[') {
+                try self.emitC(.@"unreachable", "flatMap whose function answers no array known here");
+                return;
+            }
+            try self.lowerArrayHof(@intFromEnum(Hof.map), recv, lam, null);
+            try self.emit(b.helper(.arr_flatten));
+            return;
+        }
+        if (eq(u8, name, "flatten") or eq(u8, name, "flat")) {
+            const sh = (try self.printShapeOf(recv)) orelse "";
+            if (!(sh.len >= 2 and sh[0] == '[' and sh[1] == '[')) {
+                try self.emitCf(.@"unreachable", "{s} over elements not known to be arrays", .{name});
+                return;
+            }
+            try self.lowerCoerced(recv, "i32");
+            try self.emit(b.helper(.arr_flatten));
+            return;
+        }
+        if (eq(u8, name, "unique")) {
+            const mode = (try self.uniqueMode(recv)) orelse {
+                try self.emitC(.@"unreachable", "unique over elements with no wasm equality (a record, an array, a tuple)");
+                return;
+            };
+            try self.lowerCoerced(recv, "i32");
+            try self.emit(try self.constInt(mode));
+            try self.emit(b.helper(.arr_unique));
+            return;
+        }
+        if (eq(u8, name, "fill")) {
+            const v = callArg(cc, 0).?;
+            try self.lowerCoerced(recv, "i32");
+            try self.emitC(.{ .load = .{} }, "element count");
+            if (self.wasmTypeOf(v)[0] == 'f') {
+                try self.lowerCoerced(v, "f32");
+                try self.emit(.{ .convert = "i32.reinterpret_f32" });
+            } else try self.lowerCoerced(v, "i32");
+            try self.emit(b.helper(.arr_fill));
+            return;
+        }
+        if (eq(u8, name, "chunked") or eq(u8, name, "sliding")) {
+            try self.lowerCoerced(recv, "i32");
+            try self.lowerCoerced(callArg(cc, 0).?, "i32");
+            try self.emit(b.helper(if (eq(u8, name, "chunked")) .arr_chunked else .arr_sliding));
             return;
         }
 
@@ -7453,6 +7639,7 @@ const Emitter = struct {
         if (elem_param) |p| {
             try self.declareLocal(p, elem_ty);
             if (elem_kind == .str) try self.str_locals.put(p, {});
+            if (try self.elemIsBool(recv)) try self.bool_locals.put(p, {});
             // The parameter is one ELEMENT, so it has the element's record
             // type. Without it a field read off it had no receiver type and
             // fell to the unique-field guess, or to the `0` stub.
@@ -7708,6 +7895,17 @@ const Emitter = struct {
         if (self.elemRecordOf(value)) |rec| try self.arr_elem_recs.put(name, rec) else _ = self.arr_elem_recs.remove(name);
     }
 
+    /// A local whose written type is an array: the element shape, kind and
+    /// record the TYPE names, over whatever its initialiser suggested.
+    fn noteAnnotatedArray(self: *Emitter, name: []const u8, ta: ast.TypeRef) !void {
+        if (ta == .optional) return;
+        const ek = arrayElemOfTypeRef(ta) orelse return;
+        try self.arr_locals.put(name, {});
+        try self.arr_elem_locals.put(name, ek);
+        if (try self.typeRefShape(ta)) |sh| try self.print_shape_locals.put(name, sh);
+        if (self.elemRecordOfTypeRef(ta)) |rec| try self.arr_elem_recs.put(name, rec);
+    }
+
     /// The shape `$__print_shaped_raw` walks for `e` (semantics decision 1a):
     /// `i` an i32, `f` an f32 slot, `b` a bool, `s` a string, `[X` an array of
     /// `X`, `(XY…)` a tuple. Null when `e` is not known to be an array or a
@@ -7739,6 +7937,9 @@ const Emitter = struct {
                 .arrayLit => |al| if (al.elems.len > 0) {
                     if (try self.printShapeOf(al.elems[0])) |inner| return try std.fmt.allocPrint(self.arena(), "[{s}", .{inner});
                     if (self.isTaggedValue(al.elems[0])) return "[T";
+                    // A bool is an `i32` slot like an integer; only the shape
+                    // tells the printer to write `true` (`[1, 0]` at exit 0).
+                    if (self.isBoolExpr(al.elems[0])) return "[b";
                 },
                 else => {},
             },
@@ -7752,6 +7953,13 @@ const Emitter = struct {
                     }
                     // `rows[1]` keeps the shape of one element of `rows`.
                     if (try self.indexElemShape(cc)) |inner| return inner;
+                    if (try self.newArrShape(cc, c.loc)) |sh| return sh;
+                    // `rows.reverse()`, `bs.filter(…)`: the receiver's elements,
+                    // so the receiver's shape — a nested array printed its
+                    // rows' addresses, a bool array `[1, 0]`.
+                    if (cc.receiver != null and keepsElements(cc.callee)) if (self.primKindAt(cc, c.loc)) |k| if (k == .array) {
+                        if (try self.printShapeOf(cc.receiver.?.*)) |sh| return sh;
+                    };
                 },
                 else => {},
             },
@@ -7812,6 +8020,7 @@ const Emitter = struct {
         if (nested) |ie| if (scalarCode(ie)) |c| return try std.fmt.allocPrint(self.arena(), "[[{c}", .{c});
         return switch (scalarCode(elem) orelse return null) {
             's' => "[s",
+            'b' => "[b",
             else => null,
         };
     }
@@ -7993,6 +8202,15 @@ const Emitter = struct {
                                 if (self.isStringExpr(v)) break :blk .str;
                                 if (self.wasmTypeOf(v)[0] == 'f') break :blk .f32;
                                 break :blk .i32;
+                            }
+                            // `05-wasm` step 1's arrays: their element is
+                            // read off the shape they build.
+                            if ((self.newArrShape(cc, c.loc) catch null)) |sh| {
+                                if (sh.len >= 2) break :blk switch (sh[1]) {
+                                    's' => .str,
+                                    'f' => .f32,
+                                    else => .i32,
+                                };
                             }
                             break :blk self.elemKindOf(recv);
                         },
@@ -8667,6 +8885,11 @@ const Emitter = struct {
         /// absence exactly as it is for a string.
         rec: ?[]const u8 = null,
         inner: ?ast.TypeRef = null,
+        /// The payload is a CONTAINER — an array or a tuple — with this print
+        /// shape (`[i`, `(is)`): `rows.at(1)` over `[[1, 2], [3]]`. Its own
+        /// pointer, `0` absence; printed `null` or by the shape. Through the
+        /// integer printer it answered the row's address at exit 0.
+        shape: ?[]const u8 = null,
     };
 
     fn optInfoOfTypeRef(self: *Emitter, t: ast.TypeRef) ?OptInfo {
@@ -9026,7 +9249,12 @@ const Emitter = struct {
         // A record is its own pointer: `0` is absence, as it is for a string,
         // and a box would only hide the payload from every reader.
         if (self.elemRecordOf(recv)) |rec| return .{ .boxed = false, .rec = rec };
-        if (self.elemIsPointer(recv)) return .{ .boxed = false };
+        if (self.elemIsPointer(recv)) {
+            const sh = (self.printShapeOf(recv) catch null).?;
+            return .{ .boxed = false, .shape = sh[1..] };
+        }
+        // A bool element is boxed like an integer, and prints as a bool.
+        if ((self.printShapeOf(recv) catch null)) |sh| if (std.mem.eql(u8, sh, "[b")) return .{ .boxed = true, .bool_ = true };
         return switch (self.elemKindOf(recv)) {
             .str => .{ .boxed = false, .str = true },
             .f32 => .{ .boxed = true, .float_ = true },
@@ -9043,6 +9271,14 @@ const Emitter = struct {
     fn elemIsPointer(self: *Emitter, recv: ast.Expr) bool {
         const sh = (self.printShapeOf(recv) catch null) orelse return false;
         return sh.len >= 2 and sh[0] == '[' and (sh[1] == '[' or sh[1] == '(');
+    }
+
+    /// Whether one element of `recv` is a bool — its print shape is `[b`. The
+    /// slot is an `i32` like an integer's, so a binder over it needs the
+    /// mark to print `true` and not `1`.
+    fn elemIsBool(self: *Emitter, recv: ast.Expr) anyerror!bool {
+        const sh = (try self.printShapeOf(recv)) orelse return false;
+        return std.mem.eql(u8, sh, "[b");
     }
 
     /// The record type the elements of an array-valued expression name, when
@@ -10495,6 +10731,7 @@ const Emitter = struct {
         const elem_ty = if (elem_kind == .f32) "f32" else "i32";
         try self.declareLocal(elem, elem_ty);
         if (elem_kind == .str) try self.str_locals.put(elem, {});
+        if (try self.elemIsBool(lp.iter.*)) try self.bool_locals.put(elem, {});
         if (self.elemTypeRefOf(lp.iter.*)) |et| try self.noteTypedBinder(elem, et);
         // `for (es) { e -> … }` binds one ELEMENT: when the elements are
         // records, `e.key` needs the record type or it reads a slot by the

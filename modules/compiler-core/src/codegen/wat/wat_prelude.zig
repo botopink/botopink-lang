@@ -1509,6 +1509,170 @@ const arr_last_index_of_str = func("__arr_last_index_of_str", &.{ "xs", "x" }, .
     c32(-1),
 });
 
+// ── 1.0.11 `01-compiler/05-wasm` step 1: the primitive methods that trapped ──
+
+/// Byte `i` of string `s`.
+fn byteAt(comptime i: []const u8) [5]Instr {
+    return .{ get("s"), get(i), op("add"), load8(4), set("ch") };
+}
+
+/// `s.lines()`: `s` cut at every `\n`, a `\r` right before it dropped with
+/// it — the `/\r?\n/` split node answers and the `[<<"\r\n">>, <<"\n">>]`
+/// one erlang answers. The last piece keeps a trailing `\r` (nothing follows
+/// it), and `""` is one empty line.
+const str_lines = func("__str_lines", &.{"s"}, .i32, i32s(&.{ "n", "i", "cnt", "arr", "start", "k", "e", "ch" }), &([_]Instr{
+    get("s"),   load(0),           set("n"),   c32(1), set("cnt"),
+    loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk } ++ byteAt("i") ++ [_]Instr{
+        get("ch"), c32(10), op("eq"),  when(&.{ get("cnt"), c32(1), op("add"), set("cnt") }),
+        get("i"),  c32(1),  op("add"), set("i"),
+        again,
+    })),
+    get("cnt"), call("__arr_new"), set("arr"), c32(0), set("i"),
+    loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk } ++ byteAt("i") ++ [_]Instr{
+        get("ch"), c32(10), op("eq"),
+        when(&([_]Instr{
+            get("i"),   set("e"),
+            get("e"),   get("start"),
+            op("gt_u"), when(&.{ get("s"), get("e"), op("add"), load8(3), c32(13), op("eq"), when(&.{ get("e"), c32(1), op("sub"), set("e") }) }),
+        } ++ slot("arr", "k") ++ [_]Instr{
+            get("s"), get("start"), get("e"),     call("__str_slice"), store(0),
+            get("k"), c32(1),       op("add"),    set("k"),            get("i"),
+            c32(1),   op("add"),    set("start"),
+        })),
+        get("i"),  c32(1),  op("add"),
+        set("i"),  again,
+    })),
+} ++ slot("arr", "k") ++ [_]Instr{ get("s"), get("start"), get("n"), call("__str_slice"), store(0), get("arr") }));
+
+/// `s.words()`: the maximal runs of bytes that are not ` `, `\t`, `\n` or
+/// `\r`, as fresh strings — `""` and an all-blank string answer none.
+const str_words = func("__str_words", &.{"s"}, .i32, i32s(&.{ "n", "i", "cnt", "arr", "start", "k", "inw", "ch" }), &([_]Instr{
+    get("s"),   load(0),                                                                                                  set("n"),
+    loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk } ++ byteAt("i") ++ isSpace("ch") ++ [_]Instr{
+        whenElse(&.{ c32(0), set("inw") }, &.{ get("inw"), op("eqz"), when(&.{ get("cnt"), c32(1), op("add"), set("cnt"), c32(1), set("inw") }) }),
+        get("i"),
+        c32(1),
+        op("add"),
+        set("i"),
+        again,
+    })),
+    get("cnt"), call("__arr_new"),                                                                                        set("arr"),
+    c32(0),     set("i"),                                                                                                 c32(0),
+    set("inw"),
+    loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk } ++ byteAt("i") ++ isSpace("ch") ++ [_]Instr{
+        whenElse(&.{ get("inw"), when(&(slot("arr", "k") ++ [_]Instr{
+            get("s"),   get("start"), get("i"),  call("__str_slice"), store(0),
+            get("k"),   c32(1),       op("add"), set("k"),            c32(0),
+            set("inw"),
+        })) }, &.{ get("inw"), op("eqz"), when(&.{ get("i"), set("start"), c32(1), set("inw") }) }),
+        get("i"),
+        c32(1),
+        op("add"),
+        set("i"),
+        again,
+    })),
+    get("inw"), when(&(slot("arr", "k") ++ [_]Instr{ get("s"), get("start"), get("n"), call("__str_slice"), store(0) })), get("arr"),
+}));
+
+fn opF32(comptime name: []const u8) Instr {
+    return .{ .op = .{ .ty = .f32, .name = name } };
+}
+const load_f32: Instr = .{ .load = .{ .ty = .f32 } };
+
+/// `xs.unique()` — consecutive duplicates dropped, as `primitives.bp`'s body
+/// does: element `i` is kept when it differs from element `i - 1`. `mode`
+/// names the equality: `0` the slot's word (an integer, a bool, an all-unit
+/// enum's ordinal), `1` the `f32` the slot holds, `2` a string's content.
+const arr_unique = func("__arr_unique", &.{ "xs", "mode" }, .i32, i32s(&.{ "n", "i", "k", "out", "keep", "b" }), &([_]Instr{
+    get("xs"),  load(0),  set("n"), get("n"),   call("__arr_new"), set("out"),
+    loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk, c32(1), set("keep"), get("i") } ++ [_]Instr{
+        when(&([_]Instr{ get("i"), c32(1), op("sub"), set("b"), get("mode"), c32(1), op("eq") } ++ [_]Instr{
+            whenElse(
+                &(slot("xs", "i") ++ [_]Instr{load_f32} ++ slot("xs", "b") ++ [_]Instr{ load_f32, opF32("ne"), set("keep") }),
+                &([_]Instr{ get("mode"), c32(2), op("eq") } ++ [_]Instr{whenElse(
+                    &(slot("xs", "i") ++ [_]Instr{load(0)} ++ slot("xs", "b") ++ [_]Instr{ load(0), call("__str_eq"), op("eqz"), set("keep") }),
+                    &(slot("xs", "i") ++ [_]Instr{load(0)} ++ slot("xs", "b") ++ [_]Instr{ load(0), op("ne"), set("keep") }),
+                )}),
+            ),
+        })),
+        get("keep"),
+        when(&(slot("out", "k") ++ slot("xs", "i") ++ [_]Instr{ load(0), store(0), get("k"), c32(1), op("add"), set("k") })),
+        get("i"),
+        c32(1),
+        op("add"),
+        set("i"),
+        again,
+    })),
+    get("out"), get("k"), store(0), get("out"),
+}));
+
+/// `xs.flatten()` / `xs.flat()` over an array of arrays: every inner array's
+/// slots, in order, in one fresh array.
+const arr_flatten = func("__arr_flatten", &.{"xs"}, .i32, i32s(&.{ "n", "i", "total", "out", "pos", "e" }), &([_]Instr{
+    get("xs"),    load(0),           set("n"),
+    loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk, get("total") } ++ slot("xs", "i") ++ [_]Instr{
+        load(0), load(0), op("add"), set("total"), get("i"), c32(1), op("add"), set("i"), again,
+    })),
+    get("total"), call("__arr_new"), set("out"),
+    get("out"),   c32(4),            op("add"),
+    set("pos"),   c32(0),            set("i"),
+    loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk } ++ slot("xs", "i") ++ [_]Instr{
+        load(0),    set("e"),
+        get("pos"), get("e"),
+        c32(4),     op("add"),
+        get("e"),   load(0),
+        c32(4),     op("mul"),
+        copy,       get("pos"),
+        get("e"),   load(0),
+        c32(4),     op("mul"),
+        op("add"),  set("pos"),
+        get("i"),   c32(1),
+        op("add"),  set("i"),
+        again,
+    })),
+    get("out"),
+}));
+
+/// `xs.chunked(m)`: consecutive slices of `m` elements, the last one shorter
+/// when `m` does not divide the length; `m <= 0` answers no chunk.
+const arr_chunked = func("__arr_chunked", &.{ "xs", "m" }, .i32, i32s(&.{ "n", "cnt", "out", "k" }), &([_]Instr{
+    get("m"),          c32(0),      op("le_s"),                                            when(&.{ c32(0), call("__arr_new"), ret }),
+    get("xs"),         load(0),     set("n"),                                              get("n"),
+    get("m"),          op("div_u"), set("cnt"),                                            get("n"),
+    get("m"),          op("rem_u"), when(&.{ get("cnt"), c32(1), op("add"), set("cnt") }), get("cnt"),
+    call("__arr_new"), set("out"),
+    loop(&([_]Instr{ get("k"), get("cnt"), op("ge_u"), brk } ++ slot("out", "k") ++ [_]Instr{
+        get("xs"), get("k"), get("m"),  op("mul"), get("k"), get("m"), op("mul"), get("m"), op("add"), call("__arr_slice"), store(0),
+        get("k"),  c32(1),   op("add"), set("k"),  again,
+    })),
+    get("out"),
+}));
+
+/// `xs.sliding(m)`: one slice of `m` elements per start offset
+/// (`len - m + 1` of them); `m <= 0` or `m > len` answers none.
+const arr_sliding = func("__arr_sliding", &.{ "xs", "m" }, .i32, i32s(&.{ "cnt", "out", "k" }), &([_]Instr{
+    get("m"),          c32(0),     op("le_s"),                                 when(&.{ c32(0), call("__arr_new"), ret }),
+    get("xs"),         load(0),    get("m"),                                   op("sub"),
+    c32(1),            op("add"),  set("cnt"),                                 get("cnt"),
+    c32(0),            op("le_s"), when(&.{ c32(0), call("__arr_new"), ret }), get("cnt"),
+    call("__arr_new"), set("out"),
+    loop(&([_]Instr{ get("k"), get("cnt"), op("ge_u"), brk } ++ slot("out", "k") ++ [_]Instr{
+        get("xs"), get("k"), get("k"),  get("m"), op("add"), call("__arr_slice"), store(0),
+        get("k"),  c32(1),   op("add"), set("k"), again,
+    })),
+    get("out"),
+}));
+
+/// `xs.fill(v)` — `Array.repeat(v, xs.length)`: `n` slots each holding the
+/// word `v` (a float arrives as its `f32` bits).
+const arr_fill = func("__arr_fill", &.{ "n", "v" }, .i32, i32s(&.{ "out", "i" }), &([_]Instr{
+    get("n"),   call("__arr_new"), set("out"),
+    loop(&([_]Instr{ get("i"), get("n"), op("ge_s"), brk } ++ slot("out", "i") ++ [_]Instr{
+        get("v"), store(0), get("i"), c32(1), op("add"), set("i"), again,
+    })),
+    get("out"),
+}));
+
 /// The strings of `xs` joined with `sep`, as one fresh string.
 const arr_join_str = func("__arr_join_str", &.{ "xs", "sep" }, .i32, i32s(&.{ "n", "i", "total", "p", "pos", "e" }), &.{
     get("xs"), load(0),                                                                                                        set("n"),

@@ -2280,7 +2280,9 @@ first three are now enforced by the model, not by discipline:
   `primCallRes` is the table; a method missing from it emits
   `unreachable ;; prim method not lowered on wasm: <kind>.<name>/<argc>`.
   What is lowered and what traps, member by member, is `wat/AGENTS.md` §
-  The primitive method table.
+  The primitive method table — every member `primitives.bp` declares is
+  listed since `01-compiler/05-wasm` step 1; what still traps does so by name
+  (`unique` over records, `flatMap` over a function answering no array).
   `toUpperCase` / `toLowerCase` — the host spellings `primitives.bp` gives
   `toUpper` / `toLower` through `#[@External.Node(…)]` — are not lowered: the
   checker refuses a method the primitive's interface does not declare

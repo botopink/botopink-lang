@@ -682,10 +682,11 @@ test "wat: index ---- a float array element is reinterpreted, not read as bits" 
 // receiver, which the checker lets flow), a slice's length, and a tuple
 // element.
 //
-// commonJS and erlang answer everything, modulo §7's separator. The two that do
-// not are named in this section's header and are the libraries' methods on
-// those targets, not the index: on wasm `rows.at(1)` is a heap address and
-// `rows.at(0).length` is `0`; on beam the module does not assemble, because
+// commonJS and erlang answer everything, modulo §7's separator (commonJS
+// prints `ps[1]` as `[2, "b"]`, `04-js`'s row). wasm answers erlang's text:
+// `rows[1]` and `ps[1]` print by the element's shape (`OptInfo.shape`) — they
+// printed the row's and the tuple's heap address at exit 0 until
+// `01-compiler/05-wasm` step 1. On beam the module does not assemble, because
 // `String_slice/3` comes out with unresolved labels.
 test "wat: index ---- a nested index, a slice's length and a tuple element" {
     try h.assertJsSingle(std.testing.allocator, @src(),
@@ -1112,29 +1113,62 @@ test "wat: prim method ---- the String and Float members step 6's audit lowered"
     );
 }
 
-// The rest of step 6's audit: every primitive method `primitives.bp` declares
-// that has NO wasm lowering traps (`prim method not lowered on wasm`) rather
-// than answering — one program per method, so a lowering that lands later
-// fails here and has to move its row into the test above. `words`/`lines`
-// split on a character class, and the rest are `default fn`s whose bodies call a function value the inlined HOF
-// path does not reach (`flatMap`) or grow an array through
-// `append` (`flatten`, `flat`, `chunked`, `sliding`, `fill`, `unique`).
-test "wat: prim method ---- a primitive method with no wasm lowering traps, never answers" {
+// `01-compiler/05-wasm` step 1: the primitive methods step 6's audit left
+// trapping each have a lowering — `$__str_lines` / `$__str_words`, and the
+// array helpers `$__arr_unique`, `$__arr_flatten` (`flatMap` is `map` then
+// it, as `primitives.bp`'s body is), `$__arr_chunked`, `$__arr_sliding`,
+// `$__arr_fill`. The answers are commonJS's, erlang's and beam's for the same
+// program (`tests/language/run/string_lines_words.bp`, `array_unique.bp`,
+// `array_flat_forms.bp`, `array_windows.bp`, `array_fill.bp`).
+test "wat: prim method ---- the methods that trapped lower: lines, words, unique, the flat forms, the windows, fill" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\fn main() {
+        \\    @print("a b\tc\n d".words());
+        \\    @print("a\nb\r\nc\r".lines());
+        \\    @print([3, 1, 1, 3].unique());
+        \\    @print(["a", "a", "b"].unique());
+        \\    @print([true, true, false].unique());
+        \\    @print([[1], [2, 3]].flatten());
+        \\    @print([["a"], ["b"]].flat());
+        \\    @print([1, 2].flatMap({ x -> [x, x] }));
+        \\    @print([1, 2, 3].chunked(2));
+        \\    @print([1, 2, 3].sliding(2));
+        \\    @print([1, 2].fill(0));
+        \\}
+    ,
+        \\["a", "b", "c", "d"]
+        \\["a", "b", "c\r"]
+        \\[3, 1, 3]
+        \\["a", "b"]
+        \\[true, false]
+        \\[1, 2, 3]
+        \\["a", "b"]
+        \\[1, 1, 2, 2]
+        \\[[1, 2], [3]]
+        \\[[1, 2], [2, 3]]
+        \\[0, 0]
+        \\
+    );
+}
+
+// What is left of the class traps by name rather than answering: `unique`
+// over records (commonJS answers `2` and erlang `1` for the program below —
+// the backends disagree on `!=` between two records, so no wasm answer is
+// right), `flatMap` whose function answers a scalar (node flattens nothing,
+// erlang fails), and `flatten` over elements no shape says are arrays.
+test "wat: prim method ---- unique over records and flatMap over a scalar trap, never answer" {
     const trap = "RUNTIME TRAP (wasmtime):\nwasm trap: wasm `unreachable` instruction executed\n";
-    const calls = [_][]const u8{
-        "\"a b\".words()",
-        "\"a\\nb\".lines()",
-        "[3, 1, 3].unique()",
-        "[[1], [2, 3]].flatten()",
-        "[[1], [2, 3]].flat()",
-        "[1, 2].flatMap({ x -> [x, x] })",
-        "[1, 2, 3].chunked(2)",
-        "[1, 2, 3].sliding(2)",
-        "[1, 2].fill(0)",
-    };
-    inline for (calls) |c| {
-        try h.assertWasmRunLog(std.testing.allocator, "fn main() {\n    @print(" ++ c ++ ");\n}\n", trap);
-    }
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\type P(x: i32)
+        \\fn main() {
+        \\    @print([P(x: 1), P(x: 1)].unique().length);
+        \\}
+    , trap);
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\fn main() {
+        \\    @print([1, 2].flatMap({ x -> x + 1 }));
+        \\}
+    , trap);
 }
 
 // `Array.pop` and `Array.lastIndexOf` left the trap list: `pop` answers the
