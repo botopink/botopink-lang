@@ -61,6 +61,7 @@
 //! failure from the output.
 const std = @import("std");
 const crossModule = @import("./crossModule.zig");
+const otp = @import("../otp.zig");
 fn isProcessSuccess(term: std.process.Child.Term) bool {
     return switch (term) {
         .exited => |code| code == 0,
@@ -97,7 +98,10 @@ const RunOutcome = struct {
 
 /// Spawn `argv` (optionally with `cwd` as the child's working directory),
 /// capture combined stdout+stderr, enforce `timeout_ns`, and report how the
-/// process ended. Never infers failure from the captured bytes.
+/// process ended. Never infers failure from the captured bytes. An `erl`,
+/// `erlc` or `escript` starts only on the release the compiler emits for
+/// (`otp.zig`, decision 228): another one is `error.OtpReleaseRefused`, never
+/// an empty RUN LOG.
 fn runCaptured(
     allocator: std.mem.Allocator,
     io: anytype,
@@ -105,6 +109,7 @@ fn runCaptured(
     cwd: ?[]const u8,
     timeout_ns: i96,
 ) !RunOutcome {
+    if (isErlangTool(argv[0])) try otp.check(io);
     const result = std.process.run(allocator, io, .{
         .argv = argv,
         .cwd = if (cwd) |p| .{ .path = p } else .inherit,
@@ -124,6 +129,14 @@ fn runCaptured(
     if (combined.items.len > 0) try combined.append(allocator, '\n');
     try combined.appendSlice(allocator, result.stderr);
     return .{ .output = try combined.toOwnedSlice(allocator), .status = status };
+}
+
+/// The tools whose release is the OTP release check's business.
+fn isErlangTool(tool: []const u8) bool {
+    for ([_][]const u8{ "erl", "erlc", "escript" }) |t| {
+        if (std.mem.eql(u8, tool, t)) return true;
+    }
+    return false;
 }
 
 /// RUN LOG text for a rejected module: a marker line the snapshot review can

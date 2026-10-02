@@ -170,6 +170,8 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .imports = &.{
             .{ .name = "std_prelude", .module = std_prelude },
+            // `OTP_RELEASE`, the one constant `src/otp.zig` checks `erl` against (decision 228).
+            .{ .name = "manifest", .module = manifest_mod },
         },
     });
     // ── compiler-core tests ───────────────────────────────────────────────────
@@ -180,6 +182,7 @@ pub fn build(b: *std.Build) void {
         .imports = &.{
             .{ .name = "std_prelude", .module = std_prelude },
             .{ .name = "test_scratch", .module = test_scratch_mod },
+            .{ .name = "manifest", .module = manifest_mod },
         },
     });
 
@@ -209,6 +212,7 @@ pub fn build(b: *std.Build) void {
             .target = b.graph.host,
             .imports = &.{
                 .{ .name = "std_prelude", .module = stdPreludeModule(b, b.graph.host, std_pkg_files, pkg_table_file) },
+                .{ .name = "manifest", .module = b.createModule(.{ .root_source_file = b.path("modules/manifest/src/root.zig") }) },
             },
         }),
     });
@@ -625,6 +629,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{
             .{ .name = "std_prelude", .module = stdPreludeModule(b, web_target, std_pkg_files, pkg_table_file) },
+            .{ .name = "manifest", .module = b.createModule(.{ .root_source_file = b.path("modules/manifest/src/root.zig") }) },
         },
     });
     web_core_mod.addAnonymousImport("bp_wat_rt.wasm", .{ .root_source_file = wat_rt.getEmittedBin() });

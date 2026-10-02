@@ -171,7 +171,7 @@ does not mirror them. Entry points:
 | Workflow | Trigger | What |
 | --- | --- | --- |
 | `.github/workflows/test.yml` | push / PR to `main`, `feat` | job `test`, on ubuntu-22.04 + macos-14, every step of both rows hard: `zig fmt --check modules`, `zig build test` from a cold runtime cache, the comptime runtime parity audit, `zig build test-bpmp`, the beam export audit, `zig build test-cli`, `scripts/format-check.sh`, `zig build test-language`, `zig build test-docs`, `scripts/tsc-check.sh` and `zig build test-web` — the local gate's stages minus the staged-file checks. Build mode as the gate's (decision 226): `zig build test` stays Debug; `test-bpmp`, `test-cli`, `test-language`, `test-docs` (and `test-libs` in job `libs`) pass `-Doptimize=ReleaseSafe`, exactly the `zig build` calls `scripts/gate.sh` passes `$opt` to; `test-web`, not a gate stage, keeps the default. The compiler's OTP release on both rows (decisions 227, 228): a step reads `OTP_RELEASE` from `modules/manifest/src/root.zig` (the compiler is not built yet), then `erlef/setup-beam` on linux, `brew install erlang@<release> && brew link --force erlang@<release>` plus its `bin` on `$GITHUB_PATH` on macos, then a step that fails the job unless `erl` reports that release; job `libs` reads, installs and asserts the same way. There is no windows row (1.0.11-beta gate-f: a row that cannot fail measures nothing; it returns hard or not at all). Job `libs` (ubuntu, after `test`): checks out emilia/erika/jhonstart/onze/rakun at `feat` into `repository/<name>/` and runs `zig build test-libs -Doptimize=ReleaseSafe` — every cell the manifests declare, every excluded target audited. |
-| `.github/workflows/release.yml` | tag push `v*` | 5-target matrix (`linux-{x86_64,aarch64}`, `macos-{x86_64,aarch64}`, `windows-x86_64`) → `scripts/release-pack.sh` writes `dist/<binary>-<tag>-<target>.<ext>` + `.sha256` → `softprops/action-gh-release@v2` uploads to one Release. Prerelease iff the tag contains `-`. |
+| `.github/workflows/release.yml` | tag push `v*` | Erlang/OTP: a step reads `OTP_RELEASE` from `modules/manifest/src/root.zig` (decision 228), `erlef/setup-beam` installs it on linux and windows, `brew install erlang@<release>` on macos, and a step fails the job unless `erl` reports it. 5-target matrix (`linux-{x86_64,aarch64}`, `macos-{x86_64,aarch64}`, `windows-x86_64`) → `scripts/release-pack.sh` writes `dist/<binary>-<tag>-<target>.<ext>` + `.sha256` → `softprops/action-gh-release@v2` uploads to one Release. Prerelease iff the tag contains `-`. |
 
 Asset naming (the contract bpmp and the install scripts rely on):
 
@@ -358,7 +358,9 @@ every later call site sends cmd 3 alone with its own capture. Comptime
 
 - **Spawns are bounded.** `executeJavaScript`, `executeErlang` and
   `executeBeamAsm` go through `runWithTimeout` (120 s); a timeout yields an empty
-  RUN LOG. `executeWat` runs `wasmtime` on the module's binary (`GenerateResult.wasm`).
+  RUN LOG. Every `erl` / `erlc` / `escript` among them first passes the OTP
+  release check (`src/otp.zig`, decision 228): on another release the executor
+  fails with `error.OtpReleaseRefused`, it does not record an empty RUN LOG. `executeWat` runs `wasmtime` on the module's binary (`GenerateResult.wasm`).
 - **Erlang/BEAM early exit.** Both skip `erlc`/`erl` when the generated code has
   no `_botopink_main` or no I/O (`io:format`). If a test unexpectedly spawns erl,
   check for `_botopink_main` or `@print` in the output.
