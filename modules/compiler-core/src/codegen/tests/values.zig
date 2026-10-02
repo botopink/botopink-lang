@@ -394,9 +394,8 @@ test "js: tuple ---- equality is positional, and labels take no part" {
     // the negative case passed for the wrong reason. T1/T5: the labels a
     // construction lends take no part, and a different arity is not equal.
     //
-    // A tuple is all this fires for today — the emitter walks the untyped AST
-    // and the print shape is the only thing it knows about an operand — but
-    // `__bp_eq` is structural for every composite value already (decision 35).
+    // Decision 210 made it every composite: a record, an array and a variant
+    // call their type's generated `__bp_eq_<T>` too (`js/AGENTS.md`).
     //
     // A RUN LOG, not a snapshot: the erlang, beam and wasm baselines of this
     // program are not this front's to record.

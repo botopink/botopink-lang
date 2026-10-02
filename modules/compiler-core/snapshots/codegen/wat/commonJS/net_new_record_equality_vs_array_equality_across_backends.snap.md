@@ -15,6 +15,16 @@ fn arrayEq() -> bool {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
+function __bp_eq_Point(a, b) {
+    if (a === b) return true;
+    return a.x === b.x && a.y === b.y;
+}
+
+function __bp_eq_Array_i32(a, b) {
+    if (a === b) return true;
+    return a.length === b.length && a.every((e, i) => e === b[i]);
+}
+
 class Point {
     constructor(x, y) {
         this.x = x;
@@ -26,13 +36,13 @@ Point.prototype.__bp = "Point";
 function recordEq() {
     const a = new Point(1, 2);
     const b = new Point(1, 2);
-    return (a === b);
+    return __bp_eq_Point(a, b);
 }
 
 function arrayEq() {
     const xs = [1, 2];
     const ys = [1, 2];
-    return (xs === ys);
+    return __bp_eq_Array_i32(xs, ys);
 }
 ```
 

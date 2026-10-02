@@ -563,6 +563,20 @@ test "order case over Order" {
 ```javascript
 function __bp_array_at(xs, i) { return xs.at(i) ?? null; }
 
+function __bp_eq(a, b, d) {
+    if ((a === b)) {
+        return true;
+    }
+    if ((((((d > 32) || (a === null)) || (b === null)) || (typeof a !== "object")) || (a.constructor !== b.constructor))) {
+        return false;
+    }
+    if (Array.isArray(a)) {
+        return ((a.length === b.length) && a.every((e, i) => __bp_eq(e, b[i], (d + 1))));
+    }
+    const k = Object.keys(a);
+    return ((k.length === Object.keys(b).length) && k.every((n) => __bp_eq(a[n], b[n], (d + 1))));
+}
+
 // behavior Array
 //   length: i32
 //   fn at(...)
@@ -709,7 +723,7 @@ Array.prototype.unique = function() {
     let first = true;
     let prev = __bp_array_at(this, 0);
     this.forEach((x) => {
-    (() => { if (first) { out = out.concat([x]); return first = false; } else { return (() => { if ((prev !== x)) { return out = out.concat([x]); } })(); } })();
+    (() => { if (first) { out = out.concat([x]); return first = false; } else { return (() => { if ((!__bp_eq(prev, x, 0))) { return out = out.concat([x]); } })(); } })();
     prev = x;
 });
     return out;
@@ -783,14 +797,14 @@ class Dict {
         // method dispatch). `.at(0)` here would type as array, not `?T`.;
         let found = null;
         this.pairs.forEach((p) => {
-    return (() => { if ((p[0] === key)) { return found = p[1]; } })();
+    return (() => { if (__bp_eq(p[0], key, 0)) { return found = p[1]; } })();
 });
         return found;
     }
 
     hasKey(key) {
         return (__bp_array_at(this.pairs.filter((p) => {
-    return (p[0] === key);
+    return __bp_eq(p[0], key, 0);
 }), 0) != null);
     }
 
@@ -816,14 +830,14 @@ class Dict {
 
     insert(key, value) {
         const filtered = this.pairs.filter((p) => {
-    return (p[0] !== key);
+    return (!__bp_eq(p[0], key, 0));
 });
         return new Dict(filtered.concat([[key, value]]));
     }
 
     delete(key) {
         return new Dict(this.pairs.filter((p) => {
-    return (p[0] !== key);
+    return (!__bp_eq(p[0], key, 0));
 }));
     }
 
@@ -914,7 +928,7 @@ class Set {
 
     delete(x) {
         return new Set(this.items.filter((item) => {
-    return (item !== x);
+    return (!__bp_eq(item, x, 0));
 }));
     }
 

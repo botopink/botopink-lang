@@ -27,20 +27,6 @@ fn main() {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
-function __bp_eq(a, b, d) {
-    if ((a === b)) {
-        return true;
-    }
-    if ((((((d > 32) || (a === null)) || (b === null)) || (typeof a !== "object")) || (a.constructor !== b.constructor))) {
-        return false;
-    }
-    if (Array.isArray(a)) {
-        return ((a.length === b.length) && a.every((e, i) => __bp_eq(e, b[i], (d + 1))));
-    }
-    const k = Object.keys(a);
-    return ((k.length === Object.keys(b).length) && k.every((n) => __bp_eq(a[n], b[n], (d + 1))));
-}
-
 function __bp_show(v, s, top, a) {
     if ((typeof v === "string")) {
         a.push(top ? v : (("\"" + Array.from(v, (c) => ((c === "\"") || (c === "\\")) ? ("\\" + c) : (c === "\n") ? "\\n" : (c === "\r") ? "\\r" : (c === "\t") ? "\\t" : c).join("")) + "\""));
@@ -73,28 +59,53 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
+function __bp_eq_Tuple2_i32_string(a, b) {
+    if (a === b) return true;
+    return a[0] === b[0] && a[1] === b[1];
+}
+
+function __bp_eq_Tuple2_string_i32(a, b) {
+    if (a === b) return true;
+    return a[0] === b[0] && a[1] === b[1];
+}
+
+function __bp_eq_Tuple2_Tuple2_i32_i32_string(a, b) {
+    if (a === b) return true;
+    return __bp_eq_Tuple2_i32_i32(a[0], b[0]) && a[1] === b[1];
+}
+
+function __bp_eq_Tuple2_i32_i32(a, b) {
+    if (a === b) return true;
+    return a[0] === b[0] && a[1] === b[1];
+}
+
+function __bp_eq_Tuple2_f64_bool(a, b) {
+    if (a === b) return true;
+    return a[0] === b[0] && a[1] === b[1];
+}
+
 function main() {
     const a = [1, "a"];
     const b = [1, "a"];
-    __bp_print(__bp_eq(a, b, 0));
-    __bp_print((!__bp_eq(a, b, 0)));
+    __bp_print(__bp_eq_Tuple2_i32_string(a, b));
+    __bp_print((!__bp_eq_Tuple2_i32_string(a, b)));
     const c = [1, "b"];
-    __bp_print(__bp_eq(a, c, 0));
+    __bp_print(__bp_eq_Tuple2_i32_string(a, c));
     const name = "SP";
     const pop = 12;
     const labeled = [name, pop];
     const plain = ["SP", 12];
-    __bp_print(__bp_eq(labeled, plain, 0));
+    __bp_print(__bp_eq_Tuple2_string_i32(labeled, plain));
     const n1 = [[1, 2], "x"];
     const n2 = [[1, 2], "x"];
     const n3 = [[1, 3], "x"];
-    __bp_print(__bp_eq(n1, n2, 0));
-    __bp_print(__bp_eq(n1, n3, 0));
+    __bp_print(__bp_eq_Tuple2_Tuple2_i32_i32_string(n1, n2));
+    __bp_print(__bp_eq_Tuple2_Tuple2_i32_i32_string(n1, n3));
     const f1 = [1.5, true];
     const f2 = [1.5, true];
     const f3 = [1.5, false];
-    __bp_print(__bp_eq(f1, f2, 0));
-    __bp_print(__bp_eq(f1, f3, 0));
+    __bp_print(__bp_eq_Tuple2_f64_bool(f1, f2));
+    __bp_print(__bp_eq_Tuple2_f64_bool(f1, f3));
 }
 
 function _botopink_main() {

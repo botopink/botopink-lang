@@ -21,6 +21,20 @@ function __bp_string_char_at(s, i) { return s.at(i) ?? null; }
 
 function __bp_array_at(xs, i) { return xs.at(i) ?? null; }
 
+function __bp_eq(a, b, d) {
+    if ((a === b)) {
+        return true;
+    }
+    if ((((((d > 32) || (a === null)) || (b === null)) || (typeof a !== "object")) || (a.constructor !== b.constructor))) {
+        return false;
+    }
+    if (Array.isArray(a)) {
+        return ((a.length === b.length) && a.every((e, i) => __bp_eq(e, b[i], (d + 1))));
+    }
+    const k = Object.keys(a);
+    return ((k.length === Object.keys(b).length) && k.every((n) => __bp_eq(a[n], b[n], (d + 1))));
+}
+
 function __bp_show(v, s, top, a) {
     if ((typeof v === "string")) {
         a.push(top ? v : (("\"" + Array.from(v, (c) => ((c === "\"") || (c === "\\")) ? ("\\" + c) : (c === "\n") ? "\\n" : (c === "\r") ? "\\r" : (c === "\t") ? "\\t" : c).join("")) + "\""));
@@ -233,7 +247,7 @@ Array.prototype.unique = function() {
     let first = true;
     let prev = __bp_array_at(this, 0);
     this.forEach((x) => {
-    (() => { if (first) { out = out.concat([x]); return first = false; } else { return (() => { if ((prev !== x)) { return out = out.concat([x]); } })(); } })();
+    (() => { if (first) { out = out.concat([x]); return first = false; } else { return (() => { if ((!__bp_eq(prev, x, 0))) { return out = out.concat([x]); } })(); } })();
     prev = x;
 });
     return out;
