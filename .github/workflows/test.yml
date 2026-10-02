@@ -15,10 +15,16 @@
 #         drift there, and a row that cannot fail measures nothing — the gap
 #         is listed in the milestone's status.md and the row returns hard, or
 #         not at all.
+#         Build mode as the gate's (decision 226): `zig build test` stays
+#         Debug, and every `zig build` step after it passes
+#         `-Doptimize=ReleaseSafe` — the mode `scripts/gate.sh` passes as
+#         `$opt` and `release.yml` ships — so no step reinstalls a Debug
+#         `botopink` over the one the others run. `test-web` is not a gate
+#         stage and keeps the default mode.
 #   libs  every sibling library checked out next to botopink-lang
 #         (emilia, erika, jhonstart, onze, rakun at `feat`) plus libs/std,
-#         compiled and tested on every runnable target by `zig build test-libs`
-#         (a library without tests is still compiled).
+#         compiled and tested on every runnable target by `zig build test-libs
+#         -Doptimize=ReleaseSafe` (a library without tests is still compiled).
 #         The manifest decides the matrix: a member runs on the targets its
 #         botopink.json declares and on no other, and a cell that exists is
 #         green or the job fails, by name, with its diagnostic in the log —
@@ -62,8 +68,9 @@ jobs:
       # 60 tests under `comptime/runtime/erlang.zig` shell out to `erl`/`erlc`
       # via `std.process.run`. Install Erlang/OTP 27+ — the comptime runtime
       # writes JSON via `json:encode/1`, which only landed in OTP 27.
-      # `erlef/setup-beam` pins the version cleanly on linux; macos goes
-      # through Homebrew (current bottle is OTP 27 / OTP 28). `zig build`
+      # `erlef/setup-beam` pins the version on linux; macos installs Homebrew's
+      # `erlang@28` (decision 227 — the plain `erlang` bottle is the latest
+      # OTP, 29 at the time), and the step after both asserts 28. `zig build`
       # itself runs `erlc` (front 18, decision 83 — the resident comptime
       # modules are compiled at build time and embedded), so every row needs
       # OTP before the build.
@@ -81,7 +88,18 @@ jobs:
 
       - name: Install Erlang/OTP (macos)
         if: matrix.runner == 'macos-14'
-        run: brew install erlang
+        run: |
+          brew install erlang@28 && brew link --force erlang@28
+          echo "$(brew --prefix erlang@28)/bin" >> "$GITHUB_PATH"
+
+      # Decision 227: OTP 28 on every row, linux and macos alike — `erlang@28`
+      # is keg-only, so its `bin` goes on PATH above; any other release here
+      # fails the job rather than testing against it.
+      - name: Assert Erlang/OTP 28
+        shell: bash
+        run: |
+          otp="$(erl -noshell -eval 'io:format("~s",[erlang:system_info(otp_release)]),halt().')"
+          [ "$otp" = 28 ] || { echo "Erlang/OTP is '$otp', not 28 (decision 227)"; exit 1; }
 
       # 26 wasm-codegen snapshot tests embed the wasmtime `RUN LOG`
       # (stdout of the generated `.wat` evaluated against wasmtime) into
@@ -148,9 +166,9 @@ jobs:
         shell: bash
         run: bash scripts/snap_audit.sh --mode=runtime-parity
 
-      - name: zig build test-bpmp
+      - name: zig build test-bpmp (ReleaseSafe)
         shell: bash
-        run: zig build test-bpmp
+        run: zig build test-bpmp -Doptimize=ReleaseSafe
 
       # Every beam snapshot module assembled with every function exported: a
       # rejected module prints `REJECTED <slug> <module>` with the validator's
@@ -159,9 +177,9 @@ jobs:
         shell: bash
         run: bash scripts/beam_export_audit.sh
 
-      - name: zig build test-cli
+      - name: zig build test-cli (ReleaseSafe)
         shell: bash
-        run: zig build test-cli
+        run: zig build test-cli -Doptimize=ReleaseSafe
 
       # Decision 66: `botopink format --check` over the compiler's own `.bp`
       # trees, every one canonical — the list is `TREES` in
@@ -173,9 +191,9 @@ jobs:
       # Decision 8's language tests on commonJS and erlang; a red cell
       # fails the job — the suite keeps no list of known failures.
       # Needs node and erl.
-      - name: zig build test-language
+      - name: zig build test-language (ReleaseSafe)
         shell: bash
-        run: zig build test-language
+        run: zig build test-language -Doptimize=ReleaseSafe
 
       # Every `botopink` fence in docs.md and README.md compiles and every
       # `reject` fence is refused (scripts/check-docs.sh). docs.md's
@@ -186,9 +204,9 @@ jobs:
         uses: actions/checkout@v5
         with: { repository: botopink/erika, ref: feat, path: repository/erika }
 
-      - name: zig build test-docs
+      - name: zig build test-docs (ReleaseSafe)
         shell: bash
-        run: zig build test-docs
+        run: zig build test-docs -Doptimize=ReleaseSafe
 
       # Every `.d.ts` the commonJS backend emits for the example projects
       # (erika, checked out above, is generic-loader-binding's dependency) and
@@ -254,6 +272,6 @@ jobs:
             echo "$(basename "$r"): $(git -C "$r" rev-parse HEAD)"
           done
 
-      - name: zig build test-libs
+      - name: zig build test-libs (ReleaseSafe)
         shell: bash
-        run: zig build test-libs
+        run: zig build test-libs -Doptimize=ReleaseSafe
