@@ -1,0 +1,30 @@
+//// Decision 209 — an integer literal checked against an expected `f64` is
+//// that `f64`, everywhere: a `val` annotation, an element of an expected
+//// `f64[]`, an argument, a return, the other operand of an `f64` operator.
+//// Each prints as the float it is. (A field of an `f64` takes one too; the
+//// cell reads none, since commonJS prints any `f64` field read without its
+//// fraction — `04-js`'s row.)
+
+fn total(xs: f64[]) -> f64 {
+    var sum = 0.0;
+    xs.forEach({ v ->
+        sum = sum + v;
+    });
+    return sum;
+}
+
+fn half(v: f64) -> f64 {
+    return v / 2;
+}
+
+fn one() -> f64 {
+    return 1;
+}
+
+pub fn main() {
+    val x: f64 = 1;
+    @print(x);
+    @print(total([1, 2.5]));
+    @print(half(5));
+    @print(one() + 0.5);
+}

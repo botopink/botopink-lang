@@ -206,6 +206,10 @@ the declaring module's own call runs). All sixteen fail on the parent binary.
 Decision 208 (`Ok` / `Error` are never constructors) adds `reject/result_ok_constructor` and
 `reject/result_error_constructor` — `unbound variable` at the name; both pass on the parent binary and
 pin the rule.
+Decision 209 adds `run/integer_literal_fits_f64` (an integer literal under an expected `f64` — a
+`val`, an `f64[]` element, an argument, a return, an arithmetic operand — prints as the float, four
+targets; refused by the parent binary) and `reject/i32_value_never_widens` (an `i32` value passed to an
+`f64` parameter is the mismatch; it passes on the parent binary and pins the half that stays).
 Decision 141 adds `run/external_template_refused_on_beam` — an `@External.Erlang` template with a
 macro runs on erlang and is a located build error on beam naming the construct (`.beam.expect`); beam
 no longer evaluates a template it cannot compile from source at run time.

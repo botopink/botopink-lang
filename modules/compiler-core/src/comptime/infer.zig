@@ -9856,6 +9856,21 @@ fn expectedIntegerType(env: *Env) ?[]const u8 {
     return null;
 }
 
+/// Decision B2 — `==` / `!=` between two typed numbers is exact (`2.0 == 2`
+/// is false), so an `f64` operand does not make the other side's integer
+/// literal a float there (decision 209 reads every other position).
+fn equalityOperandExpectation(op: @FieldType(ast.BinOpExprOf(.untyped), "op"), other: *T.Type) ?*T.Type {
+    if ((op == .eq or op == .ne) and other.deref().isNamed("f64")) return null;
+    return other;
+}
+
+/// Decision 209 — the position of a literal expects `f64` (through one `?T`).
+fn expectsFloat(env: *Env) bool {
+    var t = (env.expectedType orelse return false).deref();
+    if (t.* == .named and std.mem.eql(u8, t.named.name, "optional") and t.named.args.len == 1) t = t.named.args[0].deref();
+    return t.* == .named and t.named.args.len == 0 and std.mem.eql(u8, t.named.name, "f64");
+}
+
 /// True for an integer literal (`1000`), which takes its width from its
 /// position; false for everything else.
 fn isIntegerLiteral(e: ast.Expr) bool {
@@ -9913,6 +9928,21 @@ fn inferLiteralExpr(env: *Env, lit: ast.LiteralExprOf(.untyped), loc: ast.Loc) I
             // An integer literal takes the integer type its position asks for
             // (`val k: i64 = 1000;`, an `i64` parameter, the other operand of
             // an arithmetic or comparison operator); with nothing asking, `i32`.
+            // Decision 209 — an integer LITERAL checked against an expected
+            // `f64` is that `f64` (`val x: f64 = 1`, an `f64` argument, field
+            // or return, an element of an expected `f64[]`), re-spelt as a
+            // float for the backends (`env.indexRewrites`, literal for
+            // literal, as the array join does). An `i32` value never widens.
+            if (!isFloat and expectsFloat(env)) {
+                if (try floatSpelling(env, n)) |text| {
+                    if (!env.indexRewrites.contains(loc)) {
+                        const respelt = try env.arena.create(ast.Expr);
+                        respelt.* = .{ .literal = .{ .loc = loc, .kind = .{ .numberLit = text } } };
+                        try env.indexRewrites.put(loc, respelt);
+                    }
+                    break :blk TypedExpr{ .literal = .{ .loc = loc, .type_ = try env.namedType("f64"), .kind = .{ .numberLit = text } } };
+                }
+            }
             const width: []const u8 = if (isFloat) "f64" else (expectedIntegerType(env) orelse "i32");
             break :blk TypedExpr{ .literal = .{ .loc = loc, .type_ = try env.namedType(width), .kind = .{ .numberLit = n } } };
         },
@@ -10225,7 +10255,7 @@ fn inferBinaryOpExpr(env: *Env, binop: ast.BinOpExprOf(.untyped), loc: ast.Loc) 
     const lhsIsLiteral = numericOp and isIntegerLiteral(binop.lhs.*) and !isIntegerLiteral(binop.rhs.*);
     const early_rhs: ?TypedExpr = if (lhsIsLiteral) try inferExprTypedExpecting(env, binop.rhs.*, env.expectedType) else null;
     const lhsTyped = if (early_rhs) |r|
-        try inferExprTypedExpecting(env, binop.lhs.*, r.getType())
+        try inferExprTypedExpecting(env, binop.lhs.*, equalityOperandExpectation(binop.op, r.getType()))
     else
         try inferExprTyped(env, binop.lhs.*);
 
@@ -10265,7 +10295,7 @@ fn inferBinaryOpExpr(env: *Env, binop: ast.BinOpExprOf(.untyped), loc: ast.Loc) 
     const rhsTyped = if (early_rhs) |r|
         r
     else if (binop.op == .eq or binop.op == .ne or (numericOp and isIntegerLiteral(binop.rhs.*)))
-        try inferExprTypedExpecting(env, binop.rhs.*, lhsTyped.getType())
+        try inferExprTypedExpecting(env, binop.rhs.*, equalityOperandExpectation(binop.op, lhsTyped.getType()))
     else
         try inferExprTyped(env, binop.rhs.*);
 
