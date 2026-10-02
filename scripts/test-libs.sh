@@ -153,7 +153,7 @@ while IFS= read -r line; do
                         "$lib" "$target" "$found" "${at:+ ($at)}"
                     ;;
                 *)
-                    not_structural=$((not_structural + 1)); refused="$refused $lib·$target"
+                    not_structural=$((not_structural + 1)); refused="$refused ${lib}·${target}"
                     printf '\033[1;31m── %s · %s: NOT STRUCTURAL — excluded by "targets", and %s%s\033[0m\n' \
                         "$lib" "$target" "$found" "${at:+ ($at)}"
                     ;;
@@ -168,11 +168,11 @@ while IFS= read -r line; do
                     printf '\033[32m── %s · %s: pass\033[0m\n' "$lib" "$target"
                     ;;
                 fail)
-                    failed=$((failed + 1)); unexpected="$unexpected $lib·$target"
+                    failed=$((failed + 1)); unexpected="$unexpected ${lib}·${target}"
                     printf '\033[1;31m── %s · %s: FAIL\033[0m\n' "$lib" "$target"
                     ;;
                 skipped_unsupported)
-                    not_runnable=$((not_runnable + 1)); unran="$unran $lib·$target"
+                    not_runnable=$((not_runnable + 1)); unran="$unran ${lib}·${target}"
                     printf '\033[1;31m── %s · %s: NOT RUNNABLE — `botopink test` cannot run this target; nothing ran\033[0m\n' "$lib" "$target"
                     ;;
                 no_tests)
@@ -181,7 +181,7 @@ while IFS= read -r line; do
                     ;;
                 *)
                     # A status this script does not know is never a pass.
-                    failed=$((failed + 1)); unexpected="$unexpected $lib·$target"
+                    failed=$((failed + 1)); unexpected="$unexpected ${lib}·${target}"
                     printf '\033[1;31m── %s · %s: FAIL — unknown cell status `%s`\033[0m\n' "$lib" "$target" "$status"
                     ;;
             esac

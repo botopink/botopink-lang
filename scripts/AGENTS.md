@@ -109,6 +109,10 @@ straight into `$BPMP_HOME/botopink/versions/<v>/`.
 See [`../AGENTS.md`](../AGENTS.md) §Release pipeline and
 [`../.github/workflows/release.yml`](../.github/workflows/release.yml).
 
+**Portability.** Every script runs under macOS's bash 3.2: a variable followed by a non-ASCII byte
+is written braced (`${lib}·${target}`) — bash 3.2 reads the first byte of `·` as part of the name
+under `set -u` (`lib\xc2: unbound variable`, `test-libs.sh` on macos-14).
+
 ## gate.sh
 
 `scripts/gate.sh [--cold] [--staged]` — one ordered run, stopping at the first
