@@ -254,3 +254,23 @@ test "beam: a bare break in a for's body ends the loop" {
         \\
     , &.{"{atom, '__bp_break'}"});
 }
+
+// ── the keyword form of an `@External.Erlang` template ──────────────────────
+
+test "beam: the keyword form's method is a template compiled at build time" {
+    // `#[@External.Erlang(module = "erlang", method = "max($args)")]` carries
+    // a template, which erlang renders as written (`max(1, 2)`); beam refused
+    // every call — "has no `#[@External.<Target>(…)]` for the beam backend"
+    // (`tests/language/test/external_markers.bp`). It is compiled like any
+    // template now (`evalTemplate`), and so is the `pub` wrapper.
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\#[@External.Erlang(module = "erlang", method = "max($args)")]
+        \\declare fn biggest(a: i32, b: i32) -> i32;
+        \\#[@External.Erlang(module = "erlang", method = "min($0, $1)")]
+        \\pub declare fn smallest(a: i32, b: i32) -> i32;
+        \\fn main() {
+        \\    @print(biggest(1, 2));
+        \\    @print(smallest(9, 4));
+        \\}
+    , "2\n4\n", &.{"{function, smallest, 2, "});
+}

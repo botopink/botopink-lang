@@ -4440,8 +4440,8 @@ const Emitter = struct {
     /// The wrapper `f` needs (`hostDeclareWrapperNeeded`), or null when it has
     /// none: a `self`-first declaration, an `@External.Beam` template body (its
     /// call sites inline it), an arity-branched set with no branch for the
-    /// declared count, a `module:template` target (every call site refuses it)
-    /// and a template the build-time lowering refuses (decision 141 — each call
+    /// declared count, a `module:symbol(…)` target with no marker (every call
+    /// site refuses it) and a template the build-time lowering refuses (decision 141 — each call
     /// site of it is then the located build error). A template is compiled here,
     /// once per module (`compiledTemplate` caches it), so the reservation, the
     /// export list and the emission all see the same answer.
@@ -4454,7 +4454,9 @@ const Emitter = struct {
         else blk: {
             const ref = f.externalFor("erlang") orelse return null;
             if (ref.module.len > 0) {
-                if (primOpTemplate.looksLikeTemplate(ref.symbol) or std.mem.indexOfScalar(u8, ref.symbol, '(') != null) return null;
+                // The keyword form's template (`lowerHostCall`).
+                if (primOpTemplate.looksLikeTemplate(ref.symbol)) break :blk ref.symbol;
+                if (std.mem.indexOfScalar(u8, ref.symbol, '(') != null) return null;
                 return .{ .ext = ref };
             }
             break :blk ref.symbol;
@@ -7447,7 +7449,11 @@ const Emitter = struct {
             );
             return;
         }
-        if (ref.module.len > 0) return error.MissingExternalTarget;
+        // The keyword form (`module = "erlang", method = "max($args)"`)
+        // carries a template: it is the template text, as erlang renders it
+        // (`user_erlang_templates` — the module is not prefixed). A `(` with
+        // no marker names no shape either backend lowers.
+        if (ref.module.len > 0 and !primOpTemplate.looksLikeTemplate(ref.symbol)) return error.MissingExternalTarget;
         try self.evalTemplate(ref.symbol, self_first, exprs[0..cc.args.len], cc.trailing, mode);
     }
 

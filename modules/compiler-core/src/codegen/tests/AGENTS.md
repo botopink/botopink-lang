@@ -95,7 +95,8 @@ own rows (front `03-beam`), one fixture each, every RUN LOG the value the
 assembled module prints: list patterns (every element bound or tested, the
 length exact without a spread), a lambda literal ending a `case` arm (the arm's
 value, not `ok`), a behavior's `default fn` adopted by an implementing type, `?.` through a
-tuple label on an absent element, `-x` as the unary minus (`-0.0`), a bare `break` ending a `for`.
+tuple label on an absent element, `-x` as the unary minus (`-0.0`), a bare `break` ending a `for`, the keyword form of an `@External.Erlang`
+template.
 
 `assertJsExpecting`, `assertJsError` and `assertJsTestMode` wrap their snapshot calls in `utils/snap.zig` `traceEnter(loc)`/`traceLeave`, so `BOTOPINK_SNAP_TRACE=<file>` records the test `file:line` for every codegen snapshot. A new helper that writes a snapshot must do the same, or `scripts/snap_audit.sh --mode=review` cannot attribute it.
 
