@@ -17,6 +17,8 @@
 //// template wraps the call in try/catch and lifts the error to the
 //// `{error, <message>}` channel.
 
+import {path.relative} from "std";
+
 pub type FileStat(
     size: i64,
     mtime: i64,
@@ -99,15 +101,23 @@ pub declare fn stat(path: string) -> @Result<FileStat, string>;
 
 // Every REGULAR FILE under `root`, recursively, as paths relative to `root`
 // with `/` separators, sorted — the same set on both targets (the two hosts
-// walk in different orders, so the list is sorted rather than left as found).
-// Directories are not listed; a missing or non-directory `root` is an `Error`.
+// walk in different orders, so the list is sorted rather than left as found),
+// and the same paths however the root is spelled: `dir`, `dir/`, `dir/.`,
+// `./dir`, `dir/sub/..`, absolute or relative to the working directory.
+// Directories are not listed; a link is followed (a link to a file is listed
+// under its own name, a link to a directory is walked, a dangling one is
+// skipped); a missing or non-directory `root`, or a directory under it that
+// cannot be read, is an `Error`.
 // Node: `readdirSync(root, { recursive: true })` answers files AND directories
-// relative to `root`; the template keeps the entries `statSync` says are files.
-// Erlang: `filelib:fold_files/5` answers full paths of regular files only and
-// silently answers `[]` for a missing root, so the template checks
-// `filelib:is_dir/1` first and strips the normalised root prefix.
-#[@External.Node("""(() => { try { const __fs = require('fs'); const __p = require('path'); const __all = __fs.readdirSync($0, { recursive: true }).map(String); return { ok: __all.filter(__f => __fs.statSync(__p.join($0, __f)).isFile()).map(__f => __f.split(__p.sep).join('/')).sort() } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
-#[@External.Erlang("""(fun(__R) -> __Root = filename:join([unicode:characters_to_list(__R)]), case filelib:is_dir(__Root) of false -> {error, <<"enotdir">>}; true -> __N = case __Root of "/" -> 1; _ -> length(__Root) + 1 end, {ok, lists:sort([unicode:characters_to_binary(lists:nthtail(__N, __F)) || __F <- filelib:fold_files(__Root, ".*", true, fun(__F0, __A) -> [__F0 | __A] end, [])])} end end)($0)""")]
+// relative to `root`; the template keeps the entries `statSync` says are files
+// (`throwIfNoEntry: false` — a dangling link is not a file, it is not a throw).
+// Erlang: the template walks `file:list_dir/1` itself and BUILDS each relative
+// path from the names it descended through. It never cuts a prefix off a full
+// path: `filelib:fold_files/5` answers full paths `filename:join/2` has
+// normalised (`dir/.` + `app` is `dir/app`), so a prefix measured on the root
+// as written cut two characters too many when the root ended in `/.`.
+#[@External.Node("""(() => { try { const __fs = require('fs'); const __p = require('path'); const __all = __fs.readdirSync($0, { recursive: true }).map(String); return { ok: __all.filter(__f => { const __s = __fs.statSync(__p.join($0, __f), { throwIfNoEntry: false }); return __s !== undefined && __s.isFile() }).map(__f => __f.split(__p.sep).join('/')).sort() } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
+#[@External.Erlang("""(fun(__R) -> __Root = unicode:characters_to_list(__R), case filelib:is_dir(__Root) of false -> {error, <<"enotdir">>}; true -> __Walk = fun __W(__Dir, __Rel, __Acc) -> case file:list_dir(__Dir) of {error, __E} -> throw({bp_fs_walk, __E}); {ok, __Names} -> lists:foldl(fun(__Name, __A) -> __Full = filename:join(__Dir, __Name), __Sub = case __Rel of [] -> __Name; _ -> __Rel ++ "/" ++ __Name end, case file:read_file_info(__Full) of {ok, __I} when element(3, __I) =:= directory -> __W(__Full, __Sub, __A); {ok, __I} when element(3, __I) =:= regular -> [unicode:characters_to_binary(__Sub) | __A]; _ -> __A end end, __Acc, __Names) end end, try {ok, lists:sort(__Walk(__Root, [], []))} catch throw:{bp_fs_walk, __X} -> {error, iolist_to_binary(io_lib:format("~p", [__X]))} end end end)($0)""")]
 pub declare fn walk(root: string) -> @Result<string[], string>;
 
 // The entries under `root` matching the glob `pattern` (`*`, `?`, `[…]`,
@@ -133,6 +143,16 @@ declare fn scratchDir() -> string;
 #[@External.Node("""require('fs').rmSync($0, { recursive: true, force: true })""")]
 #[@External.Erlang("""(fun(__D) -> file:del_dir_r(__D), ok end)($0)""")]
 declare fn removeTree(path: string) -> void;
+
+// Internal, test scaffolding: the working directory (what a relative root is
+// read against) and a symbolic link `link` → `target`.
+#[@External.Node("process.cwd()")]
+#[@External.Erlang("""(fun() -> {ok, __D} = file:get_cwd(), unicode:characters_to_binary(__D) end)()""")]
+declare fn workingDir() -> string;
+
+#[@External.Node("""require('fs').symlinkSync($0, $1)""")]
+#[@External.Erlang("""(fun(__T, __L) -> ok = file:make_symlink(__T, __L), ok end)($0, $1)""")]
+declare fn linkTo(target: string, link: string) -> void;
 
 // ── tests ────────────────────────────────────────────────────────────────────
 // (Inline tests are smoke-grade — they require the host filesystem to be
@@ -171,12 +191,78 @@ fn makeFixtureTree(dir: string) -> void {
     writeText([dir, "/app/blog/notes.md"].join(""), "notes");
 }
 
-test "fs.walk lists every regular file relative to the root, sorted" {
+// Internal, test scaffolding: what `walk` answers for the fixture tree when
+// its root is spelled `<scratch dir><suffix>` — every spelling of one root has
+// to answer the same three relative paths.
+fn walkFixture(suffix: string) -> string {
     val dir = scratchDir();
     makeFixtureTree(dir);
-    val walked = walk([dir, "/app"].join("")).unwrapOr([]);
+    val walked = walk([dir, suffix].join("")).unwrapOr(["<error>"]);
     removeTree(dir);
-    assert walked.join(",") == "blog/notes.md,blog/page.bp,page.bp";
+    return walked.join(",");
+}
+
+// Internal, test scaffolding: the same, with the root spelled relative to the
+// working directory — `<prefix><path from the cwd to the fixture>`.
+fn walkFixtureFromCwd(prefix: string) -> string {
+    val dir = scratchDir();
+    makeFixtureTree(dir);
+    val root = [prefix, relative(workingDir(), dir), "/app"].join("");
+    val walked = walk(root).unwrapOr(["<error>"]);
+    removeTree(dir);
+    return walked.join(",");
+}
+
+test "fs.walk lists every regular file relative to the root, sorted" {
+    assert walkFixture("/app") == "blog/notes.md,blog/page.bp,page.bp";
+}
+
+test "fs.walk of a root with a trailing slash answers the same paths" {
+    assert walkFixture("/app/") == "blog/notes.md,blog/page.bp,page.bp";
+}
+
+test "fs.walk of a root ending in a dot segment answers the same paths" {
+    assert walkFixture("/app/.") == "blog/notes.md,blog/page.bp,page.bp";
+}
+
+test "fs.walk of a root with a dot segment inside answers the same paths" {
+    assert walkFixture("/./app") == "blog/notes.md,blog/page.bp,page.bp";
+}
+
+test "fs.walk of a root with a doubled separator answers the same paths" {
+    assert walkFixture("//app//") == "blog/notes.md,blog/page.bp,page.bp";
+}
+
+test "fs.walk of a root ending in a parent segment answers the same paths" {
+    assert walkFixture("/app/blog/..") == "blog/notes.md,blog/page.bp,page.bp";
+}
+
+test "fs.walk of a relative root answers the same paths" {
+    assert walkFixtureFromCwd("") == "blog/notes.md,blog/page.bp,page.bp";
+}
+
+test "fs.walk of a relative root spelled with a leading dot answers the same paths" {
+    assert walkFixtureFromCwd("./") == "blog/notes.md,blog/page.bp,page.bp";
+}
+
+test "fs.walk follows a link to a file or a directory and skips a dangling one" {
+    val dir = scratchDir();
+    makeFixtureTree(dir);
+    linkTo("blog", [dir, "/app/linked"].join(""));
+    linkTo("page.bp", [dir, "/app/alias.bp"].join(""));
+    linkTo("missing.bp", [dir, "/app/dangling.bp"].join(""));
+    val walked = walk([dir, "/app"].join("")).unwrapOr(["<error>"]);
+    removeTree(dir);
+    assert walked.join(",")
+        == "alias.bp,blog/notes.md,blog/page.bp,linked/notes.md,linked/page.bp,page.bp";
+}
+
+test "fs.walk of a regular file is an Error" {
+    val dir = scratchDir();
+    makeFixtureTree(dir);
+    val r = walk([dir, "/app/page.bp"].join(""));
+    removeTree(dir);
+    assert r.isError();
 }
 
 test "fs.walk of a missing root is an Error" {
