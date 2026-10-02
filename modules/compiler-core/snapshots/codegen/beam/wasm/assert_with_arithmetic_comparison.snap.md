@@ -17,7 +17,7 @@ fn f() {
     f64.const 2.0
     f64.add
     f64.const 3.0
-    f64.eq
+    call $__f64_eq
     i32.eqz
     (if
       (then
@@ -27,6 +27,21 @@ fn f() {
     unreachable
       )
     )
+  )
+  (func $__f64_eq (param $a f64) (param $b f64) (result i32)
+    local.get $a
+    local.get $a
+    f64.ne
+    local.get $b
+    local.get $b
+    f64.ne
+    i32.and ;; both NaN
+    local.get $a
+    i64.reinterpret_f64
+    local.get $b
+    i64.reinterpret_f64
+    i64.eq ;; the same bits
+    i32.or
   )
   ;; Scratch layout below the data section (which starts at 256):
   ;;   0..8  WASI iovec   8  newline byte

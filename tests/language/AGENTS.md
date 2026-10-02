@@ -1031,10 +1031,22 @@ equality generated per compared type (`codegen/js/AGENTS.md`, `codegen/wat/AGENT
 § structural equality). `run/record_structural_equality.bp` pins it on four targets — a
 record, a nested record, a tuple, an array of records, enum variants with payloads,
 two types with the same fields, `!=`, a generic `same<T>` and an `equals` method `==`
-does not call. Float fields (`0.0 == -0.0`, NaN) are deliberately not in it: the
-composite compare of an `f64` field is that target's own `f64 ==`, and one rule for
-all four is the maintainer's to pick. `test/type_identity.bp` keeps asserting the
-other half, two different types with the same fields.
+does not call. `test/type_identity.bp` keeps asserting the other half, two
+different types with the same fields.
+
+**`f64` under `==` is a total order — decision 214**, as Java's `Double.compare` and
+Kotlin's data class: `0.0 == -0.0` is `false` and `NaN == NaN` is `true`, bare and
+inside a record, tuple, array or variant, while `<`, `>`, `<=`, `>=` keep IEEE
+ordering. erlang and BEAM already separate the zeros (`=:=`); commonJS lowers a
+float `==` to `Object.is` and wasm to `$__f64_eq` / `$__f32_eq` (NaN canonicalised,
+then the bits). `run/f64_equality_total_order.bp` pins the zeros on all four
+targets, with `-0.0` built at run time as `zero() * -1.0`. **The NaN rows are not a
+`run/` cell**: erlang and BEAM never produce a NaN (`z / z` raises `badarith` at run
+time), and § Narrowing a cell lets a cell leave a target out only when the build
+refuses it on a host binding, which a division is not — a `.targets commonJS wasm`
+would fail the audit. Each backend that has NaN pins that half in a RUN LOG fixture of
+its own: `codegen/tests/commonjs.zig` and `codegen/tests/wat.zig`, `f64 ---- NaN
+equals NaN under ==`.
 
 **The identity is asserted on two backends and RUN on four.** `botopink test` refuses beam and wasm,
 so a `test/` cell reaches only commonJS and erlang. `run/type_identity_equality.bp` is the same

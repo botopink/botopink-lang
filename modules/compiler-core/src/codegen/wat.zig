@@ -1152,6 +1152,8 @@ fn emitWat(
     while (eq_i < em.eq_requests.count()) : (eq_i += 1) {
         try items.append(ar, .{ .func = try em.eqFunc(em.eq_requests.keys()[eq_i], em.eq_requests.values()[eq_i]) });
     }
+    if (em.float_eq_used[0]) try items.append(ar, .{ .func = try em.floatEqFunc(true) });
+    if (em.float_eq_used[1]) try items.append(ar, .{ .func = try em.floatEqFunc(false) });
 
     for (prelude.order) |group| {
         if (!em.b.helpers.has(group)) continue;
@@ -1227,6 +1229,8 @@ const Emitter = struct {
     /// Decision 210 — a `val`'s composite type when nothing else recovers it
     /// (`eqTypeOf` over its initialiser), by the local's symbol.
     eq_local_types: std.StringHashMapUnmanaged(ast.TypeRef) = .empty,
+    /// Decision 214 — whether `$__f64_eq` / `$__f32_eq` were called.
+    float_eq_used: [2]bool = .{ false, false },
     /// Node factory: owns the arena every built node borrows from and the set
     /// of runtime helpers the lowering has asked for. Set up in `init` once
     /// `reg_arena` exists.
@@ -11751,7 +11755,7 @@ const Emitter = struct {
                     try self.emit(.{ .load = .{ .ty = .f32, .offset = @intCast(off) } });
                     try self.emit(.{ .local_get = b });
                     try self.emit(.{ .load = .{ .ty = .f32, .offset = @intCast(off) } });
-                    try self.emit(opOf("f32", "eq"));
+                    try self.emit(.{ .call = self.floatEqSym("f32") });
                     i += 1;
                 },
                 's' => {
@@ -12077,9 +12081,8 @@ const Emitter = struct {
             return;
         }
         if (isFloatTypeName(n)) {
-            // The composite compare of a float is the target's own float
-            // `==` — `0.0 == -0.0`, NaN never equal; one rule for the four
-            // targets is open.
+            // The composite compare of a float is the bare float `==` —
+            // decision 214's total order (`$__f64_eq` / `$__f32_eq`).
             for ([_]EqAddr{ a, b }) |x| {
                 try self.eqPushAddr(x);
                 if (slot == .field) {
@@ -12087,7 +12090,7 @@ const Emitter = struct {
                     try self.emit(.{ .load = .{ .ty = .f64 } });
                 } else try self.emit(.{ .load = .{ .ty = .f32, .offset = x.off } });
             }
-            try self.emit(opOf(if (slot == .field) "f64" else "f32", "eq"));
+            try self.emit(.{ .call = self.floatEqSym(if (slot == .field) "f64" else "f32") });
             return;
         }
         if (self.eqComposite(t)) {
@@ -12117,6 +12120,47 @@ const Emitter = struct {
         try self.eqPushAddr(b);
         try self.emit(.{ .load = .{ .offset = b.off } });
         try self.emit(opOf("i32", "eq"));
+    }
+
+    /// Decision 214 — the float `==` this module calls, marked for emission:
+    /// `$__f64_eq` or `$__f32_eq` (`floatEqFunc`).
+    fn floatEqSym(self: *Emitter, ty: []const u8) []const u8 {
+        if (std.mem.eql(u8, ty, "f32")) {
+            self.float_eq_used[1] = true;
+            return "__f32_eq";
+        }
+        self.float_eq_used[0] = true;
+        return "__f64_eq";
+    }
+
+    /// `$__f64_eq(a, b)` / `$__f32_eq(a, b)`: `==` over floats as a total
+    /// order (decision 214, Java's `Double.compare` and Kotlin's data class) —
+    /// both NaN (any payload: NaN is canonicalised by `x != x`), or the same
+    /// bit pattern, so `0.0` and `-0.0` differ.
+    fn floatEqFunc(self: *Emitter, wide: bool) !wat.Func {
+        const ty: []const u8 = if (wide) "f64" else "f32";
+        const ity: []const u8 = if (wide) "i64" else "i32";
+        var c: Capture = .{};
+        self.open(&c);
+        for ([_][]const u8{ "a", "b" }) |x| {
+            try self.emit(.{ .local_get = x });
+            try self.emit(.{ .local_get = x });
+            try self.emit(opOf(ty, "ne"));
+        }
+        try self.emitC(opOf("i32", "and"), "both NaN");
+        for ([_][]const u8{ "a", "b" }) |x| {
+            try self.emit(.{ .local_get = x });
+            try self.emit(.{ .convert = if (wide) "i64.reinterpret_f64" else "i32.reinterpret_f32" });
+        }
+        try self.emitC(opOf(ity, "eq"), "the same bits");
+        try self.emit(opOf("i32", "or"));
+        const body = self.seal(&c, .{ .value = .i32 });
+        return try self.builder().func(.{
+            .name = if (wide) "__f64_eq" else "__f32_eq",
+            .params = &.{ wat.Builder.param("a", vt(ty)), wat.Builder.param("b", vt(ty)) },
+            .result = .i32,
+            .body = body,
+        });
     }
 
     /// `(if (then i32.const <v> return))` over the condition on the stack.
@@ -12355,6 +12399,13 @@ const Emitter = struct {
         try self.lowerCoerced(lhs, t);
         try self.lowerCoerced(rhs, t);
         const is_float = t[0] == 'f';
+        // Decision 214 — `==` over floats is a total order: NaN equals NaN
+        // and `0.0` differs from `-0.0`. `<`, `>`, `<=`, `>=` stay IEEE.
+        if (is_float and (op == Op.eq or op == Op.ne)) {
+            try self.emit(.{ .call = self.floatEqSym(t) });
+            if (op == Op.ne) try self.emit(opOf("i32", "eqz"));
+            return;
+        }
         const opname: ?[]const u8 = switch (op) {
             Op.add => "add",
             Op.sub => "sub",

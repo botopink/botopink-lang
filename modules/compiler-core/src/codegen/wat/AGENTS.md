@@ -884,14 +884,22 @@ the first difference ends it, and `1` past the last:
 
 | `T` | parts |
 |---|---|
-| record | each field at `i * 4`: a string by `$__str_eq`, an `f64` by `f64.eq` over its box (`storeBoxedF64`), an integer, bool or all-unit enum by `i32.eq`, a composite by its own `$__eq_<T>`, a field written as one of the record's type parameters by the argument `T` spells (`Box<string>`), or as a word when it spells none |
+| record | each field at `i * 4`: a string by `$__str_eq`, an `f64` by `$__f64_eq` over its box (`storeBoxedF64`), an integer, bool or all-unit enum by `i32.eq`, a composite by its own `$__eq_<T>`, a field written as one of the record's type parameters by the argument `T` spells (`Box<string>`), or as a word when it spells none |
 | payload enum | the ordinals at slot 0 (`i32.ne` → `0`), then the matching variant's payload at `(i + 1) * 4` — a float is the `f32` the slot holds; a unit variant is equal on its ordinal |
 | tuple | each element at `i * 4`, a float as its `f32` slot |
 | array | the lengths, then a `$brk`/`$cont` loop over `4 + i * 4` (locals `$n`, `$i`) |
 | `?X` | both absent is `a == b` above; one absent answers `0`; a pointer payload (a record, a variant, a container, a string) is compared directly, a box's payload by the payload's own compare |
 
-A float part answers what that target's float `==` answers — `0.0 == -0.0` is
-`1`, NaN is never equal — and one rule for the four targets is open. No hash is
+**A float under `==` is a total order** (decision 214, Java's `Double.compare` and
+Kotlin's data class): NaN equals NaN and `0.0` differs from `-0.0`, bare and as a
+part alike. `lowerBinOp`'s float `==` / `!=` and every float part call
+`$__f64_eq` (a record field's boxed `f64`) or `$__f32_eq` (a tuple element, a
+variant payload, an array element — the `f32` slot), written only when called:
+both NaN (`x != x`, which canonicalises every NaN payload) `or` the same bits
+(`i64.reinterpret_f64` / `i32.reinterpret_f32`, then `eq`). `<`, `>`, `<=`, `>=`
+keep the IEEE `f64.lt` family. `tests/language/run/f64_equality_total_order.bp`
+pins the zeros on four targets; the NaN half is `tests/wat.zig`'s `f64 ---- NaN
+equals NaN under ==` RUN LOG, since erlang and beam never produce a NaN. No hash is
 computed at construction, nothing is interned, and there is no global table.
 
 **A generic `T`**: one body here answers every type, each type parameter an `i32`

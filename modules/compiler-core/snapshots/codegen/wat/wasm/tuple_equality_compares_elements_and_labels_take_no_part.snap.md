@@ -389,7 +389,7 @@ fn main() {
     f32.load
     local.get $b
     f32.load
-    f32.eq
+    call $__f32_eq
     i32.eqz
     (if
       (then i32.const 0 return)
@@ -431,6 +431,21 @@ fn main() {
       (then i32.const 0 return)
     )
     i32.const 1
+  )
+  (func $__f32_eq (param $a f32) (param $b f32) (result i32)
+    local.get $a
+    local.get $a
+    f32.ne
+    local.get $b
+    local.get $b
+    f32.ne
+    i32.and ;; both NaN
+    local.get $a
+    i32.reinterpret_f32
+    local.get $b
+    i32.reinterpret_f32
+    i32.eq ;; the same bits
+    i32.or
   )
   ;; Scratch layout below the data section (which starts at 256):
   ;;   0..8  WASI iovec   8  newline byte
