@@ -31,6 +31,8 @@ test {
     _ = @import("./snapshot.zig");
     _ = @import("./inline_types.zig");
     _ = @import("./diagnostics.zig");
+    _ = @import("./reflection.zig");
+    _ = @import("./assoc_types.zig");
     _ = @import("./eval.zig");
     _ = @import("./trace.zig");
     _ = @import("./template_eval.zig");

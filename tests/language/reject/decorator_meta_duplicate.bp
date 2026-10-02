@@ -1,0 +1,15 @@
+//// Decision 216 (2) — a decorator sets each of its keys once per
+//// declaration: the second `setMeta("table", …)` is refused at the
+//// annotation.
+
+fn entity(comptime decl: @Decl) {
+    decl.setMeta("table", "a");
+    decl.setMeta("table", "b");
+}
+
+#[entity]
+type City(name: string)
+
+pub fn main() {
+    @print(@typeinfo(City).meta.entity.table);
+}

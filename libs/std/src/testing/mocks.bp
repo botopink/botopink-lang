@@ -27,7 +27,7 @@
 //// (`random.mjs`).
 ////
 //// **STD-001.** Unlike `asserts` and `snapshots`, the eight cells here are
-//// `pub declare fn`: the body `#[mock]` emits into the CONSUMER's module calls
+//// `pub declare fn`: the code `#[mock]` adds to the CONSUMER's behavior calls
 //// `invoke`/`key`/`newMock`, so they have to be exported. They carry Node and
 //// Erlang templates only, so `import {mocks} from "std"` is refused on beam and
 //// wasm — honestly, since `botopink test` runs on neither.
@@ -36,8 +36,8 @@
 ////   • the RUNTIME (matchers / `when` / `verify` / the host cells) — ordinary
 ////     botopink over the cells below.
 ////   • the SYNTHESIS (`#[mock]`) — a comptime decorator that reflects a
-////     behavior's methods via `@Decl` and `@emit`s the mock type plus a
-////     `mockXxx()` factory. The compiler core learns nothing about mocking
+////     behavior's methods via `@Decl` and gives the behavior the mock type
+////     `Xxx.Mock` and the factory `Xxx.mock()` (decision 216). The compiler core learns nothing about mocking
 ////     (no lib-specific surface in core); every rule here is botopink.
 
 // ── host cells (the one mutable seam) ────────────────────────────────────────
@@ -200,15 +200,16 @@ pub fn verify<T>(mock: T, spec: i32) -> T {
 // ── mock synthesis (`#[mock]`) ───────────────────────────────────────────────
 //
 // A comptime annotation processor: reflect the annotated behavior's methods via
-// `@Decl` and `@emit` (a) `type Mock<Name>(__id: string) implement <Name>` whose
-// every method funnels through `invoke`, and (b) a `pub fn mock<Name>() ->
-// <Name>` factory. The compiler core provides only the protocol (recognise →
+// `@Decl` and give the behavior (a) the associated type `<Name>.Mock(__id:
+// string)`, which implements `<Name>` and funnels every method through
+// `invoke` (`decl.addType`), and (b) the associated fn `<Name>.mock() -> <Name>`,
+// the factory (`decl.addMember`) — decision 216. The compiler core provides only the protocol (recognise →
 // reflect → run the body); every rule below is botopink. The generated method
 // records its call and answers the stub value, or the per-return-type default
 // (`""` / `false` / `0` / `[]`).
 //
-// `@emit` splices its text into the module that hosts the annotated behavior,
-// so the names it writes must resolve THERE. Inside this module they are the
+// The type and the factory are declared in the module that hosts the annotated
+// behavior, so the names their text writes must resolve THERE. Inside this module they are the
 // bare `invoke`, `key` and `newMock`; in a consumer they are reached through
 // the handle the consumer imported this module under, which is the prefix of
 // the annotation that fired: `import {testing.mocks} from "std"` and
@@ -267,23 +268,16 @@ pub fn mock(comptime decl: @Decl) {
             + def
             + "); }\n";
     });
-    @emit(
-        "type Mock"
-            + decl.name
-            + "(__id: string) implement "
-            + decl.name
-            + " {\n"
-            + methods
-            + "}",
+    decl.addType(
+        "Mock",
+        "(__id: string) implement " + decl.name + " {\n" + methods + "}",
     );
-    @emit(
-        "pub fn mock"
+    decl.addMember(
+        "default fn mock() -> "
             + decl.name
-            + "() -> "
+            + " { return "
             + decl.name
-            + " { return Mock"
-            + decl.name
-            + "(__id: "
+            + ".Mock(__id: "
             + q
             + "newMock()); }",
     );
@@ -314,20 +308,20 @@ type UserService(repo: UserRepo) {
 }
 
 test "mocks: an unstubbed method returns the type-default" {
-    val repo = mockUserRepo();
+    val repo = UserRepo.mock();
     assert repo.all().join(",") == "";
     assert repo.find(1) == "";
 }
 
 test "mocks: when(...).thenReturn stubs a return value" {
-    val repo = mockUserRepo();
+    val repo = UserRepo.mock();
     val _s = when(repo.all()).thenReturn(["ana", "bob"]);
     val svc = UserService(repo: repo);
     assert svc.list().join(",") == "ana,bob";
 }
 
 test "mocks: eq(v) stubs only the matching argument" {
-    val repo = mockUserRepo();
+    val repo = UserRepo.mock();
     val _s = when(repo.find(eq(7))).thenReturn("ana");
     val svc = UserService(repo: repo);
     assert svc.name(7) == "ana";
@@ -335,7 +329,7 @@ test "mocks: eq(v) stubs only the matching argument" {
 }
 
 test "mocks: anyInt() matches any argument" {
-    val repo = mockUserRepo();
+    val repo = UserRepo.mock();
     val _s = when(repo.find(anyInt())).thenReturn("x");
     val svc = UserService(repo: repo);
     assert svc.name(1) == "x";
@@ -343,7 +337,7 @@ test "mocks: anyInt() matches any argument" {
 }
 
 test "mocks: the last matching stub wins" {
-    val repo = mockUserRepo();
+    val repo = UserRepo.mock();
     val _a = when(repo.find(anyInt())).thenReturn("default");
     val _b = when(repo.find(eq(7))).thenReturn("seven");
     val svc = UserService(repo: repo);
@@ -352,7 +346,7 @@ test "mocks: the last matching stub wins" {
 }
 
 test "mocks: verify atLeastOnce / times / never" {
-    val repo = mockUserRepo();
+    val repo = UserRepo.mock();
     val _s = when(repo.find(eq(7))).thenReturn("ana");
     val svc = UserService(repo: repo);
     val _1 = svc.name(7);
@@ -364,7 +358,7 @@ test "mocks: verify atLeastOnce / times / never" {
 }
 
 test "mocks: thenThrow raises when the call is matched" {
-    val repo = mockUserRepo();
+    val repo = UserRepo.mock();
     val _s = when(repo.find(eq(0))).thenThrow("not found");
     val svc = UserService(repo: repo);
     // A non-matching call still answers the default rather than raising.
@@ -372,7 +366,7 @@ test "mocks: thenThrow raises when the call is matched" {
 }
 
 test "mocks: verify checks each matcher independently after different-arg calls" {
-    val repo = mockUserRepo();
+    val repo = UserRepo.mock();
     val _s = when(repo.find(anyInt())).thenReturn("x");
     val svc = UserService(repo: repo);
     val _1 = svc.name(7);
@@ -396,7 +390,7 @@ behavior Greeter {
 }
 
 test "mocks: anyString() matches any argument" {
-    val g = mockGreeter();
+    val g = Greeter.mock();
     val _s = when(g.greet(anyString())).thenReturn("hi");
     assert g.greet("ana") == "hi";
     assert g.greet("bob") == "hi";

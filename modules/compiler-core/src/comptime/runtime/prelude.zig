@@ -191,8 +191,25 @@ pub fn decoratorForms(b: Ast.Builder) Error![]const Ast.Form {
         try b.function("compilerError", &.{V("Message")}, &.{}, &.{
             try b.remote("erlang", "throw", &.{try b.tuple(&.{ fail_tag, V("Message"), A("null") })}),
         }),
+        // Every output of a decorator body is one tagged map on the same list
+        // (decision 216): `emit` (a loose top-level declaration), `addMember`
+        // (a member of the annotated type), `setMeta` (a comptime key/value)
+        // and `addType` (a type associated with the annotated one). The
+        // compiler reads the list back in call order (`decorator_eval.Reply`).
         try b.function("emit", &.{V("Source")}, &.{}, &.{
-            try b.remote("erlang", "put", &.{ key, try b.cons(&.{V("Source")}, try b.call("__bp_emitted", &.{})) }),
+            try b.call("__bp_contribute", &.{try b.map(&.{ Ast.field("kind", Ast.str("emit")), Ast.field("source", V("Source")) })}),
+        }),
+        try b.function("addMember", &.{ V("_Decl"), V("Source") }, &.{}, &.{
+            try b.call("__bp_contribute", &.{try b.map(&.{ Ast.field("kind", Ast.str("member")), Ast.field("source", V("Source")) })}),
+        }),
+        try b.function("setMeta", &.{ V("_Decl"), V("Key"), V("Value") }, &.{}, &.{
+            try b.call("__bp_contribute", &.{try b.map(&.{ Ast.field("kind", Ast.str("meta")), Ast.field("key", V("Key")), Ast.field("value", V("Value")) })}),
+        }),
+        try b.function("addType", &.{ V("_Decl"), V("Name"), V("Source") }, &.{}, &.{
+            try b.call("__bp_contribute", &.{try b.map(&.{ Ast.field("kind", Ast.str("assoc")), Ast.field("name", V("Name")), Ast.field("source", V("Source")) })}),
+        }),
+        try b.function("__bp_contribute", &.{V("Item")}, &.{}, &.{
+            try b.remote("erlang", "put", &.{ key, try b.cons(&.{V("Item")}, try b.call("__bp_emitted", &.{})) }),
             A("ok"),
         }),
         try b.function("__bp_emitted", &.{}, &.{}, &.{

@@ -1,0 +1,6 @@
+//// Decision 216 (2) — `@typeinfo` reflects a declaration of the program: a
+//// name nothing declares or imports is refused at the name.
+
+pub fn main() {
+    @print(@typeinfo(Nowhere).name);
+}

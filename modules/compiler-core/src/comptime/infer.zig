@@ -16,6 +16,7 @@ const envMod = @import("env.zig");
 const TypeError = @import("error.zig").TypeError;
 const errorMod = @import("error.zig");
 const diagnostics = @import("diagnostics.zig");
+const reflectionMod = @import("reflection.zig");
 const effectChain = @import("effect_chain.zig");
 const template = @import("template.zig");
 const primOpTemplate = @import("primOpTemplate.zig");
@@ -516,6 +517,10 @@ fn appendImportBindings(
 pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     var list: std.ArrayListUnmanaged(Binding) = .empty;
     env.testIndex = 0;
+    // Decision 216 (3): before this module's decorators run, `Owner.Name`
+    // may be an associated type they are about to declare.
+    try noteOwnDecls(env, program);
+    env.assocTypesPending = !env.skipDecoratorInvoke;
 
     try validateUniqueDefaults(env, program);
     try noteExplicitTypeNames(env, program);
@@ -540,9 +545,11 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     try refuseUnknownAnnotations(env, program);
     try validateExternalInline(env, program);
     try invokeDecorators(env, program);
-    if (env.contributions.items.len > 0) {
+    env.assocTypesPending = false;
+    if (env.contributions.items.len > 0 or env.memberContributions.items.len > 0 or env.typeContributions.items.len > 0 or env.typeinfoAllPending) {
         return list.toOwnedSlice(env.arena);
     }
+    try refusePendingAssocType(env);
 
     // Pass 2: infer value-producing declarations in order.
     for (program.decls) |decl| {
@@ -599,6 +606,10 @@ fn validateUniqueDefaults(env: *Env, program: ast.Program) InferError!void {
 pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBinding {
     var list: std.ArrayListUnmanaged(TypedBinding) = .empty;
     env.testIndex = 0;
+    // Decision 216 (3): before this module's decorators run, `Owner.Name`
+    // may be an associated type they are about to declare.
+    try noteOwnDecls(env, program);
+    env.assocTypesPending = !env.skipDecoratorInvoke;
 
     try validateUniqueDefaults(env, program);
     try noteExplicitTypeNames(env, program);
@@ -625,7 +636,8 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
     try refuseUnknownAnnotations(env, program);
     try validateExternalInline(env, program);
     try invokeDecorators(env, program);
-    if (env.contributions.items.len > 0) {
+    env.assocTypesPending = false;
+    if (env.contributions.items.len > 0 or env.memberContributions.items.len > 0 or env.typeContributions.items.len > 0 or env.typeinfoAllPending) {
         // A decorator `@emit`ed code: the spliced re-analysis (`analyzeSource`)
         // does the real, full inference of the generated declarations. But the
         // LSP needs a useful binding list even when that spliced code can't
@@ -661,6 +673,7 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
         };
         return list.toOwnedSlice(env.arena);
     }
+    try refusePendingAssocType(env);
 
     for (program.decls) |decl| {
         switch (decl) {
@@ -3734,17 +3747,33 @@ fn declTypeName(arena: std.mem.Allocator, tr: ast.TypeRef) std.mem.Allocator.Err
 }
 
 /// Run every body-carrying decorator applied to one declaration over its handle.
+/// `memberOwner` is the type a `decl.addMember` joins (decision 216): the
+/// annotated type itself, the type that owns an annotated field or method, and
+/// null for a function — which has no body a member could join.
 fn runDeclDecorators(
     env: *Env,
     ctx: envMod.TemplateEvalCtx,
     anns: []const ast.Annotation,
     handle: decoratorEval.DeclHandle,
+    memberOwner: ?[]const u8,
+    /// Set for a top-level declaration: what `@typeinfo.all` records of it.
+    declared: ?struct { kind: reflectionMod.DeclaredEntry.Kind, isPub: bool },
 ) InferError!void {
     for (anns) |a| {
         if (a.is_builtin) continue;
         const sig = env.decorators.get(a.name) orelse continue;
         const dfn = sig.fn_decl orelse continue; // bodyless `declare fn` marker
         if (dfn.body.len == 0) continue; // empty body — nothing to run
+        // Decision 216 (4) — the program's catalogue, in the order decorators run.
+        if (declared) |d| if (env.reflection) |r| try r.addDeclared(.{
+            .module = env.modulePath,
+            .name = handle.name,
+            .kind = d.kind,
+            .isPub = d.isPub,
+            .decorator_owner = env.comptimeOwnerOf(dfn),
+            .decorator_name = dfn.name,
+            .seq = 0,
+        });
 
         // A parameter the annotation leaves out takes its declared default,
         // written as the lexeme an annotation argument would be (arity was
@@ -3776,9 +3805,53 @@ fn runDeclDecorators(
             return decoratorError(env, a, "the decorator evaluator failed to run", "Decorator bodies run in a persistent `erl` process at compile time — check that `erl` and `erlc` are on PATH.");
         };
         switch (outcome) {
-            .ok => |contributions| {
+            .ok => |contributions| for (contributions) |c| switch (c.kind) {
                 // `@emit(...)` sources — spliced into the module by `analyzeModule`.
-                for (contributions) |src| try env.contributions.append(env.arena, src);
+                .emit => try env.contributions.append(env.arena, c.source),
+                // `decl.addMember(source)` — parsed into the owner's body by
+                // `analyzeSource` (decision 216 (1)).
+                .member => {
+                    const target = memberOwner orelse {
+                        const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` on the function `{s}` calls `decl.addMember`, and a member belongs to a type", .{ diagnostics.decorator_member_without_type, a.name, handle.name });
+                        return decoratorError(env, a, msg, "`decl.addMember(source)` adds to the annotated `type` or `behavior` (or to the type that owns an annotated field or method); a function has no body to add to.");
+                    };
+                    try env.memberContributions.append(env.arena, .{ .target = target, .source = c.source, .loc = a.loc, .decorator = a.name });
+                },
+                // `decl.addType(name, source)` (decision 216 (3)) — an
+                // associated type of the owner, merged as `__Owner__Name`.
+                .assoc => {
+                    const assoc_owner = memberOwner orelse {
+                        const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` on the function `{s}` calls `decl.addType`, and an associated type belongs to a type", .{ diagnostics.decorator_type_without_owner, a.name, handle.name });
+                        return decoratorError(env, a, msg, "`decl.addType(name, source)` declares a type named through the annotated `type` or `behavior` (`City.Columns`); a function has none.");
+                    };
+                    const valid = c.name.len > 0 and std.ascii.isUpper(c.name[0]) and for (c.name) |ch| {
+                        if (!std.ascii.isAlphanumeric(ch)) break false;
+                    } else true;
+                    if (!valid) {
+                        const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` names an associated type of `{s}` `{s}`, which is not a type name", .{ diagnostics.decorator_type_name, a.name, assoc_owner, c.name });
+                        return decoratorError(env, a, msg, "An associated type is named like any type: one identifier of letters and digits, starting upper-case (`Columns`, read `City.Columns`).");
+                    }
+                    if (env.reflection) |r| if (!try r.addAssoc(env.modulePath, assoc_owner, c.name)) {
+                        const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` declares `{s}.{s}`, and `{s}` already has an associated type `{s}`", .{ diagnostics.decorator_type_duplicate, a.name, assoc_owner, c.name, assoc_owner, c.name });
+                        return decoratorError(env, a, msg, "An owner's associated types have one name each; rename the one this decorator declares.");
+                    };
+                    try env.typeContributions.append(env.arena, .{ .owner = assoc_owner, .name = c.name, .source = c.source, .loc = a.loc, .decorator = a.name });
+                },
+                // `decl.setMeta(key, value)` (decision 216 (2)) — recorded in
+                // the session's reflection under the decorator's own name,
+                // before any body of this module is inferred.
+                .meta => {
+                    const is_member = std.mem.eql(u8, handle.kind, "Field") or std.mem.eql(u8, handle.kind, "Method");
+                    if (is_member) {
+                        const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` on the {s} `{s}` calls `decl.setMeta`, and meta describes a top-level declaration", .{ diagnostics.decorator_meta_on_member, a.name, if (std.mem.eql(u8, handle.kind, "Field")) "field" else "method", handle.name });
+                        return decoratorError(env, a, msg, "`@typeinfo(X)` reflects a `type`, a `behavior` or a `fn`; set the meta from a decorator on the declaration itself.");
+                    }
+                    const r = env.reflection orelse continue;
+                    if (!try r.addMeta(env.modulePath, handle.name, .{ .decorator = dfn.name, .key = c.key, .value = c.value })) {
+                        const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` sets `{s}` on `{s}` twice", .{ diagnostics.decorator_meta_duplicate, a.name, c.key, handle.name });
+                        return decoratorError(env, a, msg, "A decorator sets each of its keys once per declaration; `@typeinfo(X).meta` answers one value per key.");
+                    }
+                },
             },
             .fail => |fl| return decoratorError(env, a, fl.message, "raised by the decorator via `fail`/`failAt`"),
             .err => |m| return decoratorError(env, a, m, "the decorator could not be evaluated"),
@@ -3801,6 +3874,151 @@ fn decoratorError(env: *Env, a: ast.Annotation, message: []const u8, hint: []con
     return error.TypeError;
 }
 
+/// Decision 216 (3) — a dotted type name the first analysis accepted on
+/// credit (`Env.assocTypesPending`) and no decorator of the module declared:
+/// with no re-analysis to follow, it is the unknown type it looks like. Tooling
+/// that runs no decorator keeps it lenient.
+fn refusePendingAssocType(env: *Env) InferError!void {
+    const p = env.pendingAssocTypeName orelse return;
+    env.pendingAssocTypeName = null;
+    if (env.templateEval == null) return;
+    var e = TypeError.unknownTypeName(p.name);
+    if (p.loc) |l| e = e.withLoc(l);
+    env.lastError = e;
+    return error.TypeError;
+}
+
+/// The names `program` declares at top level (`Env.ownDecls`) — what
+/// `@typeinfo(Name)` reflects in this module.
+fn noteOwnDecls(env: *Env, program: ast.Program) InferError!void {
+    for (program.decls) |decl| {
+        const name: []const u8 = switch (decl) {
+            .@"fn" => |f| f.name,
+            .type_ => |t| t.name,
+            .behavior => |b| b.name,
+            .val => |v| v.name,
+            else => continue,
+        };
+        try env.ownDecls.put(env.arena, name, {});
+    }
+}
+
+/// The declaration `@typeinfo(<expr>)` reflects: the module that declares it
+/// and the name it is declared under. `Name` is this module's own declaration
+/// or an imported one (an alias answers the declaration, decision 110);
+/// `ns.Name` is `Name` of the module the namespace import `ns` binds.
+fn reflectedDecl(env: *Env, e: ast.Expr) ?struct { module: []const u8, name: []const u8 } {
+    if (e != .identifier) return null;
+    switch (e.identifier.kind) {
+        .ident => |n| {
+            if (env.ownDecls.contains(n)) return .{ .module = env.modulePath, .name = n };
+            if (env.importOwners.get(n)) |o| return .{ .module = o.owner, .name = o.name };
+            return null;
+        },
+        .identAccess => |ia| {
+            if (ia.receiver.* != .identifier or ia.receiver.identifier.kind != .ident) return null;
+            const path = env.namespaces.paths.get(ia.receiver.identifier.kind.ident) orelse return null;
+            return .{ .module = path, .name = ia.member };
+        },
+        else => return null,
+    }
+}
+
+/// A string as the source text of a string literal (`stringLit` keeps the
+/// escapes as written; every backend emits them).
+fn stringLiteralText(arena: std.mem.Allocator, text: []const u8) ![]const u8 {
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    for (text) |ch| switch (ch) {
+        '\\' => try out.appendSlice(arena, "\\\\"),
+        '"' => try out.appendSlice(arena, "\\\""),
+        '\n' => try out.appendSlice(arena, "\\n"),
+        '\t' => try out.appendSlice(arena, "\\t"),
+        '\r' => try out.appendSlice(arena, "\\r"),
+        else => try out.append(arena, ch),
+    };
+    return out.items;
+}
+
+/// Decision 216 (2) — a reflection read: `@typeinfo(X).name` and
+/// `@typeinfo(X).meta.<decorator>.<key>`, answered at compile time as a string
+/// constant (`env.srcRewrites` puts the literal in the read's place, the way
+/// `@src()` is spliced; `transform.zig` replaces the access node at its loc).
+/// Null when `ia` is not the end of such a read — a longer chain
+/// (`….table.length`) reaches the read as its receiver.
+fn inferTypeinfoRead(env: *Env, ia: anytype, loc: ast.Loc) InferError!?TypedExpr {
+    var members: [8][]const u8 = undefined;
+    var count: usize = 1;
+    members[0] = ia.member;
+    var node = ia.receiver;
+    while (node.* == .identifier and node.identifier.kind == .identAccess) {
+        if (count == members.len) return null;
+        members[count] = node.identifier.kind.identAccess.member;
+        count += 1;
+        node = node.identifier.kind.identAccess.receiver;
+    }
+    if (node.* != .call or node.call.kind != .call) return null;
+    const call = node.call.kind.call;
+    if (!call.is_builtin or !std.mem.eql(u8, call.callee, "typeinfo")) return null;
+    std.mem.reverse([]const u8, members[0..count]);
+    const chain = members[0..count];
+
+    const read: enum { name, meta } = if (std.mem.eql(u8, chain[0], "name")) .name else if (std.mem.eql(u8, chain[0], "meta")) .meta else {
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `@typeinfo(…)` has no member `{s}`", .{ diagnostics.typeinfo_unknown_member, chain[0] });
+        env.lastError = TypeError.custom(msg, "Read `.name` (the declaration's name) or `.meta.<decorator>.<key>` (what a decorator recorded with `decl.setMeta`).").withLoc(loc);
+        return error.TypeError;
+    };
+    const complete: usize = if (read == .name) 1 else 3;
+    if (chain.len > complete) return null;
+    if (chain.len < complete) {
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `@typeinfo(…).{s}` names a decorator's meta without its key", .{ diagnostics.typeinfo_unknown_member, std.mem.join(env.arena, ".", chain) catch return error.OutOfMemory });
+        env.lastError = TypeError.custom(msg, "A meta read is `.meta.<decorator>.<key>` — the decorator's own name, then the key it set.").withLoc(loc);
+        return error.TypeError;
+    }
+
+    if (call.args.len != 1 or call.trailing.len != 0) {
+        env.lastError = TypeError.custom(diagnostics.typeinfo_unknown_declaration ++ ": `@typeinfo` takes one declaration — `@typeinfo(City)`, `@typeinfo(models.City)`", null).withLoc(node.call.loc);
+        return error.TypeError;
+    }
+    const target = reflectedDecl(env, call.args[0].value.*) orelse {
+        const arg_loc = call.args[0].value.getLoc();
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `@typeinfo` reflects a declaration this module declares or imports, and this names none", .{diagnostics.typeinfo_unknown_declaration});
+        env.lastError = TypeError.custom(msg, "Name a `type`, `behavior` or `fn` of this module, an imported one, or one through a namespace import (`models.City`).").withLoc(arg_loc);
+        return error.TypeError;
+    };
+
+    const value: []const u8 = switch (read) {
+        .name => target.name,
+        .meta => value: {
+            const decorator = chain[1];
+            const key = chain[2];
+            const r = env.reflection orelse break :value "";
+            const entries = try r.metaOf(env.arena, target.module, target.name);
+            for (entries) |entry| {
+                if (std.mem.eql(u8, entry.decorator, decorator) and std.mem.eql(u8, entry.key, key)) break :value entry.value;
+            }
+            // Tooling that does not run decorators reads an empty constant
+            // rather than refuse what the build accepts.
+            if (env.templateEval == null) break :value "";
+            var set: std.ArrayListUnmanaged(u8) = .empty;
+            for (entries) |entry| {
+                if (set.items.len > 0) try set.appendSlice(env.arena, ", ");
+                try set.print(env.arena, "`{s}.{s}`", .{ entry.decorator, entry.key });
+            }
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` has no meta `{s}.{s}`; {s}", .{
+                diagnostics.typeinfo_meta_missing,                                                                                 target.name, decorator, key,
+                if (set.items.len == 0) "no decorator set any" else try std.fmt.allocPrint(env.arena, "it has {s}", .{set.items}),
+            });
+            env.lastError = TypeError.custom(msg, "A key is what the decorator passed to `decl.setMeta(key, value)`, read under the decorator's own name.").withLoc(loc);
+            return error.TypeError;
+        },
+    };
+
+    const rewrite = try env.arena.create(ast.Expr);
+    rewrite.* = .{ .literal = .{ .loc = loc, .kind = .{ .stringLit = try stringLiteralText(env.arena, value) } } };
+    try env.srcRewrites.put(loc, rewrite);
+    return try inferExprTyped(env, rewrite.*);
+}
+
 /// Walk `program` and run body-carrying decorators over every annotated
 /// declaration (and its methods). Mirrors `validateDecorators`' walk; runs after
 /// it (so arguments are already validated).
@@ -3818,7 +4036,7 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
                 .returnType = if (f.returnType) |rt| try declTypeName(env.arena, rt) else "",
                 .annotations = f.annotations,
             };
-            try runDeclDecorators(env, ctx, f.annotations, h);
+            try runDeclDecorators(env, ctx, f.annotations, h, null, .{ .kind = .function, .isPub = f.isPub });
         },
         .type_ => |tdecl| switch (tdecl.shape) {
             .record => {
@@ -3838,7 +4056,7 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
                     .returnType = "",
                     .annotations = tdecl.annotations,
                 };
-                try runDeclDecorators(env, ctx, tdecl.annotations, h);
+                try runDeclDecorators(env, ctx, tdecl.annotations, h, tdecl.name, .{ .kind = .type_, .isPub = tdecl.isPub });
                 for (tdecl.recordFields()) |fld| {
                     const fh = decoratorEval.DeclHandle{
                         .kind = "Field",
@@ -3848,7 +4066,7 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
                         .returnType = try declTypeName(env.arena, fld.typeRef),
                         .annotations = fld.annotations,
                     };
-                    try runDeclDecorators(env, ctx, fld.annotations, fh);
+                    try runDeclDecorators(env, ctx, fld.annotations, fh, tdecl.name, null);
                 }
                 for (tdecl.methods) |m| {
                     const mh = decoratorEval.DeclHandle{
@@ -3859,7 +4077,7 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
                         .returnType = if (m.returnType) |rt| try declTypeName(env.arena, rt) else "",
                         .annotations = m.annotations,
                     };
-                    try runDeclDecorators(env, ctx, m.annotations, mh);
+                    try runDeclDecorators(env, ctx, m.annotations, mh, tdecl.name, null);
                 }
             },
             .enum_ => {
@@ -3877,7 +4095,7 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
                     .returnType = "",
                     .annotations = tdecl.annotations,
                 };
-                try runDeclDecorators(env, ctx, tdecl.annotations, h);
+                try runDeclDecorators(env, ctx, tdecl.annotations, h, tdecl.name, .{ .kind = .type_, .isPub = tdecl.isPub });
                 for (tdecl.methods) |m| {
                     const mh = decoratorEval.DeclHandle{
                         .kind = "Method",
@@ -3887,7 +4105,7 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
                         .returnType = if (m.returnType) |rt| try declTypeName(env.arena, rt) else "",
                         .annotations = m.annotations,
                     };
-                    try runDeclDecorators(env, ctx, m.annotations, mh);
+                    try runDeclDecorators(env, ctx, m.annotations, mh, tdecl.name, null);
                 }
             },
         },
@@ -3911,7 +4129,7 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
                 .returnType = "",
                 .annotations = i.annotations,
             };
-            try runDeclDecorators(env, ctx, i.annotations, h);
+            try runDeclDecorators(env, ctx, i.annotations, h, i.name, .{ .kind = .behavior, .isPub = i.isPub });
             for (i.methods) |m| {
                 const mh = decoratorEval.DeclHandle{
                     .kind = "Method",
@@ -3921,7 +4139,7 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
                     .returnType = if (m.returnType) |rt| try declTypeName(env.arena, rt) else "",
                     .annotations = m.annotations,
                 };
-                try runDeclDecorators(env, ctx, m.annotations, mh);
+                try runDeclDecorators(env, ctx, m.annotations, mh, i.name, null);
             }
         },
         else => {},
@@ -6652,8 +6870,9 @@ const runtime_builtin_names = [_][]const u8{
 /// `inferBuiltinCallReturnType` and the intercepts in `inferCallExpr` included.
 /// Only read to suggest a spelling in `unknown-builtin`.
 const all_builtin_names = runtime_builtin_names ++ [_][]const u8{
-    "src",        "block",      "expr",  "code",       "typeInfo",      "TypeOf",
-    "makeRecord", "RecordKeys", "field", "getContext", "comptimeError",
+    "src",          "block",      "expr",  "code",       "typeInfo",      "TypeOf",
+    "makeRecord",   "RecordKeys", "field", "getContext", "comptimeError", "typeinfo",
+    "typeinfo.all",
 };
 
 fn isKnownBuiltinName(env: *Env, callee: []const u8) bool {
@@ -10086,6 +10305,8 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
             return error.TypeError;
         },
         .identAccess => |ia| {
+            // Decision 216 (2) — `@typeinfo(X).name`, `….meta.<d>.<k>`.
+            if (try inferTypeinfoRead(env, ia, loc)) |read| return read;
             // Decision 110 — `S.Red` for `import {Shape as S}` is `Shape.Red`.
             if (try importedTypeAliasReceiver(env, ia.receiver)) |recv| {
                 var direct = ident;
@@ -13444,6 +13665,25 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
             }
             // `@src()` (1.0.10-beta decision 73) — before the arguments are
             // inferred, so `@src(x)` reports the builtin's rule and not `x`.
+            if (call.is_builtin and std.mem.eql(u8, call.callee, "typeinfo.all")) {
+                // Decision 216 (4) — the answer `typeinfo_all.plan` built for
+                // this call; tooling that runs no decorator reads an empty one.
+                const answer = env.typeinfoAll.get(loc) orelse empty: {
+                    const node = try env.arena.create(ast.Expr);
+                    node.* = .{ .collection = .{ .loc = loc, .kind = .{ .arrayLit = .{ .elems = &.{} } } } };
+                    break :empty node;
+                };
+                env.usesDeclared = true;
+                try env.srcRewrites.put(loc, answer);
+                return inferExprTyped(env, answer.*);
+            }
+            if (call.is_builtin and std.mem.eql(u8, call.callee, "typeinfo")) {
+                env.lastError = TypeError.custom(
+                    diagnostics.typeinfo_without_member ++ ": `@typeinfo(…)` is read through a member, not used as a value",
+                    "Read `@typeinfo(X).name` or `@typeinfo(X).meta.<decorator>.<key>`; each is a string constant fixed at compile time.",
+                ).withLoc(loc);
+                return error.TypeError;
+            }
             if (call.is_builtin and std.mem.eql(u8, call.callee, "src")) {
                 return inferSrcBuiltin(env, call, loc);
             }

@@ -1,7 +1,7 @@
 //// validation — step 3: the constraint table, and what crosses.
 ////
 //// The table is the ONE thing serialized for a consumer that is not botopink.
-//// A botopink client does not need it: it imports `validate<TypeName>` and runs
+//// A botopink client does not need it: it imports the type, calls `validate()` and runs
 //// the identical predicate, which is the whole reason this front is a boundary
 //// front rather than a code generator.
 ////
@@ -40,17 +40,17 @@ pub fn expectedTable() -> string {
 }
 
 test "validation: the table names every constrained field, code and parameter" {
-    assert constraintsOfTableUserRequest() == expectedTable();
+    assert TableUserRequest.constraints() == expectedTable();
 }
 
 test "validation: the table names nothing else" {
-    assert constraintsOfTableUserRequest().contains("untouched") == false;
-    assert constraintsOfTableUserRequest().contains("value") == false;
-    assert constraintsOfTableUserRequest().contains("message") == false;
+    assert TableUserRequest.constraints().contains("untouched") == false;
+    assert TableUserRequest.constraints().contains("value") == false;
+    assert TableUserRequest.constraints().contains("message") == false;
 }
 
 test "validation: the table is byte-stable across calls" {
-    assert constraintsOfTableUserRequest() == constraintsOfTableUserRequest();
+    assert TableUserRequest.constraints() == TableUserRequest.constraints();
     assert constraintTableJson("X", "a|notBlank")
         == constraintTableJson("X", "a|notBlank");
 }

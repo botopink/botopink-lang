@@ -370,6 +370,73 @@ pub const type_alias_recursive: []const u8 = "type-alias-recursive";
 /// primitive's name): one name, one type.
 pub const type_alias_name_taken: []const u8 = "type-alias-name-taken";
 
+// ── decision 216 — what a decorator produces ───────────────────────────────
+
+/// `decl.addMember(source)` from a decorator on a `fn`: a member belongs to a
+/// type, and a function has no body to add it to.
+pub const decorator_member_without_type: []const u8 = "decorator-member-without-type";
+
+/// `decl.addMember` naming a member the type already has (written by hand or
+/// added by another decorator): a decorator adds, it never replaces.
+pub const decorator_member_duplicate: []const u8 = "decorator-member-duplicate";
+
+/// `decl.addMember(source)` whose source is not exactly one `fn` member.
+pub const decorator_member_not_one_fn: []const u8 = "decorator-member-not-one-fn";
+
+/// `decl.addType` from a decorator on a `fn`: an associated type belongs to a type.
+pub const decorator_type_without_owner: []const u8 = "decorator-type-without-owner";
+
+/// `decl.addType` with a name that is not one upper-case identifier.
+pub const decorator_type_name: []const u8 = "decorator-type-name";
+
+/// A second associated type of one name on one owner, or a name the owner
+/// already answers (a variant, a member) or the module already declares.
+pub const decorator_type_duplicate: []const u8 = "decorator-type-duplicate";
+
+/// `decl.addType(name, source)` whose source is not the shape of one type.
+pub const decorator_type_not_one_type: []const u8 = "decorator-type-not-one-type";
+
+/// `@typeinfo.all` written without its labels, with an unknown one, or with
+/// `member:` where it does not apply.
+pub const typeinfo_all_arguments: []const u8 = "typeinfo-all-arguments";
+
+/// `@typeinfo.all(with: x)` where `x` names no body-carrying decorator.
+pub const typeinfo_all_not_decorator: []const u8 = "typeinfo-all-not-decorator";
+
+/// One query over a decorator carried by functions and by types.
+pub const typeinfo_all_mixed: []const u8 = "typeinfo-all-mixed";
+
+/// A query over types without `member:` — a type is no value.
+pub const typeinfo_all_needs_member: []const u8 = "typeinfo-all-needs-member";
+
+/// A declaration the query answers that is not `pub` (it is reached through
+/// an import the answer adds).
+pub const typeinfo_all_private: []const u8 = "typeinfo-all-private";
+
+/// An import of a module that reads `@typeinfo.all`.
+pub const typeinfo_all_imported: []const u8 = "typeinfo-all-imported";
+
+/// `decl.setMeta` from a field's or a method's decorator: meta describes a
+/// top-level declaration, the one `@typeinfo` reflects.
+pub const decorator_meta_on_member: []const u8 = "decorator-meta-on-member";
+
+/// A decorator setting one of its keys twice on one declaration.
+pub const decorator_meta_duplicate: []const u8 = "decorator-meta-duplicate";
+
+/// `@typeinfo(X)` used as a value: it is read through `.name` or
+/// `.meta.<decorator>.<key>`.
+pub const typeinfo_without_member: []const u8 = "typeinfo-without-member";
+
+/// `@typeinfo(X).<m>` naming no reflection member (or `.meta` / `.meta.<d>`
+/// left without its key).
+pub const typeinfo_unknown_member: []const u8 = "typeinfo-unknown-member";
+
+/// `@typeinfo(X)` where `X` names no declaration of the module or its imports.
+pub const typeinfo_unknown_declaration: []const u8 = "typeinfo-unknown-declaration";
+
+/// `@typeinfo(X).meta.<decorator>.<key>` naming a key that decorator did not set.
+pub const typeinfo_meta_missing: []const u8 = "typeinfo-meta-missing";
+
 // ── Lookup table — every code (skipping aliases & reserved-empties) ─────────
 
 pub const all_codes = [_][]const u8{
@@ -438,6 +505,25 @@ pub const all_codes = [_][]const u8{
     captured_var_write,
     inline_type_position,
     behavior_member_redeclared,
+    decorator_member_without_type,
+    decorator_member_duplicate,
+    decorator_member_not_one_fn,
+    decorator_type_without_owner,
+    decorator_type_name,
+    decorator_type_duplicate,
+    decorator_type_not_one_type,
+    typeinfo_all_arguments,
+    typeinfo_all_not_decorator,
+    typeinfo_all_mixed,
+    typeinfo_all_needs_member,
+    typeinfo_all_private,
+    typeinfo_all_imported,
+    decorator_meta_on_member,
+    decorator_meta_duplicate,
+    typeinfo_without_member,
+    typeinfo_unknown_member,
+    typeinfo_unknown_declaration,
+    typeinfo_meta_missing,
 };
 
 test "every reserved code has a stable, non-empty spelling" {

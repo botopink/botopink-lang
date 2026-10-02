@@ -596,4 +596,55 @@ pub behavior Decl {
 
     fn fail(self: Self, message: string);
     fn failAt(self: Self, span: Span, message: string);
+
+    // Decision 216 (1) — give the annotated type a member, written as it would
+    // be in the type's body: one `fn`, an associated fn or a method
+    // (`decl.addMember("pub fn fromRow(r: Row) -> Self { … }")`). It is
+    // ordinary run-time code of the type and travels with it to every
+    // importer. From a field's or a method's decorator it joins the type that
+    // owns the field or method; from a function's it is refused
+    // (`decorator-member-without-type`), and so is a name the type already
+    // has (`decorator-member-duplicate`) or a source that is not one `fn`
+    // (`decorator-member-not-one-fn`).
+    fn addMember(self: Self, source: string);
+
+    // Decision 216 (2) — record a comptime fact about the annotated
+    // declaration, under this decorator's own name: `decl.setMeta("table",
+    // "cities")` in `#[entity]` is read anywhere the declaration is reached as
+    // `@typeinfo(City).meta.entity.table`, a string constant. It never becomes
+    // run-time code. Set from a `type`'s, a `behavior`'s or a `fn`'s
+    // decorator (a field's or a method's is `decorator-meta-on-member`), each
+    // key once (`decorator-meta-duplicate`).
+    fn setMeta(self: Self, key: string, value: string);
+
+    // Decision 216 (3) — declare a type that belongs to the annotated one,
+    // named through it: `decl.addType("Columns", "(id: string)")` on `City`
+    // is `City.Columns` — written in type positions, constructed as
+    // `City.Columns(id: "x")`, its variants reached as `City.Size.Large` for
+    // an enum shape (`"{ Small, Large }"`) — and imported with its owner.
+    // `source` is the shape as it follows the name in a declaration. From a
+    // field's or a method's decorator it belongs to the owning type; from a
+    // function's it is refused (`decorator-type-without-owner`), as are a
+    // name that is not a type name (`decorator-type-name`), one the owner
+    // already answers (`decorator-type-duplicate`) and a source that is not
+    // the shape of one type (`decorator-type-not-one-type`).
+    fn addType(self: Self, name: string, source: string);
 }
+
+// Decision 216 (4) — what `@typeinfo.all(with: d)` answers: one `Declared`
+// per declaration of the program carrying the decorator `d`, by module path
+// then declaration order. `meta` is what `d` set on it (`decl.setMeta`);
+// `value` is the function itself, or for a type a thunk calling the
+// associated fn the query names (`@typeinfo.all(with: d, member: "m")`).
+// The compiler's mirror is `comptime.zig` `decl_reflection_src`.
+pub type DeclaredMeta(
+    key: string,
+    value: string,
+)
+
+pub type Declared<T>(
+    name: string,
+    module: string,
+    meta: DeclaredMeta[],
+    value: T,
+)

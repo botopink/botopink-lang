@@ -1954,6 +1954,83 @@ answers the declaration — its own name and its `<package>@<path>@@<Decl>`
 identity, never the alias — which is what hover and go-to-definition inside
 the literal follow.
 
+### Decorators
+
+A decorator is a function whose first parameter is `comptime decl: @Decl`;
+`#[name(args)]` runs it at compile time over the declaration it annotates, the
+annotation's arguments after the handle. `decl` reflects the declaration
+(`kind`, `name`, `fields`, `variants`, `methods`, `returnType`,
+`annotations`), `decl.fail(message)` refuses it at the annotation, and what
+the decorator produces goes to one of four places (decision 216):
+
+| Place | Written | Read |
+|---|---|---|
+| a member of the annotated type | `decl.addMember("pub fn table() -> string { … }")` | `City.table()`, `c.describe()` — run-time code of the type, imported with it |
+| comptime meta, per decorator | `decl.setMeta("table", "cities")` | `@typeinfo(City).meta.entity.table` — a string constant, never run-time code |
+| an associated type | `decl.addType("Columns", "(name: string)")` | `City.Columns` in a type position, `City.Columns(name: "n")`, imported with its owner |
+| the program's catalogue | (every declaration a decorator runs over) | `@typeinfo.all(with: entity)` at an entry point |
+
+A member or an associated type from a field's or a method's decorator belongs
+to the type that owns it; a function has none (`decorator-member-without-type`,
+`decorator-type-without-owner`). A decorator adds and never replaces: a name
+the type already has is `decorator-member-duplicate` / `decorator-type-duplicate`.
+Meta describes a top-level declaration — a `type`, a `behavior` or a `fn` — and
+each key is set once (`decorator-meta-duplicate`); a read naming a key the
+decorator did not set is `typeinfo-meta-missing`.
+
+```botopink
+fn entity(comptime decl: @Decl, table: string) {
+    var cols: string[] = [];
+    decl.fields.forEach({ f -> cols.push(f.name + ": string") });
+    decl.setMeta("table", table);
+    decl.addMember("pub fn table() -> string { return \"" + table + "\"; }");
+    decl.addType("Columns", "(" + cols.join(", ") + ")");
+}
+
+#[entity("cities")]
+type City(name: string, people: i32)
+
+fn header(c: City.Columns) -> string {
+    return c.name + "|" + c.people;
+}
+
+fn main() {
+    @print(City.table());                          // cities
+    @print(@typeinfo(City).meta.entity.table);     // cities
+    @print(@typeinfo(City).name);                  // City
+    @print(header(City.Columns(name: "n", people: "p")));   // n|p
+}
+```
+
+`@typeinfo.all(with: d)` answers every declaration of the program that carries
+`d`, so an entry point builds its catalogue explicitly — no module registers
+itself when it loads. Each entry is a `Declared<T>(name, module, meta, value)`:
+`meta` is what `d` set on it, `value` the function itself, or for a type a thunk
+calling the associated fn named by `member:`
+(`@typeinfo.all(with: component, member: "register")`). It sees every module of
+the build — the package, its dependencies, std — in module-path order, then
+declaration order, and the reading module's own declarations; a module that
+reads it is imported by nobody (`typeinfo-all-imported`), and every declaration
+it answers from another module is `pub` (`typeinfo-all-private`).
+
+```botopink
+fn route(comptime decl: @Decl, path: string) {
+    decl.setMeta("path", path);
+}
+
+#[route("/about")]
+pub fn about() -> string {
+    return "about us";
+}
+
+fn main() {
+    for (@typeinfo.all(with: route)) { r ->
+        val page: fn() -> string = r.value;
+        @print(r.name + " " + page());             // about about us
+    }
+}
+```
+
 ### Host bindings
 
 ```botopink
@@ -2111,7 +2188,7 @@ fn greet() {
 fn notReady() -> i32 { @todo(); }
 ```
 
-Other builtins (`@panic`, `@field`, `@emit`, …) are declared in
+Other builtins (`@panic`, `@field`, `@typeinfo`, …) are declared in
 `libs/std/src/builtins.d.bp` and `libs/std/src/builtins_fns.d.bp`. Builtin
 names are exact: an unrecognised `@name(…)` is `error[unknown-builtin]`
 (with the nearest name when one is an edit away), never a silent `void`.
@@ -2295,15 +2372,15 @@ test "repo: eq(v) stubs only the matching argument" {
 ```
 
 `#[mocks.mock]` writes that double for you — it reflects the annotated
-`behavior`'s methods through `@Decl` and `@emit`s the type plus a
-`mock<Name>()` factory. A std module's decorators come with its namespace
+`behavior`'s methods through `@Decl` and gives the behavior the associated
+type `<Name>.Mock` and the factory `<Name>.mock()` (§ Decorators). A std module's decorators come with its namespace
 import, under the handle it binds: `import {testing.mocks}` makes `mock`
 the annotation `#[mocks.mock]` (an alias `as m` makes it `#[m.mock]`), and the
-code it emits reaches the runtime through that same handle (`mocks.invoke(…)`).
+code it adds reaches the runtime through that same handle (`mocks.invoke(…)`).
 A name through the handle that is not one of the module's decorators is
 `error[unknown-annotation]`, and a decorator imported as a leaf
 (`import {testing.mocks.mock}`) is `error[std-decorator-leaf-import]`: the code
-it emits would have no handle to name the runtime by.
+it adds would have no handle to name the runtime by.
 
 ```botopink
 import {testing.mocks} from "std";
@@ -2314,7 +2391,7 @@ behavior OrderRepo {
 }
 
 test "orders: the synthesized double answers its stub" {
-    val repo = mockOrderRepo();
+    val repo = OrderRepo.mock();
     val _s = mocks.when(repo.total(mocks.eq(3))).thenReturn(30);
     assert repo.total(3) == 30;
     assert repo.total(4) == 0;
@@ -2424,6 +2501,7 @@ closes it, or says that it has none yet. Every row below was re-derived by
 
 | Rule | Today | Closes with |
 |---|---|---|
+| A decorator's output goes to one of the four places of § Decorators; **module-level `@emit` is gone** (decision 216), refused by name with the four places in its message | `@emit(source)` still compiles, splicing loose declarations into the module: the libraries' sites move to the four places first | `01-compiler/130-decorator-outputs` steps 5–6 |
 | A block-shaped statement ends itself: **no** `;` after the closing brace of an `if`, a loop or a `case` in statement position | the `;` is **optional** there: the parser accepts both, `botopink format` prints none, and the compiler's own trees are migrated — a library or a `tests/language` cell that still writes it compiles | 1.0.10-beta C-13, in decision 132's order: each library drops the `;` (`botopink format`), then `tests/language`, then the parser refuses it (`blockStatementSemicolon`) |
 
 A row leaves this table when the compiler accepts the form, and the form is then

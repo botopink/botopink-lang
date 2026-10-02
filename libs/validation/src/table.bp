@@ -1,18 +1,18 @@
 //// validation — the constraint table, and what crosses. Moved from rakun
 //// front 14's validation member (decision 116 rule 5).
 ////
-//// `constraintsOf<TypeName>()` answers a JSON description of the record's
+//// `T.constraints()` answers a JSON description of the record's
 //// constraints. It is the ONE thing that is serialized for a consumer that is
 //// not botopink; a consumer that IS botopink gets the module instead and runs
-//// `validate<TypeName>` itself, which is why this front is a boundary front
+//// `t.validate()` itself, which is why this front is a boundary front
 //// rather than a code generator.
 ////
 //// THIS FILE IMPORTS ONLY std's `json` WRITER, AND SO DOES `report`. A client
 //// bundle obtains the table without importing anything that reaches a socket
 //// or the filesystem; a dependency on anything else here would be that import.
 ////
-//// WHY A BLOB AND NOT JSON IN THE DECORATOR. `#[validated]` `@emit`s
-//// `constraintsOf<Name>()` as a call to `constraintTableJson(name, blob)`
+//// WHY A BLOB AND NOT JSON IN THE DECORATOR. `#[validated]` adds
+//// `constraints()` as a call to `constraintTableJson(name, blob)`
 //// rather than as a JSON string literal. A decorator body that wrote the JSON
 //// itself would be writing a string literal INTO source — two levels of
 //// escaping — and the grammar would then live in a comptime body no test can

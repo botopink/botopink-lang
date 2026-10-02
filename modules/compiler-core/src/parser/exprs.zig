@@ -1294,7 +1294,16 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
     // Distinguish by checking for named arguments (field: value pattern).
     if (this.check(.builtinIdent)) {
         const nameTok = this.advance();
-        const callee = nameTok.lexeme[1..]; // Remove @ prefix
+        var callee: []const u8 = nameTok.lexeme[1..]; // Remove @ prefix
+        // Decision 216 (4) — `@typeinfo.all(with: d)`: the reflection
+        // builtin's one member call is the builtin `typeinfo.all`.
+        if (std.mem.eql(u8, callee, "typeinfo") and this.check(.dot) and
+            this.peekAt(1).kind == .identifier and this.peekAt(2).kind == .leftParenthesis)
+        {
+            _ = this.advance();
+            const member = this.advance();
+            callee = try std.fmt.allocPrint(alloc, "typeinfo.{s}", .{member.lexeme});
+        }
 
         // Check for @name{ ... } syntax (trailing lambda with no args)
         if (this.check(.leftBrace)) {
@@ -1311,7 +1320,9 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         if (this.check(.leftParenthesis)) {
             const savedPos = this.current;
             _ = this.advance(); // consume (
-            const isInterfaceLit = this.check(.identifier) and this.peekAt(1).kind == .colon;
+            // `@typeinfo.all(with: d)` is a call with labelled arguments.
+            const isInterfaceLit = this.check(.identifier) and this.peekAt(1).kind == .colon and
+                !std.mem.eql(u8, callee, "typeinfo.all");
             this.current = savedPos; // restore position
 
             if (isInterfaceLit) {
@@ -1361,7 +1372,7 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         // decision 73 — `@src()` answers a record whose fields are read
         // in place). Before this the chain was a parse error, so no program
         // that compiled changes.
-        const call = makeCall(nameTok, null, nameTok.lexeme[1..], true, args, trailing);
+        const call = makeCall(nameTok, null, callee, true, args, trailing);
         return parsePostfixChain(this, alloc, call);
     }
 

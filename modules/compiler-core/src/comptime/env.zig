@@ -4,6 +4,7 @@
 /// ArenaAllocator and frees it after type-checking is complete.
 const std = @import("std");
 const ast = @import("../ast.zig");
+const reflectionMod = @import("reflection.zig");
 const T = @import("./types.zig");
 const template = @import("./template.zig");
 const trace = @import("./trace.zig");
@@ -228,6 +229,9 @@ pub const TemplateOp = enum { value, text, parts, source, context, lookup, bindi
 pub const NamespaceImports = struct {
     /// Bound name → the imported module's exports.
     modules: std.StringHashMapUnmanaged(std.StringHashMap(*T.Type)) = .empty,
+    /// Bound name → the imported module's path (`@typeinfo(models.City)`
+    /// reflects `City` of that module — decision 216).
+    paths: std.StringHashMapUnmanaged([]const u8) = .empty,
     /// Call loc → the namespace and the function it calls.
     calls: std.AutoHashMapUnmanaged(ast.Loc, Call) = .empty,
     /// `"<namespace>\x00<function>"` → the function's parameters as written
@@ -427,6 +431,42 @@ pub const SequenceKind = enum { iterator, stream };
 /// `pub fn d(comptime _: @Decl) { … }`. It is run over the annotated declaration
 /// at comptime (P2: placement/argument rules live in the body). `null` for a
 /// bodyless `declare fn` marker, which only gets argument validation.
+/// One member a decorator body added to a type (`decl.addMember`, decision 216).
+pub const MemberContribution = struct {
+    /// The type the member joins — its name in this module.
+    target: []const u8,
+    /// The member's botopink source, as the body wrote it.
+    source: []const u8,
+    /// The annotation that ran the decorator: every refusal about the member
+    /// is located here.
+    loc: ?ast.Loc,
+    /// The decorator as the annotation spells it (`entity`, `mocks.mock`).
+    decorator: []const u8,
+};
+
+/// One associated type a decorator body declared (`decl.addType`, decision 216).
+pub const TypeContribution = struct {
+    /// The owner — the annotated type, or the type owning the annotated member.
+    owner: []const u8,
+    /// The associated type's own name (`Columns` in `City.Columns`).
+    name: []const u8,
+    /// Its shape, as it follows the name in a declaration (`(id: string)`).
+    source: []const u8,
+    loc: ?ast.Loc,
+    decorator: []const u8,
+};
+
+/// The top-level name an associated type is declared under: `City.Columns`
+/// is `City__Columns`. Not an enum section's `__Token__Text`: the backends
+/// read that mangling as "a section of the enum `Token`" and take the outer
+/// enum's module for the value's tag (`erlang.zig` `typeOwnerPath`), which an
+/// associated type of a `behavior` does not have. A module declaring the
+/// mangled name itself is refused where the type is added
+/// (`decorator-type-duplicate`).
+pub fn assocTypeName(arena: std.mem.Allocator, owner: []const u8, name: []const u8) ![]const u8 {
+    return std.fmt.allocPrint(arena, "{s}__{s}", .{ owner, name });
+}
+
 pub const DecoratorSig = struct {
     params: []const ast.Param,
     fn_decl: ?ast.FnDecl = null,
@@ -875,6 +915,38 @@ pub const Env = struct {
     /// and re-analyzes it (a wiring decorator builds singletons / DI / router as
     /// ordinary code). Allocated in `arena`; no explicit deinit needed.
     contributions: std.ArrayListUnmanaged([]const u8) = .empty,
+    /// Decision 216 (1) — the members decorator bodies gave the types of this
+    /// module (`decl.addMember(source)`), in call order. `analyzeSource`
+    /// parses each into the target type's body and re-analyzes the module, as
+    /// it does with `contributions`. Allocated in `arena`.
+    memberContributions: std.ArrayListUnmanaged(MemberContribution) = .empty,
+    /// Decision 216 (3) — the associated types decorator bodies declared
+    /// (`decl.addType(name, source)`), in call order; merged as top-level
+    /// types named `__<Owner>__<Name>` before the re-analysis.
+    typeContributions: std.ArrayListUnmanaged(TypeContribution) = .empty,
+    /// Decision 216 (3) — set on the first analysis of a module whose
+    /// decorators have not run yet: a dotted type name `Owner.Name` whose
+    /// owner is a type is accepted unresolved (`resolveTypeName`), since the
+    /// owner's decorators may still declare it; the first one taken is kept
+    /// here and refused if no pass-2 re-analysis follows.
+    assocTypesPending: bool = false,
+    pendingAssocTypeName: ?struct { name: []const u8, loc: ?ast.Loc } = null,
+    /// Decision 216 — the compile session's reflection (`reflection.zig`):
+    /// where a decorator's `decl.setMeta` is recorded and `@typeinfo` reads.
+    /// Null outside a session (unit helpers that infer one program alone).
+    reflection: ?*reflectionMod.Reflection = null,
+    /// Decision 216 (4) — the module reads `@typeinfo.all`: its first
+    /// analysis stops before bodies, and the re-analysis receives the answers.
+    typeinfoAllPending: bool = false,
+    /// Call loc → the `Declared<T>` array answering that `@typeinfo.all`
+    /// (`typeinfo_all.plan`), spliced through `srcRewrites`.
+    typeinfoAll: std.AutoHashMapUnmanaged(ast.Loc, *const ast.Expr) = .empty,
+    /// The module names the prelude records `Declared` / `DeclaredMeta`, so
+    /// `comptime.zig` splices their declarations in (`withDeclaredDecls`).
+    usesDeclared: bool = false,
+    /// The names this module declares at top level (types, behaviors, fns,
+    /// vals) — what `@typeinfo(Name)` reflects when no import binds `Name`.
+    ownDecls: std.StringHashMapUnmanaged(void) = .empty,
     /// Erlang sent to and replies received from the `erl` runtime by every
     /// decorator / template evaluation in this module, in order (snapshots).
     /// Allocated in `arena`.
@@ -1689,6 +1761,16 @@ pub const Env = struct {
         if (std.mem.indexOfScalar(u8, name, '.') != null) {
             const mangled = try self.mangleSectionPath(name);
             if (self.typeDefs.get(mangled)) |_| return self.namedType(mangled);
+            // Decision 216 (3) — `Owner.Name` before the owner's decorators
+            // ran: accepted for now, decided by the re-analysis (or refused
+            // after the decorators, when none follows).
+            if (self.assocTypesPending) {
+                const head = name[0..std.mem.indexOfScalar(u8, name, '.').?];
+                if (self.ownDecls.contains(head) or self.lookupTypeDef(head) != null) {
+                    if (self.pendingAssocTypeName == null) self.pendingAssocTypeName = .{ .name = name, .loc = self.typeRefLoc };
+                    return self.freshVar();
+                }
+            }
             const e = @import("error.zig").TypeError.unknownTypeName(name);
             self.lastError = if (self.typeRefLoc) |l| e.withLoc(l) else e;
             return error.TypeError;

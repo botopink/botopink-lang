@@ -1,0 +1,12 @@
+//// The owners. Their associated types are declared here by the decorators
+//// and travel with them.
+
+import {entity, double} from "kit";
+
+#[entity]
+pub type City(name: string, people: i32)
+
+#[double]
+pub behavior Greeter {
+    fn greet(self: Self) -> string;
+}

@@ -2392,7 +2392,7 @@ const Emitter = struct {
             .ctor = ctor,
             .members = try members.toOwnedSlice(self.arena()),
         } };
-        const marker = try self.protoName(r.name, r.name);
+        const marker = try self.protoName(r.name, r.printedName());
         if (!r.isPub) return self.b.group(&.{ class, marker });
         return self.b.group(&.{ class, marker, try self.pubExport(r.name) });
     }
@@ -2615,7 +2615,7 @@ const Emitter = struct {
         } });
         // Only the base class is marked: every variant inherits `__bp` and
         // adds its own `tag`, which is how the formatter spells `Shape.Square`.
-        try out.append(self.arena(), try self.protoName(e.name, e.name));
+        try out.append(self.arena(), try self.protoName(e.name, e.printedName()));
         for (tail.items) |st| try out.append(self.arena(), st);
         if (e.isPub) try out.append(self.arena(), try self.pubExport(e.name));
         return self.b.group(try out.toOwnedSlice(self.arena()));

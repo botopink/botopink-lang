@@ -1,0 +1,9 @@
+//// A module that reads the whole program.
+
+import {tagged} from "marks";
+
+pub fn names() -> string {
+    var out: string[] = [];
+    @typeinfo.all(with: tagged).forEach({ e -> out.push(e.name) });
+    return out.join(",");
+}

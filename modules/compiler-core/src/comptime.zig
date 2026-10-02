@@ -24,6 +24,9 @@ const T = @import("./comptime/types.zig");
 const Module = @import("./module.zig").Module;
 const validation = @import("./comptime/error.zig");
 const diagnostics = @import("./comptime/diagnostics.zig");
+const reflectionMod = @import("./comptime/reflection.zig");
+const assocTypes = @import("./comptime/assoc_types.zig");
+const typeinfoAll = @import("./comptime/typeinfo_all.zig");
 const hostRuntime = @import("./comptime/runtime/runtime.zig");
 
 // ── Re-exports for external consumers ────────────────────────────────────────
@@ -383,6 +386,32 @@ fn withSourceLocationDecl(arena: std.mem.Allocator, prog: ast.Program, env: *con
     return ast.Program{ .decls = new_decls };
 }
 
+/// Decision 216 (4) — the prelude records `@typeinfo.all` answers with
+/// (`Declared<T>`, `DeclaredMeta`), spliced into a module that names them the
+/// way `withSourceLocationDecl` splices `SourceLocation`: private, per module.
+fn withDeclaredDecls(arena: std.mem.Allocator, prog: ast.Program, env: *const envMod.Env) !ast.Program {
+    if (!env.usesDeclared) return prog;
+    for (prog.decls) |d| switch (d) {
+        .type_ => |t| if (std.mem.eql(u8, t.name, "Declared") or std.mem.eql(u8, t.name, "DeclaredMeta")) return prog,
+        else => {},
+    };
+    var lx = Lexer.init(declared_decl_src);
+    const tokens = try lx.scanAll(arena);
+    var p = Parser.init(tokens);
+    const decl_prog = try p.parse(arena);
+    const new_decls = try arena.alloc(ast.DeclKind, decl_prog.decls.len + prog.decls.len);
+    @memcpy(new_decls[0..decl_prog.decls.len], decl_prog.decls);
+    @memcpy(new_decls[decl_prog.decls.len..], prog.decls);
+    return ast.Program{ .decls = new_decls };
+}
+
+/// The declarations `withDeclaredDecls` splices — the `decl_reflection_src`
+/// entries, private. Keep the two in sync.
+const declared_decl_src =
+    \\type DeclaredMeta(key: string, value: string)
+    \\type Declared<T>(name: string, module: string, meta: DeclaredMeta[], value: T)
+;
+
 /// The declaration `withSourceLocationDecl` splices: private (the record is
 /// per-module — only its fields matter, never its identity), the same four
 /// fields as the `decl_reflection_src` entry. Keep the two in sync.
@@ -512,8 +541,9 @@ fn analyzeModule(
     templateEvalCtx: ?envMod.TemplateEvalCtx,
     types_only: bool,
     target_name: ?[]const u8,
+    reflection: *reflectionMod.Reflection,
 ) !AnalysisResult {
-    return analyzeSource(arena, mod, mod.source, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, types_only, false, target_name);
+    return analyzeSource(arena, mod, mod.source, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, types_only, false, target_name, reflection);
 }
 
 /// Append decorator `@emit(...)` contributions to a module's source as extra
@@ -573,6 +603,294 @@ fn parseAndMergeContributions(
     return ast.Program{ .decls = try merged.toOwnedSlice(arena) };
 }
 
+/// What `mergeMembers` answers: the program with every member in its type's
+/// body, or the refusal of the first member that cannot join it.
+const MemberMerge = union(enum) {
+    ok: ast.Program,
+    refused: validation.TypeError,
+};
+
+/// Decision 216 (1) — every `decl.addMember(source)` of pass 1, parsed as one
+/// member of its target type's body and appended to it, as if the type had
+/// been written with it. The member's tokens are placed after the module's own
+/// lines and after every `@emit` contribution (`first_line`, `first_offset`),
+/// so no two lowerings share a location (`parseAndMergeContributions`).
+///
+/// Refused at the annotation that ran the decorator: a source that is not
+/// exactly one `fn` (`decorator-member-not-one-fn`) and a name the type already
+/// has — a field, a variant, a member written by hand or added before
+/// (`decorator-member-duplicate`). A decorator adds; it never replaces.
+fn mergeMembers(
+    arena: std.mem.Allocator,
+    original: ast.Program,
+    members: []const envMod.MemberContribution,
+    first_line: usize,
+    first_offset: usize,
+) !MemberMerge {
+    const decls = try arena.dupe(ast.DeclKind, original.decls);
+    var line_shift = first_line;
+    var offset_shift = first_offset;
+    for (members) |m| {
+        const target_index = for (decls, 0..) |d, i| switch (d) {
+            .type_ => |t| if (std.mem.eql(u8, t.name, m.target)) break i,
+            .behavior => |b| if (std.mem.eql(u8, b.name, m.target)) break i,
+            else => {},
+        } else return error.MemberTargetMissing;
+        const is_behavior = decls[target_index] == .behavior;
+        const prefix = if (is_behavior) "behavior __bp_member {\n" else "type __bp_member() {\n";
+        const text = try std.fmt.allocPrint(arena, "{s}{s}\n}}", .{ prefix, m.source });
+
+        const refuse = struct {
+            fn at(a: std.mem.Allocator, mc: envMod.MemberContribution, comptime fmt: []const u8, args: anytype, hint: []const u8) !MemberMerge {
+                var e = validation.TypeError.custom(try std.fmt.allocPrint(a, fmt, args), hint);
+                if (mc.loc) |l| e = e.withLoc(l);
+                return .{ .refused = e };
+            }
+        }.at;
+        const not_one = "`decl.addMember(source)` takes one member: a single `fn` (an associated fn, or a method whose first parameter is `self: Self`) written as it would be in the type's body.";
+
+        const method: ast.BehaviorMethod = parsed: {
+            var lexer = Lexer.init(text);
+            const tokens = try arena.dupe(Token, lexer.scanAll(arena) catch
+                return refuse(arena, m, "{s}: `#[{s}]` added a member to `{s}` that does not lex: `{s}`", .{ diagnostics.decorator_member_not_one_fn, m.decorator, m.target, m.source }, not_one));
+            for (tokens) |*t| {
+                t.line += line_shift - 1;
+                t.offset = (t.offset + offset_shift) -| prefix.len;
+            }
+            var parser = Parser.init(tokens);
+            const program = parser.parse(arena) catch
+                return refuse(arena, m, "{s}: `#[{s}]` added a member to `{s}` that is not one `fn`: `{s}`", .{ diagnostics.decorator_member_not_one_fn, m.decorator, m.target, m.source }, not_one);
+            const methods: []const ast.BehaviorMethod, const extra: bool = if (program.decls.len != 1) .{ &.{}, true } else switch (program.decls[0]) {
+                .type_ => |t| .{ t.methods, t.recordFields().len != 0 },
+                .behavior => |b| .{ b.methods, b.fields.len != 0 },
+                else => .{ &.{}, true },
+            };
+            if (extra or methods.len != 1)
+                return refuse(arena, m, "{s}: `#[{s}]` added a member to `{s}` that is not one `fn`: `{s}`", .{ diagnostics.decorator_member_not_one_fn, m.decorator, m.target, m.source }, not_one);
+            break :parsed methods[0];
+        };
+        line_shift += std.mem.count(u8, m.source, "\n") + 1;
+        offset_shift += m.source.len + 1;
+
+        const taken = switch (decls[target_index]) {
+            .type_ => |t| taken: {
+                for (t.recordFields()) |f| if (std.mem.eql(u8, f.name, method.name)) break :taken "a field";
+                for (t.variants()) |v| if (std.mem.eql(u8, v.name, method.name)) break :taken "a variant";
+                for (t.methods) |mm| if (std.mem.eql(u8, mm.name, method.name)) break :taken "a member";
+                break :taken null;
+            },
+            .behavior => |b| taken: {
+                for (b.fields) |f| if (std.mem.eql(u8, f.name, method.name)) break :taken "a field";
+                for (b.methods) |mm| if (std.mem.eql(u8, mm.name, method.name)) break :taken "a member";
+                break :taken null;
+            },
+            else => unreachable,
+        };
+        if (taken) |what| return refuse(arena, m, "{s}: `#[{s}]` adds `{s}` to `{s}`, which already has {s} called `{s}`", .{ diagnostics.decorator_member_duplicate, m.decorator, method.name, m.target, what, method.name }, "A decorator adds members; it never replaces one. Rename the member the decorator writes, or the one already there.");
+
+        switch (decls[target_index]) {
+            .type_ => |*t| {
+                const grown = try arena.alloc(ast.BehaviorMethod, t.methods.len + 1);
+                @memcpy(grown[0..t.methods.len], t.methods);
+                grown[t.methods.len] = method;
+                t.methods = grown;
+            },
+            .behavior => |*b| {
+                const grown = try arena.alloc(ast.BehaviorMethod, b.methods.len + 1);
+                @memcpy(grown[0..b.methods.len], b.methods);
+                grown[b.methods.len] = method;
+                b.methods = grown;
+            },
+            else => unreachable,
+        }
+    }
+    return .{ .ok = .{ .decls = decls } };
+}
+
+/// Decision 216 (4) — the build's modules with every module that reads
+/// `@typeinfo.all` moved after all the others (relative order kept), so a
+/// reader's answer covers the whole program; the readers are noted in the
+/// session's reflection. A module importing a reader is refused at the import
+/// (`refusals`, by module index into the answer): the reader would have to be
+/// analysed before the declarations it reports.
+fn orderReaders(
+    arena: std.mem.Allocator,
+    modules: []const Module,
+    reflection: *reflectionMod.Reflection,
+    refusals: *std.AutoHashMapUnmanaged(usize, validation.TypeError),
+) ![]const Module {
+    var readers: std.ArrayListUnmanaged(Module) = .empty;
+    var others: std.ArrayListUnmanaged(Module) = .empty;
+    for (modules) |m| {
+        if (typeinfoAll.reads(m.source)) {
+            try readers.append(arena, m);
+            try reflection.readers.put(arena, m.path, {});
+        } else try others.append(arena, m);
+    }
+    if (readers.items.len == 0) return modules;
+    try others.appendSlice(arena, readers.items);
+    for (others.items, 0..) |m, idx| {
+        var lx = Lexer.init(m.source);
+        const tokens = lx.scanAll(arena) catch continue;
+        var p = Parser.init(tokens);
+        const program = p.parse(arena) catch continue;
+        scan: for (program.decls) |d| switch (d) {
+            .use => |u| for (u.imports) |imp| {
+                for ([_]bool{ false, true }) |whole| switch (try u.leafSource(imp, arena, whole)) {
+                    .module => |path| for (readers.items) |r| {
+                        if (std.mem.eql(u8, r.path, m.path)) continue;
+                        if (!std.mem.eql(u8, path, r.path) and !std.mem.eql(u8, std.fs.path.basename(r.path), path)) continue;
+                        const msg = try std.fmt.allocPrint(arena, "{s}: `{s}` reads `@typeinfo.all`, so it answers for the whole program and no module imports it", .{ diagnostics.typeinfo_all_imported, r.path });
+                        try refusals.put(arena, idx, validation.TypeError.custom(msg, "Move what this module needs out of the entry point into a module of its own; the entry point imports it, never the other way round.").withLoc(imp.loc));
+                        break :scan;
+                    },
+                    .root => {},
+                };
+            },
+            else => {},
+        };
+    }
+    return others.items;
+}
+
+/// Decision 216 (3) — every `decl.addType(name, source)` of pass 1, parsed as
+/// the one top-level type `__<Owner>__<Name>` (`envMod.assocTypeName`), `pub`
+/// when its owner is, and appended to the program. Its tokens are placed after
+/// everything earlier contributions occupy (`first_line`, `first_offset`).
+///
+/// Refused at the annotation that ran the decorator: a source that is not the
+/// shape of exactly one type (`decorator-type-not-one-type`), and a name the
+/// owner already answers — one of its variants or members — or one the module
+/// already declares (`decorator-type-duplicate`).
+fn mergeAssocTypes(
+    arena: std.mem.Allocator,
+    original: ast.Program,
+    types: []const envMod.TypeContribution,
+    first_line: usize,
+    first_offset: usize,
+) !MemberMerge {
+    var decls: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
+    try decls.appendSlice(arena, original.decls);
+    var line_shift = first_line;
+    var offset_shift = first_offset;
+    for (types) |t| {
+        const refuse = struct {
+            fn at(a: std.mem.Allocator, tc: envMod.TypeContribution, comptime fmt: []const u8, args: anytype, hint: []const u8) !MemberMerge {
+                var e = validation.TypeError.custom(try std.fmt.allocPrint(a, fmt, args), hint);
+                if (tc.loc) |l| e = e.withLoc(l);
+                return .{ .refused = e };
+            }
+        }.at;
+        var owner_pub = false;
+        var taken: ?[]const u8 = null;
+        var found = false;
+        for (decls.items) |d| switch (d) {
+            .type_ => |td| if (std.mem.eql(u8, td.name, t.owner)) {
+                found = true;
+                owner_pub = td.isPub;
+                for (td.variants()) |v| if (std.mem.eql(u8, v.name, t.name)) {
+                    taken = "a variant";
+                };
+                for (td.methods) |m| if (std.mem.eql(u8, m.name, t.name)) {
+                    taken = "a member";
+                };
+                break;
+            },
+            .behavior => |b| if (std.mem.eql(u8, b.name, t.owner)) {
+                found = true;
+                owner_pub = b.isPub;
+                for (b.methods) |m| if (std.mem.eql(u8, m.name, t.name)) {
+                    taken = "a member";
+                };
+                break;
+            },
+            else => {},
+        };
+        if (!found) return error.AssocOwnerMissing;
+        if (taken) |what| return refuse(arena, t, "{s}: `#[{s}]` declares `{s}.{s}`, and `{s}` already has {s} called `{s}`", .{ diagnostics.decorator_type_duplicate, t.decorator, t.owner, t.name, t.owner, what, t.name }, "`Owner.Name` names one thing; rename the associated type or the member.");
+        const mangled = try envMod.assocTypeName(arena, t.owner, t.name);
+        for (decls.items) |d| {
+            const n: []const u8 = switch (d) {
+                .type_ => |td| td.name,
+                .behavior => |b| b.name,
+                .@"fn" => |f| f.name,
+                .val => |v| v.name,
+                .typeAlias => |a| a.name,
+                else => continue,
+            };
+            if (std.mem.eql(u8, n, mangled)) return refuse(arena, t, "{s}: `#[{s}]` declares `{s}.{s}`, and the module already declares `{s}`", .{ diagnostics.decorator_type_duplicate, t.decorator, t.owner, t.name, mangled }, "An associated type is declared under its owner's path; rename it, or the declaration it collides with.");
+        }
+
+        const prefix = try std.fmt.allocPrint(arena, "{s}type {s}", .{ if (owner_pub) "pub " else "", mangled });
+        const text = try std.fmt.allocPrint(arena, "{s}{s}", .{ prefix, t.source });
+        const not_one = "`decl.addType(name, source)` takes the shape of one type as it follows the name in a declaration: `(id: string)`, `(…) implement B { … }`, `{ A, B }`.";
+        var lexer = Lexer.init(text);
+        const tokens = try arena.dupe(Token, lexer.scanAll(arena) catch
+            return refuse(arena, t, "{s}: `#[{s}]` declares `{s}.{s}` from a source that does not lex: `{s}`", .{ diagnostics.decorator_type_not_one_type, t.decorator, t.owner, t.name, t.source }, not_one));
+        for (tokens) |*tok| {
+            tok.line += line_shift - 1;
+            tok.offset = (tok.offset + offset_shift) -| prefix.len;
+        }
+        var parser = Parser.init(tokens);
+        const program = parser.parse(arena) catch
+            return refuse(arena, t, "{s}: `#[{s}]` declares `{s}.{s}` from a source that is not one type: `{s}`", .{ diagnostics.decorator_type_not_one_type, t.decorator, t.owner, t.name, t.source }, not_one);
+        if (program.decls.len != 1 or program.decls[0] != .type_ or !std.mem.eql(u8, program.decls[0].type_.name, mangled))
+            return refuse(arena, t, "{s}: `#[{s}]` declares `{s}.{s}` from a source that is not one type: `{s}`", .{ diagnostics.decorator_type_not_one_type, t.decorator, t.owner, t.name, t.source }, not_one);
+        var assoc = program.decls[0];
+        assoc.type_.displayName = try std.fmt.allocPrint(arena, "{s}.{s}", .{ t.owner, t.name });
+        try decls.append(arena, assoc);
+        line_shift += std.mem.count(u8, t.source, "\n") + 1;
+        offset_shift += t.source.len + 1;
+    }
+    return .{ .ok = .{ .decls = try decls.toOwnedSlice(arena) } };
+}
+
+/// Decision 216 (3) — the names `program` binds to owners of associated types
+/// (`assoc_types.zig`): its own types and behaviors with entries in the
+/// session's reflection, and every imported one — the module that declares
+/// it found the way `resolveImports` finds a type (the module the source
+/// names first, then the wider passes).
+fn assocOwners(
+    arena: std.mem.Allocator,
+    program: ast.Program,
+    module_path: []const u8,
+    typeDeclRegistry: *std.StringHashMap(std.StringHashMap(ast.DeclKind)),
+    reflection: *reflectionMod.Reflection,
+) !std.StringHashMapUnmanaged(assocTypes.Owner) {
+    var owners: std.StringHashMapUnmanaged(assocTypes.Owner) = .empty;
+    if (reflection.assoc.count() == 0) return owners;
+    for (program.decls, 0..) |d, idx| switch (d) {
+        .type_, .behavior => {
+            const name = if (d == .type_) d.type_.name else d.behavior.name;
+            const assoc = try reflection.assocOf(arena, module_path, name);
+            if (assoc.len > 0) try owners.put(arena, name, .{ .name = name, .assoc = assoc });
+        },
+        .use => |u| {
+            switch (u.source) {
+                .module => |m| if (std.mem.eql(u8, m, "std")) continue,
+                .root => {},
+            }
+            for (u.imports) |imp| {
+                if (imp.activate) continue;
+                const leaf = imp.leaf();
+                const leaf_src = try u.leafSource(imp, arena, false);
+                const path: []const u8 = found: for ([3]u2{ 0, 1, 2 }) |pass| {
+                    var it = typeDeclRegistry.iterator();
+                    while (it.next()) |e| {
+                        if (isStdPkgPath(e.key_ptr.*)) continue;
+                        if (!leaf_src.admits(e.key_ptr.*, pass)) continue;
+                        if (e.value_ptr.contains(leaf)) break :found e.key_ptr.*;
+                    }
+                } else continue;
+                const assoc = try reflection.assocOf(arena, path, leaf);
+                if (assoc.len > 0) try owners.put(arena, imp.name(), .{ .name = leaf, .assoc = assoc, .import = .{ .decl = idx, .item = imp } });
+            }
+        },
+        else => {},
+    };
+    return owners;
+}
+
 /// The pass-2 env replaces pass 1's, where the decorators ran: carry their
 /// runtime traces over, ahead of any pass-2 (template) evaluations.
 fn keepPassOneTraces(pass_two: *Env, pass_one: *const Env) !void {
@@ -587,7 +905,7 @@ fn keepPassOneTraces(pass_two: *Env, pass_one: *const Env) !void {
 fn analyzeMerged(
     arena: std.mem.Allocator,
     mod: Module,
-    program: ast.Program,
+    merged_in: ast.Program,
     registry: *std.StringHashMap(std.StringHashMap(*T.Type)),
     typeDeclRegistry: *std.StringHashMap(std.StringHashMap(ast.DeclKind)),
     templateRegistry: *const std.StringHashMap(ast.FnDecl),
@@ -595,9 +913,13 @@ fn analyzeMerged(
     extensionRegistry: *const std.StringHashMap(std.StringHashMap(ast.ImplementDecl)),
     templateEvalCtx: ?envMod.TemplateEvalCtx,
     target_name: ?[]const u8,
+    reflection: *reflectionMod.Reflection,
+    typeinfo_plan: ?typeinfoAll.Plan,
 ) anyerror!AnalysisResult {
     var env = try infer.freshEnv(arena, std.heap.page_allocator);
     env.modulePath = mod.path;
+    env.reflection = reflection;
+    if (typeinfo_plan) |pl| env.typeinfoAll = pl.rewrites;
     env.srcPath = try displaySrcPath(arena, mod);
     // The prelude registration may have named `SourceLocation`; only the
     // program's own references count (`withSourceLocationDecl`).
@@ -606,6 +928,10 @@ fn analyzeMerged(
     env.templateEval = templateEvalCtx;
     env.skipDecoratorInvoke = true;
     env.target = target_name;
+
+    // Decision 216 (3): this module's own associated types exist now.
+    var owners = try assocOwners(arena, merged_in, mod.path, typeDeclRegistry, reflection);
+    const program = try assocTypes.expand(arena, merged_in, &owners);
 
     if (validation.validateComptime(program)) |err_info| {
         env.deinit();
@@ -701,8 +1027,10 @@ fn analyzeSource(
     types_only: bool,
     skip_invoke: bool,
     target_name: ?[]const u8,
+    reflection: *reflectionMod.Reflection,
 ) anyerror!AnalysisResult {
     var env = try infer.freshEnv(arena, std.heap.page_allocator);
+    env.reflection = reflection;
     // Capture provenance for `expr` templates: which file is being inferred.
     env.modulePath = mod.path;
     // `@src().file` (decision 73): the package-relative display path.
@@ -743,7 +1071,15 @@ fn analyzeSource(
     // namespace and `collections.Dict.empty()` through a module one reach the
     // checker and the backends as the one-dot forms they lower.
     // Decision 207: an inline parameter type becomes a record of the module.
-    const program = try inline_types.expand(arena, try std_namespace.expand(arena, parsed));
+    const expanded = try inline_types.expand(arena, try std_namespace.expand(arena, parsed));
+    // Decision 216 (3): `Owner.Name` of an imported owner (or of this
+    // module's, on a re-analysis) reaches the checker as the declared name.
+    var owners = try assocOwners(arena, expanded, mod.path, typeDeclRegistry, reflection);
+    const program = try assocTypes.expand(arena, expanded, &owners);
+    // Decision 216 (4): a module reading `@typeinfo.all` is answered on its
+    // re-analysis, after its own decorators ran.
+    const typeinfo_queries = if (skip_invoke or !typeinfoAll.reads(source)) &.{} else try typeinfoAll.collect(arena, program);
+    env.typeinfoAllPending = typeinfo_queries.len > 0;
 
     if (validation.validateComptime(program)) |err_info| {
         env.deinit();
@@ -773,9 +1109,70 @@ fn analyzeSource(
     // to the pass-1 program — skipping the re-lex/re-parse of the original
     // module bytes that the legacy text-splice path forced. Fallback to text
     // splicing only when a contribution fails to parse standalone.
-    if (!skip_invoke and env.contributions.items.len > 0) {
-        if (try parseAndMergeContributions(arena, source, program, env.contributions.items)) |merged_program| {
-            var reanalysis = try analyzeMerged(arena, mod, merged_program, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, target_name);
+    if (!skip_invoke and (env.contributions.items.len > 0 or env.memberContributions.items.len > 0 or env.typeContributions.items.len > 0 or typeinfo_queries.len > 0)) {
+        // Decision 216 (1): the members join their types' bodies first, after
+        // every line the module and its `@emit` contributions occupy.
+        var with_members = program;
+        if (env.memberContributions.items.len > 0) {
+            var first_line: usize = std.mem.count(u8, source, "\n") + 1;
+            var first_offset: usize = source.len + 1;
+            for (env.contributions.items) |c| {
+                first_line += std.mem.count(u8, c, "\n") + 1;
+                first_offset += c.len + 1;
+            }
+            switch (try mergeMembers(arena, program, env.memberContributions.items, first_line, first_offset)) {
+                .ok => |p| with_members = p,
+                .refused => |te| {
+                    env.deinit();
+                    return .{ .typeError = te };
+                },
+            }
+        }
+        // Decision 216 (3): the associated types become top-level types, after
+        // every line the members occupy.
+        if (env.typeContributions.items.len > 0) {
+            var first_line: usize = std.mem.count(u8, source, "\n") + 1;
+            var first_offset: usize = source.len + 1;
+            for (env.contributions.items) |c| {
+                first_line += std.mem.count(u8, c, "\n") + 1;
+                first_offset += c.len + 1;
+            }
+            for (env.memberContributions.items) |m| {
+                first_line += std.mem.count(u8, m.source, "\n") + 1;
+                first_offset += m.source.len + 1;
+            }
+            switch (try mergeAssocTypes(arena, with_members, env.typeContributions.items, first_line, first_offset)) {
+                .ok => |p| with_members = p,
+                .refused => |te| {
+                    env.deinit();
+                    return .{ .typeError = te };
+                },
+            }
+        }
+        // Decision 216 (4): every query answered, now that this module's
+        // decorators ran too; the answers' imports join the program.
+        var typeinfo_plan: ?typeinfoAll.Plan = null;
+        if (typeinfo_queries.len > 0) {
+            var first_line: usize = std.mem.count(u8, source, "\n") + 2;
+            for (env.contributions.items) |c| first_line += std.mem.count(u8, c, "\n") + 1;
+            for (env.memberContributions.items) |m| first_line += std.mem.count(u8, m.source, "\n") + 1;
+            for (env.typeContributions.items) |t| first_line += std.mem.count(u8, t.source, "\n") + 1;
+            switch (try typeinfoAll.plan(arena, &env, with_members, mod.path, reflection, typeinfo_queries, first_line)) {
+                .ok => |pl| {
+                    typeinfo_plan = pl;
+                    const grown = try arena.alloc(ast.DeclKind, pl.imports.len + with_members.decls.len);
+                    @memcpy(grown[0..pl.imports.len], pl.imports);
+                    @memcpy(grown[pl.imports.len..], with_members.decls);
+                    with_members = .{ .decls = grown };
+                },
+                .refused => |te| {
+                    env.deinit();
+                    return .{ .typeError = te };
+                },
+            }
+        }
+        if (try parseAndMergeContributions(arena, source, with_members, env.contributions.items)) |merged_program| {
+            var reanalysis = try analyzeMerged(arena, mod, merged_program, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, target_name, reflection, typeinfo_plan);
             if (reanalysis == .success) {
                 try keepPassOneTraces(&reanalysis.success.env, &env);
                 env.deinit();
@@ -797,7 +1194,7 @@ fn analyzeSource(
         // full re-lex so the parser sees the original module as one unit (its
         // diagnostics carry global offsets).
         const spliced = try spliceContributions(arena, source, env.contributions.items);
-        var reanalysis = try analyzeSource(arena, mod, spliced, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, types_only, true, target_name);
+        var reanalysis = try analyzeSource(arena, mod, spliced, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, types_only, true, target_name, reflection);
         if (reanalysis == .success) {
             try keepPassOneTraces(&reanalysis.success.env, &env);
             env.deinit();
@@ -893,6 +1290,8 @@ const decl_reflection_src =
     \\pub type Param(name: string, typeName: string)
     \\pub type Field(name: string, typeName: string, annotations: Annotation[])
     \\pub type Method(name: string, params: Param[], returnType: string, annotations: Annotation[])
+    \\pub type DeclaredMeta(key: string, value: string)
+    \\pub type Declared<T>(name: string, module: string, meta: DeclaredMeta[], value: T)
     \\pub type Decl(
     \\    kind: DeclKind,
     \\    name: string,
@@ -903,6 +1302,9 @@ const decl_reflection_src =
     \\    annotations: Annotation[]) {
     \\    declare fn fail(self: Self, message: string);
     \\    declare fn failAt(self: Self, span: Span, message: string);
+    \\    declare fn addMember(self: Self, source: string);
+    \\    declare fn setMeta(self: Self, key: string, value: string);
+    \\    declare fn addType(self: Self, name: string, source: string);
     \\}
 ;
 
@@ -1269,6 +1671,7 @@ fn resolveImports(
                     if (!imp.activate and !names_symbol) switch (try u.leafSource(imp, env.arena, true)) {
                         .module => |path| if (!isStdPkgPath(path)) if (registry.get(path)) |exports| {
                             try env.namespaces.modules.put(env.arena, local, exports);
+                            try env.namespaces.paths.put(env.arena, local, path);
                             var eit = exports.keyIterator();
                             while (eit.next()) |fname| {
                                 if (templateRegistry.get(try defaultParamsKey(env.arena, path, fname.*))) |pfn| {
@@ -2104,17 +2507,24 @@ pub fn compileTypesOnly(
     var template_registry = std.StringHashMap(ast.FnDecl).init(arena_alloc);
     var decorator_registry = std.StringHashMap(ast.FnDecl).init(arena_alloc);
     var extension_registry = std.StringHashMap(std.StringHashMap(ast.ImplementDecl)).init(arena_alloc);
+    // Decision 216 — what decorators record for reflection, for this session.
+    var reflection = reflectionMod.Reflection.init(arena_alloc);
     var default_dsl = DefaultDsl.init(arena_alloc);
 
     // `from "std"` imports pull the embedded std modules into the compilation.
     // Non-std libs are ordinary input modules: the driver supplies their `.bp`
     // sources and `resolveImports` binds `from "<lib>"` through the shared
     // registry — the core names no specific lib (std is the one exception).
-    const all_modules = try expandStdImports(arena_alloc, modules, null);
+    var reader_refusals: std.AutoHashMapUnmanaged(usize, validation.TypeError) = .empty;
+    const all_modules = try orderReaders(arena_alloc, try expandStdImports(arena_alloc, modules, null), &reflection, &reader_refusals);
 
     for (all_modules, 0..) |mod, idx| {
         const name: []const u8 = if (mod.path.len > 0) mod.path else "main";
-        const analysis = try analyzeModule(arena_alloc, mod, &registry, &type_decl_registry, &template_registry, &decorator_registry, &extension_registry, eval_ctx, true, null);
+        if (reader_refusals.get(idx)) |te| {
+            try session.outputs.append(allocator, .{ .name = name, .src = mod.source, .srcPath = mod.srcPath, .outcome = .{ .typeError = te } });
+            continue;
+        }
+        const analysis = try analyzeModule(arena_alloc, mod, &registry, &type_decl_registry, &template_registry, &decorator_registry, &extension_registry, eval_ctx, true, null, &reflection);
 
         switch (analysis) {
             .parseError => |se| {
@@ -2304,20 +2714,27 @@ pub fn compile(
     var template_registry = std.StringHashMap(ast.FnDecl).init(arena_alloc);
     var decorator_registry = std.StringHashMap(ast.FnDecl).init(arena_alloc);
     var extension_registry = std.StringHashMap(std.StringHashMap(ast.ImplementDecl)).init(arena_alloc);
+    // Decision 216 — what decorators record for reflection, for this session.
+    var reflection = reflectionMod.Reflection.init(arena_alloc);
     var default_dsl = DefaultDsl.init(arena_alloc);
 
     // `from "std"` imports pull the embedded std modules into the compilation.
     // Non-std libs are ordinary input modules: the driver supplies their `.bp`
     // sources and `resolveImports` binds `from "<lib>"` through the shared
     // registry — the core names no specific lib (std is the one exception).
-    const all_modules = try expandStdImports(arena_alloc, modules, target_name);
+    var reader_refusals: std.AutoHashMapUnmanaged(usize, validation.TypeError) = .empty;
+    const all_modules = try orderReaders(arena_alloc, try expandStdImports(arena_alloc, modules, target_name), &reflection, &reader_refusals);
 
     for (all_modules, 0..) |mod, idx| {
         const name: []const u8 = if (mod.path.len > 0) mod.path else "main";
+        if (reader_refusals.get(idx)) |te| {
+            try session.outputs.append(allocator, .{ .name = name, .src = mod.source, .srcPath = mod.srcPath, .outcome = .{ .typeError = te } });
+            continue;
+        }
         const analysis = try analyzeModule(arena_alloc, mod, &registry, &type_decl_registry, &template_registry, &decorator_registry, &extension_registry, .{
             .io = io,
             .build_root = build_root orelse name,
-        }, false, target_name);
+        }, false, target_name, &reflection);
 
         switch (analysis) {
             .parseError => |se| {
@@ -2428,11 +2845,11 @@ pub fn compile(
                     @memcpy(new_decls[synth.items.len..], succ.program.decls);
                     break :blk ast.Program{ .decls = new_decls };
                 };
-                const transformed = try withImportSourcesNamed(arena_alloc, try withImportTypeAliasesErased(arena_alloc, try alias_erase.erase(arena_alloc, try withYieldStepDecl(arena_alloc, try withSourceLocationDecl(arena_alloc, try withSynthesisedEnumDecls(
+                const transformed = try withImportSourcesNamed(arena_alloc, try withImportTypeAliasesErased(arena_alloc, try alias_erase.erase(arena_alloc, try withYieldStepDecl(arena_alloc, try withDeclaredDecls(arena_alloc, try withSourceLocationDecl(arena_alloc, try withSynthesisedEnumDecls(
                     arena_alloc,
                     try withUsedAssocInterfaces(arena_alloc, try withTemplateHygiene(arena_alloc, try transform.transform(arena_alloc, program_for_transform, fn_decls, comptime_arrays, ct.comptime_vals, &succ.env.method_lowerings, &succ.env.templateExpansions, &succ.env.srcRewrites, &succ.env.result_jump_lowerings, &succ.env.stdArrayLowerings, &succ.env.enumSectionRewrites, &succ.env.indexRewrites, &succ.env.optionalNullCases, succ.env.ctorParams, &succ.env.defaultInjections, &succ.env.resultPatternLocs, &succ.env.namespaces), &succ.env, declaresTemplateFn(program_for_transform.decls)), &succ.env),
                     &succ.env,
-                ), &succ.env), &succ.env), &succ.env.typeAliases), &succ.env), &succ.env);
+                ), &succ.env), &succ.env), &succ.env), &succ.env.typeAliases), &succ.env), &succ.env);
 
                 var type_ids = std.StringHashMap(usize).init(arena_alloc);
                 for (succ.bindings) |b| {

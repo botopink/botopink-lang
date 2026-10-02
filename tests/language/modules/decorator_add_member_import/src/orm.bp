@@ -1,0 +1,17 @@
+//// The decorator lives in a library module of its own.
+
+pub fn entity(comptime decl: @Decl, table: string) {
+    var names: string[] = [];
+    decl.fields.forEach({ f -> names.push(f.name) });
+    decl.addMember(
+        "pub fn fromRow(row: string[]) -> Self { return "
+            + decl.name
+            + "(name: row.join(\"-\"), size: row.length); }",
+    );
+    decl.addMember("pub fn table() -> string { return \"" + table + "\"; }");
+    decl.addMember(
+        "pub fn columns(self: Self) -> string { return \""
+            + names.join(",")
+            + "\"; }",
+    );
+}

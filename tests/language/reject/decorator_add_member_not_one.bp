@@ -1,0 +1,14 @@
+//// Decision 216 (1) — `decl.addMember(source)` takes exactly one member, a
+//// `fn`: two of them in one call (or a `val`, or text that does not parse) is
+//// refused at the annotation, the source quoted.
+
+fn twice(comptime decl: @Decl) {
+    decl.addMember("pub fn a() -> i32 { return 1; } pub fn b() -> i32 { return 2; }");
+}
+
+#[twice]
+type Pair(x: i32)
+
+pub fn main() {
+    @print(Pair(x: 1).x);
+}

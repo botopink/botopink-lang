@@ -1004,6 +1004,14 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
             expr_ptr.* = rewrite.*;
         }
     }
+    // `@typeinfo(X).name` / `….meta.<d>.<k>` (decision 216 (2)) → the string
+    // constant inference answered, keyed by the access's own loc (its last
+    // member's token — no builtin call shares it).
+    if (expr_ptr.* == .identifier and expr_ptr.identifier.kind == .identAccess) {
+        if (agg.src_rewrites.get(expr_ptr.identifier.loc)) |rewrite| {
+            if (rewrite.* == .literal) expr_ptr.* = rewrite.*;
+        }
+    }
     // C-02 (decision 63, amended 2026-09-19) — the index IS a method call.
     // `xs[k]` was typed as `xs.at(k)`, `xs[a..b]` as `xs.slice(a, b)` and a
     // tuple's `t[0]` as `t._0`; the rewrite inference recorded under this loc
