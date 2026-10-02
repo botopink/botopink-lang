@@ -158,6 +158,9 @@ was accepted wrongly or refused with the wrong type by the parent binary.
 finding) — a behavior's `default fn` body is checked (an unbound call is refused at it), and a
 `-> @Result` default fn wraps its `return` and `throw`, its adopted call answering the `@Result`; a
 `test/` cell because beam answers `{unresolved_method, …}` for any adopted default (`03-beam`'s row).
+Step 12 (T9) adds `reject/reserved_word_as_binding_name` — `val unknown: i32 = 1;` is
+`reserved-word-as-name` at the name; it passes on the parent binary too (the row closed before this
+front) and pins the rule.
 Decision 141 adds `run/external_template_refused_on_beam` — an `@External.Erlang` template with a
 macro runs on erlang and is a located build error on beam naming the construct (`.beam.expect`); beam
 no longer evaluates a template it cannot compile from source at run time.
