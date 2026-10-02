@@ -522,9 +522,7 @@ pub fn schema(comptime decl: @Decl) {
     ).length
         > 0;
     val checks = if (validated)
-        "    val __checked = schemas.under(at, validate"
-            + decl.name
-            + "(__v));\n    if (__checked.violations.length > 0) { throw __checked; }\n"
+        "    val __checked = schemas.under(at, __v.validate());\n    if (__checked.violations.length > 0) { throw __checked; }\n"
     else
         "";
     @emit(
