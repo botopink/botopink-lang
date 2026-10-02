@@ -1,0 +1,3 @@
+//// The `blog` folder of `app`.
+
+pub mod not_found;
