@@ -33,10 +33,10 @@ js/
 
 | File | Role |
 |---|---|
-| `js_ast.zig` | `Class` carries `extends`, which only an enum's variant subclass uses. `Expr` (`lexeme_string`, `quoted`, `number`, `null_`, `ident`, `name`, `this`, `member`, `index`, `call`, `new_`, `binary`, `unary`, `ternary`, `assign`, `paren`, `arrow`, `function`, `array`, `object`, `host`, `await_`, `yield_`, `comment`), `Stmt` (`expr`, `decl`, `return_`, `throw_` (required operand), `continue_`, `continue_label`, `break_`, `yield_delegate`, `if_`, `for_of`, `while_` (+ an optional `label`), `block`, `function`, `class`, `comment`, `group`), `Pattern` (`ident`, `name`, `object` — a `Prop` binds a name or nests a pattern —, `array`), `Param`, `Block` (+ `Layout`), `Class`, `Comment`, `Item`; the `.d.ts` subset `TsType` / `TsField` / `TsParam` / `TsMember` / `TsDecl`; and `Builder` (arena: `ptr`, `stmtPtr`, `typePtr`, `call`, `member`, `binary`, `ternary`, `arrowBlock`, `iife`, `ifStmt`, `group`, …). |
+| `js_ast.zig` | `Class` carries `extends`, which only an enum's variant subclass uses. `Expr` (`lexeme_string`, `quoted`, `number`, `null_`, `ident`, `name`, `this`, `member`, `index`, `call`, `new_`, `binary`, `unary`, `ternary`, `assign`, `paren`, `arrow`, `function`, `array`, `object`, `host`, `await_`, `yield_`, `comment`), `Stmt` (`expr`, `decl`, `return_`, `throw_` (required operand), `continue_`, `continue_label`, `break_`, `yield_delegate`, `if_`, `for_of`, `while_` (+ an optional `label`), `block`, `function`, `class`, `comment`, `group`), `Pattern` (`ident`, `name`, `object` — a `Prop` binds a name or nests a pattern —, `array`), `Param`, `Block` (+ `Layout`), `Class`, `Comment`, `Item`; the `.d.ts` subset `TsType` / `TsField` / `TsParam` / `TsMember` / `TsDecl` / `TsNamespace` (types only — a non-instantiated namespace promises no value); and `Builder` (arena: `ptr`, `stmtPtr`, `typePtr`, `call`, `member`, `binary`, `ternary`, `arrowBlock`, `iife`, `ifStmt`, `group`, …). |
 | `js_emitter.zig` | **Names:** `ident(name)` — the ES reserved-word rename (`delete` → `delete_`); the only place it happens. A property position is never renamed. **Strings:** `writeLexemeString` — a botopink lexeme's escape pairs pass through (the lexer validated them and the escape set is JS-compatible), raw control bytes and unescaped quotes are escaped. **Numbers:** a number literal as a member receiver is parenthesised — `(42).toString()`, because `42.` lexes as a float. **Code:** `writeExpr(w, expr, indent)`, `writeStmt(w, stmt, indent)`, `writeBlock`, `writeInline`/`writeInlineStmt`, `writePattern`, `writeComment`/`writeInlineComment`, `writeProgram(w, items)` (generated declarations separated by a blank line; runtime-support source verbatim). |
 | `js_prelude.zig` | The commonJS runtime helpers for primitive methods whose native JS method disagrees with the signature, as built `Stmt.function` nodes — never a shipped file. `Helper` (`assert_fatal`: a non-test `assert` throws with message and `file:line`; `string_char_at`: `String.at -> ?string` (the native method it wraps is `charAt`), a negative index counts from the end (decision 139), `null` out of range; `array_at`: `Array.at -> ?T`, native `xs.at(i) ?? null` — a negative index counts from the end (decision 139) and `null` stands for native `undefined` out of range (decision 47); `range_from`: an open-ended `a..` as the lazy generator `function* __bp_range_from(n)`; `structural_eq`: `__bp_eq(a, b, d)`, `==` between composite values — arrays and tuples element-wise, a class instance by constructor plus own fields (decision 8 §6 T6 and decision 35); `show`: `__bp_show(v, shape, top, a)`, the text of one printed value under decision 8 §7 — a string, a `"f"`-shaped number as `5.0`, an array or tuple with spaces, a `__bp`-marked record or variant in the language's shape, `Display` when the value has one, JavaScript's `undefined` as `null` (decision 47 — `?.` and an `if` with no `else` answer JavaScript's other none), `%O` otherwise; `print` / `print_as`: `@print`'s `console.log` line over `show`, without / with the per-argument static shapes; `yield_step`: `__bp_yield_step(r)`, a generator step `{ value, done }` as the prelude enum `YieldStep` — `.next()` by hand, decision 122 — whose class the module carries through the checker's splice), `forMethod(receiver, method, argc)` (the declaration a helper answers), `name`, `decl`, `order`. `commonJS.zig`'s `Emitter.helper` returns the name **and** marks the helper, and only marked helpers are written into the module (the `wat/wat_prelude.zig` shape). |
-| `ts_emitter.zig` | `writeType`, `writeDecl` (`import` writes each name as given — `a as b` included —, `import_namespace` writes `import * as name from "…"`), `writeProgram(w, decls)` — one declaration per typed binding, separated by a blank line, a binding with no surface (`.none`) still taking its separator. `TsMember.method` carries a `modifier` (as `field` does), which is how an enum's variant factories and methods are written `static`. |
+| `ts_emitter.zig` | `writeDecl`'s `namespace_` writes `export declare namespace Name { … }` over `TsNamespaceItem`s (`interface Name { … }`, a nested `namespace`), indented one level per depth and without `export`/`declare` inside — an ambient namespace exports its members (an enum's sections, `typescript.zig`). `writeType`, `writeDecl` (`import` writes each name as given — `a as b` included —, `import_namespace` writes `import * as name from "…"`), `writeProgram(w, decls)` — one declaration per typed binding, separated by a blank line, a binding with no surface (`.none`) still taking its separator. `TsMember.method` carries a `modifier` (as `field` does), which is how an enum's variant factories and methods are written `static`. |
 
 ## A comment never ends a line something else still needs
 
@@ -164,15 +164,41 @@ here so a later row that removes one knows what it is removing:
 | `buildIfExpr` | an `if` **used as a value** — decision 2 keeps `if` an expression; a branch that `await`s makes it `await (async function() { … })()` through `iife` (`AwaitScan`), because `await` does not parse in a plain arrow (`run/task_await_in_if_block`) | **yes** |
 | `buildGeneratorLoop` | `iter loop { … }` / `stream loop { … }` (and `iter for` / `iter while`, written as the prefixed `loop`) — a `function*` / `async function*` IIFE around `while (true)` (decisions 105, 125; every other loop is a statement) | **yes** |
 | `buildCase` | a `case` used as a value: `const _s = …` and one statement per arm | **yes** |
-| `@block { body }` | a **block as a value** — the one site whose producer decision 2 removes | **no** |
+| `@block { body }` | a **block as a value** — the one site whose producer decision 2 removes | **yes, for its `return` form**; the tail form is the checker's to refuse |
 
 So the checker row that enforces decision 2 (a block is not a value) reaches
 exactly **one** of them: the other nine give a value to a construct the language
 keeps as an expression.
 
+**The `@block` site still has producers** (measured for 1.0.11-beta
+`01-compiler/04-js` step 1, which was to delete it). One fixture writes it —
+`js: block ---- @block builtin` (`tests/values.zig`, both runtimes' commonJS
+snapshot `block_block_builtin`), `val status = @block { …; if (c) return "Alto";
+return "Baixo"; }` — and no `.bp` in the checkout does. Three shapes check today:
+
+| Program | commonJS answers | What it is |
+|---|---|---|
+| `val a = @block { return 3; }` | `3` | every path returns (C1: the `return`s are the block's) — a value, like a `case` whose arms all return |
+| `@block { val x = 3; @print(x); };` | `3` | statement position — the IIFE scopes the block's `return`s, which a JS block would hand to the enclosing function |
+| `val a = @block { 1 + 2 };` | `null` | the tail form: `inferBuiltinCallReturnType` types the block by its last expression, decision 2 says a block is not a value |
+
+The first two keep the IIFE genuine; only the third is the dead lowering, and
+its producer is the checker's (`comptime/infer.zig`, the `"block"` arm of
+`inferBuiltinCallReturnType`), which still accepts it. The site stays until
+that refusal lands; then the tail form has no producer and nothing here moves.
+
 `Expr.host` is **not** a bridge: it carries the literal text of an
 `#[@External.Node("…")]` annotation, which is host code by definition — the
 same role `raw` plays in `beam/erl_ast.zig`.
+
+## What the prelude does not ship
+
+**No `unwrapOrThrow`** (1.0.11-beta decision 179, the answer to 24-h): a
+botopink `@Task<@Result<T, E>>` resolves its Promise with the tagged value —
+`{ ok: v }` or `{ error: e }` — and never rejects (decision 120), and a
+JavaScript caller that `await`s it reads that value. No prelude helper turns an
+`{ error }` back into a rejection: a Task that never fails is the one contract,
+and a helper that rejected would be a second one for a single target.
 
 ## Layout quirks kept for byte-identity
 

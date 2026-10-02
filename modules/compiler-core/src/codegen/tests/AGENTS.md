@@ -132,4 +132,12 @@ backends like every other fixture: wasm answers each of them, and the
 `KNOWN-WRONG` note above each names what commonJS, erlang and beam still answer,
 so the front that takes its half shows the move in its own commit.
 
+`commonjs.zig` holds front `01-compiler/04-js`'s commonJS-only fixtures, each an
+`assertJsRunLog` (no snapshot, so no other backend's directory moves): a
+`default fn` of a primitive behavior — a program's own `behavior String` adds
+defaults to std's — whose body calls a method on `self` (`self.length()`,
+`self.at(0)`) or builds its `@Result` with `Ok(v)` / `Error(e)`; the body is
+not typed by the checker (`../AGENTS.md` § A `default fn` body is lowered
+untyped).
+
 When adding a test file here, register it in `../tests.zig` or it will not run.

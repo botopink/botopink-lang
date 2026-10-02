@@ -170,7 +170,7 @@ Array.prototype.contains = function(x) {
     return (this.indexOf(x) !== (-1));
 };
 Array.prototype.first = function() {
-    return this.at(0);
+    return __bp_array_at(this, 0);
 };
 Array.prototype.rest = function() {
     return this.slice(1, this.length);
@@ -257,7 +257,7 @@ Array.prototype.sliding = function(n) {
 Array.prototype.unique = function() {
     let out = [];
     let first = true;
-    let prev = this.at(0);
+    let prev = __bp_array_at(this, 0);
     this.forEach((x) => {
     (() => { if (first) { out = out.concat([x]); return first = false; } else { return (() => { if ((prev !== x)) { return out = out.concat([x]); } })(); } })();
     prev = x;

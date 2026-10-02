@@ -70,6 +70,10 @@ Decision 138 (the empty record is `type Name()`) adds `run/type_empty_record` �
 `type MathOps() { … }` constructed and called on all four targets — and two `reject/` cells,
 `type_empty_braces` (`type Marker {}`) and `type_without_field_list` (`type MathOps { fn … }`), both
 `type-without-field-list` where the `()` belongs.
+1.0.11-beta `01-compiler/04-js` step 3 adds `run/number_method_call` — `42.toString()`, a literal
+receiver inside `+` and beside a `val`'s, on all four targets (JavaScript lexes `42.` as a float, so
+commonJS parenthesises the receiver). The same step's `scripts/tsc-check.sh` builds every `modules/`
+cell that runs on commonJS with `--typescript` and holds its `.d.ts` to `tsc --noEmit --strict`.
 Decision 139 (a negative index counts from the end) adds `run/index_negative_from_end` — `xs.at(-1)`,
 `xs.at(-3)`, `xs.at(-4)` / `xs.at(3)` absent, `xs[-2]`, a negative index held in a `val`, the same for
 `String.at` / `s[-2]`, and a string array — on all four targets.

@@ -190,6 +190,14 @@ jobs:
         shell: bash
         run: zig build test-docs
 
+      # Every `.d.ts` the commonJS backend emits for the example projects
+      # (erika, checked out above, is generic-loader-binding's dependency) and
+      # the tests/language/modules cells passes `tsc --noEmit --strict`
+      # (scripts/tsc-check.sh; typescript pinned, through npx).
+      - name: tsc --noEmit over the emitted .d.ts
+        shell: bash
+        run: bash scripts/tsc-check.sh
+
       # The browser build (front 18 step 5): compiler-core for wasm32-wasi,
       # then modules/compiler-web/tests/smoke.js under node — one program to
       # the four targets, a rendered diagnostic, the comptime refusal.

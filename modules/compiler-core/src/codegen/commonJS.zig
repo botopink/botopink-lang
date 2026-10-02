@@ -51,6 +51,15 @@ pub fn codegenEmit(
     // `exports.X` only for symbols consumed elsewhere.
     var cross = try crossModule.build(alloc, outputs);
     defer cross.deinit();
+    // The type-only `pub` declarations the `.d.ts` files import from each
+    // other (`typescript.TypeExport`), which the value index above omits.
+    var type_exports: std.ArrayListUnmanaged(tsEmit.TypeExport) = .empty;
+    defer type_exports.deinit(alloc);
+    if (config.typeDefLanguage != null) for (outputs) |*ct| switch (ct.outcome) {
+        .ok => |*ok| for (ok.bindings) |bd| if (tsEmit.typeExportOf(bd)) |name|
+            try type_exports.append(alloc, .{ .name = name, .module = ct.name }),
+        else => {},
+    };
 
     for (outputs) |*ct| {
         switch (ct.outcome) {
@@ -108,7 +117,7 @@ pub fn codegenEmit(
 
                 // Generate TypeScript typedefs if configured.
                 const typedef: ?[]u8 = if (config.typeDefLanguage) |_|
-                    try emitTypeDef(alloc, ok.bindings, &cross, ct.name)
+                    try emitTypeDef(alloc, ok.bindings, &cross, type_exports.items, ct.name)
                 else
                     null;
 
@@ -153,9 +162,10 @@ fn emitTypeDef(
     alloc: std.mem.Allocator,
     bindings: []const comptimeMod.TypedBinding,
     cross: *const CrossModule,
+    type_exports: []const tsEmit.TypeExport,
     module_name: []const u8,
 ) ![]u8 {
-    return try tsEmit.emitProgram(alloc, bindings, cross, module_name);
+    return try tsEmit.emitProgram(alloc, bindings, cross, type_exports, module_name);
 }
 
 // ── emit ──────────────────────────────────────────────────────────────────────
@@ -199,6 +209,31 @@ pub fn jsPrototypeOwner(name: []const u8) []const u8 {
     const numeric = [_][]const u8{ "Number", "Integer", "Signed", "Float", "I32", "I64", "U32", "U64", "F32", "F64" };
     for (numeric) |nm| if (std.mem.eql(u8, name, nm)) return "Number";
     return name;
+}
+
+/// What an untyped `default fn` body still tells the backend (`Emitter.unchecked_default`).
+const UncheckedDefault = struct {
+    /// For a prototype patch of a primitive behavior: the primitive `self`
+    /// is, and the behavior that declares the methods a call on `self`
+    /// reaches. Null in a record's copied default, whose `self` is the record.
+    primitive: ?PrimitiveSelf = null,
+};
+
+const PrimitiveSelf = struct { receiver: jsPrelude.Receiver, behavior: ast.BehaviorDecl };
+
+/// The `jsPrelude.Receiver` a primitive prototype owner (`jsPrototypeOwner`) holds.
+fn prototypeReceiver(owner: []const u8) jsPrelude.Receiver {
+    if (std.mem.eql(u8, owner, "String")) return .string;
+    if (std.mem.eql(u8, owner, "Array")) return .array;
+    return .other;
+}
+
+/// True when a call's receiver is the bare `self`.
+fn receiverIsSelf(recv: ast.Expr) bool {
+    return switch (recv) {
+        .identifier => |id| id.kind == .ident and std.mem.eql(u8, id.kind.ident, "self"),
+        else => false,
+    };
 }
 
 /// True for JS constructors whose instances box a primitive into an object —
@@ -1187,6 +1222,12 @@ const Emitter = struct {
     /// When true, `self.x` lowers to `self.x` (extension methods take `self` as a
     /// real first parameter) instead of the prototype-method `this.x`.
     self_is_param: bool = false,
+    /// Set while a `default fn` body of a behavior is lowered — a prototype
+    /// patch of a primitive behavior (`buildInterface`) or a default copied
+    /// into an implementing record (`appendInterfaceDefaults`). The checker
+    /// does not type these bodies, so no call in them has a per-loc rename or
+    /// lowering: what this backend still knows is read here instead.
+    unchecked_default: ?UncheckedDefault = null,
     /// True while building a generator (`function*`) body. A `return <expr>`
     /// inside an `#[@resultGenerator] fn -> @ResultGenerator<T>` means *delegate the rest of
     /// the iteration* to that iterator, so it lowers to `yield* <expr>;
@@ -2337,6 +2378,9 @@ const Emitter = struct {
         const prev_self_param = self.self_is_param;
         defer self.self_is_param = prev_self_param;
         self.self_is_param = false;
+        const prev_unchecked = self.unchecked_default;
+        defer self.unchecked_default = prev_unchecked;
+        self.unchecked_default = .{};
         for (iface.methods) |m| {
             if (!m.is_default or isAssociatedFn(m)) continue;
             const body_src = m.body orelse continue;
@@ -2667,7 +2711,10 @@ const Emitter = struct {
                 } else {
                     self.self_is_param = false; // bare `self` → `this`
                 }
+                const prev_unchecked = self.unchecked_default;
+                self.unchecked_default = .{ .primitive = .{ .receiver = prototypeReceiver(owner), .behavior = i } };
                 for (body_src) |s| try body.append(self.arena(), try self.buildStmt(s));
+                self.unchecked_default = prev_unchecked;
                 self.current_indent = prev;
                 try stmts.append(self.arena(), try self.prototypeAssign(owner, m.name, .{
                     .params = params,
@@ -4556,6 +4603,7 @@ const Emitter = struct {
     /// receiver, from inference's per-call-site `.prim` record.
     fn primHelper(self: *Emitter, loc: ast.Loc, cc: anytype) ?jsPrelude.Helper {
         if (cc.trailing.len != 0) return null;
+        if (self.selfPrimitive(cc)) |p| return jsPrelude.forMethod(p.receiver, cc.callee, cc.args.len);
         const lw = self.lowerings orelse return null;
         const il = lw.get(loc) orelse return null;
         const kind = switch (il) {
@@ -4568,6 +4616,36 @@ const Emitter = struct {
             else => .other,
         };
         return jsPrelude.forMethod(receiver, cc.callee, cc.args.len);
+    }
+
+    /// The primitive a call's receiver is when the call is on `self` in a
+    /// prototype patch of a primitive behavior (`unchecked_default`): the one
+    /// receiver of an untyped body whose type is known without inference.
+    fn selfPrimitive(self: *Emitter, cc: anytype) ?PrimitiveSelf {
+        const ud = self.unchecked_default orelse return null;
+        const p = ud.primitive orelse return null;
+        const recv = cc.receiver orelse return null;
+        if (!receiverIsSelf(recv.*)) return null;
+        return p;
+    }
+
+    /// The host member a call on `self` reaches in a prototype patch: the
+    /// plain `#[@External.Node("<symbol>")]` of the behavior's own method —
+    /// what inference's per-loc rename answers for the same call on a typed
+    /// receiver (`length` is then the property, `buildCallRaw`). Null for a
+    /// template, a `(module, symbol)` external or a method with no node binding.
+    fn selfHostMember(self: *Emitter, cc: anytype) !?[]const u8 {
+        const p = self.selfPrimitive(cc) orelse return null;
+        // The behavior being patched declares the method, or the std prelude's
+        // behavior of the same name does (a program's own `behavior String`
+        // adds defaults to std's `String`, whose `length` it calls).
+        const ref: ast.ExternalRef = for (p.behavior.methods) |m| {
+            if (std.mem.eql(u8, m.name, cc.callee)) break m.externalFor("node") orelse return null;
+        } else (try self.preludeIfaceExternal(p.behavior.name, cc.callee)) orelse return null;
+        if (ref.module.len != 0) return null;
+        if (primOpTemplate.looksLikeTemplate(ref.symbol)) return null;
+        if (std.mem.indexOfScalar(u8, ref.symbol, '(') != null) return null;
+        return ref.symbol;
     }
 
     fn renderTemplate(self: *Emitter, template: []const u8, cc: anytype, argc: usize, recv_err: anyerror) anyerror!js.Expr {
@@ -4739,7 +4817,7 @@ const Emitter = struct {
                     self.missing_external = me;
                     return error.MissingExternalTarget;
                 }
-                const loc_rename: ?[]const u8 = if (self.renames) |r| r.get(loc) else null;
+                const loc_rename: ?[]const u8 = (if (self.renames) |r| r.get(loc) else null) orelse try self.selfHostMember(cc);
                 const method = loc_rename orelse self.prim_node_renames.get(cc.callee) orelse cc.callee;
                 // `arr.len()`/`.size()`/`.length()` & `str.length()`: inference
                 // renamed these to `length` only for a typed array/string
@@ -4777,6 +4855,18 @@ const Emitter = struct {
             is_new = true;
             slots = self.record_fields.get(cc.callee);
         } else {
+            // `Ok(v)` / `Error(e)` in a body the checker does not type (a
+            // behavior's `default fn`): the `@Result` this backend builds,
+            // `{ ok }` / `{ error }` — erlang and beam build their tagged tuple
+            // from the same call. A module's own variant of that name wins.
+            if (self.unchecked_default != null and cc.args.len == 1 and cc.trailing.len == 0 and
+                !self.variant_fields.contains(cc.callee) and !self.class_names.contains(cc.callee))
+            {
+                if (resultKey(cc.callee)) |key| return self.b.paren(try self.b.object(&.{.{ .kv = .{
+                    .key = key,
+                    .value = try self.buildExpr(cc.args[0].value.*),
+                } }}));
+            }
             callee = .{ .ident = cc.callee };
             // A variant named bare (`Rect(width: 5, height: 2)`), which the
             // enum's static factory answers under the same slot names.
