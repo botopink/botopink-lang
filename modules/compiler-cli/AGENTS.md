@@ -14,7 +14,9 @@ compiler-cli/
 ├── tests/               ← end-to-end CLI scripts — `zig build test-cli` runs all four
 │   ├── cli_contract.sh      ← the command contract (rows C1–C13, plus the
 │   │                          build-does-not-execute and `new`-scaffold-prints
-│   │                          rows) against the real binary
+│   │                          rows, and a built erlang / beam program loading
+│   │                          its `.erl` sidecar under `erl -pa out/<target>`)
+│   │                          against the real binary
 │   ├── mutual_recursion.sh  ← forward-ref + mutual recursion runs on every backend
 │   ├── mutual_recursion/    ← fixture project for the script above
 │   ├── backend_exec.sh      ← backend execution parity (numeric / records /
@@ -131,6 +133,15 @@ modules out of BEAM assembly (`{extfunc, host, fn, N}`), and a host module that
 is neither shipped nor on the Erlang code path is the same located refusal on
 both targets.
 
+**A build is a program without `botopink run`.** `out/beam/` runs as
+`erlc +from_asm -o out/beam out/beam/*.S` and then `erl -noshell -pa out/beam
+-eval "'<entry atom>':main([]), halt()."` from any directory — the entry's
+loader compiles the shipped `.erl`. `out/erl/` runs the same way once **every**
+`.erl` in it is compiled (`erlc -o out/erl out/erl/*.erl`): a plain erlang build
+emits no sibling loader (the emitter's half, 02-erlang step 9), so compiling the
+entry alone leaves the sidecar `undef`. Pinned by `tests/cli_contract.sh` on
+`tests/language/modules/erlang_host_sidecar_shipped`.
+
 ### The erlang runner reaches one module
 
 `cli/run.zig` spawns `escript <out>/<module>.erl`. `escript` compiles **only the
@@ -210,14 +221,14 @@ What each command promises. A row the code does not meet yet is marked
 
 | Command | Reads | Writes | Spawns | Exit 0 | Exit 1 |
 |---|---|---|---|---|---|
-| `build [--target T] [--out D] [--typescript]` | `botopink.json`, the `src/` module tree, each declared dependency | `D/<stem><ext>` for every module that compiled (+ `.d.ts`, + `.mjs` sidecars on commonJS, + host `.erl` sidecars under `D/erl/` and `D/beam/`); the previous artifact of a module that did not compile is deleted. The **stem** is the module ATOM under `D/erl/` or `D/beam/` for the erlang and BEAM targets (`std/math` → `D/erl/std@math.erl`), because `erlc` refuses a `-module` atom that differs from its file's basename; commonJS, its `.d.ts` and wasm keep the mirrored `D/<module path>` tree, because a `require` target and a wasm import segment ARE the module path (`cli/build.zig` `artifactPath`/`targetSubdir`) | the program is never run — `codegen.generateWith(…, .{ .execute = false })` emits only; on **erlang** one `erl` compiles every written `.erl` in memory with the OTP compiler (`checkErlang`), because a build that only transpiled proved nothing about erlang; on **erlang and BEAM** one `erl` asks the code path about the host modules no sidecar answers (`libs.absentFromCodePath`) | every module compiled, its artifact is on disk, and on erlang the OTP compiler accepted every emitted module | no project, unsupported target, unresolvable tree or dependency, **any** module failed — each failing module is rendered (file, line, excerpt) and named in `N module(s) failed to compile: a, b` — or, on erlang, the OTP compiler refused an emitted module (each refusal printed `<file>:<line>:<col>: <message>`, then `the OTP compiler refused emitted erlang`) — or, on erlang and BEAM, a host module is neither shipped nor on the Erlang code path, or `erl` could not be run |
+| `build [--target T] [--out D] [--typescript]` | `botopink.json`, the `src/` module tree, each declared dependency | `D/<stem><ext>` for every module that compiled (+ `.d.ts`, + `.mjs` sidecars on commonJS, + host `.erl` sidecars under `D/erl/` and `D/beam/`); the previous artifact of a module that did not compile is deleted. The **stem** is the module ATOM under `D/erl/` or `D/beam/` for the erlang and BEAM targets (`std/math` → `D/erl/std@math.erl`), because `erlc` refuses a `-module` atom that differs from its file's basename; commonJS, its `.d.ts` and wasm keep the mirrored `D/<module path>` tree, because a `require` target and a wasm import segment ARE the module path (`cli/build.zig` `artifactPath`/`targetSubdir`) | the program is never run — `codegen.generateWith(…, .{ .execute = false })` emits only; on **erlang** one `erl` compiles every written `.erl` in memory with the OTP compiler (`checkErlang`), because a build that only transpiled proved nothing about erlang; on **erlang and BEAM** one `erl` asks the code path about the host modules no sidecar answers (`libs.absentFromCodePath`) | every module compiled, its artifact is on disk, and on erlang the OTP compiler accepted every emitted module | no project, unsupported target, unresolvable tree or dependency, **any** module failed — each failing module is rendered (file, line, excerpt) and named in `N module(s) failed to compile: a, b` — or, on erlang, the OTP compiler refused an emitted module (each refusal printed `<file>:<line>:<col>: <message>`, then `the OTP compiler refused emitted erlang`) — or, on erlang and BEAM, a host module is neither shipped nor on the Erlang code path, a sidecar file is named like a module atom the build emits (located on the file, naming the module), or `erl` could not be run |
 | `run [--target T] [--module M] [--out D] [-- args…]` | what `build` reads | what `build` writes, into `D` | `node` / `wasmtime` on `D/M.<ext>`; on **erlang** `erlc -o D/erl` over every emitted `.erl` and then `erl -noshell -pa D/erl -eval "M:main([]), halt()."`; on **beam** `erlc +from_asm -o D/beam` over every emitted `.S` and then `erl -noshell -pa D/beam -eval "'M':main([]), halt()."` — the entry's `'__bp_load_siblings'/0` compiles and loads the host `.erl` files the build shipped beside them | the program's own 0 | `build`'s code, or the program's — on erlang a **crash is `1`**, `erl`'s status, where `escript` used to exit `127` (see "the erlang runner reaches one module") |
 | `check [<path>]` | `botopink.json`, `src/` **and** `test/`, dependencies — in `<path>` when given | nothing | `erl` (comptime) | every module type-checks | at least one diagnostic, each with file, line and excerpt; failing modules named |
 | `test [--target T] [--filter S] [--json]` | `botopink.json`, `src/`, `test/`, dependencies | `.botopinkbuild/test-out/<target>/<id>/**` — one directory per RUN and per TARGET (`id` is 64 random bits), removed again when the run ends; its `tmp/` is the tests' scratch directory, named in `BOTOPINK_TEST_TMPDIR`. Never the shared `test-out/` root: `botopink-lib-test` runs every cell with `cwd = <lib dir>`, so two gates over one library checkout used to empty each other's output mid-run and red a library nobody owned | the target runner per module with tests (`node` / `escript`) | every module compiled **and** every test passed; the last stdout line is the run's total, `total: <P> passed, <F> failed in <N> module(s)` | a module failed to compile, a test failed, a module's runner printed no summary line (it stopped before its tests finished — named), or the binary is **stale**: its checkout's sources changed since it was built (`source_stamp`, refused before anything runs); the modules that compiled still ran their tests and are reported |
 | `format [paths…]` | the files and directories named, else the current directory — every `.bp` **and** `.d.bp` under it (`src/**`, `test/**`, `examples/**`, the projects nested inside), not entering hidden directories or `node_modules`, and not reaching a `reject/<n>.bp` that has its `<n>.expect` beside it (the language suite's rejected program — decision 66) nor a `.bp` under a `modules/<cell>/` that one of the cell's `<target>.expect` files names on its second line (`<path from the cell>:<L>:<C>`) **and** that does not lex or parse (the suite's refused project module, `tests/language/modules/lexer_error_in_imported_module/src/pattern.bp` — gate-c of `specs/1.0.11-beta/00-gate`; an `.expect` naming another file, or a named file that parses, leaves the file in the walk). Both exemptions are the directory's shape, decision 67: no skip list, pragma or environment variable | the files, in place | nothing | every file parsed and is now canonical (ending with one newline) | a file could not be read, lexed or parsed (rendered with its location) |
 | `format --check [paths…]` | as above | nothing | nothing | every file parsed **and** already canonical | a file would change (one `Formatted <path>` line each, then `N file(s) would be reformatted`), or could not be read, lexed or parsed. `scripts/format-check.sh` (gate stage 3, CI) calls it over the compiler's canonical trees |
 | `new <name> [--target T]` | nothing | `<name>/{botopink.json,src/main.bp,.gitignore}` — the scaffolded `main.bp` **prints** (see "the scaffold runs" below) | nothing | scaffolded with a supported target | bad name, or a target outside `commonJS\|erlang\|beam\|wasm` |
-| `clean` | nothing | deletes `out/` and `.botopinkbuild/` | nothing | both are gone (`Removed <dir>/` printed per success) | a delete failed |
+| `clean` | nothing | deletes `out/` and `.botopinkbuild/` whole (with `.botopinkbuild/deps/`, the `bpmp install` links; never the machine-wide `.beam` cache) | nothing | both are gone (`Removed <dir>/` printed per success) | a delete failed |
 | `migrate [--dry-run]` | the `src/` tree | index files (`root.bp`/`main.bp`/`mod.bp`) — **none** under `--dry-run` | nothing | the tree is covered | `src/` unreadable |
 
 Cross-command rules:
@@ -239,8 +250,11 @@ Cross-command rules:
   entry at all is named too). No command re-runs the comptime pipeline to
   explain a failure. A checker **warning** (decision 57 — `OkData.warnings`)
   fails nothing: `check` renders each one like an error under `warning:`
-  (`renderOutcome`'s `.ok` arm, `renderLocatedAs`); `build` and `test` do not
-  print them yet, since `codegen.generateWith`'s result does not carry them.
+  (`renderOutcome`'s `.ok` arm, `renderLocatedAs`), and the language server
+  publishes each as a diagnostic of severity Warning; `build` and `test` do not
+  print them yet: `codegen.generateWith` drops the comptime session (and its
+  `OkData.warnings`) before it returns, and `ModuleOutput` carries no warnings
+  — a compiler-core field, not this package's.
 - **Orphans.** A `.bp` file that **nothing** reaches is warned per file and
   counted once (`N module(s) not reached by any `mod` path were not compiled`).
   A module has two routes into a build and reachability means either: a `mod`
@@ -363,11 +377,14 @@ Cross-command rules:
   error on the `dependencies` entry and exit 1, never a silent exit 0
   (decision 67 of 1.0.10-beta: no flag reduces it to a warning). Pinned by
   `tests/cli_contract.sh`, whose four rows red against a pre-fix binary
-  (`BOTOPINK_BIN=<old>`). A module name with a `/` is a dependency's
-  (`rakun/http` → owner `rakun`) unless the project's own `src` holds
-  `<name>.bp` — a module in a folder of the project itself (`io/random` in
-  `libs/std`'s own `botopink test`) probes the project's `src/sidecars/`
-  (`libs.zig` `shipMjsSidecars`).
+  (`BOTOPINK_BIN=<old>`). The owner of a module's sidecars is the
+  package the build's module table gives it (`libs.sidecarPackage` over
+  `Config.packages`): `rakun/http` → `rakun`; a module in a folder of the
+  project itself (`io/random` in `libs/std`'s own `botopink test`, `orm/entity`)
+  is the project's and probes its `src/sidecars/`, whatever package a library
+  root carries under that folder's name (T16). On erlang and BEAM a sidecar file
+  named like a module atom the build emits is a located build error naming both
+  (C-25).
 - **`botopink test` on erlang writes a module's type units beside it.** A
   `type` is an erlang module of its own (policy 3); `test_cmd.zig` writes each
   unit, named by its atom, in the directory of the module that declares it, so

@@ -20,7 +20,7 @@ src/
 
 | File | Role |
 |---|---|
-| `main.zig` | Parses `botopink <command> [options]` and calls into `cli/<command>.zig`. Owns `VERSION` and the `HELP` text. Commands: `build`, `check`, `run`, `test`, `format` (alias `fmt`), `new`, `clean`, `migrate`, `help` (`--help`/`-h`), `version` (`--version`/`-v`). Carries the unit tests for every parser (contract rows C8, C10–C12, C14). |
+| `main.zig` | Parses `botopink <command> [options]` and calls into `cli/<command>.zig`. Owns `VERSION` and the `HELP` text. Commands: `build`, `check`, `run`, `test`, `format` (alias `fmt`), `new`, `clean`, `migrate`, `help` (`--help`/`-h`), `version` (`--version`/`-v`); `<command> --help` / `-h` — before a `--` — prints the same `HELP` (`wantsHelp`), whose `clean` paragraph says what `clean` deletes. Carries the unit tests for every parser (contract rows C8, C10–C12, C14). |
 
 ## Development notes
 

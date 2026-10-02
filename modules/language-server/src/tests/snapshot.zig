@@ -676,6 +676,32 @@ pub fn assertTypeDefinition(
     try checkText(gpa, slug, buf.items);
 }
 
+// ── Diagnostics ───────────────────────────────────────────────────────────────
+
+/// One line per diagnostic: its range, its severity's name and its message.
+pub fn assertDiagnostics(
+    gpa: std.mem.Allocator,
+    slug: []const u8,
+    source: []const u8,
+    diags: []const proto.Diagnostic,
+) !void {
+    var buf: std.ArrayList(u8) = .empty;
+    defer buf.deinit(gpa);
+    try appendSource(&buf, gpa, source);
+    try buf.appendSlice(gpa, "----- DIAGNOSTICS\n");
+    for (diags) |d| {
+        const severity: []const u8 = switch (d.severity orelse 0) {
+            proto.DiagnosticSeverity.Error => "error",
+            proto.DiagnosticSeverity.Warning => "warning",
+            proto.DiagnosticSeverity.Information => "information",
+            proto.DiagnosticSeverity.Hint => "hint",
+            else => "none",
+        };
+        try buf.print(gpa, "({d},{d})–({d},{d})  {s}  {s}\n", .{ d.range.start.line, d.range.start.character, d.range.end.line, d.range.end.character, severity, d.message });
+    }
+    try checkText(gpa, slug, buf.items);
+}
+
 // ╔══════════════════════════════════════════════════════════════════════════════╗
 // ║  Internal helpers                                                           ║
 // ╚══════════════════════════════════════════════════════════════════════════════╝

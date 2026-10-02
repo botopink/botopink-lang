@@ -1,0 +1,20 @@
+//// A host module called only from a module in a folder of the project —
+//// `src/orm/entity.bp` calls `orm_host:table/1`, kept in
+//// `src/sidecars/orm_host.erl` — is shipped and called on erlang and beam.
+////
+//// The gap this pins (`language-gaps.md` T16): the shipper read the first
+//// segment of the module name `orm/entity` as a package name. A library root
+//// that carries a package `orm` (here the cell's own `libs/orm/`, a root the
+//// walk-up finds) was taken for the module's owner, its `src` was probed, and
+//// the build was refused naming that package. The owner is the package the
+//// build's module table gives the module: `orm/entity` is the project's.
+////
+//// commonJS and wasm refuse an `@External.Erlang`-only function
+//// (`commonJS.expect`, `wasm.expect`).
+
+pub mod orm;
+import {describe} from "orm.entity";
+
+pub fn main() {
+    @print(describe("user"));
+}

@@ -169,7 +169,13 @@ neither shipped nor in the Erlang code path is a located build error on both, `.
 `.beam.expect`),
 `modules/erlang_host_sidecar_shipped` (a project's `src/sidecars/*.erl` reached by `botopink run` on
 erlang and on beam; `commonJS.expect` / `wasm.expect`), `modules/erlang_sidecar_named_like_a_module` (a
-sidecar `text.erl` beside the module `text.bp` is shipped — the shipper skipped a basename match), `reject/bare_print_call` (`println(x)` is unbound
+sidecar `text.erl` beside the module `text.bp` is shipped — the shipper skipped a basename match),
+`modules/sidecar_called_from_folder_module` (front 26, T16: a sidecar called only from `src/orm/entity.bp`
+is shipped on erlang and beam although the cell's own `libs/orm/` — a library root the walk-up finds —
+carries a package named like the folder; the shipper took that package for the module's owner) and
+`modules/sidecar_named_like_emitted_atom` (front 26, C-25: `src/sidecars/language_tests@text.erl`, named
+like the atom `src/text.bp` compiles to, is a located build error on erlang and beam naming both,
+`erlang.expect` / `beam.expect`), `reject/bare_print_call` (`println(x)` is unbound
 and the refusal names `@println`), `run/float_record_field` (an `f64` record field read, compared,
 destructured by name and by constructor, and through a method taking and answering an `f64` — wasm
 narrowed and bit-read it, erlang and beam did not lower `val Pt(y, _) = p`) and

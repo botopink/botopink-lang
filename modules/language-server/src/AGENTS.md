@@ -15,7 +15,7 @@ src/
 ├── messages.zig       ← frame parser/writer (Content-Length protocol)
 ├── protocol.zig       ← LSP + JSON-RPC serializable types
 ├── engine.zig         ← LSP feature implementations
-├── compiler.zig       ← thin wrapper around compiler-core (`LspCompiler`, `CompileResult`)
+├── compiler.zig       ← thin wrapper around compiler-core (`LspCompiler`, `CompileResult`; `diagnosticsFor` maps errors to Error, checker warnings to Warning)
 ├── files.zig          ← in-memory cache for open document contents
 ├── feedback.zig       ← tracks active diagnostics → clears stale editor feedback
 ├── lsp_types.zig      ← position/offset, URI ↔ path helpers

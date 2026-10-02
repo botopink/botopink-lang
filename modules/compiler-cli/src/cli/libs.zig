@@ -546,6 +546,28 @@ pub fn packagesOf(arena: std.mem.Allocator, proj: config.ProjectConfig, dep_modu
     return .{ .root = proj.name, .deps = deps.items };
 }
 
+/// The package whose sources hold the sidecars of module `name`: the
+/// dependency the build's module table (`packages`, `packagesOf`) gives it, or
+/// null for a module of the project itself — whatever its folder. A project
+/// module `orm/entity` is the project's even when a library root carries a
+/// package named `orm`; reading the first segment as a package name looked
+/// that package up and never shipped `src/sidecars/orm_host.erl` (T16).
+pub fn sidecarPackage(packages: bp.codegen.crossModule.Packages, name: []const u8) ?[]const u8 {
+    const id = packages.idOf(name);
+    return if (id.package_in_path) id.package else null;
+}
+
+test "sidecarPackage: a project folder is the project's, a dependency module its package's" {
+    const pk: bp.codegen.crossModule.Packages = .{ .root = "app", .deps = &.{"rakun"} };
+    try std.testing.expectEqual(@as(?[]const u8, null), sidecarPackage(pk, "orm/entity"));
+    try std.testing.expectEqual(@as(?[]const u8, null), sidecarPackage(pk, "main"));
+    try std.testing.expectEqualStrings("rakun", sidecarPackage(pk, "rakun/http").?);
+    try std.testing.expectEqualStrings("std", sidecarPackage(pk, "std/io").?);
+    // `libs/std`'s own build: its folders are its own.
+    const own_std: bp.codegen.crossModule.Packages = .{ .root = "std" };
+    try std.testing.expectEqual(@as(?[]const u8, null), sidecarPackage(own_std, "io/random"));
+}
+
 /// Load the `files` of the resolved dependency `dep` at `dir` as modules named
 /// `<dep>/<stem>` — the prefix is how the core resolves `from "<dep>"`
 /// generically.
@@ -889,6 +911,7 @@ pub fn shipMjsSidecars(
     gpa: std.mem.Allocator,
     io: std.Io,
     outputs: []const bp.codegen.ModuleOutput,
+    packages: bp.codegen.crossModule.Packages,
     out_dir: []const u8,
     ext: []const u8,
     env_map: EnvMap,
@@ -912,18 +935,11 @@ pub fn shipMjsSidecars(
         // `require` paths of this module to rewrite once the scan is done.
         var rewrites: std.ArrayListUnmanaged([2][]const u8) = .empty;
         const emitted_dir = std.fs.path.dirname(emitted_rel) orelse out_dir;
-        // The owning lib is the first path segment of a dependency module name
-        // (`rakun/http` → `rakun`). A project-own module has no such prefix —
-        // unless it sits in a folder of the project's own tree (`io/random`
-        // under `libs/std`'s own `botopink test`), which its source in the
-        // project's `src` tells apart from a dependency.
-        const owner: ?[]const u8 = if (std.mem.indexOfScalar(u8, o.name, '/')) |i| blk: {
-            const proj = project.get(arena, io);
-            const own_src = if (proj) |p| p.src else "src/";
-            const sep: []const u8 = if (own_src.len > 0 and own_src[own_src.len - 1] != '/') "/" else "";
-            const own = try std.fmt.allocPrint(arena, "{s}{s}{s}.bp", .{ own_src, sep, o.name });
-            break :blk if (fileExists(io, own)) null else o.name[0..i];
-        } else null;
+        // The owning lib is the package the build's module table gives the
+        // module (`sidecarPackage`): `rakun/http` → `rakun`; a module in a
+        // folder of the project's own tree (`io/random` under `libs/std`'s
+        // own `botopink test`) is the project's.
+        const owner = sidecarPackage(packages, o.name);
 
         var search: usize = 0;
         const js = o.result.js;
@@ -1071,6 +1087,7 @@ pub fn shipErlSidecars(
     gpa: std.mem.Allocator,
     io: std.Io,
     outputs: []const bp.codegen.ModuleOutput,
+    packages: bp.codegen.crossModule.Packages,
     out_dir: []const u8,
     text: HostText,
     env_map: EnvMap,
@@ -1086,13 +1103,14 @@ pub fn shipErlSidecars(
     // atom is one any more, and matching it skipped a sidecar named like a
     // module of the build (`runtime.erl` beside `rakun/runtime`), which was
     // then never shipped and died `undef`.
-    var emitted = std.StringHashMapUnmanaged(void){};
+    // Each atom maps to the module that emits it, for the collision below.
+    var emitted = std.StringHashMapUnmanaged([]const u8){};
     for (outputs) |o| {
         if (o.result.failed()) continue;
-        try putModuleAtoms(arena, &emitted, o.result.js, text);
+        try putModuleAtoms(arena, &emitted, o.result.js, text, o.name);
         for (o.result.units) |u| {
-            try emitted.put(arena, u.atom, {});
-            try putModuleAtoms(arena, &emitted, u.code, text);
+            try emitted.put(arena, u.atom, o.name);
+            try putModuleAtoms(arena, &emitted, u.code, text, o.name);
         }
     }
 
@@ -1118,11 +1136,58 @@ pub fn shipErlSidecars(
     // asked of the Erlang code path once, after the scan.
     var unresolved: std.StringArrayHashMapUnmanaged(ErlMiss) = .empty;
     var guarded = std.StringHashMapUnmanaged(void){};
+
+    // A sidecar named like an atom this build emits (`<pkg>@<path>.erl`) is
+    // never consulted — every qualifier naming that atom is the emitted
+    // module's — and on the code path the two would be one module. Refused
+    // before anything is shipped, naming both (C-25). Every package of the
+    // build is looked at, the project's own `src` included.
+    {
+        var dirs: std.ArrayListUnmanaged([]const u8) = .empty;
+        try dirs.append(arena, if (project.get(arena, io)) |p| p.src else "src/");
+        var seen_libs = std.StringHashMapUnmanaged(void){};
+        for (outputs) |o| {
+            if (o.result.failed()) continue;
+            const lib = sidecarPackage(packages, o.name) orelse continue;
+            if (seen_libs.contains(lib)) continue;
+            try seen_libs.put(arena, lib, {});
+            if (roots == null) roots = try resolveLibRoots(gpa, io, env_map);
+            const found = owners.get(lib) orelse found: {
+                var oerr: ?manifest.Located = null;
+                const f = try sidecarOwner(gpa, arena, io, roots.?, env_map, project.get(arena, io), lib, &oerr);
+                // A refusal is the main scan's to print, at its first use.
+                if (f != null or oerr == null) try owners.put(arena, lib, f);
+                break :found f;
+            };
+            if (found) |pkg| try dirs.append(arena, try pkg.srcDir(arena));
+        }
+        var refused = false;
+        for (dirs.items) |src_dir| {
+            for ([_][]const u8{ try std.fs.path.join(arena, &.{ src_dir, "sidecars" }), src_dir }) |dir_path| {
+                var dir = std.Io.Dir.cwd().openDir(io, dir_path, .{ .iterate = true }) catch continue;
+                defer dir.close(io);
+                var it = dir.iterate();
+                while (try it.next(io)) |entry| {
+                    if (entry.kind != .file and entry.kind != .sym_link) continue;
+                    if (!std.mem.endsWith(u8, entry.name, ".erl")) continue;
+                    const stem = entry.name[0 .. entry.name.len - ".erl".len];
+                    const module = emitted.get(stem) orelse continue;
+                    const path = try std.fs.path.join(arena, &.{ dir_path, entry.name });
+                    sidecarNamedLikeAtom(arena, io, path, stem, module).print();
+                    refused = true;
+                }
+            }
+        }
+        if (refused) return error.SidecarRefused;
+    }
+
     for (outputs) |o| {
         if (o.result.failed()) continue;
-        // The owning lib is the first path segment of a dependency module name
-        // (`rakun/http` → `rakun`); a project-own module has no such prefix.
-        const owner: ?[]const u8 = if (std.mem.indexOfScalar(u8, o.name, '/')) |i| o.name[0..i] else null;
+        // The owning lib is the package the build's module table gives the
+        // module (`sidecarPackage`), never the first segment of its name: a
+        // module in a folder of the project (`orm/entity`) is the project's,
+        // whatever package a library root happens to carry under `orm`.
+        const owner = sidecarPackage(packages, o.name);
 
         // Comments out: a `%%` line quoting `std@erlang:self()` is prose.
         var texts: std.ArrayListUnmanaged([]const u8) = .empty;
@@ -1160,11 +1225,10 @@ pub fn shipErlSidecars(
                             try owners.put(arena, lib, f);
                             break :found f;
                         };
-                        // No package by that name: the first segment is a
-                        // folder of the project's own tree (`unit/calc_test`)
-                        // or the embedded `std`, whose sources are in the
-                        // binary — both probe the project's `src` below, and
-                        // an atom found nowhere is asked of the code path.
+                        // No package on disk: the embedded `std`, whose
+                        // sources are in the binary — it probes the project's
+                        // `src` below, and an atom found nowhere is asked of
+                        // the code path.
                         if (found) |pkg| {
                             pkg_manifest = pkg.package;
                             const src_dir = try pkg.srcDir(arena);
@@ -1225,8 +1289,7 @@ pub fn shipErlSidecars(
         var seen_libs = std.StringHashMapUnmanaged(void){};
         for (outputs) |o| {
             if (o.result.failed()) continue;
-            const i = std.mem.indexOfScalar(u8, o.name, '/') orelse continue;
-            const lib = o.name[0..i];
+            const lib = sidecarPackage(packages, o.name) orelse continue;
             if (seen_libs.contains(lib)) continue;
             try seen_libs.put(arena, lib, {});
             const found = owners.get(lib) orelse found: {
@@ -1397,7 +1460,7 @@ const ErlMiss = struct {
 
 /// Every module an emitted text declares: the `-module(<atom>).` attribute of
 /// erlang source, the `{module, <atom>}.` form of BEAM assembly.
-fn putModuleAtoms(arena: std.mem.Allocator, set: *std.StringHashMapUnmanaged(void), text: []const u8, kind: HostText) !void {
+fn putModuleAtoms(arena: std.mem.Allocator, set: *std.StringHashMapUnmanaged([]const u8), text: []const u8, kind: HostText, module: []const u8) !void {
     const key, const close_char: u8 = switch (kind) {
         .erlang => .{ "-module(", ')' },
         .beam => .{ "{module, ", '}' },
@@ -1412,27 +1475,48 @@ fn putModuleAtoms(arena: std.mem.Allocator, set: *std.StringHashMapUnmanaged(voi
         if (kind == .beam and at > 0 and text[at - 1] != '\n') continue;
         var atom = text[start..close];
         if (atom.len >= 2 and atom[0] == '\'' and atom[atom.len - 1] == '\'') atom = atom[1 .. atom.len - 1];
-        try set.put(arena, atom, {});
+        try set.put(arena, atom, module);
     }
+}
+
+/// The refusal for a sidecar file named like a module atom the build emits:
+/// located on the file's own `-module(…)` attribute (its first line when it
+/// has none), naming the module the atom belongs to.
+fn sidecarNamedLikeAtom(arena: std.mem.Allocator, io: std.Io, path: []const u8, atom: []const u8, module: []const u8) manifest.Located {
+    const message = std.fmt.allocPrint(
+        arena,
+        "the sidecar {s} is named like the module atom '{s}', which module '{s}' of this build compiles to — the code path cannot hold both; rename the sidecar",
+        .{ path, atom, module },
+    ) catch "a sidecar is named like a module atom this build emits";
+    const source = std.Io.Dir.cwd().readFileAlloc(io, path, arena, .limited(16 * 1024 * 1024)) catch "";
+    const key = "-module(";
+    const at: usize, const span: usize = if (std.mem.indexOf(u8, source, key)) |i| .{ i, key.len } else .{ 0, 1 };
+    var line: usize = 1;
+    var line_start: usize = 0;
+    for (source[0..at], 0..) |c, i| if (c == '\n') {
+        line += 1;
+        line_start = i + 1;
+    };
+    return .{ .message = message, .file = path, .source = source, .line = line, .col = at - line_start + 1, .span = span };
 }
 
 test "putModuleAtoms reads the module form of each emitted text" {
     var arena_inst = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_inst.deinit();
     const arena = arena_inst.allocator();
-    var set = std.StringHashMapUnmanaged(void){};
+    var set = std.StringHashMapUnmanaged([]const u8){};
     try putModuleAtoms(arena, &set,
         \\-module(app@main).
         \\-export([main/0]).
-    , .erlang);
+    , .erlang, "m");
     try putModuleAtoms(arena, &set,
         \\{module, app@text}.
         \\{exports, []}.
         \\    {move, {literal, {module, not_a_form}}, {x, 0}}.
-    , .beam);
+    , .beam, "m");
     try putModuleAtoms(arena, &set,
         \\{module, 'app@main@@Shape'}.
-    , .beam);
+    , .beam, "m");
     try std.testing.expect(set.contains("app@main"));
     try std.testing.expect(set.contains("app@text"));
     try std.testing.expect(set.contains("app@main@@Shape"));

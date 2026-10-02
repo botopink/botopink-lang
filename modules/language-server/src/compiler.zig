@@ -111,7 +111,19 @@ pub const CompileResult = struct {
         for (self.session.outputs.items) |output| {
             if (!std.mem.eql(u8, output.name, path)) continue;
             switch (output.outcome) {
-                .ok => {},
+                // Decision 57 — a checker warning (`OkData.warnings`) fails
+                // nothing; the editor shows it with severity Warning, the
+                // same diagnostic `botopink check` prints under `warning:`.
+                .ok => |ok| for (ok.warnings) |w| {
+                    const line = if (w.loc) |l| l.line else 1;
+                    const col = if (w.loc) |l| l.col else 1;
+                    try diags.append(gpa, .{
+                        .range = .{ .start = lsp_types.locToPosition(line, col), .end = lsp_types.locToPosition(line, col + 1) },
+                        .severity = proto.DiagnosticSeverity.Warning,
+                        .message = try w.message(gpa),
+                        .source = "botopink",
+                    });
+                },
                 .parseError => {},
                 .typeError => |te| {
                     const line = if (te.loc) |l| l.line else 1;

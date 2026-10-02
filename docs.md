@@ -2263,6 +2263,12 @@ botopink run --target commonJS
 botopink build --target erlang
 ```
 
+`botopink clean` deletes `out/` and `.botopinkbuild/` whole: the comptime
+scratch (`.botopinkbuild/tmp/`), the run directories of `botopink test` and the
+`bpmp install` links under `.botopinkbuild/deps/` — run `bpmp install` again
+after it. The machine-wide `.beam` cache of `botopink test --target erlang`
+(`$XDG_CACHE_HOME/botopink/beam`) is not touched.
+
 ## Project manifest
 
 Every project carries a `botopink.json` at its root:
