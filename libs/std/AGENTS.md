@@ -354,10 +354,13 @@ gone, not aliased (decision 127).
 
 - Stable, additive signatures — renames force snapshot churn.
 - `.d.bp` files stay declarative (no bodies).
-- **Both `.d.bp` files are at the formatter's canonical form, and
-  `scripts/format-check.sh` holds them there** (it names
-  `src/builtins.d.bp` and `src/builtins_fns.d.bp`; the rest of `libs/std` is not
-  in its trees yet). `builtins.d.bp` parses whole since front 20: an unannotated
+- **Every `.bp` and `.d.bp` of `libs/std` is at the formatter's canonical form,
+  and `scripts/format-check.sh` holds it there** (`libs/std` is one of its
+  `TREES`: an edit here is followed by `botopink format libs/std`). The
+  `std_package_*` codegen snapshots and two LSP snapshots
+  (`definition_std_module_member`, `completion_array_methods`) quote this source
+  verbatim, so a change of layout in `src/collections.bp` or in a signature of
+  `src/primitives.bp` re-records them in the same commit. `builtins.d.bp` parses whole since front 20: an unannotated
   `pub declare fn` takes the full signature (`field<T, F>(…) -> F`,
   `getContext<T>(comptime _: type) -> Component<T, any>`), a behavior `val`
   member any type (`val fields: Field[];`). The compiler's external scanners read
@@ -391,10 +394,11 @@ gone, not aliased (decision 127).
      `pub declare fn f<T>(` / `t: fn() -> T,` / `) -> T;` reds `this token cannot
      appear here`, and with a generic return type it reds
      `generic-arg-skip-forbidden` instead. The same signature on ONE line, or
-     wrapped without the trailing comma, compiles. **This is what `botopink
-     format` writes**, so formatting a file with such a signature produces a file
-     that no longer compiles; `src/async.bp` carries a DO-NOT-FORMAT banner and
-     `libs/std` is not one of `scripts/format-check.sh`'s canonical trees.
+     wrapped without the trailing comma, compiles. Re-measured 2026-10-01: it no
+     longer reproduces — the wrapped form with the trailing comma, which is what
+     `botopink format` writes, parses with a plain and with a generic return
+     type, and `src/async.bp` is formatted like the rest of `libs/std` (its
+     DO-NOT-FORMAT banner is gone).
   2. (fixed by front 24, which made `@Task<@Result<T, E>>` parameters common)
      `Array<Array<T>>` — any doubled `>>` — as a parameter followed by another
      parameter used to red `generic-arg-skip-forbidden`: the inner list's `>>`

@@ -1513,21 +1513,16 @@ rules they pinned — a function has one return, so it has one effect.
   (brace bodies expanded, `import {a, b}` spacing) and `botopink format --check` exits 0 in all four
   `modules/*` roots and in `deps/shapesdsl`. The cells' output did not move. Nothing in this suite
   *calls* `format --check`: the caller is `scripts/format-check.sh`, stage 3 of `scripts/gate.sh`.
-  `tests/language/modules` is canonical but for one file (front 112 of 1.0.11-beta: 36 of the 37
-  files decision 65 had moved were reformatted by `botopink format`, the cells' output unchanged;
-  `modules/decorator_imported_function_name_conflict/src/main.bp` is not, because its four
-  `.expect` files pin the refusal at `src/main.bp:17:3` and the reformat moves that line to 21 —
-  the cell's owner moves the four lines to `src/main.bp:21:3`, reformats the file, and the tree
-  joins `TREES`); `modules/lexer_error_in_imported_module/src/pattern.bp` — the bad escape the cell
-  exists to refuse — is left out of the walk by `format_cmd.zig`'s second structural arm (gate-c:
-  a `.bp` under `modules/<cell>/` that the cell's `.expect` files name and that does not lex or
-  parse), the way `reject/<n>.bp` beside its `<n>.expect` is by the first. `run/` and `test/` are
-  **not** in `TREES`: their reformat does not round-trip on two cells — `run/record_update.bp`
-  (`Cfg(..base, revalidate: 60)` is printed `Cfg(..: base, …)`, which does not parse) and
-  `test/effect_result.bp` (`assert (parse(7) catch -1) == 7` is printed with a `try` inserted
-  under the parentheses, which the parser refuses as `try-await-operand`) — both the printer's
-  (`modules/compiler-core/src/format.zig`, `01-compiler/16-formatter`); the two trees join
-  `TREES` when the printer round-trips them and the 160 other files are reformatted.
+  `tests/language` is one of its `TREES`: `test/`, `run/` and `modules/` are canonical — a cell
+  is written formatted (`botopink format <file>`), and an unformatted one is a red gate. Two
+  things are outside the walk, both by structure (`format_cmd.zig`), never by a list: every
+  `reject/<n>.bp` beside its `<n>.expect`, and
+  `modules/lexer_error_in_imported_module/src/pattern.bp` — the bad escape the cell exists to
+  refuse — by the second arm (gate-c: a `.bp` under `modules/<cell>/` that the cell's `.expect`
+  files name and that does not lex or parse). A `modules/<cell>/<target>.expect` pins a
+  `<file>:<L>:<C>`: reformatting the file it names moves the pinned line with it, in the same
+  change (`modules/decorator_imported_function_name_conflict` pins `src/main.bp:21:3`, the
+  `#[tag]` under an `@emit(…)` argument the formatter opens over four lines).
 
 **Two step-4.3 measurements worth keeping.** `@panic` and `@todo` abort with stdout intact and a
 non-zero status on all four backends (`run/panic_aborts.bp`, `run/todo_aborts.bp`, `.exit` =

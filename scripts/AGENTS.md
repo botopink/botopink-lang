@@ -208,25 +208,25 @@ file per job, printed in its own order afterwards — which is what lets
 
 `scripts/format-check.sh` — stage 3 of `gate.sh` and a step of CI's `test` job:
 `zig-out/bin/botopink format --check <tree>` for every tree in its `TREES`
-array, which names the trees the gate holds canonical: every `examples/*`
-directory, `libs/std`'s two `.d.bp` files, `libs/routing`, `libs/actions`,
-`libs/validation` and `modules/compiler-cli/tests`. `format --check` on
-a directory reaches every `.bp` and `.d.bp` under it (nested projects included)
-and structurally leaves out hidden directories, `node_modules`, a
-`reject/<n>.bp` beside its `<n>.expect` and a `modules/<cell>/` file the cell's
-`<target>.expect` names that does not lex or parse
-(`modules/compiler-cli/src/cli/format_cmd.zig`); the list is not a skip list
-and there is no other way to exempt a file (decision 67). A tree that is red
-is a red gate, fixed by `botopink format <tree>` in a reformat-only commit;
-a tree the printer cannot round-trip is a formatter defect
-(`01-compiler/16-formatter`) and stays out until the printer is fixed — today
-`tests/language/run` and `tests/language/test` (two cells, named in
-`tests/language/AGENTS.md` § 66); `tests/language/modules` (36 of its 37 files
-reformatted) joins when the one cell whose `.expect` files pin a location the
-reformat moves has those four lines moved with it (same §); `libs/std` joins
-when the 26 snapshots that quote its source verbatim (the `std_package_*`
-codegen snapshots and two LSP snapshots, named in the script's header) are
-re-recorded in the same commit as its reformat. Exit `0` when every listed tree is canonical;
+array, which names the trees the gate holds canonical: `examples` (every
+example project and `hello.bp`), `libs/std`, `libs/routing`, `libs/actions`,
+`libs/validation`, `modules/compiler-cli/tests`, `modules/manifest/tests` and
+`tests/language` — every tracked `.bp` of the checkout is under one of them.
+`format --check` on a directory reaches every `.bp` and `.d.bp` under it
+(nested projects included) and structurally leaves out hidden directories,
+`node_modules`, a `reject/<n>.bp` beside its `<n>.expect` and a
+`modules/<cell>/` file the cell's `<target>.expect` names that does not lex or
+parse (`modules/compiler-cli/src/cli/format_cmd.zig`) — under `tests/language`,
+every `reject/` cell and `modules/lexer_error_in_imported_module/src/pattern.bp`;
+the list is not a skip list and there is no other way to exempt a file
+(decision 67). A tree that is red is a red gate, fixed by `botopink format
+<tree>` in a reformat-only commit; a tree the printer cannot round-trip is a
+formatter defect (`01-compiler/16-formatter`), fixed in the printer. A reformat
+carries what quotes the text it moves, in the same commit: `libs/std`'s source
+is quoted verbatim by the `std_package_*` codegen snapshots and by two LSP
+snapshots (`definition_std_module_member`, `completion_array_methods`), and a
+`modules/<cell>/<target>.expect` pins a `<file>:<L>:<C>` the reformat of that
+file can move. Exit `0` when every listed tree is canonical;
 `1` naming the tree and the files, with the `Unchanged` lines filtered out.
 
 ## git-hooks/

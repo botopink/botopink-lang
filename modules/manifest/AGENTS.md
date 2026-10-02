@@ -28,7 +28,8 @@ manifest/
 ├── AGENTS.md            ← you are here
 ├── src/
 │   └── root.zig         ← the whole module: model, parser, workspaces, discovery, resolution + unit tests
-└── tests/fixtures/      ← on-disk fixtures the unit tests read (cwd = modules/manifest)
+└── tests/fixtures/      ← on-disk fixtures the unit tests read (cwd = modules/manifest); their `.bp` files are
+    │                       canonical — `modules/manifest/tests` is one of `scripts/format-check.sh`'s `TREES`
     ├── workspace/       ← a good workspace: two library members, one library member without files, one example
     ├── bad/<case>/      ← one refused manifest per located error (nested-workspace, duplicate-member, …)
     ├── roots/           ← what `scanRoots` sees: repository/ (plain package + workspace), other/ (a second

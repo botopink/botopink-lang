@@ -155,8 +155,8 @@ jobs:
         shell: bash
         run: zig build test-cli
 
-      # Decision 66: `botopink format --check` over the compiler's own canonical
-      # `.bp` trees — the list, and the red trees with their causes, are in
+      # Decision 66: `botopink format --check` over the compiler's own `.bp`
+      # trees, every one canonical — the list is `TREES` in
       # scripts/format-check.sh. Needs only the CLI, installed by test-cli.
       - name: botopink format --check
         shell: bash

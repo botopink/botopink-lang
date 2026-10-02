@@ -259,7 +259,7 @@ run is [`scripts/gate.sh`](scripts/gate.sh) — stages 1–4 one after the other
 
 1. `--staged`: conflict markers and `zig fmt --check` on staged files, and a staged snapshot candidate (`*.snap.new`, `*.snap.md.new` — `git add -f` gets past `.gitignore`) is refused;
 2. `zig build`;
-3. `scripts/format-check.sh` (`botopink format --check` over the compiler's canonical `.bp` trees — decision 66's caller; the trees, and the red ones with their causes, are named in the script);
+3. `scripts/format-check.sh` (`botopink format --check` over the compiler's canonical `.bp` trees — decision 66's caller; `TREES` in the script names them, and every tracked `.bp` is under one or structurally exempt);
 4. `zig build test` (compiler-core, language-server, CLI and lib-test-runner unit suites; `--cold` deletes `modules/compiler-core/.botopinkbuild/runtime-cache` first — required for the run that decides a merge);
 4b. `scripts/snap_audit.sh --mode=runtime-parity` (every codegen snapshot exists under `snapshots/codegen/beam/` and `…/wat/`, and each pair is equal once the `COMPTIME BEAM ASSEMBLY`/`COMPTIME WAT` listings are set aside — front 18 step 4, decision 85; no allow-list);
 5. `zig build test-bpmp` (the package manager's unit suite);

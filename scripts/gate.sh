@@ -14,9 +14,9 @@
 #                           gate, staged or not
 #   2. zig build            the CLI, the LSP and the runners link
 #   3. format-check.sh      `botopink format --check` over the compiler's own
-#                           canonical `.bp` trees (decision 66 — the scan has a
-#                           caller); the trees, and the red ones with their
-#                           causes, are named in scripts/format-check.sh
+#                           `.bp` trees (decision 66 — the scan has a caller);
+#                           the trees, every one canonical, are named in
+#                           scripts/format-check.sh
 #   4. zig build test       compiler-core + language-server + CLI +
 #                           lib-test-runner unit suites
 #                           (--cold deletes the runtime cache first)
@@ -212,7 +212,7 @@ zig build || fail "zig build"
 pass "zig build"
 
 stage "botopink format --check (scripts/format-check.sh)"
-bash scripts/format-check.sh || fail "scripts/format-check.sh (the tree and its files are named above; the script's header names the trees that are red today and why)"
+bash scripts/format-check.sh || fail "scripts/format-check.sh (the tree and its files are named above; run: zig-out/bin/botopink format <tree>, in a reformat-only commit)"
 pass "botopink format --check"
 
 stage "zig build test$([ "$cold" -eq 1 ] && echo ' (cold runtime cache)')"
