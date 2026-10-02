@@ -443,3 +443,116 @@ test "string words splits on whitespace runs" {
     val ws = "a  b\tc".words();
     assert ws.length == 3;
 }
+
+// ── string numerals (1.0.11-beta front 97) ───────────────────────────────────
+// `parseInt` / `parseFloat` decide in botopink which strings are numerals, so
+// every refusal below is the same text on every target. An `i64` has no
+// literal, so an integer answer is compared through `toString`.
+
+// What `s.parseInt()` answers, as text: the integer, or the refusal.
+fn parsedInt(s: string) -> string {
+    return case s.parseInt() {
+        Ok(n) -> n.toString();
+        Error(reason) -> reason;
+    };
+}
+
+// The refusal of `s.parseFloat()`, `""` when it parsed.
+fn floatRefusal(s: string) -> string {
+    return case s.parseFloat() {
+        Ok(_) -> "";
+        Error(reason) -> reason;
+    };
+}
+
+test "string parseInt reads a decimal integer" {
+    assert parsedInt("42") == "42";
+    assert parsedInt("-0") == "0";
+    assert parsedInt("0") == "0";
+    assert parsedInt("+7") == "7";
+    assert parsedInt("-15") == "-15";
+    assert parsedInt("007") == "7";
+    assert "42".parseInt().isOk();
+}
+
+test "string parseInt refuses anything but a sign and digits, naming the input" {
+    assert parsedInt("4 2") == "parseInt: \"4 2\" is not an integer";
+    assert parsedInt("") == "parseInt: \"\" is not an integer";
+    assert parsedInt("42x") == "parseInt: \"42x\" is not an integer";
+    assert parsedInt("0x2A") == "parseInt: \"0x2A\" is not an integer";
+    assert parsedInt(" 42") == "parseInt: \" 42\" is not an integer";
+    assert parsedInt("42\n") == "parseInt: \"42\n\" is not an integer";
+    assert parsedInt("-") == "parseInt: \"-\" is not an integer";
+    assert parsedInt("+-5") == "parseInt: \"+-5\" is not an integer";
+    assert parsedInt("--5") == "parseInt: \"--5\" is not an integer";
+    assert parsedInt("4.2") == "parseInt: \"4.2\" is not an integer";
+    assert parsedInt("1e3") == "parseInt: \"1e3\" is not an integer";
+    assert parsedInt("1_000") == "parseInt: \"1_000\" is not an integer";
+}
+
+test "string parseInt answers the integers every target counts exactly" {
+    assert parsedInt("9007199254740991") == "9007199254740991";
+    assert parsedInt("-9007199254740991") == "-9007199254740991";
+    assert parsedInt("0009007199254740991") == "9007199254740991";
+    assert parsedInt("9007199254740992")
+        == "parseInt: \"9007199254740992\" is out of range";
+    assert parsedInt("-9007199254740992")
+        == "parseInt: \"-9007199254740992\" is out of range";
+    assert parsedInt("9007199254740993")
+        == "parseInt: \"9007199254740993\" is out of range";
+    assert parsedInt("99999999999999999999999999")
+        == "parseInt: \"99999999999999999999999999\" is out of range";
+}
+
+test "string parseFloat reads a decimal numeral" {
+    assert "1e3".parseFloat().unwrapOr(0.0) == 1000.0;
+    assert "1.5".parseFloat().unwrapOr(0.0) == 1.5;
+    assert "42".parseFloat().unwrapOr(0.0) == 42.0;
+    assert "+2.50E-2".parseFloat().unwrapOr(0.0) == 0.025;
+    assert "-2.5e-3".parseFloat().unwrapOr(0.0) == 0.0 - 0.0025;
+    assert "007.50".parseFloat().unwrapOr(0.0) == 7.5;
+    assert "0.1".parseFloat().unwrapOr(0.0) == 0.1;
+    assert "1e+2".parseFloat().unwrapOr(0.0) == 100.0;
+}
+
+test "string parseFloat refuses anything but a decimal numeral, naming the input" {
+    assert floatRefusal(".5") == "parseFloat: \".5\" is not a number";
+    assert floatRefusal("1.") == "parseFloat: \"1.\" is not a number";
+    assert floatRefusal("1e") == "parseFloat: \"1e\" is not a number";
+    assert floatRefusal("1e+") == "parseFloat: \"1e+\" is not a number";
+    assert floatRefusal("1e+-2") == "parseFloat: \"1e+-2\" is not a number";
+    assert floatRefusal("e5") == "parseFloat: \"e5\" is not a number";
+    assert floatRefusal("1.2.3") == "parseFloat: \"1.2.3\" is not a number";
+    assert floatRefusal("1e2e3") == "parseFloat: \"1e2e3\" is not a number";
+    assert floatRefusal("1e2.5") == "parseFloat: \"1e2.5\" is not a number";
+    assert floatRefusal("NaN") == "parseFloat: \"NaN\" is not a number";
+    assert floatRefusal("Infinity")
+        == "parseFloat: \"Infinity\" is not a number";
+    assert floatRefusal(" 1") == "parseFloat: \" 1\" is not a number";
+    assert floatRefusal("1 ") == "parseFloat: \"1 \" is not a number";
+    assert floatRefusal("") == "parseFloat: \"\" is not a number";
+    assert floatRefusal("-") == "parseFloat: \"-\" is not a number";
+    assert floatRefusal("+-1") == "parseFloat: \"+-1\" is not a number";
+    assert floatRefusal("0x10") == "parseFloat: \"0x10\" is not a number";
+    assert floatRefusal("1_000") == "parseFloat: \"1_000\" is not a number";
+}
+
+test "string parseFloat rounds to the nearest f64 and refuses an overflow" {
+    assert "5e-324".parseFloat().unwrapOr(1.0) == 5.0e-324;
+    assert "2.4703282292062328e-324".parseFloat().unwrapOr(1.0) == 5.0e-324;
+    assert "2.4703282292062327e-324".parseFloat().unwrapOr(1.0) == 0.0;
+    assert "1e-400".parseFloat().unwrapOr(1.0) == 0.0;
+    assert "1e-99999999999999999999".parseFloat().unwrapOr(1.0) == 0.0;
+    assert "0e99999999999999999999".parseFloat().unwrapOr(1.0) == 0.0;
+    assert "1.7976931348623157e308".parseFloat().unwrapOr(1.0)
+        == 1.7976931348623157e308;
+    assert "1.7976931348623158e308".parseFloat().unwrapOr(1.0)
+        == 1.7976931348623157e308;
+    assert "9007199254740993".parseFloat().unwrapOr(1.0) == 9007199254740992.0;
+    assert floatRefusal("1.7976931348623159e308")
+        == "parseFloat: \"1.7976931348623159e308\" overflows f64";
+    assert floatRefusal("1e400") == "parseFloat: \"1e400\" overflows f64";
+    assert floatRefusal("-1e400") == "parseFloat: \"-1e400\" overflows f64";
+    assert floatRefusal("1e99999999999999999999")
+        == "parseFloat: \"1e99999999999999999999\" overflows f64";
+}

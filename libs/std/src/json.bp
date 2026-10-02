@@ -1204,6 +1204,40 @@ test "json.decode rounds a numeral to the nearest f64, ties to even" {
     assert decodesTo("1e-99999999999999999999", Json.Num(value: 0.0));
 }
 
+// True when `s.parseFloat()` answers the very `f64` `decode(s)` answers.
+fn parseFloatAgrees(s: string) -> bool {
+    return decodesTo(s, Json.Num(value: s.parseFloat().unwrapOr(0.0 - 1.0)));
+}
+
+test "json.decode and string.parseFloat answer the same f64 for a numeral" {
+    assert parseFloatAgrees("5e-324");
+    assert parseFloatAgrees("1.7976931348623157e308");
+    assert parseFloatAgrees("1.7976931348623158e308");
+    assert parseFloatAgrees("4.9406564584124654e-324");
+    assert parseFloatAgrees("2.4703282292062328e-324");
+    assert parseFloatAgrees("2.4703282292062327e-324");
+    assert parseFloatAgrees("2.2250738585072014e-308");
+    assert parseFloatAgrees("2.2250738585072011e-308");
+    assert parseFloatAgrees("2.2250738585072012e-308");
+    assert parseFloatAgrees("0.1");
+    assert parseFloatAgrees("0.3");
+    assert parseFloatAgrees("1e23");
+    assert parseFloatAgrees("1e22");
+    assert parseFloatAgrees("1e-22");
+    assert parseFloatAgrees("9007199254740993");
+    assert parseFloatAgrees("9007199254740995");
+    assert parseFloatAgrees("123456789012345.6789e-3");
+    assert parseFloatAgrees("3.14159265358979323846264338327950288");
+    assert parseFloatAgrees("0.000001e-300");
+    assert parseFloatAgrees(
+        "100000000000000000000000000000000000000000000000000e-50",
+    );
+    assert parseFloatAgrees("-2.5e-3");
+    assert parseFloatAgrees("1e-99999999999999999999");
+    assert "1.7976931348623159e308".parseFloat().isError();
+    assert "1e99999999999999999999".parseFloat().isError();
+}
+
 test "json.decode reads the three literals" {
     assert decodesTo("true", Json.Bool(value: true));
     assert decodesTo("false", Json.Bool(value: false));

@@ -15,12 +15,12 @@ std/
 ├── botopink.json            ← `files` lists the three core files below
 ├── test/                    ← compiled in test mode against the global env (no `mod` needed)
 │   ├── result_test.bp       ← `@Result` method surface
-│   ├── primitives_test.bp   ← tests of the `primitives.bp` interfaces (green on commonJS + erlang)
+│   ├── primitives_test.bp   ← tests of the `primitives.bp` interfaces, `String.parseInt` / `parseFloat` included (green on commonJS + erlang)
 │   └── primitives_gaps_test.bp ← primitive tests that hit a compiler gap, each gap named with its owning front
 └── src/
     ├── root.bp              ← module-tree root: seventeen `pub mod` lines — the fifteen root modules, `pub mod io;`, `pub mod testing;` (decision 106)
     │                        — core files flattened into the global type env (`std_core_files` in build.zig):
-    ├── primitives.bp        ← primitive behavior registry (Number/Integer/Signed/Float, I32…F64, Bool, String, Function, Pair, Array); no tests (see `test/`). `Array.lastIndexOf` is a `default fn` over `reverse` + `indexOf` (beam's path) with an erlang and a node cell; wasm lowers it to `$__arr_last_index_of_*`. Its slice helpers are free `declare fn`s (`stringSlice0(s, start)` — no `self`: `self-param-outside-type`), and their Node templates read a missing start as 0, because commonJS's `slice` patch is global
+    ├── primitives.bp        ← primitive behavior registry (Number/Integer/Signed/Float, I32…F64, Bool, String, Function, Pair, Array); no tests (see `test/`). `Array.lastIndexOf` is a `default fn` over `reverse` + `indexOf` (beam's path) with an erlang and a node cell; wasm lowers it to `$__arr_last_index_of_*`. Its slice helpers are free `declare fn`s (`stringSlice0(s, start)` — no `self`: `self-param-outside-type`), and their Node templates read a missing start as 0, because commonJS's `slice` patch is global. `String.parseInt()` / `String.parseFloat()` (1.0.11-beta front 97) are `default fn`s over four free cells — see *String numerals* below
     ├── builtins.d.bp        ← builtin surface: print, @Result/@Task/@Component/@Iterator/@Stream (`YieldStep`)…, `Display` (decision 8 §7), `Index`/`Slice` (decision 63, amended), `Target`/`External`/`Host` annotations, std.syntax (`Expr`, `ExprContext`, `CustomNode`, …), `@Decl` reflection, effect-wrapper rules
     ├── builtins_fns.d.bp    ← builtin fns with literal defaults (`todo`, `panic`)
     │                        — the PURE root: same input, same output; imports nothing from `io/` (`std-root-imports-io`)
@@ -416,6 +416,46 @@ gone, not aliased (decision 127).
   `math:round/1` do not exist in OTP, `string:str/2` rejects binaries,
   `string:trim/1` strips both ends. Every host binding carries a test that
   asserts the value.
+
+## String numerals — `parseInt` / `parseFloat` (1.0.11-beta front 97)
+
+`"42".parseInt() -> @Result<i64, string>` and `"1e3".parseFloat() -> @Result<f64, string>` are
+`default fn`s of `behavior String`: the method decides in botopink which strings are numerals, so
+every target refuses the same inputs with the same text, and a host cell only converts a string the
+method has accepted.
+
+| | accepted — the WHOLE string | `Error` (the text names the input) |
+|---|---|---|
+| `parseInt` | an optional `+` / `-`, then digits `0`–`9` (`"-0"` is `0`, `"007"` is `7`) | anything else — `""`, `"4 2"`, `"42x"`, `"0x2A"`, `"4.2"`, `"1e3"`, `"-"`: `parseInt: "<input>" is not an integer` · a numeral beyond ±9007199254740991 (2^53 − 1): `parseInt: "<input>" is out of range` |
+| `parseFloat` | an optional sign, digits, an optional `.` with digits on both sides, an optional `e` / `E` exponent with an optional sign (`"1e3"`, `"+2.50E-2"`, `"42"`) | anything else — `".5"`, `"1."`, `"1e"`, `"NaN"`, `"Infinity"`, `"0x10"`, `" 1"`, `""`: `parseFloat: "<input>" is not a number` · an overflow: `parseFloat: "<input>" overflows f64`. An underflow is `0.0` |
+
+- **The integer range is the one every target counts exactly.** An `i64` is a JavaScript number on
+  commonJS, which stops counting by one at 2^53; `binary_to_integer/1` is exact at any size. Refusing
+  past ±(2^53 − 1) on both is what makes the two answer the same value for every input (measured:
+  `"9007199254740993"` is `9007199254740992` under `Number` and exact under Erlang).
+- **`parseFloat` is the host's correctly rounded conversion** (`Number` / `binary_to_float/1`) of the
+  numeral rewritten as `<digits>.<digits>e<exponent>` — the one form `binary_to_float/1` reads (it
+  refuses `1e3` and `1.`). It answers `json.decode`'s `f64` bit for bit: `json.bp`'s test
+  "json.decode and string.parseFloat answer the same f64 for a numeral" runs both over decision 142's
+  boundary list (`5e-324`, `1.7976931348623157e308`, the halfway points, `9007199254740993`, …).
+  `"-0".parseFloat()` is `-0.0`, which `==` tells from `0.0` on erlang (`=:=`) and not on commonJS.
+- **The cells** are free `declare fn`s beside the slice helpers: `stringIsDigits(s)`,
+  `stringToInteger(numeral, refusal)`, `stringToFloat(numeral, refusal)` and
+  `stringNumeralRefused<T>(refusal)` — the last three build the `@Result`, because of the first gap below.
+- **Two emitter gaps met writing them, each worked around here, neither std's.** In a `default fn`
+  of this file (1) commonJS emits `Ok(x)` / `Error(e)` as written (`ReferenceError: Ok is not
+  defined` at the first call), so the `@Result` is built by a host cell; (2) erlang emits
+  `opt.unwrapOr(d)` on an optional as a call to an undefined `unwrapOr/2` (`erlc` refuses the
+  module), so the body reads its pieces with `indexOf` and the slice helpers, never `split(…).at(i)`.
+  Reproduction of each: put `return Ok(1);` / `val x = self.split(".").at(0).unwrapOr("");` in a new
+  `default fn` of `behavior String` and call it from a scratch project.
+- Runs on commonJS, erlang and beam (the Erlang templates). On wasm a call traps (`unreachable`),
+  as `"a b".words()` and every other template-only `String` method does — the wasm front's.
+- Both are prototype patches on commonJS (`String.prototype.parseInt = …`), so the nine
+  `snapshots/codegen/{beam,wat}/commonJS/*` snapshots that print the `String` prelude carry the two
+  bodies.
+- Tests: `test/primitives_test.bp` (six tests — the accepted forms, every refusal's text, the range
+  and the rounding boundaries) and the `json.bp` agreement test.
 
 ## `behavior Index` / `behavior Slice` (decision 63, amended)
 

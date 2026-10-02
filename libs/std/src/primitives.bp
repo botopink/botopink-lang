@@ -282,6 +282,79 @@ behavior String {
     #[@External.Erlang("(fun(__S, __Sub) -> __L = byte_size(__S), __SL = byte_size(__Sub), __Find = fun __F(__I) -> case __I < 0 of true -> -1; false -> case binary:part(__S, __I, min(__SL, __L - __I)) =:= __Sub of true -> __I; false -> __F(__I - 1) end end end, __Find(__L - __SL) end)($0, $1)")]
     #[@External.Node("lastIndexOf")]
     fn lastIndexOf(self: Self, sub: string) -> i32;
+
+    // The integer a decimal numeral spells: an optional `+` or `-`, then the
+    // digits `0`–`9` and nothing else — the WHOLE string, so whitespace, a
+    // fraction, an exponent, `0x2A` and the empty string are an `Error` naming
+    // the input. Which strings are numerals is decided here, in botopink, so
+    // every target refuses the same inputs; the host cell converts digits it
+    // is never asked to judge. The answer is an `i64` every target holds
+    // exactly: a numeral beyond ±9007199254740991 (2^53 - 1, where a commonJS
+    // number stops counting by one) is an `Error` on every target.
+    default fn parseInt(self: Self) -> @Result<i64, string> {
+        val signed = self.startsWith("-") || self.startsWith("+");
+        val digits = if (signed) stringSlice0(self, 1) else self;
+        return if (stringIsDigits(digits))
+            stringToInteger(
+                self,
+                ["parseInt: \"", self, "\" is out of range"].join(""),
+            )
+        else
+            stringNumeralRefused(
+                ["parseInt: \"", self, "\" is not an integer"].join(""),
+            );
+    }
+
+    // The `f64` nearest to a decimal numeral: an optional `+` or `-`, digits,
+    // an optional `.` with digits on BOTH sides, an optional exponent (`e` or
+    // `E`, an optional sign, digits) — the whole string. `.5`, `1.`, `1e`,
+    // `NaN`, `Infinity`, `0x10`, whitespace and the empty string are an
+    // `Error` naming the input, decided in botopink; the host cell converts
+    // the numeral rewritten as `<digits>.<digits>e<exponent>` (the one form
+    // both hosts read), correctly rounded on both. A numeral too large for an
+    // `f64` is an `Error`; one too small to tell from zero is `0.0`.
+    default fn parseFloat(self: Self) -> @Result<f64, string> {
+        val signed = self.startsWith("-") || self.startsWith("+");
+        val sign = if (self.startsWith("-")) "-" else "";
+        val unsigned = if (signed) stringSlice0(self, 1) else self;
+        val lowered = unsigned.replaceAll("E", "e");
+        val exponentAt = lowered.indexOf("e");
+        val mantissa = if (exponentAt < 0)
+            lowered
+        else
+            stringSlice1(lowered, 0, exponentAt);
+        val exponent = if (exponentAt < 0)
+            "0"
+        else
+            stringSlice0(lowered, exponentAt + 1);
+        val pointAt = mantissa.indexOf(".");
+        val whole = if (pointAt < 0)
+            mantissa
+        else
+            stringSlice1(mantissa, 0, pointAt);
+        val fraction = if (pointAt < 0)
+            "0"
+        else
+            stringSlice0(mantissa, pointAt + 1);
+        val exponentSigned = exponent.startsWith("-")
+            || exponent.startsWith("+");
+        val exponentDigits = if (exponentSigned)
+            stringSlice0(exponent, 1)
+        else
+            exponent;
+        val wellFormed = stringIsDigits(whole)
+            && stringIsDigits(fraction)
+            && stringIsDigits(exponentDigits);
+        return if (wellFormed)
+            stringToFloat(
+                [sign, whole, ".", fraction, "e", exponent].join(""),
+                ["parseFloat: \"", self, "\" overflows f64"].join(""),
+            )
+        else
+            stringNumeralRefused(
+                ["parseFloat: \"", self, "\" is not a number"].join(""),
+            );
+    }
 }
 
 // ── string slice arity dispatch ──────────────────────────────────────────────
@@ -298,6 +371,39 @@ declare fn stringSlice0(s: string, start: i32) -> string;
 #[@External.Erlang("string:slice($0, $1, (($2) - ($1)))")]
 #[@External.Node("""((__s, __a, __e) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })($0, $1, $2)""")]
 declare fn stringSlice1(s: string, start: i32, end: ?i32) -> string;
+
+// ── string numerals ──────────────────────────────────────────────────────────
+// Host helpers behind `default fn parseInt` / `parseFloat`. The methods decide
+// in botopink which strings are numerals; these convert, and build the
+// `@Result` — a `default fn` body of this file is emitted as written on
+// commonJS, where `Ok(…)` / `Error(…)` name nothing.
+
+// True when `s` is one or more of the digits `0`–`9` and nothing else.
+#[@External.Erlang("""(fun(__S) -> (__S =/= <<>>) andalso lists:all(fun(__C) -> (__C >= 48) andalso (__C =< 57) end, binary_to_list(__S)) end)($0)""")]
+#[@External.Node("""(/^[0-9]+$/.test($0))""")]
+declare fn stringIsDigits(s: string) -> bool;
+
+// The integer `<sign><digits>` spells; `Error(refusal)` beyond ±(2^53 - 1).
+#[@External.Erlang("""(fun(__N, __E) -> case abs(__N) =< 9007199254740991 of true -> {ok, __N}; false -> {error, __E} end end)(binary_to_integer($0), $1)""")]
+#[@External.Node("""((__n, __e) => Number.isSafeInteger(__n) ? { ok: __n + 0 } : { error: __e })(Number($0), $1)""")]
+declare fn stringToInteger(
+    numeral: string,
+    refusal: string,
+) -> @Result<i64, string>;
+
+// The `f64` `<sign><digits>.<digits>e<sign><digits>` spells; `Error(refusal)`
+// when it overflows. `binary_to_float/1` raises on an overflow and answers
+// `0.0` on an underflow, which is what `Number` does with `Infinity` and `0`.
+#[@External.Erlang("""(fun(__S, __E) -> try {ok, binary_to_float(__S)} catch _:_ -> {error, __E} end end)($0, $1)""")]
+#[@External.Node("""((__n, __e) => Number.isFinite(__n) ? { ok: __n } : { error: __e })(Number($0), $1)""")]
+declare fn stringToFloat(
+    numeral: string,
+    refusal: string,
+) -> @Result<f64, string>;
+
+#[@External.Erlang("""{error, $0}""")]
+#[@External.Node("""({ error: $0 })""")]
+declare fn stringNumeralRefused<T>(refusal: string) -> @Result<T, string>;
 
 // ── function combinators ──────────────────────────────────────────────────────
 
