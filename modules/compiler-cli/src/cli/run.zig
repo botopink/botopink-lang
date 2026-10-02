@@ -6,6 +6,7 @@ const config = @import("./config.zig");
 const build_cmd = @import("./build.zig");
 const libs = @import("./libs.zig");
 const arglist = @import("./arglist.zig");
+const otp = @import("./otp.zig");
 
 // ── Options ───────────────────────────────────────────────────────────────────
 
@@ -133,7 +134,7 @@ fn runErlang(arena: std.mem.Allocator, io: std.Io, opts: Options, entry_atom: []
     }
 
     const eval = try std.fmt.allocPrint(arena, "{s}:main([]), halt().", .{entry_atom});
-    return spawnWait(arena, io, &.{ "erl", "-noshell", "-pa", dir, "-eval", eval });
+    return spawnWait(arena, io, try otp.erlArgv(arena, &.{ "-noshell", "-pa", dir, "-eval", eval }));
 }
 
 // ── the BEAM runner ───────────────────────────────────────────────────────────
@@ -168,7 +169,7 @@ fn runBeam(arena: std.mem.Allocator, io: std.Io, opts: Options, entry_atom: []co
     }
 
     const eval = try std.fmt.allocPrint(arena, "'{s}':main([]), halt().", .{entry_atom});
-    return spawnWait(arena, io, &.{ "erl", "-noshell", "-pa", dir, "-eval", eval });
+    return spawnWait(arena, io, try otp.erlArgv(arena, &.{ "-noshell", "-pa", dir, "-eval", eval }));
 }
 
 /// `erlc -o <dir> <files…>` (`+from_asm` for BEAM assembly), without a command
@@ -187,7 +188,14 @@ fn compileAll(arena: std.mem.Allocator, io: std.Io, dir: []const u8, kind: enum 
         .erlang => "erl",
         .beam => "asm",
     };
-    return spawnWait(arena, io, &.{ "erl", "-noshell", "-eval", COMPILE_EVAL, "-extra", dir, mode, list });
+    // A job of the command's `erl` session (`otp.zig`), after `build`'s check.
+    const argv: []const []const u8 = &.{ "erl", "-noshell", "-eval", COMPILE_EVAL, "-extra", dir, mode, list };
+    const result = otp.job(arena, io, COMPILE_EVAL, argv[5..], 1) catch |err| {
+        reporter.errMsg(arglist.spawnError(arena, "erl", argv, err));
+        return 1;
+    };
+    if (result.stdout.len > 0) std.Io.File.stdout().writeStreamingAll(io, result.stdout) catch {};
+    return result.code;
 }
 
 const COMPILE_EVAL =

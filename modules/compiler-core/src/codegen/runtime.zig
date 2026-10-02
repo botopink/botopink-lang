@@ -706,7 +706,7 @@ pub fn executeErlang(allocator: std.mem.Allocator, erl_code: []const u8, module_
     // A crashing program (non-zero exit) records an empty RUN LOG: the
     // partial stdout it managed to write comes with an Erlang stack trace
     // that is not worth pinning in a snapshot.
-    const ran = try runCaptured(allocator, io, &.{ "erl", "-noinput", "-pa", ".", "-s", entry_module, "_botopink_main", "-s", "init", "stop" }, tmp_dir, RUNTIME_TIMEOUT_NS);
+    const ran = try runCaptured(allocator, io, &([_][]const u8{"erl"} ++ otp.QUIET_FLAGS ++ [_][]const u8{ "-noinput", "-pa", ".", "-s", entry_module, "_botopink_main", "-s", "init", "stop" }), tmp_dir, RUNTIME_TIMEOUT_NS);
     if (ran.status != .ok) {
         allocator.free(ran.output);
         const empty = try allocator.dupe(u8, "");
@@ -820,7 +820,7 @@ pub fn executeBeamAsm(allocator: std.mem.Allocator, asm_code: []const u8, module
         }
     }
 
-    const ran = try runCaptured(allocator, io, &.{ "erl", "-noinput", "-pa", ".", "-s", entry_module, "_botopink_main", "-s", "init", "stop" }, tmp_dir, RUNTIME_TIMEOUT_NS);
+    const ran = try runCaptured(allocator, io, &([_][]const u8{"erl"} ++ otp.QUIET_FLAGS ++ [_][]const u8{ "-noinput", "-pa", ".", "-s", entry_module, "_botopink_main", "-s", "init", "stop" }), tmp_dir, RUNTIME_TIMEOUT_NS);
     if (ran.status != .ok) {
         allocator.free(ran.output);
         const empty = try allocator.dupe(u8, "");

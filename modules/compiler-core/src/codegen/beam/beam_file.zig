@@ -740,7 +740,7 @@ fn runErl(tmp: *std.testing.TmpDir, beam: []const u8, eval: []const u8) ![]u8 {
     defer alloc.free(script);
 
     const result = try std.process.run(alloc, io, .{
-        .argv = &.{ "erl", "-noshell", "-eval", script },
+        .argv = &.{ "erl", "+sbwt", "none", "+sbwtdcpu", "none", "+sbwtdio", "none", "+S", "1:1", "-noshell", "-eval", script },
         .timeout = .{ .duration = .{ .raw = .{ .nanoseconds = 60 * std.time.ns_per_s }, .clock = .real } },
     });
     defer alloc.free(result.stderr);

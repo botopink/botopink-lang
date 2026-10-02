@@ -194,23 +194,17 @@ fn checkErlang(
     defer arglist.remove(io, list);
 
     // The plain arguments are the verdict cache directory (`-` for none) and the list file.
+    // One job of the command's `erl` session (`otp.zig`): the VM that answered
+    // the release, and that `run` compiles the output directory in next.
     const argv: []const []const u8 = &.{ "erl", "-noshell", "-eval", ERLANG_CHECK_EVAL, "-extra", cache_dir orelse "-", list };
-    const result = std.process.run(arena, io, .{
-        .argv = argv,
-        .stdout_limit = .limited(16 * 1024 * 1024),
-        .stderr_limit = .limited(16 * 1024 * 1024),
-    }) catch |err| {
+    const result = otp.job(arena, io, ERLANG_CHECK_EVAL, argv[5..], otp.onlineFor(files.items.len)) catch |err| {
         const msg = try std.fmt.allocPrint(arena, "`botopink build --target erlang` compiles what it emits with the OTP compiler, and {s}", .{arglist.spawnError(arena, "erl", argv, err)});
         reporter.errMsg(msg);
         if (err == error.FileNotFound) reporter.hintMsg("install Erlang/OTP 28+ and put `erl` on PATH");
         return false;
     };
     if (result.stdout.len > 0) std.Io.File.stderr().writeStreamingAll(io, result.stdout) catch {};
-    if (result.stderr.len > 0) std.Io.File.stderr().writeStreamingAll(io, result.stderr) catch {};
-    const code: u8 = switch (result.term) {
-        .exited => |c| c,
-        .signal, .stopped, .unknown => 1,
-    };
+    const code: u8 = result.code;
     if (code == 0) return true;
     reporter.errMsg("the OTP compiler refused emitted erlang — the build is not a program");
     return false;

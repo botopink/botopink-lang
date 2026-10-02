@@ -111,6 +111,8 @@ const USAGE_EXIT: u8 = 1;
 fn dispatch(init: std.process.Init) !u8 {
     const gpa = init.gpa;
     const io = init.io;
+    // The command's `erl` session (`cli/otp.zig`) ends with the command.
+    defer otp.close(io);
     const env_map: ?*const std.process.Environ.Map = init.environ_map;
     // Parsed options live as long as the process: allocate them in the process
     // arena so no command has to free its argument lists.
