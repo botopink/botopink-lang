@@ -117,6 +117,67 @@ pub type Json {
     Str(value: string),
     Arr(items: Array<Json>),
     Obj(members: Array<#(string, Json)>),
+
+    // ── 1.0.11-beta front 97: reading a decoded value ────────────────────────
+    // The readers every consumer of `decode` wrote for itself. None throws and
+    // none answers a `@Result`: a value of another kind answers the empty
+    // reading (`[]`, `""`, `null`), and `kindName` is what an error message
+    // says it found instead.
+
+    // What the value is, as a diagnostic reads: `null`, `a boolean`,
+    // `a number`, `a string`, `an array`, `an object`.
+    pub fn kindName(self: Self) -> string {
+        return case self {
+            Null -> "null";
+            Bool(value: _) -> "a boolean";
+            Num(value: _) -> "a number";
+            Str(value: _) -> "a string";
+            Arr(items: _) -> "an array";
+            Obj(members: _) -> "an object";
+        };
+    }
+
+    pub fn isObject(self: Self) -> bool {
+        return case self {
+            Obj(members: _) -> true;
+            _ -> false;
+        };
+    }
+
+    // An object's members in document order; `[]` for any other kind.
+    pub fn members(self: Self) -> Array<#(string, Json)> {
+        return case self {
+            Obj(members: found) -> found;
+            _ -> [];
+        };
+    }
+
+    // The value of an object's member `key` — the FIRST one of that name
+    // (`decode` never answers two) — and `null` when there is none or the
+    // value is not an object.
+    pub fn field(self: Self, key: string) -> ?Json {
+        val hit = self.members().filter({ m -> m._0 == key });
+        if (hit.length == 0)
+            return null
+        else
+            return hit.at(0).unwrapOr(#("", Json.Null))._1;
+    }
+
+    // A string's text; `""` for any other kind.
+    pub fn str(self: Self) -> string {
+        return case self {
+            Str(value: text) -> text;
+            _ -> "";
+        };
+    }
+
+    // An array's items in order; `[]` for any other kind.
+    pub fn items(self: Self) -> Array<Json> {
+        return case self {
+            Arr(items: found) -> found;
+            _ -> [];
+        };
+    }
 }
 
 // One parsed value and the index of the code point after it.
@@ -1204,6 +1265,40 @@ test "json.decode rounds a numeral to the nearest f64, ties to even" {
     assert decodesTo("1e-99999999999999999999", Json.Num(value: 0.0));
 }
 
+// True when `s.parseFloat()` answers the very `f64` `decode(s)` answers.
+fn parseFloatAgrees(s: string) -> bool {
+    return decodesTo(s, Json.Num(value: s.parseFloat().unwrapOr(0.0 - 1.0)));
+}
+
+test "json.decode and string.parseFloat answer the same f64 for a numeral" {
+    assert parseFloatAgrees("5e-324");
+    assert parseFloatAgrees("1.7976931348623157e308");
+    assert parseFloatAgrees("1.7976931348623158e308");
+    assert parseFloatAgrees("4.9406564584124654e-324");
+    assert parseFloatAgrees("2.4703282292062328e-324");
+    assert parseFloatAgrees("2.4703282292062327e-324");
+    assert parseFloatAgrees("2.2250738585072014e-308");
+    assert parseFloatAgrees("2.2250738585072011e-308");
+    assert parseFloatAgrees("2.2250738585072012e-308");
+    assert parseFloatAgrees("0.1");
+    assert parseFloatAgrees("0.3");
+    assert parseFloatAgrees("1e23");
+    assert parseFloatAgrees("1e22");
+    assert parseFloatAgrees("1e-22");
+    assert parseFloatAgrees("9007199254740993");
+    assert parseFloatAgrees("9007199254740995");
+    assert parseFloatAgrees("123456789012345.6789e-3");
+    assert parseFloatAgrees("3.14159265358979323846264338327950288");
+    assert parseFloatAgrees("0.000001e-300");
+    assert parseFloatAgrees(
+        "100000000000000000000000000000000000000000000000000e-50",
+    );
+    assert parseFloatAgrees("-2.5e-3");
+    assert parseFloatAgrees("1e-99999999999999999999");
+    assert "1.7976931348623159e308".parseFloat().isError();
+    assert "1e99999999999999999999".parseFloat().isError();
+}
+
 test "json.decode reads the three literals" {
     assert decodesTo("true", Json.Bool(value: true));
     assert decodesTo("false", Json.Bool(value: false));
@@ -1318,4 +1413,91 @@ test "json.decode reads escape.scriptJson's output as the same value" {
     val want = Json.Obj(members: [#("h", Json.Str(value: "</script><!--&"))]);
     assert decodesTo(raw, want);
     assert decodesTo(safe, want);
+}
+
+// ── the readers on `Json` (1.0.11-beta front 97) ─────────────────────────────
+
+// One value of each variant, in declaration order: `Null`, `Bool`, `Num`,
+// `Str`, `Arr`, `Obj`.
+fn everyKind() -> Array<Json> {
+    return [
+        Json.Null,
+        Json.Bool(value: true),
+        Json.Num(value: 1.5),
+        Json.Str(value: "hi"),
+        Json.Arr(items: [Json.Null, Json.Str(value: "x")]),
+        Json.Obj(
+            members: [
+                #("a", Json.Num(value: 1.0)),
+                #("b", Json.Str(value: "t")),
+            ],
+        ),
+    ];
+}
+
+// What `v.field(key)` answers, as text: the kind it found, or `absent`.
+fn fieldKind(v: Json, key: string) -> string {
+    val found = v.field(key);
+    return if (found != null) found.kindName() else "absent";
+}
+
+test "Json.kindName names each variant" {
+    assert everyKind().map({ v -> v.kindName() }).join(",")
+        == "null,a boolean,a number,a string,an array,an object";
+}
+
+test "Json.isObject is true for an object and for nothing else" {
+    assert everyKind().map({ v -> v.isObject().toString() }).join(",")
+        == "false,false,false,false,false,true";
+}
+
+test "Json.members answers an object's members in order and none for the rest" {
+    assert everyKind().map({ v -> v.members().length.toString() }).join(",")
+        == "0,0,0,0,0,2";
+    val doc = decode("{\"b\":1,\"a\":2,\"10\":3,\"2\":4}").unwrapOr(Json.Null);
+    assert doc.members().map({ m -> m._0 }).join(",") == "b,a,10,2";
+}
+
+test "Json.field answers a member's value, and null for a missing key or another kind" {
+    assert everyKind().map({ v -> fieldKind(v, "a") }).join(",")
+        == "absent,absent,absent,absent,absent,a number";
+    assert everyKind().map({ v -> fieldKind(v, "b") }).join(",")
+        == "absent,absent,absent,absent,absent,a string";
+    assert everyKind().map({ v -> fieldKind(v, "missing") }).join(",")
+        == "absent,absent,absent,absent,absent,absent";
+    val twice = Json.Obj(
+        members: [#("k", Json.Str(value: "first")), #("k", Json.Null)],
+    );
+    assert fieldKind(twice, "k") == "a string";
+    assert fieldKind(Json.Obj(members: [#("n", Json.Null)]), "n") == "null";
+}
+
+test "Json.str answers a string's text and the empty string for the rest" {
+    assert everyKind().map({ v -> v.str() }).join(",") == ",,,hi,,";
+}
+
+test "Json.items answers an array's items in order and none for the rest" {
+    assert everyKind().map({ v -> v.items().length.toString() }).join(",")
+        == "0,0,0,0,2,0";
+    val doc = decode("[\"z\",\"a\",\"m\"]").unwrapOr(Json.Null);
+    assert doc.items().map({ v -> v.str() }).join(",") == "z,a,m";
+}
+
+test "Json readers walk a decoded document" {
+    val doc = decode(
+        "{\"n\":\"/next\",\"state\":{\"fields\":[\"name\",\"mail\"]},\"ok\":true}",
+    ).unwrapOr(Json.Null);
+    assert doc.isObject();
+    assert fieldKind(doc, "n") == "a string";
+    assert fieldKind(doc, "ok") == "a boolean";
+    val next = doc.field("n");
+    val nextText = if (next != null) next.str() else "<absent>";
+    assert nextText == "/next";
+    val state = doc.field("state");
+    val fields = if (state != null) state.field("fields") else null;
+    val names = if (fields != null)
+        fields.items().map({ f -> f.str() }).join("+")
+    else
+        "<absent>";
+    assert names == "name+mail";
 }

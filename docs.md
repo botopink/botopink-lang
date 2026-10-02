@@ -209,12 +209,47 @@ does what it wants.
 
 | Where | Modules |
 |---|---|
-| the root (pure) | `collections` (`Dict`, `Set`, `Queue`, `Order` — a constructor is called on its type: `Dict.empty()`, `Set.fromList(xs)`), `math`, `path`, `url`, `querystring`, `json`, `regex`, `unicode`, `string_builder`, `encoding`, `hash`, `escape`, `async`; `erlang` and `beam` (the target's surface) |
+| the root (pure) | `collections` (`Dict`, `Set`, `Queue`, `Order` — a constructor is called on its type: `Dict.empty()`, `Dict.ofEntries([#("a", 1)])`, `Set.fromList(xs)`), `math`, `path`, `url`, `querystring`, `json`, `regex`, `unicode`, `string_builder`, `encoding`, `hash`, `escape`, `async`; `erlang` and `beam` (the target's surface) |
 | `io` | `io.fs`, `io.http`, `io.net`, `io.clock`, `io.random`, `io.os`, `io.env`, `io.process` |
 | `testing` | `testing.asserts`, `testing.snapshots`, `testing.mocks` |
 
 ```botopink
 import {collections: {Dict, Set}, io: {fs, clock}, testing.asserts} from "std";
+```
+
+**What is generic lives in std, once.** A primitive several libraries need —
+reading a number out of text, walking a decoded JSON value, a retry loop — is
+std's, and a library calls it rather than writing its own:
+
+| Where | What | Answers |
+|---|---|---|
+| a `string` | `s.parseInt()` | `@Result<i64, string>` — an optional `+` / `-` and digits, the whole string; anything else (`"4 2"`, `"42x"`, `"0x2A"`, `""`) is an `Error` naming the input, and so is an integer beyond ±(2^53 − 1), the range every target counts exactly |
+| a `string` | `s.parseFloat()` | `@Result<f64, string>` — a sign, digits, an optional `.` with digits on both sides, an optional exponent; `.5`, `1.`, `NaN`, `Infinity` are an `Error`, an overflow too; the nearest `f64`, the one `json.decode` answers |
+| a `string` | `s.indexOf(x)`, `s.lastIndexOf(x)` | an index `s.at` and `s.slice` take, on every target (`-1` when absent) |
+| `json.Json` | `v.kindName()`, `v.isObject()`, `v.members()`, `v.field(key)`, `v.str()`, `v.items()` | the readers of a decoded value: `members` and `items` are `[]`, `str` is `""` and `field` is `null` for a value of another kind — none throws |
+| `hash` | `pbkdf2Sha256(password, salt, iterations, length)` | `length` bytes of PBKDF2-HMAC-SHA256 as unpadded base64url; the password and the salt are text |
+| `io.clock` | `parseDuration(text)` | `@Result<i64, string>` — the milliseconds of digits and one unit, `ms` `s` `m` `h` `d` (`"30s"` is `30000`); `"30"`, `"1.5s"`, `"30 s"`, `"30S"` are an `Error` |
+| `async` | `RetryPolicy(maxAttempts, initialMillis, multiplier, maxMillis)`, `nextDelay(policy, attempt)`, `retry(policy, work)` | `nextDelay` is `?i64` — `initialMillis × multiplier^(attempt − 1)`, never above `maxMillis`, `null` past `maxAttempts`; `retry` runs a `fn() -> @Task<@Result<T, E>>` until it answers `Ok` and answers the last `Error` when every attempt failed |
+| `io.fs` | `walk(root)`, `glob(pattern, root)`, `removeTree(path)` | relative, `/`-separated, sorted paths, the same for every spelling of the root; a dangling link under `walk` is an `Error` naming it; `glob`'s `*` and `**` do not match a name starting with `.` unless the segment writes the dot, and do not descend through a link to a directory |
+
+```botopink
+import {json, hash, async, io.clock} from "std";
+import {json.Json, async.RetryPolicy} from "std";
+
+fn main() {
+    val port = "8080".parseInt();                       // Ok(8080)
+    val ratio = "2.5e-1".parseFloat();                  // Ok(0.25)
+    @print(port.isOk() && ratio.isOk());
+    val doc = json.decode("{\"name\":\"ada\",\"tags\":[\"x\"]}")
+        .unwrapOr(Json.Null);
+    val name = doc.field("name");
+    @print(if (name != null) name.str() else doc.kindName());   // ada
+    @print(doc.members().length);                       // 2
+    @print(clock.parseDuration("30s").isOk());          // true — 30000 ms
+    @print(hash.pbkdf2Sha256("password", "salt", 1, 32));
+    val policy = RetryPolicy(3, 100, 2.0, 1000);
+    @print(async.nextDelay(policy, 4) == null);         // true — 100, 200, 400, then none
+}
 ```
 
 A library is imported the same way, under the name `botopink.json` declares it

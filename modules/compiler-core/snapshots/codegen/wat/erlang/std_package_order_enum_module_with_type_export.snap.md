@@ -4,8 +4,9 @@
 //// 106): `Dict<K, V>`, `Set<T>`, `Queue<T>` and `Order`. Was the four modules
 //// `dict`, `sets`, `queue` and `order`; the type is the namespace now, so a
 //// constructor is called on the type it builds (decision 111) —
-//// `Dict.empty()`, `Set.empty()` / `Set.fromList(xs)`, `Queue.empty()` /
-//// `Queue.fromList(xs)` — and every other function keeps its name.
+//// `Dict.empty()` / `Dict.ofEntries(entries)`, `Set.empty()` /
+//// `Set.fromList(xs)`, `Queue.empty()` / `Queue.fromList(xs)` — and every
+//// other function keeps its name.
 
 // ── Dict<K, V> ──────────────────────────────────────────────────────────────
 // `Dict` (was `dict`) — Gleam-inspired — a `type Dict<K, V>` wrapping an
@@ -109,6 +110,17 @@ pub type Dict<K, V>(
     pub fn empty() -> Dict<K, V> {
         return Dict(pairs: []);
     }
+
+    // The dict of `entries`, inserted in order (decision 174): a key that
+    // repeats keeps its LAST value, at the place of that last entry — what a
+    // chain of `insert` answers. `Dict.ofEntries([])` is `Dict.empty()`.
+    pub fn ofEntries(entries: Array<#(K, V)>) -> Dict<K, V> {
+        var out: Dict<K, V> = Dict(pairs: []);
+        entries.forEach({ e ->
+            out = out.insert(e._0, e._1);
+        });
+        return out;
+    }
 }
 
 // One key or value of `Dict.display`: a string quoted, anything else as it
@@ -123,6 +135,32 @@ test "dict displays as its pairs, a string quoted (decision 8 §7)" {
     assert d.display() == "Dict(\"a\": 1, \"b\": 2)";
     val n = Dict.empty().insert(1, "x");
     assert n.display() == "Dict(1: \"x\")";
+}
+
+test "dict ofEntries builds the dict of its entries, in order" {
+    val d = Dict.ofEntries([#("a", 1), #("b", 2), #("c", 3)]);
+    assert d.size() == 3;
+    assert d.keys().join(",") == "a,b,c";
+    assert d.at("b").unwrapOr(0) == 2;
+    assert d.at("z").unwrapOr(-1) == -1;
+    assert d.display() == "Dict(\"a\": 1, \"b\": 2, \"c\": 3)";
+}
+
+test "dict ofEntries keeps the last value of a repeated key, as insert does" {
+    val d = Dict.ofEntries([#("a", 1), #("b", 2), #("a", 3)]);
+    val chained = Dict.empty().insert("a", 1).insert("b", 2).insert("a", 3);
+    assert d.size() == 2;
+    assert d.at("a").unwrapOr(0) == 3;
+    assert d.keys().join(",") == "b,a";
+    assert d.display() == chained.display();
+}
+
+test "dict ofEntries of no entries is the empty dict, and takes any key type" {
+    val none: Array<#(string, i32)> = [];
+    assert Dict.ofEntries(none).isEmpty();
+    val byNumber = Dict.ofEntries([#(1, "one"), #(2, "two")]);
+    assert byNumber.at(2).unwrapOr("") == "two";
+    assert byNumber.insert(3, "three").size() == 3;
 }
 
 test "dict empty is empty" {
@@ -592,9 +630,11 @@ array_repeat(Value, Times) ->
 
 %%% constructor is called on the type it builds (decision 111) —
 
-%%% `Dict.empty()`, `Set.empty()` / `Set.fromList(xs)`, `Queue.empty()` /
+%%% `Dict.empty()` / `Dict.ofEntries(entries)`, `Set.empty()` /
 
-%%% `Queue.fromList(xs)` — and every other function keeps its name.
+%%% `Set.fromList(xs)`, `Queue.empty()` / `Queue.fromList(xs)` — and every
+
+%%% other function keeps its name.
 
 % ── Dict<K, V> ──────────────────────────────────────────────────────────────
 
@@ -645,6 +685,9 @@ shown(X) ->
         _ ->
             <<('__bp_text'(X))/binary>>
     end.
+
+
+
 
 
 
@@ -788,7 +831,7 @@ reverse(O) ->
 ```erlang
 -module(std@collections@@Dict).
 -compile({no_auto_import,[size/1]}).
--export([display/1, at/2, hasKey/2, size/1, isEmpty/1, keys/1, values/1, insert/3, delete/2, merge/2, fold/3, mapValues/2, empty/0, '__bp_get'/2, '__bp_format'/1]).
+-export([display/1, at/2, hasKey/2, size/1, isEmpty/1, keys/1, values/1, insert/3, delete/2, merge/2, fold/3, mapValues/2, empty/0, ofEntries/1, '__bp_get'/2, '__bp_format'/1]).
 
 display(Self) ->
     Parts = lists:foldl(fun(P, Parts) ->
@@ -861,6 +904,12 @@ mapValues(Self, F) ->
 
 empty() ->
     {std@collections@@Dict, []}.
+
+ofEntries(Entries) ->
+    Out = lists:foldl(fun(E, Out) ->
+        insert(Out, element(1, E), element(2, E))
+    end, {std@collections@@Dict, []}, Entries),
+    Out.
 
 '__bp_get'(V, pairs) -> element(2, V).
 

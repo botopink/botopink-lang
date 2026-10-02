@@ -223,7 +223,12 @@ behavior String {
 
     // `string:str/2` takes charlists and rejects binaries (`function_clause`).
     // `binary:match/2` rejects an empty pattern, which JS finds at 0.
-    #[@External.Erlang("""(fun(__S, __X) -> case __X of <<>> -> 0; _ -> case binary:match(__S, __X) of nomatch -> -1; {__P, _} -> __P end end end)($0, $1)""")]
+    // The answer is an index in the unit `at`, `slice` and `length` count in
+    // on erlang (decision 169) — `string:length/1` of the text before the
+    // match, not the match's byte offset — so `s.at(s.indexOf(x))` reads the
+    // character the search found. commonJS counts UTF-16 units in all four;
+    // the two targets differ only past a character outside the BMP.
+    #[@External.Erlang("""(fun(__S, __X) -> case __X of <<>> -> 0; _ -> case binary:match(__S, __X) of nomatch -> -1; {__P, _} -> string:length(binary:part(__S, 0, __P)) end end end)($0, $1)""")]
     #[@External.Node("indexOf")]
     fn indexOf(self: Self, sub: string) -> i32;
 
@@ -279,9 +284,84 @@ behavior String {
     #[@External.Node("(($0.codePointAt($1) ?? -1) | 0)")]
     fn charCodeAt(self: Self, index: i32) -> i32;
 
-    #[@External.Erlang("(fun(__S, __Sub) -> __L = byte_size(__S), __SL = byte_size(__Sub), __Find = fun __F(__I) -> case __I < 0 of true -> -1; false -> case binary:part(__S, __I, min(__SL, __L - __I)) =:= __Sub of true -> __I; false -> __F(__I - 1) end end end, __Find(__L - __SL) end)($0, $1)")]
+    // The last match is found over the bytes and answered in `indexOf`'s unit
+    // (decision 169): `string:length/1` of the text before it.
+    #[@External.Erlang("(fun(__S, __Sub) -> __L = byte_size(__S), __SL = byte_size(__Sub), __Find = fun __F(__I) -> case __I < 0 of true -> -1; false -> case binary:part(__S, __I, min(__SL, __L - __I)) =:= __Sub of true -> string:length(binary:part(__S, 0, __I)); false -> __F(__I - 1) end end end, __Find(__L - __SL) end)($0, $1)")]
     #[@External.Node("lastIndexOf")]
     fn lastIndexOf(self: Self, sub: string) -> i32;
+
+    // The integer a decimal numeral spells: an optional `+` or `-`, then the
+    // digits `0`–`9` and nothing else — the WHOLE string, so whitespace, a
+    // fraction, an exponent, `0x2A` and the empty string are an `Error` naming
+    // the input. Which strings are numerals is decided here, in botopink, so
+    // every target refuses the same inputs; the host cell converts digits it
+    // is never asked to judge. The answer is an `i64` every target holds
+    // exactly: a numeral beyond ±9007199254740991 (2^53 - 1, where a commonJS
+    // number stops counting by one) is an `Error` on every target
+    // (decision 176).
+    //
+    // The body calls a method on `self` only, and free cells for the rest —
+    // see `libs/std/AGENTS.md` § String numerals for the three emitter gaps
+    // that shape it.
+    default fn parseInt(self: Self) -> @Result<i64, string> {
+        val signed = self.startsWith("-") || self.startsWith("+");
+        val digits = if (signed) stringSlice0(self, 1) else self;
+        return if (stringIsDigits(digits))
+            stringToInteger(self)
+        else
+            stringNumeralRefused("parseInt: \"", self, "\" is not an integer");
+    }
+
+    // The `f64` nearest to a decimal numeral: an optional `+` or `-`, digits,
+    // an optional `.` with digits on BOTH sides, an optional exponent (`e` or
+    // `E`, an optional sign, digits) — the whole string. `.5`, `1.`, `1e`,
+    // `NaN`, `Infinity`, `0x10`, whitespace and the empty string are an
+    // `Error` naming the input, decided in botopink; the host cell converts
+    // the numeral rewritten as `<digits>.<digits>e<exponent>` (the one form
+    // both hosts read), correctly rounded on both. A numeral too large for an
+    // `f64` is an `Error`; one too small to tell from zero is `0.0`.
+    default fn parseFloat(self: Self) -> @Result<f64, string> {
+        val signed = self.startsWith("-") || self.startsWith("+");
+        val start = if (signed) 1 else 0;
+        val lowerAt = self.indexOf("e");
+        val exponentAt = if (lowerAt < 0) self.indexOf("E") else lowerAt;
+        val mantissa = if (exponentAt < 0)
+            stringSlice0(self, start)
+        else
+            stringSlice1(self, start, exponentAt);
+        val pointAt = self.indexOf(".");
+        val pointed = pointAt >= 0 && (exponentAt < 0 || pointAt < exponentAt);
+        val whole = if (pointed)
+            stringSlice1(self, start, pointAt)
+        else
+            mantissa;
+        val fraction = if (pointed == false)
+            "0"
+        else if (exponentAt < 0)
+            stringSlice0(self, pointAt + 1)
+        else
+            stringSlice1(self, pointAt + 1, exponentAt);
+        val exponent = if (exponentAt < 0)
+            "0"
+        else
+            stringSlice0(self, exponentAt + 1);
+        val exponentMark = if (exponentAt < 0)
+            ""
+        else
+            stringSlice1(self, exponentAt + 1, exponentAt + 2);
+        val exponentSigned = exponentMark == "-" || exponentMark == "+";
+        val exponentDigits = if (exponentSigned)
+            stringSlice0(self, exponentAt + 2)
+        else
+            exponent;
+        val wellFormed = stringIsDigits(whole)
+            && stringIsDigits(fraction)
+            && stringIsDigits(exponentDigits);
+        return if (wellFormed)
+            stringToFloat(self, whole, fraction, exponent)
+        else
+            stringNumeralRefused("parseFloat: \"", self, "\" is not a number");
+    }
 }
 
 // ── string slice arity dispatch ──────────────────────────────────────────────
@@ -298,6 +378,45 @@ declare fn stringSlice0(s: string, start: i32) -> string;
 #[@External.Erlang("string:slice($0, $1, (($2) - ($1)))")]
 #[@External.Node("""((__s, __a, __e) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })($0, $1, $2)""")]
 declare fn stringSlice1(s: string, start: i32, end: ?i32) -> string;
+
+// ── string numerals ──────────────────────────────────────────────────────────
+// Host helpers behind `default fn parseInt` / `parseFloat`. The methods decide
+// in botopink which strings are numerals; these convert, and build the
+// `@Result` and its text — a `default fn` body of this file is emitted as
+// written on commonJS, where `Ok(…)` / `Error(…)` name nothing.
+
+// True when `s` is one or more of the digits `0`–`9` and nothing else.
+#[@External.Erlang("""(fun(__S) -> (__S =/= <<>>) andalso lists:all(fun(__C) -> (__C >= 48) andalso (__C =< 57) end, binary_to_list(__S)) end)($0)""")]
+#[@External.Node("""(/^[0-9]+$/.test($0))""")]
+declare fn stringIsDigits(s: string) -> bool;
+
+// The integer `<sign><digits>` spells; the out-of-range `Error`, naming the
+// numeral, beyond ±(2^53 - 1).
+#[@External.Erlang("""(fun(__S) -> __N = binary_to_integer(__S), case abs(__N) =< 9007199254740991 of true -> {ok, __N}; false -> {error, <<"parseInt: ", 34, __S/binary, 34, " is out of range">>} end end)($0)""")]
+#[@External.Node("""((__s) => { const __n = Number(__s); return Number.isSafeInteger(__n) ? { ok: __n + 0 } : { error: 'parseInt: "' + __s + '" is out of range' } })($0)""")]
+declare fn stringToInteger(numeral: string) -> @Result<i64, string>;
+
+// The `f64` the numeral `text` spells, read from its accepted pieces as
+// `<sign><whole>.<fraction>e<exponent>`; the overflow `Error`, naming `text`,
+// when it does not fit. `binary_to_float/1` raises on an overflow and answers
+// `0.0` on an underflow, which is what `Number` does with `Infinity` and `0`.
+#[@External.Erlang("""(fun(__T, __W, __F, __X) -> __Sign = case __T of <<45, _/binary>> -> <<45>>; _ -> <<>> end, try {ok, binary_to_float(<<__Sign/binary, __W/binary, 46, __F/binary, 101, __X/binary>>)} catch _:_ -> {error, <<"parseFloat: ", 34, __T/binary, 34, " overflows f64">>} end end)($0, $1, $2, $3)""")]
+#[@External.Node("""((__t, __w, __f, __x) => { const __n = Number((__t.startsWith('-') ? '-' : '') + __w + '.' + __f + 'e' + __x); return Number.isFinite(__n) ? { ok: __n } : { error: 'parseFloat: "' + __t + '" overflows f64' } })($0, $1, $2, $3)""")]
+declare fn stringToFloat(
+    text: string,
+    whole: string,
+    fraction: string,
+    exponent: string,
+) -> @Result<f64, string>;
+
+// `Error(<before><text><after>)`.
+#[@External.Erlang("""{error, <<($0)/binary, ($1)/binary, ($2)/binary>>}""")]
+#[@External.Node("""({ error: $0 + $1 + $2 })""")]
+declare fn stringNumeralRefused<T>(
+    before: string,
+    text: string,
+    after: string,
+) -> @Result<T, string>;
 
 // ── function combinators ──────────────────────────────────────────────────────
 

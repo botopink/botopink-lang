@@ -673,7 +673,10 @@ and beam; wasm refuses the import (`.wasm.expect`, STD-001: `io/fs` has no wasm 
 template cut the root off each full path by its written length while `filename:join/2` had already
 dropped a trailing `.` segment, so a root ending in `/.` answered every path minus its first two
 characters (`app/layout.bp` → `p/layout.bp`) and the read that followed was `enoent`; planting the old
-template back reds lines 3, 4, 8 and 9 on erlang and beam and leaves commonJS green.
+template back reds lines 3, 4, 8 and 9 on erlang and beam and leaves commonJS green. Its last two
+lines plant a dangling link (through a private `linkTo` cell — std has no public one) and print the
+`Error` naming it by its relative path, `fs.walk: dangling link "app/gone.bp"`, the same text on the
+three targets (decision 178).
 
 ### The sidecars of a `run/` cell
 
