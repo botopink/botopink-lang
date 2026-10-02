@@ -324,7 +324,7 @@ test "variant inference: access variant-specific field after matching" {
         \\val scale = fn(s: Shape, factor: f64) -> Shape {
         \\    return case s {
         \\        Circle(r) -> Circle(radius: r * factor);
-        \\        Square(s) -> Square(side: s * factor);
+        \\        Square(side) -> Square(side: side * factor);
         \\    };
         \\};
     );

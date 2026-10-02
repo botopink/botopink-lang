@@ -4,7 +4,7 @@ type Shape { Circle(radius: f64), Square(side: f64) }
 fn area(s: Shape) -> f64 {
     return case s {
         Circle(r) -> 3.14 * r * r;
-        Square(s) -> s * s;
+        Square(side) -> side * side;
     };
 }
 fn main() {
@@ -26,8 +26,8 @@ area(S) ->
     case S of
         {test@main@@Shape__v__circle, R} ->
             ((3.14 * R) * R);
-        {test@main@@Shape__v__square, S@1} ->
-            (S@1 * S@1)
+        {test@main@@Shape__v__square, Side} ->
+            (Side * Side)
     end.
 
 main() ->

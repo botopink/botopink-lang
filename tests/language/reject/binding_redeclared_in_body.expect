@@ -1,2 +1,2 @@
-binding-redeclared: `n` is already bound in this block, by the binding at 7:5
+binding-redeclared: `n` is already bound in this function, by the binding at 7:5
 9:5

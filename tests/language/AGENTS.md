@@ -135,9 +135,10 @@ and `modules/call_of_imported_record_value` (the same through a sibling's `pub v
 `<target>.expect` on all four); both were accepted by the parent binary.
 Step 5 (decision 152) adds `reject/binding_redeclared_in_body` (a second `var n` in one body) and
 `reject/binding_shadows_parameter` (`val x` over the parameter `x`), both `binding-redeclared` at the
-second binding and both accepted by the parent binary. An inner block's `val` shadowing an outer one
-stays legal in the checker; it has no `run/` cell, because erlang (`unsafe in 'case'`), wasm (the
-inner value leaks out of the block) and beam (`unassigned`) miscompile it — the backends' rows.
+second binding and both accepted by the parent binary. Decision 205 (the body is the whole function)
+adds `reject/binding_shadows_in_inner_block` (an inner block's `val y` over the function's `y`) and
+`reject/case_arm_binder_reuses_name` (a `case` arm's `Square(s)` over the parameter `s`), both
+accepted by the parent binary.
 `run/unwrap_or_literal_width` (another front's finding) — an integer literal as `unwrapOr`'s default
 takes the payload's width over `?i64` and `@Result<i64, string>` (refused as `expected i32, got i64`
 by the parent binary).

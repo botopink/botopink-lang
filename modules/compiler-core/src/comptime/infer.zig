@@ -3354,6 +3354,7 @@ fn inferTestDecl(env: *Env, t: ast.TestDecl) InferError!void {
     };
     env.labelStack.shrinkRetainingCapacity(0);
 
+    try refuseRedeclaredBindings(env, t.body, &.{});
     try inferBodyStmts(env, t.body);
 }
 
@@ -7906,13 +7907,17 @@ fn makeTypedPtr(env: *Env, node: TypedExpr) !*TypedExpr {
 /// early-exit narrowing the same way `inferStmtsTyped` does: `if (x == null) {
 /// return …; }` narrows `x` for the REST of the block, and a body walked with a
 /// bare `for` loop would have been the one shape where it did not.
-/// Decision 152 (01c-d) — a name is bound once per block: a second `val` /
-/// `var` (or destructured name) among the statements of ONE block is
-/// `binding-redeclared` at the second, naming the first; a parameter of the
-/// function whose body the block is counts as the first (`params`). A block
-/// nested in it (an `if` branch, a loop body, a lambda) is a new scope and
-/// may shadow — each block runs this over its own statements. erlang rebound
-/// the name and commonJS refused to load (`already declared`).
+/// Decisions 152 and 205 — no binding reuses a name already bound in the
+/// function where it stands: a second `val` / `var` / destructured name, an
+/// `if` binder, a loop binder or a `case` arm's binder whose name an
+/// enclosing block of the same function — or the function's parameters —
+/// already bound is `binding-redeclared` at the second binding, naming the
+/// first, in every block and every `case` arm. A sibling block's bindings
+/// ended with that block (`walkNestedBlock`), so two `if` branches may each
+/// bind `n`. A lambda is another function: it is
+/// checked on its own when it is inferred (`inferFunctionExprExpected`), and
+/// the walk does not enter it; a `case` arm's block body is not a lambda and
+/// is walked. erlang rebound a reused name and commonJS refused to load.
 fn refuseRedeclaredBindings(env: *Env, stmts: []const ast.Stmt, params: []const []const u8) InferError!void {
     var seen: std.StringHashMapUnmanaged(?ast.Loc) = .empty;
     defer seen.deinit(env.arena);
@@ -7920,29 +7925,142 @@ fn refuseRedeclaredBindings(env: *Env, stmts: []const ast.Stmt, params: []const 
         if (p.len == 0 or std.mem.eql(u8, p, "_")) continue;
         try seen.put(env.arena, p, null);
     }
-    for (stmts) |st| {
-        if (st.expr != .binding) continue;
-        const b = st.expr.binding;
-        switch (b.kind) {
-            .localBind => |lb| try noteBlockBinding(env, &seen, lb.name, b.loc),
-            .localBindDestruct => |lb| switch (lb.pattern) {
-                .names => |n| for (n.fields) |f| try noteBlockBinding(env, &seen, f.bind_name, b.loc),
-                .tuple_ => |t| for (t) |name| try noteBlockBinding(env, &seen, name, b.loc),
-                else => {},
+    try walkBindingStmts(env, &seen, stmts);
+}
+
+const SeenNames = std.StringHashMapUnmanaged(?ast.Loc);
+
+fn walkBindingStmts(env: *Env, seen: *SeenNames, stmts: []const ast.Stmt) InferError!void {
+    for (stmts) |st| try walkBindingExpr(env, seen, st.expr);
+}
+
+/// A nested block: its bindings end with it (the visible-scope reading).
+fn walkNestedBlock(env: *Env, seen: *SeenNames, stmts: []const ast.Stmt) InferError!void {
+    var inner = try seen.clone(env.arena);
+    try walkBindingStmts(env, &inner, stmts);
+}
+
+fn walkBindingExpr(env: *Env, seen: *SeenNames, e: ast.Expr) InferError!void {
+    switch (e) {
+        .binding => |b| switch (b.kind) {
+            .localBind => |lb| {
+                try walkBindingExpr(env, seen, lb.value.*);
+                try noteBlockBinding(env, seen, lb.name, b.loc);
             },
+            .localBindDestruct => |lb| {
+                try walkBindingExpr(env, seen, lb.value.*);
+                switch (lb.pattern) {
+                    .names => |n| for (n.fields) |f| try noteBlockBinding(env, seen, f.bind_name, b.loc),
+                    .tuple_ => |t| for (t) |name| try noteBlockBinding(env, seen, name, b.loc),
+                    .list, .ctor => |p| try notePatternBinders(env, seen, p, b.loc),
+                }
+            },
+            .assign => |a| try walkBindingExpr(env, seen, a.value.*),
+        },
+        .branch => |b| switch (b.kind) {
+            .if_ => |i| {
+                try walkBindingExpr(env, seen, i.cond.*);
+                // The binder of `if (x) { v -> … }` belongs to the then-block.
+                var thenSeen = try seen.clone(env.arena);
+                if (i.binding) |bn| if (!std.mem.eql(u8, bn, ast.nullish_binding_name)) try noteBlockBinding(env, &thenSeen, bn, b.loc);
+                try walkBindingStmts(env, &thenSeen, i.then_);
+                if (i.else_) |els| try walkNestedBlock(env, seen, els);
+            },
+            .tryCatch => |tc| {
+                try walkBindingExpr(env, seen, tc.expr.*);
+                try walkBindingExpr(env, seen, tc.handler.*);
+            },
+        },
+        .loop => |lp| {
+            try walkBindingExpr(env, seen, lp.iter.*);
+            var inner = try seen.clone(env.arena);
+            for (lp.params) |p| try noteBlockBinding(env, &inner, p, lp.loc);
+            try walkBindingStmts(env, &inner, lp.body);
+        },
+        .collection => |c| switch (c.kind) {
+            .case => |cs| {
+                for (cs.subjects) |x| try walkBindingExpr(env, seen, x);
+                for (cs.arms) |arm| {
+                    var armSeen = try seen.clone(env.arena);
+                    const sp = &armSeen;
+                    try notePatternBinders(env, sp, arm.pattern, arm.patternLoc);
+                    if (arm.guard) |g| try walkBindingExpr(env, sp, g);
+                    // A block arm (`Pattern { n -> … }`, `p -> { … }`) is the
+                    // arm's own block, not another function.
+                    if (arm.body == .function and arm.body.function.kind.syntax == .lambda) {
+                        for (arm.body.function.kind.params) |p| try noteBlockBinding(env, sp, p, arm.patternLoc);
+                        try walkBindingStmts(env, sp, arm.body.function.kind.body);
+                    } else try walkBindingExpr(env, sp, arm.body);
+                }
+            },
+            .arrayLit => |al| for (al.elems) |x| try walkBindingExpr(env, seen, x),
+            .tupleLit => |tl| for (tl.elems) |x| try walkBindingExpr(env, seen, x),
+            .grouped => |g| try walkBindingExpr(env, seen, g.*),
             else => {},
-        }
+        },
+        .call => |c| switch (c.kind) {
+            .call => |cc| {
+                if (cc.receiver) |r| try walkBindingExpr(env, seen, r.*);
+                for (cc.args) |a| try walkBindingExpr(env, seen, a.value.*);
+            },
+            .pipeline => |pl| {
+                try walkBindingExpr(env, seen, pl.lhs.*);
+                try walkBindingExpr(env, seen, pl.rhs.*);
+            },
+        },
+        .binaryOp => |op| {
+            try walkBindingExpr(env, seen, op.lhs.*);
+            try walkBindingExpr(env, seen, op.rhs.*);
+        },
+        .unaryOp => |op| try walkBindingExpr(env, seen, op.expr.*),
+        .jump => |j| switch (j.kind) {
+            .@"return", .throw_, .try_ => |v| if (v) |x| try walkBindingExpr(env, seen, x.*),
+            .await_ => |x| try walkBindingExpr(env, seen, x.*),
+            .@"break" => |br| if (br.value) |x| try walkBindingExpr(env, seen, x.*),
+            .yield => |y| if (y.value) |x| try walkBindingExpr(env, seen, x.*),
+            .@"continue" => {},
+        },
+        // A lambda (another function), a literal, a name, a comptime value.
+        else => {},
     }
 }
 
-fn noteBlockBinding(env: *Env, seen: *std.StringHashMapUnmanaged(?ast.Loc), name: []const u8, loc: ast.Loc) InferError!void {
-    if (name.len == 0 or std.mem.eql(u8, name, "_")) return;
+/// The names a pattern binds (a lower-case bare name, a payload's field or
+/// whole-payload binder, a list element or rest); an `or` pattern's
+/// alternatives bind the same names, so the first one is read.
+fn notePatternBinders(env: *Env, seen: *SeenNames, p: ast.Pattern, loc: ast.Loc) InferError!void {
+    switch (p) {
+        .ident => |n| {
+            if (n.len == 0 or isVariantPath(n) or std.ascii.isUpper(n[0])) return;
+            if (std.mem.eql(u8, n, "true") or std.mem.eql(u8, n, "false") or std.mem.eql(u8, n, "null")) return;
+            try noteBlockBinding(env, seen, n, loc);
+        },
+        .variant => |v| switch (v.payload) {
+            .binding => |b| try noteBlockBinding(env, seen, b, loc),
+            .fields => |fs| for (fs) |f| try noteBlockBinding(env, seen, f, loc),
+            .literals => |ps| for (ps) |q| try notePatternBinders(env, seen, q, loc),
+        },
+        .list => |l| {
+            for (l.elems) |el| switch (el) {
+                .bind => |b| try noteBlockBinding(env, seen, b, loc),
+                else => {},
+            };
+            if (l.spread) |sp| if (sp.len > 0) try noteBlockBinding(env, seen, sp, loc);
+        },
+        .@"or" => |alts| if (alts.len > 0) try notePatternBinders(env, seen, alts[0], loc),
+        .multi => |ps| for (ps) |q| try notePatternBinders(env, seen, q, loc),
+        else => {},
+    }
+}
+
+fn noteBlockBinding(env: *Env, seen: *SeenNames, name: []const u8, loc: ast.Loc) InferError!void {
+    if (name.len == 0 or std.mem.eql(u8, name, "_") or std.mem.startsWith(u8, name, "__bp")) return;
     if (seen.get(name)) |first| {
         const msg = if (first) |f|
-            try std.fmt.allocPrint(env.arena, "{s}: `{s}` is already bound in this block, by the binding at {d}:{d}", .{ diagnostics.binding_redeclared, name, f.line, f.col })
+            try std.fmt.allocPrint(env.arena, "{s}: `{s}` is already bound in this function, by the binding at {d}:{d}", .{ diagnostics.binding_redeclared, name, f.line, f.col })
         else
-            try std.fmt.allocPrint(env.arena, "{s}: `{s}` is already bound in this body, as a parameter", .{ diagnostics.binding_redeclared, name });
-        const hint = try std.fmt.allocPrint(env.arena, "A name is bound once per block. Give the second binding its own name, or make the first a `var` and assign it: `{s} = …;`.", .{name});
+            try std.fmt.allocPrint(env.arena, "{s}: `{s}` is already bound in this function, as a parameter", .{ diagnostics.binding_redeclared, name });
+        const hint = try std.fmt.allocPrint(env.arena, "A name is bound once per function — an inner block and a `case` arm included. Give the second binding its own name, or make the first a `var` and assign it: `{s} = …;`.", .{name});
         env.lastError = TypeError.custom(msg, hint).withLoc(loc);
         return error.TypeError;
     }
@@ -7957,7 +8075,6 @@ fn paramNames(env: *Env, params: []const ast.Param) InferError![]const []const u
 }
 
 fn inferBodyStmts(env: *Env, body: []const ast.Stmt) InferError!void {
-    try refuseRedeclaredBindings(env, body, &.{});
     try noteStatementClosures(env, body);
     var narrowed: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
     defer narrowed.deinit(env.arena);
@@ -7969,7 +8086,6 @@ fn inferBodyStmts(env: *Env, body: []const ast.Stmt) InferError!void {
 }
 
 fn inferStmtsTyped(env: *Env, stmts: []const ast.Stmt) InferError![]TypedStmt {
-    try refuseRedeclaredBindings(env, stmts, &.{});
     try noteStatementClosures(env, stmts);
     const out = try env.arena.alloc(TypedStmt, stmts.len);
     // The early-exit narrowing (`narrowAfterEarlyExit`) outlives the `if` that
@@ -14750,7 +14866,7 @@ fn inferFunctionExprExpected(
             env.returnTarget = whole.deref().named.args[0];
         }
     }
-    try refuseRedeclaredBindings(env, fk.body, fk.params);
+    if (!armBlock) try refuseRedeclaredBindings(env, fk.body, fk.params);
     const bodyTyped = try inferStmtsTyped(env, fk.body);
     // The lambda's return type is its tail expression's type; an explicit
     // `return expr` tail types as void, so use the returned value's type.

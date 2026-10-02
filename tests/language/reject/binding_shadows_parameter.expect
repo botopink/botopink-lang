@@ -1,2 +1,2 @@
-binding-redeclared: `x` is already bound in this body, as a parameter
+binding-redeclared: `x` is already bound in this function, as a parameter
 6:5
