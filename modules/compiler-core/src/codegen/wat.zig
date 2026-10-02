@@ -1547,6 +1547,20 @@ const Emitter = struct {
     /// per fn). A call through the name threads the captures the lambda
     /// assigns (`lowerValueCall`) and recovers its parameters' shapes.
     closure_locals: std.StringHashMap(u32),
+    /// `<local>.<field>` → the lifted lambda a record constructor bound to
+    /// that local stored in that field (`Box(value: { s -> … })`), so a call
+    /// through the field or through a local read from it types the lambda's
+    /// parameters by its arguments as a closure local's call does. Filled from
+    /// `ctor_lambdas`, which `lowerRecordCtor` leaves for the binding. In
+    /// `reg_arena`, cleared per function.
+    field_closures: std.StringHashMapUnmanaged(u32) = .empty,
+    ctor_lambdas: std.ArrayListUnmanaged(struct { field: []const u8, idx: u32 }) = .empty,
+    /// The type a generic record's constructor is written against where it
+    /// stands — a parameter's (`run(b: Box<fn(s: string) -> string>)`), a
+    /// `val`'s annotation, the function's return —, consumed by
+    /// `lowerRecordCtor`: a lambda in a field written `T` takes its type
+    /// from the type argument at `T`.
+    expected_ctor: ?ast.TypeRef = null,
     /// Inside a lifted lambda: a captured name the body assigns → its slot in
     /// the environment cell, written back after every assignment (cleared per
     /// fn).
@@ -2911,6 +2925,8 @@ const Emitter = struct {
         self.locals.clearRetainingCapacity();
         self.eq_local_types.clearRetainingCapacity();
         self.bound_names.clearRetainingCapacity();
+        self.field_closures.clearRetainingCapacity();
+        self.ctor_lambdas.clearRetainingCapacity();
         self.shadow_log.clearRetainingCapacity();
         self.local_types.clearRetainingCapacity();
         self.str_locals.clearRetainingCapacity();
@@ -4457,6 +4473,10 @@ const Emitter = struct {
                         // whose body multiplies f32 literals produced an f32
                         // and the `(result f64)` rejected the whole module.
                         if (val.* == .function) self.expected_fn = self.cur_ret_typeref;
+                        if (self.cur_ret_typeref) |rt| if (rt == .generic and self.record_generics.contains(rt.generic.name)) {
+                            self.expected_ctor = rt;
+                        };
+                        defer self.expected_ctor = null;
                         defer self.expected_fn = null;
                         if (self.fn_has_result and self.boxesInto(self.cur_ret_typeref, val.*))
                             try self.lowerBoxedInto(self.cur_ret_typeref, val.*)
@@ -4590,6 +4610,11 @@ const Emitter = struct {
                     // `emitLocalDecls` runs before the body, so its guess can
                     // differ from what lowering ends up pushing.
                     const lambda_idx: u32 = @intCast(self.lambdas.items.len);
+                    self.ctor_lambdas.clearRetainingCapacity();
+                    if (lb.typeAnnotation) |ta| if (ta == .generic and self.record_generics.contains(ta.generic.name)) {
+                        self.expected_ctor = ta;
+                    };
+                    defer self.expected_ctor = null;
                     if (lb.value.* == .function) self.expected_fn = lb.typeAnnotation;
                     defer self.expected_fn = null;
                     // `val f: fn(a: string, b: string) -> bool = same` over a
@@ -4610,8 +4635,18 @@ const Emitter = struct {
                     try self.emit(.{ .local_set = lb.name });
                     if (lb.value.* == .function and self.lambdas.items.len > lambda_idx)
                         try self.closure_locals.put(lb.name, lambda_idx)
+                    else if (self.fieldClosureOfExpr(lb.value.*)) |li|
+                        // `val lf = lam.value` over a constructor-stored lambda.
+                        try self.closure_locals.put(lb.name, li)
                     else
                         _ = self.closure_locals.remove(lb.name);
+                    // A constructor that stored lambdas: each one by its field —
+                    // only when the value IS the constructor call.
+                    if (lb.value.* == .call and lb.value.call.kind == .call and lb.value.call.kind.call.receiver == null and self.records.contains(lb.value.call.kind.call.callee)) for (self.ctor_lambdas.items) |cl| {
+                        const key = try std.fmt.allocPrint(self.reg_arena.allocator(), "{s}.{s}", .{ lb.name, cl.field });
+                        try self.field_closures.put(self.reg_arena.allocator(), key, cl.idx);
+                    };
+                    self.ctor_lambdas.clearRetainingCapacity();
                 },
                 .assign => |a| switch (a.target) {
                     // A `var` two linked modules declare is written in the
@@ -7202,6 +7237,10 @@ const Emitter = struct {
                         continue;
                     }
                 };
+                if (ptref) |pt| if (pt == .generic and self.record_generics.contains(pt.generic.name)) {
+                    self.expected_ctor = pt;
+                };
+                defer self.expected_ctor = null;
                 if (self.boxesInto(ptref, arg.value.*))
                     try self.lowerBoxedInto(ptref, arg.value.*)
                 else
@@ -8940,6 +8979,13 @@ const Emitter = struct {
         /// lambda is written against gives it, so `out.tag` reads the slot
         /// `Out` declares rather than guessing one by the field's name.
         param_rec: []const ?[]const u8 = &.{},
+        /// Per parameter: something gave it a type — the declared function
+        /// type the lambda is written against, a behavior's declaration, or
+        /// a call through a closure local passing an argument. A parameter
+        /// the body reads that nothing typed traps at the lambda's entry
+        /// (`emitLifted`): its word could be a string or an integer, and
+        /// guessing printed `300?` for `"d" + "?"` at exit 0.
+        param_known: []bool = &.{},
         /// Set for a trampoline standing for a top-level fn used as a value.
         fn_ref: ?[]const u8 = null,
     };
@@ -8985,6 +9031,11 @@ const Emitter = struct {
         self.expected_fn = null;
         const param_rec = try ra.alloc(?[]const u8, params.len);
         @memset(param_rec, null);
+        // Known unless the slot the lambda goes into says nothing about it
+        // (`lowerRecordCtor` clears it for a field written as a type
+        // parameter); a call through the slot sets it again.
+        const param_known = try ra.alloc(bool, params.len);
+        @memset(param_known, true);
         if (expected) |et| if (et == .function) {
             const pts = et.function.params;
             for (param_str, 0..) |*ps, i| {
@@ -9006,8 +9057,22 @@ const Emitter = struct {
             .captures = caps.items,
             .param_str = param_str,
             .param_rec = param_rec,
+            .param_known = param_known,
         });
         try self.emitClosureCell(idx, caps.items);
+    }
+
+    fn fieldClosureOf(self: *Emitter, recv: ast.Expr, field: []const u8) ?u32 {
+        const n = plainIdentName(recv) orelse return null;
+        var buf: [256]u8 = undefined;
+        const key = std.fmt.bufPrint(&buf, "{s}.{s}", .{ self.resolveName(n), field }) catch return null;
+        return self.field_closures.get(key);
+    }
+
+    fn fieldClosureOfExpr(self: *Emitter, e: ast.Expr) ?u32 {
+        if (e != .identifier or e.identifier.kind != .identAccess) return null;
+        const ia = e.identifier.kind.identAccess;
+        return self.fieldClosureOf(ia.receiver.*, ia.member);
     }
 
     /// Allocate the environment cell of table slot `idx` and leave its pointer.
@@ -9098,11 +9163,16 @@ const Emitter = struct {
         try self.emit(.{ .local_set = tmp });
         const closure: ?Lifted = if (cc.calleeExpr == null and cc.receiver == null and self.locals.contains(cc.callee))
             if (self.closure_locals.get(cc.callee)) |li| self.lambdas.items[li] else null
+        else if (cc.calleeExpr == null and cc.receiver != null)
+            // `lam.value("d")`: the lambda a constructor stored in that field
+            // of that local (`field_closures`).
+            (if (self.fieldClosureOf(cc.receiver.?.*, cc.callee)) |li| self.lambdas.items[li] else null)
         else
             null;
         if (closure) |l| {
             for (cc.args, 0..) |a, i| {
                 if (i < l.param_str.len and self.isStringExpr(a.value.*)) l.param_str[i] = true;
+                if (i < l.param_known.len) l.param_known[i] = true;
             }
             try self.syncCaptures(tmp, l.captures, .into_env);
         }
@@ -9325,6 +9395,18 @@ const Emitter = struct {
                 try self.locals.put(p, "i32");
                 if (i < l.param_str.len and l.param_str[i]) try self.str_locals.put(p, {});
                 if (i < l.param_rec.len) if (l.param_rec[i]) |r| try self.local_types.put(p, r);
+            }
+            // A parameter the body reads that nothing typed: the word it
+            // holds may be a string or an integer, and the body's `+`, `==`
+            // and `@print` would pick one by guess. Trap instead.
+            var read: std.ArrayListUnmanaged([]const u8) = .empty;
+            for (l.body) |st| try self.collectIdents(st.expr, &read);
+            for (l.params, 0..) |p, i| {
+                if (i < l.param_known.len and !l.param_known[i]) for (read.items) |n| {
+                    if (!std.mem.eql(u8, n, p)) continue;
+                    try self.emitCf(.@"unreachable", "lambda parameter `{s}`: nothing gives it a type the wasm backend can see", .{p});
+                    break;
+                };
             }
             for (l.captures, 0..) |cp, i| {
                 try self.declareLocal(cp.name, cp.ty);
@@ -10487,6 +10569,8 @@ const Emitter = struct {
     }
 
     fn lowerRecordCtor(self: *Emitter, cc: anytype, fields: []const []const u8) anyerror!void {
+        const expected_ctor = self.expected_ctor;
+        self.expected_ctor = null;
         const desc = try self.typeDescriptorAddr(cc.callee, null);
         const base = try self.allocTagged(desc orelse 0, @intCast(fields.len * 4));
         for (fields, 0..) |fname, i| {
@@ -10504,9 +10588,29 @@ const Emitter = struct {
                     // parameter types from the field's declaration, as one
                     // bound to an annotated `val` does: `{ s -> prefix + s }`
                     // in a `fn(s: string) -> string` field concatenates.
-                    if (arg.value.* == .function) self.expected_fn = ftref;
+                    // A field written `T` under an expected `Box<fn(…) -> R>`:
+                    // the lambda is written against the type argument.
+                    const fexp: ?ast.TypeRef = blk: {
+                        const ft = ftref orelse break :blk null;
+                        const et = expected_ctor orelse break :blk ftref;
+                        if (ft != .named or et != .generic or !std.mem.eql(u8, et.generic.name, cc.callee)) break :blk ftref;
+                        const gps = self.record_generics.get(cc.callee) orelse break :blk ftref;
+                        for (gps, 0..) |gp, gi| if (std.mem.eql(u8, gp.name, ft.named) and gi < et.generic.args.len) break :blk et.generic.args[gi];
+                        break :blk ftref;
+                    };
+                    if (arg.value.* == .function) self.expected_fn = fexp;
                     defer self.expected_fn = null;
+                    const lambda_at: u32 = @intCast(self.lambdas.items.len);
                     try self.storeSlotExpr(base, off, arg.value.*);
+                    if (arg.value.* == .function and self.lambdas.items.len > lambda_at) {
+                        try self.ctor_lambdas.append(self.reg_arena.allocator(), .{ .field = fname, .idx = lambda_at });
+                        // A field written as the record's type parameter
+                        // (`Box<T>(value: T)`) types nothing: the lambda's
+                        // parameters are unknown until a call through the
+                        // field passes them (`field_closures`).
+                        const generic_slot = (fexp == null or fexp.? != .function) and if (ftref) |ft| ft == .named and (if (self.record_generics.get(cc.callee)) |gps| isGenericParamName(ft.named, gps, &.{}) else false) else false;
+                        if (generic_slot) @memset(self.lambdas.items[lambda_at].param_known, false);
+                    }
                 }
             } else {
                 try self.storeSlotConst(base, off, 0);
@@ -11019,6 +11123,10 @@ const Emitter = struct {
                     if (cc.receiver == null and self.locals.contains(cc.callee)) {
                         if (self.closure_locals.get(cc.callee)) |li| break :blk self.closureCallIsString(li, cc);
                     }
+                    // `lam.value("e")` over a constructor-stored lambda.
+                    // Only a yes: the field's declared type may say more than
+                    // the body judged alone (`v.tagOf(e)` over `fn(e: El) -> string`).
+                    if (cc.receiver) |r| if (self.fieldClosureOf(r.*, cc.callee)) |li| if (self.closureCallIsString(li, cc)) break :blk true;
                     if (self.resolvedCallSym(cc, c.loc)) |sym| {
                         if (self.str_fns.contains(sym)) break :blk true;
                     }
