@@ -19,10 +19,12 @@ under `botopink test` (`Config.test_mode`): commonJS emits
 `__bp_run_tests()` runner (which reads node's `process` through `globalThis`,
 so a module-level `const process` from `import { process } from "std"` cannot
 shadow it); erlang emits `'__bp_test_N'/0` functions +
-`'__bp_run_one'/1` / `'__bp_run_tests'/1` + a `main/1` escript entry. In test
-mode `assert` lowers to a recoverable per-test failure (JS: throwing
-`__bp_assert`; Erlang: `erlang:error({bp_assert, Msg, Loc})`) and `fn main/0`
-is not auto-invoked. BEAM and WAT have no test runner.
+`'__bp_run_one'/1` / `'__bp_run_tests'/1` + a `main/1` escript entry; beam_asm
+emits exported `'__bp_test_N'/0` functions, `'__bp_run_tests'/1` and a `main/1`
+run with `erl` (§ beam_asm, "`botopink test`"). In test mode `assert` lowers
+to a recoverable per-test failure (JS: throwing `__bp_assert`; Erlang and
+BEAM: `erlang:error({bp_assert, Msg, Loc})`) and `fn main/0` is not
+auto-invoked. WAT has no test runner.
 
 ## Tree
 
@@ -1535,6 +1537,30 @@ codegen/
 
 ### beam_asm
 
+- **`botopink test`** (`Config.test_mode`, std's modules excepted —
+  `emitBeamAsm`'s `test_mode`): each `test` block is `'__bp_test_N'/0`
+  (`emitTestFn`: the body lowered like a `fn`'s, exported because the
+  registry names it as `fun M:'__bp_test_N'/0`), and a module with tests gets
+  `main(Args)` — the host loader (`'__bp_load_siblings'/0`), the imported
+  modules' bodies and its own `'_botopink_init'/0`, as `'_botopink_main'/0`
+  runs them before `main/0` in a build, then `'__bp_run_tests'(Args)`, which
+  builds the registry `[{Name, fun M:'__bp_test_N'/0, <<"file:line">>}]` in
+  source order and hands it to the runner loop. The loop is Erlang text
+  (`test_runner_body`) compiled at build time like a host template
+  (`lowerTemplateFn`): the `----- RUN LOG -----` envelope, the
+  `{bp_assert, Msg, Loc}` / `Class:Reason` catch, the `--filter` word (the
+  first of `Args`, a substring of the name), `<P> passed, <F> failed` and
+  `halt(1)` on a failure — what `erlang.zig`'s `testRunnerForms` prints, byte
+  for byte. A `try` on an `Error` in a test body (decision 74,
+  `in_test_body`; a lambda's body is its own) raises `{bp_assert, E,
+  <<"file:line">>}` (`emitTryError`). `main/0` is an ordinary function here:
+  the wrapper that runs it is not emitted. An `assert`'s location is the
+  package-relative source path when the driver gives one (`src_path`), else
+  `<module atom>.bp`. `cli/test_cmd.zig` writes every module (and unit) as
+  `<atom>.S` in the run's directory, assembles them all once
+  (`erlc +from_asm`) and runs each test module with `erl -noshell -pa <dir>
+  -eval "'<atom>':main(init:get_plain_arguments()), halt()." -extra
+  [filter]`; all 68 test-kind cells of `tests/language` pass there.
 - **Host `.erl` modules beside the program — `'__bp_load_siblings'/0`**
   (`emitLoadSiblings`; 1.0.11-beta `00-gate` front 111). `botopink build
   --target beam` copies the `<host>.erl` of every `#[@External.Erlang("<host>",

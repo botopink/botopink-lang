@@ -50,6 +50,40 @@ pub const Options = struct {
 /// sibling `.erl` files it loads had been replaced by another target's `.js`.
 const TEST_OUT_ROOT = ".botopinkbuild/test-out";
 
+/// Where a module's test artifact goes: the mirrored `<module path><ext>`,
+/// except on beam, where it is `<module atom>.S` in the run's one directory
+/// (`erl -pa` loads by atom, and `erlc` names a `.beam` after its module).
+fn artifactIn(arena: std.mem.Allocator, test_out: []const u8, target: config.Target, packages: bp.codegen.crossModule.Packages, name: []const u8, ext: []const u8) ![]const u8 {
+    if (target != .beam) return std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ test_out, name, ext });
+    const stem = try bp.codegen.crossModule.outputStem(.beam, arena, packages.idOf(name));
+    return std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ test_out, stem, ext });
+}
+
+/// `erlc +from_asm -o <dir>` over every `.S` in `dir`; its exit status.
+fn assembleBeam(arena: std.mem.Allocator, io: std.Io, dir: []const u8) !u8 {
+    var argv: std.ArrayListUnmanaged([]const u8) = .empty;
+    try argv.appendSlice(arena, &.{ "erlc", "+from_asm", "-o", dir });
+    var d = std.Io.Dir.cwd().openDir(io, dir, .{ .iterate = true }) catch return 1;
+    defer d.close(io);
+    var it = d.iterate();
+    var any = false;
+    while (try it.next(io)) |entry| {
+        if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".S")) continue;
+        try argv.append(arena, try std.fmt.allocPrint(arena, "{s}/{s}", .{ dir, entry.name }));
+        any = true;
+    }
+    if (!any) return 0;
+    var child = std.process.spawn(io, .{ .argv = argv.items }) catch |err| {
+        reporter.errMsg(try std.fmt.allocPrint(arena, "failed to spawn 'erlc': {s}", .{@errorName(err)}));
+        return 1;
+    };
+    defer child.kill(io);
+    return switch (try child.wait(io)) {
+        .exited => |c| c,
+        .signal, .stopped, .unknown => 1,
+    };
+}
+
 /// The output directory of THIS run: `<root>/<target>/<id>`, where `id` is 64
 /// random bits — the same shape the comptime runtime uses for its scratch dirs
 /// (`codegen/runtime.zig`, `makeScratchDir`), and the same per-target scoping
@@ -392,8 +426,8 @@ pub fn run(
         build_cmd.reportUnsupportedTarget(proj.target);
         return 1;
     };
-    if (target != .commonJS and target != .erlang) {
-        reporter.errMsg("`botopink test` currently supports only the commonJS and erlang targets");
+    if (target == .wasm) {
+        reporter.errMsg("`botopink test` currently supports only the commonJS, erlang and beam targets");
         reporter.hintMsg("run with `--target commonJS` or set \"target\": \"commonJS\" in botopink.json");
         return 1;
     }
@@ -453,7 +487,8 @@ pub fn run(
         .targetSource = switch (target) {
             .commonJS => .commonJS,
             .erlang => .erlang,
-            else => unreachable, // guarded above
+            .beam => .beam,
+            .wasm => unreachable, // guarded above
         },
         .build_root = ".botopinkbuild",
         .test_mode = true,
@@ -498,17 +533,19 @@ pub fn run(
     const ext: []const u8 = switch (target) {
         .commonJS => ".js",
         .erlang => ".erl",
-        else => unreachable,
+        .beam => ".S",
+        .wasm => unreachable,
     };
     const runner: []const u8 = switch (target) {
         .commonJS => "node",
         .erlang => "escript",
-        else => unreachable,
+        .beam => "erl",
+        .wasm => unreachable,
     };
 
     for (outputs.items) |o| {
         if (o.result.failed()) continue;
-        const sub_path = try std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ test_out, o.name, ext });
+        const sub_path = try artifactIn(arena, test_out, target, cfg.packages, o.name, ext);
         if (std.fs.path.dirname(sub_path)) |parent| {
             std.Io.Dir.cwd().createDirPath(io, parent) catch |err| switch (err) {
                 error.PathAlreadyExists => {},
@@ -524,7 +561,9 @@ pub fn run(
         // runner at the root loads the whole tree, and the runner of a module
         // in a folder (`io/net` under `libs/std`) loads only its own folder, so
         // a unit written at the root was `{error,undef}` there.
-        const unit_dir = if (std.fs.path.dirname(o.name)) |d| try std.fmt.allocPrint(arena, "{s}/{s}", .{ test_out, d }) else test_out;
+        // On beam every module is one flat directory named by atom, where
+        // `erl -pa` finds it (`artifactIn`).
+        const unit_dir = if (target == .beam) test_out else if (std.fs.path.dirname(o.name)) |d| try std.fmt.allocPrint(arena, "{s}/{s}", .{ test_out, d }) else test_out;
         for (o.result.units) |u| {
             const unit_path = try std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ unit_dir, u.atom, ext });
             try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = unit_path, .data = u.code });
@@ -548,8 +587,8 @@ pub fn run(
     // beside its `.bp` sources. Copying it into the test output is enough: the
     // emitted runner's `__bp_load_siblings/0` compiles and loads every `.erl`
     // beside the script before running the tests.
-    if (target == .erlang) {
-        _ = libs.shipErlSidecars(gpa, io, outputs.items, test_out, .erlang, env_map) catch |err| switch (err) {
+    if (target == .erlang or target == .beam) {
+        _ = libs.shipErlSidecars(gpa, io, outputs.items, test_out, if (target == .beam) .beam else .erlang, env_map) catch |err| switch (err) {
             // A host module that is neither shipped nor in the Erlang code
             // path: the located refusal is already printed, and every call
             // into it would be `{error,undef}`.
@@ -558,7 +597,14 @@ pub fn run(
         };
         // Every `.erl` of the run is now in place: compile each once, here,
         // instead of once per test module that loads it.
-        precompileErlang(arena, io, test_out, beamCacheDir(arena, env_map));
+        if (target == .erlang) precompileErlang(arena, io, test_out, beamCacheDir(arena, env_map));
+    }
+    // beam: every module of the run assembled beside itself, once; each
+    // runner's `'__bp_load_siblings'/0` compiles the host `.erl`s shipped
+    // above (`codegen/beam_asm.zig`). A module the assembler refuses fails
+    // the run with `erlc`'s own message.
+    if (target == .beam) {
+        if (try assembleBeam(arena, io, test_out) != 0) return 1;
     }
 
     // commonJS: root-source imports (`import {x};`) emit `require("./module")`
@@ -651,12 +697,17 @@ pub fn run(
         if (std.mem.indexOf(u8, o.result.js, "__bp_run_tests") == null) continue;
         any_tests = true;
 
-        const sub_path = try std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ test_out, o.name, ext });
+        const sub_path = try artifactIn(arena, test_out, target, cfg.packages, o.name, ext);
 
         var argv = std.ArrayListUnmanaged([]const u8).empty;
         defer argv.deinit(arena);
         try argv.append(arena, runner);
-        try argv.append(arena, sub_path);
+        if (target == .beam) {
+            // `erl` on the run's directory; the runner's `main/1` takes the
+            // filter as the command line `-extra` leaves it.
+            const atom = std.fs.path.stem(sub_path);
+            try argv.appendSlice(arena, &.{ "-noshell", "-pa", test_out, "-eval", try std.fmt.allocPrint(arena, "'{s}':main(init:get_plain_arguments()), halt().", .{atom}), "-extra" });
+        } else try argv.append(arena, sub_path);
         if (opts.filter) |f| try argv.append(arena, f);
 
         if (opts.json) {

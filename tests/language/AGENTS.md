@@ -23,7 +23,7 @@ written and is red until the compiler passes it — the suite keeps no list of k
 | `run/<name>.bp` + `<name>.out` | a whole program (`pub fn main`), run by `botopink run --target <t>` | exit 0 and stdout equals `.out` byte for byte — or, with a sidecar, § the sidecars of a `run/` cell |
 | `reject/<name>.bp` + `<name>.expect` | a program that must not compile, run by `botopink check` | exit ≠ 0, stderr contains `.expect` line 1, and ` --> src/main.bp:<line 2>` — line 2 is required (C-21: every refusal is located) |
 | `modules/<name>/` | a whole **project** — its own `botopink.json`, `src/` tree and `expected.out` — run by `botopink run --target <t>`; a second project inside it can be a `{ "path": "…" }` dependency; `"targets"` in its `botopink.json` narrows it (§ Narrowing a cell) | exit 0 and stdout equals `expected.out` byte for byte — or, with `<target>.expect`, § the sidecars of a `run/` cell |
-| `modules/<name>/` with a `test/` tree and no `expected.out` | the `test/` kind over a whole project, run by `botopink test --target <t> --json` on commonJS and erlang; results are keyed `modules/<name>::<test>` | every test reports `ok` |
+| `modules/<name>/` with a `test/` tree and no `expected.out` | the `test/` kind over a whole project, run by `botopink test --target <t> --json` on commonJS, erlang and beam; results are keyed `modules/<name>::<test>` | every test reports `ok` |
 
 1.0.10-beta's `00 · 23-std-purity` step 1 (decision 107, the import tree) adds `modules/import_tree`
 — a dotted path and a braced group over the package's own tree and over std, aliases bound, only the
@@ -704,8 +704,8 @@ meta workspace), OTP 28, node v25.
 |---|---|---|---|
 | commonJS | yes | yes | every kind |
 | erlang | yes | yes | every kind |
-| wasm | refused — "supports only the commonJS and erlang targets" | yes, it executes | `run/` and `modules/` only |
-| beam | refused — the same message | yes: it builds `out/beam/*.S`, assembles each beside itself (`erlc +from_asm -o out/beam`) and runs the entry with `erl -pa out/beam` | `run/` and `modules/` only |
+| wasm | refused — "supports only the commonJS, erlang and beam targets" | yes, it executes | `run/` and `modules/` only |
+| beam | yes: every module of the run assembled beside itself (`erlc +from_asm`), each test module's runner run with `erl -pa` (`01 · 03-beam`) | yes: it builds `out/beam/*.S`, assembles each beside itself (`erlc +from_asm -o out/beam`) and runs the entry with `erl -pa out/beam` | every kind |
 
 `--target all` is the four of them. A machine without `erlc` or `erl` fails the run before any cell
 starts (`run.sh: the beam target needs erlc`); it never runs three targets and reports "all"
@@ -716,7 +716,7 @@ returns the assembled program's status, so an `.exit` claim is checked there too
 (`run/panic_aborts.bp` and `run/todo_aborts.bp` pass on beam — the second for a different reason,
 § Notes).
 
-`test/` cells therefore run on commonJS and erlang; `run/` and `modules/` cells run on all four;
+`test/` cells therefore run on commonJS, erlang and beam; `run/` and `modules/` cells run on all four;
 `reject/` runs once (target `*`, `botopink check` is target-independent).
 
 Every cell's `botopink.json` is named `language_tests`, and an erlang/BEAM module atom starts with
@@ -1019,8 +1019,8 @@ omission in a comment and asserts only what **is** settled — that two *differe
 fields are different values. Reported to the maintainer; a sentence would turn the comment into two
 assertions.
 
-**The identity is asserted on two backends and RUN on four.** `botopink test` refuses beam and wasm,
-so a `test/` cell reaches only commonJS and erlang. `run/type_identity_equality.bp` is the same
+**The identity is asserted on three backends and RUN on four.** `botopink test` refuses wasm,
+so a `test/` cell reaches commonJS, erlang and beam. `run/type_identity_equality.bp` is the same
 statement as a `run/`: `Person(name: "a", age: 1) == Vec(name: "a", age: 1)` prints `false` on all
 four since `13-module-identity` half 3 put the declaration inside the value — it answered `true` on
 erlang and BEAM before, where two bare maps with the same keys were one term.

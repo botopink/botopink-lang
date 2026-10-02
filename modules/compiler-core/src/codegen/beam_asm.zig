@@ -277,6 +277,50 @@ const MEM_BOX = "__bp_var";
 
 /// The entry's host-module loader and its per-file step (`emitLoadSiblings`).
 const LOAD_SIBLINGS = "'__bp_load_siblings'";
+/// `botopink test`'s runner (`emitTestRunner`): builds the registry and runs
+/// it. `botopink test` reads its name in the emitted text to tell a module
+/// with tests from one without.
+const RUN_TESTS = "'__bp_run_tests'";
+
+/// The `botopink test` runner's loop, compiled at build time like a host
+/// template (`lowerTemplateFn`): `__BpA0` is the registry — `[{Name, Fun,
+/// Loc}]`, `Fun` the test's `fun M:'__bp_test_N'/0` — and `__BpA1` the
+/// command line, whose first word filters the tests by name. Each test runs
+/// inside the `----- RUN LOG -----` envelope `erlang.zig`'s runner prints
+/// (`testRunnerForms`), byte for byte, and the run ends with
+/// `<P> passed, <F> failed` and `halt(1)` when one failed: the contract
+/// `botopink test` parses (`compiler-cli/AGENTS.md` § output format).
+const test_runner_body =
+    \\Filter = case __BpA1 of [F | _] -> list_to_binary(F); _ -> none end,
+    \\    Selected = case Filter of
+    \\        none -> __BpA0;
+    \\        _ -> [T || T <- __BpA0, binary:match(element(1, T), Filter) =/= nomatch]
+    \\    end,
+    \\    RunOne = fun({Name, Fun, Loc}) ->
+    \\        io:format("TEST ~ts ~ts~n", [Loc, Name]),
+    \\        io:format("----- RUN LOG -----~n```logs~n", []),
+    \\        T0 = erlang:monotonic_time(millisecond),
+    \\        Outcome = try Fun(), ok
+    \\            catch
+    \\                error:{bp_assert, Msg, ALoc} -> {fail, Msg, ALoc};
+    \\                Class:Reason -> {fail, {Class, Reason}, Loc}
+    \\            end,
+    \\        T1 = erlang:monotonic_time(millisecond),
+    \\        DurMs = erlang:max(0, T1 - T0),
+    \\        io:format("```~n", []),
+    \\        io:format("  duration ~pms~n", [DurMs]),
+    \\        case Outcome of
+    \\            ok -> io:format("  ok   ~ts~n", [Name]), ok;
+    \\            {fail, FMsg, FLoc} when is_binary(FMsg) -> io:format("  FAIL ~ts  (~ts)  at ~ts~n", [Name, FMsg, FLoc]), fail;
+    \\            {fail, FMsg, FLoc} -> io:format("  FAIL ~ts  (~tp)  at ~ts~n", [Name, FMsg, FLoc]), fail
+    \\        end
+    \\    end,
+    \\    Results = [RunOne(T) || T <- Selected],
+    \\    Failed = length([R || R <- Results, R =:= fail]),
+    \\    Passed = length(Results) - Failed,
+    \\    io:format("~p passed, ~p failed~n", [Passed, Failed]),
+    \\    case Failed > 0 of true -> halt(1); false -> ok end.
+;
 const LOAD_SIBLING = "'-bp_load_sibling-'";
 
 /// A character list as a literal operand — `"*.erl"` where the OTP file
@@ -1525,7 +1569,11 @@ pub fn codegenEmit(
                 // 06 C13 — a host-backed fn with no beam or erlang target
                 // reaches the driver as a located diagnostic naming it.
                 var missing: ?moduleOutput.MissingExternal = null;
-                const emitted = emitBeamAsm(alloc, ct.name, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, &cross, outputs, &missing) catch |err| {
+                // `botopink test` (`Config.test_mode`): a module's `test`
+                // blocks and their runner; std's own tests are not the
+                // project's.
+                const module_test_mode = config.test_mode and !std.mem.startsWith(u8, ct.name, "std/");
+                const emitted = emitBeamAsm(alloc, ct.name, ct.srcPath, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, &cross, outputs, module_test_mode, &missing) catch |err| {
                     const me = missing orelse return err;
                     try results.append(alloc, .{
                         .name = ct.name,
@@ -1744,12 +1792,18 @@ fn withHostMethodBodies(arena: std.mem.Allocator, program: ast.Program) !ast.Pro
 fn emitBeamAsm(
     alloc: std.mem.Allocator,
     module_name: []const u8,
+    /// The package-relative source path (`src/main.bp`) an `assert` and a
+    /// test's failure name; empty outside a CLI build.
+    src_path: []const u8,
     program_in: ast.Program,
     comptime_vals: std.StringHashMap([]const u8),
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
     instance_lowerings: std.AutoHashMap(ast.Loc, envMod.InstanceLowering),
     cross: ?*const CrossModule,
     all_outputs: []const ComptimeOutput,
+    /// `botopink test`: emit the module's `test` blocks and their runner
+    /// (`emitTestRunner`) instead of the `main/0` entry.
+    test_mode: bool,
     /// 06 C13 — set when the emit fails with `error.MissingExternalTarget`.
     missing: ?*?moduleOutput.MissingExternal,
 ) !EmittedBeam {
@@ -1784,6 +1838,7 @@ fn emitBeamAsm(
 
     var em = Emitter.init(alloc, module_atom, &body_buf.writer, comptime_vals, rewrites);
     em.module_path = module_name;
+    em.src_path = src_path;
     errdefer if (missing) |slot| {
         slot.* = em.missing_external;
     };
@@ -1829,16 +1884,26 @@ fn emitBeamAsm(
         }
     }
 
-    // Detect main/0 entrypoint (drives wrapper emission).
+    // Detect main/0 entrypoint (drives wrapper emission). Under `botopink
+    // test` the entry is the test runner and `main/0` is an ordinary
+    // function: the wrapper that runs it is not emitted (erlang's
+    // `emit_entrypoint_wrapper`).
     var has_main_0 = false;
+    var tests: std.ArrayListUnmanaged(ast.TestDecl) = .empty;
+    defer tests.deinit(alloc);
     for (program.decls) |decl| {
         switch (decl) {
             .@"fn" => |f| if (isMain0(f)) {
                 has_main_0 = true;
             },
+            .@"test" => |t| if (test_mode) try tests.append(alloc, t),
             else => {},
         }
     }
+    if (test_mode) has_main_0 = false;
+    const has_tests = tests.items.len > 0;
+    // What the entry — `main/1`, the wrapper's or the runner's — runs first.
+    const has_entry = has_main_0 or has_tests;
 
     // Pass 1: pre-assign labels (func_info, entry) for every emitted function
     // so wrappers and (eventually) local calls can resolve targets by name.
@@ -1893,10 +1958,18 @@ fn emitBeamAsm(
         try em.reserveFn("'_botopink_main'", 0);
         try em.reserveFn("main", 1);
     }
+    if (has_tests) {
+        for (0..tests.items.len) |i| {
+            var name_buf: [64]u8 = undefined;
+            try em.reserveFn(try std.fmt.bufPrint(&name_buf, "__bp_test_{d}", .{i}), 0);
+        }
+        try em.reserveFn(RUN_TESTS, 1);
+        try em.reserveFn("main", 1);
+    }
     // A host `.erl` the build ships beside the assembled modules is compiled
     // and loaded by the entry, before the module body runs — when a module of
     // the build binds a host at all (`emitLoadSiblings`).
-    if (has_main_0 and buildBindsBeamHost(all_outputs)) {
+    if (has_entry and buildBindsBeamHost(all_outputs)) {
         em.load_siblings = true;
         try em.reserveFn(LOAD_SIBLINGS, 0);
         try em.reserveFn(LOAD_SIBLING, 1);
@@ -1907,7 +1980,7 @@ fn emitBeamAsm(
     if (emit_init) try em.reserveFn("'_botopink_init'", 0);
     // The modules this one imports, transitively, whose body the entry runs
     // before its own, dependencies first.
-    if (has_main_0) if (cross) |xc| {
+    if (has_entry) if (cross) |xc| {
         var closure: std.ArrayListUnmanaged([]const u8) = .empty;
         defer closure.deinit(alloc);
         var seen: std.StringHashMapUnmanaged(void) = .empty;
@@ -1954,6 +2027,21 @@ fn emitBeamAsm(
         try exports.append(alloc, .{ .name = "main", .arity = 1 });
     }
     if (emit_init) try exports.append(alloc, .{ .name = "'_botopink_init'", .arity = 0 });
+    // The runner's entry, and each test: the registry names them as
+    // `fun M:'__bp_test_N'/0`, which reaches an exported function only.
+    var test_names: std.ArrayListUnmanaged([]u8) = .empty;
+    defer {
+        for (test_names.items) |n| alloc.free(n);
+        test_names.deinit(alloc);
+    }
+    if (has_tests) {
+        try exports.append(alloc, .{ .name = "main", .arity = 1 });
+        for (0..tests.items.len) |i| {
+            const n = try std.fmt.allocPrint(alloc, "__bp_test_{d}", .{i});
+            try test_names.append(alloc, n);
+            try exports.append(alloc, .{ .name = n, .arity = 0 });
+        }
+    }
     for (program.decls) |decl| {
         switch (decl) {
             .@"fn" => |f| if (f.isPub and !isHostDeclare(f)) {
@@ -2010,6 +2098,10 @@ fn emitBeamAsm(
 
     if (has_main_0) {
         try em.emitEntrypointWrappers();
+    }
+    if (has_tests) {
+        for (tests.items, test_names.items) |t, n| try em.emitTestFn(t, n);
+        try em.emitTestRunner(tests.items, test_names.items, emit_init);
     }
     if (em.load_siblings) try em.emitLoadSiblings();
     if (emit_init) try em.emitInitFunction();
@@ -2227,6 +2319,15 @@ const Emitter = struct {
     /// This module's declarations — the behaviors a type adopts `default fn`s
     /// from (`adoptedDefaults`).
     program_decls: []const ast.DeclKind = &.{},
+    /// The package-relative source path (`src/main.bp`), or empty
+    /// (`srcFile`).
+    src_path: []const u8 = "",
+    /// Lowering a `test` block's body (decision 74): a `try` on an `Error`
+    /// ends the test (`emitTryError`) instead of returning it. A lambda's
+    /// body is its own (`lowerLambda` clears it); a loop's fun is not.
+    in_test_body: bool = false,
+    /// `"<file>:<line>"` of the test being lowered, for its `try` failure.
+    test_loc: []const u8 = "",
     /// Every module of the compilation, for the declarations the link index
     /// does not carry (an imported enum's variants, another module's extension
     /// blocks).
@@ -5048,6 +5149,93 @@ const Emitter = struct {
 
     // ── entrypoint wrappers when main/0 exists ───────────────────────────────
 
+    /// A `test "name" { … }` block as `'__bp_test_N'/0` (`name`): its body
+    /// lowered like a function's, with decision 74's `try` (`in_test_body`).
+    fn emitTestFn(self: *Emitter, t: ast.TestDecl, name: []const u8) !void {
+        const saved_in_test = self.in_test_body;
+        const saved_loc = self.test_loc;
+        defer {
+            self.in_test_body = saved_in_test;
+            self.test_loc = saved_loc;
+        }
+        self.in_test_body = true;
+        self.test_loc = try std.fmt.allocPrint(self.atom_arena.allocator(), "{s}:{d}", .{ try self.srcFile(), t.loc.line });
+        try self.emitFn(.{
+            .isPub = false,
+            .name = name,
+            .genericParams = @constCast(&[_]ast.GenericParam{}),
+            .params = @constCast(&[_]ast.Param{}),
+            .returnType = null,
+            .body = t.body,
+        });
+    }
+
+    /// The source path a test's location names: the package-relative one,
+    /// else `<module path>.bp` (erlang's `srcFile`).
+    fn srcFile(self: *Emitter) ![]const u8 {
+        if (self.src_path.len > 0) return self.src_path;
+        return std.fmt.allocPrint(self.atom_arena.allocator(), "{s}.bp", .{self.module_path});
+    }
+
+    /// `botopink test`'s entry and runner, the BEAM twin of `erlang.zig`'s
+    /// `testRunnerForms`:
+    ///
+    ///   * `main(Args)` loads the host modules shipped beside it, runs the
+    ///     imported modules' bodies and its own (`'_botopink_init'/0`), as
+    ///     `'_botopink_main'/0` does before `main/0` in a build, then
+    ///     `'__bp_run_tests'(Args)`;
+    ///   * `'__bp_run_tests'(Args)` builds the registry — `{Name, fun
+    ///     M:'__bp_test_N'/0, <<"file:line">>}` per test, in source order —
+    ///     and hands it to the runner loop, `test_runner_body` compiled at
+    ///     build time (`lowerTemplateFn`, the reader and the lowering every
+    ///     host template goes through).
+    fn emitTestRunner(self: *Emitter, tests: []const ast.TestDecl, names: []const []const u8, run_init: bool) !void {
+        const w = self.out;
+        // A fixed text: a refusal is this backend's defect, never the
+        // program's.
+        const loop = (try self.lowerTemplateFn(self.atom_arena.allocator(), test_runner_body, false, 2)) orelse
+            return error.TestRunnerDoesNotLower;
+
+        // main(Args)
+        try self.beginHelper("main", 1);
+        try beamEmitter.writeAllocate(w, 1, 1);
+        try beamEmitter.writeMoveOp(w, Op.xr(0), Dst.yr(0));
+        if (self.load_siblings) {
+            const loader = try self.fnLabelsFor(LOAD_SIBLINGS, 0);
+            try beamEmitter.writeCall(w, .normal, 0, .{ .local = loader.entry }, 0);
+        }
+        for (self.import_inits.items) |dep| {
+            try beamEmitter.writeCall(w, .normal, 0, .{ .ext = .{ .module = dep, .function = "'_botopink_init'" } }, 0);
+        }
+        if (run_init) {
+            const init_fn = try self.fnLabelsFor("'_botopink_init'", 0);
+            try beamEmitter.writeCall(w, .normal, 0, .{ .local = init_fn.entry }, 0);
+        }
+        try beamEmitter.writeMoveOp(w, Op.yr(0), Dst.xr(0));
+        const run = try self.fnLabelsFor(RUN_TESTS, 1);
+        try beamEmitter.writeCall(w, .last, 1, .{ .local = run.entry }, 1);
+
+        // '__bp_run_tests'(Args): the registry, built back to front.
+        try self.beginHelper(RUN_TESTS, 1);
+        try beamEmitter.writeMoveOp(w, Op.xr(0), Dst.xr(1));
+        try beamEmitter.writeMoveOp(w, Op.nil, Dst.xr(0));
+        var i = tests.len;
+        while (i > 0) {
+            i -= 1;
+            const t = tests[i];
+            const loc = try std.fmt.allocPrint(self.atom_arena.allocator(), "{s}:{d}", .{ try self.srcFile(), t.loc.line });
+            const name_op: Op = if (t.name) |n| .{ .lexeme = n } else Op.str(names[i]);
+            try beamEmitter.writeTestHeap(w, 6, 2);
+            try beamEmitter.writePutTuple2(w, Dst.xr(2), &.{
+                name_op,
+                .{ .ext_fun = .{ .module = self.module_name, .name = names[i], .arity = 0 } },
+                Op.str(loc),
+            });
+            try beamEmitter.writePutList(w, Op.xr(2), Op.xr(0), Dst.xr(0));
+        }
+        try beamEmitter.writeCall(w, .only, 2, .{ .local = loop.entry }, 0);
+    }
+
     fn emitEntrypointWrappers(self: *Emitter) !void {
         const wrapper = try self.fnLabelsFor("'_botopink_main'", 0);
         const main1 = try self.fnLabelsFor("main", 1);
@@ -6044,7 +6232,12 @@ const Emitter = struct {
         const scratch = self.scratchBase();
         try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(scratch));
         var where_buf: [512]u8 = undefined;
-        const where = std.fmt.bufPrint(&where_buf, "{s}.bp:{d}", .{ self.module_name, loc.line }) catch "?";
+        // The package-relative source path when the driver knows it (what
+        // erlang's `srcFile` names), else the module atom's file.
+        const where = if (self.src_path.len > 0)
+            std.fmt.bufPrint(&where_buf, "{s}:{d}", .{ self.src_path, loc.line }) catch "?"
+        else
+            std.fmt.bufPrint(&where_buf, "{s}.bp:{d}", .{ self.module_name, loc.line }) catch "?";
         try beamEmitter.writeMove(self.out, Term.str(where), scratch + 1);
         try beamEmitter.writeTestHeap(self.out, 4, scratch + 2);
         try beamEmitter.writePutTuple2(self.out, Dst.xr(0), &.{ Op.atom("bp_assert"), Op.xr(scratch), Op.xr(scratch + 1) });
@@ -10249,6 +10442,10 @@ const Emitter = struct {
         const saved_group = self.fold_group;
         self.fold_group = null;
         defer self.fold_group = saved_group;
+        // A `try` in a lambda is the lambda's (decision 74), even in a test.
+        const saved_in_test = self.in_test_body;
+        self.in_test_body = false;
+        defer self.in_test_body = saved_in_test;
 
         self.next_y = 0;
         self.cur_arity = arity;
@@ -10785,6 +10982,20 @@ const Emitter = struct {
             try beamEmitter.writeTestHeap(self.out, 2, @max(self.min_live, 1));
             try beamEmitter.writePutList(self.out, Op.xr(0), Op.yr(gl.acc), Dst.yr(gl.acc));
             try beamEmitter.writeJump(self.out, gl.exit);
+            return;
+        }
+        // Decision 74 — inside a `test` body the `Error` ends the test:
+        // `erlang:error({bp_assert, E, Loc})`, the term the runner's first
+        // catch clause reads (`FAIL <name>  (<E>)  at <Loc>`), from a loop's
+        // fun as from the body itself.
+        if (self.in_test_body) {
+            // `element/2`, not `get_tuple_element`: the failed `{ok, _}`
+            // test leaves the subject untyped for the loader.
+            try beamEmitter.writeBif(self.out, "element", 0, &.{ Op.int(2), Op.xr(0) }, Dst.xr(0));
+            try beamEmitter.writeMove(self.out, Term.str(self.test_loc), 1);
+            try beamEmitter.writeTestHeap(self.out, 4, 2);
+            try beamEmitter.writePutTuple2(self.out, Dst.xr(0), &.{ Op.atom("bp_assert"), Op.xr(0), Op.xr(1) });
+            try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "error" } }, 0);
             return;
         }
         if (self.in_loop_lambda) {
