@@ -4562,9 +4562,24 @@ const Emitter = struct {
                     try self.record_fields.put(tdecl.name, names);
                     // A field of function type is CALLED like a method
                     // (`c.set(9)`), and the record emits no `set/2`: remember
-                    // the pair so the call applies the field's value.
+                    // the pair so the call applies the field's value. A field
+                    // written as one of the record's TYPE PARAMETERS
+                    // (`type Box<T>(value: T)`) holds a function whenever the
+                    // instance's argument is one, and inference records no
+                    // lowering for `h.value("b")` (the declared type is `T`,
+                    // not a function): it counts too, or the call fell through
+                    // to a bare `value(H, <<"b">>)` no module defines and
+                    // `erlc` refused the module. A method of that name still
+                    // wins (`method_owners` is consulted first).
                     for (tdecl.recordFields()) |f| {
-                        if (f.typeRef != .function) continue;
+                        const fn_like = switch (f.typeRef) {
+                            .function => true,
+                            .named => |n| for (tdecl.genericParams) |gp| {
+                                if (std.mem.eql(u8, gp.name, n)) break true;
+                            } else false,
+                            else => false,
+                        };
+                        if (!fn_like) continue;
                         var key_buf: [256]u8 = undefined;
                         const key = std.fmt.bufPrint(&key_buf, "{s}.{s}", .{ tdecl.name, f.name }) catch continue;
                         try self.fn_typed_fields.put(try self.alloc.dupe(u8, key), {});

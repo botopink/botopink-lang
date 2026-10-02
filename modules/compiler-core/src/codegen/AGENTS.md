@@ -848,7 +848,11 @@ codegen/
   applies it (`(element(3, C))(9)` since half 3); the record emits no `set/2`.
   `fn_typed_fields` (built in `collectTypeShapes`) carries the pairs, and the
   name-only set backs the untyped fallback, where inference records no lowering
-  for a call on a field.
+  for a call on a field. A field written as one of the record's type parameters
+  (`type Box<T>(value: T)`) counts too: inference records no lowering for
+  `h.value("b")` (the declared type is `T`), and the call was a bare
+  `value(H, <<"b">>)` `erlc` refused; it is `(erlang:element(2, H))(<<"b">>)`.
+  A method of that name still wins (`method_owners` answers first).
 - **A built entry point loads its siblings too** (`siblingLoaderForm`,
   language-gaps T1). When some module of the build binds a BEAM host of its own
   (`buildBindsErlangHost` — a `declare fn` or a `type` carrying

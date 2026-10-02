@@ -180,3 +180,24 @@ test "erlang: a throw in a case arm of a Result fn is that fn's error" {
         \\}
     , "-1\n-2\n4\n", &.{ "{error, <<\"one\">>};", "{ok, (N * 2)}" });
 }
+
+test "erlang: a fn in a generic record's field is applied when called through the field" {
+    // `type Box<T>(value: T)`: the field is written `T`, so inference records
+    // no lowering for `h.value("b")` and the call fell through to a bare
+    // `value(H, <<"b">>)` — undefined, `erlc` refused the module. A field typed
+    // by one of the record's type parameters is applied like a `fn(…)` one.
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\type Box<T>(value: T)
+        \\
+        \\fn shout(s: string) -> string {
+        \\    return s + "!";
+        \\}
+        \\
+        \\pub fn main() {
+        \\    val h = Box(value: shout);
+        \\    @print(h.value("b"));
+        \\    val lam = Box(value: { s -> s + "?" });
+        \\    @print(lam.value("e"));
+        \\}
+    , "b!\ne?\n", &.{ "(erlang:element(2, H))(<<\"b\">>)", "(erlang:element(2, Lam))(<<\"e\">>)" });
+}
