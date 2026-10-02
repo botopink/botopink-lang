@@ -1025,6 +1025,14 @@ codegen/
   `val`s** below), the `'_botopink_main'/0` + `main/1` entrypoint wrapper and,
   in test mode, the runner (`testRunnerForms`: `'__bp_run_one'/1`,
   `'__bp_run_tests'/1`, `main/1`).
+- **An entry point sets its own `standard_io` to unicode** (`unicodeStdio`):
+  `io:setopts(standard_io, [{encoding, unicode}])` is the first statement of
+  `'_botopink_main'/0` and of the test runner's `main/1`. `erl` opens
+  `standard_io` in the encoding of the host's locale, so under `LANG=C`
+  `@print("é")` wrote the latin1 byte `0xE9` and `"\u{1F600}"` the text
+  `\x{1F600}`; the program fixes it rather than the runner pinning a locale,
+  which would hide it (decision 67). `run/string_literal_unicode_escape` run
+  under `LANG=C` is the measurement.
 - **Bodies are `erl_ast` nodes**: `emitBodyFrom` builds an `Ast.Body` with
   `bodyNode(b, body, start, indent)` and renders it with `erl_emitter.writeBody`.
   Statements (`stmtExpr`: `return`, `bindExpr` for `val`/`=`/`+=` with versioning,

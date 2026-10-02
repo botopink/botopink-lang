@@ -130,6 +130,7 @@ passing() ->
     case Failed > 0 of true -> erlang:halt(1); false -> ok end.
 
 main(Args) ->
+    io:setopts(standard_io, [{encoding, unicode}]),
     Filter = case Args of
         [F | _] -> erlang:list_to_binary(F);
         _ -> none

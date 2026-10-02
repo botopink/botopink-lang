@@ -2212,6 +2212,7 @@ fn emitErlangModule(
         // first, then `main/0`, which is what `require`ing a commonJS module and
         // letting it call `main()` does.
         var stmts: std.ArrayListUnmanaged(Ast.Expr) = .empty;
+        try stmts.append(b.arena, try unicodeStdio(b));
         for (import_inits) |dep| try stmts.append(b.arena, try b.remote(dep, "_botopink_init", &.{}));
         if (emit_init) try stmts.append(b.arena, try b.call("_botopink_init", &.{}));
         try stmts.append(b.arena, try b.call("main", &.{}));
@@ -2327,6 +2328,17 @@ const Forms = std.ArrayListUnmanaged(Ast.Form);
 /// incomplete without the wrapper whether or not anything is compiled beside it.
 fn externalWrapperNeeded(f: ast.FnDecl) bool {
     return f.isPub and f.isExternal() and f.body.len == 0;
+}
+
+/// `io:setopts(standard_io, [{encoding, unicode}])` — the first statement of
+/// every entry point (`'_botopink_main'/0`, the test runner's `main/1`). A
+/// botopink string is UTF-8 and `@print` writes it with `~ts`; `erl` opens
+/// `standard_io` in the encoding of the host's locale, so under `LANG=C` an
+/// `é` came out as the latin1 byte `0xE9` and a code point above 255 as
+/// `\x{1F600}`. The program sets it itself rather than the runner pinning a
+/// locale, which would hide it (decision 67).
+fn unicodeStdio(b: Ast.Builder) !Ast.Expr {
+    return b.remote("io", "setopts", &.{ Ast.Expr.a("standard_io"), try b.list(&.{try b.tuple(&.{ Ast.Expr.a("encoding"), Ast.Expr.a("unicode") })}) });
 }
 
 /// `name(Patterns) ->` + block body.
@@ -2492,6 +2504,7 @@ fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr, load_
     // CALLER's location. That is how `std/querystring`'s dead `slice/3` stayed
     // invisible until it was read off the emitted `.erl` by hand.
     var main_stmts: std.ArrayListUnmanaged(Ast.Expr) = .empty;
+    try main_stmts.append(b.arena, try unicodeStdio(b));
     if (load_siblings) {
         // The runner sits `depth` folders below the run's output root (a test
         // file in `test/unit/`), and the modules it calls are anywhere in the

@@ -57,6 +57,7 @@ main() ->
     ok.
 
 '_botopink_main'() ->
+    io:setopts(standard_io, [{encoding, unicode}]),
     '_botopink_init'(),
     main().
 

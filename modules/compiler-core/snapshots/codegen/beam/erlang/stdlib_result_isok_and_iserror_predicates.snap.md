@@ -22,6 +22,7 @@ main() ->
     Bad = (fun(__BpR) -> case __BpR of {error, _} -> true; _ -> false end end)(R).
 
 '_botopink_main'() ->
+    io:setopts(standard_io, [{encoding, unicode}]),
     main().
 
 main(_Args) ->

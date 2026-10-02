@@ -165,6 +165,7 @@ helper() ->
     end.
 
 main(Args) ->
+    io:setopts(standard_io, [{encoding, unicode}]),
     '__bp_load_siblings'(),
     Filter = case Args of
         [F | _] -> erlang:list_to_binary(F);
