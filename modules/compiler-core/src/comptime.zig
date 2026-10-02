@@ -1307,9 +1307,12 @@ fn resolveImports(
                     // Decision 170 — a bundled package outside the shorthand's
                     // reach declares the name too: the backends must be told
                     // which module the item names.
-                    if (u.source == .root and owner.len > 0) {
+                    // A qualified item (`import {kit.store.Dict};`) names its
+                    // module already; std is never in a bare scan.
+                    if (u.source == .root and owner.len > 0 and !imp.isQualified()) {
                         var xit = registry.iterator();
                         while (xit.next()) |e| {
+                            if (isStdPkgPath(e.key_ptr.*)) continue;
                             if (!outsideShorthandReach(env, u.source, e.key_ptr.*)) continue;
                             if (!e.value_ptr.contains(name)) continue;
                             try env.shorthandOwners.put(env.arena, imp.loc, owner);
