@@ -18,9 +18,9 @@
 //// `path.extname` through the `basename` beside it, `queue.dequeue` through
 //// `Array.slice` in a std TYPE's method — the four routes the audit found dead.
 ////
-//// `.targets` is `commonJS erlang`: wasm inlines the std modules into the entry
-//// and prints heap addresses for `url.parse(…).host` and for the queue's
-//// values, which is a wasm gap of its own (`05-wasm`) and not this cell's claim.
+//// `.targets` is `commonJS erlang beam`: wasm refuses the program —
+//// `std/encoding.percentEncode`, which `querystring` reaches, has no wasm
+//// binding — so the cell has no row there.
 
 import {querystring, path, url, collections.Queue} from "std";
 

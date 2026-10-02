@@ -105,10 +105,12 @@ expect_code 1 "run after a failed build"
 expect_no_out "stale build v1" "run does not execute the stale artifact"
 
 # ── build does not execute the program it compiles ───────────────────────────
-# erlang is the one target whose build spawns anything: `erl`, compiling every
-# emitted `.erl` in memory with the OTP compiler (`build.zig`, `checkErlang`) —
-# never running the program. With a failing `erl` first on PATH that check
-# cannot run, and the build fails rather than claim what it did not check.
+# erlang and beam are the targets whose build spawns anything, and it is `erl`
+# both times — never running the program. The erlang build compiles every
+# emitted `.erl` in memory with the OTP compiler (`build.zig`, `checkErlang`);
+# both ask the Erlang code path about the host modules no shipped sidecar
+# answers (`libs.zig`, `shipErlSidecars`). With a failing `erl` first on PATH
+# neither can run, and the build fails rather than claim what it did not check.
 echo "==> build emits without running the program (no runtime spawn, no runtime cache)"
 SHIMS="$WORK/shims"; SPAWNED="$WORK/spawned.log"
 mkdir -p "$SHIMS"; : >"$SPAWNED"
@@ -132,6 +134,8 @@ for target in commonJS erlang beam wasm; do
   set -e
   if [[ $target == erlang ]]; then
     expect_code 1 "build --target erlang with a failing erl on PATH (the OTP compiler check cannot run)"
+  elif [[ $target == beam ]]; then
+    expect_code 1 "build --target beam with a failing erl on PATH (the host-module probe cannot run)"
   else
     expect_code 0 "build --target $target with runtime shims on PATH"
   fi
@@ -141,7 +145,7 @@ done
 # the only spawns allowed.
 OTHER="$(grep -v -e '^erl -noshell -eval Files = init:get_plain_arguments()' -e '^erl -noshell -noinput -eval lists:foreach(fun(M) -> case code:which(M)' "$SPAWNED" || true)"
 [[ -z "$OTHER" ]] && ok "no node/erl/erlc/escript/wasmtime spawned by build but the erlang compile check" || fail "build spawned a runtime: $(tr '\n' ';' <<<"$OTHER")"
-[[ "$(grep -c -e '^erl -noshell -eval Files = init:get_plain_arguments()' -e '^erl -noshell -noinput -eval lists:foreach(fun(M) -> case code:which(M)' "$SPAWNED")" -eq 1 ]] && ok "the erlang build ran one erl check, and a failing erl stopped it there" || fail "the erlang build did not run its erl check exactly once"
+[[ "$(grep -c -e '^erl -noshell -eval Files = init:get_plain_arguments()' -e '^erl -noshell -noinput -eval lists:foreach(fun(M) -> case code:which(M)' "$SPAWNED")" -eq 2 ]] && ok "the erlang and the beam build each ran one erl check, and a failing erl stopped it there" || fail "the erlang and the beam build did not run one erl check each: $(grep -c '^erl ' "$SPAWNED") erl spawn(s)"
 
 # ── build --target erlang compiles what it emits ─────────────────────────────
 # A build that only transpiled proved nothing about erlang: a module the OTP

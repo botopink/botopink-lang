@@ -1,0 +1,4 @@
+//// The `app` folder: its own `page`, and the `blog` folder below it.
+
+pub mod page;
+pub mod blog;

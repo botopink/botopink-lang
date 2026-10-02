@@ -394,13 +394,18 @@ fn writeOutputs(
     if (target == .commonJS) {
         try libs.shipMjsSidecars(gpa, io, outputs, out_dir, ext, env_map);
     }
-    // erlang: a `#[@External.Erlang("host", …)]`'s `host.erl` goes beside the
-    // emitted modules (`out/erl/`), where `botopink run` compiles every `.erl`
-    // onto the code path; a host module that is neither shipped nor in the
-    // Erlang code path is a located refusal here, not an `undef` at run time.
-    if (target == .erlang) {
-        const erl_dir = try std.fmt.allocPrint(gpa, "{s}/{s}", .{ out_dir, std.mem.trimEnd(u8, targetSubdir(.erlang), "/") });
-        defer gpa.free(erl_dir);
-        _ = try libs.shipErlSidecars(gpa, io, outputs, erl_dir, env_map);
+    // erlang and BEAM: a `#[@External.Erlang("host", …)]`'s `host.erl` goes
+    // beside the emitted modules — `out/erl/`, where `botopink run` compiles
+    // every `.erl` onto the code path, and `out/beam/`, where the assembled
+    // entry's `'__bp_load_siblings'/0` compiles and loads every `.erl` beside
+    // it. A host module that is neither shipped nor in the Erlang code path is
+    // a located refusal here, not an `undef` at run time.
+    switch (target) {
+        .erlang, .beam => {
+            const host_dir = try std.fmt.allocPrint(gpa, "{s}/{s}", .{ out_dir, std.mem.trimEnd(u8, targetSubdir(target), "/") });
+            defer gpa.free(host_dir);
+            _ = try libs.shipErlSidecars(gpa, io, outputs, host_dir, if (target == .beam) .beam else .erlang, env_map);
+        },
+        .commonJS, .wasm => {},
     }
 }

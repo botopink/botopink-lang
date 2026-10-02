@@ -1,0 +1,5 @@
+//// The application's `NotFound` — one of the two declarations of the name.
+
+pub fn NotFound() -> string {
+    return "app";
+}

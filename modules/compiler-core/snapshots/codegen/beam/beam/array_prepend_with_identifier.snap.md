@@ -39,7 +39,7 @@ val list = [1, 2, ..rest];
   {label, 5}.
     {allocate, 1, 0}.
     {init_yregs, {list, [{y, 0}]}}.
-    {move, nil, {x, 0}}.
+    {call, 0, {f, 3}}.
     {move, {x, 0}, {y, 0}}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.

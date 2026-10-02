@@ -232,10 +232,6 @@
 
 # ── wasm, the remaining rows of `00 · 05-wasm` ───────────────────────────────
 
-# ── an erlang host module on beam ────────────────────────────────────────────
-beam     | modules/erlang_host_sidecar_shipped | 03-beam | the project's `src/sidecars/lt_greeter.erl` is shipped by the erlang build (and `botopink test`), but the beam build ships no host module: the `.S` output calls `lt_greeter:hello/1` and the run dies with `undef` (`Failed to eval`); commonJS and wasm refuse the program by `.expect`, erlang prints `hello, sidecar`
-beam     | modules/erlang_sidecar_named_like_a_module | 03-beam | the same as `modules/erlang_host_sidecar_shipped`: the beam build ships no host module, so `text:shout/1` is `undef` (`Failed to eval`); erlang prints `HELLO, SIDECAR`
-
 # ── `val assert` over a record's constructor pattern ─────────────────────────
 
 

@@ -143,36 +143,74 @@ pub const ImportSource = union(enum) {
     /// single-module lib shape — and a caller that gets no match must widen to
     /// the whole package rather than treat the name as absent. `.root` names no
     /// module in particular (it is "this project"), so it never narrows.
+    ///
+    /// The source is compared as the PATH it spells (`spellsPath`): `from
+    /// "a.nf"` names `a/nf`. Compared byte for byte, a dotted source named no
+    /// module at all, so it narrowed nothing and every lookup fell through to
+    /// the whole program — where two modules declaring one `pub` name made the
+    /// import that said which module it meant `ambiguous-import-use`
+    /// (`tests/language/modules/import_same_fn_name_by_module`).
     pub fn namesModule(this: ImportSource, path: []const u8) bool {
         const m = switch (this) {
             .root => return false,
             .module => |name| name,
         };
-        if (std.mem.eql(u8, m, path)) return true;
+        if (spellsPath(m, path)) return true;
         const base = if (std.mem.lastIndexOfScalar(u8, path, '/')) |i| path[i + 1 ..] else path;
-        return std.mem.eql(u8, m, base);
+        return spellsPath(m, base);
     }
 
-    /// Whether `path` is a module of the PACKAGE this source names: a handle
-    /// (`web`, `ui`) covers every `<handle>/…` path. A name-keyed lookup that
-    /// finds nothing in the module the source names widens to this before it
-    /// widens to the whole program — two libraries of one build may each
-    /// declare a name (a server library's `Response` and an HTML library's,
-    /// both loaded by an application that uses the two), and `from "web"`
-    /// inside `web`'s own modules says which. Without this pass a package
-    /// handle narrowed nothing, and every such name in either library was
-    /// refused as ambiguous (`tests/language/modules/import_same_name_from_two_packages`).
+    /// Whether the source names `path` across a PACKAGE boundary — the second
+    /// reading, tried when the first names no module declaring the name, and
+    /// before the whole program. Two shapes:
+    ///
+    /// - `path` is a module of the package the source names: a handle (`web`,
+    ///   `ui`) covers every `<handle>/…` path. Two libraries of one build may
+    ///   each declare a name (a server library's `Response` and an HTML
+    ///   library's, both loaded by an application that uses the two), and
+    ///   `from "web"` inside `web`'s own modules says which. Without it a
+    ///   package handle narrowed nothing, and every such name in either
+    ///   library was refused as ambiguous
+    ///   (`tests/language/modules/import_same_name_from_two_packages`).
+    /// - `path` is the module the source names BELOW a package: a module of a
+    ///   package names a sibling by its path under the package's own root
+    ///   (`from "sql/rows"`, `from "app.page"`), and the registries key that
+    ///   module `<package>/sql/rows` once the package is somebody's
+    ///   dependency. Without it such a source named nothing, and the import
+    ///   was refused as soon as any other module of the program — a std
+    ///   module included — declared the name
+    ///   (`tests/language/modules/import_sibling_path_beside_std_name`,
+    ///   `import_same_fn_name_in_dependency`).
+    ///
+    /// The full path is `namesModule`'s and is tried first, so a project's
+    /// own `app/page` wins over a dependency's `<package>/app/page`.
     pub fn inPackage(this: ImportSource, path: []const u8) bool {
         const m = switch (this) {
             .root => return false,
             .module => |name| name,
         };
-        return path.len > m.len and std.mem.startsWith(u8, path, m) and path[m.len] == '/';
+        if (m.len == 0 or path.len <= m.len) return false;
+        if (path[m.len] == '/' and spellsPath(m, path[0..m.len])) return true;
+        const at = path.len - m.len;
+        return path[at - 1] == '/' and spellsPath(m, path[at..]);
+    }
+
+    /// Whether the text of a `from "…"` spells the module path `path`. A
+    /// source separates the segments of a nested module with `.` (`from
+    /// "shapes.circle"`, the `mod` chain) or with `/` (`from "tree/api"`); the
+    /// registries key a module by its `/` path, so a `.` of the source stands
+    /// for a `/` of the path and every other byte for itself.
+    fn spellsPath(written: []const u8, path: []const u8) bool {
+        if (written.len != path.len) return false;
+        for (written, path) |w, p| {
+            if (w != p and !(w == '.' and p == '/')) return false;
+        }
+        return true;
     }
 
     /// The three widening passes of a name-keyed import lookup: 0 — the module
-    /// the source names (`namesModule`), 1 — the package it names
-    /// (`inPackage`), 2 — the whole program.
+    /// the source names (`namesModule`), 1 — the source read across a package
+    /// boundary (`inPackage`), 2 — the whole program.
     pub fn admits(this: ImportSource, path: []const u8, pass: u2) bool {
         return switch (pass) {
             0 => this.namesModule(path),
@@ -207,13 +245,19 @@ pub const ImportDecl = struct {
     /// answers the decl's own source, and so does `from "std"` on a single
     /// segment (the std namespace form). With `whole`, every segment is the
     /// path: the item names a module (`io.fs` → `std/io/fs`) rather than a
-    /// symbol of one.
+    /// symbol of one. A composed answer is a `/` path whatever the source's
+    /// spelling (`import {c} from "a.b"` → `a/b/c`): callers look it up as a
+    /// registry key, and `a.b/c` is the key of nothing.
     pub fn leafSource(this: ImportDecl, imp: ImportPath, alloc: std.mem.Allocator, whole: bool) !ImportSource {
         if (!whole and !imp.isQualified()) return this.source;
         const rel = if (whole) try imp.fullPath(alloc) else try imp.prefixPath(alloc);
         return switch (this.source) {
             .root => .{ .module = rel },
-            .module => |pkg| .{ .module = try std.fmt.allocPrint(alloc, "{s}/{s}", .{ pkg, rel }) },
+            .module => |pkg| blk: {
+                const path = try std.fmt.allocPrint(alloc, "{s}/{s}", .{ pkg, rel });
+                std.mem.replaceScalar(u8, path[0..pkg.len], '.', '/');
+                break :blk .{ .module = path };
+            },
         };
     }
 };

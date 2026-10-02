@@ -1,0 +1,4 @@
+//// The package root.
+
+pub mod app;
+pub mod routes;

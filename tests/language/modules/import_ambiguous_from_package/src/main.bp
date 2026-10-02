@@ -1,0 +1,12 @@
+//// The refusal `import_same_fn_name_by_module` must not take away. `from
+//// "site"` names a PACKAGE, and two modules of that package declare `pub fn
+//// NotFound`: the import narrows to the package and no further, so the name is
+//// still two declarations and the use is `ambiguous-import-use`, located,
+//// naming both — on every target. `from "site.app.not_found"` says which
+//// (`import_same_fn_name_in_dependency`).
+
+import {NotFound} from "site";
+
+pub fn main() {
+    @print(NotFound());
+}
