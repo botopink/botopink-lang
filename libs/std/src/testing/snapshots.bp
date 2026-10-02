@@ -29,16 +29,26 @@
 //// trailing newlines trimmed on both sides — the two normalisations the
 //// compiler's `utils/snap.zig` applies — and nothing else.
 ////
-//// `path`, `pathNamed`, `suiteOf` and `slugOf` are pure botopink and run on
-//// every backend. The four `assert*` entry points sit on PRIVATE host cells
-//// (`readFile`, `writeFile`, `removeFile`, `exists` — Node + Erlang, the
-//// `fs.bp` shapes re-declared here because a std module does not import
-//// another), so `import {snapshots} from "std"` passes STD-001 on beam and
-//// wasm while the four are unresolved at lowering there — which does not
-//// matter: `botopink test` runs on commonJS and erlang only. `path(loc)` is
+//// `path`, `pathNamed`, `suiteOf` and `slugOf` are pure botopink. The four
+//// `assert*` entry points read and write through `io/fs` and `path`, imported
+//// below — the engine declares no host cell (1.0.11-beta front 97; it used to
+//// re-declare six of `fs.bp`'s). So the module runs where `io/fs` runs —
+//// commonJS, erlang and beam — and `import {testing.snapshots} from "std"` is
+//// refused on wasm (STD-001: `io/fs` has no wasm binding), which is no loss:
+//// `botopink test` runs on commonJS and erlang only. `path(loc)` is
 //// package-relative because `loc.file` is; the engine opens it relative to
 //// the process's working directory, and `botopink test` runs from the
 //// package root.
+////
+//// The imports are chosen for a CONSUMER, whose build embeds every module
+//// this one imports: `io/process` is bound as `host`, because a module-level
+//// `process` shadows Node's global in the emitted file, and `io/random` is
+//// not imported at all — its `.mjs` sidecar cannot be shipped to a consumer
+//// that resolves std from the compiler rather than from a package directory.
+
+import {io.fs, io.os, io.env} from "std";
+import {io.process as host} from "std";
+import {path.join as joinPath, path.dirname as parentOf} from "std";
 
 // ── the path rule (pure) ─────────────────────────────────────────────────────
 
@@ -126,44 +136,58 @@ pub fn pathNamed(loc: SourceLocation, name: string) -> string {
     ].join("");
 }
 
-// ── private host cells (Node + Erlang) ───────────────────────────────────────
+// ── the filesystem, through `io/fs` and `path` ────────────────────────────────
+// The engine has no host cell of its own (1.0.11-beta front 97): it reads with
+// `fs.readText`, writes with `fs.writeText`, asks `fs.exists`, removes with
+// `fs.rm`, and its inline tests clear their scratch directories with
+// `fs.removeTree`.
 
-// The file's text, or the host's error.
-#[@External.Node("""(() => { try { return { ok: require('fs').readFileSync($0, 'utf8') } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
-#[@External.Erlang("""(fun(__P) -> case file:read_file(__P) of {ok, __B} -> {ok, __B}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
-declare fn readFile(p: string) -> @Result<string, string>;
+// Make `dir` and every missing directory above it. `""` (the parent of a bare
+// name) and a directory that is already there are done at once.
+fn ensureDir(dir: string) -> @Result<void, string> {
+    val there = dir == "" || fs.exists(dir);
+    if (there) return;
+    try ensureDir(parentOf(dir));
+    val made = fs.mkdir(dir);
+    val failed = made.isError() && fs.exists(dir) == false;
+    if (failed) throw errorOf(made);
+    return;
+}
 
 // Write `text` to `p`, creating the parent directories; the host's error
 // on failure (a full disk is a test failure, not a silent pass).
-#[@External.Node("""(() => { try { require('fs').mkdirSync(require('path').dirname($0), { recursive: true }); require('fs').writeFileSync($0, $1); return { ok: 0 } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
-#[@External.Erlang("""(fun(__P, __T) -> case filelib:ensure_dir(__P) of ok -> case file:write_file(__P, __T) of ok -> {ok, 0}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0, $1)""")]
-declare fn writeFile(p: string, text: string) -> @Result<i32, string>;
+fn writeFile(p: string, text: string) -> @Result<i32, string> {
+    try ensureDir(parentOf(p));
+    return try fs.writeText(p, text);
+}
 
 // Remove `p`; a file that is not there is `Ok` too.
-#[@External.Node("""(() => { try { require('fs').rmSync($0, { force: true }); return { ok: 0 } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
-#[@External.Erlang("""(fun(__P) -> case file:delete(__P) of ok -> {ok, 0}; {error, enoent} -> {ok, 0}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
-declare fn removeFile(p: string) -> @Result<i32, string>;
+fn removeFile(p: string) -> @Result<i32, string> {
+    if (fs.exists(p) == false) return 0;
+    return try fs.rm(p);
+}
 
-// Whether a path exists at `p`, of any kind — `io.fs.exists`' cell.
-#[@External.Node("""require('fs').existsSync($0)""")]
-#[@External.Erlang("""(case file:read_file_info($0) of {ok, _} -> true; _ -> false end)""")]
-declare fn exists(p: string) -> bool;
+// The first `<base>/bpsnap-<pid>-<n>` that is not there yet, counting from
+// `n`. The pid tells two test processes of one run apart; the count tells
+// this process's own directories apart, and steps over one an earlier run
+// with the same pid left behind.
+fn freeScratch(base: string, n: i32) -> string {
+    val name = ["bpsnap-", host.pid().toString(), "-", n.toString()].join("");
+    val dir = joinPath([base, name]);
+    return if (fs.exists(dir)) freeScratch(base, n + 1) else dir;
+}
 
-// Remove a directory tree — the inline tests' scratch directories, so a run
-// leaves nothing under the host's tmpdir. A tree that is not there is `Ok`
-// too, so the tests can assert the removal succeeded.
-#[@External.Node("""(() => { try { require('fs').rmSync($0, { recursive: true, force: true }); return { ok: 0 } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
-#[@External.Erlang("""(fun(__P) -> case file:del_dir_r(__P) of ok -> {ok, 0}; {error, enoent} -> {ok, 0}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
-declare fn removeTree(p: string) -> @Result<i32, string>;
-
-// A fresh, empty scratch directory under the host's tmpdir — for the inline
-// tests only, so the package tree is never written to; each test removes it
-// again with `removeTree`. The Erlang name carries
-// the OS pid: `erlang:unique_integer` restarts with the VM, so a bare counter
-// collided (`eexist`) with the directories an earlier run left behind.
-#[@External.Node("""require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'bpsnap-'))""")]
-#[@External.Erlang("""(fun() -> __D = filename:join(case os:getenv("TMPDIR") of false -> "/tmp"; __V -> __V end, "bpsnap-" ++ os:getpid() ++ "-" ++ integer_to_list(erlang:unique_integer([positive]))), ok = file:make_dir(__D), list_to_binary(__D) end)()""")]
-declare fn tmpDir() -> string;
+// A fresh, empty scratch directory — for the inline tests only, so the
+// package tree is never written to; each test removes it again with
+// `fs.removeTree`. Under `BOTOPINK_TEST_TMPDIR` (the per-run directory
+// `botopink test` names and removes with the run) and, outside a test run,
+// under the host's tmpdir.
+fn tmpDir() -> string {
+    val base = env.read("BOTOPINK_TEST_TMPDIR").unwrapOr(os.tmpdir());
+    val dir = freeScratch(base, 0);
+    val made = ensureDir(dir);
+    return if (made.isOk()) dir else "";
+}
 
 // ── the engine ───────────────────────────────────────────────────────────────
 
@@ -270,7 +294,7 @@ fn check(
 ) -> @Result<void, string> {
     val expected = render(loc.fnName, subject, actual);
     val newPath = [file, ".new"].join("");
-    val recorded = readFile(file);
+    val recorded = fs.readText(file);
     if (recorded.isError()) {
         try writeCandidate(newPath, expected);
         throw [
@@ -435,13 +459,13 @@ test "snapshots: engine ---- missing writes a .new and answers Error" {
     );
     val r = assertAs(loc, "text", "hello");
     assert r.isError();
-    assert exists([path(loc), ".new"].join(""));
-    assert exists(path(loc)) == false;
+    assert fs.exists([path(loc), ".new"].join(""));
+    assert fs.exists(path(loc)) == false;
     assert errorText(r).startsWith("snapshots: missing ");
-    val candidate = readFile([path(loc), ".new"].join("")).unwrapOr("");
+    val candidate = fs.readText([path(loc), ".new"].join("")).unwrapOr("");
     assert candidate
         == "botopink-snap 1\ntest: e: missing\nsubject: text\n\nhello\n";
-    val cleaned = removeTree(dir);
+    val cleaned = fs.removeTree(dir);
     assert cleaned.isOk();
 }
 
@@ -459,10 +483,10 @@ test "snapshots: engine ---- mismatch writes a .new and answers Error" {
     assert r.isError();
     assert errorText(r).startsWith("snapshots: mismatch ");
     assert errorText(r).contains("(first difference at body line 1)");
-    val candidate = readFile([path(loc), ".new"].join("")).unwrapOr("");
+    val candidate = fs.readText([path(loc), ".new"].join("")).unwrapOr("");
     assert candidate
         == "botopink-snap 1\ntest: e: mismatch\nsubject: text\n\nnew\n";
-    val cleaned = removeTree(dir);
+    val cleaned = fs.removeTree(dir);
     assert cleaned.isOk();
 }
 
@@ -478,7 +502,7 @@ test "snapshots: engine ---- the differing line is counted from the body" {
     assert w.isOk();
     val r = assertAs(loc, "text", "a\nb\nd");
     assert errorText(r).contains("(first difference at body line 3)");
-    val cleaned = removeTree(dir);
+    val cleaned = fs.removeTree(dir);
     assert cleaned.isOk();
 }
 
@@ -495,8 +519,8 @@ test "snapshots: engine ---- match answers Ok and removes a stale .new" {
     val stale = writeFile([path(loc), ".new"].join(""), "stale");
     assert stale.isOk();
     try assertAs(loc, "text", "same");
-    assert exists([path(loc), ".new"].join("")) == false;
-    val cleaned = removeTree(dir);
+    assert fs.exists([path(loc), ".new"].join("")) == false;
+    val cleaned = fs.removeTree(dir);
     assert cleaned.isOk();
 }
 
@@ -513,7 +537,7 @@ test "snapshots: engine ---- header must match too" {
     val r = assertAs(loc, "text", "body");
     assert r.isError();
     assert errorText(r).contains("(header differs)");
-    val cleaned = removeTree(dir);
+    val cleaned = fs.removeTree(dir);
     assert cleaned.isOk();
 }
 
@@ -531,7 +555,7 @@ test "snapshots: engine ---- CRLF in the recorded file still matches" {
     );
     assert w.isOk();
     try assertAs(loc, "text", "line one\nline two");
-    val cleaned = removeTree(dir);
+    val cleaned = fs.removeTree(dir);
     assert cleaned.isOk();
 }
 
@@ -546,7 +570,7 @@ test "snapshots: engine ---- trailing newlines of the body do not matter" {
     val w = writeFile(path(loc), render("e: trailing", "text", "body\n\n"));
     assert w.isOk();
     try assertAs(loc, "text", "body");
-    val cleaned = removeTree(dir);
+    val cleaned = fs.removeTree(dir);
     assert cleaned.isOk();
 }
 
@@ -563,8 +587,8 @@ test "snapshots: engine ---- not a snapshot file" {
     val r = assertAs(loc, "text", "x");
     assert r.isError();
     assert errorText(r).startsWith("snapshots: not a snapshot file");
-    assert exists([path(loc), ".new"].join("")) == false;
-    val cleaned = removeTree(dir);
+    assert fs.exists([path(loc), ".new"].join("")) == false;
+    val cleaned = fs.removeTree(dir);
     assert cleaned.isOk();
 }
 
@@ -582,13 +606,13 @@ test "snapshots: engine ---- the header keeps the full test name" {
         "@media(min-width:768px){:hover{background:red}}",
     );
     assert first.isError();
-    val text = readFile([path(loc), ".new"].join("")).unwrapOr("");
+    val text = fs.readText([path(loc), ".new"].join("")).unwrapOr("");
     assert text.contains("test: css: modifiers ---- hover on md breakpoint");
     assert text.contains("subject: css");
     assert path(loc).endsWith(
         "/__snapshots__/css/modifiers_hover_on_md_breakpoint.snap",
     );
-    val cleaned = removeTree(dir);
+    val cleaned = fs.removeTree(dir);
     assert cleaned.isOk();
 }
 
@@ -614,7 +638,7 @@ test "snapshots: engine ---- a named snapshot lives beside the unnamed one" {
     assert errorText(empty).startsWith(
         "snapshots: a named snapshot needs a name",
     );
-    val cleaned = removeTree(dir);
+    val cleaned = fs.removeTree(dir);
     assert cleaned.isOk();
 }
 

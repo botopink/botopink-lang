@@ -66,7 +66,7 @@ pub type UserInfo(
 )
 
 #[@External.Node("""(() => { const __u = require('os').userInfo(); return { uid: __u.uid, username: __u.username } })()""")]
-#[@External.Erlang("""(fun() -> __U = case os:getenv("USER") of false -> <<"unknown">>; __V -> list_to_binary(__V) end, {'std@os@@UserInfo', 0, __U} end)()""")]
+#[@External.Erlang("""(fun() -> __U = case os:getenv("USER") of false -> <<"unknown">>; __V -> list_to_binary(__V) end, {'std@io@os@@UserInfo', 0, __U} end)()""")]
 pub declare fn userInfo() -> UserInfo;
 
 // Platform line terminator — `"\n"` on POSIX, `"\r\n"` on Windows.

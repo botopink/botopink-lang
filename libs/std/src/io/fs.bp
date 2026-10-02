@@ -72,7 +72,8 @@ pub declare fn list(path: string) -> @Result<string[], string>;
 #[@External.Erlang("""(fun(__P) -> case file:make_dir(__P) of ok -> {ok, 0}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
 pub declare fn mkdir(path: string) -> @Result<i32, string>;
 
-// Delete the file (or empty directory) at `path`.
+// Delete the FILE at `path`. A directory — empty or not — is an `Error` on
+// both hosts (`ERR_FS_EISDIR` / `eperm`); `removeTree` removes one.
 // Node: `require('fs').rmSync($0)`.
 // Erlang: `file:delete/1`.
 #[@External.Node("""(() => { try { require('fs').rmSync($0); return { ok: 0 } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
@@ -148,18 +149,24 @@ pub declare fn walk(root: string) -> @Result<string[], string>;
 #[@External.Erlang("""(fun(__P, __R) -> __Root = unicode:characters_to_list(__R), __Pat = unicode:characters_to_list(__P), __Segs = [__S || __S <- string:split(__Pat, "/", all), __S =/= [], __S =/= "."], __DirsOnly = lists:suffix("/", __Pat), __RealDir = fun(__F) -> case file:read_link_info(__F) of {ok, __I} -> element(3, __I) =:= directory; _ -> false end end, __Magic = fun(__S) -> lists:any(fun(__C) -> lists:member(__C, "*?[{") end, __S) end, __Names = fun(__Dir, __Seg) -> __All = case __Seg of "*" -> case file:list_dir(__Dir) of {ok, __L} -> __L; _ -> [] end; _ -> try filelib:wildcard(__Seg, __Dir) catch _:_ -> [] end end, [__N || __N <- __All, (hd(__N) =/= 46) orelse (hd(__Seg) =:= 46)] end, __Join = fun([], __N) -> __N; (__Rel, __N) -> __Rel ++ "/" ++ __N end, __Walk = fun __W([], _, [], __Acc) -> __Acc; __W([], _, __Rel, __Acc) -> [__Rel | __Acc]; __W(["**"], __Dir, __Rel, __Acc) -> lists:foldl(fun(__N, __A) -> __F = filename:join(__Dir, __N), __Sub = __Join(__Rel, __N), case __RealDir(__F) of true -> __W(["**"], __F, __Sub, [__Sub | __A]); false -> [__Sub | __A] end end, __Acc, __Names(__Dir, "*")); __W(["**" | __Rest] = __Pattern, __Dir, __Rel, __Acc) -> lists:foldl(fun(__N, __A) -> __F = filename:join(__Dir, __N), case __RealDir(__F) of true -> __W(__Pattern, __F, __Join(__Rel, __N), __A); false -> __A end end, __W(__Rest, __Dir, __Rel, __Acc), __Names(__Dir, "*")); __W([__Seg | __Rest], __Dir, __Rel, __Acc) -> case __Magic(__Seg) of false -> __F = filename:join(__Dir, __Seg), __Sub = __Join(__Rel, __Seg), case __Rest of [] -> case file:read_link_info(__F) of {ok, _} -> [__Sub | __Acc]; _ -> __Acc end; _ -> case filelib:is_dir(__F) of true -> __W(__Rest, __F, __Sub, __Acc); false -> __Acc end end; true -> lists:foldl(fun(__N, __A) -> __G = filename:join(__Dir, __N), __Under = __Join(__Rel, __N), case __Rest of [] -> [__Under | __A]; _ -> case __RealDir(__G) of true -> __W(__Rest, __G, __Under, __A); false -> __A end end end, __Acc, __Names(__Dir, __Seg)) end end, {ok, [unicode:characters_to_binary(__X) || __X <- lists:usort(__Walk(__Segs, __Root, [], [])), (not __DirsOnly) orelse __RealDir(filename:join(__Root, __X))]} end)($0, $1)""")]
 pub declare fn glob(pattern: string, root: string) -> @Result<string[], string>;
 
+// Remove `path` and everything under it: a file, a link (the link, never its
+// target) or a directory tree. A path that is not there is `Ok` too — the
+// caller wanted it gone. What a test fixture is cleared with, and what the
+// snapshot engine's tests clear their scratch directories with (1.0.11-beta
+// front 97).
+// Node: `rmSync(path, { recursive: true, force: true })`.
+// Erlang: `file:del_dir_r/1`.
+#[@External.Node("""(() => { try { require('fs').rmSync($0, { recursive: true, force: true }); return { ok: 0 } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
+#[@External.Erlang("""(fun(__P) -> case file:del_dir_r(__P) of ok -> {ok, 0}; {error, enoent} -> {ok, 0}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
+pub declare fn removeTree(path: string) -> @Result<i32, string>;
+
 // Internal, test scaffolding: a fresh, unique, empty directory under the
-// host's tmpdir, and the recursive delete that removes it again. Private —
-// the public surface stays the one the module documents. Every `walk`/`glob`
-// test makes its fixture tree in one of these and removes it, so a run leaves
-// nothing under the host's tmpdir.
+// host's tmpdir. Private — every `walk`/`glob` test makes its fixture tree in
+// one of these and removes it with `removeTree`, so a run leaves nothing under
+// the host's tmpdir.
 #[@External.Node("""require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'bp-std-fs-'))""")]
 #[@External.Erlang("""(fun() -> __T = case os:getenv("TMPDIR") of false -> "/tmp"; __V -> __V end, __D = filename:join(__T, "bp-std-fs-" ++ integer_to_list(erlang:unique_integer([positive]))), ok = file:make_dir(__D), unicode:characters_to_binary(__D) end)()""")]
 declare fn scratchDir() -> string;
-
-#[@External.Node("""require('fs').rmSync($0, { recursive: true, force: true })""")]
-#[@External.Erlang("""(fun(__D) -> file:del_dir_r(__D), ok end)($0)""")]
-declare fn removeTree(path: string) -> void;
 
 // Internal, test scaffolding: the working directory (what a relative root is
 // read against) and a symbolic link `link` → `target`.
@@ -190,6 +197,22 @@ test "fs.exists is true for a path of any kind" {
     assert exists([dir, "/file.txt"].join(""));
     assert exists(dir);
     removeTree(dir);
+    assert exists(dir).negate();
+}
+
+test "fs.removeTree removes a tree, a file and a link, and a missing path is Ok" {
+    val dir = scratchDir();
+    makeFixtureTree(dir);
+    linkTo("blog", [dir, "/app/linked"].join(""));
+    assert removeTree([dir, "/app/linked"].join("")).isOk();
+    assert exists([dir, "/app/linked"].join("")).negate();
+    assert exists([dir, "/app/blog/page.bp"].join(""));
+    assert removeTree([dir, "/app/page.bp"].join("")).isOk();
+    assert exists([dir, "/app/page.bp"].join("")).negate();
+    assert removeTree([dir, "/app"].join("")).isOk();
+    assert exists([dir, "/app"].join("")).negate();
+    assert removeTree([dir, "/app"].join("")).isOk();
+    assert removeTree(dir).isOk();
     assert exists(dir).negate();
 }
 
