@@ -1816,6 +1816,10 @@ codegen/
   matching everything. Every one of these used to match every subject and
   bind nothing (`case 0 { 1...9 { 1 } _ { 0 } }` answered `1`). Pinned by the
   `assertBeamRunLog` rows in `tests/control_flow.zig` and `tests/beam.zig`.
+- **A capitalised callee** is a record constructor (`record_fields`, or the
+  label-keyed map when every argument is labelled) only when no import binds
+  the name to a FUNCTION (`imported_fn_owners`, `crossOwnerOf(.fn)`):
+  `import {Make} from "util"` then `Make(n: 4)` was built as `#{n => 4}`.
 - **Negation** (`lowerNeg`): a literal folds to its negated token; anything
   else is the unary `'-'/1` gc_bif, as `erlc` writes `-X`. It was `0 - X`,
   which is `+0.0` for `X = 0.0` where `-0.0` is the answer (`z * -1.0` and

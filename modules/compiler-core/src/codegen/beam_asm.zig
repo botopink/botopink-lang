@@ -6707,7 +6707,15 @@ const Emitter = struct {
         // `App(8080, "/")` → a map `#{…}`. Positional args take their field name
         // from the declared order; reads use `get_map_elements` with the same
         // atom keys.
-        if (cc.callee.len > 0 and std.ascii.isUpper(cc.callee[0])) {
+        //
+        // A capitalised name that an import binds to a FUNCTION is that
+        // function, never a constructor: `import {Make} from "util"` then
+        // `Make(n: 4)` was built as the label-keyed record `#{n => 4}`
+        // (erlang and commonJS call `util.Make`). The imported-fn routes
+        // below take it.
+        const names_imported_fn = self.imported_fn_owners.contains(cc.callee) or
+            self.crossOwnerOf(cc.callee, .@"fn") != null;
+        if (cc.callee.len > 0 and std.ascii.isUpper(cc.callee[0]) and !names_imported_fn) {
             if (self.record_fields.get(cc.callee)) |fields| {
                 try self.lowerRecordConstruct(cc.args, fields, cc.callee);
                 if (mode == .tail) try self.emitReturn();

@@ -137,7 +137,9 @@ codepoints (`"%0Aéz"` → 5 pieces, `""` → none) beside a non-empty separator
 held in a `val`, on all four targets (beam lowered it to `string:split/3`, wasm cut between bytes).
 `01 · 03-beam` step 1 adds `run/ctor_pattern_in_val_binding` — `val Label(t, w) = Tag.Label(…)`, a
 one-variant type's constructor in binding position, prints `7` on all four targets (beam bound
-nothing: `{unresolved_identifier, t}`).
+nothing: `{unresolved_identifier, t}`), and `modules/import_capitalised_fn` — an imported `pub fn Make`
+called with labelled and positional arguments, on all four targets (beam built `Make(n: 4)` as the
+record `#{n => 4}`).
 01-std step 2 adds `run/std_asserts_on_every_target` — `import {testing.asserts}` and its pure
 assertions on commonJS, erlang and beam — and `run/std_asserts_host_cell_on_wasm` — `asserts.deepEquals`
 on the same three. wasm refuses both at the import (`.wasm.expect`): `deepEquals` calls `canonical`,
