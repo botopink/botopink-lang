@@ -217,9 +217,14 @@ the beam codegen test `is and == read numbers by value …` no longer prints `2.
 `test/program_primitive_behavior_extends_std` and `reject/program_primitive_behavior_redeclares_std`
 (another front's finding) — a program's own `behavior String` adds members to std's `String` (its
 default fns call `slice`, `startsWith`, `length` on `self`, and std's members answer beside them),
-and redeclaring a std member is `behavior-member-redeclared`. A `test/` cell: wasm traps on any
-program-declared default fn of a primitive (`05-wasm`'s row); beam answers as the two `test/`
-targets do. Both refused by the parent binary.
+and redeclaring a std member is `behavior-member-redeclared`. `run/program_primitive_behavior_extends_std`
+is its `run/` twin on all four targets (`botopink test` runs neither wasm nor beam), a
+`behavior Number` default beside it; wasm called no program-declared default fn of a primitive
+(it trapped) until `05-wasm`'s `lowerPrimDefault`. Both refused by the parent binary.
+`run/program_array_behavior_default` does the same for a program's `behavior Array<T>` — defaults
+calling std's `at` / `length` / `filter` / `all` / `contains` / `join` on `self`, taking a `T` and a
+`Self<T>`, answering `?T`, `T`, `Self<T>`, a bool and a string over integers, strings and records —
+on all four targets (wasm trapped: the copy did not substitute `Self<T>`).
 Decision 141 adds `run/external_template_refused_on_beam` — an `@External.Erlang` template with a
 macro runs on erlang and is a located build error on beam naming the construct (`.beam.expect`); beam
 no longer evaluates a template it cannot compile from source at run time.
