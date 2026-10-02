@@ -1,0 +1,12 @@
+//// An index answers an optional (decision 63): in `fn first<T>(xs: T[]) -> T`
+//// the `xs[0]` is a `?T`, and returning it is the type mismatch naming `T` and
+//// `?T`. It was reported as `recursive type detected`, which named neither
+//// (`run/generic_index_optional_return` is the accepted form).
+
+fn first<T>(xs: T[]) -> T {
+    return xs[0];
+}
+
+pub fn main() {
+    @print(first([1, 2]));
+}

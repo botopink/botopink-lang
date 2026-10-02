@@ -1285,6 +1285,16 @@ block is a call at statement position, also inside an `if`, a loop or a `forEach
 a use). A counter shared across calls is a module-level `var`
 (`reject/captured_var_write_in_lambda`, `run/closure_capture_statement_position`).
 
+## The occurs check is named as the mismatch it is
+
+`unifyAt` turns `unify.zig`'s occurs-check failure (`recursiveType`) into `type mismatch: expected
+`T`, got `?T` — the second holds the first`, spelling a generic fn's type parameter by name
+(`genericSpelling` over `Env.fnGenericMap`) — `return xs[0];` under `fn first<T>(xs: T[]) -> T`
+answered `recursive type detected`, which named neither (an index is `?T`, decision 63;
+`reject/generic_index_answers_optional`, `run/generic_index_optional_return`). A declared type
+parameter is still a flexible variable inside its body: `fn f<T>(x: T) -> T { return 1; }` checks as
+`fn(i32) -> i32` and reds only at a call with another type.
+
 ## A record value is not callable (`language-gaps.md` row 32)
 
 A plain call `g(…)` whose callee is a binding of a **record, enum or primitive** type — a value,

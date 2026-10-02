@@ -191,6 +191,9 @@ Step 7 (decision 148) adds `reject/captured_var_write_in_lambda` (`run({ -> n = 
 (a `forEach` body, a local closure called as a statement — directly, in a `for` body and in a
 `forEach` body — and a module-level `var` written from any lambda, four targets; it passes on the
 parent binary too and pins the legal shapes).
+`reject/generic_index_answers_optional` and `run/generic_index_optional_return` (another front's
+finding) — `return xs[0];` under `-> T` is the type mismatch naming `T` and `?T` (it was `recursive type
+detected`), and the same functions declared `-> ?T` run on four targets.
 Decision 141 adds `run/external_template_refused_on_beam` — an `@External.Erlang` template with a
 macro runs on erlang and is a located build error on beam naming the construct (`.beam.expect`); beam
 no longer evaluates a template it cannot compile from source at run time.

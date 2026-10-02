@@ -6220,10 +6220,56 @@ fn unifyAt(env: *Env, a: *T.Type, b: *T.Type, loc: ast.Loc) InferError!void {
     const ta = a.deref();
     const tb = b.deref();
     unifyUnlocated(env, a, b) catch |err| {
-        if (env.lastError) |*e| e.loc = loc;
+        if (env.lastError) |*e| {
+            // The occurs check answers a type that would contain itself —
+            // inside a generic fn, the declared `T` against a `?T` (`return
+            // xs[0];` under `-> T`, an index answering `?T`) or a `T[]`. Named
+            // as the mismatch it is, the type parameter spelled.
+            if (e.kind == .recursiveType) {
+                const msg = try std.fmt.allocPrint(env.arena, "type mismatch: expected `{s}`, got `{s}` — the second holds the first, so the two are never one type", .{ try genericSpelling(env, ta, 0), try genericSpelling(env, tb, 0) });
+                const optional = tb.* == .named and std.mem.eql(u8, tb.named.name, "optional");
+                env.lastError = TypeError.custom(msg, if (optional)
+                    "An index and `at` answer an optional (`?T`): unwrap it (`xs[0] ?? fallback`, `case`) or declare the type `?T`."
+                else
+                    "Give the position the type the value has, or a value of the type the position declares.");
+            }
+            env.lastError.?.loc = loc;
+        }
         return err;
     };
     try warnTupleLabelMismatch(env, ta, tb, loc);
+}
+
+/// A type as the source spells it, a generic fn's type parameter by its name
+/// (`fnGenericMap`) — for the occurs-check refusal, where a bare `?` would say
+/// nothing.
+fn genericSpelling(env: *Env, t: *T.Type, depth: usize) InferError![]const u8 {
+    const d = t.deref();
+    if (depth > 8) return "…";
+    switch (d.*) {
+        .typeVar => {
+            if (env.fnGenericMap) |gm| {
+                var it = gm.iterator();
+                while (it.next()) |e| if (e.value_ptr.*.deref() == d) return e.key_ptr.*;
+            }
+            return "?";
+        },
+        .named => |n| {
+            if (std.mem.eql(u8, n.name, "optional") and n.args.len == 1) return std.fmt.allocPrint(env.arena, "?{s}", .{try genericSpelling(env, n.args[0], depth + 1)});
+            if ((std.mem.eql(u8, n.name, "array") or std.mem.eql(u8, n.name, "Array")) and n.args.len == 1) return std.fmt.allocPrint(env.arena, "{s}[]", .{try genericSpelling(env, n.args[0], depth + 1)});
+            if (n.args.len == 0) return n.name;
+            var buf: std.ArrayListUnmanaged(u8) = .empty;
+            try buf.appendSlice(env.arena, n.name);
+            try buf.append(env.arena, '<');
+            for (n.args, 0..) |a, i| {
+                if (i > 0) try buf.appendSlice(env.arena, ", ");
+                try buf.appendSlice(env.arena, try genericSpelling(env, a, depth + 1));
+            }
+            try buf.append(env.arena, '>');
+            return buf.items;
+        },
+        else => return snapshotMod.typeNameOf(env.arena, d),
+    }
 }
 
 /// Decision 8 §6 T7 — a tuple built from variables lends their names as
