@@ -541,6 +541,17 @@ Each was run with the parent binary and fails there as its row describes.
   and erlang; the same table as a `run/` cell is red on beam (`#(i32, string)` holds for every
   tagged tuple — a record and a variant too) and traps on wasm — 03's and 05's rows. §11's
   "erlang stores nothing" is `codegen/tests/control_flow.zig`'s needle (`A = 2.0,`, no box).
+- `run/lambda_binds_name_of_enclosing_fn` (decision 205): a `forEach` body's `val k` over an outer
+  `k`, a lambda parameter `e` over an outer `e`, and a lambda value's parameter `e`; the outer names
+  keep their values. erlc refused the module on the parent binary (`K@1` unbound). **Red on wasm**
+  (`l l 1 2 6 2`: the inner bindings overwrite the outer ones) — 05's row.
+- `run/behavior_default_adopted_by_two_types`: a behavior's `default fn` adopted by two types (one
+  declaring the other default itself), called typed, through a default and through a behavior-typed
+  parameter. erlc refused the module on the parent binary (`function twice/1 undefined`). **Red on
+  beam** until 03's adopted-defaults commit lands and **on wasm** (it traps in `Sq_label`, 05's row).
+- `modules/erlang_host_sidecar_in_a_test` (test kind, narrowed to erlang): a `test/` module that
+  declares `#[@External.Erlang("lt_greeter", "hello")]` itself and calls it. It imports nothing, so
+  its runner loaded no sibling and the call died `{error,undef}` on the parent binary.
 - `run/captured_var_write_threaded` (decision 148, lg-b): the two lambdas that may write a
   captured `var` — a `forEach` body and a local closure called at statement position — thread the
   write out on all four targets (a pin: green on the parent binary too). Every other lambda's
@@ -952,8 +963,9 @@ refusal lines are in the front's README):
 | `run/std_template_host_fns_across_modules` | commonJS erlang beam | wasm — `std/io/fs.exists` |
 | `run/task_throw_resolves_error` | commonJS | erlang, wasm, beam — `observe` |
 | `modules/manifest_targets_host_binding` | erlang beam (`"targets"`) | commonJS, wasm — `magnitude` |
+| `modules/erlang_host_sidecar_in_a_test` (test kind) | erlang (`"targets"`) | commonJS — `hello` |
 
-Thirty-two exclusions; the run prints `narrowings: 32 exclusions audited — each stands on a host binding
+Thirty-three exclusions; the run prints `narrowings: 33 exclusions audited — each stands on a host binding
 the target does not have`. No other `modules/` manifest carries `"targets"`: the field used to be
 boilerplate (`["commonJS", "erlang", "wasm"]` in 33 cells, `["commonJS", "erlang"]` in 14) that the
 runner ignored — honoured as written it would have taken beam away from 33 passing cells — and a

@@ -870,7 +870,10 @@ codegen/
   otherwise, which is also the arm every module that does not compile takes. "Reaches another one" is `imported_fns`, `imported_vals`
   (a sibling's `pub val`, decision 140 — missing until onze F1, so a test that
   read one died `{error,undef}`; `tests/language/modules/pub_val_in_a_test`),
-  `imported_types`, **`std_imports`** and a type module of its own — the std route was missing, so
+  `imported_types`, **`std_imports`**, a build that binds a BEAM host of its own
+  (`binds_erlang_host` — a test module declaring its sidecar's function imports
+  nothing, and its call died `{error,undef}`;
+  `tests/language/modules/erlang_host_sidecar_in_a_test`) and a type module of its own — the std route was missing, so
   `import {querystring} from "std"` emitted the remote `std@querystring:parse/1`
   in a module whose runner never loaded `std@querystring` and the test died
   `{error,undef}`.
@@ -1054,6 +1057,23 @@ codegen/
   of the returned `case` (or `if`) leaves the function, the `{ok, …}` goes
   into each tail that does not; a `return v` tail is `v`, a `throw e` tail
   `{error, E}`.
+- **A lambda's bindings are its own** (decision 205; `saveLocalScope` /
+  `restoreLocalScope` around a `.function` node). An erlang fun sees the
+  enclosing clause's variables, so a parameter or `val` of the lambda that
+  reuses an enclosing name takes a fresh version (`patternBindVar`), and the
+  enclosing function's locals, versions and kinds come back unchanged after the
+  fun — `val k = "l"` inside a `forEach` body made the outer `k` read `K@1`
+  (unbound), and a parameter `e` over an outer `e` left the outer one `E@1`.
+  `var_next` keeps counting. `run/lambda_binds_name_of_enclosing_fn`.
+- **Every adopter of a `default fn` emits it** (`collectAdoptedIfaceDefaults`):
+  under policy 3 each type has a module of its own, so a default two types
+  adopt, or one a type adopts while another declares a method of that name, is
+  emitted into each adopter's module, and a call two local types answer
+  dispatches on the value (`method_owners` holds null → `dynamicMethodNode`).
+  The old rule — skip a default whose `<name>/<arity>` is taken or claimed
+  twice — was the flat namespace's and left `twice/1` undefined; only a
+  comptime module (`untyped`, methods inline) keeps it.
+  `run/behavior_default_adopted_by_two_types`.
 - **Modules are `erl_ast` forms**: `emitErlangModule` builds every form in one
   arena and renders them with `erl_emitter.writeForms`: `-module`
   (`crossModule.erlAtom(module_path)` — the path joined with `@`),
