@@ -653,6 +653,14 @@ erlang's `erlc` refuses the lambda's re-binding, `02-erlang`'s row). The
 inner-block and `case`-arm halves of the machinery stay, though a checked
 program no longer reaches them.
 
+**A lambda's bindings are its own** (decision 205: a lambda body is a
+function of its own). An inlined HOF body's `val k` and its parameter `e`
+over an enclosing `k` / `e` take the same `bindTarget` local and are undone at
+the body's end, so the enclosing names keep their values;
+`tests/language/run/lambda_binds_name_of_enclosing_fn.bp` (02-erlang's cell)
+pins it on four targets. A lifted lambda (`{ e -> e * 2 }` as a value) is a
+function of its own already.
+
 ## Function values, and the lowering that is not there
 
 **This backend has function values.** A lambda used as a value is lifted into
@@ -723,6 +731,13 @@ answered, and each was a red wasm cell of `tests/language`:
   `lowerResultOptionOp` builds. Unregistered, a `return` into `-> ?i32` boxed
   the box (an address printed), and a `map` answering a string was read one
   indirection too far by the `flatMap` after it.
+- **A primitive method on a call inside an adopted default** reads the
+  callee's declared return (`primKindAt`'s fallback): inference typed the
+  default's body against `Self`, so `self.twice().toString()` in `Sq`'s copy
+  of `Shape.label` had a type variable for a receiver and no lowering —
+  `unresolved call: toString/0`, a trap in `Sq_label`. `Sq_twice -> i32` says
+  it is an integer; the fallback answers only a primitive whose table has the
+  method (`run/behavior_default_adopted_by_two_types`, 02-erlang's cell).
 - **A type adopts its behaviors' `default fn`s** (`adoptedDefaults`,
   `methodsWithDefaults`): each one the type does not write is emitted as its own
   `$<Type>_<method>`, through `extends` too — `Money(…).clamp(lo, hi)` over
