@@ -55,9 +55,9 @@ model exists so none of them can be written again:
 wasm is the only backend that can answer **wrongly and silently** — a number,
 exit 0, no diagnostic — because every value here is an `i32` and a pointer is a
 number like any other. The rule this directory holds to: *where wasm cannot
-lower a construct, it refuses at compile time; where it cannot do a shape at
-run time, it traps*; a wrong value with exit 0 is a bug even when a fixture
-records it. A lowering that cannot proceed — a name nothing binds, a field on
+lower a construct, it refuses at compile time* — never a module that traps at
+run time on a shape the other backends run, and never a wrong value with exit
+0, even when a fixture records it. A lowering that cannot proceed — a name nothing binds, a field on
 a receiver nothing types, a pattern naming no variant, a dispatch with no
 function, a builtin or an expression kind with no lowering — is
 `Emitter.refuse(loc, …)`: `error.WasmLoweringRefused`, carried to the driver as
@@ -67,8 +67,54 @@ a located diagnostic that fails the module (`Emitter.Refusal`, the slot
 wrong value at exit 0 (`00 · 110-gate-wasm`); no `i32.const 0` stands for a
 value this backend could not produce any more, and the three `emitC(zero, …)`
 left are the `0` a `null` IS (`?.` on an absent receiver, an absent optional
-compared or propagated). `Instr.unreachable` plus a `;;` comment naming the
-shape is the run-time half, and 24 fixtures use it.
+compared or propagated).
+
+**No lowering gap is a run-time trap** (`00 · 110-gate-wasm`, the refusals
+rule). The `unreachable` sites that stood for a shape this backend could not
+lower — 26 `emitC`/`emitCf` plus the bare ones, six of them added by `05-wasm`
+— are refusals at the source location: `is` over a type with no descriptor, a
+value boxed as `unknown` that nothing types, an all-unit enum value with no
+printed form, a comptime-only builtin (`@emit`, `@compilerError`, `ref`) in a
+program body, an index or slice on a receiver nothing types, a call nothing
+resolves (`unresolved call`), a call of a bodyless `declare fn` with no
+`#[@External.<Target>(…)]` at all, a primitive method with no lowering, a
+higher-order method given a function value, `flatMap` / `flatten` / `unique`
+over elements whose shape is unknown, `.next()` with no `YieldStep`, `pop` /
+`push` on a receiver that cannot be rebound (`pop` on a record's field is
+lowered now, as `push`'s is), a loop over an iterable that is not an array or
+a range, a lambda parameter nothing types (refused where the lambda is
+written, `Lifted.loc`), and dispatch by value over an implementer whose values
+carry no header (an all-unit enum) or whose method has another wasm signature.
+The method-level ones read the call's location from `Emitter.call_loc`, which
+`lowerExpr`'s `.call` arm sets. Each has a `tests/wat.zig` fixture
+(`assertWasmRefusedAt`: the message and `line:col`).
+
+**What keeps an `unreachable`** is the program's own semantics and nothing
+else: `assert` (after `$__assert_fail`), `@panic` / `@todo`, a `throw` with
+nothing to unwind to, a rejected `#[@future]`, and the end of
+`$__bdispatch_<m>_<n>`'s chain, which `lowerBehaviorDispatch`'s refusal makes
+unreachable — plus the generic bodies below.
+
+**A generic body traps only where no execution meets it.** A `fn` with type
+parameters, a method of a generic `type` and a lambda lifted out of either are
+emitted once, generic (`Emitter.cur_template`); a call whose arguments bind
+the type parameters goes to a copy (`specializeFor` / `specializeMethod`, and
+`x is T` over a parameter now asks for one — `callsMethodOn`). A construct a
+bound type parameter would make lowerable (`refuseUnlessTemplate`: the
+`unknown` box, an unresolved method on a `T`, a `T` iterated, …) is, in the
+generic body, an `unreachable` that marks the body (`template_traps`), and
+every call that reaches a generic body unspecialised is recorded
+(`template_calls`: a plain or associated call, a record method, a generic fn
+used as a value, a behavior dispatch, `@print` of a generic `type` declaring
+`display`). After emission `refuseUnboundTemplateCalls` closes the marks over
+the calls between generic bodies and refuses the first concrete call into a
+marked one — `@print(Box(value: 1))` over `Box<T>.display` calling
+`shown(self.value)`, `d.display()` on a `Dict<string, i32>`. A refusal raised
+while emitting another module's code (a linked declaration, or a copy the
+consumer's call specialised from one — `Emitter.foreign_origin`) is located
+at the consumer's import or call, its message ending "in another module's code
+this line reaches". **Not covered**: `@print` of a value whose static type
+nothing names reaches `$__display_of` unrecorded.
 
 **A host-backed `declare fn` with no wasm host is REFUSED, not trapped**
 (`wat.zig`'s `external_missing` + `lowerPlainCall`). A `declare fn` carrying
@@ -129,20 +175,20 @@ module reports its own diagnostic in its own file; each consumer that links it
 `run/std_asserts_host_cell_on_wasm.wasm.expect`,
 `modules/labelled_call_by_label/wasm.expect`).
 
-A **bodyless `declare fn` with no `#[@External.<Target>(…)]` at all** keeps the
-old trap. That is the same cut commonJS makes — its `externals_missing` is filled
-only for an `isExternal()` fn — and it is what an interface's bodyless method
-shape lands in.
+A **bodyless `declare fn` with no `#[@External.<Target>(…)]` at all** is
+refused at its call too (`lowerPlainCall`); it kept the old trap until
+`00 · 110-gate-wasm`'s refusals rule.
 
-**A record or a variant reaching `@print` traps** (`wat.zig`'s `namedShapeOf`,
+**A record or a variant reaching `@print` with no printed form is refused**
+(it trapped until the refusals rule; `wat.zig`'s `namedShapeOf`,
 consulted first in `lowerPrintArg`). Decision 8 §7's F2 and F3 want
 `Point(x: 1, y: 2)` and `Shape.Square(side: 4)`; both need a value that knows
 which named type it is at run time, which is `13-module-identity`'s subject, not
 this backend's. Until then the numeric printer wrote the value's heap address —
-`tests/language/run/print_formatter.bp` printed `328`, `336`, `344` — so the
-printer now traps instead. commonJS needs no such interim: a class instance
-carries its constructor's name and already answers §7's text. When 13 lands, the
-trap is one branch to delete.
+`tests/language/run/print_formatter.bp` printed `328`, `336`, `344`. A value
+that carries its header prints by it now; what is left with no printed form is
+refused at the argument. commonJS needs no such interim: a class instance
+carries its constructor's name and already answers §7's text.
 
 The walk covers the value, an array or tuple **literal** holding one, and a
 record recovered through a field or a fn return type. **Not** covered, and still
@@ -227,7 +273,7 @@ wrap<T>(v: T) -> Box<T>` answer a string (a bool, …) — they printed its heap
 address (`320`) or a bool as `1`. A function type has no specialisation; only
 the result type is read.
 
-**A lambda in such a field is typed where it is used, or traps.** The field
+**A lambda in such a field is typed where it is used, or is refused.** The field
 says nothing (`T`), so `lowerRecordCtor` leaves the lifted lambda's
 `param_known` false unless the constructor stands where a type is written for
 it (`expected_ctor`: a parameter `b: Box<fn(s: string) -> string>`, a `val`'s
@@ -236,13 +282,13 @@ the type argument, `expected_fn`). A call through the field of the local the
 constructor is bound to (`lam.value("e")`) or through a local read from that
 field (`val lf = lam.value`) types it from its arguments, as a closure
 local's call does (`field_closures`, `fieldClosureOf`; `closureCallIsString`
-judges the result). A parameter the body reads that nothing typed makes the
-lambda TRAP at entry (`lambda parameter `s`: nothing gives it a type the wasm
-backend can see`) — the record passed through a generic fn and called on the
-result is that shape. It printed `300?` for `"d" + "?"` at exit 0. Any other
-lambda keeps `param_known` true: its slot types it, or an integer reading is
-what it always had (`run/generic_field_fn_value.bp`, `tests/wat.zig`'s trap
-fixture).
+judges the result). A parameter the body reads that nothing typed REFUSES the
+lambda where it is written (`lambda parameter `s`: nothing gives it a type the
+wasm backend can see`, `Lifted.loc`) — the record passed through a generic fn
+and called on the result is that shape. It printed `300?` for `"d" + "?"` at
+exit 0, then trapped at the lambda's entry. Any other lambda keeps
+`param_known` true: its slot types it, or an integer reading is what it always
+had (`run/generic_field_fn_value.bp`, `tests/wat.zig`'s refusal fixture).
 
 `run/generic_string_equality.bp` pins every way a type parameter gets a
 string bound on four targets, `modules/method_on_unimported_type` (`Dict.at`
@@ -484,18 +530,20 @@ without walking past the variants before it.
   `emitNamedTypeTest`). The bounds guard is load-bearing: an `i32` that is not a
   pointer would otherwise read four bytes of whatever sits below it.
 
-**What this backend still cannot do, and why it traps rather than guessing:**
+**What this backend still cannot do, and why it refuses rather than guessing:**
 
 * **A variant of an ALL-UNIT enum has no header.** `Color.Red` is `i32.const 0`
-  with no allocation, so there is nothing four bytes behind it. `@print` of one
-  keeps the trap, and `is` over such an enum answers no test. Boxing it would
+  with no allocation, so there is nothing four bytes behind it. `is` over such
+  an enum is refused, and so is dispatch by value over one. Boxing it would
   make `Color.Red == Color.Red` a pointer comparison, which is a worse answer
   than none.
 * **A value whose type nothing proves cannot go in the box** — a type
   parameter's slot (`Maybe.Some(value: v)` over a `T`: nothing monomorphises
   here, so `v` is a raw `i32` that may be a pointer), a result nothing typed.
-  `lowerAsUnknown` traps (`unknown: no static type to box this value by`)
-  rather than boxing a guess, which would answer `is` and `==` wrongly.
+  `lowerAsUnknown` refuses (`cannot box this value as `unknown``) rather than
+  boxing a guess, which would answer `is` and `==` wrongly — in a generic body,
+  the concrete call that reaches it unspecialised is refused instead
+  (§ Where this backend refuses to answer).
 
 **Decision 8 §11's box — `unknown` and unions over primitives** (`00 · 05-wasm`
 step 2 D1–D4). A value entering an `unknown` or union slot (`boxesInto` /
@@ -855,22 +903,23 @@ answered, and each was a red wasm cell of `tests/language`:
 ## The primitive method table (`00 · 05-wasm` step 6, `01-compiler/05-wasm` step 1)
 
 `primCallRes` is the table of what a primitive method lowers to; a method it
-does not list traps (`prim method not lowered on wasm`). Audited against every
+does not list is refused at the call (`primNotLowered`). Audited against every
 member `libs/std/src/primitives.bp` declares — **every member is listed now**:
 
 | Family | Lowered |
 |---|---|
 | `String` | every member — `charCodeAt` (`$__str_char_code`: the code point at code-point index `i`, decoded from the UTF-8 sequence it walks to; `-1` out of range), `lastIndexOf` (`$__str_last_index_of`), `padStart`/`padEnd` (`$__str_pad`, the pad cycled), `replace`/`replaceAll` (`$__str_replace`; an empty pattern matches before every byte), `chars` (`$__str_split` on `""`, which cuts before every UTF-8 codepoint, as `split("")` does), `lines` (`$__str_lines`: cut at `\n`, a `\r` right before it dropped — node's `/\r?\n/`, erlang's `[<<"\r\n">>, <<"\n">>]` —, the last line keeping a trailing `\r`, `""` one empty line) and `words` (`$__str_words`: the runs of bytes that are not ` `/`\t`/`\n`/`\r`) |
-| `Array` | every member — `find` (`filter` then `at(0)`, the `?T` `at` answers); `lastIndexOf` (`$__arr_last_index_of_i32` / `_str`, `indexOf`'s equality from the last slot down); `pop` on a local or a global (the `?T` `at(-1)` answers, then the name rebound to `$__arr_slice(xs, 0, len - 1)` — a blob is a value, as `push` rebinds it to a grown copy); `unique` (`$__arr_unique(xs, mode)`: consecutive duplicates dropped, `primitives.bp`'s body, compared by the element's word (`0` — an integer, a bool, an all-unit enum's ordinal), its `f32` (`1`) or a string's content (`2`), `uniqueMode` reading the receiver's shape); `flatten` / `flat` (`$__arr_flatten`, over a receiver whose shape is `[[…`); `flatMap(f)` (`map(f)` inlined, then `$__arr_flatten` — the body `primitives.bp` writes — when `f`'s tail is an array, `lambdaTailShape`); `chunked` / `sliding` (`$__arr_chunked` / `$__arr_sliding`, arrays of `$__arr_slice`s; `n <= 0` none); `fill(v)` (`$__arr_fill(len, v)`, `Array.repeat(v, xs.length)`, a float stored as its `f32` bits) |
+| `Array` | every member — `find` (`filter` then `at(0)`, the `?T` `at` answers); `lastIndexOf` (`$__arr_last_index_of_i32` / `_str`, `indexOf`'s equality from the last slot down); `pop` on a local, a global or a record's field (the `?T` `at(-1)` answers, then the name — or the field — rebound to `$__arr_slice(xs, 0, len - 1)`: a blob is a value, as `push` rebinds it to a grown copy; any other receiver may be an array another name holds, and is refused); `unique` (`$__arr_unique(xs, mode)`: consecutive duplicates dropped, `primitives.bp`'s body, compared by the element's word (`0` — an integer, a bool, an all-unit enum's ordinal), its `f32` (`1`) or a string's content (`2`), `uniqueMode` reading the receiver's shape); `flatten` / `flat` (`$__arr_flatten`, over a receiver whose shape is `[[…`); `flatMap(f)` (`map(f)` inlined, then `$__arr_flatten` — the body `primitives.bp` writes — when `f`'s tail is an array, `lambdaTailShape`); `chunked` / `sliding` (`$__arr_chunked` / `$__arr_sliding`, arrays of `$__arr_slice`s; `n <= 0` none); `fill(v)` (`$__arr_fill(len, v)`, `Array.repeat(v, xs.length)`, a float stored as its `f32` bits) |
 | `Integer`, `Bool` | all |
 | `Float` | all — `toString` (`$__f64_to_str`, `5.0` → `5` as on node) |
 
-**What still traps, by name** (`tests/wat.zig` `unique over records and
-flatMap over a scalar trap, never answer`): `unique` over records, arrays or
-tuples (`unique over elements with no wasm equality`) — decision 210 now gives
-`[P(x: 1), P(x: 1)].unique().length` one answer, `1` on commonJS, erlang and
-beam, and this row is still a trap here: `$__arr_unique` compares words and
-strings, and calling `$__eq_<T>` from it is open; `flatMap` whose function answers no array known here
+**What is still refused, by name** (`tests/wat.zig` `unique over records,
+flatMap over a scalar and flatten over scalars are refused at the call`; each
+trapped at run time until `00 · 110-gate-wasm`): `unique` over records, arrays
+or tuples — decision 210 now gives `[P(x: 1), P(x: 1)].unique().length` one
+answer, `1` on commonJS, erlang and beam, and this row is still a refusal
+here: `$__arr_unique` compares words and strings, and calling `$__eq_<T>` from
+it is open; `flatMap` whose function answers no array known here
 (node keeps the scalar, erlang fails); `flatten` / `flat` over elements no
 shape says are arrays.
 

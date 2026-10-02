@@ -739,6 +739,42 @@ pub fn assertJsRunLog(allocator: Allocator, src: []const u8, expected: []const u
     return error.ModuleDidNotCompile;
 }
 
+/// The wasm backend REFUSES `src` (`Emitter.refuse` → `WasmLoweringRefused`)
+/// with a diagnostic whose message contains `needle`, located at
+/// `line:col`. No snapshot, no other backend: the claim is wasm's alone — a
+/// lowering that cannot proceed is a located build refusal, never a module
+/// that traps at run time (`00 · 110-gate-wasm`).
+pub fn assertWasmRefusedAt(allocator: Allocator, src: []const u8, needle: []const u8, line: usize, col: usize) !void {
+    const io = std.testing.io;
+    var outputs = try codegen.generateWith(allocator, &.{.{ .path = "", .source = src }}, io, configs[3], .{ .execute = false });
+    defer {
+        for (outputs.items) |*o| o.result.deinit(allocator);
+        outputs.deinit(allocator);
+    }
+    for (outputs.items) |o| {
+        if (!std.mem.eql(u8, o.name, "") and !std.mem.eql(u8, o.name, "main")) continue;
+        const d = o.result.diagnostic orelse {
+            std.debug.print("\n=== expected the wasm backend to refuse, it emitted ===\n{s}\n", .{o.result.js});
+            return error.ExpectedCompileError;
+        };
+        switch (d) {
+            .type => |t| {
+                const l = t.loc orelse {
+                    std.debug.print("\n=== refusal without a location: {s} ===\n", .{t.message});
+                    return error.RefusalNotLocated;
+                };
+                if (std.mem.indexOf(u8, t.message, needle) == null or l.line != line or l.col != col) {
+                    std.debug.print("\n=== got {d}:{d} {s}\n=== expected {d}:{d} …{s}…\n", .{ l.line, l.col, t.message, line, col, needle });
+                    return error.RefusalMismatch;
+                }
+                return;
+            },
+            .syntax => return error.ExpectedCompileError,
+        }
+    }
+    return error.ModuleDidNotCompile;
+}
+
 /// The wasm twin of `assertJsRunLog`: compiles `src` as `main` for wasm, runs
 /// the module under wasmtime and asserts its RUN LOG equals `expected`.
 ///
