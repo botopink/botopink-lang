@@ -220,9 +220,22 @@ import {collections: {Dict, Set}, io: {fs, clock}, testing.asserts} from "std";
 A library is imported the same way, under the name `botopink.json` declares it
 in `dependencies`:
 
-<!-- docs-check: skip a library dependency needs that library declared in `dependencies`; the docs harness builds a scratch project with none -->
+<!-- docs-check: project library src/main.bp -->
 ```botopink
 import {of, erika} from "erika";   // a library dependency
+```
+
+<!-- docs-check: project library botopink.json -->
+```json
+{
+  "name": "app",
+  "version": "0.0.1",
+  "src": "src/",
+  "target": "commonJS",
+  "dependencies": {
+    "erika": { "git": "https://github.com/botopink/erika", "branch": "feat" }
+  }
+}
 ```
 
 **Bundled packages.** `std` is not the only package the compiler ships. The
@@ -232,7 +245,6 @@ the `:param` grammar), `actions` (the server-action protocol) and `validation`
 (constraints, `#[validated]`, the violation report) — are bundled with it and
 imported by name exactly as `std` is, with no `dependencies` entry:
 
-<!-- docs-check: skip the docs harness has no page or route table to match against -->
 ```botopink
 import {match.matchPath, table.parseTable} from "routing";
 import {envelope.writeEnvelope} from "actions";
@@ -681,8 +693,7 @@ Three shapes do **not** narrow, and each for its own reason:
 
 ### Literals
 
-<!-- docs-check: skip a table of literal forms, not a module -->
-```botopink
+```text
 42             // i32
 3.14           // f64
 "hello"        // string
@@ -733,7 +744,6 @@ by key and has no position to count from.
 Which methods those are comes from two **ambient** behaviors — ambient like
 `Display`, so the syntax finds them with nothing imported:
 
-<!-- docs-check: skip the two behaviors as libs/std declares them, not a module -->
 ```botopink
 pub behavior Index<K, V> { fn at(self: Self<K, V>, key: K) -> ?V; }
 pub behavior Slice<V>    { fn slice(self: Self<V>, start: i32, end: ?i32) -> V; }
@@ -770,8 +780,7 @@ val label: string = t[1];
 
 ### Operators
 
-<!-- docs-check: skip an operator table, not a module -->
-```botopink
+```text
 a + b, a - b, a * b, a / b, a % b     // arithmetic (+ also concatenates strings)
 a == b, a != b, a < b, a > b, a <= b, a >= b
 !x, x && y, x || y                    // logical
@@ -806,8 +815,7 @@ construct breaks **all or nothing**: it fits on one line, or each of its parts
 takes a line of its own, `+4` from the statement. The outer construct decides
 first, so a list never breaks for what follows it:
 
-<!-- docs-check: skip a layout sample, not a program -->
-```botopink
+```text
 val entry = ThemeEntry(
     name: "--text-3xl--line-height",
     value: "calc(2.25 / 1.875)",
@@ -1134,7 +1142,6 @@ fn load() {
 One keyword, two roles: a **declaration** (the import list and the extension
 activation) and an **expression prefix** (the hook activation). Grammar:
 
-<!-- docs-check: skip a grammar, not a module -->
 ```
 ImportDecl     := "import" "{" ImportList "}" ("from" String)? ";"
 ImportList     := ImportItem ("," ImportItem)* ","?
@@ -1348,11 +1355,11 @@ names by label keeps the argument it was given, whichever position it is in —
 and a parameter with no default is still **required**: leaving one out is the
 arity error it has always been.
 
-<!-- docs-check: skip a call the compiler must REFUSE; compiling it is the opposite of the claim -->
+<!-- docs-check: reject 'connect' expects 2 argument(s), got 0 -->
 ```botopink
 fn connect(host: string, port: i32 = 80) -> string { return host; }
 
-connect();   // error: 'connect' expects 2 argument(s), got 0
+fn main() { connect(); }   // error: 'connect' expects 2 argument(s), got 0
 ```
 
 Defaults are filled in by the checker, so every backend receives a call with
@@ -1762,22 +1769,31 @@ fn main() {
 
 The refusals, each located:
 
-<!-- docs-check: skip bodies the compiler must REFUSE; compiling them is the opposite of the claim -->
+<!-- docs-check: reject effect-try-without-fallible-channel -->
 ```botopink
 fn g() -> @Iterator<i32> {
     throw "x";                  // effect-try-without-fallible-channel: the item has to be
 }                               //   @Result<i32, E> to throw
+```
 
+<!-- docs-check: reject iter-await -->
+```botopink
 fn h() -> @Iterator<i32> {
     yield await count();        // iter-await: no `await` in an @Iterator — use @Stream
 }
+```
 
+<!-- docs-check: reject iter-mixed-yield-return -->
+```botopink
 fn k(xs: i32[]) -> @Iterator<i32> {
     yield 0;
     return evens(xs);           // iter-mixed-yield-return: an iterator (yield) and a
 }                               //   factory (return) in one body
+```
 
-fn old() -> @Iterator<i32, string> { … }
+<!-- docs-check: reject iterator-error-param-removed -->
+```botopink
+fn old() -> @Iterator<i32, string> { yield 0; }
                                 // iterator-error-param-removed: @Iterator<@Result<i32, string>>
 ```
 
