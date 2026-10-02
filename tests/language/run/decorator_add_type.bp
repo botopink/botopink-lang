@@ -2,7 +2,8 @@
 //// type that belongs to the annotated one, named through its owner. A
 //// record (`City.Columns`) is written in type positions and constructed by
 //// its owner's path; an enum (`City.Size`) gives its variants through the
-//// same path; a member the decorator adds names it too.
+//// same path; a member the decorator adds names it too. A value prints under
+//// its owner's path (`City.Columns(…)`, `City.Size.Small`).
 
 fn entity(comptime decl: @Decl) {
     var cols: string[] = [];
@@ -39,4 +40,6 @@ pub fn main() {
     @print(header(City.columns()));
     @print(sizeOf(City(name: "Recife", people: 500)) == City.Size.Large);
     @print(sizeOf(City(name: "Olinda", people: 5)) == City.Size.Large);
+    @print(mine);
+    @print(City.Size.Small);
 }

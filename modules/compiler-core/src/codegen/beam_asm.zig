@@ -3637,7 +3637,7 @@ const Emitter = struct {
             if (m.body == null or m.is_declare) continue;
             try self.emitMethodAsFn(type_name, m);
         }
-        try self.emitTypeIdentity(type_name, ident, &unit);
+        try self.emitTypeIdentity(ident, &unit);
         try self.closeTypeUnit(type_name, &unit, &buf);
     }
 
@@ -3652,17 +3652,17 @@ const Emitter = struct {
     ///     type implementing `Display`. `'__bp_render'/1` in the printing
     ///     module turns the description into §7's text; the description keeps
     ///     the type module free of a printer of its own.
-    fn emitTypeIdentity(self: *Emitter, type_name: []const u8, ident: IdentityShape, unit: *SavedBeamUnit) !void {
+    fn emitTypeIdentity(self: *Emitter, ident: IdentityShape, unit: *SavedBeamUnit) !void {
         switch (ident) {
             .none => return,
             .record => |r| {
                 const fields = r.recordFields();
                 if (fields.len > 0) try self.emitFieldGetter(fields, unit);
-                try self.emitRecordFormat(type_name, r, unit);
+                try self.emitRecordFormat(r.printedName(), r, unit);
             },
             .enum_ => |e| {
                 if (e.variants().len == 0) return;
-                try self.emitEnumFormat(type_name, e, unit);
+                try self.emitEnumFormat(e.printedName(), e, unit);
             },
         }
     }

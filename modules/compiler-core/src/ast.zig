@@ -3232,6 +3232,16 @@ pub const TypeDecl = struct {
     /// Where the declaration is written (01 step 9 — the diagnostics about it
     /// are located here). Left out of the AST dump.
     loc: Loc = .{ .line = 0, .col = 0 },
+    /// The name a printed value spells, when it is not `name`: an associated
+    /// type is declared `City__Columns` and prints as `City.Columns(…)`
+    /// (decision 216). Null — the dump leaves it out — for every type written
+    /// by hand. Read through `printedName`.
+    displayName: ?[]const u8 = null,
+
+    /// The type's name as `@print` writes it.
+    pub fn printedName(this: TypeDecl) []const u8 {
+        return this.displayName orelse this.name;
+    }
 
     /// True for the record shape (a field list).
     pub fn isRecord(this: TypeDecl) bool {
@@ -3276,7 +3286,7 @@ pub const TypeDecl = struct {
     }
 
     pub fn jsonStringify(this: TypeDecl, jws: anytype) !void {
-        return stringifyOmitting(this, jws, &.{"loc"}, &.{"bodyComments"});
+        return stringifyOmitting(this, jws, &.{"loc"}, &.{ "bodyComments", "displayName" });
     }
 };
 

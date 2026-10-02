@@ -782,7 +782,9 @@ fn mergeAssocTypes(
             return refuse(arena, t, "{s}: `#[{s}]` declares `{s}.{s}` from a source that is not one type: `{s}`", .{ diagnostics.decorator_type_not_one_type, t.decorator, t.owner, t.name, t.source }, not_one);
         if (program.decls.len != 1 or program.decls[0] != .type_ or !std.mem.eql(u8, program.decls[0].type_.name, mangled))
             return refuse(arena, t, "{s}: `#[{s}]` declares `{s}.{s}` from a source that is not one type: `{s}`", .{ diagnostics.decorator_type_not_one_type, t.decorator, t.owner, t.name, t.source }, not_one);
-        try decls.append(arena, program.decls[0]);
+        var assoc = program.decls[0];
+        assoc.type_.displayName = try std.fmt.allocPrint(arena, "{s}.{s}", .{ t.owner, t.name });
+        try decls.append(arena, assoc);
         line_shift += std.mem.count(u8, t.source, "\n") + 1;
         offset_shift += t.source.len + 1;
     }

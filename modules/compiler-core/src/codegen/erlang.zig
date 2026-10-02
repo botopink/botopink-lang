@@ -9419,7 +9419,7 @@ const Emitter = struct {
                     try b.call("element", &.{ Ast.Expr.t(Term.int(@intCast(i + 2))), Ast.Expr.v("V") }),
                 });
             }
-            break :blk try b.tuple(&.{ Ast.Expr.a("record"), .{ .string = r.name }, .{ .list = pairs } });
+            break :blk try b.tuple(&.{ Ast.Expr.a("record"), .{ .string = r.printedName() }, .{ .list = pairs } });
         };
         const arg: Ast.Expr = if (fields.len == 0 and this.typeRendersItselfAs(r) == null) Ast.Expr.v("_") else Ast.Expr.v("V");
         try unit.forms.appendSlice(b.arena, &.{ .blank, .{ .function = .{ .name = "__bp_format", .clauses = try b.arena.dupe(Ast.Clause, &.{.{
@@ -9439,7 +9439,7 @@ const Emitter = struct {
         const clauses = try b.arena.alloc(Ast.Clause, variants.len);
         for (variants, 0..) |v, ci| {
             const tag = Ast.Expr.a(this.variantTagAtom(e.name, v.name) catch v.name);
-            const written = try std.fmt.allocPrint(b.arena, "{s}.{s}", .{ e.name, v.name });
+            const written = try std.fmt.allocPrint(b.arena, "{s}.{s}", .{ e.printedName(), v.name });
             var pattern = tag;
             const pairs = try b.arena.alloc(Ast.Expr, v.fields.len);
             if (v.fields.len > 0) {

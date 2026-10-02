@@ -129,7 +129,7 @@ and `typeinfo_unknown_declaration` where the read is written, `decorator_meta_du
 `decorator_meta_on_member` at the annotation. Its third place — `decl.addType(name, source)`, an
 associated type named `Owner.Name` — adds `run/decorator_add_type` (a record `City.Columns` in type
 positions, constructed by its path and returned by an added member, an enum `City.Size` whose
-variants are reached as `City.Size.Large`) and `modules/decorator_add_type_import` (imported with its
+variants are reached as `City.Size.Large`, both printed under the owner's path) and `modules/decorator_add_type_import` (imported with its
 owner, under an alias too, and `Greeter.Mock` — a double implementing the annotated behavior — passed
 where a `Greeter` is expected), on all four targets, and four `reject/` cells at the annotation:
 `decorator_add_type_duplicate`, `decorator_add_type_not_one`, `decorator_add_type_without_owner`

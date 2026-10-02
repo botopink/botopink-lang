@@ -1316,6 +1316,10 @@ const Emitter = struct {
     record_field_types: std.StringHashMap([]const []const u8),
     /// enum name → variants (tag = declaration index; payload fields follow).
     enums: std.StringHashMap([]const ast.EnumVariant),
+    /// Declaration name → the name a printed value spells, for a type whose
+    /// two differ (an associated type, `City__Columns` → `City.Columns`,
+    /// decision 216). Every other type prints as `displayTypeName(name)`.
+    printed_names: std.StringHashMapUnmanaged([]const u8) = .empty,
     /// Declaration name → the address of the descriptor a value of it carries
     /// in its header (13-module-identity half 3). Keyed by the record's name
     /// and by `"<Enum>.<Variant>"`, because a variant IS a declaration for the
@@ -1983,8 +1987,12 @@ const Emitter = struct {
                     try self.record_field_typerefs.put(tdecl.name, trefs);
                     try self.records.put(tdecl.name, names);
                     try self.record_field_types.put(tdecl.name, types);
+                    if (tdecl.displayName) |shown| try self.printed_names.put(self.reg_arena.allocator(), tdecl.name, shown);
                 },
-                .enum_ => try self.enums.put(tdecl.name, tdecl.variants()),
+                .enum_ => {
+                    try self.enums.put(tdecl.name, tdecl.variants());
+                    if (tdecl.displayName) |shown| try self.printed_names.put(self.reg_arena.allocator(), tdecl.name, shown);
+                },
             },
             .@"fn" => |f| {
                 if (f.returnType) |rt| {
@@ -9714,7 +9722,7 @@ const Emitter = struct {
         try out.append(a, 'E');
         try out.append(a, @intCast(variants.len));
         for (variants) |v| {
-            const text = try std.fmt.allocPrint(a, "{s}.{s}", .{ displayTypeName(ename), v.name });
+            const text = try std.fmt.allocPrint(a, "{s}.{s}", .{ self.printed_names.get(ename) orelse displayTypeName(ename), v.name });
             if (text.len > 255) return error.NameTooLong;
             try out.append(a, @intCast(text.len));
             try out.appendSlice(a, text);
@@ -9755,7 +9763,7 @@ const Emitter = struct {
         refs: ?[]const ast.TypeRef,
     ) anyerror!void {
         const a = self.arena();
-        const shown = displayTypeName(name);
+        const shown = self.printed_names.get(name) orelse displayTypeName(name);
         if (shown.len > 255 or fields.len > 255) return error.NameTooLong;
         try out.append(a, @intCast(shown.len));
         try out.appendSlice(a, shown);
