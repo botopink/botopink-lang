@@ -379,7 +379,7 @@ both values on all four targets. commonJS tested only `instanceof`, so the secti
 fired and the `case` answered `undefined` at exit 0, which is how emilia read 223/2 on commonJS
 against 225/0 on erlang from one source), and `narrowing_*` (the same front's
 `fix/null-narrowing`: which shapes of a null test rebind the name they test —
-§ `narrowing_*` below), and the module-`var` cells of 1.0.10-beta's `00 · 17-beam-memory` (C-05, decisions 28, 38, 41, 43, 51): `run/module_var` — a module-level `var` written twice through a `fn` prints `2` on commonJS and wasm and is listed against C-10 on erlang (unbound `Hits`, does not compile) and beam (the write is dropped and it prints `0` at exit 0 — the silent one); `test/beam_memory_noop` — the annotation is a no-op off the BEAM, each test writing and reading back through the binding (erlang listed against C-10 for the same reason); and seven `reject/` cells, one per diagnostic — `val_assign_module` and `val_assign_local` (a `val` is immutable, the hint names `var`), `beam_memory_unknown_member`, `beam_memory_unknown_argument`, `beam_memory_keyed_scalar`, `beam_memory_keyed_list` (decision 51: `keyed` is `Dict`-only) and `beam_memory_on_val`. C-10 (front 17 step 4) adds the per-mode BEAM cells, each a `run/` cell with `.targets` = `erlang beam` (a `test/` cell cannot be narrowed to a target, and on commonJS the modes are one program-wide value): `run/beam_memory_process_dict` (a value written in `main` is not seen by a process `async.runAll` spawns, and its write does not reach `main` — `[0]` then `5`), `run/beam_memory_ets` (decision 39's fixture: five processes × three increments print `15`) and `run/beam_memory_persistent_term` (put at load, read by a spawned process: `[101]`); and the refusals its lowering needs — `reject/beam_memory_pt_write`, `reject/beam_memory_ets_recompose`, `reject/beam_memory_ets_bump_non_integer` (decision 40) and `reject/beam_memory_ets_initialiser` (a seed that is neither a literal nor `comptime`). `test/beam_memory_noop` no longer writes a `PersistentTerm` var (refused on every target) nor carries the `Ets(keyed = true)` `Dict` (no literal `Dict` seed exists; `keyed` is refused on the BEAM until it is lowered). `run/module_var` and `test/beam_memory_noop` pass on erlang, and the three `run/beam_memory_*` cells and `run/module_var` on beam (step 5). `01-checker` step 12 replaces `run/variant_name_ambiguous` (an erlang-only emit refusal) with `reject/variant_name_ambiguous` — the checker refuses `.Circle` with no expectation on every target — and adds `run/variant_leading_dot_expected` (the expected type decides `.Circle`; a qualified constructor is the enum written), `run/section_path_resolution` (a section leaf's shorthand, a payload section path through the annotated enum, a qualified section value) and `reject/section_leaf_without_expectation`; each fails on the `feat` binary. `modules/template_name_collision` (two modules exporting a template `tag`; the import from `loud` expands `loud`'s — the bare-name registry expanded `quiet`'s at exit 0) is 01 step 12's registry half. `run/try_catch_null_and_noreturn_narrowing`, `run/component_call_renders`, `run/component_call_awaited` (a written `await` of a component call inside a component body — jhonstart's layout chain) and `reject/try_catch_handler_mismatch` are the maintainer's 24-box-1 rows (the guide's page example): `catch null` is a `?T`, a `noreturn` call narrows, a component called in a component body renders; each fails on the `feat` binary. `run/labelled_arguments_reorder` (a label names the parameter it fills in a complete call — fn, record, method, primitive method, self tail call) and the `run/labelled_arguments.bp` erlang line's removal are 01's labelled-call row. 01 R7 (decision 2) adds `reject/fn_falls_off_end` and `reject/if_without_else_value`, both accepted by the `feat` binary. C-18's decision 45 adds `reject/member_of_optional` (a member read off a `?T` names `?.`) and moves `test/tuple_labels.bp` §6 T4 to `rs.at(0)?.b` — both targets pass it, the label is carried on commonJS and erlang. Decision 15's annotation grammar (front 17 step 3's recorded row) adds `reject/annotation_unknown_family` (`#[@TotallyMadeUp.Nonsense(whatever = 42)]` on a `var`) and `reject/annotation_family_misspelled` (`#[@BeamMemroy.Ets]` names `@BeamMemory`). Pending 0203-a, answered (b), adds `reject/primitive_method_undeclared` (`s.toUpperCase()` names `toUpper`, the method whose host spelling it is) and `reject/primitive_method_unknown` (`"x".fooBar()`, no near name), and re-spells `test/string_case_conversion` to `toUpper` / `toLower` — its erlang line is gone. `01-checker` step 13 adds the two cells of "a local ends with its body": `reject/local_binding_escapes` (a `val` of one `fn` used by the next is refused at the use, naming `holder`) and `run/local_shadow_ends_with_body` (a local `p` shadows the module's `pub fn p` only inside its own `fn` — `3` then `p:x`); each was run with the `feat` binary and fails there as the step describes. One scenario group per
+§ `narrowing_*` below), and the module-`var` cells of 1.0.10-beta's `00 · 17-beam-memory` (C-05, decisions 28, 38, 41, 43, 51): `run/module_var` — a module-level `var` written twice through a `fn` prints `2` on all four targets (on erlang it was unbound `Hits` and did not compile, on beam the write was dropped and it printed `0` at exit 0 — C-10 lowered both); `test/beam_memory_noop` — the annotation is a no-op off the BEAM, each test writing and reading back through the binding; and seven `reject/` cells, one per diagnostic — `val_assign_module` and `val_assign_local` (a `val` is immutable, the hint names `var`), `beam_memory_unknown_member`, `beam_memory_unknown_argument`, `beam_memory_keyed_scalar`, `beam_memory_keyed_list` (decision 51: `keyed` is `Dict`-only) and `beam_memory_on_val`. C-10 (front 17 step 4) adds the per-mode BEAM cells, each a `run/` cell with `.targets` = `erlang beam` (a `test/` cell cannot be narrowed to a target, and on commonJS the modes are one program-wide value): `run/beam_memory_process_dict` (a value written in `main` is not seen by a process `async.runAll` spawns, and its write does not reach `main` — `[0]` then `5`), `run/beam_memory_ets` (decision 39's fixture: five processes × three increments print `15`) and `run/beam_memory_persistent_term` (put at load, read by a spawned process: `[101]`); and the refusals its lowering needs — `reject/beam_memory_pt_write`, `reject/beam_memory_ets_recompose`, `reject/beam_memory_ets_bump_non_integer` (decision 40) and `reject/beam_memory_ets_initialiser` (a seed that is neither a literal nor `comptime`). `test/beam_memory_noop` no longer writes a `PersistentTerm` var (refused on every target) nor carries the `Ets(keyed = true)` `Dict` (no literal `Dict` seed exists; `keyed` is refused on the BEAM until it is lowered). `run/module_var` and `test/beam_memory_noop` pass on erlang, and the three `run/beam_memory_*` cells and `run/module_var` on beam (step 5). `01-checker` step 12 replaces `run/variant_name_ambiguous` (an erlang-only emit refusal) with `reject/variant_name_ambiguous` — the checker refuses `.Circle` with no expectation on every target — and adds `run/variant_leading_dot_expected` (the expected type decides `.Circle`; a qualified constructor is the enum written), `run/section_path_resolution` (a section leaf's shorthand, a payload section path through the annotated enum, a qualified section value) and `reject/section_leaf_without_expectation`; each fails on the `feat` binary. `modules/template_name_collision` (two modules exporting a template `tag`; the import from `loud` expands `loud`'s — the bare-name registry expanded `quiet`'s at exit 0) is 01 step 12's registry half. `run/try_catch_null_and_noreturn_narrowing`, `run/component_call_renders`, `run/component_call_awaited` (a written `await` of a component call inside a component body — jhonstart's layout chain) and `reject/try_catch_handler_mismatch` are the maintainer's 24-box-1 rows (the guide's page example): `catch null` is a `?T`, a `noreturn` call narrows, a component called in a component body renders; each fails on the `feat` binary. `run/labelled_arguments_reorder` (a label names the parameter it fills in a complete call — fn, record, method, primitive method, self tail call) and the `run/labelled_arguments.bp` erlang line's removal are 01's labelled-call row. 01 R7 (decision 2) adds `reject/fn_falls_off_end` and `reject/if_without_else_value`, both accepted by the `feat` binary. C-18's decision 45 adds `reject/member_of_optional` (a member read off a `?T` names `?.`) and moves `test/tuple_labels.bp` §6 T4 to `rs.at(0)?.b` — both targets pass it, the label is carried on commonJS and erlang. Decision 15's annotation grammar (front 17 step 3's recorded row) adds `reject/annotation_unknown_family` (`#[@TotallyMadeUp.Nonsense(whatever = 42)]` on a `var`) and `reject/annotation_family_misspelled` (`#[@BeamMemroy.Ets]` names `@BeamMemory`). Pending 0203-a, answered (b), adds `reject/primitive_method_undeclared` (`s.toUpperCase()` names `toUpper`, the method whose host spelling it is) and `reject/primitive_method_unknown` (`"x".fooBar()`, no near name), and re-spells `test/string_case_conversion` to `toUpper` / `toLower` — its erlang line is gone. `01-checker` step 13 adds the two cells of "a local ends with its body": `reject/local_binding_escapes` (a `val` of one `fn` used by the next is refused at the use, naming `holder`) and `run/local_shadow_ends_with_body` (a local `p` shadows the module's `pub fn p` only inside its own `fn` — `3` then `p:x`); each was run with the `feat` binary and fails there as the step describes. One scenario group per
 file: a parse error is the blast radius, so nine `#[@External]` declarations in one file mean one
 unparseable annotation hides the other eight.
 
@@ -875,173 +875,81 @@ narrowings: 3 exclusions audited — each stands on a host binding the target do
 language tests: 395 passed, 0 failed
 ```
 
-Recounted on disk: `ls test/*.bp | wc -l` 64 · `ls run/*.bp | wc -l` 169 (17 with a `.targets`,
-25 `.<target>.expect` files) · `ls reject/*.bp | wc -l` 173 · `ls -d modules/*/ | wc -l` 60 (25
-`<target>.expect` files, one `"targets"`). Decision 146 on wasm (a function whose body calls a host
-function with no binding for the target is refused called or not, on every target) moved four cells
-and added one: `run/external_wrapper_keeps_refusal` passes on wasm by its `.wasm.expect`;
-`run/std_asserts_on_every_target` and `modules/labelled_call_by_label` ran on wasm and are refused
-there now, at the import of `testing.asserts` (`.wasm.expect` / `wasm.expect`);
-`run/std_asserts_host_cell_on_wasm` was refused at the call of `deepEquals` and is refused at the
-import; `run/std_decorator_through_namespace` pins the import's STD-001 line where it pinned the
-first host cell `testing.mocks` named; `run/external_wrapper_associated_default` is new (four
-results).
+Recounted on disk by front `01-compiler/12-language-tests` of 1.0.11-beta:
+
+```
+$ ls test/*.bp | wc -l          # 64
+$ ls run/*.bp | wc -l           # 171 — 17 with a .targets, 25 .<target>.expect files, 2 .exit
+$ ls reject/*.bp | wc -l        # 174
+$ ls -d modules/*/ | wc -l      # 68 — 4 of the test kind, 33 <target>.expect files, 1 "targets"
+```
+
+Decision 146 on wasm (a function whose body calls a host function with no binding for the target is
+refused called or not, on every target): `run/external_wrapper_keeps_refusal` passes on wasm by its
+`.wasm.expect`; `run/std_asserts_on_every_target` and `modules/labelled_call_by_label` are refused
+there at the import of `testing.asserts` (`.wasm.expect` / `wasm.expect`), and so is
+`run/std_asserts_host_cell_on_wasm`; `run/std_decorator_through_namespace` pins the import's STD-001
+line; `run/external_wrapper_associated_default` runs on four targets.
 
 `zig build test-language` is a stage of `scripts/gate.sh` (after `test-libs`) and a step of the CI
 `test` job (ubuntu + macos). A red cell fails the gate.
 
 ## Notes for whoever writes the next cell
 
-Shapes that do not parse — **re-measured at `aab5489`** with `botopink check`, after front 15
-(`specs/1.0.5-beta/15-language-surface/README.md`) landed (`109f6c9`). Five of the seven rows this
-table carried are gone: they parse, and so does the sixth since C-13. What is left is one row and one
-correction.
+**Shapes that do not parse: none is known.** Every row this list carried parses. Re-measured with
+`botopink check` and `botopink run` by front `01-compiler/12-language-tests` of 1.0.11-beta; each
+row is pinned by a cell that passes on every target its kind has:
 
-| Shape | At `aab5489` | Decision |
-|---|---|---|
-| a module-level `var` | parses since front 17 (`8146d2b6`): `var` and `pub var`, with or without a `#[@BeamMemory.<member>]` above it; a `val` assigned anywhere is a located error naming `var` (decision 38) | **landed.** `run/module_var` and `test/beam_memory_noop` pin it; what is still absent is the erlang/beam lowering (C-10), which is why both carry an erlang line and the first a beam line |
+| Shape | Was listed as | Now | Cell |
+|---|---|---|---|
+| a module-level `var` | absent | `var` and `pub var`, with or without a `#[@BeamMemory.<member>]` above it; a `val` assigned anywhere is a located error naming `var` (decision 38) | `run/module_var`, `test/beam_memory_noop`, `reject/val_assign_module` |
+| §5.1 `Pattern { body }` arms, §5.3b section arms | `06 N22` | parse, check and run | `test/case_arms.bp`, `test/case_sections.bp` |
+| a block-shaped statement not last in its block (`if (1 > 0) { … }` then `@print("b");`) | decision 29 — "the `;` goes" | parses and runs since C-13 made the `;` after a braced block optional; the formatter writes no `;` there | every cell `botopink format` rewrote (FC-4) |
+| `adder(3)(4)` — calling the result of a call | "make it parse" (14) | parses, checks and runs | `test/curried_call.bp` |
+| `#(a: i32, b: string)[]` — an array of labeled tuples | "make it parse" (14) | parses, checks and runs, with `@Result<i32, string>[]` and `(i32 \| string)[]` | `test/type_suffix.bp` |
+| `??` | deliberately absent (14) | parses and runs (decision 28); `catch` is `@Result`-only, so nothing else gives an optional a default | `test/nullish_default.bp` |
+| `xs[0]`, `xs[0..2]`, `d["k"]` — an index expression | "no index expression in the grammar" | parses, checks and runs (decisions 30, 63, 139) | `run/index_expression.bp`, `run/index_dict.bp`, `run/index_past_the_end_is_null.bp`, `run/index_negative_from_end.bp` |
+| a bodyless `fn` with `-> void` | no rule | parses and runs (decision 33); without a return type it is `bodyless-fn-needs-return-type` | `test/bodyless_fn.bp`, `reject/bodyless_fn_no_return_type.bp` |
+| a method on a parenthesised expression or a number literal — `(a == b).toString()`, `("ab").length`, `42.toString()` | open | one production; `42.toString()` prints `42` on all four targets (commonJS once wrote `42.toString()` into the program, which node reads as a float) | `test/paren_receiver.bp`, `run/method_on_number_literal.bp` |
 
-**Struck, because they now parse.** Each was measured at `aab5489`:
+**The range pattern — decision 53.** `...` is inclusive in a pattern; `..` is exclusive in a slice
+and in `for (a..b)`, Zig's split. `1..9` in an arm is `error[pattern-range-exclusive]` located at
+the `..`, with `1...9` as the hint (`reject/pattern_range_exclusive`). `1...9` matches both endpoints
+and nothing outside them on all four targets — in a `case` used as a value (`run/case_range_value.bp`,
+five probes) and as a typed function's return (`fn f(n: i32) -> i32 { return case n { 1...9 … } }`
+prints `0 1 1 0` for 0, 1, 9 and 10). **An endpoint probe is the minimum a range cell may print**: a
+single value inside the range cannot tell an arm that matches from one that always matches — beam
+once answered `1` for every `n`, 0 and 10 included, and a probe at 9 read it as right. Decision 53
+legislates numeric endpoints only, so no cell asserts a string bound.
 
-| Shape | Was listed as | Now |
-|---|---|---|
-| §5.1 `Pattern { body }` arms, and §5.3b section arms | `06 N22` | parse; `test/case_sections.bp` fails in inference like every other `case` cell (`expected string, got void`), not at the `{` |
-| a block-shaped statement not last in its block (`if (1 > 0) { … }` then `@print("b");`) | "decision 29 — the `;` goes", `error: this token cannot appear here` at the next statement | **parses and runs** since C-13 made the `;` after a braced block optional: the program prints both lines on commonJS (re-measured by front 111 of 1.0.11-beta) |
-| `adder(3)(4)` — calling the result of a call | "make it parse" (14) | **parses** (15's R2) and **checks** (01 handover 15: inference types the `calleeExpr` and applies it). No backend reads `calleeExpr` yet — commonJS emits `(4)`, erlang `''(4)` — so `test/curried_call.bp` carries two `C-09 (backend half)` lines |
-| `#(a: i32, b: string)[]` — an array of labeled tuples | "make it parse" (14) | **parses, checks and runs on all four targets** (15's R1), with `@Result<i32, string>[]` and `(i32 \| string)[]`. `test/type_suffix.bp` |
-| `??` | "deliberately absent (14) — it duplicates `catch` and `?.`" | **parses and runs on all four targets** (15's R8, decision 28). The premise was false as well as the verdict: `catch` is `@Result`-only — `val b = a catch 0;` on an `a: ?i32` reds with `` `try` requires a @Result<D, E> value, found 'optional' `` — so nothing else gives an optional a default. `test/nullish_default.bp` |
-| `xs[0]`, `xs[0..2]`, `d["k"]` — an index expression | "there is no index expression in the grammar" | **parses and checks** (15's R5, decision 30). **No backend lowers it**: the form reaches the unrecognised-builtin path, so `run/index_expression.bp` is listed against all four — and beam is the one that fails *silently*, exit 0 with the index dropped |
-| a bodyless `fn` with `-> void` | "a bodyless top-level fn with no return type" — a form nobody wrote a rule for | **parses and runs** (15's R7, decision 33), and the missing return type is now its own named error, `bodyless-fn-needs-return-type`. `test/bodyless_fn.bp` and `reject/bodyless_fn_no_return_type.bp` |
-| `(a == b).toString()`, and `(sql """ab""").length` — a method on a parenthesised expression | open / "needs a dependency to measure" | **one production, and it parses** (15's R3). `(1 == 2).toString()` prints `false` and `("ab").length` prints `2` on commonJS, erlang and wasm; no dependency is needed to measure it. `test/paren_receiver.bp` |
+**A `.out` may encode a decision no backend implements yet, and that is the point.** The `.out` is
+the decision's answer, so when the backends are moved against it **exactly one file per cell** is
+involved and no `.out` is renegotiated in the same commit as an emitter. A cell's header comment
+carries the per-backend measurement it was written against.
 
-**Two commonJS defects these cells turned up that no step of `04-js`
-(`specs/1.0.5-beta/04-js/README.md`) named.** Both were reported to the maintainer; front 04 owns
-`commonJS.zig`, so the front was certain and only the row was missing. **The second is fixed** —
-recounted at `b09bf9c6`: `test/nullish_default.bp` carries no line and the suite is green, so its
-`04 (no step; reported 2026-09-18)` cell is gone from the file and only the first is still open.
+**Never pin an exit status or a runtime's diagnostic as the point of a line.** `botopink run --target
+erlang` compiles every emitted `.erl` with `erlc` and runs `erl -pa <out>` (decision 56; `beam`
+assembles the `.S` files the same way); a crash is status `1` and the runtime's report goes to
+stderr, which no `.out` sees. node answers `1` and wasmtime `134`. An aborting program is asserted by
+`.exit` = `nonzero` (§ The sidecars of a `run/` cell), never by a number.
 
-1. **`42.toString()` — a method on a number literal** (15's R3) checks, and prints `42` on erlang and
-   wasm, but the emitter writes `__bp_print(42.toString())` and node refuses it with
-   `SyntaxError: Invalid or unexpected token`, because `42.` reads as a float. `(42).toString()` is
-   the emitted form that would work. No cell asserts it — `test/paren_receiver.bp` records it in a
-   comment instead, because a listed line needs a row.
-2. **The optional-binding `if` tests `!== null`, and `?.` answers `undefined`.** `if (x) { n -> … }`
-   emits `(() => { const n = …; if (n !== null) { … } })()`, so an absent value arriving from a `?.`
-   chain takes the present branch and binds `undefined`. `o.inner?.v ?? 9` answers `undefined` on
-   commonJS and `9` on erlang and wasm. `test/optional.bp` does not see it because its optionals are
-   explicit `null`s. This one **was** asserted — `test/nullish_default.bp::?? chains after ?.` — with
-   an owner cell that said outright that it had no step, and **it passes at `b09bf9c6`**: front 04
-   fixed it and deleted the line. The paragraph is kept because the shape of the report is the thing
-   worth copying, not because the defect survives.
-
-**A third, with owners.** A tuple label does not survive a generic array method: `rs.at(0).b` on an
-`rs: #(a: i32, b: string)[]` answers `undefined` on commonJS, raises `bad map: {1,<<"x">>}` in
-`map_get/2` on erlang, and answers `0` on wasm. That is §6 T4 and the rows exist — `04 step 2`,
-`02 step 4` — so `test/tuple_labels.bp` asserts it and carries the two lines.
-
-**The range pattern in a `case` arm — decision 53 settled the spelling and `run/case_range_value.bp`
-now pins the endpoints.** Decision 53 (2026-09-18) **amended** decisions 20 and 36 to Zig's split:
-`...` is inclusive in a **pattern**, `..` is exclusive in a **slice** and in `for (a..b)`, and no
-emitter moves. `zig version` 0.16.0 has both spellings in those two positions and `1..9` inside a
-`switch` does not exist there at all, so the compiler was the Zig-consistent side all along.
-
-- `1..9` in an arm still reds `error[pattern-range-exclusive]: \`..\` is iteration, not a pattern's
-  range`, recommending `...`. Under decision 53 that recommendation is now **right** and it is the
-  decision text that moved; `test/case_arms.bp` is still listed against `01 step 4`, because the
-  parser has to accept `..` in the slice position it already refuses — verify before deleting.
-- `1...9` parses, checks, and **is wrong on three of the four backends**. Re-measured at `b5a9b85d`
-  with the endpoints, which is what `run/case_range_value.bp` prints:
-
-  | `case n { 1...9 { 1 } _ { 0 } }` | n=5 | n=1 | n=9 | n=0 | n=10 |
-  |---|---|---|---|---|---|
-  | commonJS | 1 | 1 | 1 | 0 | 0 | ← correct |
-  | erlang | 0 | 0 | 0 | 0 | 0 | ← the arm never matches |
-  | wasm | 0 | 0 | 0 | 0 | 0 | ← the same |
-  | beam | 1 | 1 | 1 | 1 | 1 | ← the arm always matches |
-
-  **The single-value probe every earlier measurement used is misleading**: at `n=9` it reads
-  `1 / 0 / 0 / 1`, which makes beam look right when its `1` is a false positive, and it was recorded
-  as `1 / 0 / 256` with "beam emits only `out/main.S`" — neither the `256` nor the `.S`-only half
-  reproduces at `b5a9b85d`. An endpoint probe is the minimum a range cell may print.
-- Written where its type is known (`fn f(n: i32) -> i32 { return case n { 1...9 … } }`) the same
-  `case` does not compile: `type mismatch: expected i32, got void`. A brace-arm of `case` is neither
-  typed nor lowered — already filed with `01-checker` step 4, which owns pattern **grammar** as well
-  as arm resolution (decision 36's ~10-line `parser/patterns.zig` `finishRangePattern` edit lands
-  there too).
-
-**Every per-cell measurement in this section and in the cells' own header comments was re-run after
-merging `origin/feat` `3cfb65cb` and none of them moved**, the range table above included — so the
-`b5a9b85d` dates in the cell comments are the measurement, not a stale one. In particular the `256`
-heap address the range defect used to be recorded with does **not** reproduce on either commit: wasm
-answers `0`, and it answers `0` at every endpoint.
-
-**A `.out` may encode a decision no backend implements yet, and that is the point.**
-`run/optional_null_pattern.bp` (decision 54) does. (The four decision-55 cells and the decision-52
-cell that used to sit beside it were superseded by decision 105 — no loop has a value — and left with
-front 22; `reject/loop_break_value.bp` and `reject/loop_yield_plain_fn.bp` are what the language says
-now.) Each `.out` is the decision's answer, so when the backends are moved against it **exactly one
-file per cell** is involved and no `.out` is renegotiated in the same commit as an emitter. Each
-cell's header comment carries the per-backend measurement it was written against, dated and with
-the commit.
-
-**Never pin an erlang exit status or an `escript` warning as the point of a line.** `run.sh` runs
-`botopink run --target erlang`, which today is `escript out/main.erl`: escript compiles the file it is
-handed, prints its **compile warnings on stdout** — which the `.out` comparison sees — and answers
-`127` when the program crashes. [Decision 56](../../../../specs/1.0.5-beta/decisions-taken.md) replaces that
-with `erlc -o <out>` over every emitted `.erl` and then `erl -pa <out>`, in front 13's `cli/run.zig`:
-the crash status becomes **`1`** and an `erlc` warning no longer reaches the program's stdout. So a
-reason line may *quote* either as evidence, and four of this front's do, but the defect it names must
-be the wrong answer. A front that fixes an erlang lowering and still sees a byte mismatch should check
-which of the two moved.
-
-**Read a collected result as `length` + `join(",")`, not as a printed array.** `@print` of an array
-is decision 8 §7's separator row and erlang and wasm still get it wrong (`[20,40,60]` for
-`[20, 40, 60]`), so a cell that prints the array carries a §7 line on two backends and the rule it
-means to assert is hidden behind it.
-
-**C-06's wasm half is verified by running, not by reading the diff.** `8594e4ba` landed
-`.tasks/wasm` as-is — the `A...B` range-pattern arm and `emitRangeBound` in `wat.zig`, a value `break`
-as `emitYield` then `br $__break`, six `loop_*` wasm snapshots' RUN LOGs moved (`[20]` where
-`[20, 40, 60]` was), three expected-failure lines deleted — without its verification. C-16
-compiled each of the six fixtures' `SOURCE CODE` as a fresh project, ran it with `botopink run
---target wasm` (wasmtime), and compared stdout with the snapshot's RUN LOG **byte for byte**: all six
-match (`1 2 3 [20]`, `[15]`, `[0]`, `[250]`, `[115.0]`, `[20]`), and `run/case_range_value.bp` and
-the three decision-55 cells (since deleted by front 22) passed on wasm in the suite, so the three
-deleted lines stay deleted.
-No defect was found and `wat.zig` was not touched. One note carried from the landing: a range pattern
-over a **string** bound has no wasm ordering and answers `0` (`emitRangeBound`'s `else` arm) — no cell
-asserts it, since decision 53 legislates numeric endpoints only.
-
-**Decision 55 turned a cell that passed on all four backends into one that fails on all four.**
-`test/loop_collection.bp`'s last test asserted `for ([1, 2, 3]) { x -> break x * 2; }` → `[2, 4, 6]`,
-and every backend agreed, because they share one accumulator shape and none of them stops at a
-`break`. Decision 55 says `break <value>` contributes its value **and ends the loop**, so the answer
-is `[2]`; the assertion was rewritten to the language and now carries two lines. This is the rule at
-the top of this file working in the direction it is usually not noticed in: four backends agreeing is
-not evidence, and a decision can make a green cell red.
-
-**Where front 02 has no row for the collection loop** — now moot: the rows are C-06's. Decision 55
-says outright that the cell comes first and "then one row per backend against it". `04 step 3` and
-`05 step 4` were both titled `break <value>` and `03 step 3`'s D7 asked for exactly this measurement;
-front 02 had no §10 collection-loop step — its step 5 is the *condition* loop used as a value — so its
-four lines read `02 (no step; decision 55, reported 2026-09-18)`, the shape the suite's list of
-expected failures used for a certain front with a missing row. 1.0.10-beta gathered the three decisions into
-`C-06`, and since 2026-09-20 every 52/53/55 line names `C-06 (<backend> half not landed)`; wasm's
-half is the one that landed.
+**Four backends agreeing is not evidence.** A decision can make a green cell red: decision 55 once
+turned `for ([1, 2, 3]) { x -> break x * 2; }` → `[2, 4, 6]`, which every backend printed because they
+shared one accumulator shape, into a red cell on all four (and decision 105 later deleted value loops
+altogether). The cell is written to the language; the backends follow.
 
 **Structural equality of two values of the same type is not legislated, so no cell asserts it.**
-`Person(name: "Ana", age: 30) == Person(name: "Ana", age: 30)` answers `false` on commonJS (reference
-equality on the class instance) and `true` on erlang and BEAM (one term, now a tagged tuple). No
-decision of this milestone settles it and no front owns it, so `test/type_identity.bp` states the
-omission in a comment and asserts only what **is** settled — that two *different* types with the same
-fields are different values. Reported to the maintainer; a sentence would turn the comment into two
+`Person(name: "Ana", age: 30) == Person(name: "Ana", age: 30)` answers `false` on commonJS and wasm
+(reference equality) and `true` on erlang and beam (one term) — re-measured by front 12 of
+1.0.11-beta. No decision settles it and no front owns it, so `test/type_identity.bp` states the
+omission in a comment and asserts only what **is** settled — that two *different* types with the
+same fields are different values. A sentence from the maintainer would turn the comment into two
 assertions.
 
-**The identity is asserted on two backends and RUN on four.** `botopink test` refuses beam and wasm,
+**The identity is asserted on two backends and run on four.** `botopink test` refuses beam and wasm,
 so a `test/` cell reaches only commonJS and erlang. `run/type_identity_equality.bp` is the same
 statement as a `run/`: `Person(name: "a", age: 1) == Vec(name: "a", age: 1)` prints `false` on all
-four since `13-module-identity` half 3 put the declaration inside the value — it answered `true` on
-erlang and BEAM before, where two bare maps with the same keys were one term.
+four since `13-module-identity` half 3 put the declaration inside the value.
 
 **`use` is tested from botopink since front 19 of 1.0.10-beta**, spelled to decisions 102/104
 (front 21): `test/context_use.bp`, `run/context_use.bp` and the `reject/use_*.bp` cells declare
@@ -1064,21 +972,13 @@ rules they pinned — a function has one return, so it has one effect.
 
 **Decisions 63–66, one cell or one sentence each (C-16).**
 
-- **63** (an index is a method call, amended 2026-09-19) — `run/index_dict.bp` (present key → `1`;
-  `Dict<string, ?i32>` → `null`; absent key → the program **fails**, `.exit` = `nonzero`),
-  `run/index_past_the_end_fails.bp` (`xs[9]` fails after `10`) and `run/index_at_optional.bp`
-  (`Dict.at` / `String.at` by name answer `?V`, `null` for absent). The first two are C-02 on all four
-  backends — the compiler half is not landed: commonJS answers `undefined` even for the **present**
-  dict key, erlang dies at the present key (`bp_unsupported_index`), wasm traps there, and `xs[9]` is
-  `undefined` / `undefined` / `0` with exit 0. The third passes on commonJS (the `libs/std` half,
-  `e065b564`) and is C-18 (decision 47's `null` spelling) on erlang, wasm and beam. Two more defects
-  it turned up, reported rather than listed: `Array.at` past the end answers `undefined` on commonJS
-  (decision 47, C-18 — kept out of the cell so it would not hide the rename), and `String.at` had **no
-  wasm lowering** — `s.at(1)` trapped, exit 134. The second is **closed** (`fix/wasm-refusals`, front
-  `05-wasm`): `$__str_at` lowers it, `run/string_at.bp` pins the present-index reader on all four
-  targets, and wasm's `index_at_optional` line is now decision 47's spelling alone. The cell C-16 names as
-  `index_an_index_past_the_end_answers_zero` is a `src/codegen/tests` fixture, not a cell of this suite;
-  `run/index_past_the_end_fails.bp` is this suite's statement of the same rule, third spelling.
+- **63** (an index is a method call, amended 2026-09-19: the index answers what `at` answers, `?V`)
+  — `run/index_dict.bp` (present key → `1`; `Dict<string, ?i32>` → `null`; absent key → `null`, and
+  the program goes on), `run/index_past_the_end_is_null.bp` (`xs[9]` is decision 47's `null`) and
+  `run/index_at_optional.bp` (`Dict.at` / `String.at` by name answer `?V`, `null` for absent), with
+  `run/string_at.bp` for the present-index reader — all on four targets. The fixture C-16 names
+  `index_an_index_past_the_end_answers_zero` is a `src/codegen/tests` fixture, not a cell of this
+  suite.
 - **64** (a wrapper per host-bound std `declare fn`) — `run/std_erlang_node.bp`: `erlang.node()`
   prints `nonode@nohost` on erlang (C-03's erlang half, `a8db11e4`); commonJS and wasm **refuse** it
   with `std-unsupported-on-target` (two `.expect` sidecars); beam prints it too since front 17 step 5
@@ -1108,11 +1008,10 @@ rules they pinned — a function has one return, so it has one effect.
   change (`modules/decorator_imported_function_name_conflict` pins `src/main.bp:21:3`, the
   `#[tag]` under an `@emit(…)` argument the formatter opens over four lines).
 
-**Two step-4.3 measurements worth keeping.** `@panic` and `@todo` abort with stdout intact and a
-non-zero status on all four backends (`run/panic_aborts.bp`, `run/todo_aborts.bp`, `.exit` =
-`nonzero`), so both cells pass everywhere — but on beam `@todo` passes for the wrong reason: a
-function whose whole body is `@todo()` is **not emitted**, and the abort is `{undef, main:notReady/0}`
-rather than the builtin's. Same observable pair, different cause; reported, no row.
+**`@panic` and `@todo` abort with stdout intact and a non-zero status on all four backends**
+(`run/panic_aborts.bp`, `run/todo_aborts.bp`, `.exit` = `nonzero`). On beam a function whose whole
+body is `@todo()` is emitted and raises the builtin's own `{todo, <<"not implemented">>}` —
+re-measured by front 12 of 1.0.11-beta (it used to be dropped, and the abort was `undef`).
 
 What cannot be tested from botopink at all, and why: `@typeInfo` / `@makeRecord` / `partial` / `omit`
 / `pick` (they produce types, and asserting on emitted text is the snapshots' job). Struck from this
