@@ -3,3 +3,8 @@
 mod lexical;
 pub mod cookie;
 pub mod accept;
+pub mod mime;
+pub mod status;
+pub mod date;
+pub mod byteRange;
+pub mod cacheControl;

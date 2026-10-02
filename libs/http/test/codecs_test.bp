@@ -1,0 +1,158 @@
+//// http: the MIME table, reason phrases, byte ranges and Cache-Control, on
+//// both targets.
+
+import {testing.asserts} from "std";
+import {contentTypeOf, extensionOf, isText} from "mime";
+import {reasonPhrase} from "status";
+import {parseRange, contentRange, ByteRange} from "byteRange";
+import {directives, withPublic, withPrivate, withMaxAge, withSharedMaxAge, withNoStore, withNoCache, withMustRevalidate, withImmutable, render, staticFile} from "cacheControl";
+import {wide} from "lexical";
+
+fn rangeText(header: string, size: i32) -> string {
+    val r = parseRange(header, wide(size));
+    return r.status.toString() + " " + contentRange(r, wide(size));
+}
+
+test "http: contentTypeOf by extension, text types with a charset" {
+    try asserts.equals(contentTypeOf("index.html"), "text/html; charset=utf-8");
+    try asserts.equals(
+        contentTypeOf("assets/app.min.JS"),
+        "text/javascript; charset=utf-8",
+    );
+    try asserts.equals(contentTypeOf("data.json"), "application/json");
+    try asserts.equals(contentTypeOf("logo.PNG"), "image/png");
+    try asserts.equals(contentTypeOf("photo.jpeg"), "image/jpeg");
+    try asserts.equals(contentTypeOf("icon.svg"), "image/svg+xml");
+    try asserts.equals(contentTypeOf("png"), "image/png");
+    try asserts.equals(contentTypeOf(".webp"), "image/webp");
+    try asserts.equals(
+        contentTypeOf("archive.tar.gz"),
+        "application/octet-stream",
+    );
+    try asserts.equals(contentTypeOf("README"), "application/octet-stream");
+    try asserts.equals(contentTypeOf(""), "application/octet-stream");
+}
+
+test "http: extensionOf and isText" {
+    try asserts.equals(extensionOf("a/b.c/d.TXT"), "txt");
+    try asserts.equals(extensionOf("a/b.c/README"), "readme");
+    try asserts.isTrue(isText("text/css; charset=utf-8"));
+    try asserts.isTrue(isText("TEXT/plain"));
+    try asserts.isFalse(isText("application/json"));
+    try asserts.isFalse(isText("image/svg+xml"));
+}
+
+test "http: reasonPhrase over the registered codes" {
+    try asserts.equals(reasonPhrase(200), "OK");
+    try asserts.equals(reasonPhrase(206), "Partial Content");
+    try asserts.equals(reasonPhrase(304), "Not Modified");
+    try asserts.equals(reasonPhrase(308), "Permanent Redirect");
+    try asserts.equals(reasonPhrase(404), "Not Found");
+    try asserts.equals(reasonPhrase(413), "Content Too Large");
+    try asserts.equals(reasonPhrase(416), "Range Not Satisfiable");
+    try asserts.equals(reasonPhrase(422), "Unprocessable Content");
+    try asserts.equals(reasonPhrase(429), "Too Many Requests");
+    try asserts.equals(reasonPhrase(500), "Internal Server Error");
+    try asserts.equals(reasonPhrase(511), "Network Authentication Required");
+}
+
+test "http: an unregistered code has no reason phrase" {
+    try asserts.equals(reasonPhrase(418), "");
+    try asserts.equals(reasonPhrase(499), "");
+    try asserts.equals(reasonPhrase(599), "");
+    try asserts.equals(reasonPhrase(99), "");
+    try asserts.equals(reasonPhrase(600), "");
+}
+
+test "http: parseRange answers 206 for a satisfiable single range" {
+    try asserts.equals(
+        rangeText("bytes=0-499", 10000),
+        "206 bytes 0-499/10000",
+    );
+    try asserts.equals(rangeText("bytes=500-", 1000), "206 bytes 500-999/1000");
+    try asserts.equals(
+        rangeText("bytes=-500", 10000),
+        "206 bytes 9500-9999/10000",
+    );
+    try asserts.equals(rangeText("bytes=-5000", 100), "206 bytes 0-99/100");
+    try asserts.equals(rangeText("bytes=0-99999", 100), "206 bytes 0-99/100");
+    try asserts.equals(rangeText("Bytes=1-1", 3), "206 bytes 1-1/3");
+}
+
+test "http: parseRange answers 416 when nothing of the range exists" {
+    try asserts.equals(rangeText("bytes=1000-", 1000), "416 bytes */1000");
+    try asserts.equals(rangeText("bytes=-0", 1000), "416 bytes */1000");
+    try asserts.equals(rangeText("bytes=0-0", 0), "416 bytes */0");
+    try asserts.equals(rangeText("bytes=-5", 0), "416 bytes */0");
+}
+
+test "http: parseRange ignores what it does not read (200)" {
+    try asserts.equals(rangeText("", 100), "200 ");
+    try asserts.equals(rangeText("items=0-1", 100), "200 ");
+    try asserts.equals(rangeText("bytes=0-1,3-4", 100), "200 ");
+    try asserts.equals(rangeText("bytes=5-1", 100), "200 ");
+    try asserts.equals(rangeText("bytes= 0-1", 100), "200 ");
+    try asserts.equals(rangeText("bytes=+0-1", 100), "200 ");
+    try asserts.equals(rangeText("bytes=0", 100), "200 ");
+    try asserts.equals(rangeText("bytes=a-b", 100), "200 ");
+    try asserts.equals(rangeText("bytes=0-99999999999999999", 100), "200 ");
+}
+
+test "http: parseRange counts past 2 GiB" {
+    val size = wide(1000000) * wide(5000);
+    val r: ByteRange = parseRange("bytes=4999999999-", size);
+    try asserts.equals(
+        contentRange(r, size),
+        "bytes 4999999999-4999999999/5000000000",
+    );
+}
+
+test "http: cacheControl renders in one order" {
+    try asserts.equals(render(directives()), "");
+    try asserts.equals(
+        render(withImmutable(withMaxAge(withPublic(directives()), 31536000))),
+        "public, max-age=31536000, immutable",
+    );
+    try asserts.equals(
+        render(withPublic(withImmutable(withMaxAge(directives(), 60)))),
+        "public, max-age=60, immutable",
+    );
+    try asserts.equals(
+        render(
+            withMustRevalidate(
+                withSharedMaxAge(withMaxAge(withPrivate(directives()), 0), 30),
+            ),
+        ),
+        "private, max-age=0, s-maxage=30, must-revalidate",
+    );
+    try asserts.equals(render(withNoStore(directives())), "no-store");
+}
+
+test "http: staticFile is rakun-web's cacheHeader" {
+    try asserts.equals(staticFile(0, true), "no-cache");
+    try asserts.equals(staticFile(-5, false), "no-cache");
+    try asserts.equals(staticFile(3600, false), "public, max-age=3600");
+    try asserts.equals(
+        staticFile(3600, true),
+        "public, max-age=3600, immutable",
+    );
+}
+
+test "http: cacheControl refuses a contradiction" {
+    try asserts.throwsWith({ ->
+        withPrivate(withPublic(directives()));
+        0;
+    }, "a response is public or private, not both");
+    try asserts.throwsWith({ ->
+        withMaxAge(directives(), -1);
+        0;
+    }, "max-age is a number of seconds, 0 or more");
+    try asserts.throwsWith({ ->
+        render(withMaxAge(withNoStore(directives()), 10));
+        0;
+    }, "no-store forbids storing");
+    try asserts.throwsWith({ ->
+        render(withImmutable(withNoCache(directives())));
+        0;
+    }, "immutable needs a max-age");
+}

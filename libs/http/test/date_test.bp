@@ -1,0 +1,112 @@
+//// http: HTTP-date, both directions, on both targets.
+
+import {testing.asserts} from "std";
+import {formatHttpDate, parseHttpDate} from "date";
+import {wide} from "lexical";
+
+// Seconds as epoch milliseconds (an integer literal is `i32`).
+fn at(seconds: i32) -> i64 {
+    return wide(seconds) * wide(1000);
+}
+
+// 2026-10-02T00:00:00Z.
+fn now() -> i64 {
+    return at(1790899200);
+}
+
+fn parsed(text: string) -> string {
+    return case parseHttpDate(text, now()) {
+        Ok(ms) -> ms.toString();
+        Error(e) -> e;
+    };
+}
+
+test "http: formatHttpDate(0) is the epoch in IMF-fixdate" {
+    try asserts.equals(
+        formatHttpDate(wide(0)),
+        "Thu, 01 Jan 1970 00:00:00 GMT",
+    );
+}
+
+test "http: formatHttpDate writes the RFC 9110 example and truncates to the second" {
+    try asserts.equals(
+        formatHttpDate(at(784111777)),
+        "Sun, 06 Nov 1994 08:49:37 GMT",
+    );
+    try asserts.equals(
+        formatHttpDate(at(784111777) + wide(999)),
+        "Sun, 06 Nov 1994 08:49:37 GMT",
+    );
+    try asserts.equals(
+        formatHttpDate(at(951782400)),
+        "Tue, 29 Feb 2000 00:00:00 GMT",
+    );
+}
+
+test "http: parseHttpDate reads the three RFC 9110 5.6.7 forms" {
+    try asserts.equals(parsed("Sun, 06 Nov 1994 08:49:37 GMT"), "784111777000");
+    try asserts.equals(
+        parsed("Sunday, 06-Nov-94 08:49:37 GMT"),
+        "784111777000",
+    );
+    try asserts.equals(parsed("Sun Nov  6 08:49:37 1994"), "784111777000");
+    try asserts.equals(parsed("Thu, 01 Jan 1970 00:00:00 GMT"), "0");
+    try asserts.equals(parsed("Wed, 31 Dec 1969 23:59:59 GMT"), "-1000");
+}
+
+test "http: a two-digit year more than 50 years ahead is the century before" {
+    try asserts.equals(
+        parsed("Wednesday, 01-Jan-76 00:00:00 GMT"),
+        "3345062400000",
+    );
+    try asserts.equals(
+        parsed("Saturday, 01-Jan-77 00:00:00 GMT"),
+        "220924800000",
+    );
+}
+
+test "http: formatHttpDate and parseHttpDate round-trip" {
+    try asserts.equals(parsed(formatHttpDate(at(951782400))), "951782400000");
+}
+
+test "http: parseHttpDate refuses what the grammar does not spell" {
+    try asserts.equals(
+        parsed("Sun, 6 Nov 1994 08:49:37 GMT"),
+        "http.parseHttpDate: \"Sun, 6 Nov 1994 08:49:37 GMT\" is not an IMF-fixdate",
+    );
+    try asserts.equals(
+        parsed("Sun, 06 Nov 1994 08:49:37 UTC"),
+        "http.parseHttpDate: \"Sun, 06 Nov 1994 08:49:37 UTC\" is not an IMF-fixdate",
+    );
+    try asserts.equals(
+        parsed("sun, 06 nov 1994 08:49:37 GMT"),
+        "http.parseHttpDate: \"sun, 06 nov 1994 08:49:37 GMT\" has no valid month name",
+    );
+    try asserts.equals(
+        parsed("Sun, 06 Nov 1994 24:00:00 GMT"),
+        "http.parseHttpDate: \"Sun, 06 Nov 1994 24:00:00 GMT\" has no valid time of day",
+    );
+    try asserts.equals(
+        parsed("1994-11-06T08:49:37Z"),
+        "http.parseHttpDate: \"1994-11-06T08:49:37Z\" is not an RFC 850 date",
+    );
+    try asserts.equals(
+        parsed(""),
+        "http.parseHttpDate: \"\" is not an RFC 850 date",
+    );
+}
+
+test "http: parseHttpDate refuses a day the calendar does not have, or the wrong weekday" {
+    try asserts.equals(
+        parsed("Mon, 29 Feb 2021 00:00:00 GMT"),
+        "http.parseHttpDate: \"Mon, 29 Feb 2021 00:00:00 GMT\" names a day its month does not have",
+    );
+    try asserts.equals(
+        parsed("Mon, 06 Nov 1994 08:49:37 GMT"),
+        "http.parseHttpDate: \"Mon, 06 Nov 1994 08:49:37 GMT\" names the wrong day of the week",
+    );
+    try asserts.equals(
+        parsed("Sun, 31 Apr 1994 00:00:00 GMT"),
+        "http.parseHttpDate: \"Sun, 31 Apr 1994 00:00:00 GMT\" names a day its month does not have",
+    );
+}

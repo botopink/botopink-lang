@@ -10,6 +10,11 @@
     "root.bp",
     "lexical.bp",
     "cookie.bp",
-    "accept.bp"
+    "accept.bp",
+    "mime.bp",
+    "status.bp",
+    "date.bp",
+    "byteRange.bp",
+    "cacheControl.bp"
   ]
 }
