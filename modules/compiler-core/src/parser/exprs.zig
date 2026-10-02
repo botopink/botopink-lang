@@ -148,7 +148,7 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         if (this.match(.@"catch")) {
             const handler = try this.parseExpr(alloc);
             const handlerPtr = try this.boxExpr(alloc, handler);
-            return Expr{ .branch = .{ .loc = locFromToken(tryTok), .kind = .{ .tryCatch = .{ .expr = innerPtr, .handler = handlerPtr } } } };
+            return Expr{ .branch = .{ .loc = locFromToken(tryTok), .kind = .{ .tryCatch = .{ .expr = innerPtr, .handler = handlerPtr, .tryKeyword = true } } } };
         }
         return Expr{ .jump = .{ .loc = locFromToken(tryTok), .kind = .{ .try_ = innerPtr } } };
     }
@@ -1926,7 +1926,7 @@ pub fn parseCallArgs(this: *This, alloc: std.mem.Allocator) ParseError![]CallArg
             const valExpr = try this.parseExpr(alloc);
             const valPtr = try this.boxExpr(alloc, valExpr);
             const commentsSlice = try argComments.toOwnedSlice(alloc);
-            try args.append(alloc, .{ .label = "..", .value = valPtr, .comments = commentsSlice });
+            try args.append(alloc, .{ .label = ast.spread_arg_label, .value = valPtr, .comments = commentsSlice });
             if (!this.match(.comma)) break;
             continue;
         }

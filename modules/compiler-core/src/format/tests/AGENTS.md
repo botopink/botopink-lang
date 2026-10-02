@@ -14,7 +14,12 @@ argument keeps its label (`assertFormat` + `assertIdempotent`). The last row is 
 alias (decision 118 rule 1): plain, generic, `pub` and a function-type target, `assertFormatLossless`.
 `expressions.zig` carries front 24's new forms through `assertFormatLossless` (step E2): the
 annotated loop's `iter loop` / `stream loop`, and `async { … }` / `async {}`, `iter while`, `iter for`,
-`stream while`, `stream for`, `try await x` and `yield :label`.
+`stream while`, `stream for`, `try await x` and `yield :label`. Its last four rows are
+the two arms that printed text the parser refuses (1.0.11-beta front 112): the record-update
+spread (`Cfg(..base, k: v)`, first, last, alone, over a path and a call, and in the open list) and
+`catch` (the tail form gains no `try` — inside parentheses, as an operand, in an argument, after
+`return`; a written `try` is kept) — each `assertFormatLossless` on a canonical source, which is
+also the proof the output re-parses to the node it came from, plus `assertIdempotent`.
 
 ## The property `assertIdempotent` does not imply
 

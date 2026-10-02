@@ -722,12 +722,20 @@ pub const Formatter = struct {
                 .@"continue" => this.text("continue"),
             },
             .branch => |br| switch (br.kind) {
-                .tryCatch => |tc| this.concatAll(&.{
-                    try this.text("try "),
-                    try this.fmtExpr(tc.expr.*),
-                    try this.text(" catch "),
-                    try this.fmtExpr(tc.handler.*),
-                }),
+                // `try e catch h` and the tail form `e catch h` are one node;
+                // the `try` is printed only where the source wrote it
+                // (`tryKeyword`). The tail form is legal inside parentheses (and
+                // so as an operand), where a `try` is refused (decision 137):
+                // `(parse(7) catch -1) == 7` printed with a `try` did not
+                // re-parse.
+                .tryCatch => |tc| blk: {
+                    const tail = try this.concatAll(&.{
+                        try this.fmtExpr(tc.expr.*),
+                        try this.text(" catch "),
+                        try this.fmtExpr(tc.handler.*),
+                    });
+                    break :blk if (tc.tryKeyword) this.concat(try this.text("try "), tail) else tail;
+                },
                 .if_ => |i| try this.fmtIf(i),
             },
             .loop => |lp| blk: {
@@ -1512,12 +1520,19 @@ pub const Formatter = struct {
                 ));
                 try isComment.append(this.arena, true);
             }
+            // `Ctor(..base, x: 1)` — the record-update spread travels as the
+            // argument labelled `ast.spread_arg_label`; it is printed back as
+            // written, `..base`. Printed as a label it came out `..: base`,
+            // which does not parse.
             const argDoc: *const Doc = if (a.label) |lbl|
-                try this.concatAll(&.{
-                    try this.text(lbl),
-                    try this.text(": "),
-                    try this.fmtExpr(a.value.*),
-                })
+                if (std.mem.eql(u8, lbl, ast.spread_arg_label))
+                    try this.concat(try this.text(".."), try this.fmtExpr(a.value.*))
+                else
+                    try this.concatAll(&.{
+                        try this.text(lbl),
+                        try this.text(": "),
+                        try this.fmtExpr(a.value.*),
+                    })
             else
                 try this.fmtExpr(a.value.*);
             try items.append(this.arena, argDoc);

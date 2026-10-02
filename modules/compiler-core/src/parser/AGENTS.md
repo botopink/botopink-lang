@@ -557,6 +557,13 @@ after its `(`: a group exists to become an operand, so `(try r).length` and
 `tests/language/reject/{try_operand_of_operator,try_in_parentheses,await_operand_of_unary}`
 cells.
 
+`try e catch h` and the tail form `e catch h` (`wrapCatch`, legal where a `try` is not — inside
+parentheses, and so as an operand) build the same `tryCatch` node; the `try` arm sets
+`tryCatch.tryKeyword`, which is source layout for the formatter alone (it prints `try ` only where
+it was written) and is left out of the AST dump. The record-update spread of `parseCallArgs` —
+`Ctor(..base, x: 1)` — is the argument labelled `ast.spread_arg_label` (`..`), which no source can
+write as a label.
+
 An **`if` expression** is read in the same place, `parseExpr`'s prefix arm, and follows the same
 rule: it stands where an expression begins and is never an operand. `parsePrimary` and a group's
 `(` refuse it as `ifOperand` (`if-operand`, at the `if`, fix-it "bind it first: `val x = if …;`")

@@ -136,6 +136,8 @@ form has always done that); whether it should is a question, recorded in
 | Parser desugarings | Printed back in the spelling that was **written**, never as the call the parser built: `xs[0]` (and `xs[0..2]`, `d["k"]`, `t[0]` — one node, decision 30) rather than `@[](xs, 0)`; `x is T` (decision 8 §4) rather than `@is(x)`, which deleted the tested type outright; `a ?? b` (decision 28) rather than `if (a) { __bp_nullish -> __bp_nullish } else { b }`. The reserved callees cannot be written by hand (`is` is a keyword, `@[]` does not lex) and the binding name is the reserved `__bp` prefix, so a node carrying one is always the desugaring. `nullishDefaultFallback` tests all four parts of the `if`, so an `if` that binds a name of its own is untouched |
 | Method chain | Two or more method calls in a row (`a.b().c()`) are **one** `groupMeasured`, all-or-nothing ([decision 65](../../../../../../specs/1.0.5-beta/decisions-taken.md)): one line when the flat spelling fits — what follows on the line (`;`, `)`) counted, so 80 columns stay and 81 break — otherwise the root (`of(people)`, `self.items`, `xs`) on the statement's line and **every** call on its own line, `+4` from the statement and never aligned under the receiver (a rename must not re-indent a chain). No two calls share a line in the broken form. The output is a pure function of the content: a hand-broken chain that fits is joined, a one-line chain that does not fit is opened, and a link holding a lambda that breaks (`.forEach({ x ->` with a statement body) breaks the whole chain, because its flat spelling does not exist. A link is `recv.name(…)` / `recv?.name(…)`; a plain call, a builtin, a tagged call and `adder(3)(4)` are not links, and a single method call is not a chain (it keeps the flat/hug printing it always had). This was the first construct enabled under the fixed `fits` |
 | Chained call | `adder(3)(4)` — calling what a call returned. There is no name, so the callee is an **expression** (`ast.CallExpr.call.calleeExpr`, `callee` is `""`) and `receiver` stays null: a chained call is not a method call. Reading only `receiver` and `callee` printed the empty name and dropped the receiver — `adder(3)(4)` came back as `(4)` |
+| Record-update spread | `Cfg(..base, revalidate: 60)` — the parser holds the spread as the argument labelled `ast.spread_arg_label` (`..`, not an identifier, so no source can write it as a label), and `fmtCallWithReceiverDoc` prints it back `..base`, in any position of the list and in the open form (one argument per line). Printed as an ordinary label it came out `Cfg(..: base, …)`, which the parser refuses — every `Ctor(..x, k: v)` in a file made `format` write a file that no longer parsed |
+| `catch` | `try e catch h` and the tail form `e catch h` are one node (`BranchExpr.tryCatch`), one meaning; `tryCatch.tryKeyword` (set by the parser's `try` arm, left out of the AST dump) records which was written and the printer writes `try ` only then. The tail form is legal inside parentheses (and so as an operand), where a `try` is refused as `try-await-operand` (decision 137): `assert (parse(7) catch -1) == 7;` printed with a `try` did not re-parse |
 | Explicit type arguments | `Box<i32>(value: 1)`, `first<string>([])` (decision 8 §1.3, `01-checker`) — `ast.CallExpr.call.typeArgs`, printed back adjacent to the name; null (and absent from the AST dump) when none was written |
 | Type references | A parenthesis is printed exactly where it is load-bearing. `parser/types.zig` binds `[]`, `?` and `\|` to a **base** type and does not keep `(T)` in the AST (`(T)` *is* `T`), so `fmtTypeRefIn` decides from the shape: an array of a union, an optional or a function type (`(i32 \| string)[]`, `(?i32)[]`, `(fn(i32) -> i32)[]`), an optional of a union (`?(i32 \| string)`), and a union or constraint-list member that is a function type (`(fn() -> i32) \| string`). Everywhere else the shortest spelling is the canonical one — `?i32[]`, `i32[] \| string[]`, `i32 \| string[]`. Printing the parentheses away gave **a different type**, and idempotently, so `format --check` reported it clean |
 | One-line lambda value | Rendered flat as one text (it may run past the width); a value that needs a line break of its own prints the open form — so a second `format` pass decides the same way. Whether the lambda **binds a name** takes no part: `{ -> 3 + 4 }` stays on one line exactly as `{ n -> n * 2 }` does ([decision 61](../../../../../../specs/1.0.5-beta/decisions-taken.md) rule 3). The rule stops at `arrow_when_empty`, and the reason is the parser's, measured: a **trailing** lambda's body is a statement block, so its statements keep their `;` and `executar { ok }` answers *unexpected `}`* — as does `calcular(fator: 2) { a, b -> a + b }` — while `{ -> 42 }` and `{ n -> n * 2 }` in argument position both parse |
@@ -197,29 +199,19 @@ form has always done that); whether it should is a question, recorded in
 
 `botopink format --check` at a project root reaches **every** `.bp` and `.d.bp` the project owns —
 `src/**`, `test/**`, `examples/**` and the projects nested inside — and structurally leaves out hidden
-directories, `node_modules` and a `reject/<n>.bp` beside its `<n>.expect` (decision 66;
-`modules/compiler-cli/src/cli/format_cmd.zig`). Measured with that walk at HEAD (2026-09-20), the
-reds and their causes: **`libs/std`** — `src/path.bp:82` and `src/querystring.bp:38` are method
-chains decision 65 opens (09's reformat); `src/builtins.d.bp` and `src/builtins_fns.d.bp` are
-canonical and in `scripts/format-check.sh` since front 20. **`examples/generic-loader-binding`** (two chains) and **`examples/stdlib-tour`** (one
-chain and two lambda arguments that hug the call, decision 61 rule 1). **`tests/language`** — never
-formatted: `modules/*` 7 of 7 files (C-16's row), `run/` 8 of 15, `test/` 41 of 49; two cells do not
-parse, `run/optional_null_pattern.bp:21` (`null` as a `case` pattern) and `test/case_arms.bp:21`
-(`1..9`, the named error `pattern-range-exclusive`) — the suite's rows. **`modules/compiler-cli/tests`**
-— 5 fixtures at two-space indent. Of the five sibling libraries under `repository/`, two are
-canonical whole and three are red, none of it losing text: the CSS library (one chain in `src/`; its
-example project's `main.bp` — import spacing, blank lines between declarations, an array-literal
-argument's indent), the query library (12 chains in `src/`, 4 in its example project) and the frontend
-library (7 chains in `src/html.bp`; its `test/html_test.bp` and three example projects — import
-spacing, an `html """…"""` with no newline printed `html "…"`, single-statement `if` braces,
-array-literal argument indent). Three files of the frontend library's `examples/*-app/app/**` cannot
-be formatted at all: `h1 { "my blog" }` — a trailing lambda whose one-line body is a statement block
-— answers *unexpected `}`* (the `arrow_when_empty` row below; front 15's parser surface). `scripts/format-check.sh`, stage
-3 of the gate, calls `format --check` over the trees that are canonical (`examples/modules` today)
-and names the rest with their owners. Canonical rewrites that remain (no content lost): a `#[a, b]`
-annotation list prints as one `#[…]` per annotation, a method chain that fits joins onto one line and
-one that does not opens, a single-expression `if` block drops its braces, a `\\` line string prints
-as `"""…"""`.
+directories, `node_modules`, a `reject/<n>.bp` beside its `<n>.expect` and a `modules/<cell>/` file
+the cell's `<target>.expect` names that does not lex or parse (decisions 66 and 67;
+`modules/compiler-cli/src/cli/format_cmd.zig`). `scripts/format-check.sh`, stage 3 of the gate, calls
+it over every `.bp` tree of this checkout — `examples`, `libs/std`, the three bundled libraries,
+`modules/compiler-cli/tests`, `modules/manifest/tests` and `tests/language` — and all of them are
+canonical: a red tree is a red gate. Measured with that walk on 2026-10-01 (1.0.11-beta front 112), each tree formatted as a
+scratch copy and checked again: every file re-parses and a second pass moves **0** files, in this
+checkout's trees (508 files walked) and in the five sibling libraries under `repository/` at their
+pinned commits (673 files; one library is canonical whole, the other four would reformat 26 to 285
+files each — their own reformat commits, none of it a printer defect, and no file that cannot be
+formatted). Canonical rewrites that remain (no content lost): a `#[a, b]` annotation list prints as
+one `#[…]` per annotation, a method chain that fits joins onto one line and one that does not opens,
+a single-expression `if` block drops its braces, a `\\` line string prints as `"""…"""`.
 
 - **End-of-line comments on an array or tuple element** (G7) — `trailingPerElem[i]`, the comment
   written on element `i`'s own line after it and its `,`, prints there (`1, // one`) and forces the

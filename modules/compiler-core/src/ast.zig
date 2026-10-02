@@ -428,10 +428,18 @@ pub fn StmtOf(comptime phase: Phase) type {
     };
 }
 
+/// The label the parser gives a record-update spread argument:
+/// `Ctor(..base, x: 1)` holds `base` as the argument labelled `..`. It is not
+/// an identifier, so no source can write it as a label (`..: base` does not
+/// parse) — an argument carrying it is always the spread, and the formatter
+/// prints it back as `..base`.
+pub const spread_arg_label = "..";
+
 /// Helper to get the correct call argument type based on phase
 pub fn CallArgOf(comptime phase: Phase) type {
     return struct {
-        /// null for positional args; non-null for named args (`fator: 2`).
+        /// null for positional args; non-null for named args (`fator: 2`);
+        /// `spread_arg_label` for the spread of a record update (`..base`).
         label: ?[]const u8,
         value: *ExprOf(phase),
         /// Comments appearing before this argument (text only, without `// `)
@@ -640,10 +648,22 @@ pub fn BranchExprOf(comptime phase: Phase) type {
             then_: []StmtOf(phase),
             else_: ?[]StmtOf(phase),
         },
-        /// `try expr catch handler` — handle error inline
+        /// `try expr catch handler` / `expr catch handler` — handle error inline
         tryCatch: struct {
             expr: *ExprOf(phase),
             handler: *ExprOf(phase),
+            /// True when the source wrote the `try` keyword (`try e catch h`),
+            /// false for the tail form (`e catch h`). The two spell one node
+            /// with one meaning; the flag is source layout, read by the
+            /// formatter alone: the tail form is legal inside parentheses (and
+            /// so as an operand), where a `try` is refused (decision 137), so
+            /// printing a `try` nobody wrote does not re-parse. Left out of
+            /// the AST dump.
+            tryKeyword: bool = false,
+
+            pub fn jsonStringify(this: @This(), jws: anytype) !void {
+                return stringifyOmitting(this, jws, &.{"tryKeyword"}, &.{});
+            }
         },
 
         pub fn deinit(this: *@This(), allocator: std.mem.Allocator) void {

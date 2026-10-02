@@ -1237,3 +1237,76 @@ test "format: C-13 ---- a brace-less if, a braced value and `??` keep their `;`"
         \\}
     );
 }
+
+// Front 112 (1.0.11-beta 00-gate): two arms that printed text the parser
+// refuses, found by formatting `tests/language/{run,test}` and a sibling
+// library's `Props(..p, k: v)` update. Each source below is canonical, so
+// `assertFormatLossless` (output == source, no token lost) is also the proof
+// that the output re-parses to the node it came from; `assertIdempotent`
+// re-parses pass 1 and formats it again.
+
+test "format: record update ---- the spread argument prints `..base`, not a label" {
+    const src =
+        \\type Cfg(name: string, revalidate: i32, tags: string[])
+        \\
+        \\fn f(base: Cfg, holder: Holder) {
+        \\    val a = Cfg(..base);
+        \\    val b = Cfg(..base, revalidate: 60);
+        \\    val c = Cfg(revalidate: 60, ..base);
+        \\    val d = Cfg(..holder.cfg, name: "d");
+        \\    val e = Cfg(..make(1), name: "e");
+        \\    val g = Shape.Circle(..circle, r: 2);
+        \\}
+    ;
+    try h.assertFormatLossless(std.testing.allocator, src);
+    try h.assertIdempotent(std.testing.allocator, src);
+}
+
+test "format: record update ---- the spread stays a spread in the open argument list" {
+    const src =
+        \\fn f(base: Cfg) {
+        \\    val c = Cfg(
+        \\        ..base,
+        \\        name: "a name long enough to push the list past the width",
+        \\        revalidate: 60,
+        \\    );
+        \\}
+    ;
+    try h.assertFormatLossless(std.testing.allocator, src);
+    try h.assertIdempotent(std.testing.allocator, src);
+    // Written on one line it opens to the same text.
+    try h.assertFormatAs(std.testing.allocator,
+        \\fn f(base: Cfg) {
+        \\    val c = Cfg(..base, name: "a name long enough to push the list past the width", revalidate: 60);
+        \\}
+    , src);
+}
+
+test "format: catch ---- the tail form gains no `try`" {
+    // `(e catch h)` is legal, alone and as an operand; with a `try` it is
+    // `try-await-operand` (decision 137).
+    const src =
+        \\fn f() -> i32 {
+        \\    assert (parse(7) catch -1) == 7;
+        \\    val a = parse(4) catch 0;
+        \\    val b = 1 + (parse(4) catch 0);
+        \\    take(parse(1) catch 2);
+        \\    return parse(5) catch throw Error(msg: "failed");
+        \\}
+    ;
+    try h.assertFormatLossless(std.testing.allocator, src);
+    try h.assertIdempotent(std.testing.allocator, src);
+}
+
+test "format: catch ---- a written `try` is kept" {
+    const src =
+        \\fn f() -> i32 {
+        \\    val a = try parse(4) catch 0;
+        \\    take(try parse(1) catch 2);
+        \\    val #(x, y) = try fetch() catch throw Error(msg: "failed");
+        \\    return try parse(5) catch -1;
+        \\}
+    ;
+    try h.assertFormatLossless(std.testing.allocator, src);
+    try h.assertIdempotent(std.testing.allocator, src);
+}
