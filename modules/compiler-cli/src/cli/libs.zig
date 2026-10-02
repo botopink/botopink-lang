@@ -60,20 +60,24 @@ pub const Error = error{
 /// `parseEnvRootsString`.
 pub const ENV_VAR = "BOTOPINK_LIB_ROOTS";
 
-/// `$XDG_CACHE_HOME/botopink/<sub>`, else `$HOME/.cache/botopink/<sub>` — the
-/// per-user cache every checkout, worktree and gate of this machine shares,
-/// beside `bpmp`'s store (`$XDG_CACHE_HOME/bpmp`). Its stores are content-keyed
-/// (`test_cmd.zig`'s `.beam` cache, `build.zig`'s erlang verdict cache), so an
-/// entry from another compiler or another source is a miss, never a wrong
-/// answer. Null (no cache) when neither variable is set to an absolute path.
-/// `botopink clean` does not reach it; each store reaps itself.
-pub fn userCacheDir(arena: std.mem.Allocator, env_map: EnvMap, sub: []const u8) ?[]const u8 {
-    const m = env_map orelse return null;
-    if (m.get("XDG_CACHE_HOME")) |v| if (v.len > 0 and std.fs.path.isAbsolute(v))
-        return std.fs.path.join(arena, &.{ v, "botopink", sub }) catch null;
-    if (m.get("HOME")) |v| if (v.len > 0 and std.fs.path.isAbsolute(v))
-        return std.fs.path.join(arena, &.{ v, ".cache", "botopink", sub }) catch null;
-    return null;
+/// Where every build cache of a compilation lives, below its cache root
+/// (decision 225): deleting the root's `.botopinkbuild/` deletes them all.
+pub const CACHE_DIR = ".botopinkbuild/cache";
+
+/// The directory whose `.botopinkbuild/cache/` holds `proj`'s build caches:
+/// the root of the workspace it is a member of — so the members of one
+/// library repository share one cache — else the project's own directory.
+pub fn cacheRoot(proj: config.ProjectConfig) []const u8 {
+    return if (proj.workspace) |ws| ws.dir else proj.dir;
+}
+
+/// `<cacheRoot(proj)>/.botopinkbuild/cache/<store>` — the home of one
+/// content-keyed store (`test_cmd.zig`'s `.beam` cache, `build.zig`'s erlang
+/// verdict cache). Nothing here reads the environment: a cache in the user's
+/// home is one `rm -rf .botopinkbuild` and `botopink clean` cannot reach, and
+/// one a `--cold` gate still answers from.
+pub fn cacheDir(arena: std.mem.Allocator, proj: config.ProjectConfig, store: []const u8) ![]const u8 {
+    return std.fs.path.join(arena, &.{ cacheRoot(proj), CACHE_DIR, store });
 }
 
 /// Resolve the ordered list of library roots — directories that directly hold a

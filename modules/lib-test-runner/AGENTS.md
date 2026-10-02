@@ -42,7 +42,7 @@ lib-test-runner/
     ├── discovery.zig    ← `manifest.scanRoots` over the roots (packages + workspace members), "has tests" probe, `libSupportsTarget` (the one rule that says whether a pair is a cell), problems + unit tests (fixtures: ../manifest/tests/fixtures)
     ├── runner.zig       ← per-(lib,target) `botopink test` spawn (or `botopink build` for a test-less lib), split into `capture*` (spawn, capture, classify — thread-safe, writes nothing) and `emit*` (the cell's output, exactly as a serial run wrote it) + the cell's failed-test tally, read from the child's run total + the restriction audit (`captureAudit`, `classifyAudit`, `emitAudit`)
     ├── doc_quotes.zig   ← a workspace document quoting the tool's member list is checked against the tool + unit tests
-    ├── schedule.zig     ← the order the pool STARTS cells in: the machine's duration history (`$XDG_CACHE_HOME/botopink/lib-test/durations.tsv`), longest last time first, unknown cells first + unit tests
+    ├── schedule.zig     ← the order the pool STARTS cells in: the duration history of each cell's cache root (`<root>/.botopinkbuild/cache/lib-test/durations.tsv`), longest last time first, unknown cells first + unit tests
     └── matrix.zig       ← Status enum, lib×target matrix render, summary + unit tests
 ```
 
@@ -352,11 +352,15 @@ each cell as it reaches it (the serial runner).
 starts the slowest cell whenever discovery reaches it, and the run then waits
 for it alone: onze-cli, discovered late, was 222 s of a 473 s `test-libs`
 stage, started at 244 s. Each worker therefore claims the cells in descending
-order of how long they took last time — the machine's duration history,
+order of how long they took last time — the duration history,
 `<ms>\t<lib>\t<target>\t<kind>` lines in
-`$XDG_CACHE_HOME/botopink/lib-test/durations.tsv` (else
-`$HOME/.cache/botopink/lib-test/durations.tsv`), rewritten after every run by
-staging and renaming — with the cells it has no time for first (a new cell may
+`<root>/.botopinkbuild/cache/lib-test/durations.tsv`, one file per cache root
+(`schedule.cacheRoot`: the workspace root of the cell's library, else the
+library's own directory — where `botopink test` keeps that library's caches,
+decision 225), each holding its own libraries' cells, all read before the
+start order is taken and each rewritten after every run by staging and
+renaming; deleting the root's `.botopinkbuild/` (or `gate.sh --cold`) deletes
+it — with the cells it has no time for first (a new cell may
 be the long one) and plan order among ties. The history is a hint and nothing
 else: every spawning cell still runs exactly once, the output is still emitted
 in plan order (so `--jobs 1` and the default print the same bytes), and a

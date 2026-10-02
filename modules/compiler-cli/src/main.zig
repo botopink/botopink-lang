@@ -86,8 +86,9 @@ const HELP =
     \\`clean` takes no option. It deletes out/ and .botopinkbuild/ whole: the
     \\comptime scratch (.botopinkbuild/tmp/), the run directories of `test` and
     \\the `bpmp install` links under .botopinkbuild/deps/ (run `bpmp install`
-    \\again after it). The machine-wide .beam cache of `test --target erlang`
-    \\($XDG_CACHE_HOME/botopink/beam) is not touched.
+    \\again after it) and every build cache (.botopinkbuild/cache/: the erlang
+    \\verdicts of `build`, the .beam files of `test --target erlang`). In a
+    \\workspace member, the workspace root's .botopinkbuild/cache/ goes too.
     \\
     \\`botopink <command> --help` (or -h) prints this message.
     \\
@@ -174,7 +175,7 @@ fn dispatch(init: std.process.Init) !u8 {
 
     if (std.mem.eql(u8, cmd, "clean")) {
         parseNoOpts(rest, &diag) catch |err| return usageError(cmd, err, diag);
-        return clean_cmd.run(io);
+        return clean_cmd.run(gpa, io);
     }
 
     if (std.mem.eql(u8, cmd, "migrate")) {

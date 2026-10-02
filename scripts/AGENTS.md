@@ -128,7 +128,10 @@ or an `erl` that does not answer, stops the gate there with the compiler's messa
 on PATH ``), `zig build -Doptimize=ReleaseSafe` (§ Build mode), `scripts/format-check.sh` (`botopink
 format --check` over the compiler's canonical `.bp` trees — decision 66's
 caller), `zig build test` (`--cold` deletes
-`modules/compiler-core/.botopinkbuild/runtime-cache` first),
+`modules/compiler-core/.botopinkbuild/runtime-cache` first, and every
+`.botopinkbuild/cache/` under this checkout and each sibling library repository
+— the erlang verdicts, the `.beam` cache, the cell durations, decision 225 —
+printing `gate: --cold deleted <dir>` for each),
 `snap_audit.sh --mode=runtime-parity` (front 18 step 4: the codegen tree under
 both comptime runtimes, pairs equal but for their listing sections), `zig build
 test-bpmp`, `scripts/beam_export_audit.sh`, `zig build test-cli`, `zig build

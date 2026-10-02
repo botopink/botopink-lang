@@ -202,7 +202,7 @@ fn run(init: std.process.Init) !u8 {
     }
 
     // The order the workers START the spawning cells in (`schedule.zig`): the
-    // longest last time first, from the machine's duration history. It moves
+    // longest last time first, from the cache roots' duration histories. It moves
     // when a cell runs, never whether it runs or where it is printed.
     const spawning = try arena.alloc(usize, spawned);
     const keys = try arena.alloc([]const u8, spawned);
@@ -215,8 +215,20 @@ fn run(init: std.process.Init) !u8 {
             k += 1;
         }
     }
-    const history_path = schedule.path(arena, init.environ_map);
-    var history: schedule.History = if (history_path) |hp| schedule.load(arena, io, hp) else .empty;
+    // One history per cache root (`schedule.cacheRoot`), each holding its own
+    // libraries' cells; the start order reads them all at once.
+    const cell_files = try arena.alloc([]const u8, spawned);
+    var files: std.StringArrayHashMapUnmanaged(schedule.History) = .empty;
+    var history: schedule.History = .empty;
+    for (spawning, 0..) |i, k| {
+        cell_files[k] = try schedule.path(arena, schedule.cacheRoot(arena, io, plan[i].lib.dir));
+        const gop = try files.getOrPut(arena, cell_files[k]);
+        if (!gop.found_existing) {
+            gop.value_ptr.* = schedule.load(arena, io, cell_files[k]);
+            var it = gop.value_ptr.iterator();
+            while (it.next()) |e| try history.put(arena, e.key_ptr.*, e.value_ptr.*);
+        }
+    }
     const by_time = try schedule.order(arena, keys, &history);
     const start_order = try arena.alloc(usize, spawned);
     for (by_time, 0..) |k, j| start_order[j] = spawning[k];
@@ -283,10 +295,18 @@ fn run(init: std.process.Init) !u8 {
 
     // Every spawning cell has run: remember how long each took, for the next
     // run's start order.
-    if (history_path) |hp| {
-        const times = try arena.alloc(u64, spawned);
-        for (spawning, 0..) |i, k| times[k] = plan[i].wall_ms;
-        schedule.store(arena, io, hp, &history, keys, times);
+    {
+        var fit = files.iterator();
+        while (fit.next()) |f| {
+            var own_keys: std.ArrayListUnmanaged([]const u8) = .empty;
+            var own_times: std.ArrayListUnmanaged(u64) = .empty;
+            for (spawning, 0..) |i, k| {
+                if (!std.mem.eql(u8, cell_files[k], f.key_ptr.*)) continue;
+                try own_keys.append(arena, keys[k]);
+                try own_times.append(arena, plan[i].wall_ms);
+            }
+            schedule.store(arena, io, f.key_ptr.*, f.value_ptr, own_keys.items, own_times.items);
+        }
     }
 
     if (opts.json) {
