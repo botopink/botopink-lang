@@ -835,6 +835,29 @@ A `reject/` `.expect` names a short key phrase of the diagnostic decision 8 sket
 `not exhaustive`, `removed-loop-parenthesised`…) and the location of the offending token. The front
 that implements the diagnostic fixes its final wording and updates the `.expect` in the same change.
 
+## Who adds a cell — the owner rule
+
+A cell is added **in the commit of the front whose fix it asserts**: one new file per cell (its
+`.out` / `.expect` / `.exit` / `.targets` beside it, or one `modules/<name>/` directory), no edit to a
+cell another front added, no shared file to append to. The commit message says the cell was **red on
+the parent binary** — the compiler built at that commit's parent — with the line that failed: a cell
+that never failed proves nothing. A **pin** (a rule that already holds, a defect that no longer
+reproduces) says so in the message instead, and names what it guards.
+
+The cell's header comment (`////`) names where it comes from, spelled by milestone:
+
+- **1.0.11-beta** — the front's directory below `specs/1.0.11-beta/` in the meta workspace and its
+  step (`01-compiler/02-erlang step 1`, `00-gate/111-gate-beam-and-targets`), a decision by its
+  number, a language gap by its row in `language-gaps.md` (`T10`);
+- **1.0.10-beta and earlier** — frozen: the spellings cells already carry (`00 · 01-checker`, `C-16`,
+  `01 step 4`) resolve against that milestone's record and are not respelled.
+
+A cell that cannot pass is never tolerated here (§ A red cell is red): the front that owes the fix
+lands it with the cell, or a decision deletes the cell. The cells the milestone's area fronts owe are
+listed in `specs/1.0.11-beta/01-compiler/12-language-tests/README.md` § Step 2 and audited at the
+close — each exists, passes on every target it declares, and its commit says it was red on the
+parent.
+
 ## Status and the gate
 
 **Fronts `111-gate-beam-and-targets` and `110-gate-wasm` of 1.0.11-beta — the suite on four
