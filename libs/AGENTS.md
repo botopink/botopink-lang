@@ -32,6 +32,7 @@ libs/
 ├── AGENTS.md          ← you are here
 ├── std/               ← standard library (embedded in the compiler)
 ├── routing/           ← bundled route matcher + routing wires (decision 115)
+├── http/              ← bundled codecs of HTTP semantics (decision 196)
 ├── actions/           ← bundled server-action protocol (decision 116)
 ├── validation/        ← bundled constraint validation (decision 116)
 └── log/               ← bundled levels, renderers, error digest, Logger (decisions 194, 195)
@@ -43,6 +44,7 @@ libs/
 |---|---|---|---|
 | `std/` | primitive interfaces, builtins, and the importable `std` modules | yes — `build.zig` embeds the files; `modules/compiler-core/src/comptime/stdlib/prelude.zig` exposes them | [link](std/AGENTS.md) |
 | `routing/` | the route matcher and the routing wires both halves run — route table, `k`/`z` blobs, URL rules, navigation signals (`nav:`), the `:param` grammar; pure `.bp`, erlang + commonJS, imports std only | yes — bundled by name (decision 115, `01-std/04-routing-lib` Step 2) | [link](routing/AGENTS.md) |
+| `http/` | the codecs of HTTP semantics rakun and onze both read and write — `cookie` (first-wins reader, decision 181; `Set-Cookie` writer), `accept` (the strict q-value, decision 182; `Accept` / `Accept-Encoding` / `Accept-Language`), `mime`, `status`, `date` (HTTP-date), `byteRange`, `cacheControl`; no wire parser, no compression; pure `.bp`, erlang + commonJS, imports std only | yes — bundled by name (decision 196, `1.0.11-beta/03-bundled-libs/104-http`) | [link](http/AGENTS.md) |
 | `actions/` | the server-action protocol both halves read and write — the `state` grammar and `ActionState`, the v1 envelope (`redirect` derived from `n`), the JSON-RPC body, `refresh`; pure `.bp`, erlang + commonJS, imports std and routing only, names no field or header | yes — bundled by name (decision 116, `01-std/05-actions-lib` Step 6) | [link](actions/AGENTS.md) |
 | `validation/` | constraint markers, `#[validated]`, the violation report and constraint table, typed coercion — one source for erlang and commonJS; the message lookup is injected (`setMessageSource`) | yes — bundled by name (decision 116, `01-std/06-validation-lib` Step 5) | [link](validation/AGENTS.md) |
 | `log/` | the five levels, `LogRecord`, the ECS / GELF / logstash / plain renderers, the one error digest (`errorDigest`, decision 194) and a `Logger` whose sink is injected (`setSink`; default: OTP `logger` / node `console`) — `Logger.logError` writes the error record and answers its digest; `.bp` only — three inline host cells (the sink slot, the default write) —, erlang + commonJS, imports std only | yes — bundled by name (decision 195, `03-bundled-libs/106-log` Step 1) | [link](log/AGENTS.md) |

@@ -5,7 +5,7 @@
 #
 # TREES names the trees the gate holds canonical: every `.bp` and `.d.bp` under
 # each (nested projects included) — `examples` (every example project and
-# `hello.bp`), `libs/std` and the four bundled libraries, the CLI's and the
+# `hello.bp`), `libs/std` and the bundled libraries, the CLI's and the
 # manifest module's fixtures and `tests/language` — every tracked `.bp` of this
 # checkout is under one of them. What
 # the walk leaves out is structural — hidden directories, `node_modules`,
@@ -43,6 +43,7 @@ TREES=(
     libs/actions
     libs/validation
     libs/log
+    libs/http
     modules/compiler-cli/tests
     modules/manifest/tests
     tests/language

@@ -1,0 +1,166 @@
+//// http: proactive negotiation, known answers over the RFC 9110 § 12
+//// examples, on both targets.
+
+import {testing.asserts} from "std";
+import {qValue, parseAccept, mediaQuality, negotiateMedia, tokenQuality, negotiateToken, parseAcceptLanguage, MediaRange, LanguageRange} from "accept";
+
+fn rfcAccept() -> string {
+    return "text/*;q=0.3, text/plain;q=0.7, text/plain;format=flowed, text/plain;format=fixed;q=0.4, */*;q=0.5";
+}
+
+fn languages(header: string) -> string {
+    return parseAcceptLanguage(header)
+        .map({ r -> r.tag + "=" + r.q.toString() })
+        .join("|");
+}
+
+test "http: qValue reads the strict grammar (decision 182)" {
+    try asserts.equals(qValue("1"), 1000);
+    try asserts.equals(qValue("1."), 1000);
+    try asserts.equals(qValue("1.000"), 1000);
+    try asserts.equals(qValue("0"), 0);
+    try asserts.equals(qValue("0.8"), 800);
+    try asserts.equals(qValue("0.125"), 125);
+    try asserts.equals(qValue("0.05"), 50);
+}
+
+test "http: a malformed qValue reads as 0" {
+    try asserts.equals(qValue(""), 0);
+    try asserts.equals(qValue(" 0.5"), 0);
+    try asserts.equals(qValue(".5"), 0);
+    try asserts.equals(qValue("0.1234"), 0);
+    try asserts.equals(qValue("1.5"), 0);
+    try asserts.equals(qValue("1.001"), 0);
+    try asserts.equals(qValue("2"), 0);
+    try asserts.equals(qValue("0.5a"), 0);
+    try asserts.equals(qValue("-0"), 0);
+    try asserts.equals(qValue("0.+5"), 0);
+}
+
+test "http: RFC 9110 12.5.1 - the quality table of the precedence example" {
+    try asserts.equals(
+        mediaQuality(rfcAccept(), "text/plain;format=flowed"),
+        1000,
+    );
+    try asserts.equals(mediaQuality(rfcAccept(), "text/plain"), 700);
+    try asserts.equals(mediaQuality(rfcAccept(), "text/html"), 300);
+    try asserts.equals(mediaQuality(rfcAccept(), "image/jpeg"), 500);
+    try asserts.equals(
+        mediaQuality(rfcAccept(), "text/plain;format=fixed"),
+        400,
+    );
+}
+
+test "http: RFC 9110 12.5.1 - audio/basic over the rest of audio" {
+    val header = "audio/*; q=0.2, audio/basic";
+    try asserts.equals(mediaQuality(header, "audio/basic"), 1000);
+    try asserts.equals(mediaQuality(header, "audio/mpeg"), 200);
+    try asserts.equals(mediaQuality(header, "video/mp4"), 0);
+    try asserts.equals(
+        negotiateMedia(header, ["audio/mpeg", "audio/basic"]),
+        "audio/basic",
+    );
+}
+
+test "http: RFC 9110 12.5.1 - text/html and text/x-c over text/x-dvi over text/plain" {
+    val header = "text/plain; q=0.5, text/html, text/x-dvi; q=0.8, text/x-c";
+    try asserts.equals(
+        negotiateMedia(header, ["text/plain", "text/x-dvi"]),
+        "text/x-dvi",
+    );
+    try asserts.equals(
+        negotiateMedia(header, ["text/plain", "text/x-c", "text/html"]),
+        "text/x-c",
+    );
+    try asserts.equals(negotiateMedia(header, ["image/png"]), "");
+}
+
+test "http: parseAccept keeps order, lowercases, and drops what does not parse" {
+    val ranges = parseAccept(
+        "Text/HTML;Level=1;q=0.5;ext=x, */html, bad, a/b;q, text/plain;charset=UTF-8",
+    );
+    try asserts.equals(ranges.length, 2);
+    val first = ranges
+        .at(0)
+        .unwrapOr(MediaRange(mainType: "", subType: "", params: [], q: 0));
+    try asserts.equals(first.mainType + "/" + first.subType, "text/html");
+    try asserts.equals(first.q, 500);
+    try asserts.equals(
+        first.params.map({ p -> p.0 + "=" + p.1 }).join(";"),
+        "level=1",
+    );
+    val second = ranges
+        .at(1)
+        .unwrapOr(MediaRange(mainType: "", subType: "", params: [], q: 0));
+    try asserts.equals(
+        second.params.map({ p -> p.0 + "=" + p.1 }).join(";"),
+        "charset=utf-8",
+    );
+    try asserts.equals(second.q, 1000);
+}
+
+test "http: an empty Accept accepts anything; a lenient q no longer does" {
+    try asserts.equals(mediaQuality("", "application/json"), 1000);
+    try asserts.equals(mediaQuality("text/html;q=0.5000", "text/html"), 0);
+    try asserts.equals(mediaQuality("text/html;q=.5", "text/html"), 0);
+    try asserts.equals(
+        negotiateMedia(
+            "text/html;q=2, application/json;q=0.1",
+            ["text/html", "application/json"],
+        ),
+        "application/json",
+    );
+}
+
+test "http: RFC 9110 12.5.3 - the Accept-Encoding examples" {
+    try asserts.equals(tokenQuality("compress, gzip", "gzip"), 1000);
+    try asserts.equals(tokenQuality("compress, gzip", "br"), 0);
+    try asserts.equals(tokenQuality("compress, gzip", "identity"), 1000);
+    try asserts.equals(tokenQuality("", "gzip"), 0);
+    try asserts.equals(tokenQuality("", "identity"), 1000);
+    try asserts.equals(tokenQuality("*", "br"), 1000);
+    try asserts.equals(
+        tokenQuality("compress;q=0.5, gzip;q=1.0", "compress"),
+        500,
+    );
+    val h = "gzip;q=1.0, identity; q=0.5, *;q=0";
+    try asserts.equals(tokenQuality(h, "gzip"), 1000);
+    try asserts.equals(tokenQuality(h, "identity"), 500);
+    try asserts.equals(tokenQuality(h, "deflate"), 0);
+    try asserts.equals(tokenQuality("*;q=0", "identity"), 0);
+    try asserts.equals(tokenQuality("GZIP", "gzip"), 1000);
+}
+
+test "http: negotiateToken takes the highest weight above zero, ties by offer order" {
+    try asserts.equals(
+        negotiateToken("gzip;q=0.5, deflate", ["gzip", "deflate"]),
+        "deflate",
+    );
+    try asserts.equals(
+        negotiateToken("gzip, deflate", ["gzip", "deflate"]),
+        "gzip",
+    );
+    try asserts.equals(negotiateToken("br", ["gzip", "deflate"]), "");
+    try asserts.equals(
+        negotiateToken("gzip;q=0.5000, deflate;q=0.1", ["gzip", "deflate"]),
+        "deflate",
+    );
+}
+
+test "http: RFC 9110 12.5.4 - the Accept-Language example" {
+    try asserts.equals(
+        languages("da, en-gb;q=0.8, en;q=0.7"),
+        "da=1000|en-gb=800|en=700",
+    );
+}
+
+test "http: parseAcceptLanguage sorts by weight, stably, and keeps exclusions" {
+    try asserts.equals(
+        languages("en;q=0.5, pt-BR, *;q=0, es-419;q=0.5"),
+        "pt-BR=1000|en=500|es-419=500|*=0",
+    );
+    try asserts.equals(
+        languages("en_US, toolonglang, 1en, pt-, fr;q=abc, de"),
+        "de=1000|fr=0",
+    );
+}

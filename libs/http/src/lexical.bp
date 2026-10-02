@@ -1,0 +1,124 @@
+//// http/lexical — the character classes every codec of the package reads
+//// with. Internal: `root.bp` does not export it.
+////
+//// Every class is a membership test over an ASCII alphabet, never a
+//// `charCodeAt`: a code unit on commonJS and a codepoint on erlang agree only
+//// below 128, and a character outside these alphabets is simply not a member.
+//// `String.slice` counts bytes on erlang and UTF-16 units on commonJS, so a
+//// substring is cut through `sub` / `charOf`.
+
+pub fn digitChars() -> string {
+    return "0123456789";
+}
+
+pub fn alphaChars() -> string {
+    return "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+}
+
+// RFC 9110 § 5.6.2 `tchar`.
+pub fn tokenChars() -> string {
+    return "!#$%&'*+-.^_`|~" + digitChars() + alphaChars();
+}
+
+// RFC 6265 § 4.1.1 `cookie-octet`: %x21 / %x23-2B / %x2D-3A / %x3C-5B /
+// %x5D-7E — printable ASCII without space, `"`, `,`, `;` and `\`.
+pub fn cookieOctetChars() -> string {
+    return "!#$%&'()*+-./0123456789:<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[]^_`abcdefghijklmnopqrstuvwxyz{|}~";
+}
+
+// Printable ASCII, space included (%x20-7E).
+pub fn printableChars() -> string {
+    return " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
+}
+
+pub fn charOf(s: string, i: i32) -> string {
+    return s.at(i).unwrapOr("");
+}
+
+pub fn sub(s: string, begin: i32, end: i32) -> string {
+    var out = "";
+    var i = begin;
+    val stop = if (end > s.length()) s.length() else end;
+    while (i < stop) {
+        out = out + charOf(s, i);
+        i = i + 1;
+    }
+    return out;
+}
+
+// True when every character of `s` is in `alphabet` (vacuously for `""`).
+pub fn allIn(s: string, alphabet: string) -> bool {
+    var ok = true;
+    var i = 0;
+    while (i < s.length()) {
+        if (alphabet.indexOf(charOf(s, i)) < 0) ok = false;
+        i = i + 1;
+    }
+    return ok;
+}
+
+pub fn isDigits(s: string) -> bool {
+    return (s != "") && allIn(s, digitChars());
+}
+
+pub fn isAlpha(s: string) -> bool {
+    return (s != "") && allIn(s, alphaChars());
+}
+
+pub fn isToken(s: string) -> bool {
+    return (s != "") && allIn(s, tokenChars());
+}
+
+pub fn isPrintable(s: string) -> bool {
+    return allIn(s, printableChars());
+}
+
+// The value a run of digits spells; the caller has checked `isDigits` and
+// keeps the run short enough for an `i32`.
+pub fn digitsValue(s: string) -> i32 {
+    var n = 0;
+    var i = 0;
+    while (i < s.length()) {
+        n = n * 10 + digitChars().indexOf(charOf(s, i));
+        i = i + 1;
+    }
+    return n;
+}
+
+// `n` written with at least `width` digits, zero-padded on the left.
+pub fn padded(n: i32, width: i32) -> string {
+    var out = n.toString();
+    while (out.length() < width) {
+        out = "0" + out;
+    }
+    return out;
+}
+
+// Integer division that agrees on both targets: `i32 / i32` is float
+// division on commonJS and integer division on erlang, so the remainder is
+// taken off first. Truncates toward zero.
+pub fn idiv(a: i32, b: i32) -> i32 {
+    return (a - a % b) / b;
+}
+
+// Strip the optional whitespace (SP / HTAB) RFC 9110 § 5.6.3 allows around a
+// list element or a parameter.
+pub fn trimOws(s: string) -> string {
+    var begin = 0;
+    var end = s.length();
+    while ((begin < end)
+        && ((charOf(s, begin) == " ") || (charOf(s, begin) == "\t"))) {
+        begin = begin + 1;
+    }
+    while ((end > begin)
+        && ((charOf(s, end - 1) == " ") || (charOf(s, end - 1) == "\t"))) {
+        end = end - 1;
+    }
+    return sub(s, begin, end);
+}
+
+// An `i32` read as an `i64` — an integer literal is `i32` and botopink has no
+// widening conversion, so it crosses a cell (std's `io/clock` does the same).
+#[@External.Node("""($0)""")]
+#[@External.Erlang("""($0)""")]
+pub declare fn wide(n: i32) -> i64;
