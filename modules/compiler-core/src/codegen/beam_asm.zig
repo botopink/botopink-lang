@@ -6011,13 +6011,16 @@ const Emitter = struct {
             },
             else => {},
         }
+        // The unary `'-'/1` BIF, as `erlc` writes `-X`: `0 - X` is not a
+        // negation for a float — `0 - 0.0` is `+0.0` where `-0.0` is the
+        // answer (and what `z * -1.0` and the erlang backend print).
         if (self.simpleTerm(inner)) |it| {
-            try beamEmitter.writeGcBif(self.out, .sub, self.min_live, &.{ Op.int(0), it }, Dst.xr(dest));
+            try beamEmitter.writeGcBif(self.out, .sub, self.min_live, &.{it}, Dst.xr(dest));
         } else {
             try self.lowerExprIntoX0(inner);
             const scratch = self.scratchBase();
             try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(scratch));
-            try beamEmitter.writeGcBif(self.out, .sub, scratch + 1, &.{ Op.int(0), Op.xr(scratch) }, Dst.xr(dest));
+            try beamEmitter.writeGcBif(self.out, .sub, scratch + 1, &.{Op.xr(scratch)}, Dst.xr(dest));
         }
     }
 

@@ -178,3 +178,37 @@ test "beam: ?. on an absent tuple element answers absent before the label is rea
         \\
     , &.{"{extfunc, erlang, element, 2}"});
 }
+
+// ── `-x` on a float ──────────────────────────────────────────────────────────
+
+test "beam: -x is the unary minus, so -0.0 is negative zero" {
+    // `-z` lowered to `0 - z`, which is `+0.0` for `z = 0.0` where `z * -1.0`
+    // (and the erlang backend's `-Z`) is `-0.0`. It is the `'-'/1` BIF now,
+    // as `erlc` writes `-X`. (commonJS prints `-0` and `0.0` for the first
+    // two lines — `04-js`'s row — so this is a beam fixture.)
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\fn neg(x: f64) -> f64 {
+        \\    return -x;
+        \\}
+        \\fn negi(x: i32) -> i32 {
+        \\    return -x;
+        \\}
+        \\fn main() {
+        \\    val z = 0.0;
+        \\    @print(-z);
+        \\    @print(z * -1.0);
+        \\    @print(neg(0.0));
+        \\    @print(neg(2.5));
+        \\    @print(negi(3) + 1);
+        \\    @print(-(z + 0.0));
+        \\}
+    ,
+        \\-0.0
+        \\-0.0
+        \\-0.0
+        \\-2.5
+        \\-2
+        \\-0.0
+        \\
+    , &.{"{gc_bif, '-', {f, 0}, "});
+}
