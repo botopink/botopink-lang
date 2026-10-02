@@ -8,8 +8,8 @@
 //// BASENAME, so `text.erl` was never shipped and `text:shout/1` died `undef`.
 ////
 //// commonJS and wasm refuse an `@External.Erlang`-only function
-//// (`commonJS.expect`, `wasm.expect`); beam is listed in
-//// `expected-failures.txt` with `modules/erlang_host_sidecar_shipped`.
+//// (`commonJS.expect`, `wasm.expect`); beam ships and loads `text.erl` the
+//// way `modules/erlang_host_sidecar_shipped` does.
 
 pub mod text;
 import {greet} from "text";

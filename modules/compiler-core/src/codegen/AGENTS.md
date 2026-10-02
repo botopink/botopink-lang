@@ -1535,6 +1535,75 @@ codegen/
 
 ### beam_asm
 
+- **Host `.erl` modules beside the program — `'__bp_load_siblings'/0`**
+  (`emitLoadSiblings`; 1.0.11-beta `00-gate` front 111). `botopink build
+  --target beam` copies the `<host>.erl` of every `#[@External.Erlang("<host>",
+  …)]` a package keeps beside its sources into `out/beam/`
+  (`cli/libs.zig` `shipErlSidecars`), and the `.S` calls it as
+  `{extfunc, <host>, …}`. Nothing assembles an `.erl`, so the ENTRY module
+  compiles and loads them, first thing in `'_botopink_main'/0`:
+  `'__bp_load_siblings'/0` asks `code:which/1` where its own `.beam` was loaded
+  from and walks `<that directory>/*.erl` with `'-bp_load_sibling-'/1` — a
+  module already loadable (`code:ensure_loaded/1`: somebody compiled it) is
+  left alone, the rest goes through `compile:file(Src, [binary,
+  return_errors])` and `code:load_binary/3`. A module that does not compile
+  REFUSES THE RUN — `error: <src> does not compile - refusing to run`, the
+  compiler's diagnostic, `halt(1)` (decision 67) — where its first call would
+  be `undef` at the caller. A module loaded from no file (`code:which/1`
+  answers an atom) has no directory to read. So a built beam program runs
+  wherever `out/beam/` is on the code path, with no runner in between; the
+  `.beam`s must sit beside the `.S` files (`erlc +from_asm -o out/beam`, which
+  is what `botopink run --target beam` does). It is the BEAM twin of the erlang
+  TEST runner's function of the same name (`erlang.zig` `testRunnerForms`); the
+  erlang BUILD has no loader of its own — `botopink run --target erlang`
+  compiles `out/erl/*.erl` — and that row is `02-erlang`'s.
+  **Which modules carry it** (`buildBindsBeamHost`): an entry (a module with
+  `main/0`) of a build in which some module declares a BEAM host binding of its
+  own — a `declare fn`, or a `type` or one of its methods, under
+  `#[@External.Erlang(…)]` / `#[@External.Beam(…)]`. A `behavior`'s bindings
+  are not read: a host-bound behavior method is the prelude's vocabulary
+  (spliced into a program that calls a primitive `default fn`), and it names
+  OTP alone. Every other program's `.S` is unchanged. The refusal message goes
+  through `file:write/2`, so a module's text names `io, format` only when the
+  program prints (`runtime.zig` `beamAsmCodeWritesOutput`). Pinned by the
+  language cells `modules/erlang_host_sidecar_shipped` and
+  `modules/erlang_sidecar_named_like_a_module` on beam (the loader running
+  over a real sidecar), and by the 13 `external_*` beam snapshots whose entry
+  gained the two functions with an unchanged RUN LOG.
+
+- **A host answer is adopted into its record — `'__bp_adopt'/3`**
+  (`hostAdoption`, `ensureAdoptHelper`, `writeAdoptCall`): the erlang backend's
+  helper of the same name, written instruction by instruction with its two
+  walkers `'-bp_adopt_fields-'/2` and `'-bp_adopt_each-'/3`. A host-backed
+  `declare fn` whose return type names a record (looked through `?T`, `T[]`,
+  `@Result`, `@Option`, `@Future`, `Array` — `recordNameOfReturn`) adopts what
+  the host hands back: a map becomes `{Tag, F1, …}` in declared field order, a
+  list adopts element by element, `{ok, V}` adopts inside the ok arm, a tagged
+  value passes through. It is applied where the host call is lowered —
+  `lowerExternalCall` (the host call is then never the tail call; the
+  adoption is) and the `pub` wrapper (`emitHostWrapper`) — so a host method of
+  a type, which reaches `lowerExternalCall` through its hidden declaration
+  (`withHostMethodBodies`), is covered by the same site. Before it a template
+  that builds `#{x => 7, y => 9}` was read positionally: `badarg` from
+  `element/2`, `badarith` from `+` over two maps
+  (`run/external_host_record`, `run/external_method_on_host_record`, which now
+  run on beam).
+
+- **A trailing spread written as a bare name** (`lowerArrayLit`): an array
+  literal's spread arrives in `spreadExpr` for an expression and in `spread`
+  for a name (`[1, 2, ..rest]`). Only the first was read, so the literal was
+  its own elements and `list[3]` read past the end — at exit 0
+  (`run/array_spread_literal`). Both are the tail `lowerListOf` conses onto.
+
+- **A method on an untyped receiver that one type of the file declares**
+  (`soleOwnTypeOfMethod`, `programMethodDeclarers`; `lowerCall`): inference
+  records no lowering for a lambda parameter typed through a generic
+  (`r.map({ p -> p.at(0) })`), and a file function of the same name and arity
+  used to take the call as `at(P, 0)`. The call now goes into the one type of
+  the file whose module holds `at/2` — the erlang backend's `method_owners`
+  rule — and to the value when a second type of the PROGRAM declares the
+  method (`lowerDynamicMethodCall`). `run/external_method_on_host_record`.
+
 - **Module-level `var`s — `@BeamMemory`** (front 17 step 5): the erlang
   lowering in assembly. The reader `name/0` (`emitMemoryReader`) and every
   write no register shadows (`emitAssign` → `emitMemoryWrite`) reach

@@ -11,8 +11,8 @@
 //// method's `at/2` in the type's module and the file's `at/2` must not be
 //// confused where the receiver is a lambda parameter.
 ////
-//// `.targets` is `commonJS erlang`, as `run/external_host_record`'s: beam
-//// adopts no host map yet and wasm has no host.
+//// `.targets` is `commonJS erlang beam`, as `run/external_host_record`'s:
+//// wasm has no host.
 
 pub type Pair(a: i32, b: i32) {
     #[@External.Node("""($1 === 0 ? $0.a : $0.b)"""),

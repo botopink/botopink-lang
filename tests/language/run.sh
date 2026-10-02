@@ -7,21 +7,27 @@
 #   tests/language/run.sh [--target commonJS|erlang|wasm|beam|all]
 #                         [--compiler <botopink>]
 #                         [--lib-root <dir>] [--only <path>] [--jobs <n>]
+#   tests/language/run.sh --self-test [--compiler <botopink>] [--lib-root <dir>]
 #
-#   --target    default `all` (commonJS, erlang and wasm — the targets
-#               `botopink run` executes directly). `beam` is supported and not
-#               in `all`; see § beam below.
+#   --target    default `all`: commonJS, erlang, wasm and beam — every target
+#               `botopink run` executes. A missing runtime fails the run; it
+#               never drops a target (decision 67).
 #   --compiler  the `botopink` binary; default <repo>/zig-out/bin/botopink
 #   --lib-root  where `from "std"` resolves; default <compiler>/../../libs
 #   --only      run one cell (e.g. test/case_arms.bp, modules/two_modules); may repeat
 #   --jobs      parallel cells; default one per CPU, bounded by memory
 #               (MemAvailable / 768 MiB) — § parallel cells below
+#   --suite     the directory holding test/, run/, reject/ and modules/; default
+#               this script's own. `--self-test` is its one caller.
+#   --self-test prove § the targets of a cell against synthetic cells: a
+#               narrowing the compiler does not back fails the run, one it backs
+#               schedules the cell on the declared targets alone. A whole run of
+#               the suite (no --only) starts with it.
 #
 # Four kinds, every cell in its own scratch project (a parse error fails only
 # that cell):
 #   test/<name>.bp     `botopink test --target <t> --json`; every test must pass
-#   run/<name>.bp      `botopink run --target <t>`; stdout must equal <name>.out
-#                      (on beam: run, then `erlc +from_asm out/*.S`, then `erl`).
+#   run/<name>.bp      `botopink run --target <t>`; stdout must equal <name>.out.
 #                      Three optional sidecars, each a claim about the cell:
 #                        <name>.exit         `nonzero` — the program must abort:
 #                                            stdout equals <name>.out AND the
@@ -39,8 +45,8 @@
 #                                            the active backend"
 #                        <name>.targets      the targets the cell is scheduled on
 #                                            (space-separated); absent = every
-#                                            target of the run. A cell's header
-#                                            comment says why a target is missing
+#                                            target of the run. Audited on every
+#                                            run — § the targets of a cell
 #   reject/<name>.bp   `botopink check`; must exit non-zero, stderr must contain
 #                      the first line of <name>.expect and ` --> src/main.bp:<L:C>`
 #                      where <L:C> is its second line — required: every refusal
@@ -57,7 +63,10 @@
 #                      (front 12 step 4.2; no network, nothing special here).
 #                      A project cell with a `test/` tree and no expected.out is
 #                      the test/ kind over the project: `botopink test --target
-#                      <t> --json` (commonJS and erlang), keyed <name>::<test>
+#                      <t> --json` (commonJS and erlang), keyed <name>::<test>.
+#                      `"targets"` in the cell's botopink.json narrows it the
+#                      way `<name>.targets` narrows a run/ cell, and is audited
+#                      the same way — § the targets of a cell
 #
 # expected-failures.txt — one line per expected failure, `|`-separated (test
 # names contain spaces):
@@ -96,6 +105,8 @@ compiler="$repo/zig-out/bin/botopink"
 lib_root=""
 jobs=""
 only=()
+suite=""
+self_test=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --target) target="$2"; shift 2 ;;
@@ -108,10 +119,22 @@ while [ $# -gt 0 ]; do
         --only=*) only+=("${1#*=}"); shift ;;
         --jobs) jobs="$2"; shift 2 ;;
         --jobs=*) jobs="${1#*=}"; shift ;;
-        -h|--help) sed -n '2,60p' "$0"; exit 0 ;;
+        --suite) suite="$2"; shift 2 ;;
+        --suite=*) suite="${1#*=}"; shift ;;
+        --self-test) self_test=1; shift ;;
+        -h|--help) sed -n '2,70p' "$0"; exit 0 ;;
         *) echo "run.sh: unknown argument '$1'" >&2; exit 2 ;;
     esac
 done
+runner="$here/$(basename "${BASH_SOURCE[0]}")"
+# The cells are read from `$here`; `--suite` points it at another tree.
+whole_suite=0
+if [ -n "$suite" ]; then
+    [ -d "$suite" ] || { echo "run.sh: --suite is not a directory: $suite" >&2; exit 2; }
+    here="$(cd "$suite" && pwd)"
+elif [ ${#only[@]} -eq 0 ] && [ $self_test -eq 0 ]; then
+    whole_suite=1
+fi
 
 # ── § parallel cells ─────────────────────────────────────────────────────────
 # Every cell is its own scratch project and writes its verdict to its own
@@ -129,30 +152,59 @@ done
 pool_check_jobs "$jobs" run.sh
 
 # ── § beam ────────────────────────────────────────────────────────────────────
-# `botopink run --target beam` writes `out/*.S` and stops — BEAM Assembly is an
-# artifact, not a run. It is two commands from being one (decision 8, measured at
-# `c2dd780`):
+# `botopink run --target beam` is a run like the other three: it builds
+# `out/beam/*.S`, assembles each beside itself and executes the entry —
 #
-#     $ botopink run --target beam        # wrote out/main.S
-#     $ (cd out && erlc +from_asm *.S)    # main.S → main.beam
-#     $ erl -noshell -pa out -eval "'language_tests@main':'_botopink_main'(), halt()."
+#     $ botopink run --target beam
+#     # = botopink build --target beam
+#     #   erlc +from_asm -o out/beam out/beam/*.S
+#     #   erl -noshell -pa out/beam -eval "'language_tests@main':main([]), halt()."
 #     hi
 #
-# `erlc` and `erl` are already gate dependencies (every erlang cell, and stage 5
-# `scripts/beam_export_audit.sh`), so beam costs no new tool. `exec_run` below is
-# that path, and `--target beam` runs it.
+# — so `exec_run` below has one arm. The `.beam`s sit beside the `.S` files
+# because that is where the build ships a host `.erl` (`#[@External.Erlang]`'s
+# module, `modules/erlang_host_sidecar_shipped`) and where the entry's
+# `'__bp_load_siblings'/0` compiles and loads it from.
+#
+# `erlc` and `erl` are gate dependencies already (every erlang cell, and
+# `scripts/beam_export_audit.sh`), so beam costs no new tool; a machine without
+# them fails the run below rather than run three targets and say "all".
 #
 # `botopink test` refuses beam, so only run/ and modules/ cells reach it — the
-# same rule wasm already lives under.
+# rule wasm lives under.
 #
-# beam is **not** in `all` yet, and that is scheduling, not doubt: front 13's
-# policy 3 changes how many `.S` files a program emits and where they live, so a
-# default-on runner would be written against a layout that is about to move, and
-# every beam line of `expected-failures.txt` would be re-derived under it.
-# Flipping it on is this one line — `all) targets=(commonJS erlang wasm beam)` —
-# plus re-running the beam cells; do it as 13's closing step.
+# ── § the targets of a cell ───────────────────────────────────────────────────
+# A cell runs on every target its kind has — test/ and a test-kind modules/
+# cell on commonJS and erlang (`botopink test` runs nowhere else), run/ and a
+# modules/ cell on all four — unless it NARROWS itself: `run/<name>.targets`
+# (space-separated) or `"targets"` in `modules/<name>/botopink.json`.
+#
+# A narrowing is a claim about the compiler, and the runner checks it on every
+# run (gate-d of `specs/1.0.11-beta/00-gate`): for each target of the run the
+# cell excludes, `botopink build --target <t>` in the cell must REFUSE the
+# program on a host binding —
+#
+#     `f` has no `#[@External.<Target>(…)]` for the <t> backend
+#     std-unsupported-on-target: std/<m> has no `@external` for target '<t>'
+#
+# — the one reason a program structurally has no row on a target. One host
+# binding the compiler does not refuse: a module `var` under
+# `#[@BeamMemory.<mode>]` binds BEAM storage, and decision 43 makes the
+# annotation a silent no-op off the BEAM, so a cell that declares one may
+# exclude commonJS and wasm on its own source's evidence (never erlang or
+# beam). A target the build accepts otherwise, or refuses for any other
+# reason, fails the run naming the cell: the narrowing was hiding a gap of that backend, and a gap is a row of
+# the backend's front, not a line in a `.targets` file. So is a narrowing that
+# names a target its kind does not have, an unknown one, the same one twice, or
+# every target of the kind (it narrows nothing: delete it). No flag, list or
+# environment variable turns the audit off (decision 67); `--self-test` shows
+# each refusal firing.
+#
+# A target a cell must be REFUSED on for a reason of its own — the claim is the
+# diagnostic — is not narrowed away: it is pinned with `<name>.<t>.expect`.
+ALL_TARGETS="commonJS erlang wasm beam"
 case "$target" in
-    all) targets=(commonJS erlang wasm) ;;
+    all) targets=(commonJS erlang wasm beam) ;;
     commonJS|erlang|wasm|beam) targets=("$target") ;;
     *) echo "run.sh: --target must be commonJS, erlang, wasm, beam or all (got '$target')" >&2; exit 2 ;;
 esac
@@ -170,6 +222,141 @@ work="$(mktemp -d "${TMPDIR:-/tmp}/bp-language-tests.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 
 RED=$'\033[0;31m'; GREEN=$'\033[0;32m'; YELLOW=$'\033[0;33m'; NC=$'\033[0m'
+
+# ── § self-test ───────────────────────────────────────────────────────────────
+# § the targets of a cell, shown firing. A synthetic suite — two narrowings the
+# compiler backs with a host-binding refusal, and one of each way a narrowing
+# is refused — is run through this script (`--suite`), and the report it prints
+# must hold exactly these lines. A runner whose audit stopped refusing would
+# print a green run over a narrowed suite; this is what reds instead.
+self_test() {
+    local st="$work/self-test" suite="$work/self-test/suite" missing=0 line
+    mkdir -p "$suite/run"
+    cell() { # <run cell name> <targets> — source on stdin, `.out` = `ok`
+        cat >"$suite/run/$1.bp"
+        printf 'ok\n' >"$suite/run/$1.out"
+        printf '%s\n' "$2" >"$suite/run/$1.targets"
+    }
+    project_cell() { # <modules cell name> <"targets" JSON> — src/main.bp on stdin
+        mkdir -p "$suite/modules/$1/src"
+        cat >"$suite/modules/$1/src/main.bp"
+        printf '{ "name": "language_tests", "version": "0.0.1", "src": "src/", "targets": %s }\n' "$2" >"$suite/modules/$1/botopink.json"
+        printf 'ok\n' >"$suite/modules/$1/expected.out"
+    }
+    # Backed: node binds the function, so erlang, wasm and beam refuse it.
+    cell backed "commonJS" <<'BP'
+#[@External.Node("""("ok")""")]
+declare fn host() -> string;
+
+pub fn main() {
+    @print(host());
+}
+BP
+    # Unbacked: nothing about the program is a host's, and wasm builds it.
+    cell unbacked "commonJS erlang beam" <<'BP'
+pub fn main() {
+    @print("ok");
+}
+BP
+    # Refused, but not on a host binding: no target compiles an unbound name.
+    cell refused_for_another_reason "commonJS erlang beam" <<'BP'
+pub fn main() {
+    @print(nowhere);
+}
+BP
+    # Decision 43: BEAM storage is a binding commonJS and wasm do not have …
+    cell beam_memory_backed "erlang beam" <<'BP'
+#[@BeamMemory.ProcessDict]
+var seen: i32 = 0;
+
+pub fn main() {
+    seen = 1;
+    @print("ok");
+}
+BP
+    # … and one the BEAM has: the annotation never excuses erlang or beam.
+    cell beam_memory_excludes_beam "commonJS erlang wasm" <<'BP'
+#[@BeamMemory.ProcessDict]
+var seen: i32 = 0;
+
+pub fn main() {
+    seen = 1;
+    @print("ok");
+}
+BP
+    cell narrows_nothing "commonJS erlang wasm beam" <<'BP'
+pub fn main() {
+    @print("ok");
+}
+BP
+    cell unknown_target "commonJS jvm" <<'BP'
+pub fn main() {
+    @print("ok");
+}
+BP
+    # Backed, by manifest: the BEAM binds the function, commonJS and wasm refuse it.
+    project_cell manifest_backed '["erlang", "beam"]' <<'BP'
+#[@External.Erlang("""<<"ok">>""")]
+declare fn host() -> string;
+
+pub fn main() {
+    @print(host());
+}
+BP
+    project_cell manifest_unbacked '["commonJS", "erlang"]' <<'BP'
+pub fn main() {
+    @print("ok");
+}
+BP
+    # A test-kind project cell never runs on wasm: naming it is malformed.
+    project_cell manifest_test_kind '["commonJS", "wasm"]' <<'BP'
+pub fn one() -> i32 {
+    return 1;
+}
+BP
+    rm "$suite/modules/manifest_test_kind/expected.out"
+    mkdir -p "$suite/modules/manifest_test_kind/test"
+    cat >"$suite/modules/manifest_test_kind/test/one_test.bp" <<'BP'
+import {one} from "main";
+
+test "one" {
+    assert one() == 1;
+}
+BP
+
+    bash "$runner" --suite "$suite" --target all --compiler "$compiler" --lib-root "$lib_root" --jobs "$jobs" >"$st/raw.txt" 2>&1
+    local code=$?
+    strip <"$st/raw.txt" >"$st/report.txt"
+    [ $code -eq 1 ] || { echo "self-test: the synthetic suite exited $code, expected 1" >&2; missing=1; }
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        grep -qF -- "$line" "$st/report.txt" || { echo "self-test: the report lacks: $line" >&2; missing=1; }
+    done <<'WANT'
+[wasm] run/unbacked.bp — excluded by run/unbacked.targets, but `botopink build --target wasm` accepts the cell
+[wasm] run/refused_for_another_reason.bp — excluded by run/refused_for_another_reason.targets, and wasm refuses it for another reason than a host binding
+[beam] run/beam_memory_excludes_beam.bp — excluded by run/beam_memory_excludes_beam.targets, but `botopink build --target beam` accepts the cell
+[*] run/narrows_nothing.bp — run/narrows_nothing.targets names every target the cell runs on, so it narrows nothing
+[*] run/unknown_target.bp — run/unknown_target.targets names `jvm`, which is no target
+[wasm] modules/manifest_unbacked — excluded by modules/manifest_unbacked/botopink.json "targets", but `botopink build --target wasm` accepts the cell
+[beam] modules/manifest_unbacked — excluded by modules/manifest_unbacked/botopink.json "targets", but `botopink build --target beam` accepts the cell
+[*] modules/manifest_test_kind — modules/manifest_test_kind/botopink.json "targets" names wasm, a target this kind of cell never runs on
+narrowings: 7 exclusions audited
+language tests: 13 passed, 0 expected failures, 11 failed
+WANT
+    # The three backed cells ran where they said and nowhere else: the tally
+    # above counts them (1 + 2 + 2 of the 13), and no line may name them.
+    if grep -qE 'run/backed\.bp|run/beam_memory_backed\.bp|modules/manifest_backed' "$st/report.txt"; then
+        echo "self-test: a narrowing that stands on a host binding was reported:" >&2
+        grep -E 'run/backed\.bp|run/beam_memory_backed\.bp|modules/manifest_backed' "$st/report.txt" >&2
+        missing=1
+    fi
+    if [ $missing -ne 0 ]; then
+        echo "self-test: FAILED — the synthetic suite's report was:" >&2
+        sed 's/^/    /' "$st/report.txt" >&2
+        return 1
+    fi
+    echo "self-test: 8 malformed or unbacked narrowings refused, 3 backed ones scheduled on their declared targets alone"
+}
 
 # ── collect the files ─────────────────────────────────────────────────────────
 files=()
@@ -200,53 +387,17 @@ strip() { sed -r 's/\x1b\[[0-9;]*m//g'; }
 quiet() { strip | grep -vE '^[[:space:]]*(Checking|Checked|Compiling|Compiled) ' || true; }
 
 # Run the project in <dir> on <target>: stdout in <dir>/stdout.txt, stderr in
-# <dir>/e.txt, the program's exit status returned.
-#
-# Every target but beam is `botopink run`. beam stops at an artifact, so its path
-# is three steps (§ beam at the top): compile, assemble **every** `out/*.S` with
-# `erlc +from_asm` (a multi-module project emits one `.S` per module), then
-# execute the entry module under `erl`. The compiler's own
-# "wrote out/main.S — BEAM Assembly is an artifact" notice goes to stdout and is
-# not program output, so it is kept out of the compared bytes.
+# <dir>/e.txt, the program's exit status returned. Every target is
+# `botopink run` — on beam that is build, `erlc +from_asm` beside the `.S`, and
+# `erl` on that directory (§ beam at the top).
 exec_run() { # <dir> <target>
-    local dir="$1" t="$2" mod=""
-    if [ "$t" != "beam" ]; then
-        (cd "$dir" && timeout 300 "$compiler" run --target "$t" >"$dir/stdout.txt" 2>"$dir/e.txt")
-        return $?
-    fi
-    : >"$dir/stdout.txt"
-    (cd "$dir" && timeout 300 "$compiler" run --target beam >"$dir/compile.txt" 2>"$dir/e.txt") || {
-        cat "$dir/compile.txt" >>"$dir/e.txt"
-        return 1
-    }
-    # Every `.S` under `out/`, not just the top level: today a `mod` tree and a
-    # `from "std"` import emit nested directories (`out/shapes/circle.S`,
-    # `out/std/…`), and a module left unassembled is an `undef` at run time, not
-    # a compile error. `-o "$dir/out"` puts every `.beam` where `-pa out` looks,
-    # which is also what front 13's policy 3 will make the emitter do by itself.
-    while IFS= read -r s; do
-        erlc +from_asm -o "$dir/out" "$s" || return 1
-    done < <(find "$dir/out" -name '*.S' | sort) 2>>"$dir/e.txt"
-    # The entry's atom starts with the package (decision 109): every cell's
-    # botopink.json is named `language_tests`.
-    if [ -f "$dir/out/language_tests@main.beam" ]; then
-        mod=language_tests@main
-    else
-        mod="$(cd "$dir/out" && ls -1 ./*.beam 2>/dev/null | head -1)"
-        mod="$(basename "${mod%.beam}")"
-    fi
-    [ -n "$mod" ] || { echo "error: erlc +from_asm produced no .beam" >>"$dir/e.txt"; return 1; }
-    # The entry is `'_botopink_main'/0`, as for the codegen snapshots
-    # (`runtime.executeBeamAsm`): it runs the module body — the `_` statements
-    # and the effectful module-level `val`s, in declaration order — and then
-    # `main/0`. Calling `main/0` directly skipped the module body.
-    (cd "$dir" && timeout 300 erl -noshell -pa out -eval "'$mod':'_botopink_main'(), halt()." \
-        >"$dir/stdout.txt" 2>>"$dir/e.txt")
+    local dir="$1" t="$2"
+    (cd "$dir" && timeout 300 "$compiler" run --target "$t" >"$dir/stdout.txt" 2>"$dir/e.txt")
 }
 
 project() { # <dir> <kind>
     mkdir -p "$1/src" "$1/test"
-    printf '{ "name": "language_tests", "version": "0.0.1", "src": "src/", "targets": ["commonJS", "erlang", "wasm"] }\n' > "$1/botopink.json"
+    printf '{ "name": "language_tests", "version": "0.0.1", "src": "src/" }\n' > "$1/botopink.json"
 }
 
 # `botopink test --json` in <dir>; one result line per test, keyed <path>::<name>,
@@ -393,51 +544,145 @@ run_one() { # <path> <target>
         *) printf '*\t%s\t%s\t%s\n' "$path" fail "not under test/, run/, reject/ or modules/" >"$work/r-$slug" ;;
     esac
 }
-export -f run_one test_project json_tests strip quiet project exec_run pool_job pool_admit pool_cpus
+# One exclusion of a narrowed cell, audited (§ the targets of a cell): build the
+# cell on the target it excludes and require a host-binding refusal. Result
+# status `audit` on a refusal the narrowing may stand on, `fail` otherwise.
+audit_one() { # <path> <excluded target> <the file that narrows>
+    local path="$1" t="$2" by="$3" slug dir out
+    slug="$(printf '%s-%s' "$path" "$t" | tr '/.' '__')"
+    dir="$work/x-$slug"; out="$work/r-audit-$slug"
+    rm -rf "$dir"
+    case "$path" in
+        modules/*) cp -R "$here/$path" "$dir" ;;
+        *) project "$dir"; cp "$here/$path" "$dir/src/main.bp" ;;
+    esac
+    export BOTOPINK_LIB_ROOTS="$lib_root"
+    (cd "$dir" && timeout 300 "$compiler" build --target "$t" >"$dir/o.txt" 2>"$dir/e.txt")
+    local code=$?
+    quiet <"$dir/o.txt" >"$dir/all.txt"; quiet <"$dir/e.txt" >>"$dir/all.txt"
+    if [ $code -eq 0 ] && [ "$t" != "erlang" ] && [ "$t" != "beam" ] && grep -rqE --include='*.bp' '^[[:space:]]*#\[@BeamMemory\.' "$dir"; then
+        # Decision 43: a `#[@BeamMemory.<mode>]` var binds BEAM storage, and
+        # off the BEAM the annotation is a silent no-op — the compiler cannot
+        # refuse what the language accepts, so the binding is read off the
+        # cell's own source.
+        printf '%s\t%s\t%s\t\n' "$t" "$path" audit >"$out"
+    elif [ $code -eq 0 ]; then
+        printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "excluded by $by, but \`botopink build --target $t\` accepts the cell — a narrowing stands on a host-binding refusal: let it run on $t, and a red there is a row of that backend's front" >"$out"
+    elif grep -qF -e 'has no `#[@External.<Target>(' -e 'std-unsupported-on-target:' "$dir/all.txt"; then
+        printf '%s\t%s\t%s\t\n' "$t" "$path" audit >"$out"
+    else
+        local first; first="$(grep -m1 -iE 'error' "$dir/all.txt" | tr '\t' ' ')"
+        printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "excluded by $by, and $t refuses it for another reason than a host binding (got: ${first:-no error line}) — pin a refusal with a .$t.expect, or let the cell run there" >"$out"
+    fi
+}
+export -f run_one test_project json_tests strip quiet project exec_run audit_one pool_job pool_admit pool_cpus
 export here work compiler lib_root
 
+if [ $self_test -eq 1 ]; then
+    self_test; exit $?
+fi
+# A whole run of the suite proves its own audit first: a green run from a
+# runner that no longer refuses says nothing.
+if [ $whole_suite -eq 1 ]; then
+    self_test || exit 1
+fi
+
 # ── dispatch ──────────────────────────────────────────────────────────────────
+# One line per job: <path>\t<target>\t<run | audit:<narrowing file>>.
 jobs_list="$work/jobs"
 : >"$jobs_list"
 mkdir -p "$work/inflight"
+
+# `"targets"` of every modules/ manifest, read once: <cell>\t<targets, space-
+# separated>. A manifest without the field has no line; one node cannot read,
+# or whose `targets` is not an array of strings, has `!` for its list.
+node -e '
+  const fs = require("fs"), path = require("path");
+  const root = process.argv[1];
+  let dirs = [];
+  try { dirs = fs.readdirSync(path.join(root, "modules")).sort(); } catch {}
+  for (const d of dirs) {
+    const file = path.join(root, "modules", d, "botopink.json");
+    if (!fs.existsSync(file)) continue;
+    let m;
+    try { m = JSON.parse(fs.readFileSync(file, "utf8")); } catch { console.log(`modules/${d}\t!`); continue; }
+    if (m.targets === undefined) continue;
+    const ok = Array.isArray(m.targets) && m.targets.every((t) => typeof t === "string" && /^[A-Za-z]+$/.test(t));
+    console.log(`modules/${d}\t${ok ? m.targets.join(" ") : "!"}`);
+  }' "$here" >"$work/manifest-targets"
+
+# Schedule <cell> of <kind targets…> under the narrowing <declared…> written in
+# <by>: a run job on each target of the run the cell keeps, an audit job on each
+# one it excludes — or one `*` failure when the narrowing itself is malformed.
+narrowed() { # <path> <by> <kind targets> <declared>
+    local f="$1" by="$2" kind="$3" declared="$4" t d seen="" why=""
+    for d in $declared; do
+        case " $ALL_TARGETS " in *" $d "*) ;; *) why="names \`$d\`, which is no target (one of: $ALL_TARGETS)"; break ;; esac
+        case " $kind " in *" $d "*) ;; *) why="names $d, a target this kind of cell never runs on (its targets: $kind)"; break ;; esac
+        case " $seen " in *" $d "*) why="names $d twice"; break ;; esac
+        seen="$seen $d"
+    done
+    if [ -z "$why" ]; then
+        [ -n "$seen" ] || why="names no target"
+        local missing=0
+        for t in $kind; do case " $seen " in *" $t "*) ;; *) missing=1 ;; esac; done
+        [ -n "$why" ] || [ $missing -eq 1 ] || why="names every target the cell runs on, so it narrows nothing: delete it"
+    fi
+    if [ -n "$why" ]; then
+        printf '*\t%s\tfail\t%s\n' "$f" "$by $why" >"$work/r-narrowing-$(printf '%s' "$f" | tr '/.' '__')"
+        return
+    fi
+    for t in "${targets[@]}"; do
+        case " $kind " in *" $t "*) ;; *) continue ;; esac
+        case " $seen " in
+            *" $t "*) printf '%s\t%s\trun\n' "$f" "$t" >>"$jobs_list" ;;
+            *) printf '%s\t%s\taudit:%s\n' "$f" "$t" "$by" >>"$jobs_list" ;;
+        esac
+    done
+}
+
 for f in "${files[@]}"; do
     f="${f%/}"
     if [ ! -f "$here/$f" ] && [ ! -d "$here/$f" ]; then
         echo "run.sh: no such cell: $f" >&2; exit 2
     fi
     case "$f" in
-        reject/*) printf '%s\t*\n' "$f" >>"$jobs_list" ;;
+        reject/*) printf '%s\t*\trun\n' "$f" >>"$jobs_list" ;;
         # `botopink test` refuses every target but commonJS and erlang, so a
         # test/ cell never runs on wasm or beam (see AGENTS.md § the targets).
         test/*) for t in "${targets[@]}"; do
                     [ "$t" = "wasm" ] || [ "$t" = "beam" ] && continue
-                    printf '%s\t%s\n' "$f" "$t" >>"$jobs_list"
+                    printf '%s\t%s\trun\n' "$f" "$t" >>"$jobs_list"
                 done ;;
-        run/*)  # `<name>.targets` narrows the cell to the targets it claims
-                local_targets=("${targets[@]}")
-                if [ -f "$here/${f%.bp}.targets" ]; then
-                    read -r -a declared <"$here/${f%.bp}.targets"
-                    local_targets=()
-                    for t in "${targets[@]}"; do
-                        for d in "${declared[@]}"; do [ "$t" = "$d" ] && local_targets+=("$t"); done
-                    done
-                fi
-                for t in "${local_targets[@]}"; do printf '%s\t%s\n' "$f" "$t" >>"$jobs_list"; done ;;
+        run/*)  if [ -f "$here/${f%.bp}.targets" ]; then
+                    narrowed "$f" "${f%.bp}.targets" "$ALL_TARGETS" "$(tr -s '[:space:]' ' ' <"$here/${f%.bp}.targets")"
+                else
+                    for t in "${targets[@]}"; do printf '%s\t%s\trun\n' "$f" "$t" >>"$jobs_list"; done
+                fi ;;
         modules/*)
                 # a project cell of the test/ kind (a `test/` tree, no
                 # expected.out) is `botopink test`: commonJS and erlang only
-                for t in "${targets[@]}"; do
-                    if [ -d "$here/$f/test" ] && [ ! -f "$here/$f/expected.out" ]; then
-                        [ "$t" = "wasm" ] || [ "$t" = "beam" ] && continue
-                    fi
-                    printf '%s\t%s\n' "$f" "$t" >>"$jobs_list"
-                done ;;
-        *) for t in "${targets[@]}"; do printf '%s\t%s\n' "$f" "$t" >>"$jobs_list"; done ;;
+                kind="$ALL_TARGETS"
+                if [ -d "$here/$f/test" ] && [ ! -f "$here/$f/expected.out" ]; then kind="commonJS erlang"; fi
+                declared="$(awk -F '\t' -v c="$f" '$1 == c { print $2 }' "$work/manifest-targets")"
+                if [ "$declared" = "!" ]; then
+                    printf '*\t%s\tfail\t%s\n' "$f" "$f/botopink.json is not JSON, or its \"targets\" is not an array of target names" >"$work/r-narrowing-$(printf '%s' "$f" | tr '/.' '__')"
+                elif [ -n "$declared" ]; then
+                    narrowed "$f" "$f/botopink.json \"targets\"" "$kind" "$declared"
+                else
+                    for t in "${targets[@]}"; do
+                        case " $kind " in *" $t "*) printf '%s\t%s\trun\n' "$f" "$t" >>"$jobs_list" ;; esac
+                    done
+                fi ;;
+        *) for t in "${targets[@]}"; do printf '%s\t%s\trun\n' "$f" "$t" >>"$jobs_list"; done ;;
     esac
 done
-while IFS=$'\t' read -r f t; do
-    if [ "$t" = "*" ]; then printf '%s\0%s\0' "$f" "${targets[0]}"; else printf '%s\0%s\0' "$f" "$t"; fi
-done <"$jobs_list" | xargs -0 -n 2 -P "$jobs" bash -c 'pool_job "$work/inflight" run_one "$0" "$1"'
+while IFS=$'\t' read -r f t what; do
+    case "$what" in
+        audit:*) printf 'audit_one\0%s\0%s\0%s\0' "$f" "$t" "${what#audit:}" ;;
+        *) if [ "$t" = "*" ]; then printf 'run_one\0%s\0%s\0\0' "$f" "${targets[0]}"; else printf 'run_one\0%s\0%s\0\0' "$f" "$t"; fi ;;
+    esac
+done <"$jobs_list" | xargs -0 -n 4 -P "$jobs" bash -c 'pool_job "$work/inflight" "$0" "$1" "$2" "$3"'
 
 cat "$work"/r-* 2>/dev/null | sort >"$work/results"
 
@@ -506,7 +751,7 @@ if (fs.existsSync(listPath)) {
 // every run, and never kept by hand in the file's header. The owner field is
 // split on `,` outside parentheses — `02 (no step; decision 55, reported …)`
 // is one row — and the first token of the first row names the owner.
-if (!partial) {
+if (!partial && fs.existsSync(listPath)) {
   const live = expected.filter((e) => !e.bad);
   const byTarget = new Map(), byOwner = new Map();
   let named = 0, second = 0, exercised = 0;
@@ -523,7 +768,7 @@ if (!partial) {
   console.log(`expected-failures.txt: ${live.length} lines, ${exercised} exercised by --target ${targetsArg.replace(/ /g, ",")} — by target: ${fmt(byTarget)}; by first owner row: ${fmt(byOwner)}; ${named} name tests rather than a path; ${second} name a second row`);
 }
 
-let fails = 0, oks = 0, expectedCount = 0;
+let fails = 0, oks = 0, expectedCount = 0, audited = 0;
 const out = [];
 const claimed = new Set();
 for (const e of expected) {
@@ -601,10 +846,14 @@ for (const [k, r] of results) {
   if (claimed.has(k)) continue;
   const [t, key] = k.split("\t");
   if (r.status === "ok") { oks++; continue; }
+  // An exclusion the compiler backs with a host-binding refusal: not a cell
+  // that ran, so not in the `passed` count.
+  if (r.status === "audit") { audited++; continue; }
   out.push(`${RED}FAIL${NC}     [${t}] ${key} — ${r.detail}`);
   fails++;
 }
 for (const l of out) console.log(l);
+if (audited) console.log(`narrowings: ${audited} exclusion${audited === 1 ? "" : "s"} audited — each stands on a host binding the target does not have`);
 const colour = fails ? RED : GREEN;
 console.log(`\n${colour}language tests: ${oks} passed, ${expectedCount} expected failures, ${fails} failed${NC}`);
 process.exit(fails ? 1 : 0);

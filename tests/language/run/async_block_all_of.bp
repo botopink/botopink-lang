@@ -10,8 +10,8 @@
 //// thunk shape of `01-std/02` open; the cell follows E7 and the guide).
 //// Printed from inside `run`.
 ////
-//// `.targets` is `commonJS erlang`: `std/async` is host-backed on Node and
-//// Erlang only, so wasm refuses the program for want of a host (a gap of the
+//// `.targets` is `commonJS erlang beam`: `std/async` is host-backed on Node and
+//// the BEAM only, so wasm refuses the program for want of a host (a gap of the
 //// module, not of the block).
 
 import {async} from "std";

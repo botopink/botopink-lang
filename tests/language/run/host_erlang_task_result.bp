@@ -5,8 +5,8 @@
 //// today's erlang shape of `@Result` (the decision fixes the `{error, R}` half;
 //// the `{ok, V}` half is the reading this cell takes). The Task is eager on
 //// erlang and `await` is the identity. Printed from inside `run`.
-//// `.targets` is `erlang`: the claim is the Erlang host's;
-//// `run/host_node_task_result.bp` is Node's.
+//// `.targets` is `erlang beam`: the claim is the Erlang host's, which beam
+//// binds too; `run/host_node_task_result.bp` is Node's.
 
 #[@External.Erlang("""(case $0 > 0 of true -> {ok, $0 * 2}; false -> {error, <<"refused">>} end)""")]
 declare fn hostDouble(n: i32) -> @Task<@Result<i32, string>>;

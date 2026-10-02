@@ -62,9 +62,10 @@ else
 fi
 
 # ── beam ──────────────────────────────────────────────────────────────────────
-# `botopink run --target beam` only writes the .S artifact, so assemble it with
-# `erlc +from_asm` and invoke `main:main()`, which returns `isEven(10)` — the
-# atom `true` when the bare-`if` base case falls through to the recursive call.
+# The program prints nothing, so `botopink run --target beam` has nothing to
+# compare: build the .S, assemble it with `erlc +from_asm` and invoke
+# `main:main()`, which returns `isEven(10)` — the atom `true` when the bare-`if`
+# base case falls through to the recursive call.
 if command -v erlc >/dev/null 2>&1 && command -v erl >/dev/null 2>&1; then
   echo "==> beam: build --target beam, erlc +from_asm, run main:main()"
   "$BP_BIN" build --target beam
