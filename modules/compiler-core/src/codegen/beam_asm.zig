@@ -1209,6 +1209,58 @@ fn scopeBindPattern(ctx: anytype, pat: ast.Pattern) !void {
     }
 }
 
+/// The bodied instance `default fn`s type `t` adopts through its inline
+/// `implement` clauses and does not declare itself, from the behaviors `decls`
+/// (the type's own module) declares — `extends` followed, depth-capped, a
+/// method two behaviors declare kept once (the first found). The twin of
+/// `erlang.zig`'s `adoptedIfaceDefaults`. They are methods of the type's
+/// module like its own (`emitTypeUnit`); without them `Sq(s: 3).twice()`
+/// reached no function and aborted with `{unresolved_method, twice, 1}`.
+fn adoptedDefaults(alloc: std.mem.Allocator, decls: []const ast.DeclKind, t: ast.TypeDecl, out: *std.ArrayListUnmanaged(ast.BehaviorMethod)) !void {
+    for (t.implement) |ref| {
+        const name = switch (ref) {
+            .named => |n| n,
+            .generic => |g| g.name,
+            else => continue,
+        };
+        try appendBehaviorDefaults(alloc, decls, name, t, out, 0);
+    }
+}
+
+fn appendBehaviorDefaults(alloc: std.mem.Allocator, decls: []const ast.DeclKind, name: []const u8, t: ast.TypeDecl, out: *std.ArrayListUnmanaged(ast.BehaviorMethod), depth: usize) !void {
+    if (depth > 16) return;
+    const b = for (decls) |d| switch (d) {
+        .behavior => |bd| if (std.mem.eql(u8, bd.name, name)) break bd,
+        else => {},
+    } else return;
+    for (b.methods) |m| {
+        if (!m.is_default or m.body == null) continue;
+        // An associated `default fn` (no `self`) is the behavior's own
+        // function (`emitInterfaceAssoc`), not a method of the type.
+        if (m.params.len == 0 or !std.mem.eql(u8, m.params[0].name, "self")) continue;
+        const taken = for (t.methods) |own| {
+            if (std.mem.eql(u8, own.name, m.name)) break true;
+        } else for (out.items) |seen| {
+            if (std.mem.eql(u8, seen.name, m.name)) break true;
+        } else false;
+        if (!taken) try out.append(alloc, m);
+    }
+    for (b.extends) |parent| try appendBehaviorDefaults(alloc, decls, parent, t, out, depth + 1);
+}
+
+/// Whether type `t` of a module whose declarations are `decls` adopts a
+/// `default fn` `method` of `arity` (the receiver included).
+fn adoptsDefault(alloc: std.mem.Allocator, decls: []const ast.DeclKind, t: ast.TypeDecl, method: []const u8, arity: usize) bool {
+    if (t.implement.len == 0) return false;
+    var adopted: std.ArrayListUnmanaged(ast.BehaviorMethod) = .empty;
+    defer adopted.deinit(alloc);
+    adoptedDefaults(alloc, decls, t, &adopted) catch return false;
+    for (adopted.items) |m| {
+        if (std.mem.eql(u8, m.name, method) and methodArity(m) == arity) return true;
+    }
+    return false;
+}
+
 fn scopeBindDestruct(ctx: anytype, d: ast.ParamDestruct) !void {
     switch (d) {
         .names => |n| for (n.fields) |f| try scopeBind(ctx, f.bind_name),
@@ -1700,6 +1752,7 @@ fn emitBeamAsm(
     em.instance_lowerings = instance_lowerings;
     em.cross = cross;
     em.all_outputs = all_outputs;
+    em.program_decls = program.decls;
     defer em.deinit();
 
     // Map each `implement`/`extend` block name to its target type + methods so
@@ -1782,12 +1835,15 @@ fn emitBeamAsm(
             // longer exists.
             .type_ => |tdecl| {
                 try em.own_types.put(tdecl.name, {});
-                for (tdecl.methods) |m| {
+                var adopted: std.ArrayListUnmanaged(ast.BehaviorMethod) = .empty;
+                defer adopted.deinit(alloc);
+                try adoptedDefaults(alloc, program.decls, tdecl, &adopted);
+                for ([_][]const ast.BehaviorMethod{ tdecl.methods, adopted.items }) |methods| for (methods) |m| {
                     if (m.body == null or m.is_declare) continue;
                     const key = try std.fmt.allocPrint(alloc, "{s}.{s}/{d}", .{ tdecl.name, m.name, methodArity(m) });
                     const gop = try em.own_type_methods.getOrPut(key);
                     if (gop.found_existing) alloc.free(key);
-                }
+                };
             },
             .behavior => |i| try em.reserveInterfaceMethods(i),
             .implement => |im| try em.reserveImplementMethods(im),
@@ -2130,6 +2186,9 @@ const Emitter = struct {
     ext_by_name: std.StringHashMap(ExtInfo),
     /// Cross-module link index (null in the standalone path).
     cross: ?*const CrossModule = null,
+    /// This module's declarations — the behaviors a type adopts `default fn`s
+    /// from (`adoptedDefaults`).
+    program_decls: []const ast.DeclKind = &.{},
     /// Every module of the compilation, for the declarations the link index
     /// does not carry (an imported enum's variants, another module's extension
     /// blocks).
@@ -3624,7 +3683,19 @@ const Emitter = struct {
     }
 
     fn emitRecord(self: *Emitter, r: ast.TypeDecl) !void {
-        try self.emitTypeUnit(r.name, r.methods, .{ .record = r });
+        const methods = try self.withAdoptedDefaults(r);
+        defer if (methods.ptr != r.methods.ptr) self.alloc.free(methods);
+        try self.emitTypeUnit(r.name, methods, .{ .record = r });
+    }
+
+    /// `t`'s own methods followed by the `default fn`s it adopts
+    /// (`adoptedDefaults`); `t.methods` itself when it adopts none.
+    fn withAdoptedDefaults(self: *Emitter, t: ast.TypeDecl) ![]const ast.BehaviorMethod {
+        var adopted: std.ArrayListUnmanaged(ast.BehaviorMethod) = .empty;
+        defer adopted.deinit(self.alloc);
+        try adoptedDefaults(self.alloc, self.program_decls, t, &adopted);
+        if (adopted.items.len == 0) return t.methods;
+        return std.mem.concat(self.alloc, ast.BehaviorMethod, &.{ t.methods, adopted.items });
     }
 
     /// What a `type`'s module answers about its own values (decision 8 §7,
@@ -4068,7 +4139,9 @@ const Emitter = struct {
     }
 
     fn emitEnum(self: *Emitter, e: ast.TypeDecl) !void {
-        try self.emitTypeUnit(e.name, e.methods, .{ .enum_ = e });
+        const methods = try self.withAdoptedDefaults(e);
+        defer if (methods.ptr != e.methods.ptr) self.alloc.free(methods);
+        try self.emitTypeUnit(e.name, methods, .{ .enum_ = e });
     }
 
     fn emitImplement(self: *Emitter, im: ast.ImplementDecl) !void {
@@ -11113,11 +11186,15 @@ const Emitter = struct {
                 else => continue,
             };
             for (ok.transformed.decls) |d| switch (d) {
-                .type_ => |t| for (t.methods) |m| {
-                    // A host-backed method with a beam binding is a function of
-                    // its type's module too (`withHostMethodBodies`).
-                    if ((m.body == null or m.is_declare) and !(hostMethods.isHostMethod(m) and hostMethods.binds(m, .beam))) continue;
-                    if (std.mem.eql(u8, m.name, method) and methodArity(m) == arity) return true;
+                .type_ => |t| {
+                    for (t.methods) |m| {
+                        // A host-backed method with a beam binding is a function of
+                        // its type's module too (`withHostMethodBodies`).
+                        if ((m.body == null or m.is_declare) and !(hostMethods.isHostMethod(m) and hostMethods.binds(m, .beam))) continue;
+                        if (std.mem.eql(u8, m.name, method) and methodArity(m) == arity) return true;
+                    }
+                    // …and so is a `default fn` it adopts (`adoptedDefaults`).
+                    if (adoptsDefault(self.alloc, ok.transformed.decls, t, method, arity)) return true;
                 },
                 else => {},
             };
@@ -11136,12 +11213,12 @@ const Emitter = struct {
                 else => continue,
             };
             for (ok.transformed.decls) |d| switch (d) {
-                .type_ => |t| for (t.methods) |m| {
-                    if ((m.body == null or m.is_declare) and !(hostMethods.isHostMethod(m) and hostMethods.binds(m, .beam))) continue;
-                    if (std.mem.eql(u8, m.name, method) and methodArity(m) == arity) {
-                        count += 1;
-                        break;
-                    }
+                .type_ => |t| {
+                    const declares = for (t.methods) |m| {
+                        if ((m.body == null or m.is_declare) and !(hostMethods.isHostMethod(m) and hostMethods.binds(m, .beam))) continue;
+                        if (std.mem.eql(u8, m.name, method) and methodArity(m) == arity) break true;
+                    } else adoptsDefault(self.alloc, ok.transformed.decls, t, method, arity);
+                    if (declares) count += 1;
                 },
                 else => {},
             };

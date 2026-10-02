@@ -36,23 +36,25 @@ fn main() {
 
 {function, main, 0, 3}.
   {label, 2}.
-    {line, [{location, "test@main.erl", 3}]}.
+    {line, [{location, "test@main.erl", 4}]}.
     {func_info, {atom, test@main}, {atom, main}, 0}.
   {label, 3}.
     {allocate, 4, 0}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, test@main@@Money}, {integer, 0}]}}.
+    {put_tuple2, {x, 0}, {list, [{atom, test@main@@Money}, {integer, 500}]}}.
     {move, {x, 0}, {y, 0}}.
     {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, test@main@@Money}, {integer, 120}]}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {y, 0}, {x, 0}}.
-    %% unresolved_method: clamp/3
-    {move, {literal, {unresolved_method, clamp, 3}}, {x, 0}}.
-    {call_ext, 1, {extfunc, erlang, error, 1}}.
+    {put_tuple2, {x, 0}, {list, [{atom, test@main@@Money}, {integer, 0}]}}.
     {move, {x, 0}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, test@main@@Money}, {integer, 120}]}}.
+    {move, {y, 1}, {x, 1}}.
+    {move, {x, 0}, {x, 2}}.
+    {move, {y, 0}, {x, 0}}.
+    {call_ext, 3, {extfunc, test@main@@Money, clamp, 3}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 2}, {x, 0}}.
     {test, is_tagged_tuple, {f, 8}, [{x, 0}, 2, {atom, test@main@@Money}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
   {label, 8}.
@@ -65,21 +67,21 @@ fn main() {
 
 {function, '_botopink_main', 0, 5}.
   {label, 4}.
-    {line, [{location, "test@main.erl", 4}]}.
+    {line, [{location, "test@main.erl", 5}]}.
     {func_info, {atom, test@main}, {atom, '_botopink_main'}, 0}.
   {label, 5}.
     {call_only, 0, {f, 3}}.
 
 {function, main, 1, 7}.
   {label, 6}.
-    {line, [{location, "test@main.erl", 5}]}.
+    {line, [{location, "test@main.erl", 6}]}.
     {func_info, {atom, test@main}, {atom, main}, 1}.
   {label, 7}.
     {call_only, 0, {f, 5}}.
 
 {function, '__bp_print', 1, 10}.
   {label, 9}.
-    {line, [{location, "test@main.erl", 4}]}.
+    {line, [{location, "test@main.erl", 5}]}.
     {func_info, {atom, test@main}, {atom, '__bp_print'}, 1}.
   {label, 10}.
     {allocate, 1, 1}.
@@ -99,7 +101,7 @@ fn main() {
 
 {function, '-bp_show_top-', 1, 14}.
   {label, 13}.
-    {line, [{location, "test@main.erl", 4}]}.
+    {line, [{location, "test@main.erl", 5}]}.
     {func_info, {atom, test@main}, {atom, '-bp_show_top-'}, 1}.
   {label, 14}.
     {move, {atom, true}, {x, 1}}.
@@ -107,7 +109,7 @@ fn main() {
 
 {function, '-bp_show_elem-', 1, 16}.
   {label, 15}.
-    {line, [{location, "test@main.erl", 4}]}.
+    {line, [{location, "test@main.erl", 5}]}.
     {func_info, {atom, test@main}, {atom, '-bp_show_elem-'}, 1}.
   {label, 16}.
     {move, {atom, false}, {x, 1}}.
@@ -115,7 +117,7 @@ fn main() {
 
 {function, '__bp_show', 2, 12}.
   {label, 11}.
-    {line, [{location, "test@main.erl", 4}]}.
+    {line, [{location, "test@main.erl", 5}]}.
     {func_info, {atom, test@main}, {atom, '__bp_show'}, 2}.
   {label, 12}.
     {allocate, 2, 2}.
@@ -201,7 +203,7 @@ fn main() {
 
 {function, '__bp_tagged', 2, 18}.
   {label, 17}.
-    {line, [{location, "test@main.erl", 4}]}.
+    {line, [{location, "test@main.erl", 5}]}.
     {func_info, {atom, test@main}, {atom, '__bp_tagged'}, 2}.
   {label, 18}.
     {allocate, 3, 2}.
@@ -241,7 +243,7 @@ fn main() {
 
 {function, '__bp_render', 1, 20}.
   {label, 19}.
-    {line, [{location, "test@main.erl", 4}]}.
+    {line, [{location, "test@main.erl", 5}]}.
     {func_info, {atom, test@main}, {atom, '__bp_render'}, 1}.
   {label, 20}.
     {allocate, 2, 1}.
@@ -285,7 +287,7 @@ fn main() {
 
 {function, '-bp_render_pair-', 1, 22}.
   {label, 21}.
-    {line, [{location, "test@main.erl", 4}]}.
+    {line, [{location, "test@main.erl", 5}]}.
     {func_info, {atom, test@main}, {atom, '-bp_render_pair-'}, 1}.
   {label, 22}.
     {allocate, 2, 1}.
@@ -311,9 +313,9 @@ fn main() {
 ----- BEAM ASSEMBLY -- test@main@@Money.S
 ```erlang
 {module, test@main@@Money}.
-{exports, [{min, 2}, {max, 2}, {'__bp_get', 2}, {'__bp_format', 1}]}.
+{exports, [{min, 2}, {max, 2}, {clamp, 3}, {'__bp_get', 2}, {'__bp_format', 1}]}.
 {attributes, []}.
-{labels, 19}.
+{labels, 21}.
 
 {function, min, 2, 3}.
   {label, 2}.
@@ -325,20 +327,20 @@ fn main() {
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 7}, [{x, 0}, 2, {atom, test@main@@Money}]}.
+    {test, is_tagged_tuple, {f, 9}, [{x, 0}, 2, {atom, test@main@@Money}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 7}.
+  {label, 9}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 8}, [{x, 0}, 2, {atom, test@main@@Money}]}.
+    {test, is_tagged_tuple, {f, 10}, [{x, 0}, 2, {atom, test@main@@Money}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 8}.
-    {test, is_lt, {f, 6}, [{x, 1}, {x, 0}]}.
+  {label, 10}.
+    {test, is_lt, {f, 8}, [{x, 1}, {x, 0}]}.
     {move, {y, 0}, {x, 0}}.
-    {jump, {f, 9}}.
-  {label, 6}.
+    {jump, {f, 11}}.
+  {label, 8}.
     {move, {y, 1}, {x, 0}}.
-  {label, 9}.
+  {label, 11}.
     {deallocate, 2}.
     return.
 
@@ -352,41 +354,57 @@ fn main() {
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 11}, [{x, 0}, 2, {atom, test@main@@Money}]}.
+    {test, is_tagged_tuple, {f, 13}, [{x, 0}, 2, {atom, test@main@@Money}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 11}.
+  {label, 13}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 12}, [{x, 0}, 2, {atom, test@main@@Money}]}.
+    {test, is_tagged_tuple, {f, 14}, [{x, 0}, 2, {atom, test@main@@Money}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 12}.
-    {test, is_lt, {f, 10}, [{x, 0}, {x, 1}]}.
+  {label, 14}.
+    {test, is_lt, {f, 12}, [{x, 0}, {x, 1}]}.
     {move, {y, 0}, {x, 0}}.
-    {jump, {f, 13}}.
-  {label, 10}.
+    {jump, {f, 15}}.
+  {label, 12}.
     {move, {y, 1}, {x, 0}}.
-  {label, 13}.
+  {label, 15}.
     {deallocate, 2}.
     return.
 
-{function, '__bp_get', 2, 15}.
-  {label, 14}.
+{function, clamp, 3, 7}.
+  {label, 6}.
     {line, [{location, "test@main@@Money.erl", 3}]}.
+    {func_info, {atom, test@main@@Money}, {atom, clamp}, 3}.
+  {label, 7}.
+    {allocate, 5, 3}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {x, 1}, {y, 1}}.
+    {move, {x, 2}, {y, 2}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {call_ext, 2, {extfunc, test@main@@Money, max, 2}}.
+    {move, {y, 2}, {x, 1}}.
+    {call_ext_last, 2, {extfunc, test@main@@Money, min, 2}, 5}.
+
+{function, '__bp_get', 2, 17}.
+  {label, 16}.
+    {line, [{location, "test@main@@Money.erl", 4}]}.
     {func_info, {atom, test@main@@Money}, {atom, '__bp_get'}, 2}.
-  {label, 15}.
-    {test, is_eq_exact, {f, 16}, [{x, 1}, {atom, cents}]}.
+  {label, 17}.
+    {test, is_eq_exact, {f, 18}, [{x, 1}, {atom, cents}]}.
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 2}, {x, 0}}.
     {call_ext_only, 2, {extfunc, erlang, element, 2}}.
-  {label, 16}.
+  {label, 18}.
     {move, {atom, undefined}, {x, 0}}.
     return.
 
-{function, '__bp_format', 1, 18}.
-  {label, 17}.
-    {line, [{location, "test@main@@Money.erl", 3}]}.
+{function, '__bp_format', 1, 20}.
+  {label, 19}.
+    {line, [{location, "test@main@@Money.erl", 4}]}.
     {func_info, {atom, test@main@@Money}, {atom, '__bp_format'}, 1}.
-  {label, 18}.
+  {label, 20}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -405,4 +423,5 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+120
 ```

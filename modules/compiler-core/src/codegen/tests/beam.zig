@@ -93,3 +93,60 @@ test "beam: a lambda literal that ends a case arm is the arm's value" {
         \\}
     , "30\n", &.{"{make_fun3, "});
 }
+
+// ── a behavior's adopted `default fn` ────────────────────────────────────────
+
+test "beam: a type adopts its behavior's default fns as methods of its module" {
+    // `Sq(s: 3).twice()` — `twice` is a `default fn` of `Shape`, which `Sq`
+    // implements without declaring it. The type's module had no such
+    // function and the call aborted `{unresolved_method, twice, 1}`; the
+    // default is now emitted into `Sq`'s module beside `area`
+    // (`adoptedDefaults`), one default calling another, a type's own method
+    // winning over the default, and a behavior-typed receiver dispatching on
+    // the value. Two types adopt `twice`, so a call names the method and the
+    // value's module answers it (`lowerDynamicMethodCall`). (erlang refuses this module — `function twice/1 undefined`
+    // — `02-erlang`'s row; commonJS prints the same lines.)
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\behavior Shape {
+        \\    fn area(self: Self) -> i32;
+        \\    default fn twice(self: Self) -> i32 {
+        \\        return self.area() * 2;
+        \\    }
+        \\    default fn label(self: Self) -> string {
+        \\        return "area " + self.twice().toString();
+        \\    }
+        \\}
+        \\type Sq(s: i32) implement Shape {
+        \\    fn area(self: Self) -> i32 {
+        \\        return self.s * self.s;
+        \\    }
+        \\}
+        \\type Rect(w: i32, h: i32) implement Shape {
+        \\    fn area(self: Self) -> i32 {
+        \\        return self.w * self.h;
+        \\    }
+        \\    fn label(self: Self) -> string {
+        \\        return "rect";
+        \\    }
+        \\}
+        \\fn show(x: Shape) -> i32 {
+        \\    return x.twice();
+        \\}
+        \\fn main() {
+        \\    @print(Sq(s: 3).twice());
+        \\    @print(Sq(s: 3).label());
+        \\    @print(Rect(w: 2, h: 5).twice());
+        \\    @print(Rect(w: 2, h: 5).label());
+        \\    @print(show(Sq(s: 1)));
+        \\    @print(show(Rect(w: 1, h: 7)));
+        \\}
+    ,
+        \\18
+        \\area 18
+        \\20
+        \\rect
+        \\2
+        \\14
+        \\
+    , &.{"{move, {atom, twice}, {x, 1}}"});
+}

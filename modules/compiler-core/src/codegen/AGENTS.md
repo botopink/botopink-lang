@@ -1636,7 +1636,15 @@ codegen/
   module's mangled local, because an `implement` block emits no module yet
   (its module would be `<package>@<path>@@<val>`, decision 109).
   A `behavior`'s `default fn` likewise keeps `'<Iface>_<method>'` wherever
-  `emitNeededDefaults` puts it (decision 23).
+  `emitNeededDefaults` puts it (decision 23) — except the bodied instance
+  defaults a `type` ADOPTS through its inline `implement` clauses and does not
+  declare itself (`adoptedDefaults`, the twin of `erlang.zig`'s
+  `adoptedIfaceDefaults`: behaviors of the type's own module, `extends`
+  followed): those are methods of the type's unit like its own
+  (`withAdoptedDefaults` → `emitTypeUnit`), counted in `own_type_methods` and
+  by `programDeclaresMethod` / `programMethodDeclarers`, so a call routes
+  there as to a declared method. `Sq(s: 3).twice()` aborted
+  `{unresolved_method, twice, 1}`.
 - **A unit is a whole module, so it gets a whole module's state**
   (`openTypeUnit` / `closeTypeUnit`): its own writer, its own `fn_labels`, its
   own `{labels, N}` counting from 1, its own `deferred_lambdas`,
