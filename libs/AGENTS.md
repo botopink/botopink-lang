@@ -33,7 +33,8 @@ libs/
 ├── std/               ← standard library (embedded in the compiler)
 ├── routing/           ← bundled route matcher + routing wires (decision 115)
 ├── actions/           ← bundled server-action protocol (decision 116)
-└── validation/        ← bundled constraint validation (decision 116)
+├── validation/        ← bundled constraint validation (decision 116)
+└── log/               ← bundled levels, renderers, error digest, Logger (decisions 194, 195)
 ```
 
 ## Packages
@@ -44,6 +45,7 @@ libs/
 | `routing/` | the route matcher and the routing wires both halves run — route table, `k`/`z` blobs, URL rules, navigation signals (`nav:`), the `:param` grammar; pure `.bp`, erlang + commonJS, imports std only | yes — bundled by name (decision 115, `01-std/04-routing-lib` Step 2) | [link](routing/AGENTS.md) |
 | `actions/` | the server-action protocol both halves read and write — the `state` grammar and `ActionState`, the v1 envelope (`redirect` derived from `n`), the JSON-RPC body, `refresh`; pure `.bp`, erlang + commonJS, imports std and routing only, names no field or header | yes — bundled by name (decision 116, `01-std/05-actions-lib` Step 6) | [link](actions/AGENTS.md) |
 | `validation/` | constraint markers, `#[validated]`, the violation report and constraint table, typed coercion — one source for erlang and commonJS; the message lookup is injected (`setMessageSource`) | yes — bundled by name (decision 116, `01-std/06-validation-lib` Step 5) | [link](validation/AGENTS.md) |
+| `log/` | the five levels, `LogRecord`, the ECS / GELF / logstash / plain renderers, the one error digest (`errorDigest`, decision 194) and a `Logger` whose sink is injected (`setSink`; default: OTP `logger` / node `console`) — `Logger.logError` writes the error record and answers its digest; `.bp` only — three inline host cells (the sink slot, the default write) —, erlang + commonJS, imports std only | yes — bundled by name (decision 195, `03-bundled-libs/106-log` Step 1) | [link](log/AGENTS.md) |
 
 ## Conventions
 
@@ -56,6 +58,16 @@ libs/
   `AGENTS.md` in the same change that touches the package's layout or contents.
 - Library-specific code never goes into `modules/compiler-core` (enforced by the
   lib-agnostic gate in `zig build test`).
+- **A shared primitive lands in std first, and each copy is deleted by the
+  owner of the file it sits in.** What two libraries need — a string → number
+  parser, a reader over `json.Json`, a retry loop, a duration parser, a key
+  derivation — is written once in `libs/std` (decisions 115–116: what is
+  generic goes to std; `.bp` only, both targets, a `#[@External.<Target>]`
+  template where a host is needed), under its natural name (decision 170). A
+  library then calls std's and removes its own in a step of the front that owns
+  that file — never the std front editing a library, and never a library
+  growing a second copy while std lacks the first. A module that needs two
+  declarations of one name meanwhile imports them under an alias.
 
 ## See also
 

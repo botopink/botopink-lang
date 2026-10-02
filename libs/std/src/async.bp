@@ -26,7 +26,7 @@
 ////   backend change that makes erlang lazy reds a test and forces this
 ////   docblock to be rewritten instead of silently making it a lie.
 ////
-////   UNSTARTED TASKS — `runAll`, `raceOf`, `timeout`.
+////   UNSTARTED TASKS — `runAll`, `raceOf`, `timeout`, `retry`.
 ////   Take `fn() -> @Task<T>` thunks. Because nothing has run when the
 ////   combinator receives them, the erlang cell can `spawn` one process per
 ////   task and gather the replies by index, and the commonJS cell can call each
@@ -244,6 +244,122 @@ pub fn timeout<T>(
             { -> expireAfter(millis) },
         ],
     );
+}
+
+// ── retry (1.0.11-beta front 97) ─────────────────────────────────────────────
+
+// How a fallible task is tried again: at most `maxAttempts` attempts, a pause
+// of `initialMillis` after the first failure, each later pause `multiplier`
+// times the one before, none above `maxMillis`. There is no jitter and no
+// field that means "for ever" (decision 67): a policy is usable only when
+// `maxAttempts` is at least 1, the two delays are not negative, `maxMillis`
+// is at most 2147483647 (the longest timer both targets arm) and `multiplier`
+// is at least 1.0 — a backoff never shrinks, and one that could would retry
+// in a near-zero-delay loop.
+pub type RetryPolicy(
+    maxAttempts: i32,
+    initialMillis: i64,
+    multiplier: f64,
+    maxMillis: i64,
+)
+
+// Internal: why `policy` is not usable, `""` when it is.
+fn policyProblem(policy: RetryPolicy) -> string {
+    if (policy.maxAttempts < 1)
+        return "maxAttempts must be at least 1 (the first attempt)";
+    if (policy.initialMillis < 0) return "initialMillis must not be negative";
+    if (policy.maxMillis < 0) return "maxMillis must not be negative";
+    if (policy.maxMillis > 2147483647)
+        return "maxMillis must be at most 2147483647";
+    val grows = policy.multiplier >= 1.0;
+    if (grows == false)
+        return "multiplier must be at least 1.0 (a backoff never shrinks)";
+    return "";
+}
+
+// Internal: an `i64` of milliseconds as an `f64`, and back — the whole
+// milliseconds of a delay that is never negative. botopink has no numeric
+// conversion; both hosts have one.
+#[@External.Node("""($0)""")]
+#[@External.Erlang("""float($0)""")]
+declare fn millisAsFloat(n: i64) -> f64;
+
+#[@External.Node("""Math.floor($0)""")]
+#[@External.Erlang("""trunc($0)""")]
+declare fn wholeMillis(x: f64) -> i64;
+
+// Internal: `delay`'s `i32` budget from a delay `policyProblem` has bounded.
+#[@External.Node("""($0)""")]
+#[@External.Erlang("""($0)""")]
+declare fn timerMillis(n: i64) -> i32;
+
+// Internal: `initial × multiplier^(attempt − 1)`, never above `ceiling`. One
+// multiplication per attempt — the same IEEE operations in the same order on
+// both targets, where a host `pow` would not promise the same last bit — and
+// none once the ceiling is reached, so it cannot overflow.
+fn grown(initial: f64, multiplier: f64, ceiling: f64, attempt: i32) -> f64 {
+    val steady = multiplier <= 1.0 || initial <= 0.0;
+    if (steady) return if (initial > ceiling) ceiling else initial;
+    var pause = initial;
+    var step = 1;
+    while (step < attempt && pause < ceiling) {
+        pause = pause * multiplier;
+        step = step + 1;
+    }
+    return if (pause > ceiling) ceiling else pause;
+}
+
+// The pause that follows attempt `attempt` (the first attempt is 1), in whole
+// milliseconds: `initialMillis × multiplier^(attempt − 1)`, rounded down and
+// never above `maxMillis`. `null` once `attempt` is past `maxAttempts` — there
+// is no further attempt to wait for — and for an attempt below 1 or a policy
+// that is not usable.
+pub fn nextDelay(policy: RetryPolicy, attempt: i32) -> ?i64 {
+    val usable = policyProblem(policy) == "";
+    val inside = attempt >= 1 && attempt <= policy.maxAttempts;
+    val answers = usable && inside;
+    if (answers == false) return null;
+    return wholeMillis(
+        grown(
+            millisAsFloat(policy.initialMillis),
+            policy.multiplier,
+            millisAsFloat(policy.maxMillis),
+            attempt,
+        ),
+    );
+}
+
+// Internal: attempt number `attempt` of `retry`, and every one after it.
+fn retryFrom<T, E>(
+    policy: RetryPolicy,
+    work: fn() -> @Task<@Result<T, E>>,
+    attempt: i32,
+) -> @Task<@Result<T, E>> {
+    val outcome = await work();
+    val settled = outcome.isOk() || attempt >= policy.maxAttempts;
+    if (settled) return try outcome;
+    val pause = nextDelay(policy, attempt).unwrapOr(policy.maxMillis);
+    await delay(timerMillis(pause), 0);
+    return try await retryFrom(policy, work, attempt + 1);
+}
+
+// Run `work` until it answers `Ok`, at most `policy.maxAttempts` times, pausing
+// `nextDelay(policy, n)` after failed attempt `n`. `Ok` is answered as soon as
+// an attempt succeeds; when every attempt fails, the LAST `Error` is answered —
+// a value, never a rejection, in `timeout`'s shape. `work` is a thunk because
+// each attempt has to start the task again; a plain `@Task<T>` never fails
+// (decision 120), so there is nothing to retry over one.
+//
+// A policy that is not usable is a programming error, fatal on both targets
+// (`async.retry: maxAttempts must be at least 1 (the first attempt)`), like
+// `race([])` — not an `Error` a caller could mistake for the work's own.
+pub fn retry<T, E>(
+    policy: RetryPolicy,
+    work: fn() -> @Task<@Result<T, E>>,
+) -> @Task<@Result<T, E>> {
+    val problem = policyProblem(policy);
+    if (problem != "") @panic(["async.retry: ", problem].join(""));
+    return try await retryFrom(policy, work, 1);
 }
 
 // ── tests ────────────────────────────────────────────────────────────────────
@@ -530,4 +646,159 @@ fn ghost(release: Gate, done: Gate) -> @Task<string> {
     val v = await gated(release, "late");
     openGate(done);
     return v;
+}
+
+// ── retry ────────────────────────────────────────────────────────────────────
+
+// Internal, test scaffolding: a counter the attempts of one `retry` share —
+// a closure cannot count on erlang, where a `var` it captures is a copy.
+// Node: an object. Erlang: a `counters` reference.
+#[@External.Node("""({ n: 0 })""")]
+#[@External.Erlang("""counters:new(1, [])""")]
+declare fn newCounter() -> unknown;
+
+// Count one more and answer the count.
+#[@External.Node("""((__c) => { __c.n = __c.n + 1; return __c.n })($0)""")]
+#[@External.Erlang("""(fun(__C) -> counters:add(__C, 1, 1), counters:get(__C, 1) end)($0)""")]
+declare fn countUp(counter: unknown) -> i32;
+
+#[@External.Node("""(($0).n)""")]
+#[@External.Erlang("""counters:get($0, 1)""")]
+declare fn countOf(counter: unknown) -> i32;
+
+// The text a task panics with, `""` when it answered — a panic inside a
+// `-> @Task` function is a rejected Promise on commonJS and a raise on erlang.
+#[@External.Node("""((__f) => Promise.resolve().then(() => (__f)()).then(() => '', (__e) => (__e && __e.message ? __e.message : String(__e))))($0)""")]
+#[@External.Erlang("""(fun(__B) -> try __B(), <<>> catch error:{panic, __M} -> unicode:characters_to_binary(__M); __C:__E -> iolist_to_binary(io_lib:format("~p:~p", [__C, __E])) end end)($0)""")]
+declare fn panicOf<T>(body: fn() -> @Task<T>) -> @Task<string>;
+
+// A task that fails until its `succeedAt`-th call: `Error("failure <n>")`
+// before it, `Ok("ok after <n>")` from it on.
+fn flaky(counter: unknown, succeedAt: i32) -> @Task<@Result<string, string>> {
+    val n = countUp(counter);
+    if (n < succeedAt) throw ["failure ", n.toString()].join("");
+    return ["ok after ", n.toString()].join("");
+}
+
+// What `nextDelay(policy, attempt)` answers, as text: the milliseconds, or
+// `none`.
+fn pauseText(policy: RetryPolicy, attempt: i32) -> string {
+    val pause = nextDelay(policy, attempt);
+    return if (pause != null) pause.toString() else "none";
+}
+
+// `pauseText` for attempts 1 to `last`, joined by `,`.
+fn pauses(policy: RetryPolicy, last: i32) -> string {
+    return Array
+        .range(1, last + 1)
+        .map({ attempt -> pauseText(policy, attempt) })
+        .join(",");
+}
+
+test "async: nextDelay ---- grows by the multiplier and ends past maxAttempts" {
+    val policy = RetryPolicy(3, 100, 2.0, 1000);
+    assert pauseText(policy, 1) == "100";
+    assert pauseText(policy, 2) == "200";
+    assert pauseText(policy, 3) == "400";
+    assert nextDelay(policy, 4) == null;
+    assert nextDelay(policy, 3) != null;
+    assert pauses(policy, 4) == "100,200,400,none";
+    assert pauseText(policy, 0) == "none";
+    assert pauseText(policy, 0 - 1) == "none";
+}
+
+test "async: nextDelay ---- never answers above maxMillis" {
+    assert pauses(RetryPolicy(7, 100, 2.0, 1000), 8)
+        == "100,200,400,800,1000,1000,1000,none";
+    assert pauses(RetryPolicy(3, 5000, 2.0, 1000), 3) == "1000,1000,1000";
+    assert pauses(RetryPolicy(12, 1, 10.0, 2147483647), 12).endsWith(
+        "100000000,1000000000,2147483647,2147483647",
+    );
+    assert pauseText(RetryPolicy(2000000000, 1, 1.5, 2147483647), 1999999999)
+        == "2147483647";
+}
+
+test "async: nextDelay ---- rounds a fractional delay down, a multiplier of one keeps it" {
+    assert pauses(RetryPolicy(5, 100, 1.5, 10000), 5) == "100,150,225,337,506";
+    assert pauses(RetryPolicy(4, 250, 1.0, 1000), 5) == "250,250,250,250,none";
+    assert pauses(RetryPolicy(3, 0, 2.0, 1000), 3) == "0,0,0";
+    assert pauses(RetryPolicy(1, 100, 2.0, 1000), 2) == "100,none";
+}
+
+test "async: nextDelay ---- a policy that is not usable names no delay" {
+    assert pauseText(RetryPolicy(0, 100, 2.0, 1000), 1) == "none";
+    assert pauseText(RetryPolicy(3, 0 - 1, 2.0, 1000), 1) == "none";
+    assert pauseText(RetryPolicy(3, 100, 2.0, 0 - 1), 1) == "none";
+    assert pauseText(RetryPolicy(3, 100, 0.5, 1000), 1) == "none";
+    assert pauseText(RetryPolicy(3, 100, 0.0, 1000), 1) == "none";
+}
+
+test "async: retry ---- a task that fails twice answers Ok after three calls" {
+    val calls = newCounter();
+    val answer = await retry(
+        RetryPolicy(5, 1, 2.0, 10),
+        { -> flaky(calls, 3) },
+    );
+    assert answer.isOk();
+    assert answer.unwrapOr("") == "ok after 3";
+    assert countOf(calls) == 3;
+}
+
+test "async: retry ---- a task that always fails answers its last Error after maxAttempts" {
+    val calls = newCounter();
+    val answer = await retry(
+        RetryPolicy(3, 1, 2.0, 10),
+        { -> flaky(calls, 99) },
+    );
+    assert answer.isError();
+    assert errorText(answer) == "failure 3";
+    assert countOf(calls) == 3;
+}
+
+test "async: retry ---- a task that answers Ok at once is called once" {
+    val calls = newCounter();
+    val answer = await retry(
+        RetryPolicy(4, 1, 2.0, 10),
+        { -> flaky(calls, 1) },
+    );
+    assert answer.unwrapOr("") == "ok after 1";
+    assert countOf(calls) == 1;
+}
+
+test "async: retry ---- one attempt is one call and its Error" {
+    val calls = newCounter();
+    val answer = await retry(
+        RetryPolicy(1, 1, 2.0, 10),
+        { -> flaky(calls, 99) },
+    );
+    assert errorText(answer) == "failure 1";
+    assert countOf(calls) == 1;
+}
+
+test "async: retry ---- pauses at least the policy's delays between attempts" {
+    // Two failures: a pause of 20 ms, then one of 40 ms. A LOWER bound only.
+    val calls = newCounter();
+    val start = monoMillis();
+    val answer = await retry(
+        RetryPolicy(3, 20, 2.0, 1000),
+        { -> flaky(calls, 3) },
+    );
+    val elapsed = monoMillis() - start;
+    assert answer.unwrapOr("") == "ok after 3";
+    assert elapsed >= 60;
+}
+
+test "async: retry ---- a policy that is not usable is fatal, and the task is never called" {
+    val calls = newCounter();
+    val raised = await panicOf(
+        { -> retry(RetryPolicy(0, 1, 2.0, 10), { -> flaky(calls, 1) }) },
+    );
+    assert raised
+        == "async.retry: maxAttempts must be at least 1 (the first attempt)";
+    val shrinking = await panicOf(
+        { -> retry(RetryPolicy(3, 1, 0.5, 10), { -> flaky(calls, 1) }) },
+    );
+    assert shrinking
+        == "async.retry: multiplier must be at least 1.0 (a backoff never shrinks)";
+    assert countOf(calls) == 0;
 }

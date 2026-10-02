@@ -833,14 +833,14 @@ fn main() {
   {label, 182}.
     {func_info, {atom, template_module}, {atom, '-__bp_prim_indexOf/2-fun-6-'}, 2}.
   {label, 183}.
-    {allocate, 5, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
+    {allocate, 6, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
     {move, {x, 0}, {y, 1}}.
     {move, {x, 1}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
     {test, is_eq_exact, {f, 187}, [{x, 0}, {literal, <<"">>}]}.
     {move, {integer, 0}, {x, 0}}.
-    {deallocate, 5}.
+    {deallocate, 6}.
     return.
   {label, 187}.
     {move, {y, 1}, {x, 0}}.
@@ -850,7 +850,7 @@ fn main() {
     {move, {y, 3}, {x, 0}}.
     {test, is_eq_exact, {f, 190}, [{x, 0}, {atom, nomatch}]}.
     {move, {integer, -1}, {x, 0}}.
-    {deallocate, 5}.
+    {deallocate, 6}.
     return.
   {label, 190}.
     {move, {y, 3}, {x, 0}}.
@@ -858,9 +858,13 @@ fn main() {
     {test, test_arity, {f, 191}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 4}}.
     {move, {y, 4}, {y, 0}}.
-    {move, {y, 0}, {x, 0}}.
-    {deallocate, 5}.
-    return.
+    {move, {y, 1}, {x, 0}}.
+    {move, {integer, 0}, {x, 1}}.
+    {move, {y, 0}, {x, 2}}.
+    {call_ext, 3, {extfunc, binary, part, 3}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {x, 0}}.
+    {call_ext_last, 1, {extfunc, string, length, 1}, 6}.
   {label, 191}.
     {move, {y, 3}, {x, 0}}.
     {case_end, {x, 0}}.

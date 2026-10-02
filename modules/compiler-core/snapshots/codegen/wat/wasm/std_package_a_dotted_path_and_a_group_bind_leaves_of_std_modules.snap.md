@@ -4,8 +4,9 @@
 //// 106): `Dict<K, V>`, `Set<T>`, `Queue<T>` and `Order`. Was the four modules
 //// `dict`, `sets`, `queue` and `order`; the type is the namespace now, so a
 //// constructor is called on the type it builds (decision 111) —
-//// `Dict.empty()`, `Set.empty()` / `Set.fromList(xs)`, `Queue.empty()` /
-//// `Queue.fromList(xs)` — and every other function keeps its name.
+//// `Dict.empty()` / `Dict.ofEntries(entries)`, `Set.empty()` /
+//// `Set.fromList(xs)`, `Queue.empty()` / `Queue.fromList(xs)` — and every
+//// other function keeps its name.
 
 // ── Dict<K, V> ──────────────────────────────────────────────────────────────
 // `Dict` (was `dict`) — Gleam-inspired — a `type Dict<K, V>` wrapping an
@@ -109,6 +110,17 @@ pub type Dict<K, V>(
     pub fn empty() -> Dict<K, V> {
         return Dict(pairs: []);
     }
+
+    // The dict of `entries`, inserted in order (decision 174): a key that
+    // repeats keeps its LAST value, at the place of that last entry — what a
+    // chain of `insert` answers. `Dict.ofEntries([])` is `Dict.empty()`.
+    pub fn ofEntries(entries: Array<#(K, V)>) -> Dict<K, V> {
+        var out: Dict<K, V> = Dict(pairs: []);
+        entries.forEach({ e ->
+            out = out.insert(e._0, e._1);
+        });
+        return out;
+    }
 }
 
 // One key or value of `Dict.display`: a string quoted, anything else as it
@@ -123,6 +135,32 @@ test "dict displays as its pairs, a string quoted (decision 8 §7)" {
     assert d.display() == "Dict(\"a\": 1, \"b\": 2)";
     val n = Dict.empty().insert(1, "x");
     assert n.display() == "Dict(1: \"x\")";
+}
+
+test "dict ofEntries builds the dict of its entries, in order" {
+    val d = Dict.ofEntries([#("a", 1), #("b", 2), #("c", 3)]);
+    assert d.size() == 3;
+    assert d.keys().join(",") == "a,b,c";
+    assert d.at("b").unwrapOr(0) == 2;
+    assert d.at("z").unwrapOr(-1) == -1;
+    assert d.display() == "Dict(\"a\": 1, \"b\": 2, \"c\": 3)";
+}
+
+test "dict ofEntries keeps the last value of a repeated key, as insert does" {
+    val d = Dict.ofEntries([#("a", 1), #("b", 2), #("a", 3)]);
+    val chained = Dict.empty().insert("a", 1).insert("b", 2).insert("a", 3);
+    assert d.size() == 2;
+    assert d.at("a").unwrapOr(0) == 3;
+    assert d.keys().join(",") == "b,a";
+    assert d.display() == chained.display();
+}
+
+test "dict ofEntries of no entries is the empty dict, and takes any key type" {
+    val none: Array<#(string, i32)> = [];
+    assert Dict.ofEntries(none).isEmpty();
+    val byNumber = Dict.ofEntries([#(1, "one"), #(2, "two")]);
+    assert byNumber.at(2).unwrapOr("") == "two";
+    assert byNumber.insert(3, "three").size() == 3;
 }
 
 test "dict empty is empty" {
@@ -578,8 +616,9 @@ test "order case over Order" {
   ;; 106): `Dict<K, V>`, `Set<T>`, `Queue<T>` and `Order`. Was the four modules
   ;; `dict`, `sets`, `queue` and `order`; the type is the namespace now, so a
   ;; constructor is called on the type it builds (decision 111) —
-  ;; `Dict.empty()`, `Set.empty()` / `Set.fromList(xs)`, `Queue.empty()` /
-  ;; `Queue.fromList(xs)` — and every other function keeps its name.
+  ;; `Dict.empty()` / `Dict.ofEntries(entries)`, `Set.empty()` /
+  ;; `Set.fromList(xs)`, `Queue.empty()` / `Queue.fromList(xs)` — and every
+  ;; other function keeps its name.
   ;; ── Dict<K, V> ──────────────────────────────────────────────────────────────
   ;; `Dict` (was `dict`) — Gleam-inspired — a `type Dict<K, V>` wrapping an
   ;; association list `pairs: Array<#(K, V)>` for full backend portability
@@ -1342,6 +1381,79 @@ test "order case over Order" {
     local.get $__mem0
     i32.const 4
     i32.add
+    return
+  )
+  (func $Dict_ofEntries (param $entries i32) (result i32)
+    (local $__mem0 i32)
+    (local $__mem1 i32)
+    (local $out i32)
+    (local $__iter0 i32)
+    (local $__idx0 i32)
+    (local $__len0 i32)
+    (local $__acc0 i32)
+    (local $e i32)
+    global.get $__heap_ptr
+    local.set $__mem0
+    global.get $__heap_ptr
+    i32.const 8
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem0
+    i32.const 296
+    i32.store
+    local.get $__mem0
+    global.get $__heap_ptr
+    local.set $__mem1
+    global.get $__heap_ptr
+    i32.const 4
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem1
+    i32.const 0
+    i32.store
+    local.get $__mem1
+    i32.store offset=4
+    local.get $__mem0
+    i32.const 4
+    i32.add
+    local.set $out
+    local.get $entries
+    local.set $__iter0
+    local.get $__iter0
+    i32.load ;; element count
+    local.set $__len0
+    i32.const 0
+    local.set $__idx0
+    i32.const 0
+    local.set $__acc0
+    (block $__break
+      (loop $__continue
+        local.get $__idx0
+        local.get $__len0
+        i32.ge_s
+        br_if $__break
+        local.get $__iter0
+        local.get $__idx0
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load offset=4
+        local.set $e
+    local.get $out
+    local.get $e
+    i32.load
+    local.get $e
+    i32.load offset=4
+    call $Dict_insert
+    local.set $out
+        local.get $__idx0
+        i32.const 1
+        i32.add
+        local.set $__idx0
+        br $__continue
+      )
+    )
+    local.get $out
     return
   )
   ;; One key or value of `Dict.display`: a string quoted, anything else as it
@@ -3677,6 +3789,79 @@ fn main() {
     local.get $__mem0
     i32.const 4
     i32.add
+    return
+  )
+  (func $Dict_ofEntries (param $entries i32) (result i32)
+    (local $__mem0 i32)
+    (local $__mem1 i32)
+    (local $out i32)
+    (local $__iter0 i32)
+    (local $__idx0 i32)
+    (local $__len0 i32)
+    (local $__acc0 i32)
+    (local $e i32)
+    global.get $__heap_ptr
+    local.set $__mem0
+    global.get $__heap_ptr
+    i32.const 8
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem0
+    i32.const 296
+    i32.store
+    local.get $__mem0
+    global.get $__heap_ptr
+    local.set $__mem1
+    global.get $__heap_ptr
+    i32.const 4
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem1
+    i32.const 0
+    i32.store
+    local.get $__mem1
+    i32.store offset=4
+    local.get $__mem0
+    i32.const 4
+    i32.add
+    local.set $out
+    local.get $entries
+    local.set $__iter0
+    local.get $__iter0
+    i32.load ;; element count
+    local.set $__len0
+    i32.const 0
+    local.set $__idx0
+    i32.const 0
+    local.set $__acc0
+    (block $__break
+      (loop $__continue
+        local.get $__idx0
+        local.get $__len0
+        i32.ge_s
+        br_if $__break
+        local.get $__iter0
+        local.get $__idx0
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load offset=4
+        local.set $e
+    local.get $out
+    local.get $e
+    i32.load
+    local.get $e
+    i32.load offset=4
+    call $Dict_insert
+    local.set $out
+        local.get $__idx0
+        i32.const 1
+        i32.add
+        local.set $__idx0
+        br $__continue
+      )
+    )
+    local.get $out
     return
   )
   (func $shown (param $x i32) (result i32)

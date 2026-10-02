@@ -37,7 +37,8 @@ botopink-lang/                 ← language core (this project)
 │   ├── std/                   ← standard library
 │   ├── routing/               ← bundled route matcher + routing wires (decision 115)
 │   ├── actions/               ← bundled server-action protocol (decision 116)
-│   └── validation/            ← bundled constraint validation (decision 116)
+│   ├── validation/            ← bundled constraint validation (decision 116)
+│   └── log/                   ← bundled levels, renderers, error digest, Logger over an injected sink (decisions 194, 195)
 ├── examples/                  ← non-framework .bp example programs
 ├── tests/language/            ← botopink language tests of decision 8 (case, tuples, loop) — see tests/language/AGENTS.md
 └── scripts/                   ← installers, release packing, snapshot audit, git hooks

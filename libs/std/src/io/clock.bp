@@ -189,6 +189,86 @@ pub fn toMillis(d: Duration) -> i64 {
     return d.millis;
 }
 
+// ── 1.0.11-beta front 97: a duration written as text ────────────────────────
+
+// Internal: the largest millisecond count both targets hold exactly —
+// 2^53 - 1, where a commonJS number stops counting by one. An `i64` has no
+// literal, so it crosses a cell.
+#[@External.Node("""(9007199254740991)""")]
+#[@External.Erlang("""(9007199254740991)""")]
+declare fn largestExactMillis() -> i64;
+
+// Internal: the unit `text` ends in — `ms` before `s`, since `5ms` ends in
+// both — and `""` when it ends in none of the five.
+fn durationUnit(text: string) -> string {
+    return if (text.endsWith("ms"))
+        "ms"
+    else if (text.endsWith("s"))
+        "s"
+    else if (text.endsWith("m"))
+        "m"
+    else if (text.endsWith("h"))
+        "h"
+    else if (text.endsWith("d"))
+        "d"
+    else
+        "";
+}
+
+// Internal: the milliseconds of one `unit` of `durationUnit`.
+fn unitMillis(unit: string) -> i64 {
+    return if (unit == "ms")
+        wide(1)
+    else if (unit == "s")
+        wide(1000)
+    else if (unit == "m")
+        wide(60000)
+    else if (unit == "h")
+        wide(3600000)
+    else
+        wide(86400000);
+}
+
+fn durationProblem(text: string, what: string) -> string {
+    return ["clock.parseDuration: \"", text, "\" ", what].join("");
+}
+
+// Internal: the count `digits` spells — digits `0`–`9` only, no sign — or
+// `-1` when it is not that and `-2` when it is but is beyond 2^53 - 1.
+fn durationCount(digits: string) -> i64 {
+    val signed = digits.startsWith("+") || digits.startsWith("-");
+    if (signed) return wide(0 - 1);
+    return case digits.parseInt() {
+        Ok(n) -> n;
+        Error(reason) -> wide(
+            if (reason.endsWith("is out of range")) 0 - 2 else 0 - 1,
+        );
+    };
+}
+
+// The milliseconds a duration spells: digits, then ONE unit — `ms`, `s`, `m`
+// (minutes), `h` or `d` — and nothing else: `"30s"` is `30000`, `"250ms"` is
+// `250`, `"0s"` is `0`. Refused, as an `Error` naming the text: no unit
+// (`"30"`), a fraction (`"1.5s"`), a sign, whitespace anywhere (`"30 s"`), an
+// uppercase unit (`"30S"`), two units (`"1h30m"`), the empty string — the
+// stricter of the two parsers this replaces — and a duration beyond
+// 2^53 - 1 milliseconds, which the two targets do not count alike.
+pub fn parseDuration(text: string) -> @Result<i64, string> {
+    val unit = durationUnit(text);
+    val digits = text.slice(0, text.length() - unit.length());
+    val count = if (unit == "") wide(0 - 1) else durationCount(digits);
+    if (count == wide(0 - 1))
+        throw durationProblem(
+            text,
+            "is not a duration: digits, then one unit of ms, s, m, h or d",
+        );
+    if (count == wide(0 - 2)) throw durationProblem(text, "is out of range");
+    val total = count * unitMillis(unit);
+    if (total > largestExactMillis())
+        throw durationProblem(text, "is out of range");
+    return total;
+}
+
 // Block the caller for `ms` milliseconds.
 // Node: `Atomics.wait` on a scratch `SharedArrayBuffer` — a synchronous
 // sleep that parks the thread instead of spinning (the value never
@@ -294,6 +374,63 @@ test "clock.Duration builders agree and add" {
     assert toMillis(minutes(1)) == toMillis(seconds(60));
     assert toMillis(hours(1)) == 3600000;
     assert toMillis(add(millis(250), seconds(1))) == 1250;
+}
+
+// The `Error` of `parseDuration(text)`, `""` when it parsed.
+fn durationRefusal(text: string) -> string {
+    return case parseDuration(text) {
+        Ok(_) -> "";
+        Error(reason) -> reason;
+    };
+}
+
+test "clock.parseDuration reads digits and one unit as milliseconds" {
+    assert parseDuration("30s").unwrapOr(wide(0 - 1)) == 30000;
+    assert parseDuration("250ms").unwrapOr(wide(0 - 1)) == 250;
+    assert parseDuration("5m").unwrapOr(wide(0 - 1)) == 300000;
+    assert parseDuration("2h").unwrapOr(wide(0 - 1)) == 7200000;
+    assert parseDuration("1d").unwrapOr(wide(0 - 1)) == 86400000;
+    assert parseDuration("0s").unwrapOr(wide(0 - 1)) == 0;
+    assert parseDuration("007s").unwrapOr(wide(0 - 1)) == 7000;
+    assert parseDuration("30s").isOk();
+    assert parseDuration("90m").unwrapOr(wide(0)) == toMillis(minutes(90));
+}
+
+test "clock.parseDuration refuses anything but digits and one unit, naming the text" {
+    val why = "is not a duration: digits, then one unit of ms, s, m, h or d";
+    assert durationRefusal("1.5s") == durationProblem("1.5s", why);
+    assert durationRefusal("30") == durationProblem("30", why);
+    assert durationRefusal("30 s") == durationProblem("30 s", why);
+    assert durationRefusal("30S") == durationProblem("30S", why);
+    assert durationRefusal("") == durationProblem("", why);
+    assert durationRefusal("s") == durationProblem("s", why);
+    assert durationRefusal("ms") == durationProblem("ms", why);
+    assert durationRefusal("-30s") == durationProblem("-30s", why);
+    assert durationRefusal("+30s") == durationProblem("+30s", why);
+    assert durationRefusal(" 30s") == durationProblem(" 30s", why);
+    assert durationRefusal("30s ") == durationProblem("30s ", why);
+    assert durationRefusal("1h30m") == durationProblem("1h30m", why);
+    assert durationRefusal("30sec") == durationProblem("30sec", why);
+    assert durationRefusal("PT30S") == durationProblem("PT30S", why);
+    assert durationRefusal("1e3s") == durationProblem("1e3s", why);
+    assert durationRefusal("30s") == "";
+    assert durationRefusal("30")
+        == "clock.parseDuration: \"30\" is not a duration: digits, then one unit of ms, s, m, h or d";
+}
+
+test "clock.parseDuration refuses a duration both targets do not count alike" {
+    assert parseDuration("9007199254740991ms").unwrapOr(wide(0))
+        == largestExactMillis();
+    assert parseDuration("104249991d").unwrapOr(wide(0))
+        == wide(104249991) * wide(86400000);
+    assert durationRefusal("9007199254740992ms")
+        == "clock.parseDuration: \"9007199254740992ms\" is out of range";
+    assert durationRefusal("9007199254741s")
+        == "clock.parseDuration: \"9007199254741s\" is out of range";
+    assert durationRefusal("104249992d")
+        == "clock.parseDuration: \"104249992d\" is out of range";
+    assert durationRefusal("99999999999999999999999999h")
+        == "clock.parseDuration: \"99999999999999999999999999h\" is out of range";
 }
 
 test "clock.deadline is in the future and isExpired reads the wall clock" {

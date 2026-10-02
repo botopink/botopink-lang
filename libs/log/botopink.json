@@ -1,0 +1,20 @@
+{
+  "name": "log",
+  "version": "0.0.1",
+  "description": "Levels, the log record, the ECS / GELF / logstash / plain renderers, the one error digest and a Logger over an injected sink — one source for erlang and commonJS (bundled with the compiler)",
+  "src": "src/",
+  "entry": "root.bp",
+  "target": "erlang",
+  "targets": [
+    "erlang",
+    "commonJS"
+  ],
+  "files": [
+    "root.bp",
+    "levels.bp",
+    "formats.bp",
+    "digest.bp",
+    "sink.bp",
+    "logging.bp"
+  ]
+}
