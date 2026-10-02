@@ -47,17 +47,17 @@ test "erlang: a default fn body lowers a local's method by the kind its declared
     // method on one of its locals was the bare local call — `unwrapOr(F, D)`,
     // undefined — or a run-time dispatch shim. The body's declared types give
     // each local its kind: `stringSlice0`'s `-> string`, `Array.at`'s `-> ?T`.
-    // Both members sit in the program's own `behavior Array<T>`: the checker
-    // checks a default body (`01-checker`) and reads a program's own primitive
-    // behavior as the whole interface of its primitive, so a `behavior String`
-    // here would refuse `tail.startsWith` (std's `String` member) in the body.
+    // The program's own `behavior String` extends std's (01-checker), so its
+    // body reaches std's `startsWith` and `self` is the primitive `string`.
     try h.assertErlangRunLog(std.testing.allocator,
-        \\behavior Array<T> {
-        \\    default fn tailShout(self: Self<T>, s: string) -> string {
-        \\        val tail = stringSlice0(s, 1);
+        \\behavior String {
+        \\    default fn tailShout(self: Self) -> string {
+        \\        val tail = stringSlice0(self, 1);
         \\        return if (tail.startsWith("+")) tail.toUpper() else tail;
         \\    }
+        \\}
         \\
+        \\behavior Array<T> {
         \\    default fn firstOr(self: Self<T>, d: T) -> T {
         \\        val f = self.at(0);
         \\        return f.unwrapOr(d);
@@ -65,8 +65,8 @@ test "erlang: a default fn body lowers a local's method by the kind its declared
         \\}
         \\
         \\pub fn main() {
-        \\    @print([0].tailShout("a+b"));
-        \\    @print([0].tailShout("ab"));
+        \\    @print("a+b".tailShout());
+        \\    @print("ab".tailShout());
         \\    @print([1, 2].firstOr(9));
         \\    val none: i32[] = [];
         \\    @print(none.firstOr(9));
