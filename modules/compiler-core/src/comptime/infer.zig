@@ -13760,17 +13760,25 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
             // 00 · 01-checker — the DECLARED parameter types of a plain call,
             // read only as the expectation an argument is inferred under
             // (`tokenDeclarations(.Color.Red.500)` resolves the path on the
-            // parameter's enum). Nothing is unified from here — the arm that
-            // types the call still unifies each argument with its parameter.
+            // parameter's enum). The arm that types the call still unifies
+            // each argument with its parameter. The expectation is a fresh
+            // instance of the callee's signature, as that arm's is: a lambda
+            // under a fallible expectation unifies its return with it
+            // (decision 147), and against the registration-time cells of a
+            // generic constructor that binds `T` for every later call — in a
+            // generic type's own methods, `Schema(…)` answering `Schema<?T>`
+            // made the next `Schema(…)` expect `?T` too.
             const declParamTypes: ?[]*T.Type = blk: {
                 if (qualifiedCtor) |qn| {
-                    const d = env.variantCtors.get(qn).?.deref();
+                    const enumName = call.receiver.?.identifier.kind.ident;
+                    const inst = try instantiateGenericType(env, try instantiateCtorType(env, enumName, env.variantCtors.get(qn).?));
+                    const d = inst.deref();
                     break :blk if (d.* == .func) d.func.params else null;
                 }
                 if (call.receiver != null or call.is_builtin) break :blk null;
                 const calleeTy = env.lookup(call.callee) orelse break :blk null;
-                const d = calleeTy.deref();
-                if (d.* != .func) break :blk null;
+                if (calleeTy.deref().* != .func) break :blk null;
+                const d = (try instantiateGenericType(env, try instantiateCtorType(env, call.callee, calleeTy))).deref();
                 break :blk d.func.params;
             };
             // Which parameter each argument lands in. Null is the ordinary

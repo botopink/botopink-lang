@@ -183,6 +183,10 @@ bad(x); })` refused at the `try`) and `run/lambda_result_return_try` (a lambda u
 `throw`s, four targets); the parent binary accepted the first and refused the second. A
 `throw_in_case_arm_result` cell is not added: erlang answers `false` for `isError()` on the arm's
 `throw` (`02-erlang`'s row), the other three answer `true`.
+`run/generic_ctor_fallible_lambda_fresh` (decision 147 beside a generic constructor) — two methods of
+`Box<T>` each build a `Box(run: { … })` under the fallible field, one `Box<?T>`, one
+`Box<Array<T>>`, on all four targets; the parent binary refused the second as `expected ?_[], got
+?_` (the lambda's expectation was the constructor's registration-time cells).
 `modules/shorthand_import_beside_bundled_package` (decision 170, another front's finding) — the
 shorthand `import {splitPath};` resolves to the project's own `config` although the bundled
 `routing` (loaded by a second import) declares `splitPath` in its internal module `routing/match`; it
