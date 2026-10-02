@@ -1238,6 +1238,21 @@ the call as `ambiguous-import-use` (`refuseShadowedStdSignature`), since the che
 std's type as the module's (`run/std_namespace_beside_own_type`,
 `modules/std_namespace_beside_aliased_type`, `reject/std_namespace_signature_names_shadowed_type`).
 
+## A behavior's `default fn` body is checked (another front's finding)
+
+The typed `.behavior` arm runs `inferBehaviorDefaultBodies`: every `default fn` that carries a body
+goes through `inferTypeMethods` against its own signature, `self` typed as the behavior (`Self`),
+so an unbound call or a mismatch inside one is refused (`reject/behavior_default_fn_body_checked`;
+nothing walked these bodies, and `inferTypeMethods`' doc named a strict pass that did not exist). A
+`-> @Result` default fn records its `return` / `throw` wrappings, and `transform.zig` walks
+`.behavior` default bodies with the method-body (`src_only`) aggregator, so every backend wraps
+them. The `.by_value` instance lowerings a `Self`-typed receiver records inside a default body are
+dropped again: the body is emitted once per implementer, which the backends dispatch statically. A
+call of an adopted default on an implementer answers the member's declared return
+(`adoptedDefaultCallType`, `Self` the receiver) instead of a fresh variable
+(`test/behavior_default_fn_result`). A bare `Ok(…)` in a default body is now `unbound variable
+'Ok'`, as in any body.
+
 ## A record value is not callable (`language-gaps.md` row 32)
 
 A plain call `g(…)` whose callee is a binding of a **record, enum or primitive** type — a value,

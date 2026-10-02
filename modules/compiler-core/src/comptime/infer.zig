@@ -964,6 +964,7 @@ fn inferDeclTyped(env: *Env, decl: ast.DeclKind) InferError!?TypedBinding {
         .behavior => |d| {
             const typeName = try buildInterfaceDeclName(env, d);
             try registerInterfaceAssociatedFns(env, d);
+            try inferBehaviorDefaultBodies(env, d);
             return .{ .name = d.name, .type_ = try env.namedType(typeName), .typedExpr = null, .decl = decl };
         },
         // Handled in `inferProgramTyped` — each import name is looked up in env.
@@ -4641,17 +4642,52 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     return env.funcType(paramTypes, retType);
 }
 
+/// A behavior's `default fn` bodies are checked like any method body, against
+/// the member's own signature, with `self` typed as the behavior (`Self`):
+/// `inferTypeMethods` over the members that carry a body. They were never
+/// walked, so `return nothingHere(x) + true` checked clean and a `-> @Result`
+/// default fn's `return` / `throw` recorded no wrapping for any backend.
+fn inferBehaviorDefaultBodies(env: *Env, d: ast.BehaviorDecl) InferError!void {
+    var n: usize = 0;
+    for (d.methods) |m| {
+        if (m.is_default and m.body != null) n += 1;
+    }
+    if (n == 0) return;
+    const ms = try env.arena.alloc(ast.BehaviorMethod, n);
+    var i: usize = 0;
+    for (d.methods) |m| {
+        if (!m.is_default or m.body == null) continue;
+        ms[i] = m;
+        i += 1;
+    }
+    // A default body is emitted once per implementer, where `self` is that
+    // implementer: the backends dispatch its calls statically, so the
+    // `.by_value` instance lowerings a `Self`-typed (behavior) receiver records
+    // are dropped again — every other lowering (the `@Result` wrappings, the
+    // `@Option` methods) stays.
+    var before = std.AutoHashMap(ast.Loc, void).init(env.arena);
+    defer before.deinit();
+    var it = env.instanceLowerings.keyIterator();
+    while (it.next()) |k| try before.put(k.*, {});
+    try inferTypeMethods(env, d.name, d.genericParams, ms);
+    var added: std.ArrayListUnmanaged(ast.Loc) = .empty;
+    var it2 = env.instanceLowerings.iterator();
+    while (it2.next()) |e| {
+        if (before.contains(e.key_ptr.*)) continue;
+        try added.append(env.arena, e.key_ptr.*);
+    }
+    for (added.items) |k| _ = env.instanceLowerings.remove(k);
+}
+
 /// Walk the bodies of a type's instance/associated methods (record / struct /
 /// enum) to record the codegen instance-method lowerings (and type the calls
 /// inside). Their signatures are registered earlier, but the bodies were never
 /// walked — so a `self.xs.map(f)` call was neither typed nor recorded, and the
 /// non-JS backends had no way to lower it.
 ///
-/// This is BEST-EFFORT: a method whose body trips an inference gap is skipped
-/// (the lowerings recorded up to that point stand; the rest fall back to the
-/// backend default). Record method bodies are not part of the strict
-/// type-checking contract here — only `default fn` interface bodies are (see
-/// `inferInterfaceDefaultBodies`) — so a gap must not fail the whole compile.
+/// Strict (06 C9): a type error in a method body fails the compile. A
+/// behavior's `default fn` bodies come through here too
+/// (`inferBehaviorDefaultBodies`).
 fn inferTypeMethods(
     env: *Env,
     typeName: []const u8,
@@ -8138,6 +8174,58 @@ fn behaviorMethodCallType(
     typedTrailing: []ast.TrailingLambdaOf(.typed),
 ) InferError!?*T.Type {
     const found = behaviorBodylessMethod(env, iface, method, 0) orelse return null;
+    return behaviorFoundCallType(env, found, recvPtr, typedArgs, typedTrailing);
+}
+
+/// The `default fn` `iface` — or anything it extends — declares under
+/// `method`, with the behavior that declares it.
+fn behaviorDefaultMethod(env: *Env, iface: []const u8, method: []const u8, depth: usize) ?BehaviorMethodFound {
+    if (depth >= 16) return null;
+    const decl = env.assocInterfaceDecls.get(iface) orelse env.importedBehaviorDecls.get(iface) orelse return null;
+    for (decl.methods) |m| {
+        if (std.mem.eql(u8, m.name, method)) {
+            if (!m.is_default or m.body == null) return null;
+            return .{ .decl = decl, .method = m };
+        }
+    }
+    for (decl.extends) |parent| {
+        if (behaviorDefaultMethod(env, parent, method, depth + 1)) |found| return found;
+    }
+    return null;
+}
+
+/// A call of a `default fn` a nominal type adopts from a behavior it
+/// implements answers the member's declared return, `Self` the receiver —
+/// as a call of a bodyless member does on a value of the behavior. It was a
+/// fresh variable, so `sq.checked().isOk()` on a `-> @Result` default fn
+/// found no `@Result` lowering.
+fn adoptedDefaultCallType(
+    env: *Env,
+    td: envMod.TypeDef,
+    recvPtr: *ast.TypedExpr,
+    method: []const u8,
+    typedArgs: []ast.CallArgOf(.typed),
+    typedTrailing: []ast.TrailingLambdaOf(.typed),
+) InferError!?*T.Type {
+    const implements: []const []const u8 = switch (td) {
+        .record => |r| r.implements,
+        .struct_ => |st| st.implements,
+        .enum_ => |e| e.implements,
+    };
+    for (implements) |iface| {
+        const found = behaviorDefaultMethod(env, iface, method, 0) orelse continue;
+        return behaviorFoundCallType(env, found, recvPtr, typedArgs, typedTrailing);
+    }
+    return null;
+}
+
+fn behaviorFoundCallType(
+    env: *Env,
+    found: BehaviorMethodFound,
+    recvPtr: *ast.TypedExpr,
+    typedArgs: []ast.CallArgOf(.typed),
+    typedTrailing: []ast.TrailingLambdaOf(.typed),
+) InferError!?*T.Type {
     const rt = found.method.returnType orelse return null;
     const params = found.method.params;
     const rest = if (params.len > 0 and std.mem.eql(u8, params[0].name, "self")) params[1..] else params;
@@ -13509,6 +13597,18 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                         return error.TypeError;
                     };
                 }
+
+                if (nominalName(recvPtr.getType())) |tn| if (env.lookupTypeDef(tn)) |td| {
+                    if (try adoptedDefaultCallType(env, td, recvPtr, call.callee, typedArgs, typedTrailing)) |ret| {
+                        return TypedExpr{ .call = .{ .loc = loc, .type_ = ret, .kind = .{ .call = .{
+                            .receiver = recvPtr,
+                            .callee = call.callee,
+                            .is_builtin = false,
+                            .args = typedArgs,
+                            .trailing = typedTrailing,
+                        } } } };
+                    }
+                };
 
                 // Other method calls (struct getters, activated extensions) are
                 // handled by sibling work — type them permissively as a fresh var
