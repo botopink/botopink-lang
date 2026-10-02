@@ -535,7 +535,7 @@ pub fn run(
     // sit a directory deeper here than in their own build, so their relative
     // `require("../../src/x.mjs")` would miss the source — copy each into place.
     if (target == .commonJS) {
-        libs.shipMjsSidecars(gpa, io, outputs.items, test_out, ext, env_map) catch |err| switch (err) {
+        libs.shipMjsSidecars(gpa, io, outputs.items, cfg.packages, test_out, ext, env_map) catch |err| switch (err) {
             // A sidecar the run cannot ship: the located refusal is already
             // printed, and a suite that cannot load its modules has no verdict.
             error.SidecarRefused => return 1,
@@ -549,7 +549,7 @@ pub fn run(
     // emitted runner's `__bp_load_siblings/0` compiles and loads every `.erl`
     // beside the script before running the tests.
     if (target == .erlang) {
-        _ = libs.shipErlSidecars(gpa, io, outputs.items, test_out, .erlang, env_map) catch |err| switch (err) {
+        _ = libs.shipErlSidecars(gpa, io, outputs.items, cfg.packages, test_out, .erlang, env_map) catch |err| switch (err) {
             // A host module that is neither shipped nor in the Erlang code
             // path: the located refusal is already printed, and every call
             // into it would be `{error,undef}`.

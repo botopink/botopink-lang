@@ -1,0 +1,6 @@
+//// A package named like the project's `src/orm/` folder, on a library root
+//// the walk-up finds. The project does not declare it.
+
+pub fn version() -> string {
+    return "orm";
+}

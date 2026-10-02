@@ -392,7 +392,7 @@ fn writeOutputs(
     // `#[@External.<targert>(...)]` `require("…/x.mjs")` — including a dependency's, whose
     // emitted module sits a directory deeper than in its own build.
     if (target == .commonJS) {
-        try libs.shipMjsSidecars(gpa, io, outputs, out_dir, ext, env_map);
+        try libs.shipMjsSidecars(gpa, io, outputs, packages, out_dir, ext, env_map);
     }
     // erlang and BEAM: a `#[@External.Erlang("host", …)]`'s `host.erl` goes
     // beside the emitted modules — `out/erl/`, where `botopink run` compiles
@@ -404,7 +404,7 @@ fn writeOutputs(
         .erlang, .beam => {
             const host_dir = try std.fmt.allocPrint(gpa, "{s}/{s}", .{ out_dir, std.mem.trimEnd(u8, targetSubdir(target), "/") });
             defer gpa.free(host_dir);
-            _ = try libs.shipErlSidecars(gpa, io, outputs, host_dir, if (target == .beam) .beam else .erlang, env_map);
+            _ = try libs.shipErlSidecars(gpa, io, outputs, packages, host_dir, if (target == .beam) .beam else .erlang, env_map);
         },
         .commonJS, .wasm => {},
     }
