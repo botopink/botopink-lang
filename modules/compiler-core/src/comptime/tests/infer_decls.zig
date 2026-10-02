@@ -445,6 +445,55 @@ test "infer: import source ---- a bare import over same-named pub fns is ambiguo
     );
 }
 
+// One local name is one declaration: two imports that each name their module
+// and bind the same name are `import-name-collision` at the second item,
+// naming both modules. The second used to replace the first silently, and the
+// backends disagreed on which declaration the call reached.
+test "infer: import source ---- two un-aliased imports of one name collide at the second" {
+    const io = std.testing.io;
+    const modules = [_]Module{
+        same_name_pages[0], same_name_pages[1],
+        .{ .path = "routes", .source =
+        \\import {NotFound} from "app.not_found";
+        \\import {NotFound} from "app.blog.not_found";
+        \\pub fn page() -> string {
+        \\    return NotFound();
+        \\}
+        },
+    };
+    var session = try comptimeMod.compile(std.testing.allocator, &modules, io, test_scratch.path(io, "comptime/import_source_twice_unaliased"), null);
+    defer session.deinit(std.testing.allocator);
+    for (session.outputs.items) |out| {
+        if (!std.mem.eql(u8, out.name, "routes")) continue;
+        try std.testing.expect(out.outcome == .typeError);
+        const te = out.outcome.typeError;
+        const msg = try te.message(std.testing.allocator);
+        defer std.testing.allocator.free(msg);
+        try std.testing.expectEqualStrings(
+            "import-name-collision: `NotFound` is already bound by the import of `NotFound` from `app/not_found`; `NotFound` from `app/blog/not_found` would bind it again",
+            msg,
+        );
+        try std.testing.expectEqual(@as(usize, 2), te.loc.?.line);
+        try std.testing.expectEqual(@as(usize, 9), te.loc.?.col);
+        return;
+    }
+    return error.ConsumerNotCompiled;
+}
+
+// The same declaration imported twice is one declaration: an `@emit`
+// contribution re-imports what its module already imports.
+test "infer: import source ---- the same declaration imported twice is not a collision" {
+    const err = try consumerTypeError("routes",
+        \\import {NotFound} from "app.not_found";
+        \\import {NotFound} from "app/not_found";
+        \\pub fn page() -> string {
+        \\    return NotFound();
+        \\}
+    , "comptime/import_source_same_declaration_twice");
+    defer if (err) |e| std.testing.allocator.free(e);
+    try std.testing.expectEqual(@as(?[]u8, null), err);
+}
+
 // What a source's text names (`ast.ImportSource`): `.` and `/` both separate
 // the segments of a module path. A module is named by its full path or its
 // last segment (pass 0); across a package boundary (pass 1) the source is a

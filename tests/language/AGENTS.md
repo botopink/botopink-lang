@@ -82,7 +82,7 @@ before `main`, dependencies first, and a val read twice is evaluated once — on
 `served` from `webapp` and `ok` from `ui`: a package handle narrows a name to the one module of that
 package declaring it, in the consumer and inside a dependency, on commonJS and erlang (both modules
 were refused as `ambiguous-import-use` on the parent binary).
-`01-checker` (an import that names its module says which declaration it means) adds six `modules/`
+`01-checker` (an import that names its module says which declaration it means) adds eight `modules/`
 cells, on all four targets. `import_same_fn_name_by_module` — `app/page` and `app/blog/page` each
 declare `pub fn title`; `main` imports it `from "app.page"` and a third module `from
 "app.blog.page"`, and the two answers differ; `import {page} from "app.blog"` binds the namespace
@@ -104,6 +104,12 @@ a path of several segments below the importer's package named nothing.
 `import_own_module_over_dependency_path` is that reading's boundary: the project's own `app/page` is
 what `from "app/page"` names although the dependency's `site/app/page` declares the name too — the
 full path is read first (it passes on the parent binary; it guards the order of the two readings).
+`import_same_name_twice_unaliased` is the use that cannot tell: `import {title} from "app.page";
+import {title} from "app.blog.page";` is `import-name-collision` at the second item, naming both
+modules, by `<target>.expect` — the second import used to replace the first and commonJS answered
+`app` where erlang and wasm answered `blog`. `import_same_fn_name_std_and_package_aliases` — a package
+and `std/collections` both declare `lt` and `reverse`; one module imports each under an alias and
+calls the four (it passes on the parent binary; it pins the rule).
 Decision 141 adds `run/external_template_refused_on_beam` — an `@External.Erlang` template with a
 macro runs on erlang and is a located build error on beam naming the construct (`.beam.expect`); beam
 no longer evaluates a template it cannot compile from source at run time.
