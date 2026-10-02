@@ -23,6 +23,9 @@ function __bp_eq(a, b, d) {
     if ((a === b)) {
         return true;
     }
+    if (((a !== a) && (b !== b))) {
+        return true;
+    }
     if ((((((d > 32) || (a === null)) || (b === null)) || (typeof a !== "object")) || (a.constructor !== b.constructor))) {
         return false;
     }

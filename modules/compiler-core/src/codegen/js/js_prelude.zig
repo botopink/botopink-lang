@@ -554,6 +554,9 @@ const print_as: ast.Stmt = .{ .function = .{
 ///     if ((a === b)) {
 ///         return true;
 ///     }
+///     if (((a !== a) && (b !== b))) {
+///         return true;
+///     }
 ///     if ((((((d > 32) || (a === null)) || (b === null)) || (typeof a !== "object")) || (a.constructor !== b.constructor))) {
 ///         return false;
 ///     }
@@ -581,12 +584,24 @@ const print_as: ast.Stmt = .{ .function = .{
 /// stays because a value handed in by a `#[@External.Node(…)]` call carries no
 /// such promise, and a cheap bound is better than a stack overflow in a host's
 /// object graph.
+///
+/// Decision 214 — NaN equals NaN under `==`: `a !== a && b !== b` is true of
+/// two NaNs alone, so the test is safe for every value. `-0` is not told from
+/// `0` here, because JavaScript's integer arithmetic produces `-0` too.
 const structural_eq: ast.Stmt = .{ .function = .{
     .name = "__bp_eq",
     .params = &.{ .{ .pattern = .{ .name = "a" } }, .{ .pattern = .{ .name = "b" } }, .{ .pattern = .{ .name = "d" } } },
     .body = .{ .stmts = &.{
         .{ .if_ = .{
             .cond = .{ .binary = .{ .op = "===", .lhs = &eq_a, .rhs = &eq_b } },
+            .then = &.{ .block = .{ .stmts = &.{.{ .return_ = .{ .name = "true" } }}, .layout = .indented, .indent = 1 } },
+        } },
+        .{ .if_ = .{
+            .cond = .{ .binary = .{
+                .op = "&&",
+                .lhs = &.{ .binary = .{ .op = "!==", .lhs = &eq_a, .rhs = &eq_a } },
+                .rhs = &.{ .binary = .{ .op = "!==", .lhs = &eq_b, .rhs = &eq_b } },
+            } },
             .then = &.{ .block = .{ .stmts = &.{.{ .return_ = .{ .name = "true" } }}, .layout = .indented, .indent = 1 } },
         } },
         .{ .if_ = .{
@@ -663,6 +678,9 @@ test "js_prelude: structural equality walks arrays and class instances" {
     try std.testing.expectEqualStrings(
         \\function __bp_eq(a, b, d) {
         \\    if ((a === b)) {
+        \\        return true;
+        \\    }
+        \\    if (((a !== a) && (b !== b))) {
         \\        return true;
         \\    }
         \\    if ((((((d > 32) || (a === null)) || (b === null)) || (typeof a !== "object")) || (a.constructor !== b.constructor))) {

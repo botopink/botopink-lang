@@ -35,7 +35,7 @@ js/
 |---|---|
 | `js_ast.zig` | `Class` carries `extends`, which only an enum's variant subclass uses. `Expr` (`lexeme_string`, `quoted`, `number`, `null_`, `ident`, `name`, `this`, `member`, `index`, `call`, `new_`, `binary`, `unary`, `ternary`, `assign`, `paren`, `arrow`, `function`, `array`, `object`, `host`, `await_`, `yield_`, `comment`), `Stmt` (`expr`, `decl`, `return_`, `throw_` (required operand), `continue_`, `continue_label`, `break_`, `yield_delegate`, `if_`, `for_of`, `while_` (+ an optional `label`), `block`, `function`, `class`, `comment`, `group`), `Pattern` (`ident`, `name`, `object` — a `Prop` binds a name or nests a pattern —, `array`), `Param`, `Block` (+ `Layout`), `Class`, `Comment`, `Item`; the `.d.ts` subset `TsType` / `TsField` / `TsParam` / `TsMember` / `TsDecl` / `TsNamespace` (types only — a non-instantiated namespace promises no value); and `Builder` (arena: `ptr`, `stmtPtr`, `typePtr`, `call`, `member`, `binary`, `ternary`, `arrowBlock`, `iife`, `ifStmt`, `group`, …). |
 | `js_emitter.zig` | **Names:** `ident(name)` — the ES reserved-word rename (`delete` → `delete_`); the only place it happens. A property position is never renamed. **Strings:** `writeLexemeString` — a botopink lexeme's escape pairs pass through (the lexer validated them and the escape set is JS-compatible), raw control bytes and unescaped quotes are escaped. **Numbers:** a number literal as a member receiver is parenthesised — `(42).toString()`, because `42.` lexes as a float. **Code:** `writeExpr(w, expr, indent)`, `writeStmt(w, stmt, indent)`, `writeBlock`, `writeInline`/`writeInlineStmt`, `writePattern`, `writeComment`/`writeInlineComment`, `writeProgram(w, items)` (generated declarations separated by a blank line; runtime-support source verbatim). |
-| `js_prelude.zig` | The commonJS runtime helpers for primitive methods whose native JS method disagrees with the signature, as built `Stmt.function` nodes — never a shipped file. `Helper` (`assert_fatal`: a non-test `assert` throws with message and `file:line`; `string_char_at`: `String.at -> ?string` (the native method it wraps is `charAt`), a negative index counts from the end (decision 139), `null` out of range; `array_at`: `Array.at -> ?T`, native `xs.at(i) ?? null` — a negative index counts from the end (decision 139) and `null` stands for native `undefined` out of range (decision 47); `range_from`: an open-ended `a..` as the lazy generator `function* __bp_range_from(n)`; `structural_eq`: `__bp_eq(a, b, d)`, the run-time `==` for a pair whose static type this backend cannot name (a type parameter, a type another module declares, two different types) — arrays and tuples element-wise, a class instance by constructor plus own fields (decision 8 §6 T6, decisions 35 and 210; § Structural equality); `show`: `__bp_show(v, shape, top, a)`, the text of one printed value under decision 8 §7 — a string, a `"f"`-shaped number as `5.0`, an array or tuple with spaces, a `__bp`-marked record or variant in the language's shape, `Display` when the value has one, JavaScript's `undefined` as `null` (decision 47 — `?.` and an `if` with no `else` answer JavaScript's other none), `%O` otherwise; `print` / `print_as`: `@print`'s `console.log` line over `show`, without / with the per-argument static shapes; `yield_step`: `__bp_yield_step(r)`, a generator step `{ value, done }` as the prelude enum `YieldStep` — `.next()` by hand, decision 122 — whose class the module carries through the checker's splice), `forMethod(receiver, method, argc)` (the declaration a helper answers), `name`, `decl`, `order`. `commonJS.zig`'s `Emitter.helper` returns the name **and** marks the helper, and only marked helpers are written into the module (the `wat/wat_prelude.zig` shape). |
+| `js_prelude.zig` | The commonJS runtime helpers for primitive methods whose native JS method disagrees with the signature, as built `Stmt.function` nodes — never a shipped file. `Helper` (`assert_fatal`: a non-test `assert` throws with message and `file:line`; `string_char_at`: `String.at -> ?string` (the native method it wraps is `charAt`), a negative index counts from the end (decision 139), `null` out of range; `array_at`: `Array.at -> ?T`, native `xs.at(i) ?? null` — a negative index counts from the end (decision 139) and `null` stands for native `undefined` out of range (decision 47); `range_from`: an open-ended `a..` as the lazy generator `function* __bp_range_from(n)`; `structural_eq`: `__bp_eq(a, b, d)`, the run-time `==` for a pair whose static type this backend cannot name (a type parameter, a type another module declares, two different types) — arrays and tuples element-wise, a class instance by constructor plus own fields, two NaNs equal (decision 8 §6 T6, decisions 35, 210 and 214; § Structural equality); `show`: `__bp_show(v, shape, top, a)`, the text of one printed value under decision 8 §7 — a string, a `"f"`-shaped number as `5.0`, an array or tuple with spaces, a `__bp`-marked record or variant in the language's shape, `Display` when the value has one, JavaScript's `undefined` as `null` (decision 47 — `?.` and an `if` with no `else` answer JavaScript's other none), `%O` otherwise; `print` / `print_as`: `@print`'s `console.log` line over `show`, without / with the per-argument static shapes; `yield_step`: `__bp_yield_step(r)`, a generator step `{ value, done }` as the prelude enum `YieldStep` — `.next()` by hand, decision 122 — whose class the module carries through the checker's splice), `forMethod(receiver, method, argc)` (the declaration a helper answers), `name`, `decl`, `order`. `commonJS.zig`'s `Emitter.helper` returns the name **and** marks the helper, and only marked helpers are written into the module (the `wat/wat_prelude.zig` shape). |
 | `ts_emitter.zig` | `writeDecl`'s `namespace_` writes `export declare namespace Name { … }` over `TsNamespaceItem`s (`interface Name { … }`, a nested `namespace`), indented one level per depth and without `export`/`declare` inside — an ambient namespace exports its members (an enum's sections, `typescript.zig`). `writeType`, `writeDecl` (`import` writes each name as given — `a as b` included —, `import_namespace` writes `import * as name from "…"`), `writeProgram(w, decls)` — one declaration per typed binding, separated by a blank line, a binding with no surface (`.none`) still taking its separator. `TsMember.method` carries a `modifier` (as `field` does), which is how an enum's variant factories and methods are written `static`. |
 
 ## A comment never ends a line something else still needs
@@ -128,7 +128,8 @@ by an arrow's parameters, restored after the arrow):
 
 | Operands | Lowering |
 |---|---|
-| either side a primitive (`i32`, `f64`, `bool`, `string`, … or `?` of one), or a `null` literal | today's `===` / `!==` (loose `==` / `!=` against `null`) — unchanged, byte for byte |
+| either side a float (`f64`, `f32`, or `?` of one) | `Object.is(a, b)` / `!Object.is(a, b)` — decision 214's total order |
+| either side another primitive (`i32`, `bool`, `string`, … or `?` of one), or a `null` literal | today's `===` / `!==` (loose `==` / `!=` against `null`) — unchanged, byte for byte |
 | both one composite type this module declares or spells — a record, an enum, a tuple, an array, `?` of one | `__bp_eq_<T>(a, b)` |
 | anything else — two different types, a type parameter `T`, a type declared in another module, `unknown`, a type nothing here recovers | `__bp_eq(a, b, 0)`, the run-time walk (constructor, then own fields) |
 
@@ -157,13 +158,24 @@ function __bp_eq_Array_Person(a, b) {
 }
 ```
 
-A field is compared by its declared type the same way: a primitive by `===` (an
-`f64` field answers exactly what `f64 ==` answers — `0.0 === -0.0` is `true`, NaN
-is never equal; one rule for the four targets is open), a composite by its own
+A field is compared by its declared type the same way: a float by `Object.is`, any
+other primitive by `===`, a composite by its own
 `__bp_eq_<T>`, a field written as one of the type's own parameters by `__bp_eq`. A
 `?T` is equal when both are absent (`== null`, so JavaScript's `undefined` is none
 too, decision 47) or both present and equal. No hash is computed at construction,
 nothing is interned, and there is no global table.
+
+**A float under `==` is a total order** (decision 214, Java's `Double.compare` and
+Kotlin's data class): `0.0 == -0.0` is `false` and `NaN == NaN` is `true`, which is
+`Object.is` exactly, bare and as a part alike; `<`, `>`, `<=`, `>=` keep IEEE.
+Only an operand `staticTypeOf` reads as a float takes it — an integer stays `===`,
+because JavaScript's integer arithmetic produces `-0` too (`0 * -1`). For the same
+reason the run-time `__bp_eq` tells NaN from NaN as equal (`a !== a && b !== b`,
+true of a NaN alone) but does not tell `-0` from `0`: a generic `T` bound to an
+`f64`, or a float part of a type another module declares, answers `0.0 == -0.0` as
+`true` here. `tests/language/run/f64_equality_total_order.bp` pins the zeros on
+four targets; the NaN half is `tests/commonjs.zig`'s `f64 ---- NaN equals NaN under
+==` RUN LOG, since erlang and beam never produce a NaN.
 
 **A generic `T`** has one JavaScript body for every type, so a `==` between two
 `T` values — `same<T>(a, b)`, `Array.unique`'s `prev != x`, `Dict`'s `p._0 == key`,

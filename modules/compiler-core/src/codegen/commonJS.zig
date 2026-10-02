@@ -4545,6 +4545,23 @@ const Emitter = struct {
         };
     }
 
+    /// True when `t` is a float, or an optional of one: its `==` is
+    /// decision 214's total order, `Object.is` (`floatEq`).
+    fn eqIsFloat(t: ast.TypeRef) bool {
+        return switch (t) {
+            .named => |n| std.mem.eql(u8, n, "f64") or std.mem.eql(u8, n, "f32") or std.mem.eql(u8, n, "float"),
+            .optional => |inner| eqIsFloat(inner.*),
+            else => false,
+        };
+    }
+
+    /// Decision 214 — `==` over floats is a total order, as Java's
+    /// `Double.compare`: NaN equals NaN and `0.0` differs from `-0.0`, which
+    /// is `Object.is` exactly. `<`, `>`, `<=`, `>=` keep IEEE ordering.
+    fn floatEq(self: *Emitter, a: js.Expr, b: js.Expr) !js.Expr {
+        return self.b.call(.{ .name = "Object.is" }, &.{ a, b });
+    }
+
     /// `Self` as the declaration it is written in, so `other: Self` and
     /// `self` name the type a per-type equality is generated for.
     fn eqResolve(self: *Emitter, t: ast.TypeRef) ast.TypeRef {
@@ -4807,6 +4824,7 @@ const Emitter = struct {
     /// per-type equality of a composite, or the run-time `__bp_eq` where
     /// this backend generates none.
     fn eqExpr(self: *Emitter, t: ast.TypeRef, a: js.Expr, b: js.Expr) anyerror!js.Expr {
+        if (eqIsFloat(t)) return self.floatEq(a, b);
         if (eqIsPrim(t)) return self.b.binaryBare("===", a, b);
         if (try self.eqFnFor(t)) |f| return self.b.call(.{ .name = f }, &.{ a, b });
         return self.b.call(self.helper(.structural_eq), &.{ a, b, .{ .number = "0" } });
@@ -4896,6 +4914,11 @@ const Emitter = struct {
         if (isNullLiteral(bin.lhs.*) or isNullLiteral(bin.rhs.*)) return null;
         const lt = try self.staticTypeOf(bin.lhs.*);
         const rt = try self.staticTypeOf(bin.rhs.*);
+        // A float on either side: decision 214's total order.
+        if ((lt != null and eqIsFloat(lt.?)) or (rt != null and eqIsFloat(rt.?))) {
+            const cmp = try self.floatEq(try self.buildExpr(bin.lhs.*), try self.buildExpr(bin.rhs.*));
+            return if (bin.op == .eq) cmp else try self.b.unary("!", cmp, true);
+        }
         if (lt) |t| if (eqIsPrim(t)) return null;
         if (rt) |t| if (eqIsPrim(t)) return null;
         const lhs = try self.buildExpr(bin.lhs.*);

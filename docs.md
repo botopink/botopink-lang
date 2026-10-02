@@ -798,6 +798,9 @@ variants are equal when they have the same type and their fields are equal, fiel
 by field and recursively — `Person(name: "Ana", age: 30) == Person(name: "Ana",
 age: 30)` is `true`. Two values of different types are never equal, `!=` is the
 negation, and `==` never calls a method of the type (one named `equals` included).
+An `f64` compares as a total order under `==`, as Java's `Double.compare` does:
+`0.0 == -0.0` is `false` and `NaN == NaN` is `true`, bare or inside a composite;
+`<`, `>`, `<=` and `>=` keep the IEEE ordering (`-0.0 < 0.0` is `false`).
 
 ### Lambdas and method chains
 

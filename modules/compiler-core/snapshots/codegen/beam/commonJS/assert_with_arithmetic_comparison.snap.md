@@ -10,7 +10,7 @@ fn f() {
 function __bp_assert_fatal(cond, msg, loc) { if (!cond) { throw new Error((msg ?? "assertion failed") + " at " + loc); } }
 
 function f() {
-    __bp_assert_fatal(((1.0 + 2.0) === 3.0), null, "main.bp:2");
+    __bp_assert_fatal(Object.is((1.0 + 2.0), 3.0), null, "main.bp:2");
 }
 ```
 

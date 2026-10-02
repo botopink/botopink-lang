@@ -81,7 +81,7 @@ function __bp_eq_Tuple2_i32_i32(a, b) {
 
 function __bp_eq_Tuple2_f64_bool(a, b) {
     if (a === b) return true;
-    return a[0] === b[0] && a[1] === b[1];
+    return Object.is(a[0], b[0]) && a[1] === b[1];
 }
 
 function main() {
