@@ -112,7 +112,7 @@ See [`../AGENTS.md`](../AGENTS.md) §Release pipeline and
 ## gate.sh
 
 `scripts/gate.sh [--cold] [--staged]` — one ordered run, stopping at the first
-failing stage (stages 4b–11 run side by side and are reported in this order —
+failing stage (stages 4b–12 run side by side and are reported in this order —
 § Where the gate's time goes): staged-file checks (`--staged`: conflict markers, `zig fmt
 --check` on staged `.zig`, no staged `*.snap.new` / `*.snap.md.new` candidate) and, every run,
 `zig fmt --check modules` (a `.zig` file red anywhere fails the gate, staged or not — the
@@ -126,7 +126,7 @@ test-bpmp`, `scripts/beam_export_audit.sh`, `zig build test-cli`, `zig build
 test-libs` (every cell the manifests declare, and an audit of every target a
 manifest excludes — § test-libs.sh), `zig build test-language` (`tests/language/`, a red cell fails
 it), `zig build test-docs`
-(`check-docs.sh`), `scripts/tsc-check.sh` (§ tsc-check.sh). CI (`.github/workflows/test.yml`) runs the same stages, in the same build mode (decision 226), minus the
+(`check-docs.sh`), `scripts/tsc-check.sh` (§ tsc-check.sh), `zig build test-web` (compiler-core for wasm32 and `modules/compiler-web/tests/smoke.js` under node, default build mode — CI's step, in the gate by decision 231). CI (`.github/workflows/test.yml`) runs the same stages, in the same build mode (decision 226), minus the
 staged checks. The pre-commit hook runs `--staged`; the run
 that decides a merge adds `--cold`. After the staged checks the script unsets
 every `git rev-parse --local-env-vars` variable a hook inherits (`GIT_DIR`,
@@ -149,7 +149,7 @@ reds `pub_val_across_modules` and `pub_val_in_a_test`.
 
 ### Build mode
 
-The binaries stages 3 and 4b–11 run are built `-Doptimize=ReleaseSafe`, the
+The binaries stages 3 and 4b–12 run are built `-Doptimize=ReleaseSafe`, the
 mode `release.yml` ships: the gate runs the compiler a user installs. Every
 `zig build` the gate starts passes the same `$opt`, so no stage reinstalls a
 Debug `zig-out/bin/*` over the one the others are running; stage 4's unit-test
@@ -167,7 +167,7 @@ binaries; a plain `zig build` puts Debug ones back.
 Every stage's `✓` line ends with its wall clock and CPU-seconds —
 `✓ zig build test-libs — 3m41s wall, 2210 CPU-s` — measured with bash's
 `time` keyword around the stage (the CPU of every child it waited for
-included). Before stages 4b–11 start, `scripts/test-libs.sh --list`,
+included). Before stages 4b–12 start, `scripts/test-libs.sh --list`,
 `tests/language/run.sh --list` and `scripts/check-docs.sh --list` print the
 plan of stages 8, 9 and 10, and after each of the three its own tally is held
 to its plan: `P + F + N` cells and `A + X` audits of `test-libs:` against the
@@ -213,12 +213,12 @@ on the same bytes and toolchain. Any other difference runs the whole gate, and
 The stages stay one ordered REPORT — the first failing stage in the order above
 is the one reported, with the output and exit status the one-at-a-time gate
 printed. Stages 1–4 still run one after the other, each only after the cheaper
-ones passed. Stages 4b–11 only read what 2–4 built, and write their own scratch,
+ones passed. Stages 4b–12 only read what 2–4 built, and write their own scratch,
 so they run side by side (`gate.sh` § side by side): each stage's stdout and
 stderr are captured to one file, and once all of them have finished the blocks
 are printed in stage order up to and including the first red one, whose failure
 line ends the run with exit 1 — the stages after it are not printed, as the
-serial gate never ran them. A red stage among 4b–11 therefore no longer saves the
+serial gate never ran them. A red stage among 4b–12 therefore no longer saves the
 time of the stages after it; that is the cost of a red run, never of a green
 one. The time is otherwise saved inside the stages, by doing the same work once
 and on every CPU, never by running less:

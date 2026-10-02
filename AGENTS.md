@@ -246,7 +246,7 @@ it and must not silently wait for it.
 **The gate every front runs before landing is `zig build test && zig build
 test-libs`**, with `zig build test` from a cold runtime cache. The full ordered
 run is [`scripts/gate.sh`](scripts/gate.sh) — stages 1–4 one after the other,
-4b–11 side by side and reported in this order, the first red one ending the run
+4b–12 side by side and reported in this order, the first red one ending the run
 (`scripts/AGENTS.md` § Where the gate's time goes):
 
 1. `--staged`: conflict markers and `zig fmt --check` on staged files, and a staged snapshot candidate (`*.snap.new`, `*.snap.md.new` — `git add -f` gets past `.gitignore`) is refused; then, on every run, `zig fmt --check modules` — a `.zig` file red anywhere in the tree fails the gate, staged or not;

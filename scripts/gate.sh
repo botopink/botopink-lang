@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # gate.sh — the botopink-lang gate, one ordered run. Stages 1–4 run one after
 # the other, each only after the previous one passed, so a failure there is
-# found by the cheapest stage that can see it. Stages 4b–11 only read the tree
+# found by the cheapest stage that can see it. Stages 4b–12 only read the tree
 # stage 4 has built and tested, so they run SIDE BY SIDE, each with its output
 # captured; they are then printed one block per stage in the order below, and
 # the gate stops at the first red one IN THAT ORDER — the stage, the output and
@@ -43,6 +43,10 @@
 #  11. tsc-check.sh         every `.d.ts` the commonJS backend emits for the
 #                           example projects and tests/language/modules passes
 #                           `tsc --noEmit --strict` (needs `npx`, from node)
+#  12. zig build test-web   compiler-core built for wasm32-wasi (the browser
+#                           compiler) and modules/compiler-web/tests/smoke.js
+#                           under node — CI's step, so its red is the gate's
+#                           (decision 231); default build mode, as CI runs it
 #
 # Usage:
 #   scripts/gate.sh [--cold] [--staged]
@@ -320,8 +324,8 @@ bash tests/language/run.sh --list >"$par/plan.language" 2>"$par/plan.language.er
 bash scripts/check-docs.sh --list >"$par/plan.docs" 2>"$par/plan.docs.err" ||
     { cat "$par/plan.docs.err"; fail "scripts/check-docs.sh --list"; }
 
-# ── § side by side: stages 4b–11 ─────────────────────────────────────────────
-# 4b, 5 and 6 are already running (§ ahead of the build); 7–11 start here.
+# ── § side by side: stages 4b–12 ─────────────────────────────────────────────
+# 4b, 5 and 6 are already running (§ ahead of the build); 7–12 start here.
 # Each reads what stages 2–4 left and writes only its own scratch (`mktemp`
 # directories, per-run `test-out/<target>/<id>/`, per-process test-scratch
 # roots); `test-cli`'s four scripts, which share `zig-out/` and fixture `out/`
@@ -341,6 +345,7 @@ launch 5 zig build test-libs "$opt"
 launch 6 zig build test-language "$opt"
 launch 7 zig build test-docs "$opt"
 launch 8 bash scripts/tsc-check.sh
+launch 9 zig build test-web
 wait
 
 # ── § counts ─────────────────────────────────────────────────────────────────
@@ -398,6 +403,8 @@ report 7 "zig build test-docs" "zig build test-docs" \
     "zig build test-docs (a ✗ line above names the doc, the fence line and the error)"
 report 8 "tsc --noEmit over the emitted .d.ts (scripts/tsc-check.sh)" "tsc-check" \
     "scripts/tsc-check.sh (the tsc error above names the project and the .d.ts; the defect is codegen/typescript.zig's)"
+report 9 "zig build test-web (the compiler built for wasm32, smoke.js under node)" "zig build test-web" \
+    "zig build test-web (a wasm32 compile error or a smoke.js assertion above names the defect)"
 
 # Record the trees as green — only when nothing moved while the gate ran.
 if [ "$(tree_key)" = "$start_key" ]; then

@@ -19,8 +19,8 @@
 #         Debug, and every `zig build` step after it passes
 #         `-Doptimize=ReleaseSafe` — the mode `scripts/gate.sh` passes as
 #         `$opt` and `release.yml` ships — so no step reinstalls a Debug
-#         `botopink` over the one the others run. `test-web` is not a gate
-#         stage and keeps the default mode.
+#         `botopink` over the one the others run. `test-web` is the gate's
+#         stage 12 (decision 231) and keeps the default mode, as the gate runs it.
 #   libs  every sibling library checked out next to botopink-lang
 #         (emilia, erika, jhonstart, onze, rakun at `feat`) plus libs/std,
 #         compiled and tested on every runnable target by `zig build test-libs
