@@ -51,6 +51,7 @@ of 1.0.5-beta). Two kinds of manifest exist: a **package** and a **workspace**
 | `targets` | array of strings | every target | `botopink-lib-test` | The targets the runner may run this package on. Absent: every requested target. A target the list leaves out is not a cell — nothing runs it — and the exclusion is audited on every run: `botopink build --target <excluded>` must be refused for a missing host binding (`has no #[@External.<Target>(…)]`), so a package may exclude only a target it structurally cannot run on; one that builds there, or fails for another reason, fails the run. A member of a workspace inherits the workspace's `targets` when it declares none, and may only **restrict** them (below). |
 | `files` | array of strings | `[]` | the loader (`compiler-cli/src/cli/libs.zig`, `language-server/src/project_graph.zig`), `bpmp pack` | The modules a **consumer** may import, each relative to `src`; shipped as `<name>/<stem>` (`acme-web/router` → `import { … } from "acme-web.router"` / the root `root.bp` → `from "acme-web"`). The only thing a dependency's consumer sees — a library that lists no `files` ships nothing. `libs/std` uses it for the modules the compiler build embeds. |
 | `dependencies` | **object** | `{}` | compiler, LSP, runner, `bpmp` | The object form only — below. |
+| `otp` | string | the compiler's | `botopink build/check/run/test` (`compiler-cli/src/cli/config.zig`, `libs.zig`) | The Erlang/OTP release the package is built for (decision 228 of 1.0.11-beta). The compiler emits for one release (`botopink --version` prints it: `otp: 28`), and `otp` may only name that one — another value is refused, located at the value. Every package of a build's closure that declares it must declare the same release; a mismatch is refused at the later value, naming the first manifest. A member of a workspace inherits the workspace's `otp` when it declares none, and may not name another. Absent everywhere: the compiler's release applies. Whatever the manifests say, `botopink build/run/test --target erlang\|beam` refuses an `erl` on `PATH` of another release before writing anything: `` botopink emits Erlang for OTP 28, and `erl` on PATH is OTP 29 — install OTP 28 and put it on PATH ``. |
 | `botopink`, `requires` | string · object | — | `bpmp` only | `botopink`: the compiler-version constraint. `requires`: the per-dependency version constraint `bpmp install <name>@<spec>` records. The compiler passes both through unread. |
 
 Unknown fields are preserved by `bpmp` (it rewrites the file) and not read by
@@ -100,6 +101,8 @@ its manifest. The same directory reached through two roots is one library.
 | `"x": { "path": "../x", "tag": "v1" }` | `dependency "x" pins a ref without a "git" source — a pin applies to a git dependency only` |
 | `"x": { "workspace": false }` | `dependency "x": "workspace" can only be true — { "workspace": true } names the sibling member of the enclosing workspace` |
 | `"x": { "git": 1 }` (and `path`, `branch`, `tag`, `rev`) | `dependency "x": "git" must be a string` |
+| `"otp": "26"` (any release but the compiler's) | `botopink emits Erlang for OTP 28; "otp" names 26` (on the value) |
+| a dependency of the closure whose `"otp"` differs from the project's (or the first pin's) | `"otp" names 29 here, but 28 in <first>/botopink.json — every package of a build pins one OTP release` (on the dependency's value) |
 
 Refusals at resolution time (the compiler and the LSP, located on the project's
 `dependencies` entry):
@@ -162,6 +165,7 @@ never a package. `npm`'s field name, `npm`'s meaning.
 |---|---|
 | `name`, `version`, `description` | As for a package. The name is what a lookup answers with when something imports the umbrella by mistake. |
 | `targets` | The default every member inherits when it declares none; a member may only **restrict** it. |
+| `otp` | The release every member inherits when it declares none; a member may only repeat it. |
 | `workspaces` | The member globs. Two forms: `"<dir>/*"` — every child directory of `<dir>` that holds a `botopink.json` (a child without one is not a member); `"<dir>"` — one directory, which **must** hold a `botopink.json`. Paths are inside the workspace (no `..`, no absolute path, no other `*`). |
 | `src`, `files`, `entry`, `dependencies` | **Refused** — a workspace compiles nothing and ships nothing. |
 
@@ -192,6 +196,7 @@ application; nothing is shipped from it by design.
 | `"modules/ghost"` with no manifest there | `workspaces entry "modules/ghost": <ws>/modules/ghost/botopink.json does not exist — a literal entry names a directory holding a botopink.json` |
 | a member that is itself a workspace | `"inner" is a member of <ws>/botopink.json and cannot itself be a workspace — workspaces do not nest` (on the member's `workspaces`) |
 | two members with one `name` | `member name "dup" is declared twice in <ws>/botopink.json: <a>/botopink.json and <b>/botopink.json` (on the second member's `name`) |
+| a member naming another `otp` | `"otp" names 29 here, but 28 in <ws>/botopink.json — every package of a build pins one OTP release` (on the member's value) |
 | a member widening `targets` | `"erlang" is not one of the workspace's targets ["commonJS"] (<ws>/botopink.json) — a member may only restrict the workspace's targets` (on the member's entry) |
 | a member depending on itself | `"web" cannot depend on itself` |
 | a member's `{ "workspace": true }` naming no sibling | `"ghost": { "workspace": true } names no member of <ws>/botopink.json (members: a, b)` |

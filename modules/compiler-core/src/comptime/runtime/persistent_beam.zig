@@ -62,6 +62,7 @@ const preludeMod = @import("./prelude.zig");
 const serverSource = @import("./server_source.zig");
 const beamFile = @import("../../codegen/beam/beam_file.zig");
 const etf = @import("./etf.zig");
+const otp = @import("../../otp.zig");
 const beamProgram = @import("beam/program.zig");
 const Term = @import("../../codegen/beam/term.zig").Term;
 
@@ -224,6 +225,12 @@ fn ensureSpawned(io: Io, allocator: std.mem.Allocator) !void {
             // stderr goes to a log file, never inherited: an orphan holding the
             // parent's stderr open blocks whoever waits for its EOF (the
             // `zig build test` runner reports "test runner failed to respond").
+            // The node starts only on the release the compiler emits for
+            // (decision 228): another one is refused before it spawns.
+            if (otp.refusal(io)) |msg| {
+                setTransportError("{s}", .{msg});
+                return error.OtpReleaseRefused;
+            }
             const cwd = std.Io.Dir.cwd();
             try cwd.createDirPath(io, server_dir);
             const stderr_log = try cwd.createFile(io, ensureStderrLogPath(io), .{});

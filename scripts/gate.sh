@@ -11,8 +11,10 @@
 #                           snapshot candidate (`*.snap.new`, `*.snap.md.new`)
 #                           staged (--staged); then, every run, `zig fmt --check
 #                           modules` — a `.zig` file red anywhere fails the
-#                           gate, staged or not
-#   2. zig build            the CLI, the LSP and the runners link, built
+#                           gate, staged or not; then the `erl` on PATH is the
+#                           OTP release the compiler emits for (decision 228,
+#                           § the OTP release), or the gate stops before stage 2
+#   2. zig build           the CLI, the LSP and the runners link, built
 #                           -Doptimize=ReleaseSafe — the shipped mode, and the
 #                           binaries every later stage runs (§ build mode)
 #   3. format-check.sh      `botopink format --check` over the compiler's own
@@ -200,6 +202,20 @@ unformatted="$(zig fmt --check modules 2>&1)" || fail "zig fmt --check modules:
 $unformatted
 (run: zig fmt modules)"
 pass "zig fmt --check modules"
+
+# ── § the OTP release ────────────────────────────────────────────────────────
+# Decision 228: the compiler emits Erlang for one release, the `OTP_RELEASE`
+# constant of modules/manifest/src/root.zig (`botopink --version` prints it),
+# and every erlang and beam run refuses another `erl` on PATH. The gate reads
+# the constant from that source — the binary is not built yet — and stops here,
+# with the compiler's message, before stage 2 builds anything.
+stage "Erlang/OTP release"
+otp_want="$(sed -n 's/^pub const OTP_RELEASE = "\([0-9][0-9]*\)";$/\1/p' modules/manifest/src/root.zig)"
+[ -n "$otp_want" ] || fail "modules/manifest/src/root.zig declares no OTP_RELEASE"
+otp_have="$(erl -noshell -eval 'io:format("~s",[erlang:system_info(otp_release)]),halt().' 2>/dev/null)" || otp_have=""
+[ -n "$otp_have" ] || fail "botopink emits Erlang for OTP $otp_want, and \`erl\` on PATH did not name its release — install OTP $otp_want and put it on PATH"
+[ "$otp_have" = "$otp_want" ] || fail "botopink emits Erlang for OTP $otp_want, and \`erl\` on PATH is OTP $otp_have — install OTP $otp_want and put it on PATH"
+pass "Erlang/OTP $otp_have, the release botopink emits for"
 
 # A hook runs with the committing repository's GIT_DIR, GIT_INDEX_FILE, … in
 # the environment. Stage 1 needed them; nothing after it may inherit them: a

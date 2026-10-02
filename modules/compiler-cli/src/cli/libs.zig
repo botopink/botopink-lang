@@ -319,6 +319,19 @@ fn loadClosure(
     // directory by one of them is refused, not silently shadowed.
     for (deps) |dep| _ = try closure.resolve(project, project_dir, dep);
     for (deps) |dep| try closure.visit(project, dep.name);
+    // One OTP release across the closure (decision 228): every package that
+    // pins `"otp"` pins the project's — or the first pin's — release.
+    var pinned: std.ArrayListUnmanaged(manifest.Manifest) = .empty;
+    try pinned.append(arena, project);
+    for (closure.order.items) |pkg| try pinned.append(arena, pkg.manifest);
+    var otp_err: ?manifest.Located = null;
+    _ = manifest.closureOtp(arena, pinned.items, &otp_err) catch |e| switch (e) {
+        error.Invalid => {
+            otp_err.?.print();
+            return error.LibManifestInvalid;
+        },
+        error.OutOfMemory => return error.OutOfMemory,
+    };
     for (closure.order.items) |pkg| try loadOne(gpa, io, pkg.dir, pkg.manifest, pkg.name, out);
 }
 

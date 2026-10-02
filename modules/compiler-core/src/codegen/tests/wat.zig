@@ -1151,24 +1151,29 @@ test "wat: prim method ---- the methods that trapped lower: lines, words, unique
     );
 }
 
-// What is left of the class traps by name rather than answering: `unique`
-// over records (commonJS answers `2` and erlang `1` for the program below —
-// the backends disagree on `!=` between two records, so no wasm answer is
-// right), `flatMap` whose function answers a scalar (node flattens nothing,
-// erlang fails), and `flatten` over elements no shape says are arrays.
-test "wat: prim method ---- unique over records and flatMap over a scalar trap, never answer" {
-    const trap = "RUNTIME TRAP (wasmtime):\nwasm trap: wasm `unreachable` instruction executed\n";
-    try h.assertWasmRunLog(std.testing.allocator,
+// What is left of the class is refused by name rather than answered:
+// `unique` over records (`$__arr_unique` compares words and strings; decision
+// 210's structural answer has no wasm lowering yet), `flatMap` whose function
+// answers a scalar (node keeps it, erlang fails), and `flatten` over elements
+// no shape says are arrays. Each was a run-time trap; each is a located build
+// refusal at the call now (`00 · 110-gate-wasm`).
+test "wat: prim method ---- unique over records, flatMap over a scalar and flatten over scalars are refused at the call" {
+    try h.assertWasmRefusedAt(std.testing.allocator,
         \\type P(x: i32)
         \\fn main() {
         \\    @print([P(x: 1), P(x: 1)].unique().length);
         \\}
-    , trap);
-    try h.assertWasmRunLog(std.testing.allocator,
+    , "`unique` on the wasm backend compares", 3, 31);
+    try h.assertWasmRefusedAt(std.testing.allocator,
         \\fn main() {
         \\    @print([1, 2].flatMap({ x -> x + 1 }));
         \\}
-    , trap);
+    , "`flatMap` on the wasm backend: nothing shows that its function answers an array", 2, 19);
+    try h.assertWasmRefusedAt(std.testing.allocator,
+        \\fn main() {
+        \\    @print([1, 2].flatten());
+        \\}
+    , "`flatten` on the wasm backend: nothing shows", 2, 19);
 }
 
 // `Array.pop` and `Array.lastIndexOf` left the trap list: `pop` answers the
@@ -1203,9 +1208,12 @@ test "wat: prim method ---- pop shrinks a local array and lastIndexOf searches f
 // time, `v is string` answered `false` for `"abc"` at exit 0 (`-1` where the
 // other backends answer `3`). The guarded arm answers a literal: a field read
 // on that slot (`v.length`) is refused before the module exists — the test
-// below pins that diagnostic.
-test "wat: unknown ---- a type parameter's slot is not boxed by a guess" {
-    try h.assertWasmRunLog(std.testing.allocator,
+// below pins that diagnostic. The box itself is refused too, where the value
+// enters the `unknown` slot (`v is string` boxes `v`): it was a run-time
+// trap, and `00 · 110-gate-wasm` makes every lowering that cannot proceed a
+// located build refusal.
+test "wat: unknown ---- a type parameter's slot is refused, not boxed by a guess" {
+    try h.assertWasmRefusedAt(std.testing.allocator,
         \\type Maybe<T> {
         \\    Some(value: T),
         \\    None,
@@ -1223,7 +1231,7 @@ test "wat: unknown ---- a type parameter's slot is not boxed by a guess" {
         \\    val s: unknown = Maybe.Some(value: "abc");
         \\    @print(innerLength(s));
         \\}
-    , "-2\nRUNTIME TRAP (wasmtime):\nwasm trap: wasm `unreachable` instruction executed\n");
+    , "the wasm backend cannot box this value as `unknown`", 7, 36);
 }
 
 // `00 · 110-gate-wasm` step 2: a field read this backend cannot place — the
@@ -1231,7 +1239,8 @@ test "wat: unknown ---- a type parameter's slot is not boxed by a guess" {
 // where it is written, as every lowering that cannot proceed now is. It used
 // to write `i32.const 0` with a `;; note` and go on, so the program ran and
 // printed a wrong value at exit 0. commonJS, erlang and beam answer `3`; the
-// wasm snapshot records the diagnostic.
+// wasm snapshot records the diagnostic — the guard's, now: `v is string` boxes
+// the same untyped slot, and that box is refused first (the test above).
 test "wat: unknown ---- a field read on a type parameter's slot is refused" {
     try h.assertJsExpecting(std.testing.allocator, @src(), &.{
         .{
@@ -1625,12 +1634,13 @@ test "wat: behavior ---- a program's default fn on Array<T> is called with its e
 // parameter nothing types: the record goes through a generic fn and the
 // field is called on the result, so no call through the constructor's own
 // local and no written type reach the lambda. Its parameter's word may be a
-// string or an integer; the lambda TRAPS at entry
+// string or an integer; the lambda is REFUSED where it is written
 // (`lambda parameter `s`: nothing gives it a type the wasm backend can see`)
-// instead of guessing — it printed `300?` for `"d" + "?"` at exit 0.
-// commonJS answers `x%`.
-test "wat: function value ---- a lambda in a generic field that nothing types traps, never guesses" {
-    try h.assertWasmRunLog(std.testing.allocator,
+// instead of guessing — it printed `300?` for `"d" + "?"` at exit 0, then
+// trapped at the lambda's entry until `00 · 110-gate-wasm`. commonJS answers
+// `x%`.
+test "wat: function value ---- a lambda in a generic field that nothing types is refused, never guessed" {
+    try h.assertWasmRefusedAt(std.testing.allocator,
         \\type Box<T>(value: T)
         \\fn keep<T>(b: Box<T>) -> Box<T> {
         \\    return b;
@@ -1640,5 +1650,142 @@ test "wat: function value ---- a lambda in a generic field that nothing types tr
         \\    val ef = esc.value;
         \\    @print(ef("x"));
         \\}
-    , "RUNTIME TRAP (wasmtime):\nwasm trap: wasm `unreachable` instruction executed\n");
+    , "lambda parameter `s`: nothing gives it a type the wasm backend can see", 6, 31);
+}
+
+// ── `00 · 110-gate-wasm`: every lowering that cannot proceed is a located refusal ──
+//
+// Each program below compiled on wasm and died at run time on an
+// `unreachable` the lowering wrote "so the module still loads" — a program the
+// other backends run, refused only once it executed. The rule of
+// `codegen/wat/AGENTS.md` § Where this backend refuses to answer is that a
+// lowering that cannot proceed stops the build where the source is written;
+// what keeps an `unreachable` is the program's own semantics (`assert`,
+// `@panic`, `@todo`, an uncaught `throw`, a rejected `#[@future]`) and the
+// structural end of a dispatch nothing else reaches.
+
+// `is` over an all-unit enum: its values are bare ordinals with no header, so
+// there is no run-time test. commonJS answers `false`.
+test "wat: refusal ---- is over a type with no descriptor is refused at the test" {
+    try h.assertWasmRefusedAt(std.testing.allocator,
+        \\type Color { Red, Green }
+        \\pub fn main() {
+        \\    val c: unknown = 1;
+        \\    @print(c is Color);
+        \\}
+    , "`is Color`: the wasm backend has no run-time test for this type", 4, 14);
+}
+
+// A decorator / template builtin written in a program body: nothing on wasm
+// runs it. (commonJS emits `__emit("x")` and dies at run time — `04-js`'s row.)
+test "wat: refusal ---- a comptime-only builtin in a program body is refused" {
+    try h.assertWasmRefusedAt(std.testing.allocator,
+        \\pub fn main() {
+        \\    @emit("x");
+        \\}
+    , "`@emit` is a comptime-only builtin", 2, 5);
+}
+
+// `pop` shrinks its receiver in place on the other backends. A local, a module
+// `var` and — now — a record's field are rebound to the shorter copy; a call's
+// result may be an array another name holds, which a copy would leave whole,
+// so it is refused rather than answered.
+test "wat: refusal ---- pop on a call's result is refused, pop on a record field shrinks it" {
+    try h.assertWasmRefusedAt(std.testing.allocator,
+        \\fn xs() -> Array<i32> {
+        \\    return [1, 2];
+        \\}
+        \\pub fn main() {
+        \\    @print(xs().pop());
+        \\}
+    , "`pop` on the wasm backend rebinds its receiver", 5, 17);
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\type Stack(items: Array<i32>)
+        \\pub fn main() {
+        \\    val s = Stack(items: [1, 2, 3]);
+        \\    @print(s.items.pop());
+        \\    @print(s.items);
+        \\}
+    ,
+        \\3
+        \\[1, 2]
+        \\
+    );
+}
+
+// Dispatch by value tells implementers apart by the header behind the value;
+// an all-unit enum's variant is its ordinal and has none, so `show(Color.Red)`
+// reached the dispatcher's end and trapped after printing `p`. commonJS prints
+// `p` then `c`.
+test "wat: refusal ---- dispatch by value over an all-unit enum implementer is refused at the call" {
+    try h.assertWasmRefusedAt(std.testing.allocator,
+        \\behavior Named {
+        \\    fn name(self: Self) -> string;
+        \\}
+        \\type Color implement Named {
+        \\    Red,
+        \\    Green,
+        \\
+        \\    fn name(self: Self) -> string {
+        \\        return "c";
+        \\    }
+        \\}
+        \\type P(x: i32) implement Named {
+        \\    fn name(self: Self) -> string {
+        \\        return "p";
+        \\    }
+        \\}
+        \\fn show(n: Named) -> string {
+        \\    return n.name();
+        \\}
+        \\pub fn main() {
+        \\    @print(show(P(x: 1)));
+        \\    @print(show(Color.Red));
+        \\}
+    , "`Color` is an all-unit enum", 18, 14);
+}
+
+// A generic body is the one a call reaches when no specialisation bound its
+// type parameters. `x is string` over a `T` now asks for a copy per bound type
+// (`callsMethodOn`), so `shown(1)` / `shown("s")` / `shown(true)` answer from
+// copies; the generic body keeps an `unreachable` no execution meets.
+test "wat: refusal ---- is over a type parameter specialises the generic fn per bound type" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\fn shown<T>(x: T) -> string {
+        \\    if (x is string) return "q";
+        \\    return "n";
+        \\}
+        \\pub fn main() {
+        \\    @print(shown(1));
+        \\    @print(shown("s"));
+        \\    @print(shown(true));
+        \\}
+    ,
+        \\n
+        \\q
+        \\n
+        \\
+    );
+}
+
+// ...and a concrete call that reaches the generic body unspecialised — here
+// `$__display_of` printing a `Box<i32>` through the ONE `Box.display`, whose
+// `shown(self.value)` binds nothing — is refused where it is written
+// (`refuseUnboundTemplateCalls`). It trapped inside `shown`. commonJS prints
+// `Box(n)`.
+test "wat: refusal ---- a generic body reached with nothing bound is refused at the concrete call" {
+    try h.assertWasmRefusedAt(std.testing.allocator,
+        \\fn shown<T>(x: T) -> string {
+        \\    if (x is string) return "s";
+        \\    return "n";
+        \\}
+        \\type Box<T>(value: T) implement Display {
+        \\    pub fn display(self: Self<T>) -> string {
+        \\        return "Box(" + shown(self.value) + ")";
+        \\    }
+        \\}
+        \\pub fn main() {
+        \\    @print(Box(value: 1));
+        \\}
+    , "cannot call the generic `Box.display` here", 11, 12);
 }

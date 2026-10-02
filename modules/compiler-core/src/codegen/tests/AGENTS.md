@@ -86,6 +86,13 @@ reason: the method already answers on the other three backends, so an
 all-backend fixture would move their snapshot directories, which front `05-wasm`
 does not own.
 
+`assertWasmRefusedAt(src, needle, line, col)` asserts the wasm backend
+REFUSES `src` — `codegen.generateWith` hands the module back with a
+`Diagnostic.type` whose message contains `needle`, located at `line:col` — and
+writes no snapshot: the claim is wasm's alone. `wat.zig`'s refusal fixtures
+use it (`00 · 110-gate-wasm`: every lowering that cannot proceed is a located
+build refusal, never a module that traps at run time).
+
 `assertBeamRunLog(src, expected, needles)` is the beam twin of
 `assertErlangRunLog` (front `03-beam`): it compiles for the beam target,
 assembles and runs every emitted `.S` (`runtime.executeBeamAsm`), compares the
