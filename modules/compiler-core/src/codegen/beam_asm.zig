@@ -186,9 +186,15 @@ fn isVariantPath(written: []const u8) bool {
 /// it is the block's value. The same set `emitLambdaBody` reads: anything else
 /// (a `return`, a `val`, an assignment) runs as a statement and the block
 /// answers `ok`.
+///
+/// A lambda literal in tail position (`Mark(s) { { item -> f(item, s) }; }`)
+/// is the value too: a statement-position block does not parse, so a
+/// `{ … -> … }` there is always a fun. It ran as a statement and the arm
+/// answered `ok`, which the caller then applied (`{badfun, ok}`).
 fn armValueTail(e: ast.Expr) bool {
     return switch (e) {
         .literal, .identifier, .binaryOp, .unaryOp, .call, .useHook, .collection, .branch => true,
+        .function => |f| f.kind.syntax != .asyncBlock,
         else => false,
     };
 }

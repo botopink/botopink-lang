@@ -71,3 +71,25 @@ test "beam: a number in a list pattern is a test of that element" {
         \\
     , &.{"{test, is_eq, {f, "});
 }
+
+// ── a lambda a `case` arm answers ────────────────────────────────────────────
+
+test "beam: a lambda literal that ends a case arm is the arm's value" {
+    // `_ { { x -> x * n }; }` — the arm block's last statement is a lambda,
+    // so it is the value the `case` answers (a statement-position block does
+    // not parse). It ran as a statement, the arm answered `ok`, and applying
+    // it was `{badfun, ok}` (01-checker's `test/case_arm_lambda_value`).
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\fn scaleBy(n: i32) -> fn(x: i32) -> i32 {
+        \\    val f = case n {
+        \\        _ {
+        \\            { x -> x * n };
+        \\        }
+        \\    };
+        \\    return f;
+        \\}
+        \\fn main() {
+        \\    @print(scaleBy(3)(10));
+        \\}
+    , "30\n", &.{"{make_fun3, "});
+}

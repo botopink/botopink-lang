@@ -1773,6 +1773,13 @@ codegen/
   constructor emits the bare atom `'Circle'`, so `variantTag` and the `.ident`
   arm take the last `.`-separated segment (`bareVariantName`); §5.1 P8 — a name
   carrying a `.` is a variant, never a binding (`isVariantPath`) (01's defect 1).
+- **A `case` arm's value** (`lowerArmBody`, `armValueTail`): a block arm runs
+  in the frame and its value is its last statement when that is a value
+  expression — a lambda literal included (`Mark(s) { { item -> f(item, s) }; }`
+  answers the fun: a statement-position block does not parse, so `{ … -> … }`
+  there is always one). It ran as a statement and the arm answered `ok`, which
+  the caller then applied (`{badfun, ok}`). `emitLambdaBody` shares the rule,
+  so a lambda's own last-statement lambda is its value too.
 - **Case patterns** (`emitPatternArm`, `emitSubPattern`, decision 8 §5; C-06's
   and C-07 D4's beam halves): every shape the `.fields`/`.binding` arms never
   read — a range, a tuple, `..`, labels, a literal or nested payload, a
