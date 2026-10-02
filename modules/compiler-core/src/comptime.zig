@@ -1021,7 +1021,7 @@ fn analyzeSource(
     const program = try assocTypes.expand(arena, expanded, &owners);
     // Decision 216 (4): a module reading `@typeinfo.all` is answered on its
     // re-analysis, after its own decorators ran.
-    const typeinfo_queries = if (skip_invoke) &.{} else try typeinfoAll.collect(arena, program);
+    const typeinfo_queries = if (skip_invoke or !typeinfoAll.reads(source)) &.{} else try typeinfoAll.collect(arena, program);
     env.typeinfoAllPending = typeinfo_queries.len > 0;
 
     if (validation.validateComptime(program)) |err_info| {
