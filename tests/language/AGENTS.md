@@ -139,6 +139,12 @@ over integers, strings, a local, a parameter and an annotated empty `i32[][]`), 
 (`chunked`, `sliding`, `n <= 0`, a slice indexed and measured) and `run/array_fill` (a value of
 each primitive, an empty receiver). `pop` is `run/array_pop_removes`; `unique`'s cell is
 `02-erlang`'s `run/array_unique` (C-35).
+Step 2 adds `run/generic_string_equality` — `==` / `!=` between two type-parameter values bound
+to strings built at run time, by a call's arguments, an array's elements, a generic record's
+constructor and a generic call answering one, a parameter written `Pair<T>`, a variant's payload,
+an array of such records under `map`, and a generic fn handed to a `fn(a: string, b: string) ->
+bool` parameter or bound to a `val` of that type — on four targets; wasm compared words for the
+record, generic-result, `Pair<T>`, array and fn-value rows.
 `00 · 03-beam`'s split row adds `run/string_split_empty_separator` — `split("")` cuts into UTF-8
 codepoints (`"%0Aéz"` → 5 pieces, `""` → none) beside a non-empty separator and an empty separator
 held in a `val`, on all four targets (beam lowered it to `string:split/3`, wasm cut between bytes).

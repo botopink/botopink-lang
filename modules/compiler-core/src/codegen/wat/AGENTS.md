@@ -196,11 +196,43 @@ the declaration with them substituted in every written type
 the body calls a method on a value of the parameter (`x.toString()`,
 `xs.at(0)`, `callsMethodOn`) whatever it binds: inference saw a type variable
 there and recorded no lowering, so inside a copy (`in_spec`) `primKindAt`
-reads the receiver's substituted type. A call whose arguments say nothing
-keeps the one generic body, and with it the limit: `==` between two
-type-parameter values compares WORDS, and `elemKindOfTypeRef` reads a type
-parameter as `.i32` (`run/generic_body_specialized.bp`,
-`modules/method_on_unimported_type`).
+reads the receiver's substituted type. `01-compiler/05-wasm` step 2 closed
+the shapes that bound a string and still reached the one body:
+
+- **a method copy reads its owner's fields by the substitution**
+  (`field_subs` / `fieldSub`, set from `GenericMethod.subs` while
+  `emitPendingFns` emits it): `self.left == self.right` in
+  `Pair<string>.matched` compared words while `left: A` read as `A`;
+- **a constructor of a generic record answers its type arguments**
+  (`ctorTypeRef`, `record_generics`): `Pair(left: s, right: "ab").matched()`,
+  a local bound to one, an array literal of them (`typeRefOf`'s `arrayLit`
+  arm) and a HOF's element parameter over such an array specialise like a
+  written `Pair<string>`;
+- **a parameter written `Pair<T>`** binds `T` from its argument's type
+  arguments (`bindParam`), and a field read through a receiver typed
+  `Pair<string>` is a `string` (`recvTypeArg`): `eqPair(Pair(left: s, …))`;
+- **a generic fn NAMED as an argument** whose parameter is written as a
+  function type, or **bound** to a `val` written with one, is the copy that
+  type binds (`specializeByFnType`, `specCopy`): `apply(same, s, "ab")`
+  against `f: fn(a: string, b: string) -> bool` called a trampoline over the
+  generic body, and `val held: fn(…) -> bool = same` too (its call also
+  prints as a bool now — `isBoolExpr` reads a function value's declared
+  return).
+
+`run/generic_string_equality.bp` pins every way a type parameter gets a
+string bound on four targets, `modules/method_on_unimported_type` (`Dict.at`
+with a key `split` built) included — it already passed at the open, through
+`specializeMethod`. **What stays**: a call whose arguments and context say
+nothing about the type keeps the one generic body — a generic fn stored in
+a field or bound with no written type, a parameter type `bindParam` does not
+read (it reads a bare `T`, `T[]` / `Array<T>` and a generic record's direct
+type arguments) — and there `==` between two
+type-parameter values compares words and `elemKindOfTypeRef` reads a type
+parameter as `.i32`. A string carries no header (it is a bare
+`[len][bytes]` blob), so a body cannot ask the value what it is: the copy is
+the only cure, and `run/generic_body_specialized.bp` pins the shapes that
+reach it. `fieldSub` is owner-wide: inside a copy of `Pair<string>`'s method,
+a `Pair` of another instantiation reads its fields as `string` too.
 
 **A tuple element is printed by its own shape, not by its address**
 (`tupleElemShapeOf`). This was the last silent wrong-answer class the directory
@@ -244,9 +276,11 @@ printed a record or a variant**, which is why the trap above re-recorded no
 existing file — the addresses §7 owes were only ever in the language cells. Any
 new fixture whose log holds such a number is worth re-reading against this table.
 
-What is left in this class is the **generic-parameter limit** above, which is a
-different cause: there the declared type is a type parameter, so no shape exists
-to slice — and one more, reported on `fix/wasm-refusals` and not fixed there:
+What is left in this class is the **generic-parameter limit** above — the
+calls nothing specialises, a narrower set since `01-compiler/05-wasm` step 2 —,
+which is a different cause: there the declared type is a type parameter, so no
+shape exists to slice — and one more, reported on `fix/wasm-refusals` and not
+fixed there:
 
 **`$__print_str_raw` guards its own null** (`00 · 05-wasm`, 1.0.10-beta). A
 string here is a length-prefixed blob in a data segment or on the heap, and both

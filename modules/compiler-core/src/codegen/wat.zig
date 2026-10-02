@@ -654,6 +654,9 @@ const GenericMethod = struct {
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
     lowerings: std.AutoHashMap(ast.Loc, envMod.InstanceLowering),
     renames: ?*const std.StringHashMapUnmanaged([]const u8),
+    /// The owner's type parameters this copy substituted (`A` → `string`),
+    /// so a field the owner declares `left: A` reads as `string` in it.
+    subs: []const TypeSub = &.{},
 };
 
 /// A type parameter's name and the type a specialisation writes for it.
@@ -1310,6 +1313,9 @@ const Emitter = struct {
     //    from the declarations to lower construction/access by memory offset) ──
     /// record/struct name → ordered field names (slots are 4 bytes each).
     records: std.StringHashMap([]const []const u8),
+    /// The type parameters a record declares (`type Pair<A>(…)`), for the
+    /// type arguments a constructor call binds (`ctorTypeRef`). In `reg_arena`.
+    record_generics: std.StringHashMapUnmanaged([]const ast.GenericParam) = .empty,
     /// record/struct name → ordered field type-names (parallel to `records`).
     /// Used to chain-infer the type of `recv.a.b` (`a`'s declared type drives
     /// the lookup for `.b`). Empty/unknown types stay as `""`.
@@ -1395,6 +1401,13 @@ const Emitter = struct {
     /// type parameters (`specializeMethod`); the specialised copies to emit.
     generic_methods: std.StringHashMapUnmanaged(GenericMethod) = .empty,
     mspec_pending: std.ArrayListUnmanaged(GenericMethod) = .empty,
+    /// While a method specialisation is emitted: its owner and the owner's
+    /// type parameters it substituted. `fieldTypeIn` / `fieldTypeRefIn`
+    /// answer a field of the owner declared as one of them by its
+    /// substitution — `self.left == self.right` over `Pair<string>`
+    /// compared WORDS while the fields read as `A` (`run/generic_string_equality`).
+    field_subs_owner: []const u8 = "",
+    field_subs: []const TypeSub = &.{},
     /// Set while a specialisation's body is emitted: a method on a value
     /// whose declared type the substitution made a primitive takes that
     /// primitive's lowering (`primKindAt`) — inference saw a type variable
@@ -1983,6 +1996,7 @@ const Emitter = struct {
                     try self.record_field_typerefs.put(tdecl.name, trefs);
                     try self.records.put(tdecl.name, names);
                     try self.record_field_types.put(tdecl.name, types);
+                    if (tdecl.genericParams.len > 0) try self.record_generics.put(ra, tdecl.name, tdecl.genericParams);
                 },
                 .enum_ => try self.enums.put(tdecl.name, tdecl.variants()),
             },
@@ -2081,8 +2095,37 @@ const Emitter = struct {
     fn fieldTypeRefIn(self: *Emitter, record: []const u8, field: []const u8) ?ast.TypeRef {
         const fields = self.records.get(record) orelse return null;
         const trefs = self.record_field_typerefs.get(record) orelse return null;
-        for (fields, 0..) |f, i| if (std.mem.eql(u8, f, field) and i < trefs.len) return trefs[i];
+        for (fields, 0..) |f, i| if (std.mem.eql(u8, f, field) and i < trefs.len) return self.fieldSub(record, trefs[i]);
         return null;
+    }
+
+    /// A field type `ft` of the generic record `rty` that names one of its
+    /// type parameters, read through `recv` whose type spells the arguments
+    /// (`p: Pair<string>` in a copy, a `Pair(left: s, …)` local): that
+    /// argument. `ft` itself otherwise.
+    fn recvTypeArg(self: *Emitter, recv: ast.Expr, rty: []const u8, ft: []const u8) []const u8 {
+        const gps = self.record_generics.get(rty) orelse return ft;
+        const idx = for (gps, 0..) |gp, i| {
+            if (std.mem.eql(u8, gp.name, ft)) break i;
+        } else return ft;
+        const tr = self.typeRefOf(recv) orelse return ft;
+        if (tr != .generic or !std.mem.eql(u8, tr.generic.name, rty) or tr.generic.args.len != gps.len) return ft;
+        return switch (tr.generic.args[idx]) {
+            .named => |n| n,
+            else => ft,
+        };
+    }
+
+    /// A field type written as one of the owner's type parameters, read in a
+    /// specialisation of one of the owner's methods: the substituted type.
+    fn fieldSub(self: *Emitter, record: []const u8, t: ast.TypeRef) ast.TypeRef {
+        if (self.field_subs.len == 0 or !std.mem.eql(u8, record, self.field_subs_owner)) return t;
+        const n = switch (t) {
+            .named => |n| n,
+            else => return t,
+        };
+        for (self.field_subs) |sub| if (std.mem.eql(u8, sub.name, n)) return sub.to;
+        return t;
     }
 
     /// Declared type-name of `field` inside `record`, when both are known.
@@ -2093,7 +2136,11 @@ const Emitter = struct {
             if (std.mem.eql(u8, fn_, field)) {
                 if (i >= types.len) return null;
                 const tn = types[i];
-                return if (tn.len == 0) null else tn;
+                if (tn.len == 0) return null;
+                return switch (self.fieldSub(record, .{ .named = tn })) {
+                    .named => |n| n,
+                    else => tn,
+                };
             }
         }
         return null;
@@ -4350,6 +4397,17 @@ const Emitter = struct {
                     const lambda_idx: u32 = @intCast(self.lambdas.items.len);
                     if (lb.value.* == .function) self.expected_fn = lb.typeAnnotation;
                     defer self.expected_fn = null;
+                    // `val f: fn(a: string, b: string) -> bool = same` over a
+                    // generic `same`: the copy the written type binds, as an
+                    // argument against such a parameter is (`specializeByFnType`).
+                    if (lb.typeAnnotation) |ta| if (plainIdentName(lb.value.*)) |vn| if (!self.locals.contains(vn)) {
+                        if (try self.specializeByFnType(self.import_aliases.get(vn) orelse vn, ta)) |sym| {
+                            try self.lowerFnRef(sym);
+                            try self.emit(.{ .local_set = lb.name });
+                            _ = self.closure_locals.remove(lb.name);
+                            return .none;
+                        }
+                    };
                     if (self.boxesInto(lb.typeAnnotation, lb.value.*))
                         try self.lowerBoxedInto(lb.typeAnnotation, lb.value.*)
                     else
@@ -5663,6 +5721,8 @@ const Emitter = struct {
                         (std.mem.eql(u8, cc.callee, ast.is_builtin_name) and cc.isType != null);
                     if (self.primKindAt(cc, c.loc)) |k| break :blk primCallRes(k, cc) == .bool_;
                     if (self.genericResultArg(cc)) |a| break :blk self.isBoolExpr(a);
+                    // `f(a, b)` over a value declared `fn(…) -> bool`.
+                    if (self.valueCallTypeRef(cc)) |t| if (isBoolTypeRef(t)) break :blk true;
                     if (self.resolvedCallSym(cc, c.loc)) |sym| break :blk self.bool_fns.contains(sym);
                     break :blk false;
                 },
@@ -6730,6 +6790,12 @@ const Emitter = struct {
                     break;
                 }
                 const ptref: ?ast.TypeRef = if (ptrefs) |ps| (if (base + i < ps.len) ps[base + i] else null) else null;
+                if (ptref) |pt| if (plainIdentName(arg.value.*)) |an| if (!self.locals.contains(an)) {
+                    if (try self.specializeByFnType(self.import_aliases.get(an) orelse an, pt)) |sym| {
+                        try self.lowerFnRef(sym);
+                        continue;
+                    }
+                };
                 if (self.boxesInto(ptref, arg.value.*))
                     try self.lowerBoxedInto(ptref, arg.value.*)
                 else
@@ -7640,6 +7706,9 @@ const Emitter = struct {
             try self.declareLocal(p, elem_ty);
             if (elem_kind == .str) try self.str_locals.put(p, {});
             if (try self.elemIsBool(recv)) try self.bool_locals.put(p, {});
+            // An element of a generic record whose type arguments are known
+            // (`ctorTypeRef`) keeps them, so `p.matched()` specialises.
+            if (self.elemTypeRefOf(recv)) |et| if (et == .generic and self.record_generics.contains(et.generic.name)) try self.local_typerefs.put(p, et);
             // The parameter is one ELEMENT, so it has the element's record
             // type. Without it a field read off it had no receiver type and
             // fell to the unique-field guess, or to the `0` stub.
@@ -8608,17 +8677,21 @@ const Emitter = struct {
         while (li < self.lambdas.items.len or ai < self.assoc_needed.items.len or si < self.spec_pending.items.len or mi < self.mspec_pending.items.len) {
             while (mi < self.mspec_pending.items.len) : (mi += 1) {
                 const sp = self.mspec_pending.items[mi];
-                const saved = .{ self.rewrites, self.instance_lowerings, self.global_renames, self.owner_tparams };
+                const saved = .{ self.rewrites, self.instance_lowerings, self.global_renames, self.owner_tparams, self.field_subs_owner, self.field_subs };
                 self.rewrites = sp.rewrites;
                 self.instance_lowerings = sp.lowerings;
                 self.global_renames = sp.renames;
                 self.owner_tparams = sp.tparams;
+                self.field_subs_owner = sp.owner;
+                self.field_subs = sp.subs;
                 self.in_spec = true;
                 defer {
                     self.rewrites = saved[0];
                     self.instance_lowerings = saved[1];
                     self.global_renames = saved[2];
                     self.owner_tparams = saved[3];
+                    self.field_subs_owner = saved[4];
+                    self.field_subs = saved[5];
                     self.in_spec = false;
                 }
                 try self.emitMemberFn(sp.owner, sp.method);
@@ -8999,6 +9072,28 @@ const Emitter = struct {
         return null;
     }
 
+    /// `Pair(left: s, right: "ab")` of a generic record: `Pair<string>`, the
+    /// type arguments its fields' arguments bind — what a method call on it
+    /// specialises by (`specializeMethod`). Null when the record has no type
+    /// parameter or some argument does not say what its parameter is.
+    fn ctorTypeRef(self: *Emitter, cc: anytype) !?ast.TypeRef {
+        if (cc.receiver != null or cc.is_builtin) return null;
+        const gps = self.record_generics.get(cc.callee) orelse return null;
+        const names = self.records.get(cc.callee) orelse return null;
+        const trefs = self.record_field_typerefs.get(cc.callee) orelse return null;
+        const ar = self.reg_arena.allocator();
+        const args = try ar.alloc(ast.TypeRef, gps.len);
+        for (gps, args) |gp, *out| {
+            const ty: []const u8 = for (trefs, 0..) |t, i| {
+                if (t != .named or !std.mem.eql(u8, t.named, gp.name) or i >= names.len) continue;
+                const arg = self.argForField(cc.args, names[i], i) orelse continue;
+                if (self.concreteTypeOf(arg.value.*)) |c| break c;
+            } else return null;
+            out.* = .{ .named = ty };
+        }
+        return .{ .generic = .{ .name = cc.callee, .args = args, .is_builtin = false } };
+    }
+
     /// The type an argument binds a type parameter to, when its shape says:
     /// a primitive, a record, an all-unit enum.
     fn concreteTypeOf(self: *Emitter, e: ast.Expr) ?[]const u8 {
@@ -9032,6 +9127,20 @@ const Emitter = struct {
                 return .{ .name = n, .ty = self.concreteTypeOf(arg) orelse return null };
             },
             .array, .generic => {
+                // `p: Pair<T>` against an argument whose type says `Pair<string>`
+                // (`ctorTypeRef`, a local bound to one): `T` is what the
+                // argument's type argument at its place is.
+                if (t == .generic and !std.mem.eql(u8, t.generic.name, "Array")) {
+                    const at = self.typeRefOf(arg) orelse return null;
+                    if (at != .generic or !std.mem.eql(u8, at.generic.name, t.generic.name) or at.generic.args.len != t.generic.args.len) return null;
+                    for (t.generic.args, at.generic.args) |pa, aa| {
+                        if (pa != .named or aa != .named) continue;
+                        if (!isParam(pa.named, a, b)) continue;
+                        if (primKindOfName(aa.named) == null and !self.records.contains(aa.named)) continue;
+                        return .{ .name = pa.named, .ty = aa.named };
+                    }
+                    return null;
+                }
                 const elem: ast.TypeRef = switch (t) {
                     .array => |inner| inner.*,
                     .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "Array")) g.args[0] else return null,
@@ -9102,18 +9211,65 @@ const Emitter = struct {
         }
         if (subs.items.len == 0) return null;
         if (!needed and !callsMethodOn(ast.FnDecl, f, params_of.items)) return null;
+        return try self.specCopy(target, g, subs.items);
+    }
+
+    /// A generic fn NAMED as an argument whose parameter is written as a
+    /// function type — `apply(same, s, "ab")` against `f: fn(a: string, b:
+    /// string) -> bool`: the copy the parameter types bind. The trampoline
+    /// over the one generic body compared two strings as words.
+    fn specializeByFnType(self: *Emitter, target: []const u8, ft: ast.TypeRef) !?[]const u8 {
+        const g = self.generic_fns.get(target) orelse return null;
+        const fty = switch (ft) {
+            .function => |x| x,
+            else => return null,
+        };
+        const ar = self.reg_arena.allocator();
+        var subs: std.ArrayListUnmanaged(TypeSub) = .empty;
+        var needed = false;
+        var pi: usize = 0;
+        for (g.decl.params) |p| {
+            if (std.mem.eql(u8, p.name, "self")) continue;
+            defer pi += 1;
+            if (pi >= fty.params.len) break;
+            const tn = switch (p.typeRef) {
+                .named => |n| n,
+                else => continue,
+            };
+            if (!isGenericParamName(tn, g.decl.genericParams, &.{})) continue;
+            const to = switch (fty.params[pi]) {
+                .named => |n| n,
+                else => continue,
+            };
+            if (primKindOfName(to) == null and !self.records.contains(to)) continue;
+            const bound = for (subs.items) |sub| {
+                if (std.mem.eql(u8, sub.name, tn)) break true;
+            } else false;
+            if (bound) continue;
+            try subs.append(ar, .{ .name = tn, .to = .{ .named = to } });
+            if (std.mem.eql(u8, to, "string") or std.mem.eql(u8, to, "bool") or to[0] == 'f') needed = true;
+        }
+        if (subs.items.len == 0 or !needed) return null;
+        return try self.specCopy(target, g, subs.items);
+    }
+
+    /// The copy of the generic fn `target` with `subs` written in, queued
+    /// for emission once; its symbol `<target>__<T>_<type>…`.
+    fn specCopy(self: *Emitter, target: []const u8, g: GenericFn, subs: []const TypeSub) ![]const u8 {
+        const f = g.decl;
+        const ar = self.reg_arena.allocator();
         var name: std.ArrayListUnmanaged(u8) = .empty;
         try name.appendSlice(ar, target);
-        for (subs.items) |sub| try name.print(ar, "__{s}_{s}", .{ sub.name, sub.to.named });
+        for (subs) |sub| try name.print(ar, "__{s}_{s}", .{ sub.name, sub.to.named });
         const sym = name.items;
         if (self.spec_names.contains(sym)) return sym;
         try self.spec_names.put(self.alloc, sym, {});
-        var copy = try substTypeParams(ast.FnDecl, ar, f, subs.items);
+        var copy = try substTypeParams(ast.FnDecl, ar, f, subs);
         copy.name = sym;
         copy.isPub = false;
         var left: std.ArrayListUnmanaged(ast.GenericParam) = .empty;
         for (f.genericParams) |gp| {
-            const done = for (subs.items) |sub| {
+            const done = for (subs) |sub| {
                 if (std.mem.eql(u8, sub.name, gp.name)) break true;
             } else false;
             if (!done) try left.append(ar, gp);
@@ -9194,7 +9350,10 @@ const Emitter = struct {
                     const rty = self.recordTypeOfExpr(ia.receiver.*) orelse break :blk null;
                     const fields = self.records.get(rty) orelse break :blk null;
                     const trefs = self.record_field_typerefs.get(rty) orelse break :blk null;
-                    for (fields, 0..) |f, i| if (std.mem.eql(u8, f, ia.member) and i < trefs.len) break :blk trefs[i];
+                    for (fields, 0..) |f, i| if (std.mem.eql(u8, f, ia.member) and i < trefs.len) {
+                        const ft = self.fieldSub(rty, trefs[i]);
+                        break :blk if (ft == .named) .{ .named = self.recvTypeArg(ia.receiver.*, rty, ft.named) } else ft;
+                    };
                     break :blk null;
                 },
                 else => null,
@@ -9223,6 +9382,7 @@ const Emitter = struct {
                     // a local bound to one: the call answers the function
                     // type's return.
                     if (self.valueCallTypeRef(cc)) |t| break :blk t;
+                    if (self.ctorTypeRef(cc) catch null) |t| break :blk t;
                     if (self.specializedCallee(cc) catch null) |sym| break :blk self.fn_ret_typerefs.get(sym);
                     if (self.genericResultArg(cc)) |a| break :blk self.typeRefOf(a);
                     break :blk self.fn_ret_typerefs.get(cc.callee);
@@ -9231,6 +9391,25 @@ const Emitter = struct {
             },
             .collection => |col| switch (col.kind) {
                 .grouped => |inner| self.typeRefOf(inner.*),
+                // `[Pair(left: s, right: "ab")]`: an array of the generic
+                // record its first constructor binds, so a HOF's element
+                // parameter specialises a method call on it like the
+                // constructor itself does. Only that shape — every other
+                // literal keeps answering nothing here.
+                .arrayLit => |al| blk: {
+                    if (al.elems.len == 0) break :blk null;
+                    const first = switch (al.elems[0]) {
+                        .call => |c| switch (c.kind) {
+                            .call => |fc| fc,
+                            else => break :blk null,
+                        },
+                        else => break :blk null,
+                    };
+                    const et = (self.ctorTypeRef(first) catch null) orelse break :blk null;
+                    const inner = self.reg_arena.allocator().create(ast.TypeRef) catch break :blk null;
+                    inner.* = et;
+                    break :blk .{ .array = inner };
+                },
                 else => null,
             },
             else => null,
@@ -9600,6 +9779,7 @@ const Emitter = struct {
             .rewrites = gm.rewrites,
             .lowerings = gm.lowerings,
             .renames = gm.renames,
+            .subs = subs.items,
         });
         return out;
     }
@@ -10117,7 +10297,7 @@ const Emitter = struct {
                     // A record field declared `string`.
                     const rty = self.recordTypeOfExpr(ia.receiver.*) orelse break :blk false;
                     const ft = self.fieldTypeIn(rty, ia.member) orelse break :blk false;
-                    break :blk std.mem.eql(u8, ft, "string");
+                    break :blk std.mem.eql(u8, self.recvTypeArg(ia.receiver.*, rty, ft), "string");
                 },
                 else => false,
             },
