@@ -417,6 +417,10 @@ Each was run with the parent binary and fails there as its row describes.
   `k`, a lambda parameter `e` over an outer `e`, and a lambda value's parameter `e`; the outer names
   keep their values. erlc refused the module on the parent binary (`K@1` unbound). **Red on wasm**
   (`l l 1 2 6 2`: the inner bindings overwrite the outer ones) — 05's row.
+- `run/behavior_default_adopted_by_two_types`: a behavior's `default fn` adopted by two types (one
+  declaring the other default itself), called typed, through a default and through a behavior-typed
+  parameter. erlc refused the module on the parent binary (`function twice/1 undefined`). **Red on
+  beam** until 03's adopted-defaults commit lands and **on wasm** (it traps in `Sq_label`, 05's row).
 - `run/closure_capture_statement_position` (decision 148, lg-b): the two lambdas that may write a
   captured `var` — a `forEach` body and a local closure called at statement position — thread the
   write out on all four targets (a pin: green on the parent binary too). Every other lambda's

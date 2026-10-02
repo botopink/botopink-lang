@@ -5019,8 +5019,16 @@ const Emitter = struct {
                 for (adopted.items) |m| {
                     var key_buf: [256]u8 = undefined;
                     const arity_key = std.fmt.bufPrint(&key_buf, "{s}/{d}", .{ m.name, m.params.len }) catch continue;
-                    if (self.local_fn_arities.contains(arity_key)) continue;
-                    if ((claims.get(arity_key) orelse 0) != 1) continue;
+                    // Under policy 3 every type has a module of its own, so
+                    // neither a name another type (or the file) defines nor a
+                    // second adopter is a clash: each adopter emits the
+                    // default, and a call two types answer dispatches on the
+                    // value (`putMethodOwner` clears the owner). Only a
+                    // comptime module keeps every method in one namespace.
+                    if (self.untyped) {
+                        if (self.local_fn_arities.contains(arity_key)) continue;
+                        if ((claims.get(arity_key) orelse 0) != 1) continue;
+                    }
                     try self.putLocalFn(m.name, m.params.len);
                     // The record's module owns it under policy 3, so a call on
                     // a receiver inference left untyped (a behavior `default
@@ -8040,16 +8048,22 @@ const Emitter = struct {
         if (!this.untyped) {
             var owner_key: [256]u8 = undefined;
             const key = std.fmt.bufPrint(&owner_key, "{s}/{d}", .{ cc.callee, cc.args.len + cc.trailing.len + 1 }) catch "";
-            if (this.method_owners.get(key)) |owner| if (owner) |tn| {
-                // One local type declares it, but a type the PROGRAM declares
-                // elsewhere may declare it too, and this file's own index
-                // cannot see that one: the receiver decides
-                // (`methodOwnerContested`).
-                if (this.methodOwnerContested(cc.callee, cc.args.len + cc.trailing.len + 1)) {
-                    return this.dynamicMethodNode(b, recv, cc);
+            if (this.method_owners.get(key)) |owner| {
+                if (owner) |tn| {
+                    // One local type declares it, but a type the PROGRAM declares
+                    // elsewhere may declare it too, and this file's own index
+                    // cannot see that one: the receiver decides
+                    // (`methodOwnerContested`).
+                    if (this.methodOwnerContested(cc.callee, cc.args.len + cc.trailing.len + 1)) {
+                        return this.dynamicMethodNode(b, recv, cc);
+                    }
+                    return this.typeCall(b, tn, cc.callee, try this.callArgs(b, try this.exprNode(b, recv.*), cc));
                 }
-                return this.typeCall(b, tn, cc.callee, try this.callArgs(b, try this.exprNode(b, recv.*), cc));
-            };
+                // Two local types answer it (two adopters of one `default
+                // fn`, or one declaring what another adopts): each type's
+                // module has it, and the value's tag says which.
+                return this.dynamicMethodNode(b, recv, cc);
+            }
         }
         if (std.mem.eql(u8, cc.callee, "toString") and cc.args.len == 0) return this.formatNode(b, recv);
         // A field of function type called like a method on a receiver inference

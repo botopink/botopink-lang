@@ -1052,6 +1052,15 @@ codegen/
   fun — `val k = "l"` inside a `forEach` body made the outer `k` read `K@1`
   (unbound), and a parameter `e` over an outer `e` left the outer one `E@1`.
   `var_next` keeps counting. `run/lambda_binds_name_of_enclosing_fn`.
+- **Every adopter of a `default fn` emits it** (`collectAdoptedIfaceDefaults`):
+  under policy 3 each type has a module of its own, so a default two types
+  adopt, or one a type adopts while another declares a method of that name, is
+  emitted into each adopter's module, and a call two local types answer
+  dispatches on the value (`method_owners` holds null → `dynamicMethodNode`).
+  The old rule — skip a default whose `<name>/<arity>` is taken or claimed
+  twice — was the flat namespace's and left `twice/1` undefined; only a
+  comptime module (`untyped`, methods inline) keeps it.
+  `run/behavior_default_adopted_by_two_types`.
 - **Modules are `erl_ast` forms**: `emitErlangModule` builds every form in one
   arena and renders them with `erl_emitter.writeForms`: `-module`
   (`crossModule.erlAtom(module_path)` — the path joined with `@`),
