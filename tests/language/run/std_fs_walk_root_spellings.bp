@@ -1,0 +1,37 @@
+//// `fs.walk` answers paths relative to its root, and the same paths however
+//// the root is spelled — a plain name, a trailing slash, a `.` or a `..`
+//// segment, a leading `./`, an absolute path. The erlang template used to cut
+//// the root off each full path by its written length, while the host had
+//// normalised the path it was cutting: a root ending in `/.` (what
+//// `path.join([dir, "."])` answers) lost the first two characters of every
+//// path — `app/layout.bp` came back `p/layout.bp`. It builds each relative
+//// path from the names it walks now. Refused on wasm (`.wasm.expect`): std's
+//// `io/fs` host cells have no wasm binding.
+
+import {io.fs, path} from "std";
+import {io.process as host} from "std";
+
+fn walked(root: string) -> string {
+    return case fs.walk(root) {
+        Ok(found) -> found.join(",");
+        Error(reason) -> ["error", reason].join(" ");
+    };
+}
+
+pub fn main() {
+    fs.mkdir("walkroot");
+    fs.mkdir("walkroot/app");
+    fs.mkdir("walkroot/app/blog");
+    fs.writeText("walkroot/root.bp", "root");
+    fs.writeText("walkroot/app/layout.bp", "layout");
+    fs.writeText("walkroot/app/blog/page.bp", "page");
+    @print(walked("walkroot"));
+    @print(walked("walkroot/"));
+    @print(walked("walkroot/."));
+    @print(walked(path.join(["walkroot", "."])));
+    @print(walked("./walkroot"));
+    @print(walked("walkroot/app/.."));
+    @print(walked(path.join([host.cwd(), "walkroot"])));
+    @print(walked(path.join([host.cwd(), "walkroot", "."])));
+    @print(walked("walkroot/app/."));
+}

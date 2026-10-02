@@ -633,6 +633,18 @@ run the tests of …"); with the `_ -> ok` skip also back, the same cell reports
 says nothing about `std/path`; with only the sibling loader's `std_imports` route removed, it is
 `{error,undef}` again on a module that compiles perfectly.
 
+### `std_fs_walk_root_spellings`
+
+`run/std_fs_walk_root_spellings` (1.0.11-beta front 97) builds `walkroot/` in its scratch project and
+prints `fs.walk` of it under nine spellings of the root — `walkroot`, `walkroot/`, `walkroot/.`,
+`path.join(["walkroot", "."])`, `./walkroot`, `walkroot/app/..`, the absolute path with and without a
+trailing `.`, and `walkroot/app/.` — expecting the same relative paths each time, on commonJS, erlang
+and beam; wasm refuses the import (`.wasm.expect`, STD-001: `io/fs` has no wasm binding). The erlang
+template cut the root off each full path by its written length while `filename:join/2` had already
+dropped a trailing `.` segment, so a root ending in `/.` answered every path minus its first two
+characters (`app/layout.bp` → `p/layout.bp`) and the read that followed was `enoent`; planting the old
+template back reds lines 3, 4, 8 and 9 on erlang and beam and leaves commonJS green.
+
 ### The sidecars of a `run/` cell
 
 Three optional files beside `run/<name>.bp`, each a claim the cell makes (C-16, front 12 steps 4.3
