@@ -96,20 +96,38 @@ fixtures moved from a `WASM TEXT` block with that trap to a
 `refused_on_wasm` expectation, which still requires commonJS, erlang and beam to
 compile and fails if wasm ever starts accepting one.
 
-**A function that reaches such a cell is refused where IT is called**
-(`wat.zig`'s `collectHostBound` → `host_bound`). A bodied function whose body
-calls an `external_missing` cell — directly or through another such function,
-to a fixpoint — cannot run on wasm either; it is not emitted, and a call of it,
-bare or module-qualified, is the located refusal
-`` `deepEquals` calls `canonical`, which has no `#[@External.<Target>(…)]` for
-the wasm backend `` (`MissingExternal.via`). `main/0` is never host-bound: its
-body is the program, so a cell it calls is refused inside it as above. The rule
-is the one a host METHOD already follows (`hostMethods.zig`), and it is what
-lets a module import on wasm when some of its functions need a host:
-refusing inside `testing.asserts`' `deepEquals` failed every program that
-imported the module, called or not
-(`tests/language/run/std_asserts_on_every_target.bp`,
-`run/std_asserts_host_cell_on_wasm.bp`).
+**A function that reaches such a cell is refused where the call is written,
+called or not** (decision 146 — "an error for whatever has no target"). Every
+bodied function is emitted — `emitDecl` lowers each `fn` and each method, and
+`registerSymbols` queues each behavior's associated `default fn` that has no
+type parameter — so a body that calls an `external_missing` cell meets
+`lowerPlainCall`'s refusal whether or not anything calls the function: the rule
+commonJS, erlang and beam hold by emitting every function, and the diagnostic
+they print (`tests/language/run/external_wrapper_keeps_refusal.bp`,
+`run/external_wrapper_associated_default.bp`). wasm used to drop such a
+function and refuse only a call of it (`collectHostBound` / `host_bound` /
+`MissingExternal.via`, all gone), which let a module import on wasm when some
+of its functions needed a host; no module does now. **One shape is still lowered
+only when a call reaches it**: an associated `default fn` with a type parameter
+of its own or of its behavior (`behavior Probe<A> { default fn f(x: A) … }`),
+which commonJS refuses uncalled and wasm accepts. Queueing those too emits the
+primitive behaviors' (`Array.range`, `Array.repeat`, `Pair.of`, …) into every
+module that carries the behavior — measured: 14 wasm fixtures change and a
+two-line `flatMap` program's `.wat` goes from 12 to 17 functions — which is
+`05-wasm`'s to weigh.
+
+**A refused module takes its consumers with it, each at its own import**
+(`codegenEmit`'s `relocateLinkedRefusals`). The linked declarations are emitted
+INTO the consumer, so the consumer meets the same refusal at a location of the
+linked module's file — which the driver would print against the consumer's
+(`src/main.bp:101:9` for a call at `std/testing/asserts.bp:101:9`). The refused
+module reports its own diagnostic in its own file; each consumer that links it
+(`Linked.via`: the consumer's import item the link walk came through) reports
+`` `canonical` has no `#[@External.<Target>(…)]` for the wasm backend — in
+`std/testing/asserts`, which this import links `` at that import
+(`run/std_asserts_on_every_target.wasm.expect`,
+`run/std_asserts_host_cell_on_wasm.wasm.expect`,
+`modules/labelled_call_by_label/wasm.expect`).
 
 A **bodyless `declare fn` with no `#[@External.<Target>(…)]` at all** keeps the
 old trap. That is the same cut commonJS makes — its `externals_missing` is filled
@@ -585,7 +603,7 @@ appear here"). So decision 2's enforcement leaves nothing dead here.
 ## Methods, binders and the module body (`00 · 05-wasm`, the rows no step named)
 
 Each of these answered `0` at exit 0 or trapped where the other three backends
-answered, and each had its own `expected-failures.txt` line:
+answered, and each was a red wasm cell of `tests/language`:
 
 - **An enum's methods are emitted** (`registerInterfaceSigs` / `emitInterfaceMethods`
   take every `type`, not only records): `Shape.Rect(…).counts(3)` was an

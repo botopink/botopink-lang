@@ -34,8 +34,8 @@
 #                           green or the stage fails — and every target a
 #                           member's "targets" list excludes is audited
 #   9. zig build test-language  tests/language — decision 8's `case`, tuples and
-#                           `loop` in botopink, on commonJS and erlang; expected
-#                           failures named by tests/language/expected-failures.txt
+#                           `loop` in botopink, on commonJS and erlang; a red
+#                           cell fails the stage
 #  10. zig build test-docs  every `botopink` fence of docs.md and README.md is
 #                           compiled (scripts/check-docs.sh)
 #

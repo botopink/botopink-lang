@@ -30,8 +30,8 @@
 ////      — `matches`, `deepEquals`, `throws`, `throwsWith` — sit on the three
 ////      PRIVATE cells `regexMatches`, `canonical` and `tryCatch`, which carry
 ////      Node and Erlang templates: beam compiles the Erlang ones at build
-////      time, and wasm, which has no host, emits the module without those
-////      four and refuses a program that calls one, at the call.
+////      time, and wasm, which has no host, refuses the module where those
+////      four call their cells — and so every import of it (decision 146).
 ////
 //// The module is named `asserts` (plural) because the unqualified `assert`
 //// is a reserved keyword statement; `import {asserts} from "std";` then

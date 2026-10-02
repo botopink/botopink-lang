@@ -68,33 +68,9 @@
 #                      way `<name>.targets` narrows a run/ cell, and is audited
 #                      the same way — § the targets of a cell
 #
-# expected-failures.txt — one line per expected failure, `|`-separated (test
-# names contain spaces):
-#   <target: commonJS|erlang|wasm|beam|*> | <key> | <owner row> | <reason>
-#
-# <key> has three shapes, and which shape it is *is* part of the claim:
-#   test/case_arms.bp                      the cell does not compile
-#   test/case_guards.bp::<test>            it compiles; that one test fails
-#   test/case_tuples.bp::<test> ;; <test>  it compiles; each of these fails
-# ` ;; ` — one space either side — separates the names. `\|` anywhere on the line
-# is a literal `|`: the split ignores an escaped pipe, which is how a test name
-# that contains one is written (`Maybe<i32 \| string>`). Nothing else is escaped.
-#
-# Outcome rules (a run fails on any `FAIL`):
-#   unlisted, passes            ok
-#   unlisted, fails             FAIL
-#   listed, fails               expected (printed with its owner)
-#   listed, passes              FAIL — "now passes: delete its line" / "drop ::<test>"
-#   listed, does not exist      FAIL — the path or the test name is not there
-#   path-only entry on a file that compiles   FAIL — list the failing tests by name
-#   malformed line              FAIL — the field, target or separator is named
-#
-# A named-test entry whose cell does **not** compile is still honoured: a cell that
-# does not compile cannot pass anything, and the run prints the line with "the cell
-# does not compile, so its listed tests did not run". That is the state the file is
-# in while the front that makes the cell compile is in flight — seven fronts share
-# this file and their compilers differ by hours. The path-only shape stays strict
-# in both directions, which is what the five fronts reading it depend on.
+# Outcome rules: a cell passes or it fails, and a run fails on any `FAIL`. There
+# is no list of known failures (gate-b of `specs/1.0.11-beta/00-gate`, decision
+# 154): a red cell is red until the compiler passes it.
 set -uo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -139,9 +115,9 @@ fi
 # ── § parallel cells ─────────────────────────────────────────────────────────
 # Every cell is its own scratch project and writes its verdict to its own
 # `$work/r-<slug>` file; nothing is printed while cells run, and the verdicts are
-# sorted before they are compared with expected-failures.txt. So how many cells
-# run at once changes the wall clock and nothing else: `--jobs 1` and the default
-# print the same bytes and exit with the same status.
+# sorted before they are reported. So how many cells run at once changes the wall
+# clock and nothing else: `--jobs 1` and the default print the same bytes and
+# exit with the same status.
 #
 # The pool is scripts/lib/pool.sh — `botopink-lib-test`'s rule: one cell per
 # CPU, bounded by `MemAvailable / 768 MiB`, and a cell admitted only while the
@@ -221,7 +197,7 @@ command -v node >/dev/null || { echo "run.sh: node is required" >&2; exit 2; }
 work="$(mktemp -d "${TMPDIR:-/tmp}/bp-language-tests.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 
-RED=$'\033[0;31m'; GREEN=$'\033[0;32m'; YELLOW=$'\033[0;33m'; NC=$'\033[0m'
+RED=$'\033[0;31m'; GREEN=$'\033[0;32m'; NC=$'\033[0m'
 
 # ── § self-test ───────────────────────────────────────────────────────────────
 # § the targets of a cell, shown firing. A synthetic suite — two narrowings the
@@ -341,7 +317,7 @@ BP
 [beam] modules/manifest_unbacked — excluded by modules/manifest_unbacked/botopink.json "targets", but `botopink build --target beam` accepts the cell
 [*] modules/manifest_test_kind — modules/manifest_test_kind/botopink.json "targets" names wasm, a target this kind of cell never runs on
 narrowings: 7 exclusions audited
-language tests: 13 passed, 0 expected failures, 11 failed
+language tests: 13 passed, 11 failed
 WANT
     # The three backed cells ran where they said and nowhere else: the tally
     # above counts them (1 + 2 + 2 of the 13), and no line may name them.
@@ -686,175 +662,28 @@ done <"$jobs_list" | xargs -0 -n 4 -P "$jobs" bash -c 'pool_job "$work/inflight"
 
 cat "$work"/r-* 2>/dev/null | sort >"$work/results"
 
-# ── compare with expected-failures.txt ────────────────────────────────────────
-node - "$work/results" "$here/expected-failures.txt" "${targets[*]}" "${#only[@]}" <<'EOF'
+# ── report ────────────────────────────────────────────────────────────────────
+node - "$work/results" <<'EOF'
 const fs = require("fs");
-const [resultsPath, listPath, targetsArg, onlyCount] = process.argv.slice(2);
-const targets = targetsArg.split(" ");
-const partial = Number(onlyCount) > 0;
-const RED = "\x1b[0;31m", GREEN = "\x1b[0;32m", YELLOW = "\x1b[0;33m", NC = "\x1b[0m";
+const [resultsPath] = process.argv.slice(2);
+const RED = "\x1b[0;31m", GREEN = "\x1b[0;32m", NC = "\x1b[0m";
 
-const results = new Map(); // `${target}\t${key}` -> {status, detail}
-const compiled = new Set(); // `${target}\t${path}` for test/ files that produced test events
+// <target>\t<key>\t<ok|fail|audit>\t<detail>, sorted. An `audit` line is an
+// exclusion the compiler backs with a host-binding refusal: not a cell that
+// ran, so not in the `passed` count.
+let fails = 0, oks = 0, audited = 0;
+const out = [];
 for (const line of fs.readFileSync(resultsPath, "utf8").split("\n")) {
   if (!line) continue;
   const [t, key, status, detail] = line.split("\t");
-  results.set(`${t}\t${key}`, { status, detail: detail || "" });
-  if (key.includes("::")) compiled.add(`${t}\t${key.split("::")[0]}`);
-}
-
-// A line is split on `|` only where the `|` is not escaped: `\\|` is a literal
-// pipe, which is how a test name that contains one is written. Nothing else is
-// escaped. The key field then has one of three shapes — <path>, <path>::<test>,
-// or <path>::<test> ;; <test> — and a line that is none of them is a FAIL that
-// names what is wrong with it, never a line read as a different shape.
-const TARGETS = ["commonJS", "erlang", "wasm", "beam", "*"];
-const unescapePipe = (s) => s.replace(/\\\|/g, "|");
-const expected = [];
-if (fs.existsSync(listPath)) {
-  fs.readFileSync(listPath, "utf8").split("\n").forEach((raw, i) => {
-    const line = raw.trim();
-    if (!line || line.startsWith("#")) return;
-    const bad = (why) => expected.push({ bad: `expected-failures.txt:${i + 1}: ${why}` });
-    const parts = line.split(/(?<!\\)\|/).map((s) => unescapePipe(s.trim()));
-    if (parts.length < 4 || !parts[0] || !parts[1] || !parts[2] || !parts[3]) {
-      bad("needs 4 non-empty fields — <target> | <path>[::<test>[ ;; <test>]] | <owner row> | <reason>");
-      return;
-    }
-    const [target, keyField, owner] = parts;
-    if (!TARGETS.includes(target)) {
-      bad(`unknown target \`${target}\` — one of ${TARGETS.join(", ")}`);
-      return;
-    }
-    const cut = keyField.indexOf("::");
-    const path = (cut < 0 ? keyField : keyField.slice(0, cut)).trim();
-    if (!path) { bad("the path is empty"); return; }
-    let tests = null;
-    if (cut >= 0) {
-      if (!path.startsWith("test/")) {
-        bad(`\`::\` names a test and only a test/ cell has tests — got \`${path}\``);
-        return;
-      }
-      tests = keyField.slice(cut + 2).split(" ;; ").map((t) => t.trim());
-      if (tests.some((t) => !t)) {
-        bad("an empty test name — the separator between names is ` ;; `, one space either side");
-        return;
-      }
-      if (new Set(tests).size !== tests.length) { bad("the same test name twice on one line"); return; }
-    }
-    expected.push({ target, path, tests, owner, reason: parts.slice(3).join(" | "), line: i + 1 });
-  });
-}
-
-// Decision 59 (b) of `specs/1.0.5-beta/decisions-taken.md`: the tally of
-// expected-failures.txt is printed by the runner, recounted from the file on
-// every run, and never kept by hand in the file's header. The owner field is
-// split on `,` outside parentheses — `02 (no step; decision 55, reported …)`
-// is one row — and the first token of the first row names the owner.
-if (!partial && fs.existsSync(listPath)) {
-  const live = expected.filter((e) => !e.bad);
-  const byTarget = new Map(), byOwner = new Map();
-  let named = 0, second = 0, exercised = 0;
-  for (const e of live) {
-    byTarget.set(e.target, (byTarget.get(e.target) || 0) + 1);
-    const rows = e.owner.split(/,(?![^(]*\))/).map((s) => s.trim()).filter(Boolean);
-    const first = (rows[0] || "?").split(/\s+/)[0];
-    byOwner.set(first, (byOwner.get(first) || 0) + 1);
-    if (rows.length > 1) second++;
-    if (e.tests) named++;
-    if (e.target === "*" || targets.includes(e.target)) exercised++;
-  }
-  const fmt = (m) => [...m.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([k, v]) => `${k} ${v}`).join(" · ");
-  console.log(`expected-failures.txt: ${live.length} lines, ${exercised} exercised by --target ${targetsArg.replace(/ /g, ",")} — by target: ${fmt(byTarget)}; by first owner row: ${fmt(byOwner)}; ${named} name tests rather than a path; ${second} name a second row`);
-}
-
-let fails = 0, oks = 0, expectedCount = 0, audited = 0;
-const out = [];
-const claimed = new Set();
-for (const e of expected) {
-  if (e.bad) { out.push(`${RED}FAIL${NC}     ${e.bad}`); fails++; continue; }
-  const ts = e.target === "*" ? ["*", ...targets] : [e.target];
-  if (e.target !== "*" && !targets.includes(e.target)) continue; // not run this time
-  const at = `expected-failures.txt:${e.line}`;
-  let found = false;
-  for (const t of ts) {
-    // Shape 1 — path only: the claim is that the cell does not compile, and it is
-    // strict in both directions. Five fronts read this shape; nothing below widens it.
-    if (e.tests === null) {
-      if (compiled.has(`${t}\t${e.path}`)) {
-        found = true;
-        out.push(`${RED}FAIL${NC}     [${t}] ${e.path} — compiles: list its failing tests by name (${at})`);
-        fails++;
-        continue;
-      }
-      const r = results.get(`${t}\t${e.path}`);
-      if (!r) continue;
-      found = true;
-      claimed.add(`${t}\t${e.path}`);
-      if (r.status === "ok") {
-        out.push(`${RED}FAIL${NC}     [${t}] ${e.path} — now passes: delete its line (${at})`);
-        fails++;
-      } else {
-        out.push(`${YELLOW}expected${NC} [${t}] ${e.path} — ${e.owner}: ${e.reason}`);
-        expectedCount++;
-      }
-      continue;
-    }
-    // Shapes 2 and 3 — one or more named tests: the claim is that none of them
-    // passes. A cell that does not compile at all passes nothing, so the line is
-    // honoured and the run says so; that is the state the file is in while the
-    // front that makes the cell compile is in flight.
-    if (!compiled.has(`${t}\t${e.path}`)) {
-      const r = results.get(`${t}\t${e.path}`);
-      if (!r) continue;
-      found = true;
-      claimed.add(`${t}\t${e.path}`);
-      const n = e.tests.length;
-      out.push(`${YELLOW}expected${NC} [${t}] ${e.path} — ${e.owner}: ${e.reason} ${YELLOW}[the cell does not compile, so its ${n} listed test${n === 1 ? "" : "s"} did not run: ${r.detail}]${NC}`);
-      expectedCount++;
-      continue;
-    }
-    found = true;
-    let stillFailing = 0;
-    for (const name of e.tests) {
-      const r = results.get(`${t}\t${e.path}::${name}`);
-      if (!r) {
-        out.push(`${RED}FAIL${NC}     [${t}] ${e.path} — no test named "${name}" (${at})`);
-        fails++;
-        continue;
-      }
-      claimed.add(`${t}\t${e.path}::${name}`);
-      if (r.status === "ok") {
-        out.push(`${RED}FAIL${NC}     [${t}] ${e.path} — "${name}" now passes: drop it from the line, and delete the line when it names no other (${at})`);
-        fails++;
-      } else stillFailing++;
-    }
-    if (stillFailing) {
-      const names = e.tests.length === 1 ? e.tests[0] : `${stillFailing} of ${e.tests.length} tests`;
-      out.push(`${YELLOW}expected${NC} [${t}] ${e.path} — ${names} — ${e.owner}: ${e.reason}`);
-      expectedCount++;
-    }
-  }
-  if (!found) {
-    const fileRan = [...results.keys()].some((k) => k.split("\t")[1].split("::")[0] === e.path);
-    if (partial && !fileRan) continue; // --only run that skipped this file
-    out.push(`${RED}FAIL${NC}     ${e.path} — listed (line ${e.line}) but no such ${e.tests && fileRan ? "test" : "file or result"} for target ${e.target}`);
-    fails++;
-  }
-}
-for (const [k, r] of results) {
-  if (claimed.has(k)) continue;
-  const [t, key] = k.split("\t");
-  if (r.status === "ok") { oks++; continue; }
-  // An exclusion the compiler backs with a host-binding refusal: not a cell
-  // that ran, so not in the `passed` count.
-  if (r.status === "audit") { audited++; continue; }
-  out.push(`${RED}FAIL${NC}     [${t}] ${key} — ${r.detail}`);
+  if (status === "ok") { oks++; continue; }
+  if (status === "audit") { audited++; continue; }
+  out.push(`${RED}FAIL${NC}     [${t}] ${key} — ${detail || ""}`);
   fails++;
 }
 for (const l of out) console.log(l);
 if (audited) console.log(`narrowings: ${audited} exclusion${audited === 1 ? "" : "s"} audited — each stands on a host binding the target does not have`);
 const colour = fails ? RED : GREEN;
-console.log(`\n${colour}language tests: ${oks} passed, ${expectedCount} expected failures, ${fails} failed${NC}`);
+console.log(`\n${colour}language tests: ${oks} passed, ${fails} failed${NC}`);
 process.exit(fails ? 1 : 0);
 EOF

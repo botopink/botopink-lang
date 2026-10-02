@@ -2528,9 +2528,11 @@ first three are now enforced by the model, not by discipline:
   erlang and beam raise (06 C13), threaded out of `emitWat` by its `missing`
   slot and collected by `codegenEmit`, so only that module fails. `registerSymbols`
   fills `external_missing` (the `isExternal()` subset of `host_fns`) and
-  `lowerPlainCall` reads it. A bodied function reaching such a cell
-  (`collectHostBound`, transitively; never `main/0`) is not emitted and its
-  CALL is refused the same way, naming the cell (`MissingExternal.via`) — see
+  `lowerPlainCall` reads it. A bodied function whose body calls such a cell is
+  emitted like any other, called or not, so the refusal is raised at the call
+  inside it (decision 146); a module refused this way is reported in its own
+  file, and each consumer that links it at its import
+  (`relocateLinkedRefusals`) — see
   [`wat/AGENTS.md`](wat/AGENTS.md). It used to be a **documented trap** —
   `unreachable ;; host-backed declare fn <name>/<n>: no wasm host` — on the
   argument that "the other three targets compile the same module, and a program
@@ -2833,8 +2835,8 @@ generator (`in_generator`) as `yield _tryN; return;`, and `yield try x` /
 `yield __bp_ok(try x)` at statement position through `buildTryStmt`
 (`TryHead.yield_ok_value` / `.yield_result`). A generator-scope `break <v>` is
 decision 105's (22-loops): commonJS's `function*` and beam run
-`run/generator_break_value.bp`; the eager erlang and wasm scopes are pinned in
-`tests/language/expected-failures.txt`.
+`run/generator_break_value.bp`; the eager erlang and wasm scopes were expected
+failures of `tests/language` when it landed.
 
 **A negative index counts from the end** (decision 139), in the one reader
 each backend has for `Array.at` / `String.at` (and so `xs[i]` / `s[i]`, which

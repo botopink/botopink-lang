@@ -25,8 +25,8 @@
 //// refusal is `reject/if_optional_needs_a_binder.bp`. Neither is `while (x !=
 //// null)`: § the loop shape of `comptime/AGENTS.md`.
 ////
-//// wasm is in `.targets` and FAILS, with its line in `expected-failures.txt`:
-//// it answers heap addresses (`276`, `388`, `425`) for every family but the
+//// wasm FAILED when this cell landed (it passes now, on all four targets):
+//// it answered heap addresses (`276`, `388`, `425`) for every family but the
 //// `?string`. The narrowing is the checker's and wasm's `?T` is a BOX
 //// (05 step 2 D1): the optional-binding form `if (es.at(0)) { f -> … }`
 //// unboxes and answers `3` there, a narrowed NAME is never unboxed. Before

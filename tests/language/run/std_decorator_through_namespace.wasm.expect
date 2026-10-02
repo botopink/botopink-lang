@@ -1,1 +1,1 @@
-`thenReturnCell` has no `#[@External.<Target>(…)]` for the wasm backend
+std-unsupported-on-target: std/testing/mocks.
