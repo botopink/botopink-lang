@@ -2190,6 +2190,18 @@ const Emitter = struct {
     /// type parameters, read through `recv` whose type spells the arguments
     /// (`p: Pair<string>` in a copy, a `Pair(left: s, …)` local): that
     /// argument. `ft` itself otherwise.
+    /// `recvTypeArg` for any type argument, a function type included.
+    fn recvTypeArgRef(self: *Emitter, recv: ast.Expr, rty: []const u8, ft: ast.TypeRef) ast.TypeRef {
+        if (ft != .named) return ft;
+        const gps = self.record_generics.get(rty) orelse return ft;
+        const idx = for (gps, 0..) |gp, i| {
+            if (std.mem.eql(u8, gp.name, ft.named)) break i;
+        } else return ft;
+        const tr = self.typeRefOf(recv) orelse return ft;
+        if (tr != .generic or !std.mem.eql(u8, tr.generic.name, rty) or tr.generic.args.len != gps.len) return ft;
+        return tr.generic.args[idx];
+    }
+
     fn recvTypeArg(self: *Emitter, recv: ast.Expr, rty: []const u8, ft: []const u8) []const u8 {
         const gps = self.record_generics.get(rty) orelse return ft;
         const idx = for (gps, 0..) |gp, i| {
@@ -9595,14 +9607,55 @@ const Emitter = struct {
         const ar = self.reg_arena.allocator();
         const args = try ar.alloc(ast.TypeRef, gps.len);
         for (gps, args) |gp, *out| {
-            const ty: []const u8 = for (trefs, 0..) |t, i| {
+            out.* = for (trefs, 0..) |t, i| {
                 if (t != .named or !std.mem.eql(u8, t.named, gp.name) or i >= names.len) continue;
                 const arg = self.argForField(cc.args, names[i], i) orelse continue;
-                if (self.concreteTypeOf(arg.value.*)) |c| break c;
+                if (self.concreteTypeOf(arg.value.*)) |c| break ast.TypeRef{ .named = c };
+                // A top-level fn stored in the field (`Box(value: shout)`):
+                // its function type, so a call through the field's value
+                // answers its declared return.
+                if (try self.fnRefTypeRef(arg.value.*)) |ft| break ft;
             } else return null;
-            out.* = .{ .named = ty };
         }
         return .{ .generic = .{ .name = cc.callee, .args = args, .is_builtin = false } };
+    }
+
+    /// `wrap(shout)` over `fn wrap<T>(v: T) -> Box<T>`: the declared return
+    /// with each type parameter a FUNCTION argument binds written in — a
+    /// function type has no specialisation (`bindParam` binds names), so the
+    /// call keeps the one body and only its result's type is read.
+    fn genericRetByFnArg(self: *Emitter, cc: anytype) !?ast.TypeRef {
+        if (cc.receiver != null or cc.is_builtin or cc.calleeExpr != null) return null;
+        const g = self.generic_fns.get(self.import_aliases.get(cc.callee) orelse cc.callee) orelse return null;
+        const f = g.decl;
+        const rt = f.returnType orelse return null;
+        const ar = self.reg_arena.allocator();
+        var subs: std.ArrayListUnmanaged(TypeSub) = .empty;
+        var pi: usize = 0;
+        for (f.params) |p| {
+            if (std.mem.eql(u8, p.name, "self")) continue;
+            defer pi += 1;
+            if (pi >= cc.args.len) break;
+            if (p.typeRef != .named or !isGenericParamName(p.typeRef.named, f.genericParams, &.{})) continue;
+            const ft = (try self.fnRefTypeRef(cc.args[pi].value.*)) orelse continue;
+            try subs.append(ar, .{ .name = p.typeRef.named, .to = ft });
+        }
+        if (subs.items.len == 0) return null;
+        return try substTypeParams(ast.TypeRef, ar, rt, subs.items);
+    }
+
+    /// `shout` named as a value, a top-level fn of this program: `fn(…) -> R`
+    /// from its declaration.
+    fn fnRefTypeRef(self: *Emitter, e: ast.Expr) !?ast.TypeRef {
+        const n0 = plainIdentName(e) orelse return null;
+        if (self.locals.contains(n0)) return null;
+        const n = self.import_aliases.get(n0) orelse n0;
+        const ps = self.fn_param_typerefs.get(n) orelse return null;
+        const rt = self.fn_ret_typerefs.get(n) orelse return null;
+        const ar = self.reg_arena.allocator();
+        const ret = try ar.create(ast.TypeRef);
+        ret.* = rt;
+        return .{ .function = .{ .params = try ar.dupe(ast.TypeRef, ps), .returnType = ret } };
     }
 
     /// The type an argument binds a type parameter to, when its shape says:
@@ -9848,7 +9901,10 @@ const Emitter = struct {
         if (cc.receiver) |r| {
             const rty = self.recordTypeOfExpr(r.*) orelse return null;
             if (self.fn_sigs.contains(std.fmt.bufPrint(&self.sym_buf, "{s}_{s}", .{ rty, cc.callee }) catch return null)) return null;
-            const ft = self.fieldTypeRefIn(rty, cc.callee) orelse return null;
+            const ft0 = self.fieldTypeRefIn(rty, cc.callee) orelse return null;
+            // `h.value("b")` over `Box<fn(s: string) -> string>`: the field is
+            // written `T`, the receiver's type argument is the function type.
+            const ft = self.recvTypeArgRef(r.*, rty, ft0);
             return switch (ft) {
                 .function => |f| f.returnType.*,
                 else => null,
@@ -9890,7 +9946,7 @@ const Emitter = struct {
                     const trefs = self.record_field_typerefs.get(rty) orelse break :blk null;
                     for (fields, 0..) |f, i| if (std.mem.eql(u8, f, ia.member) and i < trefs.len) {
                         const ft = self.fieldSub(rty, trefs[i]);
-                        break :blk if (ft == .named) .{ .named = self.recvTypeArg(ia.receiver.*, rty, ft.named) } else ft;
+                        break :blk self.recvTypeArgRef(ia.receiver.*, rty, ft);
                     };
                     break :blk null;
                 },
@@ -9937,6 +9993,7 @@ const Emitter = struct {
                     // type's return.
                     if (self.valueCallTypeRef(cc)) |t| break :blk t;
                     if (self.ctorTypeRef(cc) catch null) |t| break :blk t;
+                    if (self.genericRetByFnArg(cc) catch null) |t| break :blk t;
                     if (self.specializedCallee(cc) catch null) |sym| break :blk self.fn_ret_typerefs.get(sym);
                     if (self.genericResultArg(cc)) |a| break :blk self.typeRefOf(a);
                     break :blk self.fn_ret_typerefs.get(cc.callee);

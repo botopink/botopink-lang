@@ -139,6 +139,10 @@ over integers, strings, a local, a parameter and an annotated empty `i32[][]`), 
 (`chunked`, `sliding`, `n <= 0`, a slice indexed and measured) and `run/array_fill` (a value of
 each primitive, an empty receiver). `pop` is `run/array_pop_removes`; `unique`'s cell is
 `02-erlang`'s `run/array_unique` (C-35).
+`run/generic_field_fn_value` — a top-level fn stored in a generic record's field (`Box<T>(value: T)`)
+and called through the field, through an untyped local and through a generic wrapper — answers the
+fn's own result on commonJS, beam and wasm (wasm printed a string's address, a bool as `1`; front
+130's row); erlang refuses `h.value("b")` (`function value/2 undefined`, `02-erlang`'s row).
 Step 2 adds `run/generic_string_equality` — `==` / `!=` between two type-parameter values bound
 to strings built at run time, by a call's arguments, an array's elements, a generic record's
 constructor and a generic call answering one, a parameter written `Pair<T>`, a variant's payload,
