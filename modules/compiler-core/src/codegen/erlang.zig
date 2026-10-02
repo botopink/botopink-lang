@@ -2820,7 +2820,7 @@ const PrimErlangCall = struct {
 };
 
 /// Map a primitive `PrimKind` to its controller interface name in
-/// `primitives.d.bp`. Mirrors `comptime/infer.zig`'s `primitiveInterfaceName`.
+/// `primitives.bp`. Mirrors `comptime/infer.zig`'s `primitiveInterfaceName`.
 /// `.int` maps to `Signed` (its chain reaches `Integer` and `Number`) and
 /// `.float` to `Float` — the concrete `I32`/`I64`/`U32`/`U64`/`F32`/`F64`
 /// interfaces are empty markers that extend their parent, so a method
@@ -2851,7 +2851,7 @@ const PrimIfaceWalker = struct {
     guard: usize = 0,
     em: *const Emitter,
     /// Optional cache of (iface → parent) edges parsed from
-    /// `primitives.d.bp`. When null the walker stops after the head.
+    /// `primitives.bp`. When null the walker stops after the head.
     chain: ?*const std.StringHashMap([]const u8),
 
     fn init(em: *const Emitter, head: []const u8, chain: ?*const std.StringHashMap([]const u8)) PrimIfaceWalker {
@@ -2984,7 +2984,7 @@ const Emitter = struct {
     /// The decl emits no `module:symbol` reference at the top level — the
     /// template renders inline at every call site, matching how the
     /// existing interface-method `primAnnotationNode` path already
-    /// handles per-callee templates on primitives.d.bp methods.
+    /// handles per-callee templates on primitives.bp methods.
     user_erlang_templates: std.StringHashMap(PrimErlangCall),
     /// Module names imported via `import {…} from "std"` — a lowercase
     /// receiver naming one lowers to a remote call (`option:map(Args)`).
@@ -3240,7 +3240,7 @@ const Emitter = struct {
     /// this map before the hardcoded `@todo`/`@panic`/`@block`/`@print`
     /// switches in `if (cc.is_builtin)`.
     builtin_erlang_dispatch: std.StringHashMap(PrimErlangCall),
-    /// Parent-interface edges parsed from `primitives.d.bp`:
+    /// Parent-interface edges parsed from `primitives.bp`:
     /// `prim_iface_chain.get("I32")` → `"Signed"`, etc. Used by
     /// `primAnnotationNode`'s `PrimIfaceWalker` so a method declared on
     /// `Integer` lights up via an `I32` receiver. Populated by
@@ -3594,7 +3594,7 @@ const Emitter = struct {
             try this.collectIfaceErlangDispatch(decl.behavior);
             try this.collectIfaceExtendsChain(decl.behavior);
         }
-        // `primitives.d.bp` from the embedded prelude, so the dispatch map sees
+        // `primitives.bp` from the embedded prelude, so the dispatch map sees
         // `String`/`Bool`/numeric interfaces even when the module didn't get
         // them stubbed into `program.decls` (they're only stubbed for
         // `default fn` stdlib lib dispatch — host-backed instance methods like
@@ -3614,9 +3614,9 @@ const Emitter = struct {
     /// Record `iface.extends[0]` as the parent for `iface` in
     /// `prim_iface_chain` so `primAnnotationNode`'s walker can climb
     /// `I32 → Signed → Integer → Number`. First-write-wins (the parse of
-    /// `program.decls` lands before the embedded `primitives.d.bp`
+    /// `program.decls` lands before the embedded `primitives.bp`
     /// re-parse). We only record the first parent — multi-inheritance is
-    /// not used by `primitives.d.bp` at v1.
+    /// not used by `primitives.bp` at v1.
     fn collectIfaceExtendsChain(this: *Emitter, iface: ast.BehaviorDecl) !void {
         if (iface.extends.len == 0) return;
         if (this.prim_iface_chain.contains(iface.name)) return;
@@ -3627,7 +3627,7 @@ const Emitter = struct {
 
     /// Collect the `@external(erlang, …)` annotations on one interface's
     /// methods. Caller is the dispatch builder; this both handles the
-    /// `program.decls` interfaces and the reparsed `primitives.d.bp` ones with
+    /// `program.decls` interfaces and the reparsed `primitives.bp` ones with
     /// the same shape. A key already present wins on first-write (the in-program
     /// decl overrides the embedded primitive — useful for tests that shadow a
     /// stdlib interface to inject a custom dispatch).
@@ -5164,7 +5164,7 @@ const Emitter = struct {
                 // §A2 arity-branched template (`when(argc == N): "<tmpl>"`)
                 // on a top-level declare fn — the existing
                 // interface-method `primAnnotationNode` path already
-                // handles primitives.d.bp; this map covers
+                // handles primitives.bp; this map covers
                 // top-level user `declare fn`s so chained-host-call
                 // shapes (`file:get_cwd()`, `os:getpid()`, etc.) can
                 // lower without aliasing.
@@ -9435,7 +9435,7 @@ const Emitter = struct {
 
     /// A builtin-primitive instance method lowered to its erlang host operation
     /// (arrays are lists, strings binaries, numbers/bools native). Most methods
-    /// are annotation-driven (`primitives.d.bp` `@external(erlang, …)`
+    /// are annotation-driven (`primitives.bp` `@external(erlang, …)`
     /// templates); the inline cases below don't reduce to a template. An
     /// unmapped method is a bare local `m(Recv, args)` call (a clear runtime
     /// error if truly unsupported) rather than invalid `Recv:m(args)` syntax.
