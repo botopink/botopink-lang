@@ -14,26 +14,26 @@ type Shape { Circle, Square, Triangle }
 type Box(w: i32, h: i32)
 
 fn sides(s: Shape) -> i32 {
-  return case s {
-    Circle -> 0,
-    Square -> 4,
-    Triangle -> 3,
-  };
+    return case s {
+        Circle -> 0;
+        Square -> 4;
+        Triangle -> 3;
+    };
 }
 
 fn area(b: Box) -> i32 {
-  val twice = { x -> x * 1 };
-  return twice(b.w * b.h);
+    val twice = { x -> x * 1 };
+    return twice(b.w * b.h);
 }
 
 pub fn main() -> i32 {
-  return sides(Shape.Triangle);
+    return sides(Shape.Triangle);
 }
 
 test "records, enum, case and lambda agree across backends" {
-  assert sides(Shape.Circle) == 0;
-  assert sides(Shape.Square) == 4;
-  assert sides(Shape.Triangle) == 3;
-  assert area(Box(w: 2, h: 3)) == 6;
-  assert main() == 3;
+    assert sides(Shape.Circle) == 0;
+    assert sides(Shape.Square) == 4;
+    assert sides(Shape.Triangle) == 3;
+    assert area(Box(w: 2, h: 3)) == 6;
+    assert main() == 3;
 }

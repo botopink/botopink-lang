@@ -17,11 +17,19 @@ fn announce(what: string) -> i32 {
 }
 
 val _configLoaded = announce("config body");
+
 pub val globals = Globals(payload: "p", fill: "f", count: 3);
+
 pub val mode = Mode.Slow;
+
 pub val sizes = [1, 2, 3];
+
 pub val limit = 42;
+
 pub val scaled = limit * unit;
+
 pub val name = "cfg";
+
 pub val twice = { x -> x * 2 };
+
 pub val counted = announce("counted evaluated");

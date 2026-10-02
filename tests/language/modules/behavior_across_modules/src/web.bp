@@ -7,7 +7,9 @@ pub behavior Request {
 pub type Out(tag: string)
 
 pub type Page(route: string) implement Request {
-    fn path(self: Self) -> string { return self.route; }
+    fn path(self: Self) -> string {
+        return self.route;
+    }
 }
 
 pub fn home() -> Request {

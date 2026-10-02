@@ -9,7 +9,9 @@
 #
 #   1. staged files: no conflict markers, `zig fmt --check` on staged .zig, no
 #                           snapshot candidate (`*.snap.new`, `*.snap.md.new`)
-#                           staged (--staged)
+#                           staged (--staged); then, every run, `zig fmt --check
+#                           modules` — a `.zig` file red anywhere fails the
+#                           gate, staged or not
 #   2. zig build            the CLI, the LSP and the runners link
 #   3. format-check.sh      `botopink format --check` over the compiler's own
 #                           canonical `.bp` trees (decision 66 — the scan has a
@@ -137,6 +139,17 @@ if [ "$staged" -eq 1 ]; then
     [ -z "$bad_fmt" ] || fail "zig fmt --check failed for:$bad_fmt (run: zig fmt <file>)"
     pass "no conflict markers, staged .zig formatted, no snapshot candidate staged"
 fi
+
+# The staged check above is the fast path of a commit; the tree is the gate's
+# subject. `zig fmt --check` lists every unformatted file under `modules` and
+# exits 1 — a file nobody staged is a red the next commit that touches it meets,
+# so it is red now (front 112 of 1.0.11-beta; the fmt of the whole tree is its
+# step 1).
+stage "zig fmt --check modules"
+unformatted="$(zig fmt --check modules 2>&1)" || fail "zig fmt --check modules:
+$unformatted
+(run: zig fmt modules)"
+pass "zig fmt --check modules"
 
 # A hook runs with the committing repository's GIT_DIR, GIT_INDEX_FILE, … in
 # the environment. Stage 1 needed them; nothing after it may inherit them: a

@@ -19,7 +19,8 @@ fn lookup(path: string) -> string {
 pub fn main() {
     @print(lookup("/users"));
     @print(lookup("/nope"));
-    if (find("/users")) { f ->
+    if (find("/users")) {
+        f ->
         @print(f.params.size());
         @print(f.name.length);
     }

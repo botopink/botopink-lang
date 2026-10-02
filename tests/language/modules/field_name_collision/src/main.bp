@@ -22,7 +22,10 @@ import {Ctx, hitOf} from "shapes";
 
 pub fn main() {
     var n = 0 - 1;
-    if (hitOf()) { h -> n = h.rest.length; };
+    if (hitOf()) {
+        h ->
+        n = h.rest.length;
+    }
     @print(n);
     @print(Ctx(a: "1", rest: []).rest.length);
 }

@@ -7,21 +7,21 @@
 // assertion gracefully rather than crashing.
 
 fn double(n: i32) -> i32 {
-  return n * 2;
+    return n * 2;
 }
 
 fn failing() -> @Result<i32, string> {
-  throw "went wrong";
+    throw "went wrong";
 }
 
 test "this one passes" {
-  assert double(2) == 4;
+    assert double(2) == 4;
 }
 
 test "this one fails with a custom message" {
-  assert double(2) == 5, "double(2) should be five";
+    assert double(2) == 5, "double(2) should be five";
 }
 
 test "t: fails" {
-  try failing();
+    try failing();
 }

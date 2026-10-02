@@ -8,5 +8,8 @@ pub type Canvas(outlines: Array<Outline>, origin: Point) {
 }
 
 pub fn canvas() -> Canvas {
-    return Canvas(outlines: [Outline(points: [Point(x: 3, y: 4)])], origin: Point(x: 1, y: 2));
+    return Canvas(
+        outlines: [Outline(points: [Point(x: 3, y: 4)])],
+        origin: Point(x: 1, y: 2),
+    );
 }

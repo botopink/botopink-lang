@@ -15,8 +15,8 @@ scripts/
 ├── install.sh         ← POSIX one-liner installer
 ├── install.ps1        ← Windows one-liner installer
 ├── release-pack.sh    ← per-target archive + sha256 packer (used by release.yml)
-├── gate.sh            ← the ordered local gate (staged checks, build, format-check, test, test-bpmp, beam export audit, test-cli, test-libs, test-language, test-docs)
-├── format-check.sh    ← `botopink format --check` over the compiler's canonical `.bp` trees — decision 66's caller; the red trees and their causes are in its header
+├── gate.sh            ← the ordered local gate (staged checks + `zig fmt --check modules`, build, format-check, test, test-bpmp, beam export audit, test-cli, test-libs, test-language, test-docs)
+├── format-check.sh    ← `botopink format --check` over the compiler's canonical `.bp` trees (`TREES`) — decision 66's caller
 ├── test-libs.sh       ← runtime pre-flight + `botopink-lib-test` wrapper with known reds and the restricted-targets ledger (`zig build test-libs`)
 ├── known-red-libs.txt ← library cells known red, each with its owning front
 ├── restricted-targets.txt ← the ledger: every cell a member's `"targets"` list hides, with its measured failed count
@@ -114,7 +114,9 @@ See [`../AGENTS.md`](../AGENTS.md) §Release pipeline and
 `scripts/gate.sh [--cold] [--staged]` — one ordered run, stopping at the first
 failing stage (stages 4b–10 run side by side and are reported in this order —
 § Where the gate's time goes): staged-file checks (`--staged`: conflict markers, `zig fmt
---check` on staged `.zig`, no staged `*.snap.new` / `*.snap.md.new` candidate), `zig build`, `scripts/format-check.sh` (`botopink
+--check` on staged `.zig`, no staged `*.snap.new` / `*.snap.md.new` candidate) and, every run,
+`zig fmt --check modules` (a `.zig` file red anywhere fails the gate, staged or not — the
+whole-tree check is the stage; the staged one is a commit's fast path), `zig build`, `scripts/format-check.sh` (`botopink
 format --check` over the compiler's canonical `.bp` trees — decision 66's
 caller), `zig build test` (`--cold` deletes
 `modules/compiler-core/.botopinkbuild/runtime-cache` first),
@@ -206,17 +208,26 @@ file per job, printed in its own order afterwards — which is what lets
 
 `scripts/format-check.sh` — stage 3 of `gate.sh` and a step of CI's `test` job:
 `zig-out/bin/botopink format --check <tree>` for every tree in its `TREES`
-array, which names the trees the gate holds canonical (`examples/modules`
-today). `format --check` on a directory reaches every `.bp` and `.d.bp` under it
-(nested projects included) and structurally leaves out hidden directories,
-`node_modules` and a `reject/<n>.bp` beside its `<n>.expect`
+array, which names the trees the gate holds canonical: every `examples/*`
+directory, `libs/std`'s two `.d.bp` files, `libs/routing`, `libs/actions`,
+`libs/validation` and `modules/compiler-cli/tests`. `format --check` on
+a directory reaches every `.bp` and `.d.bp` under it (nested projects included)
+and structurally leaves out hidden directories, `node_modules`, a
+`reject/<n>.bp` beside its `<n>.expect` and a `modules/<cell>/` file the cell's
+`<target>.expect` names that does not lex or parse
 (`modules/compiler-cli/src/cli/format_cmd.zig`); the list is not a skip list
 and there is no other way to exempt a file (decision 67). A tree that is red
-today — `libs/std`, `examples/generic-loader-binding`, `examples/stdlib-tour`,
-`tests/language`, `modules/compiler-cli/tests` — is named in the script's header
-with its cause and the row that owns it, and joins `TREES` when that row
-lands. Exit `0` when every listed tree is canonical; `1` naming the tree and
-the files, with the `Unchanged` lines filtered out.
+is a red gate, fixed by `botopink format <tree>` in a reformat-only commit;
+a tree the printer cannot round-trip is a formatter defect
+(`01-compiler/16-formatter`) and stays out until the printer is fixed — today
+`tests/language/run` and `tests/language/test` (two cells, named in
+`tests/language/AGENTS.md` § 66); `tests/language/modules` (36 of its 37 files
+reformatted) joins when the one cell whose `.expect` files pin a location the
+reformat moves has those four lines moved with it (same §); `libs/std` joins
+when the 26 snapshots that quote its source verbatim (the `std_package_*`
+codegen snapshots and two LSP snapshots, named in the script's header) are
+re-recorded in the same commit as its reformat. Exit `0` when every listed tree is canonical;
+`1` naming the tree and the files, with the `Unchanged` lines filtered out.
 
 ## git-hooks/
 

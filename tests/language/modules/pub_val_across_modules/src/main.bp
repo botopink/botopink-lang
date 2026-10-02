@@ -29,7 +29,9 @@ pub fn main() {
     @print(Box(n: 1).fill());
     @print(modeName());
     @print(sizes.length);
-    for (sizes) { s -> @print(s); }
+    for (sizes) { s ->
+        @print(s);
+    }
     @print(maxItems);
     @print(scaled);
     @print(name);

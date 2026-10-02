@@ -4,8 +4,11 @@
 
 pub type Token {
     Layout {
-        Break { Before, After },
-    },
+        Break {
+            Before,
+            After,
+        }
+    }
     After(inner: Token[]),
     Plain,
 }

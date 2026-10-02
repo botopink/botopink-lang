@@ -6,8 +6,8 @@
 //// bound — only the leaves are.
 
 pub mod shapes;
-import {shapes.circle.name as circleName, shapes: {helpers: {seven}}};
-import {collections.Dict, collections: {gt, reverse, toInt as rank}} from "std";
+import {shapes.circle.name as circleName, shapes.helpers.seven};
+import {collections.Dict, collections.gt, collections.reverse, collections.toInt as rank} from "std";
 
 pub fn main() {
     @print(circleName());

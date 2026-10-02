@@ -10,7 +10,14 @@ import {pin} from "local";
 import {mark} from "marks";
 
 fn note(comptime decl: @Decl, text: string = "n", size: f64 = 2.5) {
-    @emit("pub fn " + decl.name + "Note() -> string { return \"" + text + size.toString() + "\"; }");
+    @emit(
+        "pub fn "
+            + decl.name
+            + "Note() -> string { return \""
+            + text
+            + size.toString()
+            + "\"; }",
+    );
 }
 
 #[mark("a")]
