@@ -410,7 +410,7 @@ fn registerStdDecorators(env: *Env, mod_name: []const u8, handle: []const u8) In
 
 /// STD-001 — when an active target is set on this env (the CLI codegen
 /// path), red on imports of std modules whose declares lack an
-/// `@external(<target>, …)` match. Pure-bp `pub fn` (with body) ship
+/// `#[@External.<Target>(…)]` binding. Pure-bp `pub fn` (with body) ship
 /// on every target without a host binding, so they're skipped. Only
 /// host-bound `pub declare fn` are gated.
 ///
@@ -12145,7 +12145,7 @@ fn primKindOfName(typeName: []const u8) ?envMod.PrimKind {
 }
 
 /// The return type of a builtin-primitive method call derived from its declared
-/// signature in `primitives.d.bp` (`Self` substitutes to the receiver, `T` to its
+/// signature in `primitives.bp` (`Self` substitutes to the receiver, `T` to its
 /// first type arg, and any method-level `<U>` becomes a fresh var). Lets a chained
 /// call keep tracking its type (`xs.filter(f).at(0)` → `?T`). Returns null when
 /// the method is unknown to the interface; the caller then types it permissively.
@@ -12397,7 +12397,7 @@ fn recordInstanceCall(env: *Env, loc: ast.Loc, typeName: []const u8) InferError!
     }
 }
 
-/// Map a primitive type name to its controller interface in `primitives.d.bp`.
+/// Map a primitive type name to its controller interface in `primitives.bp`.
 /// Numeric widths are intentionally excluded for now (their `default fn`s call
 /// host-backed `@[external]` methods that codegen doesn't materialize yet).
 fn primitiveInterfaceName(typeName: []const u8) ?[]const u8 {
@@ -12416,7 +12416,7 @@ fn primitiveInterfaceName(typeName: []const u8) ?[]const u8 {
     return null;
 }
 
-/// JS prototype-method rename driven by the 2-arg `@external(node, "X")`
+/// JS prototype-method rename driven by the bare-symbol `#[@External.Node("X")]`
 /// annotation on a primitive-receiver interface method. Returns the host
 /// symbol `X` when it differs from `callee` (the call site emits
 /// `recv.X(args)` instead of `recv.callee(args)`); returns null when there is
@@ -12529,7 +12529,7 @@ fn findInterfaceDefaultFn(env: *Env, ifaceName: []const u8, callee: []const u8) 
                 }
                 // A JS global namespace (`Math`) lowers as `Math.sym(self, …)`,
                 // dispatched through the stdlib lib path. The §A4 2-arg shorthand
-                // (`@external(node, "X")`, module empty) names a native prototype
+                // (`#[@External.Node("X")]`, module empty) names a native prototype
                 // method — that case is handled by the prim-block rename, NOT here.
                 if (ref.module.len == 0) continue;
                 const is_global = std.mem.indexOfScalar(u8, ref.module, '/') == null and
@@ -13508,7 +13508,7 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                             try env.jsMethodRenames.put(loc, "length");
                         }
                         // §A4: per-call-site JS prototype rename driven by the
-                        // 2-arg `@external(node, "X")` annotation on the method
+                        // bare-symbol `#[@External.Node("X")]` annotation on the method
                         // (`String.contains` ⇒ `includes`, `Array.append` ⇒
                         // `concat`, …). When the annotated symbol equals the
                         // method name nothing is recorded — call site emits the

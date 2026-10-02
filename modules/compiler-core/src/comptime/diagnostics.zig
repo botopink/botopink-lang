@@ -270,7 +270,7 @@ pub const generic_arg_skip_forbidden: []const u8 = "generic-arg-skip-forbidden";
 /// argument nothing reads is refused, not dropped).
 pub const generic_arg_count_exceeded: []const u8 = "generic-arg-count-exceeded";
 
-/// §A3 — a host `declare fn -> @Result<…>` whose `@external(<target>, "<template>")`
+/// §A3 — a host `declare fn -> @Result<…>` whose `#[@External.<Target>("<template>")]`
 /// body is missing the `ok` or `error` branch on at least one target.
 /// The template owns the wrapper shape — both branches must be present so
 /// callers see a complete `{ok, _} | {error, _}` lowering.

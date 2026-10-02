@@ -150,7 +150,7 @@ pub const ParseErrorType = enum {
     fnParamPositionalAfterNamed,
     /// The retired `@[…]` annotation-block opener (spec 05 §5.12). Annotation
     /// blocks are written `#[…]`; the builtin marker `@` belongs on the
-    /// annotation name (`#[@external(…)]`), not on the block.
+    /// annotation name (`#[@External.Node(…)]`), not on the block.
     retiredAnnotationBlock,
     /// `type P(x: i32) { A }` — a field list and a variant in the same
     /// declaration: a `type` is a record (fields) or an enum (variants).

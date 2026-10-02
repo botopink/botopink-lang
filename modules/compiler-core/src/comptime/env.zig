@@ -825,7 +825,7 @@ pub const Env = struct {
     /// module name. Populated by `registerStdlib` alongside `stdModuleTypes`.
     /// Consumed by `markStdImports` when `Env.target != null` to red
     /// `std-unsupported-on-target` on imports whose declares lack an
-    /// `@external(<target>, …)` match. Owns nothing — the FnDecl slices
+    /// `#[@External.<Target>(…)]` binding. Owns nothing — the FnDecl slices
     /// point into the arena where `registerStdlib` parsed them.
     stdModuleFns: std.StringHashMap([]const ast.FnDecl),
     /// STD-001 — a namespace import of a std module some of whose host-bound
@@ -1067,7 +1067,7 @@ pub const Env = struct {
     /// (level, jump lowerings, label stack, etc.) is freshly initialised.
     ///
     /// Avoids the ~83ms/call cost of re-parsing + re-inferring the stdlib
-    /// (`primitives.d.bp`, `@Decl` cluster, `CustomNode`, `builtins_fns.d.bp`)
+    /// (`primitives.bp`, `@Decl` cluster, `CustomNode`, `builtins_fns.d.bp`)
     /// on every `freshEnv`, which `registerStdlib` did unconditionally.
     /// Lex + parse + infer of the test snippet itself only costs ~µs.
     pub fn cloneFromTemplate(tmpl: *const Env, arena: std.mem.Allocator) !Env {
