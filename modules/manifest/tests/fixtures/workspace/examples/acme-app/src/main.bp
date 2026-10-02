@@ -1,4 +1,4 @@
-import { core } from "acme";
+import {core} from "acme";
 
 pub fn main() {
     print(core());

@@ -1,4 +1,4 @@
-import { core } from "rakun";
+import {core} from "rakun";
 
 pub fn web() -> i32 {
     return core() + 1;
