@@ -1028,6 +1028,9 @@ codegen/
   the consuming module recorded at the same place (a program's `s.trim()` at
   `out.append`'s line and column made it `append(Out, …)`). Pinned by
   `codegen/tests/erlang.zig`.
+- **`true` / `false` in a pattern are matched** (`patternNodeExtra`, and the
+  `..` tuple's element guard in `tuplePatternNode`): `#(true, n)` was
+  `{True, N}`, a binder, and the first arm took every tuple.
 - **Modules are `erl_ast` forms**: `emitErlangModule` builds every form in one
   arena and renders them with `erl_emitter.writeForms`: `-module`
   (`crossModule.erlAtom(module_path)` — the path joined with `@`),

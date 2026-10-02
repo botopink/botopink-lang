@@ -97,3 +97,30 @@ test "erlang: an entry point sets standard_io to unicode before anything prints"
         \\}
     , "é 😀\n", &.{"'_botopink_main'() ->\n    io:setopts(standard_io, [{encoding, unicode}]),\n    main()."});
 }
+
+test "erlang: true and false inside a tuple pattern are matched, not bound" {
+    // `#(true, n)` was `{True, N}`: `true` became a variable, the first arm
+    // matched every tuple, and `tag(#(false, 1))` answered `yes 1`.
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn tag(t: #(bool, i32)) -> string {
+        \\    return case t {
+        \\        #(true, n) { "yes " + n.toString(); }
+        \\        #(false, n) { "no " + n.toString(); }
+        \\    };
+        \\}
+        \\
+        \\fn first(t: #(bool, i32, i32)) -> i32 {
+        \\    return case t {
+        \\        #(false, ..) { 0; }
+        \\        #(true, n, ..) { n; }
+        \\    };
+        \\}
+        \\
+        \\pub fn main() {
+        \\    @print(tag(#(false, 1)));
+        \\    @print(tag(#(true, 2)));
+        \\    @print(first(#(false, 7, 8)));
+        \\    @print(first(#(true, 7, 8)));
+        \\}
+    , "no 1\nyes 2\n0\n7\n", &.{ "{true, N} ->", "{false, N@1} ->", "=:= false" });
+}

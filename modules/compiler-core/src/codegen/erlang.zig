@@ -8298,6 +8298,8 @@ const Emitter = struct {
             // atom through `variantTag`, which drops the path.
             .ident => |n| {
                 if (isVariantPath(n)) return Ast.Expr.a(this.variantTag(n));
+                // `#(true, n)`: a boolean literal is matched, never bound.
+                if (std.mem.eql(u8, n, "true") or std.mem.eql(u8, n, "false")) return Ast.Expr.a(n);
                 if (this.enum_variants.contains(n)) {
                     // One spelling can be BOTH a `type` this module places and
                     // a variant some enum declares (`type Block(…)` beside
@@ -8490,7 +8492,9 @@ const Emitter = struct {
                     b.arena,
                     try b.binop("=:=", at, try this.patternNodeExtra(b, e, null)),
                 ),
-                .ident => |n| if (isVariantPath(n) or this.enum_variants.contains(n))
+                .ident => |n| if (std.mem.eql(u8, n, "true") or std.mem.eql(u8, n, "false"))
+                    try ex.?.guards.append(b.arena, try b.binop("=:=", at, Ast.Expr.a(n)))
+                else if (isVariantPath(n) or this.enum_variants.contains(n))
                     try ex.?.guards.append(b.arena, try b.binop("=:=", at, Ast.Expr.a(this.variantTag(n))))
                 else
                     try ex.?.binds.append(b.arena, try b.match(Ast.Expr.v(try this.patternBindVar(b, n)), at)),
