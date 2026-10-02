@@ -20,6 +20,7 @@ scripts/
 ├── test-libs.sh       ← runtime pre-flight + `botopink-lib-test` wrapper: one line per cell and per audited exclusion, one summary line (`zig build test-libs`)
 ├── test-vscode.sh     ← locate the sibling vscode-extension, `npm ci` once, `npm test` (`zig build test-vscode`)
 ├── check-docs.sh      ← compiles every `botopink` fence of docs.md/README.md (`zig build test-docs`)
+├── tsc-check.sh       ← `tsc --noEmit --strict` over every `.d.ts` a commonJS build of the example projects and tests/language/modules emits (gate stage 11)
 ├── check-test-scratch.sh ← refuses a cwd-anchored `.botopinkbuild` path inside a `test` block or a `tests/` file (part of `zig build test`)
 ├── snap_audit.sh      ← read-only audit of every *.snap.md (7 modes)
 ├── beam_export_audit.sh ← assemble every beam snapshot module with every function exported
@@ -110,7 +111,7 @@ See [`../AGENTS.md`](../AGENTS.md) §Release pipeline and
 ## gate.sh
 
 `scripts/gate.sh [--cold] [--staged]` — one ordered run, stopping at the first
-failing stage (stages 4b–10 run side by side and are reported in this order —
+failing stage (stages 4b–11 run side by side and are reported in this order —
 § Where the gate's time goes): staged-file checks (`--staged`: conflict markers, `zig fmt
 --check` on staged `.zig`, no staged `*.snap.new` / `*.snap.md.new` candidate) and, every run,
 `zig fmt --check modules` (a `.zig` file red anywhere fails the gate, staged or not — the
@@ -124,12 +125,26 @@ test-bpmp`, `scripts/beam_export_audit.sh`, `zig build test-cli`, `zig build
 test-libs` (every cell the manifests declare, and an audit of every target a
 manifest excludes — § test-libs.sh), `zig build test-language` (`tests/language/`, a red cell fails
 it), `zig build test-docs`
-(`check-docs.sh`). CI (`.github/workflows/test.yml`) runs the same stages minus the
+(`check-docs.sh`), `scripts/tsc-check.sh` (§ tsc-check.sh). CI (`.github/workflows/test.yml`) runs the same stages minus the
 staged checks. The pre-commit hook runs `--staged`; the run
 that decides a merge adds `--cold`. After the staged checks the script unsets
 every `git rev-parse --local-env-vars` variable a hook inherits (`GIT_DIR`,
 `GIT_INDEX_FILE`, …): a stage that runs `git` in a scratch repository (bpmp's
 install tests) would otherwise act on the committing repository.
+
+### tsc-check.sh
+
+`scripts/tsc-check.sh [<project>…]` builds every project under `examples/` and
+every `tests/language/modules/<cell>/` with `botopink build --target commonJS
+--typescript` into a scratch directory and runs `tsc --noEmit --strict --lib
+es2022 --module commonjs` over each build's non-empty `.d.ts` files, one `tsc`
+per project. A cell is left out only structurally — a `commonJS.expect` (the
+program is refused there) or a manifest `"targets"` list without `commonJS` —
+and a project that does not build, or emits no `.d.ts`, is red. `tsc` is
+`npx -p typescript@<TS_VERSION>` (pinned in the script, so the verdict is a
+function of the tree); no `npx` on `PATH` is a refusal, never a skip (decision
+67). A planted typedef defect (`array<number>` for a `pub val` of an array)
+reds `pub_val_across_modules` and `pub_val_in_a_test`.
 
 ### Gate lock
 
@@ -162,12 +177,12 @@ on the same bytes and toolchain. Any other difference runs the whole gate, and
 The stages stay one ordered REPORT — the first failing stage in the order above
 is the one reported, with the output and exit status the one-at-a-time gate
 printed. Stages 1–4 still run one after the other, each only after the cheaper
-ones passed. Stages 4b–10 only read what 2–4 built, and write their own scratch,
+ones passed. Stages 4b–11 only read what 2–4 built, and write their own scratch,
 so they run side by side (`gate.sh` § side by side): each stage's stdout and
 stderr are captured to one file, and once all of them have finished the blocks
 are printed in stage order up to and including the first red one, whose failure
 line ends the run with exit 1 — the stages after it are not printed, as the
-serial gate never ran them. A red stage among 4b–10 therefore no longer saves the
+serial gate never ran them. A red stage among 4b–11 therefore no longer saves the
 time of the stages after it; that is the cost of a red run, never of a green
 one. The time is otherwise saved inside the stages, by doing the same work once
 and on every CPU, never by running less:

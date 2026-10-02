@@ -51,6 +51,15 @@ pub fn codegenEmit(
     // `exports.X` only for symbols consumed elsewhere.
     var cross = try crossModule.build(alloc, outputs);
     defer cross.deinit();
+    // The type-only `pub` declarations the `.d.ts` files import from each
+    // other (`typescript.TypeExport`), which the value index above omits.
+    var type_exports: std.ArrayListUnmanaged(tsEmit.TypeExport) = .empty;
+    defer type_exports.deinit(alloc);
+    if (config.typeDefLanguage != null) for (outputs) |*ct| switch (ct.outcome) {
+        .ok => |*ok| for (ok.bindings) |bd| if (tsEmit.typeExportOf(bd)) |name|
+            try type_exports.append(alloc, .{ .name = name, .module = ct.name }),
+        else => {},
+    };
 
     for (outputs) |*ct| {
         switch (ct.outcome) {
@@ -108,7 +117,7 @@ pub fn codegenEmit(
 
                 // Generate TypeScript typedefs if configured.
                 const typedef: ?[]u8 = if (config.typeDefLanguage) |_|
-                    try emitTypeDef(alloc, ok.bindings, &cross, ct.name)
+                    try emitTypeDef(alloc, ok.bindings, &cross, type_exports.items, ct.name)
                 else
                     null;
 
@@ -153,9 +162,10 @@ fn emitTypeDef(
     alloc: std.mem.Allocator,
     bindings: []const comptimeMod.TypedBinding,
     cross: *const CrossModule,
+    type_exports: []const tsEmit.TypeExport,
     module_name: []const u8,
 ) ![]u8 {
-    return try tsEmit.emitProgram(alloc, bindings, cross, module_name);
+    return try tsEmit.emitProgram(alloc, bindings, cross, type_exports, module_name);
 }
 
 // ── emit ──────────────────────────────────────────────────────────────────────

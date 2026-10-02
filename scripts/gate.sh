@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # gate.sh — the botopink-lang gate, one ordered run. Stages 1–4 run one after
 # the other, each only after the previous one passed, so a failure there is
-# found by the cheapest stage that can see it. Stages 4b–10 only read the tree
+# found by the cheapest stage that can see it. Stages 4b–11 only read the tree
 # stage 4 has built and tested, so they run SIDE BY SIDE, each with its output
 # captured; they are then printed one block per stage in the order below, and
 # the gate stops at the first red one IN THAT ORDER — the stage, the output and
@@ -38,6 +38,9 @@
 #                           cell fails the stage
 #  10. zig build test-docs  every `botopink` fence of docs.md and README.md is
 #                           compiled (scripts/check-docs.sh)
+#  11. tsc-check.sh         every `.d.ts` the commonJS backend emits for the
+#                           example projects and tests/language/modules passes
+#                           `tsc --noEmit --strict` (needs `npx`, from node)
 #
 # Usage:
 #   scripts/gate.sh [--cold] [--staged]
@@ -67,7 +70,7 @@ for a in "$@"; do
     case "$a" in
         --cold) cold=1 ;;
         --staged) staged=1 ;;
-        -h|--help) sed -n '2,56p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,59p' "$0"; exit 0 ;;
         *) echo "gate: unknown argument '$a'" >&2; exit 1 ;;
     esac
 done
@@ -201,7 +204,7 @@ green_record="$(git rev-parse --path-format=absolute --git-path botopink-gate-gr
 start_key="$(tree_key)"
 if [ "$staged" -eq 1 ] && [ "$cold" -eq 0 ] && [ -f "$green_record" ] &&
     [ "$(cat "$green_record")" = "$start_key" ]; then
-    stage "stages 2–10"
+    stage "stages 2–11"
     pass "this checkout and its libraries are the trees a gate already passed on (key ${start_key:0:12}) — nothing the diff can affect is left to run"
     printf "\n${GREEN}gate: every stage passed${NC}\n"
     exit 0
@@ -222,7 +225,7 @@ fi
 zig build test || fail "zig build test"
 pass "zig build test"
 
-# ── § side by side: stages 4b–10 ─────────────────────────────────────────────
+# ── § side by side: stages 4b–11 ─────────────────────────────────────────────
 # Each reads what stages 2–4 left and writes only its own scratch (`mktemp`
 # directories, per-run `test-out/<target>/<id>/`, per-process test-scratch
 # roots); `test-cli`'s four scripts, which share `zig-out/` and fixture `out/`
@@ -253,6 +256,7 @@ launch 4 zig build test-cli
 launch 5 zig build test-libs
 launch 6 zig build test-language
 launch 7 zig build test-docs
+launch 8 bash scripts/tsc-check.sh
 wait
 
 report() { # <n> <stage title> <pass text> <fail text>
@@ -272,6 +276,8 @@ report 6 "zig build test-language" "zig build test-language" \
     "zig build test-language (a FAIL line above names the file, the test and the rule)"
 report 7 "zig build test-docs" "zig build test-docs" \
     "zig build test-docs (a ✗ line above names the doc, the fence line and the error)"
+report 8 "tsc --noEmit over the emitted .d.ts (scripts/tsc-check.sh)" "tsc-check" \
+    "scripts/tsc-check.sh (the tsc error above names the project and the .d.ts; the defect is codegen/typescript.zig's)"
 
 # Record the trees as green — only when nothing moved while the gate ran.
 if [ "$(tree_key)" = "$start_key" ]; then

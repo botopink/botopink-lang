@@ -13,12 +13,36 @@ const tsEmitter = @import("./js/ts_emitter.zig");
 const crossModule = @import("./crossModule.zig");
 const hostMethods = @import("./hostMethods.zig");
 
+/// A `pub` declaration that is a TYPE and nothing else — a `behavior` (an
+/// `interface` in the `.d.ts`) or a type alias. No `.js` emits a value for
+/// one, so the cross-module index (`crossModule.zig`, which records what a
+/// `require` reaches) does not know it, and an `import { Request } from
+/// "web"` was dropped from the typedef: every signature naming `Request` was
+/// `Cannot find name` to `tsc`. The `.d.ts` of the owner declares it, so the
+/// importer's `.d.ts` imports it from there.
+pub const TypeExport = struct {
+    name: []const u8,
+    /// The declaring module's path, as `crossModule.ExportInfo.module`.
+    module: []const u8,
+};
+
+/// The `TypeExport` a binding declares, or null.
+pub fn typeExportOf(bd: comptimeMod.TypedBinding) ?[]const u8 {
+    return switch (bd.decl) {
+        .behavior => |b| if (b.isPub) b.name else null,
+        .typeAlias => |a| if (a.isPub) a.name else null,
+        else => null,
+    };
+}
+
 /// Emit a TypeScript declaration file for all bindings. `cross` (null for a
 /// standalone module) says which imported names another module actually emits.
 pub fn emitProgram(
     alloc: std.mem.Allocator,
     bindings: []const comptimeMod.TypedBinding,
     cross: ?*const crossModule.CrossModule,
+    /// Every type-only `pub` declaration of the program (`TypeExport`).
+    type_exports: []const TypeExport,
     /// The module's path (`main`, `shapes/circle`, `<dep>/<mod>`): an import's
     /// source is spelled relative to it, as the `.js` beside it spells its
     /// `require`.
@@ -26,7 +50,7 @@ pub fn emitProgram(
 ) ![]u8 {
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
-    var bld = Builder{ .b = .{ .arena = arena.allocator() }, .cross = cross, .module_name = module_name };
+    var bld = Builder{ .b = .{ .arena = arena.allocator() }, .cross = cross, .type_exports = type_exports, .module_name = module_name };
 
     const decls = try bld.b.arena.alloc(js.TsDecl, bindings.len);
     for (bindings, 0..) |binding, i| decls[i] = try bld.binding(binding);
@@ -41,6 +65,7 @@ pub fn emitProgram(
 const Builder = struct {
     b: js.Builder,
     cross: ?*const crossModule.CrossModule = null,
+    type_exports: []const TypeExport = &.{},
     module_name: []const u8 = "",
     /// What `Self` spells inside the declaration being built — the class with
     /// its own type parameters (`Dict<K, V>`). TypeScript has no `Self`.
@@ -183,15 +208,21 @@ const Builder = struct {
         self.self_type = try self.selfTypeOf(e.name, e.genericParams);
         const enum_type = self.self_type.?;
         var members: std.ArrayListUnmanaged(js.TsMember) = .empty;
-        try members.append(self.b.arena, .{ .field = .{
-            .modifier = "readonly ",
-            .name = "tag",
-            .type = .{ .union_ = blk: {
-                const tags = try self.b.arena.alloc(js.TsType, e.variants().len);
-                for (e.variants(), 0..) |v, i| tags[i] = .{ .literal = v.name };
-                break :blk tags;
-            } },
-        } });
+        try members.append(self.b.arena, try self.tagField(e.variants(), e.sections()));
+        // A section is a payload variant of the enum whose one field is the
+        // section's own enum (`comptime/AGENTS.md` § Enum sections):
+        // `Token.Layout(_inner)`, its tag the section's name.
+        for (e.sections()) |sec| {
+            try members.append(self.b.arena, .{ .method = .{
+                .modifier = "static ",
+                .name = sec.name,
+                .params = try self.b.arena.dupe(js.TsParam, &.{.{
+                    .name = "_inner",
+                    .type = .{ .name = try std.fmt.allocPrint(self.b.arena, "{s}.{s}", .{ e.name, sec.name }) },
+                }}),
+                .ret = enum_type,
+            } });
+        }
         for (e.variants()) |v| {
             if (v.fields.len == 0) {
                 try members.append(self.b.arena, .{ .field = .{
@@ -233,7 +264,47 @@ const Builder = struct {
                 .ret = try self.returnType(m.returnType),
             } });
         }
-        return .{ .class = .{ .name = try self.genericName(e.name, e.genericParams), .members = try members.toOwnedSlice(self.b.arena) } };
+        const class: js.TsDecl = .{ .class = .{ .name = try self.genericName(e.name, e.genericParams), .members = try members.toOwnedSlice(self.b.arena) } };
+        if (e.sections().len == 0) return class;
+        // The sections' types, merged with the class: a signature writes
+        // `Token.Layout.Break`, which `tsc` read as a namespace that did not
+        // exist. Each section's runtime enum is a class no module exports
+        // (`__Token__Layout__Break`), so it is an `interface` here — a type,
+        // promising no value.
+        return .{ .group = try self.b.arena.dupe(js.TsDecl, &.{ class, .{ .namespace_ = .{
+            .name = e.name,
+            .items = try self.sectionItems(e.sections()),
+        } } }) };
+    }
+
+    /// `readonly tag: "A" | "B";` over a variant list and the sections beside
+    /// it — `never` for an enum with neither, never an empty `tag: ;`.
+    fn tagField(self: *Builder, variants: []const ast.EnumVariant, sections: []const ast.EnumSection) Error!js.TsMember {
+        const tags = try self.b.arena.alloc(js.TsType, variants.len + sections.len);
+        for (variants, 0..) |v, i| tags[i] = .{ .literal = v.name };
+        for (sections, 0..) |sec, i| tags[variants.len + i] = .{ .literal = sec.name };
+        return .{ .field = .{
+            .modifier = "readonly ",
+            .name = "tag",
+            .type = if (tags.len == 0) .{ .name = "never" } else .{ .union_ = tags },
+        } };
+    }
+
+    /// One `interface` per section, and a `namespace` of the same name for
+    /// the sections nested in it.
+    fn sectionItems(self: *Builder, sections: []const ast.EnumSection) Error![]const js.TsNamespaceItem {
+        var items: std.ArrayListUnmanaged(js.TsNamespaceItem) = .empty;
+        for (sections) |sec| {
+            try items.append(self.b.arena, .{ .interface = .{
+                .name = sec.name,
+                .members = try self.b.arena.dupe(js.TsMember, &.{try self.tagField(sec.variants, sec.sections)}),
+            } });
+            if (sec.sections.len > 0) try items.append(self.b.arena, .{ .namespace = .{
+                .name = sec.name,
+                .items = try self.sectionItems(sec.sections),
+            } });
+        }
+        return items.toOwnedSlice(self.b.arena);
     }
 
     fn interface(self: *Builder, i: ast.BehaviorDecl) Error!js.TsDecl {
@@ -330,27 +401,50 @@ const Builder = struct {
         var seen_mods: std.ArrayListUnmanaged([]const u8) = .empty;
         for (u.imports) |imp| {
             if (imp.activate) continue;
-            const info = xm.picked(imp.leaf(), try u.leafSource(imp, self.b.arena, false), null) orelse continue;
+            const module = try self.ownerOf(xm, u, imp) orelse continue;
             const already = for (seen_mods.items) |m| {
-                if (std.mem.eql(u8, m, info.module)) break true;
+                if (std.mem.eql(u8, m, module)) break true;
             } else false;
             if (already) continue;
-            try seen_mods.append(self.b.arena, info.module);
+            try seen_mods.append(self.b.arena, module);
             var names: std.ArrayListUnmanaged([]const u8) = .empty;
             for (u.imports) |imp2| {
                 if (imp2.activate) continue;
-                const info2 = xm.picked(imp2.leaf(), try u.leafSource(imp2, self.b.arena, false), null) orelse continue;
-                if (!std.mem.eql(u8, info2.module, info.module)) continue;
+                const module2 = try self.ownerOf(xm, u, imp2) orelse continue;
+                if (!std.mem.eql(u8, module2, module)) continue;
                 if (!try self.noteImportName(imp2.name())) continue;
                 try names.append(self.b.arena, try importSpec(self.b.arena, imp2));
             }
             if (names.items.len == 0) continue;
             try decls.append(self.b.arena, .{ .import = .{
                 .names = names.items,
-                .source = try std.fmt.allocPrint(self.b.arena, "{s}{s}", .{ prefix, info.module }),
+                .source = try std.fmt.allocPrint(self.b.arena, "{s}{s}", .{ prefix, module }),
             } });
         }
         return group(decls.items);
+    }
+
+    /// The module whose `.d.ts` declares an imported name: the one the
+    /// cross-module index answers for a value, else the one `TypeExport`s
+    /// answer for a type-only name, narrowed by the import's source the way
+    /// `crossModule.pick` narrows (the module it names, then the package it
+    /// names) — two candidates left standing answer null, never the first.
+    fn ownerOf(self: *Builder, xm: *const crossModule.CrossModule, u: ast.ImportDecl, imp: ast.ImportPath) Error!?[]const u8 {
+        const src = try u.leafSource(imp, self.b.arena, false);
+        if (xm.picked(imp.leaf(), src, null)) |info| return info.module;
+        var pass: u2 = 0;
+        while (true) : (pass += 1) {
+            var hit: ?[]const u8 = null;
+            var n: usize = 0;
+            for (self.type_exports) |te| {
+                if (!std.mem.eql(u8, te.name, imp.leaf())) continue;
+                if (pass < 2 and !src.admits(te.module, pass)) continue;
+                hit = te.module;
+                n += 1;
+            }
+            if (n == 1) return hit;
+            if (n > 1 or pass == 2) return null;
+        }
     }
 
     fn group(decls: []const js.TsDecl) js.TsDecl {
@@ -429,6 +523,8 @@ const Builder = struct {
         // `string`, `void`, `unknown`, `never` and `any` are spelled the same
         // in both languages and need no row of their own.
         if (std.mem.eql(u8, name, "char")) return "string";
+        // The checker's type of a call that never returns (`@panic`).
+        if (std.mem.eql(u8, name, "noreturn")) return "never";
         return null;
     }
 
@@ -461,7 +557,7 @@ const Builder = struct {
                 if (n.args.len == 0) return namedType(n.name);
                 const args = try self.b.arena.alloc(js.TsType, n.args.len);
                 for (n.args, 0..) |a, i| args[i] = try self.inferredType(a.*);
-                return .{ .generic = .{ .name = n.name, .args = args } };
+                return self.applied(n.name, args);
             },
             .func => |f| {
                 const ps = try self.b.arena.alloc(js.TsParam, f.params.len);
@@ -531,53 +627,60 @@ const Builder = struct {
         }
     }
 
-    /// The effect wrappers erase or map onto a host type.
+    /// A written `Name<A, B>`: `Self<…>` is the declaration's own type, the
+    /// rest is `applied` over the mapped arguments.
     fn genericTypeRef(self: *Builder, g: anytype) Error!js.TsType {
-        // Decision 8 §3's union `A | B` rides on `TypeRef.generic` under the
-        // reserved name `ast.union_type_name` (`"|"`), which no source can
-        // write. TypeScript spells it the same way botopink does, so it is the
-        // model's own `union_` — not `|<A, B>`, which is not TypeScript.
-        if (std.mem.eql(u8, g.name, ast.union_type_name)) {
-            const members = try self.b.arena.alloc(js.TsType, g.args.len);
-            for (g.args, 0..) |a, i| members[i] = try self.typeRef(a);
-            return .{ .union_ = members };
-        }
-        // `#[@use]` lowers to an `async function` (decision 104), so its
-        // wrapper is a `Promise` of the value: `@Component<C, T>` →
-        // `Promise<T>` (the base `C` is a phantom, decision 128).
-        if (std.mem.eql(u8, g.name, "Component") and g.args.len == 2) {
-            return .{ .generic = .{ .name = "Promise", .args = try self.b.types(&.{try self.typeRef(g.args[1])}) } };
-        }
-        // `@Result<T, E>` is what the JavaScript builds: `{ ok: v }` or
-        // `{ error: e }` (`buildResult`). It used to promise a tagged
-        // `{ tag: "Ok"; result: T }` no module ever returned.
-        if (std.mem.eql(u8, g.name, "Result") and g.args.len == 2) {
-            return .{ .union_ = try self.b.types(&.{
-                .{ .object = .{ .fields = try self.b.arena.dupe(js.TsField, &.{
-                    .{ .name = "ok", .type = try self.typeRef(g.args[0]) },
-                }), .sep = "; " } },
-                .{ .object = .{ .fields = try self.b.arena.dupe(js.TsField, &.{
-                    .{ .name = "error", .type = try self.typeRef(g.args[1]) },
-                }), .sep = "; " } },
-            }) };
-        }
-        // Decisions 120 / 122: `@Task<T>` → `Promise<T>`; `@Component<C, T>`
-        // → `Promise<T>` (it extends `@Task`); `@Iterator<T>` →
-        // `IterableIterator<T>`; `@Stream<T>` → `AsyncGenerator<T>`.
-        if (std.mem.eql(u8, g.name, "Component") and g.args.len >= 2) {
-            return .{ .generic = .{ .name = "Promise", .args = try self.b.types(&.{try self.typeRef(g.args[1])}) } };
-        }
-        const host: ?[]const u8 =
-            if (std.mem.eql(u8, g.name, "Task")) "Promise" else if (std.mem.eql(u8, g.name, "Iterator")) "IterableIterator" else if (std.mem.eql(u8, g.name, "Stream")) "AsyncGenerator" else null;
-        if (host) |h| if (g.args.len >= 1) {
-            return .{ .generic = .{ .name = h, .args = try self.b.types(&.{try self.typeRef(g.args[0])}) } };
-        };
         if (std.mem.eql(u8, g.name, "Self")) if (self.self_type) |st| return st;
         // `@Decl` with no type arguments is the plain name, never `Decl<>`.
         if (g.args.len == 0) return .{ .name = g.name };
         const args = try self.b.arena.alloc(js.TsType, g.args.len);
         for (g.args, 0..) |a, i| args[i] = try self.typeRef(a);
-        return .{ .generic = .{ .name = g.name, .args = args } };
+        return self.applied(g.name, args);
+    }
+
+    /// A type constructor applied to arguments already in their TypeScript
+    /// spelling — one table for a written type (`TypeRef.generic`) and an
+    /// inferred one (`Type.named` with arguments, a `val`'s type), so the two
+    /// cannot disagree. The checker names its own constructors in lower case
+    /// (`array<T>`, `optional<T>`, `tuple<A, B>`), which no TypeScript
+    /// declares; a `pub val sizes = [1, 2, 3]` was typed `array<number>`.
+    fn applied(self: *Builder, name: []const u8, args: []const js.TsType) Error!js.TsType {
+        // Decision 8 §3's union `A | B` rides on `TypeRef.generic` under the
+        // reserved name `ast.union_type_name` (`"|"`), which no source can
+        // write. TypeScript spells it the same way botopink does, so it is the
+        // model's own `union_` — not `|<A, B>`, which is not TypeScript.
+        if (std.mem.eql(u8, name, ast.union_type_name)) return .{ .union_ = args };
+        if (std.mem.eql(u8, name, "array") and args.len == 1) return .{ .array = try self.b.typePtr(args[0]) };
+        // `?T` is `T | null`.
+        if (std.mem.eql(u8, name, "optional") and args.len == 1)
+            return .{ .union_ = try self.b.types(&.{ args[0], .{ .name = "null" } }) };
+        if (std.mem.eql(u8, name, "tuple")) return .{ .tuple = args };
+        // `#[@use]` lowers to an `async function` (decision 104), so its
+        // wrapper is a `Promise` of the value: `@Component<C, T>` →
+        // `Promise<T>` (the base `C` is a phantom, decision 128).
+        if (std.mem.eql(u8, name, "Component") and args.len >= 2)
+            return .{ .generic = .{ .name = "Promise", .args = try self.b.types(&.{args[1]}) } };
+        // `@Result<T, E>` is what the JavaScript builds: `{ ok: v }` or
+        // `{ error: e }` (`buildResult`). It used to promise a tagged
+        // `{ tag: "Ok"; result: T }` no module ever returned.
+        if (std.mem.eql(u8, name, "Result") and args.len == 2) {
+            return .{ .union_ = try self.b.types(&.{
+                .{ .object = .{ .fields = try self.b.arena.dupe(js.TsField, &.{
+                    .{ .name = "ok", .type = args[0] },
+                }), .sep = "; " } },
+                .{ .object = .{ .fields = try self.b.arena.dupe(js.TsField, &.{
+                    .{ .name = "error", .type = args[1] },
+                }), .sep = "; " } },
+            }) };
+        }
+        // Decisions 120 / 122: `@Task<T>` → `Promise<T>`; `@Iterator<T>` →
+        // `IterableIterator<T>`; `@Stream<T>` → `AsyncGenerator<T>`.
+        const host: ?[]const u8 =
+            if (std.mem.eql(u8, name, "Task")) "Promise" else if (std.mem.eql(u8, name, "Iterator")) "IterableIterator" else if (std.mem.eql(u8, name, "Stream")) "AsyncGenerator" else null;
+        if (host) |h| if (args.len >= 1) {
+            return .{ .generic = .{ .name = h, .args = try self.b.types(&.{args[0]}) } };
+        };
+        return .{ .generic = .{ .name = name, .args = args } };
     }
 };
 

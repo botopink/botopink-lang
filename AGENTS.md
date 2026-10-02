@@ -165,7 +165,7 @@ does not mirror them. Entry points:
 
 | Workflow | Trigger | What |
 | --- | --- | --- |
-| `.github/workflows/test.yml` | push / PR to `main`, `feat` | job `test`, on ubuntu-22.04 + macos-14, every step of both rows hard: `zig fmt --check modules`, `zig build test` from a cold runtime cache, the comptime runtime parity audit, `zig build test-bpmp`, the beam export audit, `zig build test-cli`, `scripts/format-check.sh`, `zig build test-language`, `zig build test-docs` and `zig build test-web` — the local gate's stages minus the staged-file checks. There is no windows row (1.0.11-beta gate-f: a row that cannot fail measures nothing; it returns hard or not at all). Job `libs` (ubuntu, after `test`): checks out emilia/erika/jhonstart/onze/rakun at `feat` into `repository/<name>/` and runs `zig build test-libs` — every cell the manifests declare, every excluded target audited. |
+| `.github/workflows/test.yml` | push / PR to `main`, `feat` | job `test`, on ubuntu-22.04 + macos-14, every step of both rows hard: `zig fmt --check modules`, `zig build test` from a cold runtime cache, the comptime runtime parity audit, `zig build test-bpmp`, the beam export audit, `zig build test-cli`, `scripts/format-check.sh`, `zig build test-language`, `zig build test-docs`, `scripts/tsc-check.sh` and `zig build test-web` — the local gate's stages minus the staged-file checks. There is no windows row (1.0.11-beta gate-f: a row that cannot fail measures nothing; it returns hard or not at all). Job `libs` (ubuntu, after `test`): checks out emilia/erika/jhonstart/onze/rakun at `feat` into `repository/<name>/` and runs `zig build test-libs` — every cell the manifests declare, every excluded target audited. |
 | `.github/workflows/release.yml` | tag push `v*` | 5-target matrix (`linux-{x86_64,aarch64}`, `macos-{x86_64,aarch64}`, `windows-x86_64`) → `scripts/release-pack.sh` writes `dist/<binary>-<tag>-<target>.<ext>` + `.sha256` → `softprops/action-gh-release@v2` uploads to one Release. Prerelease iff the tag contains `-`. |
 
 Asset naming (the contract bpmp and the install scripts rely on):
@@ -245,7 +245,7 @@ it and must not silently wait for it.
 **The gate every front runs before landing is `zig build test && zig build
 test-libs`**, with `zig build test` from a cold runtime cache. The full ordered
 run is [`scripts/gate.sh`](scripts/gate.sh) — stages 1–4 one after the other,
-4b–10 side by side and reported in this order, the first red one ending the run
+4b–11 side by side and reported in this order, the first red one ending the run
 (`scripts/AGENTS.md` § Where the gate's time goes):
 
 1. `--staged`: conflict markers and `zig fmt --check` on staged files, and a staged snapshot candidate (`*.snap.new`, `*.snap.md.new` — `git add -f` gets past `.gitignore`) is refused; then, on every run, `zig fmt --check modules` — a `.zig` file red anywhere in the tree fails the gate, staged or not;
@@ -258,7 +258,8 @@ run is [`scripts/gate.sh`](scripts/gate.sh) — stages 1–4 one after the other
 7. `zig build test-cli` (the CLI contract, test tooling, recursion and backend execution scripts);
 8. `zig build test-libs` (every visible library on the targets its manifest declares — a cell that exists is green or the stage fails; a library without tests is still compiled; every target a `"targets"` list excludes is audited, and an exclusion that is not structural fails the stage);
 9. `zig build test-language` (tests/language on commonJS, erlang, wasm and beam — decision 8's `case`, tuples and `loop`; every `.targets` / manifest `"targets"` narrowing audited against the compiler's host-binding refusal, after the runner's own `--self-test`);
-10. `zig build test-docs` (every `botopink` fence of `docs.md` and `README.md` compiles).
+10. `zig build test-docs` (every `botopink` fence of `docs.md` and `README.md` compiles);
+11. `scripts/tsc-check.sh` (every `.d.ts` a commonJS build of the example projects and `tests/language/modules` emits passes `tsc --noEmit --strict`, typescript pinned, through `npx`).
 
 One gate runs at a time per machine: a second `gate.sh` waits for the lock,
 naming the holder's pid, checkout and start time. A `--staged` run whose
@@ -279,7 +280,7 @@ git config core.hooksPath scripts/git-hooks
 The setting lives in the repository's shared config, and the relative path
 resolves against the committing checkout's root, so every worktree runs the
 hook its own tree tracks. It is enabled in the maintainer's botopink-lang
-clone. The gate needs `node`, `erl`/`erlc`/`escript` and `wasmtime` on `PATH`.
+clone. The gate needs `node` (with the `npx` it ships), `erl`/`erlc`/`escript` and `wasmtime` on `PATH`.
 Do not use `--no-verify`.
 
 ## Debugging tips & gotchas

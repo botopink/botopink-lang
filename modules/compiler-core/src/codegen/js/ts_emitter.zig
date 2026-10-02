@@ -88,7 +88,15 @@ fn writeParams(w: *Writer, params: []const Ast.TsParam) Error!void {
 // ── members ──────────────────────────────────────────────────────────────────
 
 fn writeMember(w: *Writer, m: Ast.TsMember) Error!void {
-    try w.writeAll("    ");
+    return writeMemberAt(w, m, 1);
+}
+
+fn writeIndent(w: *Writer, depth: usize) Error!void {
+    for (0..depth) |_| try w.writeAll("    ");
+}
+
+fn writeMemberAt(w: *Writer, m: Ast.TsMember, depth: usize) Error!void {
+    try writeIndent(w, depth);
     switch (m) {
         .field => |f| {
             try w.writeAll(f.modifier);
@@ -130,6 +138,34 @@ fn writeMember(w: *Writer, m: Ast.TsMember) Error!void {
             try w.writeAll("\",\n");
         },
     }
+}
+
+// ── namespaces ───────────────────────────────────────────────────────────────
+
+/// The items of a `namespace` block, `depth` levels in: inside an ambient
+/// namespace every member is exported, so neither `export` nor `declare` is
+/// written again.
+fn writeNamespaceItems(w: *Writer, items: []const Ast.TsNamespaceItem, depth: usize) Error!void {
+    for (items) |item| switch (item) {
+        .interface => |i| {
+            try writeIndent(w, depth);
+            try w.writeAll("interface ");
+            try w.writeAll(ident(i.name));
+            try w.writeAll(" {\n");
+            for (i.members) |m| try writeMemberAt(w, m, depth + 1);
+            try writeIndent(w, depth);
+            try w.writeAll("}\n");
+        },
+        .namespace => |ns| {
+            try writeIndent(w, depth);
+            try w.writeAll("namespace ");
+            try w.writeAll(ident(ns.name));
+            try w.writeAll(" {\n");
+            try writeNamespaceItems(w, ns.items, depth + 1);
+            try writeIndent(w, depth);
+            try w.writeAll("}\n");
+        },
+    };
 }
 
 // ── declarations ─────────────────────────────────────────────────────────────
@@ -186,6 +222,13 @@ pub fn writeDecl(w: *Writer, d: Ast.TsDecl) Error!void {
             try w.writeAll(" = ");
             try writeType(w, t.type);
             try w.writeAll(";\n");
+        },
+        .namespace_ => |ns| {
+            try w.writeAll("export declare namespace ");
+            try w.writeAll(ident(ns.name));
+            try w.writeAll(" {\n");
+            try writeNamespaceItems(w, ns.items, 1);
+            try w.writeAll("}\n");
         },
         .import => |i| {
             try w.writeAll("import { ");
@@ -271,4 +314,26 @@ test "ts_emitter: declarations" {
         .{ .method = .{ .name = "greet", .params = &.{}, .ret = .{ .name = "string" } } },
     } } });
     try expectDecl("import { a, b } from \"std\";\n", .{ .import = .{ .names = &.{ "a", "b" }, .source = "std" } });
+    try expectDecl(
+        \\export declare namespace Token {
+        \\    interface Layout {
+        \\        readonly tag: "Break";
+        \\    }
+        \\    namespace Layout {
+        \\        interface Break {
+        \\            readonly tag: "Before" | "After";
+        \\        }
+        \\    }
+        \\}
+        \\
+    , .{ .namespace_ = .{ .name = "Token", .items = &.{
+        .{ .interface = .{ .name = "Layout", .members = &.{
+            .{ .field = .{ .modifier = "readonly ", .name = "tag", .type = .{ .literal = "Break" } } },
+        } } },
+        .{ .namespace = .{ .name = "Layout", .items = &.{
+            .{ .interface = .{ .name = "Break", .members = &.{
+                .{ .field = .{ .modifier = "readonly ", .name = "tag", .type = .{ .union_ = &.{ .{ .literal = "Before" }, .{ .literal = "After" } } } } },
+            } } },
+        } } },
+    } } });
 }

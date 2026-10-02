@@ -503,6 +503,22 @@ pub const TsMember = union(enum) {
     enum_member: struct { name: []const u8, value: []const u8 },
 };
 
+/// `namespace Name { … }` — what an enum's **sections** declare as types
+/// (`Token.Layout.Break`), merged with the enum's class of the same name. It
+/// holds types only, so it is a non-instantiated namespace: no value is
+/// promised beside the class's own statics.
+pub const TsNamespace = struct {
+    name: []const u8,
+    items: []const TsNamespaceItem,
+};
+
+pub const TsNamespaceItem = union(enum) {
+    /// `interface Name { … }` — one section's type.
+    interface: struct { name: []const u8, members: []const TsMember },
+    /// `namespace Name { … }` — the sub-sections of the section `Name`.
+    namespace: TsNamespace,
+};
+
 /// One `.d.ts` declaration.
 pub const TsDecl = union(enum) {
     /// `export declare const name: T;`
@@ -517,6 +533,8 @@ pub const TsDecl = union(enum) {
     enum_: struct { name: []const u8, members: []const TsMember },
     /// `export declare type Name = T;`
     type_alias: struct { name: []const u8, type: TsType },
+    /// `export declare namespace Name { … }`
+    namespace_: TsNamespace,
     /// `import { a, b as c } from "src";` — a name is written as given.
     import: struct { names: []const []const u8, source: []const u8 },
     /// `import * as name from "src";` — a whole module bound to one name.
