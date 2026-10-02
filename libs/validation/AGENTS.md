@@ -4,7 +4,9 @@
 > Parent: [`../AGENTS.md`](../AGENTS.md)
 
 The bundled `validation` library (decision 116 rule 5): constraint markers,
-`#[validated]`, the violation report, the constraint table and typed coercion.
+`#[validated]`, the violation report, the constraint table, typed coercion, and
+— since `specs/1.0.11-beta/07-bundled-libs/125-validation-zod` — `#[schema]`,
+the decoder from a `Json` document to a typed record.
 One source compiled for erlang and commonJS, so the server's handler and the
 client's form run the same predicate. Moved from rakun front 14's validation
 member (`repository/rakun/modules/rakun-validation`) by
@@ -30,20 +32,27 @@ libs/validation/
 ├── botopink.json     "name": "validation", "target": "erlang", "targets": ["erlang", "commonJS"], no dependencies
 ├── AGENTS.md         ← you are here
 ├── src/
-│   ├── root.bp         pub mod report; table; messages; spi; constraints; binding; decorators
+│   ├── root.bp         pub mod path; report; table; messages; schemas; spi; constraints; binding; decorators
+│   ├── path.bp         root, key, index, segments, head — the path a violation's `field` is
 │   ├── report.bp       Violation, ValidationReport (isValid, merge, toJson, toProblemDetail, empty, of),
 │   │                   violationJson, violation, noViolation, oneViolation
 │   ├── table.bp        constraintTableJson and the blob grammar (splitBlob, paramNames, paramIsNumber,
 │   │                   renderParam, constraintJson, fieldJson)
 │   ├── messages.bp     Arg, arg, noArgs, MessageSource, setMessageSource, builtInOnly, messageSource,
 │   │                   currentLocale, templateFor, interpolate, message, builtInTemplate, showI32/I64/F64
+│   ├── schemas.bp      Schema<T> (parse, parseAt, decode, accepts, optional, array), of, text, int, long,
+│   │                   float, boolean, anyJson; the decoders decodeString/Int/Long/Float/Bool/Json,
+│   │                   optionalOf, decodeArrayOf; what `#[schema]` calls: fieldOf, memberPath,
+│   │                   objectProblems, unknownKeys, violationsOf, under, decodeText; kindOf, isNull, shown
+│   │                   (three conversion cells: wholeI32, wholeI64, isWhole)
 │   ├── spi.bp          Constraint, registerConstraint, constraintRegistered, registeredConstraints,
 │   │                   clearConstraints, unknownConstraintMessage, vConstraint   (registry: templates)
 │   ├── constraints.bp  the v* predicates (std `regex`, `io.clock`), emailPattern
 │   ├── binding.bp      bindInt, bindBool, bindRequired, bindEpochMillis, bindingReport, bindingCount,
 │   │                   bindingReset, bindingIsolated, isIntegerText, parseI32, parseI64   (accumulator: templates)
-│   └── decorators.bp   #[validated] and the thirteen constraint markers
-└── test/             binding · constraints · messages · parity · report · spi · table   (suite `validation:`)
+│   └── decorators.bp   #[validated] and the thirteen constraint markers; #[schema]
+└── test/             binding · constraints · messages · parity · path · platform · report · schema ·
+                      schema_parity · spi · table   (suite `validation:`)
 ```
 
 `botopink.json`'s `files` order is a dependency order: a module is listed before
@@ -68,6 +77,11 @@ generates (front 68).
 
 ## Host cells
 
+`schemas.bp` has three host cells that hold no state — `wholeI32`, `wholeI64`
+(an `f64` already known whole and in range, as the integer it is) and `isWhole`
+— because the language has no `f64` → integer conversion. The decision of
+whether a number fits is botopink; the cells convert.
+
 Three pieces of host state, all inline templates:
 
 | State | Erlang | Node |
@@ -87,6 +101,59 @@ place, so two inlined cells in one function never share a binding.
 `bindingIsolated()` is MEASURED on erlang (spawn a process, push two
 violations there, compare its count and this process's) and stated on node
 (one request runs to completion before the next).
+
+## `#[schema]` — a document in, a record out
+
+`validate<TypeName>` checks a value that is already a record. `#[schema]` emits
+the step before it, named after the type as `#[validated]`'s functions are:
+
+```bp
+pub fn parse<TypeName>At(input: Json, at: string) -> @Result<TypeName, ValidationReport>
+pub fn parse<TypeName>(input: Json) -> @Result<TypeName, ValidationReport>
+pub fn decode<TypeName>(text: string) -> @Result<TypeName, ValidationReport>
+pub fn schemaOf<TypeName>() -> Schema<TypeName>
+```
+
+- **Fields it decodes:** `string`, `i32`, `i64`, `f64`, `bool`, `Json`, `?T`,
+  `Array<T>` / `T[]` in any nesting, and another `#[schema]` record — the
+  record itself included — reached by calling `parse<ThatType>At` by name. Any
+  other field type is a located compile error naming the field and the type.
+- **Every violation, at its path.** Each field is decoded, every violation is
+  collected, and the record is constructed only when there are none.
+  `Violation.field` is a path (`path.bp`): `ship.zip`, `lines[1].sku`, `` for
+  the document itself. A flat record's path is its field's name.
+- **Absent is one value.** A missing key and `null` decode the same: `null` for
+  a `?T`, `required` for a `T`.
+- **Numbers.** A JSON number is an `f64`. An `i32` field takes a whole number in
+  range (`7.0` is whole, `1.5` and `2147483648` are `invalidType`); an `i64`
+  field takes a whole number within ±(2^53 − 1).
+- **An undeclared key is refused** (`unrecognizedKey`; decision 144), at its own path, after the declared fields.
+- **The checks are `#[validated]`'s.** A type that carries constraint markers
+  is also `#[validated]`; the emitted decoder calls `validate<TypeName>` on the
+  record it built and re-roots the report under the record's path
+  (`schemas.under`). A marker on a `#[schema]` type that is not `#[validated]`
+  is a compile error.
+- **Structural codes** (built-in templates in `messages.bp`): `invalidType`
+  (`{expected}`, `{received}`), `required`, `unrecognizedKey` (`{key}`,
+  `{type}`), `invalidJson` (`{reason}`); `invalidUnion`, `invalidValue`,
+  `duplicate` and `custom` are declared for the steps that follow.
+
+What the application has in scope — the emitted code names the library through
+ONE namespace, and the types its signatures spell are leaves:
+
+```bp
+import {decorators.schema} from "validation";
+import {schemas, schemas.Schema, report.ValidationReport, report.Violation} from "validation";
+import {json.Json} from "std";
+```
+
+A wrapper level under a field (`Array<Array<i32>>`, `?Array<string>`) gets one
+emitted function, `__decode<Record>_<field>_<depth>`, because a library decoder
+cannot be passed as a value from emitted code (see *Language notes*).
+
+`#[validated]` still emits bare names (`vNotBlank(…)`), so a type that carries
+both imports the predicates too. Decision 145 moves `#[validated]` to the
+namespaced form; that change edits rakun's import lines and lands with them.
 
 ## Consuming it
 
@@ -122,12 +189,62 @@ literal.
 
 ## Language notes (measured)
 
-- A record field of fn type is callable directly (`src.locale()`) on both
-  targets; `messages.bp` binds it to a local first only for readability.
-- A decorator body cannot call a sibling function; the per-marker rules in
-  `decorators.bp` are written out inline.
-- A declared parameter default is not applied at a call site; every call passes
-  every argument (hence `#[sizeBetween(min, max)]`).
-- An integer literal does not widen to `i64` in arithmetic; `rawToI64` is the
-  one host cell in the coercion path, reached only for text `isIntegerText`
-  accepted.
+Re-measured on 2026-10-01 against this checkout's compiler, on erlang and
+commonJS. What holds is a case of `test/platform_test.bp`; what is refused or
+miscompiled cannot be a green test and is listed here with the form this
+library writes instead.
+
+**Holds on both targets** (`platform_test.bp`):
+
+- A generic record carries a function field and a generic method
+  (`Schema<T>`); a record field of fn type is called through a local
+  (`val f = self.run; f(x)`).
+- A union is a generic argument (`Holder<i32 | string>`) and `x is T` tells its
+  arms apart at run time.
+- A decorator body calls a bodied function of its own module, recursion
+  included, and a decorator parameter's default is applied (`#[maker]` for
+  `maker(decl, suffix: string = "X")`). The per-marker rules of `#[validated]`
+  are written out inline for historical reasons, not because they must be.
+- Emitted code names a module through its namespace (`constraints.vNotBlank(…)`).
+- `json.decode` keeps member order, refuses a duplicate member and refuses
+  `NaN`; a JSON number is an `f64`.
+
+**Refused or miscompiled — and what is written instead:**
+
+- `Ok(v)` / `Error(e)` are patterns, not constructors (`unbound variable 'Ok'`).
+  A `@Result` comes out of a function through `return` and `throw`, so every
+  decoder is a named function and a lambda only calls one.
+- A `throw` inside a `case` arm does not become the function's `Error` — an
+  uncaught throw on node, `nocatch` on erlang. Test first, `throw` from a
+  top-level `if`.
+- `fn some<T>(v: T) -> ?T { return v; }` is "recursive type detected". The
+  optional is read out of a one-item list: `[v].at(0)` (`schemas.bp` `present`).
+- `val assert Ok(v) = r;` inside an `if` inside a `while` leaves `v` undefined
+  on commonJS. Use a `case` as an expression:
+  `out = case r { Ok(v) -> out.append([v]); Error(_) -> out; };`.
+- A function named like a primitive type (`pub fn string()`) shadows the type
+  in every annotation of its module; the mismatch is reported far from the
+  cause ("expected string, got function"). Hence `schemas.text()`.
+- A type cannot be named through a namespace (`report.ValidationReport` in an
+  annotation is "unknown type"); the emitted signatures need the type imported
+  as a leaf.
+- A namespace member is resolved where it is called, not where it is passed:
+  `schemas.of(schemas.decodeString)` is "unbound variable 'schemas'".
+- In a module of THIS package — the tests — a namespace bound by the bare
+  `import {schemas};` is not resolved inside a lambda of emitted code
+  (`schemas is not defined` on node, `decodeString/3 undefined` on erlang). A
+  consumer's `from "validation"` namespace is. `#[schema]` emits named
+  functions instead of lambdas, which works in both.
+- A method called on a lambda parameter whose type arrives through a generic
+  (`box.map({ s -> s.length() })`) is emitted verbatim on commonJS
+  (`s.length is not a function`). Pass a named function.
+- **A string's `length()` is not one number**: `"😀".length()` is 2 on commonJS
+  (UTF-16 units) and 1 on erlang (code points); `indexOf` counts bytes on
+  erlang. `vSizeBetween` inherits it for text outside the BMP. The portable
+  count is `unicode.codepoints(s).length`, which the length markers of the next
+  step are written against.
+- There is no `f64` → integer conversion in `std/math` and no `f32` literal
+  (`val f: f32 = 1.5;` is a mismatch).
+- An integer literal does not widen to `i64` in arithmetic; `rawToI64`
+  (`binding.bp`) and `wholeI64` (`schemas.bp`) are the host cells that produce
+  one.

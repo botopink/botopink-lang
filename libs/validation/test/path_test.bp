@@ -1,0 +1,52 @@
+//// validation — the path a violation is reported at.
+////
+//// A path is built going down and read by people and by forms, so the cases
+//// are the two directions: `key` / `index` compose it, `segments` / `head` take
+//// it apart, and a key that would read as structure survives the round trip.
+
+import {root, key, index, segments, head} from "path";
+
+test "validation: a member of the root is its own name" {
+    assert key(root(), "email") == "email";
+}
+
+test "validation: a member of a member is joined by a dot" {
+    assert key(key(root(), "address"), "street") == "address.street";
+}
+
+test "validation: an item is its index in brackets" {
+    assert index(key(root(), "tags"), 1) == "tags[1]";
+    assert index(root(), 0) == "[0]";
+}
+
+test "validation: a member of an item, and an item of an item" {
+    assert key(index(key(root(), "lines"), 2), "sku") == "lines[2].sku";
+    assert index(index(key(root(), "grid"), 0), 1) == "grid[0][1]";
+}
+
+test "validation: a key that reads as structure is quoted" {
+    assert key(root(), "a.b") == "[\"a.b\"]";
+    assert key(key(root(), "x"), "y[0]") == "x[\"y[0]\"]";
+    assert key(root(), "") == "[\"\"]";
+    assert key(root(), "say \"hi\"") == "[\"say \\\"hi\\\"\"]";
+}
+
+test "validation: segments are the parts, outermost first" {
+    assert segments("items[2].name").join("|") == "items|2|name";
+    assert segments("email").join("|") == "email";
+    assert segments("grid[0][1]").join("|") == "grid|0|1";
+    assert segments("").length == 0;
+}
+
+test "validation: a quoted key reads back as one part" {
+    assert segments("[\"a.b\"].c").join("|") == "a.b|c";
+    assert segments(key(key(root(), "x"), "y[0]")).join("|") == "x|y[0]";
+    assert segments(key(root(), "say \"hi\"")).join("|") == "say \"hi\"";
+}
+
+test "validation: the head of a path is the field a form puts the message beside" {
+    assert head("address.street") == "address";
+    assert head("tags[1]") == "tags";
+    assert head("email") == "email";
+    assert head("") == "";
+}

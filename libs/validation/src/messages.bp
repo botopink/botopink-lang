@@ -140,6 +140,13 @@ pub fn builtInTemplate(code: string) -> string {
         return "names the constraint {name}, which is not registered - registered: [{registered}]";
     if (code == "typeMismatch") return "must be a {type}";
     if (code == "required") return "must be present";
+    if (code == "invalidType") return "must be {expected}, was {received}";
+    if (code == "unrecognizedKey") return "{key} is not a field of {type}";
+    if (code == "invalidUnion") return "matches none of the accepted forms";
+    if (code == "invalidValue") return "must be one of {options}";
+    if (code == "duplicate") return "repeats an earlier item";
+    if (code == "invalidJson") return "is not a JSON document - {reason}";
+    if (code == "custom") return "is not valid";
     return "is not valid";
 }
 

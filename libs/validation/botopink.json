@@ -11,9 +11,11 @@
   ],
   "files": [
     "root.bp",
+    "path.bp",
     "report.bp",
     "table.bp",
     "messages.bp",
+    "schemas.bp",
     "spi.bp",
     "constraints.bp",
     "binding.bp",

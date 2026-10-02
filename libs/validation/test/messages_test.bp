@@ -122,3 +122,54 @@ test "validation: a property-table source reproduces the framework's messages" {
         == "must match ^[0-9]{5}-[0-9]{3}$";
     val _z = setMessageSource(builtInOnly());
 }
+
+// ── the structural codes (a document that does not have the record's shape) ──
+
+test "validation: the structural codes have built-in templates" {
+    assert builtInTemplate("invalidType")
+        == "must be {expected}, was {received}";
+    assert builtInTemplate("unrecognizedKey")
+        == "{key} is not a field of {type}";
+    assert builtInTemplate("invalidUnion")
+        == "matches none of the accepted forms";
+    assert builtInTemplate("invalidValue") == "must be one of {options}";
+    assert builtInTemplate("duplicate") == "repeats an earlier item";
+    assert builtInTemplate("invalidJson")
+        == "is not a JSON document - {reason}";
+    assert builtInTemplate("custom") == "is not valid";
+}
+
+test "validation: a structural message interpolates its own parameters" {
+    val _z = setMessageSource(builtInOnly());
+    assert message(
+        "invalidType",
+        builtInTemplate("invalidType"),
+        "age",
+        "x",
+        [arg("expected", "a whole number"), arg("received", "text")],
+    )
+        == "must be a whole number, was text";
+    assert message(
+        "unrecognizedKey",
+        builtInTemplate("unrecognizedKey"),
+        "admin",
+        "",
+        [arg("key", "admin"), arg("type", "Signup")],
+    )
+        == "admin is not a field of Signup";
+}
+
+test "validation: a source restates a structural code like any other" {
+    val _s = setMessageSource(
+        tableSource("", [#("invalidType", "tipo errado: {expected}")]),
+    );
+    assert message(
+        "invalidType",
+        builtInTemplate("invalidType"),
+        "age",
+        "x",
+        [arg("expected", "numero"), arg("received", "texto")],
+    )
+        == "tipo errado: numero";
+    val _z = setMessageSource(builtInOnly());
+}

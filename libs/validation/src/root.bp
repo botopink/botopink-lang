@@ -19,9 +19,11 @@
 //// The `files` ORDER in `botopink.json` is a dependency order: a module is
 //// listed before the siblings that import it.
 
+pub mod path;
 pub mod report;
 pub mod table;
 pub mod messages;
+pub mod schemas;
 pub mod spi;
 pub mod constraints;
 pub mod binding;
