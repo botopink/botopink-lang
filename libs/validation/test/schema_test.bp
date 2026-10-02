@@ -9,13 +9,13 @@
 //// this one file. A decoder that answered differently on one of them would red
 //// its own half here; `parity_test.bp` holds the two to one digest besides.
 
-import {schema, validated, notBlank, minValue} from "decorators";
-import {vNotBlank, vMinValueI32} from "constraints";
-import {constraintTableJson} from "table";
+import {decorators.schema, decorators.validated, decorators.notBlank, decorators.minValue};
+import {constraints.vNotBlank, constraints.vMinValueI32};
+import {table.constraintTableJson};
 import {schemas};
-import {Schema} from "schemas";
-import {ValidationReport, Violation} from "report";
-import {setMessageSource, builtInOnly} from "messages";
+import {schemas.Schema};
+import {report.ValidationReport, report.Violation};
+import {messages.setMessageSource, messages.builtInOnly};
 import {json, json.Json} from "std";
 
 #[schema]

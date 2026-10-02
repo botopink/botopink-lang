@@ -13,13 +13,13 @@
 //// the built-in templates and the checks `#[validated]` runs afterwards, in one
 //// string.
 
-import {schema, validated, notBlank, minValue} from "decorators";
-import {vNotBlank, vMinValueI32} from "constraints";
-import {constraintTableJson} from "table";
+import {decorators.schema, decorators.validated, decorators.notBlank, decorators.minValue};
+import {constraints.vNotBlank, constraints.vMinValueI32};
+import {table.constraintTableJson};
 import {schemas};
-import {Schema} from "schemas";
-import {ValidationReport, Violation} from "report";
-import {setMessageSource, builtInOnly} from "messages";
+import {schemas.Schema};
+import {report.ValidationReport, report.Violation};
+import {messages.setMessageSource, messages.builtInOnly};
 import {json.Json} from "std";
 
 #[schema]

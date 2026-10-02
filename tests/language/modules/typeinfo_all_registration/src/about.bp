@@ -1,6 +1,6 @@
 //// One page and one component, in a module the entry point never imports.
 
-import {route, component} from "web";
+import {web.route, web.component};
 
 #[route("/about")]
 pub fn about() -> string {

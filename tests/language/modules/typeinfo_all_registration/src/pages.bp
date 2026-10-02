@@ -1,7 +1,7 @@
 //// Two pages. Nobody imports this module: the entry point finds its pages
 //// by reflection.
 
-import {route} from "web";
+import {web.route};
 
 #[route("/blog")]
 pub fn blog() -> string {

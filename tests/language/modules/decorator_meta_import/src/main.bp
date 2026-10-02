@@ -4,8 +4,8 @@
 
 pub mod orm;
 pub mod models;
-import {City} from "models";
-import {City as Town} from "models";
+import {models.City};
+import {models.City as Town};
 import {models};
 
 pub fn main() {

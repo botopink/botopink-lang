@@ -379,7 +379,7 @@ if have node; then
     for m in a b c; do
       printf '%s\n' \
         'import {io: {env, fs}} from "std";' \
-        'import {one} from "main";' '' \
+        'import {main.one};' '' \
         "test \"leaves a broken source in the scratch ($m)\" {" \
         '    val d = env.read("BOTOPINK_TEST_TMPDIR").unwrapOr("");' \
         "    val _w = fs.writeText(d + \"/junk_$m.erl\", \"-module(junk_$m). this is not erlang\");" \
@@ -836,7 +836,7 @@ if have erl && have erlc; then
   P="$(project manymods erlang)"
   {
     for i in $(seq 0 1199); do echo "pub mod m$i;"; done
-    printf 'import {f7} from "m7";\n\npub fn main() {\n    @print(f7());\n}\n'
+    printf 'import {m7.f7};\n\npub fn main() {\n    @print(f7());\n}\n'
   } >"$P/src/main.bp"
   for i in $(seq 0 1199); do printf 'pub fn f%d() -> i32 {\n    return %d;\n}\n' "$i" "$i" >"$P/src/m$i.bp"; done
   SEG="$(printf 'd%.0s' $(seq 1 100))"

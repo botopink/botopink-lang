@@ -10,7 +10,7 @@
 pub mod web;
 pub mod about;
 pub mod pages;
-import {route, component, unused} from "web";
+import {web.route, web.component, web.unused};
 
 #[component]
 pub type Local(id: i32)

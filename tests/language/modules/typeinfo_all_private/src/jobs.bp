@@ -1,4 +1,4 @@
-import {tagged} from "marks";
+import {marks.tagged};
 
 #[tagged]
 fn hidden() -> i32 {

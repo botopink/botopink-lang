@@ -1105,7 +1105,10 @@ val m = describeMode();
 ```json
 {
   "contributions": [
-    "pub fn describePoint() -> string { return \"\"\"Point[record] @describe(\"record\") field x:i32 @column(\"px\") field y:?i32 method scaled(self:Self;by:i32;)->Point\"\"\"; }"
+    {
+      "kind": "emit",
+      "source": "pub fn describePoint() -> string { return \"\"\"Point[record] @describe(\"record\") field x:i32 @column(\"px\") field y:?i32 method scaled(self:Self;by:i32;)->Point\"\"\"; }"
+    }
   ],
   "kind": "ok"
 }
@@ -2172,7 +2175,10 @@ val m = describeMode();
 ```json
 {
   "contributions": [
-    "pub fn describeMode() -> string { return \"\"\"Mode[enum] @describe(\"enum\") variant Fast variant Slow method label(self:Self;)->string\"\"\"; }"
+    {
+      "kind": "emit",
+      "source": "pub fn describeMode() -> string { return \"\"\"Mode[enum] @describe(\"enum\") variant Fast variant Slow method label(self:Self;)->string\"\"\"; }"
+    }
   ],
   "kind": "ok"
 }

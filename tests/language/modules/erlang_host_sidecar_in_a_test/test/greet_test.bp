@@ -2,8 +2,7 @@
 //// it: `botopink test` ships `src/sidecars/lt_greeter.erl` beside the
 //// runner, and the runner loads it before the tests run. It imports nothing,
 //// so its runner loaded no sibling and the call died `{error,undef}`.
-//// Narrowed to erlang: commonJS has no binding for `hello` (and `botopink
-//// test` does not run beam or wasm).
+//// Narrowed to erlang and beam: commonJS has no binding for `hello`.
 
 #[@External.Erlang("lt_greeter", "hello")]
 declare fn hello(name: string) -> string;

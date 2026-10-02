@@ -612,7 +612,7 @@ Each was run with the parent binary and fails there as its row describes.
   declaring the other default itself), called typed, through a default and through a behavior-typed
   parameter. erlc refused the module on the parent binary (`function twice/1 undefined`). **Red on
   beam** until 03's adopted-defaults commit lands and **on wasm** (it traps in `Sq_label`, 05's row).
-- `modules/erlang_host_sidecar_in_a_test` (test kind, narrowed to erlang): a `test/` module that
+- `modules/erlang_host_sidecar_in_a_test` (test kind, narrowed to erlang and beam): a `test/` module that
   declares `#[@External.Erlang("lt_greeter", "hello")]` itself and calls it. It imports nothing, so
   its runner loaded no sibling and the call died `{error,undef}` on the parent binary.
 - `run/captured_var_write_threaded` (decision 148, lg-b): the two lambdas that may write a
@@ -1026,7 +1026,7 @@ refusal lines are in the front's README):
 | `run/std_template_host_fns_across_modules` | commonJS erlang beam | wasm — `std/io/fs.exists` |
 | `run/task_throw_resolves_error` | commonJS | erlang, wasm, beam — `observe` |
 | `modules/manifest_targets_host_binding` | erlang beam (`"targets"`) | commonJS, wasm — `magnitude` |
-| `modules/erlang_host_sidecar_in_a_test` (test kind) | erlang (`"targets"`) | commonJS — `hello` |
+| `modules/erlang_host_sidecar_in_a_test` (test kind) | erlang beam (`"targets"`) | commonJS — `hello` |
 
 Thirty-three exclusions; the run prints `narrowings: 33 exclusions audited — each stands on a host binding
 the target does not have`. No other `modules/` manifest carries `"targets"`: the field used to be

@@ -28,9 +28,9 @@
 //// `case` arm does not become the function's `Error` on erlang —
 //// `language-gaps.md`), and a lambda only ever CALLS a decoder.
 
-import {Violation, ValidationReport, violation} from "report";
-import {Arg, arg, noArgs, message, builtInTemplate} from "messages";
-import {key, index} from "path";
+import {report.Violation, report.ValidationReport, report.violation};
+import {messages.Arg, messages.arg, messages.noArgs, messages.message, messages.builtInTemplate};
+import {path.key, path.index};
 import {json, json.Json} from "std";
 
 pub type Schema<T>(

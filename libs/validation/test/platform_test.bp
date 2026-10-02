@@ -10,7 +10,7 @@
 //// the form this library writes instead.
 
 import {constraints};
-import {Violation} from "report";
+import {report.Violation};
 import {json, json.Json, unicode} from "std";
 
 // ── a generic record holding a function, with a generic method ──────────────

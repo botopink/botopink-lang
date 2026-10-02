@@ -4,7 +4,7 @@
 //// are the two directions: `key` / `index` compose it, `segments` / `head` take
 //// it apart, and a key that would read as structure survives the round trip.
 
-import {root, key, index, segments, head} from "path";
+import {path.root, path.key, path.index, path.segments, path.head};
 
 test "validation: a member of the root is its own name" {
     assert key(root(), "email") == "email";

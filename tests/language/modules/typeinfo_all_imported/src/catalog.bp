@@ -1,6 +1,6 @@
 //// A module that reads the whole program.
 
-import {tagged} from "marks";
+import {marks.tagged};
 
 pub fn names() -> string {
     var out: string[] = [];

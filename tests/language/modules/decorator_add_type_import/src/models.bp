@@ -1,7 +1,7 @@
 //// The owners. Their associated types are declared here by the decorators
 //// and travel with them.
 
-import {entity, double} from "kit";
+import {kit.entity, kit.double};
 
 #[entity]
 pub type City(name: string, people: i32)

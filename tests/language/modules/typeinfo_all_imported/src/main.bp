@@ -4,8 +4,8 @@
 
 pub mod marks;
 pub mod catalog;
-import {names} from "catalog";
-import {tagged} from "marks";
+import {catalog.names};
+import {marks.tagged};
 
 #[tagged]
 pub fn job() -> i32 {

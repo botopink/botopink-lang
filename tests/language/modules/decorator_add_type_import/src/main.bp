@@ -5,8 +5,8 @@
 
 pub mod kit;
 pub mod models;
-import {City, Greeter} from "models";
-import {City as Town} from "models";
+import {models.City, models.Greeter};
+import {models.City as Town};
 
 fn header(c: City.Columns) -> string {
     return c.name + "|" + c.people;

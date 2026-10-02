@@ -4,7 +4,7 @@
 
 pub mod marks;
 pub mod jobs;
-import {tagged} from "marks";
+import {marks.tagged};
 
 pub fn main() {
     @print(@typeinfo.all(with: tagged).length);
