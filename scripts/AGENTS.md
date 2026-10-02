@@ -25,6 +25,7 @@ scripts/
 ├── snap_audit.sh      ← read-only audit of every *.snap.md (7 modes)
 ├── beam_export_audit.sh ← assemble every beam snapshot module with every function exported
 ├── comptime_bench.sh  ← what the comptime path costs: build wall clock + the in-node compile/load/run split
+├── codemod-import-without-from.py ← decision 206's one-shot migration: `from "<a module of this package>"` → the brace form (§ below)
 ├── lib/
 │   └── pool.sh        ← the bounded worker pool the shell runners share (sourced by ../tests/language/run.sh and check-docs.sh)
 └── git-hooks/
@@ -216,6 +217,48 @@ its jobs with `xargs -P "$jobs" bash -c '… pool_job …'` after `export -f` of
 what they call, and makes its output independent of completion order — one
 file per job, printed in its own order afterwards — which is what lets
 `--jobs 1` and the default print the same bytes. bash 3.2 clean.
+
+## codemod-import-without-from.py
+
+Decision 206 (1.0.11-beta `01-compiler/129-import-without-from`): `from "<name>"`
+names a package — std, a bundled package or a declared dependency — and a
+module of the importing package is imported by its path inside the braces.
+The script rewrites every import whose `from` named a module of its own
+package, over any number of trees at once:
+
+```sh
+python3 scripts/codemod-import-without-from.py [--write] [--format <botopink>] <root>...
+```
+
+- **What it rewrites.** `import {a, b as c} from "x.y";` → `import {x.y.a, x.y.b as c};`
+  (`x/y` → `x.y`), every leaf behind its dotted path — the spelling `botopink
+  format` prints (the formatter flattens a group, so a group is never the
+  canonical form); a brace list carrying a comment is kept verbatim inside one
+  group per path segment instead. Nothing outside the import changes.
+- **Which import names a module of the package.** A package is a
+  `botopink.json` that is not a workspace; its modules are its `src` tree
+  (`x/mod.bp` is `x`), plus the flat `test/` suite for a test file. The source
+  names a module by its full path, else by a last segment only one module
+  has; it is the package's when that module exports every item (`pub fn` /
+  `val` / `var` / `type` / `behavior` / `mod` / `implement` / `extend`, or a
+  submodule for the namespace form). Otherwise a source whose first segment
+  is a bundled or declared package keeps its `from` (it names the package),
+  and anything else is printed `UNDECIDED` and left for a hand edit — a
+  decorator-emitted name, or an item that resolved through the whole program
+  to another module. A package directory holding a `*.expect` that names
+  `module-import-with-from` (the language suite's cell pinning the refusal) is
+  not touched.
+- **Formatting.** With `--format`, each file it changed that `botopink format
+  --check` accepted before is formatted after, so the trees stay canonical.
+- **Output.** One `rewrite` line per import, one `UNDECIDED` line per import it
+  left, and the tally; exit 1 when anything is undecided. Without `--write` it
+  only reports.
+
+A script and not a `botopink` subcommand: the old form is refused by the
+compiler, whose diagnostic already writes the fix for one import
+(`error[module-import-with-from]`); a subcommand would keep a reading of the
+retired spelling inside the CLI for good, which decision 67 refuses. The script
+migrates the seven repositories once and needs no build.
 
 ## format-check.sh
 
