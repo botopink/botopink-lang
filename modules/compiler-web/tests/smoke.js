@@ -33,7 +33,7 @@ fn greet(name: string): string {
 }
 
 fn main() {
-  print(greet("web"))
+  @print(greet("web"))
 }
 `;
 
@@ -85,7 +85,10 @@ const NATIVE_DECORATOR_REPLY = `----- COMPTIME REPLY -- decorator describe
 \`\`\`json
 {
   "contributions": [
-    "pub fn describeUser() -> string { return \\"User\\"; }"
+    {
+      "kind": "emit",
+      "source": "pub fn describeUser() -> string { return \\"User\\"; }"
+    }
   ],
   "kind": "ok"
 }

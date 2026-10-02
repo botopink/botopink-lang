@@ -11962,10 +11962,13 @@ fn rewriteRecordUpdate(env: *Env, c: anytype, fields: anytype, loc: ast.Loc) Inf
             // source reaches — and is inferred like a written `base.field`, so
             // what a backend reads under a field access's loc (the record it
             // belongs to) is there, and never mistaken for the base's own.
+            // The field index sits in the upper half of `col`: bit 32 on a
+            // 64-bit host, bit 16 on wasm32 (`compiler-web`), where `usize`
+            // is 32 bits and a shift by 32 does not compile.
             const bl = b.getLoc();
             const read = try env.arena.create(ast.Expr);
             read.* = .{ .identifier = .{
-                .loc = .{ .line = bl.line, .col = bl.col | (@as(usize, fi + 1) << 32) },
+                .loc = .{ .line = bl.line, .col = bl.col | (@as(usize, fi + 1) << (@bitSizeOf(usize) / 2)) },
                 .kind = .{ .identAccess = .{ .receiver = b, .member = fd.name } },
             } };
             _ = try inferExpr(env, read.*);

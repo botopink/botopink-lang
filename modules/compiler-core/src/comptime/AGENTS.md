@@ -1090,7 +1090,9 @@ run-time half. D4 (whether `is` grows a payload pattern) stands as the parser le
 `p.age = 31` and `self.count += 1` both checked and both mutated in place. The decided form is a new
 value — `Person(..p, age: 31)` — which the constructor's `..` spread builds (06 C11; the checker
 matches each label to its field, and `rewriteRecordUpdate` records the complete positional call —
-the labelled value, or `base.<field>` inferred under a loc of its own — in `enumSectionRewrites`,
+the labelled value, or `base.<field>` inferred under a loc of its own: the base's line, its column
+with the field index + 1 in the upper half of `usize`, bit `@bitSizeOf(usize) / 2` — 32 natively, 16
+on wasm32, where a shift by 32 does not compile — in `enumSectionRewrites`,
 whose call rewrite in `transform.zig` then moves the arguments too; the base must be a name or a
 path of names, anything else would run once per copied field), so
 `refuseRecordFieldAssign` (the `.fieldAccess` target of the `.assign` walk) reds at the assignment
