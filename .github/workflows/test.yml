@@ -224,9 +224,10 @@ jobs:
         shell: bash
         run: zig build test-docs -Doptimize=ReleaseSafe
 
-      # Every `.d.ts` the commonJS backend emits for the example projects
-      # (erika, checked out above, is generic-loader-binding's dependency) and
-      # the tests/language/modules cells passes `tsc --noEmit --strict`
+      # Every `.d.ts` the commonJS backend emits for libs/ (std and the
+      # bundled packages), the example projects (erika, checked out above, is
+      # generic-loader-binding's dependency) and the tests/language/modules
+      # cells passes `tsc --noEmit --strict`
       # (scripts/tsc-check.sh; typescript pinned, through npx).
       - name: tsc --noEmit over the emitted .d.ts
         shell: bash

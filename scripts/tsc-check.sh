@@ -2,8 +2,11 @@
 # tsc-check.sh — every `.d.ts` the commonJS backend emits is a declaration file
 # `tsc` accepts (1.0.11-beta 01-compiler/04-js step 3, C-18 of 1.0.10-beta).
 #
-# A scratch `botopink build --target commonJS --typescript` of every project
-# under `examples/` and of every `tests/language/modules/<cell>/`, then
+# A scratch `botopink build --target commonJS --typescript` of every library
+# the compiler ships (`libs/<pkg>/`: `std` and every bundled package — their
+# `.d.ts` is what a host TypeScript consumer of a botopink build reads), of
+# every project under `examples/` and of every `tests/language/modules/<cell>/`,
+# then
 # `tsc --noEmit --strict --lib es2022 --module commonjs` over each build's
 # non-empty `.d.ts` files, one `tsc` per project (two projects' modules would
 # otherwise share one program). A typedef `tsc` refuses is a defect of
@@ -11,8 +14,8 @@
 #
 # What the walk leaves out is structural, the same reading `tests/language/run.sh`
 # makes of a cell: a cell whose `commonJS.expect` says the program is refused on
-# commonJS, and a cell whose `botopink.json` `"targets"` list does not name
-# commonJS. A project that should build and does not is red, as is one whose
+# commonJS, and a project (a library included) whose `botopink.json`
+# `"targets"` list does not name commonJS. A project that should build and does not is red, as is one whose
 # build emits no `.d.ts` at all. There is no skip list (decision 67).
 #
 # `tsc` comes from `npx -p typescript@<TS_VERSION>` — pinned, so the verdict is
@@ -50,7 +53,7 @@ projects=()
 if [ "$#" -gt 0 ]; then
     projects=("$@")
 else
-    for p in examples/*/ tests/language/modules/*/; do
+    for p in libs/*/ examples/*/ tests/language/modules/*/; do
         p="${p%/}"
         [ -f "$p/botopink.json" ] || continue
         [ -f "$p/commonJS.expect" ] && continue
