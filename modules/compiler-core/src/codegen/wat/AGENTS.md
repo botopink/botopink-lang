@@ -219,6 +219,17 @@ the shapes that bound a string and still reached the one body:
   prints as a bool now — `isBoolExpr` reads a function value's declared
   return).
 
+**A function in a generic record's field answers its declared return**
+(`ctorTypeRef` + `fnRefTypeRef`, `recvTypeArgRef`, `genericRetByFnArg`):
+`Box(value: shout)` is a `Box<fn(s: string) -> string>`, so `h.value("b")`, a
+local `val k = h.value` called, and the same through `wrap(shout)` over `fn
+wrap<T>(v: T) -> Box<T>` answer a string (a bool, …) — they printed its heap
+address (`320`) or a bool as `1`. A function type has no specialisation; only
+the result type is read. Not covered: a LAMBDA stored in the field
+(`Box(value: { s -> s + "?" })`) — its parameter is a word here, so the body
+converts it as an integer (`300?`), which is the lambda parameter typing
+`lowerLambdaValue` has no source for (`run/generic_field_fn_value.bp`).
+
 `run/generic_string_equality.bp` pins every way a type parameter gets a
 string bound on four targets, `modules/method_on_unimported_type` (`Dict.at`
 with a key `split` built) included — it already passed at the open, through
@@ -731,6 +742,27 @@ answered, and each was a red wasm cell of `tests/language`:
   `lowerResultOptionOp` builds. Unregistered, a `return` into `-> ?i32` boxed
   the box (an address printed), and a `map` answering a string was read one
   indirection too far by the `flatMap` after it.
+- **A program's own `default fn` of a primitive behavior is called**
+  (`prim_defaults`, `primBehaviorKinds`, `lowerPrimDefault`): a `default fn`
+  with a `self` in the program's `behavior String` / `Bool` / `Number` /
+  `Integer` / `Float` (… `I32`, `F64`) is registered per primitive kind it
+  covers, and a call on such a receiver whose method the table does not list
+  is a copy of the default with `Self` written as the receiver's primitive
+  (`String_tailShout__string`, `Number_clampTo__i32`), emitted once through
+  the member path (`emitMemberFn` marks a primitive-typed `self`), the
+  receiver as `self`. `primRes` reads its declared return for every shape
+  predicate. Inside such a copy — any specialisation — a primitive method's
+  result is typed by what it answers (`typeRefOf`), so `self.max(lo).min(hi)`
+  and `val tail = self.slice(1); tail.startsWith(…)` find their primitive.
+  Every program-declared default of a primitive trapped (`prim method not
+  lowered on wasm`). An `Array<T>` default's copy writes `Self<T>` (and a
+  bare `Self`) as the receiver's array type and `T` as its element
+  (`ensurePrimDefault`, `primArrayElemName`: a record, a bool by its shape,
+  else the element kind — `Array_second__arr_string`); `substTypeParams`
+  replaces a generic `Self<…>` whole for it, `emitMemberFn` marks an array
+  `self` and, inside any copy, types each parameter by its written type, and
+  the call answers the copy's declared return (`typeRefOf`, so a `?T` result
+  is the optional its element makes).
 - **A primitive method on a call inside an adopted default** reads the
   callee's declared return (`primKindAt`'s fallback): inference typed the
   default's body against `Self`, so `self.twice().toString()` in `Sq`'s copy
