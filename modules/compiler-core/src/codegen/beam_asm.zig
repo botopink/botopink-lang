@@ -3346,11 +3346,23 @@ const Emitter = struct {
                 const elems = t.tupleElems().?;
                 try beamEmitter.writeTest(self.out, .is_tuple, fail, &.{s});
                 try beamEmitter.writeTest(self.out, .test_arity, fail, &.{ s, .{ .untagged = @as(i64, @intCast(elems.len)) } });
-                // The ELEMENT types are not tested: reading one is a call, and a
-                // call frees the register the remaining tests read. The erlang
-                // twin does test them (a guard may call `element/2`), so a
-                // tuple `is` is narrower here — written down in `AGENTS.md`,
-                // not passed off as the same test.
+                // Each ELEMENT is tested too, as the erlang twin does: after
+                // `test_arity` the loader knows the arity, so the element is a
+                // `get_tuple_element` into a scratch register (no call frees
+                // the subject), tested with the live floor raised over it.
+                // Testing the arity alone, `#(i32, string)` held for a record
+                // or a variant of two slots (`test/is_truth_table`).
+                const tmp = @max(self.scratchBase(), src + 1);
+                const saved_live = self.min_live;
+                defer self.min_live = saved_live;
+                for (elems, 0..) |elem, i| {
+                    try beamEmitter.writeGetTupleElement(self.out, s, i, Dst.xr(tmp));
+                    self.min_live = tmp + 1;
+                    // An element type no test decides (a function type)
+                    // constrains nothing more.
+                    _ = try self.emitTypeTestBranchOn(elem, tmp, fail);
+                    self.min_live = saved_live;
+                }
                 return true;
             },
             .function, .typeparam => return false,

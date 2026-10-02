@@ -1762,11 +1762,13 @@ codegen/
   answers `true`/`false`) and the `.ident` case arm share one lowering. A
   record is `is_tagged_tuple` on its own atom and arity; an enum is every tag it
   builds, the unit ones by `is_ne_exact` (which branches when the two ARE
-  equal) and the payload ones by `is_tagged_tuple` + a jump. **One divergence
-  from the erlang twin, deliberate:** a TUPLE type is tested by `is_tuple` and
-  `test_arity` but NOT element by element — reading an element is a call, and a
-  call frees the register the remaining tests read; erlang tests the elements
-  because a guard may call `element/2`.
+  equal) and the payload ones by `is_tagged_tuple` + a jump. A TUPLE type is
+  `is_tuple` + `test_arity` and then each element, as erlang tests them: after
+  `test_arity` the loader knows the arity, so an element is a
+  `get_tuple_element` into a scratch register (no call), tested with the live
+  floor raised over it. Tested by its arity alone, `#(i32, string)` held for a
+  record or a variant of two slots (`02-erlang`'s `test/is_truth_table`; the
+  §4.1 × §4.2 table is pinned by `tests/beam.zig`).
 - **Every `type`'s module answers about its own values** (`emitTypeIdentity`):
   `'__bp_get'/2` turns a field name into its position for the reads the emitter
   could not place, and `'__bp_format'/1` describes the value for

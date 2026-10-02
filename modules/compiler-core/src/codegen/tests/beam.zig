@@ -274,3 +274,155 @@ test "beam: the keyword form's method is a template compiled at build time" {
         \\}
     , "2\n4\n", &.{"{function, smallest, 2, "});
 }
+
+// ── step 2 — C-07's beam tails: decision 8 §2, §4, §5, §6 on beam ───────────
+//
+// The beam twins of the erlang fixtures `02-erlang` added for the tuple, `..`
+// and type-pattern shapes, each RUN LOG the value the assembled module prints
+// (the same lines `assertErlangRunLog` pins for erlang).
+
+test "beam: unknown ---- `is`, type arms and `==` answer by value" {
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\fn show(x: unknown) {
+        \\  case x { i32 { n -> @print(n) } f64 { f -> @print(f) } _ { @print("other") } };
+        \\}
+        \\fn main() {
+        \\  val a: unknown = 2.0;
+        \\  val c: unknown = 2.5;
+        \\  @print(a == 2, a != 2, c == 2);
+        \\  val i: i32 = 2;
+        \\  val j: i32 = 2;
+        \\  @print(i == j);
+        \\  if (a is i32) { @print(a + 1); };
+        \\  @print(a is i32, a is f64, c is i32, c is f64);
+        \\  show(a);
+        \\  show(c);
+        \\  show("s");
+        \\}
+    , "true false false\ntrue\n3\ntrue true false true\n2\n2.5\nother\n", &.{});
+}
+
+test "beam: case ---- `A...B` inside a tuple pattern, and with a binder" {
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\fn grade(n: i32) -> string {
+        \\  return case n { 1...9 { d -> "digit " + d.toString() } 10...99 { "two" } _ { "other" } };
+        \\}
+        \\fn main() {
+        \\  @print(grade(0), grade(1), grade(9), grade(10), grade(99), grade(100));
+        \\  val t = #(5, "x");
+        \\  case t { #(1...3, _) { @print("low") } #(4...6, s) { @print("mid " + s) } _ { @print("hi") } };
+        \\}
+    , "other digit 1 digit 9 two two other\nmid x\n", &.{});
+}
+
+test "beam: case ---- true and false inside a tuple pattern are matched, not bound" {
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\fn tag(t: #(bool, i32)) -> string {
+        \\    return case t {
+        \\        #(true, n) { "yes " + n.toString(); }
+        \\        #(false, n) { "no " + n.toString(); }
+        \\    };
+        \\}
+        \\fn first(t: #(bool, i32, i32)) -> i32 {
+        \\    return case t {
+        \\        #(false, ..) { 0; }
+        \\        #(true, n, ..) { n; }
+        \\    };
+        \\}
+        \\fn main() {
+        \\    @print(tag(#(false, 1)));
+        \\    @print(tag(#(true, 2)));
+        \\    @print(first(#(false, 7, 8)));
+        \\    @print(first(#(true, 7, 8)));
+        \\}
+    , "no 1\nyes 2\n0\n7\n", &.{});
+}
+
+test "beam: case ---- a record's constructor pattern tests the record's own tag" {
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\type Point(x: i32, y: i32)
+        \\fn f(p: Point) -> i32 {
+        \\    return case p {
+        \\        Point(x: 0, y: y) { y; }
+        \\        Point(x: x, y: _) { x; }
+        \\    };
+        \\}
+        \\fn onAxis(p: Point) -> string {
+        \\    return case p {
+        \\        Point(x: 0, ..) { "on y"; }
+        \\        Point(y: 0, ..) { "on x"; }
+        \\        _ { "off"; }
+        \\    };
+        \\}
+        \\fn main() {
+        \\    @print(f(Point(x: 0, y: 5)));
+        \\    @print(f(Point(x: 3, y: 0)));
+        \\    @print(onAxis(Point(x: 0, y: 5)));
+        \\    @print(onAxis(Point(x: 3, y: 0)));
+        \\    @print(onAxis(Point(x: 3, y: 4)));
+        \\}
+    , "5\n3\non y\non x\noff\n", &.{});
+}
+
+test "beam: case ---- a tuple under `..` bounds the arity from below" {
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\fn main() {
+        \\  val t = #(4, 5, 6);
+        \\  case t { #(a, ..) { @print(a) } };
+        \\}
+    , "4\n", &.{"{bif, element, "});
+}
+
+test "beam: is ---- §4.1 × §4.2, one mark per value (a tuple type tests each element)" {
+    // `02-erlang`'s `test/is_truth_table` as a program. `v is #(i32, string)`
+    // tested the arity alone, so it held for a record and a variant of two
+    // slots too (`.......TT.`); each element is now tested.
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\type Point(x: i32, y: i32)
+        \\type Box<T>(item: T)
+        \\type Shape { Dot, Circle(r: i32) }
+        \\fn values() -> unknown[] {
+        \\    val int: unknown = 1;
+        \\    val integral: unknown = 2.0;
+        \\    val fraction: unknown = 2.5;
+        \\    val wide: unknown = 300;
+        \\    val text: unknown = "s";
+        \\    val flag: unknown = true;
+        \\    val point: unknown = Point(x: 1, y: 2);
+        \\    val shape: unknown = Shape.Circle(r: 3);
+        \\    val pair: unknown = #(1, "a");
+        \\    val box: unknown = Box(item: 1);
+        \\    return [int, integral, fraction, wide, text, flag, point, shape, pair, box];
+        \\}
+        \\fn marks(holds: bool[]) -> string {
+        \\    var text = "";
+        \\    for (holds) { h ->
+        \\        val mark = if (h) "T" else ".";
+        \\        text = text + mark;
+        \\    }
+        \\    return text;
+        \\}
+        \\fn main() {
+        \\    @print(marks(values().map({ v -> v is i32 })));
+        \\    @print(marks(values().map({ v -> v is i8 })));
+        \\    @print(marks(values().map({ v -> v is f64 })));
+        \\    @print(marks(values().map({ v -> v is string })));
+        \\    @print(marks(values().map({ v -> v is bool })));
+        \\    @print(marks(values().map({ v -> v is Point })));
+        \\    @print(marks(values().map({ v -> v is Shape })));
+        \\    @print(marks(values().map({ v -> v is Box<unknown> })));
+        \\    @print(marks(values().map({ v -> v is #(i32, string) })));
+        \\}
+    ,
+        \\TT.T......
+        \\TT........
+        \\TTTT......
+        \\....T.....
+        \\.....T....
+        \\......T...
+        \\.......T..
+        \\.........T
+        \\........T.
+        \\
+    , &.{});
+}
