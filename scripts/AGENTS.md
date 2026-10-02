@@ -126,7 +126,7 @@ test-bpmp`, `scripts/beam_export_audit.sh`, `zig build test-cli`, `zig build
 test-libs` (every cell the manifests declare, and an audit of every target a
 manifest excludes — § test-libs.sh), `zig build test-language` (`tests/language/`, a red cell fails
 it), `zig build test-docs`
-(`check-docs.sh`), `scripts/tsc-check.sh` (§ tsc-check.sh). CI (`.github/workflows/test.yml`) runs the same stages minus the
+(`check-docs.sh`), `scripts/tsc-check.sh` (§ tsc-check.sh). CI (`.github/workflows/test.yml`) runs the same stages, in the same build mode (decision 226), minus the
 staged checks. The pre-commit hook runs `--staged`; the run
 that decides a merge adds `--cold`. After the staged checks the script unsets
 every `git rev-parse --local-env-vars` variable a hook inherits (`GIT_DIR`,
