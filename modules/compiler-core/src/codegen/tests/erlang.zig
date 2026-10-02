@@ -124,3 +124,35 @@ test "erlang: true and false inside a tuple pattern are matched, not bound" {
         \\}
     , "no 1\nyes 2\n0\n7\n", &.{ "{true, N} ->", "{false, N@1} ->", "=:= false" });
 }
+
+test "erlang: a record's constructor pattern carries the record's own tag" {
+    // `Point(x: 0, ..)` and `Point(x: 0, y: y)` were `{'Point', 0, _}`: the
+    // record is built as `{'test@main@@Point', …}` (decision 109), so no arm
+    // matched and the `case` died with `case_clause` — or fell to `_`.
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\type Point(x: i32, y: i32)
+        \\
+        \\fn f(p: Point) -> i32 {
+        \\    return case p {
+        \\        Point(x: 0, y: y) { y; }
+        \\        Point(x: x, y: _) { x; }
+        \\    };
+        \\}
+        \\
+        \\fn onAxis(p: Point) -> string {
+        \\    return case p {
+        \\        Point(x: 0, ..) { "on y"; }
+        \\        Point(y: 0, ..) { "on x"; }
+        \\        _ { "off"; }
+        \\    };
+        \\}
+        \\
+        \\pub fn main() {
+        \\    @print(f(Point(x: 0, y: 5)));
+        \\    @print(f(Point(x: 3, y: 0)));
+        \\    @print(onAxis(Point(x: 0, y: 5)));
+        \\    @print(onAxis(Point(x: 3, y: 0)));
+        \\    @print(onAxis(Point(x: 3, y: 4)));
+        \\}
+    , "5\n3\non y\non x\noff\n", &.{"{test@main@@Point, 0, _} ->"});
+}

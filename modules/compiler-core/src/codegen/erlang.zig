@@ -8366,7 +8366,13 @@ const Emitter = struct {
                 .range => return this.rangePatternNode(b, v, extras),
                 .variant => {
                     var items: std.ArrayListUnmanaged(Ast.Expr) = .empty;
-                    try items.append(b.arena, Ast.Expr.a(this.variantTag(v.name)));
+                    // A RECORD's constructor pattern (`Point(x: 0, ..)`) is
+                    // tagged with the record's own atom, what its constructor
+                    // builds (decision 109); a variant's bare atom matched no
+                    // record, and the `case` fell through to `case_clause`.
+                    const record_tag = !isVariantPath(v.name) and !this.enum_variants.contains(v.name) and
+                        !this.enum_variant_names.contains(v.name) and this.record_fields.contains(v.name);
+                    try items.append(b.arena, Ast.Expr.a(if (record_tag) try this.recordTagAtom(v.name) else this.variantTag(v.name)));
                     switch (v.payload) {
                         .binding => |binding| try items.append(b.arena, Ast.Expr.v(try this.patternBindVar(b, binding))),
                         .fields, .literals => try items.appendSlice(b.arena, try this.variantPayloadSlots(b, v, extras)),

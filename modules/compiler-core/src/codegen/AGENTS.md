@@ -1031,6 +1031,11 @@ codegen/
 - **`true` / `false` in a pattern are matched** (`patternNodeExtra`, and the
   `..` tuple's element guard in `tuplePatternNode`): `#(true, n)` was
   `{True, N}`, a binder, and the first arm took every tuple.
+- **A record's constructor pattern carries the record's tag**: `Point(x: 0, ..)`
+  and `Point(x: 0, y: y)` in a `case` are `{'<pkg>@<path>@@Point', 0, _}`
+  (`recordTagAtom`, decision 109), what the constructor builds — the bare
+  `'Point'` of a variant matched no record and the `case` died
+  `case_clause`. A name an enum declares as a variant keeps the variant's tag.
 - **Modules are `erl_ast` forms**: `emitErlangModule` builds every form in one
   arena and renders them with `erl_emitter.writeForms`: `-module`
   (`crossModule.erlAtom(module_path)` — the path joined with `@`),
