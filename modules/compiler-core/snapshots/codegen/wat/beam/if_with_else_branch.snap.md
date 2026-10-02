@@ -26,7 +26,7 @@ fn main() {
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {test, is_lt, {f, 10}, [{y, 0}, {integer, 0}]}.
-    {gc_bif, '-', {f, 0}, 0, [{integer, 0}, {y, 0}], {x, 0}}.
+    {gc_bif, '-', {f, 0}, 0, [{y, 0}], {x, 0}}.
     {jump, {f, 11}}.
   {label, 10}.
     {move, {y, 0}, {x, 0}}.

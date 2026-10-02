@@ -186,9 +186,15 @@ fn isVariantPath(written: []const u8) bool {
 /// it is the block's value. The same set `emitLambdaBody` reads: anything else
 /// (a `return`, a `val`, an assignment) runs as a statement and the block
 /// answers `ok`.
+///
+/// A lambda literal in tail position (`Mark(s) { { item -> f(item, s) }; }`)
+/// is the value too: a statement-position block does not parse, so a
+/// `{ … -> … }` there is always a fun. It ran as a statement and the arm
+/// answered `ok`, which the caller then applied (`{badfun, ok}`).
 fn armValueTail(e: ast.Expr) bool {
     return switch (e) {
         .literal, .identifier, .binaryOp, .unaryOp, .call, .useHook, .collection, .branch => true,
+        .function => |f| f.kind.syntax != .asyncBlock,
         else => false,
     };
 }
@@ -271,6 +277,50 @@ const MEM_BOX = "__bp_var";
 
 /// The entry's host-module loader and its per-file step (`emitLoadSiblings`).
 const LOAD_SIBLINGS = "'__bp_load_siblings'";
+/// `botopink test`'s runner (`emitTestRunner`): builds the registry and runs
+/// it. `botopink test` reads its name in the emitted text to tell a module
+/// with tests from one without.
+const RUN_TESTS = "'__bp_run_tests'";
+
+/// The `botopink test` runner's loop, compiled at build time like a host
+/// template (`lowerTemplateFn`): `__BpA0` is the registry — `[{Name, Fun,
+/// Loc}]`, `Fun` the test's `fun M:'__bp_test_N'/0` — and `__BpA1` the
+/// command line, whose first word filters the tests by name. Each test runs
+/// inside the `----- RUN LOG -----` envelope `erlang.zig`'s runner prints
+/// (`testRunnerForms`), byte for byte, and the run ends with
+/// `<P> passed, <F> failed` and `halt(1)` when one failed: the contract
+/// `botopink test` parses (`compiler-cli/AGENTS.md` § output format).
+const test_runner_body =
+    \\Filter = case __BpA1 of [F | _] -> list_to_binary(F); _ -> none end,
+    \\    Selected = case Filter of
+    \\        none -> __BpA0;
+    \\        _ -> [T || T <- __BpA0, binary:match(element(1, T), Filter) =/= nomatch]
+    \\    end,
+    \\    RunOne = fun({Name, Fun, Loc}) ->
+    \\        io:format("TEST ~ts ~ts~n", [Loc, Name]),
+    \\        io:format("----- RUN LOG -----~n```logs~n", []),
+    \\        T0 = erlang:monotonic_time(millisecond),
+    \\        Outcome = try Fun(), ok
+    \\            catch
+    \\                error:{bp_assert, Msg, ALoc} -> {fail, Msg, ALoc};
+    \\                Class:Reason -> {fail, {Class, Reason}, Loc}
+    \\            end,
+    \\        T1 = erlang:monotonic_time(millisecond),
+    \\        DurMs = erlang:max(0, T1 - T0),
+    \\        io:format("```~n", []),
+    \\        io:format("  duration ~pms~n", [DurMs]),
+    \\        case Outcome of
+    \\            ok -> io:format("  ok   ~ts~n", [Name]), ok;
+    \\            {fail, FMsg, FLoc} when is_binary(FMsg) -> io:format("  FAIL ~ts  (~ts)  at ~ts~n", [Name, FMsg, FLoc]), fail;
+    \\            {fail, FMsg, FLoc} -> io:format("  FAIL ~ts  (~tp)  at ~ts~n", [Name, FMsg, FLoc]), fail
+    \\        end
+    \\    end,
+    \\    Results = [RunOne(T) || T <- Selected],
+    \\    Failed = length([R || R <- Results, R =:= fail]),
+    \\    Passed = length(Results) - Failed,
+    \\    io:format("~p passed, ~p failed~n", [Passed, Failed]),
+    \\    case Failed > 0 of true -> halt(1); false -> ok end.
+;
 const LOAD_SIBLING = "'-bp_load_sibling-'";
 
 /// A character list as a literal operand — `"*.erl"` where the OTP file
@@ -350,6 +400,42 @@ const CondLoop = struct { top: u32, exit: u32, out: *std.Io.Writer };
 /// (reversed at `exit`), and the label a `break <v>` jumps to once `v` is
 /// pushed.
 const GenLoop = struct { acc: u32, exit: u32, out: *std.Io.Writer };
+
+/// The throw a bare `break` in a loop's fun ends the loop with
+/// (`guardLoopBreak` catches it at the loop's call site).
+const break_throw_signal = "__bp_break";
+
+/// True when `body` holds a bare `break` of the loop whose body it is —
+/// directly, under an `if`, or in a `case` arm's block (which runs in the
+/// same frame), never inside a nested loop or a lambda.
+fn bodyBreaksBare(body: []const ast.Stmt) bool {
+    for (body) |stmt| if (exprBreaksBare(stmt.expr)) return true;
+    return false;
+}
+
+fn exprBreaksBare(e: ast.Expr) bool {
+    return switch (e) {
+        .jump => |j| switch (j.kind) {
+            .@"break" => |b| b.value == null,
+            else => false,
+        },
+        .branch => |br| switch (br.kind) {
+            .if_ => |i| bodyBreaksBare(i.then_) or (if (i.else_) |els| bodyBreaksBare(els) else false),
+            .tryCatch => false,
+        },
+        .collection => |c| switch (c.kind) {
+            .case => |cs| for (cs.arms) |arm| {
+                const arm_breaks = switch (arm.body) {
+                    .function => |f| f.kind.syntax == .lambda and f.kind.params.len <= 1 and bodyBreaksBare(f.kind.body),
+                    else => exprBreaksBare(arm.body),
+                };
+                if (arm_breaks) break true;
+            } else false,
+            else => false,
+        },
+        else => false,
+    };
+}
 
 /// True for a `break` / `continue` statement.
 fn stmtIsLoopJump(stmt: ast.Stmt) bool {
@@ -673,9 +759,15 @@ fn destructYSlots(pattern: ast.ParamDestruct) u32 {
         // `erlang:element/2` is called once per binding (a `call_ext` frees
         // every x-register, so an x-scratch would not survive the first one).
         .tuple_ => |bindings| @intCast(bindings.len + 1),
-        // `val Pt(y, m) = p;` — one slot per name, as `.names`.
-        .ctor => |pat| if (pat == .variant and pat.variant.payload == .literals) @intCast(pat.variant.payload.literals.len) else 0,
-        else => 0,
+        // `val Pt(y, m) = p;` over a record — one slot per position, as
+        // `.names`; any other constructor (a variant, a nested pattern) is
+        // `emitPatternDestruct`'s walk, one slot per binder. Which of the two
+        // runs depends on the module's records, so the larger is reserved.
+        .ctor => |pat| blk: {
+            const positional: u32 = if (pat == .variant and pat.variant.payload == .literals) @intCast(pat.variant.payload.literals.len) else 0;
+            break :blk @max(positional, patternYSlots(pat));
+        },
+        .list => |pat| patternYSlots(pat),
     };
 }
 
@@ -768,11 +860,11 @@ fn isOptionalChain(e: ast.Expr) bool {
     };
 }
 
-/// Whether `emitSubPattern` lowers `p` — every shape but a list, an
-/// alternation or a multi-subject pattern, at any depth.
+/// Whether `emitSubPattern` lowers `p` — every shape but an alternation or a
+/// multi-subject pattern, at any depth.
 fn subPatternLowered(p: ast.Pattern) bool {
     return switch (p) {
-        .list, .@"or", .multi => false,
+        .@"or", .multi => false,
         .variant => |v| switch (v.payload) {
             .literals => |ls| for (ls) |sp| {
                 if (!subPatternLowered(sp)) break false;
@@ -796,7 +888,17 @@ fn patternYSlots(p: ast.Pattern) u32 {
                 break :blk n;
             },
         },
-        .list => |lst| if (lst.spread) |s| (if (s.len > 0) @as(u32, 1) else 0) else 0,
+        // Every element binder and a named spread (`emitSubPattern`).
+        .list => |lst| blk: {
+            var n: u32 = 0;
+            for (lst.elems) |el| {
+                if (el == .bind and !std.mem.eql(u8, el.bind, "_")) n += 1;
+            }
+            if (lst.spread) |s| if (s.len > 0) {
+                n += 1;
+            };
+            break :blk n;
+        },
         // Lowered as the tuple pattern of its patterns (`lowerCase`), so
         // every binder at any depth takes a slot: `Shape.Circle(r), 1` binds
         // `r`, which counting the top-level names alone left unallocated
@@ -1019,6 +1121,8 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
             // A loop whose fun may throw a propagating `try` is called inside
             // a catch section of this frame (`guardLoopCall`): its tag slot.
             if (lp.generator == null and !lp.condition and bodyPropagates(lp.body)) count.* += 1;
+            // …and one whose fun ends it with a bare `break` (`guardLoopBreak`).
+            if (lp.generator == null and !lp.condition and bodyBreaksBare(lp.body)) count.* += 1;
             // An annotated loop (decision 105) runs in this frame with its
             // item accumulator, and so does every `for` inside it that yields.
             if (lp.generator != null) {
@@ -1185,6 +1289,58 @@ fn scopeBindPattern(ctx: anytype, pat: ast.Pattern) !void {
         },
         .@"or", .multi => |ps| for (ps) |p| try scopeBindPattern(ctx, p),
     }
+}
+
+/// The bodied instance `default fn`s type `t` adopts through its inline
+/// `implement` clauses and does not declare itself, from the behaviors `decls`
+/// (the type's own module) declares — `extends` followed, depth-capped, a
+/// method two behaviors declare kept once (the first found). The twin of
+/// `erlang.zig`'s `adoptedIfaceDefaults`. They are methods of the type's
+/// module like its own (`emitTypeUnit`); without them `Sq(s: 3).twice()`
+/// reached no function and aborted with `{unresolved_method, twice, 1}`.
+fn adoptedDefaults(alloc: std.mem.Allocator, decls: []const ast.DeclKind, t: ast.TypeDecl, out: *std.ArrayListUnmanaged(ast.BehaviorMethod)) !void {
+    for (t.implement) |ref| {
+        const name = switch (ref) {
+            .named => |n| n,
+            .generic => |g| g.name,
+            else => continue,
+        };
+        try appendBehaviorDefaults(alloc, decls, name, t, out, 0);
+    }
+}
+
+fn appendBehaviorDefaults(alloc: std.mem.Allocator, decls: []const ast.DeclKind, name: []const u8, t: ast.TypeDecl, out: *std.ArrayListUnmanaged(ast.BehaviorMethod), depth: usize) !void {
+    if (depth > 16) return;
+    const b = for (decls) |d| switch (d) {
+        .behavior => |bd| if (std.mem.eql(u8, bd.name, name)) break bd,
+        else => {},
+    } else return;
+    for (b.methods) |m| {
+        if (!m.is_default or m.body == null) continue;
+        // An associated `default fn` (no `self`) is the behavior's own
+        // function (`emitInterfaceAssoc`), not a method of the type.
+        if (m.params.len == 0 or !std.mem.eql(u8, m.params[0].name, "self")) continue;
+        const taken = for (t.methods) |own| {
+            if (std.mem.eql(u8, own.name, m.name)) break true;
+        } else for (out.items) |seen| {
+            if (std.mem.eql(u8, seen.name, m.name)) break true;
+        } else false;
+        if (!taken) try out.append(alloc, m);
+    }
+    for (b.extends) |parent| try appendBehaviorDefaults(alloc, decls, parent, t, out, depth + 1);
+}
+
+/// Whether type `t` of a module whose declarations are `decls` adopts a
+/// `default fn` `method` of `arity` (the receiver included).
+fn adoptsDefault(alloc: std.mem.Allocator, decls: []const ast.DeclKind, t: ast.TypeDecl, method: []const u8, arity: usize) bool {
+    if (t.implement.len == 0) return false;
+    var adopted: std.ArrayListUnmanaged(ast.BehaviorMethod) = .empty;
+    defer adopted.deinit(alloc);
+    adoptedDefaults(alloc, decls, t, &adopted) catch return false;
+    for (adopted.items) |m| {
+        if (std.mem.eql(u8, m.name, method) and methodArity(m) == arity) return true;
+    }
+    return false;
 }
 
 fn scopeBindDestruct(ctx: anytype, d: ast.ParamDestruct) !void {
@@ -1413,7 +1569,11 @@ pub fn codegenEmit(
                 // 06 C13 — a host-backed fn with no beam or erlang target
                 // reaches the driver as a located diagnostic naming it.
                 var missing: ?moduleOutput.MissingExternal = null;
-                const emitted = emitBeamAsm(alloc, ct.name, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, &cross, outputs, &missing) catch |err| {
+                // `botopink test` (`Config.test_mode`): a module's `test`
+                // blocks and their runner; std's own tests are not the
+                // project's.
+                const module_test_mode = config.test_mode and !std.mem.startsWith(u8, ct.name, "std/");
+                const emitted = emitBeamAsm(alloc, ct.name, ct.srcPath, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, &cross, outputs, module_test_mode, &missing) catch |err| {
                     const me = missing orelse return err;
                     try results.append(alloc, .{
                         .name = ct.name,
@@ -1632,12 +1792,18 @@ fn withHostMethodBodies(arena: std.mem.Allocator, program: ast.Program) !ast.Pro
 fn emitBeamAsm(
     alloc: std.mem.Allocator,
     module_name: []const u8,
+    /// The package-relative source path (`src/main.bp`) an `assert` and a
+    /// test's failure name; empty outside a CLI build.
+    src_path: []const u8,
     program_in: ast.Program,
     comptime_vals: std.StringHashMap([]const u8),
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
     instance_lowerings: std.AutoHashMap(ast.Loc, envMod.InstanceLowering),
     cross: ?*const CrossModule,
     all_outputs: []const ComptimeOutput,
+    /// `botopink test`: emit the module's `test` blocks and their runner
+    /// (`emitTestRunner`) instead of the `main/0` entry.
+    test_mode: bool,
     /// 06 C13 — set when the emit fails with `error.MissingExternalTarget`.
     missing: ?*?moduleOutput.MissingExternal,
 ) !EmittedBeam {
@@ -1672,12 +1838,14 @@ fn emitBeamAsm(
 
     var em = Emitter.init(alloc, module_atom, &body_buf.writer, comptime_vals, rewrites);
     em.module_path = module_name;
+    em.src_path = src_path;
     errdefer if (missing) |slot| {
         slot.* = em.missing_external;
     };
     em.instance_lowerings = instance_lowerings;
     em.cross = cross;
     em.all_outputs = all_outputs;
+    em.program_decls = program.decls;
     defer em.deinit();
 
     // Map each `implement`/`extend` block name to its target type + methods so
@@ -1716,16 +1884,26 @@ fn emitBeamAsm(
         }
     }
 
-    // Detect main/0 entrypoint (drives wrapper emission).
+    // Detect main/0 entrypoint (drives wrapper emission). Under `botopink
+    // test` the entry is the test runner and `main/0` is an ordinary
+    // function: the wrapper that runs it is not emitted (erlang's
+    // `emit_entrypoint_wrapper`).
     var has_main_0 = false;
+    var tests: std.ArrayListUnmanaged(ast.TestDecl) = .empty;
+    defer tests.deinit(alloc);
     for (program.decls) |decl| {
         switch (decl) {
             .@"fn" => |f| if (isMain0(f)) {
                 has_main_0 = true;
             },
+            .@"test" => |t| if (test_mode) try tests.append(alloc, t),
             else => {},
         }
     }
+    if (test_mode) has_main_0 = false;
+    const has_tests = tests.items.len > 0;
+    // What the entry — `main/1`, the wrapper's or the runner's — runs first.
+    const has_entry = has_main_0 or has_tests;
 
     // Pass 1: pre-assign labels (func_info, entry) for every emitted function
     // so wrappers and (eventually) local calls can resolve targets by name.
@@ -1760,12 +1938,15 @@ fn emitBeamAsm(
             // longer exists.
             .type_ => |tdecl| {
                 try em.own_types.put(tdecl.name, {});
-                for (tdecl.methods) |m| {
+                var adopted: std.ArrayListUnmanaged(ast.BehaviorMethod) = .empty;
+                defer adopted.deinit(alloc);
+                try adoptedDefaults(alloc, program.decls, tdecl, &adopted);
+                for ([_][]const ast.BehaviorMethod{ tdecl.methods, adopted.items }) |methods| for (methods) |m| {
                     if (m.body == null or m.is_declare) continue;
                     const key = try std.fmt.allocPrint(alloc, "{s}.{s}/{d}", .{ tdecl.name, m.name, methodArity(m) });
                     const gop = try em.own_type_methods.getOrPut(key);
                     if (gop.found_existing) alloc.free(key);
-                }
+                };
             },
             .behavior => |i| try em.reserveInterfaceMethods(i),
             .implement => |im| try em.reserveImplementMethods(im),
@@ -1777,10 +1958,18 @@ fn emitBeamAsm(
         try em.reserveFn("'_botopink_main'", 0);
         try em.reserveFn("main", 1);
     }
+    if (has_tests) {
+        for (0..tests.items.len) |i| {
+            var name_buf: [64]u8 = undefined;
+            try em.reserveFn(try std.fmt.bufPrint(&name_buf, "__bp_test_{d}", .{i}), 0);
+        }
+        try em.reserveFn(RUN_TESTS, 1);
+        try em.reserveFn("main", 1);
+    }
     // A host `.erl` the build ships beside the assembled modules is compiled
     // and loaded by the entry, before the module body runs — when a module of
     // the build binds a host at all (`emitLoadSiblings`).
-    if (has_main_0 and buildBindsBeamHost(all_outputs)) {
+    if (has_entry and buildBindsBeamHost(all_outputs)) {
         em.load_siblings = true;
         try em.reserveFn(LOAD_SIBLINGS, 0);
         try em.reserveFn(LOAD_SIBLING, 1);
@@ -1791,7 +1980,7 @@ fn emitBeamAsm(
     if (emit_init) try em.reserveFn("'_botopink_init'", 0);
     // The modules this one imports, transitively, whose body the entry runs
     // before its own, dependencies first.
-    if (has_main_0) if (cross) |xc| {
+    if (has_entry) if (cross) |xc| {
         var closure: std.ArrayListUnmanaged([]const u8) = .empty;
         defer closure.deinit(alloc);
         var seen: std.StringHashMapUnmanaged(void) = .empty;
@@ -1838,6 +2027,21 @@ fn emitBeamAsm(
         try exports.append(alloc, .{ .name = "main", .arity = 1 });
     }
     if (emit_init) try exports.append(alloc, .{ .name = "'_botopink_init'", .arity = 0 });
+    // The runner's entry, and each test: the registry names them as
+    // `fun M:'__bp_test_N'/0`, which reaches an exported function only.
+    var test_names: std.ArrayListUnmanaged([]u8) = .empty;
+    defer {
+        for (test_names.items) |n| alloc.free(n);
+        test_names.deinit(alloc);
+    }
+    if (has_tests) {
+        try exports.append(alloc, .{ .name = "main", .arity = 1 });
+        for (0..tests.items.len) |i| {
+            const n = try std.fmt.allocPrint(alloc, "__bp_test_{d}", .{i});
+            try test_names.append(alloc, n);
+            try exports.append(alloc, .{ .name = n, .arity = 0 });
+        }
+    }
     for (program.decls) |decl| {
         switch (decl) {
             .@"fn" => |f| if (f.isPub and !isHostDeclare(f)) {
@@ -1894,6 +2098,10 @@ fn emitBeamAsm(
 
     if (has_main_0) {
         try em.emitEntrypointWrappers();
+    }
+    if (has_tests) {
+        for (tests.items, test_names.items) |t, n| try em.emitTestFn(t, n);
+        try em.emitTestRunner(tests.items, test_names.items, emit_init);
     }
     if (em.load_siblings) try em.emitLoadSiblings();
     if (emit_init) try em.emitInitFunction();
@@ -2108,6 +2316,18 @@ const Emitter = struct {
     ext_by_name: std.StringHashMap(ExtInfo),
     /// Cross-module link index (null in the standalone path).
     cross: ?*const CrossModule = null,
+    /// This module's declarations — the behaviors a type adopts `default fn`s
+    /// from (`adoptedDefaults`).
+    program_decls: []const ast.DeclKind = &.{},
+    /// The package-relative source path (`src/main.bp`), or empty
+    /// (`srcFile`).
+    src_path: []const u8 = "",
+    /// Lowering a `test` block's body (decision 74): a `try` on an `Error`
+    /// ends the test (`emitTryError`) instead of returning it. A lambda's
+    /// body is its own (`lowerLambda` clears it); a loop's fun is not.
+    in_test_body: bool = false,
+    /// `"<file>:<line>"` of the test being lowered, for its `try` failure.
+    test_loc: []const u8 = "",
     /// Every module of the compilation, for the declarations the link index
     /// does not carry (an imported enum's variants, another module's extension
     /// blocks).
@@ -3126,11 +3346,23 @@ const Emitter = struct {
                 const elems = t.tupleElems().?;
                 try beamEmitter.writeTest(self.out, .is_tuple, fail, &.{s});
                 try beamEmitter.writeTest(self.out, .test_arity, fail, &.{ s, .{ .untagged = @as(i64, @intCast(elems.len)) } });
-                // The ELEMENT types are not tested: reading one is a call, and a
-                // call frees the register the remaining tests read. The erlang
-                // twin does test them (a guard may call `element/2`), so a
-                // tuple `is` is narrower here — written down in `AGENTS.md`,
-                // not passed off as the same test.
+                // Each ELEMENT is tested too, as the erlang twin does: after
+                // `test_arity` the loader knows the arity, so the element is a
+                // `get_tuple_element` into a scratch register (no call frees
+                // the subject), tested with the live floor raised over it.
+                // Testing the arity alone, `#(i32, string)` held for a record
+                // or a variant of two slots (`test/is_truth_table`).
+                const tmp = @max(self.scratchBase(), src + 1);
+                const saved_live = self.min_live;
+                defer self.min_live = saved_live;
+                for (elems, 0..) |elem, i| {
+                    try beamEmitter.writeGetTupleElement(self.out, s, i, Dst.xr(tmp));
+                    self.min_live = tmp + 1;
+                    // An element type no test decides (a function type)
+                    // constrains nothing more.
+                    _ = try self.emitTypeTestBranchOn(elem, tmp, fail);
+                    self.min_live = saved_live;
+                }
                 return true;
             },
             .function, .typeparam => return false,
@@ -3602,7 +3834,19 @@ const Emitter = struct {
     }
 
     fn emitRecord(self: *Emitter, r: ast.TypeDecl) !void {
-        try self.emitTypeUnit(r.name, r.methods, .{ .record = r });
+        const methods = try self.withAdoptedDefaults(r);
+        defer if (methods.ptr != r.methods.ptr) self.alloc.free(methods);
+        try self.emitTypeUnit(r.name, methods, .{ .record = r });
+    }
+
+    /// `t`'s own methods followed by the `default fn`s it adopts
+    /// (`adoptedDefaults`); `t.methods` itself when it adopts none.
+    fn withAdoptedDefaults(self: *Emitter, t: ast.TypeDecl) ![]const ast.BehaviorMethod {
+        var adopted: std.ArrayListUnmanaged(ast.BehaviorMethod) = .empty;
+        defer adopted.deinit(self.alloc);
+        try adoptedDefaults(self.alloc, self.program_decls, t, &adopted);
+        if (adopted.items.len == 0) return t.methods;
+        return std.mem.concat(self.alloc, ast.BehaviorMethod, &.{ t.methods, adopted.items });
     }
 
     /// What a `type`'s module answers about its own values (decision 8 §7,
@@ -4046,7 +4290,9 @@ const Emitter = struct {
     }
 
     fn emitEnum(self: *Emitter, e: ast.TypeDecl) !void {
-        try self.emitTypeUnit(e.name, e.methods, .{ .enum_ = e });
+        const methods = try self.withAdoptedDefaults(e);
+        defer if (methods.ptr != e.methods.ptr) self.alloc.free(methods);
+        try self.emitTypeUnit(e.name, methods, .{ .enum_ = e });
     }
 
     fn emitImplement(self: *Emitter, im: ast.ImplementDecl) !void {
@@ -4307,8 +4553,8 @@ const Emitter = struct {
     /// The wrapper `f` needs (`hostDeclareWrapperNeeded`), or null when it has
     /// none: a `self`-first declaration, an `@External.Beam` template body (its
     /// call sites inline it), an arity-branched set with no branch for the
-    /// declared count, a `module:template` target (every call site refuses it)
-    /// and a template the build-time lowering refuses (decision 141 — each call
+    /// declared count, a `module:symbol(…)` target with no marker (every call
+    /// site refuses it) and a template the build-time lowering refuses (decision 141 — each call
     /// site of it is then the located build error). A template is compiled here,
     /// once per module (`compiledTemplate` caches it), so the reservation, the
     /// export list and the emission all see the same answer.
@@ -4321,7 +4567,9 @@ const Emitter = struct {
         else blk: {
             const ref = f.externalFor("erlang") orelse return null;
             if (ref.module.len > 0) {
-                if (primOpTemplate.looksLikeTemplate(ref.symbol) or std.mem.indexOfScalar(u8, ref.symbol, '(') != null) return null;
+                // The keyword form's template (`lowerHostCall`).
+                if (primOpTemplate.looksLikeTemplate(ref.symbol)) break :blk ref.symbol;
+                if (std.mem.indexOfScalar(u8, ref.symbol, '(') != null) return null;
                 return .{ .ext = ref };
             }
             break :blk ref.symbol;
@@ -4913,6 +5161,93 @@ const Emitter = struct {
 
     // ── entrypoint wrappers when main/0 exists ───────────────────────────────
 
+    /// A `test "name" { … }` block as `'__bp_test_N'/0` (`name`): its body
+    /// lowered like a function's, with decision 74's `try` (`in_test_body`).
+    fn emitTestFn(self: *Emitter, t: ast.TestDecl, name: []const u8) !void {
+        const saved_in_test = self.in_test_body;
+        const saved_loc = self.test_loc;
+        defer {
+            self.in_test_body = saved_in_test;
+            self.test_loc = saved_loc;
+        }
+        self.in_test_body = true;
+        self.test_loc = try std.fmt.allocPrint(self.atom_arena.allocator(), "{s}:{d}", .{ try self.srcFile(), t.loc.line });
+        try self.emitFn(.{
+            .isPub = false,
+            .name = name,
+            .genericParams = @constCast(&[_]ast.GenericParam{}),
+            .params = @constCast(&[_]ast.Param{}),
+            .returnType = null,
+            .body = t.body,
+        });
+    }
+
+    /// The source path a test's location names: the package-relative one,
+    /// else `<module path>.bp` (erlang's `srcFile`).
+    fn srcFile(self: *Emitter) ![]const u8 {
+        if (self.src_path.len > 0) return self.src_path;
+        return std.fmt.allocPrint(self.atom_arena.allocator(), "{s}.bp", .{self.module_path});
+    }
+
+    /// `botopink test`'s entry and runner, the BEAM twin of `erlang.zig`'s
+    /// `testRunnerForms`:
+    ///
+    ///   * `main(Args)` loads the host modules shipped beside it, runs the
+    ///     imported modules' bodies and its own (`'_botopink_init'/0`), as
+    ///     `'_botopink_main'/0` does before `main/0` in a build, then
+    ///     `'__bp_run_tests'(Args)`;
+    ///   * `'__bp_run_tests'(Args)` builds the registry — `{Name, fun
+    ///     M:'__bp_test_N'/0, <<"file:line">>}` per test, in source order —
+    ///     and hands it to the runner loop, `test_runner_body` compiled at
+    ///     build time (`lowerTemplateFn`, the reader and the lowering every
+    ///     host template goes through).
+    fn emitTestRunner(self: *Emitter, tests: []const ast.TestDecl, names: []const []const u8, run_init: bool) !void {
+        const w = self.out;
+        // A fixed text: a refusal is this backend's defect, never the
+        // program's.
+        const loop = (try self.lowerTemplateFn(self.atom_arena.allocator(), test_runner_body, false, 2)) orelse
+            return error.TestRunnerDoesNotLower;
+
+        // main(Args)
+        try self.beginHelper("main", 1);
+        try beamEmitter.writeAllocate(w, 1, 1);
+        try beamEmitter.writeMoveOp(w, Op.xr(0), Dst.yr(0));
+        if (self.load_siblings) {
+            const loader = try self.fnLabelsFor(LOAD_SIBLINGS, 0);
+            try beamEmitter.writeCall(w, .normal, 0, .{ .local = loader.entry }, 0);
+        }
+        for (self.import_inits.items) |dep| {
+            try beamEmitter.writeCall(w, .normal, 0, .{ .ext = .{ .module = dep, .function = "'_botopink_init'" } }, 0);
+        }
+        if (run_init) {
+            const init_fn = try self.fnLabelsFor("'_botopink_init'", 0);
+            try beamEmitter.writeCall(w, .normal, 0, .{ .local = init_fn.entry }, 0);
+        }
+        try beamEmitter.writeMoveOp(w, Op.yr(0), Dst.xr(0));
+        const run = try self.fnLabelsFor(RUN_TESTS, 1);
+        try beamEmitter.writeCall(w, .last, 1, .{ .local = run.entry }, 1);
+
+        // '__bp_run_tests'(Args): the registry, built back to front.
+        try self.beginHelper(RUN_TESTS, 1);
+        try beamEmitter.writeMoveOp(w, Op.xr(0), Dst.xr(1));
+        try beamEmitter.writeMoveOp(w, Op.nil, Dst.xr(0));
+        var i = tests.len;
+        while (i > 0) {
+            i -= 1;
+            const t = tests[i];
+            const loc = try std.fmt.allocPrint(self.atom_arena.allocator(), "{s}:{d}", .{ try self.srcFile(), t.loc.line });
+            const name_op: Op = if (t.name) |n| .{ .lexeme = n } else Op.str(names[i]);
+            try beamEmitter.writeTestHeap(w, 6, 2);
+            try beamEmitter.writePutTuple2(w, Dst.xr(2), &.{
+                name_op,
+                .{ .ext_fun = .{ .module = self.module_name, .name = names[i], .arity = 0 } },
+                Op.str(loc),
+            });
+            try beamEmitter.writePutList(w, Op.xr(2), Op.xr(0), Dst.xr(0));
+        }
+        try beamEmitter.writeCall(w, .only, 2, .{ .local = loop.entry }, 0);
+    }
+
     fn emitEntrypointWrappers(self: *Emitter) !void {
         const wrapper = try self.fnLabelsFor("'_botopink_main'", 0);
         const main1 = try self.fnLabelsFor("main", 1);
@@ -5095,6 +5430,20 @@ const Emitter = struct {
                         try self.lowerExprIntoX0(v.*);
                     } else if (self.fold_group) |names| {
                         try self.emitGroupIntoX0(names);
+                    } else if (self.in_loop_lambda) {
+                        try beamEmitter.writeMoveOp(self.out, Op.atom("ok"), Dst.xr(0));
+                    }
+                    // A bare `break` in a loop's fun ENDS the loop: the fun
+                    // throws `{'__bp_break', V}` — the names a fold threads,
+                    // else `ok` — and the loop's call site answers `V`
+                    // (`guardLoopBreak`). Returning from the fun only ended the
+                    // iteration: `for ([1, 2, 3]) { x -> n = n + 1; break; }`
+                    // left `n` at 3 (erlang's `'__bp_cond_break'`).
+                    if (self.in_loop_lambda and br.value == null) {
+                        try beamEmitter.writeTestHeap(self.out, 3, 1);
+                        try beamEmitter.writePutTuple2(self.out, Dst.xr(0), &.{ Op.atom(break_throw_signal), Op.xr(0) });
+                        try beamEmitter.writeCall(self.out, .only, 1, .{ .ext = .{ .module = "erlang", .function = "throw" } }, 0);
+                        return;
                     }
                     if (self.in_loop_lambda) try self.emitReturn();
                 },
@@ -5317,10 +5666,15 @@ const Emitter = struct {
             // `.names`. It used to lower to a comment, and every name it bound
             // was an unknown register.
             .ctor => |pat| {
-                if (!self.isRecordCtorBind(pat)) {
-                    try beamEmitter.writeComment(self.out, "unsupported destructure pattern", .{});
-                    return;
-                }
+                // A variant's constructor (`val Label(t, w) = Tag.Label(…)`,
+                // the variant of a one-variant type) or a nested pattern
+                // (`val Outer(Inner(a), b) = …`) is the `case` arm's walk: the
+                // checker admits only an irrefutable pattern (01's R5), so the
+                // fail edge is a `badmatch` no well-typed value reaches. It
+                // used to lower to a comment, and every name it bound was an
+                // unknown register (`{unresolved_identifier, t}`, JS-4's beam
+                // twin).
+                if (!self.isRecordCtorBind(pat)) return self.emitPatternDestruct(pat);
                 const lits = pat.variant.payload.literals;
                 const type_name = bareVariantName(pat.variant.name);
                 const declared = self.record_fields.get(type_name).?;
@@ -5348,8 +5702,30 @@ const Emitter = struct {
                 }
                 try beamEmitter.writeLabel(self.out, done);
             },
-            else => try beamEmitter.writeComment(self.out, "unsupported destructure pattern", .{}),
+            // `val [..rest] = xs;` — the one list pattern R5 admits in a
+            // binding (a spread alone cannot fail); the `case` arm's walk.
+            .list => |pat| try self.emitPatternDestruct(pat),
         }
+    }
+
+    /// Bind the names of the irrefutable `pat` from the value in `{x, 0}` with
+    /// the `case` arm's walk (`emitSubPattern`); a value the pattern does not
+    /// match raises `{badmatch, V}`, as erlang's `P = V` does. `destructYSlots`
+    /// reserves `patternYSlots(pat)`.
+    fn emitPatternDestruct(self: *Emitter, pat: ast.Pattern) anyerror!void {
+        if (!subPatternLowered(pat)) return error.NestedPatternUnsupported;
+        const fail_l = self.allocLabel();
+        const ok_l = self.allocLabel();
+        const free = self.scratchBase();
+        const saved_live = self.raiseLive(free);
+        try self.emitSubPattern(0, pat, fail_l, free);
+        self.min_live = saved_live;
+        try beamEmitter.writeJump(self.out, ok_l);
+        try beamEmitter.writeLabel(self.out, fail_l);
+        try beamEmitter.writeTestHeap(self.out, 3, 1);
+        try beamEmitter.writePutTuple2(self.out, Dst.xr(0), &.{ Op.atom("badmatch"), Op.xr(0) });
+        try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "error" } }, 0);
+        try beamEmitter.writeLabel(self.out, ok_l);
     }
 
     /// A record constructor pattern written positionally with names and `_`
@@ -5868,7 +6244,12 @@ const Emitter = struct {
         const scratch = self.scratchBase();
         try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(scratch));
         var where_buf: [512]u8 = undefined;
-        const where = std.fmt.bufPrint(&where_buf, "{s}.bp:{d}", .{ self.module_name, loc.line }) catch "?";
+        // The package-relative source path when the driver knows it (what
+        // erlang's `srcFile` names), else the module atom's file.
+        const where = if (self.src_path.len > 0)
+            std.fmt.bufPrint(&where_buf, "{s}:{d}", .{ self.src_path, loc.line }) catch "?"
+        else
+            std.fmt.bufPrint(&where_buf, "{s}.bp:{d}", .{ self.module_name, loc.line }) catch "?";
         try beamEmitter.writeMove(self.out, Term.str(where), scratch + 1);
         try beamEmitter.writeTestHeap(self.out, 4, scratch + 2);
         try beamEmitter.writePutTuple2(self.out, Dst.xr(0), &.{ Op.atom("bp_assert"), Op.xr(scratch), Op.xr(scratch + 1) });
@@ -5889,13 +6270,16 @@ const Emitter = struct {
             },
             else => {},
         }
+        // The unary `'-'/1` BIF, as `erlc` writes `-X`: `0 - X` is not a
+        // negation for a float — `0 - 0.0` is `+0.0` where `-0.0` is the
+        // answer (and what `z * -1.0` and the erlang backend print).
         if (self.simpleTerm(inner)) |it| {
-            try beamEmitter.writeGcBif(self.out, .sub, self.min_live, &.{ Op.int(0), it }, Dst.xr(dest));
+            try beamEmitter.writeGcBif(self.out, .sub, self.min_live, &.{it}, Dst.xr(dest));
         } else {
             try self.lowerExprIntoX0(inner);
             const scratch = self.scratchBase();
             try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(scratch));
-            try beamEmitter.writeGcBif(self.out, .sub, scratch + 1, &.{ Op.int(0), Op.xr(scratch) }, Dst.xr(dest));
+            try beamEmitter.writeGcBif(self.out, .sub, scratch + 1, &.{Op.xr(scratch)}, Dst.xr(dest));
         }
     }
 
@@ -6582,7 +6966,15 @@ const Emitter = struct {
         // `App(8080, "/")` → a map `#{…}`. Positional args take their field name
         // from the declared order; reads use `get_map_elements` with the same
         // atom keys.
-        if (cc.callee.len > 0 and std.ascii.isUpper(cc.callee[0])) {
+        //
+        // A capitalised name that an import binds to a FUNCTION is that
+        // function, never a constructor: `import {Make} from "util"` then
+        // `Make(n: 4)` was built as the label-keyed record `#{n => 4}`
+        // (erlang and commonJS call `util.Make`). The imported-fn routes
+        // below take it.
+        const names_imported_fn = self.imported_fn_owners.contains(cc.callee) or
+            self.crossOwnerOf(cc.callee, .@"fn") != null;
+        if (cc.callee.len > 0 and std.ascii.isUpper(cc.callee[0]) and !names_imported_fn) {
             if (self.record_fields.get(cc.callee)) |fields| {
                 try self.lowerRecordConstruct(cc.args, fields, cc.callee);
                 if (mode == .tail) try self.emitReturn();
@@ -7262,7 +7654,11 @@ const Emitter = struct {
             );
             return;
         }
-        if (ref.module.len > 0) return error.MissingExternalTarget;
+        // The keyword form (`module = "erlang", method = "max($args)"`)
+        // carries a template: it is the template text, as erlang renders it
+        // (`user_erlang_templates` — the module is not prefixed). A `(` with
+        // no marker names no shape either backend lowers.
+        if (ref.module.len > 0 and !primOpTemplate.looksLikeTemplate(ref.symbol)) return error.MissingExternalTarget;
         try self.evalTemplate(ref.symbol, self_first, exprs[0..cc.args.len], cc.trailing, mode);
     }
 
@@ -9620,10 +10016,50 @@ const Emitter = struct {
                     }
                 },
             },
-            // A list, `|` or multi-subject pattern nested inside a tuple or a
+            // `[]`, `[1, x]`, `[first, ..rest]`, `[4, ..]`: the list is walked
+            // from a copy in `{x, free}` (the subject stays intact for the
+            // next arm) — one `is_nonempty_list` + `get_list` per element,
+            // the head tested or bound from `{x, free + 1}`, then `is_nil`
+            // without a spread (the length is exact) or the remaining tail
+            // bound to a named one. The arm used to walk the elements without
+            // binding or testing any of them and to accept any longer list:
+            // `[a, b] -> a + b` answered `{unresolved_identifier, a}`.
+            .list => |lst| {
+                const cur = free;
+                const head = free + 1;
+                try beamEmitter.writeMoveOp(self.out, Op.xr(src), Dst.xr(cur));
+                const saved_live = self.raiseLive(free + 1);
+                defer self.min_live = saved_live;
+                for (lst.elems) |el| {
+                    try beamEmitter.writeTest(self.out, .is_nonempty_list, fail, &.{Op.xr(cur)});
+                    try beamEmitter.writeGetList(self.out, Op.xr(cur), Dst.xr(head), Dst.xr(cur));
+                    switch (el) {
+                        .wildcard => {},
+                        .numberLit => |n| try beamEmitter.writeTest(self.out, .is_eq, fail, &.{ Op.xr(head), Op.num(n) }),
+                        .bind => |name| if (!std.mem.eql(u8, name, "_")) {
+                            const y_idx = self.next_y;
+                            self.next_y += 1;
+                            try self.reg_map.put(name, .{ .y = y_idx });
+                            try beamEmitter.writeMoveOp(self.out, Op.xr(head), Dst.yr(y_idx));
+                        },
+                    }
+                }
+                if (lst.spread) |spread| {
+                    if (spread.len > 0) {
+                        const y_idx = self.next_y;
+                        self.next_y += 1;
+                        try self.reg_map.put(spread, .{ .y = y_idx });
+                        try beamEmitter.writeMoveOp(self.out, Op.xr(cur), Dst.yr(y_idx));
+                    } else if (lst.elems.len == 0) {
+                        // `[..]` alone: any list.
+                        try beamEmitter.writeTest(self.out, .is_list, fail, &.{Op.xr(cur)});
+                    }
+                } else try beamEmitter.writeTest(self.out, .is_nil, fail, &.{Op.xr(cur)});
+            },
+            // A `|` or multi-subject pattern nested inside a tuple or a
             // payload has no lowering here. Refused rather than matched
             // unconditionally, which is what it did before.
-            .list, .@"or", .multi => return error.NestedPatternUnsupported,
+            .@"or", .multi => return error.NestedPatternUnsupported,
         }
     }
 
@@ -9894,27 +10330,9 @@ const Emitter = struct {
                     },
                     .literals => unreachable, // `emitPatternArm` above
                 },
-                .list => |lst| {
-                    const next = self.allocLabel();
-                    if (lst.elems.len == 0 and lst.spread == null) {
-                        try beamEmitter.writeTest(self.out, .is_nil, next, &.{Op.xr(0)});
-                    } else {
-                        for (lst.elems) |_| {
-                            try beamEmitter.writeTest(self.out, .is_nonempty_list, next, &.{Op.xr(0)});
-                            try beamEmitter.writeGetList(self.out, Op.xr(0), Dst.xr(1), Dst.xr(0));
-                        }
-                        if (lst.spread) |spread_name| {
-                            if (spread_name.len > 0) {
-                                const y_idx = self.next_y;
-                                self.next_y += 1;
-                                try self.reg_map.put(spread_name, .{ .y = y_idx });
-                                try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(y_idx));
-                            }
-                        }
-                    }
-                    try self.emitArmTail(arm, subj_y, end_label);
-                    try beamEmitter.writeLabel(self.out, next);
-                },
+                // Every element is tested or bound, and the length is exact
+                // unless a spread follows (`emitSubPattern`'s `.list`).
+                .list => try self.emitPatternArm(arm, subj_y, end_label),
                 .multi => |pats| {
                     var tuple_arm = arm;
                     tuple_arm.pattern = .{ .variant = .{
@@ -10036,6 +10454,10 @@ const Emitter = struct {
         const saved_group = self.fold_group;
         self.fold_group = null;
         defer self.fold_group = saved_group;
+        // A `try` in a lambda is the lambda's (decision 74), even in a test.
+        const saved_in_test = self.in_test_body;
+        self.in_test_body = false;
+        defer self.in_test_body = saved_in_test;
 
         self.next_y = 0;
         self.cur_arity = arity;
@@ -10478,11 +10900,7 @@ const Emitter = struct {
                 try beamEmitter.writeCall(em.out, .normal, 3, .{ .ext = .{ .module = "lists", .function = "foldl" } }, 0);
             }
         };
-        if (bodyPropagates(body)) {
-            const tag = self.next_y;
-            self.next_y += 1;
-            try self.guardLoopCall(tag, Call{});
-        } else try Call.emit(.{}, self);
+        try self.emitLoopCall(body, Call{});
         try self.unpackGroupFromX0(names.items);
         return true;
     }
@@ -10576,6 +10994,20 @@ const Emitter = struct {
             try beamEmitter.writeTestHeap(self.out, 2, @max(self.min_live, 1));
             try beamEmitter.writePutList(self.out, Op.xr(0), Op.yr(gl.acc), Dst.yr(gl.acc));
             try beamEmitter.writeJump(self.out, gl.exit);
+            return;
+        }
+        // Decision 74 — inside a `test` body the `Error` ends the test:
+        // `erlang:error({bp_assert, E, Loc})`, the term the runner's first
+        // catch clause reads (`FAIL <name>  (<E>)  at <Loc>`), from a loop's
+        // fun as from the body itself.
+        if (self.in_test_body) {
+            // `element/2`, not `get_tuple_element`: the failed `{ok, _}`
+            // test leaves the subject untyped for the loader.
+            try beamEmitter.writeBif(self.out, "element", 0, &.{ Op.int(2), Op.xr(0) }, Dst.xr(0));
+            try beamEmitter.writeMove(self.out, Term.str(self.test_loc), 1);
+            try beamEmitter.writeTestHeap(self.out, 4, 2);
+            try beamEmitter.writePutTuple2(self.out, Dst.xr(0), &.{ Op.atom("bp_assert"), Op.xr(0), Op.xr(1) });
+            try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "error" } }, 0);
             return;
         }
         if (self.in_loop_lambda) {
@@ -10816,11 +11248,53 @@ const Emitter = struct {
                 try beamEmitter.writeCall(em.out, .normal, 2, .{ .ext = .{ .module = "lists", .function = c.name } }, 0);
             }
         };
-        if (bodyPropagates(lp.body)) {
+        try self.emitLoopCall(lp.body, Call{ .name = func });
+    }
+
+    /// A loop's `lists:` call (`call.emit`), inside the catch sections its
+    /// body needs: a propagating `try` / `return` (`guardLoopCall`) and a bare
+    /// `break` (`guardLoopBreak`). Each takes a tag slot `countLocalsInExpr`
+    /// reserves.
+    fn emitLoopCall(self: *Emitter, body: []const ast.Stmt, call: anytype) anyerror!void {
+        const Guarded = struct {
+            inner: @TypeOf(call),
+            body: []const ast.Stmt,
+            fn emit(g: @This(), em: *Emitter) anyerror!void {
+                if (bodyPropagates(g.body)) {
+                    const tag = em.next_y;
+                    em.next_y += 1;
+                    try em.guardLoopCall(tag, g.inner);
+                } else try g.inner.emit(em);
+            }
+        };
+        const guarded: Guarded = .{ .inner = call, .body = body };
+        if (bodyBreaksBare(body)) {
             const tag = self.next_y;
             self.next_y += 1;
-            try self.guardLoopCall(tag, Call{ .name = func });
-        } else try (Call{ .name = func }).emit(self);
+            try self.guardLoopBreak(tag, guarded);
+        } else try guarded.emit(self);
+    }
+
+    /// `call.emit` inside a catch section that ends the loop on its fun's
+    /// `throw({'__bp_break', V})` with `V` in `{x, 0}`; any other exception
+    /// is raised again.
+    fn guardLoopBreak(self: *Emitter, tag: u32, call: anytype) anyerror!void {
+        const caught = self.allocLabel();
+        const other = self.allocLabel();
+        const done = self.allocLabel();
+        try beamEmitter.writeTry(self.out, tag, caught);
+        try call.emit(self);
+        try beamEmitter.writeTryEnd(self.out, tag);
+        try beamEmitter.writeJump(self.out, done);
+        try beamEmitter.writeLabel(self.out, caught);
+        try beamEmitter.writeTryCase(self.out, tag);
+        try beamEmitter.writeTest(self.out, .is_eq_exact, other, &.{ Op.xr(0), Op.atom("throw") });
+        try beamEmitter.writeTest(self.out, .is_tagged_tuple, other, &.{ Op.xr(1), .{ .untagged = 2 }, Op.atom(break_throw_signal) });
+        try beamEmitter.writeGetTupleElement(self.out, Op.xr(1), 1, Dst.xr(0));
+        try beamEmitter.writeJump(self.out, done);
+        try beamEmitter.writeLabel(self.out, other);
+        try beamEmitter.writeBif(self.out, "raise", 0, &.{ Op.xr(2), Op.xr(1) }, Dst.xr(0));
+        try beamEmitter.writeLabel(self.out, done);
     }
 
     /// Emit a string literal's lexeme content as a BEAM binary into `{x, dest}`:
@@ -10890,10 +11364,23 @@ const Emitter = struct {
         // cross-module result), and `is_tuple` alone leaves the arity unknown, so
         // `get_tuple_element` fails the loader (`bad_type, needed t_tuple,1`).
         if (tupleIndexMember(ia.member)) |idx| {
+            // `rs.at(0)?.b` — decision 45 rewrote the label to its position,
+            // and the `?.` still short-circuits an absent receiver to
+            // `undefined` (the record/map arm below). It read
+            // `element(2, undefined)` and raised `badarg`.
+            const end_l: ?u32 = if (ia.optional) self.allocLabel() else null;
+            if (end_l) |end| {
+                const present_l = self.allocLabel();
+                try beamEmitter.writeTest(self.out, .is_eq, present_l, &.{ Op.xr(0), Op.atom("undefined") });
+                try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.xr(dest));
+                try beamEmitter.writeJump(self.out, end);
+                try beamEmitter.writeLabel(self.out, present_l);
+            }
             try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(1)); // tuple → x1
             try beamEmitter.writeMoveOp(self.out, Op.int(idx + 1), Dst.xr(0)); // index → x0
             try beamEmitter.writeCall(self.out, .normal, 2, .{ .ext = .{ .module = "erlang", .function = "element" } }, 0);
             if (dest != 0) try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(dest));
+            if (end_l) |end| try beamEmitter.writeLabel(self.out, end);
             return;
         }
 
@@ -11042,11 +11529,15 @@ const Emitter = struct {
                 else => continue,
             };
             for (ok.transformed.decls) |d| switch (d) {
-                .type_ => |t| for (t.methods) |m| {
-                    // A host-backed method with a beam binding is a function of
-                    // its type's module too (`withHostMethodBodies`).
-                    if ((m.body == null or m.is_declare) and !(hostMethods.isHostMethod(m) and hostMethods.binds(m, .beam))) continue;
-                    if (std.mem.eql(u8, m.name, method) and methodArity(m) == arity) return true;
+                .type_ => |t| {
+                    for (t.methods) |m| {
+                        // A host-backed method with a beam binding is a function of
+                        // its type's module too (`withHostMethodBodies`).
+                        if ((m.body == null or m.is_declare) and !(hostMethods.isHostMethod(m) and hostMethods.binds(m, .beam))) continue;
+                        if (std.mem.eql(u8, m.name, method) and methodArity(m) == arity) return true;
+                    }
+                    // …and so is a `default fn` it adopts (`adoptedDefaults`).
+                    if (adoptsDefault(self.alloc, ok.transformed.decls, t, method, arity)) return true;
                 },
                 else => {},
             };
@@ -11065,12 +11556,12 @@ const Emitter = struct {
                 else => continue,
             };
             for (ok.transformed.decls) |d| switch (d) {
-                .type_ => |t| for (t.methods) |m| {
-                    if ((m.body == null or m.is_declare) and !(hostMethods.isHostMethod(m) and hostMethods.binds(m, .beam))) continue;
-                    if (std.mem.eql(u8, m.name, method) and methodArity(m) == arity) {
-                        count += 1;
-                        break;
-                    }
+                .type_ => |t| {
+                    const declares = for (t.methods) |m| {
+                        if ((m.body == null or m.is_declare) and !(hostMethods.isHostMethod(m) and hostMethods.binds(m, .beam))) continue;
+                        if (std.mem.eql(u8, m.name, method) and methodArity(m) == arity) break true;
+                    } else adoptsDefault(self.alloc, ok.transformed.decls, t, method, arity);
+                    if (declares) count += 1;
                 },
                 else => {},
             };

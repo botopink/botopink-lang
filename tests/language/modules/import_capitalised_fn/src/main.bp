@@ -1,0 +1,12 @@
+//// An imported function whose name is capitalised is that function, called
+//// with labelled arguments or positional ones — never a constructor. beam
+//// built `Make(n: 4)` as the label-keyed record `#{n => 4}` (`03-beam`).
+
+pub mod util;
+import {Make, Scale} from "util";
+
+pub fn main() {
+    @print(Make(n: 4));
+    @print(Make(5));
+    @print(Scale(x: 2, by: 10));
+}

@@ -92,7 +92,15 @@ assembles and runs every emitted `.S` (`runtime.executeBeamAsm`), compares the
 RUN LOG and checks the emitted assembly for each needle. No snapshot, for the
 same reason: a beam row whose erlang or wasm half has not landed would record
 another front's wrong answer in another front's directory. The `case`-pattern
-rows of `control_flow.zig` use it.
+rows of `control_flow.zig` use it, and so does `beam.zig` — the beam backend's
+own rows (front `03-beam`), one fixture each, every RUN LOG the value the
+assembled module prints: list patterns (every element bound or tested, the
+length exact without a spread), a lambda literal ending a `case` arm (the arm's
+value, not `ok`), a behavior's `default fn` adopted by an implementing type, `?.` through a
+tuple label on an absent element, `-x` as the unary minus (`-0.0`), a bare `break` ending a `for`, the keyword form of an `@External.Erlang`
+template; and step 2's twins of `02-erlang`'s C-07 fixtures — `unknown` by value,
+`A...B` in a tuple, `true`/`false` in a tuple, a record's constructor pattern, a
+tuple under `..`, and §4.1 × §4.2's truth table (a tuple type tests each element).
 
 `assertJsExpecting`, `assertJsError` and `assertJsTestMode` wrap their snapshot calls in `utils/snap.zig` `traceEnter(loc)`/`traceLeave`, so `BOTOPINK_SNAP_TRACE=<file>` records the test `file:line` for every codegen snapshot. A new helper that writes a snapshot must do the same, or `scripts/snap_audit.sh --mode=review` cannot attribute it.
 

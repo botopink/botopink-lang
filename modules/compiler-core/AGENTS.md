@@ -60,8 +60,8 @@ source → lex → parse → infer (HM) → transform (specialize) → codegen �
   `TEST <file>:<line> <name>` header + a fenced ```logs``` block capturing the
   body's stdout. Contract: [`../compiler-cli/AGENTS.md`](../compiler-cli/AGENTS.md)
   (“`botopink test` output format”); emitters are `__bp_run_tests` in
-  `src/codegen/commonJS.zig` and `__bp_run_one` / `__bp_run_tests` in
-  `src/codegen/erlang.zig`.
+  `src/codegen/commonJS.zig`, `__bp_run_one` / `__bp_run_tests` in
+  `src/codegen/erlang.zig` and `emitTestRunner` in `src/codegen/beam_asm.zig`.
 - **A test body is a fallible context** (1.0.10-beta decision 74): a `try`
   whose operand is `Error(e)` inside a `test { … }` ends the test as
   `FAIL <name>  (<e>)  at <file>:<line>` — commonJS `throw new Error(e)`

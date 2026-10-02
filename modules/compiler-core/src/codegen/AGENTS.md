@@ -19,10 +19,12 @@ under `botopink test` (`Config.test_mode`): commonJS emits
 `__bp_run_tests()` runner (which reads node's `process` through `globalThis`,
 so a module-level `const process` from `import { process } from "std"` cannot
 shadow it); erlang emits `'__bp_test_N'/0` functions +
-`'__bp_run_one'/1` / `'__bp_run_tests'/1` + a `main/1` escript entry. In test
-mode `assert` lowers to a recoverable per-test failure (JS: throwing
-`__bp_assert`; Erlang: `erlang:error({bp_assert, Msg, Loc})`) and `fn main/0`
-is not auto-invoked. BEAM and WAT have no test runner.
+`'__bp_run_one'/1` / `'__bp_run_tests'/1` + a `main/1` escript entry; beam_asm
+emits exported `'__bp_test_N'/0` functions, `'__bp_run_tests'/1` and a `main/1`
+run with `erl` (§ beam_asm, "`botopink test`"). In test mode `assert` lowers
+to a recoverable per-test failure (JS: throwing `__bp_assert`; Erlang and
+BEAM: `erlang:error({bp_assert, Msg, Loc})`) and `fn main/0` is not
+auto-invoked. WAT has no test runner.
 
 ## Tree
 
@@ -1636,6 +1638,30 @@ codegen/
 
 ### beam_asm
 
+- **`botopink test`** (`Config.test_mode`, std's modules excepted —
+  `emitBeamAsm`'s `test_mode`): each `test` block is `'__bp_test_N'/0`
+  (`emitTestFn`: the body lowered like a `fn`'s, exported because the
+  registry names it as `fun M:'__bp_test_N'/0`), and a module with tests gets
+  `main(Args)` — the host loader (`'__bp_load_siblings'/0`), the imported
+  modules' bodies and its own `'_botopink_init'/0`, as `'_botopink_main'/0`
+  runs them before `main/0` in a build, then `'__bp_run_tests'(Args)`, which
+  builds the registry `[{Name, fun M:'__bp_test_N'/0, <<"file:line">>}]` in
+  source order and hands it to the runner loop. The loop is Erlang text
+  (`test_runner_body`) compiled at build time like a host template
+  (`lowerTemplateFn`): the `----- RUN LOG -----` envelope, the
+  `{bp_assert, Msg, Loc}` / `Class:Reason` catch, the `--filter` word (the
+  first of `Args`, a substring of the name), `<P> passed, <F> failed` and
+  `halt(1)` on a failure — what `erlang.zig`'s `testRunnerForms` prints, byte
+  for byte. A `try` on an `Error` in a test body (decision 74,
+  `in_test_body`; a lambda's body is its own) raises `{bp_assert, E,
+  <<"file:line">>}` (`emitTryError`). `main/0` is an ordinary function here:
+  the wrapper that runs it is not emitted. An `assert`'s location is the
+  package-relative source path when the driver gives one (`src_path`), else
+  `<module atom>.bp`. `cli/test_cmd.zig` writes every module (and unit) as
+  `<atom>.S` in the run's directory, assembles them all once
+  (`erlc +from_asm`) and runs each test module with `erl -noshell -pa <dir>
+  -eval "'<atom>':main(init:get_plain_arguments()), halt()." -extra
+  [filter]`; all 68 test-kind cells of `tests/language` pass there.
 - **Host `.erl` modules beside the program — `'__bp_load_siblings'/0`**
   (`emitLoadSiblings`; 1.0.11-beta `00-gate` front 111). `botopink build
   --target beam` copies the `<host>.erl` of every `#[@External.Erlang("<host>",
@@ -1737,7 +1763,15 @@ codegen/
   module's mangled local, because an `implement` block emits no module yet
   (its module would be `<package>@<path>@@<val>`, decision 109).
   A `behavior`'s `default fn` likewise keeps `'<Iface>_<method>'` wherever
-  `emitNeededDefaults` puts it (decision 23).
+  `emitNeededDefaults` puts it (decision 23) — except the bodied instance
+  defaults a `type` ADOPTS through its inline `implement` clauses and does not
+  declare itself (`adoptedDefaults`, the twin of `erlang.zig`'s
+  `adoptedIfaceDefaults`: behaviors of the type's own module, `extends`
+  followed): those are methods of the type's unit like its own
+  (`withAdoptedDefaults` → `emitTypeUnit`), counted in `own_type_methods` and
+  by `programDeclaresMethod` / `programMethodDeclarers`, so a call routes
+  there as to a declared method. `Sq(s: 3).twice()` aborted
+  `{unresolved_method, twice, 1}`.
 - **A unit is a whole module, so it gets a whole module's state**
   (`openTypeUnit` / `closeTypeUnit`): its own writer, its own `fn_labels`, its
   own `{labels, N}` counting from 1, its own `deferred_lambdas`,
@@ -1779,7 +1813,9 @@ codegen/
   (`lowerResultOptionOp`: `{ok, V}`/`{error, E}` and bare value / `undefined`,
   mirroring erlang), optional chaining (`lowerIdentAccess`: `is_eq` on
   `undefined`, then the tagged-tuple read below, or `is_map` +
-  `get_map_elements` for a receiver whose type this emit cannot place),
+  `get_map_elements` for a receiver whose type this emit cannot place; a
+  tuple label through `?.` — decision 45's `._N` — tests `undefined` before
+  its `element/2` read, which raised `badarg` on an absent element),
   `comptime` nodes
   (`lowerComptime`: a folded expression/block is its value), `await e` (eager:
   the value of `e`; `await e;` / `try e;` as a statement are the same lowering,
@@ -1827,11 +1863,13 @@ codegen/
   answers `true`/`false`) and the `.ident` case arm share one lowering. A
   record is `is_tagged_tuple` on its own atom and arity; an enum is every tag it
   builds, the unit ones by `is_ne_exact` (which branches when the two ARE
-  equal) and the payload ones by `is_tagged_tuple` + a jump. **One divergence
-  from the erlang twin, deliberate:** a TUPLE type is tested by `is_tuple` and
-  `test_arity` but NOT element by element — reading an element is a call, and a
-  call frees the register the remaining tests read; erlang tests the elements
-  because a guard may call `element/2`.
+  equal) and the payload ones by `is_tagged_tuple` + a jump. A TUPLE type is
+  `is_tuple` + `test_arity` and then each element, as erlang tests them: after
+  `test_arity` the loader knows the arity, so an element is a
+  `get_tuple_element` into a scratch register (no call), tested with the live
+  floor raised over it. Tested by its arity alone, `#(i32, string)` held for a
+  record or a variant of two slots (`02-erlang`'s `test/is_truth_table`; the
+  §4.1 × §4.2 table is pinned by `tests/beam.zig`).
 - **Every `type`'s module answers about its own values** (`emitTypeIdentity`):
   `'__bp_get'/2` turns a field name into its position for the reads the emitter
   could not place, and `'__bp_format'/1` describes the value for
@@ -1874,6 +1912,13 @@ codegen/
   constructor emits the bare atom `'Circle'`, so `variantTag` and the `.ident`
   arm take the last `.`-separated segment (`bareVariantName`); §5.1 P8 — a name
   carrying a `.` is a variant, never a binding (`isVariantPath`) (01's defect 1).
+- **A `case` arm's value** (`lowerArmBody`, `armValueTail`): a block arm runs
+  in the frame and its value is its last statement when that is a value
+  expression — a lambda literal included (`Mark(s) { { item -> f(item, s) }; }`
+  answers the fun: a statement-position block does not parse, so `{ … -> … }`
+  there is always one). It ran as a statement and the arm answered `ok`, which
+  the caller then applied (`{badfun, ok}`). `emitLambdaBody` shares the rule,
+  so a lambda's own last-statement lambda is its value too.
 - **Case patterns** (`emitPatternArm`, `emitSubPattern`, decision 8 §5; C-06's
   and C-07 D4's beam halves): every shape the `.fields`/`.binding` arms never
   read — a range, a tuple, `..`, labels, a literal or nested payload, a
@@ -1889,11 +1934,25 @@ codegen/
   (`VariantShape.decl`) and a label (P4) the slot of the field it names
   (`variantSlotIndex`, the twin of erlang's `slotIndex`). `i32` / `string`
   / `f64` / `bool` in a pattern are `emitTypeTestBranchOn` tests and bind
-  nothing. A list, `|` or multi pattern NESTED inside a tuple or payload is
-  refused (`error.NestedPatternUnsupported`) instead of matching everything.
-  Every one of these used to match every subject and bind nothing
-  (`case 0 { 1...9 { 1 } _ { 0 } }` answered `1`). Pinned by the
-  `assertBeamRunLog` rows in `tests/control_flow.zig`.
+  nothing. A list pattern — an arm's or one nested in a tuple or payload — is
+  walked from a copy of its subject in the scratch base: one
+  `is_nonempty_list` + `get_list` per element, each head tested (a number) or
+  bound, then `is_nil` without a spread (the length is exact) or the remaining
+  tail bound to a named spread; the arm used to walk the elements without
+  binding or testing any of them and to accept any longer list (`[a] -> a`
+  was `{unresolved_identifier, a}`). A `|` or multi pattern NESTED inside a
+  tuple or payload is refused (`error.NestedPatternUnsupported`) instead of
+  matching everything. Every one of these used to match every subject and
+  bind nothing (`case 0 { 1...9 { 1 } _ { 0 } }` answered `1`). Pinned by the
+  `assertBeamRunLog` rows in `tests/control_flow.zig` and `tests/beam.zig`.
+- **A capitalised callee** is a record constructor (`record_fields`, or the
+  label-keyed map when every argument is labelled) only when no import binds
+  the name to a FUNCTION (`imported_fn_owners`, `crossOwnerOf(.fn)`):
+  `import {Make} from "util"` then `Make(n: 4)` was built as `#{n => 4}`.
+- **Negation** (`lowerNeg`): a literal folds to its negated token; anything
+  else is the unary `'-'/1` gc_bif, as `erlc` writes `-X`. It was `0 - X`,
+  which is `+0.0` for `X = 0.0` where `-0.0` is the answer (`z * -1.0` and
+  the erlang backend print `-0.0`).
 - **Numbers by value** (decision 8 §4.1, §2.3; C-07 D1/D3): `x is f64` is
   `is_number`; `x is i32` (every integer spelling) is an integer, or a float
   equal to its `trunc`, within the range — `emitTypeTestBranchOn`, for `is`
@@ -2013,7 +2072,8 @@ codegen/
   (`=`, `+=`, `out.push(v)`, a mutating closure call, nested
   `if`/`loop`/`forEach`) lowers to `lists:foldl/3` with those names as the
   accumulator (one value, or a tuple), unpacked back into the caller's slots
-  (`unpackGroupFromX0`); `break`/`continue` return the group. A statement `out.push(v)` on a local Array stores the grown list back
+  (`unpackGroupFromX0`); `continue` returns the group, and a bare `break`
+  throws `{'__bp_break', Group}` out of the fun (below). A statement `out.push(v)` on a local Array stores the grown list back
   into its slot (`receiverMutation`), and on a module-level `var` through its
   memory (`moduleVarPush` → `emitMemoryWrite`). `xs.pop()` calls
   `'-bp_pop-'/1` (`primPop`, `ensurePopHelper`: `{Last, Rest}`, `{undefined,
@@ -2029,7 +2089,7 @@ codegen/
   where it tested a variant atom no value carries, and a `@Result` pattern
   (`Result.Error`) as the result's `{error, E}` even beside a user enum's
   `Error`. A pattern that binds nothing, or that `emitSubPattern` has no
-  lowering for (a list), is not matched again.
+  lowering for (an alternation), is not matched again.
 - **A `case` arm naming both a record and a variant** tests the variant's atom,
   else the record's tagged tuple (`lowerCase`'s `.ident` arm, and
   `emitSubPattern` one element down).
@@ -2047,7 +2107,15 @@ codegen/
   eager list here), so one that reassigns outer names is the same `foldl`, and
   one whose body propagates a `try` (`bodyPropagates`: through member reads,
   `case` subjects, array/tuple literals too — `(try batch).length`) is called
-  inside `guardLoopCall`'s catch section; `while (cond) { … }` / `loop { … }` run
+  inside `guardLoopCall`'s catch section. A bare `break` of the loop's own
+  body (`bodyBreaksBare`: directly, under an `if`, in a `case` arm's block —
+  never a nested loop's or a lambda's) ends it: the fun throws
+  `{'__bp_break', V}` — the fold's group, else `ok` — and the call sits
+  inside `guardLoopBreak`'s catch section, which answers `V` (erlang's
+  `'__bp_cond_break'`; one y-slot counted by `countLocalsInExpr`). It returned
+  from the fun, so the next element still ran (`for ([1, 2, 3]) { x -> n = n
+  + 1; break; }` left `n` at 3). `emitLoopCall` puts the call inside the
+  sections the body needs; `while (cond) { … }` / `loop { … }` run
   in the enclosing frame (`lowerConditionLoop`): `{label, Top}`, the condition
   as a test jumping to `Exit`, the body, `{jump, {f, Top}}`, `{label, Exit}`.
   The variables it reassigns are this frame's registers, so nothing is
@@ -2240,8 +2308,7 @@ codegen/
   when the condition is not `true`; `val assert P = e [catch h]` is a two-arm
   case whose bindings stay visible (a y-register each). Its subject is still
   emitted twice — once as the case subject, once as the matched arm's body — so
-  an effectful subject runs twice; and a list pattern binds nothing, the same
-  gap `case` has on beam. `@todo`/`@panic` → `erlang:error/1`; `__bp_*` ops
+  an effectful subject runs twice. `@todo`/`@panic` → `erlang:error/1`; `__bp_*` ops
   at register level.
 - **Effects**: non-`@Result` effect fns get an eager body (decision 120: a
   failure is the `{error, E}` value, never a throw).
@@ -2910,6 +2977,13 @@ method on an optional and the erlang emitter types a `default fn` body's locals
   with the record's own atom, `recordTagAtom`) and read off by position on beam
   (`emitDestructFromX0`'s `.ctor` arm, `isRecordCtorBind`); it lowered to the
   value alone on erlang (`variable 'Y' is unbound`) and to a comment on beam.
+  Any other constructor in binding position on beam — a one-variant type's
+  variant (`val Label(t, w) = Tag.Label(…)`, JS-4), a nested constructor — and
+  the spread-only list (`val [..rest] = xs`) are the `case` arm's walk
+  (`emitPatternDestruct` → `emitSubPattern`), whose fail edge raises
+  `{badmatch, V}` as erlang's `P = V` does; R5 admits only an irrefutable
+  pattern, so no well-typed value reaches it. `destructYSlots` reserves the
+  larger of the positional count and `patternYSlots`.
 
 ## Effects (the return is the effect — decisions 118–128)
 

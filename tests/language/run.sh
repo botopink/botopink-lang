@@ -63,7 +63,7 @@
 #                      (front 12 step 4.2; no network, nothing special here).
 #                      A project cell with a `test/` tree and no expected.out is
 #                      the test/ kind over the project: `botopink test --target
-#                      <t> --json` (commonJS and erlang), keyed <name>::<test>.
+#                      <t> --json` (commonJS, erlang and beam), keyed <name>::<test>.
 #                      `"targets"` in the cell's botopink.json narrows it the
 #                      way `<name>.targets` narrows a run/ cell, and is audited
 #                      the same way — § the targets of a cell
@@ -146,13 +146,15 @@ pool_check_jobs "$jobs" run.sh
 # `scripts/beam_export_audit.sh`), so beam costs no new tool; a machine without
 # them fails the run below rather than run three targets and say "all".
 #
-# `botopink test` refuses beam, so only run/ and modules/ cells reach it — the
-# rule wasm lives under.
+# `botopink test --target beam` assembles every module of the run beside
+# itself and runs each test module's runner with `erl -pa`, so test/ cells
+# and test-kind modules/ cells run on beam too; `botopink test` refuses wasm
+# alone, so only run/ and modules/ cells reach wasm.
 #
 # ── § the targets of a cell ───────────────────────────────────────────────────
 # A cell runs on every target its kind has — test/ and a test-kind modules/
-# cell on commonJS and erlang (`botopink test` runs nowhere else), run/ and a
-# modules/ cell on all four — unless it NARROWS itself: `run/<name>.targets`
+# cell on commonJS, erlang and beam (`botopink test` runs nowhere else), run/
+# and a modules/ cell on all four — unless it NARROWS itself: `run/<name>.targets`
 # (space-separated) or `"targets"` in `modules/<name>/botopink.json`.
 #
 # A narrowing is a claim about the compiler, and the runner checks it on every
@@ -624,10 +626,10 @@ for f in "${files[@]}"; do
     fi
     case "$f" in
         reject/*) printf '%s\t*\trun\n' "$f" >>"$jobs_list" ;;
-        # `botopink test` refuses every target but commonJS and erlang, so a
-        # test/ cell never runs on wasm or beam (see AGENTS.md § the targets).
+        # `botopink test` refuses wasm, so a test/ cell never runs there (see
+        # AGENTS.md § the targets).
         test/*) for t in "${targets[@]}"; do
-                    [ "$t" = "wasm" ] || [ "$t" = "beam" ] && continue
+                    [ "$t" = "wasm" ] && continue
                     printf '%s\t%s\trun\n' "$f" "$t" >>"$jobs_list"
                 done ;;
         run/*)  if [ -f "$here/${f%.bp}.targets" ]; then
@@ -637,9 +639,9 @@ for f in "${files[@]}"; do
                 fi ;;
         modules/*)
                 # a project cell of the test/ kind (a `test/` tree, no
-                # expected.out) is `botopink test`: commonJS and erlang only
+                # expected.out) is `botopink test`: commonJS, erlang and beam
                 kind="$ALL_TARGETS"
-                if [ -d "$here/$f/test" ] && [ ! -f "$here/$f/expected.out" ]; then kind="commonJS erlang"; fi
+                if [ -d "$here/$f/test" ] && [ ! -f "$here/$f/expected.out" ]; then kind="commonJS erlang beam"; fi
                 declared="$(awk -F '\t' -v c="$f" '$1 == c { print $2 }' "$work/manifest-targets")"
                 if [ "$declared" = "!" ]; then
                     printf '*\t%s\tfail\t%s\n' "$f" "$f/botopink.json is not JSON, or its \"targets\" is not an array of target names" >"$work/r-narrowing-$(printf '%s' "$f" | tr '/.' '__')"

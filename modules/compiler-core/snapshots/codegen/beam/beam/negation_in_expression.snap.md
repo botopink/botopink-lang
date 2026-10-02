@@ -24,7 +24,7 @@ fn main() {
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
-    {gc_bif, '-', {f, 0}, 0, [{integer, 0}, {y, 1}], {x, 0}}.
+    {gc_bif, '-', {f, 0}, 0, [{y, 1}], {x, 0}}.
     {gc_bif, '+', {f, 0}, 1, [{y, 0}, {x, 0}], {x, 0}}.
     {deallocate, 2}.
     return.
