@@ -15,7 +15,7 @@ test "t: passes" {
     @print("reached");
 }
 test "t: a lambda's try is its own" {
-    val f = { -> try failing(); 0; };
+    val f: fn() -> @Result<i32, string> = { -> try failing(); return 0; };
     @print("still here");
 }
 ```
@@ -86,7 +86,7 @@ async function __bp_test_2() {
     const f = () => {
     const _try0 = failing();
     if ("error" in _try0) return _try0;
-    return 0;
+    return ({ ok: 0 });
 };
     __bp_print("still here");
 }

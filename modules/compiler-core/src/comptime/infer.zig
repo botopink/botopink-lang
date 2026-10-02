@@ -9414,7 +9414,9 @@ pub fn inferExprTyped(env: *Env, expr: ast.Expr) InferError!TypedExpr {
         // literal's width (the literal takes the integer type its position
         // asks for — `val k: i64 = 1000;`, `n * 1000` with `n: i64`);
         // `inferBinaryOpExpr` hands it on only to arithmetic operands.
-        .identifier, .collection, .literal, .unaryOp, .binaryOp => {},
+        // `.function` reads a FALLIBLE function expectation (decision 147,
+        // `inferFunctionExpr`) and clears it before its body.
+        .identifier, .collection, .literal, .unaryOp, .binaryOp, .function => {},
         .call => |c| if (!isLeadingDotCall(c)) {
             env.expectedType = null;
         },
@@ -10051,6 +10053,11 @@ fn generatorScopeRefusal(env: *Env, code: []const u8, what: []const u8) ![]const
 /// Decision 121 — the refusal for `throw` / `try` in a body whose return
 /// carries no `@Result` layer, naming the return.
 fn fallibleChannelRefusal(env: *Env, what: []const u8) ![]const u8 {
+    if (env.inLambdaBody) return std.fmt.allocPrint(
+        env.arena,
+        "{s}: `{s}` in a lambda needs a `@Result` in the lambda's expected return — a lambda's return is the type its position expects, and this one has none",
+        .{ diagnostics.effect_try_without_fallible_channel, what },
+    );
     const shape: []const u8 = if (env.fnEffect) |e| switch (e) {
         .iterator, .stream => try std.fmt.allocPrint(env.arena, "the item of `@{s}<T>` has to be `@Result<T, E>` to use `throw` / `try`", .{e.returnWrapper()}),
         else => try std.fmt.allocPrint(env.arena, "this fn returns `@{s}<…>` with no `@Result` in it", .{e.returnWrapper()}),
@@ -14269,7 +14276,18 @@ fn caseArmTypesAgree(a: *T.Type, b: *T.Type) bool {
 /// Infer type for function definition expressions (lambdas and anonymous functions)
 fn inferFunctionExpr(env: *Env, func: ast.FunctionExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
     if (func.kind.syntax == .asyncBlock) return inferAsyncBlock(env, func, loc);
-    return inferFunctionExprExpected(env, func, loc, null, false);
+    // Decision 147 — a lambda in a position that expects a FALLIBLE function
+    // (an argument of a `fn(x: T) -> @Result<U, E>` parameter) takes that
+    // channel; any other expectation stays the hint it was.
+    const fallibleExpected: ?*T.Type = blk: {
+        const e = env.expectedType orelse break :blk null;
+        const d = e.deref();
+        if (d.* != .func) break :blk null;
+        if (!isResultType(d.func.ret)) break :blk null;
+        break :blk e;
+    };
+    env.expectedType = null;
+    return inferFunctionExprExpected(env, func, loc, fallibleExpected, false);
 }
 
 /// Decision 124 — `async { … }`: a closed block worth `@Task<T>`, legal in any
@@ -14402,11 +14420,29 @@ fn inferFunctionExprExpected(
         defer env.expectedType = savedExpected;
         return inferAsyncBlock(env, func, loc);
     }
-    // A nested function expression has no declared return type, so `throw`
-    // inside it is not checked against the enclosing fn's `E`.
+    // Decision 147 (lg-a) — a lambda's return is its expected type's: its
+    // `try` / `throw` use the fallible channel of the EXPECTED return, and a
+    // lambda whose expected return carries no `@Result` (or that has no
+    // expected type) has none. A `case` arm's block body is not a lambda for
+    // this: its `throw` is the enclosing function's (row 29), so it keeps the
+    // enclosing context.
     const savedThrowCtx = env.throwContext;
-    env.throwContext = .unchecked;
     defer env.throwContext = savedThrowCtx;
+    const savedInLambda = env.inLambdaBody;
+    defer env.inLambdaBody = savedInLambda;
+    const armBlock = env.keepReturnTarget;
+    const lambdaErr: ?*T.Type = blk: {
+        const e = expected orelse break :blk null;
+        const d = e.deref();
+        if (d.* != .func or d.func.params.len != func.kind.params.len) break :blk null;
+        const r = d.func.ret.deref();
+        if (r.* != .named or !std.mem.eql(u8, r.named.name, "Result") or r.named.args.len < 2) break :blk null;
+        break :blk r.named.args[1];
+    };
+    if (!armBlock) {
+        env.throwContext = if (lambdaErr) |et| .{ .result = et } else .plain;
+        env.inLambdaBody = true;
+    }
 
     // A nested function gets its own async/label scope: it does not inherit
     // the enclosing fn's `await`/`yield`/label context.
@@ -14478,6 +14514,13 @@ fn inferFunctionExprExpected(
         env.returnTarget = expRet orelse try env.freshVar();
         env.returnBareIsVoid = false;
         env.returnWhole = null;
+        // A fallible lambda (`fn(x: T) -> @Result<U, E>` expected) returns
+        // its payload: `return v` is wrapped `Ok(v)`, as in a fn body.
+        if (lambdaErr != null) {
+            const whole = expected.?.deref().func.ret;
+            env.returnWhole = whole;
+            env.returnTarget = whole.deref().named.args[0];
+        }
     }
     try refuseRedeclaredBindings(env, fk.body, fk.params);
     const bodyTyped = try inferStmtsTyped(env, fk.body);
@@ -14485,6 +14528,9 @@ fn inferFunctionExprExpected(
     // `return expr` tail types as void, so use the returned value's type.
     const retType = if (bodyTyped.len > 0) blk: {
         const tail = bodyTyped[bodyTyped.len - 1].expr;
+        // A fallible lambda's `return` / `throw` answer the expected
+        // `@Result` (wrapped by the transform); its value is that type.
+        if (lambdaErr != null and !keep and tail == .jump and (tail.jump.kind == .@"return" or tail.jump.kind == .throw_)) break :blk expected.?.deref().func.ret;
         if (tail == .jump and tail.jump.kind == .@"return") {
             break :blk if (tail.jump.kind.@"return") |rv| rv.getType() else try env.namedType("void");
         }

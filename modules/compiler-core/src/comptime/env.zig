@@ -895,6 +895,10 @@ pub const Env = struct {
     /// bare only where no such name is taken: the declaration the module
     /// named wins over the one a namespace brings along implicitly.
     explicitTypeNames: std.StringHashMapUnmanaged(void) = .empty,
+    /// Decision 147 (lg-a) — the body being inferred is a lambda's, whose
+    /// fallible channel is its EXPECTED return's: the refusal of a `try` /
+    /// `throw` there names the expected `fn(…) -> @Result<U, E>` form.
+    inLambdaBody: bool = false,
     /// A std module's `pub` type a namespace import did NOT register because
     /// `explicitTypeNames` holds its name → the std module key. A call into
     /// that namespace whose signature names the type is refused

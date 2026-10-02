@@ -574,7 +574,8 @@ test "js: test body ---- try on an Error fails the test" {
     // Decision 74 — a test body is a fallible context: `try` on an `Error(e)`
     // ends the test as `FAIL <name>  (<e>)  at <file>:<line>` on both
     // `botopink test` targets, an empty `return;` is the `ok` position of a
-    // `-> @Result<void, string>`, and a `try` inside a lambda is the lambda's.
+    // `-> @Result<void, string>`, and a `try` inside a lambda is the lambda's
+    // (its expected `fn() -> @Result<…>` is the channel, decision 147).
     // The RUN LOG is the runner's own output: one FAIL, two ok.
     try h.assertJsTestMode(std.testing.allocator, @src(),
         \\fn failing() -> @Result<void, string> {
@@ -592,7 +593,7 @@ test "js: test body ---- try on an Error fails the test" {
         \\    @print("reached");
         \\}
         \\test "t: a lambda's try is its own" {
-        \\    val f = { -> try failing(); 0; };
+        \\    val f: fn() -> @Result<i32, string> = { -> try failing(); return 0; };
         \\    @print("still here");
         \\}
     );

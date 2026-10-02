@@ -15,7 +15,7 @@ test "t: passes" {
     @print("reached");
 }
 test "t: a lambda's try is its own" {
-    val f = { -> try failing(); 0; };
+    val f: fn() -> @Result<i32, string> = { -> try failing(); return 0; };
     @print("still here");
 }
 ```
@@ -49,7 +49,7 @@ passing() ->
     F = fun() ->
         case failing() of
             {ok, _TryV0} ->
-                0;
+                {ok, 0};
             {error, _TryE0} -> {error, _TryE0}
         end
     end,

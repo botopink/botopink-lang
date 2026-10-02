@@ -1253,6 +1253,23 @@ call of an adopted default on an implementer answers the member's declared retur
 (`test/behavior_default_fn_result`). A bare `Ok(…)` in a default body is now `unbound variable
 'Ok'`, as in any body.
 
+## A lambda's fallible channel is its expected return's (decision 147, lg-a)
+
+`inferFunctionExprExpected` no longer gives a lambda body `throwContext = .unchecked`. Under an
+expected `fn(…) -> @Result<U, E>` the body's channel is `.result(E)` — `returnTarget` the payload
+`U`, `returnWhole` the `@Result`, so `return v` is wrapped `Ok(v)`, `throw e` `Error(e)` and `try`
+propagates, and a body ending in a `return` / `throw` has the expected `@Result` as its value; under
+any other expected return, or none, it is `.plain`, and a `try` / `throw` is
+`effect-try-without-fallible-channel` at the keyword, the message naming the lambda's expected
+return (`Env.inLambdaBody`, read by `fallibleChannelRefusal`). `inferExprTyped` keeps the
+expectation for a `.function` node and `inferFunctionExpr` reads it only when it is a fallible
+function type, so a lambda passed to a `fn(x: T) -> @Result<U, E>` parameter takes the channel; it
+clears the expectation before the body. A `case` arm's block body (`keepReturnTarget`) is not a
+lambda for this: it keeps the enclosing channel, so its `throw` is the function's (row 29 —
+`return case v { … _ -> { throw "x"; } }` answers `Error("x")` on commonJS, wasm and beam; erlang
+lowers the arm's throw as a raw `throw`, its backend's row). Cells: `reject/try_in_lambda_without_result`,
+`run/lambda_result_return_try`.
+
 ## A record value is not callable (`language-gaps.md` row 32)
 
 A plain call `g(…)` whose callee is a binding of a **record, enum or primitive** type — a value,
