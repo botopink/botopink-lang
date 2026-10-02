@@ -162,8 +162,9 @@ below) → **typed member/`mod` path** (`needsTypedDefinition` →
 (`from "<lib>"` surface, incl. member access like `Response.created`) →
 workspace `pub` symbols (project index) → embedded `std` package modules
 (`engine.definitionInStdModules`). Std hits (and builtin-method hits) are
-materialized to `<XDG_CACHE_HOME|~/.cache>/botopink-lsp/std/<name>.bp`
-(`Server.materializeStdModule`) so the editor can open them.
+materialized to `<cache root>/.botopinkbuild/cache/lsp/std/<name>.bp` of the
+document's project (`Server.materializeStdModule`, see **Cache** below) so the
+editor can open them; a document outside every project gets no such jump.
 
 **Type-aware member / module go-to-def** — `findDeclLocation`'s keyword scan is
 blind to anything that is *part of a type*. `engine.definitionMember` (gated by
@@ -245,10 +246,11 @@ knows only `CustomNode` — it never branches on any sub-language:
   `TemplateEvalCtx` passed to `comptime_pipeline.compileTypesOnly`, so template
   bodies are evaluated (through compiler-core's persistent `erl` comptime
   runtime) and their trees surface on `OkData.custom_ast`
-  (`CompileResult.customAstFor`). The scratch root is
-  `<XDG_CACHE_HOME|~/.cache>/botopink-lsp/template` (fallback
-  `.botopinkbuild/lsp`), computed by `server.zig:computeTemplateRoot`. Tooling
-  that must not evaluate templates passes a null `eval_root`. Because the compile
+  (`CompileResult.customAstFor`). The scratch root is the document's
+  `<cache root>/.botopinkbuild/cache/lsp/template` (`Server.lspCacheDir`, see
+  **Cache** below); a document outside every project compiles with a null
+  `eval_root` and its templates do not expand. Tooling that must not evaluate
+  templates passes a null `eval_root`. Because the compile
   runs over the project graph, a template fn reached via `from "<lib>"` expands too.
 - **Semantic tokens** — `engine.customSemanticTokens` maps each node's `label`
   (`keyword`/`property`/`string`/`number`/`operator`; `string`/`number`/`operator`
@@ -280,7 +282,25 @@ test under [`src/tests/`](src/tests/AGENTS.md) and a snapshot under
 | `BOTOPINK_LIB_ROOTS`  | `src/project_graph.zig` (`resolveRoots`) | Prepends extra lib roots before the walk-up roots. Same contract as the |
 |                       |                                          | CLI driver — server and CLI must see the same root list or go-to-def    |
 |                       |                                          | misroutes when bpmp is in play.                                         |
-| `XDG_CACHE_HOME` / `HOME` | `src/server.zig` (`computeTemplateRoot`, std materialization) | Cache root for template-eval scratch and materialized std files. |
+
+No cache path reads the environment: neither the user's cache home nor `HOME` is consulted.
+
+## Cache
+
+Everything the server writes lives in `<cache root>/.botopinkbuild/cache/lsp/`
+(`server.LSP_STORE`, decision 233): `template/` (the template evaluator's
+scratch) and `std/` (embedded std modules written out for go-to-definition).
+`<cache root>` is `manifest.findCacheRoot` of the document's project — the root of
+the workspace the project is a member of, else the project root — the same root
+the CLI keeps its build caches under (`compiler-cli` `libs.cacheRoot`), so one
+`rm -rf <root>/.botopinkbuild` (or `botopink clean`) deletes the editor's state
+with the build's. `ProjectGraph` resolves it once per project
+(`Resolved.cache_root`; null when the enclosing workspace does not expand) and
+`Server.lspCacheDir(arena, uri, sub)` derives the directory per request, so a
+deleted `.botopinkbuild/` is recreated empty by the next write. A document
+outside every project (no `botopink.json` walking up) has no cache root: the
+server writes nothing for it — nothing under `$HOME`. `src/tests/lsp_cache.zig`
+holds the three cases.
 
 **`BOTOPINK_LIB_ROOTS` contract** (mirrors
 [`compiler-cli`](../compiler-cli/AGENTS.md#env)):

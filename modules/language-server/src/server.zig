@@ -15,23 +15,18 @@ const lsp_types = @import("./lsp_types.zig");
 const index_mod = @import("./project_index.zig");
 const graph_mod = @import("./project_graph.zig");
 const compiler_mod = @import("./compiler.zig");
+const manifest = @import("manifest");
 
 const Lexer = bp.Lexer;
 
-/// Best-effort scratch root for the template evaluator. Prefers the user cache
-/// dir (`$XDG_CACHE_HOME` / `$HOME/.cache`), falling back to a cwd-relative
-/// `.botopinkbuild/lsp` (also used when there is no process environment, e.g.
-/// tests). Returns null only if every allocation fails. The returned slice is
-/// owned by the caller (freed in `Server.deinit`).
-fn computeTemplateRoot(gpa: std.mem.Allocator, environ_map: ?*std.process.Environ.Map) ?[]const u8 {
-    if (environ_map) |env| {
-        if (env.get("XDG_CACHE_HOME")) |xdg|
-            return std.fmt.allocPrint(gpa, "{s}/botopink-lsp/template", .{xdg}) catch null;
-        if (env.get("HOME")) |home|
-            return std.fmt.allocPrint(gpa, "{s}/.cache/botopink-lsp/template", .{home}) catch null;
-    }
-    return gpa.dupe(u8, ".botopinkbuild/lsp") catch null;
-}
+/// The language server's store under a project's cache root:
+/// `<root>/.botopinkbuild/cache/lsp/` (decision 233), `<root>` the workspace
+/// root of the opened project, else the project root (`manifest.findCacheRoot`,
+/// the root the CLI keeps its build caches under). It holds `template/` (the
+/// template evaluator's scratch) and `std/` (embedded std modules written out
+/// for go-to-definition). A document outside any project has no cache root and
+/// the server writes nothing for it — nothing under `$HOME`.
+pub const LSP_STORE = "lsp";
 
 pub const Server = struct {
     gpa: std.mem.Allocator,
@@ -53,11 +48,6 @@ pub const Server = struct {
     shutdown_requested: bool,
     /// Monotonic id for server→client requests (e.g. inlay-hint refresh).
     next_request_id: i64,
-    /// Scratch root for the node-backed template evaluator (`<cache>/botopink-lsp`
-    /// or `.botopinkbuild/lsp`). Computed once, owned by the server. When the
-    /// compiler runs with it, `@ExprCustom` sub-languages expand and their
-    /// `CustomNode` trees light up inside the literal (sublanguage-lsp).
-    template_root: ?[]const u8,
 
     pub fn init(gpa: std.mem.Allocator, io: std.Io, environ_map: ?*std.process.Environ.Map) Server {
         return .{
@@ -72,7 +62,6 @@ pub const Server = struct {
             .initialized = false,
             .shutdown_requested = false,
             .next_request_id = 1,
-            .template_root = computeTemplateRoot(gpa, environ_map),
         };
     }
 
@@ -84,13 +73,27 @@ pub const Server = struct {
         var gp = self.graph_problem_uris.keyIterator();
         while (gp.next()) |k| self.gpa.free(k.*);
         self.graph_problem_uris.deinit(self.gpa);
-        if (self.template_root) |r| self.gpa.free(r);
     }
 
-    /// Build an LSP compiler bound to this server's io + template-eval root, so
-    /// every compile can expand sub-language templates for tooling.
-    fn makeCompiler(self: *Server) compiler_mod.LspCompiler {
-        return compiler_mod.LspCompiler.init(self.gpa, self.io, self.template_root);
+    /// `<cache root>/.botopinkbuild/cache/lsp/<sub>` for the project owning
+    /// `uri` (`LSP_STORE`), allocated in `arena`; null when `uri` is outside
+    /// every project or its cache root cannot be resolved — then nothing is
+    /// written. Re-derived per request, so a deleted `.botopinkbuild/` is simply
+    /// recreated empty by the next write.
+    pub fn lspCacheDir(self: *Server, arena: std.mem.Allocator, uri: []const u8, sub: []const u8) ?[]const u8 {
+        const resolved = (self.graph.resolve(uri) catch return null) orelse return null;
+        const root = resolved.cache_root orelse return null;
+        const store = manifest.cacheDir(arena, root, LSP_STORE) catch return null;
+        return std.fs.path.join(arena, &.{ store, sub }) catch null;
+    }
+
+    /// Build an LSP compiler bound to this server's io and the template-eval
+    /// root of `uri`'s project (`lspCacheDir(…, "template")`), so a compile can
+    /// expand sub-language templates for tooling — `@ExprCustom` sub-languages
+    /// expand and their `CustomNode` trees light up inside the literal
+    /// (sublanguage-lsp). Outside a project the root is null: no expansion.
+    fn makeCompiler(self: *Server, arena: std.mem.Allocator, uri: []const u8) compiler_mod.LspCompiler {
+        return compiler_mod.LspCompiler.init(self.gpa, self.io, self.lspCacheDir(arena, uri, "template"));
     }
 
     /// Build the module list to compile for `uri`: its project dependencies
@@ -151,7 +154,7 @@ pub const Server = struct {
         var ea = std.heap.ArenaAllocator.init(self.gpa);
         defer ea.deinit();
         const entries = try self.buildModuleEntries(ea.allocator(), uri, source);
-        var lsp_compiler = self.makeCompiler();
+        var lsp_compiler = self.makeCompiler(ea.allocator(), uri);
         return lsp_compiler.compile(entries);
     }
 
@@ -475,7 +478,7 @@ pub const Server = struct {
                         .builtin => |bj| {
                             // The method lives in the embedded primitives source;
                             // materialize it to the cache so the editor can open it.
-                            if (self.materializeStdModule(.{ .name = "primitives", .source = bj.source })) |path| {
+                            if (self.materializeStdModule(uri, .{ .name = "primitives", .source = bj.source })) |path| {
                                 defer self.gpa.free(path);
                                 const std_uri = try lsp_types.pathToUri(self.gpa, path);
                                 defer self.gpa.free(std_uri);
@@ -544,7 +547,7 @@ pub const Server = struct {
         // (`import {list} from "std"; … list.map(…)`). The module source is
         // materialized into a cache dir so the editor can open it.
         if (try engine.definitionInStdModules(self.gpa, source, pos)) |sd| {
-            if (self.materializeStdModule(sd.module)) |path| {
+            if (self.materializeStdModule(uri, sd.module)) |path| {
                 defer self.gpa.free(path);
                 const std_uri = try lsp_types.pathToUri(self.gpa, path);
                 defer self.gpa.free(std_uri);
@@ -556,18 +559,15 @@ pub const Server = struct {
         try messages.writeResponse(self.io, self.gpa, msg.id(), null);
     }
 
-    /// Writes one embedded std module to `<cache>/botopink-lsp/std/<name>.bp`
+    /// Writes one embedded std module to
+    /// `<cache root>/.botopinkbuild/cache/lsp/std/<name>.bp` of `uri`'s project
     /// so go-to-definition can jump into it. Returns the absolute path (owned
-    /// by the caller), or null when the cache dir cannot be resolved/written.
-    fn materializeStdModule(self: *Server, mod: engine.StdModule) ?[]u8 {
-        const env = self.environ_map orelse return null;
-        const dir_path = if (env.get("XDG_CACHE_HOME")) |xdg|
-            std.fmt.allocPrint(self.gpa, "{s}/botopink-lsp/std", .{xdg}) catch return null
-        else if (env.get("HOME")) |home|
-            std.fmt.allocPrint(self.gpa, "{s}/.cache/botopink-lsp/std", .{home}) catch return null
-        else
-            return null;
-        defer self.gpa.free(dir_path);
+    /// by the caller), or null when `uri` is outside every project or the
+    /// directory cannot be written.
+    pub fn materializeStdModule(self: *Server, uri: []const u8, mod: engine.StdModule) ?[]u8 {
+        var arena = std.heap.ArenaAllocator.init(self.gpa);
+        defer arena.deinit();
+        const dir_path = self.lspCacheDir(arena.allocator(), uri, "std") orelse return null;
 
         const cwd = std.Io.Dir.cwd();
         cwd.createDirPath(self.io, dir_path) catch |err| switch (err) {
@@ -1068,7 +1068,7 @@ pub const Server = struct {
         defer ea.deinit();
         const entries = self.buildModuleEntries(ea.allocator(), uri, source) catch &.{};
 
-        var result = try engine.diagnose(self.gpa, self.io, uri, source, self.template_root, entries);
+        var result = try engine.diagnose(self.gpa, self.io, uri, source, self.lspCacheDir(ea.allocator(), uri, "template"), entries);
         defer result.deinit(self.gpa);
 
         try self.sendDiagnostics(uri, result.diagnostics);

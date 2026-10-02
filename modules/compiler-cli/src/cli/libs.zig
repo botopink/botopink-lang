@@ -61,14 +61,16 @@ pub const Error = error{
 pub const ENV_VAR = "BOTOPINK_LIB_ROOTS";
 
 /// Where every build cache of a compilation lives, below its cache root
-/// (decision 225): deleting the root's `.botopinkbuild/` deletes them all.
-pub const CACHE_DIR = ".botopinkbuild/cache";
+/// (decision 225, `manifest.CACHE_DIR`): deleting the root's `.botopinkbuild/`
+/// deletes them all.
+pub const CACHE_DIR = manifest.CACHE_DIR;
 
 /// The directory whose `.botopinkbuild/cache/` holds `proj`'s build caches:
-/// the root of the workspace it is a member of — so the members of one
-/// library repository share one cache — else the project's own directory.
+/// `manifest.cacheRoot` over the workspace `config.load` found — the root of
+/// the workspace it is a member of, else the project's own directory. The
+/// language server answers the same root through `manifest.findCacheRoot`.
 pub fn cacheRoot(proj: config.ProjectConfig) []const u8 {
-    return if (proj.workspace) |ws| ws.dir else proj.dir;
+    return manifest.cacheRoot(proj.dir, proj.workspace);
 }
 
 /// `<cacheRoot(proj)>/.botopinkbuild/cache/<store>` — the home of one
@@ -77,7 +79,7 @@ pub fn cacheRoot(proj: config.ProjectConfig) []const u8 {
 /// home is one `rm -rf .botopinkbuild` and `botopink clean` cannot reach, and
 /// one a `--cold` gate still answers from.
 pub fn cacheDir(arena: std.mem.Allocator, proj: config.ProjectConfig, store: []const u8) ![]const u8 {
-    return std.fs.path.join(arena, &.{ cacheRoot(proj), CACHE_DIR, store });
+    return manifest.cacheDir(arena, cacheRoot(proj), store);
 }
 
 /// Resolve the ordered list of library roots — directories that directly hold a

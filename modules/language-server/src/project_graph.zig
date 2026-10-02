@@ -87,6 +87,10 @@ pub const Problem = struct {
 const CachedProject = struct {
     arena: std.heap.ArenaAllocator,
     root: []const u8,
+    /// `manifest.findCacheRoot(root)`: the workspace root the project is a
+    /// member of, else `root`; null when the enclosing workspace does not
+    /// expand (its refusal is the CLI's; the editor then keeps no cache).
+    cache_root: ?[]const u8 = null,
     deps: []GraphModule,
     problems: []Problem = &.{},
 
@@ -103,6 +107,10 @@ pub const Resolved = struct {
     /// Manifest entries the graph could not follow, borrowed from the cache.
     /// Empty for a healthy project.
     problems: []const Problem = &.{},
+    /// The directory whose `.botopinkbuild/cache/` holds this project's caches
+    /// (the language server's under `lsp/`), borrowed from the cache; null
+    /// when it cannot be resolved.
+    cache_root: ?[]const u8 = null,
     /// True when these deps came from the cache (no disk walk this call).
     hit: bool,
 };
@@ -157,7 +165,7 @@ pub const ProjectGraph = struct {
 
         if (self.cache.get(root)) |cached| {
             self.gpa.free(root);
-            return .{ .deps = cached.deps, .problems = cached.problems, .hit = true };
+            return .{ .deps = cached.deps, .problems = cached.problems, .cache_root = cached.cache_root, .hit = true };
         }
 
         const cp = self.buildProject(root) catch |err| {
@@ -166,7 +174,7 @@ pub const ProjectGraph = struct {
         };
         // `cp.root` is arena-owned; the cache key is a gpa-owned dup.
         try self.cache.put(root, cp);
-        return .{ .deps = cp.deps, .problems = cp.problems, .hit = false };
+        return .{ .deps = cp.deps, .problems = cp.problems, .cache_root = cp.cache_root, .hit = false };
     }
 
     // ── building ──────────────────────────────────────────────────────────────
@@ -178,6 +186,11 @@ pub const ProjectGraph = struct {
         errdefer cp.arena.deinit();
         const a = cp.arena.allocator();
         cp.root = try a.dupe(u8, root);
+        var cerr: ?manifest.Located = null;
+        cp.cache_root = manifest.findCacheRoot(a, self.io, cp.root, &cerr) catch |e| switch (e) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.Invalid => null,
+        };
 
         var deps: std.ArrayListUnmanaged(GraphModule) = .empty;
         var problems: std.ArrayListUnmanaged(Problem) = .empty;

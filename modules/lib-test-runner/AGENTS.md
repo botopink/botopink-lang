@@ -355,7 +355,7 @@ stage, started at 244 s. Each worker therefore claims the cells in descending
 order of how long they took last time — the duration history,
 `<ms>\t<lib>\t<target>\t<kind>` lines in
 `<root>/.botopinkbuild/cache/lib-test/durations.tsv`, one file per cache root
-(`schedule.cacheRoot`: the workspace root of the cell's library, else the
+(`schedule.cacheRoot`, over `manifest.findCacheRoot`: the workspace root of the cell's library, else the
 library's own directory — where `botopink test` keeps that library's caches,
 decision 225), each holding its own libraries' cells, all read before the
 start order is taken and each rewritten after every run by staging and
