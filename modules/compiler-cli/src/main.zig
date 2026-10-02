@@ -82,6 +82,14 @@ const HELP =
     \\Options for `migrate`:
     \\  --dry-run                    Report the index files without writing them
     \\
+    \\`clean` takes no option. It deletes out/ and .botopinkbuild/ whole: the
+    \\comptime scratch (.botopinkbuild/tmp/), the run directories of `test` and
+    \\the `bpmp install` links under .botopinkbuild/deps/ (run `bpmp install`
+    \\again after it). The machine-wide .beam cache of `test --target erlang`
+    \\($XDG_CACHE_HOME/botopink/beam) is not touched.
+    \\
+    \\`botopink <command> --help` (or -h) prints this message.
+    \\
 ;
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -117,6 +125,11 @@ fn dispatch(init: std.process.Init) !u8 {
     const cmd = args[1];
     const rest = args[2..];
     var diag: ArgDiag = .{};
+
+    if (wantsHelp(rest)) {
+        reporter.stdout(io, HELP);
+        return 0;
+    }
 
     if (std.mem.eql(u8, cmd, "help") or std.mem.eql(u8, cmd, "--help") or std.mem.eql(u8, cmd, "-h")) {
         reporter.stdout(io, HELP);
@@ -174,6 +187,24 @@ fn dispatch(init: std.process.Init) !u8 {
     reporter.errMsg(msg);
     reporter.hintMsg("run `botopink help` for a list of commands");
     return 1;
+}
+
+/// `botopink <command> --help` / `-h`: a help flag among the command's own
+/// arguments — the ones before a `--`, after which every token is the
+/// program's (`run -- --help`).
+fn wantsHelp(rest: []const []const u8) bool {
+    for (rest) |a| {
+        if (std.mem.eql(u8, a, "--")) return false;
+        if (std.mem.eql(u8, a, "--help") or std.mem.eql(u8, a, "-h")) return true;
+    }
+    return false;
+}
+
+test "a help flag before `--` asks for the help, after it is the program's" {
+    try std.testing.expect(wantsHelp(&.{"--help"}));
+    try std.testing.expect(wantsHelp(&.{ "--target", "erlang", "-h" }));
+    try std.testing.expect(!wantsHelp(&.{ "--", "--help" }));
+    try std.testing.expect(!wantsHelp(&.{}));
 }
 
 // ── Arg parsers ───────────────────────────────────────────────────────────────

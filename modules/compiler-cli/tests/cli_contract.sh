@@ -524,6 +524,14 @@ else
   expect_no_out "Removed out/" "does not claim out/ was removed"
 fi
 
+echo "==> clean --help says what clean deletes"
+run "$WORK" clean --help
+expect_code 0 "clean --help"
+expect_out "It deletes out/ and .botopinkbuild/ whole" "names both directories"
+expect_out ".botopinkbuild/deps/" "names the bpmp links it takes with it"
+run "$WORK" run -- --help
+expect_no_out "It deletes out/" "a --help after -- is the program's, not the CLI's"
+
 # ── the `new` scaffold is a working program ──────────────────────────────────
 # A block's value is its `break` (semantics decision 2), so the old template —
 # a body whose only statement was the literal "Hello, world!" — compiled, ran
