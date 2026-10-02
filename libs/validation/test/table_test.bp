@@ -13,11 +13,11 @@
 //// `spi` because its VALIDATOR does; a bundle that ships only the table does
 //// not compile those in.
 
-import {constraintTableJson, splitBlob, paramNames, paramIsNumber, renderParam, fieldJson, constraintJson} from "table";
-import {validated, notBlank, sizeBetween, email, minValue, maxValue, pattern, constraint} from "decorators";
-import {ValidationReport, Violation} from "report";
-import {vNotBlank, vSizeBetween, vEmail, vMinValueI32, vMaxValueI32, vPattern} from "constraints";
-import {vConstraint} from "spi";
+import {table.constraintTableJson, table.splitBlob, table.paramNames, table.paramIsNumber, table.renderParam, table.fieldJson, table.constraintJson};
+import {decorators.validated, decorators.notBlank, decorators.sizeBetween, decorators.email, decorators.minValue, decorators.maxValue, decorators.pattern, decorators.constraint};
+import {report.ValidationReport, report.Violation};
+import {constraints.vNotBlank, constraints.vSizeBetween, constraints.vEmail, constraints.vMinValueI32, constraints.vMaxValueI32, constraints.vPattern};
+import {spi.vConstraint};
 
 #[validated]
 pub type TableUserRequest(

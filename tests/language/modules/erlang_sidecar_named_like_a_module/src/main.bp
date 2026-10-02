@@ -12,7 +12,7 @@
 //// way `modules/erlang_host_sidecar_shipped` does.
 
 pub mod text;
-import {greet} from "text";
+import {text.greet};
 
 #[@External.Erlang("text", "shout")]
 declare fn shout(s: string) -> string;

@@ -1,7 +1,7 @@
 //// An implementer imported beside its behavior: passed to a parameter typed
 //// by the behavior, and held in a `val` annotated with it.
 
-import {Request, Page} from "web";
+import {web.Request, web.Page};
 
 fn describe(req: Request) -> string {
     return "at " + req.path();

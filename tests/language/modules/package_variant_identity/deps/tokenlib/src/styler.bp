@@ -1,7 +1,7 @@
 //// The dispatcher: the `case` lives HERE, in the library, over a value the
 //// consumer builds. That separation is what one package cannot express.
 
-import {Token} from "tokens";
+import {tokens.Token};
 
 fn sizeCss(s: Token.Text.Size) -> string {
     val out = case s {

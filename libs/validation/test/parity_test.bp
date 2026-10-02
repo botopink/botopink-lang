@@ -17,12 +17,12 @@
 //// A commonJS-only regression here is a release blocker, not a known red — the
 //// two halves agreeing IS the deliverable.
 
-import {validated, notBlank, notEmpty, sizeBetween, email, minValue, maxValue, pattern, positive} from "decorators";
-import {ValidationReport, Violation} from "report";
-import {constraintTableJson} from "table";
-import {vNotBlank, vNotEmpty, vSizeBetween, vEmail, vMinValueI32, vMaxValueI32, vPattern, vPositiveI32} from "constraints";
-import {vConstraint} from "spi";
-import {setMessageSource, builtInOnly} from "messages";
+import {decorators.validated, decorators.notBlank, decorators.notEmpty, decorators.sizeBetween, decorators.email, decorators.minValue, decorators.maxValue, decorators.pattern, decorators.positive};
+import {report.ValidationReport, report.Violation};
+import {table.constraintTableJson};
+import {constraints.vNotBlank, constraints.vNotEmpty, constraints.vSizeBetween, constraints.vEmail, constraints.vMinValueI32, constraints.vMaxValueI32, constraints.vPattern, constraints.vPositiveI32};
+import {spi.vConstraint};
+import {messages.setMessageSource, messages.builtInOnly};
 
 #[validated]
 pub type CreateUserRequest(

@@ -188,7 +188,7 @@ pub fn make() -> Counter { return Counter(n: 41); }
 
 ----- SOURCE CODE -- main.bp
 ```botopink
-import {Counter, Shape, make} from "geometry";
+import {geometry.Counter, geometry.Shape, geometry.make};
 fn main() {
     val c: Counter = Counter.zero();
     @print(c.bump());

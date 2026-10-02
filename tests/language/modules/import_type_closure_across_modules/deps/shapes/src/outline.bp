@@ -1,4 +1,4 @@
-import {Point} from "point";
+import {point.Point};
 
 pub type Outline(points: Array<Point>) {
     pub fn first(self: Self) -> Point {

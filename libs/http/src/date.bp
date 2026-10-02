@@ -13,7 +13,7 @@
 //// same instant.
 
 import {io.clock} from "std";
-import {charOf, sub, isDigits, digitsValue, padded, idiv, wide} from "lexical";
+import {lexical.charOf, lexical.sub, lexical.isDigits, lexical.digitsValue, lexical.padded, lexical.idiv, lexical.wide};
 
 fn dayNames() -> Array<string> {
     return ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];

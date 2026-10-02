@@ -1,7 +1,7 @@
 //// actions: the JSON-RPC body both ways, and its refusals, on both targets.
 
 import {testing.asserts} from "std";
-import {RpcCall, writeRpcBody, parseRpcBody} from "rpc";
+import {rpc.RpcCall, rpc.writeRpcBody, rpc.parseRpcBody};
 
 fn rpcErr(r: @Result<RpcCall, string>) -> string {
     val t = case r {

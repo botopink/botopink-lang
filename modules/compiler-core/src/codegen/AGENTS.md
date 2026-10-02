@@ -555,7 +555,12 @@ codegen/
   (`area: function(self) {…}`), and a call `recv.area()` whose receiver
   inference typed as an enum this module declares (`enum_recv_methods`) or
   imports by name (`imported_enums`) lowers to `Shape.area(recv)`
-  (`enumMethodOwner`). A method with no parameters that reads `self`
+  (`enumMethodOwner`). An imported record (`class_names`, built with `new`) and
+  an imported enum are found by the item's LEAF in the module its path names
+  (`ImportDecl.leafSource`), so the brace form of a module of the package
+  (`import {parser.Outcome};`, decision 206) narrows exactly as `from "parser"`
+  did — read through the decl's own `.root` source it named no module, and a
+  record two modules declare was called without `new`. A method with no parameters that reads `self`
   implicitly keeps the `this` body and is not lowered.
 - **User interface `default fn`s**: an interface that is not a JS global owns
   no constructor, so its instance defaults are copied as class methods into

@@ -42,8 +42,8 @@ finds.
 <!-- docs-check: project modules src/main.bp -->
 ```botopink
 // src/main.bp
-import {area} from "geometry";
-import {describe} from "shapes";
+import {geometry.area};
+import {shapes.describe};
 
 pub mod geometry;    // resolves src/geometry.bp
 pub mod shapes;      // resolves src/shapes/mod.bp
@@ -77,15 +77,18 @@ module.
 
 ### Imports
 
-An import either names the module it reads from, or names nothing and resolves
-the sibling module that exports the names. Both forms are the language.
+`from "<name>"` names a **package** — std, a bundled package (`routing`,
+`http`, `actions`, `validation`, `log`) or a declared dependency — and nothing
+else (decision 206). A module of the importing package is imported by its path
+inside the braces, with no `from`; and an import that names no module at all is
+the shorthand, which resolves the sibling module that exports the names.
 
 <!-- docs-check: project imports src/main.bp -->
 ```botopink
 // src/main.bp
-import {math} from "std";              // a stdlib module
-import {area} from "geometry";         // a module of this package, named
-import {name} from "shapes.circle";    // a nested module path
+import {math} from "std";              // a module of the std package
+import {geometry.area};                // a module of this package, by its path
+import {shapes.circle.name};           // a nested module path
 import {perimeter};                    // the shorthand — the sibling that exports it
 
 pub mod geometry;
@@ -125,6 +128,46 @@ pub fn name() -> string {
 }
 ```
 
+`from` never names a module of this package. Beside a module named like a
+package, the brace form reaches the module and `from` the package:
+
+<!-- docs-check: project import_with_from src/main.bp -->
+```botopink
+// src/main.bp
+pub mod log;
+import {log.levelName as ownLevel};    // this package's module `log`
+import {Level, levelName} from "log";  // the bundled package `log`
+
+pub fn main() {
+    @print(ownLevel(2));               // own:2
+    @print(levelName(Level.Warn));     // warn
+}
+```
+
+<!-- docs-check: project import_with_from src/log.bp -->
+```botopink
+// src/log.bp
+pub fn levelName(level: i32) -> string {
+    return "own:" + level.toString();
+}
+```
+
+A package wins its name: `from "log"` is the bundled `log` although the package
+has a module `log` of its own, so a bundled package added later never changes
+what an existing import means — an import that could have meant the module is
+already the brace form. `from` naming a module of the package is refused at the
+source string, and the refusal writes the import as it is spelled instead
+(over the `imports` project above; pinned by
+`tests/language/modules/import_own_module_with_from`):
+
+```text
+// src/main.bp
+import {area} from "geometry";
+
+error[module-import-with-from]: "geometry" is a module of this package — write import {geometry.area};
+ --> src/main.bp:1:20
+```
+
 **A path and a group are one tree, and only the leaf enters scope.** An item
 may walk into a module (`shapes.circle.name`), and several items under one
 prefix may be grouped (`shapes: {circle: {name}, helpers: {seven}}`) — both
@@ -145,8 +188,8 @@ an alias on either side clears it (`url.parse as parseUrl, json: {parse as
 parseJson}`). One item that reaches two declarations — a bare `import {parse};`
 while two modules of the package declare `pub fn parse` — is not refused itself:
 every **use** of the name is, where it is written, naming both
-(`ambiguous-import-use`), and the item that says which (`import {parse} from
-"a"`) is the way out. An alias reaches a type and a type alias too (decision 110):
+(`ambiguous-import-use`), and the item that says which (`import {a.parse}`) is
+the way out. An alias reaches a type and a type alias too (decision 110):
 `import {collections.Dict as D}` brings `D`, a name for `Dict` in the program's
 own text — the emitted code keeps `Dict`. An activation cannot be renamed
 (`import-alias-on-activation`). A leaf that names a folder is a namespace of
@@ -342,7 +385,7 @@ fn main() {
 at the same point relative to the program's own code. A backend that cannot run
 it is a gap in that backend, not a different meaning of `val`.
 
-A `pub val` is imported like a `pub fn` — `import {port} from "config";` — and
+A `pub val` is imported like a `pub fn` — `import {config.port};` — and
 may hold any type: a record, an enum, an array, a primitive, a function. The
 bodies of the modules a program imports run before its own, dependencies first,
 each once.
@@ -645,7 +688,7 @@ against the other. Nothing of the alias reaches the emitted program.
 - An alias names a type that already exists; one whose expansion reaches itself
   is `type-alias-recursive` (a recursive type is a `type` declaration), and one
   that takes the name of a type in scope is `type-alias-name-taken`.
-- A `pub` alias is imported like a type (`import {Parser} from "parse"`); the
+- A `pub` alias is imported like a type (`import {parse.Parser};`); the
   types its target names come with it.
 - An alias of an effect wrapper **types** a function and never **activates** the
   effect (decision 118): `-> Parser<i32>` is a function that hands a
@@ -2397,7 +2440,7 @@ by every caller).
 
 A default on an **imported function** is filled at the call like a local
 one's when it is closed — a literal, `true` / `false`, `null`, a sign, an array
-or tuple of those — so `import { greet } from "helper"; greet("w")` takes
+or tuple of those — so `import {helper.greet}; greet("w")` takes
 `greet`'s declared greeting; a default that names a binding of its own module
 cannot be written at the importer's call site, and leaving that argument out
 of an imported call is the arity error (`'greet' expects 2 argument(s), got 1`).

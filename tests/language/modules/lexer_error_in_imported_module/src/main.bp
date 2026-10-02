@@ -5,7 +5,7 @@
 //// target refuses the project naming `\.` in `pattern.bp`.
 
 pub mod pattern;
-import {dotted} from "pattern";
+import {pattern.dotted};
 
 pub fn main() {
     @print(dotted());

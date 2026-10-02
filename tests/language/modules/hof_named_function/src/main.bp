@@ -5,7 +5,7 @@
 //// needs a literal lambda`).
 
 pub mod lib;
-import {shout, double} from "lib";
+import {lib.shout, lib.double};
 
 fn inc(x: i32) -> i32 {
     return x + 1;

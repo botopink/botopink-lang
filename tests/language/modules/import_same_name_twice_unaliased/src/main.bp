@@ -8,8 +8,8 @@
 
 pub mod app;
 
-import {title} from "app.page";
-import {title} from "app.blog.page";
+import {app.page.title};
+import {app.blog.page.title};
 
 pub fn main() {
     @print(title());

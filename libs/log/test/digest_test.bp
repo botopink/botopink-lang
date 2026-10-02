@@ -5,7 +5,7 @@
 //// `printf '%s' '<input>' | sha256sum | cut -c1-16`.
 
 import {testing.asserts} from "std";
-import {errorDigest, digestInput, topFramesOf, stripLineNumbers, clientErrorBody} from "digest";
+import {digest.errorDigest, digest.digestInput, digest.topFramesOf, digest.stripLineNumbers, digest.clientErrorBody};
 
 fn frames() -> string {
     return "InvoiceService.charge/2:88 InvoiceRepo.charge/2:41 rakun.core.router.dispatch/1:12 rakun.core.listener.loop/3:7";

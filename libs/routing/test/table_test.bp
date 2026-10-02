@@ -1,7 +1,7 @@
 //// routing: the route table's wire, on both targets (moved with the matcher,
 //// decision 115). Every expected wire string is a literal.
 
-import {RouteEntry, parseTable, writeTable, kindLabel} from "table";
+import {table.RouteEntry, table.parseTable, table.writeTable, table.kindLabel};
 
 // The eight `kind` letters, one entry each — the table this front's contract
 // with fronts 23, 25, 27, 30, 31, 60, 61 and 66 is written in.

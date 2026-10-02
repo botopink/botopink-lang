@@ -294,7 +294,7 @@ test "infer: net-new ---- two imported libs activating the same method are ambig
         \\}
         },
         .{ .path = "divelib", .source =
-        \\import {Pato} from "swimlib";
+        \\import {swimlib.Pato};
         \\pub val Diver = behavior {
         \\    fn swim(self: Self);
         \\}
@@ -305,8 +305,8 @@ test "infer: net-new ---- two imported libs activating the same method are ambig
         \\}
         },
         .{ .path = "", .source =
-        \\import {Pato, PatoNada*} from "swimlib";
-        \\import {PatoFundo*} from "divelib";
+        \\import {swimlib.Pato, swimlib.PatoNada*};
+        \\import {divelib.PatoFundo*};
         \\val donald = Pato(1);
         \\val splash = donald.swim();
         },
@@ -368,15 +368,16 @@ fn consumerTypeError(path: []const u8, consumer: []const u8, comptime scratch: [
 }
 
 // An import that names its module says which declaration a name is. The
-// dotted spelling of a nested module path (`from "app.not_found"`) used to be
-// compared byte for byte with the module's `/` path, so it named nothing and
-// every lookup widened to the whole program — where the second `NotFound`
-// made the import `ambiguous-import-use`. The consumer is a route table: one
+// dotted spelling of a nested module path (`app.not_found.NotFound`, decision
+// 206's brace form; `from "app.not_found"` before it) used to be compared byte
+// for byte with the module's `/` path, so it named nothing and every lookup
+// widened to the whole program — where the second `NotFound` made the import
+// `ambiguous-import-use`. The consumer is a route table: one
 // aliased import per page, in a module that is not the program's entry.
 test "infer: import source ---- a dotted module path names its module among same-named pub fns" {
     const err = try consumerTypeError("routes",
-        \\import {NotFound as appNotFound} from "app.not_found";
-        \\import {NotFound as blogNotFound} from "app.blog.not_found";
+        \\import {app.not_found.NotFound as appNotFound};
+        \\import {app.blog.not_found.NotFound as blogNotFound};
         \\pub fn pages() -> string {
         \\    return appNotFound() + blogNotFound();
         \\}
@@ -394,7 +395,7 @@ test "infer: import source ---- a module path below the importer's package names
         .{ .path = "site/app/not_found", .source = same_name_pages[0].source },
         .{ .path = "site/app/blog/not_found", .source = same_name_pages[1].source },
         .{ .path = "site/routes", .source =
-        \\import {NotFound} from "app.blog.not_found";
+        \\import {app.blog.not_found.NotFound};
         \\pub fn page() -> string {
         \\    return NotFound();
         \\}
@@ -405,9 +406,9 @@ test "infer: import source ---- a module path below the importer's package names
     for (session.outputs.items) |out| try std.testing.expect(out.outcome == .ok);
 }
 
-// The full path is read first: a project's own `app/not_found` is the one a
-// `from "app/not_found"` names, although a dependency's module has the same
-// path below its package and declares the name too.
+// The full path is read first: a project's own `app/not_found` is the one
+// `import {app.not_found.NotFound};` names, although a dependency's module
+// has the same path below its package and declares the name too.
 test "infer: import source ---- a project's own module wins over a dependency's of the same relative path" {
     const io = std.testing.io;
     const modules = [_]Module{
@@ -418,7 +419,7 @@ test "infer: import source ---- a project's own module wins over a dependency's 
         \\}
         },
         .{ .path = "routes", .source =
-        \\import {NotFound} from "app/not_found";
+        \\import {app.not_found.NotFound};
         \\pub fn page() -> string {
         \\    return NotFound();
         \\}
@@ -454,8 +455,8 @@ test "infer: import source ---- two un-aliased imports of one name collide at th
     const modules = [_]Module{
         same_name_pages[0], same_name_pages[1],
         .{ .path = "routes", .source =
-        \\import {NotFound} from "app.not_found";
-        \\import {NotFound} from "app.blog.not_found";
+        \\import {app.not_found.NotFound};
+        \\import {app.blog.not_found.NotFound};
         \\pub fn page() -> string {
         \\    return NotFound();
         \\}
@@ -484,8 +485,8 @@ test "infer: import source ---- two un-aliased imports of one name collide at th
 // contribution re-imports what its module already imports.
 test "infer: import source ---- the same declaration imported twice is not a collision" {
     const err = try consumerTypeError("routes",
-        \\import {NotFound} from "app.not_found";
-        \\import {NotFound} from "app/not_found";
+        \\import {app.not_found.NotFound};
+        \\import {app.not_found.NotFound};
         \\pub fn page() -> string {
         \\    return NotFound();
         \\}
@@ -618,7 +619,7 @@ test "infer: multi-module local extension resolves on an imported record" {
         \\pub type Pato(id: i32)
         },
         .{ .path = "", .source =
-        \\import {Pato} from "pond";
+        \\import {pond.Pato};
         \\val Swimmer = behavior {
         \\    fn swim(self: Self);
         \\}
@@ -650,7 +651,7 @@ test "infer: multi-module extension activated via star import" {
         \\}
         },
         .{ .path = "", .source =
-        \\import {Pato, PatoNada*} from "pond";
+        \\import {pond.Pato, pond.PatoNada*};
         \\val donald = Pato(1);
         \\val splash = donald.swim();
         },

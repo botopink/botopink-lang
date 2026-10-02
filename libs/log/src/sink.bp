@@ -18,8 +18,8 @@
 //// keeps it in `persistent_term` under `{log, sink}` — set once at boot, read
 //// by every process; node keeps it on `globalThis.__bp_log`.
 
-import {Level, levelRank, otpLevel} from "levels";
-import {LogRecord, renderPlain} from "formats";
+import {levels.Level, levels.levelRank, levels.otpLevel};
+import {formats.LogRecord, formats.renderPlain};
 
 pub type LogSink(
     enabled: fn(logger: string, level: Level) -> bool,

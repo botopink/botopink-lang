@@ -7,7 +7,7 @@
 
 pub mod shapes;
 
-import {Point as P, Pair as Two} from "shapes";
+import {shapes.Point as P, shapes.Pair as Two};
 import {collections.Dict as D} from "std";
 
 fn total(p: P) -> i32 {

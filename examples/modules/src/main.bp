@@ -4,8 +4,8 @@
 // tree; the compiler follows these `mod` declarations instead of compiling
 // every `.bp` it finds. Build + run with `botopink run` from this directory.
 
-import {area} from "geometry";
-import {describe, lucky} from "shapes";
+import {geometry.area};
+import {shapes.describe, shapes.lucky};
 
 pub mod geometry; // resolves geometry.bp (a sibling leaf module)
 pub mod shapes; // resolves shapes/mod.bp (a folder index)

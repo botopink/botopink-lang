@@ -4,7 +4,7 @@
 //// form).
 
 pub mod config;
-import {settings} from "config";
+import {config.settings};
 
 pub fn main() {
     @print(settings().name);

@@ -22,8 +22,8 @@
 //// `cpf` makes the report INVALID, with the name in the message, at the first
 //// validation call.
 
-import {Violation, violation, noViolation, oneViolation} from "report";
-import {message, builtInTemplate, arg, noArgs} from "messages";
+import {report.Violation, report.violation, report.noViolation, report.oneViolation};
+import {messages.message, messages.builtInTemplate, messages.arg, messages.noArgs};
 
 pub behavior Constraint {
     fn code(self: Self) -> string;

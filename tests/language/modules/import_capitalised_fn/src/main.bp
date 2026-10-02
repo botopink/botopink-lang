@@ -3,7 +3,7 @@
 //// built `Make(n: 4)` as the label-keyed record `#{n => 4}` (`03-beam`).
 
 pub mod util;
-import {Make, Scale} from "util";
+import {util.Make, util.Scale};
 
 pub fn main() {
     @print(Make(n: 4));

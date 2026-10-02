@@ -897,11 +897,15 @@ pub const Env = struct {
     /// (`registerImportedTypeAlias`); a constructor call through the alias is
     /// renamed at the call so no backend sees the alias.
     importedTypeAliases: std.StringHashMapUnmanaged([]const u8) = .empty,
-    /// Decision 170 — a shorthand import item (`import {x};`) a BUNDLED
-    /// package's module also declares: the item's loc → the importing
-    /// package's module it resolved to, which the transformed program names
-    /// (`from "<module>"`) so the backends read the same answer.
-    shorthandOwners: std.AutoHashMapUnmanaged(ast.Loc, []const u8) = .empty,
+    /// An import item whose name another module the backends' name-keyed
+    /// lookup would also read declares, out of the checker's reach: a BUNDLED
+    /// package's module beside a shorthand `import {x};` (decision 170), a
+    /// module of the importing package beside `from "<pkg>"`, or the package
+    /// `log` beside the module path `import {log.levelName};` (decision 206).
+    /// The item's loc → the module it resolved to, which the transformed
+    /// program names (`from "<module>"`, `withImportSourcesNamed`) so the
+    /// backends read the same answer.
+    itemOwners: std.AutoHashMapUnmanaged(ast.Loc, []const u8) = .empty,
     /// Decision 170 — the type names this module declares or imports by name
     /// (`type Dict(…)`, `import {kit.store.Dict as OwnDict}` → `Dict`),
     /// collected before any import is marked (`noteExplicitTypeNames`). A std

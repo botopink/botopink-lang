@@ -29,7 +29,7 @@ pub fn html(comptime q: @Expr<string>) -> @Expr<string> {
 
 ----- SOURCE CODE -- main.bp
 ```botopink
-import {html} from "view";
+import {view.html};
 
 val name = "world";
 

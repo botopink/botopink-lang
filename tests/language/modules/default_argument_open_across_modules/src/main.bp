@@ -5,7 +5,7 @@
 //// call to a function the importer cannot see.
 
 pub mod greet;
-import {greet} from "greet";
+import {greet.greet};
 
 pub fn main() {
     @print(greet("hello"));

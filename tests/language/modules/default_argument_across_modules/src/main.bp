@@ -5,7 +5,7 @@
 //// or an array / tuple literal of those.
 
 pub mod pad;
-import {pad} from "pad";
+import {pad.pad};
 import {tag, pair} from "tags";
 
 pub fn main() {

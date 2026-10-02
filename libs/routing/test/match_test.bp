@@ -1,9 +1,9 @@
 //// routing: the matcher — precedence, capture, the layout chain — on both
 //// targets (moved with the matcher, decision 115).
 
-import {parsePath, patternOf} from "segment";
-import {RouteEntry} from "table";
-import {matchPath, layoutChain, splitPath, attempt, paramOf} from "match";
+import {segment.parsePath, segment.patternOf};
+import {table.RouteEntry};
+import {match.matchPath, match.layoutChain, match.splitPath, match.attempt, match.paramOf};
 
 // ── step 4: the matcher ─────────────────────────────────────────────────────
 

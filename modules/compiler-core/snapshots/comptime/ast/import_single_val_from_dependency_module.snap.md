@@ -19,7 +19,7 @@ pub val MAX = 100;
 
 ----- SOURCE CODE -- main.bp
 ```botopink
-import {MAX} from "constants";
+import {constants.MAX};
 val limit = MAX;
 ```
 

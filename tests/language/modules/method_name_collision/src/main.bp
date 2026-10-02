@@ -24,7 +24,7 @@
 //// wasm is not in `targets`: the wasm backend stays single-module.
 
 pub mod shapes;
-import {queryOf, groupOf} from "shapes";
+import {shapes.queryOf, shapes.groupOf};
 
 pub type Bag<T>(
     items: Array<T>,

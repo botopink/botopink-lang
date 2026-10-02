@@ -276,13 +276,22 @@ Cross-command rules:
   whose `src` is `"."` compiled nothing: `check` answered "no source files found
   in src/ or test/" and a test could not import a nested module (onze F5,
   `tests/language/modules/src_at_package_root`).
-- **An import names something.** `import … from "<name>"` must resolve to a
-  package module (the `mod` tree, dotted path), to a declared dependency
-  (`<dep>` or `<dep>.<module>`) or to `std`; otherwise `build`, `check` and
-  `test` exit 1 with `unresolved import source — no such module or dependency`,
-  naming what the `from` said and where (`at: src/main.bp:1:20`). A `from` that
-  names a module which *does* exist but does not export the symbol is the other
-  error (`imported symbol is not exported by the named module`), also located.
+- **`from` names a package; an import names something.** `import … from
+  "<name>"` must resolve to a package — `std`, a bundled package or a declared
+  dependency (`<dep>` or `<dep>.<module>`) — and a package wins its name over a
+  module of this package named like it (decision 206: `from "log"` is the
+  bundled `log` beside a module `log`). A `from` naming a module of this
+  package (the `mod` tree, dotted path) is `error[module-import-with-from]`,
+  located at the source string with an excerpt, writing the brace form as the
+  fix (`"geometry" is a module of this package — write import
+  {geometry.area};`, `resolver.braceForm`; pinned by
+  `tests/language/modules/import_own_module_with_from`); anything else is
+  `unresolved import source — no such module or dependency`, naming what the
+  `from` said and where (`at: src/main.bp:1:20`). A module of the package is
+  imported by its path inside the braces (`import {shapes.circle.name};`), and
+  a path that names a module which *does* exist but does not export the leaf
+  is the other error (`imported symbol is not exported by the named module`),
+  also located.
   It is not raised against a module that does not lex or parse
   (`Analysis.broken`): its export list is unknown, not empty, and the compile
   reports the module's own located error instead (onze F8,
@@ -298,10 +307,11 @@ Cross-command rules:
   ones. A `*_test.bp` may therefore import the package it tests, and still
   cannot name a module that does not exist. `format` scans without checking:
   it rewrites files and resolves nothing.
-- **An import under `from "…"` depends only on what the clause names**
-  (`resolver.importOwner`): the project module the clause names, or nothing
-  when it names std or a library — never whichever project module declares a
-  `pub` of the same name (`ImportRef.has_from`). A `pub fn attempt` beside
+- **An import under `from "…"` depends on no module of this package**
+  (`resolver.importOwner`): the clause names a package (decision 206) — never
+  the project module named like it, nor whichever project module declares a
+  `pub` of the same name (`ImportRef.has_from`); a brace import depends on the
+  module its path names. A `pub fn attempt` beside
   another module's `import {match.attempt} from "routing"` drew an edge to the
   declarer, formed a cycle, and compiled an importer before the module it
   imports (`unbound variable` at an unrelated call). `checkVisibility` reads

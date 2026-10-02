@@ -8,7 +8,7 @@
 //// clause depends only on the module the clause names.
 
 pub mod router;
-import {route} from "router";
+import {router.route};
 
 pub fn attempt(n: i32) -> i32 {
     return n + 1;

@@ -50,7 +50,7 @@ export declare class Pato {
 
 ----- SOURCE CODE -- main.bp
 ```botopink
-import {Pato, PatoNada*} from "pond";
+import {pond.Pato, pond.PatoNada*};
 fn main() {
     val donald = Pato(2);
     @print(donald.swim());

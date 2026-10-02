@@ -418,7 +418,7 @@ test "js: import ---- multi-module pub fn import" {
         \\}
         },
         .{ .path = "", .source =
-        \\import {double} from "math";
+        \\import {math.double};
         \\val result = double(21);
         },
     });
@@ -444,8 +444,8 @@ test "js: import ---- two modules whose files share a basename" {
         \\}
         },
         .{ .path = "", .source =
-        \\import {label} from "models/user";
-        \\import {tag} from "services/user";
+        \\import {models.user.label};
+        \\import {services.user.tag};
         \\
         \\fn main() {
         \\    @print(label());
@@ -535,7 +535,7 @@ test "js: import ---- multi-module pub val import" {
         \\pub val HOST = "localhost";
         },
         .{ .path = "", .source =
-        \\import {PORT, HOST} from "config";
+        \\import {config.PORT, config.HOST};
         \\val addr = HOST;
         \\val port = PORT;
         },
@@ -564,7 +564,7 @@ test "js: import ---- cross-module record construct and assoc fn" {
         \\)
         },
         .{ .path = "", .source =
-        \\import {Response, App} from "http";
+        \\import {http.Response, http.App};
         \\
         \\fn main() {
         \\    val r = Response.ok("hi");
@@ -670,7 +670,7 @@ test "js: import ---- a sibling module imported with no `from` requires its own 
         \\}
         },
         .{ .path = "", .source =
-        \\import { seven } from "tree/api";
+        \\import {tree.api.seven};
         \\fn main() {
         \\    @print(seven());
         \\}

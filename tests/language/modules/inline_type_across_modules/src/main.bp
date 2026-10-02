@@ -3,7 +3,7 @@
 //// another module that writes the fields is refused by name, at the call.
 
 pub mod ui;
-import {link, home} from "ui";
+import {ui.link, ui.home};
 
 pub fn main() {
     @print(home());

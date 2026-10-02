@@ -69,7 +69,7 @@ text is a literal. `zig build test-libs` runs the two cells.
   (erlang: `unwrapOr/2 undefined`; commonJS: `Cannot read properties of undefined`), so
   `ActionState.fieldError` delegates to the module fn `fieldErrorOf`.
 - A method of a record reached through another module (`parseActionState(…).fieldError`)
-  needs the record TYPE imported in the calling file (`import {ActionState} from "state"`)
+  needs the record TYPE imported in the calling file (`import {state.ActionState};`)
   or erlang reports `fieldError/2 undefined`.
 - `erlc` crashes (`internal error in pass beam_ssa_opt`, `beam_ssa_type:simplify/2`)
   on: bind a `case` over a `@Result` to a `val`, then `r.unwrapOr(record)` in the `else`

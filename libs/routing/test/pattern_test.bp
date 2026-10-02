@@ -3,7 +3,7 @@
 //// route matcher) has a line here, with the same literals.
 
 import {testing.asserts} from "std";
-import {PatternSegment, parsePattern, matchPattern, patternProblem} from "pattern";
+import {pattern.PatternSegment, pattern.parsePattern, pattern.matchPattern, pattern.patternProblem};
 
 // `true` when `path` matches `pattern`; a pattern that does not parse matches
 // nothing.

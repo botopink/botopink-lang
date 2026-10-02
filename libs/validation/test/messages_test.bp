@@ -4,9 +4,9 @@
 //// then the built-in text — and the KEYS are the source's. A `""` from the
 //// source means "no entry". Every expected text is a literal.
 
-import {MessageSource, setMessageSource, builtInOnly, messageSource, templateFor, builtInTemplate, message, arg, currentLocale} from "messages";
-import {Violation} from "report";
-import {vSizeBetween, vEmail, vNotBlank, vMinValueI32, vPattern} from "constraints";
+import {messages.MessageSource, messages.setMessageSource, messages.builtInOnly, messages.messageSource, messages.templateFor, messages.builtInTemplate, messages.message, messages.arg, messages.currentLocale};
+import {report.Violation};
+import {constraints.vSizeBetween, constraints.vEmail, constraints.vNotBlank, constraints.vMinValueI32, constraints.vPattern};
 
 fn lookup(entries: Array<#(string, string)>, key: string) -> string {
     return entries

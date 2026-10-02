@@ -18,7 +18,7 @@
 //// Sizes and offsets are `i64` — a file larger than 2 GiB is an ordinary
 //// file.
 
-import {isDigits, sub, wide} from "lexical";
+import {lexical.isDigits, lexical.sub, lexical.wide};
 
 pub type ByteRange(status: i32, first: i64, last: i64)
 

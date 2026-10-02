@@ -8,8 +8,8 @@
 
 pub mod greet;
 pub mod host;
-import {fromHost} from "host";
-import {Greeter, Bob, useIt} from "greet";
+import {host.fromHost};
+import {greet.Greeter, greet.Bob, greet.useIt};
 
 #[@External.Node("(() => ({ greet: () => 'host' }))()")]
 #[@External.Erlang("#{greet => fun(_) -> <<\"host\">> end}")]

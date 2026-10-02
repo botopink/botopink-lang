@@ -3,7 +3,7 @@
 //// runner loaded its siblings only for an imported fn, type or std module,
 //// so the read died `{error,undef}`.
 
-import {greeting, sizes} from "greetings";
+import {greetings.greeting, greetings.sizes};
 
 test "a pub val imported from a sibling is read by a test" {
     assert greeting == "hi";

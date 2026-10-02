@@ -2,11 +2,11 @@
 //// both targets.
 
 import {testing.asserts} from "std";
-import {contentTypeOf, extensionOf, isText} from "mime";
-import {reasonPhrase} from "status";
-import {parseRange, contentRange, ByteRange} from "byteRange";
-import {directives, withPublic, withPrivate, withMaxAge, withSharedMaxAge, withNoStore, withNoCache, withMustRevalidate, withImmutable, render, staticFile} from "cacheControl";
-import {wide} from "lexical";
+import {mime.contentTypeOf, mime.extensionOf, mime.isText};
+import {status.reasonPhrase};
+import {byteRange.parseRange, byteRange.contentRange, byteRange.ByteRange};
+import {cacheControl.directives, cacheControl.withPublic, cacheControl.withPrivate, cacheControl.withMaxAge, cacheControl.withSharedMaxAge, cacheControl.withNoStore, cacheControl.withNoCache, cacheControl.withMustRevalidate, cacheControl.withImmutable, cacheControl.render, cacheControl.staticFile};
+import {lexical.wide};
 
 fn rangeText(header: string, size: i32) -> string {
     val r = parseRange(header, wide(size));

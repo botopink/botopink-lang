@@ -13,7 +13,7 @@
 //// `token=token` or `token="quoted"`, a coding that is not a token, a
 //// language range outside RFC 4647 § 2.1 — is dropped, never repaired.
 
-import {charOf, sub, isToken, isAlpha, allIn, alphaChars, digitChars, digitsValue, trimOws} from "lexical";
+import {lexical.charOf, lexical.sub, lexical.isToken, lexical.isAlpha, lexical.allIn, lexical.alphaChars, lexical.digitChars, lexical.digitsValue, lexical.trimOws};
 
 // One element of an `Accept` header. `mainType` and `subType` are
 // lowercase (`*` for a wildcard); `params` are the media-type parameters

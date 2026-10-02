@@ -1,0 +1,15 @@
+//// Decision 206 — `from "log"` names the bundled package `log` although this
+//// package has a module `log` of its own: `from` names a package and never a
+//// module of the importing package, so a bundled package added later never
+//// changes what an import means. The module is reached by its path inside
+//// the braces. wasm is not a target: `log` reaches host functions with no
+//// wasm binding.
+
+pub mod log;
+import {log.levelName as ownLevelName};
+import {Level, levelName} from "log";
+
+pub fn main() {
+    @print(ownLevelName(2));
+    @print(levelName(Level.Warn));
+}

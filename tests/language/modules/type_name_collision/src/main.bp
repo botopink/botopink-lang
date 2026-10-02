@@ -25,8 +25,8 @@
 
 pub mod parser;
 pub mod net;
-import {Outcome, parserOutcome} from "parser";
-import {netOutcome} from "net";
+import {parser.Outcome, parser.parserOutcome};
+import {net.netOutcome};
 
 pub fn main() {
     // The field axis, through each module's own fn.

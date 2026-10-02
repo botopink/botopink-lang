@@ -1,4 +1,4 @@
-import {Greeter} from "greet";
+import {greet.Greeter};
 
 #[@External.Node("(() => ({ greet: () => 'host' }))()")]
 #[@External.Erlang("#{greet => fun(_) -> <<\"host\">> end}")]

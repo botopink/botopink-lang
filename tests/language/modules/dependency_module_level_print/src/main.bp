@@ -5,7 +5,7 @@
 pub mod label;
 
 import {greeting} from "boot/greet";
-import {describe} from "label";
+import {label.describe};
 
 pub fn main() {
     @print(greeting);

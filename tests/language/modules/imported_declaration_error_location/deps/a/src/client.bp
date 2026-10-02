@@ -1,4 +1,4 @@
-import {Life} from "cache";
+import {cache.Life};
 
 pub type Client(life: Life, name: string) {
     pub fn withLife(self: Self, l: Life) -> Client {

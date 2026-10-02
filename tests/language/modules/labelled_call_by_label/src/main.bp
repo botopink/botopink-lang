@@ -11,7 +11,7 @@
 //// that links it is refused (`wasm.expect`).
 
 pub mod helper;
-import {describe, Box} from "helper";
+import {helper.describe, helper.Box};
 import {helper};
 import {testing.asserts} from "std";
 

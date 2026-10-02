@@ -10,7 +10,7 @@
 //// (`label(raw)`) is the parameter.
 
 pub mod view;
-import {ElementView, Node, raw, other, open, Box, firstOf, count} from "view";
+import {view.ElementView, view.Node, view.raw, view.other, view.open, view.Box, view.firstOf, view.count};
 
 fn label(raw: string) -> string {
     return "[" + raw + "]";

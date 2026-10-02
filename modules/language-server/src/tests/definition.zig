@@ -135,7 +135,7 @@ test "definition: cursor on enum usage jumps to enum declaration" {
 test "definition: imported symbol jumps to defining module" {
     const gpa = std.testing.allocator;
     const main_src =
-        \\import { double } from "math";
+        \\import {math.double};
         \\val r = double(21);
     ;
     const math_uri = "file:///math.bp";

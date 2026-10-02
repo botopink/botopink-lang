@@ -1,7 +1,7 @@
 //// routing: the `z` blob, on both targets. Every expected wire is a literal.
 
 import {testing.asserts} from "std";
-import {SlotState, writeSlotStates, parseSlotStates} from "slot_states";
+import {slot_states.SlotState, slot_states.writeSlotStates, slot_states.parseSlotStates};
 
 fn stateText(s: SlotState) -> string {
     return case s {

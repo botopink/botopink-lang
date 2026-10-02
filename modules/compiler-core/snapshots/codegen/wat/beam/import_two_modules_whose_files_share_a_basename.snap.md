@@ -58,8 +58,8 @@ pub fn tag() -> string {
 
 ----- SOURCE CODE -- main.bp
 ```botopink
-import {label} from "models/user";
-import {tag} from "services/user";
+import {models.user.label};
+import {services.user.tag};
 
 fn main() {
     @print(label());

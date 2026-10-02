@@ -25,7 +25,7 @@ export declare function double(x: number): number;
 
 ----- SOURCE CODE -- main.bp
 ```botopink
-import {double} from "math";
+import {math.double};
 val result = double(21);
 ```
 

@@ -7,7 +7,7 @@
 //// top-level `After` while one over the section matches the leaf.
 
 pub mod tokens;
-import {Token, render, breakToCss} from "tokens";
+import {tokens.Token, tokens.render, tokens.breakToCss};
 
 pub fn main() {
     @print(render(Token.After([Token.Plain])));

@@ -2,7 +2,7 @@
 //// decision 115). Every expected text is a literal.
 
 import {testing.asserts} from "std";
-import {parseSegment, parsePath, patternOf, slotOf, pathProblem, kindName, trimSlashes} from "segment";
+import {segment.parseSegment, segment.parsePath, segment.patternOf, segment.slotOf, segment.pathProblem, segment.kindName, segment.trimSlashes};
 
 // ── step 1: the segment grammar ─────────────────────────────────────────────
 

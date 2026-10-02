@@ -13,7 +13,7 @@
 //// (`commonJS.expect`, `wasm.expect`).
 
 pub mod orm;
-import {describe} from "orm.entity";
+import {orm.entity.describe};
 
 pub fn main() {
     @print(describe("user"));

@@ -1,6 +1,6 @@
 ----- SOURCE
 ```botopink
-import { double } from "math";
+import {math.double};
 val r = double(21);
         ↑
 ```

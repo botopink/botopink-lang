@@ -24,7 +24,7 @@
 //// error, never a line on the wire.
 
 import {encoding} from "std";
-import {charOf, sub, isToken, isPrintable, allIn, cookieOctetChars, trimOws, alphaChars, digitChars} from "lexical";
+import {lexical.charOf, lexical.sub, lexical.isToken, lexical.isPrintable, lexical.allIn, lexical.cookieOctetChars, lexical.trimOws, lexical.alphaChars, lexical.digitChars};
 
 // The attributes of one `Set-Cookie` line. `maxAge` absent (`null`) omits
 // `Max-Age` — a session cookie; `0` or less expires the cookie on arrival
