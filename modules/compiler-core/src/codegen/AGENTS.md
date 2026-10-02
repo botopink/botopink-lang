@@ -2301,15 +2301,14 @@ first three are now enforced by the model, not by discipline:
 - **A `?T` box holding an `f32`** (`fs.at(0)` on a float array) prints through
   `$__print_opt_f32`, its own helper group. Read as a boxed `i32` it printed the
   float's **bits** — `1069547520` for `1.5`, exit 0, no diagnostic.
-- **`==` between tuples compares elements** (decision 8 §6 T6; T5 — labels take
-  no part): `tupleEqShape` + `emitTupleEq`. Both sides are pointers into the
-  bump heap, so `i32.eq` on them answered `false` for `#(1, "a") == #(1, "a")`.
-  The print shape is static (`(is)`), so the comparison is emitted element by
-  element — `i`/`b` as an `i32`, `f` as the `f32` the slot holds, `s` through
-  `$__str_eq` (the words are addresses), `(` by recursing through the pointer.
-  A shape holding an array (`[X`) is **not** compared this way and keeps the
-  pointer comparison: `[X` has no closing code and an array's length is only
-  known at run time.
+- **`==` compares by value** (decision 210; decision 8 §6 T6 and T5 for tuples;
+  decision 211 — it never calls user code): a composite operand — a record, a
+  payload enum, a tuple, an array, `?` of one — calls the per-type `$__eq_<T>`
+  `lowerStructuralEq` requests, written after lowering; a primitive keeps its
+  instruction. The rows, the layout each part is read with and the generic-`T`
+  specialisation are in [`wat/AGENTS.md`](wat/AGENTS.md) § Structural equality.
+  `tupleEqShape` + `emitTupleEq` remain the fallback for a tuple shape no static
+  type was recovered for.
 - **A tuple element is printed by its own shape** (`tupleElemShapeOf` +
   `shapeSpan`): `@print(t.1)` answered `256` and answers `x`, `@print(row.name)`
   answered `256` and answers `SP`. `printShapeOf` already built the tuple's whole

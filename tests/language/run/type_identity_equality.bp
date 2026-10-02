@@ -3,11 +3,8 @@
 //// `botopink test` refuses beam and wasm, so only two backends reach it; this
 //// cell is the same statement as a `run/`, which every backend executes.
 ////
-//// The second line is deliberately NOT an assertion: whether two values of the
-//// SAME type with the same fields are equal is structural equality, which no
-//// decision of this milestone legislates. It is printed so the divergence is
-//// visible where it is measured — `true` on erlang and BEAM (one term), `false`
-//// on commonJS and wasm (a reference and a pointer).
+//// Two values of the SAME type with equal fields are equal (decision 210);
+//// `run/record_structural_equality.bp` is that half.
 
 type Person(name: string, age: i32)
 

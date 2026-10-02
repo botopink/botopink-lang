@@ -1,0 +1,89 @@
+//// Decision 210 — `==` compares by value on every target. Two records of the
+//// same type with equal fields are equal, recursively through a nested
+//// record, a tuple, an `Array` and an enum variant's payload; two values of
+//// different types are never equal, however alike their fields (decision 21:
+//// a value carries its declaring type); `!=` is the negation. erlang and beam
+//// compare one term (`=:=`); commonJS and wasm answered `false` for two equal
+//// records — a reference and a pointer — and now call an equality generated
+//// per compared type. A generic body (`same<T>`) answers by value too.
+//// Decision 211: `==` is always field by field — a method named `equals`
+//// has no special role and `==` never calls user code.
+
+type Person(name: string, age: i32)
+
+type Vec(name: string, age: i32)
+
+type Team(lead: Person, size: i32)
+
+type Loose(n: i32) {
+    pub fn equals(self: Self, other: Self) -> bool {
+        return true;
+    }
+}
+
+type Shape {
+    Circle(r: i32),
+    Rect(w: i32, h: i32),
+    Dot,
+}
+
+fn same<T>(a: T, b: T) -> bool {
+    return a == b;
+}
+
+pub fn main() {
+    val built = "Ana,x".split(",").at(0) ?? "";
+
+    @print(Person(name: "Ana", age: 30) == Person(name: "Ana", age: 30));
+    @print(Person(name: built, age: 30) == Person(name: "Ana", age: 30));
+    @print(Person(name: "Ana", age: 30) == Person(name: "Ana", age: 31));
+    @print(Person(name: "Ana", age: 30) == Person(name: "Bia", age: 30));
+    @print(Person(name: "Ana", age: 30) != Person(name: "Ana", age: 30));
+    @print(Person(name: "Ana", age: 30) != Person(name: "Ana", age: 31));
+
+    val p = Person(name: "Ana", age: 30);
+    @print(p == p);
+
+    @print(
+        Team(lead: Person(name: "Ana", age: 30), size: 3)
+            == Team(lead: Person(name: built, age: 30), size: 3),
+    );
+    @print(
+        Team(lead: Person(name: "Ana", age: 30), size: 3)
+            == Team(lead: Person(name: "Ana", age: 29), size: 3),
+    );
+
+    val t1 = #(1, "a");
+    val a = "a;y".split(";").at(0) ?? "";
+    val t2 = #(1, a);
+    val t3 = #(1, "b");
+    val t4 = #(2, "a");
+    @print(t1 == t2);
+    @print(t1 == t3);
+    @print(t1 != t4);
+
+    val xs = [Person(name: "Ana", age: 30), Person(name: "Bia", age: 25)];
+    val ys = [Person(name: built, age: 30), Person(name: "Bia", age: 25)];
+    val zs = [Person(name: "Ana", age: 30)];
+    @print(xs == ys);
+    @print(xs == zs);
+    @print(xs != zs);
+
+    @print(Shape.Circle(r: 2) == Shape.Circle(r: 2));
+    @print(Shape.Circle(r: 2) == Shape.Circle(r: 3));
+    @print(Shape.Rect(w: 1, h: 2) == Shape.Rect(w: 1, h: 2));
+    @print(Shape.Rect(w: 1, h: 2) == Shape.Circle(r: 1));
+    @print(Shape.Dot == Shape.Dot);
+    @print(Shape.Dot != Shape.Circle(r: 0));
+
+    @print(Person(name: "Ana", age: 30) == Vec(name: "Ana", age: 30));
+    @print(Person(name: "Ana", age: 30) != Vec(name: "Ana", age: 30));
+
+    @print(same(Person(name: built, age: 30), Person(name: "Ana", age: 30)));
+    @print(same(Person(name: "Ana", age: 30), Person(name: "Ana", age: 1)));
+    @print(same(t1, t2));
+    @print(same([1, 2], [1, 2]));
+    @print(same(Shape.Rect(w: 1, h: 2), Shape.Rect(w: 1, h: 2)));
+
+    @print(Loose(n: 1) == Loose(n: 2));
+}

@@ -227,7 +227,8 @@ nothing about the type keeps the one generic body — a generic fn stored in
 a field or bound with no written type, a parameter type `bindParam` does not
 read (it reads a bare `T`, `T[]` / `Array<T>` and a generic record's direct
 type arguments) — and there `==` between two
-type-parameter values compares words and `elemKindOfTypeRef` reads a type
+type-parameter values compares words (a composite bound where the body
+compares with `==` IS specialised, § Structural equality) and `elemKindOfTypeRef` reads a type
 parameter as `.i32`. A string carries no header (it is a bare
 `[len][bytes]` blob), so a body cannot ask the value what it is: the copy is
 the only cure, and `run/generic_body_specialized.bp` pins the shapes that
@@ -801,9 +802,10 @@ member `libs/std/src/primitives.bp` declares — **every member is listed now**:
 
 **What still traps, by name** (`tests/wat.zig` `unique over records and
 flatMap over a scalar trap, never answer`): `unique` over records, arrays or
-tuples (`unique over elements with no wasm equality`) — commonJS answers `2`
-and erlang `1` for `[P(x: 1), P(x: 1)].unique().length`, so there is no
-answer to agree with; `flatMap` whose function answers no array known here
+tuples (`unique over elements with no wasm equality`) — decision 210 now gives
+`[P(x: 1), P(x: 1)].unique().length` one answer, `1` on commonJS, erlang and
+beam, and this row is still a trap here: `$__arr_unique` compares words and
+strings, and calling `$__eq_<T>` from it is open; `flatMap` whose function answers no array known here
 (node keeps the scalar, erlang fails); `flatten` / `flat` over elements no
 shape says are arrays.
 
@@ -849,6 +851,58 @@ function's text moves. Only the explicit `return f(…)` spelling is recognised
 (reached through `if` arms and loop bodies, never through a lambda); a method, a
 lifted lambda, a destructured parameter and an accumulating (generator) body
 keep `call`. `tests/language/run/tail_self_call.bp` pins it on four targets.
+
+## Structural equality (decision 210)
+
+`==` compares by value: two values are equal when they have the same type and
+their fields are equal, field by field and recursively; `!=` is the negation, and
+`==` never calls user code — a method named `equals` has no role (decision 211).
+Before it, two equal records answered `false` here (two heap pointers, `i32.eq`),
+and so did two equal arrays, two payload variants and two allocated unit variants
+(`Shape.Dot` is a fresh one-slot cell). `lowerBinOp` asks `lowerStructuralEq`
+after its null, `unknown`, boxed-optional and string rows, so none of those moved:
+
+| Operands (`eqTypeOf`) | Lowering |
+|---|---|
+| a primitive — a scalar, a bool, a string, an all-unit enum's ordinal, `?` of one — or a type nothing recovers on both sides | the instruction it always had |
+| both one composite type — a record, a payload enum, a tuple, an array, `?` of one — or one side that and the other unrecovered | `call $__eq_<T>` (`i32.eqz` after it for `!=`) |
+| two different types, either composite | both operands run and are dropped, then `i32.const 0` (`1` for `!=`) |
+
+`eqTypeOf` reads the static type the way the rest of this backend does — a name
+`eq_local_types` recorded for a `val` (`val t = #(P(x: 1), 2)`), `recordTypeOfExpr`,
+a variant constructor or a unit variant read off its enum (`eqEnumOf`),
+`unitEnumOf`, `typeRefOf`, a tuple or array literal of recovered elements, and the
+print shape (`eqTypeOfShape`: `i` `f` `b` `s` `[X` `(…)`).
+
+`$__eq_<T>` is requested the first time the module compares a `T`
+(`eq_requests`) and written after lowering, after the behavior dispatchers; each
+may request the equality of a part. The symbol is prefix notation with each
+constructor's arity (`__eq_Person`, `__eq_Array_Person`, `__eq_Tuple2_i32_string`,
+`__eq_Opt_Node`, `__eq_Box_string`). Its first test is the pointers — `a == b`
+answers `1` at once — then the parts in order, each `i32.eqz` → `return 0`, so
+the first difference ends it, and `1` past the last:
+
+| `T` | parts |
+|---|---|
+| record | each field at `i * 4`: a string by `$__str_eq`, an `f64` by `f64.eq` over its box (`storeBoxedF64`), an integer, bool or all-unit enum by `i32.eq`, a composite by its own `$__eq_<T>`, a field written as one of the record's type parameters by the argument `T` spells (`Box<string>`), or as a word when it spells none |
+| payload enum | the ordinals at slot 0 (`i32.ne` → `0`), then the matching variant's payload at `(i + 1) * 4` — a float is the `f32` the slot holds; a unit variant is equal on its ordinal |
+| tuple | each element at `i * 4`, a float as its `f32` slot |
+| array | the lengths, then a `$brk`/`$cont` loop over `4 + i * 4` (locals `$n`, `$i`) |
+| `?X` | both absent is `a == b` above; one absent answers `0`; a pointer payload (a record, a variant, a container, a string) is compared directly, a box's payload by the payload's own compare |
+
+A float part answers what that target's float `==` answers — `0.0 == -0.0` is
+`1`, NaN is never equal — and one rule for the four targets is open. No hash is
+computed at construction, nothing is interned, and there is no global table.
+
+**A generic `T`**: one body here answers every type, each type parameter an `i32`
+word, so a body cannot compare two `T` values by value — a string has no header
+and an integer is not a pointer. A call whose argument binds `T` to a composite,
+to a function whose body compares with `==` / `!=` (`comparesValues`), calls a
+copy with `T` written as the composite (`eqBindParam`, `specializeFor`): the
+copy's `a == b` is `call $__eq_<T>`. `same(Person(…), Person(…))` is
+`same__T_Person`, `same(#(1, "a"), …)` `same__T_Tuple2_i32_string`. What stays is
+the **What stays** limit above (§ Where this backend refuses to answer): a call nothing specialises keeps the one body and
+compares words. `tests/language/run/record_structural_equality.bp`.
 
 ## Rules
 

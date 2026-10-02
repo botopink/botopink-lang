@@ -755,6 +755,45 @@ fn callsMethodOn(comptime T: type, value: T, names: []const []const u8) bool {
     }
 }
 
+/// Whether `value` holds a `==` or `!=` (decision 210: a generic body that
+/// compares values is specialised for a composite bound to its parameter).
+fn comparesValues(comptime T: type, value: T) bool {
+    switch (@typeInfo(T)) {
+        .@"struct" => |st| {
+            if (comptime @hasField(T, "op") and @hasField(T, "lhs") and @hasField(T, "rhs")) {
+                if (comptime @typeInfo(@FieldType(T, "op")) == .@"enum" and @hasField(@FieldType(T, "op"), "eq")) {
+                    if (value.op == .eq or value.op == .ne) return true;
+                }
+            }
+            inline for (st.fields) |f| {
+                if (f.is_comptime) continue;
+                if (comparesValues(f.type, @field(value, f.name))) return true;
+            }
+            return false;
+        },
+        .@"union" => |u| {
+            if (u.tag_type == null) return false;
+            switch (value) {
+                inline else => |payload| return comparesValues(@TypeOf(payload), payload),
+            }
+        },
+        .optional => |o| return if (value) |v| comparesValues(o.child, v) else false,
+        .pointer => |p| switch (p.size) {
+            .one => {
+                if (comptime !isAstNodeType(p.child)) return false;
+                return comparesValues(p.child, value.*);
+            },
+            .slice => {
+                if (comptime !isAstNodeType(p.child)) return false;
+                for (value) |e| if (comparesValues(p.child, e)) return true;
+                return false;
+            },
+            else => return false,
+        },
+        else => return false,
+    }
+}
+
 /// Whether the rename walk descends into `T`: a struct, union or optional —
 /// an AST node — and not a byte string or a pointer to anything else.
 fn isAstNodeType(comptime T: type) bool {
@@ -1108,6 +1147,11 @@ fn emitWat(
 
     try items.appendSlice(ar, em.items.items);
     for (em.behavior_dispatch.values()) |bd| try items.append(ar, .{ .func = try em.behaviorDispatchFunc(bd) });
+    // Decision 210 — each equality may ask for the equality of a part.
+    var eq_i: usize = 0;
+    while (eq_i < em.eq_requests.count()) : (eq_i += 1) {
+        try items.append(ar, .{ .func = try em.eqFunc(em.eq_requests.keys()[eq_i], em.eq_requests.values()[eq_i]) });
+    }
 
     for (prelude.order) |group| {
         if (!em.b.helpers.has(group)) continue;
@@ -1177,6 +1221,12 @@ const Emitter = struct {
     alloc: std.mem.Allocator,
     /// The behavior dispatchers the module's calls named, by symbol.
     behavior_dispatch: std.StringArrayHashMapUnmanaged(BehaviorDispatch) = .empty,
+    /// Decision 210 — the per-type equalities `$__eq_<T>` the module's `==`
+    /// asked for, by symbol, written once the module is lowered.
+    eq_requests: std.StringArrayHashMapUnmanaged(ast.TypeRef) = .empty,
+    /// Decision 210 — a `val`'s composite type when nothing else recovers it
+    /// (`eqTypeOf` over its initialiser), by the local's symbol.
+    eq_local_types: std.StringHashMapUnmanaged(ast.TypeRef) = .empty,
     /// Node factory: owns the arena every built node borrows from and the set
     /// of runtime helpers the lowering has asked for. Set up in `init` once
     /// `reg_arena` exists.
@@ -2821,6 +2871,7 @@ const Emitter = struct {
 
     fn resetFnState(self: *Emitter, result_type: ?[]const u8) void {
         self.locals.clearRetainingCapacity();
+        self.eq_local_types.clearRetainingCapacity();
         self.bound_names.clearRetainingCapacity();
         self.shadow_log.clearRetainingCapacity();
         self.local_types.clearRetainingCapacity();
@@ -4457,6 +4508,12 @@ const Emitter = struct {
                     };
                     try self.declareLocal(lb.name, self.inferExprType(lb.value.*));
                     if (lb.typeAnnotation orelse self.typeRefOf(lb.value.*)) |tr| try self.local_typerefs.put(lb.name, tr);
+                    // Decision 210 — the composite a `val` holds, for `==`
+                    // over the name (`val t = #(P(x: 1), 2)`).
+                    _ = self.eq_local_types.remove(lb.name);
+                    if (lb.typeAnnotation == null) if (try self.eqTypeOf(lb.value.*)) |et| if (self.eqComposite(et)) {
+                        try self.eq_local_types.put(self.arena(), lb.name, et);
+                    };
                     // A written `?T` says the local is optional; how the value
                     // carries its absence (boxed or not) is the VALUE's, so it
                     // is asked too: `val c: ?Color = cs[1]` holds a box around
@@ -9441,7 +9498,30 @@ const Emitter = struct {
 
     /// The type parameter a parameter is written as — `x: T`, or the element
     /// of `xs: Array<T>` / `xs: T[]` — and the type the argument binds it to.
-    const ParamBinding = struct { name: []const u8, ty: []const u8 };
+    const ParamBinding = struct {
+        name: []const u8,
+        ty: []const u8,
+        /// Decision 210 — a composite the parameter is bound to that no name
+        /// spells (`#(i32, string)`, `Array<i32>`), or a payload enum: set
+        /// only when the body compares values with `==` (`eqBindParam`).
+        tref: ?ast.TypeRef = null,
+    };
+
+    /// Decision 210 — `x: T` against an argument whose type is a composite,
+    /// in a body that compares values with `==` / `!=`: one body for every
+    /// type compares two words, so the copy binds `T` to the composite and
+    /// its `==` calls that type's `$__eq_<T>`.
+    fn eqBindParam(self: *Emitter, t: ast.TypeRef, arg: ast.Expr, f: ast.FnDecl) !?ParamBinding {
+        const n = switch (t) {
+            .named => |x| x,
+            else => return null,
+        };
+        if (!isGenericParamName(n, f.genericParams, &.{})) return null;
+        if (!comparesValues(ast.FnDecl, f)) return null;
+        const at = (try self.eqTypeOf(arg)) orelse return null;
+        if (!self.eqComposite(at)) return null;
+        return .{ .name = n, .ty = try self.eqKey(at), .tref = at };
+    }
 
     fn bindParam(self: *Emitter, t: ast.TypeRef, arg: ast.Expr, isParam: *const fn ([]const u8, []const ast.GenericParam, []const ast.GenericParam) bool, a: []const ast.GenericParam, b: []const ast.GenericParam) ?ParamBinding {
         switch (t) {
@@ -9522,15 +9602,19 @@ const Emitter = struct {
             if (std.mem.eql(u8, p.name, "self")) continue;
             defer pi += 1;
             if (pi >= cc.args.len) break;
-            const bnd = self.bindParam(p.typeRef, cc.args[pi].value.*, &isGenericParamName, f.genericParams, &.{}) orelse continue;
+            const bnd = self.bindParam(p.typeRef, cc.args[pi].value.*, &isGenericParamName, f.genericParams, &.{}) orelse
+                (try self.eqBindParam(p.typeRef, cc.args[pi].value.*, f)) orelse continue;
             try params_of.append(ar, p.name);
             var bound = false;
             for (subs.items) |sub| if (std.mem.eql(u8, sub.name, bnd.name)) {
                 bound = true;
             };
             if (bound) continue;
-            try subs.append(ar, .{ .name = bnd.name, .to = .{ .named = bnd.ty } });
+            try subs.append(ar, .{ .name = bnd.name, .to = bnd.tref orelse .{ .named = bnd.ty } });
             if (std.mem.eql(u8, bnd.ty, "string") or std.mem.eql(u8, bnd.ty, "bool") or bnd.ty[0] == 'f') needed = true;
+            // Decision 210: a composite bound where the body compares with
+            // `==` — the one body would compare two pointers.
+            if (bnd.tref != null or (self.records.contains(bnd.ty) and comparesValues(ast.FnDecl, f))) needed = true;
         }
         if (subs.items.len == 0) return null;
         if (!needed and !callsMethodOn(ast.FnDecl, f, params_of.items)) return null;
@@ -9583,7 +9667,7 @@ const Emitter = struct {
         const ar = self.reg_arena.allocator();
         var name: std.ArrayListUnmanaged(u8) = .empty;
         try name.appendSlice(ar, target);
-        for (subs) |sub| try name.print(ar, "__{s}_{s}", .{ sub.name, sub.to.named });
+        for (subs) |sub| try name.print(ar, "__{s}_{s}", .{ sub.name, if (sub.to == .named) sub.to.named else try self.eqKey(sub.to) });
         const sym = name.items;
         if (self.spec_names.contains(sym)) return sym;
         try self.spec_names.put(self.alloc, sym, {});
@@ -11695,6 +11779,502 @@ const Emitter = struct {
         return if (i < shape.len) i + 1 else i;
     }
 
+    // ── structural equality (decision 210) ───────────────────────────────────
+
+    /// A primitive whose `==` keeps the instruction it always had: a scalar,
+    /// a bool, a string (`$__str_eq`), an all-unit enum (its ordinal), and an
+    /// optional of one (`lowerBinOp`'s own optional and null rows).
+    fn eqIsPrim(self: *Emitter, t: ast.TypeRef) bool {
+        return switch (t) {
+            .named => |n| primKindOfName(n) != null or isScalarName(n) or isFloatTypeName(n) or
+                std.mem.eql(u8, n, "bool") or std.mem.eql(u8, n, "string") or std.mem.eql(u8, n, "unknown") or
+                self.isAllUnitEnum(n),
+            .optional => |inner| self.eqIsPrim(inner.*),
+            else => false,
+        };
+    }
+
+    fn eqResolve(self: *Emitter, t: ast.TypeRef) ast.TypeRef {
+        if (t.isSelf()) if (self.self_type) |st| return .{ .named = st };
+        return t;
+    }
+
+    fn eqArrayElem(t: ast.TypeRef) ?ast.TypeRef {
+        return switch (t) {
+            .array => |inner| inner.*,
+            .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "Array")) g.args[0] else null,
+            else => null,
+        };
+    }
+
+    /// The record or payload enum `t` names in this program.
+    fn eqNominal(self: *Emitter, t: ast.TypeRef) ?[]const u8 {
+        const n = switch (t) {
+            .named => |n| n,
+            .generic => |g| if (g.is_builtin) return null else g.name,
+            else => return null,
+        };
+        if (self.records.contains(n)) return n;
+        if (self.enums.get(n)) |vs| if (enumHasPayload(vs)) return n;
+        return null;
+    }
+
+    /// A composite this backend generates an equality for.
+    fn eqComposite(self: *Emitter, t0: ast.TypeRef) bool {
+        const t = self.eqResolve(t0);
+        if (self.eqIsPrim(t)) return false;
+        if (eqArrayElem(t)) |_| return true;
+        return switch (t) {
+            .tuple_, .labeledTuple => true,
+            .optional => |inner| self.eqComposite(inner.*),
+            else => self.eqNominal(t) != null,
+        };
+    }
+
+    /// The type a print shape spells (`i`, `f`, `b`, `s`, `[X`, `(XY…)`), or
+    /// null for a shape that names no one type (`T`, an enum's names).
+    fn eqTypeOfShape(self: *Emitter, sh: []const u8) anyerror!?ast.TypeRef {
+        if (sh.len == 0) return null;
+        const ar = self.arena();
+        switch (sh[0]) {
+            'i' => return .{ .named = "i32" },
+            'f' => return .{ .named = "f64" },
+            'b' => return .{ .named = "bool" },
+            's' => return .{ .named = "string" },
+            '[' => {
+                const inner = (try self.eqTypeOfShape(sh[1..])) orelse return null;
+                const p = try ar.create(ast.TypeRef);
+                p.* = inner;
+                return .{ .array = p };
+            },
+            '(' => {
+                var elems: std.ArrayListUnmanaged(ast.TypeRef) = .empty;
+                var i: usize = 1;
+                while (i < sh.len and sh[i] != ')') {
+                    const n = shapeSpan(sh[i..]);
+                    if (n == 0) return null;
+                    try elems.append(ar, (try self.eqTypeOfShape(sh[i .. i + n])) orelse return null);
+                    i += n;
+                }
+                return .{ .tuple_ = elems.items };
+            },
+            else => return null,
+        }
+    }
+
+    /// The payload enum `e` is a value of: a variant constructor, a unit
+    /// variant read off its enum, a call declared to answer one.
+    fn eqEnumOf(self: *Emitter, e: ast.Expr) ?[]const u8 {
+        switch (e) {
+            .call => |c| switch (c.kind) {
+                .call => |cc| {
+                    if (self.callKind(cc) == .enum_ctor) {
+                        if (receiverName(cc)) |rcv| if (self.enums.contains(rcv)) return rcv;
+                        return self.enumOfVariant(cc.callee);
+                    }
+                    return self.enumReturnedBy(cc);
+                },
+                else => {},
+            },
+            .identifier => |id| switch (id.kind) {
+                .identAccess => |ia| if (ia.receiver.* == .identifier and ia.receiver.identifier.kind == .ident) {
+                    const en = ia.receiver.identifier.kind.ident;
+                    if (self.enums.get(en)) |vs| for (vs) |v| {
+                        if (std.mem.eql(u8, v.name, ia.member)) return en;
+                    };
+                },
+                else => {},
+            },
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| return self.eqEnumOf(inner.*),
+                else => {},
+            },
+            else => {},
+        }
+        return null;
+    }
+
+    /// The static type of `e` for `==`, read the way the rest of this backend
+    /// reads it (`recordTypeOfExpr`, `typeRefOf`, the print shape). A
+    /// primitive is answered too, because a tuple's or an array's element
+    /// type is built from it. Null when nothing here says.
+    fn eqTypeOf(self: *Emitter, e: ast.Expr) anyerror!?ast.TypeRef {
+        if (self.genericResultOf(e)) |a| return self.eqTypeOf(a);
+        const ar = self.arena();
+        if (e == .identifier and e.identifier.kind == .ident) {
+            if (self.eq_local_types.get(self.resolveName(e.identifier.kind.ident))) |t| return t;
+        }
+        if (self.recordTypeOfExpr(e)) |r| return .{ .named = r };
+        if (self.eqEnumOf(e)) |en| return .{ .named = en };
+        if (self.unitEnumOf(e)) |en| return .{ .named = en };
+        if (self.typeRefOf(e)) |t0| {
+            const t = self.eqResolve(t0);
+            if (t.unionMembers() == null and (self.eqComposite(t) or self.eqIsPrim(t))) return t;
+        }
+        switch (e) {
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| return self.eqTypeOf(inner.*),
+                .tupleLit => |tl| {
+                    const elems = try ar.alloc(ast.TypeRef, tl.elems.len);
+                    for (tl.elems, elems) |el, *out| out.* = (try self.eqTypeOf(el)) orelse return null;
+                    return .{ .tuple_ = elems };
+                },
+                .arrayLit => |al| if (al.elems.len > 0 and al.spread == null and al.spreadExpr == null) {
+                    const p = try ar.create(ast.TypeRef);
+                    p.* = (try self.eqTypeOf(al.elems[0])) orelse return null;
+                    return .{ .array = p };
+                },
+                else => {},
+            },
+            else => {},
+        }
+        if (try self.printShapeOf(e)) |sh| if (try self.eqTypeOfShape(sh)) |t| return t;
+        if (self.isArrayExpr(e)) {
+            const p = try ar.create(ast.TypeRef);
+            if (self.elemRecordOf(e)) |r| {
+                p.* = .{ .named = r };
+            } else p.* = .{ .named = switch (self.elemKindOf(e)) {
+                .i32 => "i32",
+                .f32 => "f64",
+                .str => "string",
+            } };
+            return .{ .array = p };
+        }
+        if (self.isStringExpr(e)) return .{ .named = "string" };
+        if (self.isBoolExpr(e)) return .{ .named = "bool" };
+        if (self.wasmTypeOf(e)[0] == 'f') return .{ .named = "f64" };
+        return switch (e) {
+            .literal => |lit| switch (lit.kind) {
+                .numberLit => .{ .named = "i32" },
+                else => null,
+            },
+            .binaryOp => .{ .named = "i32" },
+            .unaryOp => .{ .named = "i32" },
+            else => null,
+        };
+    }
+
+    /// The suffix of a per-type equality's symbol — prefix notation with each
+    /// constructor's arity, so two types never share one: `Person`,
+    /// `Array_Person`, `Tuple2_i32_string`, `Opt_Team`.
+    fn eqMangle(self: *Emitter, t0: ast.TypeRef, out: *std.ArrayListUnmanaged(u8)) anyerror!void {
+        const ar = self.reg_arena.allocator();
+        const t = self.eqResolve(t0);
+        if (eqArrayElem(t)) |elem| {
+            try out.appendSlice(ar, "Array_");
+            return self.eqMangle(elem, out);
+        }
+        switch (t) {
+            .named => |n| try out.appendSlice(ar, n),
+            .generic => |g| {
+                try out.appendSlice(ar, g.name);
+                for (g.args) |a| {
+                    try out.append(ar, '_');
+                    try self.eqMangle(a, out);
+                }
+            },
+            .optional => |inner| {
+                try out.appendSlice(ar, "Opt_");
+                try self.eqMangle(inner.*, out);
+            },
+            .tuple_, .labeledTuple => {
+                const elems = t.tupleElems().?;
+                try out.print(ar, "Tuple{d}", .{elems.len});
+                for (elems) |el| {
+                    try out.append(ar, '_');
+                    try self.eqMangle(el, out);
+                }
+            },
+            else => try out.appendSlice(ar, "Any"),
+        }
+    }
+
+    fn eqKey(self: *Emitter, t: ast.TypeRef) ![]const u8 {
+        var out: std.ArrayListUnmanaged(u8) = .empty;
+        try self.eqMangle(t, &out);
+        return out.items;
+    }
+
+    /// `$__eq_<T>`, requested for emission once the module is lowered.
+    fn eqFnFor(self: *Emitter, t0: ast.TypeRef) ![]const u8 {
+        const t = self.eqResolve(t0);
+        const sym = try std.fmt.allocPrint(self.reg_arena.allocator(), "__eq_{s}", .{try self.eqKey(t)});
+        if (!self.eq_requests.contains(sym)) try self.eq_requests.put(self.reg_arena.allocator(), sym, t);
+        return sym;
+    }
+
+    /// Decision 210 — `==` / `!=` over two composites of one static type
+    /// calls that type's `$__eq_<T>`; two different nominal types are never
+    /// equal (both operands still run). False when neither side is a
+    /// composite this backend generates an equality for: the caller's rows
+    /// below answer it as before.
+    fn lowerStructuralEq(self: *Emitter, negate: bool, lhs: ast.Expr, rhs: ast.Expr) anyerror!bool {
+        const lt = try self.eqTypeOf(lhs);
+        const rt = try self.eqTypeOf(rhs);
+        const l_comp = if (lt) |t| self.eqComposite(t) else false;
+        const r_comp = if (rt) |t| self.eqComposite(t) else false;
+        if (!l_comp and !r_comp) return false;
+        // A primitive against a composite: two types, never equal.
+        const t: ast.TypeRef = blk: {
+            if (l_comp and r_comp) {
+                if (std.mem.eql(u8, try self.eqKey(lt.?), try self.eqKey(rt.?))) break :blk lt.?;
+            } else if ((l_comp and rt == null) or (r_comp and lt == null)) {
+                // The other side's type is not recovered here; the checker
+                // accepted the comparison, so it is the recovered side's.
+                break :blk if (l_comp) lt.? else rt.?;
+            }
+            try self.lowerCoerced(lhs, self.wasmTypeOf(lhs));
+            try self.emit(.drop);
+            try self.lowerCoerced(rhs, self.wasmTypeOf(rhs));
+            try self.emit(.drop);
+            try self.emitC(if (negate) one else zero, "two different types are never equal (decision 210)");
+            return true;
+        };
+        const sym = try self.eqFnFor(t);
+        try self.lowerCoerced(lhs, "i32");
+        try self.lowerCoerced(rhs, "i32");
+        try self.emit(.{ .call = sym });
+        if (negate) try self.emit(opOf("i32", "eqz"));
+        return true;
+    }
+
+    /// Where a compared value is read from: `base` (+ `4 + idx * 4` for an
+    /// array element) at `off`.
+    const EqAddr = struct { base: []const u8, off: u32 = 0, idx: ?[]const u8 = null };
+
+    /// How the slot holding a value stores a float: a record field holds the
+    /// address of a boxed `f64` (`storeBoxedF64`); a tuple element, a variant
+    /// payload and an array element hold an `f32`.
+    const EqSlot = enum { field, slot };
+
+    fn eqPushAddr(self: *Emitter, a: EqAddr) !void {
+        try self.emit(.{ .local_get = a.base });
+        if (a.idx) |i| {
+            try self.emit(try self.constInt(4));
+            try self.emit(opOf("i32", "add"));
+            try self.emit(.{ .local_get = i });
+            try self.emit(try self.constInt(4));
+            try self.emit(opOf("i32", "mul"));
+            try self.emit(opOf("i32", "add"));
+        }
+    }
+
+    /// Leave `1` / `0` for "the values at `a` and `b`, of type `t`, are
+    /// equal" — a primitive by its own instruction, a composite by its
+    /// `$__eq_<T>`.
+    fn emitValueEq(self: *Emitter, t0: ast.TypeRef, slot: EqSlot, a: EqAddr, b: EqAddr) anyerror!void {
+        const t = self.eqResolve(t0);
+        const n: []const u8 = switch (t) {
+            .named => |x| x,
+            else => "",
+        };
+        if (std.mem.eql(u8, n, "string")) {
+            try self.eqPushAddr(a);
+            try self.emit(.{ .load = .{ .offset = a.off } });
+            try self.eqPushAddr(b);
+            try self.emit(.{ .load = .{ .offset = b.off } });
+            try self.emit(self.builder().helper(.str_eq));
+            return;
+        }
+        if (isFloatTypeName(n)) {
+            // The composite compare of a float is the target's own float
+            // `==` — `0.0 == -0.0`, NaN never equal; one rule for the four
+            // targets is open.
+            for ([_]EqAddr{ a, b }) |x| {
+                try self.eqPushAddr(x);
+                if (slot == .field) {
+                    try self.emit(.{ .load = .{ .offset = x.off } });
+                    try self.emit(.{ .load = .{ .ty = .f64 } });
+                } else try self.emit(.{ .load = .{ .ty = .f32, .offset = x.off } });
+            }
+            try self.emit(opOf(if (slot == .field) "f64" else "f32", "eq"));
+            return;
+        }
+        if (self.eqComposite(t)) {
+            const sym = try self.eqFnFor(t);
+            try self.eqPushAddr(a);
+            try self.emit(.{ .load = .{ .offset = a.off } });
+            try self.eqPushAddr(b);
+            try self.emit(.{ .load = .{ .offset = b.off } });
+            try self.emit(.{ .call = sym });
+            return;
+        }
+        if (t == .optional) {
+            // A boxed scalar: equal when both are absent, or both present
+            // with equal payload words.
+            const sym = try self.eqFnFor(t);
+            try self.eqPushAddr(a);
+            try self.emit(.{ .load = .{ .offset = a.off } });
+            try self.eqPushAddr(b);
+            try self.emit(.{ .load = .{ .offset = b.off } });
+            try self.emit(.{ .call = sym });
+            return;
+        }
+        // An integer, a bool, an all-unit enum's ordinal — and a field this
+        // backend has no type for (a type parameter's), compared as the word.
+        try self.eqPushAddr(a);
+        try self.emit(.{ .load = .{ .offset = a.off } });
+        try self.eqPushAddr(b);
+        try self.emit(.{ .load = .{ .offset = b.off } });
+        try self.emit(opOf("i32", "eq"));
+    }
+
+    /// `(if (then i32.const <v> return))` over the condition on the stack.
+    fn eqReturnIf(self: *Emitter, v: Instr) !void {
+        var hit: Capture = .{};
+        self.open(&hit);
+        try self.emit(v);
+        try self.emit(.@"return");
+        const s = self.seal(&hit, .terminated);
+        try self.emit(.{ .@"if" = .{ .then = .{ .seq = s, .layout = .inline_ } } });
+    }
+
+    /// One field test: the comparison, and `return 0` at the first difference.
+    fn eqFieldStep(self: *Emitter, t: ast.TypeRef, slot: EqSlot, off: u32) !void {
+        try self.emitValueEq(t, slot, .{ .base = "a", .off = off }, .{ .base = "b", .off = off });
+        try self.emit(opOf("i32", "eqz"));
+        try self.eqReturnIf(zero);
+    }
+
+    /// A record field's declared type, its owner's type parameters written
+    /// with the arguments `t` spells (`Pair<string>`), or a parameter itself
+    /// when `t` spells none.
+    fn eqFieldType(self: *Emitter, owner: ast.TypeRef, gps: []const ast.GenericParam, ft: ast.TypeRef) ast.TypeRef {
+        _ = self;
+        const args = switch (owner) {
+            .generic => |g| g.args,
+            else => return ft,
+        };
+        if (ft != .named) return ft;
+        for (gps, 0..) |gp, i| if (std.mem.eql(u8, gp.name, ft.named) and i < args.len) return args[i];
+        return ft;
+    }
+
+    /// `$__eq_<T>(a, b)`: `a == b` as pointers answers `1` at once; then the
+    /// type's parts in order, `0` at the first difference, `1` past the last.
+    fn eqFunc(self: *Emitter, sym: []const u8, t: ast.TypeRef) !wat.Func {
+        // A field written `Self` is the type being compared.
+        const prev_self = self.self_type;
+        if (self.eqNominal(t)) |nm| self.self_type = nm;
+        defer self.self_type = prev_self;
+        var c: Capture = .{};
+        self.open(&c);
+        var locals: []const wat.Local = &.{};
+        try self.emit(.{ .local_get = "a" });
+        try self.emit(.{ .local_get = "b" });
+        try self.emit(opOf("i32", "eq"));
+        try self.eqReturnIf(one);
+        if (eqArrayElem(t)) |elem| {
+            // The same length, then each element by its own type.
+            try self.emit(.{ .local_get = "a" });
+            try self.emit(.{ .load = .{} });
+            try self.emit(.{ .local_get = "b" });
+            try self.emit(.{ .load = .{} });
+            try self.emit(opOf("i32", "ne"));
+            try self.eqReturnIf(zero);
+            try self.emit(.{ .local_get = "a" });
+            try self.emit(.{ .load = .{} });
+            try self.emit(.{ .local_set = "n" });
+            var body: Capture = .{};
+            self.open(&body);
+            try self.emit(.{ .local_get = "i" });
+            try self.emit(.{ .local_get = "n" });
+            try self.emit(opOf("i32", "ge_u"));
+            try self.emit(.{ .br_if = "brk" });
+            try self.emitValueEq(elem, .slot, .{ .base = "a", .idx = "i" }, .{ .base = "b", .idx = "i" });
+            try self.emit(opOf("i32", "eqz"));
+            try self.eqReturnIf(zero);
+            try self.emit(.{ .local_get = "i" });
+            try self.emit(one);
+            try self.emit(opOf("i32", "add"));
+            try self.emit(.{ .local_set = "i" });
+            try self.emit(.{ .br = "cont" });
+            const loop_seq = self.seal(&body, .none);
+            var outer: Capture = .{};
+            self.open(&outer);
+            try self.emit(.{ .block = .{ .kind = .loop, .label = "cont", .body = loop_seq } });
+            const outer_seq = self.seal(&outer, .none);
+            try self.emit(.{ .block = .{ .kind = .block, .label = "brk", .body = outer_seq } });
+            try self.emit(one);
+            locals = try self.arena().dupe(wat.Local, &.{ .{ .name = "n", .ty = .i32 }, .{ .name = "i", .ty = .i32 } });
+        } else switch (t) {
+            .optional => |inner| {
+                // Absent on either side: equal only when both are (`a == b`
+                // above answered two absences).
+                try self.emit(.{ .local_get = "a" });
+                try self.emit(opOf("i32", "eqz"));
+                try self.emit(.{ .local_get = "b" });
+                try self.emit(opOf("i32", "eqz"));
+                try self.emit(opOf("i32", "or"));
+                try self.eqReturnIf(zero);
+                if (self.eqComposite(inner.*) or isNamedTypeRef(inner.*, "string")) {
+                    // A pointer payload: the optional is the payload.
+                    try self.emitValueEqDirect(inner.*);
+                } else {
+                    // A box: the payload word at its address.
+                    try self.eqFieldStep(inner.*, .slot, 0);
+                    try self.emit(one);
+                }
+            },
+            .tuple_, .labeledTuple => {
+                for (t.tupleElems().?, 0..) |el, i| try self.eqFieldStep(el, .slot, @intCast(i * 4));
+                try self.emit(one);
+            },
+            else => {
+                const name = self.eqNominal(t).?;
+                if (self.records.get(name)) |fields| {
+                    const trefs = self.record_field_typerefs.get(name) orelse &.{};
+                    const gps = self.record_generics.get(name) orelse &.{};
+                    for (fields, 0..) |_, i| {
+                        const ft: ast.TypeRef = if (i < trefs.len) self.eqFieldType(t, gps, trefs[i]) else .{ .named = "i32" };
+                        try self.eqFieldStep(ft, .field, @intCast(i * 4));
+                    }
+                    try self.emit(one);
+                } else {
+                    // A payload enum: slot 0 is the ordinal; the variant's
+                    // payload follows it, one 4-byte slot per field.
+                    try self.emit(.{ .local_get = "a" });
+                    try self.emit(.{ .load = .{} });
+                    try self.emit(.{ .local_get = "b" });
+                    try self.emit(.{ .load = .{} });
+                    try self.emit(opOf("i32", "ne"));
+                    try self.eqReturnIf(zero);
+                    for (self.enums.get(name).?, 0..) |v, k| {
+                        if (v.fields.len == 0) continue;
+                        var arm: Capture = .{};
+                        self.open(&arm);
+                        for (v.fields, 0..) |f, i| try self.eqFieldStep(f.typeRef, .slot, @intCast((i + 1) * 4));
+                        const arm_seq = self.seal(&arm, .none);
+                        try self.emit(.{ .local_get = "a" });
+                        try self.emit(.{ .load = .{} });
+                        try self.emit(try self.constInt(k));
+                        try self.emit(opOf("i32", "eq"));
+                        try self.emitC(.{ .@"if" = .{ .then = .{ .seq = arm_seq } } }, v.name);
+                    }
+                    try self.emit(one);
+                }
+            },
+        }
+        const body = self.seal(&c, .{ .value = .i32 });
+        return try self.builder().func(.{
+            .name = sym,
+            .params = &.{ wat.Builder.param("a", .i32), wat.Builder.param("b", .i32) },
+            .result = .i32,
+            .locals = if (locals.len == 0) &.{} else try self.arena().dupe([]const wat.Local, &.{locals}),
+            .body = body,
+        });
+    }
+
+    /// The tail of an optional's equality over a pointer payload: `a` and `b`
+    /// ARE the payloads, so the payload type's own compare answers.
+    fn emitValueEqDirect(self: *Emitter, inner: ast.TypeRef) !void {
+        try self.emit(.{ .local_get = "a" });
+        try self.emit(.{ .local_get = "b" });
+        if (isNamedTypeRef(inner, "string")) {
+            try self.emit(self.builder().helper(.str_eq));
+        } else try self.emit(.{ .call = try self.eqFnFor(inner) });
+    }
+
     fn lowerBinOp(self: *Emitter, op: anytype, lhs: ast.Expr, rhs: ast.Expr) anyerror!void {
         const Op = @TypeOf(op);
         // `x == null` compares the carrier with 0, whatever `x` holds — a
@@ -11751,6 +12331,9 @@ const Emitter = struct {
             Op.ne => return self.lowerStrEq(lhs, rhs, true),
             else => {},
         };
+        // Decision 210 — a composite compares by value through its type's
+        // generated `$__eq_<T>` (`lowerStructuralEq`).
+        if (op == Op.eq or op == Op.ne) if (try self.lowerStructuralEq(op == Op.ne, lhs, rhs)) return;
         // Decision 8 §6 T6 — a tuple is positional at run time and `==`
         // compares its **elements**; T5 — labels take no part. Both sides are
         // pointers into the bump heap, so `i32.eq` on them answered `false` for

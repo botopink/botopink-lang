@@ -64,7 +64,7 @@ fn arrayEq() -> bool {
     local.set $b
     local.get $a
     local.get $b
-    i32.eq
+    call $__eq_Point
     return
   )
   (func $arrayEq (result i32)
@@ -108,8 +108,90 @@ fn arrayEq() -> bool {
     local.set $ys
     local.get $xs
     local.get $ys
-    i32.eq
+    call $__eq_Array_i32
     return
+  )
+  (func $__eq_Point (param $a i32) (param $b i32) (result i32)
+    local.get $a
+    local.get $b
+    i32.eq
+    (if
+      (then i32.const 1 return)
+    )
+    local.get $a
+    i32.load
+    local.get $b
+    i32.load
+    i32.eq
+    i32.eqz
+    (if
+      (then i32.const 0 return)
+    )
+    local.get $a
+    i32.load offset=4
+    local.get $b
+    i32.load offset=4
+    i32.eq
+    i32.eqz
+    (if
+      (then i32.const 0 return)
+    )
+    i32.const 1
+  )
+  (func $__eq_Array_i32 (param $a i32) (param $b i32) (result i32)
+    (local $n i32) (local $i i32)
+    local.get $a
+    local.get $b
+    i32.eq
+    (if
+      (then i32.const 1 return)
+    )
+    local.get $a
+    i32.load
+    local.get $b
+    i32.load
+    i32.ne
+    (if
+      (then i32.const 0 return)
+    )
+    local.get $a
+    i32.load
+    local.set $n
+    (block $brk
+    (loop $cont
+    local.get $i
+    local.get $n
+    i32.ge_u
+    br_if $brk
+    local.get $a
+    i32.const 4
+    i32.add
+    local.get $i
+    i32.const 4
+    i32.mul
+    i32.add
+    i32.load
+    local.get $b
+    i32.const 4
+    i32.add
+    local.get $i
+    i32.const 4
+    i32.mul
+    i32.add
+    i32.load
+    i32.eq
+    i32.eqz
+    (if
+      (then i32.const 0 return)
+    )
+    local.get $i
+    i32.const 1
+    i32.add
+    local.set $i
+    br $cont
+    )
+    )
+    i32.const 1
   )
 )
 ```

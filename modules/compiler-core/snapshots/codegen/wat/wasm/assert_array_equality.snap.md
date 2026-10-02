@@ -35,7 +35,7 @@ fn f() {
     i32.const 0
     i32.store
     local.get $__mem1
-    i32.eq
+    call $__eq_Array_i32
     i32.eqz
     (if
       (then
@@ -45,6 +45,61 @@ fn f() {
     unreachable
       )
     )
+  )
+  (func $__eq_Array_i32 (param $a i32) (param $b i32) (result i32)
+    (local $n i32) (local $i i32)
+    local.get $a
+    local.get $b
+    i32.eq
+    (if
+      (then i32.const 1 return)
+    )
+    local.get $a
+    i32.load
+    local.get $b
+    i32.load
+    i32.ne
+    (if
+      (then i32.const 0 return)
+    )
+    local.get $a
+    i32.load
+    local.set $n
+    (block $brk
+    (loop $cont
+    local.get $i
+    local.get $n
+    i32.ge_u
+    br_if $brk
+    local.get $a
+    i32.const 4
+    i32.add
+    local.get $i
+    i32.const 4
+    i32.mul
+    i32.add
+    i32.load
+    local.get $b
+    i32.const 4
+    i32.add
+    local.get $i
+    i32.const 4
+    i32.mul
+    i32.add
+    i32.load
+    i32.eq
+    i32.eqz
+    (if
+      (then i32.const 0 return)
+    )
+    local.get $i
+    i32.const 1
+    i32.add
+    local.set $i
+    br $cont
+    )
+    )
+    i32.const 1
   )
   ;; Scratch layout below the data section (which starts at 256):
   ;;   0..8  WASI iovec   8  newline byte

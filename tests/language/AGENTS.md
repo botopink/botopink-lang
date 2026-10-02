@@ -1019,13 +1019,22 @@ expected failures used for a certain front with a missing row. 1.0.10-beta gathe
 `C-06`, and since 2026-09-20 every 52/53/55 line names `C-06 (<backend> half not landed)`; wasm's
 half is the one that landed.
 
-**Structural equality of two values of the same type is not legislated, so no cell asserts it.**
-`Person(name: "Ana", age: 30) == Person(name: "Ana", age: 30)` answers `false` on commonJS (reference
-equality on the class instance) and `true` on erlang and BEAM (one term, now a tagged tuple). No
-decision of this milestone settles it and no front owns it, so `test/type_identity.bp` states the
-omission in a comment and asserts only what **is** settled — that two *different* types with the same
-fields are different values. Reported to the maintainer; a sentence would turn the comment into two
-assertions.
+**Structural equality is decision 210: `==` compares by value on every target.**
+`Person(name: "Ana", age: 30) == Person(name: "Ana", age: 30)` is `true` on all four:
+records, tuples, arrays and enum variants compare field by field, recursively, two
+values of different types are never equal (decision 21), and `!=` is the negation.
+Decision 211 adds that `==` never calls user code — a method named `equals` has no
+special role. erlang and BEAM compare one term (`=:=`); commonJS answered `false` (the
+class instance's reference) and wasm `false` (the pointer) until each lowered `==` by
+the operands' static type: a primitive keeps its instruction, a composite calls an
+equality generated per compared type (`codegen/js/AGENTS.md`, `codegen/wat/AGENTS.md`
+§ structural equality). `run/record_structural_equality.bp` pins it on four targets — a
+record, a nested record, a tuple, an array of records, enum variants with payloads,
+two types with the same fields, `!=`, a generic `same<T>` and an `equals` method `==`
+does not call. Float fields (`0.0 == -0.0`, NaN) are deliberately not in it: the
+composite compare of an `f64` field is that target's own `f64 ==`, and one rule for
+all four is the maintainer's to pick. `test/type_identity.bp` keeps asserting the
+other half, two different types with the same fields.
 
 **The identity is asserted on two backends and RUN on four.** `botopink test` refuses beam and wasm,
 so a `test/` cell reaches only commonJS and erlang. `run/type_identity_equality.bp` is the same

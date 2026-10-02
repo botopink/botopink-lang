@@ -758,11 +758,11 @@ test "wat: loop ---- a search leaves its answer in a var and ends at break" {
 
 // §6 T6 — a tuple is positional at run time and `==` compares its elements;
 // T5 — labels take no part. Both sides are pointers into the bump heap, so the
-// `i32.eq` this backend emitted answered `false` for two equal tuples. The
-// shape is static (`(is)`), so the comparison is emitted element by element:
-// a string element through `$__str_eq` (comparing the words would compare
-// addresses), a float as the `f32` its slot holds, a nested tuple by recursing
-// through the pointer.
+// `i32.eq` this backend emitted answered `false` for two equal tuples. Since
+// decision 210 each tuple type compares through its generated
+// `$__eq_Tuple<n>_…`: a string element through `$__str_eq` (comparing the
+// words would compare addresses), a float as the `f32` its slot holds, a nested
+// tuple through its own equality.
 test "wat: tuple ---- equality compares elements, and labels take no part" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
