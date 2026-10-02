@@ -4,6 +4,7 @@
 /// ArenaAllocator and frees it after type-checking is complete.
 const std = @import("std");
 const ast = @import("../ast.zig");
+const reflectionMod = @import("reflection.zig");
 const T = @import("./types.zig");
 const template = @import("./template.zig");
 const trace = @import("./trace.zig");
@@ -228,6 +229,9 @@ pub const TemplateOp = enum { value, text, parts, source, context, lookup, bindi
 pub const NamespaceImports = struct {
     /// Bound name → the imported module's exports.
     modules: std.StringHashMapUnmanaged(std.StringHashMap(*T.Type)) = .empty,
+    /// Bound name → the imported module's path (`@typeinfo(models.City)`
+    /// reflects `City` of that module — decision 216).
+    paths: std.StringHashMapUnmanaged([]const u8) = .empty,
     /// Call loc → the namespace and the function it calls.
     calls: std.AutoHashMapUnmanaged(ast.Loc, Call) = .empty,
     /// `"<namespace>\x00<function>"` → the function's parameters as written
@@ -884,6 +888,13 @@ pub const Env = struct {
     /// parses each into the target type's body and re-analyzes the module, as
     /// it does with `contributions`. Allocated in `arena`.
     memberContributions: std.ArrayListUnmanaged(MemberContribution) = .empty,
+    /// Decision 216 — the compile session's reflection (`reflection.zig`):
+    /// where a decorator's `decl.setMeta` is recorded and `@typeinfo` reads.
+    /// Null outside a session (unit helpers that infer one program alone).
+    reflection: ?*reflectionMod.Reflection = null,
+    /// The names this module declares at top level (types, behaviors, fns,
+    /// vals) — what `@typeinfo(Name)` reflects when no import binds `Name`.
+    ownDecls: std.StringHashMapUnmanaged(void) = .empty,
     /// Erlang sent to and replies received from the `erl` runtime by every
     /// decorator / template evaluation in this module, in order (snapshots).
     /// Allocated in `arena`.

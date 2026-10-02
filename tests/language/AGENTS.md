@@ -120,7 +120,13 @@ member) and `modules/decorator_add_member_import` (the members travel with the t
 calls `City.fromRow(r)` through a plain import and an alias), on all four targets, and three
 `reject/` cells at the annotation: `decorator_add_member_on_fn` (`decorator-member-without-type`),
 `decorator_add_member_duplicate` (`decorator-member-duplicate`) and `decorator_add_member_not_one`
-(`decorator-member-not-one-fn`).
+(`decorator-member-not-one-fn`). Its second place — `decl.setMeta(key, value)`, read as
+`@typeinfo(X).meta.<decorator>.<key>` — adds `run/decorator_set_meta` (two decorators' keys on a
+type, a `fn`'s meta, `.name`, a read held in a typed `val` and continued by `.length`) and
+`modules/decorator_meta_import` (meta read through a plain import, an alias and a namespace import),
+on all four targets, and five `reject/` cells: `typeinfo_meta_missing`, `typeinfo_without_member`
+and `typeinfo_unknown_declaration` where the read is written, `decorator_meta_duplicate` and
+`decorator_meta_on_member` at the annotation.
 C-03's beam half adds `run/std_template_host_fns_across_modules` — std host functions whose
 `@External.Erlang` body is a template (`fs.exists`, `fs.readText`, `os.eol`, `process.platform`,
 `encoding.hexEncode`, `hash.sha256`, `json.quote`, `regex.matches`) called from the program's

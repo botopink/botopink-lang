@@ -397,6 +397,7 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     try validateDecorators(env, program);
     try refuseUnknownAnnotations(env, program);
     try validateExternalInline(env, program);
+    try noteOwnDecls(env, program);
     try invokeDecorators(env, program);
     if (env.contributions.items.len > 0 or env.memberContributions.items.len > 0) {
         return list.toOwnedSlice(env.arena);
@@ -481,6 +482,7 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
     try validateDecorators(env, program);
     try refuseUnknownAnnotations(env, program);
     try validateExternalInline(env, program);
+    try noteOwnDecls(env, program);
     try invokeDecorators(env, program);
     if (env.contributions.items.len > 0 or env.memberContributions.items.len > 0) {
         // A decorator `@emit`ed code: the spliced re-analysis (`analyzeSource`)
@@ -3606,6 +3608,21 @@ fn runDeclDecorators(
                     };
                     try env.memberContributions.append(env.arena, .{ .target = target, .source = c.source, .loc = a.loc, .decorator = a.name });
                 },
+                // `decl.setMeta(key, value)` (decision 216 (2)) — recorded in
+                // the session's reflection under the decorator's own name,
+                // before any body of this module is inferred.
+                .meta => {
+                    const is_member = std.mem.eql(u8, handle.kind, "Field") or std.mem.eql(u8, handle.kind, "Method");
+                    if (is_member) {
+                        const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` on the {s} `{s}` calls `decl.setMeta`, and meta describes a top-level declaration", .{ diagnostics.decorator_meta_on_member, a.name, if (std.mem.eql(u8, handle.kind, "Field")) "field" else "method", handle.name });
+                        return decoratorError(env, a, msg, "`@typeinfo(X)` reflects a `type`, a `behavior` or a `fn`; set the meta from a decorator on the declaration itself.");
+                    }
+                    const r = env.reflection orelse continue;
+                    if (!try r.addMeta(env.modulePath, handle.name, .{ .decorator = dfn.name, .key = c.key, .value = c.value })) {
+                        const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` sets `{s}` on `{s}` twice", .{ diagnostics.decorator_meta_duplicate, a.name, c.key, handle.name });
+                        return decoratorError(env, a, msg, "A decorator sets each of its keys once per declaration; `@typeinfo(X).meta` answers one value per key.");
+                    }
+                },
             },
             .fail => |fl| return decoratorError(env, a, fl.message, "raised by the decorator via `fail`/`failAt`"),
             .err => |m| return decoratorError(env, a, m, "the decorator could not be evaluated"),
@@ -3626,6 +3643,137 @@ fn decoratorError(env: *Env, a: ast.Annotation, message: []const u8, hint: []con
     if (a.loc) |loc| e = e.withLoc(loc);
     env.lastError = e;
     return error.TypeError;
+}
+
+/// The names `program` declares at top level (`Env.ownDecls`) — what
+/// `@typeinfo(Name)` reflects in this module.
+fn noteOwnDecls(env: *Env, program: ast.Program) InferError!void {
+    for (program.decls) |decl| {
+        const name: []const u8 = switch (decl) {
+            .@"fn" => |f| f.name,
+            .type_ => |t| t.name,
+            .behavior => |b| b.name,
+            .val => |v| v.name,
+            else => continue,
+        };
+        try env.ownDecls.put(env.arena, name, {});
+    }
+}
+
+/// The declaration `@typeinfo(<expr>)` reflects: the module that declares it
+/// and the name it is declared under. `Name` is this module's own declaration
+/// or an imported one (an alias answers the declaration, decision 110);
+/// `ns.Name` is `Name` of the module the namespace import `ns` binds.
+fn reflectedDecl(env: *Env, e: ast.Expr) ?struct { module: []const u8, name: []const u8 } {
+    if (e != .identifier) return null;
+    switch (e.identifier.kind) {
+        .ident => |n| {
+            if (env.ownDecls.contains(n)) return .{ .module = env.modulePath, .name = n };
+            if (env.importOwners.get(n)) |o| return .{ .module = o.owner, .name = o.name };
+            return null;
+        },
+        .identAccess => |ia| {
+            if (ia.receiver.* != .identifier or ia.receiver.identifier.kind != .ident) return null;
+            const path = env.namespaces.paths.get(ia.receiver.identifier.kind.ident) orelse return null;
+            return .{ .module = path, .name = ia.member };
+        },
+        else => return null,
+    }
+}
+
+/// A string as the source text of a string literal (`stringLit` keeps the
+/// escapes as written; every backend emits them).
+fn stringLiteralText(arena: std.mem.Allocator, text: []const u8) ![]const u8 {
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    for (text) |ch| switch (ch) {
+        '\\' => try out.appendSlice(arena, "\\\\"),
+        '"' => try out.appendSlice(arena, "\\\""),
+        '\n' => try out.appendSlice(arena, "\\n"),
+        '\t' => try out.appendSlice(arena, "\\t"),
+        '\r' => try out.appendSlice(arena, "\\r"),
+        else => try out.append(arena, ch),
+    };
+    return out.items;
+}
+
+/// Decision 216 (2) — a reflection read: `@typeinfo(X).name` and
+/// `@typeinfo(X).meta.<decorator>.<key>`, answered at compile time as a string
+/// constant (`env.srcRewrites` puts the literal in the read's place, the way
+/// `@src()` is spliced; `transform.zig` replaces the access node at its loc).
+/// Null when `ia` is not the end of such a read — a longer chain
+/// (`….table.length`) reaches the read as its receiver.
+fn inferTypeinfoRead(env: *Env, ia: anytype, loc: ast.Loc) InferError!?TypedExpr {
+    var members: [8][]const u8 = undefined;
+    var count: usize = 1;
+    members[0] = ia.member;
+    var node = ia.receiver;
+    while (node.* == .identifier and node.identifier.kind == .identAccess) {
+        if (count == members.len) return null;
+        members[count] = node.identifier.kind.identAccess.member;
+        count += 1;
+        node = node.identifier.kind.identAccess.receiver;
+    }
+    if (node.* != .call or node.call.kind != .call) return null;
+    const call = node.call.kind.call;
+    if (!call.is_builtin or !std.mem.eql(u8, call.callee, "typeinfo")) return null;
+    std.mem.reverse([]const u8, members[0..count]);
+    const chain = members[0..count];
+
+    const read: enum { name, meta } = if (std.mem.eql(u8, chain[0], "name")) .name else if (std.mem.eql(u8, chain[0], "meta")) .meta else {
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `@typeinfo(…)` has no member `{s}`", .{ diagnostics.typeinfo_unknown_member, chain[0] });
+        env.lastError = TypeError.custom(msg, "Read `.name` (the declaration's name) or `.meta.<decorator>.<key>` (what a decorator recorded with `decl.setMeta`).").withLoc(loc);
+        return error.TypeError;
+    };
+    const complete: usize = if (read == .name) 1 else 3;
+    if (chain.len > complete) return null;
+    if (chain.len < complete) {
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `@typeinfo(…).{s}` names a decorator's meta without its key", .{ diagnostics.typeinfo_unknown_member, std.mem.join(env.arena, ".", chain) catch return error.OutOfMemory });
+        env.lastError = TypeError.custom(msg, "A meta read is `.meta.<decorator>.<key>` — the decorator's own name, then the key it set.").withLoc(loc);
+        return error.TypeError;
+    }
+
+    if (call.args.len != 1 or call.trailing.len != 0) {
+        env.lastError = TypeError.custom(diagnostics.typeinfo_unknown_declaration ++ ": `@typeinfo` takes one declaration — `@typeinfo(City)`, `@typeinfo(models.City)`", null).withLoc(node.call.loc);
+        return error.TypeError;
+    }
+    const target = reflectedDecl(env, call.args[0].value.*) orelse {
+        const arg_loc = call.args[0].value.getLoc();
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `@typeinfo` reflects a declaration this module declares or imports, and this names none", .{diagnostics.typeinfo_unknown_declaration});
+        env.lastError = TypeError.custom(msg, "Name a `type`, `behavior` or `fn` of this module, an imported one, or one through a namespace import (`models.City`).").withLoc(arg_loc);
+        return error.TypeError;
+    };
+
+    const value: []const u8 = switch (read) {
+        .name => target.name,
+        .meta => value: {
+            const decorator = chain[1];
+            const key = chain[2];
+            const r = env.reflection orelse break :value "";
+            const entries = try r.metaOf(env.arena, target.module, target.name);
+            for (entries) |entry| {
+                if (std.mem.eql(u8, entry.decorator, decorator) and std.mem.eql(u8, entry.key, key)) break :value entry.value;
+            }
+            // Tooling that does not run decorators reads an empty constant
+            // rather than refuse what the build accepts.
+            if (env.templateEval == null) break :value "";
+            var set: std.ArrayListUnmanaged(u8) = .empty;
+            for (entries) |entry| {
+                if (set.items.len > 0) try set.appendSlice(env.arena, ", ");
+                try set.print(env.arena, "`{s}.{s}`", .{ entry.decorator, entry.key });
+            }
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` has no meta `{s}.{s}`; {s}", .{
+                diagnostics.typeinfo_meta_missing, target.name, decorator, key,
+                if (set.items.len == 0) "no decorator set any" else try std.fmt.allocPrint(env.arena, "it has {s}", .{set.items}),
+            });
+            env.lastError = TypeError.custom(msg, "A key is what the decorator passed to `decl.setMeta(key, value)`, read under the decorator's own name.").withLoc(loc);
+            return error.TypeError;
+        },
+    };
+
+    const rewrite = try env.arena.create(ast.Expr);
+    rewrite.* = .{ .literal = .{ .loc = loc, .kind = .{ .stringLit = try stringLiteralText(env.arena, value) } } };
+    try env.srcRewrites.put(loc, rewrite);
+    return try inferExprTyped(env, rewrite.*);
 }
 
 /// Walk `program` and run body-carrying decorators over every annotated
@@ -6243,6 +6391,7 @@ const runtime_builtin_names = [_][]const u8{
 const all_builtin_names = runtime_builtin_names ++ [_][]const u8{
     "src",        "block",      "expr",  "code",       "typeInfo",      "TypeOf",
     "makeRecord", "RecordKeys", "field", "getContext", "comptimeError",
+    "typeinfo",
 };
 
 fn isKnownBuiltinName(env: *Env, callee: []const u8) bool {
@@ -9367,6 +9516,8 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
             return error.TypeError;
         },
         .identAccess => |ia| {
+            // Decision 216 (2) — `@typeinfo(X).name`, `….meta.<d>.<k>`.
+            if (try inferTypeinfoRead(env, ia, loc)) |read| return read;
             // Decision 110 — `S.Red` for `import {Shape as S}` is `Shape.Red`.
             if (try importedTypeAliasReceiver(env, ia.receiver)) |recv| {
                 var direct = ident;
@@ -12641,6 +12792,13 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
             }
             // `@src()` (1.0.10-beta decision 73) — before the arguments are
             // inferred, so `@src(x)` reports the builtin's rule and not `x`.
+            if (call.is_builtin and std.mem.eql(u8, call.callee, "typeinfo")) {
+                env.lastError = TypeError.custom(
+                    diagnostics.typeinfo_without_member ++ ": `@typeinfo(…)` is read through a member, not used as a value",
+                    "Read `@typeinfo(X).name` or `@typeinfo(X).meta.<decorator>.<key>`; each is a string constant fixed at compile time.",
+                ).withLoc(loc);
+                return error.TypeError;
+            }
             if (call.is_builtin and std.mem.eql(u8, call.callee, "src")) {
                 return inferSrcBuiltin(env, call, loc);
             }

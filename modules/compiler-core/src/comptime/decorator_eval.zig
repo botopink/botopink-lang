@@ -14,7 +14,7 @@
 /// The body is lowered by the regular Erlang backend (untyped mode), so every
 /// construct that backend supports works in a decorator. The host functions the
 /// body calls (`decl.fail`, `decl.failAt`, `@compilerError`, `@emit`,
-/// `decl.addMember` — decision 216) are plain
+/// `decl.addMember`, `decl.setMeta` — decision 216) are plain
 /// Erlang functions resident in `bp_comptime_decorator`, built once at server
 /// warmup (`runtime/prelude.zig`) and reached by the `-import`
 /// `emitComptimeModule` writes; only `main/1` is generated, and it carries nothing
@@ -59,10 +59,13 @@ pub const FieldHandle = struct {
 /// annotated type.
 pub const Contribution = struct {
     kind: Kind,
-    /// The botopink source the body wrote.
+    /// The botopink source the body wrote (`emit`, `member`).
     source: []const u8 = "",
+    /// `decl.setMeta(key, value)` — a comptime fact about the declaration.
+    key: []const u8 = "",
+    value: []const u8 = "",
 
-    pub const Kind = enum { emit, member };
+    pub const Kind = enum { emit, member, meta };
 };
 
 pub const Outcome = union(enum) {
@@ -398,6 +401,8 @@ fn annotationsToTerm(arena: std.mem.Allocator, anns: []const ast.Annotation) std
 const ReplyItem = struct {
     kind: []const u8,
     source: []const u8 = "",
+    key: []const u8 = "",
+    value: []const u8 = "",
 };
 
 /// The JSON object `main/0` returns.
@@ -419,7 +424,7 @@ fn parseOutcome(arena: std.mem.Allocator, stdout: []const u8) EvalError!Outcome 
         for (reply.contributions, 0..) |item, i| {
             const kind = std.meta.stringToEnum(Contribution.Kind, item.kind) orelse
                 return .{ .err = try errorText(arena, "the decorator evaluator returned an unknown output kind", item.kind) };
-            out[i] = .{ .kind = kind, .source = item.source };
+            out[i] = .{ .kind = kind, .source = item.source, .key = item.key, .value = item.value };
         }
         return .{ .ok = out };
     }

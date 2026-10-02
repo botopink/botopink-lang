@@ -356,6 +356,27 @@ pub const decorator_member_duplicate: []const u8 = "decorator-member-duplicate";
 /// `decl.addMember(source)` whose source is not exactly one `fn` member.
 pub const decorator_member_not_one_fn: []const u8 = "decorator-member-not-one-fn";
 
+/// `decl.setMeta` from a field's or a method's decorator: meta describes a
+/// top-level declaration, the one `@typeinfo` reflects.
+pub const decorator_meta_on_member: []const u8 = "decorator-meta-on-member";
+
+/// A decorator setting one of its keys twice on one declaration.
+pub const decorator_meta_duplicate: []const u8 = "decorator-meta-duplicate";
+
+/// `@typeinfo(X)` used as a value: it is read through `.name` or
+/// `.meta.<decorator>.<key>`.
+pub const typeinfo_without_member: []const u8 = "typeinfo-without-member";
+
+/// `@typeinfo(X).<m>` naming no reflection member (or `.meta` / `.meta.<d>`
+/// left without its key).
+pub const typeinfo_unknown_member: []const u8 = "typeinfo-unknown-member";
+
+/// `@typeinfo(X)` where `X` names no declaration of the module or its imports.
+pub const typeinfo_unknown_declaration: []const u8 = "typeinfo-unknown-declaration";
+
+/// `@typeinfo(X).meta.<decorator>.<key>` naming a key that decorator did not set.
+pub const typeinfo_meta_missing: []const u8 = "typeinfo-meta-missing";
+
 // ── Lookup table — every code (skipping aliases & reserved-empties) ─────────
 
 pub const all_codes = [_][]const u8{
@@ -421,6 +442,12 @@ pub const all_codes = [_][]const u8{
     decorator_member_without_type,
     decorator_member_duplicate,
     decorator_member_not_one_fn,
+    decorator_meta_on_member,
+    decorator_meta_duplicate,
+    typeinfo_without_member,
+    typeinfo_unknown_member,
+    typeinfo_unknown_declaration,
+    typeinfo_meta_missing,
 };
 
 test "every reserved code has a stable, non-empty spelling" {

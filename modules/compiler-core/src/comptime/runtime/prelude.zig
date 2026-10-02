@@ -202,6 +202,9 @@ pub fn decoratorForms(b: Ast.Builder) Error![]const Ast.Form {
         try b.function("addMember", &.{ V("_Decl"), V("Source") }, &.{}, &.{
             try b.call("__bp_contribute", &.{try b.map(&.{ Ast.field("kind", Ast.str("member")), Ast.field("source", V("Source")) })}),
         }),
+        try b.function("setMeta", &.{ V("_Decl"), V("Key"), V("Value") }, &.{}, &.{
+            try b.call("__bp_contribute", &.{try b.map(&.{ Ast.field("kind", Ast.str("meta")), Ast.field("key", V("Key")), Ast.field("value", V("Value")) })}),
+        }),
         try b.function("__bp_contribute", &.{V("Item")}, &.{}, &.{
             try b.remote("erlang", "put", &.{ key, try b.cons(&.{V("Item")}, try b.call("__bp_emitted", &.{})) }),
             A("ok"),

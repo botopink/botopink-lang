@@ -30,6 +30,7 @@ test {
     _ = @import("primOpTemplate.zig");
     _ = @import("./snapshot.zig");
     _ = @import("./diagnostics.zig");
+    _ = @import("./reflection.zig");
     _ = @import("./eval.zig");
     _ = @import("./trace.zig");
     _ = @import("./template_eval.zig");

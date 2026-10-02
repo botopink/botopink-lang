@@ -23,6 +23,7 @@ const T = @import("./comptime/types.zig");
 const Module = @import("./module.zig").Module;
 const validation = @import("./comptime/error.zig");
 const diagnostics = @import("./comptime/diagnostics.zig");
+const reflectionMod = @import("./comptime/reflection.zig");
 const hostRuntime = @import("./comptime/runtime/runtime.zig");
 
 // ── Re-exports for external consumers ────────────────────────────────────────
@@ -458,8 +459,9 @@ fn analyzeModule(
     templateEvalCtx: ?envMod.TemplateEvalCtx,
     types_only: bool,
     target_name: ?[]const u8,
+    reflection: *reflectionMod.Reflection,
 ) !AnalysisResult {
-    return analyzeSource(arena, mod, mod.source, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, types_only, false, target_name);
+    return analyzeSource(arena, mod, mod.source, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, types_only, false, target_name, reflection);
 }
 
 /// Append decorator `@emit(...)` contributions to a module's source as extra
@@ -645,9 +647,11 @@ fn analyzeMerged(
     extensionRegistry: *const std.StringHashMap(std.StringHashMap(ast.ImplementDecl)),
     templateEvalCtx: ?envMod.TemplateEvalCtx,
     target_name: ?[]const u8,
+    reflection: *reflectionMod.Reflection,
 ) anyerror!AnalysisResult {
     var env = try infer.freshEnv(arena, std.heap.page_allocator);
     env.modulePath = mod.path;
+    env.reflection = reflection;
     env.srcPath = try displaySrcPath(arena, mod);
     // The prelude registration may have named `SourceLocation`; only the
     // program's own references count (`withSourceLocationDecl`).
@@ -751,8 +755,10 @@ fn analyzeSource(
     types_only: bool,
     skip_invoke: bool,
     target_name: ?[]const u8,
+    reflection: *reflectionMod.Reflection,
 ) anyerror!AnalysisResult {
     var env = try infer.freshEnv(arena, std.heap.page_allocator);
+    env.reflection = reflection;
     // Capture provenance for `expr` templates: which file is being inferred.
     env.modulePath = mod.path;
     // `@src().file` (decision 73): the package-relative display path.
@@ -842,7 +848,7 @@ fn analyzeSource(
             }
         }
         if (try parseAndMergeContributions(arena, source, with_members, env.contributions.items)) |merged_program| {
-            var reanalysis = try analyzeMerged(arena, mod, merged_program, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, target_name);
+            var reanalysis = try analyzeMerged(arena, mod, merged_program, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, target_name, reflection);
             if (reanalysis == .success) {
                 try keepPassOneTraces(&reanalysis.success.env, &env);
                 env.deinit();
@@ -864,7 +870,7 @@ fn analyzeSource(
         // full re-lex so the parser sees the original module as one unit (its
         // diagnostics carry global offsets).
         const spliced = try spliceContributions(arena, source, env.contributions.items);
-        var reanalysis = try analyzeSource(arena, mod, spliced, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, types_only, true, target_name);
+        var reanalysis = try analyzeSource(arena, mod, spliced, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, types_only, true, target_name, reflection);
         if (reanalysis == .success) {
             try keepPassOneTraces(&reanalysis.success.env, &env);
             env.deinit();
@@ -967,6 +973,7 @@ const decl_reflection_src =
     \\    declare fn fail(self: Self, message: string);
     \\    declare fn failAt(self: Self, span: Span, message: string);
     \\    declare fn addMember(self: Self, source: string);
+    \\    declare fn setMeta(self: Self, key: string, value: string);
     \\}
 ;
 
@@ -1291,6 +1298,7 @@ fn resolveImports(
                     if (!imp.activate and !names_symbol) switch (try u.leafSource(imp, env.arena, true)) {
                         .module => |path| if (!isStdPkgPath(path)) if (registry.get(path)) |exports| {
                             try env.namespaces.modules.put(env.arena, local, exports);
+                            try env.namespaces.paths.put(env.arena, local, path);
                             var eit = exports.keyIterator();
                             while (eit.next()) |fname| {
                                 if (templateRegistry.get(try defaultParamsKey(env.arena, path, fname.*))) |pfn| {
@@ -2105,6 +2113,8 @@ pub fn compileTypesOnly(
     var template_registry = std.StringHashMap(ast.FnDecl).init(arena_alloc);
     var decorator_registry = std.StringHashMap(ast.FnDecl).init(arena_alloc);
     var extension_registry = std.StringHashMap(std.StringHashMap(ast.ImplementDecl)).init(arena_alloc);
+    // Decision 216 — what decorators record for reflection, for this session.
+    var reflection = reflectionMod.Reflection.init(arena_alloc);
     var default_dsl = DefaultDsl.init(arena_alloc);
 
     // `from "std"` imports pull the embedded std modules into the compilation.
@@ -2115,7 +2125,7 @@ pub fn compileTypesOnly(
 
     for (all_modules, 0..) |mod, idx| {
         const name: []const u8 = if (mod.path.len > 0) mod.path else "main";
-        const analysis = try analyzeModule(arena_alloc, mod, &registry, &type_decl_registry, &template_registry, &decorator_registry, &extension_registry, eval_ctx, true, null);
+        const analysis = try analyzeModule(arena_alloc, mod, &registry, &type_decl_registry, &template_registry, &decorator_registry, &extension_registry, eval_ctx, true, null, &reflection);
 
         switch (analysis) {
             .parseError => |se| {
@@ -2305,6 +2315,8 @@ pub fn compile(
     var template_registry = std.StringHashMap(ast.FnDecl).init(arena_alloc);
     var decorator_registry = std.StringHashMap(ast.FnDecl).init(arena_alloc);
     var extension_registry = std.StringHashMap(std.StringHashMap(ast.ImplementDecl)).init(arena_alloc);
+    // Decision 216 — what decorators record for reflection, for this session.
+    var reflection = reflectionMod.Reflection.init(arena_alloc);
     var default_dsl = DefaultDsl.init(arena_alloc);
 
     // `from "std"` imports pull the embedded std modules into the compilation.
@@ -2318,7 +2330,7 @@ pub fn compile(
         const analysis = try analyzeModule(arena_alloc, mod, &registry, &type_decl_registry, &template_registry, &decorator_registry, &extension_registry, .{
             .io = io,
             .build_root = build_root orelse name,
-        }, false, target_name);
+        }, false, target_name, &reflection);
 
         switch (analysis) {
             .parseError => |se| {

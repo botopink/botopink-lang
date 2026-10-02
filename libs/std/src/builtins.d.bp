@@ -607,4 +607,13 @@ pub behavior Decl {
     // has (`decorator-member-duplicate`) or a source that is not one `fn`
     // (`decorator-member-not-one-fn`).
     fn addMember(self: Self, source: string);
+
+    // Decision 216 (2) — record a comptime fact about the annotated
+    // declaration, under this decorator's own name: `decl.setMeta("table",
+    // "cities")` in `#[entity]` is read anywhere the declaration is reached as
+    // `@typeinfo(City).meta.entity.table`, a string constant. It never becomes
+    // run-time code. Set from a `type`'s, a `behavior`'s or a `fn`'s
+    // decorator (a field's or a method's is `decorator-meta-on-member`), each
+    // key once (`decorator-meta-duplicate`).
+    fn setMeta(self: Self, key: string, value: string);
 }
