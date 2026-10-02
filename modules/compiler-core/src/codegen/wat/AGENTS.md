@@ -727,6 +727,13 @@ answered, and each was a red wasm cell of `tests/language`:
   `lowerResultOptionOp` builds. Unregistered, a `return` into `-> ?i32` boxed
   the box (an address printed), and a `map` answering a string was read one
   indirection too far by the `flatMap` after it.
+- **A primitive method on a call inside an adopted default** reads the
+  callee's declared return (`primKindAt`'s fallback): inference typed the
+  default's body against `Self`, so `self.twice().toString()` in `Sq`'s copy
+  of `Shape.label` had a type variable for a receiver and no lowering —
+  `unresolved call: toString/0`, a trap in `Sq_label`. `Sq_twice -> i32` says
+  it is an integer; the fallback answers only a primitive whose table has the
+  method (`run/behavior_default_adopted_by_two_types`, 02-erlang's cell).
 - **A type adopts its behaviors' `default fn`s** (`adoptedDefaults`,
   `methodsWithDefaults`): each one the type does not write is emitted as its own
   `$<Type>_<method>`, through `extends` too — `Money(…).clamp(lo, hi)` over

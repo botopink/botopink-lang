@@ -1589,3 +1589,30 @@ test "wat: f64 ---- NaN equals NaN under ==, bare and inside composites" {
         \\}
     , "true\nfalse\nfalse\nfalse\ntrue\ntrue\ntrue\ntrue\nfalse\n");
 }
+
+// A behavior `default fn` adopted by two types, one of which calls a primitive
+// method on another default's result (`self.twice().toString()`): inference
+// typed the body against `Self`, so the receiver had no recorded lowering and
+// `Sq_label` trapped (`unresolved call: toString/0`). The callee's declared
+// return answers it. The RUN LOG is commonJS's and erlang's for the program.
+test "wat: behavior ---- a primitive method on a default's result inside an adopted default" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\behavior Shape {
+        \\    fn area(self: Self) -> i32;
+        \\    default fn twice(self: Self) -> i32 {
+        \\        return self.area() * 2;
+        \\    }
+        \\    default fn label(self: Self) -> string {
+        \\        return "area " + self.twice().toString();
+        \\    }
+        \\}
+        \\type Sq(s: i32) implement Shape {
+        \\    fn area(self: Self) -> i32 {
+        \\        return self.s * self.s;
+        \\    }
+        \\}
+        \\fn main() {
+        \\    @print(Sq(s: 3).label());
+        \\}
+    , "area 18\n");
+}
