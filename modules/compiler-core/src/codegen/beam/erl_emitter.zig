@@ -428,6 +428,21 @@ pub fn writeIndent(w: *Writer, indent: usize) Writer.Error!void {
     for (0..indent) |_| try w.writeAll("    ");
 }
 
+/// Whether `Fun(Args)` must be written `(Fun)(Args)`. OTP 28's grammar
+/// (`function_call -> expr_remote argument_list`) takes only a primary
+/// expression as the callee, so `erlang:element(2, C)(9)` is a syntax error
+/// there while OTP 29 (`function_call -> expr argument_list`) accepts it — the
+/// emitted module must compile on both, so a callee that is not primary is
+/// parenthesized here, whatever built the node.
+fn applyCalleeNeedsParens(fun: Ast.Expr) bool {
+    return switch (fun) {
+        .call, .apply, .match, .map_update, .exception, .comment => true,
+        .binop => |b| !b.parens,
+        .unop => |u| !u.parens,
+        .raw, .term, .variable, .atom, .lexeme_binary, .tuple, .list, .cons, .map, .list_comp, .case_, .fun, .try_catch, .bin, .number, .paren, .fun_clauses, .string, .fun_ref, .list_block, .seq => false,
+    };
+}
+
 /// Render `e` as it continues a line already indented to `indent`; multi-line
 /// constructs indent their inner lines relative to it.
 pub fn writeExpr(w: *Writer, e: Ast.Expr, indent: usize) Error!void {
@@ -446,7 +461,10 @@ pub fn writeExpr(w: *Writer, e: Ast.Expr, indent: usize) Error!void {
             try writeArgs(w, c.args, indent);
         },
         .apply => |ap| {
+            const wrap = applyCalleeNeedsParens(ap.fun.*);
+            if (wrap) try w.writeByte('(');
             try writeExpr(w, ap.fun.*, indent);
+            if (wrap) try w.writeByte(')');
             try writeArgs(w, ap.args, indent);
         },
         .binop => |b| {
@@ -871,6 +889,23 @@ test "erl_emitter: expressions" {
     try writeExpr(w, .{ .cons = .{ .heads = &.{Ast.Expr.v("Hit")}, .tail = &Ast.Expr.v("_") } }, 0);
     try std.testing.expectEqualStrings(
         "maps:get(kind, Decl) | (X + 1) | Y@1 = 'Record' | #{text := Text} | [Hit | _]",
+        aw.written(),
+    );
+}
+
+test "erl_emitter: an applied callee that is not primary is parenthesized" {
+    var aw: Writer.Allocating = .init(std.testing.allocator);
+    defer aw.deinit();
+    const w = &aw.writer;
+    const elem: Ast.Expr = .{ .call = .{ .module = "erlang", .name = "element", .args = &.{ Ast.Expr.t(Term.int(2)), Ast.Expr.v("C") } } };
+    try writeExpr(w, .{ .apply = .{ .fun = &elem, .args = &.{Ast.Expr.t(Term.int(9))} } }, 0);
+    try w.writeAll(" | ");
+    try writeExpr(w, .{ .apply = .{ .fun = &Ast.Expr.v("F"), .args = &.{} } }, 0);
+    try w.writeAll(" | ");
+    const wrapped: Ast.Expr = .{ .paren = &elem };
+    try writeExpr(w, .{ .apply = .{ .fun = &wrapped, .args = &.{} } }, 0);
+    try std.testing.expectEqualStrings(
+        "(erlang:element(2, C))(9) | F() | (erlang:element(2, C))()",
         aw.written(),
     );
 }

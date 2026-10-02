@@ -34,11 +34,11 @@ mk() ->
 main() ->
     C = mk(),
     '__bp_print'([erlang:element(1, C)]),
-    '__bp_print'([erlang:element(2, C)(9)]),
+    '__bp_print'([(erlang:element(2, C))(9)]),
     T = {1, fun(N) ->
         (N + 100)
     end},
-    '__bp_print'([erlang:element(2, T)(2)]),
+    '__bp_print'([(erlang:element(2, T))(2)]),
     O = {test@main@@Ops, fun(N) ->
         (N - 1)
     end},
