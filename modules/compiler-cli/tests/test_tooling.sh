@@ -13,6 +13,8 @@
 #     <N> module(s)` — never the last module's own summary
 #   • botopink-lib-test compiles a library with no test block (`–` when it
 #     compiles, `✗` when it does not)
+#   • a test reads the compiler that runs it from `BOTOPINK_BIN`, unless the
+#     caller set the variable
 #
 # Exit 0 = every behaviour held. Recorded (not asserted here): an arbitrary
 # *uncaught* (non-assert) throw → FAIL — pure botopink has no portable
@@ -215,6 +217,33 @@ gitq commit -q -am two
 redrun
 [[ $code -eq 1 ]] || fail "a known-red line whose library moved must fail the run (exit $code)"
 grep -q "known-red line stale — pinned at ${pin:0:12}, but the library is at" <<<"$out" || fail "the refusal should name both commits"
+
+# ── `botopink test` names its own binary to the tests it runs ────────────────
+# A test that builds a fixture project spawns "the compiler running me". It
+# reads that from BOTOPINK_BIN, which `botopink test` sets to its own
+# executable when the variable is unset; a value the caller set passes through.
+echo "==> [env] BOTOPINK_BIN in a test is the running compiler, unless the caller set it"
+mkdir -p "$LIBWORK/binprobe/src"
+printf '{ "name": "binprobe", "version": "0.0.1", "target": "commonJS", "src": "src/" }\n' >"$LIBWORK/binprobe/botopink.json"
+cat >"$LIBWORK/binprobe/src/main.bp" <<'BP'
+import {io.env} from "std";
+
+test "the compiler names itself" {
+    @print(env.read("BOTOPINK_BIN").unwrapOr("unset"));
+}
+BP
+BP_REAL="$(cd "$(dirname "$BP_BIN")" && pwd -P)/$(basename "$BP_BIN")"
+binprobe_targets=(commonJS)
+command -v escript >/dev/null 2>&1 && binprobe_targets+=(erlang)
+for t in "${binprobe_targets[@]}"; do
+  out="$( cd "$LIBWORK/binprobe" && env -u BOTOPINK_BIN "$BP_BIN" test --target "$t" )"
+  echo "$out"
+  grep -qxF "$BP_REAL" <<<"$out" || fail "$t: with BOTOPINK_BIN unset the test should read the running binary ($BP_REAL)"
+  out="$( cd "$LIBWORK/binprobe" && BOTOPINK_BIN=/caller/chose/this "$BP_BIN" test --target "$t" )"
+  echo "$out"
+  grep -qxF "/caller/chose/this" <<<"$out" || fail "$t: a BOTOPINK_BIN the caller set must pass through untouched"
+  ! grep -qxF "$BP_REAL" <<<"$out" || fail "$t: the caller's BOTOPINK_BIN was overwritten"
+done
 
 # ── a workspace document that quotes the tool is checked against it ─────────
 echo "==> [libs] a workspace AGENTS.md quoting a stale member list fails the run"
