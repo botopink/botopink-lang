@@ -3,30 +3,32 @@
 ////
 //// `#[validated]` on a record-shaped `type` reflects `decl.fields`, reads each
 //// field's constraint annotations from `f.annotations` — the way any
-//// decorator reads a field's markers — and `@emit`s two module-level functions with deterministic names:
+//// decorator reads a field's markers — and gives the type two members
+//// (`decl.addMember`, decision 216), which travel with it to every importer:
 ////
-////     pub fn validate<TypeName>(v: <TypeName>) -> ValidationReport
-////     pub fn constraintsOf<TypeName>() -> string
+////     pub fn validate(self: Self) -> ValidationReport      // req.validate()
+////     pub fn constraints() -> string                       // T.constraints()
 ////
 //// THE NAMES ARE A CONTRACT, NOT A CONVENTION. A configuration binder (rakun
 //// front 05) depends on them: when a configuration record carries
-//// `#[validated]`, the boot path calls `validate<TypeName>(bound)` after
-//// binding and refuses to start if the report is not valid. It never has to
-//// know what constraints exist; it only has to know the function's name, which
-//// it builds from the type name it already has. If either side changes the
-//// spelling the other breaks at COMPILE time rather than at run time.
+//// `#[validated]`, the boot path calls `bound.validate()` after binding and
+//// refuses to start if the report is not valid. It never has to know what
+//// constraints exist; it only has to know the member's name. If either side
+//// changes the spelling the other breaks at COMPILE time rather than at run
+//// time — and a type that already has a `validate` or `constraints` member is
+//// refused at the annotation (`decorator-member-duplicate`).
 ////
 //// IMPORT `validated` FROM `"validation"`, NEVER A FRAMEWORK'S PLACEMENT-ONLY
 //// `#[validated]`, AND NEVER BOTH. rakun's core carries a placement-only
 //// marker of the same name (front 05): it checks that the marker sits on a
 //// record-shaped `type` and EMITS NOTHING. An application that imports that one
-//// instead of this one gets no `validate<TypeName>`, and the failure lands at
+//// instead of this one gets no `validate()` member, and the failure lands at
 //// the CALL SITE as an unbound variable rather than at the annotation, which is
 //// a long way from the cause. Importing both names into one module is a
 //// duplicate binding.
 ////
-//// WHAT THE EMITTED CODE NEEDS IN SCOPE. The emission runs at the APPLICATION
-//// site, so the application imports the names it references (decision 107's
+//// WHAT THE MEMBERS NEED IN SCOPE. They are declared in the type's own module
+//// (the APPLICATION site), so the application imports the names they reference (decision 107's
 //// grammar — only the leaf is bound):
 ////
 ////     import {report.ValidationReport, report.Violation} from "validation";
@@ -196,19 +198,13 @@ pub fn validated(comptime decl: @Decl) {
             if (call != "") rows.push(f.name + "|" + n + suffix);
         });
     });
-    @emit(
-        "pub fn validate"
-            + decl.name
-            + "(v: "
-            + decl.name
-            + ") -> ValidationReport {\n    var __vs: Array<Violation> = [];\n"
+    decl.addMember(
+        "pub fn validate(self: Self) -> ValidationReport {\n    val v = self;\n    var __vs: Array<Violation> = [];\n"
             + calls.join("\n")
             + "\n    return ValidationReport(violations: __vs);\n}",
     );
-    @emit(
-        "pub fn constraintsOf"
-            + decl.name
-            + "() -> string { return constraintTableJson(\""
+    decl.addMember(
+        "pub fn constraints() -> string { return constraintTableJson(\""
             + decl.name
             + "\", \""
             + rows.join(";")

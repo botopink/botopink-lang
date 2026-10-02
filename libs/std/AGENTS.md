@@ -273,12 +273,13 @@ mocks` reads `9 passed, 0 failed`.
 **A consumer writes `#[mocks.mock]`.** A `from "std"` namespace import
 registers the module's decorators under `<handle>.<fn>` (`comptime/infer.zig`
 `registerStdImportDecorators`), so `import {testing.mocks} from "std"` makes
-`mock` the annotation `#[mocks.mock]` (an alias `as m`, `#[m.mock]`). `@emit`
-splices its text into the module that hosts the annotated `behavior`, so the
-emitted bodies name the runtime through the prefix of the annotation that fired
-them: bare here (`#[mock]`: `invoke`, `key`, `newMock`), `mocks.invoke(…)` in a
-consumer. A leaf import of `mock` is `std-decorator-leaf-import` — it would
-leave the emitted code no handle — and a `#[mocks.<name>]` that names no
+`mock` the annotation `#[mocks.mock]` (an alias `as m`, `#[m.mock]`). It gives
+the annotated `behavior` the associated type `<Name>.Mock` and the factory
+`<Name>.mock()` (`decl.addType` / `decl.addMember`, decision 216), declared in
+the module that hosts the behavior, so their bodies name the runtime through the
+prefix of the annotation that fired them: bare here (`#[mock]`: `invoke`, `key`,
+`newMock`), `mocks.invoke(…)` in a consumer. A leaf import of `mock` is
+`std-decorator-leaf-import` — it would leave the generated code no handle — and a `#[mocks.<name>]` that names no
 decorator of the module is `unknown-annotation` (tests/language
 `run/std_decorator_through_namespace`, `reject/std_decorator_leaf_import`,
 `reject/std_decorator_unknown_through_handle`).

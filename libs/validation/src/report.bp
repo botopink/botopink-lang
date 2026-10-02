@@ -3,7 +3,7 @@
 //// Moved from rakun front 14's validation member (decision 116 rule 5).
 //// This file is the one every other file in the library stands on, and its
 //// only import is std's `json` writer: no host cell of its own, nothing that
-//// reaches a socket or the filesystem. `constraintsOf<TypeName>` and
+//// reaches a socket or the filesystem. `T.constraints()` and
 //// `ValidationReport` are what a client bundle obtains, and it obtains them
 //// without importing anything that does I/O.
 ////

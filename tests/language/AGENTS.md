@@ -295,7 +295,7 @@ the host templates by `wasm.expect`), `modules/import_ambiguous_use` (a bare `im
 modules declaring `pub fn parse` — the use is `ambiguous-import-use`, located, naming both, on every
 target by `<target>.expect`), `modules/import_ambiguous_unused` (the same import unread compiles),
 `run/std_decorator_through_namespace` (`#[mocks.mock]` after `import {testing.mocks} from "std"`
-synthesizes `mockRepo()` and its stubs answer; wasm refuses the import by `.wasm.expect`),
+gives `Repo` the factory `Repo.mock()` and its stubs answer; wasm refuses the import by `.wasm.expect`),
 `reject/std_decorator_unknown_through_handle` (`#[mocks.mokc]` is `unknown-annotation`),
 `reject/std_decorator_leaf_import` (`import {testing.mocks.mock}` is `std-decorator-leaf-import`),
 `run/pipeline_call_fill` (`lhs |> f(args…)` is `f(lhs, args…)` on every target, and a pipeline takes

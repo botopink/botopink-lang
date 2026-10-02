@@ -165,14 +165,17 @@ fn goodUser() -> CreateUserRequest {
 }
 
 test "validation: #[validated] emits a callable validator into this module" {
-    assert validateCreateUserRequest(goodUser()).isValid();
-    assert validateCreateUserRequest(goodUser()).violations.length == 0;
+    assert goodUser().validate().isValid();
+    assert goodUser().validate().violations.length == 0;
 }
 
 test "validation: every constraint on a field runs, in declaration order" {
-    val r = validateCreateUserRequest(
-        CreateUserRequest(name: "", email: "nope", age: 7, postalCode: "x"),
-    );
+    val r = CreateUserRequest(
+        name: "",
+        email: "nope",
+        age: 7,
+        postalCode: "x",
+    ).validate();
     assert r.isValid() == false;
     assert codesOf(r.violations)
         == "notBlank,sizeBetween,email,minValue,pattern";
@@ -181,48 +184,40 @@ test "validation: every constraint on a field runs, in declaration order" {
 }
 
 test "validation: a field with no constraint contributes nothing" {
-    val ok = validatePartlyConstrained(
-        PartlyConstrained(free: "", alsoFree: 0, watched: "x"),
-    );
+    val ok = PartlyConstrained(free: "", alsoFree: 0, watched: "x").validate();
     assert ok.isValid();
-    val bad = validatePartlyConstrained(
-        PartlyConstrained(free: "", alsoFree: 0, watched: " "),
-    );
+    val bad = PartlyConstrained(free: "", alsoFree: 0, watched: " ").validate();
     assert codesOf(bad.violations) == "notBlank";
-    assert constraintsOfPartlyConstrained()
+    assert PartlyConstrained.constraints()
         == "{\"type\":\"PartlyConstrained\",\"fields\":[{\"name\":\"watched\",\"constraints\":[{\"code\":\"notBlank\"}]}]}";
 }
 
 test "validation: the remaining markers all fire through the emitted validator" {
     val none: Array<string> = [];
-    val r = validateEveryMarker(
-        EveryMarker(
-            maybe: null,
-            tags: none,
-            count: 0,
-            ratio: 0.0 - 1.0,
-            createdAt: farFuture(),
-            expiresAt: epochZero(),
-            document: "",
-        ),
-    );
+    val r = EveryMarker(
+        maybe: null,
+        tags: none,
+        count: 0,
+        ratio: 0.0 - 1.0,
+        createdAt: farFuture(),
+        expiresAt: epochZero(),
+        document: "",
+    ).validate();
     assert codesOf(r.violations)
         == "notNull,notEmpty,positive,positiveOrZero,pastDate,futureDate,unknownConstraint";
 }
 
 test "validation: the same record with every marker satisfied is valid" {
     val some: Array<string> = ["a"];
-    val r = validateEveryMarker(
-        EveryMarker(
-            maybe: "here",
-            tags: some,
-            count: 1,
-            ratio: 0.0,
-            createdAt: epochZero(),
-            expiresAt: farFuture(),
-            document: "x",
-        ),
-    );
+    val r = EveryMarker(
+        maybe: "here",
+        tags: some,
+        count: 1,
+        ratio: 0.0,
+        createdAt: epochZero(),
+        expiresAt: farFuture(),
+        document: "x",
+    ).validate();
     assert codesOf(r.violations) == "unknownConstraint";
     assert r.isValid() == false;
 }

@@ -91,9 +91,10 @@ violations there, compare its count and this process's) and stated on node
 ## Consuming it
 
 `#[validated]` reads each field's type from `f.typeName`, the type as the source
-spells it: a list is `Array<…>` or `…[]`, a nullable field `?…`. It emits
-`validate<TypeName>` and `constraintsOf<TypeName>` at the
-application site, so the application imports the names the emission references
+spells it: a list is `Array<…>` or `…[]`, a nullable field `?…`. It gives the
+type the members `validate(self) -> ValidationReport` (`req.validate()`) and
+`constraints() -> string` (`T.constraints()`) — `decl.addMember`, decision 216 —
+declared at the application site, so the application imports the names the members reference
 (decision 107 — the leaf is bound):
 
 ```bp

@@ -4,7 +4,7 @@
 //// EVERY FUNCTION HERE IS PLAIN BOTOPINK: string comparisons, length checks,
 //// numeric bounds and `std/regex` matches. No host cell, no `@External`
 //// anything. That is the whole reason this module's target is `both —
-//// boundary`: the emitted `validate<TypeName>` compiles for erlang and for
+//// boundary`: the `validate()` member `#[validated]` adds compiles for erlang and for
 //// commonJS from ONE source, so the server and the client run the same
 //// predicate rather than two predicates that are supposed to agree.
 //// `test/parity_test.bp` is what holds that claim up.

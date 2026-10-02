@@ -96,7 +96,7 @@ fn digest() -> string {
     while (i < all.length) {
         val one = all.at(i);
         val rep = one
-            .map({ v -> validateCreateUserRequest(v) })
+            .map({ v -> v.validate() })
             .unwrapOr(ValidationReport.empty());
         out.push(digestOne(i, rep));
         i = i + 1;
@@ -137,7 +137,7 @@ test "validation: twenty inputs, one function, one answer on both rows" {
 }
 
 test "validation: the table crosses byte-identically too" {
-    assert constraintsOfCreateUserRequest()
+    assert CreateUserRequest.constraints()
         == "{\"type\":\"CreateUserRequest\",\"fields\":[{\"name\":\"name\",\"constraints\":[{\"code\":\"notBlank\"},{\"code\":\"sizeBetween\",\"min\":2,\"max\":50}]},{\"name\":\"email\",\"constraints\":[{\"code\":\"notBlank\"},{\"code\":\"email\"}]},{\"name\":\"age\",\"constraints\":[{\"code\":\"minValue\",\"min\":18},{\"code\":\"maxValue\",\"max\":120}]},{\"name\":\"postalCode\",\"constraints\":[{\"code\":\"pattern\",\"regex\":\"^[0-9]{5}-[0-9]{3}$\"}]}]}";
 }
 
