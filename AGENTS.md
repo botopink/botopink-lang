@@ -249,7 +249,7 @@ run is [`scripts/gate.sh`](scripts/gate.sh) — stages 1–4 one after the other
 (`scripts/AGENTS.md` § Where the gate's time goes):
 
 1. `--staged`: conflict markers and `zig fmt --check` on staged files, and a staged snapshot candidate (`*.snap.new`, `*.snap.md.new` — `git add -f` gets past `.gitignore`) is refused; then, on every run, `zig fmt --check modules` — a `.zig` file red anywhere in the tree fails the gate, staged or not;
-2. `zig build`;
+2. `zig build -Doptimize=ReleaseSafe` — the mode `release.yml` ships, and the binaries every later stage runs (every `zig build` of the gate passes the same flag; stage 4's unit tests stay Debug);
 3. `scripts/format-check.sh` (`botopink format --check` over the compiler's canonical `.bp` trees — decision 66's caller; `TREES` in the script names them, and every tracked `.bp` is under one or structurally exempt);
 4. `zig build test` (compiler-core, language-server, CLI and lib-test-runner unit suites; `--cold` deletes `modules/compiler-core/.botopinkbuild/runtime-cache` first — required for the run that decides a merge);
 4b. `scripts/snap_audit.sh --mode=runtime-parity` (every codegen snapshot exists under `snapshots/codegen/beam/` and `…/wat/`, and each pair is equal once the `COMPTIME BEAM ASSEMBLY`/`COMPTIME WAT` listings are set aside — front 18 step 4, decision 85; no allow-list);

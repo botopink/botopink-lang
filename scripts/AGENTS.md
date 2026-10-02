@@ -114,7 +114,7 @@ failing stage (stages 4b–10 run side by side and are reported in this order �
 § Where the gate's time goes): staged-file checks (`--staged`: conflict markers, `zig fmt
 --check` on staged `.zig`, no staged `*.snap.new` / `*.snap.md.new` candidate) and, every run,
 `zig fmt --check modules` (a `.zig` file red anywhere fails the gate, staged or not — the
-whole-tree check is the stage; the staged one is a commit's fast path), `zig build`, `scripts/format-check.sh` (`botopink
+whole-tree check is the stage; the staged one is a commit's fast path), `zig build -Doptimize=ReleaseSafe` (§ Build mode), `scripts/format-check.sh` (`botopink
 format --check` over the compiler's canonical `.bp` trees — decision 66's
 caller), `zig build test` (`--cold` deletes
 `modules/compiler-core/.botopinkbuild/runtime-cache` first),
@@ -130,6 +130,41 @@ that decides a merge adds `--cold`. After the staged checks the script unsets
 every `git rev-parse --local-env-vars` variable a hook inherits (`GIT_DIR`,
 `GIT_INDEX_FILE`, …): a stage that runs `git` in a scratch repository (bpmp's
 install tests) would otherwise act on the committing repository.
+
+### Build mode
+
+The binaries stages 3 and 4b–10 run are built `-Doptimize=ReleaseSafe`, the
+mode `release.yml` ships: the gate runs the compiler a user installs. Every
+`zig build` the gate starts passes the same `$opt`, so no stage reinstalls a
+Debug `zig-out/bin/*` over the one the others are running; stage 4's unit-test
+binaries are built in Debug, as before (`zig build test` installs nothing).
+ReleaseSafe keeps every runtime safety check — bounds, overflow,
+`unreachable`, `std.debug.assert`; what it leaves out is Debug's allocator,
+whose leak report never changed an exit status (`std/start.zig`). The same
+cell prints the same bytes under both modes; a Debug compiler spends ~12× the
+CPU on it (an `emilia-*` erlang cell: 189 CPU-s against 15), and stages 8 and
+9 are thousands of compiles. After a gate `zig-out/bin/` holds ReleaseSafe
+binaries; a plain `zig build` puts Debug ones back.
+
+### Stage times, the plan, the budget
+
+Every stage's `✓` line ends with its wall clock and CPU-seconds —
+`✓ zig build test-libs — 3m41s wall, 2210 CPU-s` — measured with bash's
+`time` keyword around the stage (the CPU of every child it waited for
+included). Before stages 4b–10 start, `scripts/test-libs.sh --list`,
+`tests/language/run.sh --list` and `scripts/check-docs.sh --list` print the
+plan of stages 8, 9 and 10, and after each of the three its own tally is held
+to its plan: `P + F + N` cells and `A + X` audits of `test-libs:` against the
+`cell:*` and `audit` lines, `cells: <J> jobs — …, <A> audits` of the language
+tests against the job lines, `docs: <N> fences` against the fence lines. A
+stage that ran fewer than its plan fails the gate, green or not — a stage
+cannot be narrowed to win time. The last line is the total,
+`gate: every stage passed — 9m02s wall, 4120 CPU-s (budget 10m00s cold)`,
+timed from the lock (a wait for another gate is not counted), against
+`budget_cold` / `budget_warm` at the top of the script — the budget front 115
+of 1.0.11-beta set for 16 idle cores. A run over it prints `gate: over budget`
+in yellow with the load, and is not a red: a slow or shared machine is not a
+broken tree.
 
 ### Gate lock
 
@@ -177,6 +212,8 @@ and on every CPU, never by running less:
 | `zig build test` | the compiler-core suite runs as `-Dtest-shards` processes (default: CPUs, at most 8), each the tests whose index is its own modulo the count; every test runs once and is reported by name, the summary's count is the unsharded one. The default runner is serial inside a process and the suite mostly waits on the node/erl/wasmtime its RUN LOGs spawn | [`../modules/test-shard/AGENTS.md`](../modules/test-shard/AGENTS.md) |
 | `test-libs` | cells run on a bounded worker pool (one per CPU, bounded by `MemAvailable / 768 MiB`, each cell admitted only while `procs_running` ≤ CPUs) and are emitted in discovery order, byte for byte what `--jobs 1` prints | [`../modules/lib-test-runner/AGENTS.md`](../modules/lib-test-runner/AGENTS.md) § Parallel cells |
 | `test-libs` (erlang cells) | `botopink test --target erlang` compiles each `.erl` of a run once (`precompileErlang`), not once per test module that loads it; the host-sidecar shipper resolves each library and probes each qualifier once per run | [`../modules/compiler-cli/src/cli/AGENTS.md`](../modules/compiler-cli/src/cli/AGENTS.md) (`test_cmd.zig`, `libs.zig`) |
+| every stage that runs `botopink` | the binaries are ReleaseSafe (§ Build mode): ~12× less CPU per compile than Debug, the same output | § Build mode |
+| `test-libs` (tests that build fixtures) | a test's scratch directory (`BOTOPINK_TEST_TMPDIR`) is the run directory's sibling, so no erlang runner compiles and loads the fixture projects a build test wrote (rakun-scheduling: ~6 500 `.erl` per test module); `botopink build --target erlang` answers a source the same OTP compiler already accepted from its verdict cache (rakun's build tests: 22 builds of one closure per cell) | [`../modules/compiler-cli/src/cli/AGENTS.md`](../modules/compiler-cli/src/cli/AGENTS.md) (`test_cmd.zig`, `build.zig`) |
 | `test-language` | cells run on `lib/pool.sh` — the `test-libs` rule (one per CPU, bounded by `MemAvailable / 768 MiB`, each cell admitted only while `procs_running` ≤ CPUs); verdicts are written one file per cell and sorted before the report, so the output is byte for byte what `--jobs 1` prints. It used to be `--jobs 4` with no admission; measured under the usual shared load, 28.8 s → 18.3 s at +12 % CPU-seconds | [`../tests/language/run.sh`](../tests/language/run.sh) § parallel cells |
 | `test-docs` | the `botopink check` of every fence runs on `lib/pool.sh`; the report is written in fence order with a placeholder per check and printed once the pool drains, so the output is byte for byte the serial run's. 8.5 s → 1.5 s | § check-docs.sh below |
 

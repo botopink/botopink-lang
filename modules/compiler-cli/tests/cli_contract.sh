@@ -160,6 +160,36 @@ expect_code 1 "build --target erlang of a module erlc rejects"
 expect_out "erlcrefused@main.erl:" "names the refused module"
 expect_out "the OTP compiler refused emitted erlang" "says the build is not a program"
 
+# ── the erlang check remembers acceptances, never refusals ───────────────────
+# `checkErlang` keeps an empty marker per accepted source, keyed by its bytes
+# and the OTP compiler (`build.zig`, `$XDG_CACHE_HOME/botopink/erlcheck`). A
+# refusal is compiled and printed every time, and a source that changed is a
+# new key: the cache answers only for bytes it has already seen accepted.
+echo "==> the erlang check's verdict cache: acceptances only, keyed by the bytes"
+XDG_CHECK="$WORK/xdg-erlcheck"
+P="$(project erlcache erlang)"
+printf 'pub fn main() {\n    @print("one");\n}\n' >"$P/src/main.bp"
+markers() { { find "$XDG_CHECK/botopink/erlcheck" -name "*.ok" 2>/dev/null || true; } | wc -l | tr -d " "; }
+( cd "$P" && XDG_CACHE_HOME="$XDG_CHECK" "$BP" build >/dev/null 2>&1 ) && ok "an accepted build" || fail "the erlang build of a plain program failed"
+m1="$(markers)"
+[[ "$m1" -gt 0 ]] && ok "accepted sources are remembered ($m1 marker(s))" || fail "no verdict marker was written"
+( cd "$P" && XDG_CACHE_HOME="$XDG_CHECK" "$BP" build >/dev/null 2>&1 ) && ok "the same build again" || fail "the cached build failed"
+[[ "$(markers)" == "$m1" ]] && ok "the same bytes are the same keys" || fail "a rebuild of the same bytes wrote new markers ($(markers) vs $m1)"
+printf 'pub fn main() {\n    @print("two");\n}\n' >"$P/src/main.bp"
+( cd "$P" && XDG_CACHE_HOME="$XDG_CHECK" "$BP" build >/dev/null 2>&1 ) && ok "a changed source builds" || fail "the changed build failed"
+[[ "$(markers)" -gt "$m1" ]] && ok "a changed source is a new key, checked again" || fail "a changed source was answered from the cache"
+P="$(project erlcacherefused erlang)"
+printf '#[@External.Erlang("lists:reverse($0 ++)")]\ndeclare fn bad(xs: i32[]) -> i32[];\n\npub fn main() {\n    @print(bad([1]).length);\n}\n' >"$P/src/main.bp"
+for i in 1 2; do
+  set +e
+  OUT="$(cd "$P" && XDG_CACHE_HOME="$XDG_CHECK" "$BP" build 2>&1)"
+  CODE=$?
+  set -e
+  [[ $CODE -eq 1 ]] && grep -qF "the OTP compiler refused emitted erlang" <<<"$OUT" \
+    && ok "refused again on build $i — a refusal is never remembered" \
+    || fail "build $i of a module erlc rejects: exit $CODE, refusal not printed"
+done
+
 # ── C5 / C6 / C7 — check covers test/, lex and parse errors are located ──────
 echo "==> C6 a lex error renders with file, line and excerpt on build/check/test"
 P="$(project c6)"
@@ -319,14 +349,45 @@ if have node; then
       && ok "two concurrent runs got two scratch directories" \
       || fail "scratch directories not distinct: '$c3c_js' vs '$c3c_erl'"
     c3c_real="$(cd "$P" && pwd -P)"
-    [[ "$c3c_js" == "$c3c_real"/.botopinkbuild/test-out/commonJS/*/tmp && "$c3c_erl" == "$c3c_real"/.botopinkbuild/test-out/erlang/*/tmp ]] \
-      && ok "each is the tmp/ of its own run directory" \
+    [[ "$c3c_js" == "$c3c_real"/.botopinkbuild/test-out/commonJS/*.tmp && "$c3c_erl" == "$c3c_real"/.botopinkbuild/test-out/erlang/*.tmp ]] \
+      && ok "each is the <id>.tmp beside its own run directory" \
       || fail "scratch directories outside their run: '$c3c_js' / '$c3c_erl'"
     [[ ! -e "$c3c_js" && ! -e "$c3c_erl" ]] \
       && ok "both scratch directories were removed with their runs" \
       || fail "a scratch directory survived its run"
   else
     skip "C3c test scratch directory (escript not installed)"
+  fi
+
+  # ── C3d — what a test writes to its scratch is not one of the run's modules ─
+  # An erlang runner loads every `.erl` under its own directory before its
+  # tests run (`'__bp_load_siblings'/0`). The scratch directory used to be the
+  # run directory's `tmp/`, so a fixture project a test built there — its
+  # `out/erl/` — was compiled and loaded by every test module that ran after
+  # it: ~6 500 sources per module in rakun-scheduling, five CPU-minutes each,
+  # and a fixture's module loaded over the run's own. Each test module here
+  # leaves an `.erl` the OTP compiler refuses in the scratch directory; if any
+  # runner reached it, that module would refuse to run.
+  if have escript; then
+    echo "==> C3d the scratch directory is outside every runner's sibling walk"
+    P="$(project c3d)"
+    printf 'pub fn one() -> i32 {\n    return 1;\n}\n' >"$P/src/main.bp"
+    mkdir -p "$P/test"
+    for m in a b c; do
+      printf '%s\n' \
+        'import {io: {env, fs}} from "std";' \
+        'import {one} from "main";' '' \
+        "test \"leaves a broken source in the scratch ($m)\" {" \
+        '    val d = env.read("BOTOPINK_TEST_TMPDIR").unwrapOr("");' \
+        "    val _w = fs.writeText(d + \"/junk_$m.erl\", \"-module(junk_$m). this is not erlang\");" \
+        '    assert one() == 1;' \
+        '}' >"$P/test/${m}_test.bp"
+    done
+    run "$P" test --target erlang
+    expect_code 0 "erlang test with broken sources in the scratch directory"
+    expect_no_out "does not compile" "no runner compiled a scratch file"
+  else
+    skip "C3d scratch outside the sibling walk (escript not installed)"
   fi
 
   echo "==> C4 a from \"std\" import does not mask a broken module"

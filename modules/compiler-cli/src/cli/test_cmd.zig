@@ -74,8 +74,9 @@ fn makeTestOutDir(arena: std.mem.Allocator, io: std.Io, target: config.Target) !
 }
 
 /// The environment variable that names THIS run's scratch directory to the
-/// tests it runs: `<cwd>/<test_out>/tmp`, absolute, empty when the first test
-/// starts, and removed with the rest of the run's directory when the run ends.
+/// tests it runs: `<cwd>/<test_out>.tmp` (`testTmpDir`), absolute, empty when
+/// the first test starts, and removed with the run's directory when the run
+/// ends.
 ///
 /// A test that writes files — a fixture project it then compiles, a pid file,
 /// a certificate — needs a place no other process writes to. The library's own
@@ -87,8 +88,22 @@ fn makeTestOutDir(arena: std.mem.Allocator, io: std.Io, target: config.Target) !
 /// its write and its compile: one full `zig build test-libs` measured
 /// `rakun-data·commonJS` at 6 failed, the next at 0, the next at 1. This run's
 /// directory is already unique per run and per target (`makeTestOutDir`), so
-/// its `tmp/` is too, with nothing to reap.
+/// its `.tmp` sibling is too, with nothing to reap.
+///
+/// It sits BESIDE the run's directory, never inside it: an erlang runner loads
+/// every `.erl` under its own directory before its tests run
+/// (`'__bp_load_siblings'/0`, `codegen/erlang.zig`), and a fixture project a
+/// test builds holds an `out/erl/` of its own. Inside the run's directory, every
+/// test module that ran after rakun-scheduling's build tests compiled and loaded
+/// the ~6 500 fixture `.erl` those tests had written — about five CPU-minutes per
+/// module, and modules of the fixtures' builds loaded over the run's own.
 pub const TEST_TMPDIR_ENV = "BOTOPINK_TEST_TMPDIR";
+
+/// `<test_out>.tmp` — the run's scratch directory (`TEST_TMPDIR_ENV`), a
+/// sibling of the run's directory, so no runner's sibling walk reaches it.
+fn testTmpDir(arena: std.mem.Allocator, test_out: []const u8) ![]const u8 {
+    return std.fmt.allocPrint(arena, "{s}.tmp", .{test_out});
+}
 
 /// The environment variable that names "the compiler running me" to the tests
 /// a run executes: the absolute path of this `botopink` executable, set when
@@ -106,10 +121,9 @@ pub const TEST_BIN_ENV = "BOTOPINK_BIN";
 fn testTmpEnv(
     arena: std.mem.Allocator,
     io: std.Io,
-    test_out: []const u8,
+    rel: []const u8,
     env_map: libs.EnvMap,
 ) !*const std.process.Environ.Map {
-    const rel = try std.fs.path.join(arena, &.{ test_out, "tmp" });
     try std.Io.Dir.cwd().createDirPath(io, rel);
     var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
     const n = try std.process.currentPath(io, &cwd_buf);
@@ -330,21 +344,16 @@ fn precompileErlang(arena: std.mem.Allocator, io: std.Io, dir: []const u8, cache
     _ = result;
 }
 
-/// Where `precompileErlang` keeps its `.beam` cache: `$XDG_CACHE_HOME/botopink/beam`,
-/// else `$HOME/.cache/botopink/beam` — the per-user cache every checkout, worktree
-/// and gate of this machine shares, beside `bpmp`'s store (`$XDG_CACHE_HOME/bpmp`),
-/// because the cells that compile the same dependency `.erl` run from different
-/// project directories. Null (no cache — every source compiles, as before) when
-/// neither variable is set to an absolute path. `botopink clean` does not reach
-/// it; entries are content-keyed, so a stale one is never read — only kept until
-/// a run draws its shard (see `precompileErlang`).
+/// Where `precompileErlang` keeps its `.beam` cache: `libs.userCacheDir`'s
+/// `beam` — the per-user cache every checkout, worktree and gate of this
+/// machine shares, because the cells that compile the same dependency `.erl`
+/// run from different project directories. Null (no cache — every source
+/// compiles, as before) when neither `XDG_CACHE_HOME` nor `HOME` is absolute.
+/// `botopink clean` does not reach it; entries are content-keyed, so a stale
+/// one is never read — only kept until a run draws its shard (see
+/// `precompileErlang`).
 fn beamCacheDir(arena: std.mem.Allocator, env_map: libs.EnvMap) ?[]const u8 {
-    const m = env_map orelse return null;
-    if (m.get("XDG_CACHE_HOME")) |v| if (v.len > 0 and std.fs.path.isAbsolute(v))
-        return std.fs.path.join(arena, &.{ v, "botopink", "beam" }) catch null;
-    if (m.get("HOME")) |v| if (v.len > 0 and std.fs.path.isAbsolute(v))
-        return std.fs.path.join(arena, &.{ v, ".cache", "botopink", "beam" }) catch null;
-    return null;
+    return libs.userCacheDir(arena, env_map, "beam");
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -493,7 +502,10 @@ pub fn run(
 
     // The run's scratch directory, handed to every test runner as
     // `BOTOPINK_TEST_TMPDIR` (see `TEST_TMPDIR_ENV`).
-    const child_env = try testTmpEnv(arena, io, test_out, env_map);
+    const test_tmp = try testTmpDir(arena, test_out);
+    std.Io.Dir.cwd().deleteTree(io, test_tmp) catch {};
+    defer std.Io.Dir.cwd().deleteTree(io, test_tmp) catch {};
+    const child_env = try testTmpEnv(arena, io, test_tmp, env_map);
 
     const ext: []const u8 = switch (target) {
         .commonJS => ".js",

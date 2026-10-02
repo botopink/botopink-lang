@@ -6,7 +6,7 @@
 # Usage:
 #   tests/language/run.sh [--target commonJS|erlang|wasm|beam|all]
 #                         [--compiler <botopink>]
-#                         [--lib-root <dir>] [--only <path>] [--jobs <n>]
+#                         [--lib-root <dir>] [--only <path>] [--jobs <n>] [--list]
 #   tests/language/run.sh --self-test [--compiler <botopink>] [--lib-root <dir>]
 #
 #   --target    default `all`: commonJS, erlang, wasm and beam — every target
@@ -17,6 +17,11 @@
 #   --only      run one cell (e.g. test/case_arms.bp, modules/two_modules); may repeat
 #   --jobs      parallel cells; default one per CPU, bounded by memory
 #               (MemAvailable / 768 MiB) — § parallel cells below
+#   --list      print the plan and run nothing: one `<path>\t<target>\t<run|audit>`
+#               line per job (a `reject/` cell's target is `*`). A whole run
+#               ends with `cells: <J> jobs — <R> run, <A> audits`, and
+#               `scripts/gate.sh` holds J to the number of lines `--list`
+#               prints: a run cannot do fewer jobs than the tree declares
 #   --suite     the directory holding test/, run/, reject/ and modules/; default
 #               this script's own. `--self-test` is its one caller.
 #   --self-test prove § the targets of a cell against synthetic cells: a
@@ -83,6 +88,7 @@ jobs=""
 only=()
 suite=""
 self_test=0
+list=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --target) target="$2"; shift 2 ;;
@@ -98,6 +104,7 @@ while [ $# -gt 0 ]; do
         --suite) suite="$2"; shift 2 ;;
         --suite=*) suite="${1#*=}"; shift ;;
         --self-test) self_test=1; shift ;;
+        --list) list=1; shift ;;
         -h|--help) sed -n '2,70p' "$0"; exit 0 ;;
         *) echo "run.sh: unknown argument '$1'" >&2; exit 2 ;;
     esac
@@ -108,7 +115,7 @@ whole_suite=0
 if [ -n "$suite" ]; then
     [ -d "$suite" ] || { echo "run.sh: --suite is not a directory: $suite" >&2; exit 2; }
     here="$(cd "$suite" && pwd)"
-elif [ ${#only[@]} -eq 0 ] && [ $self_test -eq 0 ]; then
+elif [ ${#only[@]} -eq 0 ] && [ $self_test -eq 0 ] && [ $list -eq 0 ]; then
     whole_suite=1
 fi
 
@@ -653,6 +660,11 @@ for f in "${files[@]}"; do
         *) for t in "${targets[@]}"; do printf '%s\t%s\trun\n' "$f" "$t" >>"$jobs_list"; done ;;
     esac
 done
+# `--list`: the plan is the answer — one line per job, nothing spawned.
+if [ $list -eq 1 ]; then
+    while IFS=$'\t' read -r f t what; do printf '%s\t%s\t%s\n' "$f" "$t" "${what%%:*}"; done <"$jobs_list"
+    exit 0
+fi
 while IFS=$'\t' read -r f t what; do
     case "$what" in
         audit:*) printf 'audit_one\0%s\0%s\0%s\0' "$f" "$t" "${what#audit:}" ;;
@@ -661,11 +673,16 @@ while IFS=$'\t' read -r f t what; do
 done <"$jobs_list" | xargs -0 -n 4 -P "$jobs" bash -c 'pool_job "$work/inflight" "$0" "$1" "$2" "$3"'
 
 cat "$work"/r-* 2>/dev/null | sort >"$work/results"
+# How many jobs wrote their verdict — every job writes exactly one file
+# (`r-<slug>`, `r-audit-<slug>`); a malformed narrowing writes `r-narrowing-*`
+# without a job. `scripts/gate.sh` compares the count with `--list`.
+jobs_audit="$(ls "$work" | grep -c '^r-audit-')"
+jobs_ran="$(( $(ls "$work" | grep '^r-' | grep -vc '^r-narrowing-') ))"
 
 # ── report ────────────────────────────────────────────────────────────────────
-node - "$work/results" <<'EOF'
+node - "$work/results" "$jobs_ran" "$jobs_audit" <<'EOF'
 const fs = require("fs");
-const [resultsPath] = process.argv.slice(2);
+const [resultsPath, jobsRan, jobsAudit] = process.argv.slice(2);
 const RED = "\x1b[0;31m", GREEN = "\x1b[0;32m", NC = "\x1b[0m";
 
 // <target>\t<key>\t<ok|fail|audit>\t<detail>, sorted. An `audit` line is an
@@ -683,6 +700,7 @@ for (const line of fs.readFileSync(resultsPath, "utf8").split("\n")) {
 }
 for (const l of out) console.log(l);
 if (audited) console.log(`narrowings: ${audited} exclusion${audited === 1 ? "" : "s"} audited — each stands on a host binding the target does not have`);
+console.log(`cells: ${jobsRan} jobs — ${jobsRan - jobsAudit} run, ${jobsAudit} audits`);
 const colour = fails ? RED : GREEN;
 console.log(`\n${colour}language tests: ${oks} passed, ${fails} failed${NC}`);
 process.exit(fails ? 1 : 0);

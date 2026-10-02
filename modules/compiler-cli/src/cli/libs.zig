@@ -59,6 +59,22 @@ pub const Error = error{
 /// `parseEnvRootsString`.
 pub const ENV_VAR = "BOTOPINK_LIB_ROOTS";
 
+/// `$XDG_CACHE_HOME/botopink/<sub>`, else `$HOME/.cache/botopink/<sub>` — the
+/// per-user cache every checkout, worktree and gate of this machine shares,
+/// beside `bpmp`'s store (`$XDG_CACHE_HOME/bpmp`). Its stores are content-keyed
+/// (`test_cmd.zig`'s `.beam` cache, `build.zig`'s erlang verdict cache), so an
+/// entry from another compiler or another source is a miss, never a wrong
+/// answer. Null (no cache) when neither variable is set to an absolute path.
+/// `botopink clean` does not reach it; each store reaps itself.
+pub fn userCacheDir(arena: std.mem.Allocator, env_map: EnvMap, sub: []const u8) ?[]const u8 {
+    const m = env_map orelse return null;
+    if (m.get("XDG_CACHE_HOME")) |v| if (v.len > 0 and std.fs.path.isAbsolute(v))
+        return std.fs.path.join(arena, &.{ v, "botopink", sub }) catch null;
+    if (m.get("HOME")) |v| if (v.len > 0 and std.fs.path.isAbsolute(v))
+        return std.fs.path.join(arena, &.{ v, ".cache", "botopink", sub }) catch null;
+    return null;
+}
+
 /// Resolve the ordered list of library roots — directories that directly hold a
 /// `<name>/botopink.json`, so `from "<name>"` and a project's declared
 /// `dependencies` resolve `<name>` to the **first root** carrying it.
