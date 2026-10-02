@@ -1,0 +1,17 @@
+//// Decision 216 (4) — a module that reads `@typeinfo.all` answers for the
+//// whole program, so no module imports it (it would have to be analysed
+//// before the declarations it reports): refused at the import.
+
+pub mod marks;
+pub mod catalog;
+import {names} from "catalog";
+import {tagged} from "marks";
+
+#[tagged]
+pub fn job() -> i32 {
+    return 1;
+}
+
+pub fn main() {
+    @print(names());
+}

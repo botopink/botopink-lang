@@ -133,7 +133,18 @@ variants are reached as `City.Size.Large`) and `modules/decorator_add_type_impor
 owner, under an alias too, and `Greeter.Mock` — a double implementing the annotated behavior — passed
 where a `Greeter` is expected), on all four targets, and four `reject/` cells at the annotation:
 `decorator_add_type_duplicate`, `decorator_add_type_not_one`, `decorator_add_type_without_owner`
-and `decorator_add_type_name`.
+and `decorator_add_type_name`. Its fourth place — `@typeinfo.all(with: d)`, the program's
+declarations carrying `d` — adds `modules/typeinfo_all_registration` (an entry point that imports
+neither page module catalogues their `#[route]` functions with their meta, in module-path then
+declaration order, and its own and another module's `#[component]` types through `member:`; a
+decorator nothing carries answers `[]`), on all four targets, two project refusals by
+`<target>.expect` — `typeinfo_all_imported` (a module importing the reader, at the import) and
+`typeinfo_all_private` (a private declaration the query would answer) — and four `reject/` cells
+where the query is written: `typeinfo_all_mixed`, `typeinfo_all_needs_member`,
+`typeinfo_all_not_decorator` and `typeinfo_all_arguments`. The registration cell calls each `value`
+through a typed local (`val page: fn() -> string = r.value;`): on wasm a function read from a
+generic record's field and called through an untyped local prints its pointer (`Box<T>(value: T)`
+alone shows it, so it is the backend's, not this front's).
 C-03's beam half adds `run/std_template_host_fns_across_modules` — std host functions whose
 `@External.Erlang` body is a template (`fs.exists`, `fs.readText`, `os.eol`, `process.platform`,
 `encoding.hexEncode`, `hash.sha256`, `json.quote`, `regex.matches`) called from the program's

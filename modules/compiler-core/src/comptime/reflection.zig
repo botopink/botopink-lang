@@ -1,7 +1,8 @@
 //! What decorators record about the program for reflection to read back
 //! (decision 216): the comptime meta of each declaration (`decl.setMeta`, read
 //! as `@typeinfo(X).meta.<decorator>.<key>`) and the associated types of each
-//! owner (`decl.addType`, named `Owner.Name`).
+//! owner (`decl.addType`, named `Owner.Name`), and every top-level declaration
+//! a decorator ran over (`@typeinfo.all(with: d)`).
 //!
 //! One `Reflection` lives for one compile session (`comptime.zig` `compile` /
 //! `compileTypesOnly`) and every module's `Env` points at it
@@ -22,6 +23,22 @@ pub const MetaEntry = struct {
     value: []const u8,
 };
 
+/// One top-level declaration carrying a body-carrying decorator — what
+/// `@typeinfo.all(with: d)` answers from (`typeinfo_all.zig`).
+pub const DeclaredEntry = struct {
+    module: []const u8,
+    name: []const u8,
+    kind: Kind,
+    isPub: bool,
+    /// The decorator's identity: its declaring module and its own name.
+    decorator_owner: []const u8,
+    decorator_name: []const u8,
+    /// Order of recording — source order inside a module.
+    seq: usize,
+
+    pub const Kind = enum { function, type_, behavior };
+};
+
 pub const Reflection = struct {
     arena: std.mem.Allocator,
     /// `envMod.declIdentity(module, name)` → the declaration's entries, in the
@@ -32,6 +49,12 @@ pub const Reflection = struct {
     /// order. Read by `assoc_types.zig` to resolve `Owner.Name` in the owner's
     /// module and in every importer.
     assoc: std.StringHashMapUnmanaged(std.ArrayListUnmanaged([]const u8)) = .empty,
+    /// Every top-level declaration a body-carrying decorator ran over, in the
+    /// order the decorators ran (decision 216 (4)).
+    declared: std.ArrayListUnmanaged(DeclaredEntry) = .empty,
+    /// The module paths that read `@typeinfo.all` — analysed after every
+    /// other module; none of them answers another's query.
+    readers: std.StringHashMapUnmanaged(void) = .empty,
 
     pub fn init(arena: std.mem.Allocator) Reflection {
         return .{ .arena = arena };
@@ -65,6 +88,18 @@ pub const Reflection = struct {
     pub fn assocOf(self: *const Reflection, arena: std.mem.Allocator, module: []const u8, owner: []const u8) ![]const []const u8 {
         const id = try envMod.declIdentity(arena, module, owner);
         return if (self.assoc.get(id)) |list| list.items else &.{};
+    }
+
+    /// Record that `decorator` ran over a top-level declaration (once per
+    /// declaration and decorator).
+    pub fn addDeclared(self: *Reflection, entry: DeclaredEntry) !void {
+        for (self.declared.items) |e| {
+            if (std.mem.eql(u8, e.module, entry.module) and std.mem.eql(u8, e.name, entry.name) and
+                std.mem.eql(u8, e.decorator_owner, entry.decorator_owner) and std.mem.eql(u8, e.decorator_name, entry.decorator_name)) return;
+        }
+        var e = entry;
+        e.seq = self.declared.items.len;
+        try self.declared.append(self.arena, e);
     }
 
     /// Every entry of the declaration, in set order; empty when none.

@@ -25,6 +25,7 @@ const validation = @import("./comptime/error.zig");
 const diagnostics = @import("./comptime/diagnostics.zig");
 const reflectionMod = @import("./comptime/reflection.zig");
 const assocTypes = @import("./comptime/assoc_types.zig");
+const typeinfoAll = @import("./comptime/typeinfo_all.zig");
 const hostRuntime = @import("./comptime/runtime/runtime.zig");
 
 // ── Re-exports for external consumers ────────────────────────────────────────
@@ -331,6 +332,32 @@ fn withSourceLocationDecl(arena: std.mem.Allocator, prog: ast.Program, env: *con
     return ast.Program{ .decls = new_decls };
 }
 
+/// Decision 216 (4) — the prelude records `@typeinfo.all` answers with
+/// (`Declared<T>`, `DeclaredMeta`), spliced into a module that names them the
+/// way `withSourceLocationDecl` splices `SourceLocation`: private, per module.
+fn withDeclaredDecls(arena: std.mem.Allocator, prog: ast.Program, env: *const envMod.Env) !ast.Program {
+    if (!env.usesDeclared) return prog;
+    for (prog.decls) |d| switch (d) {
+        .type_ => |t| if (std.mem.eql(u8, t.name, "Declared") or std.mem.eql(u8, t.name, "DeclaredMeta")) return prog,
+        else => {},
+    };
+    var lx = Lexer.init(declared_decl_src);
+    const tokens = try lx.scanAll(arena);
+    var p = Parser.init(tokens);
+    const decl_prog = try p.parse(arena);
+    const new_decls = try arena.alloc(ast.DeclKind, decl_prog.decls.len + prog.decls.len);
+    @memcpy(new_decls[0..decl_prog.decls.len], decl_prog.decls);
+    @memcpy(new_decls[decl_prog.decls.len..], prog.decls);
+    return ast.Program{ .decls = new_decls };
+}
+
+/// The declarations `withDeclaredDecls` splices — the `decl_reflection_src`
+/// entries, private. Keep the two in sync.
+const declared_decl_src =
+    \\type DeclaredMeta(key: string, value: string)
+    \\type Declared<T>(name: string, module: string, meta: DeclaredMeta[], value: T)
+;
+
 /// The declaration `withSourceLocationDecl` splices: private (the record is
 /// per-module — only its fields matter, never its identity), the same four
 /// fields as the `decl_reflection_src` entry. Keep the two in sync.
@@ -626,6 +653,52 @@ fn mergeMembers(
     return .{ .ok = .{ .decls = decls } };
 }
 
+/// Decision 216 (4) — the build's modules with every module that reads
+/// `@typeinfo.all` moved after all the others (relative order kept), so a
+/// reader's answer covers the whole program; the readers are noted in the
+/// session's reflection. A module importing a reader is refused at the import
+/// (`refusals`, by module index into the answer): the reader would have to be
+/// analysed before the declarations it reports.
+fn orderReaders(
+    arena: std.mem.Allocator,
+    modules: []const Module,
+    reflection: *reflectionMod.Reflection,
+    refusals: *std.AutoHashMapUnmanaged(usize, validation.TypeError),
+) ![]const Module {
+    var readers: std.ArrayListUnmanaged(Module) = .empty;
+    var others: std.ArrayListUnmanaged(Module) = .empty;
+    for (modules) |m| {
+        if (typeinfoAll.reads(m.source)) {
+            try readers.append(arena, m);
+            try reflection.readers.put(arena, m.path, {});
+        } else try others.append(arena, m);
+    }
+    if (readers.items.len == 0) return modules;
+    try others.appendSlice(arena, readers.items);
+    for (others.items, 0..) |m, idx| {
+        var lx = Lexer.init(m.source);
+        const tokens = lx.scanAll(arena) catch continue;
+        var p = Parser.init(tokens);
+        const program = p.parse(arena) catch continue;
+        scan: for (program.decls) |d| switch (d) {
+            .use => |u| for (u.imports) |imp| {
+                for ([_]bool{ false, true }) |whole| switch (try u.leafSource(imp, arena, whole)) {
+                    .module => |path| for (readers.items) |r| {
+                        if (std.mem.eql(u8, r.path, m.path)) continue;
+                        if (!std.mem.eql(u8, path, r.path) and !std.mem.eql(u8, std.fs.path.basename(r.path), path)) continue;
+                        const msg = try std.fmt.allocPrint(arena, "{s}: `{s}` reads `@typeinfo.all`, so it answers for the whole program and no module imports it", .{ diagnostics.typeinfo_all_imported, r.path });
+                        try refusals.put(arena, idx, validation.TypeError.custom(msg, "Move what this module needs out of the entry point into a module of its own; the entry point imports it, never the other way round.").withLoc(imp.loc));
+                        break :scan;
+                    },
+                    .root => {},
+                };
+            },
+            else => {},
+        };
+    }
+    return others.items;
+}
+
 /// Decision 216 (3) — every `decl.addType(name, source)` of pass 1, parsed as
 /// the one top-level type `__<Owner>__<Name>` (`envMod.assocTypeName`), `pub`
 /// when its owner is, and appended to the program. Its tokens are placed after
@@ -785,10 +858,12 @@ fn analyzeMerged(
     templateEvalCtx: ?envMod.TemplateEvalCtx,
     target_name: ?[]const u8,
     reflection: *reflectionMod.Reflection,
+    typeinfo_plan: ?typeinfoAll.Plan,
 ) anyerror!AnalysisResult {
     var env = try infer.freshEnv(arena, std.heap.page_allocator);
     env.modulePath = mod.path;
     env.reflection = reflection;
+    if (typeinfo_plan) |pl| env.typeinfoAll = pl.rewrites;
     env.srcPath = try displaySrcPath(arena, mod);
     // The prelude registration may have named `SourceLocation`; only the
     // program's own references count (`withSourceLocationDecl`).
@@ -944,6 +1019,10 @@ fn analyzeSource(
     // module's, on a re-analysis) reaches the checker as the declared name.
     var owners = try assocOwners(arena, expanded, mod.path, typeDeclRegistry, reflection);
     const program = try assocTypes.expand(arena, expanded, &owners);
+    // Decision 216 (4): a module reading `@typeinfo.all` is answered on its
+    // re-analysis, after its own decorators ran.
+    const typeinfo_queries = if (skip_invoke) &.{} else try typeinfoAll.collect(arena, program);
+    env.typeinfoAllPending = typeinfo_queries.len > 0;
 
     if (validation.validateComptime(program)) |err_info| {
         env.deinit();
@@ -973,7 +1052,7 @@ fn analyzeSource(
     // to the pass-1 program — skipping the re-lex/re-parse of the original
     // module bytes that the legacy text-splice path forced. Fallback to text
     // splicing only when a contribution fails to parse standalone.
-    if (!skip_invoke and (env.contributions.items.len > 0 or env.memberContributions.items.len > 0 or env.typeContributions.items.len > 0)) {
+    if (!skip_invoke and (env.contributions.items.len > 0 or env.memberContributions.items.len > 0 or env.typeContributions.items.len > 0 or typeinfo_queries.len > 0)) {
         // Decision 216 (1): the members join their types' bodies first, after
         // every line the module and its `@emit` contributions occupy.
         var with_members = program;
@@ -1013,8 +1092,30 @@ fn analyzeSource(
                 },
             }
         }
+        // Decision 216 (4): every query answered, now that this module's
+        // decorators ran too; the answers' imports join the program.
+        var typeinfo_plan: ?typeinfoAll.Plan = null;
+        if (typeinfo_queries.len > 0) {
+            var first_line: usize = std.mem.count(u8, source, "\n") + 2;
+            for (env.contributions.items) |c| first_line += std.mem.count(u8, c, "\n") + 1;
+            for (env.memberContributions.items) |m| first_line += std.mem.count(u8, m.source, "\n") + 1;
+            for (env.typeContributions.items) |t| first_line += std.mem.count(u8, t.source, "\n") + 1;
+            switch (try typeinfoAll.plan(arena, &env, with_members, mod.path, reflection, typeinfo_queries, first_line)) {
+                .ok => |pl| {
+                    typeinfo_plan = pl;
+                    const grown = try arena.alloc(ast.DeclKind, pl.imports.len + with_members.decls.len);
+                    @memcpy(grown[0..pl.imports.len], pl.imports);
+                    @memcpy(grown[pl.imports.len..], with_members.decls);
+                    with_members = .{ .decls = grown };
+                },
+                .refused => |te| {
+                    env.deinit();
+                    return .{ .typeError = te };
+                },
+            }
+        }
         if (try parseAndMergeContributions(arena, source, with_members, env.contributions.items)) |merged_program| {
-            var reanalysis = try analyzeMerged(arena, mod, merged_program, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, target_name, reflection);
+            var reanalysis = try analyzeMerged(arena, mod, merged_program, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, target_name, reflection, typeinfo_plan);
             if (reanalysis == .success) {
                 try keepPassOneTraces(&reanalysis.success.env, &env);
                 env.deinit();
@@ -1128,6 +1229,8 @@ const decl_reflection_src =
     \\pub type Param(name: string, typeName: string)
     \\pub type Field(name: string, typeName: string, annotations: Annotation[])
     \\pub type Method(name: string, params: Param[], returnType: string, annotations: Annotation[])
+    \\pub type DeclaredMeta(key: string, value: string)
+    \\pub type Declared<T>(name: string, module: string, meta: DeclaredMeta[], value: T)
     \\pub type Decl(
     \\    kind: DeclKind,
     \\    name: string,
@@ -2288,10 +2391,15 @@ pub fn compileTypesOnly(
     // Non-std libs are ordinary input modules: the driver supplies their `.bp`
     // sources and `resolveImports` binds `from "<lib>"` through the shared
     // registry — the core names no specific lib (std is the one exception).
-    const all_modules = try expandStdImports(arena_alloc, modules, null);
+    var reader_refusals: std.AutoHashMapUnmanaged(usize, validation.TypeError) = .empty;
+    const all_modules = try orderReaders(arena_alloc, try expandStdImports(arena_alloc, modules, null), &reflection, &reader_refusals);
 
     for (all_modules, 0..) |mod, idx| {
         const name: []const u8 = if (mod.path.len > 0) mod.path else "main";
+        if (reader_refusals.get(idx)) |te| {
+            try session.outputs.append(allocator, .{ .name = name, .src = mod.source, .srcPath = mod.srcPath, .outcome = .{ .typeError = te } });
+            continue;
+        }
         const analysis = try analyzeModule(arena_alloc, mod, &registry, &type_decl_registry, &template_registry, &decorator_registry, &extension_registry, eval_ctx, true, null, &reflection);
 
         switch (analysis) {
@@ -2490,10 +2598,15 @@ pub fn compile(
     // Non-std libs are ordinary input modules: the driver supplies their `.bp`
     // sources and `resolveImports` binds `from "<lib>"` through the shared
     // registry — the core names no specific lib (std is the one exception).
-    const all_modules = try expandStdImports(arena_alloc, modules, target_name);
+    var reader_refusals: std.AutoHashMapUnmanaged(usize, validation.TypeError) = .empty;
+    const all_modules = try orderReaders(arena_alloc, try expandStdImports(arena_alloc, modules, target_name), &reflection, &reader_refusals);
 
     for (all_modules, 0..) |mod, idx| {
         const name: []const u8 = if (mod.path.len > 0) mod.path else "main";
+        if (reader_refusals.get(idx)) |te| {
+            try session.outputs.append(allocator, .{ .name = name, .src = mod.source, .srcPath = mod.srcPath, .outcome = .{ .typeError = te } });
+            continue;
+        }
         const analysis = try analyzeModule(arena_alloc, mod, &registry, &type_decl_registry, &template_registry, &decorator_registry, &extension_registry, .{
             .io = io,
             .build_root = build_root orelse name,
@@ -2608,11 +2721,11 @@ pub fn compile(
                     @memcpy(new_decls[synth.items.len..], succ.program.decls);
                     break :blk ast.Program{ .decls = new_decls };
                 };
-                const transformed = try withImportTypeAliasesErased(arena_alloc, try alias_erase.erase(arena_alloc, try withYieldStepDecl(arena_alloc, try withSourceLocationDecl(arena_alloc, try withSynthesisedEnumDecls(
+                const transformed = try withImportTypeAliasesErased(arena_alloc, try alias_erase.erase(arena_alloc, try withYieldStepDecl(arena_alloc, try withDeclaredDecls(arena_alloc, try withSourceLocationDecl(arena_alloc, try withSynthesisedEnumDecls(
                     arena_alloc,
                     try withUsedAssocInterfaces(arena_alloc, try withTemplateHygiene(arena_alloc, try transform.transform(arena_alloc, program_for_transform, fn_decls, comptime_arrays, ct.comptime_vals, &succ.env.method_lowerings, &succ.env.templateExpansions, &succ.env.srcRewrites, &succ.env.result_jump_lowerings, &succ.env.stdArrayLowerings, &succ.env.enumSectionRewrites, &succ.env.indexRewrites, &succ.env.optionalNullCases, succ.env.ctorParams, &succ.env.defaultInjections, &succ.env.resultPatternLocs, &succ.env.namespaces), &succ.env, declaresTemplateFn(program_for_transform.decls)), &succ.env),
                     &succ.env,
-                ), &succ.env), &succ.env), &succ.env.typeAliases), &succ.env);
+                ), &succ.env), &succ.env), &succ.env), &succ.env.typeAliases), &succ.env);
 
                 var type_ids = std.StringHashMap(usize).init(arena_alloc);
                 for (succ.bindings) |b| {

@@ -16,6 +16,7 @@ const envMod = @import("env.zig");
 const TypeError = @import("error.zig").TypeError;
 const errorMod = @import("error.zig");
 const diagnostics = @import("diagnostics.zig");
+const reflectionMod = @import("reflection.zig");
 const effectChain = @import("effect_chain.zig");
 const template = @import("template.zig");
 const primOpTemplate = @import("primOpTemplate.zig");
@@ -403,7 +404,7 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     try validateExternalInline(env, program);
     try invokeDecorators(env, program);
     env.assocTypesPending = false;
-    if (env.contributions.items.len > 0 or env.memberContributions.items.len > 0 or env.typeContributions.items.len > 0) {
+    if (env.contributions.items.len > 0 or env.memberContributions.items.len > 0 or env.typeContributions.items.len > 0 or env.typeinfoAllPending) {
         return list.toOwnedSlice(env.arena);
     }
     try refusePendingAssocType(env);
@@ -493,7 +494,7 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
     try validateExternalInline(env, program);
     try invokeDecorators(env, program);
     env.assocTypesPending = false;
-    if (env.contributions.items.len > 0 or env.memberContributions.items.len > 0 or env.typeContributions.items.len > 0) {
+    if (env.contributions.items.len > 0 or env.memberContributions.items.len > 0 or env.typeContributions.items.len > 0 or env.typeinfoAllPending) {
         // A decorator `@emit`ed code: the spliced re-analysis (`analyzeSource`)
         // does the real, full inference of the generated declarations. But the
         // LSP needs a useful binding list even when that spliced code can't
@@ -3569,12 +3570,24 @@ fn runDeclDecorators(
     anns: []const ast.Annotation,
     handle: decoratorEval.DeclHandle,
     memberOwner: ?[]const u8,
+    /// Set for a top-level declaration: what `@typeinfo.all` records of it.
+    declared: ?struct { kind: reflectionMod.DeclaredEntry.Kind, isPub: bool },
 ) InferError!void {
     for (anns) |a| {
         if (a.is_builtin) continue;
         const sig = env.decorators.get(a.name) orelse continue;
         const dfn = sig.fn_decl orelse continue; // bodyless `declare fn` marker
         if (dfn.body.len == 0) continue; // empty body — nothing to run
+        // Decision 216 (4) — the program's catalogue, in the order decorators run.
+        if (declared) |d| if (env.reflection) |r| try r.addDeclared(.{
+            .module = env.modulePath,
+            .name = handle.name,
+            .kind = d.kind,
+            .isPub = d.isPub,
+            .decorator_owner = env.comptimeOwnerOf(dfn),
+            .decorator_name = dfn.name,
+            .seq = 0,
+        });
 
         // A parameter the annotation leaves out takes its declared default,
         // written as the lexeme an annotation argument would be (arity was
@@ -3806,7 +3819,7 @@ fn inferTypeinfoRead(env: *Env, ia: anytype, loc: ast.Loc) InferError!?TypedExpr
                 try set.print(env.arena, "`{s}.{s}`", .{ entry.decorator, entry.key });
             }
             const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` has no meta `{s}.{s}`; {s}", .{
-                diagnostics.typeinfo_meta_missing, target.name, decorator, key,
+                diagnostics.typeinfo_meta_missing,                                                                                 target.name, decorator, key,
                 if (set.items.len == 0) "no decorator set any" else try std.fmt.allocPrint(env.arena, "it has {s}", .{set.items}),
             });
             env.lastError = TypeError.custom(msg, "A key is what the decorator passed to `decl.setMeta(key, value)`, read under the decorator's own name.").withLoc(loc);
@@ -3837,7 +3850,7 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
                 .returnType = if (f.returnType) |rt| try declTypeName(env.arena, rt) else "",
                 .annotations = f.annotations,
             };
-            try runDeclDecorators(env, ctx, f.annotations, h, null);
+            try runDeclDecorators(env, ctx, f.annotations, h, null, .{ .kind = .function, .isPub = f.isPub });
         },
         .type_ => |tdecl| switch (tdecl.shape) {
             .record => {
@@ -3857,7 +3870,7 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
                     .returnType = "",
                     .annotations = tdecl.annotations,
                 };
-                try runDeclDecorators(env, ctx, tdecl.annotations, h, tdecl.name);
+                try runDeclDecorators(env, ctx, tdecl.annotations, h, tdecl.name, .{ .kind = .type_, .isPub = tdecl.isPub });
                 for (tdecl.recordFields()) |fld| {
                     const fh = decoratorEval.DeclHandle{
                         .kind = "Field",
@@ -3867,7 +3880,7 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
                         .returnType = try declTypeName(env.arena, fld.typeRef),
                         .annotations = fld.annotations,
                     };
-                    try runDeclDecorators(env, ctx, fld.annotations, fh, tdecl.name);
+                    try runDeclDecorators(env, ctx, fld.annotations, fh, tdecl.name, null);
                 }
                 for (tdecl.methods) |m| {
                     const mh = decoratorEval.DeclHandle{
@@ -3878,7 +3891,7 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
                         .returnType = if (m.returnType) |rt| try declTypeName(env.arena, rt) else "",
                         .annotations = m.annotations,
                     };
-                    try runDeclDecorators(env, ctx, m.annotations, mh, tdecl.name);
+                    try runDeclDecorators(env, ctx, m.annotations, mh, tdecl.name, null);
                 }
             },
             .enum_ => {
@@ -3896,7 +3909,7 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
                     .returnType = "",
                     .annotations = tdecl.annotations,
                 };
-                try runDeclDecorators(env, ctx, tdecl.annotations, h, tdecl.name);
+                try runDeclDecorators(env, ctx, tdecl.annotations, h, tdecl.name, .{ .kind = .type_, .isPub = tdecl.isPub });
                 for (tdecl.methods) |m| {
                     const mh = decoratorEval.DeclHandle{
                         .kind = "Method",
@@ -3906,7 +3919,7 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
                         .returnType = if (m.returnType) |rt| try declTypeName(env.arena, rt) else "",
                         .annotations = m.annotations,
                     };
-                    try runDeclDecorators(env, ctx, m.annotations, mh, tdecl.name);
+                    try runDeclDecorators(env, ctx, m.annotations, mh, tdecl.name, null);
                 }
             },
         },
@@ -3930,7 +3943,7 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
                 .returnType = "",
                 .annotations = i.annotations,
             };
-            try runDeclDecorators(env, ctx, i.annotations, h, i.name);
+            try runDeclDecorators(env, ctx, i.annotations, h, i.name, .{ .kind = .behavior, .isPub = i.isPub });
             for (i.methods) |m| {
                 const mh = decoratorEval.DeclHandle{
                     .kind = "Method",
@@ -3940,7 +3953,7 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
                     .returnType = if (m.returnType) |rt| try declTypeName(env.arena, rt) else "",
                     .annotations = m.annotations,
                 };
-                try runDeclDecorators(env, ctx, m.annotations, mh, i.name);
+                try runDeclDecorators(env, ctx, m.annotations, mh, i.name, null);
             }
         },
         else => {},
@@ -6433,9 +6446,9 @@ const runtime_builtin_names = [_][]const u8{
 /// `inferBuiltinCallReturnType` and the intercepts in `inferCallExpr` included.
 /// Only read to suggest a spelling in `unknown-builtin`.
 const all_builtin_names = runtime_builtin_names ++ [_][]const u8{
-    "src",        "block",      "expr",  "code",       "typeInfo",      "TypeOf",
-    "makeRecord", "RecordKeys", "field", "getContext", "comptimeError",
-    "typeinfo",
+    "src",          "block",      "expr",  "code",       "typeInfo",      "TypeOf",
+    "makeRecord",   "RecordKeys", "field", "getContext", "comptimeError", "typeinfo",
+    "typeinfo.all",
 };
 
 fn isKnownBuiltinName(env: *Env, callee: []const u8) bool {
@@ -12836,6 +12849,18 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
             }
             // `@src()` (1.0.10-beta decision 73) — before the arguments are
             // inferred, so `@src(x)` reports the builtin's rule and not `x`.
+            if (call.is_builtin and std.mem.eql(u8, call.callee, "typeinfo.all")) {
+                // Decision 216 (4) — the answer `typeinfo_all.plan` built for
+                // this call; tooling that runs no decorator reads an empty one.
+                const answer = env.typeinfoAll.get(loc) orelse empty: {
+                    const node = try env.arena.create(ast.Expr);
+                    node.* = .{ .collection = .{ .loc = loc, .kind = .{ .arrayLit = .{ .elems = &.{} } } } };
+                    break :empty node;
+                };
+                env.usesDeclared = true;
+                try env.srcRewrites.put(loc, answer);
+                return inferExprTyped(env, answer.*);
+            }
             if (call.is_builtin and std.mem.eql(u8, call.callee, "typeinfo")) {
                 env.lastError = TypeError.custom(
                     diagnostics.typeinfo_without_member ++ ": `@typeinfo(…)` is read through a member, not used as a value",

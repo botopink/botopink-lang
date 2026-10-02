@@ -1,0 +1,6 @@
+about about /about -> about us
+pages blog /blog -> the blog
+pages latest /blog/latest -> the latest post
+Mailer: component Mailer
+Local: component Local
+0

@@ -630,3 +630,21 @@ pub behavior Decl {
     // the shape of one type (`decorator-type-not-one-type`).
     fn addType(self: Self, name: string, source: string);
 }
+
+// Decision 216 (4) — what `@typeinfo.all(with: d)` answers: one `Declared`
+// per declaration of the program carrying the decorator `d`, by module path
+// then declaration order. `meta` is what `d` set on it (`decl.setMeta`);
+// `value` is the function itself, or for a type a thunk calling the
+// associated fn the query names (`@typeinfo.all(with: d, member: "m")`).
+// The compiler's mirror is `comptime.zig` `decl_reflection_src`.
+pub type DeclaredMeta(
+    key: string,
+    value: string,
+)
+
+pub type Declared<T>(
+    name: string,
+    module: string,
+    meta: DeclaredMeta[],
+    value: T,
+)

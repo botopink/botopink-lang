@@ -369,6 +369,26 @@ pub const decorator_type_duplicate: []const u8 = "decorator-type-duplicate";
 /// `decl.addType(name, source)` whose source is not the shape of one type.
 pub const decorator_type_not_one_type: []const u8 = "decorator-type-not-one-type";
 
+/// `@typeinfo.all` written without its labels, with an unknown one, or with
+/// `member:` where it does not apply.
+pub const typeinfo_all_arguments: []const u8 = "typeinfo-all-arguments";
+
+/// `@typeinfo.all(with: x)` where `x` names no body-carrying decorator.
+pub const typeinfo_all_not_decorator: []const u8 = "typeinfo-all-not-decorator";
+
+/// One query over a decorator carried by functions and by types.
+pub const typeinfo_all_mixed: []const u8 = "typeinfo-all-mixed";
+
+/// A query over types without `member:` — a type is no value.
+pub const typeinfo_all_needs_member: []const u8 = "typeinfo-all-needs-member";
+
+/// A declaration the query answers that is not `pub` (it is reached through
+/// an import the answer adds).
+pub const typeinfo_all_private: []const u8 = "typeinfo-all-private";
+
+/// An import of a module that reads `@typeinfo.all`.
+pub const typeinfo_all_imported: []const u8 = "typeinfo-all-imported";
+
 /// `decl.setMeta` from a field's or a method's decorator: meta describes a
 /// top-level declaration, the one `@typeinfo` reflects.
 pub const decorator_meta_on_member: []const u8 = "decorator-meta-on-member";
@@ -459,6 +479,12 @@ pub const all_codes = [_][]const u8{
     decorator_type_name,
     decorator_type_duplicate,
     decorator_type_not_one_type,
+    typeinfo_all_arguments,
+    typeinfo_all_not_decorator,
+    typeinfo_all_mixed,
+    typeinfo_all_needs_member,
+    typeinfo_all_private,
+    typeinfo_all_imported,
     decorator_meta_on_member,
     decorator_meta_duplicate,
     typeinfo_without_member,

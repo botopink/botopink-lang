@@ -926,6 +926,15 @@ pub const Env = struct {
     /// where a decorator's `decl.setMeta` is recorded and `@typeinfo` reads.
     /// Null outside a session (unit helpers that infer one program alone).
     reflection: ?*reflectionMod.Reflection = null,
+    /// Decision 216 (4) — the module reads `@typeinfo.all`: its first
+    /// analysis stops before bodies, and the re-analysis receives the answers.
+    typeinfoAllPending: bool = false,
+    /// Call loc → the `Declared<T>` array answering that `@typeinfo.all`
+    /// (`typeinfo_all.plan`), spliced through `srcRewrites`.
+    typeinfoAll: std.AutoHashMapUnmanaged(ast.Loc, *const ast.Expr) = .empty,
+    /// The module names the prelude records `Declared` / `DeclaredMeta`, so
+    /// `comptime.zig` splices their declarations in (`withDeclaredDecls`).
+    usesDeclared: bool = false,
     /// The names this module declares at top level (types, behaviors, fns,
     /// vals) — what `@typeinfo(Name)` reflects when no import binds `Name`.
     ownDecls: std.StringHashMapUnmanaged(void) = .empty,
