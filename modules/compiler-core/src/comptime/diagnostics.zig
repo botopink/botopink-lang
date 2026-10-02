@@ -214,6 +214,9 @@ pub const captured_var_write: []const u8 = "captured-var-write";
 /// parameter takes one, or two of them on one function, or a field named
 /// like another parameter of its function.
 pub const inline_type_position: []const u8 = "inline-type-position";
+/// A program's own primitive behavior (`behavior String { … }`) extends std's
+/// and may not declare a member std's already declares.
+pub const behavior_member_redeclared: []const u8 = "behavior-member-redeclared";
 /// A use of an imported name the import resolved to two different
 /// declarations (`00 · 01-std`: the refusal of a duplicate `pub` name belongs
 /// to the consumer's unqualified use).
@@ -425,6 +428,7 @@ pub const all_codes = [_][]const u8{
     binding_redeclared,
     captured_var_write,
     inline_type_position,
+    behavior_member_redeclared,
 };
 
 test "every reserved code has a stable, non-empty spelling" {

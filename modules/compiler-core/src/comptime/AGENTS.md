@@ -1304,6 +1304,22 @@ answered `recursive type detected`, which named neither (an index is `?T`, decis
 parameter is still a flexible variable inside its body: `fn f<T>(x: T) -> T { return 1; }` checks as
 `fn(i32) -> i32` and reds only at a call with another type.
 
+## A program's primitive behavior extends std's
+
+A program's own `behavior` named like one std registered — a primitive's controller interface
+(`behavior String { default fn … }`) or any other — EXTENDS std's: `extendStdBehavior`
+(`registerInterfaceAssociatedFns`) puts std's declaration with the program's members added (and the
+`extends` joined) under the one name in `Env.assocInterfaceDecls`, so every reader of that table —
+the checker's dispatch and the backends' — sees both; `Env.stdBehaviorBase` keeps std's original, so
+a second registration of the program's decl merges against std's members only. A member std's
+declaration already has is `behavior-member-redeclared` at the program's member. `comptime.zig`
+`withUsedAssocInterfaces` emits the merged declaration in place of the program's (std's own default
+fns, `slice`'s default fill included, would be missing otherwise). A primitive behavior's default
+bodies type `self` as the primitive (`primitiveOfInterface`: `String` → `string`, `Array<T>` →
+`array<T>`), and `transform.zig` walks a behavior's default bodies whichever rewrite map is set
+(`self.slice(1)`'s fill). Cells: `test/program_primitive_behavior_extends_std`,
+`reject/program_primitive_behavior_redeclares_std`.
+
 ## An inline parameter type (decision 207)
 
 `fn link(props: type(href: string, label: string = "x"))` — the parser keeps the fields on

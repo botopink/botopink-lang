@@ -1,17 +1,14 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 behavior Number {
-    fn min(self: Self, other: Self) -> Self;
-    fn max(self: Self, other: Self) -> Self;
-
-    default fn clamp(self: Self, lo: Self, hi: Self) -> Self {
+    default fn clampTo(self: Self, lo: Self, hi: Self) -> Self {
         return self.max(lo).min(hi);
     }
 }
 
 fn main() {
     val n: i32 = 50;
-    @print(n.clamp(0, 10));
+    @print(n.clampTo(0, 10));
 }
 ```
 
@@ -56,10 +53,10 @@ fn main() {
   {label, 7}.
     {call_only, 0, {f, 5}}.
 
-{function, 'Number_clamp', 3, 9}.
+{function, 'Number_clampTo', 3, 9}.
   {label, 8}.
     {line, [{location, "test@main.erl", 4}]}.
-    {func_info, {atom, test@main}, {atom, 'Number_clamp'}, 3}.
+    {func_info, {atom, test@main}, {atom, 'Number_clampTo'}, 3}.
   {label, 9}.
     {allocate, 5, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.

@@ -1,17 +1,14 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 behavior Number {
-    fn min(self: Self, other: Self) -> Self;
-    fn max(self: Self, other: Self) -> Self;
-
-    default fn clamp(self: Self, lo: Self, hi: Self) -> Self {
+    default fn clampTo(self: Self, lo: Self, hi: Self) -> Self {
         return self.max(lo).min(hi);
     }
 }
 
 fn main() {
     val n: i32 = 50;
-    @print(n.clamp(0, 10));
+    @print(n.clampTo(0, 10));
 }
 ```
 
@@ -25,11 +22,7 @@ fn main() {
     (local $n i32)
     i32.const 50
     local.set $n
-    local.get $n
-    i32.const 0
-    call $__i32_max
-    i32.const 10
-    call $__i32_min
+    unreachable ;; prim method not lowered on wasm: int.clampTo/2
     call $__print_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
@@ -215,34 +208,11 @@ fn main() {
       )
     )
   )
-  (func $__i32_min (param $a i32) (param $b i32) (result i32)
-    local.get $a
-    local.get $b
-    i32.lt_s
-    (if
-      (then
-        local.get $a
-        return
-      )
-    )
-    local.get $b
-  )
-  (func $__i32_max (param $a i32) (param $b i32) (result i32)
-    local.get $a
-    local.get $b
-    i32.gt_s
-    (if
-      (then
-        local.get $a
-        return
-      )
-    )
-    local.get $b
-  )
 )
 ```
 
 ----- RUN LOG -----
 ```logs
-10
+RUNTIME TRAP (wasmtime):
+wasm trap: wasm `unreachable` instruction executed
 ```

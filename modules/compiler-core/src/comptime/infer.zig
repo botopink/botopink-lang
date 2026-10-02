@@ -1954,6 +1954,47 @@ fn registerInherentMethodTypes(
     }
 }
 
+/// A program's own `behavior` named like one std registered — a primitive's
+/// (`behavior String { default fn shout(self: Self) … }`) or any other — EXTENDS
+/// std's: the declaration under the name is std's with the program's members
+/// added (and its `extends` joined), so `"x".startsWith(…)` and the program's
+/// `"x".shout()` both answer, in the checker and in every backend that reads
+/// `assocInterfaceDecls`. A member std's declaration already has is
+/// `behavior-member-redeclared` at the program's member. The same declaration
+/// registered again (a second pass over the program) merges against std's
+/// original (`Env.stdBehaviorBase`), never against itself.
+fn extendStdBehavior(env: *Env, d: ast.BehaviorDecl) InferError!ast.BehaviorDecl {
+    const base: ast.BehaviorDecl = env.stdBehaviorBase.get(d.name) orelse blk: {
+        const existing = env.assocInterfaceDecls.get(d.name) orelse return d;
+        if (existing.methods.ptr == d.methods.ptr) return d;
+        if (std.mem.startsWith(u8, env.modulePath, "std/")) return d;
+        try env.stdBehaviorBase.put(env.arena, d.name, existing);
+        break :blk existing;
+    };
+    for (d.methods) |m| for (base.methods) |bm| {
+        if (!std.mem.eql(u8, m.name, bm.name)) continue;
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}.{s}` is a member of std's `{s}` already — a program's `behavior {s}` adds members to std's and redeclares none", .{ diagnostics.behavior_member_redeclared, d.name, m.name, d.name, d.name });
+        var e = TypeError.custom(msg, "Give the member another name.");
+        if (m.returnTypeLoc.line != 0) e = e.withLoc(m.returnTypeLoc);
+        env.lastError = e;
+        return error.TypeError;
+    };
+    var merged = d;
+    merged.methods = try std.mem.concat(env.arena, ast.BehaviorMethod, &.{ base.methods, d.methods });
+    merged.fields = try std.mem.concat(env.arena, ast.BehaviorField, &.{ base.fields, d.fields });
+    var ext: std.ArrayListUnmanaged([]const u8) = .empty;
+    try ext.appendSlice(env.arena, base.extends);
+    for (d.extends) |x| {
+        const has = for (ext.items) |y| {
+            if (std.mem.eql(u8, x, y)) break true;
+        } else false;
+        if (!has) try ext.append(env.arena, x);
+    }
+    merged.extends = ext.items;
+    if (merged.genericParams.len == 0) merged.genericParams = base.genericParams;
+    return merged;
+}
+
 /// Register an interface's associated functions — `default fn` members with no
 /// `self` receiver (`Pair.of`, `Function.compose`, `Array.range`) — under the
 /// qualified name `"<Interface>.<method>"`, so `inferCallExpr` can resolve a
@@ -1966,7 +2007,7 @@ fn registerInterfaceAssociatedFns(env: *Env, d: ast.BehaviorDecl) InferError!voi
     // Record EVERY interface decl so codegen can emit its namespace/prototype
     // when used, and the dispatch can follow the `extends` chain (markers like
     // `I32 extends Signed` carry no methods but link the tower).
-    try env.assocInterfaceDecls.put(d.name, d);
+    try env.assocInterfaceDecls.put(d.name, try extendStdBehavior(env, d));
     for (d.methods) |im| {
         const has_self = im.params.len > 0 and std.mem.eql(u8, im.params[0].name, "self");
         if (has_self) continue;
@@ -4820,7 +4861,11 @@ fn inferBehaviorDefaultBodies(env: *Env, d: ast.BehaviorDecl) InferError!void {
     defer before.deinit();
     var it = env.instanceLowerings.keyIterator();
     while (it.next()) |k| try before.put(k.*, {});
-    try inferTypeMethods(env, d.name, d.genericParams, ms);
+    // A primitive's behavior (`behavior String`, `behavior Array<T>`) types
+    // `self` as the primitive (`string`, `array<T>`), so `self.length()` and
+    // `stringSlice0(self, 1)` read the primitive's members and parameters.
+    const selfName = primitiveOfInterface(d.name) orelse d.name;
+    try inferTypeMethods(env, selfName, d.genericParams, ms);
     var added: std.ArrayListUnmanaged(ast.Loc) = .empty;
     var it2 = env.instanceLowerings.iterator();
     while (it2.next()) |e| {
@@ -12844,6 +12889,14 @@ fn primitiveInterfaceName(typeName: []const u8) ?[]const u8 {
         .{ .t = "f64", .i = "F64" },
     };
     for (map) |e| if (std.mem.eql(u8, typeName, e.t)) return e.i;
+    return null;
+}
+
+/// The primitive a controller interface of `primitives.bp` is the behavior
+/// of (`String` → `string`), the inverse of `primitiveInterfaceName`.
+fn primitiveOfInterface(iface: []const u8) ?[]const u8 {
+    const prims = [_][]const u8{ "array", "bool", "string", "i32", "i64", "u32", "u64", "f32", "f64" };
+    for (prims) |p| if (primitiveInterfaceName(p)) |i| if (std.mem.eql(u8, i, iface)) return p;
     return null;
 }
 
