@@ -191,6 +191,15 @@ that refusal lands; then the tail form has no producer and nothing here moves.
 `#[@External.Node("…")]` annotation, which is host code by definition — the
 same role `raw` plays in `beam/erl_ast.zig`.
 
+## What the prelude does not ship
+
+**No `unwrapOrThrow`** (1.0.11-beta decision 179, the answer to 24-h): a
+botopink `@Task<@Result<T, E>>` resolves its Promise with the tagged value —
+`{ ok: v }` or `{ error: e }` — and never rejects (decision 120), and a
+JavaScript caller that `await`s it reads that value. No prelude helper turns an
+`{ error }` back into a rejection: a Task that never fails is the one contract,
+and a helper that rejected would be a second one for a single target.
+
 ## Layout quirks kept for byte-identity
 
 `Block.Layout.fixed` writes one literal level of indentation and closes at
