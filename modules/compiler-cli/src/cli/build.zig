@@ -120,7 +120,7 @@ pub fn run(
     // written) and one it refuses fails the build, so "it builds on erlang"
     // means what it says.
     const erl_ok = if (target == .erlang)
-        try checkErlang(arena, io, outputs.items, opts.out_dir, cfg.packages)
+        try checkErlang(arena, io, outputs.items, opts.out_dir, cfg.packages, libs.userCacheDir(arena, env_map, "erlcheck"))
     else
         true;
 
@@ -147,12 +147,31 @@ pub fn run(
 /// rejects wrote, exited 0, and a `botopink run` / `test` of the same program
 /// then failed on it — and "it builds on that target" was read as evidence.
 /// The warnings of generated code are not reported (`return_errors` alone).
+///
+/// **The verdict cache** (`cache_dir`, `libs.userCacheDir(…, "erlcheck")`;
+/// null = none). Every build of a project compiles its dependencies' `.erl`
+/// again — rakun's build tests spawn `botopink build` 22 times in one cell,
+/// each over the same rakun closure. A source the OTP compiler accepted is
+/// therefore remembered as an empty `<cache_dir>/<k[0..2]>/<k>.ok`, `k` the
+/// SHA-256 of the source bytes and of everything else the verdict depends on:
+/// the options, the OTP release, the erts / `compiler` / `stdlib` versions and
+/// `ERL_COMPILER_OPTIONS` — the key of `test_cmd.zig`'s `.beam` cache with
+/// its own label. A source whose key is there is not compiled again: the same
+/// bytes under the same compiler get the same verdict. Only an acceptance is
+/// stored — a refusal is compiled, and printed, every time — and a source that
+/// names `-include` or `parse_transform` (its verdict depends on other files)
+/// is never looked up. The lookup is inside the same `erl`, so a build with no
+/// working `erl` fails exactly as before. Markers are written by staging and
+/// renaming; a hit refreshes the marker's mtime, and each check reaps one of
+/// the 256 shards at random (markers unused for 7 days, staging files older
+/// than a day).
 fn checkErlang(
     arena: std.mem.Allocator,
     io: std.Io,
     outputs: []const bp.codegen.ModuleOutput,
     out_dir: []const u8,
     packages: bp.codegen.crossModule.Packages,
+    cache_dir: ?[]const u8,
 ) !bool {
     // The files go through a list file, never the command line: one path per
     // module made `erl`'s argv grow with the program, and a 203-module build
@@ -169,7 +188,8 @@ fn checkErlang(
     const list = try arglist.write(arena, io, files.items);
     defer arglist.remove(io, list);
 
-    const argv: []const []const u8 = &.{ "erl", "-noshell", "-eval", ERLANG_CHECK_EVAL, "-extra", list };
+    // The plain arguments are the verdict cache directory (`-` for none) and the list file.
+    const argv: []const []const u8 = &.{ "erl", "-noshell", "-eval", ERLANG_CHECK_EVAL, "-extra", cache_dir orelse "-", list };
     const result = std.process.run(arena, io, .{
         .argv = argv,
         .stdout_limit = .limited(16 * 1024 * 1024),
@@ -191,26 +211,72 @@ fn checkErlang(
     return false;
 }
 
-/// The check `checkErlang` runs in one `erl`: the one plain argument is the
-/// list file naming the files (`arglist.write`); they are dealt round-robin to one process per online scheduler,
-/// each compiling its share in memory; every refusal is printed as
+/// The check `checkErlang` runs in one `erl`: the plain arguments are the
+/// verdict cache directory (`-` for none) and the list file naming the files
+/// (`arglist.write`); the files are dealt
+/// round-robin to one process per online scheduler, each compiling its share
+/// in memory unless its verdict is cached; every refusal is printed as
 /// `<file>:<line>: <message>`; exit 1 when there is any.
 const ERLANG_CHECK_EVAL =
-    \\[ListFile] = init:get_plain_arguments(),
+    \\[CacheArg, ListFile] = init:get_plain_arguments(),
 ++ arglist.READ_LIST("Files", "ListFile") ++
+    \\Tag = case CacheArg of
+    \\    "-" -> none;
+    \\    _ ->
+    \\        try
+    \\            _ = crypto:hash(sha256, <<>>),
+    \\            term_to_binary({<<"botopink-erl-check-1">>, [binary, return_errors],
+    \\                            erlang:system_info(otp_release), erlang:system_info(version),
+    \\                            filename:basename(code:lib_dir(compiler)),
+    \\                            filename:basename(code:lib_dir(stdlib)),
+    \\                            os:getenv("ERL_COMPILER_OPTIONS")})
+    \\        catch _:_ -> none
+    \\        end
+    \\end,
+    \\Marker = fun(F) ->
+    \\    case Tag =/= none andalso file:read_file(F) of
+    \\        {ok, Text} ->
+    \\            case lists:all(fun(W) -> binary:match(Text, W) =:= nomatch end,
+    \\                           [<<"-include">>, <<"parse_transform">>]) of
+    \\                true ->
+    \\                    Key = binary:encode_hex(crypto:hash(sha256, [Tag, Text]), lowercase),
+    \\                    <<Shard:2/binary, _/binary>> = Key,
+    \\                    filename:join([CacheArg, Shard, <<Key/binary, ".ok">>]);
+    \\                false -> none
+    \\            end;
+    \\        _ -> none
+    \\    end
+    \\end,
+    \\Accepted = fun(none) -> ok;
+    \\              (Mk) ->
+    \\                  Tmp = iolist_to_binary([Mk, ".", integer_to_list(erlang:unique_integer([positive])),
+    \\                                          "-", os:getpid(), ".tmp"]),
+    \\                  catch begin
+    \\                      ok = filelib:ensure_dir(Mk),
+    \\                      ok = file:write_file(Tmp, <<>>),
+    \\                      case file:rename(Tmp, Mk) of ok -> ok; _ -> file:delete(Tmp) end
+    \\                  end
+    \\           end,
     \\N = erlang:max(1, erlang:system_info(schedulers_online)),
     \\Indexed = lists:zip(lists:seq(0, length(Files) - 1), Files),
     \\Parts = [[F || {I, F} <- Indexed, I rem N =:= K] || K <- lists:seq(0, N - 1)],
     \\Self = self(),
     \\Loc = fun({L, C}) -> io_lib:format("~p:~p", [L, C]); (none) -> "0"; (L) -> io_lib:format("~p", [L]) end,
-    \\Check = fun(F) ->
+    \\Compile = fun(F, Mk) ->
     \\    case catch compile:file(F, [binary, return_errors]) of
-    \\        {ok, _, _} -> [];
-    \\        {ok, _, _, _} -> [];
+    \\        {ok, _, _} -> Accepted(Mk), [];
+    \\        {ok, _, _, _} -> Accepted(Mk), [];
     \\        {error, Errors, _} ->
     \\            [io_lib:format("~ts:~ts: ~ts~n", [File, Loc(L), M:format_error(D)])
     \\             || {File, Items} <- Errors, {L, M, D} <- Items];
     \\        Other -> [io_lib:format("~ts: ~p~n", [F, Other])]
+    \\    end
+    \\end,
+    \\Check = fun(F) ->
+    \\    Mk = Marker(F),
+    \\    case Mk =/= none andalso filelib:is_regular(Mk) of
+    \\        true -> file:change_time(Mk, erlang:localtime()), [];
+    \\        false -> Compile(F, Mk)
     \\    end
     \\end,
     \\Refs = [begin
@@ -220,6 +286,26 @@ const ERLANG_CHECK_EVAL =
     \\        end || Part <- Parts],
     \\Out = lists:append([receive {R, Lines} -> Lines end || R <- Refs]),
     \\io:put_chars(Out),
+    \\case Tag of
+    \\    none -> ok;
+    \\    _ ->
+    \\        catch begin
+    \\            Pick = binary_to_list(binary:encode_hex(<<(rand:uniform(256) - 1)>>, lowercase)),
+    \\            Now = calendar:datetime_to_gregorian_seconds(calendar:local_time()),
+    \\            Reap = fun(Pattern, MaxAge) ->
+    \\                [case filelib:last_modified(F) of
+    \\                     0 -> ok;
+    \\                     T ->
+    \\                         case Now - calendar:datetime_to_gregorian_seconds(T) > MaxAge of
+    \\                             true -> file:delete(F);
+    \\                             false -> ok
+    \\                         end
+    \\                 end || F <- filelib:wildcard(filename:join([CacheArg, Pick, Pattern]))]
+    \\            end,
+    \\            Reap("*.ok", 7 * 86400),
+    \\            Reap("*.tmp", 86400)
+    \\        end
+    \\end,
     \\halt(case Out of [] -> 0; _ -> 1 end).
 ;
 

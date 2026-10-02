@@ -24,6 +24,7 @@ const discovery = @import("discovery.zig");
 const matrix = @import("matrix.zig");
 const runner = @import("runner.zig");
 const doc_quotes = @import("doc_quotes.zig");
+const schedule = @import("schedule.zig");
 const source_stamp = @import("source_stamp");
 const build_stamp = @import("build_stamp");
 
@@ -200,7 +201,27 @@ fn run(init: std.process.Init) !u8 {
         return if (doc_problems.len > 0) 1 else 0;
     }
 
-    var pool: Pool = .{ .plan = plan, .io = io, .bin = bin, .opts = opts, .cpus = std.Thread.getCpuCount() catch 1 };
+    // The order the workers START the spawning cells in (`schedule.zig`): the
+    // longest last time first, from the machine's duration history. It moves
+    // when a cell runs, never whether it runs or where it is printed.
+    const spawning = try arena.alloc(usize, spawned);
+    const keys = try arena.alloc([]const u8, spawned);
+    {
+        var k: usize = 0;
+        for (plan, 0..) |cell, i| {
+            if (!cell.kind.spawns()) continue;
+            spawning[k] = i;
+            keys[k] = try schedule.keyText(arena, .{ .lib = cell.lib.name, .target = cell.target.toString(), .kind = cell.kind.listName() });
+            k += 1;
+        }
+    }
+    const history_path = schedule.path(arena, init.environ_map);
+    var history: schedule.History = if (history_path) |hp| schedule.load(arena, io, hp) else .empty;
+    const by_time = try schedule.order(arena, keys, &history);
+    const start_order = try arena.alloc(usize, spawned);
+    for (by_time, 0..) |k, j| start_order[j] = spawning[k];
+
+    var pool: Pool = .{ .plan = plan, .order = start_order, .io = io, .bin = bin, .opts = opts, .cpus = std.Thread.getCpuCount() catch 1 };
     const jobs = @min(opts.jobs orelse defaultJobs(io), @max(spawned, 1));
     const workers = try arena.alloc(?std.Io.Future(void), jobs);
     var started: usize = 0;
@@ -260,6 +281,14 @@ fn run(init: std.process.Init) !u8 {
         summary.tally(status);
     }
 
+    // Every spawning cell has run: remember how long each took, for the next
+    // run's start order.
+    if (history_path) |hp| {
+        const times = try arena.alloc(u64, spawned);
+        for (spawning, 0..) |i, k| times[k] = plan[i].wall_ms;
+        schedule.store(arena, io, hp, &history, keys, times);
+    }
+
     if (opts.json) {
         // One final aggregate record so a JSON consumer sees exactly one
         // run-terminating record per invocation.
@@ -288,6 +317,8 @@ const Cell = struct {
     kind: Kind,
     /// Filled by the worker that ran the cell; valid once `done` is set.
     captured: runner.Captured = .{},
+    /// How long the cell took, for the duration history (`schedule.zig`).
+    wall_ms: u64 = 0,
     done: std.Io.Event = .unset,
 
     const Kind = enum {
@@ -330,10 +361,13 @@ const Cell = struct {
     };
 };
 
-/// The worker pool: each worker takes the next spawning cell in plan order,
-/// runs it into its slot, and sets the slot's event. The main thread emits.
+/// The worker pool: each worker takes the next spawning cell of `order`
+/// (`schedule.zig` — the longest last time first), runs it into its slot, and
+/// sets the slot's event. The main thread emits, in plan order.
 const Pool = struct {
     plan: []Cell,
+    /// Every spawning cell's plan index, once each, in the order to start them.
+    order: []const usize,
     io: std.Io,
     bin: []const u8,
     opts: args.Options,
@@ -352,11 +386,12 @@ const Pool = struct {
 
     fn runNext(pool: *Pool) bool {
         while (true) {
-            const i = pool.next.fetchAdd(1, .monotonic);
-            if (i >= pool.plan.len) return false;
-            const cell = &pool.plan[i];
+            const k = pool.next.fetchAdd(1, .monotonic);
+            if (k >= pool.order.len) return false;
+            const cell = &pool.plan[pool.order[k]];
             if (!cell.kind.spawns()) continue;
             pool.admit();
+            const t0 = std.Io.Timestamp.now(pool.io, .awake);
             _ = pool.active.fetchAdd(1, .monotonic);
             defer _ = pool.active.fetchSub(1, .monotonic);
             // Captured output lives until the process exits; a page-backed
@@ -369,6 +404,7 @@ const Pool = struct {
                 .audit => runner.captureAudit(a, pool.io, pool.bin, cell.lib.dir, cell.target),
                 else => unreachable,
             };
+            cell.wall_ms = @intCast(@divTrunc(t0.durationTo(std.Io.Timestamp.now(pool.io, .awake)).nanoseconds, std.time.ns_per_ms));
             cell.done.set(pool.io);
             return true;
         }
@@ -480,6 +516,7 @@ test {
     _ = matrix;
     _ = runner;
     _ = doc_quotes;
+    _ = schedule;
 }
 
 test "Cell.Kind.of: the manifest decides — an excluded target is never a cell" {

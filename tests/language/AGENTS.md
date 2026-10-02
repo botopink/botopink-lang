@@ -1004,6 +1004,7 @@ tests/language/run.sh --compiler <botopink> --only test/case_arms.bp
 tests/language/run.sh --compiler <botopink> --only modules/two_modules
 tests/language/run.sh --target beam                       # one target; `all` includes it
 tests/language/run.sh --self-test                         # § Narrowing a cell — the runner's own audit
+tests/language/run.sh --list                              # the plan: one `<path>\t<target>\t<run|audit>` line per job, nothing spawned
 ```
 
 `--lib-root` defaults to `<compiler>/../../libs` (where `from "std"` resolves).
@@ -1019,6 +1020,11 @@ defaults to one per CPU bounded by `MemAvailable / 768 MiB`, and a cell is admit
 cell writes its verdict to its own file and the verdicts are sorted before the report, so
 `--jobs 1` prints the same bytes and exits with the same status — checked on the whole suite, on
 `--target beam`, and with red cells planted (front `00 · 25-gate-perf` step 1).
+
+A whole run also prints `cells: <J> jobs — <R> run, <A> audits`: the jobs that wrote a verdict
+(every job writes exactly one file; a malformed narrowing writes its `FAIL` without a job). `--list`
+prints the same plan without running it, one line per job (a `reject/` cell's target is `*`), and
+`scripts/gate.sh` holds `J` and `A` to it — stage 9 cannot run fewer jobs than the tree declares.
 
 ## A red cell is red
 
