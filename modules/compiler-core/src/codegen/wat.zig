@@ -7232,7 +7232,24 @@ const Emitter = struct {
             // inference recorded no lowering at its loc, and the binder's
             // declared type — the element's, `noteTupleElemLocal` — says
             // which primitive it is. It was an `unresolved call` trap.
-            const n = plainIdentName(cc.receiver.?.*) orelse return null;
+            //
+            // A method call answering a primitive inside an adopted
+            // behavior `default fn` (`self.twice().toString()` in `Sq`'s
+            // copy of `Shape.label`): inference typed the body against
+            // `Self`, so the call's result was a type variable and no
+            // lowering was recorded. The callee's declared return —
+            // `Sq_twice -> i32` — is the primitive, when it has the method.
+            // It trapped in `Sq_label` (`unresolved call: toString/0`).
+            const recv = cc.receiver.?.*;
+            if (recv == .call) {
+                const tr = self.typeRefOf(recv) orelse return null;
+                const k = switch (tr) {
+                    .named => |tn| primKindOfName(tn) orelse return null,
+                    else => return null,
+                };
+                return if (primCallRes(k, cc) != null) k else null;
+            }
+            const n = plainIdentName(recv) orelse return null;
             if (!self.tuple_binders.contains(n)) return null;
             const tr = self.local_typerefs.get(n) orelse return null;
             return switch (tr) {
