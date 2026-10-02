@@ -40,16 +40,17 @@ test "js: primitive behavior default fn ---- a call on self lowers as on the dec
     );
 }
 
-// The same unchecked body building its `@Result` by name: `Ok(v)` /
-// `Error(e)` named nothing on node (`ReferenceError: Ok is not defined`) where
-// erlang and beam build the tagged value. It is the `{ ok }` / `{ error }`
-// object every `@Result` is on this backend.
-test "js: primitive behavior default fn ---- Ok(v) and Error(e) build the @Result" {
+// The same body answering a `@Result`: its `return` and `throw` build the
+// `{ ok }` / `{ error }` object every `@Result` is on this backend. The body
+// is checked against its signature (`01-checker`), so it builds the value with
+// `return` / `throw` — `Ok(v)` / `Error(e)` are never constructors in an
+// expression (decision 208).
+test "js: primitive behavior default fn ---- return and throw build the @Result" {
     try h.assertJsRunLog(std.testing.allocator,
         \\behavior String {
         \\    default fn nonEmpty(self: Self) -> @Result<string, string> {
-        \\        if (self == "") return Error("empty");
-        \\        return Ok(self);
+        \\        if (self == "") throw "empty";
+        \\        return self;
         \\    }
         \\}
         \\

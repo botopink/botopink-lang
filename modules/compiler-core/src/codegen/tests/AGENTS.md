@@ -136,8 +136,9 @@ so the front that takes its half shows the move in its own commit.
 `assertJsRunLog` (no snapshot, so no other backend's directory moves): a
 `default fn` of a primitive behavior — a program's own `behavior String` adds
 defaults to std's — whose body calls a method on `self` (`self.length()`,
-`self.at(0)`) or builds its `@Result` with `Ok(v)` / `Error(e)`; the body is
-not typed by the checker (`../AGENTS.md` § A `default fn` body is lowered
-untyped).
+`self.at(0)`) or answers its `@Result` through `return` / `throw` (the body is
+checked against its signature, and `Ok(v)` / `Error(e)` are never constructors,
+decision 208); the emitter lowers it with no per-call answer from inference
+(`../AGENTS.md` § A `default fn` body is lowered untyped).
 
 When adding a test file here, register it in `../tests.zig` or it will not run.

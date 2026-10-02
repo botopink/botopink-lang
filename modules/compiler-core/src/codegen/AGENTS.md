@@ -405,7 +405,10 @@ codegen/
   function`). And a bare `Ok(v)` / `Error(e)` (`Err(e)`) with no variant or
   class of that name is the `@Result` this backend builds, `({ ok: v })` /
   `({ error: e })`, as erlang and beam build their tuple — it was `ReferenceError:
-  Ok is not defined`. Both are pinned by `tests/commonjs.zig`; a call on any
+  Ok is not defined`. The checker now refuses that spelling in a checked
+  `default fn` body (decision 208), so the `Ok` / `Error` lowering serves only a
+  body no check reaches; `tests/commonjs.zig` pins the `self` call and the
+  `@Result` a `return` / `throw` answers; a call on any
   other receiver of such a body stays untyped (02-erlang's C-35 is the typing
   of these bodies on every backend).
 - **Duplicate test names**: two `test "x"` blocks in one module print
