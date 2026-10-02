@@ -230,6 +230,14 @@ pub fn codegenEmit(
     var cross = try crossModule.build(alloc, outputs);
     defer cross.deinit();
 
+    // What `relocateLinkedRefusals` reads once every module is emitted: the
+    // message each refused module carries, and the modules each one links.
+    var notes_arena = std.heap.ArenaAllocator.init(alloc);
+    defer notes_arena.deinit();
+    const na = notes_arena.allocator();
+    var refusals: std.StringHashMapUnmanaged([]const u8) = .empty;
+    var refused_links: std.ArrayListUnmanaged(RefusedLinks) = .empty;
+
     for (outputs) |*ct| {
         switch (ct.outcome) {
             .parseError, .typeError => try results.append(alloc, try ModuleOutput.failedModule(alloc, ct.*)),
@@ -250,7 +258,7 @@ pub fn codegenEmit(
                 var visited = std.StringHashMap(void).init(alloc);
                 defer visited.deinit();
                 try visited.put(ct.name, {});
-                try collectLinks(alloc, outputs, &cross, ok.transformed, &visited, &linked);
+                try collectLinks(alloc, outputs, &cross, ok.transformed, &visited, &linked, null);
                 // 06 C13 — a host-backed fn with no `wasm` target reaches the
                 // driver as a located diagnostic naming the function, not as
                 // the bare error name that would abort the whole build.
@@ -266,6 +274,10 @@ pub fn codegenEmit(
                         .{ .type = .{ .message = r.message, .loc = r.loc } }
                     else
                         return err;
+                    try refusals.put(na, ct.name, try na.dupe(u8, diagnostic.type.message));
+                    const links = try na.alloc(LinkVia, linked.items.len);
+                    for (linked.items, links) |l, *lv| lv.* = .{ .name = l.name, .via = l.via };
+                    try refused_links.append(na, .{ .result = results.items.len, .links = links });
                     try results.append(alloc, .{
                         .name = ct.name,
                         .src = ct.src,
@@ -292,7 +304,38 @@ pub fn codegenEmit(
         }
     }
 
+    try relocateLinkedRefusals(alloc, results.items, &refusals, refused_links.items);
     return results;
+}
+
+/// A module one refused module links, and the import item of that module
+/// that reaches it (`Linked.via`).
+const LinkVia = struct { name: []const u8, via: ast.Loc };
+
+/// A refused module's entry in the results, and what it links.
+const RefusedLinks = struct { result: usize, links: []const LinkVia };
+
+/// A module this backend refuses takes every module that links it down with
+/// it: the linked declarations are emitted INTO the consumer, so the consumer
+/// meets the same refusal — at a location of the linked module's file, which
+/// the driver would print against the consumer's (`src/main.bp:101:9` for a
+/// call at `std/testing/asserts.bp:101:9`). The refused module reports its
+/// own diagnostic, in its own file; each consumer reports the same message at
+/// its import that links the module, naming it.
+fn relocateLinkedRefusals(
+    alloc: std.mem.Allocator,
+    results: []ModuleOutput,
+    refusals: *const std.StringHashMapUnmanaged([]const u8),
+    refused_links: []const RefusedLinks,
+) !void {
+    for (refused_links) |rl| for (rl.links) |l| {
+        const why = refusals.get(l.name) orelse continue;
+        const d = &(results[rl.result].result.diagnostic orelse break);
+        const message = try std.fmt.allocPrint(alloc, "{s} — in `{s}`, which this import links", .{ why, l.name });
+        alloc.free(d.type.message);
+        d.* = .{ .type = .{ .message = message, .loc = l.via } };
+        break;
+    };
 }
 
 // ── static linking ───────────────────────────────────────────────────────────
@@ -306,11 +349,17 @@ const Linked = struct {
     program: ast.Program,
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
     instance_lowerings: std.AutoHashMap(ast.Loc, envMod.InstanceLowering),
+    /// The import item of the CONSUMER that reaches this module — its own
+    /// import, or the one whose module imports this one in turn. Where the
+    /// consumer reports a refusal of this module (`relocateLinkedRefusals`).
+    via: ast.Loc,
 };
 
 /// Every module `program` imports from, transitively, dependencies first. An
 /// import resolves through the export index (`import {double} from "math"`)
-/// or names a module by its basename (`import {order} from "std"`).
+/// or names a module by its basename (`import {order} from "std"`). `via` is
+/// null for the consumer's own program and, below it, the consumer's import
+/// item the walk came through.
 fn collectLinks(
     alloc: std.mem.Allocator,
     outputs: []ComptimeOutput,
@@ -318,6 +367,7 @@ fn collectLinks(
     program: ast.Program,
     visited: *std.StringHashMap(void),
     out: *std.ArrayListUnmanaged(Linked),
+    via: ?ast.Loc,
 ) !void {
     // The import sources synthesised below are scratch: they answer one
     // ownership question each and are not kept.
@@ -352,12 +402,14 @@ fn collectLinks(
                     else => continue,
                 };
                 try visited.put(o.name, {});
-                try collectLinks(alloc, outputs, cross, ok.transformed, visited, out);
+                const reached = via orelse imp.loc;
+                try collectLinks(alloc, outputs, cross, ok.transformed, visited, out, reached);
                 try out.append(alloc, .{
                     .name = o.name,
                     .program = ok.transformed,
                     .rewrites = ok.dispatch_rewrites,
                     .instance_lowerings = ok.instance_lowerings,
+                    .via = reached,
                 });
             }
         }
@@ -1424,12 +1476,6 @@ const Emitter = struct {
     /// none was ever promised. Decision 67 — calling one is refused where it is
     /// written, not lowered to a trap (see `lowerPlainCall`).
     external_missing: std.StringHashMap(void),
-    /// A bodied function that reaches a function of `external_missing` (or of
-    /// this map) → the host cell it reaches (`collectHostBound`). It is not
-    /// emitted, and a call to it is refused where it is written, naming the
-    /// cell — the rule a host METHOD with no wasm binding already follows
-    /// (`hostMethods.zig`). `main/0` is never in it: its body is the program.
-    host_bound: std.StringHashMapUnmanaged([]const u8) = .empty,
     /// 06 C13 — set when the emit fails with `error.MissingExternalTarget`, so
     /// the driver gets a located diagnostic naming the fn and this backend
     /// instead of the bare error name.
@@ -1606,7 +1652,6 @@ const Emitter = struct {
         self.iface_assoc.deinit();
         self.host_fns.deinit();
         self.external_missing.deinit();
-        self.host_bound.deinit(self.alloc);
         self.aliases.deinit();
         self.pattern_locals.deinit();
         self.assoc_needed.deinit(self.alloc);
@@ -1618,7 +1663,12 @@ const Emitter = struct {
     /// Lower one top-level declaration into module items.
     fn emitDecl(self: *Emitter, decl: ast.DeclKind) !void {
         switch (decl) {
-            .@"fn" => |f| if (!f.isHost() and !self.host_bound.contains(f.name)) try self.emitFn(f),
+            // Every bodied function is emitted, called or not — so a body
+            // that calls a host function with no wasm binding is refused at
+            // that call (`lowerPlainCall`), in the root package and in a
+            // linked dependency alike. Decision 146: the rule commonJS,
+            // erlang and beam hold by emitting every function.
+            .@"fn" => |f| if (!f.isHost()) try self.emitFn(f),
             .val => |v| {
                 if (!isSyntheticEntrypointVal(v)) {
                     try self.emitGlobalVal(v);
@@ -1649,39 +1699,6 @@ const Emitter = struct {
             // owner's declarations in front of this module's.
             // A type alias is erased: the checker substituted its target.
             .use, .behavior, .delegate, .mod, .@"test", .typeAlias => {},
-        }
-    }
-
-    /// Decision 67 on a function that is not itself host-backed: one whose
-    /// body calls a host cell with no wasm binding — directly, or through
-    /// another such function — cannot run here, so it goes into `host_bound`
-    /// with the cell it reaches, until nothing changes. `testing.asserts`'
-    /// `deepEquals` calls the private `canonical` (Node and Erlang templates
-    /// only): the module is emitted without it and imports on wasm, and a
-    /// program that CALLS `deepEquals` is refused at that call
-    /// (`lowerPlainCall`). Refusing inside `deepEquals`'s own body failed
-    /// every program that imported the module, called or not.
-    fn collectHostBound(self: *Emitter, program: ast.Program) !void {
-        if (self.external_missing.count() == 0) return;
-        var changed = true;
-        while (changed) {
-            changed = false;
-            for (program.decls) |decl| {
-                const f = switch (decl) {
-                    .@"fn" => |x| x,
-                    else => continue,
-                };
-                if (f.isHost() or f.body.len == 0 or isMain0(f) or self.host_bound.contains(f.name)) continue;
-                var seen: std.ArrayListUnmanaged([]const u8) = .empty;
-                for (f.body) |st| try self.collectIdents(st.expr, &seen);
-                for (seen.items) |n| {
-                    const cell = if (self.external_missing.contains(n)) n else self.host_bound.get(n) orelse continue;
-                    try self.host_bound.put(self.alloc, f.name, cell);
-                    _ = self.fn_sigs.remove(f.name);
-                    changed = true;
-                    break;
-                }
-            }
         }
     }
 
@@ -1796,10 +1813,18 @@ const Emitter = struct {
                     if (isBoolTypeRef(rt)) try self.bool_fns.put(sym, {});
                 }
                 try self.iface_assoc.put(sym, m);
+                // One with no type parameter is emitted whether or not a call
+                // reaches it, like every other bodied function (`emitDecl`):
+                // a body that calls a host function with no wasm binding is
+                // refused called or not (decision 146). One with a type
+                // parameter — its own or its behavior's — is still emitted
+                // only when a call reaches it: emitting each of the primitive
+                // behaviors' (`Array.range`, `Pair.of`, …) into every module
+                // that carries the behavior is `05-wasm`'s to weigh.
+                if (i.genericParams.len + m.genericParams.len == 0) try self.assoc_needed.append(self.alloc, sym);
             },
             else => {},
         };
-        try self.collectHostBound(program);
         // Decision 107 — an import bound under an alias: the callee a body
         // spells is the alias, the function the linked owner defines is the
         // declared name. Register the alias beside the declared name in every
@@ -6662,15 +6687,6 @@ const Emitter = struct {
             var spec = cc;
             spec.callee = sym;
             return self.lowerPlainCall(spec, loc);
-        }
-        // A call of a function that reaches a host cell (`host_bound`): bare,
-        // or qualified by its module (`asserts.deepEquals(a, b)` — the
-        // receiver is a namespace, which carries no instance lowering).
-        if (cc.calleeExpr == null and (cc.receiver == null or self.instance_lowerings.get(loc) == null)) {
-            if (self.host_bound.get(self.import_aliases.get(cc.callee) orelse cc.callee)) |cell| {
-                self.missing_external = .{ .name = cc.callee, .target = "wasm", .loc = loc, .via = cell };
-                return error.MissingExternalTarget;
-            }
         }
         if (self.fn_sigs.get(cc.callee)) |sig| {
             var base: usize = 0;

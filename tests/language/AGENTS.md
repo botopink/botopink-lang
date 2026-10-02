@@ -110,9 +110,10 @@ module load — erlang and beam dropped the write), `run/index_answer_typed_opti
 codepoints (`"%0Aéz"` → 5 pieces, `""` → none) beside a non-empty separator and an empty separator
 held in a `val`, on all four targets (beam lowered it to `string:split/3`, wasm cut between bytes).
 01-std step 2 adds `run/std_asserts_on_every_target` — `import {testing.asserts}` and its pure
-assertions on all four targets — and `run/std_asserts_host_cell_on_wasm` — `asserts.deepEquals`
-on commonJS, erlang and beam, refused on wasm at the call (`.wasm.expect`: `deepEquals` calls
-`canonical`, which has no wasm binding). The same front's `reject/result_field_read` and
+assertions on commonJS, erlang and beam — and `run/std_asserts_host_cell_on_wasm` — `asserts.deepEquals`
+on the same three. wasm refuses both at the import (`.wasm.expect`): `deepEquals` calls `canonical`,
+which has no wasm binding, a function reaching such a cell is refused called or not (decision 146),
+so `testing.asserts` does not build there and the import that links it says so, naming the cell. The same front's `reject/result_field_read` and
 `reject/result_unknown_method` refuse a member of a `@Result` that is not one of its methods
 (`result-member-not-a-method`).
 The onze front's compiler findings (`specs/1.0.10-beta/06-onze/49-onze-stand-up`, F1–F10) add a
@@ -201,7 +202,9 @@ outside a type or behavior body is `self-param-outside-type`, at the name — jh
 and return), `reject/reserved_word_field_name` and `reject/reserved_word_param_name`
 (`reserved-word-as-name`, naming `from`), `run/external_wrapper_keeps_refusal` (a wrapper around a
 single-target host call inherits no restriction — refused on commonJS and wasm by
-`.<target>.expect` even though nothing calls it; the parent held this rule),
+`.<target>.expect` even though nothing calls it; the parent held this rule, and decision 146
+made wasm hold it — `run/external_wrapper_associated_default` is the same rule on a behavior's
+associated `default fn`, which wasm lowered only when a call reached it),
 `run/behavior_array_of_implementers` (`Array<Plugin>` of two implementers; `.targets`
 `commonJS erlang beam`, wasm answers `a a b b`), `modules/import_from_package_beside_same_name`
 (a project `pub fn attempt` beside another module's `import {match.attempt} from "pkg"`; wasm
@@ -225,7 +228,8 @@ and a `case` over each — the checker half already held; wasm is listed),
 `reject/section_path_es4_expected_enum` / `reject/section_path_es4_every_head` (ES4 names the
 expected enum, or every enum carrying the head, sorted — it named the hash walk's first),
 `modules/labelled_call_by_label` (a complete labelled call by label on the associated, imported,
-namespace and `"std"` call paths, and a namespace call filled from its default),
+namespace and `"std"` call paths, and a namespace call filled from its default; the `"std"` path is
+`testing.asserts`, which does not build on wasm — `wasm.expect`, the refusal at the import),
 `reject/label_on_function_value` (a label in a call of a function value, `label-on-function-value`),
 `modules/behavior_from_host_declare` (a host `declare fn -> Greeter`, here and in a third module,
 meets a `Greeter` parameter of the behavior's module — the checker half already held; wasm refuses
@@ -879,36 +883,34 @@ unconditionally and can be neither deleted (its tests fail) nor rewritten (by an
 
 ## Status and the gate
 
-**Front `111-gate-beam-and-targets` of 1.0.11-beta — the suite on four targets.** `--target all`
-is commonJS, erlang, wasm and beam; every narrowing is audited (§ Narrowing a cell); the two
-`beam |` lines of `expected-failures.txt` are gone (the beam build ships and loads a host `.erl`),
-and the one line left is wasm's, waiting on decisions-pending `ck-host`:
+**Fronts `111-gate-beam-and-targets` and `110-gate-wasm` of 1.0.11-beta — the suite on four
+targets, no expected failure.** `--target all` is commonJS, erlang, wasm and beam; every narrowing
+is audited (§ Narrowing a cell); `expected-failures.txt` has no live line — the two `beam |` lines
+went with the beam build shipping and loading a host `.erl`, and wasm's with decision 146 (a
+function whose body calls a host function with no binding for the target is refused called or not,
+on every target — `run/external_wrapper_keeps_refusal` passes on wasm by its `.wasm.expect`):
 
 ```
 $ tests/language/run.sh --target all
 self-test: 8 malformed or unbacked narrowings refused, 3 backed ones scheduled on their declared targets alone
-expected-failures.txt: 1 lines, 1 exercised by --target commonJS,erlang,wasm,beam — by target: wasm 1; by first owner row: 05-wasm 1; 0 name tests rather than a path; 0 name a second row
-expected [wasm] run/external_wrapper_keeps_refusal.bp — 05-wasm: …
+expected-failures.txt: 0 lines, 0 exercised by --target commonJS,erlang,wasm,beam — by target: ; by first owner row: ; 0 name tests rather than a path; 0 name a second row
 narrowings: 30 exclusions audited — each stands on a host binding the target does not have
-language tests: 1474 passed, 1 expected failures, 0 failed
+language tests: 1483 passed, 0 expected failures, 0 failed
 
 $ tests/language/run.sh --target beam
 narrowings: 3 exclusions audited — each stands on a host binding the target does not have
-language tests: 393 passed, 0 expected failures, 0 failed
+language tests: 395 passed, 0 expected failures, 0 failed
 ```
 
-Recounted on disk: `ls test/*.bp | wc -l` 64 · `ls run/*.bp | wc -l` 167 (17 with a `.targets`,
-21 `.<target>.expect` files) · `ls reject/*.bp | wc -l` 173 · `ls -d modules/*/ | wc -l` 60 (24
-`<target>.expect` files, one `"targets"`). The 1474: the 1251 the three targets passed before, the
-220 `run/` and `modules/` results of beam (393 less the 173 `reject/` results, which run once),
-`run/beam_memory_ets` and `run/beam_memory_persistent_term` on commonJS, and
-`modules/manifest_targets_host_binding` on erlang. Beam's own +10 over the 383 it passed before:
-the two sidecar cells and `run/array_spread_literal` (it dropped a named trailing spread),
-`run/external_host_record` and `run/external_method_on_host_record` (a host answer is adopted into
-its record; an untyped receiver reaches its type's method), `run/async_block_all_of`,
-`run/host_erlang_task_result`, `run/std_default_fn_in_a_std_module` and
-`run/external_erlang_host_module_missing` (narrowed away from beam with no host reason), and the
-new `modules/` cell.
+Recounted on disk: `ls test/*.bp | wc -l` 64 · `ls run/*.bp | wc -l` 169 (17 with a `.targets`,
+25 `.<target>.expect` files) · `ls reject/*.bp | wc -l` 173 · `ls -d modules/*/ | wc -l` 60 (25
+`<target>.expect` files, one `"targets"`). Decision 146 on wasm moved four cells and added one:
+`run/external_wrapper_keeps_refusal` passes; `run/std_asserts_on_every_target` and
+`modules/labelled_call_by_label` ran on wasm and are refused there now, at the import of
+`testing.asserts` (`.wasm.expect` / `wasm.expect`); `run/std_asserts_host_cell_on_wasm` was refused
+at the call of `deepEquals` and is refused at the import; `run/std_decorator_through_namespace`
+pins the import's STD-001 line where it pinned the first host cell `testing.mocks` named;
+`run/external_wrapper_associated_default` is new (four results).
 
 The blocks below are the record of earlier fronts, each measured at the commit it names.
 

@@ -233,7 +233,3 @@
 # ── wasm, the remaining rows of `00 · 05-wasm` ───────────────────────────────
 
 # ── `val assert` over a record's constructor pattern ─────────────────────────
-
-
-# ── a host wrapper on wasm: two rules meet (decisions-pending ck-host) ──────
-wasm     | run/external_wrapper_keeps_refusal.bp | 05-wasm | the strict rule (a wrapper around a host call with no wasm binding is refused even if nothing calls it; docs.md § host bindings) meets wasm's `collectHostBound`, which drops such a function and refuses only a call to it (what lets `testing.asserts` build on wasm): wasm now accepts the cell and prints `up`. Which rule holds is decisions-pending ck-host

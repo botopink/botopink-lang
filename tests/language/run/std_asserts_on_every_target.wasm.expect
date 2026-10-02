@@ -1,2 +1,2 @@
 `canonical` has no `#[@External.<Target>(…)]` for the wasm backend — in `std/testing/asserts`, which this import links
-9:9
+10:9

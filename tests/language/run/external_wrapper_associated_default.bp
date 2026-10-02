@@ -1,0 +1,20 @@
+//// `external_wrapper_keeps_refusal`'s rule on a behavior's associated
+//// `default fn`: its body calls a host function bound to Erlang only, and
+//// nothing calls `Probe.release`. The call is statically present, so a target
+//// the declaration does not name refuses the program where the call is
+//// written (decision 146: an error for whatever has no target, called or
+//// not). wasm used to lower an associated `default fn` only when a call
+//// reached it, so this program built there and printed `up`.
+
+#[@External.Erlang("erlang:system_info(otp_release)")]
+declare fn otpRelease() -> string;
+
+behavior Probe {
+    default fn release() -> string {
+        return otpRelease();
+    }
+}
+
+pub fn main() {
+    @print("up");
+}

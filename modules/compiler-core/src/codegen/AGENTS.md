@@ -2528,9 +2528,11 @@ first three are now enforced by the model, not by discipline:
   erlang and beam raise (06 C13), threaded out of `emitWat` by its `missing`
   slot and collected by `codegenEmit`, so only that module fails. `registerSymbols`
   fills `external_missing` (the `isExternal()` subset of `host_fns`) and
-  `lowerPlainCall` reads it. A bodied function reaching such a cell
-  (`collectHostBound`, transitively; never `main/0`) is not emitted and its
-  CALL is refused the same way, naming the cell (`MissingExternal.via`) — see
+  `lowerPlainCall` reads it. A bodied function whose body calls such a cell is
+  emitted like any other, called or not, so the refusal is raised at the call
+  inside it (decision 146); a module refused this way is reported in its own
+  file, and each consumer that links it at its import
+  (`relocateLinkedRefusals`) — see
   [`wat/AGENTS.md`](wat/AGENTS.md). It used to be a **documented trap** —
   `unreachable ;; host-backed declare fn <name>/<n>: no wasm host` — on the
   argument that "the other three targets compile the same module, and a program

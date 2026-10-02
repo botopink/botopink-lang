@@ -1,9 +1,10 @@
 //// Decision 67 on wasm, one call away from the host cell: `deepEquals` is a
 //// botopink function whose body calls `testing.asserts`' private `canonical`
 //// (Node and Erlang templates, no wasm binding). The program runs on
-//// commonJS, erlang and beam; wasm refuses the CALL, where it is written,
-//// naming the function and the cell it reaches (`.wasm.expect`) — not the
-//// import, which `std_asserts_on_every_target` builds on wasm.
+//// commonJS, erlang and beam. On wasm `deepEquals` is refused where it calls
+//// `canonical` — in the module, called or not (decision 146) — so the program
+//// is refused at the import that links the module (`.wasm.expect`), exactly
+//// as `std_asserts_on_every_target`, which calls no host-backed assertion.
 
 import {testing.asserts} from "std";
 
