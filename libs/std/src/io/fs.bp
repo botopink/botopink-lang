@@ -105,19 +105,21 @@ pub declare fn stat(path: string) -> @Result<FileStat, string>;
 // and the same paths however the root is spelled: `dir`, `dir/`, `dir/.`,
 // `./dir`, `dir/sub/..`, absolute or relative to the working directory.
 // Directories are not listed; a link is followed (a link to a file is listed
-// under its own name, a link to a directory is walked, a dangling one is
-// skipped); a missing or non-directory `root`, or a directory under it that
-// cannot be read, is an `Error`.
+// under its own name, a link to a directory is walked). An `Error`: a missing
+// or non-directory `root`, a directory under it that cannot be read, and a
+// DANGLING link (decision 178) — `fs.walk: dangling link "<relative path>"`,
+// the same text on both targets, naming the first one in sorted order.
 // Node: `readdirSync(root, { recursive: true })` answers files AND directories
-// relative to `root`; the template keeps the entries `statSync` says are files
-// (`throwIfNoEntry: false` — a dangling link is not a file, it is not a throw).
+// relative to `root`; the template sorts them, keeps the entries `statSync`
+// says are files, and answers the dangling-link `Error` for the first entry
+// `statSync` cannot find (`throwIfNoEntry: false`).
 // Erlang: the template walks `file:list_dir/1` itself and BUILDS each relative
 // path from the names it descended through. It never cuts a prefix off a full
 // path: `filelib:fold_files/5` answers full paths `filename:join/2` has
 // normalised (`dir/.` + `app` is `dir/app`), so a prefix measured on the root
 // as written cut two characters too many when the root ended in `/.`.
-#[@External.Node("""(() => { try { const __fs = require('fs'); const __p = require('path'); const __all = __fs.readdirSync($0, { recursive: true }).map(String); return { ok: __all.filter(__f => { const __s = __fs.statSync(__p.join($0, __f), { throwIfNoEntry: false }); return __s !== undefined && __s.isFile() }).map(__f => __f.split(__p.sep).join('/')).sort() } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
-#[@External.Erlang("""(fun(__R) -> __Root = unicode:characters_to_list(__R), case filelib:is_dir(__Root) of false -> {error, <<"enotdir">>}; true -> __Walk = fun __W(__Dir, __Rel, __Acc) -> case file:list_dir(__Dir) of {error, __E} -> throw({bp_fs_walk, __E}); {ok, __Names} -> lists:foldl(fun(__Name, __A) -> __Full = filename:join(__Dir, __Name), __Sub = case __Rel of [] -> __Name; _ -> __Rel ++ "/" ++ __Name end, case file:read_file_info(__Full) of {ok, __I} when element(3, __I) =:= directory -> __W(__Full, __Sub, __A); {ok, __I} when element(3, __I) =:= regular -> [unicode:characters_to_binary(__Sub) | __A]; _ -> __A end end, __Acc, __Names) end end, try {ok, lists:sort(__Walk(__Root, [], []))} catch throw:{bp_fs_walk, __X} -> {error, iolist_to_binary(io_lib:format("~p", [__X]))} end end end)($0)""")]
+#[@External.Node("""(() => { try { const __fs = require('fs'); const __p = require('path'); const __all = __fs.readdirSync($0, { recursive: true }).map(__f => String(__f).split(__p.sep).join('/')).sort(); const __out = []; for (const __f of __all) { const __s = __fs.statSync(__p.join($0, __f), { throwIfNoEntry: false }); if (__s === undefined) return { error: 'fs.walk: dangling link "' + __f + '"' }; if (__s.isFile()) __out.push(__f) } return { ok: __out } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
+#[@External.Erlang("""(fun(__R) -> __Root = unicode:characters_to_list(__R), case filelib:is_dir(__Root) of false -> {error, <<"enotdir">>}; true -> __Walk = fun __W(__Dir, __Rel, __Acc) -> case file:list_dir(__Dir) of {error, __E} -> throw({bp_fs_walk, __E}); {ok, __Names} -> lists:foldl(fun(__Name, __A) -> __Full = filename:join(__Dir, __Name), __Sub = case __Rel of [] -> __Name; _ -> __Rel ++ "/" ++ __Name end, case file:read_file_info(__Full) of {ok, __I} when element(3, __I) =:= directory -> __W(__Full, __Sub, __A); {ok, __I} when element(3, __I) =:= regular -> [{file, unicode:characters_to_binary(__Sub)} | __A]; {ok, _} -> __A; {error, enoent} -> [{dangling, unicode:characters_to_binary(__Sub)} | __A]; {error, __X} -> throw({bp_fs_walk, __X}) end end, __Acc, __Names) end end, try __Found = __Walk(__Root, [], []), case lists:sort([__D || {dangling, __D} <- __Found]) of [__First | _] -> {error, <<"fs.walk: dangling link ", 34, __First/binary, 34>>}; [] -> {ok, lists:sort([__F || {file, __F} <- __Found])} end catch throw:{bp_fs_walk, __Y} -> {error, iolist_to_binary(io_lib:format("~p", [__Y]))} end end end)($0)""")]
 pub declare fn walk(root: string) -> @Result<string[], string>;
 
 // The entries under `root` matching the glob `pattern` (`*`, `?`, `[…]`,
@@ -245,16 +247,44 @@ test "fs.walk of a relative root spelled with a leading dot answers the same pat
     assert walkFixtureFromCwd("./") == "blog/notes.md,blog/page.bp,page.bp";
 }
 
-test "fs.walk follows a link to a file or a directory and skips a dangling one" {
+test "fs.walk follows a link to a file and a link to a directory" {
     val dir = scratchDir();
     makeFixtureTree(dir);
     linkTo("blog", [dir, "/app/linked"].join(""));
     linkTo("page.bp", [dir, "/app/alias.bp"].join(""));
-    linkTo("missing.bp", [dir, "/app/dangling.bp"].join(""));
     val walked = walk([dir, "/app"].join("")).unwrapOr(["<error>"]);
     removeTree(dir);
     assert walked.join(",")
         == "alias.bp,blog/notes.md,blog/page.bp,linked/notes.md,linked/page.bp,page.bp";
+}
+
+// Internal, test scaffolding: the `Error` of `walk(root)`, `""` when it walked.
+fn walkRefusal(root: string) -> string {
+    return case walk(root) {
+        Ok(_) -> "";
+        Error(reason) -> reason;
+    };
+}
+
+test "fs.walk of a tree with a dangling link is an Error naming the link" {
+    val dir = scratchDir();
+    makeFixtureTree(dir);
+    linkTo("missing.bp", [dir, "/app/gone.bp"].join(""));
+    val refusal = walkRefusal([dir, "/app"].join(""));
+    val dotted = walkRefusal([dir, "/app/."].join(""));
+    removeTree(dir);
+    assert refusal == "fs.walk: dangling link \"gone.bp\"";
+    assert dotted == "fs.walk: dangling link \"gone.bp\"";
+}
+
+test "fs.walk names the first dangling link in sorted order, by its relative path" {
+    val dir = scratchDir();
+    makeFixtureTree(dir);
+    linkTo("missing.bp", [dir, "/app/zz-gone.bp"].join(""));
+    linkTo("missing.md", [dir, "/app/blog/gone.md"].join(""));
+    val refusal = walkRefusal([dir, "/app"].join(""));
+    removeTree(dir);
+    assert refusal == "fs.walk: dangling link \"blog/gone.md\"";
 }
 
 test "fs.walk of a regular file is an Error" {
