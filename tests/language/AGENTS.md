@@ -400,6 +400,12 @@ Each was run with the parent binary and fails there as its row describes.
   module-level `val`; `main` imports a value from one, its sibling `label` a type only from the
   other, and both bodies run first, on all four targets. Erlang's `'_botopink_init'/0` called a
   `'__bp_print'/1` the module never defined — `erlc` refused both dependency modules.
+- `run/string_literal_unicode_escape` (C-36, STD-11 and the locale row): a `\u{…}` escape above
+  U+00FF and a raw `ç` print as themselves, alone and inside an array, on all four targets. C-36's
+  emitter half (`writeStringFromLexeme` writes a code point's UTF-8 bytes) was already landed, so
+  the cell fails on the parent binary only under `LANG=C`, where erlang wrote `é` as `0xE9` and
+  `\x{1F600}` as text; beam still does there (03's twin). `.length()` of such a string is left
+  out: commonJS counts UTF-16 units (`2`) and wasm bytes (`4`) — 04's and 05's rows.
 
 ### `narrowing_*`
 
