@@ -860,7 +860,10 @@ codegen/
   otherwise, which is also the arm every module that does not compile takes. "Reaches another one" is `imported_fns`, `imported_vals`
   (a sibling's `pub val`, decision 140 — missing until onze F1, so a test that
   read one died `{error,undef}`; `tests/language/modules/pub_val_in_a_test`),
-  `imported_types`, **`std_imports`** and a type module of its own — the std route was missing, so
+  `imported_types`, **`std_imports`**, a build that binds a BEAM host of its own
+  (`binds_erlang_host` — a test module declaring its sidecar's function imports
+  nothing, and its call died `{error,undef}`;
+  `tests/language/modules/erlang_host_sidecar_in_a_test`) and a type module of its own — the std route was missing, so
   `import {querystring} from "std"` emitted the remote `std@querystring:parse/1`
   in a module whose runner never loaded `std@querystring` and the test died
   `{error,undef}`.

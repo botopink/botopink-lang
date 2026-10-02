@@ -421,6 +421,9 @@ Each was run with the parent binary and fails there as its row describes.
   declaring the other default itself), called typed, through a default and through a behavior-typed
   parameter. erlc refused the module on the parent binary (`function twice/1 undefined`). **Red on
   beam** until 03's adopted-defaults commit lands and **on wasm** (it traps in `Sq_label`, 05's row).
+- `modules/erlang_host_sidecar_in_a_test` (test kind, narrowed to erlang): a `test/` module that
+  declares `#[@External.Erlang("lt_greeter", "hello")]` itself and calls it. It imports nothing, so
+  its runner loaded no sibling and the call died `{error,undef}` on the parent binary.
 - `run/closure_capture_statement_position` (decision 148, lg-b): the two lambdas that may write a
   captured `var` — a `forEach` body and a local closure called at statement position — thread the
   write out on all four targets (a pin: green on the parent binary too). Every other lambda's
@@ -824,8 +827,9 @@ refusal lines are in the front's README):
 | `run/std_template_host_fns_across_modules` | commonJS erlang beam | wasm — `std/io/fs.exists` |
 | `run/task_throw_resolves_error` | commonJS | erlang, wasm, beam — `observe` |
 | `modules/manifest_targets_host_binding` | erlang beam (`"targets"`) | commonJS, wasm — `magnitude` |
+| `modules/erlang_host_sidecar_in_a_test` (test kind) | erlang (`"targets"`) | commonJS — `hello` |
 
-Thirty-two exclusions; the run prints `narrowings: 32 exclusions audited — each stands on a host binding
+Thirty-three exclusions; the run prints `narrowings: 33 exclusions audited — each stands on a host binding
 the target does not have`. No other `modules/` manifest carries `"targets"`: the field used to be
 boilerplate (`["commonJS", "erlang", "wasm"]` in 33 cells, `["commonJS", "erlang"]` in 14) that the
 runner ignored — honoured as written it would have taken beam away from 33 passing cells — and a
@@ -898,7 +902,7 @@ language tests: 408 passed, 0 failed
 
 Recounted on disk: `ls test/*.bp | wc -l` 65 · `ls run/*.bp | wc -l` 173 (18 with a `.targets`,
 25 `.<target>.expect` files) · `ls reject/*.bp | wc -l` 173 · `ls -d modules/*/ | wc -l` 69 (33
-`<target>.expect` files, one `"targets"`). Decision 146 on wasm (a function whose body calls a host
+`<target>.expect` files, two `"targets"`). Decision 146 on wasm (a function whose body calls a host
 function with no binding for the target is refused called or not, on every target) moved four cells
 and added one: `run/external_wrapper_keeps_refusal` passes on wasm by its `.wasm.expect`;
 `run/std_asserts_on_every_target` and `modules/labelled_call_by_label` ran on wasm and are refused

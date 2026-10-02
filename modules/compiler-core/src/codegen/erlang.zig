@@ -2250,8 +2250,14 @@ fn emitErlangModule(
         // to the remote `std@querystring:parse/1` in a module whose runner
         // never loaded `std@querystring` — `{error,undef}`, pinned to the test.
         // A `pub val` read from a sibling (decision 140) is a remote call
-        // too — `imported_vals`, the fifth route.
-        const calls_out = em.imported_fns.count() > 0 or
+        // too — `imported_vals`, the fifth route. The sixth is a host module:
+        // a build some module of which binds a BEAM host of its own
+        // (`binds_erlang_host`, the rule a built entry point loads its
+        // sidecars by) — a test module declaring
+        // `#[@External.Erlang("lt_greeter", "hello")]` itself imports
+        // nothing, and its call died `{error,undef}`.
+        const calls_out = (if (cross) |xc| xc.binds_erlang_host else false) or
+            em.imported_fns.count() > 0 or
             em.imported_vals.count() > 0 or
             em.imported_types.count() > 0 or
             em.std_imports.count() > 0 or
