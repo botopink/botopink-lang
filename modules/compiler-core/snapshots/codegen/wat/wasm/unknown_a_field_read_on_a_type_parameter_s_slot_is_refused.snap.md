@@ -19,10 +19,10 @@ fn main() {
 
 ----- COMPILE DIAGNOSTIC -- main
 ```text
-error: the wasm backend cannot place `.length`: the receiver's type is not known here
-  ┌─ :7:53
+error: the wasm backend cannot box this value as `unknown`: nothing gives it a static type here
+  ┌─ :7:36
   │
 7 │         Maybe.Some(value: v) when (v is string) { v.length }
-  │                                                     ^
+  │                                    ^
 ```
 
