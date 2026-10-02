@@ -417,13 +417,6 @@ run_one() { # <path> <target>
         test/*)
             cp "$here/$path" "$dir/test/$(basename "$path")"
             test_project "$dir" "$path" "$t" "$out" ;;
-        modules/*)
-            # A project cell with a `test/` tree and no `expected.out` is the
-            # test/ kind over a whole project: `botopink test`, every test ok.
-            if [ -d "$here/$path/test" ] && [ ! -f "$here/$path/expected.out" ]; then
-                test_project "$dir" "$path" "$t" "$out"
-                return
-            fi ;;&
         run/*)
             local expected="$here/${path%.bp}.out"
             local refuse="$here/${path%.bp}.$t.expect"
@@ -498,6 +491,13 @@ run_one() { # <path> <target>
                 fi
             fi ;;
         modules/*)
+            # A project cell with a `test/` tree and no `expected.out` is the
+            # test/ kind over a whole project: `botopink test`, every test ok.
+            # (One arm, not a `;;&` fall-through: macOS's bash 3.2 has none.)
+            if [ -d "$here/$path/test" ] && [ ! -f "$here/$path/expected.out" ]; then
+                test_project "$dir" "$path" "$t" "$out"
+                return
+            fi
             local expected="$here/$path/expected.out"
             local refuse="$here/$path/$t.expect"
             exec_run "$dir" "$t"
