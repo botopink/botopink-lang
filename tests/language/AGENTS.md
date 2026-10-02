@@ -406,6 +406,13 @@ Each was run with the parent binary and fails there as its row describes.
   the cell fails on the parent binary only under `LANG=C`, where erlang wrote `é` as `0xE9` and
   `\x{1F600}` as text; beam still does there (03's twin). `.length()` of such a string is left
   out: commonJS counts UTF-16 units (`2`) and wasm bytes (`4`) — 04's and 05's rows.
+- `test/is_truth_table` (C-07's erlang tail, decision 8 §4.1 × §4.2): each form that may follow
+  `is` — `i32`, `i8`, `u8`, `f64`, `string`, `bool`, a record, an enum type, `Box<unknown>`,
+  `#(i32, string)` — asked of the same ten `unknown` values, and §4.1's conversion inside
+  `if (a is i32)`. It passes on the parent binary (a pin, not a fix). A test cell runs on commonJS
+  and erlang; the same table as a `run/` cell is red on beam (`#(i32, string)` holds for every
+  tagged tuple — a record and a variant too) and traps on wasm — 03's and 05's rows. §11's
+  "erlang stores nothing" is `codegen/tests/control_flow.zig`'s needle (`A = 2.0,`, no box).
 
 ### `narrowing_*`
 
