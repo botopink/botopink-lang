@@ -557,6 +557,7 @@ pub fn codegenEmit(
     // associated fn to a remote call into the owning module (`http:ok(...)`)
     // and an owner export only the assoc fns another module consumes.
     var cross = try crossModule.buildIn(alloc, outputs, config.packages);
+    cross.binds_erlang_host = buildBindsErlangHost(outputs);
     defer cross.deinit();
 
     // Every module's `pub enum`s with their variants, so a consumer can quote
@@ -2213,6 +2214,10 @@ fn emitErlangModule(
         // letting it call `main()` does.
         var stmts: std.ArrayListUnmanaged(Ast.Expr) = .empty;
         try stmts.append(b.arena, try unicodeStdio(b));
+        // A built program loads the `.erl` sidecars beside it before any
+        // module body runs (`siblingLoaderForm`, language-gaps T1).
+        const load_siblings = if (cross) |xc| xc.binds_erlang_host else false;
+        if (load_siblings) try stmts.append(b.arena, try b.call("__bp_load_siblings", &.{}));
         for (import_inits) |dep| try stmts.append(b.arena, try b.remote(dep, "_botopink_init", &.{}));
         if (emit_init) try stmts.append(b.arena, try b.call("_botopink_init", &.{}));
         try stmts.append(b.arena, try b.call("main", &.{}));
@@ -2222,6 +2227,7 @@ fn emitErlangModule(
             .blank,
             try blockFunction(b, "main", &.{Ast.Expr.v("_Args")}, try b.body(&.{try b.call("_botopink_main", &.{})})),
         });
+        if (load_siblings) try forms.appendSlice(b.arena, &.{ .blank, try siblingLoaderForm(b) });
     }
 
     // Test mode: the registry, the runner and the escript entry.
@@ -2328,6 +2334,77 @@ const Forms = std.ArrayListUnmanaged(Ast.Form);
 /// incomplete without the wrapper whether or not anything is compiled beside it.
 fn externalWrapperNeeded(f: ast.FnDecl) bool {
     return f.isPub and f.isExternal() and f.body.len == 0;
+}
+
+/// Whether some module of the build binds a BEAM host of its own: a
+/// `declare fn`, or a `type` (or one of its methods), carrying
+/// `#[@External.Erlang(…)]` / `#[@External.Beam(…)]` — the beam backend's
+/// `buildBindsBeamHost`, the same rule. Only then can an emitted call name an
+/// `.erl` sidecar the build ships, so only then does an entry point load its
+/// siblings. A `behavior`'s bindings are the prelude's vocabulary, which names
+/// OTP alone, and are not read.
+fn buildBindsErlangHost(outputs: []const ComptimeOutput) bool {
+    const Binds = struct {
+        fn any(annotations: []const ast.Annotation) bool {
+            for (annotations) |a| {
+                if (!std.mem.startsWith(u8, a.name, "External.")) continue;
+                const target = a.name["External.".len..];
+                if (std.ascii.eqlIgnoreCase(target, "erlang") or std.ascii.eqlIgnoreCase(target, "beam")) return true;
+            }
+            return false;
+        }
+    };
+    for (outputs) |*o| {
+        const program = switch (o.outcome) {
+            .ok => |*ok| ok.transformed,
+            else => continue,
+        };
+        for (program.decls) |decl| switch (decl) {
+            .@"fn" => |f| if (Binds.any(f.annotations)) return true,
+            .type_ => |t| {
+                if (Binds.any(t.annotations)) return true;
+                for (t.methods) |m| if (Binds.any(m.annotations)) return true;
+            },
+            else => {},
+        };
+    }
+    return false;
+}
+
+/// `'__bp_load_siblings'/0` of a built entry point (language-gaps T1): every
+/// `.erl` beside the running module's `.beam` whose module is not loadable is
+/// compiled and loaded, first thing in `'_botopink_main'/0`. `botopink build`
+/// ships a package's `src/sidecars/<host>.erl` into `out/erl/` beside the
+/// emitted modules, and a program started on that directory with only its
+/// entry compiled (`erlc` of one file, then `erl -pa out/erl`) called the
+/// sidecar `undef`. A module already loadable — `botopink run` compiles every
+/// `.erl` — is left alone, so the loader costs one `code:ensure_loaded/1` per
+/// file there. A sidecar that does not compile REFUSES THE RUN, named, with the
+/// compiler's diagnostic (decision 67), where skipping it would make its first
+/// call `undef` at the caller. The directory is the one `code:which(?MODULE)`
+/// names; a module loaded from no file has none and loads nothing. The test
+/// runner's loader of the same name is `testRunnerForms`'s; beam's twin is
+/// `beam_asm.zig`'s `emitLoadSiblings`.
+fn siblingLoaderForm(b: Ast.Builder) !Ast.Form {
+    const body: Ast.Expr = .{ .raw =
+        \\case code:which(?MODULE) of
+        \\        Path when erlang:is_list(Path) ->
+        \\            lists:foreach(fun(Src) ->
+        \\                case code:ensure_loaded(erlang:list_to_atom(filename:basename(Src, ".erl"))) of
+        \\                    {module, _} -> ok;
+        \\                    _ ->
+        \\                        case compile:file(Src, [binary, return_errors]) of
+        \\                            {ok, Mod, Bin} -> code:load_binary(Mod, Src, Bin);
+        \\                            Bad ->
+        \\                                io:format(standard_error, "error: ~ts does not compile - refusing to run~n  ~p~n", [Src, Bad]),
+        \\                                erlang:halt(1)
+        \\                        end
+        \\                end
+        \\            end, filelib:wildcard(filename:join(filename:dirname(Path), "*.erl")));
+        \\        _ -> ok
+        \\    end
+    };
+    return blockFunction(b, "__bp_load_siblings", &.{}, try b.body(&.{body}));
 }
 
 /// `io:setopts(standard_io, [{encoding, unicode}])` — the first statement of

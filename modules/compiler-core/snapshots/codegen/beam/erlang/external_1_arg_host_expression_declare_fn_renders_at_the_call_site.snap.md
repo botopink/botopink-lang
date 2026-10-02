@@ -41,10 +41,29 @@ main() ->
 
 '_botopink_main'() ->
     io:setopts(standard_io, [{encoding, unicode}]),
+    '__bp_load_siblings'(),
     main().
 
 main(_Args) ->
     '_botopink_main'().
+
+'__bp_load_siblings'() ->
+    case code:which(?MODULE) of
+        Path when erlang:is_list(Path) ->
+            lists:foreach(fun(Src) ->
+                case code:ensure_loaded(erlang:list_to_atom(filename:basename(Src, ".erl"))) of
+                    {module, _} -> ok;
+                    _ ->
+                        case compile:file(Src, [binary, return_errors]) of
+                            {ok, Mod, Bin} -> code:load_binary(Mod, Src, Bin);
+                            Bad ->
+                                io:format(standard_error, "error: ~ts does not compile - refusing to run~n  ~p~n", [Src, Bad]),
+                                erlang:halt(1)
+                        end
+                end
+            end, filelib:wildcard(filename:join(filename:dirname(Path), "*.erl")));
+        _ -> ok
+    end.
 ```
 
 ----- RUN LOG -----

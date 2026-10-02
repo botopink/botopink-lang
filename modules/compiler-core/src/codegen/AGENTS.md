@@ -834,6 +834,21 @@ codegen/
   `fn_typed_fields` (built in `collectTypeShapes`) carries the pairs, and the
   name-only set backs the untyped fallback, where inference records no lowering
   for a call on a field.
+- **A built entry point loads its siblings too** (`siblingLoaderForm`,
+  language-gaps T1). When some module of the build binds a BEAM host of its own
+  (`buildBindsErlangHost` — a `declare fn` or a `type` carrying
+  `#[@External.Erlang(…)]` / `#[@External.Beam(…)]`, the beam backend's rule,
+  kept in `CrossModule.binds_erlang_host`), `'_botopink_main'/0` calls
+  `'__bp_load_siblings'/0` right after setting `standard_io`: every `.erl`
+  beside the running module's `.beam` (`code:which(?MODULE)`) whose module is
+  not loadable is compiled and loaded, and one that does not compile refuses
+  the run, named. `botopink build` ships `src/sidecars/<host>.erl` into
+  `out/erl/`; a program started with only its entry compiled (`erlc` of one
+  file, `erl -pa out/erl`) called the sidecar `undef`. Under `botopink run`
+  every module is compiled already, so the loader costs one
+  `code:ensure_loaded/1` per file. Measured by hand on
+  `tests/language/modules/erlang_host_sidecar_shipped` until the CLI half
+  (26) runs a built program that way.
 - **Test mode loads its siblings.** `escript <module>.erl` compiles and loads
   that module only, so a cross-module call would be `undef` at run time: in test
   mode a module that reaches another one emits `'__bp_load_siblings'/0`, which
