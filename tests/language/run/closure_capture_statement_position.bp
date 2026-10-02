@@ -5,11 +5,15 @@
 
 pub fn main() {
     var total = 0;
-    [1, 2, 3].forEach({ x -> total = total + x; });
+    [1, 2, 3].forEach({ x ->
+        total = total + x;
+    });
     @print(total);
 
     var count = 0;
-    val bump = { -> count = count + 1; };
+    val bump = { ->
+        count = count + 1;
+    };
     bump();
     bump();
     @print(count);
