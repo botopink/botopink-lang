@@ -1040,23 +1040,28 @@ parent.
 **The suite on four targets, every cell green** (fronts `111-gate-beam-and-targets` and
 `110-gate-wasm` of 1.0.11-beta). `--target all` is commonJS, erlang, wasm and beam; every narrowing
 is audited (§ Narrowing a cell); the report is the runner's tally (§ Running, § A red cell is red).
-Measured by front `01-compiler/12-language-tests`:
+Measured on the integration of the 1.0.11-beta compiler fronts `01-checker`, `02-erlang`,
+`03-beam`, `04-js`, `05-wasm`, `12-language-tests`, `14-comptime-on-beam` and `26-cli-tooling`:
 
 ```
-$ zig build test-language
+$ tests/language/run.sh --target all
 self-test: 8 malformed or unbacked narrowings refused, 3 backed ones scheduled on their declared targets alone
-narrowings: 30 exclusions audited — each stands on a host binding the target does not have
-by target: commonJS 449/449 · erlang 452/452 · wasm 217/217 · beam 232/232 · * 174/174
-language tests: 1524 passed, 0 failed
+FAIL     [wasm] modules/method_on_unimported_type — exit 1; stdout:  ; error: `quote` has no `#[@External.<Target>(…)]` for the wasm backend
+narrowings: 33 exclusions audited — each stands on a host binding the target does not have
+by target: commonJS 499/499 · erlang 503/503 · wasm 254/255 · beam 503/503 · * 205/205
+language tests: 1964 passed, 1 failed
 ```
 
-Recounted on disk by front `01-compiler/12-language-tests` of 1.0.11-beta:
+The one red cell is the cell's own module `log` read as the bundled `log` package, whose
+`json.quote` has no wasm binding; front 129 owns it.
+
+Recounted on disk:
 
 ```
-$ ls test/*.bp | wc -l          # 64
-$ ls run/*.bp | wc -l           # 171 — 17 with a .targets, 25 .<target>.expect files, 2 .exit
-$ ls reject/*.bp | wc -l        # 174
-$ ls -d modules/*/ | wc -l      # 68 — 4 of the test kind, 33 <target>.expect files, 1 "targets"
+$ ls test/*.bp | wc -l          # 68
+$ ls run/*.bp | wc -l           # 200 — 18 with a .targets, 25 .<target>.expect files, 2 .exit
+$ ls reject/*.bp | wc -l        # 205
+$ ls -d modules/*/ | wc -l      # 79 — 4 of the test kind, 55 <target>.expect files, 2 "targets"
 ```
 
 Decision 146 on wasm (a function whose body calls a host function with no binding for the target is

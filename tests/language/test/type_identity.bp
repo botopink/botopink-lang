@@ -19,4 +19,5 @@ test "§4 two types with the same fields are different values" {
 
 //// Two values of the SAME type with equal fields are equal on every target
 //// (decision 210, structural equality); `run/record_structural_equality.bp`
-//// pins that half on all four backends, since `botopink test` reaches only two.
+//// pins that half on all four backends, since `botopink test` does not reach
+//// wasm.
