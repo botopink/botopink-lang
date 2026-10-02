@@ -704,7 +704,12 @@ meta workspace), OTP 28, node v25.
 
 `--target all` is the four of them. A machine without `erlc` or `erl` fails the run before any cell
 starts (`run.sh: the beam target needs erlc`); it never runs three targets and reports "all"
-(decision 67).
+(decision 67). The tool set is the gate's own — `node`, `erl`, `erlc`, `wasmtime` — and nothing
+else: the four-target run is green with `PATH=/usr/bin:/bin:~/.wasmtime/bin` and no other variable
+but `HOME` and `LANG=C.UTF-8` (front `01-compiler/12-language-tests`). Under a locale that is not
+UTF-8 (`LANG=C`, or none) `run/string_split_empty_separator` is red on erlang and beam: `erl` writes
+`é` as the latin-1 byte `0xE9` where commonJS writes UTF-8 — a program's stdout that depends on the
+host locale is a backend defect, not a reason to pin a locale in the runner.
 
 The `run/` sidecars (§ above) apply on every target the cell reaches, beam included: `botopink run`
 returns the assembled program's status, so an `.exit` claim is checked there too
