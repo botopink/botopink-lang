@@ -165,7 +165,7 @@ does not mirror them. Entry points:
 
 | Workflow | Trigger | What |
 | --- | --- | --- |
-| `.github/workflows/test.yml` | push / PR to `main`, `feat` | job `test`: `zig build test` from a cold runtime cache, then `zig build test-cli`, `zig build test-language` (ubuntu + macos only — it needs `node` and `erl`) and `zig build test-docs`, on ubuntu-22.04 + macos-14 (hard gate) and windows-2022 (allowed to fail; OTP 28 is installed there too, because `zig build` runs `erlc`). Job `libs` (ubuntu, after `test`): checks out emilia/erika/jhonstart/onze/rakun at `feat` into `repository/<name>/` and runs `zig build test-libs` over every runnable target. |
+| `.github/workflows/test.yml` | push / PR to `main`, `feat` | job `test`, on ubuntu-22.04 + macos-14, every step of both rows hard: `zig fmt --check modules`, `zig build test` from a cold runtime cache, the comptime runtime parity audit, `zig build test-bpmp`, the beam export audit, `zig build test-cli`, `scripts/format-check.sh`, `zig build test-language`, `zig build test-docs` and `zig build test-web` — the local gate's stages minus the staged-file checks. There is no windows row (1.0.11-beta gate-f: a row that cannot fail measures nothing; it returns hard or not at all). Job `libs` (ubuntu, after `test`): checks out emilia/erika/jhonstart/onze/rakun at `feat` into `repository/<name>/` and runs `zig build test-libs` — every cell the manifests declare, every excluded target audited. |
 | `.github/workflows/release.yml` | tag push `v*` | 5-target matrix (`linux-{x86_64,aarch64}`, `macos-{x86_64,aarch64}`, `windows-x86_64`) → `scripts/release-pack.sh` writes `dist/<binary>-<tag>-<target>.<ext>` + `.sha256` → `softprops/action-gh-release@v2` uploads to one Release. Prerelease iff the tag contains `-`. |
 
 Asset naming (the contract bpmp and the install scripts rely on):
@@ -248,7 +248,7 @@ run is [`scripts/gate.sh`](scripts/gate.sh) — stages 1–4 one after the other
 4b–10 side by side and reported in this order, the first red one ending the run
 (`scripts/AGENTS.md` § Where the gate's time goes):
 
-1. `--staged`: conflict markers and `zig fmt --check` on staged files, and a staged snapshot candidate (`*.snap.new`, `*.snap.md.new` — `git add -f` gets past `.gitignore`) is refused;
+1. `--staged`: conflict markers and `zig fmt --check` on staged files, and a staged snapshot candidate (`*.snap.new`, `*.snap.md.new` — `git add -f` gets past `.gitignore`) is refused; then, on every run, `zig fmt --check modules` — a `.zig` file red anywhere in the tree fails the gate, staged or not;
 2. `zig build`;
 3. `scripts/format-check.sh` (`botopink format --check` over the compiler's canonical `.bp` trees — decision 66's caller; the trees, and the red ones with their causes, are named in the script);
 4. `zig build test` (compiler-core, language-server, CLI and lib-test-runner unit suites; `--cold` deletes `modules/compiler-core/.botopinkbuild/runtime-cache` first — required for the run that decides a merge);

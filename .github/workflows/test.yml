@@ -1,7 +1,8 @@
 # Push/PR CI for botopink-lang — the same gate as the local one
 # (scripts/gate.sh), minus the staged-file checks.
 #
-#   test  `zig build test` from a cold runtime cache, `zig build test-bpmp`,
+#   test  `zig fmt --check modules` (the gate's stage 1, whole tree), `zig
+#         build test` from a cold runtime cache, `zig build test-bpmp`,
 #         `scripts/beam_export_audit.sh`, then `zig build test-cli` (the CLI
 #         command contract, test tooling, mutual recursion and backend
 #         execution parity scripts), `scripts/format-check.sh` (decision 66:
@@ -125,6 +126,12 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: '20'
+
+      # The gate's stage 1, whole tree: a `.zig` file `zig fmt` would rewrite
+      # fails the job and is listed. Needs only zig.
+      - name: zig fmt --check modules
+        shell: bash
+        run: zig fmt --check modules
 
       # The merge-deciding run is cold: a stale runtime-cache entry can hide a
       # backend that never ran. A fresh checkout has no cache; the delete makes
