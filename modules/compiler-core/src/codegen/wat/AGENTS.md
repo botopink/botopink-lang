@@ -616,14 +616,19 @@ tests no literal in a list pattern and answers a function for a brace arm
 over one (`04-js`); erlang binds `true` (`02-erlang`); beam leaves list
 binders unresolved (`03-beam`).
 
-## A binding in an inner block is a local of its own (decision 152)
+## A re-binding is a local of its own (decisions 152, 205)
 
-Decision 152 refuses a second binding of one name in one body and keeps one in
-an inner block legal — a block is a new scope. A wasm function is ONE local
-namespace, so `val x = 2` inside an `if` wrote the outer `$x`, and `x` read
-after the block answered `2` at exit 0 (the pre-pass `emitLocalDecls` also
-registered the inner binding's shape under the shared name, so an outer `k`
-printed as the string an inner `val k = "lambda"` held). Now:
+Decision 152 refuses a second binding of one name in one body, and decision 205
+makes the body the whole function: an inner block's `val`, a loop's binder and a
+`case` arm's binder over a name visible there are the checker's
+`binding-redeclared`. What reaches this backend is a lambda — a function of its
+own — binding a name its enclosing function holds (a parameter, or a `val` of
+its body), and sibling blocks each binding one name. A wasm function is ONE
+local namespace and a HOF's lambda is inlined into it, so the lambda's
+`val k = "lambda"` wrote the outer `$k`, and `k` read after the call answered
+the inner value (the pre-pass `emitLocalDecls` also registered the inner
+binding's shape under the shared name, so the outer `k` printed as the string).
+Now:
 
 - `bindTarget` gives a `val` / `var`, a `for` binder (`lowerCollectionLoop`,
   `lowerRangeLoop`) and a HOF binder (`lowerArrayHof`) the name itself, or a
@@ -642,12 +647,11 @@ printed as the string an inner `val k = "lambda"` held). Now:
 - `emitLocalDecls` registers nothing for a re-binding — its lowering (`emitStmtRaw`) does,
   under its own local.
 
-`tests/wat.zig` `a binding in an inner block shadows the outer one only inside
-it` pins the shapes, its RUN LOG commonJS's (erlang and beam refuse the
-program today). A `case` arm's binder over an in-scope name answers the arm
-with the binder and leaves the outer name alone on wasm; commonJS reads the
-outer name inside the arm and erlang / beam rebind the outer one — which of
-the three the language means is the open question this backend reported.
+`tests/wat.zig` `a lambda's binding shadows the outer one only inside it` pins
+the shapes the checker keeps, its RUN LOG commonJS's (beam answers it too;
+erlang's `erlc` refuses the lambda's re-binding, `02-erlang`'s row). The
+inner-block and `case`-arm halves of the machinery stay, though a checked
+program no longer reaches them.
 
 ## Function values, and the lowering that is not there
 
