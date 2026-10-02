@@ -223,7 +223,12 @@ behavior String {
 
     // `string:str/2` takes charlists and rejects binaries (`function_clause`).
     // `binary:match/2` rejects an empty pattern, which JS finds at 0.
-    #[@External.Erlang("""(fun(__S, __X) -> case __X of <<>> -> 0; _ -> case binary:match(__S, __X) of nomatch -> -1; {__P, _} -> __P end end end)($0, $1)""")]
+    // The answer is an index in the unit `at`, `slice` and `length` count in
+    // on erlang (decision 169) — `string:length/1` of the text before the
+    // match, not the match's byte offset — so `s.at(s.indexOf(x))` reads the
+    // character the search found. commonJS counts UTF-16 units in all four;
+    // the two targets differ only past a character outside the BMP.
+    #[@External.Erlang("""(fun(__S, __X) -> case __X of <<>> -> 0; _ -> case binary:match(__S, __X) of nomatch -> -1; {__P, _} -> string:length(binary:part(__S, 0, __P)) end end end)($0, $1)""")]
     #[@External.Node("indexOf")]
     fn indexOf(self: Self, sub: string) -> i32;
 
@@ -279,7 +284,9 @@ behavior String {
     #[@External.Node("(($0.codePointAt($1) ?? -1) | 0)")]
     fn charCodeAt(self: Self, index: i32) -> i32;
 
-    #[@External.Erlang("(fun(__S, __Sub) -> __L = byte_size(__S), __SL = byte_size(__Sub), __Find = fun __F(__I) -> case __I < 0 of true -> -1; false -> case binary:part(__S, __I, min(__SL, __L - __I)) =:= __Sub of true -> __I; false -> __F(__I - 1) end end end, __Find(__L - __SL) end)($0, $1)")]
+    // The last match is found over the bytes and answered in `indexOf`'s unit
+    // (decision 169): `string:length/1` of the text before it.
+    #[@External.Erlang("(fun(__S, __Sub) -> __L = byte_size(__S), __SL = byte_size(__Sub), __Find = fun __F(__I) -> case __I < 0 of true -> -1; false -> case binary:part(__S, __I, min(__SL, __L - __I)) =:= __Sub of true -> string:length(binary:part(__S, 0, __I)); false -> __F(__I - 1) end end end, __Find(__L - __SL) end)($0, $1)")]
     #[@External.Node("lastIndexOf")]
     fn lastIndexOf(self: Self, sub: string) -> i32;
 

@@ -2408,7 +2408,16 @@ fn main() {
   local.set $t3
   local.get $t3
   local.set $V___P
+  local.get $V___S
+  i64.const 0
+  call $rt_int
   local.get $V___P
+  call $rt_binary_part
+  call $rt_pending
+  br_if $raise
+  call $rt_string_length
+  call $rt_pending
+  br_if $raise
   br $L6
   )
   local.get $t2

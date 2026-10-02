@@ -556,3 +556,59 @@ test "string parseFloat rounds to the nearest f64 and refuses an overflow" {
     assert floatRefusal("1e99999999999999999999")
         == "parseFloat: \"1e99999999999999999999\" overflows f64";
 }
+
+// ── one unit for every string index (decision 169) ───────────────────────────
+// On erlang `indexOf` / `lastIndexOf` answered the match's BYTE offset while
+// `at`, `slice` and `length` counted characters, so an index found by one
+// could not be handed to the other past a non-ASCII character. The text is
+// built from code points — a non-ASCII literal does not survive the erlang
+// backend — and stays inside the BMP, where commonJS's UTF-16 units and
+// erlang's characters are the same count.
+
+#[@External.Node("""String.fromCodePoint($0)""")]
+#[@External.Erlang("""unicode:characters_to_binary([$0])""")]
+declare fn codepointText(cp: i32) -> string;
+
+// `a`, U+00E9, `b`, U+20AC, `c`, U+00E9, `b` — seven characters, eleven bytes.
+fn accented() -> string {
+    return [
+        "a",
+        codepointText(233),
+        "b",
+        codepointText(8364),
+        "c",
+        codepointText(233),
+        "b",
+    ].join("");
+}
+
+test "string indexOf counts in the unit at and length count in" {
+    val s = accented();
+    assert s.length() == 7;
+    assert s.indexOf("a") == 0;
+    assert s.indexOf("b") == 2;
+    assert s.indexOf("c") == 4;
+    assert s.indexOf(codepointText(8364)) == 3;
+    assert s.indexOf("zz") == -1;
+    assert s.indexOf("") == 0;
+    assert s.at(s.indexOf("c")).unwrapOr("") == "c";
+    assert s.slice(s.indexOf("c"), s.length()).length() == 3;
+}
+
+test "string lastIndexOf counts in the unit at and length count in" {
+    val s = accented();
+    assert s.lastIndexOf("b") == 6;
+    assert s.lastIndexOf(codepointText(233)) == 5;
+    assert s.lastIndexOf("a") == 0;
+    assert s.lastIndexOf("zz") == -1;
+    assert s.lastIndexOf("") == 7;
+    assert s.at(s.lastIndexOf("b")).unwrapOr("") == "b";
+    assert s.slice(0, s.lastIndexOf("b")).length() == 6;
+}
+
+test "string indexOf and lastIndexOf keep their answers on plain text" {
+    assert "hello world".indexOf("o") == 4;
+    assert "hello world".lastIndexOf("o") == 7;
+    assert "hello world".lastIndexOf("world") == 6;
+    assert "aaa".lastIndexOf("aa") == 1;
+}

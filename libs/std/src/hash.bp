@@ -242,11 +242,10 @@ pub fn matches(body: string, ifNoneMatch: string) -> bool {
 // dot (`.gitignore`) is not an extension boundary, and a name without an
 // extension gains no trailing dot (`LICENSE` → `LICENSE.<hash>`).
 //
-// The extension is measured as the last `.`-separated piece rather than
-// found with `lastIndexOf`: on Erlang `lastIndexOf` answers a BYTE offset
-// while `length`/`slice` count characters, so a non-ASCII stem would be cut
-// in the wrong place. `length` and `slice` agree with each other on both
-// targets.
+// The extension is measured as the last `.`-separated piece. It was written
+// that way when Erlang's `lastIndexOf` answered a BYTE offset while
+// `length`/`slice` counted characters; the four agree now (decision 169), and
+// the piece measure stays because it is the same cut.
 pub fn fingerprint(fileName: string, contents: string) -> string {
     val hash = contentHash(contents);
     val pieces = fileName.split(".");
