@@ -305,7 +305,7 @@ migrates the seven repositories once and needs no build.
 `zig-out/bin/botopink format --check <tree>` for every tree in its `TREES`
 array, which names the trees the gate holds canonical: `examples` (every
 example project and `hello.bp`), `libs/std`, `libs/routing`, `libs/actions`,
-`libs/validation`, `modules/compiler-cli/tests`, `modules/manifest/tests` and
+`libs/validation`, `libs/log`, `libs/http`, `modules/compiler-cli/tests`, `modules/manifest/tests` and
 `tests/language` — every tracked `.bp` of the checkout is under one of them.
 `format --check` on a directory reaches every `.bp` and `.d.bp` under it
 (nested projects included) and structurally leaves out hidden directories,
