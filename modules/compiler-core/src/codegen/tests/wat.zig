@@ -1616,3 +1616,27 @@ test "wat: behavior ---- a primitive method on a default's result inside an adop
         \\}
     , "area 18\n");
 }
+
+// A program's own `default fn` of a primitive behavior: a copy with `Self`
+// written as the receiver's primitive, called with the receiver as `self`
+// (`lowerPrimDefault`). It trapped (`prim method not lowered on wasm`). The
+// RUN LOG is commonJS's and erlang's for the program.
+test "wat: behavior ---- a program's default fn on a primitive behavior is called" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\behavior String {
+        \\    default fn shout(self: Self) -> string {
+        \\        return self + "!";
+        \\    }
+        \\}
+        \\behavior Number {
+        \\    default fn twice(self: Self) -> Self {
+        \\        return self + self;
+        \\    }
+        \\}
+        \\fn main() {
+        \\    @print("hi".shout());
+        \\    val n: i32 = 21;
+        \\    @print(n.twice());
+        \\}
+    , "hi!\n42\n");
+}

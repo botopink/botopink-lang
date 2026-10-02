@@ -727,6 +727,21 @@ answered, and each was a red wasm cell of `tests/language`:
   `lowerResultOptionOp` builds. Unregistered, a `return` into `-> ?i32` boxed
   the box (an address printed), and a `map` answering a string was read one
   indirection too far by the `flatMap` after it.
+- **A program's own `default fn` of a primitive behavior is called**
+  (`prim_defaults`, `primBehaviorKinds`, `lowerPrimDefault`): a `default fn`
+  with a `self` in the program's `behavior String` / `Bool` / `Number` /
+  `Integer` / `Float` (… `I32`, `F64`) is registered per primitive kind it
+  covers, and a call on such a receiver whose method the table does not list
+  is a copy of the default with `Self` written as the receiver's primitive
+  (`String_tailShout__string`, `Number_clampTo__i32`), emitted once through
+  the member path (`emitMemberFn` marks a primitive-typed `self`), the
+  receiver as `self`. `primRes` reads its declared return for every shape
+  predicate. Inside such a copy — any specialisation — a primitive method's
+  result is typed by what it answers (`typeRefOf`), so `self.max(lo).min(hi)`
+  and `val tail = self.slice(1); tail.startsWith(…)` find their primitive.
+  Every program-declared default of a primitive trapped (`prim method not
+  lowered on wasm`). `Array<T>`'s defaults are not covered: their `self` is
+  `Self<T>`, which no copy substitutes, and they keep the trap.
 - **A primitive method on a call inside an adopted default** reads the
   callee's declared return (`primKindAt`'s fallback): inference typed the
   default's body against `Self`, so `self.twice().toString()` in `Sq`'s copy
