@@ -1,17 +1,14 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 behavior Number {
-    fn min(self: Self, other: Self) -> Self;
-    fn max(self: Self, other: Self) -> Self;
-
-    default fn clamp(self: Self, lo: Self, hi: Self) -> Self {
+    default fn clampTo(self: Self, lo: Self, hi: Self) -> Self {
         return self.max(lo).min(hi);
     }
 }
 
 fn main() {
     val n: i32 = 50;
-    @print(n.clamp(0, 10));
+    @print(n.clampTo(0, 10));
 }
 ```
 
@@ -53,16 +50,21 @@ function __bp_print() {
 //   fn min(...)
 //   fn max(...)
 //   default fn clamp(...)
+//   default fn clampTo(...)
 Number.prototype.min = function(other) { return Math.min(this.valueOf(), other); };
 Number.prototype.max = function(other) { return Math.max(this.valueOf(), other); };
 Number.prototype.clamp = function(lo, hi) {
     const self = this.valueOf();
     return self.max(lo).min(hi);
 };
+Number.prototype.clampTo = function(lo, hi) {
+    const self = this.valueOf();
+    return self.max(lo).min(hi);
+};
 
 function main() {
     const n = 50;
-    __bp_print(n.clamp(0, 10));
+    __bp_print(n.clampTo(0, 10));
 }
 
 function _botopink_main() {

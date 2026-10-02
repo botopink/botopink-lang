@@ -312,25 +312,22 @@ test "js: interface ---- a generic record adopts defaults through an extends cha
     );
 }
 
-// 1.0.4-beta EXAMPLES.md §9's shape: a module redeclares the primitive
-// `interface Number` with bodyless `min`/`max` and a `default fn` calling them.
-// The redeclaration replaces the prelude's, annotations included; commonJS
-// took the host binding (`Math.max`) from the std prelude's declaration of the
-// same member, so `self.max(lo)` is not `self.max is not a function`.
+// 1.0.4-beta EXAMPLES.md §9's shape: a module's own `behavior Number` with a
+// `default fn` calling std's host members `min` / `max`. The program's behavior
+// EXTENDS std's (01-checker): its members are added to the prelude's, which it
+// may not redeclare, so the host binding (`Math.max`) is std's declaration of
+// the member and `self.max(lo)` is not `self.max is not a function`.
 test "js: interface ---- a redeclared primitive interface keeps its host members" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\behavior Number {
-        \\    fn min(self: Self, other: Self) -> Self;
-        \\    fn max(self: Self, other: Self) -> Self;
-        \\
-        \\    default fn clamp(self: Self, lo: Self, hi: Self) -> Self {
+        \\    default fn clampTo(self: Self, lo: Self, hi: Self) -> Self {
         \\        return self.max(lo).min(hi);
         \\    }
         \\}
         \\
         \\fn main() {
         \\    val n: i32 = 50;
-        \\    @print(n.clamp(0, 10));
+        \\    @print(n.clampTo(0, 10));
         \\}
     );
 }
