@@ -736,13 +736,18 @@ fn stdPreludeModule(
 /// the Zig 0.16 + glibc ≥ 2.41 `.sframe` crt1.o relocation bug by making Zig
 /// emit its own crt files instead of dragging the system ones. macOS, Windows,
 /// musl and any explicitly-pinned target pass through unchanged.
+///
+/// The pin is the oldest glibc the shipped binary supports (1.0.11-beta
+/// decision 219): 2.35, ubuntu-22.04's. At 2.36 or newer Zig's std links
+/// `arc4random_buf` (GLIBC_2.36) and the binary no longer starts there;
+/// `objdump -T zig-out/bin/botopink` must list nothing newer than GLIBC_2.35.
 fn libcResolvedTarget(b: *std.Build, requested: std.Build.ResolvedTarget) std.Build.ResolvedTarget {
     const r = requested.result;
     if (r.os.tag != .linux) return requested;
     if (r.abi != .gnu) return requested;
     var q = requested.query;
     if (q.glibc_version != null) return requested;
-    q.glibc_version = .{ .major = 2, .minor = 38, .patch = 0 };
+    q.glibc_version = .{ .major = 2, .minor = 35, .patch = 0 };
     return b.resolveTargetQuery(q);
 }
 
