@@ -252,7 +252,7 @@ run is [`scripts/gate.sh`](scripts/gate.sh) — stages 1–4 one after the other
 1. `--staged`: conflict markers and `zig fmt --check` on staged files, and a staged snapshot candidate (`*.snap.new`, `*.snap.md.new` — `git add -f` gets past `.gitignore`) is refused; then, on every run, `zig fmt --check modules` — a `.zig` file red anywhere in the tree fails the gate, staged or not;
 2. `zig build -Doptimize=ReleaseSafe` — the mode `release.yml` ships, and the binaries every later stage runs (every `zig build` of the gate passes the same flag; stage 4's unit tests stay Debug);
 3. `scripts/format-check.sh` (`botopink format --check` over the compiler's canonical `.bp` trees — decision 66's caller; `TREES` in the script names them, and every tracked `.bp` is under one or structurally exempt);
-4. `zig build test` (compiler-core, language-server, CLI and lib-test-runner unit suites; `--cold` deletes `modules/compiler-core/.botopinkbuild/runtime-cache` first — required for the run that decides a merge);
+4. `zig build test` (compiler-core, language-server, CLI and lib-test-runner unit suites; `--cold` deletes `modules/compiler-core/.botopinkbuild/runtime-cache` and every `.botopinkbuild/cache/` of this checkout and each sibling library repository first, naming each — required for the run that decides a merge);
 4b. `scripts/snap_audit.sh --mode=runtime-parity` (every codegen snapshot exists under `snapshots/codegen/beam/` and `…/wat/`, and each pair is equal once the `COMPTIME BEAM ASSEMBLY`/`COMPTIME WAT` listings are set aside — front 18 step 4, decision 85; no allow-list);
 5. `zig build test-bpmp` (the package manager's unit suite);
 6. `scripts/beam_export_audit.sh` (every beam snapshot module assembles with every function exported);
@@ -363,11 +363,14 @@ every later call site sends cmd 3 alone with its own capture. Comptime
   after upgrading node/erl.
 - **`.beam` cache of `botopink test --target erlang`.** `precompileErlang`
   (`modules/compiler-cli/src/cli/test_cmd.zig`) keeps every compiled `.beam` in
-  `${XDG_CACHE_HOME:-$HOME/.cache}/botopink/beam/`, shared by every checkout,
-  worktree and gate of the machine. Its key does include the OTP / compiler
-  versions, and a hit is relocated to the run's own path, byte for byte what the
-  compile writes there; `botopink clean` does not touch it, and each run reaps
-  one random shard (entries unused for 7 days).
+  `<cache root>/.botopinkbuild/cache/beam/` — the workspace root (else the
+  project), so the members of one library repository share it (decision 225).
+  Its key does include the OTP / compiler versions, and a hit is relocated to
+  the run's own path, byte for byte what the compile writes there; `rm -rf
+  .botopinkbuild`, `botopink clean` and `gate.sh --cold` delete it, and each run
+  reaps one random shard (entries unused for 7 days). The erlang verdict cache of
+  `botopink build` (`cache/erlcheck/`) and the cell durations of `test-libs`
+  (`cache/lib-test/`) live beside it; no build cache is outside a `.botopinkbuild/`.
 
 ### General
 

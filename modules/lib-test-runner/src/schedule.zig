@@ -8,14 +8,18 @@
 /// it alone at the end (onze-cli, discovered late, measured 222 s of a 473 s
 /// `test-libs` stage, started at 244 s). So the runner remembers how long each
 /// cell took — `<ms>\t<lib>\t<target>\t<kind>` lines in
-/// `$XDG_CACHE_HOME/botopink/lib-test/durations.tsv` (else
-/// `$HOME/.cache/botopink/lib-test/durations.tsv`) — and starts the cells in
-/// descending order of their last time, the cells it has no time for first
-/// (a new cell may be the long one). The file is a scheduling hint shared by
-/// every checkout of the machine: a missing, unreadable or stale one changes
-/// the order and nothing else, and it is rewritten after every run by staging
-/// and renaming (two runs racing write whole files, the last one wins).
+/// `<cache root>/.botopinkbuild/cache/lib-test/durations.tsv`, one file per
+/// cache root, each holding the cells of the libraries under it (`path`) —
+/// and starts the cells in descending order of their last time, the cells it
+/// has no time for first (a new cell may be the long one). Like every build
+/// cache it lives under the cache root's `.botopinkbuild/` (decision 225): the
+/// workspace root of the cell's library, else the library's own directory, so
+/// deleting that `.botopinkbuild/` (or a `gate.sh --cold`) deletes it. The file
+/// is a scheduling hint: a missing, unreadable or stale one changes the order
+/// and nothing else, and it is rewritten after every run by staging and
+/// renaming (two runs racing write whole files, the last one wins).
 const std = @import("std");
+const manifest = @import("manifest");
 
 /// One spawning cell, as the history names it.
 pub const Key = struct {
@@ -64,14 +68,20 @@ pub fn order(arena: std.mem.Allocator, keys: []const []const u8, history: *const
     return out;
 }
 
-/// The history file's path, or null when neither `XDG_CACHE_HOME` nor `HOME`
-/// is an absolute path (then the pool keeps plan order).
-pub fn path(arena: std.mem.Allocator, env: *const std.process.Environ.Map) ?[]const u8 {
-    if (env.get("XDG_CACHE_HOME")) |v| if (v.len > 0 and std.fs.path.isAbsolute(v))
-        return std.fs.path.join(arena, &.{ v, "botopink", "lib-test", "durations.tsv" }) catch null;
-    if (env.get("HOME")) |v| if (v.len > 0 and std.fs.path.isAbsolute(v))
-        return std.fs.path.join(arena, &.{ v, ".cache", "botopink", "lib-test", "durations.tsv" }) catch null;
-    return null;
+/// The history file under `root` (`cacheRoot`).
+pub fn path(arena: std.mem.Allocator, root: []const u8) ![]const u8 {
+    return std.fs.path.join(arena, &.{ root, ".botopinkbuild", "cache", "lib-test", "durations.tsv" });
+}
+
+/// The cache root of the library in `lib_dir`: the workspace root it is a
+/// member of, else `lib_dir` itself — the root `botopink test` keeps that
+/// library's caches under (`compiler-cli` `libs.cacheRoot`). A workspace that
+/// does not expand is the cell's own located failure; its time is then kept
+/// beside the library.
+pub fn cacheRoot(arena: std.mem.Allocator, io: std.Io, lib_dir: []const u8) []const u8 {
+    var err: ?manifest.Located = null;
+    const ws = manifest.enclosingWorkspace(arena, io, lib_dir, &err) catch return lib_dir;
+    return if (ws) |w| w.dir else lib_dir;
 }
 
 /// Read the history; an absent or unreadable file is an empty one.
@@ -80,8 +90,9 @@ pub fn load(arena: std.mem.Allocator, io: std.Io, file: []const u8) History {
     return parse(arena, text) catch .empty;
 }
 
-/// Merge this run's times into the history and write it back (staged and
-/// renamed). Best effort: a failure leaves the old file, which only orders.
+/// Merge this run's times into the history read from `file` and write it back
+/// (staged and renamed). Best effort: a failure leaves the old file, which
+/// only orders.
 pub fn store(arena: std.mem.Allocator, io: std.Io, file: []const u8, history: *History, keys: []const []const u8, ms: []const u64) void {
     for (keys, ms) |k, t| history.put(arena, k, t) catch return;
     var out: std.ArrayListUnmanaged(u8) = .empty;
@@ -134,4 +145,10 @@ test "order: no history keeps plan order" {
     const h: History = .empty;
     const keys = [_][]const u8{ "x", "y", "z" };
     try std.testing.expectEqualSlices(usize, &.{ 0, 1, 2 }, try order(a, &keys, &h));
+}
+
+test "path: the history is a cache of the root's .botopinkbuild" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    try std.testing.expectEqualStrings("/r/rakun/.botopinkbuild/cache/lib-test/durations.tsv", try path(arena.allocator(), "/r/rakun"));
 }

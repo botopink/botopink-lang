@@ -21,7 +21,8 @@
 #                           scripts/format-check.sh
 #   4. zig build test       compiler-core + language-server + CLI +
 #                           lib-test-runner unit suites
-#                           (--cold deletes the runtime cache first)
+#                           (--cold deletes the runtime cache and every
+#                           `.botopinkbuild/cache/` first)
 #   4b. snap_audit.sh --mode=runtime-parity  every codegen snapshot recorded
 #                           under both comptime runtimes, the pairs equal but
 #                           for their listing sections (front 18 step 4)
@@ -48,7 +49,9 @@
 #   scripts/gate.sh [--cold] [--staged]
 #
 #   --cold    delete modules/compiler-core/.botopinkbuild/runtime-cache before
-#             `zig build test`. Required for the run that decides a merge: a
+#             `zig build test`, and every `.botopinkbuild/cache/` (decision 225:
+#             the erlang verdicts, the `.beam` cache, the cell durations) under
+#             this checkout and each sibling library repository, naming each. Required for the run that decides a merge: a
 #             stale cache entry can hide a backend that never ran. Never
 #             answered from the green-tree record below.
 #   --staged  also run stage 1 over `git diff --cached` (the pre-commit and
@@ -286,6 +289,27 @@ launch() { # <n> <cmd…> — run in the background, output in $par/<n>.out, sta
 }
 if [ "$cold" -eq 1 ]; then
     rm -rf modules/compiler-core/.botopinkbuild/runtime-cache
+    # Every build cache lives under a `.botopinkbuild/cache/` (decision 225):
+    # the one of each cache root this gate reads — this checkout and each
+    # sibling library repository `test-libs` reaches — goes, so no stage
+    # answers an erlang verdict, a `.beam` or a cell's start order from a
+    # previous run. Each deleted directory is named.
+    cold_top="$root"
+    while [ "$cold_top" != "/" ] && [ ! -d "$cold_top/repository" ]; do cold_top="$(dirname "$cold_top")"; done
+    cold_repos=("$root")
+    if [ -d "$cold_top/repository" ]; then
+        for r in "$cold_top"/repository/*/; do
+            r="${r%/}"
+            [ "$r" = "$root" ] || cold_repos+=("$r")
+        done
+    fi
+    for r in "${cold_repos[@]}"; do
+        while IFS= read -r c; do
+            [ -n "$c" ] || continue
+            rm -rf "$c" || fail "--cold: could not delete $c"
+            echo "gate: --cold deleted $c"
+        done < <(find "$r" \( -name .git -o -name node_modules -o -name .zig-cache \) -prune -o -type d -path '*/.botopinkbuild/cache' -prune -print)
+    done
 fi
 launch 0 zig build test
 test_pid=$!

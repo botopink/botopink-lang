@@ -379,16 +379,16 @@ fn precompileErlang(arena: std.mem.Allocator, io: std.Io, dir: []const u8, cache
     _ = result;
 }
 
-/// Where `precompileErlang` keeps its `.beam` cache: `libs.userCacheDir`'s
-/// `beam` — the per-user cache every checkout, worktree and gate of this
-/// machine shares, because the cells that compile the same dependency `.erl`
-/// run from different project directories. Null (no cache — every source
-/// compiles, as before) when neither `XDG_CACHE_HOME` nor `HOME` is absolute.
-/// `botopink clean` does not reach it; entries are content-keyed, so a stale
-/// one is never read — only kept until a run draws its shard (see
+/// Where `precompileErlang` keeps its `.beam` cache: `libs.cacheDir`'s
+/// `beam` — `<cache root>/.botopinkbuild/cache/beam`, the cache root being the
+/// workspace root (else the project), so every member of one library
+/// repository shares it: the cells that compile the same dependency `.erl`
+/// run from different member directories (decision 225). Deleting the root's
+/// `.botopinkbuild/` deletes it; entries are content-keyed, so a stale one is
+/// never read — only kept until a run draws its shard (see
 /// `precompileErlang`).
-fn beamCacheDir(arena: std.mem.Allocator, env_map: libs.EnvMap) ?[]const u8 {
-    return libs.userCacheDir(arena, env_map, "beam");
+fn beamCacheDir(arena: std.mem.Allocator, proj: config.ProjectConfig) ![]const u8 {
+    return libs.cacheDir(arena, proj, "beam");
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -610,7 +610,7 @@ pub fn run(
         };
         // Every `.erl` of the run is now in place: compile each once, here,
         // instead of once per test module that loads it.
-        if (target == .erlang) precompileErlang(arena, io, test_out, beamCacheDir(arena, env_map));
+        if (target == .erlang) precompileErlang(arena, io, test_out, try beamCacheDir(arena, proj));
     }
     // beam: every module of the run assembled beside itself, once; each
     // runner's `'__bp_load_siblings'/0` compiles the host `.erl`s shipped

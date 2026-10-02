@@ -120,7 +120,7 @@ pub fn run(
     // written) and one it refuses fails the build, so "it builds on erlang"
     // means what it says.
     const erl_ok = if (target == .erlang)
-        try checkErlang(arena, io, outputs.items, opts.out_dir, cfg.packages, libs.userCacheDir(arena, env_map, "erlcheck"))
+        try checkErlang(arena, io, outputs.items, opts.out_dir, cfg.packages, try libs.cacheDir(arena, proj, "erlcheck"))
     else
         true;
 
@@ -148,10 +148,11 @@ pub fn run(
 /// then failed on it — and "it builds on that target" was read as evidence.
 /// The warnings of generated code are not reported (`return_errors` alone).
 ///
-/// **The verdict cache** (`cache_dir`, `libs.userCacheDir(…, "erlcheck")`;
-/// null = none). Every build of a project compiles its dependencies' `.erl`
-/// again — rakun's build tests spawn `botopink build` 22 times in one cell,
-/// each over the same rakun closure. A source the OTP compiler accepted is
+/// **The verdict cache** (`cache_dir`, `libs.cacheDir(…, "erlcheck")`:
+/// `<cache root>/.botopinkbuild/cache/erlcheck`, decision 225; null = none).
+/// Every build of a project compiles its dependencies' `.erl` again —
+/// rakun's build tests spawn `botopink build` 22 times in one cell, each over
+/// the same rakun closure. A source the OTP compiler accepted is
 /// therefore remembered as an empty `<cache_dir>/<k[0..2]>/<k>.ok`, `k` the
 /// SHA-256 of the source bytes and of everything else the verdict depends on:
 /// the options, the OTP release, the erts / `compiler` / `stdlib` versions and

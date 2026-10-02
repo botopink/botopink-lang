@@ -165,33 +165,65 @@ expect_out "the OTP compiler refused emitted erlang" "says the build is not a pr
 
 # ── the erlang check remembers acceptances, never refusals ───────────────────
 # `checkErlang` keeps an empty marker per accepted source, keyed by its bytes
-# and the OTP compiler (`build.zig`, `$XDG_CACHE_HOME/botopink/erlcheck`). A
-# refusal is compiled and printed every time, and a source that changed is a
-# new key: the cache answers only for bytes it has already seen accepted.
-echo "==> the erlang check's verdict cache: acceptances only, keyed by the bytes"
-XDG_CHECK="$WORK/xdg-erlcheck"
+# and the OTP compiler, under the cache root's `.botopinkbuild/cache/erlcheck/`
+# (`build.zig`, `libs.cacheDir`, decision 225). A refusal is compiled and
+# printed every time, and a source that changed is a new key: the cache
+# answers only for bytes it has already seen accepted. HOME and XDG_CACHE_HOME
+# point at a scratch directory where `botopink` may write nothing (other tools
+# on PATH — a version manager's `erl` shim — keep their own caches there): no
+# cache of the compiler lives outside the project.
+echo "==> the erlang check's verdict cache: acceptances only, keyed by the bytes, inside .botopinkbuild"
+USER_CACHE="$WORK/user-home"
+mkdir -p "$USER_CACHE"
+bp_isolated() { HOME="$USER_CACHE" XDG_CACHE_HOME="$USER_CACHE/.cache" "$BP" "$@"; }
+user_cache_files() { find "$USER_CACHE/.cache/botopink" -type f 2>/dev/null | wc -l | tr -d " "; }
 P="$(project erlcache erlang)"
 printf 'pub fn main() {\n    @print("one");\n}\n' >"$P/src/main.bp"
-markers() { { find "$XDG_CHECK/botopink/erlcheck" -name "*.ok" 2>/dev/null || true; } | wc -l | tr -d " "; }
-( cd "$P" && XDG_CACHE_HOME="$XDG_CHECK" "$BP" build >/dev/null 2>&1 ) && ok "an accepted build" || fail "the erlang build of a plain program failed"
-m1="$(markers)"
-[[ "$m1" -gt 0 ]] && ok "accepted sources are remembered ($m1 marker(s))" || fail "no verdict marker was written"
-( cd "$P" && XDG_CACHE_HOME="$XDG_CHECK" "$BP" build >/dev/null 2>&1 ) && ok "the same build again" || fail "the cached build failed"
-[[ "$(markers)" == "$m1" ]] && ok "the same bytes are the same keys" || fail "a rebuild of the same bytes wrote new markers ($(markers) vs $m1)"
+markers() { { find "$1/.botopinkbuild/cache/erlcheck" -name "*.ok" 2>/dev/null || true; } | wc -l | tr -d " "; }
+( cd "$P" && bp_isolated build >/dev/null 2>&1 ) && ok "an accepted build" || fail "the erlang build of a plain program failed"
+m1="$(markers "$P")"
+[[ "$m1" -gt 0 ]] && ok "accepted sources are remembered under .botopinkbuild/cache/erlcheck/ ($m1 marker(s))" || fail "no verdict marker was written under $P/.botopinkbuild/cache/erlcheck"
+( cd "$P" && bp_isolated build >/dev/null 2>&1 ) && ok "the same build again" || fail "the cached build failed"
+[[ "$(markers "$P")" == "$m1" ]] && ok "the same bytes are the same keys" || fail "a rebuild of the same bytes wrote new markers ($(markers "$P") vs $m1)"
+rm -rf "$P/.botopinkbuild"
+( cd "$P" && bp_isolated build >/dev/null 2>&1 ) && ok "a build after rm -rf .botopinkbuild" || fail "the build after deleting .botopinkbuild failed"
+[[ "$(markers "$P")" == "$m1" ]] && ok "deleting .botopinkbuild deleted every verdict: each module was compiled again ($m1 marker(s) rewritten)" || fail "after rm -rf .botopinkbuild the build wrote $(markers "$P") marker(s), not $m1 — a verdict was answered from elsewhere"
 printf 'pub fn main() {\n    @print("two");\n}\n' >"$P/src/main.bp"
-( cd "$P" && XDG_CACHE_HOME="$XDG_CHECK" "$BP" build >/dev/null 2>&1 ) && ok "a changed source builds" || fail "the changed build failed"
-[[ "$(markers)" -gt "$m1" ]] && ok "a changed source is a new key, checked again" || fail "a changed source was answered from the cache"
+( cd "$P" && bp_isolated build >/dev/null 2>&1 ) && ok "a changed source builds" || fail "the changed build failed"
+[[ "$(markers "$P")" -gt "$m1" ]] && ok "a changed source is a new key, checked again" || fail "a changed source was answered from the cache"
+[[ "$(user_cache_files)" -eq 0 ]] && ok "nothing was written under HOME/.cache/botopink" || fail "a build wrote under HOME/.cache/botopink: $(find "$USER_CACHE/.cache/botopink" -type f | head -3 | tr '\n' ' ')"
+run "$P" clean
+expect_code 0 "clean"
+[[ ! -e "$P/.botopinkbuild" ]] && ok "clean leaves no .botopinkbuild/" || fail "clean left $P/.botopinkbuild"
+[[ "$(user_cache_files)" -eq 0 ]] && ok "no file under HOME/.cache/botopink after clean" || fail "files remain under the user cache"
 P="$(project erlcacherefused erlang)"
 printf '#[@External.Erlang("lists:reverse($0 ++)")]\ndeclare fn bad(xs: i32[]) -> i32[];\n\npub fn main() {\n    @print(bad([1]).length);\n}\n' >"$P/src/main.bp"
 for i in 1 2; do
   set +e
-  OUT="$(cd "$P" && XDG_CACHE_HOME="$XDG_CHECK" "$BP" build 2>&1)"
+  OUT="$(cd "$P" && bp_isolated build 2>&1)"
   CODE=$?
   set -e
   [[ $CODE -eq 1 ]] && grep -qF "the OTP compiler refused emitted erlang" <<<"$OUT" \
     && ok "refused again on build $i — a refusal is never remembered" \
     || fail "build $i of a module erlc rejects: exit $CODE, refusal not printed"
 done
+
+# The cache root of a workspace member is the workspace root: every member of
+# one library repository shares its `.botopinkbuild/cache/`, and a clean in a
+# member deletes it with the member's own `.botopinkbuild/`.
+echo "==> a workspace member caches under the workspace root; clean deletes it"
+WS="$WORK/wscache"
+rm -rf "$WS"; mkdir -p "$WS/modules/wsapp/src"
+printf '{ "name": "wscache", "version": "0.1.0", "workspaces": ["modules/*"] }\n' >"$WS/botopink.json"
+printf '{ "name": "wsapp", "version": "0.1.0", "target": "erlang" }\n' >"$WS/modules/wsapp/botopink.json"
+printf 'pub fn main() {\n    @print("ws");\n}\n' >"$WS/modules/wsapp/src/main.bp"
+( cd "$WS/modules/wsapp" && bp_isolated build >/dev/null 2>&1 ) && ok "a member builds" || fail "the workspace member's erlang build failed"
+[[ "$(markers "$WS")" -gt 0 ]] && ok "its verdicts are under the workspace root's .botopinkbuild/cache/erlcheck/" || fail "no verdict marker under $WS/.botopinkbuild/cache/erlcheck"
+[[ ! -e "$WS/modules/wsapp/.botopinkbuild/cache" ]] && ok "none under the member's own .botopinkbuild/" || fail "the member kept a cache of its own"
+run "$WS/modules/wsapp" clean
+expect_code 0 "clean in a member"
+[[ ! -e "$WS/.botopinkbuild/cache" && ! -e "$WS/modules/wsapp/.botopinkbuild" ]] && ok "clean deleted the member's .botopinkbuild/ and the workspace's cache" || fail "clean left a cache: $(find "$WS" -path '*/.botopinkbuild*' -maxdepth 4 | head -3 | tr '\n' ' ')"
+expect_out " $WS/.botopinkbuild/cache/" "clean names the workspace cache it deleted"
 
 # ── C5 / C6 / C7 — check covers test/, lex and parse errors are located ──────
 echo "==> C6 a lex error renders with file, line and excerpt on build/check/test"
