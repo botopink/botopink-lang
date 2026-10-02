@@ -1306,6 +1306,31 @@ fn resolveImports(
                     }
                     // Imported template fns (`-> @Expr<…>`) carry their decl
                     // across modules so call sites here can expand them.
+                    // One local name is one declaration. Two imports that each
+                    // name their module (`import {title} from "app.page";
+                    // import {title} from "app.blog.page";`) are two answered
+                    // questions bound to ONE name: the second used to
+                    // overwrite the first here and every backend picked its
+                    // own — commonJS called `app/page`'s, erlang and wasm
+                    // `app/blog/page`'s, with no diagnostic
+                    // (`infer.noteImportBindings` compares the item's path
+                    // and not its source, so it read the two as one repeated
+                    // item). Refused at the second item; `as` is the remedy.
+                    // The same declaration imported twice — an `@emit`
+                    // contribution re-importing what its module imports — is
+                    // one declaration and passes.
+                    if (owner.len > 0) if (env.importOwners.get(local)) |first| {
+                        if (!std.mem.eql(u8, first.owner, owner) or !std.mem.eql(u8, first.name, name)) {
+                            const msg = try std.fmt.allocPrint(
+                                env.arena,
+                                "{s}: `{s}` is already bound by the import of `{s}` from `{s}`; `{s}` from `{s}` would bind it again",
+                                .{ diagnostics.import_name_collision, local, first.name, first.owner, name, owner },
+                            );
+                            const hint = try std.fmt.allocPrint(env.arena, "Rename one of the two with `as` (`import {{{s} as other}} from \"{s}\"`): each alias then reaches its own declaration.", .{ name, owner });
+                            env.lastError = validation.TypeError.custom(msg, hint).withLoc(imp.loc);
+                            return error.TypeError;
+                        }
+                    };
                     if (owner.len > 0) try env.importOwners.put(env.arena, local, .{ .owner = owner, .name = name });
                     if (owner.len > 0) if (templateRegistry.get(try comptimeRegistryKey(env.arena, owner, name))) |tfn| {
                         try infer.registerImportedTemplateFn(env, local, tfn, owner);
