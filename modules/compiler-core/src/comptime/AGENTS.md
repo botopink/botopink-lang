@@ -1339,6 +1339,13 @@ lambda for this: it keeps the enclosing channel, so its `throw` is the function'
 lowers the arm's throw as a raw `throw`, its backend's row). Cells: `reject/try_in_lambda_without_result`,
 `run/lambda_result_return_try`.
 
+Because the lambda now UNIFIES its return with the expectation, the expectation a plain call reads
+(`declParamTypes` in `inferCallExpr`) is a fresh instance of the callee's signature —
+`instantiateCtorType` then `instantiateGenericType`, as the arm that types the call does — never the
+registration-time cells: inside a generic type's own methods, `Schema(run: { … })` answering
+`Schema<?T>` bound the constructor's `T` and the next `Schema(…)` (`Schema<Array<T>>`) was
+"expected ?_[], got ?_" (`validation`'s `schemas.bp`). Cell: `run/generic_ctor_fallible_lambda_fresh`.
+
 ## A lambda writes a captured `var` only in two shapes (decision 148, lg-b)
 
 `Env.lambdaDepth` counts the lambda bodies around the expression (a `case` arm's block is not one),

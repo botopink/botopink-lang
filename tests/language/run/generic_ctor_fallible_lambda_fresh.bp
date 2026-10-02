@@ -1,0 +1,52 @@
+//// Decision 147 (lg-a) beside a generic constructor: a lambda argument of a
+//// fallible field takes the expectation of a FRESH instance of the
+//// constructor, so `Box(…)` answering `Box<?T>` in one method leaves the next
+//// `Box(…)`, answering `Box<Array<T>>`, free.
+
+pub type Box<T>(
+    run: fn(at: string) -> @Result<T, string>,
+) {
+    pub fn optional(self: Self<T>) -> Box<?T> {
+        val inner = self.run;
+        return Box(run: { at -> optionalOf(at, inner) });
+    }
+
+    pub fn array(self: Self<T>) -> Box<Array<T>> {
+        val inner = self.run;
+        return Box(run: { at -> arrayOf(at, inner) });
+    }
+}
+
+fn present<T>(v: T) -> ?T {
+    return [v].at(0);
+}
+
+fn optionalOf<T>(
+    at: string,
+    inner: fn(at: string) -> @Result<T, string>,
+) -> @Result<?T, string> {
+    val v = try inner(at);
+    return present(v);
+}
+
+fn arrayOf<T>(
+    at: string,
+    inner: fn(at: string) -> @Result<T, string>,
+) -> @Result<Array<T>, string> {
+    val v = try inner(at);
+    return [v, v];
+}
+
+fn shout(at: string) -> @Result<string, string> {
+    if (at == "") throw "empty";
+    return at + "!";
+}
+
+pub fn main() {
+    val box = Box(run: shout);
+    val many = box.array().run;
+    @print(many("hi").unwrapOr([]).length);
+    @print(many("").isError());
+    val maybe = box.optional().run;
+    @print(maybe("yo").isOk());
+}
