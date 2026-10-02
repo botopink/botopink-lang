@@ -603,7 +603,7 @@ appear here"). So decision 2's enforcement leaves nothing dead here.
 ## Methods, binders and the module body (`00 · 05-wasm`, the rows no step named)
 
 Each of these answered `0` at exit 0 or trapped where the other three backends
-answered, and each had its own `expected-failures.txt` line:
+answered, and each was a red wasm cell of `tests/language`:
 
 - **An enum's methods are emitted** (`registerInterfaceSigs` / `emitInterfaceMethods`
   take every `type`, not only records): `Shape.Rect(…).counts(3)` was an

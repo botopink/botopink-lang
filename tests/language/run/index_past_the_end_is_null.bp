@@ -15,8 +15,8 @@
 //// four backends (`xs[9]` reaches `Array.at`, where it used to reach each
 //// backend's own decision-30 lowering) and every one of them prints
 //// `undefined` rather than `null`. That last step is decision 47's spelling of
-//// an empty optional — C-18's row, listed per target in
-//// `expected-failures.txt`, not this one's.
+//// an empty optional — C-18's row, not this one's: the cell was red on each
+//// target until that row landed.
 
 pub fn main() {
     val xs = [10, 20, 30];

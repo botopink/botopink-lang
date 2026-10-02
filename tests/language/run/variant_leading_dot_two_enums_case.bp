@@ -2,8 +2,8 @@
 //// single-segment leading dot takes its enum from the position's expected
 //// type — a `val`'s annotation, a declared parameter — and a `case` over each
 //// enum matches its own `Red`. The checker half no longer reproduces (commonJS
-//// was a `ReferenceError`, erlang bound `Warm.Red` to a `Cool`); wasm is
-//// listed in `expected-failures.txt`.
+//// was a `ReferenceError`, erlang bound `Warm.Red` to a `Cool`); wasm's half
+//// landed after it.
 
 type Warm { Red, Orange }
 

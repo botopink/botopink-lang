@@ -124,8 +124,8 @@ caller), `zig build test` (`--cold` deletes
 both comptime runtimes, pairs equal but for their listing sections), `zig build
 test-bpmp`, `scripts/beam_export_audit.sh`, `zig build test-cli`, `zig build
 test-libs` (every `"targets"`-restricted cell included, checked against
-`restricted-targets.txt`), `zig build test-language` (`tests/language/`, expected failures in
-`tests/language/expected-failures.txt`), `zig build test-docs`
+`restricted-targets.txt`), `zig build test-language` (`tests/language/`, a red cell fails
+it), `zig build test-docs`
 (`check-docs.sh`). CI (`.github/workflows/test.yml`) runs the same stages minus the
 staged checks. The pre-commit hook runs `--staged`; the run
 that decides a merge adds `--cold`. After the staged checks the script unsets

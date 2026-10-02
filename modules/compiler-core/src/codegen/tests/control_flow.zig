@@ -1060,8 +1060,8 @@ test "erlang: case ---- a one-parameter arm on a variant pattern aliases it" {
 //
 // Each one made an arm match NOTHING, or the wrong arm match everything, so each
 // is asserted by running the emitted module and pinning the clause head it now
-// writes. commonJS had all three right, which is why only erlang's lines sat in
-// `tests/language/expected-failures.txt`.
+// writes. commonJS had all three right, which is why only erlang's cells were
+// red in `tests/language`.
 //
 // The §5.1 cells these rows are written for (`test/case_tuples.bp`,
 // `test/case_variants.bp`, `test/case_guards.bp`, `test/case_exhaustive.bp`) are

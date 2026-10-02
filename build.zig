@@ -551,8 +551,8 @@ pub fn build(b: *std.Build) void {
     // `zig build test-language` — the language tests of decision 8 (front 15):
     // `case` and patterns, tuples and labels, `loop`, written in botopink under
     // `tests/language/` and run by `tests/language/run.sh` on commonJS and
-    // erlang against the installed `botopink`, with the expected failures in
-    // `tests/language/expected-failures.txt`. Forwards `--` args, e.g.
+    // erlang against the installed `botopink`; a red cell fails the step.
+    // Forwards `--` args, e.g.
     //   zig build test-language -- --target erlang --compiler <botopink>
     // NOT wired into `zig build test` (spawns node/erl per file).
     const test_language_run = b.addSystemCommand(&.{ "bash", "tests/language/run.sh" });

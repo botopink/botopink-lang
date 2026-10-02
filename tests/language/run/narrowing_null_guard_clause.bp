@@ -19,8 +19,8 @@
 //// the value present and once absent, so a narrowing that fired on the wrong
 //// side would show as a wrong answer rather than as nothing.
 ////
-//// TWO targets fail, each for a reason that is not this cell's and each with a
-//// line in `expected-failures.txt`:
+//// TWO targets failed when this cell landed, each for a reason that was not
+//// this cell's (both pass now):
 ////
 ////   wasm  heap addresses (`292`, `328`) where `3` and `5` are owed — wasm's
 ////         `?T` is a box and a narrowed NAME is not unboxed (05 step 2 D1),

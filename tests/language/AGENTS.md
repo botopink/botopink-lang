@@ -12,8 +12,8 @@ dependency, `@panic`/`@todo`, "no external target for the active backend" — an
 63–66, plus the runner's tally (decision 59 (b)).
 
 **Tests describe the language, not today's compiler.** A scenario the compiler gets wrong stays as
-written and is listed in `expected-failures.txt` with the row of the front that makes it pass. Never
-rewrite a test to match current behaviour.
+written and is red until the compiler passes it — the suite keeps no list of known failures
+(§ A red cell is red). Never rewrite a test to match current behaviour.
 
 ## Layout
 
@@ -24,7 +24,6 @@ rewrite a test to match current behaviour.
 | `reject/<name>.bp` + `<name>.expect` | a program that must not compile, run by `botopink check` | exit ≠ 0, stderr contains `.expect` line 1, and ` --> src/main.bp:<line 2>` — line 2 is required (C-21: every refusal is located) |
 | `modules/<name>/` | a whole **project** — its own `botopink.json`, `src/` tree and `expected.out` — run by `botopink run --target <t>`; a second project inside it can be a `{ "path": "…" }` dependency; `"targets"` in its `botopink.json` narrows it (§ Narrowing a cell) | exit 0 and stdout equals `expected.out` byte for byte — or, with `<target>.expect`, § the sidecars of a `run/` cell |
 | `modules/<name>/` with a `test/` tree and no `expected.out` | the `test/` kind over a whole project, run by `botopink test --target <t> --json` on commonJS and erlang; results are keyed `modules/<name>::<test>` | every test reports `ok` |
-| `expected-failures.txt` | the list of known failures | — |
 
 1.0.10-beta's `00 · 23-std-purity` step 1 (decision 107, the import tree) adds `modules/import_tree`
 — a dotted path and a braced group over the package's own tree and over std, aliases bound, only the
@@ -58,8 +57,7 @@ three `reject/` cells refuse it as `if-operand` at the `if` — `if_operand_of_o
 (the right operand of `&&` / `||` and a `while` body read the names the left operand's null test
 narrows; a narrowed `var` is assigned its declared type, on all four targets) with
 `reject/narrow_or_keeps_optional` and `reject/narrow_ends_at_assignment`, and two cells whose
-checker half is right and whose backend halves are listed in `expected-failures.txt` for
-`residual-backend-3`: `modules/imported_fn_as_value` (an imported `pub fn` bound by a `val` and
+checker half was right first and whose backend halves `residual-backend-3` closed: `modules/imported_fn_as_value` (an imported `pub fn` bound by a `val` and
 passed as an argument) and `run/enum_implements_behavior` (an enum's behavior method called
 through a behavior-typed parameter). C-04's last call path adds `run/associated_fn_default` (a
 behavior's associated fn filled and reordered by label, generic included) and
@@ -150,7 +148,7 @@ narrowed and bit-read it, erlang and beam did not lower `val Pt(y, _) = p`) and
 `modules/linked_fn_name_collision` (two modules each declaring `parse`, reached by their own calls, a
 plain import and an aliased one — wasm's one flat namespace). `run/val_assert_record_pattern` (a
 `val assert` over a record's constructor pattern — commonJS destructured the binders' own names,
-erlang tested a tag no constructor builds) came out of the same work; wasm and beam are listed.
+erlang tested a tag no constructor builds) came out of the same work; wasm and beam followed.
 C-04 across a module boundary adds `modules/default_argument_across_modules` — a call omitting
 trailing defaulted parameters of a sibling module's and of a path dependency's function, one label
 claiming its parameter, on all four targets — and `modules/default_argument_open_across_modules`: a
@@ -222,9 +220,9 @@ targets), `reject/builtin_module_not_lowered` (`@module()` is `builtin-not-lower
 `reject/enum_variant_duplicate` (a variant written twice at one level, at the second),
 `modules/enum_section_leaf_beside_variant` (a section leaf `Layout.Break.After` beside a top-level
 `After(inner: Token[])`, each reached by its path or its position's type from another module —
-the checker half already held; wasm is listed, its `case` reads the leaf's tag),
+the checker half already held; wasm, whose `case` read the leaf's tag, followed),
 `run/variant_leading_dot_two_enums_case` (two enums declaring `Red`, `.Red` by the position's type
-and a `case` over each — the checker half already held; wasm is listed),
+and a `case` over each — the checker half already held; wasm followed),
 `reject/section_path_es4_expected_enum` / `reject/section_path_es4_every_head` (ES4 names the
 expected enum, or every enum carrying the head, sorted — it named the hash walk's first),
 `modules/labelled_call_by_label` (a complete labelled call by label on the associated, imported,
@@ -353,7 +351,7 @@ both values on all four targets. commonJS tested only `instanceof`, so the secti
 fired and the `case` answered `undefined` at exit 0, which is how emilia read 223/2 on commonJS
 against 225/0 on erlang from one source), and `narrowing_*` (the same front's
 `fix/null-narrowing`: which shapes of a null test rebind the name they test —
-§ `narrowing_*` below), and the module-`var` cells of 1.0.10-beta's `00 · 17-beam-memory` (C-05, decisions 28, 38, 41, 43, 51): `run/module_var` — a module-level `var` written twice through a `fn` prints `2` on commonJS and wasm and is listed against C-10 on erlang (unbound `Hits`, does not compile) and beam (the write is dropped and it prints `0` at exit 0 — the silent one); `test/beam_memory_noop` — the annotation is a no-op off the BEAM, each test writing and reading back through the binding (erlang listed against C-10 for the same reason); and seven `reject/` cells, one per diagnostic — `val_assign_module` and `val_assign_local` (a `val` is immutable, the hint names `var`), `beam_memory_unknown_member`, `beam_memory_unknown_argument`, `beam_memory_keyed_scalar`, `beam_memory_keyed_list` (decision 51: `keyed` is `Dict`-only) and `beam_memory_on_val`. C-10 (front 17 step 4) adds the per-mode BEAM cells, each a `run/` cell with `.targets` = `erlang beam` (a `test/` cell cannot be narrowed to a target, and on commonJS the modes are one program-wide value): `run/beam_memory_process_dict` (a value written in `main` is not seen by a process `async.runAll` spawns, and its write does not reach `main` — `[0]` then `5`), `run/beam_memory_ets` (decision 39's fixture: five processes × three increments print `15`) and `run/beam_memory_persistent_term` (put at load, read by a spawned process: `[101]`); and the refusals its lowering needs — `reject/beam_memory_pt_write`, `reject/beam_memory_ets_recompose`, `reject/beam_memory_ets_bump_non_integer` (decision 40) and `reject/beam_memory_ets_initialiser` (a seed that is neither a literal nor `comptime`). `test/beam_memory_noop` no longer writes a `PersistentTerm` var (refused on every target) nor carries the `Ets(keyed = true)` `Dict` (no literal `Dict` seed exists; `keyed` is refused on the BEAM until it is lowered). `run/module_var` and `test/beam_memory_noop` pass on erlang, and the three `run/beam_memory_*` cells and `run/module_var` on beam (step 5). `01-checker` step 12 replaces `run/variant_name_ambiguous` (an erlang-only emit refusal) with `reject/variant_name_ambiguous` — the checker refuses `.Circle` with no expectation on every target — and adds `run/variant_leading_dot_expected` (the expected type decides `.Circle`; a qualified constructor is the enum written), `run/section_path_resolution` (a section leaf's shorthand, a payload section path through the annotated enum, a qualified section value) and `reject/section_leaf_without_expectation`; each fails on the `feat` binary. `modules/template_name_collision` (two modules exporting a template `tag`; the import from `loud` expands `loud`'s — the bare-name registry expanded `quiet`'s at exit 0) is 01 step 12's registry half. `run/try_catch_null_and_noreturn_narrowing`, `run/component_call_renders`, `run/component_call_awaited` (a written `await` of a component call inside a component body — jhonstart's layout chain) and `reject/try_catch_handler_mismatch` are the maintainer's 24-box-1 rows (the guide's page example): `catch null` is a `?T`, a `noreturn` call narrows, a component called in a component body renders; each fails on the `feat` binary. `run/labelled_arguments_reorder` (a label names the parameter it fills in a complete call — fn, record, method, primitive method, self tail call) and the `run/labelled_arguments.bp` erlang line's removal are 01's labelled-call row. 01 R7 (decision 2) adds `reject/fn_falls_off_end` and `reject/if_without_else_value`, both accepted by the `feat` binary. C-18's decision 45 adds `reject/member_of_optional` (a member read off a `?T` names `?.`) and moves `test/tuple_labels.bp` §6 T4 to `rs.at(0)?.b` — its two `expected-failures.txt` lines are gone, the label is carried on commonJS and erlang. Decision 15's annotation grammar (front 17 step 3's recorded row) adds `reject/annotation_unknown_family` (`#[@TotallyMadeUp.Nonsense(whatever = 42)]` on a `var`) and `reject/annotation_family_misspelled` (`#[@BeamMemroy.Ets]` names `@BeamMemory`). Pending 0203-a, answered (b), adds `reject/primitive_method_undeclared` (`s.toUpperCase()` names `toUpper`, the method whose host spelling it is) and `reject/primitive_method_unknown` (`"x".fooBar()`, no near name), and re-spells `test/string_case_conversion` to `toUpper` / `toLower` — its erlang line is gone. `01-checker` step 13 adds the two cells of "a local ends with its body": `reject/local_binding_escapes` (a `val` of one `fn` used by the next is refused at the use, naming `holder`) and `run/local_shadow_ends_with_body` (a local `p` shadows the module's `pub fn p` only inside its own `fn` — `3` then `p:x`); each was run with the `feat` binary and fails there as the step describes. One scenario group per
+§ `narrowing_*` below), and the module-`var` cells of 1.0.10-beta's `00 · 17-beam-memory` (C-05, decisions 28, 38, 41, 43, 51): `run/module_var` — a module-level `var` written twice through a `fn` prints `2` on commonJS and wasm and is listed against C-10 on erlang (unbound `Hits`, does not compile) and beam (the write is dropped and it prints `0` at exit 0 — the silent one); `test/beam_memory_noop` — the annotation is a no-op off the BEAM, each test writing and reading back through the binding (erlang listed against C-10 for the same reason); and seven `reject/` cells, one per diagnostic — `val_assign_module` and `val_assign_local` (a `val` is immutable, the hint names `var`), `beam_memory_unknown_member`, `beam_memory_unknown_argument`, `beam_memory_keyed_scalar`, `beam_memory_keyed_list` (decision 51: `keyed` is `Dict`-only) and `beam_memory_on_val`. C-10 (front 17 step 4) adds the per-mode BEAM cells, each a `run/` cell with `.targets` = `erlang beam` (a `test/` cell cannot be narrowed to a target, and on commonJS the modes are one program-wide value): `run/beam_memory_process_dict` (a value written in `main` is not seen by a process `async.runAll` spawns, and its write does not reach `main` — `[0]` then `5`), `run/beam_memory_ets` (decision 39's fixture: five processes × three increments print `15`) and `run/beam_memory_persistent_term` (put at load, read by a spawned process: `[101]`); and the refusals its lowering needs — `reject/beam_memory_pt_write`, `reject/beam_memory_ets_recompose`, `reject/beam_memory_ets_bump_non_integer` (decision 40) and `reject/beam_memory_ets_initialiser` (a seed that is neither a literal nor `comptime`). `test/beam_memory_noop` no longer writes a `PersistentTerm` var (refused on every target) nor carries the `Ets(keyed = true)` `Dict` (no literal `Dict` seed exists; `keyed` is refused on the BEAM until it is lowered). `run/module_var` and `test/beam_memory_noop` pass on erlang, and the three `run/beam_memory_*` cells and `run/module_var` on beam (step 5). `01-checker` step 12 replaces `run/variant_name_ambiguous` (an erlang-only emit refusal) with `reject/variant_name_ambiguous` — the checker refuses `.Circle` with no expectation on every target — and adds `run/variant_leading_dot_expected` (the expected type decides `.Circle`; a qualified constructor is the enum written), `run/section_path_resolution` (a section leaf's shorthand, a payload section path through the annotated enum, a qualified section value) and `reject/section_leaf_without_expectation`; each fails on the `feat` binary. `modules/template_name_collision` (two modules exporting a template `tag`; the import from `loud` expands `loud`'s — the bare-name registry expanded `quiet`'s at exit 0) is 01 step 12's registry half. `run/try_catch_null_and_noreturn_narrowing`, `run/component_call_renders`, `run/component_call_awaited` (a written `await` of a component call inside a component body — jhonstart's layout chain) and `reject/try_catch_handler_mismatch` are the maintainer's 24-box-1 rows (the guide's page example): `catch null` is a `?T`, a `noreturn` call narrows, a component called in a component body renders; each fails on the `feat` binary. `run/labelled_arguments_reorder` (a label names the parameter it fills in a complete call — fn, record, method, primitive method, self tail call) and the `run/labelled_arguments.bp` erlang line's removal are 01's labelled-call row. 01 R7 (decision 2) adds `reject/fn_falls_off_end` and `reject/if_without_else_value`, both accepted by the `feat` binary. C-18's decision 45 adds `reject/member_of_optional` (a member read off a `?T` names `?.`) and moves `test/tuple_labels.bp` §6 T4 to `rs.at(0)?.b` — both targets pass it, the label is carried on commonJS and erlang. Decision 15's annotation grammar (front 17 step 3's recorded row) adds `reject/annotation_unknown_family` (`#[@TotallyMadeUp.Nonsense(whatever = 42)]` on a `var`) and `reject/annotation_family_misspelled` (`#[@BeamMemroy.Ets]` names `@BeamMemory`). Pending 0203-a, answered (b), adds `reject/primitive_method_undeclared` (`s.toUpperCase()` names `toUpper`, the method whose host spelling it is) and `reject/primitive_method_unknown` (`"x".fooBar()`, no near name), and re-spells `test/string_case_conversion` to `toUpper` / `toLower` — its erlang line is gone. `01-checker` step 13 adds the two cells of "a local ends with its body": `reject/local_binding_escapes` (a `val` of one `fn` used by the next is refused at the use, naming `holder`) and `run/local_shadow_ends_with_body` (a local `p` shadows the module's `pub fn p` only inside its own `fn` — `3` then `p:x`); each was run with the `feat` binary and fails there as the step describes. One scenario group per
 file: a parse error is the blast radius, so nine `#[@External]` declarations in one file mean one
 unparseable annotation hides the other eight.
 
@@ -385,10 +383,10 @@ does not narrow either: only a plain NAME is rebindable. `case x { null { … } 
 `run/narrowing_null_check.bp` passes on all four targets since `00 · 05-wasm` landed the missing
 unbox (`fix/wasm-optional`): a name a `!= null` test narrows is its PAYLOAD for the branch on wasm
 too, which is what the box needed and what the optional-binding form `if (x) { v -> … }` had always
-done. `run/narrowing_null_guard_clause.bp` passes on commonJS, erlang and wasm; its one remaining
-`expected-failures.txt` line is beam's and is not the checker's either — beam does not compile a
-module holding an optional reader in a record method AND one in a top-level `fn`
-(`UnknownFunction`, no location — the same program written with `??` fails identically).
+done. `run/narrowing_null_guard_clause.bp` passes on all four targets; beam was red longest, and not
+for the checker's reason either — it did not compile a module holding an optional reader in a record
+method AND one in a top-level `fn` (`UnknownFunction`, no location — the same program written with
+`??` failed identically).
 
 ### `optional_record_carrier`
 
@@ -526,8 +524,8 @@ exit 0. The cell prints four values through one dispatcher: a uniquely-named var
 through `unknown` on every target — `test/case_unknown.bp` states the same rules, and `botopink test`
 does not reach wasm; it prints no unknown float, because commonJS stores nothing extra (§11) and
 prints `2.0` in an `unknown` slot as `2`. `run/optional_chain_method.bp` (05 step 9) is a method on
-the rest of a `?.` chain, its absent probes read through `??`; erlang and beam are listed against 02
-and 03.
+the rest of a `?.` chain, its absent probes read through `??`; erlang's and beam's halves were 02's
+and 03's.
 
 `modules/sibling_import_in_a_dependency` is a local-dependency cell for 1.0.10-beta `00 · 04-js`
 step 5: a `mod` sibling imported with no `from` (`pub mod leaf; import {Twig};`), once in the
@@ -767,7 +765,7 @@ be scheduled on their declared targets alone, and one of each way a narrowing is
 the build accepts, a refusal that is not a host binding, `#[@BeamMemory]` used to leave beam out, a
 list that narrows nothing, an unknown target, a manifest `"targets"` the build accepts, a test-kind
 project naming wasm. Its report must hold each refusal's line and the tally
-`13 passed, 0 expected failures, 11 failed`. A whole run of the suite (no `--only`) starts with it
+`13 passed, 11 failed`. A whole run of the suite (no `--only`) starts with it
 and stops there if it fails — a green run from a runner that no longer refuses says nothing.
 
 ## Running
@@ -790,611 +788,56 @@ cell writes its verdict to its own file and the verdicts are sorted before the r
 `--jobs 1` prints the same bytes and exits with the same status — checked on the whole suite, on
 `--target beam`, and with red cells planted (front `00 · 25-gate-perf` step 1).
 
-## expected-failures.txt
+## A red cell is red
 
-```
-<target: commonJS | erlang | wasm | beam | *> | <key> | <owner row> | <reason>
-```
+The suite keeps no list of known failures (gate-b of `specs/1.0.11-beta/00-gate`, decision 154): the
+file that held one reached zero lines and was deleted with the runner's reader of it. A cell passes
+or it fails, the report prints `language tests: <n> passed, <m> failed`, and a run with a `FAIL`
+exits 1. A scenario the compiler gets wrong is fixed in the compiler; a cell that must be tolerated
+is a decision to delete the cell, not a line somewhere.
 
-A line whose target is not in the current run is skipped, not failed (`--target erlang` does not
-judge a wasm line). `--target all` runs the four targets, so it exercises every line.
+What a cell may still say about a target, each checked on every run:
 
-**The tally is the runner's, not the header's** — decision 59 (b), landed by C-16 on 2026-09-20.
-Every run prints, before the results, one line recounted from the file:
+- **the target refuses the program** — `<name>.<t>.expect` / `modules/<name>/<t>.expect`
+  (§ The sidecars of a `run/` cell): the claim is the diagnostic, located;
+- **the target has no host binding for it** — `<name>.targets` / a manifest `"targets"`
+  (§ Narrowing a cell): the claim is audited against the compiler's host-binding refusal.
 
-```
-expected-failures.txt: 67 lines, 53 exercised by --target commonJS,erlang,wasm — by target: erlang 25 · beam 14 · commonJS 13 · * 8 · wasm 7; by first owner row: 01 23 · C-06 15 · C-02 8 · 02 6 · 03 4 · 05 3 · 13 3 · C-18 3 · 04 1 · C-03 1; 7 name tests rather than a path; 13 name a second row
-```
-
-The header of `expected-failures.txt` carries no number any more; it carries the by-hand command
-that reproduces the runner's split (`|` not preceded by `\`; the owner field on `,` outside
-parentheses). The paragraph it replaced read **58 lines** while the file held **55** — two landings
-after it was written, which is the drift decision 59 was taken about. The measurement that goes with
-a commit is quoted in § Status and the gate, with the commit.
-
-**Two owner-row spellings are live.** A 1.0.5-beta front's step (`01 step 4`, `02 (no step; …)`,
-`03 handover 15`, § below) and, since 2026-09-20, a 1.0.10-beta carry-over item of
-`specs/1.0.10-beta/00-compiler-carry-over/README.md` — `C-02`, `C-03`, `C-18`, or
-`C-06 (<backend> half not landed)` when an item lands one backend at a time. C-16 repointed only the
-lines it re-measured (decisions 52/53/55 → C-06) and wrote the new ones against C-NN rows; the other
-1.0.5 lines were **not** repointed wholesale — that is the milestone's first-landing job and it has
-not happened, so `01 step 4` still means `specs/1.0.5-beta/01-checker`.
-
-### The three shapes of `<key>`, and the `\|` escape
-
-Which shape the key is **is part of the claim**, so the three are distinguishable by eye and each is
-checked differently. One live example of each:
-
-```
-1  erlang | test/case_arms.bp | 01 step 4 | …
-2  erlang | test/case_guards.bp::§5.3 a guard reads the variables its pattern bound | 02 step 3 | …
-3  erlang | test/case_tuples.bp::§5.1 P6 arms are tried in order ;; §5.1 P7 #(a, ..) binds the first element only | 02 step 3 | …
-```
-
-1. **A path alone — the cell does not compile.** Strict in *both* directions: if the cell compiles,
-   the run fails with "compiles: list its failing tests by name". Five fronts read the file for that
-   reading and nothing below widens it.
-2. **A path and one test name — the cell compiles and that test fails.**
-3. **A path and several — the cell compiles and each of them fails.** `::` splits the path from the
-   first name, ` ;; ` (one space either side) separates the names. Shapes 2 and 3 are the same shape
-   and the same check; 2 is the one-name case of it. A named test that now passes fails the run with
-   "drop it from the line, and delete the line when it names no other", so a cell that is fixed test
-   by test is tracked test by test instead of going dark until the last one lands.
-
-**`\|` is a literal `|`, anywhere on the line.** The line is split on `|` only where the `|` is not
-preceded by a backslash, which is the only way a test name that carries the file's own separator can
-be written — `test/case_exhaustive.bp::§5.1 P5 a variable bound from Maybe<i32 \| string> is i32 \|
-string` is the one line that needs it. Nothing else is escaped, and the escape is greppable:
-`grep -nF '\|' tests/language/expected-failures.txt`. The counting command in the file's header
-splits the same way (`re.split(r'(?<!\\)\|', l)`); a plain `l.split('|')` miscounts that line's
-fields and therefore its owner row.
-
-**A named-test entry whose cell does not compile at all is still honoured** — a cell that does not
-compile passes nothing — and the run prints, on that line, "the cell does not compile, so its N
-listed tests did not run". That is not a loophole, it is the state the file is in while the front that
-makes the cell compile is in flight: seven fronts share this file and their trees differ by hours. The
-six lines front 12 converted at `b09bf9c6` read that way on `feat` and read per-test in front 01's
-step-4/5 tree, which is what let 01 commit a green gate without rewriting a file it does not own. The
-shape a line *cannot* have is the one it had before: path-only on a cell that compiles, which fails
-unconditionally and can be neither deleted (its tests fail) nor rewritten (by anyone but front 12).
-
-- The owner row must exist in the specs: a front of the current milestone
-  (`specs/1.0.5-beta/fronts.md`) and one of its numbered steps, written `<front> step <n>` —
-  `01 step 4`, `02 step 6`, `04 step 1`, `05 step 3`, `13 step 18`. A line may name more than one
-  row, comma-separated, when the failure needs both to land (`04 step 1, 13 step 18`: the separator
-  half is the backend's, the record and variant halves need a value that knows its own type).
-  **A cell whose owner is nobody is reported to the maintainer, not listed against an invented
-  row** — and not committed until the row exists. When a milestone closes, the next milestone's
-  first landing repoints every line before any front deletes one, so that two commits never touch
-  the same line.
-- A path-only entry is for a cell that does not compile; a cell that compiles lists its failing
-  tests by name, one line or several (§ the three shapes above). A cell may fail differently per
-  target and then carries one line per target, with two different owners — `test/tuple_labels.bp`
-  is the worked example: `04 step 2` on commonJS, `02 step 4` on erlang, the same test name.
-- A `reject/` `.expect` names a short key phrase of the diagnostic decision 8 sketches (`use _ {`,
-  `not exhaustive`, `removed-loop-parenthesised`…) and the location of the offending token. The front that implements
-  the diagnostic fixes its final wording and updates the `.expect` in the same change.
-- The runner fails on: an unlisted failure; a listed test that now passes ("delete its line", or
-  "drop it from the line" when the line names several); a listed path or test that does not exist; a
-  path-only entry on a cell that compiles; and a **malformed line**, which is reported with what is
-  wrong with it and never read as a different shape — a missing or empty field, a target that is not
-  one of the five, an empty name either side of ` ;; `, the same name twice on one line, or `::` on a
-  path that is not a `test/` cell (only a `test/` cell has tests).
+A `reject/` `.expect` names a short key phrase of the diagnostic decision 8 sketches (`use _ {`,
+`not exhaustive`, `removed-loop-parenthesised`…) and the location of the offending token. The front
+that implements the diagnostic fixes its final wording and updates the `.expect` in the same change.
 
 ## Status and the gate
 
 **Fronts `111-gate-beam-and-targets` and `110-gate-wasm` of 1.0.11-beta — the suite on four
-targets, no expected failure.** `--target all` is commonJS, erlang, wasm and beam; every narrowing
-is audited (§ Narrowing a cell); `expected-failures.txt` has no live line — the two `beam |` lines
-went with the beam build shipping and loading a host `.erl`, and wasm's with decision 146 (a
-function whose body calls a host function with no binding for the target is refused called or not,
-on every target — `run/external_wrapper_keeps_refusal` passes on wasm by its `.wasm.expect`):
+targets, every cell green.** `--target all` is commonJS, erlang, wasm and beam; every narrowing is
+audited (§ Narrowing a cell); the report is two numbers (§ A red cell is red):
 
 ```
 $ tests/language/run.sh --target all
 self-test: 8 malformed or unbacked narrowings refused, 3 backed ones scheduled on their declared targets alone
-expected-failures.txt: 0 lines, 0 exercised by --target commonJS,erlang,wasm,beam — by target: ; by first owner row: ; 0 name tests rather than a path; 0 name a second row
 narrowings: 30 exclusions audited — each stands on a host binding the target does not have
-language tests: 1483 passed, 0 expected failures, 0 failed
+language tests: 1483 passed, 0 failed
 
 $ tests/language/run.sh --target beam
 narrowings: 3 exclusions audited — each stands on a host binding the target does not have
-language tests: 395 passed, 0 expected failures, 0 failed
+language tests: 395 passed, 0 failed
 ```
 
 Recounted on disk: `ls test/*.bp | wc -l` 64 · `ls run/*.bp | wc -l` 169 (17 with a `.targets`,
 25 `.<target>.expect` files) · `ls reject/*.bp | wc -l` 173 · `ls -d modules/*/ | wc -l` 60 (25
-`<target>.expect` files, one `"targets"`). Decision 146 on wasm moved four cells and added one:
-`run/external_wrapper_keeps_refusal` passes; `run/std_asserts_on_every_target` and
-`modules/labelled_call_by_label` ran on wasm and are refused there now, at the import of
-`testing.asserts` (`.wasm.expect` / `wasm.expect`); `run/std_asserts_host_cell_on_wasm` was refused
-at the call of `deepEquals` and is refused at the import; `run/std_decorator_through_namespace`
-pins the import's STD-001 line where it pinned the first host cell `testing.mocks` named;
-`run/external_wrapper_associated_default` is new (four results).
-
-The blocks below are the record of earlier fronts, each measured at the commit it names.
-
-**Front 00 · 03-beam (branch `front/03-beam`, on `feat` `0beaa1f9`) — `--target beam` only.**
-Each step that deletes a beam line re-quotes this run; no commonJS/erlang/wasm line moves:
-
-```
-$ tests/language/run.sh --target beam
-expected-failures.txt: 35 lines, 9 exercised by --target beam
-language tests: 118 passed, 9 expected failures, 1 failed
-```
-
-The 1 failure has no line: `run/effect_method.bp` (`ConditionLoopValueUnsupported`:
-a `while` that `yield`s in an `implement` / enum-body method, whose frame opens
-no generator scope — 22-loops' lowering, decision 105). Passing since this
-front, with no beam line to delete: `run/labelled_arguments.bp` (a variant's
-labelled argument) and `modules/{field,method,type}_name_collision` (a read or
-a call the emit cannot place asks the value). Deleted so far:
-`beam | run/case_range_value.bp` (C-06's beam half),
-`beam | run/lambda_expression_body.bp` (03 handover 01),
-`beam | run/narrowing_null_guard_clause.bp` (a synth helper per module),
-`beam | run/module_init_order.bp` (the module body). The beam cells run the
-entry as `'_botopink_main'/0`, which runs the module body before `main/0`. `run/labelled_arguments.bp` had no beam line and passes since the
-variant constructor places a labelled argument by its declared field.
-
-**Recounted on disk at C-04's landing (`fix/trailing-defaults`, merged onto
-`4aee802d`):**
-
-```bash
-ls test/*.bp    | wc -l   # 54
-ls run/*.bp     | wc -l   # 33   (each with its .out; 4 with an .exit, 4 with .<target>.expect; 1 with a .targets)
-ls reject/*.bp  | wc -l   # 42   (each with its .expect)
-ls -d modules/*/| wc -l   #  5
-find . -name '*.bp' | wc -l   # 144 — 134 cells, plus the 15 extra .bp of the modules/ projects
-```
-
-**134 cells.** The difference from the `fix/js-instanceof-boundary` block below
-is C-04's two, one new area row — and `test/fn_defaults.bp`, which grew from 3
-tests to 9 without being a new cell:
-
-| Area | Cells | Total |
-|---|---|---|
-| a declared parameter default is applied at the call site (1.0.10-beta C-04, 01 step 7, N1 and N2) | 1 run + 1 reject | 2 |
-
-`test/fn_defaults.bp` is the shape claim and runs where `botopink test` runs —
-commonJS and erlang. `run/fn_defaults_values.bp` is the VALUE claim and runs on
-all four targets, because the whole defect was that the declared value never
-arrived: a cell that merely compiles proves nothing. It holds the three shapes a
-default can be declared in — a free `fn`, a record constructor and an instance
-method — and `P(y: 2)` against `type P(x: i32 = 0, y: i32)`, which names the
-required trailing field and omits the leading one that has the default.
-`reject/missing_required_argument.bp` is N2, and it cannot live in the `test/`
-cell: a cell that does not compile asserts nothing.
-
-**`expected-failures.txt` loses 2 lines and keeps 62** — `commonJS |
-test/fn_defaults.bp` and `erlang | test/fn_defaults.bp`, both `01 step 7`.
-Checked by (target, key) against every side of both merges, never by count:
-C-08's six deletions stay gone, `fix/erlang-module-load`'s two
-`run/module_init_order.bp` additions are present, `fix/js-instanceof-boundary`
-added and deleted none, and no line of the 62 is a stray or a loss.
-
-Measured there, this compiler, node v25.8.0, OTP 29, `zig version` 0.16.0, on
-the tree `fix/trailing-defaults` made by merging `origin/feat` `4aee802d`:
-
-```
-$ tests/language/run.sh                 # commonJS, erlang, wasm
-expected-failures.txt: 62 lines, 47 exercised by --target commonJS,erlang,wasm
-language tests: 452 passed, 47 expected failures, 0 failed
-$ tests/language/run.sh --target beam
-expected-failures.txt: 62 lines, 21 exercised by --target beam
-language tests: 58 passed, 21 expected failures, 0 failed
-$ zig build test-libs
-test-libs: 23 passed, 0 failed, 0 known red   # with emilia at `ea0811d`
-```
-
-Re-derived from the files and a re-run after the merge — neither side's number
-was kept. The +22 on `--target all` over `fix/js-instanceof-boundary`'s 430
-accounts for itself exactly: a `test/` cell's result is one per NAMED TEST, so
-`test/fn_defaults.bp` going from two expected-failure lines to nine passing
-tests on two targets is +18 and −2; `run/fn_defaults_values.bp` is +3 (commonJS,
-erlang, wasm) and `reject/missing_required_argument.bp` is +1 (it runs once per
-invocation). Beam's +2 over 56 is the same run cell and the same reject cell;
-its expected count does not move, because both deleted lines were commonJS and
-erlang.
-
-`test-libs` reads `0 known red` here for a reason that is not C-04's:
-`fix/js-instanceof-boundary` listed `emilia-card commonJS` while its goldens
-still pinned the pre-fix text, and said the line goes with them. emilia landed
-them (`fc23760`, "the class bodies are goldens again, not a pinned defect"), so
-the cell passes and the line had to go — a listed cell that passes fails the
-gate until it is deleted, which is the rule working as written. `feat` reached
-the same deletion independently (`3b1e2468`), and the merged file is byte-identical
-to it. `test-libs`' `passed` follows the sibling libraries' own checkouts rather
-than this branch — emilia's cells went 21 → 23 between two runs of it here, with
-no compiler change in between — so the emilia commit it was measured at is named
-above and the number is reproducible only against that.
-
-**Recounted on disk at `fix/js-instanceof-boundary` (00 · 04-js round 2, merged onto
-`032fd765`):**
-
-```bash
-ls test/*.bp    | wc -l   # 54
-ls run/*.bp     | wc -l   # 32   (each with its .out; 4 with an .exit, 4 with .<target>.expect; 1 with a .targets)
-ls reject/*.bp  | wc -l   # 41   (each with its .expect)
-ls -d modules/*/| wc -l   #  5
-find . -name '*.bp' | wc -l   # 142 — 132 cells, plus the 10 extra .bp of the modules/ projects
-```
-
-**132 cells.** The difference from the `fix/erlang-module-load` block below is this branch's three,
-one per defect emilia's front 56 measured while writing real code, and one new area row. It is also
-the first `.targets` sidecar in the suite, which that block records as "none":
-
-| Area | Cells | Total |
-|---|---|---|
-| the three commonJS defects of 00 · 04-js round 2 | 1 `modules/` + 2 run | 3 |
-
-| Cell | What it pins |
-|---|---|
-| `modules/package_variant_identity` | a variant's identity across a package boundary: the value is built in the consumer and the `case` that reads it lives in the dependency. commonJS tested a uniquely-named arm with `instanceof`, which does not cross the boundary, and the `case` answered `undefined` at exit 0. The second local-dependency cell, and one package cannot express it |
-| `run/string_char_code_after_slice.bp` | `s.slice(…)` installs the `String` prelude, whose `charCodeAt` patch called itself — every `.charCodeAt(…)` in the program blew the stack. `commonJS erlang` only, by a `.targets` sidecar: `charCodeAt` has no wasm or beam lowering and traps on wasm |
-| `run/array_reverse_answers_a_new_array.bp` | `xs.reverse()` answers a new array and leaves the receiver alone — native `reverse` is in-place, so commonJS alone reversed the receiver too |
-
-**`expected-failures.txt` does not move**: 64 lines, byte for byte the file at `032fd765`. All three
-cells pass on every target they are scheduled on, nothing was added and nothing was deleted —
-checked by (target, key), not by count, with the six lines C-08 turned green still gone.
-
-Measured there, this compiler, node v25.8.0, OTP 29, `zig version` 0.16.0, on the tree
-`fix/js-instanceof-boundary` made by merging `origin/feat` `032fd765`:
-
-```
-$ tests/language/run.sh                 # commonJS, erlang, wasm
-expected-failures.txt: 64 lines, 49 exercised by --target commonJS,erlang,wasm
-language tests: 430 passed, 49 expected failures, 0 failed
-$ tests/language/run.sh --target beam
-expected-failures.txt: 64 lines, 21 exercised by --target beam
-language tests: 56 passed, 21 expected failures, 0 failed
-```
-
-Re-derived from the files and a re-run after the merge — neither side's number was kept. The **+8**
-on `--target all` is the `modules/` cell on three targets, the `reverse` cell on three, and the
-`charCodeAt` cell on the two its `.targets` names. Beam's **+2** is the two of them that reach it.
-
-**Recounted on disk at `fix/erlang-module-load` (front 00 · 02-erlang, merged onto
-`9c230065`):**
-
-```bash
-ls test/*.bp    | wc -l   # 54
-ls run/*.bp     | wc -l   # 30   (each with its .out; 4 with an .exit, 4 with .<target>.expect; none with .targets)
-ls reject/*.bp  | wc -l   # 41   (each with its .expect)
-ls -d modules/*/| wc -l   #  4
-find . -name '*.bp' | wc -l   # 136
-```
-
-**129 cells.** The difference from the C-08 block below is this branch's three, one new area row:
-
-| Area | Cells | Total |
-|---|---|---|
-| the module body and a host-supplied `behavior` (front 00 · 02-erlang) | 2 test + 1 run | 3 |
-
-`test/module_init.bp` pins that a module-level `val` is evaluated once, in declaration order, at
-module load — before the first test, which is where `botopink run` evaluates it before `main`. It
-reads the order back through a host-side list (`globalThis` on node, the process dictionary on
-erlang: the escript runs the module body and the tests in one process). `run/module_init_order.bp`
-is the same claim on the build path, on all four targets. `test/behavior_host_dispatch.bp` pins a
-method on a `behavior` no type implements: each row's host writes the shape its backend calls with
-(node reaches the receiver through `this`, erlang takes it as the first argument), and the answer is
-the same.
-
-**`expected-failures.txt` grows by 2 lines**, both `run/module_init_order.bp` and neither this
-front's: wasm drops the `_`-named top-level statement (its named `val` is already once-at-load), and
-beam still has the shape erlang had before this branch. Each names the backend's own row. The six
-lines C-08 turned green stay gone, and no line of the 62 at `9c230065` was lost — checked by
-(target, key), not by count.
-
-Measured there, this compiler, node v25.8.0, OTP 29, `zig version` 0.16.0, on the tree
-`fix/erlang-module-load` made by merging `origin/feat` `9c230065`:
-
-```
-$ tests/language/run.sh                 # commonJS, erlang, wasm
-expected-failures.txt: 64 lines, 49 exercised by --target commonJS,erlang,wasm
-language tests: 422 passed, 49 expected failures, 0 failed
-$ tests/language/run.sh --target beam
-expected-failures.txt: 64 lines, 21 exercised by --target beam
-language tests: 54 passed, 21 expected failures, 0 failed
-```
-
-Re-derived from the files and a re-run after the merge — neither side's number was kept. The +14 on
-`--target all` is this branch's three cells: six test results each from `test/module_init.bp` and
-`test/behavior_host_dispatch.bp` (3 tests × commonJS and erlang), and the two passing rows of
-`run/module_init_order.bp`. Beam's `passed` does not move: the one cell that reaches it is an
-expected failure there.
-
-**Recounted on disk at C-08's landing (`fix/parser-gaps`, merged onto
-`6cd50ff2`):**
-
-```bash
-ls test/*.bp    | wc -l   # 52
-ls run/*.bp     | wc -l   # 29
-ls reject/*.bp  | wc -l   # 41
-ls -d modules/*/| wc -l   #  4
-find . -name '*.bp' | wc -l   # 133
-```
-
-The difference from the block below is C-08's two `reject/` cells, one new area
-row:
-
-| Area | Cells | Total |
-|---|---|---|
-| the parser gaps that are inference-side (1.0.10-beta C-08, decisions 11, 12 and 54) | 2 reject | 2 |
-
-`reject/assert_is_pattern.bp` pins the refusal `assert <expr> is <Pattern>`
-keeps giving now that the form is **decided absent** rather than missing —
-three DOCUMENTED SKIPs used to pin a parse error and promise it, and a
-deliberate refusal belongs here instead. `reject/variant_payload_without_name.bp`
-pins decision 12: an unnamed variant payload is `error[field-needs-name]` at the
-payload, naming `Variant(field: T)`, where before C-08 it reached the generic
-"this token cannot appear here" two tokens past the mistake.
-
-**Six `expected-failures.txt` lines left the file**, each turned green by
-running, none of them a line front 20 touched: the four `run/optional_null_pattern.bp`
-rows (commonJS, erlang, wasm, beam — decision 54's spelling parses, types and
-runs), `reject/optional_variant_pattern.bp` (rejected for its own reason now,
-its `.expect` phrase and location unchanged) and
-`reject/case_arity_without_rest.bp` (§5.1 P7 — re-measured before it was
-touched, the cell did not "reject for the wrong reason", it **compiled at exit
-0** while silently dropping a field).
-
-Measured there, this compiler, node v25.8.0, OTP 29, `zig version` 0.16.0, on
-the tree `fix/parser-gaps` made by merging `origin/feat` `6cd50ff2`:
-
-```
-$ tests/language/run.sh                 # commonJS, erlang, wasm
-expected-failures.txt: 62 lines, 48 exercised by --target commonJS,erlang,wasm
-language tests: 408 passed, 48 expected failures, 0 failed
-$ tests/language/run.sh --target beam
-expected-failures.txt: 62 lines, 20 exercised by --target beam
-language tests: 54 passed, 20 expected failures, 0 failed
-```
-
-Re-derived from the files and a re-run after the merge — neither side's number
-was kept.
-
-**Recounted on disk at front 20's landing (`fix/effect-chain`, merged onto
-`78509dfa`):**
-
-```bash
-ls test/*.bp    | wc -l   # 52
-ls run/*.bp     | wc -l   # 29
-ls reject/*.bp  | wc -l   # 39
-ls -d modules/*/| wc -l   #  4
-find . -name '*.bp' | wc -l   # 131
-```
-
-The difference from the block below is front 20's eleven cells, three new area
-rows:
-
-| Area | Cells | Total |
-|---|---|---|
-| the effect chain (1.0.10-beta front 20, decisions 95 and 98) | 1 test + 2 run + 5 reject | 8 |
-| one `ContextBase` per body (front 20, decision 96) | 1 run + 1 reject | 2 |
-| `?T` has one unwrap (front 20, F11) | 1 run + 1 reject | 2 |
-
-`run/effect_chain.bp` holds the two rows of decision 95's table every backend
-runs (`#[@result]` with `try`, `#[@use]` with `use` and `try`);
-`test/effect_chain.bp` holds the two that need a target able to consume a future
-or a generator. `run/effect_context_await.bp` carries `await` inside a `#[@use]`
-body, for a hook (`-> @Component<Element, i32>`) and a component
-(`-> @Component<Element, Element>`). Every `#[@use]` body is an `async function` on
-commonJS (decision 104), so its caller reads a promise there and the value on
-erlang, wasm and beam: both cells print every value from **inside** the body,
-where all four agree.
-
-`run/option_unwrap_or.bp` and `reject/option_expect_removed.bp` are F11's pair:
-`?T.expect(default)` was `unwrapOr` under a name that says the absent branch is
-unreachable, and is gone; `unwrapOr` is the one spelling, and reaching for the
-old one is refused rather than typed permissively and broken at run time.
-
-`run/use_one_base.bp` and `reject/use_two_bases.bp` are decision 96's pair: a
-body whose hooks share an owner compiles and composes, and a second `use`
-anchored elsewhere is refused at its own site with both owners and the line
-that fixed the first. `reject/use_owner_mismatch.bp`, which front 19 wrote, is
-the other refusal and a different rule — ONE `use` anchored at an owner the
-return type never named, caught before any anchor exists.
-
-The five `reject/` cells are the refusals decision 95 adds or repairs:
-`try_in_generator` (question 97 — the generator stays infallible),
-`try_in_plain_fn`, `yield_in_result`, `yield_in_context` (the last three were
-silently ACCEPTED before this front) and `await_in_result_generator` (one level above
-the body). `expected-failures.txt` did not change: none of the seven is listed,
-on any target.
-
-**Decision 103 (1.0.10-beta front 21, step 1) — the generators.** The old
-iterator effect is `#[@resultGenerator]` / `@ResultGenerator<T, E>` in every cell
-(`test/effect_result_generator.bp` and `reject/await_in_result_generator.bp` were
-renamed with it), the completion channel `C` is gone, and two cells carry what the
-decision adds: `run/generator_break_value.bp` — `break v` at the level of a generator body
-emits `v` as the last item and ends, a bare `break` there ends it (`0127` / `1` / `56`;
-green on all four targets — erlang throws `'__bp_gen_stop'` to its scope, wasm returns
-what the body collected (`wat.zig` `emitGenEnd`));
-`run/generator_levels.bp` — re-spelled by front 24 (decisions 121, 122): an
-`@Iterator<@Result<i32, string>>` body holds `try` (a failing one emits the Error as the last
-item), the `-> @Result` body that iterates it propagates with an explicit `try r` (there is no
-implicit `try`), and a plain `fn` iterates an `@Iterator<i32>` — green on all four targets.
-22-loops' `reject/for_fallible_generator_plain_fn.bp` left with the rule it pinned.
-`reject/throw_in_generator.bp` (`throw` in a `#[@generator]` body names
-`@ResultGenerator<T, E>`), `test/effect_future_generator.bp` (a `@FutureGenerator<T, E>` body
-with `try` and `await`, and its `#[@future]` `for await` consumer) and
-`reject/for_await_future_generator_in_result.bp` (`effect-await-without-future` at the
-`for await` in a `#[@result]` body).
-
-Measured there, this compiler, node v25.8.0, OTP 29, `zig version` 0.16.0:
-
-```
-$ tests/language/run.sh                 # commonJS, erlang, wasm
-language tests: 401 passed, 53 expected failures, 0 failed
-$ tests/language/run.sh --target beam
-language tests: 49 passed, 23 expected failures, 0 failed
-```
-
-Counted on disk at `b09bf9c6` — local `feat` after the fronts 12 × 13 merge:
-
-```bash
-ls test/*.bp    | wc -l   # 49
-ls run/*.bp     | wc -l   # 15   (each with its .out)
-ls reject/*.bp  | wc -l   # 24   (each with its .expect)
-ls -d modules/*/| wc -l   #  3
-find . -name '*.bp' | wc -l   # 95 — 91 cells, plus the 4 extra .bp of the modules/ projects
-```
-
-**Recounted on disk at C-16's landing (`fix/language-cells`, on `361d255d`, re-measured 2026-09-21
-after the branch moved from `85f883bd` onto the workspaces manifest):**
-
-```bash
-ls test/*.bp    | wc -l   # 51
-ls run/*.bp     | wc -l   # 24   (each with its .out; 4 with an .exit, 2 with .<target>.expect — 4 files, one per refusing target; none with .targets)
-ls reject/*.bp  | wc -l   # 32   (each with its .expect)
-ls -d modules/*/| wc -l   #  4
-find . -name '*.bp' | wc -l   # 120 — 113 cells, plus the 7 extra .bp of the modules/ projects
-```
-
-**113 cells** (51 `test/`, 26 `run/`, 32 `reject/`, 4 `modules/`), 110 besides the three `smoke`
-files. Recounted from the files after `00 · 04-js` merged `origin/feat`, which had itself been
-recounted after `fix/wasm-refusals` merged it — neither side's number has ever been kept. Since C-16's block above:
-`run/string_at.bp` is `fix/wasm-refusals`' (`String.at` had no wasm lowering and `s.at(1)` trapped
-there while the other three answered, so the cell pins the present-index reader on all four targets
-— absent indexes stay out of it, they are decision 47's spelling row, C-18, measured by
-`run/index_at_optional.bp`), and the other three are `origin/feat`'s: one `test/` cell and two
-`reject/` cells. The difference from the front-19 block below is
-C-16's eight cells, two new area rows and one row grown:
-
-| Area | Cells | Total |
-|---|---|---|
-| an index is a method call (decision 63 as amended; C-02's compiler half open, `libs/std` half landed) | 3 run | 3 |
-| a qualified std host call (decision 64; C-03's erlang half landed, beam half open) | 1 run | 1 |
-| front 12 steps 4.2–4.4: a local dependency, `@panic`/`@todo`, "no external target" | 1 `modules/` + 3 run | 4 |
-
-Measured there — this compiler, node v25.8.0, OTP 29, `zig version` 0.16.0, on the tree
-`fix/wasm-refusals` made by merging `origin/feat` `cbd5f1ec`:
-
-```
-$ tests/language/run.sh                 # commonJS, erlang, wasm
-expected-failures.txt: 67 lines, 53 exercised by --target commonJS,erlang,wasm — by target: erlang 25 · beam 14 · commonJS 13 · * 8 · wasm 7; by first owner row: 01 23 · C-06 15 · C-02 8 · 02 6 · 03 4 · 05 3 · 13 3 · C-18 3 · 04 1 · C-03 1; 7 name tests rather than a path; 13 name a second row
-language tests: 375 passed, 53 expected failures, 0 failed
-$ tests/language/run.sh --target beam
-expected-failures.txt: 67 lines, 22 exercised by --target beam — …the same line…
-language tests: 38 passed, 22 expected failures, 0 failed
-```
-
-`expected-failures.txt` keeps its 67 lines — nothing was added or deleted by `fix/wasm-refusals`,
-and **one was relabelled**: `wasm | run/index_at_optional.bp` lost the `String.at` trap half it
-carried (the method has a wasm lowering now) and names only decision 47's absent-optional spelling,
-still C-18.
-
-Where the results came from, since C-16's 363 / 53 and 35 / 22. `fix/wasm-refusals` adds **+4** on
-`--target all` and **+1** on beam: `run/string_at.bp` is new and passes on all four targets (+3 and
-+1), and `run/external_erlang_only.bp` lost its `.targets` sidecar so it now runs — and is refused
-— on wasm too (+1; it already ran on beam). `origin/feat` adds the rest: `test/use_future_context.bp`
-(commonJS and erlang only — `botopink test` refuses wasm and beam) and the two `reject/` cells
-`use_future_context_duplicate` and `use_future_without_owner`, which run once per invocation and so
-count in both columns (+2 on beam).
-
-From 348 / 45 and 31 / 18 at `85f883bd` before C-16: **+12 lines** (8 `C-02`, 3 `C-18`, 1 `C-03`),
-**15 relabelled** (decisions 52/53/55's erlang, beam and commonJS halves, from `02 step 3` / `02 (no
-step; …)` / `02 step 5` / `03 step 3` / `04 step 3` to `C-06 (<backend> half not landed)`), none
-deleted — `8594e4ba` had already deleted the three wasm lines, and C-16 verified they stay deleted by
-running the cells and the six moved `loop_*` RUN LOGs under wasmtime. The eight new cells pass 15
-results and are listed on 12 (`run/index_dict` ×4, `run/index_past_the_end_fails` ×4 (the cell is `run/index_past_the_end_is_null` since C-02),
-`run/index_at_optional` ×3, `run/std_erlang_node` on beam). The pre-C-16 tallies below are the audit
-trail.
-
-**Recounted on disk at the landing of front 19 of 1.0.10-beta (`fix/use-activation`):**
-`ls test/*.bp` **50**, `ls run/*.bp` **16**, `ls reject/*.bp` **30**, `ls -d modules/*/` **3**,
-`find . -name '*.bp'` **103** — **99 cells**, 96 besides the three `smoke` files. The difference from
-the block above is exactly front 19's eight cells, one new area row:
-
-| Area | Cells | Total |
-|---|---|---|
-| `use` / `@Context` (1.0.10-beta front 19, decisions 87 and 88) | 1 test + 1 run + 6 reject | 8 |
-
-Measured there with the same compiler, node v25.8.0, OTP 29, `zig version` 0.16.0:
-
-```
-$ tests/language/run.sh                 # commonJS, erlang, wasm
-language tests: 348 passed, 45 expected failures, 0 failed
-$ tests/language/run.sh --target beam
-language tests: 31 passed, 18 expected failures, 0 failed
-```
-
-`expected-failures.txt` did not change: none of the eight cells is listed, on any target.
-The block below is the `b09bf9c6` measurement, kept as the audit trail.
-
-**91 cells**, of which three are the `smoke` files (one per single-file kind) — so **88** besides
-them, by area:
-
-| Area | Cells | Total |
-|---|---|---|
-| `case` (§5) | 8 test + 2 run + 9 reject | 19 |
-| tuples (§6) | 6 test + 1 run + 2 reject | 9 |
-| loops (§10, decision 105) | 5 test + 3 run + 11 reject | 19 |
-| effects (§9) | 5 test + 5 reject | 10 |
-| comptime, templates, decorators | 3 test | 3 |
-| host externals (§8) | 2 test + 1 reject | 3 |
-| generics and behaviors (§1) | 1 test + 2 reject | 3 |
-| printing (§7) | 3 run | 3 |
-| core: closures, recursion, primitives, optionals (decision 54), sugar, defaults | 8 test + 1 run + 1 reject | 10 |
-| run-time type identity (§4, §7 — `13-module-identity`) | 4 test + 1 run | 5 |
-| the forms `109f6c9` landed (decisions 28, 30, 33; 15's R1–R3, R5, R8) | 5 test + 1 run + 1 reject | 7 |
-| modules | 3 `modules/` cells | 3 |
-
-Classification at botopink-lang `b09bf9c6` (node v25.8.0, OTP 29), `zig build test-language`, every
-target of `--target all` together:
-
-```
-language tests: 268 passed, 66 expected failures, 0 failed
-```
-
-`expected-failures.txt` holds **77** lines: these 66 plus 11 that only `--target beam` exercises (the
-12 `*` reject lines are counted by both runs). **11** of the 77 name tests rather than a path. Every
-owner cell names a 1.0.5-beta section, re-checked against `specs/1.0.5-beta/` on 2026-09-18, and the
-six re-attributed here on 2026-09-19. By the row that comes first on the line —
-**01-checker 36 · 02-erlang 16 · 03-beam 9 · 05-wasm 8 · 04-js 5 · 13-module-identity 3**. **16**
-lines name a second row that has to land before the line goes (the §7 formatter's record and variant
-halves, and the identity cells behind a checker row).
-`tests/language/run.sh --target beam` adds 18 `run/`+`modules/` results of its own — 7 passing, 11
-listed — beside the same 24 `reject/` results; those 11 lines are skipped by `--target all`.
-See § the targets.
-
-**Two movements are inside those tallies and neither is a line arriving or leaving.** The fronts
-12 × 13 merge took 80 lines to 77 and 265 passes to 268: front 13's half 1 made the three `modules/*`
-erlang cells run and deleted their lines. Then front 01 proved six owner cells wrong — its step 4 does
-unwrap a lambda arm body and does resolve a `.Variant` arm, so neither is what those cells fail on —
-and the six were re-attributed: four `erlang | test/case_*.bp` lines from `01 step 4` to `02 step 3`
-(erlang's pattern emission, `codegen/erlang.zig` `Emitter.patternNode`) and the two
-`test/type_identity_case.bp` lines to `13 step 17` alone. That is 42 → 36, 12 → 16, 1 → 3, and — for
-the lines naming a second row — 19 → 16, because three of the six shed a second row they no longer
-need. **The second-row figure also had a third mover, the counting command itself.** Split on every
-comma the file answers 23 before and 20 after, and both over-count by four: a comma *inside* a
-parenthesised owner cell is not a second row, and `02 (no step; decision 55, reported 2026-09-18)` is
-one row on four lines. The header's command now splits the owner field on `,(?![^(]*\))`, which
-answers 19 before and 16 after. So of 23 → 16, only three are lines moving.
-
-**Every number in this section and in `expected-failures.txt`'s header is recounted from the file,
-never adjusted by a delta** — decision 59 of `specs/1.0.5-beta/decisions-taken.md`, taken
-2026-09-18 after two fronts re-tallied the same block from different baselines in one merge window
-and were individually right and jointly wrong. The header carries the counting command, and since a
-test name may carry an escaped `|` that command splits on `(?<!\\)\|`, not on `|`. This section had
-been stale by nine results and fourteen lines for that reason when `fe871ed` recounted it, and it was
-stale again on arrival here: it read 265 / 69 / **80** lines and `01-checker 42`, measured at
-`3cfb65cb`, two merges behind the tree it sat in. Recounted above with that command.
-
-**Where an owner cell is not `<front> step <n>`.** Two of this milestone's rows are *handover
-sections* of a front's README — "Handed over by `15-language-surface`", prose with a heading and no
-step number; three lines name them, as `01 handover 15` (2) and `03 handover 15` (1). One row has
-neither a step nor a handover section and the owner cell says so: `02 (no step; decision 55, reported
-2026-09-18)`, on the four collection-loop `break` lines — front 02 owns `erlang.zig`, so the *front*
-is certain even though no step names the defect (§ Where front 02 has no row for the collection loop).
-Both shapes are reported to the maintainer rather than papered over with an invented step number.
-`04 (no step; reported 2026-09-18)` was a third and is **gone**: front 04 fixed the `?.`-into-`??`
-defect and deleted its line, so 04's five lines are `04 step 2` (1) and `04 step 3` (4). Recounted
-from the file at `b09bf9c6`.
+`<target>.expect` files, one `"targets"`). Decision 146 on wasm (a function whose body calls a host
+function with no binding for the target is refused called or not, on every target) moved four cells
+and added one: `run/external_wrapper_keeps_refusal` passes on wasm by its `.wasm.expect`;
+`run/std_asserts_on_every_target` and `modules/labelled_call_by_label` ran on wasm and are refused
+there now, at the import of `testing.asserts` (`.wasm.expect` / `wasm.expect`);
+`run/std_asserts_host_cell_on_wasm` was refused at the call of `deepEquals` and is refused at the
+import; `run/std_decorator_through_namespace` pins the import's STD-001 line where it pinned the
+first host cell `testing.mocks` named; `run/external_wrapper_associated_default` is new (four
+results).
 
 `zig build test-language` is a stage of `scripts/gate.sh` (after `test-libs`) and a step of the CI
-`test` job (ubuntu + macos). When a front makes a listed test pass, the gate fails with "now passes:
-delete its line" — the landing commit of that front deletes the line.
+`test` job (ubuntu + macos). A red cell fails the gate.
 
 ## Notes for whoever writes the next cell
 
@@ -1508,7 +951,7 @@ means to assert is hidden behind it.
 **C-06's wasm half is verified by running, not by reading the diff.** `8594e4ba` landed
 `.tasks/wasm` as-is — the `A...B` range-pattern arm and `emitRangeBound` in `wat.zig`, a value `break`
 as `emitYield` then `br $__break`, six `loop_*` wasm snapshots' RUN LOGs moved (`[20]` where
-`[20, 40, 60]` was), three `expected-failures.txt` lines deleted — without its verification. C-16
+`[20, 40, 60]` was), three expected-failure lines deleted — without its verification. C-16
 compiled each of the six fixtures' `SOURCE CODE` as a fresh project, ran it with `botopink run
 --target wasm` (wasmtime), and compared stdout with the snapshot's RUN LOG **byte for byte**: all six
 match (`1 2 3 [20]`, `[15]`, `[0]`, `[250]`, `[115.0]`, `[20]`), and `run/case_range_value.bp` and
@@ -1530,8 +973,8 @@ not evidence, and a decision can make a green cell red.
 says outright that the cell comes first and "then one row per backend against it". `04 step 3` and
 `05 step 4` were both titled `break <value>` and `03 step 3`'s D7 asked for exactly this measurement;
 front 02 had no §10 collection-loop step — its step 5 is the *condition* loop used as a value — so its
-four lines read `02 (no step; decision 55, reported 2026-09-18)`, the shape § expected-failures.txt
-documents for a certain front with a missing row. 1.0.10-beta gathered the three decisions into
+four lines read `02 (no step; decision 55, reported 2026-09-18)`, the shape the suite's list of
+expected failures used for a certain front with a missing row. 1.0.10-beta gathered the three decisions into
 `C-06`, and since 2026-09-20 every 52/53/55 line names `C-06 (<backend> half not landed)`; wasm's
 half is the one that landed.
 

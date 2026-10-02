@@ -2835,8 +2835,8 @@ generator (`in_generator`) as `yield _tryN; return;`, and `yield try x` /
 `yield __bp_ok(try x)` at statement position through `buildTryStmt`
 (`TryHead.yield_ok_value` / `.yield_result`). A generator-scope `break <v>` is
 decision 105's (22-loops): commonJS's `function*` and beam run
-`run/generator_break_value.bp`; the eager erlang and wasm scopes are pinned in
-`tests/language/expected-failures.txt`.
+`run/generator_break_value.bp`; the eager erlang and wasm scopes were expected
+failures of `tests/language` when it landed.
 
 **A negative index counts from the end** (decision 139), in the one reader
 each backend has for `Array.at` / `String.at` (and so `xs[i]` / `s[i]`, which

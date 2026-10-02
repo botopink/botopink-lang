@@ -162,8 +162,8 @@ jobs:
         shell: bash
         run: bash scripts/format-check.sh
 
-      # Decision 8's language tests on commonJS and erlang; the expected
-      # failures in tests/language/expected-failures.txt name their owner.
+      # Decision 8's language tests on commonJS and erlang; a red cell
+      # fails the job — the suite keeps no list of known failures.
       # Needs node and erl.
       - name: zig build test-language
         shell: bash

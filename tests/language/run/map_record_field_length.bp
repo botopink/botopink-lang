@@ -3,10 +3,10 @@
 //// between them. wasm answered `276` (a heap address) at exit 0 and answers
 //// `3`; `run/map_record_field_strings.bp` holds the rest of the family.
 ////
-//// commonJS fails it — `ks.at(...)?.length is not a function`: nothing
+//// commonJS failed it — `ks.at(...)?.length is not a function`: nothing
 //// between the `map` and the read resolves the element type, so `length` is
-//// taken for the array/string PROPERTY rename and called. That half is
-//// `00 · 04-js`'s, pinned in `expected-failures.txt`.
+//// taken for the array/string PROPERTY rename and called. That half was
+//// `00 · 04-js`'s, and it passes there now.
 
 type Entry(key: string)
 
