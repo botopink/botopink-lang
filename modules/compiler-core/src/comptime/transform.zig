@@ -299,15 +299,16 @@ pub fn transform(
                     for (m.body) |*stmt| rewriteStmt(&src_agg, empty_fn_decls, empty_ct_arrays, stmt) catch return error.OutOfMemory;
                 }
             }
-            // A behavior's `default fn` bodies are inferred like method bodies
-            // (`infer.inferBehaviorDefaultBodies`), and receive the same
-            // rewrites — a `-> @Result` default fn's `return` / `throw`.
-            if (decl.* == .behavior) {
-                for (decl.behavior.methods) |*m| {
-                    if (!m.is_default) continue;
-                    const body = m.body orelse continue;
-                    for (body) |*stmt| rewriteStmt(&src_agg, empty_fn_decls, empty_ct_arrays, stmt) catch return error.OutOfMemory;
-                }
+        }
+        // A behavior's `default fn` bodies are inferred like method bodies
+        // (`infer.inferBehaviorDefaultBodies`), and receive the method-body
+        // rewrites — a `-> @Result` default fn's `return` / `throw`, a call's
+        // default fill (`self.slice(1)`) — whichever map holds them.
+        if (decl.* == .behavior) {
+            for (decl.behavior.methods) |*m| {
+                if (!m.is_default) continue;
+                const body = m.body orelse continue;
+                for (body) |*stmt| rewriteStmt(&src_agg, empty_fn_decls, empty_ct_arrays, stmt) catch return error.OutOfMemory;
             }
         }
         if (decl.* == .val) {

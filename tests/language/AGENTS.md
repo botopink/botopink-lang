@@ -214,6 +214,12 @@ Decision 215 adds `reject/f64_equals_integer_literal` (`x == 2` with `x: f64`) a
 `reject/f64_not_equals_integer_literal` (`3 != x`), refused at the literal naming the float to write;
 the beam codegen test `is and == read numbers by value …` no longer prints `2.0 == 2` (it answered
 `false`). Both accepted by the parent binary.
+`test/program_primitive_behavior_extends_std` and `reject/program_primitive_behavior_redeclares_std`
+(another front's finding) — a program's own `behavior String` adds members to std's `String` (its
+default fns call `slice`, `startsWith`, `length` on `self`, and std's members answer beside them),
+and redeclaring a std member is `behavior-member-redeclared`. A `test/` cell: wasm traps on any
+program-declared default fn of a primitive (`05-wasm`'s row); beam answers as the two `test/`
+targets do. Both refused by the parent binary.
 Decision 141 adds `run/external_template_refused_on_beam` — an `@External.Erlang` template with a
 macro runs on erlang and is a located build error on beam naming the construct (`.beam.expect`); beam
 no longer evaluates a template it cannot compile from source at run time.

@@ -767,6 +767,15 @@ pub const Env = struct {
     /// `Array`) registered before user inference. Used to emit their namespace
     /// objects into the codegen output when a call site uses them.
     assocInterfaceDecls: std.StringHashMap(ast.BehaviorDecl),
+    /// A program's own `behavior` named like one std already registered
+    /// (`behavior String { default fn … }`) EXTENDS std's: its members are
+    /// added to std's under the one name in `assocInterfaceDecls`, and this
+    /// map keeps std's declaration as it was, so a re-registration of the
+    /// program's decl merges against std's members only
+    /// (`infer.registerInterfaceAssociatedFns`). Read by `comptime.zig`
+    /// `withUsedAssocInterfaces`, which emits the merged declaration in place
+    /// of the program's.
+    stdBehaviorBase: std.StringHashMapUnmanaged(ast.BehaviorDecl) = .empty,
     /// `pub behavior` declarations this module IMPORTS, by name — read only to
     /// tell that a method call's receiver is typed by a behavior declaring the
     /// method (`InstanceLowering.behavior`). Kept apart from

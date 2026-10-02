@@ -232,7 +232,21 @@ fn withTemplateHygiene(arena: std.mem.Allocator, prog: ast.Program, env: *const 
     return ast.Program{ .decls = decls.items };
 }
 
-fn withUsedAssocInterfaces(arena: std.mem.Allocator, prog: ast.Program, env: *const envMod.Env) !ast.Program {
+fn withUsedAssocInterfaces(arena: std.mem.Allocator, prog_in: ast.Program, env: *const envMod.Env) !ast.Program {
+    // A program's own behavior that extends std's (`behavior String { … }`,
+    // `Env.stdBehaviorBase`) is emitted as the merged declaration: std's
+    // members are the program's too, and std's own emission of the behavior
+    // is the one this replaces.
+    var prog = prog_in;
+    if (env.stdBehaviorBase.count() > 0) {
+        const decls = try arena.dupe(ast.DeclKind, prog.decls);
+        for (decls) |*d| if (d.* == .behavior) {
+            if (env.stdBehaviorBase.contains(d.behavior.name)) {
+                if (env.assocInterfaceDecls.get(d.behavior.name)) |merged| d.* = .{ .behavior = merged };
+            }
+        };
+        prog = .{ .decls = decls };
+    }
     if (env.usedAssocInterfaces.count() == 0) return prog;
     var extra: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
     var it = env.usedAssocInterfaces.keyIterator();
