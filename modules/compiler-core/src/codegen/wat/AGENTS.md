@@ -219,6 +219,17 @@ the shapes that bound a string and still reached the one body:
   prints as a bool now — `isBoolExpr` reads a function value's declared
   return).
 
+**A function in a generic record's field answers its declared return**
+(`ctorTypeRef` + `fnRefTypeRef`, `recvTypeArgRef`, `genericRetByFnArg`):
+`Box(value: shout)` is a `Box<fn(s: string) -> string>`, so `h.value("b")`, a
+local `val k = h.value` called, and the same through `wrap(shout)` over `fn
+wrap<T>(v: T) -> Box<T>` answer a string (a bool, …) — they printed its heap
+address (`320`) or a bool as `1`. A function type has no specialisation; only
+the result type is read. Not covered: a LAMBDA stored in the field
+(`Box(value: { s -> s + "?" })`) — its parameter is a word here, so the body
+converts it as an integer (`300?`), which is the lambda parameter typing
+`lowerLambdaValue` has no source for (`run/generic_field_fn_value.bp`).
+
 `run/generic_string_equality.bp` pins every way a type parameter gets a
 string bound on four targets, `modules/method_on_unimported_type` (`Dict.at`
 with a key `split` built) included — it already passed at the open, through

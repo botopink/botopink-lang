@@ -1,0 +1,41 @@
+//// A function stored in a generic record's field answers what the function
+//// answers, wherever it is called: through the field (`h.value("b")`),
+//// through an untyped local the field was read into, and through a record a
+//// generic function built. `Box<T>(value: T)` alone is enough — the field is
+//// written `T`, so the call's result type is the type argument's return.
+//// wasm printed the string result's heap address (front 130's row).
+
+type Box<T>(value: T)
+
+fn shout(s: string) -> string {
+    return s + "!";
+}
+
+fn isBig(n: i32) -> bool {
+    return n > 10;
+}
+
+fn inc(n: i32) -> i32 {
+    return n + 1;
+}
+
+fn wrap<T>(v: T) -> Box<T> {
+    return Box(value: v);
+}
+
+pub fn main() {
+    val h = Box(value: shout);
+    val k = h.value;
+    @print(k("a"));
+    @print(h.value("b"));
+    val p = Box(value: isBig);
+    val q = p.value;
+    @print(q(11));
+    @print(q(3));
+    val c = Box(value: inc);
+    val g = c.value;
+    @print(g(5));
+    val w = wrap(shout);
+    val z = w.value;
+    @print(z("c"));
+}
