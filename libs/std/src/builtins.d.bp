@@ -616,4 +616,17 @@ pub behavior Decl {
     // decorator (a field's or a method's is `decorator-meta-on-member`), each
     // key once (`decorator-meta-duplicate`).
     fn setMeta(self: Self, key: string, value: string);
+
+    // Decision 216 (3) — declare a type that belongs to the annotated one,
+    // named through it: `decl.addType("Columns", "(id: string)")` on `City`
+    // is `City.Columns` — written in type positions, constructed as
+    // `City.Columns(id: "x")`, its variants reached as `City.Size.Large` for
+    // an enum shape (`"{ Small, Large }"`) — and imported with its owner.
+    // `source` is the shape as it follows the name in a declaration. From a
+    // field's or a method's decorator it belongs to the owning type; from a
+    // function's it is refused (`decorator-type-without-owner`), as are a
+    // name that is not a type name (`decorator-type-name`), one the owner
+    // already answers (`decorator-type-duplicate`) and a source that is not
+    // the shape of one type (`decorator-type-not-one-type`).
+    fn addType(self: Self, name: string, source: string);
 }

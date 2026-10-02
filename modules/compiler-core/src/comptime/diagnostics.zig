@@ -356,6 +356,19 @@ pub const decorator_member_duplicate: []const u8 = "decorator-member-duplicate";
 /// `decl.addMember(source)` whose source is not exactly one `fn` member.
 pub const decorator_member_not_one_fn: []const u8 = "decorator-member-not-one-fn";
 
+/// `decl.addType` from a decorator on a `fn`: an associated type belongs to a type.
+pub const decorator_type_without_owner: []const u8 = "decorator-type-without-owner";
+
+/// `decl.addType` with a name that is not one upper-case identifier.
+pub const decorator_type_name: []const u8 = "decorator-type-name";
+
+/// A second associated type of one name on one owner, or a name the owner
+/// already answers (a variant, a member) or the module already declares.
+pub const decorator_type_duplicate: []const u8 = "decorator-type-duplicate";
+
+/// `decl.addType(name, source)` whose source is not the shape of one type.
+pub const decorator_type_not_one_type: []const u8 = "decorator-type-not-one-type";
+
 /// `decl.setMeta` from a field's or a method's decorator: meta describes a
 /// top-level declaration, the one `@typeinfo` reflects.
 pub const decorator_meta_on_member: []const u8 = "decorator-meta-on-member";
@@ -442,6 +455,10 @@ pub const all_codes = [_][]const u8{
     decorator_member_without_type,
     decorator_member_duplicate,
     decorator_member_not_one_fn,
+    decorator_type_without_owner,
+    decorator_type_name,
+    decorator_type_duplicate,
+    decorator_type_not_one_type,
     decorator_meta_on_member,
     decorator_meta_duplicate,
     typeinfo_without_member,

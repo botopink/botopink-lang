@@ -126,7 +126,14 @@ type, a `fn`'s meta, `.name`, a read held in a typed `val` and continued by `.le
 `modules/decorator_meta_import` (meta read through a plain import, an alias and a namespace import),
 on all four targets, and five `reject/` cells: `typeinfo_meta_missing`, `typeinfo_without_member`
 and `typeinfo_unknown_declaration` where the read is written, `decorator_meta_duplicate` and
-`decorator_meta_on_member` at the annotation.
+`decorator_meta_on_member` at the annotation. Its third place — `decl.addType(name, source)`, an
+associated type named `Owner.Name` — adds `run/decorator_add_type` (a record `City.Columns` in type
+positions, constructed by its path and returned by an added member, an enum `City.Size` whose
+variants are reached as `City.Size.Large`) and `modules/decorator_add_type_import` (imported with its
+owner, under an alias too, and `Greeter.Mock` — a double implementing the annotated behavior — passed
+where a `Greeter` is expected), on all four targets, and four `reject/` cells at the annotation:
+`decorator_add_type_duplicate`, `decorator_add_type_not_one`, `decorator_add_type_without_owner`
+and `decorator_add_type_name`.
 C-03's beam half adds `run/std_template_host_fns_across_modules` — std host functions whose
 `@External.Erlang` body is a template (`fs.exists`, `fs.readText`, `os.eol`, `process.platform`,
 `encoding.hexEncode`, `hash.sha256`, `json.quote`, `regex.matches`) called from the program's

@@ -1,0 +1,14 @@
+//// Decision 216 (3) — `decl.addType(name, source)` takes the shape of one
+//// type, as it follows the name in a declaration (`(id: string)`,
+//// `{ A, B }`): anything else is refused at the annotation, the source quoted.
+
+fn entity(comptime decl: @Decl) {
+    decl.addType("Columns", "(id: string) fn extra() {}");
+}
+
+#[entity]
+type City(id: i32)
+
+pub fn main() {
+    @print(City(id: 1).id);
+}

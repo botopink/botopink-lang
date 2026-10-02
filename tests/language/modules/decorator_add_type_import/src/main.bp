@@ -1,0 +1,24 @@
+//// Decision 216 (3) — an associated type is imported with its owner:
+//// importing `City` brings `City.Columns`, through an alias too
+//// (`Town.Columns` is the same type), and importing `Greeter` brings
+//// `Greeter.Mock`, which a test would use in place of a real greeter.
+
+pub mod kit;
+pub mod models;
+import {City, Greeter} from "models";
+import {City as Town} from "models";
+
+fn header(c: City.Columns) -> string {
+    return c.name + "|" + c.people;
+}
+
+fn hello(g: Greeter) -> string {
+    return g.greet() + "!";
+}
+
+pub fn main() {
+    @print(header(City.Columns(name: "nome", people: "gente")));
+    val other: Town.Columns = Town.Columns(name: "n", people: "p");
+    @print(header(other));
+    @print(hello(Greeter.Mock(reply: "oi")));
+}

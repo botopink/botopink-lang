@@ -1,6 +1,7 @@
 //! What decorators record about the program for reflection to read back
 //! (decision 216): the comptime meta of each declaration (`decl.setMeta`, read
-//! as `@typeinfo(X).meta.<decorator>.<key>`).
+//! as `@typeinfo(X).meta.<decorator>.<key>`) and the associated types of each
+//! owner (`decl.addType`, named `Owner.Name`).
 //!
 //! One `Reflection` lives for one compile session (`comptime.zig` `compile` /
 //! `compileTypesOnly`) and every module's `Env` points at it
@@ -26,6 +27,11 @@ pub const Reflection = struct {
     /// `envMod.declIdentity(module, name)` → the declaration's entries, in the
     /// order its decorators set them.
     meta: std.StringHashMapUnmanaged(std.ArrayListUnmanaged(MetaEntry)) = .empty,
+    /// `envMod.declIdentity(module, owner)` → the names of the owner's
+    /// associated types (`decl.addType`, decision 216 (3)), in declaration
+    /// order. Read by `assoc_types.zig` to resolve `Owner.Name` in the owner's
+    /// module and in every importer.
+    assoc: std.StringHashMapUnmanaged(std.ArrayListUnmanaged([]const u8)) = .empty,
 
     pub fn init(arena: std.mem.Allocator) Reflection {
         return .{ .arena = arena };
@@ -42,6 +48,23 @@ pub const Reflection = struct {
         }
         try slot.value_ptr.append(self.arena, entry);
         return true;
+    }
+
+    /// Record that `owner` has the associated type `name`; false when it
+    /// already has one of that name (`decorator-type-duplicate`).
+    pub fn addAssoc(self: *Reflection, module: []const u8, owner: []const u8, name: []const u8) !bool {
+        const id = try envMod.declIdentity(self.arena, module, owner);
+        const slot = try self.assoc.getOrPut(self.arena, id);
+        if (!slot.found_existing) slot.value_ptr.* = .empty;
+        for (slot.value_ptr.items) |n| if (std.mem.eql(u8, n, name)) return false;
+        try slot.value_ptr.append(self.arena, name);
+        return true;
+    }
+
+    /// The associated type names of `owner`; empty when none.
+    pub fn assocOf(self: *const Reflection, arena: std.mem.Allocator, module: []const u8, owner: []const u8) ![]const []const u8 {
+        const id = try envMod.declIdentity(arena, module, owner);
+        return if (self.assoc.get(id)) |list| list.items else &.{};
     }
 
     /// Every entry of the declaration, in set order; empty when none.

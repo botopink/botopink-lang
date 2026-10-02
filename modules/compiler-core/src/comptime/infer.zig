@@ -375,6 +375,10 @@ fn appendImportBindings(
 pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     var list: std.ArrayListUnmanaged(Binding) = .empty;
     env.testIndex = 0;
+    // Decision 216 (3): before this module's decorators run, `Owner.Name`
+    // may be an associated type they are about to declare.
+    try noteOwnDecls(env, program);
+    env.assocTypesPending = !env.skipDecoratorInvoke;
 
     try validateUniqueDefaults(env, program);
 
@@ -397,11 +401,12 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     try validateDecorators(env, program);
     try refuseUnknownAnnotations(env, program);
     try validateExternalInline(env, program);
-    try noteOwnDecls(env, program);
     try invokeDecorators(env, program);
-    if (env.contributions.items.len > 0 or env.memberContributions.items.len > 0) {
+    env.assocTypesPending = false;
+    if (env.contributions.items.len > 0 or env.memberContributions.items.len > 0 or env.typeContributions.items.len > 0) {
         return list.toOwnedSlice(env.arena);
     }
+    try refusePendingAssocType(env);
 
     // Pass 2: infer value-producing declarations in order.
     for (program.decls) |decl| {
@@ -458,6 +463,10 @@ fn validateUniqueDefaults(env: *Env, program: ast.Program) InferError!void {
 pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBinding {
     var list: std.ArrayListUnmanaged(TypedBinding) = .empty;
     env.testIndex = 0;
+    // Decision 216 (3): before this module's decorators run, `Owner.Name`
+    // may be an associated type they are about to declare.
+    try noteOwnDecls(env, program);
+    env.assocTypesPending = !env.skipDecoratorInvoke;
 
     try validateUniqueDefaults(env, program);
 
@@ -482,9 +491,9 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
     try validateDecorators(env, program);
     try refuseUnknownAnnotations(env, program);
     try validateExternalInline(env, program);
-    try noteOwnDecls(env, program);
     try invokeDecorators(env, program);
-    if (env.contributions.items.len > 0 or env.memberContributions.items.len > 0) {
+    env.assocTypesPending = false;
+    if (env.contributions.items.len > 0 or env.memberContributions.items.len > 0 or env.typeContributions.items.len > 0) {
         // A decorator `@emit`ed code: the spliced re-analysis (`analyzeSource`)
         // does the real, full inference of the generated declarations. But the
         // LSP needs a useful binding list even when that spliced code can't
@@ -520,6 +529,7 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
         };
         return list.toOwnedSlice(env.arena);
     }
+    try refusePendingAssocType(env);
 
     for (program.decls) |decl| {
         switch (decl) {
@@ -3608,6 +3618,26 @@ fn runDeclDecorators(
                     };
                     try env.memberContributions.append(env.arena, .{ .target = target, .source = c.source, .loc = a.loc, .decorator = a.name });
                 },
+                // `decl.addType(name, source)` (decision 216 (3)) — an
+                // associated type of the owner, merged as `__Owner__Name`.
+                .assoc => {
+                    const assoc_owner = memberOwner orelse {
+                        const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` on the function `{s}` calls `decl.addType`, and an associated type belongs to a type", .{ diagnostics.decorator_type_without_owner, a.name, handle.name });
+                        return decoratorError(env, a, msg, "`decl.addType(name, source)` declares a type named through the annotated `type` or `behavior` (`City.Columns`); a function has none.");
+                    };
+                    const valid = c.name.len > 0 and std.ascii.isUpper(c.name[0]) and for (c.name) |ch| {
+                        if (!std.ascii.isAlphanumeric(ch)) break false;
+                    } else true;
+                    if (!valid) {
+                        const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` names an associated type of `{s}` `{s}`, which is not a type name", .{ diagnostics.decorator_type_name, a.name, assoc_owner, c.name });
+                        return decoratorError(env, a, msg, "An associated type is named like any type: one identifier of letters and digits, starting upper-case (`Columns`, read `City.Columns`).");
+                    }
+                    if (env.reflection) |r| if (!try r.addAssoc(env.modulePath, assoc_owner, c.name)) {
+                        const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` declares `{s}.{s}`, and `{s}` already has an associated type `{s}`", .{ diagnostics.decorator_type_duplicate, a.name, assoc_owner, c.name, assoc_owner, c.name });
+                        return decoratorError(env, a, msg, "An owner's associated types have one name each; rename the one this decorator declares.");
+                    };
+                    try env.typeContributions.append(env.arena, .{ .owner = assoc_owner, .name = c.name, .source = c.source, .loc = a.loc, .decorator = a.name });
+                },
                 // `decl.setMeta(key, value)` (decision 216 (2)) — recorded in
                 // the session's reflection under the decorator's own name,
                 // before any body of this module is inferred.
@@ -3641,6 +3671,20 @@ fn defaultLexeme(arena: std.mem.Allocator, e: ast.Expr) InferError![]const u8 {
 fn decoratorError(env: *Env, a: ast.Annotation, message: []const u8, hint: []const u8) InferError {
     var e = TypeError.custom(message, hint);
     if (a.loc) |loc| e = e.withLoc(loc);
+    env.lastError = e;
+    return error.TypeError;
+}
+
+/// Decision 216 (3) — a dotted type name the first analysis accepted on
+/// credit (`Env.assocTypesPending`) and no decorator of the module declared:
+/// with no re-analysis to follow, it is the unknown type it looks like. Tooling
+/// that runs no decorator keeps it lenient.
+fn refusePendingAssocType(env: *Env) InferError!void {
+    const p = env.pendingAssocTypeName orelse return;
+    env.pendingAssocTypeName = null;
+    if (env.templateEval == null) return;
+    var e = TypeError.unknownTypeName(p.name);
+    if (p.loc) |l| e = e.withLoc(l);
     env.lastError = e;
     return error.TypeError;
 }
