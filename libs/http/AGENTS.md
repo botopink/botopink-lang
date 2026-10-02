@@ -17,6 +17,12 @@ value (decision 181), one strict q-value grammar for media, encodings and langua
 the wire. No exported name repeats one std or a framework exports (decision 163): the
 modules are reached qualified (`cookie.parse`, never a bare `cookies`).
 
+**Bundled.** `build.zig`'s `bundled_packages` names it after `routing` (it imports std
+only): any program's `from "http"` loads the copy embedded in the compiler, as
+`http/<module>` (atoms `http@<module>`), with no `dependencies` entry and never from this
+directory; listing `http` in `dependencies` is refused. An edit here reaches a consumer
+only through a rebuilt compiler.
+
 `.bp` only (decision 117): the one host cell is the `wide` widening in `lexical.bp`, an
 inline `#[@External]` template on both targets. It imports `std` (`encoding`, `io.clock`)
 only. The module names avoid every name std or a framework exports (erika exports `range`,
@@ -66,7 +72,8 @@ cd libs/http
 ../../zig-out/bin/botopink format --check src test
 ```
 
-Every expected text is a literal, the same on both rows.
+Every expected text is a literal, the same on both rows. `zig build test-libs -- --lib http`
+runs the two cells.
 
 ## Language notes (measured)
 
