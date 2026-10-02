@@ -317,6 +317,7 @@ BP
 [beam] modules/manifest_unbacked — excluded by modules/manifest_unbacked/botopink.json "targets", but `botopink build --target beam` accepts the cell
 [*] modules/manifest_test_kind — modules/manifest_test_kind/botopink.json "targets" names wasm, a target this kind of cell never runs on
 narrowings: 7 exclusions audited
+by target: commonJS 4/5 · erlang 5/6 · wasm 1/4 · beam 3/6 · * 0/3
 language tests: 13 passed, 11 failed
 WANT
     # The three backed cells ran where they said and nowhere else: the tally
@@ -671,18 +672,30 @@ const RED = "\x1b[0;31m", GREEN = "\x1b[0;32m", NC = "\x1b[0m";
 // <target>\t<key>\t<ok|fail|audit>\t<detail>, sorted. An `audit` line is an
 // exclusion the compiler backs with a host-binding refusal: not a cell that
 // ran, so not in the `passed` count.
+// The per-target line is what a claim of the form "every cell of X has a beam
+// result" quotes; `*` is reject/ (one `botopink check`, no target) and a
+// malformed narrowing (refused before any target ran).
 let fails = 0, oks = 0, audited = 0;
 const out = [];
+const byTarget = new Map();
+const tally = (t, k) => {
+  if (!byTarget.has(t)) byTarget.set(t, { ok: 0, fail: 0 });
+  byTarget.get(t)[k]++;
+};
 for (const line of fs.readFileSync(resultsPath, "utf8").split("\n")) {
   if (!line) continue;
   const [t, key, status, detail] = line.split("\t");
-  if (status === "ok") { oks++; continue; }
+  if (status === "ok") { oks++; tally(t, "ok"); continue; }
   if (status === "audit") { audited++; continue; }
   out.push(`${RED}FAIL${NC}     [${t}] ${key} — ${detail || ""}`);
   fails++;
+  tally(t, "fail");
 }
 for (const l of out) console.log(l);
 if (audited) console.log(`narrowings: ${audited} exclusion${audited === 1 ? "" : "s"} audited — each stands on a host binding the target does not have`);
+const order = ["commonJS", "erlang", "wasm", "beam", "*"];
+const keys = [...byTarget.keys()].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+if (keys.length) console.log(`by target: ${keys.map((t) => `${t} ${byTarget.get(t).ok}/${byTarget.get(t).ok + byTarget.get(t).fail}`).join(" · ")}`);
 const colour = fails ? RED : GREEN;
 console.log(`\n${colour}language tests: ${oks} passed, ${fails} failed${NC}`);
 process.exit(fails ? 1 : 0);

@@ -814,6 +814,11 @@ tests/language/run.sh --self-test                         # § Narrowing a cell 
 
 `--lib-root` defaults to `<compiler>/../../libs` (where `from "std"` resolves).
 
+The report is every `FAIL` line, the narrowing audit's count, a per-target line — `by target:
+commonJS <passed>/<ran> · erlang … · wasm … · beam … · * …`, where `*` is `reject/` (one `botopink
+check`) and a narrowing refused before any target ran — and the total. A claim such as "every cell
+of X has a beam result" quotes the per-target line; `--self-test` pins it on the synthetic suite.
+
 Cells run in parallel on `../../scripts/lib/pool.sh` — `botopink-lib-test`'s rule: `--jobs`
 defaults to one per CPU bounded by `MemAvailable / 768 MiB`, and a cell is admitted only while
 `procs_running` ≤ CPUs when another cell of the run is in flight (`run.sh` § parallel cells). Every
@@ -865,19 +870,17 @@ parent.
 
 ## Status and the gate
 
-**Fronts `111-gate-beam-and-targets` and `110-gate-wasm` of 1.0.11-beta — the suite on four
-targets, every cell green.** `--target all` is commonJS, erlang, wasm and beam; every narrowing is
-audited (§ Narrowing a cell); the report is two numbers (§ A red cell is red):
+**The suite on four targets, every cell green** (fronts `111-gate-beam-and-targets` and
+`110-gate-wasm` of 1.0.11-beta). `--target all` is commonJS, erlang, wasm and beam; every narrowing
+is audited (§ Narrowing a cell); the report is the runner's tally (§ Running, § A red cell is red).
+Measured by front `01-compiler/12-language-tests`:
 
 ```
-$ tests/language/run.sh --target all
+$ zig build test-language
 self-test: 8 malformed or unbacked narrowings refused, 3 backed ones scheduled on their declared targets alone
 narrowings: 30 exclusions audited — each stands on a host binding the target does not have
-language tests: 1483 passed, 0 failed
-
-$ tests/language/run.sh --target beam
-narrowings: 3 exclusions audited — each stands on a host binding the target does not have
-language tests: 395 passed, 0 failed
+by target: commonJS 449/449 · erlang 452/452 · wasm 217/217 · beam 232/232 · * 174/174
+language tests: 1524 passed, 0 failed
 ```
 
 Recounted on disk by front `01-compiler/12-language-tests` of 1.0.11-beta:
