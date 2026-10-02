@@ -7,7 +7,7 @@
 
 fn entity(comptime decl: @Decl, table: string) {
     var names: string[] = [];
-    decl.fields.forEach({ f -> names.push(f.name); });
+    decl.fields.forEach({ f -> names.push(f.name) });
     decl.setMeta("table", table);
     decl.setMeta("columns", names.join(","));
 }

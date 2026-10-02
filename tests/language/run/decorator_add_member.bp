@@ -7,8 +7,10 @@
 
 fn entity(comptime decl: @Decl) {
     var names: string[] = [];
-    decl.fields.forEach({ f -> names.push(f.name); });
-    decl.addMember("pub fn columns() -> string { return \"" + names.join(",") + "\"; }");
+    decl.fields.forEach({ f -> names.push(f.name) });
+    decl.addMember(
+        "pub fn columns() -> string { return \"" + names.join(",") + "\"; }",
+    );
     decl.addMember(
         "pub fn describe(self: Self) -> string { return \""
             + decl.name
@@ -17,7 +19,13 @@ fn entity(comptime decl: @Decl) {
 }
 
 fn label(comptime decl: @Decl) {
-    decl.addMember("pub fn " + decl.name + "Label() -> string { return \"the " + decl.name + "\"; }");
+    decl.addMember(
+        "pub fn "
+            + decl.name
+            + "Label() -> string { return \"the "
+            + decl.name
+            + "\"; }",
+    );
 }
 
 #[entity]

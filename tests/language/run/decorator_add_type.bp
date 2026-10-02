@@ -6,11 +6,11 @@
 
 fn entity(comptime decl: @Decl) {
     var cols: string[] = [];
-    decl.fields.forEach({ f -> cols.push(f.name + ": string"); });
+    decl.fields.forEach({ f -> cols.push(f.name + ": string") });
     decl.addType("Columns", "(" + cols.join(", ") + ")");
     decl.addType("Size", "{ Small, Large }");
     var names: string[] = [];
-    decl.fields.forEach({ f -> names.push(f.name + ": \"" + f.name + "\""); });
+    decl.fields.forEach({ f -> names.push(f.name + ": \"" + f.name + "\"") });
     decl.addMember(
         "pub fn columns() -> "
             + decl.name

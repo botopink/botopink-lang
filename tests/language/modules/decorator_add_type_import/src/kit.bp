@@ -4,14 +4,25 @@
 
 pub fn entity(comptime decl: @Decl) {
     var cols: string[] = [];
-    decl.fields.forEach({ f -> cols.push(f.name + ": string"); });
+    decl.fields.forEach({ f -> cols.push(f.name + ": string") });
     decl.addType("Columns", "(" + cols.join(", ") + ")");
 }
 
 pub fn double(comptime decl: @Decl) {
     var methods: string[] = [];
     decl.methods.forEach({ m ->
-        methods.push("pub fn " + m.name + "(self: Self) -> string { return self.reply; }");
+        methods.push(
+            "pub fn "
+                + m.name
+                + "(self: Self) -> string { return self.reply; }",
+        );
     });
-    decl.addType("Mock", "(reply: string) implement " + decl.name + " { " + methods.join(" ") + " }");
+    decl.addType(
+        "Mock",
+        "(reply: string) implement "
+            + decl.name
+            + " { "
+            + methods.join(" ")
+            + " }",
+    );
 }
