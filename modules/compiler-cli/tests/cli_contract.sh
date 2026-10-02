@@ -29,7 +29,10 @@ if [[ ! -x "$BP" ]]; then
   exit 1
 fi
 
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/botopink-cli-contract.XXXXXX")"
+# macOS sets TMPDIR with a trailing slash; the compiler prints normalised
+# paths, so the scratch root is spelled without it.
+tmp_root="${TMPDIR:-/tmp}"
+WORK="$(mktemp -d "${tmp_root%/}/botopink-cli-contract.XXXXXX")"
 cleanup() { chmod -R u+w "$WORK" 2>/dev/null || true; rm -rf "$WORK"; }
 trap cleanup EXIT
 
