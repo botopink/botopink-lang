@@ -1470,7 +1470,11 @@ other.
 `@Task<@Result<U, E>>` both layers wrap: `return v` with `v: U` is a Task
 holding `Ok(v)`, `return r` with `r: @Result<U, E>` is a Task holding `r`. A
 value that fits two layers of a nested wrapper (`-> @Result<@Result<i32, E>,
-E>`) is `effect-return-ambiguous-nesting`, asking for an explicit `Ok(…)`.
+E>`) is `effect-return-ambiguous-nesting`, asking which layer is meant: return
+the inner value (`return try r;`), or bind the whole value with the declared type
+and return that. `Ok(…)` / `Error(…)` are never written as constructors: a
+`@Result` is made by `return` and `throw` alone (decision 208) — they are
+patterns only (`Ok(n) -> …`).
 
 The quick reference:
 

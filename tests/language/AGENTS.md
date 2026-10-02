@@ -203,6 +203,9 @@ checker's `reject/inline_type_on_method_param`, `reject/inline_type_twice_on_one
 and `reject/inline_type_unknown_field` (named by the owner, ``the props of `link` ``), and
 `modules/inline_type_across_modules` (a call from another module that writes the fields is refused;
 the declaring module's own call runs). All sixteen fail on the parent binary.
+Decision 208 (`Ok` / `Error` are never constructors) adds `reject/result_ok_constructor` and
+`reject/result_error_constructor` — `unbound variable` at the name; both pass on the parent binary and
+pin the rule.
 Decision 141 adds `run/external_template_refused_on_beam` — an `@External.Erlang` template with a
 macro runs on erlang and is a located build error on beam naming the construct (`.beam.expect`); beam
 no longer evaluates a template it cannot compile from source at run time.
