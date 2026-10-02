@@ -154,6 +154,12 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .message = "`use` must be in static prefix",
             .hint = "Move all `use` statements to the top of the function body, before any `if`, `case`, `loop`, or `return`",
         },
+        .inlineTypeOutsideParameter => .{
+            .code = "inline-type-outside-parameter",
+            .message = "an inline `type(…)` is written only as a parameter's type",
+            .caretCaption = "not a parameter's type",
+            .hint = "Name the type where it is declared — `type LinkProps(href: string)` — and write the name here; `fn link(props: type(href: string))` is the one place an unnamed type stands (decision 207).",
+        },
         .metaKindRequiresComptime => .{
             .message = "A `type`/`expr` parameter must be marked `comptime`",
             .hint = "Meta-kinds only exist at compile time, e.g. `fn f(comptime T: type)` or `fn html(comptime template: expr string)`",

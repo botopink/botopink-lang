@@ -1518,6 +1518,13 @@ pub const Param = struct {
     /// parser; `{0,0}` when the param was synthesised. Carries the location an
     /// unknown type name reds at (06 N30) and is left out of the AST dump.
     typeLoc: Loc = .{ .line = 0, .col = 0 },
+    /// Decision 207 — `props: type(href: string, …)`: the parameter's type is
+    /// written inline, with `type(…)`'s field grammar and no name. The parser
+    /// leaves `typeRef` at `inline_type_name`; `comptime/inline_types.zig`
+    /// declares the type for the module and points `typeRef` at it, and keeps
+    /// the fields here for the checker's rules and for the formatter. Dumped
+    /// only when set.
+    inlineFields: ?[]Field = null,
 
     /// Dumped without `typeLoc`: the location is a diagnostic aid, not surface.
     pub fn jsonStringify(this: Param, jws: anytype) !void {
@@ -1536,16 +1543,43 @@ pub const Param = struct {
         try jws.write(this.destruct);
         try jws.objectField("default");
         try jws.write(this.default);
+        if (this.inlineFields) |fs| {
+            try jws.objectField("inlineFields");
+            try jws.write(fs);
+        }
         try jws.endObject();
     }
 
     pub fn deinit(this: *Param, allocator: std.mem.Allocator) void {
+        if (this.inlineFields) |fs| {
+            for (fs) |*f| @constCast(f).deinit(allocator);
+            allocator.free(fs);
+        }
         this.typeRef.deinit(allocator);
         if (this.fnType) |*ft| ft.deinit(allocator);
         if (this.destruct) |*d| d.deinit(allocator);
         if (this.default) |*d| d.deinit(allocator);
     }
 };
+
+/// Decision 207 — the placeholder `Param.typeRef` of an inline-typed
+/// parameter until `comptime/inline_types.zig` names its type; no source can
+/// spell it.
+pub const inline_type_name = "type(…)";
+
+/// The name `comptime/inline_types.zig` declares an inline parameter type
+/// under: `BpInline__<fn>__<param>` (PascalCase: beam reads a constructor call by its first letter). No source should spell it; a diagnostic
+/// names it by its owner (`ownerOfInlineType`).
+pub const inline_type_prefix = "BpInline__";
+
+/// `the props of `Link`` for `BpInline__Link__props`; null for any other
+/// name.
+pub fn ownerOfInlineType(name: []const u8) ?struct { owner: []const u8, param: []const u8 } {
+    if (!std.mem.startsWith(u8, name, inline_type_prefix)) return null;
+    const rest = name[inline_type_prefix.len..];
+    const sep = std.mem.lastIndexOf(u8, rest, "__") orelse return null;
+    return .{ .owner = rest[0..sep], .param = rest[sep + 2 ..] };
+}
 
 /// A generic type parameter, e.g. `T` or `R` in `fn select<T, R>(...)`.
 /// `default` is set when the param carries a default type ref

@@ -24,6 +24,7 @@ comptime/
 ├── specialize.zig     ← `SpecializedFn`, `SpecCache`, `specialize()`
 ├── transform.zig      ← `Aggregator` — drives the full transform pass
 ├── alias_erase.zig    ← type aliases erased for the backends (reflective `TypeRef` walk; a return alias of a wrapper stays)
+├── inline_types.zig   ← decision 207: a parameter's inline `type(…)` becomes a record `BpInline__<fn>__<param>` of the module, and a call's field labels its constructor call (`expand`, run by `analyzeSource` after `std_namespace`)
 ├── std_namespace.zig  ← decisions 110/111 on the use side: `io.fs.f()` through a std folder namespace, `collections.Dict.empty()` and a type's constructor `url.Url(…)` through a module one, rewritten on the parsed program into the one-dot / leaf forms (`analyzeSource`, `expandStdImports`)
 ├── template.zig       ← `@Expr` templates: CapturedExpr, PlainArg, ScopeSnapshot, CustomNode, fail diagnostics
 ├── template_eval.zig  ← runtime-backed template body evaluation (through runtime/runtime.zig's dispatcher)
@@ -1294,6 +1295,22 @@ answered `recursive type detected`, which named neither (an index is `?T`, decis
 `reject/generic_index_answers_optional`, `run/generic_index_optional_return`). A declared type
 parameter is still a flexible variable inside its body: `fn f<T>(x: T) -> T { return 1; }` checks as
 `fn(i32) -> i32` and reds only at a call with another type.
+
+## An inline parameter type (decision 207)
+
+`fn link(props: type(href: string, label: string = "x"))` — the parser keeps the fields on
+`Param.inlineFields` (typeRef `ast.inline_type_name`); `inline_types.expand` declares the record
+`BpInline__link__props` before the fn (PascalCase: beam reads a constructor call by its first
+letter), points the parameter at it, and rewrites each call of the same module whose labels name
+fields of the inline type (and no parameter) into `link(props: BpInline__link__props(…))`, the
+constructor call at a synthetic column past any written one (`inline_types.locatedAtCall` takes it
+off a diagnostic again). Everything after that is an ordinary record. The checker's rules:
+`refuseInlineParamRules` (one inline parameter per fn; no field named like another parameter, each
+`inline-type-position` at the type), `refuseInlineFieldsAcrossModules` (a call from another module
+that writes the fields — the type is not exported), `Env.resolveTypeName` (an inline type the pass
+did not declare: a method's, a behavior member's or a host declaration's parameter), and a left-out
+field without a default named at the call (`missing field `label` of the props of `link``).
+`error.zig` `namedByOwner` spells every `BpInline__f__p` in a message as ``the p of `f` ``.
 
 ## A record value is not callable (`language-gaps.md` row 32)
 

@@ -519,6 +519,7 @@ reaches**, never per arm:
 | `total + try r`, `-try x`, `(try r).len`, `!await t` | `tryAwaitOperand` | `parsePrimary`'s `try` / `await` arm and the group's `(` — at the keyword (decision 137; § *`try` and `await` begin an expression*) |
 | `1 + if (c) { 2 } else { 3 }`, `-if (c) 1 else 2`, `(if (c) a else b).v` | `ifOperand` | `parsePrimary`'s `if` arm and the group's `(` — at the `if` (decision 137's reading applied to `if`; § *`try` and `await` begin an expression*) |
 | `fn m(self: Self) { … }` inside an enum section's braces | `sectionBodyMethod` | `decls.zig`'s section body loop (`parseEnumItem`), at the `fn` — decision 151: a section holds leaves and nested sections, a method is the enum's |
+| `type(…)` as a return, a field's or a `val`'s type | `inlineTypeOutsideParameter` | `types.zig` `parseBaseTypeRefArm`, at the `type` — decision 207: an inline type is a parameter's whole type, read by `decls.zig` `parseParam` into `Param.inlineFields` before `parseTypeRef` is reached |
 | `#(x: 1, y: 2)` | `tupleLiteralLabel` | `parseTupleLitExpr`, at the label — the labeled construction is `01-checker`'s §6, and this replaces `novalBinding` at the value |
 
 **The infix refusals are hoisted the way the chain links are.** Every receiver

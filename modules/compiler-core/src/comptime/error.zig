@@ -411,6 +411,11 @@ pub const TypeError = struct {
     /// Render a concise, human-readable message for this error. Caller owns the
     /// returned slice. Used by `botopink check` and the language server.
     pub fn message(this: TypeError, gpa: std.mem.Allocator) ![]u8 {
+        const raw = try this.rawMessage(gpa);
+        return namedByOwner(gpa, raw);
+    }
+
+    fn rawMessage(this: TypeError, gpa: std.mem.Allocator) ![]u8 {
         return switch (this.kind) {
             .typeMismatch => |m| blk: {
                 // A union's short label has to spell its members: "expected
@@ -464,6 +469,37 @@ pub const TypeError = struct {
         };
     }
 };
+
+/// Decision 207 — an inline parameter type is named by its owner in every
+/// diagnostic: `'BpInline__link__props'` reads ``the props of `link` ``
+/// (the quotes around the name, when any, are dropped). Takes ownership of
+/// `raw`.
+pub fn namedByOwner(gpa: std.mem.Allocator, raw: []u8) ![]u8 {
+    if (std.mem.indexOf(u8, raw, ast.inline_type_prefix) == null) return raw;
+    defer gpa.free(raw);
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    errdefer out.deinit(gpa);
+    var i: usize = 0;
+    while (i < raw.len) {
+        if (std.mem.startsWith(u8, raw[i..], ast.inline_type_prefix)) {
+            var j = i;
+            while (j < raw.len and (std.ascii.isAlphanumeric(raw[j]) or raw[j] == '_')) j += 1;
+            if (ast.ownerOfInlineType(raw[i..j])) |o| {
+                const quoted = out.items.len > 0 and (out.items[out.items.len - 1] == '\'' or out.items[out.items.len - 1] == '`') and
+                    j < raw.len and raw[j] == out.items[out.items.len - 1];
+                if (quoted) _ = out.pop();
+                const named = try std.fmt.allocPrint(gpa, "the {s} of `{s}`", .{ o.param, o.owner });
+                defer gpa.free(named);
+                try out.appendSlice(gpa, named);
+                i = if (quoted) j + 1 else j;
+                continue;
+            }
+        }
+        try out.append(gpa, raw[i]);
+        i += 1;
+    }
+    return out.toOwnedSlice(gpa);
+}
 
 /// Build the `nonExhaustive` message: either "requires a wildcard" (open
 /// domain) or "missing variants: A, B" (enum). Caller owns the result.

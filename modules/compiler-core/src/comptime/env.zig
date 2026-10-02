@@ -1659,6 +1659,16 @@ pub const Env = struct {
         // parser located (`-> unknown`, `x: unknown`) would otherwise be
         // reported as an undeclared type.
         if (std.mem.eql(u8, name, ast.unknown_type_name)) return self.namedType(name);
+        // Decision 207 — an inline `type(…)` the module pass did not declare:
+        // it stands on a parameter of something that is not a top-level `fn`.
+        if (std.mem.eql(u8, name, ast.inline_type_name)) {
+            const e = @import("error.zig").TypeError.custom(
+                @import("diagnostics.zig").inline_type_position ++ ": an inline `type(…)` is the type of a top-level `fn`'s parameter only — not a method's, a behavior member's or a host declaration's",
+                "Name the type (`type LinkProps(…)`) and write the name in this signature.",
+            );
+            self.lastError = if (self.typeRefLoc) |l| e.withLoc(l) else e;
+            return error.TypeError;
+        }
         // N28 — a section of an enum-shaped `type` is named by its path
         // (`Token.Text`, `Token.Text.Size`, decision 8 §5.3b). The section's
         // typedef is registered under the mangled `__Token__Text` form by

@@ -1317,6 +1317,29 @@ answer, not the language's:
 Measured at 1.0.10-beta, with node's own ceiling for a two-parameter function
 between 10 000 and 20 000.
 
+### An inline parameter type
+
+A parameter's type may be written in place, with the field grammar of `type
+Name(…)` and no name (decision 207):
+
+```botopink
+fn link(props: type(href: string, label: string, external: bool = false)) -> string {
+    return props.label + " <" + props.href + ">";
+}
+
+fn main() {
+    @print(link(href: "/a", label: "A"));   // A </a>
+}
+```
+
+The call builds the value from its own labelled arguments, each naming a field
+(a defaulted one may be left out); a value already of the type is passed as the
+parameter itself. One parameter of a function may have an inline type, and none
+of its fields is named like another parameter. It is a top-level `fn`'s only — a
+return, a field, a `val` annotation and a method's parameter refuse it — and it
+is not exported: a call from another module that writes its fields is refused.
+A diagnostic names it by its owner: ``the props of `link` ``.
+
 ### Parameters with defaults
 
 ```botopink

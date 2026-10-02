@@ -210,6 +210,10 @@ pub const binding_redeclared: []const u8 = "binding-redeclared";
 /// Decision 148 (lg-b) — a lambda that is neither a `forEach` body nor a
 /// local closure called at statement position writes a captured `var`.
 pub const captured_var_write: []const u8 = "captured-var-write";
+/// Decision 207 — an inline parameter type where only a top-level `fn`'s
+/// parameter takes one, or two of them on one function, or a field named
+/// like another parameter of its function.
+pub const inline_type_position: []const u8 = "inline-type-position";
 /// A use of an imported name the import resolved to two different
 /// declarations (`00 · 01-std`: the refusal of a duplicate `pub` name belongs
 /// to the consumer's unqualified use).
@@ -420,6 +424,7 @@ pub const all_codes = [_][]const u8{
     callee_not_a_function,
     binding_redeclared,
     captured_var_write,
+    inline_type_position,
 };
 
 test "every reserved code has a stable, non-empty spelling" {

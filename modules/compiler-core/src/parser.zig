@@ -84,6 +84,10 @@ pub const ParseErrorType = enum {
     badInterpolation,
     /// Meta-kind parameter (`type` / `expr T`) without the `comptime` modifier
     metaKindRequiresComptime,
+    /// `type(…)` written as a type anywhere but a parameter's whole
+    /// annotation — a return, a field, a `val` annotation (decision 207).
+    /// Located at the `type`.
+    inlineTypeOutsideParameter,
     /// Anonymous `implement`/`extend` block (the name is required)
     anonymousImplExtend,
     /// Removed `*fn` prefix (use `#[@<effect>]` annotation instead).

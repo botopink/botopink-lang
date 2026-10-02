@@ -4756,6 +4756,7 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     defer env.fnGenericMap = savedFnGenericMap;
     env.returnBareIsVoid = env.returnTarget != null and (eff == null or eff.? == .result or eff.? == .task);
 
+    try refuseInlineParamRules(env, f);
     try refuseRedeclaredBindings(env, f.body, try paramNames(env, f.params));
     try inferBodyStmts(env, f.body);
     try refuseFallingOffTheEnd(env, f, retType);
@@ -8065,6 +8066,54 @@ fn noteBlockBinding(env: *Env, seen: *SeenNames, name: []const u8, loc: ast.Loc)
         return error.TypeError;
     }
     try seen.put(env.arena, name, loc);
+}
+
+/// Decision 207 — what keeps a call's labels one reading
+/// (`comptime/inline_types.zig`): one inline parameter type per function, and
+/// none of its fields named like another parameter of the function. Each
+/// refused at the inline type.
+fn refuseInlineParamRules(env: *Env, f: ast.FnDecl) InferError!void {
+    var seen: ?ast.Param = null;
+    for (f.params) |p| {
+        const fields = p.inlineFields orelse continue;
+        if (seen) |first| {
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` takes a second inline type (`{s}`) — one parameter of a function may have one, `{s}` already does", .{ diagnostics.inline_type_position, f.name, p.name, first.name });
+            env.lastError = TypeError.custom(msg, "Name one of the two types (`type Options(…)`), or merge their fields into the one inline type.").withLoc(p.typeLoc);
+            return error.TypeError;
+        }
+        seen = p;
+        for (fields) |fd| for (f.params) |other| {
+            if (std.mem.eql(u8, other.name, p.name) or !std.mem.eql(u8, other.name, fd.name)) continue;
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: the field `{s}` of the {s} of `{s}` is named like the parameter `{s}`, so `{s}({s}: …)` would mean two things", .{ diagnostics.inline_type_position, fd.name, p.name, f.name, other.name, f.name, fd.name });
+            env.lastError = TypeError.custom(msg, "Rename the field or the parameter.").withLoc(p.typeLoc);
+            return error.TypeError;
+        };
+    }
+}
+
+/// Decision 207 — a call's field labels build an inline parameter type only
+/// in the module that declares the function (`comptime/inline_types.zig`
+/// rewrites them there): the type is not exported, so a call from another
+/// module that writes the fields is refused by name rather than read as
+/// labels of the function.
+fn refuseInlineFieldsAcrossModules(env: *Env, callee: []const u8, params: []const ast.Param, args: []const ast.CallArgOf(.untyped), loc: ast.Loc) InferError!void {
+    for (params) |p| {
+        const fields = p.inlineFields orelse continue;
+        for (args) |a| {
+            const l = a.label orelse continue;
+            const isField = for (fields) |fd| {
+                if (std.mem.eql(u8, fd.name, l)) break true;
+            } else false;
+            if (!isField) continue;
+            const isParam = for (params) |q| {
+                if (std.mem.eql(u8, q.name, l)) break true;
+            } else false;
+            if (isParam) continue;
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}:` is a field of the {s} of `{s}`, an inline type built only in the module that declares `{s}`", .{ diagnostics.inline_type_position, l, p.name, callee, callee });
+            env.lastError = TypeError.custom(msg, "Call it through a function of that module, or name the type there (`pub type LinkProps(…)`) and build it here.").withLoc(loc);
+            return error.TypeError;
+        }
+    }
 }
 
 /// The names of a parameter list, for `refuseRedeclaredBindings`.
@@ -13365,6 +13414,7 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                 break :blk qn;
             };
             const declParamsAst: ?[]const ast.Param = if (qualifiedCtor) |qn| env.ctorParams.get(qn) else calleeParams(env, call.callee);
+            if (call.receiver == null) if (declParamsAst) |dps| try refuseInlineFieldsAcrossModules(env, call.callee, dps, call.args, loc);
 
             // 00 · 01-checker — the DECLARED parameter types of a plain call,
             // read only as the expectation an argument is inferred under
@@ -14027,6 +14077,21 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                                 try unifyFilledArgs(env, fill, f.params, typedArgs);
                                 break :blk f.ret;
                             }
+                            // Decision 207 — an inline parameter type's
+                            // constructor is the call's labelled fields: name
+                            // the field left out.
+                            if (ast.ownerOfInlineType(call.callee) != null) if (declParamsAst) |declared| {
+                                for (declared) |dp| {
+                                    if (dp.default != null) continue;
+                                    const given = for (call.args) |a| {
+                                        if (a.label) |l| if (std.mem.eql(u8, l, dp.name)) break true;
+                                    } else false;
+                                    if (given) continue;
+                                    const msg = try std.fmt.allocPrint(env.arena, "missing field `{s}` of {s}", .{ dp.name, call.callee });
+                                    env.lastError = TypeError.custom(msg, "Write it as a labelled argument of the call, or give the field a default in the inline type.").withLoc(loc);
+                                    return error.TypeError;
+                                }
+                            };
                             // N2 — a missing REQUIRED argument is the arity
                             // error it has always been, word for word.
                             env.lastError = TypeError.arityMismatch(call.callee, f.params.len, call.args.len).withLoc(loc);

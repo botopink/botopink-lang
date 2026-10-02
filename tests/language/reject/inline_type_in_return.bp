@@ -1,0 +1,10 @@
+//// Decision 207 — an inline `type(…)` is written only as a parameter's type;
+//// in a return it is `inline-type-outside-parameter` at the `type`.
+
+fn make() -> type(href: string) {
+    return 1;
+}
+
+pub fn main() {
+    @print(0);
+}
