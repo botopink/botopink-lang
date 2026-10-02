@@ -12,7 +12,7 @@ Inference/comptime tests, split by feature. Aggregated by the sibling barrel
 | Directory | Written by | Holds |
 |---|---|---|
 | `comptime/ast/` | `assertComptimeAst` (`../snapshot.zig`), through the `helpers.zig` wrapper | the typed-AST snapshot of a test that compiles (or records its `COMPILE DIAGNOSTIC`) — runtime-independent: the wrapper compiles the session on both comptime runtimes and fails `error.ComptimeAstDiffersByRuntime` if the two ASTs differ |
-| `comptime/runtime/{beam,wat}/` | `assertComptimeExchange` (`../snapshot.zig`), same wrapper | a test's decorator/template exchanges per comptime runtime (`SOURCE CODE`, `COMPTIME BEAM ASSEMBLY` or `COMPTIME WAT`, `COMPTIME REPLY`) — only for a test where one ran (5 today); `snap_audit.sh --mode=runtime-parity` compares the pairs |
+| `comptime/runtime/{beam,wat}/` | `assertComptimeExchange` (`../snapshot.zig`), same wrapper | a test's decorator/template exchanges per comptime runtime (`SOURCE CODE`, `COMPTIME BEAM ASSEMBLY` or `COMPTIME WAT`, `COMPTIME REPLY`) — only for a test where one ran (8 today); `snap_audit.sh --mode=runtime-parity` compares the pairs |
 | `comptime/errors/` | `assertTypeErrorSnap` (`helpers.zig`) | the rendered type error of a test that must not infer |
 | `comptime/templates/` | `checkText` in `templates.zig` | the `@Expr` capture/expansion fixtures |
 
@@ -37,7 +37,7 @@ When adding a test file here, register it in `../tests.zig` or it will not run.
 
 | File | Covers |
 |---|---|
-| `helpers.zig` | Shared harness (no tests): `assertComptimeAst`, `assertComptimeAstSingle`, `assertComptimeCompileError`, `assertTypeErrorSnap`, `assertInfersOk`, `renderTypeError`. |
+| `helpers.zig` | Shared harness (no tests): `assertComptimeAst`, `assertComptimeAstSingle`, `assertComptimeCompileError`, `assertTypeErrorSnap`, `assertInfersOk`, `renderTypeError`, `repliesIdenticalAcrossRuntimes` (front 14 step 3: compile once per comptime runtime, require every evaluation's reply — keys sorted, as the `COMPTIME REPLY` section shows it — byte-identical, answer the replies for the caller's own assertions). |
 | `infer_exprs.zig` | Literal / binary / case / control-flow inference; `@src()` typing as `SourceLocation` (`src_types_as_sourcelocation`). |
 | `infer_decls.zig` | fn / record / interface / implement / test-block inference. The `import source` tests compile three modules through `comptime.compile` — two declaring `pub fn NotFound`, one importing: a dotted module path and the path below the importer's package name their module (no `ambiguous-import-use`), a project's own module wins over a dependency's of the same relative path, a bare `import {NotFound};` is still refused naming both, two un-aliased imports of the name are `import-name-collision` at the second (message and location asserted), the same declaration imported twice is not — and pin `ast.ImportSource.namesModule` / `inPackage` / `admits` and `ImportDecl.leafSource` on dotted and slashed sources. |
 | `infer_generics.zig` | Type meta-kind + generic inference (regression guards). |
@@ -51,9 +51,9 @@ When adding a test file here, register it in `../tests.zig` or it will not run.
 | `effect_future.zig` | `-> @Task` contract (decisions 119–121): `throw` / `return` in `@Task<@Result<…>>`, `try await`, `await` answering the `@Result`, the refusals of `throw` / `try` without a `@Result` layer and of `await` without a channel. The file keeps its historical name; the RF-codes left with `@Future`. |
 | `effect_generator.zig` | `-> @Iterator` contract (`yield`, labels, `break v`, `iter-mixed-yield-return`, `throw` without a `@Result` item). |
 | `generic_defaults.zig` | Default generic parameters (RG-codes). |
-| `templates.zig` | `@Expr` capture, scope snapshot, methods, expansion. |
+| `templates.zig` | `@Expr` capture, scope snapshot, methods, expansion. The `round trip ----` cells (front 14 step 3) read a holed capture's `parts` back — three holes whose expressions are a record, an array and a `?T`, their placeholders, the text between and every span — and an `@ExprCustom` tree whose leaf `ref` is `lookup` of a type declared in another module (`shapes@@Item`). A template body calling a method its typed receiver lacks is `unknown-primitive-method` at the call in the body (front 14 step 1, the typed half). |
 | `decorators.zig` | Decorator recognition + argument validation. |
-| `decorator_invocation.zig` | Decorator body invocation + `fail` diagnostics. |
+| `decorator_invocation.zig` | Decorator body invocation + `fail` diagnostics. A body method call nothing answers is the evaluator's own refusal (no runtime runs), its whole message asserted — the call named by `line:col` in the body — and located at the annotation (front 14 step 1; `reject/comptime_method_nothing_answers` is the language twin). `round trip ---- a @Decl handle carries …` (step 3) reads a record's annotations (raw argument lexemes), fields (type, own annotations) and methods (parameters, return type), and an enum's variants and method, back out of the handle into an `@emit`. |
 | `decorator_regression.zig` | Decorator bodies with loops / conditionals / string concat / `@emit` / accumulator fold fusion. Each lowering has a rejecting fixture compared on the whole message and an accepting fixture that asserts the lowered Erlang (`OkData.comptime_traces`: `lists:foreach(`, `'__bp_len'(`, `'__bp_add'(`, `lists:foldl(`; the `@emit` reply exactly), so every row of `specs/1.0.4-beta/05-cli-residuals/mutation-matrix.md` (M1–M10) and a fold fusion that discards its accumulator reds a test. Run alone: `zig build test -Dtest-filter="decorator regression"`. |
 | `builtins_typeinfo.zig` | `@typeInfo` / `@TypeOf` / `@makeRecord` / `@RecordKeys` / `@Field` inference. |
 | `std_target_gating.zig` | `from "std"` imports rejected on targets without `@external` coverage. |

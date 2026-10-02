@@ -14,6 +14,7 @@ const comptimeMod = @import("../../comptime.zig");
 const errorMod = @import("../error.zig");
 const snapshot = @import("../snapshot.zig");
 const hostRuntime = @import("../runtime/runtime.zig");
+const replyOrder = @import("../runtime/reply_order.zig");
 const Module = @import("../../module.zig").Module;
 const format = @import("../../format.zig");
 const Lexer = lexerMod.Lexer;
@@ -317,4 +318,54 @@ pub fn assertInfersOk(
         }
         return err;
     };
+}
+
+/// Front 14 step 3 — the term round trip, read off the replies: `modules` is
+/// compiled once per comptime runtime (the capture or the `@Decl` handle reaches
+/// the BEAM as an external term, `runtime/etf.zig`, and the wat runtime as the
+/// same bytes in its linear memory), every module must compile on both, at
+/// least one evaluation must run, and every evaluation's reply — the
+/// `COMPTIME REPLY` section, keys sorted — must be byte-identical across the
+/// two. Returns the canonical replies in evaluation order (owned by `arena`), for the
+/// caller's own assertions on what the body read back.
+pub fn repliesIdenticalAcrossRuntimes(
+    allocator: std.mem.Allocator,
+    arena: std.mem.Allocator,
+    comptime loc: std.builtin.SourceLocation,
+    modules: []const Module,
+) ![]const []const u8 {
+    const io = std.testing.io;
+    const build_root = buildRootPathFromSrc(io, loc);
+    const prev_rt = hostRuntime.force(.beam);
+    defer _ = hostRuntime.force(prev_rt);
+    var beam = try comptimeMod.compile(allocator, modules, io, build_root, null);
+    defer beam.deinit(allocator);
+    _ = hostRuntime.force(.wat);
+    var wat = try comptimeMod.compile(allocator, modules, io, build_root, null);
+    defer wat.deinit(allocator);
+
+    var replies: std.ArrayListUnmanaged([]const u8) = .empty;
+    try std.testing.expectEqual(beam.outputs.items.len, wat.outputs.items.len);
+    for (beam.outputs.items, wat.outputs.items) |b, w| {
+        if (b.outcome != .ok or w.outcome != .ok) {
+            std.debug.print("\nmodule '{s}' did not compile on both runtimes (beam: {s}, wat: {s})\n", .{ b.name, @tagName(b.outcome), @tagName(w.outcome) });
+            return error.ModuleDidNotCompile;
+        }
+        const bt = b.outcome.ok.comptime_traces;
+        const wt = w.outcome.ok.comptime_traces;
+        try std.testing.expectEqual(bt.len, wt.len);
+        for (bt, wt) |be, we| {
+            try std.testing.expectEqual(be.kind, we.kind);
+            try std.testing.expectEqualStrings(be.name, we.name);
+            // The section a snapshot records: the reply read with sorted keys
+            // (`runtime/reply_order.zig` — a map's key order is the node's
+            // atom table, not part of the answer); a non-JSON reply as is.
+            const bc = (try replyOrder.canonical(arena, be.reply)) orelse be.reply;
+            const wc = (try replyOrder.canonical(arena, we.reply)) orelse we.reply;
+            try std.testing.expectEqualStrings(bc, wc);
+            try replies.append(arena, bc);
+        }
+    }
+    try std.testing.expect(replies.items.len > 0);
+    return replies.items;
 }

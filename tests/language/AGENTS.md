@@ -1208,6 +1208,11 @@ rules they pinned — a function has one return, so it has one effect.
   change (`modules/decorator_imported_function_name_conflict` pins `src/main.bp:21:3`, the
   `#[tag]` under an `@emit(…)` argument the formatter opens over four lines).
 
+1.0.11 front 14 step 1 adds `reject/comptime_method_nothing_answers` — a decorator body (untyped)
+calling `.frobnicate(1, 2)` on a string, which no primitive type and no host function answers: the
+compiler refuses it before any comptime runtime runs, the message names the call by its `line:col`
+in the body and the caret is the annotation that ran it.
+
 **`@panic` and `@todo` abort with stdout intact and a non-zero status on all four backends**
 (`run/panic_aborts.bp`, `run/todo_aborts.bp`, `.exit` = `nonzero`). On beam a function whose whole
 body is `@todo()` is emitted and raises the builtin's own `{todo, <<"not implemented">>}` —

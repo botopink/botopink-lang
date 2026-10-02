@@ -39,6 +39,7 @@ const crossModule = @import("../codegen/crossModule.zig");
 const Ast = @import("../codegen/beam/erl_ast.zig");
 const Term = @import("../codegen/beam/term.zig").Term;
 const erlEmitter = @import("../codegen/beam/erl_emitter.zig");
+const formatMod = @import("../format.zig");
 const hostRuntime = @import("./runtime/runtime.zig");
 const preludeMod = @import("./runtime/prelude.zig");
 const etf = @import("./runtime/etf.zig");
@@ -214,6 +215,96 @@ pub fn rememberListing(module: []const u8, listing: []const u8) std.mem.Allocato
     }
     slot.value_ptr.* = .{ .listing = owned };
     return owned;
+}
+
+// ── one emit per declaration ──────────────────────────────────────────────────
+//
+// The listing registry above is keyed by the module atom, which is the hash of
+// the emitted code — so it saves the listing emit but not the compilable one:
+// every call site still ran `emitComptimeModule`, and with it the re-lex and
+// re-parse of the embedded `builtins.d.bp` and `primitives.bp`
+// (`collectBuiltinErlangDispatch`) — 55 % of an N=200 build's samples (front 14
+// step 2). The code is a function of the declarations lowered and of `main/1`'s
+// plan (which slots it binds, and the literal it writes for a slot that has no
+// term), never of a capture or a handle, so it is emitted once per
+// `emitKey` and the atom and the renamed text are reused.
+//
+// The key is the declarations' FORMATTED source (the formatter round-trips to an
+// equivalent AST, and the emitter is a function of the AST), the owner, and the
+// plan — text, not an address, so a declaration edited in a long-lived process
+// (the language server) is a different key, never a stale hit. A declaration the
+// formatter cannot render is emitted every time, as before.
+
+pub const Emitted = struct {
+    /// The module atom (`erlDeclAtom`, content-addressed).
+    module: []const u8,
+    /// The compilable module text under that atom.
+    code: []const u8,
+};
+
+var emitted_modules: std.StringHashMapUnmanaged(Emitted) = .empty;
+
+/// The memo key of one comptime module, or null when a declaration does not
+/// format (no memo then). `kind` separates a template from a decorator whose
+/// declarations and plan would coincide.
+pub fn emitKey(
+    arena: std.mem.Allocator,
+    kind: []const u8,
+    owner: []const u8,
+    decls: []ast.DeclKind,
+    plans: []const ArgPlan,
+) std.mem.Allocator.Error!?[]const u8 {
+    var out: std.Io.Writer.Allocating = .init(arena);
+    const w = &out.writer;
+    const source = formatMod.format(arena, .{ .decls = decls }) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return null,
+    };
+    w.print("{s}\x00{s}\x00{s}\x00", .{ kind, owner, source }) catch return error.OutOfMemory;
+    for (plans) |plan| {
+        w.writeByte(if (plan.bound) 'b' else 'l') catch return error.OutOfMemory;
+        erlEmitter.writeExpr(w, plan.expr, 0) catch return error.OutOfMemory;
+        w.writeByte(0) catch return error.OutOfMemory;
+    }
+    return out.written();
+}
+
+/// The module this process emitted under `key`, or null.
+pub fn cachedEmit(key: []const u8) ?Emitted {
+    lockRendered();
+    defer unlockRendered();
+    return emitted_modules.get(key);
+}
+
+/// Record the module emitted under `key` and return the stored copy.
+pub fn rememberEmit(key: []const u8, emitted: Emitted) std.mem.Allocator.Error!Emitted {
+    const owned_key = try rendered_alloc.dupe(u8, key);
+    errdefer rendered_alloc.free(owned_key);
+    const module = try rendered_alloc.dupe(u8, emitted.module);
+    errdefer rendered_alloc.free(module);
+    const code = try rendered_alloc.dupe(u8, emitted.code);
+    errdefer rendered_alloc.free(code);
+
+    lockRendered();
+    defer unlockRendered();
+    const slot = try emitted_modules.getOrPut(rendered_alloc, owned_key);
+    if (slot.found_existing) {
+        // Another thread emitted the same declarations first; its text is this text.
+        rendered_alloc.free(owned_key);
+        rendered_alloc.free(module);
+        rendered_alloc.free(code);
+        return slot.value_ptr.*;
+    }
+    slot.value_ptr.* = .{ .module = module, .code = code };
+    return slot.value_ptr.*;
+}
+
+/// Distinct comptime modules emitted by this process (tests: a second call
+/// site of one declaration must not emit again).
+pub fn emittedCount() usize {
+    lockRendered();
+    defer unlockRendered();
+    return emitted_modules.count();
 }
 
 fn errorText(arena: std.mem.Allocator, what: []const u8, detail: []const u8) ![]const u8 {
@@ -491,19 +582,25 @@ fn buildModule(
         },
         .unsupported_method = unsupported,
     };
-    const code = erlang.emitComptimeModule(arena, placeholder_module, .{ .decls = decls }, config) catch |err|
-        return if (err == error.UnsupportedComptimeMethod) error.UnsupportedMethod else error.EvalFailed;
     const argument = try argumentTerm(arena, plans);
-    // A2: `bp@comptime@<owner path>__tpl__<template>__<16 hex>`. The Wyhash is
-    // unchanged, so an identical generated body is still the identical module
-    // and re-loading it is still a no-op (`runtime/persistent_beam.zig`).
-    const module = crossModule.erlDeclAtom(arena, try ownerId(arena, owner), .tpl, tfn.name, std.hash.Wyhash.hash(0, code)) catch |err| switch (err) {
-        error.OutOfMemory => return error.OutOfMemory,
-        else => return error.EvalFailed,
+    const key = try emitKey(arena, "tpl", owner, decls, plans);
+    const emitted: Emitted = (if (key) |k| cachedEmit(k) else null) orelse blk: {
+        const code = erlang.emitComptimeModule(arena, placeholder_module, .{ .decls = decls }, config) catch |err|
+            return if (err == error.UnsupportedComptimeMethod) error.UnsupportedMethod else error.EvalFailed;
+        // A2: `bp@comptime@<owner path>__tpl__<template>__<16 hex>`. The Wyhash is
+        // unchanged, so an identical generated body is still the identical module
+        // and re-loading it is still a no-op (`runtime/persistent_beam.zig`).
+        const module = crossModule.erlDeclAtom(arena, try ownerId(arena, owner), .tpl, tfn.name, std.hash.Wyhash.hash(0, code)) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => return error.EvalFailed,
+        };
+        const header = "-module(" ++ placeholder_module ++ ").";
+        if (!std.mem.startsWith(u8, code, header)) return error.EvalFailed;
+        const fresh: Emitted = .{ .module = module, .code = try std.fmt.allocPrint(arena, "-module({s}).{s}", .{ module, code[header.len..] }) };
+        break :blk if (key) |k| try rememberEmit(k, fresh) else fresh;
     };
-    const header = "-module(" ++ placeholder_module ++ ").";
-    if (!std.mem.startsWith(u8, code, header)) return error.EvalFailed;
-    const renamed = try std.fmt.allocPrint(arena, "-module({s}).{s}", .{ module, code[header.len..] });
+    const module = emitted.module;
+    const renamed = emitted.code;
 
     // What snapshots show: the lowered body, `main/1` and the argument as a
     // comment. `resident` stays set: it decides where a method call lowers, so
@@ -895,6 +992,50 @@ test "template module: one module per declaration, the capture as the argument" 
     try std.testing.expect(!std.mem.eql(u8, owned.module, elsewhere.module));
     // The hash segment is the body's, whoever owns it.
     try std.testing.expectEqualStrings(first.module[first.module.len - 16 ..], owned.module[owned.module.len - 16 ..]);
+}
+
+test "template module: the emit memo is keyed by the declaration's text and the plan, never a call site" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const lexerMod = @import("../lexer.zig");
+    const parserMod = @import("../parser.zig");
+    const parse = struct {
+        fn decls(a: std.mem.Allocator, src: []const u8) ![]ast.DeclKind {
+            var lx = lexerMod.Lexer.init(src);
+            var p = parserMod.Parser.init(try lx.scanAll(a));
+            return (try p.parse(a)).decls;
+        }
+    }.decls;
+    const body =
+        \\pub fn shout(comptime q: @Expr<string>) -> @Expr<string> {
+        \\    return q.build(q.text());
+        \\}
+    ;
+    const original = try parse(arena, body);
+    // The same declaration parsed again at other positions (another session,
+    // or the language server re-reading the file) is the same key.
+    const moved = try parse(arena, "\n\n" ++ body);
+    const edited = try parse(arena,
+        \\pub fn shout(comptime q: @Expr<string>) -> @Expr<string> {
+        \\    return q.build(q.text() + "!");
+        \\}
+    );
+
+    const bound = [_]ArgPlan{.{ .term = Term.str("alpha"), .expr = Ast.Expr.v("Arg0"), .bound = true }};
+    const other_capture = [_]ArgPlan{.{ .term = Term.str("a much longer literal"), .expr = Ast.Expr.v("Arg0"), .bound = true }};
+    const literal = [_]ArgPlan{.{ .term = Term.undefined_atom, .expr = Ast.str("\\u{263A}"), .bound = false }};
+
+    const key = (try emitKey(arena, "tpl", "main", original, &bound)).?;
+    // The term is not part of the key: it is `main/1`'s argument, not the module.
+    try std.testing.expectEqualStrings(key, (try emitKey(arena, "tpl", "main", original, &other_capture)).?);
+    try std.testing.expectEqualStrings(key, (try emitKey(arena, "tpl", "main", moved, &bound)).?);
+    // What the module text depends on is.
+    try std.testing.expect(!std.mem.eql(u8, key, (try emitKey(arena, "tpl", "main", edited, &bound)).?));
+    try std.testing.expect(!std.mem.eql(u8, key, (try emitKey(arena, "tpl", "main", original, &literal)).?));
+    try std.testing.expect(!std.mem.eql(u8, key, (try emitKey(arena, "tpl", "ui/panel", original, &bound)).?));
+    try std.testing.expect(!std.mem.eql(u8, key, (try emitKey(arena, "dec", "main", original, &bound)).?));
 }
 
 test "template outcome: every reply kind" {
