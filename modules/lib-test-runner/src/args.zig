@@ -2,12 +2,16 @@
 ///
 ///   botopink-lib-test [--target <t>[,<t>…] | --target all]
 ///                     [--lib <name>] [--filter <s>] [--strict] [--bin <path>]
-///                     [--include-unsupported] [--jobs <n>]
+///                     [--jobs <n>] [--json] [--list]
 ///
 /// `--target` is repeatable and comma-separated. It accepts every codegen target
 /// plus the alias `node` → `commonJS`, and both the `--target <t>` and
 /// `--target=<t>` spellings. The default target set is `commonJS,erlang` — the two
 /// backends `botopink test` runs today. `all` expands to every *supported* target.
+///
+/// There is no flag that runs a target a manifest excludes: the manifest's
+/// `"targets"` list decides which (lib, target) pairs are cells, and an excluded
+/// pair is audited instead (`runner.captureAudit`).
 const std = @import("std");
 
 // ── Target ──────────────────────────────────────────────────────────────────────
@@ -24,6 +28,16 @@ pub const Target = enum {
 
     /// Targets `botopink test` runs today; `--target all` expands to these.
     pub const supported = [_]Target{ .commonJS, .erlang };
+
+    /// Whether `botopink test` runs this target today (`supported`). A target
+    /// a manifest excludes is audited only when this holds: an exclusion of a
+    /// target no cell can run on hides nothing the run could have measured.
+    pub fn isSupported(self: Target) bool {
+        for (supported) |t| {
+            if (t == self) return true;
+        }
+        return false;
+    }
 
     /// Parse a target name. Accepts the `node` alias for `commonJS`.
     pub fn fromString(s: []const u8) ?Target {
@@ -56,13 +70,6 @@ pub const Options = struct {
     filter: ?[]const u8 = null,
     /// Treat an unsupported target as a failure instead of a skip.
     strict: bool = false,
-    /// Run a cell whose target the lib's `botopink.json` `"targets"` list
-    /// excludes, instead of skipping it. The restriction is *measured*, not
-    /// lifted: the cell still reports `"restricted":true` in `--json` mode so
-    /// the ledger (`scripts/restricted-targets.txt`) can pin what it hides.
-    /// Does not affect the CLI-side unsupported mark (beam/wasm) — that stays
-    /// `--strict`'s business.
-    include_unsupported: bool = false,
     /// Override the `botopink` binary path (flag form; env var handled by caller).
     bin: ?[]const u8 = null,
     /// Extra lib roots appended to the discovery walker after env-derived roots
@@ -79,6 +86,11 @@ pub const Options = struct {
     /// memory). Scheduling only: every cell runs either way, and the output is
     /// emitted in discovery order, byte for byte what `--jobs 1` prints.
     jobs: ?usize = null,
+    /// `--list` — print the plan and spawn nothing: one
+    /// `<lib>\t<target>\t<kind>` line per (lib, target) pair, in discovery
+    /// order. The lines whose kind starts with `cell:` are the cells the
+    /// manifests declare; `audit` is an excluded pair the run would audit.
+    list: bool = false,
 };
 
 pub const ParseError = error{
@@ -139,10 +151,10 @@ pub fn parse(arena: std.mem.Allocator, args: []const []const u8) ParseError!Opti
             opts.jobs = try parseJobs(args[i]);
         } else if (std.mem.eql(u8, a, "--strict")) {
             opts.strict = true;
-        } else if (std.mem.eql(u8, a, "--include-unsupported")) {
-            opts.include_unsupported = true;
         } else if (std.mem.eql(u8, a, "--json")) {
             opts.json = true;
+        } else if (std.mem.eql(u8, a, "--list")) {
+            opts.list = true;
         } else {
             return error.UnknownFlag;
         }
@@ -275,12 +287,12 @@ test "--lib, --filter, --strict, --bin" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const opts = try parse(arena.allocator(), &.{
-        "--lib",         "rakun",
+        "--lib",         "acme",
         "--filter",      "router",
         "--strict",      "--bin",
         "/tmp/botopink",
     });
-    try testing.expectEqualStrings("rakun", opts.lib.?);
+    try testing.expectEqualStrings("acme", opts.lib.?);
     try testing.expectEqualStrings("router", opts.filter.?);
     try testing.expect(opts.strict);
     try testing.expectEqualStrings("/tmp/botopink", opts.bin.?);
@@ -289,8 +301,8 @@ test "--lib, --filter, --strict, --bin" {
 test "--lib=name (= form)" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
-    const opts = try parse(arena.allocator(), &.{"--lib=onze"});
-    try testing.expectEqualStrings("onze", opts.lib.?);
+    const opts = try parse(arena.allocator(), &.{"--lib=acme-web"});
+    try testing.expectEqualStrings("acme-web", opts.lib.?);
 }
 
 test "invalid target rejected" {
@@ -305,17 +317,20 @@ test "missing argument rejected" {
     try testing.expectError(error.MissingArgument, parse(arena.allocator(), &.{"--lib"}));
 }
 
-test "--include-unsupported is off by default and set by the flag" {
+test "isSupported: the targets `botopink test` runs today" {
+    try testing.expect(Target.commonJS.isSupported());
+    try testing.expect(Target.erlang.isSupported());
+    try testing.expect(!Target.beam.isSupported());
+    try testing.expect(!Target.wasm.isSupported());
+}
+
+test "--list is off by default and set by the flag" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const off = try parse(arena.allocator(), &.{});
-    try testing.expect(!off.include_unsupported);
-    const on = try parse(arena.allocator(), &.{"--include-unsupported"});
-    try testing.expect(on.include_unsupported);
-    // Orthogonal to --strict: neither implies the other.
-    try testing.expect(!on.strict);
-    const strict = try parse(arena.allocator(), &.{"--strict"});
-    try testing.expect(!strict.include_unsupported);
+    try testing.expect(!off.list);
+    const on = try parse(arena.allocator(), &.{"--list"});
+    try testing.expect(on.list);
 }
 
 test "unknown flag rejected" {

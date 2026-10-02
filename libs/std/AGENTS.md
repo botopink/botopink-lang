@@ -293,9 +293,9 @@ planting a sequential gather in each backend's `settleOf` cell in turn: the
 serial node cell reds exactly the two commonJS elapsed cells and nothing else,
 the serial erlang cell reds exactly the two erlang ones.
 
-**No known red cell.** `scripts/known-red-libs.txt` carries no line, and
-`zig build test-libs` reads `std · commonJS: pass` and `std · erlang: pass`
-(11 passed, 0 failed, 0 known red across the workspace). The three rows this
+**No red cell.** `zig build test-libs` reads `std · commonJS: pass` and
+`std · erlang: pass`, and nothing can list a red cell away (the known-red file
+is deleted — `scripts/AGENTS.md` § test-libs.sh). The three rows this
 section used to carry were re-measured with
 `botopink test [--target erlang]` in `libs/std` and all three are green:
 `test/primitives_gaps_test.bp` is **13 passed, 0 failed on both targets**

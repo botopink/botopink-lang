@@ -26,7 +26,9 @@ compiler-cli/
 │   │                          mixed pass/fail exit, the `.snap.new` candidate list;
 │   │                          `botopink-lib-test` compiles a test-less library,
 │   │                          and prints under `--jobs 4` what `--jobs 1` prints;
-│   │                          `BOTOPINK_BIN` in a test;
+│   │                          a `"targets"` exclusion is never run and is audited
+│   │                          (structural / builds / another error — runner and
+│   │                          `scripts/test-libs.sh`); `BOTOPINK_BIN` in a test;
 │   │                          a dependency's erlang host `.erl` is shipped and reached
 │   └── test_tooling/        ← pass + fail fixture projects
 └── src/

@@ -13,6 +13,10 @@
 #     <N> module(s)` — never the last module's own summary
 #   • botopink-lib-test compiles a library with no test block (`–` when it
 #     compiles, `✗` when it does not)
+#   • a target a member's `"targets"` list excludes is never run: there is no
+#     flag for it, and the exclusion is audited — structural when `botopink
+#     build` there is refused for a missing host binding, a failed run when
+#     the member builds there or fails for another reason
 #   • a test reads the compiler that runs it from `BOTOPINK_BIN`, unless the
 #     caller set the variable
 #
@@ -184,39 +188,115 @@ pooled="$(jobsrun 4)"
 [[ -n "$serial" ]] || fail "the serial run printed nothing"
 [[ "$serial" == "$pooled" ]] || { diff <(echo "$serial") <(echo "$pooled"); fail "--jobs 4 printed something --jobs 1 did not"; }
 
-# ── a known-red line is a measurement of one library commit ─────────────────
-# `scripts/test-libs.sh` reads `<lib> <target> <commit> <owner> <reason…>`: the
-# cell is a known red only while the library's checkout is at `<commit>`; once
-# the library moves, the line is stale and fails the run, red or green.
-echo "==> [libs] a known-red line pins the library commit it measured; a moved library fails it"
+# ── the manifest decides the matrix; an exclusion is audited ────────────────
+# A member's `"targets"` list says which (member, target) pairs are cells. An
+# excluded target is never run — no flag lifts it — and the exclusion must be
+# STRUCTURAL: `botopink build --target <excluded>` refused, its first error the
+# missing host binding. A member that builds on the target it excludes, or
+# fails there for another reason, fails the run: a restriction may not hide a
+# cell that could run, or a red. The compiler's refusal carries no error id, so
+# these three builds are what hold its text and the runner's reading together.
+echo "==> [libs] an excluded target is audited: structural → ok; builds, or another error → the run fails"
 TEST_LIBS="$REPO_ROOT/scripts/test-libs.sh"
-gitq() { git -C "$LIBWORK/root/quietbad" -c user.email=t@t -c user.name=t "$@" >/dev/null; }
-gitq init -q
-gitq add -A
-gitq commit -q -m one
-pin="$(git -C "$LIBWORK/root/quietbad" rev-parse HEAD)"
-KNOWN="$LIBWORK/known-red.txt"
-redrun() { # redrun — the wrapper over quietbad·commonJS, the known-red list at $KNOWN
+AUDWORK="$LIBWORK/audit"
+mkaudit() { # mkaudit <lib> — an erlang-only member: `"targets": ["erlang"]`
+  mkdir -p "$AUDWORK/$1/src"
+  printf '{ "name": "%s", "version": "0.0.1", "src": "src/", "targets": ["erlang"], "files": ["cell.bp"] }\n' "$1" >"$AUDWORK/$1/botopink.json"
+  printf 'pub mod cell;\n' >"$AUDWORK/$1/src/root.bp"
+}
+# hostbound: its one host cell has an erlang binding and no node one.
+mkaudit hostbound
+cat >"$AUDWORK/hostbound/src/cell.bp" <<'BP'
+#[@External.Erlang("erlang:system_time()")]
+declare fn now() -> i64;
+
+pub fn stamp() -> i64 {
+    return now();
+}
+BP
+# bothbound: the same cell, given a node binding too — it builds on commonJS.
+mkaudit bothbound
+cat >"$AUDWORK/bothbound/src/cell.bp" <<'BP'
+#[@External.Erlang("erlang:system_time()"),
+  @External.Node("Date.now()")]
+declare fn now() -> i64;
+
+pub fn stamp() -> i64 {
+    return now();
+}
+BP
+# otherred: excluded from commonJS, and red there for a reason that is not a
+# host binding (it does not parse) — the exclusion would hide that red.
+mkaudit otherred
+printf 'pub fn stamp() -> i64 {\n    return (1;\n}\n' >"$AUDWORK/otherred/src/cell.bp"
+auditrun() { # auditrun <lib> [<runner args>…] — JSON run of one member, both targets
+  local lib="$1"; shift
   set +e
-  out="$( BOTOPINK_KNOWN_RED_LIBS="$KNOWN" bash "$TEST_LIBS" --lib-root "$LIBWORK/root" --lib quietbad --target commonJS 2>&1 )"
+  out="$( cd "$LIBWORK" && "$LIB_TEST_BIN" --json --bin "$BP_BIN" --lib-root "$AUDWORK" --lib "$lib" "$@" 2>&1 )"
   code=$?
   set -e
   echo "$out"
 }
-printf 'quietbad commonJS %s probe-front does not parse\n' "${pin:0:12}" >"$KNOWN"
-redrun
-[[ $code -eq 0 ]] || fail "a known red at its pinned commit must not fail the run (exit $code)"
-grep -q "quietbad · commonJS: known red — probe-front" <<<"$out" || fail "the cell should read as a known red"
-printf 'quietbad commonJS probe-front does not parse\n' >"$KNOWN"
-redrun
-[[ $code -eq 1 ]] || fail "a known-red line that names no commit must fail the run (exit $code)"
-grep -q "names no library commit" <<<"$out" || fail "the refusal should say the line names no commit"
-printf 'quietbad commonJS %s probe-front does not parse\n' "${pin:0:12}" >"$KNOWN"
-printf '// moved\n' >>"$LIBWORK/root/quietbad/src/root.bp"
-gitq commit -q -am two
-redrun
-[[ $code -eq 1 ]] || fail "a known-red line whose library moved must fail the run (exit $code)"
-grep -q "known-red line stale — pinned at ${pin:0:12}, but the library is at" <<<"$out" || fail "the refusal should name both commits"
+auditrun hostbound
+[[ $code -eq 0 ]] || fail "a structural exclusion must not fail the run (exit $code)"
+grep -q '"event":"cell_summary","lib":"hostbound","target":"erlang","status":"no_tests"' <<<"$out" || fail "hostbound·erlang is a declared cell and should compile"
+! grep -q '"event":"cell_summary","lib":"hostbound","target":"commonJS"' <<<"$out" || fail "hostbound·commonJS is excluded by the manifest: it must not be a cell"
+grep -qF '"event":"restriction_audit","lib":"hostbound","target":"commonJS","status":"ok","line":"error: `now` has no `#[@External.<Target>(…)]` for the node backend"' <<<"$out" ||
+  fail "the audit should accept hostbound's exclusion and quote the refusal"
+grep -q '"event":"run_summary","passed":0,"failed":0,"no_tests":1,"skipped":0,"audited":1,"not_structural":0' <<<"$out" || fail "the run summary should count one cell and one audit"
+auditrun bothbound
+[[ $code -eq 1 ]] || fail "a member that builds on the target it excludes must fail the run (exit $code)"
+grep -qF '"event":"restriction_audit","lib":"bothbound","target":"commonJS","status":"not_structural","line":"`botopink build --target commonJS` succeeds"' <<<"$out" ||
+  fail "the audit should refuse bothbound's exclusion: it builds on commonJS"
+grep -qF 'the restriction is not structural — `bothbound` excludes `commonJS` in its "targets"' <<<"$out" || fail "the refusal should name the member and the target"
+grep -q '"failed":0,"no_tests":1,"skipped":0,"audited":0,"not_structural":1' <<<"$out" || fail "no cell is red: the refused exclusion alone fails the run"
+auditrun otherred --target commonJS
+[[ $code -eq 1 ]] || fail "an exclusion that hides another red must fail the run (exit $code)"
+grep -q '"event":"restriction_audit","lib":"otherred","target":"commonJS","status":"not_structural","line":"error' <<<"$out" ||
+  fail "the audit should refuse otherred's exclusion and quote its first error"
+grep -q 'cell.bp' <<<"$out" || fail "the build's own diagnostic should be printed above the refusal"
+# There is no flag that runs an excluded target, in the runner or the wrapper.
+auditrun hostbound --include-unsupported
+[[ $code -eq 2 ]] || fail "--include-unsupported must be an unknown flag (exit $code)"
+! "$LIB_TEST_BIN" --help | grep -q -- "--include-unsupported" || fail "--help still documents --include-unsupported"
+# `--list` prints the plan and runs nothing: the cells are the manifest's.
+plan="$( cd "$LIBWORK" && "$LIB_TEST_BIN" --bin "$BP_BIN" --lib-root "$AUDWORK" --list )"
+echo "$plan"
+[[ "$(grep -c $'\tcell:' <<<"$plan")" -eq 3 ]] || fail "--list should count 3 cells (each member's erlang)"
+[[ "$(grep -c $'\taudit$' <<<"$plan")" -eq 3 ]] || fail "--list should count 3 audits (each member's commonJS)"
+# The wrapper reports the same verdicts and reads no list and no variable that
+# could change one: the two variables that used to swap the ledgers do nothing.
+wraprun() { # wraprun <lib> — scripts/test-libs.sh over one member
+  set +e
+  out="$( BOTOPINK_KNOWN_RED_LIBS=/dev/null BOTOPINK_RESTRICTED_TARGETS=/dev/null bash "$TEST_LIBS" --lib-root "$AUDWORK" --lib "$1" 2>&1 )"
+  code=$?
+  set -e
+  echo "$out"
+}
+wraprun hostbound
+[[ $code -eq 0 ]] || fail "test-libs.sh: a structural exclusion must not fail the run (exit $code)"
+grep -qF 'hostbound · commonJS: excluded by "targets" — structural: error: `now` has no `#[@External.<Target>(…)]` for the node backend (src/cell.bp:' <<<"$out" ||
+  fail "test-libs.sh should print the refusal that proves the exclusion structural"
+grep -qx "test-libs: 0 passed, 0 failed, 1 without tests, 1 restrictions audited" <<<"$out" || fail "test-libs.sh: the summary line is not the one documented"
+wraprun bothbound
+[[ $code -eq 1 ]] || fail "test-libs.sh: a restriction that is not structural must fail the run (exit $code)"
+grep -qF 'bothbound · commonJS: NOT STRUCTURAL — excluded by "targets", and `botopink build --target commonJS` succeeds' <<<"$out" || fail "test-libs.sh should name the refused exclusion"
+grep -qx "test-libs: 0 passed, 0 failed, 1 without tests, 0 restrictions audited, 1 restrictions not structural" <<<"$out" || fail "test-libs.sh: the summary line should count the refused exclusion"
+grep -q "^test-libs: restrictions that are not structural .*: bothbound·commonJS$" <<<"$out" || fail "test-libs.sh should list the refused exclusions"
+# A pair `botopink test` cannot run is not a pass either: the wrapper fails it.
+set +e
+wrapbeam="$( bash "$TEST_LIBS" --lib-root "$AUDWORK" --lib hostbound --target beam 2>&1 )"
+code=$?
+set -e
+echo "$wrapbeam"
+[[ $code -eq 1 ]] || fail "test-libs.sh: a requested target botopink test cannot run must fail the run (exit $code)"
+grep -qF 'hostbound · beam: NOT RUNNABLE' <<<"$wrapbeam" || fail "test-libs.sh should name the pair that did not run"
+grep -qx "test-libs: 0 passed, 0 failed, 0 without tests, 0 restrictions audited, 1 not runnable by botopink test" <<<"$wrapbeam" || fail "test-libs.sh: the summary line should count the pair that did not run"
+# A red cell is red: nothing lists it away.
+wrapred="$( bash "$TEST_LIBS" --lib-root "$LIBWORK/root" --lib quietbad --target commonJS 2>&1 )" && fail "test-libs.sh: a cell that does not compile must fail the run"
+echo "$wrapred"
+grep -qx "test-libs: 0 passed, 1 failed, 0 without tests, 0 restrictions audited" <<<"$wrapred" || fail "test-libs.sh: a red cell should be counted as failed"
+grep -q "^test-libs: FAILED cells: quietbad·commonJS$" <<<"$wrapred" || fail "test-libs.sh should name the failed cell"
 
 # ── `botopink test` names its own binary to the tests it runs ────────────────
 # A test that builds a fixture project spawns "the compiler running me". It
