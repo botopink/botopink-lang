@@ -3784,10 +3784,21 @@ const Emitter = struct {
                 // A JS number division is a float one, so the quotient is
                 // truncated. Inference says which `/` this is (`.division`).
                 if (bin.op == .div) if (self.lowerings) |lw| if (lw.get(bin.loc)) |il| if (il == .division and il.division == .integer) {
-                    return self.b.call(.{ .name = "Math.trunc" }, &.{
+                    const q = try self.b.call(.{ .name = "Math.trunc" }, &.{
                         try self.b.binary("/", try self.buildExpr(bin.lhs.*), try self.buildExpr(bin.rhs.*)),
                     });
+                    // `0 / -3`, `-1 / 2`: the truncated quotient is `-0`.
+                    return if (mayBeNegZero(bin.lhs.*, bin.rhs.*)) self.intCanon(q) else q;
                 };
+                // Decision 214's premise — an integer is never `-0` (no such
+                // value on erlang, beam or wasm). JavaScript's `*` and `%` answer
+                // `-0` for `0 * -1` and `-4 % 2`, so an integer product or
+                // remainder is canonicalised (`intCanon`).
+                if ((bin.op == .mul or bin.op == .mod) and mayBeNegZero(bin.lhs.*, bin.rhs.*) and
+                    try self.isIntArith(bin.lhs.*, bin.rhs.*))
+                {
+                    return self.intCanon(try self.b.binary(if (bin.op == .mul) "*" else "%", try self.buildExpr(bin.lhs.*), try self.buildExpr(bin.rhs.*)));
+                }
                 const op: []const u8 = switch (bin.op) {
                     .add => "+",
                     .sub => "-",
@@ -3810,10 +3821,16 @@ const Emitter = struct {
                 return self.b.binary(op, try self.buildExpr(bin.lhs.*), try self.buildExpr(bin.rhs.*));
             },
 
-            .unaryOp => |un| return self.b.unary(switch (un.op) {
-                .not => "!",
-                .neg => "-",
-            }, try self.buildExpr(un.expr.*), true),
+            .unaryOp => |un| {
+                const out = try self.b.unary(switch (un.op) {
+                    .not => "!",
+                    .neg => "-",
+                }, try self.buildExpr(un.expr.*), true);
+                // `-x` with `x = 0` is `-0` in JavaScript; an integer never is.
+                // A nonzero literal (`-1`) cannot be.
+                if (un.op == .neg and !isNonzeroLiteral(un.expr.*) and (try self.numKind(un.expr.*)).isInt()) return self.intCanon(out);
+                return out;
+            },
 
             .jump => |j| switch (j.kind) {
                 // `return` / `break` / `continue` are statements that leave the
@@ -4521,6 +4538,95 @@ const Emitter = struct {
     fn isFloatShaped(self: *Emitter, e: ast.Expr) anyerror!bool {
         const sh = (try self.printShape(e)) orelse return false;
         return sh == .quoted and std.mem.eql(u8, sh.quoted, "f");
+    }
+
+    // ── an integer is never -0 (decision 214) ────────────────────────────────
+
+    /// What `numKind` knows of a number: a written integer literal (weak — it
+    /// takes a float's type in a float position), an operand typed as an
+    /// integer or a float, or nothing.
+    const NumKind = enum {
+        unknown,
+        int_lit,
+        int,
+        float,
+
+        fn isInt(k: NumKind) bool {
+            return k == .int or k == .int_lit;
+        }
+    };
+
+    fn isIntTypeName(n: []const u8) bool {
+        const ints = [_][]const u8{ "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "isize", "usize" };
+        for (ints) |i| if (std.mem.eql(u8, n, i)) return true;
+        return false;
+    }
+
+    fn numKind(self: *Emitter, e: ast.Expr) anyerror!NumKind {
+        switch (e) {
+            .literal => |lit| switch (lit.kind) {
+                .numberLit => |n| return if (isFloatLiteral(n)) .float else .int_lit,
+                else => return .unknown,
+            },
+            .unaryOp => |un| return if (un.op == .neg) self.numKind(un.expr.*) else .unknown,
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| return self.numKind(inner.*),
+                else => {},
+            },
+            .binaryOp => |bin| switch (bin.op) {
+                .add, .sub, .mul, .mod, .div => {
+                    if (bin.op == .div) if (self.lowerings) |lw| if (lw.get(bin.loc)) |il| if (il == .division)
+                        return if (il.division == .integer) .int else .float;
+                    const l = try self.numKind(bin.lhs.*);
+                    const r = try self.numKind(bin.rhs.*);
+                    if (l == .float or r == .float) return .float;
+                    if (l == .int or r == .int) return .int;
+                    if (l == .int_lit and r == .int_lit) return .int_lit;
+                    return .unknown;
+                },
+                else => return .unknown,
+            },
+            else => {},
+        }
+        const t = (try self.staticTypeOf(e)) orelse return .unknown;
+        return switch (t) {
+            .named => |n| if (isIntTypeName(n)) .int else if (eqIsFloat(t)) .float else .unknown,
+            else => .unknown,
+        };
+    }
+
+    /// Both operands integers: one typed as an integer and none a float, or
+    /// two integer literals.
+    fn isIntArith(self: *Emitter, lhs: ast.Expr, rhs: ast.Expr) anyerror!bool {
+        const l = try self.numKind(lhs);
+        const r = try self.numKind(rhs);
+        if (l == .float or r == .float) return false;
+        return l == .int or r == .int or (l == .int_lit and r == .int_lit);
+    }
+
+    /// A nonzero number literal, negated or not.
+    fn isNonzeroLiteral(e: ast.Expr) bool {
+        return switch (e) {
+            .literal => |lit| switch (lit.kind) {
+                .numberLit => |n| for (n) |c| {
+                    if (c != '0' and c != '.' and c != '_') break true;
+                } else false,
+                else => false,
+            },
+            .unaryOp => |un| un.op == .neg and isNonzeroLiteral(un.expr.*),
+            else => false,
+        };
+    }
+
+    /// False when the result cannot be `-0`: two nonnegative literals.
+    fn mayBeNegZero(lhs: ast.Expr, rhs: ast.Expr) bool {
+        return !(lhs == .literal and lhs.literal.kind == .numberLit and rhs == .literal and rhs.literal.kind == .numberLit);
+    }
+
+    /// `(e + 0)` — `-0 + 0` is `0`, and every other number is left exactly
+    /// itself (no 32-bit wrap, unlike `| 0`), so no integer answer moves.
+    fn intCanon(self: *Emitter, e: js.Expr) !js.Expr {
+        return self.b.binary("+", e, .{ .number = "0" });
     }
 
     // ── structural equality (decision 210) ───────────────────────────────────

@@ -8,7 +8,7 @@ pub fn double(x: i32) -> i32 {
 ----- JAVASCRIPT -- math.js
 ```javascript
 function double(x) {
-    return (x * 2);
+    return ((x * 2) + 0);
 }
 exports.double = double;
 ```

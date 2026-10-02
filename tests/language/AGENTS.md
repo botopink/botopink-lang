@@ -1047,6 +1047,10 @@ refuses it on a host binding, which a division is not — a `.targets commonJS w
 would fail the audit. Each backend that has NaN pins that half in a RUN LOG fixture of
 its own: `codegen/tests/commonjs.zig` and `codegen/tests/wat.zig`, `f64 ---- NaN
 equals NaN under ==`.
+`run/integer_never_negative_zero.bp` is the premise commonJS needs for it: an integer
+is never `-0` (`0 * -1`, `-x`, `-4 % 2` and `0 / -3` print `0` and compare equal to
+`0`), so a generic `same<T>` answers `true` for two integer zeros and `false` for
+`0.0` against `-0.0` on four targets — commonJS printed `-0` and answered `true`.
 
 **The identity is asserted on two backends and RUN on four.** `botopink test` refuses beam and wasm,
 so a `test/` cell reaches only commonJS and erlang. `run/type_identity_equality.bp` is the same

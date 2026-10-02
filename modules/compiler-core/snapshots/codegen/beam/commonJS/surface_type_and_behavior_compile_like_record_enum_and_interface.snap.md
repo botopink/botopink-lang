@@ -69,7 +69,7 @@ class Square {
     }
 
     area() {
-        return (this.side * this.side);
+        return ((this.side * this.side) + 0);
     }
 }
 Square.prototype.__bp = "Square";

@@ -43,7 +43,7 @@ function __bp_print() {
 }
 
 function diff(x, y) {
-    return (x + (-y));
+    return (x + ((-y) + 0));
 }
 
 function main() {

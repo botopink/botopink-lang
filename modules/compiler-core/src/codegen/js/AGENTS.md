@@ -168,12 +168,23 @@ nothing is interned, and there is no global table.
 **A float under `==` is a total order** (decision 214, Java's `Double.compare` and
 Kotlin's data class): `0.0 == -0.0` is `false` and `NaN == NaN` is `true`, which is
 `Object.is` exactly, bare and as a part alike; `<`, `>`, `<=`, `>=` keep IEEE.
-Only an operand `staticTypeOf` reads as a float takes it — an integer stays `===`,
-because JavaScript's integer arithmetic produces `-0` too (`0 * -1`). For the same
-reason the run-time `__bp_eq` tells NaN from NaN as equal (`a !== a && b !== b`,
-true of a NaN alone) but does not tell `-0` from `0`: a generic `T` bound to an
-`f64`, or a float part of a type another module declares, answers `0.0 == -0.0` as
-`true` here. `tests/language/run/f64_equality_total_order.bp` pins the zeros on
+Only an operand `staticTypeOf` reads as a float takes it; an integer stays `===`.
+The run-time `__bp_eq`'s first test is `Object.is(a, b)` too, so a generic `T`
+bound to an `f64`, and a float part of a type another module declares, follow the
+same order — which is safe for a number of unknown type only because **an integer
+is never `-0`** here (below).
+
+**An integer is never `-0`** (decision 214's premise; erlang, beam and wasm have no
+such value). JavaScript's `*`, `%`, unary `-` and the truncated integer `/` answer
+`-0` for `0 * -1`, `-x` with `x = 0`, `-4 % 2` and `0 / -3`, and commonJS printed
+`-0` for each. `intCanon` wraps those four forms as `(e + 0)` — `-0 + 0` is `0` and
+every other number stays exactly itself, where `| 0` would wrap past 32 bits — when
+`numKind` reads them as integer arithmetic: an operand typed as an integer (and none
+a float), two integer literals, or inference's `.division == .integer` for `/`. Two
+nonnegative literals (`2 * 3`) and a negated nonzero literal (`-1`) are left alone.
+`+` and binary `-` cannot make `-0` from operands that are not. An integer this
+backend cannot type (an untyped lambda parameter times a literal, a host function's
+answer) is not wrapped. `tests/language/run/integer_never_negative_zero.bp`. `tests/language/run/f64_equality_total_order.bp` pins the zeros on
 four targets; the NaN half is `tests/commonjs.zig`'s `f64 ---- NaN equals NaN under
 ==` RUN LOG, since erlang and beam never produce a NaN.
 

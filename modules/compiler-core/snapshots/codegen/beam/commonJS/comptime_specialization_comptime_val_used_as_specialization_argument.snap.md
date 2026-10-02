@@ -30,12 +30,12 @@ function main() {
 
 function scale_$0(value) {
     const factor = 2;
-    return (value * factor);
+    return ((value * factor) + 0);
 }
 
 function scale_$1(value) {
     const factor = 3;
-    return (value * factor);
+    return ((value * factor) + 0);
 }
 
 function _botopink_main() {

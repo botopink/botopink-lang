@@ -15,7 +15,7 @@ fn sumEvens(arr: i32[]) -> i32[] {
 function sumEvens(arr) {
     let out = [];
     for (const x of arr) {
-    if (((x % 2) !== 0)) { continue; }
+    if ((((x % 2) + 0) !== 0)) { continue; }
     out.push(x);
 }
     return out;

@@ -43,7 +43,7 @@ function __bp_print() {
 }
 
 function negate(x) {
-    return (-x);
+    return ((-x) + 0);
 }
 
 function main() {

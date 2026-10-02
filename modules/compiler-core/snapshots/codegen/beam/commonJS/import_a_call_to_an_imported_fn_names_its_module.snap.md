@@ -8,7 +8,7 @@ pub fn twice(x: i32) -> i32 {
 ----- JAVASCRIPT -- a.js
 ```javascript
 function twice(x) {
-    return (x * 2);
+    return ((x * 2) + 0);
 }
 exports.twice = twice;
 ```

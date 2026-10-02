@@ -59,12 +59,12 @@ function main() {
 
 function multiply_$0(x) {
     const factor = 2;
-    return (x * factor);
+    return ((x * factor) + 0);
 }
 
 function multiply_$1(x) {
     const factor = 3;
-    return (x * factor);
+    return ((x * factor) + 0);
 }
 
 function _botopink_main() {

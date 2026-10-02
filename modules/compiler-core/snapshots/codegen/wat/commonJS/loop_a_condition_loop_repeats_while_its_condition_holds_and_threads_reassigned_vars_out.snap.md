@@ -77,7 +77,7 @@ function evens(limit) {
     let sum = 0;
     while ((i < limit)) {
     i = (i + 1);
-    if (((i % 2) === 1)) { continue; }
+    if ((((i % 2) + 0) === 1)) { continue; }
     sum = (sum + i);
 }
     return sum;

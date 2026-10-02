@@ -589,10 +589,7 @@ fn main() {
 function __bp_array_at(xs, i) { return xs.at(i) ?? null; }
 
 function __bp_eq(a, b, d) {
-    if ((a === b)) {
-        return true;
-    }
-    if (((a !== a) && (b !== b))) {
+    if (Object.is(a, b)) {
         return true;
     }
     if ((((((d > 32) || (a === null)) || (b === null)) || (typeof a !== "object")) || (a.constructor !== b.constructor))) {
@@ -798,7 +795,7 @@ Array.prototype.chunked = function(n) {
     if ((n <= 0)) { return out; }
     const len = this.length;
     for (const k of Array.from({length: Math.max(0, (len) - (0))}, (_, __i) => (0) + __i)) {
-    (() => { if (((k % n) === 0)) { return out = out.concat([this.slice(k, (k + n))]); } })();
+    (() => { if ((((k % n) + 0) === 0)) { return out = out.concat([this.slice(k, (k + n))]); } })();
 }
     return out;
 };

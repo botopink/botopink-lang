@@ -48,7 +48,7 @@ function main() {
 }
     let first = 0;
     for (const x of [1, 2, 3]) {
-    if ((x === 2)) { first = (x * 10); break; }
+    if ((x === 2)) { first = ((x * 10) + 0); break; }
 }
     __bp_print(first);
 }
