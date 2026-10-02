@@ -648,8 +648,8 @@ Now:
   under its own local.
 
 `tests/wat.zig` `a lambda's binding shadows the outer one only inside it` pins
-the shapes the checker keeps, its RUN LOG commonJS's (beam answers it too;
-erlang's `erlc` refuses the lambda's re-binding, `02-erlang`'s row). The
+the shapes the checker keeps, its RUN LOG commonJS's (erlang and beam answer
+it too). The
 inner-block and `case`-arm halves of the machinery stay, though a checked
 program no longer reaches them.
 
