@@ -27,6 +27,11 @@
 //! **Order.** By module path (byte order), then by declaration order inside a
 //! module — the order decorators ran in, which is source order.
 //!
+//! **A list** (decision 235). `with: [a, b]` answers every declaration carrying
+//! any of them, in that one order, a declaration carrying two of them once
+//! (at its first recording); its `meta` is what the listed decorators set, in
+//! set order. A name listed twice is `typeinfo-all-arguments`.
+//!
 //! The pass works in two halves. `collect` finds the queries of a parsed
 //! module, which makes its first analysis stop before bodies (like a module
 //! whose decorators contributed code). After the first analysis has run the
@@ -192,36 +197,69 @@ pub fn plan(
         }
         const with_expr = with orelse return refuse(arena, q.loc, "{s}: `@typeinfo.all` needs `with:`, the decorator its declarations carry", .{diagnostics.typeinfo_all_arguments}, arguments_hint);
 
-        // ── the decorator ────────────────────────────────────────────────
-        const spelled: []const u8 = switch (with_expr.*) {
-            .identifier => |id| switch (id.kind) {
-                .ident => |n| n,
-                .identAccess => |ia| if (ia.receiver.* == .identifier and ia.receiver.identifier.kind == .ident)
-                    try std.fmt.allocPrint(arena, "{s}.{s}", .{ ia.receiver.identifier.kind.ident, ia.member })
+        // ── the decorators ───────────────────────────────────────────────
+        // Decision 235 — `with:` names one decorator or a list of them
+        // (`with: [component, service]`): one answer, in the one order, a
+        // declaration carrying two of them once.
+        const not_decorator = "`with:` names a decorator — a function whose first parameter is `comptime _: @Decl`, with a body — declared here or imported — or a list of them.";
+        const with_items: []const ast.Expr = switch (with_expr.*) {
+            .collection => |c| switch (c.kind) {
+                .arrayLit => |al| if (al.spread == null and al.spreadExpr == null and al.elems.len > 0)
+                    al.elems
                 else
-                    "",
-                else => "",
+                    return refuse(arena, q.loc, "{s}: `with:` lists one or more decorators by name, with no spread", .{diagnostics.typeinfo_all_arguments}, arguments_hint),
+                else => @as(*const [1]ast.Expr, with_expr)[0..1],
             },
-            else => "",
+            else => @as(*const [1]ast.Expr, with_expr)[0..1],
         };
-        const not_decorator = "`with:` names a decorator — a function whose first parameter is `comptime _: @Decl`, with a body — declared here or imported.";
-        const decorator: Decorator = found: {
-            for (program.decls) |d| switch (d) {
-                .@"fn" => |f| if (std.mem.eql(u8, f.name, spelled) and f.params.len > 0 and f.params[0].typeRef.isDeclType() and f.body.len > 0)
-                    break :found .{ .owner = module_path, .name = f.name },
-                else => {},
+        var decorators: std.ArrayListUnmanaged(Decorator) = .empty;
+        for (with_items) |*item| {
+            const spelled: []const u8 = switch (item.*) {
+                .identifier => |id| switch (id.kind) {
+                    .ident => |n| n,
+                    .identAccess => |ia| if (ia.receiver.* == .identifier and ia.receiver.identifier.kind == .ident)
+                        try std.fmt.allocPrint(arena, "{s}.{s}", .{ ia.receiver.identifier.kind.ident, ia.member })
+                    else
+                        "",
+                    else => "",
+                },
+                else => "",
             };
-            if (env.decorators.get(spelled)) |sig| if (sig.fn_decl) |dfn| if (dfn.body.len > 0)
-                break :found .{ .owner = env.comptimeOwnerOf(dfn), .name = dfn.name };
-            return refuse(arena, q.loc, "{s}: `with: {s}` names no decorator of this module or its imports", .{ diagnostics.typeinfo_all_not_decorator, spelled }, not_decorator);
-        };
+            const decorator: Decorator = found: {
+                for (program.decls) |d| switch (d) {
+                    .@"fn" => |f| if (std.mem.eql(u8, f.name, spelled) and f.params.len > 0 and f.params[0].typeRef.isDeclType() and f.body.len > 0)
+                        break :found .{ .owner = module_path, .name = f.name },
+                    else => {},
+                };
+                if (env.decorators.get(spelled)) |sig| if (sig.fn_decl) |dfn| if (dfn.body.len > 0)
+                    break :found .{ .owner = env.comptimeOwnerOf(dfn), .name = dfn.name };
+                return refuse(arena, q.loc, "{s}: `with: {s}` names no decorator of this module or its imports", .{ diagnostics.typeinfo_all_not_decorator, spelled }, not_decorator);
+            };
+            for (decorators.items) |seen| if (std.mem.eql(u8, seen.owner, decorator.owner) and std.mem.eql(u8, seen.name, decorator.name))
+                return refuse(arena, q.loc, "{s}: `with:` lists `{s}` twice", .{ diagnostics.typeinfo_all_arguments, spelled }, arguments_hint);
+            try decorators.append(arena, decorator);
+        }
+        // How the refusals name the query's decorators: `#[a]`, `#[a]/#[b]`.
+        var label_buf: std.ArrayListUnmanaged(u8) = .empty;
+        for (decorators.items, 0..) |d, i| {
+            if (i > 0) try label_buf.append(arena, '/');
+            try label_buf.print(arena, "#[{s}]", .{d.name});
+        }
+        const label = label_buf.items;
 
         // ── the declarations ─────────────────────────────────────────────
         var entries: std.ArrayListUnmanaged(reflectionMod.DeclaredEntry) = .empty;
         for (reflection.declared.items) |e| {
-            if (!std.mem.eql(u8, e.decorator_owner, decorator.owner) or !std.mem.eql(u8, e.decorator_name, decorator.name)) continue;
+            const listed = for (decorators.items) |d| {
+                if (std.mem.eql(u8, e.decorator_owner, d.owner) and std.mem.eql(u8, e.decorator_name, d.name)) break true;
+            } else false;
+            if (!listed) continue;
             const own = std.mem.eql(u8, e.module, module_path);
             if (!own and reflection.readers.contains(e.module)) continue;
+            const again = for (entries.items) |prev| {
+                if (std.mem.eql(u8, prev.module, e.module) and std.mem.eql(u8, prev.name, e.name)) break true;
+            } else false;
+            if (again) continue;
             try entries.append(arena, e);
         }
         std.mem.sort(reflectionMod.DeclaredEntry, entries.items, {}, struct {
@@ -248,18 +286,18 @@ pub fn plan(
                 }
                 break :blk .{ f, t };
             };
-            return refuse(arena, q.loc, "{s}: `#[{s}]` is carried by the function `{s}` and by the type `{s}`, and one query answers one kind of value", .{ diagnostics.typeinfo_all_mixed, decorator.name, first_fn, first_type }, "Catalogue functions and types with two decorators, or two queries.");
+            return refuse(arena, q.loc, "{s}: `{s}` is carried by the function `{s}` and by the type `{s}`, and one query answers one kind of value", .{ diagnostics.typeinfo_all_mixed, label, first_fn, first_type }, "Catalogue functions and types with two decorators, or two queries.");
         }
         const of_types = entries.items.len > fns;
         if (of_types and member == null) {
-            return refuse(arena, q.loc, "{s}: `#[{s}]` is carried by the type `{s}`, and a type is no value: name the associated fn each entry calls", .{ diagnostics.typeinfo_all_needs_member, decorator.name, entries.items[0].name }, "Write `@typeinfo.all(with: <decorator>, member: \"<associated fn>\")`; each `value` is then `{ -> T.<associated fn>() }`.");
+            return refuse(arena, q.loc, "{s}: `{s}` is carried by the type `{s}`, and a type is no value: name the associated fn each entry calls", .{ diagnostics.typeinfo_all_needs_member, label, entries.items[0].name }, "Write `@typeinfo.all(with: <decorator>, member: \"<associated fn>\")`; each `value` is then `{ -> T.<associated fn>() }`.");
         }
         if (!of_types and member != null and entries.items.len > 0) {
-            return refuse(arena, q.loc, "{s}: `#[{s}]` is carried by functions, and `member:` names an associated fn of a type", .{ diagnostics.typeinfo_all_arguments, decorator.name }, "A function's entry is the function itself; leave `member:` out.");
+            return refuse(arena, q.loc, "{s}: `{s}` is carried by functions, and `member:` names an associated fn of a type", .{ diagnostics.typeinfo_all_arguments, label }, "A function's entry is the function itself; leave `member:` out.");
         }
         for (entries.items) |e| {
             if (!std.mem.eql(u8, e.module, module_path) and !e.isPub)
-                return refuse(arena, q.loc, "{s}: `{s}` of `{s}` carries `#[{s}]` and is not `pub`, so the catalogue cannot reach it", .{ diagnostics.typeinfo_all_private, e.name, e.module, decorator.name }, "Make the declaration `pub`: the entry point reaches every declaration it catalogues through an import.");
+                return refuse(arena, q.loc, "{s}: `{s}` of `{s}` carries `{s}` and is not `pub`, so the catalogue cannot reach it", .{ diagnostics.typeinfo_all_private, e.name, e.module, label }, "Make the declaration `pub`: the entry point reaches every declaration it catalogues through an import.");
         }
 
         // ── the answer ───────────────────────────────────────────────────
@@ -288,7 +326,10 @@ pub fn plan(
             try text.appendSlice(arena, ", meta: [");
             var first = true;
             for (try reflection.metaOf(arena, e.module, e.name)) |m| {
-                if (!std.mem.eql(u8, m.decorator, decorator.name)) continue;
+                const listed = for (decorators.items) |d| {
+                    if (std.mem.eql(u8, m.decorator, d.name)) break true;
+                } else false;
+                if (!listed) continue;
                 if (!first) try text.appendSlice(arena, ", ");
                 first = false;
                 try text.appendSlice(arena, "DeclaredMeta(key: ");

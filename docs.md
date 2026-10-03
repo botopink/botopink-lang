@@ -2024,6 +2024,11 @@ the build — the package, its dependencies, std — in module-path order, then
 declaration order, and the reading module's own declarations; a module that
 reads it is imported by nobody (`typeinfo-all-imported`), and every declaration
 it answers from another module is `pub` (`typeinfo-all-private`).
+`with:` may list several decorators (decision 235):
+`@typeinfo.all(with: [service, repository], member: "make")` answers every
+declaration carrying any of them in the same one order, a declaration carrying
+two of them once, its `meta` what the listed decorators set; a decorator listed
+twice is `typeinfo-all-arguments`.
 
 ```botopink
 fn route(comptime decl: @Decl, path: string) {
