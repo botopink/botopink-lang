@@ -132,6 +132,10 @@ pub const ParseErrorType = enum {
     /// follows one with a default (`fn f(a: i32 = 1, b: i32)`). Defaults
     /// occupy trailing positions only, mirroring §1G's generic-param rule.
     fnParamDefaultTrailingOnly,
+    /// Decision 244 — the same rule on a field list: a record type's field
+    /// (`type Port(number: i32 = 80, host: string)`), a variant's payload or
+    /// an inline parameter type, without a default, after one with a default.
+    fieldDefaultTrailingOnly,
     /// A `_` parameter in a function that has a body. `_` names no parameter —
     /// it is a declaration's placeholder (`declare fn f(comptime _: type)`),
     /// legal only where there is no body to bind it in.

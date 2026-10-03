@@ -218,8 +218,6 @@ library writes instead.
 - A `throw` inside a `case` arm does not become the function's `Error` — an
   uncaught throw on node, `nocatch` on erlang. Test first, `throw` from a
   top-level `if`.
-- `fn some<T>(v: T) -> ?T { return v; }` is "recursive type detected". The
-  optional is read out of a one-item list: `[v].at(0)` (`schemas.bp` `present`).
 - `val assert Ok(v) = r;` inside an `if` inside a `while` leaves `v` undefined
   on commonJS. Use a `case` as an expression:
   `out = case r { Ok(v) -> out.append([v]); Error(_) -> out; };`.

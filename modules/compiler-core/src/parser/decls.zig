@@ -168,7 +168,8 @@ pub fn parseValDecl(this: *This, alloc: std.mem.Allocator) ParseError!ValDecl {
         this.parseError = ParseErrorInfo.fromToken(.unexpectedToken, tok);
         return ParseError.UnexpectedToken;
     }
-    const name = this.advance().lexeme;
+    const nameTok = this.advance();
+    const name = nameTok.lexeme;
     var typeAnnotation: ?ast.TypeRef = null;
     if (this.match(.colon)) {
         typeAnnotation = try this.parseTypeRef(alloc);
@@ -181,7 +182,7 @@ pub fn parseValDecl(this: *This, alloc: std.mem.Allocator) ParseError!ValDecl {
     const value_ptr = try this.boxExpr(alloc, value);
     // Semicolon required after top-level val declaration
     _ = try this.consume(.semicolon);
-    return ValDecl{ .name = name, .isPub = isPub, .mutable = mutable, .typeAnnotation = typeAnnotation, .value = value_ptr };
+    return ValDecl{ .name = name, .nameLoc = parser.Parser.locFromToken(nameTok), .isPub = isPub, .mutable = mutable, .typeAnnotation = typeAnnotation, .value = value_ptr };
 }
 
 /// `import { item, ... } [from "name"];`  ──or──
@@ -362,9 +363,10 @@ pub fn parseFnDecl(this: *This, alloc: std.mem.Allocator) ParseError!FnDecl {
         return failDeprecatedStarFn(this);
     }
     _ = try this.consume(.@"fn");
-    const name = (try this.consume(.identifier)).lexeme;
-    var fn_decl = try this.parseFnBody(alloc, name, isPub, isDeclare, annotations);
+    const nameTok = try this.consume(.identifier);
+    var fn_decl = try this.parseFnBody(alloc, nameTok.lexeme, isPub, isDeclare, annotations);
     fn_decl.isDefault = isDefault;
+    fn_decl.nameLoc = parser.Parser.locFromToken(nameTok);
     return fn_decl;
 }
 
@@ -387,7 +389,9 @@ pub fn parseFnDeclFromVal(this: *This, alloc: std.mem.Allocator) ParseError!FnDe
         return failDeprecatedStarFn(this);
     }
     _ = try this.consume(.@"fn");
-    return this.parseFnBody(alloc, name, isPub, false, annotations);
+    var fn_decl = try this.parseFnBody(alloc, name, isPub, false, annotations);
+    fn_decl.nameLoc = parser.Parser.locFromToken(nameTok);
+    return fn_decl;
 }
 
 /// Refuses the `_` parameter of the list parsed last when a body follows it:
@@ -1345,6 +1349,11 @@ pub fn parseFieldList(this: *This, alloc: std.mem.Allocator) ParseError!FieldLis
         errdefer fieldType.deinit(alloc);
         var default: ?Expr = null;
         if (this.match(.equal)) default = try this.parseBinaryExpr(alloc, prec.equality);
+        // Decision 244 — a default is trailing everywhere: a field without one
+        // never follows a field with one, as a parameter never does.
+        if (default == null and fields.items.len > 0 and fields.items[fields.items.len - 1].default != null) {
+            return failAt(this, .fieldDefaultTrailingOnly, nameTok);
+        }
         const commentSlice = try comments.toOwnedSlice(alloc);
         try fields.append(alloc, .{
             .name = nameTok.lexeme,
