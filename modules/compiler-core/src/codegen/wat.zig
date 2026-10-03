@@ -25,6 +25,7 @@ const wat = @import("./wat/wat_ast.zig");
 const watEmitter = @import("./wat/wat_emitter.zig");
 const wasmBinary = @import("./wat/wasm_binary_emitter.zig");
 const prelude = @import("./wat/wat_prelude.zig");
+const hostBinding = @import("./wat/host_binding.zig");
 
 const CrossModule = crossModule.CrossModule;
 
@@ -1050,6 +1051,7 @@ fn emitWat(
             try linkValRenames(ar0, &em.link_mangled_vals, cross, mod_name, prog, m);
         }
     }
+    try em.checkHostBindings(decls.items, owner.items, linked, own_program, module_name);
     const program: ast.Program = .{ .decls = decls.items };
     try em.registerTypes(program);
     try em.collectExtensions(program);
@@ -1068,6 +1070,7 @@ fn emitWat(
     // They used to be dropped when a `main` existed, which left every reference
     // to one as a dangling `global.get`.
     try em.registerSymbols(program, true);
+    try em.typeFnValueGlobals(program);
     for (program.decls, owner.items) |decl, from| switch (decl) {
         .@"fn" => |f| if (f.genericParams.len > 0 and f.body.len > 0 and !f.isDeclare) {
             try em.generic_fns.put(em.alloc, f.name, .{
@@ -1150,6 +1153,8 @@ fn emitWat(
     // The print helpers are the only thing that needs a host function, and
     // `Builder.helper` is the only way to have called one.
     if (em.b.helpers.has(.print)) try items.append(ar, .{ .import = prelude.fd_write_import });
+    // Decision 238's `wasi:` adapters each bring the WASI call they make.
+    if (em.b.helpers.has(.wasi_random_f64)) try items.append(ar, .{ .import = prelude.random_get_import });
 
     try items.append(ar, .{ .memory = .{ .@"export" = "memory", .min_pages = 1 } });
 
@@ -1639,6 +1644,11 @@ const Emitter = struct {
     /// none was ever promised. Decision 67 — calling one is refused where it is
     /// written, not lowered to a trap (see `lowerPlainCall`).
     external_missing: std.StringHashMap(void),
+    /// Decision 238 — the `declare fn`s whose `#[@External.Wasm("…")]` reads
+    /// as one of the three forms (`checkHostBindings`), by the name the
+    /// module emits them under. Each is registered and emitted like a bodied
+    /// `fn` (`registerFn`, `emitHostBinding`).
+    host_bindings: std.StringHashMapUnmanaged(HostBound) = .empty,
     /// 06 C13 — set when the emit fails with `error.MissingExternalTarget`, so
     /// the driver gets a located diagnostic naming the fn and this backend
     /// instead of the bare error name.
@@ -1888,6 +1898,7 @@ const Emitter = struct {
         self.iface_assoc.deinit();
         self.host_fns.deinit();
         self.external_missing.deinit();
+        self.host_bindings.deinit(self.alloc);
         self.aliases.deinit();
         self.pattern_locals.deinit();
         self.assoc_needed.deinit(self.alloc);
@@ -1949,7 +1960,7 @@ const Emitter = struct {
     /// (`specializedCallee`).
     fn registerFn(self: *Emitter, f: ast.FnDecl) !void {
         const ra = self.reg_arena.allocator();
-        if (f.isHost() or f.isDeclare or f.body.len == 0) {
+        if ((f.isHost() or f.isDeclare or f.body.len == 0) and !self.host_bindings.contains(f.name)) {
             try self.host_fns.put(f.name, {});
             // Decision 67 — a host-backed `declare fn` that names some
             // other target and no `wasm` one has no symbol here and
@@ -1991,6 +2002,18 @@ const Emitter = struct {
         if (f.typeGuardParam != null) try self.bool_fns.put(f.name, {});
     }
 
+    /// A module-level `val g = greet` whose function is declared after it:
+    /// `registerSymbols` met the `val` before `greet`'s signature, so it is
+    /// typed here, once every signature is registered.
+    fn typeFnValueGlobals(self: *Emitter, program: ast.Program) !void {
+        for (program.decls) |decl| switch (decl) {
+            .val => |v| if (v.typeAnnotation == null and !self.global_typerefs.contains(v.name) and self.globals.contains(v.name)) {
+                if (try self.fnRefTypeRef(v.value.*)) |tr| try self.global_typerefs.put(v.name, tr);
+            },
+            else => {},
+        };
+    }
+
     fn registerSymbols(self: *Emitter, program: ast.Program, emit_globals: bool) !void {
         const ra = self.reg_arena.allocator();
         for (program.decls) |decl| switch (decl) {
@@ -2011,7 +2034,11 @@ const Emitter = struct {
                     if (self.isBoolExpr(v.value.*)) try self.bool_globals.put(v.name, {});
                 }
                 if (self.recordTypeOfExpr(v.value.*)) |rty| try self.global_rec_types.put(v.name, rty);
-                if (v.typeAnnotation orelse self.typeRefOf(v.value.*)) |tr| try self.global_typerefs.put(v.name, tr);
+                // `val g = greet` types `g` by `greet`'s declaration (the
+                // local's rule, `.localBind`); a fn declared further down is
+                // typed by `typeFnValueGlobals` once every signature is known.
+                const bound_tr: ?ast.TypeRef = v.typeAnnotation orelse self.typeRefOf(v.value.*) orelse try self.fnRefTypeRef(v.value.*);
+                if (bound_tr) |tr| try self.global_typerefs.put(v.name, tr);
                 if (self.isArrayExpr(v.value.*)) {
                     try self.arr_globals.put(v.name, {});
                     try self.arr_elem_globals.put(v.name, self.elemKindOf(v.value.*));
@@ -3381,11 +3408,160 @@ const Emitter = struct {
         return self.seal(&c, if (tail == .terminated) .terminated else .{ .value = vt(self.cur_result) });
     }
 
+    /// A `declare fn` decision 238's vocabulary binds: the form, and for
+    /// `fn:` the name the private fn is emitted under (a linked module's
+    /// function may be mangled, `<module>/<name>`).
+    const HostBound = struct { binding: hostBinding.Binding, target: []const u8 = "" };
+
+    /// Decision 238 — every `#[@External.Wasm("…")]` of the program and its
+    /// linked modules is read before anything is registered: `op:` against
+    /// the opcode table and the signature, `fn:` against the declaring
+    /// module's own functions (a private bodied `fn` with the same
+    /// parameter and return types), `wasi:` against the adapter list. A
+    /// binding outside the vocabulary is refused at its annotation, in a
+    /// linked module at the consumer's import (`foreign_origin`). A
+    /// `declare fn` with no wasm binding is left to `external_missing`.
+    fn checkHostBindings(
+        self: *Emitter,
+        decls: []const ast.DeclKind,
+        owner: []const usize,
+        linked: []const Linked,
+        own_program: ast.Program,
+        module_name: []const u8,
+    ) !void {
+        const ar = self.arena();
+        defer self.foreign_origin = null;
+        for (decls, owner) |d, from| {
+            const f = switch (d) {
+                .@"fn" => |f| f,
+                else => continue,
+            };
+            if (!f.isDeclare or f.body.len > 0) continue;
+            const ext = f.externalFor("wasm") orelse continue;
+            const ann_loc = wasmAnnotationLoc(f);
+            self.foreign_origin = if (from < linked.len) linked[from].via else null;
+            if (ext.module.len > 0)
+                return self.refuse(ann_loc, "`#[@External.Wasm(…)]` on `{s}` takes one string — `op:<opcode>`, `fn:<private fn of this module>` or `wasi:<adapter>`", .{f.name});
+            var slots: std.ArrayListUnmanaged(?hostBinding.Slot) = .empty;
+            for (f.params) |p| {
+                if (std.mem.eql(u8, p.name, "self")) continue;
+                try slots.append(ar, slotOf(p.typeRef));
+            }
+            const rslot: ?hostBinding.Slot = if (f.returnType) |rt| slotOf(rt) else null;
+            const result_other = if (f.returnType) |rt| rslot == null and !isNamedTypeRef(rt, "void") else false;
+            const parsed = try hostBinding.parse(ar, ext.symbol, .{ .params = slots.items, .result = rslot, .result_other = result_other });
+            const binding = switch (parsed) {
+                .refused => |r| return self.refuse(ann_loc, "{s} (on `{s}`)", .{ r.message, f.name }),
+                .ok => |b| b,
+            };
+            var bound: HostBound = .{ .binding = binding };
+            if (binding == .fn_) {
+                const name = binding.fn_;
+                const prog = if (from < linked.len) linked[from].program else own_program;
+                const mod_name = if (from < linked.len) linked[from].name else module_name;
+                const target: ?ast.FnDecl = for (prog.decls) |pd| switch (pd) {
+                    .@"fn" => |g| if (std.mem.eql(u8, g.name, name)) break g,
+                    else => {},
+                } else null;
+                const g = target orelse
+                    return self.refuse(ann_loc, "`#[@External.Wasm(\"fn:{s}\")]` on `{s}`: this module declares no fn `{s}`", .{ name, f.name, name });
+                if (g.isDeclare or g.body.len == 0)
+                    return self.refuse(ann_loc, "`#[@External.Wasm(\"fn:{s}\")]` on `{s}`: `{s}` has no body of its own to run", .{ name, f.name, name });
+                if (g.isPub)
+                    return self.refuse(ann_loc, "`#[@External.Wasm(\"fn:{s}\")]` on `{s}`: `{s}` is `pub` — a binding names a private fn, so no body becomes the module's surface twice", .{ name, f.name, name });
+                if (!try sameSignature(ar, f, g))
+                    return self.refuse(ann_loc, "`#[@External.Wasm(\"fn:{s}\")]` on `{s}`: `{s}` must take the same parameter types in the same order and answer the same type", .{ name, f.name, name });
+                bound.target = if (from < linked.len)
+                    (self.link_mangled.get(try linkKey(ar, mod_name, name)) orelse name)
+                else
+                    name;
+            }
+            try self.host_bindings.put(self.alloc, f.name, bound);
+        }
+    }
+
+    /// The location of `f`'s `#[@External.Wasm(…)]`.
+    fn wasmAnnotationLoc(f: ast.FnDecl) ?ast.Loc {
+        for (f.annotations) |a| {
+            if (std.mem.startsWith(u8, a.name, "External.") and std.ascii.eqlIgnoreCase(a.name["External.".len..], "wasm")) return a.loc;
+        }
+        return null;
+    }
+
+    /// The numeric slot a written type spells for decision 238's checks;
+    /// null for any other type.
+    fn slotOf(t: ast.TypeRef) ?hostBinding.Slot {
+        return switch (eagerTypeRef(t)) {
+            .named => |n| inline for (.{ "i32", "i64", "f32", "f64", "bool" }) |k| {
+                if (std.mem.eql(u8, n, k)) break @field(hostBinding.Slot, k);
+            } else null,
+            else => null,
+        };
+    }
+
+    /// Whether `g` takes the parameter types `f` declares, in order, and
+    /// answers the same type — compared as written (`TypeRef.format`).
+    fn sameSignature(ar: std.mem.Allocator, f: ast.FnDecl, g: ast.FnDecl) !bool {
+        if (f.genericParams.len != g.genericParams.len) return false;
+        var fp: std.ArrayListUnmanaged(ast.TypeRef) = .empty;
+        var gp: std.ArrayListUnmanaged(ast.TypeRef) = .empty;
+        for (f.params) |p| if (!std.mem.eql(u8, p.name, "self")) try fp.append(ar, p.typeRef);
+        for (g.params) |p| if (!std.mem.eql(u8, p.name, "self")) try gp.append(ar, p.typeRef);
+        if (fp.items.len != gp.items.len) return false;
+        for (fp.items, gp.items) |a, b| {
+            if (!std.mem.eql(u8, try std.fmt.allocPrint(ar, "{f}", .{a}), try std.fmt.allocPrint(ar, "{f}", .{b}))) return false;
+        }
+        if ((f.returnType == null) != (g.returnType == null)) return false;
+        if (f.returnType) |fr| {
+            if (!std.mem.eql(u8, try std.fmt.allocPrint(ar, "{f}", .{fr}), try std.fmt.allocPrint(ar, "{f}", .{g.returnType.?}))) return false;
+        }
+        return true;
+    }
+
+    /// The function a bound `declare fn` lowers to — its declared name and
+    /// signature (`registerFn` registered both), the parameters passed in
+    /// order: `op:` applies the instruction to them, `fn:` calls the private
+    /// fn, `wasi:` calls the adapter's prelude helper.
+    fn emitHostBinding(self: *Emitter, f: ast.FnDecl, hb: HostBound) !void {
+        const ar = self.arena();
+        const sig = self.fn_sigs.get(f.name).?;
+        var params: std.ArrayListUnmanaged(wat.Param) = .empty;
+        var lines: std.ArrayListUnmanaged(wat.Line) = .empty;
+        var i: usize = 0;
+        for (f.params, 0..) |p, k| {
+            if (std.mem.eql(u8, p.name, "self")) continue;
+            const sym = try self.paramSymbol(p, k);
+            try params.append(ar, wat.Builder.param(sym, vt(sig.params[i])));
+            try lines.append(ar, .{ .indent = 4, .instr = .{ .local_get = sym } });
+            i += 1;
+        }
+        const call: wat.Instr = switch (hb.binding) {
+            .op => |op| hostBinding.instrOf(op),
+            .fn_ => .{ .call = hb.target },
+            .wasi => |ad| blk: {
+                if (std.mem.eql(u8, ad.name, "random_f64")) break :blk self.builder().helper(.wasi_random_f64);
+                unreachable; // every listed adapter has its helper (`host_binding.zig` `adapters`)
+            },
+        };
+        try lines.append(ar, .{ .indent = 4, .instr = call });
+        const result: ?ValType = if (sig.result) |r| vt(r) else null;
+        try self.itemCommentF("{s} — #[@External.Wasm(\"{s}\")]", .{ f.name, f.externalFor("wasm").?.symbol });
+        try self.item(.{ .func = try self.builder().func(.{
+            .name = f.name,
+            .exports = if (f.isPub) try ar.dupe([]const u8, &.{f.name}) else &.{},
+            .params = params.items,
+            .result = result,
+            .locals = &.{},
+            .body = .{ .stack = if (result) |r| .{ .value = r } else .none, .lines = lines.items },
+        }) });
+    }
+
     fn emitFn(self: *Emitter, f: ast.FnDecl) !void {
         // A bodyless `declare fn` (host-backed FFI, `#[@External.…]`) has no
         // wasm implementation. Emitting `(func $f (result f64))` with an empty
         // body is invalid, so skip it entirely — a call of it is refused
         // (`lowerPlainCall`).
+        if (self.host_bindings.get(f.name)) |hb| return self.emitHostBinding(f, hb);
         if (f.isDeclare or f.body.len == 0) {
             try self.itemCommentF("declare fn {s} — no wasm implementation (host-backed)", .{f.name});
             return;
@@ -4736,7 +4912,13 @@ const Emitter = struct {
                         return .none;
                     };
                     try self.declareLocal(lb.name, self.inferExprType(lb.value.*));
-                    if (lb.typeAnnotation orelse self.typeRefOf(lb.value.*)) |tr| try self.local_typerefs.put(lb.name, tr);
+                    // A function NAMED as the value (`val g = greet`) types the
+                    // local by its declaration, as a written `fn(…) -> T` does:
+                    // `g()` then answers `greet`'s declared return. Without it the
+                    // call of a string-returning function printed the string's
+                    // address at exit 0.
+                    const bound_tr: ?ast.TypeRef = lb.typeAnnotation orelse self.typeRefOf(lb.value.*) orelse try self.fnRefTypeRef(lb.value.*);
+                    if (bound_tr) |tr| try self.local_typerefs.put(lb.name, tr);
                     // Decision 210 — the composite a `val` holds, for `==`
                     // over the name (`val t = #(P(x: 1), 2)`).
                     _ = self.eq_local_types.remove(lb.name);
@@ -5803,20 +5985,19 @@ const Emitter = struct {
             try self.lowerCoerced(r.start.*, "i32");
             if (r.end) |e| {
                 try self.lowerCoerced(e.*, "i32");
-            } else if (is_str) {
-                // to the end: the source's length prefix
-                try self.lowerCoerced(recv, "i32");
-                try self.emitC(.{ .load = .{} }, "source length");
             } else {
-                // `$__arr_slice` clamps, so "to the end" is the largest i32
+                // `$__str_cp_slice` and `$__arr_slice` clamp, so "to the end"
+                // is the largest i32
                 try self.emit(try self.constInt(std.math.maxInt(i32)));
             }
-            try self.emit(b.helper(if (is_str) .str_slice else .arr_slice));
+            // Decision 240: a string's bounds are codepoints.
+            try self.emit(b.helper(if (is_str) .str_cp_slice else .arr_slice));
             return;
         }
 
         if (is_str) {
-            // `s[i]` is the one-byte string at `i`, the `char` §7 prints.
+            // `s[i]` is the one-codepoint string at codepoint `i` (decision
+            // 240), the `char` §7 prints.
             const at = try self.declRes();
             try self.lowerCoerced(idx, "i32");
             try self.emit(.{ .local_set = at });
@@ -5825,7 +6006,7 @@ const Emitter = struct {
             try self.emit(.{ .local_get = at });
             try self.emit(one);
             try self.emit(opOf("i32", "add"));
-            try self.emit(b.helper(.str_slice));
+            try self.emit(b.helper(.str_cp_slice));
             return;
         }
         if (is_arr) {
@@ -8095,7 +8276,8 @@ const Emitter = struct {
         if (eq(u8, name, "slice")) return self.lowerStrSlice(cc);
         try self.lowerCoerced(recv, "i32");
         if (eq(u8, name, "length")) {
-            try self.emitC(.{ .load = .{} }, "string length");
+            // Decision 240: a string's length counts codepoints.
+            try self.emit(b.helper(.str_cp_len));
         } else if (eq(u8, name, "toUpper") or eq(u8, name, "toLower")) {
             const upper = eq(u8, name, "toUpper");
             try self.emit(try self.constInt(if (upper) @as(i32, 'a') else 'A'));
@@ -8131,13 +8313,13 @@ const Emitter = struct {
         } else {
             try self.lowerCoerced(callArg(cc, 0).?, "i32");
             if (eq(u8, name, "at")) {
-                try self.emit(b.helper(.str_at));
+                try self.emit(b.helper(.str_cp_at));
             } else if (eq(u8, name, "contains")) {
                 try self.emit(b.helper(.str_index_of));
                 try self.emit(try self.constInt(-1));
                 try self.emit(opOf("i32", "ne"));
             } else if (eq(u8, name, "indexOf")) {
-                try self.emit(b.helper(.str_index_of));
+                try self.emit(b.helper(.str_cp_index_of));
             } else if (eq(u8, name, "startsWith")) {
                 try self.emit(b.helper(.str_starts_with));
             } else if (eq(u8, name, "endsWith")) {
@@ -8147,7 +8329,7 @@ const Emitter = struct {
             } else if (eq(u8, name, "charCodeAt")) {
                 try self.emit(b.helper(.str_char_code));
             } else if (eq(u8, name, "lastIndexOf")) {
-                try self.emit(b.helper(.str_last_index_of));
+                try self.emit(b.helper(.str_cp_last_index_of));
             } else {
                 try self.emit(b.helper(.str_repeat));
             }
@@ -8262,7 +8444,7 @@ const Emitter = struct {
             } else {
                 try self.lowerCoerced(callArg(cc, 0).?, "i32");
                 if (callArg(cc, 1)) |end| {
-                    if (isNullLit(end)) try self.emit(whole) else try self.lowerSliceEnd(end, .max);
+                    if (isNullLit(end)) try self.emit(whole) else try self.lowerSliceEnd(end);
                 } else try self.emit(whole);
             }
             try self.emit(b.helper(.arr_slice));
@@ -10771,7 +10953,11 @@ const Emitter = struct {
         }
         if (std.mem.eql(u8, cc.callee, "length") and cc.args.len == 0) {
             try self.lowerValue(recv.*);
-            try self.emitC(.{ .load = .{} }, ".length (array/string prefix)");
+            // Decision 240: a string counts codepoints, an array its slots.
+            if (self.isStringExpr(recv.*))
+                try self.emit(self.builder().helper(.str_cp_len))
+            else
+                try self.emitC(.{ .load = .{} }, ".length (array prefix)");
             return true;
         }
         return false;
@@ -10869,7 +11055,11 @@ const Emitter = struct {
         if (std.mem.eql(u8, ia.member, "length")) {
             if (self.instance_lowerings.get(loc)) |il| if (il == .prim) {
                 try self.lowerValue(ia.receiver.*);
-                try self.emitC(.{ .load = .{} }, ".length");
+                // Decision 240: a string counts codepoints.
+                if (il.prim == .string)
+                    try self.emit(self.builder().helper(.str_cp_len))
+                else
+                    try self.emitC(.{ .load = .{} }, ".length");
                 return;
             };
             // Inference records `.prim` only where it typed the receiver. It
@@ -10881,7 +11071,10 @@ const Emitter = struct {
             // `length` still resolves below.
             if (self.isArrayExpr(ia.receiver.*) or self.isStringExpr(ia.receiver.*)) {
                 try self.lowerValue(ia.receiver.*);
-                try self.emitC(.{ .load = .{} }, ".length");
+                if (self.isStringExpr(ia.receiver.*))
+                    try self.emit(self.builder().helper(.str_cp_len))
+                else
+                    try self.emitC(.{ .load = .{} }, ".length");
                 return;
             }
         }
@@ -11590,23 +11783,24 @@ const Emitter = struct {
         else
             try self.emit(zero);
         if (cc.args.len > 1 and !isNullLit(cc.args[1].value.*)) {
-            try self.lowerSliceEnd(cc.args[1].value.*, .{ .str_len_of = cc.receiver.?.* });
+            try self.lowerSliceEnd(cc.args[1].value.*);
         } else {
             // No end argument — or a written `null` (`s.slice(2, null)`, what
-            // `s[2..]` passes): slice to the end (the source length prefix).
-            // `null` lowered as `0` made the end fall before the start and
-            // `$__str_slice` read out of bounds (a trap).
-            try self.lowerExpr(cc.receiver.?.*);
-            try self.emitC(.{ .load = .{} }, "source length");
+            // `s[2..]` passes): slice to the end. `$__str_cp_slice` clamps an
+            // end past the codepoint count to it, so "to the end" is the
+            // largest i32. `null` lowered as `0` once made the end fall
+            // before the start and the byte cutter read out of bounds.
+            try self.emit(try self.constInt(std.math.maxInt(i32)));
         }
-        try self.emit(self.builder().helper(.str_slice));
+        // Decision 240: the bounds are codepoints, normalised as `slice`
+        // normalises them (negative from the end, clamped).
+        try self.emit(self.builder().helper(.str_cp_slice));
     }
 
-    const SliceWhole = union(enum) { str_len_of: ast.Expr, max };
-
     /// A slice's `end: ?i32` that is not the literal `null`: a plain `i32`, or
-    /// an optional whose absence means "to the end" — `whole` then.
-    fn lowerSliceEnd(self: *Emitter, end: ast.Expr, whole: SliceWhole) anyerror!void {
+    /// an optional whose absence means "to the end" — the largest i32, which
+    /// `$__str_cp_slice` and `$__arr_slice` both clamp.
+    fn lowerSliceEnd(self: *Emitter, end: ast.Expr) anyerror!void {
         const oi = self.optInfoOf(end) orelse return self.lowerCoerced(end, "i32");
         if (!oi.boxed) return self.lowerCoerced(end, "i32");
         const tmp = try self.memName(self.nextMem());
@@ -11615,13 +11809,7 @@ const Emitter = struct {
         try self.emit(opOf("i32", "eqz"));
         var then_c: Capture = .{};
         self.open(&then_c);
-        switch (whole) {
-            .str_len_of => |recv| {
-                try self.lowerExpr(recv);
-                try self.emitC(.{ .load = .{} }, "source length");
-            },
-            .max => try self.emit(try self.constInt(std.math.maxInt(i32))),
-        }
+        try self.emit(try self.constInt(std.math.maxInt(i32)));
         const then_seq = self.seal(&then_c, .{ .value = .i32 });
         var else_c: Capture = .{};
         self.open(&else_c);

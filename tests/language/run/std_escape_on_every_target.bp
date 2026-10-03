@@ -1,0 +1,13 @@
+//// `std/escape` on all four targets (decision 238, `01-compiler/05-wasm` step
+//// 5): its two host cells build U+2028 / U+2029, and on wasm each is bound
+//// with `fn:` to a private body holding the character as a literal.
+
+import {escape} from "std";
+
+pub fn main() {
+    @print(escape.html("<a href=\"x\">&"));
+    @print(escape.attribute("it's \"q\""));
+    @print(escape.unescapeHtml("&lt;b&gt; &amp;amp;"));
+    @print(escape.jsString("a\u{2028}b\u{2029}c\"<\n"));
+    @print(escape.scriptJson("{\"k\":\"</script>\u{2028}&\"}"));
+}

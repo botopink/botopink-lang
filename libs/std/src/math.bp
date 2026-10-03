@@ -37,21 +37,25 @@ pub val log10e: f64 = 0.4342944819032518;
 #[@External.Node("Math", "abs")]
 #[@External.Erlang("erlang", "abs")]
 #[@External.Beam("erlang", "abs")]
+#[@External.Wasm("op:f64.abs")]
 pub declare fn abs(x: f64) -> f64;
 
 #[@External.Node("Math", "floor")]
 #[@External.Erlang("math", "floor")]
 #[@External.Beam("math", "floor")]
+#[@External.Wasm("op:f64.floor")]
 pub declare fn floor(x: f64) -> f64;
 
 #[@External.Node("Math", "round")]
 #[@External.Erlang("erlang", "round")]
 #[@External.Beam("erlang", "round")]
+#[@External.Wasm("fn:roundHalfUp")]
 pub declare fn round(x: f64) -> f64;
 
 #[@External.Node("Math", "trunc")]
 #[@External.Erlang("erlang", "trunc")]
 #[@External.Beam("erlang", "trunc")]
+#[@External.Wasm("op:f64.trunc")]
 pub declare fn trunc(x: f64) -> f64;
 
 // `ceil(x) = -floor(-x)` — a pure-botopink derivation that avoids the
@@ -69,11 +73,13 @@ pub fn sign(x: f64) -> f64 {
 #[@External.Node("Math", "min")]
 #[@External.Erlang("erlang", "min")]
 #[@External.Beam("erlang", "min")]
+#[@External.Wasm("op:f64.min")]
 pub declare fn minF(a: f64, b: f64) -> f64;
 
 #[@External.Node("Math", "max")]
 #[@External.Erlang("erlang", "max")]
 #[@External.Beam("erlang", "max")]
+#[@External.Wasm("op:f64.max")]
 pub declare fn maxF(a: f64, b: f64) -> f64;
 
 pub fn clamp(x: f64, lo: f64, hi: f64) -> f64 {
@@ -85,11 +91,13 @@ pub fn clamp(x: f64, lo: f64, hi: f64) -> f64 {
 #[@External.Node("Math", "sqrt")]
 #[@External.Erlang("math", "sqrt")]
 #[@External.Beam("math", "sqrt")]
+#[@External.Wasm("op:f64.sqrt")]
 pub declare fn sqrt(x: f64) -> f64;
 
 #[@External.Node("Math", "pow")]
 #[@External.Erlang("math", "pow")]
 #[@External.Beam("math", "pow")]
+#[@External.Wasm("fn:powBody")]
 pub declare fn pow(x: f64, y: f64) -> f64;
 
 // `cbrt(x)` via `pow(x, 1/3)`, honouring sign for negatives. Pure-botopink;
@@ -104,21 +112,25 @@ pub fn cbrt(x: f64) -> f64 {
 #[@External.Node("Math", "exp")]
 #[@External.Erlang("math", "exp")]
 #[@External.Beam("math", "exp")]
+#[@External.Wasm("fn:expBody")]
 pub declare fn exp(x: f64) -> f64;
 
 #[@External.Node("Math", "log")]
 #[@External.Erlang("math", "log")]
 #[@External.Beam("math", "log")]
+#[@External.Wasm("fn:lnBody")]
 pub declare fn ln(x: f64) -> f64;
 
 #[@External.Node("Math", "log2")]
 #[@External.Erlang("math", "log2")]
 #[@External.Beam("math", "log2")]
+#[@External.Wasm("fn:log2Body")]
 pub declare fn log2(x: f64) -> f64;
 
 #[@External.Node("Math", "log10")]
 #[@External.Erlang("math", "log10")]
 #[@External.Beam("math", "log10")]
+#[@External.Wasm("fn:log10Body")]
 pub declare fn log10(x: f64) -> f64;
 
 // `hypot(x, y) = sqrt(x*x + y*y)` — pure-botopink composition.
@@ -131,52 +143,1007 @@ pub fn hypot(x: f64, y: f64) -> f64 {
 #[@External.Node("Math", "sin")]
 #[@External.Erlang("math", "sin")]
 #[@External.Beam("math", "sin")]
+#[@External.Wasm("fn:sinBody")]
 pub declare fn sin(x: f64) -> f64;
 
 #[@External.Node("Math", "cos")]
 #[@External.Erlang("math", "cos")]
 #[@External.Beam("math", "cos")]
+#[@External.Wasm("fn:cosBody")]
 pub declare fn cos(x: f64) -> f64;
 
 #[@External.Node("Math", "tan")]
 #[@External.Erlang("math", "tan")]
 #[@External.Beam("math", "tan")]
+#[@External.Wasm("fn:tanBody")]
 pub declare fn tan(x: f64) -> f64;
 
 #[@External.Node("Math", "asin")]
 #[@External.Erlang("math", "asin")]
 #[@External.Beam("math", "asin")]
+#[@External.Wasm("fn:asinBody")]
 pub declare fn asin(x: f64) -> f64;
 
 #[@External.Node("Math", "acos")]
 #[@External.Erlang("math", "acos")]
 #[@External.Beam("math", "acos")]
+#[@External.Wasm("fn:acosBody")]
 pub declare fn acos(x: f64) -> f64;
 
 #[@External.Node("Math", "atan")]
 #[@External.Erlang("math", "atan")]
 #[@External.Beam("math", "atan")]
+#[@External.Wasm("fn:atanBody")]
 pub declare fn atan(x: f64) -> f64;
 
 #[@External.Node("Math", "atan2")]
 #[@External.Erlang("math", "atan2")]
 #[@External.Beam("math", "atan2")]
+#[@External.Wasm("fn:atan2Body")]
 pub declare fn atan2(y: f64, x: f64) -> f64;
 
 #[@External.Node("Math", "sinh")]
 #[@External.Erlang("math", "sinh")]
 #[@External.Beam("math", "sinh")]
+#[@External.Wasm("fn:sinhBody")]
 pub declare fn sinh(x: f64) -> f64;
 
 #[@External.Node("Math", "cosh")]
 #[@External.Erlang("math", "cosh")]
 #[@External.Beam("math", "cosh")]
+#[@External.Wasm("fn:coshBody")]
 pub declare fn cosh(x: f64) -> f64;
 
 #[@External.Node("Math", "tanh")]
 #[@External.Erlang("math", "tanh")]
 #[@External.Beam("math", "tanh")]
+#[@External.Wasm("fn:tanhBody")]
 pub declare fn tanh(x: f64) -> f64;
+
+// ── the wasm bodies (decision 238) ──────────────────────────────────────────
+// wasm has an instruction for `abs`, `floor`, `trunc`, `sqrt`, `minF` and
+// `maxF` (`op:`); for the functions below it has none, so each one's
+// `#[@External.Wasm("fn:…")]` names one of these private bodies. They run
+// only on wasm — commonJS, erlang and beam call their host — and they are a
+// port of the fdlibm code (Sun Microsystems, 1993) Node's V8 answers `Math.*`
+// with (`deps/v8/src/base/ieee754.cc`): the same operations in the same
+// order, so a wasm answer is the commonJS answer bit for bit. fdlibm reads
+// and writes the two 32-bit words of a double; botopink has no bit
+// operation, so the words are read and written with arithmetic that is exact
+// (`highWord`, `lowWord`, `fromWords`, `withLowZero`). One part is not
+// ported: the reduction of a trigonometric argument beyond 2^19·π/2
+// (`__kernel_rem_pio2`), which panics rather than answer a wrong value.
+
+// `Math.round`: V8's `Float64RoundUp(x)`, less one when that is more than a
+// half above `x` — a half rounds UP (`round(2.5)` is 3, `round(-2.5)` is -2)
+// and `-0.4` answers `-0`. `f64.nearest` rounds a half to even, which is why
+// this is not an `op:`.
+fn roundHalfUp(x: f64) -> f64 {
+    val up = -1.0 * floor(-1.0 * x);
+    return if (up - 0.5 > x) up - 1.0 else up;
+}
+
+// `s · h · h`: an overflow to ±Infinity (`h` = 1e300) or an underflow to ±0
+// (`h` = 1e-300) as fdlibm writes them, with `h` a parameter so no target
+// folds the product at compile time.
+fn timesHuge(s: f64, h: f64) -> f64 {
+    return s * h * h;
+}
+
+// 2^k for a whole k in -1074..1023 — every step exact.
+fn twoTo(k: f64) -> f64 {
+    var r = 1.0;
+    var n = k;
+    while (n >= 32.0) {
+        r = r * 4294967296.0;
+        n = n - 32.0;
+    }
+    while (n >= 1.0) {
+        r = r * 2.0;
+        n = n - 1.0;
+    }
+    while (n <= -32.0) {
+        r = r * 2.3283064365386963e-10;
+        n = n + 32.0;
+    }
+    while (n <= -1.0) {
+        r = r * 0.5;
+        n = n + 1.0;
+    }
+    return r;
+}
+
+// e with 2^e ≤ ax < 2^(e+1), for a positive finite ax.
+fn exponentOf(ax: f64) -> f64 {
+    var v = ax;
+    var e = 0.0;
+    while (v >= 4294967296.0) {
+        v = v * 2.3283064365386963e-10;
+        e = e + 32.0;
+    }
+    while (v >= 2.0) {
+        v = v * 0.5;
+        e = e + 1.0;
+    }
+    while (v < 2.3283064365386963e-10) {
+        v = v * 4294967296.0;
+        e = e - 32.0;
+    }
+    while (v < 1.0) {
+        v = v * 2.0;
+        e = e - 1.0;
+    }
+    return e;
+}
+
+// The 52-bit significand of a subnormal |x| as a whole number.
+fn subnormalBits(ax: f64) -> f64 {
+    return (ax * twoTo(1000.0)) * twoTo(74.0);
+}
+
+// fdlibm's `hx & 0x7fffffff`: the high 32-bit word of |x| as a whole number.
+fn highWord(x: f64) -> f64 {
+    if (x != x) return 2146959360.0;
+    val ax = abs(x);
+    if (ax == 0.0) return 0.0;
+    if (ax > 1.7976931348623157e308) return 2146435072.0;
+    val e = exponentOf(ax);
+    if (e < -1022.0) return floor(subnormalBits(ax) / 4294967296.0);
+    val m = ax * twoTo(0.0 - e);
+    return (e + 1023.0) * 1048576.0 + floor((m - 1.0) * 1048576.0);
+}
+
+// fdlibm's low word: the low 32 bits of |x|'s significand.
+fn lowWord(x: f64) -> f64 {
+    val ax = abs(x);
+    if (x != x || ax == 0.0 || ax > 1.7976931348623157e308) return 0.0;
+    val e = exponentOf(ax);
+    val bits = if (e < -1022.0)
+        subnormalBits(ax)
+    else
+        (ax * twoTo(0.0 - e) - 1.0) * 4503599627370496.0;
+    return bits - floor(bits / 4294967296.0) * 4294967296.0;
+}
+
+// The positive double whose words are `hw` (below the sign) and `lw`.
+fn fromWords(hw: f64, lw: f64) -> f64 {
+    val ef = floor(hw / 1048576.0);
+    val frac = (hw - ef * 1048576.0) * 4294967296.0 + lw;
+    if (ef == 0.0) return (frac * twoTo(-1000.0)) * twoTo(-74.0);
+    return (1.0 + frac / 4503599627370496.0) * twoTo(ef - 1023.0);
+}
+
+// fdlibm's `SET_LOW_WORD(x, 0)`.
+fn withLowZero(x: f64) -> f64 {
+    val v = fromWords(highWord(x), 0.0);
+    return if (signBit(x)) -1.0 * v else v;
+}
+
+// Whether `v` carries a minus sign — `-0.0` included (fdlibm's `hx < 0`).
+fn signBit(v: f64) -> bool {
+    return v < 0.0 || (v == 0.0 && 1.0 / v < 0.0);
+}
+
+// The exponent field of x's high word (`(hx >> 20) & 0x7ff`).
+fn exponentField(x: f64) -> f64 {
+    return floor(highWord(x) / 1048576.0);
+}
+
+// ── exp, expm1 ───────────────────────────────────────────────────────────────
+
+fn expBody(x: f64) -> f64 {
+    val hx = highWord(x);
+    val neg = signBit(x);
+    if (hx >= 1082535490.0) {
+        if (hx >= 2146435072.0) {
+            if (x != x) return x + x;
+            return if (neg) 0.0 else x;
+        }
+        if (x > 7.09782712893383973096e+02) return timesHuge(1.0, 1.0e300);
+        if (x < -7.45133219101941108420e+02) return timesHuge(1.0, 9.33263618503218878990e-302);
+    }
+    var hi = 0.0;
+    var lo = 0.0;
+    var k = 0.0;
+    var r = x;
+    if (hx > 1071001154.0) {
+        if (hx < 1072734898.0) {
+            if (x == 1.0) return 2.718281828459045;
+            if (neg) {
+                hi = x + 6.93147180369123816490e-01;
+                lo = -1.90821492927058770002e-10;
+                k = -1.0;
+            } else {
+                hi = x - 6.93147180369123816490e-01;
+                lo = 1.90821492927058770002e-10;
+                k = 1.0;
+            }
+        } else {
+            val half = if (neg) -0.5 else 0.5;
+            k = trunc(1.44269504088896338700e+00 * x + half);
+            hi = x - k * 6.93147180369123816490e-01;
+            lo = k * 1.90821492927058770002e-10;
+        }
+        r = hi - lo;
+    } else if (hx < 1043333120.0) {
+        return 1.0 + x;
+    }
+    val t = r * r;
+    val twopk = if (k >= -1021.0) twoTo(k) else twoTo(k + 1000.0);
+    val c = r - t * (1.66666666666666019037e-01 + t * (-2.77777777770155933842e-03 + t * (6.61375632143793436117e-05 + t * (-1.65339022054652515390e-06 + t * 4.13813679705723846039e-08))));
+    if (k == 0.0) return 1.0 - ((r * c) / (c - 2.0) - r);
+    val y = 1.0 - ((lo - (r * c) / (2.0 - c)) - hi);
+    if (k >= -1021.0) {
+        if (k == 1024.0) return y * 2.0 * 8.988465674311579539e307;
+        return y * twopk;
+    }
+    return y * twopk * 9.33263618503218878990e-302;
+}
+
+fn expm1Body(x: f64) -> f64 {
+    val hx = highWord(x);
+    val neg = signBit(x);
+    if (hx >= 1078159482.0) {
+        if (hx >= 1082535490.0) {
+            if (hx >= 2146435072.0) {
+                if (x != x) return x + x;
+                return if (neg) -1.0 else x;
+            }
+            if (x > 7.09782712893383973096e+02) return timesHuge(1.0, 1.0e300);
+        }
+        if (neg && x + 1.0e-300 < 0.0) return 1.0e-300 - 1.0;
+    }
+    var k = 0.0;
+    var r = x;
+    var c = 0.0;
+    if (hx > 1071001154.0) {
+        var hi = 0.0;
+        var lo = 0.0;
+        if (hx < 1072734898.0) {
+            if (!neg) {
+                hi = x - 6.93147180369123816490e-01;
+                lo = 1.90821492927058770002e-10;
+                k = 1.0;
+            } else {
+                hi = x + 6.93147180369123816490e-01;
+                lo = -1.90821492927058770002e-10;
+                k = -1.0;
+            }
+        } else {
+            val half = if (neg) -0.5 else 0.5;
+            k = trunc(1.44269504088896338700e+00 * x + half);
+            hi = x - k * 6.93147180369123816490e-01;
+            lo = k * 1.90821492927058770002e-10;
+        }
+        r = hi - lo;
+        c = (hi - r) - lo;
+    } else if (hx < 1016070144.0) {
+        return x;
+    }
+    val hfx = 0.5 * r;
+    val hxs = r * hfx;
+    val r1 = 1.0 + hxs * (-3.33333333333331316428e-02 + hxs * (1.58730158725481460165e-03 + hxs * (-7.93650757867487942473e-05 + hxs * (4.00821782732936239552e-06 + hxs * -2.01099218183624371326e-07))));
+    val t = 3.0 - r1 * hfx;
+    var e = hxs * ((r1 - t) / (6.0 - r * t));
+    if (k == 0.0) return r - (r * e - hxs);
+    val twopk = twoTo(k);
+    e = r * (e - c) - c;
+    e = e - hxs;
+    if (k == -1.0) return 0.5 * (r - e) - 0.5;
+    if (k == 1.0) {
+        return if (r < -0.25) -2.0 * (e - (r + 0.5)) else 1.0 + 2.0 * (r - e);
+    }
+    if (k <= -2.0 || k > 56.0) {
+        val y = 1.0 - (e - r);
+        val scaled = if (k == 1024.0) y * 2.0 * 8.98846567431158e+307 else y * twopk;
+        return scaled - 1.0;
+    }
+    if (k < 20.0) {
+        val t2 = fromWords(1072693248.0 - twoTo(21.0 - k), 0.0);
+        return (t2 - (e - r)) * twopk;
+    }
+    val t3 = fromWords((1023.0 - k) * 1048576.0, 0.0);
+    return ((r - (e + t3)) + 1.0) * twopk;
+}
+
+// ── logarithms ───────────────────────────────────────────────────────────────
+
+// fdlibm's answer for what is not a positive finite number.
+fn logSpecial(x: f64) -> f64 {
+    if (x != x || x > 1.7976931348623157e308) return x + x;
+    if (x < 0.0) return (x - x) / (x - x);
+    return -1.0 / (x * x);
+}
+
+// `x` with its exponent set to 0 (or -1, when the mantissa's high bits pass
+// √2's — fdlibm's `(hx + 0x95f64) & 0x100000`), and how much the exponent
+// moved: `logScaled(x, 0)` answers the scaled `x`, `logScaled(x, 1)` the `k`.
+fn logScaled(x: f64, which: f64) -> f64 {
+    var k = 0.0;
+    var v = x;
+    if (x < 2.2250738585072014e-308) {
+        k = -54.0;
+        v = x * 1.80143985094819840000e+16;
+    }
+    val hw = highWord(v);
+    val ef = floor(hw / 1048576.0);
+    val m20 = hw - ef * 1048576.0;
+    val up = m20 + 614244.0 >= 1048576.0;
+    val carry = if (up) 1.0 else 0.0;
+    k = k + ef - 1023.0 + carry;
+    if (which > 0.5) return k;
+    val field = if (up) 1071644672.0 else 1072693248.0;
+    return fromWords(field + m20, lowWord(v));
+}
+
+// The high mantissa bits (`hx & 0xfffff`) the scaled `x` came from.
+fn logMantissaBits(x: f64) -> f64 {
+    val v = if (x < 2.2250738585072014e-308) x * 1.80143985094819840000e+16 else x;
+    val hw = highWord(v);
+    return hw - floor(hw / 1048576.0) * 1048576.0;
+}
+
+fn lnBody(x: f64) -> f64 {
+    if (x != x || x <= 0.0 || x > 1.7976931348623157e308) return logSpecial(x);
+    val k = logScaled(x, 1.0);
+    val f = logScaled(x, 0.0) - 1.0;
+    val m20 = logMantissaBits(x);
+    val ln2Hi = 6.93147180369123816490e-01;
+    val ln2Lo = 1.90821492927058770002e-10;
+    if (m20 >= 1048574.0 || m20 == 0.0) {
+        if (f == 0.0) return if (k == 0.0) 0.0 else k * ln2Hi + k * ln2Lo;
+        val rr = f * f * (0.5 - 0.33333333333333333 * f);
+        return if (k == 0.0) f - rr else k * ln2Hi - ((rr - k * ln2Lo) - f);
+    }
+    val s = f / (2.0 + f);
+    val z = s * s;
+    val w = z * z;
+    val t1 = w * (3.999999999940941908e-01 + w * (2.222219843214978396e-01 + w * 1.531383769920937332e-01));
+    val t2 = z * (6.666666666666735130e-01 + w * (2.857142874366239149e-01 + w * (1.818357216161805012e-01 + w * 1.479819860511658591e-01)));
+    val rr = t2 + t1;
+    if (m20 >= 398458.0 && m20 <= 440401.0) {
+        val hfsq = 0.5 * f * f;
+        return if (k == 0.0)
+            f - (hfsq - s * (hfsq + rr))
+        else
+            k * ln2Hi - ((hfsq - (s * (hfsq + rr) + k * ln2Lo)) - f);
+    }
+    return if (k == 0.0) f - s * (f - rr) else k * ln2Hi - ((s * (f - rr) - k * ln2Lo) - f);
+}
+
+// fdlibm's `k_log1p(f)`.
+fn logOnePlusTail(f: f64) -> f64 {
+    val s = f / (2.0 + f);
+    val z = s * s;
+    val w = z * z;
+    val t1 = w * (3.999999999940941908e-01 + w * (2.222219843214978396e-01 + w * 1.531383769920937332e-01));
+    val t2 = z * (6.666666666666735130e-01 + w * (2.857142874366239149e-01 + w * (1.818357216161805012e-01 + w * 1.479819860511658591e-01)));
+    val hfsq = 0.5 * f * f;
+    return s * (hfsq + (t2 + t1));
+}
+
+fn log2Body(x: f64) -> f64 {
+    if (x != x || x <= 0.0 || x > 1.7976931348623157e308) return logSpecial(x);
+    if (x == 1.0) return 0.0;
+    val y = logScaled(x, 1.0);
+    val f = logScaled(x, 0.0) - 1.0;
+    val hfsq = 0.5 * f * f;
+    val r = logOnePlusTail(f);
+    val hi = withLowZero(f - hfsq);
+    val lo = (f - hi) - hfsq + r;
+    val valHi = hi * 1.44269504072144627571e+00;
+    val valLo = (lo + hi) * 1.67517131648865118353e-10 + lo * 1.44269504072144627571e+00;
+    val w = y + valHi;
+    return (valLo + ((y - w) + valHi)) + w;
+}
+
+fn log10Body(x: f64) -> f64 {
+    if (x != x || x <= 0.0 || x > 1.7976931348623157e308) return logSpecial(x);
+    if (x == 1.0) return 0.0;
+    var k = 0.0;
+    var v = x;
+    if (x < 2.2250738585072014e-308) {
+        k = -54.0;
+        v = x * 1.80143985094819840000e+16;
+    }
+    val hw = highWord(v);
+    val ef = floor(hw / 1048576.0);
+    k = k + ef - 1023.0;
+    val i = if (k < 0.0) 1.0 else 0.0;
+    val scaled = fromWords(hw - ef * 1048576.0 + (1023.0 - i) * 1048576.0, lowWord(v));
+    val y = k + i;
+    val z = y * 3.69423907715893078616e-13 + 4.34294481903251816668e-01 * lnBody(scaled);
+    return z + y * 3.01029995663611771306e-01;
+}
+
+// ── pow ──────────────────────────────────────────────────────────────────────
+// V8 answers `Math.pow` with the C library's `pow` (`v8_flags.use_std_math_pow`,
+// `src/numbers/ieee754.cc`), which is correctly rounded — not with fdlibm. So
+// this one is not a port: |x|^y is e^(y·ln|x|) carried in double-double
+// arithmetic (a value as an unevaluated sum `hi + lo`, about 106 bits) to
+// roughly 2^-98 of the result, then rounded once — which is the correctly
+// rounded answer except for an input within 2^-98 of a rounding boundary.
+// The special values are ECMA-262's (V8's checks first, then C's).
+
+// a + b − s exactly, for s the rounded sum (Knuth's two-sum).
+fn sumError(a: f64, b: f64, s: f64) -> f64 {
+    val bb = s - a;
+    return (a - (s - bb)) + (b - bb);
+}
+
+// a·b − p exactly, for p the rounded product (Dekker's two-product).
+fn productError(a: f64, b: f64, p: f64) -> f64 {
+    val ca = 134217729.0 * a;
+    val ah = ca - (ca - a);
+    val al = a - ah;
+    val cb = 134217729.0 * b;
+    val bh = cb - (cb - b);
+    val bl = b - bh;
+    return ((ah * bh - p) + ah * bl + al * bh) + al * bl;
+}
+
+// 0 when `y` is not a whole number, 1 when it is odd, 2 when it is even.
+fn wholeKind(y: f64) -> f64 {
+    if (floor(y) != y) return 0.0;
+    if (abs(y) >= 9007199254740992.0) return 2.0;
+    val half = y * 0.5;
+    return if (floor(half) == half) 2.0 else 1.0;
+}
+
+fn powBody(x: f64, y: f64) -> f64 {
+    if (y != y) return y;
+    val ax = abs(x);
+    val ay = abs(y);
+    val inf = 1.7976931348623157e308;
+    if (ay > inf && ax == 1.0) return y - y;
+    if (x != x) return x;
+    if (y == 2.0) return x * x;
+    if (y == 0.5) return if (x < -inf) -1.0 * x else sqrt(x + 0.0);
+    if (y == 0.0 || x == 1.0) return 1.0;
+    val odd = wholeKind(y) == 1.0;
+    val nx = signBit(x);
+    if (ay > inf) {
+        val grows = (ax > 1.0) == (y > 0.0);
+        return if (grows) ay else 0.0;
+    }
+    if (ax == 0.0 || ax > inf) {
+        // ±0 and ±Infinity: a magnitude of Infinity or 0, and the sign of an
+        // odd power of a negative base (`-1.0 * 0.0` is `-0.0`)
+        val big = (ax == 0.0) == (y < 0.0);
+        val mag = if (!big) 0.0 else if (ax == 0.0) 1.0 / ax else ax;
+        return if (nx && odd) -1.0 * mag else mag;
+    }
+    if (nx && wholeKind(y) == 0.0) return (x - x) / (x - x);
+    val r = powMagnitude(ax, y);
+    return if (nx && odd) -1.0 * r else r;
+}
+
+// |x|^y for a positive finite x ≠ 1 and a finite y ≠ 0, correctly rounded.
+fn powMagnitude(x: f64, y: f64) -> f64 {
+    // ln x = e·ln2 + ln m, m in [√2/2, √2], as Lh + Ll
+    val e0 = exponentOf(x);
+    val m0 = x * twoTo(0.0 - e0);
+    val e = if (m0 > 1.4142135623730951) e0 + 1.0 else e0;
+    val m = if (m0 > 1.4142135623730951) m0 * 0.5 else m0;
+    val lnmH = lnNearOne(m, 0.0);
+    val lnmL = lnNearOne(m, 1.0);
+    // e·ln2 in double-double: ln2 = 0.6931471805599453 + 2.3190468138462996e-17
+    val eh = e * 0.6931471805599453;
+    val el = productError(e, 0.6931471805599453, eh) + e * 2.3190468138462996e-17;
+    val s1 = eh + lnmH;
+    val s1e = sumError(eh, lnmH, s1) + el + lnmL;
+    val lh = s1 + s1e;
+    val ll = s1e - (lh - s1);
+    // P = y·L
+    val pPlain = y * lh;
+    if (pPlain > 710.0) return timesHuge(1.0, 1.0e300);
+    if (pPlain < -746.0) return timesHuge(1.0, 1.0e-300);
+    val ph0 = y * lh;
+    val pe = productError(y, lh, ph0) + y * ll;
+    val ph = ph0 + pe;
+    val pl = pe - (ph - ph0);
+    return expDouble(ph, pl);
+}
+
+// ln m for m in [√2/2, √2] as hi + lo — `which` 0 answers hi, 1 lo:
+// 2·atanh(s), s = (m − 1)/(m + 1), every step in double-double.
+fn lnNearOne(m: f64, which: f64) -> f64 {
+    val a = m - 1.0;
+    val bh = m + 1.0;
+    val bl = sumError(m, 1.0, bh);
+    val sh = a / bh;
+    val pq = sh * bh;
+    val sl = (((a - pq) - productError(sh, bh, pq)) - sh * bl) / bh;
+    // z = s²
+    val z0 = sh * sh;
+    val ze = productError(sh, sh, z0) + 2.0 * sh * sl;
+    val zh = z0 + ze;
+    val zl = ze - (zh - z0);
+    // Q(z) = Σ z^i / (2i + 3), i = 0..22, by Horner in double-double
+    var qh = 1.0 / 47.0;
+    var ql = ((1.0 - qh * 47.0) - productError(qh, 47.0, qh * 47.0)) / 47.0;
+    var d = 45.0;
+    while (d > 2.5) {
+        // q = q·z
+        val m0 = qh * zh;
+        val me = productError(qh, zh, m0) + (qh * zl + ql * zh);
+        val mh = m0 + me;
+        val ml = me - (mh - m0);
+        // q = q + 1/d
+        val ch = 1.0 / d;
+        val cl = ((1.0 - ch * d) - productError(ch, d, ch * d)) / d;
+        val a0 = mh + ch;
+        val ae = sumError(mh, ch, a0) + ml + cl;
+        qh = a0 + ae;
+        ql = ae - (qh - a0);
+        d = d - 2.0;
+    }
+    // t = s·z·Q
+    val u0 = zh * qh;
+    val ue = productError(zh, qh, u0) + (zh * ql + zl * qh);
+    val uh = u0 + ue;
+    val ul = ue - (uh - u0);
+    val t0 = sh * uh;
+    val te = productError(sh, uh, t0) + (sh * ul + sl * uh);
+    val th = t0 + te;
+    val tl = te - (th - t0);
+    // ln m = 2·(s + t)
+    val v0 = sh + th;
+    val ve = sumError(sh, th, v0) + sl + tl;
+    val vh = v0 + ve;
+    val vl = ve - (vh - v0);
+    return if (which < 0.5) 2.0 * vh else 2.0 * vl;
+}
+
+// e^(ph + pl), |ph| ≤ 746, rounded once to the nearest double.
+fn expDouble(ph: f64, pl: f64) -> f64 {
+    val k = floor(ph * 1.4426950408889634 + 0.5);
+    // r = P − k·ln2, ln2 in three parts
+    val c1 = 0.6931471805599453;
+    val c2 = 2.3190468138462996e-17;
+    val c3 = 5.707708438416212e-34;
+    val q1 = k * c1;
+    val q1e = productError(k, c1, q1);
+    val q2 = k * c2;
+    val q2e = productError(k, c2, q2);
+    val r0 = ph - q1;
+    val rl0 = (((pl - q1e) - q2) - q2e) - k * c3;
+    val rh = r0 + rl0;
+    val rl = rl0 - (rh - r0);
+    // e^(r / 256) by its Taylor series through the 10th power, then squared
+    // eight times — all in double-double
+    val sh = rh * 0.00390625;
+    val sl = rl * 0.00390625;
+    var eh = 1.0;
+    var el = 0.0;
+    var n = 10.0;
+    while (n > 0.5) {
+        // e = e·s/n + 1
+        val m0 = eh * sh;
+        val me = productError(eh, sh, m0) + (eh * sl + el * sh);
+        val mh = m0 + me;
+        val ml = me - (mh - m0);
+        val dh = mh / n;
+        val dq = dh * n;
+        val dl = (((mh - dq) - productError(dh, n, dq)) + ml) / n;
+        val a0 = dh + 1.0;
+        val ae = sumError(dh, 1.0, a0) + dl;
+        eh = a0 + ae;
+        el = ae - (eh - a0);
+        n = n - 1.0;
+    }
+    var i = 0.0;
+    while (i < 7.5) {
+        val s0 = eh * eh;
+        val se = productError(eh, eh, s0) + 2.0 * eh * el;
+        eh = s0 + se;
+        el = se - (eh - s0);
+        i = i + 1.0;
+    }
+    // (eh + el)·2^k, rounded once
+    if (k + exponentOf(eh) >= -1022.0) {
+        if (k > 1000.0) return (eh * twoTo(k - 1000.0)) * twoTo(1000.0);
+        return eh * twoTo(k);
+    }
+    // a subnormal result: round (eh + el)·2^(k+1074) to a whole number,
+    // half to even, then scale — one rounding
+    val v = eh * twoTo(k + 1074.0);
+    val vl = el * twoTo(k + 1074.0);
+    var whole = floor(v);
+    val frac = (v - whole) + vl;
+    val halfUp = frac > 0.5 || (frac == 0.5 && whole - 2.0 * floor(whole * 0.5) == 1.0);
+    if (halfUp) whole = whole + 1.0;
+    if (frac < -0.5) whole = whole - 1.0;
+    return (whole * twoTo(-1000.0)) * twoTo(-74.0);
+}
+
+// ── trigonometry ─────────────────────────────────────────────────────────────
+
+// fdlibm's `__ieee754_rem_pio2` for |x| up to 2^19·π/2: `which` 0 answers the
+// quadrant n, 1 and 2 the remainder's head and tail. A larger |x| needs
+// `__kernel_rem_pio2`, which is not ported — refused by a panic.
+fn remPio2(x: f64, which: f64) -> f64 {
+    val neg = signBit(x);
+    val ix = highWord(x);
+    var n = 0.0;
+    var y0 = x;
+    var y1 = 0.0;
+    if (ix <= 1072243195.0) {
+        n = 0.0;
+    } else if (ix < 1073928572.0) {
+        val sgn = if (neg) -1.0 else 1.0;
+        var z = x - sgn * 1.57079632673412561417e+00;
+        if (ix != 1073291771.0) {
+            y0 = z - sgn * 6.07710050650619224932e-11;
+            y1 = (z - y0) - sgn * 6.07710050650619224932e-11;
+        } else {
+            z = z - sgn * 6.07710050630396597660e-11;
+            y0 = z - sgn * 2.02226624879595063154e-21;
+            y1 = (z - y0) - sgn * 2.02226624879595063154e-21;
+        }
+        n = sgn;
+    } else if (ix <= 1094263291.0) {
+        val t = abs(x);
+        n = trunc(t * 6.36619772367581382433e-01 + 0.5);
+        var r = t - n * 1.57079632673412561417e+00;
+        var w = n * 6.07710050650619224932e-11;
+        if (n < 32.0 && ix != highWord(n * 1.5707963267948966)) {
+            y0 = r - w;
+        } else {
+            val j = floor(ix / 1048576.0);
+            y0 = r - w;
+            if (j - exponentField(y0) > 16.0) {
+                var tt = r;
+                w = n * 6.07710050630396597660e-11;
+                r = tt - w;
+                w = n * 2.02226624879595063154e-21 - ((tt - r) - w);
+                y0 = r - w;
+                if (j - exponentField(y0) > 49.0) {
+                    tt = r;
+                    w = n * 2.02226624871116645580e-21;
+                    r = tt - w;
+                    w = n * 8.47842766036889956997e-32 - ((tt - r) - w);
+                    y0 = r - w;
+                }
+            }
+        }
+        y1 = (r - y0) - w;
+        if (neg) {
+            y0 = -1.0 * y0;
+            y1 = -1.0 * y1;
+            n = -1.0 * n;
+        }
+    } else if (ix >= 2146435072.0) {
+        y0 = x - x;
+        y1 = y0;
+    } else {
+        @panic("math: a trigonometric argument beyond 2^19 · π/2 is not reduced on wasm");
+    }
+    return if (which < 0.5) n else if (which < 1.5) y0 else y1;
+}
+
+fn kernelCos(x: f64, y: f64) -> f64 {
+    val ix = highWord(x);
+    if (ix < 1044381696.0) return 1.0;
+    val z = x * x;
+    val r = z * (4.16666666666666019037e-02 + z * (-1.38888888888741095749e-03 + z * (2.48015872894767294178e-05 + z * (-2.75573143513906633035e-07 + z * (2.08757232129817482790e-09 + z * -1.13596475577881948265e-11)))));
+    if (ix < 1070805811.0) return 1.0 - (0.5 * z - (z * r - x * y));
+    val qx = if (ix > 1072234496.0) 0.28125 else fromWords(ix - 2097152.0, 0.0);
+    val iz = 0.5 * z - qx;
+    val a = 1.0 - qx;
+    return a - (iz - (z * r - x * y));
+}
+
+fn kernelSin(x: f64, y: f64, iy: f64) -> f64 {
+    if (highWord(x) < 1044381696.0) return x;
+    val z = x * x;
+    val v = z * x;
+    val r = 8.33333333332248946124e-03 + z * (-1.98412698298579493134e-04 + z * (2.75573137070700676789e-06 + z * (-2.50507602534068634195e-08 + z * 1.58969099521155010221e-10)));
+    if (iy == 0.0) return x + v * (-1.66666666666666324348e-01 + z * r);
+    return x - ((z * (0.5 * y - v * r) - y) - v * -1.66666666666666324348e-01);
+}
+
+// fdlibm's `__kernel_tan`: tan(x + y) for `iy` 1, -1/tan(x + y) for -1.
+fn kernelTan(x0: f64, y0: f64, iy: f64) -> f64 {
+    val neg = signBit(x0);
+    val ix = highWord(x0);
+    if (ix < 1043333120.0) {
+        if (ix == 0.0 && lowWord(x0) == 0.0 && iy == -1.0) return 1.0 / abs(x0);
+        if (iy == 1.0) return x0;
+        val w0 = x0 + y0;
+        val z0 = withLowZero(w0);
+        val v0 = y0 - (z0 - x0);
+        val a0 = -1.0 / w0;
+        val t0 = withLowZero(a0);
+        val s0 = 1.0 + t0 * z0;
+        return t0 + a0 * (s0 + t0 * v0);
+    }
+    var x = x0;
+    var y = y0;
+    val big = ix >= 1072010280.0;
+    if (big) {
+        if (neg) {
+            x = -1.0 * x;
+            y = -1.0 * y;
+        }
+        val zb = 7.85398163397448278999e-01 - x;
+        val wb = 3.06161699786838301793e-17 - y;
+        x = zb + wb;
+        y = 0.0;
+    }
+    val z = x * x;
+    val w = z * z;
+    var r = 1.33333333333201242699e-01 + w * (2.18694882948595424599e-02 + w * (3.59207910759131235356e-03 + w * (5.88041240820264096874e-04 + w * (7.81794442939557092300e-05 + w * -1.85586374855275456654e-05))));
+    val v = z * (5.39682539762260521377e-02 + w * (8.86323982359930005737e-03 + w * (1.45620945432529025516e-03 + w * (2.46463134818469906812e-04 + w * (7.14072491382608190305e-05 + w * 2.59073051863633712884e-05)))));
+    val s = z * x;
+    r = y + z * (s * (r + v) + y);
+    r = r + 3.33333333333334091986e-01 * s;
+    val ww = x + r;
+    if (big) {
+        val sign = if (neg) -1.0 else 1.0;
+        return sign * (iy - 2.0 * (x - (ww * ww / (ww + iy) - r)));
+    }
+    if (iy == 1.0) return ww;
+    val z2 = withLowZero(ww);
+    val v2 = r - (z2 - x);
+    val a = -1.0 / ww;
+    val t = withLowZero(a);
+    val s2 = 1.0 + t * z2;
+    return t + a * (s2 + t * v2);
+}
+
+// n mod 4 in 0..3 (fdlibm's `n & 3`).
+fn quadrantOf(n: f64) -> f64 {
+    return n - 4.0 * floor(n * 0.25);
+}
+
+fn sinBody(x: f64) -> f64 {
+    val ix = highWord(x);
+    if (ix <= 1072243195.0) return kernelSin(x, 0.0, 0.0);
+    if (ix >= 2146435072.0) return x - x;
+    val q = quadrantOf(remPio2(x, 0.0));
+    val y0 = remPio2(x, 1.0);
+    val y1 = remPio2(x, 2.0);
+    return if (q < 0.5) kernelSin(y0, y1, 1.0)
+    else if (q < 1.5) kernelCos(y0, y1)
+    else if (q < 2.5) -1.0 * kernelSin(y0, y1, 1.0)
+    else -1.0 * kernelCos(y0, y1);
+}
+
+fn cosBody(x: f64) -> f64 {
+    val ix = highWord(x);
+    if (ix <= 1072243195.0) return kernelCos(x, 0.0);
+    if (ix >= 2146435072.0) return x - x;
+    val q = quadrantOf(remPio2(x, 0.0));
+    val y0 = remPio2(x, 1.0);
+    val y1 = remPio2(x, 2.0);
+    return if (q < 0.5) kernelCos(y0, y1)
+    else if (q < 1.5) -1.0 * kernelSin(y0, y1, 1.0)
+    else if (q < 2.5) -1.0 * kernelCos(y0, y1)
+    else kernelSin(y0, y1, 1.0);
+}
+
+fn tanBody(x: f64) -> f64 {
+    val ix = highWord(x);
+    if (ix <= 1072243195.0) return kernelTan(x, 0.0, 1.0);
+    if (ix >= 2146435072.0) return x - x;
+    val odd = quadrantOf(remPio2(x, 0.0)) - 2.0 * floor(quadrantOf(remPio2(x, 0.0)) * 0.5);
+    return kernelTan(remPio2(x, 1.0), remPio2(x, 2.0), 1.0 - 2.0 * odd);
+}
+
+fn asinPoly(t: f64) -> f64 {
+    val p = t * (1.66666666666666657415e-01 + t * (-3.25565818622400915405e-01 + t * (2.01212532134862925881e-01 + t * (-4.00555345006794114027e-02 + t * (7.91534994289814532176e-04 + t * 3.47933107596021167570e-05)))));
+    val q = 1.0 + t * (-2.40339491173441421878e+00 + t * (2.02094576023350569471e+00 + t * (-6.88283971605453293030e-01 + t * 7.70381505559019352791e-02)));
+    return p / q;
+}
+
+fn asinBody(x: f64) -> f64 {
+    val ix = highWord(x);
+    if (ix >= 1072693248.0) {
+        if (ix == 1072693248.0 && lowWord(x) == 0.0) return x * 1.57079632679489655800e+00 + x * 6.12323399573676603587e-17;
+        return (x - x) / (x - x);
+    }
+    if (ix < 1071644672.0) {
+        if (ix < 1044381696.0) return x;
+        return x + x * asinPoly(x * x);
+    }
+    val w = 1.0 - abs(x);
+    val t = w * 0.5;
+    val s = sqrt(t);
+    var res = 0.0;
+    if (ix >= 1072640819.0) {
+        res = 1.57079632679489655800e+00 - (2.0 * (s + s * asinPoly(t)) - 6.12323399573676603587e-17);
+    } else {
+        val ws = withLowZero(s);
+        val c = (t - ws * ws) / (s + ws);
+        val p = 2.0 * s * asinPoly(t) - (6.12323399573676603587e-17 - 2.0 * c);
+        val q = 7.85398163397448278999e-01 - 2.0 * ws;
+        res = 7.85398163397448278999e-01 - (p - q);
+    }
+    return if (x > 0.0) res else -1.0 * res;
+}
+
+fn acosBody(x: f64) -> f64 {
+    val ix = highWord(x);
+    val pio2Hi = 1.57079632679489655800e+00;
+    val pio2Lo = 6.12323399573676603587e-17;
+    if (ix >= 1072693248.0) {
+        if (ix == 1072693248.0 && lowWord(x) == 0.0) return if (x > 0.0) 0.0 else 3.14159265358979311600e+00 + 2.0 * pio2Lo;
+        return (x - x) / (x - x);
+    }
+    if (ix < 1071644672.0) {
+        if (ix <= 1012924416.0) return pio2Hi + pio2Lo;
+        return pio2Hi - (x - (pio2Lo - x * asinPoly(x * x)));
+    }
+    if (x < 0.0) {
+        val z = (1.0 + x) * 0.5;
+        val s = sqrt(z);
+        val w = asinPoly(z) * s - pio2Lo;
+        return 3.14159265358979311600e+00 - 2.0 * (s + w);
+    }
+    val z = (1.0 - x) * 0.5;
+    val s = sqrt(z);
+    val df = withLowZero(s);
+    val c = (z - df * df) / (s + df);
+    val w = asinPoly(z) * s + c;
+    return 2.0 * (df + w);
+}
+
+fn atanBody(x: f64) -> f64 {
+    val ix = highWord(x);
+    val neg = signBit(x);
+    if (ix >= 1141899264.0) {
+        if (x != x) return x + x;
+        return if (neg) -1.57079632679489655800e+00 - 6.12323399573676603587e-17 else 1.57079632679489655800e+00 + 6.12323399573676603587e-17;
+    }
+    var id = -1.0;
+    var t = x;
+    if (ix < 1071382528.0) {
+        if (ix < 1044381696.0) return x;
+    } else {
+        val ax = abs(x);
+        if (ix < 1072889856.0) {
+            if (ix < 1072037888.0) {
+                id = 0.0;
+                t = (2.0 * ax - 1.0) / (2.0 + ax);
+            } else {
+                id = 1.0;
+                t = (ax - 1.0) / (ax + 1.0);
+            }
+        } else if (ix < 1073971200.0) {
+            id = 2.0;
+            t = (ax - 1.5) / (1.0 + 1.5 * ax);
+        } else {
+            id = 3.0;
+            t = -1.0 / ax;
+        }
+    }
+    val z = t * t;
+    val w = z * z;
+    val s1 = z * (3.33333333333329318027e-01 + w * (1.42857142725034663711e-01 + w * (9.09088713343650656196e-02 + w * (6.66107313738753120669e-02 + w * (4.97687799461593236017e-02 + w * 1.62858201153657823623e-02)))));
+    val s2 = w * (-1.99999999998764832476e-01 + w * (-1.11111104054623557880e-01 + w * (-7.69187620504482999495e-02 + w * (-5.83357013379057348645e-02 + w * -3.65315727442169155270e-02))));
+    if (id < 0.0) return t - t * (s1 + s2);
+    val hi = if (id < 0.5) 4.63647609000806093515e-01
+    else if (id < 1.5) 7.85398163397448278999e-01
+    else if (id < 2.5) 9.82793723247329054082e-01
+    else 1.57079632679489655800e+00;
+    val lo = if (id < 0.5) 2.26987774529616870924e-17
+    else if (id < 1.5) 3.06161699786838301793e-17
+    else if (id < 2.5) 1.39033110312309984516e-17
+    else 6.12323399573676603587e-17;
+    val zz = hi - ((t * (s1 + s2) - lo) - t);
+    return if (neg) -1.0 * zz else zz;
+}
+
+fn atan2Body(y: f64, x: f64) -> f64 {
+    if (x != x || y != y) return x + y;
+    if (x == 1.0) return atanBody(y);
+    val piV = 3.1415926535897931160E+00;
+    val piLo = 1.2246467991473531772E-16;
+    val halfPi = 1.5707963267948965580E+00;
+    val quarterPi = 7.8539816339744827900E-01;
+    val ny = signBit(y);
+    val nx = signBit(x);
+    val my = if (ny) 1.0 else 0.0;
+    val mx = if (nx) 2.0 else 0.0;
+    val m = my + mx;
+    if (y == 0.0) {
+        return if (m < 1.5) y else if (m < 2.5) piV else -1.0 * piV;
+    }
+    if (x == 0.0) return if (ny) -1.0 * halfPi else halfPi;
+    val ix = highWord(x);
+    val iy = highWord(y);
+    if (ix == 2146435072.0) {
+        if (iy == 2146435072.0) {
+            return if (m < 0.5) quarterPi
+            else if (m < 1.5) -1.0 * quarterPi
+            else if (m < 2.5) 3.0 * quarterPi
+            else -3.0 * quarterPi;
+        }
+        return if (m < 0.5) 0.0
+        else if (m < 1.5) -1.0 * 0.0
+        else if (m < 2.5) piV
+        else -1.0 * piV;
+    }
+    if (iy == 2146435072.0) return if (ny) -1.0 * halfPi else halfPi;
+    val k = floor((iy - ix) / 1048576.0);
+    var mm = m;
+    var z = 0.0;
+    if (k > 60.0) {
+        z = halfPi + 0.5 * piLo;
+        mm = m - 2.0 * floor(m * 0.5);
+    } else if (nx && k < -60.0) {
+        z = 0.0;
+    } else {
+        z = atanBody(abs(y / x));
+    }
+    return if (mm < 0.5) z
+    else if (mm < 1.5) -1.0 * z
+    else if (mm < 2.5) piV - (z - piLo)
+    else (z - piLo) - piV;
+}
+
+// ── hyperbolic functions ─────────────────────────────────────────────────────
+
+fn sinhBody(x: f64) -> f64 {
+    val h = if (x < 0.0) -0.5 else 0.5;
+    val ax = abs(x);
+    if (ax < 22.0) {
+        if (ax < 3.725290298461914e-9) return x;
+        val t = expm1Body(ax);
+        if (ax < 1.0) return h * (2.0 * t - t * t / (t + 1.0));
+        return h * (t + t / (t + 1.0));
+    }
+    if (ax < 709.7822265625) return h * expBody(ax);
+    if (ax <= 710.4758600739439) {
+        val w = expBody(0.5 * ax);
+        val t = h * w;
+        return t * w;
+    }
+    return x * 1.0e307;
+}
+
+fn coshBody(x: f64) -> f64 {
+    val ix = highWord(x);
+    if (ix < 1071001155.0) {
+        val t = expm1Body(abs(x));
+        val w = 1.0 + t;
+        if (ix < 1015021568.0) return w;
+        return 1.0 + (t * t) / (w + w);
+    }
+    if (ix < 1077280768.0) {
+        val t = expBody(abs(x));
+        return 0.5 * t + 0.5 / t;
+    }
+    if (ix < 1082535490.0) return 0.5 * expBody(abs(x));
+    if (abs(x) <= 710.4758600739439) {
+        val w = expBody(0.5 * abs(x));
+        val t = 0.5 * w;
+        return t * w;
+    }
+    if (ix >= 2146435072.0) return x * x;
+    return timesHuge(1.0, 1.0e300);
+}
+
+fn tanhBody(x: f64) -> f64 {
+    val ix = highWord(x);
+    val neg = signBit(x);
+    if (ix >= 2146435072.0) return if (!neg) 1.0 / x + 1.0 else 1.0 / x - 1.0;
+    var z = 0.0;
+    if (ix < 1077280768.0) {
+        if (ix < 1043333120.0) return x;
+        if (ix >= 1072693248.0) {
+            val t = expm1Body(2.0 * abs(x));
+            z = 1.0 - 2.0 / (t + 2.0);
+        } else {
+            val t = expm1Body(-2.0 * abs(x));
+            z = (-1.0 * t) / (t + 2.0);
+        }
+    } else {
+        z = 1.0 - 1.0e-300;
+    }
+    return if (!neg) z else -1.0 * z;
+}
 
 // ── tests ────────────────────────────────────────────────────────────────────
 

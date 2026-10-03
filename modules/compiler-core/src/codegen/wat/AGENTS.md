@@ -18,6 +18,7 @@ wat/
 ├── wat_ast.zig       ← the code model (`Module`/`Item`/`Func`/`Seq`/`Instr`) + `Builder` + the invariants
 ├── wat_emitter.zig   ← the only text writer: s-expressions, indentation, `$` names, data escaping
 ├── wasm_binary_emitter.zig ← the same model in the binary format (what an engine instantiates)
+├── host_binding.zig  ← decision 238: what `#[@External.Wasm("…")]` names — `op:` / `fn:` / `wasi:`, the opcode table, the adapter list
 └── wat_prelude.zig   ← the runtime helpers (`$__print_i32`, `$__str_concat`, …) as built nodes
 ```
 
@@ -41,7 +42,8 @@ model exists so none of them can be written again:
 | `wat_ast.zig` | **Types**: `ValType` (`i32`/`i64`/`f32`/`f64`, with `parse` for the backend's spelled type names), `Stack` (`none`/`value`/`terminated`, with `fits(?ValType)`), `Width` (`full`/`byte` — `…8_u` / `…8`), `MemArg` (`ty`, `width`, `offset`). **Instructions**: `Instr` (`const` with the numeral as spelled, `local_get`/`local_set`/`local_tee`, `global_get`/`global_set`, `op` = `<ty>.<name>`, `convert` (a fully-spelled conversion opcode), `load`/`store`, `call`, `call_indirect` (an inline `FuncType`), `br`/`br_if`, `drop`, `return`, `unreachable`, `memory_copy`, `if`, `block` (`block` or `loop`), `comment`). **Layout**: `Line` (instruction + `indent` + trailing `;; comment` + `folded`), `Seq` (lines + stack), `If.Arm.Layout` (`block` vs one-line `inline_`). **Forms**: `Param`, `Local`, `Func` (name, exports, params, result, `locals` as *lines* so a helper can group several, body), `Global`, `FuncType`/`Import`, `Memory`, `DataSegment` (offset + length prefix + raw bytes), `Item` (import/memory/start/table/data/global/func/comment — `table` is `(table funcref (elem $f …))`, each name checked against the module's functions), `Module` (items). **Invariants**: `Invalid`, `validateFunc`, `validateModule`, `declaresCall`. **Helpers**: `Helper` (every symbol is `__<tag>`; `group`), `HelperGroup` (`deps` — the groups a group's functions call into), `HelperSet` (an `EnumSet`; `require` closes over `deps`). **`Builder`**: arena + `seq`/`param`/`localLines`/`func` (which validates) + `helper`. |
 | `wat_emitter.zig` | `renderModule` (validates, then `(module …)`; there is no bare-form entry point). Owns: the two-space item column, the four-space body column and each construct's arm columns, `$`-prefixing, folded (`(call $main)`) vs flat form, inline `(then i32.const 0 return)` arms, `offset=` suppressed when zero, and the data-segment escaping (four little-endian length bytes as `\xx`, then `\n`/`"`/`\`/`\t`/`\r`/`\xx` for control bytes). |
 | `wasm_binary_emitter.zig` | `encodeModule(alloc, Module) → []u8`: the binary format of the module the text emitter renders — validated first (`validateModule`), then sections type · import · function · table · memory · global · export · start · element · code · data, LEB128, one type per distinct signature (imports' and functions' types first, then each `call_indirect`'s), locals as runs of one type, no custom section. Every name the text spells is resolved to an index — functions (imports first, then definitions, in item order), globals, locals (params then declared), branch labels (depth, every `if` counted) — and a name that resolves to nothing (`UnknownName`), an operator the MVP table (`opcodes`: numeric, conversions, sign extension, `trunc_sat`) does not know (`UnknownOp`) or a numeral that does not parse (`BadNumeral`, the text format's spellings: sign, `0x`, `_`, `inf`/`nan`) is an error, never a guess. `wat.zig`'s `emitWat` renders both from one `Module` (`GenerateResult.js` the text, `.wasm` the binary); `codegen/runtime.zig`'s `executeWat` runs the **binary**, so every wasm RUN LOG is the binary emitter's answer checked against the recorded fixture. The browser build's page instantiates the same bytes. `Encoder` (with `typeIndex`/`funcIndex`/`funcBody`), `Bytes`, `section`, `uleb`/`sleb`, `name`, `valType`, `funcType` and `constInstr` are public for `comptime/runtime/wat/link.zig`, which pre-seeds an `Encoder` with a prebuilt module's index spaces and encodes a lowered comptime program's functions against the merged numbering. |
-| `wat_prelude.zig` | The runtime helpers wasm has no opcode for, as `Func` nodes: `print` (`$__write_bytes`, `$__print_nl`, `$__print_sp`, `$__print_i32`, `$__print_i32_raw`, `$__memmove`), `print_str` (`$__print_str_raw` traps on a pointer below the data floor — decision 67, § below), `print_bool`, `print_f64`, `arr_at`, `str_concat`, `str_eq`, `str_slice` (transcribed line by line), then — one helper per group, built with the comptime constructors at the bottom of the file (`func`, `loop`, `when`, `whenElse`, `get`/`set`/`op`/…; `func` assigns each line the column its nesting puts it at) — `alloc` (bump, 4-byte aligned), `mem_eq`, `i32_abs`/`i32_min`/`i32_max`, `i32_to_str`, `f64_to_str` (float param — `typedFunc`), `str_case` (ASCII shift of a byte range), `str_index_of`, `str_starts_with`, `str_ends_with`, `str_at` (`s.at(i)` as a `?string`: a negative `i` first counted from the end (`i + len`, decision 139, as in `$__arr_at` / `$__arr_at_box`), then `$__str_slice(s, i, i + 1)`, or `0` — absence — when `i32.ge_u` puts `i` outside `0..len`, which catches a still-negative index in the one compare `$__arr_at` needs two for), `str_trim` (mode bits: 1 start, 2 end), `str_split`, `str_repeat`, `str_char_code`, `str_last_index_of`, `str_pad`, `str_replace` (§ The primitive method table), `arr_new`, `arr_slice` (host bound rules), `arr_reverse`, `arr_prepend`, `arr_push`, `arr_concat`, `arr_zip`, `arr_index_of_i32`/`_str`, `arr_join_str`/`_i32`, `print_arr_i32`, `print_arr_f32` (+`_raw`), `box_i32`, `arr_at_box`, `print_opt` (`$__print_null` — the bytes of `null`, decision 47's one spelling of absent, through scratch `176..180` — and `$__print_opt_i32`/`_bool`/`_str` +`_raw`), `assert_fail` (`$__write_err` — `fd_write` to fd 2 — and `$__assert_fail`, its literal text through scratch `188..208`), `print_shaped` (`$__print_quoted_raw` — a nested string, quoted with the source escapes — and `$__print_shaped_raw(v, shape, go)`, which walks a shape string — `i`/`f`/`b`/`s`, `[X`, `(XY…)` — writing `[a, b]` / `#(a, b)` and answering the address past the shape; `go = 0` only measures), `print_opt_tagged` (`$__print_opt_tagged` +`_raw` — a `?T` whose `T` is a record: `null` for `0`, `$__print_tagged_raw` otherwise; its own group, because the tagged printer reads a header four bytes behind the value and absence has to be answered before it is called), `display_of` (`$__display_of(v)` answering `0` — the `Display` hook `$__print_tagged_raw` calls first, which `wat.zig` replaces with the module's dispatch, § below), `unknown`, `print_unknown`, `arr_last_index_of_i32`/`_str`, and the five groups `01-compiler/05-wasm` step 1 added (§ The primitive method table): `str_lines`, `str_words`, `arr_unique`, `arr_flatten`, `arr_chunked`, `arr_sliding`, `arr_fill`. `items(group)` returns a group's forms, `order` the order a module appends them in (declaration order, so the transcribed groups keep their place), `fd_write_import` the one host import the print group needs. Scratch layout below the data section (which starts at 256): `0..8` the WASI iovec, `8` the newline byte — and `9` the space of §7's `, ` separator (`putSep`), written beside it so the two bytes leave in one `fd_write` —, `16..32` the bool text, `32..64` the float fraction, `64..128` the i32 digits, `128..160` the digits `$__i32_to_str` writes backwards, `168..174` the fraction digits of `$__f64_to_str`. |
+| `host_binding.zig` | **Decision 238's closed vocabulary**, pure (text and value types in, a `Binding` or a message out): `parse(alloc, text, Signature)` reads `op:<opcode>` against `findOp`'s table (the MVP numeric instructions by shape — integer `clz`/`ctz`/`popcnt`/`eqz`, the binary ops, the comparisons; float `abs`/`neg`/`ceil`/`floor`/`trunc`/`nearest`/`sqrt`, `add`…`copysign`, the comparisons; the conversions — no memory, control, local or global instruction) and checks the declared parameter and return types are exactly the opcode's (a comparison or `eqz` answers `bool`); splits `fn:<identifier>` (the module resolves it); reads `wasi:<adapter>` against `adapters` (`random_f64`). `instrOf` gives an `op:`'s instruction. Anything else is a `Refused` message. `codegen/tests/wat.zig` holds `adapters` and `docs.md` § Host bindings' table to each other |
+| `wat_prelude.zig` | The runtime helpers wasm has no opcode for, as `Func` nodes: `print` (`$__write_bytes`, `$__print_nl`, `$__print_sp`, `$__print_i32`, `$__print_i32_raw`, `$__memmove`), `print_str` (`$__print_str_raw` traps on a pointer below the data floor — decision 67, § below), `print_bool`, `print_f64`, `arr_at`, `str_concat`, `str_eq`, `str_slice` (transcribed line by line), then — one helper per group, built with the comptime constructors at the bottom of the file (`func`, `loop`, `when`, `whenElse`, `get`/`set`/`op`/…; `func` assigns each line the column its nesting puts it at) — `alloc` (bump, 4-byte aligned), `mem_eq`, `i32_abs`/`i32_min`/`i32_max`, `i32_to_str`, `f64_to_str` (float param — `typedFunc`), `str_case` (ASCII shift of a byte range), `str_index_of`, `str_starts_with`, `str_ends_with`, `str_at` (`s.at(i)` as a `?string`: a negative `i` first counted from the end (`i + len`, decision 139, as in `$__arr_at` / `$__arr_at_box`), then `$__str_slice(s, i, i + 1)`, or `0` — absence — when `i32.ge_u` puts `i` outside `0..len`, which catches a still-negative index in the one compare `$__arr_at` needs two for), `str_trim` (mode bits: 1 start, 2 end), `str_split`, `str_repeat`, `str_char_code`, `str_last_index_of`, `str_pad`, `str_replace` (§ The primitive method table), `arr_new`, `arr_slice` (host bound rules), `arr_reverse`, `arr_prepend`, `arr_push`, `arr_concat`, `arr_zip`, `arr_index_of_i32`/`_str`, `arr_join_str`/`_i32`, `print_arr_i32`, `print_arr_f32` (+`_raw`), `box_i32`, `arr_at_box`, `print_opt` (`$__print_null` — the bytes of `null`, decision 47's one spelling of absent, through scratch `176..180` — and `$__print_opt_i32`/`_bool`/`_str` +`_raw`), `assert_fail` (`$__write_err` — `fd_write` to fd 2 — and `$__assert_fail`, its literal text through scratch `188..208`), `print_shaped` (`$__print_quoted_raw` — a nested string, quoted with the source escapes — and `$__print_shaped_raw(v, shape, go)`, which walks a shape string — `i`/`f`/`b`/`s`, `[X`, `(XY…)` — writing `[a, b]` / `#(a, b)` and answering the address past the shape; `go = 0` only measures), `print_opt_tagged` (`$__print_opt_tagged` +`_raw` — a `?T` whose `T` is a record: `null` for `0`, `$__print_tagged_raw` otherwise; its own group, because the tagged printer reads a header four bytes behind the value and absence has to be answered before it is called), `display_of` (`$__display_of(v)` answering `0` — the `Display` hook `$__print_tagged_raw` calls first, which `wat.zig` replaces with the module's dispatch, § below), `unknown`, `print_unknown`, `arr_last_index_of_i32`/`_str`, and the five groups `01-compiler/05-wasm` step 1 added (§ The primitive method table): `str_lines`, `str_words`, `arr_unique`, `arr_flatten`, `arr_chunked`, `arr_sliding`, `arr_fill`; decision 240's codepoint helpers (§ String indices count codepoints): `str_cp_len`, `str_cp_off`, `str_cp_of`, `str_cp_slice`, `str_cp_at`, `str_cp_index_of`, `str_cp_last_index_of`; decision 238's adapter `wasi_random_f64` (`$__wasi_random_f64`, with `random_get_import` — 8 bytes into scratch `208..216`). `items(group)` returns a group's forms, `order` the order a module appends them in (declaration order, so the transcribed groups keep their place), `fd_write_import` the one host import the print group needs. Scratch layout below the data section (which starts at 256): `0..8` the WASI iovec, `8` the newline byte — and `9` the space of §7's `, ` separator (`putSep`), written beside it so the two bytes leave in one `fd_write` —, `16..32` the bool text, `32..64` the float fraction, `64..128` the i32 digits, `128..160` the digits `$__i32_to_str` writes backwards, `168..174` the fraction digits of `$__f64_to_str`. |
 
 ## Consumers
 
@@ -116,7 +118,8 @@ at the consumer's import or call, its message ending "in another module's code
 this line reaches". **Not covered**: `@print` of a value whose static type
 nothing names reaches `$__display_of` unrecorded.
 
-**A host-backed `declare fn` with no wasm host is REFUSED, not trapped**
+**A host-backed `declare fn` with no wasm binding is REFUSED, not trapped**
+(one with `#[@External.Wasm("…")]` is bound — § Host bindings)
 (`wat.zig`'s `external_missing` + `lowerPlainCall`). A `declare fn` carrying
 `#[@External.<Target>(…)]` for some other target and none for `wasm` has no
 symbol here and never claimed to have one, so the call fails where it is
@@ -368,6 +371,64 @@ after it. This is [decision 67](../../../../../../../specs/1.0.10-beta/decisions
 — the most restrictive behaviour, and no flag that turns it off — and it is the
 reason the hand-maintained list below is no longer a silent trap: an optional
 shape nobody registered is now loud.
+
+## Host bindings (decision 238, `01-compiler/05-wasm` step 5)
+
+`#[@External.Wasm("…")]` is one string of a closed vocabulary, read before
+anything is registered (`wat.zig` `checkHostBindings`, over the program and its
+linked modules, each `declare fn` against its OWN module):
+
+| Form | Check | Lowering (`emitHostBinding`) |
+|---|---|---|
+| `op:<opcode>` | `host_binding.zig` `findOp`; the declared parameters and return are exactly the opcode's types (`bool` for a comparison) | a function of the declared name: `local.get` of each parameter, the instruction |
+| `fn:<name>` | the declaring module has a `fn <name>` with a body, not `pub`, of the same written parameter types in order and the same return (`sameSignature`, compared as `TypeRef.format` spells them) | a function of the declared name that calls `<name>` — the mangled name when a linked module's function was mangled (`link_mangled`) |
+| `wasi:<adapter>` | `host_binding.zig` `adapters` (the list `docs.md` § Host bindings documents); the signature is the adapter's | a function that calls the adapter's prelude helper (`random_f64` → `$__wasi_random_f64`, which brings the `random_get` import) |
+
+A bound declaration is registered like a bodied `fn` (`registerFn` skips the
+host path when `host_bindings` holds the name), so calls, shapes and
+cross-module links read it as one. A binding outside the vocabulary — another
+prefix, an unknown opcode, an opcode of another type, a misspelt or `pub` or
+differently-typed `fn:`, an unlisted adapter, two strings — is refused at the
+annotation (`Emitter.refuse`, the annotation's `loc`; in a linked module at the
+consumer's import). The arguments are always the declared parameters, so there
+is no marker, no target text and no address in a binding, and no prelude
+helper's name is any library's contract. The check runs on a wasm build; a
+binding on a module no wasm build reaches is not read (the checker half that
+would read it on every target is `01-checker`'s — `comptime/infer.zig`'s
+`external_variants` walk).
+
+`std/math` is the first user: `abs`, `floor`, `trunc`, `sqrt`, `minF`, `maxF`
+are `op:`; `round` is `fn:roundHalfUp` (V8's ceil-based rule — `f64.nearest`
+rounds a half to even); the rest are `fn:` bodies that port fdlibm as Node's V8
+runs it (`deps/v8/src/base/ieee754.cc`) with exact arithmetic standing for its
+word operations — bit for bit the commonJS answer on a 6 500-input fuzz — and
+`pow` in double-double, since V8 answers `Math.pow` with the C library's
+(`decisions-pending.md` 05w-c). `std/escape`'s two separators are `fn:` bodies
+holding the literal.
+
+## String indices count codepoints (decision 240)
+
+A string is `[byte count][UTF-8 bytes]`; `length`, `at`, `slice`, `indexOf`,
+`lastIndexOf`, `s[i]` and `s[a..b]` count **codepoints**, as erlang and beam do
+(decision 169 on the fourth target), so an index one answers is one another
+reads. `lowerStringMethod`, `lowerIndex`, `lowerStrSlice`, the `.length` of
+`lowerCollectionMethod` and `lowerIdentAccess` emit the `str_cp_*` helpers,
+which count the bytes that are not `10xxxxxx` continuations; `$__str_cp_slice`
+normalises its bounds as `slice` does (a negative one from the end, clamped,
+an end before the start is the start), so an open end is the largest i32. The
+byte helpers below them (`$__str_slice`, `$__str_index_of`, …) stay the byte
+cutters the rest of the prelude uses. `run/string_index_of_codepoints`:
+`"a—bXc".indexOf("X")` is `3` and `.at(3)` is `X` on four targets (it was `5`
+and a broken byte on wasm).
+
+## A function value bound by a `val`
+
+`val g = greet` with no written type types `g` by `greet`'s declaration
+(`fnRefTypeRef` at the `.localBind`, and for a module-level `val` in
+`registerSymbols` / `typeFnValueGlobals` once every signature is known), as a
+written `fn(…) -> string` already did — so `g()` prints the string, `y()` a
+bool. It printed the string's address (`256`) at exit 0
+(`run/fn_value_bound_by_val`).
 
 ## The carrier of a `?T` (`00 · 05-wasm`, 1.0.10-beta)
 

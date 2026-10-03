@@ -432,6 +432,7 @@ test "every runtime helper group renders with its deps, and only with them" {
         var items: std.ArrayListUnmanaged(ast.Item) = .empty;
         defer items.deinit(alloc);
         if (set.has(.print)) try items.append(alloc, .{ .import = prelude.fd_write_import });
+        if (set.has(.wasi_random_f64)) try items.append(alloc, .{ .import = prelude.random_get_import });
         try items.append(alloc, .{ .global = .{ .name = "__heap_ptr", .ty = .i32, .mutable = true, .init = "256" } });
         for (prelude.order) |og| {
             if (set.has(og)) try items.appendSlice(alloc, prelude.items(og));

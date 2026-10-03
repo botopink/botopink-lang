@@ -1,0 +1,5 @@
+&lt;a href="x"&gt;&amp;
+it&#39;s &quot;q&quot;
+<b> &amp;
+a\u2028b\u2029c\"\u003c\n
+{"k":"\u003c/script\u003e\u2028\u0026"}
