@@ -49,7 +49,7 @@ libs/validation/
 │   │                   clearConstraints, unknownConstraintMessage, vConstraint   (registry: templates)
 │   ├── constraints.bp  the v* predicates (std `regex`, `io.clock`), emailPattern
 │   ├── binding.bp      bindInt, bindBool, bindRequired, bindEpochMillis, bindingReport, bindingCount,
-│   │                   bindingReset, bindingIsolated, isIntegerText, parseI32, parseI64   (accumulator: templates)
+│   │                   bindingReset, bindingIsolated, isIntegerText, parseI32   (accumulator: templates)
 │   └── decorators.bp   #[validated] and the thirteen constraint markers; #[schema]
 └── test/             binding · constraints · messages · parity · path · platform · report · schema ·
                       schema_parity · spi · table   (suite `validation:`)
@@ -244,6 +244,7 @@ library writes instead.
   step are written against.
 - There is no `f64` → integer conversion in `std/math` and no `f32` literal
   (`val f: f32 = 1.5;` is a mismatch).
-- An integer literal does not widen to `i64` in arithmetic; `rawToI64`
-  (`binding.bp`) and `wholeI64` (`schemas.bp`) are the host cells that produce
-  one.
+- An integer literal does not widen to `i64` in arithmetic; `wholeI64`
+  (`schemas.bp`) is the host cell that produces one. `bindEpochMillis` reads its
+  `i64` with std's `String.parseInt` over the trimmed text (front 97), so a
+  numeral beyond ±(2^53 − 1) is a `typeMismatch` on both targets.
