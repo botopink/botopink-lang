@@ -1832,6 +1832,55 @@ test "wat: host binding ---- op:, fn: and wasi: bind a declare fn" {
     );
 }
 
+// `wasi:seed_u32` / `wasi:seeded_f64` hold the seeded stream `std/io/random`
+// binds: Mulberry32 as the commonJS sidecar draws it — 39393, 29379 after
+// `seed(42)` and 28381 after `seed(-7)` are `Math.floor(draw * 65536)` of
+// `sidecars/random.mjs`'s draws. A `-> void` binding answers the 0 its
+// caller drops.
+test "wat: host binding ---- wasi:seed_u32 and wasi:seeded_f64 draw the sidecar's Mulberry32 stream" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\#[@External.Wasm("wasi:seed_u32")]
+        \\declare fn seed(s: i32) -> void;
+        \\#[@External.Wasm("wasi:seeded_f64")]
+        \\declare fn draw() -> f64;
+        \\fn main() {
+        \\    val before = draw();
+        \\    @print(before >= 0.0 && before < 1.0);
+        \\    seed(42);
+        \\    @print((draw() * 65536.0).floor());
+        \\    @print((draw() * 65536.0).floor());
+        \\    seed(0 - 7);
+        \\    @print((draw() * 65536.0).floor());
+        \\}
+    ,
+        \\true
+        \\39393.0
+        \\29379.0
+        \\28381.0
+        \\
+    );
+}
+
+// An `if` whose arms answer integers types as an integer in a function that
+// answers a float: `(if (result f64)` around two `i32`s was invalid code.
+test "wat: an integer if-expression inside a float function" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\fn digitOf(c: i32) -> f64 {
+        \\    val d = if (c < 58) c - 48 else c - 87;
+        \\    val big = if (d > 9) d >= 10 else false;
+        \\    return if (big) d * 1.0 else 0.0 - d;
+        \\}
+        \\fn main() {
+        \\    @print(digitOf(55) == 0.0 - 7.0);
+        \\    @print(digitOf(102) == 15.0);
+        \\}
+    ,
+        \\true
+        \\true
+        \\
+    );
+}
+
 // Anything outside the vocabulary is refused at the annotation — never read
 // as text, never lowered to a guess.
 test "wat: host binding ---- an unknown form, opcode, signature, fn or adapter is refused at the annotation" {

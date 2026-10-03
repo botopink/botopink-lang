@@ -20,6 +20,7 @@
 #[@External.Node("Math", "random")]
 #[@External.Erlang("rand", "uniform")]
 #[@External.Beam("rand", "uniform")]
+#[@External.Wasm("wasi:random_f64")]
 pub declare fn float() -> f64;
 
 // Seed the Node-side userland PRNG (Mulberry32) shipped via the sidecar
@@ -33,6 +34,7 @@ pub declare fn float() -> f64;
 // triple. `S` is folded to an integer via the i64 input.
 #[@External.Node("""require('./sidecars/random.mjs').seed($0)""")]
 #[@External.Erlang("""(fun(__S) -> rand:seed(exsplus, {__S, __S, __S}) end)($0)""")]
+#[@External.Wasm("wasi:seed_u32")]
 pub declare fn seed(s: i32) -> void;
 
 // Draw from the seeded PRNG when a `seed` call has been made; otherwise
@@ -42,6 +44,7 @@ pub declare fn seed(s: i32) -> void;
 // stream automatically.
 #[@External.Node("""require('./sidecars/random.mjs').seededFloat()""")]
 #[@External.Erlang("rand", "uniform")]
+#[@External.Wasm("wasi:seeded_f64")]
 pub declare fn seededFloat() -> f64;
 
 // 50/50 boolean draw. `float() >= 0.5` picks the upper half of the
@@ -119,6 +122,7 @@ fn floorWalk(start: i32, threshold: f64, product: f64, upper: i32) -> i32 {
 // until the corresponding shim lands.
 #[@External.Node("""(function(__A){ var __O = __A.slice(); for (var __I = __O.length - 1; __I > 0; __I--) { var __J = Math.floor(Math.random() * (__I + 1)); var __T = __O[__I]; __O[__I] = __O[__J]; __O[__J] = __T; } return __O; })($0)""")]
 #[@External.Erlang("""[__X || {_, __X} <- lists:sort([{rand:uniform(), __Y} || __Y <- $0])]""")]
+#[@External.Wasm("fn:shuffleBody")]
 pub declare fn shuffle<T>(xs: Array<T>) -> Array<T>;
 
 // ── 1.0.10-beta front 01 additions ──────────────────────────────────────────
@@ -135,6 +139,7 @@ pub declare fn shuffle<T>(xs: Array<T>) -> Array<T>;
 // mode without padding (OTP 26+).
 #[@External.Node("""require('crypto').randomBytes($0).toString('base64url')""")]
 #[@External.Erlang("""base64:encode(crypto:strong_rand_bytes($0), #{mode => urlsafe, padding => false})""")]
+#[@External.Wasm("fn:secureTokenBody")]
 pub declare fn secureToken(bytes: i32) -> string;
 
 // A random (version 4) UUID, lowercase: 122 strong random bits with the
@@ -145,6 +150,7 @@ pub declare fn secureToken(bytes: i32) -> string;
 // no bitwise operators (`language-gaps.md`).
 #[@External.Node("""require('crypto').randomUUID()""")]
 #[@External.Erlang("""(fun() -> <<__A:32, __B:16, _:4, __C:12, _:2, __D:14, __E:48>> = crypto:strong_rand_bytes(16), iolist_to_binary(io_lib:format("~8.16.0b-~4.16.0b-4~3.16.0b-~4.16.0b-~12.16.0b", [__A, __B, __C, __D bor 16#8000, __E])) end)()""")]
+#[@External.Wasm("fn:uuidV4Body")]
 pub declare fn uuidV4() -> string;
 
 // ── tests ────────────────────────────────────────────────────────────────────
@@ -277,6 +283,7 @@ test "random.uuidV4 has the version 4 layout" {
 // string used by the hashes above.
 #[@External.Node("""require('crypto').randomBytes($0).toString('hex')""")]
 #[@External.Erlang("""list_to_binary([io_lib:format("~2.16.0b", [__B]) || __B <- binary_to_list(crypto:strong_rand_bytes($0))])""")]
+#[@External.Wasm("fn:randomBytesBody")]
 pub declare fn randomBytes(n: i32) -> string;
 
 test "random.randomBytes(16) returns 32 hex chars" {
@@ -287,4 +294,113 @@ test "random.randomBytes(16) returns 32 hex chars" {
 test "random.randomBytes(0) is empty" {
     val h = randomBytes(0);
     assert h.length == 0;
+}
+
+// ── the wasm bodies (decision 238) ──────────────────────────────────────────
+// wasm has no host for these cells, so each names one of the private bodies
+// below with `#[@External.Wasm("fn:…")]`; commonJS and erlang call their
+// host. On wasm `float()` is `wasi:random_f64` — 53 bits of WASI's
+// `random_get`, the host's cryptographic source — so the token, UUID and
+// byte bodies draw from it a byte at a time (`randomByte`: ⌊u · 256⌋ of a
+// 53-bit uniform `u` is exactly uniform). `seed` / `seededFloat` are the
+// `wasi:seed_u32` / `wasi:seeded_f64` adapters, which hold the stream's state
+// and draw it as the commonJS sidecar does (Mulberry32): the same draws after
+// the same `seed`.
+
+// Selection shuffle: each step moves a uniformly drawn element of what is
+// left to the output — a uniform permutation, as the Node cell's
+// Fisher-Yates; the elements are moved as one-element slices, never read.
+fn shuffleBody<T>(xs: Array<T>) -> Array<T> {
+    var rest = xs;
+    var out = xs.slice(0, 0);
+    while (rest.length > 0) {
+        val j = wholeOf((float() * rest.length).floor());
+        out = out.append(rest.slice(j, j + 1));
+        rest = rest.slice(0, j).append(rest.slice(j + 1, rest.length));
+    }
+    return out;
+}
+
+fn secureTokenBody(bytes: i32) -> string {
+    return base64UrlOf(randomBytesOf(bytes));
+}
+
+// RFC 9562 §5.4: 16 random bytes, the version nibble 4, the variant `10`.
+fn uuidV4Body() -> string {
+    val b = randomBytesOf(16);
+    val version = 64 + b.at(6).unwrapOr(0) % 16;
+    val variant = 128 + b.at(8).unwrapOr(0) % 64;
+    return hexOf(b.slice(0, 4))
+        + "-"
+        + hexOf(b.slice(4, 6))
+        + "-"
+        + hexOf([version, b.at(7).unwrapOr(0)])
+        + "-"
+        + hexOf([variant, b.at(9).unwrapOr(0)])
+        + "-"
+        + hexOf(b.slice(10, 16));
+}
+
+fn randomBytesBody(n: i32) -> string {
+    return hexOf(randomBytesOf(n));
+}
+
+fn randomByte() -> i32 {
+    return wholeOf((float() * 256.0).floor());
+}
+
+fn randomBytesOf(n: i32) -> Array<i32> {
+    var out: Array<i32> = [];
+    var i = 0;
+    while (i < n) {
+        out = out.append([randomByte()]);
+        i = i + 1;
+    }
+    return out;
+}
+
+fn hexDigit(n: i32) -> string {
+    return "0123456789abcdef".at(n).unwrapOr("");
+}
+
+fn hexOf(bytes: Array<i32>) -> string {
+    return bytes.map({ b -> hexDigit(b / 16) + hexDigit(b % 16) }).join("");
+}
+
+// RFC 4648 §5 base64url, unpadded.
+fn base64UrlOf(bytes: Array<i32>) -> string {
+    val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    var out = "";
+    var g = 0;
+    while (3 * g < bytes.length) {
+        val n = bytes.length - 3 * g;
+        val b0 = bytes.at(3 * g).unwrapOr(0);
+        val b1 = if (n > 1) bytes.at(3 * g + 1).unwrapOr(0) else 0;
+        val b2 = if (n > 2) bytes.at(3 * g + 2).unwrapOr(0) else 0;
+        out = out
+            + alphabet.at(b0 / 4).unwrapOr("")
+            + alphabet.at((b0 % 4) * 16 + b1 / 16).unwrapOr("");
+        if (n > 1)
+            out = out + alphabet.at((b1 % 16) * 4 + b2 / 64).unwrapOr("");
+        if (n > 2) out = out + alphabet.at(b2 % 64).unwrapOr("");
+        g = g + 1;
+    }
+    return out;
+}
+
+// A whole `v` in [0, 2^31) as an `i32`.
+fn wholeOf(v: f64) -> i32 {
+    var r = 0;
+    var rest = v;
+    var bit = 1073741824;
+    var weight = 1073741824.0;
+    while (bit > 0) {
+        if (rest >= weight) {
+            r = r + bit;
+            rest = rest - weight;
+        }
+        bit = bit / 2;
+        weight = weight / 2.0;
+    }
+    return r;
 }

@@ -2238,6 +2238,8 @@ fn roundHalfUp(x: f64) -> f64 {
 | Adapter | Signature | Answers |
 |---|---|---|
 | `random_f64` | `() -> f64` | a uniform `f64` in `[0.0, 1.0)` from 53 bits of `random_get` (an errno from the host traps) |
+| `seed_u32` | `(i32) -> void` | nothing; seeds the module's one Mulberry32 stream with the word's bits — no WASI call: the state a seeded stream needs, which no botopink module holds on every target |
+| `seeded_f64` | `() -> f64` | the stream's next draw in `[0.0, 1.0)` — Mulberry32 as the commonJS sidecar of `std/io/random` draws it, so a seed gives the same draws there and here —, or `random_f64`'s draw before any seed |
 
 Anything else — another prefix, an opcode the backend does not bind, an opcode
 whose type differs from the signature, a `fn:` naming no private bodied fn of

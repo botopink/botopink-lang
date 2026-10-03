@@ -1,0 +1,20 @@
+//// `std/hash` on all four targets (decision 238, `01-compiler/05-wasm` step
+//// 5): on wasm every cell is bound with `fn:` to a private body in exact
+//// arithmetic, answering what Node's `crypto` answers. HMAC-SHA256, PBKDF2 and the constant-time compare.
+//// The program's text has a two- and a three-byte UTF-8 character and none
+//// above U+FFFF. Three cells, not one: a wasm program has one 64 KiB page of
+//// heap and nothing is freed (`decisions-pending.md` 05w-e), so one program
+//// cannot hold every digest.
+
+import {hash} from "std";
+
+pub fn main() {
+    @print(
+        hash.hmacSha256("key", "The quick brown fox jumps over the lazy dog"),
+    );
+    @print(hash.hmacSha256Base64Url("secret", "header.payload"));
+    @print(hash.pbkdf2Sha256("pässwörd", "salt", 2, 40));
+    @print(hash.equalsConstantTime("abcd", "abcd"));
+    @print(hash.equalsConstantTime("abcd", "abce"));
+    @print(hash.equalsConstantTime("abc", "abcd"));
+}

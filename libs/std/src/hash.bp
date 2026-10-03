@@ -28,6 +28,7 @@
 // the JWS HS256 signature (RFC 7515 §3) and a session-cookie MAC.
 #[@External.Node("""require('crypto').createHmac('sha256', $0).update($1).digest('base64url')""")]
 #[@External.Erlang("""base64:encode(crypto:mac(hmac, sha256, $0, $1), #{mode => urlsafe, padding => false})""")]
+#[@External.Wasm("fn:hmacSha256Base64UrlBody")]
 pub declare fn hmacSha256Base64Url(key: string, data: string) -> string;
 
 // Standard base64 (with padding) of the raw SHA-1 of `data` — the
@@ -35,11 +36,13 @@ pub declare fn hmacSha256Base64Url(key: string, data: string) -> string;
 // handshake only; it is not a signature primitive.
 #[@External.Node("""require('crypto').createHash('sha1').update($0).digest('base64')""")]
 #[@External.Erlang("""base64:encode(crypto:hash(sha, $0))""")]
+#[@External.Wasm("fn:sha1Base64Body")]
 pub declare fn sha1Base64(data: string) -> string;
 
 // base64url (no padding) of the raw SHA-256 of `data` — 43 characters.
 #[@External.Node("""require('crypto').createHash('sha256').update($0).digest('base64url')""")]
 #[@External.Erlang("""base64:encode(crypto:hash(sha256, $0), #{mode => urlsafe, padding => false})""")]
+#[@External.Wasm("fn:sha256Base64UrlBody")]
 pub declare fn sha256Base64Url(data: string) -> string;
 
 // `a == b` in time that depends only on the length, not on where the two
@@ -50,6 +53,7 @@ pub declare fn sha256Base64Url(data: string) -> string;
 // checks the byte length first (the length of a MAC is not secret).
 #[@External.Node("""(() => { const __a = Buffer.from($0, 'utf8'); const __b = Buffer.from($1, 'utf8'); return __a.length === __b.length && require('crypto').timingSafeEqual(__a, __b) })()""")]
 #[@External.Erlang("""(fun(__A, __B) -> byte_size(__A) =:= byte_size(__B) andalso crypto:hash_equals(__A, __B) end)($0, $1)""")]
+#[@External.Wasm("fn:equalsConstantTimeBody")]
 pub declare fn equalsConstantTime(a: string, b: string) -> bool;
 
 // ── 1.0.11-beta front 97: PBKDF2 ─────────────────────────────────────────────
@@ -59,6 +63,7 @@ pub declare fn equalsConstantTime(a: string, b: string) -> bool;
 // Erlang: `crypto:pbkdf2_hmac(sha256, Password, Salt, Iterations, Length)`.
 #[@External.Node("""require('crypto').pbkdf2Sync($0, $1, $2, $3, 'sha256').toString('base64url')""")]
 #[@External.Erlang("""base64:encode(crypto:pbkdf2_hmac(sha256, $0, $1, $2, $3), #{mode => urlsafe, padding => false})""")]
+#[@External.Wasm("fn:pbkdf2DeriveBody")]
 declare fn pbkdf2Derive(
     password: string,
     salt: string,
@@ -197,14 +202,17 @@ test "hash.equalsConstantTime is false for a different value and never throws" {
 
 #[@External.Node("""require('crypto').createHash('sha256').update($0).digest('hex')""")]
 #[@External.Erlang("""list_to_binary([io_lib:format("~2.16.0b", [__B]) || __B <- binary_to_list(crypto:hash(sha256, $0))])""")]
+#[@External.Wasm("fn:sha256Body")]
 pub declare fn sha256(data: string) -> string;
 
 #[@External.Node("""require('crypto').createHash('sha512').update($0).digest('hex')""")]
 #[@External.Erlang("""list_to_binary([io_lib:format("~2.16.0b", [__B]) || __B <- binary_to_list(crypto:hash(sha512, $0))])""")]
+#[@External.Wasm("fn:sha512Body")]
 pub declare fn sha512(data: string) -> string;
 
 #[@External.Node("""require('crypto').createHash('md5').update($0).digest('hex')""")]
 #[@External.Erlang("""list_to_binary([io_lib:format("~2.16.0b", [__B]) || __B <- binary_to_list(crypto:hash(md5, $0))])""")]
+#[@External.Wasm("fn:md5Body")]
 pub declare fn md5(data: string) -> string;
 
 // HMAC-SHA256. `key` is the secret material; `data` is the message.
@@ -213,6 +221,7 @@ pub declare fn md5(data: string) -> string;
 // Erlang's `crypto:mac(hmac, sha256, key, data)`.
 #[@External.Node("""require('crypto').createHmac('sha256', $0).update($1).digest('hex')""")]
 #[@External.Erlang("""list_to_binary([io_lib:format("~2.16.0b", [__B]) || __B <- binary_to_list(crypto:mac(hmac, sha256, $0, $1))])""")]
+#[@External.Wasm("fn:hmacSha256Body")]
 pub declare fn hmacSha256(key: string, data: string) -> string;
 
 // ── tests ────────────────────────────────────────────────────────────────────
@@ -275,10 +284,12 @@ test "hash.hmacSha256 produces a 64-hex-char digest" {
 
 #[@External.Node("""(function(__S){ var __H = 5381; for (var __I = 0; __I < __S.length; __I++) { __H = (Math.imul(__H, 33) + __S.charCodeAt(__I)) >>> 0; } return __H.toString(16); })($0)""")]
 #[@External.Erlang("""(fun(__S) -> __H = lists:foldl(fun(__C, __A) -> (__A * 33 + __C) band 16#FFFFFFFF end, 5381, unicode:characters_to_list(__S)), list_to_binary(string:lowercase(integer_to_list(__H, 16))) end)($0)""")]
+#[@External.Wasm("fn:contentHashBody")]
 pub declare fn contentHash(value: string) -> string;
 
 #[@External.Node("""require('crypto').createHash('sha256').update($0).digest('hex').slice(0, 32)""")]
 #[@External.Erlang("""binary:part(string:lowercase(binary:encode_hex(crypto:hash(sha256, $0))), 0, 32)""")]
+#[@External.Wasm("fn:strongHashBody")]
 pub declare fn strongHash(value: string) -> string;
 
 // ── cache keys — framed, never joined ────────────────────────────────────────
@@ -464,4 +475,992 @@ test "hash.fingerprint does not treat a leading dot as an extension" {
 test "hash.fingerprint answers a different name for different contents" {
     assert fingerprint("app.js", "body{x}") == "app.85cd8483.js";
     assert fingerprint("app.js", "body{}") != fingerprint("app.js", "body{x}");
+}
+
+// ── the wasm bodies (decision 238) ──────────────────────────────────────────
+// wasm has no host to hash with, so each cell above names one of these
+// private bodies with `#[@External.Wasm("fn:…")]`. They run only on wasm —
+// commonJS and erlang call their host — and they answer what Node's `crypto`
+// answers: SHA-256 and SHA-512 (FIPS 180-4), SHA-1 (RFC 3174), MD5
+// (RFC 1321), HMAC (RFC 2104), PBKDF2 (RFC 8018 §5.2), base64 (RFC 4648 §4,
+// §5) and the djb2 fold `contentHash`'s Node cell writes over UTF-16 code
+// units. botopink has no bit operation and wasm no `i64` this backend
+// lowers, so a 32-bit word is a whole `f64` in [0, 2^32), its bit
+// operations exact arithmetic (`wrap32`, `rotr32`, `mix`, `bits32`); a
+// 64-bit SHA-512 word is two of them. A word is stored in an
+// `Array<i32>` as two 16-bit halves, since a float in an array keeps only
+// its `f32`; a constant is the hex its standard prints. A byte is an `i32` in 0..255; a string's bytes are its UTF-8.
+
+fn sha256Body(data: string) -> string {
+    return hexOf(sha256Bytes(utf8Of(data)));
+}
+
+fn sha256Base64UrlBody(data: string) -> string {
+    return base64Of(sha256Bytes(utf8Of(data)), true, false);
+}
+
+fn strongHashBody(value: string) -> string {
+    return hexOf(sha256Bytes(utf8Of(value)).slice(0, 16));
+}
+
+fn sha512Body(data: string) -> string {
+    return hexOf(sha512Bytes(utf8Of(data)));
+}
+
+fn md5Body(data: string) -> string {
+    return hexOf(md5Bytes(utf8Of(data)));
+}
+
+fn sha1Base64Body(data: string) -> string {
+    return base64Of(sha1Bytes(utf8Of(data)), false, true);
+}
+
+fn hmacSha256Body(key: string, data: string) -> string {
+    return hexOf(hmacSha256Bytes(hmacKeyBlock(utf8Of(key)), utf8Of(data)));
+}
+
+fn hmacSha256Base64UrlBody(key: string, data: string) -> string {
+    return base64Of(
+        hmacSha256Bytes(hmacKeyBlock(utf8Of(key)), utf8Of(data)),
+        true,
+        false,
+    );
+}
+
+// Every byte compared, no early exit; a length mismatch is `false`.
+fn equalsConstantTimeBody(a: string, b: string) -> bool {
+    val x = utf8Of(a);
+    val y = utf8Of(b);
+    if (x.length != y.length) return false;
+    var diff = 0.0;
+    var i = 0;
+    while (i < x.length) {
+        val d = x.at(i).unwrapOr(0) - y.at(i).unwrapOr(0);
+        diff = diff + d * d * 1.0;
+        i = i + 1;
+    }
+    return diff == 0.0;
+}
+
+// RFC 8018 §5.2 over HMAC-SHA256: block `i` is U1 ^ … ^ Uc, U1 the HMAC of
+// the salt and `i` (four bytes, big-endian), each next U the HMAC of the
+// last; the key is the blocks' first `length` bytes.
+fn pbkdf2DeriveBody(
+    password: string,
+    salt: string,
+    iterations: i32,
+    length: i32,
+) -> string {
+    val key = hmacKeyBlock(utf8Of(password));
+    val inner = padOf(key, 54);
+    val outer = padOf(key, 92);
+    val s = utf8Of(salt);
+    var out: Array<i32> = [];
+    var block = 1;
+    while (out.length < length) {
+        val index = [
+            block / 16777216,
+            (block / 65536) % 256,
+            (block / 256) % 256,
+            block % 256,
+        ];
+        var u = hmacWithPads(inner, outer, s.append(index));
+        var t = u;
+        var j = 1;
+        while (j < iterations) {
+            u = hmacWithPads(inner, outer, u);
+            t = xorBytes(t, u);
+            j = j + 1;
+        }
+        out = out.append(t);
+        block = block + 1;
+    }
+    return base64Of(out.slice(0, length), true, false);
+}
+
+// djb2 as the commonJS cell answers it: h = h · 33 + c modulo 2^32, from
+// 5381, lowercase hex without padding, `c` read at every UTF-16 index by
+// the `charCodeAt` the commonJS runtime installs, which answers the code
+// point there — so a character above U+FFFF folds its code point, then its
+// low surrogate (`decisions-pending.md` 05w-d: erlang folds the code point
+// alone).
+fn contentHashBody(value: string) -> string {
+    val cs = value.chars();
+    var h = 5381.0;
+    var i = 0;
+    while (i < cs.length) {
+        val cp = cs.at(i).unwrapOr("").charCodeAt(0);
+        h = wrap32(h * 33.0 + cp * 1.0);
+        if (cp >= 65536)
+            h = wrap32(h * 33.0 + (56320 + (cp - 65536) % 1024) * 1.0);
+        i = i + 1;
+    }
+    return hexWord(h);
+}
+
+// ── bytes and text ──
+
+fn utf8Of(s: string) -> Array<i32> {
+    val parts: Array<Array<i32>> = s
+        .chars()
+        .map({ c ->
+            utf8Bytes(c.charCodeAt(0));
+        });
+    return parts.flatten();
+}
+
+fn utf8Bytes(cp: i32) -> Array<i32> {
+    if (cp < 128) return [cp];
+    if (cp < 2048) return [192 + cp / 64, 128 + cp % 64];
+    if (cp < 65536)
+        return [224 + cp / 4096, 128 + (cp / 64) % 64, 128 + cp % 64];
+    return [
+        240 + cp / 262144,
+        128 + (cp / 4096) % 64,
+        128 + (cp / 64) % 64,
+        128 + cp % 64,
+    ];
+}
+
+fn hexDigit(n: i32) -> string {
+    return "0123456789abcdef".at(n).unwrapOr("");
+}
+
+fn hexOf(bytes: Array<i32>) -> string {
+    return bytes.map({ b -> hexDigit(b / 16) + hexDigit(b % 16) }).join("");
+}
+
+// A word in lowercase hex without leading zeros (`toString(16)`).
+fn hexWord(w: f64) -> string {
+    if (w < 16.0) return hexDigit(smallInt(w));
+    val q = (w / 16.0).floor();
+    return hexWord(q) + hexDigit(smallInt(w - q * 16.0));
+}
+
+// RFC 4648 base64: §5's alphabet when `url`, `=` padding when `pad`.
+fn base64Of(bytes: Array<i32>, url: bool, pad: bool) -> string {
+    val alphabet = if (url)
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+    else
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    var out = "";
+    var g = 0;
+    while (3 * g < bytes.length) {
+        out = out + base64Group(bytes, g, alphabet, pad);
+        g = g + 1;
+    }
+    return out;
+}
+
+fn base64Group(
+    bytes: Array<i32>,
+    g: i32,
+    alphabet: string,
+    pad: bool,
+) -> string {
+    val n = bytes.length - 3 * g;
+    val b0 = bytes.at(3 * g).unwrapOr(0);
+    val b1 = if (n > 1) bytes.at(3 * g + 1).unwrapOr(0) else 0;
+    val b2 = if (n > 2) bytes.at(3 * g + 2).unwrapOr(0) else 0;
+    val fill = if (pad) "=" else "";
+    val c0 = alphabet.at(b0 / 4).unwrapOr("");
+    val c1 = alphabet.at((b0 % 4) * 16 + b1 / 16).unwrapOr("");
+    val c2 = if (n > 1)
+        alphabet.at((b1 % 16) * 4 + b2 / 64).unwrapOr("")
+    else
+        fill;
+    val c3 = if (n > 2) alphabet.at(b2 % 64).unwrapOr("") else fill;
+    return c0 + c1 + c2 + c3;
+}
+
+// `n` zero bytes, by doubling (`Array.repeat` and `Array.range` recurse once
+// per element).
+fn zeroBytes(n: i32) -> Array<i32> {
+    var zeros = [0];
+    while (zeros.length < n) {
+        zeros = zeros.append(zeros);
+    }
+    return zeros.slice(0, n);
+}
+
+fn xorByte(a: i32, b: i32) -> i32 {
+    var r = 0;
+    var x = a;
+    var y = b;
+    var bit = 1;
+    while (bit < 256) {
+        if (x % 2 != y % 2) r = r + bit;
+        x = x / 2;
+        y = y / 2;
+        bit = bit * 2;
+    }
+    return r;
+}
+
+fn xorBytes(a: Array<i32>, b: Array<i32>) -> Array<i32> {
+    return a.zip(b).map({ p -> xorByte(p._0, p._1) });
+}
+
+// ── words ──
+
+fn wrap32(x: f64) -> f64 {
+    return x - (x / 4294967296.0).floor() * 4294967296.0;
+}
+
+// `x` rotated right by n bits, `p` = 2^n.
+fn rotr32(x: f64, p: f64) -> f64 {
+    return mix(x, x, p);
+}
+
+// The low 32 bits of (y:x) >> n, `p` = 2^n: x's bits shifted down and y's
+// low n bits above them.
+fn mix(x: f64, y: f64, p: f64) -> f64 {
+    val down = (x / p).floor();
+    val low = y - (y / p).floor() * p;
+    return down + low * (4294967296.0 / p);
+}
+
+// One of four bitwise functions of three words, bit by bit: `mode` 0 is
+// x ^ y ^ z, 1 chooses y where x is set and z elsewhere, 2 is the
+// majority, 3 is MD5's y ^ (x | ~z).
+fn bits32(x: f64, y: f64, z: f64, mode: i32) -> f64 {
+    var a = x;
+    var b = y;
+    var c = z;
+    var r = 0.0;
+    var weight = 1.0;
+    var i = 0;
+    while (i < 32) {
+        val ha = (a / 2.0).floor();
+        val hb = (b / 2.0).floor();
+        val hc = (c / 2.0).floor();
+        val ba = a - 2.0 * ha;
+        val bb = b - 2.0 * hb;
+        val bc = c - 2.0 * hc;
+        val sum = ba + bb + bc;
+        var on = false;
+        if (mode == 0) on = sum == 1.0 || sum == 3.0;
+        if (mode == 1)
+            on = (ba == 1.0 && bb == 1.0) || (ba == 0.0 && bc == 1.0);
+        if (mode == 2) on = sum >= 2.0;
+        if (mode == 3) {
+            val either = if (ba == 1.0 || bc == 0.0) 1.0 else 0.0;
+            on = bb + either == 1.0;
+        }
+        if (on) r = r + weight;
+        a = ha;
+        b = hb;
+        c = hc;
+        weight = weight * 2.0;
+        i = i + 1;
+    }
+    return r;
+}
+
+// A whole `v` in 0..65535 as an `i32`.
+fn smallInt(v: f64) -> i32 {
+    var r = 0;
+    var rest = v;
+    var bit = 32768;
+    var weight = 32768.0;
+    while (bit > 0) {
+        if (rest >= weight) {
+            r = r + bit;
+            rest = rest - weight;
+        }
+        bit = bit / 2;
+        weight = weight / 2.0;
+    }
+    return r;
+}
+
+fn upperHalf(w: f64) -> i32 {
+    return smallInt((w / 65536.0).floor());
+}
+
+fn lowerHalf(w: f64) -> i32 {
+    return smallInt(w - (w / 65536.0).floor() * 65536.0);
+}
+
+// Word `i` of a halves array.
+fn wordOf(h: Array<i32>, i: i32) -> f64 {
+    return h.at(2 * i).unwrapOr(0) * 65536.0
+        + h.at(2 * i + 1).unwrapOr(0) * 1.0;
+}
+
+fn wordBE(m: Array<i32>, i: i32) -> f64 {
+    return m.at(i).unwrapOr(0) * 16777216.0
+        + m.at(i + 1).unwrapOr(0) * 65536.0
+        + m.at(i + 2).unwrapOr(0) * 256.0
+        + m.at(i + 3).unwrapOr(0) * 1.0;
+}
+
+fn wordLE(m: Array<i32>, i: i32) -> f64 {
+    return m.at(i + 3).unwrapOr(0) * 16777216.0
+        + m.at(i + 2).unwrapOr(0) * 65536.0
+        + m.at(i + 1).unwrapOr(0) * 256.0
+        + m.at(i).unwrapOr(0) * 1.0;
+}
+
+// The `count` hex digits of `w` from `start` as a whole number.
+fn hexValue(w: string, start: i32, count: i32) -> f64 {
+    var v = 0.0;
+    var i = 0;
+    while (i < count) {
+        val c = w.charCodeAt(start + i);
+        val digit = if (c < 58) c - 48 else c - 87;
+        v = v * 16.0 + digit * 1.0;
+        i = i + 1;
+    }
+    return v;
+}
+
+// Space-separated hex words of `digits` (8 or 16) digits as 16-bit halves.
+fn halvesOf(text: string, digits: i32) -> Array<i32> {
+    var out: Array<i32> = [];
+    var at = 0;
+    while (at < text.length) {
+        val v = hexValue(text, at, 8);
+        out = out.append([upperHalf(v), lowerHalf(v)]);
+        at = if ((at + 8) % (digits + 1) == digits) at + 9 else at + 8;
+    }
+    return out;
+}
+
+// Halves to bytes, each word big-endian.
+fn bytesBE(h: Array<i32>) -> Array<i32> {
+    val parts: Array<Array<i32>> = h.map({ x -> [x / 256, x % 256] });
+    return parts.flatten();
+}
+
+// Halves to bytes, each word little-endian (MD5).
+fn bytesLE(h: Array<i32>) -> Array<i32> {
+    var out: Array<i32> = [];
+    var i = 0;
+    while (i < h.length) {
+        val upper = h.at(i).unwrapOr(0);
+        val lower = h.at(i + 1).unwrapOr(0);
+        out = out.append([lower % 256, lower / 256, upper % 256, upper / 256]);
+        i = i + 2;
+    }
+    return out;
+}
+
+// The message, `0x80`, zeros, and its length in bits in the last
+// `lengthBytes` bytes of a `block`-byte block.
+fn padded(
+    msg: Array<i32>,
+    block: i32,
+    lengthBytes: i32,
+    bigEndian: bool,
+) -> Array<i32> {
+    val bits = msg.length * 8;
+    val zeros = (block - (msg.length + 1 + lengthBytes) % block) % block;
+    val be = [
+        bits / 16777216,
+        (bits / 65536) % 256,
+        (bits / 256) % 256,
+        bits % 256,
+    ];
+    val size = if (bigEndian)
+        zeroBytes(lengthBytes - 4).append(be)
+    else
+        be.reverse().append(zeroBytes(lengthBytes - 4));
+    return msg.append([128].append(zeroBytes(zeros)).append(size));
+}
+
+// ── HMAC ──
+
+// The key as HMAC's 64-byte block: hashed when longer, zero-padded.
+fn hmacKeyBlock(key: Array<i32>) -> Array<i32> {
+    val short = if (key.length > 64) sha256Bytes(key) else key;
+    return short.append(zeroBytes(64 - short.length));
+}
+
+fn hmacSha256Bytes(block: Array<i32>, msg: Array<i32>) -> Array<i32> {
+    return hmacWithPads(padOf(block, 54), padOf(block, 92), msg);
+}
+
+// The key block with every byte xored with `pad` (0x36 inner, 0x5c outer).
+fn padOf(block: Array<i32>, pad: i32) -> Array<i32> {
+    return block.map({ b -> xorByte(b, pad) });
+}
+
+fn hmacWithPads(
+    inner: Array<i32>,
+    outer: Array<i32>,
+    msg: Array<i32>,
+) -> Array<i32> {
+    return sha256Bytes(outer.append(sha256Bytes(inner.append(msg))));
+}
+
+// ── SHA-256 ──
+
+fn sha256Bytes(msg: Array<i32>) -> Array<i32> {
+    val m = padded(msg, 64, 8, true);
+    val k = sha256Constants();
+    var h = halvesOf(sha256Initial(), 8);
+    var at = 0;
+    while (at < m.length) {
+        h = sha256Block(h, m, at, k);
+        at = at + 64;
+    }
+    return bytesBE(h);
+}
+
+fn sha256Block(h: Array<i32>, m: Array<i32>, at: i32, k: string) -> Array<i32> {
+    var a = wordOf(h, 0);
+    var b = wordOf(h, 1);
+    var c = wordOf(h, 2);
+    var d = wordOf(h, 3);
+    var e = wordOf(h, 4);
+    var f = wordOf(h, 5);
+    var g = wordOf(h, 6);
+    var hh = wordOf(h, 7);
+    var w0 = wordBE(m, at);
+    var w1 = wordBE(m, at + 4);
+    var w2 = wordBE(m, at + 8);
+    var w3 = wordBE(m, at + 12);
+    var w4 = wordBE(m, at + 16);
+    var w5 = wordBE(m, at + 20);
+    var w6 = wordBE(m, at + 24);
+    var w7 = wordBE(m, at + 28);
+    var w8 = wordBE(m, at + 32);
+    var w9 = wordBE(m, at + 36);
+    var w10 = wordBE(m, at + 40);
+    var w11 = wordBE(m, at + 44);
+    var w12 = wordBE(m, at + 48);
+    var w13 = wordBE(m, at + 52);
+    var w14 = wordBE(m, at + 56);
+    var w15 = wordBE(m, at + 60);
+    var t = 0;
+    while (t < 64) {
+        val s1 = bits32(
+            rotr32(e, 64.0),
+            rotr32(e, 2048.0),
+            rotr32(e, 33554432.0),
+            0,
+        );
+        val t1 = hh + s1 + bits32(e, f, g, 1) + hexValue(k, 9 * t, 8) + w0;
+        val s0 = bits32(
+            rotr32(a, 4.0),
+            rotr32(a, 8192.0),
+            rotr32(a, 4194304.0),
+            0,
+        );
+        val t2 = s0 + bits32(a, b, c, 2);
+        hh = g;
+        g = f;
+        f = e;
+        e = wrap32(d + t1);
+        d = c;
+        c = b;
+        b = a;
+        a = wrap32(t1 + t2);
+        val g0 = bits32(
+            rotr32(w1, 128.0),
+            rotr32(w1, 262144.0),
+            (w1 / 8.0).floor(),
+            0,
+        );
+        val g1 = bits32(
+            rotr32(w14, 131072.0),
+            rotr32(w14, 524288.0),
+            (w14 / 1024.0).floor(),
+            0,
+        );
+        val next = wrap32(g1 + w9 + g0 + w0);
+        w0 = w1;
+        w1 = w2;
+        w2 = w3;
+        w3 = w4;
+        w4 = w5;
+        w5 = w6;
+        w6 = w7;
+        w7 = w8;
+        w8 = w9;
+        w9 = w10;
+        w10 = w11;
+        w11 = w12;
+        w12 = w13;
+        w13 = w14;
+        w14 = w15;
+        w15 = next;
+        t = t + 1;
+    }
+    val n0 = wrap32(wordOf(h, 0) + a);
+    val n1 = wrap32(wordOf(h, 1) + b);
+    val n2 = wrap32(wordOf(h, 2) + c);
+    val n3 = wrap32(wordOf(h, 3) + d);
+    val n4 = wrap32(wordOf(h, 4) + e);
+    val n5 = wrap32(wordOf(h, 5) + f);
+    val n6 = wrap32(wordOf(h, 6) + g);
+    val n7 = wrap32(wordOf(h, 7) + hh);
+    return [
+        upperHalf(n0),
+        lowerHalf(n0),
+        upperHalf(n1),
+        lowerHalf(n1),
+        upperHalf(n2),
+        lowerHalf(n2),
+        upperHalf(n3),
+        lowerHalf(n3),
+        upperHalf(n4),
+        lowerHalf(n4),
+        upperHalf(n5),
+        lowerHalf(n5),
+        upperHalf(n6),
+        lowerHalf(n6),
+        upperHalf(n7),
+        lowerHalf(n7),
+    ];
+}
+
+// ── SHA-1 ──
+
+fn sha1Bytes(msg: Array<i32>) -> Array<i32> {
+    val m = padded(msg, 64, 8, true);
+    var h = halvesOf("67452301 efcdab89 98badcfe 10325476 c3d2e1f0", 8);
+    var at = 0;
+    while (at < m.length) {
+        h = sha1Block(h, m, at);
+        at = at + 64;
+    }
+    return bytesBE(h);
+}
+
+fn sha1Block(h: Array<i32>, m: Array<i32>, at: i32) -> Array<i32> {
+    var a = wordOf(h, 0);
+    var b = wordOf(h, 1);
+    var c = wordOf(h, 2);
+    var d = wordOf(h, 3);
+    var e = wordOf(h, 4);
+    var w0 = wordBE(m, at);
+    var w1 = wordBE(m, at + 4);
+    var w2 = wordBE(m, at + 8);
+    var w3 = wordBE(m, at + 12);
+    var w4 = wordBE(m, at + 16);
+    var w5 = wordBE(m, at + 20);
+    var w6 = wordBE(m, at + 24);
+    var w7 = wordBE(m, at + 28);
+    var w8 = wordBE(m, at + 32);
+    var w9 = wordBE(m, at + 36);
+    var w10 = wordBE(m, at + 40);
+    var w11 = wordBE(m, at + 44);
+    var w12 = wordBE(m, at + 48);
+    var w13 = wordBE(m, at + 52);
+    var w14 = wordBE(m, at + 56);
+    var w15 = wordBE(m, at + 60);
+    var t = 0;
+    while (t < 80) {
+        val f = if (t < 20)
+            bits32(b, c, d, 1) + 1518500249.0
+        else if (t < 40)
+            bits32(b, c, d, 0) + 1859775393.0
+        else if (t < 60)
+            bits32(b, c, d, 2) + 2400959708.0
+        else
+            bits32(b, c, d, 0) + 3395469782.0;
+        val temp = wrap32(rotr32(a, 134217728.0) + f + e + w0);
+        e = d;
+        d = c;
+        c = rotr32(b, 4.0);
+        b = a;
+        a = temp;
+        val mixed = bits32(bits32(w13, w8, w2, 0), w0, 0.0, 0);
+        val next = rotr32(mixed, 2147483648.0);
+        w0 = w1;
+        w1 = w2;
+        w2 = w3;
+        w3 = w4;
+        w4 = w5;
+        w5 = w6;
+        w6 = w7;
+        w7 = w8;
+        w8 = w9;
+        w9 = w10;
+        w10 = w11;
+        w11 = w12;
+        w12 = w13;
+        w13 = w14;
+        w14 = w15;
+        w15 = next;
+        t = t + 1;
+    }
+    val n0 = wrap32(wordOf(h, 0) + a);
+    val n1 = wrap32(wordOf(h, 1) + b);
+    val n2 = wrap32(wordOf(h, 2) + c);
+    val n3 = wrap32(wordOf(h, 3) + d);
+    val n4 = wrap32(wordOf(h, 4) + e);
+    return [
+        upperHalf(n0),
+        lowerHalf(n0),
+        upperHalf(n1),
+        lowerHalf(n1),
+        upperHalf(n2),
+        lowerHalf(n2),
+        upperHalf(n3),
+        lowerHalf(n3),
+        upperHalf(n4),
+        lowerHalf(n4),
+    ];
+}
+
+// ── MD5 ──
+
+fn md5Bytes(msg: Array<i32>) -> Array<i32> {
+    val m = padded(msg, 64, 8, false);
+    val k = md5Constants();
+    // 2^(32 − s) for each round's four left-rotation amounts s.
+    val shifts = [
+        33554432,
+        1048576,
+        32768,
+        1024,
+        134217728,
+        8388608,
+        262144,
+        4096,
+        268435456,
+        2097152,
+        65536,
+        512,
+        67108864,
+        4194304,
+        131072,
+        2048,
+    ];
+    var h = halvesOf("67452301 efcdab89 98badcfe 10325476", 8);
+    var at = 0;
+    while (at < m.length) {
+        h = md5Block(h, m, at, k, shifts);
+        at = at + 64;
+    }
+    return bytesLE(h);
+}
+
+fn md5Block(
+    h: Array<i32>,
+    m: Array<i32>,
+    at: i32,
+    k: string,
+    shifts: Array<i32>,
+) -> Array<i32> {
+    var a = wordOf(h, 0);
+    var b = wordOf(h, 1);
+    var c = wordOf(h, 2);
+    var d = wordOf(h, 3);
+    var i = 0;
+    while (i < 64) {
+        val round = i / 16;
+        val f = if (round == 0)
+            bits32(b, c, d, 1)
+        else if (round == 1)
+            bits32(d, b, c, 1)
+        else if (round == 2)
+            bits32(b, c, d, 0)
+        else
+            bits32(b, c, d, 3);
+        val g = if (round == 0)
+            i
+        else if (round == 1)
+            (5 * i + 1) % 16
+        else if (round == 2)
+            (3 * i + 5) % 16
+        else
+            (7 * i) % 16;
+        val sum = wrap32(f + a + hexValue(k, 9 * i, 8) + wordLE(m, at + 4 * g));
+        val p = shifts.at(round * 4 + i % 4).unwrapOr(1) * 1.0;
+        a = d;
+        d = c;
+        c = b;
+        b = wrap32(b + rotr32(sum, p));
+        i = i + 1;
+    }
+    val n0 = wrap32(wordOf(h, 0) + a);
+    val n1 = wrap32(wordOf(h, 1) + b);
+    val n2 = wrap32(wordOf(h, 2) + c);
+    val n3 = wrap32(wordOf(h, 3) + d);
+    return [
+        upperHalf(n0),
+        lowerHalf(n0),
+        upperHalf(n1),
+        lowerHalf(n1),
+        upperHalf(n2),
+        lowerHalf(n2),
+        upperHalf(n3),
+        lowerHalf(n3),
+    ];
+}
+
+// ── SHA-512 ──
+
+fn sha512Bytes(msg: Array<i32>) -> Array<i32> {
+    val m = padded(msg, 128, 16, true);
+    val k = sha512Constants();
+    var h = halvesOf(sha512Initial(), 16);
+    var at = 0;
+    while (at < m.length) {
+        h = sha512Block(h, m, at, k);
+        at = at + 128;
+    }
+    return bytesBE(h);
+}
+
+fn sha512Block(h: Array<i32>, m: Array<i32>, at: i32, k: string) -> Array<i32> {
+    var ah = wordOf(h, 0);
+    var al = wordOf(h, 1);
+    var bh = wordOf(h, 2);
+    var bl = wordOf(h, 3);
+    var ch = wordOf(h, 4);
+    var cl = wordOf(h, 5);
+    var dh = wordOf(h, 6);
+    var dl = wordOf(h, 7);
+    var eh = wordOf(h, 8);
+    var el = wordOf(h, 9);
+    var fh = wordOf(h, 10);
+    var fl = wordOf(h, 11);
+    var gh = wordOf(h, 12);
+    var gl = wordOf(h, 13);
+    var hh = wordOf(h, 14);
+    var hl = wordOf(h, 15);
+    var w0h = wordBE(m, at + 0);
+    var w0l = wordBE(m, at + 4);
+    var w1h = wordBE(m, at + 8);
+    var w1l = wordBE(m, at + 12);
+    var w2h = wordBE(m, at + 16);
+    var w2l = wordBE(m, at + 20);
+    var w3h = wordBE(m, at + 24);
+    var w3l = wordBE(m, at + 28);
+    var w4h = wordBE(m, at + 32);
+    var w4l = wordBE(m, at + 36);
+    var w5h = wordBE(m, at + 40);
+    var w5l = wordBE(m, at + 44);
+    var w6h = wordBE(m, at + 48);
+    var w6l = wordBE(m, at + 52);
+    var w7h = wordBE(m, at + 56);
+    var w7l = wordBE(m, at + 60);
+    var w8h = wordBE(m, at + 64);
+    var w8l = wordBE(m, at + 68);
+    var w9h = wordBE(m, at + 72);
+    var w9l = wordBE(m, at + 76);
+    var w10h = wordBE(m, at + 80);
+    var w10l = wordBE(m, at + 84);
+    var w11h = wordBE(m, at + 88);
+    var w11l = wordBE(m, at + 92);
+    var w12h = wordBE(m, at + 96);
+    var w12l = wordBE(m, at + 100);
+    var w13h = wordBE(m, at + 104);
+    var w13l = wordBE(m, at + 108);
+    var w14h = wordBE(m, at + 112);
+    var w14l = wordBE(m, at + 116);
+    var w15h = wordBE(m, at + 120);
+    var w15l = wordBE(m, at + 124);
+    var t = 0;
+    while (t < 80) {
+        val s1h = bits32(
+            mix(eh, el, 16384.0),
+            mix(eh, el, 262144.0),
+            mix(el, eh, 512.0),
+            0,
+        );
+        val s1l = bits32(
+            mix(el, eh, 16384.0),
+            mix(el, eh, 262144.0),
+            mix(eh, el, 512.0),
+            0,
+        );
+        val t1l = hl
+            + s1l
+            + bits32(el, fl, gl, 1)
+            + hexValue(k, 17 * t + 8, 8)
+            + w0l;
+        val t1h = wrap32(
+            hh
+                + s1h
+                + bits32(eh, fh, gh, 1)
+                + hexValue(k, 17 * t, 8)
+                + w0h
+                + (t1l / 4294967296.0).floor(),
+        );
+        val t1lw = wrap32(t1l);
+        val s0h = bits32(
+            mix(ah, al, 268435456.0),
+            mix(al, ah, 4.0),
+            mix(al, ah, 128.0),
+            0,
+        );
+        val s0l = bits32(
+            mix(al, ah, 268435456.0),
+            mix(ah, al, 4.0),
+            mix(ah, al, 128.0),
+            0,
+        );
+        val t2l = s0l + bits32(al, bl, cl, 2);
+        val t2h = s0h + bits32(ah, bh, ch, 2);
+        hh = gh;
+        hl = gl;
+        gh = fh;
+        gl = fl;
+        fh = eh;
+        fl = el;
+        val el2 = dl + t1lw;
+        eh = wrap32(dh + t1h + (el2 / 4294967296.0).floor());
+        el = wrap32(el2);
+        dh = ch;
+        dl = cl;
+        ch = bh;
+        cl = bl;
+        bh = ah;
+        bl = al;
+        val al2 = t1lw + t2l;
+        ah = wrap32(t1h + t2h + (al2 / 4294967296.0).floor());
+        al = wrap32(al2);
+        val g0h = bits32(
+            mix(w1h, w1l, 2.0),
+            mix(w1h, w1l, 256.0),
+            (w1h / 128.0).floor(),
+            0,
+        );
+        val g0l = bits32(
+            mix(w1l, w1h, 2.0),
+            mix(w1l, w1h, 256.0),
+            mix(w1l, w1h, 128.0),
+            0,
+        );
+        val g1h = bits32(
+            mix(w14h, w14l, 524288.0),
+            mix(w14l, w14h, 536870912.0),
+            (w14h / 64.0).floor(),
+            0,
+        );
+        val g1l = bits32(
+            mix(w14l, w14h, 524288.0),
+            mix(w14h, w14l, 536870912.0),
+            mix(w14l, w14h, 64.0),
+            0,
+        );
+        val nl = g1l + w9l + g0l + w0l;
+        val nh = wrap32(g1h + w9h + g0h + w0h + (nl / 4294967296.0).floor());
+        w0h = w1h;
+        w0l = w1l;
+        w1h = w2h;
+        w1l = w2l;
+        w2h = w3h;
+        w2l = w3l;
+        w3h = w4h;
+        w3l = w4l;
+        w4h = w5h;
+        w4l = w5l;
+        w5h = w6h;
+        w5l = w6l;
+        w6h = w7h;
+        w6l = w7l;
+        w7h = w8h;
+        w7l = w8l;
+        w8h = w9h;
+        w8l = w9l;
+        w9h = w10h;
+        w9l = w10l;
+        w10h = w11h;
+        w10l = w11l;
+        w11h = w12h;
+        w11l = w12l;
+        w12h = w13h;
+        w12l = w13l;
+        w13h = w14h;
+        w13l = w14l;
+        w14h = w15h;
+        w14l = w15l;
+        w15h = nh;
+        w15l = wrap32(nl);
+        t = t + 1;
+    }
+    val n0l = wordOf(h, 1) + al;
+    val n0h = wrap32(wordOf(h, 0) + ah + (n0l / 4294967296.0).floor());
+    val n0lw = wrap32(n0l);
+    val n1l = wordOf(h, 3) + bl;
+    val n1h = wrap32(wordOf(h, 2) + bh + (n1l / 4294967296.0).floor());
+    val n1lw = wrap32(n1l);
+    val n2l = wordOf(h, 5) + cl;
+    val n2h = wrap32(wordOf(h, 4) + ch + (n2l / 4294967296.0).floor());
+    val n2lw = wrap32(n2l);
+    val n3l = wordOf(h, 7) + dl;
+    val n3h = wrap32(wordOf(h, 6) + dh + (n3l / 4294967296.0).floor());
+    val n3lw = wrap32(n3l);
+    val n4l = wordOf(h, 9) + el;
+    val n4h = wrap32(wordOf(h, 8) + eh + (n4l / 4294967296.0).floor());
+    val n4lw = wrap32(n4l);
+    val n5l = wordOf(h, 11) + fl;
+    val n5h = wrap32(wordOf(h, 10) + fh + (n5l / 4294967296.0).floor());
+    val n5lw = wrap32(n5l);
+    val n6l = wordOf(h, 13) + gl;
+    val n6h = wrap32(wordOf(h, 12) + gh + (n6l / 4294967296.0).floor());
+    val n6lw = wrap32(n6l);
+    val n7l = wordOf(h, 15) + hl;
+    val n7h = wrap32(wordOf(h, 14) + hh + (n7l / 4294967296.0).floor());
+    val n7lw = wrap32(n7l);
+    return [
+        upperHalf(n0h),
+        lowerHalf(n0h),
+        upperHalf(n0lw),
+        lowerHalf(n0lw),
+        upperHalf(n1h),
+        lowerHalf(n1h),
+        upperHalf(n1lw),
+        lowerHalf(n1lw),
+        upperHalf(n2h),
+        lowerHalf(n2h),
+        upperHalf(n2lw),
+        lowerHalf(n2lw),
+        upperHalf(n3h),
+        lowerHalf(n3h),
+        upperHalf(n3lw),
+        lowerHalf(n3lw),
+        upperHalf(n4h),
+        lowerHalf(n4h),
+        upperHalf(n4lw),
+        lowerHalf(n4lw),
+        upperHalf(n5h),
+        lowerHalf(n5h),
+        upperHalf(n5lw),
+        lowerHalf(n5lw),
+        upperHalf(n6h),
+        lowerHalf(n6h),
+        upperHalf(n6lw),
+        lowerHalf(n6lw),
+        upperHalf(n7h),
+        lowerHalf(n7h),
+        upperHalf(n7lw),
+        lowerHalf(n7lw),
+    ];
+}
+
+// ── constants, as the hex the standards print ──
+// One literal each, read in place (`hexValue` at `9 · i`, or `17 · i` for a
+// 64-bit word), so a digest allocates none of its tables.
+
+// FIPS 180-4 §5.3.3: the square roots of the first 8 primes.
+fn sha256Initial() -> string {
+    return "6a09e667 bb67ae85 3c6ef372 a54ff53a 510e527f 9b05688c 1f83d9ab 5be0cd19";
+}
+
+// FIPS 180-4 §4.2.2: the cube roots of the first 64 primes.
+fn sha256Constants() -> string {
+    return "428a2f98 71374491 b5c0fbcf e9b5dba5 3956c25b 59f111f1 923f82a4 ab1c5ed5 d807aa98 12835b01 243185be 550c7dc3 72be5d74 80deb1fe 9bdc06a7 c19bf174 e49b69c1 efbe4786 0fc19dc6 240ca1cc 2de92c6f 4a7484aa 5cb0a9dc 76f988da 983e5152 a831c66d b00327c8 bf597fc7 c6e00bf3 d5a79147 06ca6351 14292967 27b70a85 2e1b2138 4d2c6dfc 53380d13 650a7354 766a0abb 81c2c92e 92722c85 a2bfe8a1 a81a664b c24b8b70 c76c51a3 d192e819 d6990624 f40e3585 106aa070 19a4c116 1e376c08 2748774c 34b0bcb5 391c0cb3 4ed8aa4a 5b9cca4f 682e6ff3 748f82ee 78a5636f 84c87814 8cc70208 90befffa a4506ceb bef9a3f7 c67178f2";
+}
+
+// FIPS 180-4 §5.3.5: the square roots of the first 8 primes, 64 bits.
+fn sha512Initial() -> string {
+    return "6a09e667f3bcc908 bb67ae8584caa73b 3c6ef372fe94f82b a54ff53a5f1d36f1 510e527fade682d1 9b05688c2b3e6c1f 1f83d9abfb41bd6b 5be0cd19137e2179";
+}
+
+// FIPS 180-4 §4.2.3: the cube roots of the first 80 primes, 64 bits.
+fn sha512Constants() -> string {
+    return "428a2f98d728ae22 7137449123ef65cd b5c0fbcfec4d3b2f e9b5dba58189dbbc 3956c25bf348b538 59f111f1b605d019 923f82a4af194f9b ab1c5ed5da6d8118 d807aa98a3030242 12835b0145706fbe 243185be4ee4b28c 550c7dc3d5ffb4e2 72be5d74f27b896f 80deb1fe3b1696b1 9bdc06a725c71235 c19bf174cf692694 e49b69c19ef14ad2 efbe4786384f25e3 0fc19dc68b8cd5b5 240ca1cc77ac9c65 2de92c6f592b0275 4a7484aa6ea6e483 5cb0a9dcbd41fbd4 76f988da831153b5 983e5152ee66dfab a831c66d2db43210 b00327c898fb213f bf597fc7beef0ee4 c6e00bf33da88fc2 d5a79147930aa725 06ca6351e003826f 142929670a0e6e70 27b70a8546d22ffc 2e1b21385c26c926 4d2c6dfc5ac42aed 53380d139d95b3df 650a73548baf63de 766a0abb3c77b2a8 81c2c92e47edaee6 92722c851482353b a2bfe8a14cf10364 a81a664bbc423001 c24b8b70d0f89791 c76c51a30654be30 d192e819d6ef5218 d69906245565a910 f40e35855771202a 106aa07032bbd1b8 19a4c116b8d2d0c8 1e376c085141ab53 2748774cdf8eeb99 34b0bcb5e19b48a8 391c0cb3c5c95a63 4ed8aa4ae3418acb 5b9cca4f7763e373 682e6ff3d6b2b8a3 748f82ee5defb2fc 78a5636f43172f60 84c87814a1f0ab72 8cc702081a6439ec 90befffa23631e28 a4506cebde82bde9 bef9a3f7b2c67915 c67178f2e372532b ca273eceea26619c d186b8c721c0c207 eada7dd6cde0eb1e f57d4f7fee6ed178 06f067aa72176fba 0a637dc5a2c898a6 113f9804bef90dae 1b710b35131c471b 28db77f523047d84 32caab7b40c72493 3c9ebe0a15c9bebc 431d67c49c100d4c 4cc5d4becb3e42b6 597f299cfc657e2a 5fcb6fab3ad6faec 6c44198c4a475817";
+}
+
+// RFC 1321 §3.4: floor(2^32 · |sin(i + 1)|).
+fn md5Constants() -> string {
+    return "d76aa478 e8c7b756 242070db c1bdceee f57c0faf 4787c62a a8304613 fd469501 698098d8 8b44f7af ffff5bb1 895cd7be 6b901122 fd987193 a679438e 49b40821 f61e2562 c040b340 265e5a51 e9b6c7aa d62f105d 02441453 d8a1e681 e7d3fbc8 21e1cde6 c33707d6 f4d50d87 455a14ed a9e3e905 fcefa3f8 676f02d9 8d2a4c8a fffa3942 8771f681 6d9d6122 fde5380c a4beea44 4bdecfa9 f6bb4b60 bebfbc70 289b7ec6 eaa127fa d4ef3085 04881d05 d9d4d039 e6db99e5 1fa27cf8 c4ac5665 f4292244 432aff97 ab9423a7 fc93a039 655b59c3 8f0ccc92 ffeff47d 85845dd1 6fa87e4f fe2ce6e0 a3014314 4e0811a1 f7537e82 bd3af235 2ad7d2bb eb86d391";
 }

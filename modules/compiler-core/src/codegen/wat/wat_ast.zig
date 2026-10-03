@@ -488,6 +488,13 @@ pub const HelperGroup = enum {
     /// `$__wasi_random_f64()` — decision 238's `wasi:random_f64`, plus the
     /// `random_get` import.
     wasi_random_f64,
+    /// The two globals of the seeded stream (`$__seed_state`, `$__seeded`),
+    /// which `wasi:seed_u32` writes and `wasi:seeded_f64` reads.
+    wasi_seed_state,
+    /// `$__wasi_seed_u32(s)` — `wasi:seed_u32`.
+    wasi_seed_u32,
+    /// `$__wasi_seeded_f64()` — `wasi:seeded_f64`.
+    wasi_seeded_f64,
 
     /// The groups `g`'s functions call into.
     pub fn deps(g: HelperGroup) []const HelperGroup {
@@ -525,6 +532,8 @@ pub const HelperGroup = enum {
             .str_cp_at => &.{ .str_cp_len, .str_cp_slice },
             .str_cp_index_of => &.{ .str_cp_of, .str_index_of },
             .str_cp_last_index_of => &.{ .str_cp_of, .str_last_index_of },
+            .wasi_seed_u32 => &.{.wasi_seed_state},
+            .wasi_seeded_f64 => &.{ .wasi_seed_state, .wasi_random_f64 },
             else => &.{},
         };
     }
@@ -628,6 +637,8 @@ pub const Helper = enum {
     str_cp_index_of,
     str_cp_last_index_of,
     wasi_random_f64,
+    wasi_seed_u32,
+    wasi_seeded_f64,
 
     pub fn symbol(h: Helper) []const u8 {
         return switch (h) {
