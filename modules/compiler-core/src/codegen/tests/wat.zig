@@ -14,6 +14,10 @@ const comptimeMod = @import("../../comptime.zig");
 const validation = @import("../../comptime/error.zig");
 const h = @import("helpers.zig");
 
+test {
+    _ = @import("../wat/host_binding.zig");
+}
+
 test "wat: record construct two fields" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type Point(x: i32, y: i32)
@@ -1788,4 +1792,127 @@ test "wat: refusal ---- a generic body reached with nothing bound is refused at 
         \\    @print(Box(value: 1));
         \\}
     , "cannot call the generic `Box.display` here", 11, 12);
+}
+
+// Decision 238 — what a `#[@External.Wasm("…")]` binding names: `op:` one
+// numeric instruction over the declared parameters, `fn:` a private bodied fn
+// of the same module with the same signature, `wasi:` an adapter of
+// `wat/host_binding.zig`'s list (docs.md § Host bindings). Each lowers to a
+// function of the declared name and signature, so a call is an ordinary call.
+test "wat: host binding ---- op:, fn: and wasi: bind a declare fn" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\#[@External.Wasm("op:f64.floor")]
+        \\declare fn down(x: f64) -> f64;
+        \\#[@External.Wasm("op:i32.add")]
+        \\declare fn plus(a: i32, b: i32) -> i32;
+        \\#[@External.Wasm("op:f64.lt")]
+        \\declare fn below(a: f64, b: f64) -> bool;
+        \\#[@External.Wasm("fn:greetBody")]
+        \\declare fn greet(name: string) -> string;
+        \\fn greetBody(name: string) -> string {
+        \\    return "hi " + name;
+        \\}
+        \\#[@External.Wasm("wasi:random_f64")]
+        \\declare fn draw() -> f64;
+        \\fn main() {
+        \\    @print(down(2.75) == 2.0);
+        \\    @print(plus(40, 2));
+        \\    @print(below(1.0, 2.0));
+        \\    @print(greet("wasm"));
+        \\    val r = draw();
+        \\    @print(r >= 0.0 && r < 1.0);
+        \\}
+    ,
+        \\true
+        \\42
+        \\true
+        \\hi wasm
+        \\true
+        \\
+    );
+}
+
+// Anything outside the vocabulary is refused at the annotation — never read
+// as text, never lowered to a guess.
+test "wat: host binding ---- an unknown form, opcode, signature, fn or adapter is refused at the annotation" {
+    try h.assertWasmRefusedAt(std.testing.allocator,
+        \\#[@External.Wasm("op:f64.flor")]
+        \\declare fn down(x: f64) -> f64;
+        \\fn main() { @print(down(1.5)); }
+    , "`f64.flor` is not a wasm numeric instruction", 1, 3);
+    try h.assertWasmRefusedAt(std.testing.allocator,
+        \\#[@External.Wasm("op:f64.min")]
+        \\declare fn least(x: f64) -> f64;
+        \\fn main() { @print(least(1.5)); }
+    , "`f64.min` is `(f64, f64) -> f64`", 1, 3);
+    try h.assertWasmRefusedAt(std.testing.allocator,
+        \\#[@External.Wasm("op:f64.lt")]
+        \\declare fn below(a: f64, b: f64) -> f64;
+        \\fn main() { @print(below(1.0, 2.0)); }
+    , "`f64.lt` is `(f64, f64) -> bool`", 1, 3);
+    try h.assertWasmRefusedAt(std.testing.allocator,
+        \\#[@External.Wasm("fn:greetBdy")]
+        \\declare fn greet(name: string) -> string;
+        \\fn greetBody(name: string) -> string { return name; }
+        \\fn main() { @print(greet("x")); }
+    , "this module declares no fn `greetBdy`", 1, 3);
+    try h.assertWasmRefusedAt(std.testing.allocator,
+        \\#[@External.Wasm("fn:greetBody")]
+        \\declare fn greet(name: string) -> string;
+        \\pub fn greetBody(name: string) -> string { return name; }
+        \\fn main() { @print(greet("x")); }
+    , "`greetBody` is `pub`", 1, 3);
+    try h.assertWasmRefusedAt(std.testing.allocator,
+        \\#[@External.Wasm("fn:greetBody")]
+        \\declare fn greet(name: string) -> string;
+        \\fn greetBody(name: string, n: i32) -> string { return name; }
+        \\fn main() { @print(greet("x")); }
+    , "must take the same parameter types in the same order", 1, 3);
+    try h.assertWasmRefusedAt(std.testing.allocator,
+        \\#[@External.Wasm("wasi:clock_time_get")]
+        \\declare fn now() -> f64;
+        \\fn main() { @print(now()); }
+    , "`clock_time_get` is not a WASI adapter", 1, 3);
+    try h.assertWasmRefusedAt(std.testing.allocator,
+        \\#[@External.Wasm("""(f64.floor $0)""")]
+        \\declare fn down(x: f64) -> f64;
+        \\fn main() { @print(down(1.5)); }
+    , "is none of the three forms", 1, 3);
+}
+
+// `wat/host_binding.zig`'s `adapters` is the list `docs.md` § Host bindings
+// documents; the test reads the table and fails in both directions — an
+// adapter the backend binds that the reference does not list, and a row the
+// backend does not bind.
+test "wat: host binding ---- the adapter list agrees with docs.md" {
+    const hb = @import("../wat/host_binding.zig");
+    const io = std.testing.io;
+    const alloc = std.testing.allocator;
+    const docs = try std.Io.Dir.cwd().readFileAlloc(io, "../../docs.md", alloc, .limited(1 << 22));
+    defer alloc.free(docs);
+    const head = "| Adapter | Signature | Answers |";
+    const at = std.mem.indexOf(u8, docs, head) orelse return error.AdapterTableMissing;
+    var rows: usize = 0;
+    var lines = std.mem.splitScalar(u8, docs[at + head.len ..], '\n');
+    _ = lines.next(); // the rest of the header line
+    _ = lines.next(); // the separator
+    while (lines.next()) |line| {
+        if (!std.mem.startsWith(u8, line, "| `")) break;
+        const end = std.mem.indexOfScalarPos(u8, line, 3, '`') orelse return error.AdapterRowUnreadable;
+        const name = line[3..end];
+        if (hb.findAdapter(name) == null) {
+            std.debug.print("docs.md lists the adapter `{s}` and host_binding.zig binds none\n", .{name});
+            return error.AdapterNotBound;
+        }
+        rows += 1;
+    }
+    for (hb.adapters) |a| {
+        const needle = try std.fmt.allocPrint(alloc, "| `{s}` |", .{a.name});
+        defer alloc.free(needle);
+        if (std.mem.indexOf(u8, docs[at..], needle) == null) {
+            std.debug.print("host_binding.zig binds `{s}` and docs.md does not list it\n", .{a.name});
+            return error.AdapterNotDocumented;
+        }
+    }
+    try std.testing.expectEqual(hb.adapters.len, rows);
 }

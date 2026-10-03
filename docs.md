@@ -2182,7 +2182,7 @@ error: `listToBinary` has no `#[@External.<Target>(…)]` for the wasm backend
 | `commonJS` | `@External.Node` | refused at compile time — "for the node backend" |
 | `erlang` | `@External.Erlang` | refused at compile time — "for the erlang backend" |
 | `beam` | `@External.Erlang` (the same vocabulary) | refused at compile time — "for the beam backend" |
-| `wasm` | `@External.Wasm` — nothing declares one today, so **every** host binding is refused here | refused at compile time — "for the wasm backend" |
+| `wasm` | `@External.Wasm` — the closed vocabulary below | refused at compile time — "for the wasm backend" |
 
 A declaration nothing calls is free on every target; a **call** is refused
 wherever it is written, whether or not anything reaches it. A function whose
@@ -2192,12 +2192,48 @@ refuses the program even when nothing calls the wrapper. A project that needs
 such a wrapper names its `targets`, or the declaration gains the other
 target's binding.
 
-wasm has no host to bind a declaration to, and no WASI call stands in for an
-arbitrary host symbol. Until 2026-09-21 it lowered such a call to a `wasm trap`
-instead, so the program compiled and then died at run time where the other three
-refused it; it now refuses too, and there is no flag that restores the trap. A
-program that needs a host symbol on wasm needs a wasm implementation, not a
-looser compiler.
+wasm has no host of its own, so `@External.Wasm` does not name a host symbol
+or carry target text: it is **one string from a closed vocabulary of three
+forms** (decision 238), read and checked where the annotation is written. The
+arguments are always the declared parameters, in order.
+
+| Form | Binds the declaration to |
+|---|---|
+| `op:<opcode>` | one numeric wasm instruction (`op:f64.floor`, `op:i32.add`, `op:f64.lt`, `op:f64.convert_i32_s`); the declared parameter and return types must be exactly the instruction's — a comparison or `eqz` answers `bool` |
+| `fn:<name>` | a private (not `pub`) `fn` of the same module, with a body, taking the same parameter types in the same order and answering the same type — the algorithm stays in the library, in botopink |
+| `wasi:<adapter>` | a compiler adapter over WASI preview1 (`wasi_snapshot_preview1`), one of the list below |
+
+```botopink
+#[@External.Node("Math", "floor"),
+  @External.Erlang("math", "floor"),
+  @External.Wasm("op:f64.floor")]
+pub declare fn floorOf(x: f64) -> f64;
+
+#[@External.Node("Math", "round"),
+  @External.Erlang("erlang", "round"),
+  @External.Wasm("fn:roundHalfUp")]
+pub declare fn roundOf(x: f64) -> f64;
+
+fn roundHalfUp(x: f64) -> f64 {
+    val up = -1.0 * floorOf(-1.0 * x);
+    return if (up - 0.5 > x) up - 1.0 else up;
+}
+```
+
+| Adapter | Signature | Answers |
+|---|---|---|
+| `random_f64` | `() -> f64` | a uniform `f64` in `[0.0, 1.0)` from 53 bits of `random_get` (an errno from the host traps) |
+
+Anything else — another prefix, an opcode the backend does not bind, an opcode
+whose type differs from the signature, a `fn:` naming no private bodied fn of
+the module (or a `pub` one, or one of another signature), an adapter not in
+the list, a template with `$` markers — is an error at the annotation. No
+runtime-helper name of the backend is part of a binding and nothing a binding
+writes names an address: there is no raw memory in the vocabulary. A
+`declare fn` with no `@External.Wasm` keeps the refusal above at its call.
+Until 2026-09-21 wasm lowered such a call to a `wasm trap`, so the program
+compiled and then died at run time where the other three refused it; it
+refuses too, and there is no flag that restores the trap.
 
 ## Builtins
 

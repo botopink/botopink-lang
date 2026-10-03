@@ -194,6 +194,124 @@ const str_last_index_of = func("__str_last_index_of", &.{ "s", "sub" }, .i32, i3
     c32(-1),
 });
 
+// ── string indices in codepoints (decision 240) ──────────────────────────────
+//
+// A string is `[byte count][UTF-8 bytes]`, and `length`, `at`, `slice`,
+// `indexOf` and `lastIndexOf` count CODEPOINTS on this target, as erlang and
+// beam do (decision 169 applied to the fourth target): an index one of them
+// answers can be handed to another. A byte is a codepoint's first exactly
+// when it is not a `10xxxxxx` continuation byte, so each helper below walks
+// the bytes and counts the ones that start a sequence. The byte helpers they
+// sit on (`$__str_slice`, `$__str_index_of`, `$__str_last_index_of`) stay the
+// byte cutters and searchers the rest of the prelude uses.
+
+/// The bytes of `s` that start a codepoint, counted.
+const str_cp_len = func("__str_cp_len", &.{"s"}, .i32, i32s(&.{ "n", "i", "k" }), &.{
+    get("s"), load(0), set("n"),
+    loop(&.{
+        get("i"),                                          get("n"),  op("ge_u"), brk,
+        get("s"),                                          get("i"),  op("add"),  load8(4),
+        c32(0xC0),                                         op("and"), c32(0x80),  op("ne"),
+        when(&.{ get("k"), c32(1), op("add"), set("k") }), get("i"),  c32(1),     op("add"),
+        set("i"),                                          again,
+    }),
+    get("k"),
+});
+
+/// The byte offset where codepoint `i` (≥ 0) of `s` starts; the byte count
+/// when `s` has `i` codepoints or fewer.
+const str_cp_off = func("__str_cp_off", &.{ "s", "i" }, .i32, i32s(&.{ "n", "p", "k" }), &.{
+    get("s"), load(0), set("n"),
+    loop(&.{
+        get("p"),  get("n"),  op("ge_u"), brk,
+        get("s"),  get("p"),  op("add"),  load8(4),
+        c32(0xC0), op("and"), c32(0x80),  op("ne"),
+        when(&.{
+            get("k"), get("i"), op("eq"),  when(&.{ get("p"), ret }),
+            get("k"), c32(1),   op("add"), set("k"),
+        }),
+        get("p"),  c32(1),    op("add"),  set("p"),
+        again,
+    }),
+    get("n"),
+});
+
+/// The codepoint index of byte offset `off` of `s` — the codepoints that start
+/// before it; `-1` stays `-1` (a search that found nothing).
+const str_cp_of = func("__str_cp_of", &.{ "s", "off" }, .i32, i32s(&.{ "p", "k" }), &.{
+    get("off"), c32(0), op("lt_s"), when(&.{ c32(-1), ret }),
+    loop(&.{
+        get("p"),                                          get("off"), op("ge_u"), brk,
+        get("s"),                                          get("p"),   op("add"),  load8(4),
+        c32(0xC0),                                         op("and"),  c32(0x80),  op("ne"),
+        when(&.{ get("k"), c32(1), op("add"), set("k") }), get("p"),   c32(1),     op("add"),
+        set("p"),                                          again,
+    }),
+    get("k"),
+});
+
+/// `s.slice(a, b)` in codepoints, with `slice`'s bounds: a negative bound
+/// counts from the end, each is clamped to `0..length`, and an end before the
+/// start is the start. An open end is any bound past the length.
+const str_cp_slice = func("__str_cp_slice", &.{ "s", "a", "b" }, .i32, i32s(&.{"n"}), &.{
+    get("s"),                                            call("__str_cp_len"),         set("n"),
+    get("a"),                                            c32(0),                       op("lt_s"),
+    when(&.{ get("a"), get("n"), op("add"), set("a") }), get("a"),                     c32(0),
+    op("lt_s"),                                          when(&.{ c32(0), set("a") }), get("a"),
+    get("n"),                                            op("gt_s"),                   when(&.{ get("n"), set("a") }),
+    get("b"),                                            c32(0),                       op("lt_s"),
+    when(&.{ get("b"), get("n"), op("add"), set("b") }), get("b"),                     c32(0),
+    op("lt_s"),                                          when(&.{ c32(0), set("b") }), get("b"),
+    get("n"),                                            op("gt_s"),                   when(&.{ get("n"), set("b") }),
+    get("b"),                                            get("a"),                     op("lt_s"),
+    when(&.{ get("a"), set("b") }),                      get("s"),                     get("s"),
+    get("a"),                                            call("__str_cp_off"),         get("s"),
+    get("b"),                                            call("__str_cp_off"),         call("__str_slice"),
+});
+
+/// `s.at(i)` in codepoints, as a `?string`: a negative `i` counted from the
+/// end (decision 139), then the one-codepoint string, or `0` — absence —
+/// outside `0..length` (`$__str_at`'s unsigned compare, over the count).
+const str_cp_at = func("__str_cp_at", &.{ "s", "i" }, .i32, i32s(&.{"n"}), &.{
+    get("s"),                                            call("__str_cp_len"),    set("n"),
+    get("i"),                                            c32(0),                  op("lt_s"),
+    when(&.{ get("i"), get("n"), op("add"), set("i") }), get("i"),                get("n"),
+    op("ge_u"),                                          when(&.{ c32(0), ret }), get("s"),
+    get("i"),                                            get("i"),                c32(1),
+    op("add"),                                           call("__str_cp_slice"),
+});
+
+/// `s.indexOf(sub)` in codepoints.
+const str_cp_index_of = func("__str_cp_index_of", &.{ "s", "sub" }, .i32, &.{}, &.{
+    get("s"), get("s"), get("sub"), call("__str_index_of"), call("__str_cp_of"),
+});
+
+/// `s.lastIndexOf(sub)` in codepoints.
+const str_cp_last_index_of = func("__str_cp_last_index_of", &.{ "s", "sub" }, .i32, &.{}, &.{
+    get("s"), get("s"), get("sub"), call("__str_last_index_of"), call("__str_cp_of"),
+});
+
+// ── decision 238's WASI adapters (`host_binding.zig` `adapters`) ─────────────
+
+/// `random_get(buf, len)` — WASI preview1's one source of random bytes.
+pub const random_get_import = ast.Import{
+    .module = "wasi_snapshot_preview1",
+    .name = "random_get",
+    .func = "random_get",
+    .type = .{ .params = &.{ .i32, .i32 }, .result = .i32 },
+};
+
+/// `wasi:random_f64` — 8 bytes of `random_get` into scratch `208..216`, the
+/// top 53 bits of them as an integer, scaled by 2^-53: a uniform `f64` in
+/// `[0.0, 1.0)`, the range `Math.random` and `rand:uniform/0` answer. An
+/// errno from the host is a trap — a value WASI did not give is never made up.
+const wasi_random_f64 = typedFunc("__wasi_random_f64", &.{}, .f64, &.{}, &.{
+    c32(208),                                                           c32(8),                                    call("random_get"),
+    when(&.{.@"unreachable"}),                                          c32(208),                                  .{ .load = .{ .ty = .i64 } },
+    c64(11),                                                            op64("shr_u"),                             .{ .convert = "f64.convert_i64_u" },
+    .{ .@"const" = .{ .ty = .f64, .text = "1.1102230246251565e-16" } }, .{ .op = .{ .ty = .f64, .name = "mul" } },
+});
+
 /// `s.padStart(width, pad)` (`start = 1`) / `padEnd` (`start = 0`): `s` when it
 /// is already `width` long or the pad is empty, else a fresh string of `width`
 /// bytes with the pad repeated into the gap (JavaScript's cycling).

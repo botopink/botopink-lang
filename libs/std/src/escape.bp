@@ -79,12 +79,24 @@ pub fn scriptJson(json: string) -> string {
 // Internal: U+2028 LINE SEPARATOR, built on the host (see the module doc).
 #[@External.Node("""String.fromCharCode(8232)""")]
 #[@External.Erlang("""<<226, 128, 168>>""")]
+#[@External.Wasm("fn:lineSeparatorText")]
 declare fn lineSeparator() -> string;
 
 // Internal: U+2029 PARAGRAPH SEPARATOR, built on the host.
 #[@External.Node("""String.fromCharCode(8233)""")]
 #[@External.Erlang("""<<226, 128, 169>>""")]
+#[@External.Wasm("fn:paragraphSeparatorText")]
 declare fn paragraphSeparator() -> string;
+
+// The wasm bodies of the two cells (decision 238): a string literal, whose
+// UTF-8 bytes the wasm backend writes into the data segment as they are.
+fn lineSeparatorText() -> string {
+    return "\u{2028}";
+}
+
+fn paragraphSeparatorText() -> string {
+    return "\u{2029}";
+}
 
 // ── tests ────────────────────────────────────────────────────────────────────
 

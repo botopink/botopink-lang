@@ -474,6 +474,20 @@ pub const HelperGroup = enum {
     arr_sliding,
     /// `$__arr_fill(n, v)` — `xs.fill(v)` as `Array.repeat(v, xs.length)`.
     arr_fill,
+    /// Decision 240 — string indices in codepoints: `$__str_cp_len(s)`,
+    /// `$__str_cp_off(s, i)` (codepoint → byte offset), `$__str_cp_of(s, off)`
+    /// (byte offset → codepoint), `$__str_cp_slice(s, a, b)`, `$__str_cp_at(s, i)`,
+    /// `$__str_cp_index_of(s, sub)`, `$__str_cp_last_index_of(s, sub)`.
+    str_cp_len,
+    str_cp_off,
+    str_cp_of,
+    str_cp_slice,
+    str_cp_at,
+    str_cp_index_of,
+    str_cp_last_index_of,
+    /// `$__wasi_random_f64()` — decision 238's `wasi:random_f64`, plus the
+    /// `random_get` import.
+    wasi_random_f64,
 
     /// The groups `g`'s functions call into.
     pub fn deps(g: HelperGroup) []const HelperGroup {
@@ -507,6 +521,10 @@ pub const HelperGroup = enum {
             .arr_unique => &.{ .arr_new, .str_eq },
             .arr_flatten, .arr_fill => &.{.arr_new},
             .arr_chunked, .arr_sliding => &.{ .arr_new, .arr_slice },
+            .str_cp_slice => &.{ .str_cp_len, .str_cp_off, .str_slice },
+            .str_cp_at => &.{ .str_cp_len, .str_cp_slice },
+            .str_cp_index_of => &.{ .str_cp_of, .str_index_of },
+            .str_cp_last_index_of => &.{ .str_cp_of, .str_last_index_of },
             else => &.{},
         };
     }
@@ -602,6 +620,14 @@ pub const Helper = enum {
     arr_chunked,
     arr_sliding,
     arr_fill,
+    str_cp_len,
+    str_cp_off,
+    str_cp_of,
+    str_cp_slice,
+    str_cp_at,
+    str_cp_index_of,
+    str_cp_last_index_of,
+    wasi_random_f64,
 
     pub fn symbol(h: Helper) []const u8 {
         return switch (h) {

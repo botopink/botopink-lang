@@ -22,7 +22,7 @@ fn main() {
     local.get $s
     i32.const 1
     i32.const 4
-    call $__str_slice
+    call $__str_cp_slice
     local.set $mid
     local.get $mid
     i32.load ;; string length
@@ -242,6 +242,168 @@ fn main() {
     local.get $newlen
     memory.copy
     local.get $dst
+  )
+  (func $__str_cp_len (param $s i32) (result i32)
+    (local $n i32) (local $i i32) (local $k i32)
+    local.get $s
+    i32.load
+    local.set $n
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $s
+        local.get $i
+        i32.add
+        i32.load8_u offset=4
+        i32.const 192
+        i32.and
+        i32.const 128
+        i32.ne
+        (if
+          (then
+            local.get $k
+            i32.const 1
+            i32.add
+            local.set $k
+          )
+        )
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $k
+  )
+  (func $__str_cp_off (param $s i32) (param $i i32) (result i32)
+    (local $n i32) (local $p i32) (local $k i32)
+    local.get $s
+    i32.load
+    local.set $n
+    (block $brk
+      (loop $cont
+        local.get $p
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $s
+        local.get $p
+        i32.add
+        i32.load8_u offset=4
+        i32.const 192
+        i32.and
+        i32.const 128
+        i32.ne
+        (if
+          (then
+            local.get $k
+            local.get $i
+            i32.eq
+            (if
+              (then
+                local.get $p
+                return
+              )
+            )
+            local.get $k
+            i32.const 1
+            i32.add
+            local.set $k
+          )
+        )
+        local.get $p
+        i32.const 1
+        i32.add
+        local.set $p
+        br $cont
+      )
+    )
+    local.get $n
+  )
+  (func $__str_cp_slice (param $s i32) (param $a i32) (param $b i32) (result i32)
+    (local $n i32)
+    local.get $s
+    call $__str_cp_len
+    local.set $n
+    local.get $a
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+        local.get $a
+        local.get $n
+        i32.add
+        local.set $a
+      )
+    )
+    local.get $a
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+        i32.const 0
+        local.set $a
+      )
+    )
+    local.get $a
+    local.get $n
+    i32.gt_s
+    (if
+      (then
+        local.get $n
+        local.set $a
+      )
+    )
+    local.get $b
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+        local.get $b
+        local.get $n
+        i32.add
+        local.set $b
+      )
+    )
+    local.get $b
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+        i32.const 0
+        local.set $b
+      )
+    )
+    local.get $b
+    local.get $n
+    i32.gt_s
+    (if
+      (then
+        local.get $n
+        local.set $b
+      )
+    )
+    local.get $b
+    local.get $a
+    i32.lt_s
+    (if
+      (then
+        local.get $a
+        local.set $b
+      )
+    )
+    local.get $s
+    local.get $s
+    local.get $a
+    call $__str_cp_off
+    local.get $s
+    local.get $b
+    call $__str_cp_off
+    call $__str_slice
   )
 )
 ```

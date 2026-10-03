@@ -1,0 +1,11 @@
+//// Decisions 169 and 240: a string index counts codepoints on every target,
+//// so the index `indexOf` answers is the one `at` reads back. `—` (U+2014) is
+//// three UTF-8 bytes and one codepoint: counted in bytes, `indexOf("X")`
+//// answered `5` on wasm and `at(3)` the last byte of the dash.
+
+pub fn main() {
+    val s = "a—bXc";
+    @print(s.indexOf("X"));
+    @print(s.at(3));
+    @print(s.at(1));
+}
