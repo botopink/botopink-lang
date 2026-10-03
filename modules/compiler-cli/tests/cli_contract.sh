@@ -311,7 +311,8 @@ printf 'pub fn main() {\n    @print("ws");\n}\n' >"$WS/modules/wsapp/src/main.bp
 run "$WS/modules/wsapp" clean
 expect_code 0 "clean in a member"
 [[ ! -e "$WS/.botopinkbuild/cache" && ! -e "$WS/modules/wsapp/.botopinkbuild" ]] && ok "clean deleted the member's .botopinkbuild/ and the workspace's cache" || fail "clean left a cache: $(find "$WS" -path '*/.botopinkbuild*' -maxdepth 4 | head -3 | tr '\n' ' ')"
-expect_out " $WS/.botopinkbuild/cache/" "clean names the workspace cache it deleted"
+# clean prints the resolved path: on macOS $TMPDIR is under /var, a link to /private/var.
+expect_out " $(cd "$WS" && pwd -P)/.botopinkbuild/cache/" "clean names the workspace cache it deleted"
 
 # The language server keeps its state in the same root (decision 233): a
 # go-to-definition into an embedded std module writes it under the workspace
