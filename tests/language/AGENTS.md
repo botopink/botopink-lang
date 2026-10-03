@@ -139,7 +139,11 @@ Step 5 (decision 152) adds `reject/binding_redeclared_in_body` (a second `var n`
 second binding and both accepted by the parent binary. Decision 205 (the body is the whole function)
 adds `reject/binding_shadows_in_inner_block` (an inner block's `val y` over the function's `y`) and
 `reject/case_arm_binder_reuses_name` (a `case` arm's `Square(s)` over the parameter `s`), both
-accepted by the parent binary.
+accepted by the parent binary. `04-js` step 4 adds the half decision 205 keeps,
+`run/sibling_blocks_bind_one_name`: an `if` and its `else`, two `if`s, two loop bodies and two
+`case` arms' binders each binding one name, and a block's `n` followed by the function's own `n`
+once the block has closed — four targets, green on the parent binary (it pins that no backend
+leaks a block's binding or invents a scope for it).
 `run/unwrap_or_literal_width` (another front's finding) — an integer literal as `unwrapOr`'s default
 takes the payload's width over `?i64` and `@Result<i64, string>` (refused as `expected i32, got i64`
 by the parent binary).
