@@ -857,7 +857,7 @@ fn main() {
         local.set $x
     local.get $x
     i32.const 2
-    i32.mul
+    call $__i32_mul_chk
     local.set $doubled
     local.get $out
     i32.const 268
@@ -913,7 +913,7 @@ fn main() {
   )
   ;; Scratch layout below the data section (which starts at 256):
   ;;   0..8  WASI iovec   8  newline byte
-  ;;  16..32 bool text   32..64 float fraction   64..128 i32 digits
+  ;;  16..32 bool text   64..128 i32 digits
   (func $__write_bytes (param $p i32) (param $n i32)
     i32.const 0
     local.get $p
@@ -1405,6 +1405,150 @@ fn main() {
       )
     )
     local.get $p
+  )
+  (func $__i32_add_chk (param $a i32) (param $b i32) (result i32)
+    (local $r i64)
+    local.get $a
+    i64.extend_i32_s
+    local.get $b
+    i64.extend_i32_s
+    i64.add
+    local.set $r
+    local.get $r
+    i32.wrap_i64
+    i64.extend_i32_s
+    local.get $r
+    i64.ne
+    (if
+      (then
+        unreachable
+      )
+    )
+    local.get $r
+    i32.wrap_i64
+  )
+  (func $__i32_sub_chk (param $a i32) (param $b i32) (result i32)
+    (local $r i64)
+    local.get $a
+    i64.extend_i32_s
+    local.get $b
+    i64.extend_i32_s
+    i64.sub
+    local.set $r
+    local.get $r
+    i32.wrap_i64
+    i64.extend_i32_s
+    local.get $r
+    i64.ne
+    (if
+      (then
+        unreachable
+      )
+    )
+    local.get $r
+    i32.wrap_i64
+  )
+  (func $__i32_mul_chk (param $a i32) (param $b i32) (result i32)
+    (local $r i64)
+    local.get $a
+    i64.extend_i32_s
+    local.get $b
+    i64.extend_i32_s
+    i64.mul
+    local.set $r
+    local.get $r
+    i32.wrap_i64
+    i64.extend_i32_s
+    local.get $r
+    i64.ne
+    (if
+      (then
+        unreachable
+      )
+    )
+    local.get $r
+    i32.wrap_i64
+  )
+  (func $__i64_add_chk (param $a i64) (param $b i64) (result i64)
+    (local $r i64)
+    local.get $a
+    local.get $b
+    i64.add
+    local.set $r
+    local.get $a
+    local.get $r
+    i64.xor
+    local.get $b
+    local.get $r
+    i64.xor
+    i64.and
+    i64.const 0
+    i64.lt_s
+    (if
+      (then
+        unreachable
+      )
+    )
+    local.get $r
+  )
+  (func $__i64_sub_chk (param $a i64) (param $b i64) (result i64)
+    (local $r i64)
+    local.get $a
+    local.get $b
+    i64.sub
+    local.set $r
+    local.get $a
+    local.get $b
+    i64.xor
+    local.get $a
+    local.get $r
+    i64.xor
+    i64.and
+    i64.const 0
+    i64.lt_s
+    (if
+      (then
+        unreachable
+      )
+    )
+    local.get $r
+  )
+  (func $__i64_mul_chk (param $a i64) (param $b i64) (result i64)
+    (local $r i64)
+    local.get $a
+    i64.const -1
+    i64.eq
+    local.get $b
+    i64.const -9223372036854775808
+    i64.eq
+    i32.and
+    (if
+      (then
+        unreachable
+      )
+    )
+    local.get $a
+    local.get $b
+    i64.mul
+    local.set $r
+    local.get $a
+    i64.eqz
+    i32.eqz
+    (if
+      (then
+        local.get $r
+        local.get $a
+        i64.div_s
+        local.get $b
+        i64.ne
+        (if
+          (then
+            unreachable
+          )
+        )
+      )
+    )
+    local.get $r
   )
 )
 ```

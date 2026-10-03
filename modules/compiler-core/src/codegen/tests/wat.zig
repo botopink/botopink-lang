@@ -1965,3 +1965,71 @@ test "wat: host binding ---- the adapter list agrees with docs.md" {
     }
     try std.testing.expectEqual(hb.adapters.len, rows);
 }
+
+// `00 · gate-wasm-wrong-answers`: a float prints as commonJS prints it —
+// `Number.isInteger(v) ? v.toFixed(1) : String(v)`, and `String(v)` for its
+// text — V8's shortest round-trip digits (`$__dtoa`). The forms erlang and
+// beam spell otherwise (`1.0e21`, `5.0e-324`), and the values erlang cannot
+// make (`Infinity`, `NaN`), are pinned here rather than in a four-target
+// cell. The formatter wrote six fraction digits and trapped past `2^31`.
+test "wat: print ---- a float prints its shortest round-trip text, as commonJS does" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\fn id(x: f64) -> f64 {
+        \\    return x;
+        \\}
+        \\fn main() {
+        \\    @print(1e21);
+        \\    @print(1.7976931348623157e308);
+        \\    @print(5e-324);
+        \\    @print(1e-7);
+        \\    @print(0.000001);
+        \\    @print(1152921504606846976.0);
+        \\    @print(100000000000000000000.0);
+        \\    @print(id(1.0) / 0.0);
+        \\    @print(id(-1.0) / 0.0);
+        \\    @print(id(0.0) / 0.0);
+        \\    @print(5.0.toString());
+        \\    @print("x" + 0.000001);
+        \\    @print("x" + 1e300);
+        \\}
+    ,
+        \\1e+21
+        \\1.7976931348623157e+308
+        \\5e-324
+        \\1e-7
+        \\0.000001
+        \\1152921504606846976.0
+        \\100000000000000000000.0
+        \\Infinity
+        \\-Infinity
+        \\NaN
+        \\5
+        \\x0.000001
+        \\x1e+300
+        \\
+    );
+}
+
+// `00 · gate-wasm-wrong-answers`: an integer `+`, `-`, `*` whose result leaves
+// its type traps rather than wrapping. commonJS and erlang never wrap
+// (`2147483647 + 1` is `2147483648` on both); `i32.add` answered
+// `-2147483648` at exit 0. Up to the edge the answer is the number.
+test "wat: arithmetic ---- an integer that leaves its width traps instead of wrapping" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\fn main() {
+        \\    val big: i32 = 2147483647;
+        \\    @print(big - 1);
+        \\    @print(-big);
+        \\    val wide: i64 = 9223372036854775807;
+        \\    @print(wide);
+        \\    @print(big + 1);
+        \\}
+    ,
+        \\2147483646
+        \\-2147483647
+        \\9223372036854775807
+        \\RUNTIME TRAP (wasmtime):
+        \\wasm trap: wasm `unreachable` instruction executed
+        \\
+    );
+}

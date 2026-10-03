@@ -290,8 +290,13 @@ test "js: loop ---- side-effect over range" {
 // <v>` / `yield v` out of a `loop (…)` is a `var` the body reassigns, or a
 // `map` / `filter`; the four fixtures below are the old comprehension shapes
 // written that way, and they answer what the comprehensions answered.
+//
+// wasm refuses the first at the `push` (`00 · gate-wasm-wrong-answers`): `[]`
+// gives the array no element type, and a float pushed into it — its slot
+// holds the float's cell — was read back as an integer word (`[115, 287,
+// 460]`, where commonJS answers `[115, 287.5, 460]`).
 test "js: loop ---- a var pushed to in a loop body (add tax)" {
-    try h.assertJsSingle(std.testing.allocator, @src(),
+    try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
         \\fn main() {
         \\    val precosBrutos = [100, 250, 400];
         \\    var precosComTaxa = [];

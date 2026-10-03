@@ -35,8 +35,8 @@ val Shape = type {
     (if (result f64)
       (then
     local.get $__case_0
-    f32.load offset=4
-    f64.promote_f32
+    i32.load offset=4
+    f64.load
     local.set $radius
     local.get $radius
     local.get $radius
@@ -52,8 +52,8 @@ val Shape = type {
     (if (result f64)
       (then
     local.get $__case_0
-    f32.load offset=4
-    f64.promote_f32
+    i32.load offset=4
+    f64.load
     local.set $side
     local.get $side
     local.get $side
@@ -67,12 +67,12 @@ val Shape = type {
     (if (result f64)
       (then
     local.get $__case_0
-    f32.load offset=4
-    f64.promote_f32
+    i32.load offset=4
+    f64.load
     local.set $base
     local.get $__case_0
-    f32.load offset=8
-    f64.promote_f32
+    i32.load offset=8
+    f64.load
     local.set $height
     local.get $base
     local.get $height

@@ -23,27 +23,52 @@ fn extract_coordinates() {
     global.set $__heap_ptr
     local.get $__mem0
     f64.const 0.0
-    f32.demote_f64
-    f32.store
+    call $__box_f64
+    i32.store
     local.get $__mem0
     f64.const 0.0
-    f32.demote_f64
-    f32.store offset=4
+    call $__box_f64
+    i32.store offset=4
     local.get $__mem0
     return
   )
   (func $extract_coordinates
     (local $__mem0 i32)
-    (local $longitude i32)
-    (local $latitude i32)
+    (local $longitude f64)
+    (local $latitude f64)
     call $get_coordinates
     local.set $__mem0
     local.get $__mem0
     i32.load
+    f64.load
     local.set $longitude
     local.get $__mem0
     i32.load offset=4
+    f64.load
     local.set $latitude
+  )
+  (func $__alloc (param $n i32) (result i32)
+    (local $p i32)
+    global.get $__heap_ptr
+    local.set $p
+    global.get $__heap_ptr
+    local.get $n
+    i32.add
+    i32.const 3
+    i32.add
+    i32.const -4
+    i32.and
+    global.set $__heap_ptr
+    local.get $p
+  )
+  (func $__box_f64 (param $x f64) (result i32)
+    (local $p i32)
+    i32.const 8
+    call $__alloc
+    local.tee $p
+    local.get $x
+    f64.store
+    local.get $p
   )
 )
 ```

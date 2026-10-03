@@ -19,7 +19,8 @@
 //! The scratch layout the print helpers assume, below the data section (which
 //! starts at 256): `0..8` the WASI iovec, `8` the newline byte — and `9` the
 //! space of §7's `, ` separator, written beside it in one call —, `16..32` the
-//! bool text, `32..64` the float fraction, `64..128` the i32 digits.
+//! bool text, `64..128` the i32 digits. A float's text is built in the
+//! `$__dtoa_ws` workspace, allocated once (§ an f64 as text).
 
 const std = @import("std");
 const ast = @import("wat_ast.zig");
@@ -37,14 +38,18 @@ pub fn items(g: ast.HelperGroup) []const ast.Item {
         .str_eq => &str_eq_items,
         .str_slice => &str_slice_items,
         .print_arr_i32 => &.{ .{ .func = print_arr_i32_raw }, .{ .func = print_arr_i32 } },
-        .print_arr_f32 => &.{ .{ .func = print_arr_f32_raw }, .{ .func = print_arr_f32 } },
+        .print_arr_f64 => &.{ .{ .func = print_arr_f64_raw }, .{ .func = print_arr_f64 } },
         .assert_fail => &.{ .{ .func = write_err }, .{ .func = assert_fail } },
         .print_shaped => &.{ .{ .func = print_quoted_raw }, .{ .func = print_tagged_raw }, .{ .func = print_tagged }, .{ .func = print_shaped_raw } },
-        .print_opt_f32 => &.{ .{ .func = print_opt_f32_raw }, .{ .func = print_opt_f32 } },
+        .print_opt_f64 => &.{ .{ .func = print_opt_f64_raw }, .{ .func = print_opt_f64 } },
+        .print_i64 => &.{ .{ .func = print_i64_raw }, .{ .func = print_i64 } },
+        .int_chk => &int_chk_items,
+        .print_opt_i64 => &.{ .{ .func = print_opt_i64_raw }, .{ .func = print_opt_i64 } },
         .print_opt_tagged => &.{ .{ .func = print_opt_tagged_raw }, .{ .func = print_opt_tagged } },
         .unknown => &.{ .{ .func = unknown_kind }, .{ .func = unknown_int_in }, .{ .func = unknown_as_i32 }, .{ .func = unknown_as_f64 }, .{ .func = unknown_eq } },
         .print_unknown => &.{ .{ .func = print_unknown_raw }, .{ .func = print_unknown } },
         .wasi_seed_state => &.{ .{ .global = seed_state_global }, .{ .global = seeded_global } },
+        .dtoa => &dtoa_items,
         .print_opt => &.{
             .{ .func = print_null },         .{ .func = print_opt_i32_raw }, .{ .func = print_opt_i32 },
             .{ .func = print_opt_bool_raw }, .{ .func = print_opt_bool },    .{ .func = print_opt_str_raw },
@@ -839,113 +844,15 @@ const print_f64 = ast.Func{
     } },
 };
 
-const print_f64_raw = ast.Func{
-    .name = "__print_f64_raw",
-    .params = &.{.{ .name = "x", .ty = .f64 }},
-    .locals = &.{&.{ .{ .name = "i", .ty = .i32 }, .{ .name = "frac", .ty = .f64 }, .{ .name = "d", .ty = .i32 }, .{ .name = "k", .ty = .i32 }, .{ .name = "last", .ty = .i32 } }},
-    .body = .{ .stack = .none, .lines = &.{
-        .{ .indent = 4, .instr = .{ .local_get = "x" } },
-        .{ .indent = 4, .instr = .{ .@"const" = .{ .ty = .f64, .text = "0" } } },
-        .{ .indent = 4, .instr = .{ .op = .{ .ty = .f64, .name = "lt" } } },
-        .{ .indent = 4, .instr = .{ .@"if" = .{
-            .then = .{ .seq = .{ .stack = .none, .lines = &.{
-                .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "32" } } },
-                .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "45" } } },
-                .{ .indent = 8, .instr = .{ .store = .{ .ty = .i32, .width = .byte } } },
-                .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "32" } } },
-                .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "1" } } },
-                .{ .indent = 8, .instr = .{ .call = "__write_bytes" } },
-                .{ .indent = 8, .instr = .{ .local_get = "x" } },
-                .{ .indent = 8, .instr = .{ .op = .{ .ty = .f64, .name = "neg" } } },
-                .{ .indent = 8, .instr = .{ .local_set = "x" } },
-            } } },
-        } } },
-        .{ .indent = 4, .instr = .{ .local_get = "x" } },
-        .{ .indent = 4, .instr = .{ .op = .{ .ty = .i32, .name = "trunc_f64_s" } } },
-        .{ .indent = 4, .instr = .{ .local_set = "i" } },
-        .{ .indent = 4, .instr = .{ .local_get = "x" } },
-        .{ .indent = 4, .instr = .{ .local_get = "i" } },
-        .{ .indent = 4, .instr = .{ .op = .{ .ty = .f64, .name = "convert_i32_s" } } },
-        .{ .indent = 4, .instr = .{ .op = .{ .ty = .f64, .name = "sub" } } },
-        .{ .indent = 4, .instr = .{ .local_set = "frac" } },
-        .{ .indent = 4, .instr = .{ .local_get = "i" } },
-        .{ .indent = 4, .instr = .{ .call = "__print_i32_raw" } },
-        .{ .indent = 4, .instr = .{ .comment = "fractional digits into 34.. ; 33 holds the '.'" } },
-        .{ .indent = 4, .instr = .{ .@"const" = .{ .ty = .i32, .text = "0" } } },
-        .{ .indent = 4, .instr = .{ .local_set = "k" } },
-        .{ .indent = 4, .instr = .{ .@"const" = .{ .ty = .i32, .text = "0" } } },
-        .{ .indent = 4, .instr = .{ .local_set = "last" } },
-        .{ .indent = 4, .instr = .{ .block = .{
-            .kind = .block,
-            .label = "fdone",
-            .body = .{ .stack = .none, .lines = &.{
-                .{ .indent = 6, .instr = .{ .block = .{
-                    .kind = .loop,
-                    .label = "fdigits",
-                    .body = .{ .stack = .terminated, .lines = &.{
-                        .{ .indent = 8, .instr = .{ .local_get = "k" } },
-                        .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "6" } } },
-                        .{ .indent = 8, .instr = .{ .op = .{ .ty = .i32, .name = "ge_s" } } },
-                        .{ .indent = 8, .instr = .{ .br_if = "fdone" } },
-                        .{ .indent = 8, .instr = .{ .local_get = "frac" } },
-                        .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .f64, .text = "10" } } },
-                        .{ .indent = 8, .instr = .{ .op = .{ .ty = .f64, .name = "mul" } } },
-                        .{ .indent = 8, .instr = .{ .local_set = "frac" } },
-                        .{ .indent = 8, .instr = .{ .local_get = "frac" } },
-                        .{ .indent = 8, .instr = .{ .op = .{ .ty = .i32, .name = "trunc_f64_s" } } },
-                        .{ .indent = 8, .instr = .{ .local_set = "d" } },
-                        .{ .indent = 8, .instr = .{ .local_get = "frac" } },
-                        .{ .indent = 8, .instr = .{ .local_get = "d" } },
-                        .{ .indent = 8, .instr = .{ .op = .{ .ty = .f64, .name = "convert_i32_s" } } },
-                        .{ .indent = 8, .instr = .{ .op = .{ .ty = .f64, .name = "sub" } } },
-                        .{ .indent = 8, .instr = .{ .local_set = "frac" } },
-                        .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "34" } } },
-                        .{ .indent = 8, .instr = .{ .local_get = "k" } },
-                        .{ .indent = 8, .instr = .{ .op = .{ .ty = .i32, .name = "add" } } },
-                        .{ .indent = 8, .instr = .{ .local_get = "d" } },
-                        .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "48" } } },
-                        .{ .indent = 8, .instr = .{ .op = .{ .ty = .i32, .name = "add" } } },
-                        .{ .indent = 8, .instr = .{ .store = .{ .ty = .i32, .width = .byte } } },
-                        .{ .indent = 8, .instr = .{ .local_get = "k" } },
-                        .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "1" } } },
-                        .{ .indent = 8, .instr = .{ .op = .{ .ty = .i32, .name = "add" } } },
-                        .{ .indent = 8, .instr = .{ .local_set = "k" } },
-                        .{ .indent = 8, .instr = .{ .local_get = "d" } },
-                        .{ .indent = 8, .instr = .{ .@"if" = .{
-                            .then = .{ .seq = .{ .stack = .none, .lines = &.{
-                                .{ .indent = 12, .instr = .{ .local_get = "k" } },
-                                .{ .indent = 12, .instr = .{ .local_set = "last" } },
-                            } } },
-                        } } },
-                        .{ .indent = 8, .instr = .{ .br = "fdigits" } },
-                    } },
-                } } },
-            } },
-        } } },
-        .{ .indent = 4, .instr = .{ .comment = "§7 F5: an f64 always carries its decimal part — `5.0`, never `5`" } },
-        .{ .indent = 4, .instr = .{ .local_get = "last" } },
-        .{ .indent = 4, .instr = .{ .op = .{ .ty = .i32, .name = "eqz" } } },
-        .{ .indent = 4, .instr = .{ .@"if" = .{
-            .then = .{ .seq = .{ .stack = .none, .lines = &.{
-                .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "1" } } },
-                .{ .indent = 8, .instr = .{ .local_set = "last" } },
-            } } },
-        } } },
-        .{ .indent = 4, .instr = .{ .local_get = "last" } },
-        .{ .indent = 4, .instr = .{ .@"if" = .{
-            .then = .{ .seq = .{ .stack = .none, .lines = &.{
-                .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "33" } } },
-                .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "46" } } },
-                .{ .indent = 8, .instr = .{ .store = .{ .ty = .i32, .width = .byte } } },
-                .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "33" } } },
-                .{ .indent = 8, .instr = .{ .local_get = "last" } },
-                .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "1" } } },
-                .{ .indent = 8, .instr = .{ .op = .{ .ty = .i32, .name = "add" } } },
-                .{ .indent = 8, .instr = .{ .call = "__write_bytes" } },
-            } } },
-        } } },
-    } },
-};
+/// A float as commonJS prints it: `Number.isInteger(x) ? x.toFixed(1) :
+/// String(x)` (`$__f64_fmt` mode 1) — `5.0`, `0.30000000000000004`,
+/// `1e+21`, `NaN`. It wrote an integer part and six fraction digits, so
+/// `0.26642920868471265` printed `0.266429` and a float past `2^31` trapped.
+const print_f64_raw = typedFunc("__print_f64_raw", &.{.{ .name = "x", .ty = .f64 }}, null, i32s(&.{"n"}), &.{
+    getF("x"),             c32(1),         call("__f64_fmt"), set("n"),
+    call("__dtoa_ws"),     c32(dtoa_text), op("add"),         get("n"),
+    call("__write_bytes"),
+});
 
 const arr_at = ast.Func{
     .name = "__arr_at",
@@ -1142,7 +1049,7 @@ const str_slice = ast.Func{
 const print_items = [_]ast.Item{
     .{ .comment = "Scratch layout below the data section (which starts at 256):" },
     .{ .comment = "  0..8  WASI iovec   8  newline byte" },
-    .{ .comment = " 16..32 bool text   32..64 float fraction   64..128 i32 digits" },
+    .{ .comment = " 16..32 bool text   64..128 i32 digits" },
     .{ .func = write_bytes },
     .{ .func = print_nl },
     .{ .comment = "separator between the arguments of a multi-argument `@print`" },
@@ -1725,21 +1632,22 @@ const str_words = func("__str_words", &.{"s"}, .i32, i32s(&.{ "n", "i", "cnt", "
     get("inw"), when(&(slot("arr", "k") ++ [_]Instr{ get("s"), get("start"), get("n"), call("__str_slice"), store(0) })), get("arr"),
 }));
 
-fn opF32(comptime name: []const u8) Instr {
-    return .{ .op = .{ .ty = .f32, .name = name } };
-}
-const load_f32: Instr = .{ .load = .{ .ty = .f32 } };
+/// The `f64` a float slot's cell holds, as its bits (`i64.load`): decision
+/// 214's `==` over floats is a total order (`Object.is` on commonJS), which
+/// is the bits' equality.
+const load_cell_bits: [2]Instr = .{ load(0), .{ .load = .{ .ty = .i64 } } };
 
 /// `xs.unique()` — consecutive duplicates dropped, as `primitives.bp`'s body
 /// does: element `i` is kept when it differs from element `i - 1`. `mode`
 /// names the equality: `0` the slot's word (an integer, a bool, an all-unit
-/// enum's ordinal), `1` the `f32` the slot holds, `2` a string's content.
+/// enum's ordinal), `1` the `f64` the slot's cell holds (`$__box_f64`), by
+/// its bits, `2` a string's content.
 const arr_unique = func("__arr_unique", &.{ "xs", "mode" }, .i32, i32s(&.{ "n", "i", "k", "out", "keep", "b" }), &([_]Instr{
     get("xs"),  load(0),  set("n"), get("n"),   call("__arr_new"), set("out"),
     loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk, c32(1), set("keep"), get("i") } ++ [_]Instr{
         when(&([_]Instr{ get("i"), c32(1), op("sub"), set("b"), get("mode"), c32(1), op("eq") } ++ [_]Instr{
             whenElse(
-                &(slot("xs", "i") ++ [_]Instr{load_f32} ++ slot("xs", "b") ++ [_]Instr{ load_f32, opF32("ne"), set("keep") }),
+                &(slot("xs", "i") ++ load_cell_bits ++ slot("xs", "b") ++ load_cell_bits ++ [_]Instr{ op64("ne"), set("keep") }),
                 &([_]Instr{ get("mode"), c32(2), op("eq") } ++ [_]Instr{whenElse(
                     &(slot("xs", "i") ++ [_]Instr{load(0)} ++ slot("xs", "b") ++ [_]Instr{ load(0), call("__str_eq"), op("eqz"), set("keep") }),
                     &(slot("xs", "i") ++ [_]Instr{load(0)} ++ slot("xs", "b") ++ [_]Instr{ load(0), op("ne"), set("keep") }),
@@ -1902,52 +1810,543 @@ fn getF(comptime n: []const u8) Instr {
     return .{ .local_get = n };
 }
 
-/// The text a float **concatenated into a string** takes (`"x" + 5.0`,
-/// `5.0.toString()`), as a fresh string: an integer part and up to six fraction
-/// digits with trailing zeros dropped. §7 F5 is about `@print`, which goes
-/// through `$__print_f64_raw`; commonJS answers `x5` here, so this one keeps
-/// dropping a whole number's fraction. The digits go to scratch `168..174`.
-const f64_to_str = typedFunc("__f64_to_str", &.{.{ .name = "x", .ty = .f64 }}, .i32, &.{
-    .{ .name = "neg", .ty = .i32 }, .{ .name = "frac", .ty = .f64 }, .{ .name = "d", .ty = .i32 },
-    .{ .name = "k", .ty = .i32 },   .{ .name = "last", .ty = .i32 }, .{ .name = "ip", .ty = .i32 },
-    .{ .name = "len", .ty = .i32 }, .{ .name = "p", .ty = .i32 },    .{ .name = "pos", .ty = .i32 },
-}, &.{
-    getF("x"),                                                                             .{ .@"const" = .{ .ty = .f64, .text = "0" } }, opF("lt"),                                                                                              set("neg"),
-    get("neg"),                                                                            when(&.{ getF("x"), opF("neg"), set("x") }),   getF("x"),                                                                                              .{ .convert = "i32.trunc_f64_s" },
-    call("__i32_to_str"),                                                                  set("ip"),                                     getF("x"),                                                                                              getF("x"),
-    opF("floor"),                                                                          opF("sub"),                                    set("frac"),
-    loop(&.{
-        get("k"),                          c32(6),                                         op("ge_s"), brk,
-        getF("frac"),                      .{ .@"const" = .{ .ty = .f64, .text = "10" } }, opF("mul"), set("frac"),
-        getF("frac"),                      .{ .convert = "i32.trunc_f64_s" },              set("d"),   getF("frac"),
-        get("d"),                          .{ .convert = "f64.convert_i32_s" },            opF("sub"), set("frac"),
-        c32(168),                          get("k"),                                       op("add"),  get("d"),
-        c32(48),                           op("add"),                                      store8(0),  get("k"),
-        c32(1),                            op("add"),                                      set("k"),   get("d"),
-        when(&.{ get("k"), set("last") }), again,
-    }),
-    get("ip"),                                                                             load(0),                                       get("neg"),                                                                                             op("add"),
-    set("len"),                                                                            get("last"),                                   when(&.{ get("len"), get("last"), op("add"), c32(1), op("add"), set("len") }),                          get("len"),
-    c32(4),                                                                                op("add"),                                     call("__alloc"),                                                                                        set("p"),
-    get("p"),                                                                              get("len"),                                    store(0),                                                                                               get("p"),
-    c32(4),                                                                                op("add"),                                     set("pos"),                                                                                             get("neg"),
-    when(&.{ get("pos"), c32(45), store8(0), get("pos"), c32(1), op("add"), set("pos") }), get("pos"),                                    get("ip"),                                                                                              c32(4),
-    op("add"),                                                                             get("ip"),                                     load(0),                                                                                                copy,
-    get("pos"),                                                                            get("ip"),                                     load(0),                                                                                                op("add"),
-    set("pos"),                                                                            get("last"),                                   when(&.{ get("pos"), c32(46), store8(0), get("pos"), c32(1), op("add"), c32(168), get("last"), copy }), get("p"),
+/// The text a float **concatenated into a string** takes (`"x" + 0.1`,
+/// `x.toString()`), as a fresh string: JavaScript's `Number#toString` — the
+/// shortest decimal that reads back as the same `f64` (`0.30000000000000004`,
+/// `1e+21`, `5e-324`, `5` for `5.0`), what commonJS answers for the same value.
+/// It wrote an integer part and six fraction digits, and trapped on a float
+/// past `2^31`.
+const f64_to_str = typedFunc("__f64_to_str", &.{.{ .name = "x", .ty = .f64 }}, .i32, i32s(&.{ "n", "p" }), &.{
+    getF("x"),      c32(0),    call("__f64_fmt"), set("n"),
+    get("n"),       c32(4),    op("add"),         call("__alloc"),
+    set("p"),       get("p"),  get("n"),          store(0),
+    get("p"),       c32(4),    op("add"),         call("__dtoa_ws"),
+    c32(dtoa_text), op("add"), get("n"),          copy,
+    get("p"),
 });
 
-/// `[115, 287.5, 460]` — the elements of an f32 array, printed like `$__print_f64`.
-const print_arr_f32_raw = func("__print_arr_f32_raw", &.{"xs"}, null, i32s(&.{ "n", "i" }), &(putByte('[') ++ .{call("__write_bytes")} ++ [_]Instr{
+// ── an f64 as text: V8's `BignumDtoa`, shortest mode ─────────────────────────
+//
+// commonJS prints a float as `Number.isInteger(v) ? v.toFixed(1) : String(v)`
+// and concatenates it as `String(v)`. `String(v)` is the shortest digit string
+// that reads back as `v`, the closest such when several are as short, a tie
+// going to the even digit — what V8's `bignum-dtoa.cc` computes, transcribed
+// here step for step over 40-limb (1280-bit) unsigned integers, enough for the
+// widest scaled value (`5e-324`'s denominator is `2^1076`). The workspace is
+// allocated once (`$__dtoa_ws`), so printing a float allocates nothing:
+//
+//     0 numerator · 160 denominator · 320 delta− · 480 delta+ · 640 a temporary
+//     800 the decimal point (i32) · 804 the digits · 832 the text · 896..920 an
+//     integer's digits, written backwards
+
+const big_bytes = 160;
+const dtoa_point = 800;
+const dtoa_digits = 804;
+const dtoa_text = 832;
+const dtoa_ws_bytes = 920;
+
+fn cF(comptime text: []const u8) Instr {
+    return .{ .@"const" = .{ .ty = .f64, .text = text } };
+}
+fn cv(comptime opcode: []const u8) Instr {
+    return .{ .convert = opcode };
+}
+fn l32(comptime n: []const u8) ast.Local {
+    return .{ .name = n, .ty = .i32 };
+}
+fn l64(comptime n: []const u8) ast.Local {
+    return .{ .name = n, .ty = .i64 };
+}
+fn p64(comptime n: []const u8) P {
+    return .{ .name = n, .ty = .i64 };
+}
+fn p32(comptime n: []const u8) P {
+    return .{ .name = n, .ty = .i32 };
+}
+/// `loop` with its own labels, for a loop inside another.
+fn loopAs(comptime out: []const u8, comptime cont: []const u8, comptime body: []const Instr) Instr {
+    const inner: Instr = .{ .block = .{ .kind = .loop, .label = cont, .body = seqOf(body, .none) } };
+    return .{ .block = .{ .kind = .block, .label = out, .body = seqOf(&.{inner}, .none) } };
+}
+/// `a *= m` — a bignum by a word.
+fn bigMul(comptime a: []const u8, comptime m: comptime_int) [3]Instr {
+    return .{ get(a), c64(m), call("__big_mul") };
+}
+/// The text cursor `q` writes `ch` and steps.
+fn putc(comptime ch: comptime_int) [7]Instr {
+    return .{ get("q"), c32(ch), store8(0), get("q"), c32(1), op("add"), set("q") };
+}
+
+const dtoa_ws_global = ast.Global{ .name = "__dtoa_ws", .ty = .i32, .mutable = true, .init = "0" };
+
+const dtoa_ws = func("__dtoa_ws", &.{}, .i32, &.{}, &.{
+    .{ .global_get = "__dtoa_ws" },                                                  op("eqz"),
+    when(&.{ c32(dtoa_ws_bytes), call("__alloc"), .{ .global_set = "__dtoa_ws" } }), .{ .global_get = "__dtoa_ws" },
+});
+
+/// `a = v`.
+const big_set = typedFunc("__big_set", &.{ p32("a"), p64("v") }, null, &.{l32("i")}, &.{
+    loop(&.{ get("i"), c32(big_bytes), op("ge_u"), brk, get("a"), get("i"), op("add"), c32(0), store(0), get("i"), c32(4), op("add"), set("i"), again }),
+    get("a"),
+    get("v"),
+    cv("i32.wrap_i64"),
+    store(0),
+    get("a"),
+    get("v"),
+    c64(32),
+    op64("shr_u"),
+    cv("i32.wrap_i64"),
+    store(4),
+});
+
+/// `a *= m`, `m < 2^32`.
+const big_mul = typedFunc("__big_mul", &.{ p32("a"), p64("m") }, null, &.{ l32("i"), l64("t"), l64("c") }, &.{
+    loop(&.{
+        get("i"),               c32(big_bytes), op("ge_u"),         brk,
+        get("a"),               get("i"),       op("add"),          load(0),
+        cv("i64.extend_i32_u"), get("m"),       op64("mul"),        get("c"),
+        op64("add"),            set("t"),       get("a"),           get("i"),
+        op("add"),              get("t"),       cv("i32.wrap_i64"), store(0),
+        get("t"),               c64(32),        op64("shr_u"),      set("c"),
+        get("i"),               c32(4),         op("add"),          set("i"),
+        again,
+    }),
+});
+
+/// `a += b`.
+const big_add = func("__big_add", &.{ "a", "b" }, null, &.{ l32("i"), l64("t"), l64("c") }, &.{
+    loop(&.{
+        get("i"),               c32(big_bytes),         op("ge_u"),         brk,
+        get("a"),               get("i"),               op("add"),          load(0),
+        cv("i64.extend_i32_u"), get("b"),               get("i"),           op("add"),
+        load(0),                cv("i64.extend_i32_u"), op64("add"),        get("c"),
+        op64("add"),            set("t"),               get("a"),           get("i"),
+        op("add"),              get("t"),               cv("i32.wrap_i64"), store(0),
+        get("t"),               c64(32),                op64("shr_u"),      set("c"),
+        get("i"),               c32(4),                 op("add"),          set("i"),
+        again,
+    }),
+});
+
+/// `a -= b`, `a >= b`. A negative difference borrows: its sign bit is the borrow.
+const big_sub = func("__big_sub", &.{ "a", "b" }, null, &.{ l32("i"), l64("t"), l64("c") }, &.{
+    loop(&.{
+        get("i"),               c32(big_bytes),         op("ge_u"),         brk,
+        get("a"),               get("i"),               op("add"),          load(0),
+        cv("i64.extend_i32_u"), get("b"),               get("i"),           op("add"),
+        load(0),                cv("i64.extend_i32_u"), op64("sub"),        get("c"),
+        op64("sub"),            set("t"),               get("a"),           get("i"),
+        op("add"),              get("t"),               cv("i32.wrap_i64"), store(0),
+        get("t"),               c64(63),                op64("shr_u"),      set("c"),
+        get("i"),               c32(4),                 op("add"),          set("i"),
+        again,
+    }),
+});
+
+/// `-1` / `0` / `1` as `a` is below, equal to or above `b`.
+const big_cmp = func("__big_cmp", &.{ "a", "b" }, .i32, i32s(&.{ "i", "x", "y" }), &.{
+    c32(big_bytes), set("i"),
+    loop(&.{
+        get("i"),                op("eqz"),  brk,
+        get("i"),                c32(4),     op("sub"),
+        set("i"),                get("a"),   get("i"),
+        op("add"),               load(0),    set("x"),
+        get("b"),                get("i"),   op("add"),
+        load(0),                 set("y"),   get("x"),
+        get("y"),                op("lt_u"), when(&.{ c32(-1), ret }),
+        get("x"),                get("y"),   op("gt_u"),
+        when(&.{ c32(1), ret }), again,
+    }),
+    c32(0),
+});
+
+/// `cmp(a + b, c)`, the sum built in `t`.
+const big_pcmp = func("__big_pcmp", &.{ "a", "b", "c", "t" }, .i32, &.{}, &.{
+    get("t"), get("a"),          c32(big_bytes),    copy,
+    get("t"), get("b"),          call("__big_add"), get("t"),
+    get("c"), call("__big_cmp"),
+});
+
+/// `a <<= n`.
+const big_shl = func("__big_shl", &.{ "a", "n" }, null, &.{}, &.{
+    loop(&.{ get("n"), c32(31), op("lt_s"), brk, get("a"), c64(2147483648), call("__big_mul"), get("n"), c32(31), op("sub"), set("n"), again }),
+    get("a"),
+    c64(1),
+    get("n"),
+    cv("i64.extend_i32_u"),
+    op64("shl"),
+    call("__big_mul"),
+});
+
+/// `a *= 10^n`.
+const big_pow10 = func("__big_pow10", &.{ "a", "n" }, null, &.{}, &.{
+    loop(&.{ get("n"), c32(9), op("lt_s"), brk, get("a"), c64(1000000000), call("__big_mul"), get("n"), c32(9), op("sub"), set("n"), again }),
+    loop(&.{ get("n"), op("eqz"), brk, get("a"), c64(10), call("__big_mul"), get("n"), c32(1), op("sub"), set("n"), again }),
+});
+
+/// The shortest digits of a finite `v > 0` (V8's `BignumDtoa`, shortest mode):
+/// the digits at `dtoa_digits`, their count answered, the decimal point at
+/// `dtoa_point` — `v = 0.d1d2… × 10^point`.
+const dtoa = typedFunc("__dtoa", &.{.{ .name = "v", .ty = .f64 }}, .i32, &.{
+    l32("w"),    l32("n"),    l32("d"),  l32("m"),   l32("p"),   l32("t"),  l32("bexp"), l32("e"),  l32("ne"),
+    l32("near"), l32("even"), l32("k"),  l32("len"), l32("dig"), l32("lo"), l32("hi"),   l32("cc"), l64("bits"),
+    l64("mant"), l64("f"),    l64("nf"),
+}, &.{
+    call("__dtoa_ws"),       tee("w"),                                                                                                                  set("n"),
+    get("w"),                c32(big_bytes),                                                                                                            op("add"),
+    set("d"),                get("w"),                                                                                                                  c32(2 * big_bytes),
+    op("add"),               set("m"),                                                                                                                  get("w"),
+    c32(3 * big_bytes),      op("add"),                                                                                                                 set("p"),
+    get("w"),                c32(4 * big_bytes),                                                                                                        op("add"),
+    set("t"),                getF("v"),                                                                                                                 cv("i64.reinterpret_f64"),
+    set("bits"),             get("bits"),                                                                                                               c64(52),
+    op64("shr_u"),           cv("i32.wrap_i64"),                                                                                                        c32(2047),
+    op("and"),               set("bexp"),                                                                                                               get("bits"),
+    c64(0xFFFFFFFFFFFFF),    op64("and"),                                                                                                               set("mant"),
+    get("bexp"),             op("eqz"),
+    whenElse(
+        &.{ get("mant"), set("f"), c32(-1074), set("e") },
+        &.{ get("mant"), c64(1 << 52), op64("or"), set("f"), get("bexp"), c32(1075), op("sub"), set("e") },
+    ),
+    // The lower boundary is half as far when `f` is a bare power of two above
+    // the smallest normal; a tie reads back as `v` when `f` is even.
+    get("mant"),             op64("eqz"),                                                                                                               get("bexp"),
+    c32(1),                  op("gt_s"),                                                                                                                op("and"),
+    set("near"),             get("f"),                                                                                                                  c64(1),
+    op64("and"),             op64("eqz"),                                                                                                               set("even"),
+    // `EstimatePower` over the normalised exponent: the decimal point, or one less.
+    get("f"),                set("nf"),                                                                                                                 get("e"),
+    set("ne"),
+    loop(&.{
+        get("nf"), c64(1 << 52), op64("and"), op64("eqz"), op("eqz"), brk,
+        get("nf"), c64(1),       op64("shl"), set("nf"),   get("ne"), c32(1),
+        op("sub"), set("ne"),    again,
+    }),
+    get("ne"),               c32(52),                                                                                                                   op("add"),
+    cv("f64.convert_i32_s"), cF("0.30102999566398114"),                                                                                                 opF("mul"),
+    cF("1e-10"),             opF("sub"),                                                                                                                opF("ceil"),
+    cv("i32.trunc_f64_s"),   set("k"),
+    // `InitialScaledStartValues`: numerator / denominator = v / 10^k, the
+    // deltas the distance to each boundary, all doubled.
+                                                                                                                     get("e"),
+    c32(0),                  op("ge_s"),
+    whenElse(&.{
+        get("n"),          get("f"),          call("__big_set"), get("n"),          get("e"),          c32(1),              op("add"),         call("__big_shl"),
+        get("d"),          c64(1),            call("__big_set"), get("d"),          get("k"),          call("__big_pow10"), get("d"),          c32(1),
+        call("__big_shl"), get("p"),          c64(1),            call("__big_set"), get("p"),          get("e"),            call("__big_shl"), get("m"),
+        c64(1),            call("__big_set"), get("m"),          get("e"),          call("__big_shl"),
+    }, &.{
+        get("k"), c32(0), op("ge_s"),
+        whenElse(&.{
+            get("n"), get("f"),          call("__big_set"), get("n"),  c32(1),            call("__big_shl"),
+            get("d"), c64(1),            call("__big_set"), get("d"),  get("k"),          call("__big_pow10"),
+            get("d"), c32(1),            get("e"),          op("sub"), call("__big_shl"), get("p"),
+            c64(1),   call("__big_set"), get("m"),          c64(1),    call("__big_set"),
+        }, &.{
+            get("p"), c64(1),            call("__big_set"), get("p"),            c32(0),   get("k"),  op("sub"),         call("__big_pow10"),
+            get("m"), get("p"),          c32(big_bytes),    copy,                get("n"), get("f"),  call("__big_set"), get("n"),
+            c32(0),   get("k"),          op("sub"),         call("__big_pow10"), get("n"), c32(1),    call("__big_shl"), get("d"),
+            c64(1),   call("__big_set"), get("d"),          c32(1),              get("e"), op("sub"), call("__big_shl"),
+        }),
+    }),
+    get("near"),             when(&.{ get("n"), c32(1), call("__big_shl"), get("d"), c32(1), call("__big_shl"), get("p"), c32(1), call("__big_shl") }),
+    // `FixupMultiply10`: the estimate was one short when numerator + delta+
+    // already reaches the denominator.
+    get("n"),
+    get("p"),                get("d"),                                                                                                                  get("t"),
+    call("__big_pcmp"),      get("even"),                                                                                                               op("add"),
+    c32(0),                  op("gt_s"),                                                                                                                whenElse(&.{ get("k"), c32(1), op("add"), set("k") }, &(bigMul("n", 10) ++ bigMul("m", 10) ++ bigMul("p", 10))),
+    // `GenerateShortestDigits`.
+    loopAs("gbrk", "gcont", &([_]Instr{
+        c32(0),                                                                                                                                                              set("dig"),
+        loop(&.{ get("n"), get("d"), call("__big_cmp"), c32(0), op("lt_s"), brk, get("n"), get("d"), call("__big_sub"), get("dig"), c32(1), op("add"), set("dig"), again }), get("w"),
+        c32(dtoa_digits),                                                                                                                                                    op("add"),
+        get("len"),                                                                                                                                                          op("add"),
+        get("dig"),                                                                                                                                                          c32('0'),
+        op("add"),                                                                                                                                                           store8(0),
+        get("len"),                                                                                                                                                          c32(1),
+        op("add"),                                                                                                                                                           set("len"),
+        get("n"),                                                                                                                                                            get("m"),
+        call("__big_cmp"),                                                                                                                                                   get("even"),
+        op("lt_s"),                                                                                                                                                          set("lo"),
+        get("n"),                                                                                                                                                            get("p"),
+        get("d"),                                                                                                                                                            get("t"),
+        call("__big_pcmp"),                                                                                                                                                  get("even"),
+        op("add"),                                                                                                                                                           c32(0),
+        op("gt_s"),                                                                                                                                                          set("hi"),
+        get("lo"),                                                                                                                                                           get("hi"),
+        op("or"),                                                                                                                                                            .{ .br_if = "gbrk" },
+    } ++ bigMul("n", 10) ++ bigMul("m", 10) ++ bigMul("p", 10) ++ [_]Instr{.{ .br = "gcont" }})),
+    // Both boundaries in reach: round by the remainder, a tie to the even digit.
+    get("lo"),               get("hi"),                                                                                                                 op("and"),
+    when(&.{
+        get("n"),  get("n"),  get("d"),   get("t"),  call("__big_pcmp"), set("cc"),
+        get("cc"), c32(0),    op("gt_s"), get("cc"), op("eqz"),          get("dig"),
+        c32(1),    op("and"), op("and"),  op("or"),  set("hi"),
+    }),
+    get("hi"),
+    when(&.{
+        get("w"), c32(dtoa_digits - 1), op("add"), get("len"), op("add"), tee("t"),
+        get("t"), load8(0),             c32(1),    op("add"),  store8(0),
+    }),
+    get("w"),                get("k"),                                                                                                                  store(dtoa_point),
+    get("len"),
+});
+
+/// The decimal digits of the unsigned `v` at `q`, zero-padded to `width`;
+/// answers the address past them.
+const fmt_u64 = typedFunc("__fmt_u64", &.{ p32("q"), p64("v"), p32("width") }, .i32, i32s(&.{ "t", "cnt" }), &.{
+    call("__dtoa_ws"), c32(dtoa_ws_bytes), op("add"),  set("t"),
+    loop(&.{
+        get("t"),           c32(1),      op("sub"),     set("t"),
+        get("t"),           get("v"),    c64(10),       op64("rem_u"),
+        cv("i32.wrap_i64"), c32('0'),    op("add"),     store8(0),
+        get("v"),           c64(10),     op64("div_u"), set("v"),
+        get("cnt"),         c32(1),      op("add"),     set("cnt"),
+        get("v"),           op64("eqz"), get("cnt"),    get("width"),
+        op("ge_s"),         op("and"),   brk,           again,
+    }),
+    get("q"),          get("t"),           get("cnt"), copy,
+    get("q"),          get("cnt"),         op("add"),
+});
+
+/// `x` as text at `dtoa_text`, its length answered. `mode` 0 is
+/// `String(x)`; `mode` 1 is what `@print` writes on commonJS,
+/// `Number.isInteger(x) ? x.toFixed(1) : String(x)` — a whole number below
+/// `1e21` in all its digits and `.0` (`-0` is `0.0`), exact past `2^53`.
+const f64_fmt = typedFunc("__f64_fmt", &.{ .{ .name = "x", .ty = .f64 }, p32("mode") }, .i32, &.{
+    l32("w"), l32("q"), l32("len"), l32("pt"), l32("dig"), l32("i"), l32("e"), l64("bits"), l64("f"), l64("a"), l64("c"),
+}, &.{
+    call("__dtoa_ws"), tee("w"),     c32(dtoa_text),                                                    op("add"),                                                                                                                 set("q"),
+    getF("x"),         getF("x"),    opF("ne"),                                                         when(&(putc('N') ++ putc('a') ++ putc('N') ++ [_]Instr{ get("q"), get("w"), c32(dtoa_text), op("add"), op("sub"), ret })), get("mode"),
+    getF("x"),         opF("floor"), getF("x"),                                                         opF("eq"),                                                                                                                 op("and"),
+    getF("x"),         opF("abs"),   cF("1e21"),                                                        opF("lt"),                                                                                                                 op("and"),
+    when(&([_]Instr{
+        getF("x"), cF("0"),                   opF("lt"), when(&(putc('-') ++ [_]Instr{ getF("x"), opF("neg"), set("x") })),
+        getF("x"), cF("9223372036854775808"), opF("lt"),
+        whenElse(&.{ get("q"), getF("x"), cv("i64.trunc_f64_s"), c32(1), call("__fmt_u64"), set("q") }, &.{
+            // `f * 2^e` with `e <= 17`: split `f` at `10^10` so each half's
+            // product stays below `2^64`.
+            getF("x"),              cv("i64.reinterpret_f64"), set("bits"),
+            get("bits"),            c64(0xFFFFFFFFFFFFF),      op64("and"),
+            c64(1 << 52),           op64("or"),                set("f"),
+            get("bits"),            c64(52),                   op64("shr_u"),
+            cv("i32.wrap_i64"),     c32(1075),                 op("sub"),
+            set("e"),               get("f"),                  c64(10000000000),
+            op64("div_u"),          get("e"),                  cv("i64.extend_i32_u"),
+            op64("shl"),            set("a"),                  get("f"),
+            c64(10000000000),       op64("rem_u"),             get("e"),
+            cv("i64.extend_i32_u"), op64("shl"),               set("c"),
+            get("q"),               get("a"),                  get("c"),
+            c64(10000000000),       op64("div_u"),             op64("add"),
+            c32(1),                 call("__fmt_u64"),         set("q"),
+            get("q"),               get("c"),                  c64(10000000000),
+            op64("rem_u"),          c32(10),                   call("__fmt_u64"),
+            set("q"),
+        }),
+    } ++ putc('.') ++ putc('0') ++ [_]Instr{ get("q"), get("w"), c32(dtoa_text), op("add"), op("sub"), ret })),
+    getF("x"),         cF("0"),      opF("eq"),                                                         when(&(putc('0') ++ [_]Instr{ c32(1), ret })),                                                                             getF("x"),
+    cF("0"),           opF("lt"),    when(&(putc('-') ++ [_]Instr{ getF("x"), opF("neg"), set("x") })), getF("x"),                                                                                                                 cF("inf"),
+    opF("eq"),
+    whenElse(&(putc('I') ++ putc('n') ++ putc('f') ++ putc('i') ++ putc('n') ++ putc('i') ++ putc('t') ++ putc('y')), &.{
+        getF("x"),  call("__dtoa"),   set("len"),
+        get("w"),   load(dtoa_point), set("pt"),
+        get("w"),   c32(dtoa_digits), op("add"),
+        set("dig"), get("len"),       get("pt"),
+        op("le_s"), get("pt"),        c32(21),
+        op("le_s"), op("and"),
+        whenElse(&.{
+            // `123000`
+            get("q"),   get("dig"), get("len"),                                                                                                                         copy, get("q"), get("len"), op("add"), set("q"),
+            get("len"), set("i"),   loop(&([_]Instr{ get("i"), get("pt"), op("ge_s"), brk } ++ putc('0') ++ [_]Instr{ get("i"), c32(1), op("add"), set("i"), again })),
+        }, &.{
+            get("pt"), c32(0), op("gt_s"), get("pt"), c32(21), op("le_s"), op("and"),
+            whenElse(&([_]Instr{
+                // `12.5`
+                get("q"), get("dig"), get("pt"), copy, get("q"), get("pt"), op("add"), set("q"),
+            } ++ putc('.') ++ [_]Instr{
+                get("q"), get("dig"), get("pt"), op("add"), get("len"), get("pt"), op("sub"), copy,
+                get("q"), get("len"), get("pt"), op("sub"), op("add"),  set("q"),
+            }), &.{
+                get("pt"), c32(-6), op("gt_s"), get("pt"), c32(0), op("le_s"), op("and"),
+                whenElse(&(putc('0') ++ putc('.') ++ [_]Instr{
+                    // `0.000125`
+                    get("pt"),                                                                                                                       set("i"),
+                    loop(&([_]Instr{ get("i"), c32(0), op("ge_s"), brk } ++ putc('0') ++ [_]Instr{ get("i"), c32(1), op("add"), set("i"), again })), get("q"),
+                    get("dig"),                                                                                                                      get("len"),
+                    copy,                                                                                                                            get("q"),
+                    get("len"),                                                                                                                      op("add"),
+                    set("q"),
+                }), &([_]Instr{
+                    // `1.25e+21`, `5e-324`
+                    get("q"),   get("dig"), c32(1),     copy, get("q"), c32(1), op("add"), set("q"),
+                    get("len"), c32(1),     op("gt_s"),
+                    when(&(putc('.') ++ [_]Instr{
+                        get("q"), get("dig"), c32(1), op("add"), get("len"), c32(1),   op("sub"), copy,
+                        get("q"), get("len"), c32(1), op("sub"), op("add"),  set("q"),
+                    })),
+                } ++ putc('e') ++ [_]Instr{
+                    get("pt"),         c32(1),   op("sub"),              set("i"),
+                    get("i"),          c32(0),   op("lt_s"),             whenElse(&(putc('-') ++ [_]Instr{ c32(0), get("i"), op("sub"), set("i") }), &putc('+')),
+                    get("q"),          get("i"), cv("i64.extend_i32_u"), c32(1),
+                    call("__fmt_u64"), set("q"),
+                })),
+            }),
+        }),
+    }),
+    get("q"),          get("w"),     c32(dtoa_text),                                                    op("add"),                                                                                                                 op("sub"),
+});
+
+/// The `i64` `v` as decimal text at `dtoa_text`, its length answered — a
+/// `-` and the magnitude, which `$__fmt_u64` writes unsigned, so `-2^63`
+/// (its own negation) prints whole.
+const i64_fmt = typedFunc("__i64_fmt", &.{p64("v")}, .i32, i32s(&.{ "w", "q" }), &.{
+    call("__dtoa_ws"), tee("w"),  c32(dtoa_text),    op("add"),                                                                 set("q"),
+    get("v"),          c64(0),    op64("lt_s"),      when(&(putc('-') ++ [_]Instr{ c64(0), get("v"), op64("sub"), set("v") })), get("q"),
+    get("v"),          c32(1),    call("__fmt_u64"), get("w"),                                                                  c32(dtoa_text),
+    op("add"),         op("sub"),
+});
+
+const dtoa_items = [_]ast.Item{
+    .{ .global = dtoa_ws_global }, .{ .func = dtoa_ws },   .{ .func = big_set }, .{ .func = big_mul },
+    .{ .func = big_add },          .{ .func = big_sub },   .{ .func = big_cmp }, .{ .func = big_pcmp },
+    .{ .func = big_shl },          .{ .func = big_pow10 }, .{ .func = dtoa },    .{ .func = fmt_u64 },
+    .{ .func = f64_fmt },          .{ .func = i64_fmt },
+};
+
+// ── integer arithmetic that refuses to wrap ──────────────────────────────────
+//
+// commonJS and erlang never wrap an integer: `2147483647 + 1` is `2147483648`
+// on both. wasm's `i32.add` wrapped it to `-2147483648` at exit 0. An `i32`
+// `+`, `-`, `*` is computed in `i64` and checked back into the `i32` range;
+// an `i64` one is checked by the signs (`+`, `-`) or by dividing back (`*`).
+// A result the type cannot hold traps — the value the program asked for does
+// not exist in its declared type.
+
+fn chk32(comptime name: []const u8, comptime opname: []const u8) ast.Func {
+    return func(name, &.{ "a", "b" }, .i32, &.{l64("r")}, &.{
+        get("a"), cv("i64.extend_i32_s"), get("b"),               cv("i64.extend_i32_s"), op64(opname), set("r"),
+        get("r"), cv("i32.wrap_i64"),     cv("i64.extend_i32_s"), get("r"),               op64("ne"),   when(&.{.@"unreachable"}),
+        get("r"), cv("i32.wrap_i64"),
+    });
+}
+const i32_add_chk = chk32("__i32_add_chk", "add");
+const i32_sub_chk = chk32("__i32_sub_chk", "sub");
+const i32_mul_chk = chk32("__i32_mul_chk", "mul");
+
+const i64_add_chk = typedFunc("__i64_add_chk", &.{ p64("a"), p64("b") }, .i64, &.{l64("r")}, &.{
+    get("a"),     get("b"),                  op64("add"), set("r"),
+    // overflow iff both operands differ in sign from the result
+    get("a"),     get("r"),                  op64("xor"), get("b"),
+    get("r"),     op64("xor"),               op64("and"), c64(0),
+    op64("lt_s"), when(&.{.@"unreachable"}), get("r"),
+});
+const i64_sub_chk = typedFunc("__i64_sub_chk", &.{ p64("a"), p64("b") }, .i64, &.{l64("r")}, &.{
+    get("a"),     get("b"),                  op64("sub"), set("r"),
+    // overflow iff the operands differ in sign and the result's sign is `b`'s
+    get("a"),     get("b"),                  op64("xor"), get("a"),
+    get("r"),     op64("xor"),               op64("and"), c64(0),
+    op64("lt_s"), when(&.{.@"unreachable"}), get("r"),
+});
+const i64_mul_chk = typedFunc("__i64_mul_chk", &.{ p64("a"), p64("b") }, .i64, &.{l64("r")}, &.{
+    get("a"),                  c64(-1),                                                                                        op64("eq"), get("b"),    c64(-9223372036854775808), op64("eq"), op("and"),
+    when(&.{.@"unreachable"}), get("a"),                                                                                       get("b"),   op64("mul"), set("r"),                  get("a"),   op64("eqz"),
+    op("eqz"),                 when(&.{ get("r"), get("a"), op64("div_s"), get("b"), op64("ne"), when(&.{.@"unreachable"}) }), get("r"),
+});
+
+const int_chk_items = [_]ast.Item{
+    .{ .func = i32_add_chk }, .{ .func = i32_sub_chk }, .{ .func = i32_mul_chk },
+    .{ .func = i64_add_chk }, .{ .func = i64_sub_chk }, .{ .func = i64_mul_chk },
+};
+
+/// An `i64` printed in all its digits. It was lowered as an `i32`:
+/// `val a: i64 = 4294967295` printed `-1`.
+const print_i64_raw = typedFunc("__print_i64_raw", &.{p64("v")}, null, i32s(&.{"n"}), &.{
+    get("v"),       call("__i64_fmt"), set("n"), call("__dtoa_ws"),
+    c32(dtoa_text), op("add"),         get("n"), call("__write_bytes"),
+});
+const print_i64 = typedFunc("__print_i64", &.{p64("v")}, null, &.{}, &.{ get("v"), call("__print_i64_raw"), call("__print_nl") });
+
+/// An `i64` as a fresh string — `"n" + v`, `v.toString()`.
+const i64_to_str = typedFunc("__i64_to_str", &.{p64("v")}, .i32, i32s(&.{ "n", "p" }), &.{
+    get("v"),        call("__i64_fmt"), set("n"),
+    get("n"),        c32(4),            op("add"),
+    call("__alloc"), set("p"),          get("p"),
+    get("n"),        store(0),          get("p"),
+    c32(4),          op("add"),         call("__dtoa_ws"),
+    c32(dtoa_text),  op("add"),         get("n"),
+    copy,            get("p"),
+});
+
+/// An `i64` in a 4-byte word slot — a record field, a `?i64` — is the address
+/// of an 8-byte cell, as a float is (`$__box_f64`). Wrapped to an `i32` in the
+/// slot itself, `4294967295` read back as `-1`.
+const box_i64 = typedFunc("__box_i64", &.{p64("v")}, .i32, i32s(&.{"p"}), &.{
+    c32(8), call("__alloc"), tee("p"), get("v"), .{ .store = .{ .ty = .i64 } }, get("p"),
+});
+
+/// A `?i64`: the address of its cell (`$__box_i64`), or `0` — `null`.
+const print_opt_i64_raw = func("__print_opt_i64_raw", &.{"p"}, null, &.{}, &.{
+    get("p"),                                                                                                  op("eqz"),
+    whenElse(&.{call("__print_null")}, &.{ get("p"), .{ .load = .{ .ty = .i64 } }, call("__print_i64_raw") }),
+});
+const print_opt_i64 = func("__print_opt_i64", &.{"p"}, null, &.{}, &.{ get("p"), call("__print_opt_i64_raw"), call("__print_nl") });
+
+/// `[115, 287.5, 460]` — the elements of a float array, each slot the address
+/// of its `f64` cell (`$__box_f64`), printed like `$__print_f64`.
+const print_arr_f64_raw = func("__print_arr_f64_raw", &.{"xs"}, null, i32s(&.{ "n", "i" }), &(putByte('[') ++ .{call("__write_bytes")} ++ [_]Instr{
     get("xs"), load(0), set("n"),
     loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk, get("i"), when(&(putSep() ++ [_]Instr{call("__write_bytes")})) } ++ slot("xs", "i") ++ [_]Instr{
-        .{ .load = .{ .ty = .f32 } }, .{ .convert = "f64.promote_f32" }, call("__print_f64_raw"),
-        get("i"),                     c32(1),                            op("add"),
-        set("i"),                     again,
+        load(0),  .{ .load = .{ .ty = .f64 } }, call("__print_f64_raw"),
+        get("i"), c32(1),                       op("add"),
+        set("i"), again,
     })),
 } ++ putByte(']') ++ .{call("__write_bytes")}));
 
-const print_arr_f32 = func("__print_arr_f32", &.{"xs"}, null, &.{}, &.{ get("xs"), call("__print_arr_f32_raw"), call("__print_nl") });
+const print_arr_f64 = func("__print_arr_f64", &.{"xs"}, null, &.{}, &.{ get("xs"), call("__print_arr_f64_raw"), call("__print_nl") });
+
+/// A float in a 4-byte word slot — an array or tuple element, a variant's
+/// payload, a `?f64`, a closure's capture — is the address of an 8-byte `f64`
+/// cell, as a record's float field is. Narrowed to an `f32` in the slot itself,
+/// `1.1` read back as `1.100000023841858`. A cell is never written again once
+/// made: a slot that takes another float takes another cell.
+const box_f64 = typedFunc("__box_f64", &.{.{ .name = "x", .ty = .f64 }}, .i32, i32s(&.{"p"}), &.{
+    c32(8),                        call("__alloc"), tee("p"), getF("x"),
+    .{ .store = .{ .ty = .f64 } }, get("p"),
+});
+
+/// `xs.indexOf(x)` / `xs.lastIndexOf(x)` over a float array: native
+/// `Array#indexOf`'s strict equality (`f64.eq` — `NaN` is never found, `-0`
+/// finds `0`), what commonJS answers.
+const arr_index_of_f64 = typedFunc("__arr_index_of_f64", &.{ p32("xs"), .{ .name = "x", .ty = .f64 } }, .i32, i32s(&.{ "n", "i" }), &.{
+    get("xs"), load(0), set("n"),
+    loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk } ++ slot("xs", "i") ++ [_]Instr{
+        load(0),  .{ .load = .{ .ty = .f64 } }, getF("x"), opF("eq"), when(&.{ get("i"), ret }),
+        get("i"), c32(1),                       op("add"), set("i"),  again,
+    })),
+    c32(-1),
+});
+const arr_last_index_of_f64 = typedFunc("__arr_last_index_of_f64", &.{ p32("xs"), .{ .name = "x", .ty = .f64 } }, .i32, i32s(&.{"i"}), &.{
+    get("xs"), load(0), set("i"),
+    loop(&([_]Instr{ get("i"), op("eqz"), brk, get("i"), c32(1), op("sub"), set("i") } ++ slot("xs", "i") ++ [_]Instr{
+        load(0), .{ .load = .{ .ty = .f64 } }, getF("x"), opF("eq"), when(&.{ get("i"), ret }),
+        again,
+    })),
+    c32(-1),
+});
+
+/// `xs.join(sep)` over a float array: each element as `String(x)` — the text
+/// `$__f64_to_str` writes, as `Array#join` does on commonJS.
+const arr_join_f64 = func("__arr_join_f64", &.{ "xs", "sep" }, .i32, i32s(&.{ "n", "i", "t" }), &.{
+    get("xs"), load(0),           set("n"),
+    get("n"),  call("__arr_new"), set("t"),
+    loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk } ++ slot("t", "i") ++ slot("xs", "i") ++ [_]Instr{
+        load(0),  .{ .load = .{ .ty = .f64 } }, call("__f64_to_str"), store(0),
+        get("i"), c32(1),                       op("add"),            set("i"),
+        again,
+    })),
+    get("t"),  get("sep"),        call("__arr_join_str"),
+});
 
 /// Writes the byte in local `name` through the newline scratch cell at 8.
 fn putLocalByte(comptime name: []const u8) [6]Instr {
@@ -1988,7 +2387,17 @@ const print_shaped_raw = func("__print_shaped_raw", &.{ "v", "sh", "go" }, .i32,
     c32('f'),                                                                                                   op("eq"),
     when(&.{
         get("go"),
-        when(&.{ get("v"), .{ .convert = "f32.reinterpret_i32" }, .{ .convert = "f64.promote_f32" }, call("__print_f64_raw") }),
+        when(&.{ get("v"), .{ .load = .{ .ty = .f64 } }, call("__print_f64_raw") }),
+        get("sh"),
+        c32(1),
+        op("add"),
+        ret,
+    }),
+    // `l`: a record's `i64` field, the address of its cell (`$__box_i64`).
+    get("c"),                                                                                                   c32('l'),                                                                                                   op("eq"),
+    when(&.{
+        get("go"),
+        when(&.{ get("v"), .{ .load = .{ .ty = .i64 } }, call("__print_i64_raw") }),
         get("sh"),
         c32(1),
         op("add"),
@@ -2092,14 +2501,15 @@ const print_opt_str_raw = func("__print_opt_str_raw", &.{"s"}, null, &.{}, &.{
 });
 const print_opt_str = func("__print_opt_str", &.{"s"}, null, &.{}, &.{ get("s"), call("__print_opt_str_raw"), call("__print_nl") });
 
-/// A `?T` box whose payload is an `f32` slot — `fs.at(0)` on a float array.
-/// Reading it with `$__print_opt_i32` printed the float's **bits** (`1069547520`
-/// for `1.5`) with exit 0.
-const print_opt_f32_raw = func("__print_opt_f32_raw", &.{"p"}, null, &.{}, &.{
-    get("p"),                                                                                                                                     op("eqz"),
-    whenElse(&.{call("__print_null")}, &.{ get("p"), .{ .load = .{ .ty = .f32 } }, .{ .convert = "f64.promote_f32" }, call("__print_f64_raw") }),
+/// A `?f64`: the address of an `f64` cell (`$__box_f64`) — `fs.at(0)` on a
+/// float array is the element's own cell — or `0`. Reading it with
+/// `$__print_opt_i32` printed the float's **bits** (`1069547520` for `1.5`)
+/// with exit 0.
+const print_opt_f64_raw = func("__print_opt_f64_raw", &.{"p"}, null, &.{}, &.{
+    get("p"),                                                                                                  op("eqz"),
+    whenElse(&.{call("__print_null")}, &.{ get("p"), .{ .load = .{ .ty = .f64 } }, call("__print_f64_raw") }),
 });
-const print_opt_f32 = func("__print_opt_f32", &.{"p"}, null, &.{}, &.{ get("p"), call("__print_opt_f32_raw"), call("__print_nl") });
+const print_opt_f64 = func("__print_opt_f64", &.{"p"}, null, &.{}, &.{ get("p"), call("__print_opt_f64_raw"), call("__print_nl") });
 
 /// A `?T` whose `T` is a record: the value IS the record's pointer, so `0` is
 /// absence and anything else carries the header the tagged printer reads four

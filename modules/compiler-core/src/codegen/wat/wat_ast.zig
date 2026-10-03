@@ -410,16 +410,16 @@ pub const HelperGroup = enum {
     arr_join_i32,
     /// `$__print_arr_i32` `$__print_arr_i32_raw`.
     print_arr_i32,
-    /// `$__print_arr_f32` `$__print_arr_f32_raw`.
-    print_arr_f32,
+    /// `$__print_arr_f64` `$__print_arr_f64_raw`.
+    print_arr_f64,
     box_i32,
     arr_at_box,
     /// `$__print_null`, and `$__print_opt_{i32,bool,str}` (+`_raw`).
     print_opt,
-    /// `$__print_opt_f32` (+`_raw`) — a `?T` box holding an `f32` slot. Its own
-    /// group and not part of `print_opt`, so a module that prints a plain
-    /// optional renders exactly as it did before this existed.
-    print_opt_f32,
+    /// `$__print_opt_f64` (+`_raw`) — a `?f64`, the address of an `f64` cell.
+    /// Its own group and not part of `print_opt`, so a module that prints a
+    /// plain optional renders exactly as it did before this existed.
+    print_opt_f64,
     /// `$__write_err` `$__assert_fail`.
     assert_fail,
     /// `$__print_quoted_raw` `$__print_shaped_raw` `$__print_tagged_raw`
@@ -495,22 +495,52 @@ pub const HelperGroup = enum {
     wasi_seed_u32,
     /// `$__wasi_seeded_f64()` — `wasi:seeded_f64`.
     wasi_seeded_f64,
+    /// An `f64` as text (V8's `BignumDtoa`, shortest): the `$__dtoa_ws`
+    /// workspace global, the bignum steps `$__big_*`, `$__dtoa`, `$__fmt_u64`
+    /// and `$__f64_fmt(x, mode)` — `String(x)` (`0`) or commonJS's print form (`1`).
+    dtoa,
+    /// `$__box_f64(x)` — a float's 8-byte cell, the word a float slot holds.
+    box_f64,
+    /// `$__arr_index_of_f64` / `$__arr_last_index_of_f64` — `f64.eq` over the cells.
+    arr_index_of_f64,
+    arr_last_index_of_f64,
+    /// `$__arr_join_f64(xs, sep)` — each cell as `String(x)`.
+    arr_join_f64,
+    /// `$__print_i64` (+`_raw`) — an `i64` in all its digits.
+    print_i64,
+    /// `$__i64_to_str(v)` — an `i64` as a fresh string.
+    i64_to_str,
+    /// `$__box_i64(v)` — an `i64`'s 8-byte cell, the word an `i64` slot holds.
+    box_i64,
+    /// `$__print_opt_i64` (+`_raw`) — a `?i64`, the address of its cell.
+    print_opt_i64,
+    /// `$__i32_{add,sub,mul}_chk` / `$__i64_…_chk` — integer arithmetic that
+    /// traps where the result does not fit its type, instead of wrapping.
+    int_chk,
 
     /// The groups `g`'s functions call into.
     pub fn deps(g: HelperGroup) []const HelperGroup {
         return switch (g) {
-            .print_str, .print_bool, .print_f64 => &.{.print},
+            .print_str, .print_bool => &.{.print},
+            .print_f64 => &.{ .print, .dtoa },
+            .dtoa => &.{.alloc},
+            .box_f64 => &.{.alloc},
+            .arr_join_f64 => &.{ .arr_new, .f64_to_str, .arr_join_str },
+            .print_i64 => &.{ .print, .dtoa },
+            .i64_to_str => &.{ .dtoa, .alloc },
+            .box_i64 => &.{.alloc},
+            .print_opt_i64 => &.{ .print, .print_opt, .print_i64 },
             .print_arr_i32 => &.{.print},
-            .print_arr_f32 => &.{ .print, .print_f64 },
+            .print_arr_f64 => &.{ .print, .print_f64 },
             .box_i32 => &.{.alloc},
             .arr_at_box => &.{.box_i32},
             .print_opt => &.{ .print, .print_bool, .print_str },
-            .print_opt_f32 => &.{ .print, .print_f64, .print_opt },
+            .print_opt_f64 => &.{ .print, .print_f64, .print_opt },
             .print_opt_tagged => &.{ .print, .print_opt, .print_shaped },
             .assert_fail => &.{.print},
-            .print_shaped => &.{ .print, .print_bool, .print_f64, .display_of },
+            .print_shaped => &.{ .print, .print_bool, .print_f64, .print_i64, .display_of },
             .i32_to_str, .str_case, .str_repeat, .arr_new => &.{.alloc},
-            .f64_to_str => &.{ .i32_to_str, .alloc },
+            .f64_to_str => &.{ .dtoa, .alloc },
             .str_index_of, .str_starts_with, .str_ends_with => &.{.mem_eq},
             .str_trim, .str_at => &.{.str_slice},
             .str_split => &.{ .arr_new, .mem_eq, .str_slice },
@@ -586,8 +616,8 @@ pub const Helper = enum {
     arr_join_i32,
     print_arr_i32,
     print_arr_i32_raw,
-    print_arr_f32,
-    print_arr_f32_raw,
+    print_arr_f64,
+    print_arr_f64_raw,
     box_i32,
     arr_at_box,
     print_null,
@@ -597,8 +627,8 @@ pub const Helper = enum {
     print_opt_bool_raw,
     print_opt_str,
     print_opt_str_raw,
-    print_opt_f32,
-    print_opt_f32_raw,
+    print_opt_f64,
+    print_opt_f64_raw,
     write_err,
     assert_fail,
     print_quoted_raw,
@@ -639,6 +669,22 @@ pub const Helper = enum {
     wasi_random_f64,
     wasi_seed_u32,
     wasi_seeded_f64,
+    box_f64,
+    arr_index_of_f64,
+    arr_last_index_of_f64,
+    arr_join_f64,
+    print_i64,
+    print_i64_raw,
+    i64_to_str,
+    box_i64,
+    print_opt_i64,
+    print_opt_i64_raw,
+    i32_add_chk,
+    i32_sub_chk,
+    i32_mul_chk,
+    i64_add_chk,
+    i64_sub_chk,
+    i64_mul_chk,
 
     pub fn symbol(h: Helper) []const u8 {
         return switch (h) {
@@ -653,11 +699,14 @@ pub const Helper = enum {
             .print_bool, .print_bool_raw => .print_bool,
             .print_f64, .print_f64_raw => .print_f64,
             .print_arr_i32, .print_arr_i32_raw => .print_arr_i32,
-            .print_arr_f32, .print_arr_f32_raw => .print_arr_f32,
+            .print_arr_f64, .print_arr_f64_raw => .print_arr_f64,
             .write_err, .assert_fail => .assert_fail,
             .print_quoted_raw, .print_shaped_raw => .print_shaped,
             .print_null, .print_opt_i32, .print_opt_i32_raw, .print_opt_bool, .print_opt_bool_raw, .print_opt_str, .print_opt_str_raw => .print_opt,
-            .print_opt_f32, .print_opt_f32_raw => .print_opt_f32,
+            .print_opt_f64, .print_opt_f64_raw => .print_opt_f64,
+            .print_i64, .print_i64_raw => .print_i64,
+            .print_opt_i64, .print_opt_i64_raw => .print_opt_i64,
+            .i32_add_chk, .i32_sub_chk, .i32_mul_chk, .i64_add_chk, .i64_sub_chk, .i64_mul_chk => .int_chk,
             .print_tagged_raw, .print_tagged => .print_shaped,
             .print_opt_tagged, .print_opt_tagged_raw => .print_opt_tagged,
             .unknown_kind, .unknown_int_in, .unknown_as_i32, .unknown_as_f64, .unknown_eq => .unknown,
