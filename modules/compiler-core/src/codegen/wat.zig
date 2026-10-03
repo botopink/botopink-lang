@@ -152,8 +152,12 @@ fn watType(t0: ast.TypeRef) []const u8 {
     switch (t) {
         .named => |n| {
             if (std.mem.eql(u8, n, "i32")) return "i32";
-            if (std.mem.eql(u8, n, "i64")) return "i64";
-            if (std.mem.eql(u8, n, "f32")) return "f32";
+            // `u32` and `u64` past `2^31` do not fit the signed `i32` word:
+            // `4294967295` printed `-1`. Both are held as an `i64`.
+            if (std.mem.eql(u8, n, "i64") or std.mem.eql(u8, n, "u64") or std.mem.eql(u8, n, "u32")) return "i64";
+            // An `f32` is held as the `f64` it is on commonJS (a JS number):
+            // narrowed, `val x: f32 = 0.1` printed `0.10000000149011612`.
+            if (std.mem.eql(u8, n, "f32")) return "f64";
             if (std.mem.eql(u8, n, "f64")) return "f64";
             if (std.mem.eql(u8, n, "bool")) return "i32";
         },
@@ -181,7 +185,15 @@ fn isNamedTypeRef(t: ast.TypeRef, name: []const u8) bool {
 /// (`self.x / 2.0` returned `0`).
 fn memberValType(t: ast.TypeRef) []const u8 {
     const w = watType(t);
-    return if (w[0] == 'f') w else "i32";
+    return if (w[0] == 'f' or std.mem.eql(u8, w, "i64")) w else "i32";
+}
+
+/// The 8-byte cell a field or an optional of the named type holds its value
+/// in (`Emitter.Cell`): a float or a 64-bit integer; `.none` for a word.
+fn fieldCellOf(n: []const u8) Emitter.Cell {
+    if (isFloatTypeName(n)) return .f64;
+    if (std.mem.eql(u8, n, "i64") or std.mem.eql(u8, n, "u64") or std.mem.eql(u8, n, "u32")) return .i64;
+    return .none;
 }
 
 /// `i` / `f` for an array of integers / floats (`i32[]`, `Array<f64>`), the
@@ -1192,8 +1204,7 @@ fn emitWat(
     while (eq_i < em.eq_requests.count()) : (eq_i += 1) {
         try items.append(ar, .{ .func = try em.eqFunc(em.eq_requests.keys()[eq_i], em.eq_requests.values()[eq_i]) });
     }
-    if (em.float_eq_used[0]) try items.append(ar, .{ .func = try em.floatEqFunc(true) });
-    if (em.float_eq_used[1]) try items.append(ar, .{ .func = try em.floatEqFunc(false) });
+    if (em.float_eq_used) try items.append(ar, .{ .func = try em.floatEqFunc() });
 
     for (prelude.order) |group| {
         if (!em.b.helpers.has(group)) continue;
@@ -1269,8 +1280,8 @@ const Emitter = struct {
     /// Decision 210 — a `val`'s composite type when nothing else recovers it
     /// (`eqTypeOf` over its initialiser), by the local's symbol.
     eq_local_types: std.StringHashMapUnmanaged(ast.TypeRef) = .empty,
-    /// Decision 214 — whether `$__f64_eq` / `$__f32_eq` were called.
-    float_eq_used: [2]bool = .{ false, false },
+    /// Decision 214 — whether `$__f64_eq` was called.
+    float_eq_used: bool = false,
     /// Node factory: owns the arena every built node borrows from and the set
     /// of runtime helpers the lowering has asked for. Set up in `init` once
     /// `reg_arena` exists.
@@ -1666,6 +1677,10 @@ const Emitter = struct {
     /// `lowerPrimMethod`, `lowerArrayMethod`, `lowerIsCall` — refuses at the
     /// call it cannot lower.
     call_loc: ?ast.Loc = null,
+    /// The statement being lowered — where a conversion with no expression
+    /// of its own (a body's tail into the declared result, a function value's
+    /// answer into the indirect-call word) is refused.
+    stmt_loc: ?ast.Loc = null,
     assoc_needed: std.ArrayListUnmanaged([]const u8) = .empty,
     assoc_emitted: std.StringHashMap(void),
     /// Extension block name → target type + methods (for resolving the mangled
@@ -2519,7 +2534,7 @@ const Emitter = struct {
     /// `[256,264]`, addresses inside a container, the same wrong answer one
     /// bracket deeper. Not covered, and recorded in `wat/AGENTS.md`: a local
     /// bound to such a container (the element shapes tracked for a local are
-    /// `i32`/`f32`/`str`, and a record is an `i32` slot like any pointer), and a
+    /// `i32`/`f64`/`str`, and a record is an `i32` slot like any pointer), and a
     /// record read out of one.
     /// The enum a plain call (`stop()`, an import's alias included) is declared
     /// to answer, when its callee's return type names one this program holds.
@@ -3142,6 +3157,20 @@ const Emitter = struct {
             try self.shadow_log.append(ra, .{ .name = name, .prev = null, .aliased = false });
             return name;
         }
+        const alias = try std.fmt.allocPrint(ra, "{s}__sh{d}", .{ name, self.shadow_seq });
+        self.shadow_seq += 1;
+        return alias;
+    }
+
+    /// `bindTarget` for a binder of wasm type `ty`: a name the function
+    /// already declared with another type (`xs.map({ x -> x * 3.0 })` then
+    /// `[1, 2].map({ x -> x + 1 })`) is a local of its own — one wasm local
+    /// has one type, and the second walk stored an `i32` into the `f64`.
+    fn bindTargetAs(self: *Emitter, name: []const u8, ty: []const u8) ![]const u8 {
+        const t = try self.bindTarget(name);
+        const have = self.locals.get(t) orelse return t;
+        if (std.mem.eql(u8, have, ty)) return t;
+        const ra = self.reg_arena.allocator();
         const alias = try std.fmt.allocPrint(ra, "{s}__sh{d}", .{ name, self.shadow_seq });
         self.shadow_seq += 1;
         return alias;
@@ -4244,7 +4273,12 @@ const Emitter = struct {
                             try self.declareNestedLocals(lb.value.*);
                             continue;
                         };
-                        const t = self.inferExprType(lb.value.*);
+                        const t = self.bindingLocalType(lb.typeAnnotation, lb.value.*);
+                        // A cell optional (`?f64`, `?i64`) is known before the
+                        // body is lowered, so a binder over it is declared
+                        // the cell's width.
+                        if (lb.typeAnnotation) |ta| if (self.optInfoOfTypeRef(ta)) |oi| if (oi.cell != .none) try self.opt_locals.put(lb.name, oi);
+                        if (lb.typeAnnotation == null) if (self.optInfoOf(lb.value.*)) |oi| if (oi.cell != .none) try self.opt_locals.put(lb.name, oi);
                         if (self.recordTypeOfExpr(lb.value.*)) |rty| {
                             try self.local_types.put(lb.name, rty);
                         }
@@ -4260,20 +4294,20 @@ const Emitter = struct {
                             .names => |n| {
                                 const recv_rty = self.recordTypeOfExpr(lb.value.*);
                                 for (n.fields) |fld| {
-                                    var float_field = false;
+                                    var cell: Cell = .none;
                                     if (recv_rty) |rty| {
                                         if (self.fieldTypeIn(rty, fld.field_name)) |ft| {
                                             if (self.resolveRecordName(ft)) |sub|
                                                 try self.local_types.put(fld.bind_name, sub);
-                                            float_field = isFloatTypeName(ft);
+                                            cell = fieldCellOf(ft);
                                         }
                                     }
-                                    try self.declareLocal(fld.bind_name, if (float_field) "f64" else "i32");
+                                    try self.declareLocal(fld.bind_name, cell.ty());
                                 }
                             },
                             .tuple_ => |bindings| {
                                 for (bindings, 0..) |name, i| {
-                                    try self.declareLocal(name, "i32");
+                                    try self.declareLocal(name, if (try self.tupleElemIsFloat(lb.value.*, i)) "f64" else "i32");
                                     try self.noteTupleElemShape(name, lb.value.*, i);
                                 }
                             },
@@ -4293,8 +4327,12 @@ const Emitter = struct {
         switch (e) {
             .branch => |b| switch (b.kind) {
                 .if_ => |i| {
-                    // `if (opt) { v -> … }` binds the narrowed value to `v`.
-                    if (i.binding) |name| try self.declareLocal(name, "i32");
+                    // `if (opt) { v -> … }` binds the narrowed value to `v`:
+                    // a `?f64`'s / `?i64`'s is what its cell holds.
+                    if (i.binding) |name| {
+                        const cell: Cell = if (self.optInfoOf(i.cond.*)) |o| o.cell else .none;
+                        try self.declareLocal(name, cell.ty());
+                    }
                     try self.emitLocalDecls(i.then_);
                     if (i.else_) |els| try self.emitLocalDecls(els);
                 },
@@ -4314,12 +4352,13 @@ const Emitter = struct {
                 },
             },
             .loop => |lp| {
-                // A walk over a float array binds its element as an f32
-                // (`lowerCollectionLoop`); a range or an index is an i32.
+                // A walk over a float array binds its element as the `f64`
+                // its slot's cell holds (`lowerCollectionLoop`); a range or an
+                // index is an i32.
                 const is_range = lp.iter.* == .collection and lp.iter.collection.kind == .range;
                 for (lp.params, 0..) |p, i| {
-                    const float_elem = i == 0 and !is_range and self.isArrayExpr(lp.iter.*) and self.elemKindOf(lp.iter.*) == .f32;
-                    try self.declareLocal(p, if (float_elem) "f32" else "i32");
+                    const float_elem = i == 0 and !is_range and self.isArrayExpr(lp.iter.*) and self.elemKindOf(lp.iter.*) == .f64;
+                    try self.declareLocal(p, if (float_elem) "f64" else "i32");
                 }
                 try self.emitLocalDecls(lp.body);
             },
@@ -4390,6 +4429,19 @@ const Emitter = struct {
     /// `(local $taxa i32)`.
     fn inferExprType(self: *Emitter, e: ast.Expr) []const u8 {
         return self.wasmTypeOf(e);
+    }
+
+    /// The wasm type of a `val`/`var`'s local: what a written type says, when
+    /// it says one — a `?T` is the `i32` of its box or pointer, a number the
+    /// width it names (`val a: i64 = 4294967295` is an `i64`, `val o: ?f64 =
+    /// 1.1` the address of a cell) — and the value's own type otherwise.
+    fn bindingLocalType(self: *Emitter, ann: ?ast.TypeRef, value: ast.Expr) []const u8 {
+        if (ann) |ta| switch (ta) {
+            .optional => return "i32",
+            .named => |n| if (isScalarName(n)) return watType(ta),
+            else => {},
+        };
+        return self.inferExprType(value);
     }
 
     fn emitGlobalVal(self: *Emitter, v: ast.ValDecl) !void {
@@ -4809,6 +4861,9 @@ const Emitter = struct {
     }
 
     fn emitStmt(self: *Emitter, stmt: ast.Stmt, keep_value: bool) anyerror!Tail {
+        const outer_loc = self.stmt_loc;
+        self.stmt_loc = stmt.expr.getLoc();
+        defer self.stmt_loc = outer_loc;
         const tail = try self.emitStmtRaw(stmt, keep_value);
         // Normalise to what the context asked for: a value where one is
         // required, nothing where one is not. `.terminated` needs neither.
@@ -4921,7 +4976,7 @@ const Emitter = struct {
                     // outer `x` (decision 152 keeps that legal: a new scope)
                     // — is a fresh local, aliased until the block ends.
                     var lb = lb0;
-                    lb.name = try self.bindTarget(lb0.name);
+                    lb.name = try self.bindTargetAs(lb0.name, self.bindingLocalType(lb0.typeAnnotation, lb0.value.*));
                     defer self.installShadow(lb0.name, lb.name);
                     if (lb.typeAnnotation) |ta| if (isUnknownTypeRef(ta)) {
                         try self.declareLocal(lb.name, "i32");
@@ -4933,7 +4988,7 @@ const Emitter = struct {
                         try self.emit(.{ .local_set = lb.name });
                         return .none;
                     };
-                    try self.declareLocal(lb.name, self.inferExprType(lb.value.*));
+                    try self.declareLocal(lb.name, self.bindingLocalType(lb.typeAnnotation, lb.value.*));
                     // A function NAMED as the value (`val g = greet`) types the
                     // local by its declaration, as a written `fn(…) -> T` does:
                     // `g()` then answers `greet`'s declared return. Without it the
@@ -4955,6 +5010,8 @@ const Emitter = struct {
                     // box's address.
                     const ann_optional = if (lb.typeAnnotation) |ta| ta == .optional else true;
                     if (ann_optional) if (self.optInfoOf(lb.value.*)) |oi| try self.opt_locals.put(lb.name, oi);
+                    // A `?f64` written as such is a cell whatever the value is.
+                    if (lb.typeAnnotation) |ta| if (self.optInfoOfTypeRef(ta)) |oi| if (oi.cell != .none) try self.opt_locals.put(lb.name, oi);
                     if (self.isStringExpr(lb.value.*)) try self.str_locals.put(lb.name, {});
                     if (self.isBoolExpr(lb.value.*)) try self.bool_locals.put(lb.name, {});
                     // The written type says it too, where the value cannot: a
@@ -5054,7 +5111,7 @@ const Emitter = struct {
                             const t = self.locals.get(name) orelse
                                 self.global_types.get(name) orelse "i32";
                             try self.lowerCoerced(a.value.*, t);
-                            try self.emit(opOf(t, "add"));
+                            try self.emitArith(t, "add");
                             try self.emit(if (self.locals.contains(name))
                                 .{ .local_set = name }
                             else
@@ -5070,20 +5127,33 @@ const Emitter = struct {
                         const rty_opt = self.recordTypeOfExpr(fa.receiver.*);
                         const off_opt = if (rty_opt) |rty| self.fieldOffsetIn(rty, fa.field) else null;
                         if (off_opt) |off| switch (a.op) {
+                            // A float field's slot holds its `f64` cell: the
+                            // new value is a new cell (`lowerSlotWord`), never
+                            // a write into the old one, which another value
+                            // may share.
                             .assign => {
+                                const cell = fieldCellOf(self.fieldTypeIn(rty_opt.?, fa.field) orelse "");
                                 try self.lowerValue(fa.receiver.*);
-                                try self.lowerValue(a.value.*);
+                                if (cell != .none) try self.lowerCellWord(a.value.*, cell) else try self.lowerValue(a.value.*);
                                 try self.emitCf(.{ .store = .{ .offset = off } }, ".{s} =", .{fa.field});
                             },
                             .plusAssign => {
+                                const cell = fieldCellOf(self.fieldTypeIn(rty_opt.?, fa.field) orelse "");
                                 const mem = try self.memName(self.nextMem());
                                 try self.lowerValue(fa.receiver.*);
                                 try self.emit(.{ .local_set = mem });
                                 try self.emit(.{ .local_get = mem });
                                 try self.emit(.{ .local_get = mem });
                                 try self.emit(.{ .load = .{ .offset = off } });
-                                try self.lowerValue(a.value.*);
-                                try self.emit(opOf("i32", "add"));
+                                if (cell != .none) {
+                                    try self.emitFromCell(cell);
+                                    try self.lowerCoerced(a.value.*, cell.ty());
+                                    try self.emitArith(cell.ty(), "add");
+                                    try self.emit(self.builder().helper(if (cell == .f64) .box_f64 else .box_i64));
+                                } else {
+                                    try self.lowerCoerced(a.value.*, "i32");
+                                    try self.emitArith("i32", "add");
+                                }
                                 try self.emitCf(.{ .store = .{ .offset = off } }, ".{s} +=", .{fa.field});
                             },
                         } else return self.refuse(stmt.expr.getLoc(), "the wasm backend cannot place `.{s} =`: the receiver's type is not known here", .{fa.field});
@@ -5108,9 +5178,8 @@ const Emitter = struct {
                                 else
                                     @as(u32, @intCast(i * 4));
                                 try self.emitLoadOffset(off);
-                                // A float field is a boxed `f64` (`storeBoxedF64`).
-                                if (recv_rty) |rty| if (isFloatTypeName(self.fieldTypeIn(rty, fld.field_name) orelse ""))
-                                    try self.emit(.{ .load = .{ .ty = .f64 } });
+                                // A float or `i64` field holds its cell.
+                                if (recv_rty) |rty| try self.emitFromCell(fieldCellOf(self.fieldTypeIn(rty, fld.field_name) orelse ""));
                                 try self.emit(.{ .local_set = fld.bind_name });
                             }
                         },
@@ -5119,6 +5188,11 @@ const Emitter = struct {
                                 try self.noteTupleElemShape(name, lb.value.*, i);
                                 try self.emit(.{ .local_get = mem });
                                 try self.emitLoadOffset(@intCast(i * 4));
+                                if (try self.tupleElemIsFloat(lb.value.*, i)) {
+                                    try self.emitFromFloatSlot();
+                                    if (!std.mem.eql(u8, self.locals.get(name) orelse "", "f64"))
+                                        return self.refuse(stmt.expr.getLoc(), "the wasm backend binds `{s}` to an integer and a float in one function", .{name});
+                                }
                                 try self.emit(.{ .local_set = name });
                             }
                         },
@@ -5132,8 +5206,8 @@ const Emitter = struct {
                             if (self.ctorRecordFields(pat)) |r| {
                                 for (r.binds, 0..) |bind, i| {
                                     if (bind.len == 0) continue;
-                                    const float_field = isFloatTypeName(self.fieldTypeIn(r.record, r.fields[i]) orelse "");
-                                    try self.declareLocal(bind, if (float_field) "f64" else "i32");
+                                    const cell = fieldCellOf(self.fieldTypeIn(r.record, r.fields[i]) orelse "");
+                                    try self.declareLocal(bind, cell.ty());
                                     if (self.fieldTypeIn(r.record, r.fields[i])) |ft| {
                                         if (std.mem.eql(u8, ft, "string")) try self.str_locals.put(bind, {});
                                         if (std.mem.eql(u8, ft, "bool")) try self.bool_locals.put(bind, {});
@@ -5141,8 +5215,8 @@ const Emitter = struct {
                                     }
                                     try self.emit(.{ .local_get = mem });
                                     try self.emitLoadOffset(@intCast(i * 4));
-                                    // A float field is a boxed `f64` (`storeBoxedF64`).
-                                    if (float_field) try self.emit(.{ .load = .{ .ty = .f64 } });
+                                    // A float or `i64` field holds its cell.
+                                    try self.emitFromCell(cell);
                                     try self.emit(.{ .local_set = bind });
                                 }
                             } else if (try self.ctorAsFieldsPattern(pat)) |fp| {
@@ -5339,7 +5413,7 @@ const Emitter = struct {
                         // inside the branch, and a boxed payload lives one
                         // indirection away.
                         if (self.narrowed_opts.get(n)) |o| {
-                            if (o.boxed) try self.emitC(.{ .load = .{} }, "narrowed optional payload");
+                            if (o.boxed) try self.emitUnboxPayload(o, "narrowed optional payload");
                         }
                     } else if (self.globals.contains(n)) {
                         try self.emit(.{ .global_get = self.globalName(n) });
@@ -5750,7 +5824,7 @@ const Emitter = struct {
             // A `?Color` of an all-unit enum: a box around the ordinal, which
             // prints `null` or the variant's name. Through `$__print_opt_i32`
             // it printed the ordinal.
-            if (oi.boxed and !oi.bool_ and !oi.float_) if (try self.optUnitEnumShape(arg, oi)) |shape| {
+            if (oi.boxed and !oi.bool_ and oi.cell == .none) if (try self.optUnitEnumShape(arg, oi)) |shape| {
                 const tmp = try self.declRes();
                 try self.lowerValue(arg);
                 try self.emit(.{ .local_tee = tmp });
@@ -5791,7 +5865,7 @@ const Emitter = struct {
                 self.open(&else_c);
                 try self.emit(.{ .local_get = tmp });
                 try self.emit(self.builder().helper(if (code == 'f')
-                    (if (last) .print_arr_f32 else .print_arr_f32_raw)
+                    (if (last) .print_arr_f64 else .print_arr_f64_raw)
                 else if (last) .print_arr_i32 else .print_arr_i32_raw));
                 const else_seq = self.seal(&else_c, .none);
                 try self.emit(.{ .@"if" = .{ .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
@@ -5824,8 +5898,10 @@ const Emitter = struct {
             try self.emit(if (oi.boxed)
                 b.helper(if (oi.bool_)
                     (if (last) .print_opt_bool else .print_opt_bool_raw)
-                else if (oi.float_)
-                    (if (last) .print_opt_f32 else .print_opt_f32_raw)
+                else if (oi.cell == .f64)
+                    (if (last) .print_opt_f64 else .print_opt_f64_raw)
+                else if (oi.cell == .i64)
+                    (if (last) .print_opt_i64 else .print_opt_i64_raw)
                 else if (last) .print_opt_i32 else .print_opt_i32_raw)
             else if (oi.str)
                 b.helper(if (last) .print_opt_str else .print_opt_str_raw)
@@ -5844,7 +5920,7 @@ const Emitter = struct {
             return;
         }
         // An array of strings, a tuple, an array of tuples: the shape-driven
-        // printer (semantics decision 1a). A flat i32/f32 array keeps its own.
+        // printer (semantics decision 1a). A flat integer or float array keeps its own.
         if (try self.printShapeOf(arg)) |shape| if (!std.mem.eql(u8, shape, "[i") and !std.mem.eql(u8, shape, "[f")) {
             try self.lowerCoerced(arg, "i32");
             const seg = try self.internString(shape);
@@ -5861,9 +5937,9 @@ const Emitter = struct {
                 try self.emit(self.builder().helper(if (last) .print_arr_i32 else .print_arr_i32_raw));
                 return;
             },
-            .f32 => {
+            .f64 => {
                 try self.lowerCoerced(arg, "i32");
-                try self.emit(self.builder().helper(if (last) .print_arr_f32 else .print_arr_f32_raw));
+                try self.emit(self.builder().helper(if (last) .print_arr_f64 else .print_arr_f64_raw));
                 return;
             },
             .str => {},
@@ -5872,6 +5948,11 @@ const Emitter = struct {
         if (t[0] == 'f') {
             try self.lowerCoerced(arg, "f64");
             try self.emit(self.builder().helper(if (last) .print_f64 else .print_f64_raw));
+            return;
+        }
+        if (std.mem.eql(u8, t, "i64")) {
+            try self.lowerValue(arg);
+            try self.emit(self.builder().helper(if (last) .print_i64 else .print_i64_raw));
             return;
         }
         try self.lowerCoerced(arg, "i32");
@@ -6035,11 +6116,9 @@ const Emitter = struct {
             try self.lowerCoerced(recv, "i32");
             try self.lowerCoerced(idx, "i32");
             try self.emit(b.helper(.arr_at));
-            // A float array's slots are `f32`: `$__arr_at` answers the four
-            // bytes, which are the float's *bits*. `fs.at(0)` still prints
-            // them as an integer (`1069547520` for `1.5`) — the same gap, in
-            // the primitive-method path this front's step 6 audits.
-            if (self.elemKindOf(recv) == .f32) try self.emit(.{ .convert = "f32.reinterpret_i32" });
+            // A float array's slot holds the address of the element's `f64`
+            // cell (`$__box_f64`): the value is one load away.
+            if (self.elemKindOf(recv) == .f64) try self.emitFromFloatSlot();
             return;
         }
         return self.refuseUnlessTemplate(self.call_loc, "the wasm backend cannot index this receiver: nothing types it as a string or an array here", .{});
@@ -6138,6 +6217,10 @@ const Emitter = struct {
             // Result constructor (`return v` / `throw e` in a `-> @Result<…>`
             // fn): allocate a fresh `{ tag, payload }` pair (tag 0 = Ok, 1 = Error).
             const tag: u8 = if (std.mem.eql(u8, callee, "__bp_ok")) 0 else 1;
+            // A float or an `i64` does not fit the payload's word, and the
+            // readers (`try`, `unwrapOr`, a `case` arm) take a word.
+            if (Cell.of(self.wasmTypeOf(recv.*)) != .none)
+                return self.refuse(recv.getLoc(), "the wasm backend has no `@Result` holding an `{s}`", .{self.wasmTypeOf(recv.*)});
             const slot = try self.declRes();
             try self.allocResultPair(slot);
             try self.emit(.{ .local_get = slot });
@@ -6180,6 +6263,8 @@ const Emitter = struct {
                 try self.emit(zero);
                 try self.emitC(.{ .store = .{} }, "Ok tag");
                 try self.emit(.{ .local_get = out });
+                if (Cell.of(self.lambdaTailType(lam.body)) != .none)
+                    return self.refuse(loc, "the wasm backend has no `@Result` holding an `{s}`", .{self.lambdaTailType(lam.body)});
                 try self.inlineLambdaBody(lam.body);
                 try self.emitC(.{ .store = .{ .offset = 4 } }, "mapped payload");
                 try self.emit(.{ .local_get = out });
@@ -6243,6 +6328,12 @@ const Emitter = struct {
             const le = lambdaArg(arg1) orelse return self.refuse(loc, "`Option.{s}` on the wasm backend takes a closure written at the call; a function value is not lowered", .{if (is_map) "map" else "flatMap"});
             const lam = le.function.kind;
             const boxed = self.optionIsBoxed(recv.*, null);
+            if (self.optInfoOf(recv.*)) |oi| if (oi.cell != .none) {
+                return self.refuse(loc, "`Option.{s}` over a `?{s}` has no lowering on the wasm backend", .{ if (is_map) "map" else "flatMap", oi.cell.ty() });
+            };
+            if (is_map and Cell.of(self.lambdaTailType(lam.body)) != .none) {
+                return self.refuse(loc, "`Option.map` to an `{s}` has no lowering on the wasm backend", .{self.lambdaTailType(lam.body)});
+            }
             const slot = try self.declRes();
             try self.lowerExpr(recv.*);
             try self.emit(.{ .local_set = slot });
@@ -6278,6 +6369,10 @@ const Emitter = struct {
 
         if (std.mem.eql(u8, callee, "__bp_option_unwrapOr")) {
             const slot = try self.declRes();
+            // A `?f64` / `?i64` answers what its cell holds, the default
+            // that type.
+            const cell: Cell = if (self.optInfoOf(recv.*)) |oi| oi.cell else .none;
+            const res_ty: ValType = vt(cell.ty());
             try self.lowerExpr(recv.*);
             try self.emit(.{ .local_set = slot });
             try self.emitC(.{ .local_get = slot }, option_shape);
@@ -6285,16 +6380,20 @@ const Emitter = struct {
             var then_c: Capture = .{};
             self.open(&then_c);
             try self.emitC(.{ .local_get = slot }, "Some — present value");
-            if (self.optionIsBoxed(recv.*, arg1)) try self.emitC(.{ .load = .{} }, "optional payload");
-            const then_seq = self.seal(&then_c, .{ .value = .i32 });
+            if (cell != .none)
+                try self.emitC(.{ .load = .{ .ty = res_ty } }, "optional payload")
+            else if (self.optionIsBoxed(recv.*, arg1)) try self.emitC(.{ .load = .{} }, "optional payload");
+            const then_seq = self.seal(&then_c, .{ .value = res_ty });
 
             var else_c: Capture = .{};
             self.open(&else_c);
-            if (arg1) |d| try self.lowerExpr(d.*) else try self.emit(zero);
-            const else_seq = self.seal(&else_c, .{ .value = .i32 });
+            if (cell != .none) {
+                if (arg1) |d| try self.lowerCoerced(d.*, cell.ty()) else try self.emit(constOf(cell.ty(), "0"));
+            } else if (arg1) |d| try self.lowerExpr(d.*) else try self.emit(zero);
+            const else_seq = self.seal(&else_c, .{ .value = res_ty });
 
             try self.emit(.{ .@"if" = .{
-                .result = .i32,
+                .result = res_ty,
                 .then = .{ .seq = then_seq },
                 .@"else" = .{ .seq = else_seq },
             } });
@@ -6796,7 +6895,7 @@ const Emitter = struct {
     /// Decision 8 §5.1 P6/P7 — `#(0, s)`: each element that tests something
     /// is read from its slot (`i * 4`, no header) and tested in a chain, as a
     /// variant's payload literals are; a binder, `_` and the elements `..`
-    /// skips test nothing. A float element is an `f32` slot, which the `i32`
+    /// skips test nothing. A float element is a cell (`emitToFloatSlot`), which the `i32`
     /// tests here cannot compare — refused, never compared as bits.
     fn emitTuplePatternTest(self: *Emitter, v: anytype, subj: []const u8, loc: ast.Loc) anyerror!void {
         try self.emit(one);
@@ -6840,7 +6939,7 @@ const Emitter = struct {
             '[' => {
                 try self.print_shape_locals.put(n, code);
                 try self.arr_locals.put(n, {});
-                try self.arr_elem_locals.put(n, if (code.len > 1 and code[1] == 's') .str else if (code.len > 1 and code[1] == 'f') .f32 else .i32);
+                try self.arr_elem_locals.put(n, if (code.len > 1 and code[1] == 's') .str else if (code.len > 1 and code[1] == 'f') .f64 else .i32);
             },
             else => {},
         }
@@ -6861,7 +6960,7 @@ const Emitter = struct {
                 .numberLit => |n| n,
                 else => continue,
             };
-            if (self.arr_elem_locals.get(subj) == .f32 or numLitType(n)[0] == 'f')
+            if (self.arr_elem_locals.get(subj) == .f64 or numLitType(n)[0] == 'f')
                 return self.refuse(loc, "the wasm backend cannot test a float list element against a pattern", .{});
             var then_c: Capture = .{};
             self.open(&then_c);
@@ -6888,15 +6987,16 @@ const Emitter = struct {
                 .bind => |b| b,
                 else => continue,
             };
-            const float = ek == .f32;
+            const float = ek == .f64;
             const n = try self.bindName(name, if (float) "f64" else "i32");
             try self.emit(.{ .local_get = subj });
-            try self.emit(.{ .load = .{ .ty = if (float) .f32 else .i32, .offset = @intCast((i + 1) * 4) } });
-            try self.emitConvert(if (float) "f32" else "i32", self.locals.get(n) orelse "i32");
+            try self.emit(.{ .load = .{ .offset = @intCast((i + 1) * 4) } });
+            if (float) try self.emitFromFloatSlot();
+            try self.emitConvert(if (float) "f64" else "i32", self.locals.get(n) orelse "i32");
             try self.emit(.{ .local_set = n });
             if (sh) |shape| if (shape.len > 1) try self.noteTupleElemLocal(n, shape[1..]);
             if (ek == .str) try self.str_locals.put(n, {});
-            if (ek != .f32) try self.tuple_binders.put(self.reg_arena.allocator(), n, {});
+            if (ek != .f64) try self.tuple_binders.put(self.reg_arena.allocator(), n, {});
         }
         const rest = l.spread orelse return;
         if (rest.len == 0) return;
@@ -6920,8 +7020,9 @@ const Emitter = struct {
             if (sub == .ident and self.patternOnlyBinds(sub)) {
                 const n = try self.bindName(sub.ident, if (float) "f64" else "i32");
                 try self.emit(.{ .local_get = subj });
-                try self.emit(.{ .load = .{ .ty = if (float) .f32 else .i32, .offset = @intCast(i * 4) } });
-                try self.emitConvert(if (float) "f32" else "i32", self.locals.get(n) orelse "i32");
+                try self.emit(.{ .load = .{ .offset = @intCast(i * 4) } });
+                if (float) try self.emitFromFloatSlot();
+                try self.emitConvert(if (float) "f64" else "i32", self.locals.get(n) orelse "i32");
                 try self.emit(.{ .local_set = n });
                 try self.noteTupleElemLocal(n, code);
                 try self.tuple_binders.put(self.reg_arena.allocator(), n, {});
@@ -7220,11 +7321,12 @@ const Emitter = struct {
                         },
                         else => {},
                     }
-                    // payload slots are 4 bytes: a float field is an f32
+                    // payload slots are 4 bytes: a float field's holds its cell
                     const slot_float = local_ty[0] == 'f';
                     try self.emit(.{ .local_get = subj });
-                    try self.emit(.{ .load = .{ .ty = if (slot_float) .f32 else .i32, .offset = @intCast((i + 1) * 4) } });
-                    try self.emitConvert(if (slot_float) "f32" else "i32", local_ty);
+                    try self.emit(.{ .load = .{ .offset = @intCast((i + 1) * 4) } });
+                    if (slot_float) try self.emitFromFloatSlot();
+                    try self.emitConvert(if (slot_float) "f64" else "i32", local_ty);
                     try self.emit(.{ .local_set = n });
                 }
             },
@@ -7318,19 +7420,66 @@ const Emitter = struct {
         return base;
     }
 
-    /// Store one 4-byte slot. A float operand is kept a float — narrowed to
-    /// `f32` so it still fits the slot — and stored with `f32.store`; feeding a
-    /// float to `i32.store` is a validation error that rejected the module.
-    /// KNOWN LIMIT: an `f64` field therefore round-trips at `f32` precision.
+    /// Store one 4-byte slot. A float operand goes in as the address of its
+    /// own `f64` cell (`emitToFloatSlot`); narrowed to an `f32` in the slot,
+    /// `1.1` read back as `1.100000023841858` at exit 0.
     fn storeSlotExpr(self: *Emitter, base: []const u8, offset: u32, value: ast.Expr) !void {
         try self.emit(.{ .local_get = base });
-        const value_ty = self.wasmTypeOf(value);
-        const is_float = std.mem.eql(u8, value_ty, "f32") or std.mem.eql(u8, value_ty, "f64");
-        if (is_float) try self.lowerCoerced(value, "f32") else try self.lowerCoerced(value, "i32");
-        try self.emit(.{ .store = .{
-            .ty = if (is_float) .f32 else .i32,
-            .offset = offset,
-        } });
+        try self.lowerSlotWord(value);
+        try self.emit(.{ .store = .{ .offset = offset } });
+    }
+
+    /// Leave the word a 4-byte slot holds for `value`: a float's `f64` cell
+    /// (`$__box_f64`), anything else the `i32` word itself.
+    fn lowerSlotWord(self: *Emitter, value: ast.Expr) anyerror!void {
+        if (self.wasmTypeOf(value)[0] == 'f') {
+            try self.lowerCoerced(value, "f64");
+            try self.emitToFloatSlot();
+        } else try self.lowerCoerced(value, "i32");
+    }
+
+    /// Leave the address of `value`'s 8-byte `cell` — an `f64` or an `i64`
+    /// — the word a declared field or optional of that type holds.
+    fn lowerCellWord(self: *Emitter, value: ast.Expr, cell: Cell) anyerror!void {
+        try self.lowerCoerced(value, cell.ty());
+        try self.emit(self.builder().helper(switch (cell) {
+            .f64 => .box_f64,
+            .i64 => .box_i64,
+            .none => unreachable,
+        }));
+    }
+
+    /// The value a cell's address on the stack stands for.
+    fn emitFromCell(self: *Emitter, cell: Cell) !void {
+        if (cell != .none) try self.emit(.{ .load = .{ .ty = vt(cell.ty()) } });
+    }
+
+    /// The word an element of an array of `kind` holds for `value`: a float
+    /// array's every element is an `f64` cell (an integer one too —
+    /// `[1, 2.5]`), and a float never enters an array whose readers take
+    /// words: `var xs = []; xs.push(0.15)` has no element type the backend
+    /// can see, and its pointer printed as an integer at exit 0.
+    fn lowerElemWord(self: *Emitter, kind: ElemKind, value: ast.Expr) anyerror!void {
+        if (kind == .f64) {
+            try self.lowerCoerced(value, "f64");
+            return self.emitToFloatSlot();
+        }
+        if (self.wasmTypeOf(value)[0] == 'f')
+            return self.refuse(value.getLoc(), "the wasm backend cannot place a float in this array: nothing types its elements as floats (write the array's type, `Array<f64>`)", .{});
+        try self.lowerCoerced(value, "i32");
+    }
+
+    /// A float in a 4-byte word slot — an array or tuple element, a variant's
+    /// payload, a `?f64`, a closure's capture — is the address of an 8-byte
+    /// `f64` cell, as a record's float field is (`storeBoxedF64`): the `f64`
+    /// on the stack becomes that address.
+    fn emitToFloatSlot(self: *Emitter) !void {
+        try self.emit(self.builder().helper(.box_f64));
+    }
+
+    /// The `f64` a float slot's word (the address of its cell) stands for.
+    fn emitFromFloatSlot(self: *Emitter) !void {
+        try self.emit(.{ .load = .{ .ty = .f64 } });
     }
 
     /// Store a float field of a named record: the 4-byte slot holds the
@@ -7399,11 +7548,16 @@ const Emitter = struct {
     /// spread was dropped with a `;; note` and the array was two short.
     fn lowerArrayLit(self: *Emitter, al: anytype, loc: ast.Loc) anyerror!void {
         const total: u32 = @intCast((al.elems.len + 1) * 4);
+        // One element kind for the whole literal (`elemKindOf`: a float
+        // anywhere makes every slot a cell), which is the kind its readers ask.
+        const kind = self.elemKindOf(.{ .collection = .{ .loc = loc, .kind = .{ .arrayLit = al } } });
         const base = try self.allocSlots(total);
         try self.storeSlotConst(base, 0, @intCast(al.elems.len));
         for (al.elems, 0..) |el, i| {
             const off: u32 = @intCast((i + 1) * 4);
-            try self.storeSlotExpr(base, off, el);
+            try self.emit(.{ .local_get = base });
+            try self.lowerElemWord(kind, el);
+            try self.emit(.{ .store = .{ .offset = off } });
         }
         try self.loadBase(base);
         if (al.spreadExpr) |se| {
@@ -7583,6 +7737,27 @@ const Emitter = struct {
             var spec = cc;
             spec.callee = sym;
             return self.lowerPlainCall(spec, loc);
+        }
+        // The ONE body of a generic `fn` holds every type parameter as a word.
+        // A float or an `i64` reaching it inside a parameter typed by one
+        // (`first(#(1.1, 2))` over `#(A, B)`, `headOf([1.1])` over
+        // `Array<T>`) is a cell that body reads as a word: `264` printed for
+        // `1.1` at exit 0. No specialisation took it, so it is refused.
+        if (self.generic_fns.get(self.import_aliases.get(cc.callee) orelse cc.callee)) |g| {
+            var pi: usize = 0;
+            for (g.decl.params) |p| {
+                if (std.mem.eql(u8, p.name, "self")) continue;
+                defer pi += 1;
+                if (pi >= cc.args.len) break;
+                // A bare `T` passes its argument through untouched (a float
+                // one takes a specialised copy); a container OF one is read
+                // inside by the body.
+                if (p.typeRef == .named or !typeMentionsParam(p.typeRef, g.decl.genericParams)) continue;
+                const arg = cc.args[pi].value.*;
+                const sh = (try self.printShapeOf(arg)) orelse "";
+                if (Cell.of(self.wasmTypeOf(arg)) != .none or std.mem.indexOfAny(u8, sh, "fl") != null)
+                    return self.refuse(arg.getLoc(), "the wasm backend has one body for generic `{s}`, where `{s}`'s type parameter is a word: a float or an `i64` in it has no lowering", .{ cc.callee, p.name });
+            }
         }
         if (self.fn_sigs.get(cc.callee)) |sig| {
             var base: usize = 0;
@@ -7768,8 +7943,8 @@ const Emitter = struct {
                 else => {},
             },
             // `x?.n` — a field read through the chain: its declared type. A
-            // float field has no box here (`OptInfo.float_` is an `f32` slot
-            // of an array), so it is left to the unguarded path.
+            // float field has no chained lowering here, so it is left to the
+            // unguarded path.
             .identifier => |id| switch (id.kind) {
                 .identAccess => |ia| if (self.recordTypeOfExpr(ia.receiver.*)) |rty| {
                     if (self.fieldTypeIn(rty, ia.member)) |ft| {
@@ -7937,7 +8112,7 @@ const Emitter = struct {
         if (self.elemIsBool(recv) catch false) return "bool";
         return switch (self.elemKindOf(recv)) {
             .str => "string",
-            .f32 => "f32",
+            .f64 => "f64",
             .i32 => "i32",
         };
     }
@@ -8098,7 +8273,7 @@ const Emitter = struct {
     }
 
     /// `$__arr_unique`'s equality for the elements of `recv`: `0` the slot's
-    /// word (an integer, a bool, an all-unit enum's ordinal), `1` its `f32`,
+    /// word (an integer, a bool, an all-unit enum's ordinal), `1` its cell's `f64`,
     /// `2` a string's content. Null for an element whose `!=` this backend
     /// has no lowering for — a record, an array, a tuple —, which is refused.
     fn uniqueMode(self: *Emitter, recv: ast.Expr) anyerror!?i32 {
@@ -8114,7 +8289,7 @@ const Emitter = struct {
         }
         return switch (self.elemKindOf(recv)) {
             .i32 => 0,
-            .f32 => 1,
+            .f64 => 1,
             .str => 2,
         };
     }
@@ -8241,6 +8416,14 @@ const Emitter = struct {
                 }
             },
             .int => {
+                // An `i64` answers its text in all its digits; its other
+                // methods have no `i64` lowering here, and the narrowing
+                // below refuses them.
+                if (std.mem.eql(u8, self.wasmTypeOf(recv), "i64") and eq(u8, name, "toString")) {
+                    try self.lowerValue(recv);
+                    try self.emit(b.helper(.i64_to_str));
+                    return;
+                }
                 try self.lowerCoerced(recv, "i32");
                 if (eq(u8, name, "abs")) {
                     try self.emit(b.helper(.i32_abs));
@@ -8383,7 +8566,7 @@ const Emitter = struct {
             };
             try self.lowerArrayHof(@intFromEnum(Hof.filter), recv, lam, null);
             try self.emit(zero);
-            try self.emit(b.helper(if (self.arrayElemOpt(recv).boxed) .arr_at_box else .arr_at));
+            try self.emit(b.helper(self.arrAtHelper(recv)));
             return;
         }
         // `xs.flatMap(f)` is `primitives.bp`'s own body, `xs.map(f).flatten()`
@@ -8423,10 +8606,11 @@ const Emitter = struct {
             const v = callArg(cc, 0).?;
             try self.lowerCoerced(recv, "i32");
             try self.emitC(.{ .load = .{} }, "element count");
-            if (self.wasmTypeOf(v)[0] == 'f') {
-                try self.lowerCoerced(v, "f32");
-                try self.emit(.{ .convert = "i32.reinterpret_f32" });
-            } else try self.lowerCoerced(v, "i32");
+            // The result holds `v`s whatever the receiver held (its shape is
+            // `v`'s, `newArrShape`): a float fills every slot with the one
+            // cell — a cell is never written again, so sharing it is sharing
+            // a value.
+            try self.lowerSlotWord(v);
             try self.emit(b.helper(.arr_fill));
             return;
         }
@@ -8449,7 +8633,7 @@ const Emitter = struct {
             // scalar is boxed. `arrayElemOpt` is the ONE place that decides,
             // and `optInfoOf` reads the same answer — see its doc comment.
             if (eq(u8, name, "first")) try self.emit(zero) else try self.lowerCoerced(callArg(cc, 0).?, "i32");
-            try self.emit(b.helper(if (self.arrayElemOpt(recv).boxed) .arr_at_box else .arr_at));
+            try self.emit(b.helper(self.arrAtHelper(recv)));
         } else if (eq(u8, name, "toList")) {
             // the array itself
         } else if (eq(u8, name, "reverse")) {
@@ -8474,19 +8658,31 @@ const Emitter = struct {
             const arg = callArg(cc, 0).?;
             if (eq(u8, name, "join")) {
                 try self.lowerCoerced(arg, "i32");
-                try self.emit(b.helper(if (elem == .str) .arr_join_str else .arr_join_i32));
+                try self.emit(b.helper(if (elem == .str) .arr_join_str else if (elem == .f64) .arr_join_f64 else .arr_join_i32));
             } else if (eq(u8, name, "lastIndexOf")) {
-                try self.lowerCoerced(arg, "i32");
-                try self.emit(b.helper(if (elem == .str or self.isStringExpr(arg)) .arr_last_index_of_str else .arr_last_index_of_i32));
+                if (elem == .f64) {
+                    try self.lowerCoerced(arg, "f64");
+                    try self.emit(b.helper(.arr_last_index_of_f64));
+                } else {
+                    try self.lowerCoerced(arg, "i32");
+                    try self.emit(b.helper(if (elem == .str or self.isStringExpr(arg)) .arr_last_index_of_str else .arr_last_index_of_i32));
+                }
             } else if (eq(u8, name, "indexOf") or eq(u8, name, "contains")) {
-                try self.lowerCoerced(arg, "i32");
-                try self.emit(b.helper(if (elem == .str or self.isStringExpr(arg)) .arr_index_of_str else .arr_index_of_i32));
+                if (elem == .f64) {
+                    try self.lowerCoerced(arg, "f64");
+                    try self.emit(b.helper(.arr_index_of_f64));
+                } else {
+                    try self.lowerCoerced(arg, "i32");
+                    try self.emit(b.helper(if (elem == .str or self.isStringExpr(arg)) .arr_index_of_str else .arr_index_of_i32));
+                }
                 if (eq(u8, name, "contains")) {
                     try self.emit(try self.constInt(-1));
                     try self.emit(opOf("i32", "ne"));
                 }
             } else {
-                try self.lowerCoerced(arg, "i32");
+                // `prepend` takes an element (a float as its cell), `append`
+                // and `zip` an array.
+                if (eq(u8, name, "prepend")) try self.lowerElemWord(elem, arg) else try self.lowerCoerced(arg, "i32");
                 try self.emit(b.helper(if (eq(u8, name, "prepend")) .arr_prepend else if (eq(u8, name, "append")) .arr_concat else .arr_zip));
             }
         }
@@ -8590,7 +8786,7 @@ const Emitter = struct {
                     try self.emit(.{ .load = .{ .offset = off } });
                     try self.emit(.{ .local_tee = arr });
                     try self.emit(try self.constInt(-1));
-                    try self.emit(b.helper(if (self.arrayElemOpt(recv).boxed) .arr_at_box else .arr_at));
+                    try self.emit(b.helper(self.arrAtHelper(recv)));
                     try self.emit(.{ .local_get = owner });
                     try self.emit(.{ .local_get = arr });
                     try self.emit(zero);
@@ -8612,7 +8808,7 @@ const Emitter = struct {
         const get: Instr = if (self.locals.contains(n)) .{ .local_get = n } else .{ .global_get = n };
         try self.emit(get);
         try self.emit(try self.constInt(-1));
-        try self.emit(b.helper(if (self.arrayElemOpt(recv).boxed) .arr_at_box else .arr_at));
+        try self.emit(b.helper(self.arrAtHelper(recv)));
         try self.emit(get);
         try self.emit(zero);
         try self.emit(get);
@@ -8633,7 +8829,7 @@ const Emitter = struct {
                 .ident => |n0| if (self.locals.contains(self.resolveName(n0)) or self.globals.contains(self.resolveName(n0))) {
                     const n = self.resolveName(n0);
                     try self.lowerCoerced(recv, "i32");
-                    try self.lowerCoerced(arg, "i32");
+                    try self.lowerElemWord(self.elemKindOf(recv), arg);
                     try self.emit(self.builder().helper(.arr_push));
                     try self.emit(if (self.locals.contains(n)) .{ .local_set = n } else .{ .global_set = n });
                     return;
@@ -8644,7 +8840,7 @@ const Emitter = struct {
                     try self.emit(.{ .local_tee = mem });
                     try self.emit(.{ .local_get = mem });
                     try self.emit(.{ .load = .{ .offset = off } });
-                    try self.lowerCoerced(arg, "i32");
+                    try self.lowerElemWord(self.elemKindOf(recv), arg);
                     try self.emit(self.builder().helper(.arr_push));
                     try self.emitCf(.{ .store = .{ .offset = off } }, ".{s} = push", .{ia.member});
                     return;
@@ -8684,7 +8880,7 @@ const Emitter = struct {
         try self.declareLocal(len, "i32");
 
         const elem_kind = self.elemKindOf(recv);
-        const elem_ty: []const u8 = if (elem_kind == .f32) "f32" else "i32";
+        const elem_ty: []const u8 = if (elem_kind == .f64) "f64" else "i32";
         // fold binds (acc, item); the others bind (item).
         const acc_param0: ?[]const u8 = if (hof == fold and lam.params.len > 0) lam.params[0] else null;
         const elem_param0: ?[]const u8 = if (hof == fold)
@@ -8693,13 +8889,14 @@ const Emitter = struct {
         // A binder over a name the function already binds (`val e = 5;
         // xs.forEach({ e -> … })`) is a local of its own — read `e` after the
         // walk and it answered the last element.
-        const acc_param: ?[]const u8 = if (acc_param0) |p| try self.bindTarget(p) else null;
-        const elem_param: ?[]const u8 = if (elem_param0) |p| try self.bindTarget(p) else null;
         const acc_ty: []const u8 = if (hof == fold) (if (init_expr) |i| self.wasmTypeOf(i) else "i32") else "i32";
+        const acc_param: ?[]const u8 = if (acc_param0) |p| try self.bindTargetAs(p, acc_ty) else null;
+        const elem_param: ?[]const u8 = if (elem_param0) |p| try self.bindTargetAs(p, elem_ty) else null;
         try self.declareLocal(acc, acc_ty);
         if (hof == map or hof == filter) try self.declareLocal(out, "i32");
         if (elem_param) |p| {
             try self.declareLocal(p, elem_ty);
+            try self.noteElemShape(p, recv);
             if (elem_kind == .str) try self.str_locals.put(p, {});
             if (try self.elemIsBool(recv)) try self.bool_locals.put(p, {});
             // An element of a generic record whose type arguments are known
@@ -8768,7 +8965,8 @@ const Emitter = struct {
             try self.emitAt(8, try self.constInt(4));
             try self.emitAt(8, opOf("i32", "mul"));
             try self.emitAt(8, opOf("i32", "add"));
-            try self.emitAt(8, .{ .load = .{ .ty = vt(elem_ty), .offset = 4 } });
+            try self.emitAt(8, .{ .load = .{ .offset = 4 } });
+            if (elem_kind == .f64) try self.emitAt(8, .{ .load = .{ .ty = .f64 } });
             try self.emitAt(8, .{ .local_set = p });
         }
         if (acc_param) |p| {
@@ -8789,8 +8987,9 @@ const Emitter = struct {
                 try self.emit(opOf("i32", "mul"));
                 try self.emit(opOf("i32", "add"));
                 try self.inlineLambdaBody(lam.body);
-                try self.emitConvert(tail_ty, if (is_float) "f32" else "i32");
-                try self.emit(.{ .store = .{ .ty = if (is_float) .f32 else .i32, .offset = 4 } });
+                try self.emitConvert(tail_ty, if (is_float) "f64" else "i32");
+                if (is_float) try self.emitToFloatSlot();
+                try self.emit(.{ .store = .{ .offset = 4 } });
             },
             fold => {
                 const tail_ty = self.lambdaTailType(lam.body);
@@ -8882,7 +9081,9 @@ const Emitter = struct {
 
     // ── array element shapes ─────────────────────────────────────────────────
 
-    const ElemKind = enum { i32, f32, str };
+    /// `f64`: each slot holds the address of the element's `f64` cell
+    /// (`emitToFloatSlot`).
+    const ElemKind = enum { i32, f64, str };
 
     /// The element shape a `T[]` / `Array<T>` type spells, when it is an array.
     fn arrayElemOfTypeRef(t: ast.TypeRef) ?ElemKind {
@@ -8905,7 +9106,7 @@ const Emitter = struct {
             .named => |n| if (std.mem.eql(u8, n, "string"))
                 .str
             else if (std.mem.eql(u8, n, "f32") or std.mem.eql(u8, n, "f64"))
-                .f32
+                .f64
             else
                 .i32,
             else => .i32,
@@ -8974,7 +9175,7 @@ const Emitter = struct {
     }
 
     /// The shape `$__print_shaped_raw` walks for `e` (semantics decision 1a):
-    /// `i` an i32, `f` an f32 slot, `b` a bool, `s` a string, `[X` an array of
+    /// `i` an i32, `f` a float's cell, `b` a bool, `s` a string, `[X` an array of
     /// `X`, `(XY…)` a tuple. Null when `e` is not known to be an array or a
     /// tuple.
     fn printShapeOf(self: *Emitter, e: ast.Expr) anyerror!?[]const u8 {
@@ -9037,7 +9238,7 @@ const Emitter = struct {
         if (!self.isArrayExpr(e)) return null;
         return switch (self.elemKindOf(e)) {
             .i32 => "[i",
-            .f32 => "[f",
+            .f64 => "[f",
             .str => "[s",
         };
     }
@@ -9191,7 +9392,7 @@ const Emitter = struct {
     fn elemCode(k: ElemKind) u8 {
         return switch (k) {
             .i32 => 'i',
-            .f32 => 'f',
+            .f64 => 'f',
             .str => 's',
         };
     }
@@ -9223,7 +9424,8 @@ const Emitter = struct {
                     if (al.elems.len == 0) break :blk .i32;
                     const first = al.elems[0];
                     if (self.isStringExpr(first)) break :blk .str;
-                    if (self.wasmTypeOf(first)[0] == 'f') break :blk .f32;
+                    // A float anywhere makes it a float array: `[1, 2.5]`.
+                    for (al.elems) |el| if (self.wasmTypeOf(el)[0] == 'f') break :blk .f64;
                     break :blk .i32;
                 },
                 else => .i32,
@@ -9267,7 +9469,7 @@ const Emitter = struct {
                                 const held = self.holdElemParam(lam, recv);
                                 defer self.releaseElemParam(held);
                                 if (self.isStringExpr(v)) break :blk .str;
-                                if (self.wasmTypeOf(v)[0] == 'f') break :blk .f32;
+                                if (self.wasmTypeOf(v)[0] == 'f') break :blk .f64;
                                 break :blk .i32;
                             }
                             // `05-wasm` step 1's arrays: their element is
@@ -9275,7 +9477,7 @@ const Emitter = struct {
                             if ((self.newArrShape(cc, c.loc) catch null)) |sh| {
                                 if (sh.len >= 2) break :blk switch (sh[1]) {
                                     's' => .str,
-                                    'f' => .f32,
+                                    'f' => .f64,
                                     else => .i32,
                                 };
                             }
@@ -9300,6 +9502,12 @@ const Emitter = struct {
         name: ?[]const u8 = null,
         prev_type: ?[]const u8 = null,
         prev_str: bool = false,
+        /// The name's wasm type and alias before the question: the element
+        /// parameter is the element's width while it is asked about, whatever
+        /// another local of that name holds (`xs.map({ x -> x * 3.0 })`, then
+        /// `[1, 2].map({ x -> x + 1 })` printed its integers as floats).
+        prev_local: ?[]const u8 = null,
+        prev_alias: ?[]const u8 = null,
     };
 
     /// Bind a HOF lambda's element parameter the way `lowerArrayHof` does —
@@ -9312,9 +9520,13 @@ const Emitter = struct {
             .name = p,
             .prev_type = self.local_types.get(p),
             .prev_str = self.str_locals.contains(p),
+            .prev_local = self.locals.get(p),
+            .prev_alias = self.aliases.get(p),
         };
         if (self.elemRecordOf(recv)) |r| self.local_types.put(p, r) catch {};
         if (self.elemKindOf(recv) == .str) self.str_locals.put(p, {}) catch {};
+        _ = self.aliases.remove(p);
+        self.locals.put(p, if (self.elemKindOf(recv) == .f64) "f64" else "i32") catch {};
         return held;
     }
 
@@ -9322,6 +9534,8 @@ const Emitter = struct {
         const p = held.name orelse return;
         if (held.prev_type) |t| self.local_types.put(p, t) catch {} else _ = self.local_types.remove(p);
         if (!held.prev_str) _ = self.str_locals.remove(p);
+        if (held.prev_local) |t| self.locals.put(p, t) catch {} else _ = self.locals.remove(p);
+        if (held.prev_alias) |a| self.aliases.put(p, a) catch {};
     }
 
     // ── function values ──────────────────────────────────────────────────────
@@ -9478,11 +9692,14 @@ const Emitter = struct {
         const base = try self.allocSlots(@intCast((1 + caps.len) * 4));
         try self.storeSlotConst(base, 0, idx);
         for (caps, 0..) |cp, i| {
-            const is_float = cp.ty[0] == 'f';
+            // A float or `i64` capture is a cell of its own (`lowerCellWord`),
+            // which the lambda and the syncs write in place.
+            const cell = Cell.of(cp.ty);
             try self.emit(.{ .local_get = base });
             try self.emit(.{ .local_get = cp.name });
-            try self.emitConvert(cp.ty, if (is_float) "f32" else "i32");
-            try self.emitCf(.{ .store = .{ .ty = if (is_float) .f32 else .i32, .offset = @intCast((i + 1) * 4) } }, "capture {s}", .{cp.name});
+            try self.emitConvert(cp.ty, cell.ty());
+            if (cell != .none) try self.emit(self.builder().helper(if (cell == .f64) .box_f64 else .box_i64));
+            try self.emitCf(.{ .store = .{ .offset = @intCast((i + 1) * 4) } }, "capture {s}", .{cp.name});
         }
         try self.loadBase(base);
     }
@@ -9593,19 +9810,21 @@ const Emitter = struct {
         for (caps, 0..) |cp, i| {
             if (!cp.threaded) continue;
             const ty = self.locals.get(cp.name) orelse continue;
-            const is_float = cp.ty[0] == 'f';
-            const slot: wat.MemArg = .{ .ty = if (is_float) .f32 else .i32, .offset = @intCast((i + 1) * 4) };
+            const cell = Cell.of(cp.ty);
+            const slot: wat.MemArg = .{ .offset = @intCast((i + 1) * 4) };
             switch (dir) {
                 .into_env => {
                     try self.emit(.{ .local_get = env });
+                    if (cell != .none) try self.emit(.{ .load = slot });
                     try self.emit(.{ .local_get = cp.name });
-                    try self.emitConvert(ty, if (is_float) "f32" else "i32");
-                    try self.emitCf(.{ .store = slot }, "sync {s} into env", .{cp.name});
+                    try self.emitConvert(ty, cell.ty());
+                    try self.emitCf(.{ .store = if (cell != .none) .{ .ty = vt(cell.ty()) } else slot }, "sync {s} into env", .{cp.name});
                 },
                 .out_of_env => {
                     try self.emit(.{ .local_get = env });
                     try self.emitCf(.{ .load = slot }, "sync {s} from env", .{cp.name});
-                    try self.emitConvert(if (is_float) "f32" else "i32", ty);
+                    try self.emitFromCell(cell);
+                    try self.emitConvert(cell.ty(), ty);
                     try self.emit(.{ .local_set = cp.name });
                 },
             }
@@ -9617,11 +9836,12 @@ const Emitter = struct {
     fn writeBackCapture(self: *Emitter, name: []const u8) anyerror!void {
         const off = self.env_slots.get(name) orelse return;
         const ty = self.locals.get(name) orelse return;
-        const is_float = ty[0] == 'f';
+        const cell = Cell.of(ty);
         try self.emit(.{ .local_get = "__env" });
+        if (cell != .none) try self.emit(.{ .load = .{ .offset = off } });
         try self.emit(.{ .local_get = name });
-        try self.emitConvert(ty, if (is_float) "f32" else "i32");
-        try self.emitCf(.{ .store = .{ .ty = if (is_float) .f32 else .i32, .offset = off } }, "write {s} back to env", .{name});
+        try self.emitConvert(ty, cell.ty());
+        try self.emitCf(.{ .store = if (cell != .none) .{ .ty = vt(cell.ty()) } else .{ .offset = off } }, "write {s} back to env", .{name});
     }
 
     /// Whether a statement list assigns the plain name `n` (`n = …`, `n += …`),
@@ -9798,7 +10018,10 @@ const Emitter = struct {
                 try self.emitConvert("i32", pt);
             }
             try self.emit(.{ .call = target });
+            const outer_loc = self.stmt_loc;
+            self.stmt_loc = l.loc;
             if (sig.result) |r| try self.emitConvert(r, "i32") else try self.emit(zero);
+            self.stmt_loc = outer_loc;
         } else {
             for (l.params, 0..) |p, i| {
                 try params.append(ar, wat.Builder.param(p, .i32));
@@ -9828,10 +10051,11 @@ const Emitter = struct {
                     try self.arr_locals.put(cp.name, {});
                     try self.arr_elem_locals.put(cp.name, ek);
                 }
-                const is_float = cp.ty[0] == 'f';
+                const cell = Cell.of(cp.ty);
                 try self.emit(.{ .local_get = "__env" });
-                try self.emit(.{ .load = .{ .ty = if (is_float) .f32 else .i32, .offset = @intCast((i + 1) * 4) } });
-                try self.emitConvert(if (is_float) "f32" else "i32", cp.ty);
+                try self.emit(.{ .load = .{ .offset = @intCast((i + 1) * 4) } });
+                try self.emitFromCell(cell);
+                try self.emitConvert(cell.ty(), cp.ty);
                 try self.emit(.{ .local_set = cp.name });
             }
             try self.declareScratch("_try", countTrys(l.body));
@@ -9839,7 +10063,12 @@ const Emitter = struct {
             try self.emitLocalDecls(l.body);
             const tail_type: ?[]const u8 = if (l.body.len > 0) self.wasmTypeOf(l.body[l.body.len - 1].expr) else null;
             const tail = try self.emitBody(l.body, true);
+            // A closure answers through the indirect call's `i32` word: a
+            // float or an `i64` answer is refused at the lambda.
+            const outer_loc = self.stmt_loc;
+            self.stmt_loc = l.loc;
             if (tail == .value) if (tail_type) |t| try self.emitConvert(t, "i32");
+            self.stmt_loc = outer_loc;
         }
         const body = self.seal(&c, .{ .value = .i32 });
         try self.item(.{ .func = try self.builder().func(.{
@@ -9962,7 +10191,7 @@ const Emitter = struct {
             }
             if (self.yieldValue(st.expr)) |v| {
                 if (self.isStringExpr(v)) return .str;
-                if (self.wasmTypeOf(v)[0] == 'f' or self.mentionsAny(v, floats.items)) return .f32;
+                if (self.wasmTypeOf(v)[0] == 'f' or self.mentionsAny(v, floats.items)) return .f64;
                 return .i32;
             }
         }
@@ -10007,14 +10236,40 @@ const Emitter = struct {
     // the payload (`if (x) { v -> … }`, `@print`, a comparison with a value, a
     // string `+`, `unwrapOr`/`map`).
 
+    /// What an 8-byte cell holds: a float or an `i64`, each wider than the
+    /// 4-byte word every slot of this backend is.
+    const Cell = enum {
+        none,
+        f64,
+        i64,
+
+        /// The wasm type of what the cell holds — `i32` for a word.
+        fn ty(c: Cell) []const u8 {
+            return switch (c) {
+                .none => "i32",
+                .f64 => "f64",
+                .i64 => "i64",
+            };
+        }
+
+        /// The cell a value of wasm type `t` needs, if any.
+        fn of(t: []const u8) Cell {
+            if (t[0] == 'f') return .f64;
+            if (std.mem.eql(u8, t, "i64")) return .i64;
+            return .none;
+        }
+    };
+
     const OptInfo = struct {
         /// The payload is a scalar in a box (else the value is the payload).
         boxed: bool,
         str: bool = false,
         bool_: bool = false,
-        /// The boxed payload is an `f32` slot, not an integer — a float array's
-        /// `at`/`first`. Read as an `i32` it prints the float's bits.
-        float_: bool = false,
+        /// The payload is an `f64` or an `i64`, and the box is its 8-byte cell
+        /// (`$__box_f64` / `$__box_i64`) — a `?f64`, a `?i64`, a float array's
+        /// `at`/`first` (whose slot already holds the cell), a `?.` over such
+        /// a field. Read as an `i32` it printed the float's bits.
+        cell: Cell = .none,
         /// The payload is a value of this record type — `es.at(0)` over an
         /// `Entry[]`. It names the field offsets a `?.` read needs and the
         /// header `$__print_opt_tagged` writes, and it is the reason a record
@@ -10046,6 +10301,8 @@ const Emitter = struct {
                 .{ .boxed = false, .str = true, .inner = inner }
             else if (std.mem.eql(u8, n, "bool"))
                 .{ .boxed = true, .bool_ = true, .inner = inner }
+            else if (fieldCellOf(n) != .none)
+                .{ .boxed = true, .cell = fieldCellOf(n), .inner = inner }
             else if (isScalarName(n))
                 .{ .boxed = true, .inner = inner }
                 // An all-unit enum's value is its ordinal — `0` for the first
@@ -10282,12 +10539,27 @@ const Emitter = struct {
                 if (self.elemRecordOf(arg)) |r| return .{ .name = n, .ty = r };
                 return .{ .name = n, .ty = switch (self.elemKindOf(arg)) {
                     .str => "string",
-                    .f32 => return null,
+                    .f64 => return null,
                     .i32 => "i32",
                 } };
             },
             else => return null,
         }
+    }
+
+    /// Whether the written type `t` names one of `gps` anywhere in it.
+    fn typeMentionsParam(t: ast.TypeRef, gps: []const ast.GenericParam) bool {
+        return switch (t) {
+            .named => |n| isGenericParamName(n, gps, &.{}),
+            .optional, .array => |inner| typeMentionsParam(inner.*, gps),
+            .generic => |g| for (g.args) |a| {
+                if (typeMentionsParam(a, gps)) break true;
+            } else false,
+            .tuple_ => |es| for (es) |e| {
+                if (typeMentionsParam(e, gps)) break true;
+            } else false,
+            else => false,
+        };
     }
 
     fn isGenericParamName(n: []const u8, a: []const ast.GenericParam, b: []const ast.GenericParam) bool {
@@ -10583,6 +10855,15 @@ const Emitter = struct {
     /// integer) and read as a bare pointer, so `es.at(0)?.key.length()` loaded
     /// the box, then the record's first slot, and printed a heap address
     /// (`276`) at exit 0 where the other three backends answer `3`.
+    /// The helper `xs.at(i)` reads one element of `recv` with, by
+    /// `arrayElemOpt`: a boxed scalar through `$__arr_at_box`, a pointer — and
+    /// a float, whose slot already holds its `f64` cell, the box a `?f64` is —
+    /// as the slot's own word.
+    fn arrAtHelper(self: *Emitter, recv: ast.Expr) wat.Helper {
+        const oi = self.arrayElemOpt(recv);
+        return if (oi.boxed and oi.cell == .none) .arr_at_box else .arr_at;
+    }
+
     fn arrayElemOpt(self: *Emitter, recv: ast.Expr) OptInfo {
         // A record is its own pointer: `0` is absence, as it is for a string,
         // and a box would only hide the payload from every reader.
@@ -10595,7 +10876,7 @@ const Emitter = struct {
         if ((self.printShapeOf(recv) catch null)) |sh| if (std.mem.eql(u8, sh, "[b")) return .{ .boxed = true, .bool_ = true };
         return switch (self.elemKindOf(recv)) {
             .str => .{ .boxed = false, .str = true },
-            .f32 => .{ .boxed = true, .float_ = true },
+            .f64 => .{ .boxed = true, .cell = .f64 },
             .i32 => .{ .boxed = true },
         };
     }
@@ -10738,6 +11019,8 @@ const Emitter = struct {
                     const ft = self.fieldTypeIn(rty, ia.member);
                     if (ft == null or self.resolveRecordName(ft.?) != null) return .{ .boxed = false };
                     if (std.mem.eql(u8, ft.?, "string")) return .{ .boxed = false, .str = true };
+                    // A float or `i64` field's slot already holds its cell.
+                    if (fieldCellOf(ft.?) != .none) return .{ .boxed = true, .cell = fieldCellOf(ft.?) };
                     return .{ .boxed = true, .bool_ = std.mem.eql(u8, ft.?, "bool") };
                 },
                 else => {},
@@ -10817,8 +11100,18 @@ const Emitter = struct {
     /// union slot, a `?T`'s `$__box_i32` cell otherwise.
     fn lowerBoxedInto(self: *Emitter, target: ?ast.TypeRef, value: ast.Expr) anyerror!void {
         if (target) |t| if (isUnknownTypeRef(t)) return self.lowerAsUnknown(value);
+        // A `?f64`'s / `?i64`'s box is the value's own 8-byte cell.
+        const cell: Cell = if (target) |t| (if (self.optInfoOfTypeRef(t)) |oi| oi.cell else .none) else .none;
+        if (cell != .none or Cell.of(self.wasmTypeOf(value)) != .none)
+            return self.lowerCellWord(value, if (cell != .none) cell else Cell.of(self.wasmTypeOf(value)));
         try self.lowerCoerced(value, "i32");
         try self.emit(self.builder().helper(.box_i32));
+    }
+
+    /// The payload of the boxed optional on the stack: the word its box holds,
+    /// or — a `?f64` — the `f64` its cell holds.
+    fn emitUnboxPayload(self: *Emitter, o: OptInfo, what: []const u8) !void {
+        try self.emitC(.{ .load = .{ .ty = vt(o.cell.ty()) } }, what);
     }
 
     // ── record inherent methods ──────────────────────────────────────────────
@@ -10998,8 +11291,11 @@ const Emitter = struct {
                     try self.emit(.{ .local_get = base });
                     try self.lowerBoxedInto(ftref, arg.value.*);
                     try self.emit(.{ .store = .{ .offset = off } });
-                } else if (isFloatTypeName(self.fieldTypeIn(cc.callee, fname) orelse "")) {
-                    try self.storeBoxedF64(base, off, arg.value.*);
+                } else if (fieldCellOf(self.fieldTypeIn(cc.callee, fname) orelse "") != .none) {
+                    // A float or `i64` field holds the address of its cell.
+                    try self.emit(.{ .local_get = base });
+                    try self.lowerCellWord(arg.value.*, fieldCellOf(self.fieldTypeIn(cc.callee, fname).?));
+                    try self.emit(.{ .store = .{ .offset = off } });
                 } else {
                     // A lambda stored in a function-typed field takes its
                     // parameter types from the field's declaration, as one
@@ -11017,6 +11313,12 @@ const Emitter = struct {
                     };
                     if (arg.value.* == .function) self.expected_fn = fexp;
                     defer self.expected_fn = null;
+                    // A float or an `i64` in a field its declaration does not
+                    // type as one (`Box<T>(value: T)`): the slot would hold a
+                    // cell that every reader of `T` takes for a word — `300`
+                    // printed for `Box(value: 1.1).value` at exit 0.
+                    if (Cell.of(self.wasmTypeOf(arg.value.*)) != .none)
+                        return self.refuse(arg.value.getLoc(), "the wasm backend cannot hold an `{s}` in field `{s}`: its declared type is not one, and its readers take a word", .{ self.wasmTypeOf(arg.value.*), fname });
                     const lambda_at: u32 = @intCast(self.lambdas.items.len);
                     try self.storeSlotExpr(base, off, arg.value.*);
                     if (arg.value.* == .function and self.lambdas.items.len > lambda_at) {
@@ -11060,6 +11362,15 @@ const Emitter = struct {
         for (variant.fields, 0..) |vf, i| {
             const off: u32 = @intCast(tag_header_bytes + (i + 1) * 4);
             if (self.argForField(cc.args, vf.name, i)) |arg| {
+                // A float's slot holds its cell, which only a payload declared
+                // a float is read as: under a type parameter (`Some(v: T)`) a
+                // binder and the printer took the cell's address for the value.
+                const declared_float = switch (vf.typeRef) {
+                    .named => |n| isFloatTypeName(n),
+                    else => false,
+                };
+                if (self.wasmTypeOf(arg.value.*)[0] == 'f' and !declared_float)
+                    return self.refuse(arg.value.getLoc(), "the wasm backend cannot hold an `f64` in payload `{s}`: its declared type is not one, and its readers take a word", .{vf.name});
                 try self.storeSlotExpr(base, off, arg.value.*);
             } else {
                 try self.storeSlotConst(base, off, 0);
@@ -11108,10 +11419,12 @@ const Emitter = struct {
             try self.emitC(.{ .load = .{} }, "string length");
             return;
         }
-        // Tuple element access: `_0`, `_1`, ... → load at `index * 4`.
+        // Tuple element access: `_0`, `_1`, ... → load at `index * 4`; a
+        // float element's slot holds its cell.
         if (tupleIndex(ia.member)) |idx| {
             try self.lowerExpr(ia.receiver.*);
             try self.emitLoadOffset(idx * 4);
+            if (try self.tupleElemShapeOf(.{ .identifier = .{ .loc = loc, .kind = .{ .identAccess = ia } } })) |el| if (el[0] == 'f') try self.emitFromFloatSlot();
             return;
         }
         // Qualified enum unit variant: `Color.Red` → variant tag.
@@ -11156,8 +11469,8 @@ const Emitter = struct {
                 }
                 try self.lowerExpr(ia.receiver.*);
                 try self.emitCf(.{ .load = .{ .offset = off } }, ".{s}", .{ia.member});
-                // A float field is a boxed `f64` (`storeBoxedF64`).
-                if (isFloatTypeName(self.fieldTypeIn(rty, ia.member) orelse "")) try self.emit(.{ .load = .{ .ty = .f64 } });
+                // A float or `i64` field holds its cell.
+                try self.emitFromCell(fieldCellOf(self.fieldTypeIn(rty, ia.member) orelse ""));
                 return;
             }
         }
@@ -11165,6 +11478,10 @@ const Emitter = struct {
         // path still has to short-circuit on a null pointer, so use the same
         // `local.tee` + `i32.eqz` guard as the typed branch above.
         if (self.uniqueFieldOffset(ia.member)) |off| {
+            // The slot of a float field holds a cell, which a read by the
+            // name alone cannot tell from an integer's word.
+            if (self.someFieldIsFloat(ia.member))
+                return self.refuse(loc, "the wasm backend cannot read `.{s}`: the receiver's type is not known here, and a record declares it a float or an `i64`", .{ia.member});
             if (ia.optional) {
                 try self.lowerOptionalField(ia, off, " (unique)");
                 return;
@@ -11199,7 +11516,7 @@ const Emitter = struct {
         try self.emitAtCf(8, .{ .load = .{ .offset = off } }, "?.{s}{s}", .{ ia.member, suffix });
         // `?.` makes the result a `?T`: a scalar field goes in a box.
         if (self.optInfoOf(.{ .identifier = .{ .loc = .{ .line = 0, .col = 0 }, .kind = .{ .identAccess = ia } } })) |oi| {
-            if (oi.boxed) try self.emitAt(8, self.builder().helper(.box_i32));
+            if (oi.boxed and oi.cell == .none) try self.emitAt(8, self.builder().helper(.box_i32));
         }
         const else_seq = self.seal(&else_c, .{ .value = .i32 });
 
@@ -11224,7 +11541,7 @@ const Emitter = struct {
         const fields = self.records.get(name) orelse return null;
         var out: std.ArrayListUnmanaged(u8) = .empty;
         try out.append(self.arena(), 'R');
-        try self.appendNameAndFields(&out, name, fields, self.record_field_typerefs.get(name));
+        try self.appendNameAndFields(&out, name, fields, self.record_field_typerefs.get(name), true);
         const seg = try self.internString(out.items);
         const addr = seg.offset + 4;
         try self.type_descs.put(name, addr);
@@ -11347,7 +11664,7 @@ const Emitter = struct {
         }
         var out: std.ArrayListUnmanaged(u8) = .empty;
         try out.append(self.arena(), 'V');
-        try self.appendNameAndFields(&out, key, names.items, refs.items);
+        try self.appendNameAndFields(&out, key, names.items, refs.items, false);
         const seg = try self.internString(out.items);
         const addr = seg.offset + 4;
         try self.type_descs.put(key, addr);
@@ -11363,6 +11680,9 @@ const Emitter = struct {
         name: []const u8,
         fields: []const []const u8,
         refs: ?[]const ast.TypeRef,
+        /// A record's `i64` field holds a cell (`l`); a variant's payload
+        /// holds only an `i32` word, the one an `i64` slot is ever given.
+        record: bool,
     ) anyerror!void {
         const a = self.arena();
         const shown = self.printed_names.get(name) orelse displayTypeName(name);
@@ -11375,7 +11695,11 @@ const Emitter = struct {
             try out.append(a, @intCast(fname.len));
             try out.appendSlice(a, fname);
             const tref: ?ast.TypeRef = if (refs) |rs| (if (i < rs.len) rs[i] else null) else null;
-            try out.appendSlice(a, try self.fieldShape(tref));
+            const wide = if (tref) |t| switch (t) {
+                .named => |n| fieldCellOf(n) == .i64,
+                else => false,
+            } else false;
+            try out.appendSlice(a, if (record and wide) "l" else try self.fieldShape(tref));
         }
     }
 
@@ -11407,6 +11731,16 @@ const Emitter = struct {
             }
         }
         return found;
+    }
+
+    /// Whether a record this module knows declares a field `name` held in a
+    /// cell — a float or an `i64`.
+    fn someFieldIsFloat(self: *Emitter, name: []const u8) bool {
+        var it = self.records.iterator();
+        while (it.next()) |entry| {
+            if (fieldCellOf(self.fieldTypeIn(entry.key_ptr.*, name) orelse "") != .none) return true;
+        }
+        return false;
     }
 
     fn uniqueFieldOffset(self: *Emitter, name: []const u8) ?u32 {
@@ -11694,13 +12028,36 @@ const Emitter = struct {
 
     /// `val #(a, b) = #(12, "hello")`: an element of a tuple literal lends its
     /// shape to the name bound to it.
+    /// A tuple that is not a literal — a local bound to one — says what its
+    /// element `i` is by its print shape: `val #(a, b) = t` over a
+    /// `#(1.1, "a")` printed `b` as the string's address (`264`) at exit 0.
+    fn noteTupleElemByShape(self: *Emitter, name: []const u8, value: ast.Expr, i: usize) !void {
+        const sh = (try self.printShapeOf(value)) orelse return;
+        const el = tupleShapeElem(sh, @intCast(i)) orelse return;
+        try self.noteTupleElemLocal(name, el);
+    }
+
+    /// The binder of one element of the array `arr`, when the element is a
+    /// tuple or an array: its print shape, the one its reads go by.
+    fn noteElemShape(self: *Emitter, elem: []const u8, arr: ast.Expr) !void {
+        const sh = (try self.printShapeOf(arr)) orelse return;
+        if (sh.len > 1 and sh[0] == '[' and (sh[1] == '(' or sh[1] == '[')) try self.noteTupleElemLocal(elem, sh[1..]);
+    }
+
+    /// Whether element `i` of the tuple `value` is a float (its slot a cell).
+    fn tupleElemIsFloat(self: *Emitter, value: ast.Expr, i: usize) !bool {
+        const sh = (try self.printShapeOf(value)) orelse return false;
+        const el = tupleShapeElem(sh, @intCast(i)) orelse return false;
+        return el[0] == 'f';
+    }
+
     fn noteTupleElemShape(self: *Emitter, name: []const u8, value: ast.Expr, i: usize) !void {
         const elems = switch (value) {
             .collection => |col| switch (col.kind) {
                 .tupleLit => |tl| tl.elems,
-                else => return,
+                else => return self.noteTupleElemByShape(name, value, i),
             },
-            else => return,
+            else => return self.noteTupleElemByShape(name, value, i),
         };
         if (i >= elems.len) return;
         if (self.isStringExpr(elems[i])) try self.str_locals.put(name, {});
@@ -11756,7 +12113,13 @@ const Emitter = struct {
             var else_c: Capture = .{};
             self.open(&else_c);
             try self.emit(.{ .local_get = tmp });
-            if (oi.boxed) {
+            if (oi.cell == .f64) {
+                try self.emit(.{ .load = .{ .ty = .f64 } });
+                try self.emit(self.builder().helper(.f64_to_str));
+            } else if (oi.cell == .i64) {
+                try self.emit(.{ .load = .{ .ty = .i64 } });
+                try self.emit(self.builder().helper(.i64_to_str));
+            } else if (oi.boxed) {
                 try self.emit(.{ .load = .{} });
                 try self.emit(self.builder().helper(.i32_to_str));
             }
@@ -11783,6 +12146,11 @@ const Emitter = struct {
         if (self.wasmTypeOf(e)[0] == 'f') {
             try self.lowerCoerced(e, "f64");
             try self.emit(self.builder().helper(.f64_to_str));
+            return;
+        }
+        if (std.mem.eql(u8, self.wasmTypeOf(e), "i64")) {
+            try self.lowerValue(e);
+            try self.emit(self.builder().helper(.i64_to_str));
             return;
         }
         try self.lowerCoerced(e, "i32");
@@ -12025,14 +12393,11 @@ const Emitter = struct {
     }
 
     /// `yield v` / `break v` inside a comprehension: append `v` to the
-    /// accumulator. A float is appended as its f32 bits.
+    /// accumulator. A float is appended as its cell (`emitToFloatSlot`).
     fn emitYield(self: *Emitter, v: ast.Expr) anyerror!void {
         const tgt = self.yield_target.?;
         try self.emit(.{ .local_get = tgt });
-        if (self.wasmTypeOf(v)[0] == 'f') {
-            try self.lowerCoerced(v, "f32");
-            try self.emit(.{ .convert = "i32.reinterpret_f32" });
-        } else try self.lowerCoerced(v, "i32");
+        try self.lowerSlotWord(v);
         try self.emit(self.builder().helper(.arr_push));
         try self.emit(.{ .local_set = tgt });
     }
@@ -12100,15 +12465,19 @@ const Emitter = struct {
         const scope_mark = self.scopeMark();
         defer self.scopeRestore(scope_mark);
         const elem0 = if (lp.params.len > 0) lp.params[0] else "__it";
-        const elem = try self.bindTarget(elem0);
         const elem_kind = self.elemKindOf(lp.iter.*);
-        // A float element is an f32 slot: loading it as an i32 read its bits
-        // as an integer (`[2.0, 4.0, 9.0]` averaged to `1082480000`).
-        const elem_ty = if (elem_kind == .f32) "f32" else "i32";
+        // A float element is its slot's cell: loading the slot as an i32 read
+        // the float as an integer (`[2.0, 4.0, 9.0]` averaged to `1082480000`).
+        const elem_ty = if (elem_kind == .f64) "f64" else "i32";
+        const elem = try self.bindTargetAs(elem0, elem_ty);
         try self.declareLocal(elem, elem_ty);
         if (elem_kind == .str) try self.str_locals.put(elem, {});
         if (try self.elemIsBool(lp.iter.*)) try self.bool_locals.put(elem, {});
         if (self.elemTypeRefOf(lp.iter.*)) |et| try self.noteTypedBinder(elem, et);
+        // An element that is itself a tuple or an array prints — and is read
+        // — by its shape: `for ([#(1.1, 2)]) { t -> t.0 }` read the float's
+        // cell as an integer word (`288`).
+        try self.noteElemShape(elem, lp.iter.*);
         // `for (es) { e -> … }` binds one ELEMENT: when the elements are
         // records, `e.key` needs the record type or it reads a slot by the
         // unique-field guess and prints the field's ADDRESS (`284` for
@@ -12135,7 +12504,8 @@ const Emitter = struct {
         try self.emitAt(8, try self.constInt(4));
         try self.emitAt(8, opOf("i32", "mul"));
         try self.emitAt(8, opOf("i32", "add"));
-        try self.emitAt(8, .{ .load = .{ .ty = vt(elem_ty), .offset = 4 } });
+        try self.emitAt(8, .{ .load = .{ .offset = 4 } });
+        if (elem_kind == .f64) try self.emitAt(8, .{ .load = .{ .ty = .f64 } });
         try self.emitAt(8, .{ .local_set = elem });
         try self.emitIterationBody(lp.body);
         try self.emitAt(8, .{ .local_get = cur });
@@ -12404,13 +12774,22 @@ const Emitter = struct {
                 else => "i32",
             },
             .identifier => |id| switch (id.kind) {
-                .ident => |n| self.locals.get(self.resolveName(n)) orelse self.global_types.get(self.resolveName(n)) orelse "i32",
+                .ident => |n| blk: {
+                    // A narrowed `?f64` is the `f64` its cell holds.
+                    if (self.narrowed_opts.get(self.resolveName(n))) |o| if (o.cell != .none) break :blk o.cell.ty();
+                    break :blk self.locals.get(self.resolveName(n)) orelse self.global_types.get(self.resolveName(n)) orelse "i32";
+                },
                 // A named record's float field reads as the `f64` its box holds.
                 .identAccess => |ia| blk: {
                     if (ia.optional) break :blk "i32";
+                    // A float tuple element reads as the `f64` its cell holds.
+                    if (tupleIndex(ia.member) != null) {
+                        const el = (self.tupleElemShapeOf(e) catch null) orelse break :blk "i32";
+                        break :blk if (el[0] == 'f') "f64" else "i32";
+                    }
                     const rty = self.recordTypeOfExpr(ia.receiver.*) orelse break :blk "i32";
                     if (self.fieldOffsetIn(rty, ia.member) == null) break :blk "i32";
-                    break :blk if (isFloatTypeName(self.fieldTypeIn(rty, ia.member) orelse "")) "f64" else "i32";
+                    break :blk fieldCellOf(self.fieldTypeIn(rty, ia.member) orelse "").ty();
                 },
                 else => "i32",
             },
@@ -12437,12 +12816,20 @@ const Emitter = struct {
             },
             .call => |c| switch (c.kind) {
                 .call => |cc| blk: {
-                    // `xs[i]` over a float array reads an `f32` slot
+                    // `xs[i]` over a float array reads the `f64` its slot's cell holds
                     if (self.indexArgs(cc)) |ix|
                         break :blk if (!ix.is_slice and self.isArrayExpr(ix.recv) and
-                            self.elemKindOf(ix.recv) == .f32) "f32" else "i32";
-                    if (cc.is_builtin) break :blk "i32";
-                    if (self.primKindAt(cc, c.loc)) |k| break :blk if (self.primRes(k, cc) == .f64) "f64" else "i32";
+                            self.elemKindOf(ix.recv) == .f64) "f64" else "i32";
+                    if (cc.is_builtin) {
+                        // `o.unwrapOr(d)` over a `?f64` answers its `f64`.
+                        if (std.mem.eql(u8, cc.callee, "__bp_option_unwrapOr") and cc.args.len > 0) if (self.optInfoOf(cc.args[0].value.*)) |oi| if (oi.cell != .none) break :blk oi.cell.ty();
+                        break :blk "i32";
+                    }
+                    if (self.primKindAt(cc, c.loc)) |k| {
+                        // `xs.fold(init, f)` answers what its accumulator holds.
+                        if (k == .array and std.mem.eql(u8, cc.callee, "fold") and cc.args.len > 0) break :blk self.wasmTypeOf(cc.args[0].value.*);
+                        break :blk if (self.primRes(k, cc) == .f64) "f64" else "i32";
+                    }
                     if (self.recordMethodSym(cc, c.loc)) |sym| {
                         if (self.fn_sigs.get(sym)) |sig| break :blk sig.result orelse "i32";
                     }
@@ -12468,9 +12855,21 @@ const Emitter = struct {
         return "i32";
     }
 
+    /// Whether turning a `from` value into a `to` one may change the number:
+    /// a float into an integer, an `i64` into an `i32`.
+    fn lossyConversion(from: []const u8, to: []const u8) bool {
+        if (from[0] == 'f' and to[0] == 'i') return true;
+        return std.mem.eql(u8, from, "i64") and std.mem.eql(u8, to, "i32");
+    }
+
     /// Emit the conversion opcode that turns a value of type `from` into `to`.
-    fn emitConvert(self: *Emitter, from: []const u8, to: []const u8) !void {
+    fn emitConvert(self: *Emitter, from: []const u8, to: []const u8) anyerror!void {
         if (std.mem.eql(u8, from, to)) return;
+        // A float or an `i64` asked for as a narrower word: `lowerCoerced`
+        // refuses it at the expression; a conversion with none (a body's
+        // tail, a function value's answer) is refused at its statement.
+        if (lossyConversion(from, to))
+            return self.refuse(self.stmt_loc, "the wasm backend would narrow an `{s}` value to an `{s}` slot it does not fit", .{ from, to });
         const eq = std.mem.eql;
         const opcode: ?[]const u8 =
             if (eq(u8, to, "f64"))
@@ -12489,6 +12888,13 @@ const Emitter = struct {
     /// Lower `e` and convert the result to `want`.
     fn lowerCoerced(self: *Emitter, e: ast.Expr, want: []const u8) anyerror!void {
         const from = self.wasmTypeOf(e);
+        // A float or an `i64` asked for as a narrower word would be truncated
+        // or wrapped (`i32.trunc_f64_s`, `i32.wrap_i64`) — a different number
+        // at exit 0. The language converts by a call it names (`toInt`), never
+        // by flowing a value into a slot; where this backend has no wider slot
+        // for the value, it refuses.
+        if (lossyConversion(from, want))
+            return self.refuse(e.getLoc(), "the wasm backend would narrow this `{s}` value to an `{s}` slot it does not fit", .{ if (from[0] == 'f') "f64" else from, want });
         try self.lowerValue(e);
         try self.emitConvert(from, want);
     }
@@ -12511,7 +12917,7 @@ const Emitter = struct {
     /// Leave `1`/`0` for "the tuples at `a` and `b` are equal", by the shape
     /// starting at `shape[start]` (a `(`). Answers the index past its `)`.
     /// Each element is compared by its own code: `i`/`b` as an `i32`, `f` as
-    /// the `f32` the 4-byte slot holds, `s` through `$__str_eq` — a string
+    /// the `f64` the slot's cell holds, `s` through `$__str_eq` — a string
     /// element is a pointer, so comparing the words would compare addresses —
     /// and `(` by recursing through the pointer the slot holds.
     fn emitTupleEq(self: *Emitter, a: []const u8, b: []const u8, shape: []const u8, start: usize) anyerror!usize {
@@ -12534,10 +12940,12 @@ const Emitter = struct {
                 },
                 'f' => {
                     try self.emit(.{ .local_get = a });
-                    try self.emit(.{ .load = .{ .ty = .f32, .offset = @intCast(off) } });
+                    try self.emit(.{ .load = .{ .offset = @intCast(off) } });
+                    try self.emitFromFloatSlot();
                     try self.emit(.{ .local_get = b });
-                    try self.emit(.{ .load = .{ .ty = .f32, .offset = @intCast(off) } });
-                    try self.emit(.{ .call = self.floatEqSym("f32") });
+                    try self.emit(.{ .load = .{ .offset = @intCast(off) } });
+                    try self.emitFromFloatSlot();
+                    try self.emit(.{ .call = self.floatEqSym() });
                     i += 1;
                 },
                 's' => {
@@ -12721,7 +13129,7 @@ const Emitter = struct {
                 p.* = .{ .named = r };
             } else p.* = .{ .named = switch (self.elemKindOf(e)) {
                 .i32 => "i32",
-                .f32 => "f64",
+                .f64 => "f64",
                 .str => "string",
             } };
             return .{ .array = p };
@@ -12828,10 +13236,12 @@ const Emitter = struct {
     /// array element) at `off`.
     const EqAddr = struct { base: []const u8, off: u32 = 0, idx: ?[]const u8 = null };
 
-    /// How the slot holding a value stores a float: a record field holds the
-    /// address of a boxed `f64` (`storeBoxedF64`); a tuple element, a variant
-    /// payload and an array element hold an `f32`.
-    const EqSlot = enum { field, slot };
+    /// How the address of a compared value reaches a float or an `i64`: a
+    /// record `field` holds the address of either's cell; a tuple element, a
+    /// variant payload and an array element are a `word` slot holding a
+    /// float's cell (an `i64` there is only ever an `i32` word); an optional's
+    /// box IS the `cell`.
+    const EqSlot = enum { field, word, cell };
 
     fn eqPushAddr(self: *Emitter, a: EqAddr) !void {
         try self.emit(.{ .local_get = a.base });
@@ -12862,17 +13272,31 @@ const Emitter = struct {
             try self.emit(self.builder().helper(.str_eq));
             return;
         }
-        if (isFloatTypeName(n)) {
-            // The composite compare of a float is the bare float `==` —
-            // decision 214's total order (`$__f64_eq` / `$__f32_eq`).
+        if (fieldCellOf(n) == .i64 and slot != .word) {
             for ([_]EqAddr{ a, b }) |x| {
                 try self.eqPushAddr(x);
                 if (slot == .field) {
                     try self.emit(.{ .load = .{ .offset = x.off } });
-                    try self.emit(.{ .load = .{ .ty = .f64 } });
-                } else try self.emit(.{ .load = .{ .ty = .f32, .offset = x.off } });
+                    try self.emit(.{ .load = .{ .ty = .i64 } });
+                } else try self.emit(.{ .load = .{ .ty = .i64, .offset = x.off } });
             }
-            try self.emit(.{ .call = self.floatEqSym(if (slot == .field) "f64" else "f32") });
+            try self.emit(opOf("i64", "eq"));
+            return;
+        }
+        if (isFloatTypeName(n)) {
+            // The composite compare of a float is the bare float `==` —
+            // decision 214's total order (`$__f64_eq`).
+            for ([_]EqAddr{ a, b }) |x| {
+                try self.eqPushAddr(x);
+                switch (slot) {
+                    .field, .word => {
+                        try self.emit(.{ .load = .{ .offset = x.off } });
+                        try self.emitFromFloatSlot();
+                    },
+                    .cell => try self.emit(.{ .load = .{ .ty = .f64, .offset = x.off } }),
+                }
+            }
+            try self.emit(.{ .call = self.floatEqSym() });
             return;
         }
         if (self.eqComposite(t)) {
@@ -12904,42 +13328,36 @@ const Emitter = struct {
         try self.emit(opOf("i32", "eq"));
     }
 
-    /// Decision 214 — the float `==` this module calls, marked for emission:
-    /// `$__f64_eq` or `$__f32_eq` (`floatEqFunc`).
-    fn floatEqSym(self: *Emitter, ty: []const u8) []const u8 {
-        if (std.mem.eql(u8, ty, "f32")) {
-            self.float_eq_used[1] = true;
-            return "__f32_eq";
-        }
-        self.float_eq_used[0] = true;
+    /// Decision 214 — the float `==` this module calls, marked for emission
+    /// (`floatEqFunc`).
+    fn floatEqSym(self: *Emitter) []const u8 {
+        self.float_eq_used = true;
         return "__f64_eq";
     }
 
-    /// `$__f64_eq(a, b)` / `$__f32_eq(a, b)`: `==` over floats as a total
-    /// order (decision 214, Java's `Double.compare` and Kotlin's data class) —
-    /// both NaN (any payload: NaN is canonicalised by `x != x`), or the same
-    /// bit pattern, so `0.0` and `-0.0` differ.
-    fn floatEqFunc(self: *Emitter, wide: bool) !wat.Func {
-        const ty: []const u8 = if (wide) "f64" else "f32";
-        const ity: []const u8 = if (wide) "i64" else "i32";
+    /// `$__f64_eq(a, b)`: `==` over floats as a total order (decision 214,
+    /// Java's `Double.compare` and Kotlin's data class) — both NaN (any
+    /// payload: NaN is canonicalised by `x != x`), or the same bit pattern, so
+    /// `0.0` and `-0.0` differ. Every float this backend holds is an `f64`.
+    fn floatEqFunc(self: *Emitter) !wat.Func {
         var c: Capture = .{};
         self.open(&c);
         for ([_][]const u8{ "a", "b" }) |x| {
             try self.emit(.{ .local_get = x });
             try self.emit(.{ .local_get = x });
-            try self.emit(opOf(ty, "ne"));
+            try self.emit(opOf("f64", "ne"));
         }
         try self.emitC(opOf("i32", "and"), "both NaN");
         for ([_][]const u8{ "a", "b" }) |x| {
             try self.emit(.{ .local_get = x });
-            try self.emit(.{ .convert = if (wide) "i64.reinterpret_f64" else "i32.reinterpret_f32" });
+            try self.emit(.{ .convert = "i64.reinterpret_f64" });
         }
-        try self.emitC(opOf(ity, "eq"), "the same bits");
+        try self.emitC(opOf("i64", "eq"), "the same bits");
         try self.emit(opOf("i32", "or"));
         const body = self.seal(&c, .{ .value = .i32 });
         return try self.builder().func(.{
-            .name = if (wide) "__f64_eq" else "__f32_eq",
-            .params = &.{ wat.Builder.param("a", vt(ty)), wat.Builder.param("b", vt(ty)) },
+            .name = "__f64_eq",
+            .params = &.{ wat.Builder.param("a", .f64), wat.Builder.param("b", .f64) },
             .result = .i32,
             .body = body,
         });
@@ -13007,7 +13425,7 @@ const Emitter = struct {
             try self.emit(.{ .local_get = "n" });
             try self.emit(opOf("i32", "ge_u"));
             try self.emit(.{ .br_if = "brk" });
-            try self.emitValueEq(elem, .slot, .{ .base = "a", .idx = "i" }, .{ .base = "b", .idx = "i" });
+            try self.emitValueEq(elem, .word, .{ .base = "a", .idx = "i" }, .{ .base = "b", .idx = "i" });
             try self.emit(opOf("i32", "eqz"));
             try self.eqReturnIf(zero);
             try self.emit(.{ .local_get = "i" });
@@ -13037,13 +13455,13 @@ const Emitter = struct {
                     // A pointer payload: the optional is the payload.
                     try self.emitValueEqDirect(inner.*);
                 } else {
-                    // A box: the payload word at its address.
-                    try self.eqFieldStep(inner.*, .slot, 0);
+                    // A box: the payload at its address.
+                    try self.eqFieldStep(inner.*, .cell, 0);
                     try self.emit(one);
                 }
             },
             .tuple_, .labeledTuple => {
-                for (t.tupleElems().?, 0..) |el, i| try self.eqFieldStep(el, .slot, @intCast(i * 4));
+                for (t.tupleElems().?, 0..) |el, i| try self.eqFieldStep(el, .word, @intCast(i * 4));
                 try self.emit(one);
             },
             else => {
@@ -13069,7 +13487,7 @@ const Emitter = struct {
                         if (v.fields.len == 0) continue;
                         var arm: Capture = .{};
                         self.open(&arm);
-                        for (v.fields, 0..) |f, i| try self.eqFieldStep(f.typeRef, .slot, @intCast((i + 1) * 4));
+                        for (v.fields, 0..) |f, i| try self.eqFieldStep(f.typeRef, .word, @intCast((i + 1) * 4));
                         const arm_seq = self.seal(&arm, .none);
                         try self.emit(.{ .local_get = "a" });
                         try self.emit(.{ .load = .{} });
@@ -13135,9 +13553,19 @@ const Emitter = struct {
             var then_c: Capture = .{};
             self.open(&then_c);
             try self.emit(.{ .local_get = tmp });
-            try self.emitC(.{ .load = .{} }, "optional payload");
-            try self.lowerCoerced(val_side, "i32");
-            try self.emit(opOf("i32", "eq"));
+            const oi = (if (lopt != null and lopt.?.boxed) lopt else ropt).?;
+            try self.emitUnboxPayload(oi, "optional payload");
+            if (oi.cell == .f64) {
+                // decision 214's total order, as for two floats
+                try self.lowerCoerced(val_side, "f64");
+                try self.emit(.{ .call = self.floatEqSym() });
+            } else if (oi.cell == .i64) {
+                try self.lowerCoerced(val_side, "i64");
+                try self.emit(opOf("i64", "eq"));
+            } else {
+                try self.lowerCoerced(val_side, "i32");
+                try self.emit(opOf("i32", "eq"));
+            }
             const then_seq = self.seal(&then_c, .{ .value = .i32 });
             var else_c: Capture = .{};
             self.open(&else_c);
@@ -13177,14 +13605,24 @@ const Emitter = struct {
                 return;
             }
         }
-        const t = self.unifyNum(self.wasmTypeOf(lhs), self.wasmTypeOf(rhs));
+        // A boxed optional — `xs[i]`, which answers `?T` — is the address of
+        // its box: added to as a number it answered `269` for `[1, 2][0] + 1`
+        // at exit 0. An absent one has no number either (erlang raises,
+        // commonJS reads `null` as `0`), so the operation is refused.
+        if (op != Op.eq and op != Op.ne and op != Op.@"and" and op != Op.@"or") for ([_]ast.Expr{ lhs, rhs }) |side| {
+            if (self.optInfoOf(side)) |oi| if (oi.boxed)
+                return self.refuse(side.getLoc(), "the wasm backend has no `{s}` over an optional value (`xs[i]` answers `?T`): unwrap it first", .{@tagName(op)});
+        };
+        const t0 = self.unifyNum(self.wasmTypeOf(lhs), self.wasmTypeOf(rhs));
+        // Every float is compared as the `f64` the language gives it.
+        const t = if (t0[0] == 'f') "f64" else t0;
         try self.lowerCoerced(lhs, t);
         try self.lowerCoerced(rhs, t);
         const is_float = t[0] == 'f';
         // Decision 214 — `==` over floats is a total order: NaN equals NaN
         // and `0.0` differs from `-0.0`. `<`, `>`, `<=`, `>=` stay IEEE.
         if (is_float and (op == Op.eq or op == Op.ne)) {
-            try self.emit(.{ .call = self.floatEqSym(t) });
+            try self.emit(.{ .call = self.floatEqSym() });
             if (op == Op.ne) try self.emit(opOf("i32", "eqz"));
             return;
         }
@@ -13206,7 +13644,7 @@ const Emitter = struct {
             Op.@"or" => if (is_float) null else "or",
         };
         if (opname) |on| {
-            try self.emit(opOf(t, on));
+            try self.emitArith(t, on);
         } else {
             // No opcode for this pair (float `%`, float `&&`). It used to drop
             // the right operand and answer the left one at exit 0.
@@ -13222,8 +13660,28 @@ const Emitter = struct {
         } else {
             try self.emit(constOf(t, "0"));
             try self.lowerCoerced(inner, t);
-            try self.emit(opOf(t, "sub"));
+            try self.emitArith(t, "sub");
         }
+    }
+
+    /// `<t>.<op>` over the two operands on the stack — an integer `add`,
+    /// `sub` or `mul` checked (`$__i32_add_chk`, …), which traps where the
+    /// result does not fit `t`: wrapped, `2147483647 + 1` answered
+    /// `-2147483648` at exit 0 where commonJS and erlang answer `2147483648`.
+    fn emitArith(self: *Emitter, t: []const u8, on: []const u8) anyerror!void {
+        const wide = std.mem.eql(u8, t, "i64");
+        if (wide or std.mem.eql(u8, t, "i32")) {
+            const h: ?wat.Helper = if (std.mem.eql(u8, on, "add"))
+                (if (wide) .i64_add_chk else .i32_add_chk)
+            else if (std.mem.eql(u8, on, "sub"))
+                (if (wide) .i64_sub_chk else .i32_sub_chk)
+            else if (std.mem.eql(u8, on, "mul"))
+                (if (wide) .i64_mul_chk else .i32_mul_chk)
+            else
+                null;
+            if (h) |helper| return self.emit(self.builder().helper(helper));
+        }
+        try self.emit(opOf(t, on));
     }
 
     /// The plain NAMES a null test narrows — when it HOLDS (`present`), which
@@ -13411,10 +13869,13 @@ const Emitter = struct {
         } else null;
         if (i.binding) |name| {
             const oi = self.optInfoOf(i.cond.*);
-            try self.declareLocal(name, "i32");
+            const cell: Cell = if (oi) |o| o.cell else .none;
+            try self.declareLocal(name, cell.ty());
+            if (!std.mem.eql(u8, self.locals.get(name).?, cell.ty()))
+                return self.refuse(i.cond.getLoc(), "the wasm backend binds `{s}` to values of two widths in one function", .{name});
             try self.emit(.{ .local_get = bind_tmp.? });
             if (oi) |o| {
-                if (o.boxed) try self.emitC(.{ .load = .{} }, "optional payload");
+                if (o.boxed) try self.emitUnboxPayload(o, "optional payload");
                 if (o.str) try self.str_locals.put(name, {});
                 if (o.bool_) try self.bool_locals.put(name, {});
                 if (o.inner) |tr| try self.local_typerefs.put(name, tr);
@@ -13543,9 +14004,18 @@ const Emitter = struct {
 /// `1.7976931348623157e308`; it was an `f32.const`, where the first is `0`. A
 /// radix integer (`0xFE`) is an `i32` whatever letters its digits use.
 fn numLitType(n: []const u8) []const u8 {
-    if (radixOf(n) != null) return "i32";
+    if (radixOf(n)) |r| {
+        const v = radixValue(n, r) orelse return "i32";
+        return if (v > std.math.maxInt(i32) or v < std.math.minInt(i32)) "i64" else "i32";
+    }
     for (n) |c| if (c == '.' or c == 'e' or c == 'E') return "f64";
-    return "i32";
+    // An integer past the `i32` range is an `i64`: as `i32.const` the text
+    // `4294967295` wrapped to `-1`.
+    var v: u128 = 0;
+    for (n) |c| if (c >= '0' and c <= '9') {
+        v = (std.math.mul(u128, v, 10) catch return "i64") + (c - '0');
+    };
+    return if (v > std.math.maxInt(i32)) "i64" else "i32";
 }
 
 /// The base of a radix integer token — `0x` / `0b` / `0o`, after an optional

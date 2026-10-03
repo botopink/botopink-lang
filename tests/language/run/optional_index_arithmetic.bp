@@ -1,0 +1,11 @@
+//// `xs[i]` answers a `?T`, and arithmetic over it reads the element where it
+//// is present — commonJS, erlang and beam answer `2` here. On wasm a scalar
+//// `?T` is the address of its box, and `xs[0] + 1` added to the ADDRESS:
+//// `269` at exit 0 (`00 · gate-wasm-wrong-answers`). An absent element has no
+//// number on every target alike (erlang raises, commonJS reads `null` as `0`),
+//// so wasm refuses the operation at the operand, located.
+
+pub fn main() {
+    val xs = [1, 2];
+    @print(xs[0] + 1);
+}

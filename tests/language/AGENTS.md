@@ -952,6 +952,15 @@ and 4.4). `run.sh`'s usage block is the reference; this is the why.
 Any other content in `.exit` is a malformed claim and fails the cell. The cells that carry
 `.targets`, and what each excluded target lacks, are listed in § Narrowing a cell.
 
+`front/gate-wasm-wrong-answers` (`compiler-core/src/codegen/wat/AGENTS.md` § Numbers) adds three
+four-target cells for numbers wasm answered wrongly at exit 0 — `run/float_shortest_text` (a
+float's shortest round-trip text, where erlang and beam agree with commonJS), `run/float_slot_keeps_f64`
+(a float in an array, a tuple, a payload, a record field, a `?f64`, a capture), `run/i64_full_width`
+(`i64` locals, parameters, fields, `?i64`, `u32`, a literal past `i32`) — and five cells refused on
+wasm by a `.wasm.expect`, each a value wasm has no reader for yet: `run/optional_index_arithmetic`
+(`xs[i] + 1`), `run/i64_in_array_slot`, `run/fn_value_float_argument`, `run/generic_field_float`,
+`run/untyped_array_float_push`.
+
 ## The targets
 
 Measured at front `111-gate-beam-and-targets` of 1.0.11-beta (`specs/1.0.11-beta/00-gate/` in the

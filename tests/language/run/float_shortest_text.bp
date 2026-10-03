@@ -1,0 +1,30 @@
+//// A float prints, and turns into text, as the shortest decimal that reads
+//// back as the same `f64` — the text commonJS writes for it (`Number#toString`),
+//// and erlang and beam (`float_to_list(F, [short])`) for every value below.
+////
+//// The wasm gap this pins (`00 · gate-wasm-wrong-answers`): its formatter wrote
+//// an integer part and at most six fraction digits, so `0.1 + 0.2` printed
+//// `0.3`, `1.0 / 3.0` printed `0.333333` and `0.26642920868471265` printed
+//// `0.266429` — each at exit 0 — and a float past `2^31` trapped. It is now
+//// V8's own shortest-digits algorithm (`BignumDtoa`), so every `f64` prints
+//// what commonJS prints.
+
+fn id(x: f64) -> f64 {
+    return x;
+}
+
+pub fn main() {
+    @print(0.1 + 0.2);
+    @print(1.0 / 3.0);
+    @print(id(2.0) / 3.0);
+    @print(0.26642920868471265);
+    @print(123456789012.5);
+    @print(4294967296.5);
+    @print(100.0);
+    @print(id(-2.5));
+    @print(id(0.1) * 3.0);
+    @print((0.1 + 0.2).toString());
+    @print("x" + 2.5);
+    @print("x" + (1.0 / 3.0));
+    @print([0.1, 1.0 / 3.0]);
+}

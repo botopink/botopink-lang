@@ -248,8 +248,8 @@ fn main() {
     global.set $__heap_ptr
     local.get $__mem11
     f64.const 1.5
-    f32.demote_f64
-    f32.store
+    call $__box_f64
+    i32.store
     local.get $__mem11
     i32.const 1
     i32.store offset=4
@@ -263,8 +263,8 @@ fn main() {
     global.set $__heap_ptr
     local.get $__mem12
     f64.const 1.5
-    f32.demote_f64
-    f32.store
+    call $__box_f64
+    i32.store
     local.get $__mem12
     i32.const 1
     i32.store offset=4
@@ -278,8 +278,8 @@ fn main() {
     global.set $__heap_ptr
     local.get $__mem13
     f64.const 1.5
-    f32.demote_f64
-    f32.store
+    call $__box_f64
+    i32.store
     local.get $__mem13
     i32.const 0
     i32.store offset=4
@@ -386,10 +386,12 @@ fn main() {
       (then i32.const 1 return)
     )
     local.get $a
-    f32.load
+    i32.load
+    f64.load
     local.get $b
-    f32.load
-    call $__f32_eq
+    i32.load
+    f64.load
+    call $__f64_eq
     i32.eqz
     (if
       (then i32.const 0 return)
@@ -432,24 +434,24 @@ fn main() {
     )
     i32.const 1
   )
-  (func $__f32_eq (param $a f32) (param $b f32) (result i32)
+  (func $__f64_eq (param $a f64) (param $b f64) (result i32)
     local.get $a
     local.get $a
-    f32.ne
+    f64.ne
     local.get $b
     local.get $b
-    f32.ne
+    f64.ne
     i32.and ;; both NaN
     local.get $a
-    i32.reinterpret_f32
+    i64.reinterpret_f64
     local.get $b
-    i32.reinterpret_f32
-    i32.eq ;; the same bits
+    i64.reinterpret_f64
+    i64.eq ;; the same bits
     i32.or
   )
   ;; Scratch layout below the data section (which starts at 256):
   ;;   0..8  WASI iovec   8  newline byte
-  ;;  16..32 bool text   32..64 float fraction   64..128 i32 digits
+  ;;  16..32 bool text   64..128 i32 digits
   (func $__write_bytes (param $p i32) (param $n i32)
     i32.const 0
     local.get $p
@@ -696,6 +698,29 @@ fn main() {
       )
     )
     i32.const 1
+  )
+  (func $__alloc (param $n i32) (result i32)
+    (local $p i32)
+    global.get $__heap_ptr
+    local.set $p
+    global.get $__heap_ptr
+    local.get $n
+    i32.add
+    i32.const 3
+    i32.add
+    i32.const -4
+    i32.and
+    global.set $__heap_ptr
+    local.get $p
+  )
+  (func $__box_f64 (param $x f64) (result i32)
+    (local $p i32)
+    i32.const 8
+    call $__alloc
+    local.tee $p
+    local.get $x
+    f64.store
+    local.get $p
   )
 )
 ```

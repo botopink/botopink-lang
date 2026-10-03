@@ -1822,12 +1822,12 @@ codegen/
 - **Comprehensions** (`lowerLoop`, `emitYield`): a `loop` whose body `yield`s
   or `break`s with a value (directly or in an `if`/`case` arm, not in a nested
   loop or lambda) appends each value to a fresh array (`$__arr_push`; a float
-  as its f32 bits), and that array is the loop's value — the erlang reading
+  as its `f64` cell, `$__box_f64`), and that array is the loop's value — the erlang reading
   of `break <v>`. An `@Iterator` fn body that yields runs
   eagerly into one fn-level array it returns (`renderAccumulatingBody`); a
   `@Iterator<T>` is then an array of `T`. A bare `break` branches out of the
-  loop, `continue` out of the iteration's `(block $__next …)`. An f32 array
-  prints as `[115,287.5,460]` (`$__print_arr_f32`).
+  loop, `continue` out of the iteration's `(block $__next …)`. A float array
+  prints as `[115, 287.5, 460]` (`$__print_arr_f64`).
 - **Coverage**: numerics, locals, calls, booleans, assign, throw, strings,
   `@print`, field access/assign, arrays, tuples, records/structs and behavior
   literals (a `type`'s values are decision 21's tagged tuple
@@ -2402,7 +2402,9 @@ first three are now enforced by the model, not by discipline:
    value type from the literal spelling, a local/param/global's declared type or
    a callee's registered result; `lowerCoerced` + `emitConvert` meet the type
    the context wants. `return`, the implicit fn tail and every `case` arm coerce
-   to `cur_result`; `storeSlotExpr` picks `f32.store` vs `i32.store`.
+   to `cur_result`; `storeSlotExpr` stores a word, a float as its `f64` cell.
+   A float or an `i64` asked for as a narrower word (`lowerCoerced`,
+   `emitConvert`) is refused, located — never truncated or wrapped.
 
 - **Coverage**: numerics, locals, calls, assign, `!x`, null, `@todo`/`@panic`,
   `assert`, `val assert` (`lowerAssertPattern`: the subject is staged in
@@ -2416,7 +2418,7 @@ first three are now enforced by the model, not by discipline:
   (`lowerRangeLoop`; `a...b` tests `gt_s` where `a..b` tests `ge_s`), condition
   loops (`lowerConditionLoop`: `i32.eqz` + `br_if $__break` at the top of each
   iteration) and array loops (`lowerCollectionLoop` — a float array's element
-  is an `f32` slot, bound to an `f32` local), every one a statement (decision
+  is its slot's `f64` cell, bound to an `f64` local), every one a statement (decision
   105); the annotated `loop` (`lowerGeneratorLoop`, below),
   primitive methods, function values, `@print` via WASI `fd_write`,
   `_botopink_main`/`_start`.
@@ -2433,7 +2435,8 @@ first three are now enforced by the model, not by discipline:
     an array until unwrapped), because walking the layout of a non-array
     would read its first word as an element count and trap;
   - an array of tuples/records prints as the element addresses (no printer);
-  - every function value's parameters and result are `i32`;
+  - every function value's parameters and result are `i32`: a float or an
+    `i64` argument or answer is refused at it (it was truncated, `3.5` → `3`);
   - a lifted lambda's captures are threaded only through calls on the closure
     local it was bound to (`val f = { … }; f(x)`): a closure passed as an
     argument, stored in a field or returned still works on the snapshot it was
@@ -2447,11 +2450,11 @@ first three are now enforced by the model, not by discipline:
     `unreachable ;; unresolved call: map/N`. The fixtures pin the call's arity
     and have no `main`; the shape needs a `List` to exist before any backend
     can lower it;
-  - an `f64` element of an array, a tuple, an anonymous record or an enum
-    variant's payload round-trips at `f32` precision (4-byte slots). A NAMED
-    record's float field does not: its slot holds the address of an 8-byte
-    `f64` cell (`storeBoxedF64`), read back through `f64.load` by a field
-    read, `wasmTypeOf` and both destructurings (`run/float_record_field`).
+  - an `i64` in an array, a tuple, a variant's payload or a `@Result`: a
+    4-byte slot holds no `i64`, and nothing reading such a slot knows its
+    width, so the value is refused where it enters (`run/i64_in_array_slot`).
+    A record's `i64` field and a `?i64` hold an 8-byte cell (`$__box_i64`),
+    as every float slot holds its `f64` cell (§ wat/AGENTS.md "Numbers");
 - **Non-constant top-level `val`s** (`emitGlobalVal` → `deferred_globals`): a
   wasm `(global …)` accepts only a constant initialiser, so an array/tuple/call
   initialiser declares a zeroed mutable global and is evaluated in
@@ -2502,9 +2505,10 @@ first three are now enforced by the model, not by discipline:
   on any pointer below the data floor (256) instead, see
   [`wat/AGENTS.md`](wat/AGENTS.md). `tests/language/run/string_at.bp` pins it
   on all four targets.
-- **A `?T` box holding an `f32`** (`fs.at(0)` on a float array) prints through
-  `$__print_opt_f32`, its own helper group. Read as a boxed `i32` it printed the
-  float's **bits** — `1069547520` for `1.5`, exit 0, no diagnostic.
+- **A `?f64` / `?i64`** (`fs.at(0)` on a float array, whose slot already holds
+  the cell; a declared `?f64`) is the address of its 8-byte cell (`OptInfo.cell`)
+  and prints through `$__print_opt_f64` / `$__print_opt_i64`. Read as a boxed
+  `i32` it printed the float's **bits** — `1069547520` for `1.5`, exit 0.
 - **`==` compares by value** (decision 210; decision 8 §6 T6 and T5 for tuples;
   decision 211 — it never calls user code): a composite operand — a record, a
   payload enum, a tuple, an array, `?` of one — calls the per-type `$__eq_<T>`
@@ -2540,7 +2544,7 @@ first three are now enforced by the model, not by discipline:
   (`wat_prelude.putSep`): `@print([1, 2])` writes `[1, 2]` and `@print(#(1, "a"))`
   writes `#(1, "a")`, where decision 1a's text had no space at all
   (`[1,2]`, `#(1,"a")`). Four sites write a separator and all four now call it:
-  `$__print_arr_i32_raw`, `$__print_arr_f32_raw` and `$__print_shaped_raw`'s
+  `$__print_arr_i32_raw`, `$__print_arr_f64_raw` and `$__print_shaped_raw`'s
   array (`[X`) and tuple (`(XY…)`) arms. The two bytes go through the scratch
   cells at **8 and 9** in one `fd_write`, so the separator still costs one call.
   commonJS and beam already wrote the space; **erlang does not** — that is
@@ -2559,9 +2563,9 @@ first three are now enforced by the model, not by discipline:
   index goes. One node, four readings, told apart by the receiver and by whether
   the index is a range: `xs[i]` → `$__arr_at` (the element, `0` out of range),
   `xs[a..b]` → `$__arr_slice`, `s[i]` → `$__str_slice(s, i, i+1)` (the one-byte
-  string), `s[a..b]` → `$__str_slice`. A float array's slots are `f32`, so the
-  four bytes `$__arr_at` answers are reinterpreted rather than printed as an
-  integer. `indexArgs` is what `isStringExpr` / `isArrayExpr` / `elemKindOf` /
+  string), `s[a..b]` → `$__str_slice`. A float array's slot holds the
+  address of the element's `f64` cell, which `$__arr_at` answers and `f64.load`
+  reads. `indexArgs` is what `isStringExpr` / `isArrayExpr` / `elemKindOf` /
   `wasmTypeOf` ask, so `val sub = xs[1..]` is an array local and `s[1]` a string
   one. **`xs[i]` answers `T`, not `?T`** — which of the two decision 30 means is
   `01-checker`'s to settle (`ast.zig:1734`); a receiver that is neither an array
@@ -2606,7 +2610,7 @@ first three are now enforced by the model, not by discipline:
   so the tag is always the first word. `Ok(v)`/`Err(e)` read a `@Result`'s
   `[tag, payload]`. A bare name that is a variant of some enum (`Lt ->`) is a
   tag test, not a binding. Payload bindings take the variant field's type (a
-  float field is an `f32` slot). List and multi-subject patterns have no test
+  float field's slot holds its `f64` cell). List and multi-subject patterns have no test
   yet and run their arm.
 - **A pattern binding that shadows a local of another type** (`Square(s)`
   inside `fn area(s: Shape)`) is stored in a fresh `s__<n>` local; the arm's
@@ -2666,12 +2670,12 @@ first three are now enforced by the model, not by discipline:
   `run/result_string_payloads.bp` pins the shapes.
 - **`@print` of an array of strings, a tuple or an array of tuples** (semantics
   decision 1a) goes through `$__print_shaped_raw(v, shape, 1)`: the emitter
-  interns a shape string (`i` i32, `f` f32 slot, `b` bool, `s` string, `[X` array
+  interns a shape string (`i` i32, `f` a float's cell, `l` a record's `i64` cell, `b` bool, `s` string, `[X` array
   of `X`, `(XY…)` tuple) recovered by `printShapeOf` from a tuple / array
   literal, a local bound to one (`print_shape_locals`), `zip`, and a declared type
   that spells a tuple, labeled or not (`typeRefShape` over a parameter, a fn
   result or an annotation; `ast.TypeRef.tupleElems`); nested strings print quoted with the source escapes
-  (`$__print_quoted_raw`). A flat `i32`/`f32` array keeps `$__print_arr_*`.
+  (`$__print_quoted_raw`). A flat integer or float array keeps `$__print_arr_*`.
 - **String literals are unescaped at interning** (`literalBytes`): the lexer keeps
   `\"`, `\\`, `\n`, `\r`, `\t`, `\0`, `\$`, `\u{…}` verbatim, and the data segment
   holds the bytes they stand for, so `@print("q\"t")` writes `q"t` like commonJS
@@ -2695,7 +2699,7 @@ first three are now enforced by the model, not by discipline:
   inlined (`lowerArrayHof`). `xs.push(v)` rebinds the receiver (a name or a
   record field) to a grown copy. A method the table does not list traps:
   `unreachable ;; prim method not lowered on wasm: <kind>.<name>/<n>`.
-  Element shape (`ElemKind`: `i32`/`f32`/`str`) is recovered from array
+  Element shape (`ElemKind`: `i32`/`f64`/`str`) is recovered from array
   literals, `T[]`/`Array<T>` annotations and the op that produced the array;
   `join`/`indexOf`/`contains` and a lambda's element parameter use it. An
   `i32` array prints as `[1,2,3]` (`$__print_arr_i32`).

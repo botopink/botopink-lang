@@ -43,7 +43,7 @@ model exists so none of them can be written again:
 | `wat_emitter.zig` | `renderModule` (validates, then `(module …)`; there is no bare-form entry point). Owns: the two-space item column, the four-space body column and each construct's arm columns, `$`-prefixing, folded (`(call $main)`) vs flat form, inline `(then i32.const 0 return)` arms, `offset=` suppressed when zero, and the data-segment escaping (four little-endian length bytes as `\xx`, then `\n`/`"`/`\`/`\t`/`\r`/`\xx` for control bytes). |
 | `wasm_binary_emitter.zig` | `encodeModule(alloc, Module) → []u8`: the binary format of the module the text emitter renders — validated first (`validateModule`), then sections type · import · function · table · memory · global · export · start · element · code · data, LEB128, one type per distinct signature (imports' and functions' types first, then each `call_indirect`'s), locals as runs of one type, no custom section. Every name the text spells is resolved to an index — functions (imports first, then definitions, in item order), globals, locals (params then declared), branch labels (depth, every `if` counted) — and a name that resolves to nothing (`UnknownName`), an operator the MVP table (`opcodes`: numeric, conversions, sign extension, `trunc_sat`) does not know (`UnknownOp`) or a numeral that does not parse (`BadNumeral`, the text format's spellings: sign, `0x`, `_`, `inf`/`nan`) is an error, never a guess. `wat.zig`'s `emitWat` renders both from one `Module` (`GenerateResult.js` the text, `.wasm` the binary); `codegen/runtime.zig`'s `executeWat` runs the **binary**, so every wasm RUN LOG is the binary emitter's answer checked against the recorded fixture. The browser build's page instantiates the same bytes. `Encoder` (with `typeIndex`/`funcIndex`/`funcBody`), `Bytes`, `section`, `uleb`/`sleb`, `name`, `valType`, `funcType` and `constInstr` are public for `comptime/runtime/wat/link.zig`, which pre-seeds an `Encoder` with a prebuilt module's index spaces and encodes a lowered comptime program's functions against the merged numbering. |
 | `host_binding.zig` | **Decision 238's closed vocabulary**, pure (text and value types in, a `Binding` or a message out): `parse(alloc, text, Signature)` reads `op:<opcode>` against `findOp`'s table (the MVP numeric instructions by shape — integer `clz`/`ctz`/`popcnt`/`eqz`, the binary ops, the comparisons; float `abs`/`neg`/`ceil`/`floor`/`trunc`/`nearest`/`sqrt`, `add`…`copysign`, the comparisons; the conversions — no memory, control, local or global instruction) and checks the declared parameter and return types are exactly the opcode's (a comparison or `eqz` answers `bool`); splits `fn:<identifier>` (the module resolves it); reads `wasi:<adapter>` against `adapters` (`random_f64`). `instrOf` gives an `op:`'s instruction. Anything else is a `Refused` message. `codegen/tests/wat.zig` holds `adapters` and `docs.md` § Host bindings' table to each other |
-| `wat_prelude.zig` | The runtime helpers wasm has no opcode for, as `Func` nodes: `print` (`$__write_bytes`, `$__print_nl`, `$__print_sp`, `$__print_i32`, `$__print_i32_raw`, `$__memmove`), `print_str` (`$__print_str_raw` traps on a pointer below the data floor — decision 67, § below), `print_bool`, `print_f64`, `arr_at`, `str_concat`, `str_eq`, `str_slice` (transcribed line by line), then — one helper per group, built with the comptime constructors at the bottom of the file (`func`, `loop`, `when`, `whenElse`, `get`/`set`/`op`/…; `func` assigns each line the column its nesting puts it at) — `alloc` (bump, 4-byte aligned), `mem_eq`, `i32_abs`/`i32_min`/`i32_max`, `i32_to_str`, `f64_to_str` (float param — `typedFunc`), `str_case` (ASCII shift of a byte range), `str_index_of`, `str_starts_with`, `str_ends_with`, `str_at` (`s.at(i)` as a `?string`: a negative `i` first counted from the end (`i + len`, decision 139, as in `$__arr_at` / `$__arr_at_box`), then `$__str_slice(s, i, i + 1)`, or `0` — absence — when `i32.ge_u` puts `i` outside `0..len`, which catches a still-negative index in the one compare `$__arr_at` needs two for), `str_trim` (mode bits: 1 start, 2 end), `str_split`, `str_repeat`, `str_char_code`, `str_last_index_of`, `str_pad`, `str_replace` (§ The primitive method table), `arr_new`, `arr_slice` (host bound rules), `arr_reverse`, `arr_prepend`, `arr_push`, `arr_concat`, `arr_zip`, `arr_index_of_i32`/`_str`, `arr_join_str`/`_i32`, `print_arr_i32`, `print_arr_f32` (+`_raw`), `box_i32`, `arr_at_box`, `print_opt` (`$__print_null` — the bytes of `null`, decision 47's one spelling of absent, through scratch `176..180` — and `$__print_opt_i32`/`_bool`/`_str` +`_raw`), `assert_fail` (`$__write_err` — `fd_write` to fd 2 — and `$__assert_fail`, its literal text through scratch `188..208`), `print_shaped` (`$__print_quoted_raw` — a nested string, quoted with the source escapes — and `$__print_shaped_raw(v, shape, go)`, which walks a shape string — `i`/`f`/`b`/`s`, `[X`, `(XY…)` — writing `[a, b]` / `#(a, b)` and answering the address past the shape; `go = 0` only measures), `print_opt_tagged` (`$__print_opt_tagged` +`_raw` — a `?T` whose `T` is a record: `null` for `0`, `$__print_tagged_raw` otherwise; its own group, because the tagged printer reads a header four bytes behind the value and absence has to be answered before it is called), `display_of` (`$__display_of(v)` answering `0` — the `Display` hook `$__print_tagged_raw` calls first, which `wat.zig` replaces with the module's dispatch, § below), `unknown`, `print_unknown`, `arr_last_index_of_i32`/`_str`, and the five groups `01-compiler/05-wasm` step 1 added (§ The primitive method table): `str_lines`, `str_words`, `arr_unique`, `arr_flatten`, `arr_chunked`, `arr_sliding`, `arr_fill`; decision 240's codepoint helpers (§ String indices count codepoints): `str_cp_len`, `str_cp_off`, `str_cp_of`, `str_cp_slice`, `str_cp_at`, `str_cp_index_of`, `str_cp_last_index_of`; decision 238's adapter `wasi_random_f64` (`$__wasi_random_f64`, with `random_get_import` — 8 bytes into scratch `208..216`). `items(group)` returns a group's forms, `order` the order a module appends them in (declaration order, so the transcribed groups keep their place), `fd_write_import` the one host import the print group needs. Scratch layout below the data section (which starts at 256): `0..8` the WASI iovec, `8` the newline byte — and `9` the space of §7's `, ` separator (`putSep`), written beside it so the two bytes leave in one `fd_write` —, `16..32` the bool text, `32..64` the float fraction, `64..128` the i32 digits, `128..160` the digits `$__i32_to_str` writes backwards, `168..174` the fraction digits of `$__f64_to_str`. |
+| `wat_prelude.zig` | The runtime helpers wasm has no opcode for, as `Func` nodes: `print` (`$__write_bytes`, `$__print_nl`, `$__print_sp`, `$__print_i32`, `$__print_i32_raw`, `$__memmove`), `print_str` (`$__print_str_raw` traps on a pointer below the data floor — decision 67, § below), `print_bool`, `print_f64`, `arr_at`, `str_concat`, `str_eq`, `str_slice` (transcribed line by line), then — one helper per group, built with the comptime constructors at the bottom of the file (`func`, `loop`, `when`, `whenElse`, `get`/`set`/`op`/…; `func` assigns each line the column its nesting puts it at) — `alloc` (bump, 4-byte aligned), `mem_eq`, `i32_abs`/`i32_min`/`i32_max`, `i32_to_str`, `f64_to_str` (`String(x)` as a fresh string, through `$__f64_fmt`), `str_case` (ASCII shift of a byte range), `str_index_of`, `str_starts_with`, `str_ends_with`, `str_at` (`s.at(i)` as a `?string`: a negative `i` first counted from the end (`i + len`, decision 139, as in `$__arr_at` / `$__arr_at_box`), then `$__str_slice(s, i, i + 1)`, or `0` — absence — when `i32.ge_u` puts `i` outside `0..len`, which catches a still-negative index in the one compare `$__arr_at` needs two for), `str_trim` (mode bits: 1 start, 2 end), `str_split`, `str_repeat`, `str_char_code`, `str_last_index_of`, `str_pad`, `str_replace` (§ The primitive method table), `arr_new`, `arr_slice` (host bound rules), `arr_reverse`, `arr_prepend`, `arr_push`, `arr_concat`, `arr_zip`, `arr_index_of_i32`/`_str`, `arr_join_str`/`_i32`, `print_arr_i32`, `print_arr_f64` (+`_raw`, each slot's cell), `box_i32`, `arr_at_box`, `print_opt` (`$__print_null` — the bytes of `null`, decision 47's one spelling of absent, through scratch `176..180` — and `$__print_opt_i32`/`_bool`/`_str` +`_raw`), `assert_fail` (`$__write_err` — `fd_write` to fd 2 — and `$__assert_fail`, its literal text through scratch `188..208`), `print_shaped` (`$__print_quoted_raw` — a nested string, quoted with the source escapes — and `$__print_shaped_raw(v, shape, go)`, which walks a shape string — `i`/`f`/`b`/`s`, `[X`, `(XY…)` — writing `[a, b]` / `#(a, b)` and answering the address past the shape; `go = 0` only measures), `print_opt_tagged` (`$__print_opt_tagged` +`_raw` — a `?T` whose `T` is a record: `null` for `0`, `$__print_tagged_raw` otherwise; its own group, because the tagged printer reads a header four bytes behind the value and absence has to be answered before it is called), `display_of` (`$__display_of(v)` answering `0` — the `Display` hook `$__print_tagged_raw` calls first, which `wat.zig` replaces with the module's dispatch, § below), `unknown`, `print_unknown`, `arr_last_index_of_i32`/`_str`, and the five groups `01-compiler/05-wasm` step 1 added (§ The primitive method table): `str_lines`, `str_words`, `arr_unique`, `arr_flatten`, `arr_chunked`, `arr_sliding`, `arr_fill`; decision 240's codepoint helpers (§ String indices count codepoints): `str_cp_len`, `str_cp_off`, `str_cp_of`, `str_cp_slice`, `str_cp_at`, `str_cp_index_of`, `str_cp_last_index_of`; decision 238's adapter `wasi_random_f64` (`$__wasi_random_f64`, with `random_get_import` — 8 bytes into scratch `208..216`); and § Numbers' groups: `dtoa` (the `$__dtoa_ws` global, `$__big_*`, `$__dtoa`, `$__fmt_u64`, `$__f64_fmt`, `$__i64_fmt`), `box_f64`, `arr_index_of_f64`, `arr_last_index_of_f64`, `arr_join_f64`, `print_i64`, `i64_to_str`, `box_i64`, `print_opt_i64`, `int_chk` (`$__i32_add_chk` … `$__i64_mul_chk`); `print_opt_f64` is `print_opt_f32` renamed (a `?f64` is its cell). `items(group)` returns a group's forms, `order` the order a module appends them in (declaration order, so the transcribed groups keep their place), `fd_write_import` the one host import the print group needs. Scratch layout below the data section (which starts at 256): `0..8` the WASI iovec, `8` the newline byte — and `9` the space of §7's `, ` separator (`putSep`), written beside it so the two bytes leave in one `fd_write` —, `16..32` the bool text, `64..128` the i32 digits, `128..160` the digits `$__i32_to_str` writes backwards. A float's and an `i64`'s text is built in the `$__dtoa_ws` workspace (§ Numbers), not in scratch. |
 
 ## Consumers
 
@@ -197,7 +197,7 @@ The walk covers the value, an array or tuple **literal** holding one, and a
 record recovered through a field or a fn return type. **Not** covered, and still
 answering an address: a *local* bound to such a container (`val ps =
 [Point(x: 1, y: 2)]; @print(ps)`) — the element shapes tracked per local are
-`i32`/`f32`/`str`, and a record is an `i32` slot like every other pointer.
+`i32`/`f64`/`str`, and a record is an `i32` slot like every other pointer.
 
 **A `?T`'s writer and its reader must agree about the box.** Two disagreements
 made `d.at("a").unwrapOr(0)` answer `0` for a key that is present — the
@@ -429,10 +429,88 @@ binding `hash` and `io/random`, and each still open:
 | Limit | What happens | Status |
 |---|---|---|
 | one 64 KiB page of memory, a bump heap that never frees and never grows (`min_pages = 1`, no `memory.grow`) | the program traps (`out of bounds memory access`) once it has allocated ~60 KiB — three hash cells, not one, and `pbkdf2Sha256(…, 9, 32)` already traps | `decisions-pending.md` 05w-e |
-| `i64` is lowered as `i32` | `val a: i64 = 4294967295` prints `-1`, `a / 2` answers `0` — a wrong value at exit 0; the bodies use exact `f64` instead | open |
-| a float in an array is stored as its `f32` (§ The primitive method table) and `xs.at(i).unwrapOr(0.0)` on an `Array<f64>` is invalid code | the bodies keep words as `i32` halves | open |
-| `Float.toString` writes six fraction digits; a float ≥ 2^31 traps in `$__f64_to_str` | `0.26642920868471265` prints `0.266429` (node prints all 17) | open |
+| `i64` was lowered as `i32` | an `i64` local, parameter, return, record field, `?i64` and closure capture is an `i64` (§ Numbers); an `i64` in an array, a tuple, a variant's payload or a `@Result` is refused where it enters — the bodies still use exact `f64` | fixed / refused |
+| a float in an array was stored as its `f32`, and `xs.at(i).unwrapOr(0.0)` on an `Array<f64>` was invalid code | every float slot holds its `f64` cell (§ Numbers); `unwrapOr` over a `?f64` answers an `f64` | fixed |
+| `Float.toString` wrote six fraction digits; a float ≥ 2^31 trapped in `$__f64_to_str` | V8's shortest digits (§ Numbers) — `0.26642920868471265` prints whole | fixed |
 | `Array.range` / `Array.repeat` recurse once per element through a spread (`primitives.bp`), O(n²) memory | `Array.repeat(0, 128)` exhausts the page; the bodies double an array instead | open |
+
+## Numbers: a float's text, the 8-byte cells, integers that do not wrap
+
+`00 · gate-wasm-wrong-answers` closed three wrong answers at exit 0 and the
+class beside them. What each number is here, and what is refused:
+
+- **A float's text is commonJS's.** `@print` of an `f64` writes
+  `Number.isInteger(x) ? x.toFixed(1) : String(x)` (`$__f64_fmt` mode 1), its
+  text (`toString`, `"s" + x`) `String(x)` (mode 0): `NaN`, `Infinity`, the
+  digits of a whole number below `1e21` (exact past `2^53`: split at `10^10`),
+  and otherwise the **shortest** digits that read back as `x`, the closest
+  when several are as short, a tie to the even digit — V8's `BignumDtoa`
+  (`bignum-dtoa.cc`: `EstimatePower`, `InitialScaledStartValues`,
+  `FixupMultiply10`, `GenerateShortestDigits`) transcribed over 40-limb
+  bignums in a workspace allocated once (`$__dtoa_ws`, 920 bytes), then
+  `Number::toString`'s layout (`123000`, `12.5`, `0.000125`, `1.25e+21`).
+  Measured against node on 100 000 random doubles (all exponents, both modes)
+  and on every power of two and ten: no difference. It wrote six fraction
+  digits and trapped past `2^31`.
+- **A float in a 4-byte slot is the address of its `f64` cell**
+  (`$__box_f64`; `lowerSlotWord`, `emitToFloatSlot` / `emitFromFloatSlot`):
+  an array or tuple element, a variant's payload, a record field (as before),
+  a closure capture, a `?f64` (`OptInfo.cell = .f64` — a float array's
+  `at(i)` is the slot's own cell). A cell is never written again, except a
+  closure's capture, which is its own. `ElemKind.f64`, the shape code `f`,
+  `$__print_arr_f64`, `$__arr_index_of_f64` (`f64.eq`, as `Array#indexOf`),
+  `$__arr_join_f64`, `unique`'s mode 1 (the cell's bits) read the cell. It was
+  narrowed to an `f32` in the slot: `[1.1]` read back `1.100000023841858`, and
+  a tuple element, `join` and a record printed through its shape answered bits
+  or addresses.
+- **An `i64` is an `i64`** — a local (a written type wins over the value's:
+  `bindingLocalType`), a parameter, a return, a method's (`memberValType`),
+  an integer literal past the `i32` range (`numLitType`), `u32` and `u64`
+  (both held as `i64`). A record's `i64` field and a `?i64` hold an 8-byte cell
+  (`$__box_i64`, shape code `l`, `$__print_opt_i64`); a closure capture too.
+  It prints (`$__print_i64`) and turns into text (`$__i64_to_str`) in all its
+  digits.
+- **Nothing narrows silently.** `lowerCoerced` and `emitConvert` refuse a
+  float or an `i64` asked for as a narrower word (`lossyConversion`) — the
+  backstop that turns every slot with no wide reader into a located refusal:
+  an `i64` element of an array or tuple, an `i64` / float payload of a
+  `@Result` (`__bp_ok`), a function value's float or `i64` argument or answer
+  (it was `i32.trunc_f64_s`), an integer method over an `i64` but `toString`.
+  `Option.map` over or to a cell type is refused at the call.
+- **Arithmetic over a boxed optional is refused** (`lowerBinOp`): `xs[i]`
+  answers `?T`, and `[1, 2][0] + 1` added to the box's address (`269`).
+- **A cell enters only where its reader knows it.** An array's elements share
+  one kind (`lowerElemWord`: a float anywhere in a literal makes every slot a
+  cell, `[1, 2.5]`); a float pushed or prepended into an array no type says
+  holds floats (`var xs = []`) is refused at the value. A float in a record
+  field or a variant payload its declaration does not type as one
+  (`Box<T>(value: T)`, `Some(v: T)`), and a float or `i64` inside an argument
+  whose parameter is a container of a type parameter of an unspecialised
+  generic `fn` (`#(A, B)`, `Array<T>`), are refused: the one generic body
+  reads them as words (`264` for `1.1`).
+- **One wasm local has one type.** A binder whose name the function already
+  declared with another width is a local of its own (`bindTargetAs`: a `val`,
+  a `for` element, a HOF's element and accumulator); a HOF's element parameter
+  is the element's width while a shape question is asked about the body
+  (`holdElemParam`), and a `for` / HOF element that is a tuple or an array
+  takes its shape (`noteElemShape`), as a destructured tuple element does
+  from the tuple's print shape (`noteTupleElemByShape`) — `val #(a, b) = t`
+  printed the string `b` as its address.
+- **Integers do not wrap** (`emitArith`, `int_chk`): an `i32` `+`/`-`/`*`
+  (and a negation, a `+=`) is computed in `i64` and checked back; an `i64`
+  one by the signs or by dividing back. A result outside the type traps —
+  commonJS and erlang answer the wide number, which no `i32` holds; wasm
+  answered the wrapped one at exit 0. What overflow means on every target is
+  `decisions-pending.md` `gw-a`. Division keeps wasm's own traps (`/ 0`,
+  `MIN / -1`), where erlang raises too.
+
+Cells (four targets, one `.out`): `run/float_shortest_text`,
+`run/float_slot_keeps_f64`, `run/i64_full_width`; refused on wasm
+(`.wasm.expect`): `run/optional_index_arithmetic`, `run/i64_in_array_slot`,
+`run/fn_value_float_argument`, `run/generic_field_float`,
+`run/untyped_array_float_push`. `tests/wat.zig` pins the forms erlang spells
+otherwise or cannot make (`1e+21`, `5e-324`, `Infinity`, `NaN`) and the
+overflow trap as RUN LOGs.
 
 ## String indices count codepoints (decision 240)
 
@@ -755,7 +833,7 @@ Three pattern shapes had no wasm test, and two of them answered at exit 0:
 
 | Shape | Was | Is |
 |---|---|---|
-| a tuple pattern in a `case` (`#(0, s)`, `#(a, ..)`, `#(#(0, b), s)`) | refused — `` `` names no variant `` | `emitTuplePatternTest` / `bindTuplePattern`: each element that tests something is loaded from its slot (`i * 4`, no header) and tested in the chain a variant's payload literals use; a binder takes the element's shape (`noteTupleElemLocal`: a string prints as text, a float slot is read as `f32`); `..` skips the rest |
+| a tuple pattern in a `case` (`#(0, s)`, `#(a, ..)`, `#(#(0, b), s)`) | refused — `` `` names no variant `` | `emitTuplePatternTest` / `bindTuplePattern`: each element that tests something is loaded from its slot (`i * 4`, no header) and tested in the chain a variant's payload literals use; a binder takes the element's shape (`noteTupleElemLocal`: a string prints as text, a float is read from its slot's cell); `..` skips the rest |
 | a list pattern (`[]`, `[x]`, `[1, b]`, `[a, ..rest]`) | **irrefutable** — `[x]` took a `[]` arm, exit 0 | `emitListPatternTest`: the length (exactly the elements, or at least them with a spread), then each number literal; `bindListPattern` binds each element by the array's element shape and a named spread to `$__arr_slice(xs, n, …)`. Only `[..]` / `[..rest]` is irrefutable (`patternIsIrrefutable`) |
 | `true` / `false` inside a pattern | a **binder** named `true` — every arm matched, exit 0 | the bool literal (`isBoolLitName`): `subj == 1` / `subj == 0` |
 
@@ -1001,9 +1079,9 @@ member `libs/std/src/primitives.bp` declares — **every member is listed now**:
 | Family | Lowered |
 |---|---|
 | `String` | every member — `charCodeAt` (`$__str_char_code`: the code point at code-point index `i`, decoded from the UTF-8 sequence it walks to; `-1` out of range), `lastIndexOf` (`$__str_last_index_of`), `padStart`/`padEnd` (`$__str_pad`, the pad cycled), `replace`/`replaceAll` (`$__str_replace`; an empty pattern matches before every byte), `chars` (`$__str_split` on `""`, which cuts before every UTF-8 codepoint, as `split("")` does), `lines` (`$__str_lines`: cut at `\n`, a `\r` right before it dropped — node's `/\r?\n/`, erlang's `[<<"\r\n">>, <<"\n">>]` —, the last line keeping a trailing `\r`, `""` one empty line) and `words` (`$__str_words`: the runs of bytes that are not ` `/`\t`/`\n`/`\r`) |
-| `Array` | every member — `find` (`filter` then `at(0)`, the `?T` `at` answers); `lastIndexOf` (`$__arr_last_index_of_i32` / `_str`, `indexOf`'s equality from the last slot down); `pop` on a local, a global or a record's field (the `?T` `at(-1)` answers, then the name — or the field — rebound to `$__arr_slice(xs, 0, len - 1)`: a blob is a value, as `push` rebinds it to a grown copy; any other receiver may be an array another name holds, and is refused); `unique` (`$__arr_unique(xs, mode)`: consecutive duplicates dropped, `primitives.bp`'s body, compared by the element's word (`0` — an integer, a bool, an all-unit enum's ordinal), its `f32` (`1`) or a string's content (`2`), `uniqueMode` reading the receiver's shape); `flatten` / `flat` (`$__arr_flatten`, over a receiver whose shape is `[[…`); `flatMap(f)` (`map(f)` inlined, then `$__arr_flatten` — the body `primitives.bp` writes — when `f`'s tail is an array, `lambdaTailShape`); `chunked` / `sliding` (`$__arr_chunked` / `$__arr_sliding`, arrays of `$__arr_slice`s; `n <= 0` none); `fill(v)` (`$__arr_fill(len, v)`, `Array.repeat(v, xs.length)`, a float stored as its `f32` bits) |
+| `Array` | every member — `find` (`filter` then `at(0)`, the `?T` `at` answers); `lastIndexOf` (`$__arr_last_index_of_i32` / `_str` / `_f64`, `indexOf`'s equality from the last slot down); `pop` on a local, a global or a record's field (the `?T` `at(-1)` answers, then the name — or the field — rebound to `$__arr_slice(xs, 0, len - 1)`: a blob is a value, as `push` rebinds it to a grown copy; any other receiver may be an array another name holds, and is refused); `unique` (`$__arr_unique(xs, mode)`: consecutive duplicates dropped, `primitives.bp`'s body, compared by the element's word (`0` — an integer, a bool, an all-unit enum's ordinal), its `f32` (`1`) or a string's content (`2`), `uniqueMode` reading the receiver's shape); `flatten` / `flat` (`$__arr_flatten`, over a receiver whose shape is `[[…`); `flatMap(f)` (`map(f)` inlined, then `$__arr_flatten` — the body `primitives.bp` writes — when `f`'s tail is an array, `lambdaTailShape`); `chunked` / `sliding` (`$__arr_chunked` / `$__arr_sliding`, arrays of `$__arr_slice`s; `n <= 0` none); `fill(v)` (`$__arr_fill(len, v)`, `Array.repeat(v, xs.length)`, a float as the one cell every slot shares) |
 | `Integer`, `Bool` | all |
-| `Float` | all — `toString` (`$__f64_to_str`, `5.0` → `5` as on node) |
+| `Float` | all — `toString` (`$__f64_to_str`, `String(x)`: `5.0` → `5`, `0.1 + 0.2` → `0.30000000000000004`, as on node) |
 
 **What is still refused, by name** (`tests/wat.zig` `unique over records,
 flatMap over a scalar and flatten over scalars are refused at the call`; each
@@ -1090,19 +1168,20 @@ the first difference ends it, and `1` past the last:
 
 | `T` | parts |
 |---|---|
-| record | each field at `i * 4`: a string by `$__str_eq`, an `f64` by `$__f64_eq` over its box (`storeBoxedF64`), an integer, bool or all-unit enum by `i32.eq`, a composite by its own `$__eq_<T>`, a field written as one of the record's type parameters by the argument `T` spells (`Box<string>`), or as a word when it spells none |
-| payload enum | the ordinals at slot 0 (`i32.ne` → `0`), then the matching variant's payload at `(i + 1) * 4` — a float is the `f32` the slot holds; a unit variant is equal on its ordinal |
-| tuple | each element at `i * 4`, a float as its `f32` slot |
+| record | each field at `i * 4`: a string by `$__str_eq`, an `f64` by `$__f64_eq` over its cell, an `i64` by `i64.eq` over its cell (`EqSlot.field`), an integer, bool or all-unit enum by `i32.eq`, a composite by its own `$__eq_<T>`, a field written as one of the record's type parameters by the argument `T` spells (`Box<string>`), or as a word when it spells none |
+| payload enum | the ordinals at slot 0 (`i32.ne` → `0`), then the matching variant's payload at `(i + 1) * 4` — a float is the `f64` its slot's cell holds; a unit variant is equal on its ordinal |
+| tuple | each element at `i * 4`, a float as its cell's `f64` |
 | array | the lengths, then a `$brk`/`$cont` loop over `4 + i * 4` (locals `$n`, `$i`) |
 | `?X` | both absent is `a == b` above; one absent answers `0`; a pointer payload (a record, a variant, a container, a string) is compared directly, a box's payload by the payload's own compare |
 
 **A float under `==` is a total order** (decision 214, Java's `Double.compare` and
 Kotlin's data class): NaN equals NaN and `0.0` differs from `-0.0`, bare and as a
 part alike. `lowerBinOp`'s float `==` / `!=` and every float part call
-`$__f64_eq` (a record field's boxed `f64`) or `$__f32_eq` (a tuple element, a
-variant payload, an array element — the `f32` slot), written only when called:
-both NaN (`x != x`, which canonicalises every NaN payload) `or` the same bits
-(`i64.reinterpret_f64` / `i32.reinterpret_f32`, then `eq`). `<`, `>`, `<=`, `>=`
+`$__f64_eq` over the `f64` (a slot's cell, `EqSlot.word` / `.field`, or an
+optional's box, `.cell`), written only when called: both NaN (`x != x`, which
+canonicalises every NaN payload) `or` the same bits (`i64.reinterpret_f64`,
+then `eq`). There is no `f32` anywhere: a declared `f32` is held as the `f64`
+it is on commonJS. `<`, `>`, `<=`, `>=`
 keep the IEEE `f64.lt` family. `tests/language/run/f64_equality_total_order.bp`
 pins the zeros on four targets; the NaN half is `tests/wat.zig`'s `f64 ---- NaN
 equals NaN under ==` RUN LOG, since erlang and beam never produce a NaN. No hash is

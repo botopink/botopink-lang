@@ -1,0 +1,63 @@
+//// A float keeps its `f64` value wherever it is held — an array element, a
+//// tuple element, a variant's payload, a record field, a `?f64`, a closure's
+//// capture — and is found, compared, joined and printed by that value.
+////
+//// The wasm gap this pins (`00 · gate-wasm-wrong-answers`): every such slot is
+//// four bytes, and a float was narrowed into it as an `f32`, so `[1.1, 2.2]`
+//// read back `1.100000023841858` (hidden by the six-digit printer), `t.0` and
+//// `xs.join(",")` printed the `f32`'s bits as an integer, `xs.indexOf(2.2)`
+//// answered `-1`, `ys.push(0.1)` stored `0`, and a record's float field
+//// printed as its cell's address read as a float. A float slot now holds the
+//// address of the float's own 8-byte cell.
+
+type P(x: f64, n: i32)
+
+type Shape {
+    Circle(r: f64),
+    Dot,
+}
+
+pub fn main() {
+    val xs = [1.1, 2.2];
+    @print(xs);
+    @print(xs[0]);
+    @print(xs.at(1));
+    @print(xs.first());
+    @print(xs.map({ x -> x * 3.0 }));
+    @print(xs.fold(0.0, { a, x -> a + x }));
+    for (xs) { x ->
+        @print(x);
+    }
+    @print(xs.indexOf(2.2));
+    @print(xs.lastIndexOf(1.1));
+    @print(xs.contains(1.1));
+    @print(xs.join(","));
+    @print([1.1, 1.1, 2.2].unique());
+    @print(xs.fill(0.3));
+    @print(xs.filter({ x -> x > 2.0 }));
+    var ys: Array<f64> = [];
+    ys.push(0.1);
+    @print(ys);
+    val t = #(1.1, "a");
+    @print(t);
+    @print(t.0);
+    val #(a, b) = t;
+    @print(a, b);
+    @print(Shape.Circle(r: 1.1));
+    case Shape.Circle(r: 2.2) {
+        Shape.Circle(r) -> @print(r);
+        Shape.Dot -> @print(0.0);
+    }
+    @print(P(x: 1.1, n: 2));
+    @print(P(x: 1.1, n: 2) == P(x: 1.1, n: 2));
+    val o: ?f64 = 1.1;
+    @print(o);
+    @print(o.unwrapOr(0.0) + 1.0);
+    @print(o == 1.1);
+    if (o) {
+        v ->
+        @print(v * 2.0);
+    }
+    val r = 1.1;
+    @print([1, 2].map({ x -> r * 2.0 }));
+}

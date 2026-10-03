@@ -29,7 +29,7 @@ fn main() {
   )
   ;; Scratch layout below the data section (which starts at 256):
   ;;   0..8  WASI iovec   8  newline byte
-  ;;  16..32 bool text   32..64 float fraction   64..128 i32 digits
+  ;;  16..32 bool text   64..128 i32 digits
   (func $__write_bytes (param $p i32) (param $n i32)
     i32.const 0
     local.get $p
