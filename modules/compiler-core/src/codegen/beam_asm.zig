@@ -5212,6 +5212,7 @@ const Emitter = struct {
         try self.beginHelper("main", 1);
         try beamEmitter.writeAllocate(w, 1, 1);
         try beamEmitter.writeMoveOp(w, Op.xr(0), Dst.yr(0));
+        try self.emitUnicodeStdio();
         if (self.load_siblings) {
             const loader = try self.fnLabelsFor(LOAD_SIBLINGS, 0);
             try beamEmitter.writeCall(w, .normal, 0, .{ .local = loader.entry }, 0);
@@ -5248,6 +5249,20 @@ const Emitter = struct {
         try beamEmitter.writeCall(w, .only, 2, .{ .local = loop.entry }, 0);
     }
 
+    /// `io:setopts(standard_io, [{encoding, unicode}])` — the first call of
+    /// every entry (`'_botopink_main'/0`, the test runner's `main/1`), as the
+    /// erlang backend's `unicodeStdio`. A botopink string is UTF-8 and `@print`
+    /// writes it with `~ts`; `erl` opens `standard_io` in the encoding of the
+    /// host's locale, so under `LANG=C` an `é` came out as the latin1 byte
+    /// `0xE9` and a code point above 255 as `\x{1F600}`. The program sets it
+    /// itself rather than the runner pinning a locale, which would hide it
+    /// (decision 67). The caller holds a frame: the call is not the last.
+    fn emitUnicodeStdio(self: *Emitter) !void {
+        try beamEmitter.writeMove(self.out, Term.atomOf("standard_io"), 0);
+        try beamEmitter.writeMove(self.out, Term.listOf(&.{Term.tupleOf(&.{ Term.atomOf("encoding"), Term.atomOf("unicode") })}), 1);
+        try beamEmitter.writeCall(self.out, .normal, 2, .{ .ext = .{ .module = "io", .function = "setopts" } }, 0);
+    }
+
     fn emitEntrypointWrappers(self: *Emitter) !void {
         const wrapper = try self.fnLabelsFor("'_botopink_main'", 0);
         const main1 = try self.fnLabelsFor("main", 1);
@@ -5261,9 +5276,9 @@ const Emitter = struct {
         try beamEmitter.writeLine(self.out, self.module_name, self.cur_line);
         try beamEmitter.writeFuncInfo(self.out, self.module_name, "'_botopink_main'", 0);
         try beamEmitter.writeLabel(self.out, wrapper.entry);
-        if (self.entry_stmts.items.len == 0 and self.import_inits.items.len == 0 and !self.load_siblings) {
-            try beamEmitter.writeCall(self.out, .only, 0, .{ .local = main0.entry }, 0);
-        } else {
+        // Every entry sets `standard_io` to unicode first, so it holds a
+        // frame even when nothing else runs before `main/0`.
+        {
             self.resetFnState(0);
             self.cur_fn_name = "_botopink_main";
             var n: u32 = 0;
@@ -5272,6 +5287,7 @@ const Emitter = struct {
             }
             self.num_y = n;
             try self.emitFrame(0);
+            try self.emitUnicodeStdio();
             // The host modules shipped beside this one, before any module's
             // body can call into them.
             if (self.load_siblings) {

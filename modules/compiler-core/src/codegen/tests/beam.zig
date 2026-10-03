@@ -426,3 +426,26 @@ test "beam: is ---- §4.1 × §4.2, one mark per value (a tuple type tests each 
         \\
     , &.{});
 }
+
+// ── the entry point's standard_io ────────────────────────────────────────────
+
+test "beam: an entry point sets standard_io to unicode before anything prints" {
+    // The beam twin of erlang's fixture of the same name (02-erlang step 5's
+    // "under `LANG=C` beam still writes latin1"): `erl` opens `standard_io` in
+    // the host locale's encoding, so `@print("é")` wrote the latin1 byte `0xE9`
+    // and `"\u{1F600}"` the text `\x{1F600}`. `'_botopink_main'/0` now calls
+    // `io:setopts/2` first, in a frame of its own (`run/
+    // string_literal_unicode_escape` run with `LANG=C` is the measurement; this
+    // harness has the host's locale).
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\pub fn main() {
+        \\    @print("é", "\u{1F600}");
+        \\}
+    , "é 😀\n", &.{
+        \\    {allocate, 0, 0}.
+        \\    {move, {atom, standard_io}, {x, 0}}.
+        \\    {move, {literal, [{encoding, unicode}]}, {x, 1}}.
+        \\    {call_ext, 2, {extfunc, io, setopts, 2}}.
+        \\    {call_last, 0, {f,
+    });
+}
