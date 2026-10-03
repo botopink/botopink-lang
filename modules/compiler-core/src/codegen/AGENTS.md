@@ -1155,6 +1155,17 @@ codegen/
   to be) or an `apply` of a variable (a fn-typed local); a state that cannot
   happen (an unknown `__bp_*` op, an empty OR pattern) is an emit error, never an
   empty `raw`.
+- **A block as a value has no lowering of its own** (decision 2, C-09's R7 — measured in
+  1.0.11-beta `01-compiler/02-erlang` step 10). The one site that takes a block in value position
+  is `@block`'s applied `fun` (`builtinCallNode`), and it is genuine: `val a = @block { return 3; }`
+  and a body whose every path returns (the fixture `js: block ---- @block builtin`, snapshot
+  `block_block_builtin`) are values, and `@block { … };` as a statement scopes the body. The shape
+  decision 2 refuses — `val a = @block { 1 + 2 };`, which `botopink check` still accepts and erlang
+  prints as `3` — goes through the same `fun`, whose last expression is its value by Erlang's own
+  rule; no `case` is built for it, and no erlang snapshot holds one. When the checker refuses the
+  tail form (01's row, the same box as `04-js` step 1), nothing in `erlang.zig` is deleted and the
+  erlang snapshots do not move. A value `if` / `case` whose arm is a block (`val s = if (c) { "a" }
+  else { "b" }`, `docs.md` § If / else) is a `case` whose arms end in their value — legal, not R7's.
 - **Mutation through branches and loops** (`mutatingExpr`): a statement-level
   `if` / `for (xs) { x -> … }` / `xs.forEach({ x -> … })` that reassigns variables
   bound before it (looking through nested `if`/`loop`/`forEach`) returns the new
