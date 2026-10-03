@@ -54,7 +54,10 @@ for tree in "${TREES[@]}"; do
     if out="$("$bin" format --check "$tree" 2>&1)"; then
         printf '  ✓ %s\n' "$tree"
     else
-        printf '%s\n' "$out" | grep -vE '^\s*(\x1b\[[0-9;]*m)?Unchanged' >&2 || true
+        # The colour escape is passed as a real ESC byte and the space as a POSIX
+        # class: grep -E has no \x escape, and BSD grep (macOS) no \s.
+        esc="$(printf '\033')"
+        printf '%s\n' "$out" | grep -vE "^[[:space:]]*(${esc}\[[0-9;]*m)?Unchanged" >&2 || true
         printf '  ✗ %s (run: %s format %s)\n' "$tree" "$bin" "$tree" >&2
         status=1
     fi
