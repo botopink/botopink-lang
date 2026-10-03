@@ -1689,6 +1689,14 @@ codegen/
   (`erlc +from_asm`) and runs each test module with `erl -noshell -pa <dir>
   -eval "'<atom>':main(init:get_plain_arguments()), halt()." -extra
   [filter]`; all 68 test-kind cells of `tests/language` pass there.
+- **An entry point sets its own `standard_io` to unicode** (`emitUnicodeStdio`,
+  the twin of `erlang.zig`'s `unicodeStdio`): `io:setopts(standard_io,
+  [{encoding, unicode}])` is the first call of `'_botopink_main'/0` and of the
+  test runner's `main(Args)`, so `'_botopink_main'/0` always holds a frame
+  (`{allocate, 0, 0}`) even when only `main/0` follows. Under `LANG=C` beam
+  wrote `@print("é")` as the latin1 byte `0xE9` and `"\u{1F600}"` as the text
+  `\x{1F600}`; pinned by `codegen/tests/beam.zig`'s fixture of the same name,
+  measured by `run/string_literal_unicode_escape` under `LANG=C`.
 - **Host `.erl` modules beside the program — `'__bp_load_siblings'/0`**
   (`emitLoadSiblings`; 1.0.11-beta `00-gate` front 111). `botopink build
   --target beam` copies the `<host>.erl` of every `#[@External.Erlang("<host>",

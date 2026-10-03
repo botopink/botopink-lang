@@ -84,7 +84,11 @@ fn main() {
     {line, [{location, "test@main.erl", 3}]}.
     {func_info, {atom, test@main}, {atom, '_botopink_main'}, 0}.
   {label, 7}.
-    {call_only, 0, {f, 5}}.
+    {allocate, 0, 0}.
+    {move, {atom, standard_io}, {x, 0}}.
+    {move, {literal, [{encoding, unicode}]}, {x, 1}}.
+    {call_ext, 2, {extfunc, io, setopts, 2}}.
+    {call_last, 0, {f, 5}, 0}.
 
 {function, main, 1, 9}.
   {label, 8}.
