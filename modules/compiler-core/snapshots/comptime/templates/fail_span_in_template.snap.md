@@ -13,4 +13,4 @@ error: component `Buttom` not found in caller scope
 5 │ <Buttom label="Send"/>
   │  ^
 
-  hint: raised by the template function via `fail`/`failAt` against this template
+  hint: raised by the template function against this template (`fail`/`failAt`, or `lookup` of a name its text does not spell)

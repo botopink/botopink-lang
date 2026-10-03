@@ -10,7 +10,7 @@ pub fn need(comptime t: @Expr<string>) -> @Expr<string> {
     };
     return t.build("\"ok\"");
 }
-val r = need "x";
+val r = need "<Buttom/>";
 ```
 
 ----- COMPTIME BEAM ASSEMBLY -- template need
@@ -133,35 +133,22 @@ val r = need "x";
 %% main/1 argument — an external term, not part of the module:
 %% Arg0 = #{
 %%     '__bp_capture' => <<"t">>,
-%%     text => <<"x">>,
+%%     text => <<"<Buttom/>">>,
 %%     parts => [
 %%         #{
 %%             kind => <<"Text">>,
-%%             text => <<"x">>,
-%%             span => #{start => 0, 'end' => 1, line => 1}
+%%             text => <<"<Buttom/>">>,
+%%             span => #{start => 0, 'end' => 9, line => 1}
 %%         }
 %%     ],
 %%     source => #{file => <<"">>, line => 11, col => 14},
 %%     context => #{
 %%         source => #{file => <<"">>, line => 11, col => 14},
-%%         text => <<"x">>,
+%%         text => <<"<Buttom/>">>,
 %%         multiline => false
 %%     },
-%%     bindings => [
-%%         #{
-%%             name => <<"Button">>,
-%%             kind => 'Record_',
-%%             identity => <<"main@@Button">>,
-%%             local => <<"Button">>
-%%         },
-%%         #{
-%%             name => <<"need">>,
-%%             kind => 'Fn',
-%%             identity => <<"main@@need">>,
-%%             local => <<"need">>
-%%         },
-%%         #{name => <<"r">>, kind => 'Val', identity => <<"main@@r">>, local => <<"r">>}
-%%     ]
+%%     bindings => [],
+%%     words => [<<"Buttom">>]
 %% }
 ```
 

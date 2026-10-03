@@ -5,14 +5,14 @@
 ////
 //// Each of the three shapes a default can be declared in appears once — a free
 //// `fn`, a record constructor and an instance method — and the last line is
-//// the shape the plain tail-append cannot reach: `P(y: 2)` names the REQUIRED
-//// trailing field and omits the leading one that has the default.
+//// a constructor called by label: `P(y: 2)` names the required field and
+//// omits the defaulted one after it (a default is trailing, decision 244).
 
 fn connect(host: string, port: i32 = 80) -> string {
     return host + ":" + port.toString();
 }
 
-type P(x: i32 = 0, y: i32) {
+type P(y: i32, x: i32 = 0) {
     pub fn bump(self: Self, by: i32 = 5) -> i32 {
         return self.y + by;
     }

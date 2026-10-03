@@ -539,7 +539,7 @@ test "format: type ---- a comment in a compact field list opens it and adds the 
 
 test "format: type ---- annotations and defaults in a field list" {
     try h.assertFormat(std.testing.allocator,
-        \\type Config(#[value("k")] host: string = "0.0.0.0", port: i32)
+        \\type Config(#[value("k")] host: string = "0.0.0.0", port: i32 = 8080)
     );
 }
 

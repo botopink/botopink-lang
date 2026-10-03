@@ -131,26 +131,8 @@ fn main() {
 ;;         text => <<"yaml">>,
 ;;         multiline => false
 ;;     },
-;;     bindings => [
-;;         #{
-;;             name => <<"conf">>,
-;;             kind => 'Fn',
-;;             identity => <<"main@@conf">>,
-;;             local => <<"conf">>
-;;         },
-;;         #{
-;;             name => <<"cfg">>,
-;;             kind => 'Val',
-;;             identity => <<"main@@cfg">>,
-;;             local => <<"cfg">>
-;;         },
-;;         #{
-;;             name => <<"main">>,
-;;             kind => 'Fn',
-;;             identity => <<"main@@main">>,
-;;             local => <<"main">>
-;;         }
-;;     ]
+;;     bindings => [],
+;;     words => [<<"yaml">>]
 ;; }
 ```
 

@@ -21,7 +21,7 @@ type Point(x: i32, y: i32)
 
 type Shape { Rect(width: i32, height: i32), Dot }
 
-type Port(number: i32 = 80, host: string)
+type Port(host: string, number: i32 = 80)
 
 fn shown(s: Shape) -> i32 {
     return case s {

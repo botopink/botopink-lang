@@ -15,7 +15,8 @@ const comptime_pipeline = @import("botopink").comptime_pipeline;
 
 /// A self-contained sub-language fixture: a template fn that returns
 /// `@ExprCustom`, lighting up `select` as a keyword and `name` as a property
-/// (the latter bound to the `Users` struct via `ref`). No real lib involved —
+/// (the latter bound to the `Users` struct via `ref` — the text spells `Users`,
+/// decision 237). No real lib involved —
 /// proves the overlay is generic.
 const FIXTURE =
     \\pub type Users(name: string)
@@ -26,7 +27,7 @@ const FIXTURE =
     \\    val root = CustomNode(kind: "root", span: Span(0, 0, 1), label: "none", ref: null, children: [kw, col]);
     \\    return e.custom(root, code);
     \\}
-    \\val xs = q "select name";
+    \\val xs = q "select name from Users";
 ;
 
 /// Semantic tokens with the sub-language overlay merged in (mirrors the server's
@@ -240,7 +241,7 @@ const X_DEP =
 ;
 const X_MAIN =
     \\import { erika, Cities } from "erika";
-    \\val xs = erika "select name";
+    \\val xs = erika "select name from Cities";
 ;
 
 fn compileCrossModule(gpa: std.mem.Allocator) !h.CompileHandle {

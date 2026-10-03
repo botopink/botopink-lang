@@ -278,6 +278,6 @@ pub fn failDiagnostic(capture: *const CapturedExpr, span: ?Span, msg: []const u8
     const loc = if (span) |s| mapSpanToLoc(capture, s) else capture.loc;
     return TypeError.custom(
         msg,
-        "raised by the template function via `fail`/`failAt` against this template",
+        "raised by the template function against this template (`fail`/`failAt`, or `lookup` of a name its text does not spell)",
     ).withLoc(loc);
 }

@@ -402,3 +402,42 @@ test "infer: record update ---- a spread with a labelled field checks (C11)" {
         \\val b = Person(..alice, age: 25);
     );
 }
+
+test "infer: a type-parameter value widens to its optional at a return" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\fn some<T>(v: T) -> ?T {
+        \\    return v;
+        \\}
+        \\fn pick<T>(v: T, keep: bool) -> ?T {
+        \\    if (keep) return v;
+        \\    return null;
+        \\}
+        \\val a = some(3);
+        \\val b = pick("s", false);
+    );
+}
+
+test "infer error: a `?T` never narrows to its `T` at a return" {
+    const src =
+        \\fn unwrap<T>(v: ?T) -> T {
+        \\    return v;
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lx = Lexer.init(src);
+    const tokens = try lx.scanAll(alloc);
+    defer lx.deinit(alloc);
+    var p = Parser.init(tokens);
+    var program = try p.parse(alloc);
+    defer program.deinit(alloc);
+    var env = try inferMod.freshEnv(alloc, std.testing.allocator);
+    defer env.deinit();
+    try std.testing.expectError(error.TypeError, inferMod.inferProgram(&env, program));
+    const err = env.lastError orelse return error.TestExpectedEqual;
+    const desc = try h.renderTypeError(std.testing.allocator, src, err);
+    defer std.testing.allocator.free(desc);
+    try std.testing.expect(std.mem.indexOf(u8, desc, "expected `T`, got `?T`") != null);
+    try std.testing.expectEqual(@as(usize, 2), err.loc.?.line);
+}

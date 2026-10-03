@@ -129,21 +129,8 @@ val s = outer "x";
 %%         text => <<"x">>,
 %%         multiline => false
 %%     },
-%%     bindings => [
-%%         #{
-%%             name => <<"inner">>,
-%%             kind => 'Fn',
-%%             identity => <<"main@@inner">>,
-%%             local => <<"inner">>
-%%         },
-%%         #{
-%%             name => <<"outer">>,
-%%             kind => 'Fn',
-%%             identity => <<"main@@outer">>,
-%%             local => <<"outer">>
-%%         },
-%%         #{name => <<"s">>, kind => 'Val', identity => <<"main@@s">>, local => <<"s">>}
-%%     ]
+%%     bindings => [],
+%%     words => [<<"x">>]
 %% }
 ```
 

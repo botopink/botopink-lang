@@ -659,13 +659,21 @@ fn argPlans(
 // ── capture ───────────────────────────────────────────────────────────────────
 
 /// A capture as the map its host functions read:
-/// `#{'__bp_capture' => Param, text, parts, source, context, bindings}`.
+/// `#{'__bp_capture' => Param, text, parts, source, context, bindings, words}`.
 /// Text is the literal's raw text (escapes unprocessed); in a template with
 /// `${…}` holes each hole appears as its `__bp_hole_<param>_<i>` placeholder,
 /// which `infer.zig` substitutes back when the built code is spliced.
+///
+/// Decision 237: `words` are the words of the literal's own text
+/// (`appendWords`) and `bindings` the scope entries whose name is one of them,
+/// in the order the words first appear — `<Card title="x"><Badge/></Card>`
+/// carries `Card` and `Badge` (when the scope has them), `"cfg-0"` nothing. The
+/// argument is O(text), never O(scope). `lookup/2` answers `undefined` for a
+/// word the scope lacks and fails the template for a name that is not a word.
 pub fn captureToTerm(arena: std.mem.Allocator, cap: *const template.CapturedExpr) std.mem.Allocator.Error!Term {
     var text: std.ArrayListUnmanaged(u8) = .empty;
     var parts: std.ArrayListUnmanaged(Term) = .empty;
+    var words: Words = .empty;
 
     switch (cap.node.*) {
         .literal => |lit| switch (lit.kind) {
@@ -673,6 +681,7 @@ pub fn captureToTerm(arena: std.mem.Allocator, cap: *const template.CapturedExpr
                 var hole: usize = 0;
                 for (st.parts) |part| switch (part) {
                     .text => |t| {
+                        try appendWords(arena, &words, t);
                         const start = text.items.len;
                         try text.appendSlice(arena, t);
                         try parts.append(arena, try partTerm(arena, "Text", "text", t, text.items, start));
@@ -688,12 +697,14 @@ pub fn captureToTerm(arena: std.mem.Allocator, cap: *const template.CapturedExpr
             },
             else => {
                 const t = cap.text orelse "";
+                try appendWords(arena, &words, t);
                 try text.appendSlice(arena, t);
                 if (t.len > 0) try parts.append(arena, try partTerm(arena, "Text", "text", t, text.items, 0));
             },
         },
         else => {
             const t = cap.text orelse "";
+            try appendWords(arena, &words, t);
             try text.appendSlice(arena, t);
             if (t.len > 0) try parts.append(arena, try partTerm(arena, "Text", "text", t, text.items, 0));
         },
@@ -710,30 +721,62 @@ pub fn captureToTerm(arena: std.mem.Allocator, cap: *const template.CapturedExpr
     context_entries[1] = Term.field("text", Term.str(text.items));
     context_entries[2] = Term.field("multiline", .{ .boolean = cap.multiline });
 
+    // Decision 237: one scope probe per word of the text — the scope's size
+    // never enters the capture.
     var bindings: std.ArrayListUnmanaged(Term) = .empty;
-    if (cap.scope) |scope| {
-        var it = scope.entries.iterator();
-        while (it.next()) |e| {
-            // Decision 112: `name` is the declaration's own name and
-            // `identity` its `<package>@<path>@@<Decl>`; `local` is the name
-            // the scope spells — what `lookup` matches and `ref` splices.
-            const be = try arena.alloc(Term.MapEntry, 4);
-            be[0] = Term.field("name", Term.str(e.value_ptr.declName));
-            be[1] = Term.field("kind", Term.atomOf(e.value_ptr.kind.variantName()));
-            be[2] = Term.field("identity", Term.str(e.value_ptr.identity));
-            be[3] = Term.field("local", Term.str(e.value_ptr.name));
-            try bindings.append(arena, Term.mapOf(be));
-        }
+    const word_terms = try arena.alloc(Term, words.count());
+    for (words.keys(), word_terms) |word, *wt| {
+        wt.* = Term.str(word);
+        const scope = cap.scope orelse continue;
+        const e = scope.entries.getPtr(word) orelse continue;
+        // Decision 112: `name` is the declaration's own name and
+        // `identity` its `<package>@<path>@@<Decl>`; `local` is the name
+        // the scope spells — what `lookup` matches and `ref` splices.
+        const be = try arena.alloc(Term.MapEntry, 4);
+        be[0] = Term.field("name", Term.str(e.declName));
+        be[1] = Term.field("kind", Term.atomOf(e.kind.variantName()));
+        be[2] = Term.field("identity", Term.str(e.identity));
+        be[3] = Term.field("local", Term.str(e.name));
+        try bindings.append(arena, Term.mapOf(be));
     }
 
-    const entries = try arena.alloc(Term.MapEntry, 6);
+    const entries = try arena.alloc(Term.MapEntry, 7);
     entries[0] = .{ .key = Term.atomOf("__bp_capture"), .value = Term.str(cap.paramName) };
     entries[1] = Term.field("text", Term.str(text.items));
     entries[2] = Term.field("parts", Term.listOf(parts.items));
     entries[3] = Term.field("source", source);
     entries[4] = Term.field("context", Term.mapOf(context_entries));
     entries[5] = Term.field("bindings", Term.listOf(bindings.items));
+    entries[6] = Term.field("words", Term.listOf(word_terms));
     return Term.mapOf(entries);
+}
+
+/// The distinct words of a capture's text, in order of first appearance.
+const Words = std.StringArrayHashMapUnmanaged(void);
+
+/// Decision 237 — the words of `text`, appended to `words`: a word is a
+/// maximal run of `[A-Za-z0-9_]` whose first byte is not a digit — the shape
+/// of a botopink identifier (`lexer.zig` `isAlpha` / `isAlphaNumeric`), so
+/// every name a scope can hold is a word wherever the text spells it. Every
+/// other byte (punctuation, whitespace, non-ASCII) separates words. The text
+/// is the literal's own: a `${…}` hole contributes no word (its source is
+/// spliced back by `infer.zig`, never looked up) and neither does its
+/// placeholder.
+fn appendWords(arena: std.mem.Allocator, words: *Words, text: []const u8) std.mem.Allocator.Error!void {
+    var i: usize = 0;
+    while (i < text.len) {
+        if (!isWordByte(text[i])) {
+            i += 1;
+            continue;
+        }
+        const start = i;
+        while (i < text.len and isWordByte(text[i])) i += 1;
+        if (!std.ascii.isDigit(text[start])) try words.put(arena, text[start..i], {});
+    }
+}
+
+fn isWordByte(c: u8) bool {
+    return std.ascii.isAlphanumeric(c) or c == '_';
 }
 
 /// `#{kind => Kind, <field> => Value, span => #{start, end, line}}` for the part

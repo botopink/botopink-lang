@@ -1009,3 +1009,73 @@ test "infer: mutual_recursion ---- renderToString and renderChildren call each o
         \\}
     );
 }
+
+/// Infers `src` and answers the rendered refusal (caller frees), or fails
+/// the test when inference accepts it.
+fn refusalOf(src: []const u8) ![]u8 {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lx = Lexer.init(src);
+    const tokens = try lx.scanAll(alloc);
+    defer lx.deinit(alloc);
+    var p = Parser.init(tokens);
+    var program = try p.parse(alloc);
+    defer program.deinit(alloc);
+    var env = try inferMod.freshEnv(alloc, std.testing.allocator);
+    defer env.deinit();
+    try std.testing.expectError(error.TypeError, inferMod.inferProgram(&env, program));
+    const err = env.lastError orelse return error.TestExpectedEqual;
+    try std.testing.expect(err.loc != null);
+    return h.renderTypeError(std.testing.allocator, src, err);
+}
+
+test "infer error: a module fn named like an import item is import-name-collision at its name" {
+    const desc = try refusalOf(
+        \\import {page} from "deco";
+        \\pub fn page(n: i32) -> i32 {
+        \\    return n;
+        \\}
+    );
+    defer std.testing.allocator.free(desc);
+    try std.testing.expect(std.mem.indexOf(u8, desc, "import-name-collision: `page` is already bound by the import of `page`; a function of this module") != null);
+    try std.testing.expect(std.mem.indexOf(u8, desc, ":2:8") != null);
+}
+
+test "infer error: a module val named like an import item is import-name-collision at its name" {
+    const desc = try refusalOf(
+        \\import {limit} from "conf";
+        \\val limit = 3;
+    );
+    defer std.testing.allocator.free(desc);
+    try std.testing.expect(std.mem.indexOf(u8, desc, "a `val` of this module would bind it again") != null);
+    try std.testing.expect(std.mem.indexOf(u8, desc, ":2:5") != null);
+}
+
+test "parse error: a default is trailing in a record's fields and a variant's payload (decision 244)" {
+    const cases = [_][]const u8{
+        "type Port(number: i32 = 80, host: string)",
+        "type Shape { Rect(width: i32 = 1, height: i32), Dot }",
+    };
+    for (cases) |src| {
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+        var lx = Lexer.init(src);
+        const tokens = try lx.scanAll(alloc);
+        defer lx.deinit(alloc);
+        var p = Parser.init(tokens);
+        try std.testing.expectError(error.UnexpectedToken, p.parse(alloc));
+        const info = p.parseError orelse return error.TestExpectedEqual;
+        try std.testing.expectEqual(parserMod.ParseErrorType.fieldDefaultTrailingOnly, info.kind);
+    }
+    // Every field after the first default carries one: accepted.
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lx = Lexer.init("type Port(host: string, number: i32 = 80, tls: bool = false)");
+    const tokens = try lx.scanAll(alloc);
+    defer lx.deinit(alloc);
+    var p = Parser.init(tokens);
+    _ = try p.parse(alloc);
+}

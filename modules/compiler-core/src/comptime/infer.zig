@@ -523,6 +523,7 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     env.assocTypesPending = !env.skipDecoratorInvoke;
 
     try validateUniqueDefaults(env, program);
+    try refuseDeclsNamedLikeImports(env, program);
     try noteExplicitTypeNames(env, program);
 
     // Pass 1: register type definitions and their constructors.
@@ -603,6 +604,38 @@ fn validateUniqueDefaults(env: *Env, program: ast.Program) InferError!void {
     }
 }
 
+/// A module-level `fn`, `val` or `var` named like an item one of the module's
+/// imports binds (`import {page} from "deco";` beside `pub fn page(…)`) binds
+/// the name twice: commonJS stopped at load (`Identifier 'page' has already
+/// been declared`) while erlang ran. Refused at the declaration's name, on
+/// every target, naming the import — `import-name-collision`, the rule two
+/// import items already follow (decision 107). A type named like an imported
+/// type is decision 170's collision, refused where the types are registered.
+fn refuseDeclsNamedLikeImports(env: *Env, program: ast.Program) InferError!void {
+    var imported = std.StringHashMap(ast.ImportPath).init(env.arena);
+    defer imported.deinit();
+    for (program.decls) |decl| switch (decl) {
+        .use => |u| {
+            if (u.activationOnly) continue;
+            for (u.imports) |imp| if (!imp.activate) try imported.put(imp.name(), imp);
+        },
+        else => {},
+    };
+    if (imported.count() == 0) return;
+    for (program.decls) |decl| {
+        const name, const loc, const what = switch (decl) {
+            .@"fn" => |f| .{ f.name, f.nameLoc, "a function" },
+            .val => |v| .{ v.name, v.nameLoc, if (v.mutable) "a `var`" else "a `val`" },
+            else => continue,
+        };
+        const imp = imported.get(name) orelse continue;
+        const path = try imp.dotted(env.arena);
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is already bound by the import of `{s}`; {s} of this module would bind it again", .{ diagnostics.import_name_collision, name, path, what });
+        env.lastError = locatedAt(TypeError.custom(msg, "Rename the declaration, or import the item under another name with `as`."), loc);
+        return error.TypeError;
+    }
+}
+
 pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBinding {
     var list: std.ArrayListUnmanaged(TypedBinding) = .empty;
     env.testIndex = 0;
@@ -612,6 +645,7 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
     env.assocTypesPending = !env.skipDecoratorInvoke;
 
     try validateUniqueDefaults(env, program);
+    try refuseDeclsNamedLikeImports(env, program);
     try noteExplicitTypeNames(env, program);
 
     try registerTypeAliases(env, program);
@@ -7984,6 +8018,17 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
                 "CustomExpr"
             else
                 b.name;
+            // A dotted name (`collections.Dict<…>`) is a section path or an
+            // associated type, resolved by `resolveTypeName`'s dotted rule —
+            // never a nominal type spelled with a dot, which no declaration
+            // makes and no value inhabits. A std module's type written through
+            // its namespace became the leaf in `std_namespace.expand`.
+            if (!b.is_builtin and std.mem.indexOfScalar(u8, name, '.') != null) {
+                const head = try env.resolveTypeName(name, genericMap);
+                const hd = head.deref();
+                if (hd.* != .named) return head;
+                return env.namedTypeArgs(hd.named.name, args);
+            }
             return env.namedTypeArgs(name, args);
         },
         // A comptime typeparam accepts a value of any type at the call site;

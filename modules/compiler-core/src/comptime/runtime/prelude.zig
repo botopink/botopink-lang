@@ -55,6 +55,11 @@ pub const decorator_fail_tag = "__bp_decorator_fail";
 /// `{'__bp_code', Source}` — what `build`/`code`/`ref` return and `'__bp_reply'`
 /// matches.
 pub const code_tag = "__bp_code";
+/// Decision 237 — the message `lookup/2` fails the template with when its name
+/// is not a word of the captured text: head ++ Name ++ tail. ASCII only: the
+/// prelude's binary literals carry bytes, not code points.
+pub const lookup_not_a_word_head = "lookup(\"";
+pub const lookup_not_a_word_tail = "\"): not a word of the template's text; a template capture carries only the bindings whose name its text spells";
 /// The process-dictionary key `emit/1` accumulates under.
 pub const emitted_key = "__bp_emitted";
 
@@ -96,11 +101,28 @@ pub fn templateForms(b: Ast.Builder) Error![]const Ast.Form {
 
     const capture_param = try b.map(&.{.{ .key = A("__bp_capture"), .value = V("Param"), .exact = true }});
     try forms.appendSlice(b.arena, &.{
-        // lookup(#{bindings := Bindings}, Name) ->
-        //     case [B || B = #{local := N} <- Bindings, N =:= Name] of [Hit | _] -> Hit; [] -> undefined end.
+        // lookup(#{'__bp_capture' := Param, bindings := Bindings, words := Words}, Name) ->
+        //     case [B || B = #{local := N} <- Bindings, N =:= Name] of
+        //         [Hit | _] -> Hit;
+        //         [] -> case [W || W <- Words, W =:= Name] of
+        //                   [_ | _] -> undefined;
+        //                   [] -> erlang:throw({'__bp_template_fail', <message naming Name>, Param, null})
+        //               end
+        //     end.
         // Matched on the name the call site spells (`local`); the hit carries
-        // the declaration's own `name` and `identity` (decision 112).
-        try b.function("lookup", &.{ try b.map(&.{Ast.exactField("bindings", V("Bindings"))}), V("Name") }, &.{}, &.{
+        // the declaration's own `name` and `identity` (decision 112). Decision
+        // 237: the capture carries only the bindings its text names, so a
+        // word of the text the scope lacks is `undefined`, and a name that is
+        // not a word of the text fails the template at its literal — never a
+        // silent miss.
+        try b.function("lookup", &.{
+            try b.map(&.{
+                .{ .key = A("__bp_capture"), .value = V("Param"), .exact = true },
+                Ast.exactField("bindings", V("Bindings")),
+                Ast.exactField("words", V("Words")),
+            }),
+            V("Name"),
+        }, &.{}, &.{
             try b.caseOf(.{ .list_comp = .{
                 .element = try b.ptr(V("B")),
                 .qualifiers = try b.arena.dupe(Ast.ListComp.Qualifier, &.{
@@ -112,7 +134,29 @@ pub fn templateForms(b: Ast.Builder) Error![]const Ast.Form {
                 }),
             } }, &.{
                 try b.clause(&.{try b.cons(&.{V("Hit")}, V("_"))}, &.{}, &.{V("Hit")}),
-                try b.clause(&.{try b.list(&.{})}, &.{}, &.{A("undefined")}),
+                try b.clause(&.{try b.list(&.{})}, &.{}, &.{
+                    try b.caseOf(.{ .list_comp = .{
+                        .element = try b.ptr(V("W")),
+                        .qualifiers = try b.arena.dupe(Ast.ListComp.Qualifier, &.{
+                            .{ .generator = .{ .pattern = V("W"), .list = V("Words") } },
+                            .{ .filter = .{ .binop = .{ .op = "=:=", .lhs = try b.ptr(V("W")), .rhs = try b.ptr(V("Name")), .parens = false } } },
+                        }),
+                    } }, &.{
+                        try b.clause(&.{try b.cons(&.{V("_")}, V("_"))}, &.{}, &.{A("undefined")}),
+                        try b.clause(&.{try b.list(&.{})}, &.{}, &.{
+                            try throw(b, &.{
+                                fail_tag,
+                                try b.remote("erlang", "iolist_to_binary", &.{try b.list(&.{
+                                    Ast.str(lookup_not_a_word_head),
+                                    try b.call("__bp_text", &.{V("Name")}),
+                                    Ast.str(lookup_not_a_word_tail),
+                                })}),
+                                V("Param"),
+                                A("null"),
+                            }),
+                        }),
+                    }),
+                }),
             }),
         }),
         // ref(#{local := Name}) -> {'__bp_code', __bp_text(Name)}.

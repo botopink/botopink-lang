@@ -28,7 +28,7 @@ pub fn dsl<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
     val root = CustomNode(kind: "select", span: Span(0, 6, 1), label: "keyword", ref: null, children: [leaf]);
     return e.custom(root, code);
 }
-val rows = dsl "select id";
+val rows = dsl "select id from Item";
 ```
 
 ----- BOTOPINK TRANSFORM CODE -- main.bp

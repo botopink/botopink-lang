@@ -227,6 +227,15 @@ The arrowless shortform also stops swallowing a `fn` that is not followed by
 `fn main() …` used to parse the *next declaration* as this one's return type
 and report the failure there.
 
+## A default is trailing everywhere (decision 244)
+
+`parseParamList` refuses a parameter without a default after one with a default
+(`fnParamDefaultTrailingOnly`, a free `fn` and a method alike), and
+`parseFieldList` refuses the same of a field — a record type's, a variant's
+payload, an inline parameter type's — as `fieldDefaultTrailingOnly`
+(`field-default-trailing-only`), at the required field's name. Cells:
+`reject/{fn_param,method_param,record_field,variant_payload}_default_not_trailing`.
+
 ## A field and a variant payload are `name: Type` (decision 12, C-08)
 
 `parseFieldList` serves both `type Name(…)` and a variant payload `Variant(…)`,

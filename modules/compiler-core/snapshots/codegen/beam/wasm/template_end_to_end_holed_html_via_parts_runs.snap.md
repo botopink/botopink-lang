@@ -250,32 +250,8 @@ fn main() {
 %%         text => <<"<p>__bp_hole_q_0</p>">>,
 %%         multiline => true
 %%     },
-%%     bindings => [
-%%         #{
-%%             name => <<"html">>,
-%%             kind => 'Fn',
-%%             identity => <<"main@@html">>,
-%%             local => <<"html">>
-%%         },
-%%         #{
-%%             name => <<"name">>,
-%%             kind => 'Val',
-%%             identity => <<"main@@name">>,
-%%             local => <<"name">>
-%%         },
-%%         #{
-%%             name => <<"page">>,
-%%             kind => 'Val',
-%%             identity => <<"main@@page">>,
-%%             local => <<"page">>
-%%         },
-%%         #{
-%%             name => <<"main">>,
-%%             kind => 'Fn',
-%%             identity => <<"main@@main">>,
-%%             local => <<"main">>
-%%         }
-%%     ]
+%%     bindings => [],
+%%     words => [<<"p">>]
 %% }
 ```
 
