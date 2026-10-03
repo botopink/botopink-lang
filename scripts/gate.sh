@@ -46,7 +46,8 @@
 #  11. tsc-check.sh         every `.d.ts` the commonJS backend emits for the
 #                           example projects, tests/language/modules and every
 #                           package under libs/ (std included) passes
-#                           `tsc --noEmit --strict` (needs `npx`, from node)
+#                           `tsc --noEmit --strict`, and every emitted `.js`
+#                           passes `node --check` (needs `npx` and `node`)
 #  12. zig build test-web   compiler-core built for wasm32-wasi (the browser
 #                           compiler) and modules/compiler-web/tests/smoke.js
 #                           under node — CI's step, so its red is the gate's
@@ -442,7 +443,7 @@ report 6 "zig build test-language" "zig build test-language" \
     "zig build test-language (a FAIL line above names the file, the test and the rule)"
 report 7 "zig build test-docs" "zig build test-docs" \
     "zig build test-docs (a ✗ line above names the doc, the fence line and the error)"
-report 8 "tsc --noEmit over the emitted .d.ts (scripts/tsc-check.sh)" "tsc-check" \
+report 8 "tsc --noEmit over the emitted .d.ts, node --check over the emitted .js (scripts/tsc-check.sh)" "tsc-check" \
     "scripts/tsc-check.sh (the tsc error above names the project and the .d.ts; the defect is codegen/typescript.zig's)"
 report 9 "zig build test-web (the compiler built for wasm32, smoke.js under node)" "zig build test-web" \
     "zig build test-web (a wasm32 compile error or a smoke.js assertion above names the defect)"
