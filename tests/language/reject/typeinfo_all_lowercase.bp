@@ -1,5 +1,5 @@
 //// Decision 248 — `@typeinfo.all(…)` is refused where it is written, naming
-//// `@typeInfo.all`.
+//// `@TypeInfo.all`.
 
 fn route(comptime decl: @Decl) {}
 

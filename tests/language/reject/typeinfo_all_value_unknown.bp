@@ -1,0 +1,17 @@
+//// Decision 254 — `@TypeInfo.all(…)` answers `Declared<unknown>[]` whatever
+//// the program declares: an entry's `value` is `unknown`, and using it as a
+//// function without testing it is refused where it is used.
+
+fn route(comptime decl: @Decl) {
+    decl.setMeta("path", "/");
+}
+
+#[route]
+pub fn home() -> string { return "home"; }
+
+pub fn main() {
+    for (@TypeInfo.all(with: route)) { r ->
+        val page: fn() -> string = r.value;
+        @print(page());
+    }
+}

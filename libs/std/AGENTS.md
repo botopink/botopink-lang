@@ -21,7 +21,7 @@ std/
     ├── root.bp              ← module-tree root: seventeen `pub mod` lines — the fifteen root modules, `pub mod io;`, `pub mod testing;` (decision 106)
     │                        — core files flattened into the global type env (`std_core_files` in build.zig):
     ├── primitives.bp        ← primitive behavior registry (Number/Integer/Signed/Float, I32…F64, Bool, String, Function, Pair, Array); no tests (see `test/`). `Array.lastIndexOf` is a `default fn` over `reverse` + `indexOf` (beam's path) with an erlang and a node cell; wasm lowers it to `$__arr_last_index_of_*`. Its slice helpers are free `declare fn`s (`stringSlice0(s, start)` — no `self`: `self-param-outside-type`), and their Node templates read a missing start as 0, because commonJS's `slice` patch is global. `String.parseInt()` / `String.parseFloat()` (1.0.11-beta front 97) are `default fn`s over four free cells — see *String numerals* below
-    ├── builtins.d.bp        ← builtin surface: print, @Result/@Task/@Component/@Iterator/@Stream (`YieldStep`)…, `Display` (decision 8 §7), `Index`/`Slice` (decision 63, amended), `Target`/`External`/`Host` annotations, std.syntax (`Expr`, `ExprContext`, `CustomNode`, …), `@Decl` reflection, effect-wrapper rules
+    ├── builtins.d.bp        ← builtin surface: every `@name` builtin fn declared (decision 252 — `comptime/builtins.zig`'s table is held to it by a unit test, and a call to it is checked against it), @Result/@Task/@Component/@Iterator/@Stream (`YieldStep`)…, `Display` (decision 8 §7), `Index`/`Slice` (decision 63, amended), `Target`/`External`/`Host` annotations, std.syntax (`Expr`, `ExprContext`, `CustomNode`, …), `@Decl` reflection, `TypeInfo<T>` with its static `all` and `RecordField`, effect-wrapper rules
     ├── builtins_fns.d.bp    ← builtin fns with literal defaults (`todo`, `panic`)
     │                        — the PURE root: same input, same output; imports nothing from `io/` (`std-root-imports-io`)
     ├── collections.bp       ← `Dict`, `Set`, `Queue`, `Order` (was `dict`, `sets`, `queue`, `order`)
@@ -383,7 +383,7 @@ gone, not aliased (decision 127).
   verbatim, so a change of layout in `src/collections.bp` or in a signature of
   `src/primitives.bp` re-records them in the same commit. `builtins.d.bp` parses whole since front 20: an unannotated
   `pub declare fn` takes the full signature (`field<T, F>(…) -> F`,
-  `getContext<T>(comptime _: type) -> Component<T, any>`), a behavior `val`
+  `getContext<T>(comptime _: type) -> T`), a behavior `val`
   member any type (`val fields: Field[];`). The compiler's external scanners read
   it (`scanDeclareFnExternal`) and stop on a parse failure, and
   `codegen/tests/builtins.zig` pins that it parses — so a form the parser refuses

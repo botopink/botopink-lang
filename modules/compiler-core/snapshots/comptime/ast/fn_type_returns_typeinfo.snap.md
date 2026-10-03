@@ -32,7 +32,7 @@ val info = @typeInfo(add);
     {
       "ast": "val",
       "ident": "info",
-      "return_type": "TypeInfo",
+      "return_type": "TypeInfo<?>",
       "expr": {
         "ast": "call",
         "params": [
@@ -40,7 +40,7 @@ val info = @typeInfo(add);
             "value": "fn(i32, i32) -> i32"
           }
         ],
-        "return_type": "TypeInfo"
+        "return_type": "TypeInfo<?>"
       }
     }
   ]

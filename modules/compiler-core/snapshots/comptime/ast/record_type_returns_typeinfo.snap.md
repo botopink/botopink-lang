@@ -19,7 +19,7 @@ val info = @typeInfo(Point);
     {
       "ast": "val",
       "ident": "info",
-      "return_type": "TypeInfo",
+      "return_type": "TypeInfo<Point>",
       "expr": {
         "ast": "call",
         "params": [
@@ -27,7 +27,7 @@ val info = @typeInfo(Point);
             "value": "fn(i32, string) -> Point"
           }
         ],
-        "return_type": "TypeInfo"
+        "return_type": "TypeInfo<Point>"
       }
     }
   ]

@@ -10,7 +10,7 @@ val info = @typeInfo(bool);
     {
       "ast": "val",
       "ident": "info",
-      "return_type": "TypeInfo",
+      "return_type": "TypeInfo<bool>",
       "expr": {
         "ast": "call",
         "params": [
@@ -18,7 +18,7 @@ val info = @typeInfo(bool);
             "value": "bool"
           }
         ],
-        "return_type": "TypeInfo"
+        "return_type": "TypeInfo<bool>"
       }
     }
   ]

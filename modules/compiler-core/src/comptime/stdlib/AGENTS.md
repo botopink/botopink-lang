@@ -21,8 +21,8 @@ stdlib/
 | Const | Source | Consumer |
 |---|---|---|
 | `primitives` | `primitives.bp` | `registerStdlib` — flattened into the global env |
-| `builtins` | `builtins.d.bp` | doc/tooling surface (not parsed by `registerStdlib`) |
-| `builtin_fns` | `builtins_fns.d.bp` | `registerStdlib` → `env.stdlibFnDecls` |
+| `builtins` | `builtins.d.bp` | `registerBuiltinDecls` → `env.builtinDecls` (its builtin fns only — the types stay the documented surface); `comptime/builtins.zig`'s tests |
+| `builtin_fns` | `builtins_fns.d.bp` | `registerStdlib` → `env.stdlibFnDecls`; `registerBuiltinDecls` → `env.builtinDecls`; `comptime/builtins.zig`'s tests |
 | `pkg_modules` | generated `std_pkg` module | `comptime.zig std_pkg_modules` — the `import {…} from "std"` registry |
 
 ## Wiring
