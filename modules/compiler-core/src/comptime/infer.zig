@@ -4609,6 +4609,23 @@ fn validateMemoryAnnotations(env: *Env, v: ast.ValDecl, bindTy: *T.Type) InferEr
                 "Only a `Dict<K, V>` is keyed; a list stores its whole value (decision 51).",
             );
         }
+        // Decision 167 (amends 43) — the annotation names BEAM storage. A
+        // target whose execution context is the whole program has none to
+        // name, and reading the annotation as a no-op there would build a
+        // program whose `ProcessDict` / `Ets` behaviour silently differs from
+        // the one written: refused at the annotation. A null target (the
+        // language server, the type-only pass) is decision 84's beam. The
+        // target is named as `--target` spells it (`node` is commonJS's
+        // lookup name).
+        if (env.target) |lookup| if (!std.mem.eql(u8, lookup, "erlang") and !std.mem.eql(u8, lookup, "beam")) {
+            const t = if (std.mem.eql(u8, lookup, "node")) "commonJS" else lookup;
+            return failAt(
+                env,
+                loc,
+                try std.fmt.allocPrint(env.arena, "`#[@BeamMemory]` has no meaning on the {s} backend", .{t}),
+                try std.fmt.allocPrint(env.arena, "`@BeamMemory` places a `var` in BEAM storage; on {s} a module `var` is one value for the whole program. Drop the annotation, or build for `erlang` / `beam`.", .{t}),
+            );
+        };
     }
     const mem = v.memory() orelse return;
     // Design §5(d), step 4: an `Ets` table that goes missing is re-created and
@@ -4629,7 +4646,7 @@ fn validateMemoryAnnotations(env: *Env, v: ast.ValDecl, bindTy: *T.Type) InferEr
         env,
         mem.loc orelse v.value.getLoc(),
         try std.fmt.allocPrint(env.arena, "`keyed = true` has no lowering on the `{s}` target yet — `{s}` would be stored whole, which is `keyed = false`", .{ t, v.name }),
-        "Drop `keyed = true` to store the whole `Dict` as one value, or build for `commonJS` / `wasm`, where the annotation is a no-op.",
+        "Drop `keyed = true` to store the whole `Dict` as one value.",
     );
     try env.memoryVars.put(env.arena, v.name, .{ .memory = mem, .ty = bindTy });
 }

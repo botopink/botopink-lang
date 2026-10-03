@@ -172,13 +172,12 @@ pool_check_jobs "$jobs" run.sh
 #     `f` has no `#[@External.<Target>(…)]` for the <t> backend
 #     std-unsupported-on-target: std/<m> has no `@external` for target '<t>'
 #
-# — the one reason a program structurally has no row on a target. One host
-# binding the compiler does not refuse: a module `var` under
-# `#[@BeamMemory.<mode>]` binds BEAM storage, and decision 43 makes the
-# annotation a silent no-op off the BEAM, so a cell that declares one may
-# exclude commonJS and wasm on its own source's evidence (never erlang or
-# beam). A target the build accepts otherwise, or refuses for any other
-# reason, fails the run naming the cell: the narrowing was hiding a gap of that backend, and a gap is a row of
+#     `#[@BeamMemory]` has no meaning on the <t> backend
+#
+# — the one reason a program structurally has no row on a target (the third
+# line is decision 167's: a module `var` under `#[@BeamMemory.<mode>]` binds
+# BEAM storage, which commonJS and wasm refuse at the annotation). A target the
+# build accepts, or refuses for any other reason, fails the run naming the cell: the narrowing was hiding a gap of that backend, and a gap is a row of
 # the backend's front, not a line in a `.targets` file. So is a narrowing that
 # names a target its kind does not have, an unknown one, the same one twice, or
 # every target of the kind (it narrows nothing: delete it). No flag, list or
@@ -249,7 +248,7 @@ pub fn main() {
     @print(nowhere);
 }
 BP
-    # Decision 43: BEAM storage is a binding commonJS and wasm do not have …
+    # Decision 167: BEAM storage is a binding commonJS and wasm refuse …
     cell beam_memory_backed "erlang beam" <<'BP'
 #[@BeamMemory.ProcessDict]
 var seen: i32 = 0;
@@ -260,7 +259,7 @@ pub fn main() {
 }
 BP
     # … and one the BEAM has: the annotation never excuses erlang or beam.
-    cell beam_memory_excludes_beam "commonJS erlang wasm" <<'BP'
+    cell beam_memory_excludes_beam "erlang" <<'BP'
 #[@BeamMemory.ProcessDict]
 var seen: i32 = 0;
 
@@ -325,12 +324,12 @@ BP
 [wasm] modules/manifest_unbacked — excluded by modules/manifest_unbacked/botopink.json "targets", but `botopink build --target wasm` accepts the cell
 [beam] modules/manifest_unbacked — excluded by modules/manifest_unbacked/botopink.json "targets", but `botopink build --target beam` accepts the cell
 [*] modules/manifest_test_kind — modules/manifest_test_kind/botopink.json "targets" names wasm, a target this kind of cell never runs on
-narrowings: 7 exclusions audited
-by target: commonJS 4/5 · erlang 5/6 · wasm 1/4 · beam 3/6 · * 0/3
-language tests: 13 passed, 11 failed
+narrowings: 9 exclusions audited
+by target: commonJS 3/4 · erlang 5/6 · wasm 0/3 · beam 3/6 · * 0/3
+language tests: 11 passed, 11 failed
 WANT
     # The three backed cells ran where they said and nowhere else: the tally
-    # above counts them (1 + 2 + 2 of the 13), and no line may name them.
+    # above counts them (1 + 2 + 2 of the 11), and no line may name them.
     if grep -qE 'run/backed\.bp|run/beam_memory_backed\.bp|modules/manifest_backed' "$st/report.txt"; then
         echo "self-test: a narrowing that stands on a host binding was reported:" >&2
         grep -E 'run/backed\.bp|run/beam_memory_backed\.bp|modules/manifest_backed' "$st/report.txt" >&2
@@ -546,15 +545,9 @@ audit_one() { # <path> <excluded target> <the file that narrows>
     (cd "$dir" && timeout 300 "$compiler" build --target "$t" >"$dir/o.txt" 2>"$dir/e.txt")
     local code=$?
     quiet <"$dir/o.txt" >"$dir/all.txt"; quiet <"$dir/e.txt" >>"$dir/all.txt"
-    if [ $code -eq 0 ] && [ "$t" != "erlang" ] && [ "$t" != "beam" ] && grep -rqE --include='*.bp' '^[[:space:]]*#\[@BeamMemory\.' "$dir"; then
-        # Decision 43: a `#[@BeamMemory.<mode>]` var binds BEAM storage, and
-        # off the BEAM the annotation is a silent no-op — the compiler cannot
-        # refuse what the language accepts, so the binding is read off the
-        # cell's own source.
-        printf '%s\t%s\t%s\t\n' "$t" "$path" audit >"$out"
-    elif [ $code -eq 0 ]; then
+    if [ $code -eq 0 ]; then
         printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "excluded by $by, but \`botopink build --target $t\` accepts the cell — a narrowing stands on a host-binding refusal: let it run on $t, and a red there is a row of that backend's front" >"$out"
-    elif grep -qF -e 'has no `#[@External.<Target>(' -e 'std-unsupported-on-target:' "$dir/all.txt"; then
+    elif grep -qF -e 'has no `#[@External.<Target>(' -e 'std-unsupported-on-target:' -e '`#[@BeamMemory]` has no meaning on the '"$t"' backend' "$dir/all.txt"; then
         printf '%s\t%s\t%s\t\n' "$t" "$path" audit >"$out"
     else
         local first; first="$(grep -m1 -iE 'error' "$dir/all.txt" | tr '\t' ' ')"

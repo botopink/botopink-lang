@@ -1062,6 +1062,12 @@ test "infer error: unknown builtin without a near name" {
 /// message is asserted by content so that the case does not add a cell to
 /// `snapshots/comptime/errors/`.
 fn typeErrorMessage(allocator: std.mem.Allocator, src: []const u8) ![]u8 {
+    return typeErrorMessageOn(allocator, src, null);
+}
+
+/// `typeErrorMessage` on the project-side compile path of `target` — the
+/// `env.target` a build sets (null: the language server's pass).
+fn typeErrorMessageOn(allocator: std.mem.Allocator, src: []const u8, target: ?[]const u8) ![]u8 {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -1072,6 +1078,7 @@ fn typeErrorMessage(allocator: std.mem.Allocator, src: []const u8) ![]u8 {
     defer program.deinit(alloc);
     var env = try inferMod.freshEnv(alloc, allocator);
     defer env.deinit();
+    env.target = target;
     try std.testing.expectError(error.TypeError, inferMod.inferProgram(&env, program));
     const err = env.lastError orelse return error.TestExpectedEqual;
     try std.testing.expect(err.loc != null);
@@ -1136,6 +1143,37 @@ test "infer error: `keyed = true` on a list has no key (decision 51)" {
 
 test "infer: `@BeamMemory` accepts its three members, the default said out loud included" {
     try h.assertInfersOk(std.testing.allocator, "#[@BeamMemory.ProcessDict]\nvar a: i32 = 0;\n#[@BeamMemory.Ets]\nvar b: i32 = 0;\n#[@BeamMemory.PersistentTerm]\nvar c: i32 = 0;\n#[@BeamMemory.Ets(keyed = false)]\nvar d: i32 = 0;");
+}
+
+// ── decision 167: off the BEAM, `#[@BeamMemory]` is refused at the annotation ─
+
+test "infer error: `#[@BeamMemory]` has no meaning on commonJS or wasm" {
+    // `env.target` is the lookup name (`node`); the message names the target
+    // as `--target` spells it.
+    for ([_][2][]const u8{ .{ "node", "commonJS" }, .{ "wasm", "wasm" } }) |t| {
+        const msg = try typeErrorMessageOn(std.testing.allocator, "#[@BeamMemory.ProcessDict]\nvar x: i32 = 0;", t[0]);
+        defer std.testing.allocator.free(msg);
+        const want = try std.fmt.allocPrint(std.testing.allocator, "`#[@BeamMemory]` has no meaning on the {s} backend", .{t[1]});
+        defer std.testing.allocator.free(want);
+        try std.testing.expect(std.mem.indexOf(u8, msg, want) != null);
+    }
+}
+
+test "infer: `#[@BeamMemory]` is accepted on erlang and beam" {
+    for ([_][]const u8{ "erlang", "beam" }) |t| {
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+        var lx = Lexer.init("#[@BeamMemory.Ets]\nvar hits: i32 = 0;\nfn bump() { hits += 1; }");
+        const tokens = try lx.scanAll(alloc);
+        var p = Parser.init(tokens);
+        var program = try p.parse(alloc);
+        defer program.deinit(alloc);
+        var env = try inferMod.freshEnv(alloc, std.testing.allocator);
+        defer env.deinit();
+        env.target = t;
+        _ = try inferMod.inferProgram(&env, program);
+    }
 }
 
 // ── 01 R5: a pattern in binding position ──────────────────────────────────────
