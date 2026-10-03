@@ -4,6 +4,7 @@
 #
 # Usage:
 #   scripts/check-docs.sh [--compiler <botopink>] [--doc <file>]… [--list] [--jobs <n>] [--self-test]
+#                         [--cold] [--store-root <dir>]
 #
 #   --compiler  the `botopink` binary; default <repo>/zig-out/bin/botopink
 #   --doc       a markdown file to check (relative to the repository, or
@@ -13,6 +14,10 @@
 #               memory (scripts/lib/pool.sh). The report is printed in fence
 #               order whatever the count, so `--jobs 1` prints the same bytes
 #   --self-test run only the harness's own contract (below) and exit
+#   --cold      check every fence; the result store is not read, and the passes
+#               are written to it (below); `scripts/gate.sh --cold` passes it
+#   --store-root  the result store's directory; default
+#               <repo>/.botopinkbuild/cache/results/docs
 #
 # A fence is ```botopink. What the checker does with it is decided by an HTML
 # comment on the line just above the fence (invisible in rendered markdown, and
@@ -63,6 +68,22 @@
 # ✗, a module that does not compile ✗, one that does ✓, a `reject` with no
 # expectation ✗, a `body` directive on a ```text fence ✗). A verdict that
 # differs fails the run before the docs are judged; `--self-test` runs only it.
+#
+# The result store (decisions 229 and 249, front 00-gate/133-gate-speed): a
+# check whose key equals the key of a stored PASS is answered from the store,
+# and every other check runs. The key is the SHA-256 of every byte the check
+# reads (scripts/lib/result-store.js): the compiler's build configuration and
+# its sources (every backend's — `check` is target-independent), this script,
+# pool.sh and
+# result-store.js, the toolchain, every file of every library a fence's
+# `dependencies` can resolve to (each package under the library roots below),
+# and the check's own scratch project whole — the fence's text as written, the
+# manifest, every file of a named project — with its mode and expectation. Only
+# a check that passed is written, and only when its key did not move during
+# the run; the harness's own nine fences always run. The store lives in
+# `<repo>/.botopinkbuild/cache/results/docs/` (decision 225); `--cold` never
+# reads it and writes its passes. The exit line is preceded by
+# `result store: <N> fences — <R> run, <S> from store`.
 set -uo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -74,6 +95,8 @@ docs=()
 have_docs=0    # `${#docs[@]}` on an empty array is an unbound variable in bash 3.2
 list=0
 self_test_only=0
+cold=0
+store_dir=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --compiler) compiler="$2"; shift 2 ;;
@@ -84,7 +107,10 @@ while [ $# -gt 0 ]; do
         --jobs) jobs="$2"; shift 2 ;;
         --jobs=*) jobs="${1#*=}"; shift ;;
         --self-test) self_test_only=1; shift ;;
-        -h|--help) sed -n '2,60p' "$0"; exit 0 ;;
+        --cold) cold=1; shift ;;
+        --store-root) store_dir="$2"; shift 2 ;;
+        --store-root=*) store_dir="${1#*=}"; shift ;;
+        -h|--help) sed -n '2,80p' "$0"; exit 0 ;;
         *) echo "check-docs.sh: unknown argument '$1'" >&2; exit 2 ;;
     esac
 done
@@ -216,7 +242,56 @@ run_checks() {
     [ "$nchecks" -gt 0 ] || return 0
     export -f check_job check_project check_reject first_error strip pool_job pool_admit pool_cpus
     export work compiler lib_roots
-    seq 1 "$nchecks" | xargs -n 1 -P "$jobs" bash -c 'pool_job "$work/inflight" check_job "$0"'
+    # A check answered from the result store already has its `<k>.ok`.
+    seq 1 "$nchecks" | while read -r k; do [ -f "$work/checks/$k.ok" ] || echo "$k"; done |
+        xargs -r -n 1 -P "$jobs" bash -c 'pool_job "$work/inflight" check_job "$0"'
+}
+
+# ── the result store ──────────────────────────────────────────────────────────
+store_js="$repo/scripts/lib/result-store.js"
+[ -n "$store_dir" ] || store_dir="$repo/.botopinkbuild/cache/results/docs"
+store_hits="$work/store-hits"
+: > "$store_hits"
+# store_spec — one line per deferred check of the docs (the self-test's run
+# every time): `checks/<k>.ok`, its mode and expectation, its scratch project.
+store_spec() {
+    local k dir label mode expect
+    for k in $(seq 1 "$nchecks"); do
+        label="$(sed -n 2p "$work/checks/$k.job")"
+        case "$label" in self-test.md:*) continue ;; esac
+        dir="$(sed -n 1p "$work/checks/$k.job")"; mode="$(sed -n 4p "$work/checks/$k.job")"
+        expect="$(sed -n 5p "$work/checks/$k.job")"
+        printf 'checks/%s.ok\t* %s %s\tproject=%s\n' "$k" "$mode" "$expect" "${dir#"$work/"}"
+    done > "$work/store-spec"
+}
+# store_keys <out> — every check's key, from the files as they are now. The
+# global trees are every package the library roots hold — what a fence's
+# `dependencies` can name.
+store_keys() {
+    local trees=() r c
+    local IFS=:
+    for r in $lib_roots; do
+        if [ -f "$r/botopink.json" ]; then trees+=(--global-tree "root:$r=$r"); continue; fi
+        for c in "$r"/*/; do
+            c="${c%/}"
+            [ -f "$c/botopink.json" ] && trees+=(--global-tree "$(basename "$r")/$(basename "$c")=$c")
+        done
+    done
+    unset IFS
+    node "$store_js" keys --spec "$work/store-spec" --out "$1" --base "$work" \
+        --compiler "$compiler" --global-file "check-docs.sh=$here/check-docs.sh" \
+        --global-file "pool.sh=$here/lib/pool.sh" --global-file "result-store.js=$store_js" \
+        ${trees[@]+"${trees[@]}"} --global-text "docs" --scratch "$work"
+}
+# The fences of the checks answered from the store.
+store_from_fences() {
+    local id k n=0
+    while IFS= read -r id; do
+        [ -n "$id" ] || continue
+        k="${id#checks/}"; k="${k%.ok}"
+        n=$((n + $(sed -n 6p "$work/checks/$k.job")))
+    done < "$store_hits"
+    echo "$n"
 }
 print_report() { # <report file>
     local l k label suffix weight
@@ -447,7 +522,26 @@ if [ "$list" -eq 1 ]; then cat "$work/report"; exit 0; fi
 
 close_projects "$work/report" g
 
+if [ "$self_test_only" -eq 0 ]; then
+    store_spec
+    store_keys "$work/keys-before" || { echo "check-docs.sh: the result store's keys could not be computed" >&2; exit 2; }
+fi
+if [ "$cold" -eq 0 ] && [ "$self_test_only" -eq 0 ]; then
+    node "$store_js" lookup --store "$store_dir" --keys "$work/keys-before" --work "$work" --out "$store_hits" ||
+        { echo "check-docs.sh: the result store could not be read" >&2; exit 2; }
+fi
+
 run_checks
+
+store_note=""
+[ "$cold" -eq 0 ] || store_note=" (--cold: nothing read from the store)"
+if [ "$self_test_only" -eq 0 ]; then
+    store_keys "$work/keys-after" || { echo "check-docs.sh: the result store's keys could not be computed" >&2; exit 2; }
+    read -r store_written store_moved < <(node "$store_js" save --store "$store_dir" --before "$work/keys-before" \
+        --after "$work/keys-after" --work "$work" --hits "$store_hits" --pass exists) ||
+        { echo "check-docs.sh: the result store could not be written" >&2; exit 2; }
+    [ "${store_moved:-0}" -eq 0 ] || store_note="$store_note ($store_moved not written: their inputs moved during the run)"
+fi
 
 if judge_self_test; then
     printf 'self-test: 9 fences — 9 verdicts as expected\n'
@@ -459,6 +553,15 @@ fi
 
 print_report "$work/report"
 
+# What was executed and what was answered from a stored pass; `scripts/gate.sh`
+# holds run + from store to the plan. A fence judged without the compiler (an
+# unknown directive, a project with no entry point) counts as run.
+awk -F '\t' '
+    $2 == "-" { if (!($3 in n)) order[++k] = $3; n[$3]++ }
+    END { for (i = 1; i <= k; i++) printf "result store: %d check%s never stored — %s\n", n[order[i]], n[order[i]] == 1 ? "" : "s", order[i] }
+' "$work/keys-before"
+store_from="$(store_from_fences)"
+printf '\nresult store: %d fences — %d run, %d from store%s\n' "$fences" "$((fences - store_from))" "$store_from" "$store_note"
 # `0 skipped` is a constant: no directive skips a fence (decision gate-e), and
 # the gate's exit line keeps the column so "skipped" stays visibly zero.
 printf '\ndocs: %d fences — %d checked, 0 skipped, %d failed\n' "$fences" "$ok" "$failed"

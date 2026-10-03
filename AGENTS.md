@@ -266,6 +266,15 @@ run is [`scripts/gate.sh`](scripts/gate.sh) — stages 1–4 one after the other
 10. `zig build test-docs` (every `botopink` fence of `docs.md` and `README.md` compiles);
 11. `scripts/tsc-check.sh` (every `.d.ts` a commonJS build of `libs/` — std and the bundled packages —, the example projects and `tests/language/modules` emits passes `tsc --noEmit --strict`, typescript pinned, through `npx`, and every `.js` it emits passes `node --check`).
 
+Stages 8–10 keep a cell-result store (decision 229): a warm run answers a cell
+from a stored pass only when its key — the compiler's build and its sources
+partitioned by backend (decision 249,
+`modules/compiler-core/src/codegen/backend-partition.txt`), the toolchain and
+every byte the cell reads — is equal, a failure always runs, and each stage
+prints `result store: <N> jobs — <R> run, <S> from store`; `--cold` never reads
+it and writes its passes (`scripts/AGENTS.md` § Warm and cold). The budget is 5
+minutes cold, 1 minute warm.
+
 One gate runs at a time per machine: a second `gate.sh` waits for the lock,
 naming the holder's pid, checkout and start time. A `--staged` run whose
 working tree, sibling libraries and toolchain were already gated green runs
@@ -375,8 +384,10 @@ every later call site sends cmd 3 alone with its own capture. Comptime
   the run's own path, byte for byte what the compile writes there; `rm -rf
   .botopinkbuild`, `botopink clean` and `gate.sh --cold` delete it, and each run
   reaps one random shard (entries unused for 7 days). The erlang verdict cache of
-  `botopink build` (`cache/erlcheck/`) and the cell durations of `test-libs`
-  (`cache/lib-test/`) live beside it; no build cache is outside a `.botopinkbuild/`.
+  `botopink build` (`cache/erlcheck/`), the cell durations of `test-libs`
+  (`cache/lib-test/`) and the cell-result store of the gate's stages 8–10
+  (`cache/results/`, decision 229) live beside it; no build cache is outside a
+  `.botopinkbuild/`.
 
 ### General
 

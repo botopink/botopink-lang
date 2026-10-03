@@ -2,7 +2,7 @@
 ///
 ///   botopink-lib-test [--target <t>[,<t>…] | --target all]
 ///                     [--lib <name>] [--filter <s>] [--strict] [--bin <path>]
-///                     [--jobs <n>] [--json] [--list]
+///                     [--jobs <n>] [--json] [--list] [--cold] [--store-root <dir>]
 ///
 /// `--target` is repeatable and comma-separated. It accepts every codegen target
 /// plus the alias `node` → `commonJS`, and both the `--target <t>` and
@@ -91,6 +91,14 @@ pub const Options = struct {
     /// order. The lines whose kind starts with `cell:` are the cells the
     /// manifests declare; `audit` is an excluded pair the run would audit.
     list: bool = false,
+    /// `--cold` — do not read the cell-result store (`result_store.zig`):
+    /// every spawning cell runs, and its passes are written (decision 249).
+    /// `scripts/gate.sh --cold` passes it. It changes what is executed, never
+    /// a verdict.
+    cold: bool = false,
+    /// `--store-root <dir>` — keep the result store in `<dir>` instead of each
+    /// library's `<cache root>/.botopinkbuild/cache/results/lib-test/`.
+    store_root: ?[]const u8 = null,
 };
 
 pub const ParseError = error{
@@ -125,6 +133,12 @@ pub fn parse(arena: std.mem.Allocator, args: []const []const u8) ParseError!Opti
             i += 1;
             if (i >= args.len) return error.MissingArgument;
             try lib_roots.append(arena, args[i]);
+        } else if (splitEq(a, "--store-root")) |v| {
+            opts.store_root = v;
+        } else if (std.mem.eql(u8, a, "--store-root")) {
+            i += 1;
+            if (i >= args.len) return error.MissingArgument;
+            opts.store_root = args[i];
         } else if (splitEq(a, "--lib")) |v| {
             opts.lib = v;
         } else if (std.mem.eql(u8, a, "--lib")) {
@@ -155,6 +169,8 @@ pub fn parse(arena: std.mem.Allocator, args: []const []const u8) ParseError!Opti
             opts.json = true;
         } else if (std.mem.eql(u8, a, "--list")) {
             opts.list = true;
+        } else if (std.mem.eql(u8, a, "--cold")) {
+            opts.cold = true;
         } else {
             return error.UnknownFlag;
         }
@@ -331,6 +347,20 @@ test "--list is off by default and set by the flag" {
     try testing.expect(!off.list);
     const on = try parse(arena.allocator(), &.{"--list"});
     try testing.expect(on.list);
+}
+
+test "--cold and --store-root: the store is read unless --cold, in its default place unless named" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const warm = try parse(arena.allocator(), &.{});
+    try testing.expect(!warm.cold);
+    try testing.expect(warm.store_root == null);
+    const cold = try parse(arena.allocator(), &.{ "--cold", "--store-root", "/s" });
+    try testing.expect(cold.cold);
+    try testing.expectEqualStrings("/s", cold.store_root.?);
+    const eq = try parse(arena.allocator(), &.{"--store-root=/t"});
+    try testing.expectEqualStrings("/t", eq.store_root.?);
+    try testing.expectError(error.MissingArgument, parse(arena.allocator(), &.{"--store-root"}));
 }
 
 test "unknown flag rejected" {

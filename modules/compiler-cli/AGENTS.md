@@ -11,7 +11,7 @@ Package that builds the `botopink` CLI executable. Depends on `compiler-core`.
 compiler-cli/
 ├── AGENTS.md            ← you are here
 ├── botopink.json        ← module manifest (`version` drives the auto-tag)
-├── tests/               ← end-to-end CLI scripts — `zig build test-cli` runs all four
+├── tests/               ← end-to-end CLI scripts — `zig build test-cli` runs all five
 │   ├── cli_contract.sh      ← the command contract (rows C1–C13, plus the
 │   │                          build-does-not-execute and `new`-scaffold-prints
 │   │                          rows, and a built erlang / beam program loading
@@ -35,7 +35,18 @@ compiler-cli/
 │   │                          (structural / builds / another error — runner and
 │   │                          `scripts/test-libs.sh`); `BOTOPINK_BIN` in a test;
 │   │                          a dependency's erlang host `.erl` is shipped and reached
-│   └── test_tooling/        ← pass + fail fixture projects
+│   ├── test_tooling/        ← pass + fail fixture projects
+│   └── result_store.sh      ← the cell-result store of gate stages 8–10 (decisions
+│                              229, 249): run.sh, botopink-lib-test and check-docs.sh
+│                              over synthetic suites and a shim compiler naming an
+│                              edited copy of the sources — a pass answered from
+│                              the store, a failure run again, one byte of a cell,
+│                              of the library root, a wasm emitter line (wasm cells
+│                              only), a checker line (all), an unlisted emitter
+│                              file (shared), a stale binary, a failed partition
+│                              audit, another node / OTP / wasmtime version,
+│                              `--cold` (writes), a deleted store, a cell that is
+│                              never stored
 └── src/
     ├── AGENTS.md
     ├── main.zig         ← argv parser, subcommand dispatcher
@@ -59,13 +70,14 @@ zig build test          # includes the CLI unit tests (main.zig parsers / config
 
 # End-to-end scripts under tests/ spawn the CLI and runtimes, so they are NOT
 # part of `zig build test`. From the workspace root:
-zig build test-cli      # all four scripts, in order, against the installed CLI
+zig build test-cli      # all five scripts, in order, against the installed CLI
 zig build test-backends # backend_exec.sh alone
 
 # Or directly (each builds the CLI unless BOTOPINK_SKIP_BUILD=1 is set;
 # cli_contract.sh also takes BOTOPINK_BIN=<binary> to test another build):
 bash modules/compiler-cli/tests/cli_contract.sh      # command contract C1–C13
 bash modules/compiler-cli/tests/test_tooling.sh      # `botopink test` behaviours
+bash modules/compiler-cli/tests/result_store.sh      # the result store of stages 8–10
 bash modules/compiler-cli/tests/mutual_recursion.sh  # mutual recursion on every backend
 bash modules/compiler-cli/tests/backend_exec.sh      # numeric/records/modules per backend
 ```
@@ -382,6 +394,12 @@ Cross-command rules:
   located at the entry in the dependency's `botopink.json`
   (`--> <lib>/botopink.json:L:C`), and the commands add nothing after it.
   Pinned by `tests/cli_contract.sh`.
+- **The build line.** `botopink --version` ends with `build: zig <version>
+  <optimize mode> <arch>-<os>-<abi> <source hash> <source root>` (`main.zig`
+  `BUILD_LINE`, from `builtin` and `build_stamp`): how the binary was built and
+  from which sources. The gate's cell-result store reads it (decision 249,
+  `scripts/AGENTS.md` § Warm and cold) and refuses a binary whose hash is not
+  the checkout's.
 - **One OTP release** (decision 228 of 1.0.11-beta). `botopink --version` prints
   `otp: 28` (`manifest.OTP_RELEASE`); `build`/`run`/`test` on erlang or beam ask
   the `erl` on PATH for its release first — the first line of the command's one

@@ -31,6 +31,7 @@ auto-invoked. WAT has no test runner.
 ```text
 codegen/
 ├── AGENTS.md         ← you are here
+├── backend-partition.txt ← which of the compiler's sources belong to ONE backend, for the gate's cell-result store (decision 249): a listed file is in its target's keys only, every other file is shared; audited on every keyed run (`scripts/lib/result-store.js`) — list a new emitter file here once only its own target reaches it
 ├── config.zig        ← Config / TargetSource (commonJS|erlang|beam|wasm) / TypeDefLang
 ├── moduleOutput.zig  ← GenerateResult, ModuleOutput
 ├── crossModule.zig   ← backend-agnostic cross-module link index (exports + imported set)

@@ -58,10 +58,14 @@
 #
 #   --cold    delete modules/compiler-core/.botopinkbuild/runtime-cache before
 #             `zig build test`, and every `.botopinkbuild/cache/` (decision 225:
-#             the erlang verdicts, the `.beam` cache, the cell durations) under
-#             this checkout and each sibling library repository, naming each. Required for the run that decides a merge: a
-#             stale cache entry can hide a backend that never ran. Never
-#             answered from the green-tree record below.
+#             the erlang verdicts, the `.beam` cache, the cell durations, the
+#             cell-result store) under this checkout and each sibling library
+#             repository, naming each, and pass `--cold` to stages 8–10, which
+#             then never read the result store and write the passes they ran
+#             (§ warm and cold).
+#             Required for the run that decides a merge: a stale cache entry can
+#             hide a backend that never ran. Never answered from the green-tree
+#             record below.
 #   --staged  also run stage 1 over `git diff --cached` (the pre-commit and
 #             pre-merge-commit hooks).
 #
@@ -93,10 +97,10 @@ for a in "$@"; do
 done
 
 # The wall-clock budget of a run on the reference machine (16 idle cores),
-# cold and warm, in seconds — § budget at the end; derived in front 115 of
-# 1.0.11-beta from its measurements.
-budget_cold=600
-budget_warm=300
+# cold and warm, in seconds — § budget at the end. Decision 229 of 1.0.11-beta
+# (front 00-gate/133-gate-speed): 5 minutes cold, 1 minute warm.
+budget_cold=300
+budget_warm=60
 
 root="$(git rev-parse --show-toplevel)"
 cd "$root"
@@ -382,10 +386,21 @@ bash scripts/check-docs.sh --list >"$par/plan.docs" 2>"$par/plan.docs.err" ||
 # whose failure line ends the run with exit 1; the stages after it are not
 # printed, as the serial gate never ran them. A stage's stdout and stderr share
 # one capture file, so both reach this script's stdout in the order written.
+# ── § warm and cold ─────────────────────────────────────────────────────────
+# Decisions 229 and 249: stages 8, 9 and 10 keep a cell-result store under
+# `.botopinkbuild/cache/results/` — a cell whose key (the compiler's build and
+# its sources partitioned by backend, the toolchain, every byte the cell reads)
+# equals a stored PASS is answered from it, every other cell runs, a failure
+# always runs. Each stage prints `result store: <N> jobs — <R> run, <S> from
+# store` (`fences` for stage 10), and § counts holds R + S to the plan. `--cold`
+# passes `--cold` to the three: the store is not read, every cell runs, and the
+# passes are written for the warm runs after it.
+store_args=()
+[ "$cold" -eq 0 ] || store_args=(-- --cold)
 launch 4 zig build test-cli "$opt"
-launch 5 zig build test-libs "$opt"
-launch 6 zig build test-language "$opt"
-launch 7 zig build test-docs "$opt"
+launch 5 zig build test-libs "$opt" ${store_args[@]+"${store_args[@]}"}
+launch 6 zig build test-language "$opt" ${store_args[@]+"${store_args[@]}"}
+launch 7 zig build test-docs "$opt" ${store_args[@]+"${store_args[@]}"}
 launch 8 bash scripts/tsc-check.sh
 launch 9 zig build test-web
 wait
@@ -396,6 +411,20 @@ wait
 plain() { sed -E "s/$(printf '\033')\[[0-9;]*m//g" "$1"; }
 counted() {
     [ "$3" = "$4" ] || fail "$2 ran $3, and its plan (--list) declares $4 — a stage may not run fewer than its plan"
+}
+# stored <n> <stage> <unit> <planned> — the stage's `result store: <N> <unit> —
+# <R> run, <S> from store` line: N and R + S are its plan, so a job is either
+# executed or answered from a stored pass, never neither.
+stored() {
+    local line total ran from
+    line="$(plain "$par/$1.out" | grep -E "^result store: [0-9]+ $3 — " | tail -1)"
+    [ -n "$line" ] || fail "$2 printed no \`result store: <N> $3 — <R> run, <S> from store\` line"
+    total="$(sed -nE "s/^result store: ([0-9]+) $3 — .*/\1/p" <<<"$line")"
+    ran="$(sed -nE 's/.* — ([0-9]+) run, .*/\1/p' <<<"$line")"
+    from="$(sed -nE 's/.* run, ([0-9]+) from store.*/\1/p' <<<"$line")"
+    counted "$1" "$2 $3 (result store)" "$total" "$4"
+    counted "$1" "$2 $3 run or answered from the store" "$(( ${ran:-0} + ${from:-0} ))" "$4"
+    echo "result store: ${ran:-0} run, ${from:-0} answered from a stored pass"
 }
 check_counts() { # <n>
     local out="$par/$1.out" line p f n a x
@@ -410,17 +439,21 @@ check_counts() { # <n>
             counted 5 "stage 8 (test-libs) cells" "$(( ${p:-0} + ${f:-0} + ${n:-0} ))" "$(cut -f3 "$par/plan.libs" | grep -c '^cell:')"
             counted 5 "stage 8 (test-libs) restriction audits" "$(( ${a:-0} + ${x:-0} ))" "$(cut -f3 "$par/plan.libs" | grep -cx 'audit')"
             echo "plan: $(( ${p:-0} + ${f:-0} + ${n:-0} )) cells and $(( ${a:-0} + ${x:-0} )) audits, as --list declares"
+            # The pairs that spawn: cells that test or compile, and audits.
+            stored 5 "stage 8 (test-libs)" jobs "$(cut -f3 "$par/plan.libs" | grep -cxE 'cell:test|cell:compile|audit')"
             ;;
         6)  # test-language: `cells: <J> jobs — <R> run, <A> audits` (tests/language/run.sh)
             line="$(plain "$out" | grep -E '^cells: [0-9]+ jobs' | tail -1)"
             counted 6 "stage 9 (test-language) jobs" "$(sed -nE 's/^cells: ([0-9]+) jobs.*/\1/p' <<<"$line")" "$(grep -c . "$par/plan.language")"
             counted 6 "stage 9 (test-language) audits" "$(sed -nE 's/.* ([0-9]+) audits$/\1/p' <<<"$line")" "$(cut -f3 "$par/plan.language" | grep -cx 'audit')"
             echo "plan: $(grep -c . "$par/plan.language") jobs on $(cut -f2 "$par/plan.language" | sort -u | tr '\n' ' ')as --list declares"
+            stored 6 "stage 9 (test-language)" jobs "$(grep -c . "$par/plan.language")"
             ;;
         7)  # test-docs: `docs: <N> fences — …` (scripts/check-docs.sh)
             line="$(plain "$out" | grep -E '^docs: [0-9]+ fences' | tail -1)"
             counted 7 "stage 10 (test-docs) fences" "$(sed -nE 's/^docs: ([0-9]+) fences.*/\1/p' <<<"$line")" "$(grep -c . "$par/plan.docs")"
             echo "plan: $(grep -c . "$par/plan.docs") fences, as --list declares"
+            stored 7 "stage 10 (test-docs)" fences "$(grep -c . "$par/plan.docs")"
             ;;
     esac
 }
@@ -455,8 +488,8 @@ fi
 
 # ── § budget ─────────────────────────────────────────────────────────────────
 # The whole run's wall clock (from the lock, so a wait for another gate is not
-# counted) and the CPU-seconds of every stage, against the budget front 115 of
-# 1.0.11-beta set on 16 idle cores. Over budget is printed, never a red: a
+# counted) and the CPU-seconds of every stage, against the budget decision 229
+# of 1.0.11-beta set on 16 idle cores (5 minutes cold, 1 minute warm). Over budget is printed, never a red: a
 # slow or shared machine is not a broken tree.
 YELLOW='\033[0;33m'
 budget=$([ "$cold" -eq 1 ] && echo "$budget_cold" || echo "$budget_warm")

@@ -598,11 +598,12 @@ pub fn build(b: *std.Build) void {
     // `zig build test-cli` — every end-to-end CLI script under
     // `modules/compiler-cli/tests/`, each against the installed binary
     // (BOTOPINK_SKIP_BUILD=1): the command contract (`cli_contract.sh`), the
-    // `botopink test` behaviours (`test_tooling.sh`), forward references and
+    // `botopink test` behaviours (`test_tooling.sh`), the cell-result store of
+    // stages 8–10 (`result_store.sh`, decision 229), forward references and
     // mutual recursion on every backend (`mutual_recursion.sh`), and backend
     // execution parity (`backend_exec.sh`, also `test-backends`). The scripts
     // run one after another — they share `zig-out/` and fixture `out/` dirs.
-    const cli_scripts = [_][]const u8{ "cli_contract.sh", "test_tooling.sh", "mutual_recursion.sh", "backend_exec.sh" };
+    const cli_scripts = [_][]const u8{ "cli_contract.sh", "test_tooling.sh", "result_store.sh", "mutual_recursion.sh", "backend_exec.sh" };
     const test_cli_step = b.step("test-cli", "Run every modules/compiler-cli/tests/*.sh against the installed CLI");
     var prev_cli_script: ?*std.Build.Step = null;
     for (cli_scripts) |script| {

@@ -178,8 +178,10 @@ grep -q 'quietbad.bp' <<<"$out" || fail "the compile diagnostic should name quie
 # emitted in discovery order by one thread, from the child's captured output.
 echo "==> [libs] --jobs 4 prints, byte for byte, what --jobs 1 prints"
 jobsrun() { # jobsrun <n> — every lib of the work root, both targets, merged streams
+  # `--cold`: both runs execute every cell (a warm second run would answer
+  # from the result store the first one wrote — result_store.sh covers that).
   set +e
-  ( cd "$LIBWORK" && "$LIB_TEST_BIN" --json --bin "$BP_BIN" --lib-root "$LIBWORK/root" --jobs "$1" 2>&1 ) |
+  ( cd "$LIBWORK" && "$LIB_TEST_BIN" --json --bin "$BP_BIN" --lib-root "$LIBWORK/root" --jobs "$1" --cold 2>&1 ) |
     sed -E 's/ in [0-9.]+m?s/ in <t>/'
   set -e
 }
@@ -230,9 +232,10 @@ BP
 mkaudit otherred
 printf 'pub fn stamp() -> i64 {\n    return (1;\n}\n' >"$AUDWORK/otherred/src/cell.bp"
 auditrun() { # auditrun <lib> [<runner args>…] — JSON run of one member, both targets
+  # `--cold`: every audit is a build, never a stored answer.
   local lib="$1"; shift
   set +e
-  out="$( cd "$LIBWORK" && "$LIB_TEST_BIN" --json --bin "$BP_BIN" --lib-root "$AUDWORK" --lib "$lib" "$@" 2>&1 )"
+  out="$( cd "$LIBWORK" && "$LIB_TEST_BIN" --json --bin "$BP_BIN" --lib-root "$AUDWORK" --lib "$lib" --cold "$@" 2>&1 )"
   code=$?
   set -e
   echo "$out"
@@ -241,18 +244,18 @@ auditrun hostbound
 [[ $code -eq 0 ]] || fail "a structural exclusion must not fail the run (exit $code)"
 grep -q '"event":"cell_summary","lib":"hostbound","target":"erlang","status":"no_tests"' <<<"$out" || fail "hostbound·erlang is a declared cell and should compile"
 ! grep -q '"event":"cell_summary","lib":"hostbound","target":"commonJS"' <<<"$out" || fail "hostbound·commonJS is excluded by the manifest: it must not be a cell"
-grep -qF '"event":"restriction_audit","lib":"hostbound","target":"commonJS","status":"ok","line":"error: `now` has no `#[@External.<Target>(…)]` for the node backend"' <<<"$out" ||
+grep -qF '"event":"restriction_audit","lib":"hostbound","target":"commonJS","status":"ok","from_store":false,"line":"error: `now` has no `#[@External.<Target>(…)]` for the node backend"' <<<"$out" ||
   fail "the audit should accept hostbound's exclusion and quote the refusal"
 grep -q '"event":"run_summary","passed":0,"failed":0,"no_tests":1,"skipped":0,"audited":1,"not_structural":0' <<<"$out" || fail "the run summary should count one cell and one audit"
 auditrun bothbound
 [[ $code -eq 1 ]] || fail "a member that builds on the target it excludes must fail the run (exit $code)"
-grep -qF '"event":"restriction_audit","lib":"bothbound","target":"commonJS","status":"not_structural","line":"`botopink build --target commonJS` succeeds"' <<<"$out" ||
+grep -qF '"event":"restriction_audit","lib":"bothbound","target":"commonJS","status":"not_structural","from_store":false,"line":"`botopink build --target commonJS` succeeds"' <<<"$out" ||
   fail "the audit should refuse bothbound's exclusion: it builds on commonJS"
 grep -qF 'the restriction is not structural — `bothbound` excludes `commonJS` in its "targets"' <<<"$out" || fail "the refusal should name the member and the target"
 grep -q '"failed":0,"no_tests":1,"skipped":0,"audited":0,"not_structural":1' <<<"$out" || fail "no cell is red: the refused exclusion alone fails the run"
 auditrun otherred --target commonJS
 [[ $code -eq 1 ]] || fail "an exclusion that hides another red must fail the run (exit $code)"
-grep -q '"event":"restriction_audit","lib":"otherred","target":"commonJS","status":"not_structural","line":"error' <<<"$out" ||
+grep -q '"event":"restriction_audit","lib":"otherred","target":"commonJS","status":"not_structural","from_store":false,"line":"error' <<<"$out" ||
   fail "the audit should refuse otherred's exclusion and quote its first error"
 grep -q 'cell.bp' <<<"$out" || fail "the build's own diagnostic should be printed above the refusal"
 # There is no flag that runs an excluded target, in the runner or the wrapper.
