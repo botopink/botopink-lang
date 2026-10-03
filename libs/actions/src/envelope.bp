@@ -53,39 +53,6 @@ pub fn writeEnvelope(e: ActionEnvelope) -> string {
 
 // ── reading ─────────────────────────────────────────────────────────────────
 
-fn kindName(v: Json) -> string {
-    return case v {
-        Null -> "null";
-        Bool(value: _) -> "a boolean";
-        Num(value: _) -> "a number";
-        Str(value: _) -> "a string";
-        Arr(items: _) -> "an array";
-        Obj(members: _) -> "an object";
-    };
-}
-
-fn membersOf(v: Json) -> Array<#(string, Json)> {
-    return case v {
-        Obj(members: ms) -> ms;
-        _ -> [];
-    };
-}
-
-fn fieldOf(ms: Array<#(string, Json)>, key: string) -> ?Json {
-    val hit = ms.filter({ m -> m._0 == key });
-    if (hit.length == 0)
-        return null
-    else
-        return hit.at(0).unwrapOr(#("", Json.Null))._1;
-}
-
-fn strOf(v: Json) -> string {
-    return case v {
-        Str(value: s) -> s;
-        _ -> "";
-    };
-}
-
 fn boolOf(v: Json) -> bool {
     return case v {
         Bool(value: b) -> b;
@@ -100,13 +67,6 @@ fn isOne(v: Json) -> bool {
     };
 }
 
-fn itemsOf(v: Json) -> Array<Json> {
-    return case v {
-        Arr(items: xs) -> xs;
-        _ -> [];
-    };
-}
-
 fn wrongKind(key: string, want: string, got: Json) -> string {
     return [
         "actions.readEnvelope: `",
@@ -114,34 +74,31 @@ fn wrongKind(key: string, want: string, got: Json) -> string {
         "` must be ",
         want,
         ", not ",
-        kindName(got),
+        got.kindName(),
     ].join("");
 }
 
 // The string at `key`, `""` when absent; an `Error` when it is not a string.
-fn readStr(ms: Array<#(string, Json)>, key: string) -> @Result<string, string> {
-    val v = fieldOf(ms, key) ?? Json.Str(value: "");
-    if (kindName(v) != "a string") throw wrongKind(key, "a string", v);
-    return strOf(v);
+fn readStr(root: Json, key: string) -> @Result<string, string> {
+    val v = root.field(key) ?? Json.Str(value: "");
+    if (v.kindName() != "a string") throw wrongKind(key, "a string", v);
+    return v.str();
 }
 
-fn readBool(ms: Array<#(string, Json)>, key: string) -> @Result<bool, string> {
-    val v = fieldOf(ms, key) ?? Json.Bool(value: false);
-    if (kindName(v) != "a boolean") throw wrongKind(key, "a boolean", v);
+fn readBool(root: Json, key: string) -> @Result<bool, string> {
+    val v = root.field(key) ?? Json.Bool(value: false);
+    if (v.kindName() != "a boolean") throw wrongKind(key, "a boolean", v);
     return boolOf(v);
 }
 
-fn readStrings(
-    ms: Array<#(string, Json)>,
-    key: string,
-) -> @Result<Array<string>, string> {
-    val v = fieldOf(ms, key) ?? Json.Arr(items: []);
-    if (kindName(v) != "an array")
+fn readStrings(root: Json, key: string) -> @Result<Array<string>, string> {
+    val v = root.field(key) ?? Json.Arr(items: []);
+    if (v.kindName() != "an array")
         throw wrongKind(key, "an array of strings", v);
-    val xs = itemsOf(v);
-    if (xs.filter({ x -> kindName(x) != "a string" }).length > 0)
+    val xs = v.items();
+    if (xs.filter({ x -> x.kindName() != "a string" }).length > 0)
         throw wrongKind(key, "an array of strings", v);
-    return xs.map({ x -> strOf(x) });
+    return xs.map({ x -> x.str() });
 }
 
 pub fn readEnvelope(text: string) -> @Result<ActionEnvelope, string> {
@@ -149,21 +106,20 @@ pub fn readEnvelope(text: string) -> @Result<ActionEnvelope, string> {
     if (doc.isError())
         throw ["actions.readEnvelope: not JSON (", errorOf(doc), ")"].join("");
     val root = doc.unwrapOr(Json.Null);
-    if (kindName(root) != "an object")
+    if (!root.isObject())
         throw [
             "actions.readEnvelope: the envelope must be an object, not ",
-            kindName(root),
+            root.kindName(),
         ].join("");
-    val ms = membersOf(root);
-    val v = fieldOf(ms, "v") ?? Json.Null;
+    val v = root.field("v") ?? Json.Null;
     if (isOne(v).negate())
         throw "actions.readEnvelope: `v` must be 1 - this reader knows version 1 only";
-    val ok = try readBool(ms, "ok");
-    val state = try readStr(ms, "state");
-    val revalidated = try readStrings(ms, "revalidated");
-    val redirect = try readStr(ms, "redirect");
-    val n = try readStr(ms, "n");
-    val payload = try readStr(ms, "payload");
+    val ok = try readBool(root, "ok");
+    val state = try readStr(root, "state");
+    val revalidated = try readStrings(root, "revalidated");
+    val redirect = try readStr(root, "redirect");
+    val n = try readStr(root, "n");
+    val payload = try readStr(root, "payload");
     if (redirect != redirectOf(n))
         throw "actions.readEnvelope: `redirect` disagrees with the signal in `n`";
     return ActionEnvelope(
