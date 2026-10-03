@@ -13964,6 +13964,19 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                             } } } };
                         }
                     }
+                    // Decision 216 — a record-shaped type's members are closed: a
+                    // call through the type names one it declares (by hand or
+                    // through a decorator's `decl.addMember`), or one of the
+                    // behaviors it implements. `City.revisionsOf(…)` on an entity
+                    // without `#[revisions]` used to compile.
+                    if (env.lookupTypeDef(recvName)) |td| if (td == .record and
+                        !env.hasInherentMethod(recvName, call.callee) and
+                        !typeAnswersMember(env, td, call.callee))
+                    {
+                        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` has no associated fn `{s}`", .{ diagnostics.unknown_associated_fn, recvName, call.callee });
+                        env.lastError = TypeError.custom(msg, "Call a fn the type declares in its body, or one a decorator on it adds with `decl.addMember`.").withLoc(loc);
+                        return error.TypeError;
+                    };
                 }
             }
 

@@ -1977,6 +1977,18 @@ the type already has is `decorator-member-duplicate` / `decorator-type-duplicate
 Meta describes a top-level declaration — a `type`, a `behavior` or a `fn` — and
 each key is set once (`decorator-meta-duplicate`); a read naming a key the
 decorator did not set is `typeinfo-meta-missing`.
+A record-shaped type's members are closed: a call through the type names an
+associated fn it declares, by hand or through `decl.addMember`, and any other
+name is `unknown-associated-fn` where the call is written.
+
+<!-- docs-check: reject unknown-associated-fn -->
+```botopink
+type City(name: string)
+
+fn main() {
+    @print(City.table());
+}
+```
 
 ```botopink
 fn entity(comptime decl: @Decl, table: string) {

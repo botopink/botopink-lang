@@ -535,7 +535,11 @@ recognize → reflect → invoke → apply; marker meaning lives in the lib body
   with the type to every importer) and to every backend. A source that is not
   exactly one `fn` is `decorator-member-not-one-fn`, a name the type already
   has (field, variant, member) `decorator-member-duplicate`, both at the
-  annotation. Associated types follow (`mergeAssocTypes`): each source is
+  annotation. A record-shaped type's members are closed: `infer.zig`'s
+  type-qualified call (`City.f(…)`, after decision 62's
+  `associatedCallReturnType`) refuses a name the type neither declares nor
+  answers through a field or an implemented behavior as
+  `unknown-associated-fn` at the call. Associated types follow (`mergeAssocTypes`): each source is
   parsed as `[pub] type <Owner>__<Name><source>` — `pub` when the owner is —
   and appended as a top-level type; one that is not one type is
   `decorator-type-not-one-type`, a name the owner already answers (variant,
