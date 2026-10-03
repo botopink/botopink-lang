@@ -671,7 +671,9 @@ fi
 while IFS=$'\t' read -r f t what; do
     case "$what" in
         audit:*) printf 'audit_one\0%s\0%s\0%s\0' "$f" "$t" "${what#audit:}" ;;
-        *) if [ "$t" = "*" ]; then printf 'run_one\0%s\0%s\0\0' "$f" "${targets[0]}"; else printf 'run_one\0%s\0%s\0\0' "$f" "$t"; fi ;;
+        # The 4th field is `-`, never empty: BSD xargs (macOS) drops an empty
+        # argument even under -0, and every later group of 4 would shift.
+        *) if [ "$t" = "*" ]; then printf 'run_one\0%s\0%s\0-\0' "$f" "${targets[0]}"; else printf 'run_one\0%s\0%s\0-\0' "$f" "$t"; fi ;;
     esac
 done <"$jobs_list" | xargs -0 -n 4 -P "$jobs" bash -c 'pool_job "$work/inflight" "$0" "$1" "$2" "$3"'
 

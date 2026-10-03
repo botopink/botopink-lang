@@ -111,7 +111,10 @@ See [`../AGENTS.md`](../AGENTS.md) §Release pipeline and
 
 **Portability.** Every script runs under macOS's bash 3.2: a variable followed by a non-ASCII byte
 is written braced (`${lib}·${target}`) — bash 3.2 reads the first byte of `·` as part of the name
-under `set -u` (`lib\xc2: unbound variable`, `test-libs.sh` on macos-14).
+under `set -u` (`lib\xc2: unbound variable`, `test-libs.sh` on macos-14). macOS's `xargs` is BSD's:
+it drops an empty argument even under `-0`, so a NUL-separated record fed to `xargs -0 -n <k>`
+never holds an empty field — `tests/language/run.sh` pads `run_one`'s unused 4th field with `-`
+(an empty one shifted every later group: `commonJS: command not found` on macos-14).
 
 ## gate.sh
 
