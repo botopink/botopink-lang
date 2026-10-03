@@ -522,7 +522,7 @@ behavior Array<T> {
             return arraySlice0(self, start);
     }
 
-    #[@External.Erlang("""iolist_to_binary(lists:join($1, lists:map(fun(__E) -> if is_binary(__E) -> __E; is_integer(__E) -> integer_to_binary(__E); is_list(__E) -> __E; true -> $stringify(__E) end end, $0)))""")]
+    #[@External.Erlang("""iolist_to_binary(lists:join($1, lists:map(fun(__E) -> if is_binary(__E) -> __E; is_integer(__E) -> integer_to_binary(__E); is_list(__E) -> __E; true -> iolist_to_binary(io_lib:format("~p", [__E])) end end, $0)))""")]
     #[@External.Node("join")]
     fn join(self: Self<T>, sep: string) -> string;
 
@@ -754,25 +754,14 @@ behavior Array<T> {
         return out;
     }
 
-    // Drop consecutive duplicates. Matches the Node Array convention —
-    // non-consecutive de-dup is `xs.fold([], …)` (left to callers since it
-    // needs an equality predicate that interacts with generic `T`).
-    //
-    // Decision 9 (1.0.5): the body calls no method on an optional — it used to
-    // write `prev.unwrapOr(x)` inside this `default fn`, a shape no backend
-    // lowers (`prev.unwrapOr is not a function` on node, `unwrapOr/2 undefined`
-    // on erlang). `prev` is compared directly: absent only before the first
-    // element, which `first` guards.
+    // Every duplicate dropped, each value kept at its first occurrence, in
+    // order (decision 217): `[1, 2, 1, 3, 2].unique()` is `[1, 2, 3]` on every
+    // target. Values compare with `==` (decision 210), so records by value —
+    // not `contains`, which answers the host's identity on commonJS.
     default fn unique(self: Self<T>) -> Self<T> {
         var out: T[] = [];
-        var first = true;
-        var prev = self.at(0);
         self.forEach({ x ->
-            if (first) {
-                out = out.append([x]);
-                first = false;
-            } else if (prev != x) out = out.append([x]);
-            prev = x;
+            if (!out.any({ y -> y == x })) out = out.append([x]);
         });
         return out;
     }

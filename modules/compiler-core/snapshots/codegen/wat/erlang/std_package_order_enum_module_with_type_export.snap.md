@@ -837,7 +837,7 @@ display(Self) ->
     Parts = lists:foldl(fun(P, Parts) ->
         (Parts ++ [<<(std@collections:shown(erlang:element(1, P)))/binary, ": ", (std@collections:shown(erlang:element(2, P)))/binary>>])
     end, [], erlang:element(2, Self)),
-    <<"Dict(", ('__bp_text'(iolist_to_binary(lists:join(<<", ">>, lists:map(fun(__E) -> if is_binary(__E) -> __E; is_integer(__E) -> integer_to_binary(__E); is_list(__E) -> __E; true -> erlang:iolist_to_binary(io_lib:format("~p", [__E])) end end, Parts)))))/binary, ")">>.
+    <<"Dict(", ('__bp_text'(iolist_to_binary(lists:join(<<", ">>, lists:map(fun(__E) -> if is_binary(__E) -> __E; is_integer(__E) -> integer_to_binary(__E); is_list(__E) -> __E; true -> iolist_to_binary(io_lib:format("~p", [__E])) end end, Parts)))))/binary, ")">>.
 
 at(Self, Key) ->
     % NOTE: written with `forEach` + accumulator rather than

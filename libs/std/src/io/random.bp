@@ -51,13 +51,6 @@ pub fn coin() -> bool {
     return float() >= 0.5;
 }
 
-// Alias for `coin()` — matches the Node `Math.random()` mental model
-// where you draw a boolean by comparing the uniform sample to `0.5`.
-// Pure-botopink: lowers to the same `float() >= 0.5` shape as `coin`.
-pub fn bool() -> bool {
-    return coin();
-}
-
 // Random integer in the closed interval `[lo, hi]`. When `lo > hi` the
 // range is empty and the result is `lo` (a defensive default — the
 // alternative is to `@panic`, which the @assert-style tests would
@@ -170,11 +163,6 @@ test "random.pick from non-empty array returns a member" {
 test "random.pick from empty array returns null" {
     val empty: Array<i32> = [];
     assert pick(empty).unwrapOr(99) == 99;
-}
-
-test "random.bool draws either truth value" {
-    val b = bool();
-    assert b == true || b == false;
 }
 
 test "random.intInRange yields a value in the closed interval" {

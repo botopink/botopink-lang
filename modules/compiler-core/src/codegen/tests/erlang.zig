@@ -10,7 +10,8 @@ const prelude = @import("std_prelude");
 test "erlang: a prelude default fn body ignores what inference recorded at the program's line and column" {
     // Inference keys a method call's lowering by line and column, with no
     // file. `Array.unique`'s body (`primitives.bp`) calls `out.append([x])`
-    // on a local; a program whose own `s.trim()` sits at the same line and
+    // on a local (inside an `if` since decision 217, so it lowers through
+    // `'__bp_prim_append'/2`); a program whose own `s.trim()` sits at the same line and
     // column made the body's call `append(Out, [X])` — undefined, `erlc`
     // refused the module (the std-dedupe front's `exponent.startsWith("+")`
     // was the same lookup). The program is built so its call lands exactly
@@ -39,7 +40,7 @@ test "erlang: a prelude default fn body ignores what inference recorded at the p
         \\}
         \\
     );
-    try h.assertErlangRunLog(alloc, src.items, "[1, 2]\nab\n", &.{"(Out@1 ++ [X])"});
+    try h.assertErlangRunLog(alloc, src.items, "[1, 2]\nab\n", &.{"'__bp_prim_append'(Out, [X])"});
 }
 
 test "erlang: a default fn body lowers a local's method by the kind its declared types give it" {
@@ -74,12 +75,13 @@ test "erlang: a default fn body lowers a local's method by the kind its declared
     , "+B\nb\n1\n9\n", &.{ "(string:prefix(Tail, <<\"+\">>) =/= nomatch)", "string:uppercase(Tail)", "(fun(__BpO) -> case __BpO of undefined -> (D); __BpV0 -> __BpV0 end end)(F)" });
 }
 
-test "erlang: Array.unique drops consecutive duplicates" {
+test "erlang: Array.unique keeps each value's first occurrence" {
     // C-35: the prelude body is lowered with the kinds its declared types give
-    // its locals (`var out: T[]`, `self.at(0)`'s `?T`).
+    // its locals (`var out: T[]`). Decision 217: every duplicate goes, not only
+    // a consecutive one.
     try h.assertErlangRunLog(std.testing.allocator,
         \\pub fn main() {
-        \\    @print([1, 1, 2, 2, 3].unique());
+        \\    @print([1, 2, 1, 3, 2].unique());
         \\    @print([4].unique());
         \\    val none: i32[] = [];
         \\    @print(none.unique());

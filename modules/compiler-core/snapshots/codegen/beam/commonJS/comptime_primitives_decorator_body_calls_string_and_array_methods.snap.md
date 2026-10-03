@@ -840,11 +840,10 @@ Array.prototype.sliding = function(n) {
 };
 Array.prototype.unique = function() {
     let out = [];
-    let first = true;
-    let prev = __bp_array_at(this, 0);
     this.forEach((x) => {
-    (() => { if (first) { out = out.concat([x]); return first = false; } else { return (() => { if ((!__bp_eq(prev, x, 0))) { return out = out.concat([x]); } })(); } })();
-    prev = x;
+    return (() => { if ((!out.any((y) => {
+    return __bp_eq(y, x, 0);
+}))) { return out = out.concat([x]); } })();
 });
     return out;
 };
