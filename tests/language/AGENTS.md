@@ -258,7 +258,9 @@ member) and `modules/decorator_add_member_import` (the members travel with the t
 calls `City.fromRow(r)` through a plain import and an alias), on all four targets, and three
 `reject/` cells at the annotation: `decorator_add_member_on_fn` (`decorator-member-without-type`),
 `decorator_add_member_duplicate` (`decorator-member-duplicate`) and `decorator_add_member_not_one`
-(`decorator-member-not-one-fn`). Its second place — `decl.setMeta(key, value)`, read as
+(`decorator-member-not-one-fn`), and one where the call is written: `decorator_member_unknown`
+(`unknown-associated-fn` — a type's members are closed, so `City.revisions()` on a type no
+decorator gave it is refused). Its second place — `decl.setMeta(key, value)`, read as
 `@typeinfo(X).meta.<decorator>.<key>` — adds `run/decorator_set_meta` (two decorators' keys on a
 type, a `fn`'s meta, `.name`, a read held in a typed `val` and continued by `.length`) and
 `modules/decorator_meta_import` (meta read through a plain import, an alias and a namespace import),
@@ -279,7 +281,9 @@ decorator nothing carries answers `[]`), on all four targets, two project refusa
 `<target>.expect` — `typeinfo_all_imported` (a module importing the reader, at the import) and
 `typeinfo_all_private` (a private declaration the query would answer) — and four `reject/` cells
 where the query is written: `typeinfo_all_mixed`, `typeinfo_all_needs_member`,
-`typeinfo_all_not_decorator` and `typeinfo_all_arguments`. The registration cell calls each `value`
+`typeinfo_all_not_decorator` and `typeinfo_all_arguments`; decision 235's list form adds
+`run/typeinfo_all_list` (two decorators in one `with:`, declaration order kept, a type carrying two
+of them answered once with both decorators' meta) and `reject/typeinfo_all_list_twice`. The registration cell calls each `value`
 through a typed local (`val page: fn() -> string = r.value;`): on wasm a function read from a
 generic record's field and called through an untyped local prints its pointer (`Box<T>(value: T)`
 alone shows it, so it is the backend's, not this front's).

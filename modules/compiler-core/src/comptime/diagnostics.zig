@@ -396,6 +396,12 @@ pub const decorator_type_duplicate: []const u8 = "decorator-type-duplicate";
 /// `decl.addType(name, source)` whose source is not the shape of one type.
 pub const decorator_type_not_one_type: []const u8 = "decorator-type-not-one-type";
 
+/// `Type.f(…)` on a record-shaped `type` that declares no associated fn `f`
+/// (by hand or through a decorator's `decl.addMember`): a type's members are
+/// closed, so a call naming a member it does not have is refused where it is
+/// written, not left to the backend.
+pub const unknown_associated_fn: []const u8 = "unknown-associated-fn";
+
 /// `@typeinfo.all` written without its labels, with an unknown one, or with
 /// `member:` where it does not apply.
 pub const typeinfo_all_arguments: []const u8 = "typeinfo-all-arguments";
@@ -512,6 +518,7 @@ pub const all_codes = [_][]const u8{
     decorator_type_name,
     decorator_type_duplicate,
     decorator_type_not_one_type,
+    unknown_associated_fn,
     typeinfo_all_arguments,
     typeinfo_all_not_decorator,
     typeinfo_all_mixed,

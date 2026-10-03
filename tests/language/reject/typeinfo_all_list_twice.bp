@@ -1,0 +1,15 @@
+//// Decision 235 — a `with:` list names each decorator once: `service`
+//// listed twice is `typeinfo-all-arguments` where the query is written.
+
+fn service(comptime decl: @Decl) {
+    decl.setMeta("role", "service");
+}
+
+#[service]
+pub fn mailer() -> string {
+    return "mailer";
+}
+
+pub fn main() {
+    @print(@typeinfo.all(with: [service, service]).length);
+}

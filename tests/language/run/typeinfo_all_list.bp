@@ -1,0 +1,38 @@
+//// Decision 235 — `@typeinfo.all(with: [a, b])` answers every declaration
+//// carrying any decorator of the list, in the one order (module path, then
+//// declaration order), a declaration carrying two of them once, with the
+//// meta every listed decorator set.
+
+fn service(comptime decl: @Decl) {
+    decl.setMeta("role", "service");
+    decl.addMember("pub fn make() -> string { return \"" + decl.name + "\"; }");
+}
+
+fn repository(comptime decl: @Decl) {
+    decl.setMeta("store", "sql");
+    decl.addMember("pub fn make() -> string { return \"" + decl.name + "\"; }");
+}
+
+fn audited(comptime decl: @Decl) {
+    decl.setMeta("audit", "yes");
+}
+
+#[service]
+type Mailer(host: string)
+
+#[repository]
+type Orders(table: string)
+
+#[service]
+#[audited]
+type Billing(rate: i32)
+
+pub fn main() {
+    for (@typeinfo.all(with: [repository, service], member: "make")) { d ->
+        val make: fn() -> string = d.value;
+        @print(d.name + " " + make() + " " + d.meta.map({ m -> m.key + "=" + m.value }).join(","));
+    }
+    for (@typeinfo.all(with: [service, audited], member: "make")) { d ->
+        @print(d.name + " " + d.meta.length.toString());
+    }
+}
