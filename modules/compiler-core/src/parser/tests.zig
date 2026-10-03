@@ -13,4 +13,6 @@ test {
     _ = @import("tests/decision8.zig");
     _ = @import("tests/language_surface.zig");
     _ = @import("tests/type_alias.zig");
+    _ = @import("tests/decision255.zig");
+    _ = @import("tests/decision247.zig");
 }

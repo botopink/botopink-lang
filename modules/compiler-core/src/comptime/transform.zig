@@ -12,6 +12,7 @@ const std = @import("std");
 const ast = @import("../ast.zig");
 const specialize = @import("./specialize.zig");
 const envMod = @import("./env.zig");
+const lexerMod = @import("../lexer.zig");
 
 /// Map of `@Result`/`@Option` method-call sites (by source loc) to their
 /// type-directed lowering, produced by inference.
@@ -800,6 +801,7 @@ fn rewriteStmt(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
             for (col.kind.case.arms) |*arm| {
                 boolLiteralArm(agg, arm) catch return ScanError.OutOfMemory;
                 try qualifyResultPattern(agg, &arm.pattern, arm.patternLoc);
+                try stripPatternSuffixes(agg, &arm.pattern);
             }
             if (agg.optional_null_cases.get(col.loc)) |binder| {
                 try rewriteOptionalNullCase(agg, &stmt.expr, binder);
@@ -872,6 +874,27 @@ fn qualifyResultPattern(agg: *Aggregator, pattern: *ast.Pattern, at: ast.Loc) Sc
     const name = pattern.variant.name;
     if (std.mem.indexOfScalar(u8, name, '.') != null) return;
     pattern.variant.name = std.mem.concat(agg.spec_cache.arena, u8, &.{ "Result.", name }) catch return ScanError.OutOfMemory;
+}
+
+/// Decision 247 — a number pattern's suffix is the checker's (it typed the
+/// pattern against the subject); every backend matches the digits alone, so
+/// the suffix leaves the program here, as `env.indexRewrites` takes it off a
+/// literal expression.
+fn stripPatternSuffixes(agg: *Aggregator, pattern: *ast.Pattern) ScanError!void {
+    const arena = agg.spec_cache.arena;
+    switch (pattern.*) {
+        .numberLit => |text| pattern.* = .{ .numberLit = lexerMod.numberBackendText(arena, text) catch return ScanError.OutOfMemory },
+        .variant => |*v| switch (v.payload) {
+            .literals => |args| for (args) |*a| try stripPatternSuffixes(agg, a),
+            else => {},
+        },
+        .list => |l| for (l.elems) |*e| switch (e.*) {
+            .numberLit => |text| e.* = .{ .numberLit = lexerMod.numberBackendText(arena, text) catch return ScanError.OutOfMemory },
+            else => {},
+        },
+        .@"or", .multi => |pats| for (pats) |*p| try stripPatternSuffixes(agg, p),
+        else => {},
+    }
 }
 
 /// Decision 107's namespace form (`Env.namespaces`): an import item that
@@ -1145,6 +1168,8 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
                 for (case_node.arms) |*arm| {
                     boolLiteralArm(agg, arm) catch return ScanError.OutOfMemory;
                     try qualifyResultPattern(agg, &arm.pattern, arm.patternLoc);
+                    try stripPatternSuffixes(agg, &arm.pattern);
+                try stripPatternSuffixes(agg, &arm.pattern);
                     rewriteExpr(agg, fn_decls, comptime_arrays, &arm.body) catch return ScanError.OutOfMemory;
                 }
             },
@@ -1174,6 +1199,7 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
             },
             .assertPattern => |*ap| {
                 try qualifyResultPattern(agg, &ap.pattern, ct.loc);
+                try stripPatternSuffixes(agg, &ap.pattern);
                 rewriteExpr(agg, fn_decls, comptime_arrays, ap.expr) catch return ScanError.OutOfMemory;
                 rewriteExpr(agg, fn_decls, comptime_arrays, ap.handler) catch return ScanError.OutOfMemory;
             },

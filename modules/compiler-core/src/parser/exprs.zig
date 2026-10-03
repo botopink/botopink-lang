@@ -1065,7 +1065,15 @@ fn makeIndexExpr(this: *This, alloc: std.mem.Allocator, base: Expr) ParseError!E
 /// mirroring the identifier path below. Each method-call link uses the method
 /// token's loc so loc-keyed method lowering stays per-link distinct.
 fn parsePostfixChain(this: *This, alloc: std.mem.Allocator, base_in: Expr) ParseError!Expr {
+    return parsePostfixChainFrom(this, alloc, base_in, null);
+}
+
+/// The chain, with `receiverTypeArgs` — the `<…>` of a type application
+/// (decision 255 (1), `Dict<string, unknown>.empty()`) — handed to its FIRST
+/// link: the `.member` that `parseExplicitTypeArgs` saw follow the `>`.
+fn parsePostfixChainFrom(this: *This, alloc: std.mem.Allocator, base_in: Expr, receiverTypeArgs_in: ?[]ast.TypeRef) ParseError!Expr {
     var base = base_in;
+    var receiverTypeArgs = receiverTypeArgs_in;
     while (this.check(.dot) or this.check(.questionDot) or this.check(.leftParenthesis) or
         this.check(.leftSquareBracket))
     {
@@ -1099,7 +1107,9 @@ fn parsePostfixChain(this: *This, alloc: std.mem.Allocator, base_in: Expr) Parse
         else
             try this.consumeMemberName();
         // Decision 8 §1.3 — a method name is a name: `ctx.resolve<T>()`.
-        const typeArgs = try parseExplicitTypeArgs(this, alloc, fieldTok);
+        const typeArgs = try parseExplicitTypeArgs(this, alloc, fieldTok, false);
+        const recvTypeArgs = receiverTypeArgs;
+        receiverTypeArgs = null;
         if (this.check(.leftParenthesis)) {
             const args = try this.parseCallArgs(alloc);
             errdefer {
@@ -1110,6 +1120,7 @@ fn parsePostfixChain(this: *This, alloc: std.mem.Allocator, base_in: Expr) Parse
             base = makeCall(fieldTok, recvPtr, fieldTok.lexeme, false, args, try alloc.alloc(TrailingLambda, 0));
             base.call.kind.call.optional = isOptional;
             base.call.kind.call.typeArgs = typeArgs;
+            base.call.kind.call.receiverTypeArgs = recvTypeArgs;
         } else {
             const recvPtr = try this.boxExpr(alloc, base);
             // Field-access links use the member token's loc — like the
@@ -1121,7 +1132,11 @@ fn parsePostfixChain(this: *This, alloc: std.mem.Allocator, base_in: Expr) Parse
                 .receiver = recvPtr,
                 .member = fieldTok.lexeme,
                 .optional = isOptional,
+                .receiverTypeArgs = recvTypeArgs,
             } } } };
+            // `ctx.resolve<T>` with no `(` after it: the list was read as
+            // types only because a `(` followed — never true here.
+            std.debug.assert(typeArgs == null);
         }
     }
     // The chain is complete and the next token would have continued an
@@ -1137,9 +1152,14 @@ fn parsePostfixChain(this: *This, alloc: std.mem.Allocator, base_in: Expr) Parse
 
 /// Decision 8 §1.3 — `<T, …>` right after `nameTok`, when `<` touches the
 /// name, every item parses as a type, the list closes with `>` and a `(`
-/// follows. Speculative: on any other shape the cursor and the parse error are
-/// put back and null is answered, so `a < b` stays a comparison.
-fn parseExplicitTypeArgs(this: *This, alloc: std.mem.Allocator, nameTok: token.Token) ParseError!?[]ast.TypeRef {
+/// follows. Decision 255 (1) — with `typeName` (the name is a type's: it
+/// starts with an upper-case letter, `isTypeName`) a `.` after the `>` closes
+/// the list too: `Dict<string, unknown>.empty()` is a type application, its
+/// member read off the instantiated type (Kotlin's rule). Speculative: on any
+/// other shape the cursor and the parse error are put back and null is
+/// answered, so `a < b`, `x < y && z > w` and `f(a < b, c > d)` stay
+/// comparisons.
+fn parseExplicitTypeArgs(this: *This, alloc: std.mem.Allocator, nameTok: token.Token, typeName: bool) ParseError!?[]ast.TypeRef {
     if (!this.check(.lessThan)) return null;
     const lt = this.peek();
     if (lt.line != nameTok.line or lt.col != nameTok.col + nameTok.lexeme.len) return null;
@@ -1155,7 +1175,7 @@ fn parseExplicitTypeArgs(this: *This, alloc: std.mem.Allocator, nameTok: token.T
             break;
         }
         if (!this.match(.greaterThan)) break :blk false;
-        break :blk this.check(.leftParenthesis);
+        break :blk this.check(.leftParenthesis) or (typeName and this.check(.dot));
     };
     if (!ok) {
         for (items.items) |*t| t.deinit(alloc);
@@ -1165,6 +1185,13 @@ fn parseExplicitTypeArgs(this: *This, alloc: std.mem.Allocator, nameTok: token.T
         return null;
     }
     return try items.toOwnedSlice(alloc);
+}
+
+/// Decision 255 (1) — a name a type application may follow: a type's name
+/// starts with an upper-case letter (`Dict`, `Box`), a value's or a
+/// function's with a lower-case one, so `a<b>.c` stays two comparisons.
+fn isTypeName(name: []const u8) bool {
+    return name.len > 0 and std.ascii.isUpper(name[0]);
 }
 
 /// A numeric section leaf's spelling: decimal digits and nothing else.
@@ -1399,6 +1426,7 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
     }
 
     if (this.check(.numberLiteral)) {
+        try this.checkNumberLiteral(this.peek());
         const tok = this.advance();
         const lit = Expr{ .literal = .{ .loc = locFromToken(tok), .kind = .{ .numberLit = tok.lexeme } } };
         // A number is a receiver like any other literal — `libs/std` declares
@@ -1465,7 +1493,7 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         // Decision 8 §1.3 — `name<…>(…)`: a type-argument list when `<` is
         // ADJACENT to the name, its contents parse as types and `>` is
         // followed by `(`; anything else leaves `<` a comparison.
-        const typeArgs = try parseExplicitTypeArgs(this, alloc, tok);
+        const typeArgs = try parseExplicitTypeArgs(this, alloc, tok, isTypeName(tok.lexeme));
 
         // `ident(args)` — a call in operand position (e.g. `add(1, 2) == 3`).
         // Trailing lambdas are not consumed here: in a binary operand a `{`
@@ -1485,8 +1513,10 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         // verbatim third copy of `parsePostfixChain`'s loop, which is why
         // adding the `(` link there closed `("ab").length` and not
         // `adder(3)(4)`: the two forms reached two copies of one rule. One
-        // rule, one place.
-        base = try parsePostfixChain(this, alloc, base);
+        // rule, one place. A type application's `<…>` not taken by a `(`
+        // (`Dict<string, unknown>.empty()`) belongs to the first link.
+        const pendingTypeArgs = if (base == .identifier) typeArgs else null;
+        base = try parsePostfixChainFrom(this, alloc, base, pendingTypeArgs);
 
         // Tagged-call sugar: a string literal immediately after a plain
         // identifier or `a.b` access is a call with that single argument:

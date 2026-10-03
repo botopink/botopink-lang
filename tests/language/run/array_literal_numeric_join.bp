@@ -1,5 +1,6 @@
-//// Decision 150 (D5, decision 8 §3.2) — an integer literal fits `f64`, so
-//// `[1, 2.5]` is `f64[]` and the `1` is the float `1.0` on every target; a
+//// Decision 150 (D5, decision 8 §3.2) — elements that agree join: `[1.0, 2.5]`
+//// and `[16d, 0.5, 3d]` are `f64[]` (decision 247 — an integer literal
+//// never re-spells into a float; `[1, 2.5]` is refused, its own cell); a
 //// `null` element makes the element optional, `[1, null]` is `?i32[]`.
 
 fn total(xs: f64[]) -> f64 {
@@ -11,9 +12,9 @@ fn total(xs: f64[]) -> f64 {
 }
 
 pub fn main() {
-    val ys = [1, 2.5];
+    val ys = [1.0, 2.5];
     ys.forEach({ y -> @print(y * 2.0) });
-    val hs = [0x10, 0.5, 3];
+    val hs = [16d, 0.5, 3d];
     @print(total(hs));
     val zs = [1, null];
     @print(zs.length);

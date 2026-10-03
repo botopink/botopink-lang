@@ -1,0 +1,14 @@
+//// Decision 255 (2) — the decision's own line: `val d: Dict<string, unknown>
+//// = comptime Dict.empty();` types as its block form does, in a body. wasm
+//// lowers no comptime construct in a body (`05-wasm`'s row), so the cell is
+//// refused there (`.wasm.expect`).
+
+import {collections.Dict} from "std";
+
+pub fn main() {
+    val d: Dict<string, unknown> = comptime Dict.empty();
+    val e: Dict<string, unknown> = comptime {
+        break Dict.empty();
+    };
+    @print(d.size() == e.size());
+}

@@ -714,8 +714,20 @@ declaration (`Env.fnDecls`) is re-read with each parameter bound to its argument
 the call's positional arguments and result; a method's (`ctx.resolve<T>(…)`) are its own, from
 its declaration (`Env.inherentMethodDecls`, keyed `"<Type>.<method>"`), with the type's parameters
 bound to the receiver's arguments. A count that does not match, or type arguments on a callee with
-none, is refused at the call. `Option<i32>.None` (type arguments before a `.`) is not
-parsed yet.
+none, is refused at the call.
+
+**A type application** (decision 255 (1)) — `Dict<string, unknown>.empty()`, `Opt<i32>.None`: the
+parser keeps the list on `CallExpr.call.receiverTypeArgs` / `identAccess.receiverTypeArgs`, and
+`resolveTypeApplication` resolves it against the receiver — a declared type (an import alias is
+its declared name), as many arguments as it declares parameters, else refused at the receiver.
+`applyReceiverTypeArgs` (after `applyExplicitTypeArgs` on every call) then unifies: a generic
+enum's variant answers `Type<Args>`; an inherent fn (`Env.inherentMethodDecls`) has its declared
+parameters and return re-read with the type's parameters bound to the arguments, `Self` to
+`Type<Args>` and its own type parameters fresh, so `Dict<string, unknown>.empty()` is a
+`Dict<string, unknown>` and `Box<i32>.make("x")` is the mismatch at the argument; any other member
+is refused at the call. Without a call (`inferIdentifierExpr`'s `identAccess` arm) only a unit
+variant is read — its type carries the arguments instead of fresh variables — and anything else
+(`Box<i32>.value`) is refused at the member.
 
 ## Three rules the effects guide's page needs (maintainer, 24-box-1)
 

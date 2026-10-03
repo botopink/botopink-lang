@@ -687,6 +687,8 @@ pub const Formatter = struct {
                 ),
                 .identAccess => |ia| this.concatAll(&.{
                     try this.fmtExpr(ia.receiver.*),
+                    // Decision 255 (1) — `Opt<i32>.None`, printed back adjacent.
+                    try this.typeArgsDoc(if (@hasField(@TypeOf(ia), "receiverTypeArgs")) ia.receiverTypeArgs else null),
                     try this.text(if (ia.optional) "?." else "."),
                     try this.text(ia.member),
                 }),
@@ -1473,6 +1475,11 @@ pub const Formatter = struct {
             root = root.call.kind.call.receiver.?;
         }
         if (links.items.len < 2) return null;
+        // Decision 255 (1) — `Dict<string, unknown>.empty().insert(…)`: the
+        // type application's `<…>` stays on the root's line, adjacent to the
+        // type's name; a link on a line of its own would detach it.
+        const first = links.items[links.items.len - 1];
+        const rootTypeArgs = if (@hasField(@TypeOf(first), "receiverTypeArgs")) first.receiverTypeArgs else null;
         var body: std.ArrayList(*const Doc) = .empty;
         defer body.deinit(this.arena);
         var i = links.items.len;
@@ -1481,10 +1488,26 @@ pub const Formatter = struct {
             try body.append(this.arena, this.softline());
             try body.append(this.arena, try this.fmtCallWithReceiverDoc(links.items[i], this.nil()));
         }
-        return try this.groupMeasured(try this.concat(
+        return try this.groupMeasured(try this.concatAll(&.{
             try this.fmtExpr(root.*),
+            try this.typeArgsDoc(rootTypeArgs),
             try this.nest(INDENT, try this.concatAll(body.items)),
-        ));
+        }));
+    }
+
+    /// `<A, B>` — written type arguments printed back adjacent to the name
+    /// before them (decision 8 §1.3, decision 255 (1)); nothing when none was
+    /// written.
+    fn typeArgsDoc(this: *Formatter, typeArgs: ?[]const ast.TypeRef) anyerror!*const Doc {
+        const tas = typeArgs orelse return this.nil();
+        var parts: std.ArrayListUnmanaged(*const Doc) = .empty;
+        try parts.append(this.arena, try this.text("<"));
+        for (tas, 0..) |ta, i| {
+            if (i > 0) try parts.append(this.arena, try this.text(", "));
+            try parts.append(this.arena, try this.fmtTypeRef(ta));
+        }
+        try parts.append(this.arena, try this.text(">"));
+        return this.concatAll(parts.items);
     }
 
     /// One call. `recvDoc` stands in for the receiver's own printing when the
@@ -1555,26 +1578,24 @@ pub const Formatter = struct {
             try this.fmtExpr(ce.*)
         else if (c.receiver) |recv|
             try this.concatAll(&.{
-                recvDoc orelse try this.fmtExpr(recv.*),
+                // Decision 255 (1) — `Dict<string, unknown>.empty()`; a chain
+                // link (`recvDoc` set) has its root print them.
+                recvDoc orelse try this.concat(
+                    try this.fmtExpr(recv.*),
+                    try this.typeArgsDoc(if (@hasField(@TypeOf(c), "receiverTypeArgs")) c.receiverTypeArgs else null),
+                ),
                 try this.text(if (is_optional) "?." else "."),
                 try this.text(c.callee),
+                // Decision 8 §1.3 — a method's own, `ctx.resolve<Repo>()`.
+                try this.typeArgsDoc(if (@hasField(@TypeOf(c), "typeArgs")) c.typeArgs else null),
             })
-        else blk: {
-            const name = try this.text(if (is_builtin) try std.fmt.allocPrint(this.arena, "@{s}", .{c.callee}) else c.callee);
+        else
             // Decision 8 §1.3 (01-checker) — explicit type arguments at a use,
             // `Box<i32>(value: 1)`, printed back adjacent to the name.
-            const typeArgs = if (@hasField(@TypeOf(c), "typeArgs")) c.typeArgs else null;
-            const tas = typeArgs orelse break :blk name;
-            var parts: std.ArrayListUnmanaged(*const Doc) = .empty;
-            try parts.append(this.arena, name);
-            try parts.append(this.arena, try this.text("<"));
-            for (tas, 0..) |ta, i| {
-                if (i > 0) try parts.append(this.arena, try this.text(", "));
-                try parts.append(this.arena, try this.fmtTypeRef(ta));
-            }
-            try parts.append(this.arena, try this.text(">"));
-            break :blk try this.concatAll(parts.items);
-        };
+            try this.concat(
+                try this.text(if (is_builtin) try std.fmt.allocPrint(this.arena, "@{s}", .{c.callee}) else c.callee),
+                try this.typeArgsDoc(if (@hasField(@TypeOf(c), "typeArgs")) c.typeArgs else null),
+            );
 
         // Check if there are any comments to force multiline formatting
         const hasComments = hasCommentsLoop: {

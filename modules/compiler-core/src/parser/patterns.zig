@@ -238,6 +238,7 @@ pub fn parseSimplePattern(this: *This, alloc: std.mem.Allocator) ParseError!Patt
 
     // Number literal: `42`, or the inclusive range `1...9` (§5.2)
     if (this.check(.numberLiteral)) {
+        try this.checkNumberLiteral(this.peek());
         const lowTok = this.advance();
         return finishRangePattern(this, alloc, Pattern{ .numberLit = lowTok.lexeme });
     }
@@ -317,6 +318,7 @@ fn finishRangePattern(this: *This, alloc: std.mem.Allocator, low: Pattern) Parse
         this.parseError = ParseErrorInfo.fromToken(.patternRangeMissingEnd, rangeTok);
         return ParseError.UnexpectedToken;
     }
+    if (this.check(.numberLiteral)) try this.checkNumberLiteral(this.peek());
     const highTok = this.advance();
     const high: Pattern = if (highTok.kind == .numberLiteral)
         .{ .numberLit = highTok.lexeme }
@@ -453,6 +455,7 @@ pub fn parseListPattern(this: *This, alloc: std.mem.Allocator) ParseError!Patter
                 _ = this.advance();
                 break :blk .wildcard;
             } else if (this.check(.numberLiteral)) blk: {
+                try this.checkNumberLiteral(this.peek());
                 break :blk .{ .numberLit = this.advance().lexeme };
             } else if (this.check(.identifier)) blk: {
                 break :blk .{ .bind = this.advance().lexeme };

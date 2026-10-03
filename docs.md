@@ -664,6 +664,30 @@ fn main() {
 }
 ```
 
+Type arguments may be written at a use, adjacent to the name. A function or a
+constructor takes them before its call (`first<string>([], "none")`,
+`Box<i32>(value: 1)`); a type's name takes them before a member too — a
+**type application**: `Dict<string, i32>.empty()` calls `empty` on
+`Dict<string, i32>`, and `Opt<i32>.None` is that `Opt<i32>`. The list is read
+as type arguments only after a type's name (an upper-case first letter) and
+only when its `>` is followed by `.` or `(`; anywhere else `<` is a comparison,
+so `a < b`, `x < y && z > w` and `f(a < b, c > d)` mean what they say.
+
+```botopink
+type Opt<T> { Some(value: T), None }
+
+type Box<T>(value: T) {
+    pub fn make(v: T) -> Box<T> { return Box(value: v); }
+}
+
+fn main() {
+    val b = Box<i32>.make(7);
+    val o = Opt<string>.None;
+    @print(b.value);
+    @print(o == Opt<string>.None);
+}
+```
+
 ### Type aliases
 
 ```botopink
@@ -777,6 +801,47 @@ Three shapes do **not** narrow, and each for its own reason:
 "hello"        // string
 "hi ${name}!"  // string interpolation
 true, false    // bool
+```
+
+### Numeric literals
+
+A number is decimal (`1_000_000`, `1.5`, `2.5e-3`) or hexadecimal, octal and
+binary (`0xFF`, `0o17`, `0b1010`). Without a suffix, a literal with a fraction
+or an exponent is an `f64`, and an integer literal takes the integer type its
+position asks for (`val k: i64 = 1`, an `i64` argument, the other operand of an
+`i64` operator) — `i32` when nothing asks — and must fit it. A suffix, always
+lower case, gives the literal its type wherever it stands:
+
+```text
+1.5f   2f     // f32          42u    // u32
+1.5d   1d     // f64          42ul   // u64
+42l           // i64          42u8  42u16  42usize
+42i8  42i16  42isize
+```
+
+A literal never changes type to fit: an integer literal where a float is
+expected is an error, and so is `1.5` where an `f32` is — write `1d` or `1.0`,
+and `1.5f`. `f` and `d` go on decimal literals only (in `0x…` they are hex
+digits); a radix literal takes an integer suffix (`0xFFul`). An uppercase
+suffix (`42L`), letters that are no suffix (`10px`) and an exponent without
+digits (`1e`) are refused at the suffix. A number pattern matches a subject of
+its own type, and on commonJS an `l` / `ul` literal past 2^53 is refused, since
+a double cannot hold it.
+
+<!-- docs-check: body -->
+```botopink
+val ratio: f32 = 0.5f;
+val total: f64 = 10d;
+val big = 4_000_000_000ul;
+val mask: u8 = 255;
+val scaled = total / 4.0;
+```
+
+<!-- docs-check: reject the integer literal `1` is not an `f64` -->
+```botopink
+fn main() {
+    val x: f64 = 1;
+}
 ```
 
 ### Arrays

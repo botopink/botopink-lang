@@ -50,6 +50,117 @@ pub const LexerError = error{
     LexicalError,
 };
 
+// ── Numeric literal parts (decision 247) ─────────────────────────────────────
+
+/// A number token split into the digits a backend writes and the suffix the
+/// checker reads (decision 247). `floating` is a fraction or an exponent;
+/// `radix` a `0x` / `0o` / `0b` literal.
+pub const NumberParts = struct {
+    digits: []const u8,
+    suffix: []const u8,
+    floating: bool,
+    radix: bool,
+};
+
+/// Splits a `numberLiteral` lexeme the way `scanNumber` built it: the
+/// digits (with their `_` separators, the fraction and the exponent) and the
+/// letters glued after them. The one reading of a literal's text — the parser
+/// validates the suffix, the checker types it, and both strip it from what the
+/// backends see.
+pub fn splitNumber(lexeme: []const u8) NumberParts {
+    const isDigitByte = struct {
+        fn f(c: u8) bool {
+            return c >= '0' and c <= '9';
+        }
+    }.f;
+    if (lexeme.len >= 2 and lexeme[0] == '0' and std.mem.indexOfScalar(u8, "xXoObB", lexeme[1]) != null) {
+        const radix: u8 = switch (lexeme[1]) {
+            'x', 'X' => 16,
+            'o', 'O' => 8,
+            else => 2,
+        };
+        var i: usize = 2;
+        while (i < lexeme.len and (lexeme[i] == '_' or Lexer.isValidRadixDigit(lexeme[i], radix))) i += 1;
+        return .{ .digits = lexeme[0..i], .suffix = lexeme[i..], .floating = false, .radix = true };
+    }
+    var i: usize = 0;
+    var floating = false;
+    const digitRun = struct {
+        fn f(text: []const u8, start: usize) usize {
+            var j = start;
+            while (j < text.len) {
+                if (isDigitByte(text[j])) {
+                    j += 1;
+                } else if (text[j] == '_' and j + 1 < text.len and isDigitByte(text[j + 1])) {
+                    j += 1;
+                } else break;
+            }
+            return j;
+        }
+    }.f;
+    i = digitRun(lexeme, i);
+    if (i + 1 < lexeme.len and lexeme[i] == '.' and isDigitByte(lexeme[i + 1])) {
+        floating = true;
+        i = digitRun(lexeme, i + 1);
+    }
+    if (i < lexeme.len and (lexeme[i] == 'e' or lexeme[i] == 'E')) {
+        var j = i + 1;
+        if (j < lexeme.len and (lexeme[j] == '+' or lexeme[j] == '-')) j += 1;
+        if (j < lexeme.len and isDigitByte(lexeme[j])) {
+            floating = true;
+            while (j < lexeme.len and isDigitByte(lexeme[j])) j += 1;
+            i = j;
+        }
+    }
+    return .{ .digits = lexeme[0..i], .suffix = lexeme[i..], .floating = floating, .radix = false };
+}
+
+/// Decision 247 — the suffixes and the type each one gives its literal.
+pub const number_suffixes = [_]struct { suffix: []const u8, typeName: []const u8 }{
+    .{ .suffix = "f", .typeName = "f32" },
+    .{ .suffix = "d", .typeName = "f64" },
+    .{ .suffix = "l", .typeName = "i64" },
+    .{ .suffix = "u", .typeName = "u32" },
+    .{ .suffix = "ul", .typeName = "u64" },
+    .{ .suffix = "i8", .typeName = "i8" },
+    .{ .suffix = "i16", .typeName = "i16" },
+    .{ .suffix = "u8", .typeName = "u8" },
+    .{ .suffix = "u16", .typeName = "u16" },
+    .{ .suffix = "isize", .typeName = "isize" },
+    .{ .suffix = "usize", .typeName = "usize" },
+};
+
+/// The type a suffix gives (`"ul"` → `"u64"`); null for anything else.
+pub fn numberSuffixType(suffix: []const u8) ?[]const u8 {
+    for (number_suffixes) |s| if (std.mem.eql(u8, s.suffix, suffix)) return s.typeName;
+    return null;
+}
+
+/// The suffix `written` spells in upper case (`"UL"` → `"ul"`); null when its
+/// lower-case form is no suffix either.
+pub fn numberSuffixLowercase(written: []const u8) ?[]const u8 {
+    for (number_suffixes) |s| if (std.ascii.eqlIgnoreCase(s.suffix, written)) return s.suffix;
+    return null;
+}
+
+/// Decision 247 — what a backend writes for a number literal: the digits
+/// without the suffix; a floating suffix on integer digits spelt as a float
+/// (`1d` → `1.0`, `1_000f` → `1000.0`). The lexeme itself without a suffix.
+pub fn numberBackendText(allocator: std.mem.Allocator, lexeme: []const u8) std.mem.Allocator.Error![]const u8 {
+    const parts = splitNumber(lexeme);
+    if (parts.suffix.len == 0) return lexeme;
+    if (!numberSuffixIsFloat(parts.suffix) or parts.floating) return parts.digits;
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    for (parts.digits) |c| if (c != '_') try out.append(allocator, c);
+    try out.appendSlice(allocator, ".0");
+    return out.toOwnedSlice(allocator);
+}
+
+/// Whether a suffix makes a floating literal (`f`, `d`).
+pub fn numberSuffixIsFloat(suffix: []const u8) bool {
+    return std.mem.eql(u8, suffix, "f") or std.mem.eql(u8, suffix, "d");
+}
+
 // ── Lexer ─────────────────────────────────────────────────────────────────────
 
 pub const Lexer = struct {
@@ -595,16 +706,31 @@ pub const Lexer = struct {
                 _ = self.advance();
             }
         }
-        // Check for scientific notation: e.g. 1.0e10 or 1e10
+        // Check for scientific notation: e.g. 1.0e10 or 1e10. The exponent
+        // is one only with digits (after an optional sign): `1e` and `1ex`
+        // leave the `e` to the suffix run below, where the parser refuses it
+        // by name (decision 247).
         if (!self.isAtEnd() and (self.peek() == 'e' or self.peek() == 'E')) {
-            _ = self.advance();
-            // Optional sign for exponent
-            if (!self.isAtEnd() and (self.peek() == '+' or self.peek() == '-')) {
+            const signed = self.peekNext() == '+' or self.peekNext() == '-';
+            const firstExpDigit = if (signed) self.peekNextNext() else self.peekNext();
+            if (isDigit(firstExpDigit)) {
                 _ = self.advance();
+                if (signed) _ = self.advance();
+                while (!self.isAtEnd() and isDigit(self.peek())) _ = self.advance();
             }
-            while (!self.isAtEnd() and isDigit(self.peek())) _ = self.advance();
         }
+        self.scanNumberSuffix();
         try self.addToken(.numberLiteral, allocator);
+    }
+
+    /// Decision 247 — the letters glued to a number are part of its token:
+    /// a suffix (`1.5f`, `42ul`, `7i16`) or a spelling the parser refuses by
+    /// name (`42L`, `2x`, `1e`). The lexer keeps the run whole and decides
+    /// nothing about it, so every refusal is located and named in one place
+    /// (`Parser.numberLiteralSuffix`).
+    fn scanNumberSuffix(self: *Lexer) void {
+        if (self.isAtEnd() or !isAlpha(self.peek())) return;
+        while (!self.isAtEnd() and (isAlphaNumeric(self.peek()) or self.peek() == '_')) _ = self.advance();
     }
 
     fn scanRadixNumber(self: *Lexer, radix: u8, allocator: std.mem.Allocator) LexerError!void {
@@ -618,6 +744,11 @@ pub const Lexer = struct {
                 continue;
             }
             if (!isAlphaNumeric(ch)) break;
+
+            // Decision 247 — a letter that is not a digit of the radix starts
+            // the suffix run (`0xFFul`, `0b101u8`; the parser refuses `0b1f`):
+            // the radix's own letters win (`0x1f` is 31).
+            if (hasDigits and isAlpha(ch) and !isValidRadixDigit(ch, radix)) break;
 
             if (!isValidRadixDigit(ch, radix)) {
                 self.lexError = .{
@@ -641,6 +772,7 @@ pub const Lexer = struct {
             return LexerError.LexicalError;
         }
 
+        self.scanNumberSuffix();
         try self.addToken(.numberLiteral, allocator);
     }
 
@@ -730,7 +862,7 @@ pub const Lexer = struct {
             (c >= 'A' and c <= 'F');
     }
 
-    fn isValidRadixDigit(c: u8, radix: u8) bool {
+    pub fn isValidRadixDigit(c: u8, radix: u8) bool {
         return switch (radix) {
             2 => c == '0' or c == '1',
             8 => c >= '0' and c <= '7',

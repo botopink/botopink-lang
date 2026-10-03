@@ -397,7 +397,13 @@ fn writeScalar(allocator: std.mem.Allocator, out: *std.ArrayListUnmanaged(u8), v
         .null_ => try out.appendSlice(allocator, "null"),
         .boolean => |b| try out.appendSlice(allocator, if (b) "true" else "false"),
         .integer => |n| try out.print(allocator, "{d}", .{n}),
-        .float => |f| try out.print(allocator, "{d}", .{f}),
+        .float => |f| {
+            // Decision 247 — a folded float keeps its decimal point: `6` would
+            // read back as an integer literal, an `i32`.
+            const start = out.items.len;
+            try out.print(allocator, "{d}", .{f});
+            if (std.mem.indexOfAny(u8, out.items[start..], ".eEn") == null) try out.appendSlice(allocator, ".0");
+        },
         .string => |s| {
             try out.append(allocator, '"');
             for (s) |c| switch (c) {
