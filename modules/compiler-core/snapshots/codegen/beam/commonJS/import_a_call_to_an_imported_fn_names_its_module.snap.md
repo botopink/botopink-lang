@@ -7,8 +7,10 @@ pub fn twice(x: i32) -> i32 {
 
 ----- JAVASCRIPT -- a.js
 ```javascript
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
 function twice(x) {
-    return ((x * 2) + 0);
+    return __bp_int((x * 2), -2147483648, 2147483647, "* on i32 at a.bp:2:14");
 }
 exports.twice = twice;
 ```

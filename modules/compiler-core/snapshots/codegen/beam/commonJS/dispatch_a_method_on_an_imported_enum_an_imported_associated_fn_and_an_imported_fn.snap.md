@@ -22,6 +22,8 @@ pub fn make() -> Counter { return Counter(n: 41); }
 
 ----- JAVASCRIPT -- geometry.js
 ```javascript
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
 class Counter {
     constructor(n) {
         this.n = n;
@@ -32,7 +34,7 @@ class Counter {
     }
 
     bump() {
-        return (this.n + 1);
+        return __bp_int((this.n + 1), -2147483648, 2147483647, "+ on i32 at geometry.bp:3:52");
     }
 }
 Counter.prototype.__bp = "Counter";
@@ -52,11 +54,11 @@ class Shape {
             const _s = self;
             if (_s.tag === "Circle") {
                 const { radius: r } = _s;
-                return ((r * r) * 3);
+                return __bp_int((__bp_int((r * r), -2147483648, 2147483647, "* on i32 at geometry.bp:12:28") * 3), -2147483648, 2147483647, "* on i32 at geometry.bp:12:32");
             }
             if (_s.tag === "Square") {
                 const { side: s } = _s;
-                return (s * s);
+                return __bp_int((s * s), -2147483648, 2147483647, "* on i32 at geometry.bp:13:28");
             }
         })();
     }

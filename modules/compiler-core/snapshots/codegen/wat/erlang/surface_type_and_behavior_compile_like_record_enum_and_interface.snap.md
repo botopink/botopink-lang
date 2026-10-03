@@ -50,7 +50,11 @@ weight(S) ->
 main() ->
     Sq = {test@main@@Square, 3},
     '__bp_print'([test@main@@Square:area(Sq)]),
-    '__bp_print'([(weight({test@main@@Size__v__large, 5}) + weight(test@main@@Size__v__small))]).
+    '__bp_print'(['__bp_int'((weight({test@main@@Size__v__large, 5}) + weight(test@main@@Size__v__small)), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:23:37">>)]).
+
+-compile({inline,['__bp_int'/4]}).
+'__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
+'__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
@@ -86,11 +90,15 @@ main(_Args) ->
 -export([area/1, '__bp_get'/2, '__bp_format'/1]).
 
 area(Self) ->
-    (erlang:element(2, Self) * erlang:element(2, Self)).
+    '__bp_int'((erlang:element(2, Self) * erlang:element(2, Self)), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:7:26">>).
 
 '__bp_get'(V, side) -> erlang:element(2, V).
 
 '__bp_format'(V) -> {record, "Square", [{"side", erlang:element(2, V)}]}.
+
+-compile({inline,['__bp_int'/4]}).
+'__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
+'__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
 ```
 
 ----- ERLANG -- test@main@@Size.erl

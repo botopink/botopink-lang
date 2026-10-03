@@ -1352,6 +1352,12 @@ const Emitter = struct {
     /// host methods the prelude binds, so `buildInterface` falls back to these.
     /// Keys and strings live in the node arena.
     prelude_iface_externals: std.StringHashMap(ast.ExternalRef),
+    /// `Iface.method` → the template of an associated host primitive of the
+    /// prelude: a bodyless member with no `self` whose `#[@External.Node(…)]`
+    /// is a template (`String.fromCodepoint`, decision 262). JS has no
+    /// prototype to patch for it, so `Iface.method(…)` renders the template at
+    /// the call (`buildCallRaw`). Keys and strings live in the node arena.
+    prelude_assoc_templates: std.StringHashMap([]const u8),
     /// Method name → the host symbol an UNTYPED call of it emits on node, over
     /// every behavior of the embedded std registry (`scanDeclareFnExternal`),
     /// and the names two behaviors disagree on. `at` is `String.at` → native
@@ -1446,6 +1452,7 @@ const Emitter = struct {
             .enum_recv_methods = std.StringHashMap(void).init(alloc),
             .imported_enums = std.StringHashMap(void).init(alloc),
             .prelude_iface_externals = std.StringHashMap(ast.ExternalRef).init(alloc),
+            .prelude_assoc_templates = std.StringHashMap([]const u8).init(alloc),
             .prim_symbol_of = std.StringHashMap([]const u8).init(alloc),
             .ambiguous_prim_renames = std.StringHashMap(void).init(alloc),
             .local_interfaces = std.StringHashMap(ast.BehaviorDecl).init(alloc),
@@ -1482,6 +1489,7 @@ const Emitter = struct {
         self.enum_recv_methods.deinit();
         self.imported_enums.deinit();
         self.prelude_iface_externals.deinit();
+        self.prelude_assoc_templates.deinit();
         self.prim_symbol_of.deinit();
         self.ambiguous_prim_renames.deinit();
         self.local_interfaces.deinit();
@@ -1575,6 +1583,12 @@ const Emitter = struct {
                     if (std.mem.eql(u8, target, "node")) try self.noteUntypedNodeSymbol(m);
                     const ref = m.externalFor(target) orelse continue;
                     const key = try std.fmt.allocPrint(self.arena(), "{s}.{s}", .{ iface.name, m.name });
+                    const has_self = m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self");
+                    if (m.body == null and !has_self and primOpTemplate.looksLikeTemplate(ref.symbol) and
+                        !self.prelude_assoc_templates.contains(key))
+                    {
+                        try self.prelude_assoc_templates.put(key, try self.arena().dupe(u8, ref.symbol));
+                    }
                     if (self.prelude_iface_externals.contains(key)) continue;
                     try self.prelude_iface_externals.put(key, .{
                         .module = try self.arena().dupe(u8, ref.module),
@@ -3795,11 +3809,27 @@ const Emitter = struct {
                 // operand calls its type's equality (`buildEquality`); a
                 // primitive one keeps the instruction below.
                 if (bin.op == .eq or bin.op == .ne) if (try self.buildEquality(bin)) |cmp| return cmp;
+                // Decision 264 — an integer result outside its type aborts.
+                if (self.intKindAt(bin.loc)) |k| switch (bin.op) {
+                    .add, .sub, .mul, .div, .mod => {
+                        const lhs = try self.buildExpr(bin.lhs.*);
+                        const rhs = try self.buildExpr(bin.rhs.*);
+                        const raw = switch (bin.op) {
+                            .add => try self.b.binary("+", lhs, rhs),
+                            .sub => try self.b.binary("-", lhs, rhs),
+                            .mul => try self.b.binary("*", lhs, rhs),
+                            .mod => try self.b.binary("%", lhs, rhs),
+                            else => try self.b.call(.{ .name = "Math.trunc" }, &.{try self.b.binary("/", lhs, rhs)}),
+                        };
+                        return self.intChecked(raw, k, arithSymbol(bin.op), bin.loc);
+                    },
+                    else => {},
+                };
                 // Onze F7 — `/` over integers truncates toward zero and
                 // answers an integer, as erlang's `div` does: `7 / 2` is `3`.
                 // A JS number division is a float one, so the quotient is
                 // truncated. Inference says which `/` this is (`.division`).
-                if (bin.op == .div) if (self.lowerings) |lw| if (lw.get(bin.loc)) |il| if (il == .division and il.division == .integer) {
+                if (bin.op == .div) if (self.lowerings) |lw| if (lw.get(bin.loc)) |il| if (il == .division and il.division.isInt()) {
                     const q = try self.b.call(.{ .name = "Math.trunc" }, &.{
                         try self.b.binary("/", try self.buildExpr(bin.lhs.*), try self.buildExpr(bin.rhs.*)),
                     });
@@ -3842,6 +3872,10 @@ const Emitter = struct {
                     .not => "!",
                     .neg => "-",
                 }, try self.buildExpr(un.expr.*), true);
+                // Decision 264 — `-x` leaves an integer type at its minimum
+                // (`-(-128)` is no `i8`) and an unsigned one everywhere but 0.
+                // A literal operand is a constant the checker already placed.
+                if (un.op == .neg and un.expr.* != .literal) if (self.intKindAt(un.loc)) |k| return self.intChecked(out, k, "-", un.loc);
                 // `-x` with `x = 0` is `-0` in JavaScript; an integer never is.
                 // A nonzero literal (`-1`) cannot be.
                 if (un.op == .neg and !isNonzeroLiteral(un.expr.*) and (try self.numKind(un.expr.*)).isInt()) return self.intCanon(out);
@@ -3941,6 +3975,13 @@ const Emitter = struct {
                                 fa.field,
                             );
                         },
+                    };
+                    // Decision 264 — `n += v` over an integer is `n = __bp_int(n + v, …)`.
+                    // The target is a name or `<name>.<field>` (the parser's two
+                    // forms), so reading it again evaluates nothing twice.
+                    if (a.op == .plusAssign) if (self.intKindAt(b.loc)) |k| {
+                        const sum = try self.b.binary("+", target, try self.buildExpr(a.value.*));
+                        return self.b.assign(target, "=", try self.intChecked(sum, k, "+=", b.loc));
                     };
                     return self.b.assign(target, op_str, try self.buildExpr(a.value.*));
                 },
@@ -4592,7 +4633,7 @@ const Emitter = struct {
             .binaryOp => |bin| switch (bin.op) {
                 .add, .sub, .mul, .mod, .div => {
                     if (bin.op == .div) if (self.lowerings) |lw| if (lw.get(bin.loc)) |il| if (il == .division)
-                        return if (il.division == .integer) .int else .float;
+                        return if (il.division.isInt()) .int else .float;
                     const l = try self.numKind(bin.lhs.*);
                     const r = try self.numKind(bin.rhs.*);
                     if (l == .float or r == .float) return .float;
@@ -4637,6 +4678,41 @@ const Emitter = struct {
     /// False when the result cannot be `-0`: two nonnegative literals.
     fn mayBeNegZero(lhs: ast.Expr, rhs: ast.Expr) bool {
         return !(lhs == .literal and lhs.literal.kind == .numberLit and rhs == .literal and rhs.literal.kind == .numberLit);
+    }
+
+    /// The source spelling of an arithmetic operator, as an abort names it.
+    fn arithSymbol(op: anytype) []const u8 {
+        return switch (op) {
+            .add => "+",
+            .sub => "-",
+            .mul => "*",
+            .div => "/",
+            .mod => "%",
+            else => "?",
+        };
+    }
+
+    /// Decision 264 — the integer type inference recorded for the arithmetic
+    /// operator at `loc` (`InstanceLowering.division`), or null for a float
+    /// one or an operator whose type was never resolved (a generic `T`).
+    fn intKindAt(self: *const Emitter, loc: ast.Loc) ?envMod.ArithKind {
+        const lw = self.lowerings orelse return null;
+        const il = lw.get(loc) orelse return null;
+        if (il != .division or !il.division.isInt()) return null;
+        return il.division;
+    }
+
+    /// `__bp_int(e, lo, hi, "<op> on <type> at <file:line:col>")` — `e`, or
+    /// the abort `js_prelude`'s `int_check` throws when it leaves `k`'s range
+    /// (a 64-bit type's is ±(2^53 − 1) on this target, `rangeExactDouble`).
+    fn intChecked(self: *Emitter, e: js.Expr, k: envMod.ArithKind, op: []const u8, loc: ast.Loc) !js.Expr {
+        const r = k.rangeExactDouble().?;
+        return self.b.call(self.helper(.int_check), &.{
+            e,
+            .{ .number = try std.fmt.allocPrint(self.arena(), "{d}", .{r.lo}) },
+            .{ .number = try std.fmt.allocPrint(self.arena(), "{d}", .{r.hi}) },
+            .{ .quoted = try std.fmt.allocPrint(self.arena(), "{s} on {s} at {s}:{d}:{d}", .{ op, @tagName(k), self.src_file, loc.line, loc.col }) },
+        });
     }
 
     /// `(e + 0)` — `-0 + 0` is `0`, and every other number is left exactly
@@ -5323,6 +5399,14 @@ const Emitter = struct {
             // `__bp_yield_step(it.next())` on an `@Iterator`, and
             // `s.next().then(__bp_yield_step)` on a `@Stream`, whose `next()`
             // is a Promise.
+            // An associated host primitive of the prelude
+            // (`String.fromCodepoint(cp)`): its template, at the call.
+            if (recv.* == .identifier and recv.identifier.kind == .ident and cc.trailing.len == 0) assoc: {
+                var kbuf: [256]u8 = undefined;
+                const key = std.fmt.bufPrint(&kbuf, "{s}.{s}", .{ recv.identifier.kind.ident, cc.callee }) catch break :assoc;
+                const template = self.prelude_assoc_templates.get(key) orelse break :assoc;
+                return self.renderTemplate(template, cc, cc.args.len, error.PrimOpRecvInBuiltinTemplate);
+            }
             if (self.sequenceNext(loc)) |kind| {
                 const native = try self.b.call(try self.b.memberOpt(try self.buildExpr(recv.*), "next", cc.optional), &.{});
                 const step = self.helper(.yield_step);

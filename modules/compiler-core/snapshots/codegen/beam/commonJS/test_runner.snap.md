@@ -24,8 +24,10 @@ function __bp_assert(cond, msg, loc) {
     }
 }
 
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
 function add(a, b) {
-    return (a + b);
+    return __bp_int((a + b), -2147483648, 2147483647, "+ on i32 at main.bp:2:14");
 }
 
 async function __bp_test_0() {

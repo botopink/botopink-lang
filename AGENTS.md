@@ -272,8 +272,9 @@ partitioned by backend (decision 249,
 `modules/compiler-core/src/codegen/backend-partition.txt`), the toolchain and
 every byte the cell reads — is equal, a failure always runs, and each stage
 prints `result store: <N> jobs — <R> run, <S> from store`; `--cold` never reads
-it and writes its passes (`scripts/AGENTS.md` § Warm and cold). The budget is 5
-minutes cold, 1 minute warm.
+it and writes its passes (`scripts/AGENTS.md` § Warm and cold). The budget is
+7m30s cold (decision 265 — the 5-minute cold target is deferred to the next
+milestone), 1 minute warm.
 
 One gate runs at a time per machine: a second `gate.sh` waits for the lock,
 naming the holder's pid, checkout and start time. A `--staged` run whose

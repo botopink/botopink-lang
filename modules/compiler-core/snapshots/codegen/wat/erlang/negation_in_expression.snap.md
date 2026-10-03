@@ -14,10 +14,14 @@ fn main() {
 -export(['_botopink_main'/0, main/1]).
 
 diff(X, Y) ->
-    (X + (-Y)).
+    '__bp_int'((X + '__bp_int'((-Y), -2147483648, 2147483647, <<"integer overflow: - on i32 at main.bp:2:16">>)), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:2:14">>).
 
 main() ->
     '__bp_print'([diff(10, 3)]).
+
+-compile({inline,['__bp_int'/4]}).
+'__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
+'__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).

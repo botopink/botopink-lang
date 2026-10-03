@@ -45,6 +45,8 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
 function parse(n) {
     if ((n < 0)) { return ({ error: "negative" }); }
     return ({ ok: n });
@@ -52,7 +54,7 @@ function parse(n) {
 
 function main() {
     const r = ((_r) => "error" in _r ? _r : { ok: ((x) => {
-    return (x * 2);
+    return __bp_int((x * 2), -2147483648, 2147483647, "* on i32 at main.bp:7:44");
 })(_r.ok) })(parse(21));
     __bp_print(((_r) => "error" in _r ? (0) : _r.ok)(r));
 }

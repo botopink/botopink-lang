@@ -26,7 +26,7 @@ render(Words) ->
     Count = 0,
     Emit = fun(W, {Out@1, Count@1}) ->
         Out@2 = <<Out@1/binary, "<", ('__bp_text'(W))/binary, ">">>,
-        Count@2 = (Count@1 + 1),
+        Count@2 = '__bp_int'((Count@1 + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:6:23">>),
         {Out@2, Count@2}
     end,
     {Out@3, Count@3} = Emit(<<"start">>, {Out, Count}),
@@ -38,6 +38,10 @@ render(Words) ->
 
 main() ->
     '__bp_print'([render([<<"a">>, <<"b">>])]).
+
+-compile({inline,['__bp_int'/4]}).
+'__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
+'__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
 
 '__bp_text'(Value) when erlang:is_binary(Value) -> Value;
 '__bp_text'(Value) -> erlang:iolist_to_binary(io_lib:format(<<"~p">>, [Value])).

@@ -23,7 +23,7 @@ fn main() {
 {module, test@main}.
 {exports, [{'_botopink_main', 0}, {main, 1}]}.
 {attributes, []}.
-{labels, 22}.
+{labels, 26}.
 
 {function, 'COMMANDS', 0, 3}.
   {label, 2}.
@@ -107,7 +107,7 @@ fn main() {
     {move, {y, 2}, {x, 1}}.
     {move, {x, 0}, {x, 2}}.
     {test_heap, {alloc, [{words, 2}, {floats, 0}, {funs, 1}]}, 3}.
-    {make_fun3, {f, 19}, 0, 0, {x, 0}, {list, [{y, 1}, {y, 0}]}}.
+    {make_fun3, {f, 21}, 0, 0, {x, 0}, {list, [{y, 1}, {y, 0}]}}.
     {call_ext, 3, {extfunc, lists, foldl, 3}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
@@ -145,31 +145,45 @@ fn main() {
     {move, {x, 3}, {y, 3}}.
     {test, is_eq_exact, {f, 16}, [{y, 0}, {y, 2}]}.
     {gc_bif, '*', {f, 0}, 0, [{y, 3}, {integer, 2}], {x, 0}}.
-    {move, {x, 0}, {y, 1}}.
-    {jump, {f, 17}}.
-  {label, 16}.
+    {test, is_ge, {f, 17}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 17}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 18}}.
   {label, 17}.
+    {move, {literal, {integer_overflow, <<"integer overflow: * on i32 at test@main.bp:7:28">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 18}.
+    {move, {x, 0}, {y, 1}}.
+    {jump, {f, 19}}.
+  {label, 16}.
+  {label, 19}.
     {move, {y, 1}, {x, 0}}.
     {deallocate, 4}.
     return.
 
-{function, '-execute_$1/1-fun-1-', 4, 19}.
-  {label, 18}.
+{function, '-execute_$1/1-fun-1-', 4, 21}.
+  {label, 20}.
     {line, [{location, "test@main.erl", 5}]}.
     {func_info, {atom, test@main}, {atom, '-execute_$1/1-fun-1-'}, 4}.
-  {label, 19}.
+  {label, 21}.
     {allocate, 4, 4}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {x, 2}, {y, 2}}.
     {move, {x, 3}, {y, 3}}.
-    {test, is_eq_exact, {f, 20}, [{y, 0}, {y, 2}]}.
+    {test, is_eq_exact, {f, 22}, [{y, 0}, {y, 2}]}.
     {gc_bif, '*', {f, 0}, 0, [{y, 3}, {integer, 2}], {x, 0}}.
+    {test, is_ge, {f, 23}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 23}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 24}}.
+  {label, 23}.
+    {move, {literal, {integer_overflow, <<"integer overflow: * on i32 at test@main.bp:7:28">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 24}.
     {move, {x, 0}, {y, 1}}.
-    {jump, {f, 21}}.
-  {label, 20}.
-  {label, 21}.
+    {jump, {f, 25}}.
+  {label, 22}.
+  {label, 25}.
     {move, {y, 1}, {x, 0}}.
     {deallocate, 4}.
     return.

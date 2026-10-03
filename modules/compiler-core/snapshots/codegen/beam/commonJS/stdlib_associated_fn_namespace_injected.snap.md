@@ -43,6 +43,8 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
 // behavior Function
 //   default fn identity(...)
 //   default fn compose(...)
@@ -100,9 +102,9 @@ function main() {
     __bp_print(Pair.first(p));
     __bp_print(Function.identity(42));
     const inc = Function.compose((x) => {
-    return (x + 1);
+    return __bp_int((x + 1), -2147483648, 2147483647, "+ on i32 at main.bp:5:41");
 }, (y) => {
-    return (y * 2);
+    return __bp_int((y * 2), -2147483648, 2147483647, "* on i32 at main.bp:5:57");
 });
     __bp_print(inc(10));
 }

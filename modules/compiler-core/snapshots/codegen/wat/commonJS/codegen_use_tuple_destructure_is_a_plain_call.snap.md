@@ -14,6 +14,8 @@ fn LikeWidget() -> @Component<Element, Element> {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
 class Element {
 }
 Element.prototype.__bp = "Element";
@@ -27,7 +29,7 @@ async function optimistic(base, f) {
 
 async function LikeWidget() {
     const [ shown, push ] = await optimistic(12, (c, a) => {
-    return (c + a);
+    return __bp_int((c + a), -2147483648, 2147483647, "+ on i32 at main.bp:7:57");
 });
     push(shown);
     return new Element();

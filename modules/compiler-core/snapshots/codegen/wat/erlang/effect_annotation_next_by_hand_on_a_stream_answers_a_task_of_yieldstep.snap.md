@@ -44,7 +44,7 @@ countdown(N) ->
             case (I@1 > 0) of
                 true ->
                     erlang:put(__BpGen1, [I@1 | erlang:get(__BpGen1)]),
-                    I@2 = (I@1 - 1),
+                    I@2 = '__bp_int'((I@1 - 1), -2147483648, 2147483647, <<"integer overflow: - on i32 at main.bp:5:15">>),
                     __BpLoop(I@2);
                 _ -> I@1
             end
@@ -73,6 +73,10 @@ run() ->
 
 main() ->
     run().
+
+-compile({inline,['__bp_int'/4]}).
+'__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
+'__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
 
 '__bp_text'(Value) when erlang:is_binary(Value) -> Value;
 '__bp_text'(Value) -> erlang:iolist_to_binary(io_lib:format(<<"~p">>, [Value])).

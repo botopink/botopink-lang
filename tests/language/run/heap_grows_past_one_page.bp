@@ -1,0 +1,24 @@
+//// A program that allocates more than one 64 KiB page answers on wasm as on
+//// the other targets (decision 261): every allocation goes through one bump
+//// helper that calls `memory.grow` when the heap pointer passes the memory's
+//// end. The loop builds 4000 strings of growing length — about 8 MB, nothing
+//// freed — and an array of 20000 elements.
+
+pub fn main() {
+    var s = "";
+    var i = 0;
+    while (i < 4000) {
+        s = s + "x";
+        i = i + 1;
+    }
+    @print(s.length);
+    @print(s.slice(3990));
+    var xs: i32[] = [];
+    var j = 0;
+    while (j < 20000) {
+        xs.push(j);
+        j = j + 1;
+    }
+    @print(xs.length);
+    @print(xs.at(19999).unwrapOr(-1));
+}

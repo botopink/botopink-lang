@@ -44,11 +44,15 @@ zero() ->
     {test@geometry@@Counter, 0}.
 
 bump(Self) ->
-    (erlang:element(2, Self) + 1).
+    '__bp_int'((erlang:element(2, Self) + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at geometry.bp:3:52">>).
 
 '__bp_get'(V, n) -> erlang:element(2, V).
 
 '__bp_format'(V) -> {record, "Counter", [{"n", erlang:element(2, V)}]}.
+
+-compile({inline,['__bp_int'/4]}).
+'__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
+'__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
 ```
 
 ----- ERLANG -- test@geometry@@Shape.erl
@@ -59,13 +63,17 @@ bump(Self) ->
 area(Self) ->
     case Self of
         {test@geometry@@Shape__v__circle, R} ->
-            ((R * R) * 3);
+            '__bp_int'(('__bp_int'((R * R), -2147483648, 2147483647, <<"integer overflow: * on i32 at geometry.bp:12:28">>) * 3), -2147483648, 2147483647, <<"integer overflow: * on i32 at geometry.bp:12:32">>);
         {test@geometry@@Shape__v__square, S} ->
-            (S * S)
+            '__bp_int'((S * S), -2147483648, 2147483647, <<"integer overflow: * on i32 at geometry.bp:13:28">>)
     end.
 
 '__bp_format'({test@geometry@@Shape__v__circle, F0}) -> {variant, "Shape.Circle", [{"radius", F0}]};
 '__bp_format'({test@geometry@@Shape__v__square, F0}) -> {variant, "Shape.Square", [{"side", F0}]}.
+
+-compile({inline,['__bp_int'/4]}).
+'__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
+'__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
 ```
 
 ----- RUN LOG -----

@@ -60,6 +60,8 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
 function pick(xs) {
     let first = "";
     let last = "";
@@ -67,7 +69,7 @@ function pick(xs) {
     for (const x of xs) {
     (() => { if ((i === 0)) { return first = x; } })();
     last = x;
-    i = (i + 1);
+    i = __bp_int((i + 1), -2147483648, 2147483647, "+ on i32 at main.bp:8:15");
 }
     return ((first + "-") + last);
 }
@@ -75,7 +77,7 @@ function pick(xs) {
 function weigh(xs) {
     let total = 0;
     for (const i of Array.from({length: Math.max(0, (xs.length) - (0))}, (_, __i) => (0) + __i)) {
-    total = (total + (((() => { const __bp_nullish = __bp_array_at(xs, i); if (__bp_nullish != null) { return __bp_nullish; } else { return 0; } })()) * ((i + 1))));
+    total = __bp_int((total + __bp_int((((() => { const __bp_nullish = __bp_array_at(xs, i); if (__bp_nullish != null) { return __bp_nullish; } else { return 0; } })()) * (__bp_int((i + 1), -2147483648, 2147483647, "+ on i32 at main.bp:15:43"))), -2147483648, 2147483647, "* on i32 at main.bp:15:38")), -2147483648, 2147483647, "+ on i32 at main.bp:15:23");
 }
     return total;
 }

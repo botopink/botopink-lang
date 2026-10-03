@@ -38,7 +38,7 @@
 # that cell):
 #   test/<name>.bp     `botopink test --target <t> --json`; every test must pass
 #   run/<name>.bp      `botopink run --target <t>`; stdout must equal <name>.out.
-#                      Three optional sidecars, each a claim about the cell:
+#                      Four optional sidecars, each a claim about the cell:
 #                        <name>.exit         `nonzero` — the program must abort:
 #                                            stdout equals <name>.out AND the
 #                                            status is not 0 (`@panic`, a failed
@@ -46,6 +46,11 @@
 #                                            pinned (escript 127 / erl 1 / wasmtime
 #                                            134 / node 1 are the runtimes', not
 #                                            the language's)
+#                        <name>.<t>.stderr   with `.exit`: on target <t> the abort's
+#                                            stderr contains line 1 (`integer
+#                                            overflow: + on i32 at src/main.bp:2:14`)
+#                                            — what the program died of, not
+#                                            only that it died
 #                        <name>.<t>.expect   on target <t> the compiler must
 #                                            REFUSE the program: exit non-zero and
 #                                            the diagnostic contains line 1 (and
@@ -465,10 +470,21 @@ run_one() { # <path> <target>
                         *) printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "malformed ${path%.bp}.exit: the only claim it can make is \`nonzero\`" >"$out"; return ;;
                     esac
                 fi
+                # `<name>.<t>.stderr` names the abort on target <t>: line 1 must
+                # be in its stderr. It only qualifies an `.exit` claim.
+                local errfile="$here/${path%.bp}.$t.stderr"
+                if [ -f "$errfile" ] && [ $want_exit -eq 0 ]; then
+                    printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "${path%.bp}.$t.stderr names an abort, but no ${path%.bp}.exit claims one" >"$out"; return
+                fi
                 local status_ok=0
                 if [ $want_exit -eq 0 ] && [ $code -eq 0 ]; then status_ok=1; fi
                 if [ $want_exit -eq 1 ] && [ $code -ne 0 ]; then status_ok=1; fi
-                if [ $status_ok -eq 1 ] && cmp -s "$dir/stdout.txt" "$expected"; then
+                local abort_msg=""
+                [ -f "$errfile" ] && abort_msg="$(sed -n 1p "$errfile")"
+                if [ $status_ok -eq 1 ] && [ -n "$abort_msg" ] && cmp -s "$dir/stdout.txt" "$expected" && ! strip <"$dir/e.txt" | grep -qF -- "$abort_msg"; then
+                    local first; first="$(strip <"$dir/e.txt" | grep -m1 -iE 'error|trap' | tr '\t' ' ')"
+                    printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "aborted (exit $code), but stderr does not name \"$abort_msg\" (got: ${first:-nothing})" >"$out"
+                elif [ $status_ok -eq 1 ] && cmp -s "$dir/stdout.txt" "$expected"; then
                     printf '%s\t%s\t%s\t\n' "$t" "$path" ok >"$out"
                 else
                     local got; got="$(head -c 300 "$dir/stdout.txt" | tr '\n\t' '⏎ ')"
@@ -686,7 +702,7 @@ fi
 # wasmtime, the environment a compiler or runtime reads), every file of the
 # library root (`--lib-root`, where `from "std"` resolves), and the cell's own
 # files — `test/<n>.bp`; every `run/<n>.*` / `reject/<n>.*` file (source,
-# `.out`, `.exit`, `.<t>.expect`, `.targets`); the whole `modules/<n>/` tree —
+# `.out`, `.exit`, `.<t>.stderr`, `.<t>.expect`, `.targets`); the whole `modules/<n>/` tree —
 # with the target and the job's kind. No analysis decides what a change can
 # affect: a key that differs in one byte runs the job. Only a verdict whose
 # every line is `ok` (or an audited exclusion) is written, and only when the

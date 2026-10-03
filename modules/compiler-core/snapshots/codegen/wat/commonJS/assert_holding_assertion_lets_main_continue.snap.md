@@ -42,8 +42,10 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
 function main() {
-    __bp_assert_fatal(((1 + 1) === 2), "arithmetic", "main.bp:2");
+    __bp_assert_fatal((__bp_int((1 + 1), -2147483648, 2147483647, "+ on i32 at main.bp:2:14") === 2), "arithmetic", "main.bp:2");
     __bp_print("after");
 }
 

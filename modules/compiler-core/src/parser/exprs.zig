@@ -1295,11 +1295,13 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
     if (this.check(.builtinIdent)) {
         const nameTok = this.advance();
         var callee: []const u8 = nameTok.lexeme[1..]; // Remove @ prefix
-        // Decision 216 (4), 248 — `@typeInfo.all(with: d)`: the reflection
-        // builtin's one member call is the builtin `typeInfo.all`. The
-        // lowercase `@typeinfo.all` parses the same way so the checker can
-        // refuse it at its loc, naming `@typeInfo`.
-        if ((std.mem.eql(u8, callee, "typeInfo") or std.mem.eql(u8, callee, "typeinfo")) and this.check(.dot) and
+        // Decisions 216 (4), 248, 253 — `@TypeInfo.all(with: d)`: the static
+        // catalogue of the builtin type `TypeInfo` is the builtin
+        // `TypeInfo.all`. `@typeInfo.all` and the lowercase `@typeinfo.all`
+        // parse the same way so the checker can refuse each at its loc,
+        // naming `@TypeInfo.all`.
+        if ((std.mem.eql(u8, callee, "TypeInfo") or std.mem.eql(u8, callee, "typeInfo") or
+            std.mem.eql(u8, callee, "typeinfo")) and this.check(.dot) and
             this.peekAt(1).kind == .identifier and this.peekAt(2).kind == .leftParenthesis)
         {
             _ = this.advance();
@@ -1322,9 +1324,9 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         if (this.check(.leftParenthesis)) {
             const savedPos = this.current;
             _ = this.advance(); // consume (
-            // `@typeInfo.all(with: d)` is a call with labelled arguments.
+            // `@TypeInfo.all(with: d)` is a call with labelled arguments.
             const isInterfaceLit = this.check(.identifier) and this.peekAt(1).kind == .colon and
-                !std.mem.eql(u8, callee, "typeInfo.all") and !std.mem.eql(u8, callee, "typeinfo.all");
+                std.mem.indexOfScalar(u8, callee, '.') == null;
             this.current = savedPos; // restore position
 
             if (isInterfaceLit) {

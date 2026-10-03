@@ -63,6 +63,8 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
 class Box {
     constructor(items) {
         this.items = items;
@@ -71,7 +73,7 @@ class Box {
     total() {
         let sum = 0;
         this.items.forEach((n) => {
-    sum = (sum + n);
+    sum = __bp_int((sum + n), -2147483648, 2147483647, "+ on i32 at main.bp:4:45");
 });
         return sum;
     }
@@ -82,7 +84,7 @@ class Box {
 
     doubled() {
         return this.items.map((n) => {
-    return (n * 2);
+    return __bp_int((n * 2), -2147483648, 2147483647, "* on i32 at main.bp:8:75");
 });
     }
 

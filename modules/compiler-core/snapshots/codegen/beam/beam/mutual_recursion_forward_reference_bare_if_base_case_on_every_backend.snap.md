@@ -20,7 +20,7 @@ fn isOdd(n: i32) -> bool {
 {module, test@main}.
 {exports, [{'_botopink_main', 0}, {main, 1}]}.
 {attributes, []}.
-{labels, 14}.
+{labels, 18}.
 
 {function, main, 0, 3}.
   {label, 2}.
@@ -45,6 +45,13 @@ fn isOdd(n: i32) -> bool {
     return.
   {label, 12}.
     {gc_bif, '-', {f, 0}, 0, [{y, 0}, {integer, 1}], {x, 0}}.
+    {test, is_ge, {f, 13}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 13}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 14}}.
+  {label, 13}.
+    {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at test@main.bp:7:20">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 14}.
     {call_last, 1, {f, 7}, 1}.
 
 {function, isOdd, 1, 7}.
@@ -55,12 +62,19 @@ fn isOdd(n: i32) -> bool {
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
-    {test, is_eq_exact, {f, 13}, [{y, 0}, {integer, 0}]}.
+    {test, is_eq_exact, {f, 15}, [{y, 0}, {integer, 0}]}.
     {move, {atom, false}, {x, 0}}.
     {deallocate, 1}.
     return.
-  {label, 13}.
+  {label, 15}.
     {gc_bif, '-', {f, 0}, 0, [{y, 0}, {integer, 1}], {x, 0}}.
+    {test, is_ge, {f, 16}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 16}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 17}}.
+  {label, 16}.
+    {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at test@main.bp:12:21">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 17}.
     {call_last, 1, {f, 5}, 1}.
 
 {function, '_botopink_main', 0, 9}.

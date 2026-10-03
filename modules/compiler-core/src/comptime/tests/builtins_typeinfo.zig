@@ -152,29 +152,17 @@ test "field: record value field access" {
     );
 }
 
-// ── TypeInfo, RecordField, EnumVariant are known types ───────────────────────
+// ── TypeInfo<T> and RecordField are known types ─────────────────────────────
 
-test "typeInfo: TypeInfo enum is a known type" {
+test "typeInfo: TypeInfo record is a known type" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val ti: TypeInfo = TypeInfo.Int;
+        \\val ti: TypeInfo<i32> = @typeInfo(i32);
     );
 }
 
 test "typeInfo: RecordField is a known type" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\val rf = RecordField(name: "x", typeName: "i32");
-    );
-}
-
-test "typeInfo: EnumVariant is a known type" {
-    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val ev = EnumVariant(name: "Red", fields: []);
-    );
-}
-
-test "typeInfo: TypeInfoKind is a known type" {
-    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val kind: TypeInfoKind = TypeInfoKind.Int;
     );
 }
 

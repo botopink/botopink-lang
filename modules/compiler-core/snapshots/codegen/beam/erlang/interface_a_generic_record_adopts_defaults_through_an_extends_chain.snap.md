@@ -83,7 +83,7 @@ size(Self) ->
     erlang:length(erlang:element(2, Self)).
 
 twiceSize(Self) ->
-    (size(Self) * 2).
+    '__bp_int'((size(Self) * 2), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:11:28">>).
 
 isEmpty(Self) ->
     (size(Self) =:= 0).
@@ -91,6 +91,10 @@ isEmpty(Self) ->
 '__bp_get'(V, items) -> erlang:element(2, V).
 
 '__bp_format'(V) -> {record, "Bag", [{"items", erlang:element(2, V)}]}.
+
+-compile({inline,['__bp_int'/4]}).
+'__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
+'__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
 ```
 
 ----- RUN LOG -----

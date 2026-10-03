@@ -180,7 +180,7 @@ test "erlang: a throw in a case arm of a Result fn is that fn's error" {
         \\    @print(parse(1).unwrapOr(-2));
         \\    @print(parse(2).unwrapOr(-3));
         \\}
-    , "-1\n-2\n4\n", &.{ "{error, <<\"one\">>};", "{ok, (N * 2)}" });
+    , "-1\n-2\n4\n", &.{ "{error, <<\"one\">>};", "{ok, '__bp_int'((N * 2), -2147483648, 2147483647, <<\"integer overflow: * on i32 at main.bp:5:16\">>)}" });
 }
 
 test "erlang: a fn in a generic record's field is applied when called through the field" {

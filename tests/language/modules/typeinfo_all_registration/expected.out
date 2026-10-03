@@ -1,6 +1,6 @@
-about about /about -> about us
-pages blog /blog -> the blog
-pages latest /blog/latest -> the latest post
-Mailer: component Mailer
-Local: component Local
+about about /about
+pages blog /blog
+pages latest /blog/latest
+about Mailer
+main Local
 0

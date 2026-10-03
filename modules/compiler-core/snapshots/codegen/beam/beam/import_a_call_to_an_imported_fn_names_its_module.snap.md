@@ -10,7 +10,7 @@ pub fn twice(x: i32) -> i32 {
 {module, test@a}.
 {exports, [{twice, 1}]}.
 {attributes, []}.
-{labels, 4}.
+{labels, 6}.
 
 {function, twice, 1, 3}.
   {label, 2}.
@@ -21,6 +21,13 @@ pub fn twice(x: i32) -> i32 {
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {gc_bif, '*', {f, 0}, 0, [{y, 0}, {integer, 2}], {x, 0}}.
+    {test, is_ge, {f, 4}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 4}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 5}}.
+  {label, 4}.
+    {move, {literal, {integer_overflow, <<"integer overflow: * on i32 at test@a.bp:2:14">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 5}.
     {deallocate, 1}.
     return.
 ```

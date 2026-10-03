@@ -871,6 +871,33 @@ an integer of the operands' type, on every target (`7 / 2` is `3`, `-7 / 2` is
 `-3`). With a float operand it is float division (`7.0 / 2.0` is `3.5`). A number
 literal with a `.` or an exponent is a float (`2.5`, `1e3`, `5e-324`).
 
+### Numbers
+
+An integer never wraps and never widens. `+`, `-`, `*`, `/`, a unary `-` and
+`+=` over `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `isize` and
+`usize` answer a value of the operands' type, and a result outside the type's
+range aborts the program on every target — `2147483647 + 1` on `i32`, `0 - 1`
+on `u32`, `-x` of an `i32` at its minimum, `i32`'s minimum `/ -1` (decision
+264). The abort names the operator, the type and the place on stderr:
+
+```text
+integer overflow: + on i32 at src/main.bp:7:14
+```
+
+| Type | Range |
+|---|---|
+| `i8` / `u8` | −128 … 127 / 0 … 255 |
+| `i16` / `u16` | −32768 … 32767 / 0 … 65535 |
+| `i32` / `u32` | −2^31 … 2^31 − 1 / 0 … 2^32 − 1 |
+| `i64`, `isize` / `u64`, `usize` | −2^63 … 2^63 − 1 / 0 … 2^64 − 1 |
+
+On commonJS an `i64` (and `isize`, `u64`, `usize`) holds the integers a JS
+number counts exactly, ±(2^53 − 1): a result past that bound aborts there too,
+never a rounded value. An integer `/` or `%` by zero aborts on every target
+(commonJS names it `integer division by zero`). A `%` never leaves its type.
+No flag turns the check off (decision 67); wrapping arithmetic, where an
+algorithm wants it, is written with an explicit operation.
+
 `==` compares by value on every target: two records, tuples, arrays or enum
 variants are equal when they have the same type and their fields are equal, field
 by field and recursively — `Person(name: "Ana", age: 30) == Person(name: "Ana",
@@ -1972,7 +1999,7 @@ the decorator produces goes to one of four places (decision 216):
 | a member of the annotated type | `decl.addMember("pub fn table() -> string { … }")` | `City.table()`, `c.describe()` — run-time code of the type, imported with it |
 | comptime meta, per decorator | `decl.setMeta("table", "cities")` | `@typeInfo(City).meta.entity.table` — a string constant, never run-time code |
 | an associated type | `decl.addType("Columns", "(name: string)")` | `City.Columns` in a type position, `City.Columns(name: "n")`, imported with its owner |
-| the program's catalogue | (every declaration a decorator runs over) | `@typeInfo.all(with: entity)` at an entry point |
+| the program's catalogue | (every declaration a decorator runs over) | `@TypeInfo.all(with: entity)` at an entry point |
 
 A member or an associated type from a field's or a method's decorator belongs
 to the type that owns it; a function has none (`decorator-member-without-type`,
@@ -2019,9 +2046,10 @@ fn main() {
 ```
 
 `@typeInfo` is the one reflection builtin (decision 248): `.name` and
-`.meta.<decorator>.<key>` read a declaration, `@typeInfo.all(…)` the program,
-and `@typeInfo(T)` used as a value is the structural `TypeInfo` (`Record(fields)`,
-`Enum(variants)`, `Fn(params, returnType)`, …) of any type. The lowercase
+`.meta.<decorator>.<key>` read a declaration, the static `@TypeInfo.all(…)` of
+its type the program (decision 253; `@typeInfo.all` is `typeinfo-all-on-function`),
+and `@typeInfo(T)` used as a value is a `TypeInfo<T>` (decision 253; its members
+other than `name` and `meta` are `typeinfo-unknown-member` until they are answered). The lowercase
 `@typeinfo` is `typeinfo-lowercase`, naming `@typeInfo`.
 
 <!-- docs-check: reject typeinfo-lowercase -->
@@ -2033,18 +2061,21 @@ fn main() {
 }
 ```
 
-`@typeInfo.all(with: d)` answers every declaration of the program that carries
+`@TypeInfo.all(with: d)` answers every declaration of the program that carries
 `d`, so an entry point builds its catalogue explicitly — no module registers
-itself when it loads. Each entry is a `Declared<T>(name, module, meta, value)`:
-`meta` is what `d` set on it, `value` the function itself, or for a type a thunk
-calling the associated fn named by `member:`
-(`@typeInfo.all(with: component, member: "register")`). It sees every module of
+itself when it loads. The answer is always a `Declared<unknown>[]` (decision 254)
+— one type whatever the program declares —, each entry a
+`Declared<unknown>(name, module, meta, returnTypeName, value)`: `meta` is what `d` set on it,
+`returnTypeName` a function's declared return type as written (`""` for a type, decision 256),
+`value` the function itself, or for a type a thunk calling the associated fn
+named by `member:` (`@TypeInfo.all(with: component, member: "register")`), typed
+`unknown`, so a use tests it with `is` before it calls it. It sees every module of
 the build — the package, its dependencies, std — in module-path order, then
 declaration order, and the reading module's own declarations; a module that
 reads it is imported by nobody (`typeinfo-all-imported`), and every declaration
 it answers from another module is `pub` (`typeinfo-all-private`).
 `with:` may list several decorators (decision 235):
-`@typeInfo.all(with: [service, repository], member: "make")` answers every
+`@TypeInfo.all(with: [service, repository], member: "make")` answers every
 declaration carrying any of them in the same one order, a declaration carrying
 two of them once, its `meta` what the listed decorators set; a decorator listed
 twice is `typeinfo-all-arguments`.
@@ -2060,9 +2091,10 @@ pub fn about() -> string {
 }
 
 fn main() {
-    for (@typeInfo.all(with: route)) { r ->
-        val page: fn() -> string = r.value;
-        @print(r.name + " " + page());             // about about us
+    for (@TypeInfo.all(with: route)) { r ->
+        for (r.meta) { m ->
+            @print(r.name + " " + m.value);        // about /about
+        }
     }
 }
 ```
@@ -2078,7 +2110,7 @@ pub declare fn parse(input: string) -> i32;
 A declaration takes the signature a `fn` does — generic parameters, `comptime`
 parameters, any return type — with or without an annotation. A parameter it
 has no name for is written `_` (`declare fn getContext<T>(comptime _: type) ->
-Component<T, unknown>;`); `_` is a bodyless declaration's placeholder, and a
+T;`); `_` is a bodyless declaration's placeholder, and a
 function with a body refuses it (`discard-param-with-body`).
 
 A binding may also be a template, where `$0`, `$1`, … are the declared
@@ -2284,9 +2316,48 @@ fn greet() {
 fn notReady() -> i32 { @todo(); }
 ```
 
-Other builtins (`@panic`, `@field`, `@typeInfo`, …) are declared in
-`libs/std/src/builtins.d.bp` and `libs/std/src/builtins_fns.d.bp`. Builtin
-names are exact: an unrecognised `@name(…)` is `error[unknown-builtin]`
+Every builtin is declared in `libs/std/src/builtins.d.bp` (`@todo` and `@panic`,
+which carry a default, in `libs/std/src/builtins_fns.d.bp`), and the compiler is
+held to the declarations (decision 252): a unit test fails, naming the builtin,
+when the compiler implements one the files do not declare, the files declare one
+it does not implement, or the two signatures differ. The declarations, as
+written there (COMPTIME-ONLY: evaluated while the program is checked or while a
+decorator or template body runs, never at run time):
+
+| Builtin | Declaration | Held at the call by |
+|---|---|---|
+| `@print` / `@println` / `@debug` | `print(value: unknown)` (each alike) | nothing yet: they take any number of arguments, which no declaration spells (open question `134-a`) |
+| `@panic` | `panic(message: string = "panic") -> noreturn` | the declaration |
+| `@todo` | `todo(message: string = "not implemented") -> noreturn` | the declaration |
+| `@trap` | `trap() -> noreturn` | the declaration |
+| `@block` | `block<T>(body: fn() -> T) -> T` — `@block { … }`, its value what its `return`s carry | the declaration |
+| `@module` | `module() -> module` | refused at every call (`builtin-not-lowered`) |
+| `@getContext` | `getContext<T>(comptime _: type) -> T` | its own rule (§ use — imports, activation, and hooks) |
+| `@field` | `field<T, F>(obj: T, comptime name: string) -> F` — COMPTIME-ONLY name | the declaration |
+| `@src` | `src() -> SourceLocation` — COMPTIME-ONLY (§ `@src()` and `SourceLocation`) | its own rule (`src-takes-no-arguments`) |
+| `@typeInfo` | `typeInfo<T>(comptime _: type) -> TypeInfo<T>` — COMPTIME-ONLY (§ Decorators) | its own rule (`typeinfo-unknown-declaration`, `typeinfo-unknown-member`) |
+| `@TypeInfo.all` | `all(with: unknown, member: ?string = null) -> Declared<unknown>[]`, a static `declare fn` of `TypeInfo<T>` — COMPTIME-ONLY | its own rule (`typeinfo-all-arguments`); `with:` names a decorator or a list of them, which no type spells (open question `134-b`) |
+| `@TypeOf` | `TypeOf<T>(value: T) -> T` — COMPTIME-ONLY | the declaration |
+| `@makeRecord` | `makeRecord<R>(fields: RecordField[]) -> R` — COMPTIME-ONLY | the declaration |
+| `@RecordKeys` | `RecordKeys(comptime _: type) -> string[]` — COMPTIME-ONLY | the declaration |
+| `@comptimeError` | `comptimeError(comptime message: string) -> noreturn` — COMPTIME-ONLY | its own rule (the message it raises) |
+| `@emit` | `emit(source: string)` — COMPTIME-ONLY, a decorator body | the declaration |
+| `@compilerError` | `compilerError(message: string) -> noreturn` — COMPTIME-ONLY, a decorator or template body | the declaration |
+| `@expr` / `@code` | `expr<T>(comptime value: T) -> Expr<T>`, `code<T>(text: string) -> Expr<T>` — COMPTIME-ONLY, a template body | the declaration |
+
+A call the declaration refuses — more arguments than it declares, a parameter
+without a default left out, a label naming no parameter — is
+`error[builtin-arguments]` at the call, naming the declaration; an argument of
+another type is the ordinary type mismatch, at the argument.
+
+<!-- docs-check: reject builtin-arguments -->
+```botopink
+fn main() {
+    @panic("first", "second");
+}
+```
+
+Builtin names are exact: an unrecognised `@name(…)` is `error[unknown-builtin]`
 (with the nearest name when one is an edit away), never a silent `void`.
 
 `@panic`, `@todo` and `@trap` never return: they are declared `-> noreturn`, the

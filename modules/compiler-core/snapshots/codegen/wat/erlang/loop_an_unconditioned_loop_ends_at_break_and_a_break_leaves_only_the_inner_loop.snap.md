@@ -35,8 +35,8 @@ firstSquareOver(N) ->
     K = 0,
     K@3 = try
         (fun __BpLoop(K@1) ->
-            K@2 = (K@1 + 1),
-            case ((K@2 * K@2) > N) of
+            K@2 = '__bp_int'((K@1 + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:4:15">>),
+            case ('__bp_int'((K@2 * K@2), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:5:15">>) > N) of
                 true ->
                     erlang:throw({'__bp_cond_break', K@2});
                 _ -> ok
@@ -54,10 +54,10 @@ nested() ->
     {Outer@3, Inner@5} = (fun __BpLoop({Outer@1, Inner@1}) ->
         case (Outer@1 < 3) of
             true ->
-                Outer@2 = (Outer@1 + 1),
+                Outer@2 = '__bp_int'((Outer@1 + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:13:23">>),
                 Inner@4 = try
                     (fun __BpLoop1(Inner@2) ->
-                        Inner@3 = (Inner@2 + 1),
+                        Inner@3 = '__bp_int'((Inner@2 + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:15:27">>),
                         erlang:throw({'__bp_cond_break', Inner@3}),
                         __BpLoop1(Inner@3)
                     end)(Inner@1)
@@ -68,11 +68,15 @@ nested() ->
             _ -> {Outer@1, Inner@1}
         end
     end)({Outer, Inner}),
-    ((Outer@3 * 10) + Inner@5).
+    '__bp_int'(('__bp_int'((Outer@3 * 10), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:19:18">>) + Inner@5), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:19:23">>).
 
 main() ->
     '__bp_print'([firstSquareOver(20)]),
     '__bp_print'([nested()]).
+
+-compile({inline,['__bp_int'/4]}).
+'__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
+'__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).

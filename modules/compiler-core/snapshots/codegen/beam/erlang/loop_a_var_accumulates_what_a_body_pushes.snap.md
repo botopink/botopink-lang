@@ -20,13 +20,17 @@ fn main() {
 doubles(Arr) ->
     Out = [],
     Out@3 = lists:foldl(fun(X, Out@1) ->
-        Out@2 = (Out@1 ++ [(X * 2)]),
+        Out@2 = (Out@1 ++ ['__bp_int'((X * 2), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:4:20">>)]),
         Out@2
     end, Out, Arr),
     Out@3.
 
 main() ->
     '__bp_print'([doubles([1, 2, 3])]).
+
+-compile({inline,['__bp_int'/4]}).
+'__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
+'__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).

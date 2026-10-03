@@ -68,13 +68,17 @@ main(_Args) ->
 area(Self) ->
     case Self of
         {test@main@@Shape__v__circle, R} ->
-            ((R * R) * 3);
+            '__bp_int'(('__bp_int'((R * R), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:7:28">>) * 3), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:7:32">>);
         {test@main@@Shape__v__square, S} ->
-            (S * S)
+            '__bp_int'((S * S), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:8:28">>)
     end.
 
 '__bp_format'({test@main@@Shape__v__circle, F0}) -> {variant, "Shape.Circle", [{"radius", F0}]};
 '__bp_format'({test@main@@Shape__v__square, F0}) -> {variant, "Shape.Square", [{"side", F0}]}.
+
+-compile({inline,['__bp_int'/4]}).
+'__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
+'__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
 ```
 
 ----- RUN LOG -----

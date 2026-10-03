@@ -23,7 +23,7 @@ val info = @typeInfo(Color);
     {
       "ast": "val",
       "ident": "info",
-      "return_type": "TypeInfo",
+      "return_type": "TypeInfo<Color>",
       "expr": {
         "ast": "call",
         "params": [
@@ -31,7 +31,7 @@ val info = @typeInfo(Color);
             "value": "Color"
           }
         ],
-        "return_type": "TypeInfo"
+        "return_type": "TypeInfo<Color>"
       }
     }
   ]

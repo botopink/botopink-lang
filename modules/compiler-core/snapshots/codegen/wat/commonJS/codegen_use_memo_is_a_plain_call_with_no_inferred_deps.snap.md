@@ -16,6 +16,8 @@ fn Counter() -> @Component<Element, Element> {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
 class Element {
 }
 Element.prototype.__bp = "Element";
@@ -31,7 +33,7 @@ async function memo() {
 async function Counter() {
     const { count, setCount } = await state(0);
     const doubled = await memo(() => {
-    return (count * 2);
+    return __bp_int((count * 2), -2147483648, 2147483647, "* on i32 at main.bp:10:46");
 });
     return new Element();
 }

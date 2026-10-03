@@ -386,7 +386,7 @@ fn withSourceLocationDecl(arena: std.mem.Allocator, prog: ast.Program, env: *con
     return ast.Program{ .decls = new_decls };
 }
 
-/// Decision 216 (4) — the prelude records `@typeInfo.all` answers with
+/// Decision 216 (4) — the prelude records `@TypeInfo.all` answers with
 /// (`Declared<T>`, `DeclaredMeta`), spliced into a module that names them the
 /// way `withSourceLocationDecl` splices `SourceLocation`: private, per module.
 fn withDeclaredDecls(arena: std.mem.Allocator, prog: ast.Program, env: *const envMod.Env) !ast.Program {
@@ -409,7 +409,7 @@ fn withDeclaredDecls(arena: std.mem.Allocator, prog: ast.Program, env: *const en
 /// entries, private. Keep the two in sync.
 const declared_decl_src =
     \\type DeclaredMeta(key: string, value: string)
-    \\type Declared<T>(name: string, module: string, meta: DeclaredMeta[], value: T)
+    \\type Declared<T>(name: string, module: string, meta: DeclaredMeta[], returnTypeName: string, value: T)
 ;
 
 /// The declaration `withSourceLocationDecl` splices: private (the record is
@@ -708,7 +708,7 @@ fn mergeMembers(
 }
 
 /// Decision 216 (4) — the build's modules with every module that reads
-/// `@typeInfo.all` moved after all the others (relative order kept), so a
+/// `@TypeInfo.all` moved after all the others (relative order kept), so a
 /// reader's answer covers the whole program; the readers are noted in the
 /// session's reflection. A module importing a reader is refused at the import
 /// (`refusals`, by module index into the answer): the reader would have to be
@@ -740,7 +740,7 @@ fn orderReaders(
                     .module => |path| for (readers.items) |r| {
                         if (std.mem.eql(u8, r.path, m.path)) continue;
                         if (!std.mem.eql(u8, path, r.path) and !std.mem.eql(u8, std.fs.path.basename(r.path), path)) continue;
-                        const msg = try std.fmt.allocPrint(arena, "{s}: `{s}` reads `@typeInfo.all`, so it answers for the whole program and no module imports it", .{ diagnostics.typeinfo_all_imported, r.path });
+                        const msg = try std.fmt.allocPrint(arena, "{s}: `{s}` reads `@TypeInfo.all`, so it answers for the whole program and no module imports it", .{ diagnostics.typeinfo_all_imported, r.path });
                         try refusals.put(arena, idx, validation.TypeError.custom(msg, "Move what this module needs out of the entry point into a module of its own; the entry point imports it, never the other way round.").withLoc(imp.loc));
                         break :scan;
                     },
@@ -1076,7 +1076,7 @@ fn analyzeSource(
     // module's, on a re-analysis) reaches the checker as the declared name.
     var owners = try assocOwners(arena, expanded, mod.path, typeDeclRegistry, reflection);
     const program = try assocTypes.expand(arena, expanded, &owners);
-    // Decision 216 (4): a module reading `@typeInfo.all` is answered on its
+    // Decision 216 (4): a module reading `@TypeInfo.all` is answered on its
     // re-analysis, after its own decorators ran.
     const typeinfo_queries = if (skip_invoke or !typeinfoAll.reads(source)) &.{} else try typeinfoAll.collect(arena, program);
     env.typeinfoAllPending = typeinfo_queries.len > 0;
@@ -1291,7 +1291,7 @@ const decl_reflection_src =
     \\pub type Field(name: string, typeName: string, annotations: Annotation[])
     \\pub type Method(name: string, params: Param[], returnType: string, annotations: Annotation[])
     \\pub type DeclaredMeta(key: string, value: string)
-    \\pub type Declared<T>(name: string, module: string, meta: DeclaredMeta[], value: T)
+    \\pub type Declared<T>(name: string, module: string, meta: DeclaredMeta[], returnTypeName: string, value: T)
     \\pub type Decl(
     \\    kind: DeclKind,
     \\    name: string,
@@ -1325,36 +1325,25 @@ const custom_ast_reflection_src =
     \\)
 ;
 
-/// Comptime type introspection types (§1.0.0-beta): `@typeInfo` returns a
-/// `TypeInfo` enum variant describing the structure of any type. These are
-/// registered into the global env so comptime code can pattern-match on
-/// introspection results. Mirrors the surface documented in
-/// `libs/std/src/builtins.d.bp`; registered like the `@Decl` cluster.
+/// Decisions 216, 248, 253 — what `@typeInfo(T)` answers, `TypeInfo<T>`, and
+/// the field descriptor `@makeRecord` reads, registered into the global env.
+/// Mirrors `libs/std/src/builtins.d.bp`'s `pub type TypeInfo<T>` (its static
+/// `all` is reached only as the builtin `@TypeInfo.all`, so the mirror leaves
+/// it out) and `pub type RecordField`; registered after the `@Decl` cluster,
+/// whose `Field`, `Method` and `DeclaredMeta` the fields name.
 const type_info_src =
+    \\pub type TypeInfo<T>(
+    \\    name: string,
+    \\    module: string,
+    \\    fields: Field[],
+    \\    methods: Method[],
+    \\    meta: DeclaredMeta[],
+    \\)
+    \\
     \\pub type RecordField(
     \\    name: string,
     \\    typeName: string,
     \\)
-    \\
-    \\pub type EnumVariant(
-    \\    name: string,
-    \\    fields: RecordField[],
-    \\)
-    \\
-    \\pub type TypeInfoKind { Int, Float, Bool, String, Array, Record, Enum, Fn, Optional, Generic }
-    \\
-    \\pub type TypeInfo {
-    \\    Int,
-    \\    Float,
-    \\    Bool,
-    \\    String,
-    \\    Array(element: string),
-    \\    Record(fields: RecordField[]),
-    \\    Enum(variants: EnumVariant[]),
-    \\    Fn(params: RecordField[], returnType: string),
-    \\    Optional(inner: string),
-    \\    Generic(name: string, params: string[]),
-    \\}
 ;
 
 /// `YieldStep<T>` (decision 122) — the one step of both sequences, `Yield`
@@ -2248,6 +2237,43 @@ fn registerReflectionPrelude(env: *Env) anyerror!void {
     _ = try infer.inferProgram(env, program);
 }
 
+/// Decision 252 — every builtin's declaration into `env.builtinDecls`: each
+/// top-level `declare fn` of `builtins.d.bp` and `builtins_fns.d.bp`, and each
+/// static `declare fn` of a type there (`TypeInfo.all`). Parsed into
+/// `env.arena`, which the declarations' slices outlive with the env.
+fn registerBuiltinDecls(env: *Env) anyerror!void {
+    const prelude = @import("std_prelude");
+    for ([_][]const u8{ prelude.builtins, prelude.builtin_fns }) |src| {
+        var lx = Lexer.init(src);
+        const tokens = try lx.scanAll(env.arena);
+        var p = Parser.init(tokens);
+        const program = try p.parse(env.arena);
+        for (program.decls) |decl| switch (decl) {
+            .@"fn" => |f| if (f.isDeclare) try env.builtinDecls.put(f.name, .{
+                .genericParams = f.genericParams,
+                .params = f.params,
+                .returnType = f.returnType,
+            }),
+            // An unannotated `declare fn` parses as a delegate declaration.
+            .delegate => |f| try env.builtinDecls.put(f.name, .{
+                .genericParams = f.genericParams,
+                .params = f.params,
+                .returnType = f.returnType,
+            }),
+            .type_ => |t| for (t.methods) |m| {
+                if (!m.is_declare) continue;
+                if (m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self")) continue;
+                try env.builtinDecls.put(try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ t.name, m.name }), .{
+                    .genericParams = m.genericParams,
+                    .params = m.params,
+                    .returnType = m.returnType,
+                });
+            },
+            else => {},
+        };
+    }
+}
+
 pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
     _ = gpa; // stdlib sources are now parsed into `env.arena` (see below)
     const prelude = @import("std_prelude");
@@ -2290,10 +2316,9 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
         _ = try infer.inferProgram(env, program);
     }
 
-    // Type introspection types (§1.0.0-beta): `TypeInfo`, `RecordField`,
-    // `EnumVariant`, `TypeInfoKind` — the value domain of `@typeInfo`. Registered
-    // after `custom_ast_reflection_src` so the global env carries the complete
-    // comptime surface (Decl/Span/Annotation/… + TypeInfo/RecordField/…).
+    // `TypeInfo<T>` (what `@typeInfo(T)` answers) and `RecordField` (what
+    // `@makeRecord` reads). Registered after `custom_ast_reflection_src` so the
+    // global env carries the complete comptime surface.
     {
         const alloc = env.arena;
         var lx = Lexer.init(type_info_src);
@@ -2340,6 +2365,8 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
         };
     }
 
+    try registerBuiltinDecls(env);
+
     // A std module may import another (`import {json} from "std"`): each is
     // inferred after the ones it imports, and sees their exports, types and
     // functions exactly as a program's module does.
@@ -2360,6 +2387,10 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
         // module may name in a signature (`snapshots.path(loc: SourceLocation)`);
         // the scratch env has to know the same prelude the importer's env does.
         try registerReflectionPrelude(&env2);
+        {
+            var it = env.builtinDecls.iterator();
+            while (it.next()) |e| try env2.builtinDecls.put(e.key_ptr.*, e.value_ptr.*);
+        }
         {
             var it = env.stdModules.iterator();
             while (it.next()) |e| try env2.stdModules.put(e.key_ptr.*, e.value_ptr.*);
@@ -2567,8 +2598,12 @@ pub fn compileTypesOnly(
                     var rit = succ.env.instanceLowerings.iterator();
                     while (rit.next()) |e| try instance_lowerings.put(e.key_ptr.*, e.value_ptr.*);
                     var dit = succ.env.divisions.iterator();
-                    while (dit.next()) |e| if (infer.divisionKind(e.value_ptr.*)) |k|
-                        try instance_lowerings.put(e.key_ptr.*, .{ .division = k });
+                    while (dit.next()) |e| if (infer.arithKind(e.value_ptr.*)) |k| {
+                        // An operator's loc never holds another lowering; were
+                        // one there (a `+=` keyed by its target's name), it wins.
+                        const slot = try instance_lowerings.getOrPut(e.key_ptr.*);
+                        if (!slot.found_existing) slot.value_ptr.* = .{ .division = k };
+                    };
                 }
                 if (idx < all_modules.len - 1) {
                     var env = succ.env;
@@ -2777,8 +2812,12 @@ pub fn compile(
                     var rit = succ.env.instanceLowerings.iterator();
                     while (rit.next()) |e| try instance_lowerings.put(e.key_ptr.*, e.value_ptr.*);
                     var dit = succ.env.divisions.iterator();
-                    while (dit.next()) |e| if (infer.divisionKind(e.value_ptr.*)) |k|
-                        try instance_lowerings.put(e.key_ptr.*, .{ .division = k });
+                    while (dit.next()) |e| if (infer.arithKind(e.value_ptr.*)) |k| {
+                        // An operator's loc never holds another lowering; were
+                        // one there (a `+=` keyed by its target's name), it wins.
+                        const slot = try instance_lowerings.getOrPut(e.key_ptr.*);
+                        if (!slot.found_existing) slot.value_ptr.* = .{ .division = k };
+                    };
                 }
                 if (idx < all_modules.len - 1) {
                     var env = succ.env;

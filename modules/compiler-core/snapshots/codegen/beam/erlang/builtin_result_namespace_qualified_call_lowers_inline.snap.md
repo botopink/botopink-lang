@@ -26,9 +26,13 @@ parse(N) ->
 
 main() ->
     R = (fun(__BpR) -> case __BpR of {ok, __BpV0} -> {ok, (fun(X) ->
-        (X * 2)
+        '__bp_int'((X * 2), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:7:44">>)
     end)(__BpV0)}; _ -> __BpR end end)(parse(21)),
     '__bp_print'([(fun(__BpR) -> case __BpR of {ok, __BpV1} -> __BpV1; _ -> (0) end end)(R)]).
+
+-compile({inline,['__bp_int'/4]}).
+'__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
+'__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).

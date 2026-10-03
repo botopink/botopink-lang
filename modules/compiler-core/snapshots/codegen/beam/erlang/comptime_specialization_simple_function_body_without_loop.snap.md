@@ -22,10 +22,14 @@ main() ->
     R3 = 'execute_$0'(5).
 
 'execute_$0'(Input) ->
-    (Input + 0).
+    '__bp_int'((Input + 0), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:2:18">>).
 
 'execute_$1'(Input) ->
-    (Input + 0).
+    '__bp_int'((Input + 0), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:2:18">>).
+
+-compile({inline,['__bp_int'/4]}).
+'__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
+'__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
 
 '_botopink_main'() ->
     io:setopts(standard_io, [{encoding, unicode}]),

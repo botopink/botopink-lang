@@ -50,6 +50,8 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
 class Cell {
     constructor(value, set) {
         this.value = value;
@@ -60,7 +62,7 @@ Cell.prototype.__bp = "Cell";
 
 function mk(v) {
     return new Cell(v, (next) => {
-    return (next + v);
+    return __bp_int((next + v), -2147483648, 2147483647, "+ on i32 at main.bp:7:47");
 });
 }
 

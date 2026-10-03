@@ -48,6 +48,8 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
 function main() {
     const double = multiply_$0(21);
     const triple = multiply_$1(21);
@@ -59,12 +61,12 @@ function main() {
 
 function multiply_$0(x) {
     const factor = 2;
-    return ((x * factor) + 0);
+    return __bp_int((x * factor), -2147483648, 2147483647, "* on i32 at main.bp:2:14");
 }
 
 function multiply_$1(x) {
     const factor = 3;
-    return ((x * factor) + 0);
+    return __bp_int((x * factor), -2147483648, 2147483647, "* on i32 at main.bp:2:14");
 }
 
 function _botopink_main() {

@@ -459,7 +459,7 @@ test "js: index ---- element, slice, open slice, string and tuple" {
         "__bp_print(__bp_string_char_at(s, 1));",
         "__bp_print(s.slice(1, 3));",
         "__bp_print(t[0]);",
-        "__bp_print(__bp_array_at(xs, (i + 1)));",
+        "__bp_print(__bp_array_at(xs, __bp_int((i + 1), -2147483648, 2147483647, \"+ on i32 at main.bp:12:17\")));",
         "__bp_print(__bp_array_at([[1, 2], [3, 4]], 1).at(0));",
     });
     // An open-ended range is `.slice(start, null)` here and the lazy

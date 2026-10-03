@@ -41,9 +41,11 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
 function main() {
     let count = 0;
-    count += 1;
+    count = __bp_int((count + 1), -2147483648, 2147483647, "+= on i32 at main.bp:3:5");
     __bp_print(count);
 }
 

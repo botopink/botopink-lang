@@ -213,10 +213,12 @@ to its plan: `P + F + N` cells and `A + X` audits of `test-libs:` against the
 tests against the job lines, `docs: <N> fences` against the fence lines. A
 stage that ran fewer than its plan fails the gate, green or not — a stage
 cannot be narrowed to win time. The last line is the total,
-`gate: every stage passed — 4m52s wall, 2120 CPU-s (budget 5m00s cold)`,
+`gate: every stage passed — 4m52s wall, 2120 CPU-s (budget 7m30s cold)`,
 timed from the lock (a wait for another gate is not counted), against
-`budget_cold=300` / `budget_warm=60` at the top of the script — decision 229 of
-1.0.11-beta, for 16 idle cores. A run over it prints `gate: over budget`
+`budget_cold=450` / `budget_warm=60` at the top of the script — decision 229 of
+1.0.11-beta, for 16 idle cores, with the cold budget set to 7m30s for this
+milestone by decision 265 (the 5-minute cold target is deferred to the next
+milestone). A run over it prints `gate: over budget`
 in yellow with the load, and is not a red: a slow or shared machine is not a
 broken tree.
 
@@ -445,7 +447,11 @@ root), exits `1` if `zig-out/bin/botopink-lib-test` is not built, warns (without
 gating) for each missing `node`/`escript`/`erlc`/`wasmtime`, then runs the runner
 in `--json` mode — discovery is the runner's, workspace members included, so
 the script exports no root — and prints one line per (library, target) pair
-after that pair's diagnostics, and one summary line.
+after that pair's diagnostics, and one summary line. Its arguments go to the
+runner as given: `--lib a --lib b` runs both, `a` first, in one report (decision
+258 — it used to run the last `--lib` alone, silently), and a `--lib` that names
+no library fails the run (`modules/compiler-cli/tests/test_tooling.sh` holds
+both).
 
 **The manifest decides the matrix.** A member runs on the targets its
 `botopink.json` declares and on no other: a target its `"targets"` list excludes

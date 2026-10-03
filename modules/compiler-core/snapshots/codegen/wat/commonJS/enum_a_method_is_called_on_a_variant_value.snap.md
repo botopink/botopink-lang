@@ -52,6 +52,8 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
 class Shape {
     static Circle(radius) {
         return new Shape$Circle(radius);
@@ -66,11 +68,11 @@ class Shape {
             const _s = self;
             if (_s.tag === "Circle") {
                 const { radius: r } = _s;
-                return ((r * r) * 3);
+                return __bp_int((__bp_int((r * r), -2147483648, 2147483647, "* on i32 at main.bp:7:28") * 3), -2147483648, 2147483647, "* on i32 at main.bp:7:32");
             }
             if (_s.tag === "Square") {
                 const { side: s } = _s;
-                return (s * s);
+                return __bp_int((s * s), -2147483648, 2147483647, "* on i32 at main.bp:8:28");
             }
         })();
     }

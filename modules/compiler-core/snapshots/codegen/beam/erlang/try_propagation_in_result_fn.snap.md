@@ -35,7 +35,7 @@ inner(Should_fail) ->
 outer(Should_fail) ->
     case inner(Should_fail) of
         {ok, V} ->
-            {ok, (V + 1)};
+            {ok, '__bp_int'((V + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:10:14">>)};
         {error, _TryE0} -> {error, _TryE0}
     end.
 
@@ -60,6 +60,10 @@ main() ->
             (-1)
     end,
     '__bp_print'([R2]).
+
+-compile({inline,['__bp_int'/4]}).
+'__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
+'__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).

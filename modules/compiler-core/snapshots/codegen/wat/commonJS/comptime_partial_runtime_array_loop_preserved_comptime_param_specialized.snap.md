@@ -20,6 +20,8 @@ fn main() {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
 const COMMANDS = ["calc", "noop", "help"];
 
 function main() {
@@ -31,7 +33,7 @@ function execute_$0(input) {
     const slug = "calc";
     let output = 0;
     for (const cmd of COMMANDS) {
-    (() => { if ((cmd === slug)) { return output = ((input * 2) + 0); } })();
+    (() => { if ((cmd === slug)) { return output = __bp_int((input * 2), -2147483648, 2147483647, "* on i32 at main.bp:7:28"); } })();
 }
     return output;
 }
@@ -40,7 +42,7 @@ function execute_$1(input) {
     const slug = "noop";
     let output = 0;
     for (const cmd of COMMANDS) {
-    (() => { if ((cmd === slug)) { return output = ((input * 2) + 0); } })();
+    (() => { if ((cmd === slug)) { return output = __bp_int((input * 2), -2147483648, 2147483647, "* on i32 at main.bp:7:28"); } })();
 }
     return output;
 }

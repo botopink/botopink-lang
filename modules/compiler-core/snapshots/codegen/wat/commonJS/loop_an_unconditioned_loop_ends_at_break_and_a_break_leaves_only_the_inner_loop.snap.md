@@ -60,11 +60,13 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
 function firstSquareOver(n) {
     let k = 0;
     while (true) {
-    k = (k + 1);
-    if ((((k * k) + 0) > n)) { break; }
+    k = __bp_int((k + 1), -2147483648, 2147483647, "+ on i32 at main.bp:4:15");
+    if ((__bp_int((k * k), -2147483648, 2147483647, "* on i32 at main.bp:5:15") > n)) { break; }
 }
     return k;
 }
@@ -73,13 +75,13 @@ function nested() {
     let outer = 0;
     let inner = 0;
     while ((outer < 3)) {
-    outer = (outer + 1);
+    outer = __bp_int((outer + 1), -2147483648, 2147483647, "+ on i32 at main.bp:13:23");
     while (true) {
-    inner = (inner + 1);
+    inner = __bp_int((inner + 1), -2147483648, 2147483647, "+ on i32 at main.bp:15:27");
     break;
 }
 }
-    return (((outer * 10) + 0) + inner);
+    return __bp_int((__bp_int((outer * 10), -2147483648, 2147483647, "* on i32 at main.bp:19:18") + inner), -2147483648, 2147483647, "+ on i32 at main.bp:19:23");
 }
 
 function main() {

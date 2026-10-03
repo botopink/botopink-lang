@@ -29,9 +29,13 @@ memo() ->
 'Counter'() ->
     #{count := Count, setCount := SetCount} = state(0),
     Doubled = memo(fun() ->
-        (Count * 2)
+        '__bp_int'((Count * 2), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:10:46">>)
     end),
     {test@main@@Element}.
+
+-compile({inline,['__bp_int'/4]}).
+'__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
+'__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
 ```
 
 ----- ERLANG -- test@main@@Element.erl

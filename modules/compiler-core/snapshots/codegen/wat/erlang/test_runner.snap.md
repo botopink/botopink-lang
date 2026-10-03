@@ -20,7 +20,7 @@ test {
 -export([main/1]).
 
 add(A, B) ->
-    (A + B).
+    '__bp_int'((A + B), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:2:14">>).
 
 '__bp_test_0'() ->
     R = add(2, 3),
@@ -28,6 +28,10 @@ add(A, B) ->
 
 '__bp_test_1'() ->
     case (true) of true -> ok; _ -> erlang:error({bp_assert, <<"assertion failed">>, <<"main.bp:11">>}) end.
+
+-compile({inline,['__bp_int'/4]}).
+'__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
+'__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
 
 '__bp_run_one'({Name, Fun, Loc}) ->
     %% §T `----- RUN LOG -----` envelope (v0.beta.20 frente-b spec):

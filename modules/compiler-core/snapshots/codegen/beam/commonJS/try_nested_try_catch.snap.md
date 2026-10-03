@@ -52,6 +52,8 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
 class DbError {
     constructor(msg) {
         this.msg = msg;
@@ -73,7 +75,7 @@ function process() {
     const _try1 = outer();
     const b = "error" in _try1 ? (a) : _try1.ok;
     __bp_print(a, b);
-    return (a + b);
+    return __bp_int((a + b), -2147483648, 2147483647, "+ on i32 at main.bp:12:14");
 }
 
 function main() {

@@ -58,6 +58,7 @@ pub declare fn stringify(s: string) -> @Result<string, string>;
 // the two targets would disagree; bytes of U+0080 and above pass through.
 #[@External.Node("""JSON.stringify(String($0))""")]
 #[@External.Erlang("""(fun(__S) -> iolist_to_binary([34, [case __C of 34 -> [92, 34]; 92 -> [92, 92]; 8 -> [92, 98]; 12 -> [92, 102]; 10 -> [92, 110]; 13 -> [92, 114]; 9 -> [92, 116]; _ when __C < 32 -> io_lib:format("~cu~4.16.0b", [92, __C]); _ -> __C end || <<__C>> <= __S], 34]) end)($0)""")]
+#[@External.Wasm("fn:quoteBody")]
 pub declare fn quote(s: string) -> string;
 
 // The inverse of `quote`: read ONE JSON string literal (surrounding
@@ -65,6 +66,7 @@ pub declare fn quote(s: string) -> string;
 // number, a missing quote, trailing text — is an `Error`.
 #[@External.Node("""(() => { try { const __v = JSON.parse(String($0)); return typeof __v === 'string' ? { ok: __v } : { error: 'json.unquote: not a JSON string literal' } } catch (__e) { return { error: 'json.unquote: not a JSON string literal' } } })()""")]
 #[@External.Erlang("""(fun(__S) -> try json:decode(__S) of __V when is_binary(__V) -> {ok, __V}; _ -> {error, <<"json.unquote: not a JSON string literal">>} catch _:_ -> {error, <<"json.unquote: not a JSON string literal">>} end end)($0)""")]
+#[@External.Wasm("fn:unquoteBody")]
 pub declare fn unquote(literal: string) -> @Result<string, string>;
 
 // A JSON array of `items`, each ALREADY encoded (the output of `quote`, a
@@ -85,6 +87,7 @@ pub fn object(fields: Array<#(string, string)>) -> string {
 // non-ASCII string with it (see `cp`), and `decode` writes `\u` escapes.
 #[@External.Node("""String.fromCodePoint($0)""")]
 #[@External.Erlang("""unicode:characters_to_binary([$0])""")]
+#[@External.Wasm("fn:codepointTextBody")]
 declare fn codepointText(cp: i32) -> string;
 
 // ── 1.0.10-beta front 01 step 13 (decision 117 rule 7): reading JSON ─────────
@@ -207,11 +210,67 @@ pub fn decode(s: string) -> @Result<Json, string> {
 // function` (measured by `validation`'s tests under `zig build test-libs`).
 #[@External.Node("""Array.from($0, (__c) => __c.codePointAt(0))""")]
 #[@External.Erlang("""unicode:characters_to_list($0, utf8)""")]
+#[@External.Wasm("fn:codePointsOfBody")]
 declare fn codePointsOf(s: string) -> Array<i32>;
 
 #[@External.Node("""Array.from($0)""")]
 #[@External.Erlang("""[<<__C/utf8>> || __C <- unicode:characters_to_list($0, utf8)]""")]
+#[@External.Wasm("fn:textsOfBody")]
 declare fn textsOf(s: string) -> Array<string>;
+
+// ── the wasm bodies (decision 238) ───────────────────────────────────────────
+// wasm has no host JSON, so the cells above name these private bodies with
+// `#[@External.Wasm("fn:…")]`; they answer what the Node cell answers, text
+// built from code points with `String.fromCodepoint` (decision 262). `parse`
+// and `stringify` have no wasm body (`decisions-pending.md` 05w-h): a call of
+// either is refused on wasm where it is written. On wasm `unquote` reads its
+// literal with `decode`, which refuses an unpaired `\u` surrogate escape that
+// `JSON.parse` keeps (a wasm string holds UTF-8 only, so no lone surrogate).
+
+fn quoteBody(s: string) -> string {
+    val body = s.chars().map({ c -> quotedChar(c) }).join("");
+    return ["\"", body, "\""].join("");
+}
+
+// One character as `JSON.stringify` writes it inside a string literal.
+fn quotedChar(c: string) -> string {
+    val code = c.charCodeAt(0);
+    if (code == 34) return "\\\"";
+    if (code == 92) return "\\\\";
+    if (code == 8) return "\\b";
+    if (code == 12) return "\\f";
+    if (code == 10) return "\\n";
+    if (code == 13) return "\\r";
+    if (code == 9) return "\\t";
+    if (code < 32)
+        return [
+            "\\u00",
+            "0123456789abcdef".at(code / 16).unwrapOr(""),
+            "0123456789abcdef".at(code % 16).unwrapOr(""),
+        ].join("");
+    return c;
+}
+
+fn unquoteBody(literal: string) -> @Result<string, string> {
+    val read = decode(literal);
+    if (read.isError()) throw "json.unquote: not a JSON string literal";
+    val value = read.unwrapOr(Json.Null);
+    if (value.kindName() != "a string")
+        throw "json.unquote: not a JSON string literal";
+    return value.str();
+}
+
+fn codepointTextBody(cp: i32) -> string {
+    return String.fromCodepoint(cp);
+}
+
+fn codePointsOfBody(s: string) -> Array<i32> {
+    return s.chars().map({ c -> c.charCodeAt(0) });
+}
+
+fn textsOfBody(s: string) -> Array<string> {
+    return s.chars();
+}
 
 // The code point at `i`, `-1` past the end.
 fn cpAt(doc: Doc, i: i32) -> i32 {
@@ -964,14 +1023,10 @@ test "json.quote leaves non-ASCII, the slash and U+2028 alone" {
     assert quote(odd) == ["\"", odd, "\""].join("");
 }
 
-// Internal: `quote(s)` parses, and `unquote` reads `s` back.
-fn roundTrips(s: string) -> bool {
-    val parsed = parse(quote(s));
-    val back = unquote(quote(s));
-    return parsed.isOk() && back.unwrapOr("<err>") == s;
-}
-
 test "json.quote round-trips through parse and unquote" {
+    // Inside the test, not a module-level helper: `parse` has no wasm body
+    // (05w-h), and a module function that calls it would refuse the whole
+    // module on wasm (decision 146).
     val table = [
         "",
         "\u{0}\u{1}\u{2}\u{3}\u{4}\u{5}\u{6}\u{7}\u{8}\t\n\u{b}\u{c}\r\u{e}\u{f}",
@@ -983,7 +1038,10 @@ test "json.quote round-trips through parse and unquote" {
         cp(128512),
         "plain text",
     ];
-    assert table.filter({ s -> roundTrips(s) }).length == table.length;
+    val trips = table.filter({ s ->
+        parse(quote(s)).isOk() && unquote(quote(s)).unwrapOr("<err>") == s;
+    });
+    assert trips.length == table.length;
 }
 
 test "json.unquote refuses what is not one string literal" {

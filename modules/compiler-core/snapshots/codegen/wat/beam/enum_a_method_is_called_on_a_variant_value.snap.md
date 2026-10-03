@@ -302,7 +302,7 @@ pub fn main() {
 {module, test@main@@Shape}.
 {exports, [{area, 1}, {'__bp_format', 1}]}.
 {attributes, []}.
-{labels, 11}.
+{labels, 17}.
 
 {function, area, 1, 3}.
   {label, 2}.
@@ -317,29 +317,50 @@ pub fn main() {
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 1}}.
     {gc_bif, '*', {f, 0}, 0, [{y, 1}, {y, 1}], {x, 0}}.
+    {test, is_ge, {f, 6}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 6}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 7}}.
+  {label, 6}.
+    {move, {literal, {integer_overflow, <<"integer overflow: * on i32 at test@main@@Shape.bp:7:28">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 7}.
     {gc_bif, '*', {f, 0}, 1, [{x, 0}, {integer, 3}], {x, 0}}.
+    {test, is_ge, {f, 8}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 8}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 9}}.
+  {label, 8}.
+    {move, {literal, {integer_overflow, <<"integer overflow: * on i32 at test@main@@Shape.bp:7:32">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 9}.
     {jump, {f, 4}}.
   {label, 5}.
-    {test, is_tagged_tuple, {f, 6}, [{x, 0}, 2, {atom, test@main@@Shape__v__square}]}.
+    {test, is_tagged_tuple, {f, 10}, [{x, 0}, 2, {atom, test@main@@Shape__v__square}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 2}}.
     {gc_bif, '*', {f, 0}, 0, [{y, 2}, {y, 2}], {x, 0}}.
+    {test, is_ge, {f, 11}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 11}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 12}}.
+  {label, 11}.
+    {move, {literal, {integer_overflow, <<"integer overflow: * on i32 at test@main@@Shape.bp:8:28">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 12}.
     {jump, {f, 4}}.
-  {label, 6}.
+  {label, 10}.
   {label, 4}.
     {deallocate, 3}.
     return.
 
-{function, '__bp_format', 1, 8}.
-  {label, 7}.
+{function, '__bp_format', 1, 14}.
+  {label, 13}.
     {line, [{location, "test@main@@Shape.erl", 2}]}.
     {func_info, {atom, test@main@@Shape}, {atom, '__bp_format'}, 1}.
-  {label, 8}.
+  {label, 14}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 9}, [{x, 0}, 2, {atom, test@main@@Shape__v__circle}]}.
+    {test, is_tagged_tuple, {f, 15}, [{x, 0}, 2, {atom, test@main@@Shape__v__circle}]}.
     {move, nil, {y, 1}}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
@@ -351,9 +372,9 @@ pub fn main() {
     {put_tuple2, {x, 0}, {list, [{atom, variant}, {literal, <<"Shape.Circle">>}, {y, 1}]}}.
     {deallocate, 2}.
     return.
-  {label, 9}.
+  {label, 15}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 10}, [{x, 0}, 2, {atom, test@main@@Shape__v__square}]}.
+    {test, is_tagged_tuple, {f, 16}, [{x, 0}, 2, {atom, test@main@@Shape__v__square}]}.
     {move, nil, {y, 1}}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
@@ -365,7 +386,7 @@ pub fn main() {
     {put_tuple2, {x, 0}, {list, [{atom, variant}, {literal, <<"Shape.Square">>}, {y, 1}]}}.
     {deallocate, 2}.
     return.
-  {label, 10}.
+  {label, 16}.
     {test_heap, 4, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, variant}, {literal, <<"Shape">>}, nil]}}.
     {deallocate, 2}.

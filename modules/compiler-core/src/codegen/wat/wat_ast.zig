@@ -119,6 +119,11 @@ pub const Instr = union(enum) {
     @"return",
     @"unreachable",
     memory_copy,
+    /// `memory.size` — the memory's size in 64 KiB pages (decision 261).
+    memory_size,
+    /// `memory.grow` — grow by the popped page count; answers the old size,
+    /// or `-1` when the host refuses (decision 261).
+    memory_grow,
     @"if": If,
     /// `block` / `loop`.
     block: Block,
@@ -517,11 +522,16 @@ pub const HelperGroup = enum {
     /// `$__i32_{add,sub,mul}_chk` / `$__i64_…_chk` — integer arithmetic that
     /// traps where the result does not fit its type, instead of wrapping.
     int_chk,
+    /// `$__str_from_cp(cp)` — decision 262's `String.fromCodepoint(cp)`: the
+    /// code point's UTF-8 bytes as a fresh string; traps on a value that is
+    /// no Unicode scalar value (negative, a surrogate, past U+10FFFF).
+    str_from_cp,
 
     /// The groups `g`'s functions call into.
     pub fn deps(g: HelperGroup) []const HelperGroup {
         return switch (g) {
             .print_str, .print_bool => &.{.print},
+            .str_concat, .str_slice => &.{.alloc},
             .print_f64 => &.{ .print, .dtoa },
             .dtoa => &.{.alloc},
             .box_f64 => &.{.alloc},
@@ -564,6 +574,7 @@ pub const HelperGroup = enum {
             .str_cp_last_index_of => &.{ .str_cp_of, .str_last_index_of },
             .wasi_seed_u32 => &.{.wasi_seed_state},
             .wasi_seeded_f64 => &.{ .wasi_seed_state, .wasi_random_f64 },
+            .str_from_cp => &.{.alloc},
             else => &.{},
         };
     }
@@ -685,6 +696,7 @@ pub const Helper = enum {
     i64_add_chk,
     i64_sub_chk,
     i64_mul_chk,
+    str_from_cp,
 
     pub fn symbol(h: Helper) []const u8 {
         return switch (h) {

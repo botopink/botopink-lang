@@ -27,7 +27,7 @@ fn main() {
 mk() ->
     Value = 1,
     Set = fun(N) ->
-        (N * 2)
+        '__bp_int'((N * 2), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:4:31">>)
     end,
     {Value, Set}.
 
@@ -36,13 +36,17 @@ main() ->
     '__bp_print'([erlang:element(1, C)]),
     '__bp_print'([(erlang:element(2, C))(9)]),
     T = {1, fun(N) ->
-        (N + 100)
+        '__bp_int'((N + 100), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:11:34">>)
     end},
     '__bp_print'([(erlang:element(2, T))(2)]),
     O = {test@main@@Ops, fun(N) ->
-        (N - 1)
+        '__bp_int'((N - 1), -2147483648, 2147483647, <<"integer overflow: - on i32 at main.bp:13:39">>)
     end},
     '__bp_print'([(erlang:element(2, O))(10)]).
+
+-compile({inline,['__bp_int'/4]}).
+'__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
+'__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).

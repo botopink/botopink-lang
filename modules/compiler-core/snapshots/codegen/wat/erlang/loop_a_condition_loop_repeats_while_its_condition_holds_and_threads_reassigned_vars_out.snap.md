@@ -39,7 +39,7 @@ count(Limit) ->
         case (I@1 < Limit) of
             true ->
                 Acc@2 = <<Acc@1/binary, ('__bp_text'(erlang:integer_to_binary(I@1)))/binary>>,
-                I@2 = (I@1 + 1),
+                I@2 = '__bp_int'((I@1 + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:6:15">>),
                 __BpLoop({Acc@2, I@2});
             _ -> {Acc@1, I@1}
         end
@@ -54,13 +54,13 @@ evens(Limit) ->
         case (I@1 < Limit) of
             true ->
                 __BpLoop(try
-                    I@2 = (I@1 + 1),
+                    I@2 = '__bp_int'((I@1 + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:15:15">>),
                     case ((I@2 rem 2) =:= 1) of
                         true ->
                             erlang:throw({'__bp_cond_continue', {I@2, Sum@1}});
                         _ -> ok
                     end,
-                    Sum@2 = (Sum@1 + I@2),
+                    Sum@2 = '__bp_int'((Sum@1 + I@2), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:17:19">>),
                     {I@2, Sum@2}
                 catch
                     throw:{'__bp_cond_continue', __BpGroup2} -> __BpGroup2
@@ -74,6 +74,10 @@ main() ->
     '__bp_print'([count(4)]),
     '__bp_print'([count(0)]),
     '__bp_print'([evens(6)]).
+
+-compile({inline,['__bp_int'/4]}).
+'__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
+'__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
 
 '__bp_text'(Value) when erlang:is_binary(Value) -> Value;
 '__bp_text'(Value) -> erlang:iolist_to_binary(io_lib:format(<<"~p">>, [Value])).

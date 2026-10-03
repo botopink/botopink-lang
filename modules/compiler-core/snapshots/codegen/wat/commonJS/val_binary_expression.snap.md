@@ -40,7 +40,9 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-const sum = (1 + 2);
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
+const sum = __bp_int((1 + 2), -2147483648, 2147483647, "+ on i32 at main.bp:1:13");
 
 function main() {
     __bp_print(sum);
