@@ -1,4 +1,4 @@
-//// Decision 216 (4) — `@typeinfo.all(with: d)` answers, at compile time,
+//// Decision 216 (4) — `@typeInfo.all(with: d)` answers, at compile time,
 //// every declaration of the program carrying the decorator `d`, so the entry
 //// point builds its catalogue explicitly: no module registers itself at load.
 //// Each entry is a `Declared<T>` — its `name`, its `module`, the `meta` `d`
@@ -16,7 +16,7 @@ import {web.route, web.component, web.unused};
 pub type Local(id: i32)
 
 pub fn main() {
-    val routes = @typeinfo.all(with: route);
+    val routes = @typeInfo.all(with: route);
     for (routes) { r ->
         var path = "";
         for (r.meta) { m ->
@@ -25,10 +25,10 @@ pub fn main() {
         val page: fn() -> string = r.value;
         @print(r.module + " " + r.name + " " + path + " -> " + page());
     }
-    val parts = @typeinfo.all(with: component, member: "describe");
+    val parts = @typeInfo.all(with: component, member: "describe");
     for (parts) { c ->
         val describe: fn() -> string = c.value;
         @print(c.name + ": " + describe());
     }
-    @print(@typeinfo.all(with: unused).length);
+    @print(@typeInfo.all(with: unused).length);
 }

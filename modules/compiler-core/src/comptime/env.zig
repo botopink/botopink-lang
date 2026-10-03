@@ -229,7 +229,7 @@ pub const TemplateOp = enum { value, text, parts, source, context, lookup, bindi
 pub const NamespaceImports = struct {
     /// Bound name → the imported module's exports.
     modules: std.StringHashMapUnmanaged(std.StringHashMap(*T.Type)) = .empty,
-    /// Bound name → the imported module's path (`@typeinfo(models.City)`
+    /// Bound name → the imported module's path (`@typeInfo(models.City)`
     /// reflects `City` of that module — decision 216).
     paths: std.StringHashMapUnmanaged([]const u8) = .empty,
     /// Call loc → the namespace and the function it calls.
@@ -932,20 +932,20 @@ pub const Env = struct {
     assocTypesPending: bool = false,
     pendingAssocTypeName: ?struct { name: []const u8, loc: ?ast.Loc } = null,
     /// Decision 216 — the compile session's reflection (`reflection.zig`):
-    /// where a decorator's `decl.setMeta` is recorded and `@typeinfo` reads.
+    /// where a decorator's `decl.setMeta` is recorded and `@typeInfo` reads.
     /// Null outside a session (unit helpers that infer one program alone).
     reflection: ?*reflectionMod.Reflection = null,
-    /// Decision 216 (4) — the module reads `@typeinfo.all`: its first
+    /// Decision 216 (4) — the module reads `@typeInfo.all`: its first
     /// analysis stops before bodies, and the re-analysis receives the answers.
     typeinfoAllPending: bool = false,
-    /// Call loc → the `Declared<T>` array answering that `@typeinfo.all`
+    /// Call loc → the `Declared<T>` array answering that `@typeInfo.all`
     /// (`typeinfo_all.plan`), spliced through `srcRewrites`.
     typeinfoAll: std.AutoHashMapUnmanaged(ast.Loc, *const ast.Expr) = .empty,
     /// The module names the prelude records `Declared` / `DeclaredMeta`, so
     /// `comptime.zig` splices their declarations in (`withDeclaredDecls`).
     usesDeclared: bool = false,
     /// The names this module declares at top level (types, behaviors, fns,
-    /// vals) — what `@typeinfo(Name)` reflects when no import binds `Name`.
+    /// vals) — what `@typeInfo(Name)` reflects when no import binds `Name`.
     ownDecls: std.StringHashMapUnmanaged(void) = .empty,
     /// Erlang sent to and replies received from the `erl` runtime by every
     /// decorator / template evaluation in this module, in order (snapshots).

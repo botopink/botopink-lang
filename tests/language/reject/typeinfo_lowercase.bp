@@ -1,0 +1,8 @@
+//// Decision 248 — the one reflection builtin is `@typeInfo`; the lowercase
+//// `@typeinfo` is refused where it is written, naming `@typeInfo`.
+
+type City(name: string)
+
+pub fn main() {
+    @print(@typeinfo(City).name);
+}

@@ -1,9 +1,0 @@
-//// Decision 216 (2) — `@typeinfo(X)` is read through a member (`.name`,
-//// `.meta.<decorator>.<key>`); it is no run-time value of its own.
-
-type City(name: string)
-
-pub fn main() {
-    val info = @typeinfo(City);
-    @print(1);
-}

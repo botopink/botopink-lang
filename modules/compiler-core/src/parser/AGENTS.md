@@ -313,10 +313,12 @@ At its exit `parsePostfixChain` refuses a decided-against infix form by name
 A **builtin call** (`@name(args)`) continues with `parsePostfixChain` too
 (1.0.10-beta decision 73 — `@src().line` reads a field of the record `@src()`
 answers). Before that the chain after a builtin call was a parse error, so no
-program that compiled changed. `@typeinfo.all(…)` (decision 216 (4)) is the one
-builtin with a member before its arguments: `@typeinfo` followed by `.all(` is
-the builtin call whose callee is `typeinfo.all`, and its labelled arguments
-(`with: d`) never read as an `@Name(field: value)` interface literal.
+program that compiled changed. `@typeInfo.all(…)` (decisions 216 (4), 248) is the
+one builtin with a member before its arguments: `@typeInfo` followed by `.all(` is
+the builtin call whose callee is `typeInfo.all`, and its labelled arguments
+(`with: d`) never read as an `@Name(field: value)` interface literal. The
+lowercase `@typeinfo.all(…)` parses the same way (callee `typeinfo.all`) so the
+checker refuses it at its loc as `typeinfo-lowercase`.
 
 A bare **`return;`** (or `return` closing a block) parses with no operand — the
 `ok` position of a `-> @Result<void, E>` fn (decision 74). Only `;`, `}` and end

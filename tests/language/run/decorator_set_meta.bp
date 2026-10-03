@@ -1,9 +1,9 @@
 //// Decision 216 (2) — `decl.setMeta(key, value)`: a decorator records a
 //// compile-time fact about the declaration it annotates, read back by
-//// reflection as `@typeinfo(X).meta.<decorator>.<key>`. Each decorator has its
+//// reflection as `@typeInfo(X).meta.<decorator>.<key>`. Each decorator has its
 //// own namespace of keys, a function carries meta like a type does, and a
 //// read is a string constant — it never becomes run-time code of the
-//// decorator. `@typeinfo(X).name` answers the declaration's own name.
+//// decorator. `@typeInfo(X).name` answers the declaration's own name.
 
 fn entity(comptime decl: @Decl, table: string) {
     var names: string[] = [];
@@ -30,11 +30,11 @@ fn about() -> string {
 }
 
 pub fn main() {
-    @print(@typeinfo(City).meta.entity.table);
-    @print(@typeinfo(City).meta.entity.columns);
-    @print(@typeinfo(City).meta.audited.table);
-    @print(@typeinfo(City).name);
-    val path: string = @typeinfo(about).meta.route.path;
+    @print(@typeInfo(City).meta.entity.table);
+    @print(@typeInfo(City).meta.entity.columns);
+    @print(@typeInfo(City).meta.audited.table);
+    @print(@typeInfo(City).name);
+    val path: string = @typeInfo(about).meta.route.path;
     @print(path + " -> " + about());
-    @print(@typeinfo(City).meta.entity.table.length);
+    @print(@typeInfo(City).meta.entity.table.length);
 }

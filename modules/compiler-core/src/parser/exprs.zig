@@ -1295,14 +1295,16 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
     if (this.check(.builtinIdent)) {
         const nameTok = this.advance();
         var callee: []const u8 = nameTok.lexeme[1..]; // Remove @ prefix
-        // Decision 216 (4) — `@typeinfo.all(with: d)`: the reflection
-        // builtin's one member call is the builtin `typeinfo.all`.
-        if (std.mem.eql(u8, callee, "typeinfo") and this.check(.dot) and
+        // Decision 216 (4), 248 — `@typeInfo.all(with: d)`: the reflection
+        // builtin's one member call is the builtin `typeInfo.all`. The
+        // lowercase `@typeinfo.all` parses the same way so the checker can
+        // refuse it at its loc, naming `@typeInfo`.
+        if ((std.mem.eql(u8, callee, "typeInfo") or std.mem.eql(u8, callee, "typeinfo")) and this.check(.dot) and
             this.peekAt(1).kind == .identifier and this.peekAt(2).kind == .leftParenthesis)
         {
             _ = this.advance();
             const member = this.advance();
-            callee = try std.fmt.allocPrint(alloc, "typeinfo.{s}", .{member.lexeme});
+            callee = try std.fmt.allocPrint(alloc, "{s}.{s}", .{ callee, member.lexeme });
         }
 
         // Check for @name{ ... } syntax (trailing lambda with no args)
@@ -1320,9 +1322,9 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         if (this.check(.leftParenthesis)) {
             const savedPos = this.current;
             _ = this.advance(); // consume (
-            // `@typeinfo.all(with: d)` is a call with labelled arguments.
+            // `@typeInfo.all(with: d)` is a call with labelled arguments.
             const isInterfaceLit = this.check(.identifier) and this.peekAt(1).kind == .colon and
-                !std.mem.eql(u8, callee, "typeinfo.all");
+                !std.mem.eql(u8, callee, "typeInfo.all") and !std.mem.eql(u8, callee, "typeinfo.all");
             this.current = savedPos; // restore position
 
             if (isInterfaceLit) {

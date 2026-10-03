@@ -9,5 +9,5 @@ fn entity(comptime decl: @Decl) {
 type City(name: string)
 
 pub fn main() {
-    @print(@typeinfo(City).meta.entity.tabel);
+    @print(@typeInfo(City).meta.entity.tabel);
 }

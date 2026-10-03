@@ -611,7 +611,7 @@ pub behavior Decl {
     // Decision 216 (2) — record a comptime fact about the annotated
     // declaration, under this decorator's own name: `decl.setMeta("table",
     // "cities")` in `#[entity]` is read anywhere the declaration is reached as
-    // `@typeinfo(City).meta.entity.table`, a string constant. It never becomes
+    // `@typeInfo(City).meta.entity.table`, a string constant. It never becomes
     // run-time code. Set from a `type`'s, a `behavior`'s or a `fn`'s
     // decorator (a field's or a method's is `decorator-meta-on-member`), each
     // key once (`decorator-meta-duplicate`).
@@ -631,11 +631,11 @@ pub behavior Decl {
     fn addType(self: Self, name: string, source: string);
 }
 
-// Decision 216 (4) — what `@typeinfo.all(with: d)` answers: one `Declared`
+// Decision 216 (4) — what `@typeInfo.all(with: d)` answers: one `Declared`
 // per declaration of the program carrying the decorator `d`, by module path
 // then declaration order. `meta` is what `d` set on it (`decl.setMeta`);
 // `value` is the function itself, or for a type a thunk calling the
-// associated fn the query names (`@typeinfo.all(with: d, member: "m")`).
+// associated fn the query names (`@typeInfo.all(with: d, member: "m")`).
 // The compiler's mirror is `comptime.zig` `decl_reflection_src`.
 pub type DeclaredMeta(
     key: string,

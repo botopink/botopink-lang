@@ -14,5 +14,5 @@ pub fn job() -> string {
 pub type Box(n: i32)
 
 pub fn main() {
-    @print(@typeinfo.all(with: tagged).length);
+    @print(@typeInfo.all(with: tagged).length);
 }

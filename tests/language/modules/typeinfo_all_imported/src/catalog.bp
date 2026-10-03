@@ -4,6 +4,6 @@ import {marks.tagged};
 
 pub fn names() -> string {
     var out: string[] = [];
-    @typeinfo.all(with: tagged).forEach({ e -> out.push(e.name) });
+    @typeInfo.all(with: tagged).forEach({ e -> out.push(e.name) });
     return out.join(",");
 }

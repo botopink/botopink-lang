@@ -1004,7 +1004,7 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
             expr_ptr.* = rewrite.*;
         }
     }
-    // `@typeinfo(X).name` / `….meta.<d>.<k>` (decision 216 (2)) → the string
+    // `@typeInfo(X).name` / `….meta.<d>.<k>` (decision 216 (2)) → the string
     // constant inference answered, keyed by the access's own loc (its last
     // member's token — no builtin call shares it).
     if (expr_ptr.* == .identifier and expr_ptr.identifier.kind == .identAccess) {

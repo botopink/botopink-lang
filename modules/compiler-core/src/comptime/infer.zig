@@ -3790,7 +3790,7 @@ fn runDeclDecorators(
     anns: []const ast.Annotation,
     handle: decoratorEval.DeclHandle,
     memberOwner: ?[]const u8,
-    /// Set for a top-level declaration: what `@typeinfo.all` records of it.
+    /// Set for a top-level declaration: what `@typeInfo.all` records of it.
     declared: ?struct { kind: reflectionMod.DeclaredEntry.Kind, isPub: bool },
 ) InferError!void {
     for (anns) |a| {
@@ -3878,12 +3878,12 @@ fn runDeclDecorators(
                     const is_member = std.mem.eql(u8, handle.kind, "Field") or std.mem.eql(u8, handle.kind, "Method");
                     if (is_member) {
                         const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` on the {s} `{s}` calls `decl.setMeta`, and meta describes a top-level declaration", .{ diagnostics.decorator_meta_on_member, a.name, if (std.mem.eql(u8, handle.kind, "Field")) "field" else "method", handle.name });
-                        return decoratorError(env, a, msg, "`@typeinfo(X)` reflects a `type`, a `behavior` or a `fn`; set the meta from a decorator on the declaration itself.");
+                        return decoratorError(env, a, msg, "`@typeInfo(X)` reflects a `type`, a `behavior` or a `fn`; set the meta from a decorator on the declaration itself.");
                     }
                     const r = env.reflection orelse continue;
                     if (!try r.addMeta(env.modulePath, handle.name, .{ .decorator = dfn.name, .key = c.key, .value = c.value })) {
                         const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` sets `{s}` on `{s}` twice", .{ diagnostics.decorator_meta_duplicate, a.name, c.key, handle.name });
-                        return decoratorError(env, a, msg, "A decorator sets each of its keys once per declaration; `@typeinfo(X).meta` answers one value per key.");
+                        return decoratorError(env, a, msg, "A decorator sets each of its keys once per declaration; `@typeInfo(X).meta` answers one value per key.");
                     }
                 },
             },
@@ -3923,7 +3923,7 @@ fn refusePendingAssocType(env: *Env) InferError!void {
 }
 
 /// The names `program` declares at top level (`Env.ownDecls`) — what
-/// `@typeinfo(Name)` reflects in this module.
+/// `@typeInfo(Name)` reflects in this module.
 fn noteOwnDecls(env: *Env, program: ast.Program) InferError!void {
     for (program.decls) |decl| {
         const name: []const u8 = switch (decl) {
@@ -3937,7 +3937,7 @@ fn noteOwnDecls(env: *Env, program: ast.Program) InferError!void {
     }
 }
 
-/// The declaration `@typeinfo(<expr>)` reflects: the module that declares it
+/// The declaration `@typeInfo(<expr>)` reflects: the module that declares it
 /// and the name it is declared under. `Name` is this module's own declaration
 /// or an imported one (an alias answers the declaration, decision 110);
 /// `ns.Name` is `Name` of the module the namespace import `ns` binds.
@@ -3973,8 +3973,8 @@ fn stringLiteralText(arena: std.mem.Allocator, text: []const u8) ![]const u8 {
     return out.items;
 }
 
-/// Decision 216 (2) — a reflection read: `@typeinfo(X).name` and
-/// `@typeinfo(X).meta.<decorator>.<key>`, answered at compile time as a string
+/// Decision 216 (2) — a reflection read: `@typeInfo(X).name` and
+/// `@typeInfo(X).meta.<decorator>.<key>`, answered at compile time as a string
 /// constant (`env.srcRewrites` puts the literal in the read's place, the way
 /// `@src()` is spliced; `transform.zig` replaces the access node at its loc).
 /// Null when `ia` is not the end of such a read — a longer chain
@@ -3992,30 +3992,30 @@ fn inferTypeinfoRead(env: *Env, ia: anytype, loc: ast.Loc) InferError!?TypedExpr
     }
     if (node.* != .call or node.call.kind != .call) return null;
     const call = node.call.kind.call;
-    if (!call.is_builtin or !std.mem.eql(u8, call.callee, "typeinfo")) return null;
+    if (!call.is_builtin or !std.mem.eql(u8, call.callee, "typeInfo")) return null;
     std.mem.reverse([]const u8, members[0..count]);
     const chain = members[0..count];
 
     const read: enum { name, meta } = if (std.mem.eql(u8, chain[0], "name")) .name else if (std.mem.eql(u8, chain[0], "meta")) .meta else {
-        const msg = try std.fmt.allocPrint(env.arena, "{s}: `@typeinfo(…)` has no member `{s}`", .{ diagnostics.typeinfo_unknown_member, chain[0] });
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `@typeInfo(…)` has no member `{s}`", .{ diagnostics.typeinfo_unknown_member, chain[0] });
         env.lastError = TypeError.custom(msg, "Read `.name` (the declaration's name) or `.meta.<decorator>.<key>` (what a decorator recorded with `decl.setMeta`).").withLoc(loc);
         return error.TypeError;
     };
     const complete: usize = if (read == .name) 1 else 3;
     if (chain.len > complete) return null;
     if (chain.len < complete) {
-        const msg = try std.fmt.allocPrint(env.arena, "{s}: `@typeinfo(…).{s}` names a decorator's meta without its key", .{ diagnostics.typeinfo_unknown_member, std.mem.join(env.arena, ".", chain) catch return error.OutOfMemory });
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `@typeInfo(…).{s}` names a decorator's meta without its key", .{ diagnostics.typeinfo_unknown_member, std.mem.join(env.arena, ".", chain) catch return error.OutOfMemory });
         env.lastError = TypeError.custom(msg, "A meta read is `.meta.<decorator>.<key>` — the decorator's own name, then the key it set.").withLoc(loc);
         return error.TypeError;
     }
 
     if (call.args.len != 1 or call.trailing.len != 0) {
-        env.lastError = TypeError.custom(diagnostics.typeinfo_unknown_declaration ++ ": `@typeinfo` takes one declaration — `@typeinfo(City)`, `@typeinfo(models.City)`", null).withLoc(node.call.loc);
+        env.lastError = TypeError.custom(diagnostics.typeinfo_unknown_declaration ++ ": `@typeInfo` takes one declaration — `@typeInfo(City)`, `@typeInfo(models.City)`", null).withLoc(node.call.loc);
         return error.TypeError;
     }
     const target = reflectedDecl(env, call.args[0].value.*) orelse {
         const arg_loc = call.args[0].value.getLoc();
-        const msg = try std.fmt.allocPrint(env.arena, "{s}: `@typeinfo` reflects a declaration this module declares or imports, and this names none", .{diagnostics.typeinfo_unknown_declaration});
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `@typeInfo` reflects a declaration this module declares or imports, and this names none", .{diagnostics.typeinfo_unknown_declaration});
         env.lastError = TypeError.custom(msg, "Name a `type`, `behavior` or `fn` of this module, an imported one, or one through a namespace import (`models.City`).").withLoc(arg_loc);
         return error.TypeError;
     };
@@ -6904,9 +6904,8 @@ const runtime_builtin_names = [_][]const u8{
 /// `inferBuiltinCallReturnType` and the intercepts in `inferCallExpr` included.
 /// Only read to suggest a spelling in `unknown-builtin`.
 const all_builtin_names = runtime_builtin_names ++ [_][]const u8{
-    "src",          "block",      "expr",  "code",       "typeInfo",      "TypeOf",
-    "makeRecord",   "RecordKeys", "field", "getContext", "comptimeError", "typeinfo",
-    "typeinfo.all",
+    "src",        "block",      "expr",  "code",       "typeInfo",      "TypeOf",
+    "makeRecord", "RecordKeys", "field", "getContext", "comptimeError", "typeInfo.all",
 };
 
 fn isKnownBuiltinName(env: *Env, callee: []const u8) bool {
@@ -10350,7 +10349,7 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
             return error.TypeError;
         },
         .identAccess => |ia| {
-            // Decision 216 (2) — `@typeinfo(X).name`, `….meta.<d>.<k>`.
+            // Decision 216 (2) — `@typeInfo(X).name`, `….meta.<d>.<k>`.
             if (try inferTypeinfoRead(env, ia, loc)) |read| return read;
             // Decision 110 — `S.Red` for `import {Shape as S}` is `Shape.Red`.
             if (try importedTypeAliasReceiver(env, ia.receiver)) |recv| {
@@ -13713,7 +13712,7 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
             }
             // `@src()` (1.0.10-beta decision 73) — before the arguments are
             // inferred, so `@src(x)` reports the builtin's rule and not `x`.
-            if (call.is_builtin and std.mem.eql(u8, call.callee, "typeinfo.all")) {
+            if (call.is_builtin and std.mem.eql(u8, call.callee, "typeInfo.all")) {
                 // Decision 216 (4) — the answer `typeinfo_all.plan` built for
                 // this call; tooling that runs no decorator reads an empty one.
                 const answer = env.typeinfoAll.get(loc) orelse empty: {
@@ -13725,11 +13724,9 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                 try env.srcRewrites.put(loc, answer);
                 return inferExprTyped(env, answer.*);
             }
-            if (call.is_builtin and std.mem.eql(u8, call.callee, "typeinfo")) {
-                env.lastError = TypeError.custom(
-                    diagnostics.typeinfo_without_member ++ ": `@typeinfo(…)` is read through a member, not used as a value",
-                    "Read `@typeinfo(X).name` or `@typeinfo(X).meta.<decorator>.<key>`; each is a string constant fixed at compile time.",
-                ).withLoc(loc);
+            if (call.is_builtin and (std.mem.eql(u8, call.callee, "typeinfo") or std.mem.startsWith(u8, call.callee, "typeinfo."))) {
+                const msg = try std.fmt.allocPrint(env.arena, "{s}: `@{s}` is spelled `@{s}`", .{ diagnostics.typeinfo_lowercase, call.callee, try std.mem.concat(env.arena, u8, &.{ "typeInfo", call.callee["typeinfo".len..] }) });
+                env.lastError = TypeError.custom(msg, "The one reflection builtin is `@typeInfo` — `@typeInfo(X).name`, `@typeInfo(X).meta.<decorator>.<key>`, `@typeInfo.all(with: d)`, and `@typeInfo(T)` as a value is the structural `TypeInfo`.").withLoc(loc);
                 return error.TypeError;
             }
             if (call.is_builtin and std.mem.eql(u8, call.callee, "src")) {

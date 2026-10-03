@@ -402,11 +402,11 @@ pub const decorator_type_not_one_type: []const u8 = "decorator-type-not-one-type
 /// written, not left to the backend.
 pub const unknown_associated_fn: []const u8 = "unknown-associated-fn";
 
-/// `@typeinfo.all` written without its labels, with an unknown one, or with
+/// `@typeInfo.all` written without its labels, with an unknown one, or with
 /// `member:` where it does not apply.
 pub const typeinfo_all_arguments: []const u8 = "typeinfo-all-arguments";
 
-/// `@typeinfo.all(with: x)` where `x` names no body-carrying decorator.
+/// `@typeInfo.all(with: x)` where `x` names no body-carrying decorator.
 pub const typeinfo_all_not_decorator: []const u8 = "typeinfo-all-not-decorator";
 
 /// One query over a decorator carried by functions and by types.
@@ -419,28 +419,28 @@ pub const typeinfo_all_needs_member: []const u8 = "typeinfo-all-needs-member";
 /// an import the answer adds).
 pub const typeinfo_all_private: []const u8 = "typeinfo-all-private";
 
-/// An import of a module that reads `@typeinfo.all`.
+/// An import of a module that reads `@typeInfo.all`.
 pub const typeinfo_all_imported: []const u8 = "typeinfo-all-imported";
 
 /// `decl.setMeta` from a field's or a method's decorator: meta describes a
-/// top-level declaration, the one `@typeinfo` reflects.
+/// top-level declaration, the one `@typeInfo` reflects.
 pub const decorator_meta_on_member: []const u8 = "decorator-meta-on-member";
 
 /// A decorator setting one of its keys twice on one declaration.
 pub const decorator_meta_duplicate: []const u8 = "decorator-meta-duplicate";
 
-/// `@typeinfo(X)` used as a value: it is read through `.name` or
-/// `.meta.<decorator>.<key>`.
-pub const typeinfo_without_member: []const u8 = "typeinfo-without-member";
+/// Decision 248 — the lowercase `@typeInfo(X)` / `@typeInfo.all(…)`: the one
+/// reflection builtin is `@typeInfo`.
+pub const typeinfo_lowercase: []const u8 = "typeinfo-lowercase";
 
-/// `@typeinfo(X).<m>` naming no reflection member (or `.meta` / `.meta.<d>`
+/// `@typeInfo(X).<m>` naming no reflection member (or `.meta` / `.meta.<d>`
 /// left without its key).
 pub const typeinfo_unknown_member: []const u8 = "typeinfo-unknown-member";
 
-/// `@typeinfo(X)` where `X` names no declaration of the module or its imports.
+/// `@typeInfo(X)` where `X` names no declaration of the module or its imports.
 pub const typeinfo_unknown_declaration: []const u8 = "typeinfo-unknown-declaration";
 
-/// `@typeinfo(X).meta.<decorator>.<key>` naming a key that decorator did not set.
+/// `@typeInfo(X).meta.<decorator>.<key>` naming a key that decorator did not set.
 pub const typeinfo_meta_missing: []const u8 = "typeinfo-meta-missing";
 
 // ── Lookup table — every code (skipping aliases & reserved-empties) ─────────
@@ -527,7 +527,7 @@ pub const all_codes = [_][]const u8{
     typeinfo_all_imported,
     decorator_meta_on_member,
     decorator_meta_duplicate,
-    typeinfo_without_member,
+    typeinfo_lowercase,
     typeinfo_unknown_member,
     typeinfo_unknown_declaration,
     typeinfo_meta_missing,

@@ -11,5 +11,5 @@ pub fn mailer() -> string {
 }
 
 pub fn main() {
-    @print(@typeinfo.all(with: [service, service]).length);
+    @print(@typeInfo.all(with: [service, service]).length);
 }
