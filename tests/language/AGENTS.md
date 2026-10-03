@@ -290,10 +290,15 @@ the lowercase `@typeinfo(…)` / `@typeinfo.all(…)` where it is written (`type
 Decision 253 makes the catalogue the static `@TypeInfo.all` of the builtin type:
 `reject/typeinfo_all_on_function` refuses `@typeInfo.all(…)` (`typeinfo-all-on-function`).
 Decision 254 types the answer `Declared<unknown>[]` whatever the program declares:
-`run/typeinfo_all_unknown_value` catalogues two functions of different signatures in one answer, and
+`run/typeinfo_all_unknown_value` catalogues two functions of different signatures in one answer
+(each naming its declared return type, `returnTypeName` — decision 256; `run/typeinfo_all_list` reads
+it `""` for a type), and
 `reject/typeinfo_all_value_unknown` refuses an entry's `value` used as a function without a test.
 The registration and list cells therefore read `name`, `module` and `meta` only; calling a `value`
 through `is fn() -> T` comes with front 130.
+Decision 252 (every builtin declared, a call held to its declaration) adds
+`reject/builtin_arguments` — `@panic` given a second argument its declaration does not have,
+`builtin-arguments` at the call.
 C-03's beam half adds `run/std_template_host_fns_across_modules` — std host functions whose
 `@External.Erlang` body is a template (`fs.exists`, `fs.readText`, `os.eol`, `process.platform`,
 `encoding.hexEncode`, `hash.sha256`, `json.quote`, `regex.matches`) called from the program's

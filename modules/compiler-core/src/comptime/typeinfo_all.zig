@@ -5,11 +5,14 @@
 //! The answer is an array literal of the prelude record `Declared<T>`
 //! (`comptime.zig` `decl_reflection_src`):
 //!
-//!     Declared(name: "about", module: "app/about",
+//!     Declared<unknown>(name: "about", module: "app/about",
 //!              meta: [DeclaredMeta(key: "path", value: "/about")],
-//!              value: about)
+//!              returnTypeName: "string", value: about)
 //!
 //! `meta` is what `d` set on the declaration (`decl.setMeta`), in set order.
+//! `returnTypeName` is a function's declared return type as the source spells
+//! it, `""` for a type (decision 256), so a catalogue can be keyed by the type
+//! a provider answers.
 //! `value` is the function itself for a function, and for a `type` or a
 //! `behavior` a thunk `{ -> T.<member>() }` calling the associated fn the
 //! query names (`member: "register"`): a type is no value. Every entry is
@@ -340,7 +343,9 @@ pub fn plan(
                 try quoted(&text, arena, m.value);
                 try text.append(arena, ')');
             }
-            try text.appendSlice(arena, "], value: ");
+            try text.appendSlice(arena, "], returnTypeName: ");
+            try quoted(&text, arena, e.returnTypeName);
+            try text.appendSlice(arena, ", value: ");
             if (of_types) {
                 try text.print(arena, "{{ -> {s}.{s}() }}", .{ ref, member.? });
             } else try text.appendSlice(arena, ref);

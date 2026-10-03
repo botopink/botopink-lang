@@ -10,7 +10,7 @@ val info = @typeInfo(void);
     {
       "ast": "val",
       "ident": "info",
-      "return_type": "TypeInfo",
+      "return_type": "TypeInfo<void>",
       "expr": {
         "ast": "call",
         "params": [
@@ -18,7 +18,7 @@ val info = @typeInfo(void);
             "value": "void"
           }
         ],
-        "return_type": "TypeInfo"
+        "return_type": "TypeInfo<void>"
       }
     }
   ]

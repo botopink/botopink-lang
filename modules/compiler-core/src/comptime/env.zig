@@ -467,6 +467,13 @@ pub fn assocTypeName(arena: std.mem.Allocator, owner: []const u8, name: []const 
     return std.fmt.allocPrint(arena, "{s}__{s}", .{ owner, name });
 }
 
+/// Decision 252 — one builtin's declared signature (`Env.builtinDecls`).
+pub const BuiltinDecl = struct {
+    genericParams: []const ast.GenericParam,
+    params: []const ast.Param,
+    returnType: ?ast.TypeRef,
+};
+
 pub const DecoratorSig = struct {
     params: []const ast.Param,
     fn_decl: ?ast.FnDecl = null,
@@ -1064,6 +1071,12 @@ pub const Env = struct {
     /// `panic()` call site at user code resolves to the parsed `FnDecl` and
     /// its trailing literal default lands in `c.args` before dispatch.
     stdlibFnDecls: std.StringHashMap(ast.FnDecl),
+    /// Decision 252 — every builtin's declaration, parsed by
+    /// `registerStdlib` from `builtins.d.bp` and `builtins_fns.d.bp` and keyed
+    /// by the name after `@` (`TypeInfo.all` for the static method). A call to
+    /// a builtin held `.declaration` (`comptime/builtins.zig`) is checked
+    /// against it (`infer.zig` `checkBuiltinArguments`).
+    builtinDecls: std.StringHashMap(BuiltinDecl),
     /// Constructor parameter lists for record / struct / enum-variant types,
     /// keyed by the bare type name (`Config`) for records/structs and the
     /// `Enum.Variant` qualified path (`Level.Error`) for enum variants. Each
@@ -1162,6 +1175,7 @@ pub const Env = struct {
             .implicitStdModules = std.StringHashMap(void).init(arena),
             .decorators = std.StringHashMap(DecoratorSig).init(arena),
             .stdlibFnDecls = std.StringHashMap(ast.FnDecl).init(arena),
+            .builtinDecls = std.StringHashMap(BuiltinDecl).init(arena),
             .ctorParams = std.StringHashMap([]const ast.Param).init(arena),
             .defaultInjections = std.AutoHashMap(ast.Loc, DefaultFill).init(arena),
             .fnParams = std.StringHashMap([]const ast.Param).init(arena),
@@ -1243,6 +1257,7 @@ pub const Env = struct {
             .implicitStdModules = std.StringHashMap(void).init(arena),
             .decorators = try tmpl.decorators.cloneWithAllocator(arena),
             .stdlibFnDecls = try tmpl.stdlibFnDecls.cloneWithAllocator(arena),
+            .builtinDecls = try tmpl.builtinDecls.cloneWithAllocator(arena),
             .ctorParams = try tmpl.ctorParams.cloneWithAllocator(arena),
             .defaultInjections = std.AutoHashMap(ast.Loc, DefaultFill).init(arena),
             .fnParams = try tmpl.fnParams.cloneWithAllocator(arena),
@@ -1307,6 +1322,7 @@ pub const Env = struct {
         self.implicitStdModules.deinit();
         self.decorators.deinit();
         self.stdlibFnDecls.deinit();
+        self.builtinDecls.deinit();
         self.ctorParams.deinit();
         self.defaultInjections.deinit();
         self.fnParams.deinit();

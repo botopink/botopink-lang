@@ -9,15 +9,15 @@
 // name that helper.
 #[External.Node("console.log($args)")]
 #[External.Erlang("'__bp_print'([$args])")]
-pub declare fn print(message: string);
+pub declare fn print(value: unknown);
 
 #[External.Node("console.log($args)")]
 #[External.Erlang("'__bp_print'([$args])")]
-pub declare fn println(message: string);
+pub declare fn println(value: unknown);
 
 #[External.Node("console.debug($args)")]
 #[External.Erlang("'__bp_print'([$args])")]
-pub declare fn debug(value: string);
+pub declare fn debug(value: unknown);
 
 // ── result type ──────────────────────────────────────────────────────────────
 
@@ -301,36 +301,99 @@ pub type External implement Annotation {
     Typescript(template: string),
 }
 
-// ── type reflection ──────────────────────────────────────────────────────────
+// ── builtin functions (decision 252) ────────────────────────────────────────
+//
+// Every `@name(…)` a program can call is declared here (or, for the two with a
+// literal default, in the sibling `builtins_fns.d.bp`): bodyless, because the
+// compiler IS the body, and without `#[@External.<Target>]` unless a host
+// supplies it. The compiler's own table of what it implements is
+// `modules/compiler-core/src/comptime/builtins.zig`; a unit test there parses
+// both files and fails, naming the builtin, when a builtin is implemented and
+// not declared, declared and not implemented, or declared with another
+// signature. A call is checked against the declaration (its arity and its
+// argument types — `builtin-arguments` names the declaration), except where a
+// builtin's own rule refuses first (`@src`, `@typeInfo`, `@TypeInfo.all`,
+// `@getContext`, `@comptimeError`) or where the declaration cannot spell what
+// the compiler accepts (a row of the front's table with an open question).
+//
+// A builtin marked COMPTIME-ONLY is evaluated while the program is checked or
+// while a decorator / template body runs, and never reaches run time.
 
-// F10 — the five intrinsics below are written in the file's own dialect:
-// `pub declare fn`, `->` before the return type, a closing `;`. They are
-// bodyless because the compiler IS the body — each is reached as a builtin
-// call (`@field`, `@trap`, `@emit`, `@module`, `@getContext`), never as a
-// plain name — and `declare fn` is the language's bodyless form. They carry
-// no `#[@External.<Target>]` because no host supplies them.
+// `@trap()` stops the program at once, with no message.
+pub declare fn trap() -> noreturn;
+
+// `@block { … }` — a block that is an expression: its value is what its
+// `return`s carry (they target the block, not the enclosing fn), else its
+// tail expression's.
+pub declare fn block<T>(body: fn() -> T) -> T;
+
+// `@field(obj, "name")` — the field `name` of `obj`, the name known at
+// compile time: typed as that field when `obj` is a known non-generic record,
+// otherwise left open. COMPTIME-ONLY name.
 pub declare fn field<T, F>(obj: T, comptime name: string) -> F;
 
-// ── runtime ──────────────────────────────────────────────────────────────────
-//
-// `todo` and `panic` live in the sibling `builtins_fns.d.bp` so the compiler's
-// `registerStdlib` can parse them into the global env (each has a trailing
-// literal default that `expandTrailingDefaults` injects at the call site).
-// `trap` carries no default, so its decl stays here doc-only.
+// `@src()` — the place it is written, as a `SourceLocation` (decision 73;
+// the section below). COMPTIME-ONLY: rewritten into the constructor call.
+pub declare fn src() -> SourceLocation;
 
-pub declare fn trap() -> noreturn;
+// `@module()` — declared, and refused at every call (`builtin-not-lowered`):
+// no target lowers a module value.
+pub declare fn module() -> module;
+
+// `@getContext(T)` — the context-retrieval intrinsic: the active provider of
+// context type `T` from the enclosing `@Component` fn's scope stack, typed as
+// `T` itself. `T` must be a type of the enclosing fn's base tree. Errors:
+// outside a `-> @Component<…>` fn body (`context-getcontext-outside-context-fn`),
+// an argument that is not a type name (`context-getcontext-expects-type`), a
+// type outside the base's tree (`context-getcontext-anchor-violation`).
+// Declared `comptime` in its sole type argument because the base check runs at
+// compile time; the runtime side is the inside-out walk the lowering inserts.
+pub declare fn getContext<T>(comptime _: type) -> T;
+
+// `@typeInfo(T)` — the reflection of the declaration `T` (decisions 216, 248,
+// 253): `@typeInfo(City).name` and `@typeInfo(City).meta.<decorator>.<key>`
+// are string constants (the only members read today). COMPTIME-ONLY: no
+// run-time code. The program's catalogue is the static `@TypeInfo.all` of the
+// answer's type (below).
+pub declare fn typeInfo<T>(comptime _: type) -> TypeInfo<T>;
+
+// `@TypeOf(value)` — the type of `value`, as the expression's type.
+// COMPTIME-ONLY.
+pub declare fn TypeOf<T>(value: T) -> T;
+
+// `@makeRecord(fields)` — a record type built from field descriptors, its
+// type open to inference. COMPTIME-ONLY.
+pub declare fn makeRecord<R>(fields: RecordField[]) -> R;
+
+// `@RecordKeys(T)` — the field names of the record type `T`. COMPTIME-ONLY.
+pub declare fn RecordKeys(comptime _: type) -> string[];
+
+// `@comptimeError(message)` — fails the check with `comptime error:
+// <message>` at the call. COMPTIME-ONLY.
+pub declare fn comptimeError(comptime message: string) -> noreturn;
 
 // Contribute generated top-level declarations to the program from a decorator
 // body. `@emit("pub val userServiceSingleton = …")` parses `source` as botopink
 // declarations and splices them into the annotated declaration's module, so a
 // decorator can build wiring (singletons, a DI graph, a router table) as
 // ordinary code. May be called any number of times; each call appends.
-// Comptime-only.
+// COMPTIME-ONLY.
 pub declare fn emit(source: string);
 
-// ── module imports ───────────────────────────────────────────────────────────
+// `@compilerError(message)` — a decorator or template body rejects the
+// declaration it runs over with `message`. COMPTIME-ONLY.
+pub declare fn compilerError(message: string) -> noreturn;
 
-pub declare fn module() -> module;
+// `@expr(value)` lifts a comptime value as code, `@code(text)` parses
+// generated source text; both only inside a template function
+// (`-> @Expr<…>`). COMPTIME-ONLY.
+pub declare fn expr<T>(comptime value: T) -> Expr<T>;
+
+pub declare fn code<T>(text: string) -> Expr<T>;
+
+// `todo` and `panic` live in the sibling `builtins_fns.d.bp` so the compiler's
+// `registerStdlib` can parse them into the global env (each has a trailing
+// literal default that `expandTrailingDefaults` injects at the call site).
 
 // ── target enum ──────────────────────────────────────────────────────────────
 
@@ -377,21 +440,6 @@ pub type Host implement Annotation {
     /// The function body is provided by the host's raw-infra WAT block.
     host,
 }
-
-// `getContext(T)` is the context-retrieval intrinsic. It retrieves the
-// active provider of context type `T` from the enclosing `@Component` fn's
-// scope stack. `T` must be the enclosing fn's base (or a subtype thereof);
-// the call returns `Component<T, V>` where `V` is the provider's authored
-// value slot. Errors: [E1] context-unbound when no `T` provider is on the
-// stack; [E2] context-anchor-violation when `T` is outside the base's tree.
-// Only legal inside a `-> @Component<…>` fn body, behind `use`:
-//
-//   val ctx = use getContext(BasePagamento)
-//
-// Declared `comptime` in its sole type argument because the base check runs
-// at compile time; the runtime side is the inside-out walk inserted by the
-// lowering.
-pub declare fn getContext<T>(comptime _: type) -> Component<T, unknown>;
 
 // ── Expr template model (std.syntax) ─────────────────────────────────────────
 // Data model for `Expr` templates. Interfaces are pure behaviour contracts, so
@@ -635,8 +683,11 @@ pub behavior Decl {
 // per declaration of the program carrying the decorator `d`, by module path
 // then declaration order. `meta` is what `d` set on it (`decl.setMeta`);
 // `value` is the function itself, or for a type a thunk calling the
-// associated fn the query names (`@TypeInfo.all(with: d, member: "m")`).
-// The compiler's mirror is `comptime.zig` `decl_reflection_src`.
+// associated fn the query names (`@TypeInfo.all(with: d, member: "m")`),
+// typed `unknown` (decision 254). `returnTypeName` is a function's declared
+// return type as the source spells it (`"Clock"`), `""` for a type (decision
+// 256). The compiler's mirror is `comptime.zig`
+// `decl_reflection_src`.
 pub type DeclaredMeta(
     key: string,
     value: string,
@@ -646,5 +697,38 @@ pub type Declared<T>(
     name: string,
     module: string,
     meta: DeclaredMeta[],
+    returnTypeName: string,
     value: T,
+)
+
+// ── TypeInfo (decisions 216, 248, 253, 254) ─────────────────────────────────
+// What `@typeInfo(T)` answers. Its members are read at compile time:
+// `name` and `meta.<decorator>.<key>` today, as string constants
+// (`typeinfo-unknown-member` refuses the others until they are answered).
+// `all` is the program's catalogue, a STATIC method called as
+// `@TypeInfo.all(with: d)` or `@TypeInfo.all(with: [a, b], member: "m")`:
+// every declaration carrying one of the listed decorators, always as
+// `Declared<unknown>[]` (decision 254), whatever the program declares — a use
+// narrows `value` with `is`. `with:` names a decorator or a list of them,
+// which no type spells (front 134's question 134-b): it is checked by the
+// catalogue's own rule (`typeinfo-all-arguments`, `typeinfo-all-not-decorator`).
+// COMPTIME-ONLY: the answer is built while the program is checked.
+// The compiler's mirror is `comptime.zig` `type_info_src`.
+pub type TypeInfo<T>(
+    name: string,
+    module: string,
+    fields: Field[],
+    methods: Method[],
+    meta: DeclaredMeta[],
+) {
+    declare fn all(
+        with: unknown,
+        member: ?string = null,
+    ) -> Declared<unknown>[];
+}
+
+// One field descriptor `@makeRecord` builds a record type from.
+pub type RecordField(
+    name: string,
+    typeName: string,
 )

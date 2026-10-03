@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val info = @typeInfo(string);
+val ti: TypeInfo<i32> = @typeInfo(i32);
 ```
 
 ----- TYPED AST JSON -- main.json
@@ -9,16 +9,16 @@ val info = @typeInfo(string);
   "declarations": [
     {
       "ast": "val",
-      "ident": "info",
-      "return_type": "TypeInfo<string>",
+      "ident": "ti",
+      "return_type": "TypeInfo<i32>",
       "expr": {
         "ast": "call",
         "params": [
           {
-            "value": "string"
+            "value": "i32"
           }
         ],
-        "return_type": "TypeInfo<string>"
+        "return_type": "TypeInfo<i32>"
       }
     }
   ]

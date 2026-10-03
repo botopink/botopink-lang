@@ -20,6 +20,7 @@ const reflectionMod = @import("reflection.zig");
 const effectChain = @import("effect_chain.zig");
 const template = @import("template.zig");
 const primOpTemplate = @import("primOpTemplate.zig");
+const builtinsMod = @import("builtins.zig");
 const templateEval = @import("template_eval.zig");
 const decoratorEval = @import("decorator_eval.zig");
 const dslHygiene = @import("dsl_hygiene.zig");
@@ -3822,6 +3823,7 @@ fn runDeclDecorators(
             .name = handle.name,
             .kind = d.kind,
             .isPub = d.isPub,
+            .returnTypeName = if (d.kind == .function) handle.returnType else "",
             .decorator_owner = env.comptimeOwnerOf(dfn),
             .decorator_name = dfn.name,
             .seq = 0,
@@ -6805,6 +6807,7 @@ fn inferBuiltinCallReturnType(
     typedTrailing: []ast.TrailingLambdaOf(.typed),
     loc: ast.Loc,
 ) InferError!*T.Type {
+    try checkBuiltinArguments(env, callee, typedArgs, typedTrailing, loc);
     // `@block { … }` — the value of the block is what its `return`s carry
     // (C1: those returns target the block, not the enclosing fn); a block
     // without a valued `return` takes its tail expression's type.
@@ -6845,14 +6848,19 @@ fn inferBuiltinCallReturnType(
     }
 
     // ── Type introspection / manipulation builtins (§1.0.0-beta) ─────────────
-    // `@typeInfo(T: type) -> TypeInfo` — returns a TypeInfo enum variant
-    // describing the structure of T. Comptime-only: evaluated during inference,
-    // produces zero runtime code.
+    // `@typeInfo(T) -> TypeInfo<T>` (decisions 248, 253) — the reflection of
+    // `T`; its `.name` / `.meta.<d>.<k>` reads are answered before this arm
+    // (`inferTypeinfoRead`). Comptime-only: no run-time code.
     if (std.mem.eql(u8, callee, "typeInfo")) {
-        // Accept any type expression (identifier, array, optional, etc.).
-        // Type-checking ensures the argument is a type, so no additional
-        // validation is needed here — the inference system handles it.
-        return env.namedType("TypeInfo");
+        const reflected: *T.Type = blk: {
+            if (typedArgs.len != 1) break :blk try env.freshVar();
+            const arg = typedArgs[0].value;
+            if (arg.* != .identifier or arg.identifier.kind != .ident) break :blk try env.freshVar();
+            const name = arg.identifier.kind.ident;
+            if (env.lookupTypeDef(name) == null and !isPrimitiveTypeName(name)) break :blk try env.freshVar();
+            break :blk try env.namedType(name);
+        };
+        return env.namedTypeArgs("TypeInfo", &.{reflected});
     }
     // `@TypeOf(value: any) -> type` — returns the type of any value.
     // Comptime-only.
@@ -7002,10 +7010,7 @@ fn inferBuiltinCallReturnType(
     // and `return @panic("…");` type in any position. A declared
     // `builtins_fns.d.bp` entry answers its own return; the name list only
     // holds the doc-only `trap`.
-    if (env.stdlibFnDecls.get(callee)) |fd| {
-        if (fd.returnType) |rt| if (rt == .named and std.mem.eql(u8, rt.named, "noreturn")) return env.namedType("noreturn");
-    }
-    if (std.mem.eql(u8, callee, "trap")) return env.namedType("noreturn");
+    if (builtinsMod.neverReturns(callee)) return env.namedType("noreturn");
     // `@module()` is declared `-> module` in `builtins.d.bp` but no target
     // lowers it (commonJS emitted `@module()` verbatim, erlang `module/0`
     // undefined): refused at the `@` rather than typed `void` in silence.
@@ -7016,10 +7021,10 @@ fn inferBuiltinCallReturnType(
         ).withLoc(loc);
         return error.TypeError;
     }
-    // The other runtime builtins (`@print`, `@debug`, `@emit`, …) answer
-    // nothing: `void`. Anything else is a typo — refuse it (decision 67)
-    // instead of compiling it to `void` in silence.
-    if (isKnownBuiltinName(env, callee)) return env.namedType("void");
+    // The other builtins (`@print`, `@debug`, `@emit`, …) answer what their
+    // declaration says — `void`. Anything else is a typo — refuse it
+    // (decision 67) instead of compiling it to `void` in silence.
+    if (isKnownBuiltinName(callee)) return env.namedType("void");
     env.lastError = TypeError.custom(
         try unknownBuiltinMessage(env, callee),
         "Builtin names are exact and lowercase (`@print`, `@panic`, `@src`); see `libs/std/src/builtins.d.bp` for the list.",
@@ -7065,39 +7070,93 @@ fn inferCatalogueAnswer(env: *Env, answer: ast.Expr, loc: ast.Loc) InferError!Ty
 /// by `withSourceLocationDecl`.
 const source_location_type_name = "SourceLocation";
 
-/// The builtin fns that reach `inferBuiltinCallReturnType`'s fallback by
-/// design: runtime builtins the backends lower natively (`@print`, `@debug`,
-/// `@trap`, …), plus the `declare fn`s of `builtins_fns.d.bp` (`@panic`,
-/// `@todo`) and the `print`/`println` bindings `registerBuiltins` seeds.
-const runtime_builtin_names = [_][]const u8{
-    "print", "println", "debug", "panic", "todo", "trap", "compilerError", "module", "emit", "is",
-};
+fn isKnownBuiltinName(callee: []const u8) bool {
+    if (builtinsMod.find(callee) != null) return true;
+    // The parser's own sugar: `x is T` lands as the `is` builtin and `xs[i]`
+    // as the `[]` builtin call. Both are intercepted in `inferCallExpr`; the
+    // names stay known so one that survived a degraded module is not reported
+    // as a misspelled builtin.
+    return std.mem.eql(u8, callee, ast.is_builtin_name) or std.mem.eql(u8, callee, ast.index_builtin_name);
+}
 
-/// Every `@name` the checker or a backend understands — the arms of
-/// `inferBuiltinCallReturnType` and the intercepts in `inferCallExpr` included.
-/// Only read to suggest a spelling in `unknown-builtin`.
-const all_builtin_names = runtime_builtin_names ++ [_][]const u8{
-    "src",        "block",      "expr",  "code",       "typeInfo",      "TypeOf",
-    "makeRecord", "RecordKeys", "field", "getContext", "comptimeError", "TypeInfo.all",
-};
+fn isPrimitiveTypeName(name: []const u8) bool {
+    const names = [_][]const u8{ "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64", "bool", "string", "void", "unknown" };
+    for (names) |n| if (std.mem.eql(u8, n, name)) return true;
+    return false;
+}
 
-fn isKnownBuiltinName(env: *Env, callee: []const u8) bool {
-    for (runtime_builtin_names) |n| {
-        if (std.mem.eql(u8, n, callee)) return true;
+/// Decision 252 — a call to a builtin held `.declaration` (`comptime/
+/// builtins.zig`) meets its declaration (`Env.builtinDecls`, from
+/// `builtins.d.bp` / `builtins_fns.d.bp`): no more arguments than it declares,
+/// every parameter without a default given, a label naming a parameter, and
+/// each argument's type the parameter's (generic parameters fresh per call; a
+/// `type` parameter is the builtin's own to read). Refused at the call as
+/// `builtin-arguments`, naming the declaration; a type that disagrees is the
+/// ordinary mismatch, located at the argument.
+fn checkBuiltinArguments(
+    env: *Env,
+    callee: []const u8,
+    typedArgs: []ast.CallArgOf(.typed),
+    typedTrailing: []ast.TrailingLambdaOf(.typed),
+    loc: ast.Loc,
+) InferError!void {
+    const row = builtinsMod.find(callee) orelse return;
+    if (row.held != .declaration) return;
+    const decl = env.builtinDecls.get(callee) orelse return;
+    const given = typedArgs.len + typedTrailing.len;
+    const refuse = struct {
+        fn f(e: *Env, sig: []const u8, comptime fmt: []const u8, args: anytype, l: ast.Loc) InferError {
+            const what = std.fmt.allocPrint(e.arena, fmt, args) catch return error.OutOfMemory;
+            const msg = std.fmt.allocPrint(e.arena, "{s}: {s} — `@{s}` is declared in `builtins.d.bp`", .{ diagnostics.builtin_arguments, what, sig }) catch return error.OutOfMemory;
+            e.lastError = TypeError.custom(msg, "Call it as its declaration says (`libs/std/src/builtins.d.bp`, decision 252).").withLoc(l);
+            return error.TypeError;
+        }
+    }.f;
+    if (given > decl.params.len) {
+        return refuse(env, row.signature, "`@{s}` takes {d} argument{s}, {d} given", .{ callee, decl.params.len, if (decl.params.len == 1) "" else "s", given }, loc);
     }
-    // The parser's own sugar: `xs[i]` lands as the `[]` builtin call. C-02
-    // intercepts it in `inferCallExpr` and it no longer reaches the `void`
-    // fallback below; the name stays known so a `[]` that survived a degraded
-    // module is not reported as a misspelled builtin.
-    if (std.mem.eql(u8, callee, ast.index_builtin_name)) return true;
-    return env.stdlibFnDecls.contains(callee);
+    // Which parameter each argument binds: a label names one, an unlabelled
+    // argument takes the next unbound, a trailing lambda the next after them.
+    const bound = try env.arena.alloc(bool, decl.params.len);
+    @memset(bound, false);
+    var genericMap = std.StringHashMap(*T.Type).init(env.arena);
+    for (decl.genericParams) |g| try genericMap.put(g.name, try env.freshVar());
+    var next: usize = 0;
+    for (typedArgs) |a| {
+        const at: usize = if (a.label) |label| blk: {
+            for (decl.params, 0..) |p, i| if (std.mem.eql(u8, p.name, label)) break :blk i;
+            return refuse(env, row.signature, "`@{s}` has no parameter `{s}`", .{ callee, label }, a.value.getLoc());
+        } else blk: {
+            while (next < bound.len and bound[next]) next += 1;
+            break :blk next;
+        };
+        if (at >= bound.len or bound[at]) {
+            return refuse(env, row.signature, "`@{s}` takes {d} argument{s}", .{ callee, decl.params.len, if (decl.params.len == 1) "" else "s" }, a.value.getLoc());
+        }
+        bound[at] = true;
+        const p = decl.params[at];
+        if (p.typeRef == .typeparam) continue;
+        const want = try resolveTypeRefInContext(env, p.typeRef, genericMap);
+        try unifyArgument(env, want, a.value.getType(), a.value.getLoc());
+    }
+    for (typedTrailing) |_| {
+        while (next < bound.len and bound[next]) next += 1;
+        if (next >= bound.len) return refuse(env, row.signature, "`@{s}` takes no trailing lambda", .{callee}, loc);
+        bound[next] = true;
+    }
+    for (decl.params, bound) |p, b| {
+        if (!b and p.default == null) {
+            return refuse(env, row.signature, "`@{s}` needs `{s}`", .{ callee, p.name }, loc);
+        }
+    }
 }
 
 /// `unknown-builtin: unknown builtin \`@name\`` — with the nearest known name
 /// when one is an edit away (`@pritn` → `@print`), the way `removedBuiltinType`
 /// points at a replacement.
 fn unknownBuiltinMessage(env: *Env, callee: []const u8) ![]const u8 {
-    for (all_builtin_names) |candidate| {
+    for (builtinsMod.table) |row| {
+        const candidate = row.name;
         if (editDistanceIsOne(callee, candidate)) {
             return std.fmt.allocPrint(
                 env.arena,
@@ -9496,11 +9555,7 @@ fn stmtsAlwaysExit(env: *Env, stmts: []const ast.Stmt) bool {
 /// Whether a call's callee is declared `-> noreturn` (or is one of the
 /// builtins that are).
 fn callNeverReturns(env: *Env, cc: anytype) bool {
-    if (cc.is_builtin) {
-        const names = [_][]const u8{ "panic", "todo", "trap", "compilerError" };
-        for (names) |n| if (std.mem.eql(u8, n, cc.callee)) return true;
-        return false;
-    }
+    if (cc.is_builtin) return builtinsMod.neverReturns(cc.callee);
     if (cc.receiver != null) return false;
     const ty = env.lookup(cc.callee) orelse return false;
     const d = ty.deref();
@@ -13919,7 +13974,7 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
             }
             if (call.is_builtin and (std.mem.eql(u8, call.callee, "typeinfo") or std.mem.startsWith(u8, call.callee, "typeinfo."))) {
                 const msg = try std.fmt.allocPrint(env.arena, "{s}: `@{s}` is spelled `@{s}`", .{ diagnostics.typeinfo_lowercase, call.callee, if (std.mem.eql(u8, call.callee, "typeinfo.all")) "TypeInfo.all" else try std.mem.concat(env.arena, u8, &.{ "typeInfo", call.callee["typeinfo".len..] }) });
-                env.lastError = TypeError.custom(msg, "The one reflection builtin is `@typeInfo` — `@typeInfo(X).name`, `@typeInfo(X).meta.<decorator>.<key>`, `@TypeInfo.all(with: d)`, and `@typeInfo(T)` as a value is the structural `TypeInfo`.").withLoc(loc);
+                env.lastError = TypeError.custom(msg, "The one reflection builtin is `@typeInfo` — `@typeInfo(X).name`, `@typeInfo(X).meta.<decorator>.<key>`, `@TypeInfo.all(with: d)`, and `@typeInfo(T)` as a value is a `TypeInfo<T>`.").withLoc(loc);
                 return error.TypeError;
             }
             if (call.is_builtin and std.mem.eql(u8, call.callee, "src")) {

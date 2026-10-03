@@ -1,6 +1,8 @@
 //// Decision 254 — `@TypeInfo.all(…)` answers `Declared<unknown>[]` whatever
 //// the program declares, so declarations whose values differ in type sit in
 //// one answer: two functions of different signatures, catalogued together.
+//// Each entry names its function's declared return type (`returnTypeName`,
+//// decision 256), the key a catalogue of providers is built by.
 
 fn job(comptime decl: @Decl) {
     decl.setMeta("kind", "job");
@@ -19,6 +21,6 @@ pub fn greet(name: string) -> string {
 pub fn main() {
     val all: Declared<unknown>[] = @TypeInfo.all(with: job);
     for (all) { d ->
-        @print(d.name + " " + d.module);
+        @print(d.name + " " + d.module + " " + d.returnTypeName);
     }
 }

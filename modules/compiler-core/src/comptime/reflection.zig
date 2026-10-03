@@ -30,6 +30,9 @@ pub const DeclaredEntry = struct {
     name: []const u8,
     kind: Kind,
     isPub: bool,
+    /// Decision 256 — a function's declared return type as the source spells
+    /// it (`Clock`); `""` for a type or a behavior.
+    returnTypeName: []const u8 = "",
     /// The decorator's identity: its declaring module and its own name.
     decorator_owner: []const u8,
     decorator_name: []const u8,

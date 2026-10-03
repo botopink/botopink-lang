@@ -2,7 +2,8 @@
 //// carrying any decorator of the list, in the one order (module path, then
 //// declaration order), a declaration carrying two of them once, with the
 //// meta every listed decorator set. Each `value` is `unknown` (decision 254);
-//// calling it through `is fn() -> T` is front 130's.
+//// calling it through `is fn() -> T` is front 130's. A type's entry has no
+//// return type: `returnTypeName` is `""` (decision 256).
 
 fn service(comptime decl: @Decl) {
     decl.setMeta("role", "service");
@@ -35,6 +36,13 @@ pub fn main() {
         );
     }
     for (@TypeInfo.all(with: [service, audited], member: "make")) { d ->
-        @print(d.name + " " + d.meta.length.toString());
+        @print(
+            d.name
+                + " "
+                + d.meta.length.toString()
+                + " ["
+                + d.returnTypeName
+                + "]",
+        );
     }
 }

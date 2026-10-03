@@ -195,6 +195,10 @@ pub const unknown_builtin: []const u8 = "unknown-builtin";
 /// A builtin `builtins.d.bp` declares that no target lowers (`@module()`):
 /// refused at the `@` instead of typed `void` and emitted verbatim.
 pub const builtin_not_lowered: []const u8 = "builtin-not-lowered";
+/// Decision 252 — a builtin call whose arguments its declaration in
+/// `builtins.d.bp` refuses: too many, a parameter without a default missing, a
+/// label naming no parameter (a type that disagrees is the ordinary mismatch).
+pub const builtin_arguments: []const u8 = "builtin-arguments";
 /// A labelled argument in a call of a function VALUE (a parameter, a local, a
 /// field): its type is positional and names no parameter (01).
 pub const label_on_function_value: []const u8 = "label-on-function-value";

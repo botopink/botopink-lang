@@ -1,2 +1,2 @@
-count main
-greet main
+count main i32
+greet main string
