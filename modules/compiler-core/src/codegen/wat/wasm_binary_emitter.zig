@@ -445,6 +445,8 @@ const Body = struct {
             .@"return" => try o.append(ar, 0x0F),
             .@"unreachable" => try o.append(ar, 0x00),
             .memory_copy => try o.appendSlice(ar, &.{ 0xFC, 0x0A, 0x00, 0x00 }),
+            .memory_size => try o.appendSlice(ar, &.{ 0x3F, 0x00 }),
+            .memory_grow => try o.appendSlice(ar, &.{ 0x40, 0x00 }),
             .comment => {},
             .@"if" => |n| {
                 try o.append(ar, 0x04);

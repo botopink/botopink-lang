@@ -1236,6 +1236,7 @@ function __bp_print() {
 //   fn at(...)
 //   fn indexOf(...)
 //   default fn toString(...)
+//   fn fromCodepoint(...)
 //   fn padStart(...)
 //   fn padEnd(...)
 //   fn repeat(...)

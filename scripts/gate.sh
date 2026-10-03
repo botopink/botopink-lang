@@ -98,8 +98,10 @@ done
 
 # The wall-clock budget of a run on the reference machine (16 idle cores),
 # cold and warm, in seconds — § budget at the end. Decision 229 of 1.0.11-beta
-# (front 00-gate/133-gate-speed): 5 minutes cold, 1 minute warm.
-budget_cold=300
+# (front 00-gate/133-gate-speed) set 5 minutes cold, 1 minute warm; decision 265
+# sets 7m30s cold for this milestone — the 5-minute cold target is deferred to
+# the next milestone.
+budget_cold=450
 budget_warm=60
 
 root="$(git rev-parse --show-toplevel)"
@@ -489,7 +491,7 @@ fi
 # ── § budget ─────────────────────────────────────────────────────────────────
 # The whole run's wall clock (from the lock, so a wait for another gate is not
 # counted) and the CPU-seconds of every stage, against the budget decision 229
-# of 1.0.11-beta set on 16 idle cores (5 minutes cold, 1 minute warm). Over budget is printed, never a red: a
+# of 1.0.11-beta set on 16 idle cores (7m30s cold under decision 265, 1 minute warm). Over budget is printed, never a red: a
 # slow or shared machine is not a broken tree.
 YELLOW='\033[0;33m'
 budget=$([ "$cold" -eq 1 ] && echo "$budget_cold" || echo "$budget_warm")

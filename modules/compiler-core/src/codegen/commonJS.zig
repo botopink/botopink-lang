@@ -1340,6 +1340,12 @@ const Emitter = struct {
     /// host methods the prelude binds, so `buildInterface` falls back to these.
     /// Keys and strings live in the node arena.
     prelude_iface_externals: std.StringHashMap(ast.ExternalRef),
+    /// `Iface.method` → the template of an associated host primitive of the
+    /// prelude: a bodyless member with no `self` whose `#[@External.Node(…)]`
+    /// is a template (`String.fromCodepoint`, decision 262). JS has no
+    /// prototype to patch for it, so `Iface.method(…)` renders the template at
+    /// the call (`buildCallRaw`). Keys and strings live in the node arena.
+    prelude_assoc_templates: std.StringHashMap([]const u8),
     /// Method name → the host symbol an UNTYPED call of it emits on node, over
     /// every behavior of the embedded std registry (`scanDeclareFnExternal`),
     /// and the names two behaviors disagree on. `at` is `String.at` → native
@@ -1434,6 +1440,7 @@ const Emitter = struct {
             .enum_recv_methods = std.StringHashMap(void).init(alloc),
             .imported_enums = std.StringHashMap(void).init(alloc),
             .prelude_iface_externals = std.StringHashMap(ast.ExternalRef).init(alloc),
+            .prelude_assoc_templates = std.StringHashMap([]const u8).init(alloc),
             .prim_symbol_of = std.StringHashMap([]const u8).init(alloc),
             .ambiguous_prim_renames = std.StringHashMap(void).init(alloc),
             .local_interfaces = std.StringHashMap(ast.BehaviorDecl).init(alloc),
@@ -1470,6 +1477,7 @@ const Emitter = struct {
         self.enum_recv_methods.deinit();
         self.imported_enums.deinit();
         self.prelude_iface_externals.deinit();
+        self.prelude_assoc_templates.deinit();
         self.prim_symbol_of.deinit();
         self.ambiguous_prim_renames.deinit();
         self.local_interfaces.deinit();
@@ -1563,6 +1571,12 @@ const Emitter = struct {
                     if (std.mem.eql(u8, target, "node")) try self.noteUntypedNodeSymbol(m);
                     const ref = m.externalFor(target) orelse continue;
                     const key = try std.fmt.allocPrint(self.arena(), "{s}.{s}", .{ iface.name, m.name });
+                    const has_self = m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self");
+                    if (m.body == null and !has_self and primOpTemplate.looksLikeTemplate(ref.symbol) and
+                        !self.prelude_assoc_templates.contains(key))
+                    {
+                        try self.prelude_assoc_templates.put(key, try self.arena().dupe(u8, ref.symbol));
+                    }
                     if (self.prelude_iface_externals.contains(key)) continue;
                     try self.prelude_iface_externals.put(key, .{
                         .module = try self.arena().dupe(u8, ref.module),
@@ -5311,6 +5325,14 @@ const Emitter = struct {
             // `__bp_yield_step(it.next())` on an `@Iterator`, and
             // `s.next().then(__bp_yield_step)` on a `@Stream`, whose `next()`
             // is a Promise.
+            // An associated host primitive of the prelude
+            // (`String.fromCodepoint(cp)`): its template, at the call.
+            if (recv.* == .identifier and recv.identifier.kind == .ident and cc.trailing.len == 0) assoc: {
+                var kbuf: [256]u8 = undefined;
+                const key = std.fmt.bufPrint(&kbuf, "{s}.{s}", .{ recv.identifier.kind.ident, cc.callee }) catch break :assoc;
+                const template = self.prelude_assoc_templates.get(key) orelse break :assoc;
+                return self.renderTemplate(template, cc, cc.args.len, error.PrimOpRecvInBuiltinTemplate);
+            }
             if (self.sequenceNext(loc)) |kind| {
                 const native = try self.b.call(try self.b.memberOpt(try self.buildExpr(recv.*), "next", cc.optional), &.{});
                 const step = self.helper(.yield_step);

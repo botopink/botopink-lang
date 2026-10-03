@@ -3524,6 +3524,10 @@ const Emitter = struct {
         };
         defer program.deinit(alloc_arena);
         for (program.decls) |decl| {
+            if (decl == .behavior) {
+                try this.scanAssocHostTemplates(target, decl.behavior);
+                continue;
+            }
             if (decl != .@"fn") continue;
             const f = decl.@"fn";
             if (this.builtin_erlang_dispatch.contains(f.name)) continue;
@@ -3537,6 +3541,41 @@ const Emitter = struct {
                 });
             }
         }
+    }
+
+    /// An associated host primitive of a prelude behavior — a bodyless member
+    /// with no `self` and a template (`String.fromCodepoint`, decision 262) —
+    /// registered in `builtin_erlang_dispatch` under `<Behavior>.<method>`, a
+    /// key no bare callee can spell. `Behavior.method(…)` renders it at the
+    /// call (`assocHostNode`).
+    fn scanAssocHostTemplates(this: *Emitter, target: []const u8, iface: ast.BehaviorDecl) !void {
+        for (iface.methods) |m| {
+            if (m.body != null) continue;
+            if (m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self")) continue;
+            const ref = m.externalFor(target) orelse continue;
+            if (!primOpTemplate.looksLikeTemplate(ref.symbol)) continue;
+            const key = try std.fmt.allocPrint(this.alloc, "{s}.{s}", .{ iface.name, m.name });
+            if (this.builtin_erlang_dispatch.contains(key)) {
+                this.alloc.free(key);
+                continue;
+            }
+            try this.builtin_erlang_dispatch.put(key, .{
+                .module = "",
+                .symbol = try this.alloc.dupe(u8, ref.symbol),
+                .args = null,
+                .arity_branches = &.{},
+            });
+        }
+    }
+
+    /// `Behavior.method(…)` naming an associated host primitive of the prelude
+    /// (`scanAssocHostTemplates`), rendered from its template; null otherwise.
+    fn assocHostNode(this: *Emitter, b: Ast.Builder, iface: []const u8, cc: anytype) anyerror!?Ast.Expr {
+        var kbuf: [256]u8 = undefined;
+        const key = std.fmt.bufPrint(&kbuf, "{s}.{s}", .{ iface, cc.callee }) catch return null;
+        const call = this.builtin_erlang_dispatch.get(key) orelse return null;
+        const template = templateFor(call, cc) orelse return null;
+        return try this.templateNode(b, template, null, cc, error.PrimOpRecvInBuiltinTemplate);
     }
 
     /// Seeds `builtin_erlang_dispatch` with the `panic` / `todo` entries from
@@ -8155,6 +8194,7 @@ const Emitter = struct {
             // Associated `default fn` of an interface (`Array.range`): the mangled
             // local `'<Interface>_<method>'` that `interfaceForms` emits into the
             // FILE's module (decision 23: a behavior has no module of its own).
+            if (try this.assocHostNode(b, name, cc)) |node| return node;
             if (this.isInterfaceAssoc(name, cc.callee)) {
                 var mraw: [256]u8 = undefined;
                 const mname = try interfaceAssocAtom(&mraw, name, cc.callee);

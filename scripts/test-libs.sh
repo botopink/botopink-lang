@@ -5,6 +5,10 @@
 # Usage:
 #   scripts/test-libs.sh [<botopink-lib-test args>…]
 #
+# The arguments go to the runner as given: `--lib` is repeatable, and every
+# name runs, in the order given, in one report (decision 258); a `--lib` that
+# names no library fails the run.
+#
 # Discovery is the runner's: `libs/` (std) plus every sibling project under an
 # ancestor's `repository/` (emilia, erika, jhonstart, onze, rakun, … in the meta
 # workspace, or the repos CI checks out next to botopink-lang) — and every

@@ -228,6 +228,8 @@ fn instr(w: *Writer, i: ast.Instr) Error!void {
         .@"return" => try w.writeAll("return"),
         .@"unreachable" => try w.writeAll("unreachable"),
         .memory_copy => try w.writeAll("memory.copy"),
+        .memory_size => try w.writeAll("memory.size"),
+        .memory_grow => try w.writeAll("memory.grow"),
         .comment => |text| try w.print(";; {s}", .{text}),
         // Structured forms own their own lines; `line`/`arm` never reach here.
         .@"if", .block => unreachable,
