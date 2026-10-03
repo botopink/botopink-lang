@@ -20,7 +20,7 @@ scripts/
 ├── test-libs.sh       ← runtime pre-flight + `botopink-lib-test` wrapper: one line per cell and per audited exclusion, one summary line (`zig build test-libs`)
 ├── test-vscode.sh     ← locate the sibling vscode-extension, `npm ci` once, `npm test` (`zig build test-vscode`)
 ├── check-docs.sh      ← compiles every `botopink` fence of docs.md/README.md (`zig build test-docs`)
-├── tsc-check.sh       ← `tsc --noEmit --strict` over every `.d.ts` a commonJS build of libs/ (std + the bundled packages), the example projects and tests/language/modules emits (gate stage 11)
+├── tsc-check.sh       ← `tsc --noEmit --strict` over every `.d.ts`, and `node --check` over every `.js`, a commonJS build of libs/ (std + the bundled packages), the example projects and tests/language/modules emits (gate stage 11)
 ├── check-test-scratch.sh ← refuses a cwd-anchored `.botopinkbuild` path inside a `test` block or a `tests/` file (part of `zig build test`)
 ├── snap_audit.sh      ← read-only audit of every *.snap.md (7 modes)
 ├── beam_export_audit.sh ← assemble every beam snapshot module with every function exported
@@ -153,16 +153,22 @@ install tests) would otherwise act on the committing repository.
 `tests/language/modules/<cell>/` with `botopink build --target commonJS
 --typescript` into a scratch directory and runs `tsc --noEmit --strict --lib
 es2022 --module commonjs` over each build's non-empty `.d.ts` files, one `tsc`
-per project. A cell is left out only structurally — a `commonJS.expect` (the
-program is refused there) or a manifest `"targets"` list without `commonJS` —
-and a project that does not build, or emits no `.d.ts`, is red. `tsc` is
+per project, and `node --check` over each build's `.js` files (in parallel, one
+`node` per file) — the run cells execute their module under node, this reaches
+the modules nothing runs: the libraries' and the examples'. A cell is left out
+only structurally — a `commonJS.expect` (the program is refused there) or a
+manifest `"targets"` list without `commonJS` — and a project that does not
+build, or emits no `.d.ts` or no `.js`, is red; no `node` on `PATH` is a
+refusal. `tsc` is
 `npx -p typescript@<TS_VERSION>` (pinned in the script, so the verdict is a
 function of the tree); no `npx` on `PATH` is a refusal, never a skip (decision
 67). A planted typedef defect (`array<number>` for a `pub val` of an array)
 reds `pub_val_across_modules` and `pub_val_in_a_test`; the `libs/` rows were
 added after std's `testing/snapshots.d.ts` named the undeclared prelude record
 `SourceLocation` (6 × `TS2304`) with no stage to see it — the six libraries
-cost ~1.5 s of the stage's ~12 s.
+cost ~1.5 s of the stage's ~12 s. A planted host template that is not
+JavaScript (`#[@External.Node("($0 +* 1")]`) reds its project with node's
+`SyntaxError` and the file; on the tree it reads 79 projects and 364 modules.
 
 ### Build mode
 
