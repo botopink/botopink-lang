@@ -2,9 +2,11 @@
 //// wasm binds `abs`, `floor`, `trunc`, `sqrt`, `minF` and `maxF` to one
 //// instruction each (`op:`) and every other host cell to a private botopink
 //// body (`fn:`) — `round` too, because `f64.nearest` rounds a half to even.
-//// Each line compares with the value `Math.*` answers, so the one `.out` is
-//// every target's: the targets print a float differently (`3` / `3.0`), and a
-//// truth value the same way.
+//// erlang and beam run the same bodies (decision 263) and every target runs
+//// std's port of glibc's `pow` (decision 259), so no answer depends on the
+//// platform libm. Each line compares with the value `Math.*` answers on Linux,
+//// so the one `.out` is every target's on every OS: the targets print a float
+//// differently (`3` / `3.0`), and a truth value the same way.
 
 import {math} from "std";
 
@@ -27,6 +29,9 @@ pub fn main() {
             && math.pow(2.0, 0.5) == 1.4142135623730951,
     );
     @print(math.pow(1.5, 7.3) == 19.295951155032366);
+    @print(
+        math.pow(158.42161580281933, 2.853827476501465) == 1896229.4525711867,
+    );
     @print(
         math.sin(1.0) == 0.8414709848078965
             && math.cos(1.0) == 0.5403023058681398,

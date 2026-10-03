@@ -381,7 +381,7 @@ linked modules, each `declare fn` against its OWN module):
 | Form | Check | Lowering (`emitHostBinding`) |
 |---|---|---|
 | `op:<opcode>` | `host_binding.zig` `findOp`; the declared parameters and return are exactly the opcode's types (`bool` for a comparison) | a function of the declared name: `local.get` of each parameter, the instruction |
-| `fn:<name>` | the declaring module has a `fn <name>` with a body, not `pub`, of the same written parameter types in order and the same return (`sameSignature`, compared as `TypeRef.format` spells them) | a function of the declared name that calls `<name>` — the mangled name when a linked module's function was mangled (`link_mangled`) |
+| `fn:<name>` | the declaring module has a `fn <name>` with a body, not `pub`, of the same written parameter types in order and the same return (`hostFnBinding.resolve` — the check commonJS, erlang and beam run on their own `fn:` bindings — compared as `TypeRef.format` spells them) | a function of the declared name that calls `<name>` — the mangled name when a linked module's function was mangled (`link_mangled`) |
 | `wasi:<adapter>` | `host_binding.zig` `adapters` (the list `docs.md` § Host bindings documents); the signature is the adapter's | a function that calls the adapter's prelude helper (`random_f64` → `$__wasi_random_f64`, which brings the `random_get` import; `seed_u32` → `$__wasi_seed_u32`, `seeded_f64` → `$__wasi_seeded_f64`, both over the `wasi_seed_state` group's two globals); a written `-> void` answers the `0` its caller drops |
 
 A bound declaration is registered like a bodied `fn` (`registerFn` skips the
@@ -402,8 +402,9 @@ are `op:`; `round` is `fn:roundHalfUp` (V8's ceil-based rule — `f64.nearest`
 rounds a half to even); the rest are `fn:` bodies that port fdlibm as Node's V8
 runs it (`deps/v8/src/base/ieee754.cc`) with exact arithmetic standing for its
 word operations — bit for bit the commonJS answer on a 6 500-input fuzz — and
-`pow` in double-double, since V8 answers `Math.pow` with the C library's
-(`decisions-pending.md` 05w-c). `std/escape`'s two separators are `fn:` bodies
+`pow` a port of glibc's (decision 259), which every target runs. erlang and
+beam bind the same bodies (decision 263), so a transcendental is the same bits
+on every target and every OS. `std/escape`'s two separators are `fn:` bodies
 holding the literal. `std/hash` binds every cell with `fn:` — SHA-256, SHA-512,
 SHA-1, MD5, HMAC, PBKDF2, base64 and the djb2 fold in exact `f64` arithmetic
 (a word a whole number below 2^32, stored in an `Array<i32>` as two 16-bit

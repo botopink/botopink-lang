@@ -14,6 +14,7 @@ const moduleOutput = @import("./moduleOutput.zig");
 const configMod = @import("./config.zig");
 const ast = @import("../ast.zig");
 const envMod = @import("../comptime/env.zig");
+const hostFnBinding = @import("./hostFnBinding.zig");
 const crossModule = @import("./crossModule.zig");
 const patternFacts = @import("./patterns.zig");
 const lexerMod = @import("../lexer.zig");
@@ -632,6 +633,13 @@ pub fn codegenEmit(
 ) !std.ArrayListUnmanaged(ModuleOutput) {
     var results: std.ArrayListUnmanaged(ModuleOutput) = .empty;
 
+    // Decisions 238, 263 — a `#[@External.<Target>("fn:<name>")]` binding
+    // becomes an ordinary function forwarding to `<name>` before anything
+    // reads the programs; a binding that names no private fn of the same
+    // signature fails its module at the annotation (`hostFnBinding.zig`).
+    var host_fns = try hostFnBinding.Lowering.apply(alloc, outputs, .erlang);
+    defer host_fns.deinit();
+
     // Cross-module link index — lets a consumer resolve an imported record's
     // associated fn to a remote call into the owning module (`http:ok(...)`)
     // and an owner export only the assoc fns another module consumes.
@@ -670,6 +678,10 @@ pub fn codegenEmit(
                 });
             },
             .ok => |*ok| {
+                if (host_fns.refusal(ct.name)) |r| {
+                    try results.append(alloc, try r.failed(alloc, ct.*));
+                    continue;
+                }
                 // `"std"` package copies are dependencies — never emit their
                 // test blocks (mirrors the commonJS rule).
                 // The atom the module will be named by must be its own: two

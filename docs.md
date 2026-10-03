@@ -2248,6 +2248,28 @@ the list, a template with `$` markers — is an error at the annotation. No
 runtime-helper name of the backend is part of a binding and nothing a binding
 writes names an address: there is no raw memory in the vocabulary. A
 `declare fn` with no `@External.Wasm` keeps the refusal above at its call.
+
+**`fn:<name>` binds a declaration on every target** (decisions 238, 263). On
+`@External.Node`, `@External.Erlang` and `@External.Beam` a single string
+starting with `fn:` is not a host expression or a template: it is the same form
+as on wasm — a private `fn` of the same module, with a body, taking the same
+parameter types in the same order and answering the same type — and it is
+checked the same way, at the annotation. One algorithm written in botopink then
+answers the same bits on every target, instead of each host's own library
+(`std/math`'s `sin`, `pow`, … run std's bodies on erlang and beam, and `pow` on
+commonJS too).
+
+```botopink
+#[@External.Node("fn:mixBody"),
+  @External.Erlang("fn:mixBody"),
+  @External.Beam("fn:mixBody"),
+  @External.Wasm("fn:mixBody")]
+pub declare fn mix(x: f64, y: f64) -> f64;
+
+fn mixBody(a: f64, b: f64) -> f64 {
+    return a * 2.0 + b;
+}
+```
 Until 2026-09-21 wasm lowered such a call to a `wasm trap`, so the program
 compiled and then died at run time where the other three refused it; it
 refuses too, and there is no flag that restores the trap.

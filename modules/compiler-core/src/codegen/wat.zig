@@ -26,6 +26,7 @@ const watEmitter = @import("./wat/wat_emitter.zig");
 const wasmBinary = @import("./wat/wasm_binary_emitter.zig");
 const prelude = @import("./wat/wat_prelude.zig");
 const hostBinding = @import("./wat/host_binding.zig");
+const hostFnBinding = @import("./hostFnBinding.zig");
 
 const CrossModule = crossModule.CrossModule;
 
@@ -3467,7 +3468,7 @@ const Emitter = struct {
             };
             if (!f.isDeclare or f.body.len > 0) continue;
             const ext = f.externalFor("wasm") orelse continue;
-            const ann_loc = wasmAnnotationLoc(f);
+            const ann_loc = hostFnBinding.annotationLoc(f, "Wasm");
             self.foreign_origin = if (from < linked.len) linked[from].via else null;
             if (ext.module.len > 0)
                 return self.refuse(ann_loc, "`#[@External.Wasm(…)]` on `{s}` takes one string — `op:<opcode>`, `fn:<private fn of this module>` or `wasi:<adapter>`", .{f.name});
@@ -3488,18 +3489,10 @@ const Emitter = struct {
                 const name = binding.fn_;
                 const prog = if (from < linked.len) linked[from].program else own_program;
                 const mod_name = if (from < linked.len) linked[from].name else module_name;
-                const target: ?ast.FnDecl = for (prog.decls) |pd| switch (pd) {
-                    .@"fn" => |g| if (std.mem.eql(u8, g.name, name)) break g,
-                    else => {},
-                } else null;
-                const g = target orelse
-                    return self.refuse(ann_loc, "`#[@External.Wasm(\"fn:{s}\")]` on `{s}`: this module declares no fn `{s}`", .{ name, f.name, name });
-                if (g.isDeclare or g.body.len == 0)
-                    return self.refuse(ann_loc, "`#[@External.Wasm(\"fn:{s}\")]` on `{s}`: `{s}` has no body of its own to run", .{ name, f.name, name });
-                if (g.isPub)
-                    return self.refuse(ann_loc, "`#[@External.Wasm(\"fn:{s}\")]` on `{s}`: `{s}` is `pub` — a binding names a private fn, so no body becomes the module's surface twice", .{ name, f.name, name });
-                if (!try sameSignature(ar, f, g, if (from < linked.len) mod_name else ""))
-                    return self.refuse(ann_loc, "`#[@External.Wasm(\"fn:{s}\")]` on `{s}`: `{s}` must take the same parameter types in the same order and answer the same type", .{ name, f.name, name });
+                switch (try hostFnBinding.resolve(ar, f, name, prog, if (from < linked.len) mod_name else "", "Wasm")) {
+                    .refused => |message| return self.refuse(ann_loc, "{s}", .{message}),
+                    .ok => {},
+                }
                 bound.target = if (from < linked.len)
                     (self.link_mangled.get(try linkKey(ar, mod_name, name)) orelse name)
                 else
@@ -3507,14 +3500,6 @@ const Emitter = struct {
             }
             try self.host_bindings.put(self.alloc, f.name, bound);
         }
-    }
-
-    /// The location of `f`'s `#[@External.Wasm(…)]`.
-    fn wasmAnnotationLoc(f: ast.FnDecl) ?ast.Loc {
-        for (f.annotations) |a| {
-            if (std.mem.startsWith(u8, a.name, "External.") and std.ascii.eqlIgnoreCase(a.name["External.".len..], "wasm")) return a.loc;
-        }
-        return null;
     }
 
     /// The numeric slot a written type spells for decision 238's checks;
@@ -3526,36 +3511,6 @@ const Emitter = struct {
             } else null,
             else => null,
         };
-    }
-
-    /// Whether `g` takes the parameter types `f` declares, in order, and
-    /// answers the same type — compared as written (`TypeRef.format`).
-    fn sameSignature(ar: std.mem.Allocator, f: ast.FnDecl, g: ast.FnDecl, module: []const u8) !bool {
-        if (f.genericParams.len != g.genericParams.len) return false;
-        var fp: std.ArrayListUnmanaged(ast.TypeRef) = .empty;
-        var gp: std.ArrayListUnmanaged(ast.TypeRef) = .empty;
-        for (f.params) |p| if (!std.mem.eql(u8, p.name, "self")) try fp.append(ar, p.typeRef);
-        for (g.params) |p| if (!std.mem.eql(u8, p.name, "self")) try gp.append(ar, p.typeRef);
-        if (fp.items.len != gp.items.len) return false;
-        for (fp.items, gp.items) |a, b| {
-            if (!std.mem.eql(u8, try typeText(ar, a, module), try typeText(ar, b, module))) return false;
-        }
-        if ((f.returnType == null) != (g.returnType == null)) return false;
-        if (f.returnType) |fr| {
-            if (!std.mem.eql(u8, try typeText(ar, fr, module), try typeText(ar, g.returnType.?, module))) return false;
-        }
-        return true;
-    }
-
-    /// A type as `TypeRef.format` spells it, its own module's qualification
-    /// dropped: linking a module qualifies a `pub` declaration's types for
-    /// its consumers (`std/io/random/Array<T>`) and leaves a private fn's
-    /// as written (`Array<T>`), and the two name one type.
-    fn typeText(ar: std.mem.Allocator, t: ast.TypeRef, module: []const u8) ![]const u8 {
-        const text = try std.fmt.allocPrint(ar, "{f}", .{t});
-        if (module.len == 0) return text;
-        const prefix = try std.fmt.allocPrint(ar, "{s}/", .{module});
-        return std.mem.replaceOwned(u8, ar, text, prefix, "");
     }
 
     /// The function a bound `declare fn` lowers to — its declared name and
