@@ -745,8 +745,19 @@ pub fn assertJsRunLog(allocator: Allocator, src: []const u8, expected: []const u
 /// lowering that cannot proceed is a located build refusal, never a module
 /// that traps at run time (`00 · 110-gate-wasm`).
 pub fn assertWasmRefusedAt(allocator: Allocator, src: []const u8, needle: []const u8, line: usize, col: usize) !void {
+    return assertRefusedAt(allocator, configs[3], src, needle, line, col);
+}
+
+/// `assertWasmRefusedAt` for the beam backend: an `@External.Erlang` template
+/// its reader refuses is a located build error naming the construct
+/// (decision 141).
+pub fn assertBeamRefusedAt(allocator: Allocator, src: []const u8, needle: []const u8, line: usize, col: usize) !void {
+    return assertRefusedAt(allocator, configs[2], src, needle, line, col);
+}
+
+fn assertRefusedAt(allocator: Allocator, cfg: config.Config, src: []const u8, needle: []const u8, line: usize, col: usize) !void {
     const io = std.testing.io;
-    var outputs = try codegen.generateWith(allocator, &.{.{ .path = "", .source = src }}, io, configs[3], .{ .execute = false });
+    var outputs = try codegen.generateWith(allocator, &.{.{ .path = "", .source = src }}, io, cfg, .{ .execute = false });
     defer {
         for (outputs.items) |*o| o.result.deinit(allocator);
         outputs.deinit(allocator);
@@ -754,7 +765,7 @@ pub fn assertWasmRefusedAt(allocator: Allocator, src: []const u8, needle: []cons
     for (outputs.items) |o| {
         if (!std.mem.eql(u8, o.name, "") and !std.mem.eql(u8, o.name, "main")) continue;
         const d = o.result.diagnostic orelse {
-            std.debug.print("\n=== expected the wasm backend to refuse, it emitted ===\n{s}\n", .{o.result.js});
+            std.debug.print("\n=== expected the {t} backend to refuse, it emitted ===\n{s}\n", .{ cfg.targetSource, o.result.js });
             return error.ExpectedCompileError;
         };
         switch (d) {

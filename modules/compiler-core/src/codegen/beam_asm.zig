@@ -1580,6 +1580,9 @@ pub fn codegenEmit(
                 const module_test_mode = config.test_mode and !std.mem.startsWith(u8, ct.name, "std/");
                 const emitted = emitBeamAsm(alloc, ct.name, ct.srcPath, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, &cross, outputs, module_test_mode, &missing) catch |err| {
                     const me = missing orelse return err;
+                    // `evalTemplate`'s refusal is the one field the emitter
+                    // allocates for its caller (`alloc`, not its own arena).
+                    defer if (me.refusal) |why| alloc.free(why);
                     try results.append(alloc, .{
                         .name = ct.name,
                         .src = ct.src,
@@ -7860,8 +7863,12 @@ const Emitter = struct {
             return;
         }
 
+        // The reason leaves the emitter in `missing_external`, which the
+        // caller reads after `em.deinit` has freed `atom_arena`: it is copied
+        // into `self.alloc`, and `codegenEmit` frees it once the diagnostic
+        // is rendered.
         const refusal = self.template_refusal orelse "the template did not compile";
-        self.missing_external.?.refusal = refusal;
+        self.missing_external.?.refusal = try self.alloc.dupe(u8, refusal);
         return error.TemplateRefused;
     }
 

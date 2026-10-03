@@ -2225,7 +2225,11 @@ codegen/
   markers as the helper's parameters `__BpSelf`/`__BpAN`); a template the
   reader or the lowering refuses is a build error at the call site naming the
   construct (`error.TemplateRefused` → `MissingExternal.refusal`, decision
-  140) — there is no run-time evaluation of Erlang source. Every template
+  140) — there is no run-time evaluation of Erlang source. The refusal text is
+  copied into the emitter's allocator, never left in `atom_arena`: `em.deinit`
+  frees the arena before `codegenEmit` renders the diagnostic, and a reason
+  read from it was a use-after-free (right text on glibc, a crash or garbage
+  on macos-14; `tests/beam.zig` pins it under `std.testing.allocator`). Every template
   std and the bundled libraries ship lowers (`tests/beam_templates.zig`).
   Details and the re-measured cost in [`beam/AGENTS.md`](beam/AGENTS.md).
   Decision 64's beam half (C-03): a `pub` host-backed top-level fn

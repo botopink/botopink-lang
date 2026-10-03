@@ -275,6 +275,22 @@ test "beam: the keyword form's method is a template compiled at build time" {
     , "2\n4\n", &.{"{function, smallest, 2, "});
 }
 
+test "beam: a refused template's reason outlives the emitter that refused it" {
+    // Decision 141's refusal names the construct (`macros (`?NAME`)`). The
+    // reason lived in the emitter's `atom_arena`, which `em.deinit` freed
+    // before the caller rendered the diagnostic: the message read freed memory
+    // — the right text on glibc, garbage on macos-14
+    // (`tests/language/run/external_template_refused_on_beam`). Under
+    // `std.testing.allocator` freed memory is poisoned, so this reads it.
+    try h.assertBeamRefusedAt(std.testing.allocator,
+        \\#[@External.Erlang("""length(atom_to_list(?MODULE)) > 0""")]
+        \\declare fn moduleNamed() -> bool;
+        \\fn main() {
+        \\    @print(moduleNamed());
+        \\}
+    , "`moduleNamed`'s `#[@External.Erlang(…)]` template does not compile for the beam backend: macros (`?NAME`)", 4, 12);
+}
+
 // ── step 2 — C-07's beam tails: decision 8 §2, §4, §5, §6 on beam ───────────
 //
 // The beam twins of the erlang fixtures `02-erlang` added for the tuple, `..`
