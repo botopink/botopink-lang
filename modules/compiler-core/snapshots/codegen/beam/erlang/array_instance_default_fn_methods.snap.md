@@ -36,7 +36,7 @@ array_repeat(Value, Times) ->
 
 main() ->
     Xs = [1, 2, 3],
-    '__bp_print'([iolist_to_binary(lists:join(<<",">>, lists:map(fun(__E) -> if is_binary(__E) -> __E; is_integer(__E) -> integer_to_binary(__E); is_list(__E) -> __E; true -> erlang:iolist_to_binary(io_lib:format("~p", [__E])) end end, [0 | Xs])))]),
+    '__bp_print'([iolist_to_binary(lists:join(<<",">>, lists:map(fun(__E) -> if is_binary(__E) -> __E; is_integer(__E) -> integer_to_binary(__E); is_list(__E) -> __E; true -> iolist_to_binary(io_lib:format("~p", [__E])) end end, [0 | Xs])))]),
     '__bp_print'([lists:foldl(fun(__X, __A) -> (fun(A, X) ->
         '__bp_add'(A, X)
     end)(__A, __X) end, 0, Xs)]),

@@ -23,7 +23,9 @@ Pure `.bp` only (decision 117 rule 8): no `#[@External]` cell, no `declare fn`, 
 `.erl` / `.mjs` sidecar, no framework name under `src/`. It imports `std` (`json`,
 `encoding`) and the bundled `routing` (`navigation`), nothing else. JSON is written with
 std's `json.quote` / `json.array` / `json.object` and read with std's `json.decode`
-(member order kept, duplicates refused — the same botopink on both targets).
+(member order kept, duplicates refused — the same botopink on both targets) and
+`Json`'s own readers (`field`, `kindName`, `isObject`, `str`, `items`); the library
+declares no JSON accessor of its own.
 
 ## Tree
 
