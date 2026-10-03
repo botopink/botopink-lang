@@ -320,16 +320,12 @@ pub fn decodeJson(input: Json, at: string) -> @Result<Json, ValidationReport> {
 
 // ── composition ─────────────────────────────────────────────────────────────
 
-// LANGUAGE GAP: a generic `T` cannot be returned as a `?T` — `return v;` in a
-// function answering `?T` is "recursive type detected". `Array<T>.at` answers a
-// `?T`, so the optional is read back out of a one-item list.
 fn present<T>(v: T) -> ?T {
-    return [v].at(0);
+    return v;
 }
 
 fn absent<T>() -> ?T {
-    val none: Array<T> = [];
-    return none.at(0);
+    return null;
 }
 
 // `?T`: absent decodes to `null`; anything else is the inner decoder's.

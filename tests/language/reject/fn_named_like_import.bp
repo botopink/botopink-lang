@@ -1,0 +1,14 @@
+//// A module-level `fn` named like an item the module imports binds the name
+//// twice (`language-gaps.md`, "A function named like the imported decorator
+//// applied to it is declared twice on commonJS"): node stopped at load, erlang
+//// ran. Refused at the function's name, on every target.
+
+import {path.basename} from "std";
+
+fn basename(n: i32) -> i32 {
+    return n;
+}
+
+pub fn main() {
+    @print(basename(2));
+}

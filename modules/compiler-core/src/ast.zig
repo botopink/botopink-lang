@@ -2380,6 +2380,9 @@ pub const TypeRef = union(enum) {
 /// that a `#[@BeamMemory.<mode>]` annotation gives storage on the BEAM.
 pub const ValDecl = struct {
     name: []const u8,
+    /// Where the name is written — the location a refusal of the name points
+    /// at. `{0,0}` when synthesised; left out of the AST dump.
+    nameLoc: Loc = .{ .line = 0, .col = 0 },
     isPub: bool = false,
     /// `var` rather than `val`: the binding may be assigned. The local form
     /// keeps the same bit on `localBind.mutable`; this is it one level up.
@@ -2409,7 +2412,7 @@ pub const ValDecl = struct {
     /// dump, so a `val` written today dumps exactly as it did before the two
     /// fields existed and no parser snapshot moves.
     pub fn jsonStringify(this: @This(), jws: anytype) !void {
-        return stringifyOmitting(this, jws, &.{}, &.{ "mutable", "annotations" });
+        return stringifyOmitting(this, jws, &.{"nameLoc"}, &.{ "mutable", "annotations" });
     }
 
     /// Where a module `var` lives on the BEAM (front 17, decision 43's layer
@@ -3060,6 +3063,10 @@ pub const FnDecl = struct {
     /// disambiguate `yield :label` / `break :label` from an enclosing loop's.
     label: ?[]const u8 = null,
     name: []const u8,
+    /// Where the name is written (`fn link` → `link`) — the location a refusal
+    /// of the name points at. `{0,0}` when synthesised; left out of the AST
+    /// dump.
+    nameLoc: Loc = .{ .line = 0, .col = 0 },
     docComment: ?[]const u8 = null,
     /// `//` regular comment (last one before the declaration)
     comment: ?[]const u8 = null,
@@ -3141,7 +3148,7 @@ pub const FnDecl = struct {
     /// Dumped without `returnTypeLoc`: the location is a diagnostic aid, not
     /// surface, and the AST dumps are snapshot-compared.
     pub fn jsonStringify(this: FnDecl, jws: anytype) !void {
-        return stringifyOmitting(this, jws, &.{"returnTypeLoc"}, &.{"typeGuardType"});
+        return stringifyOmitting(this, jws, &.{ "returnTypeLoc", "nameLoc" }, &.{"typeGuardType"});
     }
 
     pub fn deinit(this: *FnDecl, allocator: std.mem.Allocator) void {

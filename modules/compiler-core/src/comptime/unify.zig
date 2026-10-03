@@ -100,7 +100,19 @@ fn unifyTypes(env: *Env, a: *T.Type, b: *T.Type) UnifyError!void {
 
         // ── named types ───────────────────────────────────────────────────────
         .named => |na| switch (tb.*) {
-            .typeVar => return unify(env, tb, ta), // symmetric
+            .typeVar => |cellB| {
+                // Optional subsumption for a variable: an expected `?T` takes
+                // a value typed by the `T` it wraps (`fn some<T>(v: T) -> ?T
+                // { return v; }`), as it takes a concrete `i32` for `?i32`.
+                // Linking the variable to the optional instead would fail the
+                // occurs check — the variable sits inside it.
+                if (isOptional(na) and cellB.state == .unbound and
+                    occursIn(cellB.state.unbound.id, na.args[0]))
+                {
+                    return unify(env, na.args[0], tb);
+                }
+                return unify(env, tb, ta); // symmetric
+            },
             .named => |nb| {
                 // Optional subsumption (one-way): an expected `?T` accepts a
                 // plain `T` value (`val x: ?i32 = 5`); unify inner with value.
@@ -198,6 +210,10 @@ fn unifyTypes(env: *Env, a: *T.Type, b: *T.Type) UnifyError!void {
             },
         },
     }
+}
+
+fn isOptional(n: anytype) bool {
+    return std.mem.eql(u8, n.name, "optional") and n.args.len == 1;
 }
 
 /// The member of `members` that `value` goes into, matched by shape so the

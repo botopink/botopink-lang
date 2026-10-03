@@ -1,0 +1,2 @@
+import-name-collision: `extname` is already bound by the import of `path.extname`
+5:5

@@ -83,27 +83,41 @@ const Ctx = struct {
     own: std.StringHashMapUnmanaged(void) = .empty,
     /// Items to add, keyed by the local each binds (one per module / type).
     added: std.StringArrayHashMapUnmanaged(ast.ImportPath) = .empty,
-    /// `pub type` names per std module key, parsed on first use.
-    pubTypes: std.StringHashMapUnmanaged(std.StringHashMapUnmanaged(void)) = .empty,
+    /// `pub type` and `pub fn` names per std module key, parsed on first use.
+    pubDecls: std.StringHashMapUnmanaged(PubDecls) = .empty,
     /// Where the folder / module item was written, for the added items.
     locs: std.StringHashMapUnmanaged(ast.Loc) = .empty,
 
-    fn declaresPubType(self: *Ctx, key: []const u8, name: []const u8) Error!bool {
-        if (self.pubTypes.get(key)) |set| return set.contains(name);
-        var set: std.StringHashMapUnmanaged(void) = .empty;
+    const PubDecls = struct {
+        types: std.StringHashMapUnmanaged(void) = .empty,
+        fns: std.StringHashMapUnmanaged(void) = .empty,
+    };
+
+    fn pubDeclsOf(self: *Ctx, key: []const u8) Error!PubDecls {
+        if (self.pubDecls.get(key)) |d| return d;
+        var out: PubDecls = .{};
         if (moduleSource(key)) |src| parse: {
             var lx = Lexer.init(src);
             const tokens = lx.scanAll(self.arena) catch break :parse;
             var p = Parser.init(tokens);
             const program = p.parse(self.arena) catch break :parse;
             for (program.decls) |d| switch (d) {
-                .type_ => |t| if (t.isPub) try set.put(self.arena, t.name, {}),
-                .typeAlias => |a| if (a.isPub) try set.put(self.arena, a.name, {}),
+                .type_ => |t| if (t.isPub) try out.types.put(self.arena, t.name, {}),
+                .typeAlias => |a| if (a.isPub) try out.types.put(self.arena, a.name, {}),
+                .@"fn" => |f| if (f.isPub) try out.fns.put(self.arena, f.name, {}),
                 else => {},
             };
         }
-        try self.pubTypes.put(self.arena, key, set);
-        return set.contains(name);
+        try self.pubDecls.put(self.arena, key, out);
+        return out;
+    }
+
+    fn declaresPubType(self: *Ctx, key: []const u8, name: []const u8) Error!bool {
+        return (try self.pubDeclsOf(key)).types.contains(name);
+    }
+
+    fn declaresPubFn(self: *Ctx, key: []const u8, name: []const u8) Error!bool {
+        return (try self.pubDeclsOf(key)).fns.contains(name);
     }
 
     /// The folder key an expression names — a folder namespace local, or a
@@ -179,7 +193,23 @@ const Ctx = struct {
             .module => |k| k,
             .folder => return false,
         };
-        if (a.member.len == 0 or !std.ascii.isUpper(a.member[0])) return false;
+        if (a.member.len == 0) return false;
+        // A module's `pub fn` in value position (`apply(math.abs, -3)`) is the
+        // function it names: the leaf item `math.abs`, bound under a local no
+        // source can spell (`__bp_ns_math__abs`), as an imported fn passed by
+        // its bare name already is. A call (`math.abs(x)`) is a call node
+        // with a receiver and never reaches here.
+        if (!std.ascii.isUpper(a.member[0])) {
+            if (!try self.declaresPubFn(mod_key, a.member)) return false;
+            const name = try std.fmt.allocPrint(self.arena, "__bp_ns_{s}__{s}", .{ root, a.member });
+            if (!self.added.contains(name)) try self.added.put(self.arena, name, .{
+                .segments = try self.segmentsOf(mod_key, a.member),
+                .alias = name,
+                .loc = self.locs.get(root) orelse loc,
+            });
+            e.* = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = name } } };
+            return true;
+        }
         if (self.own.contains(a.member)) return false;
         if (!try self.declaresPubType(mod_key, a.member)) return false;
         if (!self.added.contains(a.member)) try self.added.put(self.arena, a.member, .{
@@ -218,10 +248,47 @@ const Ctx = struct {
         return false;
     }
 
+    /// `<module ns>.<pub type>` written as a TYPE (`fn f() -> collections.Dict<
+    /// string, i32>`) becomes the leaf `Dict` with the item `collections.Dict`
+    /// added — the expression rule above, in type position. A module declaring
+    /// its own top-level `Dict` is left alone, and the dotted name is refused
+    /// by the checker as an unknown type.
+    fn typeLeaf(self: *Ctx, name: []const u8) Error!?[]const u8 {
+        const dot = std.mem.indexOfScalar(u8, name, '.') orelse return null;
+        const root = name[0..dot];
+        const member = name[dot + 1 ..];
+        if (std.mem.indexOfScalar(u8, member, '.') != null) return null;
+        const mod_key = switch (self.names.get(root) orelse return null) {
+            .module => |k| k,
+            .folder => return null,
+        };
+        if (member.len == 0 or !std.ascii.isUpper(member[0])) return null;
+        if (self.own.contains(member)) return null;
+        if (!try self.declaresPubType(mod_key, member)) return null;
+        if (!self.added.contains(member)) try self.added.put(self.arena, member, .{
+            .segments = try self.segmentsOf(mod_key, member),
+            .loc = self.locs.get(root) orelse .{ .line = 0, .col = 0 },
+        });
+        return member;
+    }
+
+    fn rewriteTypeRef(self: *Ctx, t: *ast.TypeRef) Error!void {
+        switch (t.*) {
+            .named => |n| if (try self.typeLeaf(n)) |leaf| {
+                t.* = .{ .named = leaf };
+            },
+            .generic => |*g| if (!g.is_builtin) {
+                if (try self.typeLeaf(g.name)) |leaf| g.name = leaf;
+            },
+            else => {},
+        }
+    }
+
     fn walk(self: *Ctx, comptime T: type, ptr: *T) Error!void {
         if (T == ast.Expr) {
             if (try self.rewrite(ptr)) return;
         }
+        if (T == ast.TypeRef) try self.rewriteTypeRef(ptr);
         if (T == ast.ImportDecl) return;
         switch (@typeInfo(T)) {
             .@"struct" => |s| inline for (s.fields) |f| {
@@ -389,4 +456,36 @@ test "std namespace: a module's type constructor called through the namespace is
     const call = body[0].expr.binding.kind.localBind.value.call.kind.call;
     try std.testing.expect(call.receiver == null);
     try std.testing.expectEqualStrings("Duration", call.callee);
+}
+
+test "std namespace: a module's type in a signature and its pub fn as a value reach the leaf forms" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const src =
+        \\import {collections, path} from "std";
+        \\fn make(d: collections.Dict<string, i32>) -> collections.Order {
+        \\    val f = path.basename;
+        \\    return collections.lt();
+        \\}
+    ;
+    var lx = Lexer.init(src);
+    const tokens = try lx.scanAll(arena);
+    var p = Parser.init(tokens);
+    const program = try expand(arena, try p.parse(arena));
+    const f = program.decls[1].@"fn";
+    try std.testing.expectEqualStrings("Dict", f.params[0].typeRef.generic.name);
+    try std.testing.expectEqualStrings("Order", f.returnType.?.named);
+    const value = f.body[0].expr.binding.kind.localBind.value;
+    try std.testing.expectEqualStrings("__bp_ns_path__basename", value.identifier.kind.ident);
+    const imports = program.decls[0].use.imports;
+    var leaves: usize = 0;
+    for (imports) |imp| {
+        if (std.mem.eql(u8, imp.name(), "__bp_ns_path__basename")) {
+            try std.testing.expectEqualStrings("path/basename", try imp.fullPath(arena));
+            leaves += 1;
+        }
+        if (std.mem.eql(u8, imp.name(), "Dict") or std.mem.eql(u8, imp.name(), "Order")) leaves += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 3), leaves);
 }
