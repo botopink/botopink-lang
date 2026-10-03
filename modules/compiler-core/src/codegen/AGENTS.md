@@ -3012,6 +3012,13 @@ method on an optional and the erlang emitter types a `default fn` body's locals
   `{badmatch, V}` as erlang's `P = V` does; R5 admits only an irrefutable
   pattern, so no well-typed value reaches it. `destructYSlots` reserves the
   larger of the positional count and `patternYSlots`.
+- On erlang the spread-only list in binding position (`val [..rest] = xs;`) is
+  `Rest = Xs` through `patternNode`, as the constructor is; it lowered to the
+  value alone, binding nothing. `patternNode`'s list arm writes a spread alone as
+  its tail variable — the whole list — in every position: it wrote `[Rest]`, a
+  one-element list, so a `[..all]` `case` arm died `case_clause` and
+  `val assert [..all]` panicked on any other length
+  (`run/list_pattern_spread_alone`, `codegen/tests/erlang.zig`).
 
 ## Effects (the return is the effect — decisions 118–128)
 

@@ -599,14 +599,14 @@ Each was run with the parent binary and fails there as its row describes.
   U+00FF and a raw `ç` print as themselves, alone and inside an array, on all four targets. C-36's
   emitter half (`writeStringFromLexeme` writes a code point's UTF-8 bytes) was already landed, so
   the cell fails on the parent binary only under `LANG=C`, where erlang wrote `é` as `0xE9` and
-  `\x{1F600}` as text; beam still does there (03's twin). `.length()` of such a string is left
+  `\x{1F600}` as text; beam did too (`03-beam`'s twin, landing with the next integration). `.length()` of such a string is left
   out: commonJS counts UTF-16 units (`2`) and wasm bytes (`4`) — 04's and 05's rows.
 - `test/is_truth_table` (C-07's erlang tail, decision 8 §4.1 × §4.2): each form that may follow
   `is` — `i32`, `i8`, `u8`, `f64`, `string`, `bool`, a record, an enum type, `Box<unknown>`,
   `#(i32, string)` — asked of the same ten `unknown` values, and §4.1's conversion inside
-  `if (a is i32)`. It passes on the parent binary (a pin, not a fix). A test cell runs on commonJS
-  and erlang; the same table as a `run/` cell is red on beam (`#(i32, string)` holds for every
-  tagged tuple — a record and a variant too) and traps on wasm — 03's and 05's rows. §11's
+  `if (a is i32)`. It passes on the parent binary (a pin, not a fix). The same table as a `run/`
+  cell waits on beam's `#(i32, string)` test (it held for every tagged tuple — a record and a
+  variant too; `03-beam`'s fix, landing with the next integration) and traps on wasm (05's row). §11's
   "erlang stores nothing" is `codegen/tests/control_flow.zig`'s needle (`A = 2.0,`, no box).
 - `run/lambda_binds_name_of_enclosing_fn` (decision 205): a `forEach` body's `val k` over an outer
   `k`, a lambda parameter `e` over an outer `e`, and a lambda value's parameter `e`; the outer names
@@ -619,6 +619,11 @@ Each was run with the parent binary and fails there as its row describes.
 - `modules/erlang_host_sidecar_in_a_test` (test kind, narrowed to erlang and beam): a `test/` module that
   declares `#[@External.Erlang("lt_greeter", "hello")]` itself and calls it. It imports nothing, so
   its runner loaded no sibling and the call died `{error,undef}` on the parent binary.
+- `run/list_pattern_spread_alone` (a row `03-beam` measured): `[..all]` as a `case` arm over three
+  elements and over `[]`, and `val assert [..every]`, on all four targets. Erlang wrote the pattern
+  `[All]`, a one-element list — `case_clause` and "assert pattern did not match" on the parent
+  binary. The plain `val [..rest] = xs;` (which erlang also left unbound) is `01-checker` step 13's
+  `run/val_spread_only_list_pattern`, refused by the checker until the backends lower it.
 - `run/captured_var_write_threaded` (decision 148, lg-b): the two lambdas that may write a
   captured `var` — a `forEach` body and a local closure called at statement position — thread the
   write out on all four targets (a pin: green on the parent binary too). Every other lambda's
