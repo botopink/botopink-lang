@@ -188,14 +188,14 @@ first_error() { strip | grep -m1 -iE '^[[:space:]]*error' | sed -r 's/^[[:space:
 
 check_project() { # <dir> → prints the first error line on failure
     local out
-    out="$(cd "$1" && BOTOPINK_LIB_ROOTS="$lib_roots" timeout 300 "$compiler" check 2>&1)" && return 0
+    out="$(cd "$1" && BOTOPINK_LIB_ROOTS="$lib_roots" with_timeout 300 "$compiler" check 2>&1)" && return 0
     first_error <<<"$out"
     return 1
 }
 
 check_reject() { # <dir> <expectation> → prints why on failure
     local out first
-    if out="$(cd "$1" && BOTOPINK_LIB_ROOTS="$lib_roots" timeout 300 "$compiler" check 2>&1)"; then
+    if out="$(cd "$1" && BOTOPINK_LIB_ROOTS="$lib_roots" with_timeout 300 "$compiler" check 2>&1)"; then
         printf 'compiles — the doc claims a refusal the compiler does not make (expected: %s)' "$2"
         return 1
     fi
@@ -240,7 +240,7 @@ check_job() { # <k> — writes <k>.ok, or <k>.fail holding why
 }
 run_checks() {
     [ "$nchecks" -gt 0 ] || return 0
-    export -f check_job check_project check_reject first_error strip pool_job pool_admit pool_cpus
+    export -f check_job check_project check_reject first_error strip pool_job pool_admit pool_cpus with_timeout
     export work compiler lib_roots
     # A check answered from the result store already has its `<k>.ok`.
     seq 1 "$nchecks" | while read -r k; do [ -f "$work/checks/$k.ok" ] || echo "$k"; done |

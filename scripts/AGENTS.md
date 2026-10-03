@@ -115,7 +115,7 @@ is written braced (`${lib}·${target}`) — bash 3.2 reads the first byte of `·
 under `set -u` (`lib\xc2: unbound variable`, `test-libs.sh` on macos-14). macOS's `xargs` is BSD's:
 it drops an empty argument even under `-0`, so a NUL-separated record fed to `xargs -0 -n <k>`
 never holds an empty field — `tests/language/run.sh` pads `run_one`'s unused 4th field with `-`
-(an empty one shifted every later group: `commonJS: command not found` on macos-14).
+(an empty one shifted every later group: `commonJS: command not found` on macos-14). A stock macOS has no GNU `timeout`: the runners call `with_timeout` (`scripts/lib/pool.sh` — `timeout`, else `gtimeout`, else perl's alarm), never `timeout` directly.
 
 ## gate.sh
 

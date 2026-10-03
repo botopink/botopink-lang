@@ -70,3 +70,19 @@ pool_job() { # <inflight dir> <cmd…>
     rm -f "$mark"
     return $rc
 }
+
+# with_timeout <seconds> <cmd…> — run a command under a wall-clock limit on
+# every runner the gate meets: GNU `timeout`, Homebrew's `gtimeout`, or — on
+# a stock macOS, which ships neither — perl's alarm, which survives the exec
+# and ends the command with SIGALRM. The callers only read pass or fail, never
+# timeout's 124, so the three are interchangeable.
+with_timeout() {
+    local secs="$1"; shift
+    if command -v timeout >/dev/null 2>&1; then
+        timeout "$secs" "$@"
+    elif command -v gtimeout >/dev/null 2>&1; then
+        gtimeout "$secs" "$@"
+    else
+        perl -e 'alarm shift; exec @ARGV or exit 127' "$secs" "$@"
+    fi
+}

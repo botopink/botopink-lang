@@ -391,7 +391,7 @@ quiet() { strip | grep -vE '^[[:space:]]*(Checking|Checked|Compiling|Compiled) '
 # `erl` on that directory (§ beam at the top).
 exec_run() { # <dir> <target>
     local dir="$1" t="$2"
-    (cd "$dir" && timeout 300 "$compiler" run --target "$t" >"$dir/stdout.txt" 2>"$dir/e.txt")
+    (cd "$dir" && with_timeout 300 "$compiler" run --target "$t" >"$dir/stdout.txt" 2>"$dir/e.txt")
 }
 
 project() { # <dir> <kind>
@@ -403,7 +403,7 @@ project() { # <dir> <kind>
 # or one `fail` line for <path> when nothing ran.
 test_project() { # <dir> <path> <target> <out>
     local dir="$1" path="$2" t="$3" out="$4"
-    (cd "$dir" && timeout 300 "$compiler" test --target "$t" --json >"$dir/o.json" 2>"$dir/e.txt")
+    (cd "$dir" && with_timeout 300 "$compiler" test --target "$t" --json >"$dir/o.json" 2>"$dir/e.txt")
     json_tests <"$dir/o.json" >"$dir/tests.tsv"
     if [ ! -s "$dir/tests.tsv" ]; then
         local why; why="$(strip <"$dir/e.txt" | grep -m1 -E 'error' | tr '\t' ' ')"
@@ -481,7 +481,7 @@ run_one() { # <path> <target>
         reject/*)
             local expect="$here/${path%.bp}.expect"
             cp "$here/$path" "$dir/src/main.bp"
-            (cd "$dir" && timeout 300 "$compiler" check >"$dir/o.txt" 2>"$dir/e.txt")
+            (cd "$dir" && with_timeout 300 "$compiler" check >"$dir/o.txt" 2>"$dir/e.txt")
             local code=$?
             quiet <"$dir/o.txt" >"$dir/all.txt"; quiet <"$dir/e.txt" >>"$dir/all.txt"
             if [ ! -f "$expect" ]; then
@@ -556,7 +556,7 @@ audit_one() { # <path> <excluded target> <the file that narrows>
         *) project "$dir"; cp "$here/$path" "$dir/src/main.bp" ;;
     esac
     export BOTOPINK_LIB_ROOTS="$lib_root"
-    (cd "$dir" && timeout 300 "$compiler" build --target "$t" >"$dir/o.txt" 2>"$dir/e.txt")
+    (cd "$dir" && with_timeout 300 "$compiler" build --target "$t" >"$dir/o.txt" 2>"$dir/e.txt")
     local code=$?
     quiet <"$dir/o.txt" >"$dir/all.txt"; quiet <"$dir/e.txt" >>"$dir/all.txt"
     if [ $code -eq 0 ] && [ "$t" != "erlang" ] && [ "$t" != "beam" ] && grep -rqE --include='*.bp' '^[[:space:]]*#\[@BeamMemory\.' "$dir"; then
@@ -574,7 +574,7 @@ audit_one() { # <path> <excluded target> <the file that narrows>
         printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "excluded by $by, and $t refuses it for another reason than a host binding (got: ${first:-no error line}) — pin a refusal with a .$t.expect, or let the cell run there" >"$out"
     fi
 }
-export -f run_one test_project json_tests strip quiet project exec_run audit_one pool_job pool_admit pool_cpus
+export -f run_one test_project json_tests strip quiet project exec_run audit_one pool_job pool_admit pool_cpus with_timeout
 export here work compiler lib_root
 
 if [ $self_test -eq 1 ]; then
