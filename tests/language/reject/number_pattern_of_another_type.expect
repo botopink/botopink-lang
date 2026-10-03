@@ -1,0 +1,2 @@
+the pattern `1.5` is an `f64` literal and the subject is `u8`
+6:9

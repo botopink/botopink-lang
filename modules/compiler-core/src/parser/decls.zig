@@ -936,6 +936,10 @@ fn parseEnumItem(
     // Numeric variant leaf (inside a section).
     if (this.check(.numberLiteral)) {
         if (!allow_numeric) return raiseUnexpected(this, this.peek());
+        // A numeric leaf is named by its digits: no suffix, no fraction
+        // (decision 247's suffixes are a literal's, not a name's).
+        const leafParts = @import("../lexer.zig").splitNumber(this.peek().lexeme);
+        if (leafParts.suffix.len != 0 or leafParts.floating or leafParts.radix) return raiseUnexpected(this, this.peek());
         const tok = this.advance();
         for (variants.items) |existing| {
             if (std.mem.eql(u8, existing.name, tok.lexeme)) return failAt(this, .enumVariantDuplicate, tok);

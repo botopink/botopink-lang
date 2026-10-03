@@ -1424,6 +1424,7 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
     }
 
     if (this.check(.numberLiteral)) {
+        try this.checkNumberLiteral(this.peek());
         const tok = this.advance();
         const lit = Expr{ .literal = .{ .loc = locFromToken(tok), .kind = .{ .numberLit = tok.lexeme } } };
         // A number is a receiver like any other literal — `libs/std` declares

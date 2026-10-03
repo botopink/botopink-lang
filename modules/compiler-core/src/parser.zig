@@ -298,6 +298,22 @@ pub const ParseErrorType = enum {
     /// blaming the value for a missing `val` (front 15 step 3). Located at the
     /// label.
     tupleLiteralLabel,
+    /// `42L`, `1.5F` — a numeric suffix is lower case (decision 247).
+    /// Located at the suffix; the caption names the lower-case one.
+    numberSuffixUppercase,
+    /// `2x`, `10px`, `1.5q` — the letters glued to a number are no suffix
+    /// (decision 247). Located at the letters.
+    numberSuffixUnknown,
+    /// `0b1f`, `0o7d` — a radix literal is an integer and takes an integer
+    /// suffix only (decision 247; in `0x…` the letters are hex digits).
+    /// Located at the suffix.
+    numberSuffixFloatOnRadix,
+    /// `1.5u`, `1e3l` — a literal with a fraction or an exponent is floating
+    /// and takes `f` or `d` only (decision 247). Located at the suffix.
+    numberSuffixIntegerOnFloat,
+    /// `1e`, `2.5ex` — an exponent without digits (decision 247). Located at
+    /// the `e`.
+    numberExponentWithoutDigits,
 };
 
 pub const ParseErrorInfo = struct {
@@ -1273,6 +1289,7 @@ pub const Parser = struct {
                     while (this.check(.dot) or this.check(.identifier)) last = this.advance();
                     try args.append(alloc, spanLexemes(first, last));
                 } else if (this.check(.minus) and this.peekAt(1).kind == .numberLiteral) {
+                    try this.checkNumberLiteral(this.peekAt(1));
                     // `#[mark(-20)]` — a negative literal is one argument, the
                     // sign and the digits spanned into one lexeme, so the
                     // reader that parses the lexeme as an expression sees
@@ -1414,6 +1431,41 @@ pub const Parser = struct {
             .args = args,
             .trailing = trailing,
         } } } };
+    }
+
+    /// Decision 247 — the suffix of a number token is one of
+    /// `lexer.number_suffixes`, lower case, and fits the literal: `f` / `d`
+    /// on a decimal literal only, an integer suffix on an integer literal
+    /// only, an exponent with its digits. Every refusal is located at the
+    /// suffix. Called by every site that reads a number token as a literal.
+    pub fn checkNumberLiteral(this: *This, tok: Token) ParseError!void {
+        const parts = lexer.splitNumber(tok.lexeme);
+        if (parts.suffix.len == 0) return;
+        var at = tok;
+        at.offset += parts.digits.len;
+        at.col += parts.digits.len;
+        at.lexeme = parts.suffix;
+        const kind: ParseErrorType = blk: {
+            if (lexer.numberSuffixType(parts.suffix) == null) {
+                if (!parts.radix and (parts.suffix[0] == 'e' or parts.suffix[0] == 'E')) break :blk .numberExponentWithoutDigits;
+                if (lexer.numberSuffixLowercase(parts.suffix)) |lower| {
+                    var info = ParseErrorInfo.fromToken(.numberSuffixUppercase, at);
+                    info.lexeme = lower;
+                    this.parseError = info;
+                    return ParseError.UnexpectedToken;
+                }
+                break :blk .numberSuffixUnknown;
+            }
+            if (lexer.numberSuffixIsFloat(parts.suffix)) {
+                if (parts.radix) break :blk .numberSuffixFloatOnRadix;
+                return;
+            }
+            if (parts.floating) break :blk .numberSuffixIntegerOnFloat;
+            return;
+        };
+        if (kind == .numberExponentWithoutDigits) at.lexeme = at.lexeme[0..1];
+        this.parseError = ParseErrorInfo.fromToken(kind, at);
+        return ParseError.UnexpectedToken;
     }
 
     /// Builds a `jump` expression (`return`/`throw`/`try`/`break`/`yield`), boxing `inner` when present.

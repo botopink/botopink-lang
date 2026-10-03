@@ -1,0 +1,7 @@
+//// Decision 247 — a suffixed literal is a value of its suffix's type, and
+//// `300u8` is past `u8`: refused at the literal.
+
+pub fn main() {
+    val b = 300u8;
+    @print(b);
+}

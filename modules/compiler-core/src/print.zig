@@ -86,6 +86,38 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .caretCaption = "write a one-character string, `\"a\"`",
             .hint = "A character is a string of length one: `\"a\"`, and `s[0]` reads one from a string.",
         },
+        .numberSuffixUppercase => .{
+            .code = "number-suffix-uppercase",
+            .message = "a numeric suffix is written in lower case",
+            .caretCaption = "write",
+            .lexemeInCaption = true,
+            .hint = "The suffixes are `f` (f32), `d` (f64), `l` (i64), `u` (u32), `ul` (u64), `i8`, `i16`, `u8`, `u16`, `isize` and `usize`, lower case only (decision 247): `42l`, `1.5f`.",
+        },
+        .numberSuffixUnknown => .{
+            .code = "number-suffix-unknown",
+            .message = "the letters after this number are not a numeric suffix",
+            .caretCaption = "not a suffix:",
+            .lexemeInCaption = true,
+            .hint = "A number takes one of `f`, `d`, `l`, `u`, `ul`, `i8`, `i16`, `u8`, `u16`, `isize`, `usize` (decision 247); anything else glued to it is an error — separate a name from a number with an operator or a space.",
+        },
+        .numberSuffixFloatOnRadix => .{
+            .code = "number-suffix-float-on-radix",
+            .message = "a hexadecimal, octal or binary literal is an integer and takes an integer suffix only",
+            .caretCaption = "a floating suffix",
+            .hint = "`f` and `d` make a floating literal and are decimal only (decision 247): write `255d` or `255.0`. In a `0x…` literal the letters `a`–`f` are hex digits.",
+        },
+        .numberSuffixIntegerOnFloat => .{
+            .code = "number-suffix-integer-on-float",
+            .message = "a literal with a fraction or an exponent is floating and takes `f` or `d` only",
+            .caretCaption = "an integer suffix",
+            .hint = "Drop the fraction for an integer (`42l`), or write a floating suffix (`1.5f`, `1.5d`) — decision 247.",
+        },
+        .numberExponentWithoutDigits => .{
+            .code = "number-exponent-without-digits",
+            .message = "an exponent needs digits",
+            .caretCaption = "write the exponent's digits after it",
+            .hint = "A floating literal's exponent is `e` (or `E`), an optional sign and digits: `1e10`, `2.5e-3` (decision 247).",
+        },
         .nestedFnDecl => .{
             .code = "nested-fn-decl",
             .message = "a `fn` is declared at module level, not inside a body",

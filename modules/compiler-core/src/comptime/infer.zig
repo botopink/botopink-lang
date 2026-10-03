@@ -32,6 +32,7 @@ const snapshotMod = @import("snapshot.zig");
 /// inference without a place in the source.
 const unifyUnlocated = unifyMod.unify;
 const Lexer = @import("../lexer.zig").Lexer;
+const lexerMod = @import("../lexer.zig");
 const Parser = @import("../parser.zig").Parser;
 const Module = @import("../module.zig").Module;
 const comptimeMod = @import("../comptime.zig");
@@ -6492,7 +6493,10 @@ fn valueToAstLiteral(env: *Env, v: templateEval.TypedValue, loc: ast.Loc, shape:
             node.* = .{ .literal = .{ .loc = loc, .kind = .{ .numberLit = text } } };
         },
         .float => |f| {
-            const text = std.fmt.allocPrint(env.arena, "{d}", .{f}) catch return null;
+            // Decision 247 — a lifted float keeps its decimal point: `6.0`
+            // printed as `6` would come back an integer literal, an `i32`.
+            const raw = std.fmt.allocPrint(env.arena, "{d}", .{f}) catch return null;
+            const text = if (std.mem.indexOfAny(u8, raw, ".eEn") == null) std.fmt.allocPrint(env.arena, "{s}.0", .{raw}) catch return null else raw;
             node.* = .{ .literal = .{ .loc = loc, .kind = .{ .numberLit = text } } };
         },
         .string => |str| {
@@ -8831,7 +8835,8 @@ fn bindPatternNamesForSubject(
     snapshots: *std.ArrayListUnmanaged(PatternBindingSnapshot),
 ) InferError!void {
     switch (pattern) {
-        .wildcard, .numberLit, .stringLit => {},
+        .wildcard, .stringLit => {},
+        .numberLit => |text| try checkNumberPattern(env, text, subjectType),
         .ident => |name| {
             if (isEnumVariantNameForSubject(env, subjectType, name)) return;
             // §5.2 — a bare type name is a type pattern, not a binder: it tests
@@ -8842,6 +8847,12 @@ fn bindPatternNamesForSubject(
             try saveAndBindPatternName(env, snapshots, name, subjectType);
         },
         .variant => |v| {
+            // Decision 247 — a range's two bounds are number (or string)
+            // patterns over the subject itself.
+            if (v.shape == .range and v.payload == .literals) {
+                for (v.payload.literals) |bound| try bindPatternNamesForSubject(env, bound, subjectType, snapshots);
+                return;
+            }
             // C8 — each payload binding takes the variant field's declared type,
             // instantiated against the subject's generic args. A record's
             // constructor pattern (`val assert Person(n, a) = p catch …`, the
@@ -8879,6 +8890,7 @@ fn bindPatternNamesForSubject(
             for (lst.elems) |elem| {
                 switch (elem) {
                     .bind => |name| try saveAndBindPatternName(env, snapshots, name, elemTy orelse try env.freshVar()),
+                    .numberLit => |text| if (elemTy) |et| try checkNumberPattern(env, text, et),
                     else => {},
                 }
             }
@@ -10397,29 +10409,106 @@ fn equalityOperandExpectation(op: @FieldType(ast.BinOpExprOf(.untyped), "op"), o
     return other;
 }
 
-/// Decision 209 — the position of a literal expects `f64` (through one `?T`).
-fn expectsFloat(env: *Env) bool {
-    var t = (env.expectedType orelse return false).deref();
+/// Decision 247 — the floating type the position of a literal expects
+/// (through one `?T`): `"f64"`, `"f32"`, or null.
+fn expectedFloatType(env: *Env) ?[]const u8 {
+    var t = (env.expectedType orelse return null).deref();
     if (t.* == .named and std.mem.eql(u8, t.named.name, "optional") and t.named.args.len == 1) t = t.named.args[0].deref();
-    return t.* == .named and t.named.args.len == 0 and std.mem.eql(u8, t.named.name, "f64");
+    if (t.* != .named or t.named.args.len != 0) return null;
+    if (std.mem.eql(u8, t.named.name, "f64")) return "f64";
+    if (std.mem.eql(u8, t.named.name, "f32")) return "f32";
+    return null;
 }
 
-/// True for an integer literal (`1000`), which takes its width from its
-/// position; false for everything else.
+/// True for an integer literal written without a suffix (`1000`), which
+/// takes its width from its position; false for everything else (decision
+/// 247: `1000l` is an `i64` wherever it stands).
 fn isIntegerLiteral(e: ast.Expr) bool {
     if (e != .literal) return false;
     return switch (e.literal.kind) {
-        .numberLit => |n| !isFloatLiteralText(n),
+        .numberLit => |n| blk: {
+            const parts = lexerMod.splitNumber(n);
+            break :blk !parts.floating and parts.suffix.len == 0;
+        },
         else => false,
     };
 }
 
-/// Whether a number literal is a float: it has a `.` or, being decimal, an
-/// exponent — `5e-324` and `1e10` are floats, `0x1E` is an integer.
+/// Whether a number literal is a float: a fraction, a decimal exponent
+/// (`5e-324`, `1e10`; `0x1E` is an integer) or a floating suffix (`1f`).
 fn isFloatLiteralText(n: []const u8) bool {
-    if (std.mem.indexOfScalar(u8, n, '.') != null) return true;
-    if (n.len >= 2 and n[0] == '0' and std.ascii.isAlphabetic(n[1])) return false;
-    return std.mem.indexOfAny(u8, n, "eE") != null;
+    const parts = lexerMod.splitNumber(n);
+    return parts.floating or lexerMod.numberSuffixIsFloat(parts.suffix);
+}
+
+/// Decision 247 — an integer literal's digits fit the integer type it is
+/// (`300u8` and `val b: u8 = 300` are refused at the literal). Radix and `_`
+/// separators read as written; a literal past `i128` is past every type.
+fn refuseIntegerOutOfRange(env: *Env, digits: []const u8, typeName: []const u8, loc: ast.Loc) InferError!void {
+    var clean: std.ArrayListUnmanaged(u8) = .empty;
+    for (digits) |c| if (c != '_') try clean.append(env.arena, c);
+    const v = std.fmt.parseInt(i128, clean.items, 0) catch std.math.maxInt(i128);
+    const max: i128 = if (std.mem.eql(u8, typeName, "i8")) std.math.maxInt(i8) else if (std.mem.eql(u8, typeName, "u8")) std.math.maxInt(u8) else if (std.mem.eql(u8, typeName, "i16")) std.math.maxInt(i16) else if (std.mem.eql(u8, typeName, "u16")) std.math.maxInt(u16) else if (std.mem.eql(u8, typeName, "i32")) std.math.maxInt(i32) else if (std.mem.eql(u8, typeName, "u32")) std.math.maxInt(u32) else if (std.mem.eql(u8, typeName, "i64") or std.mem.eql(u8, typeName, "isize")) std.math.maxInt(i64) else std.math.maxInt(u64);
+    if (v <= max) return;
+    const msg = try std.fmt.allocPrint(env.arena, "the literal `{s}` does not fit `{s}` (at most {d})", .{ digits, typeName, max });
+    env.lastError = TypeError.custom(msg, "An integer literal is a value of its type, and the type has no such value (decision 247): write a wider type's suffix (`l`, `ul`) or annotate the position with one.").withLoc(loc);
+    return error.TypeError;
+}
+
+/// Decision 247 — a 64-bit integer literal past `2^53` has no exact value on
+/// commonJS, whose numbers are doubles: refused there at the literal, so the
+/// program never prints a different number than it wrote. The other targets
+/// hold it.
+fn refuseBeyondJsSafeInteger(env: *Env, digits: []const u8, typeName: []const u8, loc: ast.Loc) InferError!void {
+    const tgt = env.target orelse return;
+    // The driver names the commonJS target `node`.
+    if (!std.mem.eql(u8, tgt, "node") and !std.mem.eql(u8, tgt, "commonJS")) return;
+    const wide = [_][]const u8{ "i64", "u64", "isize", "usize" };
+    const isWide = for (wide) |w| {
+        if (std.mem.eql(u8, w, typeName)) break true;
+    } else false;
+    if (!isWide) return;
+    var clean: std.ArrayListUnmanaged(u8) = .empty;
+    for (digits) |c| if (c != '_') try clean.append(env.arena, c);
+    const v = std.fmt.parseInt(i128, clean.items, 0) catch std.math.maxInt(i128);
+    if (v <= (1 << 53)) return;
+    const msg = try std.fmt.allocPrint(env.arena, "the `{s}` literal `{s}` is past 2^53, which commonJS cannot hold exactly", .{ typeName, digits });
+    env.lastError = TypeError.custom(msg, "A commonJS number is a double: an integer above 9007199254740992 loses digits (decision 247). Keep the value within 2^53 on this target, or build for erlang, beam or wasm.").withLoc(loc);
+    return error.TypeError;
+}
+
+/// Decision 247 — a number pattern matches only a subject of its type: a
+/// suffixed literal its suffix's type, a floating one `f64`, an integer one
+/// any integer type (the subject's, within range). A subject that is a
+/// union is matched by one of its members; a subject not yet known is left
+/// to the arms that know it.
+fn checkNumberPattern(env: *Env, text: []const u8, subjectType: *T.Type) InferError!void {
+    const st = subjectType.deref();
+    var candidates: []const *T.Type = &.{};
+    var single = [_]*T.Type{st};
+    switch (st.*) {
+        .named => candidates = &single,
+        .union_ => |members| candidates = members,
+        else => return,
+    }
+    const ints = [_][]const u8{ "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "isize", "usize" };
+    const parts = lexerMod.splitNumber(text);
+    const own: ?[]const u8 = if (parts.suffix.len != 0) lexerMod.numberSuffixType(parts.suffix) else if (parts.floating) "f64" else null;
+    for (candidates) |c| {
+        const cd = c.deref();
+        if (cd.* != .named or cd.named.args.len != 0) continue;
+        const name = cd.named.name;
+        if (own) |o| {
+            if (std.mem.eql(u8, o, name)) return;
+        } else for (ints) |i| if (std.mem.eql(u8, i, name)) return;
+    }
+    const subjectName = try snapshotMod.typeNameOf(env.arena, subjectType);
+    const msg = if (own) |o|
+        try std.fmt.allocPrint(env.arena, "the pattern `{s}` is an `{s}` literal and the subject is `{s}`", .{ text, o, subjectName })
+    else
+        try std.fmt.allocPrint(env.arena, "the pattern `{s}` is an integer literal and the subject is `{s}`", .{ text, subjectName });
+    env.lastError = TypeError.custom(msg, "A number pattern matches a subject of its own type (decision 247): write the literal the subject's type takes — `1.0` for an `f64`, `1.5f` for an `f32`, `42` or a suffix for an integer.");
+    return error.TypeError;
 }
 
 fn inferLiteralExpr(env: *Env, lit: ast.LiteralExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
@@ -10457,26 +10546,52 @@ fn inferLiteralExpr(env: *Env, lit: ast.LiteralExprOf(.untyped), loc: ast.Loc) I
             return inferExprTyped(env, acc.?.*);
         },
         .numberLit => |n| blk: {
-            const isFloat = isFloatLiteralText(n);
-            // An integer literal takes the integer type its position asks for
-            // (`val k: i64 = 1000;`, an `i64` parameter, the other operand of
-            // an arithmetic or comparison operator); with nothing asking, `i32`.
-            // Decision 209 — an integer LITERAL checked against an expected
-            // `f64` is that `f64` (`val x: f64 = 1`, an `f64` argument, field
-            // or return, an element of an expected `f64[]`), re-spelt as a
-            // float for the backends (`env.indexRewrites`, literal for
-            // literal, as the array join does). An `i32` value never widens.
-            if (!isFloat and expectsFloat(env)) {
-                if (try floatSpelling(env, n)) |text| {
-                    if (!env.indexRewrites.contains(loc)) {
-                        const respelt = try env.arena.create(ast.Expr);
-                        respelt.* = .{ .literal = .{ .loc = loc, .kind = .{ .numberLit = text } } };
-                        try env.indexRewrites.put(loc, respelt);
-                    }
-                    break :blk TypedExpr{ .literal = .{ .loc = loc, .type_ = try env.namedType("f64"), .kind = .{ .numberLit = text } } };
+            // Decision 247 (209 reversed) — a suffixed literal is its suffix's
+            // type wherever it stands (`1.5f` f32, `42ul` u64); without one,
+            // `1.5` is `f64` and `42` an integer that takes the integer type
+            // its position asks for (`val k: i64 = 1000;`, an `i64` argument,
+            // the other operand of an arithmetic or comparison operator) and
+            // `i32` with nothing asking. A literal never changes type to fit:
+            // an integer where a float is expected and an unsuffixed fraction
+            // where an `f32` is are refused at the literal, naming the
+            // spelling. The suffix is stripped here once, for the typed tree
+            // and — through `env.indexRewrites` — for the program every
+            // backend lowers.
+            const parts = lexerMod.splitNumber(n);
+            if (parts.suffix.len != 0) {
+                const typeName = lexerMod.numberSuffixType(parts.suffix) orelse {
+                    const msg = try std.fmt.allocPrint(env.arena, "`{s}` is not a numeric suffix", .{parts.suffix});
+                    env.lastError = TypeError.custom(msg, "The suffixes are `f`, `d`, `l`, `u`, `ul`, `i8`, `i16`, `u8`, `u16`, `isize`, `usize` (decision 247).").withLoc(loc);
+                    return error.TypeError;
+                };
+                if (!lexerMod.numberSuffixIsFloat(parts.suffix)) {
+                    try refuseIntegerOutOfRange(env, parts.digits, typeName, loc);
+                    try refuseBeyondJsSafeInteger(env, parts.digits, typeName, loc);
                 }
+                const text = try lexerMod.numberBackendText(env.arena, n);
+                if (!env.indexRewrites.contains(loc)) {
+                    const stripped = try env.arena.create(ast.Expr);
+                    stripped.* = .{ .literal = .{ .loc = loc, .kind = .{ .numberLit = text } } };
+                    try env.indexRewrites.put(loc, stripped);
+                }
+                break :blk TypedExpr{ .literal = .{ .loc = loc, .type_ = try env.namedType(typeName), .kind = .{ .numberLit = text } } };
             }
-            const width: []const u8 = if (isFloat) "f64" else (expectedIntegerType(env) orelse "i32");
+            if (parts.floating) {
+                if (expectedFloatType(env)) |want| if (std.mem.eql(u8, want, "f32")) {
+                    const msg = try std.fmt.allocPrint(env.arena, "`{s}` is an `f64` where an `f32` is expected — write `{s}f`", .{ n, n });
+                    env.lastError = TypeError.custom(msg, "A floating literal without a suffix is an `f64` and never changes type to fit (decision 247); the `f` suffix makes it an `f32`.").withLoc(loc);
+                    return error.TypeError;
+                };
+                break :blk TypedExpr{ .literal = .{ .loc = loc, .type_ = try env.namedType("f64"), .kind = .{ .numberLit = n } } };
+            }
+            if (expectedFloatType(env)) |want| {
+                const asFloat = (try floatSpelling(env, n)) orelse n;
+                const suffix: []const u8 = if (std.mem.eql(u8, want, "f32")) "f" else "d";
+                const msg = try std.fmt.allocPrint(env.arena, "the integer literal `{s}` is not an `{s}` — write `{s}{s}` or `{s}`", .{ n, want, n, suffix, if (std.mem.eql(u8, want, "f32")) try std.fmt.allocPrint(env.arena, "{s}f", .{asFloat}) else asFloat });
+                env.lastError = TypeError.custom(msg, "A literal without a suffix never changes type to fit (decision 247, which reverses decision 209): an integer literal is an integer, and a float is written as one.").withLoc(loc);
+                return error.TypeError;
+            }
+            const width: []const u8 = expectedIntegerType(env) orelse "i32";
             break :blk TypedExpr{ .literal = .{ .loc = loc, .type_ = try env.namedType(width), .kind = .{ .numberLit = n } } };
         },
         .null_ => blk: {
@@ -15256,19 +15371,22 @@ fn caseTypeFromArms(env: *Env, arms: []const ast.CaseArmOf(.typed)) InferError!*
 /// is not a literal does not widen. A union made here records its first
 /// disagreeing element in `env.unionOrigins`, which the refusal at a use names.
 fn arrayLiteralJoin(env: *Env, elems: []const ast.Expr, typed: []ast.TypedExpr) InferError!*T.Type {
-    const hasFloat = for (typed) |t| {
-        if (t.getType().deref().isNamed("f64")) break true;
-    } else false;
-    if (hasFloat) {
+    // Decision 247 (209 reversed) — an integer literal beside a float is
+    // not re-spelt into an `f64[]`: the literal never changes type, and
+    // `[1, 2.5]` would otherwise be the union nobody meant.
+    const floatElem = for (typed) |t| {
+        const d = t.getType().deref();
+        if (d.isNamed("f64") or d.isNamed("f32")) break d.named.name;
+    } else null;
+    if (floatElem) |ft| {
         for (elems, 0..) |e, i| {
             if (!isIntegerLiteral(e)) continue;
             if (!typed[i].getType().deref().isNamed("i32")) continue;
-            const text = try floatSpelling(env, e.literal.kind.numberLit) orelse continue;
-            const lit = try env.arena.create(ast.Expr);
-            lit.* = .{ .literal = .{ .loc = e.literal.loc, .kind = .{ .numberLit = text } } };
-            if (env.indexRewrites.contains(e.literal.loc)) continue;
-            try env.indexRewrites.put(e.literal.loc, lit);
-            typed[i] = TypedExpr{ .literal = .{ .loc = e.literal.loc, .type_ = try env.namedType("f64"), .kind = .{ .numberLit = text } } };
+            const text = e.literal.kind.numberLit;
+            const asFloat = (try floatSpelling(env, text)) orelse text;
+            const msg = try std.fmt.allocPrint(env.arena, "the integer literal `{s}` stands beside an `{s}` in an array literal — write `{s}`", .{ text, ft, if (std.mem.eql(u8, ft, "f32")) try std.fmt.allocPrint(env.arena, "{s}f", .{asFloat}) else asFloat });
+            env.lastError = TypeError.custom(msg, "A literal without a suffix never changes type to fit (decision 247): write every element as the float it is, `[1.0, 2.5]`, or annotate the array.").withLoc(e.literal.loc);
+            return error.TypeError;
         }
     }
     var members: std.ArrayListUnmanaged(*T.Type) = .empty;
