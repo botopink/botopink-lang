@@ -50,10 +50,15 @@ pub const Adapter = struct {
 };
 
 /// The adapters a `wasi:` binding may name — the list `docs.md` § Host
-/// bindings documents. Each is a prelude helper (`wat_prelude.zig`, group
-/// `wasi_random`) named `__wasi_<name>`.
+/// bindings documents. Each is a prelude helper (`wat_prelude.zig`, the group
+/// of its name) named `__wasi_<name>`. `seed_u32` / `seeded_f64` make no WASI
+/// call of their own: they hold the state of `std/io/random`'s seeded stream,
+/// which no botopink module can hold on every target, and draw it as the
+/// commonJS host's sidecar does (Mulberry32).
 pub const adapters = [_]Adapter{
     .{ .name = "random_f64", .params = &.{}, .result = .f64, .what = "a uniform `f64` in `[0.0, 1.0)` from 53 bits of `random_get`" },
+    .{ .name = "seed_u32", .params = &.{.i32}, .result = null, .what = "seeds the module's Mulberry32 stream with the word's bits" },
+    .{ .name = "seeded_f64", .params = &.{}, .result = .f64, .what = "the next Mulberry32 draw in `[0.0, 1.0)`, or `random_f64`'s before any seed" },
 };
 
 pub const Binding = union(enum) {
@@ -96,7 +101,9 @@ pub fn parse(alloc: std.mem.Allocator, text: []const u8, sig: Signature) !Result
         const name = text["wasi:".len..];
         const ad = findAdapter(name) orelse return refused(alloc, "`#[@External.Wasm(\"{s}\")]`: `{s}` is not a WASI adapter — the adapters are listed in docs.md § Host bindings ({s})", .{ text, name, adapterNames() });
         if (sig.params.len != ad.params.len or !slotsEql(sig.params, ad.params) or !resultEql(sig, ad.result)) {
-            return refused(alloc, "`#[@External.Wasm(\"{s}\")]`: the adapter `{s}` takes {s} and answers {s}; the declaration's signature differs", .{ text, name, try slotsText(alloc, ad.params), slotText(ad.result) });
+            const takes = try slotsText(alloc, ad.params);
+            defer alloc.free(takes);
+            return refused(alloc, "`#[@External.Wasm(\"{s}\")]`: the adapter `{s}` takes {s} and answers {s}; the declaration's signature differs", .{ text, name, takes, slotText(ad.result) });
         }
         return .{ .ok = .{ .wasi = ad } };
     }
@@ -148,16 +155,18 @@ fn slotText(s: ?Slot) []const u8 {
     return if (s) |x| @tagName(x) else "nothing";
 }
 
-fn slotsText(alloc: std.mem.Allocator, ss: []const Slot) ![]const u8 {
-    if (ss.len == 0) return "no parameter";
+/// The adapter's parameter list as text, owned by the caller.
+fn slotsText(alloc: std.mem.Allocator, ss: []const Slot) ![]u8 {
+    if (ss.len == 0) return alloc.dupe(u8, "no parameter");
     var buf: std.ArrayListUnmanaged(u8) = .empty;
+    errdefer buf.deinit(alloc);
     try buf.append(alloc, '(');
     for (ss, 0..) |s, i| {
         if (i > 0) try buf.appendSlice(alloc, ", ");
         try buf.appendSlice(alloc, @tagName(s));
     }
     try buf.append(alloc, ')');
-    return buf.items;
+    return buf.toOwnedSlice(alloc);
 }
 
 fn adapterNames() []const u8 {
@@ -313,6 +322,15 @@ test "host binding: the three forms and their refusals" {
     {
         const r = try parse(a, "wasi:random_f64", .{ .params = &.{}, .result = .f64 });
         try std.testing.expectEqualStrings("random_f64", r.ok.wasi.name);
+    }
+    {
+        const r = try parse(a, "wasi:seed_u32", .{ .params = &.{.i32}, .result = null });
+        try std.testing.expectEqualStrings("seed_u32", r.ok.wasi.name);
+    }
+    {
+        const r = try parse(a, "wasi:seed_u32", .{ .params = &.{.f64}, .result = null });
+        defer a.free(r.refused.message);
+        try std.testing.expect(std.mem.indexOf(u8, r.refused.message, "takes (i32) and answers nothing") != null);
     }
     {
         const r = try parse(a, "wasi:clock_time_get", .{ .params = &.{}, .result = .f64 });

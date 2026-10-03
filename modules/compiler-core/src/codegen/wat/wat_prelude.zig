@@ -44,6 +44,7 @@ pub fn items(g: ast.HelperGroup) []const ast.Item {
         .print_opt_tagged => &.{ .{ .func = print_opt_tagged_raw }, .{ .func = print_opt_tagged } },
         .unknown => &.{ .{ .func = unknown_kind }, .{ .func = unknown_int_in }, .{ .func = unknown_as_i32 }, .{ .func = unknown_as_f64 }, .{ .func = unknown_eq } },
         .print_unknown => &.{ .{ .func = print_unknown_raw }, .{ .func = print_unknown } },
+        .wasi_seed_state => &.{ .{ .global = seed_state_global }, .{ .global = seeded_global } },
         .print_opt => &.{
             .{ .func = print_null },         .{ .func = print_opt_i32_raw }, .{ .func = print_opt_i32 },
             .{ .func = print_opt_bool_raw }, .{ .func = print_opt_bool },    .{ .func = print_opt_str_raw },
@@ -310,6 +311,38 @@ const wasi_random_f64 = typedFunc("__wasi_random_f64", &.{}, .f64, &.{}, &.{
     when(&.{.@"unreachable"}),                                          c32(208),                                  .{ .load = .{ .ty = .i64 } },
     c64(11),                                                            op64("shr_u"),                             .{ .convert = "f64.convert_i64_u" },
     .{ .@"const" = .{ .ty = .f64, .text = "1.1102230246251565e-16" } }, .{ .op = .{ .ty = .f64, .name = "mul" } },
+});
+
+/// `wasi:seed_u32` / `wasi:seeded_f64` — `std/io/random`'s seeded stream as
+/// the commonJS sidecar draws it (`libs/std/src/sidecars/random.mjs`):
+/// Mulberry32 over one word of state, so the same `seed` gives the same draws
+/// on both targets. `$__seeded` is 0 until a seed is written, and until then a
+/// draw is `$__wasi_random_f64`'s — the sidecar's `Math.random` fallback.
+const seed_state_global = ast.Global{ .name = "__seed_state", .ty = .i32, .mutable = true, .init = "0" };
+const seeded_global = ast.Global{ .name = "__seeded", .ty = .i32, .mutable = true, .init = "0" };
+
+/// `state = s` — `(Number(s) | 0) >>> 0` is the word's own bits.
+const wasi_seed_u32 = func("__wasi_seed_u32", &.{"s"}, null, &.{}, &.{
+    get("s"), .{ .global_set = "__seed_state" }, c32(1), .{ .global_set = "__seeded" },
+});
+
+/// One Mulberry32 step: `state += 0x6D2B79F5`; `t = imul(t ^ t >>> 15, t | 1)`;
+/// `t ^= t + imul(t ^ t >>> 7, t | 61)`; `(t ^ t >>> 14) >>> 0` scaled by 2^-32.
+const wasi_seeded_f64 = typedFunc("__wasi_seeded_f64", &.{}, .f64, i32s(&.{"t"}), &.{
+    .{ .global_get = "__seeded" },             op("eqz"),                           when(&.{ call("__wasi_random_f64"), ret }),
+    .{ .global_get = "__seed_state" },         c32(1831565813),                     op("add"),
+    tee("t"),                                  .{ .global_set = "__seed_state" },   get("t"),
+    get("t"),                                  c32(15),                             op("shr_u"),
+    op("xor"),                                 get("t"),                            c32(1),
+    op("or"),                                  op("mul"),                           set("t"),
+    get("t"),                                  get("t"),                            get("t"),
+    get("t"),                                  c32(7),                              op("shr_u"),
+    op("xor"),                                 get("t"),                            c32(61),
+    op("or"),                                  op("mul"),                           op("add"),
+    op("xor"),                                 set("t"),                            get("t"),
+    get("t"),                                  c32(14),                             op("shr_u"),
+    op("xor"),                                 .{ .convert = "f64.convert_i32_u" }, .{ .@"const" = .{ .ty = .f64, .text = "2.3283064365386963e-10" } },
+    .{ .op = .{ .ty = .f64, .name = "mul" } },
 });
 
 /// `s.padStart(width, pad)` (`start = 1`) / `padEnd` (`start = 0`): `s` when it

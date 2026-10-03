@@ -1,0 +1,19 @@
+//// `std/hash` on all four targets (decision 238, `01-compiler/05-wasm` step
+//// 5): on wasm every cell is bound with `fn:` to a private body in exact
+//// arithmetic, answering what Node's `crypto` answers. The content hashes: the djb2 fold, the framed cache keys, ETags, fingerprints.
+//// The program's text has a two- and a three-byte UTF-8 character and none
+//// above U+FFFF. Three cells, not one: a wasm program has one 64 KiB page of
+//// heap and nothing is freed (`decisions-pending.md` 05w-e), so one program
+//// cannot hold every digest.
+
+import {hash} from "std";
+
+pub fn main() {
+    @print(hash.contentHash("héllo €"));
+    @print(hash.cacheKey(["user:1", "profile"]));
+    @print(hash.strongCacheKey(["user", "1:profile"]));
+    @print(hash.etag("<p>hi</p>"));
+    @print(hash.weakEtag("<p>hi</p>"));
+    @print(hash.matches("<p>hi</p>", "*"));
+    @print(hash.fingerprint("app.js", "body{}"));
+}

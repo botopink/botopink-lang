@@ -247,8 +247,20 @@ is one of `op:<wasm opcode>` (the declared types must be the opcode's),
 the declared parameters in order; anything else is refused at the annotation
 on a wasm build. An algorithm with no wasm instruction stays in the library as
 that private `fn` — the only std edit a wasm binding brings, never a public
-one. Bound today: `math` (every cell) and `escape` (both cells); the other
-modules wait on `01-compiler/05-wasm` step 5 and stay refused on wasm.
+one. Bound today: `math` (every cell), `escape` (both cells), `hash` (every
+cell: private bodies under `// ── the wasm bodies` at the end of `hash.bp` —
+SHA-256/512, SHA-1, MD5, HMAC, PBKDF2, base64, the djb2 fold — in exact `f64`
+arithmetic, a word stored as two 16-bit halves, the constants the standards'
+hex read in place; `run/std_hash_{digests,macs,content}_on_every_target`) and
+`io/random` (`float` `wasi:random_f64`, `seed` / `seededFloat` `wasi:seed_u32`
+/ `wasi:seeded_f64` — the sidecar's Mulberry32 —, the rest `fn:` bodies at the
+end of `io/random.bp`; `run/std_random_on_every_target`). A body here avoids
+what the wasm backend cannot do yet (`codegen/wat/AGENTS.md` § Host bindings:
+one 64 KiB heap page, `i64`, floats in arrays, `Array.range` / `repeat`); no
+std module holds a module-level `var` (on erlang it lowers to `std@beam`,
+which a std module does not import). The other group-1 modules (`unicode`,
+`json`, `encoding`, `querystring`) wait on `01-compiler/05-wasm` step 5 and
+stay refused on wasm.
 
 ## Tests
 

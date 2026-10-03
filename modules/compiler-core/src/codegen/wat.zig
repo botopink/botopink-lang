@@ -3469,7 +3469,7 @@ const Emitter = struct {
                     return self.refuse(ann_loc, "`#[@External.Wasm(\"fn:{s}\")]` on `{s}`: `{s}` has no body of its own to run", .{ name, f.name, name });
                 if (g.isPub)
                     return self.refuse(ann_loc, "`#[@External.Wasm(\"fn:{s}\")]` on `{s}`: `{s}` is `pub` — a binding names a private fn, so no body becomes the module's surface twice", .{ name, f.name, name });
-                if (!try sameSignature(ar, f, g))
+                if (!try sameSignature(ar, f, g, if (from < linked.len) mod_name else ""))
                     return self.refuse(ann_loc, "`#[@External.Wasm(\"fn:{s}\")]` on `{s}`: `{s}` must take the same parameter types in the same order and answer the same type", .{ name, f.name, name });
                 bound.target = if (from < linked.len)
                     (self.link_mangled.get(try linkKey(ar, mod_name, name)) orelse name)
@@ -3501,7 +3501,7 @@ const Emitter = struct {
 
     /// Whether `g` takes the parameter types `f` declares, in order, and
     /// answers the same type — compared as written (`TypeRef.format`).
-    fn sameSignature(ar: std.mem.Allocator, f: ast.FnDecl, g: ast.FnDecl) !bool {
+    fn sameSignature(ar: std.mem.Allocator, f: ast.FnDecl, g: ast.FnDecl, module: []const u8) !bool {
         if (f.genericParams.len != g.genericParams.len) return false;
         var fp: std.ArrayListUnmanaged(ast.TypeRef) = .empty;
         var gp: std.ArrayListUnmanaged(ast.TypeRef) = .empty;
@@ -3509,13 +3509,24 @@ const Emitter = struct {
         for (g.params) |p| if (!std.mem.eql(u8, p.name, "self")) try gp.append(ar, p.typeRef);
         if (fp.items.len != gp.items.len) return false;
         for (fp.items, gp.items) |a, b| {
-            if (!std.mem.eql(u8, try std.fmt.allocPrint(ar, "{f}", .{a}), try std.fmt.allocPrint(ar, "{f}", .{b}))) return false;
+            if (!std.mem.eql(u8, try typeText(ar, a, module), try typeText(ar, b, module))) return false;
         }
         if ((f.returnType == null) != (g.returnType == null)) return false;
         if (f.returnType) |fr| {
-            if (!std.mem.eql(u8, try std.fmt.allocPrint(ar, "{f}", .{fr}), try std.fmt.allocPrint(ar, "{f}", .{g.returnType.?}))) return false;
+            if (!std.mem.eql(u8, try typeText(ar, fr, module), try typeText(ar, g.returnType.?, module))) return false;
         }
         return true;
+    }
+
+    /// A type as `TypeRef.format` spells it, its own module's qualification
+    /// dropped: linking a module qualifies a `pub` declaration's types for
+    /// its consumers (`std/io/random/Array<T>`) and leaves a private fn's
+    /// as written (`Array<T>`), and the two name one type.
+    fn typeText(ar: std.mem.Allocator, t: ast.TypeRef, module: []const u8) ![]const u8 {
+        const text = try std.fmt.allocPrint(ar, "{f}", .{t});
+        if (module.len == 0) return text;
+        const prefix = try std.fmt.allocPrint(ar, "{s}/", .{module});
+        return std.mem.replaceOwned(u8, ar, text, prefix, "");
     }
 
     /// The function a bound `declare fn` lowers to — its declared name and
@@ -3540,11 +3551,22 @@ const Emitter = struct {
             .fn_ => .{ .call = hb.target },
             .wasi => |ad| blk: {
                 if (std.mem.eql(u8, ad.name, "random_f64")) break :blk self.builder().helper(.wasi_random_f64);
+                if (std.mem.eql(u8, ad.name, "seed_u32")) break :blk self.builder().helper(.wasi_seed_u32);
+                if (std.mem.eql(u8, ad.name, "seeded_f64")) break :blk self.builder().helper(.wasi_seeded_f64);
                 unreachable; // every listed adapter has its helper (`host_binding.zig` `adapters`)
             },
         };
         try lines.append(ar, .{ .indent = 4, .instr = call });
         const result: ?ValType = if (sig.result) |r| vt(r) else null;
+        // A written `-> void` registers an `i32` result like every function
+        // declaring one (`fnHasResult`); an adapter answering nothing
+        // (`seed_u32`) leaves the stack empty, so the wrapper answers the 0
+        // the caller drops.
+        const yields = switch (hb.binding) {
+            .wasi => |ad| ad.result != null,
+            else => true,
+        };
+        if (result != null and !yields) try lines.append(ar, .{ .indent = 4, .instr = constOf(@tagName(result.?), "0") });
         try self.itemCommentF("{s} — #[@External.Wasm(\"{s}\")]", .{ f.name, f.externalFor("wasm").?.symbol });
         try self.item(.{ .func = try self.builder().func(.{
             .name = f.name,
@@ -13448,15 +13470,22 @@ const Emitter = struct {
     /// `if` has always taken (its arms are coerced to it by their context).
     fn ifValueType(self: *Emitter, i: anytype) []const u8 {
         var t: []const u8 = "";
+        // The first arm's integer type, when no arm answers a float: an `if`
+        // over two `i32`s (a bool, a digit) inside a function answering `f64`
+        // was `(if (result f64)` around two `i32`s — invalid code.
+        var int: []const u8 = "";
         for ([_]?[]const ast.Stmt{ i.then_, i.else_ }) |maybe| {
             const body = maybe orelse continue;
             if (body.len == 0) continue;
             const last = body[body.len - 1].expr;
             if (self.exprTail(last) != .value) continue;
             const lt = self.wasmTypeOf(last);
-            if (lt[0] == 'f') t = if (t.len == 0) lt else self.unifyNum(t, lt);
+            if (lt[0] == 'f') {
+                t = if (t.len == 0) lt else self.unifyNum(t, lt);
+            } else if (int.len == 0) int = lt;
         }
-        return if (t.len > 0) t else self.cur_result;
+        if (t.len > 0) return t;
+        return if (int.len > 0) int else self.cur_result;
     }
 
     /// One arm of an `if` whose value type is its own (`ifValueType`): the

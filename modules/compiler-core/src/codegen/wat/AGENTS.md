@@ -382,7 +382,7 @@ linked modules, each `declare fn` against its OWN module):
 |---|---|---|
 | `op:<opcode>` | `host_binding.zig` `findOp`; the declared parameters and return are exactly the opcode's types (`bool` for a comparison) | a function of the declared name: `local.get` of each parameter, the instruction |
 | `fn:<name>` | the declaring module has a `fn <name>` with a body, not `pub`, of the same written parameter types in order and the same return (`sameSignature`, compared as `TypeRef.format` spells them) | a function of the declared name that calls `<name>` — the mangled name when a linked module's function was mangled (`link_mangled`) |
-| `wasi:<adapter>` | `host_binding.zig` `adapters` (the list `docs.md` § Host bindings documents); the signature is the adapter's | a function that calls the adapter's prelude helper (`random_f64` → `$__wasi_random_f64`, which brings the `random_get` import) |
+| `wasi:<adapter>` | `host_binding.zig` `adapters` (the list `docs.md` § Host bindings documents); the signature is the adapter's | a function that calls the adapter's prelude helper (`random_f64` → `$__wasi_random_f64`, which brings the `random_get` import; `seed_u32` → `$__wasi_seed_u32`, `seeded_f64` → `$__wasi_seeded_f64`, both over the `wasi_seed_state` group's two globals); a written `-> void` answers the `0` its caller drops |
 
 A bound declaration is registered like a bodied `fn` (`registerFn` skips the
 host path when `host_bindings` holds the name), so calls, shapes and
@@ -404,7 +404,35 @@ runs it (`deps/v8/src/base/ieee754.cc`) with exact arithmetic standing for its
 word operations — bit for bit the commonJS answer on a 6 500-input fuzz — and
 `pow` in double-double, since V8 answers `Math.pow` with the C library's
 (`decisions-pending.md` 05w-c). `std/escape`'s two separators are `fn:` bodies
-holding the literal.
+holding the literal. `std/hash` binds every cell with `fn:` — SHA-256, SHA-512,
+SHA-1, MD5, HMAC, PBKDF2, base64 and the djb2 fold in exact `f64` arithmetic
+(a word a whole number below 2^32, stored in an `Array<i32>` as two 16-bit
+halves, its constants the standards' hex read in place) —, identical to
+commonJS on a 180-input fuzz of every cell (1 987 lines, astral characters
+included). `std/io/random` binds `float` to `wasi:random_f64`, `seed` /
+`seededFloat` to `wasi:seed_u32` / `wasi:seeded_f64` — the commonJS sidecar's
+Mulberry32, no WASI call: the state a seeded stream needs, which a std module
+cannot hold (a module-level `var` lowers to `std@beam` on erlang) — and
+`shuffle`, `secureToken`, `uuidV4`, `randomBytes` to `fn:` bodies over
+`float()` (= `random_get` here); 400 seeded draws over ten seeds equal the
+sidecar's bit for bit.
+
+A `fn:` target is compared with the declaration as written, **its own
+module's qualification dropped** (`sameSignature` / `typeText`): linking a
+module qualifies a `pub` declaration's types for its consumers
+(`std/io/random/Array<T>`) and leaves the private body's as written, so
+`shuffle<T>(xs: Array<T>)` was refused in every program that imported it.
+
+What the std bodies ran into — each a limit of this backend, measured while
+binding `hash` and `io/random`, and each still open:
+
+| Limit | What happens | Status |
+|---|---|---|
+| one 64 KiB page of memory, a bump heap that never frees and never grows (`min_pages = 1`, no `memory.grow`) | the program traps (`out of bounds memory access`) once it has allocated ~60 KiB — three hash cells, not one, and `pbkdf2Sha256(…, 9, 32)` already traps | `decisions-pending.md` 05w-e |
+| `i64` is lowered as `i32` | `val a: i64 = 4294967295` prints `-1`, `a / 2` answers `0` — a wrong value at exit 0; the bodies use exact `f64` instead | open |
+| a float in an array is stored as its `f32` (§ The primitive method table) and `xs.at(i).unwrapOr(0.0)` on an `Array<f64>` is invalid code | the bodies keep words as `i32` halves | open |
+| `Float.toString` writes six fraction digits; a float ≥ 2^31 traps in `$__f64_to_str` | `0.26642920868471265` prints `0.266429` (node prints all 17) | open |
+| `Array.range` / `Array.repeat` recurse once per element through a spread (`primitives.bp`), O(n²) memory | `Array.repeat(0, 128)` exhausts the page; the bodies double an array instead | open |
 
 ## String indices count codepoints (decision 240)
 
@@ -716,7 +744,10 @@ yielding a float makes it an `f64` wherever it stands, each arm converted to
 it. It took the enclosing function's result type, so an `f64` `if` in a
 function answering nothing was `(if (result i32)` around two `f64`s — the
 module refused (`run/if_value_float.bp`; `testing.asserts.approxEquals` binds
-one).
+one). With no float arm it is the first arm's integer type, not the function's:
+`val d = if (c < 58) c - 48 else c - 87` in a function answering `f64` was
+`(if (result f64)` around two `i32`s (`tests/wat.zig` `an integer
+if-expression inside a float function`; `std/hash`'s `hexValue`).
 
 ## Decision 8 §5's pattern shapes (`01-compiler/05-wasm` step 3, C-07's wasm twins)
 
