@@ -2,8 +2,8 @@
 //// the `var` is one value per BEAM process. `main` writes `5`; a process
 //// `async.runAll` spawns afterwards reads the declaration's `0`, and its own
 //// write never reaches `main`. On commonJS and wasm the execution context is
-//// the whole program, so the cell is the BEAM's (`.targets`); decision 43 makes
-//// the annotation a no-op there, which `test/beam_memory_noop` pins.
+//// the whole program, and decision 167 refuses the annotation there, which
+//// the narrowing (`.targets`) stands on and `run/beam_memory_off_beam` pins.
 
 import {async} from "std";
 

@@ -1,7 +1,7 @@
 //// std/beam — the BEAM memory host primitives, layer 1 of `@BeamMemory`.
 ////
-//// Ten `declare fn`s over three BEAM storage families: the process
-//// dictionary (`erlang:get/put/erase`), ETS (`ets:whereis/new/
+//// Eleven `declare fn`s over three BEAM storage families: the process
+//// dictionary (`erlang:get/put/erase`), ETS (`ets:whereis/new/lookup/
 //// lookup_element/insert/update_counter`) and `persistent_term`
 //// (`persistent_term:get/put`). Nothing else. Each one is a single host
 //// call with the host's own arity — no composition, no policy.
@@ -15,7 +15,7 @@
 //// its write lower onto the functions below. No line of `.zig` names ETS,
 //// `persistent_term` or the process dictionary.
 ////
-//// Why these ten and not the shapes: the shapes layer 2 composes are
+//// Why these eleven and not the shapes: the shapes layer 2 composes are
 //// compositions of these calls, not host calls of their own. The
 //// `whereis`-guarded initialisation is `etsWhereis` answering `undefined`
 //// and then `etsNew` under a `try` — two primitives and a `case`, because
@@ -39,10 +39,11 @@
 //// Targets: `@External.Erlang` covers **both** BEAM targets — `codegen.zig:74-77`
 //// maps `.erlang` and `.beam` alike to the `"erlang"` lookup name. On
 //// `commonJS` and `wasm` importing this module is `std-unsupported-on-target`
-//// (`comptime/infer.zig:100`), and that is the intended answer: the
-//// annotation is a silent no-op off the BEAM, because a target with one
-//// execution context has nowhere else to put the state, while an import
-//// asks for the host primitives by name and there are none.
+//// (`comptime/infer.zig:100`), and that is the intended answer: a target
+//// with one execution context has no BEAM storage, so the annotation is
+//// refused there too, at the annotation (decision 167, which amended
+//// decision 43's no-op), and an import asks for the host primitives by name
+//// and there are none.
 ////
 //// How a qualified std host call reaches these, measured: on the erlang
 //// backend `beam.pdPut(t, t)` is emitted as a call to the std module
@@ -56,7 +57,9 @@
 //// fn`, whether or not the current build imports it by name. The beam
 //// backend does the same for a plain `"<mod>", "<symbol>"` target — every
 //// declaration below — since front 17 step 5 lowered a module `var`'s
-//// reads and writes onto these ten calls on both BEAM targets.
+//// reads and writes onto these calls on both BEAM targets; `etsLookup` is
+//// the row read of a `keyed = true` var (decision 168, front 17 step 1 of
+//// 1.0.11 — a carve-out of the std track, the layer-1 half of decision 43).
 ////
 //// Adding a primitive: one `#[@External.Erlang("<mod>", "<symbol>")] pub
 //// declare fn <camelCase>(…) -> unknown;`. `root.bp` already declares this
@@ -80,6 +83,9 @@ pub declare fn etsWhereis(name: unknown) -> unknown;
 
 #[@External.Erlang("ets", "new")]
 pub declare fn etsNew(name: unknown, opts: unknown) -> unknown;
+
+#[@External.Erlang("ets", "lookup")]
+pub declare fn etsLookup(tid: unknown, key: unknown) -> unknown;
 
 #[@External.Erlang("ets", "lookup_element")]
 pub declare fn etsGet(tid: unknown, key: unknown, pos: unknown) -> unknown;

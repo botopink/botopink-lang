@@ -274,6 +274,11 @@ const MEM_ETS_ADD = "'__bp_ets_add'";
 const MEM_ETS_SET = "'__bp_ets_set'";
 const MEM_LOAD = "'__bp_load'";
 const MEM_BOX = "__bp_var";
+/// Decision 168 — a `keyed = true` var's row read and row write, and the tag
+/// its seed carries to the owner (`erlang.zig`'s `MEM_ROWS`).
+const MEM_ETS_AT = "'__bp_ets_at'";
+const MEM_ETS_ROW = "'__bp_ets_row'";
+const MEM_ROWS = "__bp_rows";
 
 /// The entry's host-module loader and its per-file step (`emitLoadSiblings`).
 const LOAD_SIBLINGS = "'__bp_load_siblings'";
@@ -2002,6 +2007,10 @@ fn emitBeamAsm(
         try em.reserveFn(MEM_ETS_OWNER, 2);
         try em.reserveFn(MEM_ETS_ADD, 3);
         try em.reserveFn(MEM_ETS_SET, 3);
+        if (em.anyKeyedVar()) {
+            try em.reserveFn(MEM_ETS_AT, 3);
+            try em.reserveFn(MEM_ETS_ROW, 3);
+        }
     }
     if (pt_vars.items.len > 0) try em.reserveFn(MEM_LOAD, 0);
     // Decision 64's beam half (C-03): a `pub` host-backed `declare fn` is
@@ -4804,7 +4813,20 @@ const Emitter = struct {
                 try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
                 try self.emitReturn();
             },
-            .ets => {
+            // A `keyed = true` var has no whole value to read (the checker
+            // reads it one row at a time); its reader is the guard, which
+            // `'_botopink_init'/0` calls, so the table exists from load.
+            .ets => if (mem.keyed) {
+                const rows = try self.keyedRows(v.name);
+                self.num_y = self.precountLocalsInExpr(rows);
+                try self.emitFrame(0);
+                try self.lowerExprIntoX0(rows);
+                try beamEmitter.writeTestHeap(self.out, 3, 1);
+                try beamEmitter.writePutTuple2(self.out, Dst.xr(1), &.{ Op.atom(MEM_ROWS), Op.xr(0) });
+                try beamEmitter.writeMoveOp(self.out, key, Dst.xr(0));
+                try self.callFileHelper(MEM_ETS_GUARD, 2);
+                try self.emitReturn();
+            } else {
                 self.num_y = self.precountLocalsInExpr(v.value.*);
                 try self.emitFrame(0);
                 try self.stageKeySeed(key, v.value.*);
@@ -4843,6 +4865,7 @@ const Emitter = struct {
                 try self.callFileHelper(MEM_PD_SET, 2);
             },
             .ets => {
+                if (mem.keyed) return self.emitKeyedRowWrite(name, value);
                 const seed = self.module_var_decls.get(name).?.value.*;
                 switch (ast.classifyMemoryWrite(name, plus, value)) {
                     // Decision 40: the host's atomic counter, integers only
@@ -4873,6 +4896,102 @@ const Emitter = struct {
         }
     }
 
+    // ── `keyed = true` (decision 168) — `erlang.zig`'s keyed section in
+    // assembly: the row read `name.at(K)` is `'__bp_ets_at'(Name, Rows, K)`,
+    // the row write `name = name.insert(K, V)` is
+    // `'__bp_ets_row'(Name, Rows, {K, V})`, `Rows` the seed folded into
+    // `[{K, V}, …]` (`erlang.zig` `keyedSeedRows`). The operands are staged
+    // with the rows LAST: a literal list calls nothing, so nothing staged
+    // before it is parked on the stack — the frame the checked shape
+    // (`name.insert(K, V)`, `name.at(K)`) was counted for suffices.
+
+    fn anyKeyedVar(self: *const Emitter) bool {
+        var it = self.module_vars.valueIterator();
+        while (it.next()) |mem| if (mem.mode == .ets and mem.keyed) return true;
+        return false;
+    }
+
+    /// The seed of `keyed = true` var `name` as the array literal of its rows.
+    fn keyedRows(self: *Emitter, name: []const u8) !ast.Expr {
+        const decl = self.module_var_decls.get(name).?;
+        const ar = self.atom_arena.allocator();
+        const rows = try ar.dupe(ast.Expr, try erlangBackend.keyedSeedRows(ar, decl.value.*));
+        return .{ .collection = .{ .loc = decl.value.getLoc(), .kind = .{ .arrayLit = .{ .elems = rows } } } };
+    }
+
+    /// `name.at(K)` on a `keyed = true` var — lowered and true, or false for
+    /// any other call.
+    fn emitKeyedRowRead(self: *Emitter, cc: anytype) anyerror!bool {
+        if (cc.optional or cc.args.len != 1 or !std.mem.eql(u8, cc.callee, "at")) return false;
+        const recv = cc.receiver orelse return false;
+        if (!(recv.* == .identifier and recv.identifier.kind == .ident)) return false;
+        const name = recv.identifier.kind.ident;
+        if (self.reg_map.contains(name)) return false;
+        const mem = self.module_vars.get(name) orelse return false;
+        if (!mem.keyed) return false;
+        const rows = try self.keyedRows(name);
+        const st = try self.stageOperands(&.{ cc.args[0].value.*, rows }, &[_]ast.TrailingLambda{});
+        try self.emitParallelMove(&.{ Op.atom(try self.memoryKey(name)), st.ops[1], st.ops[0] }, &.{ 0, 1, 2 });
+        try self.callFileHelper(MEM_ETS_AT, 3);
+        return true;
+    }
+
+    /// `name = name.insert(K, V)` on a `keyed = true` var.
+    fn emitKeyedRowWrite(self: *Emitter, name: []const u8, value: *const ast.Expr) anyerror!void {
+        const cc = value.call.kind.call;
+        const ar = self.atom_arena.allocator();
+        const entry = try ar.dupe(ast.Expr, &.{ cc.args[0].value.*, cc.args[1].value.* });
+        const row: ast.Expr = .{ .collection = .{ .loc = value.getLoc(), .kind = .{ .tupleLit = .{ .elems = entry } } } };
+        const rows = try self.keyedRows(name);
+        const st = try self.stageOperands(&.{ row, rows }, &[_]ast.TrailingLambda{});
+        try self.emitParallelMove(&.{ Op.atom(try self.memoryKey(name)), st.ops[1], st.ops[0] }, &.{ 0, 1, 2 });
+        try self.callFileHelper(MEM_ETS_ROW, 3);
+    }
+
+    /// `'__bp_ets_at'(Name, Rows, Key)` — the row's value, `undefined` (null)
+    /// when the key has no row — and `'__bp_ets_row'(Name, Rows, Row)`, the
+    /// one-row insert. Each tags the seed `{'__bp_rows', Rows}` for the guard.
+    fn emitKeyedHelpers(self: *Emitter, guard: u32) !void {
+        // '__bp_ets_at'(Name, Rows, Key): y0 Key.
+        try self.beginHelper(MEM_ETS_AT, 3);
+        {
+            const miss = self.allocLabel();
+            try beamEmitter.writeAllocate(self.out, 1, 3);
+            try beamEmitter.writeInitYregs(self.out, 1);
+            try beamEmitter.writeMoveOp(self.out, Op.xr(2), Dst.yr(0));
+            try beamEmitter.writeTestHeap(self.out, 3, 2);
+            try beamEmitter.writePutTuple2(self.out, Dst.xr(1), &.{ Op.atom(MEM_ROWS), Op.xr(1) });
+            try beamEmitter.writeCall(self.out, .normal, 2, .{ .local = guard }, 0);
+            try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(1));
+            try self.beamPrimCall(.normal, "etsLookup", 2, 0);
+            try beamEmitter.writeTest(self.out, .is_nonempty_list, miss, &.{Op.xr(0)});
+            try beamEmitter.writeGetList(self.out, Op.xr(0), Dst.xr(1), Dst.xr(2));
+            // A row of a `set` table is `{Key, Value}`; the loader's validator
+            // wants the shape tested before the element is read.
+            try beamEmitter.writeTest(self.out, .is_tuple, miss, &.{Op.xr(1)});
+            try beamEmitter.writeTest(self.out, .test_arity, miss, &.{ Op.xr(1), .{ .untagged = 2 } });
+            try beamEmitter.writeGetTupleElement(self.out, Op.xr(1), 1, Dst.xr(0));
+            try beamEmitter.writeDeallocate(self.out, 1);
+            try beamEmitter.writeReturn(self.out);
+            try beamEmitter.writeLabel(self.out, miss);
+            try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.xr(0));
+            try beamEmitter.writeDeallocate(self.out, 1);
+            try beamEmitter.writeReturn(self.out);
+        }
+        // '__bp_ets_row'(Name, Rows, Row): y0 Row.
+        try self.beginHelper(MEM_ETS_ROW, 3);
+        {
+            try beamEmitter.writeAllocate(self.out, 1, 3);
+            try beamEmitter.writeInitYregs(self.out, 1);
+            try beamEmitter.writeMoveOp(self.out, Op.xr(2), Dst.yr(0));
+            try beamEmitter.writeTestHeap(self.out, 3, 2);
+            try beamEmitter.writePutTuple2(self.out, Dst.xr(1), &.{ Op.atom(MEM_ROWS), Op.xr(1) });
+            try beamEmitter.writeCall(self.out, .normal, 2, .{ .local = guard }, 0);
+            try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(1));
+            try self.beamPrimCall(.last, "etsPut", 2, 1);
+        }
+    }
+
     /// `'__bp_pd_set'(Key, V) -> std@beam:pdPut(Key, {'__bp_var', V}).`
     fn emitPdSet(self: *Emitter) !void {
         try self.beginHelper(MEM_PD_SET, 2);
@@ -4889,6 +5008,7 @@ const Emitter = struct {
         const guard = (try self.fnLabelsFor(MEM_ETS_GUARD, 2)).entry;
         const wait = (try self.fnLabelsFor(MEM_ETS_WAIT, 3)).entry;
         const undef = Op.atom("undefined");
+        const keyed = self.anyKeyedVar();
 
         // '__bp_ets'(Name, Seed): y0 Name, y1 Seed.
         try self.beginHelper(MEM_ETS_GUARD, 2);
@@ -4973,8 +5093,21 @@ const Emitter = struct {
             try beamEmitter.writeTryEnd(self.out, 2);
             // Won the race: seed, register (registered means seeded), park
             // outside this module so a reload leaves no frame of it to purge.
+            // A module with a `keyed = true` var seeds by the seed's tag
+            // (decision 168): `{'__bp_rows', Rows}` is the table's rows, any
+            // other seed the one row `{Name, Seed}`.
+            const put = if (keyed) self.allocLabel() else 0;
+            if (keyed) {
+                const plain = self.allocLabel();
+                try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
+                try beamEmitter.writeTest(self.out, .is_tagged_tuple, plain, &.{ Op.xr(0), .{ .untagged = 2 }, Op.atom(MEM_ROWS) });
+                try beamEmitter.writeGetTupleElement(self.out, Op.xr(0), 1, Dst.xr(1));
+                try beamEmitter.writeJump(self.out, put);
+                try beamEmitter.writeLabel(self.out, plain);
+            }
             try beamEmitter.writeTestHeap(self.out, 3, 0);
             try beamEmitter.writePutTuple2(self.out, Dst.xr(1), &.{ Op.yr(1), Op.yr(0) });
+            if (keyed) try beamEmitter.writeLabel(self.out, put);
             try beamEmitter.writeMoveOp(self.out, Op.yr(1), Dst.xr(0));
             try self.beamPrimCall(.normal, "etsPut", 2, 0);
             try beamEmitter.writeBif(self.out, "self", 0, &.{}, Dst.xr(1));
@@ -5000,6 +5133,7 @@ const Emitter = struct {
         // '__bp_ets_set'(Name, Seed, V) -> etsPut('__bp_ets'(Name, Seed), {Name, V}).
         try self.beginHelper(MEM_ETS_SET, 3);
         try self.emitEtsWriteHelper(guard, "etsPut", true);
+        if (keyed) try self.emitKeyedHelpers(guard);
     }
 
     fn emitEtsWriteHelper(self: *Emitter, guard: u32, prim: []const u8, whole: bool) !void {
@@ -6521,6 +6655,10 @@ const Emitter = struct {
         }
         if (cc.is_builtin) {
             try self.lowerBuiltinCall(cc, mode);
+            return;
+        }
+        if (try self.emitKeyedRowRead(cc)) {
+            if (mode == .tail) try self.emitReturn();
             return;
         }
         // `es.at(9)?.key.length()`: `?.` makes the REST of the chain

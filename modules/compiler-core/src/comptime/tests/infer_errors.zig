@@ -1062,6 +1062,12 @@ test "infer error: unknown builtin without a near name" {
 /// message is asserted by content so that the case does not add a cell to
 /// `snapshots/comptime/errors/`.
 fn typeErrorMessage(allocator: std.mem.Allocator, src: []const u8) ![]u8 {
+    return typeErrorMessageOn(allocator, src, null);
+}
+
+/// `typeErrorMessage` on the project-side compile path of `target` — the
+/// `env.target` a build sets (null: the language server's pass).
+fn typeErrorMessageOn(allocator: std.mem.Allocator, src: []const u8, target: ?[]const u8) ![]u8 {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -1072,6 +1078,7 @@ fn typeErrorMessage(allocator: std.mem.Allocator, src: []const u8) ![]u8 {
     defer program.deinit(alloc);
     var env = try inferMod.freshEnv(alloc, allocator);
     defer env.deinit();
+    env.target = target;
     try std.testing.expectError(error.TypeError, inferMod.inferProgram(&env, program));
     const err = env.lastError orelse return error.TestExpectedEqual;
     try std.testing.expect(err.loc != null);
@@ -1136,6 +1143,139 @@ test "infer error: `keyed = true` on a list has no key (decision 51)" {
 
 test "infer: `@BeamMemory` accepts its three members, the default said out loud included" {
     try h.assertInfersOk(std.testing.allocator, "#[@BeamMemory.ProcessDict]\nvar a: i32 = 0;\n#[@BeamMemory.Ets]\nvar b: i32 = 0;\n#[@BeamMemory.PersistentTerm]\nvar c: i32 = 0;\n#[@BeamMemory.Ets(keyed = false)]\nvar d: i32 = 0;");
+}
+
+// ── decision 167: off the BEAM, `#[@BeamMemory]` is refused at the annotation ─
+
+test "infer error: `#[@BeamMemory]` has no meaning on commonJS or wasm" {
+    // `env.target` is the lookup name (`node`); the message names the target
+    // as `--target` spells it.
+    for ([_][2][]const u8{ .{ "node", "commonJS" }, .{ "wasm", "wasm" } }) |t| {
+        const msg = try typeErrorMessageOn(std.testing.allocator,
+            \\#[@BeamMemory.ProcessDict]
+            \\var x: i32 = 0;
+        , t[0]);
+        defer std.testing.allocator.free(msg);
+        const want = try std.fmt.allocPrint(std.testing.allocator, "`#[@BeamMemory]` has no meaning on the {s} backend", .{t[1]});
+        defer std.testing.allocator.free(want);
+        try std.testing.expect(std.mem.indexOf(u8, msg, want) != null);
+    }
+}
+
+test "infer: `#[@BeamMemory]` is accepted on erlang and beam" {
+    for ([_][]const u8{ "erlang", "beam" }) |t| {
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+        var lx = Lexer.init(
+            \\#[@BeamMemory.Ets]
+            \\var hits: i32 = 0;
+            \\fn bump() { hits += 1; }
+        );
+        const tokens = try lx.scanAll(alloc);
+        var p = Parser.init(tokens);
+        var program = try p.parse(alloc);
+        defer program.deinit(alloc);
+        var env = try inferMod.freshEnv(alloc, std.testing.allocator);
+        defer env.deinit();
+        env.target = t;
+        _ = try inferMod.inferProgram(&env, program);
+    }
+}
+
+// ── decision 168: `keyed = true` — its seed, its row read and its row write ──
+
+const keyed_decl =
+    \\import {collections.Dict} from "std";
+    \\#[@BeamMemory.Ets(keyed = true)]
+    \\var counts: Dict<string, i32> = Dict.empty();
+    \\
+;
+
+test "infer: a keyed Ets var is read and written one row at a time" {
+    try h.assertInfersOk(std.testing.allocator, keyed_decl ++
+        \\fn put(k: string, v: i32) { counts = counts.insert(k, v); }
+        \\fn get(k: string) -> ?i32 { return counts.at(k); }
+    );
+    try h.assertInfersOk(std.testing.allocator,
+        \\import {collections.Dict} from "std";
+        \\#[@BeamMemory.Ets(keyed = true)]
+        \\var counts: Dict<string, i32> = Dict.ofEntries([#("a", 1), #("b", -2)]);
+    );
+}
+
+test "infer error: a keyed var is written only as `name = name.insert(key, value)`" {
+    const bodies = [_][]const u8{
+        \\fn f() { counts = Dict.empty(); }
+        ,
+        \\fn f() { counts = counts.delete("a"); }
+    };
+    for (bodies) |body| {
+        const src = try std.mem.concat(std.testing.allocator, u8, &.{ keyed_decl, body });
+        defer std.testing.allocator.free(src);
+        const msg = try typeErrorMessage(std.testing.allocator, src);
+        defer std.testing.allocator.free(msg);
+        try std.testing.expect(std.mem.indexOf(u8, msg, "`counts` is a `keyed = true` var: it is written one row at a time, as `counts = counts.insert(key, value)`") != null);
+    }
+}
+
+test "infer error: a keyed row computed from the var's own rows is the recompose refusal" {
+    const msg = try typeErrorMessage(std.testing.allocator, keyed_decl ++
+        \\fn f(k: string) { counts = counts.insert(k, counts.size()); }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "a write that recomputes it from its own value can lose one of two concurrent runs") != null);
+}
+
+test "infer error: a keyed var has no whole value to read" {
+    const msg = try typeErrorMessage(std.testing.allocator, keyed_decl ++
+        \\fn f() -> i32 { return counts.size(); }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "`counts` is a `keyed = true` var: it is read one row at a time, as `counts.at(key)`") != null);
+}
+
+test "infer error: a keyed seed is `Dict.empty()` or `Dict.ofEntries` of literal entries" {
+    const programs = [_][]const u8{
+        \\import {collections.Dict} from "std";
+        \\#[@BeamMemory.Ets(keyed = true)]
+        \\var counts: Dict<string, i32> = Dict.empty().insert("a", 1);
+        ,
+        \\import {collections.Dict} from "std";
+        \\fn entries() -> Array<#(string, i32)> { return []; }
+        \\#[@BeamMemory.Ets(keyed = true)]
+        \\var counts: Dict<string, i32> = Dict.ofEntries(entries());
+        ,
+        \\import {collections.Dict} from "std";
+        \\fn name() -> string { return "a"; }
+        \\#[@BeamMemory.Ets(keyed = true)]
+        \\var counts: Dict<string, i32> = Dict.ofEntries([#(name(), 1)]);
+    };
+    for (programs) |src| {
+        const msg = try typeErrorMessage(std.testing.allocator, src);
+        defer std.testing.allocator.free(msg);
+        try std.testing.expect(std.mem.indexOf(u8, msg, "initialiser must be `Dict.empty()` or `Dict.ofEntries([…])` of literal entries") != null);
+    }
+}
+
+test "infer error: `keyed` is an argument of `@BeamMemory.Ets` alone" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\import {collections.Dict} from "std";
+        \\#[@BeamMemory.ProcessDict(keyed = true)]
+        \\var counts: Dict<string, i32> = Dict.empty();
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "it is an argument of `@BeamMemory.Ets`, not of `@BeamMemory.ProcessDict`") != null);
+}
+
+test "infer error: a keyed var is not `pub`" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\import {collections.Dict} from "std";
+        \\#[@BeamMemory.Ets(keyed = true)]
+        \\pub var counts: Dict<string, i32> = Dict.empty();
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "a `keyed = true` var is not `pub`") != null);
 }
 
 // ── 01 R5: a pattern in binding position ──────────────────────────────────────

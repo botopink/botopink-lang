@@ -49,7 +49,10 @@ printed across processes — `std/async`'s `allOf` spawns one process per task �
 because the three modes read alike inside one process: `ProcessDict` answers
 `[3, 3, 3, 3, 3]` then `0`, `Ets` reads `15` after five requests × three
 increments (decision 39's owner), `PersistentTerm` is put at load and read by a
-spawned process.
+spawned process. A `keyed = true` `Dict` (decision 168) runs on both BEAM
+targets (`assertErlangRunLog`, `assertBeamRunLog`): two processes writing their
+own key 2 000 times each keep both, the seed's repeated key keeps its last value
+and a key with no row reads `null`.
 For multi-module assertions without a snapshot, `assertConsumerJs(modules, present, absent)`
 generates every module (last = consumer `main`) and checks the consumer's JS
 contains/omits given substrings — used by the disk-lib namespace test in
