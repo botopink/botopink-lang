@@ -1,0 +1,2 @@
+the integer literal `2` is not an `f64` — write `2d` or `2.0`
+6:16

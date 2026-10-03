@@ -14,17 +14,30 @@ const T = @import("./types.zig");
 const Env = @import("env.zig").Env;
 const envMod = @import("env.zig");
 const TypeError = @import("error.zig").TypeError;
+const errorMod = @import("error.zig");
 const diagnostics = @import("diagnostics.zig");
+const reflectionMod = @import("reflection.zig");
+const effectChain = @import("effect_chain.zig");
 const template = @import("template.zig");
 const primOpTemplate = @import("primOpTemplate.zig");
+const builtinsMod = @import("builtins.zig");
 const templateEval = @import("template_eval.zig");
 const decoratorEval = @import("decorator_eval.zig");
+const dslHygiene = @import("dsl_hygiene.zig");
 const specializeMod = @import("specialize.zig");
-const unify = @import("unify.zig").unify;
+const unifyMod = @import("unify.zig");
+const snapshotMod = @import("snapshot.zig");
+/// `unify` raises its `TypeError` unlocated: it sees types, not source. Every
+/// call is `unifyAt` (which stamps the location it is given) or sits under a
+/// caller that stamps one with `locateLast` — 01 step 9: no type error leaves
+/// inference without a place in the source.
+const unifyUnlocated = unifyMod.unify;
 const Lexer = @import("../lexer.zig").Lexer;
+const lexerMod = @import("../lexer.zig");
 const Parser = @import("../parser.zig").Parser;
 const Module = @import("../module.zig").Module;
 const comptimeMod = @import("../comptime.zig");
+const formatMod = @import("../format.zig");
 
 pub const InferError = error{ TypeError, OutOfMemory };
 
@@ -56,53 +69,440 @@ pub const TypedBinding = struct {
 ///
 /// Returns a slice of `Binding` values in declaration order.
 /// All memory is allocated in `env.arena`.
+/// Decision 107 — every item of an import list binds exactly one local name
+/// (`ImportPath.name()`: the alias, else the leaf). The names one module's
+/// imports bind are unique: a second item binding a name already bound is
+/// `import-name-collision`, located at that second item, in either spelling.
+/// A repeated IDENTICAL item is not a collision — an `@emit` contribution
+/// re-imports what its module already imports, and codegen dedups it the
+/// same way (`seen_imports`). Runs for every `use` decl, `from "std"` or not,
+/// on both inference entry points.
+fn noteImportBindings(env: *Env, u: ast.ImportDecl) InferError!void {
+    if (u.activationOnly) return;
+    for (u.imports) |imp| {
+        // A `*` opts an extension in by its declared name; the dispatch rewrite
+        // emits `Name.method(recv)`, so a renamed binding is one it never
+        // reaches. Refused rather than bound half-way.
+        if (imp.activate and imp.alias != null) {
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}* as {s}` — an activation names the extension it opts in; it cannot be renamed", .{ diagnostics.import_alias_on_activation, imp.leaf(), imp.alias.? });
+            env.lastError = TypeError.custom(msg, "Drop the `as`: `import {Name*}` activates `Name` under its own name.").withLoc(imp.loc);
+            return error.TypeError;
+        }
+        const local = imp.name();
+        const gop = try env.importBound.getOrPut(local);
+        if (gop.found_existing) {
+            if (gop.value_ptr.samePath(imp)) continue;
+            const first = gop.value_ptr.*;
+            const first_path = try first.dotted(env.arena);
+            const this_path = try imp.dotted(env.arena);
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is already bound by the import of `{s}`; `{s}` would bind it again", .{ diagnostics.import_name_collision, local, first_path, this_path });
+            env.lastError = TypeError.custom(msg, "Rename one of the two with `as` (`url.parse as parseUrl`), or import the namespace and qualify the call.").withLoc(imp.loc);
+            return error.TypeError;
+        }
+        gop.value_ptr.* = imp;
+    }
+}
+
+/// Decision 106 — the root of std is pure: a module at `std/<name>` (one
+/// segment under `std/`) imports nothing from `io/`, whether it spells the
+/// std package bare (`import {io.fs.readText};`, the package's own root) or
+/// `from "std"`, in the dotted or the grouped form (`io: {fs}`), and
+/// including the namespace `io` itself. `io/` and `testing/` modules are two
+/// segments deep and are not checked; neither is user code, where `io.` on
+/// the import line is a reading signal and not a guarantee. No configuration
+/// (decision 67). Located at the offending item.
+fn checkStdRootPurity(env: *Env, u: ast.ImportDecl) InferError!void {
+    if (!std.mem.startsWith(u8, env.modulePath, "std/")) return;
+    const name = env.modulePath["std/".len..];
+    if (std.mem.indexOfScalar(u8, name, '/') != null) return;
+    const into_std = switch (u.source) {
+        .root => true,
+        .module => |m| std.mem.eql(u8, m, "std"),
+    };
+    if (!into_std) return;
+    for (u.imports) |imp| {
+        if (!std.mem.eql(u8, imp.segments[0], "io")) continue;
+        const path = try imp.dotted(env.arena);
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: std module `{s}` is at the root of std, which is pure; `{s}` imports from `io/`", .{ diagnostics.std_root_imports_io, name, path });
+        env.lastError = TypeError.custom(msg, "Move the module under `io/` (it talks to the world), or take the value it needs as a parameter.").withLoc(imp.loc);
+        return error.TypeError;
+    }
+}
+
 /// `import {bool} from "std"` — marks each imported std module in
 /// `env.stdImports` so qualified calls (`bool.negate(x)`) resolve against
 /// `env.stdModules`. Returns true when the decl was a `from "std"` import
 /// (fully handled here); unknown std module → clear type error.
+///
+/// Decision 107 — an item may carry a path. `import {io.fs} from "std"` (or
+/// `io: {fs}`) binds the MODULE `io/fs` as the namespace `fs`;
+/// `import {io.fs.readText as read}` binds the module's `pub fn` as the value
+/// `read`; `import {collections.Dict}` registers that one `pub type`. Only the
+/// leaf enters scope — neither `io` nor `fs` is bound by the last two.
 fn markStdImports(env: *Env, u: ast.ImportDecl) InferError!bool {
+    try checkStdRootPurity(env, u);
+    try noteImportBindings(env, u);
     const from_std = switch (u.source) {
         .module => |m| std.mem.eql(u8, m, "std"),
         .root => false,
     };
     if (!from_std) return false;
     for (u.imports) |imp| {
-        const mod_name = imp.segments[imp.segments.len - 1];
-        if (!env.stdModules.contains(mod_name)) {
-            env.lastError = TypeError.custom(
-                "unknown \"std\" module in import",
-                "Available std modules: bool. (`result` is builtin — call `result.map(r, f)` without importing.)",
-            );
-            return error.TypeError;
-        }
-        try env.stdImports.put(mod_name, {});
-        // Type export: register the module's `pub` record/struct/enum decls
-        // into this env so case patterns and annotations can name them
-        // (e.g. `Order` from `import {order} from "std"`). Variant/constructor
-        // value bindings come along — construct via the module's fns
-        // (`order.lt()`), not the bare constructors (codegen has no local decl).
-        if (env.stdModuleTypes.get(mod_name)) |decls| {
-            for (decls) |d| try registerTypeDecl(env, d);
-        }
-        // STD-001 — when an active target is set on this env (the CLI codegen
-        // path), red on imports of std modules whose declares lack an
-        // `@external(<target>, …)` match. Pure-bp `pub fn` (with body) ship
-        // on every target without a host binding, so they're skipped. Only
-        // host-bound `pub declare fn` are gated.
-        if (env.target) |tgt| {
-            if (env.stdModuleFns.get(mod_name)) |fns| {
-                for (fns) |f| {
-                    if (f.body.len > 0) continue;
-                    if (!f.isExternal()) continue;
-                    if (f.externalFor(tgt) != null) continue;
-                    const msg = try std.fmt.allocPrint(env.arena, "{s}: std/{s}.{s} has no `@external` for target '{s}'", .{ diagnostics.std_unsupported_on_target, mod_name, f.name, tgt });
-                    env.lastError = TypeError.custom(msg, "Either add a per-target `@external` to the declare, or pick a target the module supports (see libs/std/src/examples.md per-target coverage matrix).");
-                    return error.TypeError;
+        const whole = try imp.fullPath(env.arena);
+        // The leaf is a module (the namespace form, dotted or grouped).
+        if (env.stdModules.contains(whole)) {
+            try env.stdImports.put(imp.name(), whole);
+            // Type export: register the module's `pub` record/struct/enum decls
+            // into this env so case patterns and annotations can name them
+            // (e.g. `Order` from `import {order} from "std"`). Variant/constructor
+            // value bindings come along — construct via the module's fns
+            // (`order.lt()`), not the bare constructors (codegen has no local decl).
+            if (env.stdModuleTypes.get(whole)) |decls| {
+                for (decls) |d| {
+                    // Decision 170 — a type the module declares or imports by
+                    // name is that declaration; the namespace's same-named
+                    // type stays reachable only as what it is not here.
+                    const tn: ?[]const u8 = switch (d) {
+                        .type_ => |t| t.name,
+                        .typeAlias => |a| a.name,
+                        else => null,
+                    };
+                    if (tn) |n| if (env.explicitTypeNames.contains(n)) {
+                        try env.shadowedStdTypes.put(env.arena, n, whole);
+                        continue;
+                    };
+                    try registerTypeDecl(env, d);
                 }
+            }
+            try gateStdTargetSupport(env, whole, imp.name(), imp.loc);
+            continue;
+        }
+        // The leaf is a symbol of the module the prefix names.
+        if (imp.isQualified()) {
+            const mod_name = try imp.prefixPath(env.arena);
+            const exports = env.stdModules.get(mod_name) orelse {
+                const msg = try std.fmt.allocPrint(env.arena, "unknown \"std\" module `{s}` in import", .{mod_name});
+                env.lastError = TypeError.custom(msg, "Only the leaf of an import path enters scope; the segments before it name a std module (`libs/std/src/root.bp` lists them).").withLoc(imp.loc);
+                return error.TypeError;
+            };
+            const leaf = imp.leaf();
+            var bound_type = false;
+            if (env.stdModuleTypes.get(mod_name)) |decls| {
+                for (decls) |d| {
+                    const type_name = switch (d) {
+                        .type_ => |t| t.name,
+                        .typeAlias => |a| a.name,
+                        else => continue,
+                    };
+                    if (!std.mem.eql(u8, type_name, leaf)) continue;
+                    try registerTypeDecl(env, d);
+                    // Decision 110 — `as` binds a type leaf like any other.
+                    if (imp.alias) |al| try registerImportedTypeAlias(env, d, al, imp.loc);
+                    bound_type = true;
+                    break;
+                }
+            }
+            // A std decorator is reached through its module: the code it
+            // `@emit`s names the module's functions through the handle the
+            // annotation is written with (`#[mocks.mock]` → `mocks.invoke`),
+            // and a leaf import gives it none.
+            if (!bound_type and stdDecoratorNamed(env, mod_name, leaf)) {
+                const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is a decorator of std module `{s}`, and a std decorator is reached through its module", .{ diagnostics.std_decorator_leaf_import, leaf, mod_name });
+                const hint = try std.fmt.allocPrint(env.arena, "Import the module (`import {{{s}}} from \"std\"`) and write the annotation through it (`#[{s}.{s}]`).", .{ try std.mem.replaceOwned(u8, env.arena, mod_name, "/", "."), imp.segments[imp.segments.len - 2], leaf });
+                env.lastError = TypeError.custom(msg, hint).withLoc(imp.loc);
+                return error.TypeError;
+            }
+            if (!bound_type) {
+                const ty = exports.get(leaf) orelse {
+                    const msg = try std.fmt.allocPrint(env.arena, "std module `{s}` has no public `{s}`", .{ mod_name, leaf });
+                    env.lastError = TypeError.custom(msg, "Check the name against the module's `pub` declarations (`libs/std/AGENTS.md` lists each module's surface).").withLoc(imp.loc);
+                    return error.TypeError;
+                };
+                try env.bind(imp.name(), ty);
+            }
+            try checkStdTargetSupport(env, mod_name, leaf, imp.loc);
+            continue;
+        }
+        env.lastError = TypeError.custom(
+            "unknown \"std\" module in import",
+            "Available std modules: bool. (`result` is builtin — call `result.map(r, f)` without importing.)",
+        ).withLoc(imp.loc);
+        return error.TypeError;
+    }
+    return true;
+}
+
+/// Decision 170 — collect the type names this module declares (`type`, a
+/// type alias, `behavior`) or imports by name from a module that is not std
+/// (the item's leaf: `import {kit.store.Dict as OwnDict}` names `Dict`), into
+/// `env.explicitTypeNames`, before any std import is marked.
+///
+/// Types are nominal by their DECLARED name in the checker and the backends,
+/// so one module cannot hold two type declarations of one name, aliases or
+/// not: `import {a.p.Policy as APolicy}; import {b.p.Policy as BPolicy};`,
+/// a `type Dict(…)` beside `import {collections.Dict as D} from "std"`. Each
+/// used to resolve silently to whichever registered last; the second source
+/// is `import-name-collision` at its import item, naming both. (Two functions
+/// of one name under two aliases stay legal — a function is bound by its
+/// local name.)
+fn noteExplicitTypeNames(env: *Env, program: ast.Program) InferError!void {
+    // Declared name → where it comes from (a module path, or "" for this module).
+    var sources: std.StringHashMapUnmanaged([]const u8) = .empty;
+    defer sources.deinit(env.arena);
+    for (program.decls) |decl| switch (decl) {
+        .type_ => |t| try noteTypeSource(env, &sources, t.name, "", null),
+        .typeAlias => |a| try noteTypeSource(env, &sources, a.name, "", null),
+        .behavior => |b| try noteTypeSource(env, &sources, b.name, "", null),
+        else => {},
+    };
+    for (program.decls) |decl| switch (decl) {
+        .use => |u| {
+            const from_std = switch (u.source) {
+                .module => |m| std.mem.eql(u8, m, "std"),
+                .root => false,
+            };
+            for (u.imports) |imp| {
+                const leaf = imp.leaf();
+                if (leaf.len == 0 or !std.ascii.isUpper(leaf[0])) continue;
+                const prefix = try imp.prefixPath(env.arena);
+                if (from_std) {
+                    // A std leaf (`collections.Dict [as D]`) brings the type
+                    // in under its declared name.
+                    if (!imp.isQualified()) continue;
+                    if (!stdModuleDeclaresType(env, prefix, leaf)) continue;
+                    try noteTypeSource(env, &sources, leaf, try std.fmt.allocPrint(env.arena, "std/{s}", .{prefix}), imp);
+                    continue;
+                }
+                try env.explicitTypeNames.put(env.arena, leaf, {});
+                // Only an item that resolved to a TYPE is a type source.
+                const isType = if (imp.alias) |al| env.importedTypeAliases.contains(al) else env.lookupTypeDef(leaf) != null;
+                if (!isType) continue;
+                const src = switch (u.source) {
+                    .module => |m| try std.fmt.allocPrint(env.arena, "{s}:{s}", .{ m, prefix }),
+                    .root => prefix,
+                };
+                try noteTypeSource(env, &sources, leaf, src, imp);
+            }
+        },
+        else => {},
+    };
+}
+
+fn stdModuleDeclaresType(env: *Env, mod: []const u8, name: []const u8) bool {
+    const decls = env.stdModuleTypes.get(mod) orelse return false;
+    for (decls) |d| {
+        const tn = switch (d) {
+            .type_ => |t| t.name,
+            .typeAlias => |a| a.name,
+            else => continue,
+        };
+        if (std.mem.eql(u8, tn, name)) return true;
+    }
+    return false;
+}
+
+fn noteTypeSource(env: *Env, sources: *std.StringHashMapUnmanaged([]const u8), name: []const u8, src: []const u8, imp: ?ast.ImportPath) InferError!void {
+    if (!std.mem.startsWith(u8, src, "std/")) try env.explicitTypeNames.put(env.arena, name, {});
+    if (sources.get(name)) |prev| {
+        if (std.mem.eql(u8, prev, src)) return;
+        const at = imp orelse return;
+        const first = if (prev.len == 0) "this module" else try std.fmt.allocPrint(env.arena, "`{s}`", .{prev});
+        const second = if (src.len == 0) "this module" else try std.fmt.allocPrint(env.arena, "`{s}`", .{src});
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: this module would hold two types declared `{s}` — {s}'s and {s}'s; a type is told apart by its declared name, so one module holds one type of a name, aliased or not", .{ diagnostics.import_name_collision, name, first, second });
+        env.lastError = TypeError.custom(msg, "Use one of the two in this module, and reach the other through a module that holds only it (a function there that takes or answers it).").withLoc(at.loc);
+        return error.TypeError;
+    }
+    try sources.put(env.arena, name, src);
+}
+
+/// Whether `t` names the nominal type `name` anywhere in it.
+fn typeNamesNominal(t: *T.Type, name: []const u8, depth: usize) bool {
+    if (depth > 32) return false;
+    const d = t.deref();
+    return switch (d.*) {
+        .named => |n| blk: {
+            if (std.mem.eql(u8, n.name, name)) break :blk true;
+            for (n.args) |a| if (typeNamesNominal(a, name, depth + 1)) break :blk true;
+            break :blk false;
+        },
+        .func => |f| blk: {
+            for (f.params) |p| if (typeNamesNominal(p, name, depth + 1)) break :blk true;
+            break :blk typeNamesNominal(f.ret, name, depth + 1);
+        },
+        .union_ => |us| blk: {
+            for (us) |u| if (typeNamesNominal(u, name, depth + 1)) break :blk true;
+            break :blk false;
+        },
+        .record => |fs| blk: {
+            for (fs) |f| if (typeNamesNominal(f.type_, name, depth + 1)) break :blk true;
+            break :blk false;
+        },
+        .typeVar => false,
+    };
+}
+
+/// Decision 170 — a call through a std namespace whose signature names a type
+/// the namespace could not bring in (`env.shadowedStdTypes`: this module's own
+/// or named import holds the name) is refused at the call. Types are nominal
+/// by name, so the checker would read std's type as this module's and accept
+/// a value of the wrong one.
+fn refuseShadowedStdSignature(env: *Env, ns: []const u8, stdKey: []const u8, callee: []const u8, fnTy: *T.Type, loc: ast.Loc) InferError!void {
+    var it = env.shadowedStdTypes.iterator();
+    while (it.next()) |e| {
+        if (!std.mem.eql(u8, e.value_ptr.*, stdKey)) continue;
+        const name = e.key_ptr.*;
+        if (!typeNamesNominal(fnTy, name, 0)) continue;
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}.{s}` names std/{s}'s `{s}`, and `{s}` in this module is another declaration", .{ diagnostics.ambiguous_import_use, ns, callee, stdKey, name, name });
+        const hint = try std.fmt.allocPrint(env.arena, "One module holds one type of a name: import std's `{s}` in a module that does not declare or import another, or rename this module's.", .{name});
+        env.lastError = TypeError.custom(msg, hint).withLoc(loc);
+        return error.TypeError;
+    }
+}
+
+/// Whether the std module `mod_name` declares the decorator `pub fn name`.
+fn stdDecoratorNamed(env: *Env, mod_name: []const u8, name: []const u8) bool {
+    const fns = env.stdModuleFns.get(mod_name) orelse return false;
+    for (fns) |f| if (f.isPub and isDecoratorParams(f.params) and std.mem.eql(u8, f.name, name)) return true;
+    return false;
+}
+
+/// A std module's decorators travel with its import, as a library's do: `import
+/// {testing.mocks} from "std"` makes `pub fn mock(comptime decl: @Decl)` the
+/// annotation `#[mocks.mock]` (the name the import binds, an alias included).
+/// A leaf import of a decorator is refused by `markStdImports`
+/// (`std-decorator-leaf-import`). Registered before `validateDecorators`,
+/// which runs ahead of the `use` declarations' own inference; every handle is
+/// noted in `Env.stdDecoratorHandles`, so an annotation through one that names
+/// no decorator of the module is refused (`refuseUnknownAnnotationList`).
+fn registerStdImportDecorators(env: *Env, program: ast.Program) InferError!void {
+    for (program.decls) |decl| {
+        if (decl != .use) continue;
+        const u = decl.use;
+        const from_std = switch (u.source) {
+            .module => |m| std.mem.eql(u8, m, "std"),
+            .root => false,
+        };
+        if (!from_std) continue;
+        for (u.imports) |imp| {
+            const whole = try imp.fullPath(env.arena);
+            if (env.stdModules.contains(whole)) {
+                try registerStdDecorators(env, whole, imp.name());
+                try env.stdDecoratorHandles.put(env.arena, imp.name(), whole);
             }
         }
     }
-    return true;
+}
+
+/// Register the decorators (`pub fn d(comptime decl: @Decl, …)`) of the std
+/// module `mod_name` in the importing env, each under `<handle>.<fn>` — the
+/// namespace import `import {testing.mocks}` makes `#[mocks.mock]`. The
+/// functions a decorator body reaches in its module travel with it
+/// (`decoratorSupport`), as for a library's.
+fn registerStdDecorators(env: *Env, mod_name: []const u8, handle: []const u8) InferError!void {
+    const fns = env.stdModuleFns.get(mod_name) orelse return;
+    var byName = std.StringHashMap(ast.FnDecl).init(env.arena);
+    for (fns) |f| try byName.put(f.name, f);
+    for (fns) |f| {
+        if (!f.isPub or !isDecoratorParams(f.params)) continue;
+        const name = try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ handle, f.name });
+        const support = try decoratorSupport(env.arena, byName, &env.importedFnSupport, f);
+        const owner = try std.fmt.allocPrint(env.arena, "std/{s}", .{mod_name});
+        try registerImportedDecorator(env, name, f, owner, support.fns, support.conflict);
+    }
+}
+
+/// STD-001 — when an active target is set on this env (the CLI codegen
+/// path), red on imports of std modules whose declares lack an
+/// `#[@External.<Target>(…)]` binding. Pure-bp `pub fn` (with body) ship
+/// on every target without a host binding, so they're skipped. Only
+/// host-bound `pub declare fn` are gated.
+///
+/// The diagnostic names the function the program reaches, never merely the
+/// module's first unsupported declaration: a symbol import names its leaf when
+/// the leaf is one, and a namespace import waits for its calls
+/// (`gateStdTargetSupport`).
+fn checkStdTargetSupport(env: *Env, mod_name: []const u8, leaf: []const u8, loc: ast.Loc) InferError!void {
+    const tgt = env.target orelse return;
+    if (stdFnUnsupported(env, mod_name, leaf, tgt)) return refuseStdUnsupported(env, mod_name, leaf, tgt, loc);
+    const first = firstStdUnsupported(env, mod_name, tgt) orelse return;
+    return refuseStdUnsupported(env, mod_name, first, tgt, loc);
+}
+
+/// A namespace import of a std module with an unsupported declare: recorded,
+/// and refused where one of those functions is called or, if none is, at the
+/// import when the program has been inferred.
+fn gateStdTargetSupport(env: *Env, mod_name: []const u8, local: []const u8, loc: ast.Loc) InferError!void {
+    const tgt = env.target orelse return;
+    if (firstStdUnsupported(env, mod_name, tgt) == null) return;
+    try env.stdTargetGates.put(env.arena, local, .{ .module = mod_name, .loc = loc });
+}
+
+/// `recv.callee(…)` on a gated namespace import: refused at the call when the
+/// callee is one of the module's functions with no binding for the target.
+fn checkStdGatedCall(env: *Env, recv: []const u8, callee: []const u8, loc: ast.Loc) InferError!void {
+    const gate = env.stdTargetGates.get(recv) orelse return;
+    const tgt = env.target orelse return;
+    if (!stdFnUnsupported(env, gate.module, callee, tgt)) return;
+    return refuseStdUnsupported(env, gate.module, callee, tgt, loc);
+}
+
+/// The gated imports no refused call reached: the module still has no
+/// binding for the target (STD-001 refuses the import), so each is refused at
+/// its import, naming the module and every function it lacks.
+fn reportStdTargetGates(env: *Env) InferError!void {
+    const tgt = env.target orelse return;
+    var it = env.stdTargetGates.iterator();
+    while (it.next()) |entry| {
+        const gate = entry.value_ptr.*;
+        var names: std.ArrayListUnmanaged(u8) = .empty;
+        const fns = env.stdModuleFns.get(gate.module) orelse continue;
+        for (fns) |f| {
+            if (!stdDeclUnsupported(f, tgt)) continue;
+            if (names.items.len > 0) try names.appendSlice(env.arena, ", ");
+            try names.appendSlice(env.arena, f.name);
+        }
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: std/{s} has no `@external` for target '{s}' (for {s})", .{ diagnostics.std_unsupported_on_target, gate.module, tgt, names.items });
+        env.lastError = TypeError.custom(msg, "The import is refused: the module's host functions listed have no binding for this target. Pick a target the module supports (see libs/std/src/examples.md per-target coverage matrix).").withLoc(gate.loc);
+        return error.TypeError;
+    }
+}
+
+/// Decision 167 — the first `#[@BeamMemory]` of a module built for a target
+/// that is not the BEAM, refused at the annotation (`validateMemoryAnnotations`
+/// recorded it). The target is named as `--target` spells it (`node` is
+/// commonJS's lookup name).
+fn reportOffBeamMemory(env: *Env) InferError!void {
+    const loc = env.offBeamMemory orelse return;
+    const lookup = env.target orelse return;
+    const t = if (std.mem.eql(u8, lookup, "node")) "commonJS" else lookup;
+    return failAt(
+        env,
+        loc,
+        try std.fmt.allocPrint(env.arena, "`#[@BeamMemory]` has no meaning on the {s} backend", .{t}),
+        try std.fmt.allocPrint(env.arena, "`@BeamMemory` places a `var` in BEAM storage; on {s} a module `var` is one value for the whole program. Drop the annotation, or build for `erlang` / `beam`.", .{t}),
+    );
+}
+
+fn stdDeclUnsupported(f: ast.FnDecl, tgt: []const u8) bool {
+    return f.body.len == 0 and f.isExternal() and f.externalFor(tgt) == null;
+}
+
+fn stdFnUnsupported(env: *Env, mod_name: []const u8, name: []const u8, tgt: []const u8) bool {
+    const fns = env.stdModuleFns.get(mod_name) orelse return false;
+    for (fns) |f| if (std.mem.eql(u8, f.name, name)) return stdDeclUnsupported(f, tgt);
+    return false;
+}
+
+fn firstStdUnsupported(env: *Env, mod_name: []const u8, tgt: []const u8) ?[]const u8 {
+    const fns = env.stdModuleFns.get(mod_name) orelse return null;
+    for (fns) |f| if (stdDeclUnsupported(f, tgt)) return f.name;
+    return null;
+}
+
+fn refuseStdUnsupported(env: *Env, mod_name: []const u8, name: []const u8, tgt: []const u8, loc: ast.Loc) InferError!void {
+    const msg = try std.fmt.allocPrint(env.arena, "{s}: std/{s}.{s} has no `@external` for target '{s}'", .{ diagnostics.std_unsupported_on_target, mod_name, name, tgt });
+    env.lastError = TypeError.custom(msg, "Either add a per-target `@external` to the declare, or pick a target the module supports (see libs/std/src/examples.md per-target coverage matrix).").withLoc(loc);
+    return error.TypeError;
 }
 
 /// Append one `TypedBinding` per imported symbol in a `use` decl so the LSP's
@@ -115,7 +515,10 @@ fn appendImportBindings(
     decl: ast.DeclKind,
     u: ast.ImportDecl,
 ) InferError!void {
-    if (try markStdImports(env, u)) return;
+    // A `from "std"` namespace item contributes no value binding; a symbol
+    // leaf of one (`import {dict.empty as newDict}`, decision 107) was bound
+    // by `markStdImports` and is listed like any other import.
+    _ = try markStdImports(env, u);
     for (u.imports) |imp| {
         const name = imp.name();
         if (env.lookup(name)) |ty| {
@@ -131,10 +534,19 @@ fn appendImportBindings(
 
 pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     var list: std.ArrayListUnmanaged(Binding) = .empty;
+    env.testIndex = 0;
+    // Decision 216 (3): before this module's decorators run, `Owner.Name`
+    // may be an associated type they are about to declare.
+    try noteOwnDecls(env, program);
+    env.assocTypesPending = !env.skipDecoratorInvoke;
 
     try validateUniqueDefaults(env, program);
+    try refuseDeclsNamedLikeImports(env, program);
+    try noteExplicitTypeNames(env, program);
 
     // Pass 1: register type definitions and their constructors.
+    try registerTypeAliases(env, program);
+    try checkSelfSpelling(env, program);
     for (program.decls) |decl| {
         try registerTypeDecl(env, decl);
     }
@@ -147,12 +559,16 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     // decorator's `@emit`ed decls must be spliced before a body referencing them
     // is inferred. Bail out early when contributions exist — the spliced
     // re-analysis does the real inference.
+    try registerStdImportDecorators(env, program);
     try validateDecorators(env, program);
-    try validateEffectAnnotations(env, program);
+    try refuseUnknownAnnotations(env, program);
+    try validateExternalInline(env, program);
     try invokeDecorators(env, program);
-    if (env.contributions.items.len > 0) {
+    env.assocTypesPending = false;
+    if (env.contributions.items.len > 0 or env.memberContributions.items.len > 0 or env.typeContributions.items.len > 0 or env.typeinfoAllPending) {
         return list.toOwnedSlice(env.arena);
     }
+    try refusePendingAssocType(env);
 
     // Pass 2: infer value-producing declarations in order.
     for (program.decls) |decl| {
@@ -161,9 +577,16 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
         }
     }
 
+    // C10 second pass — every declaration is registered by now, so an annotation
+    // that still names nothing is an unknown type, reported at the annotation.
+    try env.checkPendingTypeNames();
+    try flushBirthWarnings(env);
+
     // Pass 3: semantic validation of `implement` blocks and struct accessors.
     // (Decorators already ran above, before body inference.)
     try validateProgram(env, program);
+    try reportStdTargetGates(env);
+    try reportOffBeamMemory(env);
 
     return list.toOwnedSlice(env.arena);
 }
@@ -178,29 +601,74 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
 fn validateUniqueDefaults(env: *Env, program: ast.Program) InferError!void {
     var default_mods: usize = 0;
     var default_fns: usize = 0;
+    // 01 step 9 — the refusal points at the SECOND default, the duplicate.
+    var dupLoc: ast.Loc = .{ .line = 0, .col = 0 };
     for (program.decls) |decl| switch (decl) {
         .mod => |m| if (m.isDefault) {
             default_mods += 1;
+            if (default_mods == 2) dupLoc = m.loc;
         },
         .@"fn" => |f| if (f.isDefault) {
             default_fns += 1;
+            if (default_fns == 2 and f.body.len > 0) dupLoc = f.body[0].expr.getLoc();
         },
         else => {},
     };
     if (default_mods > 1 or default_fns > 1) {
-        env.lastError = TypeError.custom(
+        env.lastError = locatedAt(TypeError.custom(
             "a package declares at most one `pub default mod` and one `pub default fn`",
             "Remove the duplicate default declaration; a package has a single default module and handler.",
-        );
+        ), dupLoc);
+        return error.TypeError;
+    }
+}
+
+/// A module-level `fn`, `val` or `var` named like an item one of the module's
+/// imports binds (`import {page} from "deco";` beside `pub fn page(…)`) binds
+/// the name twice: commonJS stopped at load (`Identifier 'page' has already
+/// been declared`) while erlang ran. Refused at the declaration's name, on
+/// every target, naming the import — `import-name-collision`, the rule two
+/// import items already follow (decision 107). A type named like an imported
+/// type is decision 170's collision, refused where the types are registered.
+fn refuseDeclsNamedLikeImports(env: *Env, program: ast.Program) InferError!void {
+    var imported = std.StringHashMap(ast.ImportPath).init(env.arena);
+    defer imported.deinit();
+    for (program.decls) |decl| switch (decl) {
+        .use => |u| {
+            if (u.activationOnly) continue;
+            for (u.imports) |imp| if (!imp.activate) try imported.put(imp.name(), imp);
+        },
+        else => {},
+    };
+    if (imported.count() == 0) return;
+    for (program.decls) |decl| {
+        const name, const loc, const what = switch (decl) {
+            .@"fn" => |f| .{ f.name, f.nameLoc, "a function" },
+            .val => |v| .{ v.name, v.nameLoc, if (v.mutable) "a `var`" else "a `val`" },
+            else => continue,
+        };
+        const imp = imported.get(name) orelse continue;
+        const path = try imp.dotted(env.arena);
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is already bound by the import of `{s}`; {s} of this module would bind it again", .{ diagnostics.import_name_collision, name, path, what });
+        env.lastError = locatedAt(TypeError.custom(msg, "Rename the declaration, or import the item under another name with `as`."), loc);
         return error.TypeError;
     }
 }
 
 pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBinding {
     var list: std.ArrayListUnmanaged(TypedBinding) = .empty;
+    env.testIndex = 0;
+    // Decision 216 (3): before this module's decorators run, `Owner.Name`
+    // may be an associated type they are about to declare.
+    try noteOwnDecls(env, program);
+    env.assocTypesPending = !env.skipDecoratorInvoke;
 
     try validateUniqueDefaults(env, program);
+    try refuseDeclsNamedLikeImports(env, program);
+    try noteExplicitTypeNames(env, program);
 
+    try registerTypeAliases(env, program);
+    try checkSelfSpelling(env, program);
     for (program.decls) |decl| {
         try registerTypeDecl(env, decl);
     }
@@ -208,6 +676,7 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
     try buildScopeSnapshot(env, program);
     try registerFnSignatures(env, program);
     try registerAnnotationTypes(env, program);
+    try registerStdImportDecorators(env, program);
 
     // Annotation processors run BEFORE bodies are inferred: a decorator's
     // `@emit`ed declarations must be spliced (by `analyzeSource`) and present
@@ -217,22 +686,36 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
     // test`. The serialized handles read only the AST, so no body inference is
     // needed first.)
     try validateDecorators(env, program);
-    try validateEffectAnnotations(env, program);
+    try refuseUnknownAnnotations(env, program);
+    try validateExternalInline(env, program);
     try invokeDecorators(env, program);
-    if (env.contributions.items.len > 0) {
+    env.assocTypesPending = false;
+    if (env.contributions.items.len > 0 or env.memberContributions.items.len > 0 or env.typeContributions.items.len > 0 or env.typeinfoAllPending) {
         // A decorator `@emit`ed code: the spliced re-analysis (`analyzeSource`)
         // does the real, full inference of the generated declarations. But the
         // LSP needs a useful binding list even when that spliced code can't
         // type-check standalone (it may reference symbols only resolvable with
         // the project graph). Collect the bindings that don't depend on the
         // not-yet-spliced decls: imports, type declarations, and `fn`
-        // signatures. `val` bodies are skipped — they may reference a generated
-        // decl. A decl that fails to infer is tolerated (it just contributes no
+        // signatures, and `val`s. A decl that fails to infer — a `val` whose body
+        // references a generated decl, say — is tolerated (it just contributes no
         // binding) so one broken body never blanks the whole list. Generic — no
         // decorator framework is named here.
         for (program.decls) |decl| switch (decl) {
             .use => |u| try appendImportBindings(env, &list, decl, u),
-            .val => {},
+            // N23 — a `val` is inferred tolerantly like the other decls: one
+            // that references a not-yet-spliced decl fails and contributes no
+            // binding; a well-typed one still binds (the LSP lists it).
+            .val => {
+                const maybe = inferDeclTyped(env, decl) catch |err| switch (err) {
+                    error.TypeError => blk: {
+                        env.lastError = null;
+                        break :blk null;
+                    },
+                    else => return err,
+                };
+                if (maybe) |b| try list.append(env.arena, b);
+            },
             else => {
                 const maybe = inferDeclTyped(env, decl) catch |err| switch (err) {
                     error.TypeError => null,
@@ -243,6 +726,7 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
         };
         return list.toOwnedSlice(env.arena);
     }
+    try refusePendingAssocType(env);
 
     for (program.decls) |decl| {
         switch (decl) {
@@ -259,9 +743,16 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
         }
     }
 
+    // C10 second pass — every declaration is registered by now, so an annotation
+    // that still names nothing is an unknown type, reported at the annotation.
+    try env.checkPendingTypeNames();
+    try flushBirthWarnings(env);
+
     // Semantic validation of `implement` blocks and struct accessors. (Decorators
     // already ran above, before body inference.)
     try validateProgram(env, program);
+    try reportStdTargetGates(env);
+    try reportOffBeamMemory(env);
 
     return list.toOwnedSlice(env.arena);
 }
@@ -272,26 +763,103 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
 /// check that struct getters/setters agree with their backing field's type.
 ///
 /// Runs after type registration so user-defined interface and field types are
-/// already known. Only the standalone `implement … for …` form is checked for
-/// method coverage; inline `struct/enum/record implement` clauses carry no method
-/// bodies of their own here. Interfaces that are not declared in this program
-/// (e.g. stdlib interfaces) are skipped — their method sets are not visible.
+/// already known. **Both** forms are checked for method coverage — the standalone
+/// `implement … for …` block and the inline `type … implement I { }` clause
+/// (decision 58). Interfaces that are not declared in this program (e.g. stdlib
+/// interfaces) are skipped — their method sets are not visible.
 fn validateProgram(env: *Env, program: ast.Program) InferError!void {
-    var interfaces = std.StringHashMap(ast.InterfaceDecl).init(env.arena);
+    var interfaces = std.StringHashMap(ast.BehaviorDecl).init(env.arena);
     defer interfaces.deinit();
     for (program.decls) |decl| switch (decl) {
-        .interface => |d| try interfaces.put(d.name, d),
+        .behavior => |d| try interfaces.put(d.name, d),
         else => {},
     };
 
     for (program.decls) |decl| switch (decl) {
         .implement => |impl| try validateImplement(env, impl, interfaces),
+        .type_ => |td| try validateInlineImplements(env, td, interfaces, program),
         else => {},
     };
 }
 
+/// Decision 58 — an inline `implement <Behavior> { }` on a type declaration
+/// asserts that the type satisfies the behavior, and nothing verified the
+/// assertion: `type Money(cents: i32) implement Display { }` **checked**, with
+/// `Display` declared in the same file and with the long-registered `Generator`
+/// too. Only the separate block was covered (the
+/// `implement_missing_a_required_interface_method` snapshot family), so this was
+/// the same family as decisions 37, 38 and 45 — the checker accepting what a
+/// backend then answers on its own.
+///
+/// It is the same coverage check `validateImplement` runs, applied to the inline
+/// form; decision 58 settles that it is not a question about meaning.
+///
+/// A required method is one the behavior declares with **no body** — a
+/// `default fn` carries its own, so implementing it is optional. It is satisfied
+/// by a member of the type's own body, or by a member of any separate
+/// `implement <Behavior> for <this type>` block in the same program: writing both
+/// halves is legal and the inline clause is what names the contract.
+///
+/// Interfaces this program does not declare are skipped, exactly as
+/// `validateImplement` skips them. That leaves an ambient `libs/std` behavior
+/// unchecked in both forms — the block form's existing blind spot, reported rather
+/// than widened here, because closing it needs the interface-member registry and
+/// would red every implementation the registry cannot open.
+fn validateInlineImplements(
+    env: *Env,
+    td: ast.TypeDecl,
+    interfaces: std.StringHashMap(ast.BehaviorDecl),
+    program: ast.Program,
+) InferError!void {
+    for (td.implement) |iface| {
+        const iname = interfaceRefName(iface);
+        const d = interfaces.get(iname) orelse continue;
+        for (d.methods) |am| {
+            if (am.body != null) continue; // a default method — optional
+            if (typeDeclProvidesMethod(td, am.name)) continue;
+            if (separateImplementProvides(program, td.name, iname, am.name)) continue;
+            env.lastError = locatedAt(TypeError.missingMethod(td.name, iname, am.name), td.loc);
+            return error.TypeError;
+        }
+    }
+}
+
+/// True when the type's own body provides `name` with a body. A `declare fn`
+/// member is an abstract slot typed from its signature, so it provides nothing.
+fn typeDeclProvidesMethod(td: ast.TypeDecl, name: []const u8) bool {
+    for (td.methods) |m| {
+        if (!std.mem.eql(u8, m.name, name)) continue;
+        if (m.body != null) return true;
+    }
+    return false;
+}
+
+/// True when some `implement <iname> for <target>` block in this program provides
+/// `name` — either unqualified, or qualified with `iname` itself.
+fn separateImplementProvides(
+    program: ast.Program,
+    target: []const u8,
+    iname: []const u8,
+    name: []const u8,
+) bool {
+    for (program.decls) |decl| {
+        const impl = switch (decl) {
+            .implement => |i| i,
+            else => continue,
+        };
+        if (!std.mem.eql(u8, impl.target, target)) continue;
+        if (!implementsInterface(impl, iname)) continue;
+        for (impl.methods) |m| {
+            if (!std.mem.eql(u8, m.name, name)) continue;
+            const q = m.qualifier orelse return true;
+            if (std.mem.eql(u8, q, iname)) return true;
+        }
+    }
+    return false;
+}
+
 /// True when interface `d` declares a method named `name` (abstract or default).
-fn interfaceHasMethod(d: ast.InterfaceDecl, name: []const u8) bool {
+fn interfaceHasMethod(d: ast.BehaviorDecl, name: []const u8) bool {
     for (d.methods) |m| {
         if (std.mem.eql(u8, m.name, name)) return true;
     }
@@ -320,20 +888,20 @@ fn implementsInterface(impl: ast.ImplementDecl, name: []const u8) bool {
 fn validateImplement(
     env: *Env,
     impl: ast.ImplementDecl,
-    interfaces: std.StringHashMap(ast.InterfaceDecl),
+    interfaces: std.StringHashMap(ast.BehaviorDecl),
 ) InferError!void {
     // Per-method checks: qualifier validity, method existence, ambiguity.
     for (impl.methods) |m| {
         if (m.qualifier) |q| {
             // The qualifier must name an interface this block implements.
             if (!implementsInterface(impl, q)) {
-                env.lastError = TypeError.unknownInterface(q, m.name);
+                env.lastError = locatedAt(TypeError.unknownInterface(q, m.name), m.loc);
                 return error.TypeError;
             }
             // If the interface is visible, it must declare the method.
             if (interfaces.get(q)) |d| {
                 if (!interfaceHasMethod(d, m.name)) {
-                    env.lastError = TypeError.unknownMethod(impl.target, m.name);
+                    env.lastError = locatedAt(TypeError.unknownMethod(impl.target, m.name), m.loc);
                     return error.TypeError;
                 }
             }
@@ -352,11 +920,11 @@ fn validateImplement(
                 }
             }
             if (first == null) {
-                env.lastError = TypeError.unknownMethod(impl.target, m.name);
+                env.lastError = locatedAt(TypeError.unknownMethod(impl.target, m.name), m.loc);
                 return error.TypeError;
             }
             if (second) |snd| {
-                env.lastError = TypeError.ambiguousMethod(m.name, first.?, snd);
+                env.lastError = locatedAt(TypeError.ambiguousMethod(m.name, first.?, snd), m.loc);
                 return error.TypeError;
             }
         }
@@ -382,55 +950,11 @@ fn validateImplement(
                 }
             }
             if (!covered) {
-                env.lastError = TypeError.missingMethod(impl.target, iname, am.name);
+                env.lastError = locatedAt(TypeError.missingMethod(impl.target, iname, am.name), impl.loc);
                 return error.TypeError;
             }
         }
     }
-}
-
-/// Resolve the declared type of struct field `name`, or null when there is no
-/// field with that name (e.g. a computed getter that backs no field).
-fn structFieldType(
-    env: *Env,
-    s: ast.StructDecl,
-    genericMap: std.StringHashMap(*T.Type),
-    name: []const u8,
-) InferError!?*T.Type {
-    for (s.members) |m| switch (m) {
-        .field => |f| if (std.mem.eql(u8, f.name, name)) {
-            return try resolveTypeRefInContext(env, f.typeRef, genericMap);
-        },
-        else => {},
-    };
-    return null;
-}
-
-/// Check that each getter/setter named after a field agrees with that field's
-/// type: a getter must return the field type, a setter must accept it.
-fn validateStructAccessors(env: *Env, s: ast.StructDecl) InferError!void {
-    var genericMap = std.StringHashMap(*T.Type).init(env.arena);
-    defer genericMap.deinit();
-    for (s.genericParams) |gp| {
-        try genericMap.put(gp.name, try env.freshVar());
-    }
-
-    for (s.members) |m| switch (m) {
-        .getter => |g| {
-            const fieldTy = (try structFieldType(env, s, genericMap, g.name)) orelse continue;
-            const retTy = try env.resolveTypeName(g.returnType, genericMap);
-            try unify(env, fieldTy, retTy);
-        },
-        .setter => |st| {
-            const fieldTy = (try structFieldType(env, s, genericMap, st.name)) orelse continue;
-            // The value parameter follows `self`; skip malformed setters.
-            if (st.params.len < 2) continue;
-            const valueParam = st.params[st.params.len - 1];
-            const valueTy = try resolveTypeRefInContext(env, valueParam.typeRef, genericMap);
-            try unify(env, fieldTy, valueTy);
-        },
-        else => {},
-    };
 }
 
 // ── stdlib preload ────────────────────────────────────────────────────────────
@@ -443,48 +967,71 @@ fn validateStructAccessors(env: *Env, s: ast.StructDecl) InferError!void {
 fn inferDeclTyped(env: *Env, decl: ast.DeclKind) InferError!?TypedBinding {
     switch (decl) {
         .val => |v| {
-            const annType: ?*T.Type = if (v.typeAnnotation) |ann| try resolveTypeRef(env, ann) else null;
+            try refuseValuelessIf(env, v.value.*);
+            // 01 R8 — `ValDecl` carries no location for its annotation; an
+            // unlocated refusal there reds at the value.
+            const annType: ?*T.Type = if (v.typeAnnotation) |ann|
+                resolveTypeRef(env, ann) catch |err| return locateTypeRefError(env, err, v.value.getLoc())
+            else
+                null;
             // When binding a lambda to a `fn(...) -> ...` annotation, feed the
             // annotation into the lambda so its params are typed from context.
             const typedExpr = if (annType != null and v.value.* == .function)
-                try inferFunctionExprExpected(env, v.value.function, v.value.function.loc, annType)
+                try inferFunctionExprExpected(env, v.value.function, v.value.function.loc, annType, false)
             else
-                try inferExprTyped(env, v.value.*);
+                // 00 · 01-checker — the annotation is this position's expected
+                // type, so `val t: Token = .Color.Red.500;` resolves the path
+                // on `Token`.
+                try inferExprTypedExpecting(env, v.value.*, annType);
             const ty = typedExpr.getType();
-            if (annType) |at| try unifyAt(env, at, ty, v.value.getLoc());
+            // A behavior annotation takes an implementer (`val l: Lookup =
+            // memory();`), as a parameter and a return do (`unifyArgument`).
+            if (annType) |at| try unifyArgument(env, at, ty, v.value.getLoc());
             // The annotation is the DECLARED type — bind it, not the RHS type
             // (`val head: ?i32 = 5;` must bind `?i32`, or a later
             // `option.map(head, f)` sees a bare `i32`).
             const bindTy = annType orelse ty;
-            try env.bind(v.name, bindTy);
+            if (v.isPub and annType == null) try refusePublicUnknown(env, bindTy, v.name, "val", v.value.getLoc());
+            if (annType == null and isEmptyArrayLiteral(v.value.*))
+                try env.birthWarnings.append(env.arena, .{ .name = v.name, .mutable = v.mutable, .type_ = bindTy, .loc = v.value.getLoc() });
+            try validateMemoryAnnotations(env, v, bindTy);
+            try noteTypeValue(env, v.name, v.value.*, annType == null and !v.mutable);
+            if (v.mutable) try env.bind(v.name, bindTy) else try env.bindVal(v.name, bindTy);
             return .{ .name = v.name, .type_ = bindTy, .typedExpr = typedExpr, .decl = decl };
         },
         .@"fn" => |f| {
             const ty = try inferFnDecl(env, f);
+            if (f.isPub and f.returnType == null and f.body.len > 0) {
+                const d = ty.deref();
+                if (d.* == .func) try refusePublicUnknown(env, d.func.ret, f.name, "fn", f.body[0].expr.getLoc());
+            }
             try env.bind(f.name, ty);
             return .{ .name = f.name, .type_ = ty, .typedExpr = null, .decl = decl };
         },
-        .record => |r| {
-            const typeName = try buildRecordDeclName(env, r);
-            const typeId = if (env.lookupTypeDef(r.name)) |td| switch (td) {
-                .record => |rec| rec.id,
-                else => null,
-            } else null;
-            try inferTypeMethods(env, r.name, r.genericParams, r.methods);
-            return .{ .name = r.name, .type_ = try env.namedType(typeName), .typedExpr = null, .decl = decl, .typeId = typeId };
+        .type_ => |tdecl| switch (tdecl.shape) {
+            .record => {
+                const typeName = try buildRecordDeclName(env, tdecl);
+                const typeId = if (env.lookupTypeDef(tdecl.name)) |td| switch (td) {
+                    .record => |rec| rec.id,
+                    else => null,
+                } else null;
+                try inferTypeMethods(env, tdecl.name, tdecl.genericParams, tdecl.methods);
+                return .{ .name = tdecl.name, .type_ = try env.namedType(typeName), .typedExpr = null, .decl = decl, .typeId = typeId };
+            },
+            .enum_ => {
+                const typeName = try buildEnumDeclName(env, tdecl);
+                const typeId = if (env.lookupTypeDef(tdecl.name)) |td| switch (td) {
+                    .enum_ => |en| en.id,
+                    else => null,
+                } else null;
+                try inferTypeMethods(env, tdecl.name, tdecl.genericParams, tdecl.methods);
+                return .{ .name = tdecl.name, .type_ = try env.namedType(typeName), .typedExpr = null, .decl = decl, .typeId = typeId };
+            },
         },
-        .@"enum" => |e| {
-            const typeName = try buildEnumDeclName(env, e);
-            const typeId = if (env.lookupTypeDef(e.name)) |td| switch (td) {
-                .enum_ => |en| en.id,
-                else => null,
-            } else null;
-            try inferTypeMethods(env, e.name, e.genericParams, e.methods);
-            return .{ .name = e.name, .type_ = try env.namedType(typeName), .typedExpr = null, .decl = decl, .typeId = typeId };
-        },
-        .interface => |d| {
+        .behavior => |d| {
             const typeName = try buildInterfaceDeclName(env, d);
             try registerInterfaceAssociatedFns(env, d);
+            try inferBehaviorDefaultBodies(env, d);
             return .{ .name = d.name, .type_ = try env.namedType(typeName), .typedExpr = null, .decl = decl };
         },
         // Handled in `inferProgramTyped` — each import name is looked up in env.
@@ -499,16 +1046,213 @@ fn inferDeclTyped(env: *Env, decl: ast.DeclKind) InferError!?TypedBinding {
             try inferTestDecl(env, t);
             return null;
         },
+        // An alias binds no value; its binding carries the target's type for
+        // the tooling (hover, the `.d.ts`). `registerExports` keeps it out of
+        // the value exports.
+        .typeAlias => |a| {
+            const ty = try checkTypeAliasDecl(env, a);
+            return .{ .name = a.name, .type_ = ty, .typedExpr = null, .decl = decl };
+        },
         else => return null,
     }
+}
+
+/// Whether `ty` mentions `unknown` anywhere — at its head, in a type argument,
+/// a union member, a function's parameters or return, or a record field.
+fn typeContainsUnknown(ty: *T.Type) bool {
+    const t = ty.deref();
+    return switch (t.*) {
+        .named => |n| blk: {
+            if (std.mem.eql(u8, n.name, ast.unknown_type_name)) break :blk true;
+            for (n.args) |a| if (typeContainsUnknown(a)) break :blk true;
+            break :blk false;
+        },
+        .func => |f| blk: {
+            for (f.params) |p| if (typeContainsUnknown(p)) break :blk true;
+            break :blk typeContainsUnknown(f.ret);
+        },
+        .union_ => |ms| blk: {
+            for (ms) |m| if (typeContainsUnknown(m)) break :blk true;
+            break :blk false;
+        },
+        .record => |fs| blk: {
+            for (fs) |f| if (typeContainsUnknown(f.type_)) break :blk true;
+            break :blk false;
+        },
+        .typeVar => false,
+    };
+}
+
+/// 01 step 12 — the written spelling (`Token.Layout.Break`) of the first
+/// section enum declaring a unit leaf `name`, or null.
+fn sectionOwningLeaf(env: *Env, name: []const u8) InferError!?[]const u8 {
+    var it = env.typeDefs.iterator();
+    while (it.next()) |e| {
+        const key = e.key_ptr.*;
+        if (!std.mem.startsWith(u8, key, "__")) continue;
+        const td = e.value_ptr.*;
+        if (td != .enum_) continue;
+        for (td.enum_.variants) |v| {
+            if (!std.mem.eql(u8, v.name, name) or v.fields.len != 0) continue;
+            return try std.mem.replaceOwned(u8, env.arena, key[2..], "__", ".");
+        }
+    }
+    return null;
+}
+
+/// 01 step 12 — record that enum `enumName` declares `variant`, under its
+/// qualified name and in the bare name's claimant list.
+fn noteVariantClaim(env: *Env, enumName: []const u8, variant: []const u8, ctorType: *T.Type) InferError!void {
+    try env.variantCtors.put(try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ enumName, variant }), ctorType);
+    const prev = env.variantClaims.get(variant) orelse &.{};
+    for (prev) |p| if (std.mem.eql(u8, p, enumName)) return;
+    const next = try env.arena.alloc([]const u8, prev.len + 1);
+    @memcpy(next[0..prev.len], prev);
+    next[prev.len] = enumName;
+    try env.variantClaims.put(variant, next);
+}
+
+/// 01 step 12 — a bare variant name two enums claim is a **named refusal**,
+/// never the flat table's last writer (decision 67). Only a use that reached
+/// a claimant's constructor through the table is judged: a local or a fn
+/// that shadows the name is not a variant use.
+fn refuseAmbiguousVariant(env: *Env, name: []const u8, ty: *T.Type, loc: ast.Loc) InferError!void {
+    const claims = env.variantClaims.get(name) orelse return;
+    if (claims.len < 2) return;
+    // A name that is also a type or a behavior (`Array.range(…)`) is read as
+    // that, not as a variant.
+    if (env.lookupTypeDef(name) != null or env.assocInterfaceDecls.contains(name)) return;
+    const isCtor = for (claims) |c| {
+        const q = try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ c, name });
+        if (env.variantCtors.get(q)) |ct| if (ct == ty) break true;
+    } else false;
+    if (!isCtor) return;
+    // The erlang emitter's own refusal of the same program reads this way
+    // (`run/variant_name_ambiguous`); the checker now says it first, for
+    // every target.
+    var names: std.ArrayListUnmanaged(u8) = .empty;
+    var spellings: std.ArrayListUnmanaged(u8) = .empty;
+    for (claims, 0..) |c, i| {
+        if (i > 0) {
+            try names.appendSlice(env.arena, " and of ");
+            try spellings.appendSlice(env.arena, " or ");
+        }
+        try names.print(env.arena, "`{s}`", .{c});
+        try spellings.print(env.arena, "`{s}.{s}`", .{ c, name });
+    }
+    const msg = try std.fmt.allocPrint(env.arena, "`{s}` is a variant of {s}, and nothing here says which — write {s}", .{ name, names.items, spellings.items });
+    env.lastError = TypeError.custom(msg, "A bare variant name is resolved by the type its position expects; where nothing does, the qualified name says which enum is meant (decision 67: no silent pick).").withLoc(loc);
+    return error.TypeError;
+}
+
+/// 01 step 9 — attach `loc` when the declaration recorded one (a synthesised
+/// declaration carries `{0, 0}` and stays unlocated rather than point at
+/// line 0).
+fn locatedAt(err: TypeError, loc: ast.Loc) TypeError {
+    if (loc.line == 0) return err;
+    return err.withLoc(loc);
+}
+
+/// An unbound name, located. 01 step 13 — when the name was a local of a body
+/// already inferred (`Env.closedLocals`), the message names that body: the
+/// name existed, in another function, and a local ends with its body.
+fn unboundAt(env: *Env, name: []const u8, loc: ast.Loc) InferError!TypeError {
+    if (env.namespaces.ambiguous.get(name)) |owners| {
+        var names: std.ArrayListUnmanaged(u8) = .empty;
+        for (owners, 0..) |o, i| {
+            if (i > 0) try names.appendSlice(env.arena, if (i + 1 == owners.len) " and by " else ", by ");
+            try names.print(env.arena, "`{s}`", .{o});
+        }
+        const msg = try std.fmt.allocPrint(
+            env.arena,
+            "{s}: `{s}` is imported from two declarations — declared `pub` by {s} — and this use does not say which",
+            .{ diagnostics.ambiguous_import_use, name, names.items },
+        );
+        const hint = try std.fmt.allocPrint(env.arena, "Import it from the module that declares it (`import {{{s}}} from \"{s}\"`), or through the module as a namespace.", .{ name, owners[0] });
+        return TypeError.custom(msg, hint).withLoc(loc);
+    }
+    if (env.closedLocals.get(name)) |owner| {
+        const msg = try std.fmt.allocPrint(env.arena, "unbound variable '{s}' — `{s}` is a local of `{s}`, and a local ends with its body", .{ name, name, owner });
+        return TypeError.custom(msg, "Declare it where it is used, or pass it in as a parameter.").withLoc(loc);
+    }
+    for ([_][]const u8{ "print", "println", "debug" }) |b| if (std.mem.eql(u8, name, b)) {
+        const msg = try std.fmt.allocPrint(env.arena, "unbound variable '{s}' — printing is the builtin `@{s}`", .{ name, name });
+        return TypeError.custom(msg, "Write `@print(…)`: a builtin is spelled with `@`, and every backend lowers it.").withLoc(loc);
+    };
+    return TypeError.unboundVariable(name).withLoc(loc);
+}
+
+/// Decision 8 §2.4 — a `pub` declaration whose **inferred** type contains
+/// `unknown` is an error: a public API says what it answers, and `unknown`
+/// reached by inference is a type nobody chose. Writing `unknown` on purpose
+/// (`pub fn parse(s: string) -> unknown`) is fine, so only a declaration with
+/// no written type reaches here.
+fn refusePublicUnknown(env: *Env, ty: *T.Type, name: []const u8, kw: []const u8, loc: ast.Loc) InferError!void {
+    if (!typeContainsUnknown(ty)) return;
+    const rendered = try snapshotMod.typeNameOf(env.arena, ty.deref());
+    const msg = if (unifyMod.isUnknown(ty))
+        try std.fmt.allocPrint(env.arena, "`pub {s} {s}` is inferred as `unknown`; a public declaration writes that type", .{ kw, name })
+    else
+        try std.fmt.allocPrint(env.arena, "`pub {s} {s}` is inferred as `{s}`, which contains `unknown`; a public declaration writes that type", .{ kw, name, rendered });
+    const hint = if (std.mem.eql(u8, kw, "fn"))
+        try std.fmt.allocPrint(env.arena, "A public fn states what it answers: write the return type (`-> unknown` when that is what `{s}` means to answer).", .{name})
+    else
+        try std.fmt.allocPrint(env.arena, "A public binding states its type: annotate it (`pub val {s}: unknown = …` when that is what it means).", .{name});
+    env.lastError = TypeError.custom(msg, hint).withLoc(loc);
+    return error.TypeError;
+}
+
+/// Decision 8 §1.4 — a binding born with nothing that decides its element type
+/// (`var out = [];`). Recorded when the binding is inferred and turned into a
+/// warning once the module is inferred (`flushBirthWarnings`), so the warning
+/// can name the annotation to write with the element type the program settled
+/// on — `var out: i32[] = [];` — or `unknown[]` when nothing settled it.
+pub const BirthWarning = struct {
+    name: []const u8,
+    mutable: bool,
+    type_: *T.Type,
+    loc: ast.Loc,
+};
+
+fn isEmptyArrayLiteral(e: ast.Expr) bool {
+    if (e != .collection) return false;
+    const k = e.collection.kind;
+    if (k != .arrayLit) return false;
+    return k.arrayLit.elems.len == 0 and k.arrayLit.spreadExpr == null and k.arrayLit.spread == null;
+}
+
+fn flushBirthWarnings(env: *Env) InferError!void {
+    for (env.birthWarnings.items) |bw| {
+        const t = bw.type_.deref();
+        const elem_text: []const u8 = blk: {
+            if (t.* == .named and std.mem.eql(u8, t.named.name, "array") and t.named.args.len == 1) {
+                const e = t.named.args[0].deref();
+                if (e.* == .typeVar) break :blk ast.unknown_type_name;
+                if (e.* == .named and e.named.args.len == 0) break :blk e.named.name;
+                break :blk try snapshotMod.typeNameOf(env.arena, e);
+            }
+            break :blk ast.unknown_type_name;
+        };
+        const kw: []const u8 = if (bw.mutable) "var" else "val";
+        const msg = try std.fmt.allocPrint(env.arena, "`{s}` is born with no element type — annotate it: `{s} {s}: {s}[] = [];`", .{ bw.name, kw, bw.name, elem_text });
+        const hint = "An empty array literal decides no element type, and a type argument is decided where the value is born (decision 8 §1.4): what later uses make of it is not the declaration.";
+        try env.warn(TypeError.custom(msg, hint).withLoc(bw.loc));
+    }
+    env.birthWarnings.clearRetainingCapacity();
 }
 
 // ── pass 1: type definition registration ─────────────────────────────────────
 
 fn registerTypeDecl(env: *Env, decl: ast.DeclKind) InferError!void {
     switch (decl) {
-        .record => |r| try registerRecord(env, r),
-        .@"enum" => |e| try registerEnum(env, e),
+        .type_ => |tdecl| switch (tdecl.shape) {
+            .record => try registerRecord(env, tdecl),
+            .enum_ => try registerEnum(env, tdecl),
+        },
+        // An imported alias (`registerImportedTypeDecl`, the `from "std"`
+        // type export) arrives here; a module's own were registered ahead of
+        // every type by `registerTypeAliases`.
+        .typeAlias => |a| try env.typeAliases.put(env.arena, a.name, a),
         else => {},
     }
 }
@@ -526,13 +1270,25 @@ fn registerFnSignatures(env: *Env, program: ast.Program) InferError!void {
     for (program.decls) |decl| switch (decl) {
         .@"fn" => |f| {
             try env.bind(f.name, try buildFnSignatureType(env, f));
+            // C-04 — the signature type drops the `default` expressions; keep
+            // the parameters as written so a short call can be told from a
+            // call missing a required argument.
+            try env.fnParams.put(f.name, f.params);
+            try env.fnDecls.put(env.arena, f.name, f);
             registerDecoratorSig(env, f.name, f.params, f);
+            // C-01 — a template or decorator this module declares is owned by
+            // this module's path, which its evaluated module atom names.
+            try env.noteComptimeOwner(f, env.modulePath);
             if (f.typeGuardParam) |paramName| {
                 var paramIndex: usize = 0;
                 for (f.params, 0..) |p, i| {
-                    if (std.mem.eql(u8, p.name, paramName)) { paramIndex = i; break; }
+                    if (std.mem.eql(u8, p.name, paramName)) {
+                        paramIndex = i;
+                        break;
+                    }
                 }
-                const narrowedName: []const u8 = if (f.returnType) |rt| switch (rt) {
+                // 06 C5 — the narrowed type is its own slot; `returnType` is `bool`.
+                const narrowedName: []const u8 = if (f.typeGuardType) |gt| switch (gt) {
                     .named => |n| n,
                     else => paramName,
                 } else paramName;
@@ -562,8 +1318,89 @@ pub fn isDecoratorParams(params: []const ast.Param) bool {
 /// comptime. Mirrors `registerImportedTemplateFn` for the `@Expr` template case;
 /// the core stays lib-agnostic (it carries the decorator across modules by its
 /// generic `@Decl`-first shape, never by any lib's name). No-op for non-decorators.
-pub fn registerImportedDecorator(env: *Env, name: []const u8, fn_decl: ast.FnDecl) void {
+pub fn registerImportedDecorator(env: *Env, name: []const u8, fn_decl: ast.FnDecl, owner: []const u8, support: []const ast.FnDecl, conflict: ?[]const u8) !void {
     registerDecoratorSig(env, name, fn_decl.params, fn_decl);
+    if (env.decorators.getPtr(name)) |sig| {
+        sig.support = support;
+        sig.conflict = conflict;
+    }
+    try env.noteComptimeOwner(fn_decl, owner);
+}
+
+/// What a decorator module needs beside the decorator (`decoratorSupport`),
+/// or why it cannot be built: two functions it reaches share a name.
+pub const Support = struct {
+    fns: []const ast.FnDecl,
+    /// Set when two DIFFERENT functions the body reaches carry one name — a
+    /// module-local helper and one an imported function brings, say. The
+    /// decorator module is one namespace, so one of them would silently answer
+    /// for the other; the decorator is refused instead (decision 67).
+    conflict: ?[]const u8 = null,
+};
+
+/// The functions `dfn`'s body calls or names, directly or through one another
+/// — what a decorator module needs beside the decorator to compile. `lookup`
+/// answers a name with a function of `dfn`'s own module; `imported` answers a
+/// name the module IMPORTS with that function and every function it reaches
+/// in its own module (`Env.importedFnSupport` — already closed, so their
+/// bodies are not walked here: their names resolve where they were written).
+/// A decorator, a template and a bodyless `declare fn` are left out: none of
+/// them runs as a plain function in the decorator module. Before this a
+/// decorator body could call no function at all (`call to undefined function
+/// problemOf/1`), and then none it imported (`shout/1`).
+pub fn decoratorSupport(
+    arena: std.mem.Allocator,
+    lookup: anytype,
+    imported: *const std.StringHashMapUnmanaged([]const ast.FnDecl),
+    dfn: ast.FnDecl,
+) std.mem.Allocator.Error!Support {
+    var out: std.ArrayListUnmanaged(ast.FnDecl) = .empty;
+    // name → the body that name stands for in the decorator module.
+    var bodies = std.StringHashMap([*]const ast.Stmt).init(arena);
+    var seen = std.StringHashMap(void).init(arena);
+    try seen.put(dfn.name, {});
+    var names: std.ArrayListUnmanaged([]const u8) = .empty;
+    try ast.collectNames(arena, dfn.body, &names);
+    var i: usize = 0;
+    while (i < names.items.len) : (i += 1) {
+        const n = names.items[i];
+        if (seen.contains(n)) continue;
+        try seen.put(n, {});
+        if (lookup.get(n)) |f| {
+            if (f.body.len == 0 or isDecoratorParams(f.params)) continue;
+            if (f.returnType) |rt| if (rt.isTemplateReturnType()) continue;
+            if (try claimName(arena, &bodies, f, dfn.name)) |c| return .{ .fns = out.items, .conflict = c };
+            try out.append(arena, f);
+            try ast.collectNames(arena, f.body, &names);
+            continue;
+        }
+        const closure = imported.get(n) orelse continue;
+        for (closure) |g| {
+            if (bodies.get(g.name)) |b| if (b == g.body.ptr) continue;
+            if (try claimName(arena, &bodies, g, dfn.name)) |c| return .{ .fns = out.items, .conflict = c };
+            try out.append(arena, g);
+        }
+    }
+    return .{ .fns = out.items };
+}
+
+/// Records that `f.name` means `f` in the decorator module; the message when
+/// the name already means another function.
+fn claimName(arena: std.mem.Allocator, bodies: *std.StringHashMap([*]const ast.Stmt), f: ast.FnDecl, decorator: []const u8) std.mem.Allocator.Error!?[]const u8 {
+    if (bodies.get(f.name)) |b| {
+        if (b == f.body.ptr) return null;
+        return try std.fmt.allocPrint(arena, "the decorator `{s}` reaches two different functions named `{s}` — one of its module's and one an imported function calls — and a decorator runs as one module, where one name is one function", .{ decorator, f.name });
+    }
+    try bodies.put(f.name, f.body.ptr);
+    return null;
+}
+
+/// A plain function with a body, as a decorator module can carry it: not a
+/// decorator, not a template, not a bodyless declaration.
+pub fn isCarriableFn(f: ast.FnDecl) bool {
+    if (f.body.len == 0 or isDecoratorParams(f.params)) return false;
+    if (f.returnType) |rt| if (rt.isTemplateReturnType()) return false;
+    return true;
 }
 
 /// Register an `implement` block imported and activated from another module
@@ -609,7 +1446,7 @@ fn implementsAnnotation(impls: []const ast.TypeRef) bool {
 /// so the annotation argument validator applies them on a missing positional /
 /// named arg — the same rule a fn-param default uses. The synthetic param
 /// list lives in `env.arena`, so it outlives the registration call.
-fn recordFieldsAsParams(env: *Env, fields: []const ast.RecordField) ![]ast.Param {
+fn recordFieldsAsParams(env: *Env, fields: []const ast.Field) ![]ast.Param {
     var out = try env.arena.alloc(ast.Param, fields.len);
     for (fields, 0..) |f, i| {
         out[i] = .{
@@ -662,18 +1499,20 @@ fn enumVariantAsParams(env: *Env, variant: ast.EnumVariant) ![]ast.Param {
 /// @Decl` decorator path keeps working untouched.
 pub fn registerAnnotationTypes(env: *Env, program: ast.Program) InferError!void {
     for (program.decls) |decl| switch (decl) {
-        .record => |r| {
-            if (!implementsAnnotation(r.implement)) continue;
-            const params = try recordFieldsAsParams(env, r.fields);
-            env.decorators.put(r.name, .{ .params = params, .fn_decl = null }) catch {};
-        },
-        .@"enum" => |e| {
-            if (!implementsAnnotation(e.implement)) continue;
-            for (e.variants) |v| {
-                const params = try enumVariantAsParams(env, v);
-                const qname = try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ e.name, v.name });
-                env.decorators.put(qname, .{ .params = params, .fn_decl = null }) catch {};
-            }
+        .type_ => |tdecl| switch (tdecl.shape) {
+            .record => {
+                if (!implementsAnnotation(tdecl.implement)) continue;
+                const params = try recordFieldsAsParams(env, tdecl.recordFields());
+                env.decorators.put(tdecl.name, .{ .params = params, .fn_decl = null }) catch {};
+            },
+            .enum_ => {
+                if (!implementsAnnotation(tdecl.implement)) continue;
+                for (tdecl.variants()) |v| {
+                    const params = try enumVariantAsParams(env, v);
+                    const qname = try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ tdecl.name, v.name });
+                    env.decorators.put(qname, .{ .params = params, .fn_decl = null }) catch {};
+                }
+            },
         },
         else => {},
     };
@@ -703,11 +1542,11 @@ fn buildFnSignatureType(env: *Env, f: ast.FnDecl) InferError!*T.Type {
             else
                 try env.namedType("void");
             break :blk try env.funcType(fparams, fret);
-        } else try resolveTypeRefInContext(env, p.typeRef, genericMap);
+        } else try resolveParamType(env, p, genericMap);
     }
 
     const retType = if (f.returnType) |rt|
-        try resolveTypeRefInContext(env, rt, genericMap)
+        try resolveReturnType(env, rt, f.returnTypeLoc, genericMap)
     else
         try env.namedType("void");
 
@@ -740,8 +1579,10 @@ fn registerExtensions(env: *Env, program: ast.Program) InferError!void {
     // Inherent methods + extension entries.
     for (program.decls) |decl| {
         switch (decl) {
-            .record => |r| for (r.methods) |im| try env.addInherentMethod(r.name, im.name),
-            .@"enum" => |e| for (e.methods) |im| try env.addInherentMethod(e.name, im.name),
+            .type_ => |tdecl| switch (tdecl.shape) {
+                .record => for (tdecl.methods) |im| try env.addInherentMethod(tdecl.name, im.name),
+                .enum_ => for (tdecl.methods) |im| try env.addInherentMethod(tdecl.name, im.name),
+            },
             .implement => |im| {
                 try env.extensions.put(im.name, .{
                     .name = im.name,
@@ -758,7 +1599,7 @@ fn registerExtensions(env: *Env, program: ast.Program) InferError!void {
                 // Rule A: methods are added to a type only through `implement
                 // <Interface> for T`, which `validateImplement` checks against the
                 // interface. A contract-free `extend` block is rejected.
-                env.lastError = TypeError.extendRequiresInterface(ex.target);
+                env.lastError = locatedAt(TypeError.extendRequiresInterface(ex.target), ex.loc);
                 return error.TypeError;
             },
             else => {},
@@ -777,10 +1618,10 @@ fn registerExtensions(env: *Env, program: ast.Program) InferError!void {
                 if (u.activationOnly) {
                     // `*` is only for imports. A bare statement is redundant when it
                     // names a local extension, and otherwise names no extension.
-                    env.lastError = if (env.extensions.contains(nm))
+                    env.lastError = locatedAt(if (env.extensions.contains(nm))
                         TypeError.redundantActivation(nm)
                     else
-                        TypeError.notAnExtension(nm);
+                        TypeError.notAnExtension(nm), imp.loc);
                     return error.TypeError;
                 }
                 try env.activations.put(nm, {});
@@ -800,19 +1641,26 @@ fn registerExtensions(env: *Env, program: ast.Program) InferError!void {
 /// imported name's kind is derived from its bound type (`fn` vs value).
 fn buildScopeSnapshot(env: *Env, program: ast.Program) InferError!void {
     const snap = template.ScopeSnapshot.init(env.arena, env.modulePath) catch return error.OutOfMemory;
+    const here = env.modulePath;
     for (program.decls) |decl| switch (decl) {
-        .@"fn" => |f| try snap.put(f.name, .fn_, false),
-        .val => |v| try snap.put(v.name, .val, false),
-        .record => |r| try snap.put(r.name, .struct_, false),
-        .@"enum" => |e| try snap.put(e.name, .enum_, false),
-        .interface => |i| try snap.put(i.name, .interface, false),
+        .@"fn" => |f| try snap.putDeclared(f.name, .fn_, false, f.name, try envMod.declIdentity(env.arena, here, f.name)),
+        .val => |v| try snap.putDeclared(v.name, .val, false, v.name, try envMod.declIdentity(env.arena, here, v.name)),
+        .type_ => |tdecl| switch (tdecl.shape) {
+            .record => try snap.putDeclared(tdecl.name, .struct_, false, tdecl.name, try envMod.declIdentity(env.arena, here, tdecl.name)),
+            .enum_ => try snap.putDeclared(tdecl.name, .enum_, false, tdecl.name, try envMod.declIdentity(env.arena, here, tdecl.name)),
+        },
+        .behavior => |i| try snap.putDeclared(i.name, .interface, false, i.name, try envMod.declIdentity(env.arena, here, i.name)),
         .use => |u| for (u.imports) |imp| {
             const name = imp.name();
             const kind: template.BindingKind = blk: {
                 const ty = env.lookup(name) orelse break :blk .val;
                 break :blk if (ty.deref().* == .func) .fn_ else .val;
             };
-            try snap.put(name, kind, true);
+            // Decision 112 — an import answers with the declaration it
+            // names, never with the alias it is bound under.
+            if (env.importOwners.get(name)) |o| {
+                try snap.putDeclared(name, kind, true, o.name, try envMod.declIdentity(env.arena, o.owner, o.name));
+            } else try snap.put(name, kind, true);
         },
         else => {},
     };
@@ -845,8 +1693,8 @@ fn typeRefToString(arena: std.mem.Allocator, ref: ast.TypeRef) ![]const u8 {
     return buf.toOwnedSlice(arena);
 }
 
-/// If any of `impls` is `@Context<B, R>`, return the rendered `ContextBase` (`B`).
-/// Returns null when the type does not implement `@Context`.
+/// If any of `impls` is the owner marker `@Context<B>`, return the rendered
+/// base (`B`). Returns null when the type does not implement `@Context`.
 fn contextBaseFromImplements(arena: std.mem.Allocator, impls: []const ast.TypeRef) !?[]const u8 {
     for (impls) |im| {
         switch (im) {
@@ -860,22 +1708,27 @@ fn contextBaseFromImplements(arena: std.mem.Allocator, impls: []const ast.TypeRe
     return null;
 }
 
-/// Derive the `@Context` capability of a function from its declared return type.
-/// A return type implements `@Context` either directly (`@Context<B, R>`) or via a
-/// named type whose inline `implement` clause lists `@Context<B, R>`.
-fn contextInfoFromReturn(env: *Env, retType: ?ast.TypeRef) InferError!envMod.FnContext {
+/// Derive the `use` capability of a function from its declared return type
+/// (decisions 102, 104 and 128). The base is READ off the wrapper and nothing
+/// is unwrapped: `-> @Component<C, _>` anchors at `C`, for a hook and a
+/// component alike.
+/// `annotated` is `#[@use]` and nothing else — the same flag as
+/// `env.inContextFn` — so a body activates a hook only under `#[@use]`
+/// (`inferUseHookExpr`); decisions 89 and 90, which unwrapped `@Future<T>` to
+/// find an owner and let a wrapper effect activate on its own, are revoked.
+fn contextInfoFromReturn(env: *Env, retType: ?ast.TypeRef, eff: ?ast.EffectKind, fnName: []const u8) InferError!envMod.FnContext {
     const display = if (retType) |rt| try typeRefToString(env.arena, rt) else "void";
+    const annotated = eff == .component;
     if (retType) |rt| switch (rt) {
-        .generic => |g| if (std.mem.eql(u8, g.name, "Context")) {
-            const base = if (g.args.len >= 1) try typeRefToString(env.arena, g.args[0]) else null;
-            return .{ .implementsContext = true, .base = base, .returnDisplay = display };
-        },
-        .named => |n| if (env.lookupTypeDef(n)) |td| {
-            if (td.contextBase()) |b| return .{ .implementsContext = true, .base = b, .returnDisplay = display };
+        .generic => |g| {
+            if (std.mem.eql(u8, g.name, "Component")) {
+                const base = if (g.args.len >= 1) try typeRefToString(env.arena, g.args[0]) else null;
+                return .{ .implementsContext = true, .base = base, .returnDisplay = display, .annotated = annotated, .fnName = fnName };
+            }
         },
         else => {},
     };
-    return .{ .implementsContext = false, .base = null, .returnDisplay = display };
+    return .{ .implementsContext = false, .base = null, .returnDisplay = display, .annotated = annotated, .fnName = fnName };
 }
 
 /// The display name of a `ContextBase` type (a phantom, typically a plain named type).
@@ -886,33 +1739,246 @@ fn baseNameOfType(ty: *T.Type) ?[]const u8 {
     };
 }
 
-/// The `ContextBase` of an inferred type, if it implements `@Context`.
-/// Handles both `@Context<B, R>` directly and named types implementing it inline.
-fn contextBaseOfType(env: *Env, ty: *T.Type) ?[]const u8 {
+/// The base a `use` operand anchors at: the `C` of a hook's `@Component<C, T>`.
+/// Anything else — an owner type, a component (`@Component<C, T>` with
+/// `T: @Context<C>`), a plain value — is not a hook and has none (decision
+/// 104: `use` takes hooks only; decision 128: `T` tells the two apart).
+fn hookBaseOfType(env: *Env, ty: *T.Type) ?[]const u8 {
+    if (isComponentType(env, ty)) return null;
     const t = ty.deref();
     return switch (t.*) {
-        .named => |n| blk: {
-            if (std.mem.eql(u8, n.name, "Context")) {
-                break :blk if (n.args.len >= 1) baseNameOfType(n.args[0]) else null;
-            }
-            if (env.lookupTypeDef(n.name)) |td| break :blk td.contextBase();
-            break :blk null;
-        },
+        .named => |n| if (std.mem.eql(u8, n.name, "Component") and n.args.len >= 1) baseNameOfType(n.args[0]) else null,
         else => null,
     };
 }
 
-/// The type a `use` binding destructures from: the `Return` (`R`) of `@Context<B, R>`
-/// when the hook's type is `@Context`, or the type itself for a named context type.
+/// Decision 8 §1.3 — `Box<i32>(value: 1)`, `first<string>([])`: type
+/// arguments written at a use pin the callee's type parameters, in order. A
+/// constructor's arguments are its type's parameters (`Box<T>`); a generic
+/// fn's are its own (`fn first<T>`) — the declared signature is re-read with
+/// each parameter bound to its argument and unified with the call. The count
+/// must match exactly, and a callee with no type parameters takes none.
+fn applyExplicitTypeArgs(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExpr) InferError!TypedExpr {
+    if (c.kind != .call) return typed;
+    const call = c.kind.call;
+    const written = call.typeArgs orelse return typed;
+    if (typed != .call) return typed;
+    const loc = c.loc;
+    const prevLoc = env.atTypeRef(loc);
+    defer env.typeRefLoc = prevLoc;
+    const resolved = try env.arena.alloc(*T.Type, written.len);
+    for (written, 0..) |w, i| resolved[i] = try resolveTypeRef(env, w);
+    const countError = struct {
+        fn f(e: *Env, name: []const u8, declared: usize, given: usize, l: ast.Loc) InferError {
+            const msg = if (declared == 0)
+                std.fmt.allocPrint(e.arena, "`{s}` takes no type arguments, {d} given", .{ name, given }) catch return error.OutOfMemory
+            else
+                std.fmt.allocPrint(e.arena, "`{s}` takes {d} type argument{s}, {d} given", .{ name, declared, if (declared == 1) "" else "s", given }) catch return error.OutOfMemory;
+            e.lastError = TypeError.custom(msg, "Write one type argument per type parameter the declaration names, in order (decision 8 §1.3).").withLoc(l);
+            return error.TypeError;
+        }
+    }.f;
+    const resultTy = typed.getType();
+    // A method call (`ctx.resolve<T>()`): the method's own type parameters
+    // take the arguments; the type's are the receiver's.
+    if (typed.call.kind == .call) if (typed.call.kind.call.receiver) |recv| {
+        const recvTy = recv.getType().deref();
+        const tn = nominalName(recvTy) orelse return countError(env, call.callee, 0, resolved.len, loc);
+        const m = env.getInherentMethodDecl(tn, call.callee) orelse return countError(env, call.callee, 0, resolved.len, loc);
+        if (m.genericParams.len != resolved.len) return countError(env, call.callee, m.genericParams.len, resolved.len, loc);
+        var gm = std.StringHashMap(*T.Type).init(env.arena);
+        defer gm.deinit();
+        if (env.lookupTypeDef(tn)) |td| {
+            const tps = td.genericParams();
+            for (tps, 0..) |tp, i| if (i < recvTy.named.args.len) try gm.put(tp, recvTy.named.args[i]);
+        }
+        try gm.put("Self", recv.getType());
+        for (m.genericParams, resolved) |gp, r| try gm.put(gp.name, r);
+        const args = typed.call.kind.call.args;
+        const declared = if (m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self")) m.params[1..] else m.params;
+        for (declared, 0..) |p, i| {
+            if (i >= args.len) break;
+            if (args[i].label != null) break;
+            const pt = try resolveTypeRefInContext(env, p.typeRef, gm);
+            try unifyAt(env, pt, args[i].value.getType(), args[i].value.getLoc());
+        }
+        if (m.returnType) |rtRef| {
+            const want = try resolveTypeRefInContext(env, rtRef, gm);
+            try unifyAt(env, want, resultTy, loc);
+        }
+        return typed;
+    };
+    if (env.lookupTypeDef(call.callee)) |td| {
+        const params = td.genericParams();
+        if (params.len != resolved.len) return countError(env, call.callee, params.len, resolved.len, loc);
+        const rt = resultTy.deref();
+        if (rt.* == .named and rt.named.args.len == resolved.len) {
+            for (rt.named.args, resolved) |a, r| try unifyAt(env, r, a, loc);
+        }
+        return typed;
+    }
+    if (env.fnDecls.get(call.callee)) |f| {
+        if (f.genericParams.len != resolved.len) return countError(env, call.callee, f.genericParams.len, resolved.len, loc);
+        var gm = std.StringHashMap(*T.Type).init(env.arena);
+        defer gm.deinit();
+        for (f.genericParams, resolved) |gp, r| try gm.put(gp.name, r);
+        for (f.params, 0..) |p, i| {
+            if (i >= typed.call.kind.call.args.len) break;
+            if (typed.call.kind.call.args[i].label != null) break;
+            const pt = try resolveTypeRefInContext(env, p.typeRef, gm);
+            try unifyAt(env, pt, typed.call.kind.call.args[i].value.getType(), typed.call.kind.call.args[i].value.getLoc());
+        }
+        if (f.returnType) |rtRef| {
+            const want = try resolveTypeRefInContext(env, rtRef, gm);
+            try unifyAt(env, want, resultTy, loc);
+        }
+        return typed;
+    }
+    return countError(env, call.callee, 0, resolved.len, loc);
+}
+
+/// Decision 255 (1) — the type a type application names
+/// (`Dict<string, unknown>.empty()`, `Opt<i32>.None`), its written arguments
+/// resolved. The receiver must name a declared generic type (an import alias
+/// is its declared name, decision 110) and take exactly as many arguments as
+/// the type declares parameters; anything else is refused at the receiver.
+const TypeApplication = struct {
+    name: []const u8,
+    def: envMod.TypeDef,
+    args: []*T.Type,
+};
+
+fn resolveTypeApplication(env: *Env, receiver: *ast.Expr, written: []const ast.TypeRef) InferError!TypeApplication {
+    const loc = receiver.getLoc();
+    const isName = receiver.* == .identifier and receiver.identifier.kind == .ident;
+    const writtenName = if (isName) receiver.identifier.kind.ident else "";
+    const name = if (isName) importedTypeAliasTarget(env, writtenName) orelse writtenName else "";
+    const def = (if (isName) env.lookupTypeDef(name) else null) orelse {
+        const shown = if (isName) writtenName else "this receiver";
+        const msg = try std.fmt.allocPrint(env.arena, "type arguments are written on `{s}`, which names no type", .{shown});
+        env.lastError = TypeError.custom(msg, "A type application is a declared generic type's name followed by its type arguments: `Dict<string, i32>.empty()` (decision 255).").withLoc(loc);
+        return error.TypeError;
+    };
+    const params = def.genericParams();
+    if (params.len != written.len) {
+        const msg = if (params.len == 0)
+            try std.fmt.allocPrint(env.arena, "`{s}` takes no type arguments, {d} given", .{ writtenName, written.len })
+        else
+            try std.fmt.allocPrint(env.arena, "`{s}` takes {d} type argument{s}, {d} given", .{ writtenName, params.len, if (params.len == 1) "" else "s", written.len });
+        env.lastError = TypeError.custom(msg, "Write one type argument per type parameter the declaration names, in order (decision 8 §1.3, decision 255).").withLoc(loc);
+        return error.TypeError;
+    }
+    const prevLoc = env.atTypeRef(loc);
+    defer env.typeRefLoc = prevLoc;
+    const args = try env.arena.alloc(*T.Type, written.len);
+    for (written, 0..) |w, i| args[i] = try resolveTypeRef(env, w);
+    return .{ .name = name, .def = def, .args = args };
+}
+
+/// Decision 255 (1) — `Type<Args>.member(…)`: the member is called on the
+/// instantiated type. A variant of a generic enum answers `Type<Args>`; a
+/// static (or any inherent) fn has its declared signature re-read with the
+/// type's parameters bound to the arguments — and `Self` to `Type<Args>` —
+/// and unified with the call, so `Dict<string, unknown>.empty()` is a
+/// `Dict<string, unknown>`. A member that is neither has no signature the
+/// arguments could reach, and is refused at the call.
+fn applyReceiverTypeArgs(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExpr) InferError!TypedExpr {
+    if (c.kind != .call) return typed;
+    const call = c.kind.call;
+    const written = call.receiverTypeArgs orelse return typed;
+    const receiver = call.receiver orelse return typed;
+    const app = try resolveTypeApplication(env, receiver, written);
+    const loc = c.loc;
+    const resultTy = typed.getType();
+    if (app.def == .enum_) for (app.def.enum_.variants) |v| {
+        if (!std.mem.eql(u8, v.name, call.callee)) continue;
+        try unifyAt(env, try env.namedTypeArgs(app.name, app.args), resultTy, loc);
+        return typed;
+    };
+    const m = env.getInherentMethodDecl(app.name, call.callee) orelse {
+        const msg = try std.fmt.allocPrint(env.arena, "`{s}` is not a variant or a fn declared by `{s}`, so its type arguments reach nothing", .{ call.callee, app.name });
+        env.lastError = TypeError.custom(msg, "A type application calls a variant or a fn the type declares in its body (`Dict<string, i32>.empty()`).").withLoc(loc);
+        return error.TypeError;
+    };
+    var gm = std.StringHashMap(*T.Type).init(env.arena);
+    defer gm.deinit();
+    for (app.def.genericParams(), app.args) |tp, a| try gm.put(tp, a);
+    try gm.put("Self", try env.namedTypeArgs(app.name, app.args));
+    for (m.genericParams) |gp| if (!gm.contains(gp.name)) try gm.put(gp.name, try env.freshVar());
+    const args = typed.call.kind.call.args;
+    for (m.params, 0..) |p, i| {
+        if (i >= args.len) break;
+        if (args[i].label != null) break;
+        const pt = try resolveTypeRefInContext(env, p.typeRef, gm);
+        try unifyAt(env, pt, args[i].value.getType(), args[i].value.getLoc());
+    }
+    if (m.returnType) |rtRef| {
+        const want = try resolveTypeRefInContext(env, rtRef, gm);
+        try unifyAt(env, want, resultTy, loc);
+    }
+    return typed;
+}
+
+/// Decisions 104, 118 and 128 — a component is CALLED, and called inside a
+/// body whose return is `@Component<C, _>` with the same base `C` it renders
+/// within that render: the call's value is its `T` (the context owner), as
+/// `await` would answer, and the transform splices the `await` in so the
+/// backends lower it as they lower `await c()` (on commonJS a component is an
+/// `async function`). Everywhere else — outside a component body, under
+/// another base, as `use`'s operand (refused there by name), as `await`'s own
+/// operand (the `await` is written) — the call keeps its `@Component<C, T>` type. A hook is not a component and is `use`d.
+fn inferComponentCall(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExpr) InferError!TypedExpr {
+    if (env.inUseOperand) return typed;
+    if (env.awaitOperandLoc) |at| if (std.meta.eql(at, c.loc)) return typed;
+    if (typed != .call) return typed;
+    const fc = env.fnContext orelse return typed;
+    if (!fc.annotated or env.starFn == null) return typed;
+    const fnBase = fc.base orelse return typed;
+    const ty = typed.getType().deref();
+    if (!isComponentType(env, ty)) return typed;
+    const callBase = baseNameOfType(ty.named.args[0]) orelse return typed;
+    if (!std.mem.eql(u8, callBase, fnBase)) return typed;
+    // Splice `await <call>` for the backends; the operand is a copy of the
+    // call at the same location, which the transform recognises and does
+    // not wrap again.
+    const inner = try env.arena.create(ast.Expr);
+    inner.* = .{ .call = c };
+    const wrapped = try env.arena.create(ast.Expr);
+    wrapped.* = .{ .jump = .{ .loc = c.loc, .kind = .{ .await_ = inner } } };
+    try env.indexRewrites.put(c.loc, wrapped);
+    var out = typed;
+    out.call.type_ = ty.named.args[1];
+    return out;
+}
+
+/// True when `ty` is a component: `@Component<C, T>` whose `T` owns a
+/// context (`T: @Context<_>`, decision 128). A hook's `T` owns none.
+fn isComponentType(env: *Env, ty: *T.Type) bool {
+    const t = ty.deref();
+    if (t.* != .named or !std.mem.eql(u8, t.named.name, "Component") or t.named.args.len < 2) return false;
+    return ownerBaseOfType(env, t.named.args[1]) != null;
+}
+
+/// The base of an owner type: the `B` of `T: @Context<B>`, or null.
+fn ownerBaseOfType(env: *Env, ty: *T.Type) ?[]const u8 {
+    const t = ty.deref();
+    return switch (t.*) {
+        .named => |n| if (env.lookupTypeDef(n.name)) |td| td.contextBase() else null,
+        else => null,
+    };
+}
+
+/// The type a `use` binding destructures from: the `T` of the hook's
+/// `@Component<C, T>`.
 fn bindingSourceType(ty: *T.Type) *T.Type {
     const t = ty.deref();
     return switch (t.*) {
-        .named => |n| if (std.mem.eql(u8, n.name, "Context") and n.args.len >= 2) n.args[1] else ty,
+        .named => |n| if (std.mem.eql(u8, n.name, "Component") and n.args.len >= 2) n.args[1] else ty,
         else => ty,
     };
 }
 
-fn registerRecord(env: *Env, r: ast.RecordDecl) InferError!void {
+fn registerRecord(env: *Env, r: ast.TypeDecl) InferError!void {
     // Build generic param map: each param name → fresh generic type var.
     var genericMap = std.StringHashMap(*T.Type).init(env.arena);
     defer genericMap.deinit();
@@ -924,11 +1990,11 @@ fn registerRecord(env: *Env, r: ast.RecordDecl) InferError!void {
     }
 
     // Resolve each field's type.
-    var fields = try env.arena.alloc(envMod.FieldDef, r.fields.len);
-    for (r.fields, 0..) |f, i| {
+    var fields = try env.arena.alloc(envMod.FieldDef, r.recordFields().len);
+    for (r.recordFields(), 0..) |f, i| {
         fields[i] = .{
             .name = f.name,
-            .type_ = try resolveTypeRefInContext(env, f.typeRef, genericMap),
+            .type_ = try resolveFieldType(env, f, genericMap),
         };
     }
 
@@ -960,7 +2026,7 @@ fn registerRecord(env: *Env, r: ast.RecordDecl) InferError!void {
     // Build constructor function type: `fn(T1, T2, ...) -> RecordName<A,B,...>`.
     // The return type carries the generic type vars so that after call-site
     // unification `typeNameOf` can display the instantiated form, e.g. `Pair<Int,String>`.
-    var paramTypes = try env.arena.alloc(*T.Type, r.fields.len);
+    var paramTypes = try env.arena.alloc(*T.Type, r.recordFields().len);
     for (fields, 0..) |f, i| paramTypes[i] = f.type_;
     var retArgs = try env.arena.alloc(*T.Type, r.genericParams.len);
     for (r.genericParams, 0..) |gp, i| retArgs[i] = genericMap.get(gp.name).?;
@@ -972,7 +2038,7 @@ fn registerRecord(env: *Env, r: ast.RecordDecl) InferError!void {
     // is also a ctor param; expose its `default` Expr to the transform pass so
     // `expandTrailingDefaults` injects missing trailing defaults at the
     // `Config(...)` call site. Same rule as fn-decl call defaults.
-    try env.ctorParams.put(r.name, try recordFieldsAsParams(env, r.fields));
+    try env.ctorParams.put(r.name, try recordFieldsAsParams(env, r.recordFields()));
 
     // Inherent method signatures (self = the record instance type).
     try registerInherentMethodTypes(env, r.name, retType, &genericMap, r.methods);
@@ -990,7 +2056,7 @@ fn registerInherentMethodTypes(
     typeName: []const u8,
     instanceType: *T.Type,
     typeGenerics: *const std.StringHashMap(*T.Type),
-    methods: []const ast.InterfaceMethod,
+    methods: []const ast.BehaviorMethod,
 ) InferError!void {
     for (methods) |im| {
         // Register the method NAME for dispatch. This runs from registerRecord/
@@ -998,6 +2064,11 @@ fn registerInherentMethodTypes(
         // "std"` (which `registerExtensions` never sees — it only scans the
         // local program's decls).
         try env.addInherentMethod(typeName, im.name);
+        // C-04 — and its parameters as written. This runs BEFORE the
+        // return-type gate below: a method without an annotated return still
+        // has declared defaults, and its call sites still have to fill them.
+        try env.setInherentMethodParams(typeName, im.name, im.params);
+        try env.setInherentMethodDecl(typeName, im);
 
         // Only methods with an explicit return-type annotation get a stored
         // signature. Without one the true return type comes from body inference
@@ -1025,11 +2096,52 @@ fn registerInherentMethodTypes(
                 else
                     try env.namedType("void");
                 break :blk try env.funcType(fparams, fret);
-            } else try resolveTypeRefInContext(env, p.typeRef, gm);
+            } else try resolveParamType(env, p, gm);
         }
-        const ret = try resolveTypeRefInContext(env, retRef, gm);
+        const ret = try resolveReturnType(env, retRef, im.returnTypeLoc, gm);
         try env.setInherentMethodType(typeName, im.name, try env.funcType(params, ret));
     }
+}
+
+/// A program's own `behavior` named like one std registered — a primitive's
+/// (`behavior String { default fn shout(self: Self) … }`) or any other — EXTENDS
+/// std's: the declaration under the name is std's with the program's members
+/// added (and its `extends` joined), so `"x".startsWith(…)` and the program's
+/// `"x".shout()` both answer, in the checker and in every backend that reads
+/// `assocInterfaceDecls`. A member std's declaration already has is
+/// `behavior-member-redeclared` at the program's member. The same declaration
+/// registered again (a second pass over the program) merges against std's
+/// original (`Env.stdBehaviorBase`), never against itself.
+fn extendStdBehavior(env: *Env, d: ast.BehaviorDecl) InferError!ast.BehaviorDecl {
+    const base: ast.BehaviorDecl = env.stdBehaviorBase.get(d.name) orelse blk: {
+        const existing = env.assocInterfaceDecls.get(d.name) orelse return d;
+        if (existing.methods.ptr == d.methods.ptr) return d;
+        if (std.mem.startsWith(u8, env.modulePath, "std/")) return d;
+        try env.stdBehaviorBase.put(env.arena, d.name, existing);
+        break :blk existing;
+    };
+    for (d.methods) |m| for (base.methods) |bm| {
+        if (!std.mem.eql(u8, m.name, bm.name)) continue;
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}.{s}` is a member of std's `{s}` already — a program's `behavior {s}` adds members to std's and redeclares none", .{ diagnostics.behavior_member_redeclared, d.name, m.name, d.name, d.name });
+        var e = TypeError.custom(msg, "Give the member another name.");
+        if (m.returnTypeLoc.line != 0) e = e.withLoc(m.returnTypeLoc);
+        env.lastError = e;
+        return error.TypeError;
+    };
+    var merged = d;
+    merged.methods = try std.mem.concat(env.arena, ast.BehaviorMethod, &.{ base.methods, d.methods });
+    merged.fields = try std.mem.concat(env.arena, ast.BehaviorField, &.{ base.fields, d.fields });
+    var ext: std.ArrayListUnmanaged([]const u8) = .empty;
+    try ext.appendSlice(env.arena, base.extends);
+    for (d.extends) |x| {
+        const has = for (ext.items) |y| {
+            if (std.mem.eql(u8, x, y)) break true;
+        } else false;
+        if (!has) try ext.append(env.arena, x);
+    }
+    merged.extends = ext.items;
+    if (merged.genericParams.len == 0) merged.genericParams = base.genericParams;
+    return merged;
 }
 
 /// Register an interface's associated functions — `default fn` members with no
@@ -1040,11 +2152,11 @@ fn registerInherentMethodTypes(
 /// (let-polymorphism, same as top-level generic fns). Methods that take a `self`
 /// receiver are instance methods (handled by the inherent-method machinery) and
 /// are skipped here.
-fn registerInterfaceAssociatedFns(env: *Env, d: ast.InterfaceDecl) InferError!void {
+fn registerInterfaceAssociatedFns(env: *Env, d: ast.BehaviorDecl) InferError!void {
     // Record EVERY interface decl so codegen can emit its namespace/prototype
     // when used, and the dispatch can follow the `extends` chain (markers like
     // `I32 extends Signed` carry no methods but link the tower).
-    try env.assocInterfaceDecls.put(d.name, d);
+    try env.assocInterfaceDecls.put(d.name, try extendStdBehavior(env, d));
     for (d.methods) |im| {
         const has_self = im.params.len > 0 and std.mem.eql(u8, im.params[0].name, "self");
         if (has_self) continue;
@@ -1066,10 +2178,10 @@ fn registerInterfaceAssociatedFns(env: *Env, d: ast.InterfaceDecl) InferError!vo
                 else
                     try env.namedType("void");
                 break :blk try env.funcType(fparams, fret);
-            } else try resolveTypeRefInContext(env, p.typeRef, gm);
+            } else try resolveParamType(env, p, gm);
         }
         const ret = if (im.returnType) |rt|
-            try resolveTypeRefInContext(env, rt, gm)
+            try resolveReturnType(env, rt, im.returnTypeLoc, gm)
         else
             try env.namedType("void");
         const fnTy = try env.funcType(params, ret);
@@ -1112,12 +2224,29 @@ fn inferAssociatedFnCall(
     }
     const fp = inst.func.params;
     const total = typedArgs.len + typedTrailing.len;
-    if (total != fp.len) {
-        env.lastError = TypeError.arityMismatch(callee, fp.len, total).withLoc(loc);
-        return error.TypeError;
-    }
-    for (typedArgs, 0..) |arg, i| {
-        try unifyAt(env, fp[i], arg.value.getType(), arg.value.getLoc());
+    // C-04 — the associated fn's declared defaults fill a short call, and a
+    // label names its parameter, as on every other call path: the site holds
+    // only the instantiated `T.func`, so the parameters as written come from
+    // the behavior's declaration.
+    const fill: ?envMod.DefaultFill = fillBlk: {
+        if (typedTrailing.len != 0) break :fillBlk null;
+        const declared = associatedFnParams(env, recvName, callee) orelse break :fillBlk null;
+        if (declared.len != fp.len or typedArgs.len > declared.len) break :fillBlk null;
+        if (typedArgs.len < declared.len) break :fillBlk try recordDefaultFill(env, loc, declared, typedArgs);
+        const plan = try planLabelledCall(env, callee, declared, typedArgs, loc) orelse break :fillBlk null;
+        try env.defaultInjections.put(loc, plan);
+        break :fillBlk plan;
+    };
+    if (fill) |plan| {
+        try unifyFilledArgs(env, plan, fp, typedArgs);
+    } else {
+        if (total != fp.len) {
+            env.lastError = TypeError.arityMismatch(callee, fp.len, total).withLoc(loc);
+            return error.TypeError;
+        }
+        for (typedArgs, 0..) |arg, i| {
+            try unifyAt(env, fp[i], arg.value.getType(), arg.value.getLoc());
+        }
     }
     // Trailing lambdas fill the remaining params; unify a fresh fn shape.
     for (typedTrailing, 0..) |tl, i| {
@@ -1134,79 +2263,19 @@ fn inferAssociatedFnCall(
     } } } };
 }
 
-fn registerStruct(env: *Env, s: ast.StructDecl) InferError!void {
-    var genericMap = std.StringHashMap(*T.Type).init(env.arena);
-    defer genericMap.deinit();
-    var genericIds = try env.arena.alloc([]const u8, s.genericParams.len);
-    for (s.genericParams, 0..) |gp, i| {
-        const tv = try env.freshVar();
-        try genericMap.put(gp.name, tv);
-        genericIds[i] = gp.name;
+/// The parameters as written of the behavior `ifaceName`'s associated fn
+/// `callee` (a member with no `self`), or null.
+fn associatedFnParams(env: *Env, ifaceName: []const u8, callee: []const u8) ?[]const ast.Param {
+    const decl = env.assocInterfaceDecls.get(ifaceName) orelse return null;
+    for (decl.methods) |m| {
+        if (!std.mem.eql(u8, m.name, callee)) continue;
+        if (m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self")) continue;
+        return m.params;
     }
-
-    // Collect non-private fields.
-    var fieldCount: usize = 0;
-    for (s.members) |m| switch (m) {
-        .field => fieldCount += 1,
-        else => {},
-    };
-
-    var fields = try env.arena.alloc(envMod.FieldDef, fieldCount);
-    var fi: usize = 0;
-    for (s.members) |m| switch (m) {
-        .field => |f| {
-            fields[fi] = .{
-                .name = f.name,
-                .type_ = try resolveTypeRefInContext(env, f.typeRef, genericMap),
-            };
-            fi += 1;
-        },
-        else => {},
-    };
-
-    // §1G — resolve generic defaults against the same map.
-    var genericDefaults = try env.arena.alloc(?*T.Type, s.genericParams.len);
-    for (s.genericParams, 0..) |gp, i| {
-        genericDefaults[i] = if (gp.default) |dft|
-            try resolveTypeRefInContext(env, dft, genericMap)
-        else
-            null;
-    }
-
-    const structTypeId = env.allocTypeId();
-    const implNames = try extractImplementNames(env.arena, s.implement);
-    const ctxBase = try contextBaseFromImplements(env.arena, s.implement);
-    try env.registerTypeDef(s.name, .{ .struct_ = .{
-        .name = s.name,
-        .id = structTypeId,
-        .genericParams = genericIds,
-        .genericDefaults = genericDefaults,
-        .fields = fields,
-        .implements = implNames,
-        .contextBase = ctxBase,
-    } });
-
-    var paramTypes = try env.arena.alloc(*T.Type, fields.len);
-    for (fields, 0..) |f, i| paramTypes[i] = f.type_;
-    const retType = try env.namedType(s.name);
-    const ctorType = try env.funcType(paramTypes, retType);
-    try env.bind(s.name, ctorType);
-
-    // Constructor params (F4 fn-param-default-expansion): mirror registerRecord.
-    try env.ctorParams.put(s.name, try structFieldsAsParams(env, s.members));
-
-    // Inherent method signatures (self = the struct instance, bare name to
-    // match the constructor's return type).
-    var structMethods: std.ArrayListUnmanaged(ast.InterfaceMethod) = .empty;
-    defer structMethods.deinit(env.arena);
-    for (s.members) |m| switch (m) {
-        .method => |im| try structMethods.append(env.arena, im),
-        else => {},
-    };
-    try registerInherentMethodTypes(env, s.name, retType, &genericMap, structMethods.items);
+    return null;
 }
 
-fn registerEnum(env: *Env, e: ast.EnumDecl) InferError!void {
+fn registerEnum(env: *Env, e: ast.TypeDecl) InferError!void {
     var genericMap = std.StringHashMap(*T.Type).init(env.arena);
     defer genericMap.deinit();
     var genericIds = try env.arena.alloc([]const u8, e.genericParams.len);
@@ -1222,8 +2291,8 @@ fn registerEnum(env: *Env, e: ast.EnumDecl) InferError!void {
     // enums live in the type-def table only — their constructor names are NOT
     // bound at the top level; path-access (`.Section.Inner.Leaf`) lowers to the
     // wrapped form during expression inference (F2).
-    var section_wrappers = try env.arena.alloc(envMod.VariantDef, e.sections.len);
-    for (e.sections, 0..) |sec, si| {
+    var section_wrappers = try env.arena.alloc(envMod.VariantDef, e.sections().len);
+    for (e.sections(), 0..) |sec, si| {
         const inner_name = try registerEnumSection(env, e.name, &.{}, sec);
         const wrapper_field = try env.arena.alloc(envMod.FieldDef, 1);
         wrapper_field[0] = .{ .name = "_inner", .type_ = try env.namedType(inner_name) };
@@ -1244,13 +2313,13 @@ fn registerEnum(env: *Env, e: ast.EnumDecl) InferError!void {
     else
         try env.namedTypeArgs(e.name, ctorRetArgs);
 
-    var variants = try env.arena.alloc(envMod.VariantDef, e.variants.len + section_wrappers.len);
-    for (e.variants, 0..) |v, vi| {
+    var variants = try env.arena.alloc(envMod.VariantDef, e.variants().len + section_wrappers.len);
+    for (e.variants(), 0..) |v, vi| {
         var fields = try env.arena.alloc(envMod.FieldDef, v.fields.len);
         for (v.fields, 0..) |f, fi| {
             fields[fi] = .{
                 .name = f.name,
-                .type_ = try resolveTypeRefInContext(env, f.typeRef, genericMap),
+                .type_ = try resolveFieldType(env, f, genericMap),
             };
         }
         variants[vi] = .{ .name = v.name, .fields = fields };
@@ -1265,6 +2334,7 @@ fn registerEnum(env: *Env, e: ast.EnumDecl) InferError!void {
             break :blk try env.funcType(ps, ctorRetType);
         };
         try env.bind(v.name, ctorType);
+        try noteVariantClaim(env, e.name, v.name, ctorType);
 
         // Constructor params (F4 fn-param-default-expansion): register the
         // variant under both its bare name (`Error`) and the qualified path
@@ -1278,7 +2348,12 @@ fn registerEnum(env: *Env, e: ast.EnumDecl) InferError!void {
     // Append the section wrappers after the bare variants — order is irrelevant
     // for type-def semantics, but stable for snapshot determinism.
     for (section_wrappers, 0..) |w, wi| {
-        variants[e.variants.len + wi] = w;
+        variants[e.variants().len + wi] = w;
+        // 01 step 12 — the wrapper's constructor under its qualified name
+        // (`Token.Color`); it has no bare binding.
+        const ps = try env.arena.alloc(*T.Type, 1);
+        ps[0] = w.fields[0].type_;
+        try env.variantCtors.put(try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ e.name, w.name }), try env.funcType(ps, ctorRetType));
     }
 
     // §1G — resolve generic defaults against the same map.
@@ -1356,7 +2431,7 @@ fn registerEnumSection(
         for (v.fields, 0..) |f, fi| {
             fields[fi] = .{
                 .name = f.name,
-                .type_ = try resolveTypeRefInContext(env, f.typeRef, empty_map),
+                .type_ = try resolveFieldType(env, f, empty_map),
             };
         }
         // Pure-digit leaves carry the underscore-prefixed name codegen expects.
@@ -1372,6 +2447,22 @@ fn registerEnumSection(
         variants[i] = .{ .name = variant_name, .fields = fields };
     }
     for (sub_wrappers, 0..) |w, i| variants[sec.variants.len + i] = w;
+    // 01 step 12 — each section variant's constructor under its qualified
+    // name (`__Token__Color.Hex`), so a leading-dot payload path resolves
+    // through the section and not through a flat bare name.
+    const sectionTy = try env.namedType(mangled);
+    // The section enum's own name answers as a receiver (`__Token__Color.Hex(…)`
+    // is what a payload section path is spliced into), as a declared enum's
+    // name does; no source can spell a `__`-mangled name.
+    try env.bind(mangled, sectionTy);
+    for (variants) |v| {
+        const ctor = if (v.fields.len == 0) sectionTy else blk: {
+            const ps = try env.arena.alloc(*T.Type, v.fields.len);
+            for (v.fields, 0..) |f, i| ps[i] = f.type_;
+            break :blk try env.funcType(ps, sectionTy);
+        };
+        try env.variantCtors.put(try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ mangled, v.name }), ctor);
+    }
 
     const type_id = env.allocTypeId();
     try env.registerTypeDef(mangled, .{ .enum_ = .{
@@ -1384,7 +2475,7 @@ fn registerEnumSection(
         .contextBase = null,
     } });
 
-    // §enum-sections F4 — also build the matching AST EnumDecl so the
+    // §enum-sections F4 — also build the matching AST enum TypeDecl so the
     // post-inference `withSynthesisedEnumDecls` pass can prepend it to
     // `program.decls`, giving codegen a top-level enum to emit (mirroring
     // the manually-written enum-of-enum form, byte-identical at codegen).
@@ -1393,7 +2484,7 @@ fn registerEnumSection(
     return mangled;
 }
 
-/// §enum-sections F4 — assemble the AST `EnumDecl` for a synthesised inner
+/// §enum-sections F4 — assemble the AST enum `TypeDecl` for a synthesised inner
 /// enum (the one `registerEnumSection` just registered under `mangled`). The
 /// decl carries the section's bare/payload variants (`sec.variants`, with the
 /// `_` prefix on numeric leaves matching the F1 mangling) followed by one
@@ -1421,7 +2512,7 @@ fn registerSynthesisedEnumDecl(
         // Copy the variant fields (the AST owns them by slice, so we reslice
         // through the arena to keep ownership clean even though the source
         // EnumSection still references them).
-        const fields = try env.arena.alloc(ast.EnumVariantField, v.fields.len);
+        const fields = try env.arena.alloc(ast.Field, v.fields.len);
         for (v.fields, 0..) |f, fi| fields[fi] = f;
         ast_variants[i] = .{ .name = variant_name, .fields = fields, .numeric = v.numeric };
     }
@@ -1433,7 +2524,7 @@ fn registerSynthesisedEnumDecl(
         std.debug.assert(w.fields.len == 1);
         const inner_type = w.fields[0].type_.deref();
         std.debug.assert(inner_type.* == .named);
-        const fields = try env.arena.alloc(ast.EnumVariantField, 1);
+        const fields = try env.arena.alloc(ast.Field, 1);
         fields[0] = .{
             .name = "_inner",
             .typeRef = .{ .named = inner_type.named.name },
@@ -1445,10 +2536,10 @@ fn registerSynthesisedEnumDecl(
             .numeric = false,
         };
     }
-    const enum_decl = ast.EnumDecl{
+    const enum_decl = ast.TypeDecl{
         .name = mangled,
         .isPub = false,
-        .variants = ast_variants,
+        .shape = .{ .enum_ = .{ .variants = ast_variants } },
     };
     try env.synthesisedEnumDecls.put(mangled, enum_decl);
 }
@@ -1471,6 +2562,13 @@ fn registerSynthesisedEnumDecl(
 /// Returns `null` when the chain doesn't root at a dotIdent or no enum
 /// matches the path. Takes the leaf member + receiver separately because the
 /// `identAccess` payload is an anonymous struct, not a nameable type.
+///
+/// 00 · 01-checker — WHICH enum carries the path is decided by the expected
+/// type (`env.expectedType`), never by the order `env.typeDefs` happens to
+/// hand the enums over: that map holds the synthesised section enums beside
+/// the declared ones, so `.Color.Red.500` is carried by emilia's `Token` and
+/// by `__Token__Border` alike and the winner used to change with the size of
+/// the typedef set.
 fn tryResolveEnumSectionPath(
     env: *Env,
     leaf_member: []const u8,
@@ -1482,55 +2580,108 @@ fn tryResolveEnumSectionPath(
     // `dotIdent` whose name is the FIRST segment.
     var segs: std.ArrayList([]const u8) = .empty;
     defer segs.deinit(env.arena);
+    // The location of each segment's node, parallel to `segs` (N17 — the
+    // caret of an unresolved path points at the offending segment).
+    var segLocs: std.ArrayList(ast.Loc) = .empty;
+    defer segLocs.deinit(env.arena);
     try segs.append(env.arena, leaf_member);
+    try segLocs.append(env.arena, loc);
     var cur: *const ast.Expr = leaf_receiver;
+    // The enum a fully qualified chain names outright (`Token.Color.Red.500`).
+    var qualified_owner: ?envMod.TypeDef.Enum = null;
     while (true) {
         if (cur.* != .identifier) return null;
         switch (cur.*.identifier.kind) {
             .identAccess => |sub| {
                 try segs.append(env.arena, sub.member);
+                try segLocs.append(env.arena, cur.*.getLoc());
                 cur = sub.receiver;
             },
             .dotIdent => |name| {
                 try segs.append(env.arena, name);
+                try segLocs.append(env.arena, cur.*.getLoc());
                 break;
             },
-            .ident => return null, // a regular `Color.Red.X` chain — not a section path
+            .ident => |name| {
+                // 00 · 01-checker — the fully qualified spelling names its
+                // enum: `Token.Color.Red.500`. The root identifier is the
+                // owner and the rest of the chain is the path, so the one
+                // spelling that carries the answer in itself is not refused.
+                // A two-segment `Color.Red` is an ordinary variant access and
+                // stays on the regular identAccess path below.
+                if (segs.items.len < 2) return null;
+                const td = env.lookupTypeDef(name) orelse return null;
+                if (td != .enum_) return null;
+                qualified_owner = td.enum_;
+                break;
+            },
         }
     }
     // segs is leaf→head; reverse to head→leaf for path walking.
     std.mem.reverse([]const u8, segs.items);
+    std.mem.reverse(ast.Loc, segLocs.items);
+
+    if (qualified_owner) |owner| {
+        // The enum is named, so there is no candidate set and nothing to be
+        // ambiguous about. A chain that turns out not to be a section path is
+        // handed back to the ordinary identAccess handling, which reports it.
+        if (!enumCarriesSectionPath(env, owner, segs.items)) return null;
+        // 01 step 4 (d) — where the position expects the SECTION's own type
+        // (`val w: Token.Text = Token.Text.Italic;`), the path names a value
+        // of that section, not of the enum carrying it.
+        if (try sectionValueForExpected(env, owner.name, segs.items, loc)) |te| return te;
+        return try resolveAndRecordSectionPath(env, owner, segs.items, loc);
+    }
+
     if (segs.items.len < 2) return null;
 
-    // Search every registered enum for one whose top-level variant matches
-    // the head segment AND whose section tree carries the rest of the path.
+    // Collect EVERY registered enum whose top-level variant matches the head
+    // segment AND whose section tree carries the rest of the path. The set,
+    // not the first hit, is what the choice is made from.
     // Also remember the enum whose HEAD segment matched (`enum_with_head`)
     // so a partial-match path (head OK, tail wrong: `.Color.Bogus`) can
     // raise ES4 with a focused message instead of bubbling a confusing
     // generic "unknown field" error from the fall-through code.
-    var enum_with_head: ?[]const u8 = null;
+    var candidates: std.ArrayList([]const u8) = .empty;
+    defer candidates.deinit(env.arena);
+    // Every enum whose head segment matched a section wrapper — the set, so
+    // the ES4 wording is not a function of the hash map's order.
+    var heads: std.ArrayList([]const u8) = .empty;
+    defer heads.deinit(env.arena);
     var it = env.typeDefs.iterator();
     while (it.next()) |entry| {
         const td = entry.value_ptr.*;
         if (td != .enum_) continue;
         const en = td.enum_;
-        if (try resolveSectionPathInEnum(env, en, segs.items, loc)) |resolved| {
-            // Also build the equivalent UNTYPED rewrite and stash it under
-            // this chain's outermost loc. The post-inference rewrite pass
-            // (`withEnumSectionRewrites` in `comptime.zig`) walks the
-            // untyped AST and swaps the original `.dotIdent` chain for this
-            // qualified-ctor form so codegen emits the correct shape.
-            if (try buildSectionPathRewrite(env, en, segs.items)) |rewrite| {
-                try env.enumSectionRewrites.put(loc, rewrite);
-            }
-            return resolved;
+        if (enumCarriesSectionPath(env, en, segs.items)) {
+            if (!containsStr(candidates.items, en.name)) try candidates.append(env.arena, en.name);
+            continue;
         }
         // Did the head segment at least match a section wrapper on this
         // enum? If yes, the user intended a section path on this enum — a
         // bad tail is an ES4 candidate.
-        if (enum_with_head == null and headSectionVariantOn(en, segs.items[0])) {
-            enum_with_head = en.name;
+        if (headSectionVariantOn(en, segs.items[0]) and !containsStr(heads.items, en.name)) {
+            try heads.append(env.arena, en.name);
         }
+    }
+
+    if (candidates.items.len > 0) {
+        // One carrier: the path names it. More than one: the expected type of
+        // this position is what decides — an annotation, a declared parameter,
+        // the return target, an array literal's element type.
+        const chosen: ?[]const u8 = if (candidates.items.len == 1)
+            candidates.items[0]
+        else
+            expectedEnumAmong(env.expectedType, candidates.items);
+        if (chosen) |name| {
+            const owner = env.lookupTypeDef(name).?.enum_;
+            return try resolveAndRecordSectionPath(env, owner, segs.items, loc);
+        }
+        // ES5 — more than one enum carries the path and nothing here says
+        // which. Refuse, naming every candidate: picking one is what made the
+        // answer a function of the hash order, and the position that cannot
+        // say what it expects is the position that has to spell it out.
+        return raiseAmbiguousSectionPath(env, candidates.items, segs.items, segLocs.items[0]);
     }
 
     // ES4 — chain looks like a section path (`.<Section>.<more>` rooted at
@@ -1538,23 +2689,223 @@ fn tryResolveEnumSectionPath(
     // wrapper, but the tail didn't resolve. Raise a focused error so the
     // user sees "enum 'Token' has no path '.Color.Bogus'" instead of the
     // generic fall-through diagnostic.
-    if (enum_with_head) |owner| {
-        var pbuf: std.ArrayList(u8) = .empty;
-        defer pbuf.deinit(env.arena);
-        for (segs.items) |seg| {
-            try pbuf.append(env.arena, '.');
-            try pbuf.appendSlice(env.arena, seg);
-        }
-        const path_text = try pbuf.toOwnedSlice(env.arena);
+    if (heads.items.len > 0) {
+        // One enum carries the head: it is the one meant. Several: the
+        // position's expected type names it; with none, the refusal names
+        // every one of them, sorted, instead of whichever the walk met first.
+        const chosen: ?[]const u8 = if (heads.items.len == 1)
+            heads.items[0]
+        else
+            expectedEnumAmong(env.expectedType, heads.items);
+        const path_text = try sectionPathText(env, segs.items);
+        const owner = chosen orelse {
+            std.mem.sort([]const u8, heads.items, {}, struct {
+                fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+                    return std.mem.order(u8, a, b) == .lt;
+                }
+            }.lessThan);
+            var names: std.ArrayList(u8) = .empty;
+            defer names.deinit(env.arena);
+            for (heads.items, 0..) |name, i| {
+                if (i > 0) try names.appendSlice(env.arena, if (i + 1 == heads.items.len) " and " else ", ");
+                try names.append(env.arena, '"');
+                try names.appendSlice(env.arena, name);
+                try names.append(env.arena, '"');
+            }
+            const msg = try std.fmt.allocPrint(
+                env.arena,
+                "no enum has the path \"{s}\" — {s} each have a section \"{s}\" (ES4 — enum-sections path resolution)",
+                .{ path_text, names.items, segs.items[0] },
+            );
+            const badLoc = if (segLocs.items.len > 1) segLocs.items[1] else loc;
+            env.lastError = TypeError.custom(msg, "Check the section/variant chain against the enum declarations' `sections` trees; numeric leaves are matched under their declared digit form (`.Color.Red.500`).").withLoc(badLoc);
+            return error.TypeError;
+        };
         const msg = try std.fmt.allocPrint(
             env.arena,
             "enum \"{s}\" has no path \"{s}\" (ES4 — enum-sections path resolution)",
             .{ owner, path_text },
         );
-        env.lastError = TypeError.custom(msg, "Check the section/variant chain against the enum declaration's `sections` tree; numeric leaves are matched under their declared digit form (`.Color.Red.500`).").withLoc(loc);
+        const bad = firstUnresolvedSectionSegment(env, env.lookupTypeDef(owner).?.enum_, segs.items);
+        const badLoc = if (bad < segLocs.items.len) segLocs.items[bad] else loc;
+        env.lastError = TypeError.custom(msg, "Check the section/variant chain against the enum declaration's `sections` tree; numeric leaves are matched under their declared digit form (`.Color.Red.500`).").withLoc(badLoc);
         return error.TypeError;
     }
     return null;
+}
+
+/// 01 step 4 (d) — `Token.Text.Italic` where `Token.Text` is expected: the
+/// section enum's own variant (`__Token__Text.Italic`), recorded as the
+/// path's rewrite. Null when the expectation is not the section the path's
+/// prefix names.
+fn sectionValueForExpected(env: *Env, owner: []const u8, path: []const []const u8, loc: ast.Loc) InferError!?TypedExpr {
+    if (path.len < 2) return null;
+    const want = (env.expectedType orelse return null).deref();
+    if (want.* != .named) return null;
+    var mbuf: std.ArrayList(u8) = .empty;
+    try mbuf.appendSlice(env.arena, "__");
+    try mbuf.appendSlice(env.arena, owner);
+    for (path[0 .. path.len - 1]) |seg| {
+        try mbuf.appendSlice(env.arena, "__");
+        try mbuf.appendSlice(env.arena, seg);
+    }
+    if (!std.mem.eql(u8, mbuf.items, want.named.name)) return null;
+    const td = env.lookupTypeDef(want.named.name) orelse return null;
+    if (td != .enum_) return null;
+    const leaf = path[path.len - 1];
+    const has = for (td.enum_.variants) |v| {
+        if (std.mem.eql(u8, v.name, leaf) and v.fields.len == 0) break true;
+    } else false;
+    if (!has) return null;
+    const recv = try env.arena.create(ast.Expr);
+    recv.* = .{ .identifier = .{ .loc = .{ .line = 0, .col = 0 }, .kind = .{ .ident = want.named.name } } };
+    const node = try env.arena.create(ast.Expr);
+    node.* = .{ .identifier = .{ .loc = .{ .line = 0, .col = 0 }, .kind = .{ .identAccess = .{ .receiver = recv, .member = leaf } } } };
+    try env.enumSectionRewrites.put(loc, node);
+    env.expectedType = null;
+    return try inferExprTyped(env, node.*);
+}
+
+/// The chain as the user wrote it, leading dot and all: `.Color.Red.500`.
+fn sectionPathText(env: *Env, path: []const []const u8) InferError![]const u8 {
+    var buf: std.ArrayList(u8) = .empty;
+    defer buf.deinit(env.arena);
+    for (path) |seg| {
+        try buf.append(env.arena, '.');
+        try buf.appendSlice(env.arena, seg);
+    }
+    return buf.toOwnedSlice(env.arena);
+}
+
+/// ES5 — the path is carried by more than one enum and nothing at this
+/// position says which. Refuse, naming every candidate.
+///
+/// Picking one is what made the answer depend on `env.typeDefs`' hash order,
+/// and a pick cannot be right here: the two enums are different types and the
+/// program means one of them. The candidates are sorted so the message is the
+/// same on every run — the set comes off a hash map.
+fn raiseAmbiguousSectionPath(
+    env: *Env,
+    candidates: [][]const u8,
+    path: []const []const u8,
+    loc: ast.Loc,
+) InferError!?TypedExpr {
+    std.mem.sort([]const u8, candidates, {}, struct {
+        fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.order(u8, a, b) == .lt;
+        }
+    }.lessThan);
+    var names: std.ArrayList(u8) = .empty;
+    defer names.deinit(env.arena);
+    for (candidates, 0..) |name, i| {
+        if (i > 0) try names.appendSlice(env.arena, if (i + 1 == candidates.len) " and " else ", ");
+        try names.append(env.arena, '"');
+        try names.appendSlice(env.arena, name);
+        try names.append(env.arena, '"');
+    }
+    const msg = try std.fmt.allocPrint(
+        env.arena,
+        "the path \"{s}\" is carried by more than one enum — {s} — and nothing here says which (ES5 — enum-sections path ambiguity)",
+        .{ try sectionPathText(env, path), names.items },
+    );
+    env.lastError = TypeError.custom(
+        msg,
+        "Give the position a type the path can be read against — a `val` annotation, a declared parameter, the function's return type — or write the path from its enum (`Token.Color.Red.500`).",
+    ).withLoc(loc);
+    return error.TypeError;
+}
+
+/// Resolve `path` in `en` and record the untyped rewrite for it.
+///
+/// The rewrite is the equivalent qualified-ctor form, stashed under this
+/// chain's outermost loc. The post-inference rewrite pass
+/// (`withEnumSectionRewrites` in `comptime.zig`) walks the untyped AST and
+/// swaps the original chain for it, so codegen — which reads the untyped AST —
+/// emits `Token.Color(__Token__Color.Red(…))` instead of the source text.
+fn resolveAndRecordSectionPath(
+    env: *Env,
+    en: envMod.TypeDef.Enum,
+    path: []const []const u8,
+    loc: ast.Loc,
+) InferError!?TypedExpr {
+    const resolved = try resolveSectionPathInEnum(env, en, path, loc) orelse return null;
+    if (try buildSectionPathRewrite(env, en, path)) |rewrite| {
+        try env.enumSectionRewrites.put(loc, rewrite);
+    }
+    return resolved;
+}
+
+/// The candidate `expected` names, or null when the expectation says nothing
+/// about the choice (there is none, it is still a type variable, or it names
+/// an enum that carries no such path). `?Token` answers `Token`: the
+/// expectation of an optional position is the optional's inner type.
+fn expectedEnumAmong(expected: ?*T.Type, candidates: []const []const u8) ?[]const u8 {
+    var ty = (expected orelse return null).deref();
+    if (ty.* == .named and std.mem.eql(u8, ty.named.name, "optional") and ty.named.args.len == 1) {
+        ty = ty.named.args[0].deref();
+    }
+    if (ty.* != .named) return null;
+    for (candidates) |c| if (std.mem.eql(u8, c, ty.named.name)) return c;
+    return null;
+}
+
+/// True when `en`'s section tree carries `path` all the way down to a unit
+/// variant — the predicate form of `resolveSectionPathInEnum`, so the set of
+/// carriers can be collected without building a typed node for each one. The
+/// two walk the same steps and must keep agreeing: a path this answers `true`
+/// for is a path `resolveSectionPathInEnum` resolves.
+fn enumCarriesSectionPath(env: *Env, en: envMod.TypeDef.Enum, path: []const []const u8) bool {
+    if (path.len == 0) return false;
+    var current = en;
+    for (path, 0..) |seg, i| {
+        var matched: ?envMod.VariantDef = null;
+        for (current.variants) |v| {
+            if (std.mem.eql(u8, v.name, seg) or
+                (looksNumeric(seg) and v.name.len > 1 and v.name[0] == '_' and v.name[1] == '_' and std.mem.eql(u8, v.name[2..], seg)))
+            {
+                matched = v;
+                break;
+            }
+        }
+        const variant = matched orelse return false;
+        // The leaf of a section path is a unit variant; a payload variant
+        // (`Hex(value: string)`) is a call, not the end of a chain.
+        if (i + 1 == path.len) return variant.fields.len == 0;
+        // Every inner segment must be a section wrapper.
+        if (variant.fields.len != 1 or !std.mem.eql(u8, variant.fields[0].name, "_inner")) return false;
+        const inner_type = variant.fields[0].type_.deref();
+        if (inner_type.* != .named) return false;
+        const inner_def = env.lookupTypeDef(inner_type.named.name) orelse return false;
+        if (inner_def != .enum_) return false;
+        current = inner_def.enum_;
+    }
+    return false;
+}
+
+/// Index of the first segment of `path` that does not name a variant or a
+/// section wrapper on the way down `en`'s section tree.
+fn firstUnresolvedSectionSegment(env: *Env, en: envMod.TypeDef.Enum, path: []const []const u8) usize {
+    var current = en;
+    for (path, 0..) |seg, i| {
+        var matched: ?envMod.VariantDef = null;
+        for (current.variants) |v| {
+            if (std.mem.eql(u8, v.name, seg) or
+                (looksNumeric(seg) and v.name.len > 1 and v.name[0] == '_' and v.name[1] == '_' and std.mem.eql(u8, v.name[2..], seg)))
+            {
+                matched = v;
+                break;
+            }
+        }
+        const variant = matched orelse return i;
+        if (i + 1 == path.len) return path.len;
+        if (variant.fields.len != 1 or !std.mem.eql(u8, variant.fields[0].name, "_inner")) return i + 1;
+        const inner_type = variant.fields[0].type_.deref();
+        if (inner_type.* != .named) return i + 1;
+        const inner_def = env.lookupTypeDef(inner_type.named.name) orelse return i + 1;
+        if (inner_def != .enum_) return i + 1;
+        current = inner_def.enum_;
+    }
+    return path.len;
 }
 
 /// True iff `enum_def` has a section-wrapper variant named `head`. Used
@@ -1744,6 +3095,146 @@ fn resolveSectionPathInEnum(
     } } } };
 }
 
+/// 01 step 12 — `.Color.Hex("#abc")` / `Token.Color.Hex("#abc")`: a section
+/// path whose LEAF is a payload variant, written as a call. The unit-leaf path
+/// (`.Color.Red.500`) is an identifier chain and `tryResolveEnumSectionPath`
+/// answers it; a call was never walked, so its receiver `.Color` fell to the
+/// flat table and resolved to whatever enum last declared a bare `Color` —
+/// `Ns` in emilia, a type the author never wrote. The enum is chosen exactly
+/// as the unit path chooses it: the one written (`Token.…`), the one carrier,
+/// or the one the position expects; several carriers and no expectation is
+/// ES5's refusal. The qualified constructor chain is spliced in through the
+/// index channel, so no backend learns a shape.
+fn tryResolveSectionPayloadCall(env: *Env, c: ast.CallExprOf(.untyped), receiver: *const ast.Expr, loc: ast.Loc) InferError!?TypedExpr {
+    const call = c.kind.call;
+    var segs: std.ArrayList([]const u8) = .empty;
+    defer segs.deinit(env.arena);
+    var cur: *const ast.Expr = receiver;
+    var owner: ?envMod.TypeDef.Enum = null;
+    var head_loc: ast.Loc = loc;
+    while (true) {
+        if (cur.* != .identifier) return null;
+        switch (cur.*.identifier.kind) {
+            .identAccess => |sub| {
+                try segs.append(env.arena, sub.member);
+                cur = sub.receiver;
+            },
+            .dotIdent => |name| {
+                try segs.append(env.arena, name);
+                head_loc = cur.*.getLoc();
+                break;
+            },
+            .ident => |name| {
+                // `Token.Color.Hex(…)`: the root names the enum, and at least
+                // one section segment follows it (`Token.Hex(…)` is an
+                // ordinary qualified constructor call).
+                if (segs.items.len == 0) return null;
+                const td = env.lookupTypeDef(name) orelse return null;
+                if (td != .enum_) return null;
+                owner = td.enum_;
+                head_loc = cur.*.getLoc();
+                break;
+            },
+        }
+    }
+    std.mem.reverse([]const u8, segs.items);
+    try segs.append(env.arena, call.callee);
+    const path = segs.items;
+
+    const chosen: envMod.TypeDef.Enum = if (owner) |o| blk: {
+        if (!enumCarriesPayloadSectionPath(env, o, path)) return null;
+        break :blk o;
+    } else blk: {
+        var candidates: std.ArrayList([]const u8) = .empty;
+        defer candidates.deinit(env.arena);
+        var it = env.typeDefs.iterator();
+        while (it.next()) |entry| {
+            const td = entry.value_ptr.*;
+            if (td != .enum_) continue;
+            if (enumCarriesPayloadSectionPath(env, td.enum_, path) and !containsStr(candidates.items, td.enum_.name))
+                try candidates.append(env.arena, td.enum_.name);
+        }
+        if (candidates.items.len == 0) return null;
+        const pick: ?[]const u8 = if (candidates.items.len == 1) candidates.items[0] else expectedEnumAmong(env.expectedType, candidates.items);
+        const name = pick orelse {
+            const locs = try env.arena.alloc(ast.Loc, path.len);
+            for (locs) |*l| l.* = head_loc;
+            _ = try raiseAmbiguousSectionPath(env, candidates.items, path, locs[0]);
+            return error.TypeError;
+        };
+        break :blk env.lookupTypeDef(name).?.enum_;
+    };
+    const tree = try buildPayloadSectionRewrite(env, chosen, path, c, loc) orelse return null;
+    try env.indexRewrites.put(loc, tree);
+    env.expectedType = null;
+    return try inferExprTyped(env, tree.*);
+}
+
+/// `enumCarriesSectionPath` for a path whose leaf is a PAYLOAD variant: every
+/// segment but the last is a section wrapper, the last a variant with fields.
+fn enumCarriesPayloadSectionPath(env: *Env, en: envMod.TypeDef.Enum, path: []const []const u8) bool {
+    if (path.len < 2) return false;
+    var current = en;
+    for (path, 0..) |seg, i| {
+        var matched: ?envMod.VariantDef = null;
+        for (current.variants) |v| {
+            if (std.mem.eql(u8, v.name, seg)) {
+                matched = v;
+                break;
+            }
+        }
+        const variant = matched orelse return false;
+        const isWrapper = variant.fields.len == 1 and std.mem.eql(u8, variant.fields[0].name, "_inner");
+        if (i + 1 == path.len) return variant.fields.len > 0 and !isWrapper;
+        if (!isWrapper) return false;
+        const inner_type = variant.fields[0].type_.deref();
+        if (inner_type.* != .named) return false;
+        const inner_def = env.lookupTypeDef(inner_type.named.name) orelse return false;
+        if (inner_def != .enum_) return false;
+        current = inner_def.enum_;
+    }
+    return false;
+}
+
+/// The untyped qualified chain for a payload section path: every wrapper is
+/// `<Enum>.<Section>(_inner: …)` and the leaf is `<Section enum>.<Variant>(args)`
+/// with the call's own arguments. The outermost node carries the call's loc
+/// (it replaces the call); inner nodes the sentinel `{0, 0}`.
+fn buildPayloadSectionRewrite(env: *Env, en: envMod.TypeDef.Enum, path: []const []const u8, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferError!?*ast.Expr {
+    const synth_loc = ast.Loc{ .line = 0, .col = 0 };
+    const recv = try env.arena.create(ast.Expr);
+    recv.* = .{ .identifier = .{ .loc = synth_loc, .kind = .{ .ident = en.name } } };
+    const node = try env.arena.create(ast.Expr);
+    if (path.len == 1) {
+        var leaf = c;
+        leaf.loc = loc;
+        leaf.kind.call.receiver = recv;
+        leaf.kind.call.callee = path[0];
+        node.* = .{ .call = leaf };
+        return node;
+    }
+    var inner_def: ?envMod.TypeDef.Enum = null;
+    for (en.variants) |v| {
+        if (!std.mem.eql(u8, v.name, path[0])) continue;
+        const it = v.fields[0].type_.deref();
+        if (it.* != .named) return null;
+        const d = env.lookupTypeDef(it.named.name) orelse return null;
+        if (d != .enum_) return null;
+        inner_def = d.enum_;
+    }
+    const inner = try buildPayloadSectionRewrite(env, inner_def orelse return null, path[1..], c, synth_loc) orelse return null;
+    const args = try env.arena.alloc(ast.CallArg, 1);
+    args[0] = .{ .label = "_inner", .value = inner, .comments = &.{} };
+    node.* = .{ .call = .{ .loc = loc, .kind = .{ .call = .{
+        .receiver = recv,
+        .callee = path[0],
+        .is_builtin = false,
+        .args = args,
+        .trailing = &.{},
+    } } } };
+    return node;
+}
+
 /// True when every byte of `s` is an ASCII digit (`0`–`9`). Used to detect
 /// numeric leaf segments (`500`, `4`) that the F1 desugar mangled to
 /// `_500` / `_4`.
@@ -1755,89 +3246,59 @@ fn looksNumeric(s: []const u8) bool {
 
 // ── pass 2: declaration inference ────────────────────────────────────────────
 
-/// Build a signature name for a record declaration binding.
-/// Format: `"record { f1: T1, f2: T2 }"` ---- fields inline, body omitted.
-fn buildRecordDeclName(env: *Env, r: ast.RecordDecl) ![]const u8 {
+/// Build a signature name for a record declaration binding — the 1.0.3
+/// surface, which is what hover, completion and signature help print for the
+/// constructor: `"type Name<G>(f1: T1, f2: T2)"`, fields inline, body omitted.
+/// It is the name of the binding's *type*, not of the record — the instances
+/// are `named` by `r.name` alone — so the spelling is free to follow the
+/// document; `record { … }` was the pre-1.0.3 surface, which no longer parses.
+fn buildRecordDeclName(env: *Env, r: ast.TypeDecl) ![]const u8 {
     var buf: std.ArrayList(u8) = .empty;
-    try buf.appendSlice(env.arena, "record");
-    if (r.genericParams.len > 0) {
-        try buf.appendSlice(env.arena, " <");
-        for (r.genericParams, 0..) |gp, i| {
-            if (i > 0) try buf.appendSlice(env.arena, ", ");
-            try buf.appendSlice(env.arena, gp.name);
-        }
-        try buf.append(env.arena, '>');
-    }
-    try buf.appendSlice(env.arena, " { ");
-    for (r.fields, 0..) |f, i| {
+    try buf.appendSlice(env.arena, "type ");
+    try buf.appendSlice(env.arena, r.name);
+    try appendGenericParamsStr(&buf, env.arena, r.genericParams);
+    try buf.append(env.arena, '(');
+    for (r.recordFields(), 0..) |f, i| {
         if (i > 0) try buf.appendSlice(env.arena, ", ");
         try buf.appendSlice(env.arena, f.name);
         try buf.appendSlice(env.arena, ": ");
         try appendTypeRefStr(&buf, env.arena, f.typeRef);
     }
-    try buf.append(env.arena, ' ');
-    try buf.appendSlice(env.arena, "}");
+    try buf.append(env.arena, ')');
     return try buf.toOwnedSlice(env.arena);
 }
 
-/// Build a signature name for a struct declaration binding.
-/// Format: `"struct {\n    name: Type\n}"` ---- fields only.
-fn buildStructDeclName(env: *Env, s: ast.StructDecl) ![]const u8 {
-    var buf: std.ArrayList(u8) = .empty;
-    try buf.appendSlice(env.arena, "struct");
-    if (s.genericParams.len > 0) {
-        try buf.appendSlice(env.arena, " <");
-        for (s.genericParams, 0..) |gp, i| {
-            if (i > 0) try buf.appendSlice(env.arena, ", ");
-            try buf.appendSlice(env.arena, gp.name);
-        }
-        try buf.append(env.arena, '>');
+/// `<A, B>` after a declaration's name, or nothing when it has no generics —
+/// the 1.0.3 spelling shared by the three declaration-name builders.
+fn appendGenericParamsStr(buf: *std.ArrayList(u8), arena: std.mem.Allocator, params: anytype) !void {
+    if (params.len == 0) return;
+    try buf.append(arena, '<');
+    for (params, 0..) |gp, i| {
+        if (i > 0) try buf.appendSlice(arena, ", ");
+        try buf.appendSlice(arena, gp.name);
     }
-    try buf.appendSlice(env.arena, " {\n");
-    for (s.members) |m| {
-        switch (m) {
-            .field => |f| {
-                try buf.appendSlice(env.arena, "    ");
-                try buf.appendSlice(env.arena, f.name);
-                try buf.appendSlice(env.arena, ": ");
-                try buf.appendSlice(env.arena, try typeRefToString(env.arena, f.typeRef));
-                if (f.init) |_| {
-                    try buf.append(env.arena, '\n');
-                } else {
-                    try buf.append(env.arena, '\n');
-                }
-            },
-            else => {},
-        }
-    }
-    try buf.append(env.arena, '}');
-    return try buf.toOwnedSlice(env.arena);
+    try buf.append(arena, '>');
 }
 
-/// Build a signature name for an interface declaration binding.
-/// Format: `"interface {\n    fn method(params)\n}"` ---- methods and fields.
-fn buildInterfaceDeclName(env: *Env, d: ast.InterfaceDecl) ![]const u8 {
+/// Build a signature name for a behavior declaration binding — the 1.0.3
+/// surface: `"behavior Name<G> {\n    val x: T;\n    fn method<G>(params) -> R;\n}"`.
+fn buildInterfaceDeclName(env: *Env, d: ast.BehaviorDecl) ![]const u8 {
     var buf: std.ArrayList(u8) = .empty;
-    try buf.appendSlice(env.arena, "interface");
-    if (d.genericParams.len > 0) {
-        try buf.appendSlice(env.arena, " <");
-        for (d.genericParams, 0..) |gp, i| {
-            if (i > 0) try buf.appendSlice(env.arena, ", ");
-            try buf.appendSlice(env.arena, gp.name);
-        }
-        try buf.append(env.arena, '>');
-    }
+    try buf.appendSlice(env.arena, "behavior ");
+    try buf.appendSlice(env.arena, d.name);
+    try appendGenericParamsStr(&buf, env.arena, d.genericParams);
     try buf.appendSlice(env.arena, " {\n");
     for (d.fields) |f| {
         try buf.appendSlice(env.arena, "    val ");
         try buf.appendSlice(env.arena, f.name);
         try buf.appendSlice(env.arena, ": ");
-        try buf.appendSlice(env.arena, f.typeName);
+        try appendTypeRefStr(&buf, env.arena, f.typeRef);
         try buf.appendSlice(env.arena, ";\n");
     }
     for (d.methods) |m| {
         try buf.appendSlice(env.arena, "    fn ");
         try buf.appendSlice(env.arena, m.name);
+        try appendGenericParamsStr(&buf, env.arena, m.genericParams);
         try buf.append(env.arena, '(');
         for (m.params, 0..) |p, i| {
             if (i > 0) try buf.appendSlice(env.arena, ", ");
@@ -1850,6 +3311,10 @@ fn buildInterfaceDeclName(env: *Env, d: ast.InterfaceDecl) ![]const u8 {
             try appendTypeRefStr(&buf, env.arena, p.typeRef);
         }
         try buf.append(env.arena, ')');
+        if (m.returnType) |rt| {
+            try buf.appendSlice(env.arena, " -> ");
+            try appendTypeRefStr(&buf, env.arena, rt);
+        }
         if (!m.is_default) try buf.appendSlice(env.arena, ";");
         try buf.append(env.arena, '\n');
     }
@@ -1857,22 +3322,17 @@ fn buildInterfaceDeclName(env: *Env, d: ast.InterfaceDecl) ![]const u8 {
     return try buf.toOwnedSlice(env.arena);
 }
 
-/// Build a signature name for an enum declaration binding.
-/// Format: `"enum {\n    Variant,\n    Variant(field: Type),\n}\n"`
-fn buildEnumDeclName(env: *Env, e: ast.EnumDecl) ![]const u8 {
+/// Build a signature name for an enum declaration binding — the 1.0.3
+/// surface, compact as the formatter prints it:
+/// `"type Name<G> { Variant, Variant(field: Type) }"`.
+fn buildEnumDeclName(env: *Env, e: ast.TypeDecl) ![]const u8 {
     var buf: std.ArrayList(u8) = .empty;
-    try buf.appendSlice(env.arena, "enum");
-    if (e.genericParams.len > 0) {
-        try buf.appendSlice(env.arena, " <");
-        for (e.genericParams, 0..) |gp, i| {
-            if (i > 0) try buf.appendSlice(env.arena, ", ");
-            try buf.appendSlice(env.arena, gp.name);
-        }
-        try buf.append(env.arena, '>');
-    }
-    try buf.appendSlice(env.arena, " {\n");
-    for (e.variants) |v| {
-        try buf.appendSlice(env.arena, "    ");
+    try buf.appendSlice(env.arena, "type ");
+    try buf.appendSlice(env.arena, e.name);
+    try appendGenericParamsStr(&buf, env.arena, e.genericParams);
+    try buf.appendSlice(env.arena, " { ");
+    for (e.variants(), 0..) |v, vi| {
+        if (vi > 0) try buf.appendSlice(env.arena, ", ");
         try buf.appendSlice(env.arena, v.name);
         if (v.fields.len > 0) {
             try buf.append(env.arena, '(');
@@ -1884,9 +3344,8 @@ fn buildEnumDeclName(env: *Env, e: ast.EnumDecl) ![]const u8 {
             }
             try buf.append(env.arena, ')');
         }
-        try buf.appendSlice(env.arena, ",\n");
     }
-    try buf.append(env.arena, '}');
+    try buf.appendSlice(env.arena, " }");
     return try buf.toOwnedSlice(env.arena);
 }
 
@@ -1932,6 +3391,16 @@ fn appendTypeRefStr(buf: *std.ArrayListUnmanaged(u8), allocator: std.mem.Allocat
             }
             try buf.append(allocator, ')');
         },
+        .labeledTuple => |lt| {
+            try buf.appendSlice(allocator, "#(");
+            for (lt.elems, 0..) |e, i| {
+                if (i > 0) try buf.appendSlice(allocator, ", ");
+                try buf.appendSlice(allocator, lt.labels[i]);
+                try buf.appendSlice(allocator, ": ");
+                try appendTypeRefStr(buf, allocator, e);
+            }
+            try buf.append(allocator, ')');
+        },
         .optional => |inner| {
             try buf.append(allocator, '?');
             try appendTypeRefStr(buf, allocator, inner.*);
@@ -1962,32 +3431,32 @@ fn appendTypeRefStr(buf: *std.ArrayListUnmanaged(u8), allocator: std.mem.Allocat
                 try appendTypeRefStr(buf, allocator, c);
             }
         },
-        .record_type => |flds| {
-            try buf.appendSlice(allocator, "{ ");
-            for (flds, 0..) |f, i| {
-                if (i > 0) try buf.appendSlice(allocator, ", ");
-                try buf.appendSlice(allocator, f.name);
-                try buf.appendSlice(allocator, ": ");
-                try appendTypeRefStr(buf, allocator, f.typeRef);
-            }
-            try buf.appendSlice(allocator, " }");
-        },
     }
 }
 
 fn inferDecl(env: *Env, decl: ast.DeclKind) InferError!?Binding {
     switch (decl) {
         .val => |v| {
-            const ty = try inferExpr(env, v.value.*);
-            // Bind the DECLARED (annotated) type when present — see
+            // The annotation is resolved BEFORE the value so it can be this
+            // position's expected type (00 · 01-checker) — see
             // `inferDeclTyped`'s `.val` case.
+            const annType: ?*T.Type = if (v.typeAnnotation) |ann|
+                resolveTypeRef(env, ann) catch |err| return locateTypeRefError(env, err, v.value.getLoc())
+            else
+                null;
+            const ty = try inferExprExpecting(env, v.value.*, annType);
+            // Bind the DECLARED (annotated) type when present.
             var bindTy = ty;
-            if (v.typeAnnotation) |ann| {
-                const annType = try resolveTypeRef(env, ann);
-                try unifyAt(env, annType, ty, v.value.getLoc());
-                bindTy = annType;
+            if (annType) |at| {
+                try unifyArgument(env, at, ty, v.value.getLoc());
+                bindTy = at;
             }
-            try env.bind(v.name, bindTy);
+            if (v.isPub and annType == null) try refusePublicUnknown(env, bindTy, v.name, "val", v.value.getLoc());
+            if (annType == null and isEmptyArrayLiteral(v.value.*))
+                try env.birthWarnings.append(env.arena, .{ .name = v.name, .mutable = v.mutable, .type_ = bindTy, .loc = v.value.getLoc() });
+            try validateMemoryAnnotations(env, v, bindTy);
+            try noteTypeValue(env, v.name, v.value.*, annType == null and !v.mutable);
+            if (v.mutable) try env.bind(v.name, bindTy) else try env.bindVal(v.name, bindTy);
             return .{ .name = v.name, .type_ = bindTy };
         },
         .@"fn" => |f| {
@@ -1997,15 +3466,17 @@ fn inferDecl(env: *Env, decl: ast.DeclKind) InferError!?Binding {
             return .{ .name = f.name, .type_ = try env.namedType(sigName) };
         },
         // Type declarations produce a binding whose type name encodes the body.
-        .record => |r| {
-            const typeName = try buildRecordDeclName(env, r);
-            return .{ .name = r.name, .type_ = try env.namedType(typeName) };
+        .type_ => |tdecl| switch (tdecl.shape) {
+            .record => {
+                const typeName = try buildRecordDeclName(env, tdecl);
+                return .{ .name = tdecl.name, .type_ = try env.namedType(typeName) };
+            },
+            .enum_ => {
+                const typeName = try buildEnumDeclName(env, tdecl);
+                return .{ .name = tdecl.name, .type_ = try env.namedType(typeName) };
+            },
         },
-        .@"enum" => |e| {
-            const typeName = try buildEnumDeclName(env, e);
-            return .{ .name = e.name, .type_ = try env.namedType(typeName) };
-        },
-        .interface => |d| {
+        .behavior => |d| {
             const typeName = try buildInterfaceDeclName(env, d);
             try registerInterfaceAssociatedFns(env, d);
             return .{ .name = d.name, .type_ = try env.namedType(typeName) };
@@ -2022,6 +3493,10 @@ fn inferDecl(env: *Env, decl: ast.DeclKind) InferError!?Binding {
             _ = try markStdImports(env, u);
             return null;
         },
+        .typeAlias => |a| {
+            _ = try checkTypeAliasDecl(env, a);
+            return null;
+        },
         // implement doesn't produce a value binding.
         else => return null,
     }
@@ -2034,9 +3509,21 @@ fn inferDecl(env: *Env, decl: ast.DeclKind) InferError!?Binding {
 /// rule that makes `await` an identity). `yield` stays rejected; `throw`
 /// is lenient (a panic surfaces as the test's red diagnostic).
 fn inferTestDecl(env: *Env, t: ast.TestDecl) InferError!void {
+    // 01 step 13 — a test's locals end with the test.
+    var bodyLog: std.ArrayListUnmanaged(Env.BindUndo) = .empty;
+    const outerScope = env.openBodyScope(&bodyLog);
+    defer env.closeBodyScope(&bodyLog, outerScope, t.name orelse "test");
     const savedThrowCtx = env.throwContext;
     env.throwContext = .unchecked;
     defer env.throwContext = savedThrowCtx;
+
+    // `@src().fnName` inside a test body is the test name, verbatim (decision
+    // 73); an anonymous `test { … }` gets the `test_<idx>` fallback the
+    // commonJS registry gives it (`codegen/commonJS.zig`, `test_entries`).
+    const savedFnName = env.currentFnName;
+    env.currentFnName = t.name orelse try std.fmt.allocPrint(env.arena, "test_{d}", .{env.testIndex});
+    env.testIndex += 1;
+    defer env.currentFnName = savedFnName;
 
     const prevStarFn = env.starFn;
     const prevLabelsLen = env.labelStack.items.len;
@@ -2044,7 +3531,7 @@ fn inferTestDecl(env: *Env, t: ast.TestDecl) InferError!void {
         env.starFn = prevStarFn;
         env.labelStack.shrinkRetainingCapacity(prevLabelsLen);
     }
-    // §A3 follow-up — tests run inside an implicit future context so
+    // §A3 follow-up — tests run inside an implicit task context so
     // callers can `await flush()` / `await fetch(url)` directly in
     // assertions. The lowering side (`commonJS.emitTestFn`) emits an
     // `async function` to match.
@@ -2052,25 +3539,135 @@ fn inferTestDecl(env: *Env, t: ast.TestDecl) InferError!void {
         .allowsAwait = true,
         .allowsYield = false,
         .iterItem = null,
-        .iterCompletion = null,
         .fnLabel = null,
-        .effect = .future,
+        .effect = .task,
     };
     env.labelStack.shrinkRetainingCapacity(0);
 
-    for (t.body) |stmt| {
-        _ = try inferExpr(env, stmt.expr);
+    try refuseRedeclaredBindings(env, t.body, &.{});
+    try inferBodyStmts(env, t.body);
+}
+
+/// One variant of `pub type External implement Annotation { … }` in
+/// `libs/std/src/builtins.d.bp`, and whether it declares `inline: bool = false`.
+pub const ExternalVariant = struct { name: []const u8, declares_inline: bool };
+
+/// The five `External` variants (front 20 F9). `inline` opts a `(target,
+/// method)` pair out of the dispatch table, and exactly two emitters read it —
+/// `codegen/erlang.zig` and `codegen/beam_asm.zig`, each through a
+/// `hasExternalInline` over the LAST argument — so exactly two variants declare
+/// it. On the other three a written `inline` is a switch nothing reads, which
+/// decision 67 refuses rather than accepts and ignores (`refuseUnreadInline`).
+/// `builtins.d.bp` is documentation the compiler does not parse, so the table
+/// is restated here, once, and `comptime/tests/infer_decls.zig` reads the file
+/// and fails in both directions when the two disagree.
+pub const external_variants = [_]ExternalVariant{
+    .{ .name = "Erlang", .declares_inline = true },
+    .{ .name = "Node", .declares_inline = false },
+    .{ .name = "Beam", .declares_inline = true },
+    .{ .name = "Wasm", .declares_inline = false },
+    .{ .name = "Typescript", .declares_inline = false },
+};
+
+/// The `External` variant the annotation names, or null when the path names none
+/// (a lower-case spelling is still matched: `external.erlang` reaches
+/// `refuseLowerCaseExternal` first, and the emitters compare case-insensitively).
+fn externalVariantOf(a: ast.Annotation) ?ExternalVariant {
+    if (!std.mem.startsWith(u8, a.name, "External.")) return null;
+    const variant = a.name["External.".len..];
+    for (external_variants) |v| {
+        if (std.ascii.eqlIgnoreCase(variant, v.name)) return v;
+    }
+    return null;
+}
+
+/// True when `a` writes the `inline` flag: an argument labelled `inline`, or a
+/// bare trailing `true` / `false` after the template — the positional form the
+/// emitters' `hasExternalInline` reads (last argument, literally `true`).
+fn writesInline(a: ast.Annotation) bool {
+    for (a.args, 0..) |arg, i| {
+        if (a.labelOf(i)) |label| {
+            if (std.mem.eql(u8, label, "inline")) return true;
+        } else if (i == a.args.len - 1 and i > 0 and
+            (std.mem.eql(u8, arg, "true") or std.mem.eql(u8, arg, "false")))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Front 20 F9, decision 67 — a written `inline` that no emitter would read is
+/// refused at the annotation rather than accepted as a switch that does
+/// nothing. Three shapes are unread: the flag on a variant that does not
+/// declare it (`Node` / `Wasm` / `Typescript`), the flag anywhere but last
+/// (both `hasExternalInline` read the last argument only), and a value that is
+/// not `true` / `false` (the readers compare against the literal `true`).
+fn refuseUnreadInline(env: *Env, a: ast.Annotation) InferError!void {
+    const v = externalVariantOf(a) orelse return;
+    if (!writesInline(a)) return;
+    const fail = struct {
+        fn fail(e_: *Env, a_: ast.Annotation, msg: []const u8, hint: []const u8) InferError {
+            var e = TypeError.custom(msg, hint);
+            if (a_.loc) |l| e = e.withLoc(l);
+            e_.lastError = e;
+            return error.TypeError;
+        }
+    }.fail;
+    if (!v.declares_inline) {
+        return fail(env, a, try std.fmt.allocPrint(
+            env.arena,
+            "`External.{s}` declares no `inline` — the flag is read by the erlang and beam emitters only",
+            .{v.name},
+        ), try std.fmt.allocPrint(
+            env.arena,
+            "Delete it: on `External.{s}` `inline` is a switch nothing reads. `External.Erlang` and `External.Beam` declare it (`builtins.d.bp`).",
+            .{v.name},
+        ));
+    }
+    for (a.args, 0..) |arg, i| {
+        const labelled = if (a.labelOf(i)) |label| std.mem.eql(u8, label, "inline") else false;
+        const last = i == a.args.len - 1;
+        if (!labelled and !last) continue;
+        if (!last) {
+            return fail(env, a, try std.fmt.allocPrint(
+                env.arena,
+                "`External.{s}`'s `inline` must be the last argument — the emitters read the last argument only",
+                .{v.name},
+            ), "Write the template first: `#[@External.Erlang(\"<template>\", inline = true)]`.");
+        }
+        if (!std.mem.eql(u8, arg, "true") and !std.mem.eql(u8, arg, "false")) {
+            return fail(env, a, try std.fmt.allocPrint(
+                env.arena,
+                "`External.{s}`'s `inline` is a bool, got `{s}`",
+                .{ v.name, arg },
+            ), "Write `inline = true` or `inline = false`.");
+        }
     }
 }
 
-/// Targets accepted by the `external` annotation builtin — must match
-/// `enum Target { node, typescript, erlang, beam, wasm }` in builtins.d.bp.
-const external_targets = [_][]const u8{ "node", "typescript", "erlang", "beam", "wasm" };
+/// The inline rule on every `#[@External.<Target>(…)]` a method carries —
+/// `codegen/erlang.zig` and `codegen/beam_asm.zig` read `hasExternalInline` over
+/// a behavior's and a type's methods, so a flag written there is checked the
+/// same way a `declare fn`'s is (`validateExternalAnnotation`).
+fn validateExternalInline(env: *Env, program: ast.Program) InferError!void {
+    for (program.decls) |decl| switch (decl) {
+        .type_ => |tdecl| for (tdecl.methods) |m| {
+            for (m.annotations) |a| try refuseUnreadInline(env, a);
+        },
+        .behavior => |i| for (i.methods) |m| {
+            for (m.annotations) |a| try refuseUnreadInline(env, a);
+        },
+        else => {},
+    };
+}
 
 /// Type-checks one `external(target, module, symbol)` annotation against its
 /// builtin signature (builtins.d.bp): `fn external(target: Target, module: string, symbol: string)`.
 fn validateExternalAnnotation(env: *Env, f: ast.FnDecl, a: ast.Annotation) InferError!void {
-    const fnLoc: ?ast.Loc = if (f.body.len > 0) f.body[0].expr.getLoc() else null;
+    // 01 step 9 — the annotation itself is the location (a `declare fn` has no
+    // body statement to fall back on).
+    const fnLoc: ?ast.Loc = a.loc orelse if (f.body.len > 0) f.body[0].expr.getLoc() else null;
     const fail = struct {
         fn fail(e_: *Env, loc: ?ast.Loc, msg: []const u8, hint: []const u8) InferError {
             var e = TypeError.custom(msg, hint);
@@ -2085,26 +3682,21 @@ fn validateExternalAnnotation(env: *Env, f: ast.FnDecl, a: ast.Annotation) Infer
     if (!f.isDeclare) {
         return fail(env, fnLoc, "`#[@External.<Target>(…)]` requires a `declare fn` declaration", "Write `#[@External.Erlang( \"string\", \"length\")] pub declare fn length(s: string) -> i32;`");
     }
-    // `External.<Target>(module, symbol)` form: 1-2 body args (symbol alone
-    // or module + symbol). An optional trailing `inline: true`/`false` flag
-    // adds one more arg.
-    var effective_len = a.args.len;
-    if (effective_len >= 2) {
-        const last = a.args[effective_len - 1];
-        if (std.mem.eql(u8, last, "true") or std.mem.eql(u8, last, "false")) {
-            effective_len -= 1;
-        }
+    // target validation: the variant must name a known target.
+    if (externalVariantOf(a) == null) {
+        return fail(env, fnLoc, "`@external` target must be a Target member: node, typescript, erlang, beam or wasm", "Example: #[@External.Erlang( \"string\", \"length\")]");
     }
+    // `inline` (front 20 F9): read on the variants that declare it, refused on
+    // the ones that do not — before the arity count, which would otherwise
+    // report the unread flag as a wrong argument count.
+    try refuseUnreadInline(env, a);
+    // `External.<Target>(module, symbol)` form: 1-2 body args (symbol alone
+    // or module + symbol). The trailing `inline = true`/`false` flag, on a
+    // variant that declares it, adds one more arg.
+    var effective_len = a.args.len;
+    if (effective_len >= 2 and writesInline(a)) effective_len -= 1;
     if (effective_len < 1 or effective_len > 2) {
         return fail(env, fnLoc, "`@external` expects 1 or 2 arguments: module and/or symbol", "Example: #[@External.Erlang( \"string\", \"length\")] or #[@External.Node(\"reverse\")]");
-    }
-    // target validation: the variant must name a known target.
-    const variant = a.name["External.".len..]; // guaranteed non-null by caller
-    const known = for (external_targets) |t| {
-        if (std.ascii.eqlIgnoreCase(variant, t)) break true;
-    } else false;
-    if (!known) {
-        return fail(env, fnLoc, "`@external` target must be a Target member: node, typescript, erlang, beam or wasm", "Example: #[@External.Erlang( \"string\", \"length\")]");
     }
     // remaining args: string literals or `when(argc == N): "<template>"` branches.
     for (a.args[0..effective_len]) |arg| {
@@ -2132,16 +3724,18 @@ fn validateDecorators(env: *Env, program: ast.Program) InferError!void {
     if (env.decorators.count() == 0) return;
     for (program.decls) |decl| switch (decl) {
         .@"fn" => |f| try checkDecoratorAnnotations(env, f.annotations, f.name),
-        .record => |r| {
-            try checkDecoratorAnnotations(env, r.annotations, r.name);
-            for (r.fields) |fld| try checkDecoratorAnnotations(env, fld.annotations, fld.name);
-            for (r.methods) |m| try checkDecoratorAnnotations(env, m.annotations, m.name);
+        .type_ => |tdecl| switch (tdecl.shape) {
+            .record => {
+                try checkDecoratorAnnotations(env, tdecl.annotations, tdecl.name);
+                for (tdecl.recordFields()) |fld| try checkDecoratorAnnotations(env, fld.annotations, fld.name);
+                for (tdecl.methods) |m| try checkDecoratorAnnotations(env, m.annotations, m.name);
+            },
+            .enum_ => {
+                try checkDecoratorAnnotations(env, tdecl.annotations, tdecl.name);
+                for (tdecl.methods) |m| try checkDecoratorAnnotations(env, m.annotations, m.name);
+            },
         },
-        .@"enum" => |e| {
-            try checkDecoratorAnnotations(env, e.annotations, e.name);
-            for (e.methods) |m| try checkDecoratorAnnotations(env, m.annotations, m.name);
-        },
-        .interface => |i| {
+        .behavior => |i| {
             try checkDecoratorAnnotations(env, i.annotations, i.name);
             for (i.methods) |m| try checkDecoratorAnnotations(env, m.annotations, m.name);
         },
@@ -2149,35 +3743,73 @@ fn validateDecorators(env: *Env, program: ast.Program) InferError!void {
     };
 }
 
-/// Reject `#[@<effect>]` annotations where an effect is implementation-only
-/// (F1b): on an interface method, which is declarative and expresses its effect
-/// through the return wrapper alone. (Bodyless top-level `declare fn` is caught
-/// in `inferFnDecl`.)
-fn validateEffectAnnotations(env: *Env, program: ast.Program) InferError!void {
+/// The builtin annotation families: what a `#[@<Family>…]` may name. `External`
+/// (the host targets, `validateExternalAnnotation`), `BeamMemory`
+/// (`validateMemoryAnnotations`) and `Host` (wasm's prelude-backed fns). The
+/// removed effect annotations never reach here — the parser refuses them.
+const builtin_annotation_families = [_][]const u8{ "External", "BeamMemory", "Host" };
+
+/// Decision 15 gives the annotation grammar to the checker, and front 17 step
+/// 3 recorded the hole: `#[@TotallyMadeUp.Nonsense(whatever = 42)]` parsed,
+/// checked and was dropped — on a `fn`, a `var`, a type, a field, a method. A
+/// misspelled family (`#[@BeamMemroy.Ets]`) moves where the state lives with
+/// nothing said. Every `@`-prefixed annotation now names a family the compiler
+/// reads, or an annotation type (`implement @Annotation`) the module can see;
+/// anything else is `unknown-annotation` at the annotation, naming the family
+/// an edit away when there is one. The lower-case `@external` keeps its own
+/// message (`refuseLowerCaseExternal`).
+fn refuseUnknownAnnotations(env: *Env, program: ast.Program) InferError!void {
     for (program.decls) |decl| switch (decl) {
-        .interface => |i| {
-            for (i.methods) |m| {
-                if (effectAnnotationOf(m.annotations) != null) {
-                    env.lastError = TypeError.custom(
-                        "effect annotations mark an implementation; declare the effect in the return type",
-                        "An interface method expresses its effect through the return wrapper (e.g. `-> @Future<T>`), with no annotation.",
-                    );
-                    return error.TypeError;
-                }
-            }
+        .@"fn" => |f| try refuseUnknownAnnotationList(env, f.annotations),
+        .val => |v| try refuseUnknownAnnotationList(env, v.annotations),
+        .type_ => |tdecl| {
+            try refuseUnknownAnnotationList(env, tdecl.annotations);
+            if (tdecl.shape == .record) for (tdecl.recordFields()) |fld| try refuseUnknownAnnotationList(env, fld.annotations);
+            for (tdecl.methods) |m| try refuseUnknownAnnotationList(env, m.annotations);
+        },
+        .behavior => |i| {
+            try refuseUnknownAnnotationList(env, i.annotations);
+            for (i.methods) |m| try refuseUnknownAnnotationList(env, m.annotations);
         },
         else => {},
     };
 }
 
-/// The effect named by a builtin `#[@<effect>]` annotation, or null.
-fn effectAnnotationOf(anns: []const ast.Annotation) ?ast.EffectKind {
+fn refuseUnknownAnnotationList(env: *Env, anns: []const ast.Annotation) InferError!void {
     for (anns) |a| {
-        if (a.is_builtin) {
-            if (ast.EffectKind.fromAnnotationName(a.name)) |k| return k;
+        if (!a.is_builtin) {
+            // `#[mocks.mokc]` through a std module handle names a decorator
+            // of that module or nothing: it used to do nothing, silently.
+            const dot = std.mem.indexOfScalar(u8, a.name, '.') orelse continue;
+            const mod = env.stdDecoratorHandles.get(a.name[0..dot]) orelse continue;
+            if (env.decorators.contains(a.name)) continue;
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: std module `{s}` has no decorator `{s}`", .{ diagnostics.unknown_annotation, mod, a.name[dot + 1 ..] });
+            var err = TypeError.custom(msg, "A std module's decorators are its `pub fn`s whose first parameter is `comptime decl: @Decl`.");
+            if (a.loc) |l| err = err.withLoc(l);
+            env.lastError = err;
+            return error.TypeError;
         }
+        try refuseLowerCaseExternal(env, a);
+        if (ast.isRemovedEffectAnnotation(a.name)) continue;
+        const family = if (std.mem.indexOfScalar(u8, a.name, '.')) |i| a.name[0..i] else a.name;
+        var known = false;
+        for (builtin_annotation_families) |k| {
+            if (std.mem.eql(u8, family, k)) known = true;
+        }
+        if (known or env.decorators.contains(a.name)) continue;
+        var near: ?[]const u8 = null;
+        for (builtin_annotation_families) |k| {
+            if (editDistanceIsOne(family, k)) near = k;
+        }
+        const msg = if (near) |n|
+            try std.fmt.allocPrint(env.arena, "{s}: `#[@{s}]` names no annotation family — did you mean `@{s}`?", .{ diagnostics.unknown_annotation, a.name, n })
+        else
+            try std.fmt.allocPrint(env.arena, "{s}: `#[@{s}]` names no annotation family", .{ diagnostics.unknown_annotation, a.name });
+        var e = TypeError.custom(msg, "The builtin annotations are `@External.<Target>`, `@BeamMemory.<Mode>` and `@Host`; an annotation type of your own (`implement @Annotation`) is written without the `@`.");
+        if (a.loc) |l| e = e.withLoc(l);
+        env.lastError = e;
+        return error.TypeError;
     }
-    return null;
 }
 
 /// Check one declaration's annotation list. `owner` names the annotated
@@ -2195,21 +3827,26 @@ fn checkDecoratorAnnotations(env: *Env, anns: []const ast.Annotation, owner: []c
 /// (honoring trailing defaults) + a per-argument lexical kind check (string /
 /// numeric / bool / enum-member), mirroring `validateExternalAnnotation`.
 fn checkDecoratorArgs(env: *Env, a: ast.Annotation, sig: envMod.DecoratorSig, owner: []const u8) InferError!void {
-    const fail = struct {
-        fn fail(e_: *Env, msg: []const u8, hint: []const u8) InferError {
-            e_.lastError = TypeError.custom(msg, hint);
-            return error.TypeError;
-        }
-    }.fail;
-
-    // Arity: required params (no default) ≤ args ≤ total params.
+    // Arity: required params ≤ args ≤ total params. A parameter is optional
+    // only when its default is closed (`comptimeMod.isClosedDefault`): the
+    // decorator body runs in its own module, where a default naming a binding
+    // of the declaring module has nothing to read — the same rule C-04 applies
+    // to a function's default across a module boundary.
     var required: usize = 0;
-    for (sig.params) |p| {
-        if (p.default == null) required += 1;
+    for (sig.params, 0..) |p, i| {
+        const closed = if (p.default) |d| isClosedDefault(d) else false;
+        if (!closed) required = i + 1;
+    }
+    if (a.args.len < required) {
+        const p = sig.params[required - 1];
+        if (p.default != null) {
+            const msg = try std.fmt.allocPrint(env.arena, "`#[{s}]` on `{s}` leaves out `{s}`, whose default names a binding the decorator body cannot read", .{ a.name, owner, p.name });
+            return decoratorError(env, a, msg, "A decorator argument's default must be closed — a literal, `true` / `false`, a sign, or an array / tuple of those; otherwise pass the argument.");
+        }
     }
     if (a.args.len < required or a.args.len > sig.params.len) {
         const msg = try std.fmt.allocPrint(env.arena, "`#[{s}]` on `{s}` expects {d} argument(s), got {d}", .{ a.name, owner, sig.params.len, a.args.len });
-        return fail(env, msg, "Match the decorator's declared parameters (after the leading `comptime _: @Decl`).");
+        return decoratorError(env, a, msg, "Match the decorator's declared parameters (after the leading `comptime _: @Decl`).");
     }
 
     // Per-argument kind check against the declared parameter type.
@@ -2217,7 +3854,8 @@ fn checkDecoratorArgs(env: *Env, a: ast.Annotation, sig: envMod.DecoratorSig, ow
         const want = paramTypeName(sig.params[i].typeRef) orelse continue; // non-simple type → lenient
         if (!argMatchesType(arg, want)) {
             const msg = try std.fmt.allocPrint(env.arena, "`#[{s}]` argument {d} must be {s}", .{ a.name, i + 1, want });
-            return fail(env, msg, "Decorator arguments are type-checked against the decorator's signature.");
+            // C-21 — located at the annotation, as every decorator refusal is.
+            return decoratorError(env, a, msg, "Decorator arguments are type-checked against the decorator's signature.");
         }
     }
 }
@@ -2231,146 +3869,291 @@ fn checkDecoratorArgs(env: *Env, a: ast.Annotation, sig: envMod.DecoratorSig, ow
 // in the full compile pipeline (`env.templateEval` set, node available); tooling
 // paths (LSP / compileTypesOnly) skip it.
 
-/// Render a `TypeRef` as the simple type name a `@Decl` handle exposes
-/// (best-effort: the named/generic head, else empty).
-fn declTypeName(tr: ast.TypeRef) []const u8 {
+/// Render a `TypeRef` as the type name a `@Decl` handle exposes: the type as
+/// the source spells it (`TypeRef.format`) — `string`, `Array<string>`,
+/// `string[]`, `fn(i32) -> i32`, `#(string, string)`, `?i32`,
+/// `@Task<HandlerResponse>`. Never erased to a head and never empty: a
+/// decorator that admits `Array<string>` must be able to refuse
+/// `Array<Element>`.
+fn declTypeName(arena: std.mem.Allocator, tr: ast.TypeRef) std.mem.Allocator.Error![]const u8 {
     return switch (tr) {
         .named => |n| n,
-        .generic => |g| g.name,
-        else => "",
+        else => std.fmt.allocPrint(arena, "{f}", .{tr}),
     };
 }
 
-fn appendAnnotationsJson(buf: *std.ArrayList(u8), arena: std.mem.Allocator, anns: []const ast.Annotation) !void {
-    try buf.append(arena, '[');
-    var first = true;
-    for (anns) |a| {
-        if (a.is_builtin) continue;
-        if (!first) try buf.append(arena, ',');
-        first = false;
-        try buf.appendSlice(arena, "{\"name\":");
-        try template.appendJsonString(buf, arena, a.name);
-        try buf.appendSlice(arena, ",\"args\":[");
-        for (a.args, 0..) |arg, i| {
-            if (i > 0) try buf.append(arena, ',');
-            try template.appendJsonString(buf, arena, arg);
-        }
-        try buf.appendSlice(arena, "]}");
-    }
-    try buf.append(arena, ']');
-}
-
-fn appendParamsJson(buf: *std.ArrayList(u8), arena: std.mem.Allocator, params: []const ast.Param) !void {
-    try buf.append(arena, '[');
-    for (params, 0..) |p, i| {
-        if (i > 0) try buf.append(arena, ',');
-        try buf.appendSlice(arena, "{\"name\":");
-        try template.appendJsonString(buf, arena, p.name);
-        try buf.appendSlice(arena, ",\"typeName\":");
-        try template.appendJsonString(buf, arena, declTypeName(p.typeRef));
-        try buf.append(arena, '}');
-    }
-    try buf.append(arena, ']');
-}
-
-fn appendMethodsJson(buf: *std.ArrayList(u8), arena: std.mem.Allocator, methods: []const ast.InterfaceMethod) !void {
-    try buf.append(arena, '[');
-    for (methods, 0..) |m, i| {
-        if (i > 0) try buf.append(arena, ',');
-        try buf.appendSlice(arena, "{\"name\":");
-        try template.appendJsonString(buf, arena, m.name);
-        try buf.appendSlice(arena, ",\"params\":");
-        try appendParamsJson(buf, arena, m.params);
-        try buf.appendSlice(arena, ",\"returnType\":");
-        try template.appendJsonString(buf, arena, if (m.returnType) |rt| declTypeName(rt) else "");
-        try buf.appendSlice(arena, ",\"annotations\":");
-        try appendAnnotationsJson(buf, arena, m.annotations);
-        try buf.append(arena, '}');
-    }
-    try buf.append(arena, ']');
-}
-
-const HandleField = struct { name: []const u8, typeName: []const u8, annotations: []const ast.Annotation = &.{} };
-
-/// Build a `@Decl` handle JSON for any annotated declaration. `fields`/`methods`
-/// default to empty for the kinds that have none; `returnType` is the empty
-/// string except for a fn/method.
-fn buildHandleJson(
-    arena: std.mem.Allocator,
-    kind: []const u8,
-    name: []const u8,
-    fields: []const HandleField,
-    methods: []const ast.InterfaceMethod,
-    returnType: []const u8,
-    annotations: []const ast.Annotation,
-) ![]const u8 {
-    var buf: std.ArrayList(u8) = .empty;
-    try buf.appendSlice(arena, "{\"kind\":");
-    try template.appendJsonString(&buf, arena, kind);
-    try buf.appendSlice(arena, ",\"name\":");
-    try template.appendJsonString(&buf, arena, name);
-    try buf.appendSlice(arena, ",\"fields\":[");
-    for (fields, 0..) |f, i| {
-        if (i > 0) try buf.append(arena, ',');
-        try buf.appendSlice(arena, "{\"name\":");
-        try template.appendJsonString(&buf, arena, f.name);
-        try buf.appendSlice(arena, ",\"typeName\":");
-        try template.appendJsonString(&buf, arena, f.typeName);
-        try buf.appendSlice(arena, ",\"annotations\":");
-        try appendAnnotationsJson(&buf, arena, f.annotations);
-        try buf.append(arena, '}');
-    }
-    try buf.appendSlice(arena, "],\"methods\":");
-    try appendMethodsJson(&buf, arena, methods);
-    try buf.appendSlice(arena, ",\"returnType\":");
-    try template.appendJsonString(&buf, arena, returnType);
-    try buf.appendSlice(arena, ",\"annotations\":");
-    try appendAnnotationsJson(&buf, arena, annotations);
-    try buf.append(arena, '}');
-    return buf.toOwnedSlice(arena);
-}
-
 /// Run every body-carrying decorator applied to one declaration over its handle.
+/// `memberOwner` is the type a `decl.addMember` joins (decision 216): the
+/// annotated type itself, the type that owns an annotated field or method, and
+/// null for a function — which has no body a member could join.
 fn runDeclDecorators(
     env: *Env,
     ctx: envMod.TemplateEvalCtx,
     anns: []const ast.Annotation,
-    handleJson: []const u8,
+    handle: decoratorEval.DeclHandle,
+    memberOwner: ?[]const u8,
+    /// Set for a top-level declaration: what `@TypeInfo.all` records of it.
+    declared: ?struct { kind: reflectionMod.DeclaredEntry.Kind, isPub: bool },
 ) InferError!void {
     for (anns) |a| {
         if (a.is_builtin) continue;
         const sig = env.decorators.get(a.name) orelse continue;
         const dfn = sig.fn_decl orelse continue; // bodyless `declare fn` marker
         if (dfn.body.len == 0) continue; // empty body — nothing to run
+        // Decision 216 (4) — the program's catalogue, in the order decorators run.
+        if (declared) |d| if (env.reflection) |r| try r.addDeclared(.{
+            .module = env.modulePath,
+            .name = handle.name,
+            .kind = d.kind,
+            .isPub = d.isPub,
+            .returnTypeName = if (d.kind == .function) handle.returnType else "",
+            .decorator_owner = env.comptimeOwnerOf(dfn),
+            .decorator_name = dfn.name,
+            .seq = 0,
+        });
 
-        var plain = try env.arena.alloc(template.PlainArg, a.args.len);
-        for (a.args, 0..) |arg, i| {
+        // A parameter the annotation leaves out takes its declared default,
+        // written as the lexeme an annotation argument would be (arity was
+        // checked: every omitted parameter has a closed default).
+        const given = a.args.len;
+        var total = given;
+        while (total < sig.params.len) : (total += 1) {
+            const d = sig.params[total].default orelse break;
+            if (!isClosedDefault(d)) break;
+        }
+        var plain = try env.arena.alloc(template.PlainArg, total);
+        for (0..total) |i| {
             const pname = if (i < sig.params.len) sig.params[i].name else "_";
-            plain[i] = .{ .paramName = pname, .jsValue = arg };
+            const source = if (i < given) a.args[i] else try defaultLexeme(env.arena, sig.params[i].default.?);
+            plain[i] = .{ .paramName = pname, .source = source };
         }
 
-        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, dfn, handleJson, plain) catch {
-            env.lastError = TypeError.custom(
-                "the decorator evaluator failed to run",
-                "Decorator bodies run in the node runtime at compile time — check that `node` is available.",
-            );
-            return error.TypeError;
+        // Diagnostics point at the annotation. A `failAt` span has no source text
+        // to map onto for a declaration, so it is reported at the annotation too.
+        const owner = env.comptimeOwnerOf(dfn);
+        const local = std.mem.eql(u8, owner, env.modulePath);
+        const found: Support = if (local)
+            try decoratorSupport(env.arena, env.fnDecls, &env.importedFnSupport, dfn)
+        else
+            .{ .fns = sig.support, .conflict = sig.conflict };
+        if (found.conflict) |c| return decoratorError(env, a, c, "Rename one of the two functions, so each name the decorator reaches is one function.");
+        const support = found.fns;
+        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, dfn, support, handle, plain, &env.comptimeTraces) catch {
+            return decoratorError(env, a, "the decorator evaluator failed to run", "Decorator bodies run in a persistent `erl` process at compile time — check that `erl` and `erlc` are on PATH.");
         };
         switch (outcome) {
-            .ok => |contributions| {
+            .ok => |contributions| for (contributions) |c| switch (c.kind) {
                 // `@emit(...)` sources — spliced into the module by `analyzeModule`.
-                for (contributions) |src| try env.contributions.append(env.arena, src);
+                .emit => try env.contributions.append(env.arena, c.source),
+                // `decl.addMember(source)` — parsed into the owner's body by
+                // `analyzeSource` (decision 216 (1)).
+                .member => {
+                    const target = memberOwner orelse {
+                        const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` on the function `{s}` calls `decl.addMember`, and a member belongs to a type", .{ diagnostics.decorator_member_without_type, a.name, handle.name });
+                        return decoratorError(env, a, msg, "`decl.addMember(source)` adds to the annotated `type` or `behavior` (or to the type that owns an annotated field or method); a function has no body to add to.");
+                    };
+                    try env.memberContributions.append(env.arena, .{ .target = target, .source = c.source, .loc = a.loc, .decorator = a.name });
+                },
+                // `decl.addType(name, source)` (decision 216 (3)) — an
+                // associated type of the owner, merged as `__Owner__Name`.
+                .assoc => {
+                    const assoc_owner = memberOwner orelse {
+                        const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` on the function `{s}` calls `decl.addType`, and an associated type belongs to a type", .{ diagnostics.decorator_type_without_owner, a.name, handle.name });
+                        return decoratorError(env, a, msg, "`decl.addType(name, source)` declares a type named through the annotated `type` or `behavior` (`City.Columns`); a function has none.");
+                    };
+                    const valid = c.name.len > 0 and std.ascii.isUpper(c.name[0]) and for (c.name) |ch| {
+                        if (!std.ascii.isAlphanumeric(ch)) break false;
+                    } else true;
+                    if (!valid) {
+                        const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` names an associated type of `{s}` `{s}`, which is not a type name", .{ diagnostics.decorator_type_name, a.name, assoc_owner, c.name });
+                        return decoratorError(env, a, msg, "An associated type is named like any type: one identifier of letters and digits, starting upper-case (`Columns`, read `City.Columns`).");
+                    }
+                    if (env.reflection) |r| if (!try r.addAssoc(env.modulePath, assoc_owner, c.name)) {
+                        const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` declares `{s}.{s}`, and `{s}` already has an associated type `{s}`", .{ diagnostics.decorator_type_duplicate, a.name, assoc_owner, c.name, assoc_owner, c.name });
+                        return decoratorError(env, a, msg, "An owner's associated types have one name each; rename the one this decorator declares.");
+                    };
+                    try env.typeContributions.append(env.arena, .{ .owner = assoc_owner, .name = c.name, .source = c.source, .loc = a.loc, .decorator = a.name });
+                },
+                // `decl.setMeta(key, value)` (decision 216 (2)) — recorded in
+                // the session's reflection under the decorator's own name,
+                // before any body of this module is inferred.
+                .meta => {
+                    const is_member = std.mem.eql(u8, handle.kind, "Field") or std.mem.eql(u8, handle.kind, "Method");
+                    if (is_member) {
+                        const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` on the {s} `{s}` calls `decl.setMeta`, and meta describes a top-level declaration", .{ diagnostics.decorator_meta_on_member, a.name, if (std.mem.eql(u8, handle.kind, "Field")) "field" else "method", handle.name });
+                        return decoratorError(env, a, msg, "`@typeInfo(X)` reflects a `type`, a `behavior` or a `fn`; set the meta from a decorator on the declaration itself.");
+                    }
+                    const r = env.reflection orelse continue;
+                    if (!try r.addMeta(env.modulePath, handle.name, .{ .decorator = dfn.name, .key = c.key, .value = c.value })) {
+                        const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` sets `{s}` on `{s}` twice", .{ diagnostics.decorator_meta_duplicate, a.name, c.key, handle.name });
+                        return decoratorError(env, a, msg, "A decorator sets each of its keys once per declaration; `@typeInfo(X).meta` answers one value per key.");
+                    }
+                },
             },
-            .fail => |fl| {
-                env.lastError = TypeError.custom(fl.message, "raised by the decorator via `fail`/`failAt`");
-                return error.TypeError;
-            },
-            .err => |m| {
-                env.lastError = TypeError.custom(m, "the decorator body raised an unexpected error");
-                return error.TypeError;
-            },
+            .fail => |fl| return decoratorError(env, a, fl.message, "raised by the decorator via `fail`/`failAt`"),
+            .err => |m| return decoratorError(env, a, m, "the decorator could not be evaluated"),
         }
     }
+}
+
+/// A closed default (`comptimeMod.isClosedDefault`) as the source lexeme an
+/// annotation argument carries: the formatter's rendering of the expression.
+fn defaultLexeme(arena: std.mem.Allocator, e: ast.Expr) InferError![]const u8 {
+    var f = formatMod.Formatter.init(arena);
+    const doc = f.fmtExpr(e) catch return error.OutOfMemory;
+    return formatMod.render(arena, doc, std.math.maxInt(u16)) catch return error.OutOfMemory;
+}
+
+fn decoratorError(env: *Env, a: ast.Annotation, message: []const u8, hint: []const u8) InferError {
+    var e = TypeError.custom(message, hint);
+    if (a.loc) |loc| e = e.withLoc(loc);
+    env.lastError = e;
+    return error.TypeError;
+}
+
+/// Decision 216 (3) — a dotted type name the first analysis accepted on
+/// credit (`Env.assocTypesPending`) and no decorator of the module declared:
+/// with no re-analysis to follow, it is the unknown type it looks like. Tooling
+/// that runs no decorator keeps it lenient.
+fn refusePendingAssocType(env: *Env) InferError!void {
+    const p = env.pendingAssocTypeName orelse return;
+    env.pendingAssocTypeName = null;
+    if (env.templateEval == null) return;
+    var e = TypeError.unknownTypeName(p.name);
+    if (p.loc) |l| e = e.withLoc(l);
+    env.lastError = e;
+    return error.TypeError;
+}
+
+/// The names `program` declares at top level (`Env.ownDecls`) — what
+/// `@typeInfo(Name)` reflects in this module.
+fn noteOwnDecls(env: *Env, program: ast.Program) InferError!void {
+    for (program.decls) |decl| {
+        const name: []const u8 = switch (decl) {
+            .@"fn" => |f| f.name,
+            .type_ => |t| t.name,
+            .behavior => |b| b.name,
+            .val => |v| v.name,
+            else => continue,
+        };
+        try env.ownDecls.put(env.arena, name, {});
+    }
+}
+
+/// The declaration `@typeInfo(<expr>)` reflects: the module that declares it
+/// and the name it is declared under. `Name` is this module's own declaration
+/// or an imported one (an alias answers the declaration, decision 110);
+/// `ns.Name` is `Name` of the module the namespace import `ns` binds.
+fn reflectedDecl(env: *Env, e: ast.Expr) ?struct { module: []const u8, name: []const u8 } {
+    if (e != .identifier) return null;
+    switch (e.identifier.kind) {
+        .ident => |n| {
+            if (env.ownDecls.contains(n)) return .{ .module = env.modulePath, .name = n };
+            if (env.importOwners.get(n)) |o| return .{ .module = o.owner, .name = o.name };
+            return null;
+        },
+        .identAccess => |ia| {
+            if (ia.receiver.* != .identifier or ia.receiver.identifier.kind != .ident) return null;
+            const path = env.namespaces.paths.get(ia.receiver.identifier.kind.ident) orelse return null;
+            return .{ .module = path, .name = ia.member };
+        },
+        else => return null,
+    }
+}
+
+/// A string as the source text of a string literal (`stringLit` keeps the
+/// escapes as written; every backend emits them).
+fn stringLiteralText(arena: std.mem.Allocator, text: []const u8) ![]const u8 {
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    for (text) |ch| switch (ch) {
+        '\\' => try out.appendSlice(arena, "\\\\"),
+        '"' => try out.appendSlice(arena, "\\\""),
+        '\n' => try out.appendSlice(arena, "\\n"),
+        '\t' => try out.appendSlice(arena, "\\t"),
+        '\r' => try out.appendSlice(arena, "\\r"),
+        else => try out.append(arena, ch),
+    };
+    return out.items;
+}
+
+/// Decision 216 (2) — a reflection read: `@typeInfo(X).name` and
+/// `@typeInfo(X).meta.<decorator>.<key>`, answered at compile time as a string
+/// constant (`env.srcRewrites` puts the literal in the read's place, the way
+/// `@src()` is spliced; `transform.zig` replaces the access node at its loc).
+/// Null when `ia` is not the end of such a read — a longer chain
+/// (`….table.length`) reaches the read as its receiver.
+fn inferTypeinfoRead(env: *Env, ia: anytype, loc: ast.Loc) InferError!?TypedExpr {
+    var members: [8][]const u8 = undefined;
+    var count: usize = 1;
+    members[0] = ia.member;
+    var node = ia.receiver;
+    while (node.* == .identifier and node.identifier.kind == .identAccess) {
+        if (count == members.len) return null;
+        members[count] = node.identifier.kind.identAccess.member;
+        count += 1;
+        node = node.identifier.kind.identAccess.receiver;
+    }
+    if (node.* != .call or node.call.kind != .call) return null;
+    const call = node.call.kind.call;
+    if (!call.is_builtin or !std.mem.eql(u8, call.callee, "typeInfo")) return null;
+    std.mem.reverse([]const u8, members[0..count]);
+    const chain = members[0..count];
+
+    const read: enum { name, meta } = if (std.mem.eql(u8, chain[0], "name")) .name else if (std.mem.eql(u8, chain[0], "meta")) .meta else {
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `@typeInfo(…)` has no member `{s}`", .{ diagnostics.typeinfo_unknown_member, chain[0] });
+        env.lastError = TypeError.custom(msg, "Read `.name` (the declaration's name) or `.meta.<decorator>.<key>` (what a decorator recorded with `decl.setMeta`).").withLoc(loc);
+        return error.TypeError;
+    };
+    const complete: usize = if (read == .name) 1 else 3;
+    if (chain.len > complete) return null;
+    if (chain.len < complete) {
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `@typeInfo(…).{s}` names a decorator's meta without its key", .{ diagnostics.typeinfo_unknown_member, std.mem.join(env.arena, ".", chain) catch return error.OutOfMemory });
+        env.lastError = TypeError.custom(msg, "A meta read is `.meta.<decorator>.<key>` — the decorator's own name, then the key it set.").withLoc(loc);
+        return error.TypeError;
+    }
+
+    if (call.args.len != 1 or call.trailing.len != 0) {
+        env.lastError = TypeError.custom(diagnostics.typeinfo_unknown_declaration ++ ": `@typeInfo` takes one declaration — `@typeInfo(City)`, `@typeInfo(models.City)`", null).withLoc(node.call.loc);
+        return error.TypeError;
+    }
+    const target = reflectedDecl(env, call.args[0].value.*) orelse {
+        const arg_loc = call.args[0].value.getLoc();
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `@typeInfo` reflects a declaration this module declares or imports, and this names none", .{diagnostics.typeinfo_unknown_declaration});
+        env.lastError = TypeError.custom(msg, "Name a `type`, `behavior` or `fn` of this module, an imported one, or one through a namespace import (`models.City`).").withLoc(arg_loc);
+        return error.TypeError;
+    };
+
+    const value: []const u8 = switch (read) {
+        .name => target.name,
+        .meta => value: {
+            const decorator = chain[1];
+            const key = chain[2];
+            const r = env.reflection orelse break :value "";
+            const entries = try r.metaOf(env.arena, target.module, target.name);
+            for (entries) |entry| {
+                if (std.mem.eql(u8, entry.decorator, decorator) and std.mem.eql(u8, entry.key, key)) break :value entry.value;
+            }
+            // Tooling that does not run decorators reads an empty constant
+            // rather than refuse what the build accepts.
+            if (env.templateEval == null) break :value "";
+            var set: std.ArrayListUnmanaged(u8) = .empty;
+            for (entries) |entry| {
+                if (set.items.len > 0) try set.appendSlice(env.arena, ", ");
+                try set.print(env.arena, "`{s}.{s}`", .{ entry.decorator, entry.key });
+            }
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` has no meta `{s}.{s}`; {s}", .{
+                diagnostics.typeinfo_meta_missing,                                                                                 target.name, decorator, key,
+                if (set.items.len == 0) "no decorator set any" else try std.fmt.allocPrint(env.arena, "it has {s}", .{set.items}),
+            });
+            env.lastError = TypeError.custom(msg, "A key is what the decorator passed to `decl.setMeta(key, value)`, read under the decorator's own name.").withLoc(loc);
+            return error.TypeError;
+        },
+    };
+
+    const rewrite = try env.arena.create(ast.Expr);
+    rewrite.* = .{ .literal = .{ .loc = loc, .kind = .{ .stringLit = try stringLiteralText(env.arena, value) } } };
+    try env.srcRewrites.put(loc, rewrite);
+    return try inferExprTyped(env, rewrite.*);
 }
 
 /// Walk `program` and run body-carrying decorators over every annotated
@@ -2382,42 +4165,118 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
     const ctx = env.templateEval orelse return;
     for (program.decls) |decl| switch (decl) {
         .@"fn" => |f| {
-            const h = try buildHandleJson(env.arena, "Fn", f.name, &.{}, &.{}, if (f.returnType) |rt| declTypeName(rt) else "", f.annotations);
-            try runDeclDecorators(env, ctx, f.annotations, h);
+            const h = decoratorEval.DeclHandle{
+                .kind = "Fn",
+                .name = f.name,
+                .fields = &.{},
+                .methods = &.{},
+                .returnType = if (f.returnType) |rt| try declTypeName(env.arena, rt) else "",
+                .annotations = f.annotations,
+            };
+            try runDeclDecorators(env, ctx, f.annotations, h, null, .{ .kind = .function, .isPub = f.isPub });
         },
-        .record => |r| {
-            var fields = try env.arena.alloc(HandleField, r.fields.len);
-            for (r.fields, 0..) |fld, i| fields[i] = .{ .name = fld.name, .typeName = declTypeName(fld.typeRef), .annotations = fld.annotations };
-            const h = try buildHandleJson(env.arena, "Record", r.name, fields, r.methods, "", r.annotations);
-            try runDeclDecorators(env, ctx, r.annotations, h);
-            for (r.fields) |fld| {
-                const fh = try buildHandleJson(env.arena, "Field", fld.name, &.{}, &.{}, declTypeName(fld.typeRef), fld.annotations);
-                try runDeclDecorators(env, ctx, fld.annotations, fh);
-            }
-            for (r.methods) |m| {
-                const mh = try buildHandleJson(env.arena, "Method", m.name, &.{}, &.{}, if (m.returnType) |rt| declTypeName(rt) else "", m.annotations);
-                try runDeclDecorators(env, ctx, m.annotations, mh);
-            }
+        .type_ => |tdecl| switch (tdecl.shape) {
+            .record => {
+                var fields = try env.arena.alloc(decoratorEval.FieldHandle, tdecl.recordFields().len);
+                for (tdecl.recordFields(), 0..) |fld, i| {
+                    fields[i] = .{
+                        .name = fld.name,
+                        .typeName = try declTypeName(env.arena, fld.typeRef),
+                        .annotations = fld.annotations,
+                    };
+                }
+                const h = decoratorEval.DeclHandle{
+                    .kind = "Type",
+                    .name = tdecl.name,
+                    .fields = fields,
+                    .methods = tdecl.methods,
+                    .returnType = "",
+                    .annotations = tdecl.annotations,
+                };
+                try runDeclDecorators(env, ctx, tdecl.annotations, h, tdecl.name, .{ .kind = .type_, .isPub = tdecl.isPub });
+                for (tdecl.recordFields()) |fld| {
+                    const fh = decoratorEval.DeclHandle{
+                        .kind = "Field",
+                        .name = fld.name,
+                        .fields = &.{},
+                        .methods = &.{},
+                        .returnType = try declTypeName(env.arena, fld.typeRef),
+                        .annotations = fld.annotations,
+                    };
+                    try runDeclDecorators(env, ctx, fld.annotations, fh, tdecl.name, null);
+                }
+                for (tdecl.methods) |m| {
+                    const mh = decoratorEval.DeclHandle{
+                        .kind = "Method",
+                        .name = m.name,
+                        .fields = &.{},
+                        .methods = &.{},
+                        .returnType = if (m.returnType) |rt| try declTypeName(env.arena, rt) else "",
+                        .annotations = m.annotations,
+                    };
+                    try runDeclDecorators(env, ctx, m.annotations, mh, tdecl.name, null);
+                }
+            },
+            .enum_ => {
+                const vs = tdecl.variants();
+                const secs = tdecl.sections();
+                const names = try env.arena.alloc([]const u8, vs.len + secs.len);
+                for (vs, 0..) |v, i| names[i] = v.name;
+                for (secs, 0..) |sec, i| names[vs.len + i] = sec.name;
+                const h = decoratorEval.DeclHandle{
+                    .kind = "Type",
+                    .name = tdecl.name,
+                    .fields = &.{},
+                    .variants = names,
+                    .methods = tdecl.methods,
+                    .returnType = "",
+                    .annotations = tdecl.annotations,
+                };
+                try runDeclDecorators(env, ctx, tdecl.annotations, h, tdecl.name, .{ .kind = .type_, .isPub = tdecl.isPub });
+                for (tdecl.methods) |m| {
+                    const mh = decoratorEval.DeclHandle{
+                        .kind = "Method",
+                        .name = m.name,
+                        .fields = &.{},
+                        .methods = &.{},
+                        .returnType = if (m.returnType) |rt| try declTypeName(env.arena, rt) else "",
+                        .annotations = m.annotations,
+                    };
+                    try runDeclDecorators(env, ctx, m.annotations, mh, tdecl.name, null);
+                }
+            },
         },
-        .@"enum" => |e| {
-            const h = try buildHandleJson(env.arena, "Enum", e.name, &.{}, e.methods, "", e.annotations);
-            try runDeclDecorators(env, ctx, e.annotations, h);
-            for (e.methods) |m| {
-                const mh = try buildHandleJson(env.arena, "Method", m.name, &.{}, &.{}, if (m.returnType) |rt| declTypeName(rt) else "", m.annotations);
-                try runDeclDecorators(env, ctx, m.annotations, mh);
-            }
-        },
-        .interface => |i| {
-            // Interface-level markers (`#[mock]`) reflect with kind `Interface`,
+        .behavior => |i| {
+            // Behavior-level markers (`#[mock]`) reflect with kind `Behavior`,
             // exposing the interface's fields + method signatures. Its methods also
             // reflect individually (`#[getMapping]` on a route) as `Method`.
-            var fields = try env.arena.alloc(HandleField, i.fields.len);
-            for (i.fields, 0..) |fld, idx| fields[idx] = .{ .name = fld.name, .typeName = fld.typeName };
-            const h = try buildHandleJson(env.arena, "Interface", i.name, fields, i.methods, "", i.annotations);
-            try runDeclDecorators(env, ctx, i.annotations, h);
+            var fields = try env.arena.alloc(decoratorEval.FieldHandle, i.fields.len);
+            for (i.fields, 0..) |fld, idx| {
+                fields[idx] = .{
+                    .name = fld.name,
+                    .typeName = try declTypeName(env.arena, fld.typeRef),
+                    .annotations = &.{},
+                };
+            }
+            const h = decoratorEval.DeclHandle{
+                .kind = "Behavior",
+                .name = i.name,
+                .fields = fields,
+                .methods = i.methods,
+                .returnType = "",
+                .annotations = i.annotations,
+            };
+            try runDeclDecorators(env, ctx, i.annotations, h, i.name, .{ .kind = .behavior, .isPub = i.isPub });
             for (i.methods) |m| {
-                const mh = try buildHandleJson(env.arena, "Method", m.name, &.{}, &.{}, if (m.returnType) |rt| declTypeName(rt) else "", m.annotations);
-                try runDeclDecorators(env, ctx, m.annotations, mh);
+                const mh = decoratorEval.DeclHandle{
+                    .kind = "Method",
+                    .name = m.name,
+                    .fields = &.{},
+                    .methods = &.{},
+                    .returnType = if (m.returnType) |rt| try declTypeName(env.arena, rt) else "",
+                    .annotations = m.annotations,
+                };
+                try runDeclDecorators(env, ctx, m.annotations, mh, i.name, null);
             }
         },
         else => {},
@@ -2455,14 +4314,28 @@ fn argMatchesType(arg: []const u8, typeName: []const u8) bool {
     return true; // enum member / named type → lenient (full check is the body's job).
 }
 
+/// The index of the element labeled `label` (decision 8 §6), or null when no
+/// element carries that label or two do (an ambiguous label names nothing).
+fn tupleLabelIndex(labels: []const []const u8, label: []const u8) ?usize {
+    var found: ?usize = null;
+    for (labels, 0..) |l, i| {
+        if (!std.mem.eql(u8, l, label)) continue;
+        if (found != null) return null;
+        found = i;
+    }
+    return found;
+}
+
 /// Parse a tuple-index member name (`_0`, `_1`, …) into its integer index.
 /// Returns null for any other member name. Mirrors codegen's tupleIndexMember.
 fn tupleMemberIndex(member: []const u8) ?usize {
-    if (member.len < 2 or member[0] != '_') return null;
-    for (member[1..]) |ch| {
+    // `t._N` and the bare `t.N` both name element N.
+    const digits = if (member.len > 0 and member[0] == '_') member[1..] else member;
+    if (digits.len == 0) return null;
+    for (digits) |ch| {
         if (!std.ascii.isDigit(ch)) return null;
     }
-    return std.fmt.parseInt(usize, member[1..], 10) catch null;
+    return std.fmt.parseInt(usize, digits, 10) catch null;
 }
 
 /// True when `name` names a registered type definition with generic params.
@@ -2494,7 +4367,7 @@ fn instantiateCtorType(env: *Env, callee: []const u8, ctorType: *T.Type) InferEr
 /// line up — never worse than the previous behavior.
 fn instantiateFieldType(env: *Env, typeName: []const u8, instArgs: []*T.Type, fieldType: *T.Type) InferError!*T.Type {
     if (instArgs.len == 0) return fieldType;
-    const ctor = env.lookup(typeName) orelse return fieldType;
+    const ctor = env.lookup(typeName) orelse env.typeOnlyCtors.get(typeName) orelse return fieldType;
     const ctorResolved = ctor.deref();
     if (ctorResolved.* != .func) return fieldType;
     const ret = ctorResolved.func.ret.deref();
@@ -2546,7 +4419,11 @@ fn instantiateType(env: *Env, ty: *T.Type, seen: *std.AutoHashMap(*T.TypeCell, *
             const args = try env.arena.alloc(*T.Type, n.args.len);
             for (n.args, 0..) |a, i| args[i] = try instantiateType(env, a, seen, mode);
             const node = try env.arena.create(T.Type);
-            node.* = .{ .named = .{ .name = n.name, .args = args } };
+            // 06 N24 — a tuple's element labels (decision 8 §6) live on the
+            // `named` node, so instantiating a generic signature has to carry
+            // them: `fn ref<T>() -> #(current: T)` lost them here and
+            // `r.current` reds "this tuple has no element labeled".
+            node.* = .{ .named = .{ .name = n.name, .args = args, .labels = n.labels } };
             return node;
         },
         .func => |f| {
@@ -2564,7 +4441,7 @@ fn instantiateType(env: *Env, ty: *T.Type, seen: *std.AutoHashMap(*T.TypeCell, *
             return node;
         },
         .record => |fields| {
-            const copies = try env.arena.alloc(T.RecordField, fields.len);
+            const copies = try env.arena.alloc(T.Field, fields.len);
             for (fields, 0..) |f, i| copies[i] = .{ .name = f.name, .type_ = try instantiateType(env, f.type_, seen, mode) };
             const node = try env.arena.create(T.Type);
             node.* = .{ .record = copies };
@@ -2611,55 +4488,541 @@ fn instantiateGenericType(env: *Env, ty: *T.Type) InferError!*T.Type {
     return instantiateType(env, ty, &seen, .genericOnly);
 }
 
+/// R3 (decision 8 §8, decision 15) — `#[@external(node, "…")]` in lower case.
+///
+/// The annotation grammar accepts any `#[@name(…)]`, and only the capitalised
+/// path form `External.<Target>` is read as host-backed (`FnDecl.isExternal`,
+/// `ast.zig`'s `startsWith("External.")`). A lower-case one therefore fell
+/// through as an unknown annotation and was dropped: the `declare fn` bound no
+/// host, `botopink check` exited 0, and nothing was said. Name the spelling
+/// that works, at the annotation.
+///
+/// Only the `@`-prefixed builtin form is caught. `#[external(…)]` without the
+/// `@` is a user-defined attribute — a decorator's own name — and means
+/// something else entirely.
+/// Decision 38 — a `val` is **immutable**, local or module-level. `val x = 0;
+/// x = 1;` checked and then threw on node (`const`) and ran on the other three
+/// targets; the rule moves to compile time, and the error names `var`.
+/// Decision 148 (lg-b) — a write to a captured `var` (a local of an
+/// enclosing body, bound outside the lambda being inferred) from a lambda
+/// that is neither a `forEach` body nor a local closure called only at
+/// statement position is refused at the write, on every target: on the BEAM
+/// a closure gets a COPY of what it captures, so the write is lost, while
+/// commonJS writes the shared cell. A counter shared across calls is a
+/// module-level `var` with its `#[@BeamMemory]` mode.
+fn refuseCapturedVarWrite(env: *Env, name: []const u8, loc: ast.Loc) InferError!void {
+    if (env.lambdaDepth == 0 or env.captureWriteOk) return;
+    const d = env.localBindDepth(name) orelse return;
+    if (d >= env.lambdaDepth) return;
+    const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is a `var` of the enclosing body, and this lambda writes it — a lambda gets a copy of what it captures on the BEAM, so the write would not reach `{s}`", .{ diagnostics.captured_var_write, name, name });
+    env.lastError = TypeError.custom(msg, "Write it in a `forEach` body or a local closure called as a statement (`val bump = { -> n = n + 1; }; bump();`), return the new value from the lambda, or keep a counter shared across calls in a module-level `var` with its `#[@BeamMemory]` mode.").withLoc(loc);
+    return error.TypeError;
+}
+
+/// Whether `e` reads or calls the bare name `name` anywhere, a lambda body
+/// included (`ast.exprMentions` answers true for any lambda, which would make
+/// every closure passed to a call a use).
+fn usesName(e: ast.Expr, name: []const u8) bool {
+    return switch (e) {
+        .function => |f| stmtsUseName(f.kind.body, name),
+        .call => |c| switch (c.kind) {
+            .call => |cc| blk: {
+                if (cc.receiver) |r| if (usesName(r.*, name)) break :blk true;
+                if (cc.receiver == null and !cc.is_builtin and std.mem.eql(u8, cc.callee, name)) break :blk true;
+                if (cc.calleeExpr) |ce| if (usesName(ce.*, name)) break :blk true;
+                for (cc.args) |a| if (usesName(a.value.*, name)) break :blk true;
+                for (cc.trailing) |t| if (stmtsUseName(t.body, name)) break :blk true;
+                break :blk false;
+            },
+            .pipeline => |p| usesName(p.lhs.*, name) or usesName(p.rhs.*, name),
+        },
+        .jump => |j| switch (j.kind) {
+            .@"return", .throw_, .try_ => |v| if (v) |x| usesName(x.*, name) else false,
+            .await_ => |x| usesName(x.*, name),
+            .@"break" => |b| if (b.value) |x| usesName(x.*, name) else false,
+            .yield => |y| if (y.value) |x| usesName(x.*, name) else false,
+            .@"continue" => false,
+        },
+        .loop => |lp| usesName(lp.iter.*, name) or stmtsUseName(lp.body, name),
+        .branch => |b| switch (b.kind) {
+            .if_ => |i| usesName(i.cond.*, name) or stmtsUseName(i.then_, name) or
+                (if (i.else_) |els| stmtsUseName(els, name) else false),
+            .tryCatch => |tc| usesName(tc.expr.*, name) or usesName(tc.handler.*, name),
+        },
+        .binding => |b| switch (b.kind) {
+            .localBind => |lb| usesName(lb.value.*, name),
+            .localBindDestruct => |lb| usesName(lb.value.*, name),
+            .assign => |a| usesName(a.value.*, name) or switch (a.target) {
+                .name => |n| std.mem.eql(u8, n, name),
+                .fieldAccess => |fa| usesName(fa.receiver.*, name),
+            },
+        },
+        .collection => |c| switch (c.kind) {
+            .case => |cs| blk: {
+                for (cs.subjects) |x| if (usesName(x, name)) break :blk true;
+                for (cs.arms) |arm| {
+                    if (usesName(arm.body, name)) break :blk true;
+                    if (arm.guard) |g| if (usesName(g, name)) break :blk true;
+                }
+                break :blk false;
+            },
+            .arrayLit => |al| blk: {
+                for (al.elems) |x| if (usesName(x, name)) break :blk true;
+                if (al.spread) |sp| if (std.mem.eql(u8, sp, name)) break :blk true;
+                if (al.spreadExpr) |se| if (usesName(se.*, name)) break :blk true;
+                break :blk false;
+            },
+            .tupleLit => |tl| blk: {
+                for (tl.elems) |x| if (usesName(x, name)) break :blk true;
+                break :blk false;
+            },
+            .range => |r| usesName(r.start.*, name) or (if (r.end) |x| usesName(x.*, name) else false),
+            .grouped => |g| usesName(g.*, name),
+            else => true,
+        },
+        .useHook => |u| usesName(u.kind.inner.*, name),
+        else => ast.exprMentions(e, name),
+    };
+}
+
+/// Every use of `name` in `stmts` is a call at statement position (`f(…);`,
+/// its arguments not naming `f`) — in these statements or in the blocks of an
+/// `if`, a loop or a `case` arm among them.
+fn onlyStatementCalls(stmts: []const ast.Stmt, name: []const u8) bool {
+    for (stmts) |st| if (!stmtOnlyCalls(st.expr, name)) return false;
+    return true;
+}
+
+fn stmtOnlyCalls(e: ast.Expr, name: []const u8) bool {
+    switch (e) {
+        .call => |c| if (c.kind == .call) {
+            const cc = c.kind.call;
+            if (cc.receiver == null and cc.calleeExpr == null and !cc.is_builtin and std.mem.eql(u8, cc.callee, name)) {
+                for (cc.args) |a| if (usesName(a.value.*, name)) return false;
+                return cc.trailing.len == 0;
+            }
+            // `xs.forEach({ x -> f(x); })` — a `forEach` body is itself a
+            // statement-position scope (decision 148's first exempt shape).
+            if (std.mem.eql(u8, cc.callee, "forEach") and cc.receiver != null and cc.trailing.len == 0) {
+                if (usesName(cc.receiver.?.*, name)) return false;
+                for (cc.args) |a| {
+                    if (a.value.* == .function) {
+                        if (!onlyStatementCalls(a.value.function.kind.body, name)) return false;
+                    } else if (usesName(a.value.*, name)) return false;
+                }
+                return true;
+            }
+        },
+        .loop => |lp| return !usesName(lp.iter.*, name) and onlyStatementCalls(lp.body, name),
+        .branch => |b| if (b.kind == .if_) {
+            const i = b.kind.if_;
+            if (usesName(i.cond.*, name)) return false;
+            if (!onlyStatementCalls(i.then_, name)) return false;
+            return if (i.else_) |els| onlyStatementCalls(els, name) else true;
+        },
+        else => {},
+    }
+    return !usesName(e, name);
+}
+
+fn stmtsUseName(stmts: []const ast.Stmt, name: []const u8) bool {
+    for (stmts) |st| if (usesName(st.expr, name)) return true;
+    return false;
+}
+
+fn isArrayType(t: *T.Type) bool {
+    const d = t.deref();
+    return d.* == .named and (std.mem.eql(u8, d.named.name, "array") or std.mem.eql(u8, d.named.name, "Array"));
+}
+
+/// Decision 148 — the `val f = { … }` statements of a block whose every later
+/// use is a call at statement position (`f();`, its arguments not naming
+/// `f`): the lambda they bind may write a captured `var`.
+fn noteStatementClosures(env: *Env, stmts: []const ast.Stmt) InferError!void {
+    for (stmts, 0..) |st, i| {
+        if (st.expr != .binding) continue;
+        const lb = switch (st.expr.binding.kind) {
+            .localBind => |lb| lb,
+            else => continue,
+        };
+        if (lb.value.* != .function) continue;
+        const name = lb.name;
+        const ok = onlyStatementCalls(stmts[i + 1 ..], name);
+        if (ok) try env.statementClosures.put(env.arena, name, {}) else _ = env.statementClosures.remove(name);
+    }
+}
+
+fn refuseValAssign(env: *Env, name: []const u8, loc: ast.Loc) InferError!void {
+    if (!env.isVal(name)) return;
+    var e = TypeError.custom(
+        try std.fmt.allocPrint(env.arena, "`{s}` is a `val` and cannot be assigned", .{name}),
+        try std.fmt.allocPrint(env.arena, "Declare it `var {s} = …` to reassign it, or bind the new value to a new name.", .{name}),
+    );
+    env.lastError = e.withLoc(loc);
+    return error.TypeError;
+}
+
+/// `#[@BeamMemory.<member>(…)]` on a module binding — front 17 step 3,
+/// decisions 41 and 51. A misread memory annotation does not fail, it moves
+/// where the state lives, so every part is checked in the commit the carrier
+/// was born in: the binding is a `var`; the member is one of `ProcessDict`
+/// (the default, said out loud), `Ets` or `PersistentTerm`; every argument is
+/// the one the annotation takes, `keyed`, with a `true`/`false` value; and
+/// `keyed = true` names a `Dict` — an `i32` has no key, and neither has a
+/// list (51).
+fn validateMemoryAnnotations(env: *Env, v: ast.ValDecl, bindTy: *T.Type) InferError!void {
+    const members = [_][]const u8{ "ProcessDict", "Ets", "PersistentTerm" };
+    for (v.annotations) |a| {
+        if (!std.mem.startsWith(u8, a.name, "BeamMemory.")) continue;
+        const loc = a.loc orelse v.value.getLoc();
+        if (!v.mutable) return failAt(
+            env,
+            loc,
+            try std.fmt.allocPrint(env.arena, "`#[@{s}]` needs a `var` — `{s}` is a `val`", .{ a.name, v.name }),
+            try std.fmt.allocPrint(env.arena, "Write `#[@{s}] var {s}: T = …;`.", .{ a.name, v.name }),
+        );
+        const member = a.name["BeamMemory.".len..];
+        var known = false;
+        for (members) |m| known = known or std.mem.eql(u8, m, member);
+        if (!known) return failAt(
+            env,
+            loc,
+            try std.fmt.allocPrint(env.arena, "unknown member `{s}` in `@BeamMemory` — expected `ProcessDict`, `Ets` or `PersistentTerm`", .{member}),
+            "The member names where the `var` lives on the BEAM; `ProcessDict` is what a `var` with no annotation means.",
+        );
+        for (a.writtenArgs(), 0..) |arg, i| {
+            const label = a.labelOf(i) orelse arg;
+            if (!std.mem.eql(u8, label, "keyed")) return failAt(
+                env,
+                loc,
+                try std.fmt.allocPrint(env.arena, "unknown argument `{s}` — expected `keyed`", .{label}),
+                try std.fmt.allocPrint(env.arena, "Write `#[@{s}(keyed = true)]`.", .{a.name}),
+            );
+            const is_true = std.mem.eql(u8, arg, "true");
+            if (!is_true and !std.mem.eql(u8, arg, "false")) return failAt(
+                env,
+                loc,
+                try std.fmt.allocPrint(env.arena, "`keyed` takes `true` or `false`, not `{s}`", .{arg}),
+                null,
+            );
+            if (is_true and !typeIsDict(bindTy)) return failAt(
+                env,
+                loc,
+                try std.fmt.allocPrint(env.arena, "`keyed` needs a keyed container — {s} has no key", .{try describeForKeyed(env, bindTy)}),
+                "Only a `Dict<K, V>` is keyed; a list stores its whole value (decision 51).",
+            );
+        }
+        // Decision 167 (amends 43) — the annotation names BEAM storage. A
+        // target whose execution context is the whole program has none to
+        // name, and reading the annotation as a no-op there would build a
+        // program whose `ProcessDict` / `Ets` behaviour silently differs from
+        // the one written: refused at the annotation, once the module is
+        // inferred (`reportOffBeamMemory`), so the annotation's own rules
+        // answer first and on every target. A null target (the language
+        // server, the type-only pass) is decision 84's beam.
+        if (env.target) |t| if (!std.mem.eql(u8, t, "erlang") and !std.mem.eql(u8, t, "beam")) {
+            if (env.offBeamMemory == null) env.offBeamMemory = loc;
+        };
+    }
+    const mem = v.memory() orelse return;
+    if (mem.keyed) {
+        // Decision 168 — `keyed = true` stores a `Dict` one ETS row per key,
+        // so it is `Ets`'s argument; the process dictionary and
+        // `persistent_term` hold one value per name.
+        if (mem.mode != .ets) return failAt(
+            env,
+            mem.loc orelse v.value.getLoc(),
+            try std.fmt.allocPrint(env.arena, "`keyed = true` stores one row per key in an ETS table — it is an argument of `@BeamMemory.Ets`, not of `@BeamMemory.{s}`", .{mem.mode.spelling()}),
+            "Write `#[@BeamMemory.Ets(keyed = true)]`, or drop `keyed`.",
+        );
+        // Its rows are read and written in THIS module, one at a time; an
+        // importer would read the binding whole, and there is no whole value.
+        if (v.isPub) return failAt(
+            env,
+            mem.loc orelse v.value.getLoc(),
+            try std.fmt.allocPrint(env.arena, "a `keyed = true` var is not `pub` — `{s}` is read one row at a time, and another module would read it whole", .{v.name}),
+            try std.fmt.allocPrint(env.arena, "Export a `fn` that reads the row instead: `pub fn rowOf(key: K) -> ?V {{ return {s}.at(key); }}`.", .{v.name}),
+        );
+        // The seed is the table's rows (decisions 168, 174): `Dict.empty()`,
+        // or `Dict.ofEntries([…])` of literal `#(key, value)` entries — what
+        // a re-created table can be re-seeded from at any moment (§5(d)).
+        if (!isKeyedSeed(v.value.*)) return failAt(
+            env,
+            v.value.getLoc(),
+            try std.fmt.allocPrint(env.arena, "a `keyed = true` var is re-seeded one row per entry whenever its table is re-created — `{s}`'s initialiser must be `Dict.empty()` or `Dict.ofEntries([…])` of literal entries", .{v.name}),
+            try std.fmt.allocPrint(env.arena, "Write `var {s} = Dict.empty();`, or its rows as literals: `Dict.ofEntries([#(\"a\", 1)])`.", .{v.name}),
+        );
+    } else if (mem.mode == .ets and !ast.isMemorySeed(v.value.*)) return failAt(
+        // Design §5(d), step 4: an `Ets` table that goes missing is re-created
+        // and re-seeded from the declaration at a moment nobody chose, so the
+        // seed is a literal or a `comptime` expression — not a purity
+        // judgement, which the compiler cannot make.
+        env,
+        v.value.getLoc(),
+        try std.fmt.allocPrint(env.arena, "an `@BeamMemory.Ets` var is re-seeded from its initialiser whenever its table is re-created — `{s}`'s initialiser must be a literal or a `comptime` expression", .{v.name}),
+        try std.fmt.allocPrint(env.arena, "Write the value (`var {s} = 0;`), fold it with `comptime`, or keep the var in `ProcessDict` / `PersistentTerm`, whose initialiser runs once.", .{v.name}),
+    );
+    try env.memoryVars.put(env.arena, v.name, .{ .memory = mem, .ty = bindTy });
+}
+
+/// Front 17 step 4 — the writes `@BeamMemory` cannot honour, refused at the
+/// assignment on every target (the annotation's contract does not depend on
+/// where the program runs, only its lowering does):
+///
+/// - a `PersistentTerm` var is written once, at load (design §5(a)): every
+///   `persistent_term:put` scans every process heap, and `-on_load` re-runs on
+///   every code reload, so a run-time write is erased by the next one;
+/// - under `Ets`, a write that recomputes the value from what it just read
+///   loses one of two concurrent runs (§5(b)) — except the increment
+///   (`x += n`, `x = x + n`), which lowers to the host's atomic counter, and
+///   that only on an integer (decision 40).
+fn refuseMemoryWrite(env: *Env, name: []const u8, plus: bool, value: *const ast.Expr, loc: ast.Loc) InferError!void {
+    const mv = env.memoryVars.get(name) orelse return;
+    // A local or parameter of the same name shadows the module binding.
+    const bound = env.lookup(name) orelse return;
+    if (bound != mv.ty) return;
+    switch (mv.memory.mode) {
+        .processDict => {},
+        .persistentTerm => return failAt(
+            env,
+            loc,
+            try std.fmt.allocPrint(env.arena, "a `PersistentTerm` var is written once, at load — `{s}` cannot be assigned", .{name}),
+            if (typeIsDict(mv.ty))
+                "Initialise it in the declaration, or use `#[@BeamMemory.Ets(keyed = true)]` if it changes."
+            else
+                "Initialise it in the declaration, or use `#[@BeamMemory.Ets]` if it changes.",
+        ),
+        .ets => switch (ast.classifyMemoryWrite(name, plus, value)) {
+            .whole => {},
+            // A `Dict` rewritten through its own methods is decision 42's
+            // documented case, not this rule's: under `keyed = false` it is
+            // read, updated and stored whole — concurrent writes to different
+            // keys can be lost, which `docs.md` states with the figure and the
+            // compiler deliberately does not warn about — and `keyed = true`
+            // is the one-row-per-key form that exists to remove the race.
+            .recompose => if (!typeIsDict(mv.ty)) return failAt(
+                env,
+                loc,
+                try std.fmt.allocPrint(env.arena, "`{s}` is an `@BeamMemory.Ets` var: a write that recomputes it from its own value can lose one of two concurrent runs", .{name}),
+                try std.fmt.allocPrint(env.arena, "An increment — `{s} += n` or `{s} = {s} + n` — is atomic on an integer; any other write must not read `{s}`.", .{ name, name, name, name }),
+            ) else {},
+            .bump => if (!isIntType(mv.ty.deref())) return failAt(
+                env,
+                loc,
+                try std.fmt.allocPrint(env.arena, "an increment of an `@BeamMemory.Ets` var is atomic only on an integer — `{s}` is {s}", .{ name, try describeForKeyed(env, mv.ty) }),
+                try std.fmt.allocPrint(env.arena, "Declare `{s}` an integer, or write the whole value without reading `{s}`.", .{ name, name }),
+            ),
+        },
+    }
+}
+
+/// Decision 168 — the accepted seed of a `keyed = true` var: `Dict.empty()`,
+/// or `Dict.ofEntries([…])` whose entries are `#(key, value)` tuple literals
+/// of literal seeds (`ast.isMemorySeed`). The BEAM emitters fold the same
+/// shape into the table's rows (`erlang.zig` `keyedSeedRows`).
+fn isKeyedSeed(e: ast.Expr) bool {
+    if (e != .call or e.call.kind != .call) return false;
+    const cc = e.call.kind.call;
+    if (cc.is_builtin or cc.optional or cc.trailing.len != 0 or cc.calleeExpr != null) return false;
+    const recv = cc.receiver orelse return false;
+    if (!(recv.* == .identifier and recv.identifier.kind == .ident and std.mem.eql(u8, recv.identifier.kind.ident, "Dict"))) return false;
+    if (std.mem.eql(u8, cc.callee, "empty")) return cc.args.len == 0;
+    if (!std.mem.eql(u8, cc.callee, "ofEntries") or cc.args.len != 1) return false;
+    const list = cc.args[0].value.*;
+    if (list != .collection or list.collection.kind != .arrayLit) return false;
+    const al = list.collection.kind.arrayLit;
+    if (al.spread != null or al.spreadExpr != null) return false;
+    for (al.elems) |entry| {
+        if (entry != .collection or entry.collection.kind != .tupleLit) return false;
+        const tl = entry.collection.kind.tupleLit;
+        if (tl.elems.len != 2 or !ast.isMemorySeed(tl.elems[0]) or !ast.isMemorySeed(tl.elems[1])) return false;
+    }
+    return true;
+}
+
+/// The module `var` `name` if it is a `keyed = true` one and no local
+/// shadows it here.
+fn keyedVar(env: *Env, name: []const u8) ?Env.MemoryVar {
+    const mv = env.memoryVars.get(name) orelse return null;
+    if (!mv.memory.keyed) return null;
+    const bound = env.lookup(name) orelse return null;
+    if (bound != mv.ty) return null;
+    return mv;
+}
+
+/// Decision 168 — a `keyed = true` var is read one row at a time:
+/// `name.at(key)` is `ets:lookup` on the key, and the receiver is the one
+/// place the binding may be named in an expression (`refuseKeyedWholeRead`).
+fn noteKeyedRowRead(env: *Env, c: anytype) !void {
+    if (env.memoryVars.count() == 0 or c.kind != .call) return;
+    const cc = c.kind.call;
+    if (cc.is_builtin or cc.optional or cc.trailing.len != 0 or cc.args.len != 1) return;
+    if (!std.mem.eql(u8, cc.callee, "at")) return;
+    const recv = cc.receiver orelse return;
+    if (!(recv.* == .identifier and recv.identifier.kind == .ident)) return;
+    if (keyedVar(env, recv.identifier.kind.ident) == null) return;
+    try env.keyedRowAccess.put(env.arena, recv.identifier.loc, {});
+}
+
+/// Decision 168 — a `keyed = true` var is written one row at a time, and only
+/// as `name = name.insert(key, value)` with a key and a value that do not
+/// read `name`: that is `ets:insert` of the one row. Any other write — a
+/// whole value, `+=`, a row computed from the var's own rows — is refused
+/// before the value is inferred, with the diagnostic of the write it is.
+fn checkKeyedWrite(env: *Env, name: []const u8, plus: bool, value: *const ast.Expr, loc: ast.Loc) InferError!void {
+    if (keyedVar(env, name) == null) return;
+    const row: ?*const ast.Expr = blk: {
+        if (plus or value.* != .call or value.call.kind != .call) break :blk null;
+        const cc = value.call.kind.call;
+        if (cc.is_builtin or cc.optional or cc.trailing.len != 0 or cc.args.len != 2) break :blk null;
+        if (!std.mem.eql(u8, cc.callee, "insert")) break :blk null;
+        const recv = cc.receiver orelse break :blk null;
+        if (!(recv.* == .identifier and recv.identifier.kind == .ident and std.mem.eql(u8, recv.identifier.kind.ident, name))) break :blk null;
+        break :blk recv;
+    };
+    const recv = row orelse return failAt(
+        env,
+        loc,
+        try std.fmt.allocPrint(env.arena, "`{s}` is a `keyed = true` var: it is written one row at a time, as `{s} = {s}.insert(key, value)`", .{ name, name, name }),
+        "Under `keyed = true` the `Dict` lives one ETS row per key; there is no whole value to replace.",
+    );
+    const cc = value.call.kind.call;
+    if (ast.exprMentions(cc.args[0].value.*, name) or ast.exprMentions(cc.args[1].value.*, name)) return failAt(
+        env,
+        loc,
+        try std.fmt.allocPrint(env.arena, "`{s}` is an `@BeamMemory.Ets` var: a write that recomputes it from its own value can lose one of two concurrent runs", .{name}),
+        try std.fmt.allocPrint(env.arena, "Under `keyed = true` a row is written whole — `{s} = {s}.insert(key, value)` with a key and a value that do not read `{s}`.", .{ name, name, name }),
+    );
+    try env.keyedRowAccess.put(env.arena, recv.identifier.loc, {});
+}
+
+/// Decision 168 — `name` read anywhere but as the receiver of its own row
+/// read or row write (`noteKeyedRowRead`, `checkKeyedWrite`).
+fn refuseKeyedWholeRead(env: *Env, name: []const u8, ty: *T.Type, loc: ast.Loc) InferError!void {
+    if (env.memoryVars.count() == 0) return;
+    const mv = keyedVar(env, name) orelse return;
+    if (mv.ty != ty or env.keyedRowAccess.contains(loc)) return;
+    return failAt(
+        env,
+        loc,
+        try std.fmt.allocPrint(env.arena, "`{s}` is a `keyed = true` var: it is read one row at a time, as `{s}.at(key)`", .{ name, name }),
+        try std.fmt.allocPrint(env.arena, "Under `keyed = true` the `Dict` lives one ETS row per key; there is no whole value to read. Read a row with `{s}.at(key)`, write one with `{s} = {s}.insert(key, value)`.", .{ name, name, name }),
+    );
+}
+
+fn failAt(env: *Env, loc: ast.Loc, msg: []const u8, hint: ?[]const u8) InferError {
+    var e = TypeError.custom(msg, hint);
+    env.lastError = e.withLoc(loc);
+    return error.TypeError;
+}
+
+/// Is `t` the standard library's `Dict<K, V>`?
+fn typeIsDict(t: *T.Type) bool {
+    const d = t.deref();
+    return switch (d.*) {
+        .named => |n| std.mem.eql(u8, n.name, "Dict") or std.mem.startsWith(u8, n.name, "Dict<"),
+        else => false,
+    };
+}
+
+/// `an \`i32\`` / `a \`string[]\`` — the type in the `keyed` diagnostic.
+fn describeForKeyed(env: *Env, t: *T.Type) ![]const u8 {
+    const rendered = try snapshotMod.typeNameOf(env.arena, t);
+    const article: []const u8 = if (rendered.len > 0 and std.mem.indexOfScalar(u8, "aeiouAEIOU", rendered[0]) != null) "an" else "a";
+    return std.fmt.allocPrint(env.arena, "{s} `{s}`", .{ article, rendered });
+}
+
+/// Decision 37 — a record is **immutable**. `p.age = 31` and `self.count += 1`
+/// both checked and both mutated in place; the decided form is a new value,
+/// `Person(..p, age: 31)`, which the constructor's `..` spread already builds
+/// (06 C11).
+///
+/// Only a receiver whose type is a record this module registered is refused.
+/// Everything else keeps assigning: a receiver still an unresolved type
+/// variable is an inference gap and must not red here, and a named type the env
+/// cannot open — an imported record, a `@Result`/`?T` wrapper, a host object a
+/// library binds — is not something this rule can speak for.
+fn refuseRecordFieldAssign(
+    env: *Env,
+    receiver: ast.Expr,
+    receiverType: *T.Type,
+    field: []const u8,
+    loc: ast.Loc,
+) InferError!void {
+    const t = receiverType.deref();
+    if (t.* != .named) return;
+    const typeName = t.named.name;
+    const td = env.lookupTypeDef(typeName) orelse return;
+    if (td != .record) return;
+    // Name the receiver in the hint when it is something the author can spread:
+    // a plain name (`p`, `self`). Anything else gets the shape without it.
+    const spread: []const u8 = switch (receiver) {
+        .identifier => |id| switch (id.kind) {
+            .ident => |n| n,
+            else => "…",
+        },
+        else => "…",
+    };
+    var e = TypeError.custom(
+        try std.fmt.allocPrint(
+            env.arena,
+            "a `{s}` is immutable — its field `{s}` cannot be assigned",
+            .{ typeName, field },
+        ),
+        try std.fmt.allocPrint(
+            env.arena,
+            "Build a new value instead: `{s}(..{s}, {s}: <value>)`.",
+            .{ typeName, spread, field },
+        ),
+    );
+    env.lastError = e.withLoc(loc);
+    return error.TypeError;
+}
+
+fn refuseLowerCaseExternal(env: *Env, a: ast.Annotation) InferError!void {
+    if (!a.is_builtin) return;
+    const misspelled = std.ascii.eqlIgnoreCase(a.name, "external") or
+        (std.ascii.startsWithIgnoreCase(a.name, "external.") and
+            !std.mem.startsWith(u8, a.name, "External."));
+    if (!misspelled) return;
+    // `#[@external(node, "…")]` names its target in the first argument;
+    // `#[@external.node("…")]` in the path. Either way the fix is the same
+    // annotation with the target capitalised, so spell it out.
+    const target: []const u8 = blk: {
+        if (std.mem.indexOfScalar(u8, a.name, '.')) |i| break :blk a.name[i + 1 ..];
+        const args = a.writtenArgs();
+        if (args.len >= 1 and args[0].len > 0 and std.ascii.isAlphabetic(args[0][0])) break :blk args[0];
+        break :blk "Node";
+    };
+    const capitalised = try env.arena.dupe(u8, target);
+    if (capitalised.len > 0) capitalised[0] = std.ascii.toUpper(capitalised[0]);
+    var e = TypeError.custom(
+        try std.fmt.allocPrint(
+            env.arena,
+            "`#[@{s}]` binds no host — an external target is written `External.<Target>`",
+            .{a.name},
+        ),
+        try std.fmt.allocPrint(
+            env.arena,
+            "Write `#[@External.{s}(\"<template>\")]`; only the capitalised path form is read as host-backed.",
+            .{capitalised},
+        ),
+    );
+    if (a.loc) |l| e = e.withLoc(l);
+    env.lastError = e;
+    return error.TypeError;
+}
+
 fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
+    // 01 step 13 — the parameters and every local end with the body.
+    var bodyLog: std.ArrayListUnmanaged(Env.BindUndo) = .empty;
+    const outerScope = env.openBodyScope(&bodyLog);
+    defer env.closeBodyScope(&bodyLog, outerScope, f.name);
     // ── `@[external(…)]` annotation validation (F1) ─────────────────────────
     for (f.annotations) |a| {
+        try refuseLowerCaseExternal(env, a);
         if (std.mem.startsWith(u8, a.name, "External.") and a.name.len > "External.".len) {
             try validateExternalAnnotation(env, f, a);
-        }
-    }
-
-    // ── effect annotation is implementation-only (F1b) ──────────────────────
-    // A `#[@<effect>]` marks a `fn` with a body; a bodyless `declare fn` (and a
-    // `.d.bp` declaration) expresses its effect through the return wrapper only.
-    //
-    // §A3 EXCEPTION — `#[@result] declare fn` / `#[@future] declare fn` are
-    // allowed when the fn carries at least one `@external(...)` annotation and
-    // its return type is the matching wrapper (`@Result<R, E>` / `@Future<T,
-    // E>`): the host template owns the wrapper shape, and the marker signals
-    // "this declare carries effect-wrapping at the host boundary" rather than
-    // wrapping a body. All other effects + the bare (no-external) form remain
-    // rejected.
-    if (f.body.len == 0 and f.effectAnnotation() != null) {
-        const allow = blk: {
-            const e = f.effectAnnotation() orelse break :blk false;
-            if (e != .result and e != .future) break :blk false;
-            var hasExternal = false;
-            for (f.annotations) |a| {
-                if (std.mem.startsWith(u8, a.name, "External.") and a.name.len > "External.".len)
-                {
-                    hasExternal = true;
-                    break;
-                }
-            }
-            if (!hasExternal) break :blk false;
-            const expectedWrapper = e.returnWrapper();
-            const isWrapperReturn = blk2: {
-                const rt = f.returnType orelse break :blk2 false;
-                break :blk2 switch (rt) {
-                    .named => |n| std.mem.eql(u8, n, expectedWrapper),
-                    .generic => |g| std.mem.eql(u8, g.name, expectedWrapper),
-                    else => false,
-                };
-            };
-            break :blk isWrapperReturn;
-        };
-        if (!allow) {
-            env.lastError = TypeError.custom(
-                "effect annotations mark an implementation; declare the effect in the return type",
-                "A `declare fn` expresses its effect through the return wrapper (e.g. `-> @Future<T>`), with no annotation.",
-            );
-            return error.TypeError;
         }
     }
 
@@ -2714,7 +5077,7 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
             else
                 try env.namedType("void");
             break :blk try env.funcType(fparams, fret);
-        } else try resolveTypeRefInContext(env, p.typeRef, genericMap);
+        } else try resolveParamType(env, p, genericMap);
         paramTypes[i] = ty;
         if (p.destruct) |d| {
             // Destructuring param: bind each field name to its type.
@@ -2750,15 +5113,21 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
 
     // Infer return type.
     const retType = if (f.returnType) |rt|
-        try resolveTypeRefInContext(env, rt, genericMap)
+        try resolveReturnType(env, rt, f.returnTypeLoc, genericMap)
     else
         try env.namedType("void");
 
     // The return type decides whether `use` is allowed in the body and which
     // ContextBase every `use` must agree on (@Context F7). Scope it to the body.
     const savedFnCtx = env.fnContext;
-    env.fnContext = try contextInfoFromReturn(env, f.returnType);
+    env.fnContext = try contextInfoFromReturn(env, f.returnType, f.effect, f.name);
     defer env.fnContext = savedFnCtx;
+
+    // `@src().fnName` inside this body (decision 73). A lambda in the body does
+    // not change it — a lambda has no name.
+    const savedFnName = env.currentFnName;
+    env.currentFnName = f.name;
+    defer env.currentFnName = savedFnName;
 
     // A `-> @Expr<…>` (or `-> @ExprCustom<…>`) return marks a template
     // function: its body runs at comptime, enabling the `@expr`/`@code`
@@ -2767,75 +5136,56 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     env.inTemplateFn = if (f.returnType) |rt| rt.isTemplateReturnType() else false;
     defer env.inTemplateFn = savedInTemplate;
 
-    // Determine how `throw` is checked inside this body:
-    //   - no declared return type             → unchecked (lenient: e.g. `catch throw …`)
-    //   - `#[@result] fn -> @Result<D, E>`    → checked-Result effect: thrown value
-    //     must match `E`; `return`/`throw` construct `{ok, V}`/`{error, E}` values
-    //   - plain `fn -> @Result<D, E>`         → NO special treatment: `throw` stays
-    //     a raw host exception (unchecked), values are not wrapped
-    //   - any other return type               → `throw` is illegal
-    const isResultFn = f.returnsResult();
+    // Decision 118 — the effect is read from the SYNTACTIC return
+    // (`f.effect`, set by the parser from the written wrapper). Decision 121 —
+    // `throw` / `try` follow the fallible channel, computed from the return
+    // apart from the level:
+    //   - no declared return type          → unchecked (lenient: e.g. `catch throw …`)
+    //   - a `@Result<U, E>` in some layer   → checked: the thrown value must be `E`;
+    //     `return` / `throw` construct `{ok, V}` / `{error, E}` values
+    //   - any other return type             → `throw` / `try` are illegal
+    //     (`effect-try-without-fallible-channel`), or — under an alias to an
+    //     effect wrapper — `effect-wrapper-behind-alias`
     const eff = f.effect;
     var throwCtx: envMod.ThrowContext = .unchecked;
     if (f.returnType) |_| {
         throwCtx = .plain;
-        if (isResultFn) {
-            throwCtx = .unchecked;
-            if (eff == .result) {
-                const rtDeref = retType.deref();
-                if (rtDeref.* == .named and rtDeref.named.args.len >= 2) {
-                    throwCtx = .{ .result = rtDeref.named.args[1] };
-                }
-            }
+        if (eff) |e| {
+            if (fallibleErrorOf(e, retType)) |errTy| throwCtx = .{ .result = errTy };
         }
-        // R6 (§2) — `throw` belongs to a fallible-channel effect. Allow it in
-        // `#[@future]` / `#[@iterator]` / `#[@asyncGenerator]` bodies too — the
-        // auto-wrap in `transform.zig` rewrites each form to the right wrapper.
-        // `#[@generator]` and `#[@context]` keep `.plain` (they have no error
-        // channel — throwing reds with `effect-throw-without-fallible-channel`).
-        if (eff) |e| switch (e) {
-            .future, .iterator, .asyncGenerator => throwCtx = .unchecked,
-            else => {},
-        };
     }
     const savedThrowCtx = env.throwContext;
     env.throwContext = throwCtx;
     defer env.throwContext = savedThrowCtx;
 
-    // ── effect ↔ return-type validation + async/generator context (F1) ───────
-    // An effect annotation must match its return wrapper (`#[@future]` →
-    // `@Future<…>`, etc.); a plain `fn` must NOT return one of the async
-    // wrappers (those need an effect annotation).
-    const asyncKind = classifyAsyncReturn(retType);
-    const fnLoc: ?ast.Loc = if (f.body.len > 0) f.body[0].expr.getLoc() else null;
-    if (eff) |e| {
-        if (!effectMatchesReturn(e, retType)) {
-            // R3 / R4 — the annotation effect kind disagrees with the return
-            // wrapper kind. The diagnostic carries the stable code from
-            // `comptime/diagnostics.zig` so snapshot consumers can key on it.
-            const retDeref = retType.deref();
-            const code: []const u8 = if (retDeref.* == .named)
-                diagnostics.effect_wrapper_mismatch
-            else
-                diagnostics.effect_missing_wrapper;
-            const msg = try std.fmt.allocPrint(
-                env.arena,
-                "{s}: `#[@{s}]` requires a `-> @{s}<…>` return type",
-                .{ code, e.annotationName(), e.returnWrapper() },
-            );
-            var err = TypeError.custom(msg, "The effect annotation and the return wrapper must name the same effect.");
-            if (fnLoc) |l| err = err.withLoc(l);
-            env.lastError = err;
-            return error.TypeError;
+    // Decision 118 rule 1 — an alias to an effect wrapper types the function
+    // but activates nothing: a capability used in its body is refused as
+    // `effect-wrapper-behind-alias`, naming the wrapper to write.
+    const savedAliasWrapper = env.aliasWrapper;
+    env.aliasWrapper = if (f.returnType != null and ast.EffectKind.fromReturnType(f.returnType) == null) aliasedWrapperOf(retType) else null;
+    defer env.aliasWrapper = savedAliasWrapper;
+
+    // Decision 128 — `@Component<C, T>` takes its base and its `T`: a
+    // component's `T` implements `@Context<C>` with the `C` it is written with.
+    if (eff != null and eff.? == .component) {
+        const rd = retType.deref();
+        if (rd.* == .named and rd.named.args.len >= 2) {
+            if (ownerBaseOfType(env, rd.named.args[1])) |ownerBase| {
+                if (baseNameOfType(rd.named.args[0])) |base| {
+                    if (!std.mem.eql(u8, ownerBase, base)) {
+                        const msg = try std.fmt.allocPrint(
+                            env.arena,
+                            "{s}: a component's `T` implements `@Context<C>` with the `C` of its `@Component<C, T>` — here `T` anchors at `{s}`, not `{s}`",
+                            .{ diagnostics.effect_wrapper_mismatch, ownerBase, base },
+                        );
+                        var err = TypeError.custom(msg, "Write the base the component's `T` owns: `-> @Component<" ++ "B, T>` where `T implement @Context<B>`.");
+                        if (f.returnTypeLoc.line != 0) err = err.withLoc(f.returnTypeLoc);
+                        env.lastError = err;
+                        return error.TypeError;
+                    }
+                }
+            }
         }
-    } else if (asyncKind != .none) {
-        var err = TypeError.custom(
-            "a function returning `@Future`/`@Iterator`/`@AsyncIterator` needs an effect annotation",
-            "Mark it `#[@future]` / `#[@iterator]` / `#[@asyncGenerator]`.",
-        );
-        if (fnLoc) |l| err = err.withLoc(l);
-        env.lastError = err;
-        return error.TypeError;
     }
 
     // Establish the effect context (saved/restored around the body) so nested
@@ -2846,21 +5196,34 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
         env.starFn = prevStarFn;
         env.labelStack.shrinkRetainingCapacity(prevLabelsLen);
     }
-    if (if (eff) |e| starCtxFromEffect(e, retType, f.label) else null) |ctx| {
-        env.starFn = ctx;
+    if (eff) |e| {
+        // Every effect gets a body context, whatever it grants: the chain
+        // decides `allowsAwait` / `allowsYield`, and a capability it does not
+        // grant is REFUSED at the site rather than skipped for want of a
+        // context (decision 95 + 67).
+        env.starFn = starCtxFromEffect(e, retType, f.label);
         if (f.label) |lbl| try env.labelStack.append(env.arena, lbl);
     } else {
-        // A normal function body (and a `#[@result]`/`#[@context]` body) sees no
-        // async context and no outer labels — `await`/`yield` stay exclusive to
-        // the future/iterator/generator/asyncGenerator effects.
+        // A plain function body sees no effect context and no outer labels.
         env.starFn = null;
         env.labelStack.shrinkRetainingCapacity(0);
     }
-    // §1C — `@getContex(T)` is only valid inside a `#[@context]` fn body
-    // (RC5). Save/restore the flag around the body so nested non-context
-    // closures fall back to false correctly.
+    // The refusals name the body's effect: `env.fnEffect` is the return's.
+    const savedFnEffect = env.fnEffect;
+    env.fnEffect = eff;
+    defer env.fnEffect = savedFnEffect;
+    // Decision 96 — the body's `ContextBase` is fixed by its first `use`, so
+    // the anchor starts empty at every body and is restored on the way out.
+    const savedUseAnchor = env.useAnchor;
+    env.useAnchor = null;
+    defer env.useAnchor = savedUseAnchor;
+    // §1C — `@getContext(T)` is only valid inside a `-> @Component<…>` fn
+    // body (RC5). Decision 104 — this is the SAME flag as
+    // `FnContext.annotated`: the `@Component` return sets both and nothing
+    // else does. Save/restore it around the body so nested closures fall back
+    // to false correctly.
     const savedInContextFn = env.inContextFn;
-    env.inContextFn = if (eff) |e| e == .context else false;
+    env.inContextFn = eff == .component;
     defer env.inContextFn = savedInContextFn;
 
     // Self-recursion: bind the fn's own signature before walking the body so
@@ -2878,18 +5241,43 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
                 break;
             }
         }
-        // Record the narrowed type name from the return type.
-        const narrowedName: []const u8 = if (f.returnType) |rt| switch (rt) {
+        // Record the narrowed type name (06 C5: its own slot, not `returnType`,
+        // which a guard declares as `bool`).
+        const narrowedName: []const u8 = if (f.typeGuardType) |gt| switch (gt) {
             .named => |n| n,
             else => paramName,
         } else paramName;
         try env.typeGuardFns.put(f.name, .{ .paramIndex = paramIndex, .narrowedTypeName = narrowedName });
     }
 
-    // Infer body (for type checking; we ignore the result for now).
-    for (f.body) |stmt| {
-        _ = try inferExpr(env, stmt.expr);
+    // C1 — every `return <value>` in the body unifies with the declared
+    // return type, or with an effect wrapper's inner channel.
+    const savedReturnTarget = env.returnTarget;
+    const savedReturnBareIsVoid = env.returnBareIsVoid;
+    const savedReturnWhole = env.returnWhole;
+    defer {
+        env.returnTarget = savedReturnTarget;
+        env.returnBareIsVoid = savedReturnBareIsVoid;
+        env.returnWhole = savedReturnWhole;
     }
+    env.returnWhole = if (f.returnType != null) retType else null;
+    env.returnTarget = if (f.typeGuardParam != null)
+        // A type guard (`-> x is T`) returns `bool`; `T` is the narrowed type.
+        try env.namedType("bool")
+    else
+        returnTargetFor(retType, eff, f.returnType != null and !env.inTemplateFn);
+    // Annotations inside the body see the fn's generic params (`var acc:
+    // Array<#(P, O)> = []`), so a `return acc` unifies P with P, not with an
+    // opaque named `P`.
+    const savedFnGenericMap = env.fnGenericMap;
+    env.fnGenericMap = &genericMap;
+    defer env.fnGenericMap = savedFnGenericMap;
+    env.returnBareIsVoid = env.returnTarget != null and (eff == null or eff.? == .result or eff.? == .task);
+
+    try refuseInlineParamRules(env, f);
+    try refuseRedeclaredBindings(env, f.body, try paramNames(env, f.params));
+    try inferBodyStmts(env, f.body);
+    try refuseFallingOffTheEnd(env, f, retType);
 
     // Generalize (HM let-polymorphism): declared generic params still unbound
     // after the body is inferred become `.generic`. Every use site then gets a
@@ -2923,26 +5311,75 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     return env.funcType(paramTypes, retType);
 }
 
+/// A behavior's `default fn` bodies are checked like any method body, against
+/// the member's own signature, with `self` typed as the behavior (`Self`):
+/// `inferTypeMethods` over the members that carry a body. They were never
+/// walked, so `return nothingHere(x) + true` checked clean and a `-> @Result`
+/// default fn's `return` / `throw` recorded no wrapping for any backend.
+fn inferBehaviorDefaultBodies(env: *Env, d: ast.BehaviorDecl) InferError!void {
+    var n: usize = 0;
+    for (d.methods) |m| {
+        if (m.is_default and m.body != null) n += 1;
+    }
+    if (n == 0) return;
+    const ms = try env.arena.alloc(ast.BehaviorMethod, n);
+    var i: usize = 0;
+    for (d.methods) |m| {
+        if (!m.is_default or m.body == null) continue;
+        ms[i] = m;
+        i += 1;
+    }
+    // A default body is emitted once per implementer, where `self` is that
+    // implementer: the backends dispatch its calls statically, so the
+    // `.by_value` instance lowerings a `Self`-typed (behavior) receiver records
+    // are dropped again — every other lowering (the `@Result` wrappings, the
+    // `@Option` methods) stays.
+    var before = std.AutoHashMap(ast.Loc, void).init(env.arena);
+    defer before.deinit();
+    var it = env.instanceLowerings.keyIterator();
+    while (it.next()) |k| try before.put(k.*, {});
+    // A primitive's behavior (`behavior String`, `behavior Array<T>`) types
+    // `self` as the primitive (`string`, `array<T>`), so `self.length()` and
+    // `stringSlice0(self, 1)` read the primitive's members and parameters.
+    const selfName = primitiveOfInterface(d.name) orelse d.name;
+    try inferTypeMethods(env, selfName, d.genericParams, ms);
+    var added: std.ArrayListUnmanaged(ast.Loc) = .empty;
+    var it2 = env.instanceLowerings.iterator();
+    while (it2.next()) |e| {
+        if (before.contains(e.key_ptr.*)) continue;
+        try added.append(env.arena, e.key_ptr.*);
+    }
+    for (added.items) |k| _ = env.instanceLowerings.remove(k);
+}
+
 /// Walk the bodies of a type's instance/associated methods (record / struct /
 /// enum) to record the codegen instance-method lowerings (and type the calls
 /// inside). Their signatures are registered earlier, but the bodies were never
 /// walked — so a `self.xs.map(f)` call was neither typed nor recorded, and the
 /// non-JS backends had no way to lower it.
 ///
-/// This is BEST-EFFORT: a method whose body trips an inference gap is skipped
-/// (the lowerings recorded up to that point stand; the rest fall back to the
-/// backend default). Record method bodies are not part of the strict
-/// type-checking contract here — only `default fn` interface bodies are (see
-/// `inferInterfaceDefaultBodies`) — so a gap must not fail the whole compile.
+/// Strict (06 C9): a type error in a method body fails the compile. A
+/// behavior's `default fn` bodies come through here too
+/// (`inferBehaviorDefaultBodies`).
 fn inferTypeMethods(
     env: *Env,
     typeName: []const u8,
     typeGenerics: []const ast.GenericParam,
-    methods: []const ast.InterfaceMethod,
+    methods: []const ast.BehaviorMethod,
 ) InferError!void {
     for (methods) |m| {
         const body = m.body orelse continue;
         if (m.is_declare) continue;
+
+        // 01 step 13 — a method's parameters and locals end with its body.
+        var bodyLog: std.ArrayListUnmanaged(Env.BindUndo) = .empty;
+        const outerScope = env.openBodyScope(&bodyLog);
+        defer env.closeBodyScope(&bodyLog, outerScope, m.name);
+
+        // `@src().fnName` inside a method is `Type.method` (decision 73).
+        const savedFnName = env.currentFnName;
+        env.currentFnName = try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ typeName, m.name });
+        defer env.currentFnName = savedFnName;
 
         var genericMap = std.StringHashMap(*T.Type).init(env.arena);
         defer genericMap.deinit();
@@ -2975,82 +5412,309 @@ fn inferTypeMethods(
                 else
                     try env.namedType("void");
                 break :blk try env.funcType(fparams, fret);
-            } else try resolveTypeRefInContext(env, p.typeRef, genericMap);
+            } else try resolveParamType(env, p, genericMap);
             try env.bind(p.name, ty);
         }
 
         // Scope the return-type-derived `use`/effect context to this body.
         const savedFnCtx = env.fnContext;
-        env.fnContext = try contextInfoFromReturn(env, m.returnType);
+        // Decision 118 — the method's return type is its effect, as a free
+        // fn's is; decision 123 — an `@Iterator` return that yields nothing is
+        // a factory.
+        const methodEffect = ast.EffectKind.ofMethod(m.returnType, m.body);
+        env.fnContext = try contextInfoFromReturn(env, m.returnType, methodEffect, m.name);
         defer env.fnContext = savedFnCtx;
+        // An effect annotation on a method is the method's, exactly as on a
+        // free fn (decision 8 §9): the body gets the effect's context — a
+        // generator method is a generator scope for its `yield`s (decision
+        // 105), a plain method none.
+        const savedStarFn = env.starFn;
+        const savedFnEffect = env.fnEffect;
+        const savedThrowCtx = env.throwContext;
+        const savedLoopDepth = env.loopDepth;
+        const savedBreakScope = env.breakScope;
+        const savedLabelsLen = env.labelStack.items.len;
+        defer {
+            env.starFn = savedStarFn;
+            env.fnEffect = savedFnEffect;
+            env.throwContext = savedThrowCtx;
+            env.loopDepth = savedLoopDepth;
+            env.breakScope = savedBreakScope;
+            env.labelStack.shrinkRetainingCapacity(savedLabelsLen);
+        }
+        env.labelStack.shrinkRetainingCapacity(0);
+        env.loopDepth = 0;
+        env.breakScope = .none;
+        if (methodEffect) |e| {
+            const retTy = if (m.returnType) |rt| try resolveTypeRefInContext(env, rt, genericMap) else try env.freshVar();
+            env.starFn = starCtxFromEffect(e, retTy, null);
+            env.fnEffect = e;
+            // Decision 121 — `throw` / `try` follow the fallible channel.
+            env.throwContext = if (fallibleErrorOf(e, retTy)) |errTy| .{ .result = errTy } else .plain;
+        } else {
+            env.starFn = null;
+            env.fnEffect = null;
+        }
+        // The declared return, whole: a returned value that is already that
+        // wrapper (`return startApp(self)` in a `-> @Task<@Result<…>>` method)
+        // passes through rather than being wrapped `Ok(…)` again
+        // (`valuePassesThrough`), as in a free fn.
+        const savedReturnWhole = env.returnWhole;
+        defer env.returnWhole = savedReturnWhole;
+        env.returnWhole = if (m.returnType) |rt| try resolveTypeRefInContext(env, rt, genericMap) else null;
 
+        // 06 C9 — a method body is part of the strict contract, like a
+        // `default fn` interface body (`inferInterfaceDefaultBodies`). The walk
+        // used to swallow `error.TypeError` into `lastError = null`, so a real
+        // mismatch inside a method compiled and only failed at run time.
+        var inferredReturn: ?*T.Type = null;
+        // The early-exit narrowing (`narrowAfterEarlyExit`) lives as long as
+        // the block does, so it is collected here and restored below.
+        var narrowed: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
+        defer narrowed.deinit(env.arena);
+        try refuseRedeclaredBindings(env, body, try paramNames(env, m.params));
+        try noteStatementClosures(env, body);
         for (body) |stmt| {
-            // Swallow inference gaps (see the best-effort note above): clear the
-            // stale error and move to the next method so the compile survives.
-            _ = inferExpr(env, stmt.expr) catch {
-                env.lastError = null;
-                break;
-            };
+            const typed = try inferExprTyped(env, stmt.expr);
+            try narrowAfterEarlyExit(env, stmt.expr, &narrowed);
+            // 06 C9 — the return type of a method that annotates none comes
+            // from its body. `registerInherentMethodTypes` stores a signature
+            // only for an annotated method ("rather than mis-typing them as
+            // `void`"), so `d.get()` fell to the fresh-var fallback and
+            // `val a: string = d.get();` compiled. Every `return <v>` in the
+            // body agrees (they unify), and a bare `return` / no return leaves
+            // it `void`.
+            if (m.returnType == null and stmt.expr == .jump and stmt.expr.jump.kind == .@"return") {
+                if (stmt.expr.jump.kind.@"return" != null) {
+                    const rv = typed.jump.kind.@"return".?;
+                    if (inferredReturn) |prev| {
+                        try unifyAt(env, prev, rv.getType(), rv.getLoc());
+                    } else {
+                        inferredReturn = rv.getType();
+                    }
+                }
+            }
+        }
+        if (narrowed.items.len > 0) try restorePatternBindings(env, narrowed.items);
+        if (m.returnType == null) {
+            const params = try env.arena.alloc(*T.Type, m.params.len);
+            for (m.params, 0..) |p, i| {
+                params[i] = env.lookup(p.name) orelse try env.freshVar();
+            }
+            const ret = inferredReturn orelse try env.namedType("void");
+            try env.setInherentMethodType(typeName, m.name, try env.funcType(params, ret));
         }
     }
 }
 
-const AsyncReturnKind = enum { none, future, iterator, asyncIterator };
-
-/// Classify a resolved return type as `@Future` / `@Iterator` / `@AsyncIterator`.
-fn classifyAsyncReturn(ty: *T.Type) AsyncReturnKind {
-    const t = ty.deref();
-    return switch (t.*) {
-        .named => |n| if (std.mem.eql(u8, n.name, "Future"))
-            .future
-        else if (std.mem.eql(u8, n.name, "Iterator"))
-            .iterator
-        else if (std.mem.eql(u8, n.name, "AsyncIterator"))
-            .asyncIterator
-        else
-            .none,
-        else => .none,
+/// The value layer of an effect return — what a `return` carries through the
+/// wrapper (decision 119): `T` of `@Task<T>`, `T` of `@Component<C, T>`, the
+/// item `T` of `@Iterator<T>` / `@Stream<T>`; the return itself for
+/// `@Result<R, E>`, which IS the fallible layer.
+fn effectValueLayer(eff: ast.EffectKind, retType: *T.Type) ?*T.Type {
+    const t = retType.deref();
+    if (t.* != .named) return null;
+    const args = t.named.args;
+    return switch (eff) {
+        .result => retType,
+        .task, .iterator, .stream => if (args.len >= 1) args[0] else null,
+        .component => if (args.len >= 2) args[1] else null,
     };
 }
 
-/// True when `retType` is the builtin wrapper named by `eff` (an unresolved
-/// type variable stays lenient, matching the rest of the effect checks).
-fn effectMatchesReturn(eff: ast.EffectKind, retType: *T.Type) bool {
+/// True when `ty` resolves to `@Result<_, _>`.
+fn isResultType(ty: *T.Type) bool {
+    const t = ty.deref();
+    return t.* == .named and std.mem.eql(u8, t.named.name, "Result");
+}
+
+/// Decision 121 — the fallible channel: the `E` of the `@Result<U, E>` layer
+/// of an effect return (`@Result<U, E>` itself, `@Task<@Result<U, E>>`,
+/// `@Component<C, @Result<U, E>>`, `@Iterator<@Result<U, E>>`,
+/// `@Stream<@Result<U, E>>`), or null when no layer is a `@Result`. `throw`
+/// and `try` read this and nothing else.
+fn fallibleErrorOf(eff: ast.EffectKind, retType: *T.Type) ?*T.Type {
+    const layer = effectValueLayer(eff, retType) orelse return null;
+    const l = layer.deref();
+    if (l.* != .named or !std.mem.eql(u8, l.named.name, "Result") or l.named.args.len < 2) return null;
+    return l.named.args[1];
+}
+
+/// Decision 118 rule 1 — the effect wrapper an aliased return resolves to
+/// (`Parser<i32>` → `Result`), or null when the resolved return is no effect
+/// wrapper. Only asked of a return that is NOT written as the wrapper.
+fn aliasedWrapperOf(retType: *T.Type) ?[]const u8 {
     const t = retType.deref();
-    return switch (t.*) {
-        .named => |n| std.mem.eql(u8, n.name, eff.returnWrapper()),
-        .typeVar => true,
-        else => false,
+    if (t.* != .named) return null;
+    const e = ast.EffectKind.fromWrapperName(t.named.name) orelse return null;
+    return e.returnWrapper();
+}
+
+/// C1 — the type a `return <value>` unifies with inside a fn whose declared
+/// return type is `retType` (decision 119: `return` wraps through every
+/// layer): the value layer of the effect's wrapper — and, when that layer is
+/// `@Result<U, E>`, its `U` — the declared type otherwise. Null when returns
+/// are not checked: no declared return type, a template fn, or a sequence
+/// body (`@Iterator` / `@Stream` that yields, which forbids `return <expr>`).
+/// 01 R7 — decision 2: a block is a statement, and a value leaves a body
+/// through `return` (or a `break` of a value block). A plain `fn` whose written
+/// return type has a value and whose body can reach its end without one used
+/// to check — `fn f() -> i32 { val x = 1; }` — and each backend answered
+/// whatever its block-as-value lowering produced. Refused at the return type.
+/// A wrapper return is judged by what a fall-through would hand out: a
+/// `@Result` in any layer (`@Result<void, E>` included) has a value — `Ok` or
+/// `Error` — and its `ok` position is the empty `return;` (decision 74), so it
+/// is refused like any value; a `@Task` / `@Component` whose value layer is a
+/// value type is refused too; one whose value layer is `void` or `noreturn`
+/// falls through as a `void` fn does. `@Iterator` / `@Stream` end by running
+/// off their body and are not judged here; neither is a type guard.
+/// 01 R7 — decision 2's other half: an `if` in value position needs both
+/// branches, each ending in a value. `val y = if (c) { 1 };` checked and bound
+/// whatever each backend's block-as-value lowering produced when `c` is false.
+fn refuseValuelessIf(env: *Env, value: ast.Expr) InferError!void {
+    if (value != .branch) return;
+    const i = switch (value.branch.kind) {
+        .if_ => |i| i,
+        else => return,
+    };
+    if (i.else_ == null) {
+        env.lastError = TypeError.custom(
+            "an `if` without `else` has no value on its false side",
+            "Give it an `else` branch, or bind the value inside the branch (decision 2: a block is a statement).",
+        ).withLoc(value.branch.loc);
+        return error.TypeError;
+    }
+}
+
+fn refuseFallingOffTheEnd(env: *Env, f: ast.FnDecl, retType: *T.Type) InferError!void {
+    if (f.returnType == null or f.typeGuardParam != null or f.isDeclare) return;
+    if (env.inTemplateFn) return;
+    for (f.annotations) |a| if (std.mem.startsWith(u8, a.name, "External")) return;
+    const rt = retType.deref();
+    if (f.effect) |eff| {
+        switch (eff) {
+            .iterator, .stream => return,
+            .result => {},
+            .task, .component => {
+                const layer = (effectValueLayer(eff, retType) orelse return).deref();
+                if (layer.* != .named) return;
+                if (!std.mem.eql(u8, layer.named.name, "Result") and
+                    (std.mem.eql(u8, layer.named.name, "void") or std.mem.eql(u8, layer.named.name, "noreturn"))) return;
+            },
+        }
+    } else if (rt.* == .named and (std.mem.eql(u8, rt.named.name, "void") or std.mem.eql(u8, rt.named.name, "noreturn"))) return;
+    if (!stmtsMayFallThrough(env, f.body)) return;
+    const rendered = try snapshotMod.typeNameOf(env.arena, rt);
+    const msg = try std.fmt.allocPrint(env.arena, "`{s}` declares `-> {s}` and its body can reach its end without a `return`", .{ f.name, rendered });
+    var err = TypeError.custom(msg, "A value leaves a function through `return` (decision 2): end every path with `return <value>;`, or `@panic(…)` / `@todo()` where it cannot happen.");
+    if (f.returnTypeLoc.line > 0) err = err.withLoc(f.returnTypeLoc) else if (f.body.len > 0) err = err.withLoc(f.body[0].expr.getLoc());
+    env.lastError = err;
+    return error.TypeError;
+}
+
+/// Whether control can run off the end of `stmts` — the last statement is not
+/// a `return` / `throw`, an `if`/`else` or `case` whose every branch ends that
+/// way, a `loop { }` (left only by `break` or `return`), or a call to a
+/// `noreturn` builtin. Conservative the right way: anything it cannot read is
+/// "may fall through" only where the statement plainly has no exit.
+fn stmtsMayFallThrough(env: *Env, stmts: []const ast.Stmt) bool {
+    // A trailing comment is kept as a statement by the parser and is not one.
+    var n = stmts.len;
+    while (n > 0) : (n -= 1) {
+        const e = stmts[n - 1].expr;
+        if (e == .literal and e.literal.kind == .comment) continue;
+        return exprMayFallThrough(env, e);
+    }
+    return true;
+}
+
+fn exprMayFallThrough(env: *Env, e: ast.Expr) bool {
+    return switch (e) {
+        .jump => |j| switch (j.kind) {
+            .@"return", .throw_, .@"break", .@"continue" => false,
+            else => true,
+        },
+        .branch => |b| switch (b.kind) {
+            .if_ => |i| blk: {
+                const els = i.else_ orelse break :blk true;
+                break :blk stmtsMayFallThrough(env, i.then_) or stmtsMayFallThrough(env, els);
+            },
+            else => true,
+        },
+        // A bare `loop { }` is left only by `break` (which ends the loop, and
+        // the body falls through after it) or by `return`; which one is not
+        // read here, so it is not refused — the lenient answer, never a false
+        // refusal. `while` and `for` can always end normally.
+        .loop => |l| l.keyword != .loop,
+        .collection => |c| switch (c.kind) {
+            .case => |cs| blk: {
+                if (cs.arms.len == 0) break :blk true;
+                for (cs.arms) |arm| if (exprMayFallThrough(env, arm.body)) break :blk true;
+                break :blk false;
+            },
+            .grouped => |g| exprMayFallThrough(env, g.*),
+            else => true,
+        },
+        .function => |fe| stmtsMayFallThrough(env, fe.kind.body),
+        .call => |c| switch (c.kind) {
+            .call => |cc| !callNeverReturns(env, cc),
+            else => true,
+        },
+        else => true,
+    };
+}
+
+fn returnTargetFor(retType: *T.Type, eff: ?ast.EffectKind, checked: bool) ?*T.Type {
+    if (!checked) return null;
+    const e = eff orelse return retType;
+    if (retType.deref().* != .named) return null;
+    return switch (e) {
+        .result => blk: {
+            const args = retType.deref().named.args;
+            break :blk if (args.len >= 1) args[0] else null;
+        },
+        .task, .component => blk: {
+            const layer = effectValueLayer(e, retType) orelse break :blk null;
+            const l = layer.deref();
+            if (l.* == .named and std.mem.eql(u8, l.named.name, "Result") and l.named.args.len >= 1) break :blk l.named.args[0];
+            break :blk layer;
+        },
+        .iterator, .stream => null,
     };
 }
 
 /// Build the effect body context (drives `await`/`yield` validation) from the
-/// effect kind and its return type. Returns null for effects with no async /
-/// generator body operations (`#[@result]`, `#[@context]`).
-fn starCtxFromEffect(eff: ast.EffectKind, retType: *T.Type, fnLabel: ?[]const u8) ?envMod.StarFnCtx {
-    const t = retType.deref();
-    const item: ?*T.Type = switch (t.*) {
-        .named => |n| if (n.args.len >= 1) n.args[0] else null,
-        else => null,
-    };
-    // §1I — `@Iterator<T, E, C>` / `@AsyncIterator<T, E, C>` carry the
-    // completion type in the third argument. Default-fill (`C = void`) lands
-    // via `builtinDefaultFilledArgs` before this point, so `args.len >= 3`
-    // is reliable for iterator/asyncGenerator.
-    const completion: ?*T.Type = switch (t.*) {
-        .named => |n| if (n.args.len >= 3) n.args[2] else null,
-        else => null,
-    };
-    return switch (eff) {
-        .future => .{ .allowsAwait = true, .allowsYield = false, .iterItem = null, .iterCompletion = null, .fnLabel = fnLabel, .effect = eff },
-        .iterator => .{ .allowsAwait = false, .allowsYield = true, .iterItem = item, .iterCompletion = completion, .fnLabel = fnLabel, .effect = eff },
-        .generator => .{ .allowsAwait = false, .allowsYield = true, .iterItem = item, .iterCompletion = null, .fnLabel = fnLabel, .effect = eff },
-        .asyncGenerator => .{ .allowsAwait = true, .allowsYield = true, .iterItem = item, .iterCompletion = completion, .fnLabel = fnLabel, .effect = eff },
-        .result, .context => null,
+/// effect kind and its return type. EVERY effect gets one — `env.starFn` is
+/// null only in a plain `fn` — so a capability the chain does not grant is
+/// refused rather than falling through an absent context (decision 95 + 67).
+fn starCtxFromEffect(eff: ast.EffectKind, retType: *T.Type, fnLabel: ?[]const u8) envMod.StarFnCtx {
+    // `iterItem` is the one item channel: only `@Iterator` / `@Stream` carry
+    // it, and both `yield <v>` and a sequence-level `break <v>` unify with it
+    // (decision 122 — there is no completion channel).
+    const yields = effectChain.grants(eff, .yield_);
+    return .{
+        .allowsAwait = effectChain.grants(eff, .await_),
+        .allowsYield = yields,
+        .iterItem = if (yields) effectValueLayer(eff, retType) else null,
+        .fnLabel = fnLabel,
+        .effect = eff,
     };
 }
 
 // ── expression inference ──────────────────────────────────────────────────────
+
+/// The `InstanceLowering.division` an arithmetic operator of result type `t`
+/// records: the integer type (onze F7's truncating `/`, decision 264's range
+/// check), a float, or nothing while `t` is unresolved or not a number (a
+/// string `+`).
+pub fn arithKind(t: *T.Type) ?envMod.ArithKind {
+    const d = t.deref();
+    if (isFloatType(d)) return .float;
+    inline for (@typeInfo(envMod.ArithKind).@"enum".fields) |f| {
+        if (f.value != @intFromEnum(envMod.ArithKind.float) and d.isNamed(f.name)) return @enumFromInt(f.value);
+    }
+    return null;
+}
 
 fn isIntType(t: *T.Type) bool {
     return t.isNamed("i8") or t.isNamed("u8") or
@@ -3124,9 +5788,11 @@ fn captureExprArg(
     var text: ?[]const u8 = null;
     var multiline = false;
     var isLiteral = false;
-    // The lexer stamps a multiline literal with the line of its *closing*
-    // `"""`; subtract the content's newlines to recover the opening line so
-    // span mapping starts from where the template begins.
+    // `newlines` only decides `multiline` for a hole-less literal: the lexer
+    // stamps every token with the line it STARTS on, so a multiline literal's
+    // loc is already its opening `"""` and needs no adjustment. (It used to
+    // carry the CLOSING line, which this function compensated for by
+    // subtracting the content's newlines.)
     var newlines: usize = 0;
     if (rawArg.* == .literal) {
         switch (rawArg.literal.kind) {
@@ -3164,7 +5830,7 @@ fn captureExprArg(
         .node = rawArg,
         .text = text,
         .multiline = multiline,
-        .loc = .{ .line = litLoc.line -| newlines, .col = litLoc.col },
+        .loc = litLoc,
         .modulePath = env.modulePath,
         .scope = env.scopeSnapshot,
     };
@@ -3176,8 +5842,9 @@ fn captureExprArg(
 /// capture logic needs. NOTE (V1 hygiene caveat, recorded): code the template
 /// builds re-infers in the *caller's* scope — library helpers it references
 /// must be visible there.
-pub fn registerImportedTemplateFn(env: *Env, name: []const u8, decl: ast.FnDecl) !void {
+pub fn registerImportedTemplateFn(env: *Env, name: []const u8, decl: ast.FnDecl, owner: []const u8) !void {
     try env.templateFns.put(name, decl);
+    try env.noteComptimeOwner(decl, owner);
     var infos: std.ArrayListUnmanaged(envMod.ExprParamInfo) = .empty;
     for (decl.params, 0..) |p, i| {
         if (p.typeRef.isExprType()) {
@@ -3200,6 +5867,177 @@ pub fn registerImportedTemplateFn(env: *Env, name: []const u8, decl: ast.FnDecl)
 /// constructor with this module's own type ids.
 pub fn registerImportedTypeDecl(env: *Env, decl: ast.DeclKind) !void {
     try registerTypeDecl(env, decl);
+}
+
+/// Decision 110 rule 1 — `import {Dict as D}`: the alias is a local name of
+/// the imported type (or type alias) IN THE CHECKER ONLY. The declaration is
+/// registered under its own name (the emitted identity, decision 109), and
+/// `alias` becomes a checker-local type alias of it with the same parameters
+/// (`D<K, V>` is `Dict<K, V>`), erased before the backends like any alias.
+/// A value use of the alias — the constructor `D(…)` — is renamed to the
+/// declared name at the call (`Env.importedTypeAliases`, read by
+/// `inferCallExpr`), so no backend sees `D`.
+pub fn registerImportedTypeAlias(env: *Env, decl: ast.DeclKind, alias: []const u8, loc: ast.Loc) !void {
+    const real: []const u8 = switch (decl) {
+        .type_ => |t| t.name,
+        .typeAlias => |a| a.name,
+        else => return,
+    };
+    const params: []ast.GenericParam = switch (decl) {
+        .type_ => |t| t.genericParams,
+        .typeAlias => |a| a.genericParams,
+        else => &.{},
+    };
+    const target: ast.TypeRef = if (params.len == 0) .{ .named = real } else blk: {
+        const args = try env.arena.alloc(ast.TypeRef, params.len);
+        for (params, 0..) |gp, i| args[i] = .{ .named = gp.name };
+        break :blk .{ .generic = .{ .name = real, .args = args, .is_builtin = false } };
+    };
+    try env.typeAliases.put(env.arena, alias, .{
+        .name = alias,
+        .genericParams = params,
+        .target = target,
+        .loc = loc,
+        .targetLoc = loc,
+    });
+    try env.importedTypeAliases.put(env.arena, alias, real);
+    if (env.lookup(real)) |ctor| try env.bind(alias, ctor);
+}
+
+/// 01 R2 — importing a type registers the closure of the types its
+/// declaration mentions (field types and method signature types,
+/// transitively) from the module it comes from, so `import { User }` works
+/// when `User(role: Role)` and `Role` was not named in the clause. Each type
+/// of the closure is registered as a TYPE only: the constructor and variant
+/// bindings its registration adds are removed again — naming it in the
+/// import is what brings its constructor into scope. Call before registering
+/// `decl` itself: its fields resolve against the closure. A type the
+/// module imported from a third one is found under the `"\x00"` scope key
+/// `comptime.registerExports` writes (onze F2).
+pub fn registerImportedTypeClosure(
+    env: *Env,
+    moduleDecls: std.StringHashMap(ast.DeclKind),
+    decl: ast.DeclKind,
+) !void {
+    try registerTypeClosureDepth(env, moduleDecls, decl, 0);
+}
+
+fn registerTypeClosureDepth(
+    env: *Env,
+    moduleDecls: std.StringHashMap(ast.DeclKind),
+    decl: ast.DeclKind,
+    depth: usize,
+) !void {
+    if (depth >= 32) return;
+    if (decl == .typeAlias) return registerAliasClosure(env, moduleDecls, decl.typeAlias, depth);
+    if (decl != .type_) return;
+    const td = decl.type_;
+    var names: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer names.deinit(env.arena);
+    for (td.recordFields()) |f| try collectTypeRefNames(env, f.typeRef, &names);
+    for (td.variants()) |v| for (v.fields) |f| try collectTypeRefNames(env, f.typeRef, &names);
+    for (td.methods) |m| {
+        for (m.params) |p| try collectTypeRefNames(env, p.typeRef, &names);
+        if (m.returnType) |rt| try collectTypeRefNames(env, rt, &names);
+    }
+    try registerTypesOnly(env, moduleDecls, names.items, td.name, depth);
+}
+
+/// 01 R2 for an imported FUNCTION: the types its signature names (a
+/// `matchPath(…) -> ?RouteMatch` imported without `RouteMatch`) are registered
+/// as types only, from the module it comes from, like a type's closure — so a
+/// value it returns has its fields and methods here. Naming the type in the
+/// import is still what brings its constructor into scope.
+pub fn registerImportedSignatureClosure(
+    env: *Env,
+    moduleDecls: std.StringHashMap(ast.DeclKind),
+    ty: *T.Type,
+) !void {
+    var names: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer names.deinit(env.arena);
+    try collectTypeNames(env, ty, &names, 0);
+    try registerTypesOnly(env, moduleDecls, names.items, "", 0);
+}
+
+fn collectTypeNames(env: *Env, ty: *T.Type, out: *std.ArrayListUnmanaged([]const u8), depth: usize) !void {
+    if (depth >= 32) return;
+    const t = ty.deref();
+    switch (t.*) {
+        .named => |n| {
+            try out.append(env.arena, n.name);
+            for (n.args) |a| try collectTypeNames(env, a, out, depth + 1);
+        },
+        .func => |f| {
+            for (f.params) |p| try collectTypeNames(env, p, out, depth + 1);
+            try collectTypeNames(env, f.ret, out, depth + 1);
+        },
+        .union_ => |us| for (us) |u| try collectTypeNames(env, u, out, depth + 1),
+        else => {},
+    }
+}
+
+/// Register each of `names` the module declares (or imports, under the scope
+/// prefix) as a TYPE only, with its own closure first; `self_name` is skipped.
+fn registerTypesOnly(
+    env: *Env,
+    moduleDecls: std.StringHashMap(ast.DeclKind),
+    names: []const []const u8,
+    self_name: []const u8,
+    depth: usize,
+) InferError!void {
+    for (names) |n| {
+        if (std.mem.eql(u8, n, self_name)) continue;
+        if (env.lookupTypeDef(n) != null) continue;
+        // A type the module imported rather than declared is in its map
+        // under the scope prefix (`comptime.imported_type_scope_prefix`).
+        const dep = moduleDecls.get(n) orelse blk: {
+            var buf: [256]u8 = undefined;
+            if (n.len + 1 > buf.len) continue;
+            buf[0] = 0;
+            @memcpy(buf[1 .. n.len + 1], n);
+            break :blk moduleDecls.get(buf[0 .. n.len + 1]) orelse continue;
+        };
+        if (dep == .typeAlias) {
+            try registerAliasClosure(env, moduleDecls, dep.typeAlias, depth + 1);
+            continue;
+        }
+        if (dep != .type_) continue;
+        try registerTypeClosureDepth(env, moduleDecls, dep, depth + 1);
+        if (env.lookupTypeDef(n) != null) continue;
+        // Register the type, then take back the bindings it added.
+        var before = std.StringHashMap(void).init(env.arena);
+        defer before.deinit();
+        var kit = env.bindings.keyIterator();
+        while (kit.next()) |k| try before.put(k.*, {});
+        try registerTypeDecl(env, dep);
+        var added: std.ArrayListUnmanaged([]const u8) = .empty;
+        defer added.deinit(env.arena);
+        var ait = env.bindings.keyIterator();
+        while (ait.next()) |k| if (!before.contains(k.*)) try added.append(env.arena, k.*);
+        for (added.items) |k| {
+            if (env.bindings.get(k)) |ty| try env.typeOnlyCtors.put(k, ty);
+            _ = env.bindings.remove(k);
+        }
+    }
+}
+
+fn collectTypeRefNames(env: *Env, ref: ast.TypeRef, out: *std.ArrayListUnmanaged([]const u8)) !void {
+    switch (ref) {
+        .named => |n| try out.append(env.arena, n),
+        .array => |e| try collectTypeRefNames(env, e.*, out),
+        .optional => |e| try collectTypeRefNames(env, e.*, out),
+        .tuple_ => |es| for (es) |e| try collectTypeRefNames(env, e, out),
+        .labeledTuple => |lt| for (lt.elems) |e| try collectTypeRefNames(env, e, out),
+        .function => |f| {
+            for (f.params) |e| try collectTypeRefNames(env, e, out);
+            try collectTypeRefNames(env, f.returnType.*, out);
+        },
+        .generic => |g| {
+            try out.append(env.arena, g.name);
+            for (g.args) |e| try collectTypeRefNames(env, e, out);
+        },
+        .typeparam => |cs| for (cs) |e| try collectTypeRefNames(env, e, out),
+    }
 }
 
 // ── template call-site expansion (expr-templates F6, V1 driver) ───────────────
@@ -3337,7 +6175,7 @@ fn expandTemplateCallViaRuntime(
             buf.append(env.arena, 0) catch return error.OutOfMemory;
             buf.appendSlice(env.arena, pa.paramName) catch return error.OutOfMemory;
             buf.append(env.arena, 1) catch return error.OutOfMemory;
-            buf.appendSlice(env.arena, pa.jsValue) catch return error.OutOfMemory;
+            buf.appendSlice(env.arena, pa.source) catch return error.OutOfMemory;
         }
         break :blk buf.toOwnedSlice(env.arena) catch return error.OutOfMemory;
     };
@@ -3347,10 +6185,10 @@ fn expandTemplateCallViaRuntime(
         }
     }
 
-    const outcome = templateEval.evaluate(env.arena, ctx.io, ctx.build_root, tfn, captures, plainArgs) catch {
+    const outcome = templateEval.evaluate(env.arena, ctx.io, ctx.build_root, env.comptimeOwnerOf(tfn), tfn, captures, plainArgs, &env.comptimeTraces) catch {
         env.lastError = TypeError.custom(
             "the template evaluator failed to run",
-            "Template bodies are evaluated by the node runtime at compile time — check that `node` is available.",
+            "Template bodies run in a persistent `erl` process at compile time — check that `erl` and `erlc` are on PATH.",
         ).withLoc(loc);
         return error.TypeError;
     };
@@ -3364,6 +6202,7 @@ fn expandTemplateCallViaRuntime(
                 ).withLoc(loc);
                 return error.TypeError;
             };
+            try applyDslHygiene(env, tfn, @constCast(parsed), src, captures);
             // Splice the caller's `${…}` hole expressions back in place of
             // the `__bp_hole_<param>_<i>` placeholders the template embedded.
             substituteHoles(@constCast(parsed), captures);
@@ -3386,10 +6225,10 @@ fn expandTemplateCallViaRuntime(
                 ).withLoc(loc);
                 return error.TypeError;
             };
+            try applyDslHygiene(env, tfn, @constCast(parsed), c.code, captures);
             substituteHoles(@constCast(parsed), captures);
-            // The `ast` half: use pre-parsed tree from WAT memory if available,
-            // otherwise deserialize from JSON.
-            const root = if (c.root) |r| r else template.parseCustomNode(env.arena, c.ast) catch return error.OutOfMemory;
+            // The `ast` half: the reference tree the template built.
+            const root = template.parseCustomNodeFromTree(env.arena, c.ast) catch return error.OutOfMemory;
             const prov: ?*const template.CapturedExpr = if (captures.len > 0) &captures[0] else null;
             env.customAstByLoc.put(loc, .{
                 .callee = tfn.name,
@@ -3400,7 +6239,7 @@ fn expandTemplateCallViaRuntime(
             }) catch return error.OutOfMemory;
             break :blk parsed;
         },
-        .value => |v| literalFromJson(env, v, loc) orelse {
+        .value => |v| valueToAstLiteral(env, v, loc, liftShapeOf(env, tfn)) orelse {
             env.lastError = TypeError.custom(
                 "the template's `@expr(…)` value cannot be lifted as a literal",
                 "V1 lifts numbers, strings, booleans, null, and arrays of those.",
@@ -3434,6 +6273,41 @@ fn expandTemplateCallViaRuntime(
         env.templateEvalCache.put(key, expansion) catch return error.OutOfMemory;
     }
     return finishExpansion(env, expansion, retType, loc);
+}
+
+/// Decision 112 — the names the template's LIBRARY wrote into `parsed` (the
+/// built code of `src`) resolve in the library's module (`dsl_hygiene.zig`);
+/// the consumer's text keeps resolving here. A template declared in this very
+/// module has one author's scope and is left alone.
+fn applyDslHygiene(env: *Env, tfn: ast.FnDecl, parsed: *ast.Expr, src: []const u8, captures: []const template.CapturedExpr) InferError!void {
+    const owner = env.comptimeOwnerOf(tfn);
+    if (std.mem.eql(u8, owner, env.modulePath)) return;
+    const exports = env.templateOwnerExports.get(owner) orelse return;
+    const Resolver = struct {
+        env: *Env,
+        owner: []const u8,
+        exports: *const std.StringHashMap(*T.Type),
+
+        pub fn aliasFor(self: @This(), name: []const u8) dslHygiene.Error!?[]const u8 {
+            const ty = self.exports.get(name) orelse
+                self.exports.get(try envMod.templatePrivateKey(self.env.arena, name)) orelse return null;
+            var mangled: std.ArrayListUnmanaged(u8) = .empty;
+            for (self.owner) |ch| try mangled.append(self.env.arena, if (std.ascii.isAlphanumeric(ch)) ch else '_');
+            const alias = try std.fmt.allocPrint(self.env.arena, "__bp_tpl_{s}__{s}", .{ mangled.items, name });
+            if (!self.env.templateImports.contains(alias)) {
+                try self.env.templateImports.put(self.env.arena, alias, .{ .owner = self.owner, .name = name });
+                // Module-wide, like an import: the expansion may sit in a
+                // body whose scope closes before the next one uses it.
+                const scope = self.env.bodyScope;
+                self.env.bodyScope = null;
+                defer self.env.bodyScope = scope;
+                try self.env.bind(alias, ty);
+            }
+            return alias;
+        }
+    };
+    const spans = try dslHygiene.userSpans(env.arena, src, captures);
+    try dslHygiene.apply(env.arena, parsed, src, spans, Resolver{ .env = env, .owner = owner, .exports = exports });
 }
 
 /// Replace `__bp_hole_<param>_<i>` placeholder identifiers in freshly parsed
@@ -3556,9 +6430,67 @@ fn holeForPlaceholder(name: []const u8, captures: []const template.CapturedExpr)
     return null;
 }
 
-/// Build a literal expression from a JSON value produced by `@expr(…)` in
-/// the eval runtime (V1: numbers, strings, booleans, null, arrays of those).
-fn literalFromJson(env: *Env, v: std.json.Value, loc: ast.Loc) ?*const ast.Expr {
+/// The labels of a tuple a template lifts (decision 8 §6), read from the
+/// template body: `return @expr(#(server, debug))` labels its elements
+/// `server` and `debug`, and `val server = #(host, port)` earlier in the body
+/// labels the nested tuple. Children follow the elements; null = unlabeled.
+const LiftShape = struct {
+    labels: []const []const u8,
+    children: []const ?*const LiftShape,
+};
+
+/// The shape of the value `tfn` lifts through `return @expr(E)` — the first
+/// such return in the body — or null when the body builds no labeled tuple.
+fn liftShapeOf(env: *Env, tfn: ast.FnDecl) ?*const LiftShape {
+    for (tfn.body) |stmt| {
+        if (stmt.expr != .jump or stmt.expr.jump.kind != .@"return") continue;
+        const ret = stmt.expr.jump.kind.@"return" orelse continue;
+        if (ret.* != .call or ret.call.kind != .call) continue;
+        const cc = ret.call.kind.call;
+        if (!cc.is_builtin or cc.args.len != 1 or !std.mem.eql(u8, cc.callee, "expr")) continue;
+        return shapeOfExpr(env, tfn.body, cc.args[0].value.*, 0);
+    }
+    return null;
+}
+
+fn shapeOfExpr(env: *Env, body: []const ast.Stmt, e: ast.Expr, depth: usize) ?*const LiftShape {
+    if (depth > 16) return null;
+    switch (e) {
+        .identifier => |id| {
+            if (id.kind != .ident) return null;
+            // The last `val`/`var` binding of that name in the body.
+            var bound: ?*const ast.Expr = null;
+            for (body) |stmt| {
+                if (stmt.expr == .binding and stmt.expr.binding.kind == .localBind) {
+                    const lb = stmt.expr.binding.kind.localBind;
+                    if (std.mem.eql(u8, lb.name, id.kind.ident)) bound = lb.value;
+                }
+            }
+            return if (bound) |b| shapeOfExpr(env, body, b.*, depth + 1) else null;
+        },
+        .collection => |col| switch (col.kind) {
+            .grouped => |g| return shapeOfExpr(env, body, g.*, depth + 1),
+            .tupleLit => |tl| {
+                const labels = env.arena.alloc([]const u8, tl.elems.len) catch return null;
+                const children = env.arena.alloc(?*const LiftShape, tl.elems.len) catch return null;
+                for (tl.elems, 0..) |elem, i| {
+                    labels[i] = if (elem == .identifier and elem.identifier.kind == .ident) elem.identifier.kind.ident else "";
+                    children[i] = shapeOfExpr(env, body, elem, depth + 1);
+                }
+                const shape = env.arena.create(LiftShape) catch return null;
+                shape.* = .{ .labels = labels, .children = children };
+                return shape;
+            },
+            else => return null,
+        },
+        else => return null,
+    }
+}
+
+/// Build a literal expression from a TypedValue produced by template evaluation.
+/// A tuple takes the labels `shape` names; an object (a map the host built)
+/// lifts as a tuple labeled by its keys.
+fn valueToAstLiteral(env: *Env, v: templateEval.TypedValue, loc: ast.Loc, shape: ?*const LiftShape) ?*const ast.Expr {
     const node = env.arena.create(ast.Expr) catch return null;
     switch (v) {
         .integer => |n| {
@@ -3566,7 +6498,10 @@ fn literalFromJson(env: *Env, v: std.json.Value, loc: ast.Loc) ?*const ast.Expr 
             node.* = .{ .literal = .{ .loc = loc, .kind = .{ .numberLit = text } } };
         },
         .float => |f| {
-            const text = std.fmt.allocPrint(env.arena, "{d}", .{f}) catch return null;
+            // Decision 247 — a lifted float keeps its decimal point: `6.0`
+            // printed as `6` would come back an integer literal, an `i32`.
+            const raw = std.fmt.allocPrint(env.arena, "{d}", .{f}) catch return null;
+            const text = if (std.mem.indexOfAny(u8, raw, ".eEn") == null) std.fmt.allocPrint(env.arena, "{s}.0", .{raw}) catch return null else raw;
             node.* = .{ .literal = .{ .loc = loc, .kind = .{ .numberLit = text } } };
         },
         .string => |str| {
@@ -3580,30 +6515,39 @@ fn literalFromJson(env: *Env, v: std.json.Value, loc: ast.Loc) ?*const ast.Expr 
             node.* = .{ .literal = .{ .loc = loc, .kind = .null_ } };
         },
         .array => |items| {
-            const elems = env.arena.alloc(ast.Expr, items.items.len) catch return null;
-            for (items.items, 0..) |item, i| {
-                const elem = literalFromJson(env, item, loc) orelse return null;
+            const elems = env.arena.alloc(ast.Expr, items.len) catch return null;
+            for (items, 0..) |item, i| {
+                const elem = valueToAstLiteral(env, item, loc, null) orelse return null;
                 elems[i] = elem.*;
             }
             node.* = .{ .collection = .{ .loc = loc, .kind = .{ .arrayLit = .{ .elems = elems } } } };
         },
-        .object => |obj| {
-            // A JS object lifts as an anonymous record literal — the yaml
-            // case: the template computes a structure and the caller gets a
-            // fully typed `record { … }`.
-            const fields = env.arena.alloc(ast.RecordLitFieldOf(.untyped), obj.count()) catch return null;
-            var it = obj.iterator();
-            var i: usize = 0;
-            while (it.next()) |entry| : (i += 1) {
-                const value = literalFromJson(env, entry.value_ptr.*, loc) orelse return null;
-                fields[i] = .{
-                    .name = env.arena.dupe(u8, entry.key_ptr.*) catch return null,
-                    .value = @constCast(value),
-                };
+        .tuple => |items| {
+            // The yaml case: the template computes a structure and the caller
+            // gets a fully typed tuple whose labels come from the body.
+            const matches = if (shape) |sh| sh.labels.len == items.len else false;
+            const elems = env.arena.alloc(ast.Expr, items.len) catch return null;
+            for (items, 0..) |item, i| {
+                const child: ?*const LiftShape = if (matches) shape.?.children[i] else null;
+                const elem = valueToAstLiteral(env, item, loc, child) orelse return null;
+                elems[i] = elem.*;
             }
-            node.* = .{ .collection = .{ .loc = loc, .kind = .{ .recordLit = .{ .fields = fields } } } };
+            node.* = .{ .collection = .{ .loc = loc, .kind = .{ .tupleLit = .{
+                .elems = elems,
+                .labels = if (matches) shape.?.labels else &.{},
+            } } } };
         },
-        else => return null,
+        .object => |pairs| {
+            // A map built by host code lifts as a tuple labeled by its keys.
+            const elems = env.arena.alloc(ast.Expr, pairs.len) catch return null;
+            const labels = env.arena.alloc([]const u8, pairs.len) catch return null;
+            for (pairs, 0..) |pair, i| {
+                const value = valueToAstLiteral(env, pair.value, loc, null) orelse return null;
+                elems[i] = value.*;
+                labels[i] = env.arena.dupe(u8, pair.key) catch return null;
+            }
+            node.* = .{ .collection = .{ .loc = loc, .kind = .{ .tupleLit = .{ .elems = elems, .labels = labels } } } };
+        },
     }
     return node;
 }
@@ -3675,10 +6619,10 @@ fn parseCodeText(env: *Env, src: []const u8) ?*const ast.Expr {
     return node;
 }
 
-/// Serialize a literal (or bool-identifier) expression as a JS value string for
-/// a plain arg binding in the template evaluator script. Returns null when the
+/// The source lexeme of a literal (or bool-identifier) argument bound to a plain
+/// template parameter (`template.PlainArg.source`). Returns null when the
 /// expression is not a supported constant (string, number, null, true/false).
-fn literalToJsAlloc(arena: std.mem.Allocator, expr: *const ast.Expr) error{OutOfMemory}!?[]const u8 {
+fn literalSourceAlloc(arena: std.mem.Allocator, expr: *const ast.Expr) error{OutOfMemory}!?[]const u8 {
     // Booleans are identifiers in the AST (not literal nodes).
     if (expr.* == .identifier) {
         const name = switch (expr.identifier.kind) {
@@ -3691,12 +6635,9 @@ fn literalToJsAlloc(arena: std.mem.Allocator, expr: *const ast.Expr) error{OutOf
     }
     if (expr.* != .literal) return null;
     return switch (expr.literal.kind) {
-        .stringLit => |s| blk: {
-            var buf: std.ArrayList(u8) = .empty;
-            try template.appendJsonString(&buf, arena, s);
-            break :blk try buf.toOwnedSlice(arena);
-        },
-        // numberLit is stored as raw source text — valid JS numeric literal.
+        // stringLit holds the literal's raw content (escapes unprocessed).
+        .stringLit => |s| try std.fmt.allocPrint(arena, "\"{s}\"", .{s}),
+        // numberLit is stored as raw source text.
         .numberLit => |n| try std.fmt.allocPrint(arena, "{s}", .{n}),
         .null_ => "null",
         else => null,
@@ -3754,10 +6695,6 @@ fn isV1Liftable(e: *const ast.Expr) bool {
                 for (tl.elems) |*elem| if (!isV1Liftable(elem)) break :blk false;
                 break :blk true;
             },
-            .recordLit => |rl| blk: {
-                for (rl.fields) |f| if (!isV1Liftable(f.value)) break :blk false;
-                break :blk true;
-            },
             else => false,
         },
         else => false,
@@ -3792,15 +6729,146 @@ fn validateTypeparams(
     }
 }
 
+/// Gives `err`'s pending `TypeError` the location `loc` when it has none — the
+/// stamp a caller holding the source position puts on an error raised below it
+/// by `unifyUnlocated` (01 step 9). An error already located keeps its place.
+fn locateLast(env: *Env, err: InferError, loc: ast.Loc) InferError {
+    if (err == error.TypeError and loc.line != 0) {
+        if (env.lastError) |*e| if (e.loc == null) {
+            e.loc = loc;
+        };
+    }
+    return err;
+}
+
 /// Calls `unify` and, if it fails, stamps the expression's location onto the error.
 fn unifyAt(env: *Env, a: *T.Type, b: *T.Type, loc: ast.Loc) InferError!void {
     // `Children` coercion — applied before unification since `unifyAt` is
     // always called target-first (`unifyAt(param, arg)`).
     if (childrenCoercion(env, a, b)) return;
-    unify(env, a, b) catch |err| {
-        if (env.lastError) |*e| e.loc = loc;
+    // Decision 8 §6 T7 — read before `unify` links anything.
+    const ta = a.deref();
+    const tb = b.deref();
+    unifyUnlocated(env, a, b) catch |err| {
+        if (env.lastError) |*e| {
+            // The occurs check answers a type that would contain itself —
+            // inside a generic fn, the declared `T` against a `?T` (`return
+            // xs[0];` under `-> T`, an index answering `?T`) or a `T[]`. Named
+            // as the mismatch it is, the type parameter spelled.
+            if (e.kind == .recursiveType) {
+                const msg = try std.fmt.allocPrint(env.arena, "type mismatch: expected `{s}`, got `{s}` — the second holds the first, so the two are never one type", .{ try genericSpelling(env, ta, 0), try genericSpelling(env, tb, 0) });
+                const optional = tb.* == .named and std.mem.eql(u8, tb.named.name, "optional");
+                env.lastError = TypeError.custom(msg, if (optional)
+                    "An index and `at` answer an optional (`?T`): unwrap it (`xs[0] ?? fallback`, `case`) or declare the type `?T`."
+                else
+                    "Give the position the type the value has, or a value of the type the position declares.");
+            }
+            env.lastError.?.loc = loc;
+        }
         return err;
     };
+    try warnTupleLabelMismatch(env, ta, tb, loc);
+}
+
+/// A type as the source spells it, a generic fn's type parameter by its name
+/// (`fnGenericMap`) — for the occurs-check refusal, where a bare `?` would say
+/// nothing.
+fn genericSpelling(env: *Env, t: *T.Type, depth: usize) InferError![]const u8 {
+    const d = t.deref();
+    if (depth > 8) return "…";
+    switch (d.*) {
+        .typeVar => {
+            if (env.fnGenericMap) |gm| {
+                var it = gm.iterator();
+                while (it.next()) |e| if (e.value_ptr.*.deref() == d) return e.key_ptr.*;
+            }
+            return "?";
+        },
+        .named => |n| {
+            if (std.mem.eql(u8, n.name, "optional") and n.args.len == 1) return std.fmt.allocPrint(env.arena, "?{s}", .{try genericSpelling(env, n.args[0], depth + 1)});
+            if ((std.mem.eql(u8, n.name, "array") or std.mem.eql(u8, n.name, "Array")) and n.args.len == 1) return std.fmt.allocPrint(env.arena, "{s}[]", .{try genericSpelling(env, n.args[0], depth + 1)});
+            if (n.args.len == 0) return n.name;
+            var buf: std.ArrayListUnmanaged(u8) = .empty;
+            try buf.appendSlice(env.arena, n.name);
+            try buf.append(env.arena, '<');
+            for (n.args, 0..) |a, i| {
+                if (i > 0) try buf.appendSlice(env.arena, ", ");
+                try buf.appendSlice(env.arena, try genericSpelling(env, a, depth + 1));
+            }
+            try buf.append(env.arena, '>');
+            return buf.items;
+        },
+        else => return snapshotMod.typeNameOf(env.arena, d),
+    }
+}
+
+/// Decision 8 §6 T7 — a tuple built from variables lends their names as
+/// labels (T1); entering a written type whose label at that position is
+/// another name, the written one wins (T3) and the author is told: the
+/// variable's name says one thing and the type another. A warning (decision
+/// 57's channel) — the program is fine, the names disagree.
+fn warnTupleLabelMismatch(env: *Env, expected: *T.Type, got: *T.Type, loc: ast.Loc) InferError!void {
+    if (expected == got) return;
+    if (expected.* != .named or got.* != .named) return;
+    if (!std.mem.eql(u8, expected.named.name, "tuple") or !std.mem.eql(u8, got.named.name, "tuple")) return;
+    const want = expected.named.labels;
+    const have = got.named.labels;
+    if (want.len == 0 or have.len == 0) return;
+    for (want, 0..) |w, i| {
+        if (i >= have.len) break;
+        const h = have[i];
+        if (w.len == 0 or h.len == 0 or std.mem.eql(u8, w, h)) continue;
+        const msg = try std.fmt.allocPrint(env.arena, "the variable `{s}` fills the element labeled `{s}`", .{ h, w });
+        const hint = try std.fmt.allocPrint(env.arena, "The written type's label wins (decision 8 §6 T3): the element is read as `.{s}`. Rename the variable if it means the same thing.", .{w});
+        try env.warn(TypeError.custom(msg, hint).withLoc(loc));
+    }
+}
+
+/// True when `target` names a behavior and `source` is a named type that
+/// declares `implement <target>` — a `MockCounter` returned where the fn
+/// declares `-> Counter`.
+fn behaviorCoercion(env: *Env, target: *T.Type, source: *T.Type) bool {
+    const t = target.deref();
+    const s = source.deref();
+    if (t.* != .named or s.* != .named) return false;
+    if (std.mem.eql(u8, t.named.name, s.named.name)) return false;
+    const td = env.lookupTypeDef(s.named.name) orelse return false;
+    const impls = switch (td) {
+        .record => |r| r.implements,
+        .struct_ => |st| st.implements,
+        .enum_ => |e| e.implements,
+    };
+    for (impls) |i| if (behaviorReaches(env, i, t.named.name, 0)) return true;
+    return false;
+}
+
+/// True when `ty` is a named `behavior` — declared here or imported.
+fn isBehaviorType(env: *Env, ty: *T.Type) bool {
+    const t = ty.deref();
+    if (t.* != .named) return false;
+    return env.assocInterfaceDecls.contains(t.named.name) or env.importedBehaviorDecls.contains(t.named.name);
+}
+
+/// 01 R4 — whether behavior `from` is `to` or extends it, through the
+/// `extends` chain. `depth` bounds a cyclic chain.
+fn behaviorReaches(env: *Env, from: []const u8, to: []const u8, depth: usize) bool {
+    if (std.mem.eql(u8, from, to)) return true;
+    if (depth >= 16) return false;
+    const decl = env.assocInterfaceDecls.get(from) orelse env.importedBehaviorDecls.get(from) orelse return false;
+    for (decl.extends) |parent| {
+        if (behaviorReaches(env, parent, to, depth + 1)) return true;
+    }
+    return false;
+}
+
+/// 01 R4 — an argument meets its declared parameter. A parameter (or a
+/// constructor field) typed by a behavior accepts a value whose type
+/// implements that behavior, directly or through `extends`; everything else
+/// is `unifyAt`. Target-first, like `unifyAt`: the coercion only ever widens
+/// an implementer into the behavior, never the reverse.
+fn unifyArgument(env: *Env, param: *T.Type, arg: *T.Type, loc: ast.Loc) InferError!void {
+    if (behaviorCoercion(env, param, arg)) return;
+    try unifyAt(env, param, arg, loc);
 }
 
 /// True when `source` coerces into a `Children`-typed `target`. A `Children`
@@ -3817,7 +6885,7 @@ fn childrenCoercion(env: *Env, target: *T.Type, source: *T.Type) bool {
         .named => |n| std.mem.eql(u8, n.name, "Children") or
             std.mem.eql(u8, n.name, "array") or
             std.mem.eql(u8, n.name, "string") or
-            contextBaseOfType(env, source) != null,
+            ownerBaseOfType(env, source) != null,
         else => false,
     };
 }
@@ -3826,8 +6894,22 @@ fn inferBuiltinCallReturnType(
     callee: []const u8,
     typedArgs: []ast.CallArgOf(.typed),
     typedTrailing: []ast.TrailingLambdaOf(.typed),
+    loc: ast.Loc,
 ) InferError!*T.Type {
-    _ = typedTrailing;
+    try checkBuiltinArguments(env, callee, typedArgs, typedTrailing, loc);
+    // `@block { … }` — the value of the block is what its `return`s carry
+    // (C1: those returns target the block, not the enclosing fn); a block
+    // without a valued `return` takes its tail expression's type.
+    if (std.mem.eql(u8, callee, "block") and typedTrailing.len >= 1 and env.lastTrailingReturnTargets.len >= 1) {
+        const target = env.lastTrailingReturnTargets[0];
+        const td = target.deref();
+        if (td.* == .typeVar and td.typeVar.state == .unbound) {
+            const body = typedTrailing[0].body;
+            if (body.len > 0 and body[body.len - 1].expr != .jump) return body[body.len - 1].expr.getType();
+            return env.namedType("void");
+        }
+        return target;
+    }
     // ── `@Expr` construction builtins (expr-templates) ───────────────────────
     // Construction is explicit: `@expr(value)` lifts a comptime value as code
     // and `@code(text)` parses generated source text. Both only make sense
@@ -3855,14 +6937,19 @@ fn inferBuiltinCallReturnType(
     }
 
     // ── Type introspection / manipulation builtins (§1.0.0-beta) ─────────────
-    // `@typeInfo(T: type) -> TypeInfo` — returns a TypeInfo enum variant
-    // describing the structure of T. Comptime-only: evaluated during inference,
-    // produces zero runtime code.
+    // `@typeInfo(T) -> TypeInfo<T>` (decisions 248, 253) — the reflection of
+    // `T`; its `.name` / `.meta.<d>.<k>` reads are answered before this arm
+    // (`inferTypeinfoRead`). Comptime-only: no run-time code.
     if (std.mem.eql(u8, callee, "typeInfo")) {
-        // Accept any type expression (identifier, array, optional, etc.).
-        // Type-checking ensures the argument is a type, so no additional
-        // validation is needed here — the inference system handles it.
-        return env.namedType("TypeInfo");
+        const reflected: *T.Type = blk: {
+            if (typedArgs.len != 1) break :blk try env.freshVar();
+            const arg = typedArgs[0].value;
+            if (arg.* != .identifier or arg.identifier.kind != .ident) break :blk try env.freshVar();
+            const name = arg.identifier.kind.ident;
+            if (env.lookupTypeDef(name) == null and !isPrimitiveTypeName(name)) break :blk try env.freshVar();
+            break :blk try env.namedType(name);
+        };
+        return env.namedTypeArgs("TypeInfo", &.{reflected});
     }
     // `@TypeOf(value: any) -> type` — returns the type of any value.
     // Comptime-only.
@@ -3878,12 +6965,37 @@ fn inferBuiltinCallReturnType(
     // `@RecordKeys(T: type) -> string[]` — returns field name strings of a
     // record type. Comptime-only.
     if (std.mem.eql(u8, callee, "RecordKeys")) {
-        return try env.namedTypeArgs("Array", &.{try env.namedType("string")});
+        // C6: the same `array` type a `string[]` annotation resolves to.
+        return try env.namedTypeArgs("array", &.{try env.namedType("string")});
     }
     // `@Field(value: any, comptime name: string) -> any` — field access by
     // compile-time-known name. Comptime-only.
     if (std.mem.eql(u8, callee, "field")) {
-        if (typedArgs.len > 0) return typedArgs[0].value.getType();
+        // C6: `@field(v, "x")` has the type of v's field `x` when the receiver
+        // is a known non-generic record and the name is a literal; otherwise it
+        // stays open (a fresh var), never the receiver's type.
+        if (typedArgs.len >= 2) fieldBlk: {
+            const recv = typedArgs[0].value.getType().deref();
+            if (recv.* != .named) break :fieldBlk;
+            const nameLit = switch (typedArgs[1].value.*) {
+                .literal => |l| switch (l.kind) {
+                    .stringLit => |str| str,
+                    else => break :fieldBlk,
+                },
+                else => break :fieldBlk,
+            };
+            const td = env.lookupTypeDef(recv.named.name) orelse break :fieldBlk;
+            const fields = switch (td) {
+                .record => |r| if (r.genericParams.len == 0) r.fields else break :fieldBlk,
+                .struct_ => |st| if (st.genericParams.len == 0) st.fields else break :fieldBlk,
+                .enum_ => break :fieldBlk,
+            };
+            for (fields) |fd| {
+                if (std.mem.eql(u8, fd.name, nameLit)) return fd.type_;
+            }
+            env.lastError = TypeError.unknownField(recv.named.name, nameLit).withLoc(typedArgs[1].value.getLoc());
+            return error.TypeError;
+        }
         return env.freshVar();
     }
     // `@emit(source)` — a comptime body (a decorator) contributes generated
@@ -3895,18 +7007,18 @@ fn inferBuiltinCallReturnType(
         }
         return env.namedType("void");
     }
-    // §1C — `@getContex(T)` fetches the active provider of type `T` from
+    // §1C — `@getContext(T)` fetches the active provider of type `T` from
     // the context scope stack. The argument is a TYPE (not a value); the
-    // intrinsic is only valid inside a `#[@context]` fn body. RC1 (no
+    // intrinsic is only valid inside a `#[@use]` fn body. RC1 (no
     // active provider) requires the `contextStack.zig` provider tracker
     // — landed separately; RC3 (Anchor-tree reachability) is wired here.
-    if (std.mem.eql(u8, callee, "getContex")) {
-        // RC5 — outside a `#[@context]` fn body the intrinsic is meaningless.
+    if (std.mem.eql(u8, callee, "getContext")) {
+        // RC5 — outside a `#[@use]` fn body the intrinsic is meaningless.
         if (!env.inContextFn) {
             var e = TypeError.custom(
-                diagnostics.context_getcontex_outside_context_fn ++
-                    ": `@getContex(T)` only resolves inside a `#[@context]` fn body",
-                "Mark the enclosing fn `#[@context]` (`-> @Context<Base, T>`) — `@getContex` walks the active provider stack maintained by the `use` blocks.",
+                diagnostics.context_getcontext_outside_context_fn ++
+                    ": `@getContext(T)` only resolves inside a `-> @Component<C, T>` fn body",
+                "Return `@Component<Base, T>` from the enclosing fn — `@getContext` walks the active provider stack maintained by the `use` blocks.",
             );
             if (typedArgs.len >= 1) e = e.withLoc(typedArgs[0].value.getLoc());
             env.lastError = e;
@@ -3921,8 +7033,8 @@ fn inferBuiltinCallReturnType(
                 env.lookupTypeDef(arg.identifier.kind.ident) != null;
             if (!isTypeIdent) {
                 env.lastError = TypeError.custom(
-                    diagnostics.context_getcontex_expects_type ++
-                        ": `@getContex(T)` expects a type as its sole argument",
+                    diagnostics.context_getcontext_expects_type ++
+                        ": `@getContext(T)` expects a type as its sole argument",
                     "Pass a record/struct/enum name (the type whose provider you want to fetch); literals and value expressions are not accepted.",
                 ).withLoc(arg.getLoc());
                 return error.TypeError;
@@ -3941,12 +7053,12 @@ fn inferBuiltinCallReturnType(
             {
                 const msg = try std.fmt.allocPrint(
                     env.arena,
-                    "{s}: `@getContex({s})` is outside the enclosing `#[@context]` fn's Anchor tree (enclosing Anchor `{s}`, requested type's Anchor `{s}`)",
-                    .{ diagnostics.context_getcontex_anchor_violation, requestedName, enclosingBase.?, requestedBase.? },
+                    "{s}: `@getContext({s})` is outside the enclosing `@Component` fn's base tree (enclosing base `{s}`, requested type's base `{s}`)",
+                    .{ diagnostics.context_getcontext_anchor_violation, requestedName, enclosingBase.?, requestedBase.? },
                 );
                 env.lastError = TypeError.custom(
                     msg,
-                    "Either provide the requested type under an Anchor reachable from the enclosing fn, or change the enclosing fn's `@Context<Base, …>` to share an Anchor with the requested type.",
+                    "Either provide the requested type under an Anchor reachable from the enclosing fn, or change the enclosing fn's `@Component<Base, …>` to share an Anchor with the requested type.",
                 ).withLoc(arg.getLoc());
                 return error.TypeError;
             }
@@ -3978,10 +7090,266 @@ fn inferBuiltinCallReturnType(
         env.lastError = TypeError.custom(
             "comptime error",
             "@comptimeError called without a message.",
-        );
+        ).withLoc(loc);
         return error.TypeError;
     }
-    return env.namedType("void");
+    // `@panic` / `@todo` / `@trap` never return: each is declared `-> noreturn`
+    // (`builtins_fns.d.bp`, `builtins.d.bp`), and `noreturn` is the bottom type
+    // `unify` accepts wherever a value is expected, so `val x: i32 = @todo();`
+    // and `return @panic("…");` type in any position. A declared
+    // `builtins_fns.d.bp` entry answers its own return; the name list only
+    // holds the doc-only `trap`.
+    if (builtinsMod.neverReturns(callee)) return env.namedType("noreturn");
+    // `@module()` is declared `-> module` in `builtins.d.bp` but no target
+    // lowers it (commonJS emitted `@module()` verbatim, erlang `module/0`
+    // undefined): refused at the `@` rather than typed `void` in silence.
+    if (std.mem.eql(u8, callee, "module")) {
+        env.lastError = TypeError.custom(
+            diagnostics.builtin_not_lowered ++ ": `@module()` is declared but no target lowers it",
+            "Nothing reads a module value yet; import the module's members with `import {…} from \"…\"` instead.",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+    // The other builtins (`@print`, `@debug`, `@emit`, …) answer what their
+    // declaration says — `void`. Anything else is a typo — refuse it
+    // (decision 67) instead of compiling it to `void` in silence.
+    if (isKnownBuiltinName(callee)) return env.namedType("void");
+    env.lastError = TypeError.custom(
+        try unknownBuiltinMessage(env, callee),
+        "Builtin names are exact and lowercase (`@print`, `@panic`, `@src`); see `libs/std/src/builtins.d.bp` for the list.",
+    ).withLoc(loc);
+    return error.TypeError;
+}
+
+/// Decision 254 — the answer `typeinfo_all.plan` built for one
+/// `@TypeInfo.all(…)`, typed `Declared<unknown>[]` whatever its entries are.
+/// Each entry is inferred on its own and met by `Declared<unknown>` (every
+/// type is assignable to `unknown`), then carries that type: the entries never
+/// unify with each other, so a function and a type's thunk, or two functions
+/// of different signatures, sit in one answer.
+fn inferCatalogueAnswer(env: *Env, answer: ast.Expr, loc: ast.Loc) InferError!TypedExpr {
+    const declared_unknown = try env.namedTypeArgs("Declared", &.{try env.namedType("unknown")});
+    const array_type = try env.namedTypeArgs("array", &.{declared_unknown});
+    if (answer != .collection or answer.collection.kind != .arrayLit) {
+        const typed = try inferExprTyped(env, answer);
+        try unifyAt(env, array_type, typed.getType(), loc);
+        return typed;
+    }
+    const al = answer.collection.kind.arrayLit;
+    const elems = try env.arena.alloc(ast.TypedExpr, al.elems.len);
+    for (al.elems, 0..) |elem, i| {
+        elems[i] = try inferExprTyped(env, elem);
+        try unifyAt(env, declared_unknown, elems[i].getType(), elems[i].getLoc());
+        switch (elems[i]) {
+            inline else => |*e| e.type_ = declared_unknown,
+        }
+    }
+    return TypedExpr{ .collection = .{ .loc = answer.collection.loc, .type_ = array_type, .kind = .{ .arrayLit = .{
+        .elems = elems,
+        .spread = al.spread,
+        .spreadExpr = null,
+        .comments = al.comments,
+        .commentsPerElem = al.commentsPerElem,
+        .trailingComma = al.trailingComma,
+    } } } };
+}
+
+/// The type name `@src()` answers with (decision 73). Declared in
+/// `comptime.zig`'s `decl_reflection_src`; spliced into a program that names it
+/// by `withSourceLocationDecl`.
+const source_location_type_name = "SourceLocation";
+
+fn isKnownBuiltinName(callee: []const u8) bool {
+    if (builtinsMod.find(callee) != null) return true;
+    // The parser's own sugar: `x is T` lands as the `is` builtin and `xs[i]`
+    // as the `[]` builtin call. Both are intercepted in `inferCallExpr`; the
+    // names stay known so one that survived a degraded module is not reported
+    // as a misspelled builtin.
+    return std.mem.eql(u8, callee, ast.is_builtin_name) or std.mem.eql(u8, callee, ast.index_builtin_name);
+}
+
+fn isPrimitiveTypeName(name: []const u8) bool {
+    const names = [_][]const u8{ "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64", "bool", "string", "void", "unknown" };
+    for (names) |n| if (std.mem.eql(u8, n, name)) return true;
+    return false;
+}
+
+/// Decision 252 — a call to a builtin held `.declaration` (`comptime/
+/// builtins.zig`) meets its declaration (`Env.builtinDecls`, from
+/// `builtins.d.bp` / `builtins_fns.d.bp`): no more arguments than it declares,
+/// every parameter without a default given, a label naming a parameter, and
+/// each argument's type the parameter's (generic parameters fresh per call; a
+/// `type` parameter is the builtin's own to read). Refused at the call as
+/// `builtin-arguments`, naming the declaration; a type that disagrees is the
+/// ordinary mismatch, located at the argument.
+fn checkBuiltinArguments(
+    env: *Env,
+    callee: []const u8,
+    typedArgs: []ast.CallArgOf(.typed),
+    typedTrailing: []ast.TrailingLambdaOf(.typed),
+    loc: ast.Loc,
+) InferError!void {
+    const row = builtinsMod.find(callee) orelse return;
+    if (row.held != .declaration) return;
+    const decl = env.builtinDecls.get(callee) orelse return;
+    const given = typedArgs.len + typedTrailing.len;
+    const refuse = struct {
+        fn f(e: *Env, sig: []const u8, comptime fmt: []const u8, args: anytype, l: ast.Loc) InferError {
+            const what = std.fmt.allocPrint(e.arena, fmt, args) catch return error.OutOfMemory;
+            const msg = std.fmt.allocPrint(e.arena, "{s}: {s} — `@{s}` is declared in `builtins.d.bp`", .{ diagnostics.builtin_arguments, what, sig }) catch return error.OutOfMemory;
+            e.lastError = TypeError.custom(msg, "Call it as its declaration says (`libs/std/src/builtins.d.bp`, decision 252).").withLoc(l);
+            return error.TypeError;
+        }
+    }.f;
+    if (given > decl.params.len) {
+        return refuse(env, row.signature, "`@{s}` takes {d} argument{s}, {d} given", .{ callee, decl.params.len, if (decl.params.len == 1) "" else "s", given }, loc);
+    }
+    // Which parameter each argument binds: a label names one, an unlabelled
+    // argument takes the next unbound, a trailing lambda the next after them.
+    const bound = try env.arena.alloc(bool, decl.params.len);
+    @memset(bound, false);
+    var genericMap = std.StringHashMap(*T.Type).init(env.arena);
+    for (decl.genericParams) |g| try genericMap.put(g.name, try env.freshVar());
+    var next: usize = 0;
+    for (typedArgs) |a| {
+        const at: usize = if (a.label) |label| blk: {
+            for (decl.params, 0..) |p, i| if (std.mem.eql(u8, p.name, label)) break :blk i;
+            return refuse(env, row.signature, "`@{s}` has no parameter `{s}`", .{ callee, label }, a.value.getLoc());
+        } else blk: {
+            while (next < bound.len and bound[next]) next += 1;
+            break :blk next;
+        };
+        if (at >= bound.len or bound[at]) {
+            return refuse(env, row.signature, "`@{s}` takes {d} argument{s}", .{ callee, decl.params.len, if (decl.params.len == 1) "" else "s" }, a.value.getLoc());
+        }
+        bound[at] = true;
+        const p = decl.params[at];
+        if (p.typeRef == .typeparam) continue;
+        const want = try resolveTypeRefInContext(env, p.typeRef, genericMap);
+        try unifyArgument(env, want, a.value.getType(), a.value.getLoc());
+    }
+    for (typedTrailing) |_| {
+        while (next < bound.len and bound[next]) next += 1;
+        if (next >= bound.len) return refuse(env, row.signature, "`@{s}` takes no trailing lambda", .{callee}, loc);
+        bound[next] = true;
+    }
+    for (decl.params, bound) |p, b| {
+        if (!b and p.default == null) {
+            return refuse(env, row.signature, "`@{s}` needs `{s}`", .{ callee, p.name }, loc);
+        }
+    }
+}
+
+/// `unknown-builtin: unknown builtin \`@name\`` — with the nearest known name
+/// when one is an edit away (`@pritn` → `@print`), the way `removedBuiltinType`
+/// points at a replacement.
+fn unknownBuiltinMessage(env: *Env, callee: []const u8) ![]const u8 {
+    for (builtinsMod.table) |row| {
+        const candidate = row.name;
+        if (editDistanceIsOne(callee, candidate)) {
+            return std.fmt.allocPrint(
+                env.arena,
+                "{s}: unknown builtin `@{s}` — did you mean `@{s}`?",
+                .{ diagnostics.unknown_builtin, callee, candidate },
+            );
+        }
+    }
+    return std.fmt.allocPrint(env.arena, "{s}: unknown builtin `@{s}`", .{ diagnostics.unknown_builtin, callee });
+}
+
+/// True when `a` becomes `b` by one substitution, one insertion, one deletion
+/// or one adjacent transposition (case-insensitive: `@Src` is one edit from
+/// `@src`).
+fn editDistanceIsOne(a: []const u8, b: []const u8) bool {
+    if (std.ascii.eqlIgnoreCase(a, b)) return a.len > 0 and !std.mem.eql(u8, a, b);
+    if (a.len == b.len) {
+        var diffs: usize = 0;
+        var first: ?usize = null;
+        for (a, b, 0..) |ca, cb, i| {
+            if (std.ascii.toLower(ca) != std.ascii.toLower(cb)) {
+                diffs += 1;
+                if (first == null) first = i;
+            }
+        }
+        if (diffs == 1) return true;
+        if (diffs == 2) {
+            const i = first.?;
+            return i + 1 < a.len and
+                std.ascii.toLower(a[i]) == std.ascii.toLower(b[i + 1]) and
+                std.ascii.toLower(a[i + 1]) == std.ascii.toLower(b[i]);
+        }
+        return false;
+    }
+    const long, const short = if (a.len > b.len) .{ a, b } else .{ b, a };
+    if (long.len != short.len + 1) return false;
+    var i: usize = 0;
+    var j: usize = 0;
+    var skipped = false;
+    while (i < long.len and j < short.len) {
+        if (std.ascii.toLower(long[i]) == std.ascii.toLower(short[j])) {
+            i += 1;
+            j += 1;
+        } else {
+            if (skipped) return false;
+            skipped = true;
+            i += 1;
+        }
+    }
+    return true;
+}
+
+/// `@src()` (1.0.10-beta front 01-std, decision 73): a `SourceLocation(file,
+/// line, column, fnName)` naming the call site, evaluated here and never at
+/// run time. The call is rewritten into the ordinary constructor call
+/// `SourceLocation(file: "<env.srcPath>", line: L, column: C, fnName: "<env.currentFnName>")`
+/// with four literal arguments: the typed node is that call (so the typed AST
+/// carries the record type) and the untyped rewrite is recorded in
+/// `env.srcRewrites` for the transform pass to splice, the way `@makeRecord`
+/// and template expansions are. Every backend then lowers it through the
+/// record-constructor path it already has — no codegen file knows `@src`.
+///
+/// `line`/`column` are the 1-based position of the `@` token — the numbers a
+/// diagnostic prints; `file` is the package-relative path (`env.srcPath`);
+/// `fnName` is the enclosing fn / `Type.method` / test name, `""` at module
+/// level. Zero arguments, no trailing lambda: anything else is
+/// `src-takes-no-arguments`.
+fn inferSrcBuiltin(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr {
+    if (call.args.len != 0 or call.trailing.len != 0) {
+        env.lastError = TypeError.custom(
+            diagnostics.src_takes_no_arguments ++ ": `@src()` takes no arguments",
+            "Write `@src()` — the location is the call site's own; there is nothing to pass.",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+    env.usesSourceLocation = true;
+
+    const strLit = struct {
+        fn make(e: *Env, l: ast.Loc, text: []const u8) !*ast.Expr {
+            const node = try e.arena.create(ast.Expr);
+            node.* = .{ .literal = .{ .loc = l, .kind = .{ .stringLit = text } } };
+            return node;
+        }
+        fn number(e: *Env, l: ast.Loc, n: usize) !*ast.Expr {
+            const node = try e.arena.create(ast.Expr);
+            node.* = .{ .literal = .{ .loc = l, .kind = .{ .numberLit = try std.fmt.allocPrint(e.arena, "{d}", .{n}) } } };
+            return node;
+        }
+    };
+    const args = try env.arena.alloc(ast.CallArg, 4);
+    args[0] = .{ .label = "file", .value = try strLit.make(env, loc, env.srcPath) };
+    args[1] = .{ .label = "line", .value = try strLit.number(env, loc, loc.line) };
+    args[2] = .{ .label = "column", .value = try strLit.number(env, loc, loc.col) };
+    args[3] = .{ .label = "fnName", .value = try strLit.make(env, loc, env.currentFnName) };
+    const rewrite = try env.arena.create(ast.Expr);
+    rewrite.* = .{ .call = .{ .loc = loc, .kind = .{ .call = .{
+        .receiver = null,
+        .callee = source_location_type_name,
+        .is_builtin = false,
+        .args = args,
+        .trailing = &.{},
+    } } } };
+    try env.srcRewrites.put(loc, rewrite);
+    return inferExprTyped(env, rewrite.*);
 }
 
 /// Evaluate `@makeRecord(fields)` at inference time when `fields` is a literal
@@ -4163,7 +7531,10 @@ fn resolveMergeRecords(env: *Env, typedArgs: []ast.CallArgOf(.typed), loc: ast.L
     for (fieldsB) |fb| {
         var duplicate = false;
         for (fieldsA) |fa| {
-            if (std.mem.eql(u8, fa.name, fb.name)) { duplicate = true; break; }
+            if (std.mem.eql(u8, fa.name, fb.name)) {
+                duplicate = true;
+                break;
+            }
         }
         if (!duplicate) try mergedFields.append(env.arena, fb);
     }
@@ -4464,7 +7835,7 @@ fn makeSyntheticRecordType(env: *Env, fields: []envMod.FieldDef) !TypedExpr {
     const syntheticName = try std.fmt.allocPrint(env.arena, "#synth_{d}", .{typeId});
 
     // Build the record Type (anonymous structural record).
-    var recordFields = try env.arena.alloc(T.RecordField, fields.len);
+    var recordFields = try env.arena.alloc(T.Field, fields.len);
     for (fields, 0..) |f, i| {
         recordFields[i] = .{ .name = f.name, .type_ = f.type_ };
     }
@@ -4514,25 +7885,17 @@ fn tryUnwrapOrError(env: *Env, rawTy: *T.Type, loc: ast.Loc) InferError!*T.Type 
     return InferError.TypeError;
 }
 
-/// `@Future<T>` -> `T`. Returns null when `ty` is not a `Future`.
-fn unwrapFutureType(ty: *T.Type) ?*T.Type {
+/// `@Task<T>` -> `T` (decision 120). `@Component<C, T>` extends `@Task`, and
+/// decision 104 has every caller `await` a component: it awaits to `T`
+/// (decision 128). `@Stream<T>` is iterated with `for await`, never awaited
+/// whole. Returns null when `ty` is no Task.
+fn unwrapTaskType(ty: *T.Type) ?*T.Type {
     const t = ty.deref();
     return switch (t.*) {
-        .named => |n| if (std.mem.eql(u8, n.name, "Future") and n.args.len >= 1)
+        .named => |n| if (std.mem.eql(u8, n.name, "Task") and n.args.len >= 1)
             n.args[0]
-        else
-            null,
-        else => null,
-    };
-}
-
-/// `@Iterator<T>` / `@AsyncIterator<T, E>` -> `T`. Returns null when `ty` is not an iterator.
-fn unwrapIteratorType(ty: *T.Type) ?*T.Type {
-    const t = ty.deref();
-    return switch (t.*) {
-        .named => |n| if ((std.mem.eql(u8, n.name, "Iterator") or
-            std.mem.eql(u8, n.name, "AsyncIterator")) and n.args.len >= 1)
-            n.args[0]
+        else if (std.mem.eql(u8, n.name, "Component") and n.args.len >= 2)
+            n.args[1]
         else
             null,
         else => null,
@@ -4565,68 +7928,192 @@ fn typesSameShape(a: *T.Type, b: *T.Type) bool {
 /// Number of leading required generic arguments for a known builtin wrapper.
 /// Returns null for builtins without a fixed arity (e.g. `@Decl`, `array`,
 /// `optional`, `tuple`) so the resolver leaves their arg-count checks alone.
-/// The defaulted tail (per §1G / `tasks/v0.beta.19/specs/frente-b-rules-tooling.md`):
-///   - `@Future<T, E = any>`            → 1 required
-///   - `@Generator<T, R = void>`        → 1 required
-///   - `@Iterator<T, E = any, C = void>`→ 1 required
-///   - `@AsyncIterator<T, E = any, C = void>` → 1 required
-///   - `@Result<R, E>`                  → 2 required
-///   - `@Context<Base, T>`              → 2 required
-///   - `@Expr<T>` / `@ExprCustom<T>`    → 1 required
+///   - `@Task<T>` / `@Iterator<T>` / `@Stream<T>`  → 1 (decisions 120, 122)
+///   - `@Result<R, E>`                             → 2
+///   - `@Context<Base>`                            → 1 (the owner marker)
+///   - `@Component<C, T>`                          → 2 (decision 128: `C` is
+///     always written; `@Component<T>` is a type-arity error)
+///   - `@Expr<T>` / `@ExprCustom<T>`               → 1
 fn builtinRequiredGenericArgs(name: []const u8) ?usize {
     const eq = std.mem.eql;
-    if (eq(u8, name, "Future")) return 1;
-    if (eq(u8, name, "Generator")) return 1;
+    if (eq(u8, name, "Task")) return 1;
     if (eq(u8, name, "Iterator")) return 1;
-    if (eq(u8, name, "AsyncIterator")) return 1;
+    if (eq(u8, name, "Stream")) return 1;
     if (eq(u8, name, "Result")) return 2;
-    if (eq(u8, name, "Context")) return 2;
+    if (eq(u8, name, "Context")) return 1;
+    if (eq(u8, name, "Component")) return 2;
     if (eq(u8, name, "Expr")) return 1;
     if (eq(u8, name, "ExprCustom")) return 1;
     return null;
 }
 
+/// The FULL declared arity of a known builtin wrapper — required plus
+/// defaulted parameters — or null for builtins without a fixed arity. RG5: an
+/// argument past it is refused (decision 67 — a type argument nothing reads
+/// is not dropped silently). No effect wrapper declares a default any more.
+fn builtinMaxGenericArgs(name: []const u8) ?usize {
+    return builtinRequiredGenericArgs(name);
+}
+
 /// Full default-position list for the known builtin wrappers, when the
-/// caller supplied `given` leading args (a value < total params). Returns
-/// the full param-name list (so the resolver can fill positions `given..len`
-/// with `env.namedType(<name>)`); returns null when the builtin declares no
-/// defaults or when no fill is needed.
-///
-/// Layouts (per §1G default tail):
-///   - `Future<T, E = any>`              → `["any"]` for the E slot
-///   - `Generator<T, R = void>`          → `["void"]` for the R slot
-///   - `Iterator<T, E = any, C = void>`  → `["any", "void"]` for the E/C slots
-///   - `AsyncIterator<T, E = any, C = void>` → same as Iterator
-///
-/// The returned slice always has the FULL declared arity (so the caller
-/// allocates an args slice sized to it and indexes positions
-/// `given..returned.len` for the type names to bind).
+/// caller supplied `given` leading args. Decisions 120 / 122 removed the last
+/// defaulted wrappers (`@Future<T, E = any>` and the generators), so none
+/// declares a default and the answer is always null; the hook stays for a
+/// wrapper that grows one.
 fn builtinDefaultFilledArgs(env: *Env, name: []const u8, given: usize) ?[]const []const u8 {
     _ = env;
-    const eq = std.mem.eql;
-    // Each entry is the FULL position list; the caller pulls names from
-    // position `given..len` for the unfilled tail. The leading slots are
-    // placeholders ("" — never read; the caller already filled them).
-    if (eq(u8, name, "Future") and given < 2) {
-        return &.{ "", "any" };
-    }
-    if (eq(u8, name, "Generator") and given < 2) {
-        return &.{ "", "void" };
-    }
-    if (eq(u8, name, "Iterator") and given < 3) {
-        return &.{ "", "any", "void" };
-    }
-    if (eq(u8, name, "AsyncIterator") and given < 3) {
-        return &.{ "", "any", "void" };
-    }
+    _ = name;
+    _ = given;
     return null;
+}
+
+/// 06 N30 — resolve a param's annotation with its source location in scope, so
+/// an unknown type name reds at the annotation instead of at the file.
+fn resolveParamType(env: *Env, p: ast.Param, genericMap: std.StringHashMap(*T.Type)) InferError!*T.Type {
+    const prev = env.atTypeRef(p.typeLoc);
+    defer env.typeRefLoc = prev;
+    return resolveTypeRefInContext(env, p.typeRef, genericMap);
+}
+
+/// 06 N30 — the same for a record/variant field's annotation.
+fn resolveFieldType(env: *Env, f: ast.Field, genericMap: std.StringHashMap(*T.Type)) InferError!*T.Type {
+    const prev = env.atTypeRef(f.typeLoc);
+    defer env.typeRefLoc = prev;
+    return resolveTypeRefInContext(env, f.typeRef, genericMap);
+}
+
+/// 06 N30 — the same for a declared return type (`-> Foo`). Only the sites that
+/// register a declaration pass the location: a signature re-resolved at a call
+/// site would carry the *declaring* file's coordinates into the caller's
+/// diagnostic, and the declaring module already reds on its own annotation.
+fn resolveReturnType(
+    env: *Env,
+    ref: ast.TypeRef,
+    loc: ast.Loc,
+    genericMap: std.StringHashMap(*T.Type),
+) InferError!*T.Type {
+    const prev = env.atTypeRef(loc);
+    defer env.typeRefLoc = prev;
+    return resolveTypeRefInContext(env, ref, genericMap);
+}
+
+/// Decision 8 §1.2 — `Self` follows §1.1: inside a `type` or `behavior` with
+/// type parameters it is written `Self<…>` (bare `Self` is refused), and in a
+/// declaration without them it is written `Self` (`Self<…>` is refused). A
+/// syntactic walk over each method's parameter and return annotations, at the
+/// declaration, because `Self` resolves to the RECEIVER wherever a behavior's
+/// signature is instantiated — too late to say which declaration was wrong.
+fn checkSelfSpelling(env: *Env, program: ast.Program) InferError!void {
+    for (program.decls) |decl| switch (decl) {
+        .type_ => |t| try checkSelfInMethods(env, t.name, t.genericParams.len, t.methods),
+        .behavior => |b| try checkSelfInMethods(env, b.name, b.genericParams.len, b.methods),
+        else => {},
+    };
+}
+
+fn checkSelfInMethods(env: *Env, owner: []const u8, arity: usize, methods: []const ast.BehaviorMethod) InferError!void {
+    for (methods) |m| {
+        for (m.params) |p| try checkSelfRef(env, owner, arity, p.typeRef, p.typeLoc);
+        if (m.returnType) |rt| try checkSelfRef(env, owner, arity, rt, m.returnTypeLoc);
+    }
+}
+
+fn checkSelfRef(env: *Env, owner: []const u8, arity: usize, ref: ast.TypeRef, loc: ast.Loc) InferError!void {
+    switch (ref) {
+        .named => |n| if (arity > 0 and std.mem.eql(u8, n, "Self")) {
+            const msg = try std.fmt.allocPrint(env.arena, "Self needs {d} type argument{s}: `{s}` declares {d}", .{ arity, if (arity == 1) "" else "s", owner, arity });
+            var params: std.ArrayListUnmanaged(u8) = .empty;
+            for (0..arity) |i| try params.appendSlice(env.arena, if (i == 0) "…" else ", …");
+            const hint = try std.fmt.allocPrint(env.arena, "Inside a declaration with type parameters, `Self` carries them: write `Self<{s}>` (decision 8 §1.2).", .{params.items});
+            env.lastError = TypeError.custom(msg, hint).withLoc(loc);
+            return error.TypeError;
+        },
+        .generic => |g| {
+            if (arity == 0 and std.mem.eql(u8, g.name, "Self")) {
+                const msg = try std.fmt.allocPrint(env.arena, "`{s}` declares no type parameter, so `Self` takes no type argument", .{owner});
+                env.lastError = TypeError.custom(msg, "Write `Self` (decision 8 §1.2).").withLoc(loc);
+                return error.TypeError;
+            }
+            for (g.args) |a| try checkSelfRef(env, owner, arity, a, loc);
+        },
+        .array => |e| try checkSelfRef(env, owner, arity, e.*, loc),
+        .optional => |e| try checkSelfRef(env, owner, arity, e.*, loc),
+        .tuple_ => |es| for (es) |e| try checkSelfRef(env, owner, arity, e, loc),
+        .labeledTuple => |lt| for (lt.elems) |e| try checkSelfRef(env, owner, arity, e, loc),
+        .function => |f| {
+            for (f.params) |e| try checkSelfRef(env, owner, arity, e, loc);
+            try checkSelfRef(env, owner, arity, f.returnType.*, loc);
+        },
+        else => {},
+    }
+}
+
+/// The type parameters of `td` a written use must supply: the leading ones
+/// with no declared default.
+fn requiredGenericArgs(td: envMod.TypeDef) usize {
+    const params = td.genericParams().len;
+    const dflts = td.genericDefaults();
+    if (dflts.len == 0) return params;
+    var n: usize = 0;
+    for (dflts) |d| {
+        if (d != null) break;
+        n += 1;
+    }
+    return n;
+}
+
+/// Decision 8 §1.1 / §1.2 — a written generic type (or `Self` of a generic
+/// declaration) without all of its type arguments. Located at the annotation.
+fn refuseGenericArity(env: *Env, name: []const u8, required: usize, declared: usize, given: usize) InferError {
+    const msg = if (given == 0)
+        try std.fmt.allocPrint(env.arena, "{s} needs {d} type argument{s}", .{ name, required, if (required == 1) "" else "s" })
+    else
+        try std.fmt.allocPrint(env.arena, "{s} needs {d} type argument{s}, {d} given", .{ name, required, if (required == 1) "" else "s", given });
+    const hint = if (std.mem.eql(u8, name, "Self"))
+        try std.fmt.allocPrint(env.arena, "Inside a declaration with type parameters `Self` carries them: write `Self<…>` with {d} argument{s} (decision 8 §1.2).", .{ declared, if (declared == 1) "" else "s" })
+    else
+        try std.fmt.allocPrint(env.arena, "A written type carries all of its type arguments (decision 8 §1.1): write `{s}<…>` with {d}.", .{ name, required });
+    var err = TypeError.custom(msg, hint);
+    if (env.typeRefLoc) |l| err = err.withLoc(l);
+    env.lastError = err;
+    return error.TypeError;
 }
 
 /// Resolve an `ast.TypeRef` to a `*T.Type` using a generic-parameter map.
 /// Used when the type ref appears inside a generic context (record/enum registration).
 fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHashMap(*T.Type)) InferError!*T.Type {
     switch (ref) {
-        .named => |n| return env.resolveTypeName(n, genericMap),
+        .named => |n| {
+            // The builtin record is declared in a prelude the backends never
+            // see; a module that names it gets its declaration spliced in
+            // (`comptime.zig`, `withSourceLocationDecl`).
+            if (std.mem.eql(u8, n, source_location_type_name)) env.usesSourceLocation = true;
+            if (std.mem.eql(u8, n, yield_step_type_name)) env.usesYieldStep = true;
+            // 1.0.5 decision 31 — `any` is deleted. It was a closed type no
+            // botopink value inhabited (`val a: any = 1` read "expected any,
+            // got i32"); what a host parameter or handle means by it is
+            // `unknown`, which holds any value and is tested before use.
+            if (std.mem.eql(u8, n, "any") and !genericMap.contains(n) and env.lookupTypeDef(n) == null and env.typeAliases.get(n) == null) {
+                var err = TypeError.custom(
+                    diagnostics.any_type_removed ++ ": there is no type `any`",
+                    "`any` was removed (1.0.5 decision 31). A value of any type is `unknown`: it takes every value, and is tested with `is` before it is used as another type.",
+                );
+                if (env.typeRefLoc) |l| err = err.withLoc(l);
+                env.lastError = err;
+                return error.TypeError;
+            }
+            if (!genericMap.contains(n)) {
+                if (env.typeAliases.get(n)) |alias| return expandTypeAlias(env, alias, &.{}, genericMap);
+                // Decision 8 §1.1 — a written generic type carries all of its
+                // type arguments: `fn get(b: Box)` for a `type Box<T>` used to
+                // mean "any args" and check.
+                if (env.lookupTypeDef(n)) |td| {
+                    const required = requiredGenericArgs(td);
+                    if (required > 0) return refuseGenericArity(env, n, required, td.genericParams().len, 0);
+                }
+            }
+            return env.resolveTypeName(n, genericMap);
+        },
         .array => |elem| {
             const elemTy = try resolveTypeRefInContext(env, elem.*, genericMap);
             const args = try env.arena.alloc(*T.Type, 1);
@@ -4637,6 +8124,13 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
             const args = try env.arena.alloc(*T.Type, elems.len);
             for (elems, 0..) |e, i| args[i] = try resolveTypeRefInContext(env, e, genericMap);
             return env.namedTypeArgs("tuple", args);
+        },
+        .labeledTuple => |lt| {
+            const args = try env.arena.alloc(*T.Type, lt.elems.len);
+            for (lt.elems, 0..) |e, i| args[i] = try resolveTypeRefInContext(env, e, genericMap);
+            const ty = try env.namedTypeArgs("tuple", args);
+            ty.named.labels = lt.labels;
+            return ty;
         },
         .optional => |inner| {
             const innerTy = try resolveTypeRefInContext(env, inner.*, genericMap);
@@ -4656,28 +8150,120 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
             return env.funcType(paramTypes, returnType);
         },
         .generic => |b| {
+            if (!b.is_builtin) {
+                if (env.typeAliases.get(b.name)) |alias| return expandTypeAlias(env, alias, b.args, genericMap);
+                // Decision 44 (1.0.5) — `?T` is the one optional spelling:
+                // `optional<T>` (the checker's own internal name, which used
+                // to check clean) and `Option<T>` / `Optional<T>` are refused
+                // with the `@Option<T>` diagnostic, unless the module declares
+                // a type of that name.
+                const isOptionalSpelling = std.mem.eql(u8, b.name, "optional") or std.mem.eql(u8, b.name, "Option") or std.mem.eql(u8, b.name, "Optional");
+                if (isOptionalSpelling and env.lookupTypeDef(b.name) == null and b.args.len == 1) {
+                    var err = TypeError.custom(
+                        try std.fmt.allocPrint(env.arena, "`{s}<T>` is not a type — the optional type is written `?T`", .{b.name}),
+                        "Replace the annotation with `?T` (e.g. `?i32`).",
+                    );
+                    if (env.typeRefLoc) |l| err = err.withLoc(l);
+                    env.lastError = err;
+                    return error.TypeError;
+                }
+                if (std.mem.eql(u8, b.name, yield_step_type_name)) env.usesYieldStep = true;
+
+                // Decision 8 §1.2 — `Self<…>` inside a declaration is the
+                // declaration's own type applied to the written arguments
+                // (`Self<U>` in `type Box<T>` is `Box<U>`). Where `Self` stands
+                // for a non-generic implementer of a generic behavior (A1),
+                // `Self<…>` is that implementer as it is.
+                if (std.mem.eql(u8, b.name, "Self")) {
+                    if (genericMap.get("Self")) |selfTy| {
+                        const sd = selfTy.deref();
+                        if (sd.* == .named) {
+                            if (sd.named.args.len == 0) return sd;
+                            if (sd.named.args.len != b.args.len)
+                                return refuseGenericArity(env, "Self", sd.named.args.len, sd.named.args.len, b.args.len);
+                            const sargs = try env.arena.alloc(*T.Type, b.args.len);
+                            for (b.args, 0..) |a, i| sargs[i] = try resolveTypeRefInContext(env, a, genericMap);
+                            return env.namedTypeArgs(sd.named.name, sargs);
+                        }
+                    }
+                }
+                // Decision 8 §1.1 — fewer arguments than the type's required
+                // parameters (`Pair<i32>` for a `Pair<A, B>`).
+                if (env.lookupTypeDef(b.name)) |td| {
+                    const required = requiredGenericArgs(td);
+                    if (b.args.len < required) return refuseGenericArity(env, b.name, required, td.genericParams().len, b.args.len);
+                }
+                // RG5 on a declared type — an argument past the parameters
+                // the type declares is refused at the annotation, as it is on
+                // a builtin wrapper: `YieldStep<T, E>` after decision 122 took
+                // `E` away, and any `Pair<A, B>` written with a third.
+                if (env.lookupTypeDef(b.name)) |td| {
+                    const max = td.genericParams().len;
+                    if (b.args.len > max) {
+                        var err = TypeError.custom(
+                            try std.fmt.allocPrint(env.arena, "{s}: `{s}` takes {s}{d} type argument{s}, {d} given", .{ diagnostics.generic_arg_count_exceeded, b.name, if (max == 0) "" else "at most ", max, if (max == 1) "" else "s", b.args.len }),
+                            if (std.mem.eql(u8, b.name, yield_step_type_name))
+                                "`YieldStep<T>` is `{ Yield(value: T), Done }` (decision 122): an item that can fail is a `@Result`, so write `YieldStep<@Result<T, E>>`."
+                            else
+                                "Drop the extra type argument: the type declares no parameter for it.",
+                        );
+                        if (env.typeRefLoc) |l| err = err.withLoc(l);
+                        env.lastError = err;
+                        return error.TypeError;
+                    }
+                }
+            }
+            // Decision 8 §3 — `A | B` reaches inference as a `generic` under the
+            // reserved name `ast.union_type_name`; `unionMembers()` reads the
+            // members back. It is a union type, not a nominal one called `|`,
+            // which is what the old resolution produced ("expected |, got i32").
+            if (ref.unionMembers()) |members| {
+                var flat: std.ArrayListUnmanaged(*T.Type) = .empty;
+                for (members) |m| {
+                    const mt = try resolveTypeRefInContext(env, m, genericMap);
+                    try appendUnionMember(env, &flat, mt);
+                }
+                // `finishUnion` collapses `A | A` to `A`: the grammar allows the
+                // spelling and nothing downstream should meet a one-member union.
+                return finishUnion(env, flat.items);
+            }
             // RG3 (§1G) — required generic argument missing. Each known builtin
             // wrapper has a fixed required-arg minimum: the parameters before
             // the defaulted trailing range. Catching it here covers the
-            // `@Future<>` / `@Iterator<>` shape; user-defined types' defaults
+            // `@Future<>` / `@ResultGenerator<>` shape; user-defined types' defaults
             // are tracked separately on `TypeDef.genericParams` (follow-up).
             if (b.is_builtin) {
                 if (builtinRequiredGenericArgs(b.name)) |required| {
                     if (b.args.len < required) {
-                        env.lastError = TypeError.custom(
+                        var err = TypeError.custom(
                             "generic-required-arg-missing: a required generic argument is missing",
                             "Provide every leading (non-defaulted) type argument; only the trailing defaulted range may be omitted.",
                         );
+                        if (env.typeRefLoc) |l| err = err.withLoc(l);
+                        env.lastError = err;
+                        return error.TypeError;
+                    }
+                }
+                // RG5 — an argument past the declared arity names a channel
+                // the wrapper does not have (`@ResultGenerator<T, E, C>` after
+                // decision 103 took `C` away) and is refused at the annotation.
+                if (builtinMaxGenericArgs(b.name)) |max| {
+                    if (b.args.len > max) {
+                        var err = TypeError.custom(
+                            try std.fmt.allocPrint(env.arena, "{s}: `@{s}` takes at most {d} type argument{s}, {d} given", .{ diagnostics.generic_arg_count_exceeded, b.name, max, if (max == 1) "" else "s", b.args.len }),
+                            "Drop the extra type argument: the wrapper declares no channel for it.",
+                        );
+                        if (env.typeRefLoc) |l| err = err.withLoc(l);
+                        env.lastError = err;
                         return error.TypeError;
                     }
                 }
             }
             // §1G default-fill — when fewer trailing args are supplied than the
             // builtin declares, the missing positions take their declared
-            // defaults. `@Future<User>` ⇒ `@Future<User, any>`; `@Iterator<i32>`
-            // ⇒ `@Iterator<i32, any, void>`; `@Iterator<i32, MyError>` ⇒
-            // `@Iterator<i32, MyError, void>`; `@Generator<i32>` ⇒
-            // `@Generator<i32, void>`. `@Result` and `@Context` declare no
+            // defaults. `@Future<User>` ⇒ `@Future<User, any>`; `@ResultGenerator<i32>`
+            // ⇒ `@ResultGenerator<i32, any>`; `@Generator<T>` has one parameter
+            // and nothing to fill. `@Result` and `@Context` declare no
             // defaults — RG3 above already rejected an under-supplied form.
             const filled_args = if (b.is_builtin)
                 builtinDefaultFilledArgs(env, b.name, b.args.len)
@@ -4725,10 +8311,12 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
             // `interface Option<T>` is the declarative reference for `?T`'s
             // methods, not a type.
             if (b.is_builtin and (std.mem.eql(u8, b.name, "Option") or std.mem.eql(u8, b.name, "Optional"))) {
-                env.lastError = TypeError.custom(
+                var err = TypeError.custom(
                     "`@Option<T>` is not a type — the optional type is written `?T`",
                     "Replace the annotation with `?T` (e.g. `?i32`).",
                 );
+                if (env.typeRefLoc) |l| err = err.withLoc(l);
+                env.lastError = err;
                 return error.TypeError;
             }
             // `@Expr<T>` is encoded like `optional`/`array` — a named type with
@@ -4750,6 +8338,17 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
                 "CustomExpr"
             else
                 b.name;
+            // A dotted name (`collections.Dict<…>`) is a section path or an
+            // associated type, resolved by `resolveTypeName`'s dotted rule —
+            // never a nominal type spelled with a dot, which no declaration
+            // makes and no value inhabits. A std module's type written through
+            // its namespace became the leaf in `std_namespace.expand`.
+            if (!b.is_builtin and std.mem.indexOfScalar(u8, name, '.') != null) {
+                const head = try env.resolveTypeName(name, genericMap);
+                const hd = head.deref();
+                if (hd.* != .named) return head;
+                return env.namedTypeArgs(hd.named.name, args);
+            }
             return env.namedTypeArgs(name, args);
         },
         // A comptime typeparam accepts a value of any type at the call site;
@@ -4759,26 +8358,147 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
         // Anonymous record type `{ f: T, … }` — a structural `Type.record` that
         // unifies field-by-field with a `record { … }` literal (same field set,
         // declaration order; see unify.zig).
-        .record_type => |flds| {
-            const fields = try env.arena.alloc(T.RecordField, flds.len);
-            for (flds, 0..) |f, i| {
-                fields[i] = .{
-                    .name = f.name,
-                    .type_ = try resolveTypeRefInContext(env, f.typeRef, genericMap),
-                };
-            }
-            const ty = try env.arena.create(T.Type);
-            ty.* = .{ .record = fields };
-            return ty;
-        },
     }
 }
 
 /// Resolve an `ast.TypeRef` annotation to a `*T.Type` (no generic context).
 fn resolveTypeRef(env: *Env, ref: ast.TypeRef) InferError!*T.Type {
+    if (env.fnGenericMap) |gm| return resolveTypeRefInContext(env, ref, gm.*);
     var genericMap = std.StringHashMap(*T.Type).init(env.arena);
     defer genericMap.deinit();
     return resolveTypeRefInContext(env, ref, genericMap);
+}
+
+// ── type aliases (decision 118 rule 1) ───────────────────────────────────────
+
+/// Pass 1, ahead of every `type`: a record field or a signature may name an
+/// alias declared further down, so every alias of the module is in scope
+/// before anything resolves. Then each target is checked once (arity of what
+/// it names, recursion, and — through `pendingTypeNames` — unknown names), at
+/// the target's own location.
+fn registerTypeAliases(env: *Env, program: ast.Program) InferError!void {
+    for (program.decls) |decl| switch (decl) {
+        .typeAlias => |a| try env.typeAliases.put(env.arena, a.name, a),
+        else => {},
+    };
+    for (program.decls) |decl| switch (decl) {
+        .typeAlias => |a| _ = try resolveTypeAliasTarget(env, a),
+        else => {},
+    };
+}
+
+/// The target with every parameter a fresh variable, located at the target.
+fn resolveTypeAliasTarget(env: *Env, a: ast.TypeAliasDecl) InferError!*T.Type {
+    const prev = env.atTypeRef(a.targetLoc);
+    defer env.typeRefLoc = prev;
+    const args = try env.arena.alloc(ast.TypeRef, a.genericParams.len);
+    for (a.genericParams, 0..) |gp, i| args[i] = .{ .named = gp.name };
+    var map = std.StringHashMap(*T.Type).init(env.arena);
+    defer map.deinit();
+    for (a.genericParams) |gp| try map.put(gp.name, try env.freshVar());
+    return expandTypeAlias(env, a, args, map);
+}
+
+/// Pass 2: an alias may not take a name a type of the module (or a primitive)
+/// already has — the alias would shadow it in every annotation. Answers the
+/// target's type, for the declaration's binding.
+fn checkTypeAliasDecl(env: *Env, a: ast.TypeAliasDecl) InferError!*T.Type {
+    const taken = env.lookupTypeDef(a.name) != null or blk: {
+        const b = env.bindings.get(a.name) orelse break :blk false;
+        break :blk b.deref().isNamed(a.name);
+    };
+    if (taken) {
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` already names a type; an alias cannot take it", .{ diagnostics.type_alias_name_taken, a.name });
+        env.lastError = TypeError.custom(msg, "Give the alias a name of its own.").withLoc(a.loc);
+        return error.TypeError;
+    }
+    return resolveTypeAliasTarget(env, a);
+}
+
+/// `Name<args>` where `Name` is an alias: the target, with each parameter
+/// bound to its argument resolved in the CALLER's generic scope. The target's
+/// other names resolve in the module's scope, never the caller's generics —
+/// `type Box<T> = T[];` inside `fn f<U>(x: Box<U>)` is `U[]`.
+fn expandTypeAlias(
+    env: *Env,
+    alias: ast.TypeAliasDecl,
+    args: []const ast.TypeRef,
+    callerMap: std.StringHashMap(*T.Type),
+) InferError!*T.Type {
+    if (args.len != alias.genericParams.len) {
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` takes {d} type argument{s}, {d} given", .{
+            diagnostics.type_alias_arity,
+            alias.name,
+            alias.genericParams.len,
+            if (alias.genericParams.len == 1) "" else "s",
+            args.len,
+        });
+        var err = TypeError.custom(msg, "Write the alias with one argument per parameter it declares.");
+        if (env.typeRefLoc) |l| err = err.withLoc(l);
+        env.lastError = err;
+        return error.TypeError;
+    }
+    for (env.aliasExpanding.items) |open| {
+        if (!std.mem.eql(u8, open, alias.name)) continue;
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` expands to itself", .{ diagnostics.type_alias_recursive, alias.name });
+        var err = TypeError.custom(msg, "An alias names a type that already exists; declare a recursive type with `type Name(…)` or `type Name { … }`.");
+        if (env.typeRefLoc) |l| err = err.withLoc(l);
+        env.lastError = err;
+        return error.TypeError;
+    }
+    var map = std.StringHashMap(*T.Type).init(env.arena);
+    defer map.deinit();
+    for (alias.genericParams, args) |gp, arg| {
+        try map.put(gp.name, try resolveTypeRefInContext(env, arg, callerMap));
+    }
+    try env.aliasExpanding.append(env.arena, alias.name);
+    defer _ = env.aliasExpanding.pop();
+    return resolveTypeRefInContext(env, alias.target, map);
+}
+
+/// 01 R2 for an alias: importing `Parser` registers the alias and the types
+/// its target names from the module it comes from, as types only.
+fn registerAliasClosure(
+    env: *Env,
+    moduleDecls: std.StringHashMap(ast.DeclKind),
+    a: ast.TypeAliasDecl,
+    depth: usize,
+) InferError!void {
+    if (depth >= 32 or env.typeAliases.contains(a.name)) return;
+    try env.typeAliases.put(env.arena, a.name, a);
+    var names: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer names.deinit(env.arena);
+    try collectTypeRefNames(env, a.target, &names);
+    for (names.items) |n| {
+        if (env.lookupTypeDef(n) != null or env.typeAliases.contains(n)) continue;
+        // A type the module imported rather than declared is in its map
+        // under the scope prefix (`comptime.imported_type_scope_prefix`).
+        const dep = moduleDecls.get(n) orelse blk: {
+            var buf: [256]u8 = undefined;
+            if (n.len + 1 > buf.len) continue;
+            buf[0] = 0;
+            @memcpy(buf[1 .. n.len + 1], n);
+            break :blk moduleDecls.get(buf[0 .. n.len + 1]) orelse continue;
+        };
+        switch (dep) {
+            .typeAlias => |d| try registerAliasClosure(env, moduleDecls, d, depth + 1),
+            .type_ => {
+                try registerTypeClosureDepth(env, moduleDecls, dep, depth + 1);
+                if (env.lookupTypeDef(n) != null) continue;
+                var before = std.StringHashMap(void).init(env.arena);
+                defer before.deinit();
+                var kit = env.bindings.keyIterator();
+                while (kit.next()) |k| try before.put(k.*, {});
+                try registerTypeDecl(env, dep);
+                var added: std.ArrayListUnmanaged([]const u8) = .empty;
+                defer added.deinit(env.arena);
+                var ait = env.bindings.keyIterator();
+                while (ait.next()) |k| if (!before.contains(k.*)) try added.append(env.arena, k.*);
+                for (added.items) |k| _ = env.bindings.remove(k);
+            },
+            else => {},
+        }
+    }
 }
 
 /// Infer the type of an expression, returning a *Type.
@@ -4795,6 +8515,13 @@ const TypedStmt = ast.StmtOf(.typed);
 const PatternBindingSnapshot = struct {
     name: []const u8,
     previous: ?*T.Type,
+    /// Set by `bindNarrowed`: the name was a `val` before it was narrowed and
+    /// is restored as one (a plain `bind` would make it assignable).
+    wasVal: bool = false,
+    /// Set by `bindNarrowed`: the snapshot is a narrowing, and `prevDecl` is
+    /// the `narrowedDecl` entry the name had before it (null: none).
+    narrowed: bool = false,
+    prevDecl: ?*T.Type = null,
 };
 
 /// Allocate a heap-owned TypedExpr in env.arena.
@@ -4805,33 +8532,348 @@ fn makeTypedPtr(env: *Env, node: TypedExpr) !*TypedExpr {
 }
 
 /// Convert a slice of untyped statements to typed ones (arena-allocated).
+/// The statement walk for a body that needs no typed nodes back — a plain
+/// `fn`, a method and a `test` block. It exists so those three apply the
+/// early-exit narrowing the same way `inferStmtsTyped` does: `if (x == null) {
+/// return …; }` narrows `x` for the REST of the block, and a body walked with a
+/// bare `for` loop would have been the one shape where it did not.
+/// Decisions 152 and 205 — no binding reuses a name already bound in the
+/// function where it stands: a second `val` / `var` / destructured name, an
+/// `if` binder, a loop binder or a `case` arm's binder whose name an
+/// enclosing block of the same function — or the function's parameters —
+/// already bound is `binding-redeclared` at the second binding, naming the
+/// first, in every block and every `case` arm. A sibling block's bindings
+/// ended with that block (`walkNestedBlock`), so two `if` branches may each
+/// bind `n`. A lambda is another function: it is
+/// checked on its own when it is inferred (`inferFunctionExprExpected`), and
+/// the walk does not enter it; a `case` arm's block body is not a lambda and
+/// is walked. erlang rebound a reused name and commonJS refused to load.
+fn refuseRedeclaredBindings(env: *Env, stmts: []const ast.Stmt, params: []const []const u8) InferError!void {
+    var seen: std.StringHashMapUnmanaged(?ast.Loc) = .empty;
+    defer seen.deinit(env.arena);
+    for (params) |p| {
+        if (p.len == 0 or std.mem.eql(u8, p, "_")) continue;
+        try seen.put(env.arena, p, null);
+    }
+    try walkBindingStmts(env, &seen, stmts);
+}
+
+const SeenNames = std.StringHashMapUnmanaged(?ast.Loc);
+
+fn walkBindingStmts(env: *Env, seen: *SeenNames, stmts: []const ast.Stmt) InferError!void {
+    for (stmts) |st| try walkBindingExpr(env, seen, st.expr);
+}
+
+/// A nested block: its bindings end with it (the visible-scope reading).
+fn walkNestedBlock(env: *Env, seen: *SeenNames, stmts: []const ast.Stmt) InferError!void {
+    var inner = try seen.clone(env.arena);
+    try walkBindingStmts(env, &inner, stmts);
+}
+
+fn walkBindingExpr(env: *Env, seen: *SeenNames, e: ast.Expr) InferError!void {
+    switch (e) {
+        .binding => |b| switch (b.kind) {
+            .localBind => |lb| {
+                try walkBindingExpr(env, seen, lb.value.*);
+                try noteBlockBinding(env, seen, lb.name, b.loc);
+            },
+            .localBindDestruct => |lb| {
+                try walkBindingExpr(env, seen, lb.value.*);
+                switch (lb.pattern) {
+                    .names => |n| for (n.fields) |f| try noteBlockBinding(env, seen, f.bind_name, b.loc),
+                    .tuple_ => |t| for (t) |name| try noteBlockBinding(env, seen, name, b.loc),
+                    .list, .ctor => |p| try notePatternBinders(env, seen, p, b.loc),
+                }
+            },
+            .assign => |a| try walkBindingExpr(env, seen, a.value.*),
+        },
+        .branch => |b| switch (b.kind) {
+            .if_ => |i| {
+                try walkBindingExpr(env, seen, i.cond.*);
+                // The binder of `if (x) { v -> … }` belongs to the then-block.
+                var thenSeen = try seen.clone(env.arena);
+                if (i.binding) |bn| if (!std.mem.eql(u8, bn, ast.nullish_binding_name)) try noteBlockBinding(env, &thenSeen, bn, b.loc);
+                try walkBindingStmts(env, &thenSeen, i.then_);
+                if (i.else_) |els| try walkNestedBlock(env, seen, els);
+            },
+            .tryCatch => |tc| {
+                try walkBindingExpr(env, seen, tc.expr.*);
+                try walkBindingExpr(env, seen, tc.handler.*);
+            },
+        },
+        .loop => |lp| {
+            try walkBindingExpr(env, seen, lp.iter.*);
+            var inner = try seen.clone(env.arena);
+            for (lp.params) |p| try noteBlockBinding(env, &inner, p, lp.loc);
+            try walkBindingStmts(env, &inner, lp.body);
+        },
+        .collection => |c| switch (c.kind) {
+            .case => |cs| {
+                for (cs.subjects) |x| try walkBindingExpr(env, seen, x);
+                for (cs.arms) |arm| {
+                    var armSeen = try seen.clone(env.arena);
+                    const sp = &armSeen;
+                    try notePatternBinders(env, sp, arm.pattern, arm.patternLoc);
+                    if (arm.guard) |g| try walkBindingExpr(env, sp, g);
+                    // A block arm (`Pattern { n -> … }`, `p -> { … }`) is the
+                    // arm's own block, not another function.
+                    if (arm.body == .function and arm.body.function.kind.syntax == .lambda) {
+                        for (arm.body.function.kind.params) |p| try noteBlockBinding(env, sp, p, arm.patternLoc);
+                        try walkBindingStmts(env, sp, arm.body.function.kind.body);
+                    } else try walkBindingExpr(env, sp, arm.body);
+                }
+            },
+            .arrayLit => |al| for (al.elems) |x| try walkBindingExpr(env, seen, x),
+            .tupleLit => |tl| for (tl.elems) |x| try walkBindingExpr(env, seen, x),
+            .grouped => |g| try walkBindingExpr(env, seen, g.*),
+            else => {},
+        },
+        .call => |c| switch (c.kind) {
+            .call => |cc| {
+                if (cc.receiver) |r| try walkBindingExpr(env, seen, r.*);
+                for (cc.args) |a| try walkBindingExpr(env, seen, a.value.*);
+            },
+            .pipeline => |pl| {
+                try walkBindingExpr(env, seen, pl.lhs.*);
+                try walkBindingExpr(env, seen, pl.rhs.*);
+            },
+        },
+        .binaryOp => |op| {
+            try walkBindingExpr(env, seen, op.lhs.*);
+            try walkBindingExpr(env, seen, op.rhs.*);
+        },
+        .unaryOp => |op| try walkBindingExpr(env, seen, op.expr.*),
+        .jump => |j| switch (j.kind) {
+            .@"return", .throw_, .try_ => |v| if (v) |x| try walkBindingExpr(env, seen, x.*),
+            .await_ => |x| try walkBindingExpr(env, seen, x.*),
+            .@"break" => |br| if (br.value) |x| try walkBindingExpr(env, seen, x.*),
+            .yield => |y| if (y.value) |x| try walkBindingExpr(env, seen, x.*),
+            .@"continue" => {},
+        },
+        // A lambda (another function), a literal, a name, a comptime value.
+        else => {},
+    }
+}
+
+/// The names a pattern binds (a lower-case bare name, a payload's field or
+/// whole-payload binder, a list element or rest); an `or` pattern's
+/// alternatives bind the same names, so the first one is read.
+fn notePatternBinders(env: *Env, seen: *SeenNames, p: ast.Pattern, loc: ast.Loc) InferError!void {
+    switch (p) {
+        .ident => |n| {
+            if (n.len == 0 or isVariantPath(n) or std.ascii.isUpper(n[0])) return;
+            if (std.mem.eql(u8, n, "true") or std.mem.eql(u8, n, "false") or std.mem.eql(u8, n, "null")) return;
+            try noteBlockBinding(env, seen, n, loc);
+        },
+        .variant => |v| switch (v.payload) {
+            .binding => |b| try noteBlockBinding(env, seen, b, loc),
+            .fields => |fs| for (fs) |f| try noteBlockBinding(env, seen, f, loc),
+            .literals => |ps| for (ps) |q| try notePatternBinders(env, seen, q, loc),
+        },
+        .list => |l| {
+            for (l.elems) |el| switch (el) {
+                .bind => |b| try noteBlockBinding(env, seen, b, loc),
+                else => {},
+            };
+            if (l.spread) |sp| if (sp.len > 0) try noteBlockBinding(env, seen, sp, loc);
+        },
+        .@"or" => |alts| if (alts.len > 0) try notePatternBinders(env, seen, alts[0], loc),
+        .multi => |ps| for (ps) |q| try notePatternBinders(env, seen, q, loc),
+        else => {},
+    }
+}
+
+fn noteBlockBinding(env: *Env, seen: *SeenNames, name: []const u8, loc: ast.Loc) InferError!void {
+    if (name.len == 0 or std.mem.eql(u8, name, "_") or std.mem.startsWith(u8, name, "__bp")) return;
+    if (seen.get(name)) |first| {
+        const msg = if (first) |f|
+            try std.fmt.allocPrint(env.arena, "{s}: `{s}` is already bound in this function, by the binding at {d}:{d}", .{ diagnostics.binding_redeclared, name, f.line, f.col })
+        else
+            try std.fmt.allocPrint(env.arena, "{s}: `{s}` is already bound in this function, as a parameter", .{ diagnostics.binding_redeclared, name });
+        const hint = try std.fmt.allocPrint(env.arena, "A name is bound once per function — an inner block and a `case` arm included. Give the second binding its own name, or make the first a `var` and assign it: `{s} = …;`.", .{name});
+        env.lastError = TypeError.custom(msg, hint).withLoc(loc);
+        return error.TypeError;
+    }
+    try seen.put(env.arena, name, loc);
+}
+
+/// Decision 207 — what keeps a call's labels one reading
+/// (`comptime/inline_types.zig`): one inline parameter type per function, and
+/// none of its fields named like another parameter of the function. Each
+/// refused at the inline type.
+fn refuseInlineParamRules(env: *Env, f: ast.FnDecl) InferError!void {
+    var seen: ?ast.Param = null;
+    for (f.params) |p| {
+        const fields = p.inlineFields orelse continue;
+        if (seen) |first| {
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` takes a second inline type (`{s}`) — one parameter of a function may have one, `{s}` already does", .{ diagnostics.inline_type_position, f.name, p.name, first.name });
+            env.lastError = TypeError.custom(msg, "Name one of the two types (`type Options(…)`), or merge their fields into the one inline type.").withLoc(p.typeLoc);
+            return error.TypeError;
+        }
+        seen = p;
+        for (fields) |fd| for (f.params) |other| {
+            if (std.mem.eql(u8, other.name, p.name) or !std.mem.eql(u8, other.name, fd.name)) continue;
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: the field `{s}` of the {s} of `{s}` is named like the parameter `{s}`, so `{s}({s}: …)` would mean two things", .{ diagnostics.inline_type_position, fd.name, p.name, f.name, other.name, f.name, fd.name });
+            env.lastError = TypeError.custom(msg, "Rename the field or the parameter.").withLoc(p.typeLoc);
+            return error.TypeError;
+        };
+    }
+}
+
+/// Decision 207 — a call's field labels build an inline parameter type only
+/// in the module that declares the function (`comptime/inline_types.zig`
+/// rewrites them there): the type is not exported, so a call from another
+/// module that writes the fields is refused by name rather than read as
+/// labels of the function.
+fn refuseInlineFieldsAcrossModules(env: *Env, callee: []const u8, params: []const ast.Param, args: []const ast.CallArgOf(.untyped), loc: ast.Loc) InferError!void {
+    for (params) |p| {
+        const fields = p.inlineFields orelse continue;
+        for (args) |a| {
+            const l = a.label orelse continue;
+            const isField = for (fields) |fd| {
+                if (std.mem.eql(u8, fd.name, l)) break true;
+            } else false;
+            if (!isField) continue;
+            const isParam = for (params) |q| {
+                if (std.mem.eql(u8, q.name, l)) break true;
+            } else false;
+            if (isParam) continue;
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}:` is a field of the {s} of `{s}`, an inline type built only in the module that declares `{s}`", .{ diagnostics.inline_type_position, l, p.name, callee, callee });
+            env.lastError = TypeError.custom(msg, "Call it through a function of that module, or name the type there (`pub type LinkProps(…)`) and build it here.").withLoc(loc);
+            return error.TypeError;
+        }
+    }
+}
+
+/// The names of a parameter list, for `refuseRedeclaredBindings`.
+fn paramNames(env: *Env, params: []const ast.Param) InferError![]const []const u8 {
+    const out = try env.arena.alloc([]const u8, params.len);
+    for (params, 0..) |p, i| out[i] = p.name;
+    return out;
+}
+
+fn inferBodyStmts(env: *Env, body: []const ast.Stmt) InferError!void {
+    try noteStatementClosures(env, body);
+    var narrowed: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
+    defer narrowed.deinit(env.arena);
+    for (body) |stmt| {
+        _ = try inferExpr(env, stmt.expr);
+        try narrowAfterEarlyExit(env, stmt.expr, &narrowed);
+    }
+    if (narrowed.items.len > 0) try restorePatternBindings(env, narrowed.items);
+}
+
 fn inferStmtsTyped(env: *Env, stmts: []const ast.Stmt) InferError![]TypedStmt {
+    try noteStatementClosures(env, stmts);
     const out = try env.arena.alloc(TypedStmt, stmts.len);
-    for (stmts, 0..) |s, i| out[i] = .{ .expr = try inferExprTyped(env, s.expr) };
+    // The early-exit narrowing (`narrowAfterEarlyExit`) outlives the `if` that
+    // states it, so this is where it is applied and where it ends: a name
+    // narrowed by a guard clause is narrowed for the REST of this block and
+    // restored when the block does.
+    var narrowed: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
+    defer narrowed.deinit(env.arena);
+    for (stmts, 0..) |s, i| {
+        out[i] = .{ .expr = try inferExprTyped(env, s.expr) };
+        try narrowAfterEarlyExit(env, s.expr, &narrowed);
+    }
+    if (narrowed.items.len > 0) try restorePatternBindings(env, narrowed.items);
     return out;
 }
 
 /// Convert a slice of untyped trailing lambdas to typed ones (arena-allocated).
 fn inferTrailingLambdasTyped(env: *Env, trailing: []const ast.TrailingLambda) InferError![]ast.TrailingLambdaOf(.typed) {
     const out = try env.arena.alloc(ast.TrailingLambdaOf(.typed), trailing.len);
+    // C1 — a trailing lambda's `return`s belong to the lambda (an `@block`,
+    // a `use memo { -> return … }`), never to the enclosing fn.
+    const savedReturnTarget = env.returnTarget;
+    const savedReturnBareIsVoid = env.returnBareIsVoid;
+    const savedReturnWhole = env.returnWhole;
+    defer {
+        env.returnTarget = savedReturnTarget;
+        env.returnBareIsVoid = savedReturnBareIsVoid;
+        env.returnWhole = savedReturnWhole;
+    }
+    env.returnWhole = null;
+    const targets = try env.arena.alloc(*T.Type, trailing.len);
     for (trailing, 0..) |tl, i| {
+        targets[i] = try env.freshVar();
+        env.returnTarget = targets[i];
+        env.returnBareIsVoid = false;
         out[i] = .{
             .label = tl.label,
             .params = tl.params,
             .body = try inferStmtsTyped(env, tl.body),
         };
     }
+    env.lastTrailingReturnTargets = targets;
     return out;
+}
+
+/// Decision 8 §5.2 — a **type pattern**: an arm whose pattern is a bare type
+/// name (`i32 { n -> … }`, `string { s -> … }`, `Person { p -> … }`) tests the
+/// matched value's type and narrows the arm to it. Returns the tested type, or
+/// null when the name is an ordinary binder.
+///
+/// The name has to be a type the env knows AND not a variant of the subject —
+/// a variant path is read as a variant first, which is what keeps
+/// `case s { Circle { … } }` a variant arm.
+fn typePatternType(env: *Env, pattern: ast.Pattern, subjectType: *T.Type) InferError!?*T.Type {
+    const name = typePatternName(env, pattern, subjectType) orelse return null;
+    return try env.namedType(name);
+}
+
+/// The type name a pattern tests as a type pattern, or null when it is an
+/// ordinary binder. Split out of `typePatternType` because the coverage walk
+/// (§5.4) has to ask the question from `patternIsCatchAll`, which allocates
+/// nothing and cannot fail: a type pattern is **not** a catch-all, and reading
+/// it as one is what let `case x { i32 { … } }` stand in for `_`.
+fn typePatternName(env: *Env, pattern: ast.Pattern, subjectType: *T.Type) ?[]const u8 {
+    const name = switch (pattern) {
+        .ident => |n| n,
+        else => return null,
+    };
+    if (isVariantPath(name)) return null;
+    if (isEnumVariantNameForSubject(env, subjectType, name)) return null;
+    if (!isKnownTypeName(env, name)) return null;
+    return name;
+}
+
+/// A name the env can resolve as a type: a primitive, or a declaration this
+/// module registered. Deliberately *not* every name — an unregistered one is a
+/// binder, which is what every arm written before decision 8 relies on.
+fn isKnownTypeName(env: *Env, name: []const u8) bool {
+    for (scalar_type_names) |p| if (std.mem.eql(u8, name, p)) return true;
+    return env.lookupTypeDef(name) != null;
+}
+
+/// Decision 8 §5.1 P8 — the bare variant name inside a pattern's written path.
+///
+/// The parser keeps the path exactly as written, because the leading `.` is
+/// what tells a variant path from a binding (`dff3446`): `Circle`,
+/// `Shape.Circle` and `.Circle` all reach here, and only the last segment names
+/// a variant. Every variant table in the checker is keyed by the bare name, so
+/// nothing matched `.Circle` and every variant read as missing.
+fn bareVariantName(written: []const u8) []const u8 {
+    if (std.mem.lastIndexOfScalar(u8, written, '.')) |i| return written[i + 1 ..];
+    return written;
+}
+
+/// True when a pattern's written name is a **path** and so can never be a
+/// binding — `.None`, `Maybe.None`, `Token.Text.Bold`. A path that names no
+/// variant of the subject is a mistake, not a catch-all binder.
+fn isVariantPath(written: []const u8) bool {
+    return std.mem.indexOfScalar(u8, written, '.') != null;
 }
 
 fn isEnumVariantNameForSubject(env: *Env, subjectType: *T.Type, candidate: []const u8) bool {
     const ty = subjectType.deref();
     if (ty.* != .named) return false;
+    const bare = bareVariantName(candidate);
     if (env.lookupTypeDef(ty.named.name)) |td| {
         switch (td) {
             .enum_ => |en| {
                 for (en.variants) |v| {
-                    if (std.mem.eql(u8, v.name, candidate)) return true;
+                    if (std.mem.eql(u8, v.name, bare)) return true;
                 }
             },
             else => {},
@@ -4867,8 +8909,14 @@ fn restorePatternBindings(env: *Env, snapshots: []const PatternBindingSnapshot) 
     while (i > 0) {
         i -= 1;
         const snapshot = snapshots[i];
+        if (snapshot.narrowed) {
+            if (snapshot.prevDecl) |d|
+                try env.narrowedDecl.put(env.arena, snapshot.name, d)
+            else
+                _ = env.narrowedDecl.remove(snapshot.name);
+        }
         if (snapshot.previous) |old| {
-            try env.bind(snapshot.name, old);
+            if (snapshot.wasVal) try env.bindVal(snapshot.name, old) else try env.bind(snapshot.name, old);
         } else {
             _ = env.bindings.remove(snapshot.name);
         }
@@ -4882,42 +8930,1064 @@ fn bindPatternNamesForSubject(
     snapshots: *std.ArrayListUnmanaged(PatternBindingSnapshot),
 ) InferError!void {
     switch (pattern) {
-        .wildcard, .numberLit, .stringLit => {},
+        .wildcard, .stringLit => {},
+        .numberLit => |text| try checkNumberPattern(env, text, subjectType),
         .ident => |name| {
             if (isEnumVariantNameForSubject(env, subjectType, name)) return;
-            try saveAndBindPatternName(env, snapshots, name, try env.freshVar());
+            // §5.2 — a bare type name is a type pattern, not a binder: it tests
+            // the value and binds nothing. The arm's own binder is its lambda
+            // parameter (`i32 { n -> … }`), bound by `inferCaseArmBody`.
+            if (try typePatternType(env, pattern, subjectType) != null) return;
+            // C8 — a binder names the matched value itself.
+            try saveAndBindPatternName(env, snapshots, name, subjectType);
         },
-        .variant => |v| switch (v.payload) {
-            .binding => |binding| {
-                try saveAndBindPatternName(env, snapshots, binding, try env.freshVar());
-            },
-            .fields => |fields| {
-                for (fields) |binding| {
-                    try saveAndBindPatternName(env, snapshots, binding, try env.freshVar());
-                }
-            },
-            .literals => |args| {
-                for (args) |arg| {
-                    try bindPatternNamesForSubject(env, arg, try env.freshVar(), snapshots);
-                }
-            },
+        .variant => |v| {
+            // Decision 247 — a range's two bounds are number (or string)
+            // patterns over the subject itself.
+            if (v.shape == .range and v.payload == .literals) {
+                for (v.payload.literals) |bound| try bindPatternNamesForSubject(env, bound, subjectType, snapshots);
+                return;
+            }
+            // C8 — each payload binding takes the variant field's declared type,
+            // instantiated against the subject's generic args. A record's
+            // constructor pattern (`val assert Person(n, a) = p catch …`, the
+            // subject a `Person | i32`) takes the record's field types: left
+            // fresh, `a.toString()` had no lowering on wasm.
+            const payload = try variantPayloadTypes(env, subjectType, v.name) orelse
+                if (v.shape == .variant) try recordPatternFieldTypes(env, v.name, v.labels, switch (v.payload) {
+                    .binding => 1,
+                    .fields => |f| f.len,
+                    .literals => |l| l.len,
+                }) else null;
+            switch (v.payload) {
+                .binding => |binding| {
+                    const ty = if (payload) |p| (if (p.len == 1) p[0] else try env.freshVar()) else try env.freshVar();
+                    try saveAndBindPatternName(env, snapshots, binding, ty);
+                },
+                .fields => |fields| {
+                    for (fields, 0..) |binding, i| {
+                        const ty = if (payload) |p| (if (p.len == fields.len) p[i] else try env.freshVar()) else try env.freshVar();
+                        try saveAndBindPatternName(env, snapshots, binding, ty);
+                    }
+                },
+                .literals => |args| {
+                    for (args, 0..) |arg, i| {
+                        const ty = if (payload) |p| (if (p.len == args.len) p[i] else try env.freshVar()) else try env.freshVar();
+                        try bindPatternNamesForSubject(env, arg, ty, snapshots);
+                    }
+                },
+            }
         },
         .list => |lst| {
+            // C8 — elements take the array's element type, the spread the array type.
+            const st = subjectType.deref();
+            const elemTy: ?*T.Type = if (st.* == .named and std.mem.eql(u8, st.named.name, "array") and st.named.args.len == 1) st.named.args[0] else null;
             for (lst.elems) |elem| {
                 switch (elem) {
-                    .bind => |name| try saveAndBindPatternName(env, snapshots, name, try env.freshVar()),
+                    .bind => |name| try saveAndBindPatternName(env, snapshots, name, elemTy orelse try env.freshVar()),
+                    .numberLit => |text| if (elemTy) |et| try checkNumberPattern(env, text, et),
                     else => {},
                 }
             }
             if (lst.spread) |name| {
-                if (name.len > 0) try saveAndBindPatternName(env, snapshots, name, try env.freshVar());
+                if (name.len > 0) try saveAndBindPatternName(env, snapshots, name, if (elemTy != null) subjectType else try env.freshVar());
             }
         },
         .@"or" => |patterns| {
-            if (patterns.len > 0) try bindPatternNamesForSubject(env, patterns[0], subjectType, snapshots);
+            if (patterns.len == 0) return;
+            const before = snapshots.items.len;
+            try bindPatternNamesForSubject(env, patterns[0], subjectType, snapshots);
+            // C8 — a name bound by every alternative is the unification of its
+            // types across them; disagreeing alternatives red.
+            for (patterns[1..]) |alt| {
+                var local: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
+                defer local.deinit(env.arena);
+                try bindPatternNamesForSubject(env, alt, subjectType, &local);
+                for (local.items) |ls| {
+                    const newTy = env.lookup(ls.name) orelse continue;
+                    var inFirst = false;
+                    for (snapshots.items[before..]) |fs| {
+                        if (std.mem.eql(u8, fs.name, ls.name)) inFirst = true;
+                    }
+                    if (inFirst) {
+                        if (ls.previous) |prev| {
+                            // Located by the caller that holds the pattern's
+                            // place (`locateLast`).
+                            try unifyUnlocated(env, prev, newTy);
+                            try env.bind(ls.name, prev);
+                        }
+                    } else {
+                        try snapshots.append(env.arena, ls);
+                    }
+                }
+            }
         },
         .multi => {},
     }
+}
+
+/// The types of the `count` elements of a record's constructor pattern: the
+/// field each stands at — its label, else its position. A non-generic record
+/// the module can open, written bare and filled completely; null otherwise,
+/// and the bindings stay fresh.
+fn recordPatternFieldTypes(env: *Env, writtenName: []const u8, labels: []const []const u8, count: usize) InferError!?[]*T.Type {
+    if (std.mem.indexOfScalar(u8, writtenName, '.') != null) return null;
+    const td = env.lookupTypeDef(writtenName) orelse return null;
+    const r = switch (td) {
+        .record => |r| r,
+        else => return null,
+    };
+    if (r.genericParams.len != 0 or count != r.fields.len) return null;
+    const out = try env.arena.alloc(*T.Type, count);
+    for (out, 0..) |*o, i| {
+        if (labels.len > i and labels[i].len > 0) {
+            const at = for (r.fields, 0..) |f, k| {
+                if (std.mem.eql(u8, f.name, labels[i])) break k;
+            } else return null;
+            o.* = r.fields[at].type_;
+        } else o.* = r.fields[i].type_;
+    }
+    return out;
+}
+
+/// C8 — the declared payload field types of `variantName` for a value of
+/// `subjectType`, instantiated against the subject's generic args; null when
+/// the subject's type or the variant is not known (the bindings stay fresh).
+/// `@Result<R, E>`: `Ok` → [R], `Err`/`Error` → [E]; `?T`: `Some` → [T].
+fn variantPayloadTypes(env: *Env, subjectType: *T.Type, writtenName: []const u8) InferError!?[]*T.Type {
+    const st = subjectType.deref();
+    if (st.* != .named) return null;
+    const n = st.named;
+    const eq = std.mem.eql;
+    // §5.1 P8 — the written form may be a path (`.Some`, `Maybe.Some`); the
+    // payload table is keyed by the bare variant name.
+    const variantName = bareVariantName(writtenName);
+    if (eq(u8, n.name, "Result") and n.args.len >= 2) {
+        if (eq(u8, variantName, "Ok")) return try env.arena.dupe(*T.Type, n.args[0..1]);
+        if (eq(u8, variantName, "Err") or eq(u8, variantName, "Error")) return try env.arena.dupe(*T.Type, n.args[1..2]);
+        return null;
+    }
+    if (eq(u8, n.name, "optional") and n.args.len == 1) {
+        if (eq(u8, variantName, "Some")) return try env.arena.dupe(*T.Type, n.args[0..1]);
+        return null;
+    }
+    const td = env.lookupTypeDef(n.name) orelse return null;
+    if (td != .enum_) return null;
+    const en = td.enum_;
+    var fields: ?[]envMod.FieldDef = null;
+    for (en.variants) |vd| {
+        if (eq(u8, vd.name, variantName)) fields = vd.fields;
+    }
+    const fs = fields orelse return null;
+    const out = try env.arena.alloc(*T.Type, fs.len);
+    // The registration cells of a generic enum are the args of any of its
+    // variant constructors' result type (`Enum<A_cell, …>`).
+    var seen = std.AutoHashMap(*T.TypeCell, *T.Type).init(env.arena);
+    defer seen.deinit();
+    if (en.genericParams.len > 0 and n.args.len == en.genericParams.len) {
+        for (en.variants) |vd| {
+            const ctor = env.lookup(vd.name) orelse env.typeOnlyCtors.get(vd.name) orelse continue;
+            const cd = ctor.deref();
+            const ret = if (cd.* == .func) cd.func.ret.deref() else cd;
+            if (ret.* != .named or !eq(u8, ret.named.name, en.name) or ret.named.args.len != n.args.len) continue;
+            for (ret.named.args, n.args) |cellTy, inst| {
+                const cr = cellTy.deref();
+                if (cr.* == .typeVar) try seen.put(cr.typeVar, inst);
+            }
+            break;
+        }
+    }
+    for (fs, 0..) |f, i| {
+        out[i] = if (seen.count() > 0) try instantiateType(env, f.type_, &seen, .allVars) else f.type_;
+    }
+    return out;
+}
+
+/// 06 C9 — whether `td` answers `member` by some route other than an inherent
+/// method: a field of function type called like a method (`c.set(9)` on
+/// `#(value, set)`-shaped records), or a `default fn` the type adopts from a
+/// behavior it implements (through that behavior's `extends` chain). Both are
+/// legitimate and neither is registered in `inherentMethods`, so the unknown-
+/// method check has to ask before it reds.
+fn typeAnswersMember(env: *Env, td: envMod.TypeDef, member: []const u8) bool {
+    if (td.fields()) |fs| {
+        for (fs) |f| {
+            if (std.mem.eql(u8, f.name, member)) return true;
+        }
+    }
+    const implements: []const []const u8 = switch (td) {
+        .record => |r| r.implements,
+        .struct_ => |st| st.implements,
+        .enum_ => |e| e.implements,
+    };
+    for (implements) |iface| {
+        if (behaviorDeclaresMember(env, iface, member, 0)) return true;
+    }
+    return false;
+}
+
+/// Whether `iface` — or anything it extends — declares `method` as a method
+/// with no body (a `default fn` is emitted with the implementer, so it is not
+/// the value's own). `depth` bounds a cyclic `extends` chain.
+fn behaviorDeclaresBodyless(env: *Env, iface: []const u8, method: []const u8, depth: usize) bool {
+    if (depth >= 16) return false;
+    const decl = env.assocInterfaceDecls.get(iface) orelse env.importedBehaviorDecls.get(iface) orelse return false;
+    for (decl.methods) |m| {
+        if (std.mem.eql(u8, m.name, method)) return !m.is_default and !m.is_declare and m.body == null;
+    }
+    for (decl.extends) |parent| {
+        if (behaviorDeclaresBodyless(env, parent, method, depth + 1)) return true;
+    }
+    return false;
+}
+
+const BehaviorMethodFound = struct { decl: ast.BehaviorDecl, method: ast.BehaviorMethod };
+
+/// The bodyless method `iface` — or anything it extends — declares under
+/// `method`, with the behavior that declares it.
+fn behaviorBodylessMethod(env: *Env, iface: []const u8, method: []const u8, depth: usize) ?BehaviorMethodFound {
+    if (depth >= 16) return null;
+    const decl = env.assocInterfaceDecls.get(iface) orelse env.importedBehaviorDecls.get(iface) orelse return null;
+    for (decl.methods) |m| {
+        if (std.mem.eql(u8, m.name, method)) {
+            if (m.is_default or m.is_declare or m.body != null) return null;
+            return .{ .decl = decl, .method = m };
+        }
+    }
+    for (decl.extends) |parent| {
+        if (behaviorBodylessMethod(env, parent, method, depth + 1)) |found| return found;
+    }
+    return null;
+}
+
+/// The type a call of a behavior's bodyless method answers on a value of the
+/// behavior `iface`: the declared return, `Self` being the receiver and the
+/// behavior's own type parameters its type arguments, each argument unified
+/// with the parameter it fills. Null when the declaration names no return, or
+/// the call is not the plain positional shape this reads.
+fn behaviorMethodCallType(
+    env: *Env,
+    iface: []const u8,
+    recvPtr: *ast.TypedExpr,
+    method: []const u8,
+    typedArgs: []ast.CallArgOf(.typed),
+    typedTrailing: []ast.TrailingLambdaOf(.typed),
+) InferError!?*T.Type {
+    const found = behaviorBodylessMethod(env, iface, method, 0) orelse return null;
+    return behaviorFoundCallType(env, found, recvPtr, typedArgs, typedTrailing);
+}
+
+/// The `default fn` `iface` — or anything it extends — declares under
+/// `method`, with the behavior that declares it.
+fn behaviorDefaultMethod(env: *Env, iface: []const u8, method: []const u8, depth: usize) ?BehaviorMethodFound {
+    if (depth >= 16) return null;
+    const decl = env.assocInterfaceDecls.get(iface) orelse env.importedBehaviorDecls.get(iface) orelse return null;
+    for (decl.methods) |m| {
+        if (std.mem.eql(u8, m.name, method)) {
+            if (!m.is_default or m.body == null) return null;
+            return .{ .decl = decl, .method = m };
+        }
+    }
+    for (decl.extends) |parent| {
+        if (behaviorDefaultMethod(env, parent, method, depth + 1)) |found| return found;
+    }
+    return null;
+}
+
+/// A call of a `default fn` a nominal type adopts from a behavior it
+/// implements answers the member's declared return, `Self` the receiver —
+/// as a call of a bodyless member does on a value of the behavior. It was a
+/// fresh variable, so `sq.checked().isOk()` on a `-> @Result` default fn
+/// found no `@Result` lowering.
+fn adoptedDefaultCallType(
+    env: *Env,
+    td: envMod.TypeDef,
+    recvPtr: *ast.TypedExpr,
+    method: []const u8,
+    typedArgs: []ast.CallArgOf(.typed),
+    typedTrailing: []ast.TrailingLambdaOf(.typed),
+) InferError!?*T.Type {
+    const implements: []const []const u8 = switch (td) {
+        .record => |r| r.implements,
+        .struct_ => |st| st.implements,
+        .enum_ => |e| e.implements,
+    };
+    for (implements) |iface| {
+        const found = behaviorDefaultMethod(env, iface, method, 0) orelse continue;
+        return behaviorFoundCallType(env, found, recvPtr, typedArgs, typedTrailing);
+    }
+    return null;
+}
+
+fn behaviorFoundCallType(
+    env: *Env,
+    found: BehaviorMethodFound,
+    recvPtr: *ast.TypedExpr,
+    typedArgs: []ast.CallArgOf(.typed),
+    typedTrailing: []ast.TrailingLambdaOf(.typed),
+) InferError!?*T.Type {
+    const rt = found.method.returnType orelse return null;
+    const params = found.method.params;
+    const rest = if (params.len > 0 and std.mem.eql(u8, params[0].name, "self")) params[1..] else params;
+    if (typedTrailing.len != 0 or rest.len != typedArgs.len) return null;
+    for (typedArgs) |ta| if (ta.label != null) return null;
+    var gm = std.StringHashMap(*T.Type).init(env.arena);
+    defer gm.deinit();
+    const recvTy = recvPtr.getType();
+    try gm.put("Self", recvTy);
+    const named = recvTy.deref();
+    for (found.decl.genericParams, 0..) |gp, i| {
+        const arg = if (named.* == .named and i < named.named.args.len) named.named.args[i] else try env.freshVar();
+        try gm.put(gp.name, arg);
+    }
+    for (found.method.genericParams) |gp| try gm.put(gp.name, try env.freshVar());
+    for (rest, typedArgs) |p, ta| {
+        try unifyAt(env, try paramTypeInContext(env, p, gm), ta.value.getType(), ta.value.getLoc());
+    }
+    return try resolveTypeRefInContext(env, rt, gm);
+}
+
+/// Whether `iface` — or anything it extends — declares `member`. `depth` bounds
+/// a cyclic `extends` chain.
+fn behaviorDeclaresMember(env: *Env, iface: []const u8, member: []const u8, depth: usize) bool {
+    if (depth >= 16) return false;
+    const decl = env.assocInterfaceDecls.get(iface) orelse return false;
+    for (decl.methods) |m| {
+        if (std.mem.eql(u8, m.name, member)) return true;
+    }
+    for (decl.fields) |f| {
+        if (std.mem.eql(u8, f.name, member)) return true;
+    }
+    for (decl.extends) |parent| {
+        if (behaviorDeclaresMember(env, parent, member, depth + 1)) return true;
+    }
+    return false;
+}
+
+/// Decision 2 — whether a branch's statements end in something that HAS a
+/// value. Every binding expression (an assignment, a `val`/`var`, a
+/// destructuring) and a loop are statements: they end the branch with nothing
+/// for the other branch to agree with.
+fn stmtsYieldValue(stmts: []const ast.StmtOf(.typed)) bool {
+    if (stmts.len == 0) return false;
+    return switch (stmts[stmts.len - 1].expr) {
+        .binding => false,
+        .loop => false,
+        else => true,
+    };
+}
+
+/// 06 N24 / decision 8 §6 — `c.set(9)` where `set` is a LABEL of the tuple
+/// `c`, naming an element of function type. Types the call from that element's
+/// signature and records the positional rewrite the backends need
+/// (`c._1(9)`), the same `enumSectionRewrites` channel the member-access path
+/// uses for `row.pop` → `row._1`. Null when the receiver is not a labelled
+/// tuple, or the callee is not one of its labels — every other dispatch then
+/// runs as before.
+fn inferTupleLabelCall(
+    env: *Env,
+    recvPtr: ?*ast.TypedExpr,
+    recvExpr: ?*ast.Expr,
+    callee: []const u8,
+    typedArgs: []ast.CallArgOf(.typed),
+    typedTrailing: []ast.TrailingLambdaOf(.typed),
+    loc: ast.Loc,
+) InferError!?TypedExpr {
+    const recv = recvPtr orelse return null;
+    const written = recvExpr orelse return null;
+    const rt = recv.getType().deref();
+    if (rt.* != .named or !std.mem.eql(u8, rt.named.name, "tuple")) return null;
+    const idx = tupleLabelIndex(rt.named.labels, callee) orelse return null;
+    if (idx >= rt.named.args.len) return null;
+
+    const elem = rt.named.args[idx].deref();
+    const retType: *T.Type = switch (elem.*) {
+        .func => |f| blk: {
+            const total = typedArgs.len + typedTrailing.len;
+            if (f.params.len != total) {
+                env.lastError = TypeError.arityMismatch(callee, f.params.len, total).withLoc(loc);
+                return error.TypeError;
+            }
+            try refuseLabelsOnFunctionValue(env, callee, typedArgs);
+            for (typedArgs, f.params[0..typedArgs.len]) |ta, p| {
+                try unifyAt(env, p, ta.value.getType(), ta.value.getLoc());
+            }
+            break :blk f.ret;
+        },
+        else => try env.freshVar(),
+    };
+
+    const positional = try std.fmt.allocPrint(env.arena, "_{d}", .{idx});
+    const rewrite = try env.arena.create(ast.Expr);
+    rewrite.* = .{ .call = .{ .loc = loc, .kind = .{ .call = .{
+        .receiver = written,
+        .callee = positional,
+        .is_builtin = false,
+        .args = &.{},
+        .trailing = &.{},
+    } } } };
+    try env.enumSectionRewrites.put(loc, rewrite);
+
+    return TypedExpr{ .call = .{ .loc = loc, .type_ = retType, .kind = .{ .call = .{
+        .receiver = recvPtr,
+        .callee = positional,
+        .is_builtin = false,
+        .args = typedArgs,
+        .trailing = typedTrailing,
+    } } } };
+}
+
+/// 06 C3 — arithmetic constrains its operands to a numeric type, reported at
+/// the offending operand. `"a" * "b"` and `-"s"` used to check: `*` only
+/// unified the two sides with each other (two strings agree) and `-` applied
+/// no constraint at all. Permissive for a type variable an inference gap has
+/// not resolved, and for any named type the env does not know to be
+/// non-numeric — only the types that certainly hold no arithmetic red.
+/// The two type kinds decision 8 says must be **narrowed before they are
+/// used**: `unknown` (§2.2) and a union (§3.3). Both carry a set of
+/// possibilities rather than one type, and both reach the same five operations
+/// — arithmetic, `+`, an ordering comparison, a field read and a method call —
+/// through a permissive tail that would otherwise accept silently.
+///
+/// `@print(x)`, `x == y`, `x != y`, assignment and passing to a generic
+/// parameter stay allowed for both, and reach inference by paths this is not on.
+///
+/// §3.3's own rule is narrower than this: a use is allowed when **every**
+/// member allows it. Deciding that means re-resolving the operation once per
+/// member, which this front has not built; refusing the union outright refuses
+/// more than §3.3 and is never wrong, and the fix — narrow first — is the same
+/// sentence either way.
+///
+/// `what` completes "cannot …", so it is a verb phrase.
+fn refuseUnknownUse(env: *Env, ty: *T.Type, loc: ast.Loc, what: []const u8) InferError!void {
+    const t = ty.deref();
+    if (unifyMod.isUnknown(t)) {
+        var e = TypeError.custom(
+            try std.fmt.allocPrint(env.arena, "cannot {s} an `unknown` value", .{what}),
+            "Narrow it first: `if (x is i32) { … }` makes `x` an `i32` inside the block.",
+        );
+        env.lastError = e.withLoc(loc);
+        return error.TypeError;
+    }
+    if (t.* == .union_) {
+        const rendered = try snapshotMod.typeNameOf(env.arena, t);
+        // §3.2 — name the branch that widened it, when inference made it.
+        const widened: []const u8 = if (env.unionOrigins.get(t)) |o|
+            (if (std.mem.eql(u8, o.kind, "array element"))
+                try std.fmt.allocPrint(env.arena, " (the array element at {d}:{d} made it one: the literal's elements disagree)", .{ o.loc.line, o.loc.col })
+            else
+                try std.fmt.allocPrint(env.arena, " (the `{s}` at {d}:{d} made it one: its branches disagree)", .{ o.kind, o.loc.line, o.loc.col }))
+        else
+            "";
+        var e = TypeError.custom(
+            try std.fmt.allocPrint(env.arena, "cannot {s} a `{s}` — not every member of the union answers it{s}", .{ what, rendered, widened }),
+            "Narrow it first: a `case` with one arm per member, or `if (v is i32) { … }`.",
+        );
+        env.lastError = e.withLoc(loc);
+        return error.TypeError;
+    }
+}
+
+/// Decision 8 §4.2 — what may stand on the right of `is`: a primitive, a named
+/// type's constructor, a tuple `#(…)`, and a generic type applied to `unknown`
+/// only.
+///
+/// `Box<i32>` is the error the section names: a run-time test can see that a
+/// value is a `Box`, and cannot see what is in it, so `Box<i32>` would be a
+/// promise the test does not keep. `Box<unknown>` says exactly what the test
+/// can answer. A tuple is checkable — arity and each element are — and so are
+/// the other structural spellings the grammar builds out of type refs.
+fn checkIsTestableType(env: *Env, ref: ast.TypeRef, loc: ast.Loc) InferError!void {
+    switch (ref) {
+        .generic => |g| {
+            if (ref.unionMembers()) |members| {
+                for (members) |m| try checkIsTestableType(env, m, loc);
+                return;
+            }
+            for (g.args) |arg| {
+                const isUnknownArg = arg == .named and
+                    std.mem.eql(u8, arg.named, ast.unknown_type_name);
+                if (isUnknownArg) continue;
+                var e = TypeError.custom(
+                    try std.fmt.allocPrint(
+                        env.arena,
+                        "`is` cannot test the type argument of `{s}`",
+                        .{g.name},
+                    ),
+                    "A run-time test sees the type, not what is inside it. Write the argument as `unknown` (`Box<unknown>`) and narrow the contents separately.",
+                );
+                env.lastError = e.withLoc(loc);
+                return error.TypeError;
+            }
+        },
+        else => {},
+    }
+}
+
+/// Decision 8 §4.3 — `a is string` on a value statically known to be an `i32`
+/// is always false: a **warning** (decision 57's channel), and the program
+/// still checks. "Statically known" is a value whose type is one concrete
+/// head — a primitive, or a `type` the module declares — with no possibility
+/// set behind it: `unknown`, a union, an optional, a behavior and an
+/// unresolved variable are exactly the values `is` exists to test, and are
+/// left alone. Numbers are tested by range, not by origin (§4.1): `2.0 is i32`
+/// can be true, so a number tested against another number type never warns.
+fn warnAlwaysFalseIs(env: *Env, valueType: *T.Type, tested: ast.TypeRef, loc: ast.Loc) InferError!void {
+    const v = valueType.deref();
+    if (v.* != .named) return;
+    const vname = v.named.name;
+    const eq = std.mem.eql;
+    if (eq(u8, vname, ast.unknown_type_name) or eq(u8, vname, "optional")) return;
+    const v_scalar = for (scalar_type_names) |n| {
+        if (eq(u8, n, vname)) break true;
+    } else false;
+    if (!v_scalar) {
+        const td = env.lookupTypeDef(vname) orelse return;
+        _ = td;
+    }
+    const tname: []const u8 = switch (tested) {
+        .named => |n| n,
+        .generic => |g| if (tested.unionMembers() != null) return else g.name,
+        .array => "array",
+        .optional => return,
+        else => return,
+    };
+    // A dotted name (`Token.Text`, a variant or a section) tests inside the
+    // value's own type; `unknown` is always true.
+    if (std.mem.indexOfScalar(u8, tname, '.') != null) return;
+    if (eq(u8, tname, ast.unknown_type_name)) return;
+    const tested_head = if (eq(u8, tname, "Array")) "array" else tname;
+    if (eq(u8, tested_head, vname)) return;
+    const numeric = struct {
+        fn of(n: []const u8) bool {
+            const nums = [_][]const u8{ "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "isize", "usize", "f32", "f64" };
+            for (nums) |x| if (std.mem.eql(u8, x, n)) return true;
+            return false;
+        }
+    }.of;
+    if (numeric(vname) and numeric(tested_head)) return;
+    // A tested name the module knows nothing about is the unknown-name
+    // diagnostic's business, not this one's.
+    const t_known = numeric(tested_head) or env.lookupTypeDef(tested_head) != null or
+        eq(u8, tested_head, "string") or eq(u8, tested_head, "bool") or eq(u8, tested_head, "array");
+    if (!t_known) return;
+    const rendered = try snapshotMod.typeNameOf(env.arena, v);
+    const msg = try std.fmt.allocPrint(env.arena, "this `is {s}` test is always false: the value's type is `{s}`", .{ tname, rendered });
+    try env.warn(TypeError.custom(msg, "The value's type is known here, so the test can never succeed. Test a value whose type is `unknown` or a union, or delete the test.").withLoc(loc));
+}
+
+/// Decision 8 §4 — the narrowing an `if` condition records: the name it tested
+/// and the type it tested it for. Null when the condition is not one of the
+/// forms that narrow.
+const IsNarrowing = struct { name: []const u8, ref: ast.TypeRef };
+
+/// `x is T` where `x` is a plain name. Only a name can be narrowed: narrowing
+/// rebinds it for the branch, and there is nothing to rebind for `f().x`.
+fn isNarrowingOf(cond: ast.Expr) ?IsNarrowing {
+    if (cond != .call) return null;
+    const c = cond.call.kind;
+    if (c != .call) return null;
+    const cc = c.call;
+    if (!cc.is_builtin or !std.mem.eql(u8, cc.callee, ast.is_builtin_name)) return null;
+    const tested = cc.isType orelse return null;
+    if (cc.args.len != 1) return null;
+    const arg = cc.args[0].value.*;
+    if (arg != .identifier or arg.identifier.kind != .ident) return null;
+    return .{ .name = arg.identifier.kind.ident, .ref = tested };
+}
+
+/// Decision 8 §4, as the null test extends it — one name a condition narrows,
+/// and the type it takes on each SIDE of that condition. `then_` is the type
+/// the name has where the condition held, `else_` the type it has where it did
+/// not; either may be null, which means "that side leaves the name's own type
+/// alone". `x is T` fills `then_` only; `x != null` fills `then_`, `x == null`
+/// fills `else_`, and that symmetry is the whole of the negative form.
+const CondNarrowing = struct {
+    name: []const u8,
+    then_: ?*T.Type = null,
+    else_: ?*T.Type = null,
+};
+
+/// The payload of a `?T`, or null for every other type — an unresolved type
+/// VARIABLE included, because an inference gap must not narrow a name to a
+/// guess. `optional` is the named type the parser lands `?T` as.
+fn optionalPayloadOf(ty: *T.Type) ?*T.Type {
+    const t = ty.deref();
+    if (t.* != .named) return null;
+    const n = t.named;
+    if (!std.mem.eql(u8, n.name, "optional") or n.args.len != 1) return null;
+    return n.args[0];
+}
+
+/// The name of a plain identifier expression, or null. Only a NAME narrows,
+/// for the same reason `x is T` only narrows one: narrowing is a rebinding,
+/// and there is nothing to rebind for `o.inner` or `f().x`.
+fn plainIdentName(expr: ast.Expr) ?[]const u8 {
+    if (expr != .identifier or expr.identifier.kind != .ident) return null;
+    return expr.identifier.kind.ident;
+}
+
+fn isNullLiteral(expr: ast.Expr) bool {
+    return expr == .literal and expr.literal.kind == .null_;
+}
+
+/// `x != null` / `x == null`, in either operand order. `present_when_true` says
+/// which side of the test holds the value.
+fn nullTestOf(cond: ast.Expr) ?struct { name: []const u8, present_when_true: bool } {
+    if (cond != .binaryOp) return null;
+    const b = cond.binaryOp;
+    const present = switch (b.op) {
+        .ne => true,
+        .eq => false,
+        else => return null,
+    };
+    const name = if (isNullLiteral(b.rhs.*))
+        plainIdentName(b.lhs.*)
+    else if (isNullLiteral(b.lhs.*))
+        plainIdentName(b.rhs.*)
+    else
+        null;
+    return .{ .name = name orelse return null, .present_when_true = present };
+}
+
+/// Every name a condition narrows, appended to `out`. The null test is the leaf
+/// (`x != null`, `x == null`); `&&`, `||` and `not` combine leaves, and each
+/// combines exactly one side:
+///
+///   * `a && b` HOLDS only when both hold, so the then side keeps both halves'
+///     narrowings. Its failure says nothing — either half may be the one that
+///     failed — so the else side of an `&&` narrows nothing.
+///   * `a || b` FAILS only when both fail: the mirror, and the shape a library
+///     writes as `if (a == null || b == null) { return …; }`.
+///   * `not a` swaps the two sides.
+///
+/// A name whose type is not an optional is skipped rather than refused: `x !=
+/// null` on a non-optional is a comparison this function has no opinion about.
+fn collectCondNarrowings(
+    env: *Env,
+    cond: ast.Expr,
+    out: *std.ArrayListUnmanaged(CondNarrowing),
+) InferError!void {
+    // Only the narrowings THIS call appends may be rewritten by the combinator
+    // below it: `a && (b || c)` must not let the `||` clear `a`'s half.
+    const start = out.items.len;
+    switch (cond) {
+        .binaryOp => |b| switch (b.op) {
+            .@"and", .@"or" => {
+                try collectCondNarrowings(env, b.lhs.*, out);
+                try collectCondNarrowings(env, b.rhs.*, out);
+                for (out.items[start..]) |*n| {
+                    if (b.op == .@"and") n.else_ = null else n.then_ = null;
+                }
+            },
+            .eq, .ne => {
+                const test_ = nullTestOf(cond) orelse return;
+                const bound = env.lookup(test_.name) orelse return;
+                const inner = optionalPayloadOf(bound) orelse return;
+                try out.append(env.arena, if (test_.present_when_true)
+                    .{ .name = test_.name, .then_ = inner }
+                else
+                    .{ .name = test_.name, .else_ = inner });
+            },
+            else => {},
+        },
+        .unaryOp => |u| {
+            if (u.op != .not) return;
+            try collectCondNarrowings(env, u.expr.*, out);
+            for (out.items[start..]) |*n| {
+                const held = n.then_;
+                n.then_ = n.else_;
+                n.else_ = held;
+            }
+        },
+        else => {},
+    }
+}
+
+/// Rebind `name` to its narrowed type for one branch, remembering what it was.
+/// A `val` stays a `val`: `env.bind` drops the marker decision 38 reads, and a
+/// narrowed name is still the same binding, not a new assignable one.
+fn bindNarrowed(
+    env: *Env,
+    name: []const u8,
+    ty: *T.Type,
+    snapshots: *std.ArrayListUnmanaged(PatternBindingSnapshot),
+) InferError!void {
+    const wasVal = env.isVal(name);
+    const previous = env.lookup(name);
+    const prevDecl = env.narrowedDecl.get(name);
+    try snapshots.append(env.arena, .{ .name = name, .previous = previous, .wasVal = wasVal, .narrowed = true, .prevDecl = prevDecl });
+    if (wasVal) {
+        try env.bindVal(name, ty);
+    } else {
+        // A `var` keeps the type it was declared with for its assignments.
+        if (prevDecl orelse previous) |declared| try env.narrowedDecl.put(env.arena, name, declared);
+        try env.bind(name, ty);
+    }
+}
+
+/// A statement list that cannot fall through: its last statement is a `return`,
+/// `throw`, `break` or `continue`. That is all the early-return shape needs —
+/// a body ending any other way reaches the code below its `if`.
+///
+/// A call that never returns ends a branch too (maintainer, 24-box-1): a
+/// builtin `@panic` / `@todo` / `@trap` / `@compilerError`, or any function
+/// whose declared return is `noreturn` — a framework's `notFound()` and
+/// `redirect(…)` — so `if (post == null) { notFound(); }` narrows `post` below.
+fn stmtsAlwaysExit(env: *Env, stmts: []const ast.Stmt) bool {
+    var n = stmts.len;
+    while (n > 0) : (n -= 1) {
+        const last = stmts[n - 1].expr;
+        if (last == .literal and last.literal.kind == .comment) continue;
+        if (last == .call and last.call.kind == .call) return callNeverReturns(env, last.call.kind.call);
+        if (last != .jump) return false;
+        return switch (last.jump.kind) {
+            .@"return", .throw_, .@"break", .@"continue" => true,
+            else => false,
+        };
+    }
+    return false;
+}
+
+/// Whether a call's callee is declared `-> noreturn` (or is one of the
+/// builtins that are).
+fn callNeverReturns(env: *Env, cc: anytype) bool {
+    if (cc.is_builtin) return builtinsMod.neverReturns(cc.callee);
+    if (cc.receiver != null) return false;
+    const ty = env.lookup(cc.callee) orelse return false;
+    const d = ty.deref();
+    return d.* == .func and d.func.ret.isNamed("noreturn");
+}
+
+/// The early-exit shape: `if (x == null) { return …; }` and then the REST of
+/// the block, where `x` holds a value because the branch that did not left.
+/// The narrowing outlives the `if`, so unlike the two branch shapes it is
+/// applied by the statement walker and restored at the end of the block.
+///
+/// Only a `val` narrows here. A `var` may be assigned below the `if` — the
+/// branch shapes restore before the next statement and never meet that, this
+/// one would carry a type the name no longer has.
+fn narrowAfterEarlyExit(
+    env: *Env,
+    stmt: ast.Expr,
+    snapshots: *std.ArrayListUnmanaged(PatternBindingSnapshot),
+) InferError!void {
+    if (stmt != .branch or stmt.branch.kind != .if_) return;
+    const i = stmt.branch.kind.if_;
+    if (i.binding != null or i.else_ != null) return;
+    if (!stmtsAlwaysExit(env, i.then_)) return;
+    var narrowings: std.ArrayListUnmanaged(CondNarrowing) = .empty;
+    defer narrowings.deinit(env.arena);
+    try collectCondNarrowings(env, i.cond.*, &narrowings);
+    for (narrowings.items) |n| {
+        const ty = n.else_ orelse continue;
+        if (!env.isVal(n.name)) continue;
+        try bindNarrowed(env, n.name, ty, snapshots);
+    }
+}
+
+fn requireNumericOperand(env: *Env, ty: *T.Type, op: []const u8, loc: ast.Loc) InferError!void {
+    const t = ty.deref();
+    if (t.* != .named) return;
+    // §2.2 — arithmetic is refused on `unknown` for its own reason, not as a
+    // "takes numbers" mismatch: the value may well be a number, and what is
+    // wrong is that nothing has established it.
+    try refuseUnknownUse(env, ty, loc, "do arithmetic on");
+    const n = t.named.name;
+    const eq = std.mem.eql;
+    if (!(eq(u8, n, "string") or eq(u8, n, "bool") or eq(u8, n, "void") or eq(u8, n, "array"))) return;
+    var e = TypeError.custom(
+        try std.fmt.allocPrint(env.arena, "`{s}` takes numbers, not `{s}`", .{ op, n }),
+        "Arithmetic is defined on the integer and float types. `+` also concatenates strings; the other operators do not.",
+    );
+    env.lastError = e.withLoc(loc);
+    return error.TypeError;
+}
+
+/// The named types that hold no variant at all: a variant pattern asserted
+/// against one of them can never match. Every other unregistered name stays
+/// permissive (a forward reference, or an imported type).
+const scalar_type_names = [_][]const u8{
+    "i8",       "u8",    "i16", "u16", "i32",  "u32",    "i64",  "u64",
+    "isize",    "usize", "f32", "f64", "bool", "string", "void", "v128",
+    "noreturn",
+};
+
+/// Decision 8 § 9 — a `val assert` variant pattern must name a variant the
+/// subject's type can actually hold. Permissive while the subject's type is
+/// still an unresolved type variable (an inference gap must not red), and for
+/// every non-variant pattern, whose shapes (`42`, `"hi"`, `[a, ..]`) the
+/// backends test at run time.
+fn checkAssertPatternSubject(
+    env: *Env,
+    pattern: ast.Pattern,
+    subjectType: *T.Type,
+    loc: ast.Loc,
+    fatal: bool,
+    catchLoc: ?ast.Loc,
+) InferError!void {
+    const name = switch (pattern) {
+        // A path names its variant by its last segment (`Result.Error`).
+        .variant => |v| bareVariantName(v.name),
+        else => return,
+    };
+    const st = subjectType.deref();
+    if (st.* != .named) return;
+    const eq = std.mem.eql;
+    const n = st.named;
+    // Decision 8 § 9 — `val assert Ok(n) = parse("42") catch 0;` is an error:
+    // `catch` is what turns a `@Result` into its success value, so a `@Result`
+    // subject and a handler cannot both be written. The handler-less form is
+    // the one that asserts a variant, and its failure is fatal.
+    if (!fatal and eq(u8, n.name, "Result")) {
+        var ce = TypeError.custom(
+            "after `catch` the value is not a @Result — a `val assert` over a `@Result` takes no `catch`",
+            "`catch` already yields the success value, so the pattern would be asserted against the unwrapped one. Write `val assert Ok(n) = parse(s);` — a failure is a fatal assert (decision 8 § 9).",
+        );
+        // 01 R9 — the caret is on the `catch` that makes it an error.
+        env.lastError = ce.withLoc(catchLoc orelse loc);
+        return error.TypeError;
+    }
+    const known = blk: {
+        if (eq(u8, n.name, "Result")) break :blk eq(u8, name, "Ok") or eq(u8, name, "Err") or eq(u8, name, "Error");
+        if (eq(u8, n.name, "optional")) break :blk eq(u8, name, "Some") or eq(u8, name, "None");
+        if (env.lookupTypeDef(n.name)) |td| switch (td) {
+            .enum_ => |en| {
+                for (en.variants) |vd| {
+                    if (eq(u8, vd.name, name)) break :blk true;
+                }
+                break :blk false;
+            },
+            // A record's own constructor is its only "variant"; a struct is
+            // opened by name too.
+            .record => break :blk eq(u8, n.name, name),
+            .struct_ => break :blk eq(u8, n.name, name),
+        };
+        // No typedef: a primitive holds no variant at all, anything else is a
+        // forward reference or an imported type C10 has yet to register — stay
+        // permissive there.
+        for (scalar_type_names) |p| {
+            if (eq(u8, n.name, p)) break :blk false;
+        }
+        return;
+    };
+    if (known) return;
+    var e = TypeError.custom(
+        try std.fmt.allocPrint(env.arena, "`{s}` names no variant of `{s}`", .{ name, n.name }),
+        "The pattern of a `val assert` has to be able to match its subject. After `catch` the value is the unwrapped one, so `val assert Ok(n) = parse(s) catch 0;` asserts `Ok(…)` against an `i32` — drop the `catch` (decision 8 § 9: a failure is a fatal assert).",
+    );
+    env.lastError = e.withLoc(loc);
+    return error.TypeError;
+}
+
+/// Decision 54 — the `null` pattern. The parser lands it as `.ident` carrying
+/// the keyword's own lexeme (`parser/patterns.zig`), so `null` is never a
+/// binding: no source can spell a binder with that name, `null` being a keyword
+/// token. This predicate is the only reader of that spelling.
+fn isNullPattern(pattern: ast.Pattern) bool {
+    return pattern == .ident and std.mem.eql(u8, pattern.ident, "null");
+}
+
+/// The `T` of a `?T`, or null when the type is not an optional.
+fn optionalInner(ty: *T.Type) ?*T.Type {
+    const d = ty.deref();
+    if (d.* != .named) return null;
+    if (!std.mem.eql(u8, d.named.name, "optional") or d.named.args.len != 1) return null;
+    return d.named.args[0];
+}
+
+/// The name a pattern binds when it is the binder half of decision 54's `?T`
+/// form: a plain lower-case name, or `""` for `_`. Null when the pattern is
+/// anything else.
+fn optionalBinderName(pattern: ast.Pattern) ?[]const u8 {
+    return switch (pattern) {
+        .wildcard => "",
+        .ident => |n| if (isNullPattern(pattern) or std.mem.indexOfScalar(u8, n, '.') != null)
+            null
+        else
+            n,
+        else => null,
+    };
+}
+
+/// Decision 54 — a `case` over a `?T` has exactly one spelling:
+/// `case x { null { … } v { … } }`. This validates it and answers the binder's
+/// name, or reds with a located diagnostic. Called only when an arm's pattern
+/// is `null`; the arms are the untyped ones, since the shape is a property of
+/// what was written.
+///
+/// Three things are refused here, and each names the form it wants:
+///   * a `null` arm over a subject that is not an optional;
+///   * a `case` over a `?T` whose arms are not exactly `null` then a binder
+///     (a third arm, a guard, a reversed order, a payload pattern);
+///   * the arms' bodies taking a parameter (`v { n -> … }`) — §5.1 P1's
+///     whole-value binder means nothing here, where the binder is the payload.
+fn optionalNullCaseBinder(
+    env: *Env,
+    subjectType: *T.Type,
+    arms: []const ast.CaseArm,
+    loc: ast.Loc,
+) InferError!?[]const u8 {
+    var nullArm: ?usize = null;
+    for (arms, 0..) |arm, i| {
+        if (isNullPattern(arm.pattern)) {
+            nullArm = i;
+            break;
+        }
+    }
+    const nullIdx = nullArm orelse return null;
+
+    if (optionalInner(subjectType) == null) {
+        env.lastError = TypeError.custom(
+            "`null` is a pattern only over an optional",
+            "`case x { null { … } v { … } }` matches a `?T` (decision 54). This subject is not one.",
+        ).withLoc(arms[nullIdx].patternLoc);
+        return error.TypeError;
+    }
+
+    const shapeError = "an optional is matched by `null` and a binder, in that order";
+    const shapeHint = "Decision 54: a `?T` has one pattern form — `case x { null { … } v { … } }`, two arms, no guards. `null` first, because a binder written first would match the absent value too.";
+
+    if (arms.len != 2 or nullIdx != 0 or arms[0].guard != null or arms[1].guard != null) {
+        env.lastError = TypeError.custom(shapeError, shapeHint).withLoc(loc);
+        return error.TypeError;
+    }
+    const binder = optionalBinderName(arms[1].pattern) orelse {
+        env.lastError = TypeError.custom(shapeError, shapeHint).withLoc(arms[1].patternLoc);
+        return error.TypeError;
+    };
+    for (arms) |arm| {
+        if (arm.body == .function and arm.body.function.kind.params.len > 0) {
+            env.lastError = TypeError.custom(
+                "an arm of a `?T` `case` takes no parameter",
+                "The binder is the payload already: `case x { null { … } v { … } }` binds `v` to the value inside the optional.",
+            ).withLoc(arm.body.getLoc());
+            return error.TypeError;
+        }
+    }
+    return binder;
+}
+
+/// Decision 54 — `.Some(v)` / `.None` over a `?T` is a **located error**. The
+/// optional is not a variant: the checker still models `?T` as having `Some`
+/// and `None` (`variantPayloadTypes`), which is why the spelling compiled and
+/// then answered four different things on four backends. It is refused here,
+/// at the arm, naming the form the language does have.
+fn refuseVariantPatternOverOptional(
+    env: *Env,
+    subjectType: *T.Type,
+    arms: []const ast.CaseArm,
+) InferError!void {
+    if (optionalInner(subjectType) == null) return;
+    for (arms) |arm| {
+        const isVariantShaped = switch (arm.pattern) {
+            // A path is never a binder (§5.1 P8), and a bare `Some` / `None`
+            // is the spelling the decision names: both are variant patterns
+            // over a value that has no variants.
+            .ident => |n| isVariantPath(n) or
+                std.mem.eql(u8, n, "Some") or std.mem.eql(u8, n, "None"),
+            // `.Some(v)`, `Option.Some(value: v)`, `Circle(r)` — a payload
+            // pattern. `#(a, b)` and `1...9` ride the same node under `shape`
+            // and are not variants, so they are left alone.
+            .variant => |v| v.shape == .variant and v.name.len > 0,
+            else => false,
+        };
+        if (!isVariantShaped) continue;
+        env.lastError = TypeError.custom(
+            "an optional is matched by `null`, not by a variant",
+            "Decision 54: write `case x { null { … } v { … } }` — the shape `??` and `?.` already use. `Some` and `None` are not spellings this language has.",
+        ).withLoc(arm.patternLoc);
+        return error.TypeError;
+    }
+}
+
+/// Decision 8 §5.1 P8 / §5.2 — a leading-dot variant (`.Some(v)`, `.None`)
+/// takes its enum from the matched value's type. An `unknown` value has none,
+/// so the shorthand names nothing and the arm must write the full name
+/// (`Maybe.Some(v)`). Without this refusal the arm was accepted and tested
+/// against whatever the flat variant table held under that name.
+fn refuseShorthandOverUnknown(env: *Env, subjectType: *T.Type, arms: []const ast.CaseArm) InferError!void {
+    if (!unifyMod.isUnknown(subjectType)) return;
+    for (arms) |arm| {
+        const written: []const u8 = switch (arm.pattern) {
+            .ident => |n| n,
+            .variant => |v| if (v.shape == .variant) v.name else continue,
+            else => continue,
+        };
+        if (written.len < 2 or written[0] != '.') continue;
+        env.lastError = TypeError.custom(
+            try std.fmt.allocPrint(env.arena, "`{s}` on an `unknown` value names no enum — write the variant's full name", .{written}),
+            "The leading-dot shorthand takes the enum from the matched value's type, and `unknown` has none: write `Type.Variant(…)` (decision 8 §5.2).",
+        ).withLoc(arm.patternLoc);
+        return error.TypeError;
+    }
+}
+
+/// Decision 8 §5.1 P7 — without a trailing `..` a variant pattern names every
+/// field of the variant. `.Rect(width: w)` over `Rect(width: i32, height: i32)`
+/// is a missing field, not a shorthand: the fields it does not name would be
+/// silently dropped, and `..` is the spelling that says "drop them".
+///
+/// Only a written variant payload is judged. A whole-payload binding (`Ok ok`)
+/// stands for the payload entire, a tuple or range rides the same node under
+/// `shape`, and a variant whose declaration is not resolvable is left alone.
+fn checkCaseArmArity(
+    env: *Env,
+    subjectType: *T.Type,
+    arms: []const ast.CaseArm,
+) InferError!void {
+    for (arms) |arm| {
+        const v = switch (arm.pattern) {
+            .variant => |vv| vv,
+            else => continue,
+        };
+        if (v.shape != .variant or v.rest or v.name.len == 0) continue;
+        const written: usize = switch (v.payload) {
+            .fields => |f| f.len,
+            .literals => |l| l.len,
+            .binding => continue,
+        };
+        const declared = (try variantPayloadFieldNames(env, subjectType, v.name)) orelse continue;
+        if (written >= declared.len) continue;
+        env.lastError = TypeError
+            .missingField(bareVariantName(v.name), declared[written])
+            .withLoc(arm.patternLoc);
+        return error.TypeError;
+    }
+}
+
+/// The declared field names of `writtenName`'s variant on `subjectType`, or
+/// null when the subject's type or the variant is not resolvable.
+fn variantPayloadFieldNames(env: *Env, subjectType: *T.Type, writtenName: []const u8) InferError!?[]const []const u8 {
+    const st = subjectType.deref();
+    if (st.* != .named) return null;
+    const td = env.lookupTypeDef(st.named.name) orelse return null;
+    if (td != .enum_) return null;
+    const variantName = bareVariantName(writtenName);
+    for (td.enum_.variants) |vd| {
+        if (!std.mem.eql(u8, vd.name, variantName)) continue;
+        const out = try env.arena.alloc([]const u8, vd.fields.len);
+        for (vd.fields, 0..) |f, i| out[i] = f.name;
+        return out;
+    }
+    return null;
+}
+
+/// Record `pattern` at `at` when it is `Ok(…)` / `Err(…)` / `Error(…)` written
+/// bare against a `@Result` subject (`Env.resultPatternLocs`). The name is the
+/// `@Result` variant whatever else the module declares: a user enum with an
+/// `Error` variant made erlang, beam and wasm test the subject for THAT
+/// variant, and a `{error, E}` fell through every arm (`case_clause`, or no
+/// arm at all at exit 0).
+fn noteResultPattern(env: *Env, pattern: ast.Pattern, subjectType: *T.Type, at: ast.Loc) InferError!void {
+    if (pattern != .variant) return;
+    const name = pattern.variant.name;
+    if (std.mem.indexOfScalar(u8, name, '.') != null) return;
+    if (!std.mem.eql(u8, name, "Ok") and !std.mem.eql(u8, name, "Err") and !std.mem.eql(u8, name, "Error")) return;
+    const st = subjectType.deref();
+    if (st.* != .named or !std.mem.eql(u8, st.named.name, "Result")) return;
+    if (at.line == 0) return;
+    try env.resultPatternLocs.put(env.arena, at, {});
 }
 
 fn bindCaseArmPatternNames(
@@ -4953,7 +10023,16 @@ fn namesContain(list: []const []const u8, name: []const u8) bool {
 fn patternIsCatchAll(env: *Env, pattern: ast.Pattern, subjectType: *T.Type) bool {
     return switch (pattern) {
         .wildcard => true,
-        .ident => |name| !isEnumVariantNameForSubject(env, subjectType, name),
+        // §5.1 P8 — a name carrying a `.` is a variant path and never a binder,
+        // so it is never a catch-all even when it names no variant of the
+        // subject (that case is a mistake the coverage walk reports).
+        //
+        // §5.2 / §5.4 — nor is a **type pattern**. `i32 { n -> … }` tests the
+        // value; whether it happens to cover the subject whole is the coverage
+        // walk's question (`caseSubjectDomain`), not a catch-all's.
+        .ident => |name| !isVariantPath(name) and
+            !isEnumVariantNameForSubject(env, subjectType, name) and
+            typePatternName(env, pattern, subjectType) == null,
         .@"or" => |pats| blk: {
             for (pats) |p| {
                 if (patternIsCatchAll(env, p, subjectType)) break :blk true;
@@ -4967,16 +10046,114 @@ fn patternIsCatchAll(env: *Env, pattern: ast.Pattern, subjectType: *T.Type) bool
 /// True when a variant pattern's payload matches *every* value of that variant,
 /// so the variant is fully covered. Refined payloads like `Ok(1)` do not; a
 /// payload of only bindings / wildcards (e.g. `Err(_)`, `Rgb(r, g, b)`) does.
-fn variantPayloadIrrefutable(payload: anytype) bool {
+/// Decision 8 §5.1 — does this pattern match **every** value of its type?
+///
+/// A binder and a `_` do; a literal, a range, a list and a variant path do not
+/// (each selects some values and not others). A tuple pattern (§5.1 P6) matches
+/// every tuple when each of its elements does — which is what
+/// `.Some(#(a, b))` needs: the payload is one tuple pattern, all binders, so
+/// the `Some` variant is fully covered. The `.literals` walk used to answer
+/// `false` for every nested pattern, so an enum matched that way read as
+/// uncovered ("missing variant(s) Some").
+///
+/// `elemType` is the type the pattern is matched against, when it is known: an
+/// `.ident` is a binder unless it names a variant of that type, which is how a
+/// section refinement (`Text(Bold)`) is told from a binding (N28).
+fn patternIsIrrefutable(env: *Env, pattern: ast.Pattern, elemType: ?*T.Type) InferError!bool {
+    return switch (pattern) {
+        .wildcard => true,
+        .ident => |nm| blk: {
+            if (isVariantPath(nm)) break :blk false;
+            const ty = elemType orelse break :blk true;
+            break :blk !isEnumVariantNameForSubject(env, ty, nm);
+        },
+        .variant => |v| switch (v.shape) {
+            // `#(a, b)` / `#(a, ..)` — every tuple of the right shape matches
+            // when each element pattern does. `..` drops the rest, which is
+            // exactly what makes the remainder irrefutable (P7).
+            .tuple => blk: {
+                const elemTypes: ?[]*T.Type = if (elemType) |t| tupleElementTypes(t) else null;
+                switch (v.payload) {
+                    .literals => |args| {
+                        for (args, 0..) |a, i| {
+                            const at: ?*T.Type = if (elemTypes != null and i < elemTypes.?.len)
+                                elemTypes.?[i]
+                            else
+                                null;
+                            if (!try patternIsIrrefutable(env, a, at)) break :blk false;
+                        }
+                        break :blk true;
+                    },
+                    // A whole-payload binder or a field list over a tuple binds
+                    // names and tests nothing.
+                    .binding, .fields => break :blk true,
+                }
+            },
+            // A variant path selects one variant; a range selects an interval.
+            .variant, .range => false,
+        },
+        .numberLit, .stringLit, .list => false,
+        // An OR is irrefutable only if some alternative is, and an alternative
+        // that is makes the others unreachable — the reachability walk reports
+        // that separately, so answering on the whole is enough here.
+        .@"or" => |pats| blk: {
+            for (pats) |alt| {
+                if (try patternIsIrrefutable(env, alt, elemType)) break :blk true;
+            }
+            break :blk false;
+        },
+        .multi => false,
+    };
+}
+
+/// The element types of a tuple type, or null when the type is not a tuple (or
+/// is not known yet).
+fn tupleElementTypes(ty: *T.Type) ?[]*T.Type {
+    const d = ty.deref();
+    if (d.* != .named or !std.mem.eql(u8, d.named.name, "tuple")) return null;
+    return d.named.args;
+}
+
+fn variantPayloadIrrefutable(
+    env: *Env,
+    subjectType: *T.Type,
+    variantName: []const u8,
+    payload: anytype,
+) InferError!bool {
     return switch (payload) {
-        .binding, .fields => true,
+        // A single-name payload (`Text(Bold)`) is a binder unless the name is a
+        // variant of the payload's own type — inside a section wrapper it is a
+        // refinement, not a binding.
+        .binding => |name| blk: {
+            const payloadTypes = try variantPayloadTypes(env, subjectType, variantName);
+            if (payloadTypes) |p| {
+                if (p.len == 1 and isEnumVariantNameForSubject(env, p[0], name)) break :blk false;
+            }
+            break :blk true;
+        },
+        .fields => |names| blk: {
+            const payloadTypes = try variantPayloadTypes(env, subjectType, variantName);
+            if (payloadTypes) |p| {
+                for (names, 0..) |name, i| {
+                    if (i < p.len and isEnumVariantNameForSubject(env, p[i], name)) break :blk false;
+                }
+            }
+            break :blk true;
+        },
         .literals => |args| blk: {
-            for (args) |a| {
-                const ok = switch (a) {
-                    .wildcard, .ident => true,
-                    else => false,
-                };
-                if (!ok) break :blk false;
+            // N28 — an `.ident` arg is a binder (`Ok(v)`, irrefutable) *unless*
+            // it names a variant of the payload's own type, as it does inside a
+            // section wrapper (`Text(Bold)`). That match refines the section,
+            // so the wrapper variant stays open: counting it as full coverage
+            // would let a `case` skip the section's other variants in silence
+            // (decision 8 §5.4).
+            const payloadTypes = try variantPayloadTypes(env, subjectType, variantName);
+            for (args, 0..) |a, i| {
+                const argTy: ?*T.Type = if (payloadTypes != null and i < payloadTypes.?.len)
+                    payloadTypes.?[i]
+                else
+                    null;
+                if (!try patternIsIrrefutable(env, a, argTy)) break :blk false;
             }
             break :blk true;
         },
@@ -4994,13 +10171,15 @@ fn collectFullyCoveredVariants(
 ) InferError!void {
     switch (pattern) {
         .ident => |name| {
-            if (isEnumVariantNameForSubject(env, subjectType, name) and !namesContain(covered.items, name)) {
-                try covered.append(env.arena, name);
+            const bare = bareVariantName(name);
+            if (isEnumVariantNameForSubject(env, subjectType, name) and !namesContain(covered.items, bare)) {
+                try covered.append(env.arena, bare);
             }
         },
         .variant => |v| {
-            if (variantPayloadIrrefutable(v.payload) and !namesContain(covered.items, v.name)) {
-                try covered.append(env.arena, v.name);
+            const bare = bareVariantName(v.name);
+            if (try variantPayloadIrrefutable(env, subjectType, v.name, v.payload) and !namesContain(covered.items, bare)) {
+                try covered.append(env.arena, bare);
             }
         },
         .@"or" => |pats| {
@@ -5018,23 +10197,100 @@ fn alreadyCoveredVariant(
     pattern: ast.Pattern,
     subjectType: *T.Type,
     covered: []const []const u8,
-) ?[]const u8 {
+) InferError!?[]const u8 {
     switch (pattern) {
         .ident => |name| {
-            if (isEnumVariantNameForSubject(env, subjectType, name) and namesContain(covered, name)) return name;
+            const bare = bareVariantName(name);
+            if (isEnumVariantNameForSubject(env, subjectType, name) and namesContain(covered, bare)) return bare;
         },
         .variant => |v| {
-            if (variantPayloadIrrefutable(v.payload) and namesContain(covered, v.name)) return v.name;
+            const bare = bareVariantName(v.name);
+            if (try variantPayloadIrrefutable(env, subjectType, v.name, v.payload) and namesContain(covered, bare)) return bare;
         },
         else => {},
     }
     return null;
 }
 
-/// Full exhaustiveness + reachability analysis for a `case` on an enum or
-/// string subject. Sets `env.lastError` and returns `error.TypeError` on the
-/// first problem: an unreachable arm, a missing wildcard for an open domain, or
-/// an enum with uncovered variants. Subjects of any other type are not checked.
+/// Decision 8 §5.4 — the set of values a `case` subject draws from, and what it
+/// takes to cover that set.
+const CaseDomain = union(enum) {
+    /// A `type` with variants: covered when every variant is.
+    enum_: []const []const u8,
+    /// `A | B` (§3.3): covered when every member is named by a type pattern.
+    /// The identity of a union *is* its members, so the members are the domain.
+    union_: []*T.Type,
+    /// `string`, `i32`, `unknown` — an unbounded set of values no finite list of
+    /// literal arms reaches. Only `_`, or a type pattern naming the subject's own
+    /// type (§5.4's "a type covered whole"), covers it. `unknown` has no such
+    /// type pattern, which is why §5.4 always requires `_` over it.
+    open,
+};
+
+/// The two open domains §5.4 names by hand, beside `unknown`. Deliberately not
+/// every scalar: widening the rule to `f64`, `bool` and the sized integers turns
+/// every `case` on one of them that has no `_` into an error, and §5.4 states
+/// the rule for `i32` and `string`. The rest is reported, not assumed.
+const open_case_domain_names = [_][]const u8{ "i32", "string" };
+
+/// Resolve a `case` subject's domain, or null when the subject is not
+/// exhaustiveness-checked at all (a record, a generic, an array, a `?T`, an
+/// unresolved type variable).
+fn caseSubjectDomain(env: *Env, resolved: *T.Type) InferError!?CaseDomain {
+    // §3.3 — a `case` covering every member of a union needs no `_`.
+    if (resolved.* == .union_) return CaseDomain{ .union_ = resolved.union_ };
+    if (resolved.* != .named) return null;
+    // §5.4 — `unknown` always needs `_`: no type pattern covers it, because a
+    // value of any other type is still a possibility the arm did not test.
+    if (unifyMod.isUnknown(resolved)) return CaseDomain.open;
+    const name = resolved.named.name;
+    if (env.lookupTypeDef(name)) |td| {
+        switch (td) {
+            .enum_ => |en| {
+                const names = try env.arena.alloc([]const u8, en.variants.len);
+                for (en.variants, 0..) |v, i| names[i] = v.name;
+                return CaseDomain{ .enum_ = names };
+            },
+            else => return null,
+        }
+    }
+    for (open_case_domain_names) |p| {
+        if (std.mem.eql(u8, name, p)) return CaseDomain.open;
+    }
+    return null;
+}
+
+/// A printable label for a `case` subject: a named type's own name, or a union
+/// spelled out `i32 | string` — "union" on its own names nothing the author
+/// wrote. Owned by `env.arena`.
+fn caseSubjectLabel(env: *Env, ty: *T.Type) InferError![]const u8 {
+    const d = ty.deref();
+    if (d.* != .union_) return switch (d.*) {
+        .named => |n| n.name,
+        else => "value",
+    };
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    for (d.union_, 0..) |m, i| {
+        if (i > 0) try buf.appendSlice(env.arena, " | ");
+        try buf.appendSlice(env.arena, try caseSubjectLabel(env, m));
+    }
+    return buf.toOwnedSlice(env.arena);
+}
+
+/// True when the type a type pattern tests is the same named type as `member` —
+/// the only way a union member is covered arm by arm (§3.3).
+fn sameNamedType(a: *T.Type, b: *T.Type) bool {
+    const da = a.deref();
+    const db = b.deref();
+    if (da.* != .named or db.* != .named) return false;
+    return std.mem.eql(u8, da.named.name, db.named.name);
+}
+
+/// Full exhaustiveness + reachability analysis for a `case`. Sets
+/// `env.lastError` and returns `error.TypeError` on the first problem: an
+/// unreachable arm, an open domain with no `_`, a union with an uncovered member,
+/// or an enum with uncovered variants. Subjects whose type names no domain
+/// (`caseSubjectDomain`) are not checked.
 fn checkCaseExhaustiveness(
     env: *Env,
     subjectType: *T.Type,
@@ -5042,30 +10298,24 @@ fn checkCaseExhaustiveness(
     loc: ast.Loc,
 ) InferError!void {
     const resolved = subjectType.deref();
-
-    // Resolve the subject's domain. `string` is open (only a wildcard makes it
-    // exhaustive); an enum has a known finite variant set; anything else is not
-    // exhaustiveness-checked.
-    const isString = resolved.isNamed("string");
-    var typeName: []const u8 = "string";
-    var variantNames: []const []const u8 = &.{};
-    if (!isString) {
-        if (resolved.* != .named) return;
-        typeName = resolved.named.name;
-        const td = env.lookupTypeDef(typeName) orelse return;
-        switch (td) {
-            .enum_ => |en| {
-                const names = try env.arena.alloc([]const u8, en.variants.len);
-                for (en.variants, 0..) |v, i| names[i] = v.name;
-                variantNames = names;
-            },
-            else => return,
-        }
-    }
+    const domain = (try caseSubjectDomain(env, resolved)) orelse return;
+    const typeName = try caseSubjectLabel(env, resolved);
 
     var covered: std.ArrayListUnmanaged([]const u8) = .empty;
     defer covered.deinit(env.arena);
     var hasCatchAll = false;
+    // §5.4 — a type pattern naming the subject's own type covers it whole
+    // (`case n { i32 { m -> … } }` on an `i32`).
+    var wholeTypeCovered = false;
+    // §3.3 — one flag per union member, set by the arm that tests that member.
+    const memberCovered: []bool = switch (domain) {
+        .union_ => |members| blk: {
+            const flags = try env.arena.alloc(bool, members.len);
+            @memset(flags, false);
+            break :blk flags;
+        },
+        else => &.{},
+    };
 
     for (arms) |arm| {
         const guarded = arm.guard != null;
@@ -5076,8 +10326,8 @@ fn checkCaseExhaustiveness(
             return error.TypeError;
         }
 
-        // A guarded arm may fail its guard, so it neither covers a variant for
-        // exhaustiveness nor shadows later arms.
+        // §5.3 / §5.4 — a guarded arm may fail its guard, so it neither covers
+        // anything for exhaustiveness nor shadows a later arm.
         if (guarded) continue;
 
         if (patternIsCatchAll(env, arm.pattern, resolved)) {
@@ -5085,7 +10335,23 @@ fn checkCaseExhaustiveness(
             continue;
         }
 
-        if (alreadyCoveredVariant(env, arm.pattern, resolved, covered.items)) |dup| {
+        // §5.2 / §5.4 — a type pattern. What it covers depends on the domain: the
+        // subject's own type covers an open domain whole, and a union member
+        // covers that member. Over `unknown` it covers nothing.
+        if (try typePatternType(env, arm.pattern, resolved)) |tested| {
+            switch (domain) {
+                .open => if (!unifyMod.isUnknown(resolved) and sameNamedType(tested, resolved)) {
+                    wholeTypeCovered = true;
+                },
+                .union_ => |members| for (members, 0..) |m, i| {
+                    if (sameNamedType(tested, m)) memberCovered[i] = true;
+                },
+                .enum_ => {},
+            }
+            continue;
+        }
+
+        if (try alreadyCoveredVariant(env, arm.pattern, resolved, covered.items)) |dup| {
             const desc = try std.fmt.allocPrint(env.arena, "variant '{s}'", .{dup});
             env.lastError = TypeError.redundantPattern(typeName, desc).withLoc(arm.body.getLoc());
             return error.TypeError;
@@ -5096,18 +10362,34 @@ fn checkCaseExhaustiveness(
 
     if (hasCatchAll) return;
 
-    if (isString) {
-        env.lastError = TypeError.nonExhaustive(typeName, &.{}).withLoc(loc);
-        return error.TypeError;
-    }
-
-    var missing: std.ArrayListUnmanaged([]const u8) = .empty;
-    for (variantNames) |name| {
-        if (!namesContain(covered.items, name)) try missing.append(env.arena, name);
-    }
-    if (missing.items.len > 0) {
-        env.lastError = TypeError.nonExhaustive(typeName, try missing.toOwnedSlice(env.arena)).withLoc(loc);
-        return error.TypeError;
+    switch (domain) {
+        .open => {
+            if (wholeTypeCovered) return;
+            env.lastError = TypeError.nonExhaustive(typeName, &.{}).withLoc(loc);
+            return error.TypeError;
+        },
+        .union_ => |members| {
+            var missing: std.ArrayListUnmanaged([]const u8) = .empty;
+            for (members, 0..) |m, i| {
+                if (!memberCovered[i]) try missing.append(env.arena, try caseSubjectLabel(env, m));
+            }
+            if (missing.items.len > 0) {
+                env.lastError = TypeError
+                    .nonExhaustiveOf(typeName, try missing.toOwnedSlice(env.arena), "member(s)")
+                    .withLoc(loc);
+                return error.TypeError;
+            }
+        },
+        .enum_ => |variantNames| {
+            var missing: std.ArrayListUnmanaged([]const u8) = .empty;
+            for (variantNames) |name| {
+                if (!namesContain(covered.items, name)) try missing.append(env.arena, name);
+            }
+            if (missing.items.len > 0) {
+                env.lastError = TypeError.nonExhaustive(typeName, try missing.toOwnedSlice(env.arena)).withLoc(loc);
+                return error.TypeError;
+            }
+        },
     }
 }
 
@@ -5115,6 +10397,27 @@ fn checkCaseExhaustiveness(
 /// pass.  Every child node is recursively typed before its parent is built, so
 /// no expression is visited more than once.  All allocations go into env.arena.
 pub fn inferExprTyped(env: *Env, expr: ast.Expr) InferError!TypedExpr {
+    // 00 · 01-checker — an expectation belongs to the position it was set for.
+    // Only an identifier chain reads it (a leading-dot enum path) and only an
+    // array literal passes it on (to its elements); every other node clears it
+    // so a nested expression never inherits its parent's expected type. A
+    // leading-dot call (`.Circle(radius: 1)`) reads it too: its head is the
+    // same path, and `inferCallExpr` clears it before the arguments.
+    const outer_expected = env.expectedType;
+    defer env.expectedType = outer_expected;
+    switch (expr) {
+        // `.literal`, `.unaryOp` and `.binaryOp` read it for an integer
+        // literal's width (the literal takes the integer type its position
+        // asks for — `val k: i64 = 1000;`, `n * 1000` with `n: i64`);
+        // `inferBinaryOpExpr` hands it on only to arithmetic operands.
+        // `.function` reads a FALLIBLE function expectation (decision 147,
+        // `inferFunctionExpr`) and clears it before its body.
+        .identifier, .collection, .literal, .unaryOp, .binaryOp, .function => {},
+        .call => |c| if (!isLeadingDotCall(c)) {
+            env.expectedType = null;
+        },
+        else => env.expectedType = null,
+    }
     return switch (expr) {
         // ── literals ──────────────────────────────────────────────────────────
         .literal => |l| inferLiteralExpr(env, l, l.loc),
@@ -5140,7 +10443,10 @@ pub fn inferExprTyped(env: *Env, expr: ast.Expr) InferError!TypedExpr {
         .useHook => |uh| inferUseHookExpr(env, uh, uh.loc),
 
         // ── call expressions ───────────────────────────────────────────────────
-        .call => |c| inferCallExpr(env, c, c.loc),
+        .call => |c| blk: {
+            try noteKeyedRowRead(env, c);
+            break :blk inferComponentCall(env, c, try applyReceiverTypeArgs(env, c, try applyExplicitTypeArgs(env, c, try inferCallExpr(env, c, c.loc))));
+        },
 
         // ── function definition expressions ────────────────────────────────────
         .function => |f| inferFunctionExpr(env, f, f.loc),
@@ -5153,9 +10459,149 @@ pub fn inferExprTyped(env: *Env, expr: ast.Expr) InferError!TypedExpr {
     };
 }
 
+/// Infer `expr` in a position whose type the site already knows (00 ·
+/// 01-checker). The expectation is only a hint — `tryResolveEnumSectionPath`
+/// is its one reader — and the caller's own expectation is restored on the way
+/// out, so a site can set one per sub-expression.
+fn inferExprTypedExpecting(env: *Env, expr: ast.Expr, expected: ?*T.Type) InferError!TypedExpr {
+    const prev = env.expectedType;
+    defer env.expectedType = prev;
+    env.expectedType = expected;
+    return inferExprTyped(env, expr);
+}
+
+/// `inferExprTypedExpecting` for the untyped inference path.
+fn inferExprExpecting(env: *Env, expr: ast.Expr, expected: ?*T.Type) InferError!*T.Type {
+    const prev = env.expectedType;
+    defer env.expectedType = prev;
+    env.expectedType = expected;
+    return inferExpr(env, expr);
+}
+
 // ── Helper functions for each expression category ───────────────────────────
 
 /// Infer type for literal expressions (strings, numbers, null, comments)
+/// The integer type the position of an integer literal expects, if any
+/// (through one `?T`).
+fn expectedIntegerType(env: *Env) ?[]const u8 {
+    var t = (env.expectedType orelse return null).deref();
+    if (t.* == .named and std.mem.eql(u8, t.named.name, "optional") and t.named.args.len == 1) t = t.named.args[0].deref();
+    if (t.* != .named or t.named.args.len != 0) return null;
+    const ints = [_][]const u8{ "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "isize", "usize" };
+    for (ints) |i| if (std.mem.eql(u8, i, t.named.name)) return i;
+    return null;
+}
+
+/// `==` / `!=` do not widen an integer literal against an `f64` operand
+/// (decision 209 reads every other position): the comparison is refused at
+/// the literal instead (decision 215, `inferBinaryOpExpr`).
+fn equalityOperandExpectation(op: @FieldType(ast.BinOpExprOf(.untyped), "op"), other: *T.Type) ?*T.Type {
+    if ((op == .eq or op == .ne) and other.deref().isNamed("f64")) return null;
+    return other;
+}
+
+/// Decision 247 — the floating type the position of a literal expects
+/// (through one `?T`): `"f64"`, `"f32"`, or null.
+fn expectedFloatType(env: *Env) ?[]const u8 {
+    var t = (env.expectedType orelse return null).deref();
+    if (t.* == .named and std.mem.eql(u8, t.named.name, "optional") and t.named.args.len == 1) t = t.named.args[0].deref();
+    if (t.* != .named or t.named.args.len != 0) return null;
+    if (std.mem.eql(u8, t.named.name, "f64")) return "f64";
+    if (std.mem.eql(u8, t.named.name, "f32")) return "f32";
+    return null;
+}
+
+/// True for an integer literal written without a suffix (`1000`), which
+/// takes its width from its position; false for everything else (decision
+/// 247: `1000l` is an `i64` wherever it stands).
+fn isIntegerLiteral(e: ast.Expr) bool {
+    if (e != .literal) return false;
+    return switch (e.literal.kind) {
+        .numberLit => |n| blk: {
+            const parts = lexerMod.splitNumber(n);
+            break :blk !parts.floating and parts.suffix.len == 0;
+        },
+        else => false,
+    };
+}
+
+/// Whether a number literal is a float: a fraction, a decimal exponent
+/// (`5e-324`, `1e10`; `0x1E` is an integer) or a floating suffix (`1f`).
+fn isFloatLiteralText(n: []const u8) bool {
+    const parts = lexerMod.splitNumber(n);
+    return parts.floating or lexerMod.numberSuffixIsFloat(parts.suffix);
+}
+
+/// Decision 247 — an integer literal's digits fit the integer type it is
+/// (`300u8` and `val b: u8 = 300` are refused at the literal). Radix and `_`
+/// separators read as written; a literal past `i128` is past every type.
+fn refuseIntegerOutOfRange(env: *Env, digits: []const u8, typeName: []const u8, loc: ast.Loc) InferError!void {
+    var clean: std.ArrayListUnmanaged(u8) = .empty;
+    for (digits) |c| if (c != '_') try clean.append(env.arena, c);
+    const v = std.fmt.parseInt(i128, clean.items, 0) catch std.math.maxInt(i128);
+    const max: i128 = if (std.mem.eql(u8, typeName, "i8")) std.math.maxInt(i8) else if (std.mem.eql(u8, typeName, "u8")) std.math.maxInt(u8) else if (std.mem.eql(u8, typeName, "i16")) std.math.maxInt(i16) else if (std.mem.eql(u8, typeName, "u16")) std.math.maxInt(u16) else if (std.mem.eql(u8, typeName, "i32")) std.math.maxInt(i32) else if (std.mem.eql(u8, typeName, "u32")) std.math.maxInt(u32) else if (std.mem.eql(u8, typeName, "i64") or std.mem.eql(u8, typeName, "isize")) std.math.maxInt(i64) else std.math.maxInt(u64);
+    if (v <= max) return;
+    const msg = try std.fmt.allocPrint(env.arena, "the literal `{s}` does not fit `{s}` (at most {d})", .{ digits, typeName, max });
+    env.lastError = TypeError.custom(msg, "An integer literal is a value of its type, and the type has no such value (decision 247): write a wider type's suffix (`l`, `ul`) or annotate the position with one.").withLoc(loc);
+    return error.TypeError;
+}
+
+/// Decision 247 — a 64-bit integer literal past `2^53` has no exact value on
+/// commonJS, whose numbers are doubles: refused there at the literal, so the
+/// program never prints a different number than it wrote. The other targets
+/// hold it.
+fn refuseBeyondJsSafeInteger(env: *Env, digits: []const u8, typeName: []const u8, loc: ast.Loc) InferError!void {
+    const tgt = env.target orelse return;
+    // The driver names the commonJS target `node`.
+    if (!std.mem.eql(u8, tgt, "node") and !std.mem.eql(u8, tgt, "commonJS")) return;
+    const wide = [_][]const u8{ "i64", "u64", "isize", "usize" };
+    const isWide = for (wide) |w| {
+        if (std.mem.eql(u8, w, typeName)) break true;
+    } else false;
+    if (!isWide) return;
+    var clean: std.ArrayListUnmanaged(u8) = .empty;
+    for (digits) |c| if (c != '_') try clean.append(env.arena, c);
+    const v = std.fmt.parseInt(i128, clean.items, 0) catch std.math.maxInt(i128);
+    if (v <= (1 << 53)) return;
+    const msg = try std.fmt.allocPrint(env.arena, "the `{s}` literal `{s}` is past 2^53, which commonJS cannot hold exactly", .{ typeName, digits });
+    env.lastError = TypeError.custom(msg, "A commonJS number is a double: an integer above 9007199254740992 loses digits (decision 247). Keep the value within 2^53 on this target, or build for erlang, beam or wasm.").withLoc(loc);
+    return error.TypeError;
+}
+
+/// Decision 247 — a number pattern matches only a subject of its type: a
+/// suffixed literal its suffix's type, a floating one `f64`, an integer one
+/// any integer type (the subject's, within range). A subject that is a
+/// union is matched by one of its members; a subject not yet known is left
+/// to the arms that know it.
+fn checkNumberPattern(env: *Env, text: []const u8, subjectType: *T.Type) InferError!void {
+    const st = subjectType.deref();
+    var candidates: []const *T.Type = &.{};
+    var single = [_]*T.Type{st};
+    switch (st.*) {
+        .named => candidates = &single,
+        .union_ => |members| candidates = members,
+        else => return,
+    }
+    const ints = [_][]const u8{ "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "isize", "usize" };
+    const parts = lexerMod.splitNumber(text);
+    const own: ?[]const u8 = if (parts.suffix.len != 0) lexerMod.numberSuffixType(parts.suffix) else if (parts.floating) "f64" else null;
+    for (candidates) |c| {
+        const cd = c.deref();
+        if (cd.* != .named or cd.named.args.len != 0) continue;
+        const name = cd.named.name;
+        if (own) |o| {
+            if (std.mem.eql(u8, o, name)) return;
+        } else for (ints) |i| if (std.mem.eql(u8, i, name)) return;
+    }
+    const subjectName = try snapshotMod.typeNameOf(env.arena, subjectType);
+    const msg = if (own) |o|
+        try std.fmt.allocPrint(env.arena, "the pattern `{s}` is an `{s}` literal and the subject is `{s}`", .{ text, o, subjectName })
+    else
+        try std.fmt.allocPrint(env.arena, "the pattern `{s}` is an integer literal and the subject is `{s}`", .{ text, subjectName });
+    env.lastError = TypeError.custom(msg, "A number pattern matches a subject of its own type (decision 247): write the literal the subject's type takes — `1.0` for an `f64`, `1.5f` for an `f32`, `42` or a suffix for an integer.");
+    return error.TypeError;
+}
+
 fn inferLiteralExpr(env: *Env, lit: ast.LiteralExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
     return switch (lit.kind) {
         .stringLit => |s| TypedExpr{ .literal = .{ .loc = loc, .type_ = try env.namedType("string"), .kind = .{ .stringLit = s } } },
@@ -5191,8 +10637,53 @@ fn inferLiteralExpr(env: *Env, lit: ast.LiteralExprOf(.untyped), loc: ast.Loc) I
             return inferExprTyped(env, acc.?.*);
         },
         .numberLit => |n| blk: {
-            const isFloat = std.mem.indexOfScalar(u8, n, '.') != null;
-            break :blk TypedExpr{ .literal = .{ .loc = loc, .type_ = try env.namedType(if (isFloat) "f64" else "i32"), .kind = .{ .numberLit = n } } };
+            // Decision 247 (209 reversed) — a suffixed literal is its suffix's
+            // type wherever it stands (`1.5f` f32, `42ul` u64); without one,
+            // `1.5` is `f64` and `42` an integer that takes the integer type
+            // its position asks for (`val k: i64 = 1000;`, an `i64` argument,
+            // the other operand of an arithmetic or comparison operator) and
+            // `i32` with nothing asking. A literal never changes type to fit:
+            // an integer where a float is expected and an unsuffixed fraction
+            // where an `f32` is are refused at the literal, naming the
+            // spelling. The suffix is stripped here once, for the typed tree
+            // and — through `env.indexRewrites` — for the program every
+            // backend lowers.
+            const parts = lexerMod.splitNumber(n);
+            if (parts.suffix.len != 0) {
+                const typeName = lexerMod.numberSuffixType(parts.suffix) orelse {
+                    const msg = try std.fmt.allocPrint(env.arena, "`{s}` is not a numeric suffix", .{parts.suffix});
+                    env.lastError = TypeError.custom(msg, "The suffixes are `f`, `d`, `l`, `u`, `ul`, `i8`, `i16`, `u8`, `u16`, `isize`, `usize` (decision 247).").withLoc(loc);
+                    return error.TypeError;
+                };
+                if (!lexerMod.numberSuffixIsFloat(parts.suffix)) {
+                    try refuseIntegerOutOfRange(env, parts.digits, typeName, loc);
+                    try refuseBeyondJsSafeInteger(env, parts.digits, typeName, loc);
+                }
+                const text = try lexerMod.numberBackendText(env.arena, n);
+                if (!env.indexRewrites.contains(loc)) {
+                    const stripped = try env.arena.create(ast.Expr);
+                    stripped.* = .{ .literal = .{ .loc = loc, .kind = .{ .numberLit = text } } };
+                    try env.indexRewrites.put(loc, stripped);
+                }
+                break :blk TypedExpr{ .literal = .{ .loc = loc, .type_ = try env.namedType(typeName), .kind = .{ .numberLit = text } } };
+            }
+            if (parts.floating) {
+                if (expectedFloatType(env)) |want| if (std.mem.eql(u8, want, "f32")) {
+                    const msg = try std.fmt.allocPrint(env.arena, "`{s}` is an `f64` where an `f32` is expected — write `{s}f`", .{ n, n });
+                    env.lastError = TypeError.custom(msg, "A floating literal without a suffix is an `f64` and never changes type to fit (decision 247); the `f` suffix makes it an `f32`.").withLoc(loc);
+                    return error.TypeError;
+                };
+                break :blk TypedExpr{ .literal = .{ .loc = loc, .type_ = try env.namedType("f64"), .kind = .{ .numberLit = n } } };
+            }
+            if (expectedFloatType(env)) |want| {
+                const asFloat = (try floatSpelling(env, n)) orelse n;
+                const suffix: []const u8 = if (std.mem.eql(u8, want, "f32")) "f" else "d";
+                const msg = try std.fmt.allocPrint(env.arena, "the integer literal `{s}` is not an `{s}` — write `{s}{s}` or `{s}`", .{ n, want, n, suffix, if (std.mem.eql(u8, want, "f32")) try std.fmt.allocPrint(env.arena, "{s}f", .{asFloat}) else asFloat });
+                env.lastError = TypeError.custom(msg, "A literal without a suffix never changes type to fit (decision 247, which reverses decision 209): an integer literal is an integer, and a float is written as one.").withLoc(loc);
+                return error.TypeError;
+            }
+            const width: []const u8 = expectedIntegerType(env) orelse "i32";
+            break :blk TypedExpr{ .literal = .{ .loc = loc, .type_ = try env.namedType(width), .kind = .{ .numberLit = n } } };
         },
         .null_ => blk: {
             const innerVar = try env.freshVar();
@@ -5205,25 +10696,99 @@ fn inferLiteralExpr(env: *Env, lit: ast.LiteralExprOf(.untyped), loc: ast.Loc) I
 }
 
 /// Infer type for identifier expressions (ident, dotIdent, identAccess)
+/// Decision 110 rule 1 — the declared name behind an imported type's `as`
+/// alias written in expression position, or null when `name` is no such alias
+/// or a local binding shadows it (the alias is bound to the declared type's
+/// constructor, when it has one, by `registerImportedTypeAlias`).
+fn importedTypeAliasTarget(env: *Env, name: []const u8) ?[]const u8 {
+    const real = env.importedTypeAliases.get(name) orelse return null;
+    if (env.lookup(name)) |bound| {
+        const ctor = env.lookup(real) orelse return null;
+        if (bound != ctor) return null;
+    }
+    return real;
+}
+
+/// Decision 110 rule 1 — a receiver that is an imported type's alias (`D` in
+/// `D.empty()`, `S` in `S.Red`) becomes the declared name. The renamed
+/// identifier is recorded under the alias's own loc (`Env.indexRewrites`), so
+/// `comptime/transform.zig` splices it and no backend sees the alias.
+fn importedTypeAliasReceiver(env: *Env, re: *ast.Expr) !?*ast.Expr {
+    if (re.* != .identifier or re.identifier.kind != .ident) return null;
+    const real = importedTypeAliasTarget(env, re.identifier.kind.ident) orelse return null;
+    const recv = try env.arena.create(ast.Expr);
+    recv.* = .{ .identifier = .{ .loc = re.identifier.loc, .kind = .{ .ident = real } } };
+    try env.indexRewrites.put(re.identifier.loc, recv);
+    return recv;
+}
+
 fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
     return switch (ident.kind) {
         .ident => |name| {
+            // Decision 110 — the alias as a value (`xs.map(P)`) is the
+            // declared name's binding, renamed for the backends.
+            if (importedTypeAliasTarget(env, name)) |real| {
+                const renamed = try env.arena.create(ast.Expr);
+                renamed.* = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = real } } };
+                try env.indexRewrites.put(loc, renamed);
+                return inferIdentifierExpr(env, renamed.identifier, loc);
+            }
             if (env.lookup(name)) |ty| {
+                try refuseAmbiguousVariant(env, name, ty, loc);
+                try refuseKeyedWholeRead(env, name, ty, loc);
                 // A generic fn referenced as a value (`val f = identity;`,
                 // `xs.map(identity)`) gets its own instantiation — the
                 // scheme's `.generic` vars must never reach `unify`.
                 const inst = try instantiateGenericType(env, ty);
                 return TypedExpr{ .identifier = .{ .loc = loc, .type_ = inst, .kind = .{ .ident = name } } };
             }
-            env.lastError = TypeError.unboundVariable(name).withLoc(loc);
+            env.lastError = try unboundAt(env, name, loc);
             return error.TypeError;
         },
-        .dotIdent => |name| {
-            if (env.lookup(name)) |ty| return TypedExpr{ .identifier = .{ .loc = loc, .type_ = ty, .kind = .{ .dotIdent = name } } };
-            env.lastError = TypeError.unboundVariable(name).withLoc(loc);
+        .dotIdent => |written| {
+            // A numeric section leaf (`.50`, row 22) is declared under the F1
+            // mangling `__50`; it resolves by the expected section like an
+            // identifier leaf, and only that way.
+            const name = if (looksNumeric(written)) try std.fmt.allocPrint(env.arena, "__{s}", .{written}) else written;
+            // 01 step 12 — a leading-dot variant takes its enum from the
+            // position's expected type (as `.Circle(…)` does), spliced in as
+            // `Enum.Variant` so the backends see the qualified form. Without
+            // an expectation the flat table answers only when one enum
+            // claims the name.
+            if (expectedEnumDeclaring(env, name)) |en| {
+                const recv = try env.arena.create(ast.Expr);
+                recv.* = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = en } } };
+                const qualified = try env.arena.create(ast.Expr);
+                qualified.* = .{ .identifier = .{ .loc = loc, .kind = .{ .identAccess = .{ .receiver = recv, .member = name } } } };
+                try env.indexRewrites.put(loc, qualified);
+                return inferExprTyped(env, qualified.*);
+            }
+            if (name.ptr == written.ptr) if (env.lookup(name)) |ty| {
+                try refuseAmbiguousVariant(env, name, ty, loc);
+                return TypedExpr{ .identifier = .{ .loc = loc, .type_ = ty, .kind = .{ .dotIdent = name } } };
+            };
+            // A section leaf has a leading-dot shorthand only where the
+            // position's type is that section (`val b: Token.Layout.Break =
+            // .Zeta;`); anywhere else it is named for what it is, not
+            // reported as a variable nobody declared.
+            if (try sectionOwningLeaf(env, name)) |section| {
+                const msg = try std.fmt.allocPrint(env.arena, "`.{s}` is a leaf of the section `{s}`, and nothing here says the position is that section", .{ written, section });
+                const hint = try std.fmt.allocPrint(env.arena, "Give the position the section's type (`val v: {s} = .{s};`, a typed parameter) or write the full path.", .{ section, written });
+                env.lastError = TypeError.custom(msg, hint).withLoc(loc);
+                return error.TypeError;
+            }
+            env.lastError = try unboundAt(env, name, loc);
             return error.TypeError;
         },
         .identAccess => |ia| {
+            // Decision 216 (2) — `@typeInfo(X).name`, `….meta.<d>.<k>`.
+            if (try inferTypeinfoRead(env, ia, loc)) |read| return read;
+            // Decision 110 — `S.Red` for `import {Shape as S}` is `Shape.Red`.
+            if (try importedTypeAliasReceiver(env, ia.receiver)) |recv| {
+                var direct = ident;
+                direct.kind.identAccess.receiver = recv;
+                return inferIdentifierExpr(env, direct, loc);
+            }
             // §enum-sections F2 — path-access via dot-shorthand chain.
             // `.Color.Red.500` parses as `identAccess(identAccess(dotIdent(Color),
             // Red), 500)`. When the chain root is a `dotIdent`, the chain may
@@ -5232,6 +10797,20 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
             // to nested constructor calls.
             if (try tryResolveEnumSectionPath(env, ia.member, ia.receiver, loc)) |resolved| return resolved;
 
+            // Decision 255 (1) — `Opt<i32>.None`: a unit variant read off the
+            // instantiated type is that `Opt<i32>`; no other member of a type
+            // is a value a type application could instantiate.
+            const application: ?TypeApplication = if (ia.receiverTypeArgs) |w| try resolveTypeApplication(env, ia.receiver, w) else null;
+            if (application) |app| {
+                const isVariant = app.def == .enum_ and for (app.def.enum_.variants) |v| {
+                    if (std.mem.eql(u8, v.name, ia.member)) break true;
+                } else false;
+                if (!isVariant) {
+                    const msg = try std.fmt.allocPrint(env.arena, "`{s}` is not a variant of `{s}`, so its type arguments reach nothing", .{ ia.member, app.name });
+                    env.lastError = TypeError.custom(msg, "Without a call, a type application reads a unit variant (`Opt<i32>.None`); a fn the type declares is called (`Dict<string, i32>.empty()`).").withLoc(loc);
+                    return error.TypeError;
+                }
+            }
             // When receiver is an identifier, check if it's a type name rather than a variable.
             // This handles enum/record/struct constructor access like Color.Red, Option.None
             if (ia.receiver.* == .identifier) {
@@ -5252,7 +10831,18 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
                                     env.lastError = TypeError.unknownField(receiverName, ia.member).withLoc(loc);
                                     return error.TypeError;
                                 }
-                                const ty = try env.namedType(receiverName);
+                                // C7: a generic enum's unit variant carries one
+                                // fresh var per declared generic param, so
+                                // `val n: Option<i32> = Option.None` unifies.
+                                const ty = if (en.genericParams.len == 0)
+                                    try env.namedType(receiverName)
+                                else if (application) |app|
+                                    try env.namedTypeArgs(receiverName, app.args)
+                                else blk: {
+                                    const args = try env.arena.alloc(*T.Type, en.genericParams.len);
+                                    for (args) |*a| a.* = try env.freshVar();
+                                    break :blk try env.namedTypeArgs(receiverName, args);
+                                };
                                 const recvTyped = try makeTypedPtr(env, TypedExpr{ .identifier = .{
                                     .loc = ia.receiver.*.getLoc(),
                                     .type_ = ty,
@@ -5282,6 +10872,21 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
                     recvType = recvType.named.args[0].deref();
                 }
             }
+            // Decision 8 §2.2 — an `unknown` receiver has no members. Without
+            // this the field falls through every arm below and lands on a fresh
+            // variable, so `a.x` on an `unknown` checks silently.
+            try refuseUnknownUse(env, recvType, loc, "read a field of");
+            try refuseResultMemberAccess(env, recvType, ia.member, false, loc);
+            // Decision 45 (1.0.5) — a member read off a `?T` is an error
+            // naming `?.`: the value may be absent, and a plain `.` used to
+            // check and then read a field off `null` (or, through a tuple
+            // label, not get the label rewrite at all).
+            if (!ia.optional and recvType.* == .named and std.mem.eql(u8, recvType.named.name, "optional") and recvType.named.args.len == 1) {
+                const inner = try snapshotMod.typeNameOf(env.arena, recvType.named.args[0]);
+                const msg = try std.fmt.allocPrint(env.arena, "`{s}` is read off an optional `?{s}` — write `?.{s}`", .{ ia.member, inner, ia.member });
+                env.lastError = TypeError.custom(msg, "The value may be absent: `x?.field` answers `null` when it is, or narrow it first (`if (x != null) { x.field }`, `if (x) { v -> v.field }`).").withLoc(loc);
+                return error.TypeError;
+            }
             var outType: *T.Type = try env.freshVar();
             // Anonymous structural record: resolve the field directly.
             if (recvType.* == .record) {
@@ -5305,7 +10910,26 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
                 const idxStr = if (ia.member.len > 0 and ia.member[0] == '_') ia.member[1..] else ia.member;
                 if (std.fmt.parseInt(usize, idxStr, 10)) |idx| {
                     if (idx < recvType.named.args.len) outType = recvType.named.args[idx];
-                } else |_| {}
+                } else |_| {
+                    // Decision 8 §6 T4: `row.pop` names an element by its label.
+                    // The label exists only here — record the positional rewrite
+                    // (`row._1`) for the transform, so every backend sees an index.
+                    const idx = tupleLabelIndex(recvType.named.labels, ia.member) orelse {
+                        env.lastError = TypeError.custom(
+                            try std.fmt.allocPrint(env.arena, "this tuple has no element labeled `{s}`", .{ia.member}),
+                            "labels come from the tuple's written type or from the variables it was built from; use the position instead: `._0`, `._1`, …",
+                        ).withLoc(loc);
+                        return error.TypeError;
+                    };
+                    outType = recvType.named.args[idx];
+                    const rewrite = try env.arena.create(ast.Expr);
+                    rewrite.* = .{ .identifier = .{ .loc = loc, .kind = .{ .identAccess = .{
+                        .receiver = ia.receiver,
+                        .member = try std.fmt.allocPrint(env.arena, "_{d}", .{idx}),
+                        .optional = ia.optional,
+                    } } } };
+                    try env.enumSectionRewrites.put(loc, rewrite);
+                }
             }
             if (recvType.* == .named) {
                 const recvNamed = recvType.named;
@@ -5332,6 +10956,11 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
                     switch (td) {
                         .record, .struct_ => {
                             if (td.findField(ia.member)) |f| {
+                                // The receiver's type, for the backends that
+                                // store a record positionally — erlang and beam
+                                // under decision 21 read `element(N + 1, V)`,
+                                // and the field's NAME does not carry N.
+                                try env.instanceLowerings.put(loc, .{ .field_of = recvNamed.name });
                                 // Generic instance: substitute the registered
                                 // cells with the instance's type args.
                                 outType = try instantiateFieldType(env, recvNamed.name, recvNamed.args, f.type_);
@@ -5366,12 +10995,45 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
 
 /// Infer type for binary operation expressions
 fn inferBinaryOpExpr(env: *Env, binop: ast.BinOpExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
-    const lhsTyped = try inferExprTyped(env, binop.lhs.*);
+    // An integer literal takes its width from the other operand of an
+    // arithmetic or comparison operator (`n * 1000`, `1000 - n`, `x > 0` with
+    // `n`, `x: i64`), and an arithmetic operator hands its own position's
+    // expectation to its operands (`3 * 86400000` passed to an `i64`).
+    const numericOp = switch (binop.op) {
+        .add, .sub, .mul, .div, .mod, .lt, .gt, .lte, .gte, .eq, .ne => true,
+        else => false,
+    };
+    const arithmeticOp = switch (binop.op) {
+        .add, .sub, .mul, .div, .mod => true,
+        else => false,
+    };
+    const outerExpected = env.expectedType;
+    env.expectedType = if (arithmeticOp and expectedIntegerType(env) != null) outerExpected else null;
+    // A literal on the left is typed after the right, from it.
+    const lhsIsLiteral = numericOp and isIntegerLiteral(binop.lhs.*) and !isIntegerLiteral(binop.rhs.*);
+    const early_rhs: ?TypedExpr = if (lhsIsLiteral) try inferExprTypedExpecting(env, binop.rhs.*, env.expectedType) else null;
+    const lhsTyped = if (early_rhs) |r|
+        try inferExprTypedExpecting(env, binop.lhs.*, equalityOperandExpectation(binop.op, r.getType()))
+    else
+        try inferExprTyped(env, binop.lhs.*);
 
-    // AND condition narrowing: `x && x.field` — if LHS is an optional variable,
-    // narrow it before inferring the RHS so `.field` access resolves.
+    // The right operand of `&&` runs only where the left one held, and the
+    // right operand of `||` only where it failed: `x != null && x.f` and
+    // `x == null || x.f` read `x` narrowed, by the same rules an `if`
+    // condition narrows its branches with (`collectCondNarrowings`).
     var andSnapshots: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
     defer andSnapshots.deinit(env.arena);
+    if (binop.op == .@"and" or binop.op == .@"or") {
+        var lhsNarrowings: std.ArrayListUnmanaged(CondNarrowing) = .empty;
+        defer lhsNarrowings.deinit(env.arena);
+        try collectCondNarrowings(env, binop.lhs.*, &lhsNarrowings);
+        for (lhsNarrowings.items) |n| {
+            const side = if (binop.op == .@"and") n.then_ else n.else_;
+            if (side) |ty| try bindNarrowed(env, n.name, ty, &andSnapshots);
+        }
+    }
+    // `x && x.field` — if LHS is an optional variable, narrow it before
+    // inferring the RHS so `.field` access resolves.
     if (binop.op == .@"and") {
         if (binop.lhs.* == .identifier and binop.lhs.identifier.kind == .ident) {
             const varName = binop.lhs.identifier.kind.ident;
@@ -5385,43 +11047,107 @@ fn inferBinaryOpExpr(env: *Env, binop: ast.BinOpExprOf(.untyped), loc: ast.Loc) 
         }
     }
 
-    const rhsTyped = try inferExprTyped(env, binop.rhs.*);
+    // 01 step 12 — the right side of `==` / `!=` is compared with the left, so
+    // the left's type is its expected type: `decl.kind != .Record` names
+    // `TypeInfoKind.Record` even where another enum also declares `Record`.
+    const rhsTyped = if (early_rhs) |r|
+        r
+    else if (binop.op == .eq or binop.op == .ne or (numericOp and isIntegerLiteral(binop.rhs.*)))
+        try inferExprTypedExpecting(env, binop.rhs.*, equalityOperandExpectation(binop.op, lhsTyped.getType()))
+    else
+        try inferExprTyped(env, binop.rhs.*);
 
     // Restore after RHS inference.
     if (andSnapshots.items.len > 0) {
         try restorePatternBindings(env, andSnapshots.items);
+    }
+    // Decision 215 — `==` / `!=` between an `f64` and an integer literal is
+    // refused at the literal: the exact comparison (decision B2) and the
+    // literal's widening (decision 209) would read it two ways.
+    if (binop.op == .eq or binop.op == .ne) {
+        const litSide: ?ast.Expr = if (isIntegerLiteral(binop.lhs.*) and rhsTyped.getType().deref().isNamed("f64"))
+            binop.lhs.*
+        else if (isIntegerLiteral(binop.rhs.*) and lhsTyped.getType().deref().isNamed("f64"))
+            binop.rhs.*
+        else
+            null;
+        if (litSide) |lit| {
+            const text = lit.literal.kind.numberLit;
+            const fixed = (try floatSpelling(env, text)) orelse text;
+            const msg = try std.fmt.allocPrint(env.arena, "comparing f64 with an integer literal — write {s}", .{fixed});
+            env.lastError = TypeError.custom(msg, "`==` between numbers is exact and never widens; write the literal as the float it is compared with.").withLoc(lit.getLoc());
+            return error.TypeError;
+        }
     }
     const lhsPtr = try makeTypedPtr(env, lhsTyped);
     const rhsPtr = try makeTypedPtr(env, rhsTyped);
 
     // Determine result type based on operator
     const resultType: *T.Type = switch (binop.op) {
-        .lt, .gt, .lte, .gte, .eq, .ne => try env.namedType("bool"),
+        // §2.2 — `==` and `!=` are the two comparisons an `unknown` answers
+        // (they compare by value, §2.3). An ordering comparison is arithmetic:
+        // it is not in §2.2's allowed list, and it reads the value's magnitude
+        // exactly as `+` does.
+        .lt, .gt, .lte, .gte => blk: {
+            try refuseUnknownUse(env, lhsTyped.getType(), binop.lhs.getLoc(), "compare");
+            try refuseUnknownUse(env, rhsTyped.getType(), binop.rhs.getLoc(), "compare");
+            break :blk try env.namedType("bool");
+        },
+        .eq, .ne => try env.namedType("bool"),
         .@"and", .@"or" => blk: {
-            try unifyAt(env, lhsTyped.getType(), try env.namedType("bool"), loc);
-            try unifyAt(env, rhsTyped.getType(), try env.namedType("bool"), loc);
+            // 06 C3 — `unifyAt(env, a, b, loc)` is TARGET-first: `a` is what
+            // the context expects, `b` what was written
+            // (`typeMismatch(a, b)` renders "expected a, got b"). These two
+            // passed the operand as `a`, so `1 && true` read "expected i32,
+            // got bool". The caret is on the OPERAND, not the whole expression.
+            try unifyAt(env, try env.namedType("bool"), lhsTyped.getType(), binop.lhs.getLoc());
+            try unifyAt(env, try env.namedType("bool"), rhsTyped.getType(), binop.rhs.getLoc());
             break :blk try env.namedType("bool");
         },
         .add => blk: {
             // String + anything → string (coercion)
             const lhsTy = lhsTyped.getType();
             const rhsTy = rhsTyped.getType();
+            // §2.2 — `+` is the one arithmetic operator `requireNumericOperand`
+            // below does not guard, because it also concatenates strings. An
+            // `unknown` operand is refused here for both readings at once:
+            // nothing has established that it is either.
+            try refuseUnknownUse(env, lhsTy, binop.lhs.getLoc(), "do arithmetic on");
+            try refuseUnknownUse(env, rhsTy, binop.rhs.getLoc(), "do arithmetic on");
             if (lhsTy.isNamed("string") or rhsTy.isNamed("string")) break :blk try env.namedType("string");
             // Numeric promotion: float wins over int
             if (isFloatType(lhsTy) and isIntType(rhsTy)) break :blk lhsTy;
             if (isIntType(lhsTy) and isFloatType(rhsTy)) break :blk rhsTy;
-            try unify(env, lhsTy, rhsTy);
+            // Located at the right operand (01 step 9): the left one set the
+            // type the right must take.
+            try unifyAt(env, lhsTy, rhsTy, binop.rhs.getLoc());
             break :blk lhsTy;
         },
         .sub, .mul, .div, .mod => blk: {
             const lhsTy = lhsTyped.getType();
             const rhsTy = rhsTyped.getType();
+            // 06 C3 — both operands must be numeric. `unify(lhs, rhs)` alone
+            // accepted `"a" * "b"`: two strings agree with each other.
+            const opName = switch (binop.op) {
+                .sub => "-",
+                .mul => "*",
+                .div => "/",
+                else => "%",
+            };
+            try requireNumericOperand(env, lhsTy, opName, binop.lhs.getLoc());
+            try requireNumericOperand(env, rhsTy, opName, binop.rhs.getLoc());
             if (isFloatType(lhsTy) and isIntType(rhsTy)) break :blk lhsTy;
             if (isIntType(lhsTy) and isFloatType(rhsTy)) break :blk rhsTy;
-            try unify(env, lhsTy, rhsTy);
+            // Located at the right operand (01 step 9): the left one set the
+            // type the right must take.
+            try unifyAt(env, lhsTy, rhsTy, binop.rhs.getLoc());
             break :blk lhsTy;
         },
     };
+    switch (binop.op) {
+        .add, .sub, .mul, .div, .mod => try env.divisions.put(loc, resultType),
+        else => {},
+    }
     return TypedExpr{ .binaryOp = .{
         .loc = loc,
         .type_ = resultType,
@@ -5437,10 +11163,17 @@ fn inferUnaryOpExpr(env: *Env, unaryop: ast.UnaryOpExprOf(.untyped), loc: ast.Lo
     const operandPtr = try makeTypedPtr(env, operandTyped);
     return switch (unaryop.op) {
         .not => blk: {
-            try unifyAt(env, operandTyped.getType(), try env.namedType("bool"), loc);
+            // 06 C3 — target-first, located at the operand (see the `&&`/`||`
+            // note in `inferBinaryOpExpr`).
+            try unifyAt(env, try env.namedType("bool"), operandTyped.getType(), unaryop.expr.getLoc());
             break :blk TypedExpr{ .unaryOp = .{ .loc = loc, .type_ = try env.namedType("bool"), .op = .not, .expr = operandPtr } };
         },
-        .neg => TypedExpr{ .unaryOp = .{ .loc = loc, .type_ = operandTyped.getType(), .op = .neg, .expr = operandPtr } },
+        // 06 C3 — `-x` applied no constraint at all, so `-"s"` checked.
+        .neg => blk: {
+            try requireNumericOperand(env, operandTyped.getType(), "-", unaryop.expr.getLoc());
+            try env.divisions.put(loc, operandTyped.getType());
+            break :blk TypedExpr{ .unaryOp = .{ .loc = loc, .type_ = operandTyped.getType(), .op = .neg, .expr = operandPtr } };
+        },
     };
 }
 
@@ -5469,17 +11202,92 @@ fn resultVariantCallName(expr: ast.Expr) ?[]const u8 {
     return wrapperMemberCallName(expr, "Result", &.{ "Ok", "Error" });
 }
 
-/// Returns the `Future` constructor name when `expr` is the form
-/// `Future.resolved(...)` / `Future.rejected(...)` (§1F / §2 RF1/RF2/RF5
-/// detection).
-fn futureConstructorCallName(expr: ast.Expr) ?[]const u8 {
-    return wrapperMemberCallName(expr, "Future", &.{ "resolved", "rejected" });
-}
-
-/// True when `env` is currently inside a body whose `#[@<effect>]` matches `kind`.
+/// True when `env` is currently inside a body whose effect is `kind`.
 fn inEffectContext(env: *Env, kind: ast.EffectKind) bool {
     const ctx = env.starFn orelse return false;
     return ctx.effect == kind;
+}
+
+/// The refusal for `what` written outside a generator scope: the returns and
+/// the loop prefixes that open one (decisions 122, 125), read off the chain.
+fn generatorScopeRefusal(env: *Env, code: []const u8, what: []const u8) ![]const u8 {
+    const names = try effectChain.grantingReturnsSpelled(env.arena, .yield_);
+    const body: []const u8 = if (env.fnEffect) |e|
+        try std.fmt.allocPrint(env.arena, "this fn returns `@{s}<…>`, which is no sequence", .{e.returnWrapper()})
+    else
+        "this body is no sequence";
+    return std.fmt.allocPrint(
+        env.arena,
+        "{s}: {s} needs a generator scope — a {s} return that yields, or an `iter` / `stream` loop; {s}",
+        .{ code, what, names, body },
+    );
+}
+
+/// Decision 121 — the refusal for `throw` / `try` in a body whose return
+/// carries no `@Result` layer, naming the return.
+fn fallibleChannelRefusal(env: *Env, what: []const u8) ![]const u8 {
+    if (env.inLambdaBody) return std.fmt.allocPrint(
+        env.arena,
+        "{s}: `{s}` in a lambda needs a `@Result` in the lambda's expected return — a lambda's return is the type its position expects, and this one has none",
+        .{ diagnostics.effect_try_without_fallible_channel, what },
+    );
+    const shape: []const u8 = if (env.fnEffect) |e| switch (e) {
+        .iterator, .stream => try std.fmt.allocPrint(env.arena, "the item of `@{s}<T>` has to be `@Result<T, E>` to use `throw` / `try`", .{e.returnWrapper()}),
+        else => try std.fmt.allocPrint(env.arena, "this fn returns `@{s}<…>` with no `@Result` in it", .{e.returnWrapper()}),
+    } else "this fn's return has no `@Result` in it";
+    return std.fmt.allocPrint(
+        env.arena,
+        "{s}: `{s}` needs a `@Result` in some layer of the return — {s}",
+        .{ diagnostics.effect_try_without_fallible_channel, what, shape },
+    );
+}
+
+/// Unify a `throw` / `try`'s error with the fallible channel's `E`. Where the
+/// `E` is INFERRED (an `async { }` block or an `iter` / `stream` loop with no
+/// annotation, decisions 124 / 125), two that do not unify are
+/// `gen-infer-conflicting-errors`, asking for the annotation.
+fn unifyErrorChannel(env: *Env, errType: *T.Type, got: *T.Type, loc: ast.Loc) InferError!void {
+    if (!env.inferredErrorScope) return unifyAt(env, errType, got, loc);
+    unifyUnlocated(env, errType, got) catch |err| switch (err) {
+        error.TypeError => {
+            env.lastError = TypeError.custom(
+                diagnostics.gen_infer_conflicting_errors ++
+                    ": the error types of this block's `throw` / `try` do not agree, so its `@Result<U, E>` has no one `E`",
+                "Annotate the value with the error you mean: `val x: @Task<@Result<U, E>> = async { … };` (or `@Iterator<@Result<U, E>>` for a loop), and handle the other error where it happens.",
+            ).withLoc(loc);
+            return error.TypeError;
+        },
+        else => return err,
+    };
+}
+
+/// Decision 118 rule 1 — refuse `what` (a capability) in a body whose return
+/// is an ALIAS of an effect wrapper: the alias types the function but
+/// activates nothing. Returns true (with `lastError` set) when it refused.
+fn refuseBehindAlias(env: *Env, what: []const u8, loc: ast.Loc) InferError!bool {
+    const w = env.aliasWrapper orelse return false;
+    env.lastError = TypeError.custom(
+        try std.fmt.allocPrint(
+            env.arena,
+            "{s}: `{s}` under an aliased return — the alias resolves to `@{s}<…>`, and an alias does not activate the effect",
+            .{ diagnostics.effect_wrapper_behind_alias, what, w },
+        ),
+        try std.fmt.allocPrint(env.arena, "Write `@{s}<…>` literally in the return type to activate the effect (decision 118): whoever reads the signature has to see the `@`.", .{w}),
+    ).withLoc(loc);
+    return true;
+}
+
+/// The value of a `return` / `yield` that passes a wrapper layer through
+/// unchanged rather than being wrapped (decision 119): a `@Result` into a
+/// `@Result` layer, or the whole declared wrapper.
+fn valuePassesThrough(env: *Env, vt: *T.Type) bool {
+    const v = vt.deref();
+    if (v.* != .named) return false;
+    if (std.mem.eql(u8, v.named.name, "Result")) return true;
+    const w = env.returnWhole orelse return false;
+    const wd = w.deref();
+    return wd.* == .named and std.mem.eql(u8, wd.named.name, v.named.name) and
+        ast.EffectKind.fromWrapperName(v.named.name) != null;
 }
 
 /// Infer type for jump expressions (return, throw, try, break, continue, yield)
@@ -5487,22 +11295,23 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
     return switch (j.kind) {
         .@"return" => |r| {
             // R11 (§2) — `return Result.Ok(<r>);` / `return Result.Error(<e>);`
-            // inside a `#[@result]` body is the manual wrapping form that the
-            // auto-wrap contract forbids: the @Result variants are constructed
-            // by `return` / `throw` ALONE, never by the author.
+            // inside a body whose return carries a `@Result` is the manual
+            // wrapping form that the auto-wrap contract forbids: the @Result
+            // variants are constructed by `return` / `throw` ALONE, never by
+            // the author.
             if (env.throwContext == .result) {
                 if (r) |rv| {
                     if (resultVariantCallName(rv.*)) |variant| {
                         if (std.mem.eql(u8, variant, "Ok")) {
                             env.lastError = TypeError.custom(
                                 diagnostics.return_must_be_bare_R ++
-                                    ": a #[@result] fn must `return` a value of type R; the @Result::Ok wrapping is implicit.",
+                                    ": a body whose return carries `@Result<R, E>` must `return` a value of type R; the @Result::Ok wrapping is implicit.",
                                 "Drop the `Result.Ok(...)` wrapping — write `return <r>;` directly.",
                             ).withLoc(loc);
                         } else {
                             env.lastError = TypeError.custom(
                                 diagnostics.result_return_type_mismatch ++
-                                    ": a #[@result] fn returns R via `return`; use `throw` for the error variant.",
+                                    ": a body whose return carries `@Result<R, E>` returns R via `return`; use `throw` for the error variant.",
                                 "If the value is an error, change `return Result.Error(<e>);` to `throw <e>;`.",
                             ).withLoc(loc);
                         }
@@ -5510,101 +11319,124 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                     }
                 }
             }
-            // RI1 (§1I / §2 R14) — `return <expr>;` inside `#[@iterator]` /
-            // `#[@asyncGenerator]` is forbidden: the iterator/asyncGenerator
-            // protocol carries no `R` channel. The author uses `break` for a
-            // clean end and `break <C>` for a completion value. Bare `return;`
-            // (no value, an implicit clean end) stays legal.
-            if (r != null and
-                (inEffectContext(env, .iterator) or
-                    inEffectContext(env, .asyncGenerator)))
-            {
-                env.lastError = TypeError.custom(
+            // RI1 (§1I / §2 R14) — `return <expr>;` inside a sequence body
+            // (an `@Iterator` / `@Stream` that yields, or an `iter` / `stream`
+            // loop) is forbidden: a sequence carries no return channel
+            // (decision 122). The author writes `break <v>` to emit a last
+            // item and end, or bare `break` for a clean end. Bare `return;`
+            // (no value, an implicit clean end) stays legal. Decision 123 —
+            // a body that RETURNS an iterator and never yields is a factory,
+            // and mixing the two is `iter-mixed-yield-return`.
+            if (r != null and (inEffectContext(env, .iterator) or inEffectContext(env, .stream))) {
+                const inLoop = env.generatorLoopDepth > 0;
+                env.lastError = if (inLoop) TypeError.custom(
                     diagnostics.iterator_return_forbidden ++
-                        ": use `break <C>` to deliver an iterator's completion value, or bare `break` for a clean end. Plain `return <expr>` is only valid in #[@generator].",
-                    "Replace `return <expr>;` with `break <expr>;` (the third generic of @Iterator<T, E, C> declares the completion-value type).",
+                        ": a sequence has no return channel — `break <v>` emits `v` as the last item and ends, bare `break` ends cleanly",
+                    "Replace `return <expr>;` with `break <expr>;` (the value is an item of type `T`), or with `yield <expr>; return;`.",
+                ).withLoc(loc) else TypeError.custom(
+                    diagnostics.iter_mixed_yield_return ++
+                        ": this body yields, so it is an iterator — and `return <value>` answers a ready one, which is a factory (decision 123)",
+                    "Pick one: keep the `yield`s and end with `break <v>` / `break`, or drop them and `return` the iterator (`return iter for (xs) { x -> … };`).",
                 ).withLoc(loc);
                 return error.TypeError;
             }
-            // RF1 (§1F / §2 R17) — `return Future.resolved(<t>);` /
-            // `return Future.rejected(<e>);` inside a `#[@future]` body forbids
-            // the manual wrapping. The auto-wrap rewrites bare `return <t>;`
-            // to `@Future.resolved(<t>)` at AST level.
-            if (inEffectContext(env, .future)) {
-                if (r) |rv| {
-                    if (futureConstructorCallName(rv.*)) |ctor| {
-                        if (std.mem.eql(u8, ctor, "resolved")) {
-                            env.lastError = TypeError.custom(
-                                diagnostics.future_return_must_be_bare_T ++
-                                    ": a #[@future] fn must `return` a value of type T; the @Future.resolved wrapping is implicit.",
-                                "Drop the `Future.resolved(...)` wrapping — write `return <t>;` directly.",
-                            ).withLoc(loc);
-                        } else {
-                            env.lastError = TypeError.custom(
-                                diagnostics.future_return_type_mismatch ++
-                                    ": a #[@future] fn resolves T via `return`; use `throw` for the rejection variant.",
-                                "If the value is the rejection payload, change `return Future.rejected(<e>);` to `throw <e>;`.",
-                            ).withLoc(loc);
-                        }
-                        return error.TypeError;
-                    }
-                }
-            }
-            const valPtr: ?*TypedExpr = if (r) |rv| try makeTypedPtr(env, try inferExprTyped(env, rv.*)) else null;
-            // Inside a `-> @Result<…>` fn, a returned plain value must be wrapped
-            // into `{ok, V}` by the transform pass (`__bp_ok`). Skip values that
-            // are already a `@Result` (passthrough) and `try`/`catch` forms —
-            // those have dedicated statement-level lowerings in each backend.
+            // 00 · 01-checker — the body's return target is the expected type
+            // of a returned value (`fn pick() -> Token { return .Color.Red.500; }`).
+            const valPtr: ?*TypedExpr = if (r) |rv| try makeTypedPtr(env, try inferExprTypedExpecting(env, rv.*, env.returnTarget)) else null;
+            // Decision 119 — inside a body whose return carries a `@Result`
+            // layer, a returned plain value is wrapped into `{ok, V}` by the
+            // transform pass (`__bp_ok`); a value already a `@Result`, or the
+            // whole declared wrapper, passes through; `try` / `catch` forms
+            // have dedicated statement-level lowerings in each backend.
             if (env.throwContext == .result) {
                 if (r) |rv| {
                     const isCatchForm = rv.* == .branch and rv.branch.kind == .tryCatch;
                     const isTryJump = rv.* == .jump and rv.jump.kind == .try_;
-                    const valIsResult = blk: {
+                    const passes = valuePassesThrough(env, valPtr.?.getType());
+                    // Decision 119 — a nested wrapper (`-> @Result<@Result<U, E>, E>`)
+                    // where a returned `@Result` fits both the value layer and the
+                    // `@Result` layer: which one is meant is not the compiler's to
+                    // guess.
+                    const looksWhole = blk: {
                         const vt = valPtr.?.getType().deref();
-                        break :blk vt.* == .named and std.mem.eql(u8, vt.named.name, "Result");
+                        break :blk vt.* == .named and vt.named.args.len >= 1 and isResultType(vt.named.args[0]);
                     };
+                    if (passes and !isTryJump and !isCatchForm and !looksWhole and isResultType(valPtr.?.getType())) {
+                        if (env.returnTarget) |target| if (isResultType(target)) {
+                            env.lastError = TypeError.custom(
+                                diagnostics.effect_return_ambiguous_nesting ++
+                                    ": this `@Result` fits two layers of the nested return — the value layer (wrapped `Ok(…)`) and the `@Result` layer (passed through)",
+                                "Say which: return the inner value and let `return` wrap it (`return try r;`), or bind the whole value with the declared type (`val w: @Result<@Result<U, E>, E> = …; return w;`) and return that.",
+                            ).withLoc(loc);
+                            return error.TypeError;
+                        };
+                    }
                     if (isTryJump) {
                         // `return try f()` — unwrap-then-rewrap is the identity;
                         // the transform returns `f()`'s Result directly.
                         try env.result_jump_lowerings.put(loc, .unwrap_passthrough);
-                    } else if (!isCatchForm and !valIsResult) {
+                    } else if (!isCatchForm and !passes) {
                         try env.result_jump_lowerings.put(loc, .wrap_ok);
                     }
+                } else {
+                    // A bare `return;` is the `ok` position of a
+                    // `-> @Result<void, E>` (decision 74): `{ok, null}`.
+                    try env.result_jump_lowerings.put(loc, .wrap_ok);
                 }
             }
-            // §1F F4F-T1 — inside `#[@future]`, a bare `return <t>;` is the
-            // resolved-future shape. The transform wraps it in a
-            // `__bp_future_resolved(<t>)` call; commonJS strips that back to
-            // `return <t>;` (the `async function` machinery is the wrap).
-            // Skip values that are already a `@Future` (passthrough — the
-            // outer fn returns the inner future directly).
-            if (r != null and inEffectContext(env, .future)) {
-                const valIsFuture = blk: {
-                    const vt = valPtr.?.getType().deref();
-                    break :blk vt.* == .named and std.mem.eql(u8, vt.named.name, "Future");
-                };
-                if (!valIsFuture) {
-                    try env.future_jump_lowerings.put(loc, .wrap_resolved);
+            // C1 — unify the returned value with the body's return target.
+            // A value that is already a wrapper layer (a `@Result` passthrough,
+            // `try` / `catch` forms, the whole declared wrapper) is not
+            // unwrapped here.
+            if (env.returnTarget) |target| {
+                if (valPtr) |vp| {
+                    const rv = r.?.*;
+                    const passthrough = blk: {
+                        if (rv == .branch and rv.branch.kind == .tryCatch) break :blk true;
+                        if (rv == .jump and rv.jump.kind == .try_) break :blk true;
+                        const vt = vp.getType().deref();
+                        if (vt.* == .named and env.throwContext == .result and std.mem.eql(u8, vt.named.name, "Result")) break :blk true;
+                        break :blk false;
+                    };
+                    // A value that is already the declared wrapper (`return
+                    // state(start)` in a `-> @Component<B, X>` hook) unifies with
+                    // the whole declared return type.
+                    const whole: ?*T.Type = blk: {
+                        const w = env.returnWhole orelse break :blk null;
+                        const wd = w.deref();
+                        const vt = vp.getType().deref();
+                        if (wd.* == .named and vt.* == .named and w != target and
+                            std.mem.eql(u8, wd.named.name, vt.named.name)) break :blk w;
+                        break :blk null;
+                    };
+                    if (whole) |w| {
+                        try unifyAt(env, w, vp.getType(), rv.getLoc());
+                    } else if (!passthrough and !behaviorCoercion(env, target, vp.getType())) {
+                        try unifyAt(env, target, vp.getType(), rv.getLoc());
+                    }
+                } else if (env.returnBareIsVoid) {
+                    try unifyAt(env, target, try env.namedType("void"), loc);
                 }
             }
             return TypedExpr{ .jump = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .{ .@"return" = valPtr } } };
         },
         .throw_ => |e| {
             // R11-mirror (§2) — `throw Result.Error(<e>)` / `throw Result.Ok(<r>)`
-            // inside a `#[@result]` body forbids the manual wrapping by §1.
+            // inside a body whose return carries a `@Result` forbids the
+            // manual wrapping by §1.
             if (env.throwContext == .result) {
                 if (e) |ev| {
                     if (resultVariantCallName(ev.*)) |variant| {
                         if (std.mem.eql(u8, variant, "Error")) {
                             env.lastError = TypeError.custom(
                                 diagnostics.throw_must_be_bare_E ++
-                                    ": a #[@result] fn must `throw` a value of type E; the @Result::Err wrapping is implicit.",
+                                    ": a body whose return carries `@Result<R, E>` must `throw` a value of type E; the @Result::Err wrapping is implicit.",
                                 "Drop the `Result.Error(...)` wrapping — write `throw <e>;` directly.",
                             ).withLoc(loc);
                         } else {
                             env.lastError = TypeError.custom(
                                 diagnostics.result_throw_type_mismatch ++
-                                    ": a #[@result] fn raises E via `throw`; use `return` for the success variant.",
+                                    ": a body whose return carries `@Result<R, E>` raises E via `throw`; use `return` for the success variant.",
                                 "If the value is the success payload, change `throw Result.Ok(<r>);` to `return <r>;`.",
                             ).withLoc(loc);
                         }
@@ -5612,68 +11444,33 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                     }
                 }
             }
-            // RF2 (§1F / §2 R17) — `throw Future.rejected(<e>);` /
-            // `throw Future.resolved(<t>);` inside a `#[@future]` body forbids
-            // the manual wrapping. The auto-wrap rewrites bare `throw <e>;`
-            // to `@Future.rejected(<e>)` at AST level.
-            if (inEffectContext(env, .future)) {
-                if (e) |ev| {
-                    if (futureConstructorCallName(ev.*)) |ctor| {
-                        if (std.mem.eql(u8, ctor, "rejected")) {
-                            env.lastError = TypeError.custom(
-                                diagnostics.future_throw_must_be_bare_E ++
-                                    ": a #[@future] fn must `throw` a value of type E; the @Future.rejected wrapping is implicit.",
-                                "Drop the `Future.rejected(...)` wrapping — write `throw <e>;` directly.",
-                            ).withLoc(loc);
-                        } else {
-                            env.lastError = TypeError.custom(
-                                diagnostics.future_throw_type_mismatch ++
-                                    ": a #[@future] fn rejects E via `throw`; use `return` for the resolved variant.",
-                                "If the value is the success payload, change `throw Future.resolved(<t>);` to `return <t>;`.",
-                            ).withLoc(loc);
-                        }
-                        return error.TypeError;
-                    }
-                }
-            }
+            if (env.throwContext == .plain and try refuseBehindAlias(env, "throw", loc)) return error.TypeError;
             const valPtr: ?*TypedExpr = if (e) |ev| try makeTypedPtr(env, try inferExprTyped(env, ev.*)) else null;
-            // Validate the thrown value against the enclosing fn's error type.
+            // Validate the thrown value against the fallible channel's `E`
+            // (decision 121).
             switch (env.throwContext) {
                 .result => |errType| {
                     if (valPtr) |vp| {
                         // Order matters: `errType` is the expected `E`, the thrown
                         // value is what we got — so unify(expected, got).
-                        try unifyAt(env, errType, vp.getType(), loc);
-                        // `throw e` in a `-> @Result<…>` fn produces the value
-                        // `{error, E}` — the transform rewrites it to
-                        // `return __bp_error(e)`.
-                        try env.result_jump_lowerings.put(loc, .wrap_error);
+                        try unifyErrorChannel(env, errType, vp.getType(), loc);
+                        // `throw e` produces the value `{error, E}`: returned
+                        // from a `@Result` / `@Task` / `@Component` body
+                        // (`return __bp_error(e)`), emitted as the last item of
+                        // a sequence whose item is the `@Result` (`break
+                        // __bp_error(e)`, decision 122 — it never rejects).
+                        const inSequence = env.starFn != null and env.starFn.?.allowsYield;
+                        try env.result_jump_lowerings.put(loc, if (inSequence) .break_error else .wrap_error);
                     }
                 },
                 .plain => {
-                    env.lastError = TypeError.throwWithoutResult().withLoc(loc);
+                    env.lastError = TypeError.custom(
+                        try fallibleChannelRefusal(env, "throw"),
+                        "Put a `@Result` in the return (`-> @Result<T, E>`, `-> @Task<@Result<T, E>>`, `-> @Iterator<@Result<T, E>>`, …) or handle the failure where it happens.",
+                    ).withLoc(loc);
                     return error.TypeError;
                 },
                 .unchecked => {},
-            }
-            // §1F F4F-T1 — inside `#[@future]`, a bare `throw <e>;` is the
-            // rejected-future shape. The transform rewrites it as
-            // `return __bp_future_rejected(<e>);`; commonJS strips that back
-            // to `throw <e>;` (the `async function` machinery turns the throw
-            // into a rejected promise).
-            if (e != null and inEffectContext(env, .future)) {
-                try env.future_jump_lowerings.put(loc, .wrap_rejected);
-            }
-            // §1I F4I-tail — inside `#[@iterator]` / `#[@asyncGenerator]`, a
-            // `throw <e>;` lands in the iterator-error channel. The transform
-            // rewrites it as `return @IteratorStep.Error(<e>);` so the
-            // consumer can pattern-match on the step variant; the existing
-            // enum codegen materialises the value.
-            if (e != null and inEffectContext(env, .iterator)) {
-                try env.iterator_jump_lowerings.put(loc, .wrap_error);
-            }
-            if (e != null and inEffectContext(env, .asyncGenerator)) {
-                try env.iterator_jump_lowerings.put(loc, .wrap_error);
             }
             return TypedExpr{ .jump = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .{ .throw_ = valPtr } } };
         },
@@ -5681,132 +11478,212 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
             const valPtr: ?*TypedExpr = if (e) |ev| try makeTypedPtr(env, try inferExprTyped(env, ev.*)) else null;
             const rawTy = if (valPtr) |vp| vp.getType() else try env.freshVar();
             const ty = try tryUnwrapOrError(env, rawTy, loc);
+            // Decisions 124 / 125 — in a block or prefixed loop whose `E` is
+            // inferred, every propagating `try` joins it.
+            if (env.inferredErrorScope and env.throwContext == .result) {
+                const rt = rawTy.deref();
+                if (rt.* == .named and std.mem.eql(u8, rt.named.name, "Result") and rt.named.args.len >= 2) {
+                    try unifyErrorChannel(env, env.throwContext.result, rt.named.args[1], loc);
+                }
+            }
+            // Decision 121 — bare `try` PROPAGATES: it returns the `Error` out of
+            // the enclosing function (or, in a sequence whose item is a
+            // `@Result`, emits it as the last item), so the body needs the
+            // fallible channel — a `@Result` in some layer of the return. A
+            // plain `fn` and a return with no `@Result` layer have none.
+            // `try … catch` is a different node (`branch.tryCatch`): it
+            // supplies its own fallback, propagates nothing and is not gated
+            // here. The check runs AFTER the operand is known to be a
+            // `@Result`, so `try <non-result>` keeps its own, more specific
+            // refusal.
+            //
+            // `throwContext` is `.plain` exactly where a declared return type
+            // carries no fallible channel, and `.unchecked` in a body with no
+            // declared return type (a lambda, a `test` block), which stays
+            // lenient.
+            if (env.throwContext == .plain) {
+                if (try refuseBehindAlias(env, "try", loc)) return error.TypeError;
+                env.lastError = TypeError.custom(
+                    try fallibleChannelRefusal(env, "try"),
+                    "Use `try <expr> catch <fallback>`, which handles the error here and needs no channel, or put a `@Result` in the return.",
+                ).withLoc(loc);
+                return error.TypeError;
+            }
             return TypedExpr{ .jump = .{ .loc = loc, .type_ = ty, .kind = .{ .try_ = valPtr } } };
         },
         .@"break" => |b| {
-            // RI5 (§1I) — `break :label` must name an enclosing labelled scope
-            // (a loop or `#[@iterator]` / `#[@asyncGenerator]` fn). The label
-            // stack is shared with `yield`; an unbound label here is a parse-
-            // visible typo, not a backend issue.
+            // Decision 105 — a bare `break` leaves the nearest loop, or ends
+            // the generator scope when no loop encloses it; `break <value>`
+            // emits the value and ends the nearest generator scope — an
+            // annotated fn or an annotated `loop` — and needs one, unless it
+            // is the value of a `comptime` block or a `case` arm's block
+            // (decision 2). A label names an enclosing loop; the generator
+            // scope's own label (a fn's signature label, an annotated loop's)
+            // names it for `break :label <value>`.
+            const ctx = env.starFn;
+            const inGenerator = ctx != null and ctx.?.allowsYield;
             if (b.label) |lbl| {
+                for (env.closedLabels) |outer| {
+                    if (std.mem.eql(u8, outer, lbl)) {
+                        env.lastError = TypeError.custom(
+                            try std.fmt.allocPrint(env.arena, "{s}: `break :{s}` crosses the border of an `{s}` loop — its body is a closure and cannot leave a loop outside it", .{ diagnostics.generator_loop_closed_scope, lbl, if (ctx.?.effect == .stream) "stream" else "iter" }),
+                            "End the prefixed loop (`break`) and leave the outer loop after it.",
+                        ).withLoc(loc);
+                        return error.TypeError;
+                    }
+                }
                 if (!env.hasLabel(lbl)) {
                     env.lastError = TypeError.custom(
                         diagnostics.break_label_unbound ++
                             ": `break :<label>` targets an unknown label",
-                        "Label a loop (`loop :name (...)`) or an iterator/asyncGenerator fn (`#[@iterator] fn … -> @Iterator<…> :name`).",
+                        "Label a loop (`for :name (…)`, `while :name (…)`, `loop :name {`) or a generator scope (`fn … -> @Iterator<…> :name`, `iter loop :name {`).",
                     ).withLoc(loc);
                     return error.TypeError;
                 }
             }
-            const typedPtr: ?*TypedExpr = if (b.value) |expr| try makeTypedPtr(env, try inferExprTyped(env, expr.*)) else null;
-            // RI2 / RI3 (§1I) — when `break <expr>` targets the enclosing
-            // iterator/asyncGenerator (top-level position OR labelled with
-            // the fn's signature label), the value type must satisfy the
-            // wrapper's `C` parameter. An unlabelled break inside a nested
-            // loop targets the loop, not the FSM — skip.
-            if (env.starFn) |ctx| {
-                if (ctx.effect == .iterator or ctx.effect == .asyncGenerator) {
-                    const targetsIterator = blk: {
-                        if (b.label) |lbl| {
-                            if (ctx.fnLabel) |fl| break :blk std.mem.eql(u8, lbl, fl);
-                            break :blk false;
-                        }
-                        break :blk env.loopDepth == 0;
-                    };
-                    if (targetsIterator) {
-                        if (typedPtr) |vp| {
-                            // RI2 — `break <expr>` against an iterator.
-                            const completion = ctx.iterCompletion orelse try env.namedType("void");
-                            const completionDeref = completion.deref();
-                            if (completionDeref.* == .named and std.mem.eql(u8, completionDeref.named.name, "void")) {
-                                env.lastError = TypeError.custom(
-                                    diagnostics.iterator_break_without_completion_type ++
-                                        ": this iterator declares C = void; bare `break` is the only valid form",
-                                    "Extend the wrapper to opt into completion values: `@Iterator<T, E, <C-type>>` (or `@AsyncIterator<…>`).",
-                                ).withLoc(loc);
-                                return error.TypeError;
-                            }
-                            // RI2 — value must unify with the declared C.
-                            unifyAt(env, completion, vp.getType(), loc) catch {
-                                env.lastError = TypeError.custom(
-                                    diagnostics.iterator_break_type_mismatch ++
-                                        ": completion value type does not match the declared C parameter of @Iterator<T, E, C>",
-                                    "Either change the `break <expr>;` value to match C, or widen the wrapper's third generic.",
-                                ).withLoc(loc);
-                                return error.TypeError;
-                            };
-                            // F4I-tail — record `break <c>` for the transform
-                            // rewrite into `return @IteratorStep.Done(<c>);`.
-                            try env.iterator_jump_lowerings.put(loc, .wrap_done);
-                        } else {
-                            // F4I-tail — bare `break;` targeting the FSM:
-                            // record for rewrite into `return @IteratorStep.Done();`.
-                            try env.iterator_jump_lowerings.put(loc, .wrap_done_void);
-                        }
-                    }
+            if (b.value) |expr| {
+                const targetsGenerator = inGenerator and (b.label == null or
+                    (ctx.?.fnLabel != null and std.mem.eql(u8, b.label.?, ctx.?.fnLabel.?)));
+                if (targetsGenerator) {
+                    const typedPtr = try makeTypedPtr(env, try inferExprTyped(env, expr.*));
+                    if (ctx.?.iterItem) |item| try unifyItem(env, item, typedPtr.getType(), loc);
+                    return TypedExpr{ .jump = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .{ .@"break" = .{ .label = b.label, .value = typedPtr } } } };
                 }
-            }
-            return TypedExpr{ .jump = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .{ .@"break" = .{ .label = b.label, .value = typedPtr } } } };
-        },
-        .await_ => |e| {
-            // R7 — `await` is only valid inside an async effect fn
-            // (`#[@future]` / `#[@asyncGenerator]`).
-            if (env.starFn == null or !env.starFn.?.allowsAwait) {
+                if (b.label == null and env.breakScope == .valueBlock) {
+                    const typedPtr = try makeTypedPtr(env, try inferExprTyped(env, expr.*));
+                    return TypedExpr{ .jump = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .{ .@"break" = .{ .label = null, .value = typedPtr } } } };
+                }
                 env.lastError = TypeError.custom(
-                    diagnostics.effect_await_without_future ++
-                        ": `await` is only valid inside a `#[@future]` / `#[@asyncGenerator]` fn",
-                    "Mark the enclosing fn `#[@future]` (`-> @Future<…>`) or `#[@asyncGenerator]` (`-> @AsyncIterator<…>`).",
+                    try generatorScopeRefusal(env, diagnostics.break_value_outside_generator, "`break <value>`"),
+                    "`break <value>` emits the value and ends the generator; a loop is a statement and has no value. Collect in a `var`, or with `map` / `filter`; end a loop with a bare `break`.",
                 ).withLoc(loc);
                 return error.TypeError;
             }
-            const valPtr = try makeTypedPtr(env, try inferExprTyped(env, e.*));
-            const rawTy = valPtr.getType();
-            // `await @Future<T>` yields `T`. A resolved non-`@Future` named type is
-            // an error; an unresolved type variable stays lenient.
-            const deref = rawTy.deref();
-            if (deref.* == .named and !std.mem.eql(u8, deref.named.name, "Future")) {
+            // A bare `break` at loop depth 0 ends the generator scope; with
+            // no loop, no generator scope and no value block there is nothing
+            // to leave.
+            if (b.label == null and env.loopDepth == 0) {
+                if (!inGenerator and env.breakScope != .valueBlock) {
+                    env.lastError = TypeError.custom(
+                        diagnostics.break_outside_loop ++ ": `break` outside a loop",
+                        "A `break` leaves the nearest `for` / `while` / `loop`, or ends a generator scope.",
+                    ).withLoc(loc);
+                    return error.TypeError;
+                }
+            }
+            return TypedExpr{ .jump = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .{ .@"break" = .{ .label = b.label, .value = null } } } };
+        },
+        .await_ => |e| {
+            // Decision 120 — `await` belongs to `@Task`, so every return whose
+            // wrapper extends `@Task` answers it: `@Task`, `@Component` and
+            // `@Stream`, plus a `stream` loop. `@Iterator` has none (`iter-await`).
+            if (env.starFn == null or !env.starFn.?.allowsAwait) {
+                if (try refuseBehindAlias(env, "await", loc)) return error.TypeError;
+                if (env.starFn != null and env.starFn.?.effect == .iterator) {
+                    env.lastError = TypeError.custom(
+                        diagnostics.iter_await ++ ": `await` does not exist in an `@Iterator` — its items are produced synchronously",
+                        "Use `@Stream<T>` (or a `stream` loop): a stream is the sequence that may wait between items.",
+                    ).withLoc(loc);
+                    return error.TypeError;
+                }
                 env.lastError = TypeError.custom(
-                    "`await` expects a `@Future<_>` value",
+                    try effectChain.refusal(env.arena, diagnostics.effect_await_without_task, .await_, env.fnEffect),
+                    "Change the return to `@Task<…>` (or `@Component<C, …>` / `@Stream<…>`), or consume the Task through its own functions (`.map`, `.then`).",
+                ).withLoc(loc);
+                return error.TypeError;
+            }
+            // A component call written as `await`'s own operand keeps its
+            // `@Component<C, T>` — the `await` is written, not spliced
+            // (`inferComponentCall`); a call nested in its arguments still renders.
+            const prevAwaitOperand = env.awaitOperandLoc;
+            env.awaitOperandLoc = if (e.* == .call) e.call.loc else null;
+            const valTyped = inferExprTyped(env, e.*) catch |err| {
+                env.awaitOperandLoc = prevAwaitOperand;
+                return err;
+            };
+            env.awaitOperandLoc = prevAwaitOperand;
+            const valPtr = try makeTypedPtr(env, valTyped);
+            const rawTy = valPtr.getType();
+            // `await @Task<T>` answers `T` and propagates nothing (decision
+            // 120). A resolved non-Task named type is an error; an unresolved
+            // type variable stays lenient.
+            const deref = rawTy.deref();
+            if (deref.* == .named and unwrapTaskType(rawTy) == null) {
+                env.lastError = TypeError.custom(
+                    "`await` expects a `@Task<_>` value (or a `@Component<C, T>`, which extends it)",
                     null,
                 ).withLoc(loc);
                 return error.TypeError;
             }
-            const ty = unwrapFutureType(rawTy) orelse rawTy;
+            const ty = try markResultSource(env, unwrapTaskType(rawTy) orelse rawTy, .await_);
             return TypedExpr{ .jump = .{ .loc = loc, .type_ = ty, .kind = .{ .await_ = valPtr } } };
         },
-        .@"continue" => TypedExpr{ .jump = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .@"continue" } },
+        .@"continue" => {
+            if (env.loopDepth == 0) {
+                env.lastError = TypeError.custom(
+                    diagnostics.continue_outside_loop ++ ": `continue` outside a loop",
+                    "`continue` starts the next round of the nearest `for` / `while` / `loop`.",
+                ).withLoc(loc);
+                return error.TypeError;
+            }
+            return TypedExpr{ .jump = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .@"continue" } };
+        },
         .yield => |y| {
-            // RI4 — `yield :label` must name an enclosing labelled effect-fn / loop.
+            // Decision 105 — `yield` feeds the NEAREST generator scope, an
+            // `@Iterator` / `@Stream` fn or an `iter` / `stream` loop, through
+            // every unprefixed loop between them; there is no other target. A
+            // body without one — a plain `fn`, a `@Task`, a `@Result` —
+            // refuses it naming the returns that grant it.
+            const ctx = env.starFn orelse null;
+            if (ctx == null or !ctx.?.allowsYield) {
+                if (try refuseBehindAlias(env, "yield", loc)) return error.TypeError;
+                env.lastError = TypeError.custom(
+                    try effectChain.refusal(env.arena, diagnostics.yield_without_generator, .yield_, env.fnEffect),
+                    "A `yield` feeds the nearest generator scope: return `@Iterator<T>` (or `@Stream<T>`) from the fn, or write the loop as `iter loop { … }` (decision 125). To collect in a plain fn, use `map` / `filter` or a `var`.",
+                ).withLoc(loc);
+                return error.TypeError;
+            }
+            // `yield :label` names the generator scope — the fn's signature
+            // label or the prefixed loop's — never a plain loop.
             if (y.label) |lbl| {
-                if (!env.hasLabel(lbl)) {
+                const names_scope = if (ctx.?.fnLabel) |fl| std.mem.eql(u8, lbl, fl) else false;
+                if (!names_scope) {
+                    if (env.hasLabel(lbl)) {
+                        env.lastError = TypeError.custom(
+                            diagnostics.yield_label_not_generator ++ ": `yield :<label>` names a loop, and a `yield` feeds a generator scope",
+                            "Label the scope it feeds: `fn … -> @Iterator<T> :name` or `iter loop :name { … }`; an unlabelled `yield` feeds the nearest one.",
+                        ).withLoc(loc);
+                        return error.TypeError;
+                    }
                     env.lastError = TypeError.custom(
                         diagnostics.yield_label_unbound ++
                             ": `yield` targets an unknown label",
-                        "Label a generator fn (`#[@iterator] fn … -> @Iterator<T> :name`) or a `loop :name (...)`.",
+                        "Label a generator fn (`fn … -> @Iterator<T> :name`) or a prefixed loop (`iter loop :name { … }`).",
                     ).withLoc(loc);
                     return error.TypeError;
                 }
             }
             const typedPtr: ?*TypedExpr = if (y.value) |expr| try makeTypedPtr(env, try inferExprTyped(env, expr.*)) else null;
-            // R8 — `yield` belongs to a generator effect (`#[@generator]` /
-            // `#[@iterator]` / `#[@asyncGenerator]`); a `#[@future]` body cannot
-            // yield. Each yielded value unifies with the iterator item type `T`.
-            if (env.starFn) |ctx| {
-                if (!ctx.allowsYield) {
-                    env.lastError = TypeError.custom(
-                        diagnostics.yield_without_generator ++
-                            ": `yield` is only valid inside a `#[@generator]` / `#[@iterator]` / `#[@asyncGenerator]` fn",
-                        "A `#[@future]` fn awaits; mark the fn `#[@iterator]` (`-> @Iterator<T>`) to yield.",
-                    ).withLoc(loc);
-                    return error.TypeError;
-                }
-                if (ctx.iterItem) |item| {
-                    if (typedPtr) |vp| try unifyAt(env, vp.getType(), item, loc);
-                }
+            if (ctx.?.iterItem) |item| {
+                if (typedPtr) |vp| try unifyItem(env, item, vp.getType(), loc);
             }
             return TypedExpr{ .jump = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .{ .yield = .{ .label = y.label, .value = typedPtr } } } };
         },
     };
+}
+
+/// Decision 122 — an item `v` emitted by `yield v` / `break v` into a sequence
+/// of `item`: with an item `@Result<U, E>`, a `v: U` is emitted as `Ok(v)`
+/// (recorded for the transform's `__bp_ok` wrap) and a `v: @Result<U, E>`
+/// as is; otherwise `v` unifies with the item.
+fn unifyItem(env: *Env, item: *T.Type, got: *T.Type, loc: ast.Loc) InferError!void {
+    const it = item.deref();
+    if (it.* == .named and std.mem.eql(u8, it.named.name, "Result") and it.named.args.len >= 1 and !isResultType(got)) {
+        try unifyAt(env, it.named.args[0], got, loc);
+        try env.result_jump_lowerings.put(loc, .yield_ok);
+        return;
+    }
+    try unifyAt(env, got, item, loc);
 }
 
 /// Infer type for branch expressions (if and try-catch)
@@ -5816,8 +11693,13 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
             const condTyped = try inferExprTyped(env, i.cond.*);
             const condPtr = try makeTypedPtr(env, condTyped);
 
-            var guardArgName: ?[]const u8 = null;
-            var guardNarrowedType: ?*T.Type = null;
+            // Every name this condition narrows, and the type it takes on
+            // each side of it. It is still ONE channel — `x is T`, a type-guard
+            // call and the null test all write here — but it holds a LIST now:
+            // `if (a != null && b != null)` narrows two names, and one slot
+            // could only ever have narrowed the last of them.
+            var narrowings: std.ArrayListUnmanaged(CondNarrowing) = .empty;
+            defer narrowings.deinit(env.arena);
 
             if (i.binding) |binding_name| {
                 // Null-check form: `if (x) { e -> ... }` — condition is optional, not bool.
@@ -5834,13 +11716,30 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
             } else {
                 // Check for type guard call: `if (guardName(arg, ...))`
                 // Narrow the argument's type in the then-branch.
+                // Decision 8 §4 — `if (x is T)` narrows `x` to `T` inside the
+                // branch. It is the same channel C5 built for the type-guard fn
+                // form (`-> x is T`), which is why both write into
+                // `narrowings` rather than growing a second narrowing
+                // mechanism — and so does the null test below it.
+                if (isNarrowingOf(i.cond.*)) |n| {
+                    try narrowings.append(env.arena, .{ .name = n.name, .then_ = try resolveTypeRef(env, n.ref) });
+                }
+                // The null test: `if (x != null)` rebinds `x` to the `?T`'s
+                // payload inside the branch, `if (x == null)` rebinds it in the
+                // ELSE branch, and `&&` / `||` / `not` combine them. Before
+                // this the body still saw a `?Record`, so a field read off it
+                // was a fresh type variable and commonJS — which needs the
+                // receiver's type to know `.length()` is a PROPERTY — emitted a
+                // call on a number where erlang, dispatching dynamically,
+                // happened to answer.
+                try collectCondNarrowings(env, i.cond.*, &narrowings);
                 if (i.cond.* == .call) {
                     const ci = i.cond.call.kind.call;
                     if (env.typeGuardFns.get(ci.callee)) |guardInfo| {
                         if (guardInfo.paramIndex < ci.args.len) {
                             const argExpr = ci.args[guardInfo.paramIndex].value.*;
                             if (argExpr == .identifier and argExpr.identifier.kind == .ident) {
-                                guardArgName = argExpr.identifier.kind.ident;
+                                const guardArgName = argExpr.identifier.kind.ident;
                                 const argTyped = try inferExprTyped(env, argExpr);
                                 const argTy = argTyped.getType().deref();
                                 const narrowed: *T.Type = switch (argTy.*) {
@@ -5852,7 +11751,7 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
                                         try env.namedType(guardInfo.narrowedTypeName),
                                     else => try env.namedType(guardInfo.narrowedTypeName),
                                 };
-                                guardNarrowedType = narrowed;
+                                try narrowings.append(env.arena, .{ .name = guardArgName, .then_ = narrowed });
                             }
                         }
                     }
@@ -5860,24 +11759,27 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
                 try unifyAt(env, try env.namedType("bool"), condTyped.getType(), loc);
             }
 
-            // Narrow the argument in the then-branch for type guards.
+            // Narrow for the then-branch, restore, then narrow for the else.
             var snapshots: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
             defer snapshots.deinit(env.arena);
-            if (guardArgName) |argName| {
-                if (guardNarrowedType) |narrowedTy| {
-                    const old = env.lookup(argName);
-                    try snapshots.append(env.arena, .{ .name = argName, .previous = old });
-                    try env.bind(argName, narrowedTy);
-                }
+            for (narrowings.items) |n| {
+                if (n.then_) |ty| try bindNarrowed(env, n.name, ty, &snapshots);
             }
 
             const thenTyped = try inferStmtsTyped(env, i.then_);
 
-            // Restore bindings after then-branch for type guards.
             try restorePatternBindings(env, snapshots.items);
             snapshots.clearAndFree(env.arena);
 
-            const elseTyped = if (i.else_) |els| try inferStmtsTyped(env, els) else null;
+            const elseTyped = if (i.else_) |els| blk: {
+                for (narrowings.items) |n| {
+                    if (n.else_) |ty| try bindNarrowed(env, n.name, ty, &snapshots);
+                }
+                const typed = try inferStmtsTyped(env, els);
+                try restorePatternBindings(env, snapshots.items);
+                snapshots.clearAndFree(env.arena);
+                break :blk typed;
+            } else null;
 
             const bodyType = if (thenTyped.len > 0) thenTyped[thenTyped.len - 1].expr.getType() else try env.namedType("void");
             const elseType = if (elseTyped) |els| blk: {
@@ -5885,10 +11787,36 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
                 break :blk try env.namedType("void");
             } else try env.namedType("void");
 
-            if (elseTyped != null) {
-                try unify(env, bodyType, elseType);
+            // Decision 2 — a block is not a value, so the branches of an `if`
+            // only have to agree when the `if` is used as one. A branch whose
+            // last statement is a STATEMENT (an assignment, a `val`/`var`
+            // binding, a loop) has no value to agree with, and unifying the
+            // two used to red a legitimate shape:
+            //
+            //     if (pred(x)) { out = out.append([x]); } else { taking = false; }
+            //
+            // — "expected array, got bool". A library in this repository
+            // writes it in a `takeWhile` / `skipWhile`, and so does a plain
+            // fn of the same shape. Only the row that removes
+            // block-as-value outright can delete the unification entirely; this
+            // narrows it to the branches that do produce a value.
+            //
+            // Decision 8 §3.2 — when both branches DO produce a value and the
+            // two disagree, that is not an error: the `if` is their union, the
+            // same answer `caseTypeFromArms` already gives a `case`. Branches
+            // that agree still unify, so a branch pins the other's type
+            // variables exactly as before.
+            var ifType = bodyType;
+            if (elseTyped != null and stmtsYieldValue(thenTyped) and stmtsYieldValue(elseTyped.?)) {
+                if (caseArmTypesAgree(bodyType, elseType)) {
+                    try unifyAt(env, bodyType, elseType, loc);
+                } else {
+                    ifType = unionOf(env, &.{ bodyType, elseType }) catch |err| return locateLast(env, err, loc);
+                    const u = ifType.deref();
+                    if (u.* == .union_) try env.unionOrigins.put(env.arena, u, .{ .loc = loc, .kind = "if" });
+                }
             }
-            return TypedExpr{ .branch = .{ .loc = loc, .type_ = bodyType, .kind = .{ .if_ = .{
+            return TypedExpr{ .branch = .{ .loc = loc, .type_ = ifType, .kind = .{ .if_ = .{
                 .cond = condPtr,
                 .binding = i.binding,
                 .then_ = thenTyped,
@@ -5908,10 +11836,25 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
                 .func => |f| f.ret,
                 else => handlerTyped.getType(),
             };
+            // The handler's value is the other way the expression ends. A
+            // `null` (or any `?U`) handler makes the whole an optional of the
+            // success value — `try await loadPost(id) catch null` is a `?Post`
+            // (maintainer, 24-box-1): the success value is a present `Post`,
+            // the handler the absent one. Any other handler must be the
+            // success type, and a mismatch is located at the handler.
+            var outTy = resultTy;
             if (!effectiveTy.isNamed("void")) {
-                try unify(env, resultTy, effectiveTy);
+                const eff = effectiveTy.deref();
+                const isOpt = eff.* == .named and std.mem.eql(u8, eff.named.name, "optional") and eff.named.args.len == 1;
+                const resIsOpt = resultTy.deref().* == .named and std.mem.eql(u8, resultTy.deref().named.name, "optional");
+                if (isOpt and !resIsOpt) {
+                    try unifyAt(env, eff.named.args[0], resultTy, tc.handler.getLoc());
+                    outTy = effectiveTy;
+                } else {
+                    try unifyAt(env, resultTy, effectiveTy, tc.handler.getLoc());
+                }
             }
-            return TypedExpr{ .branch = .{ .loc = loc, .type_ = resultTy, .kind = .{ .tryCatch = .{
+            return TypedExpr{ .branch = .{ .loc = loc, .type_ = outTy, .kind = .{ .tryCatch = .{
                 .expr = exprPtr,
                 .handler = handlerPtr,
             } } } };
@@ -5919,82 +11862,235 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
     };
 }
 
-/// Infer type for loop expressions
+/// Decision 105 — the three loop keywords are statements typed `void`; the
+/// annotated `loop` is an expression worth its wrapper (`inferGeneratorLoop`).
 fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
+    if (lp.generator) |eff| return inferGeneratorLoop(env, lp, eff, loc);
     const iterTyped = try inferExprTyped(env, lp.iter.*);
     const iterPtr = try makeTypedPtr(env, iterTyped);
-    const indexRangePtr = if (lp.indexRange) |ir| try makeTypedPtr(env, try inferExprTyped(env, ir.*)) else null;
+    const iterTy = iterTyped.getType().deref();
 
-    // `loop await (iter)` requires an async context and an `@AsyncIterator<T, E>`
-    // iterable; the loop param binds to the item type `T`.
-    var awaitItem: ?*T.Type = null;
-    if (lp.awaitLoop) {
+    // The `for` parameter binds the ITEM of what is iterated: the element of
+    // an array, the integer of a range, the `T` of a generator. Nothing else
+    // is iterable, and a `bool` is a `while`. An unresolved type variable
+    // stays lenient, as every effect check does.
+    var itemTy: ?*T.Type = null;
+    // `while (x != null) { … }` — the body runs only where the condition
+    // held, so it reads the names the condition narrows as an `if`'s
+    // then-branch does; restored when the body ends.
+    var whileSnapshots: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
+    defer whileSnapshots.deinit(env.arena);
+    if (lp.condition) {
+        // `while (cond) { … }` / `loop { … }` — the condition is a `bool`.
+        try unifyAt(env, try env.namedType("bool"), iterTyped.getType(), loc);
+        var narrowings: std.ArrayListUnmanaged(CondNarrowing) = .empty;
+        defer narrowings.deinit(env.arena);
+        try collectCondNarrowings(env, lp.iter.*, &narrowings);
+        for (narrowings.items) |n| {
+            if (n.then_) |ty| try bindNarrowed(env, n.name, ty, &whileSnapshots);
+        }
+    } else if (lp.awaitLoop) {
+        // `for await (s) { x -> … }` — a `@Stream<T>` where there is an await
+        // channel (decision 122); the loop param binds `T`, a `@Result` when
+        // `T` is one (no implicit `try`).
         if (env.starFn == null or !env.starFn.?.allowsAwait) {
+            if (try refuseBehindAlias(env, "for await", loc)) return error.TypeError;
             env.lastError = TypeError.custom(
-                "`loop await` can only be used inside a `#[@future]` / `#[@asyncGenerator]` fn",
-                "Mark the enclosing fn `#[@future]` (`-> @Future<…>`) or `#[@asyncGenerator]` (`-> @AsyncIterator<…>`).",
+                try effectChain.refusal(env.arena, diagnostics.effect_await_without_task, .await_, env.fnEffect),
+                "`for await` suspends at every item: it needs an await channel — a `@Task<…>`, `@Component<C, …>` or `@Stream<…>` return, or a `stream` loop.",
             ).withLoc(loc);
             return error.TypeError;
         }
-        const iterTy = iterTyped.getType().deref();
-        if (iterTy.* == .named and std.mem.eql(u8, iterTy.named.name, "AsyncIterator") and iterTy.named.args.len >= 1) {
-            awaitItem = iterTy.named.args[0];
+        if (iterTy.* == .named and std.mem.eql(u8, iterTy.named.name, "Stream") and iterTy.named.args.len >= 1) {
+            itemTy = try markResultSource(env, iterTy.named.args[0], .for_item);
         } else if (iterTy.* != .typeVar) {
             env.lastError = TypeError.custom(
-                "`loop await` expects an `@AsyncIterator<T, E>` value",
-                null,
+                diagnostics.for_await_expects_stream ++ ": `for await` expects a `@Stream<T>` value",
+                "An `@Iterator<T>` is iterated by `for (it) { x -> … }`; only a `@Stream` suspends between items.",
             ).withLoc(loc);
             return error.TypeError;
         }
+    } else if (iterTy.isNamed("bool")) {
+        env.lastError = TypeError.custom(
+            diagnostics.for_over_condition ++ ": `for` iterates a collection, a range or an iterator — a condition is a `while`",
+            "Write `while (cond) { … }`; it repeats while the condition holds and binds nothing.",
+        ).withLoc(loc);
+        return error.TypeError;
+    } else if (iterTy.* == .named) {
+        const n = iterTy.named;
+        if (std.mem.eql(u8, n.name, "Range")) {
+            // `for (a..b) { i -> … }` — a range counts in integers.
+            itemTy = try env.namedType("i32");
+        } else if (n.args.len >= 1 and std.mem.eql(u8, n.name, "array")) {
+            itemTy = n.args[0];
+        } else if (n.args.len >= 1 and std.mem.eql(u8, n.name, "Stream")) {
+            env.lastError = TypeError.custom(
+                diagnostics.for_over_stream ++ ": a `@Stream` suspends between items — iterate it with `for await`",
+                "`for await (s) { x -> … }` where there is an await channel.",
+            ).withLoc(loc);
+            return error.TypeError;
+        } else if (n.args.len >= 1 and std.mem.eql(u8, n.name, "Iterator")) {
+            // Decision 122 — `for` over any `@Iterator<X>` is legal in any
+            // function and hands over each `X`, a `@Result` when `X` is one:
+            // there is no implicit `try`.
+            itemTy = try markResultSource(env, n.args[0], .for_item);
+        }
     }
+    for (lp.params) |p| try env.bind(p, itemTy orelse try env.freshVar());
 
-    for (lp.params) |p| {
-        try env.bind(p, awaitItem orelse try env.freshVar());
-    }
-
-    // A `loop :label (...)` adds its label to scope for `yield :label` inside it.
+    // The loop's own label is a `break :label` / `continue :label` target for
+    // its body; the body is one loop deeper and a bare `break` leaves it.
     const prevLabelsLen = env.labelStack.items.len;
     defer env.labelStack.shrinkRetainingCapacity(prevLabelsLen);
     if (lp.label) |lbl| try env.labelStack.append(env.arena, lbl);
-
-    // §1I REGRAS DE ESCOPO — track nested-loop depth so an unlabelled
-    // `break` inside the loop body targets the loop, not an enclosing
-    // iterator fn. RI2/RI3 in the `.@"break"` handler reads this counter.
+    const prevBreakScope = env.breakScope;
+    env.breakScope = .loop;
     env.loopDepth += 1;
-    defer env.loopDepth -= 1;
-
+    defer {
+        env.loopDepth -= 1;
+        env.breakScope = prevBreakScope;
+    }
     const typedBody = try inferStmtsTyped(env, lp.body);
-    const loopArrayArgs = try env.arena.alloc(*T.Type, 1);
-    loopArrayArgs[0] = try env.freshVar();
+    if (whileSnapshots.items.len > 0) try restorePatternBindings(env, whileSnapshots.items);
     return TypedExpr{ .loop = .{
         .loc = loc,
-        .type_ = try env.namedTypeArgs("array", loopArrayArgs),
+        .type_ = try env.namedType("void"),
+        .keyword = lp.keyword,
+        .generator = null,
         .iter = iterPtr,
-        .indexRange = indexRangePtr,
+        .indexRange = null,
         .params = lp.params,
+        .paramsLoc = lp.paramsLoc,
+        .condition = lp.condition,
         .body = typedBody,
         .awaitLoop = lp.awaitLoop,
         .label = lp.label,
     } };
 }
 
+/// Decision 125 — `iter …` / `stream …`: the body is a generator scope with
+/// exactly the iterator's / stream's capabilities, worth `@Iterator<T>` /
+/// `@Stream<T>`. `T` is the type of its `yield` / `break v`; when the body has
+/// `throw` / `try` of its own the item becomes `@Result<U, E>` on its own,
+/// `U` from the `yield`s and `E` from the `throw` / `try`s. The scope is
+/// closed: the enclosing fn's effect, labels, `use` anchor and throw channel
+/// are all replaced for the body and restored after it, so a `use` or an
+/// `await` the prefix does not grant is refused inside it whatever the fn
+/// grants, and a `break :outer` / `continue :outer` naming an enclosing loop
+/// is refused as crossing the border. The loop itself is one loop deep for
+/// its body: a bare `break` ends it (and so the sequence), a `continue`
+/// starts its next round.
+fn inferGeneratorLoop(env: *Env, lp: ast.LoopExprOf(.untyped), eff: ast.EffectKind, loc: ast.Loc) InferError!TypedExpr {
+    const fails = ast.bodyFails(lp.body);
+    const errTy: ?*T.Type = if (fails) try env.freshVar() else null;
+    const item: *T.Type = if (errTy) |et|
+        try env.namedTypeArgs("Result", &.{ try env.freshVar(), et })
+    else
+        try env.freshVar();
+    if (fails) try noteInferredResult(env, item, lp.body);
+    const wrapper = try env.namedTypeArgs(eff.returnWrapper(), &.{item});
+    const iterTyped = try inferExprTyped(env, lp.iter.*);
+    const iterPtr = try makeTypedPtr(env, iterTyped);
+
+    const prevStarFn = env.starFn;
+    const prevFnEffect = env.fnEffect;
+    const prevThrowCtx = env.throwContext;
+    const prevUseAnchor = env.useAnchor;
+    const prevInContextFn = env.inContextFn;
+    const prevLoopDepth = env.loopDepth;
+    const prevBreakScope = env.breakScope;
+    const prevClosedLabels = env.closedLabels;
+    const prevAliasWrapper = env.aliasWrapper;
+    const prevReturnWhole = env.returnWhole;
+    const prevInferredErrLoop = env.inferredErrorScope;
+    const prevLabels = try env.arena.dupe([]const u8, env.labelStack.items);
+    defer {
+        env.inferredErrorScope = prevInferredErrLoop;
+        env.starFn = prevStarFn;
+        env.fnEffect = prevFnEffect;
+        env.throwContext = prevThrowCtx;
+        env.useAnchor = prevUseAnchor;
+        env.inContextFn = prevInContextFn;
+        env.loopDepth = prevLoopDepth;
+        env.breakScope = prevBreakScope;
+        env.closedLabels = prevClosedLabels;
+        env.aliasWrapper = prevAliasWrapper;
+        env.returnWhole = prevReturnWhole;
+        env.labelStack.shrinkRetainingCapacity(0);
+        env.labelStack.appendSlice(env.arena, prevLabels) catch {};
+        env.generatorLoopDepth -= 1;
+    }
+    env.closedLabels = prevLabels;
+    env.labelStack.shrinkRetainingCapacity(0);
+    if (lp.label) |lbl| try env.labelStack.append(env.arena, lbl);
+    env.starFn = starCtxFromEffect(eff, wrapper, lp.label);
+    env.fnEffect = eff;
+    // `throw` / a failing `try` emit `Error(e)` as the last item when the
+    // item became a `@Result` (decision 122); with no `throw` / `try` in the
+    // body the channel is closed.
+    env.throwContext = if (errTy) |et| .{ .result = et } else .plain;
+    env.inferredErrorScope = errTy != null;
+    env.useAnchor = null;
+    env.inContextFn = false;
+    env.aliasWrapper = null;
+    env.returnWhole = null;
+    env.loopDepth = 1;
+    env.breakScope = .loop;
+    env.generatorLoopDepth += 1;
+
+    const typedBody = try inferStmtsTyped(env, lp.body);
+    return TypedExpr{ .loop = .{
+        .loc = loc,
+        .type_ = wrapper,
+        .keyword = lp.keyword,
+        .generator = eff,
+        .prefixedKeyword = lp.prefixedKeyword,
+        .iter = iterPtr,
+        .indexRange = null,
+        .params = lp.params,
+        .paramsLoc = lp.paramsLoc,
+        .condition = true,
+        .body = typedBody,
+        .awaitLoop = false,
+        .label = lp.label,
+    } };
+}
 /// Infer type for binding expressions (variable declarations and assignments)
 fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
     return switch (b.kind) {
         .localBind => |lb| {
-            const annType: ?*T.Type = if (lb.typeAnnotation) |ann| try resolveTypeRef(env, ann) else null;
+            try refuseValuelessIf(env, lb.value.*);
+            // 01 R8 — a refusal in the annotation needs a location; the
+            // binding carries none of its own for the annotation, so an
+            // unlocated one reds at the `val`. (Setting `typeRefLoc` instead
+            // would also enter every unresolved name into C10's pending list.)
+            const annType: ?*T.Type = if (lb.typeAnnotation) |ann|
+                resolveTypeRef(env, ann) catch |err| return locateTypeRefError(env, err, loc)
+            else
+                null;
             // Feed a `fn(...) -> ...` annotation into a lambda RHS so its
             // params are typed from context (mirrors `inferDeclTyped`).
+            // Decision 148 — a local closure called only at statement
+            // position (`val bump = { -> n = n + 1; }; bump();`) may write a
+            // captured `var`.
+            if (lb.value.* == .function and env.statementClosures.contains(lb.name)) env.nextLambdaExempt = true;
+            defer env.nextLambdaExempt = false;
             const valTyped = if (annType != null and lb.value.* == .function)
-                try inferFunctionExprExpected(env, lb.value.function, lb.value.function.loc, annType)
+                try inferFunctionExprExpected(env, lb.value.function, lb.value.function.loc, annType, false)
             else
-                try inferExprTyped(env, lb.value.*);
+                // 00 · 01-checker — the annotation is this position's expected
+                // type (`val t: Token = .Color.Red.500;`).
+                try inferExprTypedExpecting(env, lb.value.*, annType);
             const valPtr = try makeTypedPtr(env, valTyped);
-            if (annType) |at| try unifyAt(env, at, valTyped.getType(), lb.value.getLoc());
+            // A behavior annotation takes an implementer, as a parameter does.
+            if (annType) |at| try unifyArgument(env, at, valTyped.getType(), lb.value.getLoc());
             // The annotation is the DECLARED type — bind it, not the RHS type
             // (`val head: ?i32 = 5;` must bind `?i32`).
             const bindTy = annType orelse valTyped.getType();
-            try env.bind(lb.name, bindTy);
+            if (annType == null and isEmptyArrayLiteral(lb.value.*))
+                try env.birthWarnings.append(env.arena, .{ .name = lb.name, .mutable = lb.mutable, .type_ = bindTy, .loc = loc });
+            try noteTypeValue(env, lb.name, lb.value.*, annType == null and !lb.mutable);
+            if (lb.mutable) try env.bind(lb.name, bindTy) else try env.bindVal(lb.name, bindTy);
             return TypedExpr{ .binding = .{ .loc = loc, .type_ = bindTy, .kind = .{ .localBind = .{
                 .name = lb.name,
                 .value = valPtr,
@@ -6004,29 +12100,60 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
         },
 
         .assign => |a| {
+            switch (a.target) {
+                .name => |name| try checkKeyedWrite(env, name, a.op == .plusAssign, a.value, loc),
+                .fieldAccess => {},
+            }
             const valTyped = try inferExprTyped(env, a.value.*);
             const valPtr = try makeTypedPtr(env, valTyped);
 
-            return TypedExpr{ .binding = .{ .loc = loc, .type_ = valTyped.getType(), .kind = .{ .assign = .{
-                .target = switch (a.target) {
-                    .name => |name| blk: {
-                        if (env.lookup(name)) |ty| {
-                            try unifyAt(env, ty, valTyped.getType(), loc);
-                        } else {
-                            env.lastError = TypeError.unboundVariable(name).withLoc(loc);
-                            return error.TypeError;
-                        }
-                        break :blk .{ .name = name };
-                    },
-                    .fieldAccess => |fa| blk: {
-                        const recvTyped = try inferExprTyped(env, fa.receiver.*);
-                        const recvPtr = try makeTypedPtr(env, recvTyped);
-                        break :blk .{ .fieldAccess = .{ .receiver = recvPtr, .field = fa.field } };
+            return TypedExpr{
+                .binding = .{
+                    .loc = loc,
+                    .type_ = valTyped.getType(),
+                    .kind = .{
+                        .assign = .{
+                            .target = switch (a.target) {
+                                .name => |name| blk: {
+                                    if (env.lookup(name)) |ty| {
+                                        try refuseValAssign(env, name, loc);
+                                        try refuseMemoryWrite(env, name, a.op == .plusAssign, a.value, loc);
+                                        try refuseCapturedVarWrite(env, name, loc);
+                                        // A narrowed `var` is assigned its DECLARED type, and
+                                        // the assignment ends the narrowing.
+                                        const declared = env.narrowedDecl.get(name);
+                                        // A `var` typed by a behavior takes an implementer.
+                                        try unifyArgument(env, declared orelse ty, valTyped.getType(), loc);
+                                        // Decision 264 — `n += v` is checked against `n`'s type.
+                                        if (a.op == .plusAssign) try env.divisions.put(loc, declared orelse ty);
+                                        if (declared) |d| {
+                                            const keepDepth = env.localDepth.get(name);
+                                            const prevSuppress = env.suppressDepthNote;
+                                            env.suppressDepthNote = true;
+                                            defer env.suppressDepthNote = prevSuppress;
+                                            try env.bind(name, d);
+                                            if (keepDepth) |kd| try env.localDepth.put(env.arena, name, .{ .depth = kd.depth, .ty = d });
+                                        }
+                                    } else {
+                                        env.lastError = try unboundAt(env, name, loc);
+                                        return error.TypeError;
+                                    }
+                                    break :blk .{ .name = name };
+                                },
+                                .fieldAccess => |fa| blk: {
+                                    const recvTyped = try inferExprTyped(env, fa.receiver.*);
+                                    try refuseRecordFieldAssign(env, fa.receiver.*, recvTyped.getType(), fa.field, loc);
+                                    if (a.op == .plusAssign) try env.divisions.put(loc, valTyped.getType());
+                                    const recvPtr = try makeTypedPtr(env, recvTyped);
+                                    break :blk .{ .fieldAccess = .{ .receiver = recvPtr, .field = fa.field } };
+                                },
+                            },
+                            .op = a.op,
+                            .value = valPtr,
+                        },
                     },
                 },
-                .op = a.op,
-                .value = valPtr,
-            } } } };
+            };
         },
 
         .localBindDestruct => |lb| {
@@ -6036,7 +12163,7 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
             // hook's Return type `R` need not be a record, so unknown fields bind
             // to fresh type vars rather than triggering a `notARecord` error.
             if (isUseHookValue(lb.value)) {
-                try bindUseDestructure(env, lb.pattern, valTyped.getType());
+                try bindUseDestructure(env, lb.pattern, valTyped.getType(), loc);
                 return TypedExpr{ .binding = .{ .loc = loc, .type_ = valTyped.getType(), .kind = .{ .localBindDestruct = .{
                     .pattern = lb.pattern,
                     .value = valPtr,
@@ -6075,21 +12202,9 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
                         try env.bind(nm, elemTy);
                     }
                 },
-                .list => |pat| {
-                    // Bind pattern variable names to fresh type vars.
-                    switch (pat) {
-                        .ident => |name| try env.bind(name, try env.freshVar()),
-                        .variant => |v| if (v.payload == .fields) for (v.payload.fields) |binding| try env.bind(binding, try env.freshVar()),
-                        else => {},
-                    }
-                },
-                .ctor => |pat| {
-                    switch (pat) {
-                        .ident => |name| try env.bind(name, try env.freshVar()),
-                        .variant => |v| if (v.payload == .fields) for (v.payload.fields) |binding| try env.bind(binding, try env.freshVar()),
-                        else => {},
-                    }
-                },
+                // 01 R5 — `val Circle(r) = s;` / `val [..rest] = xs;` bind
+                // through the walk a `case` arm uses, typed by the subject.
+                .list, .ctor => |pat| try bindDestructPattern(env, pat, valTyped.getType(), lb.mutable, loc),
             }
             return TypedExpr{ .binding = .{ .loc = loc, .type_ = valTyped.getType(), .kind = .{ .localBindDestruct = .{
                 .pattern = lb.pattern,
@@ -6098,6 +12213,121 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
             } } } };
         },
     };
+}
+
+/// 01 R5 — a pattern in binding position: `val Circle(r) = s;`,
+/// `val Person(name, age) = p;`, `val [..rest] = xs;`.
+///
+/// The bare form has no failure path of its own, so it is legal only where the
+/// pattern matches **every** value of the subject's type: a one-variant `type`,
+/// a record's own constructor, a list pattern that is only a spread. Anything
+/// that can fail to match is refused at the binding (`refutable-val-pattern`),
+/// naming the two forms that say what a mismatch does — `val assert <Pattern>
+/// = e;` (fatal) and `case`. Nothing is left for a backend to decide: every
+/// program that checks destructures without a test.
+///
+/// The names land in the enclosing scope — the snapshots the walk collects
+/// are dropped, as `val assert` does — and a `val` binds them as `val`s.
+fn bindDestructPattern(env: *Env, pattern: ast.Pattern, subjectType: *T.Type, mutable: bool, loc: ast.Loc) InferError!void {
+    var snapshots: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
+    defer snapshots.deinit(env.arena);
+    const st = subjectType.deref();
+    const covers: bool = switch (pattern) {
+        .list => |lst| lst.elems.len == 0 and lst.spread != null and
+            st.* == .named and std.mem.eql(u8, st.named.name, "array"),
+        .variant => |v| blk: {
+            if (v.shape != .variant or st.* != .named) break :blk false;
+            const bare = bareVariantName(v.name);
+            const td = env.lookupTypeDef(st.named.name) orelse break :blk false;
+            switch (td) {
+                .enum_ => |en| {
+                    if (en.variants.len != 1 or !std.mem.eql(u8, en.variants[0].name, bare)) break :blk false;
+                    if (!try variantPayloadIrrefutable(env, subjectType, v.name, v.payload)) break :blk false;
+                    bindPatternNamesForSubject(env, pattern, subjectType, &snapshots) catch |err| return locateLast(env, err, loc);
+                    break :blk true;
+                },
+                .record => |rec| {
+                    if (!std.mem.eql(u8, rec.name, bare) or v.payload != .literals) break :blk false;
+                    const args = v.payload.literals;
+                    if (args.len > rec.fields.len or (args.len < rec.fields.len and !v.rest)) break :blk false;
+                    for (args, 0..) |a, i| {
+                        // A generic record's field types are its declaration's
+                        // cells; the subject's instantiation is not read here.
+                        const fieldTy = if (rec.genericParams.len == 0) rec.fields[i].type_ else try env.freshVar();
+                        if (!try patternIsIrrefutable(env, a, fieldTy)) break :blk false;
+                        bindPatternNamesForSubject(env, a, fieldTy, &snapshots) catch |err| return locateLast(env, err, loc);
+                    }
+                    break :blk true;
+                },
+                .struct_ => break :blk false,
+            }
+        },
+        else => false,
+    };
+    if (!covers) {
+        const msg = try std.fmt.allocPrint(
+            env.arena,
+            "{s}: `val <Pattern> = e;` needs a pattern that matches every value of `{s}`, and this one can fail",
+            .{ diagnostics.refutable_val_pattern, try snapshotMod.typeNameOf(env.arena, subjectType) },
+        );
+        env.lastError = TypeError.custom(
+            msg,
+            "write `val assert <Pattern> = e;` (a mismatch is a fatal assert) or a `case` that says what a mismatch does",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+    if (!mutable) {
+        for (snapshots.items) |sn| {
+            if (env.lookup(sn.name)) |ty| try env.bindVal(sn.name, ty);
+        }
+    }
+}
+
+/// `.Circle(…)` — a call chained onto a leading-dot head.
+fn isLeadingDotCall(c: ast.CallExprOf(.untyped)) bool {
+    if (c.kind != .call) return false;
+    const ce = c.kind.call.calleeExpr orelse return false;
+    return ce.* == .identifier and ce.identifier.kind == .dotIdent;
+}
+
+/// The name of the enum the expected type names, when it declares a variant
+/// called `variant` (front 15 handover, `.Circle(radius: 1)`).
+fn expectedEnumDeclaring(env: *Env, variant: []const u8) ?[]const u8 {
+    const exp = env.expectedType orelse return null;
+    const d = exp.deref();
+    if (d.* != .named) return null;
+    const td = env.lookupTypeDef(d.named.name) orelse return null;
+    if (td != .enum_) return null;
+    for (td.enum_.variants) |v| {
+        if (std.mem.eql(u8, v.name, variant)) return d.named.name;
+    }
+    return null;
+}
+
+/// 01 R8 — give an annotation's unlocated error the binding's location.
+fn locateTypeRefError(env: *Env, err: InferError, loc: ast.Loc) InferError {
+    if (env.lastError) |*e| {
+        if (e.loc == null) e.loc = loc;
+    }
+    return err;
+}
+
+/// 01 R8 — record whether `val name = value` binds a TYPE: `value` is a name
+/// that is itself a type (a primitive, a declared `type`/`behavior`, an
+/// imported constructor, or another such `val`). Checked before `name` is
+/// bound, so `val T = T;` cannot vouch for itself. A binding that is not one
+/// clears the mark, so a value shadowing a type alias is a value.
+fn noteTypeValue(env: *Env, name: []const u8, value: ast.Expr, eligible: bool) InferError!void {
+    const isType = eligible and blk: {
+        if (value != .identifier or value.identifier.kind != .ident) break :blk false;
+        const n = value.identifier.kind.ident;
+        if (env.typeDefs.contains(n) or env.assocInterfaceDecls.contains(n) or env.typeValueNames.contains(n)) break :blk true;
+        const ty = env.lookup(n) orelse break :blk false;
+        const d = ty.deref();
+        if (d.* == .func and d.func.ret.isNamed(n)) break :blk true;
+        break :blk d.isNamed(n);
+    };
+    if (isType) try env.typeValueNames.put(name, {}) else _ = env.typeValueNames.remove(name);
 }
 
 fn containsStr(haystack: []const []const u8, needle: []const u8) bool {
@@ -6114,6 +12344,357 @@ fn nominalName(ty: *T.Type) ?[]const u8 {
     };
 }
 
+/// C-04 (01 step 7) — the callee's parameters AS WRITTEN, for a call whose
+/// arity is about to be judged. A `T.func` carries no `default` expressions, so
+/// this is the only thing that can tell an omitted trailing default (N1) from a
+/// missing required argument (N2). `null` when the declaration is not reachable
+/// from here — the arity check then stays exactly what it was.
+fn calleeParams(env: *Env, callee: []const u8) ?[]const ast.Param {
+    if (env.fnParams.get(callee)) |ps| return ps;
+    if (env.ctorParams.get(callee)) |ps| return ps;
+    if (env.stdlibFnDecls.get(callee)) |fd| return fd.params;
+    return null;
+}
+
+/// 00 · 01-checker — which parameter each ARGUMENT of a call lands in, when
+/// that is not simply its own index.
+///
+/// A label claims the parameter it names (C-04), so `f(y: <path>)` against
+/// `fn f(x: i32 = 0, y: Token)` writes the SECOND parameter from its FIRST
+/// argument. `planDefaultFill` is the one thing that knows that mapping, so
+/// this inverts its plan rather than working a second one out — the two could
+/// then disagree, and the expectation would name the wrong enum.
+///
+/// `null` is the ordinary answer and means "argument `i` is parameter `i`":
+/// every call that writes its arguments positionally, which is nearly all of
+/// them, allocates nothing here — nor does a labelled call whose labels name
+/// the parameters in order (the plan is the identity). A returned slice
+/// carries a parameter index per argument — a complete labelled call that
+/// moves an argument is planned as a reorder, like a short one — or
+/// `params.len` for an argument whose parameter is not knowable (a label that
+/// names no parameter, one named twice: the call is refused below). Reading no
+/// expectation is right there: a wrong one would pick an enum.
+fn argumentParamSlots(
+    env: *Env,
+    params: []const ast.Param,
+    args: []const ast.CallArg,
+) InferError!?[]const usize {
+    var labelled = false;
+    for (args) |a| {
+        if (a.label != null) {
+            labelled = true;
+            break;
+        }
+    }
+    if (!labelled) return null;
+
+    const labels = try env.arena.alloc(?[]const u8, args.len);
+    for (args, 0..) |a, i| labels[i] = a.label;
+    const unknown = try env.arena.alloc(usize, args.len);
+    @memset(unknown, params.len);
+    const planned = envMod.planDefaultFill(env.arena, params, labels) catch return unknown;
+    const fill = planned orelse return if (args.len == params.len) null else unknown;
+
+    const slots = try env.arena.alloc(usize, args.len);
+    @memset(slots, params.len);
+    for (fill.slots, 0..) |slot, pi| {
+        const ai = slot orelse continue;
+        if (ai < slots.len) slots[ai] = pi;
+    }
+    return slots;
+}
+
+/// A default an importer can materialise at its own call site: it names no
+/// binding of the declaring module. Literals (a string without a `${…}` hole),
+/// `true` / `false`, `null`, a sign, and array / tuple literals of those.
+pub fn isClosedDefault(e: ast.Expr) bool {
+    return switch (e) {
+        .literal => |l| switch (l.kind) {
+            .stringLit, .numberLit, .null_ => true,
+            else => false,
+        },
+        .identifier => |id| switch (id.kind) {
+            .ident => |n| std.mem.eql(u8, n, "true") or std.mem.eql(u8, n, "false"),
+            else => false,
+        },
+        .unaryOp => |op| isClosedDefault(op.expr.*),
+        .collection => |col| switch (col.kind) {
+            .grouped => |inner| isClosedDefault(inner.*),
+            .arrayLit => |al| for (al.elems) |x| {
+                if (!isClosedDefault(x)) break false;
+            } else true,
+            .tupleLit => |tl| for (tl.elems) |x| {
+                if (!isClosedDefault(x)) break false;
+            } else true,
+            else => false,
+        },
+        else => false,
+    };
+}
+
+/// Decision 37's update form — `Name(..base, f: v)` — reaches every backend as
+/// the complete constructor call it means: one positional argument per field in
+/// declaration order, the labelled value where the call names the field and
+/// `base.<field>` where it does not. No backend lowers a `..` argument, and each
+/// used to drop it and zip what was left (`Cfg(..b, r: 60)` built
+/// `Cfg(b, 60)`). `base` is read once per field it supplies, so it must be a
+/// name or a path of names; any other expression would be evaluated again for
+/// every field, and is refused — bind it with `val` first.
+fn rewriteRecordUpdate(env: *Env, c: anytype, fields: anytype, loc: ast.Loc) InferError!void {
+    const call = c.kind.call;
+    var base: ?*ast.Expr = null;
+    for (call.args) |a| if (a.label) |l| if (std.mem.eql(u8, l, "..")) {
+        base = a.value;
+    };
+    const b = base orelse return;
+    if (!isNamePath(b.*)) {
+        env.lastError = TypeError.custom(
+            "the record a `..` update copies from must be a name",
+            "Bind it first — `val base = …; Name(..base, field: value)` — so it is evaluated once.",
+        ).withLoc(b.getLoc());
+        return error.TypeError;
+    }
+    const args = try env.arena.alloc(ast.CallArg, fields.len);
+    for (fields, 0..) |fd, fi| {
+        const written: ?*ast.Expr = for (call.args) |a| {
+            const l = a.label orelse continue;
+            if (std.mem.eql(u8, l, fd.name)) break a.value;
+        } else null;
+        const value = written orelse blk: {
+            // Each read gets a loc of its own — the base's line, a column no
+            // source reaches — and is inferred like a written `base.field`, so
+            // what a backend reads under a field access's loc (the record it
+            // belongs to) is there, and never mistaken for the base's own.
+            // The field index sits in the upper half of `col`: bit 32 on a
+            // 64-bit host, bit 16 on wasm32 (`compiler-web`), where `usize`
+            // is 32 bits and a shift by 32 does not compile.
+            const bl = b.getLoc();
+            const read = try env.arena.create(ast.Expr);
+            read.* = .{ .identifier = .{
+                .loc = .{ .line = bl.line, .col = bl.col | (@as(usize, fi + 1) << (@bitSizeOf(usize) / 2)) },
+                .kind = .{ .identAccess = .{ .receiver = b, .member = fd.name } },
+            } };
+            _ = try inferExpr(env, read.*);
+            break :blk read;
+        };
+        args[fi] = .{ .label = null, .value = value };
+    }
+    const rewrite = try env.arena.create(ast.Expr);
+    // An import alias already renamed the callee under this loc (decision 110).
+    var rc = if (env.enumSectionRewrites.get(loc)) |prev| (if (prev.* == .call) prev.call else c) else c;
+    rc.kind.call.args = args;
+    rewrite.* = .{ .call = rc };
+    try env.enumSectionRewrites.put(loc, rewrite);
+}
+
+/// `a` or `a.b.c` — an expression that reads a binding and nothing else.
+fn isNamePath(e: ast.Expr) bool {
+    return switch (e) {
+        .identifier => |id| switch (id.kind) {
+            .ident => true,
+            .identAccess => |ia| !ia.optional and isNamePath(ia.receiver.*),
+            .dotIdent => false,
+        },
+        else => false,
+    };
+}
+
+/// Row 32 — a call whose callee is a value whose type is a record, an enum or
+/// a primitive (not a function, not a constructor) is `callee-not-a-function`
+/// at the call, naming the value's type and the read the author likely meant.
+/// A name that IS the type (a constructor reached by its own name) is not a
+/// value and passes.
+fn refuseCallOfValue(env: *Env, callee: []const u8, typeName: []const u8, loc: ast.Loc) InferError!void {
+    if (callee.len == 0) return;
+    if (std.mem.eql(u8, callee, typeName)) return;
+    if (env.lookupTypeDef(callee) != null) return;
+    const td = env.lookupTypeDef(typeName);
+    const isPrim = !std.mem.eql(u8, typeName, "void") and !std.mem.eql(u8, typeName, "noreturn") and for (scalar_type_names) |p| {
+        if (std.mem.eql(u8, p, typeName)) break true;
+    } else false;
+    if (td == null and !isPrim) return;
+    const field: ?[]const u8 = if (td) |t| switch (t) {
+        .record => |r| if (r.fields.len > 0) r.fields[0].name else null,
+        else => null,
+    } else null;
+    const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is a value of type `{s}`, not a function — it cannot be called", .{ diagnostics.callee_not_a_function, callee, typeName });
+    const hint = if (field) |f|
+        try std.fmt.allocPrint(env.arena, "Read the value without calling it: `{s}.{s}`. A function-typed field is called through the value (`{s}.f(…)`).", .{ callee, f, callee })
+    else
+        try std.fmt.allocPrint(env.arena, "Use `{s}` without `( … )`; only a function or a constructor is called.", .{callee});
+    env.lastError = TypeError.custom(msg, hint).withLoc(loc);
+    return error.TypeError;
+}
+
+/// A label on a call whose callee has a function TYPE and no declaration —
+/// a parameter, a local, a record's function-typed field, a tuple element —
+/// is `label-on-function-value`, at the labelled argument.
+fn refuseLabelsOnFunctionValue(env: *Env, callee: []const u8, typedArgs: []const ast.CallArgOf(.typed)) InferError!void {
+    for (typedArgs) |ta| {
+        const l = ta.label orelse continue;
+        if (std.mem.eql(u8, l, "..")) continue;
+        const msg = try std.fmt.allocPrint(
+            env.arena,
+            "{s}: `{s}` is a function value, whose parameters have no names — `{s}:` names nothing",
+            .{ diagnostics.label_on_function_value, callee, l },
+        );
+        env.lastError = TypeError.custom(msg, "A function type is positional (`fn(i32, string) -> string`): pass the arguments in its order, without labels.").withLoc(ta.value.getLoc());
+        return error.TypeError;
+    }
+}
+
+/// `lhs |> f(args…)` / `lhs |> f` against the declared parameters of `f`: the
+/// piped value is the first argument, and a call that leaves out defaulted
+/// parameters or labels one is planned like any call (C-04, 01) and recorded
+/// under the PIPELINE's loc, which `transform.zig` rewrites into the call
+/// `f(lhs, args…)` before the fill. Null when there is nothing to plan: a
+/// complete positional pipeline, or a callee with no declaration.
+fn planPipelineFill(
+    env: *Env,
+    callee: []const u8,
+    f: anytype,
+    lhsPtr: *ast.TypedExpr,
+    args: []const ast.CallArg,
+    loc: ast.Loc,
+) InferError!?*T.Type {
+    const declared = calleeParams(env, callee) orelse return null;
+    if (declared.len != f.params.len) return null;
+    var labelled = false;
+    for (args) |a| if (a.label != null) {
+        labelled = true;
+    };
+    if (!labelled and args.len + 1 == declared.len) return null;
+    const typedArgs = try env.arena.alloc(ast.CallArgOf(.typed), args.len + 1);
+    typedArgs[0] = .{ .label = null, .value = lhsPtr };
+    for (args, 1..) |a, i| {
+        const val = try inferExprTyped(env, a.value.*);
+        typedArgs[i] = .{ .label = a.label, .value = try makeTypedPtr(env, val) };
+    }
+    const plan = (if (typedArgs.len == declared.len)
+        try planLabelledCall(env, callee, declared, typedArgs, loc)
+    else
+        try recordDefaultFill(env, loc, declared, typedArgs)) orelse return null;
+    try env.defaultInjections.put(loc, plan);
+    try unifyFilledArgs(env, plan, f.params, typedArgs);
+    return f.ret;
+}
+
+/// A qualified call's plan (a namespace import's `ns.f(…)`, a `"std"`
+/// module's `bool.negate(…)`): the reorder a complete labelled call needs, or
+/// the fill of a short one, against the parameters as written. `null` when
+/// there is nothing to plan — the call is then zipped by position and its
+/// arity judged by the caller, as before.
+fn planQualifiedCall(
+    env: *Env,
+    callee: []const u8,
+    declared: ?[]const ast.Param,
+    paramTypes: []const *T.Type,
+    typedArgs: []ast.CallArgOf(.typed),
+    trailing: usize,
+    loc: ast.Loc,
+) InferError!?envMod.DefaultFill {
+    const d = declared orelse return null;
+    if (trailing != 0 or d.len != paramTypes.len or typedArgs.len > d.len) return null;
+    const plan = (if (typedArgs.len == d.len)
+        try planLabelledCall(env, callee, d, typedArgs, loc)
+    else
+        try recordDefaultFill(env, loc, d, typedArgs)) orelse return null;
+    try env.defaultInjections.put(loc, plan);
+    try unifyFilledArgs(env, plan, paramTypes, typedArgs);
+    return plan;
+}
+
+/// The parameters as written of the `pub fn` `callee` of the `"std"` module
+/// `std_key`, a default that is not closed dropped (it names a binding of the
+/// std module, which the call site cannot write).
+fn stdFnParams(env: *Env, std_key: []const u8, callee: []const u8) InferError!?[]const ast.Param {
+    const fns = env.stdModuleFns.get(std_key) orelse return null;
+    for (fns) |f| {
+        if (!f.isPub or !std.mem.eql(u8, f.name, callee)) continue;
+        const params = try env.arena.dupe(ast.Param, f.params);
+        for (params) |*p| if (p.default) |dv| if (!isClosedDefault(dv)) {
+            p.default = null;
+        };
+        return params;
+    }
+    return null;
+}
+
+/// C-04 — plan the fill for a short call and record it under the call's loc for
+/// `transform.zig`. Answers the plan, or `null` when the call cannot be filled:
+/// that is N2, and the caller then raises the arity error it always raised.
+/// 01 — the reorder a complete labelled call needs, or null when its labels
+/// name the parameters in order (or it has none). A label that names no
+/// parameter, or names one twice, is refused here, located at the call.
+fn planLabelledCall(
+    env: *Env,
+    callee: []const u8,
+    params: []const ast.Param,
+    typedArgs: []const ast.CallArgOf(.typed),
+    loc: ast.Loc,
+) InferError!?envMod.DefaultFill {
+    const labels = try env.arena.alloc(?[]const u8, typedArgs.len);
+    for (typedArgs, 0..) |ta, i| {
+        // A `..` spread is a record update, matched field by field elsewhere.
+        if (ta.label) |l| if (std.mem.eql(u8, l, "..")) return null;
+        labels[i] = ta.label;
+    }
+    return envMod.planDefaultFill(env.arena, params, labels) catch |e| switch (e) {
+        error.CannotFill => {
+            for (labels) |ml| {
+                const l = ml orelse continue;
+                const known = for (params) |p| {
+                    if (std.mem.eql(u8, p.name, l)) break true;
+                } else false;
+                if (!known) {
+                    const msg = try std.fmt.allocPrint(env.arena, "`{s}` has no parameter named `{s}`", .{ callee, l });
+                    env.lastError = TypeError.custom(msg, "A label names the parameter its argument fills.").withLoc(loc);
+                    return error.TypeError;
+                }
+            }
+            env.lastError = TypeError.custom(
+                try std.fmt.allocPrint(env.arena, "a parameter of `{s}` is given twice", .{callee}),
+                "Each parameter takes one argument: by its label, or by its position among the unlabelled ones.",
+            ).withLoc(loc);
+            return error.TypeError;
+        },
+        else => |rest| return rest,
+    };
+}
+
+fn recordDefaultFill(
+    env: *Env,
+    loc: ast.Loc,
+    params: []const ast.Param,
+    typedArgs: []const ast.CallArgOf(.typed),
+) InferError!?envMod.DefaultFill {
+    const labels = try env.arena.alloc(?[]const u8, typedArgs.len);
+    for (typedArgs, 0..) |ta, i| labels[i] = ta.label;
+    const planned = envMod.planDefaultFill(env.arena, params, labels) catch |e| switch (e) {
+        error.CannotFill => return null,
+        else => |rest| return rest,
+    };
+    const fill = planned orelse return null;
+    try env.defaultInjections.put(loc, fill);
+    return fill;
+}
+
+/// C-04 — unify a filled call's arguments with the parameters they actually
+/// landed in. `P(y: 2)` against `type P(x: i32 = 0, y: i32)` puts its one
+/// argument in the SECOND slot; zipping positionally would check it against `x`.
+fn unifyFilledArgs(
+    env: *Env,
+    fill: envMod.DefaultFill,
+    paramTypes: []const *T.Type,
+    typedArgs: []ast.CallArgOf(.typed),
+) InferError!void {
+    for (fill.slots, 0..) |slot, pi| {
+        const ai = slot orelse continue;
+        if (pi >= paramTypes.len) continue;
+        try unifyArgument(env, paramTypes[pi], typedArgs[ai].value.getType(), typedArgs[ai].value.getLoc());
+    }
+}
+
 /// Build a typed method-call node, preserving the surface `recv.callee(args)`
 /// shape (`recvPtr` is the typed receiver expression). External dispatch
 /// (rewriting to `Sym.callee(recv, args)`) is recorded separately in
@@ -6126,7 +12707,58 @@ fn makeMethodCall(
     typedTrailing: []ast.TrailingLambdaOf(.typed),
     loc: ast.Loc,
 ) InferError!TypedExpr {
-    const retType = try methodCallReturnType(env, recvPtr, callee, typedArgs, typedTrailing, loc);
+    // C-04 / N1 — an instance call may omit an argument whose parameter
+    // declares a default. Inference never arity-checked this shape, so there is
+    // no error to keep honest here; what was missing is the fill, and without it
+    // `b.bump()` reached node as `bump()` and answered `NaN`.
+    var checkedArgs: []ast.CallArgOf(.typed) = typedArgs;
+    // A method call is arity-checked like a function call: an argument short
+    // of what the method declares, with no default to fill it, and one too
+    // many are both `expects N argument(s)`. It used to check, and the
+    // backends passed the short list — `undef` on erlang, `undefined` read as
+    // the missing argument on commonJS.
+    if (recvPtr) |rp| if (nominalName(rp.getType())) |tn| {
+        if (env.getInherentMethodParams(tn, callee)) |declared| {
+            if (declared.len > 0 and std.mem.eql(u8, declared[0].name, "self")) {
+                const want = declared.len - 1;
+                const total = typedArgs.len + typedTrailing.len;
+                const fillable = typedTrailing.len == 0 and total < want and blk: {
+                    const labels = try env.arena.alloc(?[]const u8, typedArgs.len);
+                    for (typedArgs, 0..) |ta, i| labels[i] = ta.label;
+                    const planned = envMod.planDefaultFill(env.arena, declared[1..], labels) catch |e| switch (e) {
+                        error.CannotFill => break :blk false,
+                        else => |rest| return rest,
+                    };
+                    break :blk planned != null;
+                };
+                if (total != want and !fillable) {
+                    env.lastError = TypeError.arityMismatch(callee, want, total).withLoc(loc);
+                    return error.TypeError;
+                }
+            }
+        }
+    };
+    if (typedTrailing.len == 0) {
+        if (recvPtr) |rp| if (nominalName(rp.getType())) |tn| {
+            if (env.getInherentMethodParams(tn, callee)) |declared| {
+                if (declared.len > 0 and std.mem.eql(u8, declared[0].name, "self")) {
+                    const plan = if (typedArgs.len == declared.len - 1)
+                        try planLabelledCall(env, callee, declared[1..], typedArgs, loc)
+                    else
+                        try recordDefaultFill(env, loc, declared[1..], typedArgs);
+                    // 01 — a complete call whose labels move an argument is
+                    // lowered in declaration order, and checked in it.
+                    if (plan) |p| if (typedArgs.len == declared.len - 1) {
+                        try env.defaultInjections.put(loc, p);
+                        const ordered = try env.arena.alloc(ast.CallArgOf(.typed), typedArgs.len);
+                        for (p.slots, 0..) |slot, pi| ordered[pi] = typedArgs[slot.?];
+                        checkedArgs = ordered;
+                    };
+                }
+            }
+        };
+    }
+    const retType = try methodCallReturnType(env, recvPtr, callee, checkedArgs, typedTrailing, loc);
     return TypedExpr{ .call = .{ .loc = loc, .type_ = retType, .kind = .{ .call = .{
         .receiver = recvPtr,
         .callee = callee,
@@ -6173,6 +12805,57 @@ fn methodCallReturnType(
         for (typedArgs, rest) |ta, p| {
             try unifyAt(env, p, ta.value.getType(), ta.value.getLoc());
         }
+    } else if (typedTrailing.len == 0) {
+        // C-04 — a short call whose omitted parameters take their declared
+        // defaults: unify each argument with the parameter it landed in.
+        if (env.defaultInjections.get(loc)) |fill| try unifyFilledArgs(env, fill, rest, typedArgs);
+    }
+    return fn_.func.ret;
+}
+
+/// Decision 62 — the return type of a **type-qualified** call to one of a type's
+/// own methods (`Counter.zero()`, and the explicit-receiver spelling of an
+/// instance method, `Counter.bump(c)`). Null when the type declares no such
+/// method, or declares it without a return-type annotation — in which case the
+/// caller's fresh-var fallback still stands, exactly as it does for the instance
+/// form (`registerInherentMethodTypes` only stores an annotated signature).
+///
+/// The signature is instantiated fresh per call site, like
+/// `methodCallReturnType`, so the type's shared generic cells never collapse
+/// across two calls. Unlike that function there is no receiver value to unify
+/// `self` against: every declared parameter lines up with an argument, so the
+/// arity must match exactly for the signature to be read at all.
+fn associatedCallReturnType(
+    env: *Env,
+    typeName: []const u8,
+    callee: []const u8,
+    typedArgs: []ast.CallArgOf(.typed),
+    typedTrailing: []ast.TrailingLambdaOf(.typed),
+    loc: ast.Loc,
+) InferError!?*T.Type {
+    if (!env.hasInherentMethod(typeName, callee)) return null;
+    const sigRaw = env.getInherentMethodType(typeName, callee) orelse return null;
+
+    var seen = std.AutoHashMap(*T.TypeCell, *T.Type).init(env.arena);
+    defer seen.deinit();
+    const sig = try instantiateType(env, sigRaw, &seen, .allVars);
+    const fn_ = sig.deref();
+    if (fn_.* != .func) return null;
+    // A trailing lambda's value type is not available here, and a mismatched
+    // arity is the plain-call path's diagnostic, not this one's — leave both to
+    // the fallback rather than unify against the wrong slots.
+    if (typedTrailing.len > 0 or fn_.func.params.len != typedArgs.len) return null;
+    // 01 — a label names the parameter it fills: `Box.make(count: 5,
+    // label: "a")` is checked and lowered in declaration order, never zipped.
+    if (env.getInherentMethodParams(typeName, callee)) |declared| if (declared.len == fn_.func.params.len) {
+        if (try planLabelledCall(env, callee, declared, typedArgs, loc)) |plan| {
+            try env.defaultInjections.put(loc, plan);
+            try unifyFilledArgs(env, plan, fn_.func.params, typedArgs);
+            return fn_.func.ret;
+        }
+    };
+    for (typedArgs, fn_.func.params) |ta, p| {
+        try unifyAt(env, p, ta.value.getType(), ta.value.getLoc());
     }
     return fn_.func.ret;
 }
@@ -6253,6 +12936,39 @@ fn inferResultNamespaceCall(
     } } } };
 }
 
+/// The builtin methods of a `@Result<R, E>` value — `inferResultOptionMethod`
+/// resolves each; `libs/std/src/builtins.d.bp` documents them.
+const result_methods = [_][]const u8{ "map", "flatMap", "unwrapOr", "isOk", "isError" };
+
+/// A member of a `@Result<R, E>` value is one of its builtin methods, or
+/// refused. A `@Result` is its `Ok` / `Error` carrier, not the payload:
+/// `querystring.parse(q).length` read a field off `{ok, V}` — it checked,
+/// printed `null` on commonJS and crashed on erlang. A field read and a call
+/// of any other name are refused, located at the member, naming `try` and
+/// `unwrapOr`. `recvTy` is the receiver's type after an optional chain's
+/// unwrapping; a non-`@Result` receiver passes, and so does every receiver
+/// while the program declares a type named `Result` of its own.
+fn refuseResultMemberAccess(env: *Env, recvTy: *T.Type, member: []const u8, is_call: bool, loc: ast.Loc) InferError!void {
+    const t = recvTy.deref();
+    if (t.* != .named or !std.mem.eql(u8, t.named.name, "Result")) return;
+    // A program's own `type Result { … }` is that type, with its own fields
+    // and methods (`unknownField` answers for it), not the builtin carrier.
+    if (env.lookupTypeDef("Result") != null) return;
+    if (is_call) for (result_methods) |m| if (std.mem.eql(u8, m, member)) return;
+    const msg = try std.fmt.allocPrint(
+        env.arena,
+        diagnostics.result_member_not_a_method ++ ": `{s}` is not a member of a `@Result` — take the payload with `try` or `unwrapOr(<default>)` first; a `@Result`'s methods are `map`, `flatMap`, `unwrapOr`, `isOk` and `isError`",
+        .{member},
+    );
+    const hint = try std.fmt.allocPrint(
+        env.arena,
+        "A `@Result` is `Ok` or `Error`, not its payload: take the payload with `try` (`val v = try r;`, then `v.{s}`) or with a default (`r.unwrapOr(<default>).{s}`).",
+        .{ member, member },
+    );
+    env.lastError = TypeError.custom(msg, hint).withLoc(loc);
+    return error.TypeError;
+}
+
 /// Resolve a builtin method call on a `@Result<R, E>` or `@Option<T>` receiver
 /// (`.map` / `.flatMap` / `.unwrapOr` / `.isOk` / `.isError`).
 ///
@@ -6276,8 +12992,21 @@ fn inferResultOptionMethod(
     const isOption = std.mem.eql(u8, named.name, "optional");
     if (!isResult and !isOption) return null;
 
+    // F11 — `expect` was `unwrapOr` under a name that says the opposite, and
+    // is gone. The refusal is explicit because the fallback for an unknown
+    // method on a `?T` is permissive typing: without it, `.expect(…)` would
+    // still compile and fail at run time, which is worse than the alias was.
+    if (isOption and std.mem.eql(u8, callee, "expect")) {
+        env.lastError = TypeError.custom(
+            diagnostics.option_expect_removed ++
+                ": `?T` has no `expect` — it was an alias of `unwrapOr` under a name that says the absent branch is unreachable",
+            "Write `unwrapOr(<default>)`, which is what it did. There is no assert-shaped unwrap on `?T`: `case` the optional, or `@panic` in the absent arm.",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+
     const op: envMod.MethodLowering.Op =
-        if (std.mem.eql(u8, callee, "map")) .map else if (std.mem.eql(u8, callee, "flatMap")) .flatMap else if (std.mem.eql(u8, callee, "unwrapOr")) .unwrapOr else if (isOption and std.mem.eql(u8, callee, "expect")) .unwrapOr else if (isResult and std.mem.eql(u8, callee, "isOk")) .isOk else if (isResult and std.mem.eql(u8, callee, "isError")) .isError else return null;
+        if (std.mem.eql(u8, callee, "map")) .map else if (std.mem.eql(u8, callee, "flatMap")) .flatMap else if (std.mem.eql(u8, callee, "unwrapOr")) .unwrapOr else if (isResult and std.mem.eql(u8, callee, "isOk")) .isOk else if (isResult and std.mem.eql(u8, callee, "isError")) .isError else return null;
 
     // The success-payload type: `R` for `Result<R, E>`, `T` for `Option<T>`.
     const okTy: *T.Type = if (named.args.len >= 1) named.args[0] else try env.freshVar();
@@ -6320,6 +13049,19 @@ fn inferResultOptionMethod(
         .args = typedArgs,
         .trailing = typedTrailing,
     } } } };
+}
+
+/// The expectation of `unwrapOr`'s default: the payload of the `?T` /
+/// `@Result<T, E>` it is called on, so an integer literal takes the payload's
+/// width (`delay(n).unwrapOr(0)` over `?i64`) as it does as an argument of a
+/// declared parameter or a field (`inferLiteralExpr`).
+fn unwrapOrDefaultExpected(recv: ?*ast.TypedExpr, callee: []const u8) ?*T.Type {
+    if (!std.mem.eql(u8, callee, "unwrapOr")) return null;
+    const r = recv orelse return null;
+    const t = r.getType().deref();
+    if (t.* != .named or t.named.args.len < 1) return null;
+    if (!std.mem.eql(u8, t.named.name, "optional") and !std.mem.eql(u8, t.named.name, "Result")) return null;
+    return t.named.args[0];
 }
 
 /// Resolve a compiler-provided template method (expr-templates F4):
@@ -6371,9 +13113,11 @@ fn inferTemplateMethod(
             op = .source;
             retType = try env.namedType("Source");
         } else if (std.mem.eql(u8, callee, "context")) {
-            // The full second-layer input: source + text + shape.
+            // The full second-layer input: source + text + shape. The record is
+            // `ExprContext`, not `Context`: `@Context<Base>` is the owner
+            // marker and one name cannot mean both (front 20 F1).
             op = .context;
-            retType = try env.namedType("Context");
+            retType = try env.namedType("ExprContext");
         } else if (std.mem.eql(u8, callee, "bindings")) {
             // Enumerate the origin scope (top-level decls + imports, V1).
             op = .bindings;
@@ -6507,8 +13251,12 @@ fn resolveStdArrayMethod(
     loc: ast.Loc,
 ) InferError!?TypedExpr {
     _ = recv;
-    // Don't dispatch inside stdlib modules themselves — they implement the methods.
-    if (std.mem.startsWith(u8, env.modulePath, "std/")) return null;
+    // Don't dispatch inside the module that implements the methods. Every
+    // other std module is a caller like any program: skipped as well, a
+    // `default fn` it calls (`std/path`'s `makeUps(n - 1).prepend("..")`)
+    // never marked its interface used, so commonJS emitted no prototype
+    // method for it and the call was `… .prepend is not a function`.
+    if (std.mem.eql(u8, env.modulePath, "std/primitives")) return null;
     const rp = recvPtr orelse return null;
     const recvType = rp.getType().deref();
     if (recvType.* != .named) return null;
@@ -6535,11 +13283,29 @@ fn resolveStdArrayMethod(
 
     const restParams = im.params[1..]; // drop `self`
     const total = typedArgs.len + typedTrailing.len;
+    // C-04 / N1 — `s.slice(1)` against `slice(self, start: i32, end: ?i32 = null)`.
+    // The interface declares the default; the call may omit it.
+    var fillPlan: ?envMod.DefaultFill = null;
     if (restParams.len != total) {
-        env.lastError = TypeError.arityMismatch(callee, restParams.len, total).withLoc(loc);
-        return error.TypeError;
+        if (typedTrailing.len == 0) fillPlan = try recordDefaultFill(env, loc, restParams, typedArgs);
+        // N2 — anything the defaults do not cover is still the arity error.
+        if (fillPlan == null) {
+            env.lastError = TypeError.arityMismatch(callee, restParams.len, total).withLoc(loc);
+            return error.TypeError;
+        }
+    } else if (typedTrailing.len == 0) {
+        // 01 — a complete call whose labels move an argument
+        // (`s.slice(end: 3, start: 1)`) is checked and lowered by label.
+        fillPlan = try planLabelledCall(env, callee, restParams, typedArgs, loc);
+        if (fillPlan) |plan| try env.defaultInjections.put(loc, plan);
     }
-    for (restParams[0..typedArgs.len], typedArgs) |p, ta| {
+    if (fillPlan) |fill| {
+        for (fill.slots, restParams) |slot, p| {
+            const ai = slot orelse continue;
+            const pType = try paramTypeInContext(env, p, gm);
+            try unifyAt(env, pType, typedArgs[ai].value.getType(), typedArgs[ai].value.getLoc());
+        }
+    } else for (restParams[0..typedArgs.len], typedArgs) |p, ta| {
         const pType = try paramTypeInContext(env, p, gm);
         try unifyAt(env, pType, ta.value.getType(), ta.value.getLoc());
     }
@@ -6582,14 +13348,14 @@ fn primKindOfName(typeName: []const u8) ?envMod.PrimKind {
 }
 
 /// The return type of a builtin-primitive method call derived from its declared
-/// signature in `primitives.d.bp` (`Self` substitutes to the receiver, `T` to its
+/// signature in `primitives.bp` (`Self` substitutes to the receiver, `T` to its
 /// first type arg, and any method-level `<U>` becomes a fresh var). Lets a chained
 /// call keep tracking its type (`xs.filter(f).at(0)` → `?T`). Returns null when
 /// the method is unknown to the interface; the caller then types it permissively.
 /// Two intrinsic shapes don't map to a `fn` slot: a `val name: T` interface field
 /// (e.g. `Array.length` — a property, not a fn) and the `len`/`size` aliases for
 /// that same length property — both are read off the interface field directly.
-fn primMethodReturnTypeFromIface(env: *Env, recvTy: *T.Type, callee: []const u8) InferError!?*T.Type {
+fn primMethodReturnTypeFromIface(env: *Env, recvTy: *T.Type, callee: []const u8, typedArgs: []ast.CallArgOf(.typed)) InferError!?*T.Type {
     const ifaceName = primitiveInterfaceName(recvTy.named.name) orelse return null;
     var current: ?[]const u8 = ifaceName;
     var guard: usize = 0;
@@ -6609,6 +13375,41 @@ fn primMethodReturnTypeFromIface(env: *Env, recvTy: *T.Type, callee: []const u8)
             try gm.put("Self", recvTy);
             if (recvTy.named.args.len >= 1) try gm.put("T", recvTy.named.args[0]);
             for (m.genericParams) |gp| try gm.put(gp.name, try env.freshVar());
+            // A method-level type parameter is what the ARGUMENT says it is:
+            // `map<U>(self, f: fn(T) -> U)` answers `Array<U>` with `U` the
+            // lambda's own return, `fold<A>(self, init: A, …)` an `A` of the
+            // initial value. Left fresh, `es.map({ e -> e.key })` was an array
+            // of nothing known, so `ks.at(0)?.length()` never took the
+            // `length` rename and commonJS called the property. Only a
+            // parameter that IS the type parameter, or a function parameter
+            // RETURNING it, binds it — a `fn(item: T)` declared `void` is
+            // never held to its return (`forEach`'s value-bodied lambdas).
+            for (m.params[1..], 0..) |p, i| {
+                if (i >= typedArgs.len) break;
+                if (typedArgs[i].label != null) break;
+                const argTy = typedArgs[i].value.getType();
+                const target: ?[]const u8, const from: *T.Type = switch (p.typeRef) {
+                    .named => |n| .{ n, argTy },
+                    .function => |f| blk: {
+                        const d = argTy.deref();
+                        if (d.* != .func) continue;
+                        break :blk switch (f.returnType.*) {
+                            .named => |n| .{ n, d.func.ret },
+                            else => .{ null, argTy },
+                        };
+                    },
+                    else => continue,
+                };
+                const name = target orelse continue;
+                // A lambda whose body ends in `return` statements is typed
+                // `void` here; its returns say nothing this could hold it to.
+                const fd = from.deref();
+                if (fd.* == .named and (std.mem.eql(u8, fd.named.name, "void") or std.mem.eql(u8, fd.named.name, "noreturn"))) continue;
+                for (m.genericParams) |gp| if (std.mem.eql(u8, gp.name, name)) {
+                    try unifyAt(env, gm.get(name).?, from, typedArgs[i].value.getLoc());
+                    break;
+                };
+            }
             return if (m.returnType) |rt|
                 try resolveTypeRefInContext(env, rt, gm)
             else
@@ -6623,12 +13424,167 @@ fn primMethodReturnTypeFromIface(env: *Env, recvTy: *T.Type, callee: []const u8)
         else
             callee;
         for (decl.fields) |f| {
-            if (std.mem.eql(u8, f.name, field_name)) return try env.namedType(f.typeName);
+            if (std.mem.eql(u8, f.name, field_name)) return switch (f.typeRef) {
+                .named => |n| try env.namedType(n),
+                else => try resolveTypeRefInContext(env, f.typeRef, std.StringHashMap(*T.Type).init(env.arena)),
+            };
         }
 
         current = if (decl.extends.len > 0) decl.extends[0] else null;
     }
     return null;
+}
+
+/// The declared parameter types of a builtin-primitive method, `self` dropped
+/// and resolved against the receiver: `Array<Item>.filter` answers
+/// `[fn(Item) -> bool]`. Same interface walk and same generic substitution as
+/// `primMethodReturnTypeFromIface` — `Self` is the receiver, `T` its first type
+/// argument, a method-level `<U>` a fresh var. Null when the receiver is not a
+/// builtin primitive or the interface does not declare `callee`.
+///
+/// Read before the call's arguments are inferred, so a lambda argument's
+/// parameters are bound to the element type instead of a fresh var. Without it
+/// `xs.filter({ e -> e.name.contains("x") })` typed `e` as an unresolved
+/// variable, the `contains` receiver never reached `.named`, and the
+/// `@External.Node("includes")` rename never fired — commonJS emitted
+/// `.contains(…)`, which node refuses.
+fn primMethodParamTypes(env: *Env, recvTy: *T.Type, callee: []const u8) InferError!?[]*T.Type {
+    const rt = recvTy.deref();
+    if (rt.* != .named) return null;
+    if (primKindOfName(rt.named.name) == null) return null;
+    const ifaceName = primitiveInterfaceName(rt.named.name) orelse return null;
+    var current: ?[]const u8 = ifaceName;
+    var guard: usize = 0;
+    while (current) |cname| {
+        if (guard >= 16) break;
+        guard += 1;
+        const decl = env.assocInterfaceDecls.get(cname) orelse return null;
+        for (decl.methods) |m| {
+            if (!std.mem.eql(u8, m.name, callee)) continue;
+            if (m.params.len == 0 or !std.mem.eql(u8, m.params[0].name, "self")) continue;
+            var gm = std.StringHashMap(*T.Type).init(env.arena);
+            defer gm.deinit();
+            try gm.put("Self", rt);
+            if (rt.named.args.len >= 1) try gm.put("T", rt.named.args[0]);
+            for (m.genericParams) |gp| try gm.put(gp.name, try env.freshVar());
+            const out = try env.arena.alloc(*T.Type, m.params.len - 1);
+            // `paramTypeInContext` — not `resolveTypeRefInContext` — because a
+            // fn-typed param (`pred: fn(item: T) -> bool`) carries its
+            // signature in `Param.fnType`, not in `typeRef`.
+            for (m.params[1..], 0..) |p, i| {
+                out[i] = try paramTypeInContext(env, p, gm);
+            }
+            return out;
+        }
+        current = if (decl.extends.len > 0) decl.extends[0] else null;
+    }
+    return null;
+}
+
+/// True when `ty` carries no type variable anywhere — the receiver's element
+/// type is actually KNOWN. `primMethodParamTypes`' answer is only pushed into a
+/// lambda when the declared PARAMETERS are ground: an element type that is
+/// still a variable tells the lambda nothing it did not already have, and
+/// unifying the lambda's parameter with it adds edges that are not the method's
+/// meaning — `Query<T>.min`'s `var best = keys.at(0); keys.forEach({ k -> …
+/// best = k; })` becomes `?K = K` and reds "recursive type detected". The
+/// declared RETURN is not checked: `map<U>(self, transform: fn(item: T) -> U)`
+/// has a fresh `U` by construction, and `params_only` drops it anyway.
+fn typeIsGround(ty: *T.Type, depth: usize) bool {
+    if (depth > 8) return false;
+    const d = ty.deref();
+    return switch (d.*) {
+        .typeVar => false,
+        .named => |n| blk: {
+            for (n.args) |a| if (!typeIsGround(a, depth + 1)) break :blk false;
+            break :blk true;
+        },
+        .func => |f| blk: {
+            for (f.params) |a| if (!typeIsGround(a, depth + 1)) break :blk false;
+            break :blk typeIsGround(f.ret, depth + 1);
+        },
+        .union_ => |ms| blk: {
+            for (ms) |m| if (!typeIsGround(m, depth + 1)) break :blk false;
+            break :blk true;
+        },
+        .record => |fs| blk: {
+            for (fs) |f| if (!typeIsGround(f.type_, depth + 1)) break :blk false;
+            break :blk true;
+        },
+    };
+}
+
+/// E3.9 — `ty` as the value of `source` (an `await`, a `for` item): when it is
+/// a `@Result`, a fresh copy of its type node carrying that origin in
+/// `env.resultOrigins` (and the `try` / `throw` the original was inferred
+/// from, if any), so a mismatch on it names the fix for that source. Any other
+/// type is answered as is.
+fn markResultSource(env: *Env, ty: *T.Type, source: errorMod.ResultOrigin.Source) InferError!*T.Type {
+    const d = ty.deref();
+    if (d.* != .named or !std.mem.eql(u8, d.named.name, "Result")) return ty;
+    var origin = env.resultOrigins.get(d) orelse errorMod.ResultOrigin{};
+    origin.source = source;
+    const copy = try env.arena.create(T.Type);
+    copy.* = d.*;
+    try env.resultOrigins.put(env.arena, copy, origin);
+    return copy;
+}
+
+/// E3.9 — `result` is the `@Result` an `async { }` block's value or an `iter` /
+/// `stream` item became on its own: record the first `try` / `throw` of
+/// `body` that made it one.
+fn noteInferredResult(env: *Env, result: *T.Type, body: []const ast.Stmt) InferError!void {
+    const at = ast.bodyFirstFail(body) orelse return;
+    const by: errorMod.ResultOrigin.MadeBy = if (ast.bodyFirstThrow(body)) |t|
+        (if (t.line == at.line and t.col == at.col) .throw_ else .try_)
+    else
+        .try_;
+    try env.resultOrigins.put(env.arena, result, .{ .made_at = at, .made_by = by });
+}
+
+/// The prelude enum a sequence steps with (decision 122), registered by
+/// `comptime.zig` (`yield_step_src`) and spliced into a module that names it.
+pub const yield_step_type_name = "YieldStep";
+
+/// Decision 122 — `.next()` on an `@Iterator<T>` / `@Stream<T>` receiver, or
+/// null when the call is anything else.
+fn inferSequenceNext(
+    env: *Env,
+    recv: *TypedExpr,
+    callee: []const u8,
+    args: anytype,
+    trailing: anytype,
+    loc: ast.Loc,
+) InferError!?TypedExpr {
+    if (!std.mem.eql(u8, callee, "next") or args.len != 0 or trailing.len != 0) return null;
+    const rt = recv.getType().deref();
+    if (rt.* != .named or rt.named.args.len != 1) return null;
+    const kind: envMod.SequenceKind = if (std.mem.eql(u8, rt.named.name, "Iterator"))
+        .iterator
+    else if (std.mem.eql(u8, rt.named.name, "Stream"))
+        .stream
+    else
+        return null;
+    env.usesYieldStep = true;
+    try env.instanceLowerings.put(loc, .{ .sequence_next = kind });
+    const step_args = try env.arena.alloc(*T.Type, 1);
+    step_args[0] = rt.named.args[0];
+    const step = try env.namedTypeArgs(yield_step_type_name, step_args);
+    const ret = switch (kind) {
+        .iterator => step,
+        .stream => blk: {
+            const task_args = try env.arena.alloc(*T.Type, 1);
+            task_args[0] = step;
+            break :blk try env.namedTypeArgs("Task", task_args);
+        },
+    };
+    return TypedExpr{ .call = .{ .loc = loc, .type_ = ret, .kind = .{ .call = .{
+        .receiver = recv,
+        .callee = callee,
+        .is_builtin = false,
+        .args = args,
+        .trailing = trailing,
+    } } } };
 }
 
 /// Record how a value-receiver instance call `recv.callee(args)` lowers on the
@@ -6640,11 +13596,11 @@ fn recordInstanceCall(env: *Env, loc: ast.Loc, typeName: []const u8) InferError!
     if (primKindOfName(typeName)) |k| {
         try env.instanceLowerings.put(loc, .{ .prim = k });
     } else {
-        try env.instanceLowerings.put(loc, .{ .record = typeName });
+        try env.instanceLowerings.put(loc, .{ .type_ = typeName });
     }
 }
 
-/// Map a primitive type name to its controller interface in `primitives.d.bp`.
+/// Map a primitive type name to its controller interface in `primitives.bp`.
 /// Numeric widths are intentionally excluded for now (their `default fn`s call
 /// host-backed `@[external]` methods that codegen doesn't materialize yet).
 fn primitiveInterfaceName(typeName: []const u8) ?[]const u8 {
@@ -6663,7 +13619,15 @@ fn primitiveInterfaceName(typeName: []const u8) ?[]const u8 {
     return null;
 }
 
-/// JS prototype-method rename driven by the 2-arg `@external(node, "X")`
+/// The primitive a controller interface of `primitives.bp` is the behavior
+/// of (`String` → `string`), the inverse of `primitiveInterfaceName`.
+fn primitiveOfInterface(iface: []const u8) ?[]const u8 {
+    const prims = [_][]const u8{ "array", "bool", "string", "i32", "i64", "u32", "u64", "f32", "f64" };
+    for (prims) |p| if (primitiveInterfaceName(p)) |i| if (std.mem.eql(u8, i, iface)) return p;
+    return null;
+}
+
+/// JS prototype-method rename driven by the bare-symbol `#[@External.Node("X")]`
 /// annotation on a primitive-receiver interface method. Returns the host
 /// symbol `X` when it differs from `callee` (the call site emits
 /// `recv.X(args)` instead of `recv.callee(args)`); returns null when there is
@@ -6693,7 +13657,57 @@ fn primMethodNodeRename(env: *Env, recvTy: *T.Type, callee: []const u8) InferErr
     return null;
 }
 
-const FoundMethod = struct { method: ast.InterfaceMethod, owner: []const u8 };
+/// Pending 0203-a, answered (b): a primitive receiver answers only what its
+/// interface (and the interfaces it extends) declares — a `fn` method, a `val`
+/// field, the `len`/`size` spellings of `length` — or what an `extend` block on
+/// it adds. Anything else used to type as a fresh variable and reach the host
+/// under its own spelling: `"abc".toUpperCase()` ran on node, and erlang/beam
+/// needed an alias table to follow. Refused at the call, naming the declared
+/// method a near spelling points at: the one whose `@External.Node` host symbol
+/// is the name written, else one an edit away. Silent when the interface is not
+/// registered (an environment without the prelude has nothing to check against).
+fn refuseUndeclaredPrimMethod(env: *Env, recvTy: *T.Type, callee: []const u8, loc: ast.Loc) InferError!void {
+    const ifaceName = primitiveInterfaceName(recvTy.named.name) orelse return;
+    if (env.assocInterfaceDecls.get(ifaceName) == null) return;
+    if (std.mem.eql(u8, callee, "len") or std.mem.eql(u8, callee, "size")) return;
+    if (env.hasInherentMethod(recvTy.named.name, callee)) return;
+    var ext_it = env.extensions.iterator();
+    while (ext_it.next()) |e| {
+        const entry = e.value_ptr.*;
+        if (!std.mem.eql(u8, entry.target, recvTy.named.name) and !std.mem.eql(u8, entry.target, ifaceName)) continue;
+        if (namesContain(entry.methods, callee)) return;
+    }
+    var host_match: ?[]const u8 = null;
+    var near_match: ?[]const u8 = null;
+    var current: ?[]const u8 = ifaceName;
+    var guard: usize = 0;
+    while (current) |cname| : (guard += 1) {
+        if (guard >= 16) break;
+        const decl = env.assocInterfaceDecls.get(cname) orelse break;
+        for (decl.methods) |m| {
+            if (std.mem.eql(u8, m.name, callee)) return;
+            if (host_match == null) if (m.externalFor("node")) |ref| {
+                if (std.mem.eql(u8, ref.symbol, callee)) host_match = m.name;
+            };
+            if (near_match == null and editDistanceIsOne(callee, m.name)) near_match = m.name;
+        }
+        for (decl.fields) |f| {
+            if (std.mem.eql(u8, f.name, callee)) return;
+            if (near_match == null and editDistanceIsOne(callee, f.name)) near_match = f.name;
+        }
+        current = if (decl.extends.len > 0) decl.extends[0] else null;
+    }
+    const tn = try errorMod.typeLabelAlloc(env.arena, recvTy);
+    const msg = if (host_match orelse near_match) |sugg|
+        try std.fmt.allocPrint(env.arena, "{s}: `{s}` has no method `{s}` — did you mean `{s}`?", .{ diagnostics.unknown_primitive_method, tn, callee, sugg })
+    else
+        try std.fmt.allocPrint(env.arena, "{s}: `{s}` has no method `{s}`", .{ diagnostics.unknown_primitive_method, tn, callee });
+    const hint = try std.fmt.allocPrint(env.arena, "The methods of `{s}` are the ones `{s}` declares in the std prelude (`primitives.bp`), and those an `extend` block adds.", .{ tn, ifaceName });
+    env.lastError = TypeError.custom(msg, hint).withLoc(loc);
+    return error.TypeError;
+}
+
+const FoundMethod = struct { method: ast.BehaviorMethod, owner: []const u8 };
 
 /// Find an instance method (`self` receiver) named `callee` in interface
 /// `ifaceName`, following its `extends` chain. Matches `default fn` methods (their
@@ -6714,7 +13728,7 @@ fn findInterfaceDefaultFn(env: *Env, ifaceName: []const u8, callee: []const u8) 
             if (m.params.len == 0 or !std.mem.eql(u8, m.params[0].name, "self")) continue;
             if (m.is_default) return .{ .method = m, .owner = cname };
             if (m.externalFor("node")) |ref| {
-                // Template-form annotation (`$self`/`$0`/… markers): the
+                // Template-form annotation (`$0`/`$1`/… markers): the
                 // commonJS prototype patcher (§F1) renders the template into a
                 // `Owner.prototype.<m>` body, so dispatch resolution should run
                 // here too (marks the interface used so codegen walks it). The
@@ -6726,7 +13740,7 @@ fn findInterfaceDefaultFn(env: *Env, ifaceName: []const u8, callee: []const u8) 
                 }
                 // A JS global namespace (`Math`) lowers as `Math.sym(self, …)`,
                 // dispatched through the stdlib lib path. The §A4 2-arg shorthand
-                // (`@external(node, "X")`, module empty) names a native prototype
+                // (`#[@External.Node("X")]`, module empty) names a native prototype
                 // method — that case is handled by the prim-block rename, NOT here.
                 if (ref.module.len == 0) continue;
                 const is_global = std.mem.indexOfScalar(u8, ref.module, '/') == null and
@@ -6753,7 +13767,7 @@ fn paramTypeInContext(env: *Env, p: ast.Param, gm: std.StringHashMap(*T.Type)) I
             try env.namedType("void");
         return try env.funcType(fparams, fret);
     }
-    return try resolveTypeRefInContext(env, p.typeRef, gm);
+    return try resolveParamType(env, p, gm);
 }
 
 /// Infer type for `use`-hook expressions (@Context F7).
@@ -6762,10 +13776,51 @@ fn paramTypeInContext(env: *Env, p: ast.Param, gm: std.StringHashMap(*T.Type)) I
 /// ContextBase the hook expression must agree on. The capability was recorded in
 /// `env.fnContext` by `inferFnDecl` before the body was visited.
 fn inferUseHookExpr(env: *Env, uh: ast.UseHookExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
+    // Decision 125 — an `iter` / `stream` loop's body runs later, on demand:
+    // a `use` inside it would activate a hook outside the render. Closed,
+    // whatever the enclosing fn grants.
+    if (env.generatorLoopDepth > 0) {
+        env.lastError = TypeError.custom(
+            diagnostics.generator_loop_closed_scope ++ ": `use` cannot activate inside an `iter` / `stream` loop — its body runs on demand, at each `next`",
+            "Activate the hook before the loop and read its value inside; the prefixed loop has only its own capabilities.",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
     const fc = env.fnContext orelse {
         env.lastError = TypeError.useNotAllowed("void").withLoc(loc);
         return error.TypeError;
     };
+    // Decision 104 — `use` is legal only in a `#[@use]` body, whatever the
+    // return type: a `#[@future] fn … -> @Future<Element>` does not activate
+    // (decision 90 revoked), and neither does an unannotated fn.
+    if (!fc.annotated) {
+        env.lastError = TypeError.useWithoutContextEffect(fc.fnName, fc.returnDisplay).withLoc(loc);
+        return error.TypeError;
+    }
+    // A nested closure is not the `#[@use]` body: like `await`, which a
+    // closure does not inherit either (`env.starFn` is cleared there), `use`
+    // stays in the body that carries the annotation (decision 87: `use` never
+    // leaves a function body). On commonJS the hook is an `async function`
+    // (decision 104), and an `await` in a plain arrow would not parse.
+    if (env.asyncBlockDepth > 0) {
+        env.lastError = TypeError.custom(
+            diagnostics.use_without_context_effect ++
+                ": `use` inside an `async { }` block — the block is closed like a closure (decision 124), and `use` does not enter it",
+            "Activate the hook in the `@Component` body before the block and let the block read its value.",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+    if (env.starFn == null) {
+        env.lastError = TypeError.custom(
+            diagnostics.use_without_context_effect ++
+                ": `use` inside a nested closure — the closure is not the `@Component` body, and `use` is not inherited (as `await` is not)",
+            "Activate the hook in the `@Component` body itself (`val s = use state(0);`) and let the closure read `s`.",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+    // R1/R2 already required `@Component<C, _>`, so
+    // a `#[@use]` body always has a base; this is the belt for a return type
+    // still unresolved.
     if (!fc.implementsContext) {
         env.lastError = TypeError.useNotAllowed(fc.returnDisplay).withLoc(loc);
         return error.TypeError;
@@ -6774,7 +13829,13 @@ fn inferUseHookExpr(env: *Env, uh: ast.UseHookExprOf(.untyped), loc: ast.Loc) In
     // `use <hookcall>` — infer the wrapped call, check it yields the right
     // ContextBase, and expose its Return type `R` as the prefix's type. Any
     // binding/destructuring is performed by the enclosing `val`/`var`.
-    const valTyped = try inferExprTyped(env, uh.kind.inner.*);
+    const prevInUse = env.inUseOperand;
+    env.inUseOperand = true;
+    const valTyped = inferExprTyped(env, uh.kind.inner.*) catch |err| {
+        env.inUseOperand = prevInUse;
+        return err;
+    };
+    env.inUseOperand = prevInUse;
     const valPtr = try makeTypedPtr(env, valTyped);
     try validateUseBase(env, valTyped.getType(), fc, loc);
     const srcTy = bindingSourceType(valTyped.getType());
@@ -6786,24 +13847,69 @@ fn isUseHookValue(value: *const ast.ExprOf(.untyped)) bool {
     return value.* == .useHook;
 }
 
-/// Verify a `use` expression returns `@Context<B, _>` whose `B` matches the
-/// enclosing function's ContextBase.
+/// Verify a `use` expression returns a hook `@Component<B, _>` whose `B` is the one
+/// base this body resolves every `use` against (decision 96).
+///
+/// Two questions, in this order. RC2 first: the enclosing function DECLARED a
+/// base in its return type, and a hook anchored elsewhere disagrees with the
+/// declaration — that is the older refusal and the one a single `use` hits.
+/// Then decision 96's: the anchor is a property of the BODY, fixed by its first
+/// `use`, so a second `use` anchored elsewhere reds at its own site with both
+/// bases and the line that fixed the first. The two coincide whenever the
+/// return type names a base, which is every shape that parses today; the anchor
+/// is what holds the rule up where the declaration cannot answer, and it is
+/// what makes the diagnostic say which `use` the body is committed to.
 fn validateUseBase(env: *Env, valTy: *T.Type, fc: envMod.FnContext, loc: ast.Loc) InferError!void {
-    const useBase = contextBaseOfType(env, valTy) orelse {
+    const useBase = hookBaseOfType(env, valTy) orelse {
+        // Decision 104 — `use` takes a hook. A component (decision 128: a
+        // `@Component<C, T>` whose `T` owns the context) is CALLED (`Card()`),
+        // never `use`d: its refusal says so.
+        if (isComponentType(env, valTy)) {
+            env.lastError = TypeError.custom(
+                diagnostics.use_of_non_context_fn ++
+                    ": `use` takes a hook, and this is a component (its `T` implements `@Context<…>`) — a component is called, not `use`d",
+                "Call it (`Card()`) where its value is needed; `use` activates hooks only.",
+            ).withLoc(loc);
+            return error.TypeError;
+        }
         const disp = baseNameOfType(valTy) orelse "value";
         env.lastError = TypeError.useNotContext(disp).withLoc(loc);
         return error.TypeError;
     };
-    const fnBase = fc.base orelse return; // implements @Context but base unconstrained
-    if (!std.mem.eql(u8, fnBase, useBase)) {
-        env.lastError = TypeError.contextMismatch(fnBase, useBase).withLoc(loc);
-        return error.TypeError;
+    if (env.useAnchor) |anchor| {
+        // Decision 96 — the body is already committed. This is the refusal the
+        // decision legislates, and it is the one a reader meets: both bases,
+        // and the `use` that chose the first.
+        if (!std.mem.eql(u8, anchor.base, useBase)) {
+            env.lastError = TypeError.contextBaseMixed(anchor.base, anchor.line, useBase).withLoc(loc);
+            return error.TypeError;
+        }
+        return;
     }
+    // The first `use` of the body. It fixes the anchor, and before it may do so
+    // it has to agree with the base the return type DECLARED — RC2, the older
+    // refusal, which is what a single misanchored `use` hits.
+    if (fc.base) |fnBase| {
+        if (!std.mem.eql(u8, fnBase, useBase)) {
+            env.lastError = TypeError.contextMismatch(fnBase, useBase).withLoc(loc);
+            return error.TypeError;
+        }
+    }
+    env.useAnchor = .{ .base = useBase, .line = loc.line };
 }
 
-/// Bind the names introduced by a destructuring `use { ... } = expr` against the
-/// hook's Return type. Falls back to fresh type vars when fields are unknown.
-fn bindUseDestructure(env: *Env, pattern: ast.ParamDestruct, srcTy: *T.Type) InferError!void {
+/// Bind the names introduced by a destructuring `val { … } = use …` /
+/// `val #(…) = use …` against the hook's Return type `R`.
+///
+/// The record form is lenient — `R` need not be a record, so a field `R` does
+/// not declare binds a fresh type var. The tuple form is not (front 19 step 3,
+/// decision 67): each name is bound to the element of `R` at its position, and
+/// a pattern of another arity, or a hook whose `R` is no tuple at all, is
+/// refused at the binding (`use-tuple-arity`). An `R` still unresolved — a
+/// generic hook whose instantiation left the tuple open — is committed to a
+/// tuple of the pattern's arity, so every element is one variable shared with
+/// the hook's own type, never a fresh one unrelated to it.
+fn bindUseDestructure(env: *Env, pattern: ast.ParamDestruct, srcTy: *T.Type, loc: ast.Loc) InferError!void {
     const derefed = srcTy.deref();
     switch (pattern) {
         .names => |n| {
@@ -6821,10 +13927,164 @@ fn bindUseDestructure(env: *Env, pattern: ast.ParamDestruct, srcTy: *T.Type) Inf
             }
         },
         .tuple_ => |t| {
-            for (t) |nm| try env.bind(nm, try env.freshVar());
+            switch (derefed.*) {
+                .named => |n| if (std.mem.eql(u8, n.name, "tuple")) {
+                    if (n.args.len != t.len) {
+                        env.lastError = TypeError.useTupleArity(t.len, n.args.len, srcTy).withLoc(loc);
+                        return error.TypeError;
+                    }
+                    for (t, n.args) |nm, elemTy| try env.bind(nm, elemTy);
+                    return;
+                },
+                .typeVar => {
+                    const elems = try env.arena.alloc(*T.Type, t.len);
+                    for (elems) |*e| e.* = try env.freshVar();
+                    try unifyAt(env, srcTy, try env.namedTypeArgs("tuple", elems), loc);
+                    for (t, elems) |nm, elemTy| try env.bind(nm, elemTy);
+                    return;
+                },
+                else => {},
+            }
+            env.lastError = TypeError.useTupleArity(t.len, null, srcTy).withLoc(loc);
+            return error.TypeError;
         },
         .list, .ctor => {},
     }
+}
+
+/// C-02 (decision 63, amended 2026-09-19) — **an index is a method call.**
+///
+/// The index expression has no typing rule of its own. `xs[k]` **is**
+/// `xs.at(k)`, `xs[a..b]` is `xs.slice(a, b)` and `xs[1..]` is
+/// `xs.slice(1, null)`; the type of the expression is whatever the method
+/// answers, which for `Index<K, V>.at` is `?V`.
+///
+/// So indexing stops being a privilege of the three built-in collections: a
+/// library's own `Matrix`, `Row` or `Buffer` answers `at` / `slice` — ambient
+/// behaviors, like `Display`, so the syntax finds the method with nothing
+/// imported — and is indexable **with no compiler change**.
+///
+/// Two halves meet at ONE loc. This function records the untyped method call
+/// under the index node's own loc (`env.indexRewrites`) and types that call;
+/// `comptime/transform.zig` splices it into the untyped AST before codegen.
+/// Because the spliced call keeps the index's loc, every loc-keyed plan
+/// inference made while typing it — the method lowering, C-04's default fill —
+/// still finds its node. **No backend learns a new rule**: all four already
+/// emit a method call, and none of them is touched by this row.
+///
+/// A range second argument is the slice — one AST node serves indexing and
+/// slicing because the index is an ordinary expression (`ast.zig`'s contract) —
+/// and an open end travels as `null`, because `start..end` is an AST node and
+/// not a value: there is no `Range` type to pass.
+fn inferIndexExpr(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr {
+    if (call.args.len != 2) {
+        env.lastError = TypeError.custom(
+            "an index expression carries a receiver and an index",
+            "This is the parser's own sugar (`xs[0]`); reaching here with another shape is a compiler bug.",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+    const recvExpr = call.args[0].value;
+    const idxExpr = call.args[1].value;
+
+    // The receiver is typed once, HERE, because only its type tells a tuple
+    // from everything else — and a tuple is the one receiver the behavior
+    // cannot cover. Everything else re-reads it through the rewritten call,
+    // which is the ordinary method path and owes nothing to this row.
+    const typedRecv = try inferExprTyped(env, recvExpr.*);
+    const recvType = typedRecv.getType().deref();
+    if (recvType.* == .named and std.mem.eql(u8, recvType.named.name, "tuple")) {
+        return inferTupleIndexExpr(env, recvType.named.args, recvExpr, idxExpr, loc);
+    }
+
+    const rewrite = try env.arena.create(ast.Expr);
+    if (idxExpr.* == .collection and idxExpr.collection.kind == .range) {
+        const r = idxExpr.collection.kind.range;
+        const args = try env.arena.alloc(ast.CallArgOf(.untyped), 2);
+        args[0] = .{ .label = null, .value = r.start };
+        args[1] = .{ .label = null, .value = r.end orelse blk: {
+            const nullLit = try env.arena.create(ast.Expr);
+            nullLit.* = .{ .literal = .{ .loc = idxExpr.collection.loc, .kind = .null_ } };
+            break :blk nullLit;
+        } };
+        rewrite.* = .{ .call = .{ .loc = loc, .kind = .{ .call = .{
+            .receiver = recvExpr,
+            .callee = index_slice_method,
+            .is_builtin = false,
+            .args = args,
+            .trailing = &.{},
+        } } } };
+    } else {
+        const args = try env.arena.alloc(ast.CallArgOf(.untyped), 1);
+        args[0] = .{ .label = null, .value = idxExpr };
+        rewrite.* = .{ .call = .{ .loc = loc, .kind = .{ .call = .{
+            .receiver = recvExpr,
+            .callee = index_at_method,
+            .is_builtin = false,
+            .args = args,
+            .trailing = &.{},
+        } } } };
+    }
+    try env.indexRewrites.put(loc, rewrite);
+    return inferExprTyped(env, rewrite.*);
+}
+
+/// The two method names the index expression rewrites to — the ones
+/// `Index<K, V>` and `Slice<V>` declare in `libs/std/src/builtins.d.bp`.
+const index_at_method = "at";
+const index_slice_method = "slice";
+
+/// A tuple index — the checker's one special case, and the reason the ambient
+/// behavior covers the other three receivers and not this one: `t[0]` needs a
+/// **constant** index and answers a type **per position**, which
+/// `at(key: K) -> ?V` cannot say with a single `V`.
+///
+/// It rewrites to the positional member access the checker already types and
+/// all four backends already emit (`t[0]` → `t._0`), so the special case costs
+/// a checker arm and no backend arm — the same bargain as the method rewrite,
+/// through a different door.
+fn inferTupleIndexExpr(
+    env: *Env,
+    elems: []*T.Type,
+    recvExpr: *ast.Expr,
+    idxExpr: *ast.Expr,
+    loc: ast.Loc,
+) InferError!TypedExpr {
+    const digits: []const u8 = if (idxExpr.* == .literal and idxExpr.literal.kind == .numberLit)
+        idxExpr.literal.kind.numberLit
+    else {
+        env.lastError = TypeError.custom(
+            "a tuple index must be a constant — a tuple answers a type per position",
+            "Write the position (`t[0]`, `t[1]`) or read the element by its label (`t.pop`); an array or a `Dict` is the indexable a computed key belongs to.",
+        ).withLoc(loc);
+        return error.TypeError;
+    };
+    const idx = std.fmt.parseInt(usize, digits, 10) catch {
+        env.lastError = TypeError.custom(
+            "a tuple index must be a constant — a tuple answers a type per position",
+            "Write the position (`t[0]`, `t[1]`) or read the element by its label (`t.pop`).",
+        ).withLoc(loc);
+        return error.TypeError;
+    };
+    if (idx >= elems.len) {
+        env.lastError = TypeError.custom(
+            try std.fmt.allocPrint(
+                env.arena,
+                "this tuple has {d} element(s), so `[{d}]` names no position",
+                .{ elems.len, idx },
+            ),
+            "A tuple's positions are fixed by its type; the last one is one less than its length.",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+    const rewrite = try env.arena.create(ast.Expr);
+    rewrite.* = .{ .identifier = .{ .loc = loc, .kind = .{ .identAccess = .{
+        .receiver = recvExpr,
+        .member = try std.fmt.allocPrint(env.arena, "_{d}", .{idx}),
+        .optional = false,
+    } } } };
+    try env.indexRewrites.put(loc, rewrite);
+    return inferExprTyped(env, rewrite.*);
 }
 
 /// Infer type for call expressions (function/method invocations and pipelines)
@@ -6840,27 +14100,114 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
         if (resultVariantCallName(.{ .call = c })) |_| {
             env.lastError = TypeError.custom(
                 diagnostics.result_manual_construction_forbidden ++
-                    ": the @Result type variants are only constructed by `return` / `throw` inside #[@result]; outside that the type is treated as opaque.",
-                "Replace the manual `Result.Ok(...)` / `Result.Error(...)` with the implicit form (`return <r>;` / `throw <e>;`), or move the construction outside the #[@result] body.",
-            ).withLoc(loc);
-            return error.TypeError;
-        }
-    }
-    // RF5 (§1F / §2 R17) — same shape for `#[@future]`: manual
-    // `Future.resolved(...)` / `Future.rejected(...)` calls anywhere inside
-    // the body are forbidden; the auto-wrap owns construction.
-    if (inEffectContext(env, .future)) {
-        if (futureConstructorCallName(.{ .call = c })) |_| {
-            env.lastError = TypeError.custom(
-                diagnostics.future_manual_construction_forbidden ++
-                    ": the @Future type variants are only constructed by `return` / `throw` inside #[@future]; outside that the type is treated as opaque.",
-                "Replace the manual `Future.resolved(...)` / `Future.rejected(...)` with the implicit form (`return <t>;` / `throw <e>;`), or move the construction outside the #[@future] body.",
+                    ": in a body whose return carries a `@Result`, the variants are constructed by `return` / `throw` alone.",
+                "Replace the manual `Result.Ok(...)` / `Result.Error(...)` with the implicit form (`return <r>;` / `throw <e>;`), or move the construction outside this body.",
             ).withLoc(loc);
             return error.TypeError;
         }
     }
     return switch (c.kind) {
         .call => |call| {
+            // Front 15 handover — `.Circle(radius: 1)`: the parser chains the
+            // call onto a `.dotIdent` head, so the callee arrives as an
+            // expression with `callee == ""`. It is the variant constructor
+            // the leading dot names: `Shape.Circle(…)` when the expected type
+            // is an enum declaring that variant, and a located refusal when
+            // nothing says which type (decision 67 — no guess). The
+            // rewrite is recorded like `xs[k]`'s, so no backend learns a shape.
+            if (call.calleeExpr) |ce| {
+                if (ce.* == .identifier and ce.identifier.kind == .dotIdent) {
+                    const name = ce.identifier.kind.dotIdent;
+                    var direct = c;
+                    direct.kind.call.calleeExpr = null;
+                    direct.kind.call.callee = name;
+                    const en = expectedEnumDeclaring(env, name) orelse {
+                        const msg = try std.fmt.allocPrint(
+                            env.arena,
+                            "`.{s}(…)` names a variant by its leading dot, and nothing here says which type declares it",
+                            .{name},
+                        );
+                        const hint = try std.fmt.allocPrint(
+                            env.arena,
+                            "give the position a type that declares `{s}` (`val v: T = .{s}(…);`, a typed parameter or array), or write `T.{s}(…)`",
+                            .{ name, name, name },
+                        );
+                        env.lastError = TypeError.custom(msg, hint).withLoc(ce.identifier.loc);
+                        return error.TypeError;
+                    };
+                    env.expectedType = null;
+                    const recv = try env.arena.create(ast.Expr);
+                    recv.* = .{ .identifier = .{ .loc = ce.identifier.loc, .kind = .{ .ident = en } } };
+                    direct.kind.call.receiver = recv;
+                    // The backends read the untyped program: the transform
+                    // splices the named call in, through the index channel.
+                    const spliced = try env.arena.create(ast.Expr);
+                    spliced.* = .{ .call = direct };
+                    spliced.call.loc = loc;
+                    try env.indexRewrites.put(loc, spliced);
+                    return inferCallExpr(env, direct, loc);
+                }
+            }
+            // Decision 110 — `D.empty()` for `import {Dict as D}` is
+            // `Dict.empty()`: the receiver is renamed before anything reads
+            // it, so every path below resolves the declared type and no
+            // backend sees `D`.
+            if (call.receiver) |re| if (try importedTypeAliasReceiver(env, re)) |recv| {
+                var direct = c;
+                direct.kind.call.receiver = recv;
+                return inferCallExpr(env, direct, loc);
+            };
+            // 01 step 12 — a section path whose leaf is a payload variant
+            // (`.Color.Hex("#abc")`, `Token.Color.Hex("#abc")`).
+            if (call.receiver) |re| {
+                if (try tryResolveSectionPayloadCall(env, c, re, loc)) |te| return te;
+            }
+            // C-02 (decision 63, amended 2026-09-19) — `xs[k]` IS `xs.at(k)`.
+            // First of all, and before the arguments are inferred: the index
+            // has no typing rule of its own, so there is nothing here to type
+            // until it has become the method call it is.
+            if (call.is_builtin and std.mem.eql(u8, call.callee, ast.index_builtin_name)) {
+                return inferIndexExpr(env, call, loc);
+            }
+            // `@src()` (1.0.10-beta decision 73) — before the arguments are
+            // inferred, so `@src(x)` reports the builtin's rule and not `x`.
+            if (call.is_builtin and std.mem.eql(u8, call.callee, "typeInfo.all")) {
+                // Decision 253 — the catalogue is a static method of the
+                // builtin type `TypeInfo`, not a member of the function.
+                env.lastError = TypeError.custom(
+                    diagnostics.typeinfo_all_on_function ++ ": `@typeInfo.all` is spelled `@TypeInfo.all` — the catalogue is a static method of the type `TypeInfo`",
+                    "`@typeInfo(X)` reflects one declaration; `@TypeInfo.all(with: d)` answers every declaration carrying `d`.",
+                ).withLoc(loc);
+                return error.TypeError;
+            }
+            if (call.is_builtin and std.mem.eql(u8, call.callee, "TypeInfo.all")) {
+                // Decision 216 (4) — the answer `typeinfo_all.plan` built for
+                // this call; tooling that runs no decorator reads an empty one.
+                const answer = env.typeinfoAll.get(loc) orelse empty: {
+                    const node = try env.arena.create(ast.Expr);
+                    node.* = .{ .collection = .{ .loc = loc, .kind = .{ .arrayLit = .{ .elems = &.{} } } } };
+                    break :empty node;
+                };
+                env.usesDeclared = true;
+                try env.srcRewrites.put(loc, answer);
+                // Decision 254 — the answer is `Declared<unknown>[]`, one
+                // fixed type whatever the program declares: every entry's
+                // `value` is `unknown`, and a use narrows it with `is`.
+                return inferCatalogueAnswer(env, answer.*, loc);
+            }
+            if (call.is_builtin and (std.mem.eql(u8, call.callee, "typeinfo") or std.mem.startsWith(u8, call.callee, "typeinfo."))) {
+                const msg = try std.fmt.allocPrint(env.arena, "{s}: `@{s}` is spelled `@{s}`", .{ diagnostics.typeinfo_lowercase, call.callee, if (std.mem.eql(u8, call.callee, "typeinfo.all")) "TypeInfo.all" else try std.mem.concat(env.arena, u8, &.{ "typeInfo", call.callee["typeinfo".len..] }) });
+                env.lastError = TypeError.custom(msg, "The one reflection builtin is `@typeInfo` — `@typeInfo(X).name`, `@typeInfo(X).meta.<decorator>.<key>`, `@TypeInfo.all(with: d)`, and `@typeInfo(T)` as a value is a `TypeInfo<T>`.").withLoc(loc);
+                return error.TypeError;
+            }
+            if (call.is_builtin and std.mem.eql(u8, call.callee, "src")) {
+                return inferSrcBuiltin(env, call, loc);
+            }
+            // A hand-written `SourceLocation(file: …, …)` needs the record
+            // declaration spliced in exactly like the rewrite does.
+            if (call.receiver == null and !call.is_builtin and std.mem.eql(u8, call.callee, source_location_type_name)) {
+                env.usesSourceLocation = true;
+            }
             // Method calls carry a receiver expression — infer it first.
             // Exception: a `"std"` module receiver (`bool.negate(x)`) or the
             // builtin `result` namespace (`result.map(r, f)`) is a namespace,
@@ -6873,7 +14220,8 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                     // bindings (e.g. the primitive type name `bool`); the builtin
                     // `result` namespace is shadowable by a local binding.
                     if (env.stdImports.contains(rn) or
-                        (env.lookup(rn) == null and std.mem.eql(u8, rn, "result")))
+                        (env.lookup(rn) == null and std.mem.eql(u8, rn, "result")) or
+                        env.namespaces.modules.contains(rn))
                     {
                         break :blk try makeTypedPtr(env, TypedExpr{ .identifier = .{
                             .loc = recvExpr.*.identifier.loc,
@@ -6898,14 +14246,161 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                 break :blk try makeTypedPtr(env, try inferExprTyped(env, recvExpr.*));
             } else null;
 
+            // A builtin-primitive receiver declares its own signature in
+            // `primitives.bp`, and the receiver is already inferred here — so a
+            // lambda argument can be typed from the receiver's element type
+            // BEFORE its body is inferred. Anything else keeps the permissive
+            // fresh-var path.
+            const primParams: ?[]*T.Type = if (typedReceiver) |rp|
+                try primMethodParamTypes(env, rp.getType(), call.callee)
+            else
+                null;
+
+            // C-04 — the callee's parameters AS WRITTEN, read once here and
+            // used twice: 00 · 01-checker's expectation just below, and the
+            // default fill the arity arm plans further down.
+            // A qualified variant constructor (`Tok.Size(percent: .100)`,
+            // row 22) names its variant under `Enum.Variant`; its fields are
+            // the parameters an argument is inferred under, as a plain call's.
+            const qualifiedCtor: ?[]const u8 = blk: {
+                if (call.is_builtin) break :blk null;
+                const r = call.receiver orelse break :blk null;
+                if (r.* != .identifier or r.identifier.kind != .ident) break :blk null;
+                const qn = try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ r.identifier.kind.ident, call.callee });
+                if (!env.variantCtors.contains(qn)) break :blk null;
+                break :blk qn;
+            };
+            const declParamsAst: ?[]const ast.Param = if (qualifiedCtor) |qn| env.ctorParams.get(qn) else calleeParams(env, call.callee);
+            if (call.receiver == null) if (declParamsAst) |dps| try refuseInlineFieldsAcrossModules(env, call.callee, dps, call.args, loc);
+
+            // 00 · 01-checker — the DECLARED parameter types of a plain call,
+            // read only as the expectation an argument is inferred under
+            // (`tokenDeclarations(.Color.Red.500)` resolves the path on the
+            // parameter's enum). The arm that types the call still unifies
+            // each argument with its parameter. The expectation is a fresh
+            // instance of the callee's signature, as that arm's is: a lambda
+            // under a fallible expectation unifies its return with it
+            // (decision 147), and against the registration-time cells of a
+            // generic constructor that binds `T` for every later call — in a
+            // generic type's own methods, `Schema(…)` answering `Schema<?T>`
+            // made the next `Schema(…)` expect `?T` too.
+            const declParamTypes: ?[]*T.Type = blk: {
+                if (qualifiedCtor) |qn| {
+                    const enumName = call.receiver.?.identifier.kind.ident;
+                    const inst = try instantiateGenericType(env, try instantiateCtorType(env, enumName, env.variantCtors.get(qn).?));
+                    const d = inst.deref();
+                    break :blk if (d.* == .func) d.func.params else null;
+                }
+                if (call.receiver != null or call.is_builtin) break :blk null;
+                const calleeTy = env.lookup(call.callee) orelse break :blk null;
+                if (calleeTy.deref().* != .func) break :blk null;
+                const d = (try instantiateGenericType(env, try instantiateCtorType(env, call.callee, calleeTy))).deref();
+                break :blk d.func.params;
+            };
+            // Which parameter each argument lands in. Null is the ordinary
+            // answer — argument `i` is parameter `i` — and a slice appears
+            // only when a label moved one (C-04).
+            const argParamIndex: ?[]const usize = if (declParamTypes != null)
+                if (declParamsAst) |ps| try argumentParamSlots(env, ps, call.args) else null
+            else
+                null;
+
             const typedArgs = try env.arena.alloc(ast.CallArgOf(.typed), call.args.len);
             for (call.args, 0..) |arg, i| {
-                const val = try inferExprTyped(env, arg.value.*);
+                // Only the declared PARAMETER types are pushed down
+                // (`params_only`). The declared RETURN is not a constraint the
+                // lambda has to meet here — `Array.forEach`'s `action` is
+                // declared `fn(item: T)`, and every `xs.forEach({ p -> <value> })`
+                // in `libs/std` would red against its `void` — and the call's
+                // own type is `primMethodReturnTypeFromIface`'s answer anyway.
+                // Ground only: every parameter of the declared fn-typed param
+                // must mention no type variable (`typeIsGround`). An element
+                // type still unresolved tells the lambda nothing, and unifying
+                // against it adds edges the method never meant.
+                const expected: ?*T.Type = if (primParams) |ps| blk: {
+                    if (i >= ps.len) break :blk null;
+                    const d = ps[i].deref();
+                    if (d.* != .func) break :blk null;
+                    for (d.func.params) |fp| if (!typeIsGround(fp, 0)) break :blk null;
+                    break :blk ps[i];
+                } else null;
+                const argExpected: ?*T.Type = if (declParamTypes) |ps| blk: {
+                    const pi = if (argParamIndex) |slots|
+                        (if (i < slots.len) slots[i] else ps.len)
+                    else
+                        i;
+                    if (pi >= ps.len) break :blk null;
+                    break :blk ps[pi];
+                } else if (i == 0) unwrapOrDefaultExpected(typedReceiver, call.callee) else null;
+                // Decision 148 — a `forEach` body may write a captured `var`.
+                if (arg.value.* == .function and typedReceiver != null and std.mem.eql(u8, call.callee, "forEach") and (isArrayType(typedReceiver.?.getType()) or typedReceiver.?.getType().deref().* == .typeVar))
+                    env.nextLambdaExempt = true;
+                const val = if (expected != null and arg.value.* == .function)
+                    try inferFunctionExprExpected(env, arg.value.*.function, arg.value.*.function.loc, expected.?, true)
+                else
+                    try inferExprTypedExpecting(env, arg.value.*, argExpected);
+                env.nextLambdaExempt = false;
                 typedArgs[i] = .{ .label = arg.label, .value = try makeTypedPtr(env, val) };
             }
             const typedTrailing = try inferTrailingLambdasTyped(env, call.trailing);
 
+            // 01 handover 15 — `adder(3)(4)`: what is called is the result of
+            // the previous call, carried in `calleeExpr` with `callee == ""`.
+            // Type that expression and apply it: it must be a function taking
+            // the written arguments (trailing lambdas after them), and the
+            // call's type is its return.
+            if (call.calleeExpr) |ce| {
+                const calleeTyped = try inferExprTyped(env, ce.*);
+                const argTypes = try env.arena.alloc(*T.Type, typedArgs.len + typedTrailing.len);
+                for (typedArgs, 0..) |a, i| argTypes[i] = a.value.getType();
+                for (typedTrailing, 0..) |_, i| argTypes[typedArgs.len + i] = try env.freshVar();
+                const ret = try env.freshVar();
+                const expectedFn = try env.funcType(argTypes, ret);
+                const got = calleeTyped.getType().deref();
+                if (got.* == .func and got.func.params.len != argTypes.len) {
+                    env.lastError = TypeError.arityMismatch("the called value", got.func.params.len, argTypes.len).withLoc(loc);
+                    return error.TypeError;
+                }
+                try unifyAt(env, got, expectedFn, loc);
+                return TypedExpr{ .call = .{ .loc = loc, .type_ = ret, .kind = .{ .call = .{
+                    .receiver = null,
+                    .callee = call.callee,
+                    .is_builtin = false,
+                    .args = typedArgs,
+                    .trailing = typedTrailing,
+                    .calleeExpr = try makeTypedPtr(env, calleeTyped),
+                } } } };
+            }
+
             if (call.is_builtin) {
+                // Decision 8 §4 — `x is T`. The parser lands it as the `is`
+                // builtin with the tested type in the call's `isType` slot;
+                // nothing typed it, so `inferBuiltinCallReturnType` had no arm
+                // for the name and the call came out `void`.
+                if (std.mem.eql(u8, call.callee, ast.is_builtin_name)) {
+                    if (call.isType) |tested| {
+                        try checkIsTestableType(env, tested, loc);
+                        if (typedArgs.len == 1) try warnAlwaysFalseIs(env, typedArgs[0].value.getType(), tested, loc);
+                    }
+                    return TypedExpr{
+                        .call = .{
+                            .loc = loc,
+                            .type_ = try env.namedType("bool"),
+                            .kind = .{
+                                .call = .{
+                                    .receiver = null,
+                                    .callee = call.callee,
+                                    .is_builtin = true,
+                                    .args = typedArgs,
+                                    .trailing = typedTrailing,
+                                    // The tested type is what the backends lower the run-time
+                                    // test from; dropping it here left them nothing to read.
+                                    .isType = call.isType,
+                                },
+                            },
+                        },
+                    };
+                }
                 // `@makeRecord(fields)` — when fields is a literal array of RecordField
                 // values, evaluate at inference time and create a synthetic record type.
                 if (std.mem.eql(u8, call.callee, "makeRecord") and call.args.len >= 1) {
@@ -6913,7 +14408,7 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                         return result;
                     }
                 }
-                const retType = try inferBuiltinCallReturnType(env, call.callee, typedArgs, typedTrailing);
+                const retType = try inferBuiltinCallReturnType(env, call.callee, typedArgs, typedTrailing, loc);
                 return TypedExpr{ .call = .{ .loc = loc, .type_ = retType, .kind = .{ .call = .{
                     .receiver = null,
                     .callee = call.callee,
@@ -6924,9 +14419,14 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
             }
             // Comptime type-manipulation functions (§1.0.0-beta Steps 4-6):
             // `mergeRecords`, `mapFields`, `partial`, `omit`, `pick` — resolved
-            // entirely during inference; produce zero runtime code.
-            if (try tryResolveTypeManipulationCall(env, call.callee, typedArgs, typedTrailing, loc)) |result| {
-                return result;
+            // entirely during inference; produce zero runtime code. Only a bare
+            // call the scope does not bind reaches the intercept: a user or std
+            // declaration of the same name (`random.pick`) and a method call
+            // (`xs.pick()`) keep their normal dispatch.
+            if (call.receiver == null and env.lookup(call.callee) == null) {
+                if (try tryResolveTypeManipulationCall(env, call.callee, typedArgs, typedTrailing, loc)) |result| {
+                    return result;
+                }
             }
             // Builtin `result` namespace: `result.map(r, f)`, `result.unwrap(r, 0)`,
             // `result.isOk(r)`… — qualified surface over the built-in
@@ -6943,12 +14443,53 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                     // `registerInterfaceAssociatedFns`. Each call instantiates fresh
                     // generics. Guarded by `lookup(recvName) == null` so value
                     // bindings of the same name keep their normal method dispatch.
-                    if (env.lookup(recvName) == null) {
+                    //
+                    // 01 R6 — a behavior's own name is bound too (std's `Array`
+                    // is a function-typed binding), and that binding is not a
+                    // value that shadows the behavior: without this the
+                    // associated call (`Array.range(0, 3)`) fell through to a
+                    // fresh var, and the method on its result (`.map`) recorded
+                    // no lowering — erlang's `'__bp_prim_map'` run-time helper.
+                    const behaviorName = env.assocInterfaceDecls.contains(recvName) and !env.isVal(recvName);
+                    if (env.lookup(recvName) == null or behaviorName) {
                         const qn = try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ recvName, call.callee });
                         if (env.lookup(qn)) |fnTy| {
                             return try inferAssociatedFnCall(env, recvName, call.callee, fnTy, typedReceiver, typedArgs, typedTrailing, loc);
                         }
                     }
+                    // Decision 62 — a type's own associated fn, called through the
+                    // type (`Counter.zero()`). Its result reached here as a fresh
+                    // var, so `val c = Counter.zero(); c.bump()` recorded no
+                    // `instanceLowerings` entry for `bump`: beam answered
+                    // `{unresolved_method, bump, 1}` and wasm trapped, while
+                    // commonJS and erlang happened to be right because neither
+                    // needs the type. The signature is already registered by
+                    // `registerInherentMethodTypes` (with `Self` resolved to the
+                    // type) — it was simply never read for the type-qualified form.
+                    if (env.lookupTypeDef(recvName) != null) {
+                        if (try associatedCallReturnType(env, recvName, call.callee, typedArgs, typedTrailing, loc)) |ret| {
+                            return TypedExpr{ .call = .{ .loc = loc, .type_ = ret, .kind = .{ .call = .{
+                                .receiver = typedReceiver,
+                                .callee = call.callee,
+                                .is_builtin = false,
+                                .args = typedArgs,
+                                .trailing = typedTrailing,
+                            } } } };
+                        }
+                    }
+                    // Decision 216 — a record-shaped type's members are closed: a
+                    // call through the type names one it declares (by hand or
+                    // through a decorator's `decl.addMember`), or one of the
+                    // behaviors it implements. `City.revisionsOf(…)` on an entity
+                    // without `#[revisions]` used to compile.
+                    if (env.lookupTypeDef(recvName)) |td| if (td == .record and
+                        !env.hasInherentMethod(recvName, call.callee) and
+                        !typeAnswersMember(env, td, call.callee))
+                    {
+                        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` has no associated fn `{s}`", .{ diagnostics.unknown_associated_fn, recvName, call.callee });
+                        env.lastError = TypeError.custom(msg, "Call a fn the type declares in its body, or one a decorator on it adds with `decl.addMember`.").withLoc(loc);
+                        return error.TypeError;
+                    };
                 }
             }
 
@@ -6960,8 +14501,9 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
             if (call.receiver) |recvExpr| {
                 if (recvExpr.* == .identifier and recvExpr.*.identifier.kind == .ident) {
                     const recvName = recvExpr.*.identifier.kind.ident;
-                    if (env.stdImports.contains(recvName)) {
-                        if (env.stdModules.get(recvName)) |exports| {
+                    if (env.stdImports.get(recvName)) |std_key| {
+                        try checkStdGatedCall(env, recvName, call.callee, loc);
+                        if (env.stdModules.get(std_key)) |exports| {
                             const exported = exports.get(call.callee) orelse {
                                 var e = TypeError.custom(
                                     "this \"std\" module has no such public function",
@@ -6971,11 +14513,16 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                                 env.lastError = e;
                                 return error.TypeError;
                             };
+                            try refuseShadowedStdSignature(env, recvName, std_key, call.callee, exported, loc);
                             var seen = std.AutoHashMap(*T.TypeCell, *T.Type).init(env.arena);
                             defer seen.deinit();
                             const instantiated = try instantiateType(env, exported, &seen, .allVars);
                             const retType: *T.Type = switch (instantiated.deref().*) {
                                 .func => |f| blk: {
+                                    // 01 / C-04 — by label, and short calls
+                                    // filled, against the std fn as written.
+                                    const declared = try stdFnParams(env, std_key, call.callee);
+                                    if (try planQualifiedCall(env, call.callee, declared, f.params, typedArgs, typedTrailing.len, loc) != null) break :blk f.ret;
                                     const total = typedArgs.len + typedTrailing.len;
                                     if (f.params.len != total) {
                                         env.lastError = TypeError.arityMismatch(call.callee, f.params.len, total).withLoc(loc);
@@ -6998,6 +14545,67 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                         }
                     }
                 }
+            }
+
+            // Decision 107's namespace form over a module of the program
+            // (`import {jwt} from "sec"`; `jwt.sign(x)`): the call resolves in
+            // the module's exports and is recorded for the transform, which
+            // writes it as a call of an aliased import every backend lowers.
+            if (call.receiver) |recvExpr| {
+                if (recvExpr.* == .identifier and recvExpr.*.identifier.kind == .ident) {
+                    const ns = recvExpr.*.identifier.kind.ident;
+                    // An explicit import wins over a same-named prelude
+                    // binding, as a `from "std"` one does.
+                    if (env.namespaces.modules.get(ns)) |exports| {
+                        const exported = exports.get(call.callee) orelse {
+                            const msg = try std.fmt.allocPrint(env.arena, "module `{s}` has no public `{s}`", .{ ns, call.callee });
+                            env.lastError = TypeError.custom(msg, "Check the name against the module's `pub` declarations.").withLoc(loc);
+                            return error.TypeError;
+                        };
+                        var seen = std.AutoHashMap(*T.TypeCell, *T.Type).init(env.arena);
+                        defer seen.deinit();
+                        const instantiated = try instantiateType(env, exported, &seen, .allVars);
+                        const f = switch (instantiated.deref().*) {
+                            .func => |f| f,
+                            else => {
+                                const msg = try std.fmt.allocPrint(env.arena, "`{s}.{s}` is not a function", .{ ns, call.callee });
+                                env.lastError = TypeError.custom(msg, "Only a function is called through a module namespace; import the name itself for anything else.").withLoc(loc);
+                                return error.TypeError;
+                            },
+                        };
+                        const total = typedArgs.len + typedTrailing.len;
+                        // The parameters as written travel with the export:
+                        // a label names the one it fills (01) and a short call
+                        // takes the declared defaults (C-04), as for a leaf
+                        // import.
+                        const declared = env.namespaces.params.get(try envMod.NamespaceImports.paramsKey(env.arena, ns, call.callee));
+                        if (try planQualifiedCall(env, call.callee, declared, f.params, typedArgs, typedTrailing.len, loc) == null) {
+                            if (f.params.len != total) {
+                                env.lastError = TypeError.arityMismatch(call.callee, f.params.len, total).withLoc(loc);
+                                return error.TypeError;
+                            }
+                            for (typedArgs, f.params[0..typedArgs.len]) |ta, p| {
+                                try unifyArgument(env, p, ta.value.getType(), ta.value.getLoc());
+                            }
+                        }
+                        try env.namespaces.calls.put(env.arena, loc, .{ .namespace = ns, .callee = call.callee });
+                        return TypedExpr{ .call = .{ .loc = loc, .type_ = f.ret, .kind = .{ .call = .{
+                            .receiver = typedReceiver,
+                            .callee = call.callee,
+                            .is_builtin = false,
+                            .args = typedArgs,
+                            .trailing = typedTrailing,
+                        } } } };
+                    }
+                }
+            }
+
+            // Decision 122 — `seq.next()` called by hand on an `@Iterator<T>`
+            // answers `YieldStep<T>`, on a `@Stream<T>` `@Task<YieldStep<T>>`.
+            // Neither wrapper is a declared type, so no method table answers
+            // it: the lowering is recorded per call site for every backend.
+            if (typedReceiver) |recvPtr| {
+                if (try inferSequenceNext(env, recvPtr, call.callee, typedArgs, typedTrailing, loc)) |te| return te;
             }
 
             // Static extension dispatch (F6): `obj.method(args)` resolved via
@@ -7032,7 +14640,11 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                     if (re.* == .identifier and re.*.identifier.kind == .ident and
                         env.lookupTypeDef(re.*.identifier.kind.ident) != null)
                     {
-                        if (env.lookup(call.callee)) |calleeTypeRaw| {
+                        // 01 step 12 — the qualification the author wrote is
+                        // the answer: `Shape.Circle` is Shape's constructor
+                        // whatever other enum also declares `Circle`.
+                        const qualified = try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ re.*.identifier.kind.ident, call.callee });
+                        if (env.variantCtors.get(qualified) orelse env.lookup(call.callee)) |calleeTypeRaw| {
                             // Generic enum variant constructor — instantiate per
                             // call site (the receiver names the type def).
                             const calleeType = try instantiateCtorType(env, re.*.identifier.kind.ident, calleeTypeRaw);
@@ -7040,7 +14652,16 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                             const retType: *T.Type = switch (resolved.*) {
                                 .func => |f| blk: {
                                     if (f.params.len == typedArgs.len) {
-                                        for (typedArgs, f.params) |ta, p|
+                                        // 01 — `Shape.Rect(height: 2, width: 5)`: a
+                                        // label names the field it fills; the call
+                                        // is checked and lowered in declaration
+                                        // order (erlang zipped it positionally).
+                                        const declared = env.ctorParams.get(qualified);
+                                        const plan = if (declared) |d| (if (d.len == f.params.len) try planLabelledCall(env, qualified, d, typedArgs, loc) else null) else null;
+                                        if (plan) |p| {
+                                            try env.defaultInjections.put(loc, p);
+                                            try unifyFilledArgs(env, p, f.params, typedArgs);
+                                        } else for (typedArgs, f.params) |ta, p|
                                             try unifyAt(env, p, ta.value.getType(), ta.value.getLoc());
                                     }
                                     break :blk f.ret;
@@ -7059,11 +14680,22 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                     }
                 }
 
+                // 06 N24 / decision 8 §6 — a tuple element of function type
+                // called like a method (`#(value: i32, set: fn(…))`, `c.set(9)`).
+                // The label→index rewrite the member-access path records
+                // (`row.pop` → `row._1`) never fired for a CALL, so every
+                // backend emitted `c.set(9)` on a value that is a tuple —
+                // `c.set is not a function` on commonJS.
+                if (try inferTupleLabelCall(env, recvPtr, call.receiver, call.callee, typedArgs, typedTrailing, loc)) |dispatched| {
+                    return dispatched;
+                }
+
                 // Builtin `@Result` / `@Option` methods — type-check and record
                 // the lowering decision.
                 if (try inferResultOptionMethod(env, recvPtr, call.callee, typedArgs, typedTrailing, loc)) |dispatched| {
                     return dispatched;
                 }
+                try refuseResultMemberAccess(env, recvPtr.getType(), call.callee, true, loc);
 
                 // Compiler-provided template methods on `expr` / `Binding`
                 // receivers (expr-templates F4) — comptime-only.
@@ -7081,6 +14713,41 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                         try recordInstanceCall(env, loc, tn);
                         return try makeMethodCall(env, recvPtr, call.callee, typedArgs, typedTrailing, loc);
                     }
+                    // A receiver whose static type is a `behavior` declaring
+                    // `callee` without a body: the method is the VALUE's —
+                    // whichever type implements the behavior, or the host.
+                    // Recorded so a backend without native dispatch asks the
+                    // value instead of guessing an owner from the method's
+                    // name (erlang called another type's `query/2` that
+                    // shared the name, or a local no module defined).
+                    if (behaviorDeclaresBodyless(env, tn, call.callee, 0)) {
+                        try env.instanceLowerings.put(loc, .{ .by_value = tn });
+                        // The call answers what the behavior DECLARES, `Self`
+                        // being the receiver. Typed as a fresh variable, the
+                        // result reached a chained primitive method untyped:
+                        // `x.name().length()` lowered as a call of a property
+                        // on commonJS (`length is not a function`), and
+                        // `toUpper` / `toString` found no lowering on wasm.
+                        if (try behaviorMethodCallType(env, tn, recvPtr, call.callee, typedArgs, typedTrailing)) |ret| {
+                            return TypedExpr{ .call = .{ .loc = loc, .type_ = ret, .kind = .{ .call = .{
+                                .receiver = recvPtr,
+                                .callee = call.callee,
+                                .is_builtin = false,
+                                .args = typedArgs,
+                                .trailing = typedTrailing,
+                            } } } };
+                        }
+                    }
+                    // A FIELD of function type called like a method
+                    // (`out.write(x)`): recorded as the record's, so a backend
+                    // applies what the field holds instead of looking for a
+                    // method of that name — on erlang an imported record's
+                    // field call went to whichever type declared `write/2`
+                    // (another type's answer at exit 0), or to none (`undef`).
+                    if (env.lookupTypeDef(tn)) |td| if (td.findField(call.callee)) |fd| {
+                        if (fd.type_.deref().* == .func and env.instanceLowerings.get(loc) == null)
+                            try env.instanceLowerings.put(loc, .{ .type_ = tn });
+                    };
                 }
 
                 // A builtin-primitive receiver (`xs.map(f)`, `s.split(sep)`) has
@@ -7107,7 +14774,7 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                             try env.jsMethodRenames.put(loc, "length");
                         }
                         // §A4: per-call-site JS prototype rename driven by the
-                        // 2-arg `@external(node, "X")` annotation on the method
+                        // bare-symbol `#[@External.Node("X")]` annotation on the method
                         // (`String.contains` ⇒ `includes`, `Array.append` ⇒
                         // `concat`, …). When the annotated symbol equals the
                         // method name nothing is recorded — call site emits the
@@ -7117,7 +14784,7 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                         if (try primMethodNodeRename(env, recvTy, call.callee)) |rn| {
                             try env.jsMethodRenames.put(loc, rn);
                         }
-                        if (try primMethodReturnTypeFromIface(env, recvTy, call.callee)) |ret| {
+                        if (try primMethodReturnTypeFromIface(env, recvTy, call.callee, typedArgs)) |ret| {
                             return TypedExpr{ .call = .{ .loc = loc, .type_ = ret, .kind = .{ .call = .{
                                 .receiver = recvPtr,
                                 .callee = call.callee,
@@ -7126,8 +14793,88 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                                 .trailing = typedTrailing,
                             } } } };
                         }
+                        try refuseUndeclaredPrimMethod(env, recvTy, call.callee, loc);
                     }
                 }
+
+                // The same `.length` rename through ONE optional layer.
+                // `xs.at(0)?.key` is a `?string`, and a `!= null` narrowing
+                // does not rewrite the type either, so neither reached the
+                // typed-primitive branch above and the call site kept its
+                // parens: commonJS emitted `x.length()` against JavaScript's
+                // `length` PROPERTY (`TypeError: … is not a function`, exit 1)
+                // where erlang printed the number. Only the RENAME is taken
+                // from the unwrapped type — the call's own type is whatever
+                // the branches below give it.
+                if (env.jsMethodRenames.get(loc) == null and
+                    (std.mem.eql(u8, call.callee, "len") or
+                        std.mem.eql(u8, call.callee, "size") or
+                        std.mem.eql(u8, call.callee, "length")))
+                {
+                    if (optionalInner(recvPtr.getType())) |inner| {
+                        const innerTy = inner.deref();
+                        if (innerTy.* == .named) {
+                            if (primKindOfName(innerTy.named.name)) |pk| {
+                                if (pk == .array or pk == .string) try env.jsMethodRenames.put(loc, "length");
+                            }
+                        }
+                    }
+                }
+
+                // 06 C9 — a receiver whose type is a nominal the env actually
+                // registered has a closed method surface: nothing above matched,
+                // so the method does not exist. `d.swim()` on a `type D(id: i32)`
+                // used to be typed `freshVar()` and compile.
+                //
+                // Everything else stays permissive, which is what the fresh var
+                // was for: a receiver still an unresolved type variable (an
+                // inference gap must not red), and a named type the env cannot
+                // open — an imported record whose typedef lives in its own
+                // module, a `@Result`/`?T` wrapper, a forward reference.
+                // §2.2 — an `unknown` receiver answers no method. It has to be
+                // refused before the permissive fresh-var tail below, which is
+                // what let `a.len()` check.
+                try refuseUnknownUse(env, recvPtr.getType(), loc, "call a method on");
+                // A nominal receiver this module has no declaration of (its
+                // type reached here through an imported fn's return, never
+                // imported itself): record the name, so a backend without
+                // native dispatch can ask the value rather than guess an owner
+                // from the method's name (erlang ran the untyped primitive
+                // shim: `bp_unsupported_method` for `Dict.at`).
+                if (nominalName(recvPtr.getType())) |tn| {
+                    if (env.lookupTypeDef(tn) == null and env.instanceLowerings.get(loc) == null and
+                        tn.len > 0 and std.ascii.isUpper(tn[0]) and !std.mem.eql(u8, tn, "Self"))
+                        try env.instanceLowerings.put(loc, .{ .unplaced_type = tn });
+                }
+                if (nominalName(recvPtr.getType())) |tn| {
+                    if (env.lookupTypeDef(tn)) |td| if (!typeAnswersMember(env, td, call.callee)) {
+                        var ext_err: ?TypeError = null;
+                        var it = env.extensions.iterator();
+                        while (it.next()) |e| {
+                            const entry = e.value_ptr.*;
+                            if (!std.mem.eql(u8, entry.target, tn)) continue;
+                            if (!namesContain(entry.methods, call.callee)) continue;
+                            if (env.isActivated(entry.name)) continue;
+                            ext_err = TypeError.methodNotActive(tn, call.callee, entry.name);
+                            break;
+                        }
+                        var err = ext_err orelse TypeError.unknownMethod(tn, call.callee);
+                        env.lastError = err.withLoc(loc);
+                        return error.TypeError;
+                    };
+                }
+
+                if (nominalName(recvPtr.getType())) |tn| if (env.lookupTypeDef(tn)) |td| {
+                    if (try adoptedDefaultCallType(env, td, recvPtr, call.callee, typedArgs, typedTrailing)) |ret| {
+                        return TypedExpr{ .call = .{ .loc = loc, .type_ = ret, .kind = .{ .call = .{
+                            .receiver = recvPtr,
+                            .callee = call.callee,
+                            .is_builtin = false,
+                            .args = typedArgs,
+                            .trailing = typedTrailing,
+                        } } } };
+                    }
+                };
 
                 // Other method calls (struct getters, activated extensions) are
                 // handled by sibling work — type them permissively as a fresh var
@@ -7142,8 +14889,19 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
             }
 
             const calleeTypeRaw = if (env.lookup(call.callee)) |ty| ty else {
-                env.lastError = TypeError.unboundVariable(call.callee).withLoc(loc);
+                env.lastError = try unboundAt(env, call.callee, loc);
                 return error.TypeError;
+            };
+            try refuseAmbiguousVariant(env, call.callee, calleeTypeRaw, loc);
+            // Decision 110 — `D(…)` for `import {Dict as D}` constructs the
+            // declared `Dict`: the name moves at the call (the channel that
+            // renames a tuple-label callee), so no backend sees `D`.
+            if (call.receiver == null) if (env.importedTypeAliases.get(call.callee)) |real| {
+                const renamed = try env.arena.create(ast.Expr);
+                var rc = c;
+                rc.kind.call.callee = real;
+                renamed.* = .{ .call = rc };
+                try env.enumSectionRewrites.put(loc, renamed);
             };
             // Generic record/struct/enum constructor: instantiate per call site
             // so the registration-time cells never unify destructively.
@@ -7177,8 +14935,85 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
 
                     if (spreadCount == 0) {
                         if (f.params.len != call.args.len) {
+                            // C-04 / N1 — a call may omit an argument whose
+                            // parameter declares a default. The fill is planned
+                            // here and materialised in `transform.zig`, so all
+                            // four backends see a complete call and none of them
+                            // learns a new rule. A comptime / `@Expr` / template
+                            // callee keeps the exact check: its own machinery is
+                            // driven by the argument INDEX, and a short call has
+                            // never reached it.
+                            const filled: ?envMod.DefaultFill = fillBlk: {
+                                if (call.args.len > f.params.len) break :fillBlk null;
+                                if (typeparams != null or exprParams != null) break :fillBlk null;
+                                if (env.templateFns.get(call.callee) != null) break :fillBlk null;
+                                const declared = declParamsAst orelse break :fillBlk null;
+                                if (declared.len != f.params.len) break :fillBlk null;
+                                break :fillBlk try recordDefaultFill(env, loc, declared, typedArgs);
+                            };
+                            if (filled) |fill| {
+                                try unifyFilledArgs(env, fill, f.params, typedArgs);
+                                break :blk f.ret;
+                            }
+                            // Decision 207 — an inline parameter type's
+                            // constructor is the call's labelled fields: name
+                            // the field left out.
+                            if (ast.ownerOfInlineType(call.callee) != null) if (declParamsAst) |declared| {
+                                for (declared) |dp| {
+                                    if (dp.default != null) continue;
+                                    const given = for (call.args) |a| {
+                                        if (a.label) |l| if (std.mem.eql(u8, l, dp.name)) break true;
+                                    } else false;
+                                    if (given) continue;
+                                    const msg = try std.fmt.allocPrint(env.arena, "missing field `{s}` of {s}", .{ dp.name, call.callee });
+                                    env.lastError = TypeError.custom(msg, "Write it as a labelled argument of the call, or give the field a default in the inline type.").withLoc(loc);
+                                    return error.TypeError;
+                                }
+                            };
+                            // N2 — a missing REQUIRED argument is the arity
+                            // error it has always been, word for word.
                             env.lastError = TypeError.arityMismatch(call.callee, f.params.len, call.args.len).withLoc(loc);
                             return error.TypeError;
+                        }
+                        // 01 — a complete call whose labels move an argument
+                        // (`diff(b: 1, a: 10)`, `P(y: "a", x: 1)`) is checked and
+                        // lowered by the parameter each label names: every
+                        // consumer used to zip the arguments positionally, so the
+                        // checker typed `y`'s value against `x` and the backends
+                        // passed `b` as `a` (a fully-labelled self tail call
+                        // assigned its arguments crosswise and never ended).
+                        if (typeparams == null and exprParams == null and env.templateFns.get(call.callee) == null) {
+                            if (declParamsAst) |declared| if (declared.len == f.params.len) {
+                                if (try planLabelledCall(env, call.callee, declared, typedArgs, loc)) |plan| {
+                                    try env.defaultInjections.put(loc, plan);
+                                    try unifyFilledArgs(env, plan, f.params, typedArgs);
+                                    break :blk f.ret;
+                                }
+                            };
+                            // A function VALUE (a parameter, a local, a field)
+                            // has a type and no parameter names: a label there
+                            // names nothing, and zipping it by position would
+                            // let `f(s: "x", n: 1)` mean `f("x", 1)`. Refused.
+                            if (declParamsAst == null) {
+                                // A constructor reached under another name (an
+                                // import alias, `D(pairs: [])` for std's
+                                // `Dict`) is its type's: the labels name its
+                                // fields.
+                                const aliasedCtor: ?[]const ast.Param = ctorBlk: {
+                                    if (call.callee.len == 0 or !std.ascii.isUpper(call.callee[0])) break :ctorBlk null;
+                                    const r = f.ret.deref();
+                                    if (r.* != .named) break :ctorBlk null;
+                                    const ps = env.ctorParams.get(r.named.name) orelse break :ctorBlk null;
+                                    break :ctorBlk if (ps.len == f.params.len) ps else null;
+                                };
+                                if (aliasedCtor) |declared| {
+                                    if (try planLabelledCall(env, call.callee, declared, typedArgs, loc)) |plan| {
+                                        try env.defaultInjections.put(loc, plan);
+                                        try unifyFilledArgs(env, plan, f.params, typedArgs);
+                                        break :blk f.ret;
+                                    }
+                                } else try refuseLabelsOnFunctionValue(env, call.callee, typedArgs);
+                            }
                         }
                         // Look up the template fn before the loop so non-@Expr
                         // params can also be collected as plain arg bindings.
@@ -7191,10 +15026,10 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                                 try captures.append(env.arena, try captureExprArg(env, call.callee, ep, call.args[i].value, ta, paramType));
                                 continue;
                             };
-                            try unifyAt(env, paramType, ta.value.getType(), ta.value.getLoc());
+                            try unifyArgument(env, paramType, ta.value.getType(), ta.value.getLoc());
                             // For template fns: collect the arg value as a JS literal.
                             if (maybeTfn != null and i < maybeTfn.?.params.len) {
-                                const jsVal = try literalToJsAlloc(env.arena, call.args[i].value) orelse {
+                                const jsVal = try literalSourceAlloc(env.arena, call.args[i].value) orelse {
                                     env.lastError = TypeError.custom(
                                         "non-`@Expr` parameter of a template function must receive a literal value at the call site",
                                         "Pass a string, integer, or boolean literal directly; runtime values have no compile-time meaning (V1).",
@@ -7203,7 +15038,7 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                                 };
                                 try plainArgs.append(env.arena, .{
                                     .paramName = maybeTfn.?.params[i].name,
-                                    .jsValue = jsVal,
+                                    .source = jsVal,
                                 });
                             }
                         }
@@ -7227,6 +15062,44 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                         break :blk f.ret;
                     }
 
+                    // C11: a call carrying a `..` spread on a record constructor
+                    // is a record *update*: the spread must be that record, and
+                    // each labelled arg is matched to the field its label names.
+                    if (spreadCount == 1) updBlk: {
+                        const td = env.lookupTypeDef(call.callee) orelse break :updBlk;
+                        const fields = switch (td) {
+                            .record => |r| r.fields,
+                            .struct_ => |st| st.fields,
+                            .enum_ => break :updBlk,
+                        };
+                        if (fields.len != f.params.len) break :updBlk;
+                        for (typedArgs, 0..) |ta, ai| {
+                            const lbl = ta.label orelse {
+                                // Positional args beside a spread have no field to name.
+                                env.lastError = TypeError.custom(
+                                    "a record update names its fields",
+                                    "Write `Name(..base, field: value)`.",
+                                ).withLoc(ta.value.getLoc());
+                                return error.TypeError;
+                            };
+                            if (std.mem.eql(u8, lbl, "..")) {
+                                try unifyAt(env, f.ret, ta.value.getType(), ta.value.getLoc());
+                                continue;
+                            }
+                            const idx = for (fields, 0..) |fd, fi| {
+                                if (std.mem.eql(u8, fd.name, lbl)) break fi;
+                            } else {
+                                const vloc = call.args[ai].value.getLoc();
+                                const labelCol = if (vloc.col > lbl.len + 2) vloc.col - lbl.len - 2 else vloc.col;
+                                env.lastError = TypeError.unknownField(call.callee, lbl).withLoc(.{ .line = vloc.line, .col = labelCol });
+                                return error.TypeError;
+                            };
+                            try unifyArgument(env, f.params[idx], ta.value.getType(), ta.value.getLoc());
+                        }
+                        try rewriteRecordUpdate(env, c, fields, loc);
+                        break :blk f.ret;
+                    }
+
                     // Keep the historical spread behavior (and snapshots) for narrow update/error cases.
                     if (spreadCount != 1 or nonSpreadCount < 2) {
                         if (f.params.len != call.args.len) {
@@ -7235,7 +15108,7 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                         }
                         for (typedArgs, f.params, 0..) |ta, paramType, i| {
                             if (typeparams) |constraints| if (isTypeparamIndex(constraints, i)) continue;
-                            try unifyAt(env, paramType, ta.value.getType(), ta.value.getLoc());
+                            try unifyArgument(env, paramType, ta.value.getType(), ta.value.getLoc());
                         }
                         break :blk f.ret;
                     }
@@ -7254,12 +15127,15 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                             env.lastError = TypeError.arityMismatch(call.callee, f.params.len, nonSpreadCount).withLoc(loc);
                             return error.TypeError;
                         }
-                        try unifyAt(env, f.params[paramIndex], ta.value.getType(), ta.value.getLoc());
+                        try unifyArgument(env, f.params[paramIndex], ta.value.getType(), ta.value.getLoc());
                         paramIndex += 1;
                     }
                     break :blk f.ret;
                 },
-                .named => resolved,
+                .named => |n| blk: {
+                    try refuseCallOfValue(env, call.callee, n.name, loc);
+                    break :blk resolved;
+                },
                 else => try env.freshVar(),
             };
             return TypedExpr{ .call = .{ .loc = loc, .type_ = retType, .kind = .{ .call = .{
@@ -7284,13 +15160,23 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                 const resolved = calleeType.deref();
                 const retType: *T.Type = switch (resolved.*) {
                     .func => |f| blk: {
-                        const totalArgs = call.args.len + 1;
-                        if (f.params.len == totalArgs) {
-                            try unifyAt(env, f.params[0], lhsTyped.getType(), loc);
-                            for (call.args, 1..) |arg, i| {
-                                const argTyped = try inferExprTyped(env, arg.value.*);
-                                try unifyAt(env, f.params[i], argTyped.getType(), loc);
-                            }
+                        const totalArgs = call.args.len + 1 + call.trailing.len;
+                        // C-04 / 01 — `lhs |> f(b: 1)` is the call `f(lhs, b: 1)`:
+                        // a short one takes the declared defaults and a label
+                        // names its parameter, planned under the pipeline's loc
+                        // (`transform.zig` rewrites the pipeline into that call).
+                        if (call.trailing.len == 0) if (try planPipelineFill(env, call.callee, f, lhsPtr, call.args, loc)) |ret| break :blk ret;
+                        // C12: a pipeline whose RHS does not take the piped
+                        // value plus its own arguments is an arity error at
+                        // the RHS, not a silently skipped unification.
+                        if (f.params.len != totalArgs) {
+                            env.lastError = TypeError.arityMismatch(call.callee, f.params.len, totalArgs).withLoc(p.rhs.*.getLoc());
+                            return error.TypeError;
+                        }
+                        try unifyAt(env, f.params[0], lhsTyped.getType(), loc);
+                        for (call.args, 1..) |arg, i| {
+                            const argTyped = try inferExprTyped(env, arg.value.*);
+                            try unifyAt(env, f.params[i], argTyped.getType(), loc);
                         }
                         break :blk f.ret;
                     },
@@ -7319,7 +15205,31 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
             }
             const rhsTyped = try inferExprTyped(env, p.rhs.*);
             const rhsPtr = try makeTypedPtr(env, rhsTyped);
-            return TypedExpr{ .call = .{ .loc = loc, .type_ = rhsTyped.getType(), .kind = .{ .pipeline = .{
+            // C12: `lhs |> f` with `f` a function is the call `f(lhs)`: its
+            // type is `f`'s return, and `f` must take exactly one argument —
+            // or declare a default for every other one (C-04).
+            const pipeType: *T.Type = switch (rhsTyped.getType().deref().*) {
+                .func => |f| blk: {
+                    if (f.params.len != 1) if (p.rhs.* == .identifier and p.rhs.*.identifier.kind == .ident) {
+                        if (try planPipelineFill(env, p.rhs.*.identifier.kind.ident, f, lhsPtr, &.{}, loc)) |ret| break :blk ret;
+                    };
+                    if (f.params.len != 1) {
+                        const name = switch (p.rhs.*) {
+                            .identifier => |id| switch (id.kind) {
+                                .ident => |n| n,
+                                else => "|>",
+                            },
+                            else => "|>",
+                        };
+                        env.lastError = TypeError.arityMismatch(name, f.params.len, 1).withLoc(p.rhs.*.getLoc());
+                        return error.TypeError;
+                    }
+                    try unifyAt(env, f.params[0], lhsTyped.getType(), loc);
+                    break :blk f.ret;
+                },
+                else => rhsTyped.getType(),
+            };
+            return TypedExpr{ .call = .{ .loc = loc, .type_ = pipeType, .kind = .{ .pipeline = .{
                 .lhs = lhsPtr,
                 .rhs = rhsPtr,
                 .comment = p.comment,
@@ -7328,9 +15238,436 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
     };
 }
 
+/// True when an untyped `case` arm body is a block (`_ -> { … }`), which the
+/// parser represents as a zero-parameter lambda.
+fn isBlockArmBody(body: ast.Expr) bool {
+    return body == .function and body.function.kind.syntax == .lambda and body.function.kind.params.len == 0;
+}
+
+/// Decision 8 §5.1 P3 — the arm body forms that are a lambda node: the block
+/// arm (`_ -> { … }`, no parameter) and the decision-8 binder arm
+/// (`i32 { n -> … }`, exactly one). Both are arm bodies, so both keep the
+/// enclosing fn's return target.
+fn isArmBodyLambda(body: ast.Expr) bool {
+    if (body != .function or body.function.kind.syntax != .lambda) return false;
+    return body.function.kind.params.len <= 1;
+}
+
+/// Infer an arm's body, binding a single-parameter binder arm's parameter to
+/// the matched value's type (§5.1 P1/P5) instead of to a fresh variable.
+fn inferCaseArmBody(
+    env: *Env,
+    arm: ast.CaseArm,
+    typedSubjects: []const ast.TypedExpr,
+) InferError!TypedExpr {
+    const body = arm.body;
+    const isBinderArm = body == .function and
+        body.function.kind.syntax == .lambda and
+        body.function.kind.params.len == 1;
+    if (!isBinderArm or typedSubjects.len != 1) return inferExprTyped(env, body);
+    // The subject **as this arm's pattern narrowed it** (§5.1 P1/P5). A type
+    // pattern (`i32 { n -> … }`) makes the binder that type; every other
+    // pattern leaves the subject's own, which is P5's answer for them — a
+    // variant payload's own binding comes from the pattern instead, and
+    // `bindCaseArmPatternNames` has already bound it.
+    const subjectTy = typedSubjects[0].getType();
+    const narrowed = (try typePatternType(env, arm.pattern, subjectTy)) orelse subjectTy;
+    const expected = try env.funcType(&.{narrowed}, try env.freshVar());
+    return inferFunctionExprExpected(env, body.function, body.getLoc(), expected, false);
+}
+
+/// C2a — the value an arm contributes to its `case`'s type, or null when it
+/// contributes nothing: a jump arm, a `void` arm, a block arm without a
+/// top-level `break <value>` (decision 2: a block's value comes from `break`).
+fn caseArmValueType(env: *Env, body: ast.TypedExpr) InferError!?*T.Type {
+    if (body == .jump) return null;
+    // Decision 8 §5.1 P3 — `Pattern { body }` lands as the same lambda node the
+    // older block arm produced, and the body **is** a lambda body: its last
+    // expression is the arm's value. Only the `break` half was read, so
+    // `0 { "zero" }` contributed nothing at all and the `case` typed `void`,
+    // while `_ { n -> … }` was unified as a `function`.
+    if (body == .function and body.function.kind.syntax == .lambda) {
+        var found: ?*T.Type = null;
+        for (body.function.kind.body) |stmt| {
+            const e = stmt.expr;
+            if (e != .jump) continue;
+            switch (e.jump.kind) {
+                // A `break <value>` names the arm's value explicitly and wins
+                // over the tail; that is the block arm's own rule (06 C2a).
+                .@"break" => |b| if (b.value) |v| {
+                    if (found) |f| try unifyAt(env, f, v.getType(), v.getLoc()) else found = v.getType();
+                },
+                else => {},
+            }
+        }
+        if (found) |f| return f;
+        const stmts = body.function.kind.body;
+        if (stmts.len == 0) return null;
+        const tail = stmts[stmts.len - 1].expr;
+        // §3.2 — an arm whose body jumps (`return`/`throw`/`continue`) does not
+        // contribute to the `case`'s type.
+        if (tail == .jump) return null;
+        return nonVoid(tail.getType());
+    }
+    return nonVoid(body.getType());
+}
+
+/// The type, unless it is `void` — a statement arm contributes nothing.
+fn nonVoid(t: *T.Type) ?*T.Type {
+    const d = t.deref();
+    if (d.* == .named and std.mem.eql(u8, d.named.name, "void")) return null;
+    return t;
+}
+
+/// Decision 8 §3 — add one member to a union under construction, flattening a
+/// nested union (`(A | B) | C` is `A | B | C`) and dropping a duplicate. Union
+/// membership is set-like: the members are what the value may be, and saying
+/// one of them twice says nothing more.
+fn appendUnionMember(
+    env: *Env,
+    into: *std.ArrayListUnmanaged(*T.Type),
+    member: *T.Type,
+) InferError!void {
+    const m = member.deref();
+    if (m.* == .union_) {
+        for (m.union_) |inner| try appendUnionMember(env, into, inner);
+        return;
+    }
+    // A variable inference has not decided is not a distinct alternative. It
+    // joins whatever is already there instead of standing beside it, so a
+    // union never carries a `?` member that says nothing.
+    // Located by the caller that holds the union's place (`locateLast`).
+    if (m.isUnbound() and into.items.len > 0) return unifyUnlocated(env, into.items[0], m);
+    for (into.items) |existing| {
+        if (sameTypeShape(existing, m)) return;
+        if (existing.isUnbound()) return unifyUnlocated(env, existing, m);
+    }
+    try into.append(env.arena, m);
+}
+
+/// Decision 8 §3.2/§3.4 — finish a union that `appendUnionMember` has already
+/// flattened and de-duplicated.
+///
+/// `?T` **absorbs**: a `null` branch makes the whole thing optional, so
+/// `if (c) { 1 } else { null }` is `?i32` and not `i32 | ?_`. Recursively, that
+/// is also §3.4's `Option<A> | Option<B>` → `Option<A | B>`.
+///
+/// No other head joins here. §3.4 also lists `Box`, `@Result` and `Dict`, but a
+/// join is only sound when the type's parameter is **read** and never written:
+/// joining `Box<i32> | Box<string>` into `Box<i32 | string>` would let a
+/// `set(v: T)` store a `string` in what is really a `Box<i32>`. The "only read"
+/// test is a member-signature walk this front has not built; until it exists
+/// those members stay side by side, which refuses more than §3.4 and is never
+/// wrong. Arrays never join at all — that is §3.4's own rule.
+fn finishUnion(env: *Env, all: []*T.Type) InferError!*T.Type {
+    // `noreturn` is the bottom type: a branch or an arm that never returns adds
+    // no alternative (`if (c) { a } else { @todo() }` is `a`'s type).
+    var kept: usize = 0;
+    for (all) |m| {
+        if (m.deref().isNamed("noreturn")) continue;
+        all[kept] = m;
+        kept += 1;
+    }
+    const members = if (kept > 0) all[0..kept] else all;
+    if (members.len == 0) return env.namedType("void");
+    if (members.len == 1) return members[0];
+    for (members, 0..) |m, idx| {
+        const d = m.deref();
+        if (d.* != .named) continue;
+        if (!std.mem.eql(u8, d.named.name, "optional") or d.named.args.len != 1) continue;
+        var inner: std.ArrayListUnmanaged(*T.Type) = .empty;
+        try appendUnionMember(env, &inner, d.named.args[0]);
+        for (members, 0..) |other, j| {
+            if (j != idx) try appendUnionMember(env, &inner, other);
+        }
+        // Each step consumes one optional member, so the recursion is finite.
+        const innerTy = try finishUnion(env, inner.items);
+        const args = try env.arena.alloc(*T.Type, 1);
+        args[0] = innerTy;
+        return env.namedTypeArgs("optional", args);
+    }
+    return env.unionType(try env.arena.dupe(*T.Type, members));
+}
+
+/// The union of `members`, flattened, de-duplicated and normalised.
+fn unionOf(env: *Env, members: []const *T.Type) InferError!*T.Type {
+    var flat: std.ArrayListUnmanaged(*T.Type) = .empty;
+    for (members) |m| try appendUnionMember(env, &flat, m);
+    return finishUnion(env, flat.items);
+}
+
+/// Two types are the same union member. Structural and conservative: it decides
+/// membership, so it must never call two members the same when a value could
+/// tell them apart, and it must not unify (a probe that mutated would leave the
+/// failed alternative linked).
+fn sameTypeShape(a: *T.Type, b: *T.Type) bool {
+    const da = a.deref();
+    const db = b.deref();
+    if (da == db) return true;
+    return switch (da.*) {
+        .named => |na| switch (db.*) {
+            .named => |nb| blk: {
+                if (!std.mem.eql(u8, na.name, nb.name)) break :blk false;
+                if (na.args.len != nb.args.len) break :blk false;
+                for (na.args, nb.args) |x, y| {
+                    if (!sameTypeShape(x, y)) break :blk false;
+                }
+                break :blk true;
+            },
+            else => false,
+        },
+        .func => |fa| switch (db.*) {
+            .func => |fb| blk: {
+                if (fa.params.len != fb.params.len) break :blk false;
+                for (fa.params, fb.params) |x, y| {
+                    if (!sameTypeShape(x, y)) break :blk false;
+                }
+                break :blk sameTypeShape(fa.ret, fb.ret);
+            },
+            else => false,
+        },
+        .union_ => |ua| switch (db.*) {
+            .union_ => |ub| blk: {
+                if (ua.len != ub.len) break :blk false;
+                for (ua, ub) |x, y| {
+                    if (!sameTypeShape(x, y)) break :blk false;
+                }
+                break :blk true;
+            },
+            else => false,
+        },
+        .record => |fa| switch (db.*) {
+            .record => |fb| blk: {
+                if (fa.len != fb.len) break :blk false;
+                for (fa, fb) |x, y| {
+                    if (!std.mem.eql(u8, x.name, y.name)) break :blk false;
+                    if (!sameTypeShape(x.type_, y.type_)) break :blk false;
+                }
+                break :blk true;
+            },
+            else => false,
+        },
+        // Two distinct variables are not the same member: nothing has said so.
+        .typeVar => false,
+    };
+}
+
+/// C2a — unify the arms that agree; distinct named types become union members.
+fn caseTypeFromArms(env: *Env, arms: []const ast.CaseArmOf(.typed)) InferError!*T.Type {
+    var members: std.ArrayListUnmanaged(*T.Type) = .empty;
+    for (arms) |arm| {
+        const t = (try caseArmValueType(env, arm.body)) orelse continue;
+        var merged = false;
+        for (members.items) |m| {
+            if (caseArmTypesAgree(m, t)) {
+                try unifyAt(env, m, t, arm.body.getLoc());
+                merged = true;
+                break;
+            }
+        }
+        if (!merged) try members.append(env.arena, t);
+    }
+    return finishUnion(env, members.items);
+}
+
+/// Decision 150 (D5, decision 8 §3.2) — the element type of an array literal
+/// whose elements were inferred with nothing expected of them. Elements that
+/// agree unify (the first pins the others' variables, as before); the ones
+/// that do not stand beside each other as union members, so `[1, "a"]` is
+/// `(i32 | string)[]` and `[1, null]` is `?i32[]` (`finishUnion`'s optional
+/// absorption). §3.2's one numeric rule: an integer LITERAL fits `f64`, so
+/// `[1, 2.5]` is `f64[]` — the literal is typed `f64` and re-spelt as a float
+/// for the backends (`env.indexRewrites`, literal for literal). An `i32` that
+/// is not a literal does not widen. A union made here records its first
+/// disagreeing element in `env.unionOrigins`, which the refusal at a use names.
+fn arrayLiteralJoin(env: *Env, elems: []const ast.Expr, typed: []ast.TypedExpr) InferError!*T.Type {
+    // Decision 247 (209 reversed) — an integer literal beside a float is
+    // not re-spelt into an `f64[]`: the literal never changes type, and
+    // `[1, 2.5]` would otherwise be the union nobody meant.
+    const floatElem = for (typed) |t| {
+        const d = t.getType().deref();
+        if (d.isNamed("f64") or d.isNamed("f32")) break d.named.name;
+    } else null;
+    if (floatElem) |ft| {
+        for (elems, 0..) |e, i| {
+            if (!isIntegerLiteral(e)) continue;
+            if (!typed[i].getType().deref().isNamed("i32")) continue;
+            const text = e.literal.kind.numberLit;
+            const asFloat = (try floatSpelling(env, text)) orelse text;
+            const msg = try std.fmt.allocPrint(env.arena, "the integer literal `{s}` stands beside an `{s}` in an array literal — write `{s}`", .{ text, ft, if (std.mem.eql(u8, ft, "f32")) try std.fmt.allocPrint(env.arena, "{s}f", .{asFloat}) else asFloat });
+            env.lastError = TypeError.custom(msg, "A literal without a suffix never changes type to fit (decision 247): write every element as the float it is, `[1.0, 2.5]`, or annotate the array.").withLoc(e.literal.loc);
+            return error.TypeError;
+        }
+    }
+    var members: std.ArrayListUnmanaged(*T.Type) = .empty;
+    var widenedAt: ?ast.Loc = null;
+    for (typed) |elem| {
+        const t = elem.getType();
+        var merged = false;
+        for (members.items) |m| {
+            if (caseArmTypesAgree(m, t)) {
+                try unifyAt(env, m, t, elem.getLoc());
+                merged = true;
+                break;
+            }
+        }
+        if (!merged) {
+            if (members.items.len > 0 and widenedAt == null) widenedAt = elem.getLoc();
+            try members.append(env.arena, t);
+        }
+    }
+    const joined = try finishUnion(env, members.items);
+    if (widenedAt) |at| {
+        if (joined.deref().* == .union_) try env.unionOrigins.put(env.arena, joined.deref(), .{ .loc = at, .kind = "array element" });
+    }
+    return joined;
+}
+
+/// The float spelling of an integer literal's text (`1` → `1.0`, `0xFF` →
+/// `255.0`, `1_000` → `1000.0`); null when it does not parse.
+fn floatSpelling(env: *Env, text: []const u8) InferError!?[]const u8 {
+    var digits: std.ArrayListUnmanaged(u8) = .empty;
+    for (text) |c| if (c != '_') try digits.append(env.arena, c);
+    const v = std.fmt.parseInt(i128, digits.items, 0) catch return null;
+    return try std.fmt.allocPrint(env.arena, "{d}.0", .{v});
+}
+
+/// Two arm types agree (and are unified) when either is still a type
+/// variable, both name the same type constructor with the same arity, or both
+/// are function types — the join of `case` arms, `if` branches and array
+/// elements. A function is never a union member beside another function
+/// (nothing could call `fn | fn`), so two of them unify structurally: the
+/// same arity, unifiable parameters and return, and any difference is the
+/// located mismatch at the second (rows 28/31 of `language-gaps.md`).
+fn caseArmTypesAgree(a: *T.Type, b: *T.Type) bool {
+    const da = a.deref();
+    const db = b.deref();
+    if (da.* == .typeVar or db.* == .typeVar) return true;
+    if (da.* == .func and db.* == .func) return true;
+    if (da.* == .named and db.* == .named) {
+        return std.mem.eql(u8, da.named.name, db.named.name) and da.named.args.len == db.named.args.len;
+    }
+    return false;
+}
+
 /// Infer type for function definition expressions (lambdas and anonymous functions)
 fn inferFunctionExpr(env: *Env, func: ast.FunctionExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
-    return inferFunctionExprExpected(env, func, loc, null);
+    if (func.kind.syntax == .asyncBlock) return inferAsyncBlock(env, func, loc);
+    // Decision 147 — a lambda in a position that expects a FALLIBLE function
+    // (an argument of a `fn(x: T) -> @Result<U, E>` parameter) takes that
+    // channel; any other expectation stays the hint it was.
+    const fallibleExpected: ?*T.Type = blk: {
+        const e = env.expectedType orelse break :blk null;
+        const d = e.deref();
+        if (d.* != .func) break :blk null;
+        if (!isResultType(d.func.ret)) break :blk null;
+        break :blk e;
+    };
+    env.expectedType = null;
+    return inferFunctionExprExpected(env, func, loc, fallibleExpected, false);
+}
+
+/// Decision 124 — `async { … }`: a closed block worth `@Task<T>`, legal in any
+/// function. `T` comes from the block's `return`s (a `return` leaves the
+/// BLOCK, decision 119); when the body has `throw` / `try` of its own
+/// (`ast.bodyFails`) the value becomes `@Result<U, E>` on its own, `E` from
+/// them — two that do not unify are `gen-infer-conflicting-errors`. An
+/// expected `@Task<X>` (an annotated `val`) pins the value: `X` a `@Result`
+/// opens the fallible channel with its `E`, any other `X` closes it, so a `try`
+/// in the body is then a located refusal. The body starts a new capability
+/// context: it awaits (it IS a Task), never `use`s (not the `@Component`
+/// body) and never yields; the enclosing labels are closed.
+fn inferAsyncBlock(env: *Env, func: ast.FunctionExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
+    const fk = func.kind;
+    // The expected `@Task<X>`, when the position says one (`val t: @Task<i32> = async { … }`).
+    const expectedValue: ?*T.Type = blk: {
+        const want = (env.expectedType orelse break :blk null).deref();
+        if (want.* != .named or !std.mem.eql(u8, want.named.name, "Task") or want.named.args.len != 1) break :blk null;
+        break :blk want.named.args[0];
+    };
+    var errTy: ?*T.Type = null;
+    var value: *T.Type = undefined;
+    var target: *T.Type = undefined;
+    if (expectedValue) |ev| {
+        value = ev;
+        const d = ev.deref();
+        if (d.* == .named and std.mem.eql(u8, d.named.name, "Result") and d.named.args.len >= 2) {
+            errTy = d.named.args[1];
+            target = d.named.args[0];
+        } else target = ev;
+    } else if (ast.bodyFails(fk.body)) {
+        const u = try env.freshVar();
+        const e = try env.freshVar();
+        errTy = e;
+        target = u;
+        value = try env.namedTypeArgs("Result", &.{ u, e });
+        try noteInferredResult(env, value, fk.body);
+    } else {
+        value = try env.freshVar();
+        target = value;
+    }
+    const taskTy = try env.namedTypeArgs("Task", &.{value});
+
+    const prevStarFn = env.starFn;
+    const prevFnEffect = env.fnEffect;
+    const prevThrowCtx = env.throwContext;
+    const prevUseAnchor = env.useAnchor;
+    const prevInContextFn = env.inContextFn;
+    const prevLoopDepth = env.loopDepth;
+    const prevBreakScope = env.breakScope;
+    const prevClosedLabels = env.closedLabels;
+    const prevAliasWrapper = env.aliasWrapper;
+    const prevReturnTarget = env.returnTarget;
+    const prevReturnWhole = env.returnWhole;
+    const prevReturnBareIsVoid = env.returnBareIsVoid;
+    const prevKeep = env.keepReturnTarget;
+    const prevGenLoops = env.generatorLoopDepth;
+    const prevInferredErr = env.inferredErrorScope;
+    const prevLabels = try env.arena.dupe([]const u8, env.labelStack.items);
+    defer {
+        env.starFn = prevStarFn;
+        env.fnEffect = prevFnEffect;
+        env.throwContext = prevThrowCtx;
+        env.useAnchor = prevUseAnchor;
+        env.inContextFn = prevInContextFn;
+        env.loopDepth = prevLoopDepth;
+        env.breakScope = prevBreakScope;
+        env.closedLabels = prevClosedLabels;
+        env.aliasWrapper = prevAliasWrapper;
+        env.returnTarget = prevReturnTarget;
+        env.returnWhole = prevReturnWhole;
+        env.returnBareIsVoid = prevReturnBareIsVoid;
+        env.keepReturnTarget = prevKeep;
+        env.generatorLoopDepth = prevGenLoops;
+        env.inferredErrorScope = prevInferredErr;
+        env.labelStack.shrinkRetainingCapacity(0);
+        env.labelStack.appendSlice(env.arena, prevLabels) catch {};
+        env.asyncBlockDepth -= 1;
+    }
+    env.asyncBlockDepth += 1;
+    env.closedLabels = prevLabels;
+    env.labelStack.shrinkRetainingCapacity(0);
+    env.starFn = .{ .allowsAwait = true, .allowsYield = false, .iterItem = null, .fnLabel = null, .effect = .task };
+    env.fnEffect = .task;
+    env.throwContext = if (errTy) |et| .{ .result = et } else .plain;
+    env.inferredErrorScope = expectedValue == null and errTy != null;
+    env.useAnchor = null;
+    env.inContextFn = false;
+    env.aliasWrapper = null;
+    env.loopDepth = 0;
+    env.breakScope = .none;
+    env.generatorLoopDepth = 0;
+    env.keepReturnTarget = false;
+    env.returnTarget = target;
+    env.returnWhole = taskTy;
+    env.returnBareIsVoid = true;
+
+    const bodyTyped = try inferStmtsTyped(env, fk.body);
+    return TypedExpr{ .function = .{ .loc = loc, .type_ = taskTy, .kind = .{
+        .syntax = .asyncBlock,
+        .params = fk.params,
+        .body = bodyTyped,
+    } } };
 }
 
 /// Infer a lambda / anonymous-function expression. When `expected` is a
@@ -7339,12 +15676,63 @@ fn inferFunctionExpr(env: *Env, func: ast.FunctionExprOf(.untyped), loc: ast.Loc
 /// parameter types *before* the body is inferred — so the body can resolve
 /// member calls and operators against the annotated types — and the body's
 /// result is unified with the expected return type.
-fn inferFunctionExprExpected(env: *Env, func: ast.FunctionExprOf(.untyped), loc: ast.Loc, expected: ?*T.Type) InferError!TypedExpr {
-    // A nested function expression has no declared return type, so `throw`
-    // inside it is not checked against the enclosing fn's `E`.
+///
+/// `params_only` keeps the parameter half and drops the return half: the
+/// lambda's return type stays free. A caller that only wants the parameters
+/// typed (a builtin-primitive method's declared signature — see
+/// `primMethodParamTypes`) must use it, because a body whose every path
+/// `return`s types its TAIL as void while the `return`s have already fixed the
+/// return target, and unifying the two would red a correct lambda
+/// (`xs.map({ x -> if (c) { return a; } else { return b; } })`).
+fn inferFunctionExprExpected(
+    env: *Env,
+    func: ast.FunctionExprOf(.untyped),
+    loc: ast.Loc,
+    expected: ?*T.Type,
+    params_only: bool,
+) InferError!TypedExpr {
+    if (func.kind.syntax == .asyncBlock) {
+        const savedExpected = env.expectedType;
+        env.expectedType = expected;
+        defer env.expectedType = savedExpected;
+        return inferAsyncBlock(env, func, loc);
+    }
+    // Decision 147 (lg-a) — a lambda's return is its expected type's: its
+    // `try` / `throw` use the fallible channel of the EXPECTED return, and a
+    // lambda whose expected return carries no `@Result` (or that has no
+    // expected type) has none. A `case` arm's block body is not a lambda for
+    // this: its `throw` is the enclosing function's (row 29), so it keeps the
+    // enclosing context.
     const savedThrowCtx = env.throwContext;
-    env.throwContext = .unchecked;
     defer env.throwContext = savedThrowCtx;
+    const savedInLambda = env.inLambdaBody;
+    defer env.inLambdaBody = savedInLambda;
+    const armBlock = env.keepReturnTarget;
+    const lambdaErr: ?*T.Type = blk: {
+        const e = expected orelse break :blk null;
+        const d = e.deref();
+        if (d.* != .func or d.func.params.len != func.kind.params.len) break :blk null;
+        const r = d.func.ret.deref();
+        if (r.* != .named or !std.mem.eql(u8, r.named.name, "Result") or r.named.args.len < 2) break :blk null;
+        break :blk r.named.args[1];
+    };
+    if (!armBlock) {
+        env.throwContext = if (lambdaErr) |et| .{ .result = et } else .plain;
+        env.inLambdaBody = true;
+    }
+    // Decision 148 — one lambda deeper; its writes to captured `var`s are
+    // legal only in the two exempt shapes the site that infers it named.
+    const savedDepth = env.lambdaDepth;
+    const savedWriteOk = env.captureWriteOk;
+    defer {
+        env.lambdaDepth = savedDepth;
+        env.captureWriteOk = savedWriteOk;
+    }
+    if (!armBlock) {
+        env.lambdaDepth += 1;
+        env.captureWriteOk = env.nextLambdaExempt;
+    }
+    env.nextLambdaExempt = false;
 
     // A nested function gets its own async/label scope: it does not inherit
     // the enclosing fn's `await`/`yield`/label context.
@@ -7355,8 +15743,26 @@ fn inferFunctionExprExpected(env: *Env, func: ast.FunctionExprOf(.untyped), loc:
         env.labelStack.shrinkRetainingCapacity(prevLabelsLen);
     }
     env.labelStack.shrinkRetainingCapacity(0);
+    // A lambda body is another function: no loop of the enclosing body is
+    // left by a `break` inside it (decision 105), and only a `case` arm's
+    // block keeps the value-block scope it was opened in.
+    const prevLoopDepth = env.loopDepth;
+    const prevBreakScope = env.breakScope;
+    env.loopDepth = 0;
+    if (env.breakScope != .valueBlock) env.breakScope = .none;
+    defer {
+        env.loopDepth = prevLoopDepth;
+        env.breakScope = prevBreakScope;
+    }
 
     const fk = func.kind;
+    // A lambda inside an `async { }` block is its own function again.
+    const prevAsyncDepth = env.asyncBlockDepth;
+    env.asyncBlockDepth = 0;
+    defer env.asyncBlockDepth = prevAsyncDepth;
+    const prevInferredErrLambda = env.inferredErrorScope;
+    env.inferredErrorScope = false;
+    defer env.inferredErrorScope = prevInferredErrLambda;
     // Anonymous function expressions never carry an effect annotation, so the
     // async/generator context is always cleared inside them. (The deprecated
     // `*fn(...)` anonymous-generator form was removed in v0.beta.19.)
@@ -7371,7 +15777,7 @@ fn inferFunctionExprExpected(env: *Env, func: ast.FunctionExprOf(.untyped), loc:
         const d = e.deref();
         if (d.* == .func and d.func.params.len == fk.params.len) {
             expParams = d.func.params;
-            expRet = d.func.ret;
+            if (!params_only) expRet = d.func.ret;
         }
     }
 
@@ -7380,11 +15786,41 @@ fn inferFunctionExprExpected(env: *Env, func: ast.FunctionExprOf(.untyped), loc:
         params[i] = if (expParams) |ep| ep[i] else try env.freshVar();
         try env.bind(p, params[i]);
     }
+    // C1 — a lambda's `return`s unify with the expected return type, or with
+    // each other through a shared fresh var; it never inherits the enclosing
+    // fn's return target.
+    const savedReturnTarget = env.returnTarget;
+    const savedReturnBareIsVoid = env.returnBareIsVoid;
+    const savedReturnWhole = env.returnWhole;
+    defer {
+        env.returnTarget = savedReturnTarget;
+        env.returnBareIsVoid = savedReturnBareIsVoid;
+        env.returnWhole = savedReturnWhole;
+    }
+    // A `case` block arm keeps the enclosing fn's return target.
+    const keep = env.keepReturnTarget;
+    env.keepReturnTarget = false;
+    if (!keep) {
+        env.returnTarget = expRet orelse try env.freshVar();
+        env.returnBareIsVoid = false;
+        env.returnWhole = null;
+        // A fallible lambda (`fn(x: T) -> @Result<U, E>` expected) returns
+        // its payload: `return v` is wrapped `Ok(v)`, as in a fn body.
+        if (lambdaErr != null) {
+            const whole = expected.?.deref().func.ret;
+            env.returnWhole = whole;
+            env.returnTarget = whole.deref().named.args[0];
+        }
+    }
+    if (!armBlock) try refuseRedeclaredBindings(env, fk.body, fk.params);
     const bodyTyped = try inferStmtsTyped(env, fk.body);
     // The lambda's return type is its tail expression's type; an explicit
     // `return expr` tail types as void, so use the returned value's type.
     const retType = if (bodyTyped.len > 0) blk: {
         const tail = bodyTyped[bodyTyped.len - 1].expr;
+        // A fallible lambda's `return` / `throw` answer the expected
+        // `@Result` (wrapped by the transform); its value is that type.
+        if (lambdaErr != null and !keep and tail == .jump and (tail.jump.kind == .@"return" or tail.jump.kind == .throw_)) break :blk expected.?.deref().func.ret;
         if (tail == .jump and tail.jump.kind == .@"return") {
             break :blk if (tail.jump.kind.@"return") |rv| rv.getType() else try env.namedType("void");
         }
@@ -7403,13 +15839,40 @@ fn inferFunctionExprExpected(env: *Env, func: ast.FunctionExprOf(.untyped), loc:
 fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
     return switch (col.kind) {
         .arrayLit => |al| {
+            // 00 · 01-checker — an expected `Array<T>` makes `T` the expected
+            // type of every element (`val ts: Array<Token> = [.Color.Red.500];`).
+            const elemExpected: ?*T.Type = blk: {
+                const want = (env.expectedType orelse break :blk null).deref();
+                if (want.* != .named) break :blk null;
+                if (!std.mem.eql(u8, want.named.name, "array") and !std.mem.eql(u8, want.named.name, "Array")) break :blk null;
+                if (want.named.args.len != 1) break :blk null;
+                break :blk want.named.args[0];
+            };
             const typedElems = try env.arena.alloc(ast.TypedExpr, al.elems.len);
             for (al.elems, 0..) |elem, i| {
-                typedElems[i] = try inferExprTyped(env, elem);
+                typedElems[i] = try inferExprTypedExpecting(env, elem, elemExpected);
             }
-            const elemType = if (typedElems.len > 0) typedElems[0].getType() else try env.freshVar();
+            // With a BEHAVIOR as the expected element type every element meets
+            // it, the way an argument meets its parameter — so
+            // `val ps: Array<Plugin> = [A(…), B(…)]` takes two different
+            // implementers, where unifying each element with the first one
+            // refused the second (`expected A, got B`). Any other expectation
+            // stays a hint (it may be a scheme's generic variable).
+            const behaviorElem: ?*T.Type = if (elemExpected) |ee| (if (isBehaviorType(env, ee)) ee else null) else null;
+            // An expected union is the element type: each element is one of
+            // its members (`val xs: (i32 | string)[] = [1, "a"];`).
+            const unionElem: ?*T.Type = if (elemExpected) |ee| (if (ee.deref().* == .union_) ee else null) else null;
+            // Decision 150 (D5, §3.2) — with nothing expected, elements that
+            // disagree make the union of their types, as a `case`'s arms do.
+            const joins = behaviorElem == null and unionElem == null and
+                (elemExpected == null or elemExpected.?.deref().* == .typeVar);
+            const elemType = if (joins and typedElems.len > 1)
+                try arrayLiteralJoin(env, al.elems, typedElems)
+            else
+                behaviorElem orelse unionElem orelse if (typedElems.len > 0) typedElems[0].getType() else try env.freshVar();
             for (typedElems) |elem| {
-                try unify(env, elemType, elem.getType());
+                // Located at the element that disagrees (01 step 9).
+                try unifyArgument(env, elemType, elem.getType(), elem.getLoc());
             }
             const arrayArgs = try env.arena.alloc(*T.Type, 1);
             arrayArgs[0] = elemType;
@@ -7427,11 +15890,25 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
         .tupleLit => |tl| {
             const typedElems = try env.arena.alloc(ast.TypedExpr, tl.elems.len);
             const elemTypes = try env.arena.alloc(*T.Type, tl.elems.len);
+            // Decision 8 §6 T1: an element that is a plain variable lends its
+            // name as the element's label (`#(name, pop)`); others stay
+            // unlabeled. A compiler-built literal (a lifted template value)
+            // carries its labels already.
+            const labels = try env.arena.alloc([]const u8, tl.elems.len);
+            var anyLabel = false;
             for (tl.elems, 0..) |elem, i| {
                 typedElems[i] = try inferExprTyped(env, elem);
                 elemTypes[i] = typedElems[i].getType();
+                labels[i] = if (tl.labels.len == tl.elems.len)
+                    tl.labels[i]
+                else if (elem == .identifier and elem.identifier.kind == .ident)
+                    elem.identifier.kind.ident
+                else
+                    "";
+                if (labels[i].len > 0) anyLabel = true;
             }
             const tupleType = try env.namedTypeArgs("tuple", elemTypes);
+            if (anyLabel) tupleType.named.labels = labels;
             return TypedExpr{ .collection = .{ .loc = loc, .type_ = tupleType, .kind = .{ .tupleLit = .{
                 .elems = typedElems,
                 .comments = tl.comments,
@@ -7446,6 +15923,7 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
             return TypedExpr{ .collection = .{ .loc = loc, .type_ = try env.namedType("Range"), .kind = .{ .range = .{
                 .start = startPtr,
                 .end = endPtr,
+                .inclusive = r.inclusive,
             } } } };
         },
 
@@ -7455,11 +15933,45 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
                 typedSubjects[i] = try inferExprTyped(env, subj);
             }
 
+            // Decision 54 — the optional's pattern form. `optionalNullCaseBinder`
+            // validates the whole `case` when any arm is `null` and answers the
+            // binder's name; `refuseVariantPatternOverOptional` refuses the
+            // spelling the decision rejected. Both run before the arms are
+            // typed, so a wrong shape reds at the shape rather than inside a
+            // body that was never going to mean anything.
+            const subjectTy: ?*T.Type = if (typedSubjects.len == 1) typedSubjects[0].getType() else null;
+            var optionalBinder: ?[]const u8 = null;
+            if (subjectTy) |st| {
+                optionalBinder = try optionalNullCaseBinder(env, st, c.arms, loc);
+                if (optionalBinder == null) try refuseVariantPatternOverOptional(env, st, c.arms);
+                try refuseShorthandOverUnknown(env, st, c.arms);
+            } else for (c.arms) |arm| {
+                if (isNullPattern(arm.pattern)) {
+                    env.lastError = TypeError.custom(
+                        "`null` is a pattern only over an optional",
+                        "`case x { null { … } v { … } }` matches one `?T` subject (decision 54).",
+                    ).withLoc(arm.patternLoc);
+                    return error.TypeError;
+                }
+            }
+
             const typedArms = try env.arena.alloc(ast.CaseArmOf(.typed), c.arms.len);
+            // An arm's block takes `break <value>` as its value (decision 2).
+            const prevBreakScope = env.breakScope;
+            env.breakScope = .valueBlock;
+            defer env.breakScope = prevBreakScope;
             for (c.arms, 0..) |arm, i| {
                 var snapshots: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
                 defer snapshots.deinit(env.arena);
-                try bindCaseArmPatternNames(env, arm.pattern, typedSubjects, &snapshots);
+                if (optionalBinder) |binder| {
+                    // The binder is the payload, narrowed (decision 54): `v` is
+                    // the `T` of the `?T`, not the optional itself. The `null`
+                    // arm binds nothing.
+                    if (i == 1 and binder.len > 0) {
+                        try saveAndBindPatternName(env, &snapshots, binder, optionalInner(subjectTy.?).?);
+                    }
+                } else bindCaseArmPatternNames(env, arm.pattern, typedSubjects, &snapshots) catch |err| return locateLast(env, err, arm.patternLoc);
+                if (typedSubjects.len == 1) try noteResultPattern(env, arm.pattern, typedSubjects[0].getType(), arm.patternLoc);
 
                 // A guard clause must type-check to a boolean, with the
                 // pattern's bindings in scope.
@@ -7476,10 +15988,22 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
                     guardTyped = gt;
                 }
 
-                const bodyTyped = inferExprTyped(env, arm.body) catch |err| {
+                // A block arm (`_ -> { … }`) is a zero-param lambda in the AST,
+                // but its `return`s leave the enclosing fn, not the block. So do
+                // a decision-8 arm's: `{ n -> … }` is an arm body too, not a
+                // function value the arm happens to produce.
+                env.keepReturnTarget = isArmBodyLambda(arm.body);
+                // §5.1 P1/P5 — `{ n -> … }` binds the WHOLE matched value,
+                // already narrowed by this arm's pattern. Its parameter is not a
+                // fresh variable: it is the subject. Passing it as the expected
+                // parameter type binds it before the body is inferred, so the
+                // body resolves methods and operators against the real type.
+                const bodyTyped = inferCaseArmBody(env, arm, typedSubjects) catch |err| {
+                    env.keepReturnTarget = false;
                     try restorePatternBindings(env, snapshots.items);
                     return err;
                 };
+                env.keepReturnTarget = false;
                 try restorePatternBindings(env, snapshots.items);
                 typedArms[i] = .{
                     .pattern = arm.pattern,
@@ -7491,10 +16015,21 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
 
             // A single-subject `case` on an enum or string must cover every
             // possibility (or carry a wildcard), and no arm may be unreachable.
-            if (typedSubjects.len == 1) {
+            // Decision 54's form covers its `?T` by construction — `null` and a
+            // binder are the two halves of an optional — and its `null` arm is
+            // not a catch-all, so the walk would read it as uncovered.
+            if (typedSubjects.len == 1 and optionalBinder == null) {
+                try checkCaseArmArity(env, typedSubjects[0].getType(), c.arms);
                 try checkCaseExhaustiveness(env, typedSubjects[0].getType(), c.arms, loc);
             }
-            return TypedExpr{ .collection = .{ .loc = loc, .type_ = try env.freshVar(), .kind = .{ .case = .{
+            if (optionalBinder) |binder| try env.optionalNullCases.put(loc, binder);
+            // C2a — the `case` is typed from its arms: arms that agree unify,
+            // arms of different types make a union (decision 8 §3.2). A jump arm
+            // (`return`/`throw`/`break`/`continue`) and a statement arm (`void`, a
+            // block without `break <value>`) contribute nothing.
+            const caseType = caseTypeFromArms(env, typedArms) catch |err| return locateLast(env, err, loc);
+            if (caseType.deref().* == .union_) try env.unionOrigins.put(env.arena, caseType.deref(), .{ .loc = loc, .kind = "case" });
+            return TypedExpr{ .collection = .{ .loc = loc, .type_ = caseType, .kind = .{ .case = .{
                 .subjects = typedSubjects,
                 .arms = typedArms,
                 .trailingComments = c.trailingComments,
@@ -7505,19 +16040,17 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
             return try inferExprTyped(env, e.*);
         },
 
-        .recordLit => |rl| {
-            // Anonymous structural record: each field types independently;
-            // the literal's type is `Type.record` in declaration order.
-            const typedFields = try env.arena.alloc(ast.RecordLitFieldOf(.typed), rl.fields.len);
-            const fieldTypes = try env.arena.alloc(T.RecordField, rl.fields.len);
-            for (rl.fields, 0..) |f, i| {
+        .behaviorLit => |il| {
+            // Interface literal: @InterfaceName(field: value, …).
+            // Each field is typed independently; the result type is the named interface.
+            const typedFields = try env.arena.alloc(ast.RecordLitFieldOf(.typed), il.fields.len);
+            for (il.fields, 0..) |f, i| {
                 const typedValue = try inferExprTyped(env, f.value.*);
                 typedFields[i] = .{ .name = f.name, .value = try makeTypedPtr(env, typedValue) };
-                fieldTypes[i] = .{ .name = f.name, .type_ = typedValue.getType() };
             }
-            const recTy = try env.arena.create(T.Type);
-            recTy.* = .{ .record = fieldTypes };
-            return TypedExpr{ .collection = .{ .loc = loc, .type_ = recTy, .kind = .{ .recordLit = .{
+            const ifaceTy = try env.namedType(il.name);
+            return TypedExpr{ .collection = .{ .loc = loc, .type_ = ifaceTy, .kind = .{ .behaviorLit = .{
+                .name = il.name,
                 .fields = typedFields,
             } } } };
         },
@@ -7534,8 +16067,25 @@ fn inferComptimeExpr(env: *Env, ct: ast.ComptimeExprOf(.untyped), loc: ast.Loc) 
         },
 
         .comptimeBlock => |cb| {
+            const prevBreakScope = env.breakScope;
+            env.breakScope = .valueBlock;
+            defer env.breakScope = prevBreakScope;
             const typedBody = try inferStmtsTyped(env, cb.body);
-            const bodyType = if (typedBody.len > 0) typedBody[typedBody.len - 1].expr.getType() else try env.namedType("void");
+            // C2b — a `comptime { … }` block's value is its `break <value>`
+            // (`eval.zig` `blockValue`'s rule), `void` when there is none.
+            const bodyType = blk: {
+                var found: ?*T.Type = null;
+                for (typedBody) |st| {
+                    if (st.expr != .jump) continue;
+                    switch (st.expr.jump.kind) {
+                        .@"break" => |b| if (b.value) |v| {
+                            if (found) |f| try unifyAt(env, f, v.getType(), v.getLoc()) else found = v.getType();
+                        },
+                        else => {},
+                    }
+                }
+                break :blk found orelse try env.namedType("void");
+            };
             return TypedExpr{ .comptime_ = .{ .loc = loc, .type_ = bodyType, .kind = .{ .comptimeBlock = .{
                 .body = typedBody,
             } } } };
@@ -7554,24 +16104,32 @@ fn inferComptimeExpr(env: *Env, ct: ast.ComptimeExprOf(.untyped), loc: ast.Loc) 
         },
 
         .assertPattern => |ap| {
-            // Use a fresh type variable when the expression can't be inferred (e.g. unbound var).
-            const exprTyped = inferExprTyped(env, ap.expr.*) catch |err| blk: {
-                if (err != error.TypeError) return err;
-                const freshTy = try env.freshVar();
-                break :blk TypedExpr{ .literal = .{ .loc = ap.expr.getLoc(), .type_ = freshTy, .kind = .null_ } };
-            };
+            // 06 C12 — the subject and the handler are inferred like any other
+            // expression. Both used to swallow `error.TypeError` into a fresh
+            // type variable, so `val assert 42 = answer catch 0;` compiled with
+            // `answer` bound to nothing and only aborted at run time.
+            const exprTyped = try inferExprTyped(env, ap.expr.*);
             const exprPtr = try makeTypedPtr(env, exprTyped);
+            // Decision 8 § 9 — the pattern has to be able to match the
+            // subject. This is what makes
+            // `val assert Ok(n) = parse("42") catch 0;` the error the
+            // decision writes: after `catch` the value is an `i32`, and
+            // `Ok(…)` names no variant of it.
+            try checkAssertPatternSubject(env, ap.pattern, exprTyped.getType(), ap.expr.getLoc(), ap.fatal, ap.catchLoc);
+            // Decision 8 § 9 — the pattern's names are bound in the ENCLOSING
+            // scope (`val assert Ok(n) = parse("42"); @print(n);`), so the
+            // snapshots a case arm would restore are deliberately dropped.
+            var bound: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
+            bindPatternNamesForSubject(env, ap.pattern, exprTyped.getType(), &bound) catch |err| return locateLast(env, err, loc);
+            try noteResultPattern(env, ap.pattern, exprTyped.getType(), loc);
             const handlerExpr = ap.handler.*;
-            const handlerTyped = inferExprTyped(env, handlerExpr) catch |err| blk: {
-                if (err != error.TypeError) return err;
-                const freshTy = try env.freshVar();
-                break :blk TypedExpr{ .literal = .{ .loc = handlerExpr.getLoc(), .type_ = freshTy, .kind = .null_ } };
-            };
+            const handlerTyped = try inferExprTyped(env, handlerExpr);
             const handlerPtr = try makeTypedPtr(env, handlerTyped);
             return TypedExpr{ .comptime_ = .{ .loc = loc, .type_ = exprTyped.getType(), .kind = .{ .assertPattern = .{
                 .pattern = ap.pattern,
                 .expr = exprPtr,
                 .handler = handlerPtr,
+                .fatal = ap.fatal,
             } } } };
         },
     };

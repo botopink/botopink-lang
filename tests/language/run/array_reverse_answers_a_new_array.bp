@@ -1,0 +1,22 @@
+//// `Array.reverse()` answers a NEW array and leaves the receiver alone —
+//// front 00 · 04-js round 2, D5.
+////
+//// Native `Array.prototype.reverse` reverses in place and answers the same
+//// array, so commonJS lowered `val rev = xs.reverse();` to something that
+//// also reversed `xs`, where `lists:reverse/1` on erlang and the wasm
+//// lowering both leave it untouched. Any fold that reads the receiver again
+//// after reversing it therefore answered one thing on commonJS and another
+//// on the other two targets, at exit 0 — a library maps its list twice
+//// rather than call `reverse()` for its return value.
+////
+//// The cell reads the receiver AFTER the call, which is the only way to see
+//// it: the reversed answer was right on every target the whole time.
+
+pub fn main() {
+    val xs = [1, 2, 3];
+    val rev = xs.reverse();
+    @print(rev.join(","));
+    @print(xs.join(","));
+    @print(xs.reverse().join(","));
+    @print(xs.join(","));
+}

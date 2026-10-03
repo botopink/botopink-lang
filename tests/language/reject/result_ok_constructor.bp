@@ -1,0 +1,11 @@
+//// Decision 208 — `Ok(…)` / `Error(…)` are never constructors in an
+//// expression: a `@Result` is made by `return v` and `throw e` alone, so
+//// `Ok(1)` is `unbound variable 'Ok'`, as in a behavior's `default fn` body.
+
+fn parse() -> @Result<i32, string> {
+    return Ok(1);
+}
+
+pub fn main() {
+    @print(parse().isOk());
+}

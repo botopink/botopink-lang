@@ -1,0 +1,8 @@
+//// Decision 255 (2) — `comptime <expr>` is the block that breaks with
+//// `<expr>`, so its type is the expression's: a `string` under an expected
+//// `i32` is the mismatch, located at `comptime` as the block form's is.
+
+pub fn main() {
+    val n: i32 = comptime "text";
+    @print(n);
+}

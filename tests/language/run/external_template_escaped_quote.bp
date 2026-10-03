@@ -1,0 +1,27 @@
+//// A `\"` written inside an `@External.Node` template is a quote of the
+//// JavaScript it carries, as it is of the Erlang an `@External.Erlang` template
+//// carries: a free host function, one bound to a type, and one called with an
+//// argument that holds a quote itself. commonJS wrote the template's raw lexeme
+//// into the `.js`, backslash and all — `SyntaxError: Invalid or unexpected
+//// token` before anything ran. Not scheduled on wasm: no host binding there.
+
+#[@External.Node("(\"say \" + $0)")]
+#[@External.Erlang("<<\"say \", $0/binary>>")]
+declare fn say(s: string) -> string;
+
+#[@External.Node("JSON.stringify({ k: $0 })")]
+#[@External.Erlang("<<\"{\", 34, \"k\", 34, \":\", 34, $0/binary, 34, \"}\">>")]
+declare fn enc(s: string) -> string;
+
+type Box(label: string) {
+    #[@External.Node("(\"[\" + $0.label + \"]\")")]
+    #[@External.Erlang("<<\"[\", (element(2, $0))/binary, \"]\">>")]
+    declare fn framed(self: Self) -> string;
+}
+
+pub fn main() {
+    @print(say("hi"));
+    @print(enc("v"));
+    @print(say("a \"quoted\" word"));
+    @print(Box(label: "b").framed());
+}

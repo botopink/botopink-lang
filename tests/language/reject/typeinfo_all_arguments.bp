@@ -1,0 +1,10 @@
+//// Decision 216 (4) — the query is written with its labels:
+//// `@TypeInfo.all(with: d)` or `@TypeInfo.all(with: d, member: "m")`.
+
+fn tagged(comptime decl: @Decl) {
+    decl.setMeta("tag", decl.name);
+}
+
+pub fn main() {
+    @print(@TypeInfo.all(tagged).length);
+}

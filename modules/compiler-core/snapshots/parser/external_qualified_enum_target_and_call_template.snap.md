@@ -17,7 +17,7 @@
             "name": "External.Erlang",
             "args": [
               "\"lists\"",
-              "\"zip(other, self)\""
+              "\"zip(other, xs)\""
             ],
             "is_builtin": true
           },
@@ -33,7 +33,7 @@
         "genericParams": [],
         "params": [
           {
-            "name": "self",
+            "name": "xs",
             "typeRef": {
               "generic": {
                 "name": "Array",

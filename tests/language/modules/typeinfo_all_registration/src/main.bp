@@ -1,0 +1,33 @@
+//// Decision 216 (4) — `@TypeInfo.all(with: d)` answers, at compile time,
+//// every declaration of the program carrying the decorator `d`, so the entry
+//// point builds its catalogue explicitly: no module registers itself at load.
+//// Each entry is a `Declared<unknown>` (decision 254) — its `name`, its
+//// `module`, the `meta` `d` set on it and a `value`: the function itself, or,
+//// for a type, a thunk calling the member named by `member:`, typed `unknown`
+//// (calling it through `is fn() -> T` is front 130's). The order is fixed: by module
+//// path, then by declaration order inside a module (`about` before `pages`;
+//// `blog` before `latest`).
+
+pub mod web;
+pub mod about;
+pub mod pages;
+import {web.route, web.component, web.unused};
+
+#[component]
+pub type Local(id: i32)
+
+pub fn main() {
+    val routes = @TypeInfo.all(with: route);
+    for (routes) { r ->
+        var path = "";
+        for (r.meta) { m ->
+            if (m.key == "path") path = m.value;
+        }
+        @print(r.module + " " + r.name + " " + path);
+    }
+    val parts = @TypeInfo.all(with: component, member: "describe");
+    for (parts) { c ->
+        @print(c.module + " " + c.name);
+    }
+    @print(@TypeInfo.all(with: unused).length);
+}

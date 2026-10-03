@@ -1,0 +1,11 @@
+//// Decisions 121 and 122 of 1.0.10-beta (front 24, § Cells "Iterators";
+//// guide.md § 5.6 `g`) — the iterator never fails; only a `@Result` ITEM
+//// carries failure, and `i32` is not one. `throw` is refused at the `throw`.
+//// Line 1 is the code's shared tail (see `reject/task_throw_without_result.bp`).
+
+fn g() -> @Iterator<i32> {
+    yield 1;
+    throw "x";
+}
+
+pub fn main() { for (g()) { x -> @print(x); }; }

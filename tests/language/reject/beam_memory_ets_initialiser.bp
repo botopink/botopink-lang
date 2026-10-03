@@ -1,0 +1,14 @@
+//// Design §5(d), front 17 step 4 — a missing `Ets` table is re-created and
+//// re-seeded from the declaration at a moment nobody chose, so the seed must be
+//// a literal or a `comptime` expression. Not purity, which the compiler cannot
+//// decide: `registry()` prints, and passes every other check.
+
+fn registry() -> i32 {
+    @print("side effect");
+    return 7;
+}
+
+#[@BeamMemory.Ets]
+var seeded: i32 = registry();
+
+pub fn main() { @print(seeded); }

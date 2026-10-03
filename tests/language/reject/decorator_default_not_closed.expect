@@ -1,0 +1,2 @@
+`#[dec]` on `first` leaves out `name`, whose default names a binding the decorator body cannot read
+11:3

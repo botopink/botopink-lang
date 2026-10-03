@@ -1,0 +1,22 @@
+//// An integer literal takes the width its position asks for — as an
+//// argument of a declared parameter and as a field already, and as the
+//// default of `unwrapOr` too: over a `?i64` or a `@Result<i64, E>` the `0`
+//// is an `i64` (it was `expected i32, got i64`).
+
+fn delay(n: i32) -> ?i64 {
+    if (n > 0) return 1000;
+    return null;
+}
+
+fn parsed(n: i32) -> @Result<i64, string> {
+    if (n > 0) return 7;
+    throw "negative";
+}
+
+pub fn main() {
+    val a: i64 = delay(1).unwrapOr(0);
+    @print(a);
+    @print(delay(0).unwrapOr(0) + 1);
+    @print(parsed(1).unwrapOr(0));
+    @print(parsed(-1).unwrapOr(-1));
+}

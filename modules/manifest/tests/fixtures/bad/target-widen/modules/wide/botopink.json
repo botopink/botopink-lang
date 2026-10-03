@@ -1,0 +1,1 @@
+{ "name": "wide", "targets": ["commonJS", "erlang"], "files": ["root.bp"] }

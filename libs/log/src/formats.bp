@@ -1,0 +1,276 @@
+//// log — the record and its four output schemas.
+////
+//// Moved from rakun-logging's `formats.bp` (decision 195) with two changes:
+//// the two timestamp cells (`rkLogIso`, `rkLogGelfTs`) are botopink over std
+//// `clock.toCivil` and the digits of the epoch reading, so the line is the same
+//// on erlang and commonJS; and the schema is the `Format` enum, so `renderRecord` is
+//// total — a spelling is read once, by `parseFormat`, where it can be refused.
+////
+//// Field order within a schema is fixed, so two lines of one schema diff
+//// cleanly; an optional field with no value (`service.name` with no
+//// application name, `trace.id` outside any correlation scope,
+//// `error.digest` on a record that is not a fault) is left out rather than
+//// written empty, and never moves another field.
+////
+//// | schema     | fields, in order                                                                                       |
+//// |------------|--------------------------------------------------------------------------------------------------------|
+//// | `ecs`      | `@timestamp` `log.level` `message` `service.name` `process.thread.name` `log.logger` `trace.id` `error.digest` + fields |
+//// | `gelf`     | `version` `host` `short_message` `timestamp` `level` `_logger` `_trace_id` `_error_digest` + `_`-fields |
+//// | `logstash` | `@timestamp` `@version` `message` `logger_name` `level` `level_value` `error_digest` + fields          |
+//// | `plain`    | `<timestamp> <LEVEL> <pid> --- [<app>] [<thread>] <logger> : <message>[ | k=v,…]`                    |
+////
+//// JSON strings go through std's `json.quote` (RFC 8259), so a message cannot
+//// break a line or a record. `plain` is for a human and escapes only line
+//// breaks, so one record stays one line.
+////
+//// The timestamp is UTC, `YYYY-MM-DDTHH:MM:SS` then `Z` on a whole second and
+//// `.mmmZ` otherwise; GELF's is the seconds, with `.mmm` only when there is a
+//// fraction. A record before the epoch is refused (a panic naming the reading):
+//// the two hosts do not round a negative reading alike, and no clock answers
+//// one.
+
+import {json} from "std";
+import {io.clock} from "std";
+import {levels.Level, levels.levelRank, levels.rankName};
+
+pub type LogRecord(
+    millis: i64,
+    level: Level,
+    logger: string,
+    message: string,
+    fields: Array<#(string, string)>,
+    trace: string,
+    digest: string,
+    pid: string,
+    node: string,
+    thread: string,
+    app: string,
+)
+
+pub type Format {
+    Ecs,
+    Gelf,
+    Logstash,
+    Plain,
+}
+
+// The spellings `parseFormat` accepts, for a diagnostic that lists them.
+pub fn validFormats() -> string {
+    return "ecs, gelf, logstash, plain";
+}
+
+// The schema a spelling names — exactly `ecs`, `gelf`, `logstash` or `plain`.
+// Anything else is an `Error` naming it and the four values.
+pub fn parseFormat(name: string) -> @Result<Format, string> {
+    if (name == "ecs") return Format.Ecs;
+    if (name == "gelf") return Format.Gelf;
+    if (name == "logstash") return Format.Logstash;
+    if (name == "plain") return Format.Plain;
+    throw "log.parseFormat: \""
+        + name
+        + "\" is not a log format - accepted: "
+        + validFormats();
+}
+
+pub fn formatName(format: Format) -> string {
+    val name = case format {
+        Format.Ecs -> "ecs";
+        Format.Gelf -> "gelf";
+        Format.Logstash -> "logstash";
+        Format.Plain -> "plain";
+    };
+    return name;
+}
+
+// ── the timestamp ───────────────────────────────────────────────────────────
+
+// The decimal digits of `millis`, at least four (`"0042"` for 42), so the last
+// three are always the fraction. A negative reading is refused.
+fn millisDigits(millis: i64) -> string {
+    val text = millis.toString();
+    if (text.startsWith("-"))
+        @panic("log: a record's millis must be at least 0, got " + text);
+    return text.padStart(4, "0");
+}
+
+fn fractionOf(digits: string) -> string {
+    return digits.slice(digits.length() - 3, digits.length());
+}
+
+fn two(n: i32) -> string {
+    return n.toString().padStart(2, "0");
+}
+
+// `2026-01-01T00:00:00Z`, `2026-01-01T00:00:00.250Z`.
+pub fn isoTimestamp(millis: i64) -> string {
+    val frac = fractionOf(millisDigits(millis));
+    val c = clock.toCivil(millis);
+    val base = c.year.toString().padStart(4, "0")
+        + "-"
+        + two(c.month)
+        + "-"
+        + two(c.day)
+        + "T"
+        + two(c.hour)
+        + ":"
+        + two(c.minute)
+        + ":"
+        + two(c.second);
+    if (frac == "000") return base + "Z";
+    return base + "." + frac + "Z";
+}
+
+// `1767225600`, `1767225600.250`.
+pub fn gelfTimestamp(millis: i64) -> string {
+    val digits = millisDigits(millis);
+    val seconds = digits.slice(0, digits.length() - 3);
+    val frac = fractionOf(digits);
+    if (frac == "000") return seconds;
+    return seconds + "." + frac;
+}
+
+// ── shared ──────────────────────────────────────────────────────────────────
+
+fn q(s: string) -> string {
+    return json.quote(s);
+}
+
+fn member(key: string, encoded: string) -> string {
+    return q(key) + ":" + encoded;
+}
+
+fn object(members: string[]) -> string {
+    return "{" + members.join(",") + "}";
+}
+
+fn levelText(r: LogRecord) -> string {
+    return rankName(levelRank(r.level));
+}
+
+// ── ecs ─────────────────────────────────────────────────────────────────────
+
+pub fn renderEcs(r: LogRecord) -> string {
+    var m: string[] = [];
+    m.push(member("@timestamp", q(isoTimestamp(r.millis))));
+    m.push(member("log.level", q(levelText(r))));
+    m.push(member("message", q(r.message)));
+    if (r.app != "") m.push(member("service.name", q(r.app)));
+    m.push(member("process.thread.name", q(r.pid)));
+    m.push(member("log.logger", q(r.logger)));
+    if (r.trace != "") m.push(member("trace.id", q(r.trace)));
+    if (r.digest != "") m.push(member("error.digest", q(r.digest)));
+    for (r.fields) { f ->
+        m.push(member(f._0, q(f._1)));
+    }
+    return object(m);
+}
+
+// ── gelf ────────────────────────────────────────────────────────────────────
+
+// Syslog severities, as GELF 1.1 asks: error 3 · warning 4 · info 6 · debug 7.
+pub fn gelfLevel(level: Level) -> string {
+    val rank = levelRank(level);
+    if (rank <= 1) return "7";
+    if (rank == 2) return "6";
+    if (rank == 3) return "4";
+    return "3";
+}
+
+// GELF additional fields match `^[\w\.\-]*$` and are `_`-prefixed; every
+// character outside `[A-Za-z0-9-]` folds to `_` (`invoice.id` → `_invoice_id`)
+// so a collector that indexes on the name does not read the dot as nesting.
+pub fn gelfKey(key: string) -> string {
+    var out = "_";
+    for (key.chars()) { c ->
+        val keep = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-".indexOf(
+            c,
+        )
+            >= 0;
+        if (keep) out = out + c else out = out + "_";
+    }
+    return out;
+}
+
+pub fn renderGelf(r: LogRecord) -> string {
+    var m: string[] = [];
+    m.push(member("version", q("1.1")));
+    m.push(member("host", q(r.node)));
+    m.push(member("short_message", q(r.message)));
+    m.push(member("timestamp", gelfTimestamp(r.millis)));
+    m.push(member("level", gelfLevel(r.level)));
+    m.push(member("_logger", q(r.logger)));
+    if (r.trace != "") m.push(member("_trace_id", q(r.trace)));
+    if (r.digest != "") m.push(member("_error_digest", q(r.digest)));
+    for (r.fields) { f ->
+        m.push(member(gelfKey(f._0), q(f._1)));
+    }
+    return object(m);
+}
+
+// ── logstash ────────────────────────────────────────────────────────────────
+
+// Logback's level integers: TRACE 5000 · DEBUG 10000 · INFO 20000 · WARN 30000 · ERROR 40000.
+pub fn logstashLevelValue(level: Level) -> string {
+    val rank = levelRank(level);
+    if (rank == 0) return "5000";
+    if (rank == 1) return "10000";
+    if (rank == 2) return "20000";
+    if (rank == 3) return "30000";
+    return "40000";
+}
+
+pub fn renderLogstash(r: LogRecord) -> string {
+    var m: string[] = [];
+    m.push(member("@timestamp", q(isoTimestamp(r.millis))));
+    m.push(member("@version", q("1")));
+    m.push(member("message", q(r.message)));
+    m.push(member("logger_name", q(r.logger)));
+    m.push(member("level", q(levelText(r))));
+    m.push(member("level_value", logstashLevelValue(r.level)));
+    if (r.digest != "") m.push(member("error_digest", q(r.digest)));
+    for (r.fields) { f ->
+        m.push(member(f._0, q(f._1)));
+    }
+    return object(m);
+}
+
+// ── plain ───────────────────────────────────────────────────────────────────
+
+fn oneLine(s: string) -> string {
+    return s.replaceAll("\r", "\\r").replaceAll("\n", "\\n");
+}
+
+pub fn renderPlain(r: LogRecord) -> string {
+    val head = isoTimestamp(r.millis)
+        + " "
+        + levelText(r).padStart(5, " ")
+        + " "
+        + r.pid
+        + " --- ["
+        + r.app
+        + "] ["
+        + r.thread
+        + "] "
+        + r.logger
+        + " : "
+        + oneLine(r.message);
+    var extras: string[] = [];
+    if (r.digest != "") extras.push("error.digest=" + r.digest);
+    for (r.fields) { f ->
+        extras.push(f._0 + "=" + oneLine(f._1));
+    }
+    if (extras.length == 0) return head;
+    return head + " | " + extras.join(",");
+}
+
+// ── dispatch ────────────────────────────────────────────────────────────────
+
+pub fn renderRecord(format: Format, r: LogRecord) -> string {
+    val line = case format {
+        Format.Ecs -> renderEcs(r);
+        Format.Gelf -> renderGelf(r);
+        Format.Logstash -> renderLogstash(r);
+        Format.Plain -> renderPlain(r);
+    };
+    return line;
+}

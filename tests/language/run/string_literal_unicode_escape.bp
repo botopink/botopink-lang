@@ -1,0 +1,15 @@
+//// A `\u{…}` escape is a code point, and a non-ASCII character written in
+//// the source is its UTF-8 bytes: each is one character of the string and
+//// prints as itself. Erlang's `\x{1F600}` inside a plain `<<"…">>` keeps the
+//// low 8 bits only, and a raw `ç` in a binary literal one byte per character
+//// (C-36, STD-11). Printed the same under any locale of the host: the
+//// program sets its own `standard_io` to unicode (under `LANG=C` erlang wrote
+//// `é` as the latin1 byte `0xE9` and `\x{1F600}` as text).
+
+pub fn main() {
+    @print("\u{1F600}");
+    @print("ç");
+    @print("é", "\u{e9}");
+    @print("a\u{e7}b" == "açb");
+    @print(["\u{1F600}", "ç"]);
+}

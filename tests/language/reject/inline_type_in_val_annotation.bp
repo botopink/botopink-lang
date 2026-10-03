@@ -1,0 +1,6 @@
+//// Decision 207 — an inline `type(…)` is written only as a parameter's type;
+//// as a `val` annotation it is `inline-type-outside-parameter` at the `type`.
+
+pub fn main() {
+    val p: type(href: string) = 1;
+}

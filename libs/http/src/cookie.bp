@@ -1,0 +1,227 @@
+//// http/cookie — the `Cookie` request header and the `Set-Cookie` line
+//// (RFC 6265).
+////
+//// READING (`parse`, `get`). The header is split on `;`; each chunk is
+//// trimmed of SP / HTAB and an empty chunk is skipped. A chunk is a pair when
+//// its name (before the first `=`) is an RFC 9110 token and its value is an
+//// RFC 6265 `cookie-value` — cookie-octets, optionally inside one pair of
+//// `"` (stripped) — that percent-decodes (std `encoding.percentDecode`) to a
+//// text with no control character. A chunk with no `=` is not a cookie. A
+//// chunk that breaks any other rule is REFUSED, and a refused chunk still
+//// claims its name: the FIRST occurrence of a name decides (RFC 6265 § 5.4,
+//// decision 181), so `a=%zz; a=2` reads `a` as absent, never as `2` — a
+//// later duplicate is how a cookie-tossing attacker overrides a value.
+//// Names are case-sensitive.
+////
+//// WRITING (`serialize`, `formatHeader`). The value is percent-encoded (std
+//// `encoding.percentEncode`, RFC 3986 unreserved kept), so every value
+//// round-trips through `parse`. A name that is not a token, a value or
+//// attribute outside printable ASCII, an attribute that could end the line
+//// (`;`, a control character), a `SameSite` other than `Strict` / `Lax` /
+//// `None`, `SameSite=None` without `Secure`, and a `__Secure-` / `__Host-`
+//// name without the attributes its prefix promises (RFC 6265bis § 4.1.3)
+//// RAISE: a header line that cannot be written correctly is a programming
+//// error, never a line on the wire.
+
+import {encoding} from "std";
+import {lexical.charOf, lexical.sub, lexical.isToken, lexical.isPrintable, lexical.allIn, lexical.cookieOctetChars, lexical.trimOws, lexical.alphaChars, lexical.digitChars};
+
+// The attributes of one `Set-Cookie` line. `maxAge` absent (`null`) omits
+// `Max-Age` — a session cookie; `0` or less expires the cookie on arrival
+// (RFC 6265 § 5.2.2). `domain` and `sameSite` empty omit the attribute.
+pub type CookieAttributes(
+    path: string,
+    domain: string,
+    maxAge: ?i32,
+    httpOnly: bool,
+    secure: bool,
+    sameSite: string,
+)
+
+// ── reading ─────────────────────────────────────────────────────────────────
+
+// The value of one chunk, or `null` when the chunk is refused.
+fn chunkValue(raw: string) -> ?string {
+    val quoted = (raw.length() >= 2)
+        && raw.startsWith("\"")
+        && raw.endsWith("\"");
+    val inner = if (quoted) sub(raw, 1, raw.length() - 1) else raw;
+    if (allIn(inner, cookieOctetChars()) == false) return null;
+    if (escapesClean(inner) == false) return null;
+    return case encoding.percentDecode(inner) {
+        Ok(text) -> text;
+        Error(_) -> null;
+    };
+}
+
+// The escapes of a raw value are well-formed — every `%` is followed by two
+// hex digits — and none decodes to a control character (%x00-1F, %x7F). The
+// raw value is cookie-octets already, so a control character can only come
+// from an escape. Checked here rather than left to `encoding.percentDecode`:
+// on erlang (`uri_string:unquote`) a trailing lone `%` (`100%`) decodes to
+// itself, where commonJS refuses it.
+fn escapesClean(raw: string) -> bool {
+    var clean = true;
+    var i = 0;
+    while (i < raw.length()) {
+        if (charOf(raw, i) == "%") {
+            val hi = charOf(raw, i + 1).toUpper();
+            val lo = charOf(raw, i + 2).toUpper();
+            val hex = isHex(hi) && isHex(lo);
+            if (hex == false) clean = false;
+            if ((hi == "0") || (hi == "1")) clean = false;
+            if ((hi == "7") && (lo == "F")) clean = false;
+            i = i + 3;
+        } else i = i + 1;
+    }
+    return clean;
+}
+
+fn isHex(c: string) -> bool {
+    return (c != "") && ("0123456789ABCDEF".indexOf(c) >= 0);
+}
+
+// Every `name=value` pair of a `Cookie` header, in header order, each name
+// once — its first occurrence — and without the refused ones.
+pub fn parse(header: string) -> Array<#(string, string)> {
+    var out: Array<#(string, string)> = [];
+    var seen: Array<string> = [];
+    for (header.split(";")) { piece ->
+        val chunk = trimOws(piece);
+        val eq = chunk.indexOf("=");
+        if (eq > 0) {
+            val name = trimOws(sub(chunk, 0, eq));
+            val fresh = isToken(name) && (seen.indexOf(name) < 0);
+            if (fresh) {
+                seen.push(name);
+                val value: ?string = chunkValue(
+                    trimOws(sub(chunk, eq + 1, chunk.length())),
+                );
+                if (value != null) out.push(#(name, value ?? ""));
+            }
+        }
+    }
+    return out;
+}
+
+// The value of cookie `name` — its first occurrence — or `null` when the
+// header does not carry it or its first occurrence is refused.
+pub fn get(header: string, name: string) -> ?string {
+    var found: ?string = null;
+    var decided = false;
+    for (header.split(";")) { piece ->
+        val chunk = trimOws(piece);
+        val eq = chunk.indexOf("=");
+        if ((decided == false) && (eq > 0))
+            if (trimOws(sub(chunk, 0, eq)) == name) {
+                decided = true;
+                found = chunkValue(trimOws(sub(chunk, eq + 1, chunk.length())));
+            }
+    }
+    if (isToken(name) == false) return null;
+    return found;
+}
+
+// ── writing ─────────────────────────────────────────────────────────────────
+
+fn problem(name: string, what: string) -> string {
+    return "http.cookie: cookie `" + name + "` " + what;
+}
+
+fn demandName(name: string) -> i32 {
+    if (isToken(name) == false)
+        @panic(problem(name, "- a cookie name is an RFC 9110 token"));
+    return 0;
+}
+
+fn demandValue(name: string, value: string) -> i32 {
+    if (isPrintable(value) == false)
+        @panic(
+            problem(
+                name,
+                "carries a character outside printable ASCII - there is no byte type, so the two targets cannot agree what octets that is; encode the value (base64url) first",
+            ),
+        );
+    return 0;
+}
+
+fn domainChars() -> string {
+    return alphaChars() + digitChars() + "-.";
+}
+
+fn demandAttributes(name: string, attrs: CookieAttributes) -> i32 {
+    val path = attrs.path;
+    if ((isPrintable(path) == false) || (path.indexOf(";") >= 0))
+        @panic(
+            problem(
+                name,
+                "has a Path with `;` or a character outside printable ASCII",
+            ),
+        );
+    val domain = attrs.domain;
+    if (allIn(domain, domainChars()) == false)
+        @panic(problem(name, "has a Domain that is not a host name"));
+    val sameSite = attrs.sameSite;
+    val knownSite = (sameSite == "")
+        || (sameSite == "Strict")
+        || (sameSite == "Lax")
+        || (sameSite == "None");
+    if (knownSite == false)
+        @panic(
+            problem(
+                name,
+                "has SameSite `" + sameSite + "` - it is Strict, Lax or None",
+            ),
+        );
+    if ((sameSite == "None") && (attrs.secure == false))
+        @panic(problem(name, "has SameSite=None without Secure"));
+    if (name.startsWith("__Secure-") && (attrs.secure == false))
+        @panic(problem(name, "has the __Secure- prefix without Secure"));
+    val hostOk = attrs.secure && (path == "/") && (domain == "");
+    if (name.startsWith("__Host-") && (hostOk == false))
+        @panic(
+            problem(
+                name,
+                "has the __Host- prefix without Secure, Path=/ and no Domain",
+            ),
+        );
+    return 0;
+}
+
+// One `Set-Cookie` field value: `name=<percent-encoded value>`, then
+// `Path`, `Domain`, `Max-Age`, `HttpOnly`, `Secure`, `SameSite` in that
+// order, each only when set.
+pub fn serialize(
+    name: string,
+    value: string,
+    attrs: CookieAttributes,
+) -> string {
+    val _n = demandName(name);
+    val _v = demandValue(name, value);
+    val _a = demandAttributes(name, attrs);
+    var out = name + "=" + encoding.percentEncode(value);
+    val path = attrs.path;
+    if (path != "") out = out + "; Path=" + path;
+    val domain = attrs.domain;
+    if (domain != "") out = out + "; Domain=" + domain;
+    val maxAge: ?i32 = attrs.maxAge;
+    if (maxAge != null) out = out + "; Max-Age=" + (maxAge ?? 0).toString();
+    if (attrs.httpOnly) out = out + "; HttpOnly";
+    if (attrs.secure) out = out + "; Secure";
+    val sameSite = attrs.sameSite;
+    if (sameSite != "") out = out + "; SameSite=" + sameSite;
+    return out;
+}
+
+// A `Cookie` request header carrying `pairs` in order — `name=value; …`,
+// each value percent-encoded as `serialize` writes it, so `parse` reads the
+// pairs back. A name twice is written twice; the reader keeps the first.
+pub fn formatHeader(pairs: Array<#(string, string)>) -> string {
+    var parts: Array<string> = [];
+    for (pairs) { p ->
+        val _n = demandName(p.0);
+        val _v = demandValue(p.0, p.1);
+        parts.push(p.0 + "=" + encoding.percentEncode(p.1));
+    }
+    return parts.join("; ");
+}

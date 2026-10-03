@@ -1,0 +1,51 @@
+----- SOURCE CODE -- math.bp
+```botopink
+pub fn double(x: i32) -> i32 {
+    return x * 2;
+}
+```
+
+----- ERLANG -- math.erl
+```erlang
+-module(test@math).
+-export([double/1]).
+
+double(X) ->
+    '__bp_int'((X * 2), -2147483648, 2147483647, <<"integer overflow: * on i32 at math.bp:2:14">>).
+
+-compile({inline,['__bp_int'/4]}).
+'__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
+'__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
+```
+
+----- RUN LOG -----
+```logs
+```
+
+----- SOURCE CODE -- main.bp
+```botopink
+import {math.double};
+val result = double(21);
+```
+
+----- ERLANG -- main.erl
+```erlang
+-module(test@main).
+-export(['_botopink_init'/0]).
+
+%% import double
+
+result() ->
+    case persistent_term:get({test@main, result}, '__bp_unset') of
+        '__bp_unset' -> __BpV = test@math:double(21), persistent_term:put({test@main, result}, __BpV), __BpV;
+        __BpCached -> __BpCached
+    end.
+
+'_botopink_init'() ->
+    result(),
+    ok.
+```
+
+----- RUN LOG -----
+```logs
+```

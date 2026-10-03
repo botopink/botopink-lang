@@ -7,6 +7,10 @@ const std = @import("std");
 const spec = @import("./spec.zig");
 const clone = @import("./clone.zig");
 const lock = @import("../lock.zig");
+/// Test-only: the one way a test spells a path it writes to (per process, so a
+/// second `zig build test` over this checkout cannot empty it mid-test).
+/// `build.zig` gives this module to the test modules alone.
+const test_scratch = @import("test_scratch");
 
 pub const Plan = struct {
     arena: std.heap.ArenaAllocator,
@@ -24,8 +28,21 @@ pub const Action = struct {
     rev: []const u8 = "",
     git: []const u8 = "",
     path: ?[]const u8 = null,
+    /// The ref a `.clone` checks out: the entry's own `branch:`/`tag:`/`rev:`,
+    /// or `.rev` of the lockfile pin when the store no longer holds it. Without
+    /// it a first install of a `branch:`/`tag:` dep would clone default HEAD.
+    ref: spec.DepRef = .none,
 
-    pub const Kind = enum { clone, reuse_cas, path_symlink, skip_legacy };
+    /// `skip_workspace`: a `{ "workspace": true }` entry — the sibling member
+    /// of the enclosing workspace, which the compiler resolves from the tree;
+    /// there is nothing to fetch or link.
+    pub const Kind = enum { clone, reuse_cas, path_symlink, skip_workspace };
+
+    /// The `DepSpec` the cloner materialises for this action — git source plus
+    /// the ref the action carries.
+    pub fn cloneSpec(self: Action) spec.DepSpec {
+        return .{ .git = self.git, .ref = self.ref };
+    }
 };
 
 pub const Options = struct {
@@ -37,20 +54,45 @@ pub const Options = struct {
     /// planner re-use CAS hits and skip already-resolved deps when `frozen`.
     lock_in: ?*const lock.Lockfile = null,
     /// When true: refuse to clone anything; every git dep must already have
-    /// a lockfile entry. Drives `bpmp install --frozen`.
+    /// a lockfile entry (or a spec `rev:`) whose commit is in the store.
+    /// Drives `bpmp install --frozen`.
     frozen: bool = false,
+    /// Set to the offending dependency's name when `plan` fails with
+    /// `FrozenMissingEntry` or `FrozenStoreMiss`, so the caller can name it.
+    failed_name: ?*[]const u8 = null,
 };
 
 pub const Error = error{
     FrozenMissingEntry,
+    /// `--frozen` and the pinned commit is not in the store: installing would
+    /// need a clone, which `--frozen` forbids. Never a dangling symlink.
+    FrozenStoreMiss,
     StoreRootMissing,
     DryrunNoOp,
 } || clone.TypedError || std.mem.Allocator.Error;
 
-/// Plan one action per entry without touching disk. Used by `--dry-run`
-/// and by the actual installer (which then executes the plan).
+fn storeHas(io: std.Io, path: []const u8) bool {
+    std.Io.Dir.cwd().access(io, path, .{}) catch return false;
+    return true;
+}
+
+fn dupeRef(a: std.mem.Allocator, ref: spec.DepRef) !spec.DepRef {
+    return switch (ref) {
+        .branch => |b| .{ .branch = try a.dupe(u8, b) },
+        .tag => |t| .{ .tag = try a.dupe(u8, t) },
+        .rev => |r| .{ .rev = try a.dupe(u8, r) },
+        .none => .none,
+    };
+}
+
+/// Plan one action per entry. The only disk access is probing the store for
+/// pinned commits (`<store>/<name>/<rev>/`): a pin is `.reuse_cas` only when
+/// that directory exists, otherwise it is cloned — or, under `frozen`, the
+/// plan fails with `FrozenStoreMiss`. Used by `--dry-run` and by the actual
+/// installer (which then executes the plan).
 pub fn plan(
     gpa: std.mem.Allocator,
+    io: std.Io,
     entries: []const spec.DepEntry,
     store_root: []const u8,
     opts: Options,
@@ -62,17 +104,18 @@ pub fn plan(
     var actions = try a.alloc(Action, entries.len);
     var i: usize = 0;
     for (entries) |entry| {
-        const sp = entry.spec orelse {
-            // Legacy bare-name entry — `bpmp install` skips, the resolver
-            // still finds it through `libs/<name>/` lookup.
+        const sp = entry.spec;
+        if (sp.workspace) {
+            // A sibling member of the enclosing workspace: the compiler reads
+            // it from the tree (decision 75); nothing to materialise.
             actions[i] = .{
                 .name = try a.dupe(u8, entry.name),
-                .kind = .skip_legacy,
+                .kind = .skip_workspace,
                 .store_path = "",
             };
             i += 1;
             continue;
-        };
+        }
 
         if (sp.isPath()) {
             actions[i] = .{
@@ -90,46 +133,47 @@ pub fn plan(
 
         const git_url = try a.dupe(u8, sp.git.?);
 
-        // Already in lockfile? CAS hit if the store dir exists.
-        if (opts.lock_in) |lf_in| {
-            if (lf_in.find(entry.name)) |le| {
-                if (le.rev.len == 40) {
-                    const cas = try std.fs.path.join(a, &.{ store_root, entry.name, le.rev });
-                    actions[i] = .{
-                        .name = try a.dupe(u8, entry.name),
-                        .kind = .reuse_cas,
-                        .store_path = cas,
-                        .rev = try a.dupe(u8, le.rev),
-                        .git = git_url,
-                    };
-                    i += 1;
-                    continue;
-                }
+        // A pinned commit — the lockfile's, else the spec's own `rev:`. CAS hit
+        // only when the store really holds it; otherwise clone that exact
+        // commit, which `--frozen` forbids.
+        const lock_rev: ?[]const u8 = if (opts.lock_in) |lf_in|
+            if (lf_in.find(entry.name)) |le| (if (le.rev.len == 40) le.rev else null) else null
+        else
+            null;
+        const pinned_rev: ?[]const u8 = lock_rev orelse if (sp.ref == .rev) sp.ref.rev else null;
+        if (pinned_rev) |rev| {
+            const cas = try std.fs.path.join(a, &.{ store_root, entry.name, rev });
+            const hit = storeHas(io, cas);
+            if (!hit and opts.frozen) {
+                if (opts.failed_name) |out| out.* = entry.name;
+                return Error.FrozenStoreMiss;
             }
-        }
-
-        // Pinned rev in the spec? CAS hit potential.
-        if (sp.ref == .rev) {
-            const cas = try std.fs.path.join(a, &.{ store_root, entry.name, sp.ref.rev });
+            const rev_owned = try a.dupe(u8, rev);
             actions[i] = .{
                 .name = try a.dupe(u8, entry.name),
-                .kind = if (opts.frozen) .reuse_cas else .clone,
-                .store_path = cas,
-                .rev = try a.dupe(u8, sp.ref.rev),
+                .kind = if (hit) .reuse_cas else .clone,
+                .store_path = if (hit) cas else "",
+                .rev = rev_owned,
                 .git = git_url,
+                .ref = .{ .rev = rev_owned },
             };
             i += 1;
             continue;
         }
 
-        if (opts.frozen) return Error.FrozenMissingEntry;
+        if (opts.frozen) {
+            if (opts.failed_name) |out| out.* = entry.name;
+            return Error.FrozenMissingEntry;
+        }
 
-        // Fresh clone: rev unknown until we shell out.
+        // Fresh clone of the declared branch / tag (or default HEAD when the
+        // entry names no ref): the rev is unknown until we shell out.
         actions[i] = .{
             .name = try a.dupe(u8, entry.name),
             .kind = .clone,
             .store_path = "",
             .git = git_url,
+            .ref = try dupeRef(a, sp.ref),
         };
         i += 1;
     }
@@ -141,40 +185,116 @@ pub fn plan(
 
 const testing = std.testing;
 
-test "plan: legacy bare-name skips" {
-    const entries = [_]spec.DepEntry{.{ .name = "x" }};
-    var p = try plan(testing.allocator, &entries, "/store", .{});
+const test_rev = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+
+/// Empty a scratch directory under the test cwd (`modules/bpmp`);
+/// `.botopinkbuild/` is git-ignored.
+fn resetDir(dir: []const u8) void {
+    std.Io.Dir.cwd().deleteTree(testing.io, dir) catch {};
+}
+
+fn lockWith(rev: []const u8) !lock.Lockfile {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    const a = arena.allocator();
+    const ent = try a.alloc(lock.Entry, 1);
+    ent[0] = .{
+        .name = "j",
+        .git = "https://e/j.git",
+        .rev = try a.dupe(u8, rev),
+        .fetched_at = "2026-06-19T00:00:00Z",
+    };
+    return lock.Lockfile{ .arena = arena, .generated_by = "bpmp test", .lockfile_version = 1, .entries = ent };
+}
+
+test "plan: a workspace member skips — the compiler resolves it from the tree" {
+    const entries = [_]spec.DepEntry{.{ .name = "x", .spec = .{ .workspace = true } }};
+    var p = try plan(testing.allocator, testing.io, &entries, "/store", .{});
     defer p.deinit();
     try testing.expectEqual(@as(usize, 1), p.actions.len);
-    try testing.expectEqual(Action.Kind.skip_legacy, p.actions[0].kind);
+    try testing.expectEqual(Action.Kind.skip_workspace, p.actions[0].kind);
 }
 
 test "plan: path: → path_symlink" {
     const entries = [_]spec.DepEntry{.{ .name = "x", .spec = .{ .path = "/abs/x" } }};
-    var p = try plan(testing.allocator, &entries, "/store", .{});
+    var p = try plan(testing.allocator, testing.io, &entries, "/store", .{});
     defer p.deinit();
     try testing.expectEqual(Action.Kind.path_symlink, p.actions[0].kind);
     try testing.expectEqualStrings("/abs/x", p.actions[0].path.?);
 }
 
-test "plan: git+branch with no lockfile → clone" {
+test "plan: git+branch with no lockfile → clone that carries the branch" {
     const entries = [_]spec.DepEntry{.{
         .name = "j",
         .spec = .{ .git = "https://e/j.git", .ref = .{ .branch = "feat" } },
     }};
-    var p = try plan(testing.allocator, &entries, "/store", .{});
+    var p = try plan(testing.allocator, testing.io, &entries, "/store", .{});
     defer p.deinit();
     try testing.expectEqual(Action.Kind.clone, p.actions[0].kind);
+    const s = p.actions[0].cloneSpec();
+    try testing.expectEqualStrings("https://e/j.git", s.git.?);
+    try testing.expectEqualStrings("feat", s.ref.branch);
 }
 
-test "plan: git+rev → CAS short-circuit (reuse_cas under frozen)" {
+test "plan: git+tag with no lockfile → clone that carries the tag" {
     const entries = [_]spec.DepEntry{.{
         .name = "j",
-        .spec = .{ .git = "https://e/j.git", .ref = .{ .rev = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" } },
+        .spec = .{ .git = "https://e/j.git", .ref = .{ .tag = "v1.2.0" } },
     }};
-    var p = try plan(testing.allocator, &entries, "/store", .{ .frozen = true });
+    var p = try plan(testing.allocator, testing.io, &entries, "/store", .{});
     defer p.deinit();
-    try testing.expectEqual(Action.Kind.reuse_cas, p.actions[0].kind);
+    try testing.expectEqual(Action.Kind.clone, p.actions[0].kind);
+    try testing.expectEqualStrings("v1.2.0", p.actions[0].cloneSpec().ref.tag);
+}
+
+test "plan: git with no ref → clone of default HEAD (ref .none)" {
+    const entries = [_]spec.DepEntry{.{ .name = "j", .spec = .{ .git = "https://e/j.git" } }};
+    var p = try plan(testing.allocator, testing.io, &entries, "/store", .{});
+    defer p.deinit();
+    try testing.expectEqual(spec.DepRef.none, p.actions[0].cloneSpec().ref);
+}
+
+test "plan: git+rev, commit in the store → reuse_cas (frozen or not)" {
+    const store = test_scratch.path(testing.io, "bpmp-tests/resolver-rev-hit");
+    resetDir(store);
+    defer std.Io.Dir.cwd().deleteTree(testing.io, store) catch {};
+    try std.Io.Dir.cwd().createDirPath(testing.io, test_scratch.path(testing.io, "bpmp-tests/resolver-rev-hit/j/" ++ test_rev));
+
+    const entries = [_]spec.DepEntry{.{
+        .name = "j",
+        .spec = .{ .git = "https://e/j.git", .ref = .{ .rev = test_rev } },
+    }};
+    for ([_]bool{ false, true }) |frozen| {
+        var p = try plan(testing.allocator, testing.io, &entries, store, .{ .frozen = frozen });
+        defer p.deinit();
+        try testing.expectEqual(Action.Kind.reuse_cas, p.actions[0].kind);
+        try testing.expectEqualStrings(test_scratch.path(testing.io, "bpmp-tests/resolver-rev-hit/j/" ++ test_rev), p.actions[0].store_path);
+    }
+}
+
+test "plan: git+rev, empty store → clone of that rev" {
+    const store = test_scratch.path(testing.io, "bpmp-tests/resolver-rev-miss");
+    resetDir(store);
+    const entries = [_]spec.DepEntry{.{
+        .name = "j",
+        .spec = .{ .git = "https://e/j.git", .ref = .{ .rev = test_rev } },
+    }};
+    var p = try plan(testing.allocator, testing.io, &entries, store, .{});
+    defer p.deinit();
+    try testing.expectEqual(Action.Kind.clone, p.actions[0].kind);
+    try testing.expectEqualStrings(test_rev, p.actions[0].cloneSpec().ref.rev);
+}
+
+test "plan: frozen + git+rev + empty store → FrozenStoreMiss naming the dep" {
+    const store = test_scratch.path(testing.io, "bpmp-tests/resolver-frozen-rev-miss");
+    resetDir(store);
+    const entries = [_]spec.DepEntry{.{
+        .name = "j",
+        .spec = .{ .git = "https://e/j.git", .ref = .{ .rev = test_rev } },
+    }};
+    var failed: []const u8 = "";
+    const r = plan(testing.allocator, testing.io, &entries, store, .{ .frozen = true, .failed_name = &failed });
+    try testing.expectError(Error.FrozenStoreMiss, r);
+    try testing.expectEqualStrings("j", failed);
 }
 
 test "plan: frozen + missing lockfile entry → FrozenMissingEntry" {
@@ -182,30 +302,57 @@ test "plan: frozen + missing lockfile entry → FrozenMissingEntry" {
         .name = "j",
         .spec = .{ .git = "https://e/j.git", .ref = .{ .branch = "feat" } },
     }};
-    const r = plan(testing.allocator, &entries, "/store", .{ .frozen = true });
+    var failed: []const u8 = "";
+    const r = plan(testing.allocator, testing.io, &entries, "/store", .{ .frozen = true, .failed_name = &failed });
     try testing.expectError(Error.FrozenMissingEntry, r);
+    try testing.expectEqualStrings("j", failed);
 }
 
-test "plan: lock_in hit → reuse_cas" {
+test "plan: lock_in hit with the commit in the store → reuse_cas" {
+    const store = test_scratch.path(testing.io, "bpmp-tests/resolver-lock-hit");
+    resetDir(store);
+    defer std.Io.Dir.cwd().deleteTree(testing.io, store) catch {};
+    try std.Io.Dir.cwd().createDirPath(testing.io, test_scratch.path(testing.io, "bpmp-tests/resolver-lock-hit/j/" ++ test_rev));
+
     const entries = [_]spec.DepEntry{.{
         .name = "j",
         .spec = .{ .git = "https://e/j.git", .ref = .{ .branch = "feat" } },
     }};
-
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    const a = arena.allocator();
-    const ent = try a.alloc(lock.Entry, 1);
-    ent[0] = .{
-        .name = "j",
-        .git = "https://e/j.git",
-        .rev = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
-        .fetched_at = "2026-06-19T00:00:00Z",
-    };
-    var lf = lock.Lockfile{ .arena = arena, .generated_by = "bpmp test", .lockfile_version = 1, .entries = ent };
+    var lf = try lockWith(test_rev);
     defer lf.deinit();
 
-    var p = try plan(testing.allocator, &entries, "/store", .{ .lock_in = &lf });
+    var p = try plan(testing.allocator, testing.io, &entries, store, .{ .lock_in = &lf });
     defer p.deinit();
     try testing.expectEqual(Action.Kind.reuse_cas, p.actions[0].kind);
-    try testing.expectEqualStrings("/store/j/deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", p.actions[0].store_path);
+    try testing.expectEqualStrings(test_scratch.path(testing.io, "bpmp-tests/resolver-lock-hit/j/" ++ test_rev), p.actions[0].store_path);
+}
+
+test "plan: lock_in hit, pruned store → clone of the locked rev, not the branch" {
+    const store = test_scratch.path(testing.io, "bpmp-tests/resolver-lock-pruned");
+    resetDir(store);
+    const entries = [_]spec.DepEntry{.{
+        .name = "j",
+        .spec = .{ .git = "https://e/j.git", .ref = .{ .branch = "feat" } },
+    }};
+    var lf = try lockWith(test_rev);
+    defer lf.deinit();
+
+    var p = try plan(testing.allocator, testing.io, &entries, store, .{ .lock_in = &lf });
+    defer p.deinit();
+    try testing.expectEqual(Action.Kind.clone, p.actions[0].kind);
+    try testing.expectEqualStrings(test_rev, p.actions[0].cloneSpec().ref.rev);
+}
+
+test "plan: frozen + lock_in hit + pruned store → FrozenStoreMiss (no dangling symlink)" {
+    const store = test_scratch.path(testing.io, "bpmp-tests/resolver-frozen-lock-pruned");
+    resetDir(store);
+    const entries = [_]spec.DepEntry{.{
+        .name = "j",
+        .spec = .{ .git = "https://e/j.git", .ref = .{ .branch = "feat" } },
+    }};
+    var lf = try lockWith(test_rev);
+    defer lf.deinit();
+
+    const r = plan(testing.allocator, testing.io, &entries, store, .{ .frozen = true, .lock_in = &lf });
+    try testing.expectError(Error.FrozenStoreMiss, r);
 }

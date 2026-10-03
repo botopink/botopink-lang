@@ -1,0 +1,39 @@
+//// An array typed by a behavior holds different implementers of it — the
+//// shape jhonstart's `RenderPlugin` wanted (it is a record today because this
+//// did not type). An array literal met its expected element type only through
+//// its FIRST element, so `[A(…), B(…)]` under `Array<Plugin>` was
+//// `type mismatch: expected A, got B` on every target; each element now meets
+//// the behavior the way an argument meets its parameter. Both spellings of the
+//// annotation, each element's own method answering.
+//// On all four targets: wasm read every element as the first one's type and
+//// answered `a a b b` at exit 0; it now reads each value's header.
+
+behavior Plugin {
+    fn name(self: Self) -> string;
+}
+
+type A(n: i32) implement Plugin {
+    fn name(self: Self) -> string {
+        return "a" + self.n.toString();
+    }
+}
+
+type B(s: string) implement Plugin {
+    fn name(self: Self) -> string {
+        return "b" + self.s;
+    }
+}
+
+fn names(ps: Plugin[]) -> string {
+    return ps.map({ p -> p.name() }).join(",");
+}
+
+pub fn main() {
+    val ps: Array<Plugin> = [A(n: 1), B(s: "x")];
+    ps.forEach({ p -> @print(p.name()) });
+    val qs: Plugin[] = [B(s: "y"), A(n: 2)];
+    for (qs) { q ->
+        @print(q.name());
+    }
+    @print(names([A(n: 3), B(s: "z")]));
+}

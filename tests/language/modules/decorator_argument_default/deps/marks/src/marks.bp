@@ -1,0 +1,21 @@
+//// A dependency's decorator whose trailing parameters declare a default.
+
+pub fn mark(
+    comptime decl: @Decl,
+    label: string,
+    loud: bool = false,
+    times: i32 = -1,
+    tail: string = ".",
+) {
+    val shown = if (loud) label.toUpper() else label;
+    @emit(
+        "pub fn "
+            + decl.name
+            + "Mark() -> string { return \""
+            + shown
+            + ":"
+            + times.toString()
+            + tail
+            + "\"; }",
+    );
+}

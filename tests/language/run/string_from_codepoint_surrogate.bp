@@ -1,0 +1,11 @@
+//// `String.fromCodepoint` of a value that is no Unicode scalar value aborts
+//// the program on every target (decision 262): erlang's `<<Cp/utf8>>` raises
+//// `badarg`, the Node cell throws a `RangeError` (native
+//// `String.fromCodePoint` would answer a lone surrogate) and wasm's
+//// `$__str_from_cp` traps. What was printed before stays printed.
+
+pub fn main() {
+    @print("before");
+    @print(String.fromCodepoint(55296));
+    @print("after");
+}

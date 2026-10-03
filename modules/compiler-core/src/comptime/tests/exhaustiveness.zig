@@ -20,48 +20,48 @@ const h = @import("helpers.zig");
 
 test "exhaustiveness error: missing enum patterns" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Color = enum {
+        \\val Color = type {
         \\    Red,
         \\    Green,
         \\    Blue,
         \\};
         \\val name = fn(c: Color) -> string {
-        \\    case c {
+        \\    return case c {
         \\        Red -> "red";
-        \\    }
+        \\    };
         \\};
     );
 }
 
 test "exhaustiveness: all enum patterns covered" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Color = enum {
+        \\val Color = type {
         \\    Red,
         \\    Green,
         \\    Blue,
         \\};
         \\val name = fn(c: Color) -> string {
-        \\    case c {
+        \\    return case c {
         \\        Red -> "red";
         \\        Green -> "green";
         \\        Blue -> "blue";
-        \\    }
+        \\    };
         \\};
     );
 }
 
 test "exhaustiveness: wildcard covers remaining patterns" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Color = enum {
+        \\val Color = type {
         \\    Red,
         \\    Green,
         \\    Blue,
         \\};
         \\val name = fn(c: Color) -> string {
-        \\    case c {
+        \\    return case c {
         \\        Red -> "red";
         \\        _ -> "other";
-        \\    }
+        \\    };
         \\};
     );
 }
@@ -69,74 +69,74 @@ test "exhaustiveness: wildcard covers remaining patterns" {
 test "exhaustiveness error: missing string patterns (with wildcard)" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\val categorize = fn(s: string) -> string {
-        \\    case s {
+        \\    return case s {
         \\        "hello" -> "greeting";
-        \\    }
+        \\    };
         \\};
     );
 }
 
 test "exhaustiveness: nested pattern matching" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Result = enum <T, E> {
+        \\val Result = type <T, E> {
         \\    Ok(value: T),
         \\    Err(error: E),
         \\};
-        \\val unwrap_or = fn(r: Result<i32, string>, default: i32) -> i32 {
-        \\    case r {
+        \\val unwrap_or = fn(r: Result<i32, string>, fallback: i32) -> i32 {
+        \\    return case r {
         \\        Ok(v) -> v,
-        \\        Err(_) -> default,
-        \\    }
+        \\        Err(_) -> fallback,
+        \\    };
         \\};
     );
 }
 
 test "exhaustiveness: or-pattern covers multiple variants" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Color = enum {
+        \\val Color = type {
         \\    Red,
         \\    Green,
         \\    Blue,
         \\};
         \\val warm = fn(c: Color) -> bool {
-        \\    case c {
+        \\    return case c {
         \\        Red | Green -> true;
         \\        Blue -> false;
-        \\    }
+        \\    };
         \\};
     );
 }
 
 test "exhaustiveness: guarded arm does not cover its variant" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Color = enum {
+        \\val Color = type {
         \\    Red,
         \\    Green,
         \\    Blue,
         \\};
         \\val name = fn(c: Color) -> string {
-        \\    case c {
+        \\    return case c {
         \\        Red -> "red";
         \\        Green -> "green";
         \\        Blue if false -> "blue";
-        \\    }
+        \\    };
         \\};
     );
 }
 
 test "exhaustiveness error: unreachable arm after wildcard" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Color = enum {
+        \\val Color = type {
         \\    Red,
         \\    Green,
         \\    Blue,
         \\};
         \\val name = fn(c: Color) -> string {
-        \\    case c {
+        \\    return case c {
         \\        Red -> "red";
         \\        _ -> "other";
         \\        Blue -> "blue";
-        \\    }
+        \\    };
         \\};
     );
 }
@@ -184,8 +184,8 @@ test "infer: net-new ---- case over int and string literal scrutinees" {
 // accepts flat bindings and is a known parser limitation.
 test "infer: net-new ---- nested record destructuring binds inner fields" {
     try h.assertInfersOk(std.testing.allocator,
-        \\record Point { x: i32, y: i32 }
-        \\record Line { head: Point, tail: Point }
+        \\type Point(x: i32, y: i32)
+        \\type Line(head: Point, tail: Point)
         \\fn endXY(l: Line) -> i32 {
         \\    return case l {
         \\        Line(_, Point(x, y)) -> x + y;
@@ -216,18 +216,18 @@ test "infer: net-new ---- case as val vs trailing expr type-check identically" {
 
 test "exhaustiveness error: duplicate variant arm" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Color = enum {
+        \\val Color = type {
         \\    Red,
         \\    Green,
         \\    Blue,
         \\};
         \\val name = fn(c: Color) -> string {
-        \\    case c {
+        \\    return case c {
         \\        Red -> "red";
         \\        Green -> "green";
         \\        Red -> "again";
         \\        Blue -> "blue";
-        \\    }
+        \\    };
         \\};
     );
 }

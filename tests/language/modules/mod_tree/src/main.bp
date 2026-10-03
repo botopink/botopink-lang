@@ -1,0 +1,10 @@
+//// Modules: a folder index (`shapes/mod.bp`), a `pub mod` leaf re-exported
+//// through it, and a private `mod` leaf only the index can see.
+
+pub mod shapes;
+import {shapes.describe, shapes.lucky};
+
+pub fn main() {
+    @print(describe());
+    @print(lucky());
+}

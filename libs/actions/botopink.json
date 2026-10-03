@@ -1,0 +1,16 @@
+{
+  "name": "actions",
+  "version": "0.0.1",
+  "description": "Bundled library — the server-action protocol both halves read and write: the state grammar and ActionState, the v1 envelope, the JSON-RPC body and the refresh value; pure .bp, erlang and commonJS",
+  "src": "src/",
+  "entry": "root.bp",
+  "target": "erlang",
+  "targets": ["erlang", "commonJS"],
+  "files": [
+    "root.bp",
+    "state.bp",
+    "envelope.bp",
+    "rpc.bp",
+    "refresh.bp"
+  ]
+}

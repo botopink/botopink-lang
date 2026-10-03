@@ -1,0 +1,22 @@
+//// Decision 53 — a pattern's range is inclusive and spelled `...`; `..` is
+//// iteration and slicing (`for (0..n)`, `xs[0..2]`). `1..9` in a `case` arm is
+//// refused at the range, named, with `1...9` as the hint — never read as an
+//// exclusive range and never as an arm that matches nothing.
+
+fn describe(n: i32) -> string {
+    return case n {
+        0 {
+            "zero";
+        }
+        1..9 {
+            "digit";
+        }
+        _ {
+            "big";
+        }
+    };
+}
+
+pub fn main() {
+    @print(describe(5));
+}

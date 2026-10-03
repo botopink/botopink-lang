@@ -1,0 +1,54 @@
+//// An `i64` holds every value of its width — in a local, a parameter, a
+//// return, a record field and a `?i64` — and prints, compares, divides and
+//// turns into text by that value. So does a `u32` past `2^31`, and an integer
+//// literal past the `i32` range. (Values stay below `2^53`, where commonJS's
+//// numbers are exact.)
+////
+//// The wasm gap this pins (`00 · gate-wasm-wrong-answers`): an `i64` was
+//// lowered as an `i32`, so `val a: i64 = 4294967295` printed `-1`, `a / 2`
+//// answered `0`, and a record's `i64` field kept 32 bits — each at exit 0.
+
+type Ev(name: string, ts: i64)
+
+fn twice(x: i64) -> i64 {
+    return x * 2;
+}
+
+fn later(n: i32) -> ?i64 {
+    if (n > 0) return 9007199254740991;
+    return null;
+}
+
+pub fn main() {
+    val a: i64 = 4294967295;
+    @print(a);
+    @print(a / 2);
+    @print(a % 7);
+    @print(-a / 7);
+    @print(twice(a));
+    @print(a > 4294967294);
+    @print(a.toString());
+    @print("a=" + a);
+    var m: i64 = 1;
+    for (0..40) { i ->
+        m = m * 2;
+    }
+    @print(m);
+    val e = Ev(name: "start", ts: 1700000000000);
+    @print(e.ts + 1);
+    @print(e);
+    @print(e == Ev(name: "start", ts: 1700000000000));
+    val { ts } = e;
+    @print(ts - 1700000000000);
+    @print(later(1));
+    @print(later(0));
+    @print(later(1).unwrapOr(0) - 1);
+    val o = later(1);
+    if (o) {
+        v ->
+        @print(v / 3);
+    }
+    val u: u32 = 4294967295;
+    @print(u);
+    @print(4294967296);
+}

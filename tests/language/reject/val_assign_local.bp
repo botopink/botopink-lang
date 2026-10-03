@@ -1,0 +1,10 @@
+//// Decision 38 — a `val` is immutable in a `fn` body: `val x = 0; x = 1;`
+//// checked clean once and node threw `Assignment to constant variable` while
+//// the other three targets ran. The rule moved to compile time; the hint
+//// names `var`.
+
+pub fn main() {
+    val x: i32 = 0;
+    x = 1;
+    @print(x);
+}

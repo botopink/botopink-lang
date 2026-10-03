@@ -12,6 +12,7 @@ const config = @import("./config.zig");
 const resolver = @import("./resolver.zig");
 const scanner = @import("./scanner.zig");
 const reporter = @import("./reporter.zig");
+const diagnostics = @import("./diagnostics.zig");
 
 const Module = bp.Module;
 
@@ -26,6 +27,7 @@ pub const Loaded = struct {
         for (self.modules) |m| {
             gpa.free(m.path);
             gpa.free(m.source);
+            gpa.free(m.srcPath);
         }
         gpa.free(self.modules);
         resolver.freeOrphans(gpa, self.orphans);
@@ -45,7 +47,12 @@ pub fn load(
     defer da.deinit();
     var diag: resolver.Diagnostic = .{ .kind = resolver.Error.RootNotFound };
 
-    const res = resolver.resolve(gpa, io, src_dir, proj.entry, da.allocator(), &diag) catch |err| switch (err) {
+    // The names an `import … from "<name>"` may reach outside the module tree:
+    // the project's declared dependencies (`std` is built in and always allowed).
+    // Without them the resolver cannot tell a dependency from a typo.
+    const externals = try proj.dependencyNames(da.allocator());
+
+    const res = resolver.resolve(gpa, io, src_dir, proj.entry, externals, proj.files, da.allocator(), &diag) catch |err| switch (err) {
         resolver.Error.RootNotFound => {
             // No explicit root yet — fall back to the legacy blind walk so
             // unmigrated packages keep building (deprecated for one release).
@@ -57,7 +64,7 @@ pub fn load(
             return .{ .modules = mods };
         },
         else => {
-            reportDiag(diag);
+            reportDiag(da.allocator(), diag);
             return err;
         },
     };
@@ -68,7 +75,50 @@ pub fn load(
     return .{ .modules = res.modules, .orphans = res.orphans };
 }
 
-fn reportDiag(diag: resolver.Diagnostic) void {
+/// Apply `load`'s import-source rule to a flat, non-package source directory —
+/// the `test/` suite, which `botopink test` and `botopink check` discover with
+/// `scanner.scanSourcesWithFiles` instead of the resolver. Without this a
+/// `*_test.bp` naming a module that does not exist bound nothing and said
+/// nothing, exactly as a `src/` module did before the resolver learned the rule.
+///
+/// `project_modules` are the already-resolved `src/` modules — passed so a test
+/// file may import the package it tests; they carry no file path because they
+/// have already been checked and cannot fail here. Returns the resolver error
+/// after reporting it, so the caller only has to propagate a failure.
+pub fn checkFlatImports(
+    gpa: std.mem.Allocator,
+    proj: config.ProjectConfig,
+    project_modules: []const Module,
+    flat: scanner.Scan,
+) !void {
+    if (flat.modules.len == 0) return;
+
+    var da = std.heap.ArenaAllocator.init(gpa);
+    defer da.deinit();
+    const a = da.allocator();
+
+    const mods = try std.mem.concat(a, Module, &.{ project_modules, flat.modules });
+    const files = try a.alloc([]const u8, mods.len);
+    @memset(files[0..project_modules.len], "");
+    @memcpy(files[project_modules.len..], flat.files);
+
+    const externals = try proj.dependencyNames(a);
+    var diag: resolver.Diagnostic = .{ .kind = resolver.Error.RootNotFound };
+    resolver.checkSources(a, mods, files, externals, a, &diag) catch |err| {
+        reportDiag(a, diag);
+        return err;
+    };
+}
+
+/// `file:line:col` for a diagnostic that carries a location, `""` otherwise.
+/// Falls back to the raw text on an allocation failure — a diagnostic is never
+/// worth failing over.
+fn originOf(arena: std.mem.Allocator, diag: resolver.Diagnostic) []const u8 {
+    if (diag.line == 0 or diag.file.len == 0) return "";
+    return std.fmt.allocPrint(arena, "{s}:{d}:{d}", .{ diag.file, diag.line, diag.col }) catch diag.file;
+}
+
+fn reportDiag(arena: std.mem.Allocator, diag: resolver.Diagnostic) void {
     switch (diag.kind) {
         resolver.Error.AmbiguousModule => {
             reporter.errMsg("ambiguous module: both a sibling file and a folder index exist");
@@ -84,11 +134,30 @@ fn reportDiag(diag: resolver.Diagnostic) void {
             reporter.errMsg("module reached by more than one `mod` path");
             reporter.warnDetail("  module:", diag.name);
         },
+        resolver.Error.UnresolvedImportSource => {
+            reporter.errMsg("unresolved import source — no such module or dependency");
+            reporter.warnDetail("  `from` names:", diag.name);
+            reporter.warnDetail("  imported by:", diag.importer);
+            const origin = originOf(arena, diag);
+            if (origin.len > 0) reporter.warnDetail("  at:", origin);
+            reporter.hintMsg("declare it in the module tree (`mod <name>;`), or add it to `dependencies` in botopink.json");
+        },
+        resolver.Error.ModuleImportWithFrom => {
+            // Decision 206 — located at the source string, the fix written.
+            const message = std.fmt.allocPrint(arena, "\"{s}\" is a module of this package — write {s}", .{ diag.name, diag.fix }) catch diag.name;
+            const severity = std.fmt.allocPrint(arena, "error[{s}]", .{bp.comptime_pipeline.module_import_with_from}) catch "error";
+            var aw: std.Io.Writer.Allocating = .init(arena);
+            diagnostics.renderLocatedAs(&aw.writer, severity, message, diag.file, diag.source, diag.line, diag.col, diag.name.len + 2) catch {};
+            std.debug.print("{s}", .{aw.written()});
+            reporter.hintMsg("`from` names a package — std, a bundled package or a dependency; a module of this package is imported by its path inside the braces");
+        },
         resolver.Error.UnexportedImport => {
             reporter.errMsg("imported symbol is not exported by the named module");
             reporter.warnDetail("  symbol:", diag.name);
             reporter.warnDetail("  imported by:", diag.importer);
             reporter.warnDetail("  from module:", diag.target);
+            const origin = originOf(arena, diag);
+            if (origin.len > 0) reporter.warnDetail("  at:", origin);
             reporter.hintMsg("declare it `pub` in that module, or import it from the module that defines it");
         },
         resolver.Error.PrivateModuleImport => {

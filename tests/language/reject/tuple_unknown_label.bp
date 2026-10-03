@@ -1,0 +1,9 @@
+//// Decision 8 §6 T4 — a label the tuple type does not have is an error.
+
+fn load() -> #(name: string, pop: i32) {
+    return #("SP", 12);
+}
+
+pub fn main() {
+    @print(load().city);
+}

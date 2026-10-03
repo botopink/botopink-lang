@@ -1,0 +1,26 @@
+//// An `if` whose value is an `f64` is one wherever it stands: returned from an
+//// `f64` function, bound in one, and bound or printed in a function that
+//// answers nothing. wasm typed a value `if` by the ENCLOSING function's result,
+//// so `val m = if (d < 0.0) { 0.0 - d } else { d }` in `main` was an
+//// `(if (result i32)` around two `f64`s and the module was refused; commonJS
+//// printed the float `0.0` an `if` answered as `0`.
+
+fn absF(x: f64) -> f64 {
+    return if (x < 0.0) 0.0 - x else x;
+}
+
+fn pick(c: bool) -> f64 {
+    val v = if (c) 1.5 else 2.25;
+    return v;
+}
+
+pub fn main() {
+    @print(absF(-2.5));
+    @print(absF(3.0));
+    @print(pick(true));
+    @print(pick(false));
+    val d = 0.5 - 2.0;
+    val m = if (d < 0.0) 0.0 - d else d;
+    @print(m);
+    @print(if (d > 0.0) d else 0.0);
+}

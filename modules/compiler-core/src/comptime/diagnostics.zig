@@ -1,5 +1,6 @@
-//! Stable diagnostic codes for the effect-annotation + default-generic ruleset
-//! authored in `tasks/v0.beta.19/specs/frente-b-rules-tooling.md` (§0–§4 + §1G).
+//! Stable diagnostic codes for the effect ruleset (1.0.10-beta decisions
+//! 118–128 — the return type is the effect) and the default-generic ruleset
+//! authored in `tasks/v0.beta.19/specs/frente-b-rules-tooling.md` (§1G).
 //!
 //! Each constant below is the **stable string** a snapshot or LSP consumer
 //! pattern-matches against (the test runner asserts the byte-exact diagnostic
@@ -19,60 +20,125 @@
 
 const std = @import("std");
 
-// ── R1–R17: §2 rejection cases ───────────────────────────────────────────────
+// ── decisions 118–128 — the return is the effect ────────────────────────────
+//
+// Decision 118 removed the effect annotations, so every rule that paired an
+// annotation with its wrapper left with them: `effect-on-declare-forbidden`,
+// `effect-on-behavior-method-forbidden`, `effect-missing-wrapper`,
+// `effect-missing-annotation` and `effect-duplicate-annotation` (a function
+// has one return, so it has one effect). Decision 121 merged
+// `effect-throw-without-fallible-channel` into
+// `effect-try-without-fallible-channel` — the guide spells both refusals with
+// the one code. Decision 122 deleted `for-over-fallible-generator` (a `for`
+// does no implicit `try`). `specs/1.0.10-beta/decisions-pending.md` records
+// these choices (front 24, open point 2).
 
-/// R1 — `#[@<effect>] declare fn …` (annotation on a bodyless declaration).
-pub const effect_on_declare_forbidden: []const u8 = "effect-on-declare-forbidden";
+/// Decisions 118 / 127 — `#[@result]`, `#[@future]`, `#[@use]`,
+/// `#[@generator]`, `#[@resultGenerator]`, `#[@futureGenerator]`: refused by
+/// the parser (`print.zig`), fix-it: remove it (on a loop: `iter` / `stream`).
+pub const effect_annotation_removed: []const u8 = "effect-annotation-removed";
 
-/// R2 — `interface I { #[@<effect>] fn … }` (annotation on an interface method).
-pub const effect_on_interface_method_forbidden: []const u8 = "effect-on-interface-method-forbidden";
+/// Decisions 120 / 122 / 127 / 128 — `@Future`, `@Generator`,
+/// `@ResultGenerator`, `@FutureGenerator`, `@Use` in a type: refused by the
+/// parser, fix-it: the new name.
+pub const effect_type_removed: []const u8 = "effect-type-removed";
 
-/// R3 — annotation effect kind disagrees with the return wrapper kind.
+/// Decision 122 — `@Iterator<T, E>`: refused by the parser, fix-it
+/// `@Iterator<@Result<T, E>>`.
+pub const iterator_error_param_removed: []const u8 = "iterator-error-param-removed";
+
+/// Decision 128 — a component `-> @Component<C, T>` whose `T` implements
+/// `@Context<B>` with a `B` other than `C`.
 pub const effect_wrapper_mismatch: []const u8 = "effect-wrapper-mismatch";
 
-/// R4 — annotation present, return wrapper missing (`#[@result] fn f() -> i32`).
-pub const effect_missing_wrapper: []const u8 = "effect-missing-wrapper";
+/// Decision 118 rule 1 — a capability (`throw`, `try`, `await`, `use`,
+/// `yield`) used under an ALIASED return: the alias types the function, never
+/// activates the effect. Fix-it: write the wrapper literally.
+pub const effect_wrapper_behind_alias: []const u8 = "effect-wrapper-behind-alias";
 
-/// R5 — more than one `#[@<effect>]` annotation on the same fn.
-pub const effect_duplicate_annotation: []const u8 = "effect-duplicate-annotation";
+/// Decision 119 — a `return` whose value fits two layers of a nested wrapper
+/// (`-> @Result<@Result<i32, E>, E>`); asks for an explicit `Ok(…)`.
+pub const effect_return_ambiguous_nesting: []const u8 = "effect-return-ambiguous-nesting";
 
-/// R6 — `throw` outside a fallible-channel effect (result/future/iterator/asyncGenerator).
-pub const effect_throw_without_fallible_channel: []const u8 = "effect-throw-without-fallible-channel";
+/// Decision 121 — `throw` or bare `try` (the propagating form) in a body whose
+/// return carries no `@Result` in any layer. The `try … catch` form supplies
+/// its own fallback and needs no channel, so it is not gated.
+pub const effect_try_without_fallible_channel: []const u8 = "effect-try-without-fallible-channel";
 
-/// R7 — `await` outside `#[@future]` / `#[@asyncGenerator]`.
-pub const effect_await_without_future: []const u8 = "effect-await-without-future";
+/// Decision 120 — `await` (or `for await`) without an await channel: a
+/// `@Task`, `@Component` or `@Stream` return, or a `stream` loop.
+pub const effect_await_without_task: []const u8 = "effect-await-without-task";
 
-/// R8 — `yield` outside a yielding effect (generator/iterator/asyncGenerator).
+/// Decision 122 — `await` in an `@Iterator` body or an `iter` loop.
+pub const iter_await: []const u8 = "iter-await";
+
+/// Decision 123 — `yield` and `return <iterator>` in one body.
+pub const iter_mixed_yield_return: []const u8 = "iter-mixed-yield-return";
+
+/// Decisions 124 / 125 — two different `E`s in the body of `async { }` /
+/// `iter` / `stream` whose `E` is inferred (`infer.zig` `unifyErrorChannel`).
+pub const gen_infer_conflicting_errors: []const u8 = "gen-infer-conflicting-errors";
+
+/// Front 20 F11 — `.expect(default)` on a `?T`. It was an alias of `unwrapOr`
+/// under a name that says the absent branch is unreachable, which is the
+/// loosest reading of the stricter word (decision 67). There is one spelling
+/// now, and reaching for the old one is refused rather than typed permissively
+/// and broken at run time.
+pub const option_expect_removed: []const u8 = "option-expect-removed";
+
+/// A member of a `@Result` value that is not one of its builtin methods
+/// (`map`, `flatMap`, `unwrapOr`, `isOk`, `isError`): `parse(q).length` read a
+/// field off the `{ok, V}` / `{ok: V}` carrier — `null` on commonJS, a crash on
+/// erlang. The payload is reached through `try` or `unwrapOr` (`infer.zig`
+/// `refuseResultMemberAccess`).
+pub const result_member_not_a_method: []const u8 = "result-member-not-a-method";
+
+// ── decision 105 — the three loops and the generator scope ───────────────────
+
+/// `break <value>` outside a generator scope (an annotated fn or an annotated
+/// `loop`), and not the value of a `comptime` block or a `case` arm's block.
+pub const break_value_outside_generator: []const u8 = "break-value-outside-generator";
+/// A bare `break` with no loop, generator scope or value block to leave.
+pub const break_outside_loop: []const u8 = "break-outside-loop";
+/// `continue` with no enclosing loop.
+pub const continue_outside_loop: []const u8 = "continue-outside-loop";
+/// `for (cond) { x -> … }` over a `bool` — a condition is a `while`.
+pub const for_over_condition: []const u8 = "for-over-condition";
+/// `for` (not `for await`) over a `@Stream`.
+pub const for_over_stream: []const u8 = "for-over-stream";
+/// `for await` over something that is not a `@Stream`.
+pub const for_await_expects_stream: []const u8 = "for-await-expects-stream";
+/// A `use`, or a `break :outer` / `continue :outer`, crossing the border of an
+/// `iter` / `stream` loop — its body is closed like a closure.
+pub const generator_loop_closed_scope: []const u8 = "generator-loop-closed-scope";
+/// `yield :label` naming a plain loop's label rather than a generator scope's.
+pub const yield_label_not_generator: []const u8 = "yield-label-not-generator";
+
+/// R8 — `yield` outside a generator scope (an `@Iterator` / `@Stream` return
+/// that yields, or an `iter` / `stream` loop).
 pub const yield_without_generator: []const u8 = "yield-without-generator";
 
-/// R9 — alias of R7 (`await` inside `#[@result]` body).
-pub const effect_await_without_future_in_result: []const u8 = effect_await_without_future;
-
-/// R10 — alias of R6 (`throw` inside `#[@context]` / `#[@generator]` body).
-pub const effect_throw_without_fallible_channel_in_context: []const u8 = effect_throw_without_fallible_channel;
-
-/// R11 — `return Result::Ok(<r>)` inside `#[@result]` body (must be bare R).
+/// R11 — `return Result::Ok(<r>)` in a body whose return carries a `@Result` (must be bare R).
 pub const return_must_be_bare_R: []const u8 = "return-must-be-bare-R";
 
-/// R12 — manual `Result::Ok(...)`/`Result::Err(...)` construction inside `#[@result]`.
+/// R12 — manual `Result::Ok(...)`/`Result::Err(...)` construction in such a body.
 pub const result_manual_construction_forbidden: []const u8 = "result-manual-construction-forbidden";
 
-/// `throw Result::Err(<e>)` inside `#[@result]` body (must be bare E).
+/// `throw Result::Err(<e>)` in such a body (must be bare E).
 pub const throw_must_be_bare_E: []const u8 = "throw-must-be-bare-E";
 
-/// `return e;` where `e: E` inside `#[@result]` (auto-wrap targets R).
+/// `return Result.Error(e);` in such a body (auto-wrap targets R).
 pub const result_return_type_mismatch: []const u8 = "result-return-type-mismatch";
 
-/// `throw r;` where `r: R` inside `#[@result]` (auto-wrap targets E).
+/// `throw Result.Ok(r);` in such a body (auto-wrap targets E).
 pub const result_throw_type_mismatch: []const u8 = "result-throw-type-mismatch";
 
 /// `try { … }` block whose callee `E` differs from the enclosing `E`.
 pub const result_error_type_incompatible: []const u8 = "result-error-type-incompatible";
 
-/// R13 — `break <expr>` inside an iterator whose wrapper has `C = void`.
-pub const iterator_break_without_completion_type: []const u8 = "iterator-break-without-completion-type";
-
-/// R14 — `return <expr>` inside `#[@iterator]` / `#[@asyncGenerator]`.
+/// R14 — `return <expr>` inside an `iter` / `stream` loop: a sequence has no
+/// return channel (decision 122) — `break <v>` emits the last item and ends.
+/// (In a function body the same shape is `iter-mixed-yield-return`.)
 pub const iterator_return_forbidden: []const u8 = "iterator-return-forbidden";
 
 /// R15 — `yield :label <expr>` where the label is not bound.
@@ -81,47 +147,23 @@ pub const yield_label_unbound: []const u8 = "yield-label-unbound";
 /// R16 — generic parameter list `<T = default, U>` (required after defaulted).
 pub const generic_default_before_required: []const u8 = "generic-default-before-required";
 
-/// R17 — manual `Future::resolved(...)` / `Future::rejected(...)` inside `#[@future]`.
-pub const future_manual_construction_forbidden: []const u8 = "future-manual-construction-forbidden";
-
 /// R18 (E2) — alias of RC2 (`use <hook>()` violates anchor).
-/// R19 (E1) — alias of RC1 (`@getContex(T)` with no active provider).
-/// R20      — alias of RC3 (`@getContex(T)` outside the anchor).
-/// R21      — alias of RC6 (`use` of a non-`#[@context]` fn).
+/// R19 (E1) — alias of RC1 (`@getContext(T)` with no active provider).
+/// R20      — alias of RC3 (`@getContext(T)` outside the anchor).
+/// R21      — alias of RC6 (`use` of a non-hook (a callee that is not a hook `@Component<C, _>`)).
 //
 // The §1C addendum keeps the RC* names as the canonical surface; the R-table
 // numbers point to them via alias here for the catalogue.
 
-// ── RF1–RF5: §1F `#[@future]` auto-wrap diagnostics ─────────────────────────
+// ── RI1–RI6: §1I generator-body syntax diagnostics ───────────────────────────
 
-/// RF1 — `return Future::resolved(<t>)` inside `#[@future]` (must be bare T).
-pub const future_return_must_be_bare_T: []const u8 = "future-return-must-be-bare-T";
-
-/// RF2 — `throw Future::rejected(<e>)` inside `#[@future]` (must be bare E).
-pub const future_throw_must_be_bare_E: []const u8 = "future-throw-must-be-bare-E";
-
-/// RF3 — `return e;` where `e: E` inside `#[@future]` (auto-wrap targets T).
-pub const future_return_type_mismatch: []const u8 = "future-return-type-mismatch";
-
-/// RF4 — `throw r;` where `r: T` inside `#[@future]` (auto-wrap targets E).
-pub const future_throw_type_mismatch: []const u8 = "future-throw-type-mismatch";
-
-/// RF5 — manual `Future::resolved(...)` / `Future::rejected(...)` inside `#[@future]`.
-/// Identical to R17 (the §2 alias).
-pub const future_manual_construction_forbidden_alias: []const u8 = future_manual_construction_forbidden;
-
-// ── RI1–RI6: §1I `#[@iterator]` syntax diagnostics ──────────────────────────
-
-/// RI1 — `return <expr>` inside `#[@iterator]` / `#[@asyncGenerator]`.
-/// Identical to R14 (the §2 alias).
+/// RI1 — `return <expr>` inside a generator body. Identical to R14 (the §2 alias).
 pub const iterator_return_forbidden_alias: []const u8 = iterator_return_forbidden;
 
-/// RI2 — `break <expr>` whose type is not assignable to declared `C`.
+/// RI2 — `break <expr>` whose type is not the generator's item type `T`
+/// (decision 103: `break v` ≡ `yield v; break;`, so `v` is an item). RI3 —
+/// `break <expr>` against a `C = void` wrapper — left with the `C` channel.
 pub const iterator_break_type_mismatch: []const u8 = "iterator-break-type-mismatch";
-
-/// RI3 — `break <expr>` inside an iterator whose wrapper has `C = void`.
-/// Identical to R13.
-pub const iterator_break_without_completion_type_alias: []const u8 = iterator_break_without_completion_type;
 
 /// RI4 — `yield :label <expr>` where `:label` is not bound.
 /// Identical to R15.
@@ -133,25 +175,93 @@ pub const break_label_unbound: []const u8 = "break-label-unbound";
 /// RI6 — `yield break <expr>` (the deprecated form, removed in v0.beta.19).
 pub const yield_break_removed: []const u8 = "yield-break-removed";
 
-// ── RC1–RC6: §1C `#[@context]` Anchor diagnostics ───────────────────────────
+// ── RC1–RC6: §1C `@Component` base diagnostics ───────────────────────────
 
-/// RC1 (E1) — `@getContex(T)` with no active provider of T on the scope stack.
+/// RC1 (E1) — `@getContext(T)` with no active provider of T on the scope stack.
 pub const context_unbound: []const u8 = "context-unbound";
 
 /// RC2 (E2) — `use <hook>()` whose `HookBase` is not assignable to enclosing Anchor.
 pub const context_anchor_violation: []const u8 = "context-anchor-violation";
 
-/// RC3 — `@getContex(T)` whose T is outside the enclosing fn's Anchor tree.
-pub const context_getcontex_anchor_violation: []const u8 = "context-getcontex-anchor-violation";
+/// RC3 — `@getContext(T)` whose T is outside the enclosing fn's Anchor tree.
+pub const context_getcontext_anchor_violation: []const u8 = "context-getcontext-anchor-violation";
 
-/// RC4 — `@getContex(<value>)` (the argument must be a type).
-pub const context_getcontex_expects_type: []const u8 = "context-getcontex-expects-type";
+// ── `@src()` (1.0.10-beta front 01-std, decision 73) ─────────────────────────
+/// `@src(…)` was given an argument or a trailing lambda — the builtin takes none.
+pub const src_takes_no_arguments: []const u8 = "src-takes-no-arguments";
+/// A `@name(…)` call no builtin arm recognises. Replaces the silent `void`
+/// fallback that let a typo (`@pritn`) compile (decision 67: refuse).
+pub const unknown_builtin: []const u8 = "unknown-builtin";
+/// A builtin `builtins.d.bp` declares that no target lowers (`@module()`):
+/// refused at the `@` instead of typed `void` and emitted verbatim.
+pub const builtin_not_lowered: []const u8 = "builtin-not-lowered";
+/// Decision 252 — a builtin call whose arguments its declaration in
+/// `builtins.d.bp` refuses: too many, a parameter without a default missing, a
+/// label naming no parameter (a type that disagrees is the ordinary mismatch).
+pub const builtin_arguments: []const u8 = "builtin-arguments";
+/// A labelled argument in a call of a function VALUE (a parameter, a local, a
+/// field): its type is positional and names no parameter (01).
+pub const label_on_function_value: []const u8 = "label-on-function-value";
+/// A call whose callee is a VALUE of a record, enum or primitive type — not a
+/// function, not a constructor (`val g = G(a: "x"); g()`). Row 32 of
+/// `language-gaps.md`: it used to answer the value's own type, and the
+/// backends failed at run time (`g is not a function`, `{badfun, …}`).
+pub const callee_not_a_function: []const u8 = "callee-not-a-function";
+/// A second `val` / `var` of one name in one block, a parameter counting as
+/// the first (decision 152, 01c-d). A binding in an inner block is a new
+/// scope and may shadow.
+pub const binding_redeclared: []const u8 = "binding-redeclared";
+/// Decision 148 (lg-b) — a lambda that is neither a `forEach` body nor a
+/// local closure called at statement position writes a captured `var`.
+pub const captured_var_write: []const u8 = "captured-var-write";
+/// Decision 207 — an inline parameter type where only a top-level `fn`'s
+/// parameter takes one, or two of them on one function, or a field named
+/// like another parameter of its function.
+pub const inline_type_position: []const u8 = "inline-type-position";
+/// A program's own primitive behavior (`behavior String { … }`) extends std's
+/// and may not declare a member std's already declares.
+pub const behavior_member_redeclared: []const u8 = "behavior-member-redeclared";
+/// A use of an imported name the import resolved to two different
+/// declarations (`00 · 01-std`: the refusal of a duplicate `pub` name belongs
+/// to the consumer's unqualified use).
+pub const ambiguous_import_use: []const u8 = "ambiguous-import-use";
+/// `import {testing.mocks.mock} from "std"` — a std decorator imported as a
+/// leaf: the code it emits reaches its module through the annotation's handle,
+/// so it is imported through the module (`#[mocks.mock]`).
+pub const std_decorator_leaf_import: []const u8 = "std-decorator-leaf-import";
+/// A method a primitive receiver's interface does not declare
+/// (`"abc".toUpperCase()` — `String` declares `toUpper`). Used to type as a
+/// fresh variable and reach the host under its own spelling (pending 0203-a,
+/// answered (b)): refused, with the declared method whose host spelling or
+/// name is nearest.
+pub const unknown_primitive_method: []const u8 = "unknown-primitive-method";
+/// A `#[@Family…]` annotation whose family the compiler does not read
+/// (`#[@TotallyMadeUp.Nonsense(whatever = 42)]`). It used to parse, check and
+/// be dropped (decision 15's failure mode; front 17 step 3's recorded row).
+pub const unknown_annotation: []const u8 = "unknown-annotation";
 
-/// RC5 — `@getContex(…)` outside a `#[@context]` fn body.
-pub const context_getcontex_outside_context_fn: []const u8 = "context-getcontex-outside-context-fn";
+/// RC4 — `@getContext(<value>)` (the argument must be a type).
+pub const context_getcontext_expects_type: []const u8 = "context-getcontext-expects-type";
 
-/// RC6 — `use <hook>()` where `<hook>` is not a `#[@context]` fn.
+/// RC5 — `@getContext(…)` outside a `-> @Component<…>` fn body.
+pub const context_getcontext_outside_context_fn: []const u8 = "context-getcontext-outside-context-fn";
+
+/// RC6 — `use <hook>()` where `<hook>` is not a hook `@Component<C, _>` hook.
 pub const use_of_non_context_fn: []const u8 = "use-of-non-context-fn";
+
+/// RC7 (decisions 88, 104, 118) — `use` in a body whose fn does not return
+/// `@Component<C, T>`, or in a nested closure of one: only that body
+/// activates a hook.
+pub const use_without_context_effect: []const u8 = "use-without-context-effect";
+
+/// Front 19 step 3 — `val #(a, b) = use …` whose hook yields a tuple of another
+/// arity, or no tuple at all. Located at the binding; no flag (decision 67).
+pub const use_tuple_arity: []const u8 = "use-tuple-arity";
+
+/// 01 R5 — `val <Pattern> = e;` whose pattern can fail to match the subject.
+/// The bare form has no failure path; `val assert` and `case` are the forms
+/// that say what a mismatch does.
+pub const refutable_val_pattern: []const u8 = "refutable-val-pattern";
 
 // ── RG1–RG4: §1G default-generic diagnostics ────────────────────────────────
 
@@ -163,19 +273,24 @@ pub const generic_default_before_required_alias: []const u8 = generic_default_be
 /// here for documentation symmetry.
 pub const generic_all_defaults_legal_reserved: []const u8 = "";
 
-/// RG3 — required generic argument missing (e.g. `@Future<>` where T is required).
+/// RG3 — required generic argument missing (e.g. `@Component<T>`: decision 128 requires the base).
 pub const generic_required_arg_missing: []const u8 = "generic-required-arg-missing";
 
-/// RG4 — skipped middle generic argument (`@Iterator<i32, , i64>`).
+/// RG4 — skipped middle generic argument (`@Result<i32, , i64>`).
 pub const generic_arg_skip_forbidden: []const u8 = "generic-arg-skip-forbidden";
 
-/// §A3 — `#[@result] declare fn` whose `@external(<target>, "<template>")`
+/// RG5 — more generic arguments than a builtin wrapper declares
+/// (`@Task<i32, string>`: a Task has no error parameter, decision 120, and an
+/// argument nothing reads is refused, not dropped).
+pub const generic_arg_count_exceeded: []const u8 = "generic-arg-count-exceeded";
+
+/// §A3 — a host `declare fn -> @Result<…>` whose `#[@External.<Target>("<template>")]`
 /// body is missing the `ok` or `error` branch on at least one target.
 /// The template owns the wrapper shape — both branches must be present so
 /// callers see a complete `{ok, _} | {error, _}` lowering.
 pub const result_template_shape_mismatch: []const u8 = "result-template-shape-mismatch";
 
-/// STD-001 — `import {fs} from "std"` (or any other std module) on a target
+/// STD-001 — `import {io.fs} from "std"` (or any other std module) on a target
 /// for which the module has no `#[@External.<target>( …)]` annotation set.
 /// Fires when `Env.target != null` AND the imported module's stdModuleFns
 /// entry holds at least one declare fn without an external matching the
@@ -183,6 +298,32 @@ pub const result_template_shape_mismatch: []const u8 = "result-template-shape-mi
 /// runtime check so consumers/docs can reference the spelling; the check
 /// itself lands with `Env.target` threading + `stdModuleFns` population.
 pub const std_unsupported_on_target: []const u8 = "std-unsupported-on-target";
+
+/// Decision 107 — two import items bind one local name (`import {url.parse,
+/// json.parse}`), in either spelling. Located at the second item; an alias
+/// on either side (`url.parse as parseUrl`) is the remedy. A repeated
+/// identical item (an `@emit` contribution re-importing what its module
+/// already imports) is not a collision.
+pub const import_name_collision: []const u8 = "import-name-collision";
+
+/// Decision 206 — `import {…} from "<name>"` where `<name>` is a module of the
+/// importing package and no package: `from` names a package (std, a bundled
+/// package, a declared dependency), and a module of this package is imported
+/// by its path inside the braces. Located at the source string; the fix-it is
+/// the brace form (`import {geometry.area};`). The CLI's module-tree resolver
+/// raises it — it is the one stage that knows which modules are the package's.
+pub const module_import_with_from: []const u8 = "module-import-with-from";
+
+/// Decision 107 — `as` on an activated item (`import {PatoNada* as Voa}`).
+/// An activation opts an extension in BY NAME (the dispatch rewrite emits
+/// `PatoNada.swim(donald)`), so a renamed binding would never be the one the
+/// rewrite reaches for.
+pub const import_alias_on_activation: []const u8 = "import-alias-on-activation";
+
+/// Decision 106 — a module at the root of std (`std/<name>`) is pure and
+/// imports nothing from `io/` (`import {io.fs.readText};`, `import {io: {clock}}
+/// from "std"`). Located at the item; `io/` and `testing/` are free; no flag.
+pub const std_root_imports_io: []const u8 = "std-root-imports-io";
 
 // ── D1–D6: fn-param-default-expansion diagnostics ────────────────────────────
 // Authored in `tasks/v0.beta.20/specs/prim-op.md` §"fn-param-default-expansion"
@@ -218,16 +359,112 @@ pub const fn_param_default_trailing_only_parse: []const u8 = "fn-param-default-t
 /// arity check.
 pub const fn_param_arity_exceeded: []const u8 = "fn-param-arity-exceeded";
 
+// ── type aliases (decision 118 rule 1) ───────────────────────────────────────
+
+/// `Parser<i32, string>` against `type Parser<T> = …;`, or a bare `Parser`:
+/// an alias is written with exactly as many arguments as it declares.
+pub const type_alias_arity: []const u8 = "type-alias-arity";
+
+/// `type A = B; type B = A[];` — an alias whose expansion reaches itself.
+/// An alias is a name for a type that already exists; a recursive type is a
+/// `type` declaration.
+pub const type_alias_recursive: []const u8 = "type-alias-recursive";
+
+/// `type Point = …;` in a module that already has a `type Point(…)` (or a
+/// primitive's name): one name, one type.
+pub const type_alias_name_taken: []const u8 = "type-alias-name-taken";
+
+// ── decision 216 — what a decorator produces ───────────────────────────────
+
+/// `decl.addMember(source)` from a decorator on a `fn`: a member belongs to a
+/// type, and a function has no body to add it to.
+pub const decorator_member_without_type: []const u8 = "decorator-member-without-type";
+
+/// `decl.addMember` naming a member the type already has (written by hand or
+/// added by another decorator): a decorator adds, it never replaces.
+pub const decorator_member_duplicate: []const u8 = "decorator-member-duplicate";
+
+/// `decl.addMember(source)` whose source is not exactly one `fn` member.
+pub const decorator_member_not_one_fn: []const u8 = "decorator-member-not-one-fn";
+
+/// `decl.addType` from a decorator on a `fn`: an associated type belongs to a type.
+pub const decorator_type_without_owner: []const u8 = "decorator-type-without-owner";
+
+/// `decl.addType` with a name that is not one upper-case identifier.
+pub const decorator_type_name: []const u8 = "decorator-type-name";
+
+/// A second associated type of one name on one owner, or a name the owner
+/// already answers (a variant, a member) or the module already declares.
+pub const decorator_type_duplicate: []const u8 = "decorator-type-duplicate";
+
+/// `decl.addType(name, source)` whose source is not the shape of one type.
+pub const decorator_type_not_one_type: []const u8 = "decorator-type-not-one-type";
+
+/// `Type.f(…)` on a record-shaped `type` that declares no associated fn `f`
+/// (by hand or through a decorator's `decl.addMember`): a type's members are
+/// closed, so a call naming a member it does not have is refused where it is
+/// written, not left to the backend.
+pub const unknown_associated_fn: []const u8 = "unknown-associated-fn";
+
+/// `@TypeInfo.all` written without its labels, with an unknown one, or with
+/// `member:` where it does not apply.
+pub const typeinfo_all_arguments: []const u8 = "typeinfo-all-arguments";
+
+/// `@TypeInfo.all(with: x)` where `x` names no body-carrying decorator.
+pub const typeinfo_all_not_decorator: []const u8 = "typeinfo-all-not-decorator";
+
+/// One query over a decorator carried by functions and by types.
+pub const typeinfo_all_mixed: []const u8 = "typeinfo-all-mixed";
+
+/// A query over types without `member:` — a type is no value.
+pub const typeinfo_all_needs_member: []const u8 = "typeinfo-all-needs-member";
+
+/// A declaration the query answers that is not `pub` (it is reached through
+/// an import the answer adds).
+pub const typeinfo_all_private: []const u8 = "typeinfo-all-private";
+
+/// An import of a module that reads `@TypeInfo.all`.
+pub const typeinfo_all_imported: []const u8 = "typeinfo-all-imported";
+
+/// `decl.setMeta` from a field's or a method's decorator: meta describes a
+/// top-level declaration, the one `@typeInfo` reflects.
+pub const decorator_meta_on_member: []const u8 = "decorator-meta-on-member";
+
+/// A decorator setting one of its keys twice on one declaration.
+pub const decorator_meta_duplicate: []const u8 = "decorator-meta-duplicate";
+
+/// Decision 253 — `@typeInfo.all(…)`: the catalogue is the static method
+/// `@TypeInfo.all` of the builtin type `TypeInfo`, refused where it is written.
+pub const typeinfo_all_on_function: []const u8 = "typeinfo-all-on-function";
+
+/// Decision 248 — the lowercase `@typeinfo(X)` / `@typeinfo.all(…)`: the one
+/// reflection builtin is `@typeInfo`, its catalogue `@TypeInfo.all` (253).
+pub const typeinfo_lowercase: []const u8 = "typeinfo-lowercase";
+
+/// `@typeInfo(X).<m>` naming no reflection member (or `.meta` / `.meta.<d>`
+/// left without its key).
+pub const typeinfo_unknown_member: []const u8 = "typeinfo-unknown-member";
+
+/// `@typeInfo(X)` where `X` names no declaration of the module or its imports.
+pub const typeinfo_unknown_declaration: []const u8 = "typeinfo-unknown-declaration";
+
+/// `@typeInfo(X).meta.<decorator>.<key>` naming a key that decorator did not set.
+pub const typeinfo_meta_missing: []const u8 = "typeinfo-meta-missing";
+
 // ── Lookup table — every code (skipping aliases & reserved-empties) ─────────
 
 pub const all_codes = [_][]const u8{
-    effect_on_declare_forbidden,
-    effect_on_interface_method_forbidden,
+    effect_annotation_removed,
+    effect_type_removed,
+    iterator_error_param_removed,
     effect_wrapper_mismatch,
-    effect_missing_wrapper,
-    effect_duplicate_annotation,
-    effect_throw_without_fallible_channel,
-    effect_await_without_future,
+    effect_wrapper_behind_alias,
+    effect_return_ambiguous_nesting,
+    effect_try_without_fallible_channel,
+    effect_await_without_task,
+    iter_await,
+    iter_mixed_yield_return,
+    gen_infer_conflicting_errors,
     yield_without_generator,
     return_must_be_bare_R,
     result_manual_construction_forbidden,
@@ -235,34 +472,74 @@ pub const all_codes = [_][]const u8{
     result_return_type_mismatch,
     result_throw_type_mismatch,
     result_error_type_incompatible,
-    iterator_break_without_completion_type,
     iterator_return_forbidden,
     yield_label_unbound,
     generic_default_before_required,
-    future_manual_construction_forbidden,
-    future_return_must_be_bare_T,
-    future_throw_must_be_bare_E,
-    future_return_type_mismatch,
-    future_throw_type_mismatch,
     iterator_break_type_mismatch,
     break_label_unbound,
     yield_break_removed,
     context_unbound,
     context_anchor_violation,
-    context_getcontex_anchor_violation,
-    context_getcontex_expects_type,
-    context_getcontex_outside_context_fn,
+    context_getcontext_anchor_violation,
+    context_getcontext_expects_type,
+    context_getcontext_outside_context_fn,
     use_of_non_context_fn,
+    use_without_context_effect,
     generic_required_arg_missing,
     generic_arg_skip_forbidden,
+    generic_arg_count_exceeded,
     result_template_shape_mismatch,
     std_unsupported_on_target,
+    import_name_collision,
+    module_import_with_from,
+    import_alias_on_activation,
+    std_root_imports_io,
     fn_param_default_trailing_only,
     fn_param_positional_after_named,
     fn_param_default_arity_mismatch,
     enum_variant_arity_mismatch,
     fn_param_default_trailing_only_parse,
     fn_param_arity_exceeded,
+    option_expect_removed,
+    result_member_not_a_method,
+    break_value_outside_generator,
+    break_outside_loop,
+    continue_outside_loop,
+    for_over_condition,
+    for_over_stream,
+    for_await_expects_stream,
+    generator_loop_closed_scope,
+    yield_label_not_generator,
+    refutable_val_pattern,
+    type_alias_arity,
+    type_alias_recursive,
+    type_alias_name_taken,
+    callee_not_a_function,
+    binding_redeclared,
+    captured_var_write,
+    inline_type_position,
+    behavior_member_redeclared,
+    decorator_member_without_type,
+    decorator_member_duplicate,
+    decorator_member_not_one_fn,
+    decorator_type_without_owner,
+    decorator_type_name,
+    decorator_type_duplicate,
+    decorator_type_not_one_type,
+    unknown_associated_fn,
+    typeinfo_all_arguments,
+    typeinfo_all_not_decorator,
+    typeinfo_all_mixed,
+    typeinfo_all_needs_member,
+    typeinfo_all_private,
+    typeinfo_all_imported,
+    decorator_meta_on_member,
+    decorator_meta_duplicate,
+    typeinfo_all_on_function,
+    typeinfo_lowercase,
+    typeinfo_unknown_member,
+    typeinfo_unknown_declaration,
+    typeinfo_meta_missing,
 };
 
 test "every reserved code has a stable, non-empty spelling" {
@@ -274,3 +551,6 @@ test "codes are unique (the table is the contract)" {
         for (all_codes[i + 1 ..]) |d| try std.testing.expect(!std.mem.eql(u8, c, d));
     }
 }
+
+/// 1.0.5 decision 31 — `any` is deleted; a written `any` names `unknown`.
+pub const any_type_removed: []const u8 = "any-type-removed";

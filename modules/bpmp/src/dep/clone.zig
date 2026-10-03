@@ -96,10 +96,11 @@ fn materialiseGit(
     if (dep.ref == .rev) {
         const rev = dep.ref.rev;
         const final = try std.fs.path.join(gpa, &.{ store_root, name, rev });
-        errdefer gpa.free(final);
         if (pathExistsIo(io, final)) {
+            errdefer gpa.free(final);
             return .{ .path = final, .rev = try gpa.dupe(u8, rev) };
         }
+        gpa.free(final); // store miss: clone below computes the final path again
     }
 
     // Ensure `<store_root>/<name>/` exists.
@@ -120,37 +121,19 @@ fn materialiseGit(
 
     var args: std.ArrayListUnmanaged([]const u8) = .empty;
     defer args.deinit(gpa);
-    try args.append(gpa, "git");
-    try args.append(gpa, "clone");
-    try args.append(gpa, "--depth");
-    try args.append(gpa, "1");
+    // bpmp reports each dep itself; git's progress and the detached-HEAD
+    // advice a `tag:` clone prints are noise. Errors still reach stderr.
+    try args.appendSlice(gpa, &.{ "git", "-c", "advice.detachedHead=false", "clone", "--quiet" });
+    // A pinned `rev:` needs history — `git clone --depth 1` can't check out an
+    // arbitrary commit — so only branch / tag / default-HEAD clones are shallow.
+    if (dep.ref != .rev) try args.appendSlice(gpa, &.{ "--depth", "1" });
     switch (dep.ref) {
-        .branch => |b| {
-            try args.append(gpa, "--branch");
-            try args.append(gpa, b);
-        },
-        .tag => |t| {
-            try args.append(gpa, "--branch");
-            try args.append(gpa, t);
-        },
+        .branch => |b| try args.appendSlice(gpa, &.{ "--branch", b }),
+        .tag => |t| try args.appendSlice(gpa, &.{ "--branch", t }),
         .rev, .none => {},
     }
-    try args.append(gpa, "--");
-    try args.append(gpa, git_url);
-    try args.append(gpa, tmp_dir);
-
-    // For an unpinned `rev:` we need a deeper history — `git clone --depth 1`
-    // can't check out an arbitrary commit. Drop `--depth 1` in that case.
-    var spawn_args = args.items;
-    if (dep.ref == .rev) {
-        // strip "--depth", "1" from positions 2..4
-        const without_depth = try gpa.alloc([]const u8, args.items.len - 2);
-        defer gpa.free(without_depth);
-        without_depth[0] = args.items[0];
-        without_depth[1] = args.items[1];
-        @memcpy(without_depth[2..], args.items[4..]);
-        spawn_args = without_depth;
-    }
+    try args.appendSlice(gpa, &.{ "--", git_url, tmp_dir });
+    const spawn_args = args.items;
 
     runGit(io, spawn_args) catch {
         rmTreeIo(io, tmp_dir);
@@ -159,7 +142,7 @@ fn materialiseGit(
 
     // For a pinned rev: checkout that rev inside the clone.
     if (dep.ref == .rev) {
-        runGit(io, &.{ "git", "-C", tmp_dir, "checkout", dep.ref.rev }) catch {
+        runGit(io, &.{ "git", "-c", "advice.detachedHead=false", "-C", tmp_dir, "checkout", "--quiet", dep.ref.rev }) catch {
             rmTreeIo(io, tmp_dir);
             return TypedError.CloneFailed;
         };

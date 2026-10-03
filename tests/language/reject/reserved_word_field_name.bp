@@ -1,0 +1,10 @@
+//// `from` is the import keyword and is reserved in every position, a field
+//// included. The field was refused as `field-needs-name` — "a field with no
+//// name · write `name: Type` here", pointing at the name the author had
+//// written (rakun front 72's `Edge(from, to)`). Refused naming the word.
+
+pub type Edge(from: string, to: string)
+
+pub fn main() {
+    @print(Edge(from: "a", to: "b"));
+}

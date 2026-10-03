@@ -4,7 +4,7 @@
     {
       "fn": {
         "isPub": false,
-        "effect": "future",
+        "effect": "task",
         "isDeclare": false,
         "isDefault": false,
         "label": null,
@@ -12,18 +12,12 @@
         "docComment": null,
         "comment": null,
         "moduleComment": null,
-        "annotations": [
-          {
-            "name": "future",
-            "args": [],
-            "is_builtin": true
-          }
-        ],
+        "annotations": [],
         "genericParams": [],
         "params": [],
         "returnType": {
           "generic": {
-            "name": "Future",
+            "name": "Task",
             "args": [
               {
                 "named": "Int"
@@ -38,7 +32,7 @@
             "expr": {
               "binding": {
                 "loc": {
-                  "line": 3,
+                  "line": 2,
                   "col": 5
                 },
                 "kind": {
@@ -47,14 +41,14 @@
                     "value": {
                       "jump": {
                         "loc": {
-                          "line": 3,
+                          "line": 2,
                           "col": 13
                         },
                         "kind": {
                           "await_": {
                             "call": {
                               "loc": {
-                                "line": 3,
+                                "line": 2,
                                 "col": 19
                               },
                               "kind": {
@@ -70,7 +64,7 @@
                                       "value": {
                                         "identifier": {
                                           "loc": {
-                                            "line": 3,
+                                            "line": 2,
                                             "col": 25
                                           },
                                           "kind": {
@@ -102,14 +96,14 @@
             "expr": {
               "jump": {
                 "loc": {
-                  "line": 4,
+                  "line": 3,
                   "col": 5
                 },
                 "kind": {
                   "return": {
                     "identifier": {
                       "loc": {
-                        "line": 4,
+                        "line": 3,
                         "col": 12
                       },
                       "kind": {

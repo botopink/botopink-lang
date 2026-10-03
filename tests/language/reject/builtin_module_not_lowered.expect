@@ -1,0 +1,2 @@
+builtin-not-lowered: `@module()` is declared but no target lowers it
+6:13

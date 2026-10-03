@@ -1,0 +1,43 @@
+//// log — the five levels, their ranks and names, and the spellings `rankOf`
+//// reads.
+
+import {testing.asserts} from "std";
+import {levels.Level, levels.levelName, levels.levelRank, levels.otpLevel, levels.rankOf, levels.rankName, levels.validLevels};
+
+test "levels: names, ranks and the OTP severities" {
+    try asserts.equals(
+        levelName(Level.Trace)
+            + levelName(Level.Debug)
+            + levelName(Level.Info)
+            + levelName(Level.Warn)
+            + levelName(Level.Error),
+        "tracedebuginfowarnerror",
+    );
+    try asserts.equals(levelRank(Level.Trace), 0);
+    try asserts.equals(levelRank(Level.Error), 4);
+    try asserts.equals(otpLevel(Level.Trace), "debug");
+    try asserts.equals(otpLevel(Level.Debug), "debug");
+    try asserts.equals(otpLevel(Level.Warn), "warning");
+    try asserts.equals(otpLevel(Level.Error), "error");
+}
+
+test "levels: rankOf reads the spellings and refuses the rest" {
+    try asserts.equals(rankOf("trace"), 0);
+    try asserts.equals(rankOf(" DEBUG "), 1);
+    try asserts.equals(rankOf("Info"), 2);
+    try asserts.equals(rankOf("warning"), 3);
+    try asserts.equals(rankOf("warn"), 3);
+    try asserts.equals(rankOf("error"), 4);
+    try asserts.equals(rankOf("off"), 5);
+    try asserts.equals(rankOf("fatal"), -1);
+    try asserts.equals(rankOf(""), -1);
+    try asserts.equals(validLevels(), "trace, debug, info, warn, error, off");
+}
+
+test "levels: rankName writes the uppercase name" {
+    try asserts.equals(rankName(0), "TRACE");
+    try asserts.equals(rankName(2), "INFO");
+    try asserts.equals(rankName(4), "ERROR");
+    try asserts.equals(rankName(5), "OFF");
+    try asserts.equals(rankName(-1), "OFF");
+}

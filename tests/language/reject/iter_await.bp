@@ -1,0 +1,11 @@
+//// Decision 122 of 1.0.10-beta (front 24, § Cells "Iterators"; guide.md § 5.6
+//// `h`) — `@Iterator` is synchronous: `await` does not exist in it, and the
+//// refusal suggests `@Stream`. `iter-await`, at the `await`.
+
+fn fetchCount(n: i32) -> @Task<i32> { return n; }
+
+fn h() -> @Iterator<i32> {
+    yield await fetchCount(1);
+}
+
+pub fn main() { for (h()) { x -> @print(x); }; }

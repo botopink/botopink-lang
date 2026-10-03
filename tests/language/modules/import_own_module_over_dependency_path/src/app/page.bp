@@ -1,0 +1,5 @@
+//// The project's own `app/page`.
+
+pub fn title() -> string {
+    return "own";
+}

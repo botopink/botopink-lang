@@ -1,0 +1,9 @@
+//// The meta `#[entity]` sets here is read by every module that reaches `City`.
+
+import {orm.entity};
+
+#[entity("cities")]
+pub type City(name: string)
+
+#[entity("people")]
+pub type Person(name: string)

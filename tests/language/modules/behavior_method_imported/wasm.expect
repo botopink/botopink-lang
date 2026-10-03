@@ -1,0 +1,2 @@
+`hostRequest` has no `#[@External.<Target>(…)]` for the wasm backend
+src/main.bp:11:15

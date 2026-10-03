@@ -11,6 +11,10 @@ const h = @import("./helpers.zig");
 const engine = @import("../engine.zig");
 const index_mod = @import("../project_index.zig");
 const proto = @import("../protocol.zig");
+/// Test-only: the one way a test spells a path it writes to (per process, so a
+/// second `zig build test` over this checkout cannot empty it mid-test).
+/// `build.zig` gives this module to the test modules alone.
+const test_scratch = @import("test_scratch");
 
 fn freeActions(gpa: std.mem.Allocator, actions: []proto.CodeAction) void {
     for (actions) |a| {
@@ -38,22 +42,23 @@ test "cross-module: references finds usages in other files via the project index
     const gpa = std.testing.allocator;
     const io = std.testing.io;
 
-    const dir = ".botopinkbuild/xmod-refs";
-    std.Io.Dir.cwd().deleteTree(io, dir) catch {};
+    const dir = test_scratch.path(io, "xmod-refs");
+    const dir_uri = test_scratch.uri(io, "xmod-refs");
+    test_scratch.remove(io, "xmod-refs");
     try std.Io.Dir.cwd().createDirPath(io, dir);
-    defer std.Io.Dir.cwd().deleteTree(io, dir) catch {};
-    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = dir ++ "/math.bp", .data = MATH_BP });
+    defer test_scratch.remove(io, "xmod-refs");
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = test_scratch.path(io, "xmod-refs/math.bp"), .data = MATH_BP });
 
     // The "current" (in-memory, editor-open) file references `double` twice.
     const main_src =
         \\val r = double(21);
         \\val s = double(2);
     ;
-    const main_uri = "file://" ++ dir ++ "/main.bp";
+    const main_uri = test_scratch.uri(io, "xmod-refs/main.bp");
 
     var idx = index_mod.ProjectIndex.init(gpa, io);
     defer idx.deinit();
-    try idx.setRoot("file://" ++ dir);
+    try idx.setRoot(dir_uri);
 
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
@@ -81,20 +86,21 @@ test "cross-module: rename edits the current file and every external file" {
     const gpa = std.testing.allocator;
     const io = std.testing.io;
 
-    const dir = ".botopinkbuild/xmod-rename";
-    std.Io.Dir.cwd().deleteTree(io, dir) catch {};
+    const dir = test_scratch.path(io, "xmod-rename");
+    const dir_uri = test_scratch.uri(io, "xmod-rename");
+    test_scratch.remove(io, "xmod-rename");
     try std.Io.Dir.cwd().createDirPath(io, dir);
-    defer std.Io.Dir.cwd().deleteTree(io, dir) catch {};
-    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = dir ++ "/math.bp", .data = MATH_BP });
+    defer test_scratch.remove(io, "xmod-rename");
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = test_scratch.path(io, "xmod-rename/math.bp"), .data = MATH_BP });
 
     const main_src =
         \\val r = double(21);
     ;
-    const main_uri = "file://" ++ dir ++ "/main.bp";
+    const main_uri = test_scratch.uri(io, "xmod-rename/main.bp");
 
     var idx = index_mod.ProjectIndex.init(gpa, io);
     defer idx.deinit();
-    try idx.setRoot("file://" ++ dir);
+    try idx.setRoot(dir_uri);
 
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
@@ -130,22 +136,23 @@ test "cross-module: codeAction imports a missing symbol via the project index" {
     const gpa = std.testing.allocator;
     const io = std.testing.io;
 
-    const dir = ".botopinkbuild/xmod-import";
-    std.Io.Dir.cwd().deleteTree(io, dir) catch {};
+    const dir = test_scratch.path(io, "xmod-import");
+    const dir_uri = test_scratch.uri(io, "xmod-import");
+    test_scratch.remove(io, "xmod-import");
     try std.Io.Dir.cwd().createDirPath(io, dir);
-    defer std.Io.Dir.cwd().deleteTree(io, dir) catch {};
-    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = dir ++ "/math.bp", .data = MATH_BP });
+    defer test_scratch.remove(io, "xmod-import");
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = test_scratch.path(io, "xmod-import/math.bp"), .data = MATH_BP });
 
     // `double` is used but not imported — and undefined locally, so bindings are
     // empty; the action resolves it through the project index instead.
     const main_src =
         \\val y = double(1);
     ;
-    const main_uri = "file://" ++ dir ++ "/main.bp";
+    const main_uri = test_scratch.uri(io, "xmod-import/main.bp");
 
     var idx = index_mod.ProjectIndex.init(gpa, io);
     defer idx.deinit();
-    try idx.setRoot("file://" ++ dir);
+    try idx.setRoot(dir_uri);
 
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();

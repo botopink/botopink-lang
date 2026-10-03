@@ -1,0 +1,19 @@
+//// A function whose body is only a host call does NOT inherit the call's
+//// target restriction (the strictest reading of the `00 · 01-checker` /
+//// `04-js` row, front 27's `linkStatus()`). `linkStatus` is an ordinary
+//// function, so its call to `otpRelease` is statically present on every
+//// target, and a target the declaration does not name refuses it there — even
+//// though nothing calls `linkStatus`. A declaration never called is free; a
+//// wrapper around one is not. A member that needs the wrapper restricts its
+//// own `targets`, or the declaration gains the other target's binding.
+
+#[@External.Erlang("erlang:system_info(otp_release)")]
+declare fn otpRelease() -> string;
+
+fn linkStatus() -> string {
+    return otpRelease();
+}
+
+pub fn main() {
+    @print("up");
+}

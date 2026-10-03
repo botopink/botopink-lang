@@ -1,0 +1,13 @@
+//// A dependency module printing from a module-level `val` runs its body
+//// before `main`: once for a value import (`greeting`, through `main`) and
+//// once for a type-only import (`Tag`, through the sibling `label`).
+
+pub mod label;
+
+import {greeting} from "boot/greet";
+import {label.describe};
+
+pub fn main() {
+    @print(greeting);
+    @print(describe());
+}

@@ -1,0 +1,5 @@
+//// The package root: three modules, each type naming the one before it.
+
+pub mod point;
+pub mod outline;
+pub mod canvas;

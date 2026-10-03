@@ -1,0 +1,5 @@
+//// The blog's page — the other declaration of `title`.
+
+pub fn title() -> string {
+    return "blog";
+}

@@ -1,0 +1,9 @@
+//// The package's own use of the sidecar, which the test module does not
+//// import: it declares the host function itself.
+
+#[@External.Erlang("lt_greeter", "hello")]
+declare fn hello(name: string) -> string;
+
+pub fn greetAll(names: string[]) -> string[] {
+    return names.map({ n -> hello(n) });
+}

@@ -1,0 +1,13 @@
+//// Decision 264 — a narrower integer type checks its own range: `127 + 1` on
+//// `i8` aborts, where every target answered `128`.
+
+fn add(a: i8, b: i8) -> i8 {
+    return a + b;
+}
+
+pub fn main() {
+    @print(add(100, 27));
+    @print(add(-100, -28));
+    @print(add(127, 1));
+    @print("unreachable");
+}

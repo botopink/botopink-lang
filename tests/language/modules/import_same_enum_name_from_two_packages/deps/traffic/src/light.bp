@@ -1,0 +1,21 @@
+pub type Signal {
+    Red,
+    Green,
+    Blink(times: i32),
+}
+
+pub fn stop() -> Signal {
+    return Signal.Red;
+}
+
+pub fn blink(times: i32) -> Signal {
+    return Signal.Blink(times);
+}
+
+pub fn describe(s: Signal) -> i32 {
+    return case s {
+        Signal.Red -> 1;
+        Signal.Green -> 2;
+        Signal.Blink(n) -> 100 + n;
+    };
+}

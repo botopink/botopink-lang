@@ -1,0 +1,1 @@
+{ "name": "shapes", "version": "0.0.1", "src": "src/", "entry": "root.bp", "files": ["root.bp", "point.bp", "outline.bp", "canvas.bp"] }

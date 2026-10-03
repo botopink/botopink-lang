@@ -1,0 +1,93 @@
+//// validation — where in a document a violation is.
+////
+//// A `Violation`'s `field` is a PATH: `email` for a field of the record being
+//// read, `address.street` for a field of a nested record, `tags[1]` for an item
+//// of a list, `` (the empty text) for the document itself. A flat record's path
+//// is its field's name, so every report written before paths existed reads the
+//// same.
+////
+//// The path is built going DOWN — a decoder is handed the path of the value it
+//// reads and extends it for the values inside — and it is a `string` the whole
+//// way: a report is one shape for every reader, and a list of segments would be
+//// a second one. `segments` is the way back for a reader that wants the parts.
+////
+//// A KEY THAT WOULD READ AS STRUCTURE IS QUOTED. A member named `a.b` is written
+//// `["a.b"]`, so it cannot be mistaken for the member `b` of `a`; the same for a
+//// key holding `[`, `]` or `"`, and for the empty key. Inside the quotes a `"`
+//// and a `\` are written `\"` and `\\`.
+
+// The path of the document itself.
+pub fn root() -> string {
+    return "";
+}
+
+fn needsQuotes(name: string) -> bool {
+    return name == ""
+        || name.contains(".")
+        || name.contains("[")
+        || name.contains("]")
+        || name.contains("\"")
+        || name.contains("\\");
+}
+
+fn quoted(name: string) -> string {
+    val escaped = name.replaceAll("\\", "\\\\").replaceAll("\"", "\\\"");
+    return ["[\"", escaped, "\"]"].join("");
+}
+
+// The path of the member `name` of the value at `at`.
+pub fn key(at: string, name: string) -> string {
+    if (needsQuotes(name)) return [at, quoted(name)].join("");
+    if (at == "") return name;
+    return [at, ".", name].join("");
+}
+
+// The path of the item `i` of the list at `at`.
+pub fn index(at: string, i: i32) -> string {
+    return [at, "[", [i].join(""), "]"].join("");
+}
+
+// The parts of a path, outermost first: `items[2].name` is `items`, `2`,
+// `name`; `["a.b"].c` is `a.b`, `c`; the root is no part at all. An index and a
+// key spelled with digits read the same here — a reader that must tell them
+// apart reads the path itself.
+pub fn segments(field: string) -> Array<string> {
+    val chars = field.split("");
+    var parts: Array<string> = [];
+    var current = "";
+    var quotedKey = false;
+    var escaped = false;
+    var i = 0;
+    while (i < chars.length) {
+        val c = chars.at(i).unwrapOr("");
+        val next = chars.at(i + 1).unwrapOr("");
+        if (quotedKey) {
+            if (escaped) {
+                current = current + c;
+                escaped = false;
+            } else if (c == "\\") escaped = true else if (c == "\"") {
+                parts = parts.append([current]);
+                current = "";
+                quotedKey = false;
+                i = i + 1;
+            } else current = current + c;
+        } else if (c == "[" && next == "\"") {
+            if (current != "") parts = parts.append([current]);
+            current = "";
+            quotedKey = true;
+            i = i + 1;
+        } else if (c == "." || c == "[" || c == "]") {
+            if (current != "") parts = parts.append([current]);
+            current = "";
+        } else current = current + c;
+        i = i + 1;
+    }
+    if (current != "") parts = parts.append([current]);
+    return parts;
+}
+
+// The first part of a path — the field of the outermost record — or `` for the
+// root. What a form uses to put a message beside its input.
+pub fn head(field: string) -> string {
+    return segments(field).at(0).unwrapOr("");
+}

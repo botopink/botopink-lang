@@ -1,0 +1,9 @@
+import {collections.Dict} from "std";
+
+pub type Found(name: string, params: Dict<string, string>)
+
+pub fn find(path: string) -> ?Found {
+    if (path == "/users")
+        return Found(name: "users", params: Dict.empty().insert("id", "42"));
+    return null;
+}

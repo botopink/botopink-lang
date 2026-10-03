@@ -1,0 +1,20 @@
+//// Decision 255 (2) — `comptime <expr>` is `comptime { break <expr>; }`:
+//// at module level both fold to the same literal, and in a body both type
+//// and run alike. wasm lowers no comptime construct in a body (`05-wasm`'s
+//// row), so the cell is refused there (`.wasm.expect`).
+
+val short = comptime 2 + 3;
+
+val long = comptime {
+    break 2 + 3;
+};
+
+pub fn main() {
+    @print(short == long);
+    val n = comptime 3 * 4;
+    val m = comptime {
+        break 3 * 4;
+    };
+    @print(n == m);
+    @print(n);
+}

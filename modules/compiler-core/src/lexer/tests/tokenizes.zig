@@ -99,16 +99,6 @@ test "lexer: tokenizes struct field declaration" {
     for (expected, tokens) |exp, tok| try std.testing.expectEqual(exp, tok.kind);
 }
 
-test "lexer: tokenizes getter signature" {
-    var l = Lexer.init("get balance(self: Self): number");
-    const tokens = try l.scanAll(std.testing.allocator);
-    defer l.deinit(std.testing.allocator);
-    const expected = [_]TokenKind{
-        .get, .identifier, .leftParenthesis, .identifier, .colon, .selfType, .rightParenthesis, .colon, .identifier, .endOfFile,
-    };
-    for (expected, tokens) |exp, tok| try std.testing.expectEqual(exp, tok.kind);
-}
-
 test "lexer: tokenizes self field plus-eq" {
     var l = Lexer.init("self._balance += amount");
     const tokens = try l.scanAll(std.testing.allocator);
@@ -119,24 +109,24 @@ test "lexer: tokenizes self field plus-eq" {
     for (expected, tokens) |exp, tok| try std.testing.expectEqual(exp, tok.kind);
 }
 
-test "lexer: tokenizes throw new expression" {
+test "lexer: tokenizes throw new expression — `new` is an identifier (06 N27)" {
     var l = Lexer.init("throw new Error(\"msg\")");
     const tokens = try l.scanAll(std.testing.allocator);
     defer l.deinit(std.testing.allocator);
     const expected = [_]TokenKind{
-        .throw, .new, .identifier, .leftParenthesis, .stringLiteral, .rightParenthesis, .endOfFile,
+        .throw, .identifier, .identifier, .leftParenthesis, .stringLiteral, .rightParenthesis, .endOfFile,
     };
     for (expected, tokens) |exp, tok| try std.testing.expectEqual(exp, tok.kind);
 }
 
-test "lexer: tokenizes record header" {
-    var l = Lexer.init("val GPSCoordinates = record { lat: number, lon: number }");
+test "lexer: tokenizes type header" {
+    var l = Lexer.init("type GPSCoordinates(lat: number, lon: number)");
     const tokens = try l.scanAll(std.testing.allocator);
     defer l.deinit(std.testing.allocator);
     const expected = [_]TokenKind{
-        .val,        .identifier, .equal,      .record,    .leftBrace,
-        .identifier, .colon,      .identifier, .comma,     .identifier,
-        .colon,      .identifier, .rightBrace, .endOfFile,
+        .type,             .identifier, .leftParenthesis, .identifier, .colon,
+        .identifier,       .comma,      .identifier,      .colon,      .identifier,
+        .rightParenthesis, .endOfFile,
     };
     for (expected, tokens) |exp, tok| try std.testing.expectEqual(exp, tok.kind);
 }
@@ -163,4 +153,20 @@ test "lexer: tokenizes qualified implement method name" {
         .rightParenthesis, .endOfFile,
     };
     for (expected, tokens) |exp, tok| try std.testing.expectEqual(exp, tok.kind);
+}
+
+test "lexer: a digit after a member dot is a positional index, not a float" {
+    var l = Lexer.init("t.0.1 + p.0.toString() + 1.5");
+    const tokens = try l.scanAll(std.testing.allocator);
+    defer l.deinit(std.testing.allocator);
+    const expected = [_]TokenKind{
+        .identifier,       .dot,  .numberLiteral, .dot,
+        .numberLiteral,    .plus, .identifier,    .dot,
+        .numberLiteral,    .dot,  .identifier,    .leftParenthesis,
+        .rightParenthesis, .plus, .numberLiteral, .endOfFile,
+    };
+    for (expected, tokens) |exp, tok| try std.testing.expectEqual(exp, tok.kind);
+    try std.testing.expectEqualStrings("0", tokens[2].lexeme);
+    try std.testing.expectEqualStrings("1", tokens[4].lexeme);
+    try std.testing.expectEqualStrings("1.5", tokens[14].lexeme);
 }

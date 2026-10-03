@@ -1,0 +1,408 @@
+//! Which comptime runtime runs an evaluation, and the one entry both
+//! evaluators call to run it (front 18 steps 3 and 5).
+//!
+//! **Decision 84: the comptime runtime follows the target's VM, beam by
+//! default.** A build whose target is `erlang` or `beam` evaluates on the BEAM
+//! runtime (`persistent_beam.zig`); `commonJS` and `wasm` evaluate on the wat
+//! runtime (`persistent_wat.zig`, wasm3 in-process); a compilation that names
+//! no target (the language server's type pass) uses beam. No flag and no build
+//! option: `comptime.compile` selects `forTarget(target_name)` — a harness's
+//! pin (`force`, `Config.comptime_runtime`) or `ofTargetName` — for the
+//! duration of its pass (`select`), so every driver that compiles for a target
+//! (`botopink build`, `test`, `check`, the browser build) gets decision 84 from
+//! the one place, and the evaluators ask `current` — the evaluators are reached through the
+//! type checker, which carries no configuration, so the selection travels on
+//! this thread rather than through every call between them.
+//!
+//! What a host can run is decided at compile time: the BEAM runtime needs a
+//! process the compiler can spawn (`can_spawn`, false on `wasm32`, where
+//! `persistent_beam.zig` is never analysed); the wat runtime needs an engine —
+//! wasm3 on a native host, the page's `WebAssembly.instantiate` in the browser
+//! build (not wired yet, step 5's comptime half). An evaluation whose runtime
+//! the host lacks is REFUSED with a located diagnostic naming it (decision 67),
+//! never answered with an empty reply.
+//!
+//! `evalWithArg` dispatches; `parity` (a test hook) makes it run an evaluation
+//! on the other runtime too and record where the two answers differ — the
+//! invariant `parity.zig` and the codegen harness assert.
+const std = @import("std");
+const builtin = @import("builtin");
+const configMod = @import("../../codegen/config.zig");
+const replyOrder = @import("reply_order.zig");
+
+const is_wasm = builtin.cpu.arch.isWasm();
+const persistent_beam = if (is_wasm) struct {} else @import("persistent_beam.zig");
+const persistent_wat = @import("persistent_wat.zig");
+const watProgram = @import("wat/program.zig");
+const beamProgram = @import("beam/program.zig");
+const trace = @import("../trace.zig");
+
+pub const ComptimeRuntime = configMod.ComptimeRuntime;
+
+/// Whether this build can spawn a child process: the BEAM runtime's
+/// precondition, and the RUN LOG executors' (`codegen/runtime.zig`).
+pub const can_spawn: bool = !is_wasm;
+
+/// Whether this build can run `r` at all.
+pub fn available(r: ComptimeRuntime) bool {
+    return switch (r) {
+        .beam => can_spawn,
+        // wasm3 on a native build; the page's engine, through `bp_host`
+        // imports, in the browser build (`persistent_wat.zig`).
+        .wat => true,
+    };
+}
+
+/// Decision 84: the runtime of a build for `target`.
+pub fn of(target: configMod.TargetSource) ComptimeRuntime {
+    return switch (target) {
+        .erlang, .beam => .beam,
+        .commonJS, .wasm => .wat,
+    };
+}
+
+/// Decision 84 by the target NAME `comptime.compile` receives — the
+/// vocabulary of `#[@External.<Target>]` lookups (`codegen.generateWith`,
+/// `botopink check`): `node` (commonJS) and `wasm` → wat; `erlang`, `beam` and
+/// no target at all → beam. Every driver that evaluates comptime for a target
+/// passes that name, so the choice is made once, inside the pipeline, and a
+/// driver cannot forget it (`botopink check --target commonJS` evaluated on
+/// the BEAM until it was made here).
+pub fn ofTargetName(name: ?[]const u8) ComptimeRuntime {
+    const n = name orelse return .beam;
+    const wat_names = [_][]const u8{ "node", "commonJS", "wasm" };
+    for (wat_names) |w| if (std.mem.eql(u8, n, w)) return .wat;
+    return .beam;
+}
+
+/// A runtime a harness chose for this thread regardless of the target
+/// (`Config.comptime_runtime`, the comptime snapshot helpers). Null — every
+/// driver — leaves decision 84 to decide. Not a flag: nothing a user runs
+/// reaches it.
+threadlocal var forced: ?ComptimeRuntime = null;
+
+/// Pin this thread's comptime runtime to `r` (null unpins) until the returned
+/// value is passed back.
+pub fn force(r: ?ComptimeRuntime) ?ComptimeRuntime {
+    const prev = forced;
+    forced = r;
+    return prev;
+}
+
+/// The runtime a compilation for target `name` runs its comptime pass on:
+/// the harness's pin when there is one, decision 84 otherwise.
+pub fn forTarget(name: ?[]const u8) ComptimeRuntime {
+    return forced orelse ofTargetName(name);
+}
+
+/// The runtime of the comptime pass running on this thread. Beam when no
+/// target decided (decision 84's default).
+threadlocal var selected: ComptimeRuntime = .beam;
+
+pub fn current() ComptimeRuntime {
+    return selected;
+}
+
+/// Run this thread's comptime evaluations on `r` until the returned value is
+/// passed back to `select` (the previous selection).
+pub fn select(r: ComptimeRuntime) ComptimeRuntime {
+    const prev = selected;
+    selected = r;
+    return prev;
+}
+
+/// What an evaluator answers for a runtime the host lacks — the sentence after
+/// "the <template|decorator> evaluator has ".
+pub fn missingRuntimeMessage(r: ComptimeRuntime) []const u8 {
+    return switch (r) {
+        .beam => "no BEAM runtime in this build of the compiler: it needs a process it can spawn, " ++
+            "and an erlang or beam target evaluates comptime on it (decision 84)",
+        .wat => "no wat runtime engine in this build of the compiler",
+    };
+}
+
+/// A runtime's answer. The same three cases on both runtimes, so the
+/// evaluators' `switch` does not know which one ran.
+pub const Response = union(enum) {
+    /// The reply bytes: `main/1`'s JSON.
+    ok: []u8,
+    /// The module did not compile (`erlc` rejected it) or could not be lowered
+    /// to wat (a refusal naming the construct).
+    compile_error: []u8,
+    /// `main` raised, trapped or timed out.
+    runtime_error: []u8,
+};
+
+pub const Result = union(enum) {
+    response: Response,
+    /// The runtime could not be reached: the reason, for the evaluator's
+    /// diagnostic (no runtime on this host, a broken `erl` transport).
+    unavailable: []const u8,
+};
+
+pub const EvalError = error{ OutOfMemory, EvalFailed };
+
+/// Evaluate generated module `module` (Erlang text `code`) with the ETF
+/// argument `arg`, on this thread's runtime. `host` names the evaluator in
+/// diagnostics and the placeholder atom of its listing.
+pub fn evalWithArg(arena: std.mem.Allocator, io: std.Io, host: []const u8, module: []const u8, code: []const u8, arg: []const u8) EvalError!Result {
+    const r = current();
+    const result = try evalOn(arena, io, r, host, module, code, arg);
+    if (parity) |p| {
+        const other: ComptimeRuntime = if (r == .beam) .wat else .beam;
+        if (available(other)) {
+            const second = try evalOn(arena, io, other, host, module, code, arg);
+            const beam_result = if (r == .beam) result else second;
+            const wat_result = if (r == .beam) second else result;
+            try p.record(host, module, beam_result, wat_result);
+        }
+    }
+    return result;
+}
+
+pub fn evalOn(arena: std.mem.Allocator, io: std.Io, r: ComptimeRuntime, host: []const u8, module: []const u8, code: []const u8, arg: []const u8) EvalError!Result {
+    if (!available(r)) return .{ .unavailable = try std.fmt.allocPrint(arena, "the {s} evaluator has {s}", .{ host, missingRuntimeMessage(r) }) };
+    return switch (r) {
+        .beam => if (comptime can_spawn) evalBeam(arena, io, host, module, code, arg) else unreachable,
+        .wat => evalWat(arena, module, code, arg),
+    };
+}
+
+/// The BEAM runtime: the module lowered to BEAM instructions and loaded as
+/// `.beam` bytes (cmd 4, no Erlang compiler — front 14 step 3). A construct
+/// the lowering refuses is a `compile_error` naming it, as on the wat runtime
+/// — never a module run some other way.
+fn evalBeam(arena: std.mem.Allocator, io: std.Io, host: []const u8, module: []const u8, code: []const u8, arg: []const u8) EvalError!Result {
+    const built = try beamProgram.build(module, try placeholderOf(arena, host), code);
+    const ok = switch (built) {
+        .ok => |o| o,
+        .refused => |why| return .{ .response = .{ .compile_error = try std.fmt.allocPrint(arena, "the BEAM runtime does not take {s}", .{why}) } },
+    };
+    const response = persistent_beam.evalBeamWithArg(arena, io, ok.beam, module, arg) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => {
+            // No message means `erl` is missing rather than a broken stream:
+            // the caller's hint for that case names PATH.
+            const detail = persistent_beam.lastTransportError() orelse return error.EvalFailed;
+            return .{ .unavailable = try std.fmt.allocPrint(arena, "the {s} evaluator's erl runtime failed ({s}): {s}", .{ host, @errorName(err), detail }) };
+        },
+    };
+    return .{ .response = switch (response) {
+        .ok => |b| .{ .ok = b },
+        .compile_error => |b| .{ .compile_error = b },
+        .runtime_error => |b| .{ .runtime_error = b },
+    } };
+}
+
+/// The atom a listing names the module by: the evaluator's placeholder
+/// (`template_module`, `decorator_module`), so a listing does not move with
+/// the content hash in the real atom.
+fn placeholderOf(arena: std.mem.Allocator, host: []const u8) EvalError![]const u8 {
+    return std.fmt.allocPrint(arena, "{s}_module", .{host});
+}
+
+fn evalWat(arena: std.mem.Allocator, module: []const u8, code: []const u8, arg: []const u8) EvalError!Result {
+    const built = try watProgram.build(module, code);
+    const ok = switch (built) {
+        .ok => |o| o,
+        .refused => |why| return .{ .response = .{ .compile_error = try arena.dupe(u8, why) } },
+    };
+    const response = try persistent_wat.evalWithArg(arena, ok.wasm, arg);
+    return .{ .response = switch (response) {
+        .ok => |b| .{ .ok = b },
+        .compile_error => |b| .{ .compile_error = b },
+        .runtime_error => |b| .{ .runtime_error = b },
+    } };
+}
+
+// ── what a snapshot shows of an evaluation ───────────────────────────────────
+
+/// What a snapshot shows of the module that ran, and in which language.
+pub const Listing = struct {
+    text: []const u8,
+    lang: trace.Lang,
+};
+
+/// The listing of the module this thread's runtime ran. On the BEAM runtime:
+/// the module as BEAM assembly (`beam/program.zig`), then `main/1`'s argument
+/// as `%%` comments (the tail of `erl_listing`, the Erlang listing the
+/// evaluator rendered) — or the refusal. On the wat runtime: the generated
+/// module's functions as lowered to wasm (`wat/program.zig`), then the same
+/// argument comments as `;;` lines — or the refusal.
+pub fn listingOf(arena: std.mem.Allocator, host: []const u8, module: []const u8, code: []const u8, erl_listing: []const u8) EvalError!Listing {
+    const marker = "\n%% main/1 argument";
+    const argument: ?[]const u8 = if (std.mem.indexOf(u8, erl_listing, marker)) |i| erl_listing[i + 1 ..] else null;
+    if (current() == .beam) {
+        const built = try beamProgram.build(module, try placeholderOf(arena, host), code);
+        return switch (built) {
+            .ok => |ok| .{ .lang = .beam, .text = if (argument) |a| try std.fmt.allocPrint(arena, "{s}\n{s}", .{ ok.listing, a }) else ok.listing },
+            .refused => |why| .{ .lang = .beam, .text = try std.fmt.allocPrint(arena, "%% not lowered: {s}\n", .{why}) },
+        };
+    }
+    const built = try watProgram.build(module, code);
+    const body = switch (built) {
+        .ok => |o| o.listing,
+        .refused => |why| return .{ .lang = .wat, .text = try std.fmt.allocPrint(arena, ";; not lowered: {s}\n", .{why}) },
+    };
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    try out.appendSlice(arena, std.mem.trimEnd(u8, body, "\n"));
+    try out.append(arena, '\n');
+    if (argument) |a| {
+        try out.append(arena, '\n');
+        var lines = std.mem.splitScalar(u8, a, '\n');
+        while (lines.next()) |line| {
+            if (line.len == 0) continue;
+            try out.appendSlice(arena, ";;");
+            try out.appendSlice(arena, if (std.mem.startsWith(u8, line, "%%")) line[2..] else line);
+            try out.append(arena, '\n');
+        }
+    }
+    return .{ .lang = .wat, .text = out.items };
+}
+
+// ── parity ───────────────────────────────────────────────────────────────────
+
+/// Set on a thread to run every evaluation on both runtimes and collect the
+/// ones whose answers differ (`Parity.record`). A test hook: nothing in a
+/// compilation sets it.
+pub threadlocal var parity: ?*Parity = null;
+
+pub const Parity = struct {
+    alloc: std.mem.Allocator,
+    evaluations: usize = 0,
+    mismatches: std.ArrayListUnmanaged(Mismatch) = .empty,
+
+    pub const Mismatch = struct {
+        host: []const u8,
+        module: []const u8,
+        beam: []const u8,
+        wat: []const u8,
+    };
+
+    pub fn deinit(p: *Parity) void {
+        for (p.mismatches.items) |m| {
+            p.alloc.free(m.host);
+            p.alloc.free(m.module);
+            p.alloc.free(m.beam);
+            p.alloc.free(m.wat);
+        }
+        p.mismatches.deinit(p.alloc);
+    }
+
+    /// Compare the two answers of one evaluation; keep them when they differ.
+    pub fn record(p: *Parity, host: []const u8, module: []const u8, beam: Result, wat: Result) EvalError!void {
+        p.evaluations += 1;
+        if (try equivalent(p.alloc, beam, wat)) return;
+        try p.mismatches.append(p.alloc, .{
+            .host = try p.alloc.dupe(u8, host),
+            .module = try p.alloc.dupe(u8, module),
+            .beam = try describe(p.alloc, beam),
+            .wat = try describe(p.alloc, wat),
+        });
+    }
+
+    /// Every mismatch, both answers printed, for a failing test.
+    pub fn report(p: *Parity, w: *std.Io.Writer) std.Io.Writer.Error!void {
+        for (p.mismatches.items) |m| {
+            try w.print("\n{s} {s}\n  beam: {s}\n  wat:  {s}\n", .{ m.host, m.module, m.beam, m.wat });
+        }
+    }
+};
+
+/// Two answers are the same answer: replies equal in their canonical key order
+/// (`reply_order.zig` — a map's iteration order is the BEAM's atom-table
+/// accident, not part of the reply); a compile error on both sides; runtime
+/// errors with the same `Class:Reason` (the BEAM appends a stack trace the wat
+/// runtime has no equivalent of).
+pub fn equivalent(alloc: std.mem.Allocator, beam: Result, wat: Result) std.mem.Allocator.Error!bool {
+    const b = switch (beam) {
+        .response => |r| r,
+        .unavailable => return false,
+    };
+    const w = switch (wat) {
+        .response => |r| r,
+        .unavailable => return false,
+    };
+    return switch (b) {
+        .ok => |x| blk: {
+            if (w != .ok) break :blk false;
+            const cx = (try replyOrder.canonical(alloc, x)) orelse break :blk std.mem.eql(u8, x, w.ok);
+            defer alloc.free(cx);
+            const cy = (try replyOrder.canonical(alloc, w.ok)) orelse break :blk false;
+            defer alloc.free(cy);
+            break :blk std.mem.eql(u8, cx, cy);
+        },
+        .compile_error => w == .compile_error,
+        .runtime_error => |x| w == .runtime_error and std.mem.eql(u8, firstLine(x), firstLine(w.runtime_error)),
+    };
+}
+
+fn firstLine(s: []const u8) []const u8 {
+    return s[0 .. std.mem.indexOfScalar(u8, s, '\n') orelse s.len];
+}
+
+fn describe(alloc: std.mem.Allocator, r: Result) std.mem.Allocator.Error![]const u8 {
+    return switch (r) {
+        .unavailable => |why| std.fmt.allocPrint(alloc, "unavailable: {s}", .{why}),
+        .response => |resp| switch (resp) {
+            .ok => |b| std.fmt.allocPrint(alloc, "ok: {s}", .{b}),
+            .compile_error => |b| std.fmt.allocPrint(alloc, "compile error: {s}", .{b}),
+            .runtime_error => |b| std.fmt.allocPrint(alloc, "runtime error: {s}", .{b}),
+        },
+    };
+}
+
+test "decision 84: the runtime follows the target, beam by default" {
+    try std.testing.expectEqual(ComptimeRuntime.beam, of(.erlang));
+    try std.testing.expectEqual(ComptimeRuntime.beam, of(.beam));
+    try std.testing.expectEqual(ComptimeRuntime.wat, of(.commonJS));
+    try std.testing.expectEqual(ComptimeRuntime.wat, of(.wasm));
+    try std.testing.expectEqual(ComptimeRuntime.beam, current());
+    const prev = select(.wat);
+    defer _ = select(prev);
+    try std.testing.expectEqual(ComptimeRuntime.wat, current());
+}
+
+test "decision 84 by target name; a harness pin wins over it" {
+    try std.testing.expectEqual(ComptimeRuntime.wat, ofTargetName("node"));
+    try std.testing.expectEqual(ComptimeRuntime.wat, ofTargetName("wasm"));
+    try std.testing.expectEqual(ComptimeRuntime.beam, ofTargetName("erlang"));
+    try std.testing.expectEqual(ComptimeRuntime.beam, ofTargetName("beam"));
+    try std.testing.expectEqual(ComptimeRuntime.beam, ofTargetName(null));
+    try std.testing.expectEqual(ComptimeRuntime.wat, forTarget("node"));
+    const prev = force(.beam);
+    defer _ = force(prev);
+    try std.testing.expectEqual(ComptimeRuntime.beam, forTarget("node"));
+    try std.testing.expectEqual(ComptimeRuntime.beam, forTarget("wasm"));
+}
+
+test "the BEAM runtime refuses a module its lowering does not take, naming the construct" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const code =
+        \\-module(bp_runtime_refused).
+        \\-export([main/1]).
+        \\main(_) -> maybe X end.
+    ;
+    const result = try evalOn(arena_state.allocator(), std.testing.io, .beam, "template", "bp_runtime_refused", code, "\x83\x6a");
+    try std.testing.expect(result == .response and result.response == .compile_error);
+    try std.testing.expect(std.mem.indexOf(u8, result.response.compile_error, "`maybe`") != null);
+}
+
+test "a native build carries both runtimes" {
+    try std.testing.expect(can_spawn);
+    try std.testing.expect(available(.beam));
+    try std.testing.expect(available(.wat));
+}
+
+test "equivalent: replies byte for byte, runtime errors by class and reason" {
+    const alloc = std.testing.allocator;
+    var a = "{\"kind\":\"code\",\"source\":\"x\"}".*;
+    var b = "{\"source\":\"x\",\"kind\":\"code\"}".*;
+    var c = "{\"kind\":\"value\",\"source\":\"x\"}".*;
+    try std.testing.expect(try equivalent(alloc, .{ .response = .{ .ok = &a } }, .{ .response = .{ .ok = &b } }));
+    try std.testing.expect(!try equivalent(alloc, .{ .response = .{ .ok = &a } }, .{ .response = .{ .ok = &c } }));
+    var e1 = "error:{badkey,x}\n[{m,f,1}]".*;
+    var e2 = "error:{badkey,x}".*;
+    try std.testing.expect(try equivalent(alloc, .{ .response = .{ .runtime_error = &e1 } }, .{ .response = .{ .runtime_error = &e2 } }));
+}

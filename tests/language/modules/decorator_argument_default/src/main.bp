@@ -1,0 +1,51 @@
+//// A decorator argument the annotation leaves out takes the parameter's
+//// declared default, as a function call's does (C-04), whether the decorator
+//// is this module's, a sibling's or a dependency's. The decorator body ran
+//// with `undefined` in the omitted slot, so `#[mark("a")]` failed the
+//// comptime call with `{error,{case_clause,undefined}}`. Only a closed default
+//// is filled: a literal, `true` / `false` or a sign.
+
+pub mod local;
+import {local.pin};
+import {mark} from "marks";
+
+fn note(comptime decl: @Decl, text: string = "n", size: f64 = 2.5) {
+    @emit(
+        "pub fn "
+            + decl.name
+            + "Note() -> string { return \""
+            + text
+            + size.toString()
+            + "\"; }",
+    );
+}
+
+#[mark("a")]
+fn first() -> i32 {
+    return 1;
+}
+
+#[mark("b", true)]
+fn second() -> i32 {
+    return 2;
+}
+
+#[mark("c", false, 3)]
+fn third() -> i32 {
+    return 3;
+}
+
+#[note]
+#[pin]
+fn fourth() -> i32 {
+    return 4;
+}
+
+pub fn main() {
+    @print(firstMark());
+    @print(secondMark());
+    @print(thirdMark());
+    @print(fourthNote());
+    @print(fourthPin());
+    @print(first() + second() + third() + fourth());
+}

@@ -5,7 +5,7 @@ declare fn Callback(msg: string) -> void;
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, []}.
 {attributes, []}.
 {labels, 2}.

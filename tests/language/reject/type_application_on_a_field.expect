@@ -1,0 +1,2 @@
+`value` is not a variant of `Box`, so its type arguments reach nothing
+8:22

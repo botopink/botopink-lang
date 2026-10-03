@@ -1,0 +1,25 @@
+//// Decision 63 (amended 2026-09-19) — the TUPLE is the one receiver the
+//// ambient `Index<K, V>` behavior cannot express, and the amendment says so
+//// outright: `t[0]` needs a **constant** index and answers a type **per
+//// position**, which `at(key: K) -> ?V` cannot say with a single `V`. So the
+//// tuple stays the checker's special case.
+////
+//// What the special case costs is a checker arm and no backend arm: `t[0]` is
+//// rewritten to the positional member access the language already has and all
+//// four targets already emit (`t._0`), so the element's type is the one its
+//// position declares — `i32` here, `string` there, neither of them optional,
+//// because nothing about a tuple position is absent.
+////
+//// The two refusals are `reject/index_tuple_computed.bp` (a computed index)
+//// and `reject/index_tuple_out_of_range.bp` (a position the type has not got).
+
+pub fn main() {
+    val t = #(1, "a");
+    val n: i32 = t[0];
+    val s: string = t[1];
+    @print(n);
+    @print(s);
+
+    val pair: #(x: i32, y: i32) = #(10, 20);
+    @print(pair[0] + pair[1]);
+}

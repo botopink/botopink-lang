@@ -1,0 +1,25 @@
+//// A `pub type`'s constructor reached through its std module's namespace —
+//// `url.Url(…)` after `import {url} from "std"` — builds the same value the
+//// leaf import's `Url(…)` does (it was `this "std" module has no such public
+//// function`), beside a function of the module called through the same
+//// namespace.
+
+import {url} from "std";
+
+pub fn main() {
+    val u = url.Url(
+        scheme: "https",
+        user: "",
+        password: "",
+        host: "example.com",
+        port: 443,
+        path: "/a",
+        query: "",
+        fragment: "",
+    );
+    @print(u.host);
+    @print(u.port);
+    @print(url.serialize(u));
+    val parsed = url.parse("https://example.org/b");
+    @print(parsed.host);
+}

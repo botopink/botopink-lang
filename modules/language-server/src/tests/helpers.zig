@@ -5,6 +5,7 @@
 ///   2. `tokenize(arena, source)` → []Token (freed with arena)
 ///   3. `pos(line, char)` / `range(...)` → proto types
 const std = @import("std");
+const test_scratch = @import("test_scratch");
 const bp = @import("botopink");
 const proto = @import("../protocol.zig");
 const lsp_types = @import("../lsp_types.zig");
@@ -35,8 +36,10 @@ pub fn compile(gpa: std.mem.Allocator, source: []const u8) !CompileHandle {
     return .{ .result = result };
 }
 
-/// Counter for unique per-test template-eval scratch dirs — tests run in
-/// parallel, so a shared `node` build root would race on deleteTree/writeFile.
+/// Counter for unique per-test template-eval scratch dirs under this
+/// process's `test_scratch` root — tests run in parallel, and so do whole
+/// suites over one checkout, so a shared build root would race on
+/// deleteTree/writeFile.
 var eval_counter: std.atomic.Value(usize) = .init(0);
 
 /// Compiles `source` expanding template bodies via `node` (needed for
@@ -45,7 +48,7 @@ var eval_counter: std.atomic.Value(usize) = .init(0);
 /// The `root` is only used during compilation, so it is freed on return.
 pub fn compileEval(gpa: std.mem.Allocator, source: []const u8) !CompileHandle {
     const n = eval_counter.fetchAdd(1, .monotonic);
-    const root = try std.fmt.allocPrint(gpa, ".botopinkbuild/lsp-test/{d}", .{n});
+    const root = try std.fmt.allocPrint(gpa, "{s}/{d}", .{ test_scratch.path(std.testing.io, "lsp-test"), n });
     defer gpa.free(root);
     var lsp_compiler = compiler_mod.LspCompiler.init(gpa, std.testing.io, root);
     const entries = [_]compiler_mod.ModuleEntry{.{ .uri = TEST_URI, .source = source }};
@@ -88,7 +91,7 @@ pub fn compileMultiEval(
     entries: []const compiler_mod.ModuleEntry,
 ) !CompileHandle {
     const n = eval_counter.fetchAdd(1, .monotonic);
-    const root = try std.fmt.allocPrint(gpa, ".botopinkbuild/lsp-test-multi/{d}", .{n});
+    const root = try std.fmt.allocPrint(gpa, "{s}/{d}", .{ test_scratch.path(std.testing.io, "lsp-test-multi"), n });
     defer gpa.free(root);
     var lsp_compiler = compiler_mod.LspCompiler.init(gpa, std.testing.io, root);
     const result = try lsp_compiler.compile(entries);

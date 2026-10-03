@@ -1,0 +1,19 @@
+//// Front 12 step 4.3 — `@todo()` is a body that aborts when reached, not a
+//// value. The function type-checks with its declared return type, the program
+//// prints what came before, and dies at the call.
+////
+//// Measured at `85f883bd` (2026-09-20): `before` then an abort on all four
+//// backends. beam dies for a different reason — `{undef, main:notReady/0}`: the
+//// function whose whole body is `@todo()` is not emitted at all, so the abort is
+//// the missing function's, not the builtin's. The observable pair (stdout, a
+//// non-zero status) is the same, so the cell passes there; the defect is noted
+//// here and reported, not asserted (no row owns it).
+
+fn notReady() -> i32 {
+    @todo();
+}
+
+pub fn main() {
+    @print("before");
+    @print(notReady());
+}

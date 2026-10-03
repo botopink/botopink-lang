@@ -12,17 +12,17 @@
 //!         (`generic-default-before-required`, parser-level, fires at every
 //!         `GenericParamList` site: struct, fn, enum, interface, TypeRef).
 //!   RG2 — `<>` with every param defaulted is legal (no diagnostic).
-//!   RG3 — `@Future<>`/`@Iterator<>`/`@Result<i32>` etc.: a required
+//!   RG3 — `@Task<>`/`@Stream<>`/`@Result<i32>` etc.: a required
 //!         (non-defaulted) generic argument missing
 //!         (`generic-required-arg-missing`, comptime, fires at type-ref
 //!         resolution time via `builtinRequiredGenericArgs`).
-//!   RG4 — `@Iterator<i32, , i64>`: a middle generic argument skipped while
+//!   RG4 — `@Result<i32, , i64>`: a middle generic argument skipped while
 //!         a later one is provided (`generic-arg-skip-forbidden`, parser).
 //!
 //! Resolution rules (`comptime/types.zig` default-fill for omitted trailing
 //! args) are deferred until F4G compile-side lands; once that ships, the
 //! "RG2 — every default supplied" cases below get matching resolution
-//! assertions (e.g. `@Future<User>` resolves with E = any).
+//! assertions (e.g. `@Task<User>` resolves with E = any).
 
 const std = @import("std");
 const lexerMod = @import("../../lexer.zig");
@@ -71,7 +71,7 @@ fn expectParseOk(src: []const u8) !void {
 
 test "§1G RG1 — struct: <T = i32, U> rejected" {
     try expectParseKind(
-        \\record Container<T = i32, U>(val item: T)
+        \\type Container<T = i32, U>(item: T)
     , .genericDefaultBeforeRequired);
 }
 
@@ -103,44 +103,41 @@ test "§1G — trailing defaulted parameters are accepted (canonical form)" {
 
 test "§1G — defaulted struct trailing param is accepted" {
     try expectParseOk(
-        \\val Container = record <T, U = string> { item: T, tag: U };
+        \\val Container = type <T, U = string>(item: T, tag: U);
     );
 }
 
 // ── RG3 — required generic argument missing ─────────────────────────────────
 
-test "§1G RG3 — @Future<> rejects (T is required)" {
+test "§1G RG3 — @Task<> rejects (T is required)" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@future]
-        \\fn empty() -> @Future<> { return 0; }
+        \\fn empty() -> @Task<> { return 0; }
     );
 }
 
-test "§1G RG3 — @Iterator<> rejects (T is required)" {
+test "§1G RG3 — @Stream<> rejects (T is required)" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@iterator]
-        \\fn empty() -> @Iterator<> { break; }
+        \\fn empty() -> @Stream<> { break; }
     );
 }
 
 test "§1G RG3 — @Result<i32> rejects (E is required, no default)" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@result]
         \\fn parse() -> @Result<i32> { return 0; }
     );
 }
 
 // ── RG4 — skipped middle generic argument ───────────────────────────────────
 
-test "§1G RG4 — @Iterator<i32, , i64> rejects (middle slot empty)" {
+test "§1G RG4 — @Result<i32, , i64> rejects (middle slot empty)" {
     try expectParseKind(
-        \\fn middle() -> @Iterator<i32, , i64> { return 0; }
+        \\fn middle() -> @Result<i32, , i64> { return 0; }
     , .genericArgSkipForbidden);
 }
 
 test "§1G RG4 — trailing `, >` is also a skipped slot" {
     try expectParseKind(
-        \\fn trail() -> @Future<i32, > { return 0; }
+        \\fn trail() -> @Result<i32, > { return 0; }
     , .genericArgSkipForbidden);
 }
 
@@ -152,37 +149,31 @@ test "§1G RG4 — user-defined skip rejected (nominal TypeRef site)" {
 
 // ── Resolution rules ────────────────────────────────────────────────────────
 //
-// `builtinDefaultFilledArgs` in `comptime/infer.zig` fills omitted trailing
-// args with the spec-declared defaults; the resolver builds the full args
-// slice and binds the missing positions to `env.namedType(<default>)`.
-// These cases assert the fill is observable: the type-checks succeed with no
-// error, even though the surface text omits the defaulted positions.
+// Decisions 120 / 122 removed the defaulted effect wrappers (`@Future<T, E =
+// any>`, the generators): every builtin wrapper is written with its whole
+// argument list. These cases assert the one-argument wrappers type-check.
 
-test "§1G resolution — @Future<i32> resolves with E = any (E omitted)" {
+test "§1G resolution — @Task<i32> resolves (one argument, no error parameter)" {
     try h.assertInfersOk(std.testing.allocator,
-        \\#[@future]
-        \\fn fetch(id: i64) -> @Future<i32> { return 0; }
+        \\fn fetch(id: i64) -> @Task<i32> { return 0; }
     );
 }
 
-test "§1G resolution — @Iterator<i32> resolves with E = any, C = void" {
+test "§1G resolution — @Iterator<@Result<i32, string>> resolves (the item carries E)" {
     try h.assertInfersOk(std.testing.allocator,
-        \\#[@iterator]
         \\fn count(n: i32) -> @Iterator<i32> { yield n; }
     );
 }
 
-test "§1G resolution — @Iterator<i32, string> resolves with C = void" {
+test "§1G resolution — @Stream<@Result<i32, string>> resolves (the item carries E)" {
     try h.assertInfersOk(std.testing.allocator,
-        \\#[@iterator]
-        \\fn run(n: i32) -> @Iterator<i32, string> { yield n; }
+        \\fn run(n: i32) -> @Stream<@Result<i32, string>> { yield n; }
     );
 }
 
-test "§1G resolution — @Generator<i32> resolves with R = void" {
+test "§1G resolution — @Iterator<i32> resolves" {
     try h.assertInfersOk(std.testing.allocator,
-        \\#[@generator]
-        \\fn range(a: i32) -> @Generator<i32> { yield a; }
+        \\fn range(a: i32) -> @Iterator<i32> { yield a; }
     );
 }
 
@@ -196,7 +187,7 @@ test "§1G resolution — @Generator<i32> resolves with R = void" {
 
 test "§1G F4G — user record default fills omitted trailing arg" {
     try h.assertInfersOk(std.testing.allocator,
-        \\record Container<A, B = string> { primary: A, label: B }
+        \\type Container<A, B = string>(primary: A, label: B)
         \\fn make() -> Container<i32> {
         \\    return Container(primary: 0, label: "default");
         \\}
@@ -209,7 +200,7 @@ test "§1G F4G — user record default with chained-param reference" {
     // types use, so `U` binds to `T`'s fresh var; the literal then
     // instantiates both to the same concrete type.
     try h.assertInfersOk(std.testing.allocator,
-        \\record Sym<T, U = T> { left: T, right: U }
+        \\type Sym<T, U = T>(left: T, right: U)
         \\fn pair() -> Sym<i32> {
         \\    return Sym(left: 1, right: 2);
         \\}
@@ -224,7 +215,7 @@ test "§1G F4G — user enum default fills omitted trailing arg" {
     // the registered default, the unifier matches arity, and E_cell gets
     // pinned to `string` via a single fresh-var <-> string unification.
     try h.assertInfersOk(std.testing.allocator,
-        \\enum Result2<T, E = string> { Yes(value: T), No(message: E) }
+        \\type Result2<T, E = string> { Yes(value: T), No(message: E) }
         \\fn pick() -> Result2<i32> {
         \\    return Result2.Yes(value: 42);
         \\}
@@ -237,7 +228,7 @@ test "§1G F4G — user enum default with chained-param reference" {
     // time. The annotation `Sym2<i32>` resolves the default, pinning both
     // slots to i32 via a single arity-matching unification.
     try h.assertInfersOk(std.testing.allocator,
-        \\enum Sym2<T, U = T> { L(value: T), R(value: U) }
+        \\type Sym2<T, U = T> { L(value: T), R(value: U) }
         \\fn left() -> Sym2<i32> {
         \\    return Sym2.L(value: 7);
         \\}

@@ -1,0 +1,22 @@
+//// Decision 8 §6 T6 — a tuple is positional at run time: equality compares
+//// elements, and labels never take part.
+
+test "§6 T6 two tuples with the same elements are equal" {
+    val a = #(1, "a");
+    val b = #(1, "a");
+    assert a == b;
+}
+
+test "§6 T6 different elements are not equal" {
+    val a = #(1, "a");
+    val b = #(1, "b");
+    assert a != b;
+}
+
+test "§6 T1 T6 a labeled and an unlabeled tuple with the same elements are equal" {
+    val name = "SP";
+    val pop = 12;
+    val labeled = #(name, pop);
+    val plain = #("SP", 12);
+    assert labeled == plain;
+}

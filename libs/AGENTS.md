@@ -3,54 +3,73 @@
 > Path: `libs/`
 > Parent: [`../AGENTS.md`](../AGENTS.md)
 
-Code written **in** botopink — the **bundled** `.bp` libraries shipped with
-the language core, kept separate from the Zig/TS toolchain under
-[`../modules/`](../modules/AGENTS.md). The dependency arrow runs one way:
-`modules/compiler-core` consumes `libs/std`; a lib never depends on the
-toolchain's internals.
+Code written **in** botopink that ships with the language core, kept separate
+from the Zig toolchain under [`../modules/`](../modules/AGENTS.md). The
+dependency arrow runs one way: the compiler embeds the **bundled packages** —
+`libs/std` and the libraries named in `build.zig`'s `bundled_packages`
+(decisions 115–117) — and a lib never depends on toolchain internals.
 
-The **frameworks** (`erika`, `jhonstart`, `onze`, `rakun`) live as sibling
-projects under `repository/` — not here. They are reached via `from "<name>"`
-through the multi-root resolver (the resolver walks `repository/botopink-lang/libs`
-then `repository/` then a legacy `libs/`). See the [workspace
-overview](../../AGENTS.md) for the per-project entry points.
+A bundled package is imported by name (`from "routing"`) with no `dependencies`
+entry, from the copy inside the compiler binary; listing one in `dependencies`
+is refused. Every bundled library besides `std` is `.bp` only (target-native
+code is an inline `#[@External.…]` template — no `.erl`/`.mjs`; `build.zig`
+refuses a non-`.bp` `files` entry), runs on erlang and commonJS (erlang first in
+`targets`), and imports `std` and other bundled packages only. Adding one is:
+the directory with its `botopink.json` + `AGENTS.md`, its name in
+`build.zig`'s `bundled_packages` (after every bundled package it imports), a row
+below, and its directory in `scripts/format-check.sh`'s `TREES`.
 
-Each library is a package with its own `botopink.json` and `AGENTS.md`,
-mirroring the shape of `std/`.
+The other libraries (`emilia`, `erika`, `jhonstart`, `onze`, `rakun`) are sibling
+projects under `repository/` in the meta workspace, reached via `from "<name>"`
+through the multi-root resolver (`BOTOPINK_LIB_ROOTS`, then
+`repository/botopink-lang/libs`, `repository/`, `libs/` — see
+`modules/compiler-cli/src/cli/libs.zig`).
 
 ## Tree
 
 ```text
 libs/
 ├── AGENTS.md          ← you are here
-├── std/               ← standard library (embedded prelude + interfaces)
-├── server/            ← framework-agnostic HTTP backing (real node-`http`, `from "server"`)
-└── client/            ← client-side interfaces (scaffold)
+├── std/               ← standard library (embedded in the compiler)
+├── routing/           ← bundled route matcher + routing wires (decision 115)
+├── http/              ← bundled codecs of HTTP semantics (decision 196)
+├── actions/           ← bundled server-action protocol (decision 116)
+├── validation/        ← bundled constraint validation (decision 116)
+└── log/               ← bundled levels, renderers, error digest, Logger (decisions 194, 195)
 ```
 
 ## Packages
 
 | Package | Provides | Embedded in compiler? | AGENTS |
 |---|---|---|---|
-| `std/` | builtin types, primitives, Array/String, builtins — loaded into the type `Env` at infer time | yes (`modules/compiler-core/src/comptime/stdlib/prelude.zig`, wired in root `build.zig`) | [link](std/AGENTS.md) |
-| `server/` | framework-agnostic HTTP backing — node-`http` server (`serverServe`/`serverStop`) behind `#[@External.<targert>(...)]` | no — reached via `from "server"` (real; rakun's transport) | [link](server/AGENTS.md) |
-| `client/` | HTTP client / request interfaces | no — inert scaffold | [link](client/AGENTS.md) |
+| `std/` | primitive interfaces, builtins, and the importable `std` modules | yes — `build.zig` embeds the files; `modules/compiler-core/src/comptime/stdlib/prelude.zig` exposes them | [link](std/AGENTS.md) |
+| `routing/` | the route matcher and the routing wires both halves run — route table, `k`/`z` blobs, URL rules, navigation signals (`nav:`), the `:param` grammar; pure `.bp`, erlang + commonJS, imports std only | yes — bundled by name (decision 115, `01-std/04-routing-lib` Step 2) | [link](routing/AGENTS.md) |
+| `http/` | the codecs of HTTP semantics rakun and onze both read and write — `cookie` (first-wins reader, decision 181; `Set-Cookie` writer), `accept` (the strict q-value, decision 182; `Accept` / `Accept-Encoding` / `Accept-Language`), `mime`, `status`, `date` (HTTP-date), `byteRange`, `cacheControl`; no wire parser, no compression; pure `.bp`, erlang + commonJS, imports std only | yes — bundled by name (decision 196, `1.0.11-beta/03-bundled-libs/104-http`) | [link](http/AGENTS.md) |
+| `actions/` | the server-action protocol both halves read and write — the `state` grammar and `ActionState`, the v1 envelope (`redirect` derived from `n`), the JSON-RPC body, `refresh`; pure `.bp`, erlang + commonJS, imports std and routing only, names no field or header | yes — bundled by name (decision 116, `01-std/05-actions-lib` Step 6) | [link](actions/AGENTS.md) |
+| `validation/` | constraint markers, `#[validated]`, `#[schema]` (a `Json` document decoded into a typed record, every violation at its path), the violation report and constraint table, typed coercion — one source for erlang and commonJS; the message lookup is injected (`setMessageSource`) | yes — bundled by name (decision 116, `01-std/06-validation-lib` Step 5) | [link](validation/AGENTS.md) |
+| `log/` | the five levels, `LogRecord`, the ECS / GELF / logstash / plain renderers, the one error digest (`errorDigest`, decision 194) and a `Logger` whose sink is injected (`setSink`; default: OTP `logger` / node `console`) — `Logger.logError` writes the error record and answers its digest; `.bp` only — three inline host cells (the sink slot, the default write) —, erlang + commonJS, imports std only | yes — bundled by name (decision 195, `03-bundled-libs/106-log` Step 1) | [link](log/AGENTS.md) |
 
 ## Conventions
 
-- `.bp` declarations stay declarative — interface/method **signatures only**, no
-  bodies. Codegen supplies implementations per target.
-- Only `std` is embedded today. `client` is still a scaffold; `server` is a real
-  **application-level** lib reached via `from "server"`, opted into per project,
-  never prelude-embedded or wired into `build.zig`. Embedding a lib into stdlib
-  loading / the type `Env` is a deliberate, separate task.
-- Packages here are `.bp`-only — no Zig under `libs/`. The embed/loader glue
-  lives in `modules/compiler-core/src/comptime/stdlib/prelude.zig`.
-- Framework libs (`erika`/`jhonstart`/`onze`/`rakun`) are siblings under
-  `repository/`, not here — extracting them keeps the language core
-  framework-agnostic and lets each framework ship + version independently.
-- Every directory ships its own `AGENTS.md`; update it in the same change that
-  touches the directory's layout or contents.
+- Packages here are `.bp`-only — no Zig under `libs/`. Embed/loader glue lives
+  in `build.zig` (`bundled_packages`, the generated table) and
+  `modules/compiler-core/src/comptime/stdlib/prelude.zig`; the CLI
+  (`compiler-cli/src/cli/libs.zig`) and the LSP (`language-server/src/project_graph.zig`)
+  load a non-std bundled package's modules as `<pkg>/<stem>`.
+- Each package has its own `botopink.json` and `AGENTS.md`; update the
+  `AGENTS.md` in the same change that touches the package's layout or contents.
+- Library-specific code never goes into `modules/compiler-core` (enforced by the
+  lib-agnostic gate in `zig build test`).
+- **A shared primitive lands in std first, and each copy is deleted by the
+  owner of the file it sits in.** What two libraries need — a string → number
+  parser, a reader over `json.Json`, a retry loop, a duration parser, a key
+  derivation — is written once in `libs/std` (decisions 115–116: what is
+  generic goes to std; `.bp` only, both targets, a `#[@External.<Target>]`
+  template where a host is needed), under its natural name (decision 170). A
+  library then calls std's and removes its own in a step of the front that owns
+  that file — never the std front editing a library, and never a library
+  growing a second copy while std lacks the first. A module that needs two
+  declarations of one name meanwhile imports them under an alias.
 
 ## See also
 

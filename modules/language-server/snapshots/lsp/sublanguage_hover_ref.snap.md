@@ -1,6 +1,6 @@
 ----- SOURCE
 ```botopink
-pub record Users { name: string }
+pub type Users(name: string)
 pub fn q<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
     val code = e.build("[1, 2]");
     val kw = CustomNode(kind: "kw", span: Span(0, 6, 1), label: "keyword", ref: null, children: []);
@@ -8,7 +8,7 @@ pub fn q<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
     val root = CustomNode(kind: "root", span: Span(0, 0, 1), label: "none", ref: null, children: [kw, col]);
     return e.custom(root, code);
 }
-val xs = q "select name";
+val xs = q "select name from Users";
                     ↑
 ```
 
@@ -16,5 +16,5 @@ val xs = q "select name";
 kind: markdown
 
 ```botopink
-pub record Users { name: string }
+pub type Users(name: string)
 ```

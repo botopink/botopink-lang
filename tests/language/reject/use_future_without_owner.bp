@@ -1,0 +1,14 @@
+//// Decision 104 of 1.0.10-beta (front 21) — only `#[@use]` grants `use`.
+//// Decisions 89 and 90, which let a `#[@future]` body activate a hook when its
+//// unwrapped return owned a context, are revoked: `@Future` grants no `use`,
+//// whatever it wraps. The refusal names the annotation that does.
+
+type Element(count: i32) implement @Context<Element>
+fn state(initial: i32) -> @Component<Element, i32> { return initial; }
+
+fn Page() -> @Task<Element> {
+    val n = use state(0);
+    return Element(count: n);
+}
+
+pub fn main() { @print(0); }

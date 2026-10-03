@@ -1,0 +1,18 @@
+//// Front 20 F11 of 1.0.10-beta — `?T` has no `expect`. It existed, declared
+//// `expect(self, default: T) -> T` and lowered to exactly `unwrapOr`, with the
+//// prose saying so and the NAME saying the absent branch is unreachable. A
+//// word that reads as an assertion over a signature that is a fallback is the
+//// loosest reading of the stricter word, which is the shape decision 67
+//// refuses; the strict reading (fail when absent) has to invent a failure the
+//// option surface does not have, and belongs to whoever adds it on four
+//// backends. So there is one spelling for one behaviour.
+////
+//// The refusal is explicit rather than left to the unknown-method fallback,
+//// which types a method it does not know permissively: without it this program
+//// would compile and fail at run time, which is worse than the alias was.
+
+pub fn main() {
+    val xs = [1, 2, 3];
+    val v = xs.at(9).expect(0);
+    @print(v);
+}

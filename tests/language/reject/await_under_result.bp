@@ -1,0 +1,14 @@
+//// Decisions 118 and 120 of 1.0.10-beta (front 24, § Cells "Chain and `use`";
+//// guide.md § 2.3 `semAwait`) — `@Result` is not a level of the chain: a
+//// `@Result` return grants `throw` / `try` and no `await`.
+//// `effect-await-without-task` (renamed from `effect-await-without-future`), at
+//// the `await`.
+
+fn fetchCount() -> @Task<i32> { return 1; }
+
+fn noAwait() -> @Result<i32, string> {
+    val x = await fetchCount();
+    return x;
+}
+
+pub fn main() { @print(try noAwait() catch 0); }

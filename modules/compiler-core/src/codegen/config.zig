@@ -15,13 +15,12 @@ pub const TypeDefLang = enum {
     typescript,
 };
 
+/// The VM a compilation's decorator and template bodies run on (front 18,
+/// `comptime/runtime/runtime.zig`): the BEAM (`persistent_beam.zig`) or wasm3
+/// (`persistent_wat.zig`).
+pub const ComptimeRuntime = enum { beam, wat };
+
 /// Top-level codegen configuration.
-///
-/// Note: pre-v0.beta.21 this struct carried a `comptimeRuntime` field selecting
-/// one of four backends (node/erlang/wasm/beam). The four-runtime architecture
-/// was retired by the `wasm3-unified-runtime` spec; every comptime val
-/// expression now runs through the embedded wasm3 interpreter, so the field
-/// became dead weight and was removed.
 pub const Config = struct {
     /// Module source of the generated code.
     targetSource: TargetSource = .commonJS,
@@ -37,4 +36,17 @@ pub const Config = struct {
     /// are emitted as functions plus a registry + runner entry, `assert`
     /// lowers to a throwing helper, and `fn main/0` is not auto-invoked.
     test_mode: bool = false,
+
+    /// Which package owns each module (decision 109): the root package's
+    /// `botopink.json` `name` and the dependencies loaded beside it. The
+    /// erlang and BEAM module atoms start with it. The default is a
+    /// compilation with no manifest, whose modules are `bp`'s.
+    packages: @import("crossModule.zig").Packages = .{},
+
+    /// Which runtime evaluates this generation's decorators and templates.
+    /// Null — every driver — is decision 84: the target's VM (erlang/beam →
+    /// beam, commonJS/wasm → wat). Set only where one process generates the
+    /// same program under both runtimes (the codegen snapshot harness's
+    /// doubled tree); there is no flag or build option that reaches it.
+    comptime_runtime: ?ComptimeRuntime = null,
 };

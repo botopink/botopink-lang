@@ -1,0 +1,37 @@
+//// Language gap T10 (`language-gaps.md` of 1.0.11-beta, carried from 1.0.10-beta):
+//// a `try` inside a `for` body that also writes a `var` of the enclosing
+//// function — `variable 'I@2' unsafe in 'case'`, and `erlc` refused the module.
+//// It no longer reproduces; this cell pins it on every target. The loop counts
+//// (and sums) the elements it passed, and a `throw` from the callee leaves the
+//// function before the `var` is read.
+
+fn check(x: i32) -> @Result<i32, string> {
+    if (x < 0) throw "negative";
+    return x;
+}
+
+fn count(xs: i32[]) -> @Result<i32, string> {
+    var i = 0;
+    for (xs) { x ->
+        try check(x);
+        i = i + 1;
+    }
+    return i;
+}
+
+fn total(xs: i32[]) -> @Result<i32, string> {
+    var sum = 0;
+    for (xs) { x ->
+        val v = try check(x);
+        sum = sum + v;
+    }
+    return sum;
+}
+
+pub fn main() {
+    @print(try count([4, 5, 6]) catch 0);
+    @print(try count([]) catch 0);
+    @print(try count([1, 0 - 1, 3]) catch 99);
+    @print(try total([4, 5, 6]) catch 0);
+    @print(try total([1, 0 - 1, 3]) catch 99);
+}

@@ -1,0 +1,16 @@
+//// 1.0.10-beta decision 137 — `try` and `await` begin an expression; they are
+//// never the operand of an operator. `total + try r` is refused at the `try`,
+//// with the fix-it that binds the value first: `val x = try r; total + x`.
+
+fn parse(n: i32) -> @Result<i32, string> {
+    if (n < 0) { throw "negative"; }
+    return n;
+}
+
+fn sum(total: i32, n: i32) -> @Result<i32, string> {
+    return total + try parse(n);
+}
+
+pub fn main() {
+    @print(sum(1, 2).unwrapOr(0));
+}

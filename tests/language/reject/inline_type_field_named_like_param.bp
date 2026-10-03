@@ -1,0 +1,11 @@
+//// Decision 207 — a field of an inline type named like another parameter of
+//// its function would give `col(n: …)` two readings: refused at the inline
+//// type.
+
+fn col(props: type(n: i32), n: i32) -> i32 {
+    return props.n + n;
+}
+
+pub fn main() {
+    @print(0);
+}

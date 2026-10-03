@@ -1,0 +1,18 @@
+//// `String.split("")` answers one piece per character — a UTF-8 codepoint —
+//// on every target, the way JS `split("")` does for these strings; `""`
+//// splits into no piece. On beam the method lowered to `string:split/3`,
+//// which answers the whole string as one piece for an empty separator; it now
+//// runs std's `@External.Erlang` template, as erlang does.
+
+pub fn main() {
+    val parts = "abc".split("");
+    @print(parts.length);
+    @print(parts.join("|"));
+    val accented = "%0Aéz".split("");
+    @print(accented.length);
+    @print(accented.join("|"));
+    @print("".split("").length);
+    @print("a,b".split(",").join("|"));
+    val sep = "";
+    @print("xy".split(sep).length);
+}

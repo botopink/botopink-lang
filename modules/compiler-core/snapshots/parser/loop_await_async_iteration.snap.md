@@ -4,7 +4,7 @@
     {
       "fn": {
         "isPub": false,
-        "effect": "future",
+        "effect": "task",
         "isDeclare": false,
         "isDefault": false,
         "label": null,
@@ -12,13 +12,7 @@
         "docComment": null,
         "comment": null,
         "moduleComment": null,
-        "annotations": [
-          {
-            "name": "future",
-            "args": [],
-            "is_builtin": true
-          }
-        ],
+        "annotations": [],
         "genericParams": [],
         "params": [
           {
@@ -37,7 +31,7 @@
         ],
         "returnType": {
           "generic": {
-            "name": "Future",
+            "name": "Task",
             "args": [
               {
                 "named": "Int"
@@ -52,14 +46,16 @@
             "expr": {
               "loop": {
                 "loc": {
-                  "line": 3,
+                  "line": 2,
                   "col": 5
                 },
+                "keyword": "for_",
+                "generator": null,
                 "iter": {
                   "identifier": {
                     "loc": {
-                      "line": 3,
-                      "col": 17
+                      "line": 2,
+                      "col": 16
                     },
                     "kind": {
                       "ident": "items"
@@ -70,12 +66,17 @@
                 "params": [
                   "item"
                 ],
+                "paramsLoc": {
+                  "line": 2,
+                  "col": 25
+                },
+                "condition": false,
                 "body": [
                   {
                     "expr": {
                       "call": {
                         "loc": {
-                          "line": 4,
+                          "line": 3,
                           "col": 9
                         },
                         "kind": {
@@ -91,7 +92,7 @@
                                 "value": {
                                   "identifier": {
                                     "loc": {
-                                      "line": 4,
+                                      "line": 3,
                                       "col": 16
                                     },
                                     "kind": {

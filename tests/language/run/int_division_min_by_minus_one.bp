@@ -1,0 +1,15 @@
+//// Decision 264 — `i32`'s minimum divided by `-1` is `2147483648`, no `i32`:
+//// it aborts on every target (wasm's `i32.div_s` traps on it; erlang's `div`
+//// answered the bignum, commonJS the double).
+
+fn div(a: i32, b: i32) -> i32 {
+    return a / b;
+}
+
+pub fn main() {
+    val min = div(-2147483647, 1) - 1;
+    @print(div(min, 1));
+    @print(div(min, 2));
+    @print(div(min, -1));
+    @print("unreachable");
+}

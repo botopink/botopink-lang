@@ -1,0 +1,14 @@
+//// `language-gaps.md` row 22 — a numeric section leaf takes its section from
+//// the position's type, as an identifier leaf does (01c-b); with nothing
+//// expected it is refused naming the section it belongs to.
+
+type Tok {
+    Percent {
+        50,
+        100,
+    }
+}
+
+pub fn main() {
+    val n = .50;
+}

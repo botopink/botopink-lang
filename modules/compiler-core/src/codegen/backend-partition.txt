@@ -1,0 +1,47 @@
+# backend-partition.txt — which compiler sources belong to ONE backend (decision 249 of
+# 1.0.11-beta, front 00-gate/133-gate-speed).
+#
+# The gate's cell-result store keys a cell by the compiler's sources (the file set of
+# `modules/source-stamp/src/root.zig`), partitioned by backend: a file listed here
+# under a target is in the key of that target's cells only; every other source file —
+# lexer, parser, checker, comptime and its two runtimes, the preludes, the embedded
+# std and bundled packages, the CLI, the runners, build.zig, this list — is SHARED and
+# in every key. Editing a listed file re-runs that target's cells; editing a shared
+# one re-runs every cell. `--cold` runs everything at every landing, so a wrong line
+# here can delay a red to the landing, never land one.
+#
+# One line per file: `<target> <path from the checkout root>`, the target one of
+# commonJS, erlang, beam, wasm. Exact paths, no wildcard: a file added beside these
+# is shared until it is listed here. `dispatcher <path>` names the one shared file
+# that may import a listed file — it calls each emitter for its own target only.
+#
+# The list is audited on every keyed run (`scripts/lib/result-store.js`): a listed
+# file imported AND used by a file that is neither listed under the same target nor
+# the dispatcher makes every key of the run unstorable, and the run says why. A test
+# reference (`_ = @import(...)`) is not a use.
+#
+# Not listed, and why (each is reached by shared code on every target):
+#   codegen/erlang.zig, codegen/beam/erl_ast.zig, codegen/beam/erl_emitter.zig —
+#     every comptime body, on every target, is lowered to Erlang through them
+#     (comptime/decorator_eval.zig, template_eval.zig, runtime/prelude.zig); so the
+#     erlang target has no file of its own
+#   codegen/beam/asm_text.zig, beam_file.zig, term.zig, opcodes.zig — the BEAM comptime
+#     runtime assembles with them
+#   codegen/wat/* — the wat comptime runtime (commonJS and wasm builds) lowers and
+#     links with them
+#   codegen/hostMethods.zig, crossModule.zig, patterns.zig, moduleOutput.zig,
+#     config.zig, runtime.zig — every backend reads them
+
+dispatcher modules/compiler-core/src/codegen.zig
+
+commonJS modules/compiler-core/src/codegen/commonJS.zig
+commonJS modules/compiler-core/src/codegen/typescript.zig
+commonJS modules/compiler-core/src/codegen/js/js_ast.zig
+commonJS modules/compiler-core/src/codegen/js/js_emitter.zig
+commonJS modules/compiler-core/src/codegen/js/js_prelude.zig
+commonJS modules/compiler-core/src/codegen/js/ts_emitter.zig
+
+beam modules/compiler-core/src/codegen/beam_asm.zig
+beam modules/compiler-core/src/codegen/beam/beam_emitter.zig
+
+wasm modules/compiler-core/src/codegen/wat.zig

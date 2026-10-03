@@ -1,0 +1,24 @@
+//// Front 17 step 4 — `#[@BeamMemory.ProcessDict]`, the default said out loud:
+//// the `var` is one value per BEAM process. `main` writes `5`; a process
+//// `async.runAll` spawns afterwards reads the declaration's `0`, and its own
+//// write never reaches `main`. On commonJS and wasm the execution context is
+//// the whole program, and decision 167 refuses the annotation there, which
+//// the narrowing (`.targets`) stands on and `run/beam_memory_off_beam` pins.
+
+import {async} from "std";
+
+#[@BeamMemory.ProcessDict]
+var scratch: i32 = 0;
+
+fn elsewhere() -> @Task<i32> {
+    val before = scratch;
+    scratch = 99;
+    return before;
+}
+
+pub fn main() -> @Task<void> {
+    scratch = 5;
+    val seen = await async.runAll([{ -> elsewhere() }]);
+    @print(seen);
+    @print(scratch);
+}

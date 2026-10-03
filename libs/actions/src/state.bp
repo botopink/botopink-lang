@@ -1,0 +1,63 @@
+//// actions/state — the `state` grammar an action envelope carries, and the
+//// `ActionState` a form reads from it.
+////
+//// The grammar is a form-encoded querystring (std `encoding.formStringify` /
+//// `formParse`, percent-encoded): `message` is the form-level message and
+//// `f.<name>` one field's message; any other key is ignored when read. The
+//// writer always emits `message` first (`message=` when it is empty), then the
+//// fields in the given order.
+
+import {encoding} from "std";
+
+// What a form shows after an action: `ok` and `redirectTo` come from the
+// envelope's own keys, `message` and `fields` from its `state`.
+pub type ActionState(
+    ok: bool,
+    message: string,
+    redirectTo: string,
+    fields: Array<#(string, string)>,
+) {
+    // The message of field `name`, `""` when it has none.
+    pub fn fieldError(self: Self, name: string) -> string {
+        return fieldErrorOf(self.fields, name);
+    }
+
+    // True when the action failed or any field carries a message.
+    pub fn hasError(self: Self) -> bool {
+        return self.ok.negate() || self.fields.length > 0;
+    }
+}
+
+// The body of `fieldError`, as a module fn: an array's `at` inside a method
+// body is not dispatched on erlang (`unwrapOr/2 undefined`) nor on commonJS.
+fn fieldErrorOf(fields: Array<#(string, string)>, name: string) -> string {
+    val hit = fields.filter({ f -> f._0 == name });
+    return hit.at(0).unwrapOr(#("", ""))._1;
+}
+
+// The state before any submission: `ok`, the given message, no redirect, no
+// field messages.
+pub fn newActionState(message: string) -> ActionState {
+    return ActionState(ok: true, message: message, redirectTo: "", fields: []);
+}
+
+// `message=<message>&f.<name>=<text>…`, percent-encoded.
+pub fn writeState(message: string, fields: Array<#(string, string)>) -> string {
+    var pairs: Array<#(string, string)> = [#("message", message)];
+    for (fields) { f ->
+        pairs.push(#(["f.", f._0].join(""), f._1));
+    }
+    return encoding.formStringify(pairs);
+}
+
+// The inverse of `writeState`: `#(message, fields)`. A key that is neither
+// `message` nor `f.`-prefixed is ignored; `""` reads as `#("", [])`.
+pub fn parseState(state: string) -> #(string, Array<#(string, string)>) {
+    val pairs = encoding.formParse(state);
+    val messages = pairs.filter({ p -> p._0 == "message" });
+    val message = messages.at(0).unwrapOr(#("", ""))._1;
+    val fields = pairs
+        .filter({ p -> p._0.startsWith("f.") })
+        .map({ p -> #(p._0.slice(2, p._0.length()), p._1) });
+    return #(message, fields);
+}

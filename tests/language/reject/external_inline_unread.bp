@@ -1,0 +1,13 @@
+//// Front 20 F9 of 1.0.10-beta, decision 67 — `External`'s `inline` flag is
+//// read by two emitters (erlang and beam, each over the annotation's last
+//// argument), so `builtins.d.bp` declares it on `External.Erlang` and
+//// `External.Beam` alone. On `Node`, `Wasm` and `Typescript` a written
+//// `inline = true` is a switch nothing reads: before this cell it checked and
+//// ran (exit 0), which is the configuration that looks like it bypasses the
+//// dispatch table and does not. It is refused at the annotation, naming the
+//// two variants that declare the flag.
+
+#[@External.Node("Math.max($args)", inline = true)]
+declare fn biggest(a: i32, b: i32) -> i32;
+
+pub fn main() { @print(biggest(1, 2)); }

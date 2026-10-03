@@ -1,0 +1,6 @@
+//// Runner smoke test: proves the `test/` path works end to end.
+
+test "smoke: arithmetic holds" {
+    val a = 2;
+    assert a + 2 == 4;
+}

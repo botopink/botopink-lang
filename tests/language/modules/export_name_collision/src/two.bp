@@ -1,0 +1,7 @@
+//// The other. A different arity AND a different answer: the defect showed up
+//// as both — the wrong ANSWER where the arities happened to agree at the call
+//// site, and a refusal quoting the wrong arity where they did not.
+
+pub fn parse(s: string, base: i32) -> i32 {
+    return 2;
+}

@@ -1,0 +1,70 @@
+//// routing/slot_states — the `z` blob: what each parallel slot rendered.
+////
+//// One record per line, `slot|pattern|state`, `state` one letter: `M`
+//// matched, `D` defaulted, `U` unchanged, `E` empty. The server writes it from
+//// its slot resolutions; the browser reads it to keep or replace each slot.
+//// Reading is TOLERANT — a line without three fields is skipped and an unknown
+//// letter reads as `Empty`, so a malformed payload from the network cannot
+//// crash the client router. Writing is STRICT: a slot name or pattern holding
+//// `|` or a newline halts, naming it.
+
+pub type SlotState {
+    Matched,
+    Defaulted,
+    Unchanged,
+    Empty,
+}
+
+fn stateLetter(s: SlotState) -> string {
+    return case s {
+        Matched -> "M";
+        Defaulted -> "D";
+        Unchanged -> "U";
+        Empty -> "E";
+    };
+}
+
+fn stateOf(letter: string) -> SlotState {
+    if (letter == "M")
+        return SlotState.Matched
+    else if (letter == "D")
+        return SlotState.Defaulted
+    else if (letter == "U")
+        return SlotState.Unchanged
+    else
+        return SlotState.Empty;
+}
+
+fn separatorFree(s: string) -> bool {
+    return (s.contains("|") || s.contains("\n")).negate();
+}
+
+pub fn writeSlotStates(states: Array<#(string, string, SlotState)>) -> string {
+    var lines: string[] = [];
+    for (states) { s ->
+        assert separatorFree(s._0), "routing: slot_states: the slot name `"
+            + s._0
+            + "` holds a `|` or a newline, which the `z` blob uses as separators";
+        assert separatorFree(s._1), "routing: slot_states: the pattern `"
+            + s._1
+            + "` holds a `|` or a newline, which the `z` blob uses as separators";
+        lines.push(s._0 + "|" + s._1 + "|" + stateLetter(s._2));
+    }
+    return lines.join("\n");
+}
+
+pub fn parseSlotStates(wire: string) -> Array<#(string, string, SlotState)> {
+    var out: Array<#(string, string, SlotState)> = [];
+    for (wire.split("\n")) { line ->
+        val f: string[] = line.split("|");
+        if (f.length == 3)
+            out.push(
+                #(
+                    f.at(0).unwrapOr(""),
+                    f.at(1).unwrapOr(""),
+                    stateOf(f.at(2).unwrapOr("")),
+                ),
+            );
+    }
+    return out;
+}

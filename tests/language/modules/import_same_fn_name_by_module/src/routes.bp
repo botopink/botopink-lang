@@ -1,0 +1,7 @@
+//// A third module that names the OTHER declaration by its module.
+
+import {app.blog.page.title};
+
+pub fn blogTitle() -> string {
+    return title();
+}

@@ -1,0 +1,224 @@
+//// http: the `Cookie` reader and the `Set-Cookie` writer, on both targets.
+//// Every expected text is a literal.
+
+import {testing.asserts} from "std";
+import {cookie.parse, cookie.get, cookie.serialize, cookie.formatHeader, cookie.CookieAttributes};
+
+fn lax(maxAge: ?i32) -> CookieAttributes {
+    return CookieAttributes(
+        path: "/",
+        domain: "",
+        maxAge: maxAge,
+        httpOnly: true,
+        secure: true,
+        sameSite: "Lax",
+    );
+}
+
+fn shown(found: ?string) -> string {
+    return found ?? "<absent>";
+}
+
+fn pairsText(pairs: Array<#(string, string)>) -> string {
+    return pairs.map({ p -> p.0 + "=" + p.1 }).join("|");
+}
+
+test "http: cookie tossing keeps the first value (decision 181)" {
+    try asserts.equals(shown(get("a=1; a=2", "a")), "1");
+    try asserts.equals(pairsText(parse("a=1; b=x; a=2")), "a=1|b=x");
+}
+
+test "http: a refused first occurrence hides every later one" {
+    try asserts.equals(shown(get("a=%zz; a=2", "a")), "<absent>");
+    try asserts.equals(pairsText(parse("a=%zz; a=2; b=3")), "b=3");
+}
+
+test "http: an undecodable value is refused" {
+    try asserts.equals(shown(get("s=100%", "s")), "<absent>");
+    try asserts.equals(shown(get("s=%G1", "s")), "<absent>");
+    try asserts.equals(shown(get("s=a%4", "s")), "<absent>");
+}
+
+test "http: an escape that decodes to a control character is refused" {
+    try asserts.equals(shown(get("s=a%0Ab", "s")), "<absent>");
+    try asserts.equals(shown(get("s=a%0db", "s")), "<absent>");
+    try asserts.equals(shown(get("s=a%7fb", "s")), "<absent>");
+    try asserts.equals(shown(get("s=a%20b", "s")), "a b");
+}
+
+test "http: a value outside cookie-octet is refused" {
+    try asserts.equals(shown(get("s=a b", "s")), "<absent>");
+    try asserts.equals(shown(get("s=a\"b", "s")), "<absent>");
+    try asserts.equals(shown(get("s=a\\b", "s")), "<absent>");
+    try asserts.equals(shown(get("s=a,b", "s")), "<absent>");
+}
+
+test "http: a quoted value is read without its quotes" {
+    try asserts.equals(shown(get("s=\"abc\"", "s")), "abc");
+}
+
+test "http: a chunk without = is no cookie and an empty value is a cookie" {
+    try asserts.equals(shown(get("flag; s=1", "flag")), "<absent>");
+    try asserts.equals(shown(get("s=", "s")), "");
+    try asserts.equals(pairsText(parse("flag; ; s=1;")), "s=1");
+}
+
+test "http: names are case-sensitive tokens and spaces around them are trimmed" {
+    try asserts.equals(shown(get("SID=1", "sid")), "<absent>");
+    try asserts.equals(shown(get("  SID = 1 ;x=2", "SID")), "1");
+    try asserts.equals(pairsText(parse("a b=1; c=2")), "c=2");
+    try asserts.equals(shown(get("a b=1", "a b")), "<absent>");
+}
+
+test "http: serialize is byte-identical to rakun-session's sessionCookieHeader" {
+    try asserts.equals(
+        serialize("SESSION", "abc.def-_~", lax(1800)),
+        "SESSION=abc.def-_~; Path=/; Max-Age=1800; HttpOnly; Secure; SameSite=Lax",
+    );
+    try asserts.equals(
+        serialize("SESSION", "", lax(0)),
+        "SESSION=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax",
+    );
+}
+
+test "http: serialize is byte-identical to rakun's serializeCookie" {
+    try asserts.equals(
+        serialize("s", "a b", lax(0)),
+        "s=a%20b; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax",
+    );
+    val wide = CookieAttributes(
+        path: "/app",
+        domain: "example.com",
+        maxAge: 86400,
+        httpOnly: false,
+        secure: false,
+        sameSite: "",
+    );
+    try asserts.equals(
+        serialize("t", "x;y", wide),
+        "t=x%3By; Path=/app; Domain=example.com; Max-Age=86400",
+    );
+}
+
+test "http: an absent maxAge writes a session cookie" {
+    try asserts.equals(
+        serialize("s", "1", lax(null)),
+        "s=1; Path=/; HttpOnly; Secure; SameSite=Lax",
+    );
+}
+
+test "http: a serialized value reads back" {
+    val line = serialize("s", "a=b; c%d", lax(60));
+    val value = line.split(";").at(0).unwrapOr("");
+    try asserts.equals(shown(get(value, "s")), "a=b; c%d");
+}
+
+test "http: serialize refuses what cannot be written" {
+    try asserts.throwsWith({ ->
+        serialize("a b", "1", lax(0));
+        0;
+    }, "a cookie name is an RFC 9110 token");
+    try asserts.throwsWith({ ->
+        serialize(
+            "s",
+            "1",
+            CookieAttributes(
+                path: "/;x",
+                domain: "",
+                maxAge: null,
+                httpOnly: true,
+                secure: true,
+                sameSite: "Lax",
+            ),
+        );
+        0;
+    }, "has a Path with");
+    try asserts.throwsWith({ ->
+        serialize(
+            "s",
+            "1",
+            CookieAttributes(
+                path: "/",
+                domain: "a;b",
+                maxAge: null,
+                httpOnly: true,
+                secure: true,
+                sameSite: "Lax",
+            ),
+        );
+        0;
+    }, "has a Domain that is not a host name");
+    try asserts.throwsWith({ ->
+        serialize(
+            "s",
+            "1",
+            CookieAttributes(
+                path: "/",
+                domain: "",
+                maxAge: null,
+                httpOnly: true,
+                secure: true,
+                sameSite: "lax",
+            ),
+        );
+        0;
+    }, "it is Strict, Lax or None");
+    try asserts.throwsWith({ ->
+        serialize(
+            "s",
+            "1",
+            CookieAttributes(
+                path: "/",
+                domain: "",
+                maxAge: null,
+                httpOnly: true,
+                secure: false,
+                sameSite: "None",
+            ),
+        );
+        0;
+    }, "SameSite=None without Secure");
+}
+
+test "http: the __Secure- and __Host- prefixes demand their attributes" {
+    try asserts.throwsWith({ ->
+        serialize(
+            "__Secure-s",
+            "1",
+            CookieAttributes(
+                path: "/",
+                domain: "",
+                maxAge: null,
+                httpOnly: true,
+                secure: false,
+                sameSite: "Lax",
+            ),
+        );
+        0;
+    }, "the __Secure- prefix without Secure");
+    try asserts.throwsWith({ ->
+        serialize(
+            "__Host-s",
+            "1",
+            CookieAttributes(
+                path: "/app",
+                domain: "",
+                maxAge: null,
+                httpOnly: true,
+                secure: true,
+                sameSite: "Lax",
+            ),
+        );
+        0;
+    }, "the __Host- prefix without Secure, Path=/ and no Domain");
+    try asserts.equals(
+        serialize("__Host-s", "1", lax(null)),
+        "__Host-s=1; Path=/; HttpOnly; Secure; SameSite=Lax",
+    );
+}
+
+test "http: formatHeader writes a Cookie header parse reads back" {
+    val header = formatHeader([#("a", "1"), #("b", "x y"), #("a", "2")]);
+    try asserts.equals(header, "a=1; b=x%20y; a=2");
+    try asserts.equals(pairsText(parse(header)), "a=1|b=x y");
+}

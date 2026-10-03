@@ -1,0 +1,12 @@
+//// Decisions 118, 122 and 127 of 1.0.10-beta (front 24, § Cells "Migration";
+//// guide.md § 9, row `#[@generator]` + `@Generator<T>`) — `#[@generator]` is
+//// refused at the annotation over the new `@Iterator<T>` return, which is all
+//// an iterator needs. The new form is `run/iterator_fibonacci.bp`.
+
+#[@generator]
+fn nums(n: i32) -> @Iterator<i32> {
+    var i = 0;
+    while (i < n) { yield i; i = i + 1; };
+}
+
+pub fn main() { for (nums(2)) { x -> @print(x); }; }

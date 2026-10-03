@@ -1,0 +1,20 @@
+{
+  "name": "routing",
+  "version": "0.0.1",
+  "description": "Bundled library — the route matcher and the routing wires (route table, k/z blobs, URL rules, navigation signals, :param patterns) the server and the browser both run; pure .bp, erlang and commonJS",
+  "src": "src/",
+  "entry": "root.bp",
+  "target": "erlang",
+  "targets": ["erlang", "commonJS"],
+  "files": [
+    "root.bp",
+    "segment.bp",
+    "table.bp",
+    "match.bp",
+    "route_kinds.bp",
+    "slot_states.bp",
+    "url_rules.bp",
+    "navigation.bp",
+    "pattern.bp"
+  ]
+}

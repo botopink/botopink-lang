@@ -1,0 +1,18 @@
+//// Decision 216 (4) — one query answers one kind of value: a decorator
+//// carried by a function and by a type cannot be catalogued together.
+
+fn tagged(comptime decl: @Decl) {
+    decl.setMeta("tag", decl.name);
+}
+
+#[tagged]
+pub fn job() -> string {
+    return "job";
+}
+
+#[tagged]
+pub type Box(n: i32)
+
+pub fn main() {
+    @print(@TypeInfo.all(with: tagged).length);
+}

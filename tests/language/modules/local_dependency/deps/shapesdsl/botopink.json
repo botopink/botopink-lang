@@ -1,0 +1,1 @@
+{ "name": "shapesdsl", "version": "0.0.1", "src": "src/", "entry": "root.bp", "files": ["root.bp", "shapesdsl.bp", "shapes.d.bp"] }

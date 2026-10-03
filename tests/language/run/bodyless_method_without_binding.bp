@@ -1,0 +1,14 @@
+//// A bodyless `declare fn` in a `type` body is a host method: its body can
+//// only be a host binding. One with no `#[@External.<Target>(…)]` at all binds
+//// no backend, so a call to it is refused where it is written on every target
+//// (the `.<target>.expect` sidecars), as a method bound to another host is.
+//// It used to compile, and the call failed at run time: `… .find is not a
+//// function` on commonJS, `undef` on erlang.
+
+pub type Repo() {
+    pub declare fn find(self: Self) -> i32;
+}
+
+pub fn main() {
+    @print(Repo().find());
+}

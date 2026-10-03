@@ -1,0 +1,11 @@
+try ok 1
+try error negative -2
+try done
+throw ok 0
+throw ok 1
+throw error limit 2
+throw done
+as-is ok 1
+as-is error negative -2
+as-is ok 3
+as-is done

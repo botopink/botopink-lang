@@ -1,0 +1,25 @@
+//// C-04's last call path: a behavior's ASSOCIATED fn (a member with no
+//// `self`, called through the behavior's name) takes its declared defaults
+//// like every other call — a short call is filled, a label names its
+//// parameter, and a generic associated fn instantiates around the fill.
+
+behavior Scale {
+    default fn by(x: i32, factor: i32 = 10) -> i32 {
+        return x * factor;
+    }
+}
+
+behavior Pick<A> {
+    default fn either(value: A, fallback: A, useFallback: bool = false) -> A {
+        if (useFallback) return fallback;
+        return value;
+    }
+}
+
+pub fn main() {
+    @print(Scale.by(2, 3));
+    @print(Scale.by(2));
+    @print(Scale.by(factor: 4, x: 5));
+    @print(Pick.either(7, 0));
+    @print(Pick.either(7, 9, useFallback: true));
+}

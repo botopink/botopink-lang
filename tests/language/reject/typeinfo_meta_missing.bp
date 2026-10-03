@@ -1,0 +1,13 @@
+//// Decision 216 (2) — a meta read names a key the decorator set; any other is
+//// refused where it is written, naming the keys that exist.
+
+fn entity(comptime decl: @Decl) {
+    decl.setMeta("table", "cities");
+}
+
+#[entity]
+type City(name: string)
+
+pub fn main() {
+    @print(@typeInfo(City).meta.entity.tabel);
+}

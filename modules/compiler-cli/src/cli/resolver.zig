@@ -10,6 +10,10 @@
 /// reached through any `mod` path is reported as orphaned (and not compiled).
 const std = @import("std");
 const bp = @import("botopink");
+/// Test-only: the one way a test spells a path it writes to (per process, so a
+/// second `zig build test` over this checkout cannot empty it mid-test).
+/// `build.zig` gives this module to the test modules alone.
+const test_scratch = @import("test_scratch");
 
 const Module = bp.Module;
 const Lexer = bp.Lexer;
@@ -22,6 +26,8 @@ pub const Error = error{
     DuplicateModule,
     PrivateModuleImport,
     UnexportedImport,
+    UnresolvedImportSource,
+    ModuleImportWithFrom,
 } || std.mem.Allocator.Error;
 
 /// Diagnostic detail for a resolution failure. `kind` selects the message; the
@@ -40,6 +46,17 @@ pub const Diagnostic = struct {
     importer: []const u8 = "",
     /// For a `PrivateModuleImport`: the target module being imported.
     target: []const u8 = "",
+    /// Source location of the offending declaration, when one is known: the
+    /// file the importing module was read from, plus the 1-based line and
+    /// column of the token the diagnostic points at. `line == 0` = no location.
+    file: []const u8 = "",
+    line: usize = 0,
+    col: usize = 0,
+    /// For a `ModuleImportWithFrom`: the import as it is written instead
+    /// (`import {geometry.area};`), and the source of the importing module
+    /// (for the excerpt under the location).
+    fix: []const u8 = "",
+    source: []const u8 = "",
 };
 
 /// A `.bp` file under `src/` that no `mod` path reached — not compiled.
@@ -78,13 +95,21 @@ const Node = struct {
 
 /// Resolve the module tree of the package whose source lives in `src_dir_path`
 /// (relative to cwd). `entry` is the root file relative to `src_dir_path`, or
-/// null to auto-detect (`main.bp` then `root.bp`). On a resolution error the
-/// `*diag` (if non-null) is filled with detail allocated in `diag_arena`.
+/// null to auto-detect (`main.bp` then `root.bp`). `externals` names the
+/// packages an `import … from "<name>"` may reach outside the module tree — the
+/// project's declared `dependencies`; `null` disables the check (F4) for a
+/// caller that does not know the dependency set. `declared` names the modules
+/// the manifest's `files` ships outside the `mod` tree (paths relative to
+/// `src_dir_path`) — they are reached by whoever loads them, so they are not
+/// orphans. On a resolution error the `*diag` (if non-null) is filled with
+/// detail allocated in `diag_arena`.
 pub fn resolve(
     gpa: std.mem.Allocator,
     io: std.Io,
     src_dir_path: []const u8,
     entry: ?[]const u8,
+    externals: ?[]const []const u8,
+    declared: []const []const u8,
     diag_arena: std.mem.Allocator,
     diag: ?*Diagnostic,
 ) Error!Resolution {
@@ -103,6 +128,9 @@ pub fn resolve(
     // `nodes` mirrors `modules` (same index) and carries the tree's visibility
     // data; scratch-owned (only needed during resolution).
     var nodes: std.ArrayListUnmanaged(Node) = .empty;
+    // `files` mirrors `modules` too: the path each module was read from, so a
+    // diagnostic can name a file rather than a logical module path.
+    var files: std.ArrayListUnmanaged([]const u8) = .empty;
 
     // Set of resolved file paths (for orphan detection + duplicate guard),
     // keyed in the scratch arena.
@@ -131,12 +159,22 @@ pub fn resolve(
             gpa.free(source);
             return Error.OutOfMemory;
         };
-        modules.append(gpa, .{ .path = logical, .source = source }) catch {
+        // `@src().file` (1.0.10-beta decision 73): `item.file` is already the
+        // package-root-relative path with its extension (`src/shapes/circle.bp`).
+        const src_path = gpa.dupe(u8, item.file) catch {
             gpa.free(source);
             gpa.free(logical);
             return Error.OutOfMemory;
         };
+        std.mem.replaceScalar(u8, src_path, '\\', '/');
+        modules.append(gpa, .{ .path = logical, .source = source, .srcPath = src_path }) catch {
+            gpa.free(source);
+            gpa.free(logical);
+            gpa.free(src_path);
+            return Error.OutOfMemory;
+        };
         try nodes.append(sa, .{ .is_pub = item.is_pub, .parent = item.parent });
+        try files.append(sa, try sa.dupe(u8, item.file));
 
         // Parse just enough to read the `mod` declarations. A parse failure here
         // is not fatal — the module is still compiled (the real pipeline reports
@@ -145,15 +183,21 @@ pub fn resolve(
         try collectChildren(sa, diag_arena, io, source, item.logical, decl_dir, root_logical, my_idx, &work, diag);
     }
 
-    const orphans = try collectOrphans(gpa, io, src_dir_path, &visited);
+    const orphans = try collectOrphans(gpa, io, src_dir_path, &visited, declared);
 
     // Analyze the cross-module import graph once: which module owns each `pub`
     // symbol, and what each module imports. Used for both visibility and order.
     const analysis = analyzeModules(sa, modules.items);
 
+    // F4 — an import names something that exists: `from "<name>"` must resolve
+    // to a package module or to a declared dependency. Runs before F3 so the
+    // "no such module" case is reported as such, not as a missing symbol, and
+    // before `orderByDependencies` permutes `modules` out of step with `files`.
+    try checkImportSources(modules.items, files.items, analysis, externals, diag_arena, diag);
+
     // F3 — imports resolve through the tree: an `import {x} from "a.b"` that
     // names a real package module must find `x` publicly exported there.
-    try checkImportResolution(sa, modules.items, analysis, diag_arena, diag);
+    try checkImportResolution(sa, modules.items, files.items, analysis, diag_arena, diag);
 
     // F2 — path-visibility: an import may cross into a module only if every
     // `mod` on its path is `pub mod`. Reject imports that reach a private module
@@ -226,13 +270,21 @@ fn collectChildren(
     }
 }
 
-/// Walk `src_dir_path` for `.bp` files (excluding `.d.bp`) that no `mod` path
-/// reached. Returned slice + its `file` strings are gpa-owned.
+/// Walk `src_dir_path` for `.bp` files (excluding `.d.bp`) that nothing
+/// reaches. A module is reached by a `mod` path (it is then in `visited`) OR by
+/// the manifest's `files` (it is then in `declared`) — the second route is how a
+/// package ships a module to a consumer that is not its own module tree, which
+/// is what `libs/std`'s ambient `primitives.bp` is: the compiler build embeds it
+/// into the global type env (`build.zig`'s `std_core_files`) and `libs/std`'s
+/// `files` declares it. Knowing only the first route, this walk called it an
+/// orphan and the standard library printed the warning on every gate run.
+/// Returned slice + its `file` strings are gpa-owned.
 fn collectOrphans(
     gpa: std.mem.Allocator,
     io: std.Io,
     src_dir_path: []const u8,
     visited: *std.StringHashMapUnmanaged(void),
+    declared: []const []const u8,
 ) Error![]Orphan {
     var orphans: std.ArrayListUnmanaged(Orphan) = .empty;
     errdefer {
@@ -251,14 +303,61 @@ fn collectOrphans(
     while (walker.next(io) catch null) |entry| {
         if (entry.kind != .file) continue;
         if (!isSource(entry.basename)) continue;
+        if (!inOwnTree(io, src_dir_path, entry.path)) continue;
         const full = std.fs.path.join(gpa, &.{ src_dir_path, entry.path }) catch continue;
-        if (visited.contains(full)) {
+        if (visited.contains(full) or isDeclared(entry.path, declared)) {
             gpa.free(full);
             continue;
         }
         try orphans.append(gpa, .{ .file = full });
     }
     return try orphans.toOwnedSlice(gpa);
+}
+
+/// Whether `rel` (relative to `src_dir_path`) belongs to this package's source
+/// tree at all. A package whose `"src"` is `"."` (onze F5) has its source root
+/// at the project root, next to things that are not its modules: a hidden
+/// directory (`.botopinkbuild/`, `.git/`), the flat `test/` suite `botopink
+/// test` loads on its own, and a nested package — a directory holding its own
+/// `botopink.json`, such as a local `path` dependency. None of them is an orphan.
+fn inOwnTree(io: std.Io, src_dir_path: []const u8, rel: []const u8) bool {
+    const at_root = std.mem.eql(u8, src_dir_path, ".");
+    var it = std.mem.tokenizeAny(u8, rel, "/\\");
+    var first = true;
+    var end: usize = 0;
+    while (it.next()) |seg| {
+        end = it.index;
+        if (it.peek() == null) break; // the file itself
+        if (seg.len > 0 and seg[0] == '.') return false;
+        if (first and at_root and std.mem.eql(u8, seg, "test")) return false;
+        first = false;
+        var buf: [std.fs.max_path_bytes]u8 = undefined;
+        const manifest_path = std.fmt.bufPrint(&buf, "{s}/{s}/botopink.json", .{ src_dir_path, rel[0..end] }) catch return true;
+        if (std.Io.Dir.cwd().access(io, manifest_path, .{})) |_| return false else |_| {}
+    }
+    return true;
+}
+
+/// Whether `rel` — a path relative to `src`, as the walker yields it — is one of
+/// the manifest `files` entries in `declared`. Separator-insensitive, so a
+/// manifest written with `/` still matches a path the host walked with `\\`.
+fn isDeclared(rel: []const u8, declared: []const []const u8) bool {
+    for (declared) |d| {
+        if (d.len != rel.len) continue;
+        var same = true;
+        for (rel, d) |a, b| {
+            if (a == b) continue;
+            if (isSep(a) and isSep(b)) continue;
+            same = false;
+            break;
+        }
+        if (same) return true;
+    }
+    return false;
+}
+
+fn isSep(c: u8) bool {
+    return c == '/' or c == '\\';
 }
 
 /// Resolve the root source file (relative to cwd). Returns a scratch-owned path.
@@ -287,6 +386,28 @@ fn resolveRoot(
 const ImportRef = struct {
     from: ?[]const u8,
     symbol: []const u8,
+    /// The item was written under a `from "…"` clause. Such an import names
+    /// its source, so it depends on no module the clause does not name — in
+    /// particular not on whichever package module happens to declare a `pub`
+    /// of the same name (`importOwner`).
+    has_from: bool = false,
+    /// Location of the `from "…"` string this item was written under, for the
+    /// diagnostic. `line == 0` when the import has no `from` clause.
+    line: usize = 0,
+    col: usize = 0,
+};
+
+/// One `from "<name>"` clause, as written. Collected per `import` declaration
+/// rather than per imported item, so `import pkg from "x";` — which names no
+/// item — is checked too.
+const SourceRef = struct {
+    /// The module name exactly as the source wrote it (`"shapes.circle"`).
+    raw: []const u8,
+    /// 1-based location of the string literal.
+    line: usize,
+    col: usize,
+    /// The import's items, as `braceForm` writes them under a module path.
+    items: []const bp.ast.ImportPath = &.{},
 };
 
 /// The cross-module import graph, computed once from every module's source.
@@ -299,7 +420,14 @@ const Analysis = struct {
     owner: std.StringHashMapUnmanaged(usize),
     imports: []const []const ImportRef,
     exports: []const []const []const u8,
+    /// `sources[i]` are the `from "…"` clauses module i writes, in source order.
+    sources: []const []const SourceRef,
     paths: std.StringHashMapUnmanaged(usize),
+    /// `broken[i]`: module i does not lex or parse. Its export list is empty
+    /// because it was never read, so an import from it is not refused as
+    /// "not exported" — the compile reports the module's own located error,
+    /// which is the one that says what is wrong (onze F8).
+    broken: []const bool = &.{},
 };
 
 fn analyzeModules(sa: std.mem.Allocator, mods: []const Module) Analysis {
@@ -307,15 +435,58 @@ fn analyzeModules(sa: std.mem.Allocator, mods: []const Module) Analysis {
     var paths = std.StringHashMapUnmanaged(usize){};
     for (mods, 0..) |m, i| paths.put(sa, m.path, i) catch {};
 
-    const empty: Analysis = .{ .owner = owner, .imports = &.{}, .exports = &.{}, .paths = paths };
+    const empty: Analysis = .{ .owner = owner, .imports = &.{}, .exports = &.{}, .sources = &.{}, .paths = paths };
     const imports = sa.alloc([]const ImportRef, mods.len) catch return empty;
     const exports = sa.alloc([]const []const u8, mods.len) catch return empty;
+    const sources = sa.alloc([]const SourceRef, mods.len) catch return empty;
+    const broken = sa.alloc(bool, mods.len) catch return empty;
     for (mods, 0..) |m, i| {
-        const refs = collectModuleRefs(sa, m.source, &owner, i) catch ModuleRefs{ .imports = &.{}, .exports = &.{} };
+        const refs = collectModuleRefs(sa, m.source, &owner, i) catch ModuleRefs{ .imports = &.{}, .exports = &.{}, .sources = &.{} };
         imports[i] = refs.imports;
         exports[i] = refs.exports;
+        sources[i] = refs.sources;
+        broken[i] = refs.broken;
     }
-    return .{ .owner = owner, .imports = imports, .exports = exports, .paths = paths };
+    return .{ .owner = owner, .imports = imports, .exports = exports, .sources = sources, .paths = paths, .broken = broken };
+}
+
+/// The module an import DEPENDS on: the one its `from "<mod>"` names, when that
+/// is a project module; none, when the clause names std or a library; and the
+/// symbol's owner only for an import written with no `from` clause.
+///
+/// `Analysis.owner` maps a bare symbol name to the FIRST module that exports
+/// it, over the whole package — and a name is unique inside a module, never
+/// over a program (`libs/std` declares `parse` in `json`, in `querystring` and
+/// in `url`). So two modules exporting one name drew the edge to the wrong one
+/// and the module actually imported was left with no edge at all: it sorted
+/// AFTER its own importer, was not in the registry when that importer resolved
+/// its imports, and the importer was type-checked against the other module's
+/// declaration. Measured: `import {parse} from "two"` where `one` also declares
+/// `parse` was refused on all four backends with `'parse' expects 1 argument(s),
+/// got 2` — `one`'s arity, quoted against `two`'s function.
+fn importOwner(analysis: Analysis, ref: ImportRef) ?usize {
+    // Decision 107's namespace form: the item names a MODULE of the package
+    // (`import {text};`, `import {shapes.circle}`), which its importer calls
+    // into — `text.shout(x)` — so it is that module the importer follows.
+    var whole_buf: [512]u8 = undefined;
+    const whole = if (ref.from) |from|
+        std.fmt.bufPrint(&whole_buf, "{s}/{s}", .{ from, ref.symbol }) catch ref.symbol
+    else
+        ref.symbol;
+    // A `from "…"` clause names a package — std, a bundled package or a
+    // dependency (decision 206: never a module of this package, which is
+    // `checkImportSources`' refusal): the import depends on nothing in this
+    // package, even where a module of it is named like the package
+    // (`rakun-app`'s own `actions` beside `from "actions"`). Falling back to
+    // the bare name's owner drew an edge to an unrelated module — a `pub fn
+    // attempt` beside another module's `import {match.attempt} from
+    // "routing"` made that module depend on the declarer, the two formed a
+    // cycle, and the importer of the second was compiled first (`unbound
+    // variable` at an unrelated call).
+    if (ref.has_from) return null;
+    if (analysis.paths.get(whole)) |i| return i;
+    if (ref.from) |from| if (analysis.paths.get(from)) |i| return i;
+    return analysis.owner.get(ref.symbol);
 }
 
 /// Reorder `mods` in place so that every module precedes the modules that
@@ -326,10 +497,9 @@ fn analyzeModules(sa: std.mem.Allocator, mods: []const Module) Analysis {
 fn orderByDependencies(sa: std.mem.Allocator, mods: []Module, analysis: Analysis) void {
     const n = mods.len;
     if (n < 2 or analysis.imports.len != n) return;
-    const owner = analysis.owner;
     const imports = analysis.imports;
 
-    // Build the dependency graph: edge owner(sym) → importer.
+    // Build the dependency graph: edge owner(import) → importer.
     var indeg = sa.alloc(usize, n) catch return;
     @memset(indeg, 0);
     var adj = sa.alloc(std.ArrayListUnmanaged(usize), n) catch return;
@@ -338,7 +508,7 @@ fn orderByDependencies(sa: std.mem.Allocator, mods: []Module, analysis: Analysis
     for (imports, 0..) |imps, j| {
         var deps = std.AutoHashMapUnmanaged(usize, void){};
         for (imps) |ref| {
-            const oi = owner.get(ref.symbol) orelse continue;
+            const oi = importOwner(analysis, ref) orelse continue;
             if (oi == j) continue;
             deps.put(sa, oi, {}) catch continue;
         }
@@ -383,6 +553,79 @@ fn orderByDependencies(sa: std.mem.Allocator, mods: []Module, analysis: Analysis
     @memcpy(mods, tmp);
 }
 
+/// Reorder one dependency package's modules — `<prefix>/<stem>`, loaded in its
+/// manifest's `files` order — so every module comes after the siblings it
+/// imports. The comptime pipeline registers a module's exports as it compiles
+/// it, so an importer compiled first found its import unbound (`unbound
+/// variable 'base'`), while the package's own build — ordered by
+/// `orderByDependencies` — resolved the same modules. The edges are the
+/// project's (`analyzeModules`, `importOwner`) read with the package prefix
+/// stripped, so `from "a"`, `from "<prefix>.a"` and a bare `import {Leaf};`
+/// all count. Each step places the first module in `files` order whose
+/// imports are all placed, so a package whose list is already in import order
+/// keeps it; a cycle keeps the rest in `files` order and the checker names
+/// what is unbound.
+pub fn orderPackageModules(sa: std.mem.Allocator, prefix: []const u8, mods: []Module) void {
+    const n = mods.len;
+    if (n < 2) return;
+    const local = sa.alloc(Module, n) catch return;
+    for (mods, 0..) |m, i| {
+        local[i] = m;
+        if (std.mem.startsWith(u8, m.path, prefix) and m.path.len > prefix.len and m.path[prefix.len] == '/')
+            local[i].path = m.path[prefix.len + 1 ..];
+    }
+    const analysis = analyzeModules(sa, local);
+    if (analysis.imports.len != n) return;
+    // needs[i * n + j]: module i imports from sibling j.
+    const needs = sa.alloc(bool, n * n) catch return;
+    @memset(needs, false);
+    for (analysis.imports, 0..) |imps, i| for (imps) |ref| {
+        var r = ref;
+        // `from "<prefix>.a"` names a module of this very package by the
+        // package's name — a sibling, the edge a brace import draws.
+        if (r.from) |f| if (r.has_from and std.mem.startsWith(u8, f, prefix) and f.len > prefix.len and f[prefix.len] == '/') {
+            r.from = f[prefix.len + 1 ..];
+            r.has_from = false;
+        };
+        const j = importOwner(analysis, r) orelse continue;
+        if (j != i) needs[i * n + j] = true;
+    };
+    const placed = sa.alloc(bool, n) catch return;
+    @memset(placed, false);
+    const order = sa.alloc(Module, n) catch return;
+    for (0..n) |count| {
+        const pick: usize = pick: {
+            for (0..n) |i| {
+                if (placed[i]) continue;
+                for (0..n) |j| {
+                    if (needs[i * n + j] and !placed[j]) break;
+                } else break :pick i;
+            }
+            for (0..n) |i| if (!placed[i]) break :pick i;
+            unreachable;
+        };
+        placed[pick] = true;
+        order[count] = mods[pick];
+    }
+    @memcpy(mods, order);
+}
+
+test "orderPackageModules: a module follows the siblings it imports; the rest keep files order" {
+    var arena_inst = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_inst.deinit();
+    var mods = [_]Module{
+        .{ .path = "dep/root", .source = "pub mod a;\npub mod b;\npub mod c;\npub mod leaf;\n" },
+        .{ .path = "dep/b", .source = "import {a.base};\npub fn derived() -> i32 { return base() + 1; }\n" },
+        .{ .path = "dep/c", .source = "import {Leaf};\npub fn seven() -> i32 { return Leaf(v: 7).v; }\n" },
+        .{ .path = "dep/d", .source = "import {base} from \"dep.a\";\npub fn two() -> i32 { return base() * 2; }\n" },
+        .{ .path = "dep/a", .source = "pub fn base() -> i32 { return 1; }\n" },
+        .{ .path = "dep/leaf", .source = "pub type Leaf(v: i32)\n" },
+    };
+    orderPackageModules(arena_inst.allocator(), "dep", &mods);
+    const want = [_][]const u8{ "dep/root", "dep/a", "dep/b", "dep/d", "dep/leaf", "dep/c" };
+    for (want, mods) |w, m| try std.testing.expectEqualStrings(w, m.path);
+}
+
 const Boundary = struct {
     /// Logical path of the declaring module whose subtree the target is private
     /// to; the target is importable only from within this subtree.
@@ -405,10 +648,9 @@ fn checkVisibility(
     diag: ?*Diagnostic,
 ) Error!void {
     if (analysis.imports.len != mods.len) return;
-    const owner = analysis.owner;
     for (analysis.imports, 0..) |imps, importer| {
         for (imps) |ref| {
-            const target = owner.get(ref.symbol) orelse continue;
+            const target = importOwner(analysis, ref) orelse continue;
             if (target == importer) continue;
             const b = visibilityBoundary(sa, mods, nodes, target) orelse continue;
             if (!withinSubtree(mods[importer].path, b.prefix)) {
@@ -431,6 +673,7 @@ fn checkVisibility(
 fn checkImportResolution(
     sa: std.mem.Allocator,
     mods: []const Module,
+    files: []const []const u8,
     analysis: Analysis,
     diag_arena: std.mem.Allocator,
     diag: ?*Diagnostic,
@@ -439,19 +682,148 @@ fn checkImportResolution(
     if (analysis.imports.len != mods.len) return;
     for (analysis.imports, 0..) |imps, importer| {
         for (imps) |ref| {
+            // A `from` names a package (decision 206), never a module here.
+            if (ref.has_from) continue;
             const from = ref.from orelse continue;
             const target = analysis.paths.get(from) orelse continue; // not a package module
             if (target == importer) continue;
+            if (target < analysis.broken.len and analysis.broken[target]) continue;
+            // A leaf that is itself a module of the tree (`import {shapes.circle};`
+            // binds the namespace `circle`) is not an export of `shapes`.
+            var sub_buf: [512]u8 = undefined;
+            const sub = std.fmt.bufPrint(&sub_buf, "{s}/{s}", .{ from, ref.symbol }) catch null;
+            if (sub != null and analysis.paths.contains(sub.?)) continue;
             if (!symbolInList(analysis.exports[target], ref.symbol)) {
                 return fail(diag, diag_arena, .{
                     .kind = Error.UnexportedImport,
                     .name = ref.symbol,
                     .importer = mods[importer].path,
                     .target = mods[target].path,
+                    .file = if (importer < files.len) files[importer] else "",
+                    .line = ref.line,
+                    .col = ref.col,
                 });
             }
         }
     }
+}
+
+/// Run the import-source check (F4) over a module set that is not a package —
+/// the flat `test/` directory, which `botopink test` and `botopink check`
+/// discover through `scanner.zig` and which therefore never reaches `resolve`.
+///
+/// `mods` must carry **every** module an import in it may name: the project's
+/// already-resolved `src/` tree as well as the flat modules themselves, since
+/// a `*_test.bp` imports the package it tests. `files[i]` is the path `mods[i]`
+/// was read from (`""` when unknown — the diagnostic then carries no location),
+/// and `externals` is the project's declared dependency set (`null` disables
+/// the check). Re-checking the already-resolved modules is free and harmless:
+/// they passed the same predicate in `resolve`.
+pub fn checkSources(
+    sa: std.mem.Allocator,
+    mods: []const Module,
+    files: []const []const u8,
+    externals: ?[]const []const u8,
+    diag_arena: std.mem.Allocator,
+    diag: ?*Diagnostic,
+) Error!void {
+    const analysis = analyzeModules(sa, mods);
+    try checkImportSources(mods, files, analysis, externals, diag_arena, diag);
+}
+
+/// Enforce that an import names something (F4): every `import … from "<name>"`
+/// must resolve to a package module (the `mod` tree, dotted path) or to a
+/// declared dependency — `from "std"` and `from "<dep>[.<module>]"` included.
+/// Until this check existed, a `from` naming nothing at all bound nothing and
+/// said nothing: `check` and `build` both exited 0 and emitted code, so every
+/// import example in the user docs was vacuously green.
+///
+/// `externals` null disables the check for a caller that does not know the
+/// project's dependency set.
+fn checkImportSources(
+    mods: []const Module,
+    files: []const []const u8,
+    analysis: Analysis,
+    externals: ?[]const []const u8,
+    diag_arena: std.mem.Allocator,
+    diag: ?*Diagnostic,
+) Error!void {
+    const deps = externals orelse return;
+    if (analysis.sources.len != mods.len) return;
+    for (analysis.sources, 0..) |srcs, importer| {
+        for (srcs) |ref| {
+            if (firstSegment(ref.raw).len == 0) continue; // malformed; the parser reports it
+            // `std` and every other bundled package resolve with no
+            // `dependencies` entry (decisions 115–117).
+            if (bp.comptime_pipeline.bundledPackage(firstSegment(ref.raw)) != null) continue;
+            if (symbolInList(deps, firstSegment(ref.raw))) continue;
+            var slashed_buf: [512]u8 = undefined;
+            const slashed = slashPath(&slashed_buf, ref.raw) orelse continue;
+            // Decision 206 — `from` names a package, never a module of this
+            // one: the module is imported by its path inside the braces. A
+            // package wins the name (it was tested first), so a bundled
+            // package added later never changes what an import means.
+            if (analysis.paths.contains(slashed)) return fail(diag, diag_arena, .{
+                .kind = Error.ModuleImportWithFrom,
+                .name = ref.raw,
+                .importer = mods[importer].path,
+                .file = if (importer < files.len) files[importer] else "",
+                .line = ref.line,
+                .col = ref.col,
+                .fix = try braceForm(diag_arena, slashed, ref.items),
+                .source = mods[importer].source,
+            });
+            return fail(diag, diag_arena, .{
+                .kind = Error.UnresolvedImportSource,
+                .name = ref.raw,
+                .importer = mods[importer].path,
+                .file = if (importer < files.len) files[importer] else "",
+                .line = ref.line,
+                .col = ref.col,
+            });
+        }
+    }
+}
+
+/// Decision 206 — the import `import {…} from "<module>"` written as it is
+/// instead: the module's path inside the braces, no `from`, every leaf behind
+/// the dotted path (`import {geometry.area, geometry.perimeter as p};`) — the
+/// spelling `botopink format` prints, which flattens a group.
+pub fn braceForm(a: std.mem.Allocator, path: []const u8, items: []const bp.ast.ImportPath) ![]const u8 {
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    try out.appendSlice(a, "import {");
+    for (items, 0..) |imp, i| {
+        if (i > 0) try out.appendSlice(a, ", ");
+        for (path) |c| try out.append(a, if (c == '/') '.' else c);
+        for (imp.segments) |seg| {
+            try out.append(a, '.');
+            try out.appendSlice(a, seg);
+        }
+        if (imp.activate) try out.append(a, '*');
+        if (imp.alias) |al| try out.print(a, " as {s}", .{al});
+    }
+    try out.appendSlice(a, "};");
+    return out.items;
+}
+
+/// The first `.`/`/`-separated segment of an import source — the package name a
+/// dependency is declared under (`"erika.query"` → `"erika"`).
+fn firstSegment(raw: []const u8) []const u8 {
+    for (raw, 0..) |c, i| {
+        if (c == '.' or c == '/') return raw[0..i];
+    }
+    return raw;
+}
+
+/// `raw` with `.` replaced by `/`, written into `buf`. Null when `raw` does not
+/// fit — a name that long is no package module, so the caller skips it.
+fn slashPath(buf: []u8, raw: []const u8) ?[]const u8 {
+    if (raw.len > buf.len) return null;
+    @memcpy(buf[0..raw.len], raw);
+    for (buf[0..raw.len]) |*c| {
+        if (c.* == '.') c.* = '/';
+    }
+    return buf[0..raw.len];
 }
 
 fn symbolInList(names: []const []const u8, name: []const u8) bool {
@@ -498,7 +870,30 @@ fn withinSubtree(path: []const u8, prefix: []const u8) bool {
 const ModuleRefs = struct {
     imports: []const ImportRef,
     exports: []const []const u8,
+    sources: []const SourceRef = &.{},
+    /// The module does not lex or parse, so its exports are unknown rather
+    /// than empty (onze F8).
+    broken: bool = false,
 };
+
+const Loc = struct { line: usize, col: usize };
+
+/// The location of every `from "<name>"` string literal in `tokens`, in source
+/// order. `from` is a keyword of its own and appears only in an import, so the
+/// n-th entry belongs to the n-th `import … from "…"` the parser reports — the
+/// AST carries no location for an `ImportDecl` (`ast.ImportDecl` has no `Loc`),
+/// and adding one is the parser front's file, not this one's.
+fn fromLocations(sa: std.mem.Allocator, tokens: []const bp.Token) []const Loc {
+    var locs: std.ArrayListUnmanaged(Loc) = .empty;
+    var i: usize = 0;
+    while (i + 1 < tokens.len) : (i += 1) {
+        if (tokens[i].kind != .from) continue;
+        const lit = tokens[i + 1];
+        if (lit.kind != .stringLiteral) continue;
+        locs.append(sa, .{ .line = lit.line, .col = lit.col }) catch return locs.items;
+    }
+    return locs.items;
+}
 
 /// Parse `source` and collect its imports (each with the project module it
 /// names, if any) and its `pub` export names, while recording each exported
@@ -511,19 +906,31 @@ fn collectModuleRefs(
     idx: usize,
 ) !ModuleRefs {
     var lx = Lexer.init(source);
-    const tokens = lx.scanAll(sa) catch return .{ .imports = &.{}, .exports = &.{} };
+    const tokens = lx.scanAll(sa) catch return .{ .imports = &.{}, .exports = &.{}, .broken = true };
     var p = Parser.init(tokens);
-    const program = p.parse(sa) catch return .{ .imports = &.{}, .exports = &.{} };
+    const program = p.parse(sa) catch return .{ .imports = &.{}, .exports = &.{}, .broken = true };
+
+    const from_locs = fromLocations(sa, tokens);
+    var from_idx: usize = 0;
 
     var imps: std.ArrayListUnmanaged(ImportRef) = .empty;
     var exps: std.ArrayListUnmanaged([]const u8) = .empty;
+    var srcs: std.ArrayListUnmanaged(SourceRef) = .empty;
     for (program.decls) |decl| switch (decl) {
         .@"fn" => |f| if (f.isPub) try registerExport(sa, owner, &exps, f.name, idx),
         .val => |v| if (v.isPub) try registerExport(sa, owner, &exps, v.name, idx),
-        .record => |r| if (r.isPub) try registerExport(sa, owner, &exps, r.name, idx),
-        .@"enum" => |e| if (e.isPub) try registerExport(sa, owner, &exps, e.name, idx),
-        .interface => |it| if (it.isPub) try registerExport(sa, owner, &exps, it.name, idx),
+        .type_ => |t| if (t.isPub) try registerExport(sa, owner, &exps, t.name, idx),
+        .typeAlias => |a| if (a.isPub) try registerExport(sa, owner, &exps, a.name, idx),
+        .behavior => |it| if (it.isPub) try registerExport(sa, owner, &exps, it.name, idx),
         .use => |u| {
+            // Every `from "…"` clause consumes one location, `std` included, so
+            // the zip with `from_locs` stays aligned.
+            var loc: Loc = .{ .line = 0, .col = 0 };
+            if (u.source == .module) {
+                if (from_idx < from_locs.len) loc = from_locs[from_idx];
+                from_idx += 1;
+                try srcs.append(sa, .{ .raw = u.source.module, .line = loc.line, .col = loc.col, .items = u.imports });
+            }
             // `from "a.b"` → slashed logical path "a/b" when it could name a
             // package module; `from "std"`, a lib, or a bare import → null.
             const from: ?[]const u8 = switch (u.source) {
@@ -533,12 +940,32 @@ fn collectModuleRefs(
             for (u.imports) |imp| {
                 // The imported symbol's definition name is its last path segment
                 // (an `as` alias renames only the local binding, not the export).
-                try imps.append(sa, .{ .from = from, .symbol = imp.segments[imp.segments.len - 1] });
+                // A qualified item (decision 107 — `shapes.circle.name`, or the
+                // group `shapes: {circle: {name}}`) is looked up in the module
+                // its prefix names, under the `from` module when there is one:
+                // that is the edge the dependency order and the export check
+                // read, so `import {name} from "shapes.circle"` and
+                // `import {shapes.circle.name};` are one import.
+                const leaf_from: ?[]const u8 = if (imp.isQualified() and (u.source == .root or from != null)) blk: {
+                    const prefix = try imp.prefixPath(sa);
+                    break :blk if (from) |f| try std.fmt.allocPrint(sa, "{s}/{s}", .{ f, prefix }) else prefix;
+                } else from;
+                try imps.append(sa, .{
+                    .from = leaf_from,
+                    .symbol = imp.leaf(),
+                    .has_from = u.source == .module,
+                    .line = loc.line,
+                    .col = loc.col,
+                });
             }
         },
         else => {},
     };
-    return .{ .imports = try imps.toOwnedSlice(sa), .exports = try exps.toOwnedSlice(sa) };
+    return .{
+        .imports = try imps.toOwnedSlice(sa),
+        .exports = try exps.toOwnedSlice(sa),
+        .sources = try srcs.toOwnedSlice(sa),
+    };
 }
 
 fn registerExport(
@@ -573,6 +1000,11 @@ fn fail(diag: ?*Diagnostic, da: std.mem.Allocator, d: Diagnostic) Error {
         .folder = da.dupe(u8, d.folder) catch d.folder,
         .importer = da.dupe(u8, d.importer) catch d.importer,
         .target = da.dupe(u8, d.target) catch d.target,
+        .file = da.dupe(u8, d.file) catch d.file,
+        .line = d.line,
+        .col = d.col,
+        .fix = da.dupe(u8, d.fix) catch d.fix,
+        .source = da.dupe(u8, d.source) catch d.source,
     };
     return d.kind;
 }
@@ -602,6 +1034,7 @@ fn freeAccumulated(gpa: std.mem.Allocator, modules: *std.ArrayListUnmanaged(Modu
     for (modules.items) |m| {
         gpa.free(m.path);
         gpa.free(m.source);
+        gpa.free(m.srcPath);
     }
     modules.deinit(gpa);
 }
@@ -611,6 +1044,7 @@ pub fn freeModules(gpa: std.mem.Allocator, modules: []Module) void {
     for (modules) |m| {
         gpa.free(m.path);
         gpa.free(m.source);
+        gpa.free(m.srcPath);
     }
     gpa.free(modules);
 }
@@ -649,13 +1083,13 @@ test "orderByDependencies orders imported modules before importers" {
     // Discovery (BFS) order: root first — the wrong order for compilation.
     var mods = [_]Module{
         .{ .path = "main", .source =
-        \\import {area} from "geometry";
-        \\import {describe} from "shapes";
+        \\import {geometry.area};
+        \\import {shapes.describe};
         \\fn main() {}
         },
         .{ .path = "geometry", .source = "pub fn area() -> i32 { return 1; }" },
         .{ .path = "shapes", .source =
-        \\import {name} from "shapes.circle";
+        \\import {shapes.circle.name};
         \\pub fn describe() -> string { return name(); }
         },
         .{ .path = "shapes/circle", .source = "pub fn name() -> string { return \"c\"; }" },
@@ -682,14 +1116,14 @@ test "checkImportResolution rejects importing an unexported symbol from a named 
     defer arena.deinit();
     const sa = arena.allocator();
 
-    // main imports `area` from "geometry", which only exports `perimeter`.
+    // main imports `geometry.area`, and `geometry` only exports `perimeter`.
     var mods = [_]Module{
-        .{ .path = "main", .source = "import {area} from \"geometry\";\nfn main() {}" },
+        .{ .path = "main", .source = "import {geometry.area};\nfn main() {}" },
         .{ .path = "geometry", .source = "pub fn perimeter() -> i32 { return 1; }" },
     };
     const analysis = analyzeModules(sa, &mods);
     var diag: Diagnostic = .{ .kind = Error.RootNotFound };
-    try std.testing.expectError(Error.UnexportedImport, checkImportResolution(sa, &mods, analysis, sa, &diag));
+    try std.testing.expectError(Error.UnexportedImport, checkImportResolution(sa, &mods, &.{}, analysis, sa, &diag));
     try std.testing.expectEqualStrings("area", diag.name);
     try std.testing.expectEqualStrings("geometry", diag.target);
 }
@@ -700,9 +1134,9 @@ test "checkImportResolution accepts a correct export and ignores lib/std imports
     const sa = arena.allocator();
 
     var mods = [_]Module{
-        // `from "rakun"` names no package module → ignored (lib); `from "std"` → ignored.
+        // `from "rakun"` names a package → ignored (lib); `from "std"` → ignored.
         .{ .path = "main", .source =
-        \\import {area} from "geometry";
+        \\import {geometry.area};
         \\import {Rakun} from "rakun";
         \\import {bool} from "std";
         \\fn main() {}
@@ -711,7 +1145,133 @@ test "checkImportResolution accepts a correct export and ignores lib/std imports
     };
     const analysis = analyzeModules(sa, &mods);
     var diag: Diagnostic = .{ .kind = Error.RootNotFound };
-    try checkImportResolution(sa, &mods, analysis, sa, &diag); // no error
+    try checkImportResolution(sa, &mods, &.{}, analysis, sa, &diag); // no error
+}
+
+test "checkImportSources rejects a `from` that names nothing, with its location" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const sa = arena.allocator();
+
+    // No module `geometry`, no dependency `geometry` — before this check the
+    // program compiled and ran, having bound nothing.
+    var mods = [_]Module{
+        .{ .path = "main", .source =
+        \\fn helper() {}
+        \\import {area} from "geometry";
+        \\fn main() {}
+        },
+    };
+    const files = [_][]const u8{"src/main.bp"};
+    const analysis = analyzeModules(sa, &mods);
+    var diag: Diagnostic = .{ .kind = Error.RootNotFound };
+    try std.testing.expectError(
+        Error.UnresolvedImportSource,
+        checkImportSources(&mods, &files, analysis, &.{}, sa, &diag),
+    );
+    try std.testing.expectEqualStrings("geometry", diag.name);
+    try std.testing.expectEqualStrings("main", diag.importer);
+    try std.testing.expectEqualStrings("src/main.bp", diag.file);
+    try std.testing.expectEqual(@as(usize, 2), diag.line);
+    try std.testing.expectEqual(@as(usize, 20), diag.col);
+}
+
+test "checkImportSources accepts std, a declared dependency and a module of the package in braces" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const sa = arena.allocator();
+
+    var mods = [_]Module{
+        .{ .path = "main", .source =
+        \\import {bool} from "std";
+        \\import {geometry.area};
+        \\import {shapes.circle.name};
+        \\import {Rakun} from "rakun";
+        \\import {q} from "erika.query";
+        \\fn main() {}
+        },
+        .{ .path = "geometry", .source = "pub fn area() -> i32 { return 1; }" },
+        .{ .path = "shapes/circle", .source = "pub fn name() -> string { return \"c\"; }" },
+    };
+    const files = [_][]const u8{ "src/main.bp", "src/geometry.bp", "src/shapes/circle.bp" };
+    const analysis = analyzeModules(sa, &mods);
+    var diag: Diagnostic = .{ .kind = Error.RootNotFound };
+    const deps = [_][]const u8{ "rakun", "erika" };
+    try checkImportSources(&mods, &files, analysis, &deps, sa, &diag); // no error
+}
+
+test "checkImportSources refuses `from` naming a module of the package, at the string, writing the brace form" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const sa = arena.allocator();
+
+    // Decision 206 — `from` names a package; a module of this package is
+    // imported by its path inside the braces.
+    const cases = [_]struct { src: []const u8, name: []const u8, col: usize, fix: []const u8 }{
+        .{ .src = "import {area} from \"geometry\";", .name = "geometry", .col = 20, .fix = "import {geometry.area};" },
+        .{ .src = "import {area, perimeter as p} from \"geometry\";", .name = "geometry", .col = 36, .fix = "import {geometry.area, geometry.perimeter as p};" },
+        .{ .src = "import {name, size} from \"shapes.circle\";", .name = "shapes.circle", .col = 26, .fix = "import {shapes.circle.name, shapes.circle.size};" },
+        .{ .src = "import {name as n} from \"shapes/circle\";", .name = "shapes/circle", .col = 25, .fix = "import {shapes.circle.name as n};" },
+        .{ .src = "import {Round*, inner: {depth}} from \"shapes.circle\";", .name = "shapes.circle", .col = 38, .fix = "import {shapes.circle.Round*, shapes.circle.inner.depth};" },
+    };
+    for (cases) |c| {
+        var mods = [_]Module{
+            .{ .path = "main", .source = c.src },
+            .{ .path = "geometry", .source = "pub fn area() -> i32 { return 1; }" },
+            .{ .path = "shapes/circle", .source = "pub fn name() -> string { return \"c\"; }" },
+        };
+        const files = [_][]const u8{ "src/main.bp", "src/geometry.bp", "src/shapes/circle.bp" };
+        const analysis = analyzeModules(sa, &mods);
+        var diag: Diagnostic = .{ .kind = Error.RootNotFound };
+        try std.testing.expectError(Error.ModuleImportWithFrom, checkImportSources(&mods, &files, analysis, &.{}, sa, &diag));
+        try std.testing.expectEqualStrings(c.name, diag.name);
+        try std.testing.expectEqualStrings("src/main.bp", diag.file);
+        try std.testing.expectEqual(@as(usize, 1), diag.line);
+        try std.testing.expectEqual(c.col, diag.col);
+        try std.testing.expectEqualStrings(c.fix, diag.fix);
+    }
+}
+
+test "checkImportSources: a package wins its name over a module of the package named like it" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const sa = arena.allocator();
+
+    // Decision 206 — the bundled `log` and the dependency `rakun` are what
+    // `from` names, although this package has modules `log` and `rakun`.
+    var mods = [_]Module{
+        .{ .path = "main", .source =
+        \\import {Level} from "log";
+        \\import {Rakun} from "rakun";
+        \\import {log.levelName};
+        \\fn main() {}
+        },
+        .{ .path = "log", .source = "pub fn levelName() -> i32 { return 1; }" },
+        .{ .path = "rakun", .source = "pub fn other() -> i32 { return 1; }" },
+    };
+    const files = [_][]const u8{ "src/main.bp", "src/log.bp", "src/rakun.bp" };
+    const analysis = analyzeModules(sa, &mods);
+    var diag: Diagnostic = .{ .kind = Error.RootNotFound };
+    const deps = [_][]const u8{"rakun"};
+    try checkImportSources(&mods, &files, analysis, &deps, sa, &diag); // no error
+    // …and neither draws an edge to the module named like the package, nor
+    // asks it for the symbol.
+    try checkImportResolution(sa, &mods, &files, analysis, sa, &diag);
+    for (analysis.imports[0][0..2]) |ref| try std.testing.expect(importOwner(analysis, ref) == null);
+}
+
+test "checkImportSources is a no-op when the caller knows no dependency set" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const sa = arena.allocator();
+
+    var mods = [_]Module{
+        .{ .path = "main", .source = "import {area} from \"geometry\";\nfn main() {}" },
+    };
+    const files = [_][]const u8{"src/main.bp"};
+    const analysis = analyzeModules(sa, &mods);
+    var diag: Diagnostic = .{ .kind = Error.RootNotFound };
+    try checkImportSources(&mods, &files, analysis, null, sa, &diag); // no error
 }
 
 test "checkVisibility rejects an import crossing a private mod boundary" {
@@ -721,7 +1281,7 @@ test "checkVisibility rejects an import crossing a private mod boundary" {
 
     // main(root) → shapes(pub) → helpers(private). Root imports helpers' symbol.
     var mods = [_]Module{
-        .{ .path = "main", .source = "import {secret} from \"shapes.helpers\";\nfn main() {}" },
+        .{ .path = "main", .source = "import {shapes.helpers.secret};\nfn main() {}" },
         .{ .path = "shapes", .source = "pub fn describe() -> i32 { return 1; }" },
         .{ .path = "shapes/helpers", .source = "pub fn secret() -> i32 { return 42; }" },
     };
@@ -747,7 +1307,7 @@ test "checkVisibility allows an import from within the private subtree" {
     var mods = [_]Module{
         .{ .path = "main", .source = "fn main() {}" },
         .{ .path = "shapes", .source = "pub fn describe() -> i32 { return 1; }" },
-        .{ .path = "shapes/circle", .source = "import {secret} from \"shapes.helpers\";\npub fn c() -> i32 { return secret(); }" },
+        .{ .path = "shapes/circle", .source = "import {shapes.helpers.secret};\npub fn c() -> i32 { return secret(); }" },
         .{ .path = "shapes/helpers", .source = "pub fn secret() -> i32 { return 42; }" },
     };
     const nodes = [_]Node{
@@ -768,12 +1328,111 @@ test "orderByDependencies keeps a cycle's modules without crashing" {
 
     // a imports from b, b imports from a — a genuine cycle.
     var mods = [_]Module{
-        .{ .path = "a", .source = "import {fb} from \"b\";\npub fn fa() -> i32 { return fb(); }" },
-        .{ .path = "b", .source = "import {fa} from \"a\";\npub fn fb() -> i32 { return fa(); }" },
+        .{ .path = "a", .source = "import {b.fb};\npub fn fa() -> i32 { return fb(); }" },
+        .{ .path = "b", .source = "import {a.fa};\npub fn fb() -> i32 { return fa(); }" },
     };
     orderByDependencies(sa, &mods, analyzeModules(sa, &mods));
     // Both modules survive (order is best-effort under a cycle).
     try std.testing.expectEqual(@as(usize, 2), mods.len);
     try std.testing.expect(indexOfPath(&mods, "a") != std.math.maxInt(usize));
     try std.testing.expect(indexOfPath(&mods, "b") != std.math.maxInt(usize));
+}
+
+test "checkSources locates an unresolved import in a flat test module" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const sa = arena.allocator();
+
+    // The shape `botopink test` hands over: the package's resolved `src/`
+    // modules first (no file, already checked), then the flat `test/` ones.
+    var mods = [_]Module{
+        .{ .path = "main", .source = "mod geometry;\npub fn main() {}" },
+        .{ .path = "geometry", .source = "pub fn area() -> i32 { return 1; }" },
+        .{ .path = "x_test", .source =
+        \\import {geometry.area};
+        \\import {nothing} from "nowhere";
+        },
+    };
+    const files = [_][]const u8{ "", "", "test/x_test.bp" };
+    var diag: Diagnostic = .{ .kind = Error.RootNotFound };
+    try std.testing.expectError(
+        Error.UnresolvedImportSource,
+        checkSources(sa, &mods, &files, &.{}, sa, &diag),
+    );
+    try std.testing.expectEqualStrings("nowhere", diag.name);
+    try std.testing.expectEqualStrings("x_test", diag.importer);
+    try std.testing.expectEqualStrings("test/x_test.bp", diag.file);
+    try std.testing.expectEqual(@as(usize, 2), diag.line);
+    try std.testing.expectEqual(@as(usize, 23), diag.col);
+}
+
+test "checkSources accepts a test module importing the package it tests" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const sa = arena.allocator();
+
+    var mods = [_]Module{
+        .{ .path = "geometry", .source = "pub fn area() -> i32 { return 1; }" },
+        .{ .path = "x_test", .source =
+        \\import {geometry.area};
+        \\import {math} from "std";
+        \\import {q} from "erika";
+        },
+    };
+    const files = [_][]const u8{ "", "test/x_test.bp" };
+    const deps = [_][]const u8{"erika"};
+    var diag: Diagnostic = .{ .kind = Error.RootNotFound };
+    try checkSources(sa, &mods, &files, &deps, sa, &diag); // no error
+}
+
+fn writeScratchFile(io: std.Io, path: []const u8, data: []const u8) !void {
+    if (std.fs.path.dirname(path)) |d| try std.Io.Dir.cwd().createDirPath(io, d);
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = data });
+}
+
+test "isDeclared matches a manifest `files` entry, separator-insensitively" {
+    const declared = [_][]const u8{ "primitives.bp", "sub/ambient.bp" };
+    try std.testing.expect(isDeclared("primitives.bp", &declared));
+    try std.testing.expect(isDeclared("sub/ambient.bp", &declared));
+    try std.testing.expect(isDeclared("sub\\ambient.bp", &declared));
+    try std.testing.expect(!isDeclared("dangling.bp", &declared));
+    try std.testing.expect(!isDeclared("primitives.bp.bak", &declared));
+    try std.testing.expect(!isDeclared("primitives.bp", &.{}));
+}
+
+test "a `files` entry is not an orphan; a module in neither `files` nor a `mod` chain still is" {
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+
+    // The shape `libs/std` has: a root whose `mod` chain reaches one module, an
+    // ambient module the manifest ships instead (`files`), and a real dangling
+    // file that nothing reaches at all.
+    test_scratch.remove(io, "resolver-declared");
+    defer test_scratch.remove(io, "resolver-declared");
+    try writeScratchFile(io, test_scratch.path(io, "resolver-declared/src/root.bp"), "pub mod geometry;\n");
+    try writeScratchFile(io, test_scratch.path(io, "resolver-declared/src/geometry.bp"), "pub fn area() -> i32 { return 1; }\n");
+    try writeScratchFile(io, test_scratch.path(io, "resolver-declared/src/ambient.bp"), "pub fn ambient() -> i32 { return 2; }\n");
+    try writeScratchFile(io, test_scratch.path(io, "resolver-declared/src/dangling.bp"), "pub fn dangling() -> i32 { return 3; }\n");
+
+    var da = std.heap.ArenaAllocator.init(gpa);
+    defer da.deinit();
+
+    // Nothing declared: both the ambient module and the dangling one are orphans.
+    {
+        const res = try resolve(gpa, io, test_scratch.path(io, "resolver-declared/src"), "root.bp", null, &.{}, da.allocator(), null);
+        defer freeModules(gpa, res.modules);
+        defer freeOrphans(gpa, res.orphans);
+        try std.testing.expectEqual(@as(usize, 2), res.orphans.len);
+    }
+
+    // `files` declares the ambient one: only the dangling one is left, which is
+    // the case the warning exists for.
+    {
+        const declared = [_][]const u8{"ambient.bp"};
+        const res = try resolve(gpa, io, test_scratch.path(io, "resolver-declared/src"), "root.bp", null, &declared, da.allocator(), null);
+        defer freeModules(gpa, res.modules);
+        defer freeOrphans(gpa, res.orphans);
+        try std.testing.expectEqual(@as(usize, 1), res.orphans.len);
+        try std.testing.expect(std.mem.endsWith(u8, res.orphans[0].file, "dangling.bp"));
+    }
 }

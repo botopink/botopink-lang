@@ -2,7 +2,7 @@
 {
   "decls": [
     {
-      "record": {
+      "type_": {
         "name": "X",
         "id": 1,
         "isPub": false,
@@ -12,16 +12,18 @@
         "annotations": [],
         "genericParams": [],
         "implement": [],
-        "fields": [
-          {
-            "name": "value",
-            "typeRef": {
-              "named": "string"
-            },
-            "default": null,
-            "annotations": []
-          }
-        ],
+        "shape": {
+          "record": [
+            {
+              "name": "value",
+              "typeRef": {
+                "named": "string"
+              },
+              "default": null,
+              "annotations": []
+            }
+          ]
+        },
         "trailingComma": false,
         "methods": [
           {

@@ -1,0 +1,14 @@
+//// A function used as a value takes and answers its declared types: `half`
+//// bound to `halve` answers `1.75` for `3.5` on commonJS, erlang and beam.
+//// wasm calls a function value through one `i32` word per argument and
+//// result, and a float went in truncated (`3.5` became `3`) at exit 0; it is
+//// refused at the argument (`00 · gate-wasm-wrong-answers`).
+
+fn halve(x: f64) -> f64 {
+    return x / 2.0;
+}
+
+pub fn main() {
+    val half = halve;
+    @print(half(3.5));
+}

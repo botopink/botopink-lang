@@ -2,7 +2,7 @@
 {
   "decls": [
     {
-      "enum": {
+      "type_": {
         "name": "Token",
         "id": 1,
         "isPub": false,
@@ -12,121 +12,126 @@
         "annotations": [],
         "genericParams": [],
         "implement": [],
-        "variants": [],
-        "trailingComma": false,
-        "methods": [],
-        "sections": [
-          {
-            "name": "Color",
-            "variants": [
-              {
-                "name": "Hex",
-                "fields": [
-                  {
-                    "name": "value",
-                    "typeRef": {
-                      "named": "string"
-                    },
-                    "default": null
-                  }
-                ],
-                "numeric": false
-              }
-            ],
-            "sections": [
-              {
-                "name": "Red",
-                "variants": [
-                  {
-                    "name": "100",
-                    "fields": [],
-                    "numeric": true
-                  },
-                  {
-                    "name": "500",
-                    "fields": [],
-                    "numeric": true
-                  },
-                  {
-                    "name": "700",
-                    "fields": [],
-                    "numeric": true
-                  }
-                ],
-                "sections": []
-              },
-              {
-                "name": "Blue",
-                "variants": [
-                  {
-                    "name": "100",
-                    "fields": [],
-                    "numeric": true
-                  },
-                  {
-                    "name": "500",
-                    "fields": [],
-                    "numeric": true
-                  }
-                ],
-                "sections": []
-              }
-            ]
-          },
-          {
-            "name": "Pad",
+        "shape": {
+          "enum_": {
             "variants": [],
             "sections": [
               {
-                "name": "X",
+                "name": "Color",
                 "variants": [
                   {
-                    "name": "1",
-                    "fields": [],
-                    "numeric": true
-                  },
-                  {
-                    "name": "2",
-                    "fields": [],
-                    "numeric": true
-                  },
-                  {
-                    "name": "4",
-                    "fields": [],
-                    "numeric": true
-                  },
-                  {
-                    "name": "8",
-                    "fields": [],
-                    "numeric": true
+                    "name": "Hex",
+                    "fields": [
+                      {
+                        "name": "value",
+                        "typeRef": {
+                          "named": "string"
+                        },
+                        "default": null,
+                        "annotations": []
+                      }
+                    ],
+                    "numeric": false
                   }
                 ],
-                "sections": []
+                "sections": [
+                  {
+                    "name": "Red",
+                    "variants": [
+                      {
+                        "name": "100",
+                        "fields": [],
+                        "numeric": true
+                      },
+                      {
+                        "name": "500",
+                        "fields": [],
+                        "numeric": true
+                      },
+                      {
+                        "name": "700",
+                        "fields": [],
+                        "numeric": true
+                      }
+                    ],
+                    "sections": []
+                  },
+                  {
+                    "name": "Blue",
+                    "variants": [
+                      {
+                        "name": "100",
+                        "fields": [],
+                        "numeric": true
+                      },
+                      {
+                        "name": "500",
+                        "fields": [],
+                        "numeric": true
+                      }
+                    ],
+                    "sections": []
+                  }
+                ]
               },
               {
-                "name": "Y",
-                "variants": [
+                "name": "Pad",
+                "variants": [],
+                "sections": [
                   {
-                    "name": "1",
-                    "fields": [],
-                    "numeric": true
+                    "name": "X",
+                    "variants": [
+                      {
+                        "name": "1",
+                        "fields": [],
+                        "numeric": true
+                      },
+                      {
+                        "name": "2",
+                        "fields": [],
+                        "numeric": true
+                      },
+                      {
+                        "name": "4",
+                        "fields": [],
+                        "numeric": true
+                      },
+                      {
+                        "name": "8",
+                        "fields": [],
+                        "numeric": true
+                      }
+                    ],
+                    "sections": []
                   },
                   {
-                    "name": "2",
-                    "fields": [],
-                    "numeric": true
-                  },
-                  {
-                    "name": "4",
-                    "fields": [],
-                    "numeric": true
+                    "name": "Y",
+                    "variants": [
+                      {
+                        "name": "1",
+                        "fields": [],
+                        "numeric": true
+                      },
+                      {
+                        "name": "2",
+                        "fields": [],
+                        "numeric": true
+                      },
+                      {
+                        "name": "4",
+                        "fields": [],
+                        "numeric": true
+                      }
+                    ],
+                    "sections": []
                   }
-                ],
-                "sections": []
+                ]
               }
             ]
           }
-        ]
+        },
+        "trailingComma": false,
+        "methods": []
       }
     }
   ]

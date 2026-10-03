@@ -1,0 +1,20 @@
+//// The `routing` package — module-tree root (decision 115).
+////
+//// A bundled library, neutral like std: the route matcher and the routing
+//// wires the server and the browser both read — the route table, the `k`
+//// (route kinds) and `z` (slot states) blobs, the URL rules, the navigation
+//// vocabulary and the `:param` pattern grammar. Pure `.bp` only (decision 117
+//// rule 8): no host cell, no sidecar; it imports `std` and nothing else, and it
+//// compiles for erlang and commonJS. Consumers write
+//// `import {match.matchPath, table.parseTable} from "routing";`.
+////
+//// Modules are listed so a module precedes the siblings that import it.
+
+pub mod segment;
+pub mod table;
+pub mod match;
+pub mod route_kinds;
+pub mod slot_states;
+pub mod url_rules;
+pub mod navigation;
+pub mod pattern;

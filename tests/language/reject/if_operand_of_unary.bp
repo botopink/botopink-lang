@@ -1,0 +1,10 @@
+//// The operand of a unary `-` / `!` is an operand: `-if (c) 1 else 2` is
+//// `if-operand`, at the `if`.
+
+fn f(c: bool) -> i32 {
+    return -if (c) 1 else 2;
+}
+
+pub fn main() {
+    @print(f(true));
+}

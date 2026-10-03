@@ -1,0 +1,107 @@
+----- SOURCE CODE -- hostlib.bp
+```botopink
+pub type Meter(base: i32) {
+    #[@External.Node("""($0.base + $1)"""),
+      @External.Erlang("""(element(2, $0) + $1)""")]
+    pub declare fn plus(self: Self, n: i32) -> i32;
+}
+```
+
+----- JAVASCRIPT -- hostlib.js
+```javascript
+class Meter {
+    constructor(base) {
+        this.base = base;
+    }
+
+    plus(n) {
+        return (this.base + n);
+    }
+}
+Meter.prototype.__bp = "Meter";
+exports.Meter = Meter;
+```
+
+----- TYPESCRIPT TYPEDEF -- hostlib.d.ts
+```typescript
+export declare class Meter {
+    readonly base: number;
+    constructor(base: number);
+    plus(n: number): number;
+}
+
+```
+
+----- RUN LOG -----
+```logs
+```
+
+----- SOURCE CODE -- main.bp
+```botopink
+import { Meter };
+
+pub fn main() {
+    @print(Meter(base: 40).plus(2));
+}
+```
+
+----- JAVASCRIPT -- main.js
+```javascript
+function __bp_show(v, s, top, a) {
+    if ((typeof v === "string")) {
+        a.push(top ? v : (("\"" + Array.from(v, (c) => ((c === "\"") || (c === "\\")) ? ("\\" + c) : (c === "\n") ? "\\n" : (c === "\r") ? "\\r" : (c === "\t") ? "\\t" : c).join("")) + "\""));
+        return "%s";
+    }
+    if (((typeof v === "number") && (s === "f"))) {
+        a.push(Number.isInteger(v) ? v.toFixed(1) : String(v));
+        return "%s";
+    }
+    if (Array.isArray(v)) {
+        const t = ((s != null) && (s[0] === "#"));
+        return (((t ? "#(" : "[") + v.map((e, i) => __bp_show(e, (s == null) ? null : t ? s[i + 1] : s[1], false, a)).join(", ")) + (t ? ")" : "]"));
+    }
+    if (((v != null) && (typeof v.__bp === "string"))) {
+        if ((typeof v.display === "function")) {
+            a.push(v.display());
+            return "%s";
+        }
+        const k = Object.keys(v);
+        return (((typeof v.tag === "string") ? ((v.__bp + ".") + v.tag) : v.__bp) + ((k.length === 0) ? "" : (("(" + k.map((n) => ((n + ": ") + __bp_show(v[n], null, false, a))).join(", ")) + ")")));
+    }
+    if ((v === undefined)) return "null";
+    a.push(v);
+    return "%O";
+}
+
+function __bp_print() {
+    const a = [];
+    const f = Array.from(arguments, (v, i) => __bp_show(v, null, true, a)).join(" ");
+    console.log.apply(console, [f, ...a]);
+}
+
+const { Meter } = require("./hostlib.js");
+
+function main() {
+    __bp_print(new Meter(40).plus(2));
+}
+exports.main = main;
+
+function _botopink_main() {
+    main();
+}
+_botopink_main();
+```
+
+----- TYPESCRIPT TYPEDEF -- main.d.ts
+```typescript
+import { Meter } from "./hostlib";
+
+
+export declare function main(): void;
+
+```
+
+----- RUN LOG -----
+```logs
+42
+```

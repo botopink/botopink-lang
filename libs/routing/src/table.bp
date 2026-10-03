@@ -1,0 +1,91 @@
+//// routing/table — the route table and its line-oriented wire (`contracts.md § 1`).
+////
+//// Moved from the file router (decision 115). Pure; compiled for erlang and
+//// commonJS, so the server writes the table with the same code the browser
+//// reads it with.
+
+// ── step 3: the route table and its wire format ─────────────────────────────
+//
+// The table crosses the boundary as a LINE-ORIENTED BLOB, not as JSON: the
+// parser compiles to the BEAM and to the browser alike and a line split is the
+// same operation on both. One record
+// per line, `\n`-separated, in registration order:
+//
+//     kind|pattern|slot|verb
+//
+// `kind` is one letter — `L` layout, `T` template, `P` page, `D` default,
+// `R` route handler (front 25), `S` loading (front 30), `E` error and `N`
+// not-found (front 31). `pattern` is the URL pattern with groups and slots
+// removed and the bracket spelling preserved. `slot` is `""` for the children
+// slot and the slot name for an `@slot` entry. `verb` is `""` for a UI entry and
+// the HTTP method for an `R` one.
+//
+// TRAILING EMPTY FIELDS ARE DROPPED, which is what makes the front's rule "no
+// line terminates with a trailing `|`" true of a record whose slot and verb are
+// both empty — the common case. `parseTable` reads a short line back as empty
+// fields, so the round trip is unaffected and no reader ever splits by hand.
+
+pub type RouteEntry(
+    kind: string,
+    pattern: string,
+    slot: string,
+    verb: string,
+)
+
+pub fn writeTable(entries: RouteEntry[]) -> string {
+    var lines: string[] = [];
+    for (entries) { e ->
+        val head = e.kind + "|" + e.pattern;
+        if (e.verb != "")
+            lines.push(head + "|" + e.slot + "|" + e.verb)
+        else if (e.slot != "")
+            lines.push(head + "|" + e.slot)
+        else
+            lines.push(head);
+    }
+    return lines.join("\n");
+}
+
+pub fn parseTable(wire: string) -> RouteEntry[] {
+    var out: RouteEntry[] = [];
+    if (wire == "") return out else {
+        for (wire.split("\n")) { line ->
+            if (line != "") {
+                val f: string[] = line.split("|");
+                out.push(
+                    RouteEntry(
+                        kind: f.at(0).unwrapOr(""),
+                        pattern: f.at(1).unwrapOr(""),
+                        slot: f.at(2).unwrapOr(""),
+                        verb: f.at(3).unwrapOr(""),
+                    ),
+                );
+            }
+        }
+        return out;
+    }
+}
+
+// The long name of a `kind` letter, for a diagnostic and for a reader that would
+// otherwise re-derive the table. The eight letters are the front's contract with
+// 23, 25, 27, 30, 31, 60, 61 and 66.
+pub fn kindLabel(kind: string) -> string {
+    if (kind == "L")
+        return "layout"
+    else if (kind == "T")
+        return "template"
+    else if (kind == "P")
+        return "page"
+    else if (kind == "D")
+        return "default"
+    else if (kind == "R")
+        return "route"
+    else if (kind == "S")
+        return "loading"
+    else if (kind == "E")
+        return "error"
+    else if (kind == "N")
+        return "not-found"
+    else
+        return "";
+}

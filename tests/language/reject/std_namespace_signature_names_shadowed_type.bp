@@ -1,0 +1,15 @@
+//// Decision 170 — this module's own `Order` is the `Order` it names, so a
+//// function of the std namespace `collections` whose signature names std's
+//// `Order` cannot be typed here: types are nominal by name, and the checker
+//// would read std's `Order` as this module's. Refused at the call
+//// (`run/std_namespace_beside_own_type` is the accepted half).
+
+import {collections} from "std";
+
+type Order(rank: i32)
+
+pub fn main() {
+    val o = Order(rank: 1);
+    @print(o.rank);
+    val s = collections.lt();
+}

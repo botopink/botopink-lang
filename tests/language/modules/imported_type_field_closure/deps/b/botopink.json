@@ -1,0 +1,1 @@
+{ "name": "b", "version": "0.0.1", "src": "src/", "files": ["b.bp"], "dependencies": { "a": { "path": "../a" } } }

@@ -1,0 +1,13 @@
+//// Decision 216 (4) — a type is no value: cataloguing types names the
+//// member each entry's `value` calls (`member: "describe"`).
+
+fn component(comptime decl: @Decl) {
+    decl.addMember("pub fn describe() -> string { return \"" + decl.name + "\"; }");
+}
+
+#[component]
+pub type Box(n: i32)
+
+pub fn main() {
+    @print(@TypeInfo.all(with: component).length);
+}

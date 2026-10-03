@@ -1,0 +1,14 @@
+//// Decisions 118, 127 and 128 of 1.0.10-beta (front 24, § Cells "Migration";
+//// guide.md § 9, rows `#[@use] fn f() -> @Use<C, T>` and `#[@use] fn f() ->
+//// @Component<T>`) — `#[@use]` is refused at the annotation over a return that
+//// is already `@Component<C, T>`: `use` is granted by the return alone. The
+//// new form is `run/component_hook_and_component.bp`.
+
+pub type ElementBase()
+
+#[@use]
+fn state(initial: i32) -> @Component<ElementBase, i32> {
+    return initial;
+}
+
+pub fn main() { state(1); }

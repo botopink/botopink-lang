@@ -8,7 +8,7 @@
         "isDeclare": true,
         "isDefault": false,
         "label": null,
-        "name": "absolute_value",
+        "name": "absoluteValue",
         "docComment": null,
         "comment": null,
         "moduleComment": null,
@@ -70,7 +70,7 @@
                 "kind": {
                   "call": {
                     "receiver": null,
-                    "callee": "absolute_value",
+                    "callee": "absoluteValue",
                     "is_builtin": false,
                     "is_tagged": false,
                     "optional": false,
@@ -81,14 +81,14 @@
                           "unaryOp": {
                             "loc": {
                               "line": 5,
-                              "col": 20
+                              "col": 19
                             },
                             "op": "neg",
                             "expr": {
                               "literal": {
                                 "loc": {
                                   "line": 5,
-                                  "col": 21
+                                  "col": 20
                                 },
                                 "kind": {
                                   "numberLit": "5"

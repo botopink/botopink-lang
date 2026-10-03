@@ -1,0 +1,12 @@
+//// Decisions 127 and 128 of 1.0.10-beta (front 24, § Cells "Migration";
+//// guide.md § 9, row `#[@use] fn f() -> @Use<C, T>`) — `@Use` leaves without an
+//// alias: `@Use<C, T>` is `effect-type-removed` with the fix-it
+//// `@Component<C, T>`. The new form is `run/component_hook_and_component.bp`.
+
+pub type ElementBase()
+
+fn state(initial: i32) -> @Use<ElementBase, i32> {
+    return initial;
+}
+
+pub fn main() { state(1); }

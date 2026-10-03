@@ -1,0 +1,17 @@
+//// Decision 168 with decision 40's §5(b) — a `keyed = true` row is written
+//// whole: a row computed from the var's own rows is a read-modify-write two
+//// processes can interleave, refused with the recompose diagnostic.
+
+import {collections.Dict} from "std";
+
+#[@BeamMemory.Ets(keyed = true)]
+var counts: Dict<string, i32> = Dict.empty();
+
+fn bump(key: string) {
+    counts = counts.insert(key, counts.size());
+}
+
+pub fn main() {
+    bump("a");
+    @print(counts.at("a"));
+}

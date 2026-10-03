@@ -1,0 +1,5 @@
+pub type Response(html: string)
+
+pub fn ok() -> Response {
+    return Response(html: "<p>");
+}

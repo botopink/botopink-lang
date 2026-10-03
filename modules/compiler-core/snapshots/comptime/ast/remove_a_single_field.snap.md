@@ -1,0 +1,28 @@
+----- SOURCE CODE -- main.bp
+```botopink
+type FullUser(id: i32, name: string, password: string)
+val PublicUser = omit(FullUser, "password");
+```
+
+----- TYPED AST JSON -- main.json
+```json
+{
+  "declarations": [
+    {
+      "ast": "record_def",
+      "name": "FullUser",
+      "fields": {
+        "id": "i32",
+        "name": "string",
+        "password": "string"
+      }
+    },
+    {
+      "ast": "val",
+      "ident": "PublicUser",
+      "return_type": "record { id: i32, name: string }"
+    }
+  ]
+}
+```
+

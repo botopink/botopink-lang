@@ -1,0 +1,14 @@
+//// Decisions 125 and 127 of 1.0.10-beta (front 24, § Cells "Migration";
+//// guide.md § 9, row `#[@resultGenerator] loop { … }`) — refused at the
+//// annotation; the fix-it is `iter loop`, whose item becomes `@Result` from the
+//// body's own `throw` / `try`. The new form is `run/prefixed_loop_result_item.bp`.
+
+pub fn main() {
+    var n = 0;
+    val g = #[@resultGenerator] loop {
+        n = n + 1;
+        if (n > 3) { throw "stop"; };
+        yield n;
+    };
+    for (g) { r -> @print(r.unwrapOr(0)); };
+}

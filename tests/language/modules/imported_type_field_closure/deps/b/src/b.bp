@@ -1,0 +1,9 @@
+import {Client, client} from "a";
+
+pub fn lifeOf(c: Client) -> i32 {
+    return c.ms();
+}
+
+pub fn make(ms: i32) -> Client {
+    return client(ms);
+}

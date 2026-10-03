@@ -1,0 +1,18 @@
+//// C-08, decision 11's argument applied to `assert <expr> is <Pattern>`: the
+//// form is **not** part of the language, and this cell pins the refusal that
+//// says so. `is` answers a `bool` and tests a type (decision 8 §4); the form
+//// that binds a pattern's names into the enclosing scope is
+//// `val assert <Pattern> = <expr>;`. `docs.md` lists `assert x is Some(n)`
+//// under "deliberately absent".
+////
+//// Three DOCUMENTED SKIPs used to pin the parse error instead
+//// (`comptime/tests/narrowing.zig` ×2, `codegen/tests/narrowing.zig` ×1),
+//// each promising the form would land. They are gone; this cell replaces them.
+
+type Status { Ready, Busy(count: i32), Down }
+
+pub fn main() {
+    val s: Status = Status.Busy(count: 3);
+    assert s is Status.Busy(count: n);
+    @print(n.toString());
+}

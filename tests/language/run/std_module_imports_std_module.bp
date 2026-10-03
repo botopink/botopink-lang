@@ -1,0 +1,20 @@
+//// A std module imports another std module: `querystring` takes its percent
+//// codec from `encoding` (`import {encoding.percentEncode, …} from "std"`)
+//// instead of re-declaring the two host cells. Each std module was inferred
+//// in a scratch env that knew no other std module, so any such import stopped
+//// the compiler before the program was read, and a program never embedded a
+//// std module that only another std module imported. std modules are now
+//// inferred after the ones they import, and embedded with them.
+////
+//// On wasm `encoding`'s host cells have no binding, so importing `querystring`
+//// is refused by STD-001 (`.wasm.expect`).
+
+import {querystring} from "std";
+
+pub fn main() {
+    val pairs = querystring.parse("?n=caf%C3%A9&x=a%20b").unwrapOr([]);
+    @print(pairs.length);
+    @print(pairs.at(1).unwrapOr(#("", ""))._1);
+    @print(querystring.stringify([#("a b", "c+d")]).unwrapOr("?"));
+    @print(querystring.parse("a=%ZZ").isError());
+}

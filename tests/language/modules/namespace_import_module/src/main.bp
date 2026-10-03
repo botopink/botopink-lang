@@ -1,0 +1,21 @@
+//// Decision 107's namespace form over a module of a dependency
+//// (`import {jwt} from "sec"`) and of the project's own tree
+//// (`import {text};`): the name binds the module, and `jwt.sign(x)` calls its
+//// function. Both were `unbound variable 'jwt'` — only `std` modules could be
+//// imported as a namespace. A local `sign` does not collide with `jwt.sign`.
+
+pub mod text;
+import {jwt} from "sec";
+import {text};
+
+fn sign(s: string) -> string {
+    return "local " + s;
+}
+
+pub fn main() {
+    val token = jwt.sign("a");
+    @print(token);
+    @print(jwt.verify(token));
+    @print(text.shout("hi"));
+    @print(sign("b"));
+}

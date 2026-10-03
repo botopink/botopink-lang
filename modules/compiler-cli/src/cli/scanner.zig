@@ -30,6 +30,21 @@ fn stripExt(name: []const u8) []const u8 {
 
 // ── Scanner ───────────────────────────────────────────────────────────────────
 
+/// A flat directory scan: the modules and, aligned by index, the path each one
+/// was read from (relative to cwd, extension included). A flat directory is not
+/// a package, so it never reaches `resolver.resolve` and its imports are checked
+/// separately (`sources.checkFlatImports`) — which needs the file to locate a
+/// diagnostic in it.
+pub const Scan = struct {
+    modules: []Module,
+    files: []const []const u8,
+
+    pub fn free(self: *Scan, gpa: std.mem.Allocator) void {
+        freeModules(gpa, self.modules);
+        freeFiles(gpa, self.files);
+    }
+};
+
 /// Scan `src_dir_path` (relative to cwd) recursively.
 ///
 /// Returns a list of `Module` values.  Both `path` and `source` fields are
@@ -39,15 +54,38 @@ pub fn scanSources(
     io: std.Io,
     src_dir_path: []const u8,
 ) ![]Module {
-    var modules: std.ArrayListUnmanaged(Module) = .empty;
-    errdefer freeModules(gpa, modules.items);
-    errdefer modules.deinit(gpa);
+    const scan = try scanSourcesWithFiles(gpa, io, src_dir_path);
+    freeFiles(gpa, scan.files);
+    return scan.modules;
+}
+
+/// `scanSources` plus the file each module was read from, in the same order.
+/// Both slices and every string in them are `gpa`-owned — free with
+/// `Scan.free`, or with `freeModules` + `freeFiles`.
+pub fn scanSourcesWithFiles(
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    src_dir_path: []const u8,
+) !Scan {
+    // One list of pairs rather than two parallel lists: the sort below must
+    // keep a module and its file together, and a single list cannot fall out
+    // of step with itself.
+    const Pair = struct { module: Module, file: []const u8 };
+    var pairs: std.ArrayListUnmanaged(Pair) = .empty;
+    errdefer {
+        for (pairs.items) |pair| {
+            gpa.free(pair.module.path);
+            gpa.free(pair.module.source);
+            gpa.free(pair.file);
+        }
+        pairs.deinit(gpa);
+    }
 
     const src_dir = std.Io.Dir.cwd().openDir(io, src_dir_path, .{
         .iterate = true,
         .access_sub_paths = true,
     }) catch |err| switch (err) {
-        error.FileNotFound, error.NotDir => return try modules.toOwnedSlice(gpa),
+        error.FileNotFound, error.NotDir => return .{ .modules = &.{}, .files = &.{} },
         else => return err,
     };
     defer src_dir.close(io);
@@ -68,18 +106,41 @@ pub fn scanSources(
         const source = try entry.dir.readFileAlloc(io, entry.basename, gpa, .unlimited);
         errdefer gpa.free(source);
 
-        try modules.append(gpa, .{ .path = module_path, .source = source });
+        const file = try std.fs.path.join(gpa, &.{ src_dir_path, entry.path });
+        errdefer gpa.free(file);
+
+        // `@src().file` (1.0.10-beta decision 73): the same path, package-root
+        // relative — the scan dir is given relative to the package root — with
+        // forward slashes whatever the host separator.
+        const src_path = try gpa.dupe(u8, file);
+        errdefer gpa.free(src_path);
+        std.mem.replaceScalar(u8, src_path, '\\', '/');
+
+        try pairs.append(gpa, .{ .module = .{ .path = module_path, .source = source, .srcPath = src_path }, .file = file });
     }
 
     // Sort by path so compilation order is deterministic.
-    const items = modules.items;
-    std.mem.sort(Module, items, {}, struct {
-        fn lt(_: void, a: Module, b: Module) bool {
-            return std.mem.lessThan(u8, a.path, b.path);
+    std.mem.sort(Pair, pairs.items, {}, struct {
+        fn lt(_: void, a: Pair, b: Pair) bool {
+            return std.mem.lessThan(u8, a.module.path, b.module.path);
         }
     }.lt);
 
-    return modules.toOwnedSlice(gpa);
+    const modules = try gpa.alloc(Module, pairs.items.len);
+    errdefer gpa.free(modules);
+    const files = try gpa.alloc([]const u8, pairs.items.len);
+    for (pairs.items, 0..) |pair, i| {
+        modules[i] = pair.module;
+        files[i] = pair.file;
+    }
+    pairs.deinit(gpa);
+    return .{ .modules = modules, .files = files };
+}
+
+/// Free a `Scan.files` slice and its strings.
+pub fn freeFiles(gpa: std.mem.Allocator, files: []const []const u8) void {
+    for (files) |f| gpa.free(f);
+    gpa.free(files);
 }
 
 /// Free memory allocated by `scanSources`.
@@ -87,6 +148,7 @@ pub fn freeModules(gpa: std.mem.Allocator, modules: []Module) void {
     for (modules) |m| {
         gpa.free(m.path);
         gpa.free(m.source);
+        gpa.free(m.srcPath);
     }
     gpa.free(modules);
 }

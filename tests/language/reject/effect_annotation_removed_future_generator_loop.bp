@@ -1,0 +1,15 @@
+//// Decisions 125 and 127 of 1.0.10-beta (front 24, § Cells "Migration";
+//// guide.md § 9, row `#[@futureGenerator] loop { … }`) — refused at the
+//// annotation; the fix-it is the prefix `stream`. The new form is
+//// `run/stream_loop_no_failure.bp`.
+
+fn tick(n: i32) -> @Task<i32> { return n; }
+
+pub fn main() {
+    var n = 0;
+    val s = #[@futureGenerator] loop {
+        n = n + 1;
+        if (n > 3) { break; };
+        yield await tick(n);
+    };
+}

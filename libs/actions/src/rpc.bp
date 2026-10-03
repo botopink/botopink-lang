@@ -1,0 +1,68 @@
+//// actions/rpc — the JSON-RPC body a scripted action call sends:
+////
+////     {"v":1,"id":"<action id>","args":["…", …]}
+////
+//// Written by the browser, read by the server with std's `json.decode`.
+//// Reading is strict (decision 67): not JSON, not an object, `v` other than
+//// `1`, a missing or empty `id`, an `id` that is not a string, and `args` that
+//// is not an array of strings are each an `Error` naming what was wrong — the
+//// server answers it as a 400. A missing `args` is the empty list; an unknown
+//// key is ignored.
+
+import {json.Json, json.decode, json.quote, json.array, json.object} from "std";
+
+pub type RpcCall(id: string, args: Array<string>)
+
+pub fn writeRpcBody(call: RpcCall) -> string {
+    return object(
+        [
+            #("v", "1"),
+            #("id", quote(call.id)),
+            #("args", array(call.args.map({ a -> quote(a) }))),
+        ],
+    );
+}
+
+fn isOne(v: Json) -> bool {
+    return case v {
+        Num(value: x) -> x == 1.0;
+        _ -> false;
+    };
+}
+
+fn errorOf(r: @Result<Json, string>) -> string {
+    val t = case r {
+        Ok(_) -> "";
+        Error(e) -> e;
+    };
+    return t;
+}
+
+pub fn parseRpcBody(body: string) -> @Result<RpcCall, string> {
+    // An empty or whitespace-only body is named as such, not as "not JSON".
+    if (body.trim() == "") throw "actions.parseRpcBody: the body is empty";
+    val doc = decode(body);
+    if (doc.isError())
+        throw ["actions.parseRpcBody: not JSON (", errorOf(doc), ")"].join("");
+    val root = doc.unwrapOr(Json.Null);
+    if (!root.isObject())
+        throw [
+            "actions.parseRpcBody: the body must be an object, not ",
+            root.kindName(),
+        ].join("");
+    if (isOne(root.field("v") ?? Json.Null).negate())
+        throw "actions.parseRpcBody: `v` must be 1 - this reader knows version 1 only";
+    val id = root.field("id") ?? Json.Null;
+    if (id.kindName() != "a string")
+        throw [
+            "actions.parseRpcBody: `id` must be a string, not ",
+            id.kindName(),
+        ].join("");
+    if (id.str() == "") throw "actions.parseRpcBody: `id` is empty";
+    val args = root.field("args") ?? Json.Arr(items: []);
+    val items = args.items();
+    if (args.kindName() != "an array"
+        || items.filter({ x -> x.kindName() != "a string" }).length > 0)
+        throw "actions.parseRpcBody: `args` must be an array of strings";
+    return RpcCall(id: id.str(), args: items.map({ x -> x.str() }));
+}

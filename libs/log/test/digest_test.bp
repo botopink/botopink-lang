@@ -1,0 +1,107 @@
+//// log — the error digest (decision 194): the known answer every target
+//// pins, stability, sensitivity to the fault and insensitivity to the line
+//// numbers past the third frame. The fixture is rakun-logging's, and its
+//// digest is the SHA-256 of the documented input, recomputable with
+//// `printf '%s' '<input>' | sha256sum | cut -c1-16`.
+
+import {testing.asserts} from "std";
+import {digest.errorDigest, digest.digestInput, digest.topFramesOf, digest.stripLineNumbers, digest.clientErrorBody};
+
+fn frames() -> string {
+    return "InvoiceService.charge/2:88 InvoiceRepo.charge/2:41 rakun.core.router.dispatch/1:12 rakun.core.listener.loop/3:7";
+}
+
+test "digest: the known answer" {
+    try asserts.equals(
+        digestInput(
+            "app.billing.invoices",
+            "gateway_declined",
+            "charge declined",
+            frames(),
+        ),
+        "app.billing.invoices|gateway_declined|charge declined|InvoiceService.charge/2 InvoiceRepo.charge/2 rakun.core.router.dispatch/1",
+    );
+    try asserts.equals(
+        errorDigest(
+            "app.billing.invoices",
+            "gateway_declined",
+            "charge declined",
+            frames(),
+        ),
+        "90e4cc2a07abe1fb",
+    );
+    try asserts.equals(errorDigest("", "", "", ""), "be5be69f55e91af2");
+}
+
+test "digest: the fault changes it, the line numbers and the fourth frame do not" {
+    val base = errorDigest(
+        "app.billing.invoices",
+        "gateway_declined",
+        "charge declined",
+        frames(),
+    );
+    val otherLines = errorDigest(
+        "app.billing.invoices",
+        "gateway_declined",
+        "charge declined",
+        "InvoiceService.charge/2:90\nInvoiceRepo.charge/2:44\trakun.core.router.dispatch/1:13",
+    );
+    try asserts.equals(base, otherLines);
+    try asserts.equals(base.length(), 16);
+    try asserts.notEquals(
+        base,
+        errorDigest(
+            "app.billing.invoices",
+            "gateway_declined",
+            "charge refused",
+            frames(),
+        ),
+    );
+    try asserts.notEquals(
+        base,
+        errorDigest(
+            "app.billing",
+            "gateway_declined",
+            "charge declined",
+            frames(),
+        ),
+    );
+    try asserts.notEquals(
+        base,
+        errorDigest(
+            "app.billing.invoices",
+            "timeout",
+            "charge declined",
+            frames(),
+        ),
+    );
+    try asserts.notEquals(
+        base,
+        errorDigest(
+            "app.billing.invoices",
+            "gateway_declined",
+            "charge declined",
+            "Other.f/1:1",
+        ),
+    );
+}
+
+test "digest: the frames are normalised" {
+    try asserts.equals(
+        topFramesOf(frames()),
+        "InvoiceService.charge/2 InvoiceRepo.charge/2 rakun.core.router.dispatch/1",
+    );
+    try asserts.equals(topFramesOf("  a:1   b:2  "), "a b");
+    try asserts.equals(topFramesOf(""), "");
+    try asserts.equals(stripLineNumbers("invoice.bp:42"), "invoice.bp");
+    try asserts.equals(stripLineNumbers("mod:fun:12:3"), "mod:fun");
+    try asserts.equals(stripLineNumbers("a:b"), "a:b");
+    try asserts.equals(stripLineNumbers("x:"), "x:");
+}
+
+test "digest: the client body carries the digest alone" {
+    try asserts.equals(
+        clientErrorBody("90e4cc2a07abe1fb"),
+        "{\"digest\":\"90e4cc2a07abe1fb\"}",
+    );
+}

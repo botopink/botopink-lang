@@ -1,0 +1,18 @@
+//// A decorator argument the annotation leaves out takes its declared default
+//// only when the default is closed: the body runs in its own module, where
+//// `base` does not exist. Refused at the annotation, naming the parameter.
+
+val base = "x";
+
+fn dec(comptime decl: @Decl, name: string = base) {
+    @emit("pub fn " + decl.name + "Tag() -> string { return \"" + name + "\"; }");
+}
+
+#[dec]
+fn first() -> i32 {
+    return 1;
+}
+
+pub fn main() {
+    @print(first());
+}

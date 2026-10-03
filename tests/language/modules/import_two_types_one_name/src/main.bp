@@ -1,0 +1,17 @@
+//// Two TYPES of one declared name in one module are refused at the second
+//// import, aliased or not: a type is told apart by its declared name in the
+//// checker and in every backend, and `APolicy(ms: 5)` used to resolve to
+//// `b/p`'s `Policy` (`APolicy has no parameter named ms`). Two functions of
+//// one name under two aliases stay legal (`import_same_fn_name_two_aliases`).
+
+pub mod a;
+pub mod b;
+import {a.p.Policy as APolicy};
+import {b.p.Policy as BPolicy};
+
+pub fn main() {
+    val x = APolicy(ms: 5);
+    val y = BPolicy(name: "n");
+    @print(x.ms);
+    @print(y.name);
+}

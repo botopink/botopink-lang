@@ -66,7 +66,8 @@
                               }
                             ],
                             "comments": [],
-                            "commentsPerElem": []
+                            "commentsPerElem": [],
+                            "labels": []
                           }
                         }
                       }

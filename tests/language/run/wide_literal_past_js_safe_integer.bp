@@ -1,0 +1,9 @@
+//// Decision 247 — an `l` / `ul` literal past 2^53 has no exact value on
+//// commonJS (a double): refused there at the literal (`.commonJS.expect`);
+//// erlang, beam and wasm hold it and print it as written. commonJS printed
+//// `9007199254740992` before.
+
+pub fn main() {
+    val w = 9007199254740993l;
+    @print(w);
+}

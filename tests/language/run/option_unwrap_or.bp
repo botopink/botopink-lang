@@ -1,0 +1,10 @@
+//// Front 20 F11 of 1.0.10-beta, the other side of
+//// `reject/option_expect_removed.bp` — `unwrapOr` is the one spelling, and it
+//// is what the removed `expect` did: the present value, or the default when
+//// absent. Both branches, on every backend.
+
+pub fn main() {
+    val xs = [10, 20, 30];
+    @print(xs.at(1).unwrapOr(0));
+    @print(xs.at(9).unwrapOr(0));
+}

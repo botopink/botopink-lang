@@ -1,0 +1,22 @@
+//// Decision 205: a lambda body is a function of its own, so a name it binds —
+//// a `val`, a parameter — is its own even where the enclosing function binds
+//// the same name, and the enclosing name is unchanged after it. Erlang funs
+//// see the enclosing clause's variables: the inner `val k` was `K@1`, read
+//// again outside (`variable 'K@1' is unbound`), and a parameter `e` over an
+//// outer `e` left the outer one `E@1` — erlc refused the module.
+
+pub fn main() {
+    val k = 5;
+    [1].forEach({ e ->
+        val k = "l";
+        @print(k);
+    });
+    @print(k);
+    val e = 10;
+    [1, 2].forEach({ e ->
+        @print(e);
+    });
+    val twice = { e -> e * 2 };
+    @print(twice(3));
+    @print(e);
+}

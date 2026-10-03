@@ -1,0 +1,11 @@
+//// Decision 168 — a `keyed = true` var lives one row per key; there is no
+//// whole value to read. Only `counts.at(key)` names it in an expression.
+
+import {collections.Dict} from "std";
+
+#[@BeamMemory.Ets(keyed = true)]
+var counts: Dict<string, i32> = Dict.empty();
+
+pub fn main() {
+    @print(counts.size());
+}

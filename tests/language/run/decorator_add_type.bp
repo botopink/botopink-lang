@@ -1,0 +1,45 @@
+//// Decision 216 (3) — `decl.addType(name, source)`: a decorator declares a
+//// type that belongs to the annotated one, named through its owner. A
+//// record (`City.Columns`) is written in type positions and constructed by
+//// its owner's path; an enum (`City.Size`) gives its variants through the
+//// same path; a member the decorator adds names it too. A value prints under
+//// its owner's path (`City.Columns(…)`, `City.Size.Small`).
+
+fn entity(comptime decl: @Decl) {
+    var cols: string[] = [];
+    decl.fields.forEach({ f -> cols.push(f.name + ": string") });
+    decl.addType("Columns", "(" + cols.join(", ") + ")");
+    decl.addType("Size", "{ Small, Large }");
+    var names: string[] = [];
+    decl.fields.forEach({ f -> names.push(f.name + ": \"" + f.name + "\"") });
+    decl.addMember(
+        "pub fn columns() -> "
+            + decl.name
+            + ".Columns { return "
+            + decl.name
+            + ".Columns("
+            + names.join(", ")
+            + "); }",
+    );
+}
+
+#[entity]
+type City(name: string, people: i32)
+
+fn header(c: City.Columns) -> string {
+    return c.name + "|" + c.people;
+}
+
+fn sizeOf(c: City) -> City.Size {
+    return if (c.people > 100) City.Size.Large else City.Size.Small;
+}
+
+pub fn main() {
+    val mine: City.Columns = City.Columns(name: "nome", people: "gente");
+    @print(header(mine));
+    @print(header(City.columns()));
+    @print(sizeOf(City(name: "Recife", people: 500)) == City.Size.Large);
+    @print(sizeOf(City(name: "Olinda", people: 5)) == City.Size.Large);
+    @print(mine);
+    @print(City.Size.Small);
+}

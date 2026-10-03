@@ -21,7 +21,9 @@
             "default": null
           }
         ],
-        "returnType": "bool"
+        "returnType": {
+          "named": "bool"
+        }
       }
     }
   ]

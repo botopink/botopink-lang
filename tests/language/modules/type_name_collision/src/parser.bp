@@ -1,0 +1,16 @@
+//// One of the two modules declaring `pub type Outcome`. `tag` is the FIRST
+//// field here and the second in the other one, so a read placed from the
+//// wrong declaration answers the neighbouring field instead of failing.
+
+pub type Outcome(
+    tag: string,
+    note: string,
+) {
+    pub fn describe(self: Self) -> string {
+        return self.tag;
+    }
+}
+
+pub fn parserOutcome() -> Outcome {
+    return Outcome(tag: "parser-tag", note: "parser-note");
+}

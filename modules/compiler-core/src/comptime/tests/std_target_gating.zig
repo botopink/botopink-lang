@@ -10,6 +10,10 @@
 const std = @import("std");
 const comptimeMod = @import("../../comptime.zig");
 const diagnostics = @import("../diagnostics.zig");
+/// Test-only: the one way a test spells a path it writes to (per process, so a
+/// second `zig build test` over this checkout cannot empty it mid-test).
+/// `build.zig` gives this module to the test modules alone.
+const test_scratch = @import("test_scratch");
 
 fn typeErrorMessage(outcome: anytype) []const u8 {
     return switch (outcome.typeError.kind) {
@@ -25,13 +29,13 @@ fn projectOutcome(session: anytype) @TypeOf(session.outputs.items[0].outcome) {
     return items[items.len - 1].outcome;
 }
 
-test "STD-001: import of std/process from wasm target reds" {
+test "STD-001: import of std/io/process from wasm target reds" {
     const io = std.testing.io;
     var session = try comptimeMod.compile(
         std.testing.allocator,
-        &.{.{ .path = "main.bp", .source = "import {process} from \"std\";\n" }},
+        &.{.{ .path = "main.bp", .source = "import {io.process} from \"std\";\n" }},
         io,
-        ".botopinkbuild/comptime/std_target_gating_wasm",
+        test_scratch.path(io, "comptime/std_target_gating_wasm"),
         "wasm",
     );
     defer session.deinit(std.testing.allocator);
@@ -42,13 +46,13 @@ test "STD-001: import of std/process from wasm target reds" {
     try std.testing.expect(std.mem.indexOf(u8, msg, "wasm") != null);
 }
 
-test "STD-001: import of std/process from node target is accepted" {
+test "STD-001: import of std/io/process from node target is accepted" {
     const io = std.testing.io;
     var session = try comptimeMod.compile(
         std.testing.allocator,
-        &.{.{ .path = "main.bp", .source = "import {process} from \"std\";\n" }},
+        &.{.{ .path = "main.bp", .source = "import {io.process} from \"std\";\n" }},
         io,
-        ".botopinkbuild/comptime/std_target_gating_node",
+        test_scratch.path(io, "comptime/std_target_gating_node"),
         "node",
     );
     defer session.deinit(std.testing.allocator);
@@ -59,9 +63,9 @@ test "STD-001: null target keeps the check off (tooling parity)" {
     const io = std.testing.io;
     var session = try comptimeMod.compile(
         std.testing.allocator,
-        &.{.{ .path = "main.bp", .source = "import {process} from \"std\";\n" }},
+        &.{.{ .path = "main.bp", .source = "import {io.process} from \"std\";\n" }},
         io,
-        ".botopinkbuild/comptime/std_target_gating_null",
+        test_scratch.path(io, "comptime/std_target_gating_null"),
         null,
     );
     defer session.deinit(std.testing.allocator);

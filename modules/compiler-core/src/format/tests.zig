@@ -10,4 +10,5 @@ test {
     _ = @import("tests/patterns.zig");
     _ = @import("tests/comments.zig");
     _ = @import("tests/idempotent.zig");
+    _ = @import("tests/predicate.zig");
 }

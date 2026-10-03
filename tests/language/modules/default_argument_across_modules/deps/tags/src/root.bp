@@ -1,0 +1,3 @@
+//// The package root: the tree edge to `tags.bp`.
+
+pub mod tags;

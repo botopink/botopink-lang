@@ -1,0 +1,12 @@
+//// Decision 255 (1) — `Opt<i32>.Some(…)` is the variant of `Opt<i32>`, so
+//// its payload is an `i32` and a `string` is refused at the argument.
+
+type Opt<T> {
+    Some(value: T),
+    None,
+}
+
+pub fn main() {
+    val s = Opt<i32>.Some("a");
+    @print(s == Opt<i32>.None);
+}

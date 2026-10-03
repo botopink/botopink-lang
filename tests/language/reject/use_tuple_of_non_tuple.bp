@@ -1,0 +1,14 @@
+//// Front 19 step 3 of 1.0.10-beta — the tuple form needs a hook whose `R` is a
+//// tuple. `state` yields an `i32`, so `val #(a, b) = use state(0)` is refused at
+//// the binding rather than binding two fresh type variables (decision 67).
+
+type Element(count: i32) implement @Context<Element>
+
+fn state(initial: i32) -> @Component<Element, i32> { return initial; }
+
+fn Counter() -> @Component<Element, Element> {
+    val #(count, setCount) = use state(0);
+    return Element(count: count);
+}
+
+pub fn main() { @print(Counter().count); }

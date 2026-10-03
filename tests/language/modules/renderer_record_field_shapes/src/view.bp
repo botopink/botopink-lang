@@ -1,0 +1,27 @@
+pub type ElementView<El>(tagOf: fn(e: El) -> string, isVoid: fn(t: string) -> bool)
+
+pub type Node(tag: string)
+
+pub fn other(n: i32) -> bool {
+    val raw = n > 1;
+    return raw;
+}
+
+pub fn raw(t: string) -> Node {
+    return Node(tag: t);
+}
+
+pub fn open<El>(v: ElementView<El>, e: El) -> string {
+    if (v.isVoid(v.tagOf(e))) return "<" + v.tagOf(e) + "/>";
+    return "<" + v.tagOf(e) + ">";
+}
+
+pub type Box<T>(items: Array<T>)
+
+pub fn firstOf<T>(b: Box<T>, fallback: T) -> T {
+    return b.items.at(0).unwrapOr(fallback);
+}
+
+pub fn count<El>(v: ElementView<El>, thunks: Array<fn() -> @Task<El>>) -> i32 {
+    return thunks.length;
+}

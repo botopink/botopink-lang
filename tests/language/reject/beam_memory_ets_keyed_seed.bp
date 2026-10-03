@@ -1,0 +1,13 @@
+//// Decision 168 — a `keyed = true` table that goes missing is re-created and
+//// re-seeded one row per entry, so its seed is `Dict.empty()` or
+//// `Dict.ofEntries([…])` of literal entries. A chain of `insert`s is a value
+//// computed at run time, refused naming the accepted forms.
+
+import {collections.Dict} from "std";
+
+#[@BeamMemory.Ets(keyed = true)]
+var counts: Dict<string, i32> = Dict.empty().insert("a", 1);
+
+pub fn main() {
+    @print(counts.at("a"));
+}

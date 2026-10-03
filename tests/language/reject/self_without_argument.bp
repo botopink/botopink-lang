@@ -1,0 +1,8 @@
+//// Decision 8 §1.2 — a declaration with type parameters writes `Self<T>`; bare
+//// `Self` inside `type Box<T>` is an error.
+
+type Box<T>(value: T) {
+    pub fn get(self: Self) -> T { return self.value; }
+}
+
+pub fn main() { @print(Box(value: 1).get()); }

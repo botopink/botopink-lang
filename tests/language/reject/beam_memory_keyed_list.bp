@@ -1,0 +1,8 @@
+//// Decision 51 — a `List<T>` under `Ets` stores its whole value like anything
+//// else; `keyed = true` on one is decision 41's "needs a keyed container"
+//// error, not a positional-update mode. Only a `Dict<K, V>` is keyed.
+
+#[@BeamMemory.Ets(keyed = true)]
+var names: string[] = [];
+
+pub fn main() { @print(names.length); }

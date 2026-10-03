@@ -1,0 +1,202 @@
+//// log — the four schemas over fixed records. The first four tests are
+//// rakun-logging's `format_test.bp` cells (clock 2026-01-01T00:00:00Z, pid
+//// `<0.1.0>`, node `node-0001`, correlation id `trace-0001`, application
+//// `billing`) with the lines it pins, byte for byte: the renderers moved here
+//// unchanged and the timestamp cells became botopink, so the same record
+//// renders the same line on erlang and commonJS. Every expected text is a
+//// literal.
+
+import {testing.asserts} from "std";
+import {io.clock} from "std";
+import {levels.Level};
+import {formats.LogRecord, formats.Format, formats.renderRecord, formats.renderPlain, formats.parseFormat, formats.formatName, formats.gelfKey, formats.isoTimestamp, formats.gelfTimestamp};
+
+fn at(iso: string) -> i64 {
+    return case clock.parseIso8601(iso) {
+        Ok(t) -> t;
+        Error(reason) -> @panic(reason);
+    };
+}
+
+fn parsedName(name: string) -> string {
+    return parseFormat(name).map({ f -> formatName(f) }).unwrapOr("refused");
+}
+
+fn refusal(name: string) -> string {
+    return case parseFormat(name) {
+        Ok(_) -> "";
+        Error(reason) -> reason;
+    };
+}
+
+fn noFields() -> Array<#(string, string)> {
+    val empty: Array<#(string, string)> = [];
+    return empty;
+}
+
+fn rec(
+    level: Level,
+    message: string,
+    fields: Array<#(string, string)>,
+) -> LogRecord {
+    return LogRecord(
+        millis: at("2026-01-01T00:00:00Z"),
+        level: level,
+        logger: "app.billing.invoices",
+        message: message,
+        fields: fields,
+        trace: "trace-0001",
+        digest: "",
+        pid: "<0.1.0>",
+        node: "node-0001",
+        thread: "main",
+        app: "billing",
+    );
+}
+
+test "formats: ecs renders the documented field set in fixed order" {
+    try asserts.equals(
+        renderRecord(
+            Format.Ecs,
+            rec(Level.Info, "charging invoice", [#("invoice.id", "7")]),
+        ),
+        """{"@timestamp":"2026-01-01T00:00:00Z","log.level":"INFO","message":"charging invoice","service.name":"billing","process.thread.name":"<0.1.0>","log.logger":"app.billing.invoices","trace.id":"trace-0001","invoice.id":"7"}""",
+    );
+}
+
+test "formats: gelf renders the documented field set with underscore extras" {
+    val r = rec(
+        Level.Warn,
+        "charge declined",
+        [#("invoice.id", "7"), #("gateway.code", "51")],
+    );
+    try asserts.equals(
+        renderRecord(Format.Gelf, r),
+        """{"version":"1.1","host":"node-0001","short_message":"charge declined","timestamp":1767225600,"level":4,"_logger":"app.billing.invoices","_trace_id":"trace-0001","_invoice_id":"7","_gateway_code":"51"}""",
+    );
+}
+
+test "formats: logstash renders the documented field set" {
+    try asserts.equals(
+        renderRecord(
+            Format.Logstash,
+            rec(Level.Error, "gateway unreachable", noFields()),
+        ),
+        """{"@timestamp":"2026-01-01T00:00:00Z","@version":"1","message":"gateway unreachable","logger_name":"app.billing.invoices","level":"ERROR","level_value":40000}""",
+    );
+}
+
+test "formats: plain renders the console line" {
+    try asserts.equals(
+        renderRecord(
+            Format.Plain,
+            rec(Level.Info, "charging invoice", noFields()),
+        ),
+        "2026-01-01T00:00:00Z  INFO <0.1.0> --- [billing] [main] app.billing.invoices : charging invoice",
+    );
+    try asserts.equals(
+        renderRecord(
+            Format.Plain,
+            rec(Level.Warn, "charge declined", noFields()),
+        ),
+        "2026-01-01T00:00:00Z  WARN <0.1.0> --- [billing] [main] app.billing.invoices : charge declined",
+    );
+}
+
+// A record that takes every optional branch: a fraction of a second, a
+// digest, no application name, no correlation id, a trace-level field fold.
+fn faultRecord() -> LogRecord {
+    return LogRecord(
+        millis: at("2026-03-04T05:06:07.089Z"),
+        level: Level.Debug,
+        logger: "app.x",
+        message: "two\nlines",
+        fields: [#("a.b-c", "v\r\nw")],
+        trace: "",
+        digest: "90e4cc2a07abe1fb",
+        pid: "<0.9.0>",
+        node: "n",
+        thread: "worker",
+        app: "",
+    );
+}
+
+test "formats: the optional fields and the fraction of a second, on each schema" {
+    val r = faultRecord();
+    try asserts.equals(
+        renderRecord(Format.Ecs, r),
+        "{\"@timestamp\":\"2026-03-04T05:06:07.089Z\",\"log.level\":\"DEBUG\",\"message\":\"two\\nlines\",\"process.thread.name\":\"<0.9.0>\",\"log.logger\":\"app.x\",\"error.digest\":\"90e4cc2a07abe1fb\",\"a.b-c\":\"v\\r\\nw\"}",
+    );
+    try asserts.equals(
+        renderRecord(Format.Gelf, r),
+        "{\"version\":\"1.1\",\"host\":\"n\",\"short_message\":\"two\\nlines\",\"timestamp\":1772600767.089,\"level\":7,\"_logger\":\"app.x\",\"_error_digest\":\"90e4cc2a07abe1fb\",\"_a_b-c\":\"v\\r\\nw\"}",
+    );
+    try asserts.equals(
+        renderRecord(Format.Logstash, r),
+        "{\"@timestamp\":\"2026-03-04T05:06:07.089Z\",\"@version\":\"1\",\"message\":\"two\\nlines\",\"logger_name\":\"app.x\",\"level\":\"DEBUG\",\"level_value\":10000,\"error_digest\":\"90e4cc2a07abe1fb\",\"a.b-c\":\"v\\r\\nw\"}",
+    );
+    try asserts.equals(
+        renderPlain(r),
+        "2026-03-04T05:06:07.089Z DEBUG <0.9.0> --- [] [worker] app.x : two\\nlines | error.digest=90e4cc2a07abe1fb,a.b-c=v\\r\\nw",
+    );
+}
+
+test "formats: a quote a backslash and a control character are escaped in JSON" {
+    val r = rec(Level.Info, "say \"hi\"\nthen \\ stop\t.", noFields());
+    try asserts.contains(
+        renderRecord(Format.Ecs, r),
+        "\"message\":\"say \\\"hi\\\"\\nthen \\\\ stop\\t.\"",
+    );
+    try asserts.isFalse(renderRecord(Format.Logstash, r).contains("\n"));
+}
+
+test "formats: the timestamps at the epoch, under a second and on a whole second" {
+    try asserts.equals(
+        isoTimestamp(at("1970-01-01T00:00:00Z")),
+        "1970-01-01T00:00:00Z",
+    );
+    try asserts.equals(gelfTimestamp(at("1970-01-01T00:00:00Z")), "0");
+    try asserts.equals(
+        isoTimestamp(at("1970-01-01T00:00:00.007Z")),
+        "1970-01-01T00:00:00.007Z",
+    );
+    try asserts.equals(gelfTimestamp(at("1970-01-01T00:00:00.007Z")), "0.007");
+    try asserts.equals(gelfTimestamp(at("1970-01-01T00:00:01.500Z")), "1.500");
+    try asserts.equals(
+        isoTimestamp(at("2024-02-29T23:59:59.999Z")),
+        "2024-02-29T23:59:59.999Z",
+    );
+}
+
+test "formats: a record before the epoch is refused" {
+    try asserts.throwsWith(
+        { -> isoTimestamp(at("1969-12-31T23:59:59Z")).length() },
+        "log: a record's millis must be at least 0, got -1000",
+    );
+}
+
+test "formats: gelfKey folds every character outside [A-Za-z0-9-]" {
+    try asserts.equals(gelfKey("invoice.id"), "_invoice_id");
+    try asserts.equals(gelfKey("a b/c-D9"), "_a_b_c-D9");
+    try asserts.equals(gelfKey(""), "_");
+}
+
+test "formats: parseFormat reads exactly the four names" {
+    try asserts.equals(parsedName("ecs"), "ecs");
+    try asserts.equals(parsedName("gelf"), "gelf");
+    try asserts.equals(parsedName("logstash"), "logstash");
+    try asserts.equals(parsedName("plain"), "plain");
+    try asserts.equals(
+        refusal("ECS"),
+        "log.parseFormat: \"ECS\" is not a log format - accepted: ecs, gelf, logstash, plain",
+    );
+    try asserts.equals(
+        refusal(" plain"),
+        "log.parseFormat: \" plain\" is not a log format - accepted: ecs, gelf, logstash, plain",
+    );
+    try asserts.equals(
+        refusal(""),
+        "log.parseFormat: \"\" is not a log format - accepted: ecs, gelf, logstash, plain",
+    );
+    try asserts.equals(refusal("plain"), "");
+}
