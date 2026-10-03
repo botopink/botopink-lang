@@ -17,18 +17,20 @@ fn isOdd(n: i32) -> bool {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
 function main() {
     return isEven(10);
 }
 
 function isEven(n) {
     if ((n === 0)) { return true; }
-    return isOdd((n - 1));
+    return isOdd(__bp_int((n - 1), -2147483648, 2147483647, "- on i32 at main.bp:7:20"));
 }
 
 function isOdd(n) {
     if ((n === 0)) { return false; }
-    return isEven((n - 1));
+    return isEven(__bp_int((n - 1), -2147483648, 2147483647, "- on i32 at main.bp:12:21"));
 }
 
 function _botopink_main() {

@@ -16,8 +16,12 @@ fn main() {
 -export([main/0]).
 
 main() ->
-    P = (8080 + 1),
+    P = '__bp_int'((8080 + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:5:20">>),
     '__bp_print'([P]).
+
+-compile({inline,['__bp_int'/4]}).
+'__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
+'__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).

@@ -398,11 +398,16 @@ pub const InstanceLowering = union(enum) {
     /// sequence is the list of its items, pop the head and rebind the receiver
     /// to the rest when it is a local name.
     sequence_next: SequenceKind,
-    /// Onze F7 — a `/`, keyed by its operator's loc: whether inference typed
-    /// it over integers (it truncates toward zero, and answers an integer, on
-    /// every backend) or over floats. Absent when the operands' type was never
-    /// resolved (a generic `T`); a backend then keeps its own reading.
-    division: DivisionKind,
+    /// An arithmetic operator's result type, keyed by its operator's loc —
+    /// `+`, `-`, `*`, `/`, `%`, a unary `-`, and a `+=` (keyed by its
+    /// binding's loc). The tag keeps the name of its first reader: onze F7's
+    /// `/`, which truncates toward zero and answers an integer over integers on
+    /// every backend, and divides as floats over floats. Decision 264 reads
+    /// the integer kinds for every operator: the result is checked against the
+    /// type's range and aborts outside it (`ArithKind.range`). Absent when the
+    /// operands' type was never resolved (a generic `T`); a backend then keeps
+    /// its own reading, unchecked.
+    division: ArithKind,
     /// A method call the VALUE answers, for a backend without native dispatch
     /// — the receiver's type name: its static type is a `behavior` declaring
     /// the method without a body, so the implementation is whichever type
@@ -415,8 +420,51 @@ pub const InstanceLowering = union(enum) {
     unplaced_type: []const u8,
 };
 
-/// Which `/` an `InstanceLowering.division` is.
-pub const DivisionKind = enum { integer, float };
+/// The numeric type an `InstanceLowering.division` records: a float, or one
+/// of the sized integer types (decision 264).
+pub const ArithKind = enum {
+    float,
+    i8,
+    u8,
+    i16,
+    u16,
+    i32,
+    u32,
+    i64,
+    u64,
+    isize,
+    usize,
+
+    pub fn isInt(k: ArithKind) bool {
+        return k != .float;
+    }
+
+    /// The type's inclusive range on a target whose integers are exact to
+    /// 64 bits (erlang, beam). `isize` / `usize` are `i64` / `u64`, as the
+    /// `is` test reads them on every target. Null for `.float`.
+    pub fn range(k: ArithKind) ?struct { lo: i128, hi: i128 } {
+        return switch (k) {
+            .float => null,
+            .i8 => .{ .lo = -128, .hi = 127 },
+            .u8 => .{ .lo = 0, .hi = 255 },
+            .i16 => .{ .lo = -32768, .hi = 32767 },
+            .u16 => .{ .lo = 0, .hi = 65535 },
+            .i32 => .{ .lo = std.math.minInt(i32), .hi = std.math.maxInt(i32) },
+            .u32 => .{ .lo = 0, .hi = std.math.maxInt(u32) },
+            .i64, .isize => .{ .lo = std.math.minInt(i64), .hi = std.math.maxInt(i64) },
+            .u64, .usize => .{ .lo = 0, .hi = std.math.maxInt(u64) },
+        };
+    }
+
+    /// The range commonJS can hold exactly: a JS number counts integers
+    /// exactly to ±(2^53 − 1) (docs.md § Numbers), so a 64-bit type is that
+    /// range there — a result past it aborts, never a rounded value.
+    pub fn rangeExactDouble(k: ArithKind) ?struct { lo: i128, hi: i128 } {
+        const r = k.range() orelse return null;
+        const cap: i128 = (1 << 53) - 1;
+        return .{ .lo = @max(r.lo, -cap), .hi = @min(r.hi, cap) };
+    }
+};
 
 /// Which sequence a `.next()` (`InstanceLowering.sequence_next`) steps.
 pub const SequenceKind = enum { iterator, stream };
@@ -906,9 +954,10 @@ pub const Env = struct {
     /// loc. Lets backends without native method dispatch lower record + builtin
     /// primitive methods. Empty contribution on commonJS (native dispatch).
     instanceLowerings: std.AutoHashMap(ast.Loc, InstanceLowering),
-    /// Every `/` inferred, keyed by its operator's loc, with its result type.
-    /// Read once inference is done (the operands may be type variables when
-    /// the `/` is met) and turned into `InstanceLowering.division` entries.
+    /// Every arithmetic operator inferred (`+` `-` `*` `/` `%`, a unary `-`,
+    /// a `+=`), keyed by its operator's loc, with its result type. Read once
+    /// inference is done (the operands may be type variables when the operator
+    /// is met) and turned into `InstanceLowering.division` entries.
     divisions: std.AutoHashMap(ast.Loc, *T.Type),
     /// Stdlib modules implicitly required via array method dispatch; used by
     /// the compile session to prepend synthetic imports for the codegen.

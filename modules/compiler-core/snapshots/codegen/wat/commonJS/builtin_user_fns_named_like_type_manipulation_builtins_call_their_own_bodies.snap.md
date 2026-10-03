@@ -48,24 +48,26 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
 function pick(n) {
-    return (n + 1);
+    return __bp_int((n + 1), -2147483648, 2147483647, "+ on i32 at main.bp:1:35");
 }
 
 function omit(n) {
-    return (n + 2);
+    return __bp_int((n + 2), -2147483648, 2147483647, "+ on i32 at main.bp:2:35");
 }
 
 function partial(n) {
-    return (n + 3);
+    return __bp_int((n + 3), -2147483648, 2147483647, "+ on i32 at main.bp:3:38");
 }
 
 function mergeRecords(a, b) {
-    return (a + b);
+    return __bp_int((a + b), -2147483648, 2147483647, "+ on i32 at main.bp:4:51");
 }
 
 function mapFields(n) {
-    return ((n * 2) + 0);
+    return __bp_int((n * 2), -2147483648, 2147483647, "* on i32 at main.bp:5:40");
 }
 
 function main() {

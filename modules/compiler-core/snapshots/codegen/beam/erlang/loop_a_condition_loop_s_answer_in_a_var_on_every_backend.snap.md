@@ -31,13 +31,13 @@ main() ->
                 true ->
                     Found@3 = case (I@1 =:= 4) of
                         true ->
-                            Found@2 = (I@1 * 2),
+                            Found@2 = '__bp_int'((I@1 * 2), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:4:46">>),
                             erlang:throw({'__bp_cond_break', {Found@2, I@1}}),
                             Found@2;
                         _ ->
                             Found@1
                     end,
-                    I@2 = (I@1 + 1),
+                    I@2 = '__bp_int'((I@1 + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:4:67">>),
                     __BpLoop({Found@3, I@2});
                 _ -> {Found@1, I@1}
             end
@@ -51,7 +51,7 @@ main() ->
     R = 0,
     {K@3, R@4} = try
         (fun __BpLoop({K@1, R@1}) ->
-            K@2 = (K@1 + 1),
+            K@2 = '__bp_int'((K@1 + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:9:18">>),
             R@3 = case (K@2 > 2) of
                 true ->
                     R@2 = K@2,
@@ -80,7 +80,7 @@ main() ->
                         _ ->
                             Never@1
                     end,
-                    N@2 = (N@1 + 1),
+                    N@2 = '__bp_int'((N@1 + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:13:63">>),
                     __BpLoop({Never@3, N@2});
                 _ -> {Never@1, N@1}
             end
@@ -89,6 +89,10 @@ main() ->
         throw:{'__bp_cond_break', __BpGroup3} -> __BpGroup3
     end,
     '__bp_print'([Never@4]).
+
+-compile({inline,['__bp_int'/4]}).
+'__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
+'__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).

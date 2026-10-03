@@ -871,6 +871,33 @@ an integer of the operands' type, on every target (`7 / 2` is `3`, `-7 / 2` is
 `-3`). With a float operand it is float division (`7.0 / 2.0` is `3.5`). A number
 literal with a `.` or an exponent is a float (`2.5`, `1e3`, `5e-324`).
 
+### Numbers
+
+An integer never wraps and never widens. `+`, `-`, `*`, `/`, a unary `-` and
+`+=` over `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `isize` and
+`usize` answer a value of the operands' type, and a result outside the type's
+range aborts the program on every target — `2147483647 + 1` on `i32`, `0 - 1`
+on `u32`, `-x` of an `i32` at its minimum, `i32`'s minimum `/ -1` (decision
+264). The abort names the operator, the type and the place on stderr:
+
+```text
+integer overflow: + on i32 at src/main.bp:7:14
+```
+
+| Type | Range |
+|---|---|
+| `i8` / `u8` | −128 … 127 / 0 … 255 |
+| `i16` / `u16` | −32768 … 32767 / 0 … 65535 |
+| `i32` / `u32` | −2^31 … 2^31 − 1 / 0 … 2^32 − 1 |
+| `i64`, `isize` / `u64`, `usize` | −2^63 … 2^63 − 1 / 0 … 2^64 − 1 |
+
+On commonJS an `i64` (and `isize`, `u64`, `usize`) holds the integers a JS
+number counts exactly, ±(2^53 − 1): a result past that bound aborts there too,
+never a rounded value. An integer `/` or `%` by zero aborts on every target
+(commonJS names it `integer division by zero`). A `%` never leaves its type.
+No flag turns the check off (decision 67); wrapping arithmetic, where an
+algorithm wants it, is written with an explicit operation.
+
 `==` compares by value on every target: two records, tuples, arrays or enum
 variants are equal when they have the same type and their fields are equal, field
 by field and recursively — `Person(name: "Ana", age: 30) == Person(name: "Ana",

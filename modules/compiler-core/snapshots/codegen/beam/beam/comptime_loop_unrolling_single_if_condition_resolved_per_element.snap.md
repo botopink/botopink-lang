@@ -28,7 +28,7 @@ ct_0: val COMMANDS = comptime ["calc", "noop", "help"] → ["calc", "noop", "hel
 {module, test@main}.
 {exports, [{'_botopink_main', 0}, {main, 1}]}.
 {attributes, []}.
-{labels, 14}.
+{labels, 18}.
 
 {function, 'COMMANDS', 0, 3}.
   {label, 2}.
@@ -70,6 +70,13 @@ ct_0: val COMMANDS = comptime ["calc", "noop", "help"] → ["calc", "noop", "hel
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {y, 1}}.
     {gc_bif, '*', {f, 0}, 0, [{y, 0}, {integer, 2}], {x, 0}}.
+    {test, is_ge, {f, 14}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 14}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 15}}.
+  {label, 14}.
+    {move, {literal, {integer_overflow, <<"integer overflow: * on i32 at test@main.bp:7:28">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 15}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {deallocate, 2}.
@@ -86,6 +93,13 @@ ct_0: val COMMANDS = comptime ["calc", "noop", "help"] → ["calc", "noop", "hel
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {y, 1}}.
     {gc_bif, '*', {f, 0}, 0, [{y, 0}, {integer, 2}], {x, 0}}.
+    {test, is_ge, {f, 16}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 16}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 17}}.
+  {label, 16}.
+    {move, {literal, {integer_overflow, <<"integer overflow: * on i32 at test@main.bp:7:28">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 17}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {deallocate, 2}.

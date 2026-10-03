@@ -99,7 +99,7 @@ isBig(Self) ->
 
 doubled(Self) ->
     lists:map(fun(N) ->
-        (N * 2)
+        '__bp_int'((N * 2), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:8:75">>)
     end, erlang:element(2, Self)).
 
 label(Self) ->
@@ -111,6 +111,10 @@ label(Self) ->
 
 '__bp_add'(A, B) when erlang:is_binary(A), erlang:is_binary(B) -> <<A/binary, B/binary>>;
 '__bp_add'(A, B) -> A + B.
+
+-compile({inline,['__bp_int'/4]}).
+'__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
+'__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
 ```
 
 ----- RUN LOG -----

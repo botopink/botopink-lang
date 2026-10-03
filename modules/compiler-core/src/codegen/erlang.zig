@@ -52,8 +52,9 @@ fn isAssocMethod(m: ast.BehaviorMethod) bool {
 const FoldBodyKind = union(enum) {
     /// `acc = expr;` → fun body is `expr`.
     assign: *const ast.Expr,
-    /// `acc += expr;` → fun body is `(Acc + expr)`.
-    plus_assign: *const ast.Expr,
+    /// `acc += expr;` → fun body is `(Acc + expr)`, checked against `acc`'s
+    /// type at `loc` (the binding's — decision 264).
+    plus_assign: struct { value: *const ast.Expr, loc: ast.Loc },
     /// `acc.push(x);` (mutate-in-place on JS) → fun body is `(Acc ++ [x])`.
     push: *const ast.Expr,
     /// `if (c) { acc = t; } [else { acc = e; }]` → `case c of true -> t; _ -> e|Acc end`.
@@ -86,7 +87,7 @@ fn classifyFoldStmt(stmt: ast.Stmt, acc_name: []const u8) ?FoldBodyKind {
                 if (!std.mem.eql(u8, tgt, acc_name)) return null;
                 return switch (a.op) {
                     .assign => .{ .assign = a.value },
-                    .plusAssign => .{ .plus_assign = a.value },
+                    .plusAssign => .{ .plus_assign = .{ .value = a.value, .loc = b.loc } },
                 };
             },
             else => return null,
@@ -880,6 +881,33 @@ const add_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_add", .clauses
     .{
         .patterns = &.{ Ast.Expr.v("A"), Ast.Expr.v("B") },
         .body = Ast.Body.of(&.{.{ .expr = .{ .binop = .{ .op = "+", .lhs = &Ast.Expr.v("A"), .rhs = &Ast.Expr.v("B"), .parens = false } } }}),
+        .layout = .inline_,
+    },
+} } };
+
+/// `'__bp_int'/4` (decision 264): an integer operator's value `V` inside its
+/// type's range `Lo..Hi`, or an abort — `erlang:error({integer_overflow,
+/// What})`, `What` the `<<"integer overflow: <op> on <type> at
+/// <file:line:col>">>` the call site wrote. A bignum never overflows, so the
+/// range is the declared type's; wasm traps where this raises.
+/// `-compile({inline,['__bp_int'/4]}).` — the check is carried in place at
+/// each operator: called, it cost a tight `i32` loop 160 % (measured on
+/// `front/int-overflow`, see `codegen/AGENTS.md` § Integer overflow).
+const int_inline_form: Ast.Form = .{ .inline_fns = &.{.{ .name = "__bp_int", .arity = 4 }} };
+
+const int_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_int", .clauses = &.{
+    .{
+        .patterns = &.{ Ast.Expr.v("V"), Ast.Expr.v("Lo"), Ast.Expr.v("Hi"), Ast.Expr.v("_") },
+        .guards = &.{
+            .{ .binop = .{ .op = ">=", .lhs = &Ast.Expr.v("V"), .rhs = &Ast.Expr.v("Lo"), .parens = false } },
+            .{ .binop = .{ .op = "=<", .lhs = &Ast.Expr.v("V"), .rhs = &Ast.Expr.v("Hi"), .parens = false } },
+        },
+        .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.v("V") }}),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ Ast.Expr.v("_"), Ast.Expr.v("_"), Ast.Expr.v("_"), Ast.Expr.v("What") },
+        .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .module = "erlang", .name = "error", .args = &.{.{ .tuple = &.{ Ast.Expr.a("integer_overflow"), Ast.Expr.v("What") } }} } } }}),
         .layout = .inline_,
     },
 } } };
@@ -2263,6 +2291,7 @@ fn emitErlangModule(
     }
     if (!listing_only) {
         if (em.needs_add_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, add_helper_form });
+        if (em.needs_int_helper) try forms.appendSlice(b.arena, &.{ .blank, int_inline_form, int_helper_form });
         if (em.needs_len_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, len_helper_form });
         if (em.needs_field_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, field_helper_form });
         if (em.needs_method_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, method_helper_form });
@@ -2392,6 +2421,7 @@ const SavedUnitState = struct {
     needs_index_helper: bool,
     needs_slice_helper: bool,
     needs_add_helper: bool,
+    needs_int_helper: bool,
     bif_shadows: []const Ast.FnRef,
     prim_shims: @FieldType(Emitter, "prim_shims"),
     needed_instance_defaults: @FieldType(Emitter, "needed_instance_defaults"),
@@ -3311,6 +3341,9 @@ const Emitter = struct {
     num_names: std.StringHashMapUnmanaged(NumKind) = .empty,
     /// Set when a typed `+` fell back to `'__bp_add'/2`.
     needs_add_helper: bool = false,
+    /// Set when an integer operator was range-checked (`intChecked`, decision
+    /// 264): the module defines `'__bp_int'/4` (`int_helper_form`).
+    needs_int_helper: bool = false,
     /// §A5 annotation-driven prim-method dispatch: `<Iface>.<method>` →
     /// `(host module, host symbol, ordered arg names)` parsed from
     /// `#[@External.Erlang("mod", "sym(args)")]` on a primitive interface method.
@@ -4517,7 +4550,7 @@ const Emitter = struct {
                 .add => if (this.isStringExpr(e)) null else combineNum(this.numKind(bin.lhs.*), this.numKind(bin.rhs.*)),
                 // `-`, `*` and `/` only ever answer a number in erlang; a `/`
                 // inference read answers its own kind.
-                .div => if (this.divisionKind(bin.loc)) |k| (if (k == .integer) NumKind.int else NumKind.float) else combineNum(this.numKind(bin.lhs.*), this.numKind(bin.rhs.*)) orelse .number,
+                .div => if (this.divisionKind(bin.loc)) |k| (if (k.isInt()) NumKind.int else NumKind.float) else combineNum(this.numKind(bin.lhs.*), this.numKind(bin.rhs.*)) orelse .number,
                 .sub, .mul => combineNum(this.numKind(bin.lhs.*), this.numKind(bin.rhs.*)) orelse .number,
                 .mod => .int,
                 else => null,
@@ -4530,10 +4563,43 @@ const Emitter = struct {
         };
     }
 
+    /// The source spelling of an arithmetic operator, as an abort names it.
+    fn arithSymbol(op: anytype) []const u8 {
+        return switch (op) {
+            .add => "+",
+            .sub => "-",
+            .mul => "*",
+            .div => "/",
+            .mod => "%",
+            else => "?",
+        };
+    }
+
     /// Inference's `InstanceLowering.division` for the `/` at `loc`.
-    fn divisionKind(this: *const Emitter, loc: ast.Loc) ?envMod.DivisionKind {
+    fn divisionKind(this: *const Emitter, loc: ast.Loc) ?envMod.ArithKind {
         const il = this.instance_lowerings.get(loc) orelse return null;
         return if (il == .division) il.division else null;
+    }
+
+    /// Decision 264 — `node`, the value of the integer operator at `loc`,
+    /// checked against the type inference recorded there:
+    /// `'__bp_int'(Node, Lo, Hi, <<"integer overflow: <op> on <type> at
+    /// <file:line:col>">>)` answers it inside the range and raises
+    /// `{integer_overflow, Text}` outside — a bignum never overflows, so the
+    /// range is the type's. A float operator, one whose type was never
+    /// resolved (a generic `T`), and an untyped (comptime) body stay as they are.
+    fn intChecked(this: *Emitter, b: Ast.Builder, node: Ast.Expr, loc: ast.Loc, op: []const u8) !Ast.Expr {
+        if (this.untyped) return node;
+        const k = this.divisionKind(loc) orelse return node;
+        const r = k.range() orelse return node;
+        this.needs_int_helper = true;
+        const what = try std.fmt.allocPrint(b.arena, "integer overflow: {s} on {s} at {s}:{d}:{d}", .{ op, @tagName(k), try this.srcFile(b.arena), loc.line, loc.col });
+        return b.call("__bp_int", &.{
+            node,
+            .{ .number = try std.fmt.allocPrint(b.arena, "{d}", .{r.lo}) },
+            .{ .number = try std.fmt.allocPrint(b.arena, "{d}", .{r.hi}) },
+            .{ .lexeme_binary = what },
+        });
     }
 
     fn combineNum(a: ?NumKind, b: ?NumKind) ?NumKind {
@@ -4584,9 +4650,10 @@ const Emitter = struct {
     /// The first binding of a name in the function keeps the bare variable; any
     /// later binding — assignment or a shadowing `val i = i - 1` — binds the next
     /// version, with `value` (and the `+=` left operand) reading the previous one.
-    fn bindExpr(this: *Emitter, b: Ast.Builder, name: []const u8, op: BindOp, value: ast.Expr) anyerror!Ast.Expr {
+    /// `at` is the binding's loc, where inference keys a `+=`'s type (decision 264).
+    fn bindExpr(this: *Emitter, b: Ast.Builder, name: []const u8, op: BindOp, value: ast.Expr, at: ast.Loc) anyerror!Ast.Expr {
         if (op != .bind and !this.locals.contains(name)) {
-            if (this.module_vars.get(name)) |mem| return this.memoryWrite(b, name, mem, op == .plus_assign, value);
+            if (this.module_vars.get(name)) |mem| return this.memoryWrite(b, name, mem, op == .plus_assign, value, at);
         }
         // Remember string-valued bindings so a later `+` on them concatenates.
         if (op != .plus_assign and this.isStringExpr(value)) try this.string_locals.put(name, {});
@@ -4620,7 +4687,7 @@ const Emitter = struct {
                 if (!this.untyped) this.needs_add_helper = true;
                 break :blk try b.call("__bp_add", &.{ old_var, addend });
             }
-            break :blk .{ .binop = .{ .op = "+", .lhs = try b.ptr(old_var), .rhs = try b.ptr(addend), .parens = false } };
+            break :blk try this.intChecked(b, .{ .binop = .{ .op = "+", .lhs = try b.ptr(old_var), .rhs = try b.ptr(addend), .parens = false } }, at, "+=");
         } else try this.exprNode(b, value);
         try this.var_next.put(name, version);
         try this.var_current.put(name, version);
@@ -5521,7 +5588,7 @@ const Emitter = struct {
     }
 
     /// A write to module `var` `name` (`name = value` / `name += value`).
-    fn memoryWrite(this: *Emitter, b: Ast.Builder, name: []const u8, mem: ast.Memory, plus: bool, value: ast.Expr) anyerror!Ast.Expr {
+    fn memoryWrite(this: *Emitter, b: Ast.Builder, name: []const u8, mem: ast.Memory, plus: bool, value: ast.Expr, at: ast.Loc) anyerror!Ast.Expr {
         const key = try this.memoryKey(b, name);
         switch (mem.mode) {
             .ets => {
@@ -5536,25 +5603,27 @@ const Emitter = struct {
                         return this.beamPrim(b, "etsBump", &.{ tab, key, by });
                     },
                     // `recompose` is refused by the checker (design §5(b)).
-                    .whole, .recompose => return this.beamPrim(b, "etsPut", &.{ tab, try b.tuple(&.{ key, try this.memoryNewValue(b, name, plus, value) }) }),
+                    .whole, .recompose => return this.beamPrim(b, "etsPut", &.{ tab, try b.tuple(&.{ key, try this.memoryNewValue(b, name, plus, value, at) }) }),
                 }
             },
-            .processDict => return this.beamPrim(b, "pdPut", &.{ key, try b.tuple(&.{ Ast.Expr.a(MEM_BOX), try this.memoryNewValue(b, name, plus, value) }) }),
+            .processDict => return this.beamPrim(b, "pdPut", &.{ key, try b.tuple(&.{ Ast.Expr.a(MEM_BOX), try this.memoryNewValue(b, name, plus, value, at) }) }),
             // Refused by the checker (design §5(a)); written as a put so a
             // program that reaches here unchecked still means what it says.
-            .persistentTerm => return this.beamPrim(b, "ptPut", &.{ key, try this.memoryNewValue(b, name, plus, value) }),
+            .persistentTerm => return this.beamPrim(b, "ptPut", &.{ key, try this.memoryNewValue(b, name, plus, value, at) }),
         }
     }
 
     /// The value a write stores: `value`, or `name + value` for `+=` — lowered
     /// as the binary `+` it is, so a string var concatenates.
-    fn memoryNewValue(this: *Emitter, b: Ast.Builder, name: []const u8, plus: bool, value: ast.Expr) anyerror!Ast.Expr {
+    /// The synthesized `+` takes the binding's loc `at`, where inference keyed
+    /// the `+=`'s type, so it is checked like the `+` it is (decision 264).
+    fn memoryNewValue(this: *Emitter, b: Ast.Builder, name: []const u8, plus: bool, value: ast.Expr, at: ast.Loc) anyerror!Ast.Expr {
         if (!plus) return this.exprNode(b, value);
         const lhs = try b.arena.create(ast.Expr);
         lhs.* = .{ .identifier = .{ .loc = value.getLoc(), .kind = .{ .ident = name } } };
         const rhs = try b.arena.create(ast.Expr);
         rhs.* = value;
-        return this.exprNode(b, .{ .binaryOp = .{ .loc = value.getLoc(), .op = .add, .lhs = lhs, .rhs = rhs } });
+        return this.exprNode(b, .{ .binaryOp = .{ .loc = at, .op = .add, .lhs = lhs, .rhs = rhs } });
     }
 
     // ── `keyed = true` (decision 168) ─────────────────────────────────────────
@@ -6202,7 +6271,7 @@ const Emitter = struct {
     fn foldBodyExpr(this: *Emitter, b: Ast.Builder, bk: FoldBodyKind, acc_var: Ast.Expr) anyerror!Ast.Expr {
         return switch (bk) {
             .assign => |e| this.exprNode(b, e.*),
-            .plus_assign => |e| b.binop("+", acc_var, try this.exprNode(b, e.*)),
+            .plus_assign => |pa| try this.intChecked(b, try b.binop("+", acc_var, try this.exprNode(b, pa.value.*)), pa.loc, "+="),
             .push => |e| b.binop("++", acc_var, try b.list(&.{try this.exprNode(b, e.*)})),
             .if_assign => |ia| blk: {
                 const cond = try this.exprNode(b, ia.cond.*);
@@ -6303,7 +6372,7 @@ const Emitter = struct {
                 // `out.push(x)` rebinds `out`: `Out@1 = (Out ++ [X])`, so a
                 // group-out expression after it reads the grown list.
                 if (this.receiverMutation(stmt.expr)) |name| {
-                    return try this.bindExpr(b, name, .assign, stmt.expr);
+                    return try this.bindExpr(b, name, .assign, stmt.expr, stmt.expr.getLoc());
                 }
                 const each = forEachLambda(stmt.expr) orelse return null;
                 try this.collectMutations(b.arena, each.body, each.params, &names);
@@ -7128,13 +7197,13 @@ const Emitter = struct {
                         this.rememberLocalType(lb.name, ann);
                         try this.rememberDefaultKind(lb.name, ann);
                     }
-                    return this.bindExpr(b, lb.name, .bind, lb.value.*);
+                    return this.bindExpr(b, lb.name, .bind, lb.value.*, bind.loc);
                 },
                 .assign => |a| switch (a.target) {
                     .name => |name| return this.bindExpr(b, name, switch (a.op) {
                         .assign => .assign,
                         .plusAssign => .plus_assign,
-                    }, a.value.*),
+                    }, a.value.*, bind.loc),
                     .fieldAccess => return .{ .comment = Ast.Comment.doc("field assignment is not directly supported in Erlang") },
                 },
                 .localBindDestruct => |lb| {
@@ -7472,7 +7541,7 @@ const Emitter = struct {
                     // Inference's reading of this `/` wins when it has one
                     // (onze F7: integer division truncates on every backend).
                     .div => if (this.divisionKind(bin.loc)) |k|
-                        (if (k == .integer) "div" else "/")
+                        (if (k.isInt()) "div" else "/")
                     else if (this.numKind(bin.lhs.*) == .float or this.numKind(bin.rhs.*) == .float) "/" else "div",
                     .mod => "rem",
                     .lt => "<",
@@ -7491,16 +7560,26 @@ const Emitter = struct {
                     .@"and" => "andalso",
                     .@"or" => "orelse",
                 };
-                return b.binop(op, try this.exprNode(b, bin.lhs.*), try this.exprNode(b, bin.rhs.*));
+                const node = try b.binop(op, try this.exprNode(b, bin.lhs.*), try this.exprNode(b, bin.rhs.*));
+                return switch (bin.op) {
+                    // `rem` answers a value smaller than its divisor, never
+                    // outside the type, and raises `badarith` on `0` itself.
+                    .add, .sub, .mul, .div => this.intChecked(b, node, bin.loc, arithSymbol(bin.op)),
+                    else => node,
+                };
             },
 
-            .unaryOp => |un| return .{ .unop = .{
-                .op = switch (un.op) {
-                    .not => "not ",
-                    .neg => "-",
-                },
-                .operand = try b.ptr(try this.exprNode(b, un.expr.*)),
-            } },
+            .unaryOp => |un| {
+                const node: Ast.Expr = .{ .unop = .{
+                    .op = switch (un.op) {
+                        .not => "not ",
+                        .neg => "-",
+                    },
+                    .operand = try b.ptr(try this.exprNode(b, un.expr.*)),
+                } };
+                // A literal operand is a constant the checker already placed.
+                return if (un.op == .neg and un.expr.* != .literal) this.intChecked(b, node, un.loc, "-") else node;
+            },
 
             .function => |func| {
                 const saved_cond_loop = this.cond_loop;
@@ -8381,13 +8460,13 @@ const Emitter = struct {
         switch (bind.kind) {
             .localBind => |lb| {
                 if (lb.mutable) try this.mutable_locals.put(this.alloc, lb.name, {});
-                return this.bindExpr(b, lb.name, .bind, lb.value.*);
+                return this.bindExpr(b, lb.name, .bind, lb.value.*, bind.loc);
             },
             .assign => |a| switch (a.target) {
                 .name => |name| return this.bindExpr(b, name, switch (a.op) {
                     .assign => .assign,
                     .plusAssign => .plus_assign,
-                }, a.value.*),
+                }, a.value.*, bind.loc),
                 // Maps are immutable; a field assignment has no Erlang form.
                 .fieldAccess => |fa| return .{ .comment = Ast.Comment.doc(try std.fmt.allocPrint(b.arena, "self.{s} = ...", .{fa.field})) },
             },
@@ -9275,7 +9354,7 @@ const Emitter = struct {
             const rest_var = Ast.Expr.v(try this.arenaVar(b, rest_name));
             this.addLocal(rest_name);
             const rest_ref: ast.Expr = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = rest_name } } };
-            const write = try this.memoryWrite(b, name, mem, false, rest_ref);
+            const write = try this.memoryWrite(b, name, mem, false, rest_ref, loc);
             return .{ .seq = try b.exprs(&.{
                 Ast.Expr.r("begin "),
                 try b.match(try b.tuple(&.{ Ast.Expr.v(step), rest_var }), popped),
@@ -10335,6 +10414,7 @@ const Emitter = struct {
             .needs_index_helper = this.needs_index_helper,
             .needs_slice_helper = this.needs_slice_helper,
             .needs_add_helper = this.needs_add_helper,
+            .needs_int_helper = this.needs_int_helper,
             .prim_shims = this.prim_shims,
             .needed_instance_defaults = this.needed_instance_defaults,
             .forms = .empty,
@@ -10351,6 +10431,7 @@ const Emitter = struct {
         this.needs_index_helper = false;
         this.needs_slice_helper = false;
         this.needs_add_helper = false;
+        this.needs_int_helper = false;
         this.prim_shims = .empty;
         this.needed_instance_defaults = .empty;
         return saved;
@@ -10377,6 +10458,7 @@ const Emitter = struct {
             if (this.prim_shims.contains("toString/0")) this.needs_text_helper = true;
         }
         if (this.needs_add_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, add_helper_form });
+        if (this.needs_int_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, int_inline_form, int_helper_form });
         if (this.needs_len_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, len_helper_form });
         if (this.needs_field_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, field_helper_form });
         if (this.needs_method_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, method_helper_form });
@@ -10422,6 +10504,7 @@ const Emitter = struct {
         this.needs_index_helper = unit.needs_index_helper;
         this.needs_slice_helper = unit.needs_slice_helper;
         this.needs_add_helper = unit.needs_add_helper;
+        this.needs_int_helper = unit.needs_int_helper;
         this.prim_shims = unit.prim_shims;
         this.needed_instance_defaults = unit.needed_instance_defaults;
     }

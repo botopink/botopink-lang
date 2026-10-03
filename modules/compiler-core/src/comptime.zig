@@ -2567,8 +2567,12 @@ pub fn compileTypesOnly(
                     var rit = succ.env.instanceLowerings.iterator();
                     while (rit.next()) |e| try instance_lowerings.put(e.key_ptr.*, e.value_ptr.*);
                     var dit = succ.env.divisions.iterator();
-                    while (dit.next()) |e| if (infer.divisionKind(e.value_ptr.*)) |k|
-                        try instance_lowerings.put(e.key_ptr.*, .{ .division = k });
+                    while (dit.next()) |e| if (infer.arithKind(e.value_ptr.*)) |k| {
+                        // An operator's loc never holds another lowering; were
+                        // one there (a `+=` keyed by its target's name), it wins.
+                        const slot = try instance_lowerings.getOrPut(e.key_ptr.*);
+                        if (!slot.found_existing) slot.value_ptr.* = .{ .division = k };
+                    };
                 }
                 if (idx < all_modules.len - 1) {
                     var env = succ.env;
@@ -2777,8 +2781,12 @@ pub fn compile(
                     var rit = succ.env.instanceLowerings.iterator();
                     while (rit.next()) |e| try instance_lowerings.put(e.key_ptr.*, e.value_ptr.*);
                     var dit = succ.env.divisions.iterator();
-                    while (dit.next()) |e| if (infer.divisionKind(e.value_ptr.*)) |k|
-                        try instance_lowerings.put(e.key_ptr.*, .{ .division = k });
+                    while (dit.next()) |e| if (infer.arithKind(e.value_ptr.*)) |k| {
+                        // An operator's loc never holds another lowering; were
+                        // one there (a `+=` keyed by its target's name), it wins.
+                        const slot = try instance_lowerings.getOrPut(e.key_ptr.*);
+                        if (!slot.found_existing) slot.value_ptr.* = .{ .division = k };
+                    };
                 }
                 if (idx < all_modules.len - 1) {
                     var env = succ.env;

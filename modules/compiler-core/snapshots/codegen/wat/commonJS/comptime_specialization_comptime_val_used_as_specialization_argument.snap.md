@@ -20,6 +20,8 @@ ct_0: val base = comptime 10 + 5 → 15
 
 ----- JAVASCRIPT -- main.js
 ```javascript
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
 const base = 15;
 
 function main() {
@@ -30,12 +32,12 @@ function main() {
 
 function scale_$0(value) {
     const factor = 2;
-    return ((value * factor) + 0);
+    return __bp_int((value * factor), -2147483648, 2147483647, "* on i32 at main.bp:4:18");
 }
 
 function scale_$1(value) {
     const factor = 3;
-    return ((value * factor) + 0);
+    return __bp_int((value * factor), -2147483648, 2147483647, "* on i32 at main.bp:4:18");
 }
 
 function _botopink_main() {

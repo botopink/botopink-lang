@@ -2947,6 +2947,35 @@ first three are now enforced by the model, not by discipline:
   after upgrading node/OTP. Nothing reaps it: `clean-tmp` only touches `tmp/`,
   and CI always runs cold (the directory is git-ignored).
 
+## Integer overflow (decision 264)
+
+An integer `+`, `-`, `*`, `/`, `%`, unary `-` and `+=` is a program error when
+its result leaves the operands' type — on every target, as wasm's `int_chk`
+already trapped (`wat/AGENTS.md` § Numbers). Inference records each arithmetic
+operator's result type under its operator's loc (`env.divisions` →
+`InstanceLowering.division`, an `ArithKind`; a `+=` under its binding's loc), so
+a backend checks exactly the operators whose type is a resolved integer type —
+a float, a string `+` and an operator of a generic `T` (never resolved at
+inference) are not checked. `ArithKind.range` is the type's range (`isize` /
+`usize` are `i64` / `u64`), `rangeExactDouble` the same clamped to
+±(2^53 − 1) for commonJS. A literal operand of unary `-` is a constant and not
+checked. The abort's text is one on the three backends:
+`integer overflow: <op> on <type> at <file>:<line>:<col>`.
+
+| Backend | The check | Abort |
+|---|---|---|
+| commonJS | `__bp_int(<raw>, lo, hi, "<op> on <type> at <loc>")` around the JS operation (`intChecked`, `js_prelude` `int_check`); `/` is `Math.trunc(a / b)` inside it and a non-finite value (`/` or `%` by zero) is `integer division by zero` | `throw new Error(…)` |
+| erlang | `'__bp_int'(<raw>, Lo, Hi, <<"integer overflow: …">>)` (`intChecked`, `int_helper_form`, inlined by `-compile({inline,['__bp_int'/4]})`); not around `rem`, which never leaves its type and raises `badarith` on `0` | `erlang:error({integer_overflow, Text})` |
+| beam | after the `gc_bif`, two `is_ge` tests against the type's ends and an inline fail block (`emitIntCheck`); not after `rem` | `erlang:error({integer_overflow, Text})`, the erlang backend's term |
+
+What it cost a tight `i32` loop (`acc = (acc + i * 3 - i % 7) % 1000003`,
+2·10^8 iterations, best of three, exec only): commonJS 764 → 1026 ms (+34 %),
+erlang 2065 → 2613 ms (+27 %; +160 % before the helper was inlined), beam
+1211 → 1823 ms (+50 %). No flag turns it off (decision 67). Not checked: a
+module `var` under `#[@BeamMemory.Ets]` whose `+=` is the host's atomic
+counter (`ets:update_counter`). Division by zero keeps erlang's and beam's
+`badarith`. Cells: `tests/language/AGENTS.md` § The sidecars of a `run/` cell.
+
 ## Primitive methods
 
 Primitive-receiver methods (`xs.map(f)`, `s.toUpper()`) are tagged `.prim` in
@@ -3033,13 +3062,14 @@ method on an optional and the erlang emitter types a `default fn` body's locals
   the `Children` coercion is type-level only.
 - `/` over integers truncates toward zero and answers an integer on every
   backend (onze F7). Inference marks each `/` whose type resolved with
-  `InstanceLowering.division` (`.integer` / `.float`, keyed by the operator's
-  loc): commonJS writes `Math.trunc(a / b)` for an integer one; erlang
+  `InstanceLowering.division` (an `ArithKind` — the integer type, or `.float`;
+  keyed by the operator's loc, and recorded for every arithmetic operator since
+  decision 264, § Integer overflow): commonJS writes `Math.trunc(a / b)` for an integer one; erlang
   (`divisionKind` → `div` / `/`) and beam (`div_` / `fdiv`) take it before
   their operand heuristics, and their `numKind` answers it for the quotient;
   wat's typed `i32.div_s` / `i64.div_s` already truncated. The other
-  `instance_lowerings` readers ignore `.division` (a `/` is never a call or a
-  field read).
+  `instance_lowerings` readers ignore `.division` (an operator is never a call
+  or a field read).
 - erlang and beam write a number token through `beam/erl_emitter.zig`'s
   `writeNumber`: `5e-324` → `5.0e-324` (Erlang refuses a float with no `.`
   before its exponent), `0xFF` → `16#FF`. wasm writes a float literal as an

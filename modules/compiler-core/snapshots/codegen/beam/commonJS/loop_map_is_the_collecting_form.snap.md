@@ -41,10 +41,12 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
 function main() {
     const ids = [10, 20, 30];
     const dobrados = ids.map((id) => {
-    return (id * 2);
+    return __bp_int((id * 2), -2147483648, 2147483647, "* on i32 at main.bp:3:39");
 });
     __bp_print(dobrados);
 }

@@ -30,7 +30,7 @@ fn main() {
 {module, test@main}.
 {exports, [{'_botopink_main', 0}, {main, 1}]}.
 {attributes, []}.
-{labels, 38}.
+{labels, 40}.
 
 {function, load, 0, 3}.
   {label, 2}.
@@ -84,6 +84,13 @@ fn main() {
     {move, {integer, 2}, {x, 0}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
     {gc_bif, '+', {f, 0}, 1, [{x, 0}, {integer, 1}], {x, 0}}.
+    {test, is_ge, {f, 38}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 38}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 39}}.
+  {label, 38}.
+    {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at test@main.bp:14:20">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 39}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 13}}.

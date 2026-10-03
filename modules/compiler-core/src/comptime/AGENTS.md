@@ -1240,9 +1240,12 @@ field instantiation reads its registration cells from them (`instantiateFieldTyp
 
 ## `/` over integers is integer division (onze F7)
 
-`inferBinaryOpExpr` records every `/` in `env.divisions` (operator loc → result type). Once inference
-is done, `comptime.zig` turns each resolved one into `InstanceLowering.division` (`.integer` over an
-integer type, `.float` over a float type; `infer.divisionKind`), which the backends read: commonJS
+`inferBinaryOpExpr` records every arithmetic operator (`+` `-` `*` `/` `%`; `inferUnaryOpExpr` a unary
+`-`, the `assign` arm a `+=` under its binding's loc) in `env.divisions` (loc → result type). Once
+inference is done, `comptime.zig` turns each resolved one into `InstanceLowering.division` (an
+`env.ArithKind`: the integer type, or `.float`; `infer.arithKind` — nothing for a string `+`), never
+over another lowering at the same loc. The integer kinds drive decision 264's range check on every
+backend (`codegen/AGENTS.md` § Integer overflow); for `/` the backends read: commonJS
 writes `Math.trunc(a / b)` for an integer one, erlang and beam take `div` / `'/'` from it before their
 own operand heuristics, wasm's typed `i32.div_s` already truncated. A `/` whose type never resolved (a
 generic `T`) records nothing. A number literal with an exponent is a float (`isFloatLiteralText`:

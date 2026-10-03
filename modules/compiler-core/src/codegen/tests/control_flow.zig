@@ -1734,7 +1734,7 @@ test "js: lambda ---- an expression body is the lambda's value" {
         \\}
     ;
     try h.assertJsContains(std.testing.allocator, src, &.{
-        "return (() => { if ((x > 1)) { return (x * 10); } else { return x; } })();",
+        "return (() => { if ((x > 1)) { return __bp_int((x * 10), -2147483648, 2147483647, \"* on i32 at main.bp:6:41\"); } else { return x; } })();",
         "return \"error\" in _try0 ? (0) : _try0.ok;",
     });
     try h.assertJsRunLog(std.testing.allocator, src,
@@ -1757,7 +1757,7 @@ test "js: lambda ---- a tail if whose branches return stays a statement" {
         \\}
     ;
     try h.assertJsContains(std.testing.allocator, src, &.{
-        "if ((x > 1)) { return (x * 10); } else { return 0; }",
+        "if ((x > 1)) { return __bp_int((x * 10), -2147483648, 2147483647, \"* on i32 at main.bp:2:48\"); } else { return 0; }",
     });
     try h.assertJsRunLog(std.testing.allocator, src, "0,20,30\n");
 }
@@ -1786,8 +1786,8 @@ test "js: self tail call ---- a tail call is a round of a loop, not a frame" {
     ;
     try h.assertJsContains(std.testing.allocator, src, &.{
         "    while (true) {",
-        "const __bp_tc0 = (n - 1);",
-        "const __bp_tc1 = (acc + n);",
+        "const __bp_tc0 = __bp_int((n - 1), -2147483648, 2147483647, \"- on i32 at main.bp:3:22\");",
+        "const __bp_tc1 = __bp_int((acc + n), -2147483648, 2147483647, \"+ on i32 at main.bp:3:31\");",
         "n = __bp_tc0;",
         "acc = __bp_tc1;",
         "continue;",
@@ -1834,7 +1834,7 @@ test "js: self tail call ---- a closure over a parameter keeps the recursion" {
         \\}
     ;
     try h.assertJsContains(std.testing.allocator, src, &.{
-        "return tally((n - 1), (acc + xs.length));",
+        "return tally(__bp_int((n - 1), -2147483648, 2147483647, \"- on i32 at main.bp:4:20\"), __bp_int((acc + xs.length), -2147483648, 2147483647, \"+ on i32 at main.bp:4:29\"));",
     });
     try h.assertJsRunLog(std.testing.allocator, src, "6\n");
 }

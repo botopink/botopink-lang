@@ -79,10 +79,20 @@ pub const Helper = enum {
     /// generator finished. The module declares `YieldStep` (the checker splices
     /// the declaration into every module that steps a sequence).
     yield_step,
+    /// Decision 264 — an integer `+` `-` `*` `/` `%`, unary `-` or `+=`
+    /// answered inside its type's range, or an abort: `__bp_int(v, lo, hi,
+    /// what)` answers `v + 0` (an integer is never `-0`, decision 214) when
+    /// `lo <= v <= hi`, and otherwise throws `integer overflow: <what>` —
+    /// `<op> on <type> at <file:line:col>`. A 64-bit type's range is
+    /// ±(2^53 − 1) here, the integers a JS number holds exactly, so a result
+    /// past it aborts instead of answering a rounded value. A non-finite `v`
+    /// is an integer `/` or `%` by zero (`Math.trunc(7 / 0)`, `7 % 0`), which
+    /// throws `integer division by zero: <what>` — wasm traps on both.
+    int_check,
 };
 
 /// Emission order of the helpers a module uses.
-pub const order = [_]Helper{ .assert_fatal, .string_char_at, .array_at, .range_from, .structural_eq, .show, .print, .print_as, .try_unwrap, .host_task, .adopt, .yield_step };
+pub const order = [_]Helper{ .assert_fatal, .string_char_at, .array_at, .range_from, .structural_eq, .show, .print, .print_as, .try_unwrap, .host_task, .adopt, .yield_step, .int_check };
 
 /// The receiver family of a primitive method call, as inference recorded it.
 pub const Receiver = enum { string, array, other };
@@ -117,6 +127,7 @@ pub fn name(h: Helper) []const u8 {
         .host_task => "__bp_host_task",
         .adopt => "__bp_adopt",
         .yield_step => "__bp_yield_step",
+        .int_check => "__bp_int",
     };
 }
 
@@ -135,6 +146,7 @@ pub fn decl(h: Helper) ast.Stmt {
         .host_task => host_task,
         .adopt => adopt,
         .yield_step => yield_step,
+        .int_check => int_check,
     };
 }
 
@@ -213,6 +225,38 @@ const adopt: ast.Stmt = .{ .function = .{
     .name = "__bp_adopt",
     .params = &.{ .{ .pattern = .{ .name = "v" } }, .{ .pattern = .{ .name = "C" } }, .{ .pattern = .{ .name = "p" } } },
     .body = .{ .stmts = &.{.{ .return_ = .{ .host = &.{.{ .text = "(v == null) ? v : (p === \"\") ? ((typeof v === \"object\" && !(v instanceof C)) ? Object.assign(Object.create(C.prototype), v) : v) : (p[0] === \"a\") ? (Array.isArray(v) ? v.map((e) => __bp_adopt(e, C, p.slice(1))) : v) : (p[0] === \"r\" && typeof v === \"object\" && \"ok\" in v) ? { ok: __bp_adopt(v.ok, C, p.slice(1)) } : v" }} } }}, .layout = .spaced },
+} };
+
+const iv: ast.Expr = .{ .name = "v" };
+
+/// `function __bp_int(v, lo, hi, what) { … }` — see `Helper.int_check`.
+const int_check: ast.Stmt = .{ .function = .{
+    .name = "__bp_int",
+    .params = &.{ .{ .pattern = .{ .name = "v" } }, .{ .pattern = .{ .name = "lo" } }, .{ .pattern = .{ .name = "hi" } }, .{ .pattern = .{ .name = "what" } } },
+    .body = .{ .stmts = &.{
+        .{ .if_ = .{
+            .cond = .{ .binary = .{
+                .op = "&&",
+                .lhs = &.{ .binary = .{ .op = ">=", .lhs = &iv, .rhs = &.{ .name = "lo" }, .parens = false } },
+                .rhs = &.{ .binary = .{ .op = "<=", .lhs = &iv, .rhs = &.{ .name = "hi" }, .parens = false } },
+                .parens = false,
+            } },
+            .then = &.{ .block = .{ .stmts = &.{.{ .return_ = .{ .binary = .{ .op = "+", .lhs = &iv, .rhs = &.{ .number = "0" }, .parens = false } } }}, .layout = .spaced } },
+        } },
+        .{ .throw_ = .{ .new_ = .{
+            .callee = &.{ .name = "Error" },
+            .args = &.{.{ .binary = .{
+                .op = "+",
+                .lhs = &.{ .paren = &.{ .ternary = .{
+                    .cond = &.{ .call = .{ .callee = &.{ .member = .{ .object = &.{ .name = "Number" }, .name = "isFinite" } }, .args = &.{iv} } },
+                    .then = &.{ .quoted = "integer overflow: " },
+                    .else_ = &.{ .quoted = "integer division by zero: " },
+                } } },
+                .rhs = &.{ .name = "what" },
+                .parens = false,
+            } }},
+        } } },
+    }, .layout = .spaced },
 } };
 
 const yield_step_class: ast.Expr = .{ .name = "YieldStep" };
@@ -681,6 +725,30 @@ test "js_prelude: structural equality walks arrays and class instances" {
         \\    return ((k.length === Object.keys(b).length) && k.every((n) => __bp_eq(a[n], b[n], (d + 1))));
         \\}
     , aw.written());
+}
+
+test "js_prelude: an integer outside its type's range aborts (decision 264)" {
+    var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer aw.deinit();
+    try @import("js_emitter.zig").writeStmt(&aw.writer, decl(.int_check), 0);
+    try std.testing.expectEqualStrings(
+        \\function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+    , aw.written());
+}
+
+test "js_prelude: a 64-bit type's range is the integers a JS number holds exactly (decision 264)" {
+    const ArithKind = @import("../../comptime/env.zig").ArithKind;
+    const cap: i128 = 9007199254740991;
+    try std.testing.expectEqual(-cap, ArithKind.i64.rangeExactDouble().?.lo);
+    try std.testing.expectEqual(cap, ArithKind.i64.rangeExactDouble().?.hi);
+    try std.testing.expectEqual(@as(i128, 0), ArithKind.u64.rangeExactDouble().?.lo);
+    try std.testing.expectEqual(cap, ArithKind.usize.rangeExactDouble().?.hi);
+    try std.testing.expectEqual(@as(i128, 4294967295), ArithKind.u32.rangeExactDouble().?.hi);
+    try std.testing.expectEqual(@as(i128, -128), ArithKind.i8.rangeExactDouble().?.lo);
+    try std.testing.expect(ArithKind.float.rangeExactDouble() == null);
+    // erlang and beam hold the whole 64-bit range.
+    try std.testing.expectEqual(@as(i128, 18446744073709551615), ArithKind.u64.range().?.hi);
+    try std.testing.expectEqual(@as(i128, -9223372036854775808), ArithKind.isize.range().?.lo);
 }
 
 test "js_prelude: an open-ended range counts up lazily" {

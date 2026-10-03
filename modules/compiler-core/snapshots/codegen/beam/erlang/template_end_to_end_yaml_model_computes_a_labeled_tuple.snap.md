@@ -182,7 +182,11 @@ cfg() ->
     {8004, true}.
 
 main() ->
-    '__bp_print'([(erlang:element(1, cfg()) + 1)]).
+    '__bp_print'(['__bp_int'((erlang:element(1, cfg()) + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:9:21">>)]).
+
+-compile({inline,['__bp_int'/4]}).
+'__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
+'__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).

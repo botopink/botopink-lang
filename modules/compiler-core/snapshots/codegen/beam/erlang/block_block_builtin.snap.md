@@ -19,7 +19,7 @@ fn main() -> string {
 main() ->
     Input = 42,
     Status = (fun() ->
-        Calculo = (Input * 2),
+        Calculo = '__bp_int'((Input * 2), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:4:29">>),
         case (Calculo > 100) of
             true ->
                 <<"Alto">>;
@@ -28,6 +28,10 @@ main() ->
         end
     end)(),
     Status.
+
+-compile({inline,['__bp_int'/4]}).
+'__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
+'__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
 
 '_botopink_main'() ->
     io:setopts(standard_io, [{encoding, unicode}]),

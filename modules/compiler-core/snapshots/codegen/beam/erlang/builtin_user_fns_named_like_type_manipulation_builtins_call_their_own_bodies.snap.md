@@ -20,19 +20,19 @@ fn main() {
 -export(['_botopink_main'/0, main/1]).
 
 pick(N) ->
-    (N + 1).
+    '__bp_int'((N + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:1:35">>).
 
 omit(N) ->
-    (N + 2).
+    '__bp_int'((N + 2), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:2:35">>).
 
 partial(N) ->
-    (N + 3).
+    '__bp_int'((N + 3), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:3:38">>).
 
 mergeRecords(A, B) ->
-    (A + B).
+    '__bp_int'((A + B), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:4:51">>).
 
 mapFields(N) ->
-    (N * 2).
+    '__bp_int'((N * 2), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:5:40">>).
 
 main() ->
     '__bp_print'([pick(1)]),
@@ -40,6 +40,10 @@ main() ->
     '__bp_print'([partial(1)]),
     '__bp_print'([mergeRecords(2, 3)]),
     '__bp_print'([mapFields(3)]).
+
+-compile({inline,['__bp_int'/4]}).
+'__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
+'__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).

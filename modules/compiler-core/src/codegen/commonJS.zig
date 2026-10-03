@@ -3783,11 +3783,27 @@ const Emitter = struct {
                 // operand calls its type's equality (`buildEquality`); a
                 // primitive one keeps the instruction below.
                 if (bin.op == .eq or bin.op == .ne) if (try self.buildEquality(bin)) |cmp| return cmp;
+                // Decision 264 — an integer result outside its type aborts.
+                if (self.intKindAt(bin.loc)) |k| switch (bin.op) {
+                    .add, .sub, .mul, .div, .mod => {
+                        const lhs = try self.buildExpr(bin.lhs.*);
+                        const rhs = try self.buildExpr(bin.rhs.*);
+                        const raw = switch (bin.op) {
+                            .add => try self.b.binary("+", lhs, rhs),
+                            .sub => try self.b.binary("-", lhs, rhs),
+                            .mul => try self.b.binary("*", lhs, rhs),
+                            .mod => try self.b.binary("%", lhs, rhs),
+                            else => try self.b.call(.{ .name = "Math.trunc" }, &.{try self.b.binary("/", lhs, rhs)}),
+                        };
+                        return self.intChecked(raw, k, arithSymbol(bin.op), bin.loc);
+                    },
+                    else => {},
+                };
                 // Onze F7 — `/` over integers truncates toward zero and
                 // answers an integer, as erlang's `div` does: `7 / 2` is `3`.
                 // A JS number division is a float one, so the quotient is
                 // truncated. Inference says which `/` this is (`.division`).
-                if (bin.op == .div) if (self.lowerings) |lw| if (lw.get(bin.loc)) |il| if (il == .division and il.division == .integer) {
+                if (bin.op == .div) if (self.lowerings) |lw| if (lw.get(bin.loc)) |il| if (il == .division and il.division.isInt()) {
                     const q = try self.b.call(.{ .name = "Math.trunc" }, &.{
                         try self.b.binary("/", try self.buildExpr(bin.lhs.*), try self.buildExpr(bin.rhs.*)),
                     });
@@ -3830,6 +3846,10 @@ const Emitter = struct {
                     .not => "!",
                     .neg => "-",
                 }, try self.buildExpr(un.expr.*), true);
+                // Decision 264 — `-x` leaves an integer type at its minimum
+                // (`-(-128)` is no `i8`) and an unsigned one everywhere but 0.
+                // A literal operand is a constant the checker already placed.
+                if (un.op == .neg and un.expr.* != .literal) if (self.intKindAt(un.loc)) |k| return self.intChecked(out, k, "-", un.loc);
                 // `-x` with `x = 0` is `-0` in JavaScript; an integer never is.
                 // A nonzero literal (`-1`) cannot be.
                 if (un.op == .neg and !isNonzeroLiteral(un.expr.*) and (try self.numKind(un.expr.*)).isInt()) return self.intCanon(out);
@@ -3929,6 +3949,13 @@ const Emitter = struct {
                                 fa.field,
                             );
                         },
+                    };
+                    // Decision 264 — `n += v` over an integer is `n = __bp_int(n + v, …)`.
+                    // The target is a name or `<name>.<field>` (the parser's two
+                    // forms), so reading it again evaluates nothing twice.
+                    if (a.op == .plusAssign) if (self.intKindAt(b.loc)) |k| {
+                        const sum = try self.b.binary("+", target, try self.buildExpr(a.value.*));
+                        return self.b.assign(target, "=", try self.intChecked(sum, k, "+=", b.loc));
                     };
                     return self.b.assign(target, op_str, try self.buildExpr(a.value.*));
                 },
@@ -4580,7 +4607,7 @@ const Emitter = struct {
             .binaryOp => |bin| switch (bin.op) {
                 .add, .sub, .mul, .mod, .div => {
                     if (bin.op == .div) if (self.lowerings) |lw| if (lw.get(bin.loc)) |il| if (il == .division)
-                        return if (il.division == .integer) .int else .float;
+                        return if (il.division.isInt()) .int else .float;
                     const l = try self.numKind(bin.lhs.*);
                     const r = try self.numKind(bin.rhs.*);
                     if (l == .float or r == .float) return .float;
@@ -4625,6 +4652,41 @@ const Emitter = struct {
     /// False when the result cannot be `-0`: two nonnegative literals.
     fn mayBeNegZero(lhs: ast.Expr, rhs: ast.Expr) bool {
         return !(lhs == .literal and lhs.literal.kind == .numberLit and rhs == .literal and rhs.literal.kind == .numberLit);
+    }
+
+    /// The source spelling of an arithmetic operator, as an abort names it.
+    fn arithSymbol(op: anytype) []const u8 {
+        return switch (op) {
+            .add => "+",
+            .sub => "-",
+            .mul => "*",
+            .div => "/",
+            .mod => "%",
+            else => "?",
+        };
+    }
+
+    /// Decision 264 — the integer type inference recorded for the arithmetic
+    /// operator at `loc` (`InstanceLowering.division`), or null for a float
+    /// one or an operator whose type was never resolved (a generic `T`).
+    fn intKindAt(self: *const Emitter, loc: ast.Loc) ?envMod.ArithKind {
+        const lw = self.lowerings orelse return null;
+        const il = lw.get(loc) orelse return null;
+        if (il != .division or !il.division.isInt()) return null;
+        return il.division;
+    }
+
+    /// `__bp_int(e, lo, hi, "<op> on <type> at <file:line:col>")` — `e`, or
+    /// the abort `js_prelude`'s `int_check` throws when it leaves `k`'s range
+    /// (a 64-bit type's is ±(2^53 − 1) on this target, `rangeExactDouble`).
+    fn intChecked(self: *Emitter, e: js.Expr, k: envMod.ArithKind, op: []const u8, loc: ast.Loc) !js.Expr {
+        const r = k.rangeExactDouble().?;
+        return self.b.call(self.helper(.int_check), &.{
+            e,
+            .{ .number = try std.fmt.allocPrint(self.arena(), "{d}", .{r.lo}) },
+            .{ .number = try std.fmt.allocPrint(self.arena(), "{d}", .{r.hi}) },
+            .{ .quoted = try std.fmt.allocPrint(self.arena(), "{s} on {s} at {s}:{d}:{d}", .{ op, @tagName(k), self.src_file, loc.line, loc.col }) },
+        });
     }
 
     /// `(e + 0)` — `-0 + 0` is `0`, and every other number is left exactly

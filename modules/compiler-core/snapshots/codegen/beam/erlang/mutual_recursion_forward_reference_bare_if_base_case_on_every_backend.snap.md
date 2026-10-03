@@ -28,7 +28,7 @@ isEven(N) ->
         true ->
             true;
         _ ->
-            isOdd((N - 1))
+            isOdd('__bp_int'((N - 1), -2147483648, 2147483647, <<"integer overflow: - on i32 at main.bp:7:20">>))
     end.
 
 isOdd(N) ->
@@ -36,8 +36,12 @@ isOdd(N) ->
         true ->
             false;
         _ ->
-            isEven((N - 1))
+            isEven('__bp_int'((N - 1), -2147483648, 2147483647, <<"integer overflow: - on i32 at main.bp:12:21">>))
     end.
+
+-compile({inline,['__bp_int'/4]}).
+'__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
+'__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
 
 '_botopink_main'() ->
     io:setopts(standard_io, [{encoding, unicode}]),

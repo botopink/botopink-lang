@@ -780,6 +780,11 @@ pub fn writeForm(w: *Writer, form: Ast.Form) Error!void {
             try writeFnRefs(w, refs);
             try w.writeAll("}).\n");
         },
+        .inline_fns => |refs| {
+            try w.writeAll("-compile({inline,");
+            try writeFnRefs(w, refs);
+            try w.writeAll("}).\n");
+        },
         .on_load => |ref| {
             try w.writeAll("-on_load(");
             try writeFnRef(w, ref);

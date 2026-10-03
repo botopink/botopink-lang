@@ -14,7 +14,7 @@ fn sumTo(n: i32) -> i32 {
 {module, test@main}.
 {exports, []}.
 {attributes, []}.
-{labels, 6}.
+{labels, 8}.
 
 {function, sumTo, 1, 3}.
   {label, 2}.
@@ -49,6 +49,13 @@ fn sumTo(n: i32) -> i32 {
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {gc_bif, '+', {f, 0}, 0, [{y, 1}, {y, 0}], {x, 0}}.
+    {test, is_ge, {f, 6}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 6}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 7}}.
+  {label, 6}.
+    {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at test@main.bp:4:19">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 7}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {deallocate, 2}.

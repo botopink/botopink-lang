@@ -60,6 +60,8 @@ function __bp_print() {
 
 function __bp_yield_step(r) { return r.done ? YieldStep.Done : YieldStep.Yield(r.value); }
 
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
 class YieldStep {
     static Yield(value) {
         return new YieldStep$Yield(value);
@@ -82,7 +84,7 @@ async function* countdown(n) {
     let i = n;
     while ((i > 0)) {
     yield i;
-    i = (i - 1);
+    i = __bp_int((i - 1), -2147483648, 2147483647, "- on i32 at main.bp:5:15");
 }
 }
 

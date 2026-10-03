@@ -45,10 +45,12 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
 function main() {
     let processamento = [];
     for (const i of Array.from({length: Math.max(0, (10) - (0))}, (_, __i) => (0) + __i)) {
-    (() => { if (((i % 2) === 0)) { return processamento.push(i); } })();
+    (() => { if ((__bp_int((i % 2), -2147483648, 2147483647, "% on i32 at main.bp:4:15") === 0)) { return processamento.push(i); } })();
 }
     __bp_print(processamento);
 }

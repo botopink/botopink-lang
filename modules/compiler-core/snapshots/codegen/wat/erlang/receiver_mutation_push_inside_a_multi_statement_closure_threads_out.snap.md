@@ -811,7 +811,7 @@ collect(Xs) ->
     Out = [],
     Out@1 = (Out ++ [<<"start">>]),
     Out@4 = lists:foldl(fun(X, Out@2) ->
-        Doubled = (X * 2),
+        Doubled = '__bp_int'((X * 2), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:27:25">>),
         Out@3 = (Out@2 ++ [<<"v", ('__bp_text'(erlang:integer_to_binary(Doubled)))/binary>>]),
         Out@3
     end, Out@1, Xs),
@@ -823,6 +823,10 @@ main() ->
 
 wireService() ->
     <<"Service(port: prop(port), name: makestring())">>.
+
+-compile({inline,['__bp_int'/4]}).
+'__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
+'__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
 
 '__bp_text'(Value) when erlang:is_binary(Value) -> Value;
 '__bp_text'(Value) -> erlang:iolist_to_binary(io_lib:format(<<"~p">>, [Value])).

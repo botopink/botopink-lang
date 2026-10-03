@@ -26,13 +26,17 @@ pub fn main() {
 
 mk(V) ->
     {test@main@@Cell, V, fun(Next) ->
-        (Next + V)
+        '__bp_int'((Next + V), -2147483648, 2147483647, <<"integer overflow: + on i32 at main.bp:7:47">>)
     end}.
 
 main() ->
     C = mk(5),
     '__bp_print'([erlang:element(2, C)]),
     '__bp_print'([(erlang:element(3, C))(9)]).
+
+-compile({inline,['__bp_int'/4]}).
+'__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
+'__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).

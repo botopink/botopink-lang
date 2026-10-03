@@ -59,6 +59,8 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
 // behavior Array
 //   length: i32
 //   fn at(...)
@@ -214,7 +216,7 @@ function main() {
     const xs = [1, 2, 3];
     __bp_print(xs.prepend(0).join(","));
     __bp_print(xs.fold(0, (a, x) => {
-    return (a + x);
+    return __bp_int((a + x), -2147483648, 2147483647, "+ on i32 at main.bp:4:35");
 }));
     __bp_print(xs.isEmpty());
     __bp_print(xs.all((x) => {

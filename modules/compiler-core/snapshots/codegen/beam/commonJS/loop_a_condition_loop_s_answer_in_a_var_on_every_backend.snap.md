@@ -51,19 +51,21 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
 function main() {
     let i = 0;
     let found = 0;
     while ((i < 10)) {
-    if ((i === 4)) { found = ((i * 2) + 0); break; }
-    i = (i + 1);
+    if ((i === 4)) { found = __bp_int((i * 2), -2147483648, 2147483647, "* on i32 at main.bp:4:46"); break; }
+    i = __bp_int((i + 1), -2147483648, 2147483647, "+ on i32 at main.bp:4:67");
 }
     __bp_print(found);
     __bp_print(i);
     let k = 0;
     let r = 0;
     while (true) {
-    k = (k + 1);
+    k = __bp_int((k + 1), -2147483648, 2147483647, "+ on i32 at main.bp:9:18");
     if ((k > 2)) { r = k; break; }
 }
     __bp_print(r);
@@ -71,7 +73,7 @@ function main() {
     let never = 0;
     while ((n < 3)) {
     if ((n === 99)) { never = n; break; }
-    n = (n + 1);
+    n = __bp_int((n + 1), -2147483648, 2147483647, "+ on i32 at main.bp:13:63");
 }
     __bp_print(never);
 }

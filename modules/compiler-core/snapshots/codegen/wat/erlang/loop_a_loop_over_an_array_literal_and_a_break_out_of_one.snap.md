@@ -24,7 +24,7 @@ main() ->
                 [X@1 | __BpRest1] ->
                     First@3 = case (X@1 =:= 2) of
                         true ->
-                            First@2 = (X@1 * 10),
+                            First@2 = '__bp_int'((X@1 * 10), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:4:52">>),
                             erlang:throw({'__bp_cond_break', First@2}),
                             First@2;
                         _ ->
@@ -38,6 +38,10 @@ main() ->
         throw:{'__bp_cond_break', __BpGroup1} -> __BpGroup1
     end,
     '__bp_print'([First@4]).
+
+-compile({inline,['__bp_int'/4]}).
+'__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
+'__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).

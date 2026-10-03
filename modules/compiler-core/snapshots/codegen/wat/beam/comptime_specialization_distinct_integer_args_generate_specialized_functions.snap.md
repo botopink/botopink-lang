@@ -19,7 +19,7 @@ fn main() {
 {module, test@main}.
 {exports, [{'_botopink_main', 0}, {main, 1}]}.
 {attributes, []}.
-{labels, 38}.
+{labels, 42}.
 
 {function, main, 0, 3}.
   {label, 2}.
@@ -64,6 +64,13 @@ fn main() {
     {move, {integer, 2}, {x, 0}}.
     {move, {x, 0}, {y, 1}}.
     {gc_bif, '*', {f, 0}, 0, [{y, 0}, {y, 1}], {x, 0}}.
+    {test, is_ge, {f, 38}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 38}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 39}}.
+  {label, 38}.
+    {move, {literal, {integer_overflow, <<"integer overflow: * on i32 at test@main.bp:2:14">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 39}.
     {deallocate, 2}.
     return.
 
@@ -78,6 +85,13 @@ fn main() {
     {move, {integer, 3}, {x, 0}}.
     {move, {x, 0}, {y, 1}}.
     {gc_bif, '*', {f, 0}, 0, [{y, 0}, {y, 1}], {x, 0}}.
+    {test, is_ge, {f, 40}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 40}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 41}}.
+  {label, 40}.
+    {move, {literal, {integer_overflow, <<"integer overflow: * on i32 at test@main.bp:2:14">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 41}.
     {deallocate, 2}.
     return.
 

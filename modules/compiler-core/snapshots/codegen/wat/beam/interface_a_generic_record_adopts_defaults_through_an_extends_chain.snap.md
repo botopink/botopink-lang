@@ -337,7 +337,7 @@ fn main() {
 {module, test@main@@Bag}.
 {exports, [{size, 1}, {twiceSize, 1}, {isEmpty, 1}, {'__bp_get', 2}, {'__bp_format', 1}]}.
 {attributes, []}.
-{labels, 16}.
+{labels, 18}.
 
 {function, size, 1, 3}.
   {label, 2}.
@@ -366,6 +366,13 @@ fn main() {
     {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, test@main@@Bag, size, 1}}.
     {gc_bif, '*', {f, 0}, 1, [{x, 0}, {integer, 2}], {x, 0}}.
+    {test, is_ge, {f, 9}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 9}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 10}}.
+  {label, 9}.
+    {move, {literal, {integer_overflow, <<"integer overflow: * on i32 at test@main@@Bag.bp:11:28">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 10}.
     {deallocate, 1}.
     return.
 
@@ -379,33 +386,33 @@ fn main() {
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, test@main@@Bag, size, 1}}.
-    {test, is_eq_exact, {f, 9}, [{x, 0}, {integer, 0}]}.
+    {test, is_eq_exact, {f, 11}, [{x, 0}, {integer, 0}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 10}}.
-  {label, 9}.
+    {jump, {f, 12}}.
+  {label, 11}.
     {move, {atom, false}, {x, 0}}.
-  {label, 10}.
+  {label, 12}.
     {deallocate, 1}.
     return.
 
-{function, '__bp_get', 2, 12}.
-  {label, 11}.
+{function, '__bp_get', 2, 14}.
+  {label, 13}.
     {line, [{location, "test@main@@Bag.erl", 4}]}.
     {func_info, {atom, test@main@@Bag}, {atom, '__bp_get'}, 2}.
-  {label, 12}.
-    {test, is_eq_exact, {f, 13}, [{x, 1}, {atom, items}]}.
+  {label, 14}.
+    {test, is_eq_exact, {f, 15}, [{x, 1}, {atom, items}]}.
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 2}, {x, 0}}.
     {call_ext_only, 2, {extfunc, erlang, element, 2}}.
-  {label, 13}.
+  {label, 15}.
     {move, {atom, undefined}, {x, 0}}.
     return.
 
-{function, '__bp_format', 1, 15}.
-  {label, 14}.
+{function, '__bp_format', 1, 17}.
+  {label, 16}.
     {line, [{location, "test@main@@Bag.erl", 4}]}.
     {func_info, {atom, test@main@@Bag}, {atom, '__bp_format'}, 1}.
-  {label, 15}.
+  {label, 17}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.

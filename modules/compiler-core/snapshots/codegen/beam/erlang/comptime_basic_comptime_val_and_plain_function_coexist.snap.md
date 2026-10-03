@@ -25,10 +25,14 @@ x() ->
     3.
 
 double(N) ->
-    (N * 2).
+    '__bp_int'((N * 2), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:4:14">>).
 
 main() ->
     R = double(21).
+
+-compile({inline,['__bp_int'/4]}).
+'__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
+'__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
 
 '_botopink_main'() ->
     io:setopts(standard_io, [{encoding, unicode}]),

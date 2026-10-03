@@ -60,6 +60,8 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
 // behavior Shape
 //   fn area(...)
 
@@ -69,7 +71,7 @@ class Square {
     }
 
     area() {
-        return ((this.side * this.side) + 0);
+        return __bp_int((this.side * this.side), -2147483648, 2147483647, "* on i32 at main.bp:7:26");
     }
 }
 Square.prototype.__bp = "Square";
@@ -106,7 +108,7 @@ function weight(s) {
 function main() {
     const sq = new Square(3);
     __bp_print(sq.area());
-    __bp_print((weight(Size.Large(5)) + weight(Size.Small)));
+    __bp_print(__bp_int((weight(Size.Large(5)) + weight(Size.Small)), -2147483648, 2147483647, "+ on i32 at main.bp:23:37"));
 }
 
 function _botopink_main() {

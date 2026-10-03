@@ -5618,13 +5618,16 @@ fn starCtxFromEffect(eff: ast.EffectKind, retType: *T.Type, fnLabel: ?[]const u8
 
 // ── expression inference ──────────────────────────────────────────────────────
 
-/// Onze F7 — the `InstanceLowering.division` a `/` of result type `t` records:
-/// integer division over integers, float division over floats, nothing while
-/// `t` is unresolved.
-pub fn divisionKind(t: *T.Type) ?envMod.DivisionKind {
+/// The `InstanceLowering.division` an arithmetic operator of result type `t`
+/// records: the integer type (onze F7's truncating `/`, decision 264's range
+/// check), a float, or nothing while `t` is unresolved or not a number (a
+/// string `+`).
+pub fn arithKind(t: *T.Type) ?envMod.ArithKind {
     const d = t.deref();
-    if (isIntType(d)) return .integer;
     if (isFloatType(d)) return .float;
+    inline for (@typeInfo(envMod.ArithKind).@"enum".fields) |f| {
+        if (f.value != @intFromEnum(envMod.ArithKind.float) and d.isNamed(f.name)) return @enumFromInt(f.value);
+    }
     return null;
 }
 
@@ -10840,7 +10843,10 @@ fn inferBinaryOpExpr(env: *Env, binop: ast.BinOpExprOf(.untyped), loc: ast.Loc) 
             break :blk lhsTy;
         },
     };
-    if (binop.op == .div) try env.divisions.put(loc, resultType);
+    switch (binop.op) {
+        .add, .sub, .mul, .div, .mod => try env.divisions.put(loc, resultType),
+        else => {},
+    }
     return TypedExpr{ .binaryOp = .{
         .loc = loc,
         .type_ = resultType,
@@ -10864,6 +10870,7 @@ fn inferUnaryOpExpr(env: *Env, unaryop: ast.UnaryOpExprOf(.untyped), loc: ast.Lo
         // 06 C3 — `-x` applied no constraint at all, so `-"s"` checked.
         .neg => blk: {
             try requireNumericOperand(env, operandTyped.getType(), "-", unaryop.expr.getLoc());
+            try env.divisions.put(loc, operandTyped.getType());
             break :blk TypedExpr{ .unaryOp = .{ .loc = loc, .type_ = operandTyped.getType(), .op = .neg, .expr = operandPtr } };
         },
     };
@@ -11816,6 +11823,8 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
                                         const declared = env.narrowedDecl.get(name);
                                         // A `var` typed by a behavior takes an implementer.
                                         try unifyArgument(env, declared orelse ty, valTyped.getType(), loc);
+                                        // Decision 264 — `n += v` is checked against `n`'s type.
+                                        if (a.op == .plusAssign) try env.divisions.put(loc, declared orelse ty);
                                         if (declared) |d| {
                                             const keepDepth = env.localDepth.get(name);
                                             const prevSuppress = env.suppressDepthNote;
@@ -11833,6 +11842,7 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
                                 .fieldAccess => |fa| blk: {
                                     const recvTyped = try inferExprTyped(env, fa.receiver.*);
                                     try refuseRecordFieldAssign(env, fa.receiver.*, recvTyped.getType(), fa.field, loc);
+                                    if (a.op == .plusAssign) try env.divisions.put(loc, valTyped.getType());
                                     const recvPtr = try makeTypedPtr(env, recvTyped);
                                     break :blk .{ .fieldAccess = .{ .receiver = recvPtr, .field = fa.field } };
                                 },

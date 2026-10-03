@@ -63,6 +63,8 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
 // behavior Sized
 //   fn size(...)
 //   default fn isEmpty(...)
@@ -80,7 +82,7 @@ class Bag {
     }
 
     twiceSize() {
-        return (this.size() * 2);
+        return __bp_int((this.size() * 2), -2147483648, 2147483647, "* on i32 at main.bp:11:28");
     }
 
     isEmpty() {

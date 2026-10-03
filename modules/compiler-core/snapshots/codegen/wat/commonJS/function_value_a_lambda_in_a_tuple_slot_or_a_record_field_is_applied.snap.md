@@ -51,6 +51,8 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
 class Ops {
     constructor(step) {
         this.step = step;
@@ -61,7 +63,7 @@ Ops.prototype.__bp = "Ops";
 function mk() {
     const value = 1;
     const set = (n) => {
-    return (n * 2);
+    return __bp_int((n * 2), -2147483648, 2147483647, "* on i32 at main.bp:4:31");
 };
     return [value, set];
 }
@@ -71,11 +73,11 @@ function main() {
     __bp_print(c[0]);
     __bp_print(c[1](9));
     const t = [1, (n) => {
-    return (n + 100);
+    return __bp_int((n + 100), -2147483648, 2147483647, "+ on i32 at main.bp:11:34");
 }];
     __bp_print(t[1](2));
     const o = new Ops((n) => {
-    return (n - 1);
+    return __bp_int((n - 1), -2147483648, 2147483647, "- on i32 at main.bp:13:39");
 });
     __bp_print(o.step(10));
 }

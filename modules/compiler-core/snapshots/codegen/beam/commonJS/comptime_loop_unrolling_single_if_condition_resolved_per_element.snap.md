@@ -25,6 +25,8 @@ ct_0: val COMMANDS = comptime ["calc", "noop", "help"] → ["calc", "noop", "hel
 
 ----- JAVASCRIPT -- main.js
 ```javascript
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
 const COMMANDS = ["calc", "noop", "help"];
 
 function main() {
@@ -34,13 +36,13 @@ function main() {
 
 function execute_$0(input) {
     let output = 0;
-    output = ((input * 2) + 0);
+    output = __bp_int((input * 2), -2147483648, 2147483647, "* on i32 at main.bp:7:28");
     return output;
 }
 
 function execute_$1(input) {
     let output = 0;
-    output = ((input * 2) + 0);
+    output = __bp_int((input * 2), -2147483648, 2147483647, "* on i32 at main.bp:7:28");
     return output;
 }
 

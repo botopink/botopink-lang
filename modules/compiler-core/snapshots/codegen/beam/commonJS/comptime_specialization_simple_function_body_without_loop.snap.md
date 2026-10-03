@@ -13,6 +13,8 @@ fn main() {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
 function main() {
     const r1 = execute_$0(10);
     const r2 = execute_$1(42);
@@ -20,11 +22,11 @@ function main() {
 }
 
 function execute_$0(input) {
-    return (input + 0);
+    return __bp_int((input + 0), -2147483648, 2147483647, "+ on i32 at main.bp:2:18");
 }
 
 function execute_$1(input) {
-    return (input + 0);
+    return __bp_int((input + 0), -2147483648, 2147483647, "+ on i32 at main.bp:2:18");
 }
 
 function _botopink_main() {

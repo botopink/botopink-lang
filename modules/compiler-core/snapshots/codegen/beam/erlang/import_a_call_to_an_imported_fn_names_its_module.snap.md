@@ -11,7 +11,11 @@ pub fn twice(x: i32) -> i32 {
 -export([twice/1]).
 
 twice(X) ->
-    (X * 2).
+    '__bp_int'((X * 2), -2147483648, 2147483647, <<"integer overflow: * on i32 at a.bp:2:14">>).
+
+-compile({inline,['__bp_int'/4]}).
+'__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
+'__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
 ```
 
 ----- RUN LOG -----

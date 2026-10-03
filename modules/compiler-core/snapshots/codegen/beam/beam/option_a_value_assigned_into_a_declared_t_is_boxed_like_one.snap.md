@@ -423,7 +423,7 @@ fn main() {
 {module, test@main@@Box}.
 {exports, [{total, 1}, {isBig, 1}, {doubled, 1}, {label, 1}, {'__bp_get', 2}, {'__bp_format', 1}]}.
 {attributes, []}.
-{labels, 24}.
+{labels, 28}.
 
 {function, total, 1, 3}.
   {label, 2}.
@@ -436,9 +436,9 @@ fn main() {
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 12}, [{x, 0}, 2, {atom, test@main@@Box}]}.
+    {test, is_tagged_tuple, {f, 14}, [{x, 0}, 2, {atom, test@main@@Box}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 12}.
+  {label, 14}.
     {move, {y, 1}, {x, 1}}.
     {move, {x, 0}, {x, 2}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 3}.
@@ -458,16 +458,16 @@ fn main() {
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 13}, [{x, 0}, 2, {atom, test@main@@Box}]}.
+    {test, is_tagged_tuple, {f, 15}, [{x, 0}, 2, {atom, test@main@@Box}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 13}.
-    {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_lt, {f, 14}, [{integer, 1}, {x, 0}]}.
-    {move, {atom, true}, {x, 0}}.
-    {jump, {f, 15}}.
-  {label, 14}.
-    {move, {atom, false}, {x, 0}}.
   {label, 15}.
+    {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
+    {test, is_lt, {f, 16}, [{integer, 1}, {x, 0}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 17}}.
+  {label, 16}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 17}.
     {deallocate, 1}.
     return.
 
@@ -480,12 +480,12 @@ fn main() {
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 16}, [{x, 0}, 2, {atom, test@main@@Box}]}.
+    {test, is_tagged_tuple, {f, 18}, [{x, 0}, 2, {atom, test@main@@Box}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 16}.
+  {label, 18}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 18}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 20}, 0, 0, {x, 0}, {list, []}}.
     {call_ext_last, 2, {extfunc, lists, map, 2}, 1}.
 
 {function, label, 1, 9}.
@@ -500,24 +500,24 @@ fn main() {
     {deallocate, 1}.
     return.
 
-{function, '__bp_get', 2, 20}.
-  {label, 19}.
+{function, '__bp_get', 2, 24}.
+  {label, 23}.
     {line, [{location, "test@main@@Box.erl", 5}]}.
     {func_info, {atom, test@main@@Box}, {atom, '__bp_get'}, 2}.
-  {label, 20}.
-    {test, is_eq_exact, {f, 21}, [{x, 1}, {atom, items}]}.
+  {label, 24}.
+    {test, is_eq_exact, {f, 25}, [{x, 1}, {atom, items}]}.
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 2}, {x, 0}}.
     {call_ext_only, 2, {extfunc, erlang, element, 2}}.
-  {label, 21}.
+  {label, 25}.
     {move, {atom, undefined}, {x, 0}}.
     return.
 
-{function, '__bp_format', 1, 23}.
-  {label, 22}.
+{function, '__bp_format', 1, 27}.
+  {label, 26}.
     {line, [{location, "test@main@@Box.erl", 5}]}.
     {func_info, {atom, test@main@@Box}, {atom, '__bp_format'}, 1}.
-  {label, 23}.
+  {label, 27}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -543,20 +543,34 @@ fn main() {
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {gc_bif, '+', {f, 0}, 0, [{y, 1}, {y, 0}], {x, 0}}.
+    {test, is_ge, {f, 12}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 12}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 13}}.
+  {label, 12}.
+    {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at test@main@@Box.bp:4:45">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 13}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {deallocate, 2}.
     return.
 
-{function, '-/1-fun-1-', 1, 18}.
-  {label, 17}.
+{function, '-/1-fun-1-', 1, 20}.
+  {label, 19}.
     {line, [{location, "test@main@@Box.erl", 4}]}.
     {func_info, {atom, test@main@@Box}, {atom, '-/1-fun-1-'}, 1}.
-  {label, 18}.
+  {label, 20}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {gc_bif, '*', {f, 0}, 0, [{y, 0}, {integer, 2}], {x, 0}}.
+    {test, is_ge, {f, 21}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 21}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 22}}.
+  {label, 21}.
+    {move, {literal, {integer_overflow, <<"integer overflow: * on i32 at test@main@@Box.bp:8:75">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 22}.
     {deallocate, 1}.
     return.
 ```

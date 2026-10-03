@@ -939,12 +939,13 @@ three targets (decision 178).
 
 ### The sidecars of a `run/` cell
 
-Three optional files beside `run/<name>.bp`, each a claim the cell makes (C-16, front 12 steps 4.3
-and 4.4). `run.sh`'s usage block is the reference; this is the why.
+Four optional files beside `run/<name>.bp`, each a claim the cell makes (C-16, front 12 steps 4.3
+and 4.4; `.<target>.stderr` decision 264). `run.sh`'s usage block is the reference; this is the why.
 
 | Sidecar | Claim | Passes when |
 |---|---|---|
 | `<name>.exit` holding `nonzero` | the program **aborts** after printing `.out` (`@panic`, `@todo`, a failed index under decision 63) | stdout equals `.out` **and** the status is not 0. The number is never pinned: node 1, erl 1, wasmtime 134 are the runtimes' (§ Never pin an erlang exit status) |
+| `<name>.<target>.stderr` | with `.exit`: on that target the abort **names its cause** — what the program died of, not only that it died | the `.exit` claim holds **and** the program's stderr contains line 1 (`integer overflow: + on i32 at src/main.bp:7:14`). Per target, because a runtime that writes no text of its own (a wasm trap) has nothing to compare; a `.stderr` without an `.exit` is a malformed claim and fails the cell |
 | `<name>.<target>.expect` | on that target the compiler **refuses** the program — `reject/`'s shape, per target | exit ≠ 0 and the diagnostic contains line 1 (and ` --> src/main.bp:<L:C>` when line 2 is present). `run/external_erlang_only.{commonJS,wasm}.expect` and `run/std_erlang_node.{commonJS,wasm}.expect` are the live ones |
 | `<name>.targets` | the cell is scheduled only on these targets, **because every other target refuses it on a host binding** | the cell passes on each target it names, and `botopink build --target <t>` refuses it on a host binding on each target it leaves out — § Narrowing a cell |
 | `modules/<name>/<target>.expect` | the `.<target>.expect` claim for a whole project: that target **refuses** it | exit ≠ 0 and the diagnostic contains line 1 (and ` --> <line 2>` when present — `src/<file>.bp:<L:C>`, the file named because a project has several). `modules/external_method_imported/wasm.expect` is the live one |
@@ -960,6 +961,17 @@ float's shortest round-trip text, where erlang and beam agree with commonJS), `r
 wasm by a `.wasm.expect`, each a value wasm has no reader for yet: `run/optional_index_arithmetic`
 (`xs[i] + 1`), `run/i64_in_array_slot`, `run/fn_value_float_argument`, `run/generic_field_float`,
 `run/untyped_array_float_push`.
+
+`front/int-overflow` (decision 264: an integer result outside its type aborts on every target) adds
+eight abort cells, each `.exit` plus `.<target>.stderr` naming `integer overflow: <op> on <type> at
+src/main.bp:<L:C>` on commonJS, erlang and beam: `run/int_overflow_add_i32`, `run/int_overflow_mul_i64`
+(past `2^63 − 1`, so commonJS's ±(2^53 − 1) bound aborts at the same operator),
+`run/int_overflow_negate_i32`, `run/int_overflow_plus_assign`, `run/int_division_min_by_minus_one`,
+`run/int_overflow_sub_u32`, `run/int_overflow_add_i8` and `run/int_division_by_zero` (commonJS's
+`integer division by zero`; erlang and beam raise `badarith`, wasm traps) — and
+`run/int_arith_at_bounds`, every type's bound reached by arithmetic and printed, never an abort. wasm
+traps with no text, so its half is `.exit` alone; it does not check `u32` or the narrower types
+(`run/int_overflow_sub_u32` and `run/int_overflow_add_i8` are red there — `05-wasm`'s row).
 
 ## The targets
 

@@ -17,11 +17,15 @@ fn main() {
 
 countdown(N) ->
     lists:foreach(fun(I) ->
-        '__bp_print'([(N - I)])
+        '__bp_print'(['__bp_int'((N - I), -2147483648, 2147483647, <<"integer overflow: - on i32 at main.bp:3:18">>)])
     end, lists:seq(0, (N) - 1)).
 
 main() ->
     countdown(3).
+
+-compile({inline,['__bp_int'/4]}).
+'__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
+'__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).

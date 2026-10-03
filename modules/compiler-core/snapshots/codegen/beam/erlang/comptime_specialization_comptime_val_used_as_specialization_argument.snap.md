@@ -33,11 +33,15 @@ main() ->
 
 'scale_$0'(Value) ->
     Factor = 2,
-    (Value * Factor).
+    '__bp_int'((Value * Factor), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:4:18">>).
 
 'scale_$1'(Value) ->
     Factor = 3,
-    (Value * Factor).
+    '__bp_int'((Value * Factor), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:4:18">>).
+
+-compile({inline,['__bp_int'/4]}).
+'__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
+'__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
 
 '_botopink_main'() ->
     io:setopts(standard_io, [{encoding, unicode}]),

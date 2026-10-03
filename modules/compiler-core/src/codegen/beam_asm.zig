@@ -956,7 +956,7 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
                     const fa = a.target.fieldAccess;
                     var read: ast.Expr = undefined;
                     var sum: ast.Expr = undefined;
-                    const value = fieldAssignValue(fa, a.op, a.value, &read, &sum);
+                    const value = fieldAssignValue(fa, a.op, a.value, &read, &sum, .{ .line = 0, .col = 0 });
                     if (a.op == .plusAssign) countLocalsInExpr(em, value, count);
                     countLocalsInExpr(em, fa.receiver.*, count);
                     countStaging(em, &.{ value, fa.receiver.* }, count);
@@ -1170,12 +1170,13 @@ fn countGenForSlots(em: *Emitter, body: []const ast.Stmt, count: *u32) void {
 }
 
 /// The value a field assignment stores: `value` for `=`, `recv.f + value` for
-/// `+=` (built in the caller's `read`/`sum` nodes).
-fn fieldAssignValue(fa: anytype, op: anytype, value: *ast.Expr, read: *ast.Expr, sum: *ast.Expr) ast.Expr {
+/// `+=` (built in the caller's `read`/`sum` nodes). The `+` takes the
+/// binding's loc `at`, where inference keyed the `+=`'s type (decision 264).
+fn fieldAssignValue(fa: anytype, op: anytype, value: *ast.Expr, read: *ast.Expr, sum: *ast.Expr, at: ast.Loc) ast.Expr {
     if (op != .plusAssign) return value.*;
     const loc: ast.Loc = .{ .line = 0, .col = 0 };
     read.* = .{ .identifier = .{ .loc = loc, .kind = .{ .identAccess = .{ .receiver = fa.receiver, .member = fa.field } } } };
-    sum.* = .{ .binaryOp = .{ .loc = loc, .op = .add, .lhs = read, .rhs = value } };
+    sum.* = .{ .binaryOp = .{ .loc = at, .op = .add, .lhs = read, .rhs = value } };
     return sum.*;
 }
 
@@ -3590,7 +3591,7 @@ const Emitter = struct {
                 .add => if (self.isStringExpr(strings, e)) null else combineNum(self.numKind(strings, bin.lhs.*), self.numKind(strings, bin.rhs.*)),
                 // `-`, `*` and `/` only ever answer a number; a `/` inference
                 // read answers its own kind.
-                .div => if (self.divisionKind(bin.loc)) |k| (if (k == .integer) NumKind.int else NumKind.float) else combineNum(self.numKind(strings, bin.lhs.*), self.numKind(strings, bin.rhs.*)) orelse .number,
+                .div => if (self.divisionKind(bin.loc)) |k| (if (k.isInt()) NumKind.int else NumKind.float) else combineNum(self.numKind(strings, bin.lhs.*), self.numKind(strings, bin.rhs.*)) orelse .number,
                 .sub, .mul => combineNum(self.numKind(strings, bin.lhs.*), self.numKind(strings, bin.rhs.*)) orelse .number,
                 .mod => .int,
                 else => null,
@@ -4853,13 +4854,15 @@ const Emitter = struct {
     }
 
     /// A write to module `var` `name`: stage the operands, call the helper.
-    fn emitMemoryWrite(self: *Emitter, name: []const u8, mem: ast.Memory, plus: bool, value: *const ast.Expr) anyerror!void {
+    fn emitMemoryWrite(self: *Emitter, name: []const u8, mem: ast.Memory, plus: bool, value: *const ast.Expr, at: ast.Loc) anyerror!void {
         const key = Op.atom(try self.memoryKey(name));
         // `x += e` stores `x + e` — lowered as the binary `+` it is, so a
-        // string var concatenates.
+        // string var concatenates. The `+` takes the binding's loc `at`, where
+        // inference keyed the `+=`'s type, and is range-checked as one
+        // (decision 264).
         var lhs: ast.Expr = .{ .identifier = .{ .loc = value.getLoc(), .kind = .{ .ident = name } } };
         var rhs: ast.Expr = value.*;
-        const sum: ast.Expr = .{ .binaryOp = .{ .loc = value.getLoc(), .op = .add, .lhs = &lhs, .rhs = &rhs } };
+        const sum: ast.Expr = .{ .binaryOp = .{ .loc = at, .op = .add, .lhs = &lhs, .rhs = &rhs } };
         const new_value: ast.Expr = if (plus) sum else value.*;
         switch (mem.mode) {
             .processDict => {
@@ -5643,7 +5646,7 @@ const Emitter = struct {
                     if (lb.typeAnnotation) |ta| if (writtenTypeName(ta)) |tn| try self.local_types.put(lb.name, tn);
                     try self.emitLocalBind(lb.name, lb.value.*);
                 },
-                .assign => |a| try self.emitAssign(a),
+                .assign => |a| try self.emitAssign(a, b.loc),
                 .localBindDestruct => |lb| try self.emitDestructBind(lb.pattern, lb.value.*),
             },
             // A statement `loop`/`forEach` whose body reassigns outer names
@@ -5682,7 +5685,7 @@ const Emitter = struct {
                 // component model is load-time self-registration registered
                 // nothing.
                 if (self.moduleVarPush(stmt.expr)) |mv| {
-                    return self.emitMemoryWrite(mv.name, mv.mem, false, &stmt.expr);
+                    return self.emitMemoryWrite(mv.name, mv.mem, false, &stmt.expr, stmt.expr.getLoc());
                 }
                 try self.lowerExprIntoX0(stmt.expr);
                 // `out.push(x)` on a local array rebinds it: the call's value
@@ -5912,11 +5915,12 @@ const Emitter = struct {
 
     /// `name = expr` or `name += expr`: evaluate the new value and store
     /// back into the variable's y-slot.
-    fn emitAssign(self: *Emitter, a: anytype) anyerror!void {
+    /// `at` is the binding's loc, where inference keys a `+=`'s type (decision 264).
+    fn emitAssign(self: *Emitter, a: anytype, at: ast.Loc) anyerror!void {
         switch (a.target) {
             .name => |name| {
                 if (!self.reg_map.contains(name)) if (self.module_vars.get(name)) |mem| {
-                    return self.emitMemoryWrite(name, mem, a.op == .plusAssign, a.value);
+                    return self.emitMemoryWrite(name, mem, a.op == .plusAssign, a.value, at);
                 };
                 const reg = self.reg_map.get(name) orelse {
                     try beamEmitter.writeComment(self.out, "assign to unknown variable: {s}", .{name});
@@ -5948,6 +5952,7 @@ const Emitter = struct {
                         const scratch = self.scratchBase();
                         try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(scratch));
                         try beamEmitter.writeGcBif(self.out, .add, scratch + 1, &.{ reg.operand(), Op.xr(scratch) }, Dst.xr(0));
+                        try self.emitIntCheck(0, at, "+=");
                         try beamEmitter.writeMoveOp(self.out, Op.xr(0), reg.dest());
                     },
                 }
@@ -5958,7 +5963,7 @@ const Emitter = struct {
                 // with `recv.f + v`.
                 var read: ast.Expr = undefined;
                 var sum: ast.Expr = undefined;
-                const value = fieldAssignValue(fa, a.op, a.value, &read, &sum);
+                const value = fieldAssignValue(fa, a.op, a.value, &read, &sum, at);
                 const st = try self.stageOperands(&.{ value, fa.receiver.* }, &[_]ast.TrailingLambda{});
                 try self.emitParallelMove(&.{ Op.atom(fa.field), st.ops[0], st.ops[1] }, &.{ 0, 1, 2 });
                 try beamEmitter.writeCall(self.out, .normal, 3, .{ .ext = .{ .module = "maps", .function = "update" } }, 0);
@@ -6184,7 +6189,7 @@ const Emitter = struct {
             },
             .unaryOp => |un| switch (un.op) {
                 .neg => {
-                    try self.lowerNeg(un.expr.*, 0);
+                    try self.lowerNeg(un.expr.*, 0, un.loc);
                     return;
                 },
                 .not => {
@@ -6411,8 +6416,10 @@ const Emitter = struct {
         try beamEmitter.writeMoveOp(self.out, Op.atom("ok"), Dst.xr(0));
     }
 
-    /// Lower `-e` into `{x, dest}`. Constant-folds literal numerics.
-    fn lowerNeg(self: *Emitter, inner: ast.Expr, dest: u32) !void {
+    /// Lower `-e` into `{x, dest}`. Constant-folds literal numerics; any other
+    /// operand of an integer type is range-checked (decision 264 — `-x` at
+    /// the type's minimum, or of an unsigned `x` but 0, leaves the type).
+    fn lowerNeg(self: *Emitter, inner: ast.Expr, dest: u32, loc: ast.Loc) !void {
         switch (inner) {
             .literal => |lit| switch (lit.kind) {
                 .numberLit => |n| {
@@ -6434,6 +6441,7 @@ const Emitter = struct {
             try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(scratch));
             try beamEmitter.writeGcBif(self.out, .sub, scratch + 1, &.{Op.xr(scratch)}, Dst.xr(dest));
         }
+        try self.emitIntCheck(dest, loc, "-");
     }
 
     /// Emit an `if (cmp) then else else` as a *value*: the chosen branch's value
@@ -6509,9 +6517,53 @@ const Emitter = struct {
     }
 
     /// Inference's `InstanceLowering.division` for the `/` at `loc`.
-    fn divisionKind(self: *const Emitter, loc: ast.Loc) ?envMod.DivisionKind {
+    fn divisionKind(self: *const Emitter, loc: ast.Loc) ?envMod.ArithKind {
         const il = self.instance_lowerings.get(loc) orelse return null;
         return if (il == .division) il.division else null;
+    }
+
+    /// Decision 264 — the value in `{x, reg}` of the integer operator at
+    /// `loc`, checked against the type inference recorded there: two
+    /// `is_ge` tests against the type's ends (a bignum never overflows, so
+    /// the range is the type's), and outside them
+    /// `erlang:error({integer_overflow, <<"integer overflow: <op> on <type>
+    /// at <file:line:col>">>})` — the term the erlang backend's `'__bp_int'/4`
+    /// raises. A float operator, and one whose type was never resolved (a
+    /// generic `T`), emit nothing.
+    fn emitIntCheck(self: *Emitter, reg: u32, loc: ast.Loc, op: []const u8) !void {
+        const k = self.divisionKind(loc) orelse return;
+        const r = k.range() orelse return;
+        var lo_buf: [48]u8 = undefined;
+        var hi_buf: [48]u8 = undefined;
+        const lo = std.fmt.bufPrint(&lo_buf, "{d}", .{r.lo}) catch unreachable;
+        const hi = std.fmt.bufPrint(&hi_buf, "{d}", .{r.hi}) catch unreachable;
+        const fail_l = self.allocLabel();
+        const ok_l = self.allocLabel();
+        // `is_ge` takes a literal on either side: `V >= Lo`, then `Hi >= V`.
+        try beamEmitter.writeTest(self.out, .is_ge, fail_l, &.{ Op.xr(reg), if (r.lo < 0) Op.negNum(lo[1..]) else Op.num(lo) });
+        try beamEmitter.writeTest(self.out, .is_ge, fail_l, &.{ Op.num(hi), Op.xr(reg) });
+        try beamEmitter.writeJump(self.out, ok_l);
+        try beamEmitter.writeLabel(self.out, fail_l);
+        var what_buf: [640]u8 = undefined;
+        const file = if (self.src_path.len > 0) self.src_path else self.module_name;
+        const what = std.fmt.bufPrint(&what_buf, "integer overflow: {s} on {s} at {s}{s}:{d}:{d}", .{
+            op, @tagName(k), file, if (self.src_path.len > 0) "" else ".bp", loc.line, loc.col,
+        }) catch "integer overflow";
+        try beamEmitter.writeMove(self.out, Term.tupleOf(&[_]Term{ Term.atomOf("integer_overflow"), Term.str(what) }), 0);
+        try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "error" } }, 0);
+        try beamEmitter.writeLabel(self.out, ok_l);
+    }
+
+    /// The source spelling of an arithmetic operator, as an abort names it.
+    fn arithSymbol(op: anytype) []const u8 {
+        return switch (op) {
+            .add => "+",
+            .sub => "-",
+            .mul => "*",
+            .div => "/",
+            .mod => "%",
+            else => "?",
+        };
     }
 
     /// Arithmetic via `gc_bif`. Handles non-simple operands by materializing
@@ -6526,7 +6578,7 @@ const Emitter = struct {
             // Inference's reading of this `/` wins when it has one (onze F7:
             // integer division truncates on every backend).
             .div => if (self.divisionKind(bin.loc)) |k|
-                (if (k == .integer) beamEmitter.GcBif.div_ else beamEmitter.GcBif.fdiv)
+                (if (k.isInt()) beamEmitter.GcBif.div_ else beamEmitter.GcBif.fdiv)
             else if (self.numKind(&self.string_locals, bin.lhs.*) == .float or
                 self.numKind(&self.string_locals, bin.rhs.*) == .float) .fdiv else .div_,
             .mod => .rem,
@@ -6534,6 +6586,9 @@ const Emitter = struct {
         };
         const st = try self.stageOperands(&.{ bin.lhs.*, bin.rhs.* }, &[_]ast.TrailingLambda{});
         try beamEmitter.writeGcBif(self.out, bif, @max(self.min_live, st.x_top), st.slice(), Dst.xr(dest));
+        // `rem` answers a value smaller than its divisor, never outside the
+        // type, and raises `badarith` on `0` itself.
+        if (bin.op != .mod) try self.emitIntCheck(dest, bin.loc, arithSymbol(bin.op));
     }
 
     /// Lower a comparison (`<`, `>`, `==`, …) as a value: emits a `{test, …}`
@@ -8456,7 +8511,7 @@ const Emitter = struct {
             try self.reg_map.put(rest_name, .{ .y = rest_y });
             defer _ = self.reg_map.remove(rest_name);
             const rest_ref: ast.Expr = .{ .identifier = .{ .loc = recv_expr.getLoc(), .kind = .{ .ident = rest_name } } };
-            try self.emitMemoryWrite(name, mem, false, &rest_ref);
+            try self.emitMemoryWrite(name, mem, false, &rest_ref, rest_ref.getLoc());
             try beamEmitter.writeBif(self.out, "element", 0, &.{ Op.int(1), Op.yr(pair_y) }, Dst.xr(0));
             if (mode == .tail) try self.emitReturn();
             return true;

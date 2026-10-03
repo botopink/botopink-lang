@@ -13,9 +13,11 @@ fn main() -> string {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
 function main() {
     const input = 42;
-    const status = (() => {const calculo = ((input * 2) + 0); if ((calculo > 100)) { return "Alto"; } return "Baixo";})();
+    const status = (() => {const calculo = __bp_int((input * 2), -2147483648, 2147483647, "* on i32 at main.bp:4:29"); if ((calculo > 100)) { return "Alto"; } return "Baixo";})();
     return status;
 }
 

@@ -61,12 +61,14 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
 function count(limit) {
     let i = 0;
     let acc = "";
     while ((i < limit)) {
     acc = (acc + i.toString());
-    i = (i + 1);
+    i = __bp_int((i + 1), -2147483648, 2147483647, "+ on i32 at main.bp:6:15");
 }
     __bp_print(acc);
     return i;
@@ -76,9 +78,9 @@ function evens(limit) {
     let i = 0;
     let sum = 0;
     while ((i < limit)) {
-    i = (i + 1);
-    if ((((i % 2) + 0) === 1)) { continue; }
-    sum = (sum + i);
+    i = __bp_int((i + 1), -2147483648, 2147483647, "+ on i32 at main.bp:15:15");
+    if ((__bp_int((i % 2), -2147483648, 2147483647, "% on i32 at main.bp:16:15") === 1)) { continue; }
+    sum = __bp_int((sum + i), -2147483648, 2147483647, "+ on i32 at main.bp:17:19");
 }
     return sum;
 }

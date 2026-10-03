@@ -14,7 +14,7 @@ fn main() {
 {module, test@main}.
 {exports, [{'_botopink_main', 0}, {main, 1}]}.
 {attributes, []}.
-{labels, 64}.
+{labels, 68}.
 
 {function, 'Function_identity', 1, 3}.
   {label, 2}.
@@ -210,7 +210,7 @@ fn main() {
     {make_fun3, {f, 61}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 63}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 65}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
@@ -531,18 +531,32 @@ fn main() {
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {gc_bif, '+', {f, 0}, 0, [{y, 0}, {integer, 1}], {x, 0}}.
+    {test, is_ge, {f, 62}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 62}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 63}}.
+  {label, 62}.
+    {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at test@main.bp:5:41">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 63}.
     {deallocate, 1}.
     return.
 
-{function, '-main/0-fun-4-', 1, 63}.
-  {label, 62}.
+{function, '-main/0-fun-4-', 1, 65}.
+  {label, 64}.
     {line, [{location, "test@main.erl", 12}]}.
     {func_info, {atom, test@main}, {atom, '-main/0-fun-4-'}, 1}.
-  {label, 63}.
+  {label, 65}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {gc_bif, '*', {f, 0}, 0, [{y, 0}, {integer, 2}], {x, 0}}.
+    {test, is_ge, {f, 66}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 66}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 67}}.
+  {label, 66}.
+    {move, {literal, {integer_overflow, <<"integer overflow: * on i32 at test@main.bp:5:57">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 67}.
     {deallocate, 1}.
     return.
 ```

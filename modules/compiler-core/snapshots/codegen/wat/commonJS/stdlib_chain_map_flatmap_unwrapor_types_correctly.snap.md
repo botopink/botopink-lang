@@ -12,6 +12,8 @@ fn main() {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
 function parseAge(s) {
     (() => { throw new Error("not implemented") })();
 }
@@ -24,7 +26,7 @@ function main() {
     const r = ((_r) => "error" in _r ? (0) : _r.ok)(((_r) => "error" in _r ? _r : ((n) => {
     return validate(n);
 })(_r.ok))(((_r) => "error" in _r ? _r : { ok: ((n) => {
-    return (n + 1);
+    return __bp_int((n + 1), -2147483648, 2147483647, "+ on i32 at main.bp:5:23");
 })(_r.ok) })(parseAge("42"))));
 }
 

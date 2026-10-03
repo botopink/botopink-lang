@@ -40,9 +40,11 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
 function main() {
     const x = 10;
-    __bp_print(((x * 2) + 0));
+    __bp_print(__bp_int((x * 2), -2147483648, 2147483647, "* on i32 at main.bp:3:14"));
 }
 
 function _botopink_main() {

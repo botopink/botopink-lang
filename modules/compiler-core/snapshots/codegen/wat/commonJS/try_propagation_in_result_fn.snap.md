@@ -53,6 +53,8 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
 function inner(should_fail) {
     if (should_fail) { return ({ error: "inner-fail" }); } else { return ({ ok: 7 }); }
 }
@@ -61,7 +63,7 @@ function outer(should_fail) {
     const _try0 = inner(should_fail);
     if ("error" in _try0) return _try0;
     const v = _try0.ok;
-    return ({ ok: (v + 1) });
+    return ({ ok: __bp_int((v + 1), -2147483648, 2147483647, "+ on i32 at main.bp:10:14") });
 }
 
 function main() {

@@ -44,9 +44,11 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
 function countdown(n) {
     for (const i of Array.from({length: Math.max(0, (n) - (0))}, (_, __i) => (0) + __i)) {
-    __bp_print((n - i));
+    __bp_print(__bp_int((n - i), -2147483648, 2147483647, "- on i32 at main.bp:3:18"));
 }
 }
 
