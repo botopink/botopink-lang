@@ -3,9 +3,8 @@
 //// in `unknown` — an integer, an integral float, a fractional float, a number
 //// out of `i8`'s range, a string, a bool, a record, an enum variant with a
 //// payload, a tuple and a generic record — written as one mark per value
-//// (`T` holds, `.` does not). A test cell runs on commonJS and erlang; the
-//// beam and wasm twins are their fronts' rows (beam reads `#(i32, string)`
-//// as any tagged tuple, wasm traps).
+//// (`T` holds, `.` does not). A test cell runs on commonJS, erlang and beam;
+//// the `run/` twin over four targets waits on wasm, which traps (05's row).
 
 type Point(x: i32, y: i32)
 

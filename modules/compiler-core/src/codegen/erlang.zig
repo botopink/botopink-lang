@@ -6973,7 +6973,10 @@ const Emitter = struct {
                         // constructor that cannot fail (decision 67's R5), so
                         // it is the arm's pattern matched once.
                         .ctor => |pat| b.match(try this.ctorBindPattern(b, pat), value),
-                        .list => value,
+                        // `val [..rest] = xs;` — the one list pattern that
+                        // cannot fail binds the whole list. Emitting the bare
+                        // value bound nothing, and `Rest` was unbound.
+                        .list => |pat| b.match(try this.patternNode(b, pat), value),
                     };
                 },
             },
@@ -8573,8 +8576,11 @@ const Emitter = struct {
                 const sp = lp.spread orelse return .{ .list = elems };
                 if (lp.elems.len == 0 and sp.len == 0) return Ast.Expr.v("_");
                 const tail = if (sp.len > 0) Ast.Expr.v(try this.patternBindVar(b, sp)) else Ast.Expr.v("_");
-                // `[Rest]` when only a named spread is present (as the backend has always written it).
-                if (lp.elems.len == 0) return b.list(&.{tail});
+                // A spread alone (`[..rest]`) is the whole list: `Rest`, never
+                // `[Rest]` — that matched a one-element list only, so a `case`
+                // arm fell through to `case_clause` and `val assert [..all]`
+                // panicked on any other length.
+                if (lp.elems.len == 0) return tail;
                 return b.cons(elems, tail);
             },
             // Expanded by `caseNode`; elsewhere the first alternative stands in.

@@ -201,3 +201,23 @@ test "erlang: a fn in a generic record's field is applied when called through th
         \\}
     , "b!\ne?\n", &.{ "(erlang:element(2, H))(<<\"b\">>)", "(erlang:element(2, Lam))(<<\"e\">>)" });
 }
+
+test "erlang: a list pattern that is a spread alone binds the whole list" {
+    // `[..all]` matches every list. It was emitted `[All]`, a one-element list:
+    // the `case` arm fell through to `case_clause` on `[1, 2, 3]` and on `[]`,
+    // and `val assert [..all] = xs` panicked "assert pattern did not match".
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn describe(xs: i32[]) -> string {
+        \\    return case xs {
+        \\        [..all] -> "all ${all.length()}";
+        \\    };
+        \\}
+        \\
+        \\pub fn main() {
+        \\    @print(describe([1, 2, 3]));
+        \\    @print(describe([]));
+        \\    val assert [..every] = [4, 5];
+        \\    @print(every);
+        \\}
+    , "all 3\nall 0\n[4, 5]\n", &.{"Every = case"});
+}
