@@ -402,11 +402,11 @@ pub const decorator_type_not_one_type: []const u8 = "decorator-type-not-one-type
 /// written, not left to the backend.
 pub const unknown_associated_fn: []const u8 = "unknown-associated-fn";
 
-/// `@typeInfo.all` written without its labels, with an unknown one, or with
+/// `@TypeInfo.all` written without its labels, with an unknown one, or with
 /// `member:` where it does not apply.
 pub const typeinfo_all_arguments: []const u8 = "typeinfo-all-arguments";
 
-/// `@typeInfo.all(with: x)` where `x` names no body-carrying decorator.
+/// `@TypeInfo.all(with: x)` where `x` names no body-carrying decorator.
 pub const typeinfo_all_not_decorator: []const u8 = "typeinfo-all-not-decorator";
 
 /// One query over a decorator carried by functions and by types.
@@ -419,7 +419,7 @@ pub const typeinfo_all_needs_member: []const u8 = "typeinfo-all-needs-member";
 /// an import the answer adds).
 pub const typeinfo_all_private: []const u8 = "typeinfo-all-private";
 
-/// An import of a module that reads `@typeInfo.all`.
+/// An import of a module that reads `@TypeInfo.all`.
 pub const typeinfo_all_imported: []const u8 = "typeinfo-all-imported";
 
 /// `decl.setMeta` from a field's or a method's decorator: meta describes a
@@ -429,8 +429,12 @@ pub const decorator_meta_on_member: []const u8 = "decorator-meta-on-member";
 /// A decorator setting one of its keys twice on one declaration.
 pub const decorator_meta_duplicate: []const u8 = "decorator-meta-duplicate";
 
-/// Decision 248 — the lowercase `@typeInfo(X)` / `@typeInfo.all(…)`: the one
-/// reflection builtin is `@typeInfo`.
+/// Decision 253 — `@typeInfo.all(…)`: the catalogue is the static method
+/// `@TypeInfo.all` of the builtin type `TypeInfo`, refused where it is written.
+pub const typeinfo_all_on_function: []const u8 = "typeinfo-all-on-function";
+
+/// Decision 248 — the lowercase `@typeinfo(X)` / `@typeinfo.all(…)`: the one
+/// reflection builtin is `@typeInfo`, its catalogue `@TypeInfo.all` (253).
 pub const typeinfo_lowercase: []const u8 = "typeinfo-lowercase";
 
 /// `@typeInfo(X).<m>` naming no reflection member (or `.meta` / `.meta.<d>`
@@ -527,6 +531,7 @@ pub const all_codes = [_][]const u8{
     typeinfo_all_imported,
     decorator_meta_on_member,
     decorator_meta_duplicate,
+    typeinfo_all_on_function,
     typeinfo_lowercase,
     typeinfo_unknown_member,
     typeinfo_unknown_declaration,

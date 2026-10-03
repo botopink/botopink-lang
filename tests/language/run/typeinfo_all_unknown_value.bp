@@ -1,0 +1,24 @@
+//// Decision 254 — `@TypeInfo.all(…)` answers `Declared<unknown>[]` whatever
+//// the program declares, so declarations whose values differ in type sit in
+//// one answer: two functions of different signatures, catalogued together.
+
+fn job(comptime decl: @Decl) {
+    decl.setMeta("kind", "job");
+}
+
+#[job]
+pub fn count() -> i32 {
+    return 1;
+}
+
+#[job]
+pub fn greet(name: string) -> string {
+    return "hi " + name;
+}
+
+pub fn main() {
+    val all: Declared<unknown>[] = @TypeInfo.all(with: job);
+    for (all) { d ->
+        @print(d.name + " " + d.module);
+    }
+}

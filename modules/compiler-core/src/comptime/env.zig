@@ -944,10 +944,10 @@ pub const Env = struct {
     /// where a decorator's `decl.setMeta` is recorded and `@typeInfo` reads.
     /// Null outside a session (unit helpers that infer one program alone).
     reflection: ?*reflectionMod.Reflection = null,
-    /// Decision 216 (4) — the module reads `@typeInfo.all`: its first
+    /// Decision 216 (4) — the module reads `@TypeInfo.all`: its first
     /// analysis stops before bodies, and the re-analysis receives the answers.
     typeinfoAllPending: bool = false,
-    /// Call loc → the `Declared<T>` array answering that `@typeInfo.all`
+    /// Call loc → the `Declared<T>` array answering that `@TypeInfo.all`
     /// (`typeinfo_all.plan`), spliced through `srcRewrites`.
     typeinfoAll: std.AutoHashMapUnmanaged(ast.Loc, *const ast.Expr) = .empty,
     /// The module names the prelude records `Declared` / `DeclaredMeta`, so

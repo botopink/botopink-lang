@@ -1,0 +1,13 @@
+//// Decision 253 — the program's catalogue is the static method `all` of the
+//// builtin type `TypeInfo`: `@typeInfo.all(…)` is refused where it is
+//// written, naming `@TypeInfo.all`.
+
+fn route(comptime decl: @Decl) {}
+
+#[route]
+pub fn home() -> string { return "home"; }
+
+pub fn main() {
+    val all = @typeInfo.all(with: route);
+    @print(all.length);
+}

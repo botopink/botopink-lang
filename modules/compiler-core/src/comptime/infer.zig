@@ -3808,7 +3808,7 @@ fn runDeclDecorators(
     anns: []const ast.Annotation,
     handle: decoratorEval.DeclHandle,
     memberOwner: ?[]const u8,
-    /// Set for a top-level declaration: what `@typeInfo.all` records of it.
+    /// Set for a top-level declaration: what `@TypeInfo.all` records of it.
     declared: ?struct { kind: reflectionMod.DeclaredEntry.Kind, isPub: bool },
 ) InferError!void {
     for (anns) |a| {
@@ -7027,6 +7027,39 @@ fn inferBuiltinCallReturnType(
     return error.TypeError;
 }
 
+/// Decision 254 — the answer `typeinfo_all.plan` built for one
+/// `@TypeInfo.all(…)`, typed `Declared<unknown>[]` whatever its entries are.
+/// Each entry is inferred on its own and met by `Declared<unknown>` (every
+/// type is assignable to `unknown`), then carries that type: the entries never
+/// unify with each other, so a function and a type's thunk, or two functions
+/// of different signatures, sit in one answer.
+fn inferCatalogueAnswer(env: *Env, answer: ast.Expr, loc: ast.Loc) InferError!TypedExpr {
+    const declared_unknown = try env.namedTypeArgs("Declared", &.{try env.namedType("unknown")});
+    const array_type = try env.namedTypeArgs("array", &.{declared_unknown});
+    if (answer != .collection or answer.collection.kind != .arrayLit) {
+        const typed = try inferExprTyped(env, answer);
+        try unifyAt(env, array_type, typed.getType(), loc);
+        return typed;
+    }
+    const al = answer.collection.kind.arrayLit;
+    const elems = try env.arena.alloc(ast.TypedExpr, al.elems.len);
+    for (al.elems, 0..) |elem, i| {
+        elems[i] = try inferExprTyped(env, elem);
+        try unifyAt(env, declared_unknown, elems[i].getType(), elems[i].getLoc());
+        switch (elems[i]) {
+            inline else => |*e| e.type_ = declared_unknown,
+        }
+    }
+    return TypedExpr{ .collection = .{ .loc = answer.collection.loc, .type_ = array_type, .kind = .{ .arrayLit = .{
+        .elems = elems,
+        .spread = al.spread,
+        .spreadExpr = null,
+        .comments = al.comments,
+        .commentsPerElem = al.commentsPerElem,
+        .trailingComma = al.trailingComma,
+    } } } };
+}
+
 /// The type name `@src()` answers with (decision 73). Declared in
 /// `comptime.zig`'s `decl_reflection_src`; spliced into a program that names it
 /// by `withSourceLocationDecl`.
@@ -7045,7 +7078,7 @@ const runtime_builtin_names = [_][]const u8{
 /// Only read to suggest a spelling in `unknown-builtin`.
 const all_builtin_names = runtime_builtin_names ++ [_][]const u8{
     "src",        "block",      "expr",  "code",       "typeInfo",      "TypeOf",
-    "makeRecord", "RecordKeys", "field", "getContext", "comptimeError", "typeInfo.all",
+    "makeRecord", "RecordKeys", "field", "getContext", "comptimeError", "TypeInfo.all",
 };
 
 fn isKnownBuiltinName(env: *Env, callee: []const u8) bool {
@@ -13861,6 +13894,15 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
             // `@src()` (1.0.10-beta decision 73) — before the arguments are
             // inferred, so `@src(x)` reports the builtin's rule and not `x`.
             if (call.is_builtin and std.mem.eql(u8, call.callee, "typeInfo.all")) {
+                // Decision 253 — the catalogue is a static method of the
+                // builtin type `TypeInfo`, not a member of the function.
+                env.lastError = TypeError.custom(
+                    diagnostics.typeinfo_all_on_function ++ ": `@typeInfo.all` is spelled `@TypeInfo.all` — the catalogue is a static method of the type `TypeInfo`",
+                    "`@typeInfo(X)` reflects one declaration; `@TypeInfo.all(with: d)` answers every declaration carrying `d`.",
+                ).withLoc(loc);
+                return error.TypeError;
+            }
+            if (call.is_builtin and std.mem.eql(u8, call.callee, "TypeInfo.all")) {
                 // Decision 216 (4) — the answer `typeinfo_all.plan` built for
                 // this call; tooling that runs no decorator reads an empty one.
                 const answer = env.typeinfoAll.get(loc) orelse empty: {
@@ -13870,11 +13912,14 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                 };
                 env.usesDeclared = true;
                 try env.srcRewrites.put(loc, answer);
-                return inferExprTyped(env, answer.*);
+                // Decision 254 — the answer is `Declared<unknown>[]`, one
+                // fixed type whatever the program declares: every entry's
+                // `value` is `unknown`, and a use narrows it with `is`.
+                return inferCatalogueAnswer(env, answer.*, loc);
             }
             if (call.is_builtin and (std.mem.eql(u8, call.callee, "typeinfo") or std.mem.startsWith(u8, call.callee, "typeinfo."))) {
-                const msg = try std.fmt.allocPrint(env.arena, "{s}: `@{s}` is spelled `@{s}`", .{ diagnostics.typeinfo_lowercase, call.callee, try std.mem.concat(env.arena, u8, &.{ "typeInfo", call.callee["typeinfo".len..] }) });
-                env.lastError = TypeError.custom(msg, "The one reflection builtin is `@typeInfo` — `@typeInfo(X).name`, `@typeInfo(X).meta.<decorator>.<key>`, `@typeInfo.all(with: d)`, and `@typeInfo(T)` as a value is the structural `TypeInfo`.").withLoc(loc);
+                const msg = try std.fmt.allocPrint(env.arena, "{s}: `@{s}` is spelled `@{s}`", .{ diagnostics.typeinfo_lowercase, call.callee, if (std.mem.eql(u8, call.callee, "typeinfo.all")) "TypeInfo.all" else try std.mem.concat(env.arena, u8, &.{ "typeInfo", call.callee["typeinfo".len..] }) });
+                env.lastError = TypeError.custom(msg, "The one reflection builtin is `@typeInfo` — `@typeInfo(X).name`, `@typeInfo(X).meta.<decorator>.<key>`, `@TypeInfo.all(with: d)`, and `@typeInfo(T)` as a value is the structural `TypeInfo`.").withLoc(loc);
                 return error.TypeError;
             }
             if (call.is_builtin and std.mem.eql(u8, call.callee, "src")) {

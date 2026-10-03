@@ -1972,7 +1972,7 @@ the decorator produces goes to one of four places (decision 216):
 | a member of the annotated type | `decl.addMember("pub fn table() -> string { … }")` | `City.table()`, `c.describe()` — run-time code of the type, imported with it |
 | comptime meta, per decorator | `decl.setMeta("table", "cities")` | `@typeInfo(City).meta.entity.table` — a string constant, never run-time code |
 | an associated type | `decl.addType("Columns", "(name: string)")` | `City.Columns` in a type position, `City.Columns(name: "n")`, imported with its owner |
-| the program's catalogue | (every declaration a decorator runs over) | `@typeInfo.all(with: entity)` at an entry point |
+| the program's catalogue | (every declaration a decorator runs over) | `@TypeInfo.all(with: entity)` at an entry point |
 
 A member or an associated type from a field's or a method's decorator belongs
 to the type that owns it; a function has none (`decorator-member-without-type`,
@@ -2019,7 +2019,8 @@ fn main() {
 ```
 
 `@typeInfo` is the one reflection builtin (decision 248): `.name` and
-`.meta.<decorator>.<key>` read a declaration, `@typeInfo.all(…)` the program,
+`.meta.<decorator>.<key>` read a declaration, the static `@TypeInfo.all(…)` of
+its type the program (decision 253; `@typeInfo.all` is `typeinfo-all-on-function`),
 and `@typeInfo(T)` used as a value is the structural `TypeInfo` (`Record(fields)`,
 `Enum(variants)`, `Fn(params, returnType)`, …) of any type. The lowercase
 `@typeinfo` is `typeinfo-lowercase`, naming `@typeInfo`.
@@ -2033,18 +2034,20 @@ fn main() {
 }
 ```
 
-`@typeInfo.all(with: d)` answers every declaration of the program that carries
+`@TypeInfo.all(with: d)` answers every declaration of the program that carries
 `d`, so an entry point builds its catalogue explicitly — no module registers
-itself when it loads. Each entry is a `Declared<T>(name, module, meta, value)`:
-`meta` is what `d` set on it, `value` the function itself, or for a type a thunk
-calling the associated fn named by `member:`
-(`@typeInfo.all(with: component, member: "register")`). It sees every module of
+itself when it loads. The answer is always a `Declared<unknown>[]` (decision 254)
+— one type whatever the program declares —, each entry a
+`Declared<unknown>(name, module, meta, value)`: `meta` is what `d` set on it,
+`value` the function itself, or for a type a thunk calling the associated fn
+named by `member:` (`@TypeInfo.all(with: component, member: "register")`), typed
+`unknown`, so a use tests it with `is` before it calls it. It sees every module of
 the build — the package, its dependencies, std — in module-path order, then
 declaration order, and the reading module's own declarations; a module that
 reads it is imported by nobody (`typeinfo-all-imported`), and every declaration
 it answers from another module is `pub` (`typeinfo-all-private`).
 `with:` may list several decorators (decision 235):
-`@typeInfo.all(with: [service, repository], member: "make")` answers every
+`@TypeInfo.all(with: [service, repository], member: "make")` answers every
 declaration carrying any of them in the same one order, a declaration carrying
 two of them once, its `meta` what the listed decorators set; a decorator listed
 twice is `typeinfo-all-arguments`.
@@ -2060,9 +2063,10 @@ pub fn about() -> string {
 }
 
 fn main() {
-    for (@typeInfo.all(with: route)) { r ->
-        val page: fn() -> string = r.value;
-        @print(r.name + " " + page());             // about about us
+    for (@TypeInfo.all(with: route)) { r ->
+        for (r.meta) { m ->
+            @print(r.name + " " + m.value);        // about /about
+        }
     }
 }
 ```

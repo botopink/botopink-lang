@@ -1,5 +1,5 @@
-Mailer Mailer role=service
-Orders Orders store=sql
-Billing Billing role=service
+Mailer role=service
+Orders store=sql
+Billing role=service
 Mailer 1
 Billing 2

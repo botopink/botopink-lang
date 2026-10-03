@@ -631,11 +631,11 @@ pub behavior Decl {
     fn addType(self: Self, name: string, source: string);
 }
 
-// Decision 216 (4) — what `@typeInfo.all(with: d)` answers: one `Declared`
+// Decision 216 (4) — what `@TypeInfo.all(with: d)` answers: one `Declared`
 // per declaration of the program carrying the decorator `d`, by module path
 // then declaration order. `meta` is what `d` set on it (`decl.setMeta`);
 // `value` is the function itself, or for a type a thunk calling the
-// associated fn the query names (`@typeInfo.all(with: d, member: "m")`).
+// associated fn the query names (`@TypeInfo.all(with: d, member: "m")`).
 // The compiler's mirror is `comptime.zig` `decl_reflection_src`.
 pub type DeclaredMeta(
     key: string,
