@@ -588,6 +588,16 @@ pub fn IdentifierExprOf(comptime phase: Phase) type {
             receiver: *ExprOf(phase),
             member: []const u8,
             optional: bool = false,
+            /// Decision 255 (1) — the type arguments of a type application
+            /// written on the receiver, `Opt<i32>.None`: the receiver names a
+            /// type and the member is read off its instantiation. Read by the
+            /// checker only; null when none was written, and then left out of
+            /// the AST dump.
+            receiverTypeArgs: ?[]TypeRef = null,
+
+            pub fn jsonStringify(this: @This(), jws: anytype) !void {
+                return stringifyOmitting(this, jws, &.{}, &.{"receiverTypeArgs"});
+            }
         },
 
         pub fn deinit(this: *@This(), allocator: std.mem.Allocator) void {
@@ -596,6 +606,7 @@ pub fn IdentifierExprOf(comptime phase: Phase) type {
                 .identAccess => |a| {
                     a.receiver.deinit(allocator);
                     allocator.destroy(a.receiver);
+                    freeTypeRefs(allocator, a.receiverTypeArgs);
                 },
             }
         }
@@ -1005,9 +1016,15 @@ pub fn CallExprOf(comptime phase: Phase) type {
             /// adjacent to the callee. Read by the checker only; null when none
             /// was written, and then left out of the AST dump.
             typeArgs: ?[]TypeRef = null,
+            /// Decision 255 (1) — a type application's arguments written on
+            /// the receiver, `Dict<string, unknown>.empty()`: the receiver
+            /// names a type, and its parameters take these in order before the
+            /// member is called. Read by the checker only; null when none was
+            /// written, and then left out of the AST dump.
+            receiverTypeArgs: ?[]TypeRef = null,
 
             pub fn jsonStringify(this: @This(), jws: anytype) !void {
-                return stringifyOmitting(this, jws, &.{}, &.{ "isType", "calleeExpr", "typeArgs" });
+                return stringifyOmitting(this, jws, &.{}, &.{ "isType", "calleeExpr", "typeArgs", "receiverTypeArgs" });
             }
         },
         /// `expr |> fn1 |> fn2` — pipeline operator, left-associative chain
@@ -1037,6 +1054,8 @@ pub fn CallExprOf(comptime phase: Phase) type {
                         ce.deinit(allocator);
                         allocator.destroy(ce);
                     }
+                    freeTypeRefs(allocator, c.typeArgs);
+                    freeTypeRefs(allocator, c.receiverTypeArgs);
                 },
                 .pipeline => |p| {
                     p.lhs.deinit(allocator);
@@ -1406,6 +1425,14 @@ fn freeTrailingPerElem(allocator: std.mem.Allocator, slots: []const ?[]const u8)
     if (slots.len == 0) return;
     for (slots) |slot| if (slot) |c| allocator.free(c);
     allocator.free(slots);
+}
+
+/// Frees an owned list of written type arguments (`typeArgs`,
+/// `receiverTypeArgs`) — null when none was written.
+fn freeTypeRefs(allocator: std.mem.Allocator, refs: ?[]TypeRef) void {
+    const list = refs orelse return;
+    for (list) |*t| t.deinit(allocator);
+    allocator.free(list);
 }
 
 fn stringifyOmitting(value: anytype, jws: anytype, comptime omitAlways: []const []const u8, comptime omitIfEmpty: []const []const u8) !void {

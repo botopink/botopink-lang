@@ -1835,6 +1835,88 @@ fn applyExplicitTypeArgs(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExp
     return countError(env, call.callee, 0, resolved.len, loc);
 }
 
+/// Decision 255 (1) — the type a type application names
+/// (`Dict<string, unknown>.empty()`, `Opt<i32>.None`), its written arguments
+/// resolved. The receiver must name a declared generic type (an import alias
+/// is its declared name, decision 110) and take exactly as many arguments as
+/// the type declares parameters; anything else is refused at the receiver.
+const TypeApplication = struct {
+    name: []const u8,
+    def: envMod.TypeDef,
+    args: []*T.Type,
+};
+
+fn resolveTypeApplication(env: *Env, receiver: *ast.Expr, written: []const ast.TypeRef) InferError!TypeApplication {
+    const loc = receiver.getLoc();
+    const isName = receiver.* == .identifier and receiver.identifier.kind == .ident;
+    const writtenName = if (isName) receiver.identifier.kind.ident else "";
+    const name = if (isName) importedTypeAliasTarget(env, writtenName) orelse writtenName else "";
+    const def = (if (isName) env.lookupTypeDef(name) else null) orelse {
+        const shown = if (isName) writtenName else "this receiver";
+        const msg = try std.fmt.allocPrint(env.arena, "type arguments are written on `{s}`, which names no type", .{shown});
+        env.lastError = TypeError.custom(msg, "A type application is a declared generic type's name followed by its type arguments: `Dict<string, i32>.empty()` (decision 255).").withLoc(loc);
+        return error.TypeError;
+    };
+    const params = def.genericParams();
+    if (params.len != written.len) {
+        const msg = if (params.len == 0)
+            try std.fmt.allocPrint(env.arena, "`{s}` takes no type arguments, {d} given", .{ writtenName, written.len })
+        else
+            try std.fmt.allocPrint(env.arena, "`{s}` takes {d} type argument{s}, {d} given", .{ writtenName, params.len, if (params.len == 1) "" else "s", written.len });
+        env.lastError = TypeError.custom(msg, "Write one type argument per type parameter the declaration names, in order (decision 8 §1.3, decision 255).").withLoc(loc);
+        return error.TypeError;
+    }
+    const prevLoc = env.atTypeRef(loc);
+    defer env.typeRefLoc = prevLoc;
+    const args = try env.arena.alloc(*T.Type, written.len);
+    for (written, 0..) |w, i| args[i] = try resolveTypeRef(env, w);
+    return .{ .name = name, .def = def, .args = args };
+}
+
+/// Decision 255 (1) — `Type<Args>.member(…)`: the member is called on the
+/// instantiated type. A variant of a generic enum answers `Type<Args>`; a
+/// static (or any inherent) fn has its declared signature re-read with the
+/// type's parameters bound to the arguments — and `Self` to `Type<Args>` —
+/// and unified with the call, so `Dict<string, unknown>.empty()` is a
+/// `Dict<string, unknown>`. A member that is neither has no signature the
+/// arguments could reach, and is refused at the call.
+fn applyReceiverTypeArgs(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExpr) InferError!TypedExpr {
+    if (c.kind != .call) return typed;
+    const call = c.kind.call;
+    const written = call.receiverTypeArgs orelse return typed;
+    const receiver = call.receiver orelse return typed;
+    const app = try resolveTypeApplication(env, receiver, written);
+    const loc = c.loc;
+    const resultTy = typed.getType();
+    if (app.def == .enum_) for (app.def.enum_.variants) |v| {
+        if (!std.mem.eql(u8, v.name, call.callee)) continue;
+        try unifyAt(env, try env.namedTypeArgs(app.name, app.args), resultTy, loc);
+        return typed;
+    };
+    const m = env.getInherentMethodDecl(app.name, call.callee) orelse {
+        const msg = try std.fmt.allocPrint(env.arena, "`{s}` is not a variant or a fn declared by `{s}`, so its type arguments reach nothing", .{ call.callee, app.name });
+        env.lastError = TypeError.custom(msg, "A type application calls a variant or a fn the type declares in its body (`Dict<string, i32>.empty()`).").withLoc(loc);
+        return error.TypeError;
+    };
+    var gm = std.StringHashMap(*T.Type).init(env.arena);
+    defer gm.deinit();
+    for (app.def.genericParams(), app.args) |tp, a| try gm.put(tp, a);
+    try gm.put("Self", try env.namedTypeArgs(app.name, app.args));
+    for (m.genericParams) |gp| if (!gm.contains(gp.name)) try gm.put(gp.name, try env.freshVar());
+    const args = typed.call.kind.call.args;
+    for (m.params, 0..) |p, i| {
+        if (i >= args.len) break;
+        if (args[i].label != null) break;
+        const pt = try resolveTypeRefInContext(env, p.typeRef, gm);
+        try unifyAt(env, pt, args[i].value.getType(), args[i].value.getLoc());
+    }
+    if (m.returnType) |rtRef| {
+        const want = try resolveTypeRefInContext(env, rtRef, gm);
+        try unifyAt(env, want, resultTy, loc);
+    }
+    return typed;
+}
+
 /// Decisions 104, 118 and 128 — a component is CALLED, and called inside a
 /// body whose return is `@Component<C, _>` with the same base `C` it renders
 /// within that render: the call's value is its `T` (the context owner), as
@@ -10260,7 +10342,7 @@ pub fn inferExprTyped(env: *Env, expr: ast.Expr) InferError!TypedExpr {
         // ── call expressions ───────────────────────────────────────────────────
         .call => |c| blk: {
             try noteKeyedRowRead(env, c);
-            break :blk inferComponentCall(env, c, try applyExplicitTypeArgs(env, c, try inferCallExpr(env, c, c.loc)));
+            break :blk inferComponentCall(env, c, try applyReceiverTypeArgs(env, c, try applyExplicitTypeArgs(env, c, try inferCallExpr(env, c, c.loc))));
         },
 
         // ── function definition expressions ────────────────────────────────────
@@ -10509,6 +10591,20 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
             // to nested constructor calls.
             if (try tryResolveEnumSectionPath(env, ia.member, ia.receiver, loc)) |resolved| return resolved;
 
+            // Decision 255 (1) — `Opt<i32>.None`: a unit variant read off the
+            // instantiated type is that `Opt<i32>`; no other member of a type
+            // is a value a type application could instantiate.
+            const application: ?TypeApplication = if (ia.receiverTypeArgs) |w| try resolveTypeApplication(env, ia.receiver, w) else null;
+            if (application) |app| {
+                const isVariant = app.def == .enum_ and for (app.def.enum_.variants) |v| {
+                    if (std.mem.eql(u8, v.name, ia.member)) break true;
+                } else false;
+                if (!isVariant) {
+                    const msg = try std.fmt.allocPrint(env.arena, "`{s}` is not a variant of `{s}`, so its type arguments reach nothing", .{ ia.member, app.name });
+                    env.lastError = TypeError.custom(msg, "Without a call, a type application reads a unit variant (`Opt<i32>.None`); a fn the type declares is called (`Dict<string, i32>.empty()`).").withLoc(loc);
+                    return error.TypeError;
+                }
+            }
             // When receiver is an identifier, check if it's a type name rather than a variable.
             // This handles enum/record/struct constructor access like Color.Red, Option.None
             if (ia.receiver.* == .identifier) {
@@ -10534,6 +10630,8 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
                                 // `val n: Option<i32> = Option.None` unifies.
                                 const ty = if (en.genericParams.len == 0)
                                     try env.namedType(receiverName)
+                                else if (application) |app|
+                                    try env.namedTypeArgs(receiverName, app.args)
                                 else blk: {
                                     const args = try env.arena.alloc(*T.Type, en.genericParams.len);
                                     for (args) |*a| a.* = try env.freshVar();

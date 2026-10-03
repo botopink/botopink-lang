@@ -223,6 +223,22 @@ Decision 215 adds `reject/f64_equals_integer_literal` (`x == 2` with `x: f64`) a
 `reject/f64_not_equals_integer_literal` (`3 != x`), refused at the literal naming the float to write;
 the beam codegen test `is and == read numbers by value …` no longer prints `2.0 == 2` (it answered
 `false`). Both accepted by the parent binary.
+Decision 255 (1) (a type application before a member) adds `run/type_application_static_member` —
+`Dict<string, unknown>.empty()`, `Dict<string, i32>.empty()` chained, `Box<i32>.make(7)`,
+`Opt<string>.None` and `Opt<i32>.Some(3)`, beside `a < b`, `x < y && z > w` and
+`both(a < b, y > x)` that stay comparisons, on all four targets — and four `reject/` cells:
+`type_application_argument_mismatch` (`Box<i32>.make("x")`, at the argument),
+`type_application_argument_count` (`Box<i32, string>`, at the name),
+`type_application_variant_payload_mismatch` (`Opt<i32>.Some("a")`) and
+`type_application_on_a_field` (`Box<i32>.value` — only a unit variant is read without a call). All
+five fail on the parent binary (`unexpected ','` / a comparison).
+Decision 255 (2) (`comptime <expr>` is `comptime { break <expr>; }`) adds `run/comptime_expression_is_block`
+(a module-level shorthand equal to its block form, and the same in a body) and
+`run/comptime_expression_static_call` (the decision's own `val d: Dict<string, unknown> = comptime
+Dict.empty();` beside its block form), both on commonJS, erlang and beam and refused on wasm by
+`.wasm.expect` (no comptime construct lowers in a wasm body, `05-wasm`'s row), and
+`reject/comptime_expression_type_mismatch` (the expression's type is the form's, located at
+`comptime` as the block's is). All three pass on the parent binary and pin the equivalence.
 `test/program_primitive_behavior_extends_std` and `reject/program_primitive_behavior_redeclares_std`
 (another front's finding) — a program's own `behavior String` adds members to std's `String` (its
 default fns call `slice`, `startsWith`, `length` on `self`, and std's members answer beside them),

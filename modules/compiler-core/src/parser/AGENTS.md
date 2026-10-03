@@ -84,6 +84,7 @@ parser/
     ├── errors.zig        ← parse errors & cross-stage error-message units
     ├── surface.zig       ← the 1.0.3 surface: `type` shapes, the field list, `behavior`, separators, and old-vs-new AST equality
     ├── decision8.zig     ← decision 8's grammar, one section per row: `unknown` (N19), union types (N20), `is` (N21), `case` arms (N22)
+    ├── decision255.zig   ← decision 255's two expression forms: a type application before a member (`Dict<string, unknown>.empty()`, the comparisons that stay comparisons) and `comptime <expr>`, each with its `botopink format` round-trip
     ├── effect_rejections.zig ← parser-level `#[@<effect>]` rejections (R1/R2/R5…; R5 carets the second annotation, 01 R9)
     └── language_surface.zig  ← front 15's rows: the forms the documents write against the grammar (R1 the `T[]` suffix, R2 the postfix chain, R3 a number as a receiver, R4 the shared block body, R5 the index expression, R7 a bodyless `fn`, R8 `??`, R9 the catch-all names its token, R10 the decided-against forms refused by name)
 ```
@@ -340,6 +341,21 @@ when the `<` is adjacent to the name, every item parses as a type, `>` closes th
 list and `(` follows; otherwise the cursor and the parse error are restored and
 `<` is a comparison. The list lands on `ast.CallExpr.call.typeArgs` (null, and
 absent from the dump, when none was written).
+
+**A type application** (decision 255 (1)) extends the identifier arm's list to
+a type's member: after a **type's name** (`isTypeName` — an upper-case first
+letter) a `.` after the `>` closes the list as a `(` does, and the list goes to
+the chain's **first link** (`parsePostfixChainFrom`'s `receiverTypeArgs`):
+`ast.CallExpr.call.receiverTypeArgs` for `Dict<string, unknown>.empty()`,
+`identAccess.receiverTypeArgs` for `Opt<i32>.None` (both null and absent from
+the dump when none was written; `ast.zig` frees them with `typeArgs`). That is
+Kotlin's rule: the list is tried only after a type's name and only when `>` is
+followed by `.` or `(`; a list that does not parse as types — `x < y && z > w`
+— and a `>` followed by anything else — `f(a < b, c > d)` — leave `<` a
+comparison, and so does a value's name (`a<b>.c`). The formatter prints both
+lists back adjacent (`format.zig` `typeArgsDoc`; a broken method chain keeps
+the `<…>` on its root's line). `tests/decision255.zig` pins the trees and the
+round-trip.
 
 `xs[i]` is the `[index]` link, built by `makeIndexExpr` for both copies
 (decision 30). It is the reserved builtin call `ast.index_builtin_name` over

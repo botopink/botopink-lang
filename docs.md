@@ -664,6 +664,30 @@ fn main() {
 }
 ```
 
+Type arguments may be written at a use, adjacent to the name. A function or a
+constructor takes them before its call (`first<string>([], "none")`,
+`Box<i32>(value: 1)`); a type's name takes them before a member too — a
+**type application**: `Dict<string, i32>.empty()` calls `empty` on
+`Dict<string, i32>`, and `Opt<i32>.None` is that `Opt<i32>`. The list is read
+as type arguments only after a type's name (an upper-case first letter) and
+only when its `>` is followed by `.` or `(`; anywhere else `<` is a comparison,
+so `a < b`, `x < y && z > w` and `f(a < b, c > d)` mean what they say.
+
+```botopink
+type Opt<T> { Some(value: T), None }
+
+type Box<T>(value: T) {
+    pub fn make(v: T) -> Box<T> { return Box(value: v); }
+}
+
+fn main() {
+    val b = Box<i32>.make(7);
+    val o = Opt<string>.None;
+    @print(b.value);
+    @print(o == Opt<string>.None);
+}
+```
+
 ### Type aliases
 
 ```botopink
