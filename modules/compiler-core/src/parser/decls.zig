@@ -1349,6 +1349,11 @@ pub fn parseFieldList(this: *This, alloc: std.mem.Allocator) ParseError!FieldLis
         errdefer fieldType.deinit(alloc);
         var default: ?Expr = null;
         if (this.match(.equal)) default = try this.parseBinaryExpr(alloc, prec.equality);
+        // Decision 244 — a default is trailing everywhere: a field without one
+        // never follows a field with one, as a parameter never does.
+        if (default == null and fields.items.len > 0 and fields.items[fields.items.len - 1].default != null) {
+            return failAt(this, .fieldDefaultTrailingOnly, nameTok);
+        }
         const commentSlice = try comments.toOwnedSlice(alloc);
         try fields.append(alloc, .{
             .name = nameTok.lexeme,

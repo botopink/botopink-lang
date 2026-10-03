@@ -273,6 +273,13 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .lexemeInCaption = true,
             .hint = "Every keyword is reserved in every position — a field, a parameter and a binding alike (`from` is the import keyword). Choose another name: `source` / `target`, `start`, `origin`.",
         },
+        .fieldDefaultTrailingOnly => .{
+            .code = "field-default-trailing-only",
+            .message = "a field with a default must be followed only by fields with defaults",
+            .caretCaption = "a required field after a defaulted one",
+            .lexemeInCaption = true,
+            .hint = "A default is trailing everywhere (decision 244): move the defaulted field to the end of the list, or give this field a default too. A named construction (`Port(host: \"a\")`) is unaffected by the order.",
+        },
         .fnParamDefaultTrailingOnly => .{
             .message = "fn-param-default-trailing-only: a defaulted parameter must be followed only by other defaulted parameters.",
             .hint = "Move the defaulted parameter to the end of the list, or give the following parameter a default too.",

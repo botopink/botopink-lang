@@ -49,7 +49,7 @@ fn pickBorder() -> Border {
     return .Color.Red.500;
 }
 
-type Boxed(weight: i32 = 7, tone: Token)
+type Boxed(tone: Token, weight: i32 = 7)
 
 pub fn main() {
     val t: Token = .Color.Red.500;

@@ -95,7 +95,7 @@ test "surface: a field list keeps comments, annotations, defaults and the traili
         \\type Config(
         \\    // where the server listens
         \\    #[value("k")] host: string = "0.0.0.0",
-        \\    port: i32,
+        \\    port: i32 = 8080,
         \\)
     );
     defer parsed.deinit();

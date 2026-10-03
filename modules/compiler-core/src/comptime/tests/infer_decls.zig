@@ -1051,3 +1051,31 @@ test "infer error: a module val named like an import item is import-name-collisi
     try std.testing.expect(std.mem.indexOf(u8, desc, "a `val` of this module would bind it again") != null);
     try std.testing.expect(std.mem.indexOf(u8, desc, ":2:5") != null);
 }
+
+test "parse error: a default is trailing in a record's fields and a variant's payload (decision 244)" {
+    const cases = [_][]const u8{
+        "type Port(number: i32 = 80, host: string)",
+        "type Shape { Rect(width: i32 = 1, height: i32), Dot }",
+    };
+    for (cases) |src| {
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+        var lx = Lexer.init(src);
+        const tokens = try lx.scanAll(alloc);
+        defer lx.deinit(alloc);
+        var p = Parser.init(tokens);
+        try std.testing.expectError(error.UnexpectedToken, p.parse(alloc));
+        const info = p.parseError orelse return error.TestExpectedEqual;
+        try std.testing.expectEqual(parserMod.ParseErrorType.fieldDefaultTrailingOnly, info.kind);
+    }
+    // Every field after the first default carries one: accepted.
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lx = Lexer.init("type Port(host: string, number: i32 = 80, tls: bool = false)");
+    const tokens = try lx.scanAll(alloc);
+    defer lx.deinit(alloc);
+    var p = Parser.init(tokens);
+    _ = try p.parse(alloc);
+}

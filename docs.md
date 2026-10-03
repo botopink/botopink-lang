@@ -1442,12 +1442,16 @@ fn main() {
 
 A call **may leave out an argument whose parameter declares a default**, and the
 declared expression is what the function receives. A default may be declared on
-a free `fn`, on a record's fields (where it is the constructor's default) and on
-a method — including a `behavior`'s `default fn`, which is where `"hello"
-.slice(1)` gets its open end from (`slice(self, start: i32, end: ?i32 = null)`).
+a free `fn`, on a record's fields (where it is the constructor's default), on a
+variant's payload and on a method — including a `behavior`'s `default fn`, which
+is where `"hello".slice(1)` gets its open end from (`slice(self, start: i32,
+end: ?i32 = null)`). Wherever it is declared, **a default is trailing**: a
+parameter or field with a default is followed only by others with defaults
+(`fn lead(a: i32 = 1, b: i32)` and `type Port(number: i32 = 80, host: string)`
+are refused at `b` and `host`).
 
 ```botopink
-type Port(number: i32 = 80, host: string) {
+type Port(host: string, number: i32 = 80) {
     pub fn show(self: Self, separator: string = ":") -> string {
         return self.host + separator + self.number.toString();
     }
@@ -1461,7 +1465,7 @@ fn main() {
 
 Only the parameters a call leaves out take their defaults. A parameter the call
 names by label keeps the argument it was given, whichever position it is in —
-`Port(host: "a")` names the second field and fills the first from its default —
+`Port(number: 8080, host: "a")` reorders to the declaration —
 and a parameter with no default is still **required**: leaving one out is the
 arity error it has always been.
 

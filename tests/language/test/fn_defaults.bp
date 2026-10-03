@@ -23,7 +23,7 @@ test "every argument given" {
     assert connect("a", 90, 5) == "a:90/5";
 }
 
-type Port(number: i32 = 80, host: string) {
+type Port(host: string, number: i32 = 80) {
     pub fn show(self: Self, separator: string = ":") -> string {
         return self.host + separator + self.number.toString();
     }
@@ -33,7 +33,7 @@ test "a record constructor takes the default of the field it was not given" {
     assert Port(host: "a").number == 80;
 }
 
-test "a field named at the call site does not have to be the last one" {
+test "a call that names only the required field leaves the defaulted one out" {
     val p = Port(host: "a");
     assert p.host == "a";
 }
