@@ -1480,8 +1480,25 @@ codegen/
   before `std@beam`: there `'__bp_load'/0` is exported and the runner calls it
   (its own after the siblings load, each sibling's from `'__bp_load_siblings'`).
   What the modes cannot honour the checker refuses (`infer.zig`
-  `refuseMemoryWrite`); `keyed = true` has no lowering yet and is refused on
-  erlang and beam. `beam_asm.zig` carries the same modes in assembly (step 5).
+  `refuseMemoryWrite`). **`keyed = true`** (decision 168, 1.0.11 front 17
+  step 1) stores the `Dict` one ETS row per key in the var's table: the
+  checker admits the seed `Dict.empty()` / `Dict.ofEntries([…])` of literals,
+  the row read `name.at(K)` and the row write `name = name.insert(K, V)`, and
+  nothing else (`checkKeyedWrite`, `refuseKeyedWholeRead`). `callNode` →
+  `keyedRowRead` lowers the read to `'__bp_ets_at'(Name, Rows, K)` (`etsLookup`
+  through the guard: the row's value, `undefined` without one) and
+  `memoryWrite` → `keyedRowWrite` the write to `'__bp_ets_row'(Name, Rows,
+  {K, V})` (`etsPut` of the one row). `Rows` is the seed folded at compile time
+  (`keyedSeedRows`, `pub` for the beam backend: a repeated key keeps its last
+  value, decision 174), carried to the owner tagged `{'__bp_rows', Rows}` —
+  in a module with a keyed var the owner inserts a tagged seed as the table's
+  rows and any other as the row `{Name, Seed}` (a module without one keeps the
+  plain row, byte for byte). The reader `name/0` of a keyed var is the guard
+  (`'_botopink_init'/0` calls it, so the table exists from load); nothing else
+  reads it whole. Two processes writing their own key 20 000 times each keep
+  both (`run/beam_memory_ets_keyed`); stored whole, one write put the other's
+  stale row back — 19 996 of 20 000 measured on beam. `beam_asm.zig` carries
+  the same modes in assembly (step 5).
 - **The module body** (`'_botopink_init'/0`, `initForms`): a module-level `val` is
   evaluated ONCE, in declaration order, at module load — `docs.md` § `val`, and
   what `const x = f();` does on commonJS. `'_botopink_init'/0` is that body: a
@@ -1780,7 +1797,18 @@ codegen/
   and `'__bp_ets_set'/3` (`etsPut` of the whole value). A `PersistentTerm` var
   is put by `'__bp_load'/0`, named by `{attributes, [{on_load, [{'__bp_load',
   0}]}]}` (`beamEmitter.writeOnLoadAttributes`) — the one attribute this
-  backend writes. The language cells `run/beam_memory_*` and `run/module_var`
+  backend writes. **`keyed = true`** (decision 168): `lowerCall` →
+  `emitKeyedRowRead` and `emitMemoryWrite` → `emitKeyedRowWrite` stage
+  `(K, Rows)` / `({K, V}, Rows)` — the rows LAST, a literal list that calls
+  nothing, so no operand before it is parked and the frame counted for the
+  checked shape suffices — and call `'__bp_ets_at'/3` / `'__bp_ets_row'/3`
+  (`emitKeyedHelpers`: tag the seed `{'__bp_rows', Rows}`, call the guard,
+  `etsLookup` → `is_nonempty_list`, `get_list`, `is_tuple` + `test_arity` —
+  the validator wants the row's shape tested — and its element 2, else
+  `undefined`; `etsPut` of the row). The owner tests the seed with
+  `is_tagged_tuple` only in a module with a keyed var (`anyKeyedVar`), so no
+  other module's `.S` moved. The rows come from `erlang.zig`'s
+  `keyedSeedRows`. The language cells `run/beam_memory_*` and `run/module_var`
   print the erlang backend's values on beam.
 
 - **One module per `type` — policy 3, the same split `erlang.zig` made.** A

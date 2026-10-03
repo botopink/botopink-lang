@@ -535,6 +535,15 @@ pub const Env = struct {
     /// shadows it (`lookup(name)` answers the local's type then). Read by
     /// `infer.zig`'s `refuseMemoryWrite`.
     memoryVars: std.StringHashMapUnmanaged(MemoryVar) = .empty,
+    /// Decision 168 — where a `keyed = true` module `var` may be named: the
+    /// receiver of its row read `name.at(key)` or of its row write
+    /// `name = name.insert(key, value)`, by the identifier's loc. Any other
+    /// read of the binding is refused (`infer.zig` `refuseKeyedWholeRead`).
+    keyedRowAccess: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
+    /// Decision 167 — the first `#[@BeamMemory]` annotation of a module whose
+    /// `target` is not the BEAM; `infer.zig` `reportOffBeamMemory` refuses it
+    /// once the module is inferred.
+    offBeamMemory: ?ast.Loc = null,
     /// Registered type definitions: type name → TypeDef.
     typeDefs: std.StringHashMap(TypeDef),
     /// Per-function typeparam constraints: function name → constraint list.

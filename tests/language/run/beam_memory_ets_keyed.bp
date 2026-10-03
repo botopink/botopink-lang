@@ -1,0 +1,32 @@
+//// Decision 168 — `#[@BeamMemory.Ets(keyed = true)]` stores a `Dict` one ETS
+//// row per key: `counts.at(k)` reads the row, `counts = counts.insert(k, v)`
+//// writes only that row. Two processes each write their OWN key 20 000
+//// times and both writes survive: `20000 20000`. Stored whole
+//// (`keyed = false`) every write copies the dict, and one process's write
+//// put back the other's stale row — 19 996 of 20 000 measured on beam with
+//// the whole-value lowering, 19 994 in 1.0.10 — so that figure is the
+//// measurement, never a cell: a test that fails by chance is not a test.
+////
+//// The seed is the table's rows (decision 174): `seed` written twice keeps
+//// its last value, and a key with no row reads `null`.
+
+import {async, collections.Dict} from "std";
+
+#[@BeamMemory.Ets(keyed = true)]
+var counts: Dict<string, i32> = Dict.ofEntries([#("seed", 1), #("other", 2), #("seed", 7)]);
+
+fn writer(key: string) -> @Task<i32> {
+    var i = 0;
+    while (i < 20000) {
+        i += 1;
+        counts = counts.insert(key, i);
+    }
+    return i;
+}
+
+pub fn main() -> @Task<void> {
+    val done = await async.runAll([{ -> writer("a") }, { -> writer("b") }]);
+    @print(done);
+    @print(counts.at("a"), counts.at("b"));
+    @print(counts.at("seed"), counts.at("other"), counts.at("none"));
+}

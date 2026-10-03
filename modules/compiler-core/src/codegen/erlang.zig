@@ -178,8 +178,87 @@ const MEM_ETS_OWNER = "__bp_ets_owner";
 const MEM_LOST = "__bp_lost";
 const MEM_LOAD = "__bp_load";
 const MEM_BOX = "__bp_var";
+/// Decision 168 — a `keyed = true` var's row read and row write, and the tag
+/// its seed carries to the owner: `{'__bp_rows', Rows}` is inserted as the
+/// table's rows, any other seed as the one row `{Name, Seed}`. No botopink
+/// value is a tuple led by this atom (the `MEM_BOX` reasoning).
+const MEM_ETS_AT = "__bp_ets_at";
+const MEM_ETS_ROW = "__bp_ets_row";
+const MEM_ROWS = "__bp_rows";
 
 const TOP_VAL_UNSET: []const u8 = "__bp_unset";
+
+/// Decision 168 — the rows of a `keyed = true` var's seed, as the
+/// `#(key, value)` entries of `Dict.ofEntries([…])` (none for
+/// `Dict.empty()`), folded at compile time: a key written twice keeps its
+/// LAST value at the place of that last entry (decision 174, what a chain of
+/// `insert` answers) — `ets:insert` of a list that repeats a key keeps an
+/// unspecified one. The checker admitted the shape (`infer.zig`
+/// `isKeyedSeed`); the beam backend reads the same rows.
+pub fn keyedSeedRows(arena: std.mem.Allocator, seed: ast.Expr) ![]const ast.Expr {
+    const cc = seed.call.kind.call;
+    if (cc.args.len == 0) return &.{};
+    const elems = cc.args[0].value.collection.kind.arrayLit.elems;
+    var rows: std.ArrayListUnmanaged(ast.Expr) = .empty;
+    var keys: std.ArrayListUnmanaged([]const u8) = .empty;
+    for (elems) |entry| {
+        const key = try seedKeyText(arena, entry.collection.kind.tupleLit.elems[0]);
+        for (keys.items, 0..) |k, i| if (std.mem.eql(u8, k, key)) {
+            _ = keys.orderedRemove(i);
+            _ = rows.orderedRemove(i);
+            break;
+        };
+        try keys.append(arena, key);
+        try rows.append(arena, entry);
+    }
+    return rows.items;
+}
+
+/// A key no other key equals: a `comptime` one, by where it is written.
+fn uniqueKeyText(arena: std.mem.Allocator, e: ast.Expr) ![]const u8 {
+    const loc = e.getLoc();
+    return std.fmt.allocPrint(arena, "@{d}:{d}", .{ loc.line, loc.col });
+}
+
+/// A seed key as text two equal keys share — the literal path of
+/// `ast.isMemorySeed` (an integer by its value, so `0x1` is `1`); a
+/// `comptime` key is its own (two of them are never folded together).
+fn seedKeyText(arena: std.mem.Allocator, e: ast.Expr) ![]const u8 {
+    return switch (e) {
+        .literal => |l| switch (l.kind) {
+            .numberLit => |n| blk: {
+                var digits: std.ArrayListUnmanaged(u8) = .empty;
+                for (n) |c| if (c != '_') try digits.append(arena, c);
+                if (std.fmt.parseInt(i128, digits.items, 0)) |v| break :blk std.fmt.allocPrint(arena, "i:{d}", .{v}) else |_| {}
+                break :blk std.fmt.allocPrint(arena, "f:{s}", .{n});
+            },
+            .stringLit => |t| std.fmt.allocPrint(arena, "s:{d}:{s}", .{ t.len, t }),
+            .null_ => "null",
+            else => uniqueKeyText(arena, e),
+        },
+        .identifier => |id| switch (id.kind) {
+            .ident => |n| n,
+            else => uniqueKeyText(arena, e),
+        },
+        .unaryOp => |uo| std.fmt.allocPrint(arena, "-({s})", .{try seedKeyText(arena, uo.expr.*)}),
+        .collection => |c| switch (c.kind) {
+            .grouped => |g| seedKeyText(arena, g.*),
+            .arrayLit, .tupleLit => blk: {
+                const items = if (c.kind == .arrayLit) c.kind.arrayLit.elems else c.kind.tupleLit.elems;
+                var out: std.ArrayListUnmanaged(u8) = .empty;
+                try out.appendSlice(arena, if (c.kind == .arrayLit) "[" else "#(");
+                for (items) |x| {
+                    try out.appendSlice(arena, try seedKeyText(arena, x));
+                    try out.append(arena, ',');
+                }
+                try out.append(arena, ')');
+                break :blk out.items;
+            },
+            else => uniqueKeyText(arena, e),
+        },
+        else => uniqueKeyText(arena, e),
+    };
+}
 
 /// True when EVALUATING this expression can be observed — it calls something,
 /// branches, loops, binds, or is a host/comptime construct whose shape this
@@ -5410,7 +5489,13 @@ const Emitter = struct {
                     }),
                 });
             },
-            .ets => try this.beamPrim(b, "etsGet", &.{ try this.etsTable(b, v.name), key, .{ .number = "2" } }),
+            // A `keyed = true` var has no whole value to read (the checker
+            // reads it one row at a time); its reader is the guard, which
+            // `'_botopink_init'/0` calls, so the table exists from load.
+            .ets => if (mem.keyed)
+                try this.fileCall(b, MEM_ETS_GUARD, &.{ key, try b.tuple(&.{ Ast.Expr.a(MEM_ROWS), try this.keyedRows(b, v.name) }) })
+            else
+                try this.beamPrim(b, "etsGet", &.{ try this.etsTable(b, v.name), key, .{ .number = "2" } }),
             .persistentTerm => try this.beamPrim(b, "ptGet", &.{key}),
         };
         try out.append(b.arena, try blockFunction(b, v.name, &.{}, try b.body(&.{body})));
@@ -5440,6 +5525,7 @@ const Emitter = struct {
         const key = try this.memoryKey(b, name);
         switch (mem.mode) {
             .ets => {
+                if (mem.keyed) return this.keyedRowWrite(b, name, value);
                 const tab = try this.etsTable(b, name);
                 switch (ast.classifyMemoryWrite(name, plus, &value)) {
                     // Decision 40: an increment is the host's atomic counter —
@@ -5469,6 +5555,67 @@ const Emitter = struct {
         const rhs = try b.arena.create(ast.Expr);
         rhs.* = value;
         return this.exprNode(b, .{ .binaryOp = .{ .loc = value.getLoc(), .op = .add, .lhs = lhs, .rhs = rhs } });
+    }
+
+    // ── `keyed = true` (decision 168) ─────────────────────────────────────────
+    //
+    // A `keyed = true` `Dict` is one ETS row per key in the var's table. The
+    // checker admits three shapes (`infer.zig` `checkKeyedWrite`,
+    // `noteKeyedRowRead`): the seed `Dict.empty()` / `Dict.ofEntries([…])` of
+    // literals, the row read `name.at(key)` and the row write
+    // `name = name.insert(key, value)`. Each lowers onto the module's helpers
+    // (`etsOwnerForms`), which reach the table through the same guard and
+    // registered owner as a whole-value `Ets` var, seeded with
+    // `{'__bp_rows', Rows}`:
+    //
+    //     counts.at(K)                     '__bp_ets_at'(Name, Rows, K)
+    //     counts = counts.insert(K, V)     '__bp_ets_row'(Name, Rows, {K, V})
+
+    /// The row read `name.at(key)` of a `keyed = true` var, or null for any
+    /// other call.
+    fn keyedRowRead(this: *Emitter, b: Ast.Builder, cc: anytype) anyerror!?Ast.Expr {
+        if (cc.is_builtin or cc.optional or cc.args.len != 1 or !std.mem.eql(u8, cc.callee, "at")) return null;
+        const recv = cc.receiver orelse return null;
+        if (!(recv.* == .identifier and recv.identifier.kind == .ident)) return null;
+        const name = recv.identifier.kind.ident;
+        if (this.locals.contains(name)) return null;
+        const mem = this.module_vars.get(name) orelse return null;
+        if (!mem.keyed) return null;
+        return try this.fileCall(b, MEM_ETS_AT, &.{
+            try this.memoryKey(b, name),
+            try this.keyedRows(b, name),
+            try this.exprNode(b, cc.args[0].value.*),
+        });
+    }
+
+    /// The row write `name = name.insert(key, value)` — `ets:insert` of the
+    /// one row `{Key, Value}`.
+    fn keyedRowWrite(this: *Emitter, b: Ast.Builder, name: []const u8, value: ast.Expr) anyerror!Ast.Expr {
+        const cc = value.call.kind.call;
+        return this.fileCall(b, MEM_ETS_ROW, &.{
+            try this.memoryKey(b, name),
+            try this.keyedRows(b, name),
+            try b.tuple(&.{ try this.exprNode(b, cc.args[0].value.*), try this.exprNode(b, cc.args[1].value.*) }),
+        });
+    }
+
+    /// The seed of `keyed = true` var `name` as the table's rows,
+    /// `[{K, V}, …]` (`keyedSeedRows`).
+    fn keyedRows(this: *Emitter, b: Ast.Builder, name: []const u8) anyerror!Ast.Expr {
+        const decl = this.module_var_decls.get(name).?;
+        const entries = try keyedSeedRows(b.arena, decl.value.*);
+        var rows: std.ArrayListUnmanaged(Ast.Expr) = .empty;
+        for (entries) |entry| {
+            const tl = entry.collection.kind.tupleLit;
+            try rows.append(b.arena, try b.tuple(&.{ try this.exprNode(b, tl.elems[0]), try this.exprNode(b, tl.elems[1]) }));
+        }
+        return b.list(rows.items);
+    }
+
+    fn anyKeyedVar(this: *const Emitter) bool {
+        var it = this.module_vars.valueIterator();
+        while (it.next()) |mem| if (mem.mode == .ets and mem.keyed) return true;
+        return false;
     }
 
     /// The `Ets` guard and the table owner, once per module (decision 39):
@@ -5528,10 +5675,19 @@ const Emitter = struct {
                 .body = try b.body(&.{A(MEM_LOST)}),
             }}),
         } };
+        // Decision 168: a module with a `keyed = true` var seeds by the
+        // seed's tag — `{'__bp_rows', Rows}` is the table's rows, any other
+        // seed the one row `{Name, Seed}`. A module without one keeps the
+        // plain row.
+        const keyed = this.anyKeyedVar();
+        const seeded: Ast.Expr = if (keyed) try b.caseOf(seed, &.{
+            try b.clause(&.{try b.tuple(&.{ A(MEM_ROWS), V("Rows") })}, &.{}, &.{V("Rows")}),
+            try b.clause(&.{V("_")}, &.{}, &.{try b.tuple(&.{ name, seed })}),
+        }) else try b.tuple(&.{ name, seed });
         const own = try b.caseOf(created, &.{
             try b.clause(&.{A(MEM_LOST)}, &.{}, &.{A("ok")}),
             .{ .patterns = try b.exprs(&.{V("_")}), .body = try b.body(&.{
-                try this.beamPrim(b, "etsPut", &.{ name, try b.tuple(&.{ name, seed }) }),
+                try this.beamPrim(b, "etsPut", &.{ name, seeded }),
                 try b.remote("erlang", "register", &.{ name, try b.remote("erlang", "self", &.{}) }),
                 try b.remote("timer", "sleep", &.{A("infinity")}),
             }) },
@@ -5543,6 +5699,22 @@ const Emitter = struct {
             try blockFunction(b, MEM_ETS_WAIT, &.{ name, seed, cand }, try b.body(&.{wait})),
             .blank,
             try blockFunction(b, MEM_ETS_OWNER, &.{ name, seed }, try b.body(&.{own})),
+        });
+        if (!keyed) return;
+        // '__bp_ets_at'(Name, Rows, Key) — the row's value, `undefined` (null)
+        // when the key has no row; '__bp_ets_row'(Name, Rows, Row) — one row.
+        const rows_seed = try b.tuple(&.{ A(MEM_ROWS), V("Rows") });
+        const at = try b.caseOf(try this.beamPrim(b, "etsLookup", &.{ try b.call(MEM_ETS_GUARD, &.{ name, rows_seed }), V("Key") }), &.{
+            try b.clause(&.{try b.list(&.{try b.tuple(&.{ V("_"), V("Value") })})}, &.{}, &.{V("Value")}),
+            try b.clause(&.{try b.list(&.{})}, &.{}, &.{A("undefined")}),
+        });
+        try out.appendSlice(b.arena, &.{
+            .blank,
+            try blockFunction(b, MEM_ETS_AT, &.{ name, V("Rows"), V("Key") }, try b.body(&.{at})),
+            .blank,
+            try blockFunction(b, MEM_ETS_ROW, &.{ name, V("Rows"), V("Row") }, try b.body(&.{
+                try this.beamPrim(b, "etsPut", &.{ try b.call(MEM_ETS_GUARD, &.{ name, rows_seed }), V("Row") }),
+            })),
         });
     }
 
@@ -7640,6 +7812,7 @@ const Emitter = struct {
     // ── calls ─────────────────────────────────────────────────────────────────
 
     fn callNode(this: *Emitter, b: Ast.Builder, c: anytype) anyerror!Ast.Expr {
+        if (c.kind == .call) if (try this.keyedRowRead(b, c.kind.call)) |row| return row;
         return switch (c.kind) {
             .pipeline => |p| this.pipelineNode(b, p),
             .call => |cc| if (cc.is_builtin)

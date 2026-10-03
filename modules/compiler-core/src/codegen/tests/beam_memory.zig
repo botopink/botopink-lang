@@ -119,3 +119,48 @@ test "erlang: beam memory ---- a PersistentTerm var is put at load and read from
         "std@beam:ptGet(",
     });
 }
+
+// Decision 168 — `keyed = true` stores the `Dict` one ETS row per key: two
+// processes each writing their own key keep both, where a whole-value write
+// would put one process's stale row back over the other's. The seed is the
+// table's rows, a repeated key keeping its last value (decision 174), and a
+// key with no row reads `null`.
+const keyed_program =
+    \\import {async, collections.Dict} from "std";
+    \\
+    \\#[@BeamMemory.Ets(keyed = true)]
+    \\var counts: Dict<string, i32> = Dict.ofEntries([#("seed", 1), #("seed", 7)]);
+    \\
+    \\fn writer(key: string) -> @Task<i32> {
+    \\    var i = 0;
+    \\    while (i < 2000) {
+    \\        i += 1;
+    \\        counts = counts.insert(key, i);
+    \\    }
+    \\    return i;
+    \\}
+    \\
+    \\fn main() -> @Task<void> {
+    \\    val done = await async.runAll([{ -> writer("a") }, { -> writer("b") }]);
+    \\    @print(done);
+    \\    @print(counts.at("a"), counts.at("b"), counts.at("seed"), counts.at("none"));
+    \\}
+;
+
+test "erlang: beam memory ---- a keyed Ets var writes and reads one row per key" {
+    try h.assertErlangRunLog(std.testing.allocator, keyed_program, "[2000, 2000]\n2000 2000 7 null\n", &.{
+        "'__bp_ets_row'(test@main@@counts, [{<<\"seed\">>, 7}], {Key, I@2})",
+        "'__bp_ets_at'(Name, Rows, Key) ->",
+        "std@beam:etsLookup(",
+        "{'__bp_rows', Rows} -> Rows;",
+    });
+}
+
+test "beam: beam memory ---- a keyed Ets var writes and reads one row per key" {
+    try h.assertBeamRunLog(std.testing.allocator, keyed_program, "[2000, 2000]\n2000 2000 7 null\n", &.{
+        "{function, '__bp_ets_at', 3,",
+        "{function, '__bp_ets_row', 3,",
+        "{extfunc, std@beam, etsLookup, 2}",
+        "{test, is_tagged_tuple, {f, ",
+    });
+}
