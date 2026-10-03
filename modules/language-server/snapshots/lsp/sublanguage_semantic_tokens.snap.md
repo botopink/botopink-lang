@@ -8,7 +8,7 @@ pub fn q<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
     val root = CustomNode(kind: "root", span: Span(0, 0, 1), label: "none", ref: null, children: [kw, col]);
     return e.custom(root, code);
 }
-val xs = q "select name";
+val xs = q "select name from Users";
 ```
 
 ----- SEMANTIC TOKENS

@@ -513,42 +513,13 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
 %%     },
 %%     bindings => [
 %%         #{
-%%             name => <<"Point">>,
-%%             kind => 'Record_',
-%%             identity => <<"main@@Point">>,
-%%             local => <<"Point">>
-%%         },
-%%         #{
-%%             name => <<"holes">>,
-%%             kind => 'Fn',
-%%             identity => <<"main@@holes">>,
-%%             local => <<"holes">>
-%%         },
-%%         #{
-%%             name => <<"origin">>,
-%%             kind => 'Val',
-%%             identity => <<"main@@origin">>,
-%%             local => <<"origin">>
-%%         },
-%%         #{
 %%             name => <<"xs">>,
 %%             kind => 'Val',
 %%             identity => <<"main@@xs">>,
 %%             local => <<"xs">>
-%%         },
-%%         #{
-%%             name => <<"maybe">>,
-%%             kind => 'Val',
-%%             identity => <<"main@@maybe">>,
-%%             local => <<"maybe">>
-%%         },
-%%         #{
-%%             name => <<"got">>,
-%%             kind => 'Val',
-%%             identity => <<"main@@got">>,
-%%             local => <<"got">>
 %%         }
-%%     ]
+%%     ],
+%%     words => [<<"p">>, <<"xs">>, <<"m">>]
 %% }
 ```
 

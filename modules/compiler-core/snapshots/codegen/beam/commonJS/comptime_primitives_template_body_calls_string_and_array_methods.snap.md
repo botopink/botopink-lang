@@ -1157,21 +1157,8 @@ fn main() {
 %%         text => <<" hello big world ">>,
 %%         multiline => false
 %%     },
-%%     bindings => [
-%%         #{
-%%             name => <<"shout">>,
-%%             kind => 'Fn',
-%%             identity => <<"main@@shout">>,
-%%             local => <<"shout">>
-%%         },
-%%         #{name => <<"s">>, kind => 'Val', identity => <<"main@@s">>, local => <<"s">>},
-%%         #{
-%%             name => <<"main">>,
-%%             kind => 'Fn',
-%%             identity => <<"main@@main">>,
-%%             local => <<"main">>
-%%         }
-%%     ]
+%%     bindings => [],
+%%     words => [<<"hello">>, <<"big">>, <<"world">>]
 %% }
 ```
 

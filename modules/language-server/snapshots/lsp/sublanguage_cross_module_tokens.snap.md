@@ -1,7 +1,7 @@
 ----- SOURCE
 ```botopink
 import { erika, Cities } from "erika";
-val xs = erika "select name";
+val xs = erika "select name from Cities";
 ```
 
 ----- SEMANTIC TOKENS

@@ -11,7 +11,7 @@
 ////   * a `.d.bp` shipped through the lib's `files` — `shapes.d.bp` declares the
 ////     `Rect` record this program constructs;
 ////   * `@ExprCustom` / `q.custom` — the handler returns the carrier: the `code`
-////     half runs (an `area(…)` call built from the template's text), the `ast`
+////     half runs (the `area(…)` call the template's text spells), the `ast`
 ////     half is a `CustomNode` tree for the tooling and changes nothing at run time.
 
 import shapesdsl, {area, Rect} from "shapesdsl";
@@ -19,6 +19,6 @@ import shapesdsl, {area, Rect} from "shapesdsl";
 pub fn main() {
     val r = Rect(w: 2, h: 3);
     @print(area(r.w, r.h));
-    val fromDsl = shapesdsl "4, 5";
+    val fromDsl = shapesdsl "area(4, 5)";
     @print(fromDsl);
 }

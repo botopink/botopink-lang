@@ -435,7 +435,7 @@ test "js: template end to end ---- lookup().ref() splices a caller-scope referen
         \\        return q.fail("greeting not found in caller scope");
         \\    };
         \\}
-        \\val s = refer "x";
+        \\val s = refer "greeting";
         \\fn main() {
         \\    @print(s);
         \\}
