@@ -273,16 +273,15 @@ test "hash.hmacSha256 produces a 64-hex-char digest" {
 // the hashed value came from outside: a request header, a client-supplied
 // tag, a key that spans a user boundary.
 //
-// The `contentHash` templates are lifted verbatim from
-// `repository/emilia/modules/emilia/src/emilia.bp` (`hashHex`), where they
-// were tuned until both targets agreed byte-for-byte; only the `__`-prefixed
-// variable names differ. Astral characters diverge (one codepoint on
-// Erlang, two UTF-16 units in JS) — the same caveat emilia carries.
-// `emilia.hashHex` is therefore a duplicate of `contentHash` now; collapsing
-// it onto std is a later, `emilia`-owned change — this milestone is additive
-// only.
+// The `contentHash` templates were lifted from
+// `repository/emilia/modules/emilia/src/emilia.bp` (`hashHex`). Every target
+// folds the string's CODE POINTS (decision 260, decision 169's unit):
+// `contentHash("🎉")` is `djb2([127881])` everywhere — the Node cell walks
+// `Array.from(s)`, which iterates by code point, where `hashHex` still folds
+// UTF-16 units and so differs from it for a character above U+FFFF.
+// Collapsing `emilia.hashHex` onto std is an `emilia`-owned change.
 
-#[@External.Node("""(function(__S){ var __H = 5381; for (var __I = 0; __I < __S.length; __I++) { __H = (Math.imul(__H, 33) + __S.charCodeAt(__I)) >>> 0; } return __H.toString(16); })($0)""")]
+#[@External.Node("""(function(__S){ var __H = 5381; for (const __C of Array.from(__S)) { __H = (Math.imul(__H, 33) + __C.codePointAt(0)) >>> 0; } return __H.toString(16); })($0)""")]
 #[@External.Erlang("""(fun(__S) -> __H = lists:foldl(fun(__C, __A) -> (__A * 33 + __C) band 16#FFFFFFFF end, 5381, unicode:characters_to_list(__S)), list_to_binary(string:lowercase(integer_to_list(__H, 16))) end)($0)""")]
 #[@External.Wasm("fn:contentHashBody")]
 pub declare fn contentHash(value: string) -> string;
@@ -392,6 +391,11 @@ test "hash.contentHash of the empty string is djb2's seed, not empty" {
     assert contentHash("") == "1505";
 }
 
+test "hash.contentHash folds a code point above U+FFFF once (decision 260)" {
+    // djb2([127881]) = 5381 · 33 + 127881 = 305454 = 0x4a92e.
+    assert contentHash(String.fromCodepoint(127881)) == "4a92e";
+}
+
 test "hash.strongHash of the empty string is the truncated empty SHA-256" {
     val h = strongHash("");
     assert h == "e3b0c44298fc1c149afbf4c8996fb924";
@@ -483,8 +487,7 @@ test "hash.fingerprint answers a different name for different contents" {
 // commonJS and erlang call their host — and they answer what Node's `crypto`
 // answers: SHA-256 and SHA-512 (FIPS 180-4), SHA-1 (RFC 3174), MD5
 // (RFC 1321), HMAC (RFC 2104), PBKDF2 (RFC 8018 §5.2), base64 (RFC 4648 §4,
-// §5) and the djb2 fold `contentHash`'s Node cell writes over UTF-16 code
-// units. botopink has no bit operation and wasm no `i64` this backend
+// §5) and the djb2 fold over code points (decision 260). botopink has no bit operation and wasm no `i64` this backend
 // lowers, so a 32-bit word is a whole `f64` in [0, 2^32), its bit
 // operations exact arithmetic (`wrap32`, `rotr32`, `mix`, `bits32`); a
 // 64-bit SHA-512 word is two of them. A word is stored in an
@@ -578,12 +581,9 @@ fn pbkdf2DeriveBody(
     return base64Of(out.slice(0, length), true, false);
 }
 
-// djb2 as the commonJS cell answers it: h = h · 33 + c modulo 2^32, from
-// 5381, lowercase hex without padding, `c` read at every UTF-16 index by
-// the `charCodeAt` the commonJS runtime installs, which answers the code
-// point there — so a character above U+FFFF folds its code point, then its
-// low surrogate (`decisions-pending.md` 05w-d: erlang folds the code point
-// alone).
+// djb2 as every target answers it (decision 260): h = h · 33 + c modulo
+// 2^32, from 5381, over the string's code points, lowercase hex without
+// padding.
 fn contentHashBody(value: string) -> string {
     val cs = value.chars();
     var h = 5381.0;
@@ -591,8 +591,6 @@ fn contentHashBody(value: string) -> string {
     while (i < cs.length) {
         val cp = cs.at(i).unwrapOr("").charCodeAt(0);
         h = wrap32(h * 33.0 + cp * 1.0);
-        if (cp >= 65536)
-            h = wrap32(h * 33.0 + (56320 + (cp - 65536) % 1024) * 1.0);
         i = i + 1;
     }
     return hexWord(h);

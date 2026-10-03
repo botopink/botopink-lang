@@ -273,7 +273,7 @@ variants are reached as `City.Size.Large`, both printed under the owner's path) 
 owner, under an alias too, and `Greeter.Mock` — a double implementing the annotated behavior — passed
 where a `Greeter` is expected), on all four targets, and four `reject/` cells at the annotation:
 `decorator_add_type_duplicate`, `decorator_add_type_not_one`, `decorator_add_type_without_owner`
-and `decorator_add_type_name`. Its fourth place — `@typeInfo.all(with: d)`, the program's
+and `decorator_add_type_name`. Its fourth place — `@TypeInfo.all(with: d)`, the program's
 declarations carrying `d` — adds `modules/typeinfo_all_registration` (an entry point that imports
 neither page module catalogues their `#[route]` functions with their meta, in module-path then
 declaration order, and its own and another module's `#[component]` types through `member:`; a
@@ -286,10 +286,19 @@ where the query is written: `typeinfo_all_mixed`, `typeinfo_all_needs_member`,
 of them answered once with both decorators' meta) and `reject/typeinfo_all_list_twice`. Decision 248
 names the one reflection builtin `@typeInfo` (the structural `TypeInfo` answer of a bare
 `@typeInfo(T)` folded in): `reject/typeinfo_lowercase` and `reject/typeinfo_all_lowercase` refuse
-the lowercase `@typeinfo(…)` / `@typeinfo.all(…)` where it is written (`typeinfo-lowercase`). The registration cell calls each `value`
-through a typed local (`val page: fn() -> string = r.value;`): on wasm a function read from a
-generic record's field and called through an untyped local prints its pointer (`Box<T>(value: T)`
-alone shows it, so it is the backend's, not this front's).
+the lowercase `@typeinfo(…)` / `@typeinfo.all(…)` where it is written (`typeinfo-lowercase`).
+Decision 253 makes the catalogue the static `@TypeInfo.all` of the builtin type:
+`reject/typeinfo_all_on_function` refuses `@typeInfo.all(…)` (`typeinfo-all-on-function`).
+Decision 254 types the answer `Declared<unknown>[]` whatever the program declares:
+`run/typeinfo_all_unknown_value` catalogues two functions of different signatures in one answer
+(each naming its declared return type, `returnTypeName` — decision 256; `run/typeinfo_all_list` reads
+it `""` for a type), and
+`reject/typeinfo_all_value_unknown` refuses an entry's `value` used as a function without a test.
+The registration and list cells therefore read `name`, `module` and `meta` only; calling a `value`
+through `is fn() -> T` comes with front 130.
+Decision 252 (every builtin declared, a call held to its declaration) adds
+`reject/builtin_arguments` — `@panic` given a second argument its declaration does not have,
+`builtin-arguments` at the call.
 C-03's beam half adds `run/std_template_host_fns_across_modules` — std host functions whose
 `@External.Erlang` body is a template (`fs.exists`, `fs.readText`, `os.eol`, `process.platform`,
 `encoding.hexEncode`, `hash.sha256`, `json.quote`, `regex.matches`) called from the program's

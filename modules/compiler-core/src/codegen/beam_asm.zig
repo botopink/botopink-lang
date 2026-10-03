@@ -2504,6 +2504,11 @@ const Emitter = struct {
     /// Bodied instance `default fn`s of the primitive interfaces
     /// (`"Array.fold"`), emitted on demand as `'<Iface>_<method>'(Self, …)`.
     iface_defaults: std.StringHashMap(IfaceDefault),
+    /// Associated host primitives of the interfaces (a bodyless member with no
+    /// `self` and an `@External.Erlang` template — `"String.fromCodepoint"`,
+    /// decision 262) → the template, compiled at the call like a host
+    /// `declare fn`'s (`evalTemplate`). Keys and templates in `prelude_arena`.
+    assoc_host_templates: std.StringHashMap([]const u8),
     /// The defaults some call site reached, in first-use order.
     needed_defaults: std.StringArrayHashMapUnmanaged(IfaceDefault) = .empty,
     /// The run-time primitive dispatch shims some untyped call site reached,
@@ -2578,6 +2583,7 @@ const Emitter = struct {
             .prelude_arena = std.heap.ArenaAllocator.init(alloc),
             .externals = std.StringHashMap(ast.FnDecl).init(alloc),
             .iface_defaults = std.StringHashMap(IfaceDefault).init(alloc),
+            .assoc_host_templates = std.StringHashMap([]const u8).init(alloc),
             .self_returns = std.StringHashMap(void).init(alloc),
             .string_locals = std.StringHashMap(void).init(alloc),
             .count_strings = std.StringHashMap(void).init(alloc),
@@ -2669,6 +2675,7 @@ const Emitter = struct {
         self.freeTemplateFns();
         self.externals.deinit();
         self.iface_defaults.deinit();
+        self.assoc_host_templates.deinit();
         self.needed_defaults.deinit(self.alloc);
         self.user_behavior_methods.deinit();
         for (self.needed_prim_shims.keys()) |k| self.alloc.free(k);
@@ -2730,6 +2737,14 @@ const Emitter = struct {
                 const key = try std.fmt.allocPrint(arena, "{s}.{s}", .{ i.name, m.name });
                 if (m.returnType) |rt| {
                     if (rt.isSelf()) try self.self_returns.put(key, {});
+                }
+                if (m.body == null and !(m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self"))) {
+                    if (m.externalFor("erlang")) |ref| if (primOpTemplate.looksLikeTemplate(ref.symbol) and
+                        !self.assoc_host_templates.contains(key))
+                    {
+                        try self.assoc_host_templates.put(key, try arena.dupe(u8, ref.symbol));
+                    };
+                    continue;
                 }
                 if (!m.is_default or m.body == null) continue;
                 if (m.params.len == 0 or !std.mem.eql(u8, m.params[0].name, "self")) continue;
@@ -6960,6 +6975,20 @@ const Emitter = struct {
                     // emitted as the local mangled fn `'<Interface>_<callee>'` by
                     // `emitInterfaceAssoc` (the interface is inlined), so call it
                     // directly — never a remote `array:range`.
+                    // An associated host primitive (`String.fromCodepoint`):
+                    // its erlang template, compiled into a helper of this
+                    // module like a host `declare fn`'s.
+                    if (cc.trailing.len == 0) assoc: {
+                        var kbuf: [256]u8 = undefined;
+                        const key = std.fmt.bufPrint(&kbuf, "{s}.{s}", .{ rn, cc.callee }) catch break :assoc;
+                        const template = self.assoc_host_templates.get(key) orelse break :assoc;
+                        var exprs: [max_staged]ast.Expr = undefined;
+                        if (cc.args.len > max_staged) return error.TooManyOperands;
+                        for (cc.args, 0..) |arg, i| exprs[i] = arg.value.*;
+                        self.missing_external = .{ .name = cc.callee, .target = "beam", .loc = loc };
+                        try self.evalTemplate(template, false, exprs[0..cc.args.len], cc.trailing, mode);
+                        return;
+                    }
                     if (cc.trailing.len == 0 and self.isInterfaceAssoc(rn, cc.callee)) {
                         var nbuf: [256]u8 = undefined;
                         const mangled = std.fmt.bufPrint(&nbuf, "'{s}_{s}'", .{ rn, cc.callee }) catch return;

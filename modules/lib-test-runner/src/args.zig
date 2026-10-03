@@ -1,8 +1,11 @@
 /// Argument parsing for `botopink-lib-test`.
 ///
 ///   botopink-lib-test [--target <t>[,<t>…] | --target all]
-///                     [--lib <name>] [--filter <s>] [--strict] [--bin <path>]
+///                     [--lib <name>]… [--filter <s>] [--strict] [--bin <path>]
 ///                     [--jobs <n>] [--json] [--list] [--cold] [--store-root <dir>]
+///
+/// `--lib` is repeatable: every name given runs, in the order given, in one
+/// report (decision 258); a name given twice runs once.
 ///
 /// `--target` is repeatable and comma-separated. It accepts every codegen target
 /// plus the alias `node` → `commonJS`, and both the `--target <t>` and
@@ -64,8 +67,9 @@ pub const Target = enum {
 pub const Options = struct {
     /// Requested targets, in order, de-duplicated. Owned by the caller's arena.
     targets: []const Target = &.{},
-    /// Restrict to a single lib under `libs/`; null → every lib.
-    lib: ?[]const u8 = null,
+    /// `--lib <name>`, repeatable (decision 258): the libs to run, in the
+    /// order given, de-duplicated; empty → every lib.
+    libs: []const []const u8 = &.{},
     /// Forwarded to `botopink test --filter`.
     filter: ?[]const u8 = null,
     /// Treat an unsupported target as a failure instead of a skip.
@@ -113,6 +117,7 @@ pub fn parse(arena: std.mem.Allocator, args: []const []const u8) ParseError!Opti
     var opts: Options = .{};
     var targets: std.ArrayListUnmanaged(Target) = .empty;
     var lib_roots: std.ArrayListUnmanaged([]const u8) = .empty;
+    var libs: std.ArrayListUnmanaged([]const u8) = .empty;
 
     var i: usize = 0;
     while (i < args.len) : (i += 1) {
@@ -140,11 +145,11 @@ pub fn parse(arena: std.mem.Allocator, args: []const []const u8) ParseError!Opti
             if (i >= args.len) return error.MissingArgument;
             opts.store_root = args[i];
         } else if (splitEq(a, "--lib")) |v| {
-            opts.lib = v;
+            try appendLib(arena, &libs, v);
         } else if (std.mem.eql(u8, a, "--lib")) {
             i += 1;
             if (i >= args.len) return error.MissingArgument;
-            opts.lib = args[i];
+            try appendLib(arena, &libs, args[i]);
         } else if (splitEq(a, "--filter")) |v| {
             opts.filter = v;
         } else if (std.mem.eql(u8, a, "--filter")) {
@@ -184,7 +189,19 @@ pub fn parse(arena: std.mem.Allocator, args: []const []const u8) ParseError!Opti
 
     opts.targets = try targets.toOwnedSlice(arena);
     opts.lib_roots = try lib_roots.toOwnedSlice(arena);
+    opts.libs = try libs.toOwnedSlice(arena);
     return opts;
+}
+
+/// Append one `--lib` name, skipping a name already given so a lib never runs
+/// twice; the first mention keeps its place.
+fn appendLib(
+    arena: std.mem.Allocator,
+    out: *std.ArrayListUnmanaged([]const u8),
+    name: []const u8,
+) ParseError!void {
+    for (out.items) |have| if (std.mem.eql(u8, have, name)) return;
+    try out.append(arena, name);
 }
 
 /// Append every target named in `spec` (a single name, `all`, or a comma-list)
@@ -248,7 +265,7 @@ test "default targets are commonJS + erlang" {
     try testing.expectEqual(Target.commonJS, opts.targets[0]);
     try testing.expectEqual(Target.erlang, opts.targets[1]);
     try testing.expect(!opts.strict);
-    try testing.expect(opts.lib == null);
+    try testing.expectEqual(@as(usize, 0), opts.libs.len);
 }
 
 test "node alias maps to commonJS" {
@@ -308,7 +325,8 @@ test "--lib, --filter, --strict, --bin" {
         "--strict",      "--bin",
         "/tmp/botopink",
     });
-    try testing.expectEqualStrings("acme", opts.lib.?);
+    try testing.expectEqual(@as(usize, 1), opts.libs.len);
+    try testing.expectEqualStrings("acme", opts.libs[0]);
     try testing.expectEqualStrings("router", opts.filter.?);
     try testing.expect(opts.strict);
     try testing.expectEqualStrings("/tmp/botopink", opts.bin.?);
@@ -318,7 +336,7 @@ test "--lib=name (= form)" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const opts = try parse(arena.allocator(), &.{"--lib=acme-web"});
-    try testing.expectEqualStrings("acme-web", opts.lib.?);
+    try testing.expectEqualStrings("acme-web", opts.libs[0]);
 }
 
 test "invalid target rejected" {
@@ -397,7 +415,22 @@ test "--lib-root does not shadow --lib" {
         "--lib",      "foo",
     });
     try testing.expectEqualStrings("/store", opts.lib_roots[0]);
-    try testing.expectEqualStrings("foo", opts.lib.?);
+    try testing.expectEqualStrings("foo", opts.libs[0]);
+}
+
+test "--lib is repeatable: every name, in the order given, once (decision 258)" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const opts = try parse(arena.allocator(), &.{
+        "--lib",       "zeta",
+        "--lib=alpha", "--lib",
+        "zeta",        "--lib",
+        "mid",
+    });
+    try testing.expectEqual(@as(usize, 3), opts.libs.len);
+    try testing.expectEqualStrings("zeta", opts.libs[0]);
+    try testing.expectEqualStrings("alpha", opts.libs[1]);
+    try testing.expectEqualStrings("mid", opts.libs[2]);
 }
 
 test "--jobs takes a positive count, both spellings; 0 and junk are refused" {

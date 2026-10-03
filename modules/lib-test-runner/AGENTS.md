@@ -54,6 +54,7 @@ lib-test-runner/
 # node/escript/erlc/wasmtime and then execs zig-out/bin/botopink-lib-test):
 zig build test-libs                                   # every lib, commonJS+erlang
 zig build test-libs -- --target erlang --lib rakun    # one target, one lib
+zig build test-libs -- --lib std --lib rakun          # two libs, in that order, one report
 zig build test-libs -- --target all --strict          # supported targets, strict
 zig build test-libs -- --lib rakun --target commonJS  # an excluded pair: no cell runs, the exclusion is audited
 zig build test-libs -- --list                         # the plan, nothing spawned: `cell:*` lines are the cells, `audit` the excluded pairs
@@ -65,7 +66,7 @@ zig build test          # includes the args + discovery + matrix + runner + sche
 ## CLI surface
 
 ```
-botopink-lib-test [--target <t>[,<t>…] | --target all] [--lib <name>]
+botopink-lib-test [--target <t>[,<t>…] | --target all] [--lib <name>]…
                   [--filter <s>] [--strict] [--bin <path>] [--lib-root <dir>]
                   [--json] [--list] [--jobs <n>] [--cold] [--store-root <dir>]
 ```
@@ -76,8 +77,12 @@ botopink-lib-test [--target <t>[,<t>…] | --target all] [--lib <name>]
 - `--target` — repeatable / comma-separated. Accepts `commonJS|erlang|beam|wasm`
   plus the alias `node`→`commonJS`, and both `--target <t>` and `--target=<t>`.
   Default: `commonJS,erlang`. `all` expands to every *supported* target.
-- `--lib <name>` — restrict to one project by name across roots (default: every
-  project with a `botopink.json`).
+- `--lib <name>` — restrict to the named project across roots; repeatable
+  (decision 258): every name given runs, in the order given (the plan, the
+  cells and the report follow it), in one report, a name given twice once
+  (`args.appendLib`, `discovery.discover`'s `only` list). A name that matches
+  no library fails the run, each such name printed (`main.zig`). Default: every
+  project with a `botopink.json`, sorted by name.
 - `--filter <s>` — forwarded to `botopink test --filter`.
 - `--strict` — treat an unsupported target (beam/wasm) as a **failure** instead of
   a skip (default: skip with `~`, keeping the gate green until those backends run).

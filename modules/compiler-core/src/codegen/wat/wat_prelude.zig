@@ -297,6 +297,36 @@ const str_cp_last_index_of = func("__str_cp_last_index_of", &.{ "s", "sub" }, .i
     get("s"), get("s"), get("sub"), call("__str_last_index_of"), call("__str_cp_of"),
 });
 
+/// Decision 262 — `String.fromCodepoint(cp)`: the 1–4 UTF-8 bytes of `cp` as
+/// a fresh `[n][bytes]` string. A `cp` that is no Unicode scalar value —
+/// negative or past U+10FFFF (one unsigned compare) or a surrogate
+/// (U+D800..U+DFFF) — traps, as erlang's `<<Cp/utf8>>` raises `badarg` and the
+/// Node cell throws. The last byte is written first (`p + n + 3`), then the
+/// lead byte of the length `n` returns with.
+const str_from_cp = func("__str_from_cp", &.{"cp"}, .i32, i32s(&.{ "n", "p" }), &.{
+    get("cp"),                                                                                           c32(0x10FFFF),             op("gt_u"),  when(&.{.@"unreachable"}),
+    get("cp"),                                                                                           c32(0xD800),               op("sub"),   c32(0x800),
+    op("lt_u"),                                                                                          when(&.{.@"unreachable"}), c32(1),      set("n"),
+    get("cp"),                                                                                           c32(0x80),                 op("ge_u"),  when(&.{ c32(2), set("n") }),
+    get("cp"),                                                                                           c32(0x800),                op("ge_u"),  when(&.{ c32(3), set("n") }),
+    get("cp"),                                                                                           c32(0x10000),              op("ge_u"),  when(&.{ c32(4), set("n") }),
+    get("n"),                                                                                            c32(4),                    op("add"),   call("__alloc"),
+    set("p"),                                                                                            get("p"),                  get("n"),    store(0),
+    get("n"),                                                                                            c32(1),                    op("eq"),    when(&.{ get("p"), get("cp"), store8(4), get("p"), ret }),
+    get("p"),                                                                                            get("n"),                  op("add"),   get("cp"),
+    c32(63),                                                                                             op("and"),                 c32(0x80),   op("or"),
+    store8(3),                                                                                           get("n"),                  c32(2),      op("eq"),
+    when(&.{ get("p"), get("cp"), c32(6), op("shr_u"), c32(0xC0), op("or"), store8(4), get("p"), ret }), get("p"),                  get("n"),    op("add"),
+    get("cp"),                                                                                           c32(6),                    op("shr_u"), c32(63),
+    op("and"),                                                                                           c32(0x80),                 op("or"),    store8(2),
+    get("n"),                                                                                            c32(3),                    op("eq"),    when(&.{ get("p"), get("cp"), c32(12), op("shr_u"), c32(0xE0), op("or"), store8(4), get("p"), ret }),
+    get("p"),                                                                                            get("cp"),                 c32(12),     op("shr_u"),
+    c32(63),                                                                                             op("and"),                 c32(0x80),   op("or"),
+    store8(5),                                                                                           get("p"),                  get("cp"),   c32(18),
+    op("shr_u"),                                                                                         c32(0xF0),                 op("or"),    store8(4),
+    get("p"),
+});
+
 // ── decision 238's WASI adapters (`host_binding.zig` `adapters`) ─────────────
 
 /// `random_get(buf, len)` — WASI preview1's one source of random bytes.
@@ -912,17 +942,14 @@ const str_concat = ast.Func{
         .{ .indent = 4, .instr = .{ .local_get = "b" } },
         .{ .indent = 4, .instr = .{ .load = .{ .ty = .i32 } } },
         .{ .indent = 4, .instr = .{ .local_set = "blen" } },
-        .{ .indent = 4, .instr = .{ .global_get = "__heap_ptr" } },
-        .{ .indent = 4, .instr = .{ .local_set = "base" } },
-        .{ .indent = 4, .instr = .{ .comment = "bump heap by 4 (length prefix) + alen + blen" } },
-        .{ .indent = 4, .instr = .{ .global_get = "__heap_ptr" } },
+        .{ .indent = 4, .instr = .{ .comment = "allocate 4 (length prefix) + alen + blen" } },
         .{ .indent = 4, .instr = .{ .@"const" = .{ .ty = .i32, .text = "4" } } },
         .{ .indent = 4, .instr = .{ .local_get = "alen" } },
         .{ .indent = 4, .instr = .{ .op = .{ .ty = .i32, .name = "add" } } },
         .{ .indent = 4, .instr = .{ .local_get = "blen" } },
         .{ .indent = 4, .instr = .{ .op = .{ .ty = .i32, .name = "add" } } },
-        .{ .indent = 4, .instr = .{ .op = .{ .ty = .i32, .name = "add" } } },
-        .{ .indent = 4, .instr = .{ .global_set = "__heap_ptr" } },
+        .{ .indent = 4, .instr = .{ .call = "__alloc" } },
+        .{ .indent = 4, .instr = .{ .local_set = "base" } },
         .{ .indent = 4, .instr = .{ .comment = "store combined length prefix" } },
         .{ .indent = 4, .instr = .{ .local_get = "base" } },
         .{ .indent = 4, .instr = .{ .local_get = "alen" } },
@@ -1016,15 +1043,12 @@ const str_slice = ast.Func{
         .{ .indent = 4, .instr = .{ .local_get = "start" } },
         .{ .indent = 4, .instr = .{ .op = .{ .ty = .i32, .name = "sub" } } },
         .{ .indent = 4, .instr = .{ .local_set = "newlen" } },
-        .{ .indent = 4, .instr = .{ .global_get = "__heap_ptr" } },
-        .{ .indent = 4, .instr = .{ .local_set = "dst" } },
-        .{ .indent = 4, .instr = .{ .comment = "bump heap by 4 (length prefix) + newlen" } },
-        .{ .indent = 4, .instr = .{ .global_get = "__heap_ptr" } },
+        .{ .indent = 4, .instr = .{ .comment = "allocate 4 (length prefix) + newlen" } },
         .{ .indent = 4, .instr = .{ .@"const" = .{ .ty = .i32, .text = "4" } } },
         .{ .indent = 4, .instr = .{ .local_get = "newlen" } },
         .{ .indent = 4, .instr = .{ .op = .{ .ty = .i32, .name = "add" } } },
-        .{ .indent = 4, .instr = .{ .op = .{ .ty = .i32, .name = "add" } } },
-        .{ .indent = 4, .instr = .{ .global_set = "__heap_ptr" } },
+        .{ .indent = 4, .instr = .{ .call = "__alloc" } },
+        .{ .indent = 4, .instr = .{ .local_set = "dst" } },
         .{ .indent = 4, .instr = .{ .comment = "store length prefix" } },
         .{ .indent = 4, .instr = .{ .local_get = "dst" } },
         .{ .indent = 4, .instr = .{ .local_get = "newlen" } },
@@ -1250,13 +1274,29 @@ fn isSpace(comptime ch: []const u8) [15]Instr {
 
 // ── helpers built with it ────────────────────────────────────────────────────
 
-/// Bump-allocate `n` bytes, keeping the heap pointer on a 4-byte boundary.
-const alloc = func("__alloc", &.{"n"}, .i32, i32s(&.{"p"}), &.{
+/// Bump-allocate `n` bytes, keeping the heap pointer on a 4-byte boundary —
+/// the one bump of the heap every allocation goes through (decision 261).
+/// When the new pointer `e` passes the memory's end (`memory.size` pages of
+/// 64 KiB), `memory.grow` adds the pages it needs; a grow the host refuses
+/// (`-1`) traps, and so does a pointer that wrapped past 2^32 (`e < p`), as an
+/// allocation the other targets' hosts cannot make fails there.
+const alloc = func("__alloc", &.{"n"}, .i32, i32s(&.{ "p", "e" }), &.{
     .{ .global_get = heap }, set("p"),
-    .{ .global_get = heap }, get("n"),
+    get("p"),                get("n"),
     op("add"),               c32(3),
     op("add"),               c32(-4),
-    op("and"),               .{ .global_set = heap },
+    op("and"),               set("e"),
+    get("e"),                get("p"),
+    op("lt_u"),              when(&.{.@"unreachable"}),
+    get("e"),                .memory_size,
+    c32(16),                 op("shl"),
+    op("gt_u"),
+    when(&.{
+        get("e"),    c32(65535),   op("add"),                 c32(16),
+        op("shr_u"), .memory_size, op("sub"),                 .memory_grow,
+        c32(-1),     op("eq"),     when(&.{.@"unreachable"}),
+    }),
+    get("e"),                .{ .global_set = heap },
     get("p"),
 });
 

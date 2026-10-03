@@ -17,6 +17,8 @@
 #     flag for it, and the exclusion is audited — structural when `botopink
 #     build` there is refused for a missing host binding, a failed run when
 #     the member builds there or fails for another reason
+#   • every `--lib` given runs, in the order given, in one report (decision
+#     258), and a `--lib` that names no library fails the run
 #   • a test reads the compiler that runs it from `BOTOPINK_BIN`, unless the
 #     caller set the variable
 #
@@ -295,6 +297,28 @@ echo "$wrapbeam"
 [[ $code -eq 1 ]] || fail "test-libs.sh: a requested target botopink test cannot run must fail the run (exit $code)"
 grep -qF 'hostbound · beam: NOT RUNNABLE' <<<"$wrapbeam" || fail "test-libs.sh should name the pair that did not run"
 grep -qx "test-libs: 0 passed, 0 failed, 0 without tests, 0 restrictions audited, 1 not runnable by botopink test" <<<"$wrapbeam" || fail "test-libs.sh: the summary line should count the pair that did not run"
+# Every `--lib` runs, in the order given, in one report (decision 258) — it
+# used to run only the last one, silently. The plan lists the names in the
+# order given (by name it would be bothbound first), the wrapper reports both
+# cells of two libraries, and a name that matches no library fails the run.
+plan="$( cd "$LIBWORK" && "$LIB_TEST_BIN" --bin "$BP_BIN" --lib-root "$AUDWORK" --lib hostbound --lib bothbound --list )"
+echo "$plan"
+[[ "$(cut -f1 <<<"$plan" | uniq | tr '\n' ' ')" == "hostbound bothbound " ]] || fail "--lib a --lib b should plan a then b"
+set +e
+wraptwo="$( bash "$TEST_LIBS" --lib-root "$LIBWORK/root" --lib quietok --lib quietbad --target commonJS 2>&1 )"
+code=$?
+set -e
+echo "$wraptwo"
+[[ $code -eq 1 ]] || fail "test-libs.sh --lib quietok --lib quietbad: quietbad is red, the run must fail (exit $code)"
+grep -qF 'quietok · commonJS: no tests' <<<"$wraptwo" || fail "test-libs.sh should run the first --lib too"
+grep -qF 'quietbad · commonJS: FAIL' <<<"$wraptwo" || fail "test-libs.sh should run the second --lib"
+grep -qx "test-libs: 0 passed, 1 failed, 1 without tests, 0 restrictions audited" <<<"$wraptwo" || fail "test-libs.sh: two --lib are one report"
+set +e
+unknown="$( cd "$LIBWORK" && "$LIB_TEST_BIN" --bin "$BP_BIN" --lib-root "$LIBWORK/root" --lib quietok --lib nosuchlib --target commonJS 2>&1 )"
+code=$?
+set -e
+[[ $code -eq 1 ]] || fail "a --lib that names no library must fail the run (exit $code)"
+grep -qF "no lib named 'nosuchlib'" <<<"$unknown" || fail "the unknown --lib should be named"
 # A red cell is red: nothing lists it away.
 wrapred="$( bash "$TEST_LIBS" --lib-root "$LIBWORK/root" --lib quietbad --target commonJS 2>&1 )" && fail "test-libs.sh: a cell that does not compile must fail the run"
 echo "$wrapred"

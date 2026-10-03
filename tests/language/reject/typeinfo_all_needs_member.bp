@@ -9,5 +9,5 @@ fn component(comptime decl: @Decl) {
 pub type Box(n: i32)
 
 pub fn main() {
-    @print(@typeInfo.all(with: component).length);
+    @print(@TypeInfo.all(with: component).length);
 }

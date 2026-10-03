@@ -237,6 +237,18 @@ behavior String {
         return self;
     }
 
+    // `String.fromCodepoint(cp)` — the one-character string of the Unicode
+    // scalar value `cp` (decision 262), an associated host primitive (no
+    // `self`): each backend renders the template at the call. A `cp` that is
+    // no scalar value — negative, a surrogate (U+D800..U+DFFF) or past
+    // U+10FFFF — aborts the program on every target: erlang's `/utf8`
+    // segment raises `badarg` for all three, the Node cell throws a
+    // `RangeError` for all three (native `String.fromCodePoint` answers a lone
+    // surrogate), and wasm's `$__str_from_cp` traps.
+    #[@External.Erlang("<<($0)/utf8>>")]
+    #[@External.Node("""((__c) => { if (!(__c >= 0 && __c <= 1114111) || (__c >= 55296 && __c <= 57343)) throw new RangeError('String.fromCodepoint: ' + __c + ' is not a Unicode scalar value'); return String.fromCodePoint(__c); })($0)""")]
+    fn fromCodepoint(cp: i32) -> string;
+
     // ── std-tail F7.string_ext additions ────────────────────────────────────
     // Each is wired to the Node prototype method on commonJS plus an Erlang
     // shape that mirrors the semantic. `string:pad/3` is BIF on OTP 27+; we

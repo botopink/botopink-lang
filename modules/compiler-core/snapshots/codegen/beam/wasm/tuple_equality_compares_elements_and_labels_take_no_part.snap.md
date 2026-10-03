@@ -63,12 +63,9 @@ fn main() {
     (local $f1 i32)
     (local $f2 i32)
     (local $f3 i32)
-    global.get $__heap_ptr
-    local.set $__mem0
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem0
     local.get $__mem0
     i32.const 1
     i32.store
@@ -77,12 +74,9 @@ fn main() {
     i32.store offset=4
     local.get $__mem0
     local.set $a
-    global.get $__heap_ptr
-    local.set $__mem1
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem1
     local.get $__mem1
     i32.const 1
     i32.store
@@ -100,12 +94,9 @@ fn main() {
     call $__eq_Tuple2_i32_string
     i32.eqz
     call $__print_bool
-    global.get $__heap_ptr
-    local.set $__mem2
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem2
     local.get $__mem2
     i32.const 1
     i32.store
@@ -122,12 +113,9 @@ fn main() {
     local.set $name
     i32.const 12
     local.set $pop
-    global.get $__heap_ptr
-    local.set $__mem3
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem3
     local.get $__mem3
     local.get $name
     i32.store
@@ -136,12 +124,9 @@ fn main() {
     i32.store offset=4
     local.get $__mem3
     local.set $labeled
-    global.get $__heap_ptr
-    local.set $__mem4
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem4
     local.get $__mem4
     i32.const 272
     i32.store
@@ -154,19 +139,13 @@ fn main() {
     local.get $plain
     call $__eq_Tuple2_string_i32
     call $__print_bool
-    global.get $__heap_ptr
+    i32.const 8
+    call $__alloc
     local.set $__mem5
-    global.get $__heap_ptr
-    i32.const 8
-    i32.add
-    global.set $__heap_ptr
     local.get $__mem5
-    global.get $__heap_ptr
-    local.set $__mem6
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem6
     local.get $__mem6
     i32.const 1
     i32.store
@@ -180,19 +159,13 @@ fn main() {
     i32.store offset=4
     local.get $__mem5
     local.set $n1
-    global.get $__heap_ptr
+    i32.const 8
+    call $__alloc
     local.set $__mem7
-    global.get $__heap_ptr
-    i32.const 8
-    i32.add
-    global.set $__heap_ptr
     local.get $__mem7
-    global.get $__heap_ptr
-    local.set $__mem8
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem8
     local.get $__mem8
     i32.const 1
     i32.store
@@ -206,19 +179,13 @@ fn main() {
     i32.store offset=4
     local.get $__mem7
     local.set $n2
-    global.get $__heap_ptr
+    i32.const 8
+    call $__alloc
     local.set $__mem9
-    global.get $__heap_ptr
-    i32.const 8
-    i32.add
-    global.set $__heap_ptr
     local.get $__mem9
-    global.get $__heap_ptr
-    local.set $__mem10
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem10
     local.get $__mem10
     i32.const 1
     i32.store
@@ -240,12 +207,9 @@ fn main() {
     local.get $n3
     call $__eq_Tuple2_Tuple2_i32_i32_string
     call $__print_bool
-    global.get $__heap_ptr
-    local.set $__mem11
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem11
     local.get $__mem11
     f64.const 1.5
     call $__box_f64
@@ -255,12 +219,9 @@ fn main() {
     i32.store offset=4
     local.get $__mem11
     local.set $f1
-    global.get $__heap_ptr
-    local.set $__mem12
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem12
     local.get $__mem12
     f64.const 1.5
     call $__box_f64
@@ -270,12 +231,9 @@ fn main() {
     i32.store offset=4
     local.get $__mem12
     local.set $f2
-    global.get $__heap_ptr
-    local.set $__mem13
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem13
     local.get $__mem13
     f64.const 1.5
     call $__box_f64
@@ -700,16 +658,50 @@ fn main() {
     i32.const 1
   )
   (func $__alloc (param $n i32) (result i32)
-    (local $p i32)
+    (local $p i32) (local $e i32)
     global.get $__heap_ptr
     local.set $p
-    global.get $__heap_ptr
+    local.get $p
     local.get $n
     i32.add
     i32.const 3
     i32.add
     i32.const -4
     i32.and
+    local.set $e
+    local.get $e
+    local.get $p
+    i32.lt_u
+    (if
+      (then
+        unreachable
+      )
+    )
+    local.get $e
+    memory.size
+    i32.const 16
+    i32.shl
+    i32.gt_u
+    (if
+      (then
+        local.get $e
+        i32.const 65535
+        i32.add
+        i32.const 16
+        i32.shr_u
+        memory.size
+        i32.sub
+        memory.grow
+        i32.const -1
+        i32.eq
+        (if
+          (then
+            unreachable
+          )
+        )
+      )
+    )
+    local.get $e
     global.set $__heap_ptr
     local.get $p
   )

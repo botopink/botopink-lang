@@ -176,14 +176,15 @@ fn addRootIfExists(
 
 /// Discover every lib under each root in `roots` (relative to cwd) — plain
 /// packages and workspace members alike (`manifest.scanRoots`). If `only` is
-/// set, restrict to that one lib. Results are sorted by name; each string is
+/// not empty, restrict to the libs it names (`--lib`, decision 258), in the
+/// order it names them; otherwise results are sorted by name. Each string is
 /// heap-allocated with `gpa` — call `free` when done. Roots that cannot be
 /// opened are skipped; the call errors only if no root could be read at all.
 pub fn discover(
     gpa: std.mem.Allocator,
     io: std.Io,
     roots: []const []const u8,
-    only: ?[]const u8,
+    only: []const []const u8,
 ) Error![]Lib {
     var libs: std.ArrayListUnmanaged(Lib) = .empty;
     errdefer free(gpa, libs.items);
@@ -206,9 +207,7 @@ pub fn discover(
         // The umbrella is not a cell — its members are. It stays only when it
         // is what is wrong (a workspace that does not expand).
         if (e.is_workspace and e.problem == null) continue;
-        if (only) |want| {
-            if (!std.mem.eql(u8, e.name, want)) continue;
-        }
+        if (only.len > 0 and onlyRank(only, e.name) == null) continue;
 
         const name = try gpa.dupe(u8, e.name);
         errdefer gpa.free(name);
@@ -246,13 +245,24 @@ pub fn discover(
     }
 
     const items = libs.items;
-    std.mem.sort(Lib, items, {}, struct {
-        fn lt(_: void, a: Lib, b: Lib) bool {
+    // `--lib a --lib b` runs `a` then `b`: the order given, then the name
+    // (two libraries sharing a name are both rows, side by side).
+    std.mem.sort(Lib, items, only, struct {
+        fn lt(want: []const []const u8, a: Lib, b: Lib) bool {
+            const ra = onlyRank(want, a.name) orelse 0;
+            const rb = onlyRank(want, b.name) orelse 0;
+            if (ra != rb) return ra < rb;
             return std.mem.lessThan(u8, a.name, b.name);
         }
     }.lt);
 
     return libs.toOwnedSlice(gpa);
+}
+
+/// The position of `name` among the `--lib` names, or null when it is not one.
+fn onlyRank(only: []const []const u8, name: []const u8) ?usize {
+    for (only, 0..) |want, i| if (std.mem.eql(u8, want, name)) return i;
+    return null;
 }
 
 /// Copy a manifest's `targets` (arena-owned) into `gpa`, or null.
@@ -587,7 +597,7 @@ const FIX = "../manifest/tests/fixtures/roots";
 test "discover: workspace members are rows, the umbrella is not; a library member without files is a problem" {
     const gpa = testing.allocator;
     const roots = [_][]const u8{FIX ++ "/repository"};
-    const libs = try discover(gpa, testing.io, &roots, null);
+    const libs = try discover(gpa, testing.io, &roots, &.{});
     defer free(gpa, libs);
 
     // plain + the four members (acme, acme-app, acme-empty, acme-web), sorted.
@@ -615,16 +625,26 @@ test "discover: workspace members are rows, the umbrella is not; a library membe
 test "discover: --lib restricts to one member by its manifest name" {
     const gpa = testing.allocator;
     const roots = [_][]const u8{FIX ++ "/repository"};
-    const libs = try discover(gpa, testing.io, &roots, "acme-web");
+    const libs = try discover(gpa, testing.io, &roots, &.{"acme-web"});
     defer free(gpa, libs);
     try testing.expectEqual(@as(usize, 1), libs.len);
     try testing.expectEqualStrings("acme-web", libs[0].name);
 }
 
+test "discover: several --lib run every one, in the order given (decision 258)" {
+    const gpa = testing.allocator;
+    const roots = [_][]const u8{FIX ++ "/repository"};
+    const libs = try discover(gpa, testing.io, &roots, &.{ "acme-web", "acme" });
+    defer free(gpa, libs);
+    try testing.expectEqual(@as(usize, 2), libs.len);
+    try testing.expectEqualStrings("acme-web", libs[0].name);
+    try testing.expectEqualStrings("acme", libs[1].name);
+}
+
 test "discover: two members with one name across roots are both a located problem" {
     const gpa = testing.allocator;
     const roots = [_][]const u8{ FIX ++ "/repository", FIX ++ "/other" };
-    const libs = try discover(gpa, testing.io, &roots, "acme-web");
+    const libs = try discover(gpa, testing.io, &roots, &.{"acme-web"});
     defer free(gpa, libs);
     try testing.expectEqual(@as(usize, 2), libs.len);
     for (libs) |l| {
@@ -635,7 +655,7 @@ test "discover: two members with one name across roots are both a located proble
 test "discover: a manifest that is refused is a row with its located error, not a silent skip" {
     const gpa = testing.allocator;
     const roots = [_][]const u8{FIX ++ "/other"};
-    const libs = try discover(gpa, testing.io, &roots, "array-deps");
+    const libs = try discover(gpa, testing.io, &roots, &.{"array-deps"});
     defer free(gpa, libs);
     try testing.expectEqual(@as(usize, 1), libs.len);
     try testing.expect(std.mem.indexOf(u8, libs[0].problem.?, "must be an object, not an array") != null);

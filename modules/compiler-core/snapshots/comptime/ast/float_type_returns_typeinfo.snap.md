@@ -10,7 +10,7 @@ val info = @typeInfo(f64);
     {
       "ast": "val",
       "ident": "info",
-      "return_type": "TypeInfo",
+      "return_type": "TypeInfo<f64>",
       "expr": {
         "ast": "call",
         "params": [
@@ -18,7 +18,7 @@ val info = @typeInfo(f64);
             "value": "f64"
           }
         ],
-        "return_type": "TypeInfo"
+        "return_type": "TypeInfo<f64>"
       }
     }
   ]

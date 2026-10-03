@@ -1,9 +1,10 @@
-//// Decision 216 (4) — `@typeInfo.all(with: d)` answers, at compile time,
+//// Decision 216 (4) — `@TypeInfo.all(with: d)` answers, at compile time,
 //// every declaration of the program carrying the decorator `d`, so the entry
 //// point builds its catalogue explicitly: no module registers itself at load.
-//// Each entry is a `Declared<T>` — its `name`, its `module`, the `meta` `d`
-//// set on it and a `value`: the function itself, or, for a type, a thunk
-//// calling the member named by `member:`. The order is fixed: by module
+//// Each entry is a `Declared<unknown>` (decision 254) — its `name`, its
+//// `module`, the `meta` `d` set on it and a `value`: the function itself, or,
+//// for a type, a thunk calling the member named by `member:`, typed `unknown`
+//// (calling it through `is fn() -> T` is front 130's). The order is fixed: by module
 //// path, then by declaration order inside a module (`about` before `pages`;
 //// `blog` before `latest`).
 
@@ -16,19 +17,17 @@ import {web.route, web.component, web.unused};
 pub type Local(id: i32)
 
 pub fn main() {
-    val routes = @typeInfo.all(with: route);
+    val routes = @TypeInfo.all(with: route);
     for (routes) { r ->
         var path = "";
         for (r.meta) { m ->
             if (m.key == "path") path = m.value;
         }
-        val page: fn() -> string = r.value;
-        @print(r.module + " " + r.name + " " + path + " -> " + page());
+        @print(r.module + " " + r.name + " " + path);
     }
-    val parts = @typeInfo.all(with: component, member: "describe");
+    val parts = @TypeInfo.all(with: component, member: "describe");
     for (parts) { c ->
-        val describe: fn() -> string = c.value;
-        @print(c.name + ": " + describe());
+        @print(c.module + " " + c.name);
     }
-    @print(@typeInfo.all(with: unused).length);
+    @print(@TypeInfo.all(with: unused).length);
 }

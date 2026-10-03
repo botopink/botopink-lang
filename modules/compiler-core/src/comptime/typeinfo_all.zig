@@ -1,22 +1,27 @@
-//! Decision 216 (4) — `@typeInfo.all(with: d)`: the declarations of the
+//! Decision 216 (4) — `@TypeInfo.all(with: d)`: the declarations of the
 //! program that carry the decorator `d`, answered at compile time so an entry
 //! point builds its catalogue explicitly (no module registers itself at load).
 //!
 //! The answer is an array literal of the prelude record `Declared<T>`
 //! (`comptime.zig` `decl_reflection_src`):
 //!
-//!     Declared(name: "about", module: "app/about",
+//!     Declared<unknown>(name: "about", module: "app/about",
 //!              meta: [DeclaredMeta(key: "path", value: "/about")],
-//!              value: about)
+//!              returnTypeName: "string", value: about)
 //!
 //! `meta` is what `d` set on the declaration (`decl.setMeta`), in set order.
+//! `returnTypeName` is a function's declared return type as the source spells
+//! it, `""` for a type (decision 256), so a catalogue can be keyed by the type
+//! a provider answers.
 //! `value` is the function itself for a function, and for a `type` or a
 //! `behavior` a thunk `{ -> T.<member>() }` calling the associated fn the
-//! query names (`member: "register"`): a type is no value. Every entry's
-//! `value` has one type, so one query catalogues one kind of declaration.
+//! query names (`member: "register"`): a type is no value. Every entry is
+//! built as `Declared<unknown>(…)`, so the answer is `Declared<unknown>[]`
+//! whatever the program declares (decision 254) and a use narrows `value`
+//! with `is`.
 //!
 //! **What it sees.** Every module of the build — the root package, its
-//! dependencies and std — that does not itself read `@typeInfo.all`, plus the
+//! dependencies and std — that does not itself read `@TypeInfo.all`, plus the
 //! reading module's own declarations. A module that reads it is analysed after
 //! every other one (`comptime.zig` `orderReaders`), and no module may import
 //! it: the reader answers for the whole program, so nothing it reports can
@@ -51,10 +56,10 @@ const Parser = @import("../parser.zig").Parser;
 
 const Error = error{OutOfMemory};
 
-/// The builtin's callee as the parser records it (`@typeInfo.all(…)`).
-pub const callee = "typeInfo.all";
+/// The builtin's callee as the parser records it (`@TypeInfo.all(…)`).
+pub const callee = "TypeInfo.all";
 
-/// One `@typeInfo.all(…)` call of a module.
+/// One `@TypeInfo.all(…)` call of a module.
 pub const Query = struct {
     loc: ast.Loc,
     args: []const ast.CallArg,
@@ -108,18 +113,18 @@ fn mayHoldExpr(comptime T: type) bool {
     };
 }
 
-/// Every `@typeInfo.all(…)` of `program`, in source order.
+/// Every `@TypeInfo.all(…)` of `program`, in source order.
 pub fn collect(arena: std.mem.Allocator, program: ast.Program) Error![]const Query {
     var c = Collector{ .arena = arena };
     for (program.decls) |*d| try c.walk(ast.DeclKind, d);
     return c.found.items;
 }
 
-/// True when `source` writes `@typeInfo.all` outside a `//` comment — the
+/// True when `source` writes `@TypeInfo.all` outside a `//` comment — the
 /// lexical test `comptime.zig` orders the build's modules by.
 pub fn reads(source: []const u8) bool {
     var i: usize = 0;
-    while (std.mem.indexOfPos(u8, source, i, "@typeInfo.all")) |at| {
+    while (std.mem.indexOfPos(u8, source, i, "@TypeInfo.all")) |at| {
         i = at + 1;
         const line_start = if (std.mem.lastIndexOfScalar(u8, source[0..at], '\n')) |nl| nl + 1 else 0;
         if (std.mem.indexOf(u8, source[line_start..at], "//") != null) continue;
@@ -179,23 +184,23 @@ pub fn plan(
     var imports: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
     var line = first_line;
     var alias_seq: usize = 0;
-    const arguments_hint = "Write `@typeInfo.all(with: <decorator>)` for functions, `@typeInfo.all(with: <decorator>, member: \"<associated fn>\")` for types.";
+    const arguments_hint = "Write `@TypeInfo.all(with: <decorator>)` for functions, `@TypeInfo.all(with: <decorator>, member: \"<associated fn>\")` for types.";
 
     for (queries) |q| {
         // ── the arguments ─────────────────────────────────────────────────
         var with: ?*const ast.Expr = null;
         var member: ?[]const u8 = null;
         for (q.args) |a| {
-            const label = a.label orelse return refuse(arena, q.loc, "{s}: `@typeInfo.all` takes labelled arguments, and this one has none", .{diagnostics.typeinfo_all_arguments}, arguments_hint);
+            const label = a.label orelse return refuse(arena, q.loc, "{s}: `@TypeInfo.all` takes labelled arguments, and this one has none", .{diagnostics.typeinfo_all_arguments}, arguments_hint);
             if (std.mem.eql(u8, label, "with") and with == null) {
                 with = a.value;
             } else if (std.mem.eql(u8, label, "member") and member == null) {
                 if (a.value.* != .literal or a.value.literal.kind != .stringLit)
                     return refuse(arena, q.loc, "{s}: `member:` names an associated fn with a string literal", .{diagnostics.typeinfo_all_arguments}, arguments_hint);
                 member = a.value.literal.kind.stringLit;
-            } else return refuse(arena, q.loc, "{s}: `@typeInfo.all` has no argument `{s}:` (or it is written twice)", .{ diagnostics.typeinfo_all_arguments, label }, arguments_hint);
+            } else return refuse(arena, q.loc, "{s}: `@TypeInfo.all` has no argument `{s}:` (or it is written twice)", .{ diagnostics.typeinfo_all_arguments, label }, arguments_hint);
         }
-        const with_expr = with orelse return refuse(arena, q.loc, "{s}: `@typeInfo.all` needs `with:`, the decorator its declarations carry", .{diagnostics.typeinfo_all_arguments}, arguments_hint);
+        const with_expr = with orelse return refuse(arena, q.loc, "{s}: `@TypeInfo.all` needs `with:`, the decorator its declarations carry", .{diagnostics.typeinfo_all_arguments}, arguments_hint);
 
         // ── the decorators ───────────────────────────────────────────────
         // Decision 235 — `with:` names one decorator or a list of them
@@ -290,7 +295,7 @@ pub fn plan(
         }
         const of_types = entries.items.len > fns;
         if (of_types and member == null) {
-            return refuse(arena, q.loc, "{s}: `{s}` is carried by the type `{s}`, and a type is no value: name the associated fn each entry calls", .{ diagnostics.typeinfo_all_needs_member, label, entries.items[0].name }, "Write `@typeInfo.all(with: <decorator>, member: \"<associated fn>\")`; each `value` is then `{ -> T.<associated fn>() }`.");
+            return refuse(arena, q.loc, "{s}: `{s}` is carried by the type `{s}`, and a type is no value: name the associated fn each entry calls", .{ diagnostics.typeinfo_all_needs_member, label, entries.items[0].name }, "Write `@TypeInfo.all(with: <decorator>, member: \"<associated fn>\")`; each `value` is then `{ -> T.<associated fn>() }`.");
         }
         if (!of_types and member != null and entries.items.len > 0) {
             return refuse(arena, q.loc, "{s}: `{s}` is carried by functions, and `member:` names an associated fn of a type", .{ diagnostics.typeinfo_all_arguments, label }, "A function's entry is the function itself; leave `member:` out.");
@@ -319,7 +324,7 @@ pub fn plan(
                 try imports.appendSlice(arena, parsed.decls);
                 break :ref alias;
             };
-            try text.appendSlice(arena, "Declared(name: ");
+            try text.appendSlice(arena, "Declared<unknown>(name: ");
             try quoted(&text, arena, e.name);
             try text.appendSlice(arena, ", module: ");
             try quoted(&text, arena, e.module);
@@ -338,7 +343,9 @@ pub fn plan(
                 try quoted(&text, arena, m.value);
                 try text.append(arena, ')');
             }
-            try text.appendSlice(arena, "], value: ");
+            try text.appendSlice(arena, "], returnTypeName: ");
+            try quoted(&text, arena, e.returnTypeName);
+            try text.appendSlice(arena, ", value: ");
             if (of_types) {
                 try text.print(arena, "{{ -> {s}.{s}() }}", .{ ref, member.? });
             } else try text.appendSlice(arena, ref);
@@ -363,7 +370,7 @@ pub fn plan(
 }
 
 test "typeinfo.all: the lexical test skips a comment" {
-    try std.testing.expect(reads("val x = @typeInfo.all(with: d);"));
-    try std.testing.expect(!reads("// @typeInfo.all(with: d)\nval x = 1;"));
+    try std.testing.expect(reads("val x = @TypeInfo.all(with: d);"));
+    try std.testing.expect(!reads("// @TypeInfo.all(with: d)\nval x = 1;"));
     try std.testing.expect(!reads("val x = @typeInfo(City).name;"));
 }

@@ -10,7 +10,7 @@ val info = @typeInfo(string);
     {
       "ast": "val",
       "ident": "info",
-      "return_type": "TypeInfo",
+      "return_type": "TypeInfo<string>",
       "expr": {
         "ast": "call",
         "params": [
@@ -18,7 +18,7 @@ val info = @typeInfo(string);
             "value": "string"
           }
         ],
-        "return_type": "TypeInfo"
+        "return_type": "TypeInfo<string>"
       }
     }
   ]

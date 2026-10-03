@@ -645,12 +645,9 @@ test "order case over Order" {
     (local $__len0 i32)
     (local $__acc0 i32)
     (local $p i32)
-    global.get $__heap_ptr
-    local.set $__mem0
-    global.get $__heap_ptr
     i32.const 4
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem0
     local.get $__mem0
     i32.const 0
     i32.store
@@ -1029,33 +1026,24 @@ test "order case over Order" {
     i32.store ;; kept count
     local.get $__out0
     local.set $filtered
-    global.get $__heap_ptr
-    local.set $__mem0
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem0
     local.get $__mem0
     i32.const 296
     i32.store
     local.get $__mem0
     local.get $filtered
-    global.get $__heap_ptr
-    local.set $__mem1
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem1
     local.get $__mem1
     i32.const 1
     i32.store
     local.get $__mem1
-    global.get $__heap_ptr
-    local.set $__mem2
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem2
     local.get $__mem2
     local.get $key
     i32.store
@@ -1080,12 +1068,9 @@ test "order case over Order" {
     (local $__acc0 i32)
     (local $__out0 i32)
     (local $p i32)
-    global.get $__heap_ptr
-    local.set $__mem0
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem0
     local.get $__mem0
     i32.const 296
     i32.store
@@ -1272,12 +1257,9 @@ test "order case over Order" {
     (local $p i32)
     (local $__fnv1 i32)
     (local $__mem2 i32)
-    global.get $__heap_ptr
-    local.set $__mem0
-    global.get $__heap_ptr
     i32.const 4
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem0
     local.get $__mem0
     i32.const 0
     i32.store
@@ -1307,12 +1289,9 @@ test "order case over Order" {
         i32.load offset=4
         local.set $p
     local.get $out
-    global.get $__heap_ptr
-    local.set $__mem1
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem1
     local.get $__mem1
     local.get $p
     i32.load
@@ -1337,12 +1316,9 @@ test "order case over Order" {
         br $__continue
       )
     )
-    global.get $__heap_ptr
-    local.set $__mem2
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem2
     local.get $__mem2
     i32.const 296
     i32.store
@@ -1357,22 +1333,16 @@ test "order case over Order" {
   (func $Dict_empty (result i32)
     (local $__mem0 i32)
     (local $__mem1 i32)
-    global.get $__heap_ptr
-    local.set $__mem0
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem0
     local.get $__mem0
     i32.const 296
     i32.store
     local.get $__mem0
-    global.get $__heap_ptr
-    local.set $__mem1
-    global.get $__heap_ptr
     i32.const 4
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem1
     local.get $__mem1
     i32.const 0
     i32.store
@@ -1392,22 +1362,16 @@ test "order case over Order" {
     (local $__len0 i32)
     (local $__acc0 i32)
     (local $e i32)
-    global.get $__heap_ptr
-    local.set $__mem0
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem0
     local.get $__mem0
     i32.const 296
     i32.store
     local.get $__mem0
-    global.get $__heap_ptr
-    local.set $__mem1
-    global.get $__heap_ptr
     i32.const 4
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem1
     local.get $__mem1
     i32.const 0
     i32.store
@@ -1540,24 +1504,18 @@ test "order case over Order" {
     local.get $self
       )
       (else
-    global.get $__heap_ptr
-    local.set $__mem0
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem0
     local.get $__mem0
     i32.const 328
     i32.store
     local.get $__mem0
     local.get $self
     i32.load ;; .items
-    global.get $__heap_ptr
-    local.set $__mem1
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem1
     local.get $__mem1
     i32.const 1
     i32.store
@@ -1582,12 +1540,9 @@ test "order case over Order" {
     (local $__acc0 i32)
     (local $__out0 i32)
     (local $item i32)
-    global.get $__heap_ptr
-    local.set $__mem0
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem0
     local.get $__mem0
     i32.const 328
     i32.store
@@ -1712,12 +1667,9 @@ test "order case over Order" {
     (local $__acc0 i32)
     (local $__out0 i32)
     (local $x i32)
-    global.get $__heap_ptr
-    local.set $__mem0
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem0
     local.get $__mem0
     i32.const 328
     i32.store
@@ -1801,12 +1753,9 @@ test "order case over Order" {
     (local $__acc0 i32)
     (local $__out0 i32)
     (local $x i32)
-    global.get $__heap_ptr
-    local.set $__mem0
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem0
     local.get $__mem0
     i32.const 328
     i32.store
@@ -1885,22 +1834,16 @@ test "order case over Order" {
   (func $Set_empty (result i32)
     (local $__mem0 i32)
     (local $__mem1 i32)
-    global.get $__heap_ptr
-    local.set $__mem0
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem0
     local.get $__mem0
     i32.const 328
     i32.store
     local.get $__mem0
-    global.get $__heap_ptr
-    local.set $__mem1
-    global.get $__heap_ptr
     i32.const 4
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem1
     local.get $__mem1
     i32.const 0
     i32.store
@@ -1920,22 +1863,16 @@ test "order case over Order" {
     (local $__len0 i32)
     (local $__acc0 i32)
     (local $x i32)
-    global.get $__heap_ptr
-    local.set $__mem0
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem0
     local.get $__mem0
     i32.const 328
     i32.store
     local.get $__mem0
-    global.get $__heap_ptr
-    local.set $__mem1
-    global.get $__heap_ptr
     i32.const 4
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem1
     local.get $__mem1
     i32.const 0
     i32.store
@@ -2009,24 +1946,18 @@ test "order case over Order" {
   (func $Queue_enqueue (param $self i32) (param $item i32) (result i32)
     (local $__mem0 i32)
     (local $__mem1 i32)
-    global.get $__heap_ptr
-    local.set $__mem0
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem0
     local.get $__mem0
     i32.const 348
     i32.store
     local.get $__mem0
     local.get $self
     i32.load ;; .items
-    global.get $__heap_ptr
-    local.set $__mem1
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem1
     local.get $__mem1
     i32.const 1
     i32.store
@@ -2059,19 +1990,13 @@ test "order case over Order" {
     i32.load ;; .length
     call $__arr_slice
     local.set $rest
-    global.get $__heap_ptr
+    i32.const 8
+    call $__alloc
     local.set $__mem0
-    global.get $__heap_ptr
-    i32.const 8
-    i32.add
-    global.set $__heap_ptr
     local.get $__mem0
-    global.get $__heap_ptr
-    local.set $__mem1
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem1
     local.get $__mem1
     i32.const 348
     i32.store
@@ -2103,22 +2028,16 @@ test "order case over Order" {
   (func $Queue_empty (result i32)
     (local $__mem0 i32)
     (local $__mem1 i32)
-    global.get $__heap_ptr
-    local.set $__mem0
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem0
     local.get $__mem0
     i32.const 348
     i32.store
     local.get $__mem0
-    global.get $__heap_ptr
-    local.set $__mem1
-    global.get $__heap_ptr
     i32.const 4
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem1
     local.get $__mem1
     i32.const 0
     i32.store
@@ -2131,12 +2050,9 @@ test "order case over Order" {
   )
   (func $Queue_fromList (param $xs i32) (result i32)
     (local $__mem0 i32)
-    global.get $__heap_ptr
-    local.set $__mem0
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem0
     local.get $__mem0
     i32.const 348
     i32.store
@@ -2236,17 +2152,14 @@ test "order case over Order" {
     local.get $b
     i32.load
     local.set $blen
-    global.get $__heap_ptr
-    local.set $base
-    ;; bump heap by 4 (length prefix) + alen + blen
-    global.get $__heap_ptr
+    ;; allocate 4 (length prefix) + alen + blen
     i32.const 4
     local.get $alen
     i32.add
     local.get $blen
     i32.add
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $base
     ;; store combined length prefix
     local.get $base
     local.get $alen
@@ -2315,16 +2228,50 @@ test "order case over Order" {
     i32.const 1
   )
   (func $__alloc (param $n i32) (result i32)
-    (local $p i32)
+    (local $p i32) (local $e i32)
     global.get $__heap_ptr
     local.set $p
-    global.get $__heap_ptr
+    local.get $p
     local.get $n
     i32.add
     i32.const 3
     i32.add
     i32.const -4
     i32.and
+    local.set $e
+    local.get $e
+    local.get $p
+    i32.lt_u
+    (if
+      (then
+        unreachable
+      )
+    )
+    local.get $e
+    memory.size
+    i32.const 16
+    i32.shl
+    i32.gt_u
+    (if
+      (then
+        local.get $e
+        i32.const 65535
+        i32.add
+        i32.const 16
+        i32.shr_u
+        memory.size
+        i32.sub
+        memory.grow
+        i32.const -1
+        i32.eq
+        (if
+          (then
+            unreachable
+          )
+        )
+      )
+    )
+    local.get $e
     global.set $__heap_ptr
     local.get $p
   )
@@ -3156,12 +3103,9 @@ fn main() {
     (local $__len0 i32)
     (local $__acc0 i32)
     (local $p i32)
-    global.get $__heap_ptr
-    local.set $__mem0
-    global.get $__heap_ptr
     i32.const 4
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem0
     local.get $__mem0
     i32.const 0
     i32.store
@@ -3540,33 +3484,24 @@ fn main() {
     i32.store ;; kept count
     local.get $__out0
     local.set $filtered
-    global.get $__heap_ptr
-    local.set $__mem0
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem0
     local.get $__mem0
     i32.const 296
     i32.store
     local.get $__mem0
     local.get $filtered
-    global.get $__heap_ptr
-    local.set $__mem1
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem1
     local.get $__mem1
     i32.const 1
     i32.store
     local.get $__mem1
-    global.get $__heap_ptr
-    local.set $__mem2
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem2
     local.get $__mem2
     local.get $key
     i32.store
@@ -3591,12 +3526,9 @@ fn main() {
     (local $__acc0 i32)
     (local $__out0 i32)
     (local $p i32)
-    global.get $__heap_ptr
-    local.set $__mem0
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem0
     local.get $__mem0
     i32.const 296
     i32.store
@@ -3783,12 +3715,9 @@ fn main() {
     (local $p i32)
     (local $__fnv1 i32)
     (local $__mem2 i32)
-    global.get $__heap_ptr
-    local.set $__mem0
-    global.get $__heap_ptr
     i32.const 4
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem0
     local.get $__mem0
     i32.const 0
     i32.store
@@ -3818,12 +3747,9 @@ fn main() {
         i32.load offset=4
         local.set $p
     local.get $out
-    global.get $__heap_ptr
-    local.set $__mem1
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem1
     local.get $__mem1
     local.get $p
     i32.load
@@ -3848,12 +3774,9 @@ fn main() {
         br $__continue
       )
     )
-    global.get $__heap_ptr
-    local.set $__mem2
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem2
     local.get $__mem2
     i32.const 296
     i32.store
@@ -3868,22 +3791,16 @@ fn main() {
   (func $Dict_empty (result i32)
     (local $__mem0 i32)
     (local $__mem1 i32)
-    global.get $__heap_ptr
-    local.set $__mem0
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem0
     local.get $__mem0
     i32.const 296
     i32.store
     local.get $__mem0
-    global.get $__heap_ptr
-    local.set $__mem1
-    global.get $__heap_ptr
     i32.const 4
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem1
     local.get $__mem1
     i32.const 0
     i32.store
@@ -3903,22 +3820,16 @@ fn main() {
     (local $__len0 i32)
     (local $__acc0 i32)
     (local $e i32)
-    global.get $__heap_ptr
-    local.set $__mem0
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem0
     local.get $__mem0
     i32.const 296
     i32.store
     local.get $__mem0
-    global.get $__heap_ptr
-    local.set $__mem1
-    global.get $__heap_ptr
     i32.const 4
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem1
     local.get $__mem1
     i32.const 0
     i32.store
@@ -4039,24 +3950,18 @@ fn main() {
     local.get $self
       )
       (else
-    global.get $__heap_ptr
-    local.set $__mem0
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem0
     local.get $__mem0
     i32.const 328
     i32.store
     local.get $__mem0
     local.get $self
     i32.load ;; .items
-    global.get $__heap_ptr
-    local.set $__mem1
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem1
     local.get $__mem1
     i32.const 1
     i32.store
@@ -4081,12 +3986,9 @@ fn main() {
     (local $__acc0 i32)
     (local $__out0 i32)
     (local $item i32)
-    global.get $__heap_ptr
-    local.set $__mem0
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem0
     local.get $__mem0
     i32.const 328
     i32.store
@@ -4211,12 +4113,9 @@ fn main() {
     (local $__acc0 i32)
     (local $__out0 i32)
     (local $x i32)
-    global.get $__heap_ptr
-    local.set $__mem0
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem0
     local.get $__mem0
     i32.const 328
     i32.store
@@ -4300,12 +4199,9 @@ fn main() {
     (local $__acc0 i32)
     (local $__out0 i32)
     (local $x i32)
-    global.get $__heap_ptr
-    local.set $__mem0
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem0
     local.get $__mem0
     i32.const 328
     i32.store
@@ -4384,22 +4280,16 @@ fn main() {
   (func $Set_empty (result i32)
     (local $__mem0 i32)
     (local $__mem1 i32)
-    global.get $__heap_ptr
-    local.set $__mem0
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem0
     local.get $__mem0
     i32.const 328
     i32.store
     local.get $__mem0
-    global.get $__heap_ptr
-    local.set $__mem1
-    global.get $__heap_ptr
     i32.const 4
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem1
     local.get $__mem1
     i32.const 0
     i32.store
@@ -4419,22 +4309,16 @@ fn main() {
     (local $__len0 i32)
     (local $__acc0 i32)
     (local $x i32)
-    global.get $__heap_ptr
-    local.set $__mem0
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem0
     local.get $__mem0
     i32.const 328
     i32.store
     local.get $__mem0
-    global.get $__heap_ptr
-    local.set $__mem1
-    global.get $__heap_ptr
     i32.const 4
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem1
     local.get $__mem1
     i32.const 0
     i32.store
@@ -4497,24 +4381,18 @@ fn main() {
   (func $Queue_enqueue (param $self i32) (param $item i32) (result i32)
     (local $__mem0 i32)
     (local $__mem1 i32)
-    global.get $__heap_ptr
-    local.set $__mem0
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem0
     local.get $__mem0
     i32.const 348
     i32.store
     local.get $__mem0
     local.get $self
     i32.load ;; .items
-    global.get $__heap_ptr
-    local.set $__mem1
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem1
     local.get $__mem1
     i32.const 1
     i32.store
@@ -4547,19 +4425,13 @@ fn main() {
     i32.load ;; .length
     call $__arr_slice
     local.set $rest
-    global.get $__heap_ptr
+    i32.const 8
+    call $__alloc
     local.set $__mem0
-    global.get $__heap_ptr
-    i32.const 8
-    i32.add
-    global.set $__heap_ptr
     local.get $__mem0
-    global.get $__heap_ptr
-    local.set $__mem1
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem1
     local.get $__mem1
     i32.const 348
     i32.store
@@ -4591,22 +4463,16 @@ fn main() {
   (func $Queue_empty (result i32)
     (local $__mem0 i32)
     (local $__mem1 i32)
-    global.get $__heap_ptr
-    local.set $__mem0
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem0
     local.get $__mem0
     i32.const 348
     i32.store
     local.get $__mem0
-    global.get $__heap_ptr
-    local.set $__mem1
-    global.get $__heap_ptr
     i32.const 4
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem1
     local.get $__mem1
     i32.const 0
     i32.store
@@ -4619,12 +4485,9 @@ fn main() {
   )
   (func $Queue_fromList (param $xs i32) (result i32)
     (local $__mem0 i32)
-    global.get $__heap_ptr
-    local.set $__mem0
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem0
     local.get $__mem0
     i32.const 348
     i32.store
@@ -4814,33 +4677,24 @@ fn main() {
     i32.store ;; kept count
     local.get $__out0
     local.set $filtered
-    global.get $__heap_ptr
-    local.set $__mem0
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem0
     local.get $__mem0
     i32.const 296
     i32.store
     local.get $__mem0
     local.get $filtered
-    global.get $__heap_ptr
-    local.set $__mem1
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem1
     local.get $__mem1
     i32.const 1
     i32.store
     local.get $__mem1
-    global.get $__heap_ptr
-    local.set $__mem2
-    global.get $__heap_ptr
     i32.const 8
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $__mem2
     local.get $__mem2
     local.get $key
     i32.store
@@ -5113,17 +4967,14 @@ fn main() {
     local.get $b
     i32.load
     local.set $blen
-    global.get $__heap_ptr
-    local.set $base
-    ;; bump heap by 4 (length prefix) + alen + blen
-    global.get $__heap_ptr
+    ;; allocate 4 (length prefix) + alen + blen
     i32.const 4
     local.get $alen
     i32.add
     local.get $blen
     i32.add
-    i32.add
-    global.set $__heap_ptr
+    call $__alloc
+    local.set $base
     ;; store combined length prefix
     local.get $base
     local.get $alen
@@ -5192,16 +5043,50 @@ fn main() {
     i32.const 1
   )
   (func $__alloc (param $n i32) (result i32)
-    (local $p i32)
+    (local $p i32) (local $e i32)
     global.get $__heap_ptr
     local.set $p
-    global.get $__heap_ptr
+    local.get $p
     local.get $n
     i32.add
     i32.const 3
     i32.add
     i32.const -4
     i32.and
+    local.set $e
+    local.get $e
+    local.get $p
+    i32.lt_u
+    (if
+      (then
+        unreachable
+      )
+    )
+    local.get $e
+    memory.size
+    i32.const 16
+    i32.shl
+    i32.gt_u
+    (if
+      (then
+        local.get $e
+        i32.const 65535
+        i32.add
+        i32.const 16
+        i32.shr_u
+        memory.size
+        i32.sub
+        memory.grow
+        i32.const -1
+        i32.eq
+        (if
+          (then
+            unreachable
+          )
+        )
+      )
+    )
+    local.get $e
     global.set $__heap_ptr
     local.get $p
   )

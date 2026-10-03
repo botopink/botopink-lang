@@ -85,6 +85,7 @@ function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } t
 //   fn at(...)
 //   fn indexOf(...)
 //   default fn toString(...)
+//   fn fromCodepoint(...)
 //   fn padStart(...)
 //   fn padEnd(...)
 //   fn repeat(...)

@@ -3,7 +3,7 @@
 ///
 /// Usage:
 ///   botopink-lib-test [--target <t>[,<t>…] | --target all]
-///                     [--lib <name>] [--filter <s>] [--strict] [--bin <path>]
+///                     [--lib <name>]… [--filter <s>] [--strict] [--bin <path>]
 ///                     [--jobs <n>] [--json] [--list] [--cold] [--store-root <dir>]
 ///
 /// It discovers every project carrying a `botopink.json` across the resolved root
@@ -44,7 +44,9 @@ const HELP =
     \\                        beam|wasm plus the alias node→commonJS, and --target=<t>.
     \\                        `all` expands to every supported target.
     \\                        Default: commonJS,erlang.
-    \\  --lib <name>          Restrict to one project by name across roots (default: all).
+    \\  --lib <name>          Restrict to the named project across roots; repeatable —
+    \\                        every name runs, in the order given, in one report
+    \\                        (default: all).
     \\  --filter <s>          Forwarded to `botopink test --filter`.
     \\  --strict              Treat an unsupported target as a failure, not a skip.
     \\  --bin <path>          Path to the `botopink` binary (env: BOTOPINK_BIN;
@@ -137,7 +139,7 @@ fn run(init: std.process.Init) !u8 {
     const bin = try resolveBin(arena, io, cwd, opts.bin, init.environ_map.get("BOTOPINK_BIN"));
 
     // Discover libs across every root.
-    const libs = discovery.discover(gpa, io, roots, opts.lib) catch |err| {
+    const libs = discovery.discover(gpa, io, roots, opts.libs) catch |err| {
         switch (err) {
             error.LibsRootNotFound => std.debug.print("\x1b[1m\x1b[31merror\x1b[0m: no library root could be read\n", .{}),
             else => return err,
@@ -146,11 +148,20 @@ fn run(init: std.process.Init) !u8 {
     };
     defer discovery.free(gpa, libs);
 
-    if (libs.len == 0) {
-        if (opts.lib) |name| {
+    // Every `--lib` names a library, or the run fails naming each one that
+    // does not (decision 258: no name is dropped silently).
+    var unknown_lib = false;
+    for (opts.libs) |name| {
+        const found = for (libs) |l| {
+            if (std.mem.eql(u8, l.name, name)) break true;
+        } else false;
+        if (!found) {
             std.debug.print("\x1b[1m\x1b[31merror\x1b[0m: no lib named '{s}' found across the library roots\n", .{name});
-            return 1;
+            unknown_lib = true;
         }
+    }
+    if (unknown_lib) return 1;
+    if (libs.len == 0) {
         std.debug.print("\x1b[1m\x1b[31merror\x1b[0m: no libs found across the library roots\n", .{});
         return 1;
     }

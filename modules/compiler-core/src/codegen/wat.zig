@@ -437,6 +437,26 @@ fn displayTypeName(name: []const u8) []const u8 {
     return name;
 }
 
+/// Whether `b` is a primitive behavior of the std prelude (`String`, `Array`,
+/// the numeric tower, `Bool`, `Function`, `Pair`) whose declaration already
+/// sits in `own` or `linked` with the same members, name for name — the
+/// prelude materialised twice.
+fn samePreludeBehavior(b: ast.BehaviorDecl, own: []const ast.DeclKind, linked: []const ast.DeclKind) bool {
+    const prelude_names = [_][]const u8{ "String", "Array", "Bool", "Number", "Integer", "Signed", "Float", "I32", "I64", "U32", "U64", "F32", "F64", "Function", "Pair" };
+    const is_prelude = for (prelude_names) |pn| {
+        if (std.mem.eql(u8, pn, b.name)) break true;
+    } else false;
+    if (!is_prelude) return false;
+    for ([_][]const ast.DeclKind{ own, linked }) |list| for (list) |d| {
+        if (d != .behavior or !std.mem.eql(u8, d.behavior.name, b.name)) continue;
+        const other = d.behavior;
+        if (other.methods.len != b.methods.len) return false;
+        for (other.methods, b.methods) |x, y| if (!std.mem.eql(u8, x.name, y.name)) return false;
+        return true;
+    };
+    return false;
+}
+
 /// `link_mangled`'s key: the module that declares `name`, then the name.
 fn linkKey(arena: std.mem.Allocator, module: []const u8, name: []const u8) ![]const u8 {
     return std.fmt.allocPrint(arena, "{s}\x00{s}", .{ module, name });
@@ -927,6 +947,15 @@ fn emitWat(
         }
         const n = declName(d) orelse continue;
         if (own_names.contains(n)) {
+            // The std prelude's primitive behaviors (`String`, `Array`, …) are
+            // materialised into every module that uses one of their default
+            // methods, so two linked modules each carry the SAME declaration.
+            // It is one behavior, not two: the later copy is dropped instead
+            // of mangled — mangled, every `Array<i32>` and `String.…` its
+            // module wrote was renamed to `<module>/Array`, a type no shape
+            // predicate knows (`flatten` over `Array<Array<i32>>` refused,
+            // `String.fromCodepoint` unresolved in `std/querystring`).
+            if (d == .behavior and samePreludeBehavior(d.behavior, own_program.decls, decls.items)) continue;
             // Two modules of the program declare `n`, and this backend links
             // them into ONE namespace. A FUNCTION is mangled per module: the
             // first declaration keeps `n`, this one is `<module>/<n>`, and
@@ -2499,6 +2528,29 @@ const Emitter = struct {
             .collection => |c| switch (c.kind) {
                 .behaviorLit => |il| self.ensureAnonRecord(c.loc, .{ .fields = il.fields }) catch null,
                 .grouped => |inner| self.recordTypeOfExpr(inner.*),
+                else => null,
+            },
+            // `try f(…)` answers the ok payload of the `@Result` `f` declares:
+            // `val v = try readValue(doc, i); v.next` (`std/json`'s reader)
+            // reads a field of a `Parsed`, which nothing typed before.
+            .jump => |j| switch (j.kind) {
+                .try_ => |t| blk: {
+                    const inner = t orelse break :blk null;
+                    switch (inner.*) {
+                        .call => |c| switch (c.kind) {
+                            .call => |cc| {
+                                const sym = self.assocSym(cc) orelse cc.callee;
+                                const rt = self.fn_ret_typerefs.get(sym) orelse break :blk null;
+                                if (rt != .generic) break :blk null;
+                                const g = rt.generic;
+                                if (!std.mem.endsWith(u8, g.name, "Result") or g.args.len != 2) break :blk null;
+                                break :blk self.resolveRecordName(typeRefName(g.args[0]));
+                            },
+                            else => break :blk null,
+                        },
+                        else => break :blk null,
+                    }
+                },
                 else => null,
             },
             // `a ?? b` — the transform pass writes it as `if (a) { <this> ->
@@ -5476,6 +5528,11 @@ const Emitter = struct {
                             return error.MissingExternalTarget;
                         }
                         if (try self.lowerRecordMethod(cc, c.loc)) return;
+                        if (self.primAssocHelper(cc)) |h| {
+                            try self.lowerCoerced(callArg(cc, 0).?, "i32");
+                            try self.emit(self.builder().helper(h));
+                            return;
+                        }
                         if (self.assocSym(cc)) |sym_tmp| {
                             const generic = try self.arena().dupe(u8, sym_tmp);
                             const spec = try self.specializeFor(generic, cc.args);
@@ -6129,12 +6186,9 @@ const Emitter = struct {
     /// Bump the heap by the two `i32` slots a `@Result` occupies, leaving the
     /// base pointer in the scratch local `slot`.
     fn allocResultPair(self: *Emitter, slot: []const u8) !void {
-        try self.emit(.{ .global_get = heap_ptr });
-        try self.emit(.{ .local_set = slot });
-        try self.emit(.{ .global_get = heap_ptr });
         try self.emit(try self.constInt(8));
-        try self.emit(opOf("i32", "add"));
-        try self.emit(.{ .global_set = heap_ptr });
+        try self.emit(self.builder().helper(.alloc));
+        try self.emit(.{ .local_set = slot });
     }
 
     fn declRes(self: *Emitter) ![]const u8 {
@@ -7409,14 +7463,15 @@ const Emitter = struct {
     /// scratch local, and return `k`.
     fn allocSlots(self: *Emitter, nbytes: u32) ![]const u8 {
         const base = try self.memName(self.nextMem());
-        try self.emit(.{ .global_get = heap_ptr });
-        try self.emit(.{ .local_set = base });
+        // Every allocation goes through `$__alloc`, the one bump that grows
+        // the memory (decision 261); a zero-byte one only reads the pointer.
         if (nbytes > 0) {
-            try self.emit(.{ .global_get = heap_ptr });
             try self.emit(try self.constInt(nbytes));
-            try self.emit(opOf("i32", "add"));
-            try self.emit(.{ .global_set = heap_ptr });
+            try self.emit(self.builder().helper(.alloc));
+        } else {
+            try self.emit(.{ .global_get = heap_ptr });
         }
+        try self.emit(.{ .local_set = base });
         return base;
     }
 
@@ -10080,6 +10135,19 @@ const Emitter = struct {
         }) });
     }
 
+    /// Decision 262 — an associated host primitive of a prelude behavior,
+    /// lowered to its prelude helper: `String.fromCodepoint(cp)` is
+    /// `$__str_from_cp`, which writes the code point's UTF-8 bytes and traps on
+    /// a value that is no Unicode scalar value (as erlang's `/utf8` raises and
+    /// the Node cell throws). Null for any other call, and when `String` names
+    /// something of the program's own.
+    fn primAssocHelper(self: *Emitter, cc: anytype) ?wat.Helper {
+        const rn = receiverName(cc) orelse return null;
+        if (self.locals.contains(rn) or self.globals.contains(rn) or self.records.contains(rn) or self.enums.contains(rn)) return null;
+        if (std.mem.eql(u8, rn, "String") and std.mem.eql(u8, cc.callee, "fromCodepoint") and cc.args.len == 1 and cc.trailing.len == 0) return .str_from_cp;
+        return null;
+    }
+
     /// `Iface_method` when `cc` is `Iface.method(…)` naming an interface
     /// associated `default fn`.
     fn assocSym(self: *Emitter, cc: anytype) ?[]const u8 {
@@ -11865,6 +11933,7 @@ const Emitter = struct {
             },
             .call => |c| switch (c.kind) {
                 .call => |cc| blk: {
+                    if (self.primAssocHelper(cc) != null) break :blk true;
                     if (self.primKindAt(cc, c.loc)) |k| break :blk self.primRes(k, cc) == .str;
                     if (isStrSlice(cc)) break :blk true;
                     // `s[i]` / `s[a..b]` (decision 30) answer a string; an
