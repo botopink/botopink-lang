@@ -907,6 +907,16 @@ function of its own already.
 
 ## Function values, and the lowering that is not there
 
+**A function value in an `unknown` slot is boxed under its arity** (decision 254).
+`lowerAsUnknown` puts a lambda, a top-level fn named as a value or a name declared
+`fn(…) -> R` (`fnValueArity`) in a tagged box whose descriptor is the interned
+`'P' <n> "fn/<arity>"` (`fnDescriptorAddr`) and whose payload is the closure cell.
+`x is fn(<params>) -> T` compares that descriptor (`lowerIsCall`), and the branch it
+guards reads the closure out of the box through an alias typed by the tested
+function type (`narrowUnknownFn`), so `lowerValueCall` — which loads the callee
+through `resolveName` — applies the cell and answers `T`. The arity is all the
+test can read back: a closure cell carries no parameter or return types.
+
 **This backend has function values.** A lambda used as a value is lifted into
 `$__lambda{n}(env, a0, …)`, listed in the module's `(table funcref (elem …))`, and
 applied with `call_indirect`; the value itself is a pointer to an environment cell

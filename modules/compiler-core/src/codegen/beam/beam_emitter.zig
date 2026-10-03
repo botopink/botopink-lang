@@ -138,6 +138,10 @@ pub const TestOp = enum {
     /// elements. `is_tuple` alone leaves the arity unknown, which is what
     /// decision 8 §4.2's `x is #(i32, string)` has to answer about.
     test_arity,
+    /// `{test, is_function2, {f, F}, [Src, {integer, N}]}` — a fun of arity
+    /// `N` (the arity is a source operand, so tagged, unlike `test_arity`'s):
+    /// decision 254's `x is fn(<N params>) -> T`.
+    is_function2,
 };
 
 /// The `gc_bif` selector. `add`/`sub`/… spell the quoted operator atoms.

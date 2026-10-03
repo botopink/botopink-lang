@@ -2717,6 +2717,22 @@ const Emitter = struct {
             try self.emitPrimTest(pt);
             return;
         }
+        // Decision 254 — `x is fn(<params>) -> T`: a function value in an
+        // `unknown` slot is boxed under the descriptor of its arity
+        // (`lowerAsUnknown`), so the test is that descriptor in the header.
+        if (t == .function) {
+            const desc = try self.fnDescriptorAddr(t.function.params.len);
+            const mem = try self.memName(self.nextMem());
+            try self.lowerAsUnknown(cc.args[0].value.*);
+            try self.emit(.{ .local_tee = mem });
+            try self.emit(try self.constInt(heap_floor));
+            try self.emit(opOf("i32", "ge_u"));
+            try self.emitHeaderLoad(mem);
+            try self.emit(try self.constInt(desc));
+            try self.emit(opOf("i32", "eq"));
+            try self.emit(opOf("i32", "and"));
+            return;
+        }
         const descs = try self.typeDescriptors(t);
         if (descs.len == 0) {
             return self.refuseUnlessTemplate(self.call_loc, "`is {f}`: the wasm backend has no run-time test for this type (no value of it carries a descriptor)", .{t});
@@ -2831,12 +2847,49 @@ const Emitter = struct {
         return addr;
     }
 
+    /// Decision 254 — the descriptor a function value boxed into an `unknown`
+    /// slot carries: `'P' <n> "fn/<arity>"`. The arity is the one thing a
+    /// run-time test can read back; the parameter and return types leave no
+    /// trace in a closure cell.
+    fn fnDescriptorAddr(self: *Emitter, arity: usize) anyerror!u32 {
+        return self.primDescriptorAddr(try std.fmt.allocPrint(self.reg_arena.allocator(), "fn/{d}", .{arity}));
+    }
+
+    /// The arity of `e` when it is a function value: a lambda, a top-level fn
+    /// named as a value, or a name or slot declared with a function type.
+    fn fnValueArity(self: *Emitter, e: ast.Expr) ?usize {
+        switch (e) {
+            .function => |f| if (f.kind.syntax == .lambda) return f.kind.params.len,
+            .identifier => |id| if (id.kind == .ident) {
+                const n = self.resolveName(id.kind.ident);
+                if (!self.locals.contains(n) and !self.globals.contains(n)) {
+                    if (self.fn_sigs.get(id.kind.ident)) |sig| return sig.params.len;
+                }
+            },
+            else => {},
+        }
+        const t = self.typeRefOf(e) orelse return null;
+        return switch (t) {
+            .function => |f| f.params.len,
+            else => null,
+        };
+    }
+
     /// Lower `value` as the `unknown` value it becomes in such a slot: as it
     /// is when it already is one or carries its own header, `0` for `null`,
-    /// else boxed by its static shape.
+    /// else boxed by its static shape — a function value under its arity's
+    /// descriptor (decision 254), its payload the closure cell.
     fn lowerAsUnknown(self: *Emitter, value: ast.Expr) anyerror!void {
         if (isNullLit(value) or self.isUnknownExpr(value) or self.isTaggedValue(value)) {
             try self.lowerCoerced(value, "i32");
+            return;
+        }
+        if (self.fnValueArity(value)) |arity| {
+            const fbase = try self.allocTagged(try self.fnDescriptorAddr(arity), 4);
+            try self.emit(.{ .local_get = fbase });
+            try self.lowerCoerced(value, "i32");
+            try self.emitC(.{ .store = .{ .offset = tag_header_bytes } }, "unknown: box a function value");
+            try self.loadTaggedBase(fbase);
             return;
         }
         const Kind = enum { i32_, f64_, bool_, str, arr, tuple };
@@ -9783,7 +9836,9 @@ const Emitter = struct {
             if (self_recv) |rt| try self.emit(.{ .local_tee = rt });
             try self.emitCf(.{ .load = .{ .offset = off } }, ".{s}", .{cc.callee});
         } else if (self.locals.contains(cc.callee)) {
-            try self.emit(.{ .local_get = cc.callee });
+            // Through `resolveName`: a name narrowed by `is fn(…) -> T`
+            // (decision 254) is the closure its box held.
+            try self.emit(.{ .local_get = self.resolveName(cc.callee) });
         } else {
             try self.emit(.{ .global_get = self.globalName(cc.callee) });
         }
@@ -13760,7 +13815,7 @@ const Emitter = struct {
     /// put it back. A `?string`, a `?bool` and a `?Record` also take the shape
     /// their payload has, because inside the branch every reader asks about a
     /// plain value and no longer about an optional.
-    const UnknownNarrowing = struct { name: []const u8, previous: ?[]const u8 };
+    const UnknownNarrowing = struct { name: []const u8, previous: ?[]const u8, alias: ?[]const u8 = null };
 
     /// `if (x is i32) { … x … }` over an `unknown` `x`: inside the branch `x`
     /// IS the payload the test proved — the checker types it so (§4.1) — so
@@ -13776,6 +13831,7 @@ const Emitter = struct {
             else => return null,
         };
         if (!cc.is_builtin or !std.mem.eql(u8, cc.callee, ast.is_builtin_name) or cc.args.len != 1) return null;
+        if (cc.isType) |ft| if (ft == .function) return self.narrowUnknownFn(cc.args[0].value.*, ft);
         const pt = primTestOf(cc.isType orelse return null) orelse return null;
         const n0 = plainIdentName(cc.args[0].value.*) orelse return null;
         if (!self.isUnknownExpr(cc.args[0].value.*)) return null;
@@ -13798,8 +13854,28 @@ const Emitter = struct {
         return .{ .name = n0, .previous = previous };
     }
 
+    /// Decision 254 — `if (f is fn(…) -> T) { … f(…) … }` over an `unknown`
+    /// `f`: inside the branch `f` is the closure cell the box holds, typed by
+    /// the tested function type so a call through it answers `T`.
+    fn narrowUnknownFn(self: *Emitter, subject: ast.Expr, ft: ast.TypeRef) anyerror!?UnknownNarrowing {
+        const n0 = plainIdentName(subject) orelse return null;
+        if (!self.isUnknownExpr(subject)) return null;
+        const n = self.resolveName(n0);
+        const alias = try std.fmt.allocPrint(self.arena(), "{s}__is{d}", .{ n0, self.alias_seq });
+        self.alias_seq += 1;
+        try self.declareLocal(alias, "i32");
+        try self.emit(.{ .local_get = n });
+        try self.emitC(.{ .load = .{} }, "unknown: the proven function value");
+        try self.emit(.{ .local_set = alias });
+        try self.local_typerefs.put(alias, ft);
+        const previous = self.aliases.get(n0);
+        try self.aliases.put(n0, alias);
+        return .{ .name = n0, .previous = previous, .alias = alias };
+    }
+
     fn dropUnknownNarrowing(self: *Emitter, un: ?UnknownNarrowing) void {
         const u = un orelse return;
+        if (u.alias) |a| _ = self.local_typerefs.remove(a);
         if (u.previous) |p| {
             self.aliases.put(u.name, p) catch {};
         } else _ = self.aliases.remove(u.name);

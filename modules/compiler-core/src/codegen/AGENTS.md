@@ -169,7 +169,10 @@ codegen/
   type is `typeof === "number"` + `Number.isInteger` + its range, `f64` any
   number, `string`/`bool` the primitive, a tuple an array of the right arity
   with each element tested, `?T` null-or-`T`, an array its constructor only
-  (§4.2 — an element type is not checkable), and a **named type** an
+  (§4.2 — an element type is not checkable), a **function type** `typeof ===
+  "function"` and `.length` equal to its parameter count (decision 254 — the
+  arity is all a JS function shows; a defaulted parameter is filled at the
+  call site, never a JS default, so `.length` counts it), and a **named type** an
   `instanceof`, free under decision 5. A **variant path** (`x is Token.Text`)
   is `(_v instanceof Token && _v.tag === "Text")` when `Token` is an enum this
   module declares with that variant or imports by name, and `(_v != null &&
@@ -1340,7 +1343,8 @@ codegen/
   `typeTestNode` writes ONE boolean expression that is also a legal erlang
   guard, so the two share a lowering — `is_binary` / `is_boolean`, `is_number`
   for a float type (§4.2: any number), `is_number(V) andalso V == trunc(V)`
-  plus a range for an integer type (§4.1: `2.0 is i32` holds), `is_list` for an array, `true`
+  plus a range for an integer type (§4.1: `2.0 is i32` holds), `is_list` for an array,
+  `is_function(V, N)` for a function type of `N` parameters (decision 254), `true`
   for `unknown`, `V =:= undefined orelse …` for `?T`, and for a named `type`
   what half 3 made testable: a record is `is_tuple(V) andalso tuple_size(V)
   =:= N andalso element(1, V) =:= <its atom>`, an enum every tag it builds
@@ -1927,7 +1931,9 @@ codegen/
   `emitTypeTestBranch` emits tests that FALL THROUGH on a match and jump to a
   fail label otherwise, leaving `{x, 0}` untouched, so `lowerIsCall` (which
   answers `true`/`false`) and the `.ident` case arm share one lowering. A
-  record is `is_tagged_tuple` on its own atom and arity; an enum is every tag it
+  function type is `is_function2` with the arity as `{integer, N}` (a source
+  operand — the bare `N` of `test_arity` is `bad tag 0` to the loader;
+  decision 254). A record is `is_tagged_tuple` on its own atom and arity; an enum is every tag it
   builds, the unit ones by `is_ne_exact` (which branches when the two ARE
   equal) and the payload ones by `is_tagged_tuple` + a jump. A TUPLE type is
   `is_tuple` + `test_arity` and then each element, as erlang tests them: after

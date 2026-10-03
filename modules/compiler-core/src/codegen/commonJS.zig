@@ -5562,6 +5562,7 @@ const Emitter = struct {
                 break :blk k;
             } else 1,
             .optional => |inner| 1 + isTestReads(inner.*),
+            .function => 2, // typeof + .length
             .tuple_, .labeledTuple => blk: {
                 var k: usize = 2; // Array.isArray + .length
                 for (t.tupleElems().?) |e| k += isTestReads(e);
@@ -5630,8 +5631,20 @@ const Emitter = struct {
                 }
                 return self.b.paren(acc);
             },
-            // A function type and a comptime typeparam have no run-time test.
-            .function, .typeparam => return .{ .name = "false" },
+            // Decision 254 — `x is fn(<params>) -> T`: a function declaring
+            // that many parameters (`typeof` and `.length`). The parameter
+            // and return types leave no run-time trace.
+            .function => |f| return self.b.paren(try self.b.binaryBare(
+                "&&",
+                try self.typeofIs(subject, "function"),
+                try self.b.binaryBare(
+                    "===",
+                    try self.b.member(subject, "length"),
+                    .{ .number = try std.fmt.allocPrint(self.arena(), "{d}", .{f.params.len}) },
+                ),
+            )),
+            // A comptime typeparam has no run-time test.
+            .typeparam => return .{ .name = "false" },
         }
     }
 

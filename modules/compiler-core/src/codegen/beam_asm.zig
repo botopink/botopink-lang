@@ -3259,8 +3259,9 @@ const Emitter = struct {
     /// `{x, 0}`, as a branch: the emitted tests FALL THROUGH when the value is
     /// a `T` and jump to `fail` when it is not, leaving `{x, 0}` untouched.
     /// A named `type` is what half 3 made testable — a record by its tag and
-    /// arity, an enum by every tag it builds. Answers false when the type has
-    /// no run-time test (a function type, a comptime type parameter), and the
+    /// arity, an enum by every tag it builds, a function type by its arity.
+    /// Answers false when the type has no run-time test (a comptime type
+    /// parameter), and the
     /// caller then jumps to `fail` unconditionally.
     fn emitTypeTestBranch(self: *Emitter, t: ast.TypeRef, fail: u32) anyerror!bool {
         return self.emitTypeTestBranchOn(t, 0, fail);
@@ -3405,7 +3406,13 @@ const Emitter = struct {
                 }
                 return true;
             },
-            .function, .typeparam => return false,
+            // Decision 254 — `x is fn(<params>) -> T`: a fun of that arity
+            // (`is_function2`), the erlang twin's `is_function/2`.
+            .function => |f| {
+                try beamEmitter.writeTest(self.out, .is_function2, fail, &.{ s, Op.int(f.params.len) });
+                return true;
+            },
+            .typeparam => return false,
         }
     }
 

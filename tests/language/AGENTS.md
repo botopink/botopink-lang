@@ -310,8 +310,13 @@ Decision 254 types the answer `Declared<unknown>[]` whatever the program declare
 (each naming its declared return type, `returnTypeName` — decision 256; `run/typeinfo_all_list` reads
 it `""` for a type), and
 `reject/typeinfo_all_value_unknown` refuses an entry's `value` used as a function without a test.
-The registration and list cells therefore read `name`, `module` and `meta` only; calling a `value`
-through `is fn() -> T` comes with front 130.
+The registration and list cells therefore read `name`, `module` and `meta` only. Front 130 adds
+the narrowing (decision 254): `run/is_fn_narrows_unknown` narrows an `unknown` with `is fn(<params>)
+-> T` and calls through it — a stored factory, a lambda, a top-level fn, a value of another arity,
+a string and a number — on all four targets; `run/is_fn_wrong_arity_fails` (`.exit nonzero`) is a
+resolver narrowing a stored `fn(i32) -> i32` with `is fn() -> Clock` and panicking with the entry's
+name and the expected type (the message is on stderr; wasm's `@panic` is a trap with no text); and
+`reject/call_unknown_without_narrowing` refuses calling an `unknown` that no test narrowed.
 Decision 252 (every builtin declared, a call held to its declaration) adds
 `reject/builtin_arguments` — `@panic` given a second argument its declaration does not have,
 `builtin-arguments` at the call.
