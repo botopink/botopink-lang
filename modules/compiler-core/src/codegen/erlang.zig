@@ -9523,7 +9523,8 @@ const Emitter = struct {
     /// Decision 8 §4.2 — the run-time test of `x is T`, as an expression that
     /// is also a legal erlang GUARD, so a `case` arm naming a type and an `is`
     /// in a condition share one lowering. Null when the type has no run-time
-    /// test (a function type, a comptime type parameter).
+    /// test (a comptime type parameter); a function type is its arity
+    /// (`is_function/2`, decision 254).
     ///
     /// A named `type` is what half 3 made testable: a record is
     /// `element(1, V) =:= <its atom>` at the right arity, and an enum is every
@@ -9606,7 +9607,11 @@ const Emitter = struct {
                 }
                 return acc;
             },
-            .function, .typeparam => return null,
+            // Decision 254 — `x is fn(<params>) -> T`: a fun of that arity.
+            // The parameter and return types have no run-time trace on the
+            // BEAM, so the arity is what is tested.
+            .function => |f| return try b.remote("erlang", "is_function", &.{ subject, Ast.Expr.t(Term.int(@intCast(f.params.len))) }),
+            .typeparam => return null,
         }
     }
 

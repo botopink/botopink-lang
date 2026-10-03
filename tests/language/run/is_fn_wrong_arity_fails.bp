@@ -1,0 +1,26 @@
+//// Decision 254 — a wrong arity is a RUN-TIME failure, not a build error:
+//// `is fn() -> Clock` over a stored `fn(i32) -> i32` answers false, and the
+//// resolver that narrowed it stops naming the entry and the type it
+//// expected (rakun's `rkResolve<T>` is this shape). The first entry
+//// resolves and prints; the second aborts the program.
+
+type Clock(zone: string)
+
+fn makeClock() -> Clock {
+    return Clock(zone: "UTC");
+}
+
+fn twice(n: i32) -> i32 {
+    return n * 2;
+}
+
+fn resolve(name: string, entry: unknown) -> Clock {
+    if (entry is fn() -> Clock) return entry();
+    @panic("entry '" + name + "' is not a fn() -> Clock");
+}
+
+pub fn main() {
+    @print(resolve("clock", makeClock).zone);
+    @print(resolve("twice", twice).zone);
+    @print("unreachable");
+}
