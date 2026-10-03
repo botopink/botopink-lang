@@ -19,6 +19,7 @@ const Lexer = lexerMod.Lexer;
 const Parser = parserMod.Parser;
 const Env = envMod.Env;
 const h = @import("helpers.zig");
+const hostRuntime = @import("../runtime/runtime.zig");
 
 /// Parse + infer `src` into `env` (builtins + stdlib preloaded). The caller
 /// owns `env` (deinit) and the arena everything is allocated in.
@@ -273,7 +274,10 @@ test "template: context exposes declaration position and scope for second-layer 
         "'__bp_capture' => <<\"template\">>",
         "source => #{file => <<\"\">>, line => 7, col => 13}",
         "text => <<\"\\n<Button/>\\n\">>, multiline => true}",
-        "bindings => [#{name => <<\"Button\">>, kind => 'Record_', identity => <<\"main@@Button\">>, local => <<\"Button\">>}, #{name => <<\"dsl\">>, kind => 'Fn', identity => <<\"main@@dsl\">>, local => <<\"dsl\">>}, #{name => <<\"c\">>, kind => 'Val', identity => <<\"main@@c\">>, local => <<\"c\">>}]",
+        // Decision 237: only the scope entries the text names — `dsl` and `c`
+        // are in scope but not words of `<Button/>`.
+        "bindings => [#{name => <<\"Button\">>, kind => 'Record_', identity => <<\"main@@Button\">>, local => <<\"Button\">>}]",
+        "words => [<<\"Button\">>]",
     };
     for (expected) |needle| {
         if (std.mem.indexOf(u8, term, needle) == null) {
@@ -460,7 +464,7 @@ test "comptime: runtime template body ---- lookup miss drives control flow" {
         \\    };
         \\    return t.build("\"ok\"");
         \\}
-        \\val r = need "x";
+        \\val r = need "<Buttom/>";
     ;
     try assertCompilesOk(@src(), src);
     try h.assertComptimeAstSingle(std.testing.allocator, @src(), src);
@@ -580,7 +584,7 @@ test "comptime: round trip ---- an @ExprCustom reference tree names a declaratio
         \\    val root = CustomNode(kind: "select", span: Span(0, 6, 1), label: "keyword", ref: null, children: [leaf]);
         \\    return e.custom(root, code);
         \\}
-        \\val rows = dsl "select id";
+        \\val rows = dsl "select id from Item";
     ;
     const modules: []const @import("../../module.zig").Module = &.{
         .{ .path = "shapes", .source = shapes },
@@ -619,6 +623,150 @@ test "comptime: round trip ---- an @ExprCustom reference tree names a declaratio
     try h.assertComptimeAst(std.testing.allocator, @src(), modules);
 }
 
+// ── decision 237: a capture carries only the bindings its text names ─────────
+
+test "decision 237: the capture's bindings are the scope entries its text names, in text order" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var env = try freshTestEnv(alloc);
+    defer env.deinit();
+
+    try inferInto(&env, alloc,
+        \\pub type Card(
+        \\    title: string,
+        \\)
+        \\pub type Badge(
+        \\    n: i32,
+        \\)
+        \\val unrelated = 1;
+        \\pub fn dsl(comptime template: @Expr<string>) -> @Expr<string> {
+        \\    return template;
+        \\}
+        \\val a = dsl "<Card title=\"x\"><Badge/></Card> 9lives _x Badge";
+        \\val b = dsl "cfg-0";
+    );
+
+    var it = env.exprCaptures.iterator();
+    var seen: usize = 0;
+    while (it.next()) |e| {
+        for (e.value_ptr.*) |*cap| {
+            var term_out: std.Io.Writer.Allocating = .init(std.testing.allocator);
+            defer term_out.deinit();
+            try erlEmitter.writeTerm(&term_out.writer, try templateEval.captureToTerm(alloc, cap));
+            const term = term_out.written();
+            const text = cap.text.?;
+            const expected: []const []const u8 = if (std.mem.eql(u8, text, "cfg-0")) &.{
+                // `cfg-0`: one word, `cfg`, which the scope lacks — no binding.
+                "bindings => []",
+                "words => [<<\"cfg\">>]",
+            } else &.{
+                // A word is identifier-shaped: `9lives` is not one (nor is
+                // `lives` inside it), `_x` is; a repeated word counts once. Not
+                // `unrelated`, `dsl`, `a`, `b`: the text does not spell them.
+                "bindings => [#{name => <<\"Card\">>, kind => 'Record_', identity => <<\"main@@Card\">>, local => <<\"Card\">>}, #{name => <<\"Badge\">>, kind => 'Record_', identity => <<\"main@@Badge\">>, local => <<\"Badge\">>}]",
+                "words => [<<\"Card\">>, <<\"title\">>, <<\"x\">>, <<\"Badge\">>, <<\"_x\">>]",
+            };
+            for (expected) |needle| {
+                if (std.mem.indexOf(u8, term, needle) == null) {
+                    std.debug.print("\nmissing:\n{s}\nin:\n{s}\n", .{ needle, term });
+                    return error.TestExpectedContains;
+                }
+            }
+            seen += 1;
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 2), seen);
+}
+
+test "decision 237 ---- a text that names nothing in scope carries no binding" {
+    const src =
+        \\val cfg_1 = "unread";
+        \\pub fn conf(comptime q: @Expr<string>) -> @Expr<i32> {
+        \\    val n = q.bindings().length;
+        \\    return @expr(n);
+        \\}
+        \\val n = conf "cfg-0";
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const replies = try h.repliesIdenticalAcrossRuntimes(std.testing.allocator, arena.allocator(), @src(), &.{.{ .path = "", .source = src }});
+    try std.testing.expectEqual(@as(usize, 1), replies.len);
+    try std.testing.expectEqualStrings(
+        \\{"kind":"value","value":0}
+    , replies[0]);
+    try h.assertComptimeAstSingle(std.testing.allocator, @src(), src);
+}
+
+test "decision 237 ---- lookup of a word of the text finds its binding" {
+    const src =
+        \\pub type Card(
+        \\    title: string,
+        \\)
+        \\pub type Badge(
+        \\    n: i32,
+        \\)
+        \\val unrelated = 1;
+        \\pub fn ui(comptime q: @Expr<string>) -> @Expr<string> {
+        \\    val count = q.bindings().length;
+        \\    val hit = q.lookup("Badge");
+        \\    if (hit) { b ->
+        \\        return q.build("\"" + b.name + "/" + b.local + "\"");
+        \\    } else {
+        \\        return q.fail("Badge is a word of the text and in scope");
+        \\    };
+        \\}
+        \\val s = ui "<Card title=\"x\"><Badge/></Card>";
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const replies = try h.repliesIdenticalAcrossRuntimes(std.testing.allocator, arena.allocator(), @src(), &.{.{ .path = "", .source = src }});
+    try std.testing.expectEqual(@as(usize, 1), replies.len);
+    try std.testing.expectEqualStrings(
+        \\{"kind":"code","source":"\"Badge/Badge\""}
+    , replies[0]);
+    try h.assertComptimeAstSingle(std.testing.allocator, @src(), src);
+}
+
+test "decision 237 ---- lookup of a name outside the text is a located error" {
+    // `Button` is in scope but the text does not spell it: the template fails
+    // at its literal on both runtimes, never `undefined`.
+    const src =
+        \\pub type Button(
+        \\    label: string,
+        \\)
+        \\pub fn need(comptime t: @Expr<string>) -> @Expr<string> {
+        \\    val hit = t.lookup("Button");
+        \\    if (hit) { b ->
+        \\        return t.build("\"hit\"");
+        \\    } else {
+        \\        return t.build("\"miss\"");
+        \\    };
+        \\}
+        \\val r = need "<Card/>";
+    ;
+    const io = std.testing.io;
+    const prev_rt = hostRuntime.force(.beam);
+    defer _ = hostRuntime.force(prev_rt);
+    for ([_]hostRuntime.ComptimeRuntime{ .beam, .wat }) |rt| {
+        _ = hostRuntime.force(rt);
+        var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, h.buildRootPathFromSrc(io, @src()), null);
+        defer session.deinit(std.testing.allocator);
+        try std.testing.expectEqual(@as(usize, 1), session.outputs.items.len);
+        const outcome = session.outputs.items[0].outcome;
+        try std.testing.expect(outcome == .typeError);
+        const message = try outcome.typeError.message(std.testing.allocator);
+        defer std.testing.allocator.free(message);
+        try std.testing.expectEqualStrings(
+            \\lookup("Button"): not a word of the template's text; a template capture carries only the bindings whose name its text spells
+        , message);
+        // Located at the template literal the body was handed.
+        const at = outcome.typeError.loc orelse return error.TestUnexpectedResult;
+        try std.testing.expectEqual([2]usize{ 12, 14 }, [2]usize{ at.line, at.col });
+    }
+    try h.assertComptimeCompileError(std.testing.allocator, @src(), src);
+}
+
 // ── @ExprCustom carrier (expr-custom) ─────────────────────────────────────────
 
 test "infer: a fn returning @ExprCustom<T> is recognized as a template fn" {
@@ -649,7 +797,7 @@ test "comptime: q.custom executes `code` identically + the tree is retrievable b
         \\    val root = CustomNode(kind: "select", span: Span(0, 6, 1), label: "keyword", ref: null, children: [leaf]);
         \\    return e.custom(root, code);
         \\}
-        \\val rows = dsl "select id";
+        \\val rows = dsl "select id from Item";
         \\val answer = rows + 1;
     ;
     const io = std.testing.io;

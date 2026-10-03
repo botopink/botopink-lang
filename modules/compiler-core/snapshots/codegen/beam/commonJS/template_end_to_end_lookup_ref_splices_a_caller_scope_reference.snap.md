@@ -9,7 +9,7 @@ pub fn refer(comptime q: @Expr<string>) -> @Expr<string> {
         return q.fail("greeting not found in caller scope");
     };
 }
-val s = refer "x";
+val s = refer "greeting";
 fn main() {
     @print(s);
 }
@@ -134,18 +134,18 @@ fn main() {
 %% main/1 argument — an external term, not part of the module:
 %% Arg0 = #{
 %%     '__bp_capture' => <<"q">>,
-%%     text => <<"x">>,
+%%     text => <<"greeting">>,
 %%     parts => [
 %%         #{
 %%             kind => <<"Text">>,
-%%             text => <<"x">>,
-%%             span => #{start => 0, 'end' => 1, line => 1}
+%%             text => <<"greeting">>,
+%%             span => #{start => 0, 'end' => 8, line => 1}
 %%         }
 %%     ],
 %%     source => #{file => <<"">>, line => 10, col => 15},
 %%     context => #{
 %%         source => #{file => <<"">>, line => 10, col => 15},
-%%         text => <<"x">>,
+%%         text => <<"greeting">>,
 %%         multiline => false
 %%     },
 %%     bindings => [
@@ -154,21 +154,9 @@ fn main() {
 %%             kind => 'Val',
 %%             identity => <<"main@@greeting">>,
 %%             local => <<"greeting">>
-%%         },
-%%         #{
-%%             name => <<"refer">>,
-%%             kind => 'Fn',
-%%             identity => <<"main@@refer">>,
-%%             local => <<"refer">>
-%%         },
-%%         #{name => <<"s">>, kind => 'Val', identity => <<"main@@s">>, local => <<"s">>},
-%%         #{
-%%             name => <<"main">>,
-%%             kind => 'Fn',
-%%             identity => <<"main@@main">>,
-%%             local => <<"main">>
 %%         }
-%%     ]
+%%     ],
+%%     words => [<<"greeting">>]
 %% }
 ```
 

@@ -10,7 +10,7 @@ pub fn need(comptime t: @Expr<string>) -> @Expr<string> {
     };
     return t.build("\"ok\"");
 }
-val r = need "x";
+val r = need "<Buttom/>";
 ```
 
 ----- BOTOPINK TRANSFORM CODE -- main.bp

@@ -1,14 +1,15 @@
 //// The handler: a template fn returning `@ExprCustom<T>`. `e.text()` is the
-//// template's source (`"4, 5"`); the `code` half is the `area(4, 5)` call the
+//// template's source (`"area(4, 5)"`); the `code` half is that call, which the
 //// consumer's module evaluates, the `ast` half a reference tree the tooling
-//// reads by call location.
+//// reads by call location. `e.lookup("area")` resolves because the text spells
+//// `area` (decision 237: a capture carries only the bindings its text names).
 
 pub fn area(w: i32, h: i32) -> i32 {
     return w * h;
 }
 
 pub default fn shapesdsl<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
-    val code = e.build("area(" + e.text() + ")");
+    val code = e.build(e.text());
     val root = CustomNode(
         kind: "call",
         span: Span(0, 4, 1),

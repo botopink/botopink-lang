@@ -7,7 +7,7 @@ pub fn dsl<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
     val root = CustomNode(kind: "select", span: Span(0, 6, 1), label: "keyword", ref: null, children: [leaf]);
     return e.custom(root, code);
 }
-val rows = dsl "select id";
+val rows = dsl "select id from Item";
 ```
 
 ----- COMPTIME BEAM ASSEMBLY -- template dsl
@@ -143,18 +143,18 @@ val rows = dsl "select id";
 %% main/1 argument — an external term, not part of the module:
 %% Arg0 = #{
 %%     '__bp_capture' => <<"e">>,
-%%     text => <<"select id">>,
+%%     text => <<"select id from Item">>,
 %%     parts => [
 %%         #{
 %%             kind => <<"Text">>,
-%%             text => <<"select id">>,
-%%             span => #{start => 0, 'end' => 9, line => 1}
+%%             text => <<"select id from Item">>,
+%%             span => #{start => 0, 'end' => 19, line => 1}
 %%         }
 %%     ],
 %%     source => #{file => <<"">>, line => 8, col => 16},
 %%     context => #{
 %%         source => #{file => <<"">>, line => 8, col => 16},
-%%         text => <<"select id">>,
+%%         text => <<"select id from Item">>,
 %%         multiline => false
 %%     },
 %%     bindings => [
@@ -163,20 +163,9 @@ val rows = dsl "select id";
 %%             kind => 'Fn',
 %%             identity => <<"shapes@@Item">>,
 %%             local => <<"Item">>
-%%         },
-%%         #{
-%%             name => <<"dsl">>,
-%%             kind => 'Fn',
-%%             identity => <<"main@@dsl">>,
-%%             local => <<"dsl">>
-%%         },
-%%         #{
-%%             name => <<"rows">>,
-%%             kind => 'Val',
-%%             identity => <<"main@@rows">>,
-%%             local => <<"rows">>
 %%         }
-%%     ]
+%%     ],
+%%     words => [<<"select">>, <<"id">>, <<"from">>, <<"Item">>]
 %% }
 ```
 

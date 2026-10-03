@@ -779,7 +779,9 @@ project, and the runner does nothing special for it. `modules/local_dependency` 
 cell of that shape: `deps/shapesdsl/` ships `root.bp` (`pub default mod shapesdsl;`), `shapesdsl.bp`
 (`pub default fn … -> @ExprCustom<T>`, the handler returning `e.custom(ast, code)`) and `shapes.d.bp`
 (a record declared in a `.d.bp` listed in `files`); the program does `import shapesdsl, {area, Rect}
-from "shapesdsl"` and expands `shapesdsl "4, 5"` at compile time. Green on all four targets, measured
+from "shapesdsl"` and expands `shapesdsl "area(4, 5)"` at compile time (the text spells `area`, the
+name the handler's `e.lookup` asks for — decision 237: a capture carries only the bindings its text
+names, and `lookup` of any other name is a located error). Green on all four targets, measured
 at `361d255d` — the cell was written against the array `"dependencies"` of `85f883bd` and moved to the
 object form when the workspaces manifest (`aa80e30b`) started refusing the array. A dependency ships
 only what `files` lists — `root.bp` included, or the handle never reaches the consumer.
