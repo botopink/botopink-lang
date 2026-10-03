@@ -43,6 +43,7 @@ lib-test-runner/
     ├── runner.zig       ← per-(lib,target) `botopink test` spawn (or `botopink build` for a test-less lib), split into `capture*` (spawn, capture, classify — thread-safe, writes nothing) and `emit*` (the cell's output, exactly as a serial run wrote it) + the cell's failed-test tally, read from the child's run total + the restriction audit (`captureAudit`, `classifyAudit`, `emitAudit`)
     ├── doc_quotes.zig   ← a workspace document quoting the tool's member list is checked against the tool + unit tests
     ├── schedule.zig     ← the order the pool STARTS cells in: the duration history of each cell's cache root (`<root>/.botopinkbuild/cache/lib-test/durations.tsv`), longest last time first, unknown cells first + unit tests
+    ├── result_store.zig ← the cell-result store (decision 229): the key (binaries, toolchain, every library's bytes, the cell), load / save / reap of `<root>/.botopinkbuild/cache/results/lib-test/` + unit tests
     └── matrix.zig       ← Status enum, lib×target matrix render, summary + unit tests
 ```
 
@@ -56,8 +57,9 @@ zig build test-libs -- --target erlang --lib rakun    # one target, one lib
 zig build test-libs -- --target all --strict          # supported targets, strict
 zig build test-libs -- --lib rakun --target commonJS  # an excluded pair: no cell runs, the exclusion is audited
 zig build test-libs -- --list                         # the plan, nothing spawned: `cell:*` lines are the cells, `audit` the excluded pairs
+zig build test-libs -- --cold                         # every cell runs; the result store is not read, the passes are written
 zig build               # produces zig-out/bin/botopink-lib-test among the workspace executables
-zig build test          # includes the args + discovery + matrix + runner + schedule + doc_quotes + main unit tests (65)
+zig build test          # includes the args + discovery + matrix + runner + schedule + doc_quotes + result_store + main unit tests
 ```
 
 ## CLI surface
@@ -65,7 +67,7 @@ zig build test          # includes the args + discovery + matrix + runner + sche
 ```
 botopink-lib-test [--target <t>[,<t>…] | --target all] [--lib <name>]
                   [--filter <s>] [--strict] [--bin <path>] [--lib-root <dir>]
-                  [--json] [--list] [--jobs <n>]
+                  [--json] [--list] [--jobs <n>] [--cold] [--store-root <dir>]
 ```
 
 `--json` switches output from the text matrix to JSONL — see
@@ -93,6 +95,12 @@ botopink-lib-test [--target <t>[,<t>…] | --target all] [--lib <name>]
   (`MemAvailable / 768 MiB` from `/proc/meminfo` where it exists — a `botopink
   test` child peaks around 400 MB plus its `erl`/`node`, and several gates share
   one machine). Scheduling only — see "Parallel cells" below.
+- `--cold` — do not read the result store (§ The result store): every
+  spawning cell runs, and its passes are written. `scripts/gate.sh --cold`
+  passes it.
+- `--store-root <dir>` — keep the result store in `<dir>` instead of each
+  library's `<cache root>/.botopinkbuild/cache/results/lib-test/` (the tests'
+  scratch stores).
 - `--lib-root <dir>` — extra root to scan; repeatable. Appended **after**
   `BOTOPINK_LIB_ROOTS` env entries and the walk-up roots. Useful for ad-hoc CI
   without mutating env (`botopink-lib-test --lib-root /tmp/store --lib foo`).
@@ -246,7 +254,7 @@ text matrix):
 ```
 {"event":"cell_summary","lib":"<name>","target":"<t>",
  "status":"pass|fail|skipped_unsupported|no_tests",
- "failed":<n>,"ran":<bool>}
+ "failed":<n>,"ran":<bool>,"from_store":<bool>}
 ```
 
 - `failed` — the `"failed"` of the child's own terminating
@@ -255,13 +263,16 @@ text matrix):
   compile, one that ran `botopink build` (no `test` block), and one that was
   never spawned. `"ran":false` is **not** "zero failures": a cell that does not
   build has no test count.
+- `from_store` — the cell did not run: its captured output (the records above
+  it, its stderr) and its verdict are a stored pass whose key equals this run's
+  (§ The result store).
 
 A pair the lib's `"targets"` list excludes has no `cell_summary` — it is not
 a cell. An audited one has, in its place in the stream,
 
 ```
 {"event":"restriction_audit","lib":"<name>","target":"<t>",
- "status":"ok|not_structural","line":"<text>","at":"<file>:<line>:<col>"}
+ "status":"ok|not_structural","from_store":<bool>,"line":"<text>","at":"<file>:<line>:<col>"}
 ```
 
 - `line` — for `ok`, the refusal that proves the exclusion structural (the
@@ -284,6 +295,18 @@ its cells run in:
 
 and, when a workspace document disagrees with the tool (§ Documents
 that quote the tool), one `{"event":"doc_quote_mismatch"}`.
+
+Before it, one record says what the result store did:
+
+```
+{"event":"result_store","jobs":<spawning pairs>,"ran":<R>,"from_store":<S>,
+ "written":<passes stored>,"note":"<text>"}
+```
+
+— `note` is empty, or why nothing was read or written (`--cold: …`, `never
+stored: <why>`, `<n> not written: their inputs moved during the run`). Text mode
+prints `result store: <J> jobs — <R> run, <S> from store` after the matrix, and a
+cell answered from the store ends its stderr header with `(from store)`.
 
 The run terminates with a single aggregated record:
 
@@ -392,6 +415,56 @@ removed with the run). rakun's build tests used to write their fixture projects 
 the other cell's write and compile: `rakun-data·commonJS` measured 6, `build`,
 1 failed on three consecutive gates, and the erlang cells of `rakun-data` and
 `rakun-security` went red now and then.
+
+## The result store
+
+Decision 229 of 1.0.11-beta (front `00-gate/133-gate-speed`), `result_store.zig`.
+A run without `--cold` answers a spawning cell (`compile`, `test_run`, `audit`)
+from a stored **pass** when the cell's key is equal, before the pool starts —
+the cell is marked done with the stored capture and no worker takes it — and
+the pool runs the rest; every cell is still emitted in plan order, so the stream
+is the one the run would print but for the `from_store` marks.
+
+The key is the SHA-256 of:
+
+- the compiler and the toolchain, as `node <checkout>/scripts/lib/result-store.js
+  compiler --bin <botopink>` prints them (`result_store.global`, `<checkout>`
+  being `build_stamp.source_root`) — one computation for the three stores:
+  the `botopink --version` `build:` line (Zig version, optimize mode, target
+  triple), the compiler's sources partitioned by backend (decision 249,
+  `../compiler-core/src/codegen/backend-partition.txt`; the shared files in
+  every key, a backend's own files only in the keys of cells on that target —
+  an audit's target is the one it excludes), and the toolchain (`node
+  --version`, the OTP release, `wasmtime --version`, the platform, 14
+  environment variables — every runtime in every key). A binary not built from
+  the checkout's sources, a partition that fails its audit, or a checkout
+  without the script stores nothing, and the `note` says why;
+- **the library universe**: every package the run's roots hold — each child of a
+  root carrying a `botopink.json`, or a root that is itself a workspace — every
+  directory and file by path, executable bit and content, `.git` and
+  `.botopinkbuild` left out. A cell compiles its package and its dependency
+  closure, and its tests may read their whole repository (onze-assets walks its
+  siblings), so rather than decide which packages a cell reads every key holds
+  all of them: a byte changed in any library runs every cell;
+- the cell: its library's name and directory, the target, the kind, and
+  `--filter`, `--strict`, `--json`.
+
+Every run writes — `--cold` too (decision 249): it only never reads. Only a pass
+is written (`.pass`, `.no_tests` — compiled —, a structural
+`.excluded`; a spawn error never), and only when the global part of the key,
+computed again after the run, is unchanged — nothing the keys read moved under
+the run. Nothing is stored at all when the universe holds bytes the hash cannot
+see — a symbolic link, or a `.botopinkbuild/deps/` (the `bpmp install` store
+the compiler resolves dependencies through); the `note` names it. An entry is
+the captured cell (status, the test count, the audit's line and location, the
+child's stdout and stderr) at `<cache root>/.botopinkbuild/cache/results/lib-test/<kk>/<key>`
+(`schedule.cacheRoot`'s root, decision 225), staged and renamed; a hit refreshes
+its time and entries unused for 7 days are deleted after every run. A cell
+answered from the store keeps its last duration in `durations.tsv`.
+`rm -rf .botopinkbuild` (or `gate.sh --cold`) wipes it; `--cold` never reads it
+and writes its passes. The shell runners keep the same store
+(`../../scripts/lib/result-store.js`), and
+`../compiler-cli/tests/result_store.sh` holds the rule end to end.
 
 ## Design contract
 

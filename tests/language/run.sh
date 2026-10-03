@@ -28,6 +28,11 @@
 #               narrowing the compiler does not back fails the run, one it backs
 #               schedules the cell on the declared targets alone. A whole run of
 #               the suite (no --only) starts with it.
+#   --cold      run every job; the result store is not read, and the passes are
+#               written to it (§ the result store); `scripts/gate.sh --cold`
+#               passes it
+#   --store-root  the result store's directory; default
+#               <repo>/.botopinkbuild/cache/results/language
 #
 # Four kinds, every cell in its own scratch project (a parse error fails only
 # that cell):
@@ -89,6 +94,8 @@ only=()
 suite=""
 self_test=0
 list=0
+cold=0
+store_dir=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --target) target="$2"; shift 2 ;;
@@ -105,7 +112,10 @@ while [ $# -gt 0 ]; do
         --suite=*) suite="${1#*=}"; shift ;;
         --self-test) self_test=1; shift ;;
         --list) list=1; shift ;;
-        -h|--help) sed -n '2,70p' "$0"; exit 0 ;;
+        --cold) cold=1; shift ;;
+        --store-root) store_dir="$2"; shift 2 ;;
+        --store-root=*) store_dir="${1#*=}"; shift ;;
+        -h|--help) sed -n '2,74p' "$0"; exit 0 ;;
         *) echo "run.sh: unknown argument '$1'" >&2; exit 2 ;;
     esac
 done
@@ -309,7 +319,10 @@ test "one" {
 }
 BP
 
-    bash "$runner" --suite "$suite" --target all --compiler "$compiler" --lib-root "$lib_root" --jobs "$jobs" >"$st/raw.txt" 2>&1
+    # `--cold`: the runner's own proof runs every synthetic cell, every time,
+    # and what it passes goes to a store of its own, deleted with the run.
+    bash "$runner" --suite "$suite" --target all --compiler "$compiler" --lib-root "$lib_root" --jobs "$jobs" --cold \
+        --store-root "$st/store" >"$st/raw.txt" 2>&1
     local code=$?
     strip <"$st/raw.txt" >"$st/report.txt"
     [ $code -eq 1 ] || { echo "self-test: the synthetic suite exited $code, expected 1" >&2; missing=1; }
@@ -668,12 +681,86 @@ if [ $list -eq 1 ]; then
     while IFS=$'\t' read -r f t what; do printf '%s\t%s\t%s\n' "$f" "$t" "${what%%:*}"; done <"$jobs_list"
     exit 0
 fi
+
+# ── § the result store ────────────────────────────────────────────────────────
+# Decisions 229 and 249 (front 00-gate/133-gate-speed): a job whose key equals
+# the key of a stored PASS is answered from the store — its verdict file is the
+# stored one, byte for byte — and every other job runs. The key is the SHA-256
+# of every byte the job reads (scripts/lib/result-store.js): the compiler's
+# build configuration and its sources partitioned by backend (the shared ones
+# and the job's target's own, every target's for a `reject/` job), this
+# script, pool.sh and result-store.js, the toolchain (node, the OTP release,
+# wasmtime, the environment a compiler or runtime reads), every file of the
+# library root (`--lib-root`, where `from "std"` resolves), and the cell's own
+# files — `test/<n>.bp`; every `run/<n>.*` / `reject/<n>.*` file (source,
+# `.out`, `.exit`, `.<t>.expect`, `.targets`); the whole `modules/<n>/` tree —
+# with the target and the job's kind. No analysis decides what a change can
+# affect: a key that differs in one byte runs the job. Only a verdict whose
+# every line is `ok` (or an audited exclusion) is written, and only when the
+# job's key is the same after the run as before it (nothing moved under it). A
+# cell whose inputs cannot be enumerated with certainty is never stored, and the
+# report says why (result-store.js: a symbolic link, a dependency that leaves
+# the cell, a library root above the scratch directory). The store lives in
+# `<repo>/.botopinkbuild/cache/results/language/` (decision 225): deleting
+# `.botopinkbuild/` wipes it; `--cold` never reads it and writes its passes
+# (decision 249), so the warm run after a landing answers from them.
+store_js="$repo/scripts/lib/result-store.js"
+[ -n "$store_dir" ] || store_dir="$repo/.botopinkbuild/cache/results/language"
+# One line per job: <verdict file>\t<path>\t<target>\t<what>, in plan order.
+jobs_ids="$work/jobs-ids"
+: >"$jobs_ids"
 while IFS=$'\t' read -r f t what; do
+    arg="$t"; [ "$t" = "*" ] && arg="${targets[0]}"
+    s="$f-$arg"; s="${s//\//_}"; s="${s//./_}"
+    case "$what" in audit:*) id="r-audit-$s" ;; *) id="r-$s" ;; esac
+    printf '%s\t%s\t%s\t%s\n' "$id" "$f" "$t" "$what" >>"$jobs_ids"
+done <"$jobs_list"
+store_hits="$work/store-hits"
+: >"$store_hits"
+store_keys() { # <out> — the key of every job, from the files as they are now
+    node "$store_js" keys --spec "$work/store-spec" --out "$1" --base "$here" \
+        --compiler "$compiler" --global-file "run.sh=$runner" \
+        --global-file "pool.sh=$repo/scripts/lib/pool.sh" --global-file "result-store.js=$store_js" \
+        --global-tree "lib-root=$lib_root" --global-text "tests/language" --scratch "$work"
+}
+while IFS=$'\t' read -r id f t what; do
+    case "$f" in
+        modules/*) inputs="$f" ;;
+        *) inputs=""
+           for g in "$here/${f%.bp}".*; do [ -f "$g" ] && inputs="$inputs	${g#"$here/"}"; done
+           inputs="${inputs#	}" ;;
+    esac
+    printf '%s\t%s %s\t%s\n' "$id" "$t" "$what" "$inputs"
+done <"$jobs_ids" >"$work/store-spec"
+store_keys "$work/keys-before" || { echo "run.sh: the result store's keys could not be computed" >&2; exit 2; }
+if [ $cold -eq 0 ]; then
+    node "$store_js" lookup --store "$store_dir" --keys "$work/keys-before" --work "$work" --out "$store_hits" ||
+        { echo "run.sh: the result store could not be read" >&2; exit 2; }
+fi
+
+awk -F '\t' 'FILENAME == ARGV[1] { hit[$0] = 1; next } !($1 in hit)' "$store_hits" "$jobs_ids" |
+while IFS=$'\t' read -r id f t what; do
     case "$what" in
         audit:*) printf 'audit_one\0%s\0%s\0%s\0' "$f" "$t" "${what#audit:}" ;;
         *) if [ "$t" = "*" ]; then printf 'run_one\0%s\0%s\0\0' "$f" "${targets[0]}"; else printf 'run_one\0%s\0%s\0\0' "$f" "$t"; fi ;;
     esac
-done <"$jobs_list" | xargs -0 -n 4 -P "$jobs" bash -c 'pool_job "$work/inflight" "$0" "$1" "$2" "$3"'
+done | xargs -0 -r -n 4 -P "$jobs" bash -c 'pool_job "$work/inflight" "$0" "$1" "$2" "$3"'
+
+store_total="$(grep -c . "$jobs_ids")"
+store_from="$(grep -c . "$store_hits")"
+store_note=""
+[ $cold -eq 0 ] || store_note=" (--cold: nothing read from the store)"
+store_keys "$work/keys-after" || { echo "run.sh: the result store's keys could not be computed" >&2; exit 2; }
+read -r store_written store_moved < <(node "$store_js" save --store "$store_dir" --before "$work/keys-before" \
+    --after "$work/keys-after" --work "$work" --hits "$store_hits" --pass lines-ok) ||
+    { echo "run.sh: the result store could not be written" >&2; exit 2; }
+[ "${store_moved:-0}" -eq 0 ] || store_note="$store_note ($store_moved not written: their inputs moved during the run)"
+# Every job that can never be answered from the store, by reason.
+: >"$work/store-never"
+awk -F '\t' '
+    $2 == "-" { if (!($3 in n)) order[++k] = $3; n[$3]++ }
+    END { for (i = 1; i <= k; i++) printf "result store: %d job%s never stored — %s\n", n[order[i]], n[order[i]] == 1 ? "" : "s", order[i] }
+' "$work/keys-before" >"$work/store-never"
 
 cat "$work"/r-* 2>/dev/null | sort >"$work/results"
 # How many jobs wrote their verdict — every job writes exactly one file
@@ -683,9 +770,9 @@ jobs_audit="$(ls "$work" | grep -c '^r-audit-')"
 jobs_ran="$(( $(ls "$work" | grep '^r-' | grep -vc '^r-narrowing-') ))"
 
 # ── report ────────────────────────────────────────────────────────────────────
-node - "$work/results" "$jobs_ran" "$jobs_audit" <<'EOF'
+node - "$work/results" "$jobs_ran" "$jobs_audit" "$store_total" "$store_from" "$store_note" "$work/store-never" <<'EOF'
 const fs = require("fs");
-const [resultsPath, jobsRan, jobsAudit] = process.argv.slice(2);
+const [resultsPath, jobsRan, jobsAudit, storeTotal, storeFrom, storeNote, storeNever] = process.argv.slice(2);
 const RED = "\x1b[0;31m", GREEN = "\x1b[0;32m", NC = "\x1b[0m";
 
 // <target>\t<key>\t<ok|fail|audit>\t<detail>, sorted. An `audit` line is an
@@ -716,6 +803,10 @@ const order = ["commonJS", "erlang", "wasm", "beam", "*"];
 const keys = [...byTarget.keys()].sort((a, b) => order.indexOf(a) - order.indexOf(b));
 if (keys.length) console.log(`by target: ${keys.map((t) => `${t} ${byTarget.get(t).ok}/${byTarget.get(t).ok + byTarget.get(t).fail}`).join(" · ")}`);
 console.log(`cells: ${jobsRan} jobs — ${jobsRan - jobsAudit} run, ${jobsAudit} audits`);
+// § the result store: what was executed and what was answered from a stored
+// pass; `scripts/gate.sh` holds run + from store to the plan.
+process.stdout.write(fs.readFileSync(storeNever, "utf8"));
+console.log(`result store: ${storeTotal} jobs — ${storeTotal - storeFrom} run, ${storeFrom} from store${storeNote}`);
 const colour = fails ? RED : GREEN;
 console.log(`\n${colour}language tests: ${oks} passed, ${fails} failed${NC}`);
 process.exit(fails ? 1 : 0);

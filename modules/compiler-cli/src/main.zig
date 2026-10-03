@@ -25,10 +25,22 @@ const test_cmd = @import("./cli/test_cmd.zig");
 const migrate_cmd = @import("./cli/migrate.zig");
 const cfg = @import("./cli/config.zig");
 const otp = @import("./cli/otp.zig");
+const builtin = @import("builtin");
+const build_stamp = @import("build_stamp");
 
 // ── Version ───────────────────────────────────────────────────────────────────
 
 const VERSION = "0.1.0";
+
+/// `build: zig <version> <optimize mode> <arch>-<os>-<abi> <source hash> <source root>` —
+/// how this binary was built and from which sources (`build_stamp`, the hash
+/// `source_stamp` computes over the checkout). The gate's cell-result store
+/// (decision 249) reads it: a key holds the build configuration and the
+/// compiler's sources partitioned by backend, and a binary whose source hash is
+/// not the checkout's is never read from or written to the store.
+const BUILD_LINE = "build: zig " ++ builtin.zig_version_string ++ " " ++ @tagName(builtin.mode) ++ " " ++
+    @tagName(builtin.cpu.arch) ++ "-" ++ @tagName(builtin.os.tag) ++ "-" ++ @tagName(builtin.abi) ++ " " ++
+    build_stamp.source_hash ++ " " ++ build_stamp.source_root ++ "\n";
 
 // ── Help text ─────────────────────────────────────────────────────────────────
 
@@ -141,7 +153,7 @@ fn dispatch(init: std.process.Init) !u8 {
     }
 
     if (std.mem.eql(u8, cmd, "version") or std.mem.eql(u8, cmd, "--version") or std.mem.eql(u8, cmd, "-v")) {
-        reporter.stdout(io, "botopink " ++ VERSION ++ "\notp: " ++ otp.RELEASE ++ "\n");
+        reporter.stdout(io, "botopink " ++ VERSION ++ "\notp: " ++ otp.RELEASE ++ "\n" ++ BUILD_LINE);
         return 0;
     }
 

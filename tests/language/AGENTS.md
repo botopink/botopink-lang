@@ -1059,6 +1059,7 @@ tests/language/run.sh --compiler <botopink> --only modules/two_modules
 tests/language/run.sh --target beam                       # one target; `all` includes it
 tests/language/run.sh --self-test                         # § Narrowing a cell — the runner's own audit
 tests/language/run.sh --list                              # the plan: one `<path>\t<target>\t<run|audit>` line per job, nothing spawned
+tests/language/run.sh --cold                              # every job runs; the result store is not read, the passes are written
 ```
 
 `--lib-root` defaults to `<compiler>/../../libs` (where `from "std"` resolves).
@@ -1079,6 +1080,38 @@ A whole run also prints `cells: <J> jobs — <R> run, <A> audits`: the jobs that
 (every job writes exactly one file; a malformed narrowing writes its `FAIL` without a job). `--list`
 prints the same plan without running it, one line per job (a `reject/` cell's target is `*`), and
 `scripts/gate.sh` holds `J` and `A` to it — stage 9 cannot run fewer jobs than the tree declares.
+
+### The result store (decisions 229 and 249)
+
+A run without `--cold` answers a job from a stored **pass** when the job's key is equal, and runs
+every other job (`run.sh` § the result store; front `00-gate/133-gate-speed`). The key is the
+SHA-256 of every byte the job reads, computed by `../../scripts/lib/result-store.js`:
+
+| Part | What |
+|---|---|
+| compiler | `--compiler`'s build configuration (`botopink --version`'s `build:` line) and its sources partitioned by backend (`modules/compiler-core/src/codegen/backend-partition.txt`, `scripts/AGENTS.md` § Warm and cold): the shared files and the job's target's own — every target's for a `reject/` job |
+| harness | `run.sh`, `scripts/lib/pool.sh`, `scripts/lib/result-store.js` |
+| toolchain | `node --version`; the OTP release, its erts version and `OTP_VERSION`; `wasmtime --version`; the platform; `BOTOPINK_LIB_ROOTS`, `BPMP_HOME`, `ERL_*FLAGS`, `ERL_LIBS`, `ERL_COMPILER_OPTIONS`, `NODE_OPTIONS`, `NODE_PATH`, `HOME`, `LANG`, `LC_ALL`, `TZ`, `XDG_CACHE_HOME` — every runtime in every key, whatever the target (the comptime node is an `erl` on every target) |
+| library root | every file under `--lib-root` (`.git` and `.botopinkbuild` left out) |
+| the cell | `test/<n>.bp`; every `run/<n>.*` or `reject/<n>.*` file (source, `.out`, `.exit`, `.<t>.expect`, `.targets`); the whole `modules/<n>/` tree — each path, directory, executable bit and content |
+| the job | the target and the job's kind (`run`, or the audit and the file that narrows) |
+
+No analysis decides what a change can affect: one byte anywhere in the key runs the job. A verdict
+is written only when every line of it is `ok` (or an audited exclusion) and the job's key is the
+same after the run as before it; a failure is never stored and always runs. A job whose inputs
+cannot be enumerated with certainty is never stored and is named on a `result store: <n> jobs never
+stored — <why>` line: a symbolic link in the cell, a `git` dependency or a `path` dependency that
+leaves the cell, and — for every job of the run — a library root the compiler would find by walking
+up from the scratch directory (`botopink.json`, `libs/` or `repository/` above it), a binary
+not built from the sources its key reads, a partition that fails its audit. The store is
+`<repo>/.botopinkbuild/cache/results/language/<kk>/<key>` (decision 225; `--store-root` names
+another directory), entries unused for 7 days are deleted, `rm -rf .botopinkbuild` wipes it, and
+`--cold` (passed by `scripts/gate.sh --cold`) never reads it and writes its passes. The
+`--self-test` suite always runs cold, into a store of its own deleted with the run. Every run prints `result store: <J> jobs — <R> run, <S> from store`, and
+`scripts/gate.sh` holds `R + S` to the plan. `modules/compiler-cli/tests/result_store.sh` (`zig build
+test-cli`) holds the rule end to end: a byte of a cell, of the library root, a wasm emitter line
+(wasm cells only), a checker line (every cell), an unlisted emitter file (shared), a stale binary,
+a failed partition audit, another `node` / OTP / `wasmtime` version, `--cold` and a deleted store.
 
 ## A red cell is red
 

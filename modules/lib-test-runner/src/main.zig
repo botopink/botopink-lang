@@ -4,7 +4,7 @@
 /// Usage:
 ///   botopink-lib-test [--target <t>[,<t>…] | --target all]
 ///                     [--lib <name>] [--filter <s>] [--strict] [--bin <path>]
-///                     [--jobs <n>] [--json] [--list]
+///                     [--jobs <n>] [--json] [--list] [--cold] [--store-root <dir>]
 ///
 /// It discovers every project carrying a `botopink.json` across the resolved root
 /// list (bundled `repository/botopink-lang/libs`, sibling `repository/`, legacy
@@ -25,6 +25,7 @@ const matrix = @import("matrix.zig");
 const runner = @import("runner.zig");
 const doc_quotes = @import("doc_quotes.zig");
 const schedule = @import("schedule.zig");
+const result_store = @import("result_store.zig");
 const source_stamp = @import("source_stamp");
 const build_stamp = @import("build_stamp");
 
@@ -60,6 +61,13 @@ const HELP =
     \\  --list                Print the plan and run nothing: one tab-separated
     \\                        <lib> <target> <kind> line per pair. The `cell:*`
     \\                        kinds are the cells the manifests declare.
+    \\  --cold                Do not read the cell-result store: every cell runs
+    \\                        (its passes are still written). Without it a cell
+    \\                        whose key (the compiler's build and sources, the
+    \\                        toolchain, every library's bytes, the cell) equals a
+    \\                        stored pass is answered from the store.
+    \\  --store-root <dir>    Keep the result store in <dir> (default: each
+    \\                        library's .botopinkbuild/cache/results/lib-test/).
     \\  -h, --help            Show this message.
     \\
     \\A lib's botopink.json "targets" list decides its cells: a target it
@@ -233,6 +241,29 @@ fn run(init: std.process.Init) !u8 {
     const start_order = try arena.alloc(usize, spawned);
     for (by_time, 0..) |k, j| start_order[j] = spawning[k];
 
+    // The cell-result store (`result_store.zig`): every spawning cell whose
+    // key equals a stored pass is answered from it before the pool starts, and
+    // the pool runs the rest. `--cold` never reads it, and every run writes
+    // the passes it ran (decision 249).
+    var from_store: usize = 0;
+    const store_global = try result_store.global(arena, io, build_stamp.source_root, bin, roots);
+    const never_stored: ?[]const u8 = store_global.unstorable;
+    if (never_stored == null) {
+        for (spawning) |i| {
+            const cell = &plan[i];
+            cell.key = result_store.cellKey(store_global, cellId(cell.*, opts));
+            cell.store = try result_store.storeDir(arena, io, opts.store_root, cell.lib.dir);
+            if (!opts.cold) {
+                if (result_store.load(arena, io, cell.store, cell.key.?)) |cap| {
+                    cell.captured = cap;
+                    cell.from_store = true;
+                    cell.done.set(io);
+                    from_store += 1;
+                }
+            }
+        }
+    }
+
     var pool: Pool = .{ .plan = plan, .order = start_order, .io = io, .bin = bin, .opts = opts, .cpus = std.Thread.getCpuCount() catch 1 };
     const jobs = @min(opts.jobs orelse defaultJobs(io), @max(spawned, 1));
     const workers = try arena.alloc(?std.Io.Future(void), jobs);
@@ -282,12 +313,12 @@ fn run(init: std.process.Init) !u8 {
             // No `test` block: still compiled per target (`botopink
             // build`), so a test-less lib that does not compile fails
             // its cell; one that compiles is `–`.
-            .compile => try runner.emitCompile(arena, io, bin, lib.name, cell.target, opts.json, pool.await(i)),
-            .test_run => try runner.emitTest(arena, io, bin, lib.name, cell.target, opts.json, pool.await(i)),
+            .compile => try runner.emitCompile(arena, io, bin, lib.name, cell.target, opts.json, pool.await(i), cell.from_store),
+            .test_run => try runner.emitTest(arena, io, bin, lib.name, cell.target, opts.json, pool.await(i), cell.from_store),
             // Not a cell: the manifest excludes the target. The exclusion is
             // audited — `·` when it is structural, `!` (and a failed run)
             // when it is not.
-            .audit => try runner.emitAudit(arena, io, bin, lib.name, cell.target, opts.json, pool.await(i)),
+            .audit => try runner.emitAudit(arena, io, bin, lib.name, cell.target, opts.json, pool.await(i), cell.from_store),
         };
         cells[r][c] = status;
         summary.tally(status);
@@ -302,6 +333,8 @@ fn run(init: std.process.Init) !u8 {
             var own_times: std.ArrayListUnmanaged(u64) = .empty;
             for (spawning, 0..) |i, k| {
                 if (!std.mem.eql(u8, cell_files[k], f.key_ptr.*)) continue;
+                // A cell answered from the store did not run: its last time stays.
+                if (plan[i].from_store) continue;
                 try own_keys.append(arena, keys[k]);
                 try own_times.append(arena, plan[i].wall_ms);
             }
@@ -309,7 +342,30 @@ fn run(init: std.process.Init) !u8 {
         }
     }
 
+    // Every pass that ran is written to the store — only when nothing the keys
+    // read moved while the run was going (the global part computed again).
+    var written: usize = 0;
+    var moved: usize = 0;
+    if (never_stored == null) {
+        const after = try result_store.global(arena, io, build_stamp.source_root, bin, roots);
+        const same = after.unstorable == null and std.mem.eql(u8, &after.hex, &store_global.hex);
+        var stores: std.StringArrayHashMapUnmanaged(void) = .empty;
+        for (spawning) |i| {
+            const cell = &plan[i];
+            if (cell.from_store or cell.key == null or !result_store.storable(cell.captured)) continue;
+            try stores.put(arena, cell.store, {});
+            if (!same) {
+                moved += 1;
+                continue;
+            }
+            if (result_store.save(arena, io, cell.store, cell.key.?, cell.captured)) written += 1;
+        }
+        for (stores.keys()) |d| result_store.reap(arena, io, d);
+    }
+    const store_line = try storeLine(arena, spawned, from_store, opts.cold, never_stored, moved);
+
     if (opts.json) {
+        try runner.emitStoreRecord(arena, io, spawned, spawned - from_store, from_store, written, store_line.note);
         // One final aggregate record so a JSON consumer sees exactly one
         // run-terminating record per invocation.
         try runner.emitRunSummary(arena, io, summary);
@@ -321,6 +377,7 @@ fn run(init: std.process.Init) !u8 {
     for (cells, 0..) |row, i| cells_const[i] = row;
     const text = try matrix.render(arena, lib_names, opts.targets, cells_const, summary);
     std.Io.File.stdout().writeStreamingAll(io, text) catch {};
+    std.Io.File.stdout().writeStreamingAll(io, store_line.text) catch {};
 
     // Exit non-zero iff any cell failed (skips / no-tests do not), a
     // restriction audit refused an exclusion, or a document's quote of the
@@ -329,12 +386,51 @@ fn run(init: std.process.Init) !u8 {
     return summary.exitCode();
 }
 
+/// The cell's identity under the result store's global key.
+fn cellId(cell: Cell, opts: args.Options) result_store.CellId {
+    return .{
+        .lib = cell.lib.name,
+        .dir = cell.lib.dir,
+        .target = cell.target.toString(),
+        .kind = cell.kind.listName(),
+        .filter = opts.filter,
+        .strict = opts.strict,
+        .json = opts.json,
+    };
+}
+
+/// `result store: <N> jobs — <R> run, <S> from store<note>` — what was
+/// executed and what was answered from a stored pass; `scripts/gate.sh` holds
+/// run + from store to the plan's spawning pairs.
+fn storeLine(arena: std.mem.Allocator, jobs: usize, from_store: usize, cold: bool, never: ?[]const u8, moved: usize) !struct { text: []const u8, note: []const u8 } {
+    const note: []const u8 = if (never) |why|
+        try std.fmt.allocPrint(arena, "{s}never stored: {s}", .{ if (cold) "--cold: nothing read from the store; " else "", why })
+    else if (moved > 0)
+        try std.fmt.allocPrint(arena, "{s}{d} not written: their inputs moved during the run", .{ if (cold) "--cold: nothing read from the store; " else "", moved })
+    else if (cold)
+        "--cold: nothing read from the store"
+    else
+        "";
+    const text = try std.fmt.allocPrint(arena, "result store: {d} jobs — {d} run, {d} from store{s}{s}{s}\n", .{
+        jobs,                           jobs - from_store, from_store,
+        if (note.len > 0) " (" else "", note,              if (note.len > 0) ")" else "",
+    });
+    return .{ .text = text, .note = note };
+}
+
 /// One (lib, target) pair of the plan. `kind` is decided up front from
 /// discovery alone; only `.compile`, `.test_run` and `.audit` spawn a child.
 const Cell = struct {
     lib: discovery.Lib,
     target: args.Target,
     kind: Kind,
+    /// The result-store key (`result_store.cellKey`); null under `--cold`
+    /// or when nothing of this run can be stored.
+    key: ?[64]u8 = null,
+    /// The store directory this cell's entry lives in.
+    store: []const u8 = "",
+    /// Answered from a stored pass: never spawned.
+    from_store: bool = false,
     /// Filled by the worker that ran the cell; valid once `done` is set.
     captured: runner.Captured = .{},
     /// How long the cell took, for the duration history (`schedule.zig`).
@@ -409,7 +505,7 @@ const Pool = struct {
             const k = pool.next.fetchAdd(1, .monotonic);
             if (k >= pool.order.len) return false;
             const cell = &pool.plan[pool.order[k]];
-            if (!cell.kind.spawns()) continue;
+            if (!cell.kind.spawns() or cell.from_store) continue;
             pool.admit();
             const t0 = std.Io.Timestamp.now(pool.io, .awake);
             _ = pool.active.fetchAdd(1, .monotonic);
@@ -537,6 +633,7 @@ test {
     _ = runner;
     _ = doc_quotes;
     _ = schedule;
+    _ = result_store;
 }
 
 test "Cell.Kind.of: the manifest decides — an excluded target is never a cell" {
