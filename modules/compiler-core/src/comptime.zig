@@ -386,7 +386,7 @@ fn withSourceLocationDecl(arena: std.mem.Allocator, prog: ast.Program, env: *con
     return ast.Program{ .decls = new_decls };
 }
 
-/// Decision 216 (4) — the prelude records `@typeinfo.all` answers with
+/// Decision 216 (4) — the prelude records `@typeInfo.all` answers with
 /// (`Declared<T>`, `DeclaredMeta`), spliced into a module that names them the
 /// way `withSourceLocationDecl` splices `SourceLocation`: private, per module.
 fn withDeclaredDecls(arena: std.mem.Allocator, prog: ast.Program, env: *const envMod.Env) !ast.Program {
@@ -708,7 +708,7 @@ fn mergeMembers(
 }
 
 /// Decision 216 (4) — the build's modules with every module that reads
-/// `@typeinfo.all` moved after all the others (relative order kept), so a
+/// `@typeInfo.all` moved after all the others (relative order kept), so a
 /// reader's answer covers the whole program; the readers are noted in the
 /// session's reflection. A module importing a reader is refused at the import
 /// (`refusals`, by module index into the answer): the reader would have to be
@@ -740,7 +740,7 @@ fn orderReaders(
                     .module => |path| for (readers.items) |r| {
                         if (std.mem.eql(u8, r.path, m.path)) continue;
                         if (!std.mem.eql(u8, path, r.path) and !std.mem.eql(u8, std.fs.path.basename(r.path), path)) continue;
-                        const msg = try std.fmt.allocPrint(arena, "{s}: `{s}` reads `@typeinfo.all`, so it answers for the whole program and no module imports it", .{ diagnostics.typeinfo_all_imported, r.path });
+                        const msg = try std.fmt.allocPrint(arena, "{s}: `{s}` reads `@typeInfo.all`, so it answers for the whole program and no module imports it", .{ diagnostics.typeinfo_all_imported, r.path });
                         try refusals.put(arena, idx, validation.TypeError.custom(msg, "Move what this module needs out of the entry point into a module of its own; the entry point imports it, never the other way round.").withLoc(imp.loc));
                         break :scan;
                     },
@@ -1076,7 +1076,7 @@ fn analyzeSource(
     // module's, on a re-analysis) reaches the checker as the declared name.
     var owners = try assocOwners(arena, expanded, mod.path, typeDeclRegistry, reflection);
     const program = try assocTypes.expand(arena, expanded, &owners);
-    // Decision 216 (4): a module reading `@typeinfo.all` is answered on its
+    // Decision 216 (4): a module reading `@typeInfo.all` is answered on its
     // re-analysis, after its own decorators ran.
     const typeinfo_queries = if (skip_invoke or !typeinfoAll.reads(source)) &.{} else try typeinfoAll.collect(arena, program);
     env.typeinfoAllPending = typeinfo_queries.len > 0;

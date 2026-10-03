@@ -11,5 +11,5 @@ fn entity(comptime decl: @Decl) {
 type City(name: string)
 
 pub fn main() {
-    @print(@typeinfo(City).meta.entity.table);
+    @print(@typeInfo(City).meta.entity.table);
 }

@@ -6,5 +6,5 @@ fn helper() -> i32 {
 }
 
 pub fn main() {
-    @print(@typeinfo.all(with: helper).length);
+    @print(@typeInfo.all(with: helper).length);
 }

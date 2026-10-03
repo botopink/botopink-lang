@@ -1,8 +1,8 @@
 //! What decorators record about the program for reflection to read back
 //! (decision 216): the comptime meta of each declaration (`decl.setMeta`, read
-//! as `@typeinfo(X).meta.<decorator>.<key>`) and the associated types of each
+//! as `@typeInfo(X).meta.<decorator>.<key>`) and the associated types of each
 //! owner (`decl.addType`, named `Owner.Name`), and every top-level declaration
-//! a decorator ran over (`@typeinfo.all(with: d)`).
+//! a decorator ran over (`@typeInfo.all(with: d)`).
 //!
 //! One `Reflection` lives for one compile session (`comptime.zig` `compile` /
 //! `compileTypesOnly`) and every module's `Env` points at it
@@ -16,7 +16,7 @@ const envMod = @import("env.zig");
 /// One `decl.setMeta(key, value)`.
 pub const MetaEntry = struct {
     /// The decorator's own name (`entity`, never the `orm.entity` an
-    /// annotation may spell): the namespace `@typeinfo(X).meta.<decorator>`
+    /// annotation may spell): the namespace `@typeInfo(X).meta.<decorator>`
     /// reads.
     decorator: []const u8,
     key: []const u8,
@@ -24,7 +24,7 @@ pub const MetaEntry = struct {
 };
 
 /// One top-level declaration carrying a body-carrying decorator — what
-/// `@typeinfo.all(with: d)` answers from (`typeinfo_all.zig`).
+/// `@typeInfo.all(with: d)` answers from (`typeinfo_all.zig`).
 pub const DeclaredEntry = struct {
     module: []const u8,
     name: []const u8,
@@ -52,7 +52,7 @@ pub const Reflection = struct {
     /// Every top-level declaration a body-carrying decorator ran over, in the
     /// order the decorators ran (decision 216 (4)).
     declared: std.ArrayListUnmanaged(DeclaredEntry) = .empty,
-    /// The module paths that read `@typeinfo.all` — analysed after every
+    /// The module paths that read `@typeInfo.all` — analysed after every
     /// other module; none of them answers another's query.
     readers: std.StringHashMapUnmanaged(void) = .empty,
 

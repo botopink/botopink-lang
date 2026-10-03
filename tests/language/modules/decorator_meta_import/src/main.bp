@@ -9,8 +9,8 @@ import {models.City as Town};
 import {models};
 
 pub fn main() {
-    @print(@typeinfo(City).meta.entity.table);
-    @print(@typeinfo(Town).meta.entity.table);
-    @print(@typeinfo(Town).name);
-    @print(@typeinfo(models.Person).meta.entity.table);
+    @print(@typeInfo(City).meta.entity.table);
+    @print(@typeInfo(Town).meta.entity.table);
+    @print(@typeInfo(Town).name);
+    @print(@typeInfo(models.Person).meta.entity.table);
 }

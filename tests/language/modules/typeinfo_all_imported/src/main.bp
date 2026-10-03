@@ -1,4 +1,4 @@
-//// Decision 216 (4) — a module that reads `@typeinfo.all` answers for the
+//// Decision 216 (4) — a module that reads `@typeInfo.all` answers for the
 //// whole program, so no module imports it (it would have to be analysed
 //// before the declarations it reports): refused at the import.
 

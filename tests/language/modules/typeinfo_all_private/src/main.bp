@@ -7,5 +7,5 @@ pub mod jobs;
 import {marks.tagged};
 
 pub fn main() {
-    @print(@typeinfo.all(with: tagged).length);
+    @print(@typeInfo.all(with: tagged).length);
 }

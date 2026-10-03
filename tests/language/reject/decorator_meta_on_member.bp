@@ -1,5 +1,5 @@
 //// Decision 216 (2) — meta describes a declaration of the module: a
-//// decorator on a field (or a method) has no `@typeinfo` to answer through,
+//// decorator on a field (or a method) has no `@typeInfo` to answer through,
 //// and `decl.setMeta` from it is refused at the annotation.
 
 fn column(comptime decl: @Decl) {

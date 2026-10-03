@@ -1970,9 +1970,9 @@ the decorator produces goes to one of four places (decision 216):
 | Place | Written | Read |
 |---|---|---|
 | a member of the annotated type | `decl.addMember("pub fn table() -> string { … }")` | `City.table()`, `c.describe()` — run-time code of the type, imported with it |
-| comptime meta, per decorator | `decl.setMeta("table", "cities")` | `@typeinfo(City).meta.entity.table` — a string constant, never run-time code |
+| comptime meta, per decorator | `decl.setMeta("table", "cities")` | `@typeInfo(City).meta.entity.table` — a string constant, never run-time code |
 | an associated type | `decl.addType("Columns", "(name: string)")` | `City.Columns` in a type position, `City.Columns(name: "n")`, imported with its owner |
-| the program's catalogue | (every declaration a decorator runs over) | `@typeinfo.all(with: entity)` at an entry point |
+| the program's catalogue | (every declaration a decorator runs over) | `@typeInfo.all(with: entity)` at an entry point |
 
 A member or an associated type from a field's or a method's decorator belongs
 to the type that owns it; a function has none (`decorator-member-without-type`,
@@ -2012,24 +2012,39 @@ fn header(c: City.Columns) -> string {
 
 fn main() {
     @print(City.table());                          // cities
-    @print(@typeinfo(City).meta.entity.table);     // cities
-    @print(@typeinfo(City).name);                  // City
+    @print(@typeInfo(City).meta.entity.table);     // cities
+    @print(@typeInfo(City).name);                  // City
     @print(header(City.Columns(name: "n", people: "p")));   // n|p
 }
 ```
 
-`@typeinfo.all(with: d)` answers every declaration of the program that carries
+`@typeInfo` is the one reflection builtin (decision 248): `.name` and
+`.meta.<decorator>.<key>` read a declaration, `@typeInfo.all(…)` the program,
+and `@typeInfo(T)` used as a value is the structural `TypeInfo` (`Record(fields)`,
+`Enum(variants)`, `Fn(params, returnType)`, …) of any type. The lowercase
+`@typeinfo` is `typeinfo-lowercase`, naming `@typeInfo`.
+
+<!-- docs-check: reject typeinfo-lowercase -->
+```botopink
+type City(name: string)
+
+fn main() {
+    @print(@typeinfo(City).name);
+}
+```
+
+`@typeInfo.all(with: d)` answers every declaration of the program that carries
 `d`, so an entry point builds its catalogue explicitly — no module registers
 itself when it loads. Each entry is a `Declared<T>(name, module, meta, value)`:
 `meta` is what `d` set on it, `value` the function itself, or for a type a thunk
 calling the associated fn named by `member:`
-(`@typeinfo.all(with: component, member: "register")`). It sees every module of
+(`@typeInfo.all(with: component, member: "register")`). It sees every module of
 the build — the package, its dependencies, std — in module-path order, then
 declaration order, and the reading module's own declarations; a module that
 reads it is imported by nobody (`typeinfo-all-imported`), and every declaration
 it answers from another module is `pub` (`typeinfo-all-private`).
 `with:` may list several decorators (decision 235):
-`@typeinfo.all(with: [service, repository], member: "make")` answers every
+`@typeInfo.all(with: [service, repository], member: "make")` answers every
 declaration carrying any of them in the same one order, a declaration carrying
 two of them once, its `meta` what the listed decorators set; a decorator listed
 twice is `typeinfo-all-arguments`.
@@ -2045,7 +2060,7 @@ pub fn about() -> string {
 }
 
 fn main() {
-    for (@typeinfo.all(with: route)) { r ->
+    for (@typeInfo.all(with: route)) { r ->
         val page: fn() -> string = r.value;
         @print(r.name + " " + page());             // about about us
     }
@@ -2209,7 +2224,7 @@ fn greet() {
 fn notReady() -> i32 { @todo(); }
 ```
 
-Other builtins (`@panic`, `@field`, `@typeinfo`, …) are declared in
+Other builtins (`@panic`, `@field`, `@typeInfo`, …) are declared in
 `libs/std/src/builtins.d.bp` and `libs/std/src/builtins_fns.d.bp`. Builtin
 names are exact: an unrecognised `@name(…)` is `error[unknown-builtin]`
 (with the nearest name when one is an edit away), never a silent `void`.
