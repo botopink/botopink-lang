@@ -381,7 +381,7 @@ json_tests() {
       }'
 }
 
-strip() { sed -r 's/\x1b\[[0-9;]*m//g'; }
+strip() { sed "s/$(printf '\033')\[[0-9;]*m//g"; }
 # progress lines (`Checking 1 module(s)...`) would satisfy an .expect like `..`
 quiet() { strip | grep -vE '^[[:space:]]*(Checking|Checked|Compiling|Compiled) ' || true; }
 
@@ -761,7 +761,7 @@ read -r store_written store_moved < <(node "$store_js" save --store "$store_dir"
 : >"$work/store-never"
 awk -F '\t' '
     $2 == "-" { if (!($3 in n)) order[++k] = $3; n[$3]++ }
-    END { for (i = 1; i <= k; i++) printf "result store: %d job%s never stored — %s\n", n[order[i]], n[order[i]] == 1 ? "" : "s", order[i] }
+    END { for (i = 1; i <= k; i++) printf "result store: %d job%s never stored — %s\n", n[order[i]], (n[order[i]] == 1 ? "" : "s"), order[i] }
 ' "$work/keys-before" >"$work/store-never"
 
 cat "$work"/r-* 2>/dev/null | sort >"$work/results"

@@ -182,9 +182,9 @@ project() { # <dir>
     printf '{ "name": "docs_check", "version": "0.0.1", "src": "src/", "target": "commonJS" }\n' > "$1/botopink.json"
 }
 
-strip() { sed -r 's/\x1b\[[0-9;]*m//g'; }
+strip() { sed "s/$(printf '\033')\[[0-9;]*m//g"; }
 
-first_error() { strip | grep -m1 -iE '^[[:space:]]*error' | sed -r 's/^[[:space:]]*//' | tr '\t' ' '; }
+first_error() { strip | grep -m1 -iE '^[[:space:]]*error' | sed -E 's/^[[:space:]]*//' | tr '\t' ' '; }
 
 check_project() { # <dir> → prints the first error line on failure
     local out
@@ -345,7 +345,7 @@ run_doc() {
                 defer_check "$dir" "$d:$line" "" compile ;;
             body)
                 dir="$work/p-$fences"; project "$dir"
-                { echo "fn main() {"; sed -r 's/^/    /' "$body"; echo "}"; } > "$dir/src/main.bp"
+                { echo "fn main() {"; sed -E 's/^/    /' "$body"; echo "}"; } > "$dir/src/main.bp"
                 defer_check "$dir" "$d:$line" " (body)" compile ;;
             reject)
                 local wrap="" expect="$rest"
@@ -357,7 +357,7 @@ run_doc() {
                 fi
                 dir="$work/p-$fences"; project "$dir"
                 if [ -n "$wrap" ]; then
-                    { echo "fn main() {"; sed -r 's/^/    /' "$body"; echo "}"; } > "$dir/src/main.bp"
+                    { echo "fn main() {"; sed -E 's/^/    /' "$body"; echo "}"; } > "$dir/src/main.bp"
                 else
                     cp "$body" "$dir/src/main.bp"
                 fi
@@ -558,7 +558,7 @@ print_report "$work/report"
 # unknown directive, a project with no entry point) counts as run.
 awk -F '\t' '
     $2 == "-" { if (!($3 in n)) order[++k] = $3; n[$3]++ }
-    END { for (i = 1; i <= k; i++) printf "result store: %d check%s never stored — %s\n", n[order[i]], n[order[i]] == 1 ? "" : "s", order[i] }
+    END { for (i = 1; i <= k; i++) printf "result store: %d check%s never stored — %s\n", n[order[i]], (n[order[i]] == 1 ? "" : "s"), order[i] }
 ' "$work/keys-before"
 store_from="$(store_from_fences)"
 printf '\nresult store: %d fences — %d run, %d from store%s\n' "$fences" "$((fences - store_from))" "$store_from" "$store_note"
