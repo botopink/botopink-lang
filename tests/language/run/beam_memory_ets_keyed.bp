@@ -13,7 +13,9 @@
 import {async, collections.Dict} from "std";
 
 #[@BeamMemory.Ets(keyed = true)]
-var counts: Dict<string, i32> = Dict.ofEntries([#("seed", 1), #("other", 2), #("seed", 7)]);
+var counts: Dict<string, i32> = Dict.ofEntries(
+    [#("seed", 1), #("other", 2), #("seed", 7)],
+);
 
 fn writer(key: string) -> @Task<i32> {
     var i = 0;
