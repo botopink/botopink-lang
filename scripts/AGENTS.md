@@ -25,6 +25,7 @@ scripts/
 ├── snap_audit.sh      ← read-only audit of every *.snap.md (7 modes)
 ├── beam_export_audit.sh ← assemble every beam snapshot module with every function exported
 ├── comptime_bench.sh  ← what the comptime path costs: build wall clock + the in-node compile/load/run split
+├── macos-sim.sh       ← run a command on Linux as the macos-14 CI row would (§ Portability)
 ├── codemod-import-without-from.py ← decision 206's one-shot migration: `from "<a module of this package>"` → the brace form (§ below)
 ├── lib/
 │   ├── pool.sh        ← the bounded worker pool the shell runners share (sourced by ../tests/language/run.sh and check-docs.sh)
@@ -116,6 +117,15 @@ under `set -u` (`lib\xc2: unbound variable`, `test-libs.sh` on macos-14). macOS'
 it drops an empty argument even under `-0`, so a NUL-separated record fed to `xargs -0 -n <k>`
 never holds an empty field — `tests/language/run.sh` pads `run_one`'s unused 4th field with `-`
 (an empty one shifted every later group: `commonJS: command not found` on macos-14). A stock macOS has no GNU `timeout`: the runners call `with_timeout` (`scripts/lib/pool.sh` — `timeout`, else `gtimeout`, else perl's alarm), never `timeout` directly.
+macOS's `awk` is BWK awk: a comparison inside an unparenthesized `print`/`printf` argument list is a
+syntax error there (`printf "%s", n == 1 ? "" : "s"` — gawk accepts it), so the ternary is
+parenthesized; the error message quotes the program, and run.sh's never-stored report printed it —
+`✗ nothing should be unstorable` in `result_store.sh` on macos-14. Its `sed` and `grep` know no
+`\x1b`-style escape (an ESC is `$(printf '\033')`), and `sed` takes `-E`, never GNU's `-r`; `sed -i`
+always carries a suffix (`-i.bak`). `scripts/macos-sim.sh <command>` runs a command on Linux with
+bash 3.2.57, BWK awk (`nawk`), BSD xargs' empty-argument drop, no GNU-only tool on PATH, the GNU-only
+flags above refused, and a `TMPDIR` reached through a symbolic link with a trailing `/` — run a
+stage under it before a change to a script lands.
 
 ## gate.sh
 

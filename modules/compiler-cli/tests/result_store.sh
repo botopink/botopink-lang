@@ -114,7 +114,7 @@ rm -rf "$WORK"/lang/libs/*/.botopinkbuild
 # expect <what> <output> <total> <run> <from store> — the runner's store line.
 expect() {
   local line
-  line="$(sed 's/\x1b\[[0-9;]*m//g' <<<"$2" | grep -E '^result store: [0-9]+ (jobs|fences) — ' | tail -1)"
+  line="$(sed "s/$(printf '\033')\[[0-9;]*m//g" <<<"$2" | grep -E '^result store: [0-9]+ (jobs|fences) — ' | tail -1)"
   [[ "$line" =~ ^result\ store:\ $3\ (jobs|fences)\ —\ $4\ run,\ $5\ from\ store ]] ||
     { echo "$2" >&2; fail "$1: expected $3 — $4 run, $5 from store; got: ${line:-no result store line}"; }
 }
