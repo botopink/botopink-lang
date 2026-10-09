@@ -7656,8 +7656,23 @@ const Emitter = struct {
                 .numberLit => |n| .{ .number = n },
                 .comment => |c| .{ .comment = commentNode(c) },
                 .stringLit => |str| .{ .lexeme_binary = str },
-                // Desugared to a `+` chain by the transform pass; never reaches codegen.
-                .stringTemplate => unreachable,
+                // Desugared to a `+` chain by the transform pass in a typed
+                // module. A comptime module is emitted from the AST as
+                // written (01-compiler/14 step 8): each hole is its text
+                // (`'__bp_text'/1`, which keeps a binary as it is) and the
+                // parts join through `'__bp_add'/2`.
+                .stringTemplate => |t| {
+                    if (!this.untyped) unreachable;
+                    var acc: Ast.Expr = .{ .lexeme_binary = "" };
+                    for (t.parts) |part| {
+                        const operand: Ast.Expr = switch (part) {
+                            .text => |txt| .{ .lexeme_binary = txt },
+                            .expr => |hole| try b.call("__bp_text", &.{try this.exprNode(b, hole.*)}),
+                        };
+                        acc = try b.call("__bp_add", &.{ acc, operand });
+                    }
+                    return acc;
+                },
                 .null_ => A("undefined"),
             },
 

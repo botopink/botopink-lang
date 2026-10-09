@@ -322,6 +322,12 @@ const Preparer = struct {
     /// The lambda whose own body is being copied for its maker: not routed
     /// through a maker a second time.
     skip: ?*const ast.Expr = null,
+    /// Copying a carried function's body (`expandedFn`), not the block: only
+    /// a template call is replaced, by its expansion.
+    expansions_only: bool = false,
+    /// Evaluating a hole's build value (`holeValue`): a module-level `val`
+    /// the code reads is its initializer — `knownAtBuild` admitted it.
+    inline_vals: usize = 0,
 
     fn clone(self: *Preparer, comptime U: type, v: U) Error!U {
         if (U == ast.Expr) {
@@ -367,6 +373,14 @@ const Preparer = struct {
     }
 
     fn replace(self: *Preparer, e: ast.Expr) Error!?ast.Expr {
+        // 01-compiler/14 step 8 — a template call the block (or a function
+        // it carries) reaches is the code its expansion built
+        // (`Env.templateExpansions`, by the call's location), copied with the
+        // same rules: the caller's holes are in it already.
+        if (e == .call and e.call.kind == .call and !e.call.kind.call.is_builtin) {
+            if (self.env.templateExpansions.get(e.call.loc)) |expansion| return try self.clone(ast.Expr, expansion.*);
+        }
+        if (self.expansions_only) return null;
         switch (e) {
             .call => |c| if (c.kind == .call and c.kind.call.is_builtin) {
                 if (self.env.srcRewrites.get(c.loc)) |rewrite| {
@@ -384,6 +398,11 @@ const Preparer = struct {
             .identifier => |id| switch (id.kind) {
                 .ident => |name| {
                     if (self.declared.contains(name)) return null;
+                    if (self.inline_vals > 0 and self.inline_vals < max_build_depth) if (moduleVal(self.env, name)) |v| {
+                        self.inline_vals += 1;
+                        defer self.inline_vals -= 1;
+                        return try self.clone(ast.Expr, v.value.*);
+                    };
                     const ty = self.env.lookup(name) orelse return null;
                     if (ty.deref().* != .func) return null;
                     if (!isTopLevelFn(self.env, name)) return null;
@@ -601,8 +620,9 @@ pub fn collectSupport(env: *Env, prepared: Prepared) Error!Support {
                 // A host function (`#[@External.Erlang(…)]`) is carried as
                 // its declaration: the module calls the host.
                 if ((f.body.len == 0 and !f.isExternal()) or isComptimeOnly(f)) continue;
-                try fns.append(arena, f);
-                try readFn(arena, &names, &methods, f);
+                const g = try expandedFn(env, f);
+                try fns.append(arena, g);
+                try readFn(arena, &names, &methods, g);
                 changed = true;
                 continue;
             }
@@ -658,6 +678,100 @@ pub fn collectSupport(env: *Env, prepared: Prepared) Error!Support {
         try out_types.append(arena, .{ .type_ = decl });
     }
     return .{ .fns = fns.items, .types = out_types.items };
+}
+
+/// `f` with every template call of its body replaced by its expansion
+/// (`Env.templateExpansions`): the comptime module is emitted from the AST as
+/// written, where a template call has no lowering. A function of this module
+/// whose body was not inferred yet has no expansion recorded and is left as
+/// written — its template call is refused at the `comptime`
+/// (`unexpandedTemplateCall`).
+fn expandedFn(env: *Env, f: ast.FnDecl) Error!ast.FnDecl {
+    if (!try holdsExpansion(env, f.body)) return f;
+    var p = Preparer{ .env = env, .arena = env.arena, .declared = .empty, .expansions_only = true };
+    var out = f;
+    out.body = @constCast(try p.clone([]const ast.Stmt, f.body));
+    return out;
+}
+
+fn holdsExpansion(env: *Env, body: []const ast.Stmt) Error!bool {
+    var w = ExpansionWalk{ .env = env };
+    for (body) |*s| w.walk(ast.Expr, &s.expr);
+    return w.found != null;
+}
+
+/// The first call of `body` whose location `Env.templateExpansions` holds, or
+/// (with `unexpanded`) the first call of a template function no expansion
+/// answers.
+const ExpansionWalk = struct {
+    env: *Env,
+    unexpanded: bool = false,
+    found: ?ast.Loc = null,
+    callee: []const u8 = "",
+
+    fn walk(self: *ExpansionWalk, comptime U: type, ptr: *const U) void {
+        if (self.found != null) return;
+        if (U == ast.Expr) switch (ptr.*) {
+            .call => |c| if (c.kind == .call and !c.kind.call.is_builtin) {
+                const expanded = self.env.templateExpansions.contains(c.loc);
+                if (!self.unexpanded and expanded) {
+                    self.found = c.loc;
+                    return;
+                }
+                if (self.unexpanded and !expanded and c.kind.call.receiver == null and isTemplateName(self.env, c.kind.call.callee)) {
+                    self.found = c.loc;
+                    self.callee = c.kind.call.callee;
+                    return;
+                }
+            },
+            else => {},
+        };
+        if (U == ast.TypeRef or U == ast.Pattern) return;
+        switch (@typeInfo(U)) {
+            .@"struct" => |s| inline for (s.fields) |f| {
+                if (f.is_comptime) continue;
+                if (comptime mayHoldNames(f.type)) self.walk(f.type, &@field(ptr.*, f.name));
+            },
+            .@"union" => |u| if (u.tag_type != null) switch (ptr.*) {
+                inline else => |*payload| if (comptime mayHoldNames(@TypeOf(payload.*))) self.walk(@TypeOf(payload.*), payload),
+            },
+            .optional => |o| if (ptr.*) |*inner| self.walk(o.child, inner),
+            .pointer => |p| switch (p.size) {
+                .one => if (comptime mayHoldNames(p.child)) self.walk(p.child, ptr.*),
+                .slice => if (comptime mayHoldNames(p.child)) {
+                    for (ptr.*) |*e| self.walk(p.child, e);
+                },
+                else => {},
+            },
+            else => {},
+        }
+    }
+};
+
+/// Whether `name` is a template function this module declares or imports.
+fn isTemplateName(env: *Env, name: []const u8) bool {
+    if (env.fnDecls.get(name)) |f| if (f.returnType) |rt| return rt.isTemplateReturnType();
+    return env.templateFns.contains(name);
+}
+
+/// 01-compiler/14 step 8 — a template call left in what the comptime module
+/// carries (a function of this module declared after the `comptime`, whose
+/// body was not inferred when it ran; a function another module exports,
+/// carried as written) has no lowering: the `comptime` is refused, naming the
+/// call, instead of reaching the emitter.
+pub fn unexpandedTemplateCall(env: *Env, prepared: Prepared, support: Support) Error!?[]const u8 {
+    var w = ExpansionWalk{ .env = env, .unexpanded = true };
+    for (prepared.value.body) |*s| w.walk(ast.Expr, &s.expr);
+    for (prepared.makers) |m| for (m.decl.body) |*s| w.walk(ast.Expr, &s.expr);
+    var in_fn: []const u8 = "";
+    for (support.fns) |f| {
+        if (w.found != null) break;
+        for (f.body) |*s| w.walk(ast.Expr, &s.expr);
+        if (w.found != null) in_fn = f.name;
+    }
+    const loc = w.found orelse return null;
+    if (in_fn.len > 0) return try std.fmt.allocPrint(env.arena, "the comptime reaches the template call `{s}` at {d}:{d} in `{s}`, which is not expanded where the comptime runs — declare `{s}` before the `comptime` in this module", .{ w.callee, loc.line, loc.col, in_fn, in_fn });
+    return try std.fmt.allocPrint(env.arena, "the comptime reaches the template call `{s}` at {d}:{d}, which is not expanded where the comptime runs", .{ w.callee, loc.line, loc.col });
 }
 
 fn fnListed(list: []const ast.FnDecl, f: ast.FnDecl) bool {
@@ -1016,7 +1130,7 @@ const Lifter = struct {
                 }
                 return try self.node(.{ .call = .{ .loc = loc, .kind = .{ .call = .{
                     .receiver = null,
-                    .callee = name,
+                    .callee = try self.constructorName(name),
                     .is_builtin = false,
                     .args = args,
                     .trailing = &.{},
@@ -1030,6 +1144,48 @@ const Lifter = struct {
             },
             .resource => return self.refuse("{s}: the value is a resource — a process, a port or a reference lives only while the comptime block runs", .{diagnostics.comptime_value_not_liftable}),
         }
+    }
+
+    /// 01-compiler/14 step 8 — the record type `name`'s constructor, as the
+    /// backends call it: by its declared name (decision 110 — an import's
+    /// `as` on a type is a checker name only). When neither this module nor
+    /// one of its imports declares it, the one module of the build that does
+    /// is imported where the value is emitted (`Env.templateImports` under its
+    /// alias, which `Env.importedTypeAliases` erases like any type alias) —
+    /// `comptime styledComputed(…)` in a module that does not import `Styled`
+    /// was a call of an unbound `Styled`. A prelude record or a type of std
+    /// is called as before.
+    fn constructorName(self: *Lifter, name: []const u8) Error![]const u8 {
+        const env = self.env;
+        for (env.moduleDecls) |d| switch (d) {
+            .type_ => |t| if (std.mem.eql(u8, t.name, name)) return name,
+            else => {},
+        };
+        var sit = env.stdModuleTypes.iterator();
+        while (sit.next()) |e| for (e.value_ptr.*) |d| switch (d) {
+            .type_ => |t| if (std.mem.eql(u8, t.name, name)) return name,
+            else => {},
+        };
+        const registry = env.typeDeclRegistry orelse return name;
+        var owner: ?[]const u8 = null;
+        var it = registry.iterator();
+        while (it.next()) |e| {
+            const d = e.value_ptr.get(name) orelse continue;
+            if (d != .type_) continue;
+            if (owner != null) return name;
+            owner = e.key_ptr.*;
+        }
+        const module = owner orelse return name;
+        var imported = env.importedTypeDecls.iterator();
+        while (imported.next()) |e| {
+            if (std.mem.eql(u8, e.value_ptr.name, name) and std.mem.eql(u8, e.value_ptr.module, module)) return name;
+        }
+        const alias = try envMod.templateAlias(self.arena, module, name);
+        if (!env.templateImports.contains(alias)) {
+            try env.templateImports.put(env.arena, alias, .{ .owner = module, .name = name });
+            try env.importedTypeAliases.put(env.arena, alias, name);
+        }
+        return name;
     }
 
     /// The record type a map is: the expected type when its fields are the
@@ -1138,6 +1294,142 @@ pub fn lift(env: *Env, prepared: Prepared, support: Support, value: Value, ty: *
     var l = Lifter{ .env = env, .arena = env.arena, .prepared = prepared, .support = support, .root = loc };
     const e = try l.value(value, ty, loc) orelse return .{ .refused = l.refusal orelse diagnostics.comptime_value_not_liftable };
     return .{ .expr = e };
+}
+
+// ── a hole's build value (decision 355) ─────────────────────────────────────
+
+/// How deep `knownAtBuild` follows a `val` naming a `val`: past it the hole is
+/// computed at render (a cycle is refused by inference before this runs).
+const max_build_depth: usize = 32;
+
+/// 01-compiler/14 step 8 — what a `${…}` hole of a template's literal is worth
+/// at build (decision 355): `render` when the value is computed when the
+/// program runs, `build` with the value as the term the template module reads
+/// (`Part.value`), `refused` when it is known at build and raises there.
+pub const HoleValue = union(enum) {
+    render,
+    build: Term,
+    refused: struct { message: []const u8, loc: ast.Loc },
+};
+
+/// The module-level, non-`var` `val` `name` of this module, unless a local or
+/// a parameter of the body being inferred shadows it.
+fn moduleVal(env: *Env, name: []const u8) ?ast.ValDecl {
+    if (env.localBindDepth(name) != null) return null;
+    for (env.moduleDecls) |d| switch (d) {
+        .val => |v| if (std.mem.eql(u8, v.name, name)) return if (v.mutable) null else v,
+        else => {},
+    };
+    return null;
+}
+
+/// Decision 355 — a hole is known at build when its value is a literal, a
+/// `comptime` value, a `val` of this module whose initializer is known at
+/// build, or a template call (expanded already, `Env.templateExpansions`)
+/// whose every argument is known at build — another `styled` / `styledProperty`
+/// with no run-time hole. Anything else (a parameter, a local, a call, an
+/// imported `val`, a `val` declared after the literal) is computed at render.
+/// The rule reads the hole's value, never the template's text.
+pub fn knownAtBuild(env: *Env, e: *const ast.Expr, depth: usize) bool {
+    if (depth >= max_build_depth) return false;
+    return switch (e.*) {
+        .literal => |lit| switch (lit.kind) {
+            .numberLit, .stringLit, .null_ => true,
+            .stringTemplate => |t| for (t.parts) |part| switch (part) {
+                .text => {},
+                .expr => |hole| if (!knownAtBuild(env, hole, depth + 1)) break false,
+            } else true,
+            else => false,
+        },
+        .identifier => |id| switch (id.kind) {
+            .ident => |name| std.mem.eql(u8, name, "true") or std.mem.eql(u8, name, "false") or
+                if (moduleVal(env, name)) |v| knownAtBuild(env, v.value, depth + 1) else false,
+            else => false,
+        },
+        .comptime_ => |ct| ct.kind == .comptimeExpr or ct.kind == .comptimeBlock,
+        .call => |c| switch (c.kind) {
+            .call => |cc| blk: {
+                if (cc.is_builtin or cc.receiver != null or cc.trailing.len > 0) break :blk false;
+                if (!env.templateExpansions.contains(c.loc)) break :blk false;
+                for (cc.args) |a| if (!knownAtBuild(env, a.value, depth + 1)) break :blk false;
+                break :blk true;
+            },
+            else => false,
+        },
+        else => false,
+    };
+}
+
+/// The build value of the hole `e` (decision 355), evaluated on the comptime
+/// runtime as a `comptime` of it would be — a `val`'s initializer, a template
+/// call's expansion — and handed to the template as a term. A literal needs
+/// no evaluation.
+pub fn holeValue(env: *Env, io: std.Io, hole: *const ast.Expr) Error!HoleValue {
+    if (!knownAtBuild(env, hole, 0)) return .render;
+    // A `val` naming a `val` is the value its last initializer writes.
+    var e = hole;
+    var depth: usize = 0;
+    while (depth < max_build_depth) : (depth += 1) switch (e.*) {
+        .identifier => |id| switch (id.kind) {
+            .ident => |name| if (moduleVal(env, name)) |v| {
+                e = v.value;
+            } else break,
+            else => break,
+        },
+        else => break,
+    };
+    switch (e.*) {
+        .literal => |lit| switch (lit.kind) {
+            .stringLit => |lexeme| if (try templateEval.lexemeBytes(env.arena, lexeme)) |bytes| return .{ .build = Term.str(bytes) },
+            .null_ => return .{ .build = Term.undefined_atom },
+            else => {},
+        },
+        .identifier => |id| switch (id.kind) {
+            .ident => |name| if (std.mem.eql(u8, name, "true") or std.mem.eql(u8, name, "false")) return .{ .build = .{ .boolean = name[0] == 't' } },
+            else => {},
+        },
+        else => {},
+    }
+    const loc = hole.getLoc();
+    const ct: ast.ComptimeExprOf(.untyped) = .{ .loc = loc, .kind = .{ .comptimeExpr = @constCast(e) } };
+    var p = Preparer{ .env = env, .arena = env.arena, .declared = .empty, .inline_vals = 1 };
+    const one = try env.arena.alloc(ast.Stmt, 1);
+    one[0] = .{ .expr = .{ .jump = .{ .loc = loc, .kind = .{ .@"return" = try p.clone(*ast.Expr, ct.kind.comptimeExpr) } } } };
+    const prepared: Prepared = .{ .value = synthFn(value_fn, one), .makers = p.makers.items };
+    const support = try collectSupport(env, prepared);
+    if (try unexpandedTemplateCall(env, prepared, support)) |msg| return .{ .refused = .{ .message = msg, .loc = loc } };
+    const outcome = evaluate(env.arena, io, env.modulePath, prepared, support, &env.comptimeTraces) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.EvalFailed => return .{ .refused = .{ .message = "the comptime evaluator failed to run", .loc = loc } },
+    };
+    return switch (outcome) {
+        .value => |v| if (try valueTerm(env.arena, v)) |t| .{ .build = t } else .render,
+        .err => |msg| .{ .refused = .{ .message = msg, .loc = loc } },
+    };
+}
+
+/// `v` as the term a template module reads (a record is its untagged map, a
+/// variant its atom); a function value or a resource has none.
+fn valueTerm(arena: std.mem.Allocator, v: Value) Error!?Term {
+    return switch (v) {
+        .null_ => Term.undefined_atom,
+        .boolean => |b| .{ .boolean = b },
+        .integer => |n| Term.int(n),
+        .float => |f| .{ .float = f },
+        .string => |str| Term.str(str),
+        .atom => |a| Term.atomOf(a),
+        .list, .tuple => |items| blk: {
+            const out = try arena.alloc(Term, items.len);
+            for (items, out) |item, *o| o.* = try valueTerm(arena, item) orelse return null;
+            break :blk if (v == .list) Term.listOf(out) else Term.tupleOf(out);
+        },
+        .record => |fields| blk: {
+            const out = try arena.alloc(Term.MapEntry, fields.len);
+            for (fields, out) |f, *o| o.* = Term.field(f.name, try valueTerm(arena, f.value) orelse return null);
+            break :blk Term.mapOf(out);
+        },
+        .function, .resource => null,
+    };
 }
 
 // ── what a `comptime` may read ───────────────────────────────────────────────

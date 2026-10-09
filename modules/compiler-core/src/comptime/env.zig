@@ -311,6 +311,18 @@ pub fn templatePrivateKey(arena: std.mem.Allocator, name: []const u8) ![]const u
     return std.fmt.allocPrint(arena, "\x00tpl\x00{s}", .{name});
 }
 
+/// The alias a name of the template module `owner` is bound under in a
+/// consumer (decision 112, `Env.templateImports`): `__bp_tpl_<owner>__<name>`,
+/// the owner's path with every non-alphanumeric byte as `_`. One spelling for
+/// the built code's names (`infer.applyDslHygiene`), the functions a
+/// `comptime` carries for them (`comptime.zig` `importTemplateSupport`) and
+/// the constructor of a lifted record (`block_eval.zig`).
+pub fn templateAlias(arena: std.mem.Allocator, owner: []const u8, name: []const u8) ![]const u8 {
+    var mangled: std.ArrayListUnmanaged(u8) = .empty;
+    for (owner) |ch| try mangled.append(arena, if (std.ascii.isAlphanumeric(ch)) ch else '_');
+    return std.fmt.allocPrint(arena, "__bp_tpl_{s}__{s}", .{ mangled.items, name });
+}
+
 /// A declaration's identity as `lookup` answers it (decision 112):
 /// `<module path>@@<Decl>` with the path's `/` written `@` — a dependency's
 /// module path starts with its package (`shapesdsl/shapesdsl` →

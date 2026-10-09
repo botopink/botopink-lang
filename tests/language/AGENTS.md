@@ -332,6 +332,15 @@ reading nothing the block declares, written back as the reference and the lambda
 catalogue shape) and `reject/comptime_value_not_liftable` (a lambda capturing the block's `val`,
 `comptime-value-not-liftable` at the `comptime`; the resource half is `block_eval.zig`'s unit test —
 the WAT runtime has no process to answer, so no one cell refuses it the same way on both runtimes).
+`01-compiler/14` step 8 (decision 355) adds `run/styled_holes_known_at_build` (a template of the
+cell's own reads each hole's `known` / `value`: a literal, a `val`, another expansion with no
+run-time hole and a `comptime` are written at build, a parameter and a call computed at render —
+four targets; the parent binary fails the body at `badkey known`), `modules/comptime_reaches_package_template`
+(a `comptime` over a package template's expansion, whose built code calls the package's function
+under its alias, and a record of the package's type written back where the module does not import
+it — the parent binary aborted the compiler), `run/comptime_interpolation_in_called_fn` (`"${…}"` in
+a function a `comptime` calls), `reject/comptime_template_call_declared_after` and
+`reject/hole_known_at_build_raises`.
 `test/program_primitive_behavior_extends_std` and `reject/program_primitive_behavior_redeclares_std`
 (another front's finding) — a program's own `behavior String` adds members to std's `String` (its
 default fns call `slice`, `startsWith`, `length` on `self`, and std's members answer beside them),

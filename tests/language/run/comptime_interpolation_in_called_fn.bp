@@ -1,0 +1,15 @@
+//// 01-compiler/14 step 8 — a function a `comptime` calls may interpolate. The
+//// comptime module is emitted from the function as written, where `"${…}"`
+//// had no lowering (the erlang emitter's `stringTemplate => unreachable`
+//// aborted the compiler); each hole is now its text, joined to the literal
+//// parts, on both comptime runtimes.
+
+fn label(n: i32, b: bool, s: string) -> string {
+    return "n=${n} b=${b} s=${s}";
+}
+
+pub val built = comptime label(2, true, "x\"y");
+
+pub fn main() {
+    @print(built);
+}

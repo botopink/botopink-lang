@@ -623,6 +623,56 @@ test "comptime: round trip ---- an @ExprCustom reference tree names a declaratio
     try h.assertComptimeAst(std.testing.allocator, @src(), modules);
 }
 
+test "comptime: round trip ---- a hole known at build reaches the body as its value (decision 355)" {
+    // 01-compiler/14 step 8. `${label}` names a `val` holding a literal,
+    // `${pt}` a `val` whose initializer is another expansion with no run-time
+    // hole (its value is the record that expansion's code builds, evaluated on
+    // the comptime runtime), `${dyn()}` a call: computed at render.
+    const src =
+        \\pub type Point(x: i32, y: i32)
+        \\pub fn mk(comptime q: @Expr<string>) -> @Expr<Point> {
+        \\    return q.build("Point(x: " + q.text().length.toString() + ", y: 2)");
+        \\}
+        \\fn flag(b: bool) -> string {
+        \\    return if (b) "known" else "render";
+        \\}
+        \\fn pointText(p: Point) -> string {
+        \\    return p.x.toString() + "," + p.y.toString();
+        \\}
+        \\fn asText(s: string) -> string {
+        \\    return s;
+        \\}
+        \\pub fn probe(comptime q: @Expr<string>) -> @Expr<string> {
+        \\    var out = "";
+        \\    var k = 0;
+        \\    for (q.parts()) { p ->
+        \\        if (p.kind == "Interp") {
+        \\            out = out + flag(p.known);
+        \\            if (k == 0) out = out + "=" + asText(p.value);
+        \\            if (k == 1) out = out + "=" + pointText(p.value);
+        \\            out = out + ";";
+        \\            k = k + 1;
+        \\        }
+        \\    }
+        \\    return q.build("\"" + out + "\"");
+        \\}
+        \\fn dyn() -> string {
+        \\    return "d";
+        \\}
+        \\pub val label = "a";
+        \\pub val pt = mk "abc";
+        \\pub val got = probe """${label} ${pt} ${dyn()}""";
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const replies = try h.repliesIdenticalAcrossRuntimes(std.testing.allocator, arena.allocator(), @src(), &.{.{ .path = "", .source = src }});
+    var found = false;
+    for (replies) |r| {
+        if (std.mem.indexOf(u8, r, "known=a;known=3,2;render;") != null) found = true;
+    }
+    try std.testing.expect(found);
+}
+
 // ── decision 237: a capture carries only the bindings its text names ─────────
 
 test "decision 237: the capture's bindings are the scope entries its text names, in text order" {

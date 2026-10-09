@@ -233,7 +233,9 @@ val page = html """<p>${name}</p>""";
 %%         #{
 %%             kind => <<"Interp">>,
 %%             code => <<"__bp_hole_q_0">>,
-%%             span => #{start => 3, 'end' => 16, line => 1}
+%%             span => #{start => 3, 'end' => 16, line => 1},
+%%             known => true,
+%%             value => <<"world">>
 %%         },
 %%         #{
 %%             kind => <<"Text">>,

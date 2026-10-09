@@ -260,7 +260,9 @@ fn main() {
 %%         #{
 %%             kind => <<"Interp">>,
 %%             code => <<"__bp_hole_q_0">>,
-%%             span => #{start => 11, 'end' => 24, line => 2}
+%%             span => #{start => 11, 'end' => 24, line => 2},
+%%             known => true,
+%%             value => <<"world">>
 %%         },
 %%         #{
 %%             kind => <<"Text">>,

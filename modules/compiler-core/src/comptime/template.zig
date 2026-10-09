@@ -17,6 +17,7 @@ const std = @import("std");
 const ast = @import("../ast.zig");
 const TypeError = @import("./error.zig").TypeError;
 const ErlAst = @import("../codegen/beam/erl_ast.zig");
+pub const Term = @import("../codegen/beam/term.zig").Term;
 
 // ── scope snapshot ────────────────────────────────────────────────────────────
 
@@ -144,6 +145,11 @@ pub const CapturedExpr = struct {
     /// imports). Null only in direct unit-test paths that bypass
     /// `inferProgram*`.
     scope: ?*ScopeSnapshot,
+    /// 01-compiler/14 step 8 (decision 355) — each `${…}` hole's build value,
+    /// by hole index: the term the template reads as the part's `value`, or
+    /// null when the hole is computed at render (`block_eval.holeValue`).
+    /// Empty when none was computed (a hole-less literal, the V1 driver).
+    holeValues: []const ?Term = &.{},
 };
 
 // ── second-layer context ──────────────────────────────────────────────────────

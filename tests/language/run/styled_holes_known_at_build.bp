@@ -1,0 +1,87 @@
+//// 01-compiler/14 step 8, decision 355 — a template tells a `${…}` hole known
+//// at build from one computed at render. Each `Interp` part carries `known`
+//// and, when it is true, the hole's build value as `value`: a literal, a
+//// `comptime` value, a `val` whose initializer is known at build — another
+//// expansion with no run-time hole included, read as the record its code
+//// builds. `rule "…"` writes the text into the code when every hole is known
+//// (`at: "build"`) and leaves the holes to the program otherwise
+//// (`at: "render"`): a parameter, a call.
+
+pub type Rule(text: string, at: string)
+
+// What a hole puts in the text, read twice by the template: as a string and
+// as a `Rule`.
+fn buildText(v: string, r: Rule) -> string {
+    if (v is string) return v;
+    return r.text;
+}
+
+pub fn textOf(v: string | Rule) -> string {
+    if (v is Rule) return v.text;
+    if (v is string) return v;
+    return "";
+}
+
+fn quoted(text: string) -> string {
+    return "\"" + text + "\"";
+}
+
+pub fn rule(comptime t: @Expr<string>) -> @Expr<Rule> {
+    var built = "";
+    var computed = "\"\"";
+    var known = true;
+    for (t.parts()) { part ->
+        if (part.kind == "Interp") {
+            if (part.known)
+                built = built + buildText(part.value, part.value)
+            else
+                known = false;
+            computed = computed + " + textOf(" + part.code + ")";
+        } else {
+            built = built + part.text;
+            computed = computed + " + " + quoted(part.text);
+        }
+    }
+    if (known)
+        return t.build("Rule(text: " + quoted(built) + ", at: \"build\")");
+    return t.build("Rule(text: " + computed + ", at: \"render\")");
+}
+
+fn shout(s: string) -> string {
+    return s.toUpper();
+}
+
+pub val red = "red";
+
+pub val tab = rule "tab-size: 4;";
+
+pub val literal = rule "color: ${"blue"};";
+
+pub val named = rule "color: ${red};";
+
+pub val expansion = rule "${tab} color: ${red};";
+
+pub val nested = rule "${expansion} margin: 0;";
+
+pub val folded = rule "font: ${comptime shout("mono")};";
+
+fn badge(c: string) -> Rule {
+    return rule "color: ${c};";
+}
+
+pub val called = rule "${badge("green")} margin: 0;";
+
+fn show(r: Rule) {
+    @print(r.at + " " + r.text);
+}
+
+pub fn main() {
+    show(tab);
+    show(literal);
+    show(named);
+    show(expansion);
+    show(nested);
+    show(folded);
+    show(badge("green"));
+    show(called);
+}

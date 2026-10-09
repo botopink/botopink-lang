@@ -1001,7 +1001,9 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
 ;;         #{
 ;;             kind => <<"Interp">>,
 ;;             code => <<"__bp_hole_q_0">>,
-;;             span => #{start => 2, 'end' => 15, line => 1}
+;;             span => #{start => 2, 'end' => 15, line => 1},
+;;             known => false,
+;;             value => undefined
 ;;         },
 ;;         #{
 ;;             kind => <<"Text">>,
@@ -1011,7 +1013,9 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
 ;;         #{
 ;;             kind => <<"Interp">>,
 ;;             code => <<"__bp_hole_q_1">>,
-;;             span => #{start => 19, 'end' => 32, line => 1}
+;;             span => #{start => 19, 'end' => 32, line => 1},
+;;             known => false,
+;;             value => undefined
 ;;         },
 ;;         #{
 ;;             kind => <<"Text">>,
@@ -1021,7 +1025,9 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
 ;;         #{
 ;;             kind => <<"Interp">>,
 ;;             code => <<"__bp_hole_q_2">>,
-;;             span => #{start => 35, 'end' => 48, line => 1}
+;;             span => #{start => 35, 'end' => 48, line => 1},
+;;             known => true,
+;;             value => undefined
 ;;         }
 ;;     ],
 ;;     source => #{file => <<"">>, line => 16, col => 17},

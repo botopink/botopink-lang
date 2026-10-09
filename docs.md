@@ -2387,6 +2387,15 @@ val result = comptime {
 };
 ```
 
+A `comptime` may call the module's functions and imported ones, and they may
+interpolate (`"n=${n}"`) and call template functions: a template call the
+`comptime` reaches is the code its expansion built, carried with the functions
+that code names. A function holding a template call is expanded where it is
+inferred, so it is declared before the `comptime` that calls it — otherwise
+the `comptime` is refused, naming the call. A record the `comptime` answers is
+written back as its type's constructor; a type of another module that this one
+does not import is imported where the value is written.
+
 ### Template functions
 
 A function taking `comptime q: @Expr<…>` expands at the call site; `@expr`
@@ -2413,6 +2422,46 @@ the library's `double` even where the consumer declares its own, and
 answers the declaration — its own name and its `<package>@<path>@@<Decl>`
 identity, never the alias — which is what hover and go-to-definition inside
 the literal follow.
+
+**A hole known at build** (decision 355). Each `Interp` part of `q.parts()`
+carries `known` and `value`: `known` is true when the hole's value is known
+while the program compiles — a literal, a `comptime` value, a `val` of the
+module whose initializer is known at build, or a template call (another
+expansion) whose every argument is — and `value` is that value, read as data
+(a record is its fields); for any other hole (a parameter, a local, a call)
+`known` is false and `value` is `null`, and the hole is the program's to
+compute. The rule reads the hole's value, never the literal's text. A hole
+known at build is evaluated as a `comptime` is, and a value that raises there
+is refused at the hole. So a template can write its answer as a constant when
+every hole is known — `styled "${tab4} color: red;"` with `tab4 =
+styledProperty "tab-size: 4;"` is emitted as `styledConstant("s_…",
+".s_…{tab-size:4;color:red}")` — and leave the holes to the program otherwise:
+
+```botopink
+pub fn shout(comptime q: @Expr<string>) -> @Expr<string> {
+    var built = "";
+    var computed = "\"\"";
+    var known = true;
+    for (q.parts()) { p ->
+        if (p.kind == "Interp") {
+            if (p.known) built = built + p.value else known = false;
+            computed = computed + " + " + p.code;
+        } else {
+            built = built + p.text;
+            computed = computed + " + \"" + p.text + "\"";
+        }
+    }
+    if (known) return q.build("\"" + built.toUpper() + "\"");
+    return q.build("(" + computed + ").toUpper()");
+}
+
+pub val name = "world";
+pub val fixed = shout "hello ${name}";      // "HELLO WORLD", written at build
+
+fn greet(who: string) -> string {
+    return shout "hello ${who}";            // computed when it runs
+}
+```
 
 ### Decorators
 

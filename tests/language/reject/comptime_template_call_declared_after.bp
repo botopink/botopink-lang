@@ -1,0 +1,19 @@
+//// 01-compiler/14 step 8 — a `comptime` carries the expansion of each
+//// template call it reaches. `late` is declared after the `comptime`, so its
+//// body — and `tag "b"` in it — is not expanded when the `comptime` runs: the
+//// `comptime` is refused, naming the call and the remedy, instead of reaching
+//// the emitter with a call no backend lowers.
+
+pub fn tag(comptime t: @Expr<string>) -> @Expr<string> {
+    return t.build("\"<" + t.text() + ">\"");
+}
+
+pub val early = comptime late();
+
+fn late() -> string {
+    return tag "b";
+}
+
+pub fn main() {
+    @print(early);
+}

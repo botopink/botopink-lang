@@ -354,7 +354,7 @@ pub fn plainArgTerm(arena: std.mem.Allocator, pa: template.PlainArg) std.mem.All
 /// The bytes a string literal's lexer content stands for — the value side of
 /// `erl_emitter.writeStringFromLexeme`, which writes the same thing as Erlang
 /// source. Null when the lexeme carries `\u{…}` (see `plainArgTerm`).
-fn lexemeBytes(arena: std.mem.Allocator, s: []const u8) std.mem.Allocator.Error!?[]const u8 {
+pub fn lexemeBytes(arena: std.mem.Allocator, s: []const u8) std.mem.Allocator.Error!?[]const u8 {
     var out: std.ArrayListUnmanaged(u8) = .empty;
     var i: usize = 0;
     while (i < s.len) {
@@ -726,10 +726,11 @@ pub fn captureToTerm(arena: std.mem.Allocator, cap: *const template.CapturedExpr
                     },
                     .expr => {
                         const placeholder = try std.fmt.allocPrint(arena, "__bp_hole_{s}_{d}", .{ cap.paramName, hole });
+                        const value: ?Term = if (hole < cap.holeValues.len) cap.holeValues[hole] else null;
                         hole += 1;
                         const start = text.items.len;
                         try text.appendSlice(arena, placeholder);
-                        try parts.append(arena, try partTerm(arena, "Interp", "code", placeholder, text.items, start));
+                        try parts.append(arena, try interpTerm(arena, placeholder, value, text.items, start));
                     },
                 };
             },
@@ -861,6 +862,19 @@ fn appendWords(arena: std.mem.Allocator, words: *Words, text: []const u8) std.me
 
 fn isWordByte(c: u8) bool {
     return std.ascii.isAlphanumeric(c) or c == '_';
+}
+
+/// An `Interp` part: `partTerm`'s map with the hole's build value (decision
+/// 355, 01-compiler/14 step 8) — `known => true, value => V` when every value
+/// the hole names is known at build, `known => false, value => undefined`
+/// (`null` in the body) when the hole is computed at render.
+fn interpTerm(arena: std.mem.Allocator, placeholder: []const u8, value: ?Term, text: []const u8, start: usize) !Term {
+    const base = (try partTerm(arena, "Interp", "code", placeholder, text, start)).map;
+    const entries = try arena.alloc(Term.MapEntry, base.len + 2);
+    @memcpy(entries[0..base.len], base);
+    entries[base.len] = Term.field("known", .{ .boolean = value != null });
+    entries[base.len + 1] = Term.field("value", value orelse Term.undefined_atom);
+    return Term.mapOf(entries);
 }
 
 /// `#{kind => Kind, <field> => Value, span => #{start, end, line}}` for the part

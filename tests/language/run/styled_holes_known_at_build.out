@@ -1,0 +1,8 @@
+build tab-size: 4;
+build color: blue;
+build color: red;
+build tab-size: 4; color: red;
+build tab-size: 4; color: red; margin: 0;
+build font: MONO;
+render color: green;
+render color: green; margin: 0;

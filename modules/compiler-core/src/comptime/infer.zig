@@ -6949,6 +6949,34 @@ fn finishExpansion(env: *Env, expansion: *const ast.Expr, retType: *T.Type, loc:
     return typed;
 }
 
+/// 01-compiler/14 step 8 (decision 355) — `captures` with each `${…}` hole's
+/// build value (`block_eval.holeValue`): the template reads it as the part's
+/// `value`, so it tells a hole known at build from one computed at render. A
+/// hole known at build whose evaluation raises is refused at the hole.
+fn withHoleValues(env: *Env, io: std.Io, captures: []const template.CapturedExpr) InferError![]const template.CapturedExpr {
+    const out = try env.arena.dupe(template.CapturedExpr, captures);
+    for (out) |*cap| {
+        if (cap.node.* != .literal or cap.node.literal.kind != .stringTemplate) continue;
+        var values: std.ArrayListUnmanaged(?template.Term) = .empty;
+        for (cap.node.literal.kind.stringTemplate.parts) |part| switch (part) {
+            .text => {},
+            .expr => |hole| switch (try blockEval.holeValue(env, io, hole)) {
+                .render => try values.append(env.arena, null),
+                .build => |t| try values.append(env.arena, t),
+                .refused => |r| {
+                    env.lastError = TypeError.custom(
+                        try std.fmt.allocPrint(env.arena, "this hole is known at build (decision 355) and its value raised there: {s}", .{r.message}),
+                        "A hole whose value is a literal, a `comptime` or a `val` known at build is evaluated while the program compiles, as a `comptime` is (decision 331).",
+                    ).withLoc(r.loc);
+                    return error.TypeError;
+                },
+            },
+        };
+        cap.holeValues = values.items;
+    }
+    return out;
+}
+
 /// Run the template body in the node eval runtime and turn the protocol
 /// result into an expansion (F6-full, slice 1). Limits (recorded follow-ups):
 /// every parameter must be an `@Expr` capture (runtime params have no
@@ -7034,7 +7062,8 @@ fn expandTemplateCallViaRuntime(
     const reached = try blockEval.typesReached(env, carried, &templateEval.injected_names);
     const support = try std.mem.concat(env.arena, ast.FnDecl, &.{ carried[1..], reached.fns });
     const types = try std.mem.concat(env.arena, ast.DeclKind, &.{ reached.types, answered.types });
-    const outcome = templateEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, carried[0], support, types, captures, plainArgs, &env.comptimeTraces) catch {
+    const valued = try withHoleValues(env, ctx.io, captures);
+    const outcome = templateEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, carried[0], support, types, valued, plainArgs, &env.comptimeTraces) catch {
         env.lastError = TypeError.custom(
             "the template evaluator failed to run",
             "Template bodies run in a persistent `erl` process at compile time — check that `erl` is on PATH.",
@@ -7182,9 +7211,7 @@ fn applyDslHygiene(env: *Env, tfn: ast.FnDecl, parsed: *ast.Expr, src: []const u
         pub fn aliasFor(self: @This(), name: []const u8) dslHygiene.Error!?[]const u8 {
             const ty = self.exports.get(name) orelse
                 self.exports.get(try envMod.templatePrivateKey(self.env.arena, name)) orelse return null;
-            var mangled: std.ArrayListUnmanaged(u8) = .empty;
-            for (self.owner) |ch| try mangled.append(self.env.arena, if (std.ascii.isAlphanumeric(ch)) ch else '_');
-            const alias = try std.fmt.allocPrint(self.env.arena, "__bp_tpl_{s}__{s}", .{ mangled.items, name });
+            const alias = try envMod.templateAlias(self.env.arena, self.owner, name);
             if (!self.env.templateImports.contains(alias)) {
                 try self.env.templateImports.put(self.env.arena, alias, .{ .owner = self.owner, .name = name });
                 // Module-wide, like an import: the expansion may sit in a
@@ -18036,6 +18063,10 @@ fn foldBodyComptime(env: *Env, ct: ast.ComptimeExprOf(.untyped), typed: TypedExp
     const ctx = env.templateEval orelse return;
     const prepared = try blockEval.prepare(env, ct);
     const support = try blockEval.collectSupport(env, prepared);
+    if (try blockEval.unexpandedTemplateCall(env, prepared, support)) |msg| {
+        env.lastError = TypeError.custom(msg, "A template call is expanded where it is inferred (01-compiler/14 step 8); a `comptime` carries its expansion.").withLoc(loc);
+        return error.TypeError;
+    }
     const outcome = blockEval.evaluate(env.arena, ctx.io, env.modulePath, prepared, support, &env.comptimeTraces) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.EvalFailed => {

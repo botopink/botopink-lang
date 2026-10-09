@@ -138,7 +138,46 @@ const Builder = struct {
             for (decls.items[pass_start..]) |d| try self.scanDecl(d, &bound, &named);
             pass_start = decls.items.len;
         }
+        try self.programImports(decls, &bound, &named, program_decls);
         if (added) try decls.append(self.b.arena, .export_none);
+    }
+
+    /// A public signature may name a type of another module that the module
+    /// never imports in its source: the transformed program imports it where
+    /// a value of it is written (01-compiler/14 step 8 — a `comptime` whose
+    /// answer is a package's record is lifted as that record's constructor,
+    /// imported under its template alias, `Env.templateImports`). The `.js`
+    /// requires it from that `import`, which is no binding of the module; the
+    /// `.d.ts` named it and imported nothing (`Cannot find name 'Badge'`).
+    /// Each name a declaration reads that nothing binds and that such an
+    /// `import` brings is imported from the module that emits it, by its
+    /// declared name — the alias is a checker name only (decision 110), as
+    /// the `.js` spells it — at the top of the file.
+    fn programImports(self: *Builder, decls: *std.ArrayListUnmanaged(js.TsDecl), bound: *std.StringHashMapUnmanaged(void), named: *const std.StringHashMapUnmanaged(void), program_decls: []const ast.DeclKind) Error!void {
+        const xm = self.cross orelse return;
+        const prefix = try self.requirePrefix();
+        var imports: std.ArrayListUnmanaged(js.TsDecl) = .empty;
+        for (program_decls) |pd| {
+            if (pd != .use) continue;
+            const u = pd.use;
+            if (u.activationOnly) continue;
+            if (u.source == .module and std.mem.eql(u8, u.source.module, "std")) continue;
+            for (u.imports) |imp| {
+                if (imp.activate) continue;
+                const leaf = imp.leaf();
+                if (bound.contains(leaf) or !named.contains(leaf)) continue;
+                const module = try self.ownerOf(xm, u, imp) orelse continue;
+                if (!try self.noteImportName(leaf)) continue;
+                const names = try self.b.arena.alloc([]const u8, 1);
+                names[0] = leaf;
+                try imports.append(self.b.arena, .{ .import = .{
+                    .names = names,
+                    .source = try std.fmt.allocPrint(self.b.arena, "{s}{s}", .{ prefix, module }),
+                } });
+                try bound.put(self.b.arena, leaf, {});
+            }
+        }
+        if (imports.items.len > 0) try decls.insertSlice(self.b.arena, 0, imports.items);
     }
 
     /// The comptime reflection records a signature names (`__Decl__Annotation`

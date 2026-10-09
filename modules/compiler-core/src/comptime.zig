@@ -2205,6 +2205,42 @@ fn importTemplateSupport(
     }
     const conflict = if (decoratorRegistry.get(try decoratorConflictKey(env.arena, owner, name))) |c| c.name else null;
     try env.importedTemplateSupport.put(env.arena, @intFromPtr(tfn.body.ptr), .{ .fns = support.items, .conflict = conflict });
+    try importTemplateAliasClosures(env, decoratorRegistry, owner);
+}
+
+/// 01-compiler/14 step 8 — the built code of a template of `owner` names the
+/// owner's functions under their aliases (`envMod.templateAlias`, decision
+/// 112); a `comptime` that reaches an expansion (`block_eval.zig`) carries
+/// each such function with its closure, as it carries an imported one. Every
+/// `pub fn` of `owner` with a closure (`decoratorClosureKey`) is bound in
+/// `Env.importedFnSupport` under its alias, the head renamed to it.
+fn importTemplateAliasClosures(
+    env: *envMod.Env,
+    decoratorRegistry: *const std.StringHashMap(ast.FnDecl),
+    owner: []const u8,
+) !void {
+    const prefix = try std.fmt.allocPrint(env.arena, "{s}\x00", .{owner});
+    const suffix = "\x00closure\x000";
+    var it = decoratorRegistry.iterator();
+    while (it.next()) |e| {
+        const key = e.key_ptr.*;
+        if (!std.mem.startsWith(u8, key, prefix) or !std.mem.endsWith(u8, key, suffix)) continue;
+        const name = key[prefix.len .. key.len - suffix.len];
+        if (std.mem.indexOfScalar(u8, name, 0) != null) continue;
+        const alias = try envMod.templateAlias(env.arena, owner, name);
+        if (env.importedFnSupport.contains(alias)) continue;
+        var closure: std.ArrayListUnmanaged(ast.FnDecl) = .empty;
+        var head = e.value_ptr.*;
+        head.name = alias;
+        try closure.append(env.arena, head);
+        // The function's own module calls it by its declared name.
+        try closure.append(env.arena, e.value_ptr.*);
+        var ci: usize = 1;
+        while (decoratorRegistry.get(try decoratorClosureKey(env.arena, owner, name, ci))) |cf| : (ci += 1) {
+            try closure.append(env.arena, cf);
+        }
+        try env.importedFnSupport.put(env.arena, alias, closure.items);
+    }
 }
 
 fn conflictCarrier(message: []const u8) ast.FnDecl {
