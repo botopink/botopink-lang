@@ -28,6 +28,7 @@ test {
     _ = @import("js/js_emitter.zig");
     _ = @import("js/ts_emitter.zig");
     _ = @import("js/js_prelude.zig");
+    _ = @import("js/str_slots.zig");
     _ = @import("beam/term.zig");
     _ = @import("beam/erl_emitter.zig");
     _ = @import("beam/erl_ast.zig");

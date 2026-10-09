@@ -16,7 +16,7 @@ tests/
 ├── snapshot.zig          ← snapshot read/write + the per-request renderers
 ├── snapshot_test.zig     ← unit tests for `snapshot.appendSourceWithCursor`
 ├── messages.zig          ← JSON-RPC frame reader (`messages.readMessage`)
-├── diagnostics.zig       ← publishDiagnostics (a checker warning: `snapshot.assertDiagnostics`)
+├── diagnostics.zig       ← publishDiagnostics (a checker warning, the import-source refusals: `snapshot.assertDiagnostics`)
 ├── formatting.zig        ← textDocument/formatting
 ├── hover.zig             ← textDocument/hover
 ├── definition.zig        ← textDocument/definition
@@ -65,6 +65,9 @@ tests each). `scripts/check-test-scratch.sh` refuses a hand-spelled one.
   points a `ProjectIndex` at it via `setRoot`, and exercises
   `crossModuleReferences` / `crossModuleRename` / the import-missing
   `codeAction`. Each test pre-deletes and deletes its dir on exit.
+- `diagnostics.zig` writes one package (`lsp-own-package`, manifest `name`
+  `shapes`) and asks `Server.importDiagnostics` for its `main.bp`: the
+  package name decision 309 refuses comes from that manifest.
 - `lsp_cache.zig` writes a workspace with one member (`lsp-cache-ws`), a lone
   package (`lsp-cache-pkg`) and a file outside every project (`lsp-cache-loose`),
   with `HOME` on a scratch directory: the member's

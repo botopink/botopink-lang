@@ -1,0 +1,26 @@
+//// A `bool` read out of a record field or a tuple element prints `true` /
+//// `false` — by itself, beside another value, negated, through a local and
+//// in a string — on every target. wasm held the field as the word `1` / `0`
+//// and printed that word at exit 0: only a bool local, a literal and a
+//// comparison were known to be bools, not a field read.
+
+type Flags(on: bool, off: bool, n: i32)
+
+fn make(on: bool) -> Flags {
+    return Flags(on: on, off: !on, n: 7);
+}
+
+pub fn main() {
+    val f = make(true);
+    @print(f.on);
+    @print(f.off);
+    @print(f.on, f.n);
+    @print(!f.on);
+    @print("on=" + f.on);
+    @print(f.off.toString());
+    val v = f.off;
+    @print(v);
+    @print(make(false).on);
+    val t = #(f.n, f.on);
+    @print(t.1);
+}

@@ -26,6 +26,7 @@ js/
 │                     the `.d.ts` `TsDecl`/`TsMember`/`TsType`, and `Builder`
 ├── js_emitter.zig  ← the only writer of JavaScript text
 ├── js_prelude.zig  ← the runtime helpers a module may call, as built nodes
+├── str_slots.zig   ← decision 320's string reads hoisted per binding (the analysis)
 └── ts_emitter.zig  ← the only writer of `.d.ts` text
 ```
 
@@ -36,6 +37,7 @@ js/
 | `js_ast.zig` | `Class` carries `extends`, which only an enum's variant subclass uses. `Expr` (`lexeme_string`, `quoted`, `number`, `null_`, `ident`, `name`, `this`, `member`, `index`, `call`, `new_`, `binary`, `unary`, `ternary`, `assign`, `paren`, `arrow`, `function`, `array`, `object`, `host`, `await_`, `yield_`, `comment`), `Stmt` (`expr`, `decl`, `return_`, `throw_` (required operand), `continue_`, `continue_label`, `break_`, `yield_delegate`, `if_`, `for_of`, `while_` (+ an optional `label`), `block`, `function`, `class`, `comment`, `group`), `Pattern` (`ident`, `name`, `object` — a `Prop` binds a name or nests a pattern —, `array`), `Param`, `Block` (+ `Layout`), `Class`, `Comment`, `Item`; the `.d.ts` subset `TsType` / `TsField` / `TsParam` / `TsMember` / `TsDecl` / `TsNamespace` (types only — a non-instantiated namespace promises no value); and `Builder` (arena: `ptr`, `stmtPtr`, `typePtr`, `call`, `member`, `binary`, `ternary`, `arrowBlock`, `iife`, `ifStmt`, `group`, …). |
 | `js_emitter.zig` | **Names:** `ident(name)` — the ES reserved-word rename (`delete` → `delete_`); the only place it happens. A property position is never renamed. **Strings:** `writeLexemeString` — a botopink lexeme's escape pairs pass through (the lexer validated them and the escape set is JS-compatible), raw control bytes and unescaped quotes are escaped. **Numbers:** a number literal as a member receiver is parenthesised — `(42).toString()`, because `42.` lexes as a float. **Code:** `writeExpr(w, expr, indent)`, `writeStmt(w, stmt, indent)`, `writeBlock`, `writeInline`/`writeInlineStmt`, `writePattern`, `writeComment`/`writeInlineComment`, `writeProgram(w, items)` (generated declarations separated by a blank line; runtime-support source verbatim). |
 | `js_prelude.zig` | The commonJS runtime helpers for primitive methods whose native JS method disagrees with the signature, as built `Stmt.function` nodes — never a shipped file. `Helper` (`assert_fatal`: a non-test `assert` throws with message and `file:line`; `string_char_at`: `String.at -> ?string` (the native method it wraps is `charAt`), a negative index counts from the end (decision 139), `null` out of range; `array_at`: `Array.at -> ?T`, native `xs.at(i) ?? null` — a negative index counts from the end (decision 139) and `null` stands for native `undefined` out of range (decision 47); `range_from`: an open-ended `a..` as the lazy generator `function* __bp_range_from(n)`; `structural_eq`: `__bp_eq(a, b, d)`, the run-time `==` for a pair whose static type this backend cannot name (a type parameter, a type another module declares, two different types) — arrays and tuples element-wise, a class instance by constructor plus own fields, two NaNs equal (decision 8 §6 T6, decisions 35, 210 and 214; § Structural equality); `show`: `__bp_show(v, shape, top, a)`, the text of one printed value under decision 8 §7 — a string, a `"f"`-shaped number as `5.0`, an array or tuple with spaces, a `__bp`-marked record or variant in the language's shape, `Display` when the value has one, JavaScript's `undefined` as `null` (decision 47 — `?.` and an `if` with no `else` answer JavaScript's other none), `%O` otherwise; `print` / `print_as`: `@print`'s `console.log` line over `show`, without / with the per-argument static shapes; `yield_step`: `__bp_yield_step(r)`, a generator step `{ value, done }` as the prelude enum `YieldStep` — `.next()` by hand, decision 122 — whose class the module carries through the checker's splice; `int_check`: `__bp_int(v, lo, hi, what)`, decision 264's range check for `i8` … `u32` — `v + 0` inside `lo..hi`, else a throw of `integer overflow: <what>` (`integer division by zero: <what>` for a non-finite `v`, an integer `/` or `%` by zero), § Integer overflow in `../AGENTS.md`; `wide_norm` / `wide_add` / `wide_sub` / `wide_mul` / `wide_div` / `wide_mod` / `wide_neg`: the 64-bit operations, § 64-bit integers below; `str_surrogate` / `str_count` / `str_length` / `str_index_of` / `str_last_index_of` (and `string_char_at`): codepoint indices, § String indices below), `requires(h)` (the helpers `h`'s body calls, marked with it), `forMethod(receiver, method, argc)` (the declaration a helper answers), `name`, `decl`, `order`. `commonJS.zig`'s `Emitter.helper` returns the name **and** marks the helper, and only marked helpers are written into the module (the `wat/wat_prelude.zig` shape). |
+| `str_slots.zig` | `analyze(gpa, ctx, params, body)` → `Slots` for one `fn` (`commonJS.zig` `buildFn`): the string reads (`length` / `len`, `at`, `indexOf`, `lastIndexOf`) whose receiver needs no per-read surrogate test, keyed by the receiver node's address — `.native` (a surrogate-free string literal, or a `val` bound to one: `literalSurrogateFree`) or `.slot` (`<name>$sp`) —, the `val`s whose slot is declared after them (keyed by the bound value node) and the parameters whose slot opens the body. `ctx` is the backend's `StrSlotCtx` (`plainVal`, `stringRead`). § String indices below. |
 | `ts_emitter.zig` | `writeDecl`'s `namespace_` writes `export declare namespace Name { … }` over `TsNamespaceItem`s (`interface Name { … }`, a nested `namespace`), indented one level per depth and without `export`/`declare` inside — an ambient namespace exports its members (an enum's sections, `typescript.zig`). `writeType`, `writeDecl` (`import` writes each name as given — `a as b` included —, `import_namespace` writes `import * as name from "…"`), `writeProgram(w, decls)` — one declaration per typed binding, separated by a blank line, a binding with no surface (`.none`) still taking its separator. `TsMember.method` carries a `modifier` (as `field` does), which is how an enum's variant factories and methods are written `static`. A `class` / `interface` / `type_alias` / `namespace_` whose `exported` is false is written `declare …` without `export` (a module-private type a public signature names, `typescript.zig` `localTypes`), and `export_none` writes `export {};`, which keeps those from being exported implicitly. |
 
 ## A comment never ends a line something else still needs
@@ -341,12 +343,66 @@ and `charCodeAt` are std's own Node cells (`libs/std/src/primitives.bp`,
 `stringSlice0` / `stringSlice1` / `charCodeAt`), which carry the same test
 inline. A JS host template receives and answers codepoint indices.
 
-The one test is `__bp_has_surrogate(s)`: `/[\uD800-\uDFFF]/.test(s)` fails at
-once on a string V8 stores one byte per character, so its cost is the call
-(≈20 ns), and a 64-slot cache keyed by the length answers a string seen again
-for a comparison (≈2 ns; `===` is a pointer test on the same string object).
-The cache keeps at most 64 strings alive. Cost: a loop of four string reads
-per iteration over four pair-free words (`length`, `indexOf`, `lastIndexOf`,
-`at`; 2·10^7 iterations, best of three): native 687 ms, helpers 850 ms
-(+24 %; +100 % without the cache) — above the 10 % the front asked, the price of
-one call and one cache probe per read.
+The one test is `__bp_has_surrogate(s)`: `/[\uD800-\uDFFF]/.test(s)` costs a
+call into the regexp engine (≈15 ns) whatever the string, so a cache answers a
+string seen again — two ways per length (`s.length & 63`), each a pointer test
+when the string is the same object (≈2 ns). Two ways keep two strings of one
+length read in turn (`"alpha"`, `"delta"`) from evicting each other on every
+read; a miss moves the first way to the second. The cache keeps at most 128
+strings alive.
+
+**A read tests its binding, not itself** (`str_slots.zig`). A string is
+immutable, so the answer belongs to the binding. In a `fn`, a name bound
+exactly once — a parameter or a `val` written as one `const` — and never
+assigned gets a slot, `let <name>$sp = null;`, beside its declaration (first in
+the body for a parameter; after the `const` for a `val`, so a `val` in a loop
+body starts each round with an empty slot, and so does a parameter of a
+self-tail-call loop). A read of it in scope is
+
+```js
+((s$sp ??= __bp_has_surrogate(s)) ? __bp_str_length(s) : s.length)
+```
+
+— one test per binding, the native read after it. A `val` bound to a string
+literal with no surrogate (no four-byte UTF-8 sequence, no `\u` escape) and
+such a literal read directly take the native read with no test at all
+(`(s.at(1) ?? null)`, `"abc".length`). Everything else — a name with two
+binders, a `var`, a `case` / loop / lambda binder (a pattern counts every name
+it spells), a `try`-lowered `val`, an optional read, a body outside a `fn` —
+keeps the helper call. The walks' switches have no `else`, so a new expression
+kind does not compile until it is placed.
+
+Cost, the benchmark (`commonJS`, best of three, `node` 25):
+
+```botopink
+fn reads(w: string) -> i32 {
+    var n = w.length + w.indexOf("a") + w.lastIndexOf("a");
+    if (w.at(1) == "l") {
+        n = n + 1;
+    }
+    return n;
+}
+
+pub fn main() {
+    val a = "alpha";
+    val b = "bravo-x";
+    val c = "charlie";
+    val d = "delta";
+    var acc = 0;
+    var i = 0;
+    while (i < 5000000) {
+        acc = (acc + reads(a) + reads(b) + reads(c) + reads(d)) % 1000003;
+        i = i + 1;
+    }
+    @print(acc);
+}
+```
+
+— 2·10^7 calls of four reads; "native" is the same emitted module with each
+helper call replaced by the bare JavaScript read. Before (one test per read,
+one-way cache): native 590 ms, helpers 895 ms (+52 % — `"alpha"`/`"delta"` and
+`"bravo-x"`/`"charlie"` share a length and evicted each other); with four
+lengths that do not collide (`"bravos"`, `"deltaaaa"`) 583 → 662 ms (+14 %).
+After: 631 ms (+7 %) and 625 ms (+7 %). Two further best-of-three rounds on a
+loaded machine gave +7 % / +15 % and +9 % / +11 % — the margin left is the
+one cache probe per call of `reads` (≈2 ns) plus the slot test per read.

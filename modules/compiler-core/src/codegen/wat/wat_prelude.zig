@@ -47,6 +47,7 @@ pub fn items(g: ast.HelperGroup) []const ast.Item {
         .print_u64 => &.{ .{ .func = print_u64_raw }, .{ .func = print_u64 } },
         .u64_chk => &.{ .{ .func = u64_add_chk }, .{ .func = u64_sub_chk }, .{ .func = u64_mul_chk } },
         .print_opt_i64 => &.{ .{ .func = print_opt_i64_raw }, .{ .func = print_opt_i64 } },
+        .print_opt_u64 => &.{ .{ .func = print_opt_u64_raw }, .{ .func = print_opt_u64 } },
         .print_opt_tagged => &.{ .{ .func = print_opt_tagged_raw }, .{ .func = print_opt_tagged } },
         .unknown => &.{ .{ .func = unknown_kind }, .{ .func = unknown_int_in }, .{ .func = unknown_as_i32 }, .{ .func = unknown_as_f64 }, .{ .func = unknown_eq } },
         .print_unknown => &.{ .{ .func = print_unknown_raw }, .{ .func = print_unknown } },
@@ -2398,6 +2399,15 @@ const print_opt_i64_raw = func("__print_opt_i64_raw", &.{"p"}, null, &.{}, &.{
 });
 const print_opt_i64 = func("__print_opt_i64", &.{"p"}, null, &.{}, &.{ get("p"), call("__print_opt_i64_raw"), call("__print_nl") });
 
+/// A `?u64`: the address of its cell, or `0` — `null`. The cell's bits are
+/// unsigned (`$__print_u64_raw`); through `$__print_opt_i64_raw`,
+/// `18446744073709551615` printed `-1`.
+const print_opt_u64_raw = func("__print_opt_u64_raw", &.{"p"}, null, &.{}, &.{
+    get("p"),                                                                                                  op("eqz"),
+    whenElse(&.{call("__print_null")}, &.{ get("p"), .{ .load = .{ .ty = .i64 } }, call("__print_u64_raw") }),
+});
+const print_opt_u64 = func("__print_opt_u64", &.{"p"}, null, &.{}, &.{ get("p"), call("__print_opt_u64_raw"), call("__print_nl") });
+
 /// `[115, 287.5, 460]` — the elements of a float array, each slot the address
 /// of its `f64` cell (`$__box_f64`), printed like `$__print_f64`.
 const print_arr_f64_raw = func("__print_arr_f64_raw", &.{"xs"}, null, i32s(&.{ "n", "i" }), &(putByte('[') ++ .{call("__write_bytes")} ++ [_]Instr{
@@ -2479,7 +2489,7 @@ const print_quoted_raw = func("__print_quoted_raw", &.{"s"}, null, i32s(&.{ "n",
 
 /// The text of `v` by the shape at `sh`, answering the address just past that
 /// shape (semantics decision 1a). Shape codes: `i` an i32, `b` a bool, `f` an
-/// f32 slot, `s` a string (quoted), `[X` an array of `X` — `[e1, e2]` —,
+/// `f64` cell, `l` / `u` an `i64` / `u64` cell, `s` a string (quoted), `[X` an array of `X` — `[e1, e2]` —,
 /// `?X` / `!X` a `?T` (`null`, or `X` over the slot / over its box's word),
 /// `(XY…)` a tuple — `#(e1, e2)` —, and `E k [ <n> Enum.Variant ] * k` a value
 /// of an all-unit enum, whose ordinal picks one of the `k` names. With `go` =
@@ -2500,11 +2510,24 @@ const print_shaped_raw = func("__print_shaped_raw", &.{ "v", "sh", "go" }, .i32,
         op("add"),
         ret,
     }),
-    // `l`: a record's `i64` field, the address of its cell (`$__box_i64`).
+    // `l`: an `i64` (or `u32`) in a record field or a tuple slot, the
+    // address of its cell (`$__box_i64`).
     get("c"),                                                                                                   c32('l'),                                                                                                   op("eq"),
     when(&.{
         get("go"),
         when(&.{ get("v"), .{ .load = .{ .ty = .i64 } }, call("__print_i64_raw") }),
+        get("sh"),
+        c32(1),
+        op("add"),
+        ret,
+    }),
+    // `u`: a `u64` in a record field or a tuple slot, the address of its
+    // cell, whose bits are unsigned (decision 319) — through `l` the field
+    // printed `-1` for `18446744073709551615`.
+    get("c"),                                                                                                   c32('u'),                                                                                                   op("eq"),
+    when(&.{
+        get("go"),
+        when(&.{ get("v"), .{ .load = .{ .ty = .i64 } }, call("__print_u64_raw") }),
         get("sh"),
         c32(1),
         op("add"),

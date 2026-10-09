@@ -300,20 +300,27 @@ const wide_neg: ast.Stmt = hFn("__bp_wneg", &.{ "a", "u", "what" }, &.{
 });
 
 /// `__bp_has_surrogate(s)` — see `Helper.str_surrogate`. The regular
-/// expression fails at once on a string V8 stores one byte per character, so
-/// its cost is the call (≈20 ns); a 64-slot cache keyed by the length answers
-/// a string seen again (the same string read index by index, a handful of
-/// strings in a loop) for the cost of a comparison, which `===` makes a
-/// pointer test when the string is the same object. The cache holds at most
-/// 64 strings alive.
+/// expression costs a call into the regexp engine (≈15 ns) whatever the
+/// string, so a cache answers a string seen again: two ways per length
+/// (`s.length & 63`), each a pointer test when the string is the same object
+/// (≈2 ns). Two ways keep two strings of one length — `"alpha"` and
+/// `"delta"` read in turn — from evicting each other on every read; a miss
+/// moves the first way to the second. The cache holds at most 128 strings
+/// alive. A read whose binding carries a slot (`str_slots.zig`) asks this
+/// once per binding.
 const str_surrogate: ast.Stmt = .{ .group = &.{
     hConst(.const_, "__bp_surrogate", "/[\\uD800-\\uDFFF]/"),
     hConst(.const_, "__bp_surrogate_k", "new Array(64).fill(\"\")"),
     hConst(.const_, "__bp_surrogate_v", "new Array(64).fill(false)"),
+    hConst(.const_, "__bp_surrogate_k2", "new Array(64).fill(\"\")"),
+    hConst(.const_, "__bp_surrogate_v2", "new Array(64).fill(false)"),
     hFn("__bp_has_surrogate", &.{"s"}, &.{
         hConst(.const_, "h", "s.length & 63"),
         hIf("__bp_surrogate_k[h] === s", &.{hRet("__bp_surrogate_v[h]")}),
+        hIf("__bp_surrogate_k2[h] === s", &.{hRet("__bp_surrogate_v2[h]")}),
         hConst(.const_, "p", "__bp_surrogate.test(s)"),
+        .{ .expr = hx("__bp_surrogate_k2[h] = __bp_surrogate_k[h]") },
+        .{ .expr = hx("__bp_surrogate_v2[h] = __bp_surrogate_v[h]") },
         .{ .expr = hx("__bp_surrogate_k[h] = s") },
         .{ .expr = hx("__bp_surrogate_v[h] = p") },
         hRet("p"),

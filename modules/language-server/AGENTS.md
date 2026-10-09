@@ -34,11 +34,14 @@ The server handles `initialize` / `shutdown`, `didOpen` / `didChange` /
   `OkData.warnings`, e.g. `var out = [];` born with no element type — is a
   diagnostic of severity Warning, `compiler.zig` `diagnosticsFor`, snapshot
   `diagnostics_checker_warning`; the import-source refusals `botopink check`
-  makes — `from "<a module of this package>"` (decision 206) and `from "<a
-  package not declared in botopink.json>"` (decision 242) — as errors at the
-  source string with the CLI's own message, `engine.importDiagnostics` over
-  the CLI's resolver (`cli_resolver` module), snapshots
-  `diagnostics_import_module_with_from` and
+  makes — `from "<a module of this package>"` (decision 206), `from "<this
+  package's own name>"` (decision 309; the name is the nearest manifest's
+  `name`, `Server.packageName`, a dependency's own inside its sources) and
+  `from "<a package not declared in botopink.json>"` (decision 242) — as
+  errors at the source string with the CLI's own message,
+  `engine.importDiagnostics` over the CLI's resolver (`cli_resolver` module),
+  snapshots `diagnostics_import_module_with_from`,
+  `diagnostics_import_own_package_with_from` and
   `diagnostics_import_unresolved_source`), `formatting`,
   `hover` (full signature + doc comments, incl. qualified `std` members and
   builtin interface methods on primitives/arrays/strings; for a fn whose return

@@ -1047,6 +1047,25 @@ fn main() {
       )
     )
     local.get $c
+    i32.const 117
+    i32.eq
+    (if
+      (then
+        local.get $go
+        (if
+          (then
+            local.get $v
+            i64.load
+            call $__print_u64_raw
+          )
+        )
+        local.get $sh
+        i32.const 1
+        i32.add
+        return
+      )
+    )
+    local.get $c
     i32.const 115
     i32.eq
     (if
@@ -2584,6 +2603,36 @@ fn main() {
   (func $__print_i64 (param $v i64)
     local.get $v
     call $__print_i64_raw
+    call $__print_nl
+  )
+  (func $__u64_fmt (param $v i64) (result i32)
+    (local $w i32)
+    call $__dtoa_ws
+    local.tee $w
+    i32.const 832
+    i32.add
+    local.get $v
+    i32.const 1
+    call $__fmt_u64
+    local.get $w
+    i32.const 832
+    i32.add
+    i32.sub
+  )
+  (func $__print_u64_raw (param $v i64)
+    (local $n i32)
+    local.get $v
+    call $__u64_fmt
+    local.set $n
+    call $__dtoa_ws
+    i32.const 832
+    i32.add
+    local.get $n
+    call $__write_bytes
+  )
+  (func $__print_u64 (param $v i64)
+    local.get $v
+    call $__print_u64_raw
     call $__print_nl
   )
 )

@@ -1094,9 +1094,13 @@ pub const Server = struct {
     }
 
     /// `engine.importDiagnostics` over the open document's project: its `src`
-    /// tree (open buffers overlaid) and its manifest's `dependencies`. Empty
-    /// outside a project, as `botopink check` has nothing to check against.
-    fn importDiagnostics(self: *Server, arena: std.mem.Allocator, uri: []const u8, source: []const u8) ![]proto.Diagnostic {
+    /// tree (open buffers overlaid), its manifest's `dependencies` and its
+    /// manifest's `name` (decision 309 — inside a dependency's own sources
+    /// the nearest manifest is the dependency's, so the name is its own, as
+    /// `libs.zig` passes it to the CLI's resolver). Empty outside a project,
+    /// as `botopink check` has nothing to check against. Caller frees each
+    /// message and the slice with `self.gpa`.
+    pub fn importDiagnostics(self: *Server, arena: std.mem.Allocator, uri: []const u8, source: []const u8) ![]proto.Diagnostic {
         const resolved = (self.graph.resolve(uri) catch null) orelse return &.{};
         const externals = resolved.dependency_names orelse return &.{};
         var package: std.ArrayListUnmanaged(engine.ModuleSource) = .empty;
@@ -1104,7 +1108,30 @@ pub const Server = struct {
             const src = self.files.get(dep.uri) orelse dep.source;
             try package.append(arena, .{ .uri = dep.uri, .source = src });
         }
-        return engine.importDiagnostics(self.gpa, uri, source, package.items, resolved.src_dir, externals);
+        const own = try self.packageName(arena, uri);
+        return engine.importDiagnostics(self.gpa, uri, source, package.items, resolved.src_dir, externals, own);
+    }
+
+    /// The `name` of the nearest `botopink.json` walking up from `uri`'s
+    /// directory — the manifest `ProjectGraph.resolve` reads the project from
+    /// (`dependency_names` is non-null only when that read succeeded, so a
+    /// refused or missing manifest never reaches here with a name to lose);
+    /// `""` when none is found or it cannot be read.
+    fn packageName(self: *Server, arena: std.mem.Allocator, uri: []const u8) ![]const u8 {
+        var dir = std.fs.path.dirname(lsp_types.uriToPath(uri)) orelse return "";
+        while (true) {
+            var err: ?manifest.Located = null;
+            if (manifest.read(arena, self.io, dir, &err)) |m| {
+                return m.name;
+            } else |e| switch (e) {
+                error.NotFound => {},
+                error.Invalid => return "",
+                error.OutOfMemory => return error.OutOfMemory,
+            }
+            const parent = std.fs.path.dirname(dir) orelse return "";
+            if (std.mem.eql(u8, parent, dir)) return "";
+            dir = parent;
+        }
     }
 
     /// Publish the project graph's own diagnostics — a dependency no library

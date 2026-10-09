@@ -328,10 +328,15 @@ test "path.isInside treats a name starting with two dots as a name" {
 const __bp_surrogate = /[\uD800-\uDFFF]/;
 const __bp_surrogate_k = new Array(64).fill("");
 const __bp_surrogate_v = new Array(64).fill(false);
+const __bp_surrogate_k2 = new Array(64).fill("");
+const __bp_surrogate_v2 = new Array(64).fill(false);
 function __bp_has_surrogate(s) {
     const h = s.length & 63;
     if (__bp_surrogate_k[h] === s) { return __bp_surrogate_v[h]; }
+    if (__bp_surrogate_k2[h] === s) { return __bp_surrogate_v2[h]; }
     const p = __bp_surrogate.test(s);
+    __bp_surrogate_k2[h] = __bp_surrogate_k[h];
+    __bp_surrogate_v2[h] = __bp_surrogate_v[h];
     __bp_surrogate_k[h] = s;
     __bp_surrogate_v[h] = p;
     return p;
@@ -890,9 +895,11 @@ exports.resolve = resolve;
 // answers, so a dotfile keeps its name.
 
 function withoutExtension(p) {
+    let p$sp = null;
     const ext = extname(p);
-    const n = __bp_str_length(p);
-    const stem = (() => { if ((ext === "")) { return p; } else { return p.slice(0, __bp_int((n - __bp_str_length(ext)), -2147483648, 2147483647, "- on i32 at src/path.bp:208:51")); } })();
+    let ext$sp = null;
+    const n = ((p$sp ??= __bp_has_surrogate(p)) ? __bp_str_length(p) : p.length);
+    const stem = (() => { if ((ext === "")) { return p; } else { return p.slice(0, __bp_int((n - ((ext$sp ??= __bp_has_surrogate(ext)) ? __bp_str_length(ext) : ext.length)), -2147483648, 2147483647, "- on i32 at src/path.bp:208:51")); } })();
     return stem;
 }
 exports.withoutExtension = withoutExtension;

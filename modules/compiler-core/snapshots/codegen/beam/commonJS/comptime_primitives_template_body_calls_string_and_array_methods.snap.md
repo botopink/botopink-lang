@@ -1365,10 +1365,15 @@ fn main() {
 const __bp_surrogate = /[\uD800-\uDFFF]/;
 const __bp_surrogate_k = new Array(64).fill("");
 const __bp_surrogate_v = new Array(64).fill(false);
+const __bp_surrogate_k2 = new Array(64).fill("");
+const __bp_surrogate_v2 = new Array(64).fill(false);
 function __bp_has_surrogate(s) {
     const h = s.length & 63;
     if (__bp_surrogate_k[h] === s) { return __bp_surrogate_v[h]; }
+    if (__bp_surrogate_k2[h] === s) { return __bp_surrogate_v2[h]; }
     const p = __bp_surrogate.test(s);
+    __bp_surrogate_k2[h] = __bp_surrogate_k[h];
+    __bp_surrogate_v2[h] = __bp_surrogate_v[h];
     __bp_surrogate_k[h] = s;
     __bp_surrogate_v[h] = p;
     return p;

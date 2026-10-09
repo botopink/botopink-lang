@@ -542,6 +542,9 @@ pub const HelperGroup = enum {
     print_u64,
     u64_to_str,
     u64_chk,
+    /// `$__print_opt_u64` (+`_raw`) — a `?u64`, the address of its cell,
+    /// written through `$__print_u64_raw`. Appended, as the `u64` groups.
+    print_opt_u64,
 
     /// The groups `g`'s functions call into.
     pub fn deps(g: HelperGroup) []const HelperGroup {
@@ -564,7 +567,7 @@ pub const HelperGroup = enum {
             .print_opt_f64 => &.{ .print, .print_f64, .print_opt },
             .print_opt_tagged => &.{ .print, .print_opt, .print_shaped },
             .assert_fail => &.{.print},
-            .print_shaped => &.{ .print, .print_bool, .print_f64, .print_i64, .display_of },
+            .print_shaped => &.{ .print, .print_bool, .print_f64, .print_i64, .print_u64, .display_of },
             .i32_to_str, .str_case, .str_repeat, .arr_new => &.{.alloc},
             .f64_to_str => &.{ .dtoa, .alloc },
             .str_index_of, .str_starts_with, .str_ends_with => &.{.mem_eq},
@@ -593,6 +596,7 @@ pub const HelperGroup = enum {
             .str_from_cp => &.{.alloc},
             .u64_fmt => &.{.dtoa},
             .print_u64 => &.{ .print, .u64_fmt },
+            .print_opt_u64 => &.{ .print, .print_opt, .print_u64 },
             .u64_to_str => &.{ .alloc, .u64_fmt },
             else => &.{},
         };
@@ -724,6 +728,8 @@ pub const Helper = enum {
     u64_add_chk,
     u64_sub_chk,
     u64_mul_chk,
+    print_opt_u64,
+    print_opt_u64_raw,
 
     pub fn symbol(h: Helper) []const u8 {
         return switch (h) {
@@ -747,6 +753,7 @@ pub const Helper = enum {
             .print_opt_i64, .print_opt_i64_raw => .print_opt_i64,
             .i32_add_chk, .i32_sub_chk, .i32_mul_chk, .i64_add_chk, .i64_sub_chk, .i64_mul_chk => .int_chk,
             .print_u64, .print_u64_raw => .print_u64,
+            .print_opt_u64, .print_opt_u64_raw => .print_opt_u64,
             .u64_add_chk, .u64_sub_chk, .u64_mul_chk => .u64_chk,
             .print_tagged_raw, .print_tagged => .print_shaped,
             .print_opt_tagged, .print_opt_tagged_raw => .print_opt_tagged,

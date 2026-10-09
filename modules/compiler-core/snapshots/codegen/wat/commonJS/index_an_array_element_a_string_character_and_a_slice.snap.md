@@ -20,10 +20,15 @@ fn main() {
 const __bp_surrogate = /[\uD800-\uDFFF]/;
 const __bp_surrogate_k = new Array(64).fill("");
 const __bp_surrogate_v = new Array(64).fill(false);
+const __bp_surrogate_k2 = new Array(64).fill("");
+const __bp_surrogate_v2 = new Array(64).fill(false);
 function __bp_has_surrogate(s) {
     const h = s.length & 63;
     if (__bp_surrogate_k[h] === s) { return __bp_surrogate_v[h]; }
+    if (__bp_surrogate_k2[h] === s) { return __bp_surrogate_v2[h]; }
     const p = __bp_surrogate.test(s);
+    __bp_surrogate_k2[h] = __bp_surrogate_k[h];
+    __bp_surrogate_v2[h] = __bp_surrogate_v[h];
     __bp_surrogate_k[h] = s;
     __bp_surrogate_v[h] = p;
     return p;
@@ -34,8 +39,6 @@ function __bp_str_count(s, u) {
     for (const c of s.substring(0, u)) { n += 1; }
     return n;
 }
-
-function __bp_string_char_at(s, i) { if (!__bp_has_surrogate(s)) { return s.at(i) ?? null; } return Array.from(s).at(i) ?? null; }
 
 function __bp_str_index_of(s, sub) {
     const u = s.indexOf(sub);
@@ -316,7 +319,7 @@ function main() {
     const names = ["ana", "bo"];
     __bp_print(__bp_array_at(names, 1));
     const s = "hello";
-    __bp_print(__bp_string_char_at(s, 1));
+    __bp_print((s.at(1) ?? null));
     __bp_print(s.slice(1, 3));
     __bp_print(s.slice(3, null));
     __bp_print(xs.slice(1, null));

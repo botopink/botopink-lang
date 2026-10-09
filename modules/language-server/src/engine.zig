@@ -99,16 +99,20 @@ pub fn diagnose(
 }
 
 /// The import-source refusals `botopink check` makes for the open document
-/// (front 26 step 8, decisions 206 and 242): `from "<a module of this
-/// package>"` and `from "<a package this one does not declare>"`, each at its
+/// (front 26 step 8, decisions 206, 242 and 309): `from "<a module of this
+/// package>"`, `from "<this package>"` and `from "<a package this one does
+/// not declare>"`, each at its
 /// source string with the CLI's message (`cli_resolver.importSourceMessage`,
 /// one text for both drivers). Before this the editor showed such an import
 /// resolving until `botopink check` refused it.
 ///
 /// `package` is the project's own `src` tree (the open document among them or
 /// not — `source` replaces its disk copy), `src_dir` where that tree lives and
-/// `externals` the names `botopink.json` declares under `dependencies`. A
-/// document outside `src_dir` is no module of the package and gets nothing.
+/// `externals` the names `botopink.json` declares under `dependencies`, `own`
+/// the package's own name (that manifest's `name` — a dependency's own when the
+/// document is one of its sources): `from "<own>"` is decision 309's
+/// `module-import-with-from`. A document outside `src_dir` is no module of the
+/// package and gets nothing.
 pub fn importDiagnostics(
     gpa: std.mem.Allocator,
     uri: []const u8,
@@ -116,6 +120,7 @@ pub fn importDiagnostics(
     package: []const ModuleSource,
     src_dir: []const u8,
     externals: []const []const u8,
+    own: []const u8,
 ) ![]proto.Diagnostic {
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
@@ -130,7 +135,7 @@ pub fn importDiagnostics(
         try mods.append(a, .{ .path = path, .source = m.source });
     }
 
-    const problems = try cli_resolver.importSourceProblems(a, mods.items, 0, externals, a);
+    const problems = try cli_resolver.importSourceProblems(a, mods.items, 0, externals, own, a);
     var out: std.ArrayList(proto.Diagnostic) = .empty;
     errdefer {
         for (out.items) |d| gpa.free(d.message);

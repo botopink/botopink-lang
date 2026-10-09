@@ -7,6 +7,8 @@ const h = @import("./helpers.zig");
 const proto = @import("../protocol.zig");
 const engine = @import("../engine.zig");
 const snap = @import("./snapshot.zig");
+const test_scratch = @import("test_scratch");
+const server_mod = @import("../server.zig");
 
 // ── D1 — empty file ────────────────────────────────────────────────────────
 
@@ -188,8 +190,8 @@ test "diagnostics: a checker warning surfaces with severity Warning" {
 
 // ── D12 — the import-source refusals `check` makes (front 26 step 8) ────────
 //
-// Decisions 206 and 242: `from` names a package — std, a bundled package or a
-// declared dependency. The compile binds `from "<own module>"` and the editor
+// Decisions 206, 242 and 309: `from` names a package — std, a bundled package
+// or a declared dependency, never the importing package itself. The compile binds `from "<own module>"` and the editor
 // showed it resolving until `botopink check` refused it; the LSP now reports
 // both refusals with the CLI's message, at the source string.
 
@@ -205,7 +207,7 @@ test "diagnostics: from naming a module of this package is module-import-with-fr
     const package = [_]engine.ModuleSource{
         .{ .uri = "file:///proj/src/geometry.bp", .source = "pub fn area(x: i32) -> i32 { return x * x; }" },
     };
-    const diags = try engine.importDiagnostics(gpa, "file:///proj/src/main.bp", source, &package, "/proj/src", &.{});
+    const diags = try engine.importDiagnostics(gpa, "file:///proj/src/main.bp", source, &package, "/proj/src", &.{}, "");
     defer {
         for (diags) |d| gpa.free(d.message);
         gpa.free(diags);
@@ -224,11 +226,72 @@ test "diagnostics: from naming an undeclared package is an unresolved import sou
         \\    @print(start() + greet());
         \\}
     ;
-    const diags = try engine.importDiagnostics(gpa, "file:///proj/src/main.bp", source, &.{}, "/proj/src", &.{"starter"});
+    const diags = try engine.importDiagnostics(gpa, "file:///proj/src/main.bp", source, &.{}, "/proj/src", &.{"starter"}, "");
     defer {
         for (diags) |d| gpa.free(d.message);
         gpa.free(diags);
     }
     try std.testing.expectEqual(@as(usize, 1), diags.len);
     try snap.assertDiagnostics(gpa, "diagnostics_import_unresolved_source", source, diags);
+}
+
+test "diagnostics: from naming this package itself is module-import-with-from" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\import {area} from "shapes.geometry";
+        \\
+        \\pub fn main() {
+        \\    @print(area(2));
+        \\}
+    ;
+    const package = [_]engine.ModuleSource{
+        .{ .uri = "file:///proj/src/geometry.bp", .source = "pub fn area(x: i32) -> i32 { return x * x; }" },
+    };
+    const diags = try engine.importDiagnostics(gpa, "file:///proj/src/main.bp", source, &package, "/proj/src", &.{}, "shapes");
+    defer {
+        for (diags) |d| gpa.free(d.message);
+        gpa.free(diags);
+    }
+    try std.testing.expectEqual(@as(usize, 1), diags.len);
+    try snap.assertDiagnostics(gpa, "diagnostics_import_own_package_with_from", source, diags);
+}
+
+// The server half: the package name is the open document's manifest `name`.
+test "diagnostics: the server names the package by its manifest for the 309 refusal" {
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+    test_scratch.remove(io, "lsp-own-package");
+    defer test_scratch.remove(io, "lsp-own-package");
+
+    const source =
+        \\import {area} from "shapes.geometry";
+        \\
+        \\pub fn main() {
+        \\    @print(area(2));
+        \\}
+        \\
+    ;
+    const files = [_]struct { rel: []const u8, data: []const u8 }{
+        .{ .rel = test_scratch.path(io, "lsp-own-package/shapes/botopink.json"), .data =
+        \\{ "name": "shapes" }
+        },
+        .{ .rel = test_scratch.path(io, "lsp-own-package/shapes/src/geometry.bp"), .data = "pub fn area(x: i32) -> i32 { return x * x; }" },
+        .{ .rel = test_scratch.path(io, "lsp-own-package/shapes/src/main.bp"), .data = source },
+    };
+    for (files) |f| {
+        if (std.fs.path.dirname(f.rel)) |d| try std.Io.Dir.cwd().createDirPath(io, d);
+        try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = f.rel, .data = f.data });
+    }
+
+    var server = server_mod.Server.init(gpa, io, null);
+    defer server.deinit();
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const diags = try server.importDiagnostics(arena.allocator(), test_scratch.uri(io, "lsp-own-package/shapes/src/main.bp"), source);
+    defer {
+        for (diags) |d| gpa.free(d.message);
+        gpa.free(diags);
+    }
+    try std.testing.expectEqual(@as(usize, 1), diags.len);
+    try std.testing.expectEqualStrings("\"shapes.geometry\" is this package — write import {geometry.area};", diags[0].message);
 }

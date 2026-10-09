@@ -16,6 +16,7 @@ const js = @import("./js/js_ast.zig");
 const envMod = @import("../comptime/env.zig");
 const jsEmitter = @import("./js/js_emitter.zig");
 const jsPrelude = @import("./js/js_prelude.zig");
+const strSlots = @import("./js/str_slots.zig");
 
 /// `prim-op-annotation` builtin dispatch entry (commonJS).
 const BuiltinNodeCall = struct {
@@ -731,6 +732,54 @@ fn isJumpHandler(h: ast.Expr) bool {
 }
 
 /// Recognise the try/catch shape of `e`, or null when it is not a try/catch.
+/// `let <slot> = null;` — a binding's surrogate slot (`js/str_slots.zig`).
+fn slotDecl(slot: []const u8) js.Stmt {
+    return .{ .decl = .{ .kw = .let_, .pattern = .{ .name = slot }, .value = .null_ } };
+}
+
+/// What `js/str_slots.zig` asks of this backend's lowering.
+const StrSlotCtx = struct {
+    em: *Emitter,
+
+    /// A `val` bound to `value` is written as one `const` (`buildStmt`), not
+    /// through the `try` lowering.
+    pub fn plainVal(_: StrSlotCtx, value: ast.Expr) bool {
+        return classifyTry(value) == null;
+    }
+
+    /// `e`'s receiver when `e` is a string read lowered through a codepoint
+    /// helper: `s.length` / `s.len` (`buildExpr`'s `identAccess`) or
+    /// `s.length()`, `s.at(i)`, `s.indexOf(x)`, `s.lastIndexOf(x)`
+    /// (`primHelper`).
+    pub fn stringRead(c: StrSlotCtx, e: ast.Expr) ?*ast.Expr {
+        switch (e) {
+            .identifier => |id| switch (id.kind) {
+                .identAccess => |ia| {
+                    if (ia.optional) return null;
+                    if (!std.mem.eql(u8, ia.member, "len") and !std.mem.eql(u8, ia.member, "length")) return null;
+                    const lw = c.em.lowerings orelse return null;
+                    const il = lw.get(id.loc) orelse return null;
+                    return if (il == .prim and il.prim == .string) ia.receiver else null;
+                },
+                else => return null,
+            },
+            .call => |call| switch (call.kind) {
+                .call => |cc| {
+                    const r = cc.receiver orelse return null;
+                    if (cc.optional) return null;
+                    const hp = c.em.primHelper(call.loc, cc) orelse return null;
+                    return switch (hp) {
+                        .str_length, .str_index_of, .str_last_index_of, .string_char_at => r,
+                        else => null,
+                    };
+                },
+                else => return null,
+            },
+            else => return null,
+        }
+    }
+};
+
 fn classifyTry(e: ast.Expr) ?TryForm {
     switch (e) {
         .jump => |j| switch (j.kind) {
@@ -1238,6 +1287,10 @@ const Emitter = struct {
     /// `.prim`). commonJS reads it only to spell a primitive `len` as the
     /// native `.length` property. Null in the standalone paths.
     lowerings: ?*const std.AutoHashMap(ast.Loc, envMod.InstanceLowering) = null,
+    /// Decision 320's string reads hoisted per binding in the function being
+    /// built (`js/str_slots.zig`): the reads that skip the per-read surrogate
+    /// test, and the slots their bindings declare. Null outside a `fn`.
+    str_slots: ?*const strSlots.Slots = null,
     /// When true, `self.x` lowers to `self.x` (extension methods take `self` as a
     /// real first parameter) instead of the prototype-method `this.x`.
     self_is_param: bool = false,
@@ -2316,9 +2369,13 @@ const Emitter = struct {
         self.expr_try_used = false;
         defer self.expr_try_used = prev_expr_try;
         const params = try self.buildParams(f.params);
+        const prev_slots = self.str_slots;
+        defer self.str_slots = prev_slots;
+        const slots = try strSlots.analyze(self.arena(), StrSlotCtx{ .em = self }, f.params, f.body);
+        self.str_slots = &slots;
         const prev_fn_indent = self.current_indent;
         self.current_indent = 1;
-        var body = try self.buildStmts(f.body);
+        var body = try self.withParamSlots(&slots, try self.buildStmts(f.body));
         body = @constCast(try self.guardExprTry(body, 1));
         self.current_indent = prev_fn_indent;
         const kw = shape.keyword();
@@ -3378,7 +3435,13 @@ const Emitter = struct {
                     // `val d = use memo(…)` → `const d = memo(…)`: the `use`
                     // prefix is transparent (decision 88), `buildExpr` drops it.
                     const value = try self.buildExpr(lb.value.*);
-                    return .{ .decl = .{ .kw = kw, .pattern = .{ .ident = lb.name }, .value = value } };
+                    const decl: js.Stmt = .{ .decl = .{ .kw = kw, .pattern = .{ .ident = lb.name }, .value = value } };
+                    // Decision 320 — the binding's surrogate slot, when a read
+                    // of it skips the per-read test (`js/str_slots.zig`).
+                    if (self.str_slots) |sl| if (sl.valSlot(lb.value)) |slot| {
+                        return self.b.group(&.{ decl, slotDecl(slot) });
+                    };
+                    return decl;
                 },
                 .localBindDestruct => |lb| {
                     if (classifyTry(lb.value.*)) |form| {
@@ -3828,7 +3891,7 @@ const Emitter = struct {
                     // Decision 320 — a string's `length` / `len` counts
                     // codepoints (`__bp_str_length`), not UTF-16 units.
                     if (std.mem.eql(u8, ia.member, "len") or std.mem.eql(u8, ia.member, "length")) if (self.lowerings) |lw| if (lw.get(id.loc)) |il| if (il == .prim) {
-                        if (il.prim == .string and !ia.optional) return self.b.call(self.helper(.str_length), &.{recv});
+                        if (il.prim == .string and !ia.optional) return self.strRead(ia.receiver, recv, .str_length, &.{});
                         return self.b.memberOpt(recv, "length", ia.optional);
                     };
                     // Optional chaining maps 1:1 to native JS `?.`.
@@ -5318,6 +5381,44 @@ const Emitter = struct {
         };
     }
 
+    /// Decision 320 — a string read `recv.<hp>(args)` (`recv` built as `r`):
+    /// the helper call, or — when `js/str_slots.zig` approved the receiver —
+    /// the native read (a surrogate-free literal or `val`), or the native read
+    /// behind the binding's slot, `((s$sp ??= __bp_has_surrogate(s)) ?
+    /// __bp_str_length(s) : s.length)`, which tests the string once per
+    /// binding instead of once per read.
+    fn strRead(self: *Emitter, recv: *const ast.Expr, r: js.Expr, hp: jsPrelude.Helper, args: []const js.Expr) !js.Expr {
+        const all = try self.arena().alloc(js.Expr, args.len + 1);
+        all[0] = r;
+        @memcpy(all[1..], args);
+        const rd = (if (self.str_slots) |sl| sl.read(recv) else null) orelse return self.b.call(self.helper(hp), all);
+        const native: js.Expr = switch (hp) {
+            .str_length => try self.b.member(r, "length"),
+            .str_index_of => try self.b.call(try self.b.member(r, "indexOf"), args),
+            .str_last_index_of => try self.b.call(try self.b.member(r, "lastIndexOf"), args),
+            .string_char_at => try self.b.paren(try self.b.binaryBare("??", try self.b.call(try self.b.member(r, "at"), args), .null_)),
+            else => return self.b.call(self.helper(hp), all),
+        };
+        return switch (rd) {
+            .native => native,
+            .slot => |slot| self.b.paren(try self.b.ternary(
+                try self.b.paren(try self.b.assign(.{ .name = slot }, "??=", try self.b.call(self.helper(.str_surrogate), &.{r}))),
+                try self.b.call(self.helper(hp), all),
+                native,
+            )),
+        };
+    }
+
+    /// `body` with the parameters' surrogate slots (`let s$sp = null;`)
+    /// declared first.
+    fn withParamSlots(self: *Emitter, slots: *const strSlots.Slots, body: []const js.Stmt) ![]const js.Stmt {
+        if (slots.params.items.len == 0) return body;
+        const out = try self.arena().alloc(js.Stmt, slots.params.items.len + body.len);
+        for (slots.params.items, 0..) |slot, i| out[i] = slotDecl(slot);
+        @memcpy(out[slots.params.items.len..], body);
+        return out;
+    }
+
     /// The prelude helper for `recv.method(args)` on a typed primitive
     /// receiver, from inference's per-call-site `.prim` record.
     fn primHelper(self: *Emitter, loc: ast.Loc, cc: anytype) ?jsPrelude.Helper {
@@ -5514,8 +5615,14 @@ const Emitter = struct {
             } else if (self.primHelper(loc, cc)) |hp| {
                 // A primitive method whose native JS method disagrees with
                 // the signature: `__bp_helper(recv, args)` (`js/js_prelude.zig`).
+                const recv_node = try self.buildExpr(recv.*);
+                if (self.str_slots) |sl| if (sl.read(recv) != null) {
+                    const built = try self.arena().alloc(js.Expr, cc.args.len);
+                    for (cc.args, 0..) |arg, i| built[i] = try self.buildExpr(arg.value.*);
+                    return self.strRead(recv, recv_node, hp, built);
+                };
                 callee = self.helper(hp);
-                try args.append(self.arena(), try self.buildExpr(recv.*));
+                try args.append(self.arena(), recv_node);
             } else {
                 const recv_node = try self.buildExpr(recv.*);
                 // §A4 rename: a 2-arg `#[@External.Node("X")]` on a primitive

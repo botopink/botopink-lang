@@ -770,19 +770,22 @@ fn checkImportSources(
 /// reports per file and keeps going: the language server, which shows each
 /// refused `from` of the open document as `check` names it (front 26 step 8).
 /// `mods` is the whole package (the module paths decide what a `from` names);
-/// a refusal elsewhere in the package is that file's, not this one's.
+/// a refusal elsewhere in the package is that file's, not this one's. `own` is
+/// the package's own name (its manifest `name`): `from "<own>"` is refused
+/// (decision 309), as `checkSources` refuses it.
 pub fn importSourceProblems(
     sa: std.mem.Allocator,
     mods: []const Module,
     importer: usize,
     externals: []const []const u8,
+    own: []const u8,
     diag_arena: std.mem.Allocator,
 ) Error![]const Diagnostic {
     const analysis = analyzeModules(sa, mods);
     if (analysis.sources.len != mods.len or importer >= mods.len) return &.{};
     var out: std.ArrayListUnmanaged(Diagnostic) = .empty;
     for (analysis.sources[importer]) |ref| {
-        if (try sourceProblem(mods, &.{}, analysis, externals, "", importer, ref, diag_arena)) |d| try out.append(diag_arena, d);
+        if (try sourceProblem(mods, &.{}, analysis, externals, own, importer, ref, diag_arena)) |d| try out.append(diag_arena, d);
     }
     return out.toOwnedSlice(diag_arena);
 }

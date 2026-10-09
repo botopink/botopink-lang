@@ -1,0 +1,4 @@
+Big(n: 18446744073709551615, label: "top")
+18446744073709551615
+Pair(left: Big(n: 9223372036854775808, label: "half"), right: -1)
+[Big(n: 18446744073709551615, label: "top"), Big(n: 0, label: "zero")]

@@ -984,6 +984,11 @@ all four targets (wasm bound `w` to 0 and answered the nested arms wrong at exit
 `run/unsigned_compare_and_divide` — `u32` above 2^31 and `u64` above 2^63 compared and divided, on
 all four targets (wasm read a `u64` signed, decision 319); `u64`'s `%` past 2^53 is
 `codegen/tests/wat.zig`'s, since commonJS aborts it (`04-js`'s step 9).
+`05-wasm`'s printing rows, each on all four targets: `run/bool_field_print` (a `bool` record field
+or tuple element read alone printed `1` / `0` on wasm), `run/u64_record_field_print` (a `u64` field
+through the record printer printed signed), `run/u64_tuple_slot` (a `u64` / `i64` / `u32` tuple
+element — built, read, destructured, bound, compared, nested — was refused on wasm) and
+`run/optional_u64_to_string` (a `?u64` printed, narrowed, unwrapped and turned into text signed).
 
 ### `std_default_fn_in_a_std_module`
 

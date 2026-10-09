@@ -427,7 +427,8 @@ test "erlang: index ---- a range second argument is a slice, open end included" 
 // decision 47's `null` past the end where native `.at` answers `undefined`; the
 // inner `.at(0)` of `[[1, 2], [3, 4]][1][0]` stays native, because its
 // receiver is the `?T` the outer one answered and inference records no array
-// lowering for it.
+// lowering for it. `s[1]` reads a `val` bound to a literal with no surrogate,
+// so it is the native read (`js/str_slots.zig`, decision 320).
 test "js: index ---- element, slice, open slice, string and tuple" {
     const src =
         \\fn main() {
@@ -449,7 +450,7 @@ test "js: index ---- element, slice, open slice, string and tuple" {
         "__bp_print(__bp_array_at(xs, 0));",
         "__bp_print(xs.slice(0, 2));",
         "__bp_print(xs.slice(1, null));",
-        "__bp_print(__bp_string_char_at(s, 1));",
+        "__bp_print((s.at(1) ?? null));",
         "__bp_print(s.slice(1, 3));",
         "__bp_print(t[0]);",
         "__bp_print(__bp_array_at(xs, __bp_int((i + 1), -2147483648, 2147483647, \"+ on i32 at main.bp:12:17\")));",

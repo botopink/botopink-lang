@@ -197,6 +197,14 @@ fn fieldCellOf(n: []const u8) Emitter.Cell {
     return .none;
 }
 
+/// The shape code of a value held in an `i64` cell, by its type's name: `u`
+/// for a `u64` (unsigned digits, decision 319), `l` for an `i64` or a `u32`;
+/// null for a type held in a word or an `f64` cell.
+fn i64CellCode(n: []const u8) ?u8 {
+    if (fieldCellOf(n) != .i64) return null;
+    return if (std.mem.eql(u8, n, "u64")) 'u' else 'l';
+}
+
 /// `i` / `f` for an array of integers / floats (`i32[]`, `Array<f64>`), the
 /// two flat element kinds with a printer of their own; null otherwise.
 fn arrayScalarCode(t: ast.TypeRef) ?u8 {
@@ -3063,8 +3071,7 @@ const Emitter = struct {
         if (t == .generic and std.mem.eql(u8, t.generic.name, "Array")) return .arr;
         if (primTestOf(t)) |pt| {
             const n = t.named;
-            const eq = std.mem.eql;
-            if (eq(u8, n, "i64") or eq(u8, n, "u64")) return .unresolved;
+            if (fieldCellOf(n) == .i64) return .unresolved;
             return switch (pt) {
                 .int => .i32_,
                 .float => .f64_,
@@ -4681,7 +4688,7 @@ const Emitter = struct {
                             },
                             .tuple_ => |bindings| {
                                 for (bindings, 0..) |name, i| {
-                                    try self.declareLocal(name, if (try self.tupleElemIsFloat(lb.value.*, i)) "f64" else "i32");
+                                    try self.declareLocal(name, (try self.tupleElemCell(lb.value.*, i)).ty());
                                     try self.noteTupleElemShape(name, lb.value.*, i);
                                 }
                             },
@@ -5566,10 +5573,11 @@ const Emitter = struct {
                                 try self.noteTupleElemShape(name, lb.value.*, i);
                                 try self.emit(.{ .local_get = mem });
                                 try self.emitLoadOffset(@intCast(i * 4));
-                                if (try self.tupleElemIsFloat(lb.value.*, i)) {
-                                    try self.emitFromFloatSlot();
-                                    if (!std.mem.eql(u8, self.locals.get(name) orelse "", "f64"))
-                                        return self.refuse(stmt.expr.getLoc(), "the wasm backend binds `{s}` to an integer and a float in one function", .{name});
+                                const cell = try self.tupleElemCell(lb.value.*, i);
+                                if (cell != .none) {
+                                    try self.emitFromCell(cell);
+                                    if (!std.mem.eql(u8, self.locals.get(name) orelse "", cell.ty()))
+                                        return self.refuse(stmt.expr.getLoc(), "the wasm backend binds `{s}` to values of two widths in one function", .{name});
                                 }
                                 try self.emit(.{ .local_set = name });
                             }
@@ -6289,6 +6297,8 @@ const Emitter = struct {
                     (if (last) .print_opt_bool else .print_opt_bool_raw)
                 else if (oi.cell == .f64)
                     (if (last) .print_opt_f64 else .print_opt_f64_raw)
+                else if (oi.cell == .i64 and optIsU64(oi))
+                    (if (last) .print_opt_u64 else .print_opt_u64_raw)
                 else if (oi.cell == .i64)
                     (if (last) .print_opt_i64 else .print_opt_i64_raw)
                 else if (last) .print_opt_i32 else .print_opt_i32_raw)
@@ -6812,6 +6822,11 @@ const Emitter = struct {
             .identifier => |id| switch (id.kind) {
                 .ident => |n| std.mem.eql(u8, n, "true") or std.mem.eql(u8, n, "false") or
                     self.bool_locals.contains(self.resolveName(n)) or self.bool_globals.contains(self.resolveName(n)),
+                // `r.flag` of a field declared `bool`, `t.1` of a `bool`
+                // element: the word is `1`/`0`, and only the declared type
+                // says it prints `true`/`false` — `@print(r.flag)` wrote `1`
+                // at exit 0. An optional read (`r?.flag`) is a `?bool`.
+                .identAccess => |ia| !ia.optional and if (self.typeRefOf(e)) |t| isBoolTypeRef(t) else if (self.tupleElemShapeOf(e) catch null) |el| std.mem.eql(u8, el, "b") else false,
                 else => false,
             },
             .unaryOp => |un| un.op == .not,
@@ -7313,6 +7328,7 @@ const Emitter = struct {
             if (self.patternOnlyBinds(sub)) continue;
             const code = try self.tuplePatternElemShape(subj, i, loc);
             if (code[0] == 'f') return self.refuse(loc, "the wasm backend cannot test a float tuple element against a pattern", .{});
+            if (shapeCell(code) == .i64) return self.refuse(loc, "the wasm backend cannot test a 64-bit integer tuple element against a pattern", .{});
             const field = try std.fmt.allocPrint(self.arena(), "__case_{d}", .{self.case_depth});
             self.case_depth += 1;
             try self.declareLocal(field, "i32");
@@ -7339,6 +7355,8 @@ const Emitter = struct {
             's' => "string",
             'b' => "bool",
             'f' => "f64",
+            'l' => "i64",
+            'u' => "u64",
             else => null,
         };
         if (scalar) |t| try self.local_typerefs.put(n, .{ .named = t });
@@ -7426,13 +7444,14 @@ const Emitter = struct {
         for (tupleElems(v), 0..) |sub, i| {
             if (sub == .wildcard) continue;
             const code = try self.tuplePatternElemShape(subj, i, .{ .line = 0, .col = 0 });
-            const float = code[0] == 'f';
+            const cell = shapeCell(code);
+            const float = cell != .none;
             if (sub == .ident and self.patternOnlyBinds(sub)) {
-                const n = try self.bindName(sub.ident, if (float) "f64" else "i32");
+                const n = try self.bindName(sub.ident, cell.ty());
                 try self.emit(.{ .local_get = subj });
                 try self.emit(.{ .load = .{ .offset = @intCast(i * 4) } });
-                if (float) try self.emitFromFloatSlot();
-                try self.emitConvert(if (float) "f64" else "i32", self.locals.get(n) orelse "i32");
+                try self.emitFromCell(cell);
+                try self.emitConvert(cell.ty(), self.locals.get(n) orelse "i32");
                 try self.emit(.{ .local_set = n });
                 try self.noteTupleElemLocal(n, code);
                 try self.tuple_binders.put(self.reg_arena.allocator(), n, {});
@@ -8007,10 +8026,41 @@ const Emitter = struct {
         try self.emit(.{ .load = .{ .offset = offset } });
     }
 
+    /// A tuple's slots are words: a float element holds its `f64` cell and a
+    /// 64-bit integer (`i64`, `u32`, `u64`) its `i64` cell (`$__box_i64`),
+    /// the codes `f` / `l` / `u` of its print shape (`valueShapeOf`), which
+    /// every reader of an element goes by. The checker types each element by
+    /// itself (`#(1, true)` is no `#(i64, bool)`), so the element's own type
+    /// is the slot's. An `i64` element was refused as a narrowing.
     fn lowerTupleLit(self: *Emitter, tl: anytype) anyerror!void {
+        return self.lowerTupleLitAs(tl, null);
+    }
+
+    /// The same, each element widened to the type `as` gives its slot when
+    /// one is given: `pair(5) == #(5, true)` over a `#(u64, bool)`, where the
+    /// checker typed the literal by the other operand and the `5` is a `u64`.
+    fn lowerTupleLitAs(self: *Emitter, tl: anytype, as: ?[]const ast.TypeRef) anyerror!void {
         const base = try self.allocSlots(@intCast(tl.elems.len * 4));
-        for (tl.elems, 0..) |el, i| try self.storeSlotExpr(base, @intCast(i * 4), el);
+        for (tl.elems, 0..) |el, i| {
+            const want: ?ast.TypeRef = if (as) |ts| (if (i < ts.len) ts[i] else null) else null;
+            const wide = if (want) |w| (w == .named and fieldCellOf(w.named) == .i64) else std.mem.eql(u8, self.wasmTypeOf(el), "i64");
+            if (wide) {
+                try self.emit(.{ .local_get = base });
+                try self.lowerCellWord(el, .i64);
+                try self.emit(.{ .store = .{ .offset = @intCast(i * 4) } });
+            } else try self.storeSlotExpr(base, @intCast(i * 4), el);
+        }
         try self.loadBase(base);
+    }
+
+    /// The cell a tuple element's shape code says its slot holds.
+    fn shapeCell(code: []const u8) Cell {
+        if (code.len == 0) return .none;
+        return switch (code[0]) {
+            'f' => .f64,
+            'l', 'u' => .i64,
+            else => .none,
+        };
     }
 
     /// F4 — list literals over linear memory with an explicit i32 length
@@ -8230,7 +8280,7 @@ const Emitter = struct {
                 if (p.typeRef == .named or !typeMentionsParam(p.typeRef, g.decl.genericParams)) continue;
                 const arg = cc.args[pi].value.*;
                 const sh = (try self.printShapeOf(arg)) orelse "";
-                if (Cell.of(self.wasmTypeOf(arg)) != .none or std.mem.indexOfAny(u8, sh, "fl") != null)
+                if (Cell.of(self.wasmTypeOf(arg)) != .none or std.mem.indexOfAny(u8, sh, "flu") != null)
                     return self.refuse(arg.getLoc(), "the wasm backend has one body for generic `{s}`, where `{s}`'s type parameter is a word: a float or an `i64` in it has no lowering", .{ cc.callee, p.name });
             }
         }
@@ -9756,6 +9806,11 @@ const Emitter = struct {
                         try out.appendSlice(self.arena(), inner);
                         continue;
                     }
+                    // A 64-bit integer element's slot holds its cell.
+                    if (el == .named) if (i64CellCode(el.named)) |c| {
+                        try out.append(self.arena(), c);
+                        continue;
+                    };
                     try out.append(self.arena(), scalarCode(el) orelse return null);
                 }
                 try out.append(self.arena(), ')');
@@ -9903,6 +9958,7 @@ const Emitter = struct {
         if (self.isStringExpr(e)) return "s";
         if (self.isBoolExpr(e)) return "b";
         if (self.wasmTypeOf(e)[0] == 'f') return "f";
+        if (std.mem.eql(u8, self.wasmTypeOf(e), "i64")) return if (self.isU64Expr(e)) "u" else "l";
         return "i";
     }
 
@@ -9920,7 +9976,7 @@ const Emitter = struct {
         } else null;
         if (oi.boxed) {
             if (oi.cell == .f64) return "?f";
-            if (oi.cell == .i64) return "?l";
+            if (oi.cell == .i64) return if (optIsU64(oi)) "?u" else "?l";
             if (oi.bool_) return "!b";
             const n = inner_name orelse return if (oi.inner == null) "!i" else null;
             if (std.mem.eql(u8, n, "bool")) return "!b";
@@ -10846,6 +10902,12 @@ const Emitter = struct {
         shape: ?[]const u8 = null,
     };
 
+    /// Whether a `?T`'s cell holds a `u64` — its bits print unsigned.
+    fn optIsU64(oi: OptInfo) bool {
+        const inner = oi.inner orelse return false;
+        return inner == .named and std.mem.eql(u8, inner.named, "u64");
+    }
+
     fn optInfoOfTypeRef(self: *Emitter, t: ast.TypeRef) ?OptInfo {
         const inner = switch (t) {
             .optional => |i| i.*,
@@ -11348,6 +11410,15 @@ const Emitter = struct {
             },
             .call => |c| switch (c.kind) {
                 .call => |cc| blk: {
+                    // `o.unwrapOr(d)` over a `?T` answers a `T`: a `?u64`'s
+                    // payload stays a `u64`, which prints, compares and turns
+                    // into text unsigned (`-1` at exit 0 before).
+                    if (isUnwrapOr(cc)) {
+                        if (self.typeRefOf(cc.args[0].value.*)) |ot| if (ot == .optional) break :blk ot.optional.*;
+                        // A `?T` element of a tuple no type is written for
+                        // names its payload by its print shape (`?u`).
+                        if (self.optInfoOf(cc.args[0].value.*)) |oi| if (oi.inner) |inner| break :blk inner;
+                    }
                     if (cc.is_builtin) break :blk null;
                     // Inside a specialisation a primitive method's result is
                     // typed by what it answers, so the next link of a chain
@@ -11620,6 +11691,7 @@ const Emitter = struct {
                         '?' => return switch (el[1]) {
                             'f' => .{ .boxed = true, .cell = .f64 },
                             'l' => .{ .boxed = true, .cell = .i64 },
+                            'u' => .{ .boxed = true, .cell = .i64, .inner = .{ .named = "u64" } },
                             's' => .{ .boxed = false, .str = true },
                             else => .{ .boxed = false, .shape = el[1..] },
                         },
@@ -12047,7 +12119,7 @@ const Emitter = struct {
         if (tupleIndex(ia.member)) |idx| {
             try self.lowerExpr(ia.receiver.*);
             try self.emitLoadOffset(idx * 4);
-            if (try self.tupleElemShapeOf(.{ .identifier = .{ .loc = loc, .kind = .{ .identAccess = ia } } })) |el| if (el[0] == 'f') try self.emitFromFloatSlot();
+            if (try self.tupleElemShapeOf(.{ .identifier = .{ .loc = loc, .kind = .{ .identAccess = ia } } })) |el| try self.emitFromCell(shapeCell(el));
             return;
         }
         // Qualified enum unit variant: `Color.Red` → variant tag.
@@ -12303,8 +12375,9 @@ const Emitter = struct {
         name: []const u8,
         fields: []const []const u8,
         refs: ?[]const ast.TypeRef,
-        /// A record's `i64` field holds a cell (`l`); a variant's payload
-        /// holds only an `i32` word, the one an `i64` slot is ever given.
+        /// A record's `i64` field holds a cell (`l`, `u` for a `u64`); a
+        /// variant's payload holds only an `i32` word, the one an `i64` slot
+        /// is ever given.
         record: bool,
     ) anyerror!void {
         const a = self.arena();
@@ -12318,11 +12391,15 @@ const Emitter = struct {
             try out.append(a, @intCast(fname.len));
             try out.appendSlice(a, fname);
             const tref: ?ast.TypeRef = if (refs) |rs| (if (i < rs.len) rs[i] else null) else null;
-            const wide = if (tref) |t| switch (t) {
-                .named => |n| fieldCellOf(n) == .i64,
-                else => false,
-            } else false;
-            try out.appendSlice(a, if (record and wide) "l" else try self.fieldShape(tref));
+            const wide: ?u8 = if (tref) |t| switch (t) {
+                .named => |n| i64CellCode(n),
+                else => null,
+            } else null;
+            if (record) if (wide) |c| {
+                try out.append(a, c);
+                continue;
+            };
+            try out.appendSlice(a, try self.fieldShape(tref));
         }
     }
 
@@ -12669,11 +12746,12 @@ const Emitter = struct {
         if (sh.len > 1 and sh[0] == '[' and (sh[1] == '(' or sh[1] == '[')) try self.noteTupleElemLocal(elem, sh[1..]);
     }
 
-    /// Whether element `i` of the tuple `value` is a float (its slot a cell).
-    fn tupleElemIsFloat(self: *Emitter, value: ast.Expr, i: usize) !bool {
-        const sh = (try self.printShapeOf(value)) orelse return false;
-        const el = tupleShapeElem(sh, @intCast(i)) orelse return false;
-        return el[0] == 'f';
+    /// The cell element `i` of the tuple `value` holds in its slot: a float's
+    /// `f64`, a 64-bit integer's `i64`, `.none` for a word.
+    fn tupleElemCell(self: *Emitter, value: ast.Expr, i: usize) !Cell {
+        const sh = (try self.printShapeOf(value)) orelse return .none;
+        const el = tupleShapeElem(sh, @intCast(i)) orelse return .none;
+        return shapeCell(el);
     }
 
     fn noteTupleElemShape(self: *Emitter, name: []const u8, value: ast.Expr, i: usize) !void {
@@ -13492,10 +13570,11 @@ const Emitter = struct {
                 // A named record's float field reads as the `f64` its box holds.
                 .identAccess => |ia| blk: {
                     if (ia.optional) break :blk "i32";
-                    // A float tuple element reads as the `f64` its cell holds.
+                    // A float / 64-bit tuple element reads as the value its
+                    // cell holds.
                     if (tupleIndex(ia.member) != null) {
                         const el = (self.tupleElemShapeOf(e) catch null) orelse break :blk "i32";
-                        break :blk if (el[0] == 'f') "f64" else "i32";
+                        break :blk shapeCell(el).ty();
                     }
                     const rty = self.recordTypeOfExpr(ia.receiver.*) orelse break :blk "i32";
                     if (self.fieldOffsetIn(rty, ia.member) == null) break :blk "i32";
@@ -13669,6 +13748,17 @@ const Emitter = struct {
                     try self.emit(self.builder().helper(.str_eq));
                     i += 1;
                 },
+                // A 64-bit element: the values its two cells hold.
+                'l', 'u' => {
+                    try self.emit(.{ .local_get = a });
+                    try self.emit(.{ .load = .{ .offset = @intCast(off) } });
+                    try self.emitFromCell(.i64);
+                    try self.emit(.{ .local_get = b });
+                    try self.emit(.{ .load = .{ .offset = @intCast(off) } });
+                    try self.emitFromCell(.i64);
+                    try self.emit(opOf("i64", "eq"));
+                    i += 1;
+                },
                 else => {
                     try self.emit(.{ .local_get = a });
                     try self.emit(.{ .load = .{ .offset = @intCast(off) } });
@@ -13748,6 +13838,8 @@ const Emitter = struct {
             'f' => return .{ .named = "f64" },
             'b' => return .{ .named = "bool" },
             's' => return .{ .named = "string" },
+            'l' => return .{ .named = "i64" },
+            'u' => return .{ .named = "u64" },
             '[' => {
                 const inner = (try self.eqTypeOfShape(sh[1..])) orelse return null;
                 const p = try ar.create(ast.TypeRef);
@@ -13925,6 +14017,12 @@ const Emitter = struct {
         const t: ast.TypeRef = blk: {
             if (l_comp and r_comp) {
                 if (std.mem.eql(u8, try self.eqKey(lt.?), try self.eqKey(rt.?))) break :blk lt.?;
+                // A tuple literal against a tuple of the same arity: the
+                // checker typed the literal by the other operand, so its
+                // integers take the other side's widths (`#(5, true)` against
+                // a `#(u64, bool)`). Compared by their own types the two were
+                // never equal — `false` at exit 0.
+                if (try self.lowerTupleEqAgainst(negate, lhs, lt.?, rhs, rt.?)) return true;
             } else if ((l_comp and rt == null) or (r_comp and lt == null)) {
                 // The other side's type is not recovered here; the checker
                 // accepted the comparison, so it is the recovered side's.
@@ -13945,6 +14043,40 @@ const Emitter = struct {
         return true;
     }
 
+    /// `#(…) == t` / `t == #(…)` where `t`'s tuple type has the literal's
+    /// arity: the literal is built with `t`'s element types and both sides
+    /// compared by `t`'s `$__eq_<T>`. False when neither side is such a pair.
+    fn lowerTupleEqAgainst(self: *Emitter, negate: bool, lhs: ast.Expr, lt: ast.TypeRef, rhs: ast.Expr, rt: ast.TypeRef) anyerror!bool {
+        const lit_left = tupleLitElems(lhs) != null;
+        const lit = tupleLitElems(if (lit_left) lhs else rhs) orelse return false;
+        const t = if (lit_left) rt else lt;
+        const elems = t.tupleElems() orelse return false;
+        if (elems.len != lit.len or tupleLitElems(if (lit_left) rhs else lhs) != null) return false;
+        const sym = try self.eqFnFor(t);
+        if (lit_left) {
+            try self.lowerTupleLitAs(.{ .elems = lit }, elems);
+            try self.lowerCoerced(rhs, "i32");
+        } else {
+            try self.lowerCoerced(lhs, "i32");
+            try self.lowerTupleLitAs(.{ .elems = lit }, elems);
+        }
+        try self.emit(.{ .call = sym });
+        if (negate) try self.emit(opOf("i32", "eqz"));
+        return true;
+    }
+
+    /// The elements of a tuple literal, through parentheses.
+    fn tupleLitElems(e: ast.Expr) ?[]ast.Expr {
+        return switch (e) {
+            .collection => |col| switch (col.kind) {
+                .tupleLit => |tl| tl.elems,
+                .grouped => |inner| tupleLitElems(inner.*),
+                else => null,
+            },
+            else => null,
+        };
+    }
+
     /// Where a compared value is read from: `base` (+ `4 + idx * 4` for an
     /// array element) at `off`.
     const EqAddr = struct { base: []const u8, off: u32 = 0, idx: ?[]const u8 = null };
@@ -13952,8 +14084,9 @@ const Emitter = struct {
     /// How the address of a compared value reaches a float or an `i64`: a
     /// record `field` holds the address of either's cell; a tuple element, a
     /// variant payload and an array element are a `word` slot holding a
-    /// float's cell (an `i64` there is only ever an `i32` word); an optional's
-    /// box IS the `cell`.
+    /// float's cell (an `i64` there is only ever an `i32` word; a tuple's
+    /// slot holds its cell and is compared as a `field`); an optional's box
+    /// IS the `cell`.
     const EqSlot = enum { field, word, cell };
 
     fn eqPushAddr(self: *Emitter, a: EqAddr) !void {
@@ -14174,7 +14307,9 @@ const Emitter = struct {
                 }
             },
             .tuple_, .labeledTuple => {
-                for (t.tupleElems().?, 0..) |el, i| try self.eqFieldStep(el, .word, @intCast(i * 4));
+                // A tuple's slot holds a 64-bit element's cell, as a record
+                // field does (`lowerTupleLit`).
+                for (t.tupleElems().?, 0..) |el, i| try self.eqFieldStep(el, .field, @intCast(i * 4));
                 try self.emit(one);
             },
             else => {
@@ -14428,6 +14563,12 @@ const Emitter = struct {
         return il.division == .u64 or il.division == .usize;
     }
 
+    /// Whether `e` names a `?T` local a null test narrowed to its payload.
+    fn isNarrowedName(self: *Emitter, e: ast.Expr) bool {
+        const n = plainIdentName(e) orelse return false;
+        return self.narrowed_opts.contains(self.resolveName(n));
+    }
+
     /// Whether `e` is a `u64` / `usize` value: its declared type, or the
     /// type inference recorded at its operator.
     fn isU64Expr(self: *Emitter, e: ast.Expr) bool {
@@ -14439,7 +14580,12 @@ const Emitter = struct {
             },
             else => {},
         }
-        const tr = self.typeRefOf(e) orelse return false;
+        // `t.0` of a `u64` element of a tuple no type is written for.
+        if (self.tupleElemShapeOf(e) catch null) |el| if (el.len == 1 and el[0] == 'u') return true;
+        const tr0 = self.typeRefOf(e) orelse return false;
+        // A `?u64` a null test narrowed is the `u64` its cell holds:
+        // `if (o != null) { o.toString() }` wrote `-1`.
+        const tr = if (tr0 == .optional and self.isNarrowedName(e)) tr0.optional.* else tr0;
         if (tr != .named) return false;
         return std.mem.eql(u8, tr.named, "u64") or std.mem.eql(u8, tr.named, "usize");
     }
