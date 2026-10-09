@@ -1394,7 +1394,7 @@ fn registerFnSignatures(env: *Env, program: ast.Program) InferError!void {
             // call missing a required argument.
             try env.fnParams.put(f.name, f.params);
             try env.fnDecls.put(env.arena, f.name, f);
-            registerDecoratorSig(env, f.name, f.params, f);
+            registerDecoratorSig(env, f.name, f.params, f.genericParams, f);
             // C-01 — a template or decorator this module declares is owned by
             // this module's path, which its evaluated module atom names.
             try env.noteComptimeOwner(f, env.modulePath);
@@ -1416,7 +1416,7 @@ fn registerFnSignatures(env: *Env, program: ast.Program) InferError!void {
         },
         // A `declare fn` decorator (`declare fn service(comptime _: @Decl)`) —
         // the bodyless form a lib ships its markers as — parses as a delegate.
-        .delegate => |d| registerDecoratorSig(env, d.name, d.params, null),
+        .delegate => |d| registerDecoratorSig(env, d.name, d.params, d.genericParams, null),
         else => {},
     };
 }
@@ -1438,7 +1438,7 @@ pub fn isDecoratorParams(params: []const ast.Param) bool {
 /// the core stays lib-agnostic (it carries the decorator across modules by its
 /// generic `@Decl`-first shape, never by any lib's name). No-op for non-decorators.
 pub fn registerImportedDecorator(env: *Env, name: []const u8, fn_decl: ast.FnDecl, owner: []const u8, support: []const ast.FnDecl, conflict: ?[]const u8) !void {
-    registerDecoratorSig(env, name, fn_decl.params, fn_decl);
+    registerDecoratorSig(env, name, fn_decl.params, fn_decl.genericParams, fn_decl);
     if (env.decorators.getPtr(name)) |sig| {
         sig.support = support;
         sig.conflict = conflict;
@@ -1543,9 +1543,9 @@ pub fn registerImportedExtension(env: *Env, im: ast.ImplementDecl) !void {
 /// `comptime _: @Decl`) so `#[name(args)]` applications can be argument-checked,
 /// plus its full `FnDecl` (when it has a body) so the body can run over each
 /// annotated declaration at comptime (P2). No-op for ordinary functions.
-fn registerDecoratorSig(env: *Env, name: []const u8, params: []const ast.Param, fn_decl: ?ast.FnDecl) void {
+fn registerDecoratorSig(env: *Env, name: []const u8, params: []const ast.Param, generics: []const ast.GenericParam, fn_decl: ?ast.FnDecl) void {
     if (!isDecoratorParams(params)) return;
-    env.decorators.put(name, .{ .params = params[1..], .fn_decl = fn_decl }) catch {};
+    env.decorators.put(name, .{ .params = params[1..], .fn_decl = fn_decl, .decl = params[0].typeRef, .generics = generics }) catch {};
 }
 
 /// True when a type's `implement` clause lists the builtin `@Annotation`
@@ -3910,23 +3910,21 @@ fn validateExternalAnnotation(env: *Env, f: ast.FnDecl, a: ast.Annotation) Infer
 /// recognized decorator are left untouched: builtins (`external`) validate
 /// elsewhere, and an unknown bare marker stays lenient (a lib may not be loaded).
 fn validateDecorators(env: *Env, program: ast.Program) InferError!void {
+    try refuseNonComptimeDecoratorParams(env, program);
     if (env.decorators.count() == 0) return;
     for (program.decls) |decl| switch (decl) {
-        .@"fn" => |f| try checkDecoratorAnnotations(env, f.annotations, f.name),
-        .type_ => |tdecl| switch (tdecl.shape) {
-            .record => {
-                try checkDecoratorAnnotations(env, tdecl.annotations, tdecl.name);
-                for (tdecl.recordFields()) |fld| try checkDecoratorAnnotations(env, fld.annotations, fld.name);
-                for (tdecl.methods) |m| try checkDecoratorAnnotations(env, m.annotations, m.name);
-            },
-            .enum_ => {
-                try checkDecoratorAnnotations(env, tdecl.annotations, tdecl.name);
-                for (tdecl.methods) |m| try checkDecoratorAnnotations(env, m.annotations, m.name);
-            },
+        .@"fn" => |f| try checkDecoratorAnnotations(env, program, f.annotations, .{ .name = f.name, .type_ = try fnDeclType(env, f.name) }),
+        .type_ => |tdecl| {
+            const self = try typeDeclType(env, tdecl.name);
+            try checkDecoratorAnnotations(env, program, tdecl.annotations, .{ .name = tdecl.name, .type_ = self });
+            if (tdecl.shape == .record) for (tdecl.recordFields()) |fld| {
+                try checkDecoratorAnnotations(env, program, fld.annotations, .{ .name = fld.name, .type_ = try fieldDeclType(env, tdecl, fld) });
+            };
+            for (tdecl.methods) |m| try checkDecoratorAnnotations(env, program, m.annotations, .{ .name = m.name, .type_ = null });
         },
         .behavior => |i| {
-            try checkDecoratorAnnotations(env, i.annotations, i.name);
-            for (i.methods) |m| try checkDecoratorAnnotations(env, m.annotations, m.name);
+            try checkDecoratorAnnotations(env, program, i.annotations, .{ .name = i.name, .type_ = env.namedType(i.name) catch null });
+            for (i.methods) |m| try checkDecoratorAnnotations(env, program, m.annotations, .{ .name = m.name, .type_ = null });
         },
         else => {},
     };
@@ -4001,52 +3999,613 @@ fn refuseUnknownAnnotationList(env: *Env, anns: []const ast.Annotation) InferErr
     }
 }
 
-/// Check one declaration's annotation list. `owner` names the annotated
-/// declaration (for diagnostics).
-fn checkDecoratorAnnotations(env: *Env, anns: []const ast.Annotation, owner: []const u8) InferError!void {
-    for (anns) |a| {
-        if (a.is_builtin) continue; // `@external`, … validated by their own pass.
-        const sig = env.decorators.get(a.name) orelse continue;
-        try checkDecoratorArgs(env, a, sig, owner);
+/// The declaration a decorator application annotates, as decision 280 (2)
+/// reads it: its name (diagnostics) and its type — the type itself, a field's
+/// type, a function's type — which `@Decl<T>` binds `T` to; null where the
+/// declaration has none (a method).
+const DecoratedDecl = struct {
+    name: []const u8,
+    type_: ?*T.Type,
+};
+
+/// A function's type as its signature registered it, copied so a decorator's
+/// `@Decl<…>` pattern binds against it without touching the binding.
+fn fnDeclType(env: *Env, name: []const u8) InferError!?*T.Type {
+    const t = env.lookup(name) orelse return null;
+    var seen = std.AutoHashMap(*T.TypeCell, *T.Type).init(env.arena);
+    defer seen.deinit();
+    return try instantiateType(env, t, &seen, .allVars);
+}
+
+/// The type a `type` declaration names, a fresh variable per type parameter.
+fn typeDeclType(env: *Env, name: []const u8) InferError!?*T.Type {
+    const td = env.lookupTypeDef(name) orelse return null;
+    const generics = switch (td) {
+        inline else => |d| d.genericParams,
+    };
+    const args = try env.arena.alloc(*T.Type, generics.len);
+    for (args) |*a| a.* = try env.freshVar();
+    return try env.namedTypeArgs(name, args);
+}
+
+/// A record field's declared type, the record's type parameters fresh
+/// variables. Null when it does not resolve here (its error is the field's).
+fn fieldDeclType(env: *Env, owner: ast.TypeDecl, fld: ast.Field) InferError!?*T.Type {
+    var map = std.StringHashMap(*T.Type).init(env.arena);
+    defer map.deinit();
+    for (owner.genericParams) |gp| try map.put(gp.name, try env.freshVar());
+    const saved = env.lastError;
+    return resolveTypeRefInContext(env, fld.typeRef, map) catch {
+        env.lastError = saved;
+        return null;
+    };
+}
+
+/// Decision 280 (0) — every parameter of a decorator after its `@Decl` is
+/// `comptime`, written out: its argument exists only while the program
+/// compiles. Refused at the parameter, in the module that declares it.
+fn refuseNonComptimeDecoratorParams(env: *Env, program: ast.Program) InferError!void {
+    for (program.decls) |decl| switch (decl) {
+        .type_ => |t| for (t.methods) |m| try refuseComptimeDefaults(env, m.params),
+        .behavior => |b| for (b.methods) |m| try refuseComptimeDefaults(env, m.params),
+        else => {},
+    };
+    for (program.decls) |decl| {
+        const name: []const u8, const params: []const ast.Param = switch (decl) {
+            .@"fn" => |f| .{ f.name, f.params },
+            .delegate => |d| .{ d.name, d.params },
+            else => continue,
+        };
+        if (!isDecoratorParams(params)) {
+            try refuseComptimeDefaults(env, params);
+            continue;
+        }
+        for (params[1..]) |p| {
+            if (p.modifier == .@"comptime") continue;
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: the decorator `{s}`'s parameter `{s}` is not `comptime`", .{ diagnostics.decorator_param_not_comptime, name, p.name });
+            const hint = try std.fmt.allocPrint(env.arena, "A decorator's arguments exist only while the program compiles: write `comptime {s}: …` (decision 280).", .{p.name});
+            env.lastError = TypeError.custom(msg, hint).withLoc(if (p.loc.line != 0) p.loc else p.typeLoc);
+            return error.TypeError;
+        }
     }
 }
 
-/// Type-check a single `#[name(args…)]` application's trailing arguments against
-/// the decorator's parameters (everything after `comptime _: @Decl`). V1: arity
-/// (honoring trailing defaults) + a per-argument lexical kind check (string /
-/// numeric / bool / enum-member), mirroring `validateExternalAnnotation`.
-fn checkDecoratorArgs(env: *Env, a: ast.Annotation, sig: envMod.DecoratorSig, owner: []const u8) InferError!void {
-    // Arity: required params ≤ args ≤ total params. A parameter is optional
-    // only when its default is closed (`comptimeMod.isClosedDefault`): the
-    // decorator body runs in its own module, where a default naming a binding
-    // of the declaring module has nothing to read — the same rule C-04 applies
-    // to a function's default across a module boundary.
-    var required: usize = 0;
-    for (sig.params, 0..) |p, i| {
-        const closed = if (p.default) |d| isClosedDefault(d) else false;
-        if (!closed) required = i + 1;
+/// A `comptime` parameter takes a default only in a decorator (decision 280
+/// (0)), where the annotation that leaves it out hands the body the default:
+/// no call site of an ordinary function fills one, so it is refused at the
+/// default — before 280 the parser refused it at the `=`.
+fn refuseComptimeDefaults(env: *Env, params: []const ast.Param) InferError!void {
+    for (params) |p| {
+        if (p.modifier != .@"comptime") continue;
+        const d = p.default orelse continue;
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: the `comptime` parameter `{s}` takes a default only in a decorator", .{ diagnostics.comptime_default_outside_decorator, p.name });
+        env.lastError = TypeError.custom(msg, "Pass the argument at every call, or make the function a decorator (`comptime decl: @Decl` first).").withLoc(d.getLoc());
+        return error.TypeError;
     }
-    if (a.args.len < required) {
-        const p = sig.params[required - 1];
-        if (p.default != null) {
-            const msg = try std.fmt.allocPrint(env.arena, "`#[{s}]` on `{s}` leaves out `{s}`, whose default names a binding the decorator body cannot read", .{ a.name, owner, p.name });
-            return decoratorError(env, a, msg, "A decorator argument's default must be closed — a literal, `true` / `false`, a sign, or an array / tuple of those; otherwise pass the argument.");
+}
+
+/// Check one declaration's annotation list.
+fn checkDecoratorAnnotations(env: *Env, program: ast.Program, anns: []const ast.Annotation, target: DecoratedDecl) InferError!void {
+    for (anns) |a| {
+        if (a.is_builtin) continue; // `@external`, … validated by their own pass.
+        const sig = env.decorators.get(a.name) orelse continue;
+        try checkDecoratorArgs(env, program, a, sig, target);
+    }
+}
+
+/// Which argument each parameter of a decorator takes (after its `@Decl`):
+/// `slots[p]` the index of parameter `p`'s argument, null when the annotation
+/// leaves it out; `rest` the arguments of the variadic last parameter, in order.
+pub const DecoratorArgMap = struct {
+    slots: []?usize,
+    rest: []const usize,
+};
+
+/// Decision 280 — the arguments of `#[name(args)]` meet the parameters as a
+/// call's do: positional ones first, in order, then labelled ones by name; a
+/// variadic last parameter (267) takes the positional ones left. Each refusal
+/// is located at the argument.
+fn mapDecoratorArgs(env: *Env, a: ast.Annotation, sig: envMod.DecoratorSig, owner: []const u8) InferError!DecoratorArgMap {
+    const params = sig.params;
+    const slots = try env.arena.alloc(?usize, params.len);
+    @memset(slots, null);
+    var rest: std.ArrayListUnmanaged(usize) = .empty;
+    const variadicAt: ?usize = if (params.len > 0 and params[params.len - 1].variadic) params.len - 1 else null;
+    var next: usize = 0;
+    var labelled = false;
+    for (a.args, 0..) |_, i| {
+        if (a.labelOf(i)) |label| {
+            labelled = true;
+            const at = for (params, 0..) |p, j| {
+                if (std.mem.eql(u8, p.name, label)) break j;
+            } else {
+                const msg = try std.fmt.allocPrint(env.arena, "`#[{s}]` has no parameter `{s}`", .{ a.name, label });
+                return decoratorArgError(env, a, i, msg, "A label names one of the decorator's parameters (after its `@Decl`).");
+            };
+            if (variadicAt != null and at == variadicAt.?) {
+                const msg = try std.fmt.allocPrint(env.arena, "`#[{s}]`'s `{s}` is variadic and takes no label", .{ a.name, label });
+                return decoratorArgError(env, a, i, msg, "Pass the variadic parameter's arguments positionally, after the fixed ones (decision 267).");
+            }
+            if (slots[at] != null) {
+                const msg = try std.fmt.allocPrint(env.arena, "`#[{s}]` gives `{s}` twice", .{ a.name, label });
+                return decoratorArgError(env, a, i, msg, "Each parameter takes one argument.");
+            }
+            slots[at] = i;
+            continue;
         }
+        if (labelled) {
+            const msg = try std.fmt.allocPrint(env.arena, "`#[{s}]` argument {d} is positional after a labelled one", .{ a.name, i + 1 });
+            return decoratorArgError(env, a, i, msg, "Write the positional arguments first, then the labelled ones.");
+        }
+        if (variadicAt) |v| if (next >= v) {
+            try rest.append(env.arena, i);
+            continue;
+        };
+        if (next >= params.len) {
+            const msg = try std.fmt.allocPrint(env.arena, "`#[{s}]` on `{s}` expects {d} argument(s), got {d}", .{ a.name, owner, params.len, a.args.len });
+            return decoratorArgError(env, a, i, msg, "Match the decorator's declared parameters (after the leading `comptime _: @Decl`).");
+        }
+        slots[next] = i;
+        next += 1;
     }
-    if (a.args.len < required or a.args.len > sig.params.len) {
-        const msg = try std.fmt.allocPrint(env.arena, "`#[{s}]` on `{s}` expects {d} argument(s), got {d}", .{ a.name, owner, sig.params.len, a.args.len });
+    return .{ .slots = slots, .rest = rest.items };
+}
+
+/// A default an omitted decorator argument takes: one `isClosedDefault`
+/// admits, or a variant written `.Name` — resolved against the parameter's
+/// type in the decorator's own module.
+fn isClosedDecoratorDefault(e: ast.Expr) bool {
+    if (e == .identifier and e.identifier.kind == .dotIdent) return true;
+    return isClosedDefault(e);
+}
+
+/// Type-check a single `#[name(args…)]` application against the decorator's
+/// signature (decision 280): `@Decl<T>`'s pattern against the annotated
+/// declaration, then every argument against its parameter, `T` bound — at
+/// the argument.
+fn checkDecoratorArgs(env: *Env, program: ast.Program, a: ast.Annotation, sig: envMod.DecoratorSig, target: DecoratedDecl) InferError!void {
+    const owner = target.name;
+    const map = try mapDecoratorArgs(env, a, sig, owner);
+    // An omitted parameter takes its default only when the default is closed
+    // (`isClosedDecoratorDefault`): the decorator body runs in its own module,
+    // where a default naming a binding of the declaring module has nothing to
+    // read — the same rule C-04 applies to a function's default across a
+    // module boundary.
+    for (sig.params, 0..) |p, j| {
+        if (p.variadic or map.slots[j] != null) continue;
+        if (p.default) |d| {
+            if (isClosedDecoratorDefault(d)) continue;
+            const msg = try std.fmt.allocPrint(env.arena, "`#[{s}]` on `{s}` leaves out `{s}`, whose default names a binding the decorator body cannot read", .{ a.name, owner, p.name });
+            return decoratorError(env, a, msg, "A decorator argument's default must be closed — a literal, `true` / `false`, a sign, a variant `.Name`, or an array / tuple of those; otherwise pass the argument.");
+        }
+        const msg = try std.fmt.allocPrint(env.arena, "`#[{s}]` on `{s}` expects {d} argument(s), got {d} — `{s}` is not given", .{ a.name, owner, sig.params.len, a.args.len, p.name });
         return decoratorError(env, a, msg, "Match the decorator's declared parameters (after the leading `comptime _: @Decl`).");
     }
 
-    // Per-argument kind check against the declared parameter type.
-    for (a.args, 0..) |arg, i| {
-        const want = paramTypeName(sig.params[i].typeRef) orelse continue; // non-simple type → lenient
-        if (!argMatchesType(arg, want)) {
-            const msg = try std.fmt.allocPrint(env.arena, "`#[{s}]` argument {d} must be {s}", .{ a.name, i + 1, want });
-            // C-21 — located at the annotation, as every decorator refusal is.
-            return decoratorError(env, a, msg, "Decorator arguments are type-checked against the decorator's signature.");
+    // The decorator's parameter types, its type parameters fresh: resolved
+    // where it is declared for a local decorator, from its registered
+    // signature (whose types came with the import) for an imported one.
+    var generics = std.StringHashMap(*T.Type).init(env.arena);
+    defer generics.deinit();
+    for (sig.generics) |gp| try generics.put(gp.name, try env.freshVar());
+    const declWant = if (sig.decl) |d| try resolveDecoratorParamType(env, d, generics) else null;
+    const wants = try env.arena.alloc(?*T.Type, sig.params.len);
+    for (sig.params, 0..) |p, j| wants[j] = if (p.typeRef == .typeparam) null else try resolveDecoratorParamType(env, p.typeRef, generics);
+
+    // Decision 280 (2) — `@Decl<P>`: `P` meets the annotated declaration's
+    // type, binding the type parameters it names; a declaration that does
+    // not match is refused at the annotation.
+    if (declWant) |dw| if (dw.deref().* == .named and dw.deref().named.args.len == 1) {
+        const pattern = dw.deref().named.args[0];
+        if (target.type_) |actual| {
+            // Spelled before unifying, which binds the parameters it can.
+            const prevMap = env.fnGenericMap;
+            env.fnGenericMap = &generics;
+            const spelled = try decoratorSpelling(env, pattern, 0);
+            env.fnGenericMap = prevMap;
+            const saved = env.lastError;
+            unifyUnlocated(env, pattern, actual) catch {
+                env.lastError = saved;
+                const msg = try std.fmt.allocPrint(env.arena, "`#[{s}]` expects a declaration of type `{s}`, and `{s}` is `{s}`", .{ a.name, spelled, owner, try decoratorSpelling(env, actual, 0) });
+                return decoratorError(env, a, msg, "The decorator's `@Decl<…>` names the shape of the declaration it annotates (decision 280).");
+            };
+        }
+    };
+
+    const values = try env.arena.alloc(envMod.DecoratorArgValue, sig.params.len);
+    for (sig.params, 0..) |p, j| {
+        const isType = p.typeRef == .typeparam;
+        if (p.variadic) {
+            const elem: ?*T.Type = if (wants[j]) |w| blk: {
+                const d = w.deref();
+                break :blk if (d.* == .named and std.mem.eql(u8, d.named.name, "array") and d.named.args.len == 1) d.named.args[0] else null;
+            } else null;
+            var joined: std.ArrayListUnmanaged(u8) = .empty;
+            try joined.append(env.arena, '[');
+            for (map.rest, 0..) |i, k| {
+                const e = try checkDecoratorArg(env, program, a, i, p, elem);
+                if (k > 0) try joined.appendSlice(env.arena, ", ");
+                try joined.appendSlice(env.arena, (try decoratorArgValue(env, program, e.*, a.args[i], elem, false, 0)).source);
+            }
+            try joined.append(env.arena, ']');
+            values[j] = .{ .source = joined.items, .built = true };
+            continue;
+        }
+        if (map.slots[j]) |i| {
+            const e = try checkDecoratorArg(env, program, a, i, p, wants[j]);
+            values[j] = try decoratorArgValue(env, program, e.*, a.args[i], wants[j], isType, 0);
+        } else {
+            const d = p.default.?;
+            values[j] = try decoratorArgValue(env, program, d, try defaultLexeme(env.arena, d), wants[j], isType, 0);
         }
     }
+    if (a.loc) |l| try env.decoratorArgValues.put(env.arena, l, values);
+}
+
+/// A decorator parameter's type in the applying module. Null when a name it
+/// spells is not in scope here (a namespaced std decorator's own types):
+/// that argument is checked by the body alone, as before decision 280.
+fn resolveDecoratorParamType(env: *Env, ref: ast.TypeRef, generics: std.StringHashMap(*T.Type)) InferError!?*T.Type {
+    const saved = env.lastError;
+    const savedLoc = env.typeRefLoc;
+    defer env.typeRefLoc = savedLoc;
+    return resolveTypeRefInContext(env, ref, generics) catch |err| switch (err) {
+        error.TypeError => {
+            env.lastError = saved;
+            return null;
+        },
+        else => |e| return e,
+    };
+}
+
+/// The argument `a.args[i]` as an expression, every node located where the
+/// argument stands in the file: the lexeme is a slice of the source, so it is
+/// lexed behind as many line breaks and spaces as its start.
+fn parseDecoratorArg(env: *Env, lexeme: []const u8, at: ast.Loc) InferError!*ast.Expr {
+    const pad = (at.line -| 1) + (at.col -| 1);
+    const src = try env.arena.alloc(u8, pad + lexeme.len);
+    @memset(src[0..at.line -| 1], '\n');
+    @memset(src[at.line -| 1..pad], ' ');
+    @memcpy(src[pad..], lexeme);
+    var lx = Lexer.init(src);
+    const tokens = lx.scanAll(env.arena) catch return error.OutOfMemory;
+    var p = Parser.init(tokens);
+    const node = try env.arena.create(ast.Expr);
+    node.* = p.parseExpr(env.arena) catch {
+        const msg = try std.fmt.allocPrint(env.arena, "`{s}` is not one expression", .{lexeme});
+        env.lastError = TypeError.custom(msg, "A decorator argument is one value.").withLoc(at);
+        return error.TypeError;
+    };
+    return node;
+}
+
+/// The module-level `val` (not `var`) of `program` named `name`.
+fn moduleVal(program: ast.Program, name: []const u8) ?ast.ValDecl {
+    for (program.decls) |d| switch (d) {
+        .val => |v| if (std.mem.eql(u8, v.name, name)) return v,
+        else => {},
+    };
+    return null;
+}
+
+/// Decision 280 (0) — the part of a decorator argument not known while the
+/// program compiles: a call of a function (`env("X")`, `now()`) — a
+/// constructor builds a value from known ones —, a module `var`, or a module
+/// `val` holding either. Null when every part is known.
+fn decoratorArgNotKnownAt(env: *Env, program: ast.Program, e: ast.Expr, depth: usize) ?ast.Loc {
+    if (depth > 16) return null;
+    switch (e) {
+        .call => |c| {
+            if (c.kind != .call) return c.loc;
+            const call = c.kind.call;
+            if (call.receiver == null and !call.is_builtin and env.lookupTypeDef(call.callee) != null) {
+                for (call.args) |arg| if (decoratorArgNotKnownAt(env, program, arg.value.*, depth + 1)) |l| return l;
+                return null;
+            }
+            return c.loc;
+        },
+        .identifier => |id| switch (id.kind) {
+            .ident => |n| {
+                const v = moduleVal(program, n) orelse return null;
+                if (v.mutable) return id.loc;
+                return decoratorArgNotKnownAt(env, program, v.value.*, depth + 1);
+            },
+            else => return null,
+        },
+        .unaryOp => |u| return decoratorArgNotKnownAt(env, program, u.expr.*, depth + 1),
+        .binaryOp => |b| return decoratorArgNotKnownAt(env, program, b.lhs.*, depth + 1) orelse
+            decoratorArgNotKnownAt(env, program, b.rhs.*, depth + 1),
+        .collection => |col| switch (col.kind) {
+            .grouped => |inner| return decoratorArgNotKnownAt(env, program, inner.*, depth + 1),
+            .arrayLit => |al| {
+                for (al.elems) |x| if (decoratorArgNotKnownAt(env, program, x, depth + 1)) |l| return l;
+                return null;
+            },
+            .tupleLit => |tl| {
+                for (tl.elems) |x| if (decoratorArgNotKnownAt(env, program, x, depth + 1)) |l| return l;
+                return null;
+            },
+            else => return null,
+        },
+        else => return null,
+    }
+}
+
+/// One argument against its parameter (decision 280 (1), (3), (4)).
+fn checkDecoratorArg(env: *Env, program: ast.Program, a: ast.Annotation, i: usize, p: ast.Param, want: ?*T.Type) InferError!*ast.Expr {
+    const loc = a.argLoc(i) orelse ast.Loc{ .line = 0, .col = 0 };
+    const e = try parseDecoratorArg(env, a.args[i], loc);
+    try checkDecoratorArgExpr(env, program, a, i, e, p, want, loc);
+    return e;
+}
+
+fn checkDecoratorArgExpr(env: *Env, program: ast.Program, a: ast.Annotation, i: usize, e: *ast.Expr, p: ast.Param, want: ?*T.Type, loc: ast.Loc) InferError!void {
+    if (p.typeRef == .typeparam) return checkDecoratorTypeArg(env, program, a, e.*, p, loc);
+    if (decoratorArgNotKnownAt(env, program, e.*, 0)) |at| {
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]`'s argument `{s}` is not known while the program compiles", .{ diagnostics.decorator_arg_not_comptime, a.name, a.args[i] });
+        env.lastError = TypeError.custom(msg, "A decorator argument is a literal, a function, a type, a field `.name`, a variant, or a value built from those by a constructor (decision 280).").withLoc(at);
+        return error.TypeError;
+    }
+    const w = want orelse return;
+    if (e.* == .identifier and e.identifier.kind == .dotIdent) return checkDotNameArg(env, a, e.identifier.kind.dotIdent, p, w, loc);
+    // The parameter's type is the argument's expectation, as a call's is
+    // (an integer literal takes the integer type asked for, `.Name` its enum).
+    const prevExpected = env.expectedType;
+    env.expectedType = optionalInner(w) orelse w;
+    const got = blk: {
+        defer env.expectedType = prevExpected;
+        if (e.* == .identifier and e.identifier.kind == .ident and env.lookup(e.identifier.kind.ident) == null) {
+            if (moduleVal(program, e.identifier.kind.ident)) |v| {
+                if (v.typeAnnotation) |ta| if (try resolveDecoratorParamType(env, ta, std.StringHashMap(*T.Type).init(env.arena))) |t| break :blk t;
+                break :blk try inferExpr(env, v.value.*);
+            }
+        }
+        break :blk try inferExpr(env, e.*);
+    };
+    // A value meets `?T` as a `T` (`null` meets it whole).
+    const target = if (optionalInner(w)) |inner| (if (optionalInner(got) == null) inner else w) else w;
+    const saved = env.lastError;
+    unifyArgument(env, target, got, loc) catch |err| switch (err) {
+        error.TypeError => {
+            env.lastError = saved;
+            const msg = try std.fmt.allocPrint(env.arena, "type mismatch: `#[{s}]`'s `{s}` expects `{s}`, got `{s}`", .{ a.name, p.name, try decoratorSpelling(env, w, 0), try decoratorSpelling(env, got, 0) });
+            env.lastError = TypeError.custom(msg, "A decorator argument is checked against its parameter like a call's (decision 280).").withLoc(loc);
+            return error.TypeError;
+        },
+        else => |x| return x,
+    };
+}
+
+/// A type as a decorator diagnostic spells it: a function `fn(A) -> R`, an
+/// unbound type parameter `_`.
+fn decoratorSpelling(env: *Env, t: *T.Type, depth: usize) InferError![]const u8 {
+    const d = t.deref();
+    if (depth > 8) return "…";
+    switch (d.*) {
+        .func => |f| {
+            var buf: std.ArrayListUnmanaged(u8) = .empty;
+            try buf.appendSlice(env.arena, "fn(");
+            for (f.params, 0..) |pt, i| {
+                if (i > 0) try buf.appendSlice(env.arena, ", ");
+                try buf.appendSlice(env.arena, try decoratorSpelling(env, pt, depth + 1));
+            }
+            try buf.appendSlice(env.arena, ") -> ");
+            try buf.appendSlice(env.arena, try decoratorSpelling(env, f.ret, depth + 1));
+            return buf.items;
+        },
+        .typeVar => return if (env.fnGenericMap != null) genericSpelling(env, d, depth) else "_",
+        .named => |n| {
+            if (std.mem.eql(u8, n.name, "optional") and n.args.len == 1) return std.fmt.allocPrint(env.arena, "?{s}", .{try decoratorSpelling(env, n.args[0], depth + 1)});
+            if (std.mem.eql(u8, n.name, "array") and n.args.len == 1) return std.fmt.allocPrint(env.arena, "{s}[]", .{try decoratorSpelling(env, n.args[0], depth + 1)});
+            if (std.mem.eql(u8, n.name, field_key_type_name) and n.args.len == 1) return std.fmt.allocPrint(env.arena, "Type.Field<{s}>", .{try decoratorSpelling(env, n.args[0], depth + 1)});
+            if (n.args.len == 0) return n.name;
+            var buf: std.ArrayListUnmanaged(u8) = .empty;
+            try buf.appendSlice(env.arena, n.name);
+            try buf.append(env.arena, '<');
+            for (n.args, 0..) |x, i| {
+                if (i > 0) try buf.appendSlice(env.arena, ", ");
+                try buf.appendSlice(env.arena, try decoratorSpelling(env, x, depth + 1));
+            }
+            try buf.append(env.arena, '>');
+            return buf.items;
+        },
+        else => return genericSpelling(env, d, depth),
+    }
+}
+
+/// `comptime t: type` (decision 280 (1), lg2-f) — the argument names a type:
+/// a type, an alias, a behavior or a primitive in scope here.
+fn checkDecoratorTypeArg(env: *Env, program: ast.Program, a: ast.Annotation, e: ast.Expr, p: ast.Param, loc: ast.Loc) InferError!void {
+    if (e == .identifier and e.identifier.kind == .ident) {
+        const n = e.identifier.kind.ident;
+        if (isTypeArgName(env, program, n)) return;
+        if (env.lookup(n) == null) {
+            env.lastError = TypeError.unknownTypeName(n).withLoc(loc);
+            return error.TypeError;
+        }
+    }
+    const got = try inferExpr(env, e);
+    const msg = try std.fmt.allocPrint(env.arena, "type mismatch: `#[{s}]`'s `{s}` expects a `type`, got `{s}`", .{ a.name, p.name, try decoratorSpelling(env, got, 0) });
+    env.lastError = TypeError.custom(msg, "Pass the type itself (`MailSender`), never its name as a string (decision 281).").withLoc(loc);
+    return error.TypeError;
+}
+
+/// A name a `type` argument may be: a primitive, a type, an alias or a
+/// behavior this module declares or imports.
+fn isTypeArgName(env: *Env, program: ast.Program, n: []const u8) bool {
+    if (isKnownTypeName(env, n) or env.lookupTypeAlias(n) != null or env.importedBehaviorDecls.contains(n)) return true;
+    for (program.decls) |d| switch (d) {
+        .behavior => |b| if (std.mem.eql(u8, b.name, n)) return true,
+        .type_ => |t| if (std.mem.eql(u8, t.name, n)) return true,
+        else => {},
+    };
+    // An imported record, struct or enum binds its constructor.
+    if (env.lookup(n)) |t| {
+        const d = t.deref();
+        if (d.* == .func and d.func.ret.isNamed(n)) return true;
+    }
+    return false;
+}
+
+/// The name a `Type.Field<T>` holds the `T` of, after std's associated-type
+/// rewrite (`assoc_types.zig`).
+const field_key_type_name = "Type__Field";
+
+/// `.name` (decision 280 (3), (4)) — against a `Type.Field<T>` a field of `T`,
+/// against an enum one of its variants; the name exactly as declared.
+fn checkDotNameArg(env: *Env, a: ast.Annotation, name: []const u8, p: ast.Param, want: *T.Type, loc: ast.Loc) InferError!void {
+    const w = (optionalInner(want) orelse want).deref();
+    if (w.* == .named and std.mem.eql(u8, w.named.name, field_key_type_name) and w.named.args.len == 1) {
+        const t = w.named.args[0].deref();
+        if (t.* != .named) {
+            const msg = try std.fmt.allocPrint(env.arena, "`#[{s}]`'s `.{s}` names a field, and `{s}`'s `Type.Field<…>` has no type to read it from", .{ a.name, name, p.name });
+            env.lastError = TypeError.custom(msg, "`.name` resolves against the `T` of `Type.Field<T>`: bind it through the decorator's `@Decl<T>` (decision 280 (2)).").withLoc(loc);
+            return error.TypeError;
+        }
+        if (recordFieldNames(env, t.named.name)) |fields| {
+            for (fields) |f| if (std.mem.eql(u8, f.name, name)) return;
+        }
+        env.lastError = TypeError.unknownField(t.named.name, name).withLoc(loc);
+        return error.TypeError;
+    }
+    if (w.* == .named) if (env.lookupTypeDef(w.named.name)) |td| if (td == .enum_) {
+        for (td.enum_.variants) |v| if (std.mem.eql(u8, v.name, name)) return;
+        const msg = try std.fmt.allocPrint(env.arena, "`.{s}` names no variant of `{s}`", .{ name, w.named.name });
+        env.lastError = TypeError.custom(msg, "A variant is written exactly as declared, case included (decision 280 (4)).").withLoc(loc);
+        return error.TypeError;
+    };
+    const msg = try std.fmt.allocPrint(env.arena, "type mismatch: `#[{s}]`'s `{s}` is `{s}`, and `.{s}` names a field or a variant", .{ a.name, p.name, try decoratorSpelling(env, want, 0), name });
+    env.lastError = TypeError.custom(msg, "`.name` is a field of `T` against `Type.Field<T>`, or a variant against an enum.").withLoc(loc);
+    return error.TypeError;
+}
+
+/// The fields a record or struct type declares, in order; null for any other.
+fn recordFieldNames(env: *Env, name: []const u8) ?[]const envMod.FieldDef {
+    const td = env.lookupTypeDef(name) orelse return null;
+    return switch (td) {
+        .record => |r| r.fields,
+        .struct_ => |s| s.fields,
+        .enum_ => null,
+    };
+}
+
+/// Decision 280 (1) — what parameter `p` hands the decorator body once its
+/// argument is typed. A string, a number or a `bool` is the literal term it
+/// is; a function or a type is its name, as before decision 280 (what the body
+/// reads of one is question s24-a); anything else — an array, a record, a
+/// variant, `null`, a field key — is built by a function of the decorator
+/// module, a field key `.name` as the `Type.Field<T>` record (`name`,
+/// `typeName`, `annotations`), and a module `val` as its value.
+fn decoratorArgValue(env: *Env, program: ast.Program, e: ast.Expr, lexeme: []const u8, want: ?*T.Type, isType: bool, depth: usize) InferError!envMod.DecoratorArgValue {
+    const plain: envMod.DecoratorArgValue = .{ .source = lexeme, .built = false };
+    if (isType or depth > 16) return plain;
+    switch (e) {
+        .literal => |l| switch (l.kind) {
+            .stringLit, .numberLit => return plain,
+            else => {},
+        },
+        .unaryOp => |u| if (u.expr.* == .literal and u.expr.literal.kind == .numberLit) return plain,
+        .identifier => |id| switch (id.kind) {
+            .ident => |n| {
+                if (std.mem.eql(u8, n, "true") or std.mem.eql(u8, n, "false")) return plain;
+                if (env.lookup(n) == null) if (moduleVal(program, n)) |v| {
+                    return decoratorArgValue(env, program, v.value.*, try defaultLexeme(env.arena, v.value.*), want, false, depth + 1);
+                };
+                return plain;
+            },
+            .dotIdent => |n| if (want) |w| {
+                const d = (optionalInner(w) orelse w).deref();
+                if (d.* == .named and std.mem.eql(u8, d.named.name, field_key_type_name) and d.named.args.len == 1) {
+                    const t = d.named.args[0].deref();
+                    if (t.* == .named) return .{ .source = fieldKeySource(env, program, t.named.name, n) catch return error.OutOfMemory, .built = true };
+                }
+            },
+            else => {},
+        },
+        else => {},
+    }
+    return .{ .source = lexeme, .built = true };
+}
+
+/// `.name` against `Type.Field<T>` as the record the body reads (decision
+/// 308): `__bp_FieldKey(name, typeName, annotations)`, which the decorator
+/// module lowers to the map a `decl.fields` entry is. The type name and the
+/// field's annotations come from `T`'s declaration when this module declares
+/// it; a type imported from another module gives its field type as the
+/// checker spells it and no annotations.
+fn fieldKeySource(env: *Env, program: ast.Program, typeName: []const u8, field: []const u8) (InferError || std.Io.Writer.Error)![]const u8 {
+    var out: std.Io.Writer.Allocating = .init(env.arena);
+    const w = &out.writer;
+    try w.writeAll("__bp_FieldKey(");
+    try writeBpString(w, field);
+    try w.writeAll(", ");
+    var local: ?ast.Field = null;
+    for (program.decls) |d| switch (d) {
+        .type_ => |td| if (td.shape == .record and std.mem.eql(u8, td.name, typeName)) {
+            for (td.recordFields()) |f| if (std.mem.eql(u8, f.name, field)) {
+                local = f;
+            };
+        },
+        else => {},
+    };
+    if (local) |f| {
+        try writeBpString(w, try declTypeName(env.arena, f.typeRef));
+        try w.writeAll(", [");
+        for (f.annotations, 0..) |an, i| {
+            if (i > 0) try w.writeAll(", ");
+            try w.writeAll("__bp_DeclAnnotation(");
+            try writeBpString(w, an.name);
+            try w.writeAll(", [");
+            for (an.writtenArgs(), 0..) |arg, k| {
+                if (k > 0) try w.writeAll(", ");
+                try writeBpString(w, arg);
+            }
+            try w.writeAll("])");
+        }
+        try w.writeAll("])");
+    } else {
+        const spelled: []const u8 = if (recordFieldNames(env, typeName)) |fields| for (fields) |f| {
+            if (std.mem.eql(u8, f.name, field)) break try genericSpelling(env, f.type_, 0);
+        } else "" else "";
+        try writeBpString(w, spelled);
+        try w.writeAll(", [])");
+    }
+    return out.written();
+}
+
+/// `s` as a botopink string literal.
+fn writeBpString(w: *std.Io.Writer, s: []const u8) std.Io.Writer.Error!void {
+    try w.writeByte('"');
+    for (s) |c| switch (c) {
+        '"' => try w.writeAll("\\\""),
+        '\\' => try w.writeAll("\\\\"),
+        '$' => try w.writeAll("\\$"),
+        '\n' => try w.writeAll("\\n"),
+        '\r' => try w.writeAll("\\r"),
+        '\t' => try w.writeAll("\\t"),
+        else => try w.writeByte(c),
+    };
+    try w.writeByte('"');
+}
+
+/// The zero-argument function of the decorator module that builds a
+/// parameter's value (`DecoratorArgValue.built`).
+fn builtArgFn(env: *Env, name: []const u8, source: []const u8) InferError!ast.FnDecl {
+    const src = try std.fmt.allocPrint(env.arena, "fn {s}() {{ return {s}; }}", .{ name, source });
+    var lx = Lexer.init(src);
+    const tokens = lx.scanAll(env.arena) catch return error.OutOfMemory;
+    var p = Parser.init(tokens);
+    const program = p.parse(env.arena) catch return error.OutOfMemory;
+    if (program.decls.len != 1 or program.decls[0] != .@"fn") return error.OutOfMemory;
+    return program.decls[0].@"fn";
+}
+
+/// A decorator refusal located at argument `i`.
+fn decoratorArgError(env: *Env, a: ast.Annotation, i: usize, message: []const u8, hint: []const u8) InferError {
+    var e = TypeError.custom(message, hint);
+    if (a.argLoc(i)) |loc| e = e.withLoc(loc);
+    env.lastError = e;
+    return error.TypeError;
 }
 
 // ── generic decorator invocation (annotation processors, P2) ──────────────────
@@ -4101,20 +4660,18 @@ fn runDeclDecorators(
             .seq = 0,
         });
 
-        // A parameter the annotation leaves out takes its declared default,
-        // written as the lexeme an annotation argument would be (arity was
-        // checked: every omitted parameter has a closed default).
-        const given = a.args.len;
-        var total = given;
-        while (total < sig.params.len) : (total += 1) {
-            const d = sig.params[total].default orelse break;
-            if (!isClosedDefault(d)) break;
-        }
-        var plain = try env.arena.alloc(template.PlainArg, total);
-        for (0..total) |i| {
-            const pname = if (i < sig.params.len) sig.params[i].name else "_";
-            const source = if (i < given) a.args[i] else try defaultLexeme(env.arena, sig.params[i].default.?);
-            plain[i] = .{ .paramName = pname, .source = source };
+        // Decision 280 — each parameter's value as `checkDecoratorArgs` typed
+        // it, in parameter order: a literal term, or a function of the
+        // decorator module that builds it (`DecoratorArgValue.built`).
+        const values: []const envMod.DecoratorArgValue = (if (a.loc) |l| env.decoratorArgValues.get(l) else null) orelse &.{};
+        var plain = try env.arena.alloc(template.PlainArg, values.len);
+        var builtFns: std.ArrayListUnmanaged(ast.FnDecl) = .empty;
+        for (values, 0..) |v, j| {
+            plain[j] = .{ .paramName = sig.params[j].name, .source = v.source };
+            if (!v.built) continue;
+            const fname = try std.fmt.allocPrint(env.arena, "__bp_decorator_arg_{d}", .{j + 1});
+            try builtFns.append(env.arena, try builtArgFn(env, fname, v.source));
+            plain[j].call = fname;
         }
 
         // Diagnostics point at the annotation. A `failAt` span has no source text
@@ -4130,11 +4687,9 @@ fn runDeclDecorators(
         // (a package record an imported helper builds) travel with them
         // (`block_eval.typesReached`); the evaluator's own (`DeclKind`,
         // `Span`) are injected by it.
-        const carried = try env.arena.alloc(ast.FnDecl, 1 + found.fns.len);
-        carried[0] = dfn;
-        @memcpy(carried[1..], found.fns);
+        const carried = try std.mem.concat(env.arena, ast.FnDecl, &.{ &.{dfn}, found.fns, builtFns.items });
         const reached = try blockEval.typesReached(env, carried, &.{ "DeclKind", "Span", "Decl" });
-        const support = try std.mem.concat(env.arena, ast.FnDecl, &.{ found.fns, reached.fns });
+        const support = try std.mem.concat(env.arena, ast.FnDecl, &.{ found.fns, reached.fns, builtFns.items });
         const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, dfn, support, reached.types, handle, plain, &env.comptimeTraces) catch {
             return decoratorError(env, a, "the decorator evaluator failed to run", "Decorator bodies run in a persistent `erl` process at compile time — check that `erl` is on PATH.");
         };
@@ -4526,37 +5081,6 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
         },
         else => {},
     };
-}
-
-/// The simple (named) type of a parameter, or null for arrays/optionals/generics
-/// where the lexical check is skipped (kept lenient in V1).
-fn paramTypeName(tr: ast.TypeRef) ?[]const u8 {
-    return switch (tr) {
-        .named => |n| n,
-        else => null,
-    };
-}
-
-/// True when the raw annotation argument lexeme is consistent with `typeName`.
-/// Annotation args reach inference as source lexemes, so this is a lexical (not
-/// full-expression) check: enough to catch `#[value(123)]` where a string is
-/// required, while staying permissive for user/named types.
-fn argMatchesType(arg: []const u8, typeName: []const u8) bool {
-    if (arg.len == 0) return true;
-    if (std.mem.eql(u8, typeName, "string")) {
-        return arg[0] == '"';
-    }
-    if (std.mem.eql(u8, typeName, "bool")) {
-        return std.mem.eql(u8, arg, "true") or std.mem.eql(u8, arg, "false");
-    }
-    // Numeric primitives: a leading digit or sign (covers i32/i64/f32/f64/u*).
-    if (std.mem.startsWith(u8, typeName, "i") or std.mem.startsWith(u8, typeName, "u") or
-        std.mem.startsWith(u8, typeName, "f"))
-    {
-        const c = arg[0];
-        return std.ascii.isDigit(c) or c == '-' or c == '+';
-    }
-    return true; // enum member / named type → lenient (full check is the body's job).
 }
 
 /// The index of the element labeled `label` (decision 8 §6), or null when no

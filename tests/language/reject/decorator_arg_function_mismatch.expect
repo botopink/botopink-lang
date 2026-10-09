@@ -1,0 +1,2 @@
+type mismatch: `#[check]`'s `rule` expects `?fn(Account) -> bool`, got `fn(Order) -> bool`
+25:21

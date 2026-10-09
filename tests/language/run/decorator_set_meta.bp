@@ -5,7 +5,7 @@
 //// read is a string constant — it never becomes run-time code of the
 //// decorator. `@typeInfo(X).name` answers the declaration's own name.
 
-fn entity(comptime decl: @Decl, table: string) {
+fn entity(comptime decl: @Decl, comptime table: string) {
     var names: string[] = [];
     decl.fields.forEach({ f -> names.push(f.name) });
     decl.setMeta("table", table);
@@ -16,7 +16,7 @@ fn audited(comptime decl: @Decl) {
     decl.setMeta("table", "audit_" + decl.name);
 }
 
-fn route(comptime decl: @Decl, path: string) {
+fn route(comptime decl: @Decl, comptime path: string) {
     decl.setMeta("path", path);
 }
 

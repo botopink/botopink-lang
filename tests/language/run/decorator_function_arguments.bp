@@ -1,0 +1,48 @@
+//// Decision 280 (1), (2), example 4 — function arguments typed by the
+//// annotated function: `@Decl<fn(route: Route<P, D>) -> View>` binds `P`
+//// and `D` from the page, so `paths` must be an `fn() -> #(P, D)[]` and
+//// `head` an `fn(p: P, d: D) -> Head` of those same types. A function of
+//// another shape is refused at the argument
+//// (`reject/decorator_function_argument_mismatch`), a page of another shape
+//// at the annotation (`reject/decorator_decl_pattern_return`).
+
+type Route<P, D>(params: P, data: D)
+
+type View(html: string)
+
+type Head(title: string)
+
+type BlogParams(slug: string)
+
+type Post(title: string, body: string)
+
+fn page<P, D>(
+    comptime decl: @Decl<fn(route: Route<P, D>) -> View>,
+    comptime seg: string,
+    comptime paths: ?fn() -> #(P, D)[] = null,
+    comptime head: ?fn(p: P, d: D) -> Head = null,
+) {
+    decl.setMeta("seg", seg);
+}
+
+#[page("blog/[slug]", paths = allPosts, head = postHead)]
+fn blogPage(route: Route<BlogParams, Post>) -> View {
+    val post: Post = route.data;
+    return View(html: post.title);
+}
+
+fn allPosts() -> #(BlogParams, Post)[] {
+    return [#(BlogParams(slug: "a"), Post(title: "A", body: "…"))];
+}
+
+fn postHead(p: BlogParams, d: Post) -> Head {
+    return Head(title: d.title + " /" + p.slug);
+}
+
+pub fn main() {
+    @print(@typeInfo(blogPage).meta.page.seg);
+    for (allPosts()) { pair ->
+        @print(blogPage(Route(params: pair._0, data: pair._1)).html);
+        @print(postHead(pair._0, pair._1).title);
+    }
+}

@@ -1,0 +1,23 @@
+//// Decision 280 — a labelled decorator argument names a parameter; a label
+//// the decorator does not declare is refused at it.
+
+import {types.Type} from "std";
+
+pub type Code { Custom, Mismatch }
+
+fn check<T>(
+    comptime decl: @Decl<T>,
+    comptime message: string,
+    comptime rule: ?fn(v: T) -> bool = null,
+    comptime at: ?Type.Field<T> = null,
+    comptime code: Code = .Custom,
+) {
+    decl.setMeta("message", message);
+}
+
+#[check("taken", where = .password)]
+type Account(password: string, confirm: string)
+
+pub fn main() {
+    @print("unreached");
+}

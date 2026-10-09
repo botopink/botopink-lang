@@ -2391,7 +2391,7 @@ fn main() {
 ```
 
 ```botopink
-fn entity(comptime decl: @Decl, table: string) {
+fn entity(comptime decl: @Decl, comptime table: string) {
     var cols: string[] = [];
     decl.fields.forEach({ f -> cols.push(f.name + ": string") });
     decl.setMeta("table", table);
@@ -2413,6 +2413,70 @@ fn main() {
     @print(header(City.Columns(name: "n", people: "p")));   // n|p
 }
 ```
+
+A decorator's arguments are typed compile-time values (decision 280), checked
+where they are written, as a call's are:
+
+1. **Every parameter after `@Decl` is `comptime`**, written out — the argument
+   exists only while the program compiles; what runs later comes from the
+   decorator's outputs. A parameter without it is
+   `decorator-param-not-comptime` at the parameter. A `comptime` parameter may
+   take a default, which an annotation that leaves it out gets — a literal,
+   `null`, a variant `.Name`, or an array or tuple of those; outside a
+   decorator no call fills one, and a `comptime` default there is
+   `comptime-default-outside-decorator` at the default.
+2. **An argument may be of any type** — a string, a number, an array, a
+   record built by its constructor (directly or through a module `val`), a
+   variant, a function, a type (`comptime t: type`), a field. It is checked
+   against its parameter's type at the argument (an integer literal takes the
+   integer type asked for, decision 247), positional arguments first and
+   labelled ones by name (`at: .confirm`); a variadic last parameter (decision
+   267) takes the positional arguments left. A value not known at compile time —
+   a function call such as `env("X")`, a module `var` — is
+   `decorator-arg-not-comptime` at it. The body receives each value as it is:
+   `[1, 2]` has length 2.
+3. **`@Decl<P>` names the shape of the annotated declaration** — a type, a
+   field's type, a function's type — and binds the type parameters `P` names,
+   through a pattern too: `@Decl<fn(e: E) -> unknown>` binds `E` to the
+   function's parameter type. A declaration that does not fit is refused at the
+   annotation, both shapes spelled; `@Decl` alone is `@Decl<unknown>`.
+4. **`Type.Field<T>` and `.name`** — a field of `T` (decision 308, std's
+   `types.bp`); `.name` resolves against the `T` the parameter expects, a field
+   `T` does not declare is refused at the `.name`, and the body reads it as the
+   record `decl.fields` hands out (`name`, `typeName`, `annotations`). A
+   variant against an enum parameter resolves the same way. Either is named
+   exactly as declared, case included: `.custom` against `Custom` is the
+   missing-name error. A name that points at botopink code is a reference; a
+   name of another system (a table, a URL, a cache key, text for a user) stays
+   a string.
+
+```botopink
+import {types.Type} from "std";
+
+type Level { Low, High }
+
+fn index<T>(comptime decl: @Decl<T>, comptime ..fields: Type.Field<T>[]) {
+    decl.setMeta("columns", fields.map({ f -> f.name }).join(","));
+}
+
+fn mark(comptime decl: @Decl, comptime sizes: i32[], comptime level: Level = .Low) {
+    decl.setMeta("sizes", sizes.length.toString());
+    decl.setMeta("level", if (level == Level.High) "high" else "low");
+}
+
+#[index(.state, .name), mark([1, 2], level: .High)]
+type City(code: string, name: string, state: string)
+
+fn main() {
+    @print(@typeInfo(City).meta.index.columns);    // state,name
+    @print(@typeInfo(City).meta.mark.sizes);       // 2
+    @print(@typeInfo(City).meta.mark.level);       // high
+}
+```
+
+What a decorator body reads of a function or a type argument is not decided
+yet (question `s24-a`): both are checked at the argument, and the body receives
+the name as written.
 
 `@typeInfo` is the one reflection builtin (decision 248): `.name` and
 `.meta.<decorator>.<key>` read a declaration, the static `@TypeInfo.all(…)` of
@@ -2461,7 +2525,7 @@ two of them once, its `meta` what the listed decorators set; a decorator listed
 twice is `typeinfo-all-arguments`.
 
 ```botopink
-fn route(comptime decl: @Decl, path: string) {
+fn route(comptime decl: @Decl, comptime path: string) {
     decl.setMeta("path", path);
 }
 

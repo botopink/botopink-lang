@@ -1,0 +1,16 @@
+//// Decision 280 (2), example 2 — `@Decl<fn(e: E) -> unknown>` is the shape
+//// of the declaration `#[on]` annotates: a function with no parameter does
+//// not match it, refused at the annotation with both shapes spelled.
+
+fn on<E>(comptime decl: @Decl<fn(e: E) -> unknown>) {
+    decl.setMeta("event", decl.name);
+}
+
+#[on]
+fn wrong() {
+    @print("no event");
+}
+
+pub fn main() {
+    wrong();
+}

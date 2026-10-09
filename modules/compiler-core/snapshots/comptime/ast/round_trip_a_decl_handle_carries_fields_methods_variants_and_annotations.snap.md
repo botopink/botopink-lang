@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn column(comptime decl: @Decl, name: string) { }
-fn describe(comptime decl: @Decl, label: string) {
+fn column(comptime decl: @Decl, comptime name: string) { }
+fn describe(comptime decl: @Decl, comptime label: string) {
     var out = decl.name + "[" + label + "]";
     for (decl.annotations) { a -> out = out + " @" + a.name + "(" + a.args.join(",") + ")"; };
     for (decl.fields) { f ->
@@ -82,7 +82,8 @@ pub fn describeMode() -> string {
         },
         {
           "name": "name",
-          "type": "string"
+          "type": "string",
+          "is_comptime": true
         }
       ],
       "return_type": "void",
@@ -100,7 +101,8 @@ pub fn describeMode() -> string {
         },
         {
           "name": "label",
-          "type": "string"
+          "type": "string",
+          "is_comptime": true
         }
       ],
       "return_type": "void",

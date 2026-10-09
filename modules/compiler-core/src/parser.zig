@@ -1245,6 +1245,9 @@ pub const Parser = struct {
                 }
                 try list.append(alloc, ann);
                 if (!this.match(.comma)) break;
+                // A list written one annotation per line ends with a comma
+                // (`#[\n    a(…),\n    b(…),\n]`), as an argument list may.
+                if (this.check(.rightSquareBracket)) break;
             }
             _ = try this.consume(.rightSquareBracket);
             if (removed) |tok| {
@@ -1303,6 +1306,8 @@ pub const Parser = struct {
         // One entry per argument: the label written before it, or `""`.
         var labels: std.ArrayList([]const u8) = .empty;
         defer labels.deinit(alloc);
+        var argLocs: std.ArrayList(Loc) = .empty;
+        errdefer argLocs.deinit(alloc);
         var any_label = false;
         if (this.match(.leftParenthesis)) {
             while (!this.check(.rightParenthesis) and !this.check(.endOfFile)) {
@@ -1339,6 +1344,7 @@ pub const Parser = struct {
                     }
                     try args.append(alloc, spanLexemes(first, last));
                     try labels.append(alloc, "");
+                    try argLocs.append(alloc, locFromToken(first));
                     if (!this.match(.comma)) break;
                     continue;
                 }
@@ -1359,6 +1365,20 @@ pub const Parser = struct {
                     any_label = true;
                 }
                 try labels.append(alloc, label);
+                try argLocs.append(alloc, locFromToken(this.peek()));
+                if (!is_builtin) {
+                    // Decision 280 (1) — a decorator's argument is a value of
+                    // any type (`[1, 2]`, `Cache<Item>("items")`, `env("X")`,
+                    // `.name`): one expression, kept as its source span and
+                    // located, which the checker parses again and types
+                    // against the parameter (`infer.zig` `checkDecoratorArgs`).
+                    const first = this.peek();
+                    var e = try this.parseExpr(alloc);
+                    e.deinit(alloc);
+                    try args.append(alloc, spanLexemes(first, this.tokens[this.current - 1]));
+                    if (!this.match(.comma)) break;
+                    continue;
+                }
                 if ((this.check(.dot) or this.check(.identifier)) and
                     (this.peekAt(1).kind == .dot or this.peekAt(1).kind == .identifier))
                 {
@@ -1391,6 +1411,7 @@ pub const Parser = struct {
             .name = name,
             .args = try args.toOwnedSlice(alloc),
             .labels = if (any_label) try labels.toOwnedSlice(alloc) else &.{},
+            .argLocs = try argLocs.toOwnedSlice(alloc),
             .is_builtin = is_builtin,
             .loc = .{ .line = name_start.line, .col = name_start.col },
         };

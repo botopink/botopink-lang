@@ -196,7 +196,7 @@ test "comptime module: push through a local threads out of a multi-statement clo
 
     // A parameter is not rebound: the push keeps its plain lowering.
     const param = try lower(arena_state.allocator(),
-        \\fn tag(comptime decl: @Decl, names: Array<string>) {
+        \\fn tag(comptime decl: @Decl, comptime names: Array<string>) {
         \\    names.push(decl.name);
         \\    @emit(names.join(", "));
         \\}

@@ -1182,23 +1182,31 @@ pub fn parseParam(this: *This, alloc: std.mem.Allocator) ParseError!Param {
 
     // ── comptime-prefixed form: `comptime name : type` ─────────────────
     if (this.check(.@"comptime")) {
-        _ = this.advance(); // consume 'comptime'
+        const startTok = this.advance(); // consume 'comptime'
         const variadic = matchVariadic(this);
         const name = (try this.consumeParamName()).lexeme;
         _ = try this.consume(.colon);
         const typeTok = this.peek();
         const typeRef = try this.parseTypeRef(alloc);
         if (variadic) try checkVariadicParam(this, alloc, typeRef, typeTok);
+        // Decision 280 (0) — every decorator parameter is `comptime`, so a
+        // `comptime` parameter takes a default like any other
+        // (`comptime code: Code = .Custom`).
+        var defaultExpr: ?Expr = null;
+        if (this.match(.equal)) defaultExpr = try this.parseBinaryExpr(alloc, prec.equality);
         return Param{
             .name = name,
             .typeRef = typeRef,
             .modifier = .@"comptime",
+            .default = defaultExpr,
             .typeLoc = parser.Parser.locFromToken(typeTok),
+            .loc = parser.Parser.locFromToken(startTok),
             .variadic = variadic,
         };
     }
 
     // ── regular param: ['..'] name ['comptime'] ':' ['syntax'] type_expr ────
+    const startTok = this.peek();
     const variadic = matchVariadic(this);
     const nameTok = try this.consumeParamName();
     const name = nameTok.lexeme;
@@ -1294,6 +1302,7 @@ pub fn parseParam(this: *This, alloc: std.mem.Allocator) ParseError!Param {
         .modifier = modifier,
         .default = defaultExpr,
         .typeLoc = parser.Parser.locFromToken(typeTok),
+        .loc = parser.Parser.locFromToken(startTok),
         .variadic = variadic,
     };
 }

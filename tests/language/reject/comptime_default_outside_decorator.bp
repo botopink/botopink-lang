@@ -1,0 +1,12 @@
+//// Decision 280 (0) — a `comptime` parameter takes a default in a decorator,
+//// where the annotation that leaves it out hands the body the default. No
+//// call of an ordinary function fills one (each backend called the function
+//// with one argument short), so there it is refused at the default.
+
+fn scale(x: i32, comptime n: i32 = 3) -> i32 {
+    return x * n;
+}
+
+pub fn main() {
+    @print(scale(2));
+}

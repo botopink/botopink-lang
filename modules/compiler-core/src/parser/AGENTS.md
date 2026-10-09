@@ -85,6 +85,7 @@ parser/
     ├── errors.zig        ← parse errors & cross-stage error-message units
     ├── surface.zig       ← the 1.0.3 surface: `type` shapes, the field list, `behavior`, separators, and old-vs-new AST equality
     ├── decision8.zig     ← decision 8's grammar, one section per row: `unknown` (N19), union types (N20), `is` (N21), `case` arms (N22)
+    ├── decision280.zig   ← decision 280's parser half: a `comptime` parameter's default and location (`Param.loc`), a decorator argument as one located expression span, the trailing comma of an annotation list
     ├── decision255.zig   ← decision 255's two expression forms: a type application before a member (`Dict<string, unknown>.empty()`, the comparisons that stay comparisons) and `comptime <expr>`, each with its `botopink format` round-trip
     ├── effect_rejections.zig ← parser-level `#[@<effect>]` rejections (R1/R2/R5…; R5 carets the second annotation, 01 R9)
     └── language_surface.zig  ← front 15's rows: the forms the documents write against the grammar (R1 the `T[]` suffix, R2 the postfix chain, R3 a number as a receiver, R4 the shared block body, R5 the index expression, R7 a bodyless `fn`, R8 `??`, R9 the catch-all names its token, R10 the decided-against forms refused by name)
@@ -654,16 +655,25 @@ rule applies to the pipeline RHS `|> Recv.method(args)`.
 The `@[name(…)]` annotation-block opener (spec 05 §5.12) is **rejected** with
 `ParseErrorType.retiredAnnotationBlock`. The lookaheads still recognise `@[`
 so the stale form reaches that diagnostic instead of a bare unexpected-token
-error. Annotation blocks are `#[…]`; `@` marks a builtin annotation inside one.
+error. Annotation blocks are `#[…]`; `@` marks a builtin annotation inside one. A block
+written one annotation per line may end with a comma (`#[\n    a(…),\n]`, decision 280’s example).
+A `comptime` parameter takes a default (`comptime code: Code = .Custom`) — a decorator's; the
+checker refuses one elsewhere (`comptime-default-outside-decorator`) — and every parameter records
+where it starts (`Param.loc`, the refusal site of `decorator-param-not-comptime`).
 
 ## Annotations (`parseAnnotationCall`)
 
 The annotation name may be a qualified path — `@External.Erlang(…)` lands as
 `Annotation.name = "External.Erlang"` with `is_builtin = true` (leading `@`
 stripped). Arguments are kept as **raw lexemes** (`Annotation.args: []const []const u8`),
-not parsed expressions; each reader (`FnDecl.externalFor`,
-`ast.parseArityBranchArg`, …) interprets them. The arg loop special-cases three
-shapes (vocabulary in `libs/std/AGENTS.md`):
+each located (`Annotation.argLocs`, `argLoc(i)`); each reader (`FnDecl.externalFor`,
+`ast.parseArityBranchArg`, …) interprets them. The argument of a user
+annotation — a decorator's (decision 280) — is **one expression**: parsed with
+`parseExpr` (and discarded) so its extent is exact, and kept as the source span
+it covers (`[1, 2]`, `Cache<Item>("x")`, `env("X")`, `.name`); the checker
+parses it again at its location (`infer.zig` `parseDecoratorArg`). A builtin
+annotation's (`#[@…]`) loop special-cases these shapes (vocabulary in
+`libs/std/AGENTS.md`); its labels and arity branches apply to both:
 
 - **Arity branches** — `when($argc == N): "<template>"` spans the balanced parens,
   the `:` and the value into one lexeme (`spanLexemes`).

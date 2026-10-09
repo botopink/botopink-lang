@@ -397,6 +397,20 @@ pub const type_alias_recursive: []const u8 = "type-alias-recursive";
 /// primitive's name): one name, one type.
 pub const type_alias_name_taken: []const u8 = "type-alias-name-taken";
 
+// ── decision 280 — typed comptime decorator arguments ───────────────────────
+
+/// A decorator parameter (after its `@Decl`) written without `comptime`: a
+/// decorator's arguments exist only while the program compiles.
+pub const decorator_param_not_comptime: []const u8 = "decorator-param-not-comptime";
+
+/// A decorator argument that is not known while the program compiles — a
+/// function call (`env("X")`), a module `var`, or a `val` holding one.
+pub const decorator_arg_not_comptime: []const u8 = "decorator-arg-not-comptime";
+
+/// A `comptime` parameter with a default outside a decorator: no call site
+/// fills it (decision 280 (0) gives the default to decorators).
+pub const comptime_default_outside_decorator: []const u8 = "comptime-default-outside-decorator";
+
 // ── decision 216 — what a decorator produces ───────────────────────────────
 
 /// `decl.addMember(source)` from a decorator on a `fn`: a member belongs to a
@@ -559,6 +573,9 @@ pub const all_codes = [_][]const u8{
     captured_var_write,
     inline_type_position,
     behavior_member_redeclared,
+    decorator_param_not_comptime,
+    decorator_arg_not_comptime,
+    comptime_default_outside_decorator,
     decorator_member_without_type,
     decorator_member_duplicate,
     decorator_member_not_one_fn,

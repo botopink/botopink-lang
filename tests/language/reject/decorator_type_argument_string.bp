@@ -1,0 +1,20 @@
+//// Decisions 280 (1), 281, example 3 — a type is passed as itself, never by
+//// its name as a string: `"MailSender"` against `comptime t: type` is refused
+//// at the argument.
+
+pub behavior MailSender {
+    fn send(self: Self, to: string) -> string;
+}
+
+fn conditionalOnMissingBean(comptime decl: @Decl, comptime t: type) {
+    decl.setMeta("bean", decl.name);
+}
+
+#[conditionalOnMissingBean("MailSender")]
+fn consoleMail() -> string {
+    return "console";
+}
+
+pub fn main() {
+    @print(consoleMail());
+}

@@ -1,0 +1,34 @@
+//// Decision 280 (1), example 3 (lg2-f) — a decorator parameter `comptime t:
+//// type` takes a type, checked where it is written: a behavior, a record or
+//// a primitive is accepted; a misspelt name and a string are refused
+//// (`reject/decorator_type_argument_{unknown,string}`).
+
+pub behavior MailSender {
+    fn send(self: Self, to: string) -> string;
+}
+
+pub type ConsoleMail(prefix: string) implement MailSender {
+    fn send(self: Self, to: string) -> string {
+        return self.prefix + to;
+    }
+}
+
+fn conditionalOnMissingBean(comptime decl: @Decl, comptime t: type) {
+    decl.setMeta("bean", decl.name);
+}
+
+#[conditionalOnMissingBean(MailSender)]
+fn consoleMail() -> MailSender {
+    return ConsoleMail(prefix: "console: ");
+}
+
+#[conditionalOnMissingBean(string)]
+fn greeting() -> string {
+    return "hello";
+}
+
+pub fn main() {
+    @print(@typeInfo(consoleMail).meta.conditionalOnMissingBean.bean);
+    @print(consoleMail().send("ana"));
+    @print(greeting());
+}

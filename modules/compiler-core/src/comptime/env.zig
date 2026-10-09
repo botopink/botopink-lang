@@ -529,9 +529,25 @@ pub const ComptimeSupport = struct {
     conflict: ?[]const u8 = null,
 };
 
+/// Decision 280 — one decorator parameter's value as the body receives it.
+pub const DecoratorArgValue = struct {
+    /// The value as botopink source.
+    source: []const u8,
+    /// Built by a function of the decorator module — an array, a record, a
+    /// variant, a field key, `null` — rather than handed over as a literal
+    /// term (a string, a number, a `bool`).
+    built: bool,
+};
+
 pub const DecoratorSig = struct {
     params: []const ast.Param,
     fn_decl: ?ast.FnDecl = null,
+    /// The leading parameter's type — `@Decl` or `@Decl<P>` (decision 280
+    /// (2)); null for an annotation type (`implement @Annotation`).
+    decl: ?ast.TypeRef = null,
+    /// The decorator's type parameters (`fn check<T>(…)`), bound per
+    /// application by `@Decl<P>` and the arguments.
+    generics: []const ast.GenericParam = &.{},
     /// The functions of the decorator's own module its body calls, directly
     /// or through one another (`infer.decoratorSupport`) — compiled into the
     /// decorator module beside it. Filled for an IMPORTED decorator; a local
@@ -1017,6 +1033,11 @@ pub const Env = struct {
     /// (`decl.addType(name, source)`), in call order; merged as top-level
     /// types named `__<Owner>__<Name>` before the re-analysis.
     typeContributions: std.ArrayListUnmanaged(TypeContribution) = .empty,
+    /// Decision 280 — how each parameter of a decorator application reaches
+    /// the body, keyed by the annotation's location: `infer.zig`
+    /// `checkDecoratorArgs` writes it once the arguments are typed,
+    /// `runDeclDecorators` reads it. Allocated in `arena`.
+    decoratorArgValues: std.AutoHashMapUnmanaged(ast.Loc, []const DecoratorArgValue) = .empty,
     /// Decision 216 (3) — set on the first analysis of a module whose
     /// decorators have not run yet: a dotted type name `Owner.Name` whose
     /// owner is a type is accepted unresolved (`resolveTypeName`), since the

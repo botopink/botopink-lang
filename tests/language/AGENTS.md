@@ -636,6 +636,26 @@ run time — wasm answered from one word-typed body) and `modules/imported_fn_as
 backend halves the checker front listed.
 | `run.sh` | the runner | — |
 
+Decision 280 (`01-checker` step 24, typed comptime decorator arguments) adds, on all four targets,
+`run/decorator_arguments_check` (example 1 of `01-checker/examples/decorator-arguments-280.md`: a
+function `rule`, a field key `at: .confirm`, a variant `code: .Mismatch` and the function form),
+`run/decorator_decl_pattern` (`@Decl<fn(e: E) -> unknown>`), `run/decorator_type_argument`
+(`comptime t: type`), `run/decorator_function_arguments` (`paths:` / `head:` typed by the page's
+`P`, `D`), `run/decorator_record_argument` (`Cache<T>` through a module `val`),
+`run/decorator_field_keys` (`index(.state, .name)`, `unique(.code)`, the field's annotations in the
+key) `run/decorator_argument_values` (an array keeps its length, defaults, labels, a variant) and
+`modules/decorator_typed_arguments_import` (an imported decorator's `Type.Field<T>` and enum, the
+importer importing neither),
+and 19 `reject/` cells, each at the argument unless named: `decorator_param_not_comptime` (at the
+parameter), `comptime_default_outside_decorator` (at the default), `decorator_arg_not_comptime`,
+`decorator_arg_unbound_function`, `decorator_arg_function_mismatch`, `decorator_arg_unknown_field`,
+`decorator_arg_label_unknown`, `decorator_variant_case`, `decorator_field_key_{unknown,case,too_many}`,
+`decorator_function_argument_mismatch`, `decorator_record_argument_{mismatch,string}`,
+`decorator_type_argument_{unknown,string}`, `decorator_decl_pattern_{mismatch,return}` (at the
+annotation) and `decorator_check_without_rule_not_bool` (the body's `decl.fail`, at the annotation).
+`reject/decorator_argument_kind` now carets the argument with the typed mismatch, and every
+decorator of the cells writes its parameters `comptime`.
+
 Every cell is copied into its own scratch project, so a parse error fails only that cell. Test names
 start with the decision-8 section they pin (`test "§5.4 …"`) when there is one, so a failure points at
 the rule; a capability decision 8 does not legislate gets a plain sentence.

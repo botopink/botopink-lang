@@ -6,7 +6,7 @@
 //// argument, so the decorator receives the NUMBER `-20`: the emitted function
 //// answers it, and `-20 + 25` prints `5`.
 
-fn mark(comptime decl: @Decl, n: i32) {
+fn mark(comptime decl: @Decl, comptime n: i32) {
     @emit("pub fn markedWith() -> i32 { return " + n.toString() + "; }");
 }
 

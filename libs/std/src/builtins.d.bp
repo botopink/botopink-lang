@@ -626,13 +626,20 @@ pub type Method(
     annotations: DeclAnnotation[],
 )
 
-// The reflection handle. `kind`/`name`/`fields`/`variants`/`methods`/`returnType`/
+// The reflection handle, `@Decl<T>` (decision 280 (2)): `T` is the annotated
+// declaration's type — the type itself, a field's type, a function's type —,
+// bound when the decorator's signature names it (`fn index<T>(comptime decl:
+// @Decl<T>, comptime ..fields: Type.Field<T>[])`), through a pattern too
+// (`@Decl<fn(e: E) -> unknown>` binds `E`); a declaration that does not fit
+// is refused at the annotation. `@Decl` is `@Decl<unknown>`. Every parameter
+// after it is `comptime`.
+// `kind`/`name`/`fields`/`variants`/`methods`/`returnType`/
 // `annotations` are read-only data (serialized like a template's capture);
 // `variants` lists an enum-shaped `type`'s variant and section names and is
 // empty otherwise — `kind == DeclKind.Type && variants.length == 0` is a record;
 // `fail`/`failAt` emit a scoped diagnostic at the annotated declaration, reusing
 // the template diagnostic surface.
-pub behavior Decl {
+pub behavior Decl<T> {
     val kind: DeclKind;
     val name: string;
     val fields: Field[];

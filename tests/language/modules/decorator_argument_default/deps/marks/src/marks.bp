@@ -2,10 +2,10 @@
 
 pub fn mark(
     comptime decl: @Decl,
-    label: string,
-    loud: bool = false,
-    times: i32 = -1,
-    tail: string = ".",
+    comptime label: string,
+    comptime loud: bool = false,
+    comptime times: i32 = -1,
+    comptime tail: string = ".",
 ) {
     val shown = if (loud) label.toUpper() else label;
     @emit(

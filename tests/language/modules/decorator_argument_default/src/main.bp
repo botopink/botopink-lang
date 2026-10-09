@@ -9,7 +9,11 @@ pub mod local;
 import {local.pin};
 import {mark} from "marks";
 
-fn note(comptime decl: @Decl, text: string = "n", size: f64 = 2.5) {
+fn note(
+    comptime decl: @Decl,
+    comptime text: string = "n",
+    comptime size: f64 = 2.5,
+) {
     @emit(
         "pub fn "
             + decl.name

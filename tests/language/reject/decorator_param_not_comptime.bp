@@ -1,0 +1,12 @@
+//// Decision 280 (0) — every parameter of a decorator after its `@Decl` is
+//// `comptime`, written: its argument exists only while the program compiles.
+//// A parameter without it is refused at the parameter, where the decorator is
+//// declared.
+
+fn route(comptime decl: @Decl, path: string) {
+    decl.setMeta("path", path);
+}
+
+pub fn main() {
+    @print("unreached");
+}

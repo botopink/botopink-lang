@@ -1,0 +1,2 @@
+`#[on]` expects a declaration of type `fn(E) -> unknown`, and `wrong` is `fn() -> void`
+9:3

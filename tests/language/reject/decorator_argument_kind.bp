@@ -1,8 +1,8 @@
-//// C-21 — a decorator argument of the wrong kind is refused AT the
-//// annotation. It was the one decorator refusal raised with no location: the
-//// message named the argument and the reader had to find the annotation.
+//// C-21, decision 280 — a decorator argument of the wrong type is refused AT
+//// the argument: the parameter's type checks it as a call's argument is
+//// checked, and the caret sits on the value that does not fit.
 
-fn value(comptime decl: @Decl, key: string) { }
+fn value(comptime decl: @Decl, comptime key: string) { }
 
 #[value(42)]
 type A(x: i32)

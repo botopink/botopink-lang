@@ -264,7 +264,14 @@ fn buildModule(
     const config: erlang.ComptimeModule = .{
         .host_enums = &.{"DeclKind"},
         // `decl.failAt(Span(start, end, line), msg)` builds the span map.
-        .host_records = &.{.{ .name = "Span", .fields = &.{ "start", "end", "line" } }},
+        // Decision 280 — a field key `.name` reaches the body as the
+        // `Type.Field<T>` record a `decl.fields` entry is (`infer.zig`
+        // `fieldKeySource`).
+        .host_records = &.{
+            .{ .name = "Span", .fields = &.{ "start", "end", "line" } },
+            .{ .name = "__bp_FieldKey", .fields = &.{ "name", "typeName", "annotations" } },
+            .{ .name = "__bp_DeclAnnotation", .fields = &.{ "name", "args" } },
+        },
         .exports = &.{.{ .name = "main", .arity = 1 }},
         .forms = forms,
         .resident = .{
@@ -317,6 +324,10 @@ fn argPlans(
     for (plans[1..], 0..) |*plan, i| {
         if (i >= plainArgs.len) {
             plan.* = .{ .term = Term.undefined_atom, .expr = Ast.Expr.a("undefined"), .bound = false };
+            continue;
+        }
+        if (plainArgs[i].call) |builder| {
+            plan.* = .{ .term = Term.undefined_atom, .expr = .{ .call = .{ .name = builder, .args = &.{} } }, .bound = false };
             continue;
         }
         const name = try std.fmt.allocPrint(arena, "Arg{d}", .{i + 1});
@@ -449,7 +460,7 @@ test "decorator module: lowered body, handle term and host glue" {
     const lexerMod = @import("../lexer.zig");
     const parserMod = @import("../parser.zig");
     var lx = lexerMod.Lexer.init(
-        \\fn getMapping(comptime decl: @Decl, path: string, verb: string) {
+        \\fn getMapping(comptime decl: @Decl, comptime path: string, comptime verb: string) {
         \\    if (decl.kind != DeclKind.Method) { decl.fail("#[getMapping] must annotate a method"); }
         \\}
     );

@@ -61,7 +61,7 @@ test "decorator: marker with no trailing args applies to a record" {
 
 test "decorator: string-arg marker on a method (interface site)" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn getMapping(comptime decl: @Decl, path: string) { }
+        \\fn getMapping(comptime decl: @Decl, comptime path: string) { }
         \\
         \\behavior Routes {
         \\    #[getMapping("/users")]
@@ -72,7 +72,7 @@ test "decorator: string-arg marker on a method (interface site)" {
 
 test "decorator: string-arg marker on a record method (P3 method-site)" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn getMapping(comptime decl: @Decl, path: string) { }
+        \\fn getMapping(comptime decl: @Decl, comptime path: string) { }
         \\
         \\type Controller(
         \\    name: string) {
@@ -84,7 +84,7 @@ test "decorator: string-arg marker on a record method (P3 method-site)" {
 
 test "decorator: marker on a struct method (P3 method-site)" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn tag(comptime decl: @Decl, label: string) { }
+        \\fn tag(comptime decl: @Decl, comptime label: string) { }
         \\
         \\type Sb(
         \\    x: i32) {
@@ -108,7 +108,7 @@ test "decorator: marker on a record field (P3 field-site)" {
 
 test "decorator: string-arg marker on a struct field (P3 field-site)" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn value(comptime decl: @Decl, key: string) { }
+        \\fn value(comptime decl: @Decl, comptime key: string) { }
         \\
         \\type Config(
         \\    #[value("port")]
@@ -130,7 +130,7 @@ test "decorator: declared as a `declare fn` marker (delegate form)" {
 
 test "decorator: applies on struct, enum and fn sites" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn tag(comptime decl: @Decl, label: string) { }
+        \\fn tag(comptime decl: @Decl, comptime label: string) { }
         \\
         \\#[tag("a")]
         \\type Sa(x: i32)
@@ -218,7 +218,7 @@ test "decorator body: reads the aggregate members (fields/methods/annotations)" 
 
 test "decorator error: too few arguments" {
     try expectDecoratorError(
-        \\fn getMapping(comptime decl: @Decl, path: string) { }
+        \\fn getMapping(comptime decl: @Decl, comptime path: string) { }
         \\
         \\#[getMapping]
         \\type A(x: i32)
@@ -236,11 +236,100 @@ test "decorator error: too many arguments" {
 
 test "decorator error: argument type mismatch (number where string expected)" {
     try expectDecoratorError(
-        \\fn value(comptime decl: @Decl, key: string) { }
+        \\fn value(comptime decl: @Decl, comptime key: string) { }
         \\
         \\#[value(123)]
         \\type A(x: i32)
-    , "must be string");
+    , "`#[value]`'s `key` expects `string`, got `i32`");
+}
+
+// ── decision 280 — typed comptime decorator arguments ────────────────────────
+
+test "decision 280: a decorator parameter without comptime is refused at it" {
+    try expectDecoratorError(
+        \\fn route(comptime decl: @Decl, path: string) { }
+    , "decorator-param-not-comptime: the decorator `route`'s parameter `path` is not `comptime`");
+}
+
+test "decision 280: a comptime default outside a decorator is refused at it" {
+    try expectDecoratorError(
+        \\fn scale(x: i32, comptime n: i32 = 3) -> i32 { return x * n; }
+    , "comptime-default-outside-decorator: the `comptime` parameter `n` takes a default only in a decorator");
+}
+
+test "decision 280: a function call is not a comptime argument" {
+    try expectDecoratorError(
+        \\fn env(name: string) -> string { return name; }
+        \\fn tag(comptime decl: @Decl, comptime label: string) { }
+        \\
+        \\#[tag(env("X"))]
+        \\type A(x: i32)
+    , "decorator-arg-not-comptime");
+}
+
+test "decision 280: arguments are typed — arrays, functions, variants, labels, defaults" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\type Level { Low, High }
+        \\fn positive(o: Order) -> bool { return o.total > 0; }
+        \\fn mark<T>(
+        \\    comptime decl: @Decl<T>,
+        \\    comptime sizes: i32[],
+        \\    comptime rule: ?fn(v: T) -> bool = null,
+        \\    comptime level: Level = .Low,
+        \\) { }
+        \\
+        \\#[mark([1, 2], positive, level: .High)]
+        \\type Order(total: i32)
+    );
+}
+
+test "decision 280: a function argument over another type is refused, both spelled" {
+    try expectDecoratorError(
+        \\type Order(total: i32)
+        \\fn positive(o: Order) -> bool { return o.total > 0; }
+        \\fn check<T>(comptime decl: @Decl<T>, comptime rule: fn(v: T) -> bool) { }
+        \\
+        \\#[check(positive)]
+        \\type Account(name: string)
+    , "`#[check]`'s `rule` expects `fn(Account) -> bool`, got `fn(Order) -> bool`");
+}
+
+test "decision 280: @Decl<P> refuses a declaration of another shape" {
+    try expectDecoratorError(
+        \\fn on<E>(comptime decl: @Decl<fn(e: E) -> unknown>) { }
+        \\
+        \\#[on]
+        \\fn wrong() { }
+    , "`#[on]` expects a declaration of type `fn(E) -> unknown`, and `wrong` is `fn() -> void`");
+}
+
+test "decision 280: a variant is named as declared" {
+    try expectDecoratorError(
+        \\type Code { Custom, Mismatch }
+        \\fn tag(comptime decl: @Decl, comptime code: Code) { }
+        \\
+        \\#[tag(.custom)]
+        \\type A(x: i32)
+    , "`.custom` names no variant of `Code`");
+}
+
+test "decision 280: a type parameter refuses a string" {
+    try expectDecoratorError(
+        \\type Mail(to: string)
+        \\fn missing(comptime decl: @Decl, comptime t: type) { }
+        \\
+        \\#[missing("Mail")]
+        \\fn mail() { }
+    , "`#[missing]`'s `t` expects a `type`, got `string`");
+}
+
+test "decision 280: a label names a parameter" {
+    try expectDecoratorError(
+        \\fn tag(comptime decl: @Decl, comptime label: string) { }
+        \\
+        \\#[tag(name: "x")]
+        \\type A(x: i32)
+    , "`#[tag]` has no parameter `name`");
 }
 
 // ── F2 (lsp-project-awareness): @emit must not blank the binding list ─────────

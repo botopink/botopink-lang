@@ -1,0 +1,17 @@
+//// Decision 280 — an imported decorator checks its arguments where it is applied: `.name`
+//// against `Type.Field<T>` with `T` the annotated type, a variant of an enum the
+//// decorator's module declares (it came with the signature), labelled; the
+//// importer imports neither `Type` nor `Order`.
+
+pub mod orm;
+
+import {orm.index, orm.sorted};
+
+#[index(.state, .name)]
+#[sorted(.name, order = .Desc)]
+type City(code: string, name: string, state: string)
+
+pub fn main() {
+    @print(@typeInfo(City).meta.index.columns);
+    @print(@typeInfo(City).meta.sorted.sort);
+}

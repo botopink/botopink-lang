@@ -1,6 +1,6 @@
 //// The decorator lives in a library module of its own.
 
-pub fn entity(comptime decl: @Decl, table: string) {
+pub fn entity(comptime decl: @Decl, comptime table: string) {
     var names: string[] = [];
     decl.fields.forEach({ f -> names.push(f.name) });
     decl.addMember(

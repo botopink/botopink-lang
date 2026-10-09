@@ -1,0 +1,32 @@
+//// Decision 280 (1), (2), example 4 — `paths` is an `fn() -> P[]` with `P`
+//// bound by the page's own parameter: a function answering another type is
+//// refused at the argument.
+
+type View(html: string)
+
+type Route<P>(params: P)
+
+type BlogParams(slug: string)
+
+type User(name: string)
+
+fn page<P>(
+    comptime decl: @Decl<fn(route: Route<P>) -> View>,
+    comptime seg: string,
+    comptime paths: ?fn() -> P[] = null,
+) {
+    decl.setMeta("seg", seg);
+}
+
+fn allUsers() -> User[] {
+    return [];
+}
+
+#[page("blog/[slug]", paths = allUsers)]
+fn blog(route: Route<BlogParams>) -> View {
+    return View(html: route.params.slug);
+}
+
+pub fn main() {
+    @print(blog(Route(params: BlogParams(slug: "a"))).html);
+}

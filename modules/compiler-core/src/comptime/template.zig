@@ -158,6 +158,10 @@ pub const PlainArg = struct {
     paramName: []const u8,
     /// The argument's source lexeme (e.g. `42`, `"hi"`, `true`).
     source: []const u8,
+    /// Decision 280 — a decorator argument no literal term carries (an
+    /// array, a record, a variant, a field key, `null`): the zero-argument
+    /// function of the decorator module that builds it, called in its place.
+    call: ?[]const u8 = null,
 
     /// The lexeme as an Erlang expression: a string literal becomes a binary
     /// (botopink escapes resolved at render), `true`/`false` atoms, integers and

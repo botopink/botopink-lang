@@ -1,5 +1,5 @@
 //// The decorator: it records the table a type maps to.
 
-pub fn entity(comptime decl: @Decl, table: string) {
+pub fn entity(comptime decl: @Decl, comptime table: string) {
     decl.setMeta("table", table);
 }

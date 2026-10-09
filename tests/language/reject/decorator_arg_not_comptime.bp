@@ -1,0 +1,28 @@
+//// Decision 280 (0), example 1 — a decorator argument exists only while the
+//// program compiles: a call of a function (`env(…)`) is not known then, and
+//// is refused at the call — a constructor of known values is.
+
+import {types.Type} from "std";
+
+pub type Code { Custom, Mismatch }
+
+fn check<T>(
+    comptime decl: @Decl<T>,
+    comptime message: string,
+    comptime rule: ?fn(v: T) -> bool = null,
+    comptime at: ?Type.Field<T> = null,
+    comptime code: Code = .Custom,
+) {
+    decl.setMeta("message", message);
+}
+
+fn env(name: string) -> string {
+    return name;
+}
+
+#[check(env("MSG"))]
+type Account(password: string, confirm: string)
+
+pub fn main() {
+    @print("unreached");
+}

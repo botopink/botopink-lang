@@ -2,7 +2,7 @@
 //// and a decorator's name has type `Decorator`: a decorator with further
 //// arguments, a single decorator and a list of them are all accepted.
 
-fn route(comptime decl: @Decl, path: string) {
+fn route(comptime decl: @Decl, comptime path: string) {
     decl.setMeta("path", path);
 }
 

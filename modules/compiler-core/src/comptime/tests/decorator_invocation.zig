@@ -113,8 +113,8 @@ test "decorator invocation: round trip ---- a @Decl handle carries fields, metho
     // external term); the body reads every part back and emits it, and the reply
     // is byte-identical on the BEAM and the wat runtime.
     const src =
-        \\fn column(comptime decl: @Decl, name: string) { }
-        \\fn describe(comptime decl: @Decl, label: string) {
+        \\fn column(comptime decl: @Decl, comptime name: string) { }
+        \\fn describe(comptime decl: @Decl, comptime label: string) {
         \\    var out = decl.name + "[" + label + "]";
         \\    for (decl.annotations) { a -> out = out + " @" + a.name + "(" + a.args.join(",") + ")"; };
         \\    for (decl.fields) { f ->
@@ -192,7 +192,7 @@ test "decorator invocation: a \\u{…} literal in the body evaluates to the char
     // a plain `<<"…">>` truncates to its low byte. The wat runtime decodes the
     // same lexeme in `wat.zig`'s `literalBytes`; both replies must agree.
     const src =
-        \\fn smile(comptime decl: @Decl, mark: string) {
+        \\fn smile(comptime decl: @Decl, comptime mark: string) {
         \\    val s = "<\u{263A}\u{e7}\u{1F600}>";
         \\    @emit("pub val smiled" + decl.name + " = \"" + s + mark + "\";");
         \\}
@@ -215,7 +215,7 @@ test "decorator invocation: a \\u{…} literal in the body evaluates to the char
 
 test "decorator invocation: method placement accepted" {
     try assertAccepts(@src(),
-        \\fn getMapping(comptime decl: @Decl, path: string) {
+        \\fn getMapping(comptime decl: @Decl, comptime path: string) {
         \\    if (decl.kind != DeclKind.Method) { decl.fail("#[getMapping] must annotate a method"); }
         \\}
         \\behavior Routes {
@@ -227,7 +227,7 @@ test "decorator invocation: method placement accepted" {
 
 test "decorator invocation: method decorator rejects a record" {
     try assertRejects(@src(),
-        \\fn getMapping(comptime decl: @Decl, path: string) {
+        \\fn getMapping(comptime decl: @Decl, comptime path: string) {
         \\    if (decl.kind != DeclKind.Method) { decl.fail("#[getMapping] must annotate a method"); }
         \\}
         \\#[getMapping("/x")]

@@ -4,7 +4,7 @@
 
 val base = "x";
 
-fn dec(comptime decl: @Decl, name: string = base) {
+fn dec(comptime decl: @Decl, comptime name: string = base) {
     @emit("pub fn " + decl.name + "Tag() -> string { return \"" + name + "\"; }");
 }
 

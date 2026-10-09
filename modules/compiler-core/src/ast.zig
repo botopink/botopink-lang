@@ -1578,6 +1578,10 @@ pub const Param = struct {
     /// parser; `{0,0}` when the param was synthesised. Carries the location an
     /// unknown type name reds at (06 N30) and is left out of the AST dump.
     typeLoc: Loc = .{ .line = 0, .col = 0 },
+    /// Where the parameter starts (its `comptime`, `..` or name). Set by the
+    /// parser for a plain and a `comptime` parameter; `{0,0}` when synthesised.
+    /// Decision 280 (0) refuses a decorator parameter there. Not dumped.
+    loc: Loc = .{ .line = 0, .col = 0 },
     /// Decision 207 — `props: type(href: string, …)`: the parameter's type is
     /// written inline, with `type(…)`'s field grammar and no name. The parser
     /// leaves `typeRef` at `inline_type_name`; `comptime/inline_types.zig`
@@ -1806,6 +1810,16 @@ pub const Annotation = struct {
     /// checks (decision 41) and what the formatter prints back — before this
     /// field it printed `#[@External.Node("charAt", true)]` for `inline = true`.
     labels: []const []const u8 = &.{},
+    /// Where each argument starts, parallel to `args` (decision 280: a
+    /// decorator argument is refused at the argument). Empty for a
+    /// synthesized annotation; diagnostic metadata, never serialized.
+    argLocs: []const Loc = &.{},
+
+    /// Where argument `i` starts, or the annotation's own location.
+    pub fn argLoc(this: Annotation, i: usize) ?Loc {
+        if (i < this.argLocs.len) return this.argLocs[i];
+        return this.loc;
+    }
 
     /// The label of argument `i`, or null when it was written bare.
     pub fn labelOf(this: Annotation, i: usize) ?[]const u8 {
@@ -1815,6 +1829,7 @@ pub const Annotation = struct {
 
     pub fn deinit(this: *Annotation, allocator: std.mem.Allocator) void {
         if (this.labels.len > 0) allocator.free(this.labels);
+        if (this.argLocs.len > 0) allocator.free(this.argLocs);
         if (this.source_args) |src| {
             for (this.args) |a| allocator.free(a);
             allocator.free(src);

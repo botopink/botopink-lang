@@ -1,0 +1,28 @@
+//// Decision 280 (2), example 2 — `@Decl<fn(e: E) -> unknown>`: the decorator
+//// takes no argument, and its pattern binds `E` from the annotated
+//// function's parameter. A function of that shape is accepted whatever it
+//// returns; the catalogue (`@TypeInfo.all(with: on)`) lists the listeners.
+
+pub type OrderPlaced(id: string, total: i64)
+
+pub type OrderCancelled(id: string)
+
+fn on<E>(comptime decl: @Decl<fn(e: E) -> unknown>) {
+    decl.setMeta("event", decl.name);
+}
+
+#[on]
+pub fn sendReceipt(e: OrderPlaced) -> string {
+    return "receipt " + e.id;
+}
+
+#[on]
+pub fn refund(e: OrderCancelled) {
+    @print("refund " + e.id);
+}
+
+pub fn main() {
+    @print(@TypeInfo.all(with: on).map({ d -> d.name }).join(","));
+    @print(sendReceipt(OrderPlaced(id: "o1", total: 10)));
+    refund(OrderCancelled(id: "o2"));
+}
