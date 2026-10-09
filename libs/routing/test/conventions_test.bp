@@ -1,0 +1,147 @@
+//// routing: the app-file conventions, on both targets (front 102 step 1).
+//// Every expected text is a literal.
+
+import {testing.asserts} from "std";
+import {conventions.ConventionFile, conventions.fileKinds, conventions.kindOf, conventions.kindLetter, conventions.classify, conventions.conventionConflicts};
+import {table.kindLabel};
+
+fn kindCell(appDir: string, path: string) -> string {
+    val f = classify(appDir, path);
+    if (f == null) return "-";
+    return f?.kind ?? "-";
+}
+
+fn segmentCell(appDir: string, path: string) -> string {
+    val f = classify(appDir, path);
+    if (f == null) return "-";
+    return f?.segment ?? "-";
+}
+
+fn file(segment: string, kind: string) -> ConventionFile {
+    return ConventionFile(
+        authoredPath: "app/" + segment + "/" + kind + ".bp",
+        segment: segment,
+        kind: kind,
+    );
+}
+
+test "routing: the eight file kinds, in wrap order" {
+    try asserts.equals(
+        fileKinds().join(","),
+        "layout,template,error,loading,not-found,page,default,route",
+    );
+}
+
+test "routing: kindOf names a convention file's kind and nothing else" {
+    try asserts.equals(kindOf("page.bp") ?? "-", "page");
+    try asserts.equals(kindOf("not-found.bp") ?? "-", "not-found");
+    try asserts.equals(kindOf("route.bp") ?? "-", "route");
+    assert kindOf("page") == null;
+    assert kindOf("pages.bp") == null;
+    assert kindOf("utils.bp") == null;
+    assert kindOf("") == null;
+}
+
+test "routing: kindLetter inverts table.kindLabel for the eight kinds" {
+    for (fileKinds()) { k ->
+        assert kindLabel(kindLetter(k)) == k;
+    }
+    try asserts.equals(kindLetter("layout"), "L");
+    try asserts.equals(kindLetter("template"), "T");
+    try asserts.equals(kindLetter("page"), "P");
+    try asserts.equals(kindLetter("default"), "D");
+    try asserts.equals(kindLetter("route"), "R");
+    try asserts.equals(kindLetter("loading"), "S");
+    try asserts.equals(kindLetter("error"), "E");
+    try asserts.equals(kindLetter("not-found"), "N");
+    try asserts.equals(kindLetter("middleware"), "");
+}
+
+test "routing: every kind classifies, with its segment" {
+    for (fileKinds()) { k ->
+        assert kindCell("app", "app/blog/" + k + ".bp") == k;
+    }
+    try asserts.equals(segmentCell("app", "app/page.bp"), "");
+    try asserts.equals(
+        segmentCell("app", "app/blog/[slug]/page.bp"),
+        "blog/[slug]",
+    );
+    try asserts.equals(
+        segmentCell("app", "app/(marketing)/about/layout.bp"),
+        "(marketing)/about",
+    );
+    try asserts.equals(
+        segmentCell("src/app", "src/app/dashboard/@team/default.bp"),
+        "dashboard/@team",
+    );
+    val f = classify("app", "app/blog/page.bp");
+    try asserts.equals(f?.authoredPath ?? "-", "app/blog/page.bp");
+}
+
+test "routing: a stray file answers null" {
+    assert classify("app", "app/blog/utils.bp") == null;
+    assert classify("app", "app/blog/page.ts") == null;
+    assert classify("app", "app/blog/page") == null;
+    assert classify("app", "app/_components/page.bp") == null;
+    assert classify("app", "app/blog/_drafts/x/page.bp") == null;
+    assert classify("app", "lib/page.bp") == null;
+    assert classify("app", "application/page.bp") == null;
+    assert classify("app", "app") == null;
+    assert classify("src/app", "app/page.bp") == null;
+}
+
+test "routing: classify compares the app directory as startsWith(appDir + /)" {
+    try asserts.equals(segmentCell("app/", "app//page.bp"), "");
+    assert classify("app/", "app/page.bp") == null;
+    try asserts.equals(segmentCell("", "/blog/page.bp"), "blog");
+    assert classify("", "blog/page.bp") == null;
+}
+
+test "routing: page beside route in one segment is a named conflict" {
+    val problems = conventionConflicts(
+        [
+            file("about", "layout"),
+            file("about", "page"),
+            file("about", "route"),
+            file("blog", "page"),
+        ],
+    );
+    try asserts.equals(problems.length, 1);
+    try asserts.equals(
+        problems.at(0).unwrapOr(""),
+        "routing: `about` holds both page.bp and route.bp - a segment is a page or an endpoint, never both",
+    );
+}
+
+test "routing: two root groups claiming one URL are a named conflict" {
+    val problems = conventionConflicts(
+        [
+            file("(marketing)", "layout"),
+            file("(marketing)/about", "page"),
+            file("(shop)", "layout"),
+            file("(shop)/about", "page"),
+            file("(shop)/cart", "page"),
+        ],
+    );
+    try asserts.equals(problems.length, 1);
+    try asserts.equals(
+        problems.at(0).unwrapOr(""),
+        "routing: `/about` is claimed by both `(marketing)` and `(shop)` - two root layouts whose subtrees match one URL",
+    );
+}
+
+test "routing: a tree without conflicts answers none" {
+    try asserts.equals(
+        conventionConflicts(
+            [
+                file("", "layout"),
+                file("", "page"),
+                file("(marketing)/about", "page"),
+                file("dashboard/@team", "page"),
+                file("dashboard", "page"),
+                file("api", "route"),
+            ],
+        ).length,
+        0,
+    );
+}
