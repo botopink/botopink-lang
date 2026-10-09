@@ -265,6 +265,10 @@ const Fn = struct {
     bound: std.StringHashMapUnmanaged(void) = .empty,
     trail: std.ArrayListUnmanaged(Change) = .empty,
     n_vars: u32 = 0,
+    /// Set by `finish`: variable → its frame slot (`packVars`), and how many
+    /// slots the variables take.
+    var_slots: []const u32 = &.{},
+    n_slots: u32 = 0,
     temp_top: u32 = 0,
     temp_max: u32 = 0,
     tag_depth: u32 = 0,
@@ -406,7 +410,11 @@ const Fn = struct {
     /// function's `label`/`func_info`/`label`/`allocate` prologue.
     fn finish(f: *Fn, name: []const u8, info: u32, entry: u32, exported: bool) Error!bf.Function {
         const ar_ = f.ar();
-        const frame: u32 = f.n_vars + f.temp_max + f.tag_max;
+        const packed_vars = try packVars(ar_, f.code.items, f.n_vars);
+        f.var_slots = packed_vars.slots;
+        f.n_slots = packed_vars.count;
+        const frame: u32 = f.n_slots + f.temp_max + f.tag_max;
+        if (frame >= max_frame) return f.l.refuse("a function of {d} live Y registers, more than the BEAM's {d}", .{ frame, max_frame - 1 });
         var out: std.ArrayListUnmanaged(Instr) = .empty;
         try out.append(ar_, Instr.of(.label, try ar_.dupe(Arg, &.{Arg.uint(info)})));
         try out.append(ar_, Instr.of(.func_info, try ar_.dupe(Arg, &.{ Arg.atomOf(f.l.name), Arg.atomOf(name), Arg.uint(f.arity) })));
@@ -433,11 +441,11 @@ const Fn = struct {
             // catch tags must nest downwards on the stack (`beam_validator`'s
             // `bad_try_catch_nesting`; the emulator's catch search assumes it).
             .y => |n| Arg.yr(if (n >= tag_space)
-                f.n_vars + f.temp_max + (f.tag_max - 1 - (n - tag_space))
+                f.n_slots + f.temp_max + (f.tag_max - 1 - (n - tag_space))
             else if (n >= temp_space)
-                f.n_vars + (n - temp_space)
+                f.n_slots + (n - temp_space)
             else
-                n),
+                f.var_slots[n]),
             .u => |n| if (n == frame_placeholder) Arg.uint(frame) else a,
             .list => |items| blk: {
                 const out = try f.ar().alloc(Arg, items.len);
@@ -448,6 +456,96 @@ const Fn = struct {
         };
     }
 };
+
+// ── the variables' slots ─────────────────────────────────────────────────────
+
+/// The BEAM loader's bound on a Y register: `allocate N` with N at or above it
+/// is `badfile` (`MAX_REG`).
+const max_frame: u32 = 1024;
+
+const Packed = struct { slots: []const u32, count: u32 };
+
+/// Variables whose live ranges never overlap share a frame slot. Every
+/// Erlang variable of the module (`Split@4`, `Split@5`, … — each rebinding of
+/// a botopink `var` is one) took a Y register of its own, so a large body
+/// needed thousands and the loader refused the module (`badfile`, front 118's
+/// `html`). A range is the variable's first to its last appearance in the
+/// code: every jump the lowering writes goes forward — a clause's next, a
+/// `case`'s done, a `try`'s handler — but the loops (a comprehension, a
+/// `receive`), whose backward jump keeps live through the whole loop every
+/// variable whose range touches it. Ranges are packed in order of their
+/// start, each into the lowest slot free there; a range that ends where
+/// another starts does not share with it (one instruction never reads and
+/// writes one slot for two variables).
+fn packVars(ar: std.mem.Allocator, code: []const Instr, n_vars: u32) Error!Packed {
+    const none = std.math.maxInt(u32);
+    const first = try ar.alloc(u32, n_vars);
+    const last = try ar.alloc(u32, n_vars);
+    @memset(first, none);
+    @memset(last, 0);
+    var labels: std.AutoHashMapUnmanaged(u64, u32) = .empty;
+    for (code, 0..) |ins, i| {
+        if (ins.op == .label) try labels.put(ar, ins.args[0].u, @intCast(i));
+        for (ins.args) |a| touch(a, @intCast(i), first, last);
+    }
+    // The loops: a label target behind its jump.
+    var loops: std.ArrayListUnmanaged([2]u32) = .empty;
+    for (code, 0..) |ins, i| for (ins.args) |a| if (a == .f) {
+        if (labels.get(a.f)) |at| if (at < i) try loops.append(ar, .{ at, @intCast(i) });
+    };
+    var changed = loops.items.len > 0;
+    while (changed) {
+        changed = false;
+        for (loops.items) |lp| for (first, last) |*s, *e| {
+            if (s.* == none or s.* > lp[1] or e.* < lp[0]) continue;
+            if (s.* > lp[0]) {
+                s.* = lp[0];
+                changed = true;
+            }
+            if (e.* < lp[1]) {
+                e.* = lp[1];
+                changed = true;
+            }
+        };
+    }
+    const order = try ar.alloc(u32, n_vars);
+    for (order, 0..) |*o, i| o.* = @intCast(i);
+    std.mem.sort(u32, order, first, struct {
+        fn lt(fs: []const u32, a: u32, b: u32) bool {
+            return if (fs[a] != fs[b]) fs[a] < fs[b] else a < b;
+        }
+    }.lt);
+    const slots = try ar.alloc(u32, n_vars);
+    @memset(slots, 0);
+    // The last position each slot is busy to.
+    var busy: std.ArrayListUnmanaged(u32) = .empty;
+    for (order) |v| {
+        if (first[v] == none) continue;
+        var chosen: ?u32 = null;
+        for (busy.items, 0..) |until, k| if (until < first[v]) {
+            chosen = @intCast(k);
+            break;
+        };
+        const k = chosen orelse blk: {
+            try busy.append(ar, 0);
+            break :blk @as(u32, @intCast(busy.items.len - 1));
+        };
+        busy.items[k] = last[v];
+        slots[v] = k;
+    }
+    return .{ .slots = slots, .count = @intCast(busy.items.len) };
+}
+
+fn touch(a: Arg, at: u32, first: []u32, last: []u32) void {
+    switch (a) {
+        .y => |n| if (n < temp_space) {
+            first[n] = @min(first[n], at);
+            last[n] = @max(last[n], at);
+        },
+        .list => |items| for (items) |it| touch(it, at, first, last),
+        else => {},
+    }
+}
 
 // ── dead code ────────────────────────────────────────────────────────────────
 

@@ -1188,3 +1188,142 @@ test "template: markup DSL ---- ${expr} splices as a text child" {
         \\val page = html """<p>${name}</p>""";
     );
 }
+
+// ── decision 331: a template module carries what its body reaches ────────────
+//
+// Front 118's three rows, each run on both comptime runtimes with the replies
+// required byte-identical (`h.repliesIdenticalAcrossRuntimes`).
+
+test "decision 331: a template body calls its module's functions, a recursive one and an imported one" {
+    // The template module held the template alone: every call was `the BEAM
+    // runtime does not take call to undefined function wrap/1 (in shout/1)`
+    // (the wat runtime the same). It carries the functions its body reaches
+    // now — `helper` (private), `depth` (recursive), `wrap` imported with
+    // the private `inner` it calls — expanded in the declaring module and in
+    // an importer alike.
+    const text =
+        \\fn inner(s: string) -> string {
+        \\    return "<" + s + ">";
+        \\}
+        \\pub fn wrap(s: string) -> string {
+        \\    return inner(s);
+        \\}
+    ;
+    const tags =
+        \\import {wrap} from "text";
+        \\fn helper(s: string) -> string {
+        \\    return "[" + s + "]";
+        \\}
+        \\fn depth(n: i32) -> i32 {
+        \\    return if (n <= 0) 0 else 1 + depth(n - 1);
+        \\}
+        \\pub fn shout(comptime q: @Expr<string>) -> @Expr<string> {
+        \\    return q.build("\"" + wrap(helper(q.text())) + depth(3).toString() + "\"");
+        \\}
+        \\val here = shout "in";
+    ;
+    const main =
+        \\import {shout} from "tags";
+        \\fn twice(s: string) -> string {
+        \\    return s + s;
+        \\}
+        \\pub fn echo(comptime q: @Expr<string>) -> @Expr<string> {
+        \\    return q.build("\"" + twice(q.text()) + "\"");
+        \\}
+        \\val a = shout "ab";
+        \\val b = echo "xy";
+    ;
+    const modules: []const @import("../../module.zig").Module = &.{
+        .{ .path = "text", .source = text },
+        .{ .path = "tags", .source = tags },
+        .{ .path = "", .source = main },
+    };
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const replies = try h.repliesIdenticalAcrossRuntimes(std.testing.allocator, arena.allocator(), @src(), modules);
+    try std.testing.expectEqual(@as(usize, 3), replies.len);
+    try std.testing.expectEqualStrings(
+        \\{"kind":"code","source":"\"<[in]>3\""}
+    , replies[0]);
+    try std.testing.expectEqualStrings(
+        \\{"kind":"code","source":"\"<[ab]>3\""}
+    , replies[1]);
+    try std.testing.expectEqualStrings(
+        \\{"kind":"code","source":"\"xyxy\""}
+    , replies[2]);
+}
+
+test "decision 331: a template body reads a labelled tuple element by its label" {
+    // `x.kind` lowered as a map read in the template module — `{error,
+    // {badmap, {<<"ab">>, 2}}}` on both runtimes — where an ordinary function
+    // reads the element by position. A label read is the position inference
+    // recorded for it: a local, an array element in a loop, a helper's
+    // parameter, and a template another module exports.
+    const pairs =
+        \\fn kindOf(x: #(kind: string, n: i32)) -> string {
+        \\    return x.kind;
+        \\}
+        \\pub fn pairs(comptime q: @Expr<string>) -> @Expr<string> {
+        \\    val items: #(kind: string, n: i32)[] = [#(q.text(), 1), #("z", 2)];
+        \\    var out = "";
+        \\    for (items) { it ->
+        \\        out = out + it.kind + it.n.toString() + ";";
+        \\    };
+        \\    return q.build("\"" + out + kindOf(#("w", 7)) + "\"");
+        \\}
+    ;
+    const main =
+        \\import {pairs} from "pairs";
+        \\pub fn probe(comptime q: @Expr<string>) -> @Expr<string> {
+        \\    val x: #(kind: string, n: i32) = #(q.text(), 2);
+        \\    return q.build("\"" + x.kind + x.n.toString() + "\"");
+        \\}
+        \\val a = probe "ab";
+        \\val b = pairs "xy";
+    ;
+    const modules: []const @import("../../module.zig").Module = &.{
+        .{ .path = "pairs", .source = pairs },
+        .{ .path = "", .source = main },
+    };
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const replies = try h.repliesIdenticalAcrossRuntimes(std.testing.allocator, arena.allocator(), @src(), modules);
+    try std.testing.expectEqual(@as(usize, 2), replies.len);
+    try std.testing.expectEqualStrings(
+        \\{"kind":"code","source":"\"ab2\""}
+    , replies[0]);
+    try std.testing.expectEqualStrings(
+        \\{"kind":"code","source":"\"xy1;z2;w\""}
+    , replies[1]);
+}
+
+test "decision 331: a template body of more variables than a frame holds compiles on both runtimes" {
+    // Every Erlang variable took a Y register (the BEAM) or a local (wat) of
+    // its own: 1200 rebindings of one `var` were `{load_binary, …, badfile}`
+    // and `wasm3: compiling function overran its stack height limit`. Slots
+    // whose ranges never overlap are shared now.
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const ar = arena.allocator();
+    var src: std.ArrayListUnmanaged(u8) = .empty;
+    try src.appendSlice(ar,
+        \\pub fn big(comptime q: @Expr<string>) -> @Expr<string> {
+        \\    var s = q.text();
+        \\    var n = 0;
+        \\
+    );
+    for (0..1200) |i| {
+        try src.print(ar, "    s = s + \"{c}\";\n", .{@as(u8, 'a' + @as(u8, @intCast(i % 26)))});
+        try src.appendSlice(ar, "    n = n + 1;\n");
+    }
+    try src.appendSlice(ar,
+        \\    return q.build("\"" + s.slice(0, 6) + n.toString() + "\"");
+        \\}
+        \\val got = big "q";
+    );
+    const replies = try h.repliesIdenticalAcrossRuntimes(std.testing.allocator, ar, @src(), &.{.{ .path = "", .source = src.items }});
+    try std.testing.expectEqual(@as(usize, 1), replies.len);
+    try std.testing.expectEqualStrings(
+        \\{"kind":"code","source":"\"qabcde1200\""}
+    , replies[0]);
+}

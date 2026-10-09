@@ -1458,6 +1458,7 @@ pub fn decoratorSupport(
     imported: *const std.StringHashMapUnmanaged([]const ast.FnDecl),
     dfn: ast.FnDecl,
 ) std.mem.Allocator.Error!Support {
+    const kind: []const u8 = if (dfn.returnType) |rt| (if (rt.isTemplateReturnType()) "template" else "decorator") else "decorator";
     var out: std.ArrayListUnmanaged(ast.FnDecl) = .empty;
     // name → the body that name stands for in the decorator module.
     var bodies = std.StringHashMap([*]const ast.Stmt).init(arena);
@@ -1473,7 +1474,7 @@ pub fn decoratorSupport(
         if (lookup.get(n)) |f| {
             if (f.body.len == 0 or isDecoratorParams(f.params)) continue;
             if (f.returnType) |rt| if (rt.isTemplateReturnType()) continue;
-            if (try claimName(arena, &bodies, f, dfn.name)) |c| return .{ .fns = out.items, .conflict = c };
+            if (try claimName(arena, &bodies, f, dfn.name, kind)) |c| return .{ .fns = out.items, .conflict = c };
             try out.append(arena, f);
             try ast.collectNames(arena, f.body, &names);
             continue;
@@ -1481,7 +1482,7 @@ pub fn decoratorSupport(
         const closure = imported.get(n) orelse continue;
         for (closure) |g| {
             if (bodies.get(g.name)) |b| if (b == g.body.ptr) continue;
-            if (try claimName(arena, &bodies, g, dfn.name)) |c| return .{ .fns = out.items, .conflict = c };
+            if (try claimName(arena, &bodies, g, dfn.name, kind)) |c| return .{ .fns = out.items, .conflict = c };
             try out.append(arena, g);
         }
     }
@@ -1490,10 +1491,11 @@ pub fn decoratorSupport(
 
 /// Records that `f.name` means `f` in the decorator module; the message when
 /// the name already means another function.
-fn claimName(arena: std.mem.Allocator, bodies: *std.StringHashMap([*]const ast.Stmt), f: ast.FnDecl, decorator: []const u8) std.mem.Allocator.Error!?[]const u8 {
+fn claimName(arena: std.mem.Allocator, bodies: *std.StringHashMap([*]const ast.Stmt), f: ast.FnDecl, decorator: []const u8, kind: []const u8) std.mem.Allocator.Error!?[]const u8 {
     if (bodies.get(f.name)) |b| {
         if (b == f.body.ptr) return null;
-        return try std.fmt.allocPrint(arena, "the decorator `{s}` reaches two different functions named `{s}` — one of its module's and one an imported function calls — and a decorator runs as one module, where one name is one function", .{ decorator, f.name });
+        const what = if (std.mem.eql(u8, kind, "template")) "a template" else "a decorator";
+        return try std.fmt.allocPrint(arena, "the {s} `{s}` reaches two different functions named `{s}` — one of its module's and one an imported function calls — and {s} runs as one module, where one name is one function", .{ kind, decorator, f.name, what });
     }
     try bodies.put(f.name, f.body.ptr);
     return null;
@@ -6323,7 +6325,35 @@ fn expandTemplateCallViaRuntime(
         }
     }
 
-    const outcome = templateEval.evaluate(env.arena, ctx.io, ctx.build_root, env.comptimeOwnerOf(tfn), tfn, captures, plainArgs, &env.comptimeTraces) catch {
+    // Decision 331, calls included — the template module carries the
+    // functions its body reaches (its own module's, and the ones that module
+    // imports with their closure) and the record and enum types they name, as
+    // a decorator's does (`decoratorSupport`, `block_eval.typesReached`). An
+    // imported template brings what its module computed
+    // (`Env.importedTemplateSupport`); a local one computes it here.
+    const owner = env.comptimeOwnerOf(tfn);
+    const found: Support = if (env.importedTemplateSupport.get(@intFromPtr(tfn.body.ptr))) |s|
+        .{ .fns = s.fns, .conflict = s.conflict }
+    else if (owner.len == 0 or std.mem.eql(u8, owner, env.modulePath))
+        try decoratorSupport(env.arena, env.fnDecls, &env.importedFnSupport, tfn)
+    else
+        .{ .fns = &.{} };
+    if (found.conflict) |c| {
+        env.lastError = TypeError.custom(c, "Rename one of the two functions, so each name the template reaches is one function.").withLoc(loc);
+        return error.TypeError;
+    }
+    // A local function's tuple label reads were recorded by this module's
+    // inference (`Env.tupleLabelReads`); an imported one's were applied when
+    // its module exported it.
+    const carried = try env.arena.alloc(ast.FnDecl, 1 + found.fns.len);
+    for (carried, 0..) |*c, i| {
+        const f = if (i == 0) tfn else found.fns[i - 1];
+        const own = if (i == 0) owner.len == 0 or std.mem.eql(u8, owner, env.modulePath) else if (env.fnDecls.get(f.name)) |g| g.body.ptr == f.body.ptr else false;
+        c.* = if (own) try templateEval.relabelTupleReads(env.arena, &env.tupleLabelReads, f) else f;
+    }
+    const reached = try blockEval.typesReached(env, carried, &templateEval.injected_names);
+    const support = try std.mem.concat(env.arena, ast.FnDecl, &.{ carried[1..], reached.fns });
+    const outcome = templateEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, carried[0], support, reached.types, captures, plainArgs, &env.comptimeTraces) catch {
         env.lastError = TypeError.custom(
             "the template evaluator failed to run",
             "Template bodies run in a persistent `erl` process at compile time — check that `erl` is on PATH.",
@@ -11243,6 +11273,7 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
                         .optional = ia.optional,
                     } } } };
                     try env.enumSectionRewrites.put(loc, rewrite);
+                    try env.tupleLabelReads.put(env.arena, loc, idx);
                 }
             }
             if (recvType.* == .named) {

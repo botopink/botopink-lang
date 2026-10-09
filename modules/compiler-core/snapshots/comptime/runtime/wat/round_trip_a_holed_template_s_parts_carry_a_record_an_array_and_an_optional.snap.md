@@ -21,92 +21,92 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
 ----- COMPTIME WAT -- template holes
 ```wat
 (func $holes/1 (param $a0 i32) (result i32)
-  (local $V_Q i32) (local $t1 i32) (local $V_Codes i32) (local $t2 i32) (local $V_Texts i32) (local $t3 i32) (local $V_Spans i32) (local $t4 i32) (local $t5 i32) (local $t6 i32) (local $t7 i32) (local $V_Codes@4 i32) (local $t8 i32) (local $V_Texts@4 i32) (local $t9 i32) (local $V_Spans@3 i32)
+  (local $V_Q i32) (local $s1 i32) (local $s2 i32) (local $s3 i32) (local $s4 i32)
   (block $raise
   (block $L1 (result i32)
   (block $L2
   local.get $a0
   local.set $V_Q
   call $rt_nil
-  local.set $t1
+  local.set $s1
   (block $L4
   (block $L3
-  local.get $t1
-  local.set $V_Codes
+  local.get $s1
+  local.set $s2
   br $L4
   )
-  local.get $t1
+  local.get $s1
   call $rt_badmatch
   drop
   br $raise
   )
-  local.get $t1
+  local.get $s1
   drop
   global.get $__lit
   i32.const 224
   i32.add
   i32.const 0
   call $rt_bin
-  local.set $t2
+  local.set $s1
   (block $L6
   (block $L5
-  local.get $t2
-  local.set $V_Texts
+  local.get $s1
+  local.set $s3
   br $L6
   )
-  local.get $t2
+  local.get $s1
   call $rt_badmatch
   drop
   br $raise
   )
-  local.get $t2
+  local.get $s1
   drop
   global.get $__lit
   i32.const 224
   i32.add
   i32.const 0
   call $rt_bin
-  local.set $t3
+  local.set $s1
   (block $L8
   (block $L7
-  local.get $t3
-  local.set $V_Spans
+  local.get $s1
+  local.set $s4
   br $L8
   )
-  local.get $t3
+  local.get $s1
   call $rt_badmatch
   drop
   br $raise
   )
-  local.get $t3
+  local.get $s1
   drop
   call $rt_nil
-  local.set $t4
+  local.set $s1
   global.get $__tbase
   i32.const 0
   i32.add
   i32.const 2
-  local.get $t4
+  local.get $s1
   call $rt_make_fun
   i32.const 3
   call $rt_tuple
-  local.set $t5
-  local.get $t5
+  local.set $s1
+  local.get $s1
   i32.const 0
-  local.get $V_Codes
+  local.get $s2
   call $rt_tset
   drop
-  local.get $t5
+  local.get $s1
   i32.const 1
-  local.get $V_Texts
+  local.get $s3
   call $rt_tset
   drop
-  local.get $t5
+  local.get $s1
   i32.const 2
-  local.get $V_Spans
+  local.get $s4
   call $rt_tset
   drop
-  local.get $t5
+  local.get $s1
   local.get $V_Q
   call $bp_comptime_template:parts/1
   call $rt_pending
@@ -114,40 +114,40 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   call $rt_lists_foldl
   call $rt_pending
   br_if $raise
-  local.set $t6
+  local.set $s1
   (block $L10
   (block $L9
-  local.get $t6
+  local.get $s1
   call $rt_tuple_arity
   i32.const 3
   i32.ne
   br_if $L9
-  local.get $t6
+  local.get $s1
   i32.const 0
   call $rt_elem
-  local.set $t7
-  local.get $t7
-  local.set $V_Codes@4
-  local.get $t6
+  local.set $s2
+  local.get $s2
+  local.set $s2
+  local.get $s1
   i32.const 1
   call $rt_elem
-  local.set $t8
-  local.get $t8
-  local.set $V_Texts@4
-  local.get $t6
+  local.set $s3
+  local.get $s3
+  local.set $s3
+  local.get $s1
   i32.const 2
   call $rt_elem
-  local.set $t9
-  local.get $t9
-  local.set $V_Spans@3
+  local.set $s4
+  local.get $s4
+  local.set $s4
   br $L10
   )
-  local.get $t6
+  local.get $s1
   call $rt_badmatch
   drop
   br $raise
   )
-  local.get $t6
+  local.get $s1
   drop
   local.get $V_Q
   global.get $__lit
@@ -155,7 +155,7 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   i32.add
   i32.const 2
   call $rt_bin
-  local.get $V_Codes@4
+  local.get $s2
   global.get $__lit
   i32.const 296
   i32.add
@@ -175,7 +175,7 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   call $bp_comptime_template:__bp_add/2
   call $rt_pending
   br_if $raise
-  local.get $V_Texts@4
+  local.get $s3
   call $bp_comptime_template:__bp_add/2
   call $rt_pending
   br_if $raise
@@ -187,7 +187,7 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   call $bp_comptime_template:__bp_add/2
   call $rt_pending
   br_if $raise
-  local.get $V_Spans@3
+  local.get $s4
   call $bp_comptime_template:__bp_add/2
   call $rt_pending
   br_if $raise
@@ -214,12 +214,12 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
 )
 
 (func $fun1:holes/1 (param $self i32) (param $a0 i32) (param $a1 i32) (result i32)
-  (local $V_P i32) (local $t1 i32) (local $V_Codes@1 i32) (local $t2 i32) (local $V_Texts@1 i32) (local $t3 i32) (local $V_Spans@1 i32) (local $t4 i32) (local $t5 i32) (local $V_Codes@2 i32) (local $t6 i32) (local $V_Codes@3 i32) (local $t7 i32) (local $t8 i32) (local $V_Texts@2 i32) (local $t9 i32) (local $V_Texts@3 i32) (local $t10 i32) (local $V_Spans@2 i32) (local $t11 i32)
+  (local $s0 i32) (local $s1 i32) (local $s2 i32) (local $s3 i32) (local $s4 i32) (local $s5 i32) (local $s6 i32)
   (block $raise
   (block $L1 (result i32)
   (block $L2
   local.get $a0
-  local.set $V_P
+  local.set $s0
   local.get $a1
   call $rt_tuple_arity
   i32.const 3
@@ -228,27 +228,27 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   local.get $a1
   i32.const 0
   call $rt_elem
-  local.set $t1
-  local.get $t1
-  local.set $V_Codes@1
+  local.set $s1
+  local.get $s1
+  local.set $s1
   local.get $a1
   i32.const 1
   call $rt_elem
-  local.set $t2
-  local.get $t2
-  local.set $V_Texts@1
+  local.set $s2
+  local.get $s2
+  local.set $s2
   local.get $a1
   i32.const 2
   call $rt_elem
-  local.set $t3
-  local.get $t3
-  local.set $V_Spans@1
+  local.set $s3
+  local.get $s3
+  local.set $s3
   global.get $__lit
   i32.const 32
   i32.add
   i32.const 4
   call $rt_atom
-  local.get $V_P
+  local.get $s0
   call $rt_maps_get
   call $rt_pending
   br_if $raise
@@ -259,10 +259,10 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   call $rt_bin
   call $rt_eqx
   call $rt_bool
-  local.set $t4
+  local.set $s4
   (block $L3 (result i32)
   (block $L4
-  local.get $t4
+  local.get $s4
   global.get $__lit
   i32.const 232
   i32.add
@@ -271,65 +271,65 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   call $rt_eqx
   i32.eqz
   br_if $L4
-  local.get $V_Codes@1
+  local.get $s1
   global.get $__lit
   i32.const 96
   i32.add
   i32.const 4
   call $rt_atom
-  local.get $V_P
+  local.get $s0
   call $rt_maps_get
   call $rt_pending
   br_if $raise
   call $__bp_prim_push/2
   call $rt_pending
   br_if $raise
-  local.set $t5
+  local.set $s5
   (block $L6
   (block $L5
-  local.get $t5
-  local.set $V_Codes@2
+  local.get $s5
+  local.set $s6
   br $L6
   )
-  local.get $t5
+  local.get $s5
   call $rt_badmatch
   drop
   br $raise
   )
-  local.get $t5
+  local.get $s5
   drop
-  local.get $V_Codes@2
+  local.get $s6
   br $L3
   )
   (block $L7
-  local.get $V_Codes@1
+  local.get $s1
   br $L3
   )
-  local.get $t4
+  local.get $s4
   call $rt_case_clause
   drop
   br $raise
   )
-  local.set $t6
+  local.set $s1
   (block $L9
   (block $L8
-  local.get $t6
-  local.set $V_Codes@3
+  local.get $s1
+  local.set $s4
   br $L9
   )
-  local.get $t6
+  local.get $s1
   call $rt_badmatch
   drop
   br $raise
   )
-  local.get $t6
+  local.get $s1
   drop
   global.get $__lit
   i32.const 32
   i32.add
   i32.const 4
   call $rt_atom
-  local.get $V_P
+  local.get $s0
   call $rt_maps_get
   call $rt_pending
   br_if $raise
@@ -340,10 +340,10 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   call $rt_bin
   call $rt_eqx
   call $rt_bool
-  local.set $t7
+  local.set $s1
   (block $L10 (result i32)
   (block $L11
-  local.get $t7
+  local.get $s1
   global.get $__lit
   i32.const 232
   i32.add
@@ -352,60 +352,60 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   call $rt_eqx
   i32.eqz
   br_if $L11
-  local.get $V_Texts@1
+  local.get $s2
   global.get $__lit
   i32.const 248
   i32.add
   i32.const 4
   call $rt_atom
-  local.get $V_P
+  local.get $s0
   call $rt_maps_get
   call $rt_pending
   br_if $raise
   call $bp_comptime_template:__bp_add/2
   call $rt_pending
   br_if $raise
-  local.set $t8
+  local.set $s5
   (block $L13
   (block $L12
-  local.get $t8
-  local.set $V_Texts@2
+  local.get $s5
+  local.set $s6
   br $L13
   )
-  local.get $t8
+  local.get $s5
   call $rt_badmatch
   drop
   br $raise
   )
-  local.get $t8
+  local.get $s5
   drop
-  local.get $V_Texts@2
+  local.get $s6
   br $L10
   )
   (block $L14
-  local.get $V_Texts@1
+  local.get $s2
   br $L10
   )
-  local.get $t7
+  local.get $s1
   call $rt_case_clause
   drop
   br $raise
   )
-  local.set $t9
+  local.set $s1
   (block $L16
   (block $L15
-  local.get $t9
-  local.set $V_Texts@3
+  local.get $s1
+  local.set $s2
   br $L16
   )
-  local.get $t9
+  local.get $s1
   call $rt_badmatch
   drop
   br $raise
   )
-  local.get $t9
+  local.get $s1
   drop
-  local.get $V_Spans@1
+  local.get $s3
   global.get $__lit
   i32.const 256
   i32.add
@@ -416,7 +416,7 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   i32.add
   i32.const 4
   call $rt_atom
-  local.get $V_P
+  local.get $s0
   call $rt_maps_get
   call $rt_pending
   br_if $raise
@@ -447,7 +447,7 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   i32.add
   i32.const 4
   call $rt_atom
-  local.get $V_P
+  local.get $s0
   call $rt_maps_get
   call $rt_pending
   br_if $raise
@@ -468,39 +468,39 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   call $bp_comptime_template:__bp_add/2
   call $rt_pending
   br_if $raise
-  local.set $t10
+  local.set $s0
   (block $L18
   (block $L17
-  local.get $t10
-  local.set $V_Spans@2
+  local.get $s0
+  local.set $s1
   br $L18
   )
-  local.get $t10
+  local.get $s0
   call $rt_badmatch
   drop
   br $raise
   )
-  local.get $t10
+  local.get $s0
   drop
   i32.const 3
   call $rt_tuple
-  local.set $t11
-  local.get $t11
+  local.set $s0
+  local.get $s0
   i32.const 0
-  local.get $V_Codes@3
+  local.get $s4
   call $rt_tset
   drop
-  local.get $t11
+  local.get $s0
   i32.const 1
-  local.get $V_Texts@3
+  local.get $s2
   call $rt_tset
   drop
-  local.get $t11
+  local.get $s0
   i32.const 2
-  local.get $V_Spans@2
+  local.get $s1
   call $rt_tset
   drop
-  local.get $t11
+  local.get $s0
   br $L1
   )
   call $rt_function_clause
@@ -513,14 +513,14 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
 )
 
 (func $__bp_prim_push/2 (param $a0 i32) (param $a1 i32) (result i32)
-  (local $V_Recv i32) (local $V_Arg0 i32) (local $t1 i32) (local $t2 i32) (local $t3 i32)
+  (local $V_Recv i32) (local $s1 i32) (local $t2 i32)
   (block $raise
   (block $L1 (result i32)
   (block $L2
   local.get $a0
   local.set $V_Recv
   local.get $a1
-  local.set $V_Arg0
+  local.set $s1
   (block $L3
   (block $L4
   (block $L5
@@ -539,11 +539,11 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   br $L2
   )
   local.get $V_Recv
-  local.get $V_Arg0
-  local.set $t1
+  local.get $s1
+  local.set $s1
   call $rt_nil
   local.set $t2
-  local.get $t1
+  local.get $s1
   local.get $t2
   call $rt_cons
   call $rt_append
@@ -556,8 +556,8 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   local.set $V_Recv
   i32.const 4
   call $rt_tuple
-  local.set $t3
-  local.get $t3
+  local.set $s1
+  local.get $s1
   i32.const 0
   global.get $__lit
   i32.const 368
@@ -566,7 +566,7 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   call $rt_atom
   call $rt_tset
   drop
-  local.get $t3
+  local.get $s1
   i32.const 1
   global.get $__lit
   i32.const 392
@@ -575,18 +575,18 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   call $rt_bin
   call $rt_tset
   drop
-  local.get $t3
+  local.get $s1
   i32.const 2
   i64.const 1
   call $rt_int
   call $rt_tset
   drop
-  local.get $t3
+  local.get $s1
   i32.const 3
   local.get $V_Recv
   call $rt_tset
   drop
-  local.get $t3
+  local.get $s1
   call $rt_error
   call $rt_pending
   br_if $raise
@@ -739,14 +739,14 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
 )
 
 (func $__bp_prim_join/2 (param $a0 i32) (param $a1 i32) (result i32)
-  (local $V_Recv i32) (local $V_Arg0 i32) (local $t1 i32) (local $t2 i32)
+  (local $V_Recv i32) (local $s1 i32)
   (block $raise
   (block $L1 (result i32)
   (block $L2
   local.get $a0
   local.set $V_Recv
   local.get $a1
-  local.set $V_Arg0
+  local.set $s1
   (block $L3
   (block $L4
   (block $L5
@@ -764,14 +764,14 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   )
   br $L2
   )
-  local.get $V_Arg0
+  local.get $s1
   call $rt_nil
-  local.set $t1
+  local.set $s1
   global.get $__tbase
   i32.const 2
   i32.add
   i32.const 1
-  local.get $t1
+  local.get $s1
   call $rt_make_fun
   local.get $V_Recv
   call $rt_lists_map
@@ -790,8 +790,8 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   local.set $V_Recv
   i32.const 4
   call $rt_tuple
-  local.set $t2
-  local.get $t2
+  local.set $s1
+  local.get $s1
   i32.const 0
   global.get $__lit
   i32.const 368
@@ -800,7 +800,7 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   call $rt_atom
   call $rt_tset
   drop
-  local.get $t2
+  local.get $s1
   i32.const 1
   global.get $__lit
   i32.const 416
@@ -809,18 +809,18 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   call $rt_bin
   call $rt_tset
   drop
-  local.get $t2
+  local.get $s1
   i32.const 2
   i64.const 1
   call $rt_int
   call $rt_tset
   drop
-  local.get $t2
+  local.get $s1
   i32.const 3
   local.get $V_Recv
   call $rt_tset
   drop
-  local.get $t2
+  local.get $s1
   call $rt_error
   call $rt_pending
   br_if $raise
@@ -836,18 +836,18 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
 )
 
 (func $fun3:__bp_prim_join/2 (param $self i32) (param $a0 i32) (result i32)
-  (local $V___E i32) (local $t1 i32) (local $t2 i32) (local $t3 i32) (local $t4 i32)
+  (local $s0 i32) (local $s1 i32)
   (block $raise
   (block $L1 (result i32)
   (block $L2
   local.get $a0
-  local.set $V___E
+  local.set $s0
   (block $L3 (result i32)
   (block $L4
   (block $L5
   (block $L6
   (block $L7
-  local.get $V___E
+  local.get $s0
   call $rt_erlang_is_binary
   call $rt_pending
   br_if $L7
@@ -861,14 +861,14 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   )
   br $L4
   )
-  local.get $V___E
+  local.get $s0
   br $L3
   )
   (block $L8
   (block $L9
   (block $L10
   (block $L11
-  local.get $V___E
+  local.get $s0
   call $rt_erlang_is_integer
   call $rt_pending
   br_if $L11
@@ -882,7 +882,7 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   )
   br $L8
   )
-  local.get $V___E
+  local.get $s0
   call $rt_erlang_integer_to_binary
   call $rt_pending
   br_if $raise
@@ -892,7 +892,7 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   (block $L13
   (block $L14
   (block $L15
-  local.get $V___E
+  local.get $s0
   call $rt_erlang_is_list
   call $rt_pending
   br_if $L15
@@ -906,7 +906,7 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   )
   br $L12
   )
-  local.get $V___E
+  local.get $s0
   br $L3
   )
   (block $L16
@@ -929,22 +929,22 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   br $L16
   )
   call $rt_nil
-  local.set $t1
+  local.set $s1
   i64.const 112
   call $rt_int
-  local.get $t1
+  local.get $s1
   call $rt_cons
-  local.set $t2
+  local.set $s1
   i64.const 126
   call $rt_int
-  local.get $t2
+  local.get $s1
   call $rt_cons
-  local.get $V___E
-  local.set $t3
+  local.get $s0
+  local.set $s0
   call $rt_nil
-  local.set $t4
-  local.get $t3
-  local.get $t4
+  local.set $s1
+  local.get $s0
+  local.get $s1
   call $rt_cons
   call $rt_io_lib_format
   call $rt_pending

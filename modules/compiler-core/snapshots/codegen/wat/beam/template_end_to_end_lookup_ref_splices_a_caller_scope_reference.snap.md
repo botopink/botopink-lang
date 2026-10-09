@@ -18,13 +18,13 @@ fn main() {
 ----- COMPTIME WAT -- template refer
 ```wat
 (func $refer/1 (param $a0 i32) (result i32)
-  (local $V_Q i32) (local $t1 i32) (local $V_Hit i32) (local $t2 i32) (local $V_B i32)
+  (local $s0 i32) (local $s1 i32) (local $V_Hit i32)
   (block $raise
   (block $L1 (result i32)
   (block $L2
   local.get $a0
-  local.set $V_Q
-  local.get $V_Q
+  local.set $s0
+  local.get $s0
   global.get $__lit
   i32.const 224
   i32.add
@@ -33,25 +33,25 @@ fn main() {
   call $bp_comptime_template:lookup/2
   call $rt_pending
   br_if $raise
-  local.set $t1
+  local.set $s1
   (block $L4
   (block $L3
-  local.get $t1
+  local.get $s1
   local.set $V_Hit
   br $L4
   )
-  local.get $t1
+  local.get $s1
   call $rt_badmatch
   drop
   br $raise
   )
-  local.get $t1
+  local.get $s1
   drop
   local.get $V_Hit
-  local.set $t2
+  local.set $s1
   (block $L5 (result i32)
   (block $L6
-  local.get $t2
+  local.get $s1
   global.get $__lit
   i32.const 232
   i32.add
@@ -60,7 +60,7 @@ fn main() {
   call $rt_eqx
   i32.eqz
   br_if $L6
-  local.get $V_Q
+  local.get $s0
   global.get $__lit
   i32.const 248
   i32.add
@@ -72,15 +72,15 @@ fn main() {
   br $L5
   )
   (block $L7
-  local.get $t2
-  local.set $V_B
-  local.get $V_B
+  local.get $s1
+  local.set $s0
+  local.get $s0
   call $bp_comptime_template:ref/1
   call $rt_pending
   br_if $raise
   br $L5
   )
-  local.get $t2
+  local.get $s1
   call $rt_case_clause
   drop
   br $raise

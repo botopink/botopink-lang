@@ -581,106 +581,106 @@ fn main() {
   {label, 78}.
     {func_info, {atom, test@main}, {atom, '__bp_tpl_1-t/3-fun-0-'}, 3}.
   {label, 79}.
-    {allocate, 10, 3}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}]}}.
-    {move, {x, 0}, {y, 4}}.
-    {move, {x, 1}, {y, 5}}.
-    {move, {x, 2}, {y, 6}}.
-    {move, {y, 4}, {x, 0}}.
+    {allocate, 9, 3}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}]}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {x, 1}, {y, 4}}.
+    {move, {x, 2}, {y, 5}}.
+    {move, {y, 3}, {x, 0}}.
     {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
-    {move, {x, 0}, {y, 7}}.
-    {move, {y, 7}, {y, 0}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {y, 0}}.
     {jump, {f, 83}}.
   {label, 83}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, length, 1}}.
-    {move, {x, 0}, {y, 7}}.
-    {move, {y, 7}, {y, 1}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {y, 1}}.
     {jump, {f, 85}}.
   {label, 85}.
-    {move, {y, 5}, {x, 0}}.
+    {move, {y, 4}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '<', 2}}.
-    {move, {x, 0}, {y, 7}}.
-    {move, {y, 7}, {x, 0}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {x, 0}}.
     {test, is_eq_exact, {f, 87}, [{x, 0}, {atom, true}]}.
     {move, {y, 1}, {x, 0}}.
-    {move, {y, 5}, {x, 1}}.
+    {move, {y, 4}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '+', 2}}.
-    {move, {x, 0}, {y, 9}}.
-    {move, {y, 9}, {x, 0}}.
-    {move, {integer, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, max, 2}}.
-    {move, {x, 0}, {y, 9}}.
-    {move, {y, 9}, {y, 8}}.
-    {jump, {f, 86}}.
-  {label, 87}.
-    {move, {y, 7}, {x, 0}}.
-    {test, is_eq_exact, {f, 88}, [{x, 0}, {atom, false}]}.
-    {move, {y, 5}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, min, 2}}.
-    {move, {x, 0}, {y, 9}}.
-    {move, {y, 9}, {y, 8}}.
-    {jump, {f, 86}}.
-  {label, 88}.
-    {move, {y, 7}, {x, 0}}.
-    {case_end, {x, 0}}.
-  {label, 86}.
-    {move, {y, 8}, {y, 2}}.
-    {jump, {f, 90}}.
-  {label, 90}.
-    {move, {y, 6}, {x, 0}}.
-    {move, {integer, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, '<', 2}}.
-    {move, {x, 0}, {y, 7}}.
-    {move, {y, 7}, {x, 0}}.
-    {test, is_eq_exact, {f, 92}, [{x, 0}, {atom, true}]}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {y, 6}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, '+', 2}}.
-    {move, {x, 0}, {y, 9}}.
-    {move, {y, 9}, {x, 0}}.
-    {move, {integer, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, max, 2}}.
-    {move, {x, 0}, {y, 9}}.
-    {move, {y, 9}, {y, 8}}.
-    {jump, {f, 91}}.
-  {label, 92}.
-    {move, {y, 7}, {x, 0}}.
-    {test, is_eq_exact, {f, 93}, [{x, 0}, {atom, false}]}.
-    {move, {y, 6}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, min, 2}}.
-    {move, {x, 0}, {y, 9}}.
-    {move, {y, 9}, {y, 8}}.
-    {jump, {f, 91}}.
-  {label, 93}.
-    {move, {y, 7}, {x, 0}}.
-    {case_end, {x, 0}}.
-  {label, 91}.
-    {move, {y, 8}, {y, 3}}.
-    {jump, {f, 95}}.
-  {label, 95}.
-    {move, {y, 2}, {x, 0}}.
-    {move, {integer, 1}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, '+', 2}}.
-    {move, {x, 0}, {y, 7}}.
-    {move, {y, 3}, {x, 0}}.
-    {move, {y, 2}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, '-', 2}}.
     {move, {x, 0}, {y, 8}}.
     {move, {y, 8}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, max, 2}}.
     {move, {x, 0}, {y, 8}}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {y, 7}, {x, 1}}.
-    {move, {y, 8}, {x, 2}}.
-    {call_ext, 3, {extfunc, lists, sublist, 3}}.
+    {move, {y, 8}, {y, 7}}.
+    {jump, {f, 86}}.
+  {label, 87}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_eq_exact, {f, 88}, [{x, 0}, {atom, false}]}.
+    {move, {y, 4}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, min, 2}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {y, 7}}.
+    {jump, {f, 86}}.
+  {label, 88}.
+    {move, {y, 6}, {x, 0}}.
+    {case_end, {x, 0}}.
+  {label, 86}.
+    {move, {y, 7}, {y, 2}}.
+    {jump, {f, 90}}.
+  {label, 90}.
+    {move, {y, 5}, {x, 0}}.
+    {move, {integer, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, '<', 2}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_eq_exact, {f, 92}, [{x, 0}, {atom, true}]}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {y, 5}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, '+', 2}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {x, 0}}.
+    {move, {integer, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, max, 2}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {y, 7}}.
+    {jump, {f, 91}}.
+  {label, 92}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_eq_exact, {f, 93}, [{x, 0}, {atom, false}]}.
+    {move, {y, 5}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, min, 2}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {y, 7}}.
+    {jump, {f, 91}}.
+  {label, 93}.
+    {move, {y, 6}, {x, 0}}.
+    {case_end, {x, 0}}.
+  {label, 91}.
+    {move, {y, 7}, {y, 1}}.
+    {jump, {f, 95}}.
+  {label, 95}.
+    {move, {y, 2}, {x, 0}}.
+    {move, {integer, 1}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, '+', 2}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, '-', 2}}.
     {move, {x, 0}, {y, 7}}.
     {move, {y, 7}, {x, 0}}.
-    {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 10}.
+    {move, {integer, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, max, 2}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {y, 6}, {x, 1}}.
+    {move, {y, 7}, {x, 2}}.
+    {call_ext, 3, {extfunc, lists, sublist, 3}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {x, 0}}.
+    {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 9}.
 
 {function, '__bp_tpl_1', 3, 75}.
   {label, 74}.
@@ -706,60 +706,60 @@ fn main() {
   {label, 100}.
     {func_info, {atom, test@main}, {atom, '__bp_tpl_2-t/2-fun-0-'}, 2}.
   {label, 101}.
-    {allocate, 8, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}]}}.
-    {move, {x, 0}, {y, 3}}.
-    {move, {x, 1}, {y, 4}}.
-    {move, {y, 3}, {x, 0}}.
+    {allocate, 7, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {x, 1}, {y, 3}}.
+    {move, {y, 2}, {x, 0}}.
     {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
-    {move, {x, 0}, {y, 5}}.
-    {move, {y, 5}, {y, 0}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 4}, {y, 0}}.
     {jump, {f, 105}}.
   {label, 105}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, length, 1}}.
-    {move, {x, 0}, {y, 5}}.
-    {move, {y, 5}, {y, 1}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 4}, {y, 1}}.
     {jump, {f, 107}}.
   {label, 107}.
-    {move, {y, 4}, {x, 0}}.
+    {move, {y, 3}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '<', 2}}.
-    {move, {x, 0}, {y, 5}}.
-    {move, {y, 5}, {x, 0}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 4}, {x, 0}}.
     {test, is_eq_exact, {f, 109}, [{x, 0}, {atom, true}]}.
     {move, {y, 1}, {x, 0}}.
-    {move, {y, 4}, {x, 1}}.
+    {move, {y, 3}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '+', 2}}.
-    {move, {x, 0}, {y, 7}}.
-    {move, {y, 7}, {x, 0}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, max, 2}}.
-    {move, {x, 0}, {y, 7}}.
-    {move, {y, 7}, {y, 6}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {y, 5}}.
     {jump, {f, 108}}.
   {label, 109}.
-    {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 110}, [{x, 0}, {atom, false}]}.
     {move, {y, 4}, {x, 0}}.
+    {test, is_eq_exact, {f, 110}, [{x, 0}, {atom, false}]}.
+    {move, {y, 3}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, min, 2}}.
-    {move, {x, 0}, {y, 7}}.
-    {move, {y, 7}, {y, 6}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {y, 5}}.
     {jump, {f, 108}}.
   {label, 110}.
-    {move, {y, 5}, {x, 0}}.
+    {move, {y, 4}, {x, 0}}.
     {case_end, {x, 0}}.
   {label, 108}.
-    {move, {y, 6}, {y, 2}}.
+    {move, {y, 5}, {y, 1}}.
     {jump, {f, 112}}.
   {label, 112}.
-    {move, {y, 2}, {x, 0}}.
+    {move, {y, 1}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, lists, nthtail, 2}}.
-    {move, {x, 0}, {y, 5}}.
-    {move, {y, 5}, {x, 0}}.
-    {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 8}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 4}, {x, 0}}.
+    {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 7}.
 
 {function, '__bp_tpl_2', 2, 97}.
   {label, 96}.

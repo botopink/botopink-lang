@@ -22,7 +22,7 @@ val s = ui "<Card title=\"x\"><Badge/></Card>";
 ----- COMPTIME WAT -- template ui
 ```wat
 (func $ui/1 (param $a0 i32) (result i32)
-  (local $V_Q i32) (local $t1 i32) (local $V_Count i32) (local $t2 i32) (local $V_Hit i32) (local $t3 i32) (local $V_B i32)
+  (local $V_Q i32) (local $s1 i32) (local $s2 i32)
   (block $raise
   (block $L1 (result i32)
   (block $L2
@@ -40,19 +40,19 @@ val s = ui "<Card title=\"x\"><Badge/></Card>";
   call $bp_comptime_template:__bp_len/2
   call $rt_pending
   br_if $raise
-  local.set $t1
+  local.set $s1
   (block $L4
   (block $L3
-  local.get $t1
-  local.set $V_Count
+  local.get $s1
+  local.set $s2
   br $L4
   )
-  local.get $t1
+  local.get $s1
   call $rt_badmatch
   drop
   br $raise
   )
-  local.get $t1
+  local.get $s1
   drop
   local.get $V_Q
   global.get $__lit
@@ -63,25 +63,25 @@ val s = ui "<Card title=\"x\"><Badge/></Card>";
   call $bp_comptime_template:lookup/2
   call $rt_pending
   br_if $raise
-  local.set $t2
+  local.set $s1
   (block $L6
   (block $L5
-  local.get $t2
-  local.set $V_Hit
+  local.get $s1
+  local.set $s2
   br $L6
   )
-  local.get $t2
+  local.get $s1
   call $rt_badmatch
   drop
   br $raise
   )
-  local.get $t2
+  local.get $s1
   drop
-  local.get $V_Hit
-  local.set $t3
+  local.get $s2
+  local.set $s1
   (block $L7 (result i32)
   (block $L8
-  local.get $t3
+  local.get $s1
   global.get $__lit
   i32.const 240
   i32.add
@@ -102,8 +102,8 @@ val s = ui "<Card title=\"x\"><Badge/></Card>";
   br $L7
   )
   (block $L9
-  local.get $t3
-  local.set $V_B
+  local.get $s1
+  local.set $s2
   local.get $V_Q
   global.get $__lit
   i32.const 296
@@ -115,7 +115,7 @@ val s = ui "<Card title=\"x\"><Badge/></Card>";
   i32.add
   i32.const 4
   call $rt_atom
-  local.get $V_B
+  local.get $s2
   call $rt_maps_get
   call $rt_pending
   br_if $raise
@@ -135,7 +135,7 @@ val s = ui "<Card title=\"x\"><Badge/></Card>";
   i32.add
   i32.const 5
   call $rt_atom
-  local.get $V_B
+  local.get $s2
   call $rt_maps_get
   call $rt_pending
   br_if $raise
@@ -155,7 +155,7 @@ val s = ui "<Card title=\"x\"><Badge/></Card>";
   br_if $raise
   br $L7
   )
-  local.get $t3
+  local.get $s1
   call $rt_case_clause
   drop
   br $raise

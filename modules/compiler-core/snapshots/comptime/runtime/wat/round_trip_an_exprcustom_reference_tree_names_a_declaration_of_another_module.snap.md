@@ -13,7 +13,7 @@ val rows = dsl "select id from Item";
 ----- COMPTIME WAT -- template dsl
 ```wat
 (func $dsl/1 (param $a0 i32) (result i32)
-  (local $V_E i32) (local $t1 i32) (local $V_Code i32) (local $t2 i32) (local $t3 i32) (local $t4 i32) (local $t5 i32) (local $t6 i32) (local $t7 i32) (local $t8 i32) (local $t9 i32) (local $t10 i32) (local $V_Leaf i32) (local $t11 i32) (local $t12 i32) (local $t13 i32) (local $t14 i32) (local $t15 i32) (local $t16 i32) (local $t17 i32) (local $t18 i32) (local $t19 i32) (local $t20 i32) (local $t21 i32) (local $V_Root i32)
+  (local $V_E i32) (local $s1 i32) (local $V_Code i32) (local $s3 i32)
   (block $raise
   (block $L1 (result i32)
   (block $L2
@@ -28,23 +28,23 @@ val rows = dsl "select id from Item";
   call $bp_comptime_template:build/2
   call $rt_pending
   br_if $raise
-  local.set $t1
+  local.set $s1
   (block $L4
   (block $L3
-  local.get $t1
+  local.get $s1
   local.set $V_Code
   br $L4
   )
-  local.get $t1
+  local.get $s1
   call $rt_badmatch
   drop
   br $raise
   )
-  local.get $t1
+  local.get $s1
   drop
   call $rt_map_empty
-  local.set $t2
-  local.get $t2
+  local.set $s1
+  local.get $s1
   global.get $__lit
   i32.const 32
   i32.add
@@ -56,16 +56,16 @@ val rows = dsl "select id from Item";
   i32.const 5
   call $rt_bin
   call $rt_map_put
-  local.set $t3
-  local.get $t3
+  local.set $s1
+  local.get $s1
   global.get $__lit
   i32.const 64
   i32.add
   i32.const 4
   call $rt_atom
   call $rt_map_empty
-  local.set $t4
-  local.get $t4
+  local.set $s1
+  local.get $s1
   global.get $__lit
   i32.const 240
   i32.add
@@ -74,8 +74,8 @@ val rows = dsl "select id from Item";
   i64.const 7
   call $rt_int
   call $rt_map_put
-  local.set $t5
-  local.get $t5
+  local.set $s1
+  local.get $s1
   global.get $__lit
   i32.const 248
   i32.add
@@ -84,8 +84,8 @@ val rows = dsl "select id from Item";
   i64.const 9
   call $rt_int
   call $rt_map_put
-  local.set $t6
-  local.get $t6
+  local.set $s1
+  local.get $s1
   global.get $__lit
   i32.const 256
   i32.add
@@ -95,8 +95,8 @@ val rows = dsl "select id from Item";
   call $rt_int
   call $rt_map_put
   call $rt_map_put
-  local.set $t7
-  local.get $t7
+  local.set $s1
+  local.get $s1
   global.get $__lit
   i32.const 264
   i32.add
@@ -108,8 +108,8 @@ val rows = dsl "select id from Item";
   i32.const 8
   call $rt_bin
   call $rt_map_put
-  local.set $t8
-  local.get $t8
+  local.set $s1
+  local.get $s1
   global.get $__lit
   i32.const 280
   i32.add
@@ -125,8 +125,8 @@ val rows = dsl "select id from Item";
   call $rt_pending
   br_if $raise
   call $rt_map_put
-  local.set $t9
-  local.get $t9
+  local.set $s1
+  local.get $s1
   global.get $__lit
   i32.const 296
   i32.add
@@ -134,23 +134,23 @@ val rows = dsl "select id from Item";
   call $rt_atom
   call $rt_nil
   call $rt_map_put
-  local.set $t10
+  local.set $s1
   (block $L6
   (block $L5
-  local.get $t10
-  local.set $V_Leaf
+  local.get $s1
+  local.set $s3
   br $L6
   )
-  local.get $t10
+  local.get $s1
   call $rt_badmatch
   drop
   br $raise
   )
-  local.get $t10
+  local.get $s1
   drop
   call $rt_map_empty
-  local.set $t11
-  local.get $t11
+  local.set $s1
+  local.get $s1
   global.get $__lit
   i32.const 32
   i32.add
@@ -162,16 +162,16 @@ val rows = dsl "select id from Item";
   i32.const 6
   call $rt_bin
   call $rt_map_put
-  local.set $t12
-  local.get $t12
+  local.set $s1
+  local.get $s1
   global.get $__lit
   i32.const 64
   i32.add
   i32.const 4
   call $rt_atom
   call $rt_map_empty
-  local.set $t13
-  local.get $t13
+  local.set $s1
+  local.get $s1
   global.get $__lit
   i32.const 240
   i32.add
@@ -180,8 +180,8 @@ val rows = dsl "select id from Item";
   i64.const 0
   call $rt_int
   call $rt_map_put
-  local.set $t14
-  local.get $t14
+  local.set $s1
+  local.get $s1
   global.get $__lit
   i32.const 248
   i32.add
@@ -190,8 +190,8 @@ val rows = dsl "select id from Item";
   i64.const 6
   call $rt_int
   call $rt_map_put
-  local.set $t15
-  local.get $t15
+  local.set $s1
+  local.get $s1
   global.get $__lit
   i32.const 256
   i32.add
@@ -201,8 +201,8 @@ val rows = dsl "select id from Item";
   call $rt_int
   call $rt_map_put
   call $rt_map_put
-  local.set $t16
-  local.get $t16
+  local.set $s1
+  local.get $s1
   global.get $__lit
   i32.const 264
   i32.add
@@ -214,8 +214,8 @@ val rows = dsl "select id from Item";
   i32.const 7
   call $rt_bin
   call $rt_map_put
-  local.set $t17
-  local.get $t17
+  local.set $s1
+  local.get $s1
   global.get $__lit
   i32.const 280
   i32.add
@@ -227,37 +227,37 @@ val rows = dsl "select id from Item";
   i32.const 9
   call $rt_atom
   call $rt_map_put
-  local.set $t18
-  local.get $t18
+  local.set $s1
+  local.get $s1
   global.get $__lit
   i32.const 296
   i32.add
   i32.const 8
   call $rt_atom
-  local.get $V_Leaf
-  local.set $t19
+  local.get $s3
+  local.set $s1
   call $rt_nil
-  local.set $t20
-  local.get $t19
-  local.get $t20
+  local.set $s3
+  local.get $s1
+  local.get $s3
   call $rt_cons
   call $rt_map_put
-  local.set $t21
+  local.set $s1
   (block $L8
   (block $L7
-  local.get $t21
-  local.set $V_Root
+  local.get $s1
+  local.set $s3
   br $L8
   )
-  local.get $t21
+  local.get $s1
   call $rt_badmatch
   drop
   br $raise
   )
-  local.get $t21
+  local.get $s1
   drop
   local.get $V_E
-  local.get $V_Root
+  local.get $s3
   local.get $V_Code
   call $bp_comptime_template:custom/3
   call $rt_pending

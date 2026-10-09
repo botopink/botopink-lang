@@ -30,6 +30,7 @@ const reflectionMod = @import("./comptime/reflection.zig");
 const assocTypes = @import("./comptime/assoc_types.zig");
 const typeinfoAll = @import("./comptime/typeinfo_all.zig");
 const hostRuntime = @import("./comptime/runtime/runtime.zig");
+const templateEval = @import("./comptime/template_eval.zig");
 
 // ── Re-exports for external consumers ────────────────────────────────────────
 
@@ -1670,6 +1671,7 @@ fn resolveImports(
                     // Template-fn binding so the call expands at comptime.
                     if (templateRegistry.get(pkg)) |tfn| {
                         try infer.registerImportedTemplateFn(env, pkg, tfn, pkg_owner);
+                        try importTemplateSupport(env, decoratorRegistry, pkg_owner, tfn.name, tfn);
                         if (registry.getPtr(pkg_owner)) |ex| try env.templateOwnerExports.put(env.arena, pkg_owner, ex);
                     }
                 }
@@ -1925,6 +1927,7 @@ fn resolveImports(
                     if (owner.len > 0) try env.importOwners.put(env.arena, local, .{ .owner = owner, .name = name });
                     if (owner.len > 0) if (templateRegistry.get(try comptimeRegistryKey(env.arena, owner, name))) |tfn| {
                         try infer.registerImportedTemplateFn(env, local, tfn, owner);
+                        try importTemplateSupport(env, decoratorRegistry, owner, name, tfn);
                         if (registry.getPtr(owner)) |ex| try env.templateOwnerExports.put(env.arena, owner, ex);
                     };
                     // C-04 — an imported function's parameters as written, so
@@ -2035,6 +2038,44 @@ fn decoratorClosureKey(arena: std.mem.Allocator, path: []const u8, name: []const
 /// (`conflictCarrier`) — never a function anything calls.
 fn decoratorConflictKey(arena: std.mem.Allocator, path: []const u8, name: []const u8) ![]const u8 {
     return std.fmt.allocPrint(arena, "{s}\x00{s}\x00conflict", .{ path, name });
+}
+
+/// `f` with its tuple label reads by position when `f` is a function of the
+/// module being exported (`fns`): the reads were recorded by THIS module's
+/// inference, keyed by location, so a function another module brought is
+/// left as it came (it was relabelled when that module exported it).
+fn relabelLocal(arena: std.mem.Allocator, env: *const envMod.Env, fns: *const std.StringHashMap(ast.FnDecl), f: ast.FnDecl) !ast.FnDecl {
+    const own = fns.get(f.name) orelse return f;
+    if (own.body.ptr != f.body.ptr) return f;
+    return templateEval.relabelTupleReads(arena, &env.tupleLabelReads, f);
+}
+
+/// A function whose return is a template type (`-> @Expr<T>`, …): expanded at
+/// its call sites, never compiled as a function.
+fn isTemplateFn(f: ast.FnDecl) bool {
+    const rt = f.returnType orelse return false;
+    return rt.isTemplateReturnType();
+}
+
+/// Binds what the template `tfn`, exported by module `owner` under `name`,
+/// carries beside it (`registerExports`: the functions its body reaches, or
+/// why its module cannot be built) in `Env.importedTemplateSupport`, keyed by
+/// the declaration's body as `Env.comptimeOwners` is.
+fn importTemplateSupport(
+    env: *envMod.Env,
+    decoratorRegistry: *const std.StringHashMap(ast.FnDecl),
+    owner: []const u8,
+    name: []const u8,
+    tfn: ast.FnDecl,
+) !void {
+    if (owner.len == 0 or tfn.body.len == 0) return;
+    var support: std.ArrayListUnmanaged(ast.FnDecl) = .empty;
+    var si: usize = 0;
+    while (decoratorRegistry.get(try decoratorSupportKey(env.arena, owner, name, si))) |sf| : (si += 1) {
+        try support.append(env.arena, sf);
+    }
+    const conflict = if (decoratorRegistry.get(try decoratorConflictKey(env.arena, owner, name))) |c| c.name else null;
+    try env.importedTemplateSupport.put(env.arena, @intFromPtr(tfn.body.ptr), .{ .fns = support.items, .conflict = conflict });
 }
 
 fn conflictCarrier(message: []const u8) ast.FnDecl {
@@ -2202,7 +2243,10 @@ fn registerExports(
             if (b.decl == .@"fn") {
                 const f = b.decl.@"fn";
                 if (f.returnType) |rt| {
-                    if (rt.isTemplateReturnType()) try templateRegistry.put(try comptimeRegistryKey(arena, path, b.name), f);
+                    // Its tuple label reads by position (`relabelTupleReads`):
+                    // the importer lowers the body untyped, without this
+                    // module's inference.
+                    if (rt.isTemplateReturnType()) try templateRegistry.put(try comptimeRegistryKey(arena, path, b.name), try templateEval.relabelTupleReads(arena, &env.tupleLabelReads, f));
                 }
                 // C-04 across a module boundary — a function exports its
                 // parameters as written, so an importer's short call is filled
@@ -2233,6 +2277,15 @@ fn registerExports(
                     // them, and the decorator module needs them.
                     const support = try infer.decoratorSupport(arena, fns, &env.importedFnSupport, f);
                     for (support.fns, 0..) |sf, i| try decoratorRegistry.put(try decoratorSupportKey(arena, path, b.name, i), sf);
+                    if (support.conflict) |c| try decoratorRegistry.put(try decoratorConflictKey(arena, path, b.name), conflictCarrier(c));
+                } else if (isTemplateFn(f)) {
+                    // A template carries the functions its body reaches the
+                    // same way (decision 331, calls included): the template
+                    // module is built where the template is EXPANDED, whose
+                    // module declares none of them. Same keys as a
+                    // decorator's — a template is never one.
+                    const support = try infer.decoratorSupport(arena, fns, &env.importedFnSupport, f);
+                    for (support.fns, 0..) |sf, i| try decoratorRegistry.put(try decoratorSupportKey(arena, path, b.name, i), try relabelLocal(arena, env, &fns, sf));
                     if (support.conflict) |c| try decoratorRegistry.put(try decoratorConflictKey(arena, path, b.name), conflictCarrier(c));
                 } else if (infer.isCarriableFn(f)) {
                     // A plain `pub fn` carries itself and what it reaches

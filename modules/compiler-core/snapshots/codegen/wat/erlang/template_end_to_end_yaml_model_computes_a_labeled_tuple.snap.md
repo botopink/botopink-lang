@@ -15,33 +15,33 @@ fn main() {
 ----- COMPTIME WAT -- template conf
 ```wat
 (func $conf/1 (param $a0 i32) (result i32)
-  (local $V_Q i32) (local $t1 i32) (local $V_T i32) (local $t2 i32) (local $V_Port i32) (local $t3 i32) (local $V_Debug i32) (local $t4 i32)
+  (local $s0 i32) (local $s1 i32) (local $V_Debug i32)
   (block $raise
   (block $L1 (result i32)
   (block $L2
   local.get $a0
-  local.set $V_Q
-  local.get $V_Q
+  local.set $s0
+  local.get $s0
   call $bp_comptime_template:text/1
   call $rt_pending
   br_if $raise
-  local.set $t1
+  local.set $s0
   (block $L4
   (block $L3
-  local.get $t1
-  local.set $V_T
+  local.get $s0
+  local.set $s1
   br $L4
   )
-  local.get $t1
+  local.get $s0
   call $rt_badmatch
   drop
   br $raise
   )
-  local.get $t1
+  local.get $s0
   drop
   i64.const 8000
   call $rt_int
-  local.get $V_T
+  local.get $s1
   global.get $__lit
   i32.const 224
   i32.add
@@ -53,53 +53,53 @@ fn main() {
   call $bp_comptime_template:__bp_add/2
   call $rt_pending
   br_if $raise
-  local.set $t2
+  local.set $s0
   (block $L6
   (block $L5
-  local.get $t2
-  local.set $V_Port
+  local.get $s0
+  local.set $s1
   br $L6
   )
-  local.get $t2
+  local.get $s0
   call $rt_badmatch
   drop
   br $raise
   )
-  local.get $t2
+  local.get $s0
   drop
   global.get $__lit
   i32.const 232
   i32.add
   i32.const 4
   call $rt_atom
-  local.set $t3
+  local.set $s0
   (block $L8
   (block $L7
-  local.get $t3
+  local.get $s0
   local.set $V_Debug
   br $L8
   )
-  local.get $t3
+  local.get $s0
   call $rt_badmatch
   drop
   br $raise
   )
-  local.get $t3
+  local.get $s0
   drop
   i32.const 2
   call $rt_tuple
-  local.set $t4
-  local.get $t4
+  local.set $s0
+  local.get $s0
   i32.const 0
-  local.get $V_Port
+  local.get $s1
   call $rt_tset
   drop
-  local.get $t4
+  local.get $s0
   i32.const 1
   local.get $V_Debug
   call $rt_tset
   drop
-  local.get $t4
+  local.get $s0
   call $bp_comptime_template:expr/1
   call $rt_pending
   br_if $raise

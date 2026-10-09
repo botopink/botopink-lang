@@ -522,6 +522,13 @@ pub const BuiltinDecl = struct {
     returnType: ?ast.TypeRef,
 };
 
+/// What a template module carries beside the template, or why it cannot be
+/// built (`infer.Support`, stored per imported template).
+pub const ComptimeSupport = struct {
+    fns: []const ast.FnDecl,
+    conflict: ?[]const u8 = null,
+};
+
 pub const DecoratorSig = struct {
     params: []const ast.Param,
     fn_decl: ?ast.FnDecl = null,
@@ -854,6 +861,13 @@ pub const Env = struct {
     /// so the codegen — which reads the untyped AST — emits the byte-correct
     /// shape instead of the bare `Color.Red.500` source-text fallback.
     enumSectionRewrites: std.AutoHashMap(ast.Loc, *const ast.Expr),
+    /// Decision 8 §6 T4 — every tuple element this module reads by its label
+    /// (`row.pop`), keyed by the access's loc, with the element's position.
+    /// The transform reads the same fact off `enumSectionRewrites`; a comptime
+    /// module is lowered from the untransformed AST, so `template_eval`
+    /// `relabelTupleReads` rewrites the functions it carries from here
+    /// (an untyped `x.kind` is a map read — `{badmap, {…}}` on a tuple).
+    tupleLabelReads: std.AutoHashMapUnmanaged(ast.Loc, usize) = .empty,
     /// C-02 (decision 63, amended 2026-09-19) — the untyped rewrite of an index
     /// expression, keyed by the index node's own loc.
     ///
@@ -1106,6 +1120,13 @@ pub const Env = struct {
     /// imported function itself, under that name) — what a decorator of this
     /// module carries when its body calls it (`infer.decoratorSupport`).
     importedFnSupport: std.StringHashMapUnmanaged([]const ast.FnDecl) = .empty,
+    /// A template this module IMPORTS, by its body's address (as
+    /// `comptimeOwners`), with the functions of its own module its body
+    /// reaches (`infer.decoratorSupport`, exported by `comptime.zig`
+    /// `registerExports`) — compiled into the template module beside it
+    /// (decision 331, calls included). A local template computes it from
+    /// `fnDecls` when it is expanded.
+    importedTemplateSupport: std.AutoHashMapUnmanaged(usize, ComptimeSupport) = .empty,
     /// Decision 331 — the declarations of the module being inferred
     /// (`inferProgramTyped` sets them): the types and functions a `comptime`
     /// evaluated on the runtime carries (`block_eval.zig`).

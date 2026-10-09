@@ -102,6 +102,12 @@ pub fn evaluate(
     /// no module owns it. Named in the module atom (`ownerId`).
     owner: []const u8,
     tfn: ast.FnDecl,
+    /// The functions `tfn`'s body reaches (`infer.decoratorSupport`, decision
+    /// 331's "calls included"), compiled into the module beside it.
+    support: []const ast.FnDecl,
+    /// The record and enum types `tfn` and `support` name, with the methods
+    /// they call (`block_eval.typesReached`).
+    types: []const ast.DeclKind,
     captures: []const template.CapturedExpr,
     plainArgs: []const template.PlainArg,
     /// Receives what was sent to and returned by the runtime (snapshots); null skips it.
@@ -109,7 +115,7 @@ pub fn evaluate(
 ) EvalError!Outcome {
     _ = build_root;
     var unsupported: erlang.UnsupportedMethod = .{};
-    const source = buildModule(arena, owner, tfn, captures, plainArgs, &unsupported) catch |err| switch (err) {
+    const source = buildModule(arena, owner, tfn, support, types, captures, plainArgs, &unsupported) catch |err| switch (err) {
         error.UnsupportedMethod => return .{ .err = try unsupportedText(arena, "template", tfn.name, unsupported) },
         else => |e| return e,
     };
@@ -494,6 +500,96 @@ pub const comptime_owner: crossModule.ModuleId = .inPackage(crossModule.COMPILER
 const placeholder_module = "template_module";
 
 /// Records of the `std.syntax` template model a body may construct.
+/// `f` with every tuple element read by its label (`x.kind`) read by its
+/// position (`x._0`) — `Env.tupleLabelReads`, recorded by inference of the
+/// module that declares `f`. A comptime module is lowered untyped from the
+/// AST as written, where a label read is a map read: `{badmap, {…}}` on the
+/// tuple. Positions are what the transform hands every backend; `f`'s own
+/// declaration is left untouched (the copy is new nodes throughout).
+pub fn relabelTupleReads(
+    arena: std.mem.Allocator,
+    reads: *const std.AutoHashMapUnmanaged(ast.Loc, usize),
+    f: ast.FnDecl,
+) std.mem.Allocator.Error!ast.FnDecl {
+    if (reads.count() == 0) return f;
+    var r: Relabel = .{ .arena = arena, .reads = reads };
+    var out = f;
+    out.body = try r.clone(@TypeOf(f.body), f.body);
+    return out;
+}
+
+const Relabel = struct {
+    arena: std.mem.Allocator,
+    reads: *const std.AutoHashMapUnmanaged(ast.Loc, usize),
+
+    fn clone(self: *Relabel, comptime U: type, v: U) std.mem.Allocator.Error!U {
+        if (U == ast.TypeRef or U == ast.Pattern) return v;
+        if (U == ast.Expr) if (try self.replace(v)) |r| return r;
+        switch (@typeInfo(U)) {
+            .@"struct" => |s| {
+                var out: U = v;
+                inline for (s.fields) |fld| {
+                    if (fld.is_comptime) continue;
+                    if (comptime mayHoldExprs(fld.type)) @field(out, fld.name) = try self.clone(fld.type, @field(v, fld.name));
+                }
+                return out;
+            },
+            .@"union" => |u| {
+                if (u.tag_type == null) return v;
+                switch (v) {
+                    inline else => |payload, tag| {
+                        const P = @TypeOf(payload);
+                        if (comptime !mayHoldExprs(P)) return v;
+                        return @unionInit(U, @tagName(tag), try self.clone(P, payload));
+                    },
+                }
+            },
+            .optional => |o| return if (v) |inner| try self.clone(o.child, inner) else null,
+            .pointer => |p| switch (p.size) {
+                .one => {
+                    if (comptime !mayHoldExprs(p.child)) return v;
+                    const n = try self.arena.create(p.child);
+                    n.* = try self.clone(p.child, v.*);
+                    return n;
+                },
+                .slice => {
+                    if (comptime !mayHoldExprs(p.child)) return v;
+                    const out = try self.arena.alloc(p.child, v.len);
+                    for (v, 0..) |e, i| out[i] = try self.clone(p.child, e);
+                    return out;
+                },
+                else => return v,
+            },
+            else => return v,
+        }
+    }
+
+    fn replace(self: *Relabel, e: ast.Expr) std.mem.Allocator.Error!?ast.Expr {
+        if (e != .identifier) return null;
+        const id = e.identifier;
+        if (id.kind != .identAccess) return null;
+        const idx = self.reads.get(id.loc) orelse return null;
+        var ia = id.kind.identAccess;
+        ia.receiver = try self.clone(*ast.Expr, ia.receiver);
+        ia.member = try std.fmt.allocPrint(self.arena, "_{d}", .{idx});
+        var out = id;
+        out.kind = .{ .identAccess = ia };
+        return .{ .identifier = out };
+    }
+};
+
+fn mayHoldExprs(comptime U: type) bool {
+    return switch (@typeInfo(U)) {
+        .int, .float, .bool, .@"enum", .void, .comptime_int, .comptime_float, .@"fn", .@"opaque", .null, .undefined => false,
+        .pointer => |p| if (p.child == u8) false else if (@typeInfo(p.child) == .@"fn" or @typeInfo(p.child) == .@"opaque") false else true,
+        else => true,
+    };
+}
+
+/// The type names the template module defines itself (its host enums and
+/// records): never carried from the program (`block_eval.typesReached`'s skip).
+pub const injected_names = [_][]const u8{ "BindingKind", "DeclKind", "Span", "CustomNode", "Binding", "Source", "ExprContext" };
+
 const host_records = [_]erlang.HostRecord{
     .{ .name = "Span", .fields = &.{ "start", "end", "line" } },
     .{ .name = "CustomNode", .fields = &.{ "kind", "span", "label", "ref", "children" } },
@@ -560,6 +656,8 @@ fn buildModule(
     arena: std.mem.Allocator,
     owner: []const u8,
     tfn: ast.FnDecl,
+    support: []const ast.FnDecl,
+    types: []const ast.DeclKind,
     captures: []const template.CapturedExpr,
     plainArgs: []const template.PlainArg,
     unsupported: *erlang.UnsupportedMethod,
@@ -569,8 +667,10 @@ fn buildModule(
     const forms = try mainForms(b, tfn, plans);
     const resident = try preludeMod.templateForms(b);
 
-    const decls = try arena.alloc(ast.DeclKind, 1);
+    const decls = try arena.alloc(ast.DeclKind, 1 + support.len + types.len);
     decls[0] = .{ .@"fn" = tfn };
+    for (support, 1..) |f, i| decls[i] = .{ .@"fn" = f };
+    @memcpy(decls[1 + support.len ..], types);
     var config: erlang.ComptimeModule = .{
         .host_enums = &.{ "BindingKind", "DeclKind" },
         .host_records = &host_records,
@@ -1001,8 +1101,8 @@ test "template module: one module per declaration, the capture as the argument" 
     var unsupported: erlang.UnsupportedMethod = .{};
     const one = try capture(arena, "alpha");
     const two = try capture(arena, "a much longer literal");
-    const first = try buildModule(arena, "", tfn, &.{one}, &.{}, &unsupported);
-    const second = try buildModule(arena, "", tfn, &.{two}, &.{}, &unsupported);
+    const first = try buildModule(arena, "", tfn, &.{}, &.{}, &.{one}, &.{}, &unsupported);
+    const second = try buildModule(arena, "", tfn, &.{}, &.{}, &.{two}, &.{}, &unsupported);
 
     // Two call sites with different literals, one module — the difference is
     // entirely in `main/1`'s argument.
@@ -1024,7 +1124,7 @@ test "template module: one module per declaration, the capture as the argument" 
     // same body declared in another module is another module, and one no
     // module owns keeps the compiler's own `bp@comptime`.
     try std.testing.expect(std.mem.startsWith(u8, first.module, "bp@comptime__tpl__shout__"));
-    const owned = try buildModule(arena, "ui/panel", tfn, &.{one}, &.{}, &unsupported);
+    const owned = try buildModule(arena, "ui/panel", tfn, &.{}, &.{}, &.{one}, &.{}, &unsupported);
     try std.testing.expect(std.mem.startsWith(u8, owned.module, "bp@comptime@ui@panel__tpl__shout__"));
     try std.testing.expect(std.mem.startsWith(u8, owned.code, "-module(bp@comptime@ui@panel__tpl__shout__"));
     const decoded = try crossModule.decodeAtom(arena, owned.module);
@@ -1032,7 +1132,7 @@ test "template module: one module per declaration, the capture as the argument" 
     try std.testing.expectEqualStrings("comptime/ui/panel", decoded.path);
     try std.testing.expectEqualStrings("tpl", decoded.kind);
     try std.testing.expectEqualStrings("shout", decoded.decl);
-    const elsewhere = try buildModule(arena, "ui/card", tfn, &.{one}, &.{}, &unsupported);
+    const elsewhere = try buildModule(arena, "ui/card", tfn, &.{}, &.{}, &.{one}, &.{}, &unsupported);
     try std.testing.expect(!std.mem.eql(u8, owned.module, elsewhere.module));
     // The hash segment is the body's, whoever owns it.
     try std.testing.expectEqualStrings(first.module[first.module.len - 16 ..], owned.module[owned.module.len - 16 ..]);

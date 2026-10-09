@@ -29,139 +29,139 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   {label, 21}.
     {func_info, {atom, template_module}, {atom, '-holes/1-fun-0-'}, 2}.
   {label, 22}.
-    {allocate, 16, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}, {y, 13}, {y, 14}, {y, 15}]}}.
-    {move, {x, 0}, {y, 8}}.
-    {move, {x, 1}, {y, 9}}.
-    {move, {y, 9}, {x, 0}}.
+    {allocate, 12, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}]}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {x, 1}, {y, 5}}.
+    {move, {y, 5}, {x, 0}}.
     {test, is_tuple, {f, 24}, [{x, 0}]}.
     {test, test_arity, {f, 24}, [{x, 0}, 3]}.
-    {get_tuple_element, {x, 0}, 0, {y, 10}}.
-    {get_tuple_element, {x, 0}, 1, {y, 11}}.
-    {get_tuple_element, {x, 0}, 2, {y, 12}}.
-    {move, {y, 10}, {y, 0}}.
-    {move, {y, 11}, {y, 1}}.
-    {move, {y, 12}, {y, 2}}.
+    {get_tuple_element, {x, 0}, 0, {y, 6}}.
+    {get_tuple_element, {x, 0}, 1, {y, 7}}.
+    {get_tuple_element, {x, 0}, 2, {y, 8}}.
+    {move, {y, 6}, {y, 0}}.
+    {move, {y, 7}, {y, 1}}.
+    {move, {y, 8}, {y, 2}}.
     {move, {atom, kind}, {x, 0}}.
-    {move, {y, 8}, {x, 1}}.
+    {move, {y, 4}, {x, 1}}.
     {call_ext, 2, {extfunc, maps, get, 2}}.
-    {move, {x, 0}, {y, 13}}.
-    {move, {y, 13}, {x, 0}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
     {move, {literal, <<"Interp">>}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '=:=', 2}}.
-    {move, {x, 0}, {y, 13}}.
-    {move, {y, 13}, {x, 0}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
     {test, is_eq_exact, {f, 26}, [{x, 0}, {atom, true}]}.
     {move, {atom, code}, {x, 0}}.
-    {move, {y, 8}, {x, 1}}.
+    {move, {y, 4}, {x, 1}}.
     {call_ext, 2, {extfunc, maps, get, 2}}.
-    {move, {x, 0}, {y, 15}}.
+    {move, {x, 0}, {y, 11}}.
     {move, {y, 0}, {x, 0}}.
-    {move, {y, 15}, {x, 1}}.
+    {move, {y, 11}, {x, 1}}.
     {call, 2, {f, 4}}.
-    {move, {x, 0}, {y, 15}}.
-    {move, {y, 15}, {y, 3}}.
+    {move, {x, 0}, {y, 11}}.
+    {move, {y, 11}, {y, 3}}.
     {jump, {f, 28}}.
   {label, 28}.
-    {move, {y, 3}, {y, 14}}.
+    {move, {y, 3}, {y, 10}}.
     {jump, {f, 25}}.
   {label, 26}.
-    {move, {y, 0}, {y, 14}}.
+    {move, {y, 0}, {y, 10}}.
     {jump, {f, 25}}.
   {label, 25}.
-    {move, {y, 14}, {y, 4}}.
+    {move, {y, 10}, {y, 0}}.
     {jump, {f, 31}}.
   {label, 31}.
     {move, {atom, kind}, {x, 0}}.
-    {move, {y, 8}, {x, 1}}.
+    {move, {y, 4}, {x, 1}}.
     {call_ext, 2, {extfunc, maps, get, 2}}.
-    {move, {x, 0}, {y, 13}}.
-    {move, {y, 13}, {x, 0}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
     {move, {literal, <<"Text">>}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '=:=', 2}}.
-    {move, {x, 0}, {y, 13}}.
-    {move, {y, 13}, {x, 0}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
     {test, is_eq_exact, {f, 33}, [{x, 0}, {atom, true}]}.
     {move, {atom, text}, {x, 0}}.
-    {move, {y, 8}, {x, 1}}.
+    {move, {y, 4}, {x, 1}}.
     {call_ext, 2, {extfunc, maps, get, 2}}.
-    {move, {x, 0}, {y, 15}}.
+    {move, {x, 0}, {y, 11}}.
     {move, {y, 1}, {x, 0}}.
-    {move, {y, 15}, {x, 1}}.
+    {move, {y, 11}, {x, 1}}.
     {call_ext, 2, {extfunc, bp_comptime_template, '__bp_add', 2}}.
-    {move, {x, 0}, {y, 15}}.
-    {move, {y, 15}, {y, 5}}.
+    {move, {x, 0}, {y, 11}}.
+    {move, {y, 11}, {y, 3}}.
     {jump, {f, 35}}.
   {label, 35}.
-    {move, {y, 5}, {y, 14}}.
+    {move, {y, 3}, {y, 10}}.
     {jump, {f, 32}}.
   {label, 33}.
-    {move, {y, 1}, {y, 14}}.
+    {move, {y, 1}, {y, 10}}.
     {jump, {f, 32}}.
   {label, 32}.
-    {move, {y, 14}, {y, 6}}.
+    {move, {y, 10}, {y, 1}}.
     {jump, {f, 38}}.
   {label, 38}.
     {move, {atom, span}, {x, 0}}.
-    {move, {y, 8}, {x, 1}}.
+    {move, {y, 4}, {x, 1}}.
     {call_ext, 2, {extfunc, maps, get, 2}}.
-    {move, {x, 0}, {y, 13}}.
+    {move, {x, 0}, {y, 9}}.
     {move, {atom, start}, {x, 0}}.
-    {move, {y, 13}, {x, 1}}.
+    {move, {y, 9}, {x, 1}}.
     {call_ext, 2, {extfunc, maps, get, 2}}.
-    {move, {x, 0}, {y, 13}}.
-    {move, {y, 13}, {x, 0}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
     {call, 1, {f, 6}}.
-    {move, {x, 0}, {y, 13}}.
+    {move, {x, 0}, {y, 9}}.
     {move, {y, 2}, {x, 0}}.
-    {move, {y, 13}, {x, 1}}.
+    {move, {y, 9}, {x, 1}}.
     {call_ext, 2, {extfunc, bp_comptime_template, '__bp_add', 2}}.
-    {move, {x, 0}, {y, 13}}.
-    {move, {y, 13}, {x, 0}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
     {move, {literal, <<"-">>}, {x, 1}}.
     {call_ext, 2, {extfunc, bp_comptime_template, '__bp_add', 2}}.
-    {move, {x, 0}, {y, 13}}.
+    {move, {x, 0}, {y, 9}}.
     {move, {atom, span}, {x, 0}}.
-    {move, {y, 8}, {x, 1}}.
+    {move, {y, 4}, {x, 1}}.
     {call_ext, 2, {extfunc, maps, get, 2}}.
-    {move, {x, 0}, {y, 14}}.
+    {move, {x, 0}, {y, 10}}.
     {move, {atom, 'end'}, {x, 0}}.
-    {move, {y, 14}, {x, 1}}.
+    {move, {y, 10}, {x, 1}}.
     {call_ext, 2, {extfunc, maps, get, 2}}.
-    {move, {x, 0}, {y, 14}}.
-    {move, {y, 14}, {x, 0}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 10}, {x, 0}}.
     {call, 1, {f, 6}}.
-    {move, {x, 0}, {y, 14}}.
-    {move, {y, 13}, {x, 0}}.
-    {move, {y, 14}, {x, 1}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, {y, 9}, {x, 0}}.
+    {move, {y, 10}, {x, 1}}.
     {call_ext, 2, {extfunc, bp_comptime_template, '__bp_add', 2}}.
-    {move, {x, 0}, {y, 13}}.
-    {move, {y, 13}, {x, 0}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
     {move, {literal, <<";">>}, {x, 1}}.
     {call_ext, 2, {extfunc, bp_comptime_template, '__bp_add', 2}}.
-    {move, {x, 0}, {y, 13}}.
-    {move, {y, 13}, {y, 7}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 2}}.
     {jump, {f, 40}}.
   {label, 40}.
     {test_heap, 4, 0}.
-    {put_tuple2, {x, 0}, {list, [{y, 4}, {y, 6}, {y, 7}]}}.
-    {move, {x, 0}, {y, 13}}.
-    {move, {y, 13}, {x, 0}}.
-    {deallocate, 16}.
+    {put_tuple2, {x, 0}, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
+    {deallocate, 12}.
     return.
   {label, 24}.
-    {move, {y, 8}, {x, 0}}.
-    {move, {y, 9}, {x, 1}}.
-    {deallocate, 16}.
+    {move, {y, 4}, {x, 0}}.
+    {move, {y, 5}, {x, 1}}.
+    {deallocate, 12}.
     {jump, {f, 21}}.
 
 {function, holes, 1, 2}.
   {label, 1}.
     {func_info, {atom, template_module}, {atom, holes}, 1}.
   {label, 2}.
-    {allocate, 11, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}]}}.
-    {move, {x, 0}, {y, 6}}.
+    {allocate, 8, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}]}}.
+    {move, {x, 0}, {y, 3}}.
     {move, nil, {y, 0}}.
     {jump, {f, 16}}.
   {label, 16}.
@@ -173,63 +173,63 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   {label, 20}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
     {make_fun3, {f, 22}, 0, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {y, 7}}.
+    {move, {x, 0}, {y, 4}}.
     {test_heap, 4, 0}.
     {put_tuple2, {x, 0}, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
-    {move, {x, 0}, {y, 8}}.
-    {move, {y, 6}, {x, 0}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 3}, {x, 0}}.
     {call_ext, 1, {extfunc, bp_comptime_template, parts, 1}}.
-    {move, {x, 0}, {y, 9}}.
-    {move, {y, 7}, {x, 0}}.
-    {move, {y, 8}, {x, 1}}.
-    {move, {y, 9}, {x, 2}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 4}, {x, 0}}.
+    {move, {y, 5}, {x, 1}}.
+    {move, {y, 6}, {x, 2}}.
     {call_ext, 3, {extfunc, lists, foldl, 3}}.
-    {move, {x, 0}, {y, 7}}.
-    {move, {y, 7}, {x, 0}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 4}, {x, 0}}.
     {test, is_tuple, {f, 41}, [{x, 0}]}.
     {test, test_arity, {f, 41}, [{x, 0}, 3]}.
-    {get_tuple_element, {x, 0}, 0, {y, 8}}.
-    {get_tuple_element, {x, 0}, 1, {y, 9}}.
-    {get_tuple_element, {x, 0}, 2, {y, 10}}.
-    {move, {y, 8}, {y, 3}}.
-    {move, {y, 9}, {y, 4}}.
-    {move, {y, 10}, {y, 5}}.
+    {get_tuple_element, {x, 0}, 0, {y, 5}}.
+    {get_tuple_element, {x, 0}, 1, {y, 6}}.
+    {get_tuple_element, {x, 0}, 2, {y, 7}}.
+    {move, {y, 5}, {y, 0}}.
+    {move, {y, 6}, {y, 1}}.
+    {move, {y, 7}, {y, 2}}.
     {jump, {f, 42}}.
   {label, 41}.
-    {move, {y, 7}, {x, 0}}.
+    {move, {y, 4}, {x, 0}}.
     {badmatch, {x, 0}}.
   {label, 42}.
-    {move, {y, 3}, {x, 0}}.
+    {move, {y, 0}, {x, 0}}.
     {move, {literal, <<", ">>}, {x, 1}}.
     {call, 2, {f, 8}}.
-    {move, {x, 0}, {y, 7}}.
+    {move, {x, 0}, {y, 4}}.
     {move, {literal, <<"#(">>}, {x, 0}}.
-    {move, {y, 7}, {x, 1}}.
-    {call_ext, 2, {extfunc, bp_comptime_template, '__bp_add', 2}}.
-    {move, {x, 0}, {y, 7}}.
-    {move, {y, 7}, {x, 0}}.
-    {move, {literal, <<", \"">>}, {x, 1}}.
-    {call_ext, 2, {extfunc, bp_comptime_template, '__bp_add', 2}}.
-    {move, {x, 0}, {y, 7}}.
-    {move, {y, 7}, {x, 0}}.
     {move, {y, 4}, {x, 1}}.
     {call_ext, 2, {extfunc, bp_comptime_template, '__bp_add', 2}}.
-    {move, {x, 0}, {y, 7}}.
-    {move, {y, 7}, {x, 0}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 4}, {x, 0}}.
+    {move, {literal, <<", \"">>}, {x, 1}}.
+    {call_ext, 2, {extfunc, bp_comptime_template, '__bp_add', 2}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 4}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {call_ext, 2, {extfunc, bp_comptime_template, '__bp_add', 2}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 4}, {x, 0}}.
     {move, {literal, <<"\", \"">>}, {x, 1}}.
     {call_ext, 2, {extfunc, bp_comptime_template, '__bp_add', 2}}.
-    {move, {x, 0}, {y, 7}}.
-    {move, {y, 7}, {x, 0}}.
-    {move, {y, 5}, {x, 1}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 4}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
     {call_ext, 2, {extfunc, bp_comptime_template, '__bp_add', 2}}.
-    {move, {x, 0}, {y, 7}}.
-    {move, {y, 7}, {x, 0}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 4}, {x, 0}}.
     {move, {literal, <<"\")">>}, {x, 1}}.
     {call_ext, 2, {extfunc, bp_comptime_template, '__bp_add', 2}}.
-    {move, {x, 0}, {y, 7}}.
-    {move, {y, 6}, {x, 0}}.
-    {move, {y, 7}, {x, 1}}.
-    {call_ext_last, 2, {extfunc, bp_comptime_template, build, 2}, 11}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 3}, {x, 0}}.
+    {move, {y, 4}, {x, 1}}.
+    {call_ext_last, 2, {extfunc, bp_comptime_template, build, 2}, 8}.
 
 {function, '__bp_prim_push', 2, 4}.
   {label, 3}.
@@ -388,85 +388,85 @@ val got = holes """p=${origin} xs=${xs} m=${maybe}""";
   {label, 11}.
     {func_info, {atom, template_module}, {atom, main}, 1}.
   {label, 12}.
-    {allocate, 19, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}, {y, 13}, {y, 14}, {y, 15}, {y, 16}, {y, 17}, {y, 18}]}}.
-    {move, {x, 0}, {y, 6}}.
-    {move, {y, 6}, {x, 0}}.
+    {allocate, 16, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}, {y, 13}, {y, 14}, {y, 15}]}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {y, 3}, {x, 0}}.
     {test, is_tuple, {f, 77}, [{x, 0}]}.
     {test, test_arity, {f, 77}, [{x, 0}, 1]}.
-    {get_tuple_element, {x, 0}, 0, {y, 7}}.
-    {move, {y, 7}, {y, 0}}.
-    {'try', {y, 18}, {f, 78}}.
+    {get_tuple_element, {x, 0}, 0, {y, 4}}.
+    {move, {y, 4}, {y, 0}}.
+    {'try', {y, 15}, {f, 78}}.
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 2}}.
-    {move, {x, 0}, {y, 9}}.
-    {move, {y, 9}, {x, 0}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {x, 0}}.
     {call_ext, 1, {extfunc, bp_comptime_template, '__bp_reply', 1}}.
-    {move, {x, 0}, {y, 9}}.
-    {move, {y, 9}, {x, 0}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {x, 0}}.
     {call_ext, 1, {extfunc, json, encode, 1}}.
-    {move, {x, 0}, {y, 9}}.
-    {move, {y, 9}, {y, 8}}.
-    {try_end, {y, 18}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {y, 5}}.
+    {try_end, {y, 15}}.
     {jump, {f, 79}}.
   {label, 78}.
-    {try_case, {y, 18}}.
-    {move, {x, 0}, {y, 9}}.
-    {move, {x, 1}, {y, 10}}.
-    {move, {x, 2}, {y, 11}}.
-    {move, {y, 9}, {x, 0}}.
+    {try_case, {y, 15}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {x, 1}, {y, 7}}.
+    {move, {x, 2}, {y, 8}}.
+    {move, {y, 6}, {x, 0}}.
     {test, is_eq_exact, {f, 81}, [{x, 0}, {atom, throw}]}.
-    {move, {y, 10}, {x, 0}}.
+    {move, {y, 7}, {x, 0}}.
     {test, is_tuple, {f, 81}, [{x, 0}]}.
     {test, test_arity, {f, 81}, [{x, 0}, 4]}.
-    {get_tuple_element, {x, 0}, 0, {y, 12}}.
-    {get_tuple_element, {x, 0}, 1, {y, 13}}.
-    {get_tuple_element, {x, 0}, 2, {y, 14}}.
-    {get_tuple_element, {x, 0}, 3, {y, 15}}.
-    {move, {y, 12}, {x, 0}}.
+    {get_tuple_element, {x, 0}, 0, {y, 9}}.
+    {get_tuple_element, {x, 0}, 1, {y, 10}}.
+    {get_tuple_element, {x, 0}, 2, {y, 11}}.
+    {get_tuple_element, {x, 0}, 3, {y, 12}}.
+    {move, {y, 9}, {x, 0}}.
     {test, is_eq_exact, {f, 81}, [{x, 0}, {atom, '__bp_template_fail'}]}.
-    {move, {y, 13}, {y, 1}}.
-    {move, {y, 14}, {y, 2}}.
-    {move, {y, 15}, {y, 3}}.
-    {move, {y, 1}, {x, 0}}.
+    {move, {y, 10}, {y, 0}}.
+    {move, {y, 11}, {y, 1}}.
+    {move, {y, 12}, {y, 2}}.
+    {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, bp_comptime_template, '__bp_text', 1}}.
-    {move, {x, 0}, {y, 16}}.
-    {move, {y, 3}, {x, 0}}.
+    {move, {x, 0}, {y, 13}}.
+    {move, {y, 2}, {x, 0}}.
     {call_ext, 1, {extfunc, bp_comptime_template, '__bp_json', 1}}.
-    {move, {x, 0}, {y, 17}}.
+    {move, {x, 0}, {y, 14}}.
     {move, {literal, #{}}, {x, 0}}.
-    {put_map_assoc, {f, 0}, {x, 0}, {x, 0}, 1, {list, [{atom, kind}, {literal, <<"fail">>}, {atom, message}, {y, 16}, {atom, param}, {y, 2}, {atom, span}, {y, 17}]}}.
-    {move, {x, 0}, {y, 16}}.
-    {move, {y, 16}, {x, 0}}.
+    {put_map_assoc, {f, 0}, {x, 0}, {x, 0}, 1, {list, [{atom, kind}, {literal, <<"fail">>}, {atom, message}, {y, 13}, {atom, param}, {y, 1}, {atom, span}, {y, 14}]}}.
+    {move, {x, 0}, {y, 13}}.
+    {move, {y, 13}, {x, 0}}.
     {call_ext, 1, {extfunc, json, encode, 1}}.
-    {move, {x, 0}, {y, 16}}.
-    {move, {y, 16}, {y, 8}}.
+    {move, {x, 0}, {y, 13}}.
+    {move, {y, 13}, {y, 5}}.
     {jump, {f, 80}}.
   {label, 81}.
-    {move, {y, 9}, {y, 4}}.
-    {move, {y, 10}, {y, 5}}.
+    {move, {y, 6}, {y, 0}}.
+    {move, {y, 7}, {y, 1}}.
     {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{y, 4}, {y, 5}]}}.
-    {move, {x, 0}, {y, 12}}.
-    {move, {y, 12}, {x, 0}}.
+    {put_tuple2, {x, 0}, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
     {call_ext, 1, {extfunc, bp_comptime_template, '__bp_text', 1}}.
-    {move, {x, 0}, {y, 12}}.
+    {move, {x, 0}, {y, 9}}.
     {move, {literal, #{}}, {x, 0}}.
-    {put_map_assoc, {f, 0}, {x, 0}, {x, 0}, 1, {list, [{atom, kind}, {literal, <<"error">>}, {atom, message}, {y, 12}]}}.
-    {move, {x, 0}, {y, 12}}.
-    {move, {y, 12}, {x, 0}}.
+    {put_map_assoc, {f, 0}, {x, 0}, {x, 0}, 1, {list, [{atom, kind}, {literal, <<"error">>}, {atom, message}, {y, 9}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
     {call_ext, 1, {extfunc, json, encode, 1}}.
-    {move, {x, 0}, {y, 12}}.
-    {move, {y, 12}, {y, 8}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 5}}.
     {jump, {f, 80}}.
   {label, 80}.
   {label, 79}.
-    {move, {y, 8}, {x, 0}}.
-    {deallocate, 19}.
+    {move, {y, 5}, {x, 0}}.
+    {deallocate, 16}.
     return.
   {label, 77}.
-    {move, {y, 6}, {x, 0}}.
-    {deallocate, 19}.
+    {move, {y, 3}, {x, 0}}.
+    {deallocate, 16}.
     {jump, {f, 11}}.
 
 %% main/1 argument — an external term, not part of the module:

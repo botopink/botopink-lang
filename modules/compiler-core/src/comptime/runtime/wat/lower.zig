@@ -1673,14 +1673,169 @@ fn finishFunction(l: *Lowerer, f: *Fn, sym: []const u8, exports: []const []const
     try emit(&inner, l.ar, .@"return");
     try block(&wrapped, l.ar, .block, "raise", null, inner);
     try emit(&wrapped, l.ar, .{ .@"const" = .{ .ty = .i32, .text = "0" } });
+    const packed_locals = try packLocals(l.ar, f.locals.items, wrapped.items);
     try l.funcs.append(l.ar, .{ .func = .{
         .name = sym,
         .exports = exports,
         .params = params,
         .result = .i32,
-        .locals = if (f.locals.items.len == 0) &.{} else try l.ar.dupe([]const wat.Local, &.{f.locals.items}),
-        .body = .{ .lines = wrapped.items, .stack = .{ .value = .i32 } },
+        .locals = if (packed_locals.locals.len == 0) &.{} else try l.ar.dupe([]const wat.Local, &.{packed_locals.locals}),
+        .body = .{ .lines = packed_locals.lines, .stack = .{ .value = .i32 } },
     } });
+}
+
+// ── the locals' sharing ──────────────────────────────────────────────────────
+
+const PackedLocals = struct { locals: []const wat.Local, lines: []const Line };
+
+/// Locals whose live ranges never overlap share one. Every Erlang variable
+/// and every intermediate took a local of its own, so a large body declared
+/// thousands, past wasm3's per-function bound (`d_m3MaxFunctionStackHeight`:
+/// "compiling function overran its stack height limit", front 118's `html`).
+/// A range is the local's first to its last appearance in the body's order:
+/// a `br` out of a `block` or an `if` goes forward, and a `loop` (a
+/// comprehension) keeps live through the whole loop every local whose range
+/// touches it. A local first READ before any write relies on wasm's zero
+/// initialisation and keeps a local of its own. Ranges are packed in order of
+/// their start into the lowest free local; one local that ends where another
+/// starts does not share with it. A local holding one variable keeps its
+/// name; a shared one is `$s<N>`.
+fn packLocals(ar: std.mem.Allocator, locals: []const wat.Local, lines: []const Line) Error!PackedLocals {
+    if (locals.len == 0) return .{ .locals = locals, .lines = lines };
+    var index: std.StringHashMapUnmanaged(u32) = .empty;
+    for (locals, 0..) |lc, i| try index.put(ar, lc.name, @intCast(i));
+    var r: Ranges = .{ .ar = ar, .index = &index };
+    r.first = try ar.alloc(u32, locals.len);
+    r.last = try ar.alloc(u32, locals.len);
+    r.pinned = try ar.alloc(bool, locals.len);
+    @memset(r.first, Ranges.none);
+    @memset(r.last, 0);
+    @memset(r.pinned, false);
+    try r.walk(lines);
+    var changed = r.loops.items.len > 0;
+    while (changed) {
+        changed = false;
+        for (r.loops.items) |lp| for (r.first, r.last) |*b, *e| {
+            if (b.* == Ranges.none or b.* > lp[1] or e.* < lp[0]) continue;
+            if (b.* > lp[0]) {
+                b.* = lp[0];
+                changed = true;
+            }
+            if (e.* < lp[1]) {
+                e.* = lp[1];
+                changed = true;
+            }
+        };
+    }
+    const order = try ar.alloc(u32, locals.len);
+    for (order, 0..) |*o, i| o.* = @intCast(i);
+    std.mem.sort(u32, order, r.first, struct {
+        fn lt(fs: []const u32, a: u32, b: u32) bool {
+            return if (fs[a] != fs[b]) fs[a] < fs[b] else a < b;
+        }
+    }.lt);
+    const slot = try ar.alloc(u32, locals.len);
+    var busy: std.ArrayListUnmanaged(u32) = .empty;
+    var holders: std.ArrayListUnmanaged(u32) = .empty;
+    var owner: std.ArrayListUnmanaged(u32) = .empty;
+    for (order) |v| {
+        var chosen: ?u32 = null;
+        if (!r.pinned[v] and r.first[v] != Ranges.none) {
+            for (busy.items, 0..) |until, k| if (until != Ranges.none and until < r.first[v]) {
+                chosen = @intCast(k);
+                break;
+            };
+        }
+        const k = chosen orelse blk: {
+            try busy.append(ar, 0);
+            try holders.append(ar, 0);
+            try owner.append(ar, v);
+            break :blk @as(u32, @intCast(busy.items.len - 1));
+        };
+        // A pinned or unused local is never shared.
+        busy.items[k] = if (r.pinned[v] or r.first[v] == Ranges.none) Ranges.none else r.last[v];
+        holders.items[k] += 1;
+        slot[v] = k;
+    }
+    const names = try ar.alloc([]const u8, busy.items.len);
+    const out_locals = try ar.alloc(wat.Local, busy.items.len);
+    for (names, out_locals, 0..) |*n, *lc, k| {
+        n.* = if (holders.items[k] == 1) locals[owner.items[k]].name else try std.fmt.allocPrint(ar, "s{d}", .{k});
+        lc.* = .{ .name = n.*, .ty = locals[owner.items[k]].ty };
+    }
+    var rename: std.StringHashMapUnmanaged([]const u8) = .empty;
+    for (locals, 0..) |lc, i| try rename.put(ar, lc.name, names[slot[i]]);
+    return .{ .locals = out_locals, .lines = try renameLines(ar, &rename, lines) };
+}
+
+const Ranges = struct {
+    const none = std.math.maxInt(u32);
+    ar: std.mem.Allocator,
+    index: *const std.StringHashMapUnmanaged(u32),
+    first: []u32 = &.{},
+    last: []u32 = &.{},
+    pinned: []bool = &.{},
+    loops: std.ArrayListUnmanaged([2]u32) = .empty,
+    at: u32 = 0,
+
+    fn walk(r: *Ranges, lines: []const Line) Error!void {
+        for (lines) |ln| {
+            r.at += 1;
+            switch (ln.instr) {
+                .local_get => |n| r.touch(n, true),
+                .local_set, .local_tee => |n| r.touch(n, false),
+                .block => |b| {
+                    const start = r.at;
+                    try r.walk(b.body.lines);
+                    r.at += 1;
+                    if (b.kind == .loop) try r.loops.append(r.ar, .{ start, r.at });
+                },
+                .@"if" => |i| {
+                    try r.walk(i.then.seq.lines);
+                    r.at += 1;
+                    if (i.@"else") |e| try r.walk(e.seq.lines);
+                    r.at += 1;
+                },
+                else => {},
+            }
+        }
+    }
+
+    fn touch(r: *Ranges, name: []const u8, read: bool) void {
+        const i = r.index.get(name) orelse return;
+        if (r.first[i] == none and read) r.pinned[i] = true;
+        r.first[i] = @min(r.first[i], r.at);
+        r.last[i] = @max(r.last[i], r.at);
+    }
+};
+
+fn renameLines(ar: std.mem.Allocator, rename: *const std.StringHashMapUnmanaged([]const u8), lines: []const Line) Error![]const Line {
+    const out = try ar.alloc(Line, lines.len);
+    for (lines, out) |ln, *o| {
+        o.* = ln;
+        switch (ln.instr) {
+            .local_get => |n| o.instr = .{ .local_get = rename.get(n) orelse n },
+            .local_set => |n| o.instr = .{ .local_set = rename.get(n) orelse n },
+            .local_tee => |n| o.instr = .{ .local_tee = rename.get(n) orelse n },
+            .block => |b| {
+                var nb = b;
+                nb.body.lines = try renameLines(ar, rename, b.body.lines);
+                o.instr = .{ .block = nb };
+            },
+            .@"if" => |i| {
+                var ni = i;
+                ni.then.seq.lines = try renameLines(ar, rename, i.then.seq.lines);
+                if (i.@"else") |e| {
+                    var ne = e;
+                    ne.seq.lines = try renameLines(ar, rename, e.seq.lines);
+                    ni.@"else" = ne;
+                }
+                o.instr = .{ .@"if" = ni };
+            },
+            else => {},
+        }
+    }
+    return out;
 }
 
 fn lowerFunction(l: *Lowerer, sym: []const u8, k: FnKey) Error!void {
