@@ -156,10 +156,13 @@ jobs:
           echo "git sha: $GITHUB_SHA"
           echo "runner: ${{ matrix.runner }}"
 
-      - name: Install Node 20
+      # Node 22, the floor std's commonJS bodies need: `fs.glob` matches a
+      # segment with `fs.globSync` (Node 22+, libs/std/src/io/fs.bp); under
+      # Node 20 it throws, the walk answers `[]` and std's glob tests fail.
+      - name: Install Node 22
         uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
 
       # The gate's stage 1, whole tree: a `.zig` file `zig fmt` would rewrite
       # fails the job and is listed. Needs only zig.
@@ -272,10 +275,13 @@ jobs:
         with:
           version: 0.16.0
 
-      - name: Install Node 20
+      # Node 22, the floor std's commonJS bodies need: `fs.glob` matches a
+      # segment with `fs.globSync` (Node 22+, libs/std/src/io/fs.bp); under
+      # Node 20 it throws, the walk answers `[]` and std's glob tests fail.
+      - name: Install Node 22
         uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
 
       # Decision 228: the release is the compiler's `OTP_RELEASE`
       # (modules/manifest/src/root.zig, printed by `botopink --version`), read
