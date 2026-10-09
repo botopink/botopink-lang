@@ -66,13 +66,30 @@ run_beam() {
   fi
 }
 
+# A `wasi` build writes a WASI preview 2 component (decision 334), whose one
+# export is `wasi:cli/run`; the module the backend lowered is embedded in it as
+# `(core module $main …)`. `--invoke main` reaches that module: print it on its
+# own (`(module …)`, its `__bp_init` the start a component drops) so wasmtime
+# runs it as the core module it is. The component itself runs in
+# `tests/language` (`botopink run --target wasm`).
+core_module() {
+  # The module's last line is the `  )` just before the shim's module.
+  awk '
+    /^  \(core module \$main$/ { inside = 1; print "(module"; next }
+    inside && /^  \(core module \$p1_shim$/ { print ")"; exit }
+    inside { if (held != "") print held; held = $0; sub(/ \(export "__bp_init"\)/, "", held) }
+  ' "$1"
+}
+
 # Build for wasm and assert `main()` equals $expected under wasmtime.
 run_wasm() {
   local dir="$1" expected="$2"
   echo "==> [$(basename "$dir")] wasm: build + wasmtime --invoke main"
   ( cd "$dir" && "$BP_BIN" build --target wasm )
   local got
-  got="$(wasmtime --invoke main "$dir/out/main.wat" 2>/dev/null | tail -1 | tr -d '[:space:]')"
+  head -1 "$dir/out/main.wat" | grep -qx '(component' || { echo "  wasm: out/main.wat is not a component" >&2; exit 1; }
+  core_module "$dir/out/main.wat" > "$dir/out/main.core.wat"
+  got="$(wasmtime --invoke main "$dir/out/main.core.wat" 2>/dev/null | tail -1 | tr -d '[:space:]')"
   if [[ "$got" == "$expected" ]]; then
     echo "  wasm: main() => $got"
   else

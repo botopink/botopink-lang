@@ -1022,9 +1022,18 @@ pub fn CallExprOf(comptime phase: Phase) type {
             /// member is called. Read by the checker only; null when none was
             /// written, and then left out of the AST dump.
             receiverTypeArgs: ?[]TypeRef = null,
+            /// Decision 267 — the call's arguments past the callee's fixed
+            /// parameters were packed into one array literal, its last
+            /// argument, for the variadic parameter (`comptime/transform.zig`
+            /// from the checker's `Env.variadicPacks`). erlang, beam and wasm
+            /// read the array as the one list / array argument; commonJS
+            /// writes its elements back as the rest parameter's arguments.
+            /// False on every call the parser builds, and then left out of the
+            /// AST dump.
+            variadicPacked: bool = false,
 
             pub fn jsonStringify(this: @This(), jws: anytype) !void {
-                return stringifyOmitting(this, jws, &.{}, &.{ "isType", "calleeExpr", "typeArgs", "receiverTypeArgs" });
+                return stringifyOmitting(this, jws, &.{}, &.{ "isType", "calleeExpr", "typeArgs", "receiverTypeArgs", "variadicPacked" });
             }
         },
         /// `expr |> fn1 |> fn2` — pipeline operator, left-associative chain
@@ -1581,6 +1590,12 @@ pub const Param = struct {
     /// `typeRef` at the value member (`Box<T>`); the parser never does. Not
     /// dumped.
     typeArgOf: ?[]const u8 = null,
+    /// Decision 267 — `..name: T[]`: the function's last parameter takes the
+    /// zero or more positional arguments after the fixed ones, each a `T`, and
+    /// the body reads `name` as a `T[]`. The parser refuses one that is not
+    /// last, a second one, a default on it and a type that is not `T[]`.
+    /// Dumped only when set.
+    variadic: bool = false,
 
     /// Dumped without `typeLoc`: the location is a diagnostic aid, not surface.
     pub fn jsonStringify(this: Param, jws: anytype) !void {
@@ -1602,6 +1617,10 @@ pub const Param = struct {
         if (this.inlineFields) |fs| {
             try jws.objectField("inlineFields");
             try jws.write(fs);
+        }
+        if (this.variadic) {
+            try jws.objectField("variadic");
+            try jws.write(true);
         }
         try jws.endObject();
     }
@@ -1704,14 +1723,7 @@ pub const BehaviorMethod = struct {
     /// The `(module, symbol)` of the `external` annotation targeting `target`
     /// (e.g. "node", "erlang"), or null when none matches.
     pub fn externalFor(this: BehaviorMethod, target: []const u8) ?ExternalRef {
-        for (this.annotations) |a| {
-            if (!std.mem.startsWith(u8, a.name, "External.")) continue;
-            if (!std.ascii.eqlIgnoreCase(a.name["External.".len..], target)) continue;
-            var n = a.args.len;
-            if (n >= 1 and isBoolFlagArg(a.args[n - 1])) n -= 1;
-            if (n == 1) return .{ .module = "", .symbol = unquoteAnnotationArg(a.args[0]) };
-            if (n == 2) return .{ .module = unquoteAnnotationArg(a.args[0]), .symbol = unquoteAnnotationArg(a.args[1]) };
-        }
+        for (this.annotations) |a| if (externalRefOf(a, target)) |r| return r;
         return null;
     }
 
@@ -1838,6 +1850,80 @@ pub const ExternalRef = struct {
     module: []const u8,
     symbol: []const u8,
 };
+
+/// Decision 334 — the runtime a wasm build binds to. A
+/// `#[@External.Wasm(…, host: .Wasi)]` binding serves that host only; one
+/// written without `host:` serves every host.
+pub const WasmHost = enum {
+    wasi,
+    browser,
+
+    /// The written value of a `host:` argument — `.Wasi` / `.Browser`, the one
+    /// spelling — or null for anything else (the checker refuses it,
+    /// `validateExternalAnnotation`).
+    pub fn ofArg(arg: []const u8) ?WasmHost {
+        if (std.mem.eql(u8, arg, ".Wasi")) return .wasi;
+        if (std.mem.eql(u8, arg, ".Browser")) return .browser;
+        return null;
+    }
+
+    /// The `#[@External.<Member>]` lookup name of a wasm build for this host
+    /// (`codegen.generateWith`, `botopink check`): `wasm` is the `wasi` host's
+    /// — the default of decision 334 —, `wasm.browser` the `browser` host's.
+    pub fn lookupName(self: WasmHost) []const u8 {
+        return switch (self) {
+            .wasi => "wasm",
+            .browser => "wasm.browser",
+        };
+    }
+};
+
+/// A lookup name (`node`, `erlang`, `wasm`, `wasm.browser`) split into the
+/// `External` member it reads and, on wasm, the host the build binds to.
+pub const ExternalLookup = struct {
+    member: []const u8,
+    host: ?WasmHost = null,
+
+    pub fn of(target: []const u8) ExternalLookup {
+        if (std.mem.eql(u8, target, "wasm")) return .{ .member = "wasm", .host = .wasi };
+        if (std.mem.eql(u8, target, "wasm.browser")) return .{ .member = "wasm", .host = .browser };
+        return .{ .member = target };
+    }
+};
+
+/// The index of the argument an annotation labels `host:`, or null.
+pub fn hostArgIndex(a: Annotation) ?usize {
+    for (a.args, 0..) |_, i| {
+        if (a.labelOf(i)) |label| if (std.mem.eql(u8, label, "host")) return i;
+    }
+    return null;
+}
+
+/// The `(module, symbol)` of `a` when it is an `External.<member>` annotation
+/// serving `lookup` (`ExternalLookup.of`): a `host:` argument other than the
+/// lookup's host passes it by, and is not counted among the template's
+/// arguments; neither is a trailing `inline` flag.
+pub fn externalRefOf(a: Annotation, target: []const u8) ?ExternalRef {
+    const lookup = ExternalLookup.of(target);
+    if (!std.mem.startsWith(u8, a.name, "External.")) return null;
+    if (!std.ascii.eqlIgnoreCase(a.name["External.".len..], lookup.member)) return null;
+    const host_at = hostArgIndex(a);
+    if (host_at) |h| if (lookup.host) |want| {
+        if (WasmHost.ofArg(a.args[h]) != want) return null;
+    };
+    var pos: [3][]const u8 = undefined;
+    var n: usize = 0;
+    for (a.args, 0..) |arg, i| {
+        if (host_at != null and i == host_at.?) continue;
+        if (n == pos.len) return null;
+        pos[n] = arg;
+        n += 1;
+    }
+    if (n >= 1 and isBoolFlagArg(pos[n - 1])) n -= 1;
+    if (n == 1) return .{ .module = "", .symbol = unquoteAnnotationArg(pos[0]) };
+    if (n == 2) return .{ .module = unquoteAnnotationArg(pos[0]), .symbol = unquoteAnnotationArg(pos[1]) };
+    return null;
+}
 
 /// A parsed `@external` call template: the host `symbol` (with the call
 /// punctuation stripped) plus the ordered argument names that pin the host's
@@ -3198,14 +3284,7 @@ pub const FnDecl = struct {
     /// The `(module, symbol)` of the `external` annotation matching `target`
     /// (e.g. "erlang", "node"), or null when no annotation targets it.
     pub fn externalFor(this: FnDecl, target: []const u8) ?ExternalRef {
-        for (this.annotations) |a| {
-            if (!std.mem.startsWith(u8, a.name, "External.")) continue;
-            if (!std.ascii.eqlIgnoreCase(a.name["External.".len..], target)) continue;
-            var n = a.args.len;
-            if (n >= 1 and isBoolFlagArg(a.args[n - 1])) n -= 1;
-            if (n == 1) return .{ .module = "", .symbol = unquoteAnnotationArg(a.args[0]) };
-            if (n == 2) return .{ .module = unquoteAnnotationArg(a.args[0]), .symbol = unquoteAnnotationArg(a.args[1]) };
-        }
+        for (this.annotations) |a| if (externalRefOf(a, target)) |r| return r;
         return null;
     }
 

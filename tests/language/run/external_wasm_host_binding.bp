@@ -1,0 +1,22 @@
+//// Decision 334 — a wasm build binds to the runtime it runs on, and a
+//// `declare fn` may bind each host its own way: `host: .Wasi` and
+//// `host: .Browser` side by side. A wasm build for the default `wasi` host
+//// (no `"wasm"` in botopink.json) lowers `floorOf` to the opcode its `.Wasi`
+//// binding names; the `.Browser` binding (a private botopink body) is the
+//// browser host's. Every target prints the same.
+
+#[@External.Node("Math", "floor")]
+#[@External.Erlang("math", "floor")]
+#[@External.Beam("math", "floor")]
+#[@External.Wasm("op:f64.floor", host = .Wasi)]
+#[@External.Wasm("fn:floorBody", host = .Browser)]
+declare fn floorOf(x: f64) -> f64;
+
+fn floorBody(x: f64) -> f64 {
+    return x - 0.5;
+}
+
+pub fn main() {
+    @print(floorOf(2.5));
+    @print(floorOf(-1.5));
+}

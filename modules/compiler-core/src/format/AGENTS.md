@@ -158,7 +158,7 @@ form has always done that); whether it should is a question, recorded in
 - **A behavior `val` member and a `declare fn` delegate print whole types** — `fmtBehavior`
   prints `BehaviorField.typeRef` through `fmtTypeRef` (`val fields: Field[];`), and
   `fmtDelegate` prints the generic list and `fmtReturnTypeRef`
-  (`pub declare fn getContext<T>(comptime _: type) -> Component<T, any>;`) — front 20.
+  (`pub declare fn getContext<T>(comptime _: type) -> Component<T, T>;`) — front 20.
 - **Comments inside a `type`/`behavior` body** — the parser attaches the `//` lines above a
   member to `BehaviorMethod.comments` / `BehaviorField.comments` (and the lines before `}` to
   `bodyComments`), with `""` for a blank source line; the formatter prints them above the

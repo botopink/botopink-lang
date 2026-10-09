@@ -1,0 +1,14 @@
+//// Decision 269 — `@getContext(T)` is a hook (`-> Component<T, T>` in
+//// `builtins.d.bp`): it is `use`d (`val ctx = use @getContext(T);`), never
+//// called for its value. The bare call is refused at the `@`, naming `use`.
+
+pub type BasePagamento(total: i32)
+
+fn total() -> @Component<BasePagamento, i32> {
+    val ctx = @getContext(BasePagamento);
+    return ctx.total;
+}
+
+pub fn main() {
+    @print("unreached");
+}

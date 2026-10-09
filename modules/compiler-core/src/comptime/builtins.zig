@@ -25,13 +25,10 @@ pub const Held = enum {
     declaration,
     /// The builtin's own rule refuses, before the declaration is consulted,
     /// every call the declaration refuses (`@src`: no argument; `@typeInfo`:
-    /// one declaration; `@getContext`: one type name inside a component;
+    /// one declaration; `@getContext`: one type name inside a component, as
+    /// `use`'s operand;
     /// `@comptimeError`: the message it raises).
     own_rule,
-    /// The declaration cannot spell what the compiler accepts; the call keeps
-    /// today's acceptance until the front's open question (`question`) is
-    /// answered.
-    open_question,
 };
 
 pub const Builtin = struct {
@@ -40,9 +37,6 @@ pub const Builtin = struct {
     /// The declaration's signature in `renderSignature`'s canonical form.
     signature: []const u8,
     held: Held,
-    /// For `.open_question`: the question's id in the milestone's
-    /// `decisions-pending.md`.
-    question: ?[]const u8 = null,
     /// Never reaches run time: evaluated while the program is checked or while
     /// a decorator / template body runs.
     comptime_only: bool = false,
@@ -51,15 +45,15 @@ pub const Builtin = struct {
 /// Every `@name` builtin call the compiler implements.
 pub const table = [_]Builtin{
     // ── run time ──
-    .{ .name = "print", .signature = "print(value: unknown)", .held = .open_question, .question = "134-a" },
-    .{ .name = "println", .signature = "println(value: unknown)", .held = .open_question, .question = "134-a" },
-    .{ .name = "debug", .signature = "debug(value: unknown)", .held = .open_question, .question = "134-a" },
+    .{ .name = "print", .signature = "print(..values: unknown[])", .held = .declaration },
+    .{ .name = "println", .signature = "println(..values: unknown[])", .held = .declaration },
+    .{ .name = "debug", .signature = "debug(..values: unknown[])", .held = .declaration },
     .{ .name = "panic", .signature = "panic(message: string = \"panic\") -> noreturn", .held = .declaration },
     .{ .name = "todo", .signature = "todo(message: string = \"not implemented\") -> noreturn", .held = .declaration },
     .{ .name = "trap", .signature = "trap() -> noreturn", .held = .declaration },
     .{ .name = "block", .signature = "block<T>(body: fn() -> T) -> T", .held = .declaration },
     .{ .name = "module", .signature = "module() -> module", .held = .declaration },
-    .{ .name = "getContext", .signature = "getContext<T>(comptime _: type) -> T", .held = .own_rule },
+    .{ .name = "getContext", .signature = "getContext<T>(comptime _: type) -> Component<T, T>", .held = .own_rule },
     // ── comptime only ──
     .{ .name = "field", .signature = "field<T, F>(obj: T, comptime name: string) -> F", .held = .declaration, .comptime_only = true },
     .{ .name = "src", .signature = "src() -> SourceLocation", .held = .own_rule, .comptime_only = true },
@@ -142,6 +136,7 @@ pub fn renderSignature(
     for (params, 0..) |p, i| {
         if (i > 0) try w.writeAll(", ");
         if (p.modifier == .@"comptime") try w.writeAll("comptime ");
+        if (p.variadic) try w.writeAll("..");
         try w.print("{s}: {f}", .{ p.name, p.typeRef });
         if (p.default) |d| try w.print(" = {s}", .{defaultText(d)});
     }
@@ -426,12 +421,6 @@ test "builtins: every implemented builtin is declared, every declaration impleme
     const items = try drift(arena.allocator(), &.{ prelude.builtins, prelude.builtin_fns });
     printDrift(items);
     try std.testing.expectEqual(@as(usize, 0), items.len);
-}
-
-test "builtins: an open question names its id, and only an open question does" {
-    for (table) |b| {
-        try std.testing.expectEqual(b.held == .open_question, b.question != null);
-    }
 }
 
 test "builtins: a removed declaration is named as undeclared" {

@@ -1016,3 +1016,24 @@ test "format: `comptime s: Box<T> | type T` prints without parentheses" {
         \\}
     );
 }
+
+// ── decision 267: a variadic parameter ──────────────────────────────────────
+
+test "format: a variadic parameter keeps its `..`" {
+    try h.assertFormat(std.testing.allocator,
+        \\fn total(label: string, ..values: i32[]) -> i32 {
+        \\    return values.length();
+        \\}
+        \\
+        \\pub type Bag(name: string) {
+        \\    pub fn join(self: Self, ..parts: string[]) -> string {
+        \\        return parts.join(self.name);
+        \\    }
+        \\}
+        \\
+        \\pub declare fn pick<T>(
+        \\    comptime source: type T,
+        \\    comptime ..fields: string[],
+        \\) -> type;
+    );
+}

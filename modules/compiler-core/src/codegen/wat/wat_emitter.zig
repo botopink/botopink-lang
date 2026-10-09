@@ -27,6 +27,220 @@ pub fn renderModule(w: *Writer, m: ast.Module) Error!void {
     try w.writeAll(")\n");
 }
 
+// ── the WASI preview 2 component (decision 334, front `01-compiler/140`) ─────
+
+/// The preview 1 functions the component's adapter implements over WASI
+/// preview 2 — every `wasi_snapshot_preview1` import the backend emits
+/// (`wat_prelude.zig`: `fd_write` for the print helpers, `random_get` for
+/// `wasi:random_f64`). A module importing another one is refused here, never
+/// wrapped with the import left unsatisfied.
+pub const preview1_adapted = [_][]const u8{ "fd_write", "random_get" };
+
+pub const ComponentError = Error || std.mem.Allocator.Error || error{UnadaptedPreview1Import};
+
+/// Render `m` as a WASI preview 2 component — what a wasm build for the
+/// `wasi` host writes, and what `wasmtime run` runs (decision 334).
+///
+/// The module is embedded as `$main`, unchanged but for its `(start …)`: a
+/// start function runs while the module is instantiated, before the adapter
+/// that serves its `wasi_snapshot_preview1` imports exists, so the start is
+/// dropped and its function exported as `__bp_init`, which the component's
+/// `wasi:cli/run` export calls before `_start`. Around it, a fixed frame:
+///
+///   * the preview 2 interfaces imported — `wasi:io/{error,streams}`,
+///     `wasi:cli/{stdout,stderr}`, `wasi:random/random` (`@0.2.0`);
+///   * `$p1_shim` — the preview 1 functions `$main` imports, as trampolines
+///     through a table (`$main` needs them to be instantiated; their
+///     implementation needs `$main`'s memory);
+///   * `$p1_adapter` — the preview 1 adapter: `fd_write` copies each iovec
+///     from `$main`'s memory into a scratch memory 4096 bytes at a time and
+///     writes it with `blocking-write-and-flush` on stdout (fd 1) or stderr
+///     (fd 2), any other fd `EBADF`, a failed write `EIO`; `random_get` fills
+///     the buffer from `get-random-u64`; `run` calls `__bp_init` and `_start`;
+///   * `$p1_fixup` — fills the shim's table with the adapter's functions;
+///   * the `wasi:cli/run@0.2.0` export, when `$main` exports `_start`.
+pub fn renderComponent(alloc: std.mem.Allocator, w: *Writer, module: ast.Module) ComponentError!void {
+    var arena_state = std.heap.ArenaAllocator.init(alloc);
+    defer arena_state.deinit();
+    const m = try ast.startAsExport(arena_state.allocator(), module);
+    try ast.validateModule(m);
+    var has_init = false;
+    var has_start = false;
+    for (m.items) |it| switch (it) {
+        .import => |im| if (std.mem.eql(u8, im.module, "wasi_snapshot_preview1")) {
+            for (preview1_adapted) |n| {
+                if (std.mem.eql(u8, n, im.name)) break;
+            } else return error.UnadaptedPreview1Import;
+        },
+        .func => |f| for (f.exports) |e| {
+            if (std.mem.eql(u8, e, "_start")) has_start = true;
+            if (std.mem.eql(u8, e, ast.host_init_export)) has_init = true;
+        },
+        else => {},
+    };
+
+    try w.writeAll(component_imports);
+    try w.writeAll("  (core module $main\n");
+    for (m.items) |it| try renderItem(w, it);
+    try w.writeAll("  )\n");
+    try w.writeAll(component_adapter_head);
+    if (has_init) try w.writeAll("    (import \"main\" \"__bp_init\" (func $init))\n");
+    if (has_start) try w.writeAll("    (import \"main\" \"_start\" (func $start))\n");
+    try w.writeAll(component_adapter_body);
+    if (has_init) try w.writeAll("      call $init\n");
+    if (has_start) try w.writeAll("      call $start\n");
+    try w.writeAll(component_adapter_tail);
+    if (has_start) try w.writeAll(component_run_export);
+    try w.writeAll(")\n");
+}
+
+const component_imports =
+    \\(component
+    \\  (import "wasi:io/error@0.2.0" (instance $error
+    \\    (export "error" (type (sub resource)))
+    \\  ))
+    \\  (alias export $error "error" (type $error_t))
+    \\  (import "wasi:io/streams@0.2.0" (instance $streams
+    \\    (export "error" (type $err (eq $error_t)))
+    \\    (export "output-stream" (type $os (sub resource)))
+    \\    (type $se (variant (case "last-operation-failed" (own $err)) (case "closed")))
+    \\    (export "stream-error" (type $se2 (eq $se)))
+    \\    (export "[method]output-stream.blocking-write-and-flush"
+    \\      (func (param "self" (borrow $os)) (param "contents" (list u8)) (result (result (error $se2)))))
+    \\  ))
+    \\  (alias export $streams "output-stream" (type $os_t))
+    \\  (import "wasi:cli/stdout@0.2.0" (instance $stdout
+    \\    (export "output-stream" (type $os (eq $os_t)))
+    \\    (export "get-stdout" (func (result (own $os))))
+    \\  ))
+    \\  (import "wasi:cli/stderr@0.2.0" (instance $stderr
+    \\    (export "output-stream" (type $os (eq $os_t)))
+    \\    (export "get-stderr" (func (result (own $os))))
+    \\  ))
+    \\  (import "wasi:random/random@0.2.0" (instance $random
+    \\    (export "get-random-u64" (func (result u64)))
+    \\  ))
+    \\
+;
+
+const component_adapter_head =
+    \\  (core module $p1_shim
+    \\    (type $fd_write (func (param i32 i32 i32 i32) (result i32)))
+    \\    (type $random_get (func (param i32 i32) (result i32)))
+    \\    (table (export "$imports") 2 2 funcref)
+    \\    (func (export "fd_write") (type $fd_write)
+    \\      local.get 0 local.get 1 local.get 2 local.get 3 i32.const 0 call_indirect (type $fd_write))
+    \\    (func (export "random_get") (type $random_get)
+    \\      local.get 0 local.get 1 i32.const 1 call_indirect (type $random_get))
+    \\  )
+    \\  (core instance $shim (instantiate $p1_shim))
+    \\  (core instance $main (instantiate $main (with "wasi_snapshot_preview1" (instance $shim))))
+    \\  (core module $p1_scratch (memory (export "memory") 1))
+    \\  (core instance $scratch (instantiate $p1_scratch))
+    \\  (alias core export $scratch "memory" (core memory $scratch_memory))
+    \\  (core func $get_stdout (canon lower (func $stdout "get-stdout")))
+    \\  (core func $get_stderr (canon lower (func $stderr "get-stderr")))
+    \\  (core func $write (canon lower (func $streams "[method]output-stream.blocking-write-and-flush") (memory $scratch_memory)))
+    \\  (core func $drop_stream (canon resource.drop $os_t))
+    \\  (core func $random_u64 (canon lower (func $random "get-random-u64")))
+    \\  (core module $p1_adapter
+    \\    (import "main" "memory" (memory $m 0))
+    \\    (import "scratch" "memory" (memory $s 1))
+    \\    (import "p2" "get-stdout" (func $get_stdout (result i32)))
+    \\    (import "p2" "get-stderr" (func $get_stderr (result i32)))
+    \\    (import "p2" "write" (func $write (param i32 i32 i32 i32)))
+    \\    (import "p2" "drop-stream" (func $drop_stream (param i32)))
+    \\    (import "p2" "random-u64" (func $random_u64 (result i64)))
+    \\
+;
+
+const component_adapter_body =
+    \\    (func (export "fd_write") (param $fd i32) (param $iovs i32) (param $n i32) (param $written i32) (result i32)
+    \\      (local $stream i32) (local $total i32) (local $ptr i32) (local $len i32) (local $chunk i32)
+    \\      (block $bad
+    \\        (block $out
+    \\          (block $err
+    \\            local.get $fd i32.const 1 i32.eq
+    \\            (if (then call $get_stdout local.set $stream)
+    \\              (else
+    \\                local.get $fd i32.const 2 i32.ne br_if $bad
+    \\                call $get_stderr local.set $stream))
+    \\            (block $iovs_done
+    \\              (loop $each_iov
+    \\                local.get $n i32.eqz br_if $iovs_done
+    \\                local.get $iovs i32.load $m local.set $ptr
+    \\                local.get $iovs i32.load $m offset=4 local.set $len
+    \\                (block $iov_done
+    \\                  (loop $each_chunk
+    \\                    local.get $len i32.eqz br_if $iov_done
+    \\                    local.get $len i32.const 4096 local.get $len i32.const 4096 i32.lt_u select local.set $chunk
+    \\                    i32.const 16 local.get $ptr local.get $chunk memory.copy $s $m
+    \\                    local.get $stream i32.const 16 local.get $chunk i32.const 0 call $write
+    \\                    i32.const 0 i32.load8_u $s br_if $err
+    \\                    local.get $ptr local.get $chunk i32.add local.set $ptr
+    \\                    local.get $len local.get $chunk i32.sub local.set $len
+    \\                    local.get $total local.get $chunk i32.add local.set $total
+    \\                    br $each_chunk))
+    \\                local.get $iovs i32.const 8 i32.add local.set $iovs
+    \\                local.get $n i32.const 1 i32.sub local.set $n
+    \\                br $each_iov))
+    \\            br $out)
+    \\          local.get $stream call $drop_stream
+    \\          i32.const 29 return)
+    \\        local.get $written local.get $total i32.store $m
+    \\        local.get $stream call $drop_stream
+    \\        i32.const 0 return)
+    \\      i32.const 8)
+    \\    (func (export "random_get") (param $buf i32) (param $len i32) (result i32)
+    \\      (local $v i64)
+    \\      (block $whole
+    \\        (loop $words
+    \\          local.get $len i32.const 8 i32.lt_u br_if $whole
+    \\          local.get $buf call $random_u64 i64.store $m
+    \\          local.get $buf i32.const 8 i32.add local.set $buf
+    \\          local.get $len i32.const 8 i32.sub local.set $len
+    \\          br $words))
+    \\      call $random_u64 local.set $v
+    \\      (block $done
+    \\        (loop $bytes
+    \\          local.get $len i32.eqz br_if $done
+    \\          local.get $buf local.get $v i64.store8 $m
+    \\          local.get $v i64.const 8 i64.shr_u local.set $v
+    \\          local.get $buf i32.const 1 i32.add local.set $buf
+    \\          local.get $len i32.const 1 i32.sub local.set $len
+    \\          br $bytes))
+    \\      i32.const 0)
+    \\    (func (export "run") (result i32)
+    \\
+;
+
+const component_adapter_tail =
+    \\      i32.const 0)
+    \\  )
+    \\  (core instance $p2 (export "get-stdout" (func $get_stdout)) (export "get-stderr" (func $get_stderr)) (export "write" (func $write)) (export "drop-stream" (func $drop_stream)) (export "random-u64" (func $random_u64)))
+    \\  (core instance $adapter (instantiate $p1_adapter
+    \\    (with "main" (instance $main))
+    \\    (with "scratch" (instance $scratch))
+    \\    (with "p2" (instance $p2))))
+    \\  (core module $p1_fixup
+    \\    (import "" "$imports" (table 2 2 funcref))
+    \\    (import "" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
+    \\    (import "" "random_get" (func $random_get (param i32 i32) (result i32)))
+    \\    (elem (i32.const 0) func $fd_write $random_get))
+    \\  (core instance (instantiate $p1_fixup (with "" (instance
+    \\    (export "$imports" (table $shim "$imports"))
+    \\    (export "fd_write" (func $adapter "fd_write"))
+    \\    (export "random_get" (func $adapter "random_get"))))))
+    \\
+;
+
+const component_run_export =
+    \\  (func $run (result (result)) (canon lift (core func $adapter "run")))
+    \\  (instance $run_instance (export "run" (func $run)))
+    \\  (export "wasi:cli/run@0.2.0" (instance $run_instance))
+    \\
+;
+
 /// One top-level form, in the module's two-space item column.
 fn renderItem(w: *Writer, it: ast.Item) Error!void {
     switch (it) {
@@ -445,4 +659,62 @@ test "every runtime helper group renders with its deps, and only with them" {
             return err;
         };
     }
+}
+
+test "a wasi build's module is wrapped as a WASI preview 2 component, its start called by run (decision 334)" {
+    const alloc = std.testing.allocator;
+    const m: ast.Module = .{ .items = &.{
+        .{ .import = .{
+            .module = "wasi_snapshot_preview1",
+            .name = "fd_write",
+            .func = "fd_write",
+            .type = .{ .params = &.{ .i32, .i32, .i32, .i32 }, .result = .i32 },
+        } },
+        .{ .memory = .{ .@"export" = "memory", .min_pages = 1 } },
+        .{ .start = "__init_globals" },
+        .{ .func = .{ .name = "__init_globals" } },
+        .{ .func = .{ .name = "_botopink_main", .exports = &.{ "_botopink_main", "_start" } } },
+    } };
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    try renderComponent(alloc, &aw.writer, m);
+    const out = aw.written();
+    try std.testing.expect(std.mem.startsWith(u8, out, "(component\n"));
+    // The module keeps its items, but for the start: its function is
+    // exported for the adapter's `run`, which calls it before `_start`.
+    try std.testing.expect(std.mem.indexOf(u8, out, "(start") == null);
+    try std.testing.expect(std.mem.indexOf(u8, out,
+        \\  (core module $main
+        \\  (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
+        \\  (memory (export "memory") 1)
+        \\  (func $__init_globals (export "__bp_init")
+        \\  )
+        \\  (func $_botopink_main (export "_botopink_main") (export "_start")
+        \\  )
+        \\  )
+    ) != null);
+    try std.testing.expect(std.mem.indexOf(u8, out,
+        \\      call $init
+        \\      call $start
+        \\      i32.const 0)
+    ) != null);
+    try std.testing.expect(std.mem.endsWith(u8, out,
+        \\  (export "wasi:cli/run@0.2.0" (instance $run_instance))
+        \\)
+        \\
+    ));
+}
+
+test "a module importing a preview 1 function the adapter does not implement is not wrapped" {
+    const m: ast.Module = .{ .items = &.{
+        .{ .import = .{ .module = "wasi_snapshot_preview1", .name = "proc_exit", .func = "proc_exit", .type = .{ .params = &.{.i32} } } },
+    } };
+    var discard: std.Io.Writer.Discarding = .init(&.{});
+    try std.testing.expectError(error.UnadaptedPreview1Import, renderComponent(std.testing.allocator, &discard.writer, m));
+}
+
+test {
+    // The `browser` host's loader (decision 334) — a sibling this file's
+    // tests carry, as `codegen/tests.zig` carries this one.
+    _ = @import("browser_loader.zig");
 }

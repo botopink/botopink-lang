@@ -242,7 +242,15 @@ pub fn codegenEmit(
     outputs: []ComptimeOutput,
     config: configMod.Config,
 ) !std.ArrayListUnmanaged(ModuleOutput) {
-    _ = config;
+    // Decision 334: which `#[@External.Wasm(…, host: …)]` a `declare fn`
+    // lowers to (`wasm` is the `wasi` host's lookup, `wasm.browser` the
+    // browser's).
+    const external_lookup = config.wasm_host.lookupName();
+    // What the text is: the module, or the build's artifact for its host.
+    const artifact: Artifact = if (config.wasm_artifact) switch (config.wasm_host) {
+        .wasi => .component,
+        .browser => .browser,
+    } else .module;
     var results: std.ArrayListUnmanaged(ModuleOutput) = .empty;
 
     // wasm has no module linking at run time, so a module that imports from
@@ -286,7 +294,7 @@ pub fn codegenEmit(
                 // the bare error name that would abort the whole build.
                 var missing: ?moduleOutput.MissingExternal = null;
                 var refused: ?Emitter.Refusal = null;
-                const emitted = emitWat(alloc, ct.name, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, linked.items, &cross, &missing, &refused) catch |err| {
+                const emitted = emitWat(alloc, ct.name, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, linked.items, &cross, external_lookup, artifact, &missing, &refused) catch |err| {
                     // A construct this backend cannot lower reaches the
                     // driver the same way: located, naming the construct,
                     // failing only this module.
@@ -931,6 +939,9 @@ fn emitWat(
     own_instance_lowerings: std.AutoHashMap(ast.Loc, envMod.InstanceLowering),
     linked: []const Linked,
     cross: ?*const CrossModule,
+    /// The build's `#[@External.Wasm]` lookup (decision 334's host).
+    external_lookup: []const u8,
+    artifact: Artifact,
     /// 06 C13 — set when the emit fails with `error.MissingExternalTarget`.
     missing: ?*?moduleOutput.MissingExternal,
     /// Set when the emit fails with `error.WasmLoweringRefused`: the slot
@@ -948,6 +959,7 @@ fn emitWat(
         em.refusal = null;
     };
     em.module_name = module_name;
+    em.external_lookup = external_lookup;
     em.instance_lowerings = own_instance_lowerings;
 
     // `val x = comptime { … break v; }` was folded by the comptime pass into
@@ -1286,10 +1298,22 @@ fn emitWat(
 
     // One model, two renderings: the text the snapshot records and the binary
     // an engine instantiates (`wasm_binary_emitter.zig`).
-    const module: wat.Module = .{ .items = items.items };
+    const lowered: wat.Module = .{ .items = items.items };
+    // The `browser` host's module: the start a host calls once the instance
+    // exists (`wat_ast.startAsExport`, decision 334) — text and binary alike.
+    const module: wat.Module = if (artifact == .browser) try wat.startAsExport(em.arena(), lowered) else lowered;
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
-    try watEmitter.renderModule(&aw.writer, module);
+    switch (artifact) {
+        .module, .browser => try watEmitter.renderModule(&aw.writer, module),
+        .component => watEmitter.renderComponent(alloc, &aw.writer, module) catch |err| switch (err) {
+            // Every preview 1 import the prelude emits is adapted
+            // (`wat_emitter.preview1_adapted`); one that is not is a
+            // backend defect, never a module left unsatisfied.
+            error.UnadaptedPreview1Import => return em.refuse(null, "the module imports a WASI preview 1 function the `wasi` host's component does not adapt (it adapts {s} and {s})", .{ watEmitter.preview1_adapted[0], watEmitter.preview1_adapted[1] }),
+            else => |e| return e,
+        },
+    }
     const binary = try wasmBinary.encodeModule(alloc, module);
     errdefer alloc.free(binary);
     return .{ .text = try aw.toOwnedSlice(), .binary = binary };
@@ -1297,6 +1321,12 @@ fn emitWat(
 
 /// What `emitWat` renders a module to: the `.wat` text and the binary module.
 const Emitted = struct { text: []u8, binary: []u8 };
+
+/// The text `emitWat` writes: the module the backend lowers (the snapshot's,
+/// the comptime runtime's), the WASI preview 2 component a `wasi` build runs,
+/// or the module a `browser` build's loader instantiates — its start exported
+/// for the loader to call — beside its binary (decision 334).
+const Artifact = enum { module, component, browser };
 
 // ── Emitter ──────────────────────────────────────────────────────────────────
 
@@ -1524,6 +1554,11 @@ const Emitter = struct {
     loop_seq: u32 = 0,
     /// The module path, for the `file:line` an `assert` failure names.
     module_name: []const u8 = "",
+    /// Decision 334 — the `#[@External.<Member>]` lookup of this build:
+    /// `wasm` (the `wasi` host, the default) or `wasm.browser`. A
+    /// `declare fn` lowers to the binding serving the host; one with none
+    /// for it is `external_missing`.
+    external_lookup: []const u8 = "wasm",
     /// The array local a comprehension's `yield`/`break <v>` appends to.
     yield_target: ?[]const u8 = null,
     /// The block label of the annotated `loop` being lowered (decision 105):
@@ -2109,7 +2144,7 @@ const Emitter = struct {
             // other target and no `wasm` one has no symbol here and
             // never claimed to: `lowerPlainCall` refuses the call
             // rather than lowering it to a trap.
-            if (f.isExternal() and f.externalFor("wasm") == null)
+            if (f.isExternal() and f.externalFor(self.external_lookup) == null)
                 try self.external_missing.put(f.name, {});
             return;
         }
@@ -3894,7 +3929,6 @@ const Emitter = struct {
         own_program: ast.Program,
         module_name: []const u8,
     ) !void {
-        const ar = self.arena();
         defer self.foreign_origin = null;
         for (decls, owner) |d, from| {
             const f = switch (d) {
@@ -3902,39 +3936,64 @@ const Emitter = struct {
                 else => continue,
             };
             if (!f.isDeclare or f.body.len > 0) continue;
-            const ext = f.externalFor("wasm") orelse continue;
-            const ann_loc = hostFnBinding.annotationLoc(f, "Wasm");
-            self.foreign_origin = if (from < linked.len) linked[from].via else null;
-            if (ext.module.len > 0)
-                return self.refuse(ann_loc, "`#[@External.Wasm(…)]` on `{s}` takes one string — `op:<opcode>`, `fn:<private fn of this module>` or `wasi:<adapter>`", .{f.name});
-            var slots: std.ArrayListUnmanaged(?hostBinding.Slot) = .empty;
-            for (f.params) |p| {
-                if (std.mem.eql(u8, p.name, "self")) continue;
-                try slots.append(ar, slotOf(p.typeRef));
+            // Decision 334: every wasm binding is read and checked, whichever
+            // host it serves — a misspelt `.Browser` binding is refused on a
+            // `wasi` build too —, and the one serving this build's host is
+            // the one recorded.
+            const build_host = ast.ExternalLookup.of(self.external_lookup).host orelse .wasi;
+            for (f.annotations) |a| {
+                if (!std.mem.startsWith(u8, a.name, "External.") or !std.ascii.eqlIgnoreCase(a.name["External.".len..], "Wasm")) continue;
+                const host: ?ast.WasmHost = if (ast.hostArgIndex(a)) |at| ast.WasmHost.ofArg(a.args[at]) else null;
+                const ext = ast.externalRefOf(a, (host orelse build_host).lookupName()) orelse continue;
+                const bound = try self.checkHostBinding(f, from, ext, a.loc, linked, own_program, module_name);
+                if (host == null or host.? == build_host) try self.host_bindings.put(self.alloc, f.name, bound);
             }
-            const rslot: ?hostBinding.Slot = if (f.returnType) |rt| slotOf(rt) else null;
-            const result_other = if (f.returnType) |rt| rslot == null and !isNamedTypeRef(rt, "void") else false;
-            const parsed = try hostBinding.parse(ar, ext.symbol, .{ .params = slots.items, .result = rslot, .result_other = result_other });
-            const binding = switch (parsed) {
-                .refused => |r| return self.refuse(ann_loc, "{s} (on `{s}`)", .{ r.message, f.name }),
-                .ok => |b| b,
-            };
-            var bound: HostBound = .{ .binding = binding };
-            if (binding == .fn_) {
-                const name = binding.fn_;
-                const prog = if (from < linked.len) linked[from].program else own_program;
-                const mod_name = if (from < linked.len) linked[from].name else module_name;
-                switch (try hostFnBinding.resolve(ar, f, name, prog, if (from < linked.len) mod_name else "", "Wasm")) {
-                    .refused => |message| return self.refuse(ann_loc, "{s}", .{message}),
-                    .ok => {},
-                }
-                bound.target = if (from < linked.len)
-                    (self.link_mangled.get(try linkKey(ar, mod_name, name)) orelse name)
-                else
-                    name;
-            }
-            try self.host_bindings.put(self.alloc, f.name, bound);
         }
+    }
+
+    /// One `#[@External.Wasm(…)]` of `f`, read and checked (decision 238's
+    /// three forms); `from` indexes `linked` for a linked module's `fn`.
+    fn checkHostBinding(
+        self: *Emitter,
+        f: ast.FnDecl,
+        from: usize,
+        ext: ast.ExternalRef,
+        ann_loc: ?ast.Loc,
+        linked: []const Linked,
+        own_program: ast.Program,
+        module_name: []const u8,
+    ) !HostBound {
+        const ar = self.arena();
+        self.foreign_origin = if (from < linked.len) linked[from].via else null;
+        if (ext.module.len > 0)
+            return self.refuse(ann_loc, "`#[@External.Wasm(…)]` on `{s}` takes one string — `op:<opcode>`, `fn:<private fn of this module>` or `wasi:<adapter>`", .{f.name});
+        var slots: std.ArrayListUnmanaged(?hostBinding.Slot) = .empty;
+        for (f.params) |p| {
+            if (std.mem.eql(u8, p.name, "self")) continue;
+            try slots.append(ar, slotOf(p.typeRef));
+        }
+        const rslot: ?hostBinding.Slot = if (f.returnType) |rt| slotOf(rt) else null;
+        const result_other = if (f.returnType) |rt| rslot == null and !isNamedTypeRef(rt, "void") else false;
+        const parsed = try hostBinding.parse(ar, ext.symbol, .{ .params = slots.items, .result = rslot, .result_other = result_other });
+        const binding = switch (parsed) {
+            .refused => |r| return self.refuse(ann_loc, "{s} (on `{s}`)", .{ r.message, f.name }),
+            .ok => |b| b,
+        };
+        var bound: HostBound = .{ .binding = binding };
+        if (binding == .fn_) {
+            const name = binding.fn_;
+            const prog = if (from < linked.len) linked[from].program else own_program;
+            const mod_name = if (from < linked.len) linked[from].name else module_name;
+            switch (try hostFnBinding.resolve(ar, f, name, prog, if (from < linked.len) mod_name else "", "Wasm")) {
+                .refused => |message| return self.refuse(ann_loc, "{s}", .{message}),
+                .ok => {},
+            }
+            bound.target = if (from < linked.len)
+                (self.link_mangled.get(try linkKey(ar, mod_name, name)) orelse name)
+            else
+                name;
+        }
+        return bound;
     }
 
     /// The numeric slot a written type spells for decision 238's checks;
@@ -3986,7 +4045,7 @@ const Emitter = struct {
             else => true,
         };
         if (result != null and !yields) try lines.append(ar, .{ .indent = 4, .instr = constOf(@tagName(result.?), "0") });
-        try self.itemCommentF("{s} — #[@External.Wasm(\"{s}\")]", .{ f.name, f.externalFor("wasm").?.symbol });
+        try self.itemCommentF("{s} — #[@External.Wasm(\"{s}\")]", .{ f.name, f.externalFor(self.external_lookup).?.symbol });
         try self.item(.{ .func = try self.builder().func(.{
             .name = f.name,
             .exports = if (f.isPub) try ar.dupe([]const u8, &.{f.name}) else &.{},

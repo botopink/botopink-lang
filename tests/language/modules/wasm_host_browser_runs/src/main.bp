@@ -1,0 +1,28 @@
+//// Decision 334 — a build for `"wasm": { "host": "browser" }` is the module's
+//// binary and a loader that instantiates it with a browser's imports; node runs
+//// the loader (`botopink run`). The binding serving the browser host is the
+//// one read: `halfDown` lowers to its `.Browser` body, which prints the same
+//// as every other target's binding. Strings, numbers and a random draw cross
+//// the loader's `fd_write` and `random_get`.
+
+import {io} from "std";
+
+#[@External.Node("Math", "floor")]
+#[@External.Erlang("math", "floor")]
+#[@External.Beam("math", "floor")]
+#[@External.Wasm("op:f64.floor", host = .Wasi)]
+#[@External.Wasm("fn:halfDownBody", host = .Browser)]
+declare fn halfDown(x: f64) -> f64;
+
+fn halfDownBody(x: f64) -> f64 {
+    return x - 0.5;
+}
+
+val greeting = "hello from the browser host";
+
+pub fn main() {
+    @print(greeting);
+    @print(halfDown(2.5));
+    val r = io.random.float();
+    @print(r >= 0.0 && r < 1.0);
+}

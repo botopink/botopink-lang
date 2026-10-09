@@ -3187,6 +3187,25 @@ const Emitter = struct {
         } };
     }
 
+    /// Decision 267 — a `variadicPacked` call with its last argument (the
+    /// array literal the transform packed) spread back into arguments; null
+    /// when that argument is not one.
+    fn unpackVariadic(self: *Emitter, e: ast.Expr) !?ast.Expr {
+        const call = e.call.kind.call;
+        if (call.args.len == 0) return null;
+        const last = call.args[call.args.len - 1].value.*;
+        if (last != .collection or last.collection.kind != .arrayLit) return null;
+        const elems = last.collection.kind.arrayLit.elems;
+        const fixed = call.args.len - 1;
+        const args = try self.arena().alloc(ast.CallArg, fixed + elems.len);
+        @memcpy(args[0..fixed], call.args[0..fixed]);
+        for (elems, 0..) |*el, i| args[fixed + i] = .{ .label = null, .value = @constCast(el) };
+        var flat = e;
+        flat.call.kind.call.args = args;
+        flat.call.kind.call.variadicPacked = false;
+        return flat;
+    }
+
     // ── params & patterns ─────────────────────────────────────────────────────
 
     fn buildParams(self: *Emitter, params: []const ast.Param) ![]const js.Param {
@@ -3204,7 +3223,8 @@ const Emitter = struct {
     fn buildParam(self: *Emitter, p: ast.Param) !js.Param {
         try self.notePrintShape(p.name, try self.typeShape(p.typeRef));
         try self.noteEqType(p.name, if (p.destruct == null) p.typeRef else null);
-        const d = p.destruct orelse return .{ .pattern = .{ .ident = p.name } };
+        // Decision 267 — a variadic parameter is a rest parameter.
+        const d = p.destruct orelse return .{ .pattern = .{ .ident = p.name }, .rest = p.variadic };
         return switch (d) {
             // A destructuring parameter takes no default.
             .names => .{ .pattern = try self.buildNamesPattern(d.names) },
@@ -3851,6 +3871,11 @@ const Emitter = struct {
     }
 
     fn buildExpr(self: *Emitter, e: ast.Expr) anyerror!js.Expr {
+        // Decision 267 — commonJS lowers a variadic as a rest parameter: the
+        // array the transform packed is written back as the arguments.
+        if (e == .call and e.call.kind == .call and e.call.kind.call.variadicPacked) {
+            if (try self.unpackVariadic(e)) |flat| return self.buildExpr(flat);
+        }
         switch (e) {
             .literal => |lit| switch (lit.kind) {
                 .stringLit => |s| return .{ .lexeme_string = s },

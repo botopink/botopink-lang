@@ -10,6 +10,7 @@
 /// here, located, before `error.ConfigInvalid` is returned, so a caller prints
 /// nothing more.
 const std = @import("std");
+const bp = @import("botopink");
 const manifest = @import("manifest");
 /// Test-only: the one way a test spells a path it writes to (per process, so a
 /// second `zig build test` over this checkout cannot empty it mid-test).
@@ -90,6 +91,15 @@ pub const ProjectConfig = struct {
     /// The manifest's `target`, or null when it names a target the compiler
     /// does not support. Never degrades an unknown target to commonJS — the
     /// caller reports it (`reportUnsupportedTarget`) and fails.
+    /// The runtime a wasm build of this project binds to (decision 334):
+    /// `"wasm": { "host": … }`, `wasi` when absent.
+    pub fn wasmHost(self: ProjectConfig) bp.ast.WasmHost {
+        return switch (self.manifest.wasm_host) {
+            .wasi => .wasi,
+            .browser => .browser,
+        };
+    }
+
     pub fn parsedTarget(self: ProjectConfig) ?Target {
         return Target.fromString(self.target);
     }

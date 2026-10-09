@@ -3322,3 +3322,16 @@ access with a method on the element (`2`, `x`, `7`). The fixtures are
 `…_chained_positional_access_and_a_method_on_an_element`. What is **not** closed
 is a label behind a `?T` (`rs.at(0).b`): the rewrite never fires there, which is
 decision 45's row and the checker's, not a backend's.
+
+## A variadic parameter (decision 267)
+
+The checker packs a call's arguments past the fixed parameters into one array
+literal and marks the call `variadicPacked` (`comptime/AGENTS.md` § A variadic
+parameter), so erlang, beam and wasm need nothing: the variadic is one list /
+array parameter and the call passes one. commonJS lowers it as a rest
+parameter: `buildParam` sets `js.Param.rest` (`function total(label,
+...values)`) and `buildExpr` writes a `variadicPacked` call back with the
+array's elements as its arguments (`unpackVariadic`), before any other call
+arm — so a host function bound by `#[@External.Node(…)]` receives them one by
+one (`Math.max(3, 9, 4)`). The `.d.ts` writes `...values: T[]`
+(`typescript.zig` `params` / `delegate`, `TsParam.rest`).

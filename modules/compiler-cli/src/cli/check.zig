@@ -94,7 +94,7 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, opts: Options, env_map: libs.EnvM
         all_modules,
         io,
         ".botopinkbuild",
-        diagnostics.comptimeTargetName(target),
+        diagnostics.comptimeTargetName(target, proj.wasmHost()),
     ) catch |err| {
         reporter.errMsg("type-check failed");
         std.debug.print("  {s}\n", .{@errorName(err)});

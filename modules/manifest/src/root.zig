@@ -220,6 +220,22 @@ pub const DepEntry = struct {
 
 pub const Kind = enum { package, workspace };
 
+/// Decision 334 of 1.0.12-beta: the runtime a wasm build binds to, named by
+/// `"wasm": { "host": … }`. `wasi` — wasmtime and the runtimes that follow
+/// WASI preview 2 — is the default; `browser` binds JS imports (`fetch`,
+/// timers, `Promise` through JSPI).
+pub const WasmHost = enum {
+    wasi,
+    browser,
+
+    pub fn fromString(s: []const u8) ?WasmHost {
+        inline for (@typeInfo(WasmHost).@"enum".fields) |f| {
+            if (std.mem.eql(u8, s, f.name)) return @enumFromInt(f.value);
+        }
+        return null;
+    }
+};
+
 /// A manifest's `"otp": "<release>"` and the manifest that wrote it, so a
 /// refusal points at the value even when a member inherited it.
 pub const OtpPin = struct {
@@ -307,6 +323,9 @@ pub const Manifest = struct {
     /// inherits its workspace's (set by `expand`), which keeps pointing at the
     /// workspace's manifest.
     otp: ?OtpPin = null,
+    /// `"wasm": { "host": … }` (decision 334): the runtime a wasm build binds
+    /// to; absent means `wasi`. Read on the project being built only.
+    wasm_host: WasmHost = .wasi,
 
     pub fn isWorkspace(self: Manifest) bool {
         return self.kind == .workspace;
@@ -386,7 +405,7 @@ pub fn parse(arena: std.mem.Allocator, text: []const u8, path: []const u8, out_e
         m.workspaces = globs;
         // A workspace is not a package: nothing compiles from it and nothing
         // imports it, so the package fields have no meaning here.
-        for ([_][]const u8{ "src", "files", "entry", "dependencies" }) |field| {
+        for ([_][]const u8{ "src", "files", "entry", "dependencies", "wasm" }) |field| {
             if (obj.get(field) != null) {
                 out_err.* = located(text, path, locateKey(text, field), try std.fmt.allocPrint(
                     arena,
@@ -400,6 +419,7 @@ pub fn parse(arena: std.mem.Allocator, text: []const u8, path: []const u8, out_e
         return m;
     }
 
+    if (obj.get("wasm")) |v| m.wasm_host = try parseWasm(arena, v, text, path, out_err);
     if (obj.get("dependencies")) |deps_val| {
         m.dependencies = try parseDependencies(arena, deps_val, text, path, out_err);
     }
@@ -494,6 +514,38 @@ fn optionalStringArray(arena: std.mem.Allocator, obj: std.json.ObjectMap, key: [
         out[i] = try arena.dupe(u8, item.string);
     }
     return out;
+}
+
+const WASM_SHAPE = "{ \"host\": \"wasi\" | \"browser\" }";
+
+/// `"wasm"` (decision 334): an object whose one field, `"host"`, names
+/// `wasi` or `browser`. Nothing else is read, so nothing else is accepted: an
+/// object without `"host"` (absent `"wasm"` is the one way to mean the
+/// default), another field, a host that is not a string or not one of the two
+/// — each a refusal located where it is written.
+fn parseWasm(arena: std.mem.Allocator, v: std.json.Value, text: []const u8, path: []const u8, out_err: *?Located) Error!WasmHost {
+    if (v != .object) {
+        out_err.* = located(text, path, locateKey(text, "wasm"), "\"wasm\" must be an object — " ++ WASM_SHAPE);
+        return error.Invalid;
+    }
+    var it = v.object.iterator();
+    while (it.next()) |e| {
+        if (std.mem.eql(u8, e.key_ptr.*, "host")) continue;
+        out_err.* = located(text, path, locateEntry(text, "wasm", e.key_ptr.*), try std.fmt.allocPrint(arena, "\"wasm\" has no field \"{s}\" — its one field is \"host\": {s}", .{ e.key_ptr.*, WASM_SHAPE }));
+        return error.Invalid;
+    }
+    const host = v.object.get("host") orelse {
+        out_err.* = located(text, path, locateKey(text, "wasm"), "\"wasm\" names no \"host\" — write " ++ WASM_SHAPE ++ ", or omit \"wasm\" for the default \"wasi\"");
+        return error.Invalid;
+    };
+    if (host != .string) {
+        out_err.* = located(text, path, locateEntry(text, "wasm", "host"), "\"wasm\": \"host\" must be a string — \"wasi\" or \"browser\"");
+        return error.Invalid;
+    }
+    return WasmHost.fromString(host.string) orelse {
+        out_err.* = located(text, path, locateEntry(text, "wasm", host.string), try std.fmt.allocPrint(arena, "\"wasm\": \"host\" names \"{s}\" — a wasm build runs on \"wasi\" (wasmtime, WASI preview 2) or \"browser\" (JS imports, JSPI)", .{host.string}));
+        return error.Invalid;
+    };
 }
 
 /// Only two glob forms are required by decision 75: `<dir>/*` (every child of
@@ -1623,8 +1675,8 @@ test "parse: a workspace manifest — kind, globs, and no package field" {
         \\
         \\
     , with_files);
-    for ([_][]const u8{ "src", "entry", "dependencies" }) |field| {
-        const text = try std.fmt.allocPrint(a, "{{ \"name\": \"w\", \"workspaces\": [\"m/*\"], \"{s}\": {s} }}", .{ field, if (std.mem.eql(u8, field, "dependencies")) "{}" else "\"x\"" });
+    for ([_][]const u8{ "src", "entry", "dependencies", "wasm" }) |field| {
+        const text = try std.fmt.allocPrint(a, "{{ \"name\": \"w\", \"workspaces\": [\"m/*\"], \"{s}\": {s} }}", .{ field, if (std.mem.eql(u8, field, "dependencies")) "{}" else if (std.mem.eql(u8, field, "wasm")) "{ \"host\": \"wasi\" }" else "\"x\"" });
         const out = try refuse(a, text);
         const want = try std.fmt.allocPrint(a, "error: a workspace manifest cannot carry \"{s}\"", .{field});
         try testing.expect(std.mem.indexOf(u8, out, want) != null);
@@ -1752,6 +1804,50 @@ fn refuseClosureOtp(a: std.mem.Allocator, texts: []const []const u8) ![]const u8
     var err: ?Located = null;
     try testing.expectError(error.Invalid, closureOtp(a, ms, &err));
     return try err.?.renderAlloc(a);
+}
+
+test "parse: \"wasm\" names the host a wasm build binds to, absent meaning wasi (decision 334)" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const a = arena_inst.allocator();
+    try testing.expectEqual(WasmHost.wasi, (try parseText(a,
+        \\{ "name": "app", "target": "wasm" }
+    )).wasm_host);
+    try testing.expectEqual(WasmHost.wasi, (try parseText(a,
+        \\{ "name": "app", "target": "wasm", "wasm": { "host": "wasi" } }
+    )).wasm_host);
+    try testing.expectEqual(WasmHost.browser, (try parseText(a,
+        \\{ "name": "app", "target": "wasm", "wasm": { "host": "browser" } }
+    )).wasm_host);
+}
+
+test "parse: a \"wasm\" that names no known host, or anything beside it, is a located error (decision 334)" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const a = arena_inst.allocator();
+    try testing.expectEqualStrings(
+        \\error: "wasm": "host" names "deno" — a wasm build runs on "wasi" (wasmtime, WASI preview 2) or "browser" (JS imports, JSPI)
+        \\ --> botopink.json:1:36
+        \\  |
+        \\1 | { "name": "app", "wasm": { "host": "deno" } }
+        \\  |                                    ^^^^^^
+        \\
+        \\
+    , try refuse(a,
+        \\{ "name": "app", "wasm": { "host": "deno" } }
+    ));
+    try expectHead(try refuse(a,
+        \\{ "name": "app", "wasm": "wasi" }
+    ), "error: \"wasm\" must be an object — { \"host\": \"wasi\" | \"browser\" }", "--> botopink.json:1:18");
+    try expectHead(try refuse(a,
+        \\{ "name": "app", "wasm": {} }
+    ), "error: \"wasm\" names no \"host\" — write { \"host\": \"wasi\" | \"browser\" }, or omit \"wasm\" for the default \"wasi\"", "--> botopink.json:1:18");
+    try expectHead(try refuse(a,
+        \\{ "name": "app", "wasm": { "host": 1 } }
+    ), "error: \"wasm\": \"host\" must be a string — \"wasi\" or \"browser\"", "--> botopink.json:1:28");
+    try expectHead(try refuse(a,
+        \\{ "name": "app", "wasm": { "host": "wasi", "jspi": true } }
+    ), "error: \"wasm\" has no field \"jspi\" — its one field is \"host\": { \"host\": \"wasi\" | \"browser\" }", "--> botopink.json:1:44");
 }
 
 test "otp: a release the compiler does not emit for is refused, located at the value (decision 228)" {

@@ -79,6 +79,21 @@ else
   echo "==> beam: SKIPPED (erlc/erl not on PATH)"
 fi
 
+# A `wasi` build writes a WASI preview 2 component (decision 334), whose one
+# export is `wasi:cli/run`; the module the backend lowered is embedded in it as
+# `(core module $main …)`. `--invoke main` reaches that module: print it on its
+# own (`(module …)`, its `__bp_init` the start a component drops) so wasmtime
+# runs it as the core module it is. The component itself runs in
+# `tests/language` (`botopink run --target wasm`).
+core_module() {
+  # The module's last line is the `  )` just before the shim's module.
+  awk '
+    /^  \(core module \$main$/ { inside = 1; print "(module"; next }
+    inside && /^  \(core module \$p1_shim$/ { print ")"; exit }
+    inside { if (held != "") print held; held = $0; sub(/ \(export "__bp_init"\)/, "", held) }
+  ' "$1"
+}
+
 # ── wasm ──────────────────────────────────────────────────────────────────────
 # `botopink run --target wasm` would spawn wasmtime on the module's `_start`,
 # but `main` (the recursion entry) is also exported, so invoke it directly and
@@ -86,7 +101,9 @@ fi
 if command -v wasmtime >/dev/null 2>&1; then
   echo "==> wasm: build --target wasm, wasmtime --invoke main"
   "$BP_BIN" build --target wasm
-  wasm_result="$(wasmtime --invoke main out/main.wat 2>/dev/null | tail -1 | tr -d '[:space:]')"
+  head -1 out/main.wat | grep -qx '(component' || { echo "  wasm: out/main.wat is not a component" >&2; exit 1; }
+  core_module out/main.wat > out/main.core.wat
+  wasm_result="$(wasmtime --invoke main out/main.core.wat 2>/dev/null | tail -1 | tr -d '[:space:]')"
   if [[ "$wasm_result" == "1" ]]; then
     echo "  wasm: main() => 1 (true)"
   else

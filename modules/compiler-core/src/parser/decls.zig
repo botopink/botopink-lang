@@ -64,6 +64,7 @@ fn isTypeStart(kind: TokenKind) bool {
 pub fn parseParamList(this: *This, alloc: std.mem.Allocator) ParseError![]Param {
     this.discardParam = null;
     this.selfParam = null;
+    this.lastVariadicTok = null;
     var params: std.ArrayList(Param) = .empty;
     errdefer {
         for (params.items) |*p| p.deinit(alloc);
@@ -76,6 +77,14 @@ pub fn parseParamList(this: *This, alloc: std.mem.Allocator) ParseError![]Param 
         // bad signature is rejected before inference ever sees the fn.
         const param_tok = this.peek();
         const p = try this.parseParam(alloc);
+        // Decision 267 — a variadic is the last parameter, and the only one.
+        if (params.items.len > 0 and params.items[params.items.len - 1].variadic) {
+            var q = p;
+            q.deinit(alloc);
+            // The second `..` when this one is variadic too, else the first.
+            this.parseError = ParseErrorInfo.fromToken(if (p.variadic) .variadicTwice else .variadicNotLast, this.lastVariadicTok.?);
+            return ParseError.UnexpectedToken;
+        }
         try params.append(alloc, p);
         if (params.items.len >= 2 and
             params.items[params.items.len - 2].default != null and
@@ -1174,19 +1183,23 @@ pub fn parseParam(this: *This, alloc: std.mem.Allocator) ParseError!Param {
     // ── comptime-prefixed form: `comptime name : type` ─────────────────
     if (this.check(.@"comptime")) {
         _ = this.advance(); // consume 'comptime'
+        const variadic = matchVariadic(this);
         const name = (try this.consumeParamName()).lexeme;
         _ = try this.consume(.colon);
         const typeTok = this.peek();
         const typeRef = try this.parseTypeRef(alloc);
+        if (variadic) try checkVariadicParam(this, alloc, typeRef, typeTok);
         return Param{
             .name = name,
             .typeRef = typeRef,
             .modifier = .@"comptime",
             .typeLoc = parser.Parser.locFromToken(typeTok),
+            .variadic = variadic,
         };
     }
 
-    // ── regular param: name ['comptime'] ':' ['syntax'] type_expr ───────────
+    // ── regular param: ['..'] name ['comptime'] ':' ['syntax'] type_expr ────
+    const variadic = matchVariadic(this);
     const nameTok = try this.consumeParamName();
     const name = nameTok.lexeme;
     // Optional post-name, pre-colon modifier.
@@ -1270,6 +1283,7 @@ pub fn parseParam(this: *This, alloc: std.mem.Allocator) ParseError!Param {
     // their fallback for a missing trailing positional / named arg (see
     // infer.zig arity check; call-site auto-injection is gated behind the
     // `fn-param-default-expansion` follow-up spec).
+    if (variadic) try checkVariadicParam(this, alloc, typeRef, typeTok);
     var defaultExpr: ?Expr = null;
     if (this.match(.equal)) {
         defaultExpr = try this.parseBinaryExpr(alloc, prec.equality);
@@ -1280,7 +1294,33 @@ pub fn parseParam(this: *This, alloc: std.mem.Allocator) ParseError!Param {
         .modifier = modifier,
         .default = defaultExpr,
         .typeLoc = parser.Parser.locFromToken(typeTok),
+        .variadic = variadic,
     };
+}
+
+/// Decision 267 — consume the `..` of a variadic parameter (`..rest: T[]`),
+/// remembering it for the not-last refusal of `parseParamList`.
+fn matchVariadic(this: *This) bool {
+    if (!this.check(.dotDot)) return false;
+    this.lastVariadicTok = this.advance();
+    return true;
+}
+
+/// Decision 267 — a variadic's type is written `T[]` and it takes no
+/// default: refused here, the type at its first token, the default at `=`.
+fn checkVariadicParam(this: *This, alloc: std.mem.Allocator, typeRef: ast.TypeRef, typeTok: Token) ParseError!void {
+    if (typeRef != .array) {
+        var t = typeRef;
+        t.deinit(alloc);
+        this.parseError = ParseErrorInfo.fromToken(.variadicNotArray, typeTok);
+        return ParseError.UnexpectedToken;
+    }
+    if (this.check(.equal)) {
+        var t = typeRef;
+        t.deinit(alloc);
+        this.parseError = ParseErrorInfo.fromToken(.variadicDefault, this.peek());
+        return ParseError.UnexpectedToken;
+    }
 }
 
 // ── 1.0.3 surface: `type` and `behavior` (front 12 dual grammar) ──────────────

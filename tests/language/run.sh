@@ -38,6 +38,9 @@
 # that cell):
 #   test/<name>.bp     `botopink test --target <t> --json`; every test must pass
 #   run/<name>.bp      `botopink run --target <t>`; stdout must equal <name>.out.
+#                      On wasm the cell runs on both hosts of decision 334 —
+#                      wasmtime (`wasi`) and node (`browser`) — and the two
+#                      must agree (`exec_run`); so does a modules/ cell.
 #                      Four optional sidecars, each a claim about the cell:
 #                        <name>.exit         `nonzero` — the program must abort:
 #                                            stdout equals <name>.out AND the
@@ -393,9 +396,40 @@ quiet() { strip | grep -vE '^[[:space:]]*(Checking|Checked|Compiling|Compiled) '
 # <dir>/e.txt, the program's exit status returned. Every target is
 # `botopink run` — on beam that is build, `erlc +from_asm` beside the `.S`, and
 # `erl` on that directory (§ beam at the top).
+#
+# wasm runs on both hosts of decision 334: the `wasi` build (a WASI preview 2
+# component under `wasmtime`) and the `browser` build (the module's binary and
+# its loader under `node`), one `.out` for both. The `wasi` run is the one the
+# cell's claims read; the `browser` run must agree with it — the same exit
+# status, zero or not, and the same stdout byte for byte — or the cell fails
+# naming both. A project cell whose botopink.json names `"wasm"` builds for
+# that host alone. (front `01-compiler/140`, a carve-out of this runner.)
 exec_run() { # <dir> <target>
     local dir="$1" t="$2"
     (cd "$dir" && with_timeout 300 "$compiler" run --target "$t" >"$dir/stdout.txt" 2>"$dir/e.txt")
+    local code=$?
+    [ "$t" = wasm ] || return $code
+    grep -q '"wasm"' "$dir/botopink.json" && return $code
+    cp "$dir/botopink.json" "$dir/botopink.wasi.json"
+    node -e 'const fs = require("fs"); const m = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); m.wasm = { host: "browser" }; fs.writeFileSync(process.argv[1], JSON.stringify(m) + "\n");' "$dir/botopink.json"
+    (cd "$dir" && with_timeout 300 "$compiler" run --target wasm >"$dir/stdout.browser.txt" 2>"$dir/e.browser.txt")
+    local bcode=$?
+    mv "$dir/botopink.wasi.json" "$dir/botopink.json"
+    local agree=1
+    if [ $code -eq 0 ] && [ $bcode -ne 0 ]; then agree=0; fi
+    if [ $code -ne 0 ] && [ $bcode -eq 0 ]; then agree=0; fi
+    cmp -s "$dir/stdout.txt" "$dir/stdout.browser.txt" || agree=0
+    [ $agree -eq 1 ] && return $code
+    # Lines joined by `|`: the text lands in e.txt, which the report greps, so
+    # it stays valid UTF-8 (tr maps a byte, not `⏎`).
+    local wout bout berr
+    wout="$(head -c 200 "$dir/stdout.txt" | tr '\n\t' '| ')"
+    bout="$(head -c 200 "$dir/stdout.browser.txt" | tr '\n\t' '| ')"
+    berr="$(strip <"$dir/e.browser.txt" | grep -m1 -iE 'error' | tr '\t' ' ')"
+    printf 'error: the wasm hosts disagree — wasi (wasmtime): exit %s, stdout: %s; browser (node): exit %s, stdout: %s%s\n' \
+        "$code" "$wout" "$bcode" "$bout" "${berr:+; $berr}" >"$dir/e.txt"
+    printf '<the wasm hosts disagree>\n' >"$dir/stdout.txt"
+    return 97
 }
 
 project() { # <dir> <kind>

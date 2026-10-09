@@ -21,6 +21,9 @@ pub const TargetSource = configMod.TargetSource;
 /// `outputStem` (erlang and BEAM take the module ATOM, commonJS and wasm the
 /// module path) and `erlAtom` beside it.
 pub const crossModule = @import("./codegen/crossModule.zig");
+/// Decision 334 — the loader a wasm build for the `browser` host writes
+/// beside its `.wasm` (`botopink build`).
+pub const wasmBrowserLoader = @import("./codegen/wat/browser_loader.zig");
 
 /// What `generateWith` does after emitting each module.
 pub const Options = struct {
@@ -108,7 +111,9 @@ pub fn generateWith(
     const target_name: []const u8 = switch (config.targetSource) {
         .commonJS => "node",
         .erlang, .beam => "erlang",
-        .wasm => "wasm",
+        // Decision 334: a wasm build's lookup names its host (`wasm` is
+        // `wasi`'s, `wasm.browser` the browser's).
+        .wasm => config.wasm_host.lookupName(),
     };
 
     // Decision 84 is `comptimeMod.compile`'s (it picks the runtime from

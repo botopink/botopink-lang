@@ -294,6 +294,35 @@ pub const Invalid = error{
     UndefinedCall,
 };
 
+/// The export name a host calls a module's start function by (decision 334).
+pub const host_init_export = "__bp_init";
+
+/// Decision 334 — the module as a host runs it: its `(start …)` dropped and
+/// the start function exported as `host_init_export`. A start function runs
+/// while the module is instantiated, before the host can hand its imports
+/// the module's memory (the `wasi` component's preview 1 adapter, the
+/// `browser` loader's `fd_write`); the host calls it once the instance
+/// exists, then `_start`. A module with no start comes back unchanged.
+/// `items` is allocated in `alloc` (an arena: the exports list too).
+pub fn startAsExport(alloc: std.mem.Allocator, m: Module) std.mem.Allocator.Error!Module {
+    var start: ?[]const u8 = null;
+    for (m.items) |it| if (it == .start) {
+        start = it.start;
+    };
+    const name = start orelse return m;
+    var items: std.ArrayListUnmanaged(Item) = .empty;
+    for (m.items) |it| switch (it) {
+        .start => {},
+        .func => |f| if (std.mem.eql(u8, f.name, name)) {
+            var named = f;
+            named.exports = try std.mem.concat(alloc, []const u8, &.{ f.exports, &.{host_init_export} });
+            try items.append(alloc, .{ .func = named });
+        } else try items.append(alloc, it),
+        else => try items.append(alloc, it),
+    };
+    return .{ .items = try items.toOwnedSlice(alloc) };
+}
+
 pub fn validateFunc(f: Func) Invalid!void {
     for (f.params) |p| {
         if (p.name.len == 0) return error.UnnamedParam;

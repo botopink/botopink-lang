@@ -81,6 +81,7 @@ fn writeParams(w: *Writer, params: []const Ast.TsParam) Error!void {
     try w.writeByte('(');
     for (params, 0..) |p, i| {
         if (i > 0) try w.writeAll(", ");
+        if (p.rest) try w.writeAll("...");
         if (p.name) |n| {
             try w.writeAll(ident(n));
             try w.writeAll(": ");

@@ -179,6 +179,10 @@ pub const context_anchor_violation: []const u8 = "context-anchor-violation";
 /// RC3 — `@getContext(T)` whose T is outside the enclosing fn's Anchor tree.
 pub const context_getcontext_anchor_violation: []const u8 = "context-getcontext-anchor-violation";
 
+/// Decision 269 — `@getContext(T)` is a hook (`-> Component<T, T>`): it is
+/// `use`d, never called for its value. A call that is not `use`'s operand.
+pub const context_getcontext_without_use: []const u8 = "context-getcontext-without-use";
+
 // ── `@src()` (1.0.10-beta front 01-std, decision 73) ─────────────────────────
 /// `@src(…)` was given an argument or a trailing lambda — the builtin takes none.
 pub const src_takes_no_arguments: []const u8 = "src-takes-no-arguments";
@@ -192,6 +196,10 @@ pub const builtin_not_lowered: []const u8 = "builtin-not-lowered";
 /// `builtins.d.bp` refuses: too many, a parameter without a default missing, a
 /// label naming no parameter (a type that disagrees is the ordinary mismatch).
 pub const builtin_arguments: []const u8 = "builtin-arguments";
+/// Decision 267 — a spread (`f(..xs)`) at a call of a variadic function.
+pub const variadic_spread: []const u8 = "variadic-spread";
+/// Decision 267 — a label on a variadic argument, or a trailing lambda.
+pub const variadic_label: []const u8 = "variadic-label";
 /// Decision 2 — an `@block { … }` in value position whose body has no valued
 /// `return` (`val a = @block { 1 + 2 };`): a tail expression is never the
 /// block's value. A statement `@block { … };` stays legal.
@@ -493,6 +501,9 @@ pub const all_codes = [_][]const u8{
     context_unbound,
     context_anchor_violation,
     context_getcontext_anchor_violation,
+    context_getcontext_without_use,
+    variadic_spread,
+    variadic_label,
     context_getcontext_expects_type,
     context_getcontext_outside_context_fn,
     use_of_non_context_fn,

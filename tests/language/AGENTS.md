@@ -101,6 +101,15 @@ index of an index (`rows[1][0]`, `xs[k]` answering `?T`) is `rows[1]?.[0]` (`run
 `run/optional_member_default` — `xs.at(k)?.field ?? d` over a present and an absent element, a string
 field, an empty array, an array built by `map` and one passed in, four targets (wasm printed the
 element's address for the `map`-built array on the parent binary).
+Decision 267 (a variadic parameter `..name: T[]`, front 134 step 4) adds `run/variadic_parameter` (a free
+function with zero, one and three variadic arguments, a generic one, a method, an associated function, `@print`
+with two arguments — four targets), `run/variadic_parameter_host` (a `declare fn` bound to `Math.max` /
+`lists:max`; wasm refuses it at the first call by `wasm.expect`), `modules/variadic_across_modules` (an
+imported variadic `pub fn`, four targets) and six `reject/` cells: `variadic_not_last`, `variadic_twice`,
+`variadic_default`, `variadic_not_array` (parse refusals at the declaration), `variadic_spread_at_call`
+(`variadic-spread`) and `variadic_label` (`variadic-label`). Decision 269 (`@getContext(T)` is a hook,
+step 6) adds `reject/getcontext_without_use` (`context-getcontext-without-use` at the bare call). Every one was
+refused or accepted otherwise by the parent binary.
 Decision 139 (a negative index counts from the end) adds `run/index_negative_from_end` — `xs.at(-1)`,
 `xs.at(-3)`, `xs.at(-4)` / `xs.at(3)` absent, `xs[-2]`, a negative index held in a `val`, the same for
 `String.at` / `s[-2]`, and a string array — on all four targets.
@@ -686,7 +695,17 @@ decisions 95 and 98: one `test/`, two `run/` and five `reject/` cells; front 20
 also adds `run/use_one_base` and `reject/use_two_bases` to the `use_*` area for
 decision 96, `run/option_unwrap_or` + `reject/option_expect_removed` to
 `optional*` for F11, and `reject/external_inline_unread` to `external_*` for F9 — `inline` on
-a variant whose emitter never reads it is refused at the annotation), and `enum_section_*` (1.0.10-beta's `00 · 01-checker`: which enum a
+a variant whose emitter never reads it is refused at the annotation; 1.0.12-beta's front 140 step 2,
+decision 334, adds `reject/external_wasm_host_unknown`, `reject/external_host_on_node`,
+`reject/external_wasm_host_twice` and `reject/external_wasm_host_beside_unhosted` — `host:` is
+`External.Wasm`'s, `.Wasi` or `.Browser`, one binding per host — with `run/external_wasm_host_binding`
+(a `.Wasi` and a `.Browser` binding side by side, the `wasi` build lowering the first) and
+`modules/wasm_host_from_manifest` (`"wasm": { "host": "browser" }` leaves a `.Wasi`-only binding
+unbound, `wasm.expect`); its step 6 adds `modules/wasm_host_browser_runs` (a `browser` build run by
+`node` through its loader, the `.Browser` binding read) and makes the wasm column two runs — `run.sh`'s
+`exec_run` runs a wasm cell on the `wasi` host (wasmtime) and on the `browser` host (node), and a cell
+whose two exit statuses or stdouts differ fails naming both; a project cell whose botopink.json names
+`"wasm"` runs on that host alone), and `enum_section_*` (1.0.10-beta's `00 · 01-checker`: which enum a
 leading-dot section path names — `run/enum_section_expected_type`, where two enums carry
 `.Color.Red.500` and every spelling is resolved by the type its position expects, and
 `reject/enum_section_ambiguous_path`, where the position expects nothing and the refusal names both

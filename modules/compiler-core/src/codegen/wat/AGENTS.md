@@ -18,6 +18,7 @@ wat/
 ├── wat_ast.zig       ← the code model (`Module`/`Item`/`Func`/`Seq`/`Instr`) + `Builder` + the invariants
 ├── wat_emitter.zig   ← the only text writer: s-expressions, indentation, `$` names, data escaping
 ├── wasm_binary_emitter.zig ← the same model in the binary format (what an engine instantiates)
+├── browser_loader.zig ← decision 334: the `browser` host's loader (`<module>.mjs`) beside the binary
 ├── host_binding.zig  ← decision 238: what `#[@External.Wasm("…")]` names — `op:` / `fn:` / `wasi:`, the opcode table, the adapter list
 └── wat_prelude.zig   ← the runtime helpers (`$__print_i32`, `$__str_concat`, …) as built nodes
 ```
@@ -40,7 +41,7 @@ model exists so none of them can be written again:
 | File | Role |
 |---|---|
 | `wat_ast.zig` | **Types**: `ValType` (`i32`/`i64`/`f32`/`f64`, with `parse` for the backend's spelled type names), `Stack` (`none`/`value`/`terminated`, with `fits(?ValType)`), `Width` (`full`/`byte` — `…8_u` / `…8`), `MemArg` (`ty`, `width`, `offset`). **Instructions**: `Instr` (`const` with the numeral as spelled, `local_get`/`local_set`/`local_tee`, `global_get`/`global_set`, `op` = `<ty>.<name>`, `convert` (a fully-spelled conversion opcode), `load`/`store`, `call`, `call_indirect` (an inline `FuncType`), `br`/`br_if`, `drop`, `return`, `unreachable`, `memory_copy`, `if`, `block` (`block` or `loop`), `comment`). **Layout**: `Line` (instruction + `indent` + trailing `;; comment` + `folded`), `Seq` (lines + stack), `If.Arm.Layout` (`block` vs one-line `inline_`). **Forms**: `Param`, `Local`, `Func` (name, exports, params, result, `locals` as *lines* so a helper can group several, body), `Global`, `FuncType`/`Import`, `Memory`, `DataSegment` (offset + length prefix + raw bytes), `Item` (import/memory/start/table/data/global/func/comment — `table` is `(table funcref (elem $f …))`, each name checked against the module's functions), `Module` (items). **Invariants**: `Invalid`, `validateFunc`, `validateModule`, `declaresCall`. **Helpers**: `Helper` (every symbol is `__<tag>`; `group`), `HelperGroup` (`deps` — the groups a group's functions call into), `HelperSet` (an `EnumSet`; `require` closes over `deps`). **`Builder`**: arena + `seq`/`param`/`localLines`/`func` (which validates) + `helper`. |
-| `wat_emitter.zig` | `renderModule` (validates, then `(module …)`; there is no bare-form entry point). Owns: the two-space item column, the four-space body column and each construct's arm columns, `$`-prefixing, folded (`(call $main)`) vs flat form, inline `(then i32.const 0 return)` arms, `offset=` suppressed when zero, and the data-segment escaping (four little-endian length bytes as `\xx`, then `\n`/`"`/`\`/`\t`/`\r`/`\xx` for control bytes). |
+| `wat_emitter.zig` | `renderModule` (validates, then `(module …)`; there is no bare-form entry point). `renderComponent(alloc, w, Module)` (decision 334, § The `wasi` host's component): the module embedded as `(core module $main …)` — its `(start …)` dropped and the start function exported `__bp_init` — inside the fixed frame `component_imports` / `component_adapter_*` / `component_run_export` (the preview 2 imports, the preview 1 shim, scratch and adapter modules, the table fixup, `wasi:cli/run`); a `wasi_snapshot_preview1` import outside `preview1_adapted` (`fd_write`, `random_get`) is `UnadaptedPreview1Import`, which `wat.zig` refuses located. Owns: the two-space item column, the four-space body column and each construct's arm columns, `$`-prefixing, folded (`(call $main)`) vs flat form, inline `(then i32.const 0 return)` arms, `offset=` suppressed when zero, and the data-segment escaping (four little-endian length bytes as `\xx`, then `\n`/`"`/`\`/`\t`/`\r`/`\xx` for control bytes). |
 | `wasm_binary_emitter.zig` | `encodeModule(alloc, Module) → []u8`: the binary format of the module the text emitter renders — validated first (`validateModule`), then sections type · import · function · table · memory · global · export · start · element · code · data, LEB128, one type per distinct signature (imports' and functions' types first, then each `call_indirect`'s), locals as runs of one type, no custom section; `memory.size` / `memory.grow` as `0x3F 0x00` / `0x40 0x00` (decision 261, a test pins the bytes). Every name the text spells is resolved to an index — functions (imports first, then definitions, in item order), globals, locals (params then declared), branch labels (depth, every `if` counted) — and a name that resolves to nothing (`UnknownName`), an operator the MVP table (`opcodes`: numeric, conversions, sign extension, `trunc_sat`) does not know (`UnknownOp`) or a numeral that does not parse (`BadNumeral`, the text format's spellings: sign, `0x`, `_`, `inf`/`nan`) is an error, never a guess. `wat.zig`'s `emitWat` renders both from one `Module` (`GenerateResult.js` the text, `.wasm` the binary); `codegen/runtime.zig`'s `executeWat` runs the **binary**, so every wasm RUN LOG is the binary emitter's answer checked against the recorded fixture. The browser build's page instantiates the same bytes. `Encoder` (with `typeIndex`/`funcIndex`/`funcBody`), `Bytes`, `section`, `uleb`/`sleb`, `name`, `valType`, `funcType` and `constInstr` are public for `comptime/runtime/wat/link.zig`, which pre-seeds an `Encoder` with a prebuilt module's index spaces and encodes a lowered comptime program's functions against the merged numbering. |
 | `host_binding.zig` | **Decision 238's closed vocabulary**, pure (text and value types in, a `Binding` or a message out): `parse(alloc, text, Signature)` reads `op:<opcode>` against `findOp`'s table (the MVP numeric instructions by shape — integer `clz`/`ctz`/`popcnt`/`eqz`, the binary ops, the comparisons; float `abs`/`neg`/`ceil`/`floor`/`trunc`/`nearest`/`sqrt`, `add`…`copysign`, the comparisons; the conversions — no memory, control, local or global instruction) and checks the declared parameter and return types are exactly the opcode's (a comparison or `eqz` answers `bool`); splits `fn:<identifier>` (the module resolves it); reads `wasi:<adapter>` against `adapters` (`random_f64`). `instrOf` gives an `op:`'s instruction. Anything else is a `Refused` message. `codegen/tests/wat.zig` holds `adapters` and `docs.md` § Host bindings' table to each other |
 | `wat_prelude.zig` | The runtime helpers wasm has no opcode for, as `Func` nodes: `print` (`$__write_bytes`, `$__print_nl`, `$__print_sp`, `$__print_i32`, `$__print_i32_raw`, `$__memmove`), `print_str` (`$__print_str_raw` traps on a pointer below the data floor — decision 67, § below), `print_bool`, `print_f64`, `arr_at`, `str_concat`, `str_eq`, `str_slice` (transcribed line by line), then — one helper per group, built with the comptime constructors at the bottom of the file (`func`, `loop`, `when`, `whenElse`, `get`/`set`/`op`/…; `func` assigns each line the column its nesting puts it at) — `alloc` (bump, 4-byte aligned), `mem_eq`, `i32_abs`/`i32_min`/`i32_max`, `i32_to_str`, `f64_to_str` (`String(x)` as a fresh string, through `$__f64_fmt`), `str_case` (ASCII shift of a byte range), `str_index_of`, `str_starts_with`, `str_ends_with`, `str_at` (`s.at(i)` as a `?string`: a negative `i` first counted from the end (`i + len`, decision 139, as in `$__arr_at` / `$__arr_at_box`), then `$__str_slice(s, i, i + 1)`, or `0` — absence — when `i32.ge_u` puts `i` outside `0..len`, which catches a still-negative index in the one compare `$__arr_at` needs two for), `str_trim` (mode bits: 1 start, 2 end), `str_split`, `str_repeat`, `str_char_code`, `str_last_index_of`, `str_pad`, `str_replace` (§ The primitive method table), `arr_new`, `arr_slice` (host bound rules), `arr_reverse`, `arr_prepend`, `arr_push`, `arr_concat`, `arr_zip`, `arr_index_of_i32`/`_str`, `arr_join_str`/`_i32`, `print_arr_i32`, `print_arr_f64` (+`_raw`, each slot's cell), `box_i32`, `arr_at_box`, `print_opt` (`$__print_null` — the bytes of `null`, decision 47's one spelling of absent, through scratch `176..180` — and `$__print_opt_i32`/`_bool`/`_str` +`_raw`), `assert_fail` (`$__write_err` — `fd_write` to fd 2 — and `$__assert_fail`, its literal text through scratch `188..208`), `print_shaped` (`$__print_quoted_raw` — a nested string, quoted with the source escapes — and `$__print_shaped_raw(v, shape, go)`, which walks a shape string — `i`/`f`/`b`/`s`, `l`/`u` (an `i64` / `u64` cell; `print_shaped` requires `print_i64` and `print_u64`), `[X`, `(XY…)`, `?X` / `!X` — writing `[a, b]` / `#(a, b)` and answering the address past the shape; `go = 0` only measures), `print_opt_tagged` (`$__print_opt_tagged` +`_raw` — a `?T` whose `T` is a record: `null` for `0`, `$__print_tagged_raw` otherwise; its own group, because the tagged printer reads a header four bytes behind the value and absence has to be answered before it is called), `display_of` (`$__display_of(v)` answering `0` — the `Display` hook `$__print_tagged_raw` calls first, which `wat.zig` replaces with the module's dispatch, § below), `unknown`, `print_unknown`, `arr_last_index_of_i32`/`_str`, and the five groups `01-compiler/05-wasm` step 1 added (§ The primitive method table): `str_lines`, `str_words`, `arr_unique`, `arr_flatten`, `arr_chunked`, `arr_sliding`, `arr_fill`; decision 240's codepoint helpers (§ String indices count codepoints): `str_cp_len`, `str_cp_off`, `str_cp_of`, `str_cp_slice`, `str_cp_at`, `str_cp_index_of`, `str_cp_last_index_of`; decision 238's adapter `wasi_random_f64` (`$__wasi_random_f64`, with `random_get_import` — 8 bytes into scratch `208..216`); and § Numbers' groups: `dtoa` (the `$__dtoa_ws` global, `$__big_*`, `$__dtoa`, `$__fmt_u64`, `$__f64_fmt`, `$__i64_fmt`), `box_f64`, `arr_index_of_f64`, `arr_last_index_of_f64`, `arr_join_f64`, `print_i64`, `i64_to_str`, `box_i64`, `print_opt_i64`, `int_chk` (`$__i32_add_chk` … `$__i64_mul_chk`), `i32_range_chk` / `i64_range_chk` (decision 264's narrower types, groups of their own), and decision 319's `u64_fmt`, `print_u64`, `u64_to_str`, `u64_chk`, `print_opt_u64` (appended groups); `print_opt_f64` is `print_opt_f32` renamed (a `?f64` is its cell). `items(group)` returns a group's forms, `order` the order a module appends them in (declaration order, so the transcribed groups keep their place), `fd_write_import` the one host import the print group needs. Scratch layout below the data section (which starts at 256): `0..8` the WASI iovec, `8` the newline byte — and `9` the space of §7's `, ` separator (`putSep`), written beside it so the two bytes leave in one `fd_write` —, `16..32` the bool text, `64..128` the i32 digits, `128..160` the digits `$__i32_to_str` writes backwards. A float's and an `i64`'s text is built in the `$__dtoa_ws` workspace (§ Numbers), not in scratch. |
@@ -51,6 +52,49 @@ model exists so none of them can be written again:
   nodes (`Emitter.emit`/`emitC`/`emitAt`/`note`/`item`, `Capture` + `open`/`seal`
   for a nested body), assembles the module's item order, and calls
   `renderModule`.
+
+## The `wasi` host's component (decision 334, front `01-compiler/140` step 3)
+
+A wasm build is the artifact its host runs. On `wasi` (the default; `"wasm": {
+"host": … }` in `botopink.json`) that is a **WASI preview 2 component**, in
+text: the CLI's build sets `Config.wasm_artifact`, and `emitWat` renders its
+one `Module` through `renderComponent` instead of `renderModule`
+(`Artifact.component`); the binary beside it (`GenerateResult.wasm`) and every
+other driver — the codegen snapshots, `codegen/runtime.zig`'s RUN LOG, the WAT
+comptime runtime — keep the core module, so the snapshots record what the
+backend lowers and the comptime runtime keeps the core-module subset.
+
+The component is the module, untouched but for its start, inside a fixed
+frame. The module keeps importing `wasi_snapshot_preview1`'s `fd_write` and
+`random_get`; a preview 1 adapter the compiler writes serves them over
+preview 2 (`wasi:cli/stdout` / `stderr` and `wasi:io/streams`'
+`blocking-write-and-flush`, 4096 bytes at a time through a scratch memory of its
+own; `wasi:random/random`'s `get-random-u64`). The adapter reads the module's
+memory, so it is instantiated after the module, and the module's imports are
+trampolines through a table the fixup fills (`$p1_shim`, `$p1_fixup`) — the
+shape `wit-component` gives a preview 1 adapter. A start function would run
+before that table is filled, so the start is dropped and its function
+exported as `__bp_init`; the `wasi:cli/run` export calls it, then `_start`.
+A trap traps the same way (`wasmtime` exits 134 with the trap message), and
+every wasm cell of `tests/language` runs through this frame
+(`botopink run --target wasm` is `wasmtime run -S http <file>`).
+
+**The `browser` host (step 6).** `Artifact.browser` renders the module as a host
+runs it (`wat_ast.startAsExport`: the start dropped, its function exported
+`__bp_init`) in both forms, and the CLI writes the binary as `<module>.wasm`
+beside the `.wat` with the loader `browser_loader.zig` renders as
+`<module>.mjs` — the same two preview 1 imports in JavaScript (`fd_write` on
+the console, `fs.writeSync` under node; `random_get` on
+`crypto.getRandomValues`), then `__bp_init` and `_start`. `botopink run` is
+`node <module>.mjs`. `tests/language/run.sh` runs every wasm cell on both hosts
+and fails one whose exit status or stdout differ (`exec_run`).
+
+`wasi:http/outgoing-handler`, `wasi:clocks/monotonic-clock` and `wasi:io/poll`
+join the frame with their first users (`@Task` on `wasi`, step 4; `io/http`'s
+`fetch`, std's step 17). The binary emitter does not encode components:
+`wasmtime` runs the text, and the `browser` host runs the core module's
+binary. `@Task` as a `Promise` through JSPI on `browser` waits with step 4
+(`decisions-pending.md` `140-a`…`140-c`).
 
 ## Where this backend refuses to answer
 
@@ -414,6 +458,28 @@ helper's name is any library's contract. The check runs on a wasm build; a
 binding on a module no wasm build reaches is not read (the checker half that
 would read it on every target is `01-checker`'s — `comptime/infer.zig`'s
 `external_variants` walk).
+
+**The host a binding serves (decision 334, front `01-compiler/140` step 2).** A
+wasm build binds to one runtime, named by `botopink.json`'s `"wasm": { "host":
+… }` (`wasi`, the default — wasmtime, WASI preview 2 — or `browser` — JS imports,
+JSPI) and carried in as `Config.wasm_host`. A binding may name the host it
+serves, `#[@External.Wasm("op:f64.floor", host: .Wasi)]`; one written without
+`host:` serves every host. The build's `#[@External.<Member>]` lookup carries
+the host (`ast.WasmHost.lookupName`: `wasm` is `wasi`'s, `wasm.browser` the
+browser's; `ast.ExternalLookup.of` splits it), so `externalFor` returns the
+binding serving the build's host and passes a binding for the other one by —
+a `declare fn` bound on the other host only is `external_missing` on this one,
+and std's gate (`comptime/infer.zig` `externalSpelling`) reads
+`std-unsupported-on-target: … for target 'wasm' on host 'wasi'`.
+`checkHostBindings` reads and checks **every** wasm binding of a `declare fn`,
+whichever host it serves (`checkHostBinding`), and records the one serving
+the build's host: a misspelt `.Browser` `fn:` is refused on a `wasi` build. The
+checker refuses `host:` on another variant, a value other than `.Wasi` /
+`.Browser`, and a second binding for one host (an unhosted binding beside a
+hosted one included) — `refuseHostArg`, `refuseWasmHostTwice`; cells
+`reject/external_wasm_host_unknown`, `reject/external_host_on_node`,
+`reject/external_wasm_host_twice`, `reject/external_wasm_host_beside_unhosted`,
+`run/external_wasm_host_binding`, `modules/wasm_host_from_manifest`.
 
 `std/math` is the first user: `abs`, `floor`, `trunc`, `sqrt`, `minF`, `maxF`
 are `op:`; `round` is `fn:roundHalfUp` (V8's ceil-based rule — `f64.nearest`

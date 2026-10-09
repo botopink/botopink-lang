@@ -1051,6 +1051,9 @@ pub const Env = struct {
     /// True while the operand of a `use` is inferred: a component call there
     /// is `use`'s to refuse, not an implicit render (`inferComponentCall`).
     inUseOperand: bool = false,
+    /// The location of the call written as `use`'s operand: `@getContext(T)`
+    /// is a hook, legal only there (decision 269).
+    useOperandLoc: ?ast.Loc = null,
     /// The location of the call written as `await`'s operand: a component call
     /// there keeps its wrapper, the `await` being written (`inferComponentCall`).
     awaitOperandLoc: ?ast.Loc = null,

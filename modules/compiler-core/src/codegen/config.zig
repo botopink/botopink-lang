@@ -49,4 +49,18 @@ pub const Config = struct {
     /// same program under both runtimes (the codegen snapshot harness's
     /// doubled tree); there is no flag or build option that reaches it.
     comptime_runtime: ?ComptimeRuntime = null,
+
+    /// Decision 334 — the runtime a wasm build binds to (`botopink.json`'s
+    /// `"wasm": { "host": … }`, read by the CLI): `wasi` (wasmtime, WASI
+    /// preview 2), the default, or `browser` (JS imports, JSPI). It picks which
+    /// `#[@External.Wasm(…, host: …)]` binding a `declare fn` lowers to.
+    /// Read on the wasm target only.
+    wasm_host: @import("../ast.zig").WasmHost = .wasi,
+
+    /// Emit the wasm build's artifact rather than the bare module: on the
+    /// `wasi` host the module wrapped as a WASI preview 2 component
+    /// (`wat_emitter.renderComponent`, decision 334). Set by the CLI's build
+    /// (`botopink build` / `run`); the snapshot harness records the module
+    /// the backend lowers, so it leaves it off.
+    wasm_artifact: bool = false,
 };

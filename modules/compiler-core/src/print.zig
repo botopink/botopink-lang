@@ -316,6 +316,30 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .message = "fn-param-default-trailing-only: a defaulted parameter must be followed only by other defaulted parameters.",
             .hint = "Move the defaulted parameter to the end of the list, or give the following parameter a default too.",
         },
+        .variadicNotLast => .{
+            .code = "variadic-not-last",
+            .message = "a variadic parameter must be the last parameter",
+            .caretCaption = "variadic before another parameter",
+            .hint = "Only the last parameter may be variadic (decision 267): move `..name: T[]` to the end of the list, or declare an array parameter `name: T[]` where it stands.",
+        },
+        .variadicTwice => .{
+            .code = "variadic-twice",
+            .message = "a function has at most one variadic parameter",
+            .caretCaption = "a second variadic",
+            .hint = "One `..name: T[]` per function, as its last parameter (decision 267); declare the other one as an array parameter `name: T[]`.",
+        },
+        .variadicDefault => .{
+            .code = "variadic-default",
+            .message = "a variadic parameter takes no default",
+            .caretCaption = "default on a variadic",
+            .hint = "A call passing no argument after the fixed ones already gives the variadic an empty array (decision 267): remove the `= …`.",
+        },
+        .variadicNotArray => .{
+            .code = "variadic-not-array",
+            .message = "a variadic parameter's type is written as an array `T[]`",
+            .caretCaption = "not `T[]`",
+            .hint = "Write the element type followed by `[]` — `..values: unknown[]`, `..rest: string[]` (decision 267): each argument is a `T`, the body reads a `T[]`.",
+        },
         .retiredAnnotationBlock => .{
             .message = "the `@[…]` annotation block was retired",
             .caretCaption = "write `#[…]` instead",

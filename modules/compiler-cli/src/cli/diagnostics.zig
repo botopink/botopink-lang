@@ -327,12 +327,12 @@ pub fn renderOutcome(gpa: std.mem.Allocator, io: std.Io, arena: std.mem.Allocato
 }
 
 /// The target vocabulary the comptime pipeline takes (`codegen.generate` threads
-/// the same names in).
-pub fn comptimeTargetName(t: anytype) []const u8 {
+/// the same names in); a wasm build's names its host (decision 334).
+pub fn comptimeTargetName(t: anytype, wasm_host: bp.ast.WasmHost) []const u8 {
     return switch (t) {
         .commonJS => "node",
         .erlang, .beam => "erlang",
-        .wasm => "wasm",
+        .wasm => wasm_host.lookupName(),
     };
 }
 

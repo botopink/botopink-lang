@@ -315,6 +315,7 @@ fn writeParams(w: *Writer, params: []const Ast.Param, indent: usize) Error!void 
 }
 
 fn writeParam(w: *Writer, p: Ast.Param, indent: usize) Error!void {
+    if (p.rest) try w.writeAll("...");
     try writePattern(w, p.pattern, indent);
     if (p.default) |d| {
         try w.writeAll(" = ");

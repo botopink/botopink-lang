@@ -364,16 +364,18 @@ pub const Formatter = struct {
             try this.concat(try this.text(" = "), try this.fmtExpr(d))
         else
             this.nil();
+        // Decision 267 — a variadic parameter keeps its `..`.
+        const nameDoc = if (p.variadic) try this.text(try std.mem.concat(this.arena, u8, &.{ "..", p.name })) else try this.text(p.name);
         return switch (p.modifier) {
             .none => this.concatAll(&.{
-                try this.text(p.name),
+                nameDoc,
                 try this.text(": "),
                 typeDoc,
                 defaultDoc,
             }),
             .@"comptime" => this.concatAll(&.{
                 try this.text("comptime "),
-                try this.text(p.name),
+                nameDoc,
                 try this.text(": "),
                 typeDoc,
                 defaultDoc,

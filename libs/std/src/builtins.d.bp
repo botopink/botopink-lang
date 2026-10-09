@@ -9,15 +9,15 @@
 // name that helper.
 #[External.Node("console.log($args)")]
 #[External.Erlang("'__bp_print'([$args])")]
-pub declare fn print(value: unknown);
+pub declare fn print(..values: unknown[]);
 
 #[External.Node("console.log($args)")]
 #[External.Erlang("'__bp_print'([$args])")]
-pub declare fn println(value: unknown);
+pub declare fn println(..values: unknown[]);
 
 #[External.Node("console.debug($args)")]
 #[External.Erlang("'__bp_print'([$args])")]
-pub declare fn debug(value: unknown);
+pub declare fn debug(..values: unknown[]);
 
 // ── result type ──────────────────────────────────────────────────────────────
 
@@ -307,9 +307,8 @@ pub type External implement Annotation {
 // not declared, declared and not implemented, or declared with another
 // signature. A call is checked against the declaration (its arity and its
 // argument types — `builtin-arguments` names the declaration), except where a
-// builtin's own rule refuses first (`@src`, `@typeInfo`, `@TypeInfo.all`,
-// `@getContext`, `@comptimeError`) or where the declaration cannot spell what
-// the compiler accepts (a row of the front's table with an open question).
+// builtin's own rule refuses first (`@src`, `@typeInfo`, `@getContext`,
+// `@comptimeError`).
 //
 // A builtin marked COMPTIME-ONLY is evaluated while the program is checked or
 // while a decorator / template body runs, and never reaches run time.
@@ -336,15 +335,19 @@ pub declare fn src() -> SourceLocation;
 // no target lowers a module value.
 pub declare fn module() -> module;
 
-// `@getContext(T)` — the context-retrieval intrinsic: the active provider of
-// context type `T` from the enclosing `@Component` fn's scope stack, typed as
-// `T` itself. `T` must be a type of the enclosing fn's base tree. Errors:
-// outside a `-> @Component<…>` fn body (`context-getcontext-outside-context-fn`),
-// an argument that is not a type name (`context-getcontext-expects-type`), a
-// type outside the base's tree (`context-getcontext-anchor-violation`).
-// Declared `comptime` in its sole type argument because the base check runs at
-// compile time; the runtime side is the inside-out walk the lowering inserts.
-pub declare fn getContext<T>(comptime _: type) -> T;
+// `@getContext(T)` — the context-retrieval hook (decision 269): a hook
+// anchored at `T`, `use`d to read the active provider of `T` from the
+// enclosing `@Component` fn's scope stack as a `T` —
+// `val ctx = use @getContext(BasePagamento);`. The `use` obeys the hook rule
+// at the body's base. Errors: outside a `-> @Component<…>` fn body
+// (`context-getcontext-outside-context-fn`), an argument that is not a type
+// name (`context-getcontext-expects-type`), a type outside the base's tree
+// (`context-getcontext-anchor-violation`), and the call without `use`
+// (`context-getcontext-without-use`: a hook is used, never called for its
+// value). Declared `comptime` in its sole type argument because the base check
+// runs at compile time; the runtime side is the inside-out walk the lowering
+// inserts.
+pub declare fn getContext<T>(comptime _: type) -> Component<T, T>;
 
 // `@typeInfo(T)` — the reflection of the declaration `T` (decisions 216, 248,
 // 253): `@typeInfo(City).name` and `@typeInfo(City).meta.<decorator>.<key>`
@@ -408,7 +411,7 @@ pub type Target { Node, Typescript, Erlang, Beam, Wasm }
 // §1C — `use` + `getContext`. The body of a `-> @Component<C, T>` fn anchors
 // every `use` at `C`: EVERY `use` in one body resolves against the SAME base
 // (decision 96), and a second anchored elsewhere is refused at its own site
-// with both bases named (RC2). `use getContext(T)` requires `T` to be in the
+// with both bases named (RC2). `use @getContext(T)` requires `T` to be in the
 // base's inheritance tree (RC3) and finds the active provider by inside-out
 // walk of the activation stack (RC1 when missing). `await` is legal here —
 // `Component` extends `Task`; `yield` is not.

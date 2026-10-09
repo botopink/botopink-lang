@@ -2562,7 +2562,16 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
         var p = Parser.init(tokens);
         // Decision 330 (7): a std type's associated types are top-level types
         // of the module (`Type.Field` is `Type__Field`).
-        const program = try nested_types.expand(env.arena, try embeddedStdProgram(env.arena, try stripTestDecls(try p.parse(env.arena), env.arena)));
+        const parsed_std = try embeddedStdProgram(env.arena, try stripTestDecls(try p.parse(env.arena), env.arena));
+        // `Owner.Name` written in the module's own source — a member of
+        // `Type` taking `Type.Field<T>` — names that one top-level type, as
+        // `analyzeSource` rewrites it for a program's module; left dotted, an
+        // importer registering the owner meets a name it cannot resolve.
+        var std_owners: std.StringHashMapUnmanaged(assocTypes.Owner) = .empty;
+        for (parsed_std.decls) |d| if (d == .type_ and d.type_.assocTypes.len > 0) {
+            try std_owners.put(env.arena, d.type_.name, .{ .name = d.type_.name, .assoc = try nested_types.namesOf(env.arena, d.type_) });
+        };
+        const program = try assocTypes.expand(env.arena, try nested_types.expand(env.arena, parsed_std), &std_owners);
         const bindings = try infer.inferProgramTyped(&env2, program);
 
         // Collect the module's public type declarations so `import {…} from
@@ -2913,7 +2922,9 @@ pub fn compile(
     // Decision 84: this compilation's decorator and template bodies run on the
     // target's VM (`comptime/runtime/runtime.zig` `forTarget`) — chosen here,
     // once, so no driver can compile for a target and evaluate on the other one.
-    const prev_runtime = hostRuntime.select(hostRuntime.forTarget(target_name));
+    // A wasm build's lookup carries its host (`wasm.browser`, decision 334);
+    // the runtime is the member's.
+    const prev_runtime = hostRuntime.select(hostRuntime.forTarget(if (target_name) |t| ast.ExternalLookup.of(t).member else null));
     defer _ = hostRuntime.select(prev_runtime);
 
     var session = ComptimeSession{

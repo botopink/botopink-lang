@@ -238,6 +238,19 @@ payload, an inline parameter type's — as `fieldDefaultTrailingOnly`
 (`field-default-trailing-only`), at the required field's name. Cells:
 `reject/{fn_param,method_param,record_field,variant_payload}_default_not_trailing`.
 
+## A variadic parameter (decision 267)
+
+`parseParam` reads `..name: T[]` (and `comptime ..name: T[]`) as a parameter
+with `Param.variadic` set (dumped only when true); `matchVariadic` keeps the `..`
+in `Parser.lastVariadicTok`. `checkVariadicParam` refuses a type that is not
+written `T[]` (`variadicNotArray`, at the type) and a default
+(`variadicDefault`, at the `=`); `parseParamList` refuses a parameter after a
+variadic — `variadicTwice` at the second `..` when it is variadic too,
+`variadicNotLast` at the first `..` otherwise. Codes `variadic-not-array`,
+`variadic-default`, `variadic-twice`, `variadic-not-last` (`print.zig`). The
+formatter writes the `..` back (`fmtParam`). Cells:
+`reject/variadic_{not_last,twice,default,not_array}`.
+
 ## A field and a variant payload are `name: Type` (decision 12, C-08)
 
 `parseFieldList` serves both `type Name(…)` and a variant payload `Variant(…)`,

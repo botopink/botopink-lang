@@ -89,6 +89,10 @@ pub fn run(
         .typeDefLanguage = if (opts.typescript) .typescript else null,
         .build_root = ".botopinkbuild",
         .packages = try libs.packagesOf(arena, proj, dep_modules),
+        .wasm_host = proj.wasmHost(),
+        // The file a wasm build writes is what its host runs: the WASI
+        // preview 2 component on `wasi` (decision 334).
+        .wasm_artifact = true,
     };
 
     // Run the compiler. `build` emits only: the program is not executed.
@@ -112,7 +116,7 @@ pub fn run(
 
     // Write what compiled; remove any previous artifact of a module that did not,
     // so nothing stale is left claiming to be current.
-    writeOutputs(gpa, io, outputs.items, opts.out_dir, target, cfg.packages, env_map) catch |err| switch (err) {
+    writeOutputs(gpa, io, outputs.items, opts.out_dir, target, cfg.packages, cfg.wasm_host, env_map) catch |err| switch (err) {
         // A sidecar the build cannot ship: the located refusal is already
         // printed by the shipper, and the build ends here with exit 1.
         error.SidecarRefused => return 1,
@@ -437,6 +441,7 @@ fn writeOutputs(
     out_dir: []const u8,
     target: config.Target,
     packages: bp.codegen.crossModule.Packages,
+    wasm_host: bp.ast.WasmHost,
     env_map: libs.EnvMap,
 ) !void {
     // Ensure output directory exists.
@@ -464,6 +469,21 @@ fn writeOutputs(
         }
 
         try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = sub_path, .data = o.result.js });
+
+        // Decision 334: a `browser` build is the module's binary and the
+        // loader that instantiates it with a browser's imports (node runs it
+        // too) — `<module>.wasm` and `<module>.mjs` beside the `.wat`.
+        if (target == .wasm and wasm_host == .browser) {
+            const bin = o.result.wasm orelse return error.MissingWasmBinary;
+            const wasm_path = try artifactPath(gpa, out_dir, target, packages, o.name, ".wasm");
+            defer gpa.free(wasm_path);
+            try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = wasm_path, .data = bin });
+            const loader_path = try artifactPath(gpa, out_dir, target, packages, o.name, ".mjs");
+            defer gpa.free(loader_path);
+            const loader = try bp.codegen.wasmBrowserLoader.render(gpa, std.fs.path.basename(wasm_path));
+            defer gpa.free(loader);
+            try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = loader_path, .data = loader });
+        }
 
         // Policy 3 (`13-module-identity`): every `type` of the module is a
         // module of its own on erlang/beam — `out/<target>/<type atom><ext>`,

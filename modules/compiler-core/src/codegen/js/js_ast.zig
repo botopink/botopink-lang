@@ -263,6 +263,8 @@ pub const Param = struct {
     pattern: Pattern,
     /// `= <default>`.
     default: ?Expr = null,
+    /// `...<pattern>` — a rest parameter (decision 267's variadic).
+    rest: bool = false,
 
     pub fn id(name: []const u8) Param {
         return .{ .pattern = .{ .ident = name } };
@@ -485,6 +487,8 @@ pub const TsParam = struct {
     /// (`(string, i32) => void`).
     name: ?[]const u8 = null,
     type: TsType,
+    /// `...name: T[]` — decision 267's variadic, a rest parameter.
+    rest: bool = false,
 };
 
 /// A `.d.ts` member of a class or interface.

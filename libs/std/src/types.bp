@@ -14,11 +14,9 @@
 ////
 //// `Type` is a namespace type (decision 329): no field list, no value, every
 //// function associated. `Field<T>` is declared in its body, so it is its
-//// associated type `Type.Field<T>` (decision 330 (7)).
-////
-//// Still to be declared here, blocked on the language spelling it: `pick`
-//// and `omit` take the fields as a variadic
-//// (`comptime ..fields: Type.Field<T>[]`, decision 267 — front 134 step 4).
+//// associated type `Type.Field<T>` (decision 330 (7)). `pick` and `omit`
+//// take the fields as a variadic (`comptime ..fields: Type.Field<T>[]`,
+//// decision 267): `Type.pick(Recipe, .title, .servings)`.
 
 pub type Type {
     // The field of `T` (decision 308): its name, its type as the source
@@ -48,5 +46,17 @@ pub type Type {
     pub declare fn merge<A, B>(
         comptime first: type A,
         comptime second: type B,
+    ) -> type;
+
+    // The fields of `T` named in `fields`, in the order `T` declares them.
+    pub declare fn pick<T>(
+        comptime source: type T,
+        comptime ..fields: Type.Field<T>[],
+    ) -> type;
+
+    // The fields of `T` but those named in `fields`.
+    pub declare fn omit<T>(
+        comptime source: type T,
+        comptime ..fields: Type.Field<T>[],
     ) -> type;
 }

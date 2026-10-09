@@ -1048,6 +1048,12 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
         if (agg.index_rewrites.get(expr_ptr.call.loc)) |rewrite| {
             if (rewrite.* == .call and rewrite.call.kind == .call and isTwinOf(rewrite.call.kind.call.callee, expr_ptr.call.kind.call.callee)) {
                 expr_ptr.* = rewrite.*;
+            } else if (rewrite.* == .call and rewrite.call.kind == .call and rewrite.call.kind.call.variadicPacked and
+                !expr_ptr.call.kind.call.variadicPacked)
+            {
+                // Decision 267 — the call with its variadic arguments packed
+                // into one array literal, as inference typed it.
+                expr_ptr.* = rewrite.*;
             }
         }
     }

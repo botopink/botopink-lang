@@ -1713,8 +1713,12 @@ through what `f` does; the pure body above is what every backend runs, and what
 the server renders.
 
 **The provider side.** A `@Component` body is also the effect under which
-`@getContext(T)` reads the active provider of `T` on the same owner tree; a
-provider stack is not part of this section.
+`@getContext(T)` reads the active provider of `T` on the same owner tree. It is
+a hook anchored at `T` (decision 269, `-> Component<T, T>`): it is `use`d —
+`val ctx = use @getContext(BasePagamento);` reads the context as a
+`BasePagamento` — and the call without `use` is
+`error[context-getcontext-without-use]`, naming `use`; a provider stack is not
+part of this section.
 
 ## Functions
 
@@ -1834,6 +1838,51 @@ A function **value** (a parameter, a local, a field) has a positional type with
 no names, so a label in a call of one is refused (`error[label-on-function-value]`).
 A pipeline is a call: `x |> f(a)` is `f(x, a)` and `x |> f` is `f(x)`, so it
 takes defaults and labels like one (`"w" |> greet(mark: "?")`).
+
+### A variadic parameter
+
+```botopink
+fn total(label: string, ..values: i32[]) -> string {
+    var sum = 0;
+    for (values) { v ->
+        sum = sum + v;
+    }
+    return label + ": " + sum.toString();
+}
+
+fn main() {
+    @print(total("none"));            // none: 0
+    @print(total("three", 1, 2, 3));  // three: 6
+}
+```
+
+`..name: T[]` as a function's **last** parameter takes zero or more positional
+arguments after the fixed ones, each checked against `T`, and the body reads
+`name` as a `T[]` (decision 267). It holds for a free `fn`, a method, an
+associated function and a `declare fn` alike — `@print`, `@println` and `@debug`
+are declared `(..values: unknown[])`. A function has at most one, it is the last
+parameter, its type is written `T[]` and it takes no default
+(`variadic-not-last`, `variadic-twice`, `variadic-not-array`,
+`variadic-default`, at the declaration). Its arguments are positional: a label
+on one is `variadic-label`, and there is no spread at a call — a function that
+takes an existing array declares `values: T[]`, not `..values`:
+
+<!-- docs-check: reject variadic-spread -->
+```botopink
+fn total(..values: i32[]) -> i32 { return values.length(); }
+
+fn main() {
+    val xs = [1, 2, 3];
+    @print(total(..xs));
+}
+```
+
+The checker packs the arguments into one array, so erlang and beam receive one
+list argument and wasm one array; commonJS writes the function with a rest
+parameter (`function total(label, ...values)`) and the call with the arguments
+one by one, so a host function bound by `#[@External.Node(…)]` receives them as
+JavaScript does (`Math.max(3, 9, 4)`), and `#[@External.Erlang(…)]` one list
+(`lists:max([3, 9, 4])`).
 
 ### Effects
 
@@ -2430,7 +2479,7 @@ pub declare fn parse(input: string) -> i32;
 A declaration takes the signature a `fn` does — generic parameters, `comptime`
 parameters, any return type — with or without an annotation. A parameter it
 has no name for is written `_` (`declare fn getContext<T>(comptime _: type) ->
-T;`); `_` is a bodyless declaration's placeholder, and a
+Component<T, T>;`); `_` is a bodyless declaration's placeholder, and a
 function with a body refuses it (`discard-param-with-body`).
 
 A binding may also be a template, where `$0`, `$1`, … are the declared
@@ -2601,6 +2650,41 @@ runtime-helper name of the backend is part of a binding and nothing a binding
 writes names an address: there is no raw memory in the vocabulary. A
 `declare fn` with no `@External.Wasm` keeps the refusal above at its call.
 
+**A wasm build binds to the runtime it runs on** (decision 334). The package
+names it in `botopink.json`, `"wasm": { "host": "wasi" }` or `"browser"`
+(`docs/botopink-json.md`); absent, it is `wasi` — wasmtime and the runtimes
+that follow WASI preview 2. A binding may name the host it serves with
+`host:` — `#[@External.Wasm("op:f64.floor", host: .Wasi)]` beside
+`#[@External.Wasm("fn:floorBody", host: .Browser)]` —, and one written without
+`host:` serves every host. A build reads the binding serving its host and
+checks every other one too; a function with no binding for the build's host
+is refused at its call as above, and a std function with none is
+`std-unsupported-on-target: … for target 'wasm' on host 'wasi'`. `host:` on
+another `External` variant, a value other than `.Wasi` or `.Browser`, and a
+second binding for one host (a binding without `host:` beside a hosted one
+included) are errors at the annotation.
+
+On the `wasi` host the file `botopink build --target wasm` writes is a **WASI
+preview 2 component** in WebAssembly text, which `botopink run` runs with
+`wasmtime run -S http`: the module the backend lowers, unchanged but for its
+start function (called by the component's `wasi:cli/run` export before
+`main`), and a preview 1 adapter the compiler writes — `fd_write` on
+`wasi:cli/stdout` and `wasi:cli/stderr` through `wasi:io/streams`,
+`random_get` on `wasi:random/random`. The adapters above keep their preview 1
+names inside the module; the component imports `wasi:io/error`,
+`wasi:io/streams`, `wasi:cli/stdout`, `wasi:cli/stderr` and
+`wasi:random/random` at `@0.2.0`.
+
+On the `browser` host the build writes, beside the module's text, its binary
+`<module>.wasm` and a loader `<module>.mjs`: an ES module that instantiates the
+binary with the imports a browser offers — `fd_write` on the console
+(`console.log` / `console.error`, line by line; `fs.writeSync` on the same fd
+under node), `random_get` on `crypto.getRandomValues` — then calls the
+module's start and `main`. A page imports the loader; `botopink run` runs it
+with `node <module>.mjs`. Every wasm program prints the same on both hosts:
+`tests/language` runs its wasm column under both and fails a cell whose
+answers differ.
+
 **`fn:<name>` binds a declaration on every target** (decisions 238, 263). On
 `@External.Node`, `@External.Erlang` and `@External.Beam` a single string
 starting with `fn:` is not a host expression or a template: it is the same form
@@ -2646,13 +2730,13 @@ decorator or template body runs, never at run time):
 
 | Builtin | Declaration | Held at the call by |
 |---|---|---|
-| `@print` / `@println` / `@debug` | `print(value: unknown)` (each alike) | nothing yet: they take any number of arguments, which no declaration spells (open question `134-a`) |
+| `@print` / `@println` / `@debug` | `print(..values: unknown[])` (each alike) — any number of arguments (§ A variadic parameter) | the declaration |
 | `@panic` | `panic(message: string = "panic") -> noreturn` | the declaration |
 | `@todo` | `todo(message: string = "not implemented") -> noreturn` | the declaration |
 | `@trap` | `trap() -> noreturn` | the declaration |
 | `@block` | `block<T>(body: fn() -> T) -> T` — `@block { … }`, its value what its `return`s carry | the declaration |
 | `@module` | `module() -> module` | refused at every call (`builtin-not-lowered`) |
-| `@getContext` | `getContext<T>(comptime _: type) -> T` | its own rule (§ use — imports, activation, and hooks) |
+| `@getContext` | `getContext<T>(comptime _: type) -> Component<T, T>` — a hook, `val ctx = use @getContext(T);` reads a `T` | its own rule (§ use — imports, activation, and hooks): a call that is not `use`'s operand is `context-getcontext-without-use` |
 | `@field` | `field<T, F>(obj: T, comptime name: string) -> F` — COMPTIME-ONLY name | the declaration |
 | `@src` | `src() -> SourceLocation` — COMPTIME-ONLY (§ `@src()` and `SourceLocation`) | its own rule (`src-takes-no-arguments`) |
 | `@typeInfo` | `typeInfo<T>(comptime _: type) -> TypeInfo<T>` — COMPTIME-ONLY (§ Decorators) | its own rule (`typeinfo-unknown-declaration`, `typeinfo-unknown-member`) |

@@ -709,7 +709,7 @@ const Builder = struct {
     fn delegate(self: *Builder, d: ast.DelegateDecl) Error!js.TsDecl {
         if (!d.isPub) return .none;
         const ps = try self.b.arena.alloc(js.TsParam, d.params.len);
-        for (d.params, 0..) |p, i| ps[i] = .{ .name = p.name, .type = try self.typeRef(p.typeRef) };
+        for (d.params, 0..) |p, i| ps[i] = .{ .name = p.name, .type = try self.typeRef(p.typeRef), .rest = p.variadic };
         const ret = try self.b.typePtr(if (d.returnType) |r| try self.typeRef(r) else js.TsType{ .name = "void" });
         return .{ .type_alias = .{
             .name = try self.genericName(d.name, d.genericParams),
@@ -723,7 +723,7 @@ const Builder = struct {
         var out: std.ArrayListUnmanaged(js.TsParam) = .empty;
         for (ps) |p| {
             if (std.mem.eql(u8, p.name, "self")) continue;
-            try out.append(self.b.arena, .{ .name = p.name, .type = try self.typeRef(p.typeRef) });
+            try out.append(self.b.arena, .{ .name = p.name, .type = try self.typeRef(p.typeRef), .rest = p.variadic });
         }
         return out.toOwnedSlice(self.b.arena);
     }

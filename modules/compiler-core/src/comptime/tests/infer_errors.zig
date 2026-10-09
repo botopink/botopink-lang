@@ -719,6 +719,27 @@ test "infer error: RC3 ---- @getContext(T) outside enclosing Anchor tree reds co
     );
 }
 
+test "infer: `use @getContext(T)` reads the context as a `T` (decision 269)" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\type BasePagamento(total: i32)
+        \\fn total() -> @Component<BasePagamento, i32> {
+        \\    val ctx: BasePagamento = use @getContext(BasePagamento);
+        \\    val n: i32 = ctx.total;
+        \\    return n;
+        \\}
+    );
+}
+
+test "infer error: `use @getContext(T)` is a `T`, not anything else (decision 269)" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\type BasePagamento(total: i32)
+        \\fn total() -> @Component<BasePagamento, i32> {
+        \\    val ctx: string = use @getContext(BasePagamento);
+        \\    return 0;
+        \\}
+    );
+}
+
 test "infer error: break <wrongType> in a generator reds a type mismatch against T (decision 103)" {
     // `break v` emits `v` and ends the generator: `v` is an item, so it must
     // be a `T`. The completion channel `C` is gone (decision 103).

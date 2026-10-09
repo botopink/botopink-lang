@@ -500,7 +500,7 @@ fn reportStdTargetGates(env: *Env) InferError!void {
 /// commonJS's lookup name).
 fn reportOffBeamMemory(env: *Env) InferError!void {
     const loc = env.offBeamMemory orelse return;
-    const lookup = env.target orelse return;
+    const lookup = ast.ExternalLookup.of(env.target orelse return).member;
     const t = if (std.mem.eql(u8, lookup, "node")) "commonJS" else lookup;
     return failAt(
         env,
@@ -530,10 +530,21 @@ fn firstStdUnsupported(env: *Env, mod_name: []const u8, tgt: []const u8) ?[]cons
 /// `#[@External.<Member>(…)]` annotation (`Node`, `Erlang`, `Beam`, `Wasm` —
 /// `externalFor`'s member, the target capitalised), and the target is the one
 /// `--target` takes (`commonJS`, never the internal `node`).
+///
+/// A wasm build names its host too (decision 334): the lookup `wasm` is the
+/// `wasi` host's, `wasm.browser` the `browser` host's, and the target reads
+/// `'wasm' on host 'wasi'`.
 fn externalSpelling(env: *Env, tgt: []const u8) InferError!struct { member: []const u8, target: []const u8 } {
-    const member = try env.arena.dupe(u8, tgt);
+    const lookup = ast.ExternalLookup.of(tgt);
+    const member = try env.arena.dupe(u8, lookup.member);
     if (member.len > 0) member[0] = std.ascii.toUpper(member[0]);
-    return .{ .member = member, .target = if (std.mem.eql(u8, tgt, "node")) "commonJS" else tgt };
+    const target = if (std.mem.eql(u8, lookup.member, "node"))
+        "commonJS"
+    else if (lookup.host) |h|
+        try std.fmt.allocPrint(env.arena, "{s}' on host '{s}", .{ lookup.member, @tagName(h) })
+    else
+        lookup.member;
+    return .{ .member = member, .target = target };
 }
 
 fn refuseStdUnsupported(env: *Env, mod_name: []const u8, name: []const u8, tgt: []const u8, loc: ast.Loc) InferError!void {
@@ -3754,6 +3765,62 @@ fn refuseUnreadInline(env: *Env, a: ast.Annotation) InferError!void {
     }
 }
 
+/// Decision 334 — `host:` names the runtime a wasm binding serves, so it is
+/// `External.Wasm`'s alone, and its value is `.Wasi` or `.Browser`. Written on
+/// another variant it is a switch nothing reads; any other value names no
+/// host. Both are refused at the annotation.
+fn refuseHostArg(env: *Env, a: ast.Annotation) InferError!void {
+    const v = externalVariantOf(a) orelse return;
+    const at = ast.hostArgIndex(a) orelse return;
+    var e: TypeError = undefined;
+    if (!std.mem.eql(u8, v.name, "Wasm")) {
+        e = TypeError.custom(try std.fmt.allocPrint(
+            env.arena,
+            "`External.{s}` declares no `host` — a host is the runtime a wasm build binds to (decision 334)",
+            .{v.name},
+        ), "Delete it: `host:` is read on `External.Wasm` alone (`#[@External.Wasm(\"…\", host: .Wasi)]`).");
+    } else if (ast.WasmHost.ofArg(a.args[at]) == null) {
+        e = TypeError.custom(try std.fmt.allocPrint(
+            env.arena,
+            "`External.Wasm`'s `host` is `.Wasi` or `.Browser`, got `{s}`",
+            .{a.args[at]},
+        ), "Write `host: .Wasi` (wasmtime, WASI preview 2) or `host: .Browser` (JS imports, JSPI); a binding without `host:` serves every host.");
+    } else return;
+    if (a.loc) |l| e = e.withLoc(l);
+    env.lastError = e;
+    return error.TypeError;
+}
+
+/// Decision 334 — a `declare fn` has one wasm binding per host: at most one
+/// `#[@External.Wasm(…, host: .Wasi)]`, at most one `host: .Browser`, and a
+/// binding without `host:` (which serves every host) stands alone. A second
+/// binding for a host the function already has one for is refused at it,
+/// rather than one of the two read and the other dropped.
+fn refuseWasmHostTwice(env: *Env, f: ast.FnDecl) InferError!void {
+    var seen_any = false;
+    var seen_all = false;
+    var seen = [_]bool{ false, false };
+    for (f.annotations) |a| {
+        const v = externalVariantOf(a) orelse continue;
+        if (!std.mem.eql(u8, v.name, "Wasm")) continue;
+        const host: ?ast.WasmHost = if (ast.hostArgIndex(a)) |at| ast.WasmHost.ofArg(a.args[at]) else null;
+        const twice = seen_all or (host == null and seen_any) or (if (host) |h| seen[@intFromEnum(h)] else false);
+        if (twice) {
+            const which = if (host) |h| try std.fmt.allocPrint(env.arena, "host '{s}'", .{@tagName(h)}) else "every host";
+            var e = TypeError.custom(try std.fmt.allocPrint(
+                env.arena,
+                "`{s}` binds wasm twice for {s} — one `#[@External.Wasm]` per host",
+                .{ f.name, which },
+            ), "Keep one binding per host: `host: .Wasi` and `host: .Browser` side by side, or one binding without `host:`, which serves every host.");
+            if (a.loc) |l| e = e.withLoc(l);
+            env.lastError = e;
+            return error.TypeError;
+        }
+        seen_any = true;
+        if (host) |h| seen[@intFromEnum(h)] = true else seen_all = true;
+    }
+}
+
 /// The inline rule on every `#[@External.<Target>(…)]` a method carries —
 /// `codegen/erlang.zig` and `codegen/beam_asm.zig` read `hasExternalInline` over
 /// a behavior's and a type's methods, so a flag written there is checked the
@@ -3761,10 +3828,16 @@ fn refuseUnreadInline(env: *Env, a: ast.Annotation) InferError!void {
 fn validateExternalInline(env: *Env, program: ast.Program) InferError!void {
     for (program.decls) |decl| switch (decl) {
         .type_ => |tdecl| for (tdecl.methods) |m| {
-            for (m.annotations) |a| try refuseUnreadInline(env, a);
+            for (m.annotations) |a| {
+                try refuseUnreadInline(env, a);
+                try refuseHostArg(env, a);
+            }
         },
         .behavior => |i| for (i.methods) |m| {
-            for (m.annotations) |a| try refuseUnreadInline(env, a);
+            for (m.annotations) |a| {
+                try refuseUnreadInline(env, a);
+                try refuseHostArg(env, a);
+            }
         },
         else => {},
     };
@@ -3798,16 +3871,21 @@ fn validateExternalAnnotation(env: *Env, f: ast.FnDecl, a: ast.Annotation) Infer
     // the ones that do not — before the arity count, which would otherwise
     // report the unread flag as a wrong argument count.
     try refuseUnreadInline(env, a);
+    // Decision 334: `host:` on `External.Wasm` alone, `.Wasi` or `.Browser`.
+    try refuseHostArg(env, a);
     // `External.<Target>(module, symbol)` form: 1-2 body args (symbol alone
     // or module + symbol). The trailing `inline = true`/`false` flag, on a
-    // variant that declares it, adds one more arg.
-    var effective_len = a.args.len;
+    // variant that declares it, adds one more arg; so does wasm's `host:`.
+    const host_at = ast.hostArgIndex(a);
+    var body_args: std.ArrayListUnmanaged([]const u8) = .empty;
+    for (a.args, 0..) |arg, i| if (host_at == null or i != host_at.?) try body_args.append(env.arena, arg);
+    var effective_len = body_args.items.len;
     if (effective_len >= 2 and writesInline(a)) effective_len -= 1;
     if (effective_len < 1 or effective_len > 2) {
         return fail(env, fnLoc, "`@external` expects 1 or 2 arguments: module and/or symbol", "Example: #[@External.Erlang( \"string\", \"length\")] or #[@External.Node(\"reverse\")]");
     }
     // remaining args: string literals or `when(argc == N): "<template>"` branches.
-    for (a.args[0..effective_len]) |arg| {
+    for (body_args.items[0..effective_len]) |arg| {
         if (ast.parseArityBranchArg(arg) != null) continue;
         if (arg.len < 2 or arg[0] != '"') {
             return fail(env, fnLoc, "`@external` module and symbol must be string literals", "Example: #[@External.Node(\"./gleam_stdlib.mjs\", \"string_length\")]");
@@ -5165,6 +5243,7 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
             try validateExternalAnnotation(env, f, a);
         }
     }
+    try refuseWasmHostTwice(env, f);
 
     // Build generic map.
     var genericMap = std.StringHashMap(*T.Type).init(env.arena);
@@ -7234,10 +7313,14 @@ fn inferBuiltinCallReturnType(
                 ).withLoc(arg.getLoc());
                 return error.TypeError;
             }
-            // Best-effort return type: the named user type. RC1 (active
-            // provider check) needs the contextStack runtime to land.
-            return env.namedType(requestedName);
+            // Decision 269 — a hook anchored at `T`: `-> Component<T, T>`,
+            // `use`d to read the context as a `T`. RC1 (active provider check)
+            // needs the contextStack runtime to land.
+            try refuseGetContextWithoutUse(env, loc);
+            const t = try env.namedType(requestedName);
+            return env.namedTypeArgs("Component", &.{ t, t });
         }
+        try refuseGetContextWithoutUse(env, loc);
         return env.freshVar();
     }
     // `@comptimeError(message)` — report a compile-time error from comptime
@@ -7326,6 +7409,18 @@ fn inferCatalogueAnswer(env: *Env, answer: ast.Expr, loc: ast.Loc) InferError!Ty
     } } } };
 }
 
+/// Decision 269 — `@getContext(T)` is a hook: legal only as `use`'s operand
+/// (`val ctx = use @getContext(T);`), refused at the call otherwise.
+fn refuseGetContextWithoutUse(env: *Env, loc: ast.Loc) InferError!void {
+    if (env.useOperandLoc) |at| if (std.meta.eql(at, loc)) return;
+    env.lastError = TypeError.custom(
+        diagnostics.context_getcontext_without_use ++
+            ": `@getContext(T)` is a hook (`-> Component<T, T>`) — it is `use`d, never called for its value",
+        "Read the context with `use`: `val ctx = use @getContext(T);`.",
+    ).withLoc(loc);
+    return error.TypeError;
+}
+
 /// The type name `@src()` answers with (decision 73). Declared in
 /// `comptime.zig`'s `decl_reflection_src`; spliced into a program that names it
 /// by `withSourceLocationDecl`.
@@ -7396,7 +7491,10 @@ fn checkDeclaredArguments(
             return error.TypeError;
         }
     }.f;
-    if (given > decl.params.len) {
+    // Decision 267 — a variadic last parameter takes every unlabelled
+    // argument past the fixed ones, each checked against its element type.
+    const variadicAt: ?usize = if (decl.params.len > 0 and decl.params[decl.params.len - 1].variadic) decl.params.len - 1 else null;
+    if (variadicAt == null and given > decl.params.len) {
         return refuse(env, row.signature, "`@{s}` takes {d} argument{s}, {d} given", .{ callee, decl.params.len, if (decl.params.len == 1) "" else "s", given }, loc);
     }
     // Which parameter each argument binds: a label names one, an unlabelled
@@ -7407,8 +7505,20 @@ fn checkDeclaredArguments(
     for (decl.genericParams) |g| try genericMap.put(g.name, try env.freshVar());
     var next: usize = 0;
     for (typedArgs) |a| {
+        if (variadicAt) |va| if (a.label == null) {
+            while (next < va and bound[next]) next += 1;
+            if (next >= va) {
+                const p = decl.params[va];
+                const want = try resolveTypeRefInContext(env, p.typeRef.array.*, genericMap);
+                try unifyArgument(env, want, a.type_, a.loc);
+                continue;
+            }
+        };
         const at: usize = if (a.label) |label| blk: {
-            for (decl.params, 0..) |p, i| if (std.mem.eql(u8, p.name, label)) break :blk i;
+            for (decl.params, 0..) |p, i| if (std.mem.eql(u8, p.name, label)) {
+                if (p.variadic) return refuse(env, row.signature, "`{s}` of `@{s}` is variadic and takes no label", .{ label, callee }, a.loc);
+                break :blk i;
+            };
             return refuse(env, row.signature, "`@{s}` has no parameter `{s}`", .{ callee, label }, a.loc);
         } else blk: {
             while (next < bound.len and bound[next]) next += 1;
@@ -7429,7 +7539,7 @@ fn checkDeclaredArguments(
         bound[next] = true;
     }
     for (decl.params, bound) |p, b| {
-        if (!b and p.default == null) {
+        if (!b and p.default == null and !p.variadic) {
             return refuse(env, row.signature, "`@{s}` needs `{s}`", .{ callee, p.name }, loc);
         }
     }
@@ -14134,11 +14244,15 @@ fn inferUseHookExpr(env: *Env, uh: ast.UseHookExprOf(.untyped), loc: ast.Loc) In
     // binding/destructuring is performed by the enclosing `val`/`var`.
     const prevInUse = env.inUseOperand;
     env.inUseOperand = true;
+    const prevUseOperand = env.useOperandLoc;
+    env.useOperandLoc = if (uh.kind.inner.* == .call) uh.kind.inner.call.loc else null;
     const valTyped = inferExprTyped(env, uh.kind.inner.*) catch |err| {
         env.inUseOperand = prevInUse;
+        env.useOperandLoc = prevUseOperand;
         return err;
     };
     env.inUseOperand = prevInUse;
+    env.useOperandLoc = prevUseOperand;
     const valPtr = try makeTypedPtr(env, valTyped);
     try validateUseBase(env, valTyped.getType(), fc, loc);
     const srcTy = bindingSourceType(valTyped.getType());
@@ -14577,7 +14691,90 @@ fn inferTupleIndexExpr(
 }
 
 /// Infer type for call expressions (function/method invocations and pipelines)
+/// Decision 267 — the parameters a call's arguments bind (a method's `self`
+/// left out) when the last one is variadic; null for every other callee. A
+/// plain call reads the declaration by name (`calleeParams`), a method or an
+/// associated function the receiver's type's (`Env.getInherentMethodParams`).
+fn variadicCalleeParams(env: *Env, call: anytype, typedReceiver: ?*ast.TypedExpr) ?[]const ast.Param {
+    const params: []const ast.Param = if (typedReceiver) |tr| blk: {
+        // `Bag.of(…)`: a receiver naming a type calls its associated fn (the
+        // name's own binding is the constructor, typed as a function).
+        const typeNamed: ?[]const u8 = if (call.receiver) |r|
+            (if (r.* == .identifier and r.identifier.kind == .ident and env.lookupTypeDef(r.identifier.kind.ident) != null) r.identifier.kind.ident else null)
+        else
+            null;
+        const owner = nominalName(tr.getType()) orelse typeNamed orelse return null;
+        const ps = env.getInherentMethodParams(owner, call.callee) orelse return null;
+        break :blk if (ps.len > 0 and std.mem.eql(u8, ps[0].name, "self")) ps[1..] else ps;
+    } else calleeParams(env, call.callee) orelse return null;
+    if (params.len == 0 or !params[params.len - 1].variadic) return null;
+    return params;
+}
+
+/// Decision 267 — `c` with the arguments past the fixed parameters packed
+/// into one array literal (`variadicPacked`), recorded under the call's loc
+/// for the transform. A spread (`f(..xs)`) and a label on a variadic
+/// argument are refused at the argument; a trailing lambda at the call.
+fn packVariadicCall(env: *Env, c: ast.CallExprOf(.untyped), params: []const ast.Param, loc: ast.Loc) InferError!ast.CallExprOf(.untyped) {
+    const call = c.kind.call;
+    const fixed = params.len - 1;
+    const v = params[fixed];
+    for (call.args, 0..) |a, i| {
+        const label = a.label orelse continue;
+        if (std.mem.eql(u8, label, "..")) {
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is variadic, and a call passes its arguments one by one — there is no spread at a call", .{ diagnostics.variadic_spread, call.callee });
+            const hint = try std.fmt.allocPrint(env.arena, "Write the arguments after the fixed ones (`{s}(a, b, c)`); a function that takes an existing array declares `{s}: T[]`, not `..{s}` (decision 267).", .{ call.callee, v.name, v.name });
+            env.lastError = TypeError.custom(msg, hint).withLoc(a.value.getLoc());
+            return error.TypeError;
+        }
+        if (i >= fixed or std.mem.eql(u8, label, v.name)) {
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` of `{s}` is variadic and takes no label", .{ diagnostics.variadic_label, v.name, call.callee });
+            env.lastError = TypeError.custom(msg, "Pass the variadic's arguments by position, after the fixed ones (decision 267).").withLoc(a.value.getLoc());
+            return error.TypeError;
+        }
+    }
+    if (call.trailing.len > 0) {
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is variadic, and a trailing lambda is not one of its arguments", .{ diagnostics.variadic_label, call.callee });
+        env.lastError = TypeError.custom(msg, "Pass the lambda inside the parentheses, by position (decision 267).").withLoc(loc);
+        return error.TypeError;
+    }
+    if (call.args.len < fixed) {
+        const msg = try std.fmt.allocPrint(env.arena, "'{s}' expects at least {d} argument(s), got {d}", .{ call.callee, fixed, call.args.len });
+        const hint = try std.fmt.allocPrint(env.arena, "Pass the {d} fixed argument(s) first; `..{s}` takes the ones after them (decision 267).", .{ fixed, v.name });
+        env.lastError = TypeError.custom(msg, hint).withLoc(loc);
+        return error.TypeError;
+    }
+    const elems = try env.arena.alloc(ast.Expr, call.args.len - fixed);
+    for (call.args[fixed..], elems) |a, *e| e.* = a.value.*;
+    const arr = try env.arena.create(ast.Expr);
+    arr.* = .{ .collection = .{ .loc = loc, .kind = .{ .arrayLit = .{ .elems = elems } } } };
+    const args = try env.arena.alloc(ast.CallArgOf(.untyped), fixed + 1);
+    @memcpy(args[0..fixed], call.args[0..fixed]);
+    args[fixed] = .{ .label = null, .value = arr };
+    const out = markPacked(c, args);
+    // The backends read the program's call: the transform splices this one
+    // in (`index_rewrites`, a `variadicPacked` call).
+    const spliced = try env.arena.create(ast.Expr);
+    spliced.* = .{ .call = out };
+    try env.indexRewrites.put(loc, spliced);
+    return out;
+}
+
+fn markPacked(c: ast.CallExprOf(.untyped), args: []ast.CallArgOf(.untyped)) ast.CallExprOf(.untyped) {
+    var out = c;
+    out.kind.call.args = args;
+    out.kind.call.variadicPacked = true;
+    return out;
+}
+
 fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
+    return inferCallExprWith(env, c, loc, null);
+}
+
+/// `inferCallExpr` with the receiver already typed — the variadic packing
+/// (decision 267) re-enters with the packed call, and the receiver is not
+/// inferred twice.
+fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typedReceiverIn: ?*ast.TypedExpr) InferError!TypedExpr {
     // R12 (§2) — manual `Result.Ok(...)` / `Result.Error(...)` construction
     // anywhere inside a `#[@result]` body is forbidden by the auto-wrap
     // contract: the @Result type is opaque inside the body and is constructed
@@ -14731,7 +14928,7 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
             // builtin `result` namespace (`result.map(r, f)`) is a namespace,
             // not a value binding — synthesize its typed node instead of
             // looking it up (it would be an unbound variable).
-            const typedReceiver: ?*ast.TypedExpr = if (call.receiver) |recvExpr| blk: {
+            const typedReceiver: ?*ast.TypedExpr = if (typedReceiverIn) |tr| tr else if (call.receiver) |recvExpr| blk: {
                 if (recvExpr.* == .identifier and recvExpr.*.identifier.kind == .ident) {
                     const rn = recvExpr.*.identifier.kind.ident;
                     // An explicit `from "std"` import wins over same-named value
@@ -14761,6 +14958,17 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                 }
                 break :blk try makeTypedPtr(env, try inferExprTyped(env, recvExpr.*));
             } else null;
+
+            // Decision 267 — a callee whose last parameter is variadic takes
+            // the arguments past its fixed ones as one array: the call is
+            // typed with them packed into an array literal, and the program's
+            // call is replaced by that packed call for the backends.
+            if (!call.variadicPacked and !call.is_builtin and call.calleeExpr == null) {
+                if (variadicCalleeParams(env, call, typedReceiver)) |vps| {
+                    const packedCall = try packVariadicCall(env, c, vps, loc);
+                    return inferCallExprWith(env, packedCall, loc, typedReceiver);
+                }
+            }
 
             // A builtin-primitive receiver declares its own signature in
             // `primitives.bp`, and the receiver is already inferred here — so a

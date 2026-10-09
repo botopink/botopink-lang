@@ -132,6 +132,17 @@ pub const ParseErrorType = enum {
     /// follows one with a default (`fn f(a: i32 = 1, b: i32)`). Defaults
     /// occupy trailing positions only, mirroring §1G's generic-param rule.
     fnParamDefaultTrailingOnly,
+    /// Decision 267 — a variadic parameter (`..rest: T[]`) followed by
+    /// another parameter. Located at the variadic's `..`.
+    variadicNotLast,
+    /// Decision 267 — a second variadic parameter in one list. Located at the
+    /// second one's `..`.
+    variadicTwice,
+    /// Decision 267 — a default on a variadic parameter. Located at the `=`.
+    variadicDefault,
+    /// Decision 267 — a variadic parameter whose type is not written `T[]`.
+    /// Located at the type.
+    variadicNotArray,
     /// Decision 244 — the same rule on a field list: a record type's field
     /// (`type Port(number: i32 = 80, host: string)`), a variant's payload or
     /// an inline parameter type, without a default, after one with a default.
@@ -402,6 +413,9 @@ pub const Parser = struct {
     /// (`parseParamList` resets it). `self` is a method's receiver, so a free
     /// function (`parseFnBody`) that names one is `self-param-outside-type`.
     selfParam: ?Token = null,
+    /// Decision 267 — the `..` of the last variadic parameter
+    /// `parseParamList` read, for its not-last / twice refusals.
+    lastVariadicTok: ?Token = null,
     /// The static-prefix rule of `use` (front 19 step 1, decision 88): true once
     /// an `if`, `case`, `loop` or `return` of the **current function body** has
     /// been parsed, at any nesting. A `use` seen while it is set is

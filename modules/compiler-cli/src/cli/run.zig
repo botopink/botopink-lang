@@ -55,7 +55,9 @@ pub fn run(
     // The entry is the project's own module: its atom starts with the
     // project's package (decision 109).
     const packages: bp.codegen.crossModule.Packages = .{ .root = proj.name };
-    const entry_path = try build_cmd.artifactPath(arena, opts.out_dir, target, packages, opts.module, build_cmd.artifactExt(target));
+    // A `browser` wasm build runs through its loader (decision 334).
+    const browser = target == .wasm and proj.wasmHost() == .browser;
+    const entry_path = try build_cmd.artifactPath(arena, opts.out_dir, target, packages, opts.module, if (browser) ".mjs" else build_cmd.artifactExt(target));
 
     // erlang and BEAM need two steps, not one. `escript <file>` compiles ONLY
     // the file it is handed, so every cross-module call in a multi-module
@@ -70,7 +72,7 @@ pub fn run(
     // Build argv.
     const runner: []const u8 = switch (target) {
         .commonJS => "node",
-        .wasm => "wasmtime",
+        .wasm => if (browser) "node" else "wasmtime",
         .erlang => unreachable, // handled above
         .beam => unreachable, // handled above
     };
@@ -78,6 +80,11 @@ pub fn run(
     var argv = std.ArrayListUnmanaged([]const u8).empty;
     defer argv.deinit(arena);
     try argv.append(arena, runner);
+    // A `wasi` build is a WASI preview 2 component (decision 334): `wasmtime
+    // run` with `wasi:http` granted (`-S http`), which a component that
+    // imports no `wasi:http` does not read.
+    // A `browser` build is `node <module>.mjs`, its loader.
+    if (target == .wasm and !browser) try argv.appendSlice(arena, &.{ "run", "-S", "http" });
     try argv.append(arena, entry_path);
     for (opts.extra_args) |arg| try argv.append(arena, arg);
 
