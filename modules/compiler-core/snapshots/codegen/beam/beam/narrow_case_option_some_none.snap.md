@@ -54,6 +54,7 @@ fn main() {
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
     {jump, {f, 10}}.
   {label, 12}.
+    {case_end, {x, 0}}.
   {label, 10}.
     {deallocate, 4}.
     return.

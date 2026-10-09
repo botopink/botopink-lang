@@ -211,6 +211,11 @@ pub const primitive_type_name_taken: []const u8 = "primitive-type-name-taken";
 /// Decisions 280 (0), 297 — the argument of a `comptime` parameter reads a
 /// run-time value (a local, a parameter that is not `comptime`).
 pub const comptime_arg_not_known: []const u8 = "comptime-arg-not-known";
+/// Decision 331 — the value of a `comptime` has no construction in the emitted
+/// program: a lambda capturing the block's state, a resource (a process, a
+/// port, a reference), a non-finite float, a record no reached type declares.
+/// Fires from `comptime/block_eval.zig`'s lift, located at the `comptime`.
+pub const comptime_value_not_liftable: []const u8 = "comptime-value-not-liftable";
 /// Decision 297 — `x is type` where `x` is no `comptime x: V | type T`
 /// parameter.
 pub const is_type_outside_value_or_type: []const u8 = "is-type-outside-value-or-type";
@@ -533,6 +538,7 @@ pub const all_codes = [_][]const u8{
     block_tail_value,
     primitive_type_name_taken,
     comptime_arg_not_known,
+    comptime_value_not_liftable,
     is_type_outside_value_or_type,
     type_arg_read,
     captured_var_write,

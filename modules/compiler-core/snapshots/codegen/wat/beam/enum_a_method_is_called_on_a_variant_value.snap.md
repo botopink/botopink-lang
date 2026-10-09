@@ -347,6 +347,7 @@ pub fn main() {
   {label, 12}.
     {jump, {f, 4}}.
   {label, 10}.
+    {case_end, {x, 0}}.
   {label, 4}.
     {deallocate, 3}.
     return.

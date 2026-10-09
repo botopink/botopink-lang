@@ -357,6 +357,7 @@ fn main() {
   {label, 14}.
     {jump, {f, 6}}.
   {label, 12}.
+    {case_end, {x, 0}}.
   {label, 6}.
     {deallocate, 3}.
     return.

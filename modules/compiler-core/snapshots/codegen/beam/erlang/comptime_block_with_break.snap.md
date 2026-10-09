@@ -22,17 +22,11 @@ ct_0: val result = comptime {
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
-%% comptime val result
 result() ->
-    X = 10,
-    '__bp_int'((X * 2), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:3:13">>).
+    20.
 
 main() ->
     '__bp_print'([result()]).
-
--compile({inline,['__bp_int'/4]}).
-'__bp_int'(V, Lo, Hi, _) when V >= Lo, V =< Hi -> V;
-'__bp_int'(_, _, _, What) -> erlang:error({integer_overflow, What}).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).

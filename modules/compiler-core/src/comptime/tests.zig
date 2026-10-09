@@ -40,6 +40,7 @@ test {
     _ = @import("./trace.zig");
     _ = @import("./template_eval.zig");
     _ = @import("./decorator_eval.zig");
+    _ = @import("./block_eval.zig");
     _ = @import("./runtime/persistent_beam.zig");
     _ = @import("./runtime/runtime.zig");
     _ = @import("./runtime/prelude.zig");

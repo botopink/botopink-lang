@@ -4,14 +4,36 @@ type RecordField(name: string, typeName: string)
 val f = comptime RecordField(name: "x", typeName: "i32");
 ```
 
------ COMPILE DIAGNOSTIC -- main
+----- COMPTIME VALUES -- main
 ```text
-error comptime: expression cannot be evaluated at compile time
- ┌─ main.bp:2:18
-  │
-2 │ val f = comptime RecordField(name: "x", typeName: "i32");
-  │                  ^^^^
+ct_1: val f = comptime RecordField(name: "x", typeName: "i32") → RecordField(name: "x", typeName: "i32")
+```
 
-  'call' is a runtime identifier
+----- BOTOPINK TRANSFORM CODE -- main.bp
+```botopink
+type RecordField(name: string, typeName: string)
+
+val f = RecordField(name: "x", typeName: "i32");
+```
+
+----- TYPED AST JSON -- main.json
+```json
+{
+  "declarations": [
+    {
+      "ast": "record_def",
+      "name": "RecordField",
+      "fields": {
+        "name": "string",
+        "typeName": "string"
+      }
+    },
+    {
+      "ast": "val",
+      "ident": "f",
+      "return_type": "RecordField"
+    }
+  ]
+}
 ```
 

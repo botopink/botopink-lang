@@ -2761,6 +2761,7 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {move, {y, 1}, {x, 0}}.
     {jump, {f, 386}}.
   {label, 388}.
+    {case_end, {x, 0}}.
   {label, 386}.
     {deallocate, 2}.
     return.

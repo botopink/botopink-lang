@@ -1,5 +1,5 @@
-/// What a decorator or template evaluation exchanged with its comptime
-/// runtime, kept for snapshots.
+/// What a decorator, template or `comptime` block evaluation exchanged with
+/// its comptime runtime, kept for snapshots.
 ///
 /// `template_eval` / `decorator_eval` record one `Entry` per evaluation: the
 /// module that ran (`Lang`) and the reply the runtime sent back to the
@@ -8,7 +8,9 @@
 const std = @import("std");
 const replyOrder = @import("runtime/reply_order.zig");
 
-pub const Kind = enum { template, decorator };
+/// `comptime`: a `comptime` block or expression the runtime evaluated
+/// (`block_eval.zig`, decisions 266 and 331).
+pub const Kind = enum { template, decorator, @"comptime" };
 
 /// What the listing of an evaluation is: the BEAM assembly the BEAM runtime
 /// loaded (front 14 step 3), or the wasm the wat runtime lowered the module

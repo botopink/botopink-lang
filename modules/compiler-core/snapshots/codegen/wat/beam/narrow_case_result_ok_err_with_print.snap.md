@@ -98,6 +98,7 @@ fn main() {
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
     {jump, {f, 11}}.
   {label, 17}.
+    {case_end, {x, 0}}.
   {label, 11}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 5}, {x, 0}}.
@@ -150,6 +151,7 @@ fn main() {
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
     {jump, {f, 44}}.
   {label, 46}.
+    {case_end, {x, 0}}.
   {label, 44}.
     {move, {x, 0}, {y, 11}}.
     {move, {y, 11}, {x, 0}}.

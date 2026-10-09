@@ -598,32 +598,181 @@ fn isLiteralIdent(name: []const u8) bool {
     return std.mem.eql(u8, name, "true") or std.mem.eql(u8, name, "false") or std.mem.eql(u8, name, "null");
 }
 
-/// Validates that every `comptime` / `comptime { }` expression in `program`
-/// contains only compile-time-evaluable nodes: literals, arithmetic and
-/// comparisons, and — inside a block — locals declared by the block itself.
-/// Returns the first offending expression, or null if valid.
+/// Decisions 266, 331 — what a module-level `comptime` may not read: a
+/// module-level `val` (its value exists when the program runs, not while it is
+/// compiled — `'greeting' is a runtime identifier`), unless the block declares
+/// the name itself. A call, a loop, a lambda or a record is admitted: the
+/// comptime runtime runs it (`block_eval.zig`), and what it cannot run is
+/// reported there, located. Two folds that evaluate to an error stay refused
+/// here (C4b): a constant zero divisor and a negated string. Returns the first
+/// offending node, or null.
 pub fn validateComptime(program: ast.Program) ?ComptimeError {
-    for (program.decls) |decl| {
-        if (validateDecl(decl)) |err| return err;
-    }
+    for (program.decls) |decl| switch (decl) {
+        .val => |v| if (v.value.* == .comptime_) {
+            var check = ReadCheck{ .program = program, .root = v.value };
+            check.walk(ast.Expr, v.value);
+            if (check.found) |err| return err;
+        },
+        else => {},
+    };
     return null;
 }
 
+/// The walk of `validateComptime` over one `comptime` node; no allocation —
+/// a name's declaration inside the node is searched for (`declares`).
+const ReadCheck = struct {
+    program: ast.Program,
+    root: *const ast.Expr,
+    found: ?ComptimeError = null,
+
+    fn walk(self: *ReadCheck, comptime U: type, ptr: *const U) void {
+        if (self.found != null) return;
+        if (U == ast.Expr) {
+            self.visit(ptr.*);
+            if (self.found != null) return;
+        }
+        if (U == ast.TypeRef or U == ast.Pattern) return;
+        switch (@typeInfo(U)) {
+            .@"struct" => |st| inline for (st.fields) |f| {
+                if (f.is_comptime) continue;
+                if (comptime mayHoldExpr(f.type)) self.walk(f.type, &@field(ptr.*, f.name));
+            },
+            .@"union" => |u| if (u.tag_type != null) switch (ptr.*) {
+                inline else => |*payload| if (comptime mayHoldExpr(@TypeOf(payload.*))) self.walk(@TypeOf(payload.*), payload),
+            },
+            .optional => |o| if (ptr.*) |*inner| self.walk(o.child, inner),
+            .pointer => |p| switch (p.size) {
+                .one => if (comptime mayHoldExpr(p.child)) self.walk(p.child, ptr.*),
+                .slice => if (comptime mayHoldExpr(p.child)) {
+                    for (ptr.*) |*e| self.walk(p.child, e);
+                },
+                else => {},
+            },
+            else => {},
+        }
+    }
+
+    fn visit(self: *ReadCheck, e: ast.Expr) void {
+        switch (e) {
+            .identifier => |i| switch (i.kind) {
+                .ident => |name| {
+                    if (isLiteralIdent(name) or !isModuleValue(self.program, name)) return;
+                    if (declares(self.root.*, name)) return;
+                    self.found = .{ .ident = name, .loc = i.loc };
+                },
+                else => {},
+            },
+            .binaryOp => |b| if (b.op == .div or b.op == .mod) {
+                if (constNumber(b.rhs.*)) |d| if (d == 0) {
+                    self.found = .{ .ident = "0", .loc = b.rhs.*.getLoc(), .reason = .divisionByZero };
+                };
+            },
+            .unaryOp => |u| if (u.op == .neg and isConstString(u.expr.*)) {
+                self.found = .{ .ident = "-", .loc = u.loc, .reason = .negatedNonNumber };
+            },
+            else => {},
+        }
+    }
+};
+
+fn mayHoldExpr(comptime U: type) bool {
+    return switch (@typeInfo(U)) {
+        .int, .float, .bool, .@"enum", .void, .comptime_int, .comptime_float, .@"fn", .@"opaque", .null, .undefined => false,
+        .pointer => |p| if (p.child == u8) false else if (@typeInfo(p.child) == .@"fn" or @typeInfo(p.child) == .@"opaque") false else true,
+        else => true,
+    };
+}
+
+/// A module-level `val` named `name`.
+fn isModuleValue(program: ast.Program, name: []const u8) bool {
+    for (program.decls) |d| switch (d) {
+        .val => |v| if (std.mem.eql(u8, v.name, name)) return true,
+        else => {},
+    };
+    return false;
+}
+
+/// Whether `root` declares `name` anywhere — a local, a loop's or a lambda's
+/// parameter, an `if` binding.
+fn declares(root: ast.Expr, name: []const u8) bool {
+    var d = Declares{ .name = name };
+    d.walk(ast.Expr, &root);
+    return d.hit;
+}
+
+const Declares = struct {
+    name: []const u8,
+    hit: bool = false,
+
+    fn walk(self: *Declares, comptime U: type, ptr: *const U) void {
+        if (self.hit) return;
+        if (U == ast.Expr) self.visit(ptr.*);
+        if (U == ast.TypeRef or U == ast.Pattern) return;
+        switch (@typeInfo(U)) {
+            .@"struct" => |st| inline for (st.fields) |f| {
+                if (f.is_comptime) continue;
+                if (comptime mayHoldExpr(f.type)) self.walk(f.type, &@field(ptr.*, f.name));
+            },
+            .@"union" => |u| if (u.tag_type != null) switch (ptr.*) {
+                inline else => |*payload| if (comptime mayHoldExpr(@TypeOf(payload.*))) self.walk(@TypeOf(payload.*), payload),
+            },
+            .optional => |o| if (ptr.*) |*inner| self.walk(o.child, inner),
+            .pointer => |p| switch (p.size) {
+                .one => if (comptime mayHoldExpr(p.child)) self.walk(p.child, ptr.*),
+                .slice => if (comptime mayHoldExpr(p.child)) {
+                    for (ptr.*) |*e| self.walk(p.child, e);
+                },
+                else => {},
+            },
+            else => {},
+        }
+    }
+
+    fn visit(self: *Declares, e: ast.Expr) void {
+        const eq = struct {
+            fn any(names: []const []const u8, n: []const u8) bool {
+                for (names) |x| if (std.mem.eql(u8, x, n)) return true;
+                return false;
+            }
+        };
+        switch (e) {
+            .binding => |b| switch (b.kind) {
+                .localBind => |lb| if (std.mem.eql(u8, lb.name, self.name)) {
+                    self.hit = true;
+                },
+                else => {},
+            },
+            .loop => |lp| if (eq.any(lp.params, self.name)) {
+                self.hit = true;
+            },
+            .function => |f| if (eq.any(f.kind.params, self.name)) {
+                self.hit = true;
+            },
+            .branch => |br| switch (br.kind) {
+                .if_ => |i| if (i.binding) |n| if (std.mem.eql(u8, n, self.name)) {
+                    self.hit = true;
+                },
+                else => {},
+            },
+            .call => |c| switch (c.kind) {
+                .call => |cc| for (cc.trailing) |tl| if (eq.any(tl.params, self.name)) {
+                    self.hit = true;
+                },
+                else => {},
+            },
+            else => {},
+        }
+    }
+};
+
 /// Decision 266 — whether a `comptime` node (`comptime <expr>` or
-/// `comptime { … }`) written anywhere, a body included, holds only what
-/// `eval.zig` folds: the module-level rule (`validateComptime`) read on one
-/// node. A body's `comptime` that passes is folded at build
-/// (`infer.zig` `foldBodyComptime`).
+/// `comptime { … }`) written anywhere holds only what `eval.zig` folds in Zig:
+/// literals, operators, the block's own locals, `if`, `break`. One that does
+/// not runs on the comptime runtime instead (`infer.zig` `foldBodyComptime`,
+/// decision 331).
 pub fn isFoldable(expr: ast.Expr) bool {
     if (expr != .comptime_) return false;
     return validateIfComptime(expr) == null;
-}
-
-fn validateDecl(decl: ast.DeclKind) ?ComptimeError {
-    switch (decl) {
-        .val => |v| return validateIfComptime(v.value.*),
-        else => return null,
-    }
 }
 
 fn validateIfComptime(expr: ast.Expr) ?ComptimeError {

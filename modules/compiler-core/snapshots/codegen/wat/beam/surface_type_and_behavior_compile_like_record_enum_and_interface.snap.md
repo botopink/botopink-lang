@@ -52,6 +52,7 @@ fn main() {
     {move, {y, 1}, {x, 0}}.
     {jump, {f, 10}}.
   {label, 12}.
+    {case_end, {x, 0}}.
   {label, 10}.
     {deallocate, 3}.
     return.

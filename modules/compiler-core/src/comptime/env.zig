@@ -1106,6 +1106,19 @@ pub const Env = struct {
     /// imported function itself, under that name) — what a decorator of this
     /// module carries when its body calls it (`infer.decoratorSupport`).
     importedFnSupport: std.StringHashMapUnmanaged([]const ast.FnDecl) = .empty,
+    /// Decision 331 — the declarations of the module being inferred
+    /// (`inferProgramTyped` sets them): the types and functions a `comptime`
+    /// evaluated on the runtime carries (`block_eval.zig`).
+    moduleDecls: []const ast.DeclKind = &.{},
+    /// Decision 331 — every module's type declarations the build analysed so
+    /// far, by module path (`comptime.zig`'s `typeDeclRegistry`): where
+    /// `block_eval.zig` finds a type of another package the block reaches.
+    /// Null in tooling that analyses one module.
+    typeDeclRegistry: ?*const std.StringHashMap(std.StringHashMap(ast.DeclKind)) = null,
+    /// Decision 331 — the last synthetic column a lifted `comptime` value's
+    /// node took (`block_eval.Lifter.nextLoc`): each node is located apart,
+    /// since the lowering tables are keyed by location.
+    comptimeLiftSeq: usize = 0,
     /// Decision 112 — the exports of each module an imported template was
     /// declared in, by module path, private functions and values included
     /// under `templatePrivateKey`: the names the template's own text may use.

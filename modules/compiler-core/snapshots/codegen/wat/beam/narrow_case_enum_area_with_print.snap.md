@@ -42,6 +42,7 @@ fn main() {
     {gc_bif, '*', {f, 0}, 0, [{y, 2}, {y, 2}], {x, 0}}.
     {jump, {f, 10}}.
   {label, 12}.
+    {case_end, {x, 0}}.
   {label, 10}.
     {deallocate, 3}.
     return.

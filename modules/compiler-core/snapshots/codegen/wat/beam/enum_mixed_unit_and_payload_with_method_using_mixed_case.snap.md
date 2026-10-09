@@ -46,6 +46,7 @@ val Maybe = type {
     {move, {literal, <<"just">>}, {x, 0}}.
     {jump, {f, 4}}.
   {label, 6}.
+    {case_end, {x, 0}}.
   {label, 4}.
     {deallocate, 3}.
     return.

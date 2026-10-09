@@ -20,9 +20,8 @@ ct_0: val pi2 = comptime {
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
-%% comptime val pi2
 pi2() ->
-    (3.14 * 2.0).
+    6.28.
 
 main() ->
     '__bp_print'([pi2()]).

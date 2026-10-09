@@ -63,6 +63,7 @@ fn describe() -> string {
     {move, {literal, <<"many">>}, {x, 0}}.
     {jump, {f, 4}}.
   {label, 7}.
+    {case_end, {x, 0}}.
   {label, 4}.
     {deallocate, 5}.
     return.

@@ -760,6 +760,15 @@ an `unknown` subject tests a primitive-type arm and binds its payload unboxed
 (`unknown_subjects`, `arm_unbox`) — as a plain identifier it was a binding that
 matched everything (`number 364`, a heap address). `tests/language/run/unknown_by_value.bp`
 pins it on four targets.
+A TUPLE in the box (`boxTupleAsUnknown`) is `[desc "tuple"][the tuple][arity][box 0]…`:
+the tuple stays the payload's first word, and each element goes in an `unknown`
+box of its own, typed from the literal's elements or the tuple type's, so
+`x is #(i32, string)` (`lowerIsTuple`) tests the arity and then each element as a
+primitive or named `is` does — by value, `#(2.0, "a") is #(i32, string)` holds.
+An element nothing types (a nested tuple, a function, an `i64` cell) writes arity
+`-1`, and `is` over that box traps. An element of an `unknown[]` walked by
+`map`/`filter`/… is an `unknown` local (`elemTypeRefOf`), not a value to box.
+`tests/language/run/is_truth_table.bp` holds §4.1 × §4.2 on four targets.
 
 **§7's `Display` half is answered by the module, not the descriptor**
 (`00 · 05-wasm` step 1 F4). `$__print_tagged_raw` first asks `$__display_of(v)`
@@ -1138,7 +1147,7 @@ member `libs/std/src/primitives.bp` declares — **every member is listed now**:
 | Family | Lowered |
 |---|---|
 | `String` | every member — `charCodeAt` (`$__str_char_code`: the code point at code-point index `i`, decoded from the UTF-8 sequence it walks to; `-1` out of range), `lastIndexOf` (`$__str_last_index_of`), `padStart`/`padEnd` (`$__str_pad`, the pad cycled), `replace`/`replaceAll` (`$__str_replace`; an empty pattern matches before every byte), `chars` (`$__str_split` on `""`, which cuts before every UTF-8 codepoint, as `split("")` does), `lines` (`$__str_lines`: cut at `\n`, a `\r` right before it dropped — node's `/\r?\n/`, erlang's `[<<"\r\n">>, <<"\n">>]` —, the last line keeping a trailing `\r`, `""` one empty line) and `words` (`$__str_words`: the runs of bytes that are not ` `/`\t`/`\n`/`\r`) |
-| `Array` | every member — `find` (`filter` then `at(0)`, the `?T` `at` answers); `lastIndexOf` (`$__arr_last_index_of_i32` / `_str` / `_f64`, `indexOf`'s equality from the last slot down); `pop` on a local, a global or a record's field (the `?T` `at(-1)` answers, then the name — or the field — rebound to `$__arr_slice(xs, 0, len - 1)`: a blob is a value, as `push` rebinds it to a grown copy; any other receiver may be an array another name holds, and is refused); `unique` (`$__arr_unique(xs, mode)`: consecutive duplicates dropped, `primitives.bp`'s body, compared by the element's word (`0` — an integer, a bool, an all-unit enum's ordinal), its `f32` (`1`) or a string's content (`2`), `uniqueMode` reading the receiver's shape); `flatten` / `flat` (`$__arr_flatten`, over a receiver whose shape is `[[…`); `flatMap(f)` (`map(f)` inlined, then `$__arr_flatten` — the body `primitives.bp` writes — when `f`'s tail is an array, `lambdaTailShape`); `chunked` / `sliding` (`$__arr_chunked` / `$__arr_sliding`, arrays of `$__arr_slice`s; `n <= 0` none); `fill(v)` (`$__arr_fill(len, v)`, `Array.repeat(v, xs.length)`, a float as the one cell every slot shares) |
+| `Array` | every member — `find` (`filter` then `at(0)`, the `?T` `at` answers); `lastIndexOf` (`$__arr_last_index_of_i32` / `_str` / `_f64`, `indexOf`'s equality from the last slot down); `pop` on a local, a global or a record's field (the `?T` `at(-1)` answers, then the name — or the field — rebound to `$__arr_slice(xs, 0, len - 1)`: a blob is a value, as `push` rebinds it to a grown copy; any other receiver may be an array another name holds, and is refused); `unique` (`$__arr_unique(xs, mode)`: every duplicate dropped, each value kept at its first occurrence (decision 217), `primitives.bp`'s body, compared by the element's word (`0` — an integer, a bool, an all-unit enum's ordinal), the bits of its `f64` (`1`) or a string's content (`2`), `uniqueMode` reading the receiver's shape); `flatten` / `flat` (`$__arr_flatten`, over a receiver whose shape is `[[…`); `flatMap(f)` (`map(f)` inlined, then `$__arr_flatten` — the body `primitives.bp` writes — when `f`'s tail is an array, `lambdaTailShape`); `chunked` / `sliding` (`$__arr_chunked` / `$__arr_sliding`, arrays of `$__arr_slice`s; `n <= 0` none); `fill(v)` (`$__arr_fill(len, v)`, `Array.repeat(v, xs.length)`, a float as the one cell every slot shares) |
 | `Integer`, `Bool` | all |
 | `Float` | all — `toString` (`$__f64_to_str`, `String(x)`: `5.0` → `5`, `0.1 + 0.2` → `0.30000000000000004`, as on node) |
 

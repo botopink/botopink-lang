@@ -1263,7 +1263,12 @@ codegen/
   inline cases, Array fallbacks — else `primDefaultShimNode`, which calls the
   instance `default fn` with omitted trailing params filled from their declared
   defaults), then a clause raising `{bp_unsupported_method, <<"m">>, Argc, Recv}`
-  (`toString/0` formats through `'__bp_text'` instead). The prelude's bodied
+  (`toString/0` formats through `'__bp_text'` instead) — or, when a type the
+  module carries declares `m` at that arity (a `comptime` block's module keeps
+  its types' methods inline: `Dict.at` beside `Array.at`, decision 331), a
+  clause calling that local `m`. A call no primitive answers but such a local
+  method does is the bare local call, and a static call `T.m()` is local too
+  (`typeCall` in untyped mode). The prelude's bodied
   instance defaults (`String.slice`, `Array.first`) are indexed by
   `collectPreludeInstanceDefaults` for **every** module, off the process-wide
   `prelude_cache` (whose arena outlives the emit, so a reached body may be
@@ -1896,7 +1901,10 @@ codegen/
   `emitGuardPre`/`emitGuardPost`; a bare `.ident` arm naming a nullary enum
   variant — local, imported by name, or from a `from "std"` module — is a match
   test against that atom, not a binding — `enum_variants`; `Ok`/`Err` arms test
-  the `ok`/`error` tags — `variantTag`),
+  the `ok`/`error` tags — `variantTag`; with no arm that takes every subject
+  (`armCatchesAll`: `_` or a plain binder, unguarded), the fall-through is
+  `{case_end, {x,0}}` — `{case_clause, V}`, as erlang raises; it answered the
+  subject as the `case`'s value — `run/case_no_arm_matches_raises`),
   `if` as value (`emitValueIf`) and as
   statement (`emitIf` — the false branch falls through, never an early
   `return`; the binding form `if (x) { v -> … }` runs when `x` is not
@@ -3071,10 +3079,11 @@ Primitive-receiver methods (`xs.map(f)`, `s.toUpper()`) are tagged `.prim` in
 **The table audited (02 step 7, 2026-09-26):** one call of every method
 `primitives.bp` declares on `Number`/`Integer`/`Signed`/`Float`/`Bool`/`String`/
 `Array` (82 calls, `Array.range`/`Array.repeat` included) compiles on erlang
-and on beam and prints the same 84 lines on both. `Array.unique` (drop
-consecutive duplicates) answers on erlang since std's body stopped calling a
-method on an optional and the erlang emitter types a `default fn` body's locals
-(§ erlang, "A `default fn` body's locals"); wasm traps on it (05's row).
+and on beam and prints the same 84 lines on both. `Array.unique` (every
+duplicate dropped, first occurrence kept — decision 217) answers on erlang since
+std's body stopped calling a method on an optional and the erlang emitter types a
+`default fn` body's locals (§ erlang, "A `default fn` body's locals"); wasm's
+`$__arr_unique` answers the same (`run/array_unique`).
 
 ## Quick-reference rules
 

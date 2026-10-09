@@ -50,6 +50,7 @@ val Color = type {
     {move, {literal, <<"blue">>}, {x, 0}}.
     {jump, {f, 4}}.
   {label, 7}.
+    {case_end, {x, 0}}.
   {label, 4}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 4}.

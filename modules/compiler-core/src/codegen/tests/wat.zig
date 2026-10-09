@@ -1119,7 +1119,7 @@ test "wat: prim method ---- the methods that trapped lower: lines, words, unique
     ,
         \\["a", "b", "c", "d"]
         \\["a", "b", "c\r"]
-        \\[3, 1, 3]
+        \\[3, 1]
         \\["a", "b"]
         \\[true, false]
         \\[1, 2, 3]

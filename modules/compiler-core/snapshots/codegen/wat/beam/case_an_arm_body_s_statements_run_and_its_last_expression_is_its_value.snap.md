@@ -51,6 +51,7 @@ fn main() {
     {call, 1, {f, 11}}.
     {jump, {f, 8}}.
   {label, 36}.
+    {case_end, {x, 0}}.
   {label, 8}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 4}.

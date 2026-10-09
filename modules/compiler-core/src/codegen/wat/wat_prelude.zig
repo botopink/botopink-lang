@@ -1679,22 +1679,31 @@ const str_words = func("__str_words", &.{"s"}, .i32, i32s(&.{ "n", "i", "cnt", "
 /// is the bits' equality.
 const load_cell_bits: [2]Instr = .{ load(0), .{ .load = .{ .ty = .i64 } } };
 
-/// `xs.unique()` — consecutive duplicates dropped, as `primitives.bp`'s body
-/// does: element `i` is kept when it differs from element `i - 1`. `mode`
-/// names the equality: `0` the slot's word (an integer, a bool, an all-unit
-/// enum's ordinal), `1` the `f64` the slot's cell holds (`$__box_f64`), by
-/// its bits, `2` a string's content.
-const arr_unique = func("__arr_unique", &.{ "xs", "mode" }, .i32, i32s(&.{ "n", "i", "k", "out", "keep", "b" }), &([_]Instr{
+/// `xs.unique()` — every duplicate dropped, each value kept at its first
+/// occurrence, in order (decision 217), as `primitives.bp`'s body does:
+/// element `i` is kept when no element already kept equals it. `mode` names
+/// the equality: `0` the slot's word (an integer, a bool, an all-unit enum's
+/// ordinal), `1` the `f64` the slot's cell holds (`$__box_f64`), by its bits,
+/// `2` a string's content.
+const arr_unique = func("__arr_unique", &.{ "xs", "mode" }, .i32, i32s(&.{ "n", "i", "k", "out", "keep", "j" }), &([_]Instr{
     get("xs"),  load(0),  set("n"), get("n"),   call("__arr_new"), set("out"),
-    loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk, c32(1), set("keep"), get("i") } ++ [_]Instr{
-        when(&([_]Instr{ get("i"), c32(1), op("sub"), set("b"), get("mode"), c32(1), op("eq") } ++ [_]Instr{
+    loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk, c32(1), set("keep"), c32(0), set("j") } ++ [_]Instr{
+        loopAs("ubrk", "ucont", &([_]Instr{ get("j"), get("k"), op("ge_u"), .{ .br_if = "ubrk" }, get("mode"), c32(1), op("eq") } ++ [_]Instr{
             whenElse(
-                &(slot("xs", "i") ++ load_cell_bits ++ slot("xs", "b") ++ load_cell_bits ++ [_]Instr{ op64("ne"), set("keep") }),
+                &(slot("xs", "i") ++ load_cell_bits ++ slot("out", "j") ++ load_cell_bits ++ [_]Instr{ op64("ne"), set("keep") }),
                 &([_]Instr{ get("mode"), c32(2), op("eq") } ++ [_]Instr{whenElse(
-                    &(slot("xs", "i") ++ [_]Instr{load(0)} ++ slot("xs", "b") ++ [_]Instr{ load(0), call("__str_eq"), op("eqz"), set("keep") }),
-                    &(slot("xs", "i") ++ [_]Instr{load(0)} ++ slot("xs", "b") ++ [_]Instr{ load(0), op("ne"), set("keep") }),
+                    &(slot("xs", "i") ++ [_]Instr{load(0)} ++ slot("out", "j") ++ [_]Instr{ load(0), call("__str_eq"), op("eqz"), set("keep") }),
+                    &(slot("xs", "i") ++ [_]Instr{load(0)} ++ slot("out", "j") ++ [_]Instr{ load(0), op("ne"), set("keep") }),
                 )}),
             ),
+            get("keep"),
+            op("eqz"),
+            .{ .br_if = "ubrk" },
+            get("j"),
+            c32(1),
+            op("add"),
+            set("j"),
+            .{ .br = "ucont" },
         })),
         get("keep"),
         when(&(slot("out", "k") ++ slot("xs", "i") ++ [_]Instr{ load(0), store(0), get("k"), c32(1), op("add"), set("k") })),

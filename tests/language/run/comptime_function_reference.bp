@@ -1,0 +1,32 @@
+//// Decision 331 — a `comptime`'s value may hold functions: a declared
+//// top-level function is written back as that reference, and a lambda that
+//// reads nothing the block declares as the lambda — rakun's bean catalogue
+//// (a `Dict` of factories) is this shape. Both are called after the build
+//// wrote them.
+
+import {collections.Dict} from "std";
+
+fn two() -> i32 {
+    return 2;
+}
+
+fn three() -> i32 {
+    return 3;
+}
+
+pub fn main() {
+    val fs: Dict<string, fn() -> i32> = comptime {
+        var d: Dict<string, fn() -> i32> = Dict.empty();
+        d = d.insert("two", two);
+        d = d.insert("three", three);
+        d = d.insert("four", { -> two() + two() });
+        break d;
+    };
+    for (fs.keys()) { k ->
+        val f = fs[k];
+        if (f) {
+            g ->
+            @print(k + " " + g().toString());
+        }
+    }
+}

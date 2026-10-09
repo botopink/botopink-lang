@@ -42,6 +42,7 @@ fn main() {
     return.
     {jump, {f, 10}}.
   {label, 12}.
+    {case_end, {x, 0}}.
   {label, 10}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.

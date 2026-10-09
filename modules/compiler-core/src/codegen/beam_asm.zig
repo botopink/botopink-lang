@@ -10661,7 +10661,35 @@ const Emitter = struct {
                 },
             }
         }
+        // No arm matched: every fail edge left the subject in `{x, 0}` (a
+        // guard's restore block puts it back), and erlang's `case` raises
+        // `{case_clause, V}` there. Falling into `end_label` answered the
+        // subject as the `case`'s value at exit 0. A value the checker cannot
+        // see past (a host function's answer) reaches it.
+        var catches_all = false;
+        for (arms) |arm| if (self.armCatchesAll(arm)) {
+            catches_all = true;
+            break;
+        };
+        if (!catches_all) try beamEmitter.writeCaseEnd(self.out, Op.xr(0));
         try beamEmitter.writeLabel(self.out, end_label);
+    }
+
+    /// Whether `arm` takes every subject: no guard, and `_` or a plain binder
+    /// (the branch of `lowerCase` that only moves the subject to a slot).
+    fn armCatchesAll(self: *Emitter, arm: anytype) bool {
+        if (arm.guard != null) return false;
+        return switch (arm.pattern) {
+            .wildcard => true,
+            .ident => |written| blk: {
+                const name = bareVariantName(written);
+                if (isVariantPath(written) or self.enum_variants.contains(name)) break :blk false;
+                if (std.mem.eql(u8, written, "true") or std.mem.eql(u8, written, "false") or primitiveTypeName(name)) break :blk false;
+                if (self.record_fields.contains(name) or self.enum_variant_names.contains(name)) break :blk false;
+                break :blk true;
+            },
+            else => false,
+        };
     }
 
     /// Emit a lambda body. When the final statement is a bare value-producing

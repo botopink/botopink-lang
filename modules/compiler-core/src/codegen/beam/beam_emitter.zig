@@ -371,6 +371,14 @@ pub fn writeMoveOp(w: *Writer, src: Operand, dst: Dest) Error!void {
     try closeInstr(w);
 }
 
+/// `{case_end, Src}.` — raises `{case_clause, Src}`, what erlang's `case`
+/// raises when no clause matches.
+pub fn writeCaseEnd(w: *Writer, src: Operand) Error!void {
+    try openInstr(w, "case_end");
+    try writeField(w, src);
+    try closeInstr(w);
+}
+
 /// `{jump, {f, N}}.`
 pub fn writeJump(w: *Writer, label: usize) Error!void {
     try openInstr(w, "jump");

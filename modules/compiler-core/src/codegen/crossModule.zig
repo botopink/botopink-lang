@@ -462,6 +462,8 @@ pub const Kind = enum {
     tpl,
     /// a decorator body evaluated at compile time.
     dec,
+    /// a `comptime` block or expression evaluated at compile time (decision 331).
+    ct,
 
     pub fn tag(self: Kind) []const u8 {
         return @tagName(self);

@@ -466,3 +466,51 @@ test "js: comptime ---- negating a string is a located comptime error (C4b)" {
         \\val q = comptime -"s";
     );
 }
+
+// Decisions 266, 331 (01-checker step 21) — a `comptime` with a call and a
+// loop runs on the comptime runtime, never on the target: the `COMPTIME
+// REPLY` is the same on the BEAM and the WAT runtime (the runtime-parity
+// audit compares the two snapshot trees), and every backend emits `2` and `6`
+// where the source wrote the two `comptime`s.
+test "js: comptime runtime ---- a block with a call and a loop is evaluated at build" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn add(a: i32, b: i32) -> i32 {
+        \\    return a + b;
+        \\}
+        \\
+        \\fn two() -> i32 {
+        \\    return 2;
+        \\}
+        \\
+        \\fn main() {
+        \\    val a = comptime two();
+        \\    @print(a);
+        \\    val d = comptime {
+        \\        var d = 0;
+        \\        for ([1, 2, 3]) { b -> d = add(d, b); }
+        \\        break d;
+        \\    };
+        \\    @print(d);
+        \\}
+    );
+}
+
+// Decision 331 — a record and a declared function lifted: the record the
+// block built is written as its constructor, the function as its name, and a
+// lambda reading nothing the block declares as the lambda.
+test "js: comptime runtime ---- a record holding a function reference is lifted" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\type Op(name: string, run: fn() -> i32, twice: fn() -> i32)
+        \\
+        \\fn two() -> i32 {
+        \\    return 2;
+        \\}
+        \\
+        \\fn main() {
+        \\    val op = comptime Op(name: "two" + "!", run: two, twice: { -> two() * 2 });
+        \\    @print(op.name);
+        \\    @print(op.run());
+        \\    @print(op.twice());
+        \\}
+    );
+}

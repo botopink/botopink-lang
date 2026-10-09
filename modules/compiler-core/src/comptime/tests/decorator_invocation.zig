@@ -396,3 +396,45 @@ test "decorator invocation: mock-style synthesis from an interface compiles" {
         \\fn useit() -> i32 { return mockCounter().value(); }
     );
 }
+
+test "decorator invocation: a helper of another module builds that module's record on both runtimes" {
+    // A library's `#[page]` calls `routing`'s `segment.parseSegment`, which
+    // builds a `Segment(…)`: the record travels into the decorator module with
+    // the helper (`block_eval.typesReached`), and a method the body calls on
+    // it with the type. The parent binary lowered `Seg(…)` as a call of an
+    // undefined `Seg/2` — the decorator module did not compile on either
+    // runtime ("call to undefined function Seg/2"), and `s.shout()` was a
+    // method no primitive answers.
+    const lib =
+        \\pub type Seg(name: string, size: i32) {
+        \\    pub fn shout(self: Self) -> string {
+        \\        return self.name.toUpper();
+        \\    }
+        \\}
+        \\pub fn parseSeg(raw: string) -> Seg {
+        \\    return Seg(name: raw, size: raw.length());
+        \\}
+    ;
+    const src =
+        \\import {seg.parseSeg};
+        \\fn page(comptime decl: @Decl) {
+        \\    val s = parseSeg(decl.name);
+        \\    @emit("pub fn seen" + decl.name + "() -> string { return \"" + s.shout() + s.size.toString() + "\"; }");
+        \\}
+        \\#[page]
+        \\type Home(x: i32)
+        \\val shown = seenHome();
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const replies = try h.repliesIdenticalAcrossRuntimes(std.testing.allocator, arena.allocator(), @src(), &.{
+        .{ .path = "seg", .source = lib },
+        .{ .path = "", .source = src },
+    });
+    for (replies) |r| {
+        if (std.mem.indexOf(u8, r, "return \\\"HOME4\\\";") != null) return;
+    }
+    std.debug.print("\nno reply emits seenHome:\n", .{});
+    for (replies) |r| std.debug.print("{s}\n", .{r});
+    return error.TestExpectedContains;
+}

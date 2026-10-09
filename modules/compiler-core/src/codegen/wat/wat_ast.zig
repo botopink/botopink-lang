@@ -469,8 +469,8 @@ pub const HelperGroup = enum {
     /// `$__str_lines(s)` / `$__str_words(s)` — `s.lines()` / `s.words()`.
     str_lines,
     str_words,
-    /// `$__arr_unique(xs, mode)` — `xs.unique()`, consecutive duplicates
-    /// dropped by the slot's word (`0`), its `f32` (`1`) or a string's content (`2`).
+    /// `$__arr_unique(xs, mode)` — `xs.unique()`, each value kept at its first
+    /// occurrence, compared by the slot's word (`0`), its `f64` (`1`) or a string's content (`2`).
     arr_unique,
     /// `$__arr_flatten(xs)` — `flatten` / `flat`, and `flatMap` after its `map`.
     arr_flatten,

@@ -16,6 +16,7 @@ const envMod = @import("env.zig");
 const TypeError = @import("error.zig").TypeError;
 const errorMod = @import("error.zig");
 const evalMod = @import("eval.zig");
+const blockEval = @import("block_eval.zig");
 const diagnostics = @import("diagnostics.zig");
 const reflectionMod = @import("reflection.zig");
 const effectChain = @import("effect_chain.zig");
@@ -730,6 +731,7 @@ fn refuseDeclsNamedLikeImports(env: *Env, program: ast.Program) InferError!void 
 pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBinding {
     var list: std.ArrayListUnmanaged(TypedBinding) = .empty;
     env.testIndex = 0;
+    env.moduleDecls = program.decls;
     // Decision 216 (3): before this module's decorators run, `Owner.Name`
     // may be an associated type they are about to declare.
     try noteOwnDecls(env, program);
@@ -4039,8 +4041,16 @@ fn runDeclDecorators(
         else
             .{ .fns = sig.support, .conflict = sig.conflict };
         if (found.conflict) |c| return decoratorError(env, a, c, "Rename one of the two functions, so each name the decorator reaches is one function.");
-        const support = found.fns;
-        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, dfn, support, handle, plain, &env.comptimeTraces) catch {
+        // The record and enum types the decorator and its functions name
+        // (a package record an imported helper builds) travel with them
+        // (`block_eval.typesReached`); the evaluator's own (`DeclKind`,
+        // `Span`) are injected by it.
+        const carried = try env.arena.alloc(ast.FnDecl, 1 + found.fns.len);
+        carried[0] = dfn;
+        @memcpy(carried[1..], found.fns);
+        const reached = try blockEval.typesReached(env, carried, &.{ "DeclKind", "Span", "Decl" });
+        const support = try std.mem.concat(env.arena, ast.FnDecl, &.{ found.fns, reached.fns });
+        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, dfn, support, reached.types, handle, plain, &env.comptimeTraces) catch {
             return decoratorError(env, a, "the decorator evaluator failed to run", "Decorator bodies run in a persistent `erl` process at compile time — check that `erl` is on PATH.");
         };
         switch (outcome) {
@@ -16399,24 +16409,67 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
     };
 }
 
-/// Decision 266 — a `comptime` is evaluated at compile time everywhere. One
-/// `eval.zig` folds (`errorMod.isFoldable`: literals, operators, the block's
-/// own locals, `if`, `break`) is answered here and its value recorded in
-/// `env.srcRewrites` under the node's loc; the transform splices it in place
-/// of the node in every body it walks (`transform.zig` `rewriteExpr`), so no
-/// backend meets a folded `comptime` (a body's `comptime { … }` used to reach
-/// commonJS as its `break` value alone, its locals dropped, and wasm not at
-/// all). A module-level `val`'s `comptime` keeps its own path
-/// (`comptime.zig` `evaluateComptime`), which never reads this entry. A node
-/// the folder cannot read (a call, a loop — step 21's comptime-runtime boxes)
-/// is left as it was.
+/// Decisions 266, 331 — a `comptime` is evaluated at compile time everywhere,
+/// independent of the target. One `eval.zig` folds (`errorMod.isFoldable`:
+/// literals, operators, the block's own locals, `if`, `break`) is answered
+/// here; any other — a call, a loop, a lambda, a record — runs on the comptime
+/// runtime (`block_eval.zig`) and its value is lifted. Either way the value is
+/// recorded in `env.srcRewrites` under the node's loc; the transform splices
+/// it in place of the node in every body it walks (`transform.zig`
+/// `rewriteExpr`) and in a module-level `val` (`transform.zig`'s phase 2), so
+/// no backend meets a `comptime`. The lifted value is not inferred again: it
+/// is the value of a node already typed (the `comptime`'s type is its type),
+/// and every function it carries is the node the block wrote — the lambda or
+/// the identifier inference already walked, its lowerings recorded under its
+/// own locations.
+/// Tooling that runs no comptime runtime (`env.templateEval` null) leaves a
+/// node the folder cannot read as it was.
 fn foldBodyComptime(env: *Env, ct: ast.ComptimeExprOf(.untyped), typed: TypedExpr, loc: ast.Loc) InferError!void {
-    if (!errorMod.isFoldable(.{ .comptime_ = ct })) return;
-    const folded = evalMod.foldToExpr(env.arena, typed, loc) catch |err| switch (err) {
+    if (errorMod.isFoldable(.{ .comptime_ = ct })) {
+        const folded = evalMod.foldToExpr(env.arena, typed, loc) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.UnsupportedComptimeValue => null,
+        };
+        if (folded) |f| return env.srcRewrites.put(loc, f);
+    }
+    if (try blockEval.runtimeRead(env, ct)) |read| {
+        env.lastError = TypeError.custom(
+            try std.fmt.allocPrint(env.arena, "expression cannot be evaluated at compile time: '{s}' is a runtime identifier", .{read.name}),
+            "A `comptime` runs while the program is compiled (decision 331): it reads its own locals, literals, functions and types — not a local, a parameter or a module-level `val`, which exist only when the program runs.",
+        ).withLoc(read.loc);
+        return error.TypeError;
+    }
+    const ctx = env.templateEval orelse return;
+    const prepared = try blockEval.prepare(env, ct);
+    const support = try blockEval.collectSupport(env, prepared);
+    const outcome = blockEval.evaluate(env.arena, ctx.io, env.modulePath, prepared, support, &env.comptimeTraces) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
-        error.UnsupportedComptimeValue => return,
-    } orelse return;
-    try env.srcRewrites.put(loc, folded);
+        error.EvalFailed => {
+            env.lastError = TypeError.custom(
+                "the comptime evaluator failed to run",
+                "A `comptime` runs on the comptime runtime at build time (decision 331) — check that `erl` is on PATH for an erlang or beam target.",
+            ).withLoc(loc);
+            return error.TypeError;
+        },
+    };
+    const value = switch (outcome) {
+        .value => |v| v,
+        .err => |msg| {
+            env.lastError = TypeError.custom(msg, "Raised while the `comptime` ran at build time (decision 331).").withLoc(loc);
+            return error.TypeError;
+        },
+    };
+    const lifted = switch (try blockEval.lift(env, prepared, support, value, typed.getType(), loc)) {
+        .expr => |e| e,
+        .refused => |msg| {
+            env.lastError = TypeError.custom(
+                msg,
+                "A `comptime`'s value is written into the program (decision 331): a literal, an array, a tuple, a record, a declared function, or a lambda that reads nothing the block declares.",
+            ).withLoc(loc);
+            return error.TypeError;
+        },
+    };
+    try env.srcRewrites.put(loc, lifted);
 }
 
 /// Infer type for comptime expressions (comptime, assert, assertPattern).

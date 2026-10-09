@@ -33,7 +33,7 @@ ct_0: val COMMANDS = comptime ["calc", "noop", "help"] → ["calc", "noop", "hel
 -export(['_botopink_main'/0, main/1]).
 
 'COMMANDS'() ->
-    ["calc", "noop", "help"].
+    [<<"calc">>, <<"noop">>, <<"help">>].
 
 main() ->
     R1 = 'execute_$0'(10),

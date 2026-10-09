@@ -18,6 +18,9 @@ pub const ComptimeEntry = struct {
     expr: ast.TypedExpr,
     /// The declaration as written (formatted), shown next to its value.
     source: []const u8 = "",
+    /// Decision 331 — the value the comptime runtime computed, as the
+    /// expression the program is emitted with; listed instead of a fold.
+    lifted: ?[]const u8 = null,
 };
 
 pub const RunResult = struct {
@@ -48,7 +51,7 @@ pub fn evaluate(allocator: std.mem.Allocator, entries: []const ComptimeEntry) Ev
         values.deinit();
     }
     for (entries) |e| {
-        const lit = try literal(allocator, try valueOf(arena, &root, e.expr));
+        const lit = if (e.lifted) |text| try allocator.dupe(u8, text) else try literal(allocator, try valueOf(arena, &root, e.expr));
         errdefer allocator.free(lit);
         try values.put(try allocator.dupe(u8, e.id), lit);
         try writeListing(allocator, &script, e, lit);

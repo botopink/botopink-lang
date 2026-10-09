@@ -40,6 +40,7 @@ fn process(a: i32, b: i32) {
     {move, {atom, undefined}, {x, 0}}.
     {jump, {f, 4}}.
   {label, 6}.
+    {case_end, {x, 0}}.
   {label, 4}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 2}.

@@ -12,9 +12,7 @@ ct_0: val hash = comptime {
 
 ----- BOTOPINK TRANSFORM CODE -- main.bp
 ```botopink
-val hash = comptime {
-    break 6364 + 11;
-};
+val hash = 6375;
 ```
 
 ----- TYPED AST JSON -- main.json

@@ -319,8 +319,18 @@ pub fn transform(
                 else => false,
             };
             if (is_comptime) {
-                // Look up the comptime value and replace with a literal.
-                if (agg.val_ct_map.get(val_decl.name)) |ct_id| {
+                // Decisions 266, 331 — the value inference evaluated (folded,
+                // or run on the comptime runtime and lifted) under the
+                // `comptime`'s loc, rewritten like any spliced code. It is
+                // read first: the `ct_<i>` entries below are numbered by
+                // binding, which a `val` after an import does not match
+                // (step 20's finding — the `val` reached commonJS unemitted).
+                if (agg.src_rewrites.get(val_decl.value.comptime_.loc)) |rewrite| {
+                    const spliced = try allocator.create(ast.Expr);
+                    spliced.* = rewrite.*;
+                    val_decl.value = spliced;
+                    rewriteExpr(&agg, fn_decls, comptime_arrays, val_decl.value) catch return error.OutOfMemory;
+                } else if (agg.val_ct_map.get(val_decl.name)) |ct_id| {
                     if (agg.comptime_vals.get(ct_id)) |lit| {
                         val_decl.value.deinit(allocator);
                         allocator.destroy(val_decl.value);

@@ -82,6 +82,7 @@ pub fn main() {
     {move, {literal, <<"done">>}, {x, 0}}.
     {jump, {f, 13}}.
   {label, 19}.
+    {case_end, {x, 0}}.
   {label, 13}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.

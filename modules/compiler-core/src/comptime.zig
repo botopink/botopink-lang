@@ -941,6 +941,7 @@ fn analyzeMerged(
     env.templateEval = templateEvalCtx;
     env.skipDecoratorInvoke = true;
     env.target = target_name;
+    env.typeDeclRegistry = typeDeclRegistry;
 
     // Decision 216 (3): this module's own associated types exist now.
     var owners = try assocOwners(arena, merged_in, mod.path, typeDeclRegistry, reflection);
@@ -1059,6 +1060,7 @@ fn analyzeSource(
     // `markStdImports` to red imports of `from "std"` modules whose
     // host-bound declares lack an `#[@External.<Target>(…)]` match.
     env.target = target_name;
+    env.typeDeclRegistry = typeDeclRegistry;
 
     var lexer = Lexer.init(source);
     const tokens = lexer.scanAll(arena) catch |err| switch (err) {
@@ -2550,12 +2552,17 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
 pub fn evaluateComptime(
     allocator: std.mem.Allocator,
     bindings: []const infer.TypedBinding,
+    /// Decision 331 — the values inference lifted (`Env.srcRewrites`): a
+    /// `comptime` the Zig folder cannot read ran on the comptime runtime, and
+    /// its listing shows the expression the program is emitted with.
+    lifted: ?*const std.AutoHashMap(ast.Loc, *const ast.Expr),
 ) !ComptimeEvalResult {
     var entries: std.ArrayListUnmanaged(evalMod.ComptimeEntry) = .empty;
     defer {
         for (entries.items) |e| {
             allocator.free(e.id);
             allocator.free(e.source);
+            if (e.lifted) |l| allocator.free(l);
         }
         entries.deinit(allocator);
     }
@@ -2567,7 +2574,13 @@ pub fn evaluateComptime(
         var decl = [_]ast.DeclKind{b.decl};
         const source = format.format(allocator, .{ .decls = &decl }) catch try allocator.dupe(u8, b.name);
         errdefer allocator.free(source);
-        try entries.append(allocator, .{ .id = id, .expr = te, .source = source });
+        const shown: ?[]const u8 = shown: {
+            const map = lifted orelse break :shown null;
+            if (b.decl != .val or validation.isFoldable(b.decl.val.value.*)) break :shown null;
+            const value = map.get(b.decl.val.value.getLoc()) orelse break :shown null;
+            break :shown try liftedText(allocator, value);
+        };
+        try entries.append(allocator, .{ .id = id, .expr = te, .source = source, .lifted = shown });
     }
 
     if (entries.items.len == 0) {
@@ -2579,6 +2592,21 @@ pub fn evaluateComptime(
 
     const result = try evalMod.evaluate(allocator, entries.items);
     return .{ .comptime_script = result.script, .comptime_vals = result.values };
+}
+
+/// A lifted value as the formatter writes it (`Dict(pairs: [])`), for the
+/// `COMPTIME VALUES` listing. Owned by `allocator`.
+fn liftedText(allocator: std.mem.Allocator, value: *const ast.Expr) ![]const u8 {
+    var arena_state = std.heap.ArenaAllocator.init(allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const copy = try arena.create(ast.Expr);
+    copy.* = value.*;
+    var decl = [_]ast.DeclKind{.{ .val = .{ .name = "v", .value = copy } }};
+    const text = try format.format(arena, .{ .decls = &decl });
+    const head = "val v = ";
+    const start = if (std.mem.indexOf(u8, text, head)) |i| i + head.len else 0;
+    return allocator.dupe(u8, std.mem.trimEnd(u8, std.mem.trimEnd(u8, text[start..], "\n"), ";"));
 }
 
 // ── LSP entry point: type inference only ─────────────────────────────────────
@@ -2908,7 +2936,7 @@ pub fn compile(
                     // below still reads `succ.env.method_lowerings`. The env is
                     // arena-backed; the session arena reclaims it wholesale.
                 }
-                const ct = try evaluateComptime(arena_alloc, succ.bindings);
+                const ct = try evaluateComptime(arena_alloc, succ.bindings, &succ.env.srcRewrites);
 
                 var fn_decls = std.StringHashMap(ast.FnDecl).init(arena_alloc);
                 var comptime_arrays = std.StringHashMap([]const ast.TypedExpr).init(arena_alloc);

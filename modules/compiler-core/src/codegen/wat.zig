@@ -2823,6 +2823,7 @@ const Emitter = struct {
             try self.emit(opOf("i32", "and"));
             return;
         }
+        if (t.tupleElems()) |elems| return self.lowerIsTuple(cc.args[0].value.*, elems);
         const descs = try self.typeDescriptors(t);
         if (descs.len == 0) {
             return self.refuseUnlessTemplate(self.call_loc, "`is {f}`: the wasm backend has no run-time test for this type (no value of it carries a descriptor)", .{t});
@@ -3013,6 +3014,7 @@ const Emitter = struct {
                 return self.lowerCoerced(value, "i32");
             return self.refuse(value.getLoc(), "the wasm backend cannot box this value as `unknown`: nothing gives it a static type here", .{});
         };
+        if (kind == .tuple) return self.boxTupleAsUnknown(value);
         const name = switch (kind) {
             .i32_ => "i32",
             .f64_ => "f64",
@@ -3032,6 +3034,227 @@ const Emitter = struct {
             try self.emitCf(.{ .store = .{ .offset = tag_header_bytes } }, "unknown: box a{s} {s}", .{ if (kind == .arr) "n" else "", name });
         }
         try self.loadTaggedBase(base);
+    }
+
+    /// How a tuple element's word goes into an `unknown` slot of its own:
+    /// boxed as the primitive it is, as it is when it carries a header (a
+    /// record, a variant, an `unknown`), or `unresolved` when nothing says
+    /// what the word holds (a nested tuple, a function, an `i64` cell, a type
+    /// parameter's slot).
+    const ElemBox = enum { i32_, f64_, bool_, str, arr, as_is, unresolved };
+
+    fn elemBoxOfExpr(self: *Emitter, e: ast.Expr) ElemBox {
+        if (isNullLit(e) or self.isUnknownExpr(e) or self.isTaggedValue(e)) return .as_is;
+        if (self.fnValueArity(e) != null) return .unresolved;
+        if (self.isStringExpr(e)) return .str;
+        if (self.isBoolExpr(e)) return .bool_;
+        const wt = self.wasmTypeOf(e);
+        if (std.mem.eql(u8, wt, "f64")) return .f64_;
+        if (wt[0] != 'i' or wt.len != 3 or wt[1] != '3') return .unresolved;
+        if (self.isArrayExpr(e)) return .arr;
+        if (isTupleLit(e) or self.typeRefIsTuple(e)) return .unresolved;
+        if (self.isKnownInteger(e)) return .i32_;
+        return .unresolved;
+    }
+
+    fn elemBoxOfTypeRef(self: *Emitter, t: ast.TypeRef) ElemBox {
+        if (isUnknownTypeRef(t)) return .as_is;
+        if (t == .array) return .arr;
+        if (t == .generic and std.mem.eql(u8, t.generic.name, "Array")) return .arr;
+        if (primTestOf(t)) |pt| {
+            const n = t.named;
+            const eq = std.mem.eql;
+            if (eq(u8, n, "i64") or eq(u8, n, "u64")) return .unresolved;
+            return switch (pt) {
+                .int => .i32_,
+                .float => .f64_,
+                .bool_ => .bool_,
+                .string => .str,
+            };
+        }
+        const descs = self.typeDescriptors(t) catch return .unresolved;
+        if (descs.len > 0) {
+            // An enum whose values may be bare ordinals (a unit variant
+            // beside allocated ones) has no header to read on every value.
+            const n = typeRefName(t);
+            if (self.enums.get(n)) |variants| {
+                if (variants.len != descs.len) return .unresolved;
+            }
+            return .as_is;
+        }
+        if (t == .named and self.enums.contains(t.named)) return .i32_;
+        return .unresolved;
+    }
+
+    /// Decision 8 §4.2 — a tuple in an `unknown` slot: `[desc "tuple"][the
+    /// tuple][arity][box 0]…[box n-1]`, each element in an `unknown` box of its
+    /// own, so `v is #(i32, string)` asks every element by value as a
+    /// primitive `is` does. The tuple stays the payload's first word, which is
+    /// what every other reader of a boxed tuple loads. An element nothing
+    /// types writes arity `-1`: `is` over such a box traps rather than answer.
+    fn boxTupleAsUnknown(self: *Emitter, value: ast.Expr) anyerror!void {
+        const lit_elems: ?[]const ast.Expr = switch (value) {
+            .collection => |col| switch (col.kind) {
+                .tupleLit => |tl| tl.elems,
+                else => null,
+            },
+            else => null,
+        };
+        const tr_elems: ?[]ast.TypeRef = if (self.typeRefOf(value)) |t| t.tupleElems() else null;
+        const n: usize = if (lit_elems) |es| es.len else if (tr_elems) |ts| ts.len else 0;
+        const ra = self.reg_arena.allocator();
+        const kinds = try ra.alloc(ElemBox, n);
+        var resolved = lit_elems != null or tr_elems != null;
+        for (kinds, 0..) |*k, i| {
+            k.* = if (lit_elems) |es| self.elemBoxOfExpr(es[i]) else self.elemBoxOfTypeRef(tr_elems.?[i]);
+            if (k.* == .unresolved) resolved = false;
+        }
+        const tup = try self.memName(self.nextMem());
+        try self.lowerCoerced(value, "i32");
+        try self.emit(.{ .local_set = tup });
+        const desc = try self.primDescriptorAddr("tuple");
+        const base = try self.allocTagged(desc, @intCast(8 + 4 * (if (resolved) n else 0)));
+        try self.emit(.{ .local_get = base });
+        try self.emit(.{ .local_get = tup });
+        try self.emitC(.{ .store = .{ .offset = tag_header_bytes } }, "unknown: box a tuple");
+        try self.emit(.{ .local_get = base });
+        try self.emit(try self.constInt(if (resolved) @as(i32, @intCast(n)) else -1));
+        try self.emitC(.{ .store = .{ .offset = tag_header_bytes + 4 } }, "unknown: the tuple's arity (-1: an element nothing types)");
+        if (!resolved) {
+            try self.loadTaggedBase(base);
+            return;
+        }
+        const word = try self.memName(self.nextMem());
+        const boxed = try self.memName(self.nextMem());
+        for (kinds, 0..) |k, i| {
+            try self.emit(.{ .local_get = tup });
+            try self.emitLoadOffset(@intCast(i * 4));
+            try self.emit(.{ .local_set = word });
+            switch (k) {
+                .as_is => try self.emit(.{ .local_get = word }),
+                .f64_ => {
+                    const eb = try self.allocTagged(try self.primDescriptorAddr("f64"), 8);
+                    try self.emit(.{ .local_get = eb });
+                    try self.emit(.{ .local_get = word });
+                    try self.emit(.{ .load = .{ .ty = .f64 } });
+                    try self.emitC(.{ .store = .{ .ty = .f64, .offset = tag_header_bytes } }, "unknown: box a tuple's f64 element");
+                    try self.loadTaggedBase(eb);
+                },
+                .i32_, .bool_, .str, .arr => {
+                    const name: []const u8 = switch (k) {
+                        .i32_ => "i32",
+                        .bool_ => "bool",
+                        .str => "string",
+                        else => "array",
+                    };
+                    const eb = try self.allocTagged(try self.primDescriptorAddr(name), 4);
+                    try self.emit(.{ .local_get = eb });
+                    try self.emit(.{ .local_get = word });
+                    try self.emitCf(.{ .store = .{ .offset = tag_header_bytes } }, "unknown: box a tuple's {s} element", .{name});
+                    try self.loadTaggedBase(eb);
+                },
+                .unresolved => unreachable,
+            }
+            try self.emit(.{ .local_set = boxed });
+            try self.emit(.{ .local_get = base });
+            try self.emit(.{ .local_get = boxed });
+            try self.emit(.{ .store = .{ .offset = @intCast(tag_header_bytes + 8 + 4 * i) } });
+        }
+        try self.loadTaggedBase(base);
+    }
+
+    /// `x is #(T0, …, Tn-1)`: the subject in its `unknown` box is a boxed
+    /// tuple of arity `n` whose every element box answers `is Ti`. A box whose
+    /// elements nothing typed (arity `-1`) traps.
+    fn lowerIsTuple(self: *Emitter, subject: ast.Expr, elems: []const ast.TypeRef) anyerror!void {
+        const b = self.builder();
+        const m = try self.memName(self.nextMem());
+        const r = try self.memName(self.nextMem());
+        const e = try self.memName(self.nextMem());
+        try self.lowerAsUnknown(subject);
+        try self.emit(.{ .local_set = m });
+        try self.emit(try self.constInt(0));
+        try self.emit(.{ .local_set = r });
+
+        // Innermost first: element i's test runs only when every earlier one held.
+        var inner: ?Seq = null;
+        var i = elems.len;
+        while (i > 0) {
+            i -= 1;
+            var c: Capture = .{};
+            self.open(&c);
+            try self.emit(.{ .local_get = m });
+            try self.emitLoadOffset(@intCast(8 + 4 * i));
+            try self.emit(.{ .local_set = e });
+            try self.emitElemIsTest(elems[i], e);
+            try self.emit(.{ .local_set = r });
+            if (inner) |sq| {
+                try self.emit(.{ .local_get = r });
+                try self.emit(.{ .@"if" = .{ .then = .{ .seq = sq } } });
+            }
+            inner = self.seal(&c, .none);
+        }
+
+        var arity_c: Capture = .{};
+        self.open(&arity_c);
+        try self.emit(.{ .local_get = m });
+        try self.emitLoadOffset(4);
+        try self.emit(try self.constInt(-1));
+        try self.emit(opOf("i32", "eq"));
+        var trap_c: Capture = .{};
+        self.open(&trap_c);
+        try self.emitC(.@"unreachable", "`is` over a tuple whose elements nothing typed");
+        const trap_seq = self.seal(&trap_c, .none);
+        try self.emit(.{ .@"if" = .{ .then = .{ .seq = trap_seq } } });
+        try self.emit(.{ .local_get = m });
+        try self.emitLoadOffset(4);
+        try self.emit(try self.constInt(@as(i32, @intCast(elems.len))));
+        try self.emit(opOf("i32", "eq"));
+        var hit_c: Capture = .{};
+        self.open(&hit_c);
+        if (inner) |sq| {
+            for (sq.lines) |ln| try self.cur.?.append(self.arena(), ln);
+        } else {
+            try self.emit(try self.constInt(1));
+            try self.emit(.{ .local_set = r });
+        }
+        const hit_seq = self.seal(&hit_c, .none);
+        try self.emit(.{ .@"if" = .{ .then = .{ .seq = hit_seq } } });
+        const arity_seq = self.seal(&arity_c, .none);
+
+        try self.emit(.{ .local_get = m });
+        try self.emit(b.helper(.unknown_kind));
+        try self.emit(try self.constInt(@as(i32, 't')));
+        try self.emit(opOf("i32", "eq"));
+        try self.emit(.{ .@"if" = .{ .then = .{ .seq = arity_seq } } });
+        try self.emit(.{ .local_get = r });
+    }
+
+    /// With element box `e` in a local, leave whether it holds `t`.
+    fn emitElemIsTest(self: *Emitter, t: ast.TypeRef, e: []const u8) anyerror!void {
+        if (isUnknownTypeRef(t)) {
+            try self.emit(try self.constInt(1));
+            return;
+        }
+        if (primTestOf(t)) |pt| {
+            try self.emit(.{ .local_get = e });
+            try self.emitPrimTest(pt);
+            return;
+        }
+        const descs = try self.typeDescriptors(t);
+        if (descs.len == 0 or t.tupleElems() != null) {
+            return self.refuseUnlessTemplate(self.call_loc, "`is` over a tuple: the wasm backend has no run-time test for an element of type `{f}`", .{t});
+        }
+        try self.emit(.{ .local_get = e });
+        try self.emit(try self.constInt(heap_floor));
+        try self.emit(opOf("i32", "ge_u"));
+        for (descs, 0..) |d, k| {
+            try self.emitHeaderLoad(e);
+            try self.emit(try self.constInt(d));
+            try self.emit(opOf("i32", "eq"));
+            if (k > 0) try self.emit(opOf("i32", "or"));
+        }
+        try self.emit(opOf("i32", "and"));
     }
 
     /// Whether `e` is known to be an integer: a numeral, an integer-typed
@@ -9154,6 +9377,10 @@ const Emitter = struct {
             // An element of a generic record whose type arguments are known
             // (`ctorTypeRef`) keeps them, so `p.matched()` specialises.
             if (self.elemTypeRefOf(recv)) |et| if (et == .generic and self.record_generics.contains(et.generic.name)) try self.local_typerefs.put(p, et);
+            // An element of an `unknown[]` is an `unknown` (its own header):
+            // `v is i32` reads the box, not a guess at a static type
+            // (`run/is_truth_table`).
+            if (self.elemTypeRefOf(recv)) |et| if (isUnknownTypeRef(et)) try self.local_typerefs.put(p, et);
             // The parameter is one ELEMENT, so it has the element's record
             // type. Without it a field read off it had no receiver type and
             // fell to the unique-field guess, or to the `0` stub.

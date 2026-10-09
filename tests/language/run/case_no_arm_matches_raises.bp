@@ -1,0 +1,29 @@
+//// A `case` no arm matches raises `{case_clause, V}` (03-beam's row). The
+//// checker refuses a `case` whose arms do not cover the subject's type, so the
+//// value that reaches the fall-through comes from where the checker cannot
+//// look: a host function declared to answer a `Shape` that answers an atom no
+//// variant is. erlang raised `case_clause`; beam answered the subject as the
+//// `case`'s value and printed `'Square'` at exit 0. commonJS and wasm refuse
+//// the program — the host binding is erlang's alone.
+
+type Shape { Dot, Circle(r: i32) }
+
+#[@External.Erlang("erlang", "binary_to_atom")]
+declare fn shapeNamed(name: string) -> Shape;
+
+fn area(s: Shape) -> i32 {
+    return case s {
+        Dot {
+            0;
+        }
+        Circle(r) {
+            r * r;
+        }
+    };
+}
+
+pub fn main() {
+    @print("before");
+    @print(area(shapeNamed("Square")));
+    @print("after");
+}

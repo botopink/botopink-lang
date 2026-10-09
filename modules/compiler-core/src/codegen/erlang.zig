@@ -4042,6 +4042,9 @@ const Emitter = struct {
     /// shapes; nothing is mangled and nothing is inlined.
     fn typeCall(this: *Emitter, b: Ast.Builder, type_name: []const u8, method: []const u8, args: []const Ast.Expr) !Ast.Expr {
         if (this.cur_type) |ct| if (std.mem.eql(u8, ct, type_name)) return b.call(method, args);
+        // A comptime module keeps every type's methods inline (`type_units`):
+        // `Dict.empty()` in a `comptime` block (decision 331) is a local call.
+        if (this.untyped) return b.call(method, args);
         const owner = try this.typeModuleAtom(type_name);
         return b.remote(owner, method, args);
     }
@@ -10186,6 +10189,9 @@ const Emitter = struct {
         const argc = cc.args.len + cc.trailing.len;
         if (this.isHostFunction(cc.callee, argc + 1)) return null;
         if (!try this.primMethodAnswered(b, cc.callee, argc)) {
+            // A method of a type the comptime module carries (a `comptime`
+            // block's `d.insert(k, v)`, decision 331): the bare local call.
+            if (this.local_fn_arities.contains(try std.fmt.allocPrint(b.arena, "{s}/{d}", .{ cc.callee, argc + 1 }))) return null;
             if (this.unsupported_method) |slot| {
                 slot.* = .{ .callee = cc.callee, .argc = argc, .loc = loc };
                 return error.UnsupportedComptimeMethod;
@@ -10256,6 +10262,15 @@ const Emitter = struct {
         const fallback_patterns = try b.arena.alloc(Ast.Expr, shim.argc + 1);
         fallback_patterns[0] = Ast.Expr.v("Recv");
         for (fallback_patterns[1..]) |*p| p.* = Ast.Expr.v("_");
+        // A method of the same name and arity a type of the module declares
+        // (`Dict.at` beside `Array.at`, in a `comptime` block's module —
+        // decision 331): a value no primitive clause took is that type's.
+        const local_key = try std.fmt.allocPrint(b.arena, "{s}/{d}", .{ shim.callee, shim.argc + 1 });
+        if (this.local_fn_arities.contains(local_key)) {
+            try clauses.append(b.arena, .{ .patterns = patterns, .body = try b.body(&.{try b.call(shim.callee, patterns)}) });
+            const local_name = try std.fmt.allocPrint(b.arena, prim_shim_prefix ++ "{s}", .{shim.callee});
+            return b.functionClauses(local_name, clauses.items);
+        }
         const fallback = if (std.mem.eql(u8, shim.callee, "toString") and shim.argc == 0)
             try b.call("__bp_text", &.{Ast.Expr.v("Recv")})
         else

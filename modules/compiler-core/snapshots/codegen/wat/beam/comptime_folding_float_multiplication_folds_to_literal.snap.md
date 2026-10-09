@@ -28,7 +28,7 @@ ct_0: val pi2 = comptime {
     {func_info, {atom, test@main}, {atom, pi2}, 0}.
   {label, 3}.
     {allocate, 0, 0}.
-    {gc_bif, '*', {f, 0}, 0, [{float, 3.14}, {float, 2.0}], {x, 0}}.
+    {move, {float, 6.28}, {x, 0}}.
     {deallocate, 0}.
     return.
 

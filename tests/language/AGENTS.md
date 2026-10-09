@@ -252,10 +252,21 @@ five fail on the parent binary (`unexpected ','` / a comparison).
 Decision 255 (2) (`comptime <expr>` is `comptime { break <expr>; }`) adds `run/comptime_expression_is_block`
 (a module-level shorthand equal to its block form, and the same in a body) and
 `run/comptime_expression_static_call` (the decision's own `val d: Dict<string, unknown> = comptime
-Dict.empty();` beside its block form), both on commonJS, erlang and beam and refused on wasm by
-`.wasm.expect` (no comptime construct lowers in a wasm body, `05-wasm`'s row), and
-`reject/comptime_expression_type_mismatch` (the expression's type is the form's, located at
-`comptime` as the block's is). All three pass on the parent binary and pin the equivalence.
+Dict.empty();` beside its block form), and `reject/comptime_expression_type_mismatch` (the
+expression's type is the form's, located at `comptime` as the block's is).
+Decisions 266 and 331 (`01-checker` step 21 — every `comptime` runs on the comptime runtime, BEAM or
+WAT by the target, never on the target, and its value is written into the program) give
+`run/comptime_expression_static_call` all four targets (its `.wasm.expect` is gone: the `Dict` is
+written as its constructor) and add `run/comptime_block_with_loop` (`comptime two()` emits `2`; a
+block with a call and a loop answers `6`; a loop pushing strings answers the array — one `.out` on
+the four targets; the parent binary refused the block on erlang, read `d` unbound on commonJS and
+had no wasm lowering), `run/comptime_val_after_import` (step 20's finding: a module-level
+`comptime` `val` after an import, dropped on commonJS by the parent binary; a call and a record at
+module level), `run/comptime_function_reference` (a `Dict` of a declared function and a lambda
+reading nothing the block declares, written back as the reference and the lambda — rakun's bean
+catalogue shape) and `reject/comptime_value_not_liftable` (a lambda capturing the block's `val`,
+`comptime-value-not-liftable` at the `comptime`; the resource half is `block_eval.zig`'s unit test —
+the WAT runtime has no process to answer, so no one cell refuses it the same way on both runtimes).
 `test/program_primitive_behavior_extends_std` and `reject/program_primitive_behavior_redeclares_std`
 (another front's finding) — a program's own `behavior String` adds members to std's `String` (its
 default fns call `slice`, `startsWith`, `length` on `self`, and std's members answer beside them),
@@ -688,10 +699,18 @@ Each was run with the parent binary and fails there as its row describes.
 - `test/is_truth_table` (C-07's erlang tail, decision 8 §4.1 × §4.2): each form that may follow
   `is` — `i32`, `i8`, `u8`, `f64`, `string`, `bool`, a record, an enum type, `Box<unknown>`,
   `#(i32, string)` — asked of the same ten `unknown` values, and §4.1's conversion inside
-  `if (a is i32)`. It passes on the parent binary (a pin, not a fix). The same table as a `run/`
-  cell waits on beam's `#(i32, string)` test (it held for every tagged tuple — a record and a
-  variant too; `03-beam`'s fix, landing with the next integration) and traps on wasm (05's row). §11's
-  "erlang stores nothing" is `codegen/tests/control_flow.zig`'s needle (`A = 2.0,`, no box).
+  `if (a is i32)`. `run/is_truth_table` is the same table on four targets, with tuple rows by
+  arity and by element value (`#(2.0, "a") is #(i32, string)` holds); wasm refused it on the parent
+  (`cannot box this value as unknown` for an `unknown[]` element, then no run-time test for a tuple
+  type). §11's "erlang stores nothing" is `codegen/tests/control_flow.zig`'s needle (`A = 2.0,`, no
+  box) — no program prints a difference, so it has no `run/` cell.
+- `run/array_unique` (C-35, decision 217): `unique` keeps each value at its first occurrence over
+  integers, strings, floats, bools and an empty receiver. wasm dropped only consecutive duplicates
+  on the parent (`[1, 2, 1, 3, 2]`).
+- `run/case_no_arm_matches_raises`: a `case` no arm matches raises `case_clause`; the value comes
+  from an erlang host function answering an atom no variant is (the checker sees the `case` as
+  exhaustive). beam answered the subject at exit 0 on the parent; commonJS and wasm refuse the
+  binding (`.commonJS.expect`, `.wasm.expect`).
 - `run/lambda_binds_name_of_enclosing_fn` (decision 205): a `forEach` body's `val k` over an outer
   `k`, a lambda parameter `e` over an outer `e`, and a lambda value's parameter `e`; the outer names
   keep their values. erlc refused the module on the parent binary (`K@1` unbound). **Red on wasm**

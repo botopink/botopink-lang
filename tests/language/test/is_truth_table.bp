@@ -4,7 +4,7 @@
 //// out of `i8`'s range, a string, a bool, a record, an enum variant with a
 //// payload, a tuple and a generic record — written as one mark per value
 //// (`T` holds, `.` does not). A test cell runs on commonJS, erlang and beam;
-//// the `run/` twin over four targets waits on wasm, which traps (05's row).
+//// `run/is_truth_table` is the same table on four targets.
 
 type Point(x: i32, y: i32)
 

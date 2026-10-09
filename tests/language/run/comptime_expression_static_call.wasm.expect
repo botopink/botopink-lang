@@ -1,2 +1,0 @@
-the wasm backend has no lowering for the comptime construct `comptimeExpr`
-9:36
