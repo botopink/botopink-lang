@@ -1,0 +1,42 @@
+//// Decisions 277, 354 (4) — `decl.hooks` carries each `use provide(C, …)` /
+//// `use context(C)` with its context object, the `val` that declares `C`,
+//// which a framework's root decorator reads to check that every context read
+//// has a provider on its path. std's `provide` / `context` get no node.
+
+import {context.Context, context.provide, context.context} from "std";
+
+type Theme(mode: string)
+
+type Element(text: string) implement @Renderable
+
+pub val ThemeContext = Context<Theme>();
+
+fn contexts(comptime decl: @Decl) {
+    var out: string[] = [];
+    decl.hooks.forEach({ n ->
+        n.uses.forEach({ u ->
+            val h = u.hook;
+            val c = u.context;
+            val hook = if (h == null) "null" else h.module + "." + h.name;
+            val ctx = if (c == null) "-" else c.module + "." + c.name;
+            out.push(n.function.name + ": " + hook + "(" + ctx + ")");
+        });
+    });
+    decl.setMeta("uses", out.join(" | "));
+}
+
+fn Label() -> @Component<Element> {
+    val t = use context(ThemeContext);
+    return Element(text: t.mode);
+}
+
+#[contexts]
+fn App() -> @Component<Element> {
+    use provide(ThemeContext, Theme(mode: "dark"));
+    val l = Label();
+    return Element(text: l.text);
+}
+
+pub fn main() {
+    @print(@typeInfo(App).meta.contexts.uses);
+}

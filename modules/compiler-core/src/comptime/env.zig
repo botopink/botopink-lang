@@ -5,6 +5,7 @@
 const std = @import("std");
 const ast = @import("../ast.zig");
 const reflectionMod = @import("reflection.zig");
+const hooksMod = @import("hooks.zig");
 const T = @import("./types.zig");
 const template = @import("./template.zig");
 const trace = @import("./trace.zig");
@@ -782,6 +783,17 @@ pub const Env = struct {
     /// Decision 354 (8) — each `use provide(…)` / `use context(…)`, by the
     /// `use`'s location: what the hidden context map lowers it to.
     contextUses: std.AutoHashMapUnmanaged(ast.Loc, ContextUse) = .empty,
+    /// Decision 277 — the hook node of the top-level function whose body is
+    /// being inferred (`hooks.zig`): each `use` and each `@Component` call
+    /// written in it, lambdas included. Null outside such a body.
+    hookBuilder: ?*hooksMod.Builder = null,
+    /// Decision 277 — the node of each top-level function of this module whose
+    /// body has been inferred, by name; published to the session
+    /// (`Reflection.hookFns`) when the analysis ends.
+    hookNodes: std.StringHashMapUnmanaged(hooksMod.Node) = .empty,
+    /// Decision 277 — the module-level `val`s were bound ahead of Pass 2 for
+    /// a body inferred while decorators run (`infer.zig` `declHooks`).
+    hookValsBound: bool = false,
     /// Decision 354 (8) — every call whose value is, or may resolve to, a
     /// `@Component<R>`, by location, with that type: the calls that pass the
     /// hidden context map (`context_lower.zig`).

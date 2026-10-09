@@ -129,6 +129,14 @@ and `reject/use_after_early_return` (`use-not-top-level`, naming the construct o
 return before a `use`); `reject/use_after_return` and `reject/generator_loop_use` now meet
 `use-not-top-level`, and `reject/use_inside_branch` / `reject/use_in_closure` left for `use_in_if` /
 `use_in_lambda`.
+Decision 277 (`decl.hooks`, `01-checker` step 23) adds `run/decl_hooks_direct` (a host hook: one node;
+commonJS, erlang and beam — `session` has no wasm binding), `run/decl_hooks_all_nodes` (four nodes, a
+component once, calls in body order), `run/decl_hooks_custom_hook` (a hook's own node),
+`run/decl_hooks_cycle` (an edge back), `run/decl_hooks_function_value` (`hook: null`),
+`run/decl_hooks_type_args` (a `use`'s type arguments with their fields, decision 293),
+`run/decl_hooks_context` (each `provide` / `context` with its context object, 354 (4); wasm refuses the
+`use`) and `modules/decl_hooks_imported` (another module's nodes, a hook through an alias with its own
+annotations), on the four targets but where named; each red on the parent binary (`unknown field 'hooks'`).
 Decision 139 (a negative index counts from the end) adds `run/index_negative_from_end` — `xs.at(-1)`,
 `xs.at(-3)`, `xs.at(-4)` / `xs.at(3)` absent, `xs[-2]`, a negative index held in a `val`, the same for
 `String.at` / `s[-2]`, and a string array — on all four targets.

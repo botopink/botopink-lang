@@ -2420,7 +2420,7 @@ A decorator is a function whose first parameter is `comptime decl: @Decl`;
 `#[name(args)]` runs it at compile time over the declaration it annotates, the
 annotation's arguments after the handle. `decl` reflects the declaration
 (`kind`, `name`, `fields`, `variants`, `methods`, `returnType`,
-`annotations`), `decl.fail(message)` refuses it at the annotation, and what
+`annotations`, and a function's `hooks`, § The hooks a function reaches), `decl.fail(message)` refuses it at the annotation, and what
 the decorator produces goes to one of four places (decision 216):
 
 | Place | Written | Read |
@@ -2605,6 +2605,66 @@ fn main() {
             @print(r.name + " " + m.value);        // about /about
         }
     }
+}
+```
+
+#### The hooks a function reaches — `decl.hooks`
+
+A function's `@Decl` lists every function it reaches through hooks and
+components (decision 277), so a framework's decorator checks what a page
+activates at build — which markers its hooks carry, which contexts it reads —
+without the compiler naming any stage, marker or library. `decl.hooks:
+HookNode[]` is the function's own node first, then the node of every function
+reachable through its `use`s and calls of `@Component` functions,
+breadth-first, each node's edges in body order, each function once; empty for
+a type, a field, a method and a `val`. A node holds only what is written in its
+`function`:
+
+| Record | Fields |
+|---|---|
+| `HookNode` | `function: Declared<unknown>`, `uses: HookUse[]`, `calls: HookCall[]` |
+| `HookUse` — one `use h(…)` | `hook: ?Declared<unknown>` (`null` over a function value), `annotations: DeclAnnotation[]` (the hook's own), `at: string`, `typeArgs: TypeInfo<unknown>[]` (`use params<BlogParams>()` → `BlogParams`, its fields as the checker spells them), `context: ?Declared<unknown>` (the context object of a `use provide(C, …)` / `use context(C)`, decision 354 (4); `null` for any other hook) |
+| `HookCall` — one call of a `@Component` function | `callee: Declared<unknown>`, `at: string` |
+
+A call a template builds from a tag counts as written. `at` is
+`"<module>:<line>:<column>"`, the entry module `main`. A cycle is an edge back
+to a listed node; a host function (`declare fn`, `#[@External…]`) and std's
+`provide` / `context` get no node. Each node is recorded once, when its
+function's body is checked, and an importer reads the nodes of the functions
+it reaches in another module. In a decorator body a `Declared`'s `value` is
+`null` (no function of the program runs while it compiles) and its `meta` is
+every entry its declaration's decorators set, keyed `<decorator>.<key>`. A
+`DeclAnnotation`'s `decorator` is the `Decorator` its name names — an alias
+(`#[srv]` after `import {serverOnly as srv}`) and a namespace give the
+declaration, never the spelling. Decorators run before bodies: a function whose
+list a decorator reads is checked then, after the module's imports and `val`s.
+
+```botopink
+type Element(text: string) implement @Renderable
+
+fn graph(comptime decl: @Decl) {
+    var names: string[] = [];
+    decl.hooks.forEach({ n -> names.push(n.function.name + "/" + n.uses.length.toString()) });
+    decl.setMeta("nodes", names.join(" "));
+}
+
+fn session() -> @Component<string> {
+    return "alice";
+}
+
+fn user() -> @Component<string> {
+    val s = use session();
+    return "user " + s;
+}
+
+#[graph]
+fn Page() -> @Component<Element> {
+    val u = use user();
+    return Element(text: u);
+}
+
+fn main() {
+    @print(@typeInfo(Page).meta.graph.nodes);       // Page/1 user/1 session/0
 }
 ```
 

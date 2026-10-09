@@ -1,0 +1,1 @@
+main.Page(uses: [ui.session#[tracked]], calls: [ui.Avatar@main:44:16]) ui.session(uses: [], calls: []) ui.Avatar(uses: [ui.session#[tracked]], calls: [])

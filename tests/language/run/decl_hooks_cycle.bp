@@ -1,0 +1,44 @@
+//// Decision 277 — a cycle is an edge back to a listed node: `A` renders `B`
+//// and `B` renders `A` — two nodes, `B`'s call goes back to `A`, no third.
+
+type Element(text: string) implement @Renderable
+
+// Renders `decl.hooks` into one meta string `main` prints: each node as
+// `fn(uses: […], calls: […])`, a `use` over a function value as `null`.
+fn graph(comptime decl: @Decl) {
+    var nodes: string[] = [];
+    decl.hooks.forEach({ n ->
+        var uses: string[] = [];
+        n.uses.forEach({ u ->
+            val h = u.hook;
+            uses.push(if (h == null) "null" else h.name + "@" + u.at);
+        });
+        var calls: string[] = [];
+        n.calls.forEach({ c -> calls.push(c.callee.name + "@" + c.at) });
+        nodes.push(
+            n.function.name
+                + "(uses: ["
+                + uses.join(", ")
+                + "], calls: ["
+                + calls.join(", ")
+                + "])",
+        );
+    });
+    decl.setMeta("nodes", nodes.join(" "));
+}
+
+fn B(depth: i32) -> @Component<Element> {
+    if (depth == 0) return Element(text: "b");
+    val a = A(depth - 1);
+    return Element(text: a.text);
+}
+
+#[graph]
+fn A(depth: i32) -> @Component<Element> {
+    val b = B(depth);
+    return Element(text: b.text);
+}
+
+pub fn main() {
+    @print(@typeInfo(A).meta.graph.nodes);
+}

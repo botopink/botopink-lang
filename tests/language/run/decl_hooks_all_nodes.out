@@ -1,0 +1,1 @@
+Page(uses: [], calls: [UserMenu@main:50:13]) UserMenu(uses: [], calls: [Avatar@main:42:13, Badge@main:43:13, Avatar@main:44:13]) Avatar(uses: [], calls: []) Badge(uses: [], calls: [])

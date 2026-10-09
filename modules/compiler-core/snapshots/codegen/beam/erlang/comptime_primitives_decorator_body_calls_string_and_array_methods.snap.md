@@ -745,7 +745,8 @@ fn main() {
 %%     variants => [],
 %%     methods => [],
 %%     returnType => <<"">>,
-%%     annotations => [#{name => <<"describe">>, args => []}]
+%%     annotations => [#{name => <<"describe">>, args => [], decorator => <<"main@@describe">>}],
+%%     hooks => []
 %% }
 ```
 

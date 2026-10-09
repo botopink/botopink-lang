@@ -13,6 +13,7 @@
 const std = @import("std");
 const ast = @import("../ast.zig");
 const envMod = @import("env.zig");
+const hooksMod = @import("hooks.zig");
 
 /// One `decl.setMeta(key, value)`.
 pub const MetaEntry = struct {
@@ -95,6 +96,11 @@ pub const Reflection = struct {
     templateQueries: std.StringHashMapUnmanaged([]const TemplateQuery) = .empty,
     /// Every answer a template body's query was given in this session.
     templateReads: std.ArrayListUnmanaged(TemplateRead) = .empty,
+    /// Decision 277 — `envMod.declIdentity(module, name)` → each top-level
+    /// function of an analysed module with its hook node (`hooks.zig`),
+    /// published when the module's analysis ends: an importer's `decl.hooks`
+    /// reads the nodes of the functions it reaches here.
+    hookFns: std.StringHashMapUnmanaged(hooksMod.FnInfo) = .empty,
     /// The complete catalogue of an earlier session over the same modules:
     /// when set, a template body's query is answered from it, so an expansion
     /// sees declarations of modules analysed after it (`comptime.zig`

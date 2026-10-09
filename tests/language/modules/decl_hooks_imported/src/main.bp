@@ -1,0 +1,50 @@
+//// Decision 277 — `decl.hooks` across modules: `Page` `use`s `ui`'s
+//// `session` through an alias and renders `ui.Avatar` through the namespace.
+//// Each reached function of `ui` enters with the node its own module
+//// recorded, `session` once — `Avatar`'s `use` of it is an edge back — and a
+//// hook carries its own annotations, the marker named as `ui` declares it.
+
+pub mod ui;
+
+import {ui};
+import {ui.session as currentUser, ui.Element};
+
+fn graph(comptime decl: @Decl) {
+    var nodes: string[] = [];
+    decl.hooks.forEach({ n ->
+        var uses: string[] = [];
+        n.uses.forEach({ u ->
+            val h = u.hook;
+            var anns: string[] = [];
+            u.annotations.forEach({ a -> anns.push("#[" + a.name + "]") });
+            val name = if (h == null) "null" else h.module + "." + h.name;
+            uses.push(name + anns.join(""));
+        });
+        var calls: string[] = [];
+        n.calls.forEach(
+            { c -> calls.push(c.callee.module + "." + c.callee.name + "@" + c.at) },
+        );
+        nodes.push(
+            n.function.module
+                + "."
+                + n.function.name
+                + "(uses: ["
+                + uses.join(", ")
+                + "], calls: ["
+                + calls.join(", ")
+                + "])",
+        );
+    });
+    decl.setMeta("nodes", nodes.join(" "));
+}
+
+#[graph]
+fn Page() -> @Component<Element> {
+    val who = use currentUser();
+    val a = ui.Avatar();
+    return Element(text: who + " " + a.text);
+}
+
+pub fn main() {
+    @print(@typeInfo(Page).meta.graph.nodes);
+}

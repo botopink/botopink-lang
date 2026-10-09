@@ -27,7 +27,7 @@ const erlang = @import("../codegen/erlang.zig");
 const crossModule = @import("../codegen/crossModule.zig");
 const templateEval = @import("./template_eval.zig");
 const Ast = @import("../codegen/beam/erl_ast.zig");
-const Term = @import("../codegen/beam/term.zig").Term;
+pub const Term = @import("../codegen/beam/term.zig").Term;
 const hostRuntime = @import("./runtime/runtime.zig");
 const preludeMod = @import("./runtime/prelude.zig");
 const etf = @import("./runtime/etf.zig");
@@ -47,7 +47,18 @@ pub const DeclHandle = struct {
     methods: []const ast.BehaviorMethod,
     returnType: []const u8,
     annotations: []const ast.Annotation,
+    /// Decision 277 — `decl.hooks`, the `HookNode` maps the checker built
+    /// (`hooks.zig` `nodesToTerm`); empty but for a function one of whose
+    /// decorators reads it.
+    hooks: []const Term = &.{},
+    /// `DeclAnnotation.decorator` — the identity of the decorator each
+    /// annotation name of the handle names (`infer.zig`
+    /// `annotationDecoratorId`).
+    decoratorIds: []const DecoratorId = &.{},
 };
+
+/// An annotation name and the identity of the decorator it names.
+pub const DecoratorId = struct { name: []const u8, id: []const u8 };
 
 pub const FieldHandle = struct {
     name: []const u8,
@@ -270,7 +281,7 @@ fn buildModule(
         .host_records = &.{
             .{ .name = "Span", .fields = &.{ "start", "end", "line" } },
             .{ .name = "__bp_FieldKey", .fields = &.{ "name", "typeName", "annotations" } },
-            .{ .name = "__bp_DeclAnnotation", .fields = &.{ "name", "args" } },
+            .{ .name = "__bp_DeclAnnotation", .fields = &.{ "name", "args", "decorator" } },
         },
         .exports = &.{.{ .name = "main", .arity = 1 }},
         .forms = forms,
@@ -350,7 +361,7 @@ pub fn handleToTerm(arena: std.mem.Allocator, handle: DeclHandle) std.mem.Alloca
         const entries = try arena.alloc(Term.MapEntry, 3);
         entries[0] = Term.field("name", Term.str(f.name));
         entries[1] = Term.field("typeName", Term.str(f.typeName));
-        entries[2] = Term.field("annotations", try annotationsToTerm(arena, f.annotations));
+        entries[2] = Term.field("annotations", try annotationsToTerm(arena, f.annotations, handle.decoratorIds));
         fields[i] = Term.mapOf(entries);
     }
 
@@ -367,21 +378,22 @@ pub fn handleToTerm(arena: std.mem.Allocator, handle: DeclHandle) std.mem.Alloca
         entries[0] = Term.field("name", Term.str(m.name));
         entries[1] = Term.field("params", Term.listOf(params));
         entries[2] = Term.field("returnType", Term.str(if (m.returnType) |rt| try typeName(arena, rt) else ""));
-        entries[3] = Term.field("annotations", try annotationsToTerm(arena, m.annotations));
+        entries[3] = Term.field("annotations", try annotationsToTerm(arena, m.annotations, handle.decoratorIds));
         methods[i] = Term.mapOf(entries);
     }
 
     const variants = try arena.alloc(Term, handle.variants.len);
     for (handle.variants, 0..) |v, i| variants[i] = Term.str(v);
 
-    const entries = try arena.alloc(Term.MapEntry, 7);
+    const entries = try arena.alloc(Term.MapEntry, 8);
     entries[0] = Term.field("kind", Term.atomOf(handle.kind));
     entries[1] = Term.field("name", Term.str(handle.name));
     entries[2] = Term.field("fields", Term.listOf(fields));
     entries[3] = Term.field("variants", Term.listOf(variants));
     entries[4] = Term.field("methods", Term.listOf(methods));
     entries[5] = Term.field("returnType", Term.str(handle.returnType));
-    entries[6] = Term.field("annotations", try annotationsToTerm(arena, handle.annotations));
+    entries[6] = Term.field("annotations", try annotationsToTerm(arena, handle.annotations, handle.decoratorIds));
+    entries[7] = Term.field("hooks", Term.listOf(handle.hooks));
     return Term.mapOf(entries);
 }
 
@@ -394,16 +406,22 @@ fn typeName(arena: std.mem.Allocator, tr: ast.TypeRef) std.mem.Allocator.Error![
     };
 }
 
-/// `[#{name => <<"getMapping">>, args => [<<"\"/users\"">>]}]` — args keep their
-/// raw source lexemes (`DeclAnnotation.args` in `builtins.d.bp`).
-fn annotationsToTerm(arena: std.mem.Allocator, anns: []const ast.Annotation) std.mem.Allocator.Error!Term {
+/// `[#{name => <<"getMapping">>, args => [<<"\"/users\"">>], decorator => <<"web@@getMapping">>}]`
+/// — args keep their raw source lexemes (`DeclAnnotation.args` in
+/// `builtins.d.bp`); `decorator` is the identity of the decorator the name
+/// names (`ids`, decision 277).
+fn annotationsToTerm(arena: std.mem.Allocator, anns: []const ast.Annotation, ids: []const DecoratorId) std.mem.Allocator.Error!Term {
     const items = try arena.alloc(Term, anns.len);
     for (anns, 0..) |a, i| {
         const args = try arena.alloc(Term, a.args.len);
         for (a.args, 0..) |arg, j| args[j] = Term.str(arg);
-        const entries = try arena.alloc(Term.MapEntry, 2);
+        const id = for (ids) |d| {
+            if (std.mem.eql(u8, d.name, a.name)) break d.id;
+        } else a.name;
+        const entries = try arena.alloc(Term.MapEntry, 3);
         entries[0] = Term.field("name", Term.str(a.name));
         entries[1] = Term.field("args", Term.listOf(args));
+        entries[2] = Term.field("decorator", Term.str(id));
         items[i] = Term.mapOf(entries);
     }
     return Term.listOf(items);

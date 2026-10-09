@@ -580,10 +580,15 @@ pub type DeclKind {
 }
 
 // One annotation entry on a reflected declaration (`#[name(args…)]`). `args`
-// holds the raw argument lexemes in source order.
+// holds the raw argument lexemes in source order; `decorator` is the
+// decorator the name names, resolved where the annotation is written — an
+// alias (`#[srv]` after `import {serverOnly as srv}`) and a namespace
+// (`#[web.route]`) give the declaration's identity, never the spelling
+// (decision 277).
 pub type DeclAnnotation(
     name: string,
     args: string[],
+    decorator: Decorator,
 )
 
 // Every type name below (`Param.typeName`, `Field.typeName`,
@@ -634,6 +639,11 @@ pub behavior Decl<T> {
     val methods: Method[];
     val returnType: string;
     val annotations: DeclAnnotation[];
+    // Decision 277 — a function's hook graph: its own node, then the node of
+    // every function reachable through its `use`s and calls of `@Component`
+    // functions, breadth-first in body order, each function once. Empty for
+    // any other declaration.
+    val hooks: HookNode[];
 
     fn fail(self: Self, message: string);
     fn failAt(self: Self, span: Span, message: string);
@@ -693,6 +703,42 @@ pub type Declared<T>(
     meta: DeclaredMeta[],
     returnTypeName: string,
     value: T,
+)
+
+// ── Hooks (decision 277) ────────────────────────────────────────────────────
+// What `decl.hooks` lists. A `HookNode` holds only what is written in one
+// function (`function`): each `use h(…)` (`HookUse`) and each call of a
+// `@Component` function (`HookCall`), the calls a template builds from tags
+// included, both in body order. `at` is `"<module>:<line>:<column>"` (the
+// entry module is `main`). A cycle is an edge back to a listed node; a host
+// function and std's `provide` / `context` get no node. In a decorator body a
+// `Declared`'s `value` is `null` — no function of the program runs while it
+// compiles — and its `meta` is every entry the declaration's decorators set,
+// keyed `<decorator>.<key>`.
+//
+// `HookUse.hook` is the hook's declaration, `null` for a `use` over a function
+// value; `annotations` are the hook's own; `typeArgs` the `use`'s explicit
+// type arguments (`use params<BlogParams>()` → `[BlogParams]`, a record's
+// fields as the checker spells them); `context` the context object a
+// `use provide(C, …)` / `use context(C)` names (decision 354 (4)), `null` for
+// any other hook.
+pub type HookUse(
+    hook: ?Declared<unknown>,
+    annotations: DeclAnnotation[],
+    at: string,
+    typeArgs: TypeInfo<unknown>[],
+    context: ?Declared<unknown>,
+)
+
+pub type HookCall(
+    callee: Declared<unknown>,
+    at: string,
+)
+
+pub type HookNode(
+    function: Declared<unknown>,
+    uses: HookUse[],
+    calls: HookCall[],
 )
 
 // ── Decorator (decision 268) ────────────────────────────────────────────────

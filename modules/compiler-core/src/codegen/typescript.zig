@@ -145,7 +145,9 @@ const Builder = struct {
     /// in std's `Type.Field<T>`, whose `annotations` are `DeclAnnotation[]`):
     /// the module never declares them — they live in the checker's prelude
     /// (`comptime.zig` `decl_reflection_src`) — so they join the candidates,
-    /// read from that one source, only when a declaration names one.
+    /// read from that one source, only when a declaration names one; the
+    /// behaviors of that source join with them (`Decorator`, the type of an
+    /// annotation's `decorator`), since a record names one in turn.
     fn reflectionCandidates(self: *Builder, candidates: *std.ArrayListUnmanaged(ast.DeclKind), named: *const std.StringHashMapUnmanaged(void)) Error!void {
         var it = named.keyIterator();
         const wanted = while (it.next()) |k| {
@@ -158,6 +160,14 @@ const Builder = struct {
         const prog = try p.parse(self.b.arena);
         for (prog.decls) |d| switch (d) {
             .type_ => |t| if (std.mem.startsWith(u8, t.name, decl_reflection_prefix)) try candidates.append(self.b.arena, d),
+            // A behavior the records name (`Decorator`, decision 268: an
+            // annotation's `decorator`, decision 277) is no binding of the
+            // module either: it joins private, declared only when named.
+            .behavior => |b| {
+                var pb = b;
+                pb.isPub = false;
+                try candidates.append(self.b.arena, .{ .behavior = pb });
+            },
             else => {},
         };
     }

@@ -775,14 +775,15 @@ fn main() {
 ;;         #{
 ;;             name => <<"port">>,
 ;;             typeName => <<"i32">>,
-;;             annotations => [#{name => <<"value">>, args => [<<"port">>]}]
+;;             annotations => [#{name => <<"value">>, args => [<<"port">>], decorator => <<"main@@value">>}]
 ;;         },
 ;;         #{name => <<"name">>, typeName => <<"string">>, annotations => []}
 ;;     ],
 ;;     variants => [],
 ;;     methods => [],
 ;;     returnType => <<"">>,
-;;     annotations => [#{name => <<"component">>, args => []}]
+;;     annotations => [#{name => <<"component">>, args => [], decorator => <<"main@@component">>}],
+;;     hooks => []
 ;; }
 ```
 

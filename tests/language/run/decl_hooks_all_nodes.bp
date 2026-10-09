@@ -1,0 +1,56 @@
+//// Decision 277 — every node reachable from the reflected function through
+//// calls of `@Component` functions, breadth-first in body order, each
+//// function once: `Page` renders `UserMenu`, which renders `Avatar`, `Badge`
+//// and `Avatar` again — four nodes, `Avatar` listed once, `UserMenu`'s three
+//// calls in body order.
+
+type Element(text: string) implement @Renderable
+
+// Renders `decl.hooks` into one meta string `main` prints: each node as
+// `fn(uses: […], calls: […])`, a `use` over a function value as `null`.
+fn graph(comptime decl: @Decl) {
+    var nodes: string[] = [];
+    decl.hooks.forEach({ n ->
+        var uses: string[] = [];
+        n.uses.forEach({ u ->
+            val h = u.hook;
+            uses.push(if (h == null) "null" else h.name + "@" + u.at);
+        });
+        var calls: string[] = [];
+        n.calls.forEach({ c -> calls.push(c.callee.name + "@" + c.at) });
+        nodes.push(
+            n.function.name
+                + "(uses: ["
+                + uses.join(", ")
+                + "], calls: ["
+                + calls.join(", ")
+                + "])",
+        );
+    });
+    decl.setMeta("nodes", nodes.join(" "));
+}
+
+fn Avatar() -> @Component<Element> {
+    return Element(text: "avatar");
+}
+
+fn Badge() -> @Component<Element> {
+    return Element(text: "badge");
+}
+
+fn UserMenu() -> @Component<Element> {
+    val a = Avatar();
+    val b = Badge();
+    val c = Avatar();
+    return Element(text: a.text + b.text + c.text);
+}
+
+#[graph]
+fn Page() -> @Component<Element> {
+    val m = UserMenu();
+    return Element(text: m.text);
+}
+
+pub fn main() {
+    @print(@typeInfo(Page).meta.graph.nodes);
+}

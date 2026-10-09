@@ -35,6 +35,7 @@ test {
     _ = @import("./value_or_type.zig");
     _ = @import("./diagnostics.zig");
     _ = @import("./reflection.zig");
+    _ = @import("./hooks.zig");
     _ = @import("./assoc_types.zig");
     _ = @import("./eval.zig");
     _ = @import("./trace.zig");

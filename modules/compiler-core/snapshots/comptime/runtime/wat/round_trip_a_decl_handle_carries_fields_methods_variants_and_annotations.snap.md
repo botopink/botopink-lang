@@ -1079,7 +1079,9 @@ val m = describeMode();
 ;;         #{
 ;;             name => <<"x">>,
 ;;             typeName => <<"i32">>,
-;;             annotations => [#{name => <<"column">>, args => [<<"\"px\"">>]}]
+;;             annotations => [
+;;                 #{name => <<"column">>, args => [<<"\"px\"">>], decorator => <<"main@@column">>}
+;;             ]
 ;;         },
 ;;         #{name => <<"y">>, typeName => <<"?i32">>, annotations => []}
 ;;     ],
@@ -1096,7 +1098,14 @@ val m = describeMode();
 ;;         }
 ;;     ],
 ;;     returnType => <<"">>,
-;;     annotations => [#{name => <<"describe">>, args => [<<"\"record\"">>]}]
+;;     annotations => [
+;;         #{
+;;             name => <<"describe">>,
+;;             args => [<<"\"record\"">>],
+;;             decorator => <<"main@@describe">>
+;;         }
+;;     ],
+;;     hooks => []
 ;; }
 ;; Arg1 = <<"record">>
 ```
@@ -2166,7 +2175,14 @@ val m = describeMode();
 ;;         }
 ;;     ],
 ;;     returnType => <<"">>,
-;;     annotations => [#{name => <<"describe">>, args => [<<"\"enum\"">>]}]
+;;     annotations => [
+;;         #{
+;;             name => <<"describe">>,
+;;             args => [<<"\"enum\"">>],
+;;             decorator => <<"main@@describe">>
+;;         }
+;;     ],
+;;     hooks => []
 ;; }
 ;; Arg1 = <<"enum">>
 ```

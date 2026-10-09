@@ -1357,6 +1357,10 @@ fn isIdentChar(c: u8) bool {
 /// object `decorator_eval.zig` binds, so a body's `decl.fields`/`decl.kind`/
 /// `decl.fail(…)` type-check against the same data the runtime provides.
 ///
+/// Decision 277 — `decl.hooks: HookNode[]` (`comptime/hooks.zig`), with
+/// `HookUse`, `HookCall` and the `TypeInfo<T>` a `use`'s type argument is; a
+/// `DeclAnnotation` carries the `Decorator` it names.
+///
 /// T17 — the member records a handle hands out (`DeclAnnotation`, `Param`,
 /// `Field`, `Method`) are registered under internal names (`__Decl__Param`,
 /// shown `Decl.Param` in a diagnostic) that no module can declare or import,
@@ -1368,7 +1372,8 @@ pub const decl_reflection_src =
     \\pub type DeclKind { Type, Behavior, Fn, Method, Field, Val }
     \\pub type Span(start: i32, end: i32, line: i32)
     \\pub type SourceLocation(file: string, line: i32, column: i32, fnName: string)
-    \\pub type __Decl__Annotation(name: string, args: string[])
+    \\pub behavior Decorator {}
+    \\pub type __Decl__Annotation(name: string, args: string[], decorator: Decorator)
     \\pub type __Decl__Param(name: string, typeName: string)
     \\pub type __Decl__Field(name: string, typeName: string, annotations: __Decl__Annotation[])
     \\pub type __Decl__Method(name: string, params: __Decl__Param[], returnType: string, annotations: __Decl__Annotation[])
@@ -1378,6 +1383,22 @@ pub const decl_reflection_src =
     \\pub type Method = __Decl__Method;
     \\pub type DeclaredMeta(key: string, value: string)
     \\pub type Declared<T>(name: string, module: string, meta: DeclaredMeta[], returnTypeName: string, value: T)
+    \\pub type TypeInfo<T>(
+    \\    name: string,
+    \\    module: string,
+    \\    fields: __Decl__Field[],
+    \\    methods: __Decl__Method[],
+    \\    meta: DeclaredMeta[],
+    \\)
+    \\pub type HookUse(
+    \\    hook: ?Declared<unknown>,
+    \\    annotations: __Decl__Annotation[],
+    \\    at: string,
+    \\    typeArgs: TypeInfo<unknown>[],
+    \\    context: ?Declared<unknown>,
+    \\)
+    \\pub type HookCall(callee: Declared<unknown>, at: string)
+    \\pub type HookNode(function: Declared<unknown>, uses: HookUse[], calls: HookCall[])
     \\pub type Decl(
     \\    kind: DeclKind,
     \\    name: string,
@@ -1385,7 +1406,8 @@ pub const decl_reflection_src =
     \\    variants: string[],
     \\    methods: __Decl__Method[],
     \\    returnType: string,
-    \\    annotations: __Decl__Annotation[]) {
+    \\    annotations: __Decl__Annotation[],
+    \\    hooks: HookNode[]) {
     \\    declare fn fail(self: Self, message: string);
     \\    declare fn failAt(self: Self, span: Span, message: string);
     \\    declare fn addMember(self: Self, source: string);
@@ -1411,21 +1433,12 @@ const custom_ast_reflection_src =
     \\)
 ;
 
-/// Decisions 216, 248, 253 — what `@typeInfo(T)` answers, `TypeInfo<T>`, and
-/// the field descriptor `@makeRecord` reads, registered into the global env.
-/// Mirrors `libs/std/src/builtins.d.bp`'s `pub type TypeInfo<T>` (its static
-/// `all` is reached only as the builtin `@TypeInfo.all`, so the mirror leaves
-/// it out) and `pub type RecordField`; registered after the `@Decl` cluster,
-/// whose `Field`, `Method` (`__Decl__Field`, `__Decl__Method`) and `DeclaredMeta` the fields name.
+/// Decision 248 — the field descriptor `@makeRecord` reads, registered into
+/// the global env; mirrors `libs/std/src/builtins.d.bp`'s `pub type
+/// RecordField`. `TypeInfo<T>` (decisions 216, 253) is in the `@Decl` cluster
+/// above, since a `HookUse` names it (decision 277); its static `all` is
+/// reached only as the builtin `@TypeInfo.all`, so the mirror leaves it out.
 const type_info_src =
-    \\pub type TypeInfo<T>(
-    \\    name: string,
-    \\    module: string,
-    \\    fields: __Decl__Field[],
-    \\    methods: __Decl__Method[],
-    \\    meta: DeclaredMeta[],
-    \\)
-    \\
     \\pub type RecordField(
     \\    name: string,
     \\    typeName: string,

@@ -1,0 +1,47 @@
+//// Decision 277 — `decl.hooks` of a function that `use`s a host hook: one
+//// node, the function's own, holding the `use` with where it is written
+//// (`"<module>:<line>:<column>"`). A host function (`declare fn` bound by
+//// `#[@External…]`) gets no node of its own.
+////
+//// wasm is not in `.targets`: `session` has no wasm binding, and the
+//// compiler refuses the `use` there.
+
+type Element(text: string) implement @Renderable
+
+// Renders `decl.hooks` into one meta string `main` prints: each node as
+// `fn(uses: […], calls: […])`, a `use` over a function value as `null`.
+fn graph(comptime decl: @Decl) {
+    var nodes: string[] = [];
+    decl.hooks.forEach({ n ->
+        var uses: string[] = [];
+        n.uses.forEach({ u ->
+            val h = u.hook;
+            uses.push(if (h == null) "null" else h.name + "@" + u.at);
+        });
+        var calls: string[] = [];
+        n.calls.forEach({ c -> calls.push(c.callee.name + "@" + c.at) });
+        nodes.push(
+            n.function.name
+                + "(uses: ["
+                + uses.join(", ")
+                + "], calls: ["
+                + calls.join(", ")
+                + "])",
+        );
+    });
+    decl.setMeta("nodes", nodes.join(" "));
+}
+
+#[@External.Node("""Promise.resolve("alice")""")]
+#[@External.Erlang("""<<"alice">>""")]
+declare fn session() -> @Component<string>;
+
+#[graph]
+fn Page() -> @Component<Element> {
+    val user = use session();
+    return Element(text: user);
+}
+
+pub fn main() {
+    @print(@typeInfo(Page).meta.graph.nodes);
+}

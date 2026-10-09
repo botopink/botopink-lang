@@ -19,6 +19,7 @@ const evalMod = @import("eval.zig");
 const blockEval = @import("block_eval.zig");
 const diagnostics = @import("diagnostics.zig");
 const reflectionMod = @import("reflection.zig");
+const hooksMod = @import("hooks.zig");
 const typeinfoAll = @import("typeinfo_all.zig");
 const effectChain = @import("effect_chain.zig");
 const template = @import("template.zig");
@@ -689,6 +690,7 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     try validateProgram(env, program);
     try reportStdTargetGates(env);
     try reportOffBeamMemory(env);
+    try publishHookFns(env, program);
 
     return list.toOwnedSlice(env.arena);
 }
@@ -868,6 +870,7 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
     try validateProgram(env, program);
     try reportStdTargetGates(env);
     try reportOffBeamMemory(env);
+    try publishHookFns(env, program);
 
     return list.toOwnedSlice(env.arena);
 }
@@ -4585,7 +4588,9 @@ fn fieldKeySource(env: *Env, program: ast.Program, typeName: []const u8, field: 
                 if (k > 0) try w.writeAll(", ");
                 try writeBpString(w, arg);
             }
-            try w.writeAll("])");
+            try w.writeAll("], ");
+            try writeBpString(w, try annotationDecoratorId(env, an));
+            try w.writeAll(")");
         }
         try w.writeAll("])");
     } else {
@@ -4716,7 +4721,7 @@ fn runDeclDecorators(
         const carried = try std.mem.concat(env.arena, ast.FnDecl, &.{ &.{dfn}, found.fns, builtFns.items });
         const reached = try blockEval.typesReached(env, carried, &.{ "DeclKind", "Span", "Decl" });
         const support = try std.mem.concat(env.arena, ast.FnDecl, &.{ found.fns, reached.fns, builtFns.items });
-        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, dfn, support, reached.types, handle, plain, &env.comptimeTraces) catch {
+        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, dfn, support, reached.types, try completeHandle(env, handle), plain, &env.comptimeTraces) catch {
             return decoratorError(env, a, "the decorator evaluator failed to run", "Decorator bodies run in a persistent `erl` process at compile time — check that `erl` is on PATH.");
         };
         switch (outcome) {
@@ -5004,6 +5009,7 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
                 .methods = &.{},
                 .returnType = if (f.returnType) |rt| try declTypeName(env.arena, rt) else "",
                 .annotations = f.annotations,
+                .hooks = try declHooksTerm(env, program, f),
             };
             try runDeclDecorators(env, ctx, f.annotations, h, null, .{ .kind = .function, .isPub = f.isPub });
         },
@@ -5948,6 +5954,14 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     env.currentFnName = f.name;
     defer env.currentFnName = savedFnName;
 
+    // Decision 277 — a top-level function's body records its hook node: each
+    // `use` and `@Component` call written in it, its lambdas' included.
+    var hookBuilder: hooksMod.Builder = .{};
+    const recordsHooks = isModuleFn(env, f);
+    const savedHookBuilder = env.hookBuilder;
+    env.hookBuilder = if (recordsHooks) &hookBuilder else null;
+    defer env.hookBuilder = savedHookBuilder;
+
     // A `-> @Expr<…>` (or `-> @ExprCustom<…>`) return marks a template
     // function: its body runs at comptime, enabling the `@expr`/`@code`
     // construction builtins (and, for the custom carrier, `q.custom`).
@@ -6090,6 +6104,7 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     try refuseRedeclaredBindings(env, f.body, try paramNames(env, f.params));
     try inferBodyStmts(env, f.body);
     try refuseFallingOffTheEnd(env, f, retType);
+    if (recordsHooks) try finishHookNode(env, f, &hookBuilder);
 
     // Generalize (HM let-polymorphism): declared generic params still unbound
     // after the body is inferred become `.generic`. Every use site then gets a
@@ -14916,6 +14931,7 @@ fn inferUseHookExpr(env: *Env, uh: ast.UseHookExprOf(.untyped), loc: ast.Loc) In
     const valPtr = try makeTypedPtr(env, valTyped);
     try validateUseOperand(env, valTyped.getType(), loc);
     try noteContextUse(env, uh.kind.inner.*, valTyped, fc, loc);
+    try noteHookUse(env, uh.kind.inner.*, loc);
     const srcTy = bindingSourceType(valTyped.getType());
     return TypedExpr{ .useHook = .{ .loc = loc, .type_ = srcTy, .kind = .{ .inner = valPtr } } };
 }
@@ -14957,6 +14973,7 @@ fn noteComponentCall(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExpr) I
         .typeVar => {},
         else => return,
     }
+    try noteHookCall(env, c, ty);
     const rec: envMod.ComponentCall = .{ .type_ = ty, .callee = c.kind.call.callee };
     const gop = try env.componentCalls.getOrPut(env.arena, c.loc);
     if (!gop.found_existing) {
@@ -15132,6 +15149,326 @@ fn typedCallArgType(typed: TypedExpr, i: usize) ?*T.Type {
     const args = typed.call.kind.call.args;
     if (i >= args.len) return null;
     return args[i].value.getType();
+}
+
+// ── decision 277 — the hooks a function reaches (`hooks.zig`) ────────────────
+
+/// The declaration a call names: a top-level function of this module, an
+/// imported one, one reached through a namespace import, or std's `provide`
+/// / `context`. Null for a function value (a parameter, a local) and a method.
+fn hookCalleeDecl(env: *Env, c: ast.CallExprOf(.untyped)) InferError!?hooksMod.DeclRef {
+    if (c.kind != .call) return null;
+    const call = c.kind.call;
+    if (call.is_builtin or call.calleeExpr != null) return null;
+    if (stdContextCallee(env, c)) |which| return switch (which) {
+        .provide, .context => .{ .module = "std/context", .name = call.callee },
+        .context_type => null,
+    };
+    if (call.receiver) |r| {
+        if (r.* != .identifier or r.identifier.kind != .ident) return null;
+        const handle = r.identifier.kind.ident;
+        if (env.localBindDepth(handle) != null) return null;
+        const path = env.namespaces.paths.get(handle) orelse return null;
+        return try importedHookDecl(env, path, call.callee);
+    }
+    if (env.localBindDepth(call.callee) != null) return null;
+    if (env.fnDecls.get(call.callee)) |f| if (env.ownDecls.contains(call.callee)) return .{
+        .module = env.modulePath,
+        .name = f.name,
+        .returnTypeName = if (f.returnType) |rt| try declTypeName(env.arena, rt) else "",
+    };
+    if (env.importOwners.get(call.callee)) |o| return try importedHookDecl(env, o.owner, o.name);
+    return null;
+}
+
+/// An imported function's reference, its return type as its module published it.
+fn importedHookDecl(env: *Env, module: []const u8, name: []const u8) InferError!hooksMod.DeclRef {
+    if (env.reflection) |r| if (r.hookFns.get(try envMod.declIdentity(env.arena, module, name))) |info| return info.ref;
+    return .{ .module = module, .name = name };
+}
+
+/// The decorator an annotation of this module names, as its identity
+/// (`declIdentity` of the decorator's declaring module and declared name): an
+/// alias (`#[srv]` for `serverOnly`) and a namespace (`#[web.route]`) answer
+/// the declaration. A builtin annotation (`#[@External.Node(…)]`) is `@<name>`.
+fn annotationDecoratorId(env: *Env, a: ast.Annotation) InferError![]const u8 {
+    if (a.is_builtin) return std.fmt.allocPrint(env.arena, "@{s}", .{a.name});
+    if (env.importOwners.get(a.name)) |o| return envMod.declIdentity(env.arena, o.owner, o.name);
+    if (std.mem.indexOfScalar(u8, a.name, '.')) |dot| if (env.namespaces.paths.get(a.name[0..dot])) |path|
+        return envMod.declIdentity(env.arena, path, a.name[dot + 1 ..]);
+    // A std decorator through its namespace handle (`#[mocks.mock]`) is
+    // registered with its std module as owner.
+    if (env.decorators.get(a.name)) |sig| if (sig.fn_decl) |d| {
+        const owner = env.comptimeOwnerOf(d);
+        if (owner.len > 0) return envMod.declIdentity(env.arena, owner, d.name);
+    };
+    return envMod.declIdentity(env.arena, env.modulePath, a.name);
+}
+
+/// A declaration's annotations with the decorators they name resolved here.
+fn hookAnnotations(env: *Env, anns: []const ast.Annotation) InferError![]const hooksMod.Annotation {
+    const out = try env.arena.alloc(hooksMod.Annotation, anns.len);
+    for (anns, 0..) |a, i| out[i] = .{
+        .name = a.name,
+        .args = a.args,
+        .decorator = try annotationDecoratorId(env, a),
+    };
+    return out;
+}
+
+/// The annotations of the function `ref` names: this module's from its
+/// declaration, another module's as that module published them.
+fn hookDeclAnnotations(env: *Env, ref: hooksMod.DeclRef) InferError![]const hooksMod.Annotation {
+    if (std.mem.eql(u8, ref.module, env.modulePath)) {
+        const f = env.fnDecls.get(ref.name) orelse return &.{};
+        return hookAnnotations(env, f.annotations);
+    }
+    const r = env.reflection orelse return &.{};
+    const info = r.hookFns.get(try envMod.declIdentity(env.arena, ref.module, ref.name)) orelse return &.{};
+    return info.annotations;
+}
+
+/// One explicit type argument of a `use`, as `TypeInfo<unknown>` hands it
+/// out: its declared name and module, and a record's fields as the checker
+/// spells their types.
+fn hookTypeArg(env: *Env, tr: ast.TypeRef) InferError!hooksMod.TypeArg {
+    const spelled = try declTypeName(env.arena, tr);
+    if (tr != .named) return .{ .name = spelled, .module = "", .fields = &.{} };
+    const n = tr.named;
+    // A type of this module, an imported one, or a primitive / std type
+    // (module `""`).
+    const name, const module = if (env.importedTypeDecls.get(n)) |it|
+        .{ it.name, it.module }
+    else if (env.ownDecls.contains(n))
+        .{ n, if (env.modulePath.len == 0) "main" else env.modulePath }
+    else
+        .{ n, "" };
+    var fields: std.ArrayListUnmanaged(hooksMod.TypeArg.Field) = .empty;
+    if (env.lookupTypeDef(n)) |td| if (td.fields()) |fs| for (fs) |f| {
+        try fields.append(env.arena, .{ .name = f.name, .typeName = try decoratorSpelling(env, f.type_, 0) });
+    };
+    return .{ .name = name, .module = module, .fields = fields.items };
+}
+
+/// Decision 277 — a `use` written in the body being recorded: the hook it
+/// activates (null over a function value), the hook's annotations, the
+/// `use`'s explicit type arguments, and for std's `provide` / `context` the
+/// context object it names (decision 354 (4)).
+fn noteHookUse(env: *Env, operand: ast.Expr, loc: ast.Loc) InferError!void {
+    const b = env.hookBuilder orelse return;
+    if (operand != .call or operand.call.kind != .call) {
+        return b.uses.append(env.arena, .{ .hook = null, .annotations = &.{}, .at = loc, .typeArgs = &.{} });
+    }
+    const c = operand.call;
+    const call = c.kind.call;
+    const hook = try hookCalleeDecl(env, c);
+    var typeArgs: std.ArrayListUnmanaged(hooksMod.TypeArg) = .empty;
+    if (call.typeArgs) |tas| for (tas) |ta| try typeArgs.append(env.arena, try hookTypeArg(env, ta));
+    var context: ?hooksMod.DeclRef = null;
+    if (stdContextCallee(env, c) != null and call.args.len > 0) {
+        const arg = call.args[0].value.*;
+        if (arg == .identifier and arg.identifier.kind == .ident) {
+            const name = arg.identifier.kind.ident;
+            if (env.declaredContexts.contains(name)) {
+                context = .{ .module = env.modulePath, .name = name };
+            } else if (env.importOwners.get(name)) |o| context = .{ .module = o.owner, .name = o.name };
+        }
+    }
+    try b.uses.append(env.arena, .{
+        .hook = hook,
+        .annotations = if (hook) |h| try hookDeclAnnotations(env, h) else &.{},
+        .at = loc,
+        .typeArgs = typeArgs.items,
+        .context = context,
+    });
+}
+
+/// Decision 277 — a call of a `@Component` function written in the body being
+/// recorded (its type read when the body is done). The operand of a `use` is
+/// the `use`'s, and a call of a function value names no declaration.
+fn noteHookCall(env: *Env, c: ast.CallExprOf(.untyped), ty: *T.Type) InferError!void {
+    const b = env.hookBuilder orelse return;
+    if (env.inUseOperand) if (env.useOperandLoc) |at| if (std.meta.eql(at, c.loc)) return;
+    const callee = try hookCalleeDecl(env, c) orelse return;
+    try b.calls.append(env.arena, .{ .call = .{ .callee = callee, .at = c.loc }, .type_ = ty });
+}
+
+/// The top-level function of this module `f` is (methods and lambdas are not).
+fn isModuleFn(env: *Env, f: ast.FnDecl) bool {
+    if (f.body.len == 0) return false;
+    const d = env.fnDecls.get(f.name) orelse return false;
+    return d.body.ptr == f.body.ptr and env.ownDecls.contains(f.name);
+}
+
+/// The node of `f` once its body is inferred: its `use`s, and its calls whose
+/// type resolved to `@Component<R>`.
+fn finishHookNode(env: *Env, f: ast.FnDecl, b: *hooksMod.Builder) InferError!void {
+    var calls: std.ArrayListUnmanaged(hooksMod.Call) = .empty;
+    for (b.calls.items) |pc| {
+        const d = pc.type_.deref();
+        if (d.* == .named and std.mem.eql(u8, d.named.name, "Component")) try calls.append(env.arena, pc.call);
+    }
+    try env.hookNodes.put(env.arena, f.name, .{
+        .function = .{
+            .module = env.modulePath,
+            .name = f.name,
+            .returnTypeName = if (f.returnType) |rt| try declTypeName(env.arena, rt) else "",
+        },
+        .uses = b.uses.items,
+        .calls = calls.items,
+    });
+}
+
+/// A host function — `declare fn`, an `#[@External…]` binding — or std's
+/// compiler-lowered `provide` / `context`: no node.
+fn isHookHost(f: ast.FnDecl) bool {
+    if (f.isDeclare or f.body.len == 0) return true;
+    for (f.annotations) |a| if (a.is_builtin and std.mem.startsWith(u8, a.name, "External")) return true;
+    return false;
+}
+
+/// Decision 277 — publish this module's top-level functions with their nodes
+/// to the session, for the modules that import them.
+fn publishHookFns(env: *Env, program: ast.Program) InferError!void {
+    const r = env.reflection orelse return;
+    for (program.decls) |d| {
+        if (d != .@"fn") continue;
+        const f = d.@"fn";
+        const host = isHookHost(f) or std.mem.eql(u8, env.modulePath, "std/context");
+        const ref: hooksMod.DeclRef = .{
+            .module = env.modulePath,
+            .name = f.name,
+            .returnTypeName = if (f.returnType) |rt| try declTypeName(r.arena, rt) else "",
+        };
+        try r.hookFns.put(r.arena, try envMod.declIdentity(r.arena, env.modulePath, f.name), .{
+            .ref = ref,
+            .host = host,
+            .annotations = try hookAnnotations(env, f.annotations),
+            .node = if (host) null else env.hookNodes.get(f.name),
+        });
+    }
+}
+
+/// The node of the function `ref` names, or null for one that has none (a
+/// host function). This module's function is inferred now when its body has
+/// not been yet — decorators run before bodies.
+fn hookNodeOf(env: *Env, ref: hooksMod.DeclRef) InferError!?hooksMod.Node {
+    if (std.mem.eql(u8, ref.module, "std/context")) return null;
+    if (std.mem.eql(u8, ref.module, env.modulePath)) {
+        const f = env.fnDecls.get(ref.name) orelse return null;
+        if (isHookHost(f)) return null;
+        if (env.hookNodes.get(ref.name)) |n| return n;
+        _ = try inferFnDecl(env, f);
+        return env.hookNodes.get(ref.name);
+    }
+    const r = env.reflection orelse return null;
+    const info = r.hookFns.get(try envMod.declIdentity(env.arena, ref.module, ref.name)) orelse return null;
+    return info.node;
+}
+
+/// Decision 277 — `decl.hooks` of the function `f`: its node, then every node
+/// reachable through its `use`s and calls, breadth-first, each node's edges in
+/// body order, each function once (an edge back to a listed node adds none).
+/// Computed only when a decorator on `f` reads it (`hooks.readsMember`).
+fn declHooks(env: *Env, program: ast.Program, f: ast.FnDecl) InferError![]const hooksMod.Node {
+    if (!try decoratorsReadHooks(env, f.annotations)) return &.{};
+    // Decorators run before bodies: a body this module's nodes are read from
+    // is inferred now, so the imports and module-level `val`s it names (a
+    // context's declaration) are bound first, in declaration order, as Pass 2
+    // binds them.
+    if (!env.hookValsBound) {
+        env.hookValsBound = true;
+        for (program.decls) |d| if (d == .use or d == .val) {
+            _ = try inferDecl(env, d);
+        };
+    }
+    const start: hooksMod.DeclRef = .{ .module = env.modulePath, .name = f.name };
+    var seen: std.StringHashMapUnmanaged(void) = .empty;
+    try seen.put(env.arena, try envMod.declIdentity(env.arena, start.module, start.name), {});
+    var queue: std.ArrayListUnmanaged(hooksMod.DeclRef) = .empty;
+    try queue.append(env.arena, start);
+    var nodes: std.ArrayListUnmanaged(hooksMod.Node) = .empty;
+    var i: usize = 0;
+    while (i < queue.items.len) : (i += 1) {
+        const node = try hookNodeOf(env, queue.items[i]) orelse continue;
+        try nodes.append(env.arena, node);
+        // The node's edges in body order: its `use`s (over a declaration)
+        // and its calls, merged by where they are written.
+        var u: usize = 0;
+        var c: usize = 0;
+        while (u < node.uses.len or c < node.calls.len) {
+            const takeUse = c >= node.calls.len or (u < node.uses.len and hooksMod.before(node.uses[u].at, node.calls[c].at));
+            const next: ?hooksMod.DeclRef = if (takeUse) node.uses[u].hook else node.calls[c].callee;
+            if (takeUse) u += 1 else c += 1;
+            const target = next orelse continue;
+            const gop = try seen.getOrPut(env.arena, try envMod.declIdentity(env.arena, target.module, target.name));
+            if (!gop.found_existing) try queue.append(env.arena, target);
+        }
+    }
+    return nodes.items;
+}
+
+/// Whether a body-carrying decorator among `anns` reads `.hooks` — in its
+/// body or a function it reaches.
+fn decoratorsReadHooks(env: *Env, anns: []const ast.Annotation) InferError!bool {
+    for (anns) |a| {
+        if (a.is_builtin) continue;
+        const sig = env.decorators.get(a.name) orelse continue;
+        const dfn = sig.fn_decl orelse continue;
+        if (dfn.body.len == 0) continue;
+        const local = std.mem.eql(u8, env.comptimeOwnerOf(dfn), env.modulePath);
+        const support: []const ast.FnDecl = if (local)
+            (try decoratorSupport(env.arena, env.fnDecls, &env.importedFnSupport, dfn)).fns
+        else
+            sig.support;
+        if (hooksMod.readsMember(&.{dfn}, "hooks") or hooksMod.readsMember(support, "hooks")) return true;
+    }
+    return false;
+}
+
+/// The decorator identities a handle's annotations name (`DeclAnnotation.decorator`),
+/// for every annotation of `handle` (its own, its fields', its methods').
+fn handleDecoratorIds(env: *Env, handle: decoratorEval.DeclHandle) InferError![]const decoratorEval.DecoratorId {
+    var out: std.ArrayListUnmanaged(decoratorEval.DecoratorId) = .empty;
+    const lists = [_][]const ast.Annotation{handle.annotations};
+    for (lists) |anns| for (anns) |a| try out.append(env.arena, .{ .name = a.name, .id = try annotationDecoratorId(env, a) });
+    for (handle.fields) |f| for (f.annotations) |a| try out.append(env.arena, .{ .name = a.name, .id = try annotationDecoratorId(env, a) });
+    for (handle.methods) |m| for (m.annotations) |a| try out.append(env.arena, .{ .name = a.name, .id = try annotationDecoratorId(env, a) });
+    return out.items;
+}
+
+/// `Declared.meta` of a reached declaration: every entry its decorators set
+/// so far, keyed `<decorator>.<key>`.
+fn hookMetaOf(ctx: *const anyopaque, arena: std.mem.Allocator, module: []const u8, name: []const u8) anyerror![]const hooksMod.MetaPair {
+    const r: *const reflectionMod.Reflection = @ptrCast(@alignCast(ctx));
+    const entries = try r.metaOf(arena, module, name);
+    const out = try arena.alloc(hooksMod.MetaPair, entries.len);
+    for (entries, 0..) |e, i| out[i] = .{ .key = try std.fmt.allocPrint(arena, "{s}.{s}", .{ e.decorator, e.key }), .value = e.value };
+    return out;
+}
+
+fn noMeta(_: *const anyopaque, _: std.mem.Allocator, _: []const u8, _: []const u8) anyerror![]const hooksMod.MetaPair {
+    return &.{};
+}
+
+/// The handle a decorator body reads, completed with the decorators its
+/// annotations name (`DeclAnnotation.decorator`), which only the checker knows.
+fn completeHandle(env: *Env, handle: decoratorEval.DeclHandle) InferError!decoratorEval.DeclHandle {
+    var h = handle;
+    h.decoratorIds = try handleDecoratorIds(env, handle);
+    return h;
+}
+
+/// Decision 277 — `decl.hooks` of the function `f` as the term its decorator
+/// body reads (empty unless one of its decorators reads it).
+fn declHooksTerm(env: *Env, program: ast.Program, f: ast.FnDecl) InferError![]const decoratorEval.Term {
+    const nodes = try declHooks(env, program, f);
+    if (nodes.len == 0) return &.{};
+    const source: hooksMod.MetaSource = if (env.reflection) |r|
+        .{ .ctx = r, .metaOf = hookMetaOf }
+    else
+        .{ .ctx = env, .metaOf = noMeta };
+    return hooksMod.nodesToTerm(env.arena, nodes, source) catch return error.OutOfMemory;
 }
 
 /// Bind the names introduced by a destructuring `val { … } = use …` /
