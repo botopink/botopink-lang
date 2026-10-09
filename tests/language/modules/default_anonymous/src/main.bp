@@ -1,0 +1,20 @@
+//// 01-compiler/01-checker step 25 (decision 289) — `pub default fn (…)` is a
+//// module's default function with no name in its module: `import {m.double};`
+//// binds it under the path's last segment, an alias binds it under another
+//// name, and a decorator on it reads `decl.name` as the file's name. The
+//// parent binary refused `pub default fn (` (an identifier was expected).
+
+pub mod deco;
+pub mod m;
+import {m.double};
+import {m.double as twice};
+import {m.page};
+import {m.double.reportName, m.page.reportPage};
+
+pub fn main() {
+    @print(double(4));
+    @print(twice(5));
+    @print(page());
+    @print(reportName());
+    @print(reportPage());
+}

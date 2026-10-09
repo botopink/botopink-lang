@@ -183,6 +183,35 @@ test "decorator invocation: round trip ---- a @Decl handle carries fields, metho
     try h.assertComptimeAstSingle(std.testing.allocator, @src(), src);
 }
 
+test "decorator invocation: a \\u{…} literal in the body evaluates to the character on both runtimes" {
+    // 1.0.12 front 14 step 7 (02-erlang step 5 box 2): the body's literal and
+    // the annotation's plain argument reach the comptime module as text written
+    // by `erl_emitter.writeStringFromLexeme`, the erlang target's renderer, so
+    // `\u{…}` is the code point's UTF-8 bytes — not Erlang's `\x{263A}`, which
+    // a plain `<<"…">>` truncates to its low byte. The wat runtime decodes the
+    // same lexeme in `wat.zig`'s `literalBytes`; both replies must agree.
+    const src =
+        \\fn smile(comptime decl: @Decl, mark: string) {
+        \\    val s = "<\u{263A}\u{e7}\u{1F600}>";
+        \\    @emit("pub val smiled" + decl.name + " = \"" + s + mark + "\";");
+        \\}
+        \\#[smile("[\u{2028}\u{263A}]")]
+        \\type Face(x: i32)
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const replies = try h.repliesIdenticalAcrossRuntimes(std.testing.allocator, arena.allocator(), @src(), &.{.{ .path = "", .source = src }});
+    // U+263A, U+00E7, U+1F600, then the argument's U+2028, U+263A — each as
+    // its UTF-8 bytes, the whole code point.
+    const expected = "pub val smiledFace = \\\"<\xE2\x98\xBA\xC3\xA7\xF0\x9F\x98\x80>[\xE2\x80\xA8\xE2\x98\xBA]\\\";";
+    for (replies) |r| {
+        if (std.mem.indexOf(u8, r, expected) == null) {
+            std.debug.print("\nexpected {s} in:\n{s}\n", .{ expected, r });
+            return error.TestExpectedContains;
+        }
+    }
+}
+
 test "decorator invocation: method placement accepted" {
     try assertAccepts(@src(),
         \\fn getMapping(comptime decl: @Decl, path: string) {

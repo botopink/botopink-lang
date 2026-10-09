@@ -245,6 +245,25 @@ pub fn failedOutputs(
     return failed.items;
 }
 
+/// Decision 57 — print the warnings every `generateWith` entry carries
+/// (`GenerateResult.warnings`), exactly as `check` prints them
+/// (`renderOutcome`'s `.ok` arm): `build` and `test` show what `check` shows,
+/// and a warning fails nothing (front 26 step 4).
+pub fn renderWarnings(gpa: std.mem.Allocator, io: std.Io, arena: std.mem.Allocator, outputs: []const bp.codegen.ModuleOutput) void {
+    for (outputs) |o| {
+        for (o.result.warnings) |w| printWarning(gpa, w.message, w.loc, o.src, fileLabel(arena, io, o.name));
+    }
+}
+
+fn printWarning(gpa: std.mem.Allocator, msg: []const u8, loc: anytype, source: []const u8, file: []const u8) void {
+    if (loc) |l| {
+        var aw: std.Io.Writer.Allocating = .init(gpa);
+        defer aw.deinit();
+        renderLocatedAs(&aw.writer, "warning", msg, file, source, l.line, l.col, 1) catch return;
+        std.debug.print("{s}", .{aw.written()});
+    } else std.debug.print("warning: {s}\n --> {s}\n\n", .{ msg, file });
+}
+
 /// Render the diagnostic a `generateWith` entry carries. Returns true when the
 /// entry is a failure.
 pub fn renderResult(gpa: std.mem.Allocator, io: std.Io, arena: std.mem.Allocator, o: bp.codegen.ModuleOutput) bool {
@@ -286,13 +305,7 @@ pub fn renderOutcome(gpa: std.mem.Allocator, io: std.Io, arena: std.mem.Allocato
             for (ok.warnings) |w| {
                 const msg = w.message(gpa) catch continue;
                 defer gpa.free(msg);
-                const file = fileLabel(arena, io, o.name);
-                if (w.loc) |l| {
-                    var aw: std.Io.Writer.Allocating = .init(gpa);
-                    defer aw.deinit();
-                    renderLocatedAs(&aw.writer, "warning", msg, file, o.src, l.line, l.col, 1) catch continue;
-                    std.debug.print("{s}", .{aw.written()});
-                } else std.debug.print("warning: {s}\n --> {s}\n\n", .{ msg, file });
+                printWarning(gpa, msg, w.loc, o.src, fileLabel(arena, io, o.name));
             }
             return false;
         },

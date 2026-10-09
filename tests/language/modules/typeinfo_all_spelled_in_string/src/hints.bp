@@ -1,0 +1,8 @@
+//// Spells the builtin in a string literal and never calls it.
+
+import {marks.tagged};
+
+#[tagged]
+pub fn usage() -> string {
+    return "write @TypeInfo.all(with: d) in the entry point";
+}

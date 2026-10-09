@@ -249,9 +249,17 @@ pub const ParseErrorType = enum {
     /// A bodyless member of a `behavior` (`fn f(self: Self) -> i32`, `val x: T`)
     /// without its terminating `;`.
     memberMissingSemicolon,
+    /// Decision 289 — `pub default <name>;` naming no `fn` of the module.
+    defaultUnknown,
+    /// Decision 289 — a second default function in one module: `pub default
+    /// <name>;` naming a function already the default, or a second such line.
+    defaultTwice,
     /// `$self` in an `@External` template: markers are positional (decision 5),
     /// `$0` is the first declared parameter — `self` on a method.
     templateSelfMarker,
+    /// `$stringify(…)` in an `@External` template (decisions 164, 239): a
+    /// template writes the host's own string conversion.
+    templateStringifyMarker,
     /// `$N` in an `@External` template past the declaration's parameters.
     templateMarkerOutOfRange,
     /// `fn f(x: string)` with no body and no `-> …` — decision 33 (b): a
@@ -506,7 +514,8 @@ pub const Parser = struct {
             return err;
         };
         // Decision 5: positional `@External` template markers, translated for
-        // the renderers; `$self` and an out-of-range `$N` are refused here.
+        // the renderers; `$self`, `$stringify` (decision 239) and an
+        // out-of-range `$N` are refused here.
         if (template_markers.normalizeProgram(alloc, this.tokens, &program) catch |err| {
             program.deinit(alloc);
             return err;
@@ -514,6 +523,7 @@ pub const Parser = struct {
             program.deinit(alloc);
             this.parseError = ParseErrorInfo.fromToken(switch (failure.kind) {
                 .selfMarker => .templateSelfMarker,
+                .stringifyMarker => .templateStringifyMarker,
                 .indexOutOfRange => .templateMarkerOutOfRange,
             }, failure.tok);
             return ParseError.UnexpectedToken;
@@ -529,6 +539,8 @@ pub const Parser = struct {
         }
         var blankBefore: std.ArrayList(bool) = .empty;
         errdefer blankBefore.deinit(alloc);
+        var defaultNames: std.ArrayList(Token) = .empty;
+        defer defaultNames.deinit(alloc);
         while (!this.check(.endOfFile)) {
             const blank = if (this.current > 0) blk: {
                 const prev = this.tokens[this.current - 1];
@@ -549,6 +561,15 @@ pub const Parser = struct {
                 const d = try this.parseActivationStmt(alloc);
                 _ = this.match(.semicolon);
                 break :blk .{ .use = d };
+            } else if (this.checkDefaultName()) {
+                // Decision 289 — `pub default <name>;`: no declaration of its
+                // own; it marks the named `fn` once every decl is parsed.
+                _ = blankBefore.pop();
+                _ = this.advance();
+                _ = this.advance();
+                try defaultNames.append(alloc, this.advance());
+                _ = try this.consume(.semicolon);
+                continue;
             } else if (this.checkShorthand(.@"fn") or this.checkStarFn() or this.checkDefaultFn()) blk: {
                 const d = try this.parseFnDecl(alloc);
                 _ = this.match(.semicolon);
@@ -609,6 +630,12 @@ pub const Parser = struct {
                 const eff = if (isPub) this.peekAt(annEnd + 1).kind else tok;
                 const decl: DeclKind = switch (eff) {
                     .@"fn", .star => DeclKind{ .@"fn" = try this.parseFnDecl(alloc) },
+                    // `#[d] pub default fn …` — an annotated default function
+                    // (decision 289; `.bpp`'s route decorator).
+                    .default => if (this.peekAt((if (isPub) annEnd + 1 else annEnd) + 1).kind == .@"fn")
+                        DeclKind{ .@"fn" = try this.parseFnDecl(alloc) }
+                    else
+                        return ParseError.UnexpectedToken,
                     .identifier => {
                         const off = if (isPub) annEnd + 1 else annEnd;
                         if (this.removedDeclKeywordAt(off) != null) return this.failRemovedDeclKeyword(off);
@@ -693,12 +720,42 @@ pub const Parser = struct {
             };
             try decls.append(alloc, decl);
         }
+        try this.markDefaultNames(decls.items, defaultNames.items);
         const declSlice = try decls.toOwnedSlice(alloc);
         errdefer {
             for (declSlice) |*d| d.deinit(alloc);
             alloc.free(declSlice);
         }
         return Program{ .decls = declSlice, .blankLineBefore = try blankBefore.toOwnedSlice(alloc) };
+    }
+
+    /// Decision 289 — each `pub default <name>;` makes the module's `fn
+    /// <name>` its default (`isDefault`, `defaultBy`). A name no top-level `fn`
+    /// declares is `default-unknown`; a function already the default (written
+    /// `pub default fn <name>` or named by an earlier line) is `default-twice`,
+    /// both at the name. Two different defaults are the checker's
+    /// (`validateUniqueDefaults`).
+    fn markDefaultNames(this: *This, decls: []DeclKind, names: []const Token) ParseError!void {
+        for (names) |tok| {
+            const target: *ast.FnDecl = for (decls) |*d| switch (d.*) {
+                .@"fn" => |*f| if (std.mem.eql(u8, f.name, tok.lexeme)) break f,
+                else => {},
+            } else {
+                this.parseError = ParseErrorInfo.fromTokenDetail(.defaultUnknown, tok, tok.lexeme);
+                return ParseError.UnexpectedToken;
+            };
+            if (target.isDefault) {
+                this.parseError = ParseErrorInfo.fromTokenDetail(.defaultTwice, tok, tok.lexeme);
+                return ParseError.UnexpectedToken;
+            }
+            target.isDefault = true;
+            target.defaultBy = locFromToken(tok);
+            // The default is what the module exports to its importer.
+            if (!target.isPub) {
+                target.isPub = true;
+                target.pubByDefault = true;
+            }
+        }
     }
 
     /// Parses a top-level `mod Name;` / `pub mod Name;` module declaration.
@@ -836,6 +893,12 @@ pub const Parser = struct {
         if (this.check(.default)) return this.peekAt(1).kind == .@"fn";
         if (this.check(.@"pub")) return this.peekAt(1).kind == .default and this.peekAt(2).kind == .@"fn";
         return false;
+    }
+
+    /// Decision 289 — `pub default <name>;` at a module's top level.
+    pub inline fn checkDefaultName(this: *This) bool {
+        return this.check(.@"pub") and this.peekAt(1).kind == .default and
+            this.peekAt(2).kind == .identifier and this.peekAt(3).kind == .semicolon;
     }
 
     /// `default mod Name;` / `pub default mod Name;` at a module's top level — the

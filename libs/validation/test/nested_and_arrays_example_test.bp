@@ -1,0 +1,97 @@
+// The suite case of the front's example, byte for byte but for the import
+// lines: a module of this package names it by path (`import {schemas};`,
+// decision 206), an application by `from "validation"`.
+//
+// Front 125 — validation: Zod's feature set · examples/nested-and-arrays-example.bp
+//
+// Demonstrates: step 2 — nested records, arrays, and a type that names itself.
+// A field whose type is another `#[schema]` type is decoded by calling
+// `parse<ThatType>At` BY NAME, so the decorator never needs to see a second
+// declaration; a violation inside it carries the whole path.
+//
+//   const Address = z.object({ street: z.string(), zip: z.string() });
+//   const Order   = z.object({ id: z.string(), ship: Address, lines: z.array(Line) });
+//   const Category = z.object({ name: z.string(), get subcategories() { return z.array(Category) } });
+//
+// Upstream: ZOD_DOCUMENTATION.md §§ 4.17 (Objects), 4.18 (Recursive Objects),
+//           4.19 (Arrays) — https://zod.dev/api#objects
+//
+// Target: both.
+
+import {decorators.schema};
+import {schemas};
+import {schemas.Schema, report.ValidationReport, report.Violation};
+import {json.Json} from "std";
+
+#[schema]
+pub type Address(
+    street: string,
+    zip: string,
+)
+
+#[schema]
+pub type Line(
+    sku: string,
+    quantity: i32,
+)
+
+#[schema]
+pub type Order(
+    id: string,
+    ship: Address,
+    lines: Array<Line>,
+    note: ?string,
+)
+
+// Zod needs a getter to let a schema mention itself. Here the field's type is
+// the record's own name and `parseCategory` calls itself.
+#[schema]
+pub type Category(
+    name: string,
+    subcategories: Array<Category>,
+)
+
+fn located(r: @Result<Order, ValidationReport>) -> string {
+    return case r {
+        Ok(_) -> "";
+        Error(report) -> report.violations
+            .map({ v -> v.field + ":" + v.code })
+            .join(",");
+    };
+}
+
+test "validation: a nested document becomes nested records" {
+    val order = try decodeOrder(
+        """{"id": "o1", "ship": {"street": "Rua A", "zip": "01310-100"},
+            "lines": [{"sku": "x", "quantity": 2}]}""",
+    );
+    assert order.ship.zip == "01310-100";
+    assert order.lines.length == 1;
+    assert order.note == null;
+}
+
+test "validation: a violation names the path to the value, not the leaf alone" {
+    val r = decodeOrder(
+        """{"id": "o1", "ship": {"street": "Rua A"},
+            "lines": [{"sku": "x", "quantity": 2}, {"sku": 7, "quantity": "two"}]}""",
+    );
+    assert located(r)
+        == "ship.zip:required,lines[1].sku:invalidType,lines[1].quantity:invalidType";
+}
+
+test "validation: an array field refuses a value that is not an array" {
+    val r = decodeOrder(
+        """{"id": "o1", "ship": {"street": "a", "zip": "b"}, "lines": {}}""",
+    );
+    assert located(r) == "lines:invalidType";
+}
+
+test "validation: a recursive type decodes to any depth" {
+    val tree = try decodeCategory(
+        """{"name": "root", "subcategories": [
+              {"name": "a", "subcategories": [{"name": "a1", "subcategories": []}]},
+              {"name": "b", "subcategories": []}]}""",
+    );
+    assert tree.subcategories.length == 2;
+    assert tree.subcategories.at(0).unwrapOr(tree).subcategories.length == 1;
+}

@@ -1,0 +1,3 @@
+pub fn tagged(comptime decl: @Decl) {
+    decl.setMeta("tag", decl.name);
+}

@@ -95,6 +95,13 @@ pub const Pick = union(enum) {
     contested: Contested,
 };
 
+/// `CrossModule.variantFields`' answer.
+pub const VariantFields = union(enum) {
+    none,
+    known: []const []const u8,
+    contested,
+};
+
 /// Two of the modules that declare one exported name, for the diagnostic. Two
 /// is enough to name the defect; listing every one of them would not help a
 /// reader fix it.
@@ -171,6 +178,16 @@ pub const CrossModule = struct {
     /// when it has none. Two modules declaring one `Type.method` keep the
     /// first one walked (the name is all a call site has to go on).
     host_methods: std.StringHashMapUnmanaged(ast.BehaviorMethod) = .empty,
+    /// Every payload variant name declared by an enum of the program — any
+    /// module, `pub` or not — → its declared field names, in order; null when
+    /// two enums declare the name with different fields (`Tag.Item(label)`
+    /// and `Count.Item(count)`). A positional payload pattern (`Str(text)`)
+    /// binds the field at its position, and a backend that lowers a `case`
+    /// without the subject's type knows the variant by its bare name only:
+    /// a pattern over a variant of an imported enum (`json.Json`'s `Str`)
+    /// reads `value` from here, and a contested name says the position must
+    /// be read from the matched value itself (`variantFields`).
+    variant_fields: std.StringHashMapUnmanaged(?[]const []const u8) = .empty,
     /// Which package owns each module path (decision 109) — every atom an
     /// emitter renders for a path goes through `idOf`.
     packages: Packages = .{},
@@ -187,6 +204,7 @@ pub const CrossModule = struct {
         var hit = self.host_methods.keyIterator();
         while (hit.next()) |k| self.alloc.free(k.*);
         self.host_methods.deinit(self.alloc);
+        self.variant_fields.deinit(self.alloc);
         self.export_faults.deinit();
         var ait = self.atoms.valueIterator();
         while (ait.next()) |a| self.alloc.free(a.*);
@@ -217,6 +235,15 @@ pub const CrossModule = struct {
     pub fn ownerModuleAtom(self: *const CrossModule, name: []const u8) ?[]const u8 {
         const info = self.exports.get(name) orelse return null;
         return self.atomFor(info.module);
+    }
+
+    /// What the program declares for the payload variant `bare`: its field
+    /// names when every enum declaring it agrees, `.contested` when two
+    /// disagree, `.none` when no enum of the program declares it with a
+    /// payload (a `@Result`'s `Ok`, a record's constructor pattern).
+    pub fn variantFields(self: *const CrossModule, bare: []const u8) VariantFields {
+        const entry = self.variant_fields.get(bare) orelse return .none;
+        return if (entry) |names| .{ .known = names } else .contested;
     }
 
     /// The fault that makes `path`'s atom unusable, or null.
@@ -1114,7 +1141,38 @@ pub fn buildIn(alloc: std.mem.Allocator, outputs: []ComptimeOutput, packages: Pa
             else => {},
         };
     }
-    return .{ .exports = exports, .owners = owners_final, .export_faults = export_faults, .imported = imported, .atoms = atoms, .atom_faults = atom_faults, .fault_atoms = fault_atoms, .field_arrays = field_arrays, .method_arrays = method_arrays, .owner_arrays = owner_arrays, .host_methods = host_methods, .packages = packages, .alloc = alloc };
+    var variant_fields: std.StringHashMapUnmanaged(?[]const []const u8) = .empty;
+    errdefer variant_fields.deinit(alloc);
+    for (outputs) |*ct| {
+        const ok = switch (ct.outcome) {
+            .ok => |*o| o,
+            else => continue,
+        };
+        for (ok.transformed.decls) |decl| switch (decl) {
+            .type_ => |t| for (t.variants()) |v| {
+                if (v.fields.len == 0) continue;
+                const names = try alloc.alloc([]const u8, v.fields.len);
+                for (v.fields, 0..) |f, i| names[i] = f.name;
+                try field_arrays.append(alloc, names);
+                const gop = try variant_fields.getOrPut(alloc, v.name);
+                if (!gop.found_existing) {
+                    gop.value_ptr.* = names;
+                    continue;
+                }
+                const prev = gop.value_ptr.* orelse continue;
+                if (!sameNames(prev, names)) gop.value_ptr.* = null;
+            },
+            else => {},
+        };
+    }
+    return .{ .exports = exports, .owners = owners_final, .export_faults = export_faults, .imported = imported, .atoms = atoms, .atom_faults = atom_faults, .fault_atoms = fault_atoms, .field_arrays = field_arrays, .method_arrays = method_arrays, .owner_arrays = owner_arrays, .host_methods = host_methods, .variant_fields = variant_fields, .packages = packages, .alloc = alloc };
+}
+
+/// Two field-name lists that are the same names in the same order.
+fn sameNames(a: []const []const u8, b: []const []const u8) bool {
+    if (a.len != b.len) return false;
+    for (a, b) |x, y| if (!std.mem.eql(u8, x, y)) return false;
+    return true;
 }
 
 // ── tests: the atom, its qualifier, its decoder and the collision check ───────

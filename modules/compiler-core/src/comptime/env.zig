@@ -142,6 +142,14 @@ pub const ExtEntry = struct {
     methods: []const []const u8,
 };
 
+/// The declaration a type import item resolved to (`Env.importedTypeDecls`).
+pub const ImportedTypeDecl = struct {
+    /// The type's declared name (the item's leaf).
+    name: []const u8,
+    /// The module path that declares it (`catalog`, `srv/app`).
+    module: []const u8,
+};
+
 // ── @Context capability scope ───────────────────────────────────────────────────
 
 /// Capability information about the function body currently being inferred.
@@ -767,6 +775,16 @@ pub const Env = struct {
     /// C1 — the return targets of the trailing lambdas inferred last, read by
     /// `@block` to type the block as the value its `return`s carry.
     lastTrailingReturnTargets: []*T.Type = &.{},
+    /// Decision 2 — where the statement being inferred is an `@block { … }`
+    /// written as a whole statement (its value discarded). Set by the
+    /// statement loops (`inferStmtsTyped`, `inferBodyStmts`) per statement
+    /// and restored after it; the `@block` arm reads it to tell a statement
+    /// block from one in value position, which needs a valued `return`.
+    statementBlockLoc: ?ast.Loc = null,
+    /// Decision 297 — the functions a call of this module passed a type to
+    /// (`pick(User)` → `pick__type()`, `value_or_type.zig`): an import of one
+    /// brings its type form along (`value_or_type.withTwinImports`).
+    typeArgTwins: std.StringHashMapUnmanaged(void) = .empty,
     /// How `throw` is checked in the function body currently being inferred.
     throwContext: ThrowContext = .unchecked,
     /// Active effect-fn context while inferring its body (for `await`/`yield`
@@ -1043,6 +1061,15 @@ pub const Env = struct {
     /// program names (`from "<module>"`, `withImportSourcesNamed`) so the
     /// backends read the same answer.
     itemOwners: std.AutoHashMapUnmanaged(ast.Loc, []const u8) = .empty,
+    /// The declaration each non-std type import item resolved to, by the
+    /// local name the item binds (`resolveImports` in `comptime.zig`): its
+    /// declared name and the module path that declares it. One declaration
+    /// reached by two items — `import {catalog.Widget};` beside the
+    /// `import {Widget as __bp_ti_0} from "catalog";` a `@TypeInfo.all`
+    /// answer adds — is one type: registered once, and the same identity to
+    /// decision 170's two-types check (`noteExplicitTypeNames`), however each
+    /// item spells its source.
+    importedTypeDecls: std.StringHashMapUnmanaged(ImportedTypeDecl) = .empty,
     /// Decision 170 — the type names this module declares or imports by name
     /// (`type Dict(…)`, `import {kit.store.Dict as OwnDict}` → `Dict`),
     /// collected before any import is marked (`noteExplicitTypeNames`). A std
@@ -1255,6 +1282,19 @@ pub const Env = struct {
     /// on every `freshEnv`, which `registerStdlib` did unconditionally.
     /// Lex + parse + infer of the test snippet itself only costs ~µs.
     pub fn cloneFromTemplate(tmpl: *const Env, arena: std.mem.Allocator) !Env {
+        var env = try cloneFromTemplateFields(tmpl, arena);
+        // T17 — the reflection records' spellings (`Param` = `__Decl__Param`,
+        // `comptime.zig` `decl_reflection_src`) are the template's only
+        // aliases every module sees; no other template alias is in scope.
+        var ait = tmpl.typeAliases.iterator();
+        while (ait.next()) |e| switch (e.value_ptr.target) {
+            .named => |n| if (std.mem.startsWith(u8, n, "__Decl__")) try env.typeAliases.put(arena, e.key_ptr.*, e.value_ptr.*),
+            else => {},
+        };
+        return env;
+    }
+
+    fn cloneFromTemplateFields(tmpl: *const Env, arena: std.mem.Allocator) !Env {
         return .{
             .arena = arena,
             .bindings = try tmpl.bindings.cloneWithAllocator(arena),

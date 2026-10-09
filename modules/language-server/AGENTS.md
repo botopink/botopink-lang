@@ -33,7 +33,13 @@ The server handles `initialize` / `shutdown`, `didOpen` / `didChange` /
 - `publishDiagnostics` (with `$/progress`; a checker warning — decision 57's
   `OkData.warnings`, e.g. `var out = [];` born with no element type — is a
   diagnostic of severity Warning, `compiler.zig` `diagnosticsFor`, snapshot
-  `diagnostics_checker_warning`), `formatting`,
+  `diagnostics_checker_warning`; the import-source refusals `botopink check`
+  makes — `from "<a module of this package>"` (decision 206) and `from "<a
+  package not declared in botopink.json>"` (decision 242) — as errors at the
+  source string with the CLI's own message, `engine.importDiagnostics` over
+  the CLI's resolver (`cli_resolver` module), snapshots
+  `diagnostics_import_module_with_from` and
+  `diagnostics_import_unresolved_source`), `formatting`,
   `hover` (full signature + doc comments, incl. qualified `std` members and
   builtin interface methods on primitives/arrays/strings; for a fn whose return
   is `@Task` / `@Component` / `@Iterator` / `@Stream`, a footer naming what the

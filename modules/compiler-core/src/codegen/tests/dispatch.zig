@@ -186,21 +186,13 @@ test "js: dispatch ---- multi-module extension activated via star import" {
 // kind *and* the `info.methods` membership test. `methodOwnerModule` now mirrors
 // `beam_asm.zig`'s (`448b935`) over both sources, and `main.erl` calls
 // `geometry:area/1`; the RUN LOG is `1`, `16`, `42` — what commonJS and beam
-// print.
-// KNOWN-WRONG (wasm): wasm stays single-module and has no named-type identity,
-// so the imported enum's `case self` traps (`unreachable`); the two record
-// shapes print.
+// print. wasm prints `1`, `16`, `42` too.
 //
-// NOT pinned here, because it fails on beam and wasm both and the row is the
-// CHECKER's: the same associated fn WITHOUT the type annotation —
-// `Counter.zero().bump()`, or `val c = Counter.zero()` — reaches beam as
-// `{unresolved_method, bump, 1}` and wasm as a trap, because
-// `env.instanceLowerings` carries no entry for the call: the checker gives
-// `Type.assoc()` no return type, so the receiver's type is a fresh var and
-// `recordInstanceCall` never runs. It reproduces inside ONE module, so it is not
-// about imports at all, and the two dynamic-dispatch backends cannot see it
-// (commonJS dispatches at run time; erlang names a record method flatly, so it
-// needs no type either).
+// The same associated fn WITHOUT the type annotation — `Counter.zero().bump()`,
+// or `val c = Counter.zero()` — reached beam as `{unresolved_method, bump, 1}`
+// and wasm as a trap, inside one module too: the checker gave `Type.assoc()` no
+// return type. It prints `1` on all four backends now (one module, measured
+// with `botopink run`); this cell keeps the annotated form.
 test "js: dispatch ---- a method on an imported enum, an imported associated fn and an imported fn" {
     try h.assertJs(std.testing.allocator, @src(), &.{
         .{ .path = "geometry", .source =
@@ -240,9 +232,7 @@ test "js: dispatch ---- a method on an imported enum, an imported associated fn 
 // = …` for an interface that is no JS constructor (`Bounded is not defined` at
 // load); the default is now a method of the implementing class. erlang emits it
 // beside the record's own methods (`clamp(Self, Lo, Hi) -> min(max(Self, Lo),
-// Hi).`) and prints the same `120`. KNOWN: beam aborts
-// `{unresolved_method, clamp, 3}` (empty RUN LOG) and wasm traps — neither
-// reaches a user interface's default through a record yet (1.0.4-beta 01).
+// Hi).`) and prints the same `120`, as beam and wasm do.
 test "js: interface ---- a default fn calls members of the implementing record" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\behavior Bounded {
@@ -277,9 +267,7 @@ test "js: interface ---- a default fn calls members of the implementing record" 
 // generic record adopts a behavior through an `extends` chain and defines only
 // the abstract member. Both defaults are the record's own functions, and
 // `self.size()` inside them reaches `size/1`, so `Bag(items: []).isEmpty()` is
-// `true` on every backend that runs the program. KNOWN: beam and wasm do not
-// reach a record's adopted default (same 1.0.4-beta 01 row as the test above);
-// beam's RUN LOG is empty and wasm's is the trap.
+// `true` on all four backends.
 test "js: interface ---- a generic record adopts defaults through an extends chain" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\behavior Sized {
@@ -486,7 +474,7 @@ test "js: record ---- a field of function type is called like a method" {
 // lambda ARGUMENT was inferred with fresh variables for its parameters —
 // nothing pushed the receiver's element type down into it — so inside the
 // lambda the receiver was an unresolved variable, the rename never fired, and
-// node died with `e.name.contains is not a function`. Measured by emilia's
+// node died with `e.name.contains is not a function`. Measured by a library's
 // theme front; the fix reads the method's declared signature out of
 // `libs/std/src/primitives.bp` (`filter(self, pred: fn(item: T) -> bool)`)
 // before the arguments are inferred.

@@ -17,7 +17,7 @@
 //// template wraps the call in try/catch and lifts the error to the
 //// `{error, <message>}` channel.
 
-import {path.relative} from "std";
+import {path.relative};
 
 pub type FileStat(
     size: i64,

@@ -22,8 +22,10 @@ fn main() -> string {
     (local $input i32)
     (local $status i32)
     (local $calculo i32)
+    (local $__blk0 i32)
     i32.const 42
     local.set $input
+    (block $__blkend0
     local.get $input
     i32.const 2
     call $__i32_mul_chk
@@ -34,7 +36,8 @@ fn main() -> string {
     (if (result i32)
       (then
     i32.const 256
-    return
+    local.set $__blk0
+    br $__blkend0
       )
       (else
         i32.const 0
@@ -42,7 +45,10 @@ fn main() -> string {
     )
     drop
     i32.const 264
-    return
+    local.set $__blk0
+    br $__blkend0
+    )
+    local.get $__blk0
     local.set $status
     local.get $status
     return

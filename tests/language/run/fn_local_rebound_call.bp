@@ -1,0 +1,53 @@
+//// A local holding a function is called at its current binding. Two sibling
+//// `for` bodies each declare `val v`, narrowed by `is fn() -> i32` and
+//// called; a `var` holding a function, reassigned, calls the new one; and a
+//// second `val f` in a later block calls its own function, not the first.
+
+fn one() -> i32 {
+    return 1;
+}
+
+fn two() -> i32 {
+    return 2;
+}
+
+fn narrowed(xs: unknown[], ys: unknown[]) -> i32 {
+    var n = 0;
+    for (xs) { x ->
+        val v = x;
+        if (v is fn() -> i32) n = n + v();
+    }
+    for (ys) { y ->
+        val v = y;
+        if (v is fn() -> i32) n = n + v() * 10;
+    }
+    return n;
+}
+
+fn reassigned() -> i32 {
+    var f: fn() -> i32 = one;
+    val first = f();
+    f = two;
+    return first * 100 + f();
+}
+
+fn siblings() -> i32 {
+    var total = 0;
+    for ([1, 2]) { k ->
+        val f = { -> k };
+        total = total + f();
+    }
+    for ([3]) { k ->
+        val f = { -> k * 10 };
+        total = total + f();
+    }
+    return total;
+}
+
+pub fn main() {
+    val a: unknown = one;
+    val b: unknown = two;
+    @print(narrowed([a, b], [b]));
+    @print(reassigned());
+    @print(siblings());
+}

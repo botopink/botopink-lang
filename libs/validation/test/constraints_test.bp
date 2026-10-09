@@ -22,7 +22,8 @@ import {report.ValidationReport, report.Violation};
 import {table.constraintTableJson};
 import {constraints.vNotNull, constraints.vNotBlank, constraints.vNotEmpty, constraints.vNotEmptyList, constraints.vSizeBetween, constraints.vSizeBetweenList, constraints.vMinValueI32, constraints.vMaxValueI32, constraints.vMinValueF64, constraints.vMaxValueF64, constraints.vPositiveI32, constraints.vPositiveOrZeroI32, constraints.vPositiveI64, constraints.vPositiveOrZeroI64, constraints.vPositiveF64, constraints.vPositiveOrZeroF64, constraints.vEmail, constraints.vPattern, constraints.vPastDate, constraints.vFutureDate, constraints.emailPattern};
 import {spi.vConstraint};
-import {io.clock} from "std";
+import {constraints.vMinLength, constraints.vMaxLength, constraints.vLength, constraints.vMinLengthList, constraints.vMaxLengthList, constraints.vLengthList, constraints.vMinLengthDict, constraints.vMaxLengthDict, constraints.vLengthDict, constraints.vMinLengthSet, constraints.vMaxLengthSet, constraints.vLengthSet, constraints.vStartsWith, constraints.vEndsWith, constraints.vIncludes, constraints.vUppercase, constraints.vLowercase, constraints.vEmailHtml5, constraints.vEmailRfc5322, constraints.vEmailUnicode, constraints.vUuid, constraints.vUuidV, constraints.vGuid, constraints.vUrl, constraints.vUrlHost, constraints.vUrlProtocol, constraints.vHttpUrl, constraints.vHostname, constraints.vE164, constraints.vEmoji, constraints.vBase64, constraints.vBase64Url, constraints.vHex, constraints.vJwt, constraints.vJwtAlg, constraints.vNanoid, constraints.vCuid, constraints.vCuid2, constraints.vUlid, constraints.vIpv4, constraints.vIpv6, constraints.vMac, constraints.vMacDelimiter, constraints.vCidrv4, constraints.vCidrv6, constraints.vCreditCard, constraints.vCurrencyCode, constraints.vIban, constraints.vHash, constraints.vHashEnc, constraints.vIsoDate, constraints.vIsoTime, constraints.vIsoTimePrecision, constraints.vIsoDatetime, constraints.vIsoDatetimeOffset, constraints.vIsoDatetimeLocal, constraints.vIsoDatetimePrecision, constraints.vIsoDuration, constraints.vGtI32, constraints.vGtI64, constraints.vGtF64, constraints.vLtI32, constraints.vLtI64, constraints.vLtF64, constraints.vNegativeI32, constraints.vNegativeI64, constraints.vNegativeF64, constraints.vNegativeOrZeroI32, constraints.vNegativeOrZeroI64, constraints.vNegativeOrZeroF64, constraints.vMultipleOfI32, constraints.vMultipleOfI64, constraints.vMultipleOfF64, constraints.vSafeInt, constraints.vFloat32, constraints.vAfterIso, constraints.vBeforeIso};
+import {io.clock, collections.Dict, collections.Set} from "std";
 
 // An `i64` cannot be written as a literal and an integer literal does not widen
 // to one in arithmetic, so the two epochs a temporal test needs are BUILT from
@@ -220,4 +221,658 @@ test "validation: the same record with every marker satisfied is valid" {
     ).validate();
     assert codesOf(r.violations) == "unknownConstraint";
     assert r.isValid() == false;
+}
+
+// ── step 3: three accepted and three refused inputs per predicate ───────────
+//
+// `marks` answers one digit per input: `1` accepted, `0` refused. Each row is
+// three accepted inputs then three refused ones, so every expectation reads
+// `"111000"`; a refused input the reference gives is named beside it.
+
+fn marks(
+    check: fn(s: string) -> Array<Violation>,
+    inputs: Array<string>,
+) -> string {
+    return inputs.map({ s -> if (check(s).length == 0) "1" else "0" }).join("");
+}
+
+test "validation: minLength, maxLength and length count code points" {
+    // "é😀" is two code points; on commonJS it is three UTF-16 units.
+    assert marks(
+        { s -> vMinLength("f", s, 2) },
+        ["ab", "abc", "é😀", "", "a", "😀"],
+    )
+        == "111000";
+    assert marks(
+        { s -> vMaxLength("f", s, 3) },
+        ["", "abc", "😀😀😀", "abcd", "😀😀😀😀", "abcde"],
+    )
+        == "111000";
+    assert marks(
+        { s -> vLength("f", s, 2) },
+        ["ab", "é😀", "  ", "a", "abc", ""],
+    )
+        == "111000";
+}
+
+test "validation: the length markers count the items of a list, a dict and a set" {
+    val two: Array<i32> = [1, 2];
+    val one: Array<i32> = [1];
+    assert vMinLengthList("f", two, 2).length == 0;
+    assert codesOf(vMinLengthList("f", one, 2)) == "minLength";
+    assert vMaxLengthList("f", one, 1).length == 0;
+    assert codesOf(vMaxLengthList("f", two, 1)) == "maxLength";
+    assert vLengthList("f", two, 2).length == 0;
+    assert codesOf(vLengthList("f", one, 2)) == "length";
+    val d: Dict<string, i32> = Dict.empty().insert("a", 1).insert("b", 2);
+    assert vMinLengthDict("f", d, 2).length == 0;
+    assert codesOf(vMaxLengthDict("f", d, 1)) == "maxLength";
+    assert codesOf(vLengthDict("f", d, 3)) == "length";
+    val set: Set<string> = Set.fromList(["a", "b", "a"]);
+    assert vLengthSet("f", set, 2).length == 0;
+    assert codesOf(vMinLengthSet("f", set, 3)) == "minLength";
+    assert vMaxLengthSet("f", set, 2).length == 0;
+}
+
+test "validation: startsWith, endsWith, includes" {
+    assert marks(
+        { s -> vStartsWith("f", s, "ord_") },
+        ["ord_1", "ord_", "ord_abc", "1", "Ord_1", "or"],
+    )
+        == "111000";
+    assert marks(
+        { s -> vEndsWith("f", s, ".com") },
+        ["a.com", ".com", "x.y.com", "a.co", "com", "a.com."],
+    )
+        == "111000";
+    assert marks(
+        { s -> vIncludes("f", s, "---") },
+        ["a---b", "---", "x----", "a--b", "", "-- -"],
+    )
+        == "111000";
+}
+
+test "validation: uppercase and lowercase are checks over ASCII letters" {
+    assert marks(
+        { s -> vUppercase("f", s) },
+        ["ABC", "A1!", "ÉÀ", "aBC", "abc", "ABc"],
+    )
+        == "111000";
+    assert marks(
+        { s -> vLowercase("f", s) },
+        ["abc", "a1!", "", "Abc", "ABC", "abC"],
+    )
+        == "111000";
+}
+
+test "validation: the three email grammars" {
+    assert marks(
+        { s -> vEmailHtml5("f", s) },
+        [
+            "a@b",
+            "a.b+c@x-y.z",
+            "!#$%@example.com",
+            "a@-b.com",
+            "@b.com",
+            "a b@c.com",
+        ],
+    )
+        == "111000";
+    assert marks(
+        { s -> vEmailRfc5322("f", s) },
+        [
+            "a.b@example.com",
+            "\"john doe\"@example.com",
+            "a@[192.168.0.1]",
+            "a..b@example.com",
+            "a@b",
+            "a@example.c",
+        ],
+    )
+        == "111000";
+    assert marks(
+        { s -> vEmailUnicode("f", s) },
+        [
+            "josé@exemplo.com",
+            "用户@例子.广告",
+            "a@b",
+            "a b@c",
+            "a@b@c",
+            "\"a\"@b",
+        ],
+    )
+        == "111000";
+}
+
+test "validation: uuid, uuidV and guid" {
+    assert marks(
+        { s -> vUuid("f", s) },
+        [
+            "0190a5b2-7f3c-7c1e-9d2a-3b4c5d6e7f80",
+            "00000000-0000-0000-0000-000000000000",
+            "123e4567-e89b-12d3-a456-426614174000",
+            "not-a-uuid",
+            "123e4567-e89b-02d3-a456-426614174000",
+            "123e4567-e89b-12d3-c456-426614174000",
+        ],
+    )
+        == "111000";
+    assert marks(
+        { s -> vUuidV("f", s, 7) },
+        [
+            "0190a5b2-7f3c-7c1e-9d2a-3b4c5d6e7f80",
+            "01890a5d-ac96-774b-bcce-b302099a8057",
+            "FFFFFFFF-FFFF-7FFF-BFFF-FFFFFFFFFFFF",
+            "123e4567-e89b-12d3-a456-426614174000",
+            "0190a5b2-7f3c-4c1e-9d2a-3b4c5d6e7f80",
+            "00000000-0000-0000-0000-000000000000",
+        ],
+    )
+        == "111000";
+    assert marks(
+        { s -> vGuid("f", s) },
+        [
+            "123e4567-e89b-02d3-c456-426614174000",
+            "00000000-0000-0000-0000-000000000000",
+            "ABCDEFAB-CDEF-ABCD-EFAB-CDEFABCDEFAB",
+            "123e4567e89b02d3c456426614174000",
+            "123e4567-e89b-02d3-c456-42661417400g",
+            "{123e4567-e89b-02d3-c456-426614174000}",
+        ],
+    )
+        == "111000";
+}
+
+test "validation: url, urlHost, urlProtocol, httpUrl and hostname" {
+    assert marks(
+        { s -> vUrl("f", s) },
+        [
+            "https://example.com",
+            "http://localhost:8080/p?q=1#f",
+            "ftp://user:pw@[::1]:21/x",
+            "mailto:a@b.c",
+            "http://",
+            "http://a b.com/",
+        ],
+    )
+        == "111000";
+    assert marks(
+        { s -> vUrlHost("f", s, "^example[.]com$") },
+        [
+            "https://example.com",
+            "http://example.com:80/x",
+            "ftp://example.com",
+            "https://www.example.com",
+            "https://example.org",
+            "example.com",
+        ],
+    )
+        == "111000";
+    assert marks(
+        { s -> vUrlProtocol("f", s, "^https$") },
+        [
+            "https://a.com",
+            "https://b.io/x",
+            "https://[::1]",
+            "http://a.com",
+            "ftp://a.com",
+            "nope",
+        ],
+    )
+        == "111000";
+    assert marks(
+        { s -> vHttpUrl("f", s) },
+        [
+            "https://example.com",
+            "http://a.b.co/x?y",
+            "https://sub.example.com.br:8443",
+            "ftp://example.com",
+            "http://localhost",
+            "https://192.168.0.1",
+        ],
+    )
+        == "111000";
+    assert marks(
+        { s -> vHostname("f", s) },
+        ["example.com", "localhost", "a-b.c.d.", "-a.com", "a..com", "a_b.com"],
+    )
+        == "111000";
+    // `url.parse` answers these; `#[url]` refuses them (`platform_test.bp`).
+    assert marks(
+        { s -> vUrl("f", s) },
+        [
+            "http://a.com:65535",
+            "HTTP://Example.COM",
+            "http://1.2.3.4",
+            "http://a.com:abc/",
+            "http://a.com:65536",
+            "not a url",
+        ],
+    )
+        == "111000";
+}
+
+test "validation: e164 and emoji" {
+    // "555-555-5555" is the reference's refused number.
+    assert marks(
+        { s -> vE164("f", s) },
+        [
+            "+15555555555",
+            "+5511999990000",
+            "+1234567",
+            "555-555-5555",
+            "+0123456789",
+            "+1234567890123456",
+        ],
+    )
+        == "111000";
+    assert marks(
+        { s -> vEmoji("f", s) },
+        ["😀", "👍🏽", "🇧🇷", "a", "😀a", ":)"],
+    )
+        == "111000";
+}
+
+test "validation: base64, base64url and hex" {
+    assert marks(
+        { s -> vBase64("f", s) },
+        ["", "SGVsbG8=", "YWJj", "SGVsbG8", "SGV=bG8=", "SGVs bG8="],
+    )
+        == "111000";
+    assert marks(
+        { s -> vBase64Url("f", s) },
+        ["SGVsbG8", "a-_b", "", "SGVsbG8=", "a+b", "abcde"],
+    )
+        == "111000";
+    assert marks(
+        { s -> vHex("f", s) },
+        ["", "deadBEEF", "0123", "0x12", "g", "12 34"],
+    )
+        == "111000";
+}
+
+test "validation: jwt and jwtAlg read the header" {
+    val hs = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIn0.c2ln";
+    val none = "eyJhbGciOiJub25lIn0.eyJzdWIiOiIxIn0.";
+    val rs = "eyJhbGciOiJSUzI1NiJ9.e30.abc";
+    val noAlg = "eyJ0eXAiOiJKV1QifQ.e30.x";
+    val jws = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXUyJ9.e30.x";
+    assert marks({ s -> vJwt("f", s) }, [hs, none, rs, "a.b", noAlg, jws])
+        == "111000";
+    assert marks(
+        { s -> vJwtAlg("f", s, "HS256") },
+        [
+            hs,
+            "eyJhbGciOiJIUzI1NiJ9.e30.xy",
+            "eyJhbGciOiJIUzI1NiJ9.e30.",
+            none,
+            rs,
+            "a.b",
+        ],
+    )
+        == "111000";
+}
+
+test "validation: nanoid, cuid, cuid2 and ulid" {
+    assert marks(
+        { s -> vNanoid("f", s) },
+        [
+            "V1StGXR8_Z5jdHi6B-myT",
+            "abcdefghijklmnopqrstu",
+            "012345678901234567890",
+            "V1StGXR8_Z5jdHi6B-my",
+            "V1StGXR8_Z5jdHi6B-myTx",
+            "V1StGXR8_Z5jdHi6B-my!",
+        ],
+    )
+        == "111000";
+    assert marks(
+        { s -> vCuid("f", s) },
+        [
+            "cjld2cjxh0000qzrmn831i7rn",
+            "c12345678",
+            "Cabcdefgh",
+            "xjld2cjxh0000qzrmn831i7rn",
+            "c1234567",
+            "c1234-5678",
+        ],
+    )
+        == "111000";
+    assert marks(
+        { s -> vCuid2("f", s) },
+        ["tz4a98xxat96iws9zmbrgj3a", "a", "abc123", "ABC", "a-b", ""],
+    )
+        == "111000";
+    assert marks(
+        { s -> vUlid("f", s) },
+        [
+            "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+            "01arz3ndektsv4rrffq69g5fav",
+            "7ZZZZZZZZZZZZZZZZZZZZZZZZZ",
+            "01ARZ3NDEKTSV4RRFFQ69G5FA",
+            "01ARZ3NDEKTSV4RRFFQ69G5FAI",
+            "01ARZ3NDEKTSV4RRFFQ69G5FAVX",
+        ],
+    )
+        == "111000";
+}
+
+test "validation: ipv4, ipv6, cidrv4 and cidrv6" {
+    assert marks(
+        { s -> vIpv4("f", s) },
+        [
+            "192.168.0.0",
+            "0.0.0.0",
+            "255.255.255.255",
+            "256.1.1.1",
+            "01.1.1.1",
+            "1.1.1",
+        ],
+    )
+        == "111000";
+    assert marks(
+        { s -> vIpv6("f", s) },
+        [
+            "2001:db8:85a3::8a2e:370:7334",
+            "::",
+            "::ffff:192.168.0.1",
+            "2001:db8::85a3::1",
+            "12345::",
+            "1:2:3:4:5:6:7:8:9",
+        ],
+    )
+        == "111000";
+    assert marks(
+        { s -> vCidrv4("f", s) },
+        [
+            "192.168.0.0/24",
+            "0.0.0.0/0",
+            "10.0.0.1/32",
+            "192.168.0.0/33",
+            "192.168.0.0",
+            "192.168.0.0/024",
+        ],
+    )
+        == "111000";
+    assert marks(
+        { s -> vCidrv6("f", s) },
+        [
+            "2001:db8::/32",
+            "::/0",
+            "fe80::1/128",
+            "2001:db8::/129",
+            "2001:db8::",
+            "1.2.3.4/24",
+        ],
+    )
+        == "111000";
+}
+
+test "validation: mac and macDelimiter keep one case and one delimiter" {
+    assert marks(
+        { s -> vMac("f", s) },
+        [
+            "00:1A:2B:3C:4D:5E",
+            "00:1a:2b:3c:4d:5e",
+            "FF:FF:FF:FF:FF:FF",
+            "00:1A:2b:3C:4D:5E",
+            "00-1A-2B-3C-4D-5E",
+            "00:1A:2B:3C:4D",
+        ],
+    )
+        == "111000";
+    assert marks(
+        { s -> vMacDelimiter("f", s, "-") },
+        [
+            "00-1A-2B-3C-4D-5E",
+            "aa-bb-cc-dd-ee-ff",
+            "00-00-00-00-00-00",
+            "00:1A:2B:3C:4D:5E",
+            "00-1A-2B-3C-4D-5G",
+            "001A2B3C4D5E",
+        ],
+    )
+        == "111000";
+}
+
+test "validation: the checksum formats" {
+    assert marks(
+        { s -> vCreditCard("f", s) },
+        [
+            "4111111111111111",
+            "4111 1111 1111 1111",
+            "4111-1111-1111-1111",
+            "4111111111111112",
+            "4111  1111 1111 1111",
+            "4111 1111-1111 1111",
+        ],
+    )
+        == "111000";
+    // "DE89 3704 0044 0532" is the reference's refused IBAN; "usd" its refused currency.
+    assert marks(
+        { s -> vIban("f", s) },
+        [
+            "DE89370400440532013000",
+            "GB82WEST12345698765432",
+            "BR1800360305000010009795493C1",
+            "DE89 3704 0044 0532",
+            "DE88370400440532013000",
+            "de89370400440532013000",
+        ],
+    )
+        == "111000";
+    assert marks(
+        { s -> vCurrencyCode("f", s) },
+        ["USD", "EUR", "BRL", "usd", "XYZ", "US"],
+    )
+        == "111000";
+}
+
+test "validation: hash and hashEnc follow the reference's size table" {
+    val hex64 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+    assert marks(
+        { s -> vHash("f", s, "sha256") },
+        [
+            hex64,
+            hex64.toUpper(),
+            "E3B0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "abc",
+            [hex64, "0"].join(""),
+            hex64.replaceAll("e", "g"),
+        ],
+    )
+        == "111000";
+    val b64 = "LXEWQrcmsEQBYnyp+6wy9chTD7GQPMTbAiWHF5IaSIE=";
+    assert marks(
+        { s -> vHashEnc("f", s, "sha256", "base64") },
+        [
+            b64,
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+            "//////////////////////////////////////////8=",
+            "LXEWQrcmsEQBYnyp+6wy9chTD7GQPMTbAiWHF5IaSIE",
+            "LXEWQrcmsEQBYnyp+6wy9chTD7GQPMTbAiWHF5IaSI==",
+            "LXEWQrcmsEQBYnyp-6wy9chTD7GQPMTbAiWHF5IaSIE=",
+        ],
+    )
+        == "111000";
+    assert marks(
+        { s -> vHashEnc("f", s, "md5", "base64url") },
+        [
+            "ndTkYSaMgDT1yFZOFVxnpg",
+            "AAAAAAAAAAAAAAAAAAAAAA",
+            "-_v7-_v7-_v7-_v7-_v7-w",
+            "ndTkYSaMgDT1yFZOFVxnpg==",
+            "ndTkYSaMgDT1yFZOFVxnp",
+            "ndTkYSaMgDT1yFZOFVxnp+",
+        ],
+    )
+        == "111000";
+    assert marks(
+        { s -> vHashEnc("f", s, "sha384", "base64") },
+        [
+            "11LCxR+6DimqGQVwqdQlPkQHegWNMpf6OlYw1b0BJiL5fCisrtMTtcg7uZDKp9qF",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "////////////////////////////////////////////////////////////////",
+            "11LCxR+6DimqGQVwqdQlPkQHegWNMpf6OlYw1b0BJiL5fCisrtMTtcg7uZDKp9q=",
+            "11LCxR",
+            "11LCxR-6DimqGQVwqdQlPkQHegWNMpf6OlYw1b0BJiL5fCisrtMTtcg7uZDKp9qF",
+        ],
+    )
+        == "111000";
+}
+
+test "validation: isoDate is a calendar date" {
+    // "2020-1-1" is the reference's refused date.
+    assert marks(
+        { s -> vIsoDate("f", s) },
+        [
+            "2020-01-01",
+            "2024-02-29",
+            "1999-12-31",
+            "2020-1-1",
+            "2023-02-29",
+            "2020-13-01",
+        ],
+    )
+        == "111000";
+}
+
+test "validation: isoTime and isoTimePrecision" {
+    assert marks(
+        { s -> vIsoTime("f", s) },
+        ["03:15", "03:15:00", "03:15:00.9999999", "3:15", "24:00", "03:15:60"],
+    )
+        == "111000";
+    assert marks(
+        { s -> vIsoTimePrecision("f", s, 3) },
+        [
+            "03:15:00.123",
+            "23:59:59.999",
+            "00:00:00.000",
+            "03:15:00",
+            "03:15:00.12",
+            "03:15",
+        ],
+    )
+        == "111000";
+    assert marks(
+        { s -> vIsoTimePrecision("f", s, 0 - 1) },
+        ["03:15", "23:59", "00:00", "03:15:00", "03:15:00.1", "24:00"],
+    )
+        == "111000";
+}
+
+test "validation: isoDatetime and its zone and precision forms" {
+    // "2020-01-01T06:15:00+02:00" is refused by the reference's default form.
+    assert marks(
+        { s -> vIsoDatetime("f", s) },
+        [
+            "2020-01-01T06:15:00Z",
+            "2020-01-01T06:15:00.123Z",
+            "2020-01-01T06:15Z",
+            "2020-01-01T06:15:00+02:00",
+            "2020-01-01T06:15:00",
+            "2020-01-01 06:15:00Z",
+        ],
+    )
+        == "111000";
+    assert marks(
+        { s -> vIsoDatetimeOffset("f", s) },
+        [
+            "2020-01-01T06:15:00+02:00",
+            "2020-01-01T06:15:00Z",
+            "2020-01-01T06:15:00.5-03:00",
+            "2020-01-01T06:15:00",
+            "2020-01-01T06:15:00+2:00",
+            "2020-01-01T06:15:00+24:00",
+        ],
+    )
+        == "111000";
+    assert marks(
+        { s -> vIsoDatetimeLocal("f", s) },
+        [
+            "2020-01-01T06:15:00",
+            "2020-01-01T06:15:00Z",
+            "2020-01-01T06:15",
+            "2020-01-01T06:15:00+02:00",
+            "2020-01-01",
+            "2020-02-30T06:15:00",
+        ],
+    )
+        == "111000";
+    assert marks(
+        { s -> vIsoDatetimePrecision("f", s, 0) },
+        [
+            "2020-01-01T06:15:00Z",
+            "2020-01-01T06:15:00+02:00",
+            "2020-01-01T06:15:00",
+            "2020-01-01T06:15Z",
+            "2020-01-01T06:15:00.1Z",
+            "x",
+        ],
+    )
+        == "111000";
+}
+
+test "validation: isoDuration" {
+    assert marks(
+        { s -> vIsoDuration("f", s) },
+        ["P3Y6M4DT12H30M5S", "PT0.5S", "P2W", "P", "PT", "P1W2D"],
+    )
+        == "111000";
+}
+
+test "validation: gt and lt are strict, one cell per width" {
+    val big: i64 = 9007199254740991;
+    assert vGtI32("f", 1, 0).length == 0;
+    assert codesOf(vGtI32("f", 0, 0)) == "gt";
+    assert vGtI64("f", big, 5).length == 0;
+    assert codesOf(vGtF64("f", 0.5, 0.5, "0.5")) == "gt";
+    assert vLtI32("f", 0 - 1, 0).length == 0;
+    assert codesOf(vLtI64("f", big, big)) == "lt";
+    assert vLtF64("f", 0.25, 0.5, "0.5").length == 0;
+}
+
+test "validation: negative and negativeOrZero" {
+    assert vNegativeI32("f", 0 - 1).length == 0;
+    assert codesOf(vNegativeI32("f", 0)) == "negative";
+    assert codesOf(vNegativeF64("f", 0.5)) == "negative";
+    val zero: i64 = 0;
+    assert vNegativeOrZeroI64("f", zero).length == 0;
+    assert codesOf(vNegativeI64("f", zero)) == "negative";
+    assert vNegativeOrZeroF64("f", 0.0).length == 0;
+    assert codesOf(vNegativeOrZeroI32("f", 1)) == "negativeOrZero";
+}
+
+test "validation: multipleOf, an f64 step by the reference's scaled test" {
+    assert vMultipleOfI32("f", 15, 5).length == 0;
+    assert codesOf(vMultipleOfI32("f", 12, 5)) == "multipleOf";
+    val big: i64 = 9007199254740990;
+    assert vMultipleOfI64("f", big, 10).length == 0;
+    assert vMultipleOfF64("f", 0.3, 0.1, 1, "0.1").length == 0;
+    assert vMultipleOfF64("f", 1.25, 0.05, 2, "0.05").length == 0;
+    assert codesOf(vMultipleOfF64("f", 0.35, 0.1, 1, "0.1")) == "multipleOf";
+}
+
+// An `i64` beyond ±(2^53 − 1) cannot be built on commonJS (the arithmetic that
+// would make one is refused as an overflow), so `#[safeInt]`'s refusal is
+// reachable on erlang only and is not a case here: the cases are one answer
+// on both targets.
+test "validation: safeInt and float32 are ranges" {
+    val edge: i64 = 9007199254740991;
+    assert vSafeInt("f", edge).length == 0;
+    assert vSafeInt("f", 0 - edge).length == 0;
+    assert vFloat32("f", 3.4e38).length == 0;
+    assert codesOf(vFloat32("f", 3.5e38)) == "float32";
+    assert codesOf(vFloat32("f", 0.0 - 1.0e39)) == "float32";
+}
+
+test "validation: afterIso and beforeIso are strict bounds on epoch milliseconds" {
+    val at: i64 = 1577836800000;
+    val bound = "2020-01-01T00:00:00Z";
+    assert vAfterIso("f", at + 1, bound).length == 0;
+    assert codesOf(vAfterIso("f", at, bound)) == "afterIso";
+    assert vBeforeIso("f", at - 1, bound).length == 0;
+    assert codesOf(vBeforeIso("f", at, bound)) == "beforeIso";
+    assert vAfterIso("f", at, "2020-01-01T00:00:00+01:00").length == 0;
 }

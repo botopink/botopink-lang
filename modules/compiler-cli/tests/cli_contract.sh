@@ -107,6 +107,29 @@ run "$P" run
 expect_code 1 "run after a failed build"
 expect_no_out "stale build v1" "run does not execute the stale artifact"
 
+# ── checker warnings reach build and test (decision 57, front 26 step 4) ─────
+# `check` prints `OkData.warnings`; `build` and `test` read the compiler's
+# output after the comptime session is freed, and printed none of them.
+echo "==> build and test print the checker warning check prints"
+P="$(project warn)"
+printf 'pub fn main() {\n    var out = [];\n    @print("x");\n}\n\ntest "one" {\n    assert 1 == 1;\n}\n' >"$P/src/main.bp"
+WARN='`out` is born with no element type'
+run "$P" check
+expect_code 0 "check with a warning"
+expect_out "$WARN" "check prints the warning"
+run "$P" build
+expect_code 0 "build with a warning"
+expect_out "$WARN" "build prints the warning"
+expect_out "src/main.bp:2:" "build locates the warning"
+if have node; then
+  run "$P" test
+  expect_code 0 "test with a warning"
+  expect_out "$WARN" "test prints the warning"
+  expect_out "src/main.bp:2:" "test locates the warning"
+else
+  skip "test prints the warning (node not on PATH)"
+fi
+
 # ── build does not execute the program it compiles ───────────────────────────
 # erlang and beam are the targets whose build spawns anything, and it is one
 # `erl` — never running the program: the command's session (`otp.zig`), which
@@ -400,6 +423,19 @@ printf 'test "broken" {\n    assert nope();\n}\n' >"$P/test/broken_test.bp"
 run "$P" check
 expect_code 1 "check on a broken test/ module"
 expect_out "test/broken_test.bp:2:12" "check locates the test/ diagnostic"
+
+echo "==> decision 309: a test/ module importing its own package by name is refused"
+P="$(project shapes)"
+printf 'pub mod geometry;\n\n%s' "$MAIN_OK" >"$P/src/main.bp"
+printf 'pub fn area(w: i32, h: i32) -> i32 {\n    return w * h;\n}\n' >"$P/src/geometry.bp"
+mkdir -p "$P/test"
+printf 'import {geometry.area} from "shapes";\n\ntest "area" {\n    assert area(3, 4) == 12;\n}\n' >"$P/test/geometry_test.bp"
+for cmd in check test; do
+  run "$P" "$cmd"
+  expect_code 1 "$cmd on a test importing its own package with from"
+  expect_out 'error[module-import-with-from]: "shapes" is this package — write import {geometry.area};' "$cmd writes the brace form"
+  expect_out "test/geometry_test.bp:1:29" "$cmd locates it at the source string"
+done
 
 # ── C3 / C4 — test runs what compiles and still fails the run ────────────────
 if have node; then
@@ -949,6 +985,29 @@ expect_out "$PLIB/src/side.mjs" "names the last path it looked at"
 expect_out "botopink.json:2:21" "locates the dependency entry of the project manifest"
 [[ ! -e "$PAPP/out/side/side.mjs" ]] && ok "nothing half-shipped" || fail "a sidecar was written by the refused build"
 
+echo "==> a dependency of a path dependency ships its sidecar from the directory the build resolved"
+# The app sits outside the workspace and names only `mid`, by path; `side` is
+# `mid`'s `{ "workspace": true }` sibling and under no library root. The build
+# compiles `side` from `mid`'s workspace, and the shipper has to find it there
+# too (a rakun member depended on by path: "`rakun_actuator` is not a sidecar").
+TWS="$WORK/transws"; rm -rf "$TWS"; mkdir -p "$TWS/modules"
+printf '{ "name": "transws", "version": "0.0.1", "targets": ["commonJS"], "workspaces": ["modules/*"] }\n' >"$TWS/botopink.json"
+sidecar_lib "$TWS/modules/side" "from the transitive member"
+mkdir -p "$TWS/modules/mid/src"
+printf '{ "name": "mid", "version": "0.0.1", "target": "commonJS", "entry": "root.bp", "files": ["root.bp"],\n  "dependencies": { "side": { "workspace": true } } }\n' >"$TWS/modules/mid/botopink.json"
+printf 'import { mark } from "side";\n\npub fn midMark() -> string {\n    return mark();\n}\n' >"$TWS/modules/mid/src/root.bp"
+TAPP="$WORK/transapp"; rm -rf "$TAPP"; mkdir -p "$TAPP/src"
+printf '{ "name": "trans-app", "version": "0.0.1", "target": "commonJS", "entry": "main.bp",\n  "dependencies": { "mid": { "path": "%s" } } }\n' "$TWS/modules/mid" >"$TAPP/botopink.json"
+printf 'import { midMark } from "mid";\n\npub fn main() {\n    @print(midMark());\n}\n' >"$TAPP/src/main.bp"
+run "$TAPP" build
+expect_code 0 "build with a sidecar two dependencies away"
+if [[ -f "$TAPP/out/side/side.mjs" ]]; then
+  ok "out/side/side.mjs shipped from mid's workspace sibling"
+  expect_file_out "$TAPP/out/side/side.mjs" "from the transitive member" "shipped from the directory the build resolved"
+else
+  fail "a transitive dependency's sidecar was not shipped"
+fi
+
 # ── a built erlang / beam program loads its `.erl` sidecar ───────────────────
 # `botopink run` is not the only way to start a build: `out/<target>/` is the
 # program, and `erl -pa out/<target>` has to run it from any directory. The
@@ -999,9 +1058,11 @@ if have erl && have erlc; then
   P="$(project manymods erlang)"
   {
     for i in $(seq 0 1199); do echo "pub mod m$i;"; done
-    printf 'import {m7.f7};\n\npub fn main() {\n    @print(f7());\n}\n'
+    printf 'import {m7.value7};\n\npub fn main() {\n    @print(value7());\n}\n'
   } >"$P/src/main.bp"
-  for i in $(seq 0 1199); do printf 'pub fn f%d() -> i32 {\n    return %d;\n}\n' "$i" "$i" >"$P/src/m$i.bp"; done
+  # `value<N>`, not `f<N>`: `f32` / `f64` name primitive types, refused as a
+  # module-level function name (primitive-type-name-taken).
+  for i in $(seq 0 1199); do printf 'pub fn value%d() -> i32 {\n    return %d;\n}\n' "$i" "$i" >"$P/src/m$i.bp"; done
   SEG="$(printf 'd%.0s' $(seq 1 100))"
   DEEP="$P/out"; while [[ ${#DEEP} -lt 880 ]]; do DEEP="$DEEP/$SEG"; done
   for args in "run --target erlang" "run --target beam"; do

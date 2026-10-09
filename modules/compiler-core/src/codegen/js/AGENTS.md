@@ -245,28 +245,31 @@ here so a later row that removes one knows what it is removing:
 | `buildIfExpr` | an `if` **used as a value** — decision 2 keeps `if` an expression; a branch that `await`s makes it `await (async function() { … })()` through `iife` (`AwaitScan`), because `await` does not parse in a plain arrow (`run/task_await_in_if_block`) | **yes** |
 | `buildGeneratorLoop` | `iter loop { … }` / `stream loop { … }` (and `iter for` / `iter while`, written as the prefixed `loop`) — a `function*` / `async function*` IIFE around `while (true)` (decisions 105, 125; every other loop is a statement) | **yes** |
 | `buildCase` | a `case` used as a value: `const _s = …` and one statement per arm | **yes** |
-| `@block { body }` | a **block as a value** — the one site whose producer decision 2 removes | **yes, for its `return` form**; the tail form is the checker's to refuse |
+| `@block { body }` | a **block as a value** — what its `return`s carry, or a whole statement | **yes**: the tail form is refused by the checker (`block-tail-value`) |
 
 So the checker row that enforces decision 2 (a block is not a value) reaches
-exactly **one** of them: the other nine give a value to a construct the language
-keeps as an expression.
+exactly **one** of them, and leaves it two genuine producers; the other nine
+give a value to a construct the language keeps as an expression.
 
-**The `@block` site still has producers** (measured for 1.0.11-beta
+**The `@block` site keeps producers** (measured for 1.0.11-beta
 `01-compiler/04-js` step 1, which was to delete it). One fixture writes it —
 `js: block ---- @block builtin` (`tests/values.zig`, both runtimes' commonJS
 snapshot `block_block_builtin`), `val status = @block { …; if (c) return "Alto";
-return "Baixo"; }` — and no `.bp` in the checkout does. Three shapes check today:
+return "Baixo"; }` — and no `.bp` in the checkout does. Three shapes:
 
 | Program | commonJS answers | What it is |
 |---|---|---|
 | `val a = @block { return 3; }` | `3` | every path returns (C1: the `return`s are the block's) — a value, like a `case` whose arms all return |
 | `@block { val x = 3; @print(x); };` | `3` | statement position — the IIFE scopes the block's `return`s, which a JS block would hand to the enclosing function |
-| `val a = @block { 1 + 2 };` | `null` | the tail form: `inferBuiltinCallReturnType` types the block by its last expression, decision 2 says a block is not a value |
+| `val a = @block { 1 + 2 };` | refused | the tail form: `block-tail-value` at the block (`comptime/infer.zig`, the `"block"` arm of `inferBuiltinCallReturnType`; `reject/block_tail_value`) — decision 2, a block is not a value; it printed `null` here before the refusal |
 
-The first two keep the IIFE genuine; only the third is the dead lowering, and
-its producer is the checker's (`comptime/infer.zig`, the `"block"` arm of
-`inferBuiltinCallReturnType`), which still accepts it. The site stays until
-that refusal lands; then the tail form has no producer and nothing here moves.
+The first two keep the IIFE genuine; the third never reaches this backend, so
+the one lowering serves both and nothing here moved when the refusal landed.
+One shape still slips past it: a block whose `return` is valued on some paths
+and that falls through to a tail on another (`val a = @block { if (c) return
+3; 4 };`) checks, answers `null` here on the fall-through path and the tail
+`4` on erlang, beam and wasm — a checker row (front `04-js`'s README, rows
+found), not this backend's.
 
 `Expr.host` is **not** a bridge: it carries the literal text of an
 `#[@External.Node("…")]` annotation, which is host code by definition — the

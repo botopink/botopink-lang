@@ -2,7 +2,7 @@
 //// decision 115). Every expected text is a literal.
 
 import {testing.asserts} from "std";
-import {segment.parseSegment, segment.parsePath, segment.patternOf, segment.slotOf, segment.pathProblem, segment.kindName, segment.trimSlashes};
+import {segment.parseSegment, segment.parsePath, segment.patternOf, segment.slotOf, segment.pathProblem, segment.kindName, segment.trimSlashes, segment.paramNamesOf, segment.fillPattern, segment.toColonPattern};
 
 // ── step 1: the segment grammar ─────────────────────────────────────────────
 
@@ -90,4 +90,102 @@ test "routing: parsePath halts on a `|` in a segment, naming the segment" {
         parsePath("blog/a|b");
         0;
     }, "routing: segment `a|b` in `blog/a|b` holds a `|`");
+}
+
+// ── step 2: the segment helpers (front 102) ─────────────────────────────────
+
+fn filled(pattern: string, bindings: Array<#(string, string)>) -> string {
+    val r = fillPattern(pattern, bindings);
+    val text = case r {
+        Ok(p) -> p;
+        Error(e) -> "<refused> " + e;
+    };
+    return text;
+}
+
+test "routing: paramNamesOf names a path's capturing segments in order" {
+    try asserts.equals(paramNamesOf("blog/[slug]").join(","), "slug");
+    try asserts.equals(
+        paramNamesOf("shop/[cat]/[...rest]").join(","),
+        "cat,rest",
+    );
+    try asserts.equals(paramNamesOf("docs/[[...path]]").join(","), "path");
+    try asserts.equals(paramNamesOf("(group)/@slot/[id]/edit").join(","), "id");
+    try asserts.equals(paramNamesOf("about").length, 0);
+    try asserts.equals(paramNamesOf("").length, 0);
+}
+
+test "routing: paramNamesOf reads through parseSegment" {
+    try asserts.equals(paramNamesOf("[a.b]").join(","), "a.b");
+    try asserts.equals(paramNamesOf("blog/[x").length, 0);
+}
+
+test "routing: fillPattern fills every capturing segment" {
+    try asserts.equals(
+        filled("/blog/[slug]", [#("slug", "hello")]),
+        "/blog/hello",
+    );
+    try asserts.equals(
+        filled("/(marketing)/@team/[id]/edit", [#("id", "7")]),
+        "/7/edit",
+    );
+    try asserts.equals(
+        filled("/docs/[...path]", [#("path", "a/b/c")]),
+        "/docs/a/b/c",
+    );
+    try asserts.equals(
+        filled("/shop/[cat]/[[...rest]]", [#("cat", "toys"), #("rest", "x/y")]),
+        "/shop/toys/x/y",
+    );
+    try asserts.equals(filled("/about", []), "/about");
+    try asserts.equals(filled("/", []), "/");
+}
+
+test "routing: fillPattern accepts a missing or empty optional catch-all" {
+    try asserts.equals(filled("/docs/[[...path]]", []), "/docs");
+    try asserts.equals(filled("/docs/[[...path]]", [#("path", "")]), "/docs");
+}
+
+test "routing: fillPattern refuses a missing [x]" {
+    try asserts.equals(
+        filled("/blog/[slug]", []),
+        "<refused> routing: a binding row for `/blog/[slug]` binds no `slug`",
+    );
+    try asserts.equals(
+        filled("/docs/[...path]", []),
+        "<refused> routing: a binding row for `/docs/[...path]` binds no `path`",
+    );
+}
+
+test "routing: fillPattern refuses a slash, an empty value, an extra and a twice-bound name" {
+    try asserts.equals(
+        filled("/blog/[slug]", [#("slug", "a/b")]),
+        "<refused> routing: `slug` of `/blog/[slug]` is bound to `a/b`, which holds a `/` - only a catch-all segment spans several",
+    );
+    try asserts.equals(
+        filled("/blog/[slug]", [#("slug", "")]),
+        "<refused> routing: `slug` of `/blog/[slug]` is bound to the empty string",
+    );
+    try asserts.equals(
+        filled("/docs/[...path]", [#("path", "")]),
+        "<refused> routing: `path` of `/docs/[...path]` is bound to the empty string",
+    );
+    try asserts.equals(
+        filled("/blog/[slug]", [#("slug", "a"), #("extra", "b")]),
+        "<refused> routing: a binding row for `/blog/[slug]` binds `extra`, which the pattern does not have",
+    );
+    try asserts.equals(
+        filled("/blog/[slug]", [#("slug", "a"), #("slug", "b")]),
+        "<refused> routing: a binding row for `/blog/[slug]` binds `slug` twice",
+    );
+}
+
+test "routing: toColonPattern replaces only the outer bracket pair" {
+    try asserts.equals(toColonPattern("[id]/[...rest]"), ":id/:...rest");
+    try asserts.equals(toColonPattern("/posts/[id]"), "/posts/:id");
+    try asserts.equals(toColonPattern("/docs/[[...path]]"), "/docs/:[...path]");
+    try asserts.equals(toColonPattern("/about"), "/about");
+    try asserts.equals(toColonPattern("/"), "/");
+    try asserts.equals(toColonPattern(""), "");
+    try asserts.equals(toColonPattern("/a/[x/b"), "/a/[x/b");
 }

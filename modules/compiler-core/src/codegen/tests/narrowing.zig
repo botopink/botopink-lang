@@ -86,8 +86,8 @@ test "js: narrow ---- early return with print" {
 // A type guard is erased at runtime: it lowers to a plain bool-returning fn,
 // so the snapshot can only prove both results. Expected RUN LOG `true` then
 // `false`. Narrowing at the call site (`if (isText(v)) { … }` with
-// `v: ?string`) is not covered here: at HEAD it fails with `type mismatch —
-// expected bool, found string` on the `if` (registered with 07-checker).
+// `v: ?string`) is not covered by this cell; it typechecks and runs (`a` for
+// `"a"`, nothing for `null`, on commonJS and erlang).
 test "js: narrow ---- type guard basic codegen" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn isPositive(n: i32) -> n is i32 {
@@ -329,8 +329,7 @@ test "codegen: is ---- a named type is tested by the tag the value carries" {
 // `x instanceof Token.Text` threw `TypeError: Right-hand side of 'instanceof'
 // is not callable` at run time. The test is now the enum's class plus the
 // `tag` the variant's prototype carries, the same `tag` a `case` arm reads.
-// commonJS only: erlang answers `false` for every line and wasm traps, which
-// are 02-erlang's and 05-wasm's halves of the same row.
+// A commonJS RUN LOG cell; erlang, wasm and beam print the same four lines.
 test "js: is ---- an enum variant path is tested by the enum's class and its tag" {
     try h.assertJsRunLog(std.testing.allocator,
         \\pub type Token { Text(v: string), Num(n: i32), Eof }

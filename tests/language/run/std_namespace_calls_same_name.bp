@@ -1,0 +1,23 @@
+//// Two std modules each declare `parse`, and a program reaches both through
+//// their namespaces (`querystring.parse`, `url.parse`). wasm links every
+//// module into one namespace and keeps one `parse` under its bare name; the
+//// other is `<module>/parse`, and a namespace call has to name the one its
+//// receiver means. It dropped the receiver and called the bare one:
+//// `url.parse(…).host` read `querystring`'s array and printed `0`, at exit 0.
+
+import {querystring, url} from "std";
+
+pub fn main() {
+    @print(querystring.parse("?a=1&b=2").unwrapOr([]).length);
+    val u = url.parse("https://example.com:8080/a?b=1#f");
+    @print(u.host);
+    @print(u.port);
+    @print(url.parse("http://h/p").path);
+    @print(
+        querystring
+            .parse("x=%20")
+            .unwrapOr([])
+            .at(0)
+            .unwrapOr(#("", ""))._1.length,
+    );
+}

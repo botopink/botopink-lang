@@ -46,9 +46,9 @@
 //// not imported at all — its `.mjs` sidecar cannot be shipped to a consumer
 //// that resolves std from the compiler rather than from a package directory.
 
-import {io.fs, io.os, io.env} from "std";
-import {io.process as host} from "std";
-import {path.join as joinPath, path.dirname as parentOf} from "std";
+import {io.fs, io.os, io.env};
+import {io.process as host};
+import {path.join as joinPath, path.dirname as parentOf};
 
 // ── the path rule (pure) ─────────────────────────────────────────────────────
 

@@ -32,7 +32,7 @@ libs/validation/
 ├── botopink.json     "name": "validation", "target": "erlang", "targets": ["erlang", "commonJS"], no dependencies
 ├── AGENTS.md         ← you are here
 ├── src/
-│   ├── root.bp         pub mod path; report; table; messages; schemas; spi; constraints; binding; decorators
+│   ├── root.bp         pub mod path; report; table; messages; schemas; spi; formats; constraints; binding; decorators
 │   ├── path.bp         root, key, index, segments, head — the path a violation's `field` is
 │   ├── report.bp       Violation, ValidationReport (isValid, merge, toJson, toProblemDetail, empty, of),
 │   │                   violationJson, violation, noViolation, oneViolation
@@ -42,17 +42,20 @@ libs/validation/
 │   │                   currentLocale, templateFor, interpolate, message, builtInTemplate, showI32/I64/F64
 │   ├── schemas.bp      Schema<T> (parse, parseAt, decode, accepts, optional, array), of, text, int, long,
 │   │                   float, boolean, anyJson; the decoders decodeString/Int/Long/Float/Bool/Json,
-│   │                   optionalOf, decodeArrayOf; what `#[schema]` calls: fieldOf, memberPath,
+│   │                   optionalOf, decodeArrayOf; what `#[schema]` calls: memberPath,
 │   │                   objectProblems, unknownKeys, violationsOf, under, decodeText; kindOf, isNull, shown
 │   │                   (three conversion cells: wholeI32, wholeI64, isWhole)
 │   ├── spi.bp          Constraint, registerConstraint, constraintRegistered, registeredConstraints,
 │   │                   clearConstraints, unknownConstraintMessage, vConstraint   (registry: templates)
-│   ├── constraints.bp  the v* predicates (std `regex`, `io.clock`), emailPattern
+│   ├── formats.bp      the string formats as walks or intersection-grammar regexes: is<Format>(s) for every
+│   │                   format marker, <name>Pattern() per regex format, urlParts, digitsValue (no host cell)
+│   ├── constraints.bp  the v* predicates (std `regex`, `unicode`, `io.clock`, `formats.bp`), emailPattern
 │   ├── binding.bp      bindInt, bindBool, bindRequired, bindEpochMillis, bindingReport, bindingCount,
 │   │                   bindingReset, bindingIsolated, isIntegerText, parseI32   (accumulator: templates)
-│   └── decorators.bp   #[validated] and the thirteen constraint markers; #[schema]
-└── test/             binding · constraints · messages · parity · path · platform · report · schema ·
-                      schema_parity · spi · table   (suite `validation:`)
+│   └── decorators.bp   #[validated], the 71 constraint markers (`markerNames()`), markerRule; #[schema]
+└── test/             binding · checks_and_formats_example · constraints · messages · nested_and_arrays_example · parity · path ·
+                      platform · refusal · report · schema · schema_parity · signup_schema_example ·
+                      spi · table   (suite `validation:`)
 ```
 
 `botopink.json`'s `files` order is a dependency order: a module is listed before
@@ -102,6 +105,39 @@ place, so two inlined cells in one function never share a binding.
 violations there, compare its count and this process's) and stated on node
 (one request runs to completion before the next).
 
+## The markers
+
+`decorators.markerNames()` lists the 71 markers `#[validated]` reads, in file
+order: the thirteen of step 2 and the 58 of front 125 step 3 — string checks
+(`minLength`, `maxLength`, `length`, `startsWith`, `endsWith`, `includes`,
+`uppercase`, `lowercase`), string formats (`emailHtml5` … `isoDuration`, rules
+in `formats.bp`), numbers (`gt`, `lt`, `negative`, `negativeOrZero`,
+`multipleOf`, `safeInt`, `float32`) and date bounds (`afterIso`, `beforeIso`).
+
+- **Field types.** Every marker names the types it checks; on any other it is a
+  located compile error (`test/refusal_test.bp`: one row per marker, and the
+  count is `markerNames()`'s). The length markers read `string` (code points),
+  `Array<T>`, `Dict<K, V>` and `Set<T>` (items); `gt` / `lt` / `negative*` /
+  `multipleOf` one predicate per width (`I32`, `I64`, `F64`).
+- **Optional fields.** A marker other than `#[notNull]` on `?string`, `?i32`,
+  `?i64` or `?f64` checks the value when it is present and nothing when it is
+  null (`if (v.f != null) …`); on any other optional type it is refused.
+- **Numeric bounds.** The bound of `gt` / `lt` / `multipleOf` is the field's
+  type: a fraction on an integer field is refused; on an `f64` field `5` is
+  emitted as `5.0`, and the message shows the bound as written (a whole `f64`
+  renders `2.0` on erlang and `2` on node). `minValue` / `maxValue` on `f64`
+  take the same widening.
+- **Messages.** A parameter is never named `value` (the field's value is
+  `{value}` in every template): `gt` / `lt` say `{bound}`, `multipleOf`
+  `{step}`.
+- **Arguments.** Text arguments may not be empty nor carry `;`, `|` or `"`
+  (the table's separators, the lexeme's delimiter); a bound that could never
+  fail is refused (`#[minLength(0)]`, `#[multipleOf(0)]`); `afterIso` /
+  `beforeIso` take RFC 3339 text with its zone; `#[isoDatetimePrecision]` needs
+  one of `isoDatetime`, `isoDatetimeOffset`, `isoDatetimeLocal` beside it,
+  which say the zones it takes.
+- **Every marker parameter is `comptime`**, as decision 280 (0) writes it.
+
 ## `#[schema]` — a document in, a record out
 
 `validate<TypeName>` checks a value that is already a record. `#[schema]` emits
@@ -122,6 +158,9 @@ pub fn schemaOf<TypeName>() -> Schema<TypeName>
   collected, and the record is constructed only when there are none.
   `Violation.field` is a path (`path.bp`): `ship.zip`, `lines[1].sku`, `` for
   the document itself. A flat record's path is its field's name.
+- **Members are read with std's `Json` methods**: the emitted decoder reads
+  `input.field("name") ?? Json.Null`; `schemas.bp` walks `input.items()` and
+  `input.members()` and keeps no reader of its own.
 - **Absent is one value.** A missing key and `null` decode the same: `null` for
   a `?T`, `required` for a `T`.
 - **Numbers.** A JSON number is an `f64`. An `i32` field takes a whole number in
@@ -182,6 +221,13 @@ from here, never rakun's placement-only `#[validated]`, and never both.
 ../../zig-out/bin/botopink format --check src test
 ```
 
+`*_example_test.bp` are the front's `examples/` files as suite cases, byte for
+byte but for the import lines (a module of this package cannot name it
+`from "validation"` — the namespace is unbound in emitted code). A refusal is a
+case of `refusal_test.bp`: it writes a one-file project under
+`BOTOPINK_TEST_TMPDIR`, runs `botopink check` on it (`BOTOPINK_BIN`, else the
+checkout's `zig-out/bin/botopink`) and asserts status, message and location.
+
 Tests import the package's modules by their path inside the braces
 (`import {report.Violation};`, decision 206), as any package's tests do. Every test that depends on message templates sets its
 own source first (`setMessageSource(builtInOnly())` or a table source) — the
@@ -209,6 +255,15 @@ library writes instead.
 - Emitted code names a module through its namespace (`constraints.vNotBlank(…)`).
 - `json.decode` keeps member order, refuses a duplicate member and refuses
   `NaN`; a JSON number is an `f64`.
+- An `f32` is written `1.5f` (a bare `1.5` is an `f64` and does not fit one)
+  and is held as a double on both targets: `0.1f` reads back `0.1`, so the
+  single-precision range is a marker's check, not a rounding.
+- `std/url.parse` answers every input and normalizes nothing: it keeps the
+  case WHATWG lowers, keeps a default port, reads `mailto:a@b.c` as one
+  scheme, splits `[::1]:8080` at its first colon (host `[`) and answers
+  `not a url`, `http://`, `http://a b.com/`, `http://a.com:abc/` where WHATWG
+  refuses. A URL check splits the authority and checks scheme, host and port
+  itself.
 
 **Refused or miscompiled — and what is written instead:**
 
@@ -242,8 +297,15 @@ library writes instead.
   erlang. `vSizeBetween` inherits it for text outside the BMP. The portable
   count is `unicode.codepoints(s).length`, which the length markers of the next
   step are written against.
-- There is no `f64` → integer conversion in `std/math` and no `f32` literal
-  (`val f: f32 = 1.5;` is a mismatch).
+- There is no `f64` → integer conversion in `std/math` (hence `schemas.bp`'s
+  three conversion cells).
+- A helper cannot take a `@Decl` (the call lowers to a run-time module that
+  does not exist): every marker body calls `decl.fail` itself. Inside a
+  decorator body an optional has no `unwrapOr` (`xs.slice(0, 1).join("")`
+  instead), and a top-level `val` is not readable from a function a decorator
+  calls (`formats.bp`'s character sets are functions).
+- An `i64` beyond ±(2^53 − 1) cannot be built on commonJS (the arithmetic is
+  refused as an overflow), so `#[safeInt]`'s refusal is reached on erlang only.
 - An integer literal does not widen to `i64` in arithmetic; `wholeI64`
   (`schemas.bp`) is the host cell that produces one. `bindEpochMillis` reads its
   `i64` with std's `String.parseInt` over the trimmed text (front 97), so a

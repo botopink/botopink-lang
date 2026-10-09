@@ -6,6 +6,9 @@ const proto = @import("./protocol.zig");
 const lsp_types = @import("./lsp_types.zig");
 const compiler_mod = @import("./compiler.zig");
 const index_mod = @import("./project_index.zig");
+/// The CLI's module-tree resolver (`compiler-cli/src/cli/resolver.zig`), given
+/// to this module by `build.zig`: the import-source rule has one implementation.
+const cli_resolver = @import("cli_resolver");
 
 const Lexer = bp.Lexer;
 const Parser = bp.Parser;
@@ -93,6 +96,79 @@ pub fn diagnose(
     }
 
     return .{ .uri = uri, .diagnostics = try diags.toOwnedSlice(gpa) };
+}
+
+/// The import-source refusals `botopink check` makes for the open document
+/// (front 26 step 8, decisions 206 and 242): `from "<a module of this
+/// package>"` and `from "<a package this one does not declare>"`, each at its
+/// source string with the CLI's message (`cli_resolver.importSourceMessage`,
+/// one text for both drivers). Before this the editor showed such an import
+/// resolving until `botopink check` refused it.
+///
+/// `package` is the project's own `src` tree (the open document among them or
+/// not — `source` replaces its disk copy), `src_dir` where that tree lives and
+/// `externals` the names `botopink.json` declares under `dependencies`. A
+/// document outside `src_dir` is no module of the package and gets nothing.
+pub fn importDiagnostics(
+    gpa: std.mem.Allocator,
+    uri: []const u8,
+    source: []const u8,
+    package: []const ModuleSource,
+    src_dir: []const u8,
+    externals: []const []const u8,
+) ![]proto.Diagnostic {
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    const active = logicalPath(a, src_dir, lsp_types.uriToPath(uri)) orelse return &.{};
+    var mods: std.ArrayListUnmanaged(bp.Module) = .empty;
+    try mods.append(a, .{ .path = active, .source = source });
+    for (package) |m| {
+        const path = logicalPath(a, src_dir, lsp_types.uriToPath(m.uri)) orelse continue;
+        if (std.mem.eql(u8, path, active)) continue;
+        try mods.append(a, .{ .path = path, .source = m.source });
+    }
+
+    const problems = try cli_resolver.importSourceProblems(a, mods.items, 0, externals, a);
+    var out: std.ArrayList(proto.Diagnostic) = .empty;
+    errdefer {
+        for (out.items) |d| gpa.free(d.message);
+        out.deinit(gpa);
+    }
+    for (problems) |p| {
+        if (p.line == 0) continue;
+        const line: u32 = @intCast(p.line - 1);
+        const character: u32 = @intCast(p.col -| 1);
+        try out.append(gpa, .{
+            .range = .{
+                .start = .{ .line = line, .character = character },
+                .end = .{ .line = line, .character = character + @as(u32, @intCast(p.name.len + 2)) },
+            },
+            .severity = proto.DiagnosticSeverity.Error,
+            .message = try gpa.dupe(u8, try cli_resolver.importSourceMessage(a, p)),
+            .source = "botopink",
+        });
+    }
+    return out.toOwnedSlice(gpa);
+}
+
+/// The logical module path of the file at `path` under `src_dir`, as the
+/// CLI's resolver names it: relative, `/`-separated, without `.bp` / `.d.bp`,
+/// a folder index `x/mod.bp` named `x`. Null for a file outside `src_dir`.
+fn logicalPath(a: std.mem.Allocator, src_dir: []const u8, path: []const u8) ?[]const u8 {
+    const dir = std.mem.trimEnd(u8, src_dir, "/");
+    if (dir.len == 0 or !std.mem.startsWith(u8, path, dir) or path.len <= dir.len + 1 or path[dir.len] != '/') return null;
+    var rel = path[dir.len + 1 ..];
+    if (std.mem.endsWith(u8, rel, ".d.bp")) {
+        rel = rel[0 .. rel.len - ".d.bp".len];
+    } else if (std.mem.endsWith(u8, rel, ".bp")) {
+        rel = rel[0 .. rel.len - ".bp".len];
+    } else return null;
+    if (std.mem.endsWith(u8, rel, "/mod")) rel = rel[0 .. rel.len - "/mod".len];
+    const out = a.dupe(u8, rel) catch return null;
+    std.mem.replaceScalar(u8, out, '\\', '/');
+    return out;
 }
 
 // ── Formatting ────────────────────────────────────────────────────────────────

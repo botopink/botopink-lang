@@ -508,6 +508,26 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .caretCaption = "use `$0`",
             .hint = "Markers are positional over the declared parameters: on a method `$0` is `self`, `$1` the next parameter.",
         },
+        .defaultUnknown => .{
+            .code = "default-unknown",
+            .message = "`pub default` names no function of this module",
+            .caretCaption = "no `fn` of this name",
+            .lexemeInCaption = true,
+            .hint = "`pub default <name>;` makes a function the module declares its default (decision 289): declare `fn <name>(…)`, or write `pub default fn (…)`.",
+        },
+        .defaultTwice => .{
+            .code = "default-twice",
+            .message = "a module has one default function",
+            .caretCaption = "already the default",
+            .lexemeInCaption = true,
+            .hint = "Write `default` once: on the `fn` itself (`pub default fn …`) or as `pub default <name>;`, never both (decision 289).",
+        },
+        .templateStringifyMarker => .{
+            .code = "template-stringify-marker",
+            .message = "`$stringify` is not a template marker",
+            .caretCaption = "write the host's conversion",
+            .hint = "A template is host code (decisions 164, 239): write the target's own string conversion of the marker, e.g. `String($0)` on Node.",
+        },
         .templateMarkerOutOfRange => .{
             .code = "template-marker-out-of-range",
             .message = "a template marker names a parameter the declaration does not have",

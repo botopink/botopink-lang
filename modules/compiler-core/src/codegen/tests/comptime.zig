@@ -86,8 +86,6 @@ test "js: comptime val ---- comptime val folds arithmetic to literal" {
     );
 }
 
-// beam records an empty RUN LOG on the two string-specialisation fixtures while
-// string `+` lowers to arithmetic `'+'` (04-beam B3) — known-wrong output.
 test "js: comptime specialization ---- distinct string args generate specialized functions" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn build(prefix comptime: string, name: string) -> string {

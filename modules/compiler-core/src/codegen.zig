@@ -62,6 +62,35 @@ pub fn generate(
     return outputs;
 }
 
+/// Decision 57 — copy each module's `OkData.warnings` onto its output before
+/// the comptime session that owns them is freed (front 26 step 4: `build` and
+/// `test` print them as `check` does). Matched by module name; a module that
+/// emitted no output has nothing to carry them.
+fn attachWarnings(allocator: std.mem.Allocator, session: []const ComptimeOutput, outputs: []ModuleOutput) !void {
+    for (session) |ct| {
+        const ok = switch (ct.outcome) {
+            .ok => |ok| ok,
+            else => continue,
+        };
+        if (ok.warnings.len == 0) continue;
+        for (outputs) |*o| {
+            if (!std.mem.eql(u8, o.name, ct.name) or o.result.warnings.len > 0) continue;
+            const ws = try allocator.alloc(moduleOutput.Diagnostic.TypeDiagnostic, ok.warnings.len);
+            var filled: usize = 0;
+            errdefer {
+                for (ws[0..filled]) |w| allocator.free(w.message);
+                allocator.free(ws);
+            }
+            for (ok.warnings, ws) |w, *out| {
+                out.* = .{ .message = try w.message(allocator), .loc = w.loc };
+                filled += 1;
+            }
+            o.result.warnings = ws;
+            break;
+        }
+    }
+}
+
 /// Compile `modules` for `config.targetSource`. Executes the emitted modules
 /// only when `options.execute` is set. Every module comes back: one that did
 /// not lex, parse or type-check carries its `result.diagnostic`, one that
@@ -97,6 +126,7 @@ pub fn generateWith(
         .beam => beam_asm.codegenEmit(allocator, session.outputs.items, config),
         .wasm => wat.codegenEmit(allocator, session.outputs.items, config),
     };
+    try attachWarnings(allocator, session.outputs.items, outputs.items);
 
     // A host that cannot spawn a process (the browser build, front 18 step 5)
     // has no executor: the harness's `execute` is refused there rather than

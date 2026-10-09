@@ -26,6 +26,7 @@ const diagnostics = @import("./diagnostics.zig");
 const arglist = @import("./arglist.zig");
 const otp = @import("./otp.zig");
 const resolver = @import("./resolver.zig");
+const sources = @import("./sources.zig");
 /// Test-only: the one way a test spells a path it writes to (per process, so a
 /// second `zig build test` over this checkout cannot empty it mid-test).
 /// `build.zig` gives this module to the test modules alone.
@@ -54,6 +55,11 @@ pub const Error = error{
     /// the compiler ships — decisions 115–117) in `dependencies`; the located
     /// diagnostic has already been printed.
     BundledDependency,
+    /// A module of a dependency imports a package that dependency does not
+    /// declare, or a module of itself with `from` — the same refusal its own
+    /// build gives (decisions 206, 242); the located diagnostic has already
+    /// been printed.
+    ImportSourceRefused,
 } || std.mem.Allocator.Error;
 
 /// Name of the env var that prepends extra lib roots (drop-in for `PATH`-style
@@ -621,6 +627,11 @@ fn loadOne(
     const arena = arena_inst.allocator();
 
     const first = out.items.len;
+    // Where an import-source refusal points: each file relative to the
+    // working directory, the spelling a project module's location has.
+    var file_paths: std.ArrayListUnmanaged([]const u8) = .empty;
+    var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const cwd = cwd_buf[0..try std.process.currentPath(io, &cwd_buf)];
     for (m.files) |file| {
         const file_path = try std.fs.path.join(arena, &.{ dir, m.src, file });
         const source = std.Io.Dir.cwd().readFileAlloc(io, file_path, gpa, .unlimited) catch |err| switch (err) {
@@ -645,10 +656,73 @@ fn loadOne(
         std.mem.replaceScalar(u8, src_path, '\\', '/');
 
         try out.append(gpa, .{ .path = mod_path, .source = source, .declaration = isDeclFile(file), .srcPath = src_path });
+        try file_paths.append(arena, try std.fs.path.relative(arena, cwd, null, cwd, file_path));
     }
+    try checkImportSources(arena, dep, m, file_paths.items, out.items[first..]);
     // `files` lists what the package ships, not a build order: each module
     // compiles after the siblings it imports.
     resolver.orderPackageModules(arena, dep, out.items[first..]);
+}
+
+/// The import-source rule a package's own build applies (`resolver.checkSources`,
+/// decisions 206, 242 and 309), applied to dependency `dep`'s modules `mods`
+/// (read from `files`) against ITS manifest `m`: a `from` names std, a bundled
+/// package or a package `m` declares, and never `dep` itself or a module of
+/// it. A consumer used to compile the import of a package the dependency does
+/// not declare with nothing bound, and answered `unbound variable` at the
+/// first use — in the dependency's module, with no word of the import that
+/// bound nothing.
+fn checkImportSources(
+    arena: std.mem.Allocator,
+    dep: []const u8,
+    m: manifest.Manifest,
+    files: []const []const u8,
+    mods: []const Module,
+) Error!void {
+    // The package's own module paths, as when it builds itself (`<dep>/a` → `a`).
+    const local = try arena.alloc(Module, mods.len);
+    for (mods, 0..) |mod, i| {
+        local[i] = mod;
+        local[i].path = mod.path[dep.len + 1 ..];
+    }
+    const declared = try arena.alloc([]const u8, m.dependencies.len);
+    for (m.dependencies, 0..) |d, i| declared[i] = d.name;
+    var diag: resolver.Diagnostic = .{ .kind = resolver.Error.RootNotFound };
+    // Decision 309 — nor the package itself: its manifest `name`, or the
+    // name it is imported under when the manifest names none.
+    const own = if (m.name.len > 0) m.name else dep;
+    resolver.checkSources(arena, local, files, declared, own, arena, &diag) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => {
+            sources.reportDiag(arena, diag);
+            return error.ImportSourceRefused;
+        },
+    };
+}
+
+test "loadOne: a dependency importing a package it does not declare is refused at the import" {
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+    test_scratch.remove(io, "dep-import-source");
+    defer test_scratch.remove(io, "dep-import-source");
+    // `kit-link` imports `kit-core` and declares it; `kit-bare` imports it too
+    // and declares nothing.
+    try writeKitWorkspace(io, "dep-import-source");
+    try writeFileP(io, test_scratch.path(io, "dep-import-source/ws/repository/kit/modules/kit-bare/botopink.json"), "{ \"name\": \"kit-bare\", \"files\": [\"bare.bp\"] }");
+    try writeFileP(io, test_scratch.path(io, "dep-import-source/ws/repository/kit/modules/kit-bare/src/bare.bp"), "import {core} from \"kit-core\";");
+    const roots = [_][]const u8{test_scratch.path(io, "dep-import-source/ws/repository")};
+
+    var out: std.ArrayListUnmanaged(Module) = .empty;
+    defer {
+        for (out.items) |mod| {
+            gpa.free(mod.path);
+            gpa.free(mod.source);
+            gpa.free(mod.srcPath);
+        }
+        out.deinit(gpa);
+    }
+    try loadByName(gpa, io, &roots, "kit-link", &out);
+    try std.testing.expectError(error.ImportSourceRefused, loadByName(gpa, io, &roots, "kit-bare", &out));
 }
 
 /// The package a sidecar is shipped from: the directory, and the manifest whose
@@ -713,6 +787,15 @@ fn sidecarOwner(
             const r = resolved orelse return null;
             return .{ .dir = r.dir, .package = r.manifest };
         }
+
+        // A dependency of a dependency: the build compiled it from the
+        // directory its OWN dependent's entry meant (`DepClosure`), so the
+        // closure is walked again the same way. A `path` dependency outside
+        // the workspace whose members it depends on carries those members in
+        // no root, and asking the roots by name found nothing.
+        var buf: [std.fs.max_path_bytes]u8 = undefined;
+        const n = try std.process.currentPath(io, &buf);
+        if (try closureOwner(gpa, arena, io, roots, env_map, proj, buf[0..n], lib)) |owner| return owner;
     }
 
     const entries = try manifest.scanRoots(arena, io, roots);
@@ -723,6 +806,69 @@ fn sidecarOwner(
     }
     if (e.is_workspace) return null;
     return .{ .dir = e.dir, .package = e.manifest.? };
+}
+
+/// The package `lib` of the dependency closure of the project at `project_dir`
+/// whose manifest is `project` — resolved exactly as `loadDependencies` resolved
+/// it for the build (`DepClosure`) — or null when no package of the closure
+/// carries that import name. A closure that does not resolve is null too: the
+/// build compiled it before any shipper runs, so that is not reachable through
+/// `build`/`test`, and the caller still names the missing owner.
+fn closureOwner(
+    gpa: std.mem.Allocator,
+    arena: std.mem.Allocator,
+    io: std.Io,
+    roots: []const []const u8,
+    env_map: EnvMap,
+    project: manifest.Manifest,
+    project_dir: []const u8,
+    lib: []const u8,
+) !?SidecarOwner {
+    const fallback_roots = try resolveFallbackRoots(gpa, io, env_map);
+    defer freeRoots(gpa, fallback_roots);
+    var closure: DepClosure = .{
+        .arena = arena,
+        .io = io,
+        .entries = try manifest.scanRoots(arena, io, roots),
+        .fallback_entries = try manifest.scanRoots(arena, io, fallback_roots),
+    };
+    for (project.dependencies) |dep| _ = closure.resolve(project, project_dir, dep) catch |e| switch (e) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return null,
+    };
+    for (project.dependencies) |dep| closure.visit(project, dep.name) catch |e| switch (e) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return null,
+    };
+    const pkg = closure.packages.get(lib) orelse return null;
+    return .{ .dir = pkg.dir, .package = pkg.manifest };
+}
+
+test "closureOwner: a dependency of a path dependency resolves from its dependent's workspace" {
+    var arena_inst = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+    const io = std.testing.io;
+    test_scratch.remove(io, "closure-owner");
+    defer test_scratch.remove(io, "closure-owner");
+    try writeKitWorkspace(io, "closure-owner");
+
+    // `app` lives outside the `kit` workspace and names only `kit-forms`, by
+    // path; `kit-core` and `kit-link` are `kit-forms`' workspace siblings and
+    // are under no library root (none is given).
+    const app_dir = test_scratch.path(io, "closure-owner/app");
+    var err: ?manifest.Located = null;
+    const m = try manifest.parse(arena,
+        \\{ "name": "app", "dependencies": { "kit-forms": { "path": "../ws/repository/kit/modules/kit-forms" } } }
+    , try std.fmt.allocPrint(arena, "{s}/botopink.json", .{app_dir}), &err);
+
+    const core = (try closureOwner(std.testing.allocator, arena, io, &.{}, null, m, app_dir, "kit-core")).?;
+    try std.testing.expect(std.mem.endsWith(u8, core.dir, "closure-owner/ws/repository/kit/modules/kit-core"));
+    try std.testing.expectEqualStrings("kit-core", core.package.name);
+    const forms = (try closureOwner(std.testing.allocator, arena, io, &.{}, null, m, app_dir, "kit-forms")).?;
+    try std.testing.expect(std.mem.endsWith(u8, forms.dir, "closure-owner/ws/repository/kit/modules/kit-forms"));
+    // Not a package of the closure.
+    try std.testing.expectEqual(@as(?SidecarOwner, null), try closureOwner(std.testing.allocator, arena, io, &.{}, null, m, app_dir, "kit-other"));
 }
 
 /// The project's own manifest, read once per shipper run and only when a

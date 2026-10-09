@@ -8,10 +8,10 @@
 //// `json.quote`), a two-argument (`regex.matches`) and a nullary template
 //// (`os.eol`, `process.platform`), and one that answers a `@Result`
 //// (`fs.readText`) — through `import {io}`'s folder namespace and through a
-//// leaf import. Not scheduled on wasm (`.targets`): std's `io/fs`, `json`
-//// and `encoding` host cells have no wasm binding, and the build refuses each
-//// module that calls one — the refusal names std's own call sites, not this
-//// program (`hash` builds on wasm: `run/std_hash_*_on_every_target`).
+//// leaf import. Not scheduled on wasm (`.targets`): `io/fs` stays refused
+//// there (decision 241's group 3) and `json.parse` / `json.stringify` have no
+//// wasm binding yet (`decisions-pending.md` 05w-j); `encoding` and `hash`
+//// build on wasm (`run/std_{encoding,hash}_on_every_target`).
 
 import {io} from "std";
 import {io.fs, io.os} from "std";

@@ -18,6 +18,8 @@ import {decorators.validated, decorators.notBlank, decorators.sizeBetween, decor
 import {report.ValidationReport, report.Violation};
 import {constraints.vNotBlank, constraints.vSizeBetween, constraints.vEmail, constraints.vMinValueI32, constraints.vMaxValueI32, constraints.vPattern};
 import {spi.vConstraint};
+import {decorators.minLength, decorators.startsWith, decorators.hashEnc, decorators.isoTimePrecision, decorators.gt, decorators.multipleOf, decorators.lt, decorators.afterIso};
+import {constraints.vMinLength, constraints.vStartsWith, constraints.vHashEnc, constraints.vIsoTimePrecision, constraints.vGtI32, constraints.vMultipleOfI32, constraints.vLtF64, constraints.vAfterIso};
 
 #[validated]
 pub type TableUserRequest(
@@ -78,4 +80,21 @@ test "validation: the table's JSON escapes a parameter that needs it" {
     assert fieldJson("f", "") == "{\"name\":\"f\",\"constraints\":[]}";
     assert constraintJson(["f", "minValue", "3"])
         == "{\"code\":\"minValue\",\"min\":3}";
+}
+
+// ── step 3: the markers' table rows ─────────────────────────────────────────
+
+#[validated]
+pub type Order(
+    #[minLength(2)] #[startsWith("ord_")] id: string,
+    #[hashEnc("sha256", "base64")] receipt: string,
+    #[isoTimePrecision(-1)] at: string,
+    #[gt(0)] #[multipleOf(5)] cents: i32,
+    #[lt(0.5)] ratio: f64,
+    #[afterIso("2020-01-01T00:00:00Z")] placed: i64,
+)
+
+test "validation: a step-3 marker's parameters reach the table, numbers as numbers" {
+    assert Order.constraints()
+        == "{\"type\":\"Order\",\"fields\":[{\"name\":\"id\",\"constraints\":[{\"code\":\"minLength\",\"min\":2},{\"code\":\"startsWith\",\"prefix\":\"ord_\"}]},{\"name\":\"receipt\",\"constraints\":[{\"code\":\"hashEnc\",\"algorithm\":\"sha256\",\"encoding\":\"base64\"}]},{\"name\":\"at\",\"constraints\":[{\"code\":\"isoTimePrecision\",\"precision\":-1}]},{\"name\":\"cents\",\"constraints\":[{\"code\":\"gt\",\"bound\":0},{\"code\":\"multipleOf\",\"step\":5}]},{\"name\":\"ratio\",\"constraints\":[{\"code\":\"lt\",\"bound\":0.5}]},{\"name\":\"placed\",\"constraints\":[{\"code\":\"afterIso\",\"instant\":\"2020-01-01T00:00:00Z\"}]}]}";
 }

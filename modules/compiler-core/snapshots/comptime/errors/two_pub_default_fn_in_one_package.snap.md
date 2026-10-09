@@ -3,10 +3,10 @@ pub default fn one(comptime q: @Expr<string>) -> @ExprCustom<i32> { return q.bui
 pub default fn two(comptime q: @Expr<string>) -> @ExprCustom<i32> { return q.build("0"); }
 
 ----- ERROR
-error: a package declares at most one `pub default mod` and one `pub default fn`
-  ┌─ main.bp:2:69
+error: default-twice: a module has one default function
+  ┌─ main.bp:2:16
   │
 2 │ pub default fn two(comptime q: @Expr<string>) -> @ExprCustom<i32> { return q.build("0"); }
-  │                                                                     ^
+  │                ^
 
-  hint: Remove the duplicate default declaration; a package has a single default module and handler.
+  hint: Keep one `pub default fn` (or `pub default <name>;`) per module (decision 289); the importer binds it under the module path.

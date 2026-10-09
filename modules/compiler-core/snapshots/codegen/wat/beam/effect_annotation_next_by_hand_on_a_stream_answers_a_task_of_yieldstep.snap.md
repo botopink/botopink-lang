@@ -43,6 +43,7 @@ pub fn main() {
     {move, nil, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
+    {line, [{location, "test@main.erl", 2}]}.
   {label, 15}.
     {test, is_lt, {f, 16}, [{integer, 0}, {y, 2}]}.
     {move, {y, 2}, {x, 0}}.

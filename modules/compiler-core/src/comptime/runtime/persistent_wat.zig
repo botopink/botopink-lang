@@ -223,6 +223,71 @@ test "a body's prints are captured in the module, never written to the compiler'
     try std.testing.expectEqualStrings("{\"value\":7}", r.ok);
 }
 
+// ── the limits (`AGENTS.md` § Limits): each pinned where it raises ──────────
+
+test "limit 1: no process, mailbox or ETS table — what `safe_call` isolates is refused by name" {
+    const cases = [_]struct { []const u8, []const u8, []const u8 }{
+        .{
+            \\-module(bp@wat_test_limit1a).
+            \\-export([main/1]).
+            \\main(_) -> spawn(fun() -> ok end).
+            ,
+            "spawn/1",
+            "bp@wat_test_limit1a",
+        },
+        .{
+            \\-module(bp@wat_test_limit1b).
+            \\-export([main/1]).
+            \\main(_) -> receive X -> X end.
+            ,
+            "`receive`",
+            "bp@wat_test_limit1b",
+        },
+        .{
+            \\-module(bp@wat_test_limit1c).
+            \\-export([main/1]).
+            \\main(_) -> ets:new(t, []).
+            ,
+            "ets:new/2",
+            "bp@wat_test_limit1c",
+        },
+    };
+    for (cases) |case_| {
+        const built = try program.build(case_[2], case_[0]);
+        try std.testing.expect(built == .refused);
+        if (std.mem.indexOf(u8, built.refused, case_[1]) == null) {
+            std.debug.print("\nrefusal without {s}: {s}\n", .{ case_[1], built.refused });
+            return error.TestUnexpectedResult;
+        }
+    }
+}
+
+test "limit 3: Unicode case mapping of a non-ASCII letter raises bp_wat_runtime" {
+    const alloc = std.testing.allocator;
+    const code =
+        \\-module(bp@wat_test_limit3).
+        \\-export([main/1]).
+        \\
+        \\main({Arg0}) -> string:uppercase(Arg0).
+    ;
+    const r = try runSource(alloc, "bp@wat_test_limit3", code, Term.tupleOf(&.{Term.str("\xc3\xa9t\xc3\xa9")}));
+    defer alloc.free(r.payload());
+    try std.testing.expectEqualStrings("error:{bp_wat_runtime,<<\"string case mapping of a non-ASCII character\">>}", r.runtime_error);
+}
+
+test "limit 4: an integer beyond 64 bits raises bp_wat_runtime" {
+    const alloc = std.testing.allocator;
+    const code =
+        \\-module(bp@wat_test_limit4).
+        \\-export([main/1]).
+        \\
+        \\main({Arg0}) -> Arg0 * Arg0.
+    ;
+    const r = try runSource(alloc, "bp@wat_test_limit4", code, Term.tupleOf(&.{.{ .integer = 4294967296 }}));
+    defer alloc.free(r.payload());
+    try std.testing.expectEqualStrings("error:{bp_wat_runtime,<<\"integer beyond 64 bits (a bignum)\">>}", r.runtime_error);
+}
+
 test "a construct outside the subset is refused before anything runs" {
     const built = try program.build("bp@wat_test_refuse", "-module(bp@wat_test_refuse).\n-export([main/1]).\nmain(_) -> self().\n");
     try std.testing.expect(built == .refused);

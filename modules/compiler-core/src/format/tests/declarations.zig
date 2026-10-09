@@ -986,3 +986,33 @@ test "format: behavior ---- val members keep their full type" {
         \\}
     );
 }
+
+// ── decision 289: a module's default function ───────────────────────────────
+
+test "format: an anonymous default function keeps `fn (`" {
+    try h.assertFormat(std.testing.allocator,
+        \\pub default fn (x: i32) -> i32 {
+        \\    return x * 2;
+        \\}
+    );
+}
+
+test "format: `pub default <name>;` stays after its private function" {
+    try h.assertFormat(std.testing.allocator,
+        \\fn Tree(depth: i32) -> string {
+        \\    return "leaf";
+        \\}
+        \\
+        \\pub default Tree;
+    );
+}
+
+// ── decision 297: a value-or-type parameter ─────────────────────────────────
+
+test "format: `comptime s: Box<T> | type T` prints without parentheses" {
+    try h.assertFormat(std.testing.allocator,
+        \\fn pick<T>(comptime s: Box<T> | type T) -> string {
+        \\    return "x";
+        \\}
+    );
+}

@@ -807,6 +807,40 @@ test "a module encodes to the exact bytes of its sections" {
     try std.testing.expectEqualSlices(u8, &want, bytes);
 }
 
+test "memory.size and memory.grow encode with their memory-index byte (decision 261)" {
+    const alloc = std.testing.allocator;
+    // (module
+    //   (memory 1)
+    //   (func $f (result i32) memory.size memory.grow))
+    const m: ast.Module = .{ .items = &.{
+        .{ .memory = .{ .min_pages = 1 } },
+        .{ .func = .{
+            .name = "f",
+            .result = .i32,
+            .body = .{ .stack = .{ .value = .i32 }, .lines = &.{
+                .{ .instr = .memory_size },
+                .{ .instr = .memory_grow },
+            } },
+        } },
+    } };
+    const bytes = try encodeModule(alloc, m);
+    defer alloc.free(bytes);
+    const want = [_]u8{
+        0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
+        // type: () -> i32
+        0x01, 0x05, 0x01, 0x60, 0x00, 0x01, 0x7F,
+        // function: one, type 0
+        0x03,
+        0x02, 0x01, 0x00,
+        // memory: min 1
+        0x05, 0x03, 0x01, 0x00, 0x01,
+        // code: no locals, memory.size 0, memory.grow 0, end
+        0x0A, 0x08, 0x01, 0x06, 0x00, 0x3F, 0x00, 0x40,
+        0x00, 0x0B,
+    };
+    try std.testing.expectEqualSlices(u8, &want, bytes);
+}
+
 test "a name nothing declares is refused, not guessed" {
     const alloc = std.testing.allocator;
     const m: ast.Module = .{ .items = &.{.{ .func = .{

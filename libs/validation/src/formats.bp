@@ -1,0 +1,923 @@
+//// validation — the string formats, as plain botopink.
+////
+//// Each `is<Format>(s)` answers whether `s` is in the format; `constraints.bp`
+//// turns the answer into a violation. Nothing here reaches a host cell of its
+//// own: a format is a walk over the text's characters or a regex in the
+//// intersection of PCRE (`re:run/2`, erlang) and ECMAScript (node) — bracket
+//// classes, groups, `(?:…)` and counted repeats, no backslash class and no
+//// lookaround — so one source answers the same on both targets.
+////
+//// A WALK READS `s.split("")`. On erlang that is one item per code point, on
+//// node one per UTF-16 unit; the two differ only outside the BMP, and every
+//// format below that walks is ASCII, so a character outside the BMP is refused
+//// on both — as one item or as two, it is in no ASCII class. The formats that
+//// read non-ASCII text (`isEmoji`, `isEmailUnicode`) walk
+//// `unicode.codepoints(s)` instead.
+////
+//// THE RULES ARE THE REFERENCE'S (Zod 4), each written out where it is
+//// implemented. Where the reference is loose and the rule here is stricter, the
+//// comment says so (decision 67: refuse > accept).
+
+import {regex, unicode, json, json.Json, encoding} from "std";
+
+// ── characters ──────────────────────────────────────────────────────────────
+
+fn digitChars() -> string {
+    return "0123456789";
+}
+
+fn hexChars() -> string {
+    return "0123456789abcdefABCDEF";
+}
+
+fn lowerChars() -> string {
+    return "abcdefghijklmnopqrstuvwxyz";
+}
+
+fn upperChars() -> string {
+    return "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+}
+
+fn alnumChars() -> string {
+    return "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+}
+
+fn base64Chars() -> string {
+    return "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/";
+}
+
+fn base64UrlChars() -> string {
+    return "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_";
+}
+
+fn chars(s: string) -> Array<string> {
+    return s.split("");
+}
+
+// One character `c` (an item of `chars`) is in `set`.
+pub fn inSet(c: string, set: string) -> bool {
+    return c.length() == 1 && set.indexOf(c) >= 0;
+}
+
+// Every character of `s` is in `set`; `""` is.
+pub fn allIn(s: string, set: string) -> bool {
+    return chars(s).filter({ c -> inSet(c, set) == false }).length == 0;
+}
+
+fn isDigits(s: string) -> bool {
+    return s != "" && allIn(s, digitChars());
+}
+
+// The value of a run of decimal digits; -1 for anything else, and for a run
+// longer than nine digits (it would not fit an i32 — no format here needs one).
+pub fn digitsValue(s: string) -> i32 {
+    if (isDigits(s) == false || s.length() > 9) return 0 - 1;
+    return chars(s).fold(0, { acc, c -> acc * 10 + digitChars().indexOf(c) });
+}
+
+// The `s` split at every `sep`, in order. `"".split(".")` is `[""]` on both
+// targets; written out so the answer does not depend on it.
+fn parts(s: string, sep: string) -> Array<string> {
+    if (s == "") return [""];
+    return s.split(sep);
+}
+
+// ── text checks ─────────────────────────────────────────────────────────────
+
+// Zod's `.uppercase()`: no ASCII lowercase letter (`^[^a-z]*$`). A check, not a
+// transform; a letter outside ASCII is neither.
+pub fn isUppercase(s: string) -> bool {
+    return chars(s).filter({ c -> inSet(c, lowerChars()) }).length == 0;
+}
+
+// Zod's `.lowercase()`: no ASCII uppercase letter (`^[^A-Z]*$`).
+pub fn isLowercase(s: string) -> bool {
+    return chars(s).filter({ c -> inSet(c, upperChars()) }).length == 0;
+}
+
+// ── identifiers (regex) ─────────────────────────────────────────────────────
+
+// RFC 9562: version nibble 1–8, variant nibble 8, 9, a or b; the nil and the
+// max UUID are UUIDs too (Zod 4).
+pub fn uuidPattern() -> string {
+    return "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff|FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF)$";
+}
+
+pub fn isUuid(s: string) -> bool {
+    return regex.matches(uuidPattern(), s);
+}
+
+// A UUID of version `v` (1–8): the version nibble is `v`, the variant RFC 9562's.
+pub fn uuidVersionPattern(v: i32) -> string {
+    return [
+        "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-",
+        [v].join(""),
+        "[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+    ].join("");
+}
+
+pub fn isUuidVersion(s: string, v: i32) -> bool {
+    if (v < 1 || v > 8) return false;
+    return regex.matches(uuidVersionPattern(v), s);
+}
+
+// The 8-4-4-4-12 shape, no nibble checked (Zod's `guid`).
+pub fn guidPattern() -> string {
+    return "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
+}
+
+pub fn isGuid(s: string) -> bool {
+    return regex.matches(guidPattern(), s);
+}
+
+pub fn nanoidPattern() -> string {
+    return "^[a-zA-Z0-9_-]{21}$";
+}
+
+pub fn isNanoid(s: string) -> bool {
+    return regex.matches(nanoidPattern(), s);
+}
+
+// Zod: `^[cC][^\s-]{8,}$`. The class `\s` is not in the intersection grammar,
+// so the tail is walked: eight or more characters, none a dash, none
+// whitespace, none outside ASCII (stricter: a cuid is ASCII).
+pub fn isCuid(s: string) -> bool {
+    val cs = chars(s);
+    if (cs.length < 9) return false;
+    if (inSet(cs.at(0).unwrapOr(""), "cC") == false) return false;
+    val tail = cs.slice(1, cs.length);
+    return tail.filter({ c ->
+        c.length() != 1 || c == "-" || isPrintableAscii(c) == false || c == " ";
+    }).length
+        == 0;
+}
+
+pub fn cuid2Pattern() -> string {
+    return "^[0-9a-z]+$";
+}
+
+pub fn isCuid2(s: string) -> bool {
+    return regex.matches(cuid2Pattern(), s);
+}
+
+// Crockford base32, 26 characters (no I, L, O, U).
+pub fn ulidPattern() -> string {
+    return "^[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{26}$";
+}
+
+pub fn isUlid(s: string) -> bool {
+    return regex.matches(ulidPattern(), s);
+}
+
+// `+`, a digit 1–9, then six to fourteen digits: 7 to 15 digits in all.
+pub fn e164Pattern() -> string {
+    return "^[+][1-9][0-9]{6,14}$";
+}
+
+pub fn isE164(s: string) -> bool {
+    return regex.matches(e164Pattern(), s);
+}
+
+// Six two-digit hex groups joined by `delimiter`, one case throughout (Zod 4:
+// `00:1A:2B:3C:4D:5E` and `00:1a:…`, never mixed).
+pub fn isMac(s: string, delimiter: string) -> bool {
+    val groups = parts(s, delimiter);
+    if (delimiter == "" || groups.length != 6) return false;
+    val good = groups.filter({ g -> g.length() == 2 && allIn(g, hexChars()) });
+    if (good.length != 6) return false;
+    return allIn(groups.join(""), "0123456789ABCDEF")
+        || allIn(groups.join(""), "0123456789abcdef");
+}
+
+// ── encodings (walks) ───────────────────────────────────────────────────────
+
+// Zod's `hex`: hex digits, either case, any count (`""` included).
+pub fn isHex(s: string) -> bool {
+    return allIn(s, hexChars());
+}
+
+// Padded base64: a multiple of four characters of the alphabet, with at most
+// two `=` and only at the end (`""` is base64, as in Zod).
+pub fn isBase64(s: string) -> bool {
+    val n = s.length();
+    if (n % 4 != 0) return false;
+    if (allIn(s, base64Chars())) return true;
+    if (s.endsWith("==")) return allIn(s.slice(0, n - 2), base64Chars());
+    if (s.endsWith("=")) return allIn(s.slice(0, n - 1), base64Chars());
+    return false;
+}
+
+// Unpadded base64url: the URL alphabet, any length but one that leaves a
+// single dangling character (`n % 4 == 1` encodes no whole byte).
+pub fn isBase64Url(s: string) -> bool {
+    return allIn(s, base64UrlChars()) && s.length() % 4 != 1;
+}
+
+// ── JWT ─────────────────────────────────────────────────────────────────────
+
+fn padded(segment: string) -> string {
+    val rest = segment.length() % 4;
+    if (rest == 2) return [segment, "=="].join("");
+    if (rest == 3) return [segment, "="].join("");
+    return segment;
+}
+
+// The decoded header of a token, `Json.Null` when it is not a JSON object.
+fn jwtHeader(token: string) -> Json {
+    val head = parts(token, ".").at(0).unwrapOr("");
+    val standard = padded(head).replaceAll("-", "+").replaceAll("_", "/");
+    val text = try encoding.base64Decode(standard) catch "";
+    if (text == "") return Json.Null;
+    val doc = try json.decode(text) catch Json.Null;
+    if (isObject(doc)) return doc;
+    return Json.Null;
+}
+
+fn isObject(doc: Json) -> bool {
+    return case doc {
+        Obj(_) -> true;
+        _ -> false;
+    };
+}
+
+fn textOf(j: Json) -> string {
+    return case j {
+        Str(text) -> text;
+        _ -> "";
+    };
+}
+
+// The member `name` of a header: `#(found, text)` — the text `""` when the
+// value is not text. A walk, not `Json.field`, so nothing here calls a method
+// on a lambda's parameter.
+fn member(doc: Json, name: string) -> #(bool, string) {
+    val ms = doc.members();
+    var found = false;
+    var text = "";
+    var i = 0;
+    while (i < ms.length) {
+        val m = ms.at(i).unwrapOr(#("", Json.Null));
+        if (found == false && m._0 == name) {
+            found = true;
+            text = textOf(m._1);
+        }
+        i = i + 1;
+    }
+    return #(found, text);
+}
+
+// Three base64url segments, header and payload not empty; the header a JSON
+// object with a text `alg` and, when it has a `typ`, `"JWT"`. The shape only:
+// no signature is checked. Stricter than Zod 4, which reads the header and
+// never counts the segments.
+pub fn isJwt(token: string) -> bool {
+    val segs = parts(token, ".");
+    if (segs.length != 3) return false;
+    val ok = segs.filter({ g -> isBase64Url(g) }).length == 3;
+    if (ok == false) return false;
+    if (segs.at(0).unwrapOr("") == "" || segs.at(1).unwrapOr("") == "")
+        return false;
+    val header = jwtHeader(token);
+    if (isObject(header) == false) return false;
+    if (member(header, "alg")._1 == "") return false;
+    val typ = member(header, "typ");
+    if (typ._0 && typ._1 != "JWT") return false;
+    return true;
+}
+
+// A JWT whose header names `alg`.
+pub fn isJwtAlg(token: string, alg: string) -> bool {
+    return isJwt(token) && member(jwtHeader(token), "alg")._1 == alg;
+}
+
+// ── hashes ──────────────────────────────────────────────────────────────────
+
+// The digest size in bytes of an algorithm Zod names; 0 for any other.
+pub fn hashBytes(algorithm: string) -> i32 {
+    if (algorithm == "md5") return 16;
+    if (algorithm == "sha1") return 20;
+    if (algorithm == "sha256") return 32;
+    if (algorithm == "sha384") return 48;
+    if (algorithm == "sha512") return 64;
+    return 0;
+}
+
+pub fn isHashEncoding(encodingName: string) -> bool {
+    return encodingName == "hex"
+        || encodingName == "base64"
+        || encodingName == "base64url";
+}
+
+// The reference's table (§ "Tamanhos Esperados e Padding"): hex is two
+// characters a byte; base64 is padded to a multiple of four; base64url is not
+// padded.
+pub fn isHash(s: string, algorithm: string, encodingName: string) -> bool {
+    val bytes = hashBytes(algorithm);
+    if (bytes == 0) return false;
+    if (encodingName == "hex") return s.length() == bytes * 2 && isHex(s);
+    val bits = bytes * 8;
+    val unpadded = (bits + 5) / 6;
+    if (encodingName == "base64url")
+        return s.length() == unpadded && allIn(s, base64UrlChars());
+    if (encodingName == "base64") {
+        val full = ((bytes + 2) / 3) * 4;
+        if (s.length() != full) return false;
+        val pad = full - unpadded;
+        val body = s.slice(0, unpadded);
+        val tail = s.slice(unpadded, full);
+        return allIn(body, base64Chars()) && tail == "==".slice(0, pad);
+    }
+    return false;
+}
+
+// ── network ─────────────────────────────────────────────────────────────────
+
+// Dotted quad, each octet 0–255 written without a leading zero (Zod 4).
+pub fn isIpv4(s: string) -> bool {
+    val octets = parts(s, ".");
+    if (octets.length != 4) return false;
+    return octets.filter({ o ->
+        val n = digitsValue(o);
+        n < 0
+            || n > 255
+            || o.length() > 3
+            || (o.length() > 1 && o.startsWith("0"));
+    }).length
+        == 0;
+}
+
+fn isHexGroup(g: string) -> bool {
+    return g.length() >= 1 && g.length() <= 4 && allIn(g, hexChars());
+}
+
+// The groups of one side of `::` (or of a whole address with none), with an
+// embedded IPv4 tail allowed in the last place when `tail` is set: the number
+// of 16-bit groups they stand for, -1 when one is malformed.
+fn ipv6Groups(side: string, tail: bool) -> i32 {
+    if (side == "") return 0;
+    val gs = parts(side, ":");
+    var count = 0;
+    var bad = false;
+    var i = 0;
+    while (i < gs.length) {
+        val g = gs.at(i).unwrapOr("");
+        val last = i == gs.length - 1;
+        if (last && tail && g.indexOf(".") >= 0) {
+            if (isIpv4(g)) count = count + 2 else bad = true;
+        } else if (isHexGroup(g)) count = count + 1 else bad = true;
+        i = i + 1;
+    }
+    if (bad) return 0 - 1;
+    return count;
+}
+
+// RFC 4291 § 2.2 text form: eight groups of one to four hex digits, or fewer
+// with one `::` standing for at least one zero group; an IPv4 dotted quad may
+// end the address in place of the last two groups. No zone identifier.
+pub fn isIpv6(s: string) -> bool {
+    val halves = s.split("::");
+    if (halves.length > 2) return false;
+    if (halves.length == 2) {
+        val left = halves.at(0).unwrapOr("");
+        val right = halves.at(1).unwrapOr("");
+        val l = ipv6Groups(left, false);
+        val r = ipv6Groups(right, true);
+        if (l < 0 || r < 0) return false;
+        return l + r <= 7;
+    }
+    return ipv6Groups(s, true) == 8;
+}
+
+fn isPrefix(p: string, max: i32) -> bool {
+    val n = digitsValue(p);
+    if (n < 0 || n > max) return false;
+    return p.length() == 1 || p.startsWith("0") == false;
+}
+
+pub fn isCidrv4(s: string) -> bool {
+    val ps = parts(s, "/");
+    if (ps.length != 2) return false;
+    return isIpv4(ps.at(0).unwrapOr("")) && isPrefix(ps.at(1).unwrapOr(""), 32);
+}
+
+pub fn isCidrv6(s: string) -> bool {
+    val ps = parts(s, "/");
+    if (ps.length != 2) return false;
+    return isIpv6(ps.at(0).unwrapOr(""))
+        && isPrefix(ps.at(1).unwrapOr(""), 128);
+}
+
+fn isLabel(l: string) -> bool {
+    val n = l.length();
+    if (n < 1 || n > 63) return false;
+    if (allIn(l, [alnumChars(), "-"].join("")) == false) return false;
+    return l.startsWith("-") == false && l.endsWith("-") == false;
+}
+
+// RFC 1123: labels of one to 63 letters, digits and inner hyphens, joined by
+// dots, at most 253 characters; one trailing dot allowed (Zod 4).
+pub fn isHostname(s: string) -> bool {
+    val body = if (s.endsWith(".")) s.slice(0, s.length() - 1) else s;
+    if (body == "" || body.length() > 253) return false;
+    return parts(body, ".").filter({ l -> isLabel(l) == false }).length == 0;
+}
+
+// A domain: a hostname of two labels or more whose last label is two or more
+// letters (Zod's `domain`, what `httpUrl` asks of the host).
+pub fn isDomain(s: string) -> bool {
+    if (isHostname(s) == false || s.endsWith(".")) return false;
+    val labels = parts(s, ".");
+    val top = labels.at(labels.length - 1).unwrapOr("");
+    return labels.length >= 2
+        && top.length() >= 2
+        && allIn(top, [lowerChars(), upperChars()].join(""));
+}
+
+// ── URLs ────────────────────────────────────────────────────────────────────
+
+// The parts of a URL this module checks: scheme, host (brackets of an IPv6
+// literal kept), port text. `ok` is false when the text is not a URL.
+pub type UrlParts(ok: bool, scheme: string, host: string, port: string)
+
+fn noUrl() -> UrlParts {
+    return UrlParts(ok: false, scheme: "", host: "", port: "");
+}
+
+fn isPrintableAscii(c: string) -> bool {
+    return c.length() == 1 && c >= "!" && c <= "~";
+}
+
+fn isScheme(s: string) -> bool {
+    val cs = chars(s);
+    if (cs.length == 0) return false;
+    if (inSet(cs.at(0).unwrapOr(""), [lowerChars(), upperChars()].join(""))
+        == false)
+        return false;
+    return allIn(s, [alnumChars(), "+.-"].join(""));
+}
+
+fn isPort(p: string) -> bool {
+    if (p == "") return true;
+    val n = digitsValue(p);
+    return n >= 0 && n <= 65535;
+}
+
+// `scheme://[userinfo@]host[:port][/path][?query][#fragment]`, every character
+// printable ASCII. The host is an IPv6 literal in brackets, an IPv4 address or
+// a hostname; it is required. `std/url.parse` is not asked: it answers every
+// input (`test/platform_test.bp`).
+pub fn urlParts(s: string) -> UrlParts {
+    if (chars(s).filter({ c -> isPrintableAscii(c) == false }).length > 0)
+        return noUrl();
+    val split = s.split("://");
+    if (split.length < 2) return noUrl();
+    val scheme = split.at(0).unwrapOr("");
+    if (isScheme(scheme) == false) return noUrl();
+    val rest = split.slice(1, split.length).join("://");
+    val ends = chars(rest);
+    var stop = ends.length;
+    var i = 0;
+    while (i < ends.length && stop == ends.length) {
+        val c = ends.at(i).unwrapOr("");
+        if (c == "/" || c == "?" || c == "#") stop = i;
+        i = i + 1;
+    }
+    val authority = rest.slice(0, stop);
+    val at = authority.split("@");
+    val hostport = at.at(at.length - 1).unwrapOr("");
+    var host = "";
+    var port = "";
+    if (hostport.startsWith("[")) {
+        val close = hostport.split("]");
+        if (close.length != 2) return noUrl();
+        host = [close.at(0).unwrapOr(""), "]"].join("");
+        val after = close.at(1).unwrapOr("");
+        if (after != "" && after.startsWith(":") == false) return noUrl();
+        port = if (after == "") "" else after.slice(1, after.length());
+        if (isIpv6(host.slice(1, host.length() - 1)) == false) return noUrl();
+    } else {
+        val hp = parts(hostport, ":");
+        if (hp.length > 2) return noUrl();
+        host = hp.at(0).unwrapOr("");
+        port = hp.at(1).unwrapOr("");
+        if (isIpv4(host) == false && isHostname(host) == false) return noUrl();
+    }
+    if (isPort(port) == false) return noUrl();
+    return UrlParts(ok: true, scheme: scheme, host: host, port: port);
+}
+
+pub fn isUrl(s: string) -> bool {
+    return urlParts(s).ok;
+}
+
+// A URL whose scheme is `http` or `https` and whose host is a domain.
+pub fn isHttpUrl(s: string) -> bool {
+    val u = urlParts(s);
+    return u.ok
+        && (u.scheme == "http" || u.scheme == "https")
+        && isDomain(u.host);
+}
+
+// ── email variants ──────────────────────────────────────────────────────────
+
+// The WHATWG `input[type=email]` grammar, written in the intersection grammar.
+pub fn emailHtml5Pattern() -> string {
+    return "^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?([.][a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$";
+}
+
+pub fn isEmailHtml5(s: string) -> bool {
+    return regex.matches(emailHtml5Pattern(), s);
+}
+
+fn rfcSpecials() -> string {
+    return "<>()[]\\.,;:@\"";
+}
+
+fn isRfcAtom(a: string) -> bool {
+    return a != ""
+        && chars(a).filter({ c ->
+            isPrintableAscii(c) == false || rfcSpecials().indexOf(c) >= 0;
+        }).length
+            == 0;
+}
+
+// Zod's `rfc5322Email`: a local part of dot-joined atoms (no specials, no
+// whitespace) or one quoted string; a domain of letters, digits and hyphens in
+// two or more labels ending in two or more letters, or an IPv4 literal in
+// brackets. Stricter than the reference's regex: the text is ASCII.
+pub fn isEmailRfc5322(s: string) -> bool {
+    val at = s.split("@");
+    if (at.length < 2) return false;
+    val domain = at.at(at.length - 1).unwrapOr("");
+    val local = at.slice(0, at.length - 1).join("@");
+    val quoted = local.length() >= 3
+        && local.startsWith("\"")
+        && local.endsWith("\"")
+        && chars(local).filter(
+            { c -> isPrintableAscii(c) == false && c != " " },
+        ).length
+            == 0;
+    val dotted = at.length == 2
+        && parts(local, ".").filter({ a -> isRfcAtom(a) == false }).length == 0;
+    if ((quoted || dotted) == false) return false;
+    if (domain.startsWith("[") && domain.endsWith("]"))
+        return isIpv4(domain.slice(1, domain.length() - 1));
+    val labels = parts(domain, ".");
+    if (labels.length < 2) return false;
+    val top = labels.at(labels.length - 1).unwrapOr("");
+    return labels.filter(
+        { l -> l == "" || allIn(l, [alnumChars(), "-"].join("")) == false },
+    ).length
+        == 0
+        && top.length() >= 2
+        && allIn(top, [lowerChars(), upperChars()].join(""));
+}
+
+// The code points ECMAScript's `\s` names.
+pub fn isSpaceCodepoint(cp: i32) -> bool {
+    return (cp >= 9 && cp <= 13)
+        || cp == 32
+        || cp == 160
+        || cp == 5760
+        || (cp >= 8192 && cp <= 8202)
+        || cp == 8232
+        || cp == 8233
+        || cp == 8239
+        || cp == 8287
+        || cp == 12288
+        || cp == 65279;
+}
+
+// Zod's `unicodeEmail`: `^[^\s@"]{1,64}@[^\s@]{1,255}$`, counted in code points.
+pub fn isEmailUnicode(s: string) -> bool {
+    val cps = unicode.codepoints(s);
+    val ats = cps.filter({ c -> c == 64 }).length;
+    if (ats != 1) return false;
+    if (cps.filter({ c -> isSpaceCodepoint(c) }).length > 0) return false;
+    val at = cps.indexOf(64);
+    val local = cps.slice(0, at);
+    val domain = cps.slice(at + 1, cps.length);
+    return local.length >= 1
+        && local.length <= 64
+        && local.filter({ c -> c == 34 }).length == 0
+        && domain.length >= 1
+        && domain.length <= 255;
+}
+
+// ── emoji ───────────────────────────────────────────────────────────────────
+
+// `Extended_Pictographic` of Unicode's emoji-data.txt, as ranges.
+fn isPictographic(c: i32) -> bool {
+    if (c < 169) return false;
+    if (c == 169
+        || c == 174
+        || c == 8252
+        || c == 8265
+        || c == 8482
+        || c == 8505)
+        return true;
+    if (c >= 8596 && c <= 8601) return true;
+    if (c >= 8617 && c <= 8618) return true;
+    if (c >= 8986 && c <= 8987) return true;
+    if (c == 9000 || c == 9096 || c == 9167) return true;
+    if (c >= 9193 && c <= 9203) return true;
+    if (c >= 9208 && c <= 9210) return true;
+    if (c == 9410 || c == 9654 || c == 9664) return true;
+    if (c >= 9642 && c <= 9643) return true;
+    if (c >= 9723 && c <= 9726) return true;
+    if (c >= 9728 && c <= 10175) return true;
+    if (c >= 10548 && c <= 10549) return true;
+    if (c >= 11013 && c <= 11015) return true;
+    if (c >= 11035 && c <= 11036) return true;
+    if (c == 11088
+        || c == 11093
+        || c == 12336
+        || c == 12349
+        || c == 12951
+        || c == 12953)
+        return true;
+    if (c >= 126976 && c <= 127231) return true;
+    if (c >= 127245 && c <= 127247) return true;
+    if (c == 127279) return true;
+    if (c >= 127340 && c <= 127345) return true;
+    if (c >= 127358 && c <= 127359) return true;
+    if (c == 127374) return true;
+    if (c >= 127377 && c <= 127386) return true;
+    if (c >= 127405 && c <= 127461) return true;
+    if (c >= 127489 && c <= 127503) return true;
+    if (c == 127514 || c == 127535) return true;
+    if (c >= 127538 && c <= 127546) return true;
+    if (c >= 127548 && c <= 127551) return true;
+    if (c >= 127561 && c <= 127994) return true;
+    if (c >= 128000 && c <= 128317) return true;
+    if (c >= 128326 && c <= 128591) return true;
+    if (c >= 128640 && c <= 128767) return true;
+    if (c >= 128884 && c <= 128895) return true;
+    if (c >= 128981 && c <= 129023) return true;
+    if (c >= 129036 && c <= 129039) return true;
+    if (c >= 129096 && c <= 129103) return true;
+    if (c >= 129114 && c <= 129119) return true;
+    if (c >= 129160 && c <= 129167) return true;
+    if (c >= 129198 && c <= 129279) return true;
+    if (c >= 129292 && c <= 129338) return true;
+    if (c >= 129340 && c <= 129349) return true;
+    if (c >= 129351 && c <= 129791) return true;
+    if (c >= 130048 && c <= 131069) return true;
+    return false;
+}
+
+// `Emoji_Component`: `#`, `*`, the digits, ZWJ, the variation selector, the
+// keycap, the regional indicators, the skin tones, the hair components and the
+// tag characters.
+fn isEmojiComponent(c: i32) -> bool {
+    return c == 35
+        || c == 42
+        || (c >= 48 && c <= 57)
+        || c == 8205
+        || c == 8419
+        || c == 65039
+        || (c >= 127462 && c <= 127487)
+        || (c >= 127995 && c <= 127999)
+        || (c >= 129456 && c <= 129459)
+        || (c >= 917536 && c <= 917631);
+}
+
+// Zod 4: `^(\p{Extended_Pictographic}|\p{Emoji_Component})+$` — so a flag (two
+// regional indicators) and a keycap (`#` + U+FE0F + U+20E3) are emoji.
+pub fn isEmoji(s: string) -> bool {
+    val cps = unicode.codepoints(s);
+    if (cps.length == 0) return false;
+    return cps.filter({ c ->
+        isPictographic(c) == false && isEmojiComponent(c) == false;
+    }).length
+        == 0;
+}
+
+// ── checksums ───────────────────────────────────────────────────────────────
+
+// A card number: 12 to 19 digits, in groups joined by single spaces or by
+// single hyphens (one separator throughout), passing Luhn.
+pub fn isCreditCard(s: string) -> bool {
+    val bySpace = parts(s, " ");
+    val byHyphen = parts(s, "-");
+    if (bySpace.length > 1 && byHyphen.length > 1) return false;
+    val groups = if (bySpace.length > 1) bySpace else byHyphen;
+    if (groups.filter({ g -> isDigits(g) == false }).length > 0) return false;
+    val digits = groups.join("");
+    val n = digits.length();
+    if (n < 12 || n > 19) return false;
+    val ds = chars(digits).map({ c -> digitChars().indexOf(c) });
+    var sum = 0;
+    var i = 0;
+    while (i < n) {
+        val d = ds.at(n - 1 - i).unwrapOr(0);
+        val doubled = if (i % 2 == 1) d * 2 else d;
+        val folded = if (doubled > 9) doubled - 9 else doubled;
+        sum = sum + folded;
+        i = i + 1;
+    }
+    return sum % 10 == 0;
+}
+
+// ISO 13616: two uppercase letters, two check digits, then 11 to 30 uppercase
+// letters or digits (15 to 34 in all), no spaces; ISO 7064 mod 97-10 over the
+// text with its first four characters moved to the end is 1. The per-country
+// length is not checked.
+pub fn isIban(s: string) -> bool {
+    val n = s.length();
+    if (n < 15 || n > 34) return false;
+    if (allIn(s.slice(0, 2), upperChars()) == false) return false;
+    if (allIn(s.slice(2, 4), digitChars()) == false) return false;
+    if (allIn(s, [upperChars(), digitChars()].join("")) == false) return false;
+    val moved = chars([s.slice(4, n), s.slice(0, 4)].join(""));
+    var rem = 0;
+    var i = 0;
+    while (i < moved.length) {
+        val c = moved.at(i).unwrapOr("");
+        val d = digitChars().indexOf(c);
+        if (d >= 0)
+            rem = (rem * 10 + d) % 97
+        else
+            rem = (rem * 100 + upperChars().indexOf(c) + 10) % 97;
+        i = i + 1;
+    }
+    return rem == 1;
+}
+
+// ISO 4217's codes in use (the published list of 2025, funds and precious
+// metals included), uppercase only.
+fn currencyList() -> string {
+    return "AED,AFN,ALL,AMD,ANG,AOA,ARS,AUD,AWG,AZN,BAM,BBD,BDT,BGN,BHD,BIF,BMD,BND,BOB,BOV,BRL,BSD,BTN,BWP,BYN,BZD,CAD,CDF,CHE,CHF,CHW,CLF,CLP,CNY,COP,COU,CRC,CUP,CVE,CZK,DJF,DKK,DOP,DZD,EGP,ERN,ETB,EUR,FJD,FKP,GBP,GEL,GHS,GIP,GMD,GNF,GTQ,GYD,HKD,HNL,HTG,HUF,IDR,ILS,INR,IQD,IRR,ISK,JMD,JOD,JPY,KES,KGS,KHR,KMF,KPW,KRW,KWD,KYD,KZT,LAK,LBP,LKR,LRD,LSL,LYD,MAD,MDL,MGA,MKD,MMK,MNT,MOP,MRU,MUR,MVR,MWK,MXN,MXV,MYR,MZN,NAD,NGN,NIO,NOK,NPR,NZD,OMR,PAB,PEN,PGK,PHP,PKR,PLN,PYG,QAR,RON,RSD,RUB,RWF,SAR,SBD,SCR,SDG,SEK,SGD,SHP,SLE,SOS,SRD,SSP,STN,SVC,SYP,SZL,THB,TJS,TMT,TND,TOP,TRY,TTD,TWD,TZS,UAH,UGX,USD,USN,UYI,UYU,UYW,UZS,VED,VES,VND,VUV,WST,XAF,XAG,XAU,XBA,XBB,XBC,XBD,XCD,XCG,XDR,XOF,XPD,XPF,XPT,XSU,XTS,XUA,XXX,YER,ZAR,ZMW,ZWG";
+}
+
+pub fn isCurrencyCode(s: string) -> bool {
+    return s.length() == 3
+        && allIn(s, upperChars())
+        && currencyList().indexOf(s) >= 0;
+}
+
+// ── ISO 8601 ────────────────────────────────────────────────────────────────
+
+fn isLeapYear(y: i32) -> bool {
+    return (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+}
+
+fn daysInMonth(y: i32, m: i32) -> i32 {
+    if (m == 2) return if (isLeapYear(y)) 29 else 28;
+    if (m == 4 || m == 6 || m == 9 || m == 11) return 30;
+    return 31;
+}
+
+// `YYYY-MM-DD`, a day the calendar has (`2023-02-29` is not one).
+pub fn isIsoDate(s: string) -> bool {
+    val ps = parts(s, "-");
+    if (ps.length != 3) return false;
+    val y = ps.at(0).unwrapOr("");
+    val m = ps.at(1).unwrapOr("");
+    val d = ps.at(2).unwrapOr("");
+    if (y.length() != 4 || m.length() != 2 || d.length() != 2) return false;
+    val year = digitsValue(y);
+    val month = digitsValue(m);
+    val day = digitsValue(d);
+    if (year < 0 || month < 1 || month > 12 || day < 1) return false;
+    return day <= daysInMonth(year, month);
+}
+
+fn isTwo(s: string, max: i32) -> bool {
+    return s.length() == 2 && digitsValue(s) >= 0 && digitsValue(s) <= max;
+}
+
+// `HH:MM`, `HH:MM:SS` or `HH:MM:SS.f…` — Zod 4's `iso.time()`. `precision` is
+// -2 for "any of the three", -1 for `HH:MM` only, 0 for `HH:MM:SS` only, and n
+// for exactly n fraction digits.
+pub fn isIsoTimeWith(s: string, precision: i32) -> bool {
+    val dot = s.split(".");
+    if (dot.length > 2) return false;
+    val clock = parts(dot.at(0).unwrapOr(""), ":");
+    val fraction = dot.at(1).unwrapOr("");
+    val hasFraction = dot.length == 2;
+    if (clock.length < 2 || clock.length > 3) return false;
+    if (isTwo(clock.at(0).unwrapOr(""), 23) == false) return false;
+    if (isTwo(clock.at(1).unwrapOr(""), 59) == false) return false;
+    if (clock.length == 3 && isTwo(clock.at(2).unwrapOr(""), 59) == false)
+        return false;
+    if (hasFraction && (clock.length != 3 || isDigits(fraction) == false))
+        return false;
+    if (precision == 0 - 2) return true;
+    if (precision == 0 - 1) return clock.length == 2;
+    if (precision == 0) return clock.length == 3 && hasFraction == false;
+    return clock.length == 3 && hasFraction && fraction.length() == precision;
+}
+
+pub fn isIsoTime(s: string) -> bool {
+    return isIsoTimeWith(s, 0 - 2);
+}
+
+// The time zone a datetime ends with: `"Z"`, an offset `±HH:MM`, or `""` when
+// it has none; `"?"` when what follows the time is no zone.
+fn zoneOf(rest: string) -> #(string, string) {
+    if (rest.endsWith("Z")) return #(rest.slice(0, rest.length() - 1), "Z");
+    val n = rest.length();
+    if (n >= 6) {
+        val sign = rest.slice(n - 6, n - 5);
+        val hh = rest.slice(n - 5, n - 3);
+        val colon = rest.slice(n - 3, n - 2);
+        val mm = rest.slice(n - 2, n);
+        if ((sign == "+" || sign == "-")
+            && colon == ":"
+            && isTwo(hh, 23)
+            && isTwo(mm, 59))
+            return #(rest.slice(0, n - 6), "offset");
+    }
+    return #(rest, "");
+}
+
+// `YYYY-MM-DDT<time><zone>`. `zones` names the zones accepted: `"Z"` (Zod's
+// default: UTC only), `"Z,offset"` (`offset: true`), `"Z,"` (`local: true`:
+// `Z` or none); `precision` as `isIsoTimeWith`'s.
+pub fn isIsoDatetimeWith(s: string, zones: string, precision: i32) -> bool {
+    val ps = s.split("T");
+    if (ps.length != 2) return false;
+    if (isIsoDate(ps.at(0).unwrapOr("")) == false) return false;
+    val z = zoneOf(ps.at(1).unwrapOr(""));
+    val accepted = parts(zones, ",");
+    if (accepted.indexOf(z._1) < 0) return false;
+    return isIsoTimeWith(z._0, precision);
+}
+
+pub fn isIsoDatetime(s: string) -> bool {
+    return isIsoDatetimeWith(s, "Z", 0 - 2);
+}
+
+pub fn isIsoDatetimeOffset(s: string) -> bool {
+    return isIsoDatetimeWith(s, "Z,offset", 0 - 2);
+}
+
+pub fn isIsoDatetimeLocal(s: string) -> bool {
+    return isIsoDatetimeWith(s, "Z,", 0 - 2);
+}
+
+// The time part of a datetime with any zone has `precision` — what
+// `#[isoDatetimePrecision(n)]` checks beside the marker that fixes the zones.
+pub fn isIsoDatetimePrecision(s: string, precision: i32) -> bool {
+    return isIsoDatetimeWith(s, "Z,offset,", precision);
+}
+
+// Units read left to right, each a run of digits and a letter; `order` is the
+// letters allowed in order, each at most once. Answers the letters met, `"?"`
+// when the text is not such a run.
+fn durationUnits(s: string, order: string, lastMayFraction: bool) -> string {
+    var met = "";
+    var at = 0;
+    var digits = "";
+    var bad = false;
+    val cs = chars(s);
+    var i = 0;
+    while (i < cs.length) {
+        val c = cs.at(i).unwrapOr("");
+        if (inSet(c, digitChars())
+            || ((c == "." || c == ",") && lastMayFraction))
+            digits = [digits, c].join("")
+        else {
+            val pos = order.indexOf(c);
+            if (pos < at || digits == "") bad = true;
+            val fraction = digits.indexOf(".") >= 0 || digits.indexOf(",") >= 0;
+            if (fraction) {
+                val ds = if (digits.indexOf(".") >= 0)
+                    digits.split(".")
+                else
+                    digits.split(",");
+                val ok = ds.length == 2
+                    && isDigits(ds.at(0).unwrapOr(""))
+                    && isDigits(ds.at(1).unwrapOr(""))
+                    && c == "S";
+                if (ok == false) bad = true;
+            } else if (isDigits(digits) == false) bad = true;
+            met = [met, c].join("");
+            at = pos + 1;
+            digits = "";
+        }
+        i = i + 1;
+    }
+    if (bad || digits != "") return "?";
+    return met;
+}
+
+// ISO 8601 duration, Zod 4's grammar: `P` then either `nW` alone, or any of
+// `nY nM nD` in order and an optional `T` followed by at least one of
+// `nH nM nS` in order; only the seconds may carry a fraction. `P` alone and a
+// bare `T` are refused.
+pub fn isIsoDuration(s: string) -> bool {
+    if (s.startsWith("P") == false) return false;
+    val body = s.slice(1, s.length());
+    if (body == "") return false;
+    if (body.endsWith("W") && body.indexOf("T") < 0)
+        return durationUnits(body, "W", false) == "W";
+    val halves = body.split("T");
+    if (halves.length > 2) return false;
+    val date = durationUnits(halves.at(0).unwrapOr(""), "YMD", false);
+    if (date == "?") return false;
+    if (halves.length == 1) return date != "";
+    val time = durationUnits(halves.at(1).unwrapOr(""), "HMS", true);
+    return time != "?" && time != "";
+}

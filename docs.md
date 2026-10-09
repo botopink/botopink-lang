@@ -1,8 +1,10 @@
 # Botopink language reference
 
 This reference describes the language as the compiler accepts it today. Every
-`botopink` fence here is compiled by `zig build test-docs`; a fence that is not a
-module (an operator table, a layout sample) says so in a `docs-check` comment.
+`botopink` fence here is compiled by `zig build test-docs`. A table, a grammar or
+a layout sample is not code and is fenced as `text`; a `botopink` fence that is
+a statement list, one file of a project or a refusal says so in a `docs-check`
+comment.
 
 ## Syntax changes
 
@@ -74,6 +76,57 @@ Leaf modules are single files; folder modules use a `mod.bp` entry point.
 `pub mod` is visible through the parent; a plain `mod` is private to its
 declaring module's subtree. Only `pub` declarations are visible outside their
 module.
+
+#### A module's default function
+
+A module may have one **default function**, which its importer names
+(decision 289). `pub default fn (…) -> R { … }` binds no name in its own
+module; `pub default <name>;` makes a function the module declares its default
+(it keeps its name there, e.g. for a recursive call); `pub default fn
+Name(…)` is the shorthand of both. `import {m.card};` — whose path names the
+module, not an item of it — binds the default under the path's last segment,
+`import {m.card as Card};` under the alias. A decorator on an anonymous
+default reads the file's name as `decl.name`. A second default is
+`default-twice`; `pub default nope;` naming no function is `default-unknown`.
+
+<!-- docs-check: project default_fn src/main.bp -->
+```botopink
+// src/main.bp
+pub mod m;
+import {m.double};
+import {m.tree as Tree};
+
+fn main() {
+    @print(double(4));    // 8
+    @print(Tree(1));      // node(leaf)
+}
+```
+
+<!-- docs-check: project default_fn src/m/mod.bp -->
+```botopink
+// src/m/mod.bp
+pub mod double;
+pub mod tree;
+```
+
+<!-- docs-check: project default_fn src/m/double.bp -->
+```botopink
+// src/m/double.bp
+pub default fn (x: i32) -> i32 {
+    return x * 2;
+}
+```
+
+<!-- docs-check: project default_fn src/m/tree.bp -->
+```botopink
+// src/m/tree.bp
+fn Tree(depth: i32) -> string {
+    if (depth == 0) return "leaf";
+    return "node(" + Tree(depth - 1) + ")";
+}
+
+pub default Tree;
+```
 
 ### Imports
 
@@ -172,8 +225,9 @@ error[module-import-with-from]: "geometry" is a module of this package — write
 may walk into a module (`shapes.circle.name`), and several items under one
 prefix may be grouped (`shapes: {circle: {name}, helpers: {seven}}`) — both
 spellings bind exactly the same names: `a: {b: {c}}` is `a.b.c`. The dot serves
-one leaf, the braces several under one prefix; there is no formatter rule that
-converts one into the other. What an item binds is its **leaf** — `name`,
+one leaf, the braces several under one prefix, and `botopink format` flattens a
+group into its dotted leaves — `collections: {Dict as D, lt}` is printed
+`collections.Dict as D, collections.lt`. What an item binds is its **leaf** — `name`,
 `seven` — never the segments before it: `import {io.fs.readText}` brings
 `readText`, neither `io` nor `fs`; whoever wants both writes both
 (`import {io, io.fs.readText}`). An intermediate node may itself be a leaf
@@ -361,6 +415,16 @@ val count: i32 = 42;
 val names: string[] = ["alice", "bob"];
 ```
 
+A `val` is immutable: assigning to it — a local or a module-level `val`, from
+any `fn` body — is a compile-time error. The rule is the same one node already
+enforced at run time (`const`); it now holds on every target before any code
+is emitted.
+
+```botopink
+val x: i32 = 0;
+// x = 1;   error: `x` is a `val` and cannot be assigned
+```
+
 A `val` at module level is part of the **module body**: it is evaluated **once**,
 in declaration order, when the module loads — before `main` runs and before the
 first `test {}` block. Reading the name afterwards does not evaluate it again,
@@ -392,11 +456,98 @@ each once.
 
 ### var — mutable binding
 
-<!-- docs-check: body -->
+A `var` may be reassigned. Inside a `fn` it is a local; at module level it is
+**one value per execution context** — the whole program on commonJS and wasm,
+the **process** on erlang and beam. Two writes through a `fn` and one read
+print `2`:
+
 ```botopink
-var n = 0;
-n = n + 1;
+var hits: i32 = 0;
+
+pub fn bump() { hits = hits + 1; }
+
+pub fn main() { bump(); bump(); @print(hits); }
 ```
+
+On the BEAM the annotation `#[@BeamMemory.<member>]` widens where a module `var`
+lives beyond the process (§ `@BeamMemory`). Off the BEAM the annotation is
+refused where it is written — ``error: `#[@BeamMemory]` has no meaning on the
+commonJS backend`` — because a target with one execution context has no BEAM
+storage to name; a `var` there is one value for the whole program. A
+hand-written `import { beam } from "std"` — the host primitives themselves — is
+`std-unsupported-on-target` there for the same reason (decisions 43, 167).
+
+### @BeamMemory — where a module var lives on the BEAM
+
+`#[@BeamMemory.<member>]` above a module `var` names its memory on erlang and
+beam. The member is one of `ProcessDict` (the default, which a bare `var`
+already means — writing it out loud records the choice where it is read), `Ets`
+or `PersistentTerm`. The only argument is `keyed: true | false`, default
+`false`, and it is a `Dict`-only argument: an `i32` has no key and neither has a
+list, which stores its whole value. Every part is checked at `botopink check`,
+in a project whose target is erlang or beam:
+
+<!-- docs-check: project beam_memory src/main.bp -->
+```botopink
+import {collections.Dict} from "std";
+
+#[@BeamMemory.ProcessDict]        var explicit: i32 = 0;   // the default, said out loud
+#[@BeamMemory.Ets]                var hits: i32 = 0;
+#[@BeamMemory.PersistentTerm]     var buildVersion: i32 = 101;
+#[@BeamMemory.Ets(keyed: true)]  var counts: Dict<string, i32> = Dict.empty();
+
+// #[@BeamMemory.Etz] var x: i32 = 0;
+//   error: unknown member `Etz` in `@BeamMemory` — expected `ProcessDict`, `Ets` or `PersistentTerm`
+// #[@BeamMemory.Ets(keyd: true)] var x: i32 = 0;
+//   error: unknown argument `keyd` — expected `keyed`
+// #[@BeamMemory.Ets(keyed: true)] var n: i32 = 0;
+//   error: `keyed` needs a keyed container — an `i32` has no key
+// #[@BeamMemory.Ets] val x: i32 = 0;
+//   error: `#[@BeamMemory.Ets]` needs a `var` — `x` is a `val`
+```
+
+<!-- docs-check: project beam_memory botopink.json -->
+```json
+{ "name": "app", "version": "0.0.1", "src": "src/", "target": "erlang" }
+```
+
+**`ProcessDict`** — one value per BEAM process, in the process dictionary: no
+setup, no owner, erased when the process ends. It is what a bare `var` means,
+and the spelling exists so that a file whose other bindings are `Ets` can say
+"per-process, on purpose" where it is read. A request handler that counts under
+`ProcessDict` counts its own requests only.
+
+**`Ets`** — one value per node, in a named public ETS table the module owns
+through a registered owner process, so the table survives the process that
+first touched it and is re-created and re-seeded from the declaration if the
+owner dies. `hits += 1` and `hits = hits + 1` on an `i32` or `i64` are one
+atomic `ets:update_counter`; any other read-modify-write — `hits = hits * 2 +
+1`, or `+=` on an `f64`, `bool` or `string` — is refused, because two processes
+running it would lose one of the two writes. The initialiser must be a literal
+or a `comptime` expression: it is re-run at a moment nobody chose. **`Ets` is
+cache and counting memory, not where the truth lives** — a balance, an order, a
+paid session belong in a supervised process or a database. Under **`keyed:
+false`** (the default) a `Dict` is stored as **one** value: a write copies the
+whole dict, and two processes writing *different* keys at the same time lose one
+of the writes — measured, 20 000 writes each to two keys finished at `19 996`
+and `20 000`. Under **`keyed: true`** each key is its own row: the seed is
+`Dict.empty()` or `Dict.ofEntries([#("a", 1)])` of literals, a row is read as
+`counts.at(k)` and written as `counts = counts.insert(k, v)`, and nothing else
+names the var — measured, two processes writing 20 000 times each to their own
+key finish at `20000` and `20000`; at 10 keys a write is 5× cheaper, at 10 000
+keys 5 000×. Choose `keyed: true` whenever more than one process writes; keep
+the default when the dict is replaced whole.
+
+**`PersistentTerm`** — one value per node, written **once, at load**, read
+everywhere for the cost of a function call. A write after load is a
+compile-time error whose hint points to `#[@BeamMemory.Ets]`: at run time
+a `persistent_term:put` scans every process heap (measured, 810 ns against
+17 ns for a read), and the module's load hook **re-runs on every hot code
+reload**, so a run-time write would be erased by the next reload anyway. It is
+the mode for a routes table, a scanned-component list, configuration read at
+bootstrap — anything the decorators emit at load and nothing changes
+afterwards. Store a handler by **name**, not as a function value: a `fun`
+belongs to the module version that created it and dies with it on reload.
 
 ### fn — function
 
@@ -668,13 +819,13 @@ Type arguments may be written at a use, adjacent to the name. A function or a
 constructor takes them before its call (`first<string>([], "none")`,
 `Box<i32>(value: 1)`); a type's name takes them before a member too — a
 **type application**: `Dict<string, i32>.empty()` calls `empty` on
-`Dict<string, i32>`, and `Opt<i32>.None` is that `Opt<i32>`. The list is read
+`Dict<string, i32>`, and `Slot<i32>.Empty` is that `Slot<i32>`. The list is read
 as type arguments only after a type's name (an upper-case first letter) and
 only when its `>` is followed by `.` or `(`; anywhere else `<` is a comparison,
 so `a < b`, `x < y && z > w` and `f(a < b, c > d)` mean what they say.
 
 ```botopink
-type Opt<T> { Some(value: T), None }
+type Slot<T> { Full(value: T), Empty }
 
 type Box<T>(value: T) {
     pub fn make(v: T) -> Box<T> { return Box(value: v); }
@@ -682,9 +833,34 @@ type Box<T>(value: T) {
 
 fn main() {
     val b = Box<i32>.make(7);
-    val o = Opt<string>.None;
+    val o = Slot<string>.Empty;
     @print(b.value);
-    @print(o == Opt<string>.None);
+    @print(o == Slot<string>.Empty);
+}
+```
+
+A `comptime` parameter may take **a value or a type** (decision 297):
+`comptime source: Box<T> | type T`. A `Box<T>` argument binds `T` from it; a
+type argument binds `T` to that type; the body tells them apart with
+`source is type`, decided while the program compiles — only the branch taken
+is emitted, and where `source is type` holds, reading `source` is
+`type-arg-read`. The argument of any `comptime` parameter is known at compile
+time: a local or a non-`comptime` parameter is `comptime-arg-not-known` at the
+argument.
+
+```botopink
+type Box<T>(value: T)
+
+fn orDefault<T>(comptime source: Box<T> | type T, fallback: T) -> T {
+    if (source is type) return fallback;
+    return source.value;
+}
+
+fn main() {
+    val n: i32 = orDefault(Box(value: 4), 0);    // 4, from the value
+    val s: string = orDefault(string, "none");   // "none", T bound to string
+    @print(n);
+    @print(s);
 }
 ```
 

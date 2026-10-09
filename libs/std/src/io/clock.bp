@@ -263,10 +263,11 @@ pub fn parseDuration(text: string) -> @Result<i64, string> {
             "is not a duration: digits, then one unit of ms, s, m, h or d",
         );
     if (count == wide(0 - 2)) throw durationProblem(text, "is out of range");
-    val total = count * unitMillis(unit);
-    if (total > largestExactMillis())
+    // Compared before multiplying: a product past 2^53 - 1 is an overflow
+    // that aborts the program on commonJS, never a value to compare.
+    if (count > largestExactMillis() / unitMillis(unit))
         throw durationProblem(text, "is out of range");
-    return total;
+    return count * unitMillis(unit);
 }
 
 // Block the caller for `ms` milliseconds.

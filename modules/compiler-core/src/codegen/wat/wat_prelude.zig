@@ -2294,6 +2294,18 @@ const i64_mul_chk = typedFunc("__i64_mul_chk", &.{ p64("a"), p64("b") }, .i64, &
     op("eqz"),                 when(&.{ get("r"), get("a"), op64("div_s"), get("b"), op64("ne"), when(&.{.@"unreachable"}) }), get("r"),
 });
 
+// A type narrower than its carrier (`i8`, `u8`, `i16`, `u16` in an `i32`;
+// `u32`, `u64` in an `i64`) checks the carrier's result against its own
+// range (decision 264): `v` answered inside `lo..=hi`, a trap outside it.
+const i32_range_chk = func("__i32_range_chk", &.{ "v", "lo", "hi" }, .i32, &.{}, &.{
+    get("v"), get("lo"),                 op("lt_s"), get("v"), get("hi"), op("gt_s"),
+    op("or"), when(&.{.@"unreachable"}), get("v"),
+});
+const i64_range_chk = typedFunc("__i64_range_chk", &.{ p64("v"), p64("lo"), p64("hi") }, .i64, &.{}, &.{
+    get("v"), get("lo"),                 op64("lt_s"), get("v"), get("hi"), op64("gt_s"),
+    op("or"), when(&.{.@"unreachable"}), get("v"),
+});
+
 const int_chk_items = [_]ast.Item{
     .{ .func = i32_add_chk }, .{ .func = i32_sub_chk }, .{ .func = i32_mul_chk },
     .{ .func = i64_add_chk }, .{ .func = i64_sub_chk }, .{ .func = i64_mul_chk },
@@ -2414,6 +2426,7 @@ const print_quoted_raw = func("__print_quoted_raw", &.{"s"}, null, i32s(&.{ "n",
 /// The text of `v` by the shape at `sh`, answering the address just past that
 /// shape (semantics decision 1a). Shape codes: `i` an i32, `b` a bool, `f` an
 /// f32 slot, `s` a string (quoted), `[X` an array of `X` — `[e1, e2]` —,
+/// `?X` / `!X` a `?T` (`null`, or `X` over the slot / over its box's word),
 /// `(XY…)` a tuple — `#(e1, e2)` —, and `E k [ <n> Enum.Variant ] * k` a value
 /// of an all-unit enum, whose ordinal picks one of the `k` names. With `go` =
 /// 0 nothing is written and nothing is read through `v`: the call only
@@ -2480,6 +2493,25 @@ const print_shaped_raw = func("__print_shaped_raw", &.{ "v", "sh", "go" }, .i32,
             set("i"),  again,
         }),
         get("p"),  ret,
+    }),
+    // `?X` — a `?T` whose slot is the payload's own pointer or 8-byte cell;
+    // `!X` — one whose payload is a scalar in a `$__box_i32` cell. `0` is
+    // absence in both, written `null`; measuring (`go` = 0) reads nothing.
+    get("c"),                                                                                                   c32('?'),                                                                                                   op("eq"),
+    get("c"),                                                                                                   c32('!'),                                                                                                   op("eq"),
+    op("or"),
+    when(&[_]Instr{
+        get("sh"), c32(1),                                  op("add"), set("e"),
+        get("go"), get("v"),                                op("eqz"), op("and"),
+        when(&[_]Instr{
+            c32(176),                   c32(1819047278), .{ .store = .{ .ty = .i32 } },
+            c32(176),                   c32(4),          call("__write_bytes"),
+            c32(0),                     get("e"),        c32(0),
+            call("__print_shaped_raw"), ret,
+        }),
+        get("go"), get("c"),                                c32('!'),  op("eq"),
+        op("and"), when(&.{ get("v"), load(0), set("v") }), get("v"),  get("e"),
+        get("go"), call("__print_shaped_raw"),              ret,
     }),
     get("c"),                                                                                                   c32('('),                                                                                                   op("eq"),
     when(&([_]Instr{

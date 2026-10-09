@@ -25,6 +25,16 @@ format/
 
 ## Round-trip contract
 
+A union's last member is printed without parentheses unless it is a function
+type (`TypePosition.lastUnionMember`): decision 297's `Box<T> | type T` prints
+as written, while `type T | X` keeps its parentheses everywhere else.
+
+Decision 289's default function round-trips: an anonymous `pub default fn (…)`
+prints with its empty name, and a function `pub default <name>;` made the
+default (`FnDecl.defaultBy`) prints as written (`pubByDefault` drops the `pub`
+the line implied) followed by the `pub default <name>;` line — the line moves
+to just after its function.
+
 `format(parse(src))` must produce output that re-parses to an equivalent AST,
 and running `format` twice in a row must produce identical text.
 

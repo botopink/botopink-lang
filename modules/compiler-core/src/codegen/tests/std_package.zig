@@ -81,9 +81,9 @@ test "js: std package ---- env template externals resolve through the module obj
 // and the OTP `math:sqrt/1` in the same function, and RUNNING it is the only
 // assertion that can see the shadow (a snapshot of unloadable code looks fine).
 //
-// Erlang-only on purpose: `libs/std`'s `math` does not compile for wasm at all
-// (`math.abs` has no `@external` for that target), so a four-backend cell would
-// pin that unrelated gap instead of this one.
+// Erlang-only on purpose: the collision is an Erlang module name, and the
+// program binds OTP's own `math` (`otpSqrt` has no `#[@External.Wasm(…)]`), a
+// host wasm does not have. `libs/std`'s `math` itself runs on wasm.
 test "erlang: std package ---- a std math import and the OTP math module in one program" {
     try h.assertErlangRunLog(std.testing.allocator,
         \\import {math} from "std";

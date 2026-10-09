@@ -174,6 +174,21 @@ pub fn build(b: *std.Build) void {
             .{ .name = "manifest", .module = manifest_mod },
         },
     });
+    // ── the CLI's module-tree resolver, for the language server ───────────────
+    // Front 26 step 8: the LSP reports the import-source refusals `check`
+    // makes (decisions 206, 242) through the CLI's own predicate
+    // (`resolver.importSourceProblems` / `importSourceMessage`), so the editor
+    // and the command line cannot drift. The CLI itself imports the file by
+    // path; this module is the language server's view of it.
+    const cli_resolver_mod = b.createModule(.{
+        .root_source_file = b.path("modules/compiler-cli/src/cli/resolver.zig"),
+        .target = target_for_libc,
+        .imports = &.{
+            .{ .name = "botopink", .module = core_mod },
+            .{ .name = "test_scratch", .module = test_scratch_mod },
+        },
+    });
+
     // ── compiler-core tests ───────────────────────────────────────────────────
 
     const core_test_mod = b.addModule("botopink_tests", .{
@@ -367,6 +382,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "botopink", .module = core_mod },
             .{ .name = "manifest", .module = manifest_mod },
             .{ .name = "test_scratch", .module = test_scratch_mod },
+            .{ .name = "cli_resolver", .module = cli_resolver_mod },
         },
     });
 
@@ -433,6 +449,7 @@ pub fn build(b: *std.Build) void {
             .imports = &.{
                 .{ .name = "botopink", .module = core_mod },
                 .{ .name = "manifest", .module = manifest_mod },
+                .{ .name = "cli_resolver", .module = cli_resolver_mod },
             },
         }),
     });
@@ -570,8 +587,13 @@ pub fn build(b: *std.Build) void {
 
     // `zig build test-docs` — every `botopink` fence of the user docs compiles
     // (front 14 step 3). `scripts/check-docs.sh` extracts each fence into a
-    // scratch project and runs `botopink check`; a fence that is a table rather
-    // than a module carries a `<!-- docs-check: skip <reason> -->` comment.
+    // scratch project and runs `botopink check`. A plain fence is a whole
+    // module that must compile; a comment above it says otherwise:
+    // `<!-- docs-check: body -->` (statements wrapped in `fn main`),
+    // `<!-- docs-check: project <name> <path> -->` (one file of a multi-file
+    // project) and `<!-- docs-check: reject [body] <expectation> -->` (code
+    // the compiler must refuse with that first error). No directive skips a
+    // fence: text that is not code is fenced as ```text.
     // Forwards `--` args, e.g.
     //   zig build test-docs -- --doc docs.md --list
     // NOT wired into `zig build test` (spawns a compiler per fence).

@@ -317,8 +317,7 @@ test "wat: string concat of two literals" {
 
 // F3.2 — equality compares content, not identity. `left` is built at runtime,
 // so it is not the interned "foo" pointer; `diff` is the false case. Expected
-// RUN LOG `1` then `0`. beam's RUN LOG is empty while string `+` lowers to an
-// arithmetic `'+'` (04-beam B3) — known-wrong output, pinned until that lands.
+// RUN LOG `1` then `0`, on all four backends.
 test "wat: string equality compares content not identity" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
@@ -486,10 +485,8 @@ test "wat: try propagation in result fn" {
 
 // ── decision 8 §5: the three defects `01-checker` handed to the backends ─────
 //
-// Each of the four fixtures below answered wrongly on wasm before front 05's
-// case row, and the ones the remaining backends have not taken still do —
-// recorded, not hidden, so the next front's commit shows the move. `04-js` took
-// its half at `f1757f41`, which is why every commonJS log below is now right.
+// Each of the fixtures below answered wrongly on wasm before front 05's case
+// row; every backend has taken its half since, and the four logs agree.
 
 // §5.1 P8 — a pattern's variant name reaches the backend with the path it was
 // **written** with (`Shape.Circle`), while the constructor stores the bare
@@ -854,34 +851,19 @@ test "wat: string ---- toUpper and toLower answer" {
     );
 }
 
-// ── step 1, the interim: a record or a variant reaching `@print` traps ───────
+// ── step 1: a record and a variant reaching `@print` ──────────────────────────
 //
 // §7's F2 (`Point(x: 1, y: 2)`) and F3 (`Shape.Square(side: 4)`) need a value
-// that knows which named type it is at run time — `13-module-identity`, not this
-// front. Until they land there is no text to write, and the numeric printer
-// answered the value's **heap address** with exit 0 and no diagnostic:
-// `run/print_formatter.bp` printed `328`, `336`, `344` where §7 wants three
-// names. That is the one thing this backend must not do, so it now traps, the
-// way the 24 fixtures that record a shape wasm cannot lower already do.
+// that knows which named type it is at run time. Before it did, the wasm
+// numeric printer answered the value's **heap address** with exit 0 and no
+// diagnostic: `run/print_formatter.bp` printed `328`, `336`, `344` where §7
+// wants three names, and `@print([Point(x: 1, y: 2)])` wrote `[256]`; the
+// interim was a trap.
 //
-// The array is here because the same wrong answer hid one bracket deeper:
-// `@print([Point(x: 1, y: 2)])` wrote `[256]`. A tuple holding one is covered by
-// the same walk; what is not, and is recorded in `wat/AGENTS.md`, is a *local*
-// bound to such a container.
-//
-// The three prints before the trap are deliberate: they show the trap is the
-// record's, not the program's, and the RUN LOG keeps their text.
-//
-// **commonJS already answers §7's text** — `Point(x: 1, y: 2)`,
-// `Shape.Square(side: 4)`, `Shape.Nothing`, `[Point(x: 1, y: 2)]` — which is
-// worth recording here: a class instance carries its constructor's name, so that
-// backend needed no identity work. **erlang answers it too since
-// 13-module-identity half 3**: the value carries the atom of the module that
-// declares its type, and `'__bp_tagged'/2` reaches that module's
-// `'__bp_format'/1`. KNOWN-WRONG (beam): a record is still a bare map
-// (`#{x => 1,y => 2}`) and a variant a tagged tuple or an atom
-// (`{'Square',4}`, `'Nothing'`) — half 3's step 15. Neither answers an address,
-// so neither has this front's interim to make; wasm is the only one that did.
+// All four backends print §7's text now — `Point(x: 1, y: 2)`,
+// `Shape.Square(side: 4)`, `Shape.Nothing`, `[Point(x: 1, y: 2)]` — after the
+// three prints of values that never needed an identity. The test's name still
+// says "trap"; its rename is front 07's step 4.
 test "wat: print ---- a record and a variant have no printed form yet, so they trap" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type Point(x: i32, y: i32)
@@ -922,13 +904,8 @@ test "wat: print ---- a record and a variant have no printed form yet, so they t
 // `keys()` is `Array<K>` with `K = string`, and `?V` with `V = string`, and
 // nothing here monomorphises, so both print an address.
 //
-// wasm's log is now **byte-identical to erlang's**, and to beam's but for §7's
-// separator (`[6,8]` on wasm and erlang, `[6, 8]` on commonJS and beam, which is
-// the text §7 wants — this front's step 1 F1 and 02's). The one text where wasm
-// was with the majority and commonJS the outlier: `undefined` for absence on
-// three backends against commonJS's `null`. Decision 47 settles it — absent is
-// spelled `null` — and wasm prints `null` since 1.0.10-beta `00 · 05-wasm`
-// (`$__print_null`); erlang and beam are C-18's.
+// The four backends' logs are byte-identical: §7's separator (`[6, 8]`) and
+// decision 47's spelling of absence (`null`) on every one.
 //
 // The `Dict` cells this row was found through live in `std_package.zig`, where
 // erlang's and beam's own cross-module rows are pinned.
@@ -2030,6 +2007,71 @@ test "wat: arithmetic ---- an integer that leaves its width traps instead of wra
         \\9223372036854775807
         \\RUNTIME TRAP (wasmtime):
         \\wasm trap: wasm `unreachable` instruction executed
+        \\
+    );
+}
+
+// `01-compiler/05-wasm` step 5: a `?T` in a tuple's slot is the optional's
+// carrier — `0` absence, a scalar's box, a string's or a record's own
+// pointer, a float's cell — and prints `null` or its payload (`?X` / `!X` in
+// `$__print_shaped_raw`). Read through the payload's code it printed the
+// box's address (`#(1, 328)`) at exit 0, and a generic method's
+// `#(Q<T>, ?T)` read the box as the payload.
+test "wat: tuple ---- a `?T` element prints and reads as its payload or null" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\type P(n: i32)
+        \\type Q<T>(items: Array<T>) {
+        \\    fn pop(self: Self<T>) -> #(Q<T>, ?T) {
+        \\        return #(Q(items: self.items), self.items.at(0));
+        \\    }
+        \\}
+        \\fn mixed() -> #(?i32, ?string, ?bool, ?f64, ?P) {
+        \\    return #([7].at(0), ["s"].at(3), [true].at(0), [1.5].at(0), [P(n: 2)].at(0));
+        \\}
+        \\fn main() {
+        \\    val t = #(1, [7].at(5));
+        \\    @print(t);
+        \\    @print(t._1.unwrapOr(4));
+        \\    @print(mixed());
+        \\    val m = mixed();
+        \\    @print(m._0);
+        \\    @print(m._1);
+        \\    @print(m._3);
+        \\    val q: Q<i32> = Q(items: [5, 6]);
+        \\    @print(q.pop()._1.unwrapOr(-1));
+        \\}
+    ,
+        \\#(1, null)
+        \\4
+        \\#(7, null, true, 1.5, P(n: 2))
+        \\7
+        \\null
+        \\1.5
+        \\5
+        \\
+    );
+}
+
+// `o.unwrapOr(d)` keeps the payload's print shape: the `@Result`'s declared
+// payload, else a container default (`[]` says nothing). Both read a tuple's
+// string element as an integer at exit 0.
+test "wat: unwrapOr ---- the answer keeps the payload's tuple shape" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\fn rows() -> @Result<Array<#(string, string)>, string> {
+        \\    val xs = [#("a", "b"), #("c", "d")];
+        \\    if (xs.length > 5) throw "too many";
+        \\    return xs;
+        \\}
+        \\fn main() {
+        \\    val rs = rows().unwrapOr([]);
+        \\    @print(rs);
+        \\    @print(rs.at(1).unwrapOr(#("", ""))._1);
+        \\    @print(rs.map({ r -> r._0 }).join(","));
+        \\}
+    ,
+        \\[#("a", "b"), #("c", "d")]
+        \\d
+        \\a,c
         \\
     );
 }

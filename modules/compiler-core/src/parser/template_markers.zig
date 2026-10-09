@@ -21,8 +21,9 @@
 //! parameter on every target. A `$args` on a method means every declared
 //! parameter, the receiver first.
 //!
-//! Refused with a location: `$self` anywhere, and `$N` with N ≥ the number of
-//! declared parameters.
+//! Refused with a location: `$self` anywhere, `$stringify(…)` anywhere
+//! (decisions 164, 239 — a template writes the host's own string conversion),
+//! and `$N` with N ≥ the number of declared parameters.
 
 const std = @import("std");
 const ast = @import("../ast.zig");
@@ -32,7 +33,7 @@ const receiver_marker = @import("../comptime/primOpTemplate.zig").receiver_marke
 const Token = token.Token;
 
 pub const Failure = struct {
-    kind: enum { selfMarker, indexOutOfRange },
+    kind: enum { selfMarker, stringifyMarker, indexOutOfRange },
     /// The token that carries the offending annotation argument.
     tok: Token,
 };
@@ -102,6 +103,7 @@ fn normalizeDecl(
                     new_args.?[i] = text;
                 },
                 .self_marker => return .{ .kind = .selfMarker, .tok = tokenOf(tokens, arg) },
+                .stringify_marker => return .{ .kind = .stringifyMarker, .tok = tokenOf(tokens, arg) },
                 .out_of_range => return .{ .kind = .indexOutOfRange, .tok = tokenOf(tokens, arg) },
             }
         }
@@ -119,6 +121,7 @@ const Rewrite = union(enum) {
     unchanged,
     rewritten: []u8,
     self_marker,
+    stringify_marker,
     out_of_range,
 };
 
@@ -140,6 +143,10 @@ fn rewrite(alloc: std.mem.Allocator, arg: []const u8, param_count: usize, shift:
         if (std.mem.startsWith(u8, rest, "$self")) {
             out.deinit(alloc);
             return .self_marker;
+        }
+        if (std.mem.startsWith(u8, rest, "$stringify")) {
+            out.deinit(alloc);
+            return .stringify_marker;
         }
         if (std.mem.startsWith(u8, rest, "$args")) {
             if (args_with_receiver) {
@@ -204,6 +211,11 @@ test "a method's $0 is the receiver and $N shifts" {
 
 test "$self is refused" {
     try std.testing.expect(try rewrite(std.testing.allocator, "\"f($self)\"", 1, true, true) == .self_marker);
+}
+
+test "$stringify is refused (decision 239)" {
+    try std.testing.expect(try rewrite(std.testing.allocator, "\"io_lib:format($stringify($0))\"", 1, false, false) == .stringify_marker);
+    try std.testing.expect(try rewrite(std.testing.allocator, "\"f($stringify($1))\"", 2, true, true) == .stringify_marker);
 }
 
 test "$N past the declared parameters is refused" {

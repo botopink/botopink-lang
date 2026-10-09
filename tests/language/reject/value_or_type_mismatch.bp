@@ -1,0 +1,13 @@
+//// 01-compiler/01-checker step 26 (decision 297) — an explicit `<T>` is
+//// checked against the value a `comptime s: Box<T> | type T` parameter takes:
+//// `pick<i32>(Box(value: "x"))` is the ordinary mismatch, at the argument.
+
+type Box<T>(value: T)
+
+fn pick<T>(comptime s: Box<T> | type T) -> string {
+    return if (s is type) "type" else "value";
+}
+
+pub fn main() {
+    @print(pick<i32>(Box(value: "x")));
+}

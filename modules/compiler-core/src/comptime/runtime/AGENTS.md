@@ -63,6 +63,30 @@ the compiler — the renderer's module root has to be compiler-core's `src/`, so
 | `render_resident.zig` | **Build-time tool, never linked into the compiler.** `main(init)` takes one argument, an output directory, and writes `botopink_comptime_server.erl` (`server_source.source`), `bp_comptime_template.erl` and `bp_comptime_decorator.erl` (`prelude.modules`). Root `build.zig` runs it (`render-resident`, host target, its own host-targeted `std_prelude`) with an `addOutputDirectoryArg`, feeds the three files to `erlc +deterministic -o <out>` and hands the `.beam`s to compiler-core (and its test module) as anonymous imports. Its analysed closure is small (the prelude forms, `erl_ast`, `erl_emitter`, `erlang.comptime_helper_forms`) — ≈ 0.4 s to compile, cached like any artifact; `erlc` runs again only when a source changes. |
 | `persistent_beam.zig` | The BEAM runtime's node (renamed from `persistent_erl.zig` when the `.erl` path went, front 14 step 3 / front 18 step 1b). Lazily spawns `erl -noshell -eval <bootstrap_eval>` with stdin/stdout piped and stderr → `.botopinkbuild/tmp/persistent_beam/erl.<id>.stderr.log`, where `<id>` is 64 random bits drawn once per process (`ensureStderrLogPath`; `stderrLogPath()` is what a diagnostic names) — the directory is created for the log alone, and is fixed, so two compilers sharing this cwd used to hand their two children ONE path and truncate each other's live log. **The three resident modules are embedded** (decision 83): `resident_beams` = `@embedFile("botopink_comptime_server.beam")` / `bp_comptime_template.beam` / `bp_comptime_decorator.beam`, produced by `erlc` at `zig build` from `server_source.zig` and `prelude.zig` via `render_resident.zig`. `bootstrap_eval` (Erlang, `erl_eval`-interpreted so it runs on any release) is `bootstrap_bindings` (`Floor = 28, Count = 3, Server = botopink_comptime_server,`) ++ the script: latin1 binary stdio; the default logger handler moved to `standard_error` *before* the first load (a loader's `=ERROR REPORT` would otherwise land on stdout ahead of the reply and read as a multi-GiB frame length); **decision 86's floor** — `Rel < Floor` answers one frame `__BP_ERL_BELOW_FLOOR__:erl is Erlang/OTP N; … needs OTP 28 or later` and `halt(3)`; then `Count` cmd-4 frames read from stdin and `code:load_binary/3`'d; every failure collected into one `__BP_ERL_LOAD_ERROR__:[{Mod, Reason}…]; erl is Erlang/OTP N and the embedded modules were compiled by the erlc that built this compiler` frame; success answers `ok` and calls `Server:start()`; `halt()` when `start/0` returns (stdin EOF). `ensureSpawned` spawns, then `handshake` sends one cmd-4 frame per `resident_beams` entry (`namedPayload`) and reads the one reply: `ok` → ready; the floor tag → `setTransportError(message)` + `error.PersistentErlBelowFloor`; anything else → `error.PersistentErlBroken` with the detail; the child is killed on any handshake failure and the singleton marked broken. A missing `erl` fails at `std.process.spawn` with no message, so the evaluators' PATH hint still fires. **Protocol:** length-prefixed binary frames both ways — request `<u32 BE len><cmd:u8><payload>`, response `<u32 BE len><payload>` = `main`'s iodata result or a payload tagged `__BP_ERL_COMPILE_ERROR__:` / `__BP_ERL_RUNTIME_ERROR__:`. Two commands after the handshake: **cmd 4** load `.beam` **bytes** carried in the frame — payload `<u16 BE namelen><module><beam bytes>`, no file, no `compile:file` — and answer the module atom; a `code:load_binary/3` rejection (`badfile`, an opcode above what the running release knows) comes back on the `__BP_ERL_COMPILE_ERROR__:` channel as `{load_binary, Mod, Reason}`; **cmd 3** call `<module>:main(<term>)` where the payload is `<u16 BE namelen><module><external term>`. Cmds 1 and 2 (`compile:file` of a staged `.erl`, `compile_then`/`load_then`) are deleted: nothing on this path compiles Erlang. `load_beam` runs `code:purge/1` before each load — one module serves every call site of a declaration, so a reload means the declaration changed. `readExact` loops over short reads. `main` runs in a `spawn_monitor`ed process killed after `server_source.eval_timeout_ms` (10 s), with `standard_error` as its group leader; a non-iodata result becomes a runtime-error frame. `readFrame` refuses a length above `max_frame_len` (16 MiB) before allocating. **API:** `evalBeamWithArg(allocator, io, beam, module, arg)` — cmd 4 when this process has not loaded `module` (the `loaded` set, cleared on a respawn), then cmd 3, under one lock — → `Response { ok, compile_error, runtime_error }` (payload owned by caller); `lastTransportError()` for a broken stream. Its tests build their modules with `beam/program.zig` (a noisy body stays off the frame stream; an over-cap frame is a transport error and the respawned node is sent the module again; cmd 4 loads an echo module and refuses garbage bytes on the compile-error channel). |
 
+## Limits
+
+What the BEAM runtime does that the wat runtime does not. The BEAM runtime is the reference: a
+difference `runtime.parity` finds is fixed in `wat/rt.zig`, never accepted. Each limit raises (or is
+refused) where a body meets it, and a fixture in `persistent_wat.zig` pins it — except the second,
+which has nothing to pin.
+
+1. **No `safe_call` isolation, no 10 s timeout.** The BEAM runtime runs `main/1` in a process of
+   its own and kills it after `server_source.eval_timeout_ms`; on the wat runtime a runaway body is
+   a runaway wasm3 call on the compiler's thread. No generated module spawns, receives or touches
+   ETS, and the lowering refuses all three by name before anything runs (`spawn/1` as an undefined
+   function, `` `receive` ``, `ets:new/2` not in the wat runtime) — fixture `limit 1`.
+2. **No `~p` line breaking past 80 columns.** `io_lib_pretty` breaks a long term across lines on
+   the BEAM; the wat runtime's `~p` prints it on one line. No fixture, because nothing raises: the
+   difference is layout, not a failure. A body reaches `~p` only through `'__bp_text'/1` (a
+   non-binary term as text, `../../codegen/erlang.zig`), and no fixture or library body formats a
+   term that wide; the first that does is a divergence `runtime.parity` reports, fixed in
+   `wat/rt.zig` by porting the break.
+3. **No Unicode case mapping.** `string:uppercase` / `lowercase` of a non-ASCII letter raises
+   `{bp_wat_runtime, <<"string case mapping of a non-ASCII character">>}` instead of answering —
+   fixture `limit 3`.
+4. **No integer beyond 64 bits.** An `+`, `-` or `*` that overflows `i64`, or a float truncated
+   past it, raises `{bp_wat_runtime, <<"integer beyond 64 bits (a bignum)">>}` — fixture `limit 4`.
+
 ## Notes
 
 - **The browser build carries the wat runtime and not the BEAM one.**
@@ -101,11 +125,15 @@ the compiler — the renderer's module root has to be compiler-core's `src/`, so
   (`evalBeam`) — the only caller of `evalBeamWithArg` and the only reader outside
   this file. A failure that left a
   message becomes the diagnostic `the <template|decorator> evaluator's erl
-  runtime failed (<error name>): <message>`; a failure that left none stays
-  `error.EvalFailed`, because that case is `erl` or `erlc` missing and the
-  caller's hint for it names `PATH` (`erl` only, now: `erlc` left the run-time
-  path with decision 83 — a machine that builds the compiler needs it, a machine
-  that runs it does not).
+  runtime failed (<error name>): <message>` — `runtime.zig`'s test drives a body
+  whose reply is one byte past `max_frame_len` and pins it. A missing `erl` leaves
+  one too: the release probe (`../../otp.zig`, decision 228) runs before the
+  spawn and its refusal (`` `erl` could not be run: FileNotFound — install OTP 28
+  and put it on PATH ``) is the message, `PATH` named in it. A failure that left
+  none (the stderr log's directory or file not created, a child without pipes)
+  stays `error.EvalFailed`, and the evaluators' hint for that case still names
+  `PATH` (`erl` only: `erlc` left the run-time path with decision 83 — a machine
+  that builds the compiler needs it, a machine that runs it does not).
 - **Another release.** Before the node spawns, `../../otp.zig` asks the `erl` on
   PATH for its release (once per process) and refuses anything but the release
   the compiler emits for (decision 228): `error.OtpReleaseRefused`, the message

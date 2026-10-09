@@ -25,6 +25,7 @@ pub mod table;
 pub mod messages;
 pub mod schemas;
 pub mod spi;
+pub mod formats;
 pub mod constraints;
 pub mod binding;
 pub mod decorators;

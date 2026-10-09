@@ -1576,6 +1576,11 @@ pub const Param = struct {
     /// the fields here for the checker's rules and for the formatter. Dumped
     /// only when set.
     inlineFields: ?[]Field = null,
+    /// Decision 297 — `comptime source: Box<T> | type T`: the type parameter
+    /// a type argument binds. `comptime/value_or_type.zig` sets it and leaves
+    /// `typeRef` at the value member (`Box<T>`); the parser never does. Not
+    /// dumped.
+    typeArgOf: ?[]const u8 = null,
 
     /// Dumped without `typeLoc`: the location is a diagnostic aid, not surface.
     pub fn jsonStringify(this: Param, jws: anytype) !void {
@@ -3073,6 +3078,12 @@ fn isThrowJump(j: JumpExpr) bool {
     return j == .throw_;
 }
 
+/// Decision 289 — the name an anonymous `pub default fn (…)` is analysed and
+/// emitted under: `default` is a keyword, so no declaration, import or call of
+/// the module can spell it, and its importer reaches it only through the
+/// module path (`import {m.double};`).
+pub const anonymous_default_name = "default";
+
 pub const FnDecl = struct {
     isPub: bool,
     /// The function's effect, or null for a plain function. Set from a
@@ -3083,8 +3094,23 @@ pub const FnDecl = struct {
     isDeclare: bool = false,
     /// `pub default fn` — a package's DEFAULT handler, invoked by the
     /// `<package> "…"` DSL form (`q "select …"`). Declarable at any module's top
-    /// level (not just `root.bp`).
+    /// level (not just `root.bp`). Decision 289: the module's default function,
+    /// the one an importer binds under the module path's last segment.
     isDefault: bool = false,
+    /// Decision 289 — `pub default fn (…) -> R { … }`: the default binds no
+    /// name in its module. The parser leaves `name` empty (the formatter prints
+    /// `fn (`); analysis names it `anonymous_default_name`, a keyword no source
+    /// can spell, and its reflected `decl.name` is the module's file name.
+    /// Omitted from the AST dump when false.
+    anonymousDefault: bool = false,
+    /// Decision 289 — where `pub default <name>;` made this function the
+    /// module's default (null when `default` is written on the `fn` itself or
+    /// the fn is no default). Omitted from the AST dump when null.
+    defaultBy: ?Loc = null,
+    /// Decision 289 — the function is `pub` only because `pub default <name>;`
+    /// made it the module's (exported) default; the `fn` itself is written
+    /// without `pub`, which the formatter keeps. Omitted from the dump when false.
+    pubByDefault: bool = false,
     /// Optional generator label declared after the return type
     /// (`#[@resultGenerator] fn f() -> @ResultGenerator<T, E> :gen`), used to
     /// disambiguate `yield :label` / `break :label` from an enclosing loop's.
@@ -3175,7 +3201,7 @@ pub const FnDecl = struct {
     /// Dumped without `returnTypeLoc`: the location is a diagnostic aid, not
     /// surface, and the AST dumps are snapshot-compared.
     pub fn jsonStringify(this: FnDecl, jws: anytype) !void {
-        return stringifyOmitting(this, jws, &.{ "returnTypeLoc", "nameLoc" }, &.{"typeGuardType"});
+        return stringifyOmitting(this, jws, &.{ "returnTypeLoc", "nameLoc" }, &.{ "typeGuardType", "anonymousDefault", "defaultBy", "pubByDefault" });
     }
 
     pub fn deinit(this: *FnDecl, allocator: std.mem.Allocator) void {

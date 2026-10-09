@@ -1,0 +1,32 @@
+//// A method call is the method of its receiver's type, even where the
+//// module declares a function of the same name. `startsWith` here is a
+//// marker whose parameters are `comptime`, and `t.startsWith("ab")` lost its
+//// argument as if it were a call of the marker: erlang refused the module
+//// with `PrimOpArgIndexOutOfRange` and no location, commonJS emitted
+//// `t.startsWith()` and printed `false` for `"abc"`. `endsWith` is a plain
+//// function of another arity, called beside the method of its name.
+
+pub fn startsWith(comptime decl: @Decl, comptime prefix: string) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[startsWith] must annotate a field");
+}
+
+pub fn endsWith(a: i32, b: i32) -> i32 {
+    return a + b;
+}
+
+fn opens(t: string) -> bool {
+    return t.startsWith("ab");
+}
+
+fn closes(t: string) -> bool {
+    return t.endsWith("bc");
+}
+
+pub fn main() {
+    @print(opens("abc"));
+    @print(opens("xbc"));
+    @print(closes("abc"));
+    @print(closes("abx"));
+    @print(endsWith(1, 2));
+}

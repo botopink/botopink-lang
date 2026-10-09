@@ -31,6 +31,8 @@ test {
     _ = @import("primOpTemplate.zig");
     _ = @import("./snapshot.zig");
     _ = @import("./inline_types.zig");
+    _ = @import("./default_fn.zig");
+    _ = @import("./value_or_type.zig");
     _ = @import("./diagnostics.zig");
     _ = @import("./reflection.zig");
     _ = @import("./assoc_types.zig");

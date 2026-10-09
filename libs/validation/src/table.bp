@@ -46,14 +46,40 @@ pub fn paramNames(code: string) -> string[] {
     if (code == "maxValue") return ["max"];
     if (code == "pattern") return ["regex"];
     if (code == "constraint") return ["name"];
+    if (code == "minLength") return ["min"];
+    if (code == "maxLength") return ["max"];
+    if (code == "length") return ["length"];
+    if (code == "startsWith") return ["prefix"];
+    if (code == "endsWith") return ["suffix"];
+    if (code == "includes") return ["substring"];
+    if (code == "uuidV") return ["version"];
+    if (code == "urlHost") return ["hostname"];
+    if (code == "urlProtocol") return ["protocol"];
+    if (code == "jwtAlg") return ["alg"];
+    if (code == "macDelimiter") return ["delimiter"];
+    if (code == "hash") return ["algorithm"];
+    if (code == "hashEnc") return ["algorithm", "encoding"];
+    if (code == "isoTimePrecision") return ["precision"];
+    if (code == "isoDatetimePrecision") return ["precision"];
+    if (code == "gt") return ["bound"];
+    if (code == "lt") return ["bound"];
+    if (code == "multipleOf") return ["step"];
+    if (code == "afterIso") return ["instant"];
+    if (code == "beforeIso") return ["instant"];
     val none: string[] = [];
     return none;
 }
 
-// `min` and `max` are numbers on the wire; `regex` and `name` are strings.
-// Nothing else has a parameter.
+// `min`, `max`, `length`, `version`, `precision`, `bound` and `step` are numbers on
+// the wire; every other parameter is a string.
 pub fn paramIsNumber(name: string) -> bool {
-    return name == "min" || name == "max";
+    return name == "min"
+        || name == "max"
+        || name == "length"
+        || name == "version"
+        || name == "precision"
+        || name == "bound"
+        || name == "step";
 }
 
 pub fn renderParam(name: string, value: string) -> string {

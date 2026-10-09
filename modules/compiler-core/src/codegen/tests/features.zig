@@ -462,13 +462,8 @@ test "js: import ---- two modules whose files share a basename" {
 // (`shapes: {helpers: {seven}}`) — with no `from`: the package's own tree. Only
 // the leaf enters scope, under its alias when one is written, and the four
 // backends resolve the owner through the path, not through the bare name (the
-// two `label`s below live in different modules and both answer on commonJS,
-// erlang and beam). KNOWN (wasm): the wasm backend links every imported
-// module statically into one flat namespace, so the second `label` WAS the
-// first one's function — `shapes/circle` twice at exit 0. Since `00 · 05-wasm`
-// a call to a name two linked modules declare traps instead (the recorded
-// RUNTIME TRAP), until the link mangles per module; the alias itself maps back
-// to `$name` correctly.
+// two `label`s below live in different modules and both answer on all four
+// backends).
 test "js: import ---- a dotted path and a group bind their leaves across a module tree" {
     try h.assertJs(std.testing.allocator, @src(), &.{
         .{ .path = "shapes/circle", .source =
@@ -767,11 +762,6 @@ test "js: enum ---- method with case on self" {
     );
 }
 
-// 1.0.4-beta EXAMPLES.md §5: an enum method called on a variant value. Enum
-// values carry no methods on commonJS (a payload variant is a plain object), so
-// the call passes the value to the enum's method: `Shape.area(Shape.Square(4))`.
-// It used to throw `Shape.Square(...).area is not a function`. KNOWN: `16`
-// then `12`; wasm traps (1.0.4-beta 01 wasm).
 // An associated `fn` on an `enum` — no `self`, so it is a constructor-like
 // helper, not an instance method. `memberCallNode`'s qualified-payload-variant
 // branch fired on ANY `EnumName.callee(...)` without checking that `callee`
@@ -808,6 +798,11 @@ test "js: enum ---- an associated fn on an enum is a call, not a variant" {
     });
 }
 
+// 1.0.4-beta EXAMPLES.md §5: an enum method called on a variant value. Enum
+// values carry no methods on commonJS (a payload variant is a plain object), so
+// the call passes the value to the enum's method: `Shape.area(Shape.Square(4))`.
+// It used to throw `Shape.Square(...).area is not a function`. All four
+// backends print `16` then `12`.
 test "js: enum ---- a method is called on a variant value" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\pub type Shape {
@@ -1117,8 +1112,7 @@ test "js: array zip via @External.Node template" {
     // calling ONLY `xs.zip(ys)` triggers the prototype-patch emission.
     //
     // Semantics decision 1a: the array of tuples prints
-    // `[#(1,"a"),#(2,"b"),#(3,"c")]`. KNOWN: beam prints its own `~p` text
-    // (PR3, deferred after 06).
+    // `[#(1, "a"), #(2, "b"), #(3, "c")]` on all four backends.
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
         \\    val xs = [1, 2, 3];
@@ -1309,9 +1303,8 @@ test "js: enum sections ---- path-access lowers to qualified ctor calls" {
 // `untypedPrimCallNode`); the `COMPTIME ERLANG` section shows the call sites.
 // The string receivers avoid `indexOf`, whose `string:str/2` host op rejects a
 // binary (a `libs/std/src/primitives.bp` table defect, not a dispatch one).
-// Known-wrong run logs pinned here, owned by the backend fronts: beam prints
-// `s` (an unresolved module-level `val` read as the atom of its name) and wasm
-// prints nothing; the comptime sections and replies are identical everywhere.
+// The comptime sections, the replies and the RUN LOG are identical on all four
+// backends.
 test "js: comptime primitives ---- template body calls string and array methods" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\pub fn shout(comptime q: @Expr<string>) -> @Expr<string> {
@@ -1363,8 +1356,7 @@ test "js: comptime primitives ---- decorator body calls string and array methods
 // through `lists:foldl` like an assignment does — in straight-line position, in
 // a multi-statement `forEach` closure, and in a decorator body (a dependency-injection
 // constructor shape: an inner mutating `forEach`, then the push).
-// Known-wrong run logs pinned here, owned by the backend fronts: beam and wasm
-// print nothing (and `codegen/beam_asm.zig` has no mutation threading at all).
+// All four backends print the same RUN LOG.
 test "js: receiver mutation ---- push inside a multi-statement closure threads out" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\pub fn component(comptime decl: @Decl) {

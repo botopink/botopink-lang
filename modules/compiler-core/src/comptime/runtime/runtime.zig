@@ -389,6 +389,35 @@ test "the BEAM runtime refuses a module its lowering does not take, naming the c
     try std.testing.expect(std.mem.indexOf(u8, result.response.compile_error, "`maybe`") != null);
 }
 
+test "a reply past the frame cap reaches the evaluator as the transport message, not EvalFailed" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    // A comptime body whose reply is one byte past `max_frame_len`: the
+    // server frames it, `readFrame` refuses the length before allocating.
+    const code =
+        \\-module(bp_runtime_oversized).
+        \\-export([main/1]).
+        \\main(_) -> binary:copy(<<"a">>, 16777217).
+    ;
+    const result = try evalOn(arena, std.testing.io, .beam, "template", "bp_runtime_oversized", code, "\x83\x6a");
+    try std.testing.expect(result == .unavailable);
+    const detail = persistent_beam.lastTransportError() orelse return error.TestExpectedTransportMessage;
+    try std.testing.expect(std.mem.indexOf(u8, detail, "exceeds the 16777216-byte cap") != null);
+    try std.testing.expect(std.mem.startsWith(u8, result.unavailable, "the template evaluator's erl runtime failed (PersistentErlFrameTooLarge): "));
+    try std.testing.expect(std.mem.endsWith(u8, result.unavailable, detail));
+
+    // The node respawns on the next request and answers again.
+    const again =
+        \\-module(bp_runtime_after_cap).
+        \\-export([main/1]).
+        \\main(_) -> <<"ok">>.
+    ;
+    const next = try evalOn(arena, std.testing.io, .beam, "template", "bp_runtime_after_cap", again, "\x83\x6a");
+    try std.testing.expect(next == .response and next.response == .ok);
+    try std.testing.expectEqualStrings("ok", next.response.ok);
+}
+
 test "a native build carries both runtimes" {
     try std.testing.expect(can_spawn);
     try std.testing.expect(available(.beam));

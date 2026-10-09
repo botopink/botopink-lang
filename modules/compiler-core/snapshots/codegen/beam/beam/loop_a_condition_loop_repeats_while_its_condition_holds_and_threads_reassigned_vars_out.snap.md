@@ -46,6 +46,7 @@ fn main() {
     {move, {x, 0}, {y, 1}}.
     {move, {literal, <<"">>}, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
+    {line, [{location, "test@main.erl", 2}]}.
   {label, 12}.
     {test, is_lt, {f, 13}, [{y, 1}, {y, 0}]}.
     {move, nil, {x, 0}}.
@@ -97,6 +98,7 @@ fn main() {
     {move, {x, 0}, {y, 1}}.
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
+    {line, [{location, "test@main.erl", 3}]}.
   {label, 46}.
     {test, is_lt, {f, 47}, [{y, 1}, {y, 0}]}.
     {gc_bif, '+', {f, 0}, 0, [{y, 1}, {integer, 1}], {x, 0}}.

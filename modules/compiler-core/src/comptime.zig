@@ -9,6 +9,8 @@ const transform = @import("./comptime/transform.zig");
 const alias_erase = @import("./comptime/alias_erase.zig");
 const std_namespace = @import("./comptime/std_namespace.zig");
 const inline_types = @import("./comptime/inline_types.zig");
+const default_fn = @import("./comptime/default_fn.zig");
+const value_or_type = @import("./comptime/value_or_type.zig");
 const evalMod = @import("./comptime/eval.zig");
 const format = @import("./format.zig");
 pub const trace = @import("./comptime/trace.zig");
@@ -721,19 +723,30 @@ fn orderReaders(
 ) ![]const Module {
     var readers: std.ArrayListUnmanaged(Module) = .empty;
     var others: std.ArrayListUnmanaged(Module) = .empty;
+    var reader_programs: std.ArrayListUnmanaged(?ast.Program) = .empty;
+    var other_programs: std.ArrayListUnmanaged(?ast.Program) = .empty;
     for (modules) |m| {
-        if (typeinfoAll.reads(m.source)) {
+        // A module that does not parse is no reader; its own analysis
+        // reports the parse error.
+        var lx = Lexer.init(m.source);
+        const program: ?ast.Program = if (lx.scanAll(arena)) |tokens| parsed: {
+            var p = Parser.init(tokens);
+            break :parsed p.parse(arena) catch null;
+        } else |_| null;
+        if (program != null and try typeinfoAll.reads(arena, program.?)) {
             try readers.append(arena, m);
+            try reader_programs.append(arena, program);
             try reflection.readers.put(arena, m.path, {});
-        } else try others.append(arena, m);
+        } else {
+            try others.append(arena, m);
+            try other_programs.append(arena, program);
+        }
     }
     if (readers.items.len == 0) return modules;
     try others.appendSlice(arena, readers.items);
-    for (others.items, 0..) |m, idx| {
-        var lx = Lexer.init(m.source);
-        const tokens = lx.scanAll(arena) catch continue;
-        var p = Parser.init(tokens);
-        const program = p.parse(arena) catch continue;
+    try other_programs.appendSlice(arena, reader_programs.items);
+    for (others.items, other_programs.items, 0..) |m, maybe_program, idx| {
+        const program = maybe_program orelse continue;
         scan: for (program.decls) |d| switch (d) {
             .use => |u| for (u.imports) |imp| {
                 for ([_]bool{ false, true }) |whole| switch (try u.leafSource(imp, arena, whole)) {
@@ -1061,24 +1074,30 @@ fn analyzeSource(
     };
 
     var parser = Parser.init(tokens);
-    const parsed = parser.parse(arena) catch |err| switch (err) {
+    const parsed_as_written = parser.parse(arena) catch |err| switch (err) {
         // The caller renders the diagnostic (`ComptimeOutput.parseError`); a
         // library call must not write to stderr — a test runner reads it.
         error.UnexpectedToken => return .{ .parseError = .{ .parse = parser.parseError } },
         else => return err,
     };
+    // Decision 309 — an embedded std module's brace imports name `std/<path>`.
+    const parsed = if (isStdPkgPath(mod.path)) try embeddedStdProgram(arena, parsed_as_written) else parsed_as_written;
     // Decisions 110 / 111 on the use side: `io.fs.f()` through a folder
     // namespace and `collections.Dict.empty()` through a module one reach the
     // checker and the backends as the one-dot forms they lower.
     // Decision 207: an inline parameter type becomes a record of the module.
-    const expanded = try inline_types.expand(arena, try std_namespace.expand(arena, parsed));
+    // Decision 289: an anonymous default is named `default`, and an import of
+    // a module holding a default binds that function.
+    const defaulted = try default_fn.expandImports(arena, try default_fn.nameAnonymous(arena, parsed), templateRegistry, registry);
+    // Decision 297: a `comptime x: V | type T` parameter's two forms.
+    const expanded = try value_or_type.expand(arena, try inline_types.expand(arena, try std_namespace.expand(arena, defaulted)));
     // Decision 216 (3): `Owner.Name` of an imported owner (or of this
     // module's, on a re-analysis) reaches the checker as the declared name.
     var owners = try assocOwners(arena, expanded, mod.path, typeDeclRegistry, reflection);
     const program = try assocTypes.expand(arena, expanded, &owners);
     // Decision 216 (4): a module reading `@TypeInfo.all` is answered on its
     // re-analysis, after its own decorators ran.
-    const typeinfo_queries = if (skip_invoke or !typeinfoAll.reads(source)) &.{} else try typeinfoAll.collect(arena, program);
+    const typeinfo_queries = if (skip_invoke) &.{} else try typeinfoAll.collect(arena, program);
     env.typeinfoAllPending = typeinfo_queries.len > 0;
 
     if (validation.validateComptime(program)) |err_info| {
@@ -1282,24 +1301,36 @@ fn isIdentChar(c: u8) bool {
 /// matches the `@Decl` handle JSON `buildHandleJson` emits and the `__decl`
 /// object `decorator_eval.zig` binds, so a body's `decl.fields`/`decl.kind`/
 /// `decl.fail(…)` type-check against the same data the runtime provides.
+///
+/// T17 — the member records a handle hands out (`Annotation`, `Param`,
+/// `Field`, `Method`) are registered under internal names (`__Decl__Param`,
+/// shown `Decl.Param` in a diagnostic) that no module can declare or import,
+/// and spelled through the aliases below; a module declaring or importing a
+/// type of one of those names takes the name (`infer.zig`
+/// `dropReflectionAlias`), so a decorator module that imports a user `Param`
+/// still reads `m.params` of a `@Decl` as the reflection's `Param`.
 const decl_reflection_src =
     \\pub type DeclKind { Type, Behavior, Fn, Method, Field }
     \\pub type Span(start: i32, end: i32, line: i32)
     \\pub type SourceLocation(file: string, line: i32, column: i32, fnName: string)
-    \\pub type Annotation(name: string, args: string[])
-    \\pub type Param(name: string, typeName: string)
-    \\pub type Field(name: string, typeName: string, annotations: Annotation[])
-    \\pub type Method(name: string, params: Param[], returnType: string, annotations: Annotation[])
+    \\pub type __Decl__Annotation(name: string, args: string[])
+    \\pub type __Decl__Param(name: string, typeName: string)
+    \\pub type __Decl__Field(name: string, typeName: string, annotations: __Decl__Annotation[])
+    \\pub type __Decl__Method(name: string, params: __Decl__Param[], returnType: string, annotations: __Decl__Annotation[])
+    \\pub type Annotation = __Decl__Annotation;
+    \\pub type Param = __Decl__Param;
+    \\pub type Field = __Decl__Field;
+    \\pub type Method = __Decl__Method;
     \\pub type DeclaredMeta(key: string, value: string)
     \\pub type Declared<T>(name: string, module: string, meta: DeclaredMeta[], returnTypeName: string, value: T)
     \\pub type Decl(
     \\    kind: DeclKind,
     \\    name: string,
-    \\    fields: Field[],
+    \\    fields: __Decl__Field[],
     \\    variants: string[],
-    \\    methods: Method[],
+    \\    methods: __Decl__Method[],
     \\    returnType: string,
-    \\    annotations: Annotation[]) {
+    \\    annotations: __Decl__Annotation[]) {
     \\    declare fn fail(self: Self, message: string);
     \\    declare fn failAt(self: Self, span: Span, message: string);
     \\    declare fn addMember(self: Self, source: string);
@@ -1330,13 +1361,13 @@ const custom_ast_reflection_src =
 /// Mirrors `libs/std/src/builtins.d.bp`'s `pub type TypeInfo<T>` (its static
 /// `all` is reached only as the builtin `@TypeInfo.all`, so the mirror leaves
 /// it out) and `pub type RecordField`; registered after the `@Decl` cluster,
-/// whose `Field`, `Method` and `DeclaredMeta` the fields name.
+/// whose `Field`, `Method` (`__Decl__Field`, `__Decl__Method`) and `DeclaredMeta` the fields name.
 const type_info_src =
     \\pub type TypeInfo<T>(
     \\    name: string,
     \\    module: string,
-    \\    fields: Field[],
-    \\    methods: Method[],
+    \\    fields: __Decl__Field[],
+    \\    methods: __Decl__Method[],
     \\    meta: DeclaredMeta[],
     \\)
     \\
@@ -1458,11 +1489,7 @@ fn expandStdImports(arena: std.mem.Allocator, modules: []const Module, target_na
                 }
             },
             .use => |u| {
-                const from_std = switch (u.source) {
-                    .module => |m| std.mem.eql(u8, m, "std"),
-                    .root => false,
-                };
-                if (!from_std) continue;
+                if (!importsStd(u, isStdPkgPath(mod.path))) continue;
                 for (u.imports) |imp| {
                     // Decision 107 — the item names a module by its whole path
                     // (`io.fs`, the namespace form) or a symbol of the module
@@ -1513,8 +1540,40 @@ fn expandStdImports(arena: std.mem.Allocator, modules: []const Module, target_na
     return out.toOwnedSlice(arena);
 }
 
-/// The std modules `source` (a std module) imports — `import {json} from "std"`
-/// or a leaf of one, `import {json.quote} from "std"` — as indices into
+/// Whether `u` imports std modules: `from "std"`, or — inside a std module
+/// (`in_std`) — the brace form with no `from` (decision 309), which names a
+/// sibling of the module's own package, std.
+fn importsStd(u: ast.ImportDecl, in_std: bool) bool {
+    if (u.package != null or u.activationOnly) return false;
+    return switch (u.source) {
+        .module => |m| std.mem.eql(u8, m, "std"),
+        .root => in_std,
+    };
+}
+
+/// Decision 309 — a std module imports a sibling by the brace form
+/// (`import {path.relative};`), which std's own package build resolves among
+/// std's modules (`path`). Embedded in another build, the module is
+/// `std/<mod>` and its siblings are `std/<path>`, reached the way every other
+/// module reaches std: so each brace import of the module reads as
+/// `from "std"`, and the checker, the type exports and the four backends see
+/// the import they already lower.
+fn embeddedStdProgram(arena: std.mem.Allocator, program: ast.Program) !ast.Program {
+    const decls = try arena.dupe(ast.DeclKind, program.decls);
+    for (decls) |*d| switch (d.*) {
+        .use => |*u| if (importsStd(u.*, true)) {
+            u.source = .{ .module = "std" };
+        },
+        else => {},
+    };
+    var out = program;
+    out.decls = decls;
+    return out;
+}
+
+/// The std modules `source` (a std module) imports — `import {json};` or a
+/// leaf of one, `import {json.quote};` (decision 309's brace form; the
+/// `from "std"` spelling reads the same) — as indices into
 /// `std_pkg_modules`. A source that does not parse imports nothing here; its
 /// own compile reports the error.
 fn stdImportsOf(arena: std.mem.Allocator, source: []const u8) ![]const usize {
@@ -1526,11 +1585,7 @@ fn stdImportsOf(arena: std.mem.Allocator, source: []const u8) ![]const usize {
     for (program.decls) |decl| {
         if (decl != .use) continue;
         const u = decl.use;
-        const from_std = switch (u.source) {
-            .module => |m| std.mem.eql(u8, m, "std"),
-            .root => false,
-        };
-        if (!from_std) continue;
+        if (!importsStd(u, true)) continue;
         for (u.imports) |imp| {
             const whole = try imp.fullPath(arena);
             const prefix = try imp.prefixPath(arena);
@@ -1715,8 +1770,23 @@ fn resolveImports(
                                 // A type's identity is its declared name on
                                 // every backend; an alias would bind a name
                                 // the emitted code never defines.
-                                try infer.registerImportedTypeClosure(env, e.value_ptr.*, type_decl);
-                                try infer.registerImportedTypeDecl(env, type_decl);
+                                // The same declaration reached by an earlier
+                                // item of this module (`import {catalog.Widget};`
+                                // beside a `@TypeInfo.all` answer's
+                                // `import {Widget as __bp_ti_0} from "catalog";`)
+                                // is registered once: registering it again
+                                // would rebind its constructor, and an alias
+                                // bound to the first one would stop naming it.
+                                var seen = false;
+                                var tit = env.importedTypeDecls.valueIterator();
+                                while (tit.next()) |prev| {
+                                    if (std.mem.eql(u8, prev.name, name) and std.mem.eql(u8, prev.module, e.key_ptr.*)) seen = true;
+                                }
+                                try env.importedTypeDecls.put(env.arena, local, .{ .name = name, .module = e.key_ptr.* });
+                                if (!seen) {
+                                    try infer.registerImportedTypeClosure(env, e.value_ptr.*, type_decl);
+                                    try infer.registerImportedTypeDecl(env, type_decl);
+                                }
                                 // Decision 110 — `as` binds a type leaf like any
                                 // other: a checker-local alias of the declared
                                 // name, which is the emitted identity.
@@ -2188,6 +2258,11 @@ fn registerExports(
         },
         else => {},
     };
+    // Decision 289 — the module's default function, for `default_fn.expandImports`.
+    for (decls) |d| switch (d) {
+        .@"fn" => |f| if (f.isDefault) try templateRegistry.put(try default_fn.key(arena, path), f),
+        else => {},
+    };
     for (bindings) |b| {
         if (b.decl == .@"fn" and b.decl.@"fn".isDefault and !dsl.handler.contains(key)) {
             const ty = env.lookup(b.name) orelse b.type_;
@@ -2409,7 +2484,7 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
         var lx = Lexer.init(spm.source);
         const tokens = try lx.scanAll(env.arena);
         var p = Parser.init(tokens);
-        const program = try stripTestDecls(try p.parse(env.arena), env.arena);
+        const program = try embeddedStdProgram(env.arena, try stripTestDecls(try p.parse(env.arena), env.arena));
         const bindings = try infer.inferProgramTyped(&env2, program);
 
         // Collect the module's public type declarations so `import {…} from
@@ -2884,11 +2959,11 @@ pub fn compile(
                     @memcpy(new_decls[synth.items.len..], succ.program.decls);
                     break :blk ast.Program{ .decls = new_decls };
                 };
-                const transformed = try withImportSourcesNamed(arena_alloc, try withImportTypeAliasesErased(arena_alloc, try alias_erase.erase(arena_alloc, try withYieldStepDecl(arena_alloc, try withDeclaredDecls(arena_alloc, try withSourceLocationDecl(arena_alloc, try withSynthesisedEnumDecls(
+                const transformed = try value_or_type.withTwinImports(arena_alloc, try withImportSourcesNamed(arena_alloc, try withImportTypeAliasesErased(arena_alloc, try alias_erase.erase(arena_alloc, try withYieldStepDecl(arena_alloc, try withDeclaredDecls(arena_alloc, try withSourceLocationDecl(arena_alloc, try withSynthesisedEnumDecls(
                     arena_alloc,
                     try withUsedAssocInterfaces(arena_alloc, try withTemplateHygiene(arena_alloc, try transform.transform(arena_alloc, program_for_transform, fn_decls, comptime_arrays, ct.comptime_vals, &succ.env.method_lowerings, &succ.env.templateExpansions, &succ.env.srcRewrites, &succ.env.result_jump_lowerings, &succ.env.stdArrayLowerings, &succ.env.enumSectionRewrites, &succ.env.indexRewrites, &succ.env.optionalNullCases, succ.env.ctorParams, &succ.env.defaultInjections, &succ.env.resultPatternLocs, &succ.env.namespaces), &succ.env, declaresTemplateFn(program_for_transform.decls)), &succ.env),
                     &succ.env,
-                ), &succ.env), &succ.env), &succ.env), &succ.env.typeAliases), &succ.env), &succ.env);
+                ), &succ.env), &succ.env), &succ.env), &succ.env.typeAliases), &succ.env), &succ.env), &succ.env.typeArgTwins);
 
                 var type_ids = std.StringHashMap(usize).init(arena_alloc);
                 for (succ.bindings) |b| {
@@ -2931,4 +3006,46 @@ test "importsPackage: the `from` keyword and the quoted name, dotted or not" {
     try std.testing.expect(!importsPackage("//// like `import {x} from \"shapes\"`\nval y = 1;", "shapes"));
     try std.testing.expect(!importsPackage("val y = 1; // from \"shapes\"", "shapes"));
     try std.testing.expect(importsPackage("// a comment\nimport {x} from \"shapes\";", "shapes"));
+}
+
+test "stdImportsOf: a std module's brace import names its std sibling (decision 309)" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var path_index: ?usize = null;
+    for (std_pkg_modules, 0..) |spm, i| {
+        if (std.mem.eql(u8, spm.path, "std/path")) path_index = i;
+    }
+    for ([_][]const u8{
+        "import {path.relative};\n",
+        "import {path};\n",
+        "import {path.relative} from \"std\";\n",
+    }) |src| {
+        const deps = try stdImportsOf(a, src);
+        try std.testing.expectEqual(@as(usize, 1), deps.len);
+        try std.testing.expectEqual(path_index.?, deps[0]);
+    }
+}
+
+test "embedded std module: a brace import of a sibling resolves to std/<path> (decision 309)" {
+    // A std module as a consumer's build embeds it (`std/<mod>`), importing
+    // its sibling `path` by the brace form — what std's own build resolves to
+    // `path`. Before: `relative` reached nothing and the module failed with an
+    // unlocated `TypeError`.
+    var session = try compileTypesOnly(std.testing.allocator, &.{.{
+        .path = "std/self_import",
+        .source =
+        \\import {path.relative};
+        \\
+        \\pub fn rel(a: string, b: string) -> string {
+        \\    return relative(a, b);
+        \\}
+        \\
+        ,
+    }}, null);
+    defer session.deinit(std.testing.allocator);
+    const items = session.outputs.items;
+    try std.testing.expect(items.len >= 2);
+    try std.testing.expectEqualStrings("std/path", items[0].name);
+    try std.testing.expect(items[items.len - 1].outcome == .ok);
 }

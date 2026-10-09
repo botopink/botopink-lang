@@ -53,6 +53,8 @@
 //// be null. That is the failure mode this module exists to design out, and it
 //// is designed out at compile time.
 
+import {formats.isIsoDatetimeOffset};
+
 // ── `#[validated]` ──────────────────────────────────────────────────────────
 
 pub fn validated(comptime decl: @Decl) {
@@ -60,31 +62,38 @@ pub fn validated(comptime decl: @Decl) {
     var rows: Array<string> = [];
     var problem = "";
     decl.fields.forEach({ f ->
+        val names = f.annotations.map({ a -> a.name });
         f.annotations.forEach({ a ->
-            val t = f.typeName;
-            val read = "v." + f.name;
+            val declared = f.typeName;
+            val nullable = declared.startsWith("?");
+            val t = if (nullable)
+                declared.slice(1, declared.length())
+            else
+                declared;
+            val base = "v." + f.name;
+            val zero = optionalZero(t);
+            val read = if (nullable) "(" + base + " ?? " + zero + ")" else base;
             val q = "\"" + f.name + "\"";
             val raw = a.args.join(", ");
             val bare = a.args.join("|").replaceAll("\"", "");
             val n = a.name;
             val isText = t == "string";
             val isList = t.startsWith("Array<") || t.endsWith("[]");
-            val nullable = t.startsWith("?");
             var call = "";
             var why = "";
             if (n == "notNull")
                 if (nullable)
-                    call = "vNotNull(" + q + ", " + read + " != null)"
+                    call = "vNotNull(" + q + ", " + base + " != null)"
                 else
                     why = "a field of type `"
-                        + t
+                        + declared
                         + "` can never be null, so the constraint could never fail";
             if (n == "notBlank")
                 if (isText)
                     call = "vNotBlank(" + q + ", " + read + ")"
                 else
                     why = "it applies to `string`, and this field is `"
-                        + t
+                        + declared
                         + "`";
             if (n == "notEmpty")
                 if (isText)
@@ -93,7 +102,7 @@ pub fn validated(comptime decl: @Decl) {
                     call = "vNotEmptyList(" + q + ", " + read + ")"
                 else
                     why = "it applies to `string` and `Array<T>`, and this field is `"
-                        + t
+                        + declared
                         + "`";
             if (n == "sizeBetween")
                 if (isText)
@@ -108,25 +117,37 @@ pub fn validated(comptime decl: @Decl) {
                         + ")"
                 else
                     why = "it applies to `string` and `Array<T>`, and this field is `"
-                        + t
+                        + declared
                         + "`";
             if (n == "minValue")
                 if (t == "i32")
                     call = "vMinValueI32(" + q + ", " + read + ", " + raw + ")"
                 else if (t == "f64")
-                    call = "vMinValueF64(" + q + ", " + read + ", " + raw + ")"
+                    call = "vMinValueF64("
+                        + q
+                        + ", "
+                        + read
+                        + ", "
+                        + asF64(raw)
+                        + ")"
                 else
                     why = "it applies to `i32` and `f64`, and this field is `"
-                        + t
+                        + declared
                         + "` (an integer literal does not widen to `i64`, so an `i64` bound cannot be written)";
             if (n == "maxValue")
                 if (t == "i32")
                     call = "vMaxValueI32(" + q + ", " + read + ", " + raw + ")"
                 else if (t == "f64")
-                    call = "vMaxValueF64(" + q + ", " + read + ", " + raw + ")"
+                    call = "vMaxValueF64("
+                        + q
+                        + ", "
+                        + read
+                        + ", "
+                        + asF64(raw)
+                        + ")"
                 else
                     why = "it applies to `i32` and `f64`, and this field is `"
-                        + t
+                        + declared
                         + "` (an integer literal does not widen to `i64`, so an `i64` bound cannot be written)";
             if (n == "positive")
                 if (t == "i32")
@@ -137,7 +158,7 @@ pub fn validated(comptime decl: @Decl) {
                     call = "vPositiveF64(" + q + ", " + read + ")"
                 else
                     why = "it applies to `i32`, `i64` and `f64`, and this field is `"
-                        + t
+                        + declared
                         + "`";
             if (n == "positiveOrZero")
                 if (t == "i32")
@@ -148,43 +169,56 @@ pub fn validated(comptime decl: @Decl) {
                     call = "vPositiveOrZeroF64(" + q + ", " + read + ")"
                 else
                     why = "it applies to `i32`, `i64` and `f64`, and this field is `"
-                        + t
+                        + declared
                         + "`";
             if (n == "email")
                 if (isText)
                     call = "vEmail(" + q + ", " + read + ")"
                 else
                     why = "it applies to `string`, and this field is `"
-                        + t
+                        + declared
                         + "`";
             if (n == "pattern")
                 if (isText)
                     call = "vPattern(" + q + ", " + read + ", " + raw + ")"
                 else
                     why = "it applies to `string`, and this field is `"
-                        + t
+                        + declared
                         + "`";
             if (n == "pastDate")
                 if (t == "i64")
                     call = "vPastDate(" + q + ", " + read + ")"
                 else
                     why = "it applies to epoch milliseconds, which is `i64`, and this field is `"
-                        + t
+                        + declared
                         + "`";
             if (n == "futureDate")
                 if (t == "i64")
                     call = "vFutureDate(" + q + ", " + read + ")"
                 else
                     why = "it applies to epoch milliseconds, which is `i64`, and this field is `"
-                        + t
+                        + declared
                         + "`";
             if (n == "constraint")
                 if (isText)
                     call = "vConstraint(" + q + ", " + raw + ", " + read + ")"
                 else
                     why = "a registered constraint reads a `string`, and this field is `"
-                        + t
+                        + declared
                         + "`";
+            if (call == "" && why == "") {
+                val rule = markerRule(n, t, declared, q, read, a.args, names);
+                if (rule.startsWith("!"))
+                    why = rule.slice(1, rule.length())
+                else
+                    call = rule;
+            }
+            if (nullable && n != "notNull" && call != "" && zero == "") {
+                why = "a marker on an optional field applies to `?string`, `?i32`, `?i64` and `?f64`, and this field is `"
+                    + declared
+                    + "`";
+                call = "";
+            }
             if (why != "")
                 problem = "#["
                     + n
@@ -195,7 +229,14 @@ pub fn validated(comptime decl: @Decl) {
                     + "`: "
                     + why;
             val suffix = if (bare == "") "" else "|" + bare;
-            if (call != "") calls.push("    __vs = __vs.append(" + call + ");");
+            val guard = if (nullable && n != "notNull")
+                "if (" + base + " != null) "
+            else
+                "";
+            if (call != "")
+                calls.push(
+                    "    " + guard + "__vs = __vs.append(" + call + ");",
+                );
             if (call != "") rows.push(f.name + "|" + n + suffix);
         });
     });
@@ -332,6 +373,579 @@ pub fn constraint(comptime decl: @Decl, name: string) {
         decl.fail(
             "#[constraint]: a name may not contain a double quote - it is the argument's own delimiter in the reflected lexeme",
         );
+}
+
+// ── step 3: the rules of the checks and formats ─────────────────────────────
+//
+// `markerRule` answers the call `#[validated]` emits for one marker of front
+// 125 step 3 on a field of type `t` (the `?` of an optional field already
+// taken off — `declared` is the type as written), `"!" + why` when the marker
+// cannot check that type, and `""` for a name that is none of these markers.
+// The predicates are `constraints.bp`'s; the emitted call names them bare, as
+// the thirteen markers above do.
+
+// The value an optional field reads as when it is null — never checked, the
+// emitted call is guarded by `!= null`; `""` for a type no marker reads
+// through an optional.
+fn optionalZero(t: string) -> string {
+    if (t == "string") return "\"\"";
+    if (t == "i32" || t == "i64") return "0";
+    if (t == "f64") return "0.0";
+    return "";
+}
+
+fn capitalized(n: string) -> string {
+    return n.slice(0, 1).toUpper() + n.slice(1, n.length());
+}
+
+fn numberSuffix(t: string) -> string {
+    if (t == "i32") return "I32";
+    if (t == "i64") return "I64";
+    if (t == "f64") return "F64";
+    return "";
+}
+
+fn collectionSuffix(t: string) -> string {
+    if (t == "string") return "";
+    if ((t.startsWith("Array<") && t.endsWith(">")) || t.endsWith("[]"))
+        return "List";
+    if (t.startsWith("Dict<")) return "Dict";
+    if (t.startsWith("Set<")) return "Set";
+    return "?";
+}
+
+fn isFractionLexeme(l: string) -> bool {
+    return l.indexOf(".") >= 0 || l.indexOf("e") >= 0 || l.indexOf("E") >= 0;
+}
+
+// A numeric lexeme as an `f64` literal: `5` is `5.0`; `0.5` and `1e3` stay.
+fn asF64(l: string) -> string {
+    if (isFractionLexeme(l)) return l;
+    return l + ".0";
+}
+
+// The digits after the point of a decimal lexeme (`0.05` → 2).
+fn decimalsOf(l: string) -> i32 {
+    val ps = l.split(".");
+    if (ps.length < 2) return 0;
+    return ps.slice(1, 2).join("").length();
+}
+
+fn quoted(l: string) -> string {
+    return "\"" + l + "\"";
+}
+
+fn plainTextMarkers() -> string {
+    return "|uppercase|lowercase|emailHtml5|emailRfc5322|emailUnicode|uuid|guid|url|httpUrl|hostname|e164|emoji|base64|base64url|hex|jwt|nanoid|cuid|cuid2|ulid|ipv4|ipv6|mac|cidrv4|cidrv6|creditCard|currencyCode|iban|isoDate|isoTime|isoDatetime|isoDatetimeOffset|isoDatetimeLocal|isoDuration|";
+}
+
+fn argTextMarkers() -> string {
+    return "|startsWith|endsWith|includes|uuidV|urlHost|urlProtocol|jwtAlg|macDelimiter|hash|hashEnc|isoTimePrecision|isoDatetimePrecision|";
+}
+
+fn listed(set: string, n: string) -> bool {
+    return set.indexOf("|" + n + "|") >= 0;
+}
+
+fn predicateOf(n: string) -> string {
+    if (n == "base64url") return "vBase64Url";
+    return "v" + capitalized(n);
+}
+
+fn refusedOn(applies: string, declared: string) -> string {
+    return "!it applies to "
+        + applies
+        + ", and this field is `"
+        + declared
+        + "`";
+}
+
+fn markerRule(
+    n: string,
+    t: string,
+    declared: string,
+    q: string,
+    read: string,
+    args: Array<string>,
+    names: Array<string>,
+) -> string {
+    val raw = args.join(", ");
+    val first = args.slice(0, 1).join("");
+    if (listed(plainTextMarkers(), n)) {
+        if (t != "string") return refusedOn("`string`", declared);
+        return predicateOf(n) + "(" + q + ", " + read + ")";
+    }
+    if (listed(argTextMarkers(), n)) {
+        if (t != "string") return refusedOn("`string`", declared);
+        if (n == "isoDatetimePrecision") {
+            val shapes = names.filter({ m ->
+                m == "isoDatetime"
+                    || m == "isoDatetimeOffset"
+                    || m == "isoDatetimeLocal";
+            });
+            if (shapes.length == 0)
+                return "!it fixes the precision only - add #[isoDatetime], #[isoDatetimeOffset] or #[isoDatetimeLocal] to say which zones the field takes";
+        }
+        return predicateOf(n) + "(" + q + ", " + read + ", " + raw + ")";
+    }
+    if (n == "minLength" || n == "maxLength" || n == "length") {
+        val kind = collectionSuffix(t);
+        if (kind == "?")
+            return refusedOn(
+                "`string`, `Array<T>`, `Dict<K, V>` and `Set<T>`",
+                declared,
+            );
+        return predicateOf(n) + kind + "(" + q + ", " + read + ", " + raw + ")";
+    }
+    if (n == "gt" || n == "lt" || n == "multipleOf") {
+        val width = numberSuffix(t);
+        if (width == "") return refusedOn("`i32`, `i64` and `f64`", declared);
+        if (width != "F64" && isFractionLexeme(first))
+            return "!the bound `"
+                + first
+                + "` is not a whole number, and this field is `"
+                + declared
+                + "`";
+        if (width != "F64")
+            return predicateOf(n)
+                + width
+                + "("
+                + q
+                + ", "
+                + read
+                + ", "
+                + first
+                + ")";
+        if (n == "multipleOf") {
+            if (first.indexOf("e") >= 0 || first.indexOf("E") >= 0)
+                return "!write the step as a decimal (`0.001`), not with an exponent";
+            return "vMultipleOfF64("
+                + q
+                + ", "
+                + read
+                + ", "
+                + asF64(first)
+                + ", "
+                + [decimalsOf(first)].join("")
+                + ", "
+                + quoted(first)
+                + ")";
+        }
+        return predicateOf(n)
+            + width
+            + "("
+            + q
+            + ", "
+            + read
+            + ", "
+            + asF64(first)
+            + ", "
+            + quoted(first)
+            + ")";
+    }
+    if (n == "negative" || n == "negativeOrZero") {
+        val width = numberSuffix(t);
+        if (width == "") return refusedOn("`i32`, `i64` and `f64`", declared);
+        return predicateOf(n) + width + "(" + q + ", " + read + ")";
+    }
+    if (n == "safeInt") {
+        if (t != "i64") return refusedOn("`i64`", declared);
+        return "vSafeInt(" + q + ", " + read + ")";
+    }
+    if (n == "float32") {
+        if (t != "f64") return refusedOn("`f64`", declared);
+        return "vFloat32(" + q + ", " + read + ")";
+    }
+    if (n == "afterIso" || n == "beforeIso") {
+        if (t != "i64")
+            return refusedOn("epoch milliseconds, which is `i64`", declared);
+        return predicateOf(n) + "(" + q + ", " + read + ", " + raw + ")";
+    }
+    return "";
+}
+
+// ── step 3: the markers ─────────────────────────────────────────────────────
+//
+// Placement, and what each argument may say. A text argument reaches the
+// constraint table, whose blob separates records with `;` and fields with `|`,
+// and the reflected lexeme, delimited by `"`: none of the three may appear in
+// it (`textArgProblem`). A bound that makes the check one that could never
+// fail is refused (decision 67).
+
+fn textArgProblem(marker: string, what: string, text: string) -> string {
+    if (text == "")
+        return "#[" + marker + "]: the " + what + " may not be empty";
+    if (text.indexOf(";") >= 0 || text.indexOf("|") >= 0)
+        return "#["
+            + marker
+            + "]: the "
+            + what
+            + " may not contain ';' or '|' - those are the constraint table's record and field separators";
+    if (text.indexOf("\"") >= 0)
+        return "#["
+            + marker
+            + "]: the "
+            + what
+            + " may not contain a double quote - it is the argument's own delimiter in the reflected lexeme";
+    return "";
+}
+
+pub fn minLength(comptime decl: @Decl, comptime min: i32) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[minLength] must annotate a field");
+    if (min < 1)
+        decl.fail(
+            "#[minLength]: a lower bound below 1 could never fail - write a bound of 1 or more",
+        );
+}
+
+pub fn maxLength(comptime decl: @Decl, comptime max: i32) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[maxLength] must annotate a field");
+    if (max < 0) decl.fail("#[maxLength]: the upper bound may not be negative");
+}
+
+pub fn length(comptime decl: @Decl, comptime length: i32) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[length] must annotate a field");
+    if (length < 0) decl.fail("#[length]: the length may not be negative");
+}
+
+pub fn startsWith(comptime decl: @Decl, comptime prefix: string) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[startsWith] must annotate a field");
+    val problem = textArgProblem("startsWith", "prefix", prefix);
+    if (problem != "") decl.fail(problem);
+}
+
+pub fn endsWith(comptime decl: @Decl, comptime suffix: string) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[endsWith] must annotate a field");
+    val problem = textArgProblem("endsWith", "suffix", suffix);
+    if (problem != "") decl.fail(problem);
+}
+
+pub fn includes(comptime decl: @Decl, comptime substring: string) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[includes] must annotate a field");
+    val problem = textArgProblem("includes", "substring", substring);
+    if (problem != "") decl.fail(problem);
+}
+
+pub fn uppercase(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[uppercase] must annotate a field");
+}
+
+pub fn lowercase(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[lowercase] must annotate a field");
+}
+
+pub fn emailHtml5(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[emailHtml5] must annotate a field");
+}
+
+pub fn emailRfc5322(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[emailRfc5322] must annotate a field");
+}
+
+pub fn emailUnicode(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[emailUnicode] must annotate a field");
+}
+
+pub fn uuid(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field) decl.fail("#[uuid] must annotate a field");
+}
+
+pub fn uuidV(comptime decl: @Decl, comptime version: i32) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[uuidV] must annotate a field");
+    if (version < 1 || version > 8)
+        decl.fail("#[uuidV]: RFC 9562 versions are 1 to 8");
+}
+
+pub fn guid(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field) decl.fail("#[guid] must annotate a field");
+}
+
+pub fn url(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field) decl.fail("#[url] must annotate a field");
+}
+
+pub fn urlHost(comptime decl: @Decl, comptime hostname: string) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[urlHost] must annotate a field");
+    val problem = textArgProblem("urlHost", "pattern", hostname);
+    if (problem != "") decl.fail(problem);
+}
+
+pub fn urlProtocol(comptime decl: @Decl, comptime protocol: string) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[urlProtocol] must annotate a field");
+    val problem = textArgProblem("urlProtocol", "pattern", protocol);
+    if (problem != "") decl.fail(problem);
+}
+
+pub fn httpUrl(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[httpUrl] must annotate a field");
+}
+
+pub fn hostname(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[hostname] must annotate a field");
+}
+
+pub fn e164(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field) decl.fail("#[e164] must annotate a field");
+}
+
+pub fn emoji(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[emoji] must annotate a field");
+}
+
+pub fn base64(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[base64] must annotate a field");
+}
+
+pub fn base64url(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[base64url] must annotate a field");
+}
+
+pub fn hex(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field) decl.fail("#[hex] must annotate a field");
+}
+
+pub fn jwt(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field) decl.fail("#[jwt] must annotate a field");
+}
+
+pub fn jwtAlg(comptime decl: @Decl, comptime alg: string) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[jwtAlg] must annotate a field");
+    val problem = textArgProblem("jwtAlg", "algorithm", alg);
+    if (problem != "") decl.fail(problem);
+}
+
+pub fn nanoid(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[nanoid] must annotate a field");
+}
+
+pub fn cuid(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field) decl.fail("#[cuid] must annotate a field");
+}
+
+pub fn cuid2(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[cuid2] must annotate a field");
+}
+
+pub fn ulid(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field) decl.fail("#[ulid] must annotate a field");
+}
+
+pub fn ipv4(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field) decl.fail("#[ipv4] must annotate a field");
+}
+
+pub fn ipv6(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field) decl.fail("#[ipv6] must annotate a field");
+}
+
+pub fn mac(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field) decl.fail("#[mac] must annotate a field");
+}
+
+// One character that is not a hex digit — a delimiter that were one would
+// make `00` ambiguous with its neighbours.
+pub fn macDelimiter(comptime decl: @Decl, comptime delimiter: string) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[macDelimiter] must annotate a field");
+    val problem = textArgProblem("macDelimiter", "delimiter", delimiter);
+    if (problem != "") decl.fail(problem);
+    if (delimiter.length() != 1
+        || "0123456789abcdefABCDEF".indexOf(delimiter) >= 0)
+        decl.fail(
+            "#[macDelimiter]: the delimiter is one character that is not a hex digit",
+        );
+}
+
+pub fn cidrv4(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[cidrv4] must annotate a field");
+}
+
+pub fn cidrv6(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[cidrv6] must annotate a field");
+}
+
+pub fn creditCard(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[creditCard] must annotate a field");
+}
+
+pub fn currencyCode(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[currencyCode] must annotate a field");
+}
+
+pub fn iban(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field) decl.fail("#[iban] must annotate a field");
+}
+
+fn isHashAlgorithm(a: string) -> bool {
+    return a == "md5"
+        || a == "sha1"
+        || a == "sha256"
+        || a == "sha384"
+        || a == "sha512";
+}
+
+pub fn hash(comptime decl: @Decl, comptime algorithm: string) {
+    if (decl.kind != DeclKind.Field) decl.fail("#[hash] must annotate a field");
+    if (isHashAlgorithm(algorithm) == false)
+        decl.fail(
+            "#[hash]: the algorithm is one of md5, sha1, sha256, sha384, sha512",
+        );
+}
+
+pub fn hashEnc(
+    comptime decl: @Decl,
+    comptime algorithm: string,
+    comptime encoding: string,
+) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[hashEnc] must annotate a field");
+    if (isHashAlgorithm(algorithm) == false)
+        decl.fail(
+            "#[hashEnc]: the algorithm is one of md5, sha1, sha256, sha384, sha512",
+        );
+    if (encoding != "hex" && encoding != "base64" && encoding != "base64url")
+        decl.fail("#[hashEnc]: the encoding is one of hex, base64, base64url");
+}
+
+pub fn isoDate(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[isoDate] must annotate a field");
+}
+
+pub fn isoTime(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[isoTime] must annotate a field");
+}
+
+// -1 is `HH:MM`, 0 whole seconds, n that many fraction digits (to 9).
+pub fn isoTimePrecision(comptime decl: @Decl, comptime precision: i32) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[isoTimePrecision] must annotate a field");
+    if (precision < 0 - 1 || precision > 9)
+        decl.fail(
+            "#[isoTimePrecision]: the precision is -1 (minutes), 0 (seconds) or 1 to 9 fraction digits",
+        );
+}
+
+pub fn isoDatetime(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[isoDatetime] must annotate a field");
+}
+
+pub fn isoDatetimeOffset(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[isoDatetimeOffset] must annotate a field");
+}
+
+pub fn isoDatetimeLocal(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[isoDatetimeLocal] must annotate a field");
+}
+
+pub fn isoDatetimePrecision(comptime decl: @Decl, comptime precision: i32) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[isoDatetimePrecision] must annotate a field");
+    if (precision < 0 - 1 || precision > 9)
+        decl.fail(
+            "#[isoDatetimePrecision]: the precision is -1 (minutes), 0 (seconds) or 1 to 9 fraction digits",
+        );
+}
+
+pub fn isoDuration(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[isoDuration] must annotate a field");
+}
+
+// The bound's type is the field's: an `i32` or `i64` field takes a whole
+// number, an `f64` field any number (`#[validated]` refuses a fraction on an
+// integer field).
+pub fn gt(comptime decl: @Decl, comptime value: f64) {
+    if (decl.kind != DeclKind.Field) decl.fail("#[gt] must annotate a field");
+}
+
+pub fn lt(comptime decl: @Decl, comptime value: f64) {
+    if (decl.kind != DeclKind.Field) decl.fail("#[lt] must annotate a field");
+}
+
+pub fn negative(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[negative] must annotate a field");
+}
+
+pub fn negativeOrZero(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[negativeOrZero] must annotate a field");
+}
+
+pub fn multipleOf(comptime decl: @Decl, comptime value: f64) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[multipleOf] must annotate a field");
+    if (value <= 0.0)
+        decl.fail("#[multipleOf]: the step must be greater than 0");
+}
+
+pub fn safeInt(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[safeInt] must annotate a field");
+}
+
+pub fn float32(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[float32] must annotate a field");
+}
+
+// The bound is RFC 3339 text with its zone (`Z` or `±HH:MM`), what
+// `clock.parseIso8601` reads.
+pub fn afterIso(comptime decl: @Decl, comptime instant: string) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[afterIso] must annotate a field");
+    if (isIsoDatetimeOffset(instant) == false)
+        decl.fail(
+            "#[afterIso]: the bound is an ISO datetime with its zone, e.g. \"2020-01-01T00:00:00Z\"",
+        );
+}
+
+pub fn beforeIso(comptime decl: @Decl, comptime instant: string) {
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[beforeIso] must annotate a field");
+    if (isIsoDatetimeOffset(instant) == false)
+        decl.fail(
+            "#[beforeIso]: the bound is an ISO datetime with its zone, e.g. \"2020-01-01T00:00:00Z\"",
+        );
+}
+
+// Every marker `#[validated]` reads, in the order of this file — what
+// `#[schema]` asks of a field and what `test/refusal_test.bp` counts.
+pub fn markerNames() -> Array<string> {
+    return "notNull|notBlank|notEmpty|sizeBetween|minValue|maxValue|positive|positiveOrZero|email|pattern|pastDate|futureDate|constraint|minLength|maxLength|length|startsWith|endsWith|includes|uppercase|lowercase|emailHtml5|emailRfc5322|emailUnicode|uuid|uuidV|guid|url|urlHost|urlProtocol|httpUrl|hostname|e164|emoji|base64|base64url|hex|jwt|jwtAlg|nanoid|cuid|cuid2|ulid|ipv4|ipv6|mac|macDelimiter|cidrv4|cidrv6|creditCard|currencyCode|iban|hash|hashEnc|isoDate|isoTime|isoTimePrecision|isoDatetime|isoDatetimeOffset|isoDatetimeLocal|isoDatetimePrecision|isoDuration|gt|lt|negative|negativeOrZero|multipleOf|safeInt|float32|afterIso|beforeIso".split(
+        "|",
+    );
 }
 
 // ── `#[schema]` ─────────────────────────────────────────────────────────────
@@ -475,8 +1089,7 @@ fn schemaHelpers(
 }
 
 fn schemaIsMarker(name: string) -> bool {
-    val markers = "|notNull|notBlank|notEmpty|sizeBetween|minValue|maxValue|positive|positiveOrZero|email|pattern|pastDate|futureDate|constraint|";
-    return markers.indexOf("|" + name + "|") >= 0;
+    return markerNames().indexOf(name) >= 0;
 }
 
 pub fn schema(comptime decl: @Decl) {
@@ -488,7 +1101,7 @@ pub fn schema(comptime decl: @Decl) {
     var problem = "";
     var marked = false;
     decl.fields.forEach({ f ->
-        val source = "schemas.fieldOf(input, \"" + f.name + "\")";
+        val source = "(input.field(\"" + f.name + "\") ?? Json.Null)";
         val path = "schemas.memberPath(at, \"" + f.name + "\")";
         val supported = schemaSupported(f.typeName);
         val call = if (supported)

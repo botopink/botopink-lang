@@ -25,7 +25,7 @@
 //// imported: the same bytes on commonJS and erlang, and the refusals above
 //// are decided in botopink before either cell runs.
 
-import {encoding.percentEncode, encoding.percentDecode, encoding.hexDecode} from "std";
+import {encoding.percentEncode, encoding.percentDecode, encoding.hexDecode};
 
 // Strip an optional leading `?` from a URL's query portion. Idempotent.
 fn stripPrefix(query: string) -> string {

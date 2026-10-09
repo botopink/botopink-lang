@@ -15,6 +15,7 @@
     "slot_states.bp",
     "url_rules.bp",
     "navigation.bp",
-    "pattern.bp"
+    "pattern.bp",
+    "conventions.bp"
   ]
 }

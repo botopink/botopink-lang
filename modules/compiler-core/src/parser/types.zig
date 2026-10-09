@@ -19,6 +19,9 @@ const GenericParam = parser.GenericParam;
 pub fn startsTypeRef(kind: TokenKind) bool {
     return switch (kind) {
         .identifier, .builtinIdent, .questionMark, .hash, .@"fn", .selfType, .unknown => true,
+        // `type T` — a meta-kind member (decision 297's `Box<T> | type T`),
+        // and `x is type`.
+        .type => true,
         // `(T)` — a parenthesised type (decision 8 §3.1). It begins a type
         // wherever a bare name does, so `A | (B | C)` and `x is (i32 | string)`
         // read the way `(i32 | string)[]` does.
@@ -43,8 +46,13 @@ pub fn parseTypeRef(this: *This, alloc: std.mem.Allocator) ParseError!ast.TypeRe
         for (members.items) |*m| m.deinit(alloc);
         members.deinit(alloc);
     }
-    errdefer first.deinit(alloc);
-    try members.append(alloc, first);
+    // `first` is owned by `members` once appended: a later error frees it
+    // there, once (a second `errdefer` on `first` freed it twice — a panic on
+    // any refused member after the first, `Box<T> | type T`).
+    members.append(alloc, first) catch |err| {
+        first.deinit(alloc);
+        return err;
+    };
     while (this.match(.verticalBar)) {
         const barTok = this.tokens[this.current - 1];
         if (!startsTypeRef(this.peek().kind)) {

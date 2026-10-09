@@ -479,6 +479,25 @@ fn linkRenames(
     for (program.decls) |d| switch (d) {
         .@"fn" => |f| if (mangled.get(try linkKey(arena, module_name, f.name))) |m| try out.put(arena, f.name, m),
         .use => |u| for (u.imports) |imp| {
+            // A namespace item (`import {url} from "std"`): every mangled
+            // function of the module it names is reached as `url.parse(…)`,
+            // a call with the namespace as its receiver. Keyed
+            // `<namespace>.<fn>` — no function name holds a dot — and
+            // rewritten to the plain mangled call by `renameLinkedCalls`.
+            // Without it the receiver was dropped and `url.parse(…)` called
+            // whichever `parse` kept the bare name (`querystring`'s), at
+            // exit 0.
+            const whole = try u.leafSource(imp, arena, true);
+            if (whole == .module) {
+                const ns = imp.alias orelse imp.leaf();
+                var it = mangled.iterator();
+                while (it.next()) |e| {
+                    const sep = std.mem.indexOfScalar(u8, e.key_ptr.*, 0) orelse continue;
+                    if (!std.mem.eql(u8, e.key_ptr.*[0..sep], whole.module)) continue;
+                    const key = try std.fmt.allocPrint(arena, "{s}.{s}", .{ ns, e.key_ptr.*[sep + 1 ..] });
+                    try out.put(arena, key, e.value_ptr.*);
+                }
+            }
             const c = cross orelse continue;
             const src = try u.leafSource(imp, arena, false);
             const info = c.picked(imp.leaf(), src, null) orelse continue;
@@ -641,6 +660,16 @@ fn renameLinkedCalls(comptime T: type, arena: std.mem.Allocator, value: T, renam
             if (comptime @hasField(T, "callee") and @hasField(T, "receiver") and @hasField(T, "calleeExpr") and @hasField(T, "is_builtin")) {
                 if (out.receiver == null and out.calleeExpr == null and !out.is_builtin) {
                     if (renames.get(out.callee)) |m| out.callee = m;
+                } else if (out.calleeExpr == null and !out.is_builtin) {
+                    // `url.parse(…)` through a namespace item (`linkRenames`).
+                    const r = out.receiver.?;
+                    if (r.* == .identifier and r.identifier.kind == .ident) {
+                        const key = try std.fmt.allocPrint(arena, "{s}.{s}", .{ r.identifier.kind.ident, out.callee });
+                        if (renames.get(key)) |m| {
+                            out.callee = m;
+                            out.receiver = null;
+                        }
+                    }
                 }
             }
             return out;
@@ -1279,6 +1308,11 @@ const Tail = enum { value, none, terminated };
 /// here and `funcNode` hands the list to the model.
 const LocalDecl = struct { name: []const u8, ty: []const u8 };
 
+/// An `@block` being lowered whose body returns (`Emitter.block_ret`): the
+/// local its value lands in, of type `ty`, and the label of the wasm block a
+/// `return` branches out of.
+const BlockRet = struct { local: []const u8, label: []const u8, ty: []const u8 };
+
 /// A detached instruction sink. Lowering a nested body (a function body, an
 /// `if` arm, a `loop` body) redirects `Emitter.cur` into one of these and
 /// `seal`s it into a `wat_ast.Seq` with the stack effect the context expects —
@@ -1289,6 +1323,58 @@ const Capture = struct {
     /// one (a function body).
     saved: ?*std.ArrayListUnmanaged(Line) = null,
 };
+
+/// True when an `@block`'s body holds a `return` of its own scope — the
+/// block's value, never the enclosing function's (`ast.exprReturns`).
+fn blockBodyReturns(body: []const ast.Stmt) bool {
+    for (body) |stmt| if (ast.exprReturns(stmt.expr)) return true;
+    return false;
+}
+
+/// The first value an `@block`'s body returns in its own scope (the borders of
+/// `ast.exprReturns`: a closure and a nested `@block` return for themselves, a
+/// braced `case` arm does not) — what the block answers, for the classifiers
+/// that read a value's shape off its expression (`genericResultOf`).
+fn blockReturnValue(body: []const ast.Stmt) ?ast.Expr {
+    for (body) |st| if (blockReturnValueOf(st.expr)) |v| return v;
+    return null;
+}
+
+/// `e`'s returned value when `e` is an `@block` whose body returns.
+fn blockResultOf(e: ast.Expr) ?ast.Expr {
+    if (e != .call or e.call.kind != .call) return null;
+    const cc = e.call.kind.call;
+    if (!cc.is_builtin or !std.mem.eql(u8, cc.callee, "block") or cc.trailing.len == 0) return null;
+    return blockReturnValue(cc.trailing[0].body);
+}
+
+fn blockReturnValueOf(e: ast.Expr) ?ast.Expr {
+    return switch (e) {
+        .jump => |j| switch (j.kind) {
+            .@"return" => |r| if (r) |v| v.* else null,
+            else => null,
+        },
+        .branch => |b| switch (b.kind) {
+            .if_ => |i| blockReturnValue(i.then_) orelse (if (i.else_) |els| blockReturnValue(els) else null),
+            .tryCatch => null,
+        },
+        .loop => |lp| if (lp.generator == null) blockReturnValue(lp.body) else null,
+        .collection => |col| switch (col.kind) {
+            .case => |c| blk: {
+                for (c.arms) |arm| {
+                    const v = if (arm.body == .function and arm.body.function.kind.syntax == .lambda)
+                        blockReturnValue(arm.body.function.kind.body)
+                    else
+                        blockReturnValueOf(arm.body);
+                    if (v) |x| break :blk x;
+                }
+                break :blk null;
+            },
+            else => null,
+        },
+        else => null,
+    };
+}
 
 /// Signature of an emitted function, keyed by its WAT symbol (already mangled
 /// for extension/record methods). `result` is null for a void function. Call
@@ -1436,6 +1522,10 @@ const Emitter = struct {
     /// a `break <v>` inside it pushes `v` and branches here, out of every
     /// loop between. Null outside one.
     gen_end: ?[]const u8 = null,
+    /// The innermost `@block { … }` with a `return` of its own being lowered
+    /// in this function (`lowerBlockWithReturn`): its `return` stores into
+    /// `local` and branches to `label`, never leaving the function.
+    block_ret: ?BlockRet = null,
     /// How many loops enclose the code being lowered: `break`/`continue`
     /// branch only inside one.
     loop_depth: u32 = 0,
@@ -3241,6 +3331,7 @@ const Emitter = struct {
         self.loop_seq = 0;
         self.yield_target = null;
         self.gen_end = null;
+        self.block_ret = null;
         self.loop_depth = 0;
         self.tail_self = null;
         self.tail_self_used = false;
@@ -4942,6 +5033,10 @@ const Emitter = struct {
         switch (stmt.expr) {
             .jump => |j| switch (j.kind) {
                 .@"return" => |r| {
+                    if (self.block_ret) |br| {
+                        try self.emitBlockReturn(br, if (r) |val| val.* else null);
+                        return .terminated;
+                    }
                     if (r) |val| if (try self.lowerSelfTailCall(val.*)) return .terminated;
                     if (r) |val| {
                         // Coerce to the *declared* result: `fn area(…) -> f64`
@@ -5171,7 +5266,7 @@ const Emitter = struct {
                             const t = self.locals.get(name) orelse
                                 self.global_types.get(name) orelse "i32";
                             try self.lowerCoerced(a.value.*, t);
-                            try self.emitArith(t, "add");
+                            try self.emitArith(t, "add", b.loc);
                             try self.emit(if (self.locals.contains(name))
                                 .{ .local_set = name }
                             else
@@ -5208,11 +5303,11 @@ const Emitter = struct {
                                 if (cell != .none) {
                                     try self.emitFromCell(cell);
                                     try self.lowerCoerced(a.value.*, cell.ty());
-                                    try self.emitArith(cell.ty(), "add");
+                                    try self.emitArith(cell.ty(), "add", b.loc);
                                     try self.emit(self.builder().helper(if (cell == .f64) .box_f64 else .box_i64));
                                 } else {
                                     try self.lowerCoerced(a.value.*, "i32");
-                                    try self.emitArith("i32", "add");
+                                    try self.emitArith("i32", "add", b.loc);
                                 }
                                 try self.emitCf(.{ .store = .{ .offset = off } }, ".{s} +=", .{fa.field});
                             },
@@ -5302,6 +5397,7 @@ const Emitter = struct {
                 .call => |cc| {
                     if (cc.is_builtin and std.mem.eql(u8, cc.callee, "block")) {
                         if (cc.trailing.len == 0) return .none;
+                        if (blockBodyReturns(cc.trailing[0].body)) return self.lowerBlockWithReturn(cc.trailing[0].body, keep_value);
                         return self.emitBody(cc.trailing[0].body, keep_value);
                     }
                     try self.lowerExpr(stmt.expr);
@@ -5338,6 +5434,7 @@ const Emitter = struct {
                         if (isVoidBuiltinCall(cc)) break :blk .none;
                         if (std.mem.eql(u8, cc.callee, "block")) {
                             if (cc.trailing.len == 0) break :blk .none;
+                            if (blockBodyReturns(cc.trailing[0].body)) break :blk .value;
                             break :blk self.bodyTail(cc.trailing[0].body);
                         }
                         break :blk .value;
@@ -5501,9 +5598,9 @@ const Emitter = struct {
                 },
                 .identAccess => |ia| try self.lowerIdentAccess(ia, id.loc),
             },
-            .binaryOp => |bin| try self.lowerBinOp(bin.op, bin.lhs.*, bin.rhs.*),
+            .binaryOp => |bin| try self.lowerBinOp(bin.op, bin.lhs.*, bin.rhs.*, bin.loc),
             .unaryOp => |un| switch (un.op) {
-                .neg => try self.lowerNeg(un.expr.*),
+                .neg => try self.lowerNeg(un.expr.*, un.loc),
                 .not => {
                     try self.lowerExpr(un.expr.*);
                     try self.emit(opOf("i32", "eqz"));
@@ -5611,6 +5708,10 @@ const Emitter = struct {
             },
             .jump => |j| switch (j.kind) {
                 .@"return" => |r| {
+                    if (self.block_ret) |br| {
+                        try self.emitBlockReturn(br, if (r) |val| val.* else null);
+                        return;
+                    }
                     if (r) |val| if (try self.lowerSelfTailCall(val.*)) return;
                     if (r) |val| try self.lowerExpr(val.*) else if (self.fn_has_result) try self.pushZero();
                     try self.emit(.@"return");
@@ -6020,6 +6121,11 @@ const Emitter = struct {
             try self.emit(self.builder().helper(if (last) .print_i64 else .print_i64_raw));
             return;
         }
+        // A tuple whose elements have no print shape here (a `?T` over a type
+        // parameter, an all-unit enum) is a pointer: through the integer
+        // printer it answered its address (`300`) at exit 0.
+        if (self.typeRefOf(arg)) |tr| if (tr.tupleElems() != null)
+            return self.refuse(arg.getLoc(), "the wasm backend has no printed form for this tuple: one of its elements has no print shape here", .{});
         try self.lowerCoerced(arg, "i32");
         try self.emit(self.builder().helper(if (last) .print_i32 else .print_i32_raw));
     }
@@ -6034,7 +6140,12 @@ const Emitter = struct {
             return;
         }
         if (std.mem.eql(u8, cc.callee, "block")) {
-            if (cc.trailing.len > 0) _ = try self.emitBody(cc.trailing[0].body, true);
+            if (cc.trailing.len > 0) {
+                const body = cc.trailing[0].body;
+                if (blockBodyReturns(body)) {
+                    _ = try self.lowerBlockWithReturn(body, true);
+                } else _ = try self.emitBody(body, true);
+            }
             return;
         }
         if (std.mem.eql(u8, cc.callee, "print")) {
@@ -6469,6 +6580,7 @@ const Emitter = struct {
     /// identifiers, a comparison, `!x`, `&&`/`||`, or a call to a fn declared
     /// `-> bool`.
     fn isBoolExpr(self: *Emitter, e: ast.Expr) bool {
+        if (blockResultOf(e)) |a| return self.isBoolExpr(a);
         return switch (e) {
             .identifier => |id| switch (id.kind) {
                 .ident => |n| std.mem.eql(u8, n, "true") or std.mem.eql(u8, n, "false") or
@@ -9276,6 +9388,21 @@ const Emitter = struct {
             },
             .call => |c| switch (c.kind) {
                 .call => |cc| {
+                    // `o.unwrapOr(d)` answers the payload or `d`, one type:
+                    // the payload's declared shape (`r.unwrapOr([])` over an
+                    // `@Result<Array<#(string, string)>, …>`), the optional's
+                    // own, or a container default's (`pairs.at(1).unwrapOr(
+                    // #("", ""))._1`) — an empty `[]` says nothing. Each
+                    // printed a string's address at exit 0.
+                    if (isUnwrapOr(cc)) {
+                        if (self.typeRefOf(cc.args[0].value.*)) |tr| if (tr == .generic and tr.generic.args.len == 2 and
+                            std.mem.endsWith(u8, tr.generic.name, "Result"))
+                        {
+                            if (try self.typeRefShape(tr.generic.args[0])) |sh| return sh;
+                        };
+                        if (self.optInfoOf(cc.args[0].value.*)) |oi| if (oi.shape) |sh| return sh;
+                        if (!isEmptyArrayLit(cc.args[1].value.*)) if (try self.printShapeOf(cc.args[1].value.*)) |sh| return sh;
+                    }
                     if (std.mem.eql(u8, cc.callee, "zip") and cc.args.len == 1 and cc.receiver != null) {
                         if (self.primKindAt(cc, c.loc) == .array) return try std.fmt.allocPrint(self.arena(), "[({c}{c})", .{
                             elemCode(self.elemKindOf(cc.receiver.?.*)),
@@ -9316,6 +9443,11 @@ const Emitter = struct {
                 var out: std.ArrayListUnmanaged(u8) = .empty;
                 try out.append(self.arena(), '(');
                 for (elems) |el| {
+                    if (el == .optional) {
+                        const oi = self.optInfoOfTypeRef(el) orelse return null;
+                        try out.appendSlice(self.arena(), (try self.optElemShape(oi, null)) orelse return null);
+                        continue;
+                    }
                     if (try self.typeRefShape(el)) |inner| {
                         try out.appendSlice(self.arena(), inner);
                         continue;
@@ -9326,7 +9458,11 @@ const Emitter = struct {
                 return out.items;
             },
             .array => |inner| return self.arrayTypeShape(inner.*),
-            .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "Array")) return self.arrayTypeShape(g.args[0]),
+            .generic => |g| {
+                if (g.args.len == 1 and std.mem.eql(u8, g.name, "Array")) return self.arrayTypeShape(g.args[0]);
+                // A generic record (`Queue<i32>`) carries its declaration too.
+                if (self.records.contains(g.name)) return "T";
+            },
             // A written record type: the element carries its own declaration.
             .named => |n| {
                 if (self.records.contains(n)) return "T";
@@ -9409,7 +9545,7 @@ const Emitter = struct {
     fn shapeSpan(sh: []const u8) usize {
         if (sh.len == 0) return 0;
         switch (sh[0]) {
-            '[' => return 1 + shapeSpan(sh[1..]),
+            '[', '?', '!' => return 1 + shapeSpan(sh[1..]),
             '(' => {
                 var i: usize = 1;
                 while (i < sh.len and sh[i] != ')') {
@@ -9441,6 +9577,20 @@ const Emitter = struct {
 
     /// The shape of one element of a tuple.
     fn valueShapeOf(self: *Emitter, e: ast.Expr) anyerror![]const u8 {
+        // A `?T` element: its slot is the optional's carrier, `0` absence.
+        // Read through its payload's code it printed the box's address
+        // (`#(1, 328)` for `#(1, [7].at(0))`) at exit 0.
+        // One whose payload is not known here is refused — in a generic
+        // body, the body is marked instead (`template_traps`): a concrete
+        // call that reaches it unspecialised is refused at the call.
+        if (self.optInfoOf(e)) |oi| {
+            if (try self.optElemShape(oi, e)) |sh| return sh;
+            if (self.cur_template) |t| {
+                try self.template_traps.put(self.reg_arena.allocator(), t, {});
+                return "!i";
+            }
+            return self.refuse(e.getLoc(), "the wasm backend has no printed form for this optional inside a tuple or an array: its payload's type is not known here", .{});
+        }
         if (try self.printShapeOf(e)) |shape| return shape;
         // A value that carries its own declaration reads its text from the
         // header (13-module-identity half 3), so a tuple or an array holding
@@ -9450,6 +9600,36 @@ const Emitter = struct {
         if (self.isBoolExpr(e)) return "b";
         if (self.wasmTypeOf(e)[0] == 'f') return "f";
         return "i";
+    }
+
+    /// The print shape of a `?T` held in a tuple's or an array's slot:
+    /// `?X` when the slot is the payload's own pointer (a string, a record, a
+    /// container) or its 8-byte cell (`?f64`, `?i64`), `!X` when the payload
+    /// is a scalar in a `$__box_i32` cell — `0` is absence in both, printed
+    /// `null`. Null when the payload's code is not known here (a `?T` over a
+    /// type parameter, an all-unit enum): the caller refuses.
+    fn optElemShape(self: *Emitter, oi: OptInfo, e: ?ast.Expr) anyerror!?[]const u8 {
+        _ = e;
+        const inner_name: ?[]const u8 = if (oi.inner) |inner| switch (inner) {
+            .named => |n| n,
+            else => null,
+        } else null;
+        if (oi.boxed) {
+            if (oi.cell == .f64) return "?f";
+            if (oi.cell == .i64) return "?l";
+            if (oi.bool_) return "!b";
+            const n = inner_name orelse return if (oi.inner == null) "!i" else null;
+            if (std.mem.eql(u8, n, "bool")) return "!b";
+            return if (scalarCode(.{ .named = n }) == @as(?u8, 'i')) "!i" else null;
+        }
+        if (oi.str) return "?s";
+        if (oi.rec != null) return "?T";
+        if (oi.shape) |sh| return try std.fmt.allocPrint(self.arena(), "?{s}", .{sh});
+        if (oi.inner) |inner| {
+            if (try self.typeRefShape(inner)) |sh| return try std.fmt.allocPrint(self.arena(), "?{s}", .{sh});
+            if (scalarCode(inner) == @as(?u8, 's')) return "?s";
+        }
+        return null;
     }
 
     fn elemCode(k: ElemKind) u8 {
@@ -10405,8 +10585,26 @@ const Emitter = struct {
     /// A declared return type as a CALLER reads it: `?V` over one of `owner` /
     /// `own`'s type parameters becomes `?__tparam`, which `optInfoOfTypeRef`
     /// knows is boxed wherever it is asked — at a call site the parameter
-    /// names nothing.
+    /// names nothing. A tuple's elements the same way (`dequeue`'s
+    /// `#(Queue<T>, ?T)`): its `?T` slot holds the box the generic body wrote,
+    /// and read as `?T` at the call — a name nothing in scope binds — the
+    /// box's ADDRESS was the payload (`d._1.unwrapOr(-1)` printed `296`).
     fn eraseOptTypeParam(self: *Emitter, owner: []const ast.GenericParam, own: []const ast.GenericParam, rt: ast.TypeRef) !ast.TypeRef {
+        const elems: ?[]ast.TypeRef = switch (rt) {
+            .tuple_ => |es| es,
+            .labeledTuple => |lt| lt.elems,
+            else => null,
+        };
+        if (elems) |es| {
+            const ra = self.reg_arena.allocator();
+            const out = try ra.alloc(ast.TypeRef, es.len);
+            for (es, out) |e, *o| o.* = try self.eraseOptTypeParam(owner, own, e);
+            return switch (rt) {
+                .tuple_ => .{ .tuple_ = out },
+                .labeledTuple => |lt| .{ .labeledTuple = .{ .elems = out, .labels = lt.labels } },
+                else => unreachable,
+            };
+        }
         const inner = switch (rt) {
             .optional => |i| i.*,
             else => return rt,
@@ -10763,11 +10961,12 @@ const Emitter = struct {
     }
 
     /// `e` itself when it is a generic call answering its argument's shape
-    /// (`genericResultArg`), that argument.
+    /// (`genericResultArg`), that argument — and when it is an `@block` whose
+    /// body returns, the first value it returns (`blockReturnValue`).
     fn genericResultOf(self: *Emitter, e: ast.Expr) ?ast.Expr {
         return switch (e) {
             .call => |c| switch (c.kind) {
-                .call => |cc| self.genericResultArg(cc),
+                .call => |cc| blockResultOf(e) orelse self.genericResultArg(cc),
                 else => null,
             },
             else => null,
@@ -11091,8 +11290,21 @@ const Emitter = struct {
                     if (self.narrowed_opts.contains(rn)) return null;
                     if (self.opt_locals.get(rn)) |oi| return oi;
                 },
-                // `recv?.field` of a scalar field is a boxed optional
-                .identAccess => |ia| if (ia.optional) {
+                // `t._1` of a `?T` element: the carrier its shape names.
+                // A tuple with no shape here falls to its declared type below.
+                .identAccess => |ia| if (!ia.optional and tupleIndex(ia.member) != null) {
+                    if (self.tupleElemShapeOf(e) catch null) |el| if (el.len >= 2) switch (el[0]) {
+                        '!' => return .{ .boxed = true, .bool_ = el[1] == 'b' },
+                        '?' => return switch (el[1]) {
+                            'f' => .{ .boxed = true, .cell = .f64 },
+                            'l' => .{ .boxed = true, .cell = .i64 },
+                            's' => .{ .boxed = false, .str = true },
+                            else => .{ .boxed = false, .shape = el[1..] },
+                        },
+                        else => {},
+                    };
+                } else if (ia.optional) {
+                    // `recv?.field` of a scalar field is a boxed optional
                     const rty = self.recordTypeOfExpr(ia.receiver.*) orelse return null;
                     const ft = self.fieldTypeIn(rty, ia.member);
                     if (ft == null or self.resolveRecordName(ft.?) != null) return .{ .boxed = false };
@@ -11121,6 +11333,17 @@ const Emitter = struct {
                 else => null,
             },
             else => null,
+        };
+    }
+
+    fn isEmptyArrayLit(e: ast.Expr) bool {
+        return switch (e) {
+            .collection => |col| switch (col.kind) {
+                .arrayLit => |al| al.elems.len == 0,
+                .grouped => |inner| isEmptyArrayLit(inner.*),
+                else => false,
+            },
+            else => false,
         };
     }
 
@@ -11880,6 +12103,7 @@ const Emitter = struct {
     /// result, or a `+` chain over such operands. Drives string `==`, `+` and
     /// `@print`, none of which may go through the numeric path.
     fn isStringExpr(self: *Emitter, e: ast.Expr) bool {
+        if (blockResultOf(e)) |a| return self.isStringExpr(a);
         return switch (e) {
             .literal => |lit| switch (lit.kind) {
                 .stringLit => true,
@@ -12360,6 +12584,91 @@ const Emitter = struct {
         const seq = self.seal(&c, .none);
         try self.emit(.{ .block = .{ .kind = .block, .label = label, .body = seq } });
         try self.emit(.{ .local_get = tgt });
+    }
+
+    /// `@block { … }` whose body holds a `return` of its own (decision 2): the
+    /// body is inlined in a wasm block, and each `return` stores its value in
+    /// the block's local and branches out (`emitBlockReturn`) — a `return`
+    /// opcode would leave the ENCLOSING function. The value is the local:
+    ///
+    ///     (block $__blkend<n> Body…)  [local.get $__blk<n>]
+    ///
+    /// A body that runs off its end leaves the local at its zero (a statement
+    /// block's value; the checker refuses a valueless tail in value position,
+    /// `block-tail-value`).
+    fn lowerBlockWithReturn(self: *Emitter, body: []const ast.Stmt, keep_value: bool) anyerror!Tail {
+        const ra = self.reg_arena.allocator();
+        const n = self.loop_seq;
+        self.loop_seq += 1;
+        const ty = self.blockReturnType(body);
+        const local = try std.fmt.allocPrint(ra, "__blk{d}", .{n});
+        const label = try std.fmt.allocPrint(ra, "__blkend{d}", .{n});
+        try self.declareLocal(local, ty);
+        const saved = self.block_ret;
+        self.block_ret = .{ .local = local, .label = label, .ty = ty };
+        var c: Capture = .{};
+        self.open(&c);
+        {
+            defer self.block_ret = saved;
+            _ = try self.emitBody(body, false);
+        }
+        const seq = self.seal(&c, .none);
+        try self.emit(.{ .block = .{ .kind = .block, .label = label, .body = seq } });
+        if (!keep_value) return .none;
+        try self.emit(.{ .local_get = local });
+        return .value;
+    }
+
+    /// A `return` of an `@block`'s body: its value (zero for a bare one) into
+    /// the block's local, then out of the block.
+    fn emitBlockReturn(self: *Emitter, br: BlockRet, value: ?ast.Expr) anyerror!void {
+        if (value) |v| try self.lowerCoerced(v, br.ty) else try self.emit(constOf(br.ty, "0"));
+        try self.emit(.{ .local_set = br.local });
+        try self.emit(.{ .br = br.label });
+    }
+
+    /// The wasm type an `@block`'s `return`s carry: their values' types met
+    /// (`unifyNum`), `i32` when none carries one.
+    fn blockReturnType(self: *Emitter, body: []const ast.Stmt) []const u8 {
+        var ty: ?[]const u8 = null;
+        self.blockReturnTypeIn(body, &ty);
+        return ty orelse "i32";
+    }
+
+    fn blockReturnTypeIn(self: *Emitter, body: []const ast.Stmt, ty: *?[]const u8) void {
+        for (body) |st| self.blockReturnTypeOf(st.expr, ty);
+    }
+
+    /// The borders of `ast.exprReturns`: a closure and a nested `@block` hold
+    /// `return`s of their own, a braced `case` arm does not.
+    fn blockReturnTypeOf(self: *Emitter, e: ast.Expr, ty: *?[]const u8) void {
+        switch (e) {
+            .jump => |j| switch (j.kind) {
+                .@"return" => |r| if (r) |v| {
+                    const t = self.wasmTypeOf(v.*);
+                    ty.* = if (ty.*) |prev| self.unifyNum(prev, t) else t;
+                },
+                else => {},
+            },
+            .branch => |b| switch (b.kind) {
+                .if_ => |i| {
+                    self.blockReturnTypeIn(i.then_, ty);
+                    if (i.else_) |els| self.blockReturnTypeIn(els, ty);
+                },
+                .tryCatch => {},
+            },
+            .loop => |lp| if (lp.generator == null) self.blockReturnTypeIn(lp.body, ty),
+            .collection => |col| switch (col.kind) {
+                .case => |c| for (c.arms) |arm| {
+                    if (arm.body == .function and arm.body.function.kind.syntax == .lambda)
+                        self.blockReturnTypeIn(arm.body.function.kind.body, ty)
+                    else
+                        self.blockReturnTypeOf(arm.body, ty);
+                },
+                else => {},
+            },
+            else => {},
+        }
     }
 
     /// `break <v>` in a generator scope: append `v`, then end the scope —
@@ -12900,6 +13209,9 @@ const Emitter = struct {
                         break :blk if (!ix.is_slice and self.isArrayExpr(ix.recv) and
                             self.elemKindOf(ix.recv) == .f64) "f64" else "i32";
                     if (cc.is_builtin) {
+                        // An `@block` whose body returns answers what its `return`s carry.
+                        if (std.mem.eql(u8, cc.callee, "block") and cc.trailing.len > 0 and blockBodyReturns(cc.trailing[0].body))
+                            break :blk self.blockReturnType(cc.trailing[0].body);
                         // `o.unwrapOr(d)` over a `?f64` answers its `f64`.
                         if (std.mem.eql(u8, cc.callee, "__bp_option_unwrapOr") and cc.args.len > 0) if (self.optInfoOf(cc.args[0].value.*)) |oi| if (oi.cell != .none) break :blk oi.cell.ty();
                         break :blk "i32";
@@ -13598,7 +13910,7 @@ const Emitter = struct {
         } else try self.emit(.{ .call = try self.eqFnFor(inner) });
     }
 
-    fn lowerBinOp(self: *Emitter, op: anytype, lhs: ast.Expr, rhs: ast.Expr) anyerror!void {
+    fn lowerBinOp(self: *Emitter, op: anytype, lhs: ast.Expr, rhs: ast.Expr, loc: ast.Loc) anyerror!void {
         const Op = @TypeOf(op);
         // `x == null` compares the carrier with 0, whatever `x` holds — a
         // string `==` would read the length word at address 0.
@@ -13723,7 +14035,7 @@ const Emitter = struct {
             Op.@"or" => if (is_float) null else "or",
         };
         if (opname) |on| {
-            try self.emitArith(t, on);
+            try self.emitArith(t, on, loc);
         } else {
             // No opcode for this pair (float `%`, float `&&`). It used to drop
             // the right operand and answer the left one at exit 0.
@@ -13731,7 +14043,7 @@ const Emitter = struct {
         }
     }
 
-    fn lowerNeg(self: *Emitter, inner: ast.Expr) anyerror!void {
+    fn lowerNeg(self: *Emitter, inner: ast.Expr, loc: ast.Loc) anyerror!void {
         const t = self.wasmTypeOf(inner);
         if (t[0] == 'f') {
             try self.lowerValue(inner);
@@ -13739,7 +14051,7 @@ const Emitter = struct {
         } else {
             try self.emit(constOf(t, "0"));
             try self.lowerCoerced(inner, t);
-            try self.emitArith(t, "sub");
+            try self.emitArith(t, "sub", loc);
         }
     }
 
@@ -13747,7 +14059,9 @@ const Emitter = struct {
     /// `sub` or `mul` checked (`$__i32_add_chk`, …), which traps where the
     /// result does not fit `t`: wrapped, `2147483647 + 1` answered
     /// `-2147483648` at exit 0 where commonJS and erlang answer `2147483648`.
-    fn emitArith(self: *Emitter, t: []const u8, on: []const u8) anyerror!void {
+    /// The type inference recorded at `loc` (decision 264) then checks its
+    /// own range when it is narrower than `t` (`emitRangeCheck`).
+    fn emitArith(self: *Emitter, t: []const u8, on: []const u8, loc: ast.Loc) anyerror!void {
         const wide = std.mem.eql(u8, t, "i64");
         if (wide or std.mem.eql(u8, t, "i32")) {
             const h: ?wat.Helper = if (std.mem.eql(u8, on, "add"))
@@ -13758,9 +14072,36 @@ const Emitter = struct {
                 (if (wide) .i64_mul_chk else .i32_mul_chk)
             else
                 null;
-            if (h) |helper| return self.emit(self.builder().helper(helper));
+            if (h) |helper| {
+                try self.emit(self.builder().helper(helper));
+                return self.emitRangeCheck(wide, loc);
+            }
         }
         try self.emit(opOf(t, on));
+    }
+
+    /// Decision 264 — the checked result of the integer operator at `loc`,
+    /// on the stack in its carrier (`i64` when `wide`, else `i32`), checked
+    /// against the range of the type inference recorded there when that
+    /// range is narrower than the carrier's: `i8`, `u8`, `i16`, `u16` in an
+    /// `i32`; `u32`, `u64`, `usize` in an `i64`. `127 + 1` on `i8` answered
+    /// `128` and `0 - 1` on `u32` answered `-1`, both at exit 0. A `u64`
+    /// lives in an `i64` here, so its range ends at the carrier's. An
+    /// operator whose type was never resolved (a generic `T`) is left as the
+    /// carrier's check left it.
+    fn emitRangeCheck(self: *Emitter, wide: bool, loc: ast.Loc) anyerror!void {
+        const il = self.instance_lowerings.get(loc) orelse return;
+        if (il != .division) return;
+        const r = il.division.range() orelse return;
+        const c_lo: i128 = if (wide) std.math.minInt(i64) else std.math.minInt(i32);
+        const c_hi: i128 = if (wide) std.math.maxInt(i64) else std.math.maxInt(i32);
+        const lo = @max(r.lo, c_lo);
+        const hi = @min(r.hi, c_hi);
+        if (lo == c_lo and hi == c_hi) return;
+        const ty: []const u8 = if (wide) "i64" else "i32";
+        try self.emit(constOf(ty, try std.fmt.allocPrint(self.arena(), "{d}", .{lo})));
+        try self.emit(constOf(ty, try std.fmt.allocPrint(self.arena(), "{d}", .{hi})));
+        try self.emit(self.builder().helper(if (wide) .i64_range_chk else .i32_range_chk));
     }
 
     /// The plain NAMES a null test narrows — when it HOLDS (`present`), which

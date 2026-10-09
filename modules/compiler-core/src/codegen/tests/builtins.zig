@@ -359,11 +359,12 @@ test "js: assert ---- holding assertion lets main continue" {
     );
 }
 
-// A failing assertion aborts the program. beam raises
-// `{bp_assert, <<"boom">>, <<"main.bp:3">>}`, so the process exits non-zero and
-// the RUN LOG is empty (a crash records no output). KNOWN DIVERGENCE: commonJS
-// still lowers to `console.assert` and prints `before`/`after` (F8), erlang to
-// `true = (…)` without message or location (F5).
+// A failing assertion aborts the program on all four backends (decision 4),
+// carrying the message and the location: erlang and beam raise
+// `{bp_assert, <<"boom">>, <<"main.bp:3">>}`, commonJS throws from
+// `__bp_assert_fatal`, wasm prints `main.bp:3: assertion failed: boom` and
+// traps. `after` is never printed; the commonJS, erlang and beam RUN LOGs are
+// empty (a crash records no output), wasm's keeps `before` and the trap.
 test "js: assert ---- failing assertion outside test mode is fatal" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
@@ -385,9 +386,9 @@ test "js: builtin ---- @print mixes strings and terms as text" {
     );
 }
 
-// Semantics decision 1a: an array is `[a,b]` with no spaces, and a string
-// nested in it is quoted with the source escapes; a top-level string stays
-// bare. KNOWN: beam prints its own `~p` text (PR3, deferred after 06).
+// Semantics decision 1a: an array is `[a, b]`, and a string nested in it is
+// quoted with the source escapes; a top-level string stays bare. All four
+// backends print the same text.
 test "js: builtin ---- @print quotes the strings of an array" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
@@ -400,7 +401,7 @@ test "js: builtin ---- @print quotes the strings of an array" {
 
 // Semantics decision 1a: a tuple is `#(a,b)` — from a literal, a nested tuple,
 // an array of tuples, a fn's declared result and a parameter's declared type.
-// KNOWN: beam prints its own `~p` text (PR3, deferred after 06).
+// All four backends print the same text.
 test "js: builtin ---- @print writes tuples as #(a,b)" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn pairOf(a: i32, b: string) -> #(i32, string) {
@@ -455,11 +456,7 @@ test "js: src ---- in a fn" {
 }
 
 test "js: src ---- in a method" {
-    // `fnName` is `Type.method`. KNOWN-WRONG (wasm): a record answered by a
-    // *method* call loses its field types on the wat backend — `loc.file` and
-    // `loc.fnName` print as the raw i32 pointers (`256 … 272`); a hand-written
-    // `SourceLocation(…)` returned from the same method prints the same, so it
-    // is the wat backend's method-return typing, not `@src()`.
+    // `fnName` is `Type.method`.
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type Stub(n: i32) {
         \\    fn where(self: Self) -> SourceLocation {

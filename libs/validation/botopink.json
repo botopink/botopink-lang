@@ -17,6 +17,7 @@
     "messages.bp",
     "schemas.bp",
     "spi.bp",
+    "formats.bp",
     "constraints.bp",
     "binding.bp",
     "decorators.bp"

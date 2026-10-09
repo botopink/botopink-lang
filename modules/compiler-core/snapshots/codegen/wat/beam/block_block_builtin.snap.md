@@ -16,7 +16,7 @@ fn main() -> string {
 {module, test@main}.
 {exports, [{'_botopink_main', 0}, {main, 1}]}.
 {attributes, []}.
-{labels, 11}.
+{labels, 12}.
 
 {function, main, 0, 3}.
   {label, 2}.
@@ -28,22 +28,21 @@ fn main() -> string {
     {move, {integer, 42}, {x, 0}}.
     {move, {x, 0}, {y, 0}}.
     {gc_bif, '*', {f, 0}, 0, [{y, 0}, {integer, 2}], {x, 0}}.
-    {test, is_ge, {f, 8}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 8}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 9}}.
-  {label, 8}.
+    {test, is_ge, {f, 9}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 9}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 10}}.
+  {label, 9}.
     {move, {literal, {integer_overflow, <<"integer overflow: * on i32 at test@main.bp:4:29">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 9}.
-    {move, {x, 0}, {y, 1}}.
-    {test, is_lt, {f, 10}, [{integer, 100}, {y, 1}]}.
-    {move, {literal, <<"Alto">>}, {x, 0}}.
-    {deallocate, 3}.
-    return.
   {label, 10}.
+    {move, {x, 0}, {y, 1}}.
+    {test, is_lt, {f, 11}, [{integer, 100}, {y, 1}]}.
+    {move, {literal, <<"Alto">>}, {x, 0}}.
+    {jump, {f, 8}}.
+  {label, 11}.
     {move, {literal, <<"Baixo">>}, {x, 0}}.
-    {deallocate, 3}.
-    return.
+    {jump, {f, 8}}.
+  {label, 8}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
     {deallocate, 3}.

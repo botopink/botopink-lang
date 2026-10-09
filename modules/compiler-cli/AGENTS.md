@@ -18,7 +18,9 @@ compiler-cli/
 │   │                          its `.erl` sidecar under `erl -pa out/<target>`,
 │   │                          and 1 200 modules under a deep `--out` within a
 │   │                          1 MiB ARG_MAX, and the OTP release rows: `--version`,
-│   │                          an `erl` shim answering 29 / 28, a manifest `"otp"`)
+│   │                          an `erl` shim answering 29 / 28, a manifest `"otp"`,
+│   │                          and `build` / `test` printing the checker warning
+│   │                          `check` prints — decision 57)
 │   │                          against the real binary
 │   ├── mutual_recursion.sh  ← forward-ref + mutual recursion runs on every backend
 │   ├── mutual_recursion/    ← fixture project for the script above
@@ -298,9 +300,22 @@ Cross-command rules:
   located at the source string with an excerpt, writing the brace form as the
   fix (`"geometry" is a module of this package — write import
   {geometry.area};`, `resolver.braceForm`; pinned by
-  `tests/language/modules/import_own_module_with_from`); anything else is
-  `unresolved import source — no such module or dependency`, naming what the
-  `from` said and where (`at: src/main.bp:1:20`). A module of the package is
+  `tests/language/modules/import_own_module_with_from`). A `from` naming the
+  package ITSELF is the same refusal, std and every bundled package included,
+  in `src/`, `test/` and a dependency's own sources alike (decision 309:
+  `"shapes" is this package — write import {geometry.area};`;
+  `tests/language/modules/import_own_package_with_from`,
+  `dependency_imports_itself_with_from`, `tests/cli_contract.sh`); anything else is
+  `unresolved import source "<name>" — declare it in botopink.json
+  "dependencies"`, located at the source string with an excerpt. Only a
+  **direct** dependency is importable (decision 242): a package another
+  dependency brings into the build (`core` under a declared `starter`) is
+  refused the same way until this package declares it
+  (`tests/language/modules/transitive_package_import`, four targets). A
+  dependency's own modules answer the same rule against THEIR manifest when a
+  consumer loads them (`libs.loadOne` → `resolver.checkSources`), located at
+  the dependency's file relative to the working directory
+  (`tests/language/modules/dependency_imports_undeclared_package`). A module of the package is
   imported by its path inside the braces (`import {shapes.circle.name};`), and
   a path that names a module which *does* exist but does not export the leaf
   is the other error (`imported symbol is not exported by the named module`),

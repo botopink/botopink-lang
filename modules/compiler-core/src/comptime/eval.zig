@@ -425,7 +425,9 @@ test "comptime literals: lists, strings and numbers" {
     try std.testing.expectEqualStrings("[1, \"a\\\"b\", 2.5, null]", text);
     const n = try literal(alloc, try numberValue("3.0"));
     defer alloc.free(n);
-    try std.testing.expectEqualStrings("3", n);
+    // Decision 247: a whole float keeps its decimal point — `3` would read
+    // back as an `i32` literal.
+    try std.testing.expectEqualStrings("3.0", n);
 }
 
 test "comptime operators: the operand kind drives the fold" {

@@ -21,7 +21,7 @@ deployment's values, passed to both sides by whoever wires them (decision 114 it
 
 Pure `.bp` only (decision 117 rule 8): no `#[@External]` cell, no `declare fn`, no
 `.erl` / `.mjs` sidecar, no framework name under `src/`. It imports `std` (`json`,
-`encoding`) and the bundled `routing` (`navigation`), nothing else. JSON is written with
+`encoding`, `hash`) and the bundled `routing` (`navigation`), nothing else. JSON is written with
 std's `json.quote` / `json.array` / `json.object` and read with std's `json.decode`
 (member order kept, duplicates refused — the same botopink on both targets) and
 `Json`'s own readers (`field`, `kindName`, `isObject`, `str`, `items`); the library
@@ -33,12 +33,13 @@ declares no JSON accessor of its own.
 actions/
 ├── botopink.json      "name": "actions", "target": "erlang", "targets": ["erlang", "commonJS"]
 ├── AGENTS.md
-├── src/root.bp        pub mod state; pub mod envelope; pub mod rpc; pub mod refresh;
+├── src/root.bp        pub mod state; pub mod envelope; pub mod rpc; pub mod refresh; pub mod id;
 ├── src/state.bp       ActionState (fieldError, hasError), newActionState, writeState, parseState
 ├── src/envelope.bp    ActionEnvelope, writeEnvelope, readEnvelope, parseActionState
 ├── src/rpc.bp         RpcCall, writeRpcBody, parseRpcBody
 ├── src/refresh.bp     refreshValue
-└── test/              state_test · envelope_test · rpc_test · refresh_test (suite `actions:`)
+├── src/id.bp          deriveActionId, isActionId
+└── test/              state_test · envelope_test · rpc_test · refresh_test · id_test (suite `actions:`)
 ```
 
 Consumers: `import {envelope.writeEnvelope, state.writeState} from "actions";` —
@@ -52,6 +53,7 @@ bundled, so no `dependencies` entry (listing it is refused).
 | `envelope` | `type ActionEnvelope(ok, state, revalidated: Array<string>, n, payload)`; `writeEnvelope(e)`; `readEnvelope(text) -> @Result<ActionEnvelope, string>`; `parseActionState(envelope) -> ActionState` (decision 78) | `{"v":1,"ok":…,"state":…,"revalidated":[…],"redirect":…,"n":…,"payload":…}`, `v` first, keys in that order. `redirect` is DERIVED from `n` (routing `signalFromWire(n)`: a redirect's location, else `""`) and has no parameter; the reader refuses an envelope whose `redirect` disagrees with its `n`. Reader: not JSON, not an object, `v` ≠ 1 (missing included), a known key of the wrong kind → `Error` naming it (`actions.readEnvelope: …`); a missing key reads empty, an unknown key is ignored. `parseActionState` takes `ok` / `redirectTo` from the envelope's own keys, never from `state`; an envelope that does not read is `ok: false` with the reader's error as `message` |
 | `rpc` | `type RpcCall(id, args: Array<string>)`; `writeRpcBody(call)`; `parseRpcBody(body) -> @Result<RpcCall, string>` | `{"v":1,"id":…,"args":[…]}`. Reader: an empty/whitespace body, not JSON, not an object, `v` ≠ 1, `id` missing / not a string / empty, `args` not an array of strings → `Error` naming it (`actions.parseRpcBody: …`); missing `args` is `[]`; unknown keys ignored |
 | `refresh` | `refreshValue()` → `refresh` | the header value asking for a re-render of the current route |
+| `id` | `deriveActionId(secret, module, name, buildId)`; `isActionId(id) -> bool` | the id is `a_` + the first 24 hex digits of std `hash.hmacSha256(secret, module + "." + name + ":" + buildId)` (lowercase on both targets); `isActionId` is exactly that shape — `a_` and 24 lowercase hex digits, nothing else. The secret is a parameter: the package reads no configuration. Named `deriveActionId` because a framework exports an `actionId` of its own (decision 163, `103-a`) |
 
 ## Testing
 
@@ -62,7 +64,7 @@ cd libs/actions
 ../../zig-out/bin/botopink format --check src test
 ```
 
-19 tests (state 7, envelope 7, rpc 4, refresh 1), green on both rows; every expected
+24 tests (state 7, envelope 7, rpc 4, refresh 1, id 5), green on both rows; every expected
 text is a literal. `zig build test-libs` runs the two cells.
 
 ## Language notes (measured)

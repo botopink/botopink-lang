@@ -391,6 +391,15 @@ test "surface: a marker past the declared parameters is template-marker-out-of-r
     , .templateMarkerOutOfRange, 1, 18);
 }
 
+test "surface: $stringify in an External template is template-stringify-marker (decision 239)" {
+    try expectError(
+        \\behavior S {
+        \\    #[@External.Erlang("iolist_to_binary($stringify($0))")]
+        \\    fn show(self: Self) -> string;
+        \\}
+    , .templateStringifyMarker, 2, 24);
+}
+
 test "surface: a method's $0 is self and $1 its first argument" {
     var parsed = try parse(
         \\behavior S {

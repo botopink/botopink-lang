@@ -9,17 +9,12 @@
 //! | `receiver_marker`   | The receiver expression (internal, see below) |
 //! | `$0`..`$N`          | The N-th positional call argument             |
 //! | `$args`             | All positional args, comma-separated          |
-//! | `$stringify(<inner>)` | Target's string-of-value wrap around `<inner>` |
 //! | other               | Passthrough — target syntax (erlang, JS, …)   |
 //!
-//! `$stringify(<inner>)` produces a target-language expression whose runtime
-//! value is the textual rendering of `<inner>` (Node: `JSON.stringify(...)`,
-//! Erlang: `iolist_to_binary(io_lib:format("~p", [...]))`, BEAM/WAT: RP3
-//! unsupported). `<inner>` is rendered recursively, so it may contain the receiver
-//! / `$N` markers or arbitrary target-language tokens (e.g. a lambda's bound
-//! variable name like `__E`) — the wrap is purely the open/close bracket pair
-//! the backend supplies via `emitStringifyOpen` / `emitStringifyClose`.
-//! Source templates never name the receiver: their markers are positional over
+//! `$stringify(…)` is no marker (decisions 164, 239): the parser refuses it in
+//! every template (`template-stringify-marker`), so its bytes never reach
+//! this renderer, and a template that needs a value as text spells the host
+//! call out. Source templates never name the receiver: their markers are positional over
 //! the declared parameters (decision 5, `$0` is `self` on a method). The parser
 //! (`parser/template_markers.zig`) translates them into this renderer's
 //! convention — the receiver as `receiver_marker`, `$N` counting the call's
@@ -33,10 +28,8 @@
 //! The renderer is purely structural: it walks the template bytes, emits
 //! literal bytes verbatim, and on each marker calls the matching method on
 //! the caller-supplied `ctx`. Backends provide a context struct with
-//! `writeByte`, `writeAll`, `emitRecv`, `emitArg`, `emitStringifyOpen`,
-//! and `emitStringifyClose` — those callbacks invoke the backend's own
-//! expression emitter for the receiver / arg, surrounded by the target's
-//! string-of-value bracket pair when stringified.
+//! `writeByte`, `writeAll`, `emitRecv` and `emitArg` — those callbacks
+//! invoke the backend's own expression emitter for the receiver / arg.
 
 const std = @import("std");
 
@@ -54,26 +47,17 @@ pub fn looksLikeTemplate(template: []const u8) bool {
 }
 
 /// Render a template body into `ctx`. Walks `template`, emits literal bytes
-/// verbatim, and dispatches markers to `ctx.emitRecv()` / `ctx.emitArg(i)`
-/// (or the stringified variants when wrapped in `$stringify(...)`).
+/// verbatim, and dispatches markers to `ctx.emitRecv()` / `ctx.emitArg(i)`.
 ///
 /// `ctx` must expose:
 ///   - `writeByte(c: u8) anyerror!void`
 ///   - `emitRecv() anyerror!void`
 ///   - `emitArg(i: usize) anyerror!void`
-///   - `emitStringifyOpen() anyerror!void` (optional — backends that
-///      don't support `$stringify(...)` can return
-///      `error.PrimOpStringifyUnsupported`)
-///   - `emitStringifyClose() anyerror!void` (same)
 ///   - `argc: usize` (the call-site argument count, for `$N` bounds checks)
 ///
 /// Diagnostics:
 ///   - Out-of-range `$N` is rejected with `error.PrimOpArgIndexOutOfRange`
 ///     (RP1, reserved in the spec).
-///   - `$stringify(...)` on a backend whose ctx returns
-///     `error.PrimOpStringifyUnsupported` surfaces RP3.
-///   - A malformed `$stringify(...)` (unbalanced `(`/`)`) returns
-///     `error.PrimOpStringifyMalformed`.
 pub fn render(template: []const u8, ctx: anytype) anyerror!void {
     var i: usize = 0;
     while (i < template.len) {
@@ -81,34 +65,6 @@ pub fn render(template: []const u8, ctx: anytype) anyerror!void {
         if (c != '$') {
             try ctx.writeByte(c);
             i += 1;
-            continue;
-        }
-        // `$stringify(<inner>)` — target-specific string-of-value wrap.
-        // Inner content is rendered recursively, so markers like the receiver
-        // and `$N` substitute as usual; bare target-language bytes
-        // (a lambda's bound var like `__E`) pass through.
-        if (std.mem.startsWith(u8, template[i..], "$stringify(")) {
-            const open = i + "$stringify(".len;
-            // Scan for matching close paren with simple balance counting.
-            var depth: usize = 1;
-            var j = open;
-            while (j < template.len) : (j += 1) {
-                if (template[j] == '(') depth += 1 else if (template[j] == ')') {
-                    depth -= 1;
-                    if (depth == 0) break;
-                }
-            }
-            if (depth != 0) return error.PrimOpStringifyMalformed;
-            // `$stringify` is optional per the ctx contract — backends whose
-            // Ctx struct doesn't expose the open/close pair surface
-            // `error.PrimOpStringifyUnsupported` (RP3). This avoids requiring
-            // every Ctx in every backend to carry the pair when only specific
-            // templates (e.g., Array.join's lambda-bound-var wrap) use it.
-            if (!@hasDecl(@TypeOf(ctx.*), "emitStringifyOpen")) return error.PrimOpStringifyUnsupported;
-            try ctx.emitStringifyOpen();
-            try render(template[open..j], ctx);
-            try ctx.emitStringifyClose();
-            i = j + 1;
             continue;
         }
         // The receiver (written by the parser — see `receiver_marker`).
@@ -167,12 +123,6 @@ const StringCtx = struct {
         const s = try std.fmt.bufPrint(&tmp, "<A{d}>", .{i});
         try self.buf.appendSlice(self.alloc, s);
     }
-    pub fn emitStringifyOpen(self: *StringCtx) anyerror!void {
-        try self.buf.appendSlice(self.alloc, "<STR(");
-    }
-    pub fn emitStringifyClose(self: *StringCtx) anyerror!void {
-        try self.buf.appendSlice(self.alloc, ")>");
-    }
 };
 
 fn renderToOwned(alloc: std.mem.Allocator, template: []const u8, argc: usize) ![]u8 {
@@ -230,39 +180,14 @@ test "render: $N out of range reds" {
     try std.testing.expectError(error.PrimOpArgIndexOutOfRange, r);
 }
 
-test "render: $stringify(<receiver>)" {
-    const out = try renderToOwned(std.testing.allocator, "log($stringify($\x01))", 0);
-    defer std.testing.allocator.free(out);
-    try std.testing.expectEqualStrings("log(<STR(<RECV>)>)", out);
-}
-
-test "render: $stringify($0) on first arg" {
+// Decision 239: `$stringify` is no marker. The parser refuses it, and the
+// renderer has no arm for it — its `$` is a bare `$` and the rest is host
+// text, with `$0` inside still the argument. The parent rendered it as a
+// backend-supplied wrap (`JSON.stringify(…)`, `io_lib:format("~p", …)`).
+test "render: $stringify is no marker — its bytes pass through" {
     const out = try renderToOwned(std.testing.allocator, "label = $stringify($0)", 1);
     defer std.testing.allocator.free(out);
-    try std.testing.expectEqualStrings("label = <STR(<A0>)>", out);
-}
-
-test "render: $stringify of arbitrary inner expression" {
-    // Inner is a free variable name — passes through as literal bytes.
-    const out = try renderToOwned(std.testing.allocator, "$stringify(__E)", 0);
-    defer std.testing.allocator.free(out);
-    try std.testing.expectEqualStrings("<STR(__E)>", out);
-}
-
-test "render: $stringify with nested parens" {
-    const out = try renderToOwned(std.testing.allocator, "$stringify(f($\x01))", 0);
-    defer std.testing.allocator.free(out);
-    try std.testing.expectEqualStrings("<STR(f(<RECV>))>", out);
-}
-
-test "render: $stringify with out-of-range index reds RP1" {
-    const r = renderToOwned(std.testing.allocator, "$stringify($5)", 1);
-    try std.testing.expectError(error.PrimOpArgIndexOutOfRange, r);
-}
-
-test "render: $stringify missing closing paren reds RP3" {
-    const r = renderToOwned(std.testing.allocator, "$stringify($\x01", 0);
-    try std.testing.expectError(error.PrimOpStringifyMalformed, r);
+    try std.testing.expectEqualStrings("label = $stringify(<A0>)", out);
 }
 
 test "looksLikeTemplate" {

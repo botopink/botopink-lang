@@ -27,6 +27,7 @@ const dslHygiene = @import("dsl_hygiene.zig");
 const specializeMod = @import("specialize.zig");
 const unifyMod = @import("unify.zig");
 const snapshotMod = @import("snapshot.zig");
+const valueOrType = @import("value_or_type.zig");
 /// `unify` raises its `TypeError` unlocated: it sees types, not source. Every
 /// call is `unifyAt` (which stamps the location it is given) or sits under a
 /// caller that stamps one with `locateLast` — 01 step 9: no type error leaves
@@ -247,12 +248,12 @@ fn markStdImports(env: *Env, u: ast.ImportDecl) InferError!bool {
 /// local name.)
 fn noteExplicitTypeNames(env: *Env, program: ast.Program) InferError!void {
     // Declared name → where it comes from (a module path, or "" for this module).
-    var sources: std.StringHashMapUnmanaged([]const u8) = .empty;
+    var sources: std.StringHashMapUnmanaged(TypeSource) = .empty;
     defer sources.deinit(env.arena);
     for (program.decls) |decl| switch (decl) {
-        .type_ => |t| try noteTypeSource(env, &sources, t.name, "", null),
-        .typeAlias => |a| try noteTypeSource(env, &sources, a.name, "", null),
-        .behavior => |b| try noteTypeSource(env, &sources, b.name, "", null),
+        .type_ => |t| try noteTypeSource(env, &sources, t.name, .{ .label = "" }, null),
+        .typeAlias => |a| try noteTypeSource(env, &sources, a.name, .{ .label = "" }, null),
+        .behavior => |b| try noteTypeSource(env, &sources, b.name, .{ .label = "" }, null),
         else => {},
     };
     for (program.decls) |decl| switch (decl) {
@@ -270,18 +271,24 @@ fn noteExplicitTypeNames(env: *Env, program: ast.Program) InferError!void {
                     // in under its declared name.
                     if (!imp.isQualified()) continue;
                     if (!stdModuleDeclaresType(env, prefix, leaf)) continue;
-                    try noteTypeSource(env, &sources, leaf, try std.fmt.allocPrint(env.arena, "std/{s}", .{prefix}), imp);
+                    try noteTypeSource(env, &sources, leaf, .{ .label = try std.fmt.allocPrint(env.arena, "std/{s}", .{prefix}) }, imp);
                     continue;
                 }
                 try env.explicitTypeNames.put(env.arena, leaf, {});
                 // Only an item that resolved to a TYPE is a type source.
                 const isType = if (imp.alias) |al| env.importedTypeAliases.contains(al) else env.lookupTypeDef(leaf) != null;
                 if (!isType) continue;
-                const src = switch (u.source) {
-                    .module => |m| try std.fmt.allocPrint(env.arena, "{s}:{s}", .{ m, prefix }),
+                // A package's own item (no module prefix — row 33's
+                // `import {App} from "pkg";`) is named by the package alone.
+                const label = switch (u.source) {
+                    .module => |m| if (prefix.len == 0) m else try std.fmt.allocPrint(env.arena, "{s}:{s}", .{ m, prefix }),
                     .root => prefix,
                 };
-                try noteTypeSource(env, &sources, leaf, src, imp);
+                // The item's identity is the module that declares what it
+                // resolved to, not its spelling: `from "catalog"` and the
+                // path `catalog.Widget` reach one declaration.
+                const module: ?[]const u8 = if (env.importedTypeDecls.get(imp.name())) |d| d.module else null;
+                try noteTypeSource(env, &sources, leaf, .{ .label = label, .module = module }, imp);
             }
         },
         else => {},
@@ -301,10 +308,26 @@ fn stdModuleDeclaresType(env: *Env, mod: []const u8, name: []const u8) bool {
     return false;
 }
 
-fn noteTypeSource(env: *Env, sources: *std.StringHashMapUnmanaged([]const u8), name: []const u8, src: []const u8, imp: ?ast.ImportPath) InferError!void {
+/// Where a type name of a module comes from (`noteExplicitTypeNames`): the
+/// label a refusal names it by (`""` for this module, `std/collections`,
+/// `srv`, `a/p`), and — for a non-std import item — the module path of the
+/// declaration it resolved to, which is what tells two sources apart.
+const TypeSource = struct {
+    label: []const u8,
+    module: ?[]const u8 = null,
+
+    fn same(a: TypeSource, b: TypeSource) bool {
+        if (a.module) |am| if (b.module) |bm| return std.mem.eql(u8, am, bm);
+        return std.mem.eql(u8, a.label, b.label);
+    }
+};
+
+fn noteTypeSource(env: *Env, sources: *std.StringHashMapUnmanaged(TypeSource), name: []const u8, src_: TypeSource, imp: ?ast.ImportPath) InferError!void {
+    const src = src_.label;
     if (!std.mem.startsWith(u8, src, "std/")) try env.explicitTypeNames.put(env.arena, name, {});
-    if (sources.get(name)) |prev| {
-        if (std.mem.eql(u8, prev, src)) return;
+    if (sources.get(name)) |prev_| {
+        if (prev_.same(src_)) return;
+        const prev = prev_.label;
         const at = imp orelse return;
         const first = if (prev.len == 0) "this module" else try std.fmt.allocPrint(env.arena, "`{s}`", .{prev});
         const second = if (src.len == 0) "this module" else try std.fmt.allocPrint(env.arena, "`{s}`", .{src});
@@ -312,7 +335,7 @@ fn noteTypeSource(env: *Env, sources: *std.StringHashMapUnmanaged([]const u8), n
         env.lastError = TypeError.custom(msg, "Use one of the two in this module, and reach the other through a module that holds only it (a function there that takes or answers it).").withLoc(at.loc);
         return error.TypeError;
     }
-    try sources.put(env.arena, name, src);
+    try sources.put(env.arena, name, src_);
 }
 
 /// Whether `t` names the nominal type `name` anywhere in it.
@@ -532,6 +555,30 @@ fn appendImportBindings(
     }
 }
 
+/// A module-level `fn`, `val` or `var` named like a primitive type
+/// (`pub fn string() -> …`) took the type's name in its module: every `string`
+/// annotation there read as the function, reported far from the declaration
+/// (`language-gaps.md`, "A function named like a primitive type shadows the
+/// type in its module"). Refused at the declaration's name as
+/// `primitive-type-name-taken`. A method keeps its name (`rows.bool(…)` — a
+/// member never shadows a type).
+fn refuseDeclsNamedLikePrimitives(env: *Env, program: ast.Program) InferError!void {
+    for (program.decls) |decl| {
+        const name, const loc, const what = switch (decl) {
+            .@"fn" => |f| .{ f.name, f.nameLoc, "a function" },
+            .val => |v| .{ v.name, v.nameLoc, if (v.mutable) "a `var`" else "a `val`" },
+            else => continue,
+        };
+        const taken = for (scalar_type_names) |n| {
+            if (std.mem.eql(u8, n, name)) break true;
+        } else false;
+        if (!taken) continue;
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` names a primitive type; {s} of this module cannot take its name", .{ diagnostics.primitive_type_name_taken, name, what });
+        env.lastError = locatedAt(TypeError.custom(msg, "Rename the declaration."), loc);
+        return error.TypeError;
+    }
+}
+
 pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     var list: std.ArrayListUnmanaged(Binding) = .empty;
     env.testIndex = 0;
@@ -542,6 +589,7 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
 
     try validateUniqueDefaults(env, program);
     try refuseDeclsNamedLikeImports(env, program);
+    try refuseDeclsNamedLikePrimitives(env, program);
     try noteExplicitTypeNames(env, program);
 
     // Pass 1: register type definitions and their constructors.
@@ -603,6 +651,7 @@ fn validateUniqueDefaults(env: *Env, program: ast.Program) InferError!void {
     var default_fns: usize = 0;
     // 01 step 9 — the refusal points at the SECOND default, the duplicate.
     var dupLoc: ast.Loc = .{ .line = 0, .col = 0 };
+    var dupFnLoc: ?ast.Loc = null;
     for (program.decls) |decl| switch (decl) {
         .mod => |m| if (m.isDefault) {
             default_mods += 1;
@@ -610,9 +659,18 @@ fn validateUniqueDefaults(env: *Env, program: ast.Program) InferError!void {
         },
         .@"fn" => |f| if (f.isDefault) {
             default_fns += 1;
-            if (default_fns == 2 and f.body.len > 0) dupLoc = f.body[0].expr.getLoc();
+            // Decision 289 — at the later of the two: the `pub default
+            // <name>;` line, or the default `fn`'s name.
+            if (default_fns == 2) dupFnLoc = f.defaultBy orelse f.nameLoc;
         },
         else => {},
+    };
+    if (default_fns > 1) if (dupFnLoc) |at| {
+        env.lastError = locatedAt(TypeError.custom(
+            "default-twice: a module has one default function",
+            "Keep one `pub default fn` (or `pub default <name>;`) per module (decision 289); the importer binds it under the module path.",
+        ), at);
+        return error.TypeError;
     };
     if (default_mods > 1 or default_fns > 1) {
         env.lastError = locatedAt(TypeError.custom(
@@ -665,6 +723,7 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
 
     try validateUniqueDefaults(env, program);
     try refuseDeclsNamedLikeImports(env, program);
+    try refuseDeclsNamedLikePrimitives(env, program);
     try noteExplicitTypeNames(env, program);
 
     try registerTypeAliases(env, program);
@@ -1171,6 +1230,17 @@ fn unboundAt(env: *Env, name: []const u8, loc: ast.Loc) InferError!TypeError {
         const hint = try std.fmt.allocPrint(env.arena, "Import it from the module that declares it (`import {{{s}}} from \"{s}\"`), or through the module as a namespace.", .{ name, owners[0] });
         return TypeError.custom(msg, hint).withLoc(loc);
     }
+    // Decision 297 — in the branch `x is type` takes, `x` is a type: the type
+    // form (`value_or_type.zig`'s `<f>__type`) has no parameter `x`.
+    if (std.mem.endsWith(u8, env.currentFnName, valueOrType.twin_suffix)) {
+        const original = env.currentFnName[0 .. env.currentFnName.len - valueOrType.twin_suffix.len];
+        if (env.fnDecls.get(original)) |f| for (f.params) |p| {
+            if (p.typeArgOf != null and std.mem.eql(u8, p.name, name)) {
+                const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is a type where `{s} is type` holds — a type has no value to read", .{ diagnostics.type_arg_read, name, name });
+                return TypeError.custom(msg, "Read the value in the branch where `x is type` is false.").withLoc(loc);
+            }
+        };
+    }
     if (env.closedLocals.get(name)) |owner| {
         const msg = try std.fmt.allocPrint(env.arena, "unbound variable '{s}' — `{s}` is a local of `{s}`, and a local ends with its body", .{ name, name, owner });
         return TypeError.custom(msg, "Declare it where it is used, or pass it in as a parameter.").withLoc(loc);
@@ -1245,9 +1315,12 @@ fn flushBirthWarnings(env: *Env) InferError!void {
 
 fn registerTypeDecl(env: *Env, decl: ast.DeclKind) InferError!void {
     switch (decl) {
-        .type_ => |tdecl| switch (tdecl.shape) {
-            .record => try registerRecord(env, tdecl),
-            .enum_ => try registerEnum(env, tdecl),
+        .type_ => |tdecl| {
+            dropReflectionAlias(env, tdecl.name);
+            switch (tdecl.shape) {
+                .record => try registerRecord(env, tdecl),
+                .enum_ => try registerEnum(env, tdecl),
+            }
         },
         // An imported alias (`registerImportedTypeDecl`, the `from "std"`
         // type export) arrives here; a module's own were registered ahead of
@@ -1255,6 +1328,21 @@ fn registerTypeDecl(env: *Env, decl: ast.DeclKind) InferError!void {
         .typeAlias => |a| try env.typeAliases.put(env.arena, a.name, a),
         else => {},
     }
+}
+
+/// T17 — the reflection records a `@Decl` hands out are declared under
+/// internal names (`__Decl__Param`, `comptime.zig` `decl_reflection_src`) and
+/// spelled `Param`, `Field`, `Method`, `Annotation` through prelude aliases. A
+/// module that declares or imports a type of one of those names takes the
+/// name: the alias leaves this module's scope, and the handle's members keep
+/// their own identity.
+fn dropReflectionAlias(env: *Env, name: []const u8) void {
+    const alias = env.typeAliases.get(name) orelse return;
+    const target = switch (alias.target) {
+        .named => |n| n,
+        else => return,
+    };
+    if (std.mem.startsWith(u8, target, "__Decl__")) _ = env.typeAliases.remove(name);
 }
 
 /// Pre-pass (mutual recursion): bind every top-level `fn`/`pub fn` name to its
@@ -4159,6 +4247,15 @@ fn inferTypeinfoRead(env: *Env, ia: anytype, loc: ast.Loc) InferError!?TypedExpr
 /// Walk `program` and run body-carrying decorators over every annotated
 /// declaration (and its methods). Mirrors `validateDecorators`' walk; runs after
 /// it (so arguments are already validated).
+/// Decision 289 — the last segment of a module path (`components/card` →
+/// `card`): an anonymous default function's reflected name. The entry module
+/// (path "") is `main`.
+fn moduleFileName(path: []const u8) []const u8 {
+    if (path.len == 0) return "main";
+    const i = std.mem.lastIndexOfScalar(u8, path, '/') orelse return path;
+    return path[i + 1 ..];
+}
+
 fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
     if (env.skipDecoratorInvoke) return; // second pass: contributions already spliced
     if (env.decorators.count() == 0) return;
@@ -4167,7 +4264,8 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
         .@"fn" => |f| {
             const h = decoratorEval.DeclHandle{
                 .kind = "Fn",
-                .name = f.name,
+                // Decision 289 — an anonymous default is named by its file.
+                .name = if (f.anonymousDefault) moduleFileName(env.modulePath) else f.name,
                 .fields = &.{},
                 .methods = &.{},
                 .returnType = if (f.returnType) |rt| try declTypeName(env.arena, rt) else "",
@@ -6898,14 +6996,22 @@ fn inferBuiltinCallReturnType(
 ) InferError!*T.Type {
     try checkBuiltinArguments(env, callee, typedArgs, typedTrailing, loc);
     // `@block { … }` — the value of the block is what its `return`s carry
-    // (C1: those returns target the block, not the enclosing fn); a block
-    // without a valued `return` takes its tail expression's type.
+    // (C1: those returns target the block, not the enclosing fn). A tail
+    // expression is never its value (decision 2): a block with no valued
+    // `return` is `void`, legal only as a whole statement — in value position
+    // it is `block-tail-value`, located at the block.
     if (std.mem.eql(u8, callee, "block") and typedTrailing.len >= 1 and env.lastTrailingReturnTargets.len >= 1) {
         const target = env.lastTrailingReturnTargets[0];
         const td = target.deref();
         if (td.* == .typeVar and td.typeVar.state == .unbound) {
-            const body = typedTrailing[0].body;
-            if (body.len > 0 and body[body.len - 1].expr != .jump) return body[body.len - 1].expr.getType();
+            const asStatement = if (env.statementBlockLoc) |sl| sl.line == loc.line and sl.col == loc.col else false;
+            if (!asStatement) {
+                env.lastError = TypeError.custom(
+                    try std.fmt.allocPrint(env.arena, "{s}: an `@block` used as a value has no valued `return` — its tail expression is not its value", .{diagnostics.block_tail_value}),
+                    "Write `return <value>;` as the block's last statement, or use the block as a statement.",
+                ).withLoc(loc);
+                return error.TypeError;
+            }
             return env.namedType("void");
         }
         return target;
@@ -8756,11 +8862,24 @@ fn inferBodyStmts(env: *Env, body: []const ast.Stmt) InferError!void {
     try noteStatementClosures(env, body);
     var narrowed: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
     defer narrowed.deinit(env.arena);
+    const savedStatementBlock = env.statementBlockLoc;
+    defer env.statementBlockLoc = savedStatementBlock;
     for (body) |stmt| {
+        env.statementBlockLoc = statementBlockLocOf(stmt.expr);
         _ = try inferExpr(env, stmt.expr);
         try narrowAfterEarlyExit(env, stmt.expr, &narrowed);
     }
     if (narrowed.items.len > 0) try restorePatternBindings(env, narrowed.items);
+}
+
+/// Decision 2 — the location of `stmt` when it is an `@block { … }` written
+/// as a whole statement (its value discarded), else null.
+fn statementBlockLocOf(stmt: ast.Expr) ?ast.Loc {
+    if (stmt != .call or stmt.call.kind != .call) return null;
+    const c = stmt.call.kind.call;
+    if (!c.is_builtin or c.receiver != null or c.calleeExpr != null) return null;
+    if (!std.mem.eql(u8, c.callee, "block")) return null;
+    return stmt.call.loc;
 }
 
 fn inferStmtsTyped(env: *Env, stmts: []const ast.Stmt) InferError![]TypedStmt {
@@ -8772,7 +8891,10 @@ fn inferStmtsTyped(env: *Env, stmts: []const ast.Stmt) InferError![]TypedStmt {
     // restored when the block does.
     var narrowed: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
     defer narrowed.deinit(env.arena);
+    const savedStatementBlock = env.statementBlockLoc;
+    defer env.statementBlockLoc = savedStatementBlock;
     for (stmts, 0..) |s, i| {
+        env.statementBlockLoc = statementBlockLocOf(s.expr);
         out[i] = .{ .expr = try inferExprTyped(env, s.expr) };
         try narrowAfterEarlyExit(env, s.expr, &narrowed);
     }
@@ -9397,6 +9519,101 @@ fn refuseUnknownUse(env: *Env, ty: *T.Type, loc: ast.Loc, what: []const u8) Infe
 /// promise the test does not keep. `Box<unknown>` says exactly what the test
 /// can answer. A tuple is checkable — arity and each element are — and so are
 /// the other structural spellings the grammar builds out of type refs.
+/// Decision 297 — the type a call argument names, when it is a type written
+/// where a `comptime x: V | type T` parameter is: a primitive or a declared
+/// type, not a local value.
+fn typeArgName(env: *Env, e: ast.Expr) ?[]const u8 {
+    if (e != .identifier or e.identifier.kind != .ident) return null;
+    const n = e.identifier.kind.ident;
+    if (env.localBindDepth(n) != null) return null;
+    if (isPrimitiveTypeName(n) or env.lookupTypeDef(n) != null) return n;
+    return null;
+}
+
+/// Decision 297 — a type argument typed as the parameter's value form with
+/// `T` bound to the type (`pick(User)` against `comptime s: Box<T> | type T`
+/// is a `Box<User>`), so unifying it with the parameter binds `T` and the
+/// call's return reads it. Any other name the value form mentions that is no
+/// type is a fresh variable.
+fn typeArgument(env: *Env, p: ast.Param, typeParam: []const u8, typeName: []const u8, e: ast.Expr) InferError!TypedExpr {
+    var map = std.StringHashMap(*T.Type).init(env.arena);
+    try map.put(typeParam, try env.namedType(typeName));
+    try freshNamesOf(env, p.typeRef, &map);
+    const ty = try resolveTypeRefInContext(env, p.typeRef, map);
+    return TypedExpr{ .identifier = .{ .loc = e.identifier.loc, .type_ = ty, .kind = .{ .ident = typeName } } };
+}
+
+fn freshNamesOf(env: *Env, ref: ast.TypeRef, map: *std.StringHashMap(*T.Type)) InferError!void {
+    switch (ref) {
+        .named => |n| if (!map.contains(n) and !isPrimitiveTypeName(n) and env.lookupTypeDef(n) == null and env.typeAliases.get(n) == null) {
+            try map.put(n, try env.freshVar());
+        },
+        .generic => |g| for (g.args) |a| try freshNamesOf(env, a, map),
+        else => {},
+    }
+}
+
+/// Decision 297 — a call whose argument is a type calls the function's type
+/// form (`value_or_type.zig`'s twin `<name>__type`) with that argument
+/// removed: recorded as the call's rewrite, and the callee's name noted so an
+/// import of it brings the twin along.
+fn noteTypeArgCall(env: *Env, c: ast.CallExprOf(.untyped), at: usize, loc: ast.Loc) InferError!void {
+    const call = c.kind.call;
+    var direct = c;
+    const args = try env.arena.alloc(ast.CallArg, call.args.len - 1);
+    @memcpy(args[0..at], call.args[0..at]);
+    @memcpy(args[at..], call.args[at + 1 ..]);
+    direct.kind.call.args = args;
+    direct.kind.call.callee = try std.fmt.allocPrint(env.arena, "{s}{s}", .{ call.callee, valueOrType.twin_suffix });
+    const spliced = try env.arena.create(ast.Expr);
+    spliced.* = .{ .call = direct };
+    spliced.call.loc = loc;
+    try env.indexRewrites.put(loc, spliced);
+    try env.typeArgTwins.put(env.arena, call.callee, {});
+}
+
+/// Decision 280 (0), read by 297 — the argument of a `comptime` parameter is
+/// known while the program compiles: a run-time value (a local binding or a
+/// parameter of the enclosing function that is not itself `comptime`) is
+/// refused at the argument, as `comptime-arg-not-known`. A decorator's
+/// `@Decl` and a template's `@Expr` parameters are not arguments of a call.
+fn refuseRuntimeComptimeArg(env: *Env, p: ast.Param, e: ast.Expr) InferError!void {
+    if (p.modifier != .@"comptime") return;
+    if (p.typeRef.isDeclType()) return;
+    if (p.typeRef == .generic and p.typeRef.generic.is_builtin) return;
+    const at = runtimeNameIn(env, e) orelse return;
+    const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is a run-time value, and the parameter `{s}` is `comptime` — its argument is known while the program compiles", .{ diagnostics.comptime_arg_not_known, at.name, p.name });
+    env.lastError = TypeError.custom(msg, "Pass a literal, a type, a constructor of known values, or a `comptime` parameter of the enclosing function (decisions 280, 297).").withLoc(at.loc);
+    return error.TypeError;
+}
+
+const RuntimeName = struct { name: []const u8, loc: ast.Loc };
+
+/// The first name `e` reads that holds a run-time value: a local binding, or a
+/// parameter of the enclosing function that is not `comptime`.
+fn runtimeNameIn(env: *Env, e: ast.Expr) ?RuntimeName {
+    switch (e) {
+        .identifier => |id| {
+            if (id.kind != .ident) return null;
+            const n = id.kind.ident;
+            if (env.localBindDepth(n) == null) return null;
+            if (env.fnDecls.get(env.currentFnName)) |f| for (f.params) |fp| {
+                if (fp.modifier == .@"comptime" and std.mem.eql(u8, fp.name, n)) return null;
+            };
+            return .{ .name = n, .loc = id.loc };
+        },
+        .unaryOp => |u| return runtimeNameIn(env, u.expr.*),
+        .binaryOp => |b| return runtimeNameIn(env, b.lhs.*) orelse runtimeNameIn(env, b.rhs.*),
+        .call => |c| {
+            if (c.kind != .call) return null;
+            if (c.kind.call.receiver) |r| if (runtimeNameIn(env, r.*)) |n| return n;
+            for (c.kind.call.args) |a| if (runtimeNameIn(env, a.value.*)) |n| return n;
+            return null;
+        },
+        else => return null,
+    }
+}
+
 fn checkIsTestableType(env: *Env, ref: ast.TypeRef, loc: ast.Loc) InferError!void {
     switch (ref) {
         .generic => |g| {
@@ -14306,7 +14523,20 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                 null;
 
             const typedArgs = try env.arena.alloc(ast.CallArgOf(.typed), call.args.len);
+            // Decision 297 — the argument a type was written for, if any.
+            var typeArgAt: ?usize = null;
             for (call.args, 0..) |arg, i| {
+                if (call.receiver == null and !call.is_builtin and call.calleeExpr == null) if (declParamsAst) |dps| {
+                    const pi = if (argParamIndex) |slots| (if (i < slots.len) slots[i] else dps.len) else i;
+                    if (pi < dps.len) {
+                        if (dps[pi].typeArgOf) |tp| if (typeArgName(env, arg.value.*)) |tn| {
+                            typedArgs[i] = .{ .label = arg.label, .value = try makeTypedPtr(env, try typeArgument(env, dps[pi], tp, tn, arg.value.*)) };
+                            typeArgAt = i;
+                            continue;
+                        };
+                        try refuseRuntimeComptimeArg(env, dps[pi], arg.value.*);
+                    }
+                };
                 // Only the declared PARAMETER types are pushed down
                 // (`params_only`). The declared RETURN is not a constraint the
                 // lambda has to meet here — `Array.forEach`'s `action` is
@@ -14342,6 +14572,7 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                 env.nextLambdaExempt = false;
                 typedArgs[i] = .{ .label = arg.label, .value = try makeTypedPtr(env, val) };
             }
+            if (typeArgAt) |ti| try noteTypeArgCall(env, c, ti, loc);
             const typedTrailing = try inferTrailingLambdasTyped(env, call.trailing);
 
             // 01 handover 15 — `adder(3)(4)`: what is called is the result of
@@ -14378,6 +14609,16 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                 // nothing typed it, so `inferBuiltinCallReturnType` had no arm
                 // for the name and the call came out `void`.
                 if (std.mem.eql(u8, call.callee, ast.is_builtin_name)) {
+                    if (call.isType) |tested| if (tested == .typeparam and tested.typeparam.len == 0) {
+                        // Decision 297 — `x is type` is folded where `x` is a
+                        // `comptime x: V | type T` parameter (`value_or_type.zig`);
+                        // anything else reaching here tests nothing.
+                        env.lastError = TypeError.custom(
+                            diagnostics.is_type_outside_value_or_type ++ ": `is type` tests a `comptime` parameter that takes a value or a type (`comptime x: V | type T`)",
+                            "Declare the parameter `comptime x: V | type T`, or test a type with `x is T`.",
+                        ).withLoc(loc);
+                        return error.TypeError;
+                    };
                     if (call.isType) |tested| {
                         try checkIsTestableType(env, tested, loc);
                         if (typedArgs.len == 1) try warnAlwaysFalseIs(env, typedArgs[0].value.getType(), tested, loc);

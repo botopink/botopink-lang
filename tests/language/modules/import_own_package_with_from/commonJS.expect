@@ -1,0 +1,2 @@
+error[module-import-with-from]: "shapes" is this package — write import {geometry.area};
+src/main.bp:8:29

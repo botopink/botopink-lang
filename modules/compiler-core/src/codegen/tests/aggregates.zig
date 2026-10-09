@@ -193,9 +193,8 @@ test "js: tuple ---- access elements" {
 
 // A record method named like a builtin (`print`) is the record's method: a
 // receiver call never reaches the `@print` dispatch. commonJS used to lower
-// `d.print()` to `console.log(console.log())`, dropping the receiver.
-// KNOWN: wasm prints `276`, the string's address (a record method's string
-// result is printed as an i32 — 1.0.4-beta 01 wasm).
+// `d.print()` to `console.log(console.log())`, dropping the receiver. All four
+// backends print `doc:hi`.
 test "js: record ---- a method named print is called on the record" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type Doc(
@@ -215,8 +214,7 @@ test "js: record ---- a method named print is called on the record" {
 
 // `t.0.1` lexes as two positional indexes (not the float `0.1`) and
 // `p.0.toString()` calls a method on an element; erlang and beam read tuple
-// elements with `element/2`. Prints `2`, `x` and `7`. KNOWN: wasm prints the
-// string element of an unannotated local tuple as its address (`256`).
+// elements with `element/2`. Prints `2`, `x` and `7` on all four backends.
 test "js: tuple ---- chained positional access and a method on an element" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
@@ -231,11 +229,8 @@ test "js: tuple ---- chained positional access and a method on an element" {
 
 // `pair.0` is the tuple index `pair._0` (commonJS emitted `pair.0` verbatim, a
 // SyntaxError), and `.map` on the `?T` a `find` answers is the Option map, not
-// `Array.prototype.map` over the found tuple. Prints `2` then `true` on
-// commonJS, erlang and beam (the bare `pair.0` is `element/2` since front 12
-// step 4). KNOWN: wasm still traps (the `?T` map over a found tuple).
-// The same `?T.map` inside a record method body is not lowered on commonJS
-// either: inference records no Option lowering there (06-checker).
+// `Array.prototype.map` over the found tuple. Prints `2` then `true` on all
+// four backends (the bare `pair.0` is `element/2` on erlang and beam).
 test "js: tuple ---- a bare digit index and an option map over a found pair" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn lookup(pairs: Array<#(string, i32)>, key: string) -> ?i32 {
@@ -300,10 +295,8 @@ test "js: tuple ---- labels resolve to positions on every backend" {
     // Decision 8 §6: labels are compile-time names — from the written type
     // (`load`'s return, `show`'s parameter, an annotation) or from the variables
     // a tuple is built from; the value stays the positional tuple.
-    // KNOWN (wasm): `row` and `local` carry no written type, so the wasm printer
-    // has no print type for their string elements and prints the addresses
-    // (`256`, `264`) — the same for a positional `row._0`; a decision-8 printer
-    // concern (01 step 6), not a label one. The annotated `typed.y` prints 2.
+    // `row` and `local` carry no written type and print their string elements
+    // as text on all four backends; the annotated `typed.y` prints 2.
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn load() -> #(name: string, pop: i32) {
         \\    val name = "SP";

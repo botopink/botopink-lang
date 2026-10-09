@@ -460,7 +460,10 @@ fn scanExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), comptime_
                     return;
                 }
 
-                const fn_decl = fn_decls.get(call.callee) orelse {
+                // A call with a receiver is a method of the receiver's type
+                // (`t.startsWith("?")`), never the module's function that
+                // happens to share the name (`localFnOf`).
+                const fn_decl = localFnOf(fn_decls, call) orelse {
                     for (call.args) |arg| scanExpr(agg, fn_decls, comptime_arrays, arg.value.*) catch return ScanError.OutOfMemory;
                     for (call.trailing) |tl| {
                         for (tl.body) |s| scanExpr(agg, fn_decls, comptime_arrays, s.expr) catch return ScanError.OutOfMemory;
@@ -1053,6 +1056,16 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
     // And 01 step 12's payload section path (`.Color.Hex("#abc")`,
     // `Token.Color.Hex("#abc")`): a call whose receiver is a path, replaced by
     // the qualified constructor chain inference resolved.
+    // Decision 297 — a call whose argument is a type calls the function's type
+    // form (`value_or_type.zig`), that argument removed: inference recorded
+    // the call to `<name>__type` under the call's loc.
+    if (expr_ptr.* == .call and expr_ptr.call.kind == .call and !expr_ptr.call.kind.call.is_builtin) {
+        if (agg.index_rewrites.get(expr_ptr.call.loc)) |rewrite| {
+            if (rewrite.* == .call and rewrite.call.kind == .call and isTwinOf(rewrite.call.kind.call.callee, expr_ptr.call.kind.call.callee)) {
+                expr_ptr.* = rewrite.*;
+            }
+        }
+    }
     if (expr_ptr.* == .call and expr_ptr.call.kind == .call and
         (expr_ptr.call.kind.call.is_builtin or expr_ptr.call.kind.call.calleeExpr != null or
             isPathReceiver(expr_ptr.call.kind.call.receiver)))
@@ -1169,7 +1182,6 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
                     boolLiteralArm(agg, arm) catch return ScanError.OutOfMemory;
                     try qualifyResultPattern(agg, &arm.pattern, arm.patternLoc);
                     try stripPatternSuffixes(agg, &arm.pattern);
-                try stripPatternSuffixes(agg, &arm.pattern);
                     rewriteExpr(agg, fn_decls, comptime_arrays, &arm.body) catch return ScanError.OutOfMemory;
                 }
             },
@@ -1418,8 +1430,20 @@ fn applyDefaultFill(agg: *Aggregator, fill: envMod.DefaultFill, c: anytype) !voi
     c.args = new_args;
 }
 
+/// The module function a call names — null for a call with a receiver. A
+/// method call (`t.startsWith("?")`) is the method of the receiver's type even
+/// where the module declares a function of the same name: matched by name, a
+/// module marker `startsWith(comptime decl: @Decl, comptime prefix: string)`
+/// had the call's argument stripped as a comptime one, so erlang refused the
+/// module with `PrimOpArgIndexOutOfRange` (no location) and commonJS emitted
+/// `t.startsWith()`, answering `false`.
+fn localFnOf(fn_decls: std.StringHashMap(ast.FnDecl), c: anytype) ?ast.FnDecl {
+    if (c.receiver != null) return null;
+    return fn_decls.get(c.callee);
+}
+
 fn rewriteCall(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), comptime_arrays: std.StringHashMap([]const ast.TypedExpr), c: anytype) ScanError!void {
-    const fn_decl = fn_decls.get(c.callee) orelse {
+    const fn_decl = localFnOf(fn_decls, c.*) orelse {
         // Ctor lookup (F4): a `Config(...)` / `Level.Error(...)` call hits the
         // record / struct / enum-variant constructor binding, not `fn_decls`.
         // Build the qualified key from the receiver when the call shape is
@@ -1630,6 +1654,12 @@ fn extractComptimeLiteral(e: anytype) ?[]const u8 {
         },
         else => null,
     };
+}
+
+/// Decision 297 — `twin` is `callee`'s type form (`<callee>__type`).
+fn isTwinOf(twin: []const u8, callee: []const u8) bool {
+    const suffix = @import("value_or_type.zig").twin_suffix;
+    return twin.len == callee.len + suffix.len and std.mem.startsWith(u8, twin, callee) and std.mem.endsWith(u8, twin, suffix);
 }
 
 /// 01 step 12 — a call receiver written as a path (`.Color`, `Token.Color`):

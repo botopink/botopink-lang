@@ -150,28 +150,6 @@ fn boolOf(input: Json) -> bool {
     };
 }
 
-fn itemsOf(input: Json) -> Array<Json> {
-    return case input {
-        Arr(items) -> items;
-        _ -> [];
-    };
-}
-
-fn membersOf(input: Json) -> Array<#(string, Json)> {
-    return case input {
-        Obj(members) -> members;
-        _ -> [];
-    };
-}
-
-// The member `name` of an object, `Json.Null` when the object has none — and
-// when `input` is not an object at all, which the record decoder has refused
-// before it asks.
-pub fn fieldOf(input: Json, name: string) -> Json {
-    val hits = membersOf(input).filter({ m -> m[0] == name });
-    return hits.at(0).unwrapOr(#("", Json.Null))[1];
-}
-
 // The rejected value as a violation carries it: text as it is, a number and a
 // boolean rendered, anything larger by its kind. It reaches a log line, never a
 // response (`report.bp` — `violationJson` does not write it).
@@ -349,7 +327,7 @@ pub fn decodeArrayOf<T>(
     val k = kindOf(input);
     if (k == "null") throw missing(at);
     if (k != "a list") throw wrongType(at, "a list", input);
-    val items = itemsOf(input);
+    val items = input.items();
     var out: Array<T> = [];
     var found: Array<Violation> = [];
     var i = 0;
@@ -394,7 +372,7 @@ pub fn unknownKeys(
     at: string,
     typeName: string,
 ) -> Array<Violation> {
-    val extra = membersOf(input).filter({ m -> known.indexOf(m[0]) < 0 });
+    val extra = input.members().filter({ m -> known.indexOf(m[0]) < 0 });
     return extra.map({ m ->
         val where = key(at, m[0]);
         violation(

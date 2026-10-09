@@ -70,10 +70,6 @@ test "js: case ---- or patterns with numbers" {
     );
 }
 
-// DIVERGENT wasm RUN LOG, second line (pinned, 06-wasm): `undefined` — the
-// value of an `if` with no `else` when the condition is false. commonJS prints
-// `undefined`, erlang `ok`; decision 2 (a block's value comes from `break`)
-// makes this program a checker error, 07-checker's to land.
 // Decision 2 (01 R7): an `if` without `else` has no value on its false side.
 // This compiled and printed `positive` then `undefined` on commonJS, wasm and
 // beam and `ok` on erlang for `sign(-3)`; it is refused at the `if` now.
@@ -530,12 +526,8 @@ test "js: case ---- nested case in block arm" {
 //
 // `beam_export_audit.sh` stayed green through it, because assembling every
 // snapshot cannot find a shape no snapshot has. Both prints run on all four
-// backends now: `1`, `2`, `3`, then `[20]`.
-//
-// KNOWN (decision 8 §10, all four backends): `break <value>` out of a
-// COLLECTION loop answers a one-element ARRAY, `[20]`, where §10 reads as the
-// value itself, `20`. commonJS, erlang, wasm and beam agree on `[20]`, so this
-// is the decision's row (front 03's step 3 D7 names it), not one backend's.
+// backends now: `1`, `2`, `3`, then `20` — the second loop ends with a bare
+// `break` and leaves its answer in a `var` (decision 105: no loop has a value).
 test "js: loop ---- a loop over an array literal, and a break out of one" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
@@ -1711,7 +1703,7 @@ test "erlang: generator ---- a bare-yield body still lowers to an eager list" {
 // only the always-a-value categories, so an `if`, a `loop` and a `try`/`catch`
 // tail fell through to `buildStmt` and were emitted as statements: the value
 // IIFE was written as `(x) => { (() => { … })(); }` and the arrow answered
-// `undefined` for every element. Measured by emilia's theme front, on `if`; the
+// `undefined` for every element. Measured by a library's theme front, on `if`; the
 // other three rows are the same defect found while scoping it. `case` never had
 // it (it is a `.collection`) and is the control in the language cell.
 //

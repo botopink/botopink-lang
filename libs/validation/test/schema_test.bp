@@ -267,6 +267,90 @@ test "validation: a type that names itself decodes to any depth" {
     assert first.subcategories.length == 1;
 }
 
+fn depthOf(c: Category) -> i32 {
+    var depth = 1;
+    var at = c;
+    while (at.subcategories.length > 0) {
+        at = at.subcategories.at(0).unwrapOr(at);
+        depth = depth + 1;
+    }
+    return depth;
+}
+
+test "validation: a four-level recursive document decodes, a bad leaf at its path" {
+    val _f = fresh();
+    val tree = try decodeCategory(
+        """{"name": "1", "subcategories": [{"name": "2", "subcategories": [
+              {"name": "3", "subcategories": [{"name": "4", "subcategories": []}]}]}]}""",
+    );
+    assert depthOf(tree) == 4;
+    val r = decodeCategory(
+        """{"name": "1", "subcategories": [{"name": "2", "subcategories": [
+              {"name": "3", "subcategories": [{"name": 4, "subcategories": []}]}]}]}""",
+    );
+    val located = case r {
+        Ok(_) -> "";
+        Error(report) -> report.violations
+            .map({ v -> v.field + ":" + v.code })
+            .join(",");
+    };
+    assert located
+        == "subcategories[0].subcategories[0].subcategories[0].name:invalidType";
+}
+
+// The decoder recurses through `Arr` once per level, so the depth it reaches
+// is the document's. 2 000 levels is the depth these tests pin on both
+// targets, over a document built as a value and over the same document read
+// from its JSON text by std's reader.
+fn nestedDocument(levels: i32) -> Json {
+    var doc = Json.Obj(
+        members: [
+            #("name", Json.Str(value: "leaf")),
+            #("subcategories", Json.Arr(items: [])),
+        ],
+    );
+    var i = 1;
+    while (i < levels) {
+        doc = Json.Obj(
+            members: [
+                #("name", Json.Str(value: "n")),
+                #("subcategories", Json.Arr(items: [doc])),
+            ],
+        );
+        i = i + 1;
+    }
+    return doc;
+}
+
+test "validation: a self-reference 2000 levels deep does not exhaust the stack" {
+    val _f = fresh();
+    val tree = try parseCategory(nestedDocument(2000));
+    assert depthOf(tree) == 2000;
+}
+
+// The text of `nestedDocument(levels)`.
+fn nestedText(levels: i32) -> string {
+    var parts: string[] = [];
+    var i = 1;
+    while (i < levels) {
+        parts.push("{\"name\":\"n\",\"subcategories\":[");
+        i = i + 1;
+    }
+    parts.push("{\"name\":\"leaf\",\"subcategories\":[]}");
+    i = 1;
+    while (i < levels) {
+        parts.push("]}");
+        i = i + 1;
+    }
+    return parts.join("");
+}
+
+test "validation: a self-reference 2000 levels deep read from JSON text" {
+    val _f = fresh();
+    val tree = try decodeCategory(nestedText(2000));
+    assert depthOf(tree) == 2000;
+}
+
 // ── the other primitives ────────────────────────────────────────────────────
 
 test "validation: every primitive, a list of lists and an optional list" {

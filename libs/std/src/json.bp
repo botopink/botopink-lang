@@ -222,8 +222,8 @@ declare fn textsOf(s: string) -> Array<string>;
 // wasm has no host JSON, so the cells above name these private bodies with
 // `#[@External.Wasm("fn:…")]`; they answer what the Node cell answers, text
 // built from code points with `String.fromCodepoint` (decision 262). `parse`
-// and `stringify` have no wasm body (`decisions-pending.md` 05w-h): a call of
-// either is refused on wasm where it is written. On wasm `unquote` reads its
+// and `stringify` have no wasm body (`decisions-pending.md` 05w-j), so STD-001
+// refuses an import of `json` on wasm until they have one. On wasm `unquote` reads its
 // literal with `decode`, which refuses an unpaired `\u` surrogate escape that
 // `JSON.parse` keeps (a wasm string holds UTF-8 only, so no lone surrogate).
 
@@ -313,10 +313,10 @@ fn problemAt(doc: Doc, i: i32, what: string) -> string {
     return ["json.decode: ", what, " at byte ", bytes.toString()].join("");
 }
 
-fn readValue(doc: Doc, i: i32) -> @Result<Parsed, string> {
+// One value at `i` that is not a container — a string, a number or one of
+// the three literals. `[` and `{` are `readValue`'s.
+fn readScalar(doc: Doc, i: i32) -> @Result<Parsed, string> {
     val c = cpAt(doc, i);
-    if (c == 123) return try readObject(doc, i);
-    if (c == 91) return try readArray(doc, i);
     if (c == 34) {
         val t = try readString(doc, i);
         return Parsed(value: Json.Str(value: t.text), next: t.next);
@@ -362,63 +362,161 @@ fn readWord(doc: Doc, i: i32, word: string) -> @Result<i32, string> {
 // `var`, compiles to an "unsafe variable" `case` that `erlc` refuses. Each
 // loop records its problem and stops; the `throw` follows the loop.
 
-fn readArray(doc: Doc, open: i32) -> @Result<Parsed, string> {
-    var items: Json[] = [];
-    var i = skipWs(doc, open + 1);
-    if (cpAt(doc, i) == 93)
-        return Parsed(value: Json.Arr(items: items), next: i + 1);
-    var more = true;
+// The value at `i`, containers included, read by a loop and not by
+// recursion: how deep a document may nest is bounded by memory alone, the
+// same on every target. The recursive reader this replaces overflowed node's
+// stack between 1 000 and 1 500 levels, where erlang read 3 000.
+//
+// `open` is the innermost container opened and not yet closed (`Open`, a
+// linked stack: entering and leaving a level costs the same at any depth),
+// `children` the members it has read so far, each with its member name (`""`
+// for an array item). `name` is the member name of the value being read;
+// `have` says `value` holds a finished value to place.
+fn readValue(doc: Doc, start: i32) -> @Result<Parsed, string> {
+    var open: ?Open = null;
+    var children: Array<#(string, Json)> = [];
+    var name = "";
+    var value = Json.Null;
+    var have = false;
+    var i = start;
     var problem = "";
-    while (more) {
-        val v = try readValue(doc, i);
-        items.push(v.value);
-        val after = skipWs(doc, v.next);
-        val c = cpAt(doc, after);
-        if (c == 44) i = skipWs(doc, after + 1) else if (c == 93) {
-            i = after + 1;
-            more = false;
-        } else {
-            problem = problemAt(doc, after, "expected `,` or `]` in an array");
-            more = false;
+    var done = false;
+    while (!done) {
+        if (!have) {
+            val c = cpAt(doc, i);
+            if (c == 91 || c == 123) {
+                val first = skipWs(doc, i + 1);
+                if (cpAt(doc, first) == closerOf(c)) {
+                    value = emptyOf(c);
+                    have = true;
+                    i = first + 1;
+                } else {
+                    open = Open(
+                        kind: c,
+                        name: name,
+                        siblings: children,
+                        outer: open,
+                    );
+                    children = [];
+                    name = "";
+                    i = first;
+                    if (c == 123) {
+                        val m = readName(doc, i, children);
+                        if (m.isError()) {
+                            problem = nameProblem(m);
+                            done = true;
+                        } else {
+                            val n = m.unwrapOr(ParsedText(text: "", next: 0));
+                            name = n.text;
+                            i = n.next;
+                        }
+                    }
+                }
+            } else {
+                val s = readScalar(doc, i);
+                if (s.isError()) {
+                    problem = scalarProblem(s);
+                    done = true;
+                } else {
+                    val p = s.unwrapOr(Parsed(value: Json.Null, next: 0));
+                    value = p.value;
+                    i = p.next;
+                    have = true;
+                }
+            }
+        } else if (open == null) done = true else {
+            val top = open ?? Open(
+                kind: 0,
+                name: "",
+                siblings: [],
+                outer: null,
+            );
+            children.push(#(name, value));
+            have = false;
+            val after = skipWs(doc, i);
+            val c = cpAt(doc, after);
+            if (c == 44) {
+                i = skipWs(doc, after + 1);
+                name = "";
+                if (top.kind == 123) {
+                    val m = readName(doc, i, children);
+                    if (m.isError()) {
+                        problem = nameProblem(m);
+                        done = true;
+                    } else {
+                        val n = m.unwrapOr(ParsedText(text: "", next: 0));
+                        name = n.text;
+                        i = n.next;
+                    }
+                }
+            } else if (c == closerOf(top.kind)) {
+                value = containerOf(top.kind, children);
+                children = top.siblings;
+                name = top.name;
+                open = top.outer;
+                i = after + 1;
+                have = true;
+            } else {
+                problem = problemAt(doc, after, separatorProblem(top.kind));
+                done = true;
+            }
         }
     }
     if (problem != "") throw problem;
-    return Parsed(value: Json.Arr(items: items), next: i);
+    return Parsed(value: value, next: i);
 }
 
-fn readObject(doc: Doc, open: i32) -> @Result<Parsed, string> {
-    var members: Array<#(string, Json)> = [];
-    var i = skipWs(doc, open + 1);
-    if (cpAt(doc, i) == 125)
-        return Parsed(value: Json.Obj(members: members), next: i + 1);
-    var more = true;
-    var problem = "";
-    while (more) {
-        val member = try readMember(doc, i, members);
-        members.push(#(member.key, member.value));
-        val after = skipWs(doc, member.next);
-        val c = cpAt(doc, after);
-        if (c == 44) i = skipWs(doc, after + 1) else if (c == 125) {
-            i = after + 1;
-            more = false;
-        } else {
-            problem = problemAt(doc, after, "expected `,` or `}` in an object");
-            more = false;
-        }
-    }
-    if (problem != "") throw problem;
-    return Parsed(value: Json.Obj(members: members), next: i);
+// A container `readValue` has opened and not closed: `kind` (`[` is 91, `{`
+// is 123), the member name it is read under in its parent (`""` in an array
+// or at the top), the children its parent had read before it, and the
+// container that holds it.
+type Open(kind: i32, name: string, siblings: Array<#(string, Json)>, outer: ?Open)
+
+// The code point that closes the container `open` opens: `]` for `[`, `}`
+// for `{`.
+fn closerOf(open: i32) -> i32 {
+    if (open == 91) return 93;
+    return 125;
 }
 
-// One parsed member and the index after its value.
-type ParsedMember(key: string, value: Json, next: i32)
+// The empty container `open` opens.
+fn emptyOf(open: i32) -> Json {
+    if (open == 91) return Json.Arr(items: []);
+    return Json.Obj(members: []);
+}
 
-// `"name" : value` at `i`, refused when `name` is already among `seen`.
-fn readMember(
+// The container `open` opens, holding `children` in document order.
+fn containerOf(open: i32, children: Array<#(string, Json)>) -> Json {
+    if (open == 91) return Json.Arr(items: children.map({ e -> e._1 }));
+    return Json.Obj(members: children);
+}
+
+fn separatorProblem(open: i32) -> string {
+    if (open == 91) return "expected `,` or `]` in an array";
+    return "expected `,` or `}` in an object";
+}
+
+fn scalarProblem(r: @Result<Parsed, string>) -> string {
+    return case r {
+        Ok(_) -> "";
+        Error(e) -> e;
+    };
+}
+
+fn nameProblem(r: @Result<ParsedText, string>) -> string {
+    return case r {
+        Ok(_) -> "";
+        Error(e) -> e;
+    };
+}
+
+// `"name" :` at `i` — the name, and the index of the member's value — refused
+// when `name` is already among `seen`.
+fn readName(
     doc: Doc,
     i: i32,
     seen: Array<#(string, Json)>,
-) -> @Result<ParsedMember, string> {
+) -> @Result<ParsedText, string> {
     if (cpAt(doc, i) != 34)
         throw problemAt(doc, i, "expected a member name (a string)");
     val key = try readString(doc, i);
@@ -431,8 +529,7 @@ fn readMember(
     val colon = skipWs(doc, key.next);
     if (cpAt(doc, colon) != 58)
         throw problemAt(doc, colon, "expected `:` after a member name");
-    val v = try readValue(doc, skipWs(doc, colon + 1));
-    return ParsedMember(key: key.text, value: v.value, next: v.next);
+    return ParsedText(text: key.text, next: skipWs(doc, colon + 1));
 }
 
 // The value of one hex digit, `-1` for anything else.
@@ -1025,7 +1122,7 @@ test "json.quote leaves non-ASCII, the slash and U+2028 alone" {
 
 test "json.quote round-trips through parse and unquote" {
     // Inside the test, not a module-level helper: `parse` has no wasm body
-    // (05w-h), and a module function that calls it would refuse the whole
+    // (05w-j), and a module function that calls it would refuse the whole
     // module on wasm (decision 146).
     val table = [
         "",
@@ -1323,36 +1420,38 @@ test "json.decode rounds a numeral to the nearest f64, ties to even" {
     assert decodesTo("1e-99999999999999999999", Json.Num(value: 0.0));
 }
 
-// True when `s.parseFloat()` answers the very `f64` `decode(s)` answers.
-fn parseFloatAgrees(s: string) -> bool {
-    return decodesTo(s, Json.Num(value: s.parseFloat().unwrapOr(0.0 - 1.0)));
-}
-
 test "json.decode and string.parseFloat answer the same f64 for a numeral" {
-    assert parseFloatAgrees("5e-324");
-    assert parseFloatAgrees("1.7976931348623157e308");
-    assert parseFloatAgrees("1.7976931348623158e308");
-    assert parseFloatAgrees("4.9406564584124654e-324");
-    assert parseFloatAgrees("2.4703282292062328e-324");
-    assert parseFloatAgrees("2.4703282292062327e-324");
-    assert parseFloatAgrees("2.2250738585072014e-308");
-    assert parseFloatAgrees("2.2250738585072011e-308");
-    assert parseFloatAgrees("2.2250738585072012e-308");
-    assert parseFloatAgrees("0.1");
-    assert parseFloatAgrees("0.3");
-    assert parseFloatAgrees("1e23");
-    assert parseFloatAgrees("1e22");
-    assert parseFloatAgrees("1e-22");
-    assert parseFloatAgrees("9007199254740993");
-    assert parseFloatAgrees("9007199254740995");
-    assert parseFloatAgrees("123456789012345.6789e-3");
-    assert parseFloatAgrees("3.14159265358979323846264338327950288");
-    assert parseFloatAgrees("0.000001e-300");
-    assert parseFloatAgrees(
+    // Inline, not a helper `fn`: a top-level function is emitted on every
+    // build, and `parseFloat` has no wasm lowering, so a helper refused the
+    // whole module on wasm (`01-compiler/05-wasm` step 5).
+    val numerals = [
+        "5e-324",
+        "1.7976931348623157e308",
+        "1.7976931348623158e308",
+        "4.9406564584124654e-324",
+        "2.4703282292062328e-324",
+        "2.4703282292062327e-324",
+        "2.2250738585072014e-308",
+        "2.2250738585072011e-308",
+        "2.2250738585072012e-308",
+        "0.1",
+        "0.3",
+        "1e23",
+        "1e22",
+        "1e-22",
+        "9007199254740993",
+        "9007199254740995",
+        "123456789012345.6789e-3",
+        "3.14159265358979323846264338327950288",
+        "0.000001e-300",
         "100000000000000000000000000000000000000000000000000e-50",
-    );
-    assert parseFloatAgrees("-2.5e-3");
-    assert parseFloatAgrees("1e-99999999999999999999");
+        "-2.5e-3",
+        "1e-99999999999999999999",
+    ];
+    val disagree = numerals.filter({ s ->
+        !decodesTo(s, Json.Num(value: s.parseFloat().unwrapOr(0.0 - 1.0)));
+    });
+    assert disagree.join(" ") == "";
     assert "1.7976931348623159e308".parseFloat().isError();
     assert "1e99999999999999999999".parseFloat().isError();
 }
@@ -1497,6 +1596,64 @@ fn everyKind() -> Array<Json> {
 fn fieldKind(v: Json, key: string) -> string {
     val found = v.field(key);
     return if (found != null) found.kindName() else "absent";
+}
+
+// `[{"a":` repeated `levels` times around `1`, closed again.
+fn nestedDocument(levels: i32) -> string {
+    var parts: string[] = [];
+    var k = 0;
+    while (k < levels) {
+        parts.push("[{\"a\":");
+        k = k + 1;
+    }
+    parts.push("1");
+    k = 0;
+    while (k < levels) {
+        parts.push("}]");
+        k = k + 1;
+    }
+    return parts.join("");
+}
+
+// How many `[{"a": …}]` levels wrap the innermost value, walked by a loop.
+fn nestingOf(doc: Json) -> i32 {
+    var cur = doc;
+    var levels = 0;
+    var going = true;
+    while (going) {
+        val xs = cur.items();
+        val inner = if (xs.length == 1)
+            xs.at(0).unwrapOr(Json.Null).field("a")
+        else
+            null;
+        if (inner == null) going = false else {
+            cur = inner ?? Json.Null;
+            levels = levels + 1;
+        }
+    }
+    return levels;
+}
+
+// A document's depth is bounded by memory, not by the host's stack: the
+// recursive reader overflowed node's between 1 000 and 1 500 levels.
+test "json.decode reads a document nested 3000 levels deep" {
+    val doc = try decode(nestedDocument(3000));
+    assert nestingOf(doc) == 3000;
+}
+
+test "json.decode names where a deep document's last bracket is missing" {
+    val text = nestedDocument(2000);
+    val cut = text.slice(0, text.length() - 1);
+    val r = decode(cut);
+    val wanted = [
+        "json.decode: expected `,` or `]` in an array at byte ",
+        cut.length().toString(),
+    ].join("");
+    val matched = case r {
+        Ok(_) -> false;
+        Error(e) -> e == wanted;
+    };
+    assert matched;
 }
 
 test "Json.kindName names each variant" {

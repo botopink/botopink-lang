@@ -97,7 +97,23 @@ dotted source was compared byte for byte with the module's `/` path and named no
 below the importer's package had no reading.
 `import_ambiguous_from_package` is the refusal that stays — `import {NotFound} from "site"` names a
 package two of whose modules declare the name, so the use is `ambiguous-import-use`, located, naming
-both, by `<target>.expect`. `import_sibling_path_beside_std_name` — a dependency's module imports a
+both, by `<target>.expect`. `transitive_package_import` (front 26 step 3, decision 242) — the
+package declares `starter`, `starter` declares `core`, and `from "core"` in the package is refused
+`unresolved import source "core" — declare it in botopink.json "dependencies"` at the source
+string, by `<target>.expect` on all four targets: only a direct dependency is importable.
+`dependency_imports_undeclared_package` — the same refusal inside a dependency: `starter` imports
+`from "core"` without declaring it (the package declares both), and the build refuses it at
+`deps/starter/src/root.bp:1:21`, as `starter`'s own build does, where it used to compile the
+import with nothing bound and answer `unbound variable 'greet'`.
+Decision 309 adds `import_own_package_with_from` — the package `shapes` imports its module
+`geometry` as `from "shapes"`, refused `error[module-import-with-from]: "shapes" is this package —
+write import {geometry.area};` at the source string on all four targets (the parent answered
+`unresolved import source "shapes"`) — and `dependency_imports_itself_with_from`, the same refusal
+inside a dependency (`starter`'s `root.bp` imports `from "starter"`, located at
+`deps/starter/src/root.bp:2:27`). A `test/` module importing its own package by name is
+`modules/compiler-cli/tests/cli_contract.sh`'s (a project cell with a `test/` tree has no refusal
+form).
+`import_sibling_path_beside_std_name` — a dependency's module imports a
 type and two functions as `sort.queue.…` (its sibling, `kit/sort/queue`) in a program that also
 loads `std/collections`, which declares the three names: the dependency was refused ("`Queue` is
 declared `pub` by `std/collections` and by `kit/sort/queue`, and this import does not say which") while
@@ -122,8 +138,9 @@ cell was refused by the parent binary.
 Step 2 (rows 28 and 31) adds `run/case_function_typed_arms` (two arms answering `fn(string) -> string`
 join into that type and the result is applied, four targets), `reject/case_function_arms_arity` (arms
 whose arity differs are refused at the second) and `test/case_arm_lambda_value` (`A(x) -> { item ->
-f(item) }` is a lambda value; a `test/` cell because beam answers `{badfun, ok}` for a lambda a `case`
-arm produces — `03-beam`'s row). Each was refused by the parent binary.
+f(item) }` is a lambda value; a `test/` cell because beam answered `{badfun, ok}` for a lambda a `case`
+arm produces — `03-beam`'s row). Each was refused by the parent binary. `03-beam` step 9 moved the
+last to `run/case_arm_lambda_value` (four targets print `a?` / `b`) and deleted row 28.
 Step 3 (decision 151, row 22) adds `reject/section_body_method` (a `fn` in a section body is
 `section-body-method` at the `fn`), `run/section_numeric_leaf_standalone` (`val n: Tok.Percent =
 .50;`, a leaf argument, and a section-typed field of a payload variant built with `.100`, four
@@ -194,8 +211,8 @@ bad(x); })` refused at the `try`) and `run/lambda_result_return_try` (a lambda u
 `modules/shorthand_import_beside_bundled_package` (decision 170, another front's finding) — the
 shorthand `import {splitPath};` resolves to the project's own `config` although the bundled
 `routing` (loaded by a second import) declares `splitPath` in its internal module `routing/match`; it
-was `ambiguous-import-use` on the parent binary. `"targets"` excludes wasm, where `routing` reaches
-host functions with no wasm binding.
+was `ambiguous-import-use` on the parent binary. On all four targets since `encoding` binds every
+cell on wasm (`01-compiler/05-wasm` step 5; its `"targets"` narrowing no longer stood).
 Step 7 (decision 148) adds `reject/captured_var_write_in_lambda` (`run({ -> n = n + 1; 1; }, 0)` is
 `captured-var-write` at `n =`; accepted by the parent binary) and `run/closure_capture_statement_position`
 (a `forEach` body, a local closure called as a statement — directly, in a `for` body and in a
@@ -293,9 +310,14 @@ and `decorator_add_type_name`. Its fourth place — `@TypeInfo.all(with: d)`, th
 declarations carrying `d` — adds `modules/typeinfo_all_registration` (an entry point that imports
 neither page module catalogues their `#[route]` functions with their meta, in module-path then
 declaration order, and its own and another module's `#[component]` types through `member:`; a
-decorator nothing carries answers `[]`), on all four targets, two project refusals by
+decorator nothing carries answers `[]`), on all four targets, and
+`modules/typeinfo_all_type_also_imported` (catalogued types of a dependency and of a nested module
+of the package, each also imported by the entry point — plain, under an alias, by its path — are
+one declaration reached twice, not decision 170's two types of one name), on all four targets, two project refusals by
 `<target>.expect` — `typeinfo_all_imported` (a module importing the reader, at the import) and
-`typeinfo_all_private` (a private declaration the query would answer) — and four `reject/` cells
+`typeinfo_all_private` (a private declaration the query would answer) — `modules/typeinfo_all_spelled_in_string`
+(a module whose string literal only spells `@TypeInfo.all` is no reader: the entry point imports it and
+catalogues its tagged function, on all four targets), and four `reject/` cells
 where the query is written: `typeinfo_all_mixed`, `typeinfo_all_needs_member`,
 `typeinfo_all_not_decorator` and `typeinfo_all_arguments`; decision 235's list form adds
 `run/typeinfo_all_list` (two decorators in one `with:`, declaration order kept, a type carrying two
@@ -317,6 +339,9 @@ a string and a number — on all four targets; `run/is_fn_wrong_arity_fails` (`.
 resolver narrowing a stored `fn(i32) -> i32` with `is fn() -> Clock` and panicking with the entry's
 name and the expected type (the message is on stderr; wasm's `@panic` is a trap with no text); and
 `reject/call_unknown_without_narrowing` refuses calling an `unknown` that no test narrowed.
+`run/fn_local_rebound_call` calls a fn-typed local at its current binding — a `val v` narrowed
+by `is fn() -> i32` in two sibling `for` bodies, a reassigned `var f`, a second `val f` lambda —
+on all four targets (erlang applied the first binding's `V` where the second was `V@1`).
 Decision 252 (every builtin declared, a call held to its declaration) adds
 `reject/builtin_arguments` — `@panic` given a second argument its declaration does not have,
 `builtin-arguments` at the call.
@@ -324,7 +349,19 @@ C-03's beam half adds `run/std_template_host_fns_across_modules` — std host fu
 `@External.Erlang` body is a template (`fs.exists`, `fs.readText`, `os.eol`, `process.platform`,
 `encoding.hexEncode`, `hash.sha256`, `json.quote`, `regex.matches`) called from the program's
 module through a folder namespace and a leaf import, on commonJS, erlang and beam (`.targets`: wasm
-refuses std's own call sites of those cells).
+refuses `io/fs`, decision 241's group 3).
+`01-compiler/05-wasm` step 5 adds a cell per std module family, the commonJS answers on four
+targets: `run/std_encoding_on_every_target` (base64, base64url, hex, percent and form codecs over
+ASCII to astral text, each decoder's refusal) and `run/std_querystring_on_every_target` (query and
+form bodies, each refusal); `run/std_json_on_every_target` (writers, `unquote`, `decode` and its
+accessors, the host round-trip) and `run/std_unicode_on_every_target` (`fromCodepoint`,
+`codepoints`, `firstCodepoint`, the four normalization forms) run on three and are refused on wasm by
+name (`.wasm.expect`) until `decisions-pending.md` 05w-j / 05w-i bind `json.parse` / `stringify` and
+`normalize` there. Two cells pin the wrong answers wasm gave those families at exit 0, each failing
+on the parent binary: `run/std_namespace_calls_same_name` (`querystring.parse` and `url.parse`
+through their namespaces — the mangled one's receiver was dropped) and `run/tuple_optional_element`
+(a `?T` in a tuple — printed, read through `._N`, a generic method's `#(Q<T>, ?T)`, and
+`o.unwrapOr(d)` keeping a tuple's shape).
 The backend rows of `status.md` (`front/backend-rows-2`) add, each failing on the parent binary
 on the targets named: `run/case_arm_record_named_like_a_variant` (a `case` over `Block | Vec` naming
 a record an enum section also declares as a variant — erlang `case_clause`, wasm a trap, beam the
@@ -454,7 +491,7 @@ annotation), `run/record_update` and `reject/record_update_base_not_a_name` (dec
 names), `run/explicit_type_arguments_on_a_method` and
 `reject/explicit_type_argument_on_a_method_disagrees` (decision 8 §1.3 at a method call,
 `ctx.resolve<T>()`), `run/std_module_imports_std_module` (`querystring` imports `encoding`'s
-percent codec; `.wasm.expect` — STD-001 at the import) and `run/bodyless_method_without_binding` (a
+percent codec; on four targets since `01-compiler/05-wasm` step 5) and `run/bodyless_method_without_binding` (a
 bodyless method with no host binding is refused at the call on every target, `.<target>.expect`).
 The checker rows of `front/checker-rows` add a cell each, every one failing on the parent binary
 (or, where noted, pinning a rule the parent already held): `reject/self_param_free_fn` (`self`
@@ -929,7 +966,7 @@ emitted `string_slice/3`, which is why the defect needs a std module to say anyt
 
 | Cell | Pins |
 |---|---|
-| `run/std_default_fn_in_a_std_module.bp` | the VALUE, through four std modules and both interfaces. `botopink run --target erlang` compiles the whole output directory with `erlc` up front, so a dead std module is a hard error on this path. `.targets` is `commonJS erlang beam`: wasm refuses the program — `std/encoding.percentEncode`, which `querystring` reaches, has no wasm binding |
+| `run/std_default_fn_in_a_std_module.bp` | the VALUE, through four std modules and both interfaces. `botopink run --target erlang` compiles the whole output directory with `erlc` up front, so a dead std module is a hard error on this path. On four targets since `01-compiler/05-wasm` step 5, which closed the two wrong answers wasm gave it at exit 0 (`url.parse` through its namespace called `querystring`'s `parse`; `dequeue`'s `?T` read as its box's address) |
 | `test/std_default_fn_in_a_std_module.bp` | the `botopink test` path, which does NOT run `erlc` over the output: the entry runs under `escript` and its emitted runner loads its own siblings. Its imports are namespace-only on purpose (`querystring`, `path` — no imported fn, no imported type), because the sibling loader was emitted for `imported_fns` / `imported_types` / a type module only and `from "std"` fills none of them |
 
 Both halves were invisible rather than red, and in different ways. The lowering half was invisible
@@ -1000,8 +1037,24 @@ src/main.bp:<L:C>` on commonJS, erlang and beam: `run/int_overflow_add_i32`, `ru
 `run/int_overflow_sub_u32`, `run/int_overflow_add_i8` and `run/int_division_by_zero` (commonJS's
 `integer division by zero`; erlang and beam raise `badarith`, wasm traps) — and
 `run/int_arith_at_bounds`, every type's bound reached by arithmetic and printed, never an abort. wasm
-traps with no text, so its half is `.exit` alone; it does not check `u32` or the narrower types
-(`run/int_overflow_sub_u32` and `run/int_overflow_add_i8` are red there — `05-wasm`'s row).
+traps with no text, so its half is `.exit` alone; `u32` and the narrower types check their own range
+there too (`wat.zig` `emitRangeCheck`).
+
+`front/block-backends` (decision 2: an `@block`'s `return` is the block's value) adds
+`run/block_return_is_block_value` — `val x = @block { return 3; }`, a branch's `return`, a string,
+an `f64`, a `case` arm's `return`, a nested `@block`, a block inside a `for` and a statement block
+ending in `return;`, on all four targets. The parent returned from the enclosing function on beam
+and wasm and, from a block inside a loop, on erlang.
+
+`fix-js-gaps` (gaps `libs/validation` met) adds `modules/imported_variant_positional_payload` —
+`Circle(r)`, `Rect(w, h)`, `Two(l, r)` and a `val assert Circle(r)` over enums of a sibling module, on
+all four targets (commonJS read a property named after the binding and died on `undefined`).
+`run/method_named_like_module_fn` — a module declaring `startsWith(comptime decl: @Decl, …)` and
+`endsWith(a, b)` calls the string methods of those names (erlang refused the module with
+`PrimOpArgIndexOutOfRange`, commonJS answered `false`), on all four targets.
+`test/type_method_prim_default` — a `type`'s method calls `String.parseInt`, whose body calls
+`self.startsWith`; erlang emitted `startsWith(Self, …)` into the type's module, undefined. A `test/`
+cell: wasm has no `String.parseInt` (`stringSlice0/2`, `05-wasm`).
 
 ## The targets
 
@@ -1102,15 +1155,13 @@ refusal lines are in the front's README):
 | `run/host_erlang_task_result` | erlang beam | commonJS, wasm — `hostDouble` |
 | `run/host_node_task_result` | commonJS | erlang, wasm, beam — `hostDouble` |
 | `run/host_unknown_parameter` | erlang beam | commonJS, wasm — `std/erlang.element` |
-| `run/std_default_fn_in_a_std_module` | commonJS erlang beam | wasm — `std/encoding.percentEncode` |
 | `run/std_template_host_fns_across_modules` | commonJS erlang beam | wasm — `std/io/fs.exists` |
 | `run/task_throw_resolves_error` | commonJS | erlang, wasm, beam — `observe` |
 | `modules/manifest_targets_host_binding` | erlang beam (`"targets"`) | commonJS, wasm — `magnitude` |
 | `modules/erlang_host_sidecar_in_a_test` (test kind) | erlang beam (`"targets"`) | commonJS — `hello` |
 | `modules/import_bundled_package_beside_own_module` | commonJS erlang beam (`"targets"`) | wasm — `std/json.quote` |
-| `modules/shorthand_import_beside_bundled_package` | commonJS erlang beam (`"targets"`) | wasm — `std/encoding.base64Encode` |
 
-Thirty-nine exclusions; the run prints `narrowings: 39 exclusions audited — each stands on a host binding
+Thirty-seven exclusions; the run prints `narrowings: 37 exclusions audited — each stands on a host binding
 the target does not have`. No other `modules/` manifest carries `"targets"`: the field used to be
 boilerplate (`["commonJS", "erlang", "wasm"]` in 33 cells, `["commonJS", "erlang"]` in 14) that the
 runner ignored — honoured as written it would have taken beam away from 33 passing cells — and a

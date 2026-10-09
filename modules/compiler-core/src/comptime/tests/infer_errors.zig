@@ -451,8 +451,9 @@ test "infer error: external ---- builtin typechecks args" {
 }
 
 test "infer error: external ---- wrong arity" {
-    // 1 arg is below the 2..3 range (target alone). The 2-arg node-prototype
-    // shorthand `@external(target, symbol)` is now valid (§A vocabulary).
+    // `..` in place of the binding's strings: an `#[@External.<Target>(…)]`
+    // names its module and symbol as string literals, so the annotation is
+    // refused before any target reads it.
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\#[@External.Erlang(..)]
         \\pub declare fn str_length(s: string) -> i32;

@@ -1,0 +1,28 @@
+//// `std/unicode` on all four targets (`01-compiler/05-wasm` step 5):
+//// `fromCodepoint` over `String.fromCodepoint` (decision 262), `codepoints`
+//// and `firstCodepoint` by code point — an astral character is one — and the
+//// four normalization forms over composed, decomposed and compatibility text.
+//// On wasm `codepoints` and `firstCodepoint` are bound with `fn:` bodies;
+//// the four `normalize` cells have no binding yet (`decisions-pending.md`
+//// 05w-i), so the module is refused there (`.wasm.expect`).
+
+import {unicode} from "std";
+
+fn cps(s: string) -> string {
+    return unicode.codepoints(s).map({ c -> c.toString() }).join(" ");
+}
+
+pub fn main() {
+    @print(unicode.fromCodepoint(65));
+    @print(unicode.fromCodepoint(233));
+    @print(unicode.fromCodepoint(127881));
+    @print(cps("aé🎉"));
+    @print(unicode.codepoints("").length);
+    @print(unicode.firstCodepoint("🎉x").unwrapOr(-1));
+    @print(unicode.firstCodepoint("").unwrapOr(-1));
+    @print(cps(unicode.normalize("e\u{301}", unicode.NormalizationForm.NFC)));
+    @print(cps(unicode.normalize("é", unicode.NormalizationForm.NFD)));
+    @print(cps(unicode.normalize("ﬁ²", unicode.NormalizationForm.NFKC)));
+    @print(cps(unicode.normalize("ǅ", unicode.NormalizationForm.NFKD)));
+    @print(cps(unicode.normalize("한", unicode.NormalizationForm.NFD)));
+}

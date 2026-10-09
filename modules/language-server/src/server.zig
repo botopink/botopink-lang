@@ -1071,9 +1071,18 @@ pub const Server = struct {
         var result = try engine.diagnose(self.gpa, self.io, uri, source, self.lspCacheDir(ea.allocator(), uri, "template"), entries);
         defer result.deinit(self.gpa);
 
-        try self.sendDiagnostics(uri, result.diagnostics);
+        // The import-source refusals `botopink check` makes (decisions 206,
+        // 242) — the compile above binds a `from` it should refuse.
+        const import_diags = self.importDiagnostics(ea.allocator(), uri, source) catch &.{};
+        defer {
+            for (import_diags) |d| self.gpa.free(d.message);
+            self.gpa.free(import_diags);
+        }
+        const all = try std.mem.concat(ea.allocator(), proto.Diagnostic, &.{ import_diags, result.diagnostics });
 
-        if (result.diagnostics.len > 0) {
+        try self.sendDiagnostics(uri, all);
+
+        if (all.len > 0) {
             try self.feedback.mark(uri);
         } else {
             self.feedback.clear(uri);
@@ -1082,6 +1091,20 @@ pub const Server = struct {
         try self.publishGraphProblems(uri);
 
         try self.sendProgress("end", null);
+    }
+
+    /// `engine.importDiagnostics` over the open document's project: its `src`
+    /// tree (open buffers overlaid) and its manifest's `dependencies`. Empty
+    /// outside a project, as `botopink check` has nothing to check against.
+    fn importDiagnostics(self: *Server, arena: std.mem.Allocator, uri: []const u8, source: []const u8) ![]proto.Diagnostic {
+        const resolved = (self.graph.resolve(uri) catch null) orelse return &.{};
+        const externals = resolved.dependency_names orelse return &.{};
+        var package: std.ArrayListUnmanaged(engine.ModuleSource) = .empty;
+        for (resolved.deps) |dep| {
+            const src = self.files.get(dep.uri) orelse dep.source;
+            try package.append(arena, .{ .uri = dep.uri, .source = src });
+        }
+        return engine.importDiagnostics(self.gpa, uri, source, package.items, resolved.src_dir, externals);
     }
 
     /// Publish the project graph's own diagnostics — a dependency no library

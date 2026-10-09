@@ -523,7 +523,9 @@ pub fn run(
 
     // Every module comes back from the compiler; one that failed carries its
     // diagnostic, rendered here (file, line, excerpt). It does not stop the
-    // modules that compiled from running their tests.
+    // modules that compiled from running their tests. A warning is printed
+    // as `check` prints it and fails nothing (decision 57).
+    diagnostics.renderWarnings(gpa, io, arena, outputs.items);
     const failed = try diagnostics.failedOutputs(gpa, io, arena, modules, outputs.items);
 
     // This run's own artifact tree, empty by construction: a previous run's

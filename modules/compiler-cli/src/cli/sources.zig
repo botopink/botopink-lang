@@ -52,7 +52,7 @@ pub fn load(
     // Without them the resolver cannot tell a dependency from a typo.
     const externals = try proj.dependencyNames(da.allocator());
 
-    const res = resolver.resolve(gpa, io, src_dir, proj.entry, externals, proj.files, da.allocator(), &diag) catch |err| switch (err) {
+    const res = resolver.resolve(gpa, io, src_dir, proj.entry, externals, proj.name, proj.files, da.allocator(), &diag) catch |err| switch (err) {
         resolver.Error.RootNotFound => {
             // No explicit root yet — fall back to the legacy blind walk so
             // unmigrated packages keep building (deprecated for one release).
@@ -104,7 +104,7 @@ pub fn checkFlatImports(
 
     const externals = try proj.dependencyNames(a);
     var diag: resolver.Diagnostic = .{ .kind = resolver.Error.RootNotFound };
-    resolver.checkSources(a, mods, files, externals, a, &diag) catch |err| {
+    resolver.checkSources(a, mods, files, externals, proj.name, a, &diag) catch |err| {
         reportDiag(a, diag);
         return err;
     };
@@ -118,7 +118,9 @@ fn originOf(arena: std.mem.Allocator, diag: resolver.Diagnostic) []const u8 {
     return std.fmt.allocPrint(arena, "{s}:{d}:{d}", .{ diag.file, diag.line, diag.col }) catch diag.file;
 }
 
-fn reportDiag(arena: std.mem.Allocator, diag: resolver.Diagnostic) void {
+/// Print a resolution failure as every driver does — `load`, `checkFlatImports`
+/// and `libs.loadOne` over a dependency's own modules.
+pub fn reportDiag(arena: std.mem.Allocator, diag: resolver.Diagnostic) void {
     switch (diag.kind) {
         resolver.Error.AmbiguousModule => {
             reporter.errMsg("ambiguous module: both a sibling file and a folder index exist");
@@ -135,21 +137,31 @@ fn reportDiag(arena: std.mem.Allocator, diag: resolver.Diagnostic) void {
             reporter.warnDetail("  module:", diag.name);
         },
         resolver.Error.UnresolvedImportSource => {
-            reporter.errMsg("unresolved import source — no such module or dependency");
-            reporter.warnDetail("  `from` names:", diag.name);
-            reporter.warnDetail("  imported by:", diag.importer);
-            const origin = originOf(arena, diag);
-            if (origin.len > 0) reporter.warnDetail("  at:", origin);
-            reporter.hintMsg("declare it in the module tree (`mod <name>;`), or add it to `dependencies` in botopink.json");
+            // Decision 242 — only a direct dependency is importable: a package
+            // another dependency brings into the build is not this package's
+            // to name. Located at the source string when the importer is known.
+            const message = resolver.importSourceMessage(arena, diag) catch "unresolved import source — declare it in botopink.json \"dependencies\"";
+            if (diag.line == 0 or diag.file.len == 0) {
+                reporter.errMsg(message);
+                reporter.warnDetail("  imported by:", diag.importer);
+            } else {
+                var aw: std.Io.Writer.Allocating = .init(arena);
+                diagnostics.renderLocatedAs(&aw.writer, "error", message, diag.file, diag.source, diag.line, diag.col, diag.name.len + 2) catch {};
+                std.debug.print("{s}", .{aw.written()});
+            }
+            reporter.hintMsg("`from` names a package — std, a bundled package or a dependency declared in this package's botopink.json; a package one of them depends on is not importable until this one declares it");
         },
         resolver.Error.ModuleImportWithFrom => {
             // Decision 206 — located at the source string, the fix written.
-            const message = std.fmt.allocPrint(arena, "\"{s}\" is a module of this package — write {s}", .{ diag.name, diag.fix }) catch diag.name;
+            const message = resolver.importSourceMessage(arena, diag) catch diag.name;
             const severity = std.fmt.allocPrint(arena, "error[{s}]", .{bp.comptime_pipeline.module_import_with_from}) catch "error";
             var aw: std.Io.Writer.Allocating = .init(arena);
             diagnostics.renderLocatedAs(&aw.writer, severity, message, diag.file, diag.source, diag.line, diag.col, diag.name.len + 2) catch {};
             std.debug.print("{s}", .{aw.written()});
-            reporter.hintMsg("`from` names a package — std, a bundled package or a dependency; a module of this package is imported by its path inside the braces");
+            reporter.hintMsg(if (diag.own_package)
+                "`from` names another package — std, a bundled package or a dependency; this package's own modules are imported by their path inside the braces"
+            else
+                "`from` names a package — std, a bundled package or a dependency; a module of this package is imported by its path inside the braces");
         },
         resolver.Error.UnexportedImport => {
             reporter.errMsg("imported symbol is not exported by the named module");

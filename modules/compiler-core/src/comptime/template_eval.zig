@@ -374,11 +374,12 @@ fn argVar(arena: std.mem.Allocator, index: usize) std.mem.Allocator.Error![]cons
 /// keys the module by that literal as well as by the code.
 ///
 /// The only such lexeme today is one carrying `\u{…}`: `erl_emitter`'s
-/// `writeStringFromLexeme` renders it as Erlang's `\x{…}`, which inside a plain
-/// `<<"…">>` **truncates the code point to one byte** (`<<"a\x{263A}b">>` is
-/// `<<97,58,98>>`). Reproducing that here would be a second definition of what a
-/// botopink string literal means, and a wrong one; leaving the literal in the
-/// module keeps the single definition in the emitter.
+/// `writeStringFromLexeme` writes the code point as its UTF-8 bytes, one
+/// `\x{HH}` each (Erlang's own `\x{263A}` inside a plain `<<"…">>` would keep
+/// only the low byte). Decoding it here too would be a second definition of
+/// what a botopink string literal means; leaving the literal in the module keeps
+/// the single definition in the emitter (`tests/decorator_invocation.zig`'s
+/// `a \u{…} literal in the body …` pins the argument's bytes on both runtimes).
 pub fn plainArgTerm(arena: std.mem.Allocator, pa: template.PlainArg) std.mem.Allocator.Error!?Term {
     const text = std.mem.trim(u8, pa.source, " \t\r\n");
     if (text.len >= 2 and text[0] == '"' and text[text.len - 1] == '"') {

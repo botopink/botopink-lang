@@ -1,10 +1,10 @@
-//! STD-001 — `from "std"` imports red on a target with no `@external` coverage.
+//! STD-001 — `from "std"` imports red on a target no host binding covers.
 //!
 //! The CLI codegen path (`codegen.generate` + `cli/check.zig`) threads its target
 //! name through `comptimeMod.compile` → `analyzeSource`, which sets
 //! `env.target` so `markStdImports` reads `env.stdModuleFns` and rejects any
-//! imported std module whose `pub declare fn` lacks an `@external(<target>, …)`
-//! match. The non-codegen paths (LSP, comptime tests) pass `null` and the
+//! imported std module whose `pub declare fn` carries no
+//! `#[@External.<Target>(…)]` for that target. The non-codegen paths (LSP, comptime tests) pass `null` and the
 //! check stays off.
 
 const std = @import("std");

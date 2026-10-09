@@ -526,6 +526,12 @@ pub const HelperGroup = enum {
     /// code point's UTF-8 bytes as a fresh string; traps on a value that is
     /// no Unicode scalar value (negative, a surrogate, past U+10FFFF).
     str_from_cp,
+    /// `$__i32_range_chk(v, lo, hi)` / `$__i64_range_chk` — decision 264's
+    /// check of a type narrower than its carrier (`i8` in an `i32`, `u32` in
+    /// an `i64`): `v` inside `lo..=hi`, a trap outside. Groups of their own,
+    /// so a module that never asks for one renders as before.
+    i32_range_chk,
+    i64_range_chk,
 
     /// The groups `g`'s functions call into.
     pub fn deps(g: HelperGroup) []const HelperGroup {
@@ -696,6 +702,8 @@ pub const Helper = enum {
     i64_add_chk,
     i64_sub_chk,
     i64_mul_chk,
+    i32_range_chk,
+    i64_range_chk,
     str_from_cp,
 
     pub fn symbol(h: Helper) []const u8 {

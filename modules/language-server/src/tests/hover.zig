@@ -300,10 +300,11 @@ test "hover: a std type imported under an alias hovers as the declared type" {
 }
 
 // NOTE: the "external declare fn in std module" hover test was retired with the
-// stdlib-interface migration — `io` was dissolved and `@[external]` declarations
-// now live in `primitives.d.bp` (flattened into the global env, not an importable
-// std module). Re-add once an importable module carries an `@[external]` declare
-// fn again (tasks/v0.beta.4 carryover).
+// stdlib-interface migration — `io` was dissolved and the host declarations of
+// the primitives live in `libs/std/src/primitives.bp`, flattened into the global
+// env rather than imported. Importable std modules carry
+// `#[@External.<Target>(…)]` declares again (`math`, `json`), so a hover over one
+// is a test this file can add back.
 
 // ── H-F4 — hover on an interface method invoked on a builtin receiver ──────────
 

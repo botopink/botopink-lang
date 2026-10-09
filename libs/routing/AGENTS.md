@@ -28,14 +28,15 @@ routing/
 ├── botopink.json      ← "name": "routing", "target": "erlang", "targets": ["erlang", "commonJS"], `files` = every src module
 ├── src/
 │   ├── root.bp        ← `pub mod` per module, a module before the siblings that import it
-│   ├── segment.bp     ← SegmentKind, Segment, parseSegment, kindName, pathProblem, trimSlashes, parsePath, patternOf, slotOf
+│   ├── segment.bp     ← SegmentKind, Segment, parseSegment, kindName, pathProblem, trimSlashes, parsePath, patternOf, slotOf, paramNamesOf, fillPattern, toColonPattern
 │   ├── table.bp       ← RouteEntry, writeTable, parseTable, kindLabel            (the route table wire, `kind|pattern|slot|verb`)
 │   ├── match.bp       ← RouteMatch, matchPath, layoutChain, paramOf, paramsOf, splitPath, attempt, Attempt, segmentWeight, scoreBeats, ancestorPatterns
 │   ├── route_kinds.bp ← RouteKind { Static, Dynamic }, writeKinds, parseKinds, routeKindOf   (the `k` blob, `pattern|S|D`)
 │   ├── slot_states.bp ← SlotState { Matched, Defaulted, Unchanged, Empty }, writeSlotStates, parseSlotStates   (the `z` blob, `slot|pattern|M|D|U|E`)
 │   ├── url_rules.bp   ← PathRules, canonicalize, clientHref, RedirectRule, writeRedirectTable, parseRedirectTable   (`source|destination|1|0`)
 │   ├── navigation.bp  ← NavKind { None, NotFound, Redirect }, NavOutcome, signalReason, signalFromReason, isSignalReason, signalPrefixes, signalToWire, signalFromWire
-│   └── pattern.bp     ← PatternSegment { Literal, Param, Rest }, parsePattern, matchPattern, patternProblem   (the `:param` grammar)
+│   ├── pattern.bp     ← PatternSegment { Literal, Param, Rest }, parsePattern, matchPattern, patternProblem   (the `:param` grammar)
+│   └── conventions.bp ← ConventionFile, fileKinds, kindOf, kindLetter, classify, conventionConflicts   (the app-file conventions)
 └── test/              ← one `<module>_test.bp` per module, suite `routing:`
 ```
 
@@ -49,6 +50,9 @@ routing/
 | `url_rules` | `source\|destination\|1\|0` | tolerant | strict, naming the rule |
 | `navigation` | reasons `nav:not-found`, `nav:redirect:<loc>` (307), `nav:permanent-redirect:<loc>` (308), `nav:see-other:<loc>` (303); wire `""` / `N` / `R\|<status>\|<loc>` | the wire is tolerant (anything else is `None`; the location keeps its `\|`); a `nav:` reason with an unknown verb halts, naming the verb | `signalReason(None)` and a redirect status outside 303/307/308 halt |
 | `pattern` | literal, `:param`, trailing `:param*` | anything else (`*`, `[`, `(`, `?`, `{`, a bare `:`) is an `Error` whose text is `patternProblem`'s; `:param*` not last is an `Error` | — |
+
+| `conventions` | eight kinds in wrap order (decision 171): `layout template error loading not-found page default route`; a kind's file is `<kind>.bp`; `kindLetter` is `table.kindLabel`'s inverse (172) | `classify(appDir, path)` takes one path (173), never a disk: `null` outside `appDir` (compared part by part, = `startsWith(appDir + "/")`), for a name no kind has, under a `_folder` | `conventionConflicts(files)`: page beside route in one segment, then one URL claimed by two root `(group)`s with a page; a segment `pathProblem` refuses is skipped; texts `routing: …`, ASCII |
+| `segment` helpers | `paramNamesOf(path)` reads through `parseSegment` (`[a.b]` binds `a.b`, unclosed `[x` binds nothing); `toColonPattern` swaps a segment's outer `[`…`]` pair for `:` (`[...r]` → `:...r`) | — | `fillPattern(pattern, bindings)`: `Error` for a name bound twice, a required name unbound, `[x]` bound to `""` or a `/`-holding value, `[...x]` bound to `""`, a binding the pattern lacks; `[[...x]]` unbound or `""` contributes nothing |
 
 `url_rules.canonicalize` strips `basePath`, applies `trailingSlash`, then percent-decodes
 **once**; the query / fragment (from the first `?` or `#`) pass through untouched; a path

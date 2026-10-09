@@ -151,7 +151,7 @@ test "js: external ---- A2 method-on-global template keeps receiver bound" {
     );
 }
 
-// §A3: a `declare fn` paired with `@external` accepts the
+// §A3: a `declare fn` paired with `#[@External.<Target>(…)]` accepts the
 // effect annotation because the host template owns the wrapper shape.
 // The fn's return type is `@Result<R, E>`; the template renders an
 // `{ ok: ... } | { error: ... }` shape on Node and `{ok, _} | {error, _}`
@@ -227,11 +227,9 @@ test "js: external ---- 1-arg host expression declare fn renders at the call sit
 // (`hostlib:hostKey(42)`). `nodeOnly` carries no erlang target: there is nothing
 // to wrap, so it keeps its comment and is not exported, and a call to it stays
 // bare for erlc to name.
-// KNOWN (commonJS): a bare `import { … }` has no module path, so the consumer
-// requires the project root placeholder (`require("./module")`) exactly as in
-// `import_a_call_to_an_imported_fn_names_its_module`, and nothing runs — its
-// RUN LOG is empty. Erlang runs and prints `42` / `2`; wasm is single-module
-// and traps on the host-backed call, as its `declare fn` comment says.
+// commonJS, erlang and beam print `42` / `2`; wasm refuses the program at
+// compile time (`hostKey` has no `#[@External.<Target>(…)]` for the wasm
+// backend).
 test "js: external ---- an imported host-backed declare fn is wrapped by its owner" {
     try h.assertJsExpecting(std.testing.allocator, @src(), &.{
         .{

@@ -1,0 +1,2 @@
+std-unsupported-on-target: std/json.parse has no `@external` for target 'wasm'
+8:9

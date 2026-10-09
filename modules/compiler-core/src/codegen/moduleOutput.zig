@@ -148,6 +148,11 @@ pub const GenerateResult = struct {
     comptime_err: ?comptimeMod.ComptimeError = null,
     /// Set (and `js` is empty) when the module did not lex, parse or type-check.
     diagnostic: ?Diagnostic = null,
+    /// Decision 57 — the warnings inference recorded for the module
+    /// (`OkData.warnings`), rendered while the comptime session is alive and
+    /// owned here, so `build` and `test` print them as `check` does (front 26
+    /// step 4). None fails the module.
+    warnings: []Diagnostic.TypeDiagnostic = &.{},
     run_output: ?[]u8 = null,
 
     /// The module produced no artifact: a comptime validation error or a
@@ -169,6 +174,8 @@ pub const GenerateResult = struct {
         if (self.comptime_trace) |s| allocator.free(s);
         if (self.run_output) |o| allocator.free(o);
         if (self.diagnostic) |*d| d.deinit(allocator);
+        for (self.warnings) |w| allocator.free(w.message);
+        if (self.warnings.len > 0) allocator.free(self.warnings);
     }
 };
 

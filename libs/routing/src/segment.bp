@@ -175,6 +175,126 @@ pub fn slotOf(segments: Segment[]) -> string {
     return name;
 }
 
+// ── step 2: the segment helpers (front 102) ─────────────────────────────────
+
+// The names a path's capturing segments bind, in path order: `[x]`, `[...x]`
+// and `[[...x]]` read through `parseSegment` (so `[a.b]` binds `a.b`, and an
+// unclosed `[x` is a static segment and binds nothing).
+pub fn paramNamesOf(seg: string) -> string[] {
+    var out: string[] = [];
+    for (seg.split("/")) { raw ->
+        if (captures(parseSegment(raw).kind)) out.push(parseSegment(raw).name);
+    }
+    return out;
+}
+
+// The URL `pattern` names once `bindings` fill its capturing segments, groups
+// and slots dropped. `[x]` needs a binding that is neither empty nor holds a
+// `/`; `[...x]` a non-empty one (it may span segments); `[[...x]]` may be
+// unbound or bound to `""`, and then contributes nothing. A name bound twice, a
+// required name unbound, and a binding the pattern does not have are each an
+// `Error` naming them.
+pub fn fillPattern(
+    pattern: string,
+    bindings: Array<#(string, string)>,
+) -> @Result<string, string> {
+    val problem = fillProblem(pattern, bindings);
+    if (problem != "") throw problem;
+    var parts: string[] = [];
+    for (pattern.split("/")) { raw ->
+        if (raw != "") {
+            val s = parseSegment(raw);
+            val k = kindName(s.kind);
+            if (captures(s.kind)) {
+                val value = boundValue(bindings, s.name);
+                if (value != "") parts.push(value);
+            } else if ((k != "Group" && k != "Slot")) parts.push(raw);
+        }
+    }
+    return "/" + parts.join("/");
+}
+
+// The `:param` spelling of a bracket pattern: each segment wrapped in one
+// `[`…`]` pair loses that outer pair for a leading `:` (`[id]` → `:id`,
+// `[...rest]` → `:...rest`, `[[...x]]` → `:[...x]`); every other segment, and
+// the separators, are kept byte for byte.
+pub fn toColonPattern(pattern: string) -> string {
+    var parts: string[] = [];
+    for (pattern.split("/")) { s ->
+        if ((s.startsWith("[") && s.endsWith("]")))
+            parts.push(":" + sub(s, 1, s.length() - 1))
+        else
+            parts.push(s);
+    }
+    return parts.join("/");
+}
+
+fn captures(k: SegmentKind) -> bool {
+    val name = kindName(k);
+    return (name == "Dynamic" || name == "CatchAll")
+        || name == "OptionalCatchAll";
+}
+
+fn boundCount(bindings: Array<#(string, string)>, name: string) -> i32 {
+    return bindings.filter({ b -> b._0 == name }).length;
+}
+
+fn boundValue(bindings: Array<#(string, string)>, name: string) -> string {
+    return bindings.filter({ b -> b._0 == name }).at(0).unwrapOr(#("", ""))._1;
+}
+
+// The first refusal `fillPattern` answers, `""` when the bindings fill it.
+fn fillProblem(pattern: string, bindings: Array<#(string, string)>) -> string {
+    var problem = "";
+    var names: string[] = [];
+    for (bindings) { b ->
+        if ((problem == "" && boundCount(bindings, b._0) > 1))
+            problem = "routing: a binding row for `"
+                + pattern
+                + "` binds `"
+                + b._0
+                + "` twice";
+    }
+    for (pattern.split("/")) { raw ->
+        val s = parseSegment(raw);
+        val k = kindName(s.kind);
+        if ((problem == "" && captures(s.kind))) {
+            names.push(s.name);
+            val present = boundCount(bindings, s.name) > 0;
+            val value = boundValue(bindings, s.name);
+            if ((present == false && k != "OptionalCatchAll"))
+                problem = "routing: a binding row for `"
+                    + pattern
+                    + "` binds no `"
+                    + s.name
+                    + "`"
+            else if ((k == "Dynamic" && value.contains("/")))
+                problem = "routing: `"
+                    + s.name
+                    + "` of `"
+                    + pattern
+                    + "` is bound to `"
+                    + value
+                    + "`, which holds a `/` - only a catch-all segment spans several"
+            else if ((value == "" && k != "OptionalCatchAll"))
+                problem = "routing: `"
+                    + s.name
+                    + "` of `"
+                    + pattern
+                    + "` is bound to the empty string";
+        }
+    }
+    for (bindings) { b ->
+        if ((problem == "" && names.indexOf(b._0) < 0))
+            problem = "routing: a binding row for `"
+                + pattern
+                + "` binds `"
+                + b._0
+                + "`, which the pattern does not have";
+    }
+    return problem;
+}
+
 // ── character helpers (private) ─────────────────────────────────────────────
 
 fn charOf(s: string, i: i32) -> string {

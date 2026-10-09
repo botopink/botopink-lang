@@ -10,8 +10,9 @@
 ////
 //// `codepoints(s)` decomposes a string into its sequence of Unicode
 //// codepoints (the i32 representation each backend hands back as an
-//// integer). `fromCodepoint(cp)` lifts a single codepoint to a string;
-//// `firstCodepoint(s)` peeks the head. The carry-forward declares use
+//// integer). `fromCodepoint(cp)` lifts a single codepoint to a string
+//// through the primitive `String.fromCodepoint` (a `fn:` body on every
+//// target); `firstCodepoint(s)` peeks the head. The carry-forward declares use
 //// the typed `#[@External.<Target>]` annotation form (migrated in
 //// `external-target-libs-migration` F5-partial, c828308).
 ////
@@ -26,13 +27,31 @@
 //// annotation grammar; once the `when-argc-removal` keystone lands the
 //// four per-form declares can migrate together.
 
-#[@External.Node("String.fromCodePoint($0)")]
-#[@External.Erlang("unicode:characters_to_binary([$0], utf8)")]
+// The one-character string of the scalar value `cp` (decision 262): every
+// target runs `fromCodepointBody`, a call of the primitive
+// `String.fromCodepoint`, so a `cp` that is no Unicode scalar value — negative,
+// a surrogate, past U+10FFFF — aborts the program the same way everywhere.
+#[@External.Node("fn:fromCodepointBody")]
+#[@External.Erlang("fn:fromCodepointBody")]
+#[@External.Beam("fn:fromCodepointBody")]
+#[@External.Wasm("fn:fromCodepointBody")]
 pub declare fn fromCodepoint(cp: i32) -> string;
+
+fn fromCodepointBody(cp: i32) -> string {
+    return String.fromCodepoint(cp);
+}
 
 #[@External.Node("($0.codePointAt(0) ?? 0)")]
 #[@External.Erlang("""(fun(__S) -> case unicode:characters_to_list(__S, utf8) of [__C | _] -> __C; _ -> 0 end end)($0)""")]
+#[@External.Wasm("fn:firstCodepointOrZeroBody")]
 declare fn firstCodepointOrZero(s: string) -> i32;
+
+// wasm's cell: a wasm string is UTF-8 indexed by code point (decision 240),
+// so `charCodeAt(0)` of its first character IS the code point.
+fn firstCodepointOrZeroBody(s: string) -> i32 {
+    if (s.length == 0) return 0;
+    return s.charCodeAt(0);
+}
 
 // First codepoint of `s`, or `null` for the empty string. Implemented
 // in pure botopink over `firstCodepointOrZero` + a length check —
@@ -52,10 +71,19 @@ pub fn firstCodepoint(s: string) -> ?i32 {
 // integer list of codepoints when given a UTF-8 binary.
 #[@External.Node("""(Array.from($0).map((__c) => __c.codePointAt(0)))""")]
 #[@External.Erlang("unicode:characters_to_list($0, utf8)")]
+#[@External.Wasm("fn:codepointsBody")]
 pub declare fn codepoints(s: string) -> Array<i32>;
+
+// wasm's cell: one code point per character (decision 240).
+fn codepointsBody(s: string) -> Array<i32> {
+    return s.chars().map({ c -> c.charCodeAt(0) });
+}
 
 // Which Unicode normalization form to apply (NFC, NFD, NFKC, NFKD).
 pub type NormalizationForm { NFC, NFD, NFKC, NFKD }
+
+// The four forms are host calls on Node and erlang; wasm has no host and no
+// binding yet (`decisions-pending.md` 05w-i), so the module is refused there.
 
 #[@External.Node("""($0.normalize('NFC'))""")]
 #[@External.Erlang("unicode:characters_to_nfc_binary($0)")]
@@ -94,6 +122,17 @@ test "unicode.fromCodepoint round-trips ASCII 'A'" {
 
 test "unicode.fromCodepoint round-trips ASCII '0' (U+0030)" {
     assert fromCodepoint(48) == "0";
+}
+
+test "unicode.fromCodepoint of a code point above U+FFFF is one code point" {
+    val s = fromCodepoint(127881);
+    assert codepoints(s).length == 1;
+    assert firstCodepoint(s).unwrapOr(0) == 127881;
+}
+
+test "unicode.fromCodepoint of U+00E9 is the primitive's one code point" {
+    assert fromCodepoint(233) == String.fromCodepoint(233);
+    assert codepoints(fromCodepoint(233)).length == 1;
 }
 
 test "unicode.firstCodepoint of empty is null" {

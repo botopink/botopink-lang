@@ -93,6 +93,12 @@ const CachedProject = struct {
     cache_root: ?[]const u8 = null,
     deps: []GraphModule,
     problems: []Problem = &.{},
+    /// The project's own `src` directory, absolute, without a trailing `/`.
+    src_dir: []const u8 = "",
+    /// The names the project's `dependencies` declare; null when no manifest
+    /// was read (the import-source check then has no set to check against,
+    /// exactly as the CLI's resolver with `externals == null`).
+    dependency_names: ?[]const []const u8 = null,
 
     fn destroy(self: *CachedProject, gpa: std.mem.Allocator) void {
         self.arena.deinit();
@@ -113,6 +119,11 @@ pub const Resolved = struct {
     cache_root: ?[]const u8 = null,
     /// True when these deps came from the cache (no disk walk this call).
     hit: bool,
+    /// The project's own `src` directory and declared dependency names,
+    /// borrowed from the cache — what `engine.importDiagnostics` checks an
+    /// open document's `from` clauses against (front 26 step 8).
+    src_dir: []const u8 = "",
+    dependency_names: ?[]const []const u8 = null,
 };
 
 pub const ProjectGraph = struct {
@@ -165,7 +176,7 @@ pub const ProjectGraph = struct {
 
         if (self.cache.get(root)) |cached| {
             self.gpa.free(root);
-            return .{ .deps = cached.deps, .problems = cached.problems, .cache_root = cached.cache_root, .hit = true };
+            return .{ .deps = cached.deps, .problems = cached.problems, .cache_root = cached.cache_root, .hit = true, .src_dir = cached.src_dir, .dependency_names = cached.dependency_names };
         }
 
         const cp = self.buildProject(root) catch |err| {
@@ -174,7 +185,7 @@ pub const ProjectGraph = struct {
         };
         // `cp.root` is arena-owned; the cache key is a gpa-owned dup.
         try self.cache.put(root, cp);
-        return .{ .deps = cp.deps, .problems = cp.problems, .cache_root = cp.cache_root, .hit = false };
+        return .{ .deps = cp.deps, .problems = cp.problems, .cache_root = cp.cache_root, .hit = false, .src_dir = cp.src_dir, .dependency_names = cp.dependency_names };
     }
 
     // ── building ──────────────────────────────────────────────────────────────
@@ -210,6 +221,11 @@ pub const ProjectGraph = struct {
         var src_rel: []const u8 = "src/";
         if (project) |m| {
             src_rel = m.src;
+            if (!m.isWorkspace()) {
+                const names = try a.alloc([]const u8, m.dependencies.len);
+                for (m.dependencies, names) |dep, *n| n.* = dep.name;
+                cp.dependency_names = names;
+            }
             if (m.isWorkspace()) {
                 // The nearest manifest is an umbrella: nothing compiles from it.
                 try problems.append(a, try problemFromLocated(a, workspaceProblem(a, m)));
@@ -255,6 +271,7 @@ pub const ProjectGraph = struct {
         // trimmed so the joined paths stay canonical and match the editor's URIs.
         const src_dir = try std.fs.path.join(self.gpa, &.{ root, std.mem.trimEnd(u8, src_rel, "/") });
         defer self.gpa.free(src_dir);
+        cp.src_dir = try a.dupe(u8, src_dir);
         try self.loadSrcTree(a, &deps, &problems, src_dir);
 
         // 3) The bundled packages (decisions 115–117) a loaded module imports:

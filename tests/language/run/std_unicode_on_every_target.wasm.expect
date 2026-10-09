@@ -1,0 +1,2 @@
+`normalizeNfc` has no `#[@External.<Target>(…)]` for the wasm backend — in `std/unicode`, which this import links
+9:9

@@ -120,17 +120,11 @@ pub fn collect(arena: std.mem.Allocator, program: ast.Program) Error![]const Que
     return c.found.items;
 }
 
-/// True when `source` writes `@TypeInfo.all` outside a `//` comment — the
-/// lexical test `comptime.zig` orders the build's modules by.
-pub fn reads(source: []const u8) bool {
-    var i: usize = 0;
-    while (std.mem.indexOfPos(u8, source, i, "@TypeInfo.all")) |at| {
-        i = at + 1;
-        const line_start = if (std.mem.lastIndexOfScalar(u8, source[0..at], '\n')) |nl| nl + 1 else 0;
-        if (std.mem.indexOf(u8, source[line_start..at], "//") != null) continue;
-        return true;
-    }
-    return false;
+/// True when `program` calls `@TypeInfo.all` — the test `comptime.zig`
+/// orders the build's modules by. It reads the parse, never the text: a
+/// comment or a string literal spelling `@TypeInfo.all` reads nothing.
+pub fn reads(arena: std.mem.Allocator, program: ast.Program) Error!bool {
+    return (try collect(arena, program)).len > 0;
 }
 
 /// What the re-analysis of a reading module receives.
@@ -369,8 +363,30 @@ pub fn plan(
     return .{ .ok = out };
 }
 
-test "typeinfo.all: the lexical test skips a comment" {
-    try std.testing.expect(reads("val x = @TypeInfo.all(with: d);"));
-    try std.testing.expect(!reads("// @TypeInfo.all(with: d)\nval x = 1;"));
-    try std.testing.expect(!reads("val x = @typeInfo(City).name;"));
+fn readsSource(arena: std.mem.Allocator, source: []const u8) !bool {
+    var lx = Lexer.init(source);
+    const toks = try lx.scanAll(arena);
+    var p = Parser.init(toks);
+    return reads(arena, try p.parse(arena));
+}
+
+test "typeinfo.all: a reader is a module that calls it" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    try std.testing.expect(try readsSource(arena, "val x = @TypeInfo.all(with: d);"));
+    try std.testing.expect(try readsSource(arena, "fn f() -> i32 { return @TypeInfo.all(with: d).length; }"));
+    try std.testing.expect(!try readsSource(arena, "// @TypeInfo.all(with: d)\nval x = 1;"));
+    try std.testing.expect(!try readsSource(arena, "val x = @typeInfo(City).name;"));
+}
+
+test "typeinfo.all: a string literal spelling it reads nothing" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    try std.testing.expect(!try readsSource(arena,
+        \\pub fn hint() -> string {
+        \\    return "write @TypeInfo.all(with: d) in the entry point";
+        \\}
+    ));
 }

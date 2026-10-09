@@ -1,0 +1,23 @@
+//// 01-compiler/01-checker row T17 — the reflection model (`Decl`, `Param`,
+//// `Field`, `Method`) resolves in a decorator body by its own identity: a
+//// decorator module that imports a user type named `Param` reads `m.params`
+//// of a `@Decl`'s method as the reflection's `Param`. The parent binary
+//// refused it: `unknown field 'name' on type 'Param'`.
+
+pub mod model;
+pub mod deco;
+import {deco.described, deco.labelOf};
+import {model.Param};
+
+#[described]
+type Scaler(base: i32) {
+    fn scale(self: Self, factor: i32) -> i32 {
+        return self.base * factor;
+    }
+}
+
+pub fn main() {
+    @print(paramNames());
+    @print(Scaler(base: 2).scale(3));
+    @print(labelOf(Param(key: "k", weight: 1)).label);
+}

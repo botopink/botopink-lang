@@ -107,6 +107,7 @@ pub fn run(
     // Every module comes back from the compiler; one that did not lex, parse,
     // type-check or pass comptime validation carries its diagnostic instead of
     // an artifact, rendered here.
+    diagnostics.renderWarnings(gpa, io, arena, outputs.items);
     const failed = try diagnostics.failedOutputs(gpa, io, arena, modules, outputs.items);
 
     // Write what compiled; remove any previous artifact of a module that did not,
@@ -329,6 +330,8 @@ pub fn reportDependencyError(err: anyerror) void {
         error.LibFileNotFound => {},
         // Already rendered, located at the `dependencies` entry.
         error.BundledDependency => {},
+        // Already rendered, located at the dependency's import.
+        error.ImportSourceRefused => {},
         else => reporter.errMsg("failed to load project dependencies"),
     }
 }

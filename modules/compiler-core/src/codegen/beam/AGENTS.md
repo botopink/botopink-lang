@@ -100,7 +100,7 @@ and `../../comptime/runtime/AGENTS.md` say how).
 `#[@External.Beam("""…""")]` body is `.S` spliced at the call site
 (`renderBeamTemplate`), and an `#[@External.Erlang("mod", "sym")]` pair is a
 plain `call_ext`. An `#[@External.Erlang("…")]` **template** — Erlang *source*
-with receiver/`$N`/`$stringify(…)` holes (`"base64:encode($0)"`, the arity-branch
+with receiver/`$N` holes (`"base64:encode($0)"`, the arity-branch
 form, the keyword form's `method = "max($args)"` — its text as written, the
 `module` not prefixed, as erlang renders it — a primitive method's template
 reached through `primErlangTemplate`) — is
@@ -108,7 +108,7 @@ reached through `primErlangTemplate`) — is
 (`evalTemplate` → `compiledTemplate` → `lowerTemplateFn`):
 
 - the holes become the helper's parameters (the receiver → `__BpSelf`, `$N` →
-  `__BpAN`, `$stringify(e)` → `iolist_to_binary(io_lib:format("~p", [e]))`) and
+  `__BpAN`; `$stringify(…)` is no hole — the parser refuses it, decision 239) and
   the text is the body of `t(__BpSelf, __BpA0, …) -> <template>.`;
 - that one-function module is read by `../../comptime/runtime/wat/erl_parse.zig`
   and lowered by `../../comptime/runtime/beam/lower.zig` — **the reader and the
@@ -172,7 +172,12 @@ to remove on this backend. Two reasons, both checkable:
 
 - `@block { … }` already runs its statements **in the current frame** here — the
   `"block"` arm of `lowerBuiltinCall`, with `countLocalsRec` reserving the block's
-  locals in the enclosing frame. commonJS wraps the same form in an IIFE, which is
+  locals in the enclosing frame. A body holding a `return` of its own scope
+  (`ast.exprReturns`) goes through `lowerBlockWithReturn`: each `return` moves
+  its value into `x0` and jumps to the block's exit label (`emitBlockReturn`,
+  `Emitter.block_exit`), so it is the block's value and never the enclosing
+  function's `return.` (decision 2; `run/block_return_is_block_value`). commonJS
+  wraps the same form in an IIFE, which is
   the one block-as-value site front 04 found in its twin sweep (11 text hits / 10
   build sites / 1 block-as-value).
 - beam's other block-as-value producer was **already removed**, by this front's
@@ -210,7 +215,7 @@ snapshots carry.
   primitive/builtin annotation) written by the program or library author, which
   the compiler has no business restructuring; the receiver/argument holes around
   it are real nodes (`seq`). Everything the compiler itself decides — calls,
-  heads, the `$stringify(…)` wrap, missing values — is a node. Do not add a
+  heads, missing values — is a node. Do not add a
   second `raw`: a value `raw("")` rendered as nothing and produced modules that
   did not compile, and a pre-spelled call head skipped atom quoting.
 - Use `writeBinaryFromBytes` for runtime data (handles, comptime values) and

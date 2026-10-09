@@ -941,6 +941,57 @@ fn main() {
       )
     )
     local.get $c
+    i32.const 63
+    i32.eq
+    local.get $c
+    i32.const 33
+    i32.eq
+    i32.or
+    (if
+      (then
+        local.get $sh
+        i32.const 1
+        i32.add
+        local.set $e
+        local.get $go
+        local.get $v
+        i32.eqz
+        i32.and
+        (if
+          (then
+            i32.const 176
+            i32.const 1819047278
+            i32.store
+            i32.const 176
+            i32.const 4
+            call $__write_bytes
+            i32.const 0
+            local.get $e
+            i32.const 0
+            call $__print_shaped_raw
+            return
+          )
+        )
+        local.get $go
+        local.get $c
+        i32.const 33
+        i32.eq
+        i32.and
+        (if
+          (then
+            local.get $v
+            i32.load
+            local.set $v
+          )
+        )
+        local.get $v
+        local.get $e
+        local.get $go
+        call $__print_shaped_raw
+        return
+      )
+    )
+    local.get $c
     i32.const 40
     i32.eq
     (if

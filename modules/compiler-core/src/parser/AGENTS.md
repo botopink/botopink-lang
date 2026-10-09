@@ -46,8 +46,9 @@ parser/
 │                     (`$0` is `self` on a method). `Parser.parse` runs `normalizeProgram` once: it translates each
 │                     template to the renderers' receiver convention (`primOpTemplate.receiver_marker`, `$N` shifted;
 │                     `self`-first top-level fns on Erlang/Beam too), keeps the source in `Annotation.source_args`
-│                     (formatter, AST dump), and refuses `$self` / an out-of-range `$N` with a located
-│                     `template-self-marker` / `template-marker-out-of-range`
+│                     (formatter, AST dump), and refuses `$self` / `$stringify(…)` (decisions 164, 239) / an
+│                     out-of-range `$N` with a located `template-self-marker` / `template-stringify-marker` /
+│                     `template-marker-out-of-range`
 ├── exprs.zig      ← expression sub-grammar: precedence climbing, primary/pipeline/local-bind/lambda/loops/range,
 │                     string templates (`${…}` re-scan), tagged calls. The loops are decision 105's three keywords,
 │                     one parser each and one `LoopExpr` node (`keyword` says which): `parseForExpr` —
@@ -747,6 +748,19 @@ that uses none of them dumps exactly as it did before they existed.
   `import pkg [, { … }] [from "…"]` form (`ImportDecl.package`, parsed in
   `decls.zig`). The parser only records the modifier — uniqueness is validated in
   inference, and the resolver/driver (`comptime.zig`) binds the handle.
+- **`type T` as a union member (decision 297)**: `startsTypeRef` takes `type`,
+  so `comptime s: Box<T> | type T` parses (a `typeparam` member) and `x is type`
+  tests the meta-kind; `parseTypeRef` frees a refused union's first member
+  once (it used to free it twice — a panic on `| type T` before `type` began a
+  type).
+- **A module's default function (decision 289)**: `[#[d]] pub default fn (…)`
+  parses with an empty name (`FnDecl.anonymousDefault`, `nameLoc` at `fn`;
+  analysis names it `ast.anonymous_default_name`, `comptime/default_fn.zig`);
+  `pub default <name>;` (`checkDefaultName`) is no declaration — `parseDecls`
+  collects it and `markDefaultNames` sets `isDefault` / `defaultBy` (and `isPub`
+  with `pubByDefault`) on the module's `fn <name>`: no such `fn` is
+  `default-unknown`, a function already the default is `default-twice`, both at
+  the name. Two different defaults are the checker's `default-twice`.
 - **Enum sections**: an `Identifier { … }` item
   inside an enum body declares a *section* — a named grouping of nested
   variants — captured as `EnumSection { name, variants, sections }` and stored

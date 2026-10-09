@@ -136,16 +136,15 @@ test "diagnostics: type mismatch surfaces a located typeError" {
 
 // ── D10 — comptime annotation failure surfaces as a diagnostic ────────────────
 //
-// A comptime annotation `fail` surfaces as a diagnostic. `@external` arity
-// validation runs during inference (no node eval needed), so it is the
-// deterministic, node-free representative of that path. (The node-backed
-// `decorator_eval` `fail`/`failAt` path is exercised by the lib matrix —
-// onze/rakun decorators — see front-c-runtime.md C3.)
-//
-// NOTE: this annotation-validation typeError currently carries a null `loc`, so
-// it surfaces file-wide rather than pinned to the annotated decl. Attaching the
-// span is `compiler-core` (Front A) work; here we pin the diagnostic fires.
-test "diagnostics: a comptime @external misuse surfaces a typeError diagnostic" {
+// A comptime annotation `fail` surfaces as a diagnostic. The validation of an
+// `#[@External.<Target>(…)]` annotation's arguments runs during inference (no
+// node eval needed), so it is the deterministic, node-free representative of
+// that path. (The node-backed
+// `decorator_eval` `fail`/`failAt` path is exercised by the libraries'
+// decorator cells.) The error is located at the annotation, as every
+// `TypeError` is (`snapshots/comptime/errors/external_wrong_arity.snap.md`,
+// `main.bp:1:3`); here we pin the diagnostic fires.
+test "diagnostics: a misused #[@External.<Target>] annotation surfaces a typeError diagnostic" {
     const gpa = std.testing.allocator;
     var c = try h.compile(gpa,
         \\#[@External.Erlang(..)]
@@ -153,8 +152,8 @@ test "diagnostics: a comptime @external misuse surfaces a typeError diagnostic" 
     );
     defer c.deinit(gpa);
 
-    // The arity failure means there is no successful (.ok) output. (1 arg is
-    // below the 2..3 range; the 2-arg node shorthand is valid — see §A.)
+    // The refused annotation means there is no successful (.ok) output: `..`
+    // stands where the module and symbol string literals go.
     try std.testing.expect(!c.isOk());
 
     var found = false;
@@ -185,4 +184,51 @@ test "diagnostics: a checker warning surfaces with severity Warning" {
     try std.testing.expect(result.diagnostics.len > 0);
     for (result.diagnostics) |d| try std.testing.expectEqual(@as(?u32, proto.DiagnosticSeverity.Warning), d.severity);
     try snap.assertDiagnostics(gpa, "diagnostics_checker_warning", source, result.diagnostics);
+}
+
+// ── D12 — the import-source refusals `check` makes (front 26 step 8) ────────
+//
+// Decisions 206 and 242: `from` names a package — std, a bundled package or a
+// declared dependency. The compile binds `from "<own module>"` and the editor
+// showed it resolving until `botopink check` refused it; the LSP now reports
+// both refusals with the CLI's message, at the source string.
+
+test "diagnostics: from naming a module of this package is module-import-with-from" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\import {area} from "geometry";
+        \\
+        \\pub fn main() {
+        \\    @print(area(2));
+        \\}
+    ;
+    const package = [_]engine.ModuleSource{
+        .{ .uri = "file:///proj/src/geometry.bp", .source = "pub fn area(x: i32) -> i32 { return x * x; }" },
+    };
+    const diags = try engine.importDiagnostics(gpa, "file:///proj/src/main.bp", source, &package, "/proj/src", &.{});
+    defer {
+        for (diags) |d| gpa.free(d.message);
+        gpa.free(diags);
+    }
+    try std.testing.expectEqual(@as(usize, 1), diags.len);
+    try snap.assertDiagnostics(gpa, "diagnostics_import_module_with_from", source, diags);
+}
+
+test "diagnostics: from naming an undeclared package is an unresolved import source" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\import {start} from "starter";
+        \\import {greet} from "core";
+        \\
+        \\pub fn main() {
+        \\    @print(start() + greet());
+        \\}
+    ;
+    const diags = try engine.importDiagnostics(gpa, "file:///proj/src/main.bp", source, &.{}, "/proj/src", &.{"starter"});
+    defer {
+        for (diags) |d| gpa.free(d.message);
+        gpa.free(diags);
+    }
+    try std.testing.expectEqual(@as(usize, 1), diags.len);
+    try snap.assertDiagnostics(gpa, "diagnostics_import_unresolved_source", source, diags);
 }

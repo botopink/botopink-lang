@@ -1,0 +1,5 @@
+import {greet} from "core";
+
+pub fn start() -> string {
+    return greet();
+}

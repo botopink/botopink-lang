@@ -43,6 +43,7 @@ fn main() {
     {move, {x, 0}, {y, 0}}.
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {y, 1}}.
+    {line, [{location, "test@main.erl", 2}]}.
   {label, 12}.
     {move, {atom, true}, {x, 0}}.
     {test, is_eq_exact, {f, 13}, [{x, 0}, {atom, true}]}.
@@ -83,6 +84,7 @@ fn main() {
     {move, {x, 0}, {y, 0}}.
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {y, 1}}.
+    {line, [{location, "test@main.erl", 3}]}.
   {label, 19}.
     {test, is_lt, {f, 20}, [{y, 0}, {integer, 3}]}.
     {gc_bif, '+', {f, 0}, 0, [{y, 0}, {integer, 1}], {x, 0}}.
@@ -94,6 +96,7 @@ fn main() {
     {call_ext, 1, {extfunc, erlang, error, 1}}.
   {label, 22}.
     {move, {x, 0}, {y, 0}}.
+    {line, [{location, "test@main.erl", 3}]}.
   {label, 23}.
     {move, {atom, true}, {x, 0}}.
     {test, is_eq_exact, {f, 24}, [{x, 0}, {atom, true}]}.

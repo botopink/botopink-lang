@@ -1326,6 +1326,10 @@ const Emitter = struct {
     /// a contested name has no slot list that is certainly its own, and it
     /// claims nothing by label (decision 67).
     variant_owner: std.StringHashMap([]const u8),
+    /// Payload variant names two enums of this module declare with different
+    /// fields. `variant_fields` keeps one of the two lists, so neither says
+    /// which field a positional pattern reads (`payloadSlots`).
+    variant_contested: std.StringHashMapUnmanaged(void) = .empty,
     /// Every payload-less variant name declared by an enum in this module
     /// (`Nothing`, `X3xl`). It says "this bare name is a variant, not a
     /// binding" — nothing more. The JS class the variant's singleton is an
@@ -1855,6 +1859,9 @@ const Emitter = struct {
                     }
                     const names = try self.arena().alloc([]const u8, v.fields.len);
                     for (v.fields, 0..) |f, i| names[i] = f.name;
+                    if (self.variant_fields.get(v.name)) |prev| if (!sameFieldNames(prev, names)) {
+                        try self.variant_contested.put(self.arena(), v.name, {});
+                    };
                     try self.variant_fields.put(v.name, names);
                     // A second enum of this module declaring the same variant
                     // name contests it — neither owns it for the purpose of a
@@ -2514,6 +2521,23 @@ const Emitter = struct {
     /// The subclasses follow the base class because `extends Shape` is
     /// evaluated when the subclass declaration runs; the singletons follow the
     /// subclasses for the same reason.
+    /// `get $0() { return this.label; }` — one per field — for a payload
+    /// variant whose name two enums of the program declare with different
+    /// fields: a positional pattern over it reads `$<i>` (`payloadSlots`).
+    /// The getters live on the prototype, so `Object.keys(value)` still
+    /// answers exactly the payload fields. Empty for every other variant.
+    fn positionalGetters(self: *Emitter, v: ast.EnumVariant) ![]const js.Class.ClassMember {
+        if (v.fields.len == 0 or !self.variantReadsByPosition(v.name)) return &.{};
+        if (v.fields.len > positional_keys.len) return error.TooManyPositionalFields;
+        const getters = try self.arena().alloc(js.Class.ClassMember, v.fields.len);
+        for (v.fields, 0..) |f, i| getters[i] = .{
+            .kind = .getter,
+            .name = positional_keys[i],
+            .body = .{ .stmts = try self.b.stmts(&.{.{ .return_ = try self.b.member(.this, f.name) }}), .indent = 1 },
+        };
+        return getters;
+    }
+
     fn buildEnum(self: *Emitter, e: ast.TypeDecl) !js.Stmt {
         const prev_self_type = self.eq_self_type;
         self.eq_self_type = e.name;
@@ -2556,6 +2580,7 @@ const Emitter = struct {
                 .name = class_name,
                 .extends = e.name,
                 .ctor = ctor,
+                .members = try self.positionalGetters(v),
             } });
             try tail.append(self.arena(), .{ .expr = try self.b.assign(
                 try self.b.member(try self.b.member(.{ .name = class_name }, "prototype"), "tag"),
@@ -3158,8 +3183,7 @@ const Emitter = struct {
                     for (lits, 0..) |p, i| elems[i] = try self.buildPattern(p);
                     return .{ .array = .{ .elems = elems } };
                 }
-                const bare = bareVariantName(v.name);
-                const declared = self.variant_fields.get(bare) orelse self.record_fields.get(bare);
+                const declared = self.payloadSlots(v.name, true);
                 switch (v.payload) {
                     .binding => |binding| return .{ .ident = binding },
                     .fields => |fields| {
@@ -3244,9 +3268,13 @@ const Emitter = struct {
                 // `tag`, exactly as a `case` arm tests it (`patternTest`):
                 // `instanceof Circle` named no class any module emits, and
                 // `val assert Circle(r) = s catch …` died `ReferenceError:
-                // Circle is not defined`. A record keeps its class test.
+                // Circle is not defined`. A record keeps its class test. So
+                // is a payload variant another module of the program
+                // declares (`payloadSlots`): an imported enum's `Circle` is
+                // no class of this module either.
                 const bare = bareVariantName(v.name);
-                if (self.isDeclaredVariantName(bare) and !self.class_names.contains(bare)) {
+                const program_variant = if (self.cross) |xc| xc.variantFields(bare) != .none else false;
+                if ((self.isDeclaredVariantName(bare) or program_variant) and !self.class_names.contains(bare)) {
                     return (try self.patternTest(pat.*, subject)) orelse js.Expr{ .name = "true" };
                 }
                 return switch (v.payload) {
@@ -6052,8 +6080,8 @@ const Emitter = struct {
     /// the payload, `.Some(#(a, b))` tests the tuple.
     fn variantTest(self: *Emitter, v: anytype, subject: js.Expr) anyerror!js.Expr {
         const bare = bareVariantName(v.name);
-        const declared = if (isResultPath(v.name)) null else self.variant_fields.get(bare);
-        if (declared == null) if (resultKey(bare)) |key| {
+        const declared = self.payloadSlots(v.name, false);
+        if (declared == .none) if (resultKey(bare)) |key| {
             return try self.b.binaryBare("in", .{ .quoted = key }, subject);
         };
         var acc = try self.b.binaryBare("===", try self.b.member(subject, "tag"), .{ .quoted = bare });
@@ -6071,11 +6099,56 @@ const Emitter = struct {
     /// otherwise the declared field at that position (§5.1 P4). Null when the
     /// variant is not declared in this module, which leaves the caller its own
     /// fallback.
-    fn variantFieldKey(v: anytype, declared: ?[]const []const u8, i: usize) ?[]const u8 {
+    fn variantFieldKey(v: anytype, declared: PayloadSlots, i: usize) ?[]const u8 {
         if (v.labels.len > i and v.labels[i].len > 0) return v.labels[i];
-        const d = declared orelse return null;
-        if (i >= d.len) return null;
-        return d[i];
+        return switch (declared) {
+            .none => null,
+            .names => |d| if (i < d.len) d[i] else null,
+            .by_position => if (i < positional_keys.len) positional_keys[i] else null,
+        };
+    }
+
+    /// Which property a positional payload element of the variant `name` is
+    /// read from (decision 8 § 5.1 P4: `Circle(r)` binds the field at
+    /// position 0, `radius`). This emitter lowers a `case` without the
+    /// subject's type, so the variant is known by its bare name:
+    ///
+    /// - a variant of an enum this module declares reads its declared fields;
+    /// - a record's constructor pattern (`with_records`) reads the record's;
+    /// - a variant declared by another module of the program — an imported
+    ///   enum, or one whose values reach this module through a function —
+    ///   reads the fields that module declares (`CrossModule.variantFields`).
+    ///   It used to read a property named after the binding, so `Str(text)`
+    ///   over std's `Json` was `undefined` on node and right on erlang;
+    /// - a name two enums of the program declare with different fields
+    ///   (`Tag.Item(label)`, `Count.Item(count)`) reads by POSITION, from the
+    ///   `$<i>` getter every class of such a variant carries (`buildEnum`) —
+    ///   the matched value says which field it is.
+    ///
+    /// `Ok` / `Err` / `Error` naming no variant of this module stay a
+    /// `@Result`'s key (`.none`), whatever another module declares.
+    fn payloadSlots(self: *Emitter, name: []const u8, with_records: bool) PayloadSlots {
+        if (isResultPath(name)) return .none;
+        const bare = bareVariantName(name);
+        const local = self.variant_fields.get(bare);
+        if (self.variant_contested.contains(bare)) return .by_position;
+        if (local == null and resultKey(bare) != null) return .none;
+        const program: crossModule.VariantFields = if (self.cross) |xc| xc.variantFields(bare) else .none;
+        if (program == .contested and (local != null or !(with_records and self.record_fields.contains(bare)))) return .by_position;
+        if (local) |names| return .{ .names = names };
+        if (with_records) if (self.record_fields.get(bare)) |names| return .{ .names = names };
+        return switch (program) {
+            .known => |names| .{ .names = names },
+            .none, .contested => .none,
+        };
+    }
+
+    /// True when the payload variant `name` reads by position (`payloadSlots`)
+    /// — its class then carries one `$<i>` getter per field.
+    fn variantReadsByPosition(self: *Emitter, name: []const u8) bool {
+        if (self.variant_contested.contains(name)) return true;
+        const xc = self.cross orelse return false;
+        return xc.variantFields(name) == .contested;
     }
 
     /// `return <body>;` for a matched arm, gated by the arm's guard when
@@ -6368,8 +6441,8 @@ const Emitter = struct {
                 // declared names too, as `buildPattern` does: `val assert
                 // Person(n, a) = p catch …` destructured `{ n, a }` — names the
                 // record does not have — and printed `null null`.
-                const declared = if (isResultPath(v.name)) null else self.variant_fields.get(bare) orelse self.record_fields.get(bare);
-                if (declared == null) if (resultKey(bare)) |key| {
+                const declared = self.payloadSlots(v.name, true);
+                if (declared == .none) if (resultKey(bare)) |key| {
                     switch (v.payload) {
                         .binding => |binding| try body.append(self.arena(), .{ .decl = .{
                             .pattern = .{ .ident = binding },
@@ -6449,6 +6522,27 @@ const Emitter = struct {
 /// `Ok(…)` / `Error(…)` pattern over a `@Result` subject
 /// (`Env.resultPatternLocs`). Always the `@Result` variant, even where a user
 /// enum declares one of those names.
+/// `Emitter.payloadSlots`' answer.
+const PayloadSlots = union(enum) {
+    /// Nothing declares the variant: the caller's own fallback.
+    none,
+    /// The declared field names, in order.
+    names: []const []const u8,
+    /// Read the field at position `i` from the value's `$<i>` getter.
+    by_position,
+};
+
+/// The getter names of a by-position payload (`PayloadSlots.by_position`). A
+/// botopink identifier never starts with `$`, so none collides with a field.
+const positional_keys = [_][]const u8{ "$0", "$1", "$2", "$3", "$4", "$5", "$6", "$7", "$8", "$9", "$10", "$11", "$12", "$13", "$14", "$15" };
+
+/// Two field-name lists that are the same names in the same order.
+fn sameFieldNames(a: []const []const u8, b: []const []const u8) bool {
+    if (a.len != b.len) return false;
+    for (a, b) |x, y| if (!std.mem.eql(u8, x, y)) return false;
+    return true;
+}
+
 fn isResultPath(name: []const u8) bool {
     if (!std.mem.startsWith(u8, name, "Result.")) return false;
     const bare = name["Result.".len..];

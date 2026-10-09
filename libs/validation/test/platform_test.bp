@@ -11,7 +11,7 @@
 
 import {constraints};
 import {report.Violation};
-import {json, json.Json, unicode} from "std";
+import {json, json.Json, unicode, url} from "std";
 
 // ── a generic record holding a function, with a generic method ──────────────
 
@@ -117,6 +117,76 @@ test "validation: the portable length of a string is its code-point count" {
     assert unicode.codepoints(text).length == 3;
     assert unicode.codepoints("").length == 0;
     assert unicode.codepoints("abc").length == "abc".length();
+}
+
+// ── f32 ─────────────────────────────────────────────────────────────────────
+
+// An `f32` is written with the `f` suffix (`1.5f`; a bare `1.5` is an `f64`
+// and does not fit). Both targets hold it as a double: `0.1f` reads back as
+// `0.1`, not as the nearest single-precision value `0.100000001490116…`. So a
+// value round-trips through an `f32` unchanged, and the single-precision range
+// is a check a marker makes (`#[float32]` on an `f64`), never a rounding the
+// platform does.
+fn widened(x: f32) -> string {
+    return [x].join("");
+}
+
+test "validation: an f32 is written 1.5f and round-trips unchanged on both targets" {
+    val half: f32 = 1.5f;
+    val tenth: f32 = 0.1f;
+    assert widened(half) == "1.5";
+    assert widened(tenth) == "0.1";
+    assert tenth == 0.1f;
+}
+
+// ── url.parse against the WHATWG URL standard ───────────────────────────────
+
+// `std/url.parse` splits at `://`, `#`, `?`, `/`, `@` and the first `:` and
+// answers every input; the WHATWG parser (`new URL(…)`, what Zod's `z.url()`
+// asks) normalizes and refuses. Each case is an input where the two answer
+// differently, with WHATWG's answer beside it. The `#[url]` marker is written
+// against these: it splits the authority and checks scheme, host and port
+// itself, and does not take `url.parse`'s answer as a verdict.
+fn parts(input: string) -> string {
+    val u = url.parse(input);
+    return [
+        u.scheme,
+        u.host,
+        [u.port].join(""),
+        u.path,
+        u.query,
+        u.fragment,
+    ].join("|");
+}
+
+test "validation: url.parse keeps the case WHATWG lowers, and no path is not /" {
+    // WHATWG: scheme `http`, host `example.com`, path `/`.
+    assert parts("HTTP://Example.COM") == "HTTP|Example.COM|0|||";
+    // WHATWG: path `/`.
+    assert parts("http://example.com") == "http|example.com|0|||";
+}
+
+test "validation: url.parse keeps a default port WHATWG elides" {
+    // WHATWG: port `""` — 80 is http's default.
+    assert parts("http://a.com:80/x") == "http|a.com|80|/x||";
+}
+
+test "validation: url.parse reads a URL without an authority as one scheme" {
+    // WHATWG: scheme `mailto`, path `a@b.c`.
+    assert parts("mailto:a@b.c") == "mailto:a@b.c||0|||";
+}
+
+test "validation: url.parse splits a bracketed IPv6 host at its first colon" {
+    // WHATWG: host `[::1]`, port 8080.
+    assert parts("http://[::1]:8080/") == "http|[|18080|||";
+}
+
+test "validation: url.parse answers what WHATWG refuses" {
+    // WHATWG: each one is a failure (TypeError: Invalid URL).
+    assert parts("not a url") == "not a url||0|||";
+    assert parts("http://") == "http||0|||";
+    assert parts("http://a b.com/") == "http|a b.com|0|||";
+    assert parts("http://a.com:abc/") == "http|a.com|0|||";
 }
 
 // ── decorators ──────────────────────────────────────────────────────────────

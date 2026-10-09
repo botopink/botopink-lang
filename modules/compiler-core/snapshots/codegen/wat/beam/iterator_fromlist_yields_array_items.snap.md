@@ -38,6 +38,7 @@ fn main() {
     {move, nil, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
+    {line, [{location, "test@main.erl", 2}]}.
   {label, 13}.
     {test, is_nonempty_list, {f, 14}, [{y, 2}]}.
     {get_list, {y, 2}, {x, 0}, {x, 1}}.

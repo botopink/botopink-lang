@@ -860,6 +860,10 @@ const cond_continue_signal = "__bp_cond_continue";
 const gen_end_signal = "__bp_gen_end";
 /// The throw of a `try` with no rest to nest (`tryThrowCase`).
 const try_throw_signal = "__bp_try";
+/// The throw of a `return` an `@block`'s fun cannot answer as its last
+/// expression — one in a loop or a discarded statement of the block
+/// (`returnNode`); the block's own guard catches it (`builtinCallNode`).
+const block_return_signal = "__bp_block";
 /// The throw of a bare `break` at a generator fn's own level (`genStopThrow`).
 const gen_stop_signal = "__bp_gen_stop";
 
@@ -3067,6 +3071,11 @@ const Emitter = struct {
     /// `earlyReturnIfExpr` does not reach (`if (a) { …; if (b) return x; }`):
     /// that `return` throws to the function's guard like one in a loop.
     in_nested_return: bool = false,
+    /// Set while an `@block`'s body is lowered: a `return` that cannot be the
+    /// fun's last expression throws `{'__bp_block', V}` to the block's guard,
+    /// never to the function's (`returnNode`), and the flag records that the
+    /// guard is needed. A lambda resets it — its `return` is its own.
+    block_guard: ?*bool = null,
     /// 06 C13 — the host-backed fn whose `#[@External.Erlang(…)]` is missing,
     /// filled at the throw site so `codegenEmit` can turn
     /// `error.MissingExternalTarget` into a located diagnostic naming it.
@@ -3705,8 +3714,6 @@ const Emitter = struct {
             no_recv: anyerror,
             parts: std.ArrayListUnmanaged(Ast.Expr) = .empty,
             text: std.ArrayListUnmanaged(u8) = .empty,
-            /// `parts` lengths at each open `$stringify(`.
-            stringify_marks: std.ArrayListUnmanaged(usize) = .empty,
 
             fn flush(c: *@This()) anyerror!void {
                 if (c.text.items.len == 0) return;
@@ -3727,23 +3734,6 @@ const Emitter = struct {
             pub fn emitArg(c: *@This(), i: usize) anyerror!void {
                 try c.flush();
                 try c.parts.append(c.b.arena, try c.self.argNode(c.b, c.cc_ref, i));
-            }
-            /// `$stringify(<inner>)`: the parts `<inner>` renders become the
-            /// argument of the compiler's own any-value-as-text call node,
-            /// `iolist_to_binary(io_lib:format("~p", [Inner]))` — not template
-            /// text, which stays the author's only.
-            pub fn emitStringifyOpen(c: *@This()) anyerror!void {
-                try c.flush();
-                try c.stringify_marks.append(c.b.arena, c.parts.items.len);
-            }
-            pub fn emitStringifyClose(c: *@This()) anyerror!void {
-                try c.flush();
-                const mark = c.stringify_marks.pop() orelse return error.PrimOpStringifyMalformed;
-                const inner_parts = try c.b.arena.dupe(Ast.Expr, c.parts.items[mark..]);
-                c.parts.shrinkRetainingCapacity(mark);
-                const inner: Ast.Expr = if (inner_parts.len == 1) inner_parts[0] else .{ .seq = inner_parts };
-                const format = try c.b.remote("io_lib", "format", &.{ .{ .string = "~p" }, try c.b.list(&.{inner}) });
-                try c.parts.append(c.b.arena, try c.b.remote("erlang", "iolist_to_binary", &.{format}));
             }
         };
         var ctx = Ctx{ .self = this, .b = b, .recv = recv, .cc_ref = cc, .argc = cc.args.len + cc.trailing.len, .no_recv = no_recv };
@@ -6710,13 +6700,36 @@ const Emitter = struct {
     /// in one arm only — erlc's `variable unsafe in 'case'`.
     fn returnNode(this: *Emitter, b: Ast.Builder, value: Ast.Expr) anyerror!Ast.Expr {
         if (!this.returnThrows()) return value;
+        if (this.block_guard) |used| {
+            used.* = true;
+            return b.remote("erlang", "throw", &.{try b.tuple(&.{ Ast.Expr.a(block_return_signal), value })});
+        }
         this.try_throw_used = true;
         return b.remote("erlang", "throw", &.{try b.tuple(&.{ Ast.Expr.a(try_throw_signal), value })});
     }
 
     /// Whether a `return` here throws to the function's guard (`returnNode`).
     fn returnThrows(this: *const Emitter) bool {
-        return (this.in_loop_body or this.in_nested_return) and this.fn_guarded and this.gen_scope == null and !this.in_test_body;
+        if (!this.in_loop_body and !this.in_nested_return) return false;
+        // Inside an `@block` the `return` is the block's, whose guard is
+        // always there to catch it.
+        if (this.block_guard != null) return true;
+        return this.fn_guarded and this.gen_scope == null and !this.in_test_body;
+    }
+
+    /// `try Body catch throw:{'__bp_block', V} -> V end` — the guard of an
+    /// `@block`'s fun whose `return` threw (`returnNode`).
+    fn guardBlockReturn(this: *Emitter, b: Ast.Builder, body: Ast.Body) anyerror!Ast.Body {
+        _ = this;
+        const r_var = Ast.Expr.v("__BpBlockR");
+        return b.body(&.{.{ .try_catch = .{
+            .body = body,
+            .catches = try b.arena.dupe(Ast.Clause, &.{try b.clause(
+                &.{try b.exception(Ast.Expr.a("throw"), try b.tuple(&.{ Ast.Expr.a(block_return_signal), r_var }))},
+                &.{},
+                &.{r_var},
+            )}),
+        } }});
     }
 
     /// `try Body catch throw:{'__bp_try', E} -> E end` — the guard of a
@@ -6763,6 +6776,9 @@ const Emitter = struct {
         const saved_nested_return = this.in_nested_return;
         this.in_nested_return = false;
         defer this.in_nested_return = saved_nested_return;
+        const saved_block_guard = this.block_guard;
+        this.block_guard = null;
+        defer this.block_guard = saved_block_guard;
         // Its body answers the group, not a value a thrown `return` could be:
         // a `return` inside a loop in it keeps the old shape.
         const saved_guarded = this.fn_guarded;
@@ -7642,6 +7658,9 @@ const Emitter = struct {
                 const saved_nested_return = this.in_nested_return;
                 this.in_nested_return = false;
                 defer this.in_nested_return = saved_nested_return;
+                const saved_block_guard = this.block_guard;
+                this.block_guard = null;
+                defer this.block_guard = saved_block_guard;
                 // A `fun` is a function of its own: a `return` (or a `try`)
                 // thrown from a loop inside it is caught by ITS guard, not by
                 // the enclosing function's.
@@ -8031,8 +8050,21 @@ const Emitter = struct {
         if (try this.builtinAnnotationNode(b, cc.callee, cc)) |node| return node;
         if (std.mem.eql(u8, cc.callee, "block")) {
             // `@block { … }` (or `@block(fn)`) is an immediately-applied fun, so
-            // the body runs and its value is the call's value.
-            const body: Ast.Body = if (cc.args.len == 1) blk: {
+            // the body runs and its value is the call's value. Its `return` is
+            // the block's (decision 2): the fun's last expression, or — from a
+            // loop or a discarded statement of the body, enclosing loops of the
+            // function aside — a throw its own guard answers (`returnNode`).
+            const saved_in_loop = this.in_loop_body;
+            this.in_loop_body = false;
+            defer this.in_loop_body = saved_in_loop;
+            const saved_nested_return = this.in_nested_return;
+            this.in_nested_return = false;
+            defer this.in_nested_return = saved_nested_return;
+            const saved_block_guard = this.block_guard;
+            var guard_used = false;
+            this.block_guard = &guard_used;
+            defer this.block_guard = saved_block_guard;
+            const raw_body: Ast.Body = if (cc.args.len == 1) blk: {
                 const arg = cc.args[0].value;
                 if (arg.* != .function) return error.InvalidArgs;
                 this.indent += 1;
@@ -8042,6 +8074,7 @@ const Emitter = struct {
                 try this.bodyNode(b, cc.trailing[0].body, 0, this.indent + 1)
             else
                 return error.InvalidArgs;
+            const body = if (guard_used) try this.guardBlockReturn(b, raw_body) else raw_body;
             return b.applyParen(.{ .fun = .{ .params = &.{}, .body = body } }, &.{});
         }
         if (std.mem.eql(u8, cc.callee, ast.is_builtin_name) and cc.isType != null) return this.isTestNode(b, cc);
@@ -8156,10 +8189,12 @@ const Emitter = struct {
                 }
             }
             // A fn-typed local (parameter, `val`, lambda binding) is applied as a
-            // fun variable (`Pred(X)`), not called as a module function.
+            // fun variable (`Pred(X)`), not called as a module function — at
+            // its current version: a second `val v` of the function binds
+            // `V@1`, and `v()` there applies `V@1`, never the first `V`.
             if (this.locals.contains(cc.callee)) {
                 return .{ .apply = .{
-                    .fun = try b.ptr(Ast.Expr.v(try this.arenaVar(b, cc.callee))),
+                    .fun = try b.ptr(Ast.Expr.v(try this.varRef(b, cc.callee))),
                     .args = try this.callArgs(b, null, cc),
                 } };
             }
@@ -10214,11 +10249,19 @@ const Emitter = struct {
     fn instanceDefaultForm(this: *Emitter, b: Ast.Builder, out: *Forms, d: IfaceDefault) !void {
         const saved_kind = this.self_prim_kind;
         const saved_in = this.in_iface_default;
+        const saved_self_record = this.self_record_type;
         defer {
             this.self_prim_kind = saved_kind;
             this.in_iface_default = saved_in;
+            this.self_record_type = saved_self_record;
         }
         this.in_iface_default = true;
+        // `self` is the interface's primitive here, never the record whose
+        // module the form lands in: a `type`'s module emits the defaults its
+        // methods reached while `recordForms` holds `self_record_type`, and
+        // `String.parseInt`'s `self.startsWith("-")` came out as the record's
+        // `startsWith(Self, …)` — undefined, so erlc refused the module.
+        this.self_record_type = null;
         // A prelude body is `primitives.bp`'s text, and inference's tables are
         // keyed by a source location with no file: a lookup at one of its
         // locations answers whatever the CONSUMING module recorded at the same

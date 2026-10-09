@@ -1,0 +1,13 @@
+//// The catalogued types, declared in a module of a dependency.
+
+import {marks.service};
+
+#[service]
+pub type Widget(tag: string) {
+    pub fn name(self: Self) -> string {
+        return "widget " + self.tag;
+    }
+}
+
+#[service]
+pub type Gadget(tag: string)

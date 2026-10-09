@@ -78,7 +78,7 @@ test "beam: a lambda literal that ends a case arm is the arm's value" {
     // `_ { { x -> x * n }; }` — the arm block's last statement is a lambda,
     // so it is the value the `case` answers (a statement-position block does
     // not parse). It ran as a statement, the arm answered `ok`, and applying
-    // it was `{badfun, ok}` (01-checker's `test/case_arm_lambda_value`).
+    // it was `{badfun, ok}` (`run/case_arm_lambda_value`).
     try h.assertBeamRunLog(std.testing.allocator,
         \\fn scaleBy(n: i32) -> fn(x: i32) -> i32 {
         \\    val f = case n {
@@ -156,8 +156,9 @@ test "beam: a type adopts its behavior's default fns as methods of its module" {
 test "beam: ?. on an absent tuple element answers absent before the label is read" {
     // Decision 45 rewrites `?.b` to the element's position (`._1`), and the
     // tuple-index read came before the `?.` test: `es.at(0)?.b` read
-    // `element(2, undefined)` and raised `badarg`. (wasm traps on the absent
-    // half — `05-wasm`'s row — so this is a beam fixture.)
+    // `element(2, undefined)` and raised `badarg`. A beam fixture: commonJS
+    // and erlang print the same four lines; wasm answers `8` for both absent
+    // `?.a ?? …` reads (`05-wasm`'s row).
     try h.assertBeamRunLog(std.testing.allocator,
         \\fn rows() -> #(a: i32, b: string)[] {
         \\    return [#(1, "x"), #(2, "y")];

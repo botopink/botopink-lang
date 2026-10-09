@@ -2812,8 +2812,11 @@ pub const Formatter = struct {
         // `<pkg> "…"` stops binding, with nothing in the repository noticing.
         // The keyword order is the parser's (`parseFnDecl`): pub, default,
         // declare.
-        const pubKw: []const u8 = if (f.isPub) "pub " else "";
-        const defaultKw: []const u8 = if (f.isDefault) "default " else "";
+        // Decision 289: a function made the default by `pub default <name>;`
+        // prints as written (`fn Tree`, `pub` only if written) and the line
+        // after it; an anonymous default prints `fn (` (its name is empty).
+        const pubKw: []const u8 = if (f.isPub and !f.pubByDefault) "pub " else "";
+        const defaultKw: []const u8 = if (f.isDefault and f.defaultBy == null) "default " else "";
         const declareKw: []const u8 = if (f.isDeclare) "declare " else "";
         const prefix = try this.text(try std.fmt.allocPrint(this.arena, "{s}{s}{s}fn ", .{ pubKw, defaultKw, declareKw }));
         if (f.isDeclare and f.body.len == 0) {
@@ -2833,6 +2836,10 @@ pub const Formatter = struct {
         else
             this.nil();
 
+        const defaultLine: *const Doc = if (f.defaultBy != null)
+            try this.concatAll(&.{ this.hardline(), this.hardline(), try this.text(try std.fmt.allocPrint(this.arena, "pub default {s};", .{f.name})) })
+        else
+            this.nil();
         return this.concatAll(&.{
             try this.fmtAnnotations(f.annotations),
             prefix,
@@ -2845,6 +2852,7 @@ pub const Formatter = struct {
             ),
             try this.text(" "),
             try this.fmtBody(f.body),
+            defaultLine,
         });
     }
 
@@ -2877,6 +2885,10 @@ pub const Formatter = struct {
         /// `X | …` — a member's own grammar must not swallow the bar: a function
         /// type's return type is parsed with the full `parseTypeRef`.
         unionMember,
+        /// The last member of `X | …`: nothing follows it for a `type T`'s
+        /// constraint list to swallow, so decision 297's `Box<T> | type T`
+        /// prints as written.
+        lastUnionMember,
     };
 
     /// True when printing `ref` in `position` needs parentheses to read back as
@@ -2890,6 +2902,7 @@ pub const Formatter = struct {
             .arrayElement => isUnion or ref == .optional or ref == .function or isConstrainedTypeparam,
             .optionalInner => isUnion or isConstrainedTypeparam,
             .unionMember => ref == .function or isConstrainedTypeparam,
+            .lastUnionMember => ref == .function,
         };
     }
 
@@ -2961,7 +2974,7 @@ pub const Formatter = struct {
                 // under `ast.union_type_name`; it is written as its members.
                 if (ref.unionMembers()) |members| {
                     var memberDocs = try this.arena.alloc(*const Doc, members.len);
-                    for (members, 0..) |m, i| memberDocs[i] = try this.fmtTypeRefIn(m, .unionMember);
+                    for (members, 0..) |m, i| memberDocs[i] = try this.fmtTypeRefIn(m, if (i + 1 == members.len) .lastUnionMember else .unionMember);
                     break :blk this.join(memberDocs, try this.text(" | "));
                 }
                 var argDocs = try this.arena.alloc(*const Doc, b.args.len);

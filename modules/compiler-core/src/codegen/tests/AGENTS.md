@@ -9,7 +9,9 @@ WAT backend, `externals.zig` for `#[@External.<Target>(…)]` FFI declarations,
 decision 141's audit — every `#[@External.Erlang(…)]` template std, its
 `primitives.bp` and the bundled libraries ship lowers for beam, through
 `beam_asm.templateBody` / `templateModuleText` / `lowerTemplateText`, the
-functions the backend compiles a call site's template with, `erlang.zig` for
+functions the backend compiles a call site's template with (a top-level
+`declare fn`'s single-string `fn:<name>` binding is no template: it goes
+through `hostFnBinding.resolve`, the check the backends apply), `erlang.zig` for
 the erlang backend's own rows of 1.0.11-beta `01-compiler/02-erlang` — fixtures
 that run the module, one file per backend). Aggregated by the
 sibling barrel `../tests.zig` for `test_root.zig`; shared harness

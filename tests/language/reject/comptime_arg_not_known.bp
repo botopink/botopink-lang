@@ -1,0 +1,15 @@
+//// 01-compiler/01-checker step 26 (decisions 280 (0), 297) — the argument of
+//// a `comptime` parameter is known while the program compiles: a local is a
+//// run-time value, `comptime-arg-not-known` at the argument. The parent binary
+//// accepted `twice(k)` and the erlang build failed (`twice/1 undefined`).
+
+fn twice(comptime n: i32) -> i32 {
+    return n * 2;
+}
+
+pub fn main() {
+    var k = 3;
+    k = k + 1;
+    @print(twice(2));
+    @print(twice(k));
+}

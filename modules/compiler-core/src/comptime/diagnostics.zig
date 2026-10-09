@@ -199,6 +199,23 @@ pub const builtin_not_lowered: []const u8 = "builtin-not-lowered";
 /// `builtins.d.bp` refuses: too many, a parameter without a default missing, a
 /// label naming no parameter (a type that disagrees is the ordinary mismatch).
 pub const builtin_arguments: []const u8 = "builtin-arguments";
+/// Decision 2 — an `@block { … }` in value position whose body has no valued
+/// `return` (`val a = @block { 1 + 2 };`): a tail expression is never the
+/// block's value. A statement `@block { … };` stays legal.
+pub const block_tail_value: []const u8 = "block-tail-value";
+/// A module-level `fn` / `val` / `var` named like a primitive type
+/// (`pub fn string()`): it took the type's name in its module
+/// (`language-gaps.md` row "A function named like a primitive type shadows
+/// the type in its module").
+pub const primitive_type_name_taken: []const u8 = "primitive-type-name-taken";
+/// Decisions 280 (0), 297 — the argument of a `comptime` parameter reads a
+/// run-time value (a local, a parameter that is not `comptime`).
+pub const comptime_arg_not_known: []const u8 = "comptime-arg-not-known";
+/// Decision 297 — `x is type` where `x` is no `comptime x: V | type T`
+/// parameter.
+pub const is_type_outside_value_or_type: []const u8 = "is-type-outside-value-or-type";
+/// Decision 297 — a read of `x` in the branch where `x is type` holds.
+pub const type_arg_read: []const u8 = "type-arg-read";
 /// A labelled argument in a call of a function VALUE (a parameter, a local, a
 /// field): its type is positional and names no parameter (01).
 pub const label_on_function_value: []const u8 = "label-on-function-value";
@@ -516,6 +533,11 @@ pub const all_codes = [_][]const u8{
     type_alias_name_taken,
     callee_not_a_function,
     binding_redeclared,
+    block_tail_value,
+    primitive_type_name_taken,
+    comptime_arg_not_known,
+    is_type_outside_value_or_type,
+    type_arg_read,
     captured_var_write,
     inline_type_position,
     behavior_member_redeclared,

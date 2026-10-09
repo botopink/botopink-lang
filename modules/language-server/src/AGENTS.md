@@ -14,13 +14,13 @@ src/
 ├── server.zig         ← JSON-RPC message loop + LSP method dispatch
 ├── messages.zig       ← frame parser/writer (Content-Length protocol)
 ├── protocol.zig       ← LSP + JSON-RPC serializable types
-├── engine.zig         ← LSP feature implementations
+├── engine.zig         ← LSP feature implementations; `importDiagnostics` = `check`'s import-source refusals (206/242) via `cli_resolver`
 ├── compiler.zig       ← thin wrapper around compiler-core (`LspCompiler`, `CompileResult`; `diagnosticsFor` maps errors to Error, checker warnings to Warning)
 ├── files.zig          ← in-memory cache for open document contents
 ├── feedback.zig       ← tracks active diagnostics → clears stale editor feedback
 ├── lsp_types.zig      ← position/offset, URI ↔ path helpers
 ├── project_index.zig  ← lazy project-wide pub symbol index (cross-module features)
-├── project_graph.zig  ← per-project dependency graph (libs + bundled packages + mod siblings) for the project-graph compile
+├── project_graph.zig  ← per-project dependency graph (libs + bundled packages + mod siblings) for the project-graph compile; `Resolved.src_dir` / `dependency_names` feed `importDiagnostics`
 ├── test_root.zig      ← test aggregator used by both build.zig files
 └── tests/             ← feature-level tests — see tests/AGENTS.md
 ```

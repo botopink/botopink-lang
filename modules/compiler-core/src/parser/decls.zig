@@ -362,7 +362,16 @@ pub fn parseFnDecl(this: *This, alloc: std.mem.Allocator) ParseError!FnDecl {
     if (this.check(.star) and this.peekAt(1).kind == .@"fn") {
         return failDeprecatedStarFn(this);
     }
-    _ = try this.consume(.@"fn");
+    const fnTok = try this.consume(.@"fn");
+    // Decision 289 — `pub default fn (…)`: the module's default function with
+    // no name in its module.
+    if (isDefault and !isDeclare and this.check(.leftParenthesis)) {
+        var anon = try this.parseFnBody(alloc, "", isPub, isDeclare, annotations);
+        anon.isDefault = true;
+        anon.anonymousDefault = true;
+        anon.nameLoc = parser.Parser.locFromToken(fnTok);
+        return anon;
+    }
     const nameTok = try this.consume(.identifier);
     var fn_decl = try this.parseFnBody(alloc, nameTok.lexeme, isPub, isDeclare, annotations);
     fn_decl.isDefault = isDefault;

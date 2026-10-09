@@ -395,6 +395,13 @@ fn stmtIsReturn(stmt: ast.Stmt) bool {
     };
 }
 
+/// True when an `@block`'s body holds a `return` of its own scope — the
+/// block's value, never the enclosing function's (`ast.exprReturns`).
+fn blockBodyReturns(body: []const ast.Stmt) bool {
+    for (body) |stmt| if (ast.exprReturns(stmt.expr)) return true;
+    return false;
+}
+
 /// A loop's labels, and the buffer (the frame) it is emitted into: a
 /// condition loop, or a `for` walked in the frame (`lowerInFrameFor`).
 /// `break` jumps to `exit`, `continue` to `top`. No loop has a value
@@ -406,6 +413,14 @@ const CondLoop = struct { top: u32, exit: u32, out: *std.Io.Writer };
 /// (reversed at `exit`), and the label a `break <v>` jumps to once `v` is
 /// pushed.
 const GenLoop = struct { acc: u32, exit: u32, out: *std.Io.Writer };
+
+/// An `@block { … }` whose body holds a `return` of its own
+/// (`ast.exprReturns`), being emitted into a frame: the block runs in that
+/// frame, and its `return` leaves the BLOCK — the value into `x0`, then a jump
+/// to `exit`, where the block's value is read. `gen_exit` is the annotated
+/// loop open when the block began, so a generator scope opened inside the
+/// block keeps its own bare `return`.
+const BlockExit = struct { exit: u32, out: *std.Io.Writer, gen_exit: ?u32 };
 
 /// The throw a bare `break` in a loop's fun ends the loop with
 /// (`guardLoopBreak` catches it at the loop's call site).
@@ -1629,8 +1644,8 @@ pub fn codegenEmit(
 
 /// The Erlang body of template `template_raw` called with `argc` arguments
 /// besides its receiver: the receiver marker → `__BpSelf`, `$N` → `__BpAN`,
-/// `$stringify(e)` → its `~p` text, a `\"` kept from a `"…"` annotation
-/// unescaped, and a trailing `.`. Owned by `alloc`.
+/// a `\"` kept from a `"…"` annotation unescaped, and a trailing `.`. Owned
+/// by `alloc`.
 pub fn templateBody(alloc: std.mem.Allocator, template_raw: []const u8, argc: usize) anyerror![]u8 {
     var src: std.ArrayListUnmanaged(u8) = .empty;
     errdefer src.deinit(alloc);
@@ -1657,12 +1672,6 @@ pub fn templateBody(alloc: std.mem.Allocator, template_raw: []const u8, argc: us
         pub fn emitArg(c: *@This(), idx: usize) anyerror!void {
             var name_buf: [16]u8 = undefined;
             try c.out.appendSlice(c.alloc, try std.fmt.bufPrint(&name_buf, "__BpA{d}", .{idx}));
-        }
-        pub fn emitStringifyOpen(c: *@This()) anyerror!void {
-            try c.out.appendSlice(c.alloc, "iolist_to_binary(io_lib:format(\"~p\", [");
-        }
-        pub fn emitStringifyClose(c: *@This()) anyerror!void {
-            try c.out.appendSlice(c.alloc, "]))");
         }
     };
     var ctx = Ctx{ .alloc = alloc, .out = &src, .argc = argc };
@@ -2329,6 +2338,9 @@ const Emitter = struct {
     cond_loop: ?CondLoop = null,
     /// The annotated `loop` whose body is being emitted (decision 105).
     gen_loop: ?GenLoop = null,
+    /// The innermost `@block { … }` with a `return` of its own being emitted
+    /// in this frame (`lowerBlockWithReturn`).
+    block_exit: ?BlockExit = null,
     /// Static extension dispatch (F6): call-site loc → activated extension symbol.
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
     /// Primitive (Array/String/Bool/numeric) receiver method lowering, keyed by
@@ -5546,6 +5558,10 @@ const Emitter = struct {
         switch (stmt.expr) {
             .jump => |j| switch (j.kind) {
                 .@"return" => |r| {
+                    if (self.inBlockExit()) |be| {
+                        try self.emitBlockReturn(be, if (r) |val| val.* else null);
+                        return;
+                    }
                     if (r == null) if (self.inGenLoop()) |gl| {
                         try beamEmitter.writeJump(self.out, gl.exit);
                         return;
@@ -6282,6 +6298,10 @@ const Emitter = struct {
             },
             .jump => |j| switch (j.kind) {
                 .@"return" => |r| {
+                    if (self.inBlockExit()) |be| {
+                        try self.emitBlockReturn(be, if (r) |val| val.* else null);
+                        return;
+                    }
                     if (self.in_loop_lambda and self.inGenLoop() == null) {
                         try self.emitLoopReturn(if (r) |val| val.* else null);
                         return;
@@ -7942,9 +7962,9 @@ const Emitter = struct {
     }
 
     /// Call an `@External.Erlang` template: the template, with the receiver
-    /// marker → `__BpSelf` and `$N` → `__BpAN` (and `$stringify(e)` → its `~p`
-    /// text), is compiled at build time into a helper function of this module
-    /// (`compiledTemplate`) and the operands are staged into its arguments.
+    /// marker → `__BpSelf` and `$N` → `__BpAN`, is compiled at build time
+    /// into a helper function of this module (`compiledTemplate`) and the
+    /// operands are staged into its arguments.
     /// A template the reader or the lowering refuses is a build error naming
     /// the construct (`error.TemplateRefused`, decision 141) — there is no
     /// run-time evaluation of Erlang source. `exprs` starts with the receiver
@@ -8954,8 +8974,12 @@ const Emitter = struct {
         }
         if (std.mem.eql(u8, cc.callee, "block")) {
             if (cc.trailing.len > 0) {
-                const body = cc.trailing[0];
-                for (body.body) |stmt| try self.emitStmt(stmt);
+                const body = cc.trailing[0].body;
+                if (blockBodyReturns(body)) {
+                    try self.lowerBlockWithReturn(body, mode);
+                    return;
+                }
+                for (body) |stmt| try self.emitStmt(stmt);
             }
             return;
         }
@@ -11223,6 +11247,26 @@ const Emitter = struct {
         return if (cl.out == self.out) cl else null;
     }
 
+    /// An in-frame loop's head, `{line, …}` then `{label, Top}`. `Top` is
+    /// entered by falling through and re-entered by backward jumps only, and
+    /// OTP's `beam_jump` assumes no backward jump but a receive loop's: its
+    /// tail sharing replaces an earlier code sequence by a jump to an identical
+    /// later one, so when the code falling into `Top` equals a back edge's
+    /// tail (`{move, {x,0}, {y,9}}` then `{jump, Top}` in both), the entry
+    /// becomes a forward jump to the back edge, `Top` is left with backward
+    /// references alone, its forward scan drops it as unreachable, and
+    /// `beam_clean` stops on `{undefined_label, Top}` (log's
+    /// `stripLineNumbers`, `modules/import_bundled_package_beside_own_module`).
+    /// The `{line, …}` anchor ends the entry sequence and no back edge holds
+    /// one — an anchor is always followed by its own `Top` — so the entry
+    /// never equals another sequence and keeps falling into `Top`. Its
+    /// location is `cur_line`, an entry of this module's synthetic line
+    /// table (one number per emitted function, no source line).
+    fn writeLoopTop(self: *Emitter, top: u32) anyerror!void {
+        try beamEmitter.writeLine(self.out, self.module_name, self.cur_line);
+        try beamEmitter.writeLabel(self.out, top);
+    }
+
     /// `while (cond) { … }` / `loop { … }` in this frame:
     ///
     ///     {label, Top}  <test Cond, else jump Exit>  Body  {jump, {f, Top}}  {label, Exit}
@@ -11233,7 +11277,7 @@ const Emitter = struct {
     fn lowerConditionLoop(self: *Emitter, lp: anytype) anyerror!void {
         const top = self.allocLabel();
         const exit = self.allocLabel();
-        try beamEmitter.writeLabel(self.out, top);
+        try self.writeLoopTop(top);
         if (!try self.lowerComparisonAsTest(lp.iter.*, exit)) {
             try self.lowerExprIntoX0(lp.iter.*);
             try beamEmitter.writeTest(self.out, .is_eq_exact, exit, &.{ Op.xr(0), Op.atom("true") });
@@ -11324,6 +11368,52 @@ const Emitter = struct {
         try beamEmitter.writeLabel(self.out, done);
     }
 
+    /// The `@block` whose `return` the statement being emitted leaves: the
+    /// innermost one of this frame, unless an annotated loop opened inside it
+    /// (that loop's bare `return` ends its generator scope).
+    fn inBlockExit(self: *const Emitter) ?BlockExit {
+        const be = self.block_exit orelse return null;
+        if (be.out != self.out) return null;
+        if (self.inGenLoop()) |gl| if (be.gen_exit != gl.exit) return null;
+        return be;
+    }
+
+    /// `@block { … }` whose body holds a `return` of its own (decision 2): the
+    /// body runs in this frame, and every `return` in it moves its value into
+    /// `x0` and jumps to `Exit` (`emitBlockReturn`) — it never leaves the
+    /// enclosing function. A body that can run off its end answers `ok` (a
+    /// statement block's value; the checker refuses a valueless tail in value
+    /// position, `block-tail-value`).
+    ///
+    ///     Body…  [move ok x0]  {label, Exit}  [return, in tail position]
+    fn lowerBlockWithReturn(self: *Emitter, body: []const ast.Stmt, mode: CallMode) anyerror!void {
+        const exit = self.allocLabel();
+        const saved = self.block_exit;
+        self.block_exit = .{
+            .exit = exit,
+            .out = self.out,
+            .gen_exit = if (self.inGenLoop()) |gl| gl.exit else null,
+        };
+        for (body) |stmt| try self.emitStmt(stmt);
+        self.block_exit = saved;
+        if (body.len == 0 or !stmtIsReturn(body[body.len - 1])) {
+            try beamEmitter.writeMoveOp(self.out, Op.atom("ok"), Dst.xr(0));
+        }
+        try beamEmitter.writeLabel(self.out, exit);
+        if (mode == .tail) try self.emitReturn();
+    }
+
+    /// A `return` of an `@block`'s body: its value (`ok` for a bare one) into
+    /// `x0`, then the block's exit.
+    fn emitBlockReturn(self: *Emitter, be: BlockExit, value: ?ast.Expr) anyerror!void {
+        if (value) |v| {
+            try self.lowerExprIntoX0(v);
+        } else {
+            try beamEmitter.writeMoveOp(self.out, Op.atom("ok"), Dst.xr(0));
+        }
+        try beamEmitter.writeJump(self.out, be.exit);
+    }
+
     /// The annotated loop whose body is being emitted into the current frame.
     fn inGenLoop(self: *const Emitter) ?GenLoop {
         const gl = self.gen_loop orelse return null;
@@ -11405,7 +11495,7 @@ const Emitter = struct {
         try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(rest));
         const top = self.allocLabel();
         const exit = self.allocLabel();
-        try beamEmitter.writeLabel(self.out, top);
+        try self.writeLoopTop(top);
         try beamEmitter.writeTest(self.out, .is_nonempty_list, exit, &.{Op.yr(rest)});
         try beamEmitter.writeGetList(self.out, Op.yr(rest), Dst.xr(0), Dst.xr(1));
         try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(item));
