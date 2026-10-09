@@ -1,0 +1,20 @@
+//// Decision 354 (3) — a template function's body (`-> @Expr<…>`) runs at
+//// compile time when a call is expanded, with no render tree: `use` there is
+//// refused.
+
+import {context.Context, context.provide, context.context} from "std";
+
+type Theme(mode: string)
+
+type Element(text: string) implement @Renderable
+
+pub val ThemeContext = Context<Theme>();
+
+fn shout(comptime q: @Expr<string>) -> @Expr<string> {
+    val t = use context(ThemeContext);
+    return q;
+}
+
+pub fn main() {
+    @print("unreached");
+}

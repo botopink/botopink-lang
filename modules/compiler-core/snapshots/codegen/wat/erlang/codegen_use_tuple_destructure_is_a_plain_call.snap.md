@@ -1,11 +1,11 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Element = type() implement @Context<Element>
-fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Component<Element, #(i32, fn(action: i32) -> i32)> {
+val Element = type() implement @Renderable
+fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Component<#(i32, fn(action: i32) -> i32)> {
     val push = { action -> f(base, action) };
     return #(base, push);
 }
-fn LikeWidget() -> @Component<Element, Element> {
+fn LikeWidget() -> @Component<Element> {
     val #(shown, push) = use optimistic(12, { c, a -> c + a });
     push(shown);
     return Element();
@@ -18,14 +18,14 @@ fn LikeWidget() -> @Component<Element, Element> {
 
 %% type Element: 
 
-optimistic(Base, F) ->
+optimistic(BpContextMap__, Base, F) ->
     Push = fun(Action) ->
         F(Base, Action)
     end,
     {Base, Push}.
 
-'LikeWidget'() ->
-    {Shown, Push} = optimistic(12, fun(C, A) ->
+'LikeWidget'(BpContextMap__) ->
+    {Shown, Push} = optimistic(BpContextMap__, 12, fun(C, A) ->
         '__bp_add'(C, A)
     end),
     Push(Shown),

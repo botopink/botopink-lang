@@ -1,11 +1,11 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Element = type() implement @Context<Element>
-fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Component<Element, #(i32, fn(action: i32) -> i32)> {
+val Element = type() implement @Renderable
+fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Component<#(i32, fn(action: i32) -> i32)> {
     val push = { action -> f(base, action) };
     return #(base, push);
 }
-fn LikeWidget() -> @Component<Element, Element> {
+fn LikeWidget() -> @Component<Element> {
     val #(shown, push) = use optimistic(12, { c, a -> c + a });
     push(shown);
     return Element();
@@ -19,7 +19,7 @@ fn LikeWidget() -> @Component<Element, Element> {
   (table funcref (elem $__lambda0 $__lambda1))
   (data (i32.const 256) "\0a\00\00\00R\07Element\00")
   (global $__heap_ptr (mut i32) (i32.const 272))
-  (func $optimistic (param $base i32) (param $f i32) (result i32)
+  (func $optimistic (param $bpContextMap__ i32) (param $base i32) (param $f i32) (result i32)
     (local $__mem0 i32)
     (local $push i32)
     (local $__mem1 i32)
@@ -49,13 +49,14 @@ fn LikeWidget() -> @Component<Element, Element> {
     local.get $__mem1
     return
   )
-  (func $LikeWidget (result i32)
+  (func $LikeWidget (param $bpContextMap__ i32) (result i32)
     (local $__mem0 i32)
     (local $__mem1 i32)
     (local $shown i32)
     (local $push i32)
     (local $__fnv0 i32)
     (local $__mem2 i32)
+    local.get $bpContextMap__
     i32.const 12
     i32.const 4
     call $__alloc

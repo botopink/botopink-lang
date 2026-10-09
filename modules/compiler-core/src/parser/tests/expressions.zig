@@ -13,7 +13,7 @@ const print = @import("../../print.zig");
 const h = @import("helpers.zig");
 
 // One test for the three `use` forms (discarded, `val` binding, destructuring
-// `val`) in one static prefix. The single-form tests it replaced produced the
+// `val`) at one body's top level. The single-form tests it replaced produced the
 // same JSON sub-trees with other line numbers (1.0.1-beta review, parser.md
 // `duplicate` row `use_multiple_hooks_in_function`).
 test "parser: use multiple hooks in function" {

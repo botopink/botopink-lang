@@ -107,9 +107,28 @@ with two arguments — four targets), `run/variadic_parameter_host` (a `declare 
 `lists:max`; wasm refuses it at the first call by `wasm.expect`), `modules/variadic_across_modules` (an
 imported variadic `pub fn`, four targets) and six `reject/` cells: `variadic_not_last`, `variadic_twice`,
 `variadic_default`, `variadic_not_array` (parse refusals at the declaration), `variadic_spread_at_call`
-(`variadic-spread`) and `variadic_label` (`variadic-label`). Decision 269 (`@getContext(T)` is a hook,
-step 6) adds `reject/getcontext_without_use` (`context-getcontext-without-use` at the bare call). Every one was
-refused or accepted otherwise by the parent binary.
+(`variadic-spread`) and `variadic_label` (`variadic-label`). Every one was
+refused or accepted otherwise by the parent binary. Decision 354 (step 6, contexts — it replaced 269's
+`@getContext(T)`, whose `reject/getcontext_without_use` left) adds `run/context_provide_read` (a provider
+reaches a component two renders below it; a `@Component` read with `use` reads its caller's map; a body
+does not see its own provide), `run/context_nearest_wins` (the nearest provider wins, a sibling does not
+see another's) and `run/context_unbound` (`context-unbound` at run time, `.exit` nonzero and the
+message on stderr) — erlang, beam and commonJS run them, the wasm backend refuses the `use` where it is
+written (`.wasm.expect`, `language-gaps.md`); and the refusals `reject/component_base_parameter`
+(`@Component<C, R>` at the base), `reject/context_marker_removed`, `reject/renderable_type_argument`,
+`reject/getcontext_removed`, `reject/context_provide_in_hook`, `reject/context_provide_after_render`,
+`reject/context_hook_without_use`, `reject/context_hook_as_value`, `reject/context_not_declared`,
+`reject/context_val_alias`, `reject/context_read_of_parameter`, `reject/use_in_comptime_block`,
+`reject/use_in_decorator_body` and `reject/use_in_template_body` (`use-outside-render-tree`), each red on
+the parent binary. Decision 354 took the base out of the wrapper, so `reject/component_two_bases`,
+`reject/use_two_bases`, `reject/use_owner_mismatch` (decision 96's one base per body) and the arity
+cells `reject/component_one_type_argument` / `reject/context_two_type_arguments` left with it.
+Decision 357 (the rules of hooks) adds `reject/use_in_if`, `reject/use_in_loop`, `reject/use_in_lambda`
+and `reject/use_after_early_return` (`use-not-top-level`, naming the construct or the line) and
+`run/use_conditional_argument` (a condition inside `use provide`'s argument, an `if` that does not
+return before a `use`); `reject/use_after_return` and `reject/generator_loop_use` now meet
+`use-not-top-level`, and `reject/use_inside_branch` / `reject/use_in_closure` left for `use_in_if` /
+`use_in_lambda`.
 Decision 139 (a negative index counts from the end) adds `run/index_negative_from_end` — `xs.at(-1)`,
 `xs.at(-3)`, `xs.at(-4)` / `xs.at(3)` absent, `xs[-2]`, a negative index held in a `val`, the same for
 `String.at` / `s[-2]`, and a string array — on all four targets.
@@ -719,8 +738,8 @@ enum's body; the fourth, a `behavior`'s `default fn`, cannot be written at all,
 because the checker refuses `effect-on-behavior-method-forbidden`), and
 `effect_chain` (1.0.10-beta front 20,
 decisions 95 and 98: one `test/`, two `run/` and five `reject/` cells; front 20
-also adds `run/use_one_base` and `reject/use_two_bases` to the `use_*` area for
-decision 96, `run/option_unwrap_or` + `reject/option_expect_removed` to
+also adds `run/use_one_base` to the `use_*` area for
+decision 96 (its `reject/use_two_bases` left with decision 354), `run/option_unwrap_or` + `reject/option_expect_removed` to
 `optional*` for F11, and `reject/external_inline_unread` to `external_*` for F9 — `inline` on
 a variant whose emitter never reads it is refused at the annotation; 1.0.12-beta's front 140 step 2,
 decision 334, adds `reject/external_wasm_host_unknown`, `reject/external_host_on_node`,
@@ -921,14 +940,14 @@ Task eagerly, and inside one body the order is the same everywhere.
 |---|---|
 | Return and effect mode | `test/effect_return_result`, `run/task_return_layers` (three layers), `run/effect_alias_passes_value`; `reject/effect_return_ambiguous_nesting`, `reject/effect_wrapper_behind_alias` |
 | `@Task` and failure | `run/task_await_no_try`, `run/task_await_result` (`await t` answers the `@Result`, `try await t`, `try await t catch x`), `run/task_throw_resolves_error` (`.targets commonJS`: the Promise resolves with `Error`, never rejects); `reject/task_throw_without_result`, `reject/task_try_await_without_result` |
-| Chain and `use` | `run/component_hook_and_component`, `run/component_result_try_await`; `reject/component_try_element`, `reject/await_under_result`, `reject/use_under_task`, `reject/component_two_bases`, `reject/use_of_component` |
+| Chain and `use` | `run/component_hook_and_component`, `run/component_result_try_await`; `reject/component_try_element`, `reject/await_under_result`, `reject/use_under_task`, `reject/use_of_component` |
 | `async { }` | `run/async_block_all_of` (`.targets commonJS erlang beam`: `std/async` has no wasm host), `run/async_block_value_type`, `run/async_block_return`; `reject/async_block_use`, `reject/async_block_conflicting_errors` |
 | Iterators | `run/iterator_fibonacci`, `run/iterator_result_item`, `run/iterator_result_items` (step E4), `run/iterator_factory`, `test/yield_step_next` and `run/yield_step_next` (`.next()` by hand on an `@Iterator` and, awaited, on a `@Stream` — the `run/` half reaches beam and wasm, which a `test/` cell cannot, and steps a parameter inside a `while`); `reject/iterator_throw_without_result`, `reject/iter_await`, `reject/iter_mixed_yield_return`, `reject/iterator_error_param_removed` |
 | Streams | `run/stream_pages` (a simulated http failing mid-way), `run/stream_loop_no_failure`; `reject/for_await_without_task` |
 | Prefixed loops | `run/prefixed_loop_forms`, `run/prefixed_loop_result_item`, `run/prefixed_loop_break_value`, `run/prefixed_loop_nearest_scope`, `test/contextual_words`; `reject/prefixed_loop_break_outer` |
 | Host (decision 126) | `run/host_node_task_result` (`.targets commonJS`), `run/host_erlang_task_result` (`.targets erlang beam`) |
 | The E3.9 hint (a `@Result` used as its `U`, one hint per source) | `reject/result_hint_await` (`try await t`), `reject/result_hint_for_item` (`try r`), `reject/result_hint_inferred_async` (the `await` hint plus the `try` that made the block's value a `@Result`) and `reject/result_hint_inferred_iter` (the `for`-item hint plus the `throw` that made the `iter` items `@Result`s); the two `for` cells carry no location line — the mismatch is reported at the file |
-| Migration (decision 127, guide § 9's "Old names that left") | `effect-annotation-removed`: `reject/effect_annotation_removed_{result,future,use,generator,result_generator,future_generator}`, the three loop forms `…_{generator,result_generator,future_generator}_loop`, and the older `…_{context,iterator,async_generator}`; `effect-type-removed`: `reject/effect_type_removed_{future,future_no_error,use,generator,result_generator,future_generator}` and the older `…_{async_iterator,iterable,iterator_step,yield}`; the arity refusals `reject/component_one_type_argument` (`@Component<T>`), `reject/context_two_type_arguments` (`@Context<B, R>`), `reject/yield_step_error_param` (`YieldStep<T, E>`); and the existing refusals `reject/loop_condition_parenthesised`, `reject/loop_await_removed`, `reject/component_plain_return` |
+| Migration (decision 127, guide § 9's "Old names that left") | `effect-annotation-removed`: `reject/effect_annotation_removed_{result,future,use,generator,result_generator,future_generator}`, the three loop forms `…_{generator,result_generator,future_generator}_loop`, and the older `…_{context,iterator,async_generator}`; `effect-type-removed`: `reject/effect_type_removed_{future,future_no_error,use,generator,result_generator,future_generator}` and the older `…_{async_iterator,iterable,iterator_step,yield}`; the arity refusals `reject/component_base_parameter` (`@Component<C, R>`, decision 354), `reject/yield_step_error_param` (`YieldStep<T, E>`); and the existing refusals `reject/loop_condition_parenthesised`, `reject/loop_await_removed`, `reject/component_plain_return` |
 
 Every row of guide § 9 has a new-form cell above and an old-form `reject/` cell. Two
 `.expect` first lines are a code's shared tail on purpose: `without-fallible-channel`
@@ -1565,14 +1584,14 @@ four since `13-module-identity` half 3 put the declaration inside the value.
 
 **`use` is tested from botopink since front 19 of 1.0.10-beta**, spelled to decisions 102/104
 (front 21): `test/context_use.bp`, `run/context_use.bp` and the `reject/use_*.bp` cells declare
-their own owner type (`type Element(…) implement @Context<Element>`), hooks as
-`#[@use] fn … -> @Component<Element, T>` and components as `#[@use] fn … -> @Component<Element, Element>`, and
+their own owner type (`type Element(…) implement @Renderable`, decision 354), hooks as
+`fn … -> @Component<T>` and components as `fn … -> @Component<Element>`, and
 pin the binding of `T`, field and positional destructuring, a custom hook composing hooks, a bare
-void `use`, an unannotated `fn … -> Element` as an ordinary function, the static prefix (rows 4b and
-4c as parse errors), `use-without-context-effect` (a `-> Element` body without `#[@use]`, a plain
-`-> string` body, a `#[@future]` body — `reject/use_future_without_owner.bp`, decisions 89/90
-revoked — and a `use` in a nested closure, `reject/use_in_closure.bp`), `use-of-non-context-fn` (a
-module-level `val`, decision 87) and `context-anchor-violation`. A component's caller awaits it:
+void `use`, an unannotated `fn … -> Element` as an ordinary function, the rules of hooks (decision 357,
+`use-not-top-level`; rows 4b and 4c were parse errors of the static prefix before it),
+`use-without-context-effect` (a `-> Element` body, a plain `-> string` body, a `#[@future]` body —
+`reject/use_future_without_owner.bp`, decisions 89/90 revoked) and `use-of-non-context-fn` (a
+module-level `val`, decision 87). A component's caller awaits it:
 `run/context_use.bp` drives the components from a `#[@future] fn run`, and the `test/` cells await
 them (a `test` body is a future context). `test/use_future_context.bp` is the server component that
 `use`s and `await`s under a `@Component` return. Front 24 (decision 118) deleted

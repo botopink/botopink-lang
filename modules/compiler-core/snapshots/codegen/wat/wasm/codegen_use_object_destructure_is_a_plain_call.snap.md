@@ -1,10 +1,10 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Element = type() implement @Context<Element>
-fn state(initial: i32) -> @Component<Element, i32> {
+val Element = type() implement @Renderable
+fn state(initial: i32) -> @Component<i32> {
     return initial;
 }
-fn Counter() -> @Component<Element, Element> {
+fn Counter() -> @Component<Element> {
     val {count, setCount} = use state(0);
     return Element();
 }
@@ -16,15 +16,16 @@ fn Counter() -> @Component<Element, Element> {
   (memory (export "memory") 1)
   (data (i32.const 256) "\0a\00\00\00R\07Element\00")
   (global $__heap_ptr (mut i32) (i32.const 272))
-  (func $state (param $initial i32) (result i32)
+  (func $state (param $bpContextMap__ i32) (param $initial i32) (result i32)
     local.get $initial
     return
   )
-  (func $Counter (result i32)
+  (func $Counter (param $bpContextMap__ i32) (result i32)
     (local $__mem0 i32)
     (local $__mem1 i32)
     (local $count i32)
     (local $setCount i32)
+    local.get $bpContextMap__
     i32.const 0
     call $state
     local.set $__mem0

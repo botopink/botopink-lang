@@ -33,11 +33,10 @@ structural assertions, no snapshot. `surface.zig` carries the front's two `expec
 cases: an annotated `val` shorthand (`#[@BeamMemory.Ets] val add = fn …`) is
 `unexpectedToken` **at the annotation** (`1:1`), and `var` reads no shorthand at all.
 
-`errors.zig` carries the static-prefix cells of `use` (front 19 of 1.0.10-beta): the
-bare `use …;` after a `return`, row 4b (`val c = use …` after a `return`, refused at the
-`use` token) and row 4c (a `use` inside an `if`'s own block); `expressions.zig`'s
-`use multiple hooks in function` and `errors.zig`'s `lambda return does not end the
-enclosing static prefix` pin what still parses — a lambda body is a fresh scope.
+`expressions.zig`'s `use multiple hooks in function` and `errors.zig`'s `lambda return
+does not end the enclosing static prefix` pin what parses: where a `use` may stand is
+the checker's rule (decision 357), not the parser's. `effect_rejections.zig` pins decision
+354's three parse refusals (`@Renderable`, `@Component<R>` at the base, `@Renderable<…>`).
 
 `type_alias.zig` holds the type-alias declaration (decision 118 rule 1): `[pub] type Name<A, B> = T;`
 parses to `DeclKind.typeAlias` (structural assertions), `type Box<T>(v: T)` stays a record, and the

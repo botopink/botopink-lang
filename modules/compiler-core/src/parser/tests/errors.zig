@@ -44,78 +44,9 @@ test "parser: anonymous extend rejected" {
     );
 }
 
-// The offending `use` is on line 3: this is the regression test for the
-// location contract (`ParseErrorInfo.start` is a BYTE OFFSET, not a column).
-// While the parser stored `tok.col - 1` there, `print.findLocation` read the
-// column as an offset and every diagnostic in a multi-line file rendered on
-// line 1 — this one pointed at `pp(` of `fn App() {`.
-test "parser error: use after return (static prefix violation)" {
-    try h.expectParseError(std.testing.allocator,
-        \\error: `use` must be in static prefix
-        \\ --> <test>:3:5
-        \\  |
-        \\3 |     use state(0);
-        \\  |     ^^^ `use` must be in static prefix
-        \\  |
-        \\  = hint: Move all `use` statements to the top of the function body, before any `if`, `case`, `loop`, or `return`
-        \\
-        \\
-    ,
-        \\fn App() {
-        \\    return 1;
-        \\    use state(0);
-        \\}
-    );
-}
-
-// Row 4b of front 19 (1.0.10-beta): the guard used to test the statement's
-// FIRST token, so `val c = use …` after a `return` parsed. The rule is over the
-// statement's shape — a `val`/`var` whose value is the `use` prefix — reported
-// at the `use` token.
-test "parser error: val bound use after return (static prefix, row 4b)" {
-    try h.expectParseError(std.testing.allocator,
-        \\error: `use` must be in static prefix
-        \\ --> <test>:3:13
-        \\  |
-        \\3 |     val c = use state(0);
-        \\  |             ^^^ `use` must be in static prefix
-        \\  |
-        \\  = hint: Move all `use` statements to the top of the function body, before any `if`, `case`, `loop`, or `return`
-        \\
-        \\
-    ,
-        \\fn App() {
-        \\    return 1;
-        \\    val c = use state(0);
-        \\}
-    );
-}
-
-// Row 4c: `seenBranch` used to be local to each block, so a branch's own block
-// started clean and `if (a) { use … }` parsed. The flag is the function body's
-// (`Parser.useBranchSeen`), set by the `if` itself and inherited by its block.
-test "parser error: use inside an if block (static prefix, row 4c)" {
-    try h.expectParseError(std.testing.allocator,
-        \\error: `use` must be in static prefix
-        \\ --> <test>:2:14
-        \\  |
-        \\2 |     if (a) { use effect(1); };
-        \\  |              ^^^ `use` must be in static prefix
-        \\  |
-        \\  = hint: Move all `use` statements to the top of the function body, before any `if`, `case`, `loop`, or `return`
-        \\
-        \\
-    ,
-        \\fn App(a: bool) {
-        \\    if (a) { use effect(1); };
-        \\    use state(0);
-        \\}
-    );
-}
-
-// A lambda body is another function: its static prefix starts over, so a
-// `return` inside `use memo { -> return … }` does not end the enclosing one,
-// and a `use` in the enclosing prefix after it still parses.
+// Where a `use` may stand is the checker's rule (decision 357,
+// `use-not-top-level`), not the parser's: a `return` inside a lambda is the
+// lambda's, and a `use` after `use memo { -> return … }` parses.
 test "parser: lambda return does not end the enclosing static prefix" {
     try h.assertParser(std.testing.allocator, @src(),
         \\fn Counter() {

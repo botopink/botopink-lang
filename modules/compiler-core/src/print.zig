@@ -182,10 +182,6 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .message = "Builtin type syntax `@Result(D, E)` has been removed",
             .hint = "Use `@Result<D, E>` instead",
         },
-        .useAfterBranch => .{
-            .message = "`use` must be in static prefix",
-            .hint = "Move all `use` statements to the top of the function body, before any `if`, `case`, `loop`, or `return`",
-        },
         .inlineTypeOutsideParameter => .{
             .code = "inline-type-outside-parameter",
             .message = "an inline `type(…)` is written only as a parameter's type",
@@ -221,7 +217,7 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .code = "effect-annotation-removed",
             .message = "effect annotations were removed — the return type is the effect (decision 118)",
             .caretCaption = "remove the annotation; write the wrapper in the return",
-            .note = "`#[@result]` → `-> @Result<T, E>`; `#[@future]` → `-> @Task<T>` (or `-> @Task<@Result<T, E>>` when it can fail); `#[@use]` → `-> @Component<C, T>`; `#[@generator]` → `-> @Iterator<T>`; `#[@resultGenerator]` → `-> @Iterator<@Result<T, E>>`; `#[@futureGenerator]` → `-> @Stream<@Result<T, E>>`",
+            .note = "`#[@result]` → `-> @Result<T, E>`; `#[@future]` → `-> @Task<T>` (or `-> @Task<@Result<T, E>>` when it can fail); `#[@use]` → `-> @Component<T>`; `#[@generator]` → `-> @Iterator<T>`; `#[@resultGenerator]` → `-> @Iterator<@Result<T, E>>`; `#[@futureGenerator]` → `-> @Stream<@Result<T, E>>`",
             .hint = "Delete the annotation: `fn f() -> @Task<User> { … }` — writing the wrapper in the return type is what activates `await` / `use` / `yield`, and a `@Result` in some layer of it is what activates `throw` / `try`.",
         },
         .effectAnnotationRemovedLoop => .{
@@ -257,9 +253,27 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
         },
         .effectTypeRemovedUse => .{
             .code = "effect-type-removed",
-            .message = "`@Use` was removed — one context wrapper, `@Component<C, T>` (decision 128)",
-            .caretCaption = "write `@Component<C, T>`",
-            .hint = "`@Use<C, T>` is `@Component<C, T>`: `C` is the base the body's `use`s anchor at, `T` what the function returns — a hook returns any `T`, a component the context owner.",
+            .message = "`@Use` was removed — one wrapper, `@Component<R>` (decisions 128, 354)",
+            .caretCaption = "write `@Component<R>`",
+            .hint = "`@Use<C, T>` is `@Component<T>`: a hook returns any `T`, a component an `R` that implements `@Renderable`.",
+        },
+        .contextMarkerRemoved => .{
+            .code = "context-marker-removed",
+            .message = "`@Context` was removed — a component's `R` implements `@Renderable`, and a context is a `Context<T>` object (decision 354)",
+            .caretCaption = "write `implement @Renderable`",
+            .hint = "`type Element(…) implement @Context<ElementBase>` is `type Element(…) implement @Renderable`; what a body reads from above it is `use context(SomeContext)`, under a `use provide(SomeContext, value)`.",
+        },
+        .componentBaseParamRemoved => .{
+            .code = "generic-arg-count-exceeded",
+            .message = "`@Component` takes one type argument, `@Component<R>` — its base parameter was removed (decision 354)",
+            .caretCaption = "drop the base: `@Component<R>`",
+            .hint = "`@Component<ElementBase, Element>` is `@Component<Element>`: a component is the `@Component<R>` whose `R` implements `@Renderable`, any other `R` is a hook.",
+        },
+        .renderableTakesNoTypeArguments => .{
+            .code = "generic-arg-count-exceeded",
+            .message = "`@Renderable` takes no type argument — it is a bare marker (decision 354)",
+            .caretCaption = "write `@Renderable`",
+            .hint = "`type Element(…) implement @Renderable` marks the type a component returns.",
         },
         .effectTypeRemovedLegacy => .{
             .code = "effect-type-removed",

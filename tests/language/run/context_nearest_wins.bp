@@ -1,0 +1,45 @@
+//// Decision 354 (2) — the nearest provider wins: `Outer` provides depth 1
+//// and an `i32` step, `Inner` provides depth 2 below it, so `Leaf` rendered by
+//// `Inner` reads 2 while the `Leaf` rendered by `Outer` reads 1; the step,
+//// provided once, reaches both. A provider gives its value to descendants
+//// only, never a sibling: `Sibling`, rendered by `Outer` after `Inner`, reads
+//// `Outer`'s depth.
+
+import {context.Context, context.provide, context.context} from "std";
+
+type Element(text: string) implement @Renderable
+
+pub val DepthContext = Context<i32>();
+
+pub val StepContext = Context<i32>();
+
+fn Leaf(name: string) -> @Component<Element> {
+    val depth = use context(DepthContext);
+    val step = use context(StepContext);
+    return Element(text: name + "=" + (depth * step).toString());
+}
+
+fn Inner() -> @Component<Element> {
+    use provide(DepthContext, 2);
+    val l = Leaf("inner");
+    return Element(text: l.text);
+}
+
+fn Sibling() -> @Component<Element> {
+    val l = Leaf("sibling");
+    return Element(text: l.text);
+}
+
+fn Outer() -> @Component<Element> {
+    use provide(DepthContext, 1);
+    use provide(StepContext, 10);
+    val a = Leaf("outer");
+    val b = Inner();
+    val c = Sibling();
+    return Element(text: a.text + " " + b.text + " " + c.text);
+}
+
+pub fn main() -> @Task<void> {
+    val e = await Outer();
+    @print(e.text);
+}

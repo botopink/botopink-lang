@@ -130,6 +130,13 @@ test "effect-type-removed — in a parameter and inside another type" {
     try expectKind("fn f() -> Array<@Generator<i32>> { return []; }", .effectTypeRemovedGenerator);
 }
 
+test "decision 354 — `@Context`, `@Component<C, R>` and `@Renderable<…>` refused, located" {
+    try expectKindAt("type E() implement @Context<E>", .contextMarkerRemoved, 1, 20);
+    try expectKindAt("fn f() -> @Component<Base, i32> { return 0; }", .componentBaseParamRemoved, 1, 22);
+    try expectKindAt("type E() implement @Renderable<E>", .renderableTakesNoTypeArguments, 1, 31);
+    try expectKind("fn f(g: fn() -> @Component<Base, i32>) -> i32 { return 0; }", .componentBaseParamRemoved);
+}
+
 test "iterator-error-param-removed — located on the error argument" {
     try expectKindAt("fn f() -> @Iterator<i32, string> { yield 0; }", .iteratorErrorParamRemoved, 1, 26);
 }
@@ -138,7 +145,7 @@ test "the new surface parses — the five wrappers with no annotation" {
     try expectParses(
         \\fn a() -> @Result<i32, string> { return 1; }
         \\fn b() -> @Task<@Result<i32, string>> { return 1; }
-        \\fn c() -> @Component<Base, i32> { return 1; }
+        \\fn c() -> @Component<i32> { return 1; }
         \\fn d() -> @Iterator<@Result<i32, string>> { yield 1; }
         \\fn e() -> @Stream<i32> { yield 1; }
     );
@@ -152,7 +159,7 @@ test "the return is the effect — FnDecl.effect, and a factory has none" {
         \\fn a() -> @Task<i32> { return 0; }
         \\fn b() -> @Iterator<i32> { yield 0; }
         \\fn c(xs: i32[]) -> @Iterator<i32> { return iter for (xs) { x -> yield x; }; }
-        \\fn d() -> @Component<Base, i32> { return 0; }
+        \\fn d() -> @Component<i32> { return 0; }
         \\fn e() -> i32 { return 0; }
     ;
     var lx = Lexer.init(src);

@@ -1,6 +1,6 @@
 ----- SOURCE CODE
-val Element = type() implement @Context<Element>
-fn state(initial: i32) -> @Component<Element, i32> {
+val Element = type() implement @Renderable
+fn state(initial: i32) -> @Component<i32> {
     return initial;
 }
 fn bad() -> string {
@@ -9,11 +9,11 @@ fn bad() -> string {
 }
 
 ----- ERROR
-error: use-without-context-effect: `use` needs a `-> @Component<C, T>` return on the enclosing fn
+error: use-without-context-effect: `use` needs a `-> @Component<R>` return on the enclosing fn
   ┌─ main.bp:6:13
   │
 6 │     val x = use state(0);
   │             ^
 
   fn 'bad' returns 'string',
-  but only a `-> @Component<C, T>` body activates a hook (decisions 104, 118)
+  but only a `-> @Component<R>` body activates a hook (decisions 104, 118)

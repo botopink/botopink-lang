@@ -243,11 +243,11 @@ test "js: import ---- named imports" {
 // activate a hook.
 test "codegen ---- use object destructure is a plain call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = type() implement @Context<Element>
-        \\fn state(initial: i32) -> @Component<Element, i32> {
+        \\val Element = type() implement @Renderable
+        \\fn state(initial: i32) -> @Component<i32> {
         \\    return initial;
         \\}
-        \\fn Counter() -> @Component<Element, Element> {
+        \\fn Counter() -> @Component<Element> {
         \\    val {count, setCount} = use state(0);
         \\    return Element();
         \\}
@@ -259,12 +259,12 @@ test "codegen ---- use object destructure is a plain call" {
 // lowering is the same plain call followed by the destructure.
 test "codegen ---- use tuple destructure is a plain call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = type() implement @Context<Element>
-        \\fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Component<Element, #(i32, fn(action: i32) -> i32)> {
+        \\val Element = type() implement @Renderable
+        \\fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Component<#(i32, fn(action: i32) -> i32)> {
         \\    val push = { action -> f(base, action) };
         \\    return #(base, push);
         \\}
-        \\fn LikeWidget() -> @Component<Element, Element> {
+        \\fn LikeWidget() -> @Component<Element> {
         \\    val #(shown, push) = use optimistic(12, { c, a -> c + a });
         \\    push(shown);
         \\    return Element();
@@ -274,14 +274,14 @@ test "codegen ---- use tuple destructure is a plain call" {
 
 test "codegen ---- use memo is a plain call with no inferred deps" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = type() implement @Context<Element>
-        \\fn state(initial: i32) -> @Component<Element, i32> {
+        \\val Element = type() implement @Renderable
+        \\fn state(initial: i32) -> @Component<i32> {
         \\    return initial;
         \\}
-        \\fn memo() -> @Component<Element, i32> {
+        \\fn memo() -> @Component<i32> {
         \\    return 0;
         \\}
-        \\fn Counter() -> @Component<Element, Element> {
+        \\fn Counter() -> @Component<Element> {
         \\    val {count, setCount} = use state(0);
         \\    val doubled = use memo { -> return count * 2; };
         \\    return Element();
@@ -291,14 +291,14 @@ test "codegen ---- use memo is a plain call with no inferred deps" {
 
 test "codegen ---- use effect void hook is a plain call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = type() implement @Context<Element>
+        \\val Element = type() implement @Renderable
         \\fn cleanup() {
         \\    0;
         \\}
-        \\fn effect() -> @Component<Element, i32> {
+        \\fn effect() -> @Component<i32> {
         \\    return 0;
         \\}
-        \\fn Widget() -> @Component<Element, Element> {
+        \\fn Widget() -> @Component<Element> {
         \\    use effect { -> cleanup(); };
         \\    return Element();
         \\}
@@ -307,7 +307,7 @@ test "codegen ---- use effect void hook is a plain call" {
 
 test "codegen ---- inline implement context base erased at runtime" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = type() implement @Context<Element>
+        \\val Element = type() implement @Renderable
         \\fn render() -> Element {
         \\    return Element();
         \\}

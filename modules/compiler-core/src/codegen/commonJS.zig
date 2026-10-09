@@ -259,23 +259,6 @@ pub fn isBoxedPrototype(owner: []const u8) bool {
         std.mem.eql(u8, owner, "String");
 }
 
-/// True when a type reference is the owner marker `@Context<B>` (decision 102).
-pub fn isContextTypeRef(tr: ast.TypeRef) bool {
-    return switch (tr) {
-        .generic => |g| std.mem.eql(u8, g.name, "Context"),
-        else => false,
-    };
-}
-
-/// True when a struct exists solely as a phantom `ContextBase` marker —
-/// it `implement`s `@Context` and carries no members. Such structs are erased:
-/// they describe a capability, not a runtime value.
-pub fn isPhantomContextStruct(s: ast.StructDecl) bool {
-    if (s.members.len != 0) return false;
-    for (s.implement) |im| if (isContextTypeRef(im)) return true;
-    return false;
-}
-
 /// JS host namespaces that exist as globals — `#\[@External\.node("Math", …)]`
 /// must reference them directly: `require("Math")` fails at module load
 /// (`Cannot find module 'Math'`). `require` is reserved for relative/package
@@ -2103,7 +2086,7 @@ const Emitter = struct {
     /// The JS shape a botopink effect asks for — read off the return
     /// (decision 118):
     ///   `-> @Task<T>`          → `async function` (decision 120)
-    ///   `-> @Component<C, T>`  → `async function`, awaiting or not (decision
+    ///   `-> @Component<T>`  → `async function`, awaiting or not (decision
     ///                            104: every hook and component answers a
     ///                            Promise and every caller `await`s it)
     ///   `-> @Iterator<T>`      → `function*` (a body that yields; decision 123)

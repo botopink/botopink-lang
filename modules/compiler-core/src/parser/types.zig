@@ -256,6 +256,8 @@ fn parseBaseTypeRefArm(this: *This, alloc: std.mem.Allocator) ParseError!ast.Typ
             .effectTypeRemovedFutureGenerator
         else if (std.mem.eql(u8, name, "Use"))
             .effectTypeRemovedUse
+        else if (std.mem.eql(u8, name, "Context"))
+            .contextMarkerRemoved
         else if (std.mem.eql(u8, name, "AsyncIterator") or std.mem.eql(u8, name, "Iterable") or
             std.mem.eql(u8, name, "IteratorStep") or std.mem.eql(u8, name, "Yield"))
             .effectTypeRemovedLegacy
@@ -268,10 +270,21 @@ fn parseBaseTypeRefArm(this: *This, alloc: std.mem.Allocator) ParseError!ast.Typ
         if (std.mem.eql(u8, name, "Decl") and !this.check(.lessThan)) {
             return ast.TypeRef{ .generic = .{ .name = name, .args = &.{}, .is_builtin = true } };
         }
+        // Decision 354 — `@Renderable` is the marker a component's `R`
+        // implements (`type Element(…) implement @Renderable`). It takes no
+        // type argument: written bare, like `@Decl`.
+        if (std.mem.eql(u8, name, "Renderable")) {
+            if (this.check(.lessThan)) {
+                this.parseError = ParseErrorInfo.fromToken(.renderableTakesNoTypeArguments, this.peek());
+                return ParseError.UnexpectedToken;
+            }
+            return ast.TypeRef{ .generic = .{ .name = name, .args = &.{}, .is_builtin = true } };
+        }
         // Other builtin types always take their generic parameters (`@Expr<i32>`,
         // never bare `@Expr`) — a result type only the expansion knows is
         // written as an ordinary fn generic: `fn yaml<T>(…) -> @Expr<T>`.
         _ = try this.consume(.lessThan);
+        var first_arg_tok = this.peek();
         var args: std.ArrayList(ast.TypeRef) = .empty;
         errdefer {
             for (args.items) |*a| a.deinit(alloc);
@@ -284,6 +297,14 @@ fn parseBaseTypeRefArm(this: *This, alloc: std.mem.Allocator) ParseError!ast.Typ
                 this.parseError = ParseErrorInfo.fromToken(.iteratorErrorParamRemoved, this.peek());
                 return ParseError.UnexpectedToken;
             }
+            // Decision 354 — `@Component<R>` takes one type argument: a second
+            // one means the removed base `C` of `@Component<C, R>`, refused at
+            // the base the codemod drops.
+            if (args.items.len == 1 and std.mem.eql(u8, name, "Component")) {
+                this.parseError = ParseErrorInfo.fromToken(.componentBaseParamRemoved, first_arg_tok);
+                return ParseError.UnexpectedToken;
+            }
+            if (args.items.len == 0) first_arg_tok = this.peek();
             try args.append(alloc, try this.parseTypeRef(alloc));
             // A `>>` that closed an inner list left the outer close pending: the
             // `,` after it separates the ENCLOSING list, not this one.

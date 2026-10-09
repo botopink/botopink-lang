@@ -490,8 +490,8 @@ fn getDeclDocComment(decl: ast.DeclKind) ?[]const u8 {
 const AsyncItem = struct { kind: ast.EffectKind, type_: ast.TypeRef };
 
 /// The element type of an async/sequence return type, or null: the `T` of
-/// `@Task<T>` / `@Iterator<T>` / `@Stream<T>` and of `@Component<C, T>` (the
-/// value slot after the context base, decision 128). A `@Result` return has
+/// `@Task<T>` / `@Iterator<T>` / `@Stream<T>` and the `R` of `@Component<R>`
+/// (decision 354). A `@Result` return has
 /// no element — it is consumed by `try` / `case`, not unwrapped — and with
 /// `@Task<@Result<U, E>>` the element is the whole `@Result<U, E>`: `await`
 /// hands the Result over and never propagates (decision 120).
@@ -502,8 +502,7 @@ fn asyncItemTypeRef(tr: ast.TypeRef) ?AsyncItem {
     const kind = ast.EffectKind.fromWrapperName(g.name) orelse return null;
     const slot: usize = switch (kind) {
         .result => return null,
-        .task, .iterator, .stream => 0,
-        .component => 1,
+        .task, .iterator, .stream, .component => 0,
     };
     if (g.args.len <= slot) return null;
     return .{ .kind = kind, .type_ = g.args[slot] };
@@ -5001,7 +5000,7 @@ const stream_members = [_]WrapperMember{
 const task_members = [_]WrapperMember{ task_map_member, task_then_member };
 
 /// The members `builtins.d.bp` declares on an effect wrapper, following its
-/// `extends` chain (`Stream<T> extends Task`, `Component<C, T> extends Task`),
+/// `extends` chain (`Stream<T> extends Task`, `Component<R> extends Task`),
 /// or null for a name that is not a wrapper with members. `@Result`'s methods
 /// come from its own behavior and are not listed here.
 fn wrapperMembers(type_name: []const u8) ?[]const WrapperMember {

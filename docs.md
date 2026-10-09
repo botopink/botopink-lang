@@ -589,7 +589,7 @@ return type has a value must end every path with `return` (or `@panic` / `@todo`
 `fn f() -> i32 { val x = 1; }` is refused at `-> i32`. An effect return is judged by what
 running off the end would hand out: a `@Result` in any layer has a value (`Ok` or `Error`), so
 `-> @Result<void, E>` and `-> @Task<@Result<void, E>>` end with the empty `return;`, and so does a
-`@Task<T>` or `@Component<C, T>` whose `T` is a value; one whose `T` is `void` falls through as a
+`@Task<T>` or `@Component<T>` whose `T` is a value; one whose `T` is `void` falls through as a
 `void` fn does. `@Iterator` and `@Stream` end by running off their body.
 
 ## Types
@@ -1594,40 +1594,37 @@ in this module is auto-applied; `*` is only for imports `` (`redundantActivation
 — and anything else is `'Name' does not name an implement/extend symbol`
 (`notAnExtension`).
 
-**Expression role.** A **hook** is a function whose return type is
-`@Component<Base, R>`: `Base` is the base the hook is anchored at, `R` is what it
-yields. A hook is named by its noun, without a `use` prefix (`state`, `effect`,
-`router`, `pathname` — never `useState`), because the keyword *is* the
-activation. `val x = use <hook>(…)` activates the hook and binds `R`; a bare
-`use <hook>(…);` activates a void hook; `val {a, b} = use …` binds `R`'s fields
-by name. The activating body is itself a `@Component` function — a **custom
-hook** (`-> @Component<Base, _>`, hooks compose) or a **component**,
-`fn Widget() -> @Component<ElementBase, Element>`, where `Element` is the type
-that carries the tree: `implement @Context<ElementBase>` is the owner marker.
-One wrapper serves both (decision 128): the base is always written, and a
-component is the `@Component<Base, T>` whose `T` implements `@Context<Base>`. A
-component is **called** (`Widget(1)`), never `use`d. Every `use` in one body
-agrees on the one base its return type names. There is no annotation: the
-return is the declaration of the effect (decision 118).
+**Expression role.** `@Component<R>` is the one wrapper of `use` (decisions
+104, 118, 128, 354). A function returning it is a **component** when its `R`
+implements the marker `@Renderable` (`type Element(…) implement @Renderable`):
+a component is **called** (`Widget(1)`, or as a tag), never `use`d. Any other
+`@Component<R>` is **read with `use`** — what React calls a hook: `val x = use
+<f>(…)` runs it and binds `R`, a bare `use <f>(…);` runs one whose `R` is
+`void`, and `val {a, b} = use …` binds `R`'s fields by name. Such a function is
+named by its noun (`state`, `effect`, `router`, `pathname` — never
+`useState`), because the keyword *is* the activation. The body that `use`s is
+itself a `@Component` function — another one read with `use` (they compose) or
+a component, which may `await` too. There is no annotation: the return is the
+declaration of the effect (decision 118), and there is no base: any
+`@Component` may be `use`d in any `@Component` body.
 
 ```botopink
-type ElementBase(id: i32)
-type Element(count: i32) implement @Context<ElementBase>
+type Element(count: i32) implement @Renderable
 type State(value: i32, name: string)
 
-// A hook: the noun, the base, the yield.
-fn state(initial: i32) -> @Component<ElementBase, State> {
+// Read with `use`: the noun, the yield.
+fn state(initial: i32) -> @Component<State> {
     return State(value: initial, name: "state");
 }
 
-// A custom hook composes hooks.
-fn counter(start: i32) -> @Component<ElementBase, State> {
+// One read with `use` composes others.
+fn counter(start: i32) -> @Component<State> {
     val s = use state(start * 2);
     return s;
 }
 
-// A component: its return is the owner, and it may `await` too.
-fn Widget(n: i32) -> @Component<ElementBase, Element> {
+// A component: its `R` implements `@Renderable`, and it may `await` too.
+fn Widget(n: i32) -> @Component<Element> {
     val c = use state(n);
     val {value, name} = use counter(n);
     return Element(count: c.value + value);
@@ -1641,84 +1638,147 @@ fn Loading() -> Element {
 
 The rules, each with its diagnostic:
 
-- **Only a `@Component<C, T>` return grants `use`** (decisions 104 and 118). A
+- **Only a `@Component<R>` return grants `use`** (decisions 104 and 118). A
   `use` in any other body — a plain `fn`, a `@Task` one whatever it wraps — is
   refused at the `use`: `` use-without-context-effect: `use` needs a
-  `@Component<…>` return on the enclosing fn 'Widget' (it returns 'Element') ``.
-  Nothing is unwrapped to find an owner: the server component that awaits and
-  uses is `fn Page() -> @Component<ElementBase, Element>`, which the chain lets
-  `await` (`@Component ⊃ @Task`). A nested closure, an `async { }` block and an
-  `iter` / `stream` loop are not the `@Component` body either: `use` is not
-  inherited by them, as `await` is not.
-- **The wrapper is written, with its base.** `@Component<Element>` with one
-  argument is a type-arity error — the base is never read off `T`. A component
-  that activates a hook under a bare `-> Element` is
-  `use-without-context-effect`; an aliased return (`type Comp<T> =
-  @Component<ElementBase, T>`) types the function but grants nothing
-  (`effect-wrapper-behind-alias`). A `T` that owns a context at another base
-  (`@Component<Http, Element>` with `Element: @Context<ElementBase>`) is refused.
+  `-> @Component<R>` return on the enclosing fn 'Widget' (it returns 'Element') ``.
+  Nothing is unwrapped to find one: the server component that awaits and
+  uses is `fn Page() -> @Component<Element>`, which the chain lets `await`
+  (`@Component ⊃ @Task`). An `async { }` block is not the `@Component` body
+  either: `use` is not inherited by it, as `await` is not.
+- **The wrapper takes one type argument.** `@Component<C, R>` — decision
+  128's base — is refused where it is written, at the base: `` `@Component`
+  takes one type argument, `@Component<R>` — its base parameter was removed
+  (decision 354) `` (`generic-arg-count-exceeded`). The owner marker
+  `@Context<C>` left with it (`context-marker-removed`, naming `implement
+  @Renderable`), and `@Renderable` takes no type argument. An aliased return
+  (`type Comp<T> = @Component<T>`) types the function but grants nothing
+  (`effect-wrapper-behind-alias`).
 - **A component never propagates** (decision 121). `throw` and `try` are legal
-  in a `@Component` body only when `T` is a `@Result`; a component returns
+  in a `@Component` body only when `R` is a `@Result`; a component returns
   `Element`, so it handles a failure in its own body — `try await load() catch
   fallback`, a `case`, a navigation signal or an error screen. A bare `try` there
-  is `effect-try-without-fallible-channel`. A hook may return
-  `@Component<Base, @Result<T, E>>`, and then its body may `try`.
-- **The operand is a hook.** `use plain()` where `plain : -> User` is
-  `` use-of-non-context-fn: `use` takes a hook: 'User' is not a hook `@Component<C, _>` ``,
-  and `use Card()` where `Card` is a component (its `T` owns the context) is refused: a component is
-  called, not `use`d.
-- **One base per body** (decision 96). The base is a property of the
-  FUNCTION, not of each activation: the first `use` fixes it and every later
-  one resolves against the same one. Two refusals say so, and they are
-  different rules. A single `use` anchored at a base the return type never
-  named is the DECLARATION's: `use connection()` with `connection : ->
-  @Component<Http, _>` inside a body anchored at `Element` is
-  `` context-anchor-violation: function anchors at `Element` but `use` returns
-  @Component<Http, _> ``. A second `use` disagreeing with the first is the BODY's,
-  refused at its own site with both bases and the line that fixed the anchor:
-  `` context-anchor-violation: every `use` in one function resolves against the
-  same ContextBase: this body's is `Element`, fixed by the `use` on line 9, and
-  this one is @Component<Http, _> ``. Two hooks that are each legal alone are still
-  refused together; there is no flag (decision 67). Each body starts over — a
-  sibling `fn` may anchor wherever its own return type says.
-- **The static prefix.** Every `use` of a function body comes before its first
-  `if`, `case`, `loop` or `return`, at any nesting: `val c = use …` after a
-  `return`, and a `use` inside an `if`'s own block, are both parse errors —
-  `` `use` must be in static prefix `` with the hint `Move all `use` statements
-  to the top of the function body, before any `if`, `case`, `loop`, or
-  `return``. A lambda body is another function: its own prefix starts over, so
-  `use memo({ -> return count * 2; })` keeps the enclosing prefix intact.
+  is `effect-try-without-fallible-channel`. One read with `use` may return
+  `@Component<@Result<T, E>>`, and then its body may `try`.
+- **The operand is read with `use`.** `use plain()` where `plain : -> User` is
+  `` use-of-non-context-fn: `use` takes a hook: 'User' is not a hook `@Component<R>` ``,
+  and `use Card()` where `Card` is a component (its `R` implements
+  `@Renderable`) is refused: a component is called, not `use`d.
+- **The rules of hooks** (decision 357). A `use` is written at the top level of
+  its `@Component` body and runs on every call, in the same order and the same
+  number. One inside an `if` / `else`, a `case` arm, a `for` / `while` /
+  `loop` (or an `iter` / `stream` loop), a lambda, a `catch` handler, the right
+  operand of `&&` / `||` / `??`, or after a statement that may `return`,
+  `throw` or `try` early is refused at the `use`, naming what encloses it:
+  `` use-not-top-level: `use` inside an `if` / `else` — a `use` is written at the
+  top level of a `@Component` body and runs on every call (decision 357) ``. A
+  condition goes inside the argument, never around the `use` (the example
+  below the list).
 - **The type is `R`.** `val c = use state(0)` binds `c : State`, and
   `val {value, set} = use state(0)` binds each name to the field of `R` it
   names. A tuple `R` destructures positionally: with `optimistic : (i32, fn(i32,
-  i32) -> i32) -> @Component<ElementBase, #(i32, fn(action: i32) -> i32)>`,
+  i32) -> i32) -> @Component<#(i32, fn(action: i32) -> i32)>`,
   `val #(shown, push) = use optimistic(12, addLike)` binds `shown : i32` and
   `push : fn(action: i32) -> i32`. The pattern's arity is the tuple's, and the
-  hook's `R` has to be a tuple; either failing is refused at the binding —
+  `R` has to be a tuple; either failing is refused at the binding —
   `` use-tuple-arity: `val #(…)` binds 1 name(s) but the hook yields a tuple
   of 2 `` and `` use-tuple-arity: `val #(…)` binds 2 name(s) but the hook
   yields 'i32', which is not a tuple `` — with no flag (decision 67).
+- **`use` exists only where there is a render tree** (decision 354 (3)). A
+  decorator body, a template body and a `comptime { … }` are compile-time
+  evaluation with none: `use` there is `use-outside-render-tree`; what they
+  need comes from the catalogue (`@TypeInfo.all`, 353).
 - **`use` never leaves a function body.** There is no module-level `use` and no
   `use client;` / `use server;` directive (decision 87 of 1.0.10-beta): a
   framework's boundary markers are its own decorators (`#[client]`).
 
+A condition inside the argument is at the top level; around the `use`, it is
+refused:
+
+```botopink
+import {context.Context, context.provide} from "std";
+
+type Element(text: string) implement @Renderable
+type Theme(mode: string)
+
+pub val ThemeContext = Context<Theme>();
+
+fn App(dark: bool) -> @Component<Element> {
+    use provide(ThemeContext, if (dark) Theme(mode: "dark") else Theme(mode: "light"));
+    return Element(text: "app");
+}
+```
+
+<!-- docs-check: reject use-not-top-level -->
+```botopink
+type Element(count: i32) implement @Renderable
+
+fn state(initial: i32) -> @Component<i32> {
+    return initial;
+}
+
+fn Widget(on: bool) -> @Component<Element> {
+    if (on) {
+        val n = use state(1);
+    }
+    return Element(count: 0);
+}
+```
+
 **Lowering.** `use f(x)` is `f(x)` on erlang, wasm and beam, and `await f(x)`
 on commonJS, where every `@Component` body is an `async function` — awaiting or
-not, as a `@Task` one is — so every hook and component answers a Promise and
-every caller awaits it (decisions 88 and 104). The prefix is the
-activation the checker validated, not a rename: nothing is turned into
-`useState`, no dependency array is inferred — a hook that takes one declares it
-as a parameter (`memo(compute, deps)`). A client runtime supplies hook semantics
+not, as a `@Task` one is — so every `@Component` answers a Promise and every
+caller awaits it (decisions 88 and 104). The prefix is the activation the
+checker validated, not a rename: nothing is turned into `useState`, no
+dependency array is inferred — a function that takes one declares it as a
+parameter (`memo(compute, deps)`). A client runtime supplies hook semantics
 through what `f` does; the pure body above is what every backend runs, and what
 the server renders.
 
-**The provider side.** A `@Component` body is also the effect under which
-`@getContext(T)` reads the active provider of `T` on the same owner tree. It is
-a hook anchored at `T` (decision 269, `-> Component<T, T>`): it is `use`d —
-`val ctx = use @getContext(BasePagamento);` reads the context as a
-`BasePagamento` — and the call without `use` is
-`error[context-getcontext-without-use]`, naming `use`; a provider stack is not
-part of this section.
+**Contexts** (decision 354). What a body reads from above it is a context: a
+declared object, its identity the declaration (281) — `pub val ThemeContext =
+Context<Theme>();` with std's `context.Context`, no default value, and no other
+way to make one (`context-not-declared`: a `Context<T>()` that is not a
+module-level `val`'s whole initializer, a `val` naming another context, a
+context named by a local or a parameter). Two hooks of std's `context` module
+work it, `use`d and nothing else (`context-hook-without-use`):
+
+- `use provide(ThemeContext, value);` in a **component's** body gives `value`
+  to everything that component renders below it — descendants only, never
+  itself or a sibling; the nearest provider wins. In a body whose `R` is not
+  `@Renderable` it is `context-provide-outside-component`, and after the body
+  rendered a component it is `context-provide-after-render` (that child would
+  not see it).
+- `val t = use context(ThemeContext);` reads the value provided nearest above
+  — a `Theme`; with no provider above it is `context-unbound` at run time.
+
+```botopink
+import {context.Context, context.provide, context.context} from "std";
+
+type Theme(mode: string)
+type Element(text: string) implement @Renderable
+
+pub val ThemeContext = Context<Theme>();
+
+fn Label() -> @Component<Element> {
+    val t = use context(ThemeContext);
+    return Element(text: t.mode);
+}
+
+fn App() -> @Component<Element> {
+    use provide(ThemeContext, Theme(mode: "dark"));
+    val l = Label();
+    return Element(text: "[" + l.text + "]");
+}
+```
+
+Every `@Component` function takes a hidden context map (its first parameter,
+after `self` on a method): `provide` makes the map its children receive,
+`context` looks it up, and a call outside every `@Component` body passes the
+empty map (`comptime/context_lower.zig`). erlang, beam and commonJS run it; the
+wasm backend refuses a `use provide` / `use context` where it is written, and
+a component reached from a `comptime` evaluation does not take the map yet
+(`language-gaps.md` row 354-wasm, 354-comptime).
 
 ## Functions
 
@@ -1895,7 +1955,7 @@ there is no annotation; the return is the annotation (decision 118):
 | `T` | only `try … catch` (handles the error on the spot) |
 | `@Result<T, E>` | `throw` · `try` |
 | `@Task<T>` | `await` |
-| `@Component<C, T>` | `use` · `await` |
+| `@Component<T>` | `use` · `await` |
 | `@Iterator<T>` | `yield` · `break v` |
 | `@Stream<T>` | `yield` · `break v` · `await` |
 
@@ -1921,7 +1981,7 @@ The rules that make it work:
 2. **The capabilities form a chain**, and each level grants everything below it:
 
    ```
-   @Component<C, T>  ⊃  @Task<T>        use · await
+   @Component<T>  ⊃  @Task<T>        use · await
    @Stream<T>        ⊃  @Task + yield   yield · await
    @Iterator<T>                         yield
    ```
@@ -1940,7 +2000,7 @@ The rules that make it work:
 
 ```
 error: effect-try-without-fallible-channel: `try` needs a @Result in the return
-(@Result<…>, @Task<@Result<…>>, @Component<C, @Result<…>>, …) — or handle it
+(@Result<…>, @Task<@Result<…>>, @Component<@Result<…>>, …) — or handle it
 here with `try … catch`
 ```
 
@@ -1971,8 +2031,8 @@ The quick reference:
 | an asynchronous function | `fn f() -> @Task<T>` | `await f()`, with an await channel |
 | an asynchronous function that can fail | `fn f() -> @Task<@Result<T, E>>` | `try await f()` · `try await f() catch x` · `case (await f())` |
 | a Task in the middle of a function | `async { … }` | pass it along, `await` it |
-| a hook | `fn h() -> @Component<Base, T>` | `use h()`, in a `@Component` body with the same base |
-| a component, page or layout | `fn C() -> @Component<ElementBase, Element>` | `C()`, an ordinary call |
+| a `@Component` read with `use` | `fn h() -> @Component<T>` (`T` not `@Renderable`) | `use h()`, at the top level of a `@Component` body |
+| a component, page or layout | `fn C() -> @Component<Element>` | `C()`, an ordinary call |
 | a sequence | `fn g() -> @Iterator<T>` | `for (g()) { x -> … }`, in any function |
 | a sequence of items that fail | `fn g() -> @Iterator<@Result<T, E>>` | `for` + `try r` or `case` |
 | an asynchronous sequence | `fn g() -> @Stream<T>` | `for await`, with an await channel |
@@ -2553,8 +2613,8 @@ pub declare fn parse(input: string) -> i32;
 
 A declaration takes the signature a `fn` does — generic parameters, `comptime`
 parameters, any return type — with or without an annotation. A parameter it
-has no name for is written `_` (`declare fn getContext<T>(comptime _: type) ->
-Component<T, T>;`); `_` is a bodyless declaration's placeholder, and a
+has no name for is written `_` (`declare fn typeInfo<T>(comptime _: type) ->
+TypeInfo<T>;`); `_` is a bodyless declaration's placeholder, and a
 function with a body refuses it (`discard-param-with-body`).
 
 A binding may also be a template, where `$0`, `$1`, … are the declared
@@ -2811,7 +2871,6 @@ decorator or template body runs, never at run time):
 | `@trap` | `trap() -> noreturn` | the declaration |
 | `@block` | `block<T>(body: fn() -> T) -> T` — `@block { … }`, its value what its `return`s carry | the declaration |
 | `@module` | `module() -> module` | refused at every call (`builtin-not-lowered`) |
-| `@getContext` | `getContext<T>(comptime _: type) -> Component<T, T>` — a hook, `val ctx = use @getContext(T);` reads a `T` | its own rule (§ use — imports, activation, and hooks): a call that is not `use`'s operand is `context-getcontext-without-use` |
 | `@field` | `field<T, F>(obj: T, comptime name: string) -> F` — COMPTIME-ONLY name | the declaration |
 | `@src` | `src() -> SourceLocation` — COMPTIME-ONLY (§ `@src()` and `SourceLocation`) | its own rule (`src-takes-no-arguments`) |
 | `@typeInfo` | `typeInfo<T>(comptime _: type) -> TypeInfo<T>` — COMPTIME-ONLY (§ Decorators) | its own rule (`typeinfo-unknown-declaration`, `typeinfo-unknown-member`) |
@@ -3133,8 +3192,8 @@ no automatic rewriter: each error names the new spelling, from the table below.
 | `#[@result] fn f() -> @Result<T, E>` | `fn f() -> @Result<T, E>` |
 | `#[@future] fn f() -> @Future<T, E>` | `fn f() -> @Task<@Result<T, E>>` (and `await x` → `try await x` where the error must propagate) |
 | `@Future<T>` with no error | `@Task<T>` |
-| `#[@use] fn f() -> @Use<C, T>` | `fn f() -> @Component<C, T>` (`throw` / `try` only if `T` is a `@Result`) |
-| `#[@use] fn f() -> @Component<T>` | `fn f() -> @Component<B, T>`, `B` from `T implement @Context<B>` |
+| `#[@use] fn f() -> @Use<C, T>` | `fn f() -> @Component<T>` (`throw` / `try` only if `T` is a `@Result`) |
+| `#[@use] fn f() -> @Component<T>` | `fn f() -> @Component<T>` |
 | `#[@generator]` + `@Generator<T>` | `@Iterator<T>` |
 | `#[@resultGenerator]` + `@ResultGenerator<T, E>` | `@Iterator<@Result<T, E>>` (`for` no longer does an implicit `try`) |
 | `#[@futureGenerator]` + `@FutureGenerator<T, E>` | `@Stream<@Result<T, E>>` |
@@ -3143,11 +3202,19 @@ no automatic rewriter: each error names the new spelling, from the table below.
 | `#[@futureGenerator] loop { … }` | `stream loop { … }` |
 | `YieldStep<T, E>` with `Error(error: E)` | `YieldStep<T>` = `{ Yield(value: T), Done }` |
 | `@Iterator<T, E>` | `@Iterator<@Result<T, E>>` |
-| `#[@context]` / `@Context<B, R>` as an effect | `-> @Component<B, R>` |
+| `#[@context]` / `@Context<B, R>` as an effect | `-> @Component<R>` |
 | `#[@iterator]` / `#[@asyncGenerator]` / `@AsyncIterator` | `@Iterator<@Result<…>>` / `@Stream<@Result<…>>` |
 | `Iterable`, `IteratorStep`, `Yield<T, R>` | `YieldStep<T>` |
 | `loop (xs) { x -> }` · `loop (cond)` · `loop await` | `for (xs) { x -> }` · `while (cond)` · `for await` |
-| `-> Element` on a component that uses a hook | `-> @Component<ElementBase, Element>` |
+| `-> Element` on a component that uses a hook | `-> @Component<Element>` |
+| `@Component<C, R>` (decision 128's base) | `@Component<R>` (decision 354) |
+| `type T(…) implement @Context<C>` | `type T(…) implement @Renderable` |
+| `val c = use @getContext(T);` | a declared `Context<T>`, `use provide(…)` in the component that renders the reader, `val c = use context(…);` |
+
+Decision 354's three rows have a codemod, `scripts/codemod-component-contexts.py`
+(`scripts/AGENTS.md`): it rewrites the first two and reports each `use
+@getContext(T)` at its line — which component provides the context is the
+author's choice.
 
 Four changes are not a rename and are reviewed by hand:
 
@@ -3156,7 +3223,7 @@ Four changes are not a rename and are reviewed by hand:
   Where it does not — a component returning `Element`, a `@Task<T>` — handle the
   error there: `try await x catch fallback`, a `case`, a navigation signal.
 - **A `throw` in a hook or component** whose `T` is not a `@Result`: either the
-  hook returns `@Component<C, @Result<T, E>>`, or the error is handled in its
+  hook returns `@Component<@Result<T, E>>`, or the error is handled in its
   body (decision 121).
 - **A `for` over a fallible iterator** hands over the `@Result`: add `try r`
   (with a `@Result` in the return) or a `case`; `for await` likewise.

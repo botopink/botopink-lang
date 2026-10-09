@@ -165,9 +165,6 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
     // OR: if (cond) expr [else expr]
     if (this.check(.@"if")) {
         const ifTok = this.advance();
-        // Static prefix of `use`: an `if` ends it for the rest of the function
-        // body, its own branches included (`parser.zig` `useBranchSeen`).
-        this.useBranchSeen = true;
 
         _ = try this.consume(.leftParenthesis);
         // `prec.lowest`, not `prec.equality`: an `if` condition is delimited by
@@ -180,8 +177,7 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         _ = try this.consume(.rightParenthesis);
         const condPtr = try this.boxExpr(alloc, cond);
         // `cond`'s errdefer above frees the children; the box itself was
-        // leaked when a branch failed to parse (a `use` inside the then-block
-        // refused by the static-prefix rule, for one).
+        // leaked when a branch failed to parse.
         errdefer alloc.destroy(condPtr);
 
         var binding: ?[]const u8 = null;
@@ -209,7 +205,6 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
                 .trackEmptyLines = true,
                 .handleComments = true,
                 .semicolonPolicy = .requiredExceptLast,
-                .useAfterBranchGuard = true,
             });
         } else blk: {
             const expr = try this.parseExpr(alloc);
@@ -247,7 +242,6 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
     // still takes the expression on the next line, as it always did.
     if (this.check(.@"return")) {
         const retTok = this.advance();
-        this.useBranchSeen = true; // static prefix of `use` ends at a `return`
         if (this.check(.semicolon) or this.check(.rightBrace) or this.check(.endOfFile)) {
             return this.makeJump(alloc, retTok, .@"return", null);
         }
@@ -257,7 +251,6 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
 
     // case expr { arm* }
     if (this.check(.case)) {
-        this.useBranchSeen = true; // static prefix of `use` ends at a `case`
         return .{ .collection = try this.parseCaseExpr(alloc) };
     }
 
@@ -340,33 +333,27 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         return Expr{ .comptime_ = .{ .loc = locFromToken(assertTok), .kind = .{ .assert = .{ .condition = conditionPtr, .message = message } } } };
     }
 
-    // The three loop keywords (decision 105). Each ends the static prefix of
-    // `use` for the rest of the function body.
+    // The three loop keywords (decision 105).
     //   while [:label] (cond) { … }
     //   for [await] [:label] (iter) { x -> … }
     //   loop [:label] { … }
     //   iter|stream loop|while|for …   (decision 125)
     if (this.check(.@"while")) {
-        this.useBranchSeen = true;
         return .{ .loop = try this.parseWhileExpr(alloc) };
     }
     if (this.check(.@"for")) {
-        this.useBranchSeen = true;
         return .{ .loop = try this.parseForExpr(alloc) };
     }
     if (this.check(.loop)) {
-        this.useBranchSeen = true;
         return .{ .loop = try this.parseLoopExpr(alloc, null) };
     }
     if (this.check(.hash) and this.peekAt(1).kind == .leftSquareBracket) {
-        this.useBranchSeen = true;
         return .{ .loop = try this.parseAnnotatedLoopExpr(alloc) };
     }
     //   iter loop|while|for …  /  stream loop|while|for …   (decision 125)
     // `iter` and `stream` are contextual: a keyword only immediately before a
     // loop keyword, an identifier everywhere else (`g.iter()`, `val stream = 1`).
     if (genLoopPrefixAhead(this)) |kind| {
-        this.useBranchSeen = true;
         return .{ .loop = try this.parseGenLoopExpr(alloc, kind) };
     }
 
@@ -1361,10 +1348,6 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
                 .trackEmptyLines = true,
                 .handleComments = true,
                 .semicolonPolicy = .optional,
-                // A lambda is another function: its static prefix of `use`
-                // starts over and does not touch the enclosing body's.
-                .useAfterBranchGuard = true,
-                .freshUseScope = true,
             });
 
             return Expr{ .function = .{ .loc = locFromToken(braceTok), .kind = .{
@@ -2146,10 +2129,6 @@ pub fn parseTrailingLambdas(this: *This, alloc: std.mem.Allocator) ParseError![]
             .trackEmptyLines = true,
             .handleComments = true,
             .semicolonPolicy = .requiredExceptLast,
-            // A trailing lambda is another function: a fresh static prefix
-            // of `use` (`use memo { -> return … }` keeps the enclosing one).
-            .useAfterBranchGuard = true,
-            .freshUseScope = true,
         });
 
         try lambdas.append(alloc, .{
@@ -2371,9 +2350,7 @@ fn parseLoopLabel(this: *This) ParseError!?[]const u8 {
 /// The statements of a loop body, after the `{` and the optional `x ->`
 /// prologue. The semicolon policy stays `.required`, which is what a loop
 /// body has always applied; comments and empty lines are tracked as in every
-/// other block body. A loop body is a branch's block, not a function: it
-/// inherits the enclosing body's static prefix, which the loop itself just
-/// ended, so a `use` inside it is `useAfterBranch`.
+/// other block body.
 fn parseLoopBody(this: *This, alloc: std.mem.Allocator) ParseError![]Stmt {
     // The shared block body of `for`, `while` and `loop` — the `{` and the
     // `x ->` parameter are this block's prologue. The semicolon policy is the
@@ -2386,10 +2363,6 @@ fn parseLoopBody(this: *This, alloc: std.mem.Allocator) ParseError![]Stmt {
         .trackEmptyLines = true,
         .handleComments = true,
         .semicolonPolicy = .requiredExceptLast,
-        // A loop body is a branch's block, not a function: it inherits the
-        // enclosing body's static prefix, which the loop itself just ended,
-        // so a `use` inside it is `useAfterBranch`.
-        .useAfterBranchGuard = true,
     });
 }
 

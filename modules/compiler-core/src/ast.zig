@@ -2906,7 +2906,7 @@ pub const EffectKind = enum {
     iterator,
     /// `-> @Stream<T>` whose body yields — an asynchronous sequence (decision 122).
     stream,
-    /// `-> @Component<C, T>` — the body may `use` a hook (decision 128).
+    /// `-> @Component<T>` — the body may `use` a hook (decision 128).
     component,
 
     /// Every effect, in declaration order. The one list: `fromWrapperName`
@@ -3084,6 +3084,21 @@ fn isReturnJump(j: JumpExpr) bool {
     return j == .@"return";
 }
 
+/// Decision 357 — true when the statement `e` may leave its function before
+/// the statements after it run: a `return`, a `throw` or a propagating `try`
+/// in its OWN scope (a closure's are the closure's; a `case` arm's block and
+/// an `if` branch are the function's).
+pub fn exprMayExitEarly(e: Expr) bool {
+    return exprFindJump(e, isEarlyExitJump) != null;
+}
+
+fn isEarlyExitJump(j: JumpExpr) bool {
+    return switch (j) {
+        .@"return", .throw_, .try_ => true,
+        else => false,
+    };
+}
+
 fn isYieldJump(j: JumpExpr) bool {
     return switch (j) {
         .yield => true,
@@ -3146,7 +3161,7 @@ fn exprFindJump(e: Expr, comptime pred: fn (JumpExpr) bool) ?Loc {
                     // A braced arm is parsed as a lambda, but it is the
                     // arm's block, not a closure: its `return` is the
                     // enclosing function's.
-                    if (pred == isReturnJump and arm.body == .function and arm.body.function.kind.syntax == .lambda) {
+                    if ((pred == isReturnJump or pred == isEarlyExitJump) and arm.body == .function and arm.body.function.kind.syntax == .lambda) {
                         if (bodyFindJump(arm.body.function.kind.body, pred)) |l| break :blk l;
                         continue;
                     }
@@ -3171,7 +3186,7 @@ fn exprFindJump(e: Expr, comptime pred: fn (JumpExpr) bool) ?Loc {
                 // A `@block { … }`'s `return` is the block's value, not the
                 // enclosing function's.
                 if (cc.is_builtin and std.mem.eql(u8, cc.callee, "block") and cc.trailing.len > 0)
-                    break :blk if (pred == isReturnJump) null else bodyFindJump(cc.trailing[0].body, pred);
+                    break :blk if (pred == isReturnJump or pred == isEarlyExitJump) null else bodyFindJump(cc.trailing[0].body, pred);
                 break :blk null;
             },
             else => null,
@@ -3617,8 +3632,8 @@ pub const ImplementDecl = struct {
     comment: ?[]const u8 = null,
     /// `////` module-level documentation
     moduleComment: ?[]const u8 = null,
-    /// interfaces being implemented, e.g. `[Drawable, @Context<B>]`.
-    /// Each is a full `TypeRef` so generic interfaces (`Iface<A, B>`, `@Context<…>`)
+    /// interfaces being implemented, e.g. `[Drawable, @Renderable]`.
+    /// Each is a full `TypeRef` so generic interfaces (`Iface<A, B>`, `@Renderable`)
     /// are supported, not just bare identifiers.
     interfaces: []TypeRef,
     /// The type this implement is for, e.g. "SmartCamera".

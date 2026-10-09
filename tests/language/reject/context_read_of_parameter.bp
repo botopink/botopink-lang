@@ -1,0 +1,19 @@
+//// Decision 354 (2) — `use context(…)` names the context by the `val` that
+//// declares it; a parameter holding one is no declaration (its key is the
+//// declaration's identity, 281).
+
+import {context.Context, context.provide, context.context} from "std";
+
+type Theme(mode: string)
+
+type Element(text: string) implement @Renderable
+
+pub val ThemeContext = Context<Theme>();
+
+fn read(ctx: Context<Theme>) -> @Component<Theme> {
+    return use context(ctx);
+}
+
+pub fn main() {
+    read(ThemeContext);
+}

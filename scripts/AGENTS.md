@@ -28,6 +28,7 @@ scripts/
 ├── macos-sim.sh       ← run a command on Linux as the macos-14 CI row would (§ Portability)
 ├── codemod-import-without-from.py ← decision 206's one-shot migration: `from "<a module of this package>"` → the brace form (§ below)
 ├── codemod-optional-operators.py ← decision 330's migration: `.unwrapOr(d)` on a `?T` → `?? d`, `result.<op>(r, …)` → `r.<op>(…)` (§ below)
+├── codemod-component-contexts.py ← decision 354's migration: `@Component<C, R>` → `@Component<R>`, `@Context<C>` → `@Renderable`, `use @getContext(T)` reported (§ below)
 ├── lib/
 │   ├── pool.sh        ← the bounded worker pool the shell runners share (sourced by ../tests/language/run.sh and check-docs.sh)
 │   └── result-store.js ← the cell-result store of run.sh and check-docs.sh: keys, lookup, save (decision 229)
@@ -402,6 +403,30 @@ compiler, whose diagnostic already writes the fix for one import
 (`error[module-import-with-from]`); a subcommand would keep a reading of the
 retired spelling inside the CLI for good, which decision 67 refuses. The script
 migrates the seven repositories once and needs no build.
+
+## codemod-component-contexts.py
+
+Decision 354 (1.0.12-beta `01-compiler/134` step 6): `@Component<R>` is the one wrapper —
+decision 128's base parameter is gone — a component's `R` implements the marker
+`@Renderable` (the owner marker `@Context<C>` left), and `@getContext(T)` gave way to
+contexts (`use provide` / `use context`). The script migrates a tree:
+
+```sh
+python3 scripts/codemod-component-contexts.py [--write] [--format <botopink>] [--ext <.ext>]... <root>...
+```
+
+- **`@Component<C, R>` → `@Component<R>`** — the second argument kept whatever it nests
+  (`#(…)`, `fn(…) -> T`, generics; a `->` closes nothing), folded onto one line (a line
+  broken inside a `//` comment included); a `@Component` of one argument is left alone.
+- **`@Context<C>` → `@Renderable`**, in an `implement` clause or anywhere else.
+- **`use @getContext(T)` is reported** `UNDECIDED <file>:<line>` (outside `//` prose) and the
+  run exits 1: which component provides the context is the author's.
+- Textual, over code, comments and string literals alike (a reflected return type compared
+  as text is the same spelling). It reads `.bp`, `.d.bp` and `.bp.fixture` files, plus each
+  `--ext` (`.md`, `.zig`, `.ts` for docs, the compiler's tests, the VS Code grammar tests);
+  a `CHANGELOG.md` records the past and is not a target.
+- With `--format`, each `.bp` / `.d.bp` it changed that `format --check` accepted before
+  is formatted after. Without `--write` it only reports.
 
 ## format-check.sh
 

@@ -1,9 +1,9 @@
 ----- SOURCE CODE
-val Element = type() implement @Context<Element>
-fn state(initial: i32) -> @Component<Element, i32> {
+val Element = type() implement @Renderable
+fn state(initial: i32) -> @Component<i32> {
     return initial;
 }
-fn Counter() -> @Component<Element, Element> {
+fn Counter() -> @Component<Element> {
     val #(count, setCount) = use state(0);
     return Element();
 }

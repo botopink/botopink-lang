@@ -3,7 +3,7 @@
 //// `throw` / `try` are not a level of it: they are legal wherever a layer of
 //// the return is a `@Result` (decision 121). The two rows here are the ones
 //// every backend runs: `-> @Result`, holding the `try` its value grants, and
-//// `-> @Component<C, @Result<…>>`, the top, holding `use` and the `try` its
+//// `-> @Component<@Result<…>>`, the top, holding `use` and the `try` its
 //// `@Result` value grants. `test/effect_chain.bp` carries the `@Task` and
 //// `@Iterator` rows, which need a target that can consume a Task or an
 //// iterator (commonJS and erlang).
@@ -13,9 +13,9 @@
 //// its caller reads a promise there and the value elsewhere: `Widget` prints
 //// its own count from inside the body, after `main`'s two lines.
 
-type Element(count: i32) implement @Context<Element>
+type Element(count: i32) implement @Renderable
 
-fn state(initial: i32) -> @Component<Element, i32> {
+fn state(initial: i32) -> @Component<i32> {
     return initial;
 }
 
@@ -30,8 +30,8 @@ fn doubled(n: i32) -> @Result<i32, string> {
     return v * 2;
 }
 
-// `-> @Component<C, @Result<…>>` — `use`, and `try` because its value is a `@Result`.
-fn widget(n: i32) -> @Component<Element, @Result<i32, string>> {
+// `-> @Component<@Result<…>>` — `use`, and `try` because its value is a `@Result`.
+fn widget(n: i32) -> @Component<@Result<i32, string>> {
     val c = use state(1);
     val v = try parse(n);
     @print(c + v);

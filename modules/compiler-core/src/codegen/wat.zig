@@ -14,6 +14,7 @@
 /// funcref table, boxed scalar optionals, `assert`, and imports linked
 /// statically. See `codegen/AGENTS.md` §wat.
 const std = @import("std");
+const context_lower = @import("../comptime/context_lower.zig");
 const comptimeMod = @import("../comptime.zig");
 const moduleOutput = @import("./moduleOutput.zig");
 const configMod = @import("./config.zig");
@@ -132,7 +133,7 @@ fn isZeroArgMainCall(e: ast.Expr) bool {
 }
 
 /// The value an eager effect wrapper carries. wasm runs a `@Task<T>` and a
-/// `@Component<C, T>` in place (`await` and `use` are identity), so a value of
+/// `@Component<T>` in place (`await` and `use` are identity), so a value of
 /// either type IS its `T`: every question about its representation — a string,
 /// a `@Result` with a string payload, an array, a record — is asked of `T`.
 /// Nested wrappers peel all the way (`@Task<@Task<string>>` is a string).
@@ -140,8 +141,8 @@ fn eagerTypeRef(t: ast.TypeRef) ast.TypeRef {
     return switch (t) {
         .generic => |g| if (g.is_builtin and g.args.len == 1 and std.mem.eql(u8, g.name, "Task"))
             eagerTypeRef(g.args[0])
-        else if (g.is_builtin and g.args.len == 2 and std.mem.eql(u8, g.name, "Component"))
-            eagerTypeRef(g.args[1])
+        else if (g.is_builtin and g.args.len == 1 and std.mem.eql(u8, g.name, "Component"))
+            eagerTypeRef(g.args[0])
         else
             t,
         else => t,
@@ -3028,12 +3029,20 @@ const Emitter = struct {
         };
     }
 
+    /// Decision 354 (8) — the hidden context map a `@Component` function
+    /// receives (`context_lower.zig`) is already an `unknown` value: passed
+    /// on, it is not boxed again.
+    fn isContextMapIdent(value: ast.Expr) bool {
+        if (value != .identifier or value.identifier.kind != .ident) return false;
+        return std.mem.eql(u8, value.identifier.kind.ident, context_lower.map_param);
+    }
+
     /// Lower `value` as the `unknown` value it becomes in such a slot: as it
     /// is when it already is one or carries its own header, `0` for `null`,
     /// else boxed by its static shape — a function value under its arity's
     /// descriptor (decision 254), its payload the closure cell.
     fn lowerAsUnknown(self: *Emitter, value: ast.Expr) anyerror!void {
-        if (isNullLit(value) or self.isUnknownExpr(value) or self.isTaggedValue(value)) {
+        if (isNullLit(value) or self.isUnknownExpr(value) or self.isTaggedValue(value) or isContextMapIdent(value)) {
             try self.lowerCoerced(value, "i32");
             return;
         }
@@ -5921,6 +5930,16 @@ const Emitter = struct {
                 defer self.call_loc = outer_call;
                 switch (c.kind) {
                     .call => |cc| {
+                        // Decision 354 (8) — a `use provide` / `use context`
+                        // lowered to std's `context.push` / `context.find`
+                        // carries a value through an `unknown` slot the lowering
+                        // wrote after inference, and this backend boxes and
+                        // unboxes a value only by a static type it reads from
+                        // inference: refused, located at the `use`, until the
+                        // wasm lowering of the hidden map lands
+                        // (`language-gaps.md` row 354-wasm).
+                        if (cc.receiver == null and (std.mem.eql(u8, cc.callee, context_lower.push_fn) or std.mem.eql(u8, cc.callee, context_lower.find_fn)))
+                            return self.refuse(c.loc, "the wasm backend does not lower a context yet: `use provide` / `use context` (decision 354 (8)) runs on erlang, beam and commonJS", .{});
                         // Static extension dispatch (F6) — resolve to the mangled
                         // linear-memory function `$<target>_<method>` before the
                         // ordinary call-kind handling.

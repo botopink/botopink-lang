@@ -1,0 +1,89 @@
+//// Contexts (decision 354) — what a component's body reads from above it,
+//// React's context in botopink's spelling.
+////
+//// A context is a declared object, its identity the declaration (decision
+//// 281): `pub val ThemeContext = Context<Theme>();` — no default value, and
+//// no other way to make one (`context-not-declared`). A component provides a
+//// value to everything it renders below it, and a body reads the nearest
+//// value provided above it:
+////
+////     use provide(ThemeContext, Theme(mode: .Dark));   // the children's
+////     val theme = use context(ThemeContext);           // the nearest above
+////
+//// Both are hooks, so they are `use`d, never called for a value; `provide`
+//// only in a component's body (a `@Component<R>` whose `R` implements
+//// `@Renderable`), before it renders a child. `use` exists only where there
+//// is a render tree — a decorator body, a template body and a
+//// `comptime { … }` have none (`use-outside-render-tree`). A read with no
+//// provider above it is `context-unbound` at run time.
+////
+//// The work is the compiler's: every `@Component` function takes a hidden
+//// context map, and each `use provide(…)` / `use context(…)` is lowered where
+//// it is written — `provide` makes the children's map and `context` looks it
+//// up (decision 354 (8)). Neither function below is ever called: the checker
+//// refuses every reference to them but a `use`'s operand, and the bodies
+//// panic.
+
+// A context of `T`, named by the `val` that declares it.
+pub type Context<T>()
+
+// Gives `value` to every component this component renders below it — never
+// to itself or a sibling; the nearest provider wins.
+pub fn provide<T>(ctx: Context<T>, value: T) -> @Component<void> {
+    @panic(
+        "`use provide` / `use context` are lowered where they are written; this body never runs",
+    );
+}
+
+// The value of `ctx` provided nearest above this body.
+pub fn context<T>(ctx: Context<T>) -> @Component<T> {
+    @panic(
+        "`use provide` / `use context` are lowered where they are written; this body never runs",
+    );
+}
+
+// ── the hidden context map (decision 354 (8)) ────────────────────────────────
+//
+// What the compiler's lowering builds and reads; a program never names these.
+// Every `@Component` function takes the map as a hidden first argument (after
+// `self` on a method), `null` where nothing provides; `use provide(C, v)`
+// lowers to `push(map, <C's identity>, "C", v)` bound for the children, and
+// `use context(C)` to `find(map, <C's identity>, "C")`. A context's identity
+// is the declaration of its `val` (281) — the compiler writes it, never a
+// program.
+
+// One provided value over the map it was provided in.
+pub type Frame(key: string, value: unknown, parent: unknown)
+
+// The map a component's children receive: `value` provided for `key` over `map`.
+pub fn push(map: unknown, key: string, value: unknown) -> unknown {
+    return Frame(key: key, value: value, parent: map);
+}
+
+// The value provided nearest above for `key`; `context-unbound` when no
+// provider of `name` is above.
+// LANGUAGE GAP: the wasm backend does not lower a context — the two `unknown` fields are read through `valueOf` / `parentOf`, since wasm boxes a field read as `unknown` only as a function's answer.
+pub fn find(map: unknown, key: string, name: string) -> unknown {
+    var cur = map;
+    loop {
+        if (cur is Frame) {
+            val f: Frame = cur;
+            if (f.key == key) return valueOf(f);
+            cur = parentOf(f);
+        } else @panic(
+            "context-unbound: no `use provide("
+                + name
+                + ", ...)` above this `use context("
+                + name
+                + ")` (decision 354)",
+        );
+    }
+}
+
+fn valueOf(f: Frame) -> unknown {
+    return f.value;
+}
+
+fn parentOf(f: Frame) -> unknown {
+    return f.parent;
+}

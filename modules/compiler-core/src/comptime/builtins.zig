@@ -25,9 +25,7 @@ pub const Held = enum {
     declaration,
     /// The builtin's own rule refuses, before the declaration is consulted,
     /// every call the declaration refuses (`@src`: no argument; `@typeInfo`:
-    /// one declaration; `@getContext`: one type name inside a component, as
-    /// `use`'s operand;
-    /// `@comptimeError`: the message it raises).
+    /// one declaration; `@comptimeError`: the message it raises).
     own_rule,
 };
 
@@ -53,7 +51,6 @@ pub const table = [_]Builtin{
     .{ .name = "trap", .signature = "trap() -> noreturn", .held = .declaration },
     .{ .name = "block", .signature = "block<T>(body: fn() -> T) -> T", .held = .declaration },
     .{ .name = "module", .signature = "module() -> module", .held = .declaration },
-    .{ .name = "getContext", .signature = "getContext<T>(comptime _: type) -> Component<T, T>", .held = .own_rule },
     // ── comptime only ──
     .{ .name = "field", .signature = "field<T, F>(obj: T, comptime name: string) -> F", .held = .declaration, .comptime_only = true },
     .{ .name = "src", .signature = "src() -> SourceLocation", .held = .own_rule, .comptime_only = true },

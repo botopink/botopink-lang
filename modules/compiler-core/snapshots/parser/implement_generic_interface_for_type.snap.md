@@ -40,12 +40,8 @@
         "interfaces": [
           {
             "generic": {
-              "name": "Context",
-              "args": [
-                {
-                  "named": "E"
-                }
-              ],
+              "name": "Renderable",
+              "args": [],
               "is_builtin": true
             }
           }

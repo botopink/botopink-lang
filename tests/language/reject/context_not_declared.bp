@@ -1,0 +1,20 @@
+//// Decision 354 (2) — a context's identity is its declaration (281): it is
+//// made only by `Context<T>()` as the whole initializer of a module-level
+//// `val`. One made inside a body has no declaration to be named by.
+
+import {context.Context, context.provide, context.context} from "std";
+
+type Theme(mode: string)
+
+type Element(text: string) implement @Renderable
+
+pub val ThemeContext = Context<Theme>();
+
+fn App() -> @Component<Element> {
+    val local = Context<Theme>();
+    return Element(text: "");
+}
+
+pub fn main() {
+    App();
+}

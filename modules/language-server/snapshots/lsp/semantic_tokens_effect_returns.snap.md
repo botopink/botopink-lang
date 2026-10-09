@@ -1,10 +1,10 @@
 ----- SOURCE
 ```botopink
-val Element = type() implement @Context<Element>
+val Element = type() implement @Renderable
 fn plain(a: i32) -> i32 { return a; }
 fn fails(a: i32) -> @Result<i32, string> { return a; }
 fn waits<T>(a: T) -> @Task<T> { return a; }
-fn hook(a: i32) -> @Component<Element, i32> { return a; }
+fn hook(a: i32) -> @Component<i32> { return a; }
 fn seq() -> @Iterator<i32> { yield 1; }
 fn pulses() -> @Stream<i32> { yield 1; }
 fn takes(t: @Task<i32>) -> i32[] { return [1]; }
@@ -19,8 +19,7 @@ type Box(v: i32) {
   (0,4) +7  type [declaration]  "Element"
   (0,14) +4  keyword  "type"
   (0,21) +9  keyword  "implement"
-  (0,31) +8  type [defaultLibrary]  "@Context"
-  (0,40) +7  type  "Element"
+  (0,31) +11  type [defaultLibrary]  "@Renderable"
   (1,0) +2  keyword  "fn"
   (1,3) +5  function [declaration]  "plain"
   (1,9) +1  parameter  "a"
@@ -51,10 +50,9 @@ type Box(v: i32) {
   (4,8) +1  parameter  "a"
   (4,11) +3  type [defaultLibrary]  "i32"
   (4,19) +10  type [defaultLibrary]  "@Component"
-  (4,30) +7  type  "Element"
-  (4,39) +3  type [defaultLibrary]  "i32"
-  (4,46) +6  keyword  "return"
-  (4,53) +1  parameter  "a"
+  (4,30) +3  type [defaultLibrary]  "i32"
+  (4,37) +6  keyword  "return"
+  (4,44) +1  parameter  "a"
   (5,0) +2  keyword  "fn"
   (5,3) +3  function [declaration,async]  "seq"
   (5,12) +9  type [defaultLibrary]  "@Iterator"
@@ -96,8 +94,7 @@ type Box(v: i32) {
   0 4 7 0 1
   0 10 4 9 0
   0 7 9 9 0
-  0 10 8 0 4
-  0 9 7 0 0
+  0 10 11 0 4
   1 0 2 9 0
   0 3 5 4 1
   0 6 1 6 0
@@ -128,8 +125,7 @@ type Box(v: i32) {
   0 5 1 6 0
   0 3 3 0 4
   0 8 10 0 4
-  0 11 7 0 0
-  0 9 3 0 4
+  0 11 3 0 4
   0 7 6 9 0
   0 7 1 6 0
   1 0 2 9 0

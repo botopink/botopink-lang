@@ -136,25 +136,12 @@ pub const TypeErrorKind = union(enum) {
     /// A bare `name*;` naming a locally-declared extension. Extensions declared in
     /// the current module are auto-applied; `*` is only for imports. Payload is `name`.
     redundantActivation: []const u8,
-    /// `use` appeared in a function whose return type does not implement `@Context`.
+    /// `use` appeared in a function whose return type is not `@Component<R>`.
     /// Payload is the rendered return type (e.g. `"string"`, `"void"`).
     useNotAllowed: []const u8,
-    /// The expression used with `use` does not implement `@Context`.
+    /// The expression used with `use` is not a hook.
     /// Payload is the rendered expression type.
     useNotContext: []const u8,
-    /// A `use` expression's ContextBase diverges from the function's ContextBase.
-    contextMismatch: struct {
-        fnBase: []const u8,
-        useBase: []const u8,
-    },
-    /// Decision 96 — two `use`s in ONE body anchored at different bases. The
-    /// anchor is a property of the function, fixed by its first `use`, so this
-    /// reds at the SECOND one and names both bases and the line that fixed it.
-    contextBaseMixed: struct {
-        anchorBase: []const u8,
-        anchorLine: usize,
-        useBase: []const u8,
-    },
     /// `use` in a body whose fn does not carry `#[@use]` (decisions 88, 104).
     /// Payload: the fn's name and its rendered return type.
     useWithoutContextEffect: struct {
@@ -304,14 +291,6 @@ pub const TypeError = struct {
         return .{ .kind = .{ .useNotContext = exprType } };
     }
 
-    pub fn contextMismatch(fnBase: []const u8, useBase: []const u8) TypeError {
-        return .{ .kind = .{ .contextMismatch = .{ .fnBase = fnBase, .useBase = useBase } } };
-    }
-
-    pub fn contextBaseMixed(anchorBase: []const u8, anchorLine: usize, useBase: []const u8) TypeError {
-        return .{ .kind = .{ .contextBaseMixed = .{ .anchorBase = anchorBase, .anchorLine = anchorLine, .useBase = useBase } } };
-    }
-
     pub fn useWithoutContextEffect(fnName: []const u8, returnType: []const u8) TypeError {
         return .{ .kind = .{ .useWithoutContextEffect = .{ .fnName = fnName, .returnType = returnType } } };
     }
@@ -438,11 +417,9 @@ pub const TypeError = struct {
             .recursiveType => std.fmt.allocPrint(gpa, "recursive type detected", .{}),
             .unknownTypeName => |n| std.fmt.allocPrint(gpa, "unknown type '{s}'", .{n}),
             .missingField => |m| std.fmt.allocPrint(gpa, "missing required field '{s}' on type '{s}'", .{ m.field, m.typeName }),
-            .useNotAllowed => |r| std.fmt.allocPrint(gpa, "use-of-non-context-fn: `use` not allowed: function returns '{s}', which is not a `@Component<C, _>`", .{r}),
-            .useNotContext => |e| std.fmt.allocPrint(gpa, "use-of-non-context-fn: `use` takes a hook: '{s}' is not a hook `@Component<C, _>`", .{e}),
-            .contextMismatch => |m| std.fmt.allocPrint(gpa, "context-anchor-violation: function anchors at `{s}` but `use` returns @Component<{s}, _>", .{ m.fnBase, m.useBase }),
-            .contextBaseMixed => |m| std.fmt.allocPrint(gpa, "context-anchor-violation: every `use` in one function resolves against the same ContextBase: this body's is `{s}`, fixed by the `use` on line {d}, and this one is @Component<{s}, _>", .{ m.anchorBase, m.anchorLine, m.useBase }),
-            .useWithoutContextEffect => |u| std.fmt.allocPrint(gpa, "use-without-context-effect: `use` needs a `-> @Component<C, T>` return on the enclosing fn '{s}' (it returns '{s}'): only a `@Component` body activates a hook", .{ u.fnName, u.returnType }),
+            .useNotAllowed => |r| std.fmt.allocPrint(gpa, "use-of-non-context-fn: `use` not allowed: function returns '{s}', which is not a `@Component<R>`", .{r}),
+            .useNotContext => |e| std.fmt.allocPrint(gpa, "use-of-non-context-fn: `use` takes a hook: '{s}' is not a hook `@Component<R>`", .{e}),
+            .useWithoutContextEffect => |u| std.fmt.allocPrint(gpa, "use-without-context-effect: `use` needs a `-> @Component<R>` return on the enclosing fn '{s}' (it returns '{s}'): only a `@Component` body activates a hook", .{ u.fnName, u.returnType }),
             .useTupleArity => |u| blk: {
                 const source = try typeLabelAlloc(gpa, u.sourceType);
                 defer gpa.free(source);

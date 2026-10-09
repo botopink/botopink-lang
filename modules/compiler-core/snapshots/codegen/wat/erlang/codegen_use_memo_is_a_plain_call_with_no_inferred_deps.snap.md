@@ -1,13 +1,13 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Element = type() implement @Context<Element>
-fn state(initial: i32) -> @Component<Element, i32> {
+val Element = type() implement @Renderable
+fn state(initial: i32) -> @Component<i32> {
     return initial;
 }
-fn memo() -> @Component<Element, i32> {
+fn memo() -> @Component<i32> {
     return 0;
 }
-fn Counter() -> @Component<Element, Element> {
+fn Counter() -> @Component<Element> {
     val {count, setCount} = use state(0);
     val doubled = use memo { -> return count * 2; };
     return Element();
@@ -20,15 +20,15 @@ fn Counter() -> @Component<Element, Element> {
 
 %% type Element: 
 
-state(Initial) ->
+state(BpContextMap__, Initial) ->
     Initial.
 
-memo() ->
+memo(BpContextMap__) ->
     0.
 
-'Counter'() ->
-    #{count := Count, setCount := SetCount} = state(0),
-    Doubled = memo(fun() ->
+'Counter'(BpContextMap__) ->
+    #{count := Count, setCount := SetCount} = state(BpContextMap__, 0),
+    Doubled = memo(BpContextMap__, fun() ->
         '__bp_int'((Count * 2), -2147483648, 2147483647, <<"integer overflow: * on i32 at main.bp:10:46">>)
     end),
     {test@main@@Element}.

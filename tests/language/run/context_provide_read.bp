@@ -1,0 +1,48 @@
+//// Decision 354 (2), (8) — a context provided by a component reaches every
+//// component it renders below it, through the hidden context map every
+//// `@Component` function takes: `App` provides `ThemeContext`, `Page` (a
+//// component `App` renders) renders `Label`, and `Label` reads the value.
+//// A `@Component` read with `use` (`themeName`) reads the map its caller
+//// received. `App` itself does not see its own provide — `Root` provides the
+//// one `App` reads.
+
+import {context.Context, context.provide, context.context} from "std";
+
+type Theme(mode: string)
+
+type Element(text: string) implement @Renderable
+
+pub val ThemeContext = Context<Theme>();
+
+fn themeName() -> @Component<string> {
+    val t = use context(ThemeContext);
+    return t.mode;
+}
+
+fn Label(prefix: string) -> @Component<Element> {
+    val name = use themeName();
+    return Element(text: prefix + name);
+}
+
+fn Page() -> @Component<Element> {
+    val l = Label("label:");
+    return Element(text: "page[" + l.text + "]");
+}
+
+fn App() -> @Component<Element> {
+    val outer = use context(ThemeContext);
+    use provide(ThemeContext, Theme(mode: "dark"));
+    val p = Page();
+    return Element(text: outer.mode + " " + p.text);
+}
+
+fn Root() -> @Component<Element> {
+    use provide(ThemeContext, Theme(mode: "light"));
+    val a = App();
+    return Element(text: a.text);
+}
+
+pub fn main() -> @Task<void> {
+    val r = await Root();
+    @print(r.text);
+}

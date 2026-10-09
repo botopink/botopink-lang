@@ -46,8 +46,9 @@ pub const TypeDef = union(enum) {
         genericDefaults: []const ?*T.Type = &.{},
         fields: []FieldDef,
         implements: []const []const u8 = &.{},
-        /// The base `B` when this type implements the owner marker `@Context<B>` inline; null otherwise.
-        contextBase: ?[]const u8 = null,
+        /// True when this type implements the marker `@Renderable` (decision
+        /// 354): a `@Component<R>` with this `R` is a component, not a hook.
+        renderable: bool = false,
     };
 
     pub const Struct = struct {
@@ -58,8 +59,9 @@ pub const TypeDef = union(enum) {
         genericDefaults: []const ?*T.Type = &.{},
         fields: []FieldDef,
         implements: []const []const u8 = &.{},
-        /// The base `B` when this type implements the owner marker `@Context<B>` inline; null otherwise.
-        contextBase: ?[]const u8 = null,
+        /// True when this type implements the marker `@Renderable` (decision
+        /// 354): a `@Component<R>` with this `R` is a component, not a hook.
+        renderable: bool = false,
     };
 
     pub const Enum = struct {
@@ -70,17 +72,17 @@ pub const TypeDef = union(enum) {
         genericDefaults: []const ?*T.Type = &.{},
         variants: []VariantDef,
         implements: []const []const u8 = &.{},
-        /// The base `B` when this type implements the owner marker `@Context<B>` inline; null otherwise.
-        contextBase: ?[]const u8 = null,
+        /// True when this type implements the marker `@Renderable` (decision
+        /// 354): a `@Component<R>` with this `R` is a component, not a hook.
+        renderable: bool = false,
     };
 
-    /// The base of this type when it implements the owner marker `@Context<B>` inline.
-    /// Returns null for types that do not implement `@Context`.
-    pub fn contextBase(self: TypeDef) ?[]const u8 {
+    /// True when this type implements `@Renderable` (decision 354).
+    pub fn isRenderable(self: TypeDef) bool {
         return switch (self) {
-            .record => |r| r.contextBase,
-            .struct_ => |s| s.contextBase,
-            .enum_ => |e| e.contextBase,
+            .record => |r| r.renderable,
+            .struct_ => |s| s.renderable,
+            .enum_ => |e| e.renderable,
         };
     }
 
@@ -150,28 +152,54 @@ pub const ImportedTypeDecl = struct {
     module: []const u8,
 };
 
-// ── @Context capability scope ───────────────────────────────────────────────────
+// ── @Component capability scope ───────────────────────────────────────────────────
 
 /// Capability information about the function body currently being inferred.
 ///
 /// The function's return type decides whether `use` is allowed inside the body:
-/// it must be `@Component<C, _>` (decisions 102, 128). All
-/// `use` calls in the body must agree on the same base (decision 96). `null` on the environment means
-/// no function body is currently being inferred (top-level position).
+/// it must be `@Component<R>` (decisions 102, 128, 354). `null` on the
+/// environment means no function body is currently being inferred (top-level
+/// position).
 pub const FnContext = struct {
-    /// True when the function's return type is `@Component<C, _>`.
+    /// True when the function's return type is `@Component<R>`.
     implementsContext: bool,
-    /// The `ContextBase` name when `implementsContext` is true; null otherwise.
-    base: ?[]const u8 = null,
     /// Rendered return type, used in the "`use` not allowed" diagnostic.
     returnDisplay: []const u8 = "void",
-    /// True when the enclosing fn's return is `@Component<C, T>` — and only
-    /// then (decisions 104, 118, 128). It is the same flag as
+    /// True when the enclosing fn's return is `@Component<R>` — and only
+    /// then (decisions 104, 118, 128, 354). It is the same flag as
     /// `Env.inContextFn`. A `use` in any other body is
     /// `useWithoutContextEffect`, which names the return to write.
     annotated: bool = false,
     /// The enclosing fn's name, for that diagnostic.
     fnName: []const u8 = "",
+    /// Decision 354 — true when the return is `@Component<R>` with an `R` that
+    /// implements `@Renderable`: a component, whose body may `use provide`.
+    renderable: bool = false,
+};
+
+/// Decision 354 — what a name imported from std's `context` module declares.
+pub const StdContextName = enum { context_type, provide, context };
+
+/// Decision 354 (8) — a call recorded for the hidden context map: its value's
+/// type and the callee it names. The lowering matches the callee too, since a
+/// template's built code can share a location with another expansion's
+/// (`language-gaps.md`, "Two template expansions in one module share the
+/// locations of their built code").
+pub const ComponentCall = struct { type_: *T.Type, callee: []const u8 };
+
+/// Decision 354 (8) — a lambda recorded for the hidden context map: its type
+/// and its parameter count (matched as `ComponentCall.callee` is).
+pub const ComponentLambda = struct { type_: *T.Type, params: usize };
+
+/// Decision 354 (8) — one `use provide(ctx, value)` / `use context(ctx)`:
+/// which hook, the context's identity (`declIdentity` of the `val` that
+/// declares it — the run-time key of the hidden map) and the `T` it carries.
+pub const ContextUse = struct {
+    kind: enum { provide, read },
+    key: []const u8,
+    /// The context's name as written, for the run-time `context-unbound`.
+    name: []const u8,
+    value_type: *T.Type,
 };
 
 /// How `throw` should be type-checked in the current function scope.
@@ -713,6 +741,58 @@ pub const Env = struct {
     /// True while inferring the body of a template function (`-> @Expr<…>`).
     /// Gates the `@expr`/`@code` construction builtins.
     inTemplateFn: bool = false,
+    /// Decision 354 (3) — true while inferring a decorator's body (a fn whose
+    /// first parameter is `comptime _: @Decl`): compile-time evaluation with
+    /// no render tree, where `use` is refused (`use-outside-render-tree`).
+    inDecoratorFn: bool = false,
+    /// Decision 354 (3) — the number of `comptime { … }` / `comptime <expr>`
+    /// enclosing the position being inferred; `use` is refused inside one.
+    comptimeDepth: u32 = 0,
+    /// Decision 354 — the local names an import from std's `context` module
+    /// binds, by the declaration each one names: the type `Context<T>` and
+    /// the two hooks `provide` / `context`, which the compiler lowers.
+    stdContextNames: std.StringHashMapUnmanaged(StdContextName) = .empty,
+    /// Decision 354 — where the body of the `@Component<R>` fn being inferred
+    /// first renders a component (a call `inferComponentCall` answers with its
+    /// `R`): a `use provide(…)` after it is refused, since the child rendered
+    /// before it would not see the value. Null until one renders; saved and
+    /// restored around each fn body.
+    firstRenderAt: ?ast.Loc = null,
+    /// Decision 357 — the construct enclosing the position being inferred
+    /// that makes a `use` there conditional or repeated (an `if` / `else`,
+    /// a loop, a lambda, …): a `use` is written at the top level of a
+    /// `@Component` body only. Null at the body's top level; set by the
+    /// outermost such construct and restored on its way out.
+    useConstruct: ?[]const u8 = null,
+    /// Decision 357 — the line of the first top-level statement of the body
+    /// being inferred that may leave it early (`return`, `throw`, a bare
+    /// `try`): a `use` after it does not run on every call. Saved and
+    /// restored around every function and lambda body.
+    earlyExitLine: ?usize = null,
+    /// Decision 354 — the location of the `use` that is the whole statement
+    /// being inferred, if one is: `use provide(…)` stands only there.
+    useStatementLoc: ?ast.Loc = null,
+    /// Decision 354 (2) — the value location of the module-level `val` whose
+    /// initializer is being inferred: the one place `Context<T>()` may be
+    /// written (a context's identity is its declaration).
+    contextDeclSite: ?ast.Loc = null,
+    /// Decision 354 — the module-level `val`s of this module declared
+    /// `= Context<T>()`, by name.
+    declaredContexts: std.StringHashMapUnmanaged(void) = .empty,
+    /// Decision 354 (8) — each `use provide(…)` / `use context(…)`, by the
+    /// `use`'s location: what the hidden context map lowers it to.
+    contextUses: std.AutoHashMapUnmanaged(ast.Loc, ContextUse) = .empty,
+    /// Decision 354 (8) — every call whose value is, or may resolve to, a
+    /// `@Component<R>`, by location, with that type: the calls that pass the
+    /// hidden context map (`context_lower.zig`).
+    componentCalls: std.AutoHashMapUnmanaged(ast.Loc, []const ComponentCall) = .empty,
+    /// Decision 354 (8) — every lambda, by location, with its type: one that
+    /// answers `@Component<R>` takes the hidden context map.
+    componentLambdas: std.AutoHashMapUnmanaged(ast.Loc, ComponentLambda) = .empty,
+    /// Decision 354 (8) — the module's functions whose resolved return is
+    /// `@Component<R>` (written, or through an alias such as `View`), by name:
+    /// the ones that take the hidden context map.
+    componentFns: std.StringHashMapUnmanaged(void) = .empty,
     /// Runtime-backed template evaluation context (F6-full). Null in tooling
     /// paths — non-V1 template bodies then raise the V1 driver error.
     templateEval: ?TemplateEvalCtx = null,
@@ -775,15 +855,15 @@ pub const Env = struct {
     /// C1 — the type a `return <value>` in the body currently being inferred
     /// must unify with: the declared return type, or an effect wrapper's inner
     /// channel (`@Result<R, E>` → R, `@Task<T>` → T — `U` when `T` is
-    /// `@Result<U, E>` —, `@Component<C, T>` → the `T` of
-    /// `@Component<C, T>`). Null where returns are not checked (no declared
+    /// `@Result<U, E>` —, `@Component<T>` → the `T` of
+    /// `@Component<T>`). Null where returns are not checked (no declared
     /// return type, template fns, top level).
     returnTarget: ?*T.Type = null,
     /// C1 — a bare `return;` must unify with `void` (fn decls with a declared
     /// return type; not lambdas, whose target is a shared fresh var).
     returnBareIsVoid: bool = false,
     /// C1 — the fn's whole declared return type, for a returned value that is
-    /// already the wrapper (`return state(start)` in a `-> @Component<B, X>` hook).
+    /// already the wrapper (`return state(start)` in a `-> @Component<X>` hook).
     returnWhole: ?*T.Type = null,
     /// C1 — set while inferring a `case` block arm: its `return`s leave the
     /// enclosing fn, so the arm's lambda keeps the fn's return target.
@@ -809,10 +889,10 @@ pub const Env = struct {
     /// Active effect-fn context while inferring its body (for `await`/`yield`
     /// rules). The field name is historical — see `StarFnCtx` above.
     starFn: ?StarFnCtx = null,
-    /// True while inferring the body of a `-> @Component<…>` fn — the same
+    /// True while inferring the body of a `-> @Component<R>` fn — the same
     /// question as `FnContext.annotated` (decision 104: one flag, set by the
-    /// `@Component` return alone). Read by the `@getContext` builtin-call
-    /// handler for §1C RC5 (the intrinsic is only valid inside such a body).
+    /// `@Component` return alone); cleared in a nested closure's and a
+    /// prefixed loop's body.
     inContextFn: bool = false,
     /// Labels currently in scope (effect-fn label + enclosing loop labels),
     /// used to validate `yield :label` / `break :label`. Pushed/popped as
@@ -840,13 +920,6 @@ pub const Env = struct {
     /// position being inferred. Their body runs later, on demand, so a `use`
     /// inside one is refused (decision 105 — the annotated loop is closed).
     generatorLoopDepth: u32 = 0,
-    /// Decision 96 — the `ContextBase` this body resolved its FIRST `use`
-    /// against, with the line that fixed it. The anchor is a property of the
-    /// FUNCTION, not of each activation: every later `use` must agree with it,
-    /// and one that does not reds at its own site naming both bases. Set and
-    /// cleared by `inferFnDecl` around each body, so a nested lambda or a
-    /// sibling fn starts over.
-    useAnchor: ?struct { base: []const u8, line: usize } = null,
     /// The effect the return of the fn whose body is being inferred activates
     /// (decision 118), or null for a plain `fn` (and at module level). Read by
     /// the refusals, which name it.
@@ -1076,8 +1149,8 @@ pub const Env = struct {
     /// True while the operand of a `use` is inferred: a component call there
     /// is `use`'s to refuse, not an implicit render (`inferComponentCall`).
     inUseOperand: bool = false,
-    /// The location of the call written as `use`'s operand: `@getContext(T)`
-    /// is a hook, legal only there (decision 269).
+    /// The location of the call written as `use`'s operand: std's `provide`
+    /// / `context` are hooks, legal only there (decision 354).
     useOperandLoc: ?ast.Loc = null,
     /// The location of the call written as `await`'s operand: a component call
     /// there keeps its wrapper, the `await` being written (`inferComponentCall`).
@@ -1196,7 +1269,7 @@ pub const Env = struct {
     /// decorators are not re-invoked — no re-contribution, no infinite loop.
     skipDecoratorInvoke: bool = false,
     /// Fn declarations parsed by `registerStdlib` from `builtins_fns.d.bp`
-    /// (todo / panic / trap / emit / module / getContext / field). Made
+    /// (todo / panic / trap / emit / module / field). Made
     /// available to `transform.expandTrailingDefaults` so a bare `todo()` /
     /// `panic()` call site at user code resolves to the parsed `FnDecl` and
     /// its trailing literal default lands in `c.args` before dispatch.

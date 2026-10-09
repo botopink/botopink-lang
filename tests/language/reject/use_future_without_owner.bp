@@ -3,8 +3,8 @@
 //// unwrapped return owned a context, are revoked: `@Future` grants no `use`,
 //// whatever it wraps. The refusal names the annotation that does.
 
-type Element(count: i32) implement @Context<Element>
-fn state(initial: i32) -> @Component<Element, i32> { return initial; }
+type Element(count: i32) implement @Renderable
+fn state(initial: i32) -> @Component<i32> { return initial; }
 
 fn Page() -> @Task<Element> {
     val n = use state(0);

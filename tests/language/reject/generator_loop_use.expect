@@ -1,2 +1,2 @@
-`use` must be in static prefix
-17:17
+use-not-top-level: `use` inside an `iter` / `stream` loop
+16:17

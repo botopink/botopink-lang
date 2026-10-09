@@ -61,11 +61,11 @@ test "semanticTokens: free fn, interface method, and effect fn distinguished" {
 
 test "semanticTokens: async modifier follows each effect return wrapper" {
     const source =
-        \\val Element = type() implement @Context<Element>
+        \\val Element = type() implement @Renderable
         \\fn plain(a: i32) -> i32 { return a; }
         \\fn fails(a: i32) -> @Result<i32, string> { return a; }
         \\fn waits<T>(a: T) -> @Task<T> { return a; }
-        \\fn hook(a: i32) -> @Component<Element, i32> { return a; }
+        \\fn hook(a: i32) -> @Component<i32> { return a; }
         \\fn seq() -> @Iterator<i32> { yield 1; }
         \\fn pulses() -> @Stream<i32> { yield 1; }
         \\fn takes(t: @Task<i32>) -> i32[] { return [1]; }

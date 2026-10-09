@@ -7,9 +7,9 @@
 //// 105: it feeds the nearest generator scope, and a body the chain grants no
 //// `yield` has none.
 
-type Element(count: i32) implement @Context<Element>
+type Element(count: i32) implement @Renderable
 
-fn Bad(n: i32) -> @Component<Element, Element> {
+fn Bad(n: i32) -> @Component<Element> {
     yield n;
 }
 

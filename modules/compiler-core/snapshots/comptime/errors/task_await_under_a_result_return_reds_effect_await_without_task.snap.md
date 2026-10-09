@@ -8,10 +8,10 @@ fn semAwait() -> @Result<i32, string> {
 }
 
 ----- ERROR
-error: effect-await-without-task: `await` needs `-> @Task<…>`, `-> @Stream<…>` or `-> @Component<C, …>` return — this fn returns `@Result<…>`, which does not
+error: effect-await-without-task: `await` needs `-> @Task<…>`, `-> @Stream<…>` or `-> @Component<…>` return — this fn returns `@Result<…>`, which does not
   ┌─ main.bp:5:13
   │
 5 │     val x = await fetchCount();
   │             ^
 
-  hint: Change the return to `@Task<…>` (or `@Component<C, …>` / `@Stream<…>`), or consume the Task through its own functions (`.map`, `.then`).
+  hint: Change the return to `@Task<…>` (or `@Component<…>` / `@Stream<…>`), or consume the Task through its own functions (`.map`, `.then`).

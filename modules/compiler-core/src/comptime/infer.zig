@@ -105,7 +105,32 @@ fn noteImportBindings(env: *Env, u: ast.ImportDecl) InferError!void {
             return error.TypeError;
         }
         gop.value_ptr.* = imp;
+        try noteStdContextName(env, u, imp, local);
     }
+}
+
+/// Decision 354 — a leaf import of std's `context` module (`import
+/// {context.Context, context.provide, context.context} from "std"`) records
+/// the local name against the declaration it names, so the checker knows the
+/// type and the two hooks it lowers whatever the import's `as` calls them.
+fn noteStdContextName(env: *Env, u: ast.ImportDecl, imp: ast.ImportPath, local: []const u8) InferError!void {
+    if (!imp.isQualified()) return;
+    const src = try u.leafSource(imp, env.arena, false);
+    const module = switch (src) {
+        .module => |m| m,
+        .root => return,
+    };
+    if (!std.mem.eql(u8, module, "std/context")) return;
+    const leaf = imp.leaf();
+    const which: envMod.StdContextName = if (std.mem.eql(u8, leaf, "Context"))
+        .context_type
+    else if (std.mem.eql(u8, leaf, "provide"))
+        .provide
+    else if (std.mem.eql(u8, leaf, "context"))
+        .context
+    else
+        return;
+    try env.stdContextNames.put(env.arena, local, which);
 }
 
 /// Decision 106 — the root of std is pure: a module at `std/<name>` (one
@@ -957,7 +982,7 @@ fn interfaceHasMethod(d: ast.BehaviorDecl, name: []const u8) bool {
 }
 
 /// The bare name of an interface type ref — the identifier the interface was
-/// declared under. Generic interfaces (`Iface<A, B>`, `@Context<…>`) reduce to
+/// declared under. Generic interfaces (`Iface<A, B>`, `@Renderable`) reduce to
 /// their head name (`Iface`, `Context`); non-name refs yield "".
 fn interfaceRefName(ref: ast.TypeRef) []const u8 {
     return switch (ref) {
@@ -1066,6 +1091,9 @@ fn inferDeclTyped(env: *Env, decl: ast.DeclKind) InferError!?TypedBinding {
                 null;
             // When binding a lambda to a `fn(...) -> ...` annotation, feed the
             // annotation into the lambda so its params are typed from context.
+            const prevDeclSite = env.contextDeclSite;
+            env.contextDeclSite = if (v.mutable) null else v.value.getLoc();
+            defer env.contextDeclSite = prevDeclSite;
             const typedExpr = if (annType != null and v.value.* == .function)
                 try inferFunctionExprExpected(env, v.value.function, v.value.function.loc, annType, false)
             else
@@ -1074,6 +1102,7 @@ fn inferDeclTyped(env: *Env, decl: ast.DeclKind) InferError!?TypedBinding {
                 // on `Token`.
                 try inferExprTypedExpecting(env, v.value.*, annType);
             const ty = typedExpr.getType();
+            try noteContextDeclaration(env, v, annType orelse ty);
             // A behavior annotation takes an implementer (`val l: Lookup =
             // memory();`), as a parameter and a return do (`unifyArgument`).
             if (annType) |at| try unifyArgument(env, at, ty, v.value.getLoc());
@@ -1814,45 +1843,34 @@ fn typeRefToString(arena: std.mem.Allocator, ref: ast.TypeRef) ![]const u8 {
     return buf.toOwnedSlice(arena);
 }
 
-/// If any of `impls` is the owner marker `@Context<B>`, return the rendered
-/// base (`B`). Returns null when the type does not implement `@Context`.
-fn contextBaseFromImplements(arena: std.mem.Allocator, impls: []const ast.TypeRef) !?[]const u8 {
-    for (impls) |im| {
-        switch (im) {
-            .generic => |g| if (std.mem.eql(u8, g.name, "Context")) {
-                if (g.args.len >= 1) return try typeRefToString(arena, g.args[0]);
-                return null;
-            },
-            else => {},
-        }
-    }
-    return null;
+/// True when any of `impls` is the marker `@Renderable` (decision 354): a
+/// `@Component<R>` whose `R` implements it is a component.
+fn implementsRenderable(impls: []const ast.TypeRef) bool {
+    for (impls) |im| switch (im) {
+        .generic => |g| if (g.is_builtin and std.mem.eql(u8, g.name, "Renderable")) return true,
+        else => {},
+    };
+    return false;
 }
 
 /// Derive the `use` capability of a function from its declared return type
-/// (decisions 102, 104 and 128). The base is READ off the wrapper and nothing
-/// is unwrapped: `-> @Component<C, _>` anchors at `C`, for a hook and a
-/// component alike.
-/// `annotated` is `#[@use]` and nothing else — the same flag as
-/// `env.inContextFn` — so a body activates a hook only under `#[@use]`
-/// (`inferUseHookExpr`); decisions 89 and 90, which unwrapped `@Future<T>` to
-/// find an owner and let a wrapper effect activate on its own, are revoked.
+/// (decisions 102, 104, 128 and 354): `-> @Component<R>` grants `use`, for a
+/// hook and a component alike, and nothing is unwrapped to find it.
+/// `annotated` is the `@Component` return and nothing else — the same flag as
+/// `env.inContextFn`.
 fn contextInfoFromReturn(env: *Env, retType: ?ast.TypeRef, eff: ?ast.EffectKind, fnName: []const u8) InferError!envMod.FnContext {
     const display = if (retType) |rt| try typeRefToString(env.arena, rt) else "void";
     const annotated = eff == .component;
     if (retType) |rt| switch (rt) {
-        .generic => |g| {
-            if (std.mem.eql(u8, g.name, "Component")) {
-                const base = if (g.args.len >= 1) try typeRefToString(env.arena, g.args[0]) else null;
-                return .{ .implementsContext = true, .base = base, .returnDisplay = display, .annotated = annotated, .fnName = fnName };
-            }
+        .generic => |g| if (std.mem.eql(u8, g.name, "Component")) {
+            return .{ .implementsContext = true, .returnDisplay = display, .annotated = annotated, .fnName = fnName };
         },
         else => {},
     };
-    return .{ .implementsContext = false, .base = null, .returnDisplay = display, .annotated = annotated, .fnName = fnName };
+    return .{ .implementsContext = false, .returnDisplay = display, .annotated = annotated, .fnName = fnName };
 }
 
-/// The display name of a `ContextBase` type (a phantom, typically a plain named type).
+/// The display name of a named type (a value's head, for a diagnostic).
 fn baseNameOfType(ty: *T.Type) ?[]const u8 {
     return switch (ty.deref().*) {
         .named => |n| n.name,
@@ -1860,17 +1878,12 @@ fn baseNameOfType(ty: *T.Type) ?[]const u8 {
     };
 }
 
-/// The base a `use` operand anchors at: the `C` of a hook's `@Component<C, T>`.
-/// Anything else — an owner type, a component (`@Component<C, T>` with
-/// `T: @Context<C>`), a plain value — is not a hook and has none (decision
-/// 104: `use` takes hooks only; decision 128: `T` tells the two apart).
-fn hookBaseOfType(env: *Env, ty: *T.Type) ?[]const u8 {
-    if (isComponentType(env, ty)) return null;
+/// True when `ty` is a hook: `@Component<R>` whose `R` does not implement
+/// `@Renderable` (decision 354). A component, a plain value — is not.
+fn isHookType(env: *Env, ty: *T.Type) bool {
     const t = ty.deref();
-    return switch (t.*) {
-        .named => |n| if (std.mem.eql(u8, n.name, "Component") and n.args.len >= 1) baseNameOfType(n.args[0]) else null,
-        else => null,
-    };
+    if (t.* != .named or !std.mem.eql(u8, t.named.name, "Component") or t.named.args.len < 1) return false;
+    return !isComponentType(env, ty);
 }
 
 /// Decision 8 §1.3 — `Box<i32>(value: 1)`, `first<string>([])`: type
@@ -2040,25 +2053,23 @@ fn applyReceiverTypeArgs(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExp
     return typed;
 }
 
-/// Decisions 104, 118 and 128 — a component is CALLED, and called inside a
-/// body whose return is `@Component<C, _>` with the same base `C` it renders
-/// within that render: the call's value is its `T` (the context owner), as
-/// `await` would answer, and the transform splices the `await` in so the
-/// backends lower it as they lower `await c()` (on commonJS a component is an
-/// `async function`). Everywhere else — outside a component body, under
-/// another base, as `use`'s operand (refused there by name), as `await`'s own
-/// operand (the `await` is written) — the call keeps its `@Component<C, T>` type. A hook is not a component and is `use`d.
+/// Decisions 104, 118, 128 and 354 — a component is CALLED, and called inside
+/// a body whose return is `@Component<_>` it renders within that render: the
+/// call's value is its `R` (the `@Renderable` value), as `await` would answer,
+/// and the transform splices the `await` in so the backends lower it as they
+/// lower `await c()` (on commonJS a component is an `async function`).
+/// Everywhere else — outside a component body, as `use`'s operand (refused
+/// there by name), as `await`'s own operand (the `await` is written) — the call
+/// keeps its `@Component<R>` type. A hook is not a component and is `use`d.
 fn inferComponentCall(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExpr) InferError!TypedExpr {
     if (env.inUseOperand) return typed;
     if (env.awaitOperandLoc) |at| if (std.meta.eql(at, c.loc)) return typed;
     if (typed != .call) return typed;
     const fc = env.fnContext orelse return typed;
     if (!fc.annotated or env.starFn == null) return typed;
-    const fnBase = fc.base orelse return typed;
     const ty = typed.getType().deref();
     if (!isComponentType(env, ty)) return typed;
-    const callBase = baseNameOfType(ty.named.args[0]) orelse return typed;
-    if (!std.mem.eql(u8, callBase, fnBase)) return typed;
+    if (env.firstRenderAt == null) env.firstRenderAt = c.loc;
     // Splice `await <call>` for the backends; the operand is a copy of the
     // call at the same location, which the transform recognises and does
     // not wrap again.
@@ -2068,33 +2079,33 @@ fn inferComponentCall(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExpr) 
     wrapped.* = .{ .jump = .{ .loc = c.loc, .kind = .{ .await_ = inner } } };
     try env.indexRewrites.put(c.loc, wrapped);
     var out = typed;
-    out.call.type_ = ty.named.args[1];
+    out.call.type_ = ty.named.args[0];
     return out;
 }
 
-/// True when `ty` is a component: `@Component<C, T>` whose `T` owns a
-/// context (`T: @Context<_>`, decision 128). A hook's `T` owns none.
+/// True when `ty` is a component: `@Component<R>` whose `R` implements
+/// `@Renderable` (decision 354). A hook's `R` does not.
 fn isComponentType(env: *Env, ty: *T.Type) bool {
     const t = ty.deref();
-    if (t.* != .named or !std.mem.eql(u8, t.named.name, "Component") or t.named.args.len < 2) return false;
-    return ownerBaseOfType(env, t.named.args[1]) != null;
+    if (t.* != .named or !std.mem.eql(u8, t.named.name, "Component") or t.named.args.len < 1) return false;
+    return isRenderableType(env, t.named.args[0]);
 }
 
-/// The base of an owner type: the `B` of `T: @Context<B>`, or null.
-fn ownerBaseOfType(env: *Env, ty: *T.Type) ?[]const u8 {
+/// True when `ty` names a type that implements `@Renderable`.
+fn isRenderableType(env: *Env, ty: *T.Type) bool {
     const t = ty.deref();
     return switch (t.*) {
-        .named => |n| if (env.lookupTypeDef(n.name)) |td| td.contextBase() else null,
-        else => null,
+        .named => |n| if (env.lookupTypeDef(n.name)) |td| td.isRenderable() else false,
+        else => false,
     };
 }
 
-/// The type a `use` binding destructures from: the `T` of the hook's
-/// `@Component<C, T>`.
+/// The type a `use` binding destructures from: the `R` of the hook's
+/// `@Component<R>`.
 fn bindingSourceType(ty: *T.Type) *T.Type {
     const t = ty.deref();
     return switch (t.*) {
-        .named => |n| if (std.mem.eql(u8, n.name, "Component") and n.args.len >= 2) n.args[1] else ty,
+        .named => |n| if (std.mem.eql(u8, n.name, "Component") and n.args.len >= 1) n.args[0] else ty,
         else => ty,
     };
 }
@@ -2133,7 +2144,6 @@ fn registerRecord(env: *Env, r: ast.TypeDecl) InferError!void {
     // Register the type definition.
     const typeId = env.allocTypeId();
     const implNames = try extractImplementNames(env.arena, r.implement);
-    const ctxBase = try contextBaseFromImplements(env.arena, r.implement);
     try env.registerTypeDef(r.name, .{ .record = .{
         .name = r.name,
         .id = typeId,
@@ -2141,7 +2151,7 @@ fn registerRecord(env: *Env, r: ast.TypeDecl) InferError!void {
         .genericDefaults = genericDefaults,
         .fields = fields,
         .implements = implNames,
-        .contextBase = ctxBase,
+        .renderable = implementsRenderable(r.implement),
     } });
 
     // Build constructor function type: `fn(T1, T2, ...) -> RecordName<A,B,...>`.
@@ -2489,7 +2499,6 @@ fn registerEnum(env: *Env, e: ast.TypeDecl) InferError!void {
 
     const enumTypeId = env.allocTypeId();
     const implNames = try extractImplementNames(env.arena, e.implement);
-    const ctxBase = try contextBaseFromImplements(env.arena, e.implement);
     try env.registerTypeDef(e.name, .{ .enum_ = .{
         .name = e.name,
         .id = enumTypeId,
@@ -2497,7 +2506,7 @@ fn registerEnum(env: *Env, e: ast.TypeDecl) InferError!void {
         .genericDefaults = genericDefaults,
         .variants = variants,
         .implements = implNames,
-        .contextBase = ctxBase,
+        .renderable = implementsRenderable(e.implement),
     } });
     // Bind the enum name itself so `inferDecl` can look it up.
     const enumInstance = try env.namedType(e.name);
@@ -2594,7 +2603,6 @@ fn registerEnumSection(
         .genericDefaults = &.{},
         .variants = variants,
         .implements = &.{},
-        .contextBase = null,
     } });
 
     // §enum-sections F4 — also build the matching AST enum TypeDecl so the
@@ -3566,7 +3574,11 @@ fn inferDecl(env: *Env, decl: ast.DeclKind) InferError!?Binding {
                 resolveTypeRef(env, ann) catch |err| return locateTypeRefError(env, err, v.value.getLoc())
             else
                 null;
+            const prevDeclSite = env.contextDeclSite;
+            env.contextDeclSite = if (v.mutable) null else v.value.getLoc();
+            defer env.contextDeclSite = prevDeclSite;
             const ty = try inferExprExpecting(env, v.value.*, annType);
+            try noteContextDeclaration(env, v, annType orelse ty);
             // Bind the DECLARED (annotated) type when present.
             var bindTy = ty;
             if (annType) |at| {
@@ -5887,8 +5899,8 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     else
         try env.namedType("void");
 
-    // The return type decides whether `use` is allowed in the body and which
-    // ContextBase every `use` must agree on (@Context F7). Scope it to the body.
+    // The return type decides whether `use` is allowed in the body (a
+    // `@Component<R>` return). Scope it to the body.
     const savedFnCtx = env.fnContext;
     env.fnContext = try contextInfoFromReturn(env, f.returnType, f.effect, f.name);
     defer env.fnContext = savedFnCtx;
@@ -5905,6 +5917,28 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     const savedInTemplate = env.inTemplateFn;
     env.inTemplateFn = if (f.returnType) |rt| rt.isTemplateReturnType() else false;
     defer env.inTemplateFn = savedInTemplate;
+    // Decision 354 (3) — a decorator's body is compile-time evaluation with
+    // no render tree: `use` there is refused.
+    const savedInDecorator = env.inDecoratorFn;
+    env.inDecoratorFn = isDecoratorParams(f.params);
+    defer env.inDecoratorFn = savedInDecorator;
+    // Decision 354 — a component's body (its `R` implements `@Renderable`)
+    // may `use provide`; where it first renders a child is tracked per body.
+    if (env.fnContext) |*fc| fc.renderable = f.effect == .component and isComponentType(env, retType);
+    // Decision 354 (8) — the hidden context map follows the TYPE: an aliased
+    // `-> View` takes it as `-> @Component<Element>` does.
+    if (retType.deref().* == .named and std.mem.eql(u8, retType.deref().named.name, "Component"))
+        try env.componentFns.put(env.arena, f.name, {});
+    const savedFirstRender = env.firstRenderAt;
+    env.firstRenderAt = null;
+    defer env.firstRenderAt = savedFirstRender;
+    // Decision 357 — each body starts at its own top level.
+    const savedUseConstruct = env.useConstruct;
+    env.useConstruct = null;
+    defer env.useConstruct = savedUseConstruct;
+    const savedEarlyExit = env.earlyExitLine;
+    env.earlyExitLine = null;
+    defer env.earlyExitLine = savedEarlyExit;
 
     // Decision 118 — the effect is read from the SYNTACTIC return
     // (`f.effect`, set by the parser from the written wrapper). Decision 121 —
@@ -5935,29 +5969,6 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     env.aliasWrapper = if (f.returnType != null and ast.EffectKind.fromReturnType(f.returnType) == null) aliasedWrapperOf(retType) else null;
     defer env.aliasWrapper = savedAliasWrapper;
 
-    // Decision 128 — `@Component<C, T>` takes its base and its `T`: a
-    // component's `T` implements `@Context<C>` with the `C` it is written with.
-    if (eff != null and eff.? == .component) {
-        const rd = retType.deref();
-        if (rd.* == .named and rd.named.args.len >= 2) {
-            if (ownerBaseOfType(env, rd.named.args[1])) |ownerBase| {
-                if (baseNameOfType(rd.named.args[0])) |base| {
-                    if (!std.mem.eql(u8, ownerBase, base)) {
-                        const msg = try std.fmt.allocPrint(
-                            env.arena,
-                            "{s}: a component's `T` implements `@Context<C>` with the `C` of its `@Component<C, T>` — here `T` anchors at `{s}`, not `{s}`",
-                            .{ diagnostics.effect_wrapper_mismatch, ownerBase, base },
-                        );
-                        var err = TypeError.custom(msg, "Write the base the component's `T` owns: `-> @Component<" ++ "B, T>` where `T implement @Context<B>`.");
-                        if (f.returnTypeLoc.line != 0) err = err.withLoc(f.returnTypeLoc);
-                        env.lastError = err;
-                        return error.TypeError;
-                    }
-                }
-            }
-        }
-    }
-
     // Establish the effect context (saved/restored around the body) so nested
     // `await`/`yield` validate against this function, not an enclosing one.
     const prevStarFn = env.starFn;
@@ -5982,13 +5993,7 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     const savedFnEffect = env.fnEffect;
     env.fnEffect = eff;
     defer env.fnEffect = savedFnEffect;
-    // Decision 96 — the body's `ContextBase` is fixed by its first `use`, so
-    // the anchor starts empty at every body and is restored on the way out.
-    const savedUseAnchor = env.useAnchor;
-    env.useAnchor = null;
-    defer env.useAnchor = savedUseAnchor;
-    // §1C — `@getContext(T)` is only valid inside a `-> @Component<…>` fn
-    // body (RC5). Decision 104 — this is the SAME flag as
+    // `env.inContextFn` — the body of a `-> @Component<R>` fn. Decision 104 — this is the SAME flag as
     // `FnContext.annotated`: the `@Component` return sets both and nothing
     // else does. Save/restore it around the body so nested closures fall back
     // to false correctly.
@@ -6278,7 +6283,7 @@ fn inferTypeMethods(
 }
 
 /// The value layer of an effect return — what a `return` carries through the
-/// wrapper (decision 119): `T` of `@Task<T>`, `T` of `@Component<C, T>`, the
+/// wrapper (decision 119): `T` of `@Task<T>`, `T` of `@Component<T>`, the
 /// item `T` of `@Iterator<T>` / `@Stream<T>`; the return itself for
 /// `@Result<R, E>`, which IS the fallible layer.
 fn effectValueLayer(eff: ast.EffectKind, retType: *T.Type) ?*T.Type {
@@ -6288,7 +6293,7 @@ fn effectValueLayer(eff: ast.EffectKind, retType: *T.Type) ?*T.Type {
     return switch (eff) {
         .result => retType,
         .task, .iterator, .stream => if (args.len >= 1) args[0] else null,
-        .component => if (args.len >= 2) args[1] else null,
+        .component => if (args.len >= 1) args[0] else null,
     };
 }
 
@@ -6300,7 +6305,7 @@ fn isResultType(ty: *T.Type) bool {
 
 /// Decision 121 — the fallible channel: the `E` of the `@Result<U, E>` layer
 /// of an effect return (`@Result<U, E>` itself, `@Task<@Result<U, E>>`,
-/// `@Component<C, @Result<U, E>>`, `@Iterator<@Result<U, E>>`,
+/// `@Component<@Result<U, E>>`, `@Iterator<@Result<U, E>>`,
 /// `@Stream<@Result<U, E>>`), or null when no layer is a `@Result`. `throw`
 /// and `try` read this and nothing else.
 fn fallibleErrorOf(eff: ast.EffectKind, retType: *T.Type) ?*T.Type {
@@ -6630,7 +6635,7 @@ pub fn registerImportedTemplateFn(env: *Env, name: []const u8, decl: ast.FnDecl,
 
 /// Register a nominal type (record/struct/enum) imported from another module.
 /// The export registry carries the full declaration so the importing module can
-/// rebuild the `TypeDef` — its `implements` / `contextBase` and fields, not just
+/// rebuild the `TypeDef` — its `implements` / `renderable` and fields, not just
 /// the constructor value binding. Without this, an imported type's `implement`
 /// clause is invisible here (e.g. the `use`-legality check `contextInfoFromReturn`
 /// looks up `env.lookupTypeDef` and would find nothing). This mirrors the
@@ -7708,7 +7713,7 @@ fn unifyArgument(env: *Env, param: *T.Type, arg: *T.Type, loc: ast.Loc) InferErr
 /// True when `source` coerces into a `Children`-typed `target`. A `Children`
 /// parameter (the builder children model a markup DSL's `div { … }` needs)
 /// accepts another `Children`, any array (`Element[]` — the list form), a
-/// `string` (→ a text child), or a single value implementing `@Context` (an
+/// `string` (→ a text child), or a single value implementing `@Renderable` (an
 /// `Element` → a one-element list). Coercion is one-directional: it only fires
 /// when the *declared* type (`target`) is `Children`, never the reverse.
 fn childrenCoercion(env: *Env, target: *T.Type, source: *T.Type) bool {
@@ -7719,7 +7724,7 @@ fn childrenCoercion(env: *Env, target: *T.Type, source: *T.Type) bool {
         .named => |n| std.mem.eql(u8, n.name, "Children") or
             std.mem.eql(u8, n.name, "array") or
             std.mem.eql(u8, n.name, "string") or
-            ownerBaseOfType(env, source) != null,
+            isRenderableType(env, source),
         else => false,
     };
 }
@@ -7860,71 +7865,6 @@ fn inferBuiltinCallReturnType(
         }
         return env.namedType("void");
     }
-    // §1C — `@getContext(T)` fetches the active provider of type `T` from
-    // the context scope stack. The argument is a TYPE (not a value); the
-    // intrinsic is only valid inside a `#[@use]` fn body. RC1 (no
-    // active provider) requires the `contextStack.zig` provider tracker
-    // — landed separately; RC3 (Anchor-tree reachability) is wired here.
-    if (std.mem.eql(u8, callee, "getContext")) {
-        // RC5 — outside a `#[@use]` fn body the intrinsic is meaningless.
-        if (!env.inContextFn) {
-            var e = TypeError.custom(
-                diagnostics.context_getcontext_outside_context_fn ++
-                    ": `@getContext(T)` only resolves inside a `-> @Component<C, T>` fn body",
-                "Return `@Component<Base, T>` from the enclosing fn — `@getContext` walks the active provider stack maintained by the `use` blocks.",
-            );
-            if (typedArgs.len >= 1) e = e.withLoc(typedArgs[0].value.getLoc());
-            env.lastError = e;
-            return error.TypeError;
-        }
-        // RC4 — the argument must be a type reference (a record / struct /
-        // enum name), never a value expression. The parser already wrapped
-        // values as `Expr`; we detect non-identifier arg shapes here.
-        if (typedArgs.len >= 1) {
-            const arg = typedArgs[0].value;
-            const isTypeIdent = arg.* == .identifier and arg.identifier.kind == .ident and
-                env.lookupTypeDef(arg.identifier.kind.ident) != null;
-            if (!isTypeIdent) {
-                env.lastError = TypeError.custom(
-                    diagnostics.context_getcontext_expects_type ++
-                        ": `@getContext(T)` expects a type as its sole argument",
-                    "Pass a record/struct/enum name (the type whose provider you want to fetch); literals and value expressions are not accepted.",
-                ).withLoc(arg.getLoc());
-                return error.TypeError;
-            }
-            // RC3 (§1C / F4C-T4) — the requested type's `contextBase` must
-            // match the enclosing fn's Anchor. A type whose Anchor is a
-            // different tree is statically out of reach: no `use` chain in
-            // this fn can ever provide it, since every `use` site lives
-            // under the fn's Anchor by RC2. The `inContextFn` flag (RC5)
-            // guarantees `env.fnContext` is set when we reach this arm.
-            const requestedName = arg.identifier.kind.ident;
-            const requestedBase = env.lookupTypeDef(requestedName).?.contextBase();
-            const enclosingBase: ?[]const u8 = if (env.fnContext) |fc| fc.base else null;
-            if (requestedBase != null and enclosingBase != null and
-                !std.mem.eql(u8, requestedBase.?, enclosingBase.?))
-            {
-                const msg = try std.fmt.allocPrint(
-                    env.arena,
-                    "{s}: `@getContext({s})` is outside the enclosing `@Component` fn's base tree (enclosing base `{s}`, requested type's base `{s}`)",
-                    .{ diagnostics.context_getcontext_anchor_violation, requestedName, enclosingBase.?, requestedBase.? },
-                );
-                env.lastError = TypeError.custom(
-                    msg,
-                    "Either provide the requested type under an Anchor reachable from the enclosing fn, or change the enclosing fn's `@Component<Base, …>` to share an Anchor with the requested type.",
-                ).withLoc(arg.getLoc());
-                return error.TypeError;
-            }
-            // Decision 269 — a hook anchored at `T`: `-> Component<T, T>`,
-            // `use`d to read the context as a `T`. RC1 (active provider check)
-            // needs the contextStack runtime to land.
-            try refuseGetContextWithoutUse(env, loc);
-            const t = try env.namedType(requestedName);
-            return env.namedTypeArgs("Component", &.{ t, t });
-        }
-        try refuseGetContextWithoutUse(env, loc);
-        return env.freshVar();
-    }
     // `@comptimeError(message)` — report a compile-time error from comptime
     // code. Takes a string message and sets env.lastError, causing inference
     // to fail with a custom type error.
@@ -8009,18 +7949,6 @@ fn inferCatalogueAnswer(env: *Env, answer: ast.Expr, loc: ast.Loc) InferError!Ty
         .commentsPerElem = al.commentsPerElem,
         .trailingComma = al.trailingComma,
     } } } };
-}
-
-/// Decision 269 — `@getContext(T)` is a hook: legal only as `use`'s operand
-/// (`val ctx = use @getContext(T);`), refused at the call otherwise.
-fn refuseGetContextWithoutUse(env: *Env, loc: ast.Loc) InferError!void {
-    if (env.useOperandLoc) |at| if (std.meta.eql(at, loc)) return;
-    env.lastError = TypeError.custom(
-        diagnostics.context_getcontext_without_use ++
-            ": `@getContext(T)` is a hook (`-> Component<T, T>`) — it is `use`d, never called for its value",
-        "Read the context with `use`: `val ctx = use @getContext(T);`.",
-    ).withLoc(loc);
-    return error.TypeError;
 }
 
 /// The type name `@src()` answers with (decision 73). Declared in
@@ -8839,17 +8767,17 @@ fn tryUnwrapOrError(env: *Env, rawTy: *T.Type, loc: ast.Loc) InferError!*T.Type 
     return InferError.TypeError;
 }
 
-/// `@Task<T>` -> `T` (decision 120). `@Component<C, T>` extends `@Task`, and
-/// decision 104 has every caller `await` a component: it awaits to `T`
-/// (decision 128). `@Stream<T>` is iterated with `for await`, never awaited
+/// `@Task<T>` -> `T` (decision 120). `@Component<R>` extends `@Task`, and
+/// decision 104 has every caller `await` a component: it awaits to `R`
+/// (decision 354). `@Stream<T>` is iterated with `for await`, never awaited
 /// whole. Returns null when `ty` is no Task.
 fn unwrapTaskType(ty: *T.Type) ?*T.Type {
     const t = ty.deref();
     return switch (t.*) {
         .named => |n| if (std.mem.eql(u8, n.name, "Task") and n.args.len >= 1)
             n.args[0]
-        else if (std.mem.eql(u8, n.name, "Component") and n.args.len >= 2)
-            n.args[1]
+        else if (std.mem.eql(u8, n.name, "Component") and n.args.len >= 1)
+            n.args[0]
         else
             null,
         else => null,
@@ -8884,9 +8812,9 @@ fn typesSameShape(a: *T.Type, b: *T.Type) bool {
 /// `optional`, `tuple`) so the resolver leaves their arg-count checks alone.
 ///   - `@Task<T>` / `@Iterator<T>` / `@Stream<T>`  → 1 (decisions 120, 122)
 ///   - `@Result<R, E>`                             → 2
-///   - `@Context<Base>`                            → 1 (the owner marker)
-///   - `@Component<C, T>`                          → 2 (decision 128: `C` is
-///     always written; `@Component<T>` is a type-arity error)
+///   - `@Component<R>`                             → 1 (decision 354: the base
+///     parameter is gone; the parser refuses `@Component<R>` at `C`)
+///   - `@Renderable`                               → 0 (the bare marker)
 ///   - `@Expr<T>` / `@ExprCustom<T>`               → 1
 fn builtinRequiredGenericArgs(name: []const u8) ?usize {
     const eq = std.mem.eql;
@@ -8894,8 +8822,8 @@ fn builtinRequiredGenericArgs(name: []const u8) ?usize {
     if (eq(u8, name, "Iterator")) return 1;
     if (eq(u8, name, "Stream")) return 1;
     if (eq(u8, name, "Result")) return 2;
-    if (eq(u8, name, "Context")) return 1;
-    if (eq(u8, name, "Component")) return 2;
+    if (eq(u8, name, "Component")) return 1;
+    if (eq(u8, name, "Renderable")) return 0;
     if (eq(u8, name, "Expr")) return 1;
     if (eq(u8, name, "ExprCustom")) return 1;
     return null;
@@ -9714,8 +9642,13 @@ fn inferBodyStmts(env: *Env, body: []const ast.Stmt) InferError!void {
     defer env.statementBlockLoc = savedStatementBlock;
     for (body) |stmt| {
         env.statementBlockLoc = statementBlockLocOf(stmt.expr);
+        env.useStatementLoc = if (stmt.expr == .useHook) stmt.expr.useHook.loc else null;
         _ = try inferExpr(env, stmt.expr);
+        env.useStatementLoc = null;
         try narrowAfterEarlyExit(env, stmt.expr, &narrowed);
+        // Decision 357 — a `use` after this statement would not run on every call.
+        if (env.useConstruct == null and env.earlyExitLine == null and ast.exprMayExitEarly(stmt.expr))
+            env.earlyExitLine = stmt.expr.getLoc().line;
     }
     if (narrowed.items.len > 0) try restorePatternBindings(env, narrowed.items);
 }
@@ -11510,7 +11443,10 @@ pub fn inferExprTyped(env: *Env, expr: ast.Expr) InferError!TypedExpr {
         // ── call expressions ───────────────────────────────────────────────────
         .call => |c| blk: {
             try noteKeyedRowRead(env, c);
-            break :blk inferComponentCall(env, c, try applyReceiverTypeArgs(env, c, try applyExplicitTypeArgs(env, c, try inferCallExpr(env, c, c.loc))));
+            try checkStdContextCall(env, c);
+            const typedCall = try inferCallExpr(env, c, c.loc);
+            try noteComponentCall(env, c, typedCall);
+            break :blk inferComponentCall(env, c, try applyReceiverTypeArgs(env, c, try applyExplicitTypeArgs(env, c, typedCall)));
         },
 
         // ── function definition expressions ────────────────────────────────────
@@ -11802,6 +11738,8 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
             if (env.lookup(name)) |ty| {
                 try refuseAmbiguousVariant(env, name, ty, loc);
                 try refuseKeyedWholeRead(env, name, ty, loc);
+                if (env.localBindDepth(name) == null) if (env.stdContextNames.get(name)) |which| if (which != .context_type)
+                    return refuseContextHookWithoutUse(env, name, loc);
                 // A generic fn referenced as a value (`val f = identity;`,
                 // `xs.map(identity)`) gets its own instantiation — the
                 // scheme's `.generic` vars must never reach `unify`.
@@ -12126,6 +12064,14 @@ fn inferBinaryOpExpr(env: *Env, binop: ast.BinOpExprOf(.untyped), loc: ast.Loc) 
         }
     }
 
+    // Decision 357 — the right operand of `&&` / `||` runs on some calls only.
+    const prevUseConstruct = if (binop.op == .@"and")
+        enterUseConstruct(env, "the right operand of `&&`")
+    else if (binop.op == .@"or")
+        enterUseConstruct(env, "the right operand of `||`")
+    else
+        env.useConstruct;
+    defer env.useConstruct = prevUseConstruct;
     // 01 step 12 — the right side of `==` / `!=` is compared with the left, so
     // the left's type is its expected type: `decl.kind != .Record` names
     // `TypeInfoKind.Record` even where another enum also declares `Record`.
@@ -12486,7 +12432,7 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                         break :blk false;
                     };
                     // A value that is already the declared wrapper (`return
-                    // state(start)` in a `-> @Component<B, X>` hook) unifies with
+                    // state(start)` in a `-> @Component<X>` hook) unifies with
                     // the whole declared return type.
                     const whole: ?*T.Type = blk: {
                         const w = env.returnWhole orelse break :blk null;
@@ -12675,12 +12621,12 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                 }
                 env.lastError = TypeError.custom(
                     try effectChain.refusal(env.arena, diagnostics.effect_await_without_task, .await_, env.fnEffect),
-                    "Change the return to `@Task<…>` (or `@Component<C, …>` / `@Stream<…>`), or consume the Task through its own functions (`.map`, `.then`).",
+                    "Change the return to `@Task<…>` (or `@Component<…>` / `@Stream<…>`), or consume the Task through its own functions (`.map`, `.then`).",
                 ).withLoc(loc);
                 return error.TypeError;
             }
             // A component call written as `await`'s own operand keeps its
-            // `@Component<C, T>` — the `await` is written, not spliced
+            // `@Component<T>` — the `await` is written, not spliced
             // (`inferComponentCall`); a call nested in its arguments still renders.
             const prevAwaitOperand = env.awaitOperandLoc;
             env.awaitOperandLoc = if (e.* == .call) e.call.loc else null;
@@ -12697,7 +12643,7 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
             const deref = rawTy.deref();
             if (deref.* == .named and unwrapTaskType(rawTy) == null) {
                 env.lastError = TypeError.custom(
-                    "`await` expects a `@Task<_>` value (or a `@Component<C, T>`, which extends it)",
+                    "`await` expects a `@Task<_>` value (or a `@Component<T>`, which extends it)",
                     null,
                 ).withLoc(loc);
                 return error.TypeError;
@@ -12779,6 +12725,12 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
         .if_ => |i| {
             const condTyped = try inferExprTyped(env, i.cond.*);
             const condPtr = try makeTypedPtr(env, condTyped);
+            // Decision 357 — a branch runs on some calls only: no `use` in it.
+            const prevUseConstruct = enterUseConstruct(env, if (i.binding != null and std.mem.eql(u8, i.binding.?, ast.nullish_binding_name))
+                "the right operand of `??`"
+            else
+                "an `if` / `else`");
+            defer env.useConstruct = prevUseConstruct;
 
             // Every name this condition narrows, and the type it takes on
             // each side of it. It is still ONE channel — `x is T`, a type-guard
@@ -12923,7 +12875,12 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
         .tryCatch => |tc| {
             const exprTyped = try inferExprTyped(env, tc.expr.*);
             const exprPtr = try makeTypedPtr(env, exprTyped);
-            const handlerTyped = try inferExprTyped(env, tc.handler.*);
+            const prevUseConstruct = enterUseConstruct(env, "a `try` / `catch` handler");
+            const handlerTyped = inferExprTyped(env, tc.handler.*) catch |err| {
+                env.useConstruct = prevUseConstruct;
+                return err;
+            };
+            env.useConstruct = prevUseConstruct;
             const handlerPtr = try makeTypedPtr(env, handlerTyped);
             const rawTy = exprTyped.getType();
             const resultTy = try tryUnwrapOrError(env, rawTy, loc);
@@ -12962,6 +12919,9 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
 /// annotated `loop` is an expression worth its wrapper (`inferGeneratorLoop`).
 fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
     if (lp.generator) |eff| return inferGeneratorLoop(env, lp, eff, loc);
+    // Decision 357 — a loop runs its body any number of times: no `use` in it.
+    const prevUseConstruct = enterUseConstruct(env, "a loop");
+    defer env.useConstruct = prevUseConstruct;
     const iterTyped = try inferExprTyped(env, lp.iter.*);
     const iterPtr = try makeTypedPtr(env, iterTyped);
     const iterTy = iterTyped.getType().deref();
@@ -12993,7 +12953,7 @@ fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferErr
             if (try refuseBehindAlias(env, "for await", loc)) return error.TypeError;
             env.lastError = TypeError.custom(
                 try effectChain.refusal(env.arena, diagnostics.effect_await_without_task, .await_, env.fnEffect),
-                "`for await` suspends at every item: it needs an await channel — a `@Task<…>`, `@Component<C, …>` or `@Stream<…>` return, or a `stream` loop.",
+                "`for await` suspends at every item: it needs an await channel — a `@Task<…>`, `@Component<…>` or `@Stream<…>` return, or a `stream` loop.",
             ).withLoc(loc);
             return error.TypeError;
         }
@@ -13077,6 +13037,9 @@ fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferErr
 /// its body: a bare `break` ends it (and so the sequence), a `continue`
 /// starts its next round.
 fn inferGeneratorLoop(env: *Env, lp: ast.LoopExprOf(.untyped), eff: ast.EffectKind, loc: ast.Loc) InferError!TypedExpr {
+    // Decision 357 — its body runs on demand, at each `next`: no `use` in it.
+    const prevUseConstruct = enterUseConstruct(env, "an `iter` / `stream` loop");
+    defer env.useConstruct = prevUseConstruct;
     const fails = ast.bodyFails(lp.body);
     const errTy: ?*T.Type = if (fails) try env.freshVar() else null;
     const item: *T.Type = if (errTy) |et|
@@ -13091,7 +13054,6 @@ fn inferGeneratorLoop(env: *Env, lp: ast.LoopExprOf(.untyped), eff: ast.EffectKi
     const prevStarFn = env.starFn;
     const prevFnEffect = env.fnEffect;
     const prevThrowCtx = env.throwContext;
-    const prevUseAnchor = env.useAnchor;
     const prevInContextFn = env.inContextFn;
     const prevLoopDepth = env.loopDepth;
     const prevBreakScope = env.breakScope;
@@ -13105,7 +13067,6 @@ fn inferGeneratorLoop(env: *Env, lp: ast.LoopExprOf(.untyped), eff: ast.EffectKi
         env.starFn = prevStarFn;
         env.fnEffect = prevFnEffect;
         env.throwContext = prevThrowCtx;
-        env.useAnchor = prevUseAnchor;
         env.inContextFn = prevInContextFn;
         env.loopDepth = prevLoopDepth;
         env.breakScope = prevBreakScope;
@@ -13126,7 +13087,6 @@ fn inferGeneratorLoop(env: *Env, lp: ast.LoopExprOf(.untyped), eff: ast.EffectKi
     // body the channel is closed.
     env.throwContext = if (errTy) |et| .{ .result = et } else .plain;
     env.inferredErrorScope = errTy != null;
-    env.useAnchor = null;
     env.inContextFn = false;
     env.aliasWrapper = null;
     env.returnWhole = null;
@@ -14174,7 +14134,7 @@ fn inferTemplateMethod(
             retType = try env.namedType("Source");
         } else if (std.mem.eql(u8, callee, "context")) {
             // The full second-layer input: source + text + shape. The record is
-            // `ExprContext`, not `Context`: `@Context<Base>` is the owner
+            // `ExprContext`, not `Context`: `@Renderable` is the owner
             // marker and one name cannot mean both (front 20 F1).
             op = .context;
             retType = try env.namedType("ExprContext");
@@ -14830,20 +14790,32 @@ fn paramTypeInContext(env: *Env, p: ast.Param, gm: std.StringHashMap(*T.Type)) I
     return try resolveParamType(env, p, gm);
 }
 
-/// Infer type for `use`-hook expressions (@Context F7).
+/// Infer type for `use`-hook expressions (decisions 104, 354, 357).
 ///
-/// The enclosing function's return type decides whether `use` is allowed and which
-/// ContextBase the hook expression must agree on. The capability was recorded in
+/// The enclosing function's return type decides whether `use` is allowed. The
+/// capability was recorded in
 /// `env.fnContext` by `inferFnDecl` before the body was visited.
 fn inferUseHookExpr(env: *Env, uh: ast.UseHookExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
-    // Decision 125 — an `iter` / `stream` loop's body runs later, on demand:
-    // a `use` inside it would activate a hook outside the render. Closed,
-    // whatever the enclosing fn grants.
-    if (env.generatorLoopDepth > 0) {
-        env.lastError = TypeError.custom(
-            diagnostics.generator_loop_closed_scope ++ ": `use` cannot activate inside an `iter` / `stream` loop — its body runs on demand, at each `next`",
-            "Activate the hook before the loop and read its value inside; the prefixed loop has only its own capabilities.",
-        ).withLoc(loc);
+    // Decision 354 (3) — `use` exists only where there is a render tree: a
+    // decorator body, a template body and a `comptime { … }` are compile-time
+    // evaluation with none. What they need comes from the catalogue (353).
+    if (env.comptimeDepth > 0 or env.inDecoratorFn or env.inTemplateFn) {
+        const where: []const u8 = if (env.comptimeDepth > 0)
+            "a `comptime` block or expression"
+        else if (env.inDecoratorFn)
+            "a decorator's body"
+        else
+            "a template function's body";
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `use` inside {s} — compile-time evaluation has no render tree, so no hook runs there (decision 354)", .{ diagnostics.use_outside_render_tree, where });
+        env.lastError = TypeError.custom(msg, "Read what compile-time code needs from the catalogue (`@TypeInfo.all(with: …)`) or from its arguments; `use` belongs in a `@Component` body.").withLoc(loc);
+        return error.TypeError;
+    }
+    // Decision 357 — the rules of hooks: a `use` stands at the top level of a
+    // `@Component` body and runs on every call (an `iter` / `stream` loop's
+    // body, decision 125, is one of the constructs it may not stand in).
+    if (env.useConstruct) |what| {
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `use` inside {s} — a `use` is written at the top level of a `@Component` body and runs on every call (decision 357)", .{ diagnostics.use_not_top_level, what });
+        env.lastError = TypeError.custom(msg, "Move the `use` to the top level of the body; a condition goes inside its argument (`use provide(Ctx, if (c) a else b);`), never around it.").withLoc(loc);
         return error.TypeError;
     }
     const fc = env.fnContext orelse {
@@ -14862,6 +14834,11 @@ fn inferUseHookExpr(env: *Env, uh: ast.UseHookExprOf(.untyped), loc: ast.Loc) In
     // stays in the body that carries the annotation (decision 87: `use` never
     // leaves a function body). On commonJS the hook is an `async function`
     // (decision 104), and an `await` in a plain arrow would not parse.
+    if (env.earlyExitLine) |line| {
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `use` after the statement on line {d}, which may return early — this `use` would not run on every call (decision 357)", .{ diagnostics.use_not_top_level, line });
+        env.lastError = TypeError.custom(msg, "Move every `use` before the first statement that may `return`, `throw` or `try`.").withLoc(loc);
+        return error.TypeError;
+    }
     if (env.asyncBlockDepth > 0) {
         env.lastError = TypeError.custom(
             diagnostics.use_without_context_effect ++
@@ -14878,16 +14855,15 @@ fn inferUseHookExpr(env: *Env, uh: ast.UseHookExprOf(.untyped), loc: ast.Loc) In
         ).withLoc(loc);
         return error.TypeError;
     }
-    // R1/R2 already required `@Component<C, _>`, so
-    // a `#[@use]` body always has a base; this is the belt for a return type
-    // still unresolved.
+    // The `@Component` return granted `use`; this is the belt for a return
+    // type still unresolved.
     if (!fc.implementsContext) {
         env.lastError = TypeError.useNotAllowed(fc.returnDisplay).withLoc(loc);
         return error.TypeError;
     }
 
-    // `use <hookcall>` — infer the wrapped call, check it yields the right
-    // ContextBase, and expose its Return type `R` as the prefix's type. Any
+    // `use <hookcall>` — infer the wrapped call, check it is a hook, and
+    // expose its Return type `R` as the prefix's type. Any
     // binding/destructuring is performed by the enclosing `val`/`var`.
     const prevInUse = env.inUseOperand;
     env.inUseOperand = true;
@@ -14901,7 +14877,8 @@ fn inferUseHookExpr(env: *Env, uh: ast.UseHookExprOf(.untyped), loc: ast.Loc) In
     env.inUseOperand = prevInUse;
     env.useOperandLoc = prevUseOperand;
     const valPtr = try makeTypedPtr(env, valTyped);
-    try validateUseBase(env, valTyped.getType(), fc, loc);
+    try validateUseOperand(env, valTyped.getType(), loc);
+    try noteContextUse(env, uh.kind.inner.*, valTyped, fc, loc);
     const srcTy = bindingSourceType(valTyped.getType());
     return TypedExpr{ .useHook = .{ .loc = loc, .type_ = srcTy, .kind = .{ .inner = valPtr } } };
 }
@@ -14911,55 +14888,213 @@ fn isUseHookValue(value: *const ast.ExprOf(.untyped)) bool {
     return value.* == .useHook;
 }
 
-/// Verify a `use` expression returns a hook `@Component<B, _>` whose `B` is the one
-/// base this body resolves every `use` against (decision 96).
-///
-/// Two questions, in this order. RC2 first: the enclosing function DECLARED a
-/// base in its return type, and a hook anchored elsewhere disagrees with the
-/// declaration — that is the older refusal and the one a single `use` hits.
-/// Then decision 96's: the anchor is a property of the BODY, fixed by its first
-/// `use`, so a second `use` anchored elsewhere reds at its own site with both
-/// bases and the line that fixed the first. The two coincide whenever the
-/// return type names a base, which is every shape that parses today; the anchor
-/// is what holds the rule up where the declaration cannot answer, and it is
-/// what makes the diagnostic say which `use` the body is committed to.
-fn validateUseBase(env: *Env, valTy: *T.Type, fc: envMod.FnContext, loc: ast.Loc) InferError!void {
-    const useBase = hookBaseOfType(env, valTy) orelse {
-        // Decision 104 — `use` takes a hook. A component (decision 128: a
-        // `@Component<C, T>` whose `T` owns the context) is CALLED (`Card()`),
-        // never `use`d: its refusal says so.
-        if (isComponentType(env, valTy)) {
+/// Verify a `use` operand is a hook: `@Component<R>` whose `R` does not
+/// implement `@Renderable` (decisions 104, 354). A component is CALLED
+/// (`Card()`), never `use`d, and its refusal says so; anything else is not a
+/// hook at all.
+fn validateUseOperand(env: *Env, valTy: *T.Type, loc: ast.Loc) InferError!void {
+    if (isHookType(env, valTy)) return;
+    if (isComponentType(env, valTy)) {
+        env.lastError = TypeError.custom(
+            diagnostics.use_of_non_context_fn ++
+                ": `use` takes a hook, and this is a component (its `R` implements `@Renderable`) — a component is called, not `use`d",
+            "Call it (`Card()`) where its value is needed; `use` activates hooks only.",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+    const disp = baseNameOfType(valTy) orelse "value";
+    env.lastError = TypeError.useNotContext(disp).withLoc(loc);
+    return error.TypeError;
+}
+
+/// Decision 354 (8) — a call whose value is (or may resolve to) a
+/// `@Component<R>` passes the hidden context map; `context_lower.zig` reads
+/// the type once it is resolved. std's `provide` / `context` are lowered
+/// where they are `use`d, and a builtin takes no map.
+fn noteComponentCall(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExpr) InferError!void {
+    if (c.kind != .call or c.kind.call.is_builtin) return;
+    if (stdContextCallee(env, c) != null) return;
+    const ty = typed.getType();
+    switch (ty.deref().*) {
+        .named => |n| if (!std.mem.eql(u8, n.name, "Component")) return,
+        .typeVar => {},
+        else => return,
+    }
+    const rec: envMod.ComponentCall = .{ .type_ = ty, .callee = c.kind.call.callee };
+    const gop = try env.componentCalls.getOrPut(env.arena, c.loc);
+    if (!gop.found_existing) {
+        gop.value_ptr.* = try env.arena.dupe(envMod.ComponentCall, &.{rec});
+        return;
+    }
+    // Two template expansions' built code can share a location: keep each.
+    const grown = try env.arena.alloc(envMod.ComponentCall, gop.value_ptr.len + 1);
+    @memcpy(grown[0..gop.value_ptr.len], gop.value_ptr.*);
+    grown[gop.value_ptr.len] = rec;
+    gop.value_ptr.* = grown;
+}
+
+/// Decision 357 — enter a construct a `use` may not stand in (a branch, a
+/// loop, a lambda, …); the outermost one names it. Answers the value to
+/// restore on the way out.
+fn enterUseConstruct(env: *Env, what: []const u8) ?[]const u8 {
+    const prev = env.useConstruct;
+    if (prev == null) env.useConstruct = what;
+    return prev;
+}
+
+/// Decision 354 — which declaration of std's `context` module a call names:
+/// a leaf import's local name (`provide(…)`), or a call through the
+/// namespace (`context.provide(…)` after `import {context} from "std"`).
+fn stdContextCallee(env: *Env, c: ast.CallExprOf(.untyped)) ?envMod.StdContextName {
+    if (c.kind != .call) return null;
+    const call = c.kind.call;
+    if (call.is_builtin or call.calleeExpr != null) return null;
+    if (call.receiver) |r| {
+        if (r.* != .identifier or r.identifier.kind != .ident) return null;
+        const handle = r.identifier.kind.ident;
+        if (env.localBindDepth(handle) != null) return null;
+        const module = env.stdImports.get(handle) orelse return null;
+        if (!std.mem.eql(u8, module, "context")) return null;
+        if (std.mem.eql(u8, call.callee, "Context")) return .context_type;
+        if (std.mem.eql(u8, call.callee, "provide")) return .provide;
+        if (std.mem.eql(u8, call.callee, "context")) return .context;
+        return null;
+    }
+    if (env.localBindDepth(call.callee) != null) return null;
+    return env.stdContextNames.get(call.callee);
+}
+
+/// Decision 354 — the two hooks are `use`d and nothing else, and a context is
+/// made only where it is declared: `Context<T>()`, with no argument, as the
+/// whole initializer of a module-level `val` (its identity is the
+/// declaration, 281).
+fn checkStdContextCall(env: *Env, c: ast.CallExprOf(.untyped)) InferError!void {
+    const which = stdContextCallee(env, c) orelse return;
+    switch (which) {
+        .context_type => {
+            const at_decl = if (env.contextDeclSite) |site| std.meta.eql(site, c.loc) else false;
+            if (at_decl and c.kind.call.args.len == 0 and c.kind.call.trailing.len == 0) return;
             env.lastError = TypeError.custom(
-                diagnostics.use_of_non_context_fn ++
-                    ": `use` takes a hook, and this is a component (its `T` implements `@Context<…>`) — a component is called, not `use`d",
-                "Call it (`Card()`) where its value is needed; `use` activates hooks only.",
+                diagnostics.context_not_declared ++ ": a context is made only by its declaration — `Context<T>()`, with no argument, as the whole initializer of a module-level `val` (decision 354)",
+                "Declare it once at module level (`pub val ThemeContext = Context<Theme>();`) and name that `val` wherever the context is provided or read.",
+            ).withLoc(c.loc);
+            return error.TypeError;
+        },
+        .provide, .context => {
+            if (env.useOperandLoc) |at| if (std.meta.eql(at, c.loc)) return;
+            return refuseContextHookWithoutUse(env, c.kind.call.callee, c.loc);
+        },
+    }
+}
+
+fn refuseContextHookWithoutUse(env: *Env, name: []const u8, loc: ast.Loc) InferError {
+    const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is a hook of std's `context` module — it is `use`d (`use {s}(…)`), never called or passed as a value (decision 354)", .{ diagnostics.context_hook_without_use, name, name });
+    env.lastError = TypeError.custom(msg, "Write `use provide(SomeContext, value);` in a component's body, or `val v = use context(SomeContext);` in a `@Component` body.").withLoc(loc);
+    return error.TypeError;
+}
+
+/// Decision 354 (2) — a module-level `val` holding a `Context<T>` is that
+/// context's declaration, and only `Context<T>()` declares one: `val B = A;`
+/// would give one context two identities, and is refused.
+fn noteContextDeclaration(env: *Env, v: ast.ValDecl, ty: *T.Type) InferError!void {
+    if (!importsStdContextType(env)) return;
+    const d = ty.deref();
+    if (d.* != .named or !std.mem.eql(u8, d.named.name, "Context")) return;
+    const declared = !v.mutable and v.value.* == .call and stdContextCallee(env, v.value.call) == .context_type;
+    if (!declared) {
+        env.lastError = TypeError.custom(
+            diagnostics.context_not_declared ++ ": a module-level `Context<T>` is declared by `Context<T>()` itself — a `var`, or a `val` naming another context, would give one context two identities (decision 354)",
+            "Name the declaring `val` where the context is provided or read; declare a new context with `Context<T>()`.",
+        ).withLoc(v.value.getLoc());
+        return error.TypeError;
+    }
+    try env.declaredContexts.put(env.arena, v.name, {});
+}
+
+fn importsStdContextType(env: *Env) bool {
+    var it = env.stdContextNames.valueIterator();
+    while (it.next()) |w| if (w.* == .context_type) return true;
+    return env.stdImports.count() > 0 and stdImportsContextModule(env);
+}
+
+fn stdImportsContextModule(env: *Env) bool {
+    var it = env.stdImports.valueIterator();
+    while (it.next()) |m| if (std.mem.eql(u8, m.*, "context")) return true;
+    return false;
+}
+
+/// Decision 354 — the run-time key of a context named by `arg`: the
+/// `declIdentity` of the module-level `val` that declares it, local or
+/// imported. Null when `arg` names anything else (a local, a parameter, an
+/// expression) — a context is named by its declaration.
+fn declaredContextKey(env: *Env, arg: ast.Expr) InferError!?[]const u8 {
+    if (arg != .identifier or arg.identifier.kind != .ident) return null;
+    const name = arg.identifier.kind.ident;
+    if (env.localBindDepth(name) != null) return null;
+    if (env.declaredContexts.contains(name)) return try envMod.declIdentity(env.arena, env.modulePath, name);
+    if (env.importOwners.get(name)) |o| {
+        const ty = env.lookup(name) orelse return null;
+        const d = ty.deref();
+        if (d.* != .named or !std.mem.eql(u8, d.named.name, "Context")) return null;
+        return try envMod.declIdentity(env.arena, o.owner, o.name);
+    }
+    return null;
+}
+
+/// Decision 354 — a `use` of std's `provide` / `context`: `provide` only in a
+/// component's body and before it renders a child, the context named by its
+/// declaration; recorded for the lowering (`Env.contextUses`).
+fn noteContextUse(env: *Env, operand: ast.Expr, typed: TypedExpr, fc: envMod.FnContext, loc: ast.Loc) InferError!void {
+    if (operand != .call) return;
+    const which = stdContextCallee(env, operand.call) orelse return;
+    if (which == .context_type) return;
+    const call = operand.call.kind.call;
+    if (which == .provide) {
+        const statement = if (env.useStatementLoc) |at| std.meta.eql(at, loc) else false;
+        if (!statement) {
+            env.lastError = TypeError.custom(
+                diagnostics.context_provide_outside_component ++ ": `use provide(…)` is a statement of a component's body of its own — it yields nothing to bind or pass",
+                "Write it alone on its line: `use provide(ThemeContext, value);`.",
             ).withLoc(loc);
             return error.TypeError;
         }
-        const disp = baseNameOfType(valTy) orelse "value";
-        env.lastError = TypeError.useNotContext(disp).withLoc(loc);
+        if (!fc.renderable) {
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `use provide(…)` in '{s}', which returns '{s}' — a provider gives its value to what a COMPONENT renders below it, and this body is no component (its `R` does not implement `@Renderable`)", .{ diagnostics.context_provide_outside_component, fc.fnName, fc.returnDisplay });
+            env.lastError = TypeError.custom(msg, "Provide the context in the component that renders the children which read it (`fn App() -> @Component<Element> { use provide(…); … }`).").withLoc(loc);
+            return error.TypeError;
+        }
+        if (env.firstRenderAt) |r| {
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `use provide(…)` after this body renders a component on line {d} — that child would not see the value", .{ diagnostics.context_provide_after_render, r.line });
+            env.lastError = TypeError.custom(msg, "Move every `use provide(…)` before the first component the body renders.").withLoc(loc);
+            return error.TypeError;
+        }
+    }
+    if (call.args.len == 0) return;
+    const arg = call.args[0].value.*;
+    const key = try declaredContextKey(env, arg) orelse {
+        env.lastError = TypeError.custom(
+            diagnostics.context_not_declared ++ ": the context is named by the module-level `val` that declares it (`Context<T>()`), not by a local, a parameter or an expression (decision 354)",
+            "Write the declaring `val`: `use context(ThemeContext)`.",
+        ).withLoc(arg.getLoc());
         return error.TypeError;
     };
-    if (env.useAnchor) |anchor| {
-        // Decision 96 — the body is already committed. This is the refusal the
-        // decision legislates, and it is the one a reader meets: both bases,
-        // and the `use` that chose the first.
-        if (!std.mem.eql(u8, anchor.base, useBase)) {
-            env.lastError = TypeError.contextBaseMixed(anchor.base, anchor.line, useBase).withLoc(loc);
-            return error.TypeError;
-        }
-        return;
-    }
-    // The first `use` of the body. It fixes the anchor, and before it may do so
-    // it has to agree with the base the return type DECLARED — RC2, the older
-    // refusal, which is what a single misanchored `use` hits.
-    if (fc.base) |fnBase| {
-        if (!std.mem.eql(u8, fnBase, useBase)) {
-            env.lastError = TypeError.contextMismatch(fnBase, useBase).withLoc(loc);
-            return error.TypeError;
-        }
-    }
-    env.useAnchor = .{ .base = useBase, .line = loc.line };
+    const ctx_ty = typedCallArgType(typed, 0) orelse return;
+    const d = ctx_ty.deref();
+    const value_type = if (d.* == .named and d.named.args.len == 1) d.named.args[0] else return;
+    try env.contextUses.put(env.arena, loc, .{
+        .kind = if (which == .provide) .provide else .read,
+        .key = key,
+        .name = arg.identifier.kind.ident,
+        .value_type = value_type,
+    });
+}
+
+/// The type of the `i`-th argument of a typed call, or null.
+fn typedCallArgType(typed: TypedExpr, i: usize) ?*T.Type {
+    if (typed != .call or typed.call.kind != .call) return null;
+    const args = typed.call.kind.call.args;
+    if (i >= args.len) return null;
+    return args[i].value.getType();
 }
 
 /// Bind the names introduced by a destructuring `val { … } = use …` /
@@ -15762,6 +15897,15 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
             }
 
             if (call.is_builtin) {
+                // Decision 354 — `@getContext(T)` (269) left: a context is a
+                // `Context<T>` object read with `use context(…)`.
+                if (std.mem.eql(u8, call.callee, "getContext")) {
+                    env.lastError = TypeError.custom(
+                        diagnostics.unknown_builtin ++ ": unknown builtin `@getContext` — a context is read with `use context(C)` (decision 354)",
+                        "Declare the context (`pub val ThemeContext = Context<Theme>();`), provide it above (`use provide(ThemeContext, theme);`) and read it with `val t = use context(ThemeContext);`.",
+                    ).withLoc(loc);
+                    return error.TypeError;
+                }
                 // Decision 8 §4 — `x is T`. The parser lands it as the `is`
                 // builtin with the tested type in the call's `isType` slot;
                 // nothing typed it, so `inferBuiltinCallReturnType` had no arm
@@ -16955,6 +17099,12 @@ fn caseArmTypesAgree(a: *T.Type, b: *T.Type) bool {
 /// Infer type for function definition expressions (lambdas and anonymous functions)
 fn inferFunctionExpr(env: *Env, func: ast.FunctionExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
     if (func.kind.syntax == .asyncBlock) return inferAsyncBlock(env, func, loc);
+    // Decision 357 — a lambda runs when it is called, if ever: no `use` in it.
+    const prevUseConstruct = enterUseConstruct(env, "a lambda");
+    defer env.useConstruct = prevUseConstruct;
+    const prevEarlyExit = env.earlyExitLine;
+    env.earlyExitLine = null;
+    defer env.earlyExitLine = prevEarlyExit;
     // Decision 147 — a lambda in a position that expects a FALLIBLE function
     // (an argument of a `fn(x: T) -> @Result<U, E>` parameter) takes that
     // channel; any other expectation stays the hint it was.
@@ -17013,7 +17163,6 @@ fn inferAsyncBlock(env: *Env, func: ast.FunctionExprOf(.untyped), loc: ast.Loc) 
     const prevStarFn = env.starFn;
     const prevFnEffect = env.fnEffect;
     const prevThrowCtx = env.throwContext;
-    const prevUseAnchor = env.useAnchor;
     const prevInContextFn = env.inContextFn;
     const prevLoopDepth = env.loopDepth;
     const prevBreakScope = env.breakScope;
@@ -17030,7 +17179,6 @@ fn inferAsyncBlock(env: *Env, func: ast.FunctionExprOf(.untyped), loc: ast.Loc) 
         env.starFn = prevStarFn;
         env.fnEffect = prevFnEffect;
         env.throwContext = prevThrowCtx;
-        env.useAnchor = prevUseAnchor;
         env.inContextFn = prevInContextFn;
         env.loopDepth = prevLoopDepth;
         env.breakScope = prevBreakScope;
@@ -17053,7 +17201,6 @@ fn inferAsyncBlock(env: *Env, func: ast.FunctionExprOf(.untyped), loc: ast.Loc) 
     env.fnEffect = .task;
     env.throwContext = if (errTy) |et| .{ .result = et } else .plain;
     env.inferredErrorScope = expectedValue == null and errTy != null;
-    env.useAnchor = null;
     env.inContextFn = false;
     env.aliasWrapper = null;
     env.loopDepth = 0;
@@ -17093,6 +17240,26 @@ fn inferFunctionExprExpected(
     expected: ?*T.Type,
     params_only: bool,
 ) InferError!TypedExpr {
+    const typed = try inferFunctionExprExpectedInner(env, func, loc, expected, params_only);
+    // Decision 354 (8) — a lambda whose type answers `@Component<R>` takes the
+    // hidden context map (`context_lower.zig` reads its resolved type).
+    if (func.kind.syntax != .asyncBlock) try env.componentLambdas.put(env.arena, loc, .{ .type_ = typed.getType(), .params = func.kind.params.len });
+    return typed;
+}
+
+fn inferFunctionExprExpectedInner(
+    env: *Env,
+    func: ast.FunctionExprOf(.untyped),
+    loc: ast.Loc,
+    expected: ?*T.Type,
+    params_only: bool,
+) InferError!TypedExpr {
+    // Decision 357 — a lambda runs when it is called, if ever: no `use` in it.
+    const prevUseConstruct = enterUseConstruct(env, "a lambda");
+    defer env.useConstruct = prevUseConstruct;
+    const prevEarlyExit = env.earlyExitLine;
+    env.earlyExitLine = null;
+    defer env.earlyExitLine = prevEarlyExit;
     if (func.kind.syntax == .asyncBlock) {
         const savedExpected = env.expectedType;
         env.expectedType = expected;
@@ -17358,6 +17525,9 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
             }
 
             const typedArms = try env.arena.alloc(ast.CaseArmOf(.typed), c.arms.len);
+            // Decision 357 — an arm runs on some calls only: no `use` in it.
+            const prevUseConstruct = enterUseConstruct(env, "a `case` arm");
+            defer env.useConstruct = prevUseConstruct;
             // An arm's block takes `break <value>` as its value (decision 2).
             const prevBreakScope = env.breakScope;
             env.breakScope = .valueBlock;
@@ -17526,7 +17696,12 @@ fn foldBodyComptime(env: *Env, ct: ast.ComptimeExprOf(.untyped), typed: TypedExp
 fn inferComptimeExpr(env: *Env, ct: ast.ComptimeExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
     return switch (ct.kind) {
         .comptimeExpr => |e| {
-            const typed = try inferExprTyped(env, e.*);
+            env.comptimeDepth += 1;
+            const typed = inferExprTyped(env, e.*) catch |err| {
+                env.comptimeDepth -= 1;
+                return err;
+            };
+            env.comptimeDepth -= 1;
             const typedPtr = try makeTypedPtr(env, typed);
             const node = TypedExpr{ .comptime_ = .{ .loc = loc, .type_ = typed.getType(), .kind = .{ .comptimeExpr = typedPtr } } };
             try foldBodyComptime(env, ct, node, loc);
@@ -17537,7 +17712,12 @@ fn inferComptimeExpr(env: *Env, ct: ast.ComptimeExprOf(.untyped), loc: ast.Loc) 
             const prevBreakScope = env.breakScope;
             env.breakScope = .valueBlock;
             defer env.breakScope = prevBreakScope;
-            const typedBody = try inferStmtsTyped(env, cb.body);
+            env.comptimeDepth += 1;
+            const typedBody = inferStmtsTyped(env, cb.body) catch |err| {
+                env.comptimeDepth -= 1;
+                return err;
+            };
+            env.comptimeDepth -= 1;
             // C2b — a `comptime { … }` block's value is its `break <value>`
             // (`eval.zig` `blockValue`'s rule), `void` when there is none.
             const bodyType = blk: {

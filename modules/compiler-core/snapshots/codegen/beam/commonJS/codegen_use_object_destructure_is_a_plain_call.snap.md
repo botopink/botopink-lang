@@ -1,10 +1,10 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Element = type() implement @Context<Element>
-fn state(initial: i32) -> @Component<Element, i32> {
+val Element = type() implement @Renderable
+fn state(initial: i32) -> @Component<i32> {
     return initial;
 }
-fn Counter() -> @Component<Element, Element> {
+fn Counter() -> @Component<Element> {
     val {count, setCount} = use state(0);
     return Element();
 }
@@ -16,12 +16,12 @@ class Element {
 }
 Element.prototype.__bp = "Element";
 
-async function state(initial) {
+async function state(bpContextMap__, initial) {
     return initial;
 }
 
-async function Counter() {
-    const { count, setCount } = await state(0);
+async function Counter(bpContextMap__) {
+    const { count, setCount } = await state(bpContextMap__, 0);
     return new Element();
 }
 ```

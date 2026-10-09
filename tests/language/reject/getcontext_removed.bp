@@ -1,0 +1,14 @@
+//// Decision 354 (2) — `@getContext(T)` (decision 269) is gone: a context is a
+//// `Context<T>` object read with `use context(…)` under a `use provide(…)`.
+//// The builtin is unknown, located at the `@`, naming the hook to write.
+
+type Element(total: i32) implement @Renderable
+
+fn total() -> @Component<i32> {
+    val ctx = use @getContext(Element);
+    return ctx.total;
+}
+
+pub fn main() {
+    total();
+}

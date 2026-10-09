@@ -1159,7 +1159,7 @@ test "comptime: net-new ---- nested template call inside a template body" {
 
 test "template: markup DSL ---- <Component/> tags resolve to calls" {
     try assertCompilesOk(@src(),
-        \\val Element = type() implement @Context<Element>
+        \\val Element = type() implement @Renderable
         \\fn fragment(items: Element[]) -> Element { return Element(); }
         \\fn Page1() -> Element { return Element(); }
         \\fn Page2() -> Element { return Element(); }
@@ -1172,7 +1172,7 @@ test "template: markup DSL ---- <Component/> tags resolve to calls" {
 
 test "template: markup DSL ---- ${expr} splices as a text child" {
     try assertCompilesOk(@src(),
-        \\val Element = type() implement @Context<Element>
+        \\val Element = type() implement @Renderable
         \\fn fragment(items: Element[]) -> Element { return Element(); }
         \\fn text(value: string) -> Element { return Element(); }
         \\pub fn html(comptime q: @Expr<string>) -> @Expr<Element> {

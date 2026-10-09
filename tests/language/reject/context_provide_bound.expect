@@ -1,0 +1,2 @@
+context-provide-outside-component: `use provide(…)` is a statement of a component's body of its own
+13:19

@@ -7,7 +7,7 @@
 //! `libs/std/src/builtins.d.bp`:
 //!
 //!     pub behavior Task<T>                   { … }
-//!     pub behavior Component<C, T> extends Task   // decision 128
+//!     pub behavior Component<R> extends Task      // decisions 128, 354
 //!     pub behavior Stream<T> extends Task         // decision 122
 //!     pub behavior Iterator<T>                    // no clause
 //!
@@ -33,9 +33,9 @@ const ast = @import("../ast.zig");
 const Clause = struct { wrapper: []const u8, implements: []const u8 };
 
 /// The chain, in the order `builtins.d.bp` declares it. Transitivity is
-/// computed by `wrapperImplements`. `@Context<Base>` is not here: it is the
-/// owner MARKER a type implements (decision 102), not a wrapper, and grants
-/// nothing.
+/// computed by `wrapperImplements`. `@Renderable` is not here: it is the
+/// MARKER a component's `R` implements (decision 354), not a wrapper, and
+/// grants nothing.
 pub const clauses = [_]Clause{
     .{ .wrapper = "Component", .implements = "Task" },
     .{ .wrapper = "Stream", .implements = "Task" },
@@ -123,17 +123,14 @@ pub fn grantingEffects(cap: Capability, buf: *[ast.EffectKind.all.len]ast.Effect
 }
 
 /// The returns that grant `cap`, spelled — "`@Task<…>`, `@Stream<…>` or
-/// `@Component<C, …>`".
+/// `@Component<…>`".
 pub fn grantingReturnsSpelled(arena: std.mem.Allocator, cap: Capability) ![]const u8 {
     var buf: [ast.EffectKind.all.len]ast.EffectKind = undefined;
     const granting = grantingEffects(cap, &buf);
     var names: std.ArrayListUnmanaged(u8) = .empty;
     for (granting, 0..) |e, i| {
         if (i > 0) try names.appendSlice(arena, if (i + 1 == granting.len) " or " else ", ");
-        const one = if (e == .component)
-            "`-> @Component<C, …>`"
-        else
-            try std.fmt.allocPrint(arena, "`-> @{s}<…>`", .{e.returnWrapper()});
+        const one = try std.fmt.allocPrint(arena, "`-> @{s}<…>`", .{e.returnWrapper()});
         try names.appendSlice(arena, one);
     }
     return names.items;
@@ -240,7 +237,7 @@ test "effect chain: decision 118's table, row by row" {
     try std.testing.expect(grants(.task, .await_));
     try std.testing.expect(!grants(.task, .use_));
     try std.testing.expect(!grants(.task, .yield_));
-    // `-> @Component<C, T>` ⊃ `@Task` — use · await.
+    // `-> @Component<R>` ⊃ `@Task` — use · await.
     try std.testing.expect(grants(.component, .await_));
     try std.testing.expect(grants(.component, .use_));
     try std.testing.expect(!grants(.component, .yield_));
@@ -272,6 +269,6 @@ test "effect chain: the chain grants downwards, never upwards" {
     try std.testing.expect(wrapperImplements("Component", "Task"));
     try std.testing.expect(wrapperImplements("Stream", "Task"));
     try std.testing.expect(!wrapperImplements("Iterator", "Task"));
-    // `@Context<Base>` is a marker, not a level of the chain.
-    try std.testing.expect(!wrapperImplements("Context", "Task"));
+    // `@Renderable` is a marker, not a level of the chain.
+    try std.testing.expect(!wrapperImplements("Renderable", "Task"));
 }

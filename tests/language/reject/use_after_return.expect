@@ -1,2 +1,2 @@
-`use` must be in static prefix
+use-not-top-level: `use` after the statement on line 9, which may return early
 10:13

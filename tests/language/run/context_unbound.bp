@@ -1,0 +1,22 @@
+//// Decision 354 (2) — a `use context(…)` with no `use provide(…)` above it
+//// is `context-unbound` at run time, naming the context: `Label` is rendered
+//// by `main`, outside every provider. What prints before it stands.
+
+import {context.Context, context.provide, context.context} from "std";
+
+type Theme(mode: string)
+
+type Element(text: string) implement @Renderable
+
+pub val ThemeContext = Context<Theme>();
+
+fn Label() -> @Component<Element> {
+    val t = use context(ThemeContext);
+    return Element(text: t.mode);
+}
+
+pub fn main() -> @Task<void> {
+    @print("before");
+    val l = await Label();
+    @print(l.text);
+}

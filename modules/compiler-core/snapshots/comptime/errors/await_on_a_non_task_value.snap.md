@@ -5,7 +5,7 @@ fn bad() -> @Task<i32> {
 }
 
 ----- ERROR
-error: `await` expects a `@Task<_>` value (or a `@Component<C, T>`, which extends it)
+error: `await` expects a `@Task<_>` value (or a `@Component<T>`, which extends it)
   ┌─ main.bp:2:13
   │
 2 │     val x = await 5;

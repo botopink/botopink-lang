@@ -47,7 +47,7 @@ The server handles `initialize` / `shutdown`, `didOpen` / `didChange` /
   builtin interface methods on primitives/arrays/strings; for a fn whose return
   is `@Task` / `@Component` / `@Iterator` / `@Stream`, a footer naming what the
   caller unwraps — the `await` value (`T` of `@Task<T>`, `T` of
-  `@Component<C, T>`, the whole `@Result<U, E>` of a `@Task<@Result<U, E>>`) or
+  `@Component<T>`, the whole `@Result<U, E>` of a `@Task<@Result<U, E>>`) or
   the `for` / `for await` item; driven by the return, so an `@Iterator` factory
   shows it too),
   `definition` (same-file, cross-module, embedded `std` modules, plus type-aware

@@ -1,18 +1,17 @@
-//// Decision 105 — an annotated loop is closed: its body has only its own
-//// annotation's capabilities, never the enclosing fn's. Inside a `#[@use]`
-//// fn a `iter loop` may not `use`: the body runs later, on demand, and
-//// a lazy `use` would activate a hook outside the render. The parser's
-//// static-prefix rule (decision 88) refuses it first — a loop ends the prefix —
-//// and the checker's `generator-loop-closed-scope` stands behind it.
+//// Decisions 105 and 357 — an annotated loop is closed: its body has only its
+//// own capabilities, never the enclosing fn's. Inside a `@Component` fn an
+//// `iter loop` may not `use`: the body runs later, on demand, and a lazy
+//// `use` would activate a hook outside the render — and a `use` stands at the
+//// top level of its body only (`use-not-top-level`, naming the loop).
 
-type Element(count: i32) implement @Context<Element>
+type Element(count: i32) implement @Renderable
 type State(value: i32)
 
-fn state(initial: i32) -> @Component<Element, State> {
+fn state(initial: i32) -> @Component<State> {
     return State(value: initial);
 }
 
-fn Counter() -> @Component<Element, Element> {
+fn Counter() -> @Component<Element> {
     val g = iter loop {
         val s = use state(0);
         break s.value;

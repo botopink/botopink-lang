@@ -676,66 +676,13 @@ test "infer: decision 122 ---- next() by hand answers YieldStep on an iterator a
     );
 }
 
-test "infer error: RC5 ---- @getContext outside @Component fn reds context-getcontext-outside-context-fn" {
-    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\type User(id: i32)
-        \\fn lookup() -> User {
-        \\    return @getContext(User);
-        \\}
-    );
-}
-
-test "infer error: RC4 ---- @getContext(<value>) reds context-getcontext-expects-type" {
-    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\type User(id: i32)
-        \\fn lookup() -> @Component<User, User> {
-        \\    return @getContext(42);
-        \\}
-    );
-}
-
 test "infer error: RC6 ---- use of non-context fn reds use-of-non-context-fn" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\type User(id: i32)
         \\fn plain() -> User { return User(id: 1); }
-        \\fn lookup() -> @Component<User, User> {
+        \\fn lookup() -> @Component<User> {
         \\    val u = use plain();
         \\    return u;
-        \\}
-    );
-}
-
-test "infer error: RC3 ---- @getContext(T) outside enclosing Anchor tree reds context-getcontext-anchor-violation" {
-    // The enclosing fn's Anchor is `RootA`; the requested type `LeafB`'s
-    // Anchor is `RootB`. No `use` chain rooted at `RootA` can ever provide
-    // `LeafB`, so the request is statically out of reach (RC3).
-    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\type RootA(name: string)
-        \\type RootB(name: string)
-        \\type LeafB(v: i32) implement @Context<RootB>
-        \\fn pickA() -> @Component<RootA, RootA> {
-        \\    return @getContext(LeafB);
-        \\}
-    );
-}
-
-test "infer: `use @getContext(T)` reads the context as a `T` (decision 269)" {
-    try h.assertInfersOk(std.testing.allocator,
-        \\type BasePagamento(total: i32)
-        \\fn total() -> @Component<BasePagamento, i32> {
-        \\    val ctx: BasePagamento = use @getContext(BasePagamento);
-        \\    val n: i32 = ctx.total;
-        \\    return n;
-        \\}
-    );
-}
-
-test "infer error: `use @getContext(T)` is a `T`, not anything else (decision 269)" {
-    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\type BasePagamento(total: i32)
-        \\fn total() -> @Component<BasePagamento, i32> {
-        \\    val ctx: string = use @getContext(BasePagamento);
-        \\    return 0;
         \\}
     );
 }
@@ -852,12 +799,12 @@ test "infer error: return ---- an @block value flows to the fn's return" {
     );
 }
 
-test "infer: return ---- a hook body returns the X of @Component<B, X>, or another hook" {
+test "infer: return ---- a hook body returns the X of @Component<X>, or another hook" {
     try h.assertInfersOk(std.testing.allocator,
         \\type El(tag: string)
         \\type Cell<T>(value: T)
-        \\fn state<T>(initial: T) -> @Component<El, Cell<T>> { return Cell(value: initial); }
-        \\fn counter(start: i32) -> @Component<El, Cell<i32>> { return state(start); }
+        \\fn state<T>(initial: T) -> @Component<Cell<T>> { return Cell(value: initial); }
+        \\fn counter(start: i32) -> @Component<Cell<i32>> { return state(start); }
     );
 }
 

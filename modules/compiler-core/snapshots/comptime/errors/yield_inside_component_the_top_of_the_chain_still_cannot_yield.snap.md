@@ -1,6 +1,6 @@
 ----- SOURCE CODE
-val Element = type() implement @Context<Element>
-fn state(initial: i32) -> @Component<Element, i32> {
+val Element = type() implement @Renderable
+fn state(initial: i32) -> @Component<i32> {
     return initial;
 }
 fn parse(n: i32) -> @Result<i32, string> {
@@ -9,7 +9,7 @@ fn parse(n: i32) -> @Result<i32, string> {
 fn fetch(n: i32) -> @Task<i32> {
     return n;
 }
-fn Bad(n: i32) -> @Component<Element, Element> {
+fn Bad(n: i32) -> @Component<Element> {
     yield n;
 }
 

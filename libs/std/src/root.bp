@@ -35,6 +35,7 @@ pub mod hash;
 pub mod escape;
 pub mod async;
 pub mod types;
+pub mod context;
 pub mod erlang;
 pub mod beam;
 pub mod io;

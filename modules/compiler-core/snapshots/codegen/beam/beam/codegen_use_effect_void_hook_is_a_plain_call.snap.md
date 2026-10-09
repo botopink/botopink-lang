@@ -1,13 +1,13 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Element = type() implement @Context<Element>
+val Element = type() implement @Renderable
 fn cleanup() {
     0;
 }
-fn effect() -> @Component<Element, i32> {
+fn effect() -> @Component<i32> {
     return 0;
 }
-fn Widget() -> @Component<Element, Element> {
+fn Widget() -> @Component<Element> {
     use effect { -> cleanup(); };
     return Element();
 }
@@ -31,38 +31,42 @@ fn Widget() -> @Component<Element, Element> {
     {deallocate, 0}.
     return.
 
-{function, effect, 0, 5}.
+{function, effect, 1, 5}.
   {label, 4}.
     {line, [{location, "test@main.erl", 2}]}.
-    {func_info, {atom, test@main}, {atom, effect}, 0}.
+    {func_info, {atom, test@main}, {atom, effect}, 1}.
   {label, 5}.
-    {allocate, 0, 0}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
     {move, {integer, 0}, {x, 0}}.
-    {deallocate, 0}.
+    {deallocate, 1}.
     return.
 
-{function, 'Widget', 0, 7}.
+{function, 'Widget', 1, 7}.
   {label, 6}.
     {line, [{location, "test@main.erl", 3}]}.
-    {func_info, {atom, test@main}, {atom, 'Widget'}, 0}.
+    {func_info, {atom, test@main}, {atom, 'Widget'}, 1}.
   {label, 7}.
-    {allocate, 0, 0}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
     {make_fun3, {f, 9}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {x, 1}}.
-    {move, {x, 1}, {x, 0}}.
-    %% unresolved_call: effect/1
-    {move, {literal, {unresolved_call, effect, 1}}, {x, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    %% unresolved_call: effect/2
+    {move, {literal, {unresolved_call, effect, 2}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
     {test_heap, 2, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, test@main@@Element}]}}.
-    {deallocate, 0}.
+    {deallocate, 1}.
     return.
 
-{function, '-Widget/0-fun-0-', 0, 9}.
+{function, '-Widget/1-fun-0-', 0, 9}.
   {label, 8}.
     {line, [{location, "test@main.erl", 4}]}.
-    {func_info, {atom, test@main}, {atom, '-Widget/0-fun-0-'}, 0}.
+    {func_info, {atom, test@main}, {atom, '-Widget/1-fun-0-'}, 0}.
   {label, 9}.
     {allocate, 0, 0}.
     {call, 0, {f, 3}}.

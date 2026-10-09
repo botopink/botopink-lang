@@ -3,7 +3,7 @@
 /// Iterates over typed bindings and **builds** a declaration model
 /// (`codegen/js/js_ast.zig`: `TsDecl` / `TsMember` / `TsType`); `ts_emitter.zig`
 /// renders it. This file decides what the public contract of a module is —
-/// which bindings surface, how `@Result` / `@Future` / `@Context` erase — and
+/// which bindings surface, how `@Result` / `@Task` / `@Component` erase — and
 /// writes no TypeScript text of its own.
 const std = @import("std");
 const ast = @import("../ast.zig");
@@ -313,7 +313,6 @@ const Builder = struct {
         return switch (bd.decl) {
             .val => |v| try self.val(v.name, v.isPub, bd.type_),
             .@"fn" => |f| try self.fnDecl(f),
-            // Phantom `@Context` base structs are erased from the typedef too.
             .type_ => |t| if (t.isRecord()) try self.record(t) else try self.enumDecl(t),
             .behavior => |i| try self.interface(i),
             .implement => |im| try self.implement(im),
@@ -891,11 +890,11 @@ const Builder = struct {
         if (std.mem.eql(u8, name, "optional") and args.len == 1)
             return .{ .union_ = try self.b.types(&.{ args[0], .{ .name = "null" } }) };
         if (std.mem.eql(u8, name, "tuple")) return .{ .tuple = args };
-        // `#[@use]` lowers to an `async function` (decision 104), so its
-        // wrapper is a `Promise` of the value: `@Component<C, T>` →
-        // `Promise<T>` (the base `C` is a phantom, decision 128).
-        if (std.mem.eql(u8, name, "Component") and args.len >= 2)
-            return .{ .generic = .{ .name = "Promise", .args = try self.b.types(&.{args[1]}) } };
+        // A `@Component` body lowers to an `async function` (decision 104), so
+        // its wrapper is a `Promise` of the value: `@Component<R>` →
+        // `Promise<R>` (decision 354).
+        if (std.mem.eql(u8, name, "Component") and args.len >= 1)
+            return .{ .generic = .{ .name = "Promise", .args = try self.b.types(&.{args[0]}) } };
         // `@Result<T, E>` is what the JavaScript builds: `{ ok: v }` or
         // `{ error: e }` (`buildResult`). It used to promise a tagged
         // `{ tag: "Ok"; result: T }` no module ever returned.

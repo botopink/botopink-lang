@@ -1,0 +1,36 @@
+//// Decision 357 (2) — once declared, always fed: a condition goes inside a
+//// `use`'s argument, never around the `use`. `use provide(ThemeContext, if
+//// (dark) … else …)` is at the top level of the body and runs on every call;
+//// an `if` that does not return before a `use` leaves it at the top level
+//// too.
+
+import {context.Context, context.provide, context.context} from "std";
+
+type Theme(mode: string)
+
+type Element(text: string) implement @Renderable
+
+pub val ThemeContext = Context<Theme>();
+
+fn Label() -> @Component<Element> {
+    val t = use context(ThemeContext);
+    return Element(text: t.mode);
+}
+
+fn App(dark: bool) -> @Component<Element> {
+    var note = "";
+    if (dark) note = "!";
+    use provide(
+        ThemeContext,
+        if (dark) Theme(mode: "dark") else Theme(mode: "light"),
+    );
+    val l = Label();
+    return Element(text: l.text + note);
+}
+
+pub fn main() -> @Task<void> {
+    val a = await App(true);
+    @print(a.text);
+    val b = await App(false);
+    @print(b.text);
+}

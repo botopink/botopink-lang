@@ -106,33 +106,24 @@ test "import decl" {
 
 `parseBlock` consumes the `{` and delegates to **`parseBlockBody`**, which runs
 the statement loop under `BlockParseOptions` (`handleComments`,
-`trackEmptyLines`, `semicolonPolicy`, `useAfterBranchGuard`, `freshUseScope`). A
+`trackEmptyLines`, `semicolonPolicy`). A
 block that reads something between the `{` and its first statement — a prologue
 — consumes the `{` itself, reads the prologue, and then calls `parseBlockBody`:
 
-| Block | Prologue | Policy | `use` scope |
-|---|---|---|---|
-| fn / `test` body, `fn (…) { … }` expression | — (`parseFnBodyInBraces`) | `requiredExceptLast` | fresh |
-| `if` else-branch, `case` arm | — (`parseStmtListInBraces`) | `requiredExceptLast` | inherits |
-| `if` then-branch | `{ x -> ` or `{ _ -> ` — the branch's value binding | `requiredExceptLast` | inherits |
-| lambda `{ a, b -> … }` | the parameter list | `optional` | fresh |
-| trailing lambda `f { a -> … }` | an optional `label:` and the parameter list | `requiredExceptLast` (was `required` — the one block whose last statement could not drop its `;`; front 15 step 4b) | fresh |
-| `for (…) { x -> … }` body | the one binder (`parseLoopBody`) | `requiredExceptLast` (was `required`; front 15 step 4b, with the trailing lambda) | inherits |
-| `while (…) { … }`, `loop { … }`, `iter loop { … }` body | — (`parseLoopBody`; a binder is refused) | `requiredExceptLast` (the same `parseLoopBody`) | inherits |
+| Block | Prologue | Policy |
+|---|---|---|
+| fn / `test` body, `fn (…) { … }` expression | — (`parseFnBodyInBraces`) | `requiredExceptLast` |
+| `if` else-branch, `case` arm | — (`parseStmtListInBraces`) | `requiredExceptLast` |
+| `if` then-branch | `{ x -> ` or `{ _ -> ` — the branch's value binding | `requiredExceptLast` |
+| lambda `{ a, b -> … }` | the parameter list | `optional` |
+| trailing lambda `f { a -> … }` | an optional `label:` and the parameter list | `requiredExceptLast` (was `required` — the one block whose last statement could not drop its `;`; front 15 step 4b) |
+| `for (…) { x -> … }` body | the one binder (`parseLoopBody`) | `requiredExceptLast` (was `required`; front 15 step 4b, with the trailing lambda) |
+| `while (…) { … }`, `loop { … }`, `iter loop { … }` body | — (`parseLoopBody`; a binder is refused) | `requiredExceptLast` (the same `parseLoopBody`) |
 
-**The static prefix of `use`** (front 19 of 1.0.10-beta, decision 88) is a
-property of the *function body*: every `use` precedes every `if`, `case`, loop
-(`for`/`while`/`loop`) and `return` of that body, at any nesting.
-`Parser.useBranchSeen` is set by the constructs themselves when they are parsed (`parser/exprs.zig`), so a
-branch's own block sees the branch it is in (`if (a) { use … }` is refused) and
-a `val m = if (…) …` counts as a branch. `parseBlockBody` saves and restores the
-flag around every block; `freshUseScope` clears it on entry — a lambda body is
-another function, so `use memo { -> return … }` keeps the enclosing prefix. Under
-`useAfterBranchGuard` a statement is tested by its **shape**, not its first
-token: a bare `use …;` at its own token before the parse, and a `val`/`var`
-(plain or destructuring) whose value is the `use` prefix after it
-(`bindingUseLoc`, reported at the `use` token found by `tokenAt`). Both are
-`useAfterBranch` (`print.zig`).
+**Where a `use` may stand** is not the parser's rule: decision 357's rules of
+hooks (`use-not-top-level`) are the checker's (`comptime/AGENTS.md`), which
+knows the construct around a `use`. The parser's static-prefix guard of front
+19 (1.0.10-beta, decision 88) — `useBranchSeen`, `useAfterBranch` — is gone.
 
 **Five of those carried their own copy of the loop**, each written before the
 options existed, and each left out comment handling and empty-line tracking — so

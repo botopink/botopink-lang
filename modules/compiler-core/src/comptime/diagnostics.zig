@@ -47,10 +47,6 @@ pub const effect_type_removed: []const u8 = "effect-type-removed";
 /// `@Iterator<@Result<T, E>>`.
 pub const iterator_error_param_removed: []const u8 = "iterator-error-param-removed";
 
-/// Decision 128 — a component `-> @Component<C, T>` whose `T` implements
-/// `@Context<B>` with a `B` other than `C`.
-pub const effect_wrapper_mismatch: []const u8 = "effect-wrapper-mismatch";
-
 /// Decision 118 rule 1 — a capability (`throw`, `try`, `await`, `use`,
 /// `yield`) used under an ALIASED return: the alias types the function, never
 /// activates the effect. Fix-it: write the wrapper literally.
@@ -140,14 +136,6 @@ pub const yield_label_unbound: []const u8 = "yield-label-unbound";
 /// R16 — generic parameter list `<T = default, U>` (required after defaulted).
 pub const generic_default_before_required: []const u8 = "generic-default-before-required";
 
-/// R18 (E2) — alias of RC2 (`use <hook>()` violates anchor).
-/// R19 (E1) — alias of RC1 (`@getContext(T)` with no active provider).
-/// R20      — alias of RC3 (`@getContext(T)` outside the anchor).
-/// R21      — alias of RC6 (`use` of a non-hook (a callee that is not a hook `@Component<C, _>`)).
-//
-// The §1C addendum keeps the RC* names as the canonical surface; the R-table
-// numbers point to them via alias here for the catalogue.
-
 // ── RI1–RI6: §1I generator-body syntax diagnostics ───────────────────────────
 
 /// RI1 — `return <expr>` inside a generator body. Identical to R14 (the §2 alias).
@@ -168,20 +156,35 @@ pub const break_label_unbound: []const u8 = "break-label-unbound";
 /// RI6 — `yield break <expr>` (the deprecated form, removed in v0.beta.19).
 pub const yield_break_removed: []const u8 = "yield-break-removed";
 
-// ── RC1–RC6: §1C `@Component` base diagnostics ───────────────────────────
+// ── RC1, RC6, RC7: contexts and `use` (decision 354) ──────────────────────
 
-/// RC1 (E1) — `@getContext(T)` with no active provider of T on the scope stack.
+/// RC1 — `use context(C)` with no `use provide(C, …)` above it: raised at
+/// run time by the lookup the hidden context map lowers to (decision 354).
 pub const context_unbound: []const u8 = "context-unbound";
 
-/// RC2 (E2) — `use <hook>()` whose `HookBase` is not assignable to enclosing Anchor.
-pub const context_anchor_violation: []const u8 = "context-anchor-violation";
+/// Decision 354 — `@Context<C>` left the language (parser).
+pub const context_marker_removed: []const u8 = "context-marker-removed";
 
-/// RC3 — `@getContext(T)` whose T is outside the enclosing fn's Anchor tree.
-pub const context_getcontext_anchor_violation: []const u8 = "context-getcontext-anchor-violation";
+/// Decision 354 (3) — `use` in a decorator body, a template body or a
+/// `comptime { … }`: compile-time evaluation has no render tree.
+pub const use_outside_render_tree: []const u8 = "use-outside-render-tree";
 
-/// Decision 269 — `@getContext(T)` is a hook (`-> Component<T, T>`): it is
-/// `use`d, never called for its value. A call that is not `use`'s operand.
-pub const context_getcontext_without_use: []const u8 = "context-getcontext-without-use";
+/// Decision 354 — `use provide(…)` outside a component's body (a hook's, or
+/// a `@Component<R>` whose `R` is not `@Renderable`): a provider gives its
+/// value to what a component renders below it, and a hook renders nothing.
+pub const context_provide_outside_component: []const u8 = "context-provide-outside-component";
+
+/// Decision 354 — `use provide(…)` after the body rendered a component: the
+/// child rendered before it would not see the value.
+pub const context_provide_after_render: []const u8 = "context-provide-after-render";
+
+/// Decision 354 — std's `provide` / `context` referenced other than as the
+/// operand of a `use` (called for a value, passed, bound).
+pub const context_hook_without_use: []const u8 = "context-hook-without-use";
+
+/// Decision 354 (2) — a `Context<T>()` that is not a module-level `val`'s
+/// whole initializer: a context's identity is its declaration (281).
+pub const context_not_declared: []const u8 = "context-not-declared";
 
 // ── `@src()` (1.0.10-beta front 01-std, decision 73) ─────────────────────────
 /// `@src(…)` was given an argument or a trailing lambda — the builtin takes none.
@@ -263,19 +266,20 @@ pub const unknown_primitive_method: []const u8 = "unknown-primitive-method";
 /// be dropped (decision 15's failure mode; front 17 step 3's recorded row).
 pub const unknown_annotation: []const u8 = "unknown-annotation";
 
-/// RC4 — `@getContext(<value>)` (the argument must be a type).
-pub const context_getcontext_expects_type: []const u8 = "context-getcontext-expects-type";
-
-/// RC5 — `@getContext(…)` outside a `-> @Component<…>` fn body.
-pub const context_getcontext_outside_context_fn: []const u8 = "context-getcontext-outside-context-fn";
-
-/// RC6 — `use <hook>()` where `<hook>` is not a hook `@Component<C, _>` hook.
+/// RC6 — `use <hook>()` where `<hook>` is not a hook `@Component<R>` (a
+/// component, or no `@Component` at all).
 pub const use_of_non_context_fn: []const u8 = "use-of-non-context-fn";
 
 /// RC7 (decisions 88, 104, 118) — `use` in a body whose fn does not return
-/// `@Component<C, T>`, or in a nested closure of one: only that body
+/// `@Component<R>`, or in a nested closure of one: only that body
 /// activates a hook.
 pub const use_without_context_effect: []const u8 = "use-without-context-effect";
+
+/// Decision 357 — a `use` that is not at the top level of its `@Component`
+/// body: inside an `if` / `else`, a `case` arm, a loop, a lambda, a `catch`
+/// handler, a short-circuit operand, or after a statement that may return
+/// early. Named construct, located at the `use`.
+pub const use_not_top_level: []const u8 = "use-not-top-level";
 
 /// Front 19 step 3 — `val #(a, b) = use …` whose hook yields a tuple of another
 /// arity, or no tuple at all. Located at the binding; no flag (decision 67).
@@ -296,7 +300,7 @@ pub const generic_default_before_required_alias: []const u8 = generic_default_be
 /// here for documentation symmetry.
 pub const generic_all_defaults_legal_reserved: []const u8 = "";
 
-/// RG3 — required generic argument missing (e.g. `@Component<T>`: decision 128 requires the base).
+/// RG3 — required generic argument missing (e.g. `@Result<T>`).
 pub const generic_required_arg_missing: []const u8 = "generic-required-arg-missing";
 
 /// RG4 — skipped middle generic argument (`@Result<i32, , i64>`).
@@ -499,7 +503,6 @@ pub const all_codes = [_][]const u8{
     effect_annotation_removed,
     effect_type_removed,
     iterator_error_param_removed,
-    effect_wrapper_mismatch,
     effect_wrapper_behind_alias,
     effect_return_ambiguous_nesting,
     effect_try_without_fallible_channel,
@@ -521,15 +524,17 @@ pub const all_codes = [_][]const u8{
     break_label_unbound,
     yield_break_removed,
     context_unbound,
-    context_anchor_violation,
-    context_getcontext_anchor_violation,
-    context_getcontext_without_use,
+    context_marker_removed,
+    use_outside_render_tree,
+    context_provide_outside_component,
+    context_not_declared,
+    context_provide_after_render,
+    context_hook_without_use,
     variadic_spread,
     variadic_label,
-    context_getcontext_expects_type,
-    context_getcontext_outside_context_fn,
     use_of_non_context_fn,
     use_without_context_effect,
+    use_not_top_level,
     generic_required_arg_missing,
     generic_arg_skip_forbidden,
     generic_arg_count_exceeded,

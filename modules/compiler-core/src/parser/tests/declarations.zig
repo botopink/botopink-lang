@@ -84,10 +84,10 @@ test "parser: full Drawable interface (field + abstract + default method)" {
 
 test "parser: implement generic interface for type" {
     // G6: a standalone `implement <generic-iface> for <Type>` must parse, both
-    // for a builtin generic (`@Context<…>`) and a user generic (`Foo<A, B>`).
+    // for a builtin generic (`@Renderable`) and a user generic (`Foo<A, B>`).
     try h.assertParser(std.testing.allocator, @src(),
         \\type E(tag: string)
-        \\val C = implement @Context<E> for E {}
+        \\val C = implement @Renderable for E {}
         \\val D = implement Foo<E, E> for E {}
     );
 }

@@ -1,11 +1,11 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Element = type() implement @Context<Element>
-fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Component<Element, #(i32, fn(action: i32) -> i32)> {
+val Element = type() implement @Renderable
+fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Component<#(i32, fn(action: i32) -> i32)> {
     val push = { action -> f(base, action) };
     return #(base, push);
 }
-fn LikeWidget() -> @Component<Element, Element> {
+fn LikeWidget() -> @Component<Element> {
     val #(shown, push) = use optimistic(12, { c, a -> c + a });
     push(shown);
     return Element();
@@ -19,57 +19,60 @@ fn LikeWidget() -> @Component<Element, Element> {
 {attributes, []}.
 {labels, 13}.
 
-{function, optimistic, 2, 3}.
+{function, optimistic, 3, 3}.
   {label, 2}.
     {line, [{location, "test@main.erl", 1}]}.
-    {func_info, {atom, test@main}, {atom, optimistic}, 2}.
+    {func_info, {atom, test@main}, {atom, optimistic}, 3}.
   {label, 3}.
-    {allocate, 3, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+    {allocate, 4, 3}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
+    {move, {x, 2}, {y, 2}}.
     {test_heap, {alloc, [{words, 2}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 7}, 0, 0, {x, 0}, {list, [{y, 1}, {y, 0}]}}.
-    {move, {x, 0}, {y, 2}}.
+    {make_fun3, {f, 7}, 0, 0, {x, 0}, {list, [{y, 2}, {y, 1}]}}.
+    {move, {x, 0}, {y, 3}}.
     {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{y, 0}, {y, 2}]}}.
-    {deallocate, 3}.
+    {put_tuple2, {x, 0}, {list, [{y, 1}, {y, 3}]}}.
+    {deallocate, 4}.
     return.
 
-{function, 'LikeWidget', 0, 5}.
+{function, 'LikeWidget', 1, 5}.
   {label, 4}.
     {line, [{location, "test@main.erl", 2}]}.
-    {func_info, {atom, test@main}, {atom, 'LikeWidget'}, 0}.
+    {func_info, {atom, test@main}, {atom, 'LikeWidget'}, 1}.
   {label, 5}.
-    {allocate, 3, 0}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+    {allocate, 4, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
+    {move, {x, 0}, {y, 0}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
     {make_fun3, {f, 9}, 0, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {integer, 12}, {x, 0}}.
-    {call, 2, {f, 3}}.
-    {move, {x, 0}, {y, 0}}.
-    {move, {integer, 1}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {move, {integer, 12}, {x, 1}}.
+    {move, {x, 0}, {x, 2}}.
+    {move, {y, 0}, {x, 0}}.
+    {call, 3, {f, 3}}.
     {move, {x, 0}, {y, 1}}.
-    {move, {integer, 2}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
+    {move, {integer, 1}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
     {move, {x, 0}, {y, 2}}.
-    {move, {y, 0}, {x, 0}}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {move, {x, 0}, {y, 3}}.
     {move, {y, 1}, {x, 0}}.
-    {move, {y, 2}, {x, 1}}.
+    {move, {y, 2}, {x, 0}}.
+    {move, {y, 3}, {x, 1}}.
     {call_fun, 1}.
     {test_heap, 2, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, test@main@@Element}]}}.
-    {deallocate, 3}.
+    {deallocate, 4}.
     return.
 
-{function, '-optimistic/2-fun-0-', 3, 7}.
+{function, '-optimistic/3-fun-0-', 3, 7}.
   {label, 6}.
     {line, [{location, "test@main.erl", 2}]}.
-    {func_info, {atom, test@main}, {atom, '-optimistic/2-fun-0-'}, 3}.
+    {func_info, {atom, test@main}, {atom, '-optimistic/3-fun-0-'}, 3}.
   {label, 7}.
     {allocate, 3, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
@@ -98,10 +101,10 @@ fn LikeWidget() -> @Component<Element, Element> {
     {gc_bif, '+', {f, 0}, 2, [{x, 0}, {x, 1}], {x, 0}}.
     return.
 
-{function, '-LikeWidget/0-fun-1-', 2, 9}.
+{function, '-LikeWidget/1-fun-1-', 2, 9}.
   {label, 8}.
     {line, [{location, "test@main.erl", 3}]}.
-    {func_info, {atom, test@main}, {atom, '-LikeWidget/0-fun-1-'}, 2}.
+    {func_info, {atom, test@main}, {atom, '-LikeWidget/1-fun-1-'}, 2}.
   {label, 9}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.

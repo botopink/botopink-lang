@@ -1,0 +1,2 @@
+use-not-top-level: `use` after the statement on line 12, which may return early
+15:13

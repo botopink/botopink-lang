@@ -1,0 +1,19 @@
+//// Decision 354 (2) — `provide` and `context` are hooks: `use`d, never
+//// called for their value. A bare call is refused at the call.
+
+import {context.Context, context.provide, context.context} from "std";
+
+type Theme(mode: string)
+
+type Element(text: string) implement @Renderable
+
+pub val ThemeContext = Context<Theme>();
+
+fn Label() -> @Component<Element> {
+    val t = context(ThemeContext);
+    return Element(text: "");
+}
+
+pub fn main() {
+    Label();
+}

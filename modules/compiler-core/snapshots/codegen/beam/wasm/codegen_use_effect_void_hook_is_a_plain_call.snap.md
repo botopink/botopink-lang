@@ -1,13 +1,13 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Element = type() implement @Context<Element>
+val Element = type() implement @Renderable
 fn cleanup() {
     0;
 }
-fn effect() -> @Component<Element, i32> {
+fn effect() -> @Component<i32> {
     return 0;
 }
-fn Widget() -> @Component<Element, Element> {
+fn Widget() -> @Component<Element> {
     use effect { -> cleanup(); };
     return Element();
 }
@@ -22,12 +22,13 @@ fn Widget() -> @Component<Element, Element> {
   (func $cleanup (result i32)
     i32.const 0
   )
-  (func $effect (result i32)
+  (func $effect (param $bpContextMap__ i32) (result i32)
     i32.const 0
     return
   )
-  (func $Widget (result i32)
+  (func $Widget (param $bpContextMap__ i32) (result i32)
     (local $__mem0 i32)
+    local.get $bpContextMap__
     call $effect
     drop
     i32.const 4
