@@ -11,6 +11,7 @@
     "state.bp",
     "envelope.bp",
     "rpc.bp",
-    "refresh.bp"
+    "refresh.bp",
+    "id.bp"
   ]
 }
