@@ -725,48 +725,15 @@ fn tryLowerResultJump(agg: *Aggregator, expr_ptr: *ast.Expr) ScanError!bool {
 }
 
 fn rewriteStmt(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), comptime_arrays: std.StringHashMap([]const ast.TypedExpr), stmt: *ast.Stmt) ScanError!void {
-    // Template-call expansion (F6): substitute the expansion recorded by
-    // inference, then process the spliced code like ordinary AST.
-    if (stmt.expr == .call and stmt.expr.call.kind == .call) {
-        if (agg.template_expansions.get(stmt.expr.call.loc)) |expansion| {
-            stmt.expr = expansion.*;
-            rewriteExpr(agg, fn_decls, comptime_arrays, &stmt.expr) catch return ScanError.OutOfMemory;
-            return;
-        }
-        // `@src()` at statement position (decision 73) — the same splice.
-        if (agg.src_rewrites.get(stmt.expr.call.loc)) |rewrite| {
-            if (stmt.expr.call.kind.call.is_builtin) {
-                stmt.expr = rewrite.*;
-                rewriteExpr(agg, fn_decls, comptime_arrays, &stmt.expr) catch return ScanError.OutOfMemory;
-                return;
-            }
-        }
-    }
-    // C-04 — the same fill at statement position (`b.bump();`, `x |> log;`).
-    if (stmt.expr == .call and stmt.expr.call.kind == .pipeline) {
-        if (pipelineIsCall(agg, stmt.expr.call.kind.pipeline, stmt.expr.call.loc)) {
-            pipelineAsCall(agg, &stmt.expr) catch return ScanError.OutOfMemory;
-        }
-    }
-    if (stmt.expr == .call and stmt.expr.call.kind == .call) {
-        if (agg.default_injections.get(stmt.expr.call.loc)) |fill| {
-            applyDefaultFill(agg, fill, &stmt.expr.call.kind.call) catch return ScanError.OutOfMemory;
-        }
-    }
+    // A call at statement position — the last statement of a lambda body is
+    // its value (`{ b -> Brk(..b, active: false) }`) — is walked exactly as
+    // the same call anywhere else: every loc-keyed rewrite inference recorded
+    // for it (a record update's complete constructor call, a template
+    // expansion, `@src()`, a default fill, a namespace call) lives in
+    // `rewriteExpr`. A second copy of that walk here missed the record
+    // update, and a lambda body's update dropped the fields it did not write.
+    if (stmt.expr == .call) return rewriteExpr(agg, fn_decls, comptime_arrays, &stmt.expr);
     switch (stmt.expr) {
-        .call => |*c| switch (c.kind) {
-            .call => {
-                if (try tryLowerMethodCall(agg, &stmt.expr)) {
-                    for (stmt.expr.call.kind.call.args) |*arg| rewriteExpr(agg, fn_decls, comptime_arrays, arg.value) catch return ScanError.OutOfMemory;
-                } else if (try tryLowerStdArrayCall(agg, &stmt.expr)) {
-                    for (stmt.expr.call.kind.call.args) |*arg| rewriteExpr(agg, fn_decls, comptime_arrays, arg.value) catch return ScanError.OutOfMemory;
-                } else {
-                    if (c.kind.call.receiver) |r| rewriteExpr(agg, fn_decls, comptime_arrays, r) catch return ScanError.OutOfMemory;
-                    rewriteCall(agg, fn_decls, comptime_arrays, &c.kind.call) catch return ScanError.OutOfMemory;
-                }
-            },
-            else => {},
-        },
         .binding => |*b| switch (b.kind) {
             .localBind => |lb| rewriteExpr(agg, fn_decls, comptime_arrays, lb.value) catch return ScanError.OutOfMemory,
             .assign => |a| rewriteExpr(agg, fn_decls, comptime_arrays, a.value) catch return ScanError.OutOfMemory,

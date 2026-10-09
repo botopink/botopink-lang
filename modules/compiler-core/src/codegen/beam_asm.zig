@@ -10158,6 +10158,13 @@ const Emitter = struct {
             }
             if (i + 1 == stmts.len and armValueTail(stmt.expr)) {
                 try self.lowerExprIntoX0(stmt.expr);
+                // `_ { out.push(x); }` — a push that is the arm's value
+                // still rebinds `out` (the grown list is the value), as it
+                // does at any other statement position. Taken only as the
+                // value, the arm's push was lost.
+                if (self.receiverMutation(stmt.expr)) |reg| {
+                    try beamEmitter.writeMoveOp(self.out, Op.xr(0), reg.dest());
+                }
                 return false;
             }
             try self.emitStmt(stmt);
@@ -11020,36 +11027,63 @@ const Emitter = struct {
     }
 
     /// Append (once each) the names of this frame that `stmts` reassigns —
-    /// through `=`/`+=`, `push`, or a nested `if`/`loop`/`forEach` body.
-    fn collectMutations(self: *const Emitter, stmts: []const ast.Stmt, shadowed: []const []const u8, out: *std.ArrayListUnmanaged([]const u8)) anyerror!void {
+    /// through `=`/`+=`, `push`, or a nested `if`/`loop`/`forEach` body or a
+    /// statement `case`'s arms. A `val` / `var` declared inside `stmts` is
+    /// the branch's own, never the frame's: it is shadowed for the statements
+    /// after it, as the construct's own parameters are.
+    fn collectMutations(self: *const Emitter, stmts: []const ast.Stmt, outer_shadowed: []const []const u8, out: *std.ArrayListUnmanaged([]const u8)) anyerror!void {
+        var scope: std.ArrayListUnmanaged([]const u8) = .empty;
+        defer scope.deinit(self.alloc);
+        try scope.appendSlice(self.alloc, outer_shadowed);
         for (stmts) |s| switch (s.expr) {
             .binding => |b| switch (b.kind) {
+                .localBind => |lb| try scope.append(self.alloc, lb.name),
                 .assign => |a| switch (a.target) {
-                    .name => |n| try self.addMutation(n, shadowed, out),
+                    .name => |n| try self.addMutation(n, scope.items, out),
                     else => {},
                 },
                 else => {},
             },
             .branch => |br| switch (br.kind) {
                 .if_ => |i| {
-                    try self.collectMutations(i.then_, shadowed, out);
-                    if (i.else_) |els| try self.collectMutations(els, shadowed, out);
+                    try self.collectMutations(i.then_, scope.items, out);
+                    if (i.else_) |els| try self.collectMutations(els, scope.items, out);
                 },
                 else => {},
             },
-            .loop => |lp| try self.collectMutations(lp.body, lp.params, out),
+            .loop => |lp| try self.collectNested(lp.body, scope.items, lp.params, out),
+            // A loop's fun threads what a `case` arm writes as well — a
+            // `case` in a `for` body that reassigned the frame's names lost
+            // every write at the end of the round.
+            .collection => |col| if (col.kind == .case) for (col.kind.case.arms) |arm| {
+                if (arm.body == .function and arm.body.function.kind.syntax == .lambda) {
+                    const fe = arm.body.function.kind;
+                    try self.collectNested(fe.body, scope.items, fe.params, out);
+                } else {
+                    try self.collectMutations(&.{.{ .expr = arm.body }}, scope.items, out);
+                }
+            },
             .call => {
                 if (self.closureMutation(s.expr)) |cm| {
-                    for (cm.names) |n| try self.addMutation(n, shadowed, out);
+                    for (cm.names) |n| try self.addMutation(n, scope.items, out);
                 } else if (self.receiverMutation(s.expr) != null) {
                     const name = s.expr.call.kind.call.receiver.?.*.identifier.kind.ident;
-                    try self.addMutation(name, shadowed, out);
+                    try self.addMutation(name, scope.items, out);
                 } else if (self.forEachLambda(s.expr)) |each| {
-                    try self.collectMutations(each.body, &.{each.param}, out);
+                    try self.collectNested(each.body, scope.items, &.{each.param}, out);
                 }
             },
             else => {},
         };
+    }
+
+    /// `collectMutations` over a body that binds `params` of its own.
+    fn collectNested(self: *const Emitter, body: []const ast.Stmt, shadowed: []const []const u8, params: []const []const u8, out: *std.ArrayListUnmanaged([]const u8)) anyerror!void {
+        var all: std.ArrayListUnmanaged([]const u8) = .empty;
+        defer all.deinit(self.alloc);
+        try all.appendSlice(self.alloc, shadowed);
+        try all.appendSlice(self.alloc, params);
+        try self.collectMutations(body, all.items, out);
     }
 
     fn addMutation(self: *const Emitter, name: []const u8, shadowed: []const []const u8, out: *std.ArrayListUnmanaged([]const u8)) !void {

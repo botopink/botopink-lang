@@ -6009,6 +6009,15 @@ const Emitter = struct {
                 try out.append(self.arena(), try self.buildStmt(st));
             }
         }
+        // The arms are sibling `if`s over `_s`, not an `else if` chain: an arm
+        // whose block ends in a statement that answers nothing (a `for`, an
+        // assignment, an `if` without `else`) has to leave the `case` itself,
+        // or the next arm's test runs and a `_` arm runs too.
+        const leaves = if (out.items.len == 0) false else switch (out.items[out.items.len - 1]) {
+            .return_, .throw_, .yield_delegate => true,
+            else => false,
+        };
+        if (!leaves) try out.append(self.arena(), .{ .return_ = null });
         self.current_indent = indent;
         return out.toOwnedSlice(self.arena());
     }

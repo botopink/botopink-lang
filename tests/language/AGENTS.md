@@ -1102,6 +1102,16 @@ all four targets (commonJS read a property named after the binding and died on `
 `test/type_method_prim_default` — a `type`'s method calls `String.parseInt`, whose body calls
 `self.startsWith`; erlang emitted `startsWith(Self, …)` into the type's module, undefined. A `test/`
 cell: wasm has no `String.parseInt` (`stringSlice0/2`, `05-wasm`).
+`fix-121-gaps` (the gaps front 121's `onze-content` met) adds three cells on all four targets:
+`run/var_written_in_branch_read_after` — a `var` written in the arms of a statement `case` inside a
+`for`, in an `if` block ending in `return` (and in one holding a nested `return`), two `var k` in
+sibling `else if` branches of a `while` body, and `val kids = case c { Box(kids) -> kids; … }` (erlang
+refused the module, `Out@1` unbound; beam lost the arms' writes at the end of each round; commonJS ran
+a `_` arm after an arm whose block answered nothing); `run/case_arm_ending_in_for` — a statement
+`case` arm whose block ends in a `for` (commonJS fell into the next arm, erlang refused the module,
+beam dropped a `push` that was an arm's last statement); `run/record_update_on_lambda_parameter` —
+`xs.map({ b -> Brk(..b, active: false) })` and a block lambda ending in the update (commonJS, erlang
+and beam built `Brk(b, false)`, wasm trapped).
 
 ## The targets
 

@@ -508,6 +508,10 @@ codegen/
   function; a trailing `val`, `if`, `loop` or jump stays a statement). Without
   it the arm's value was dropped *and* execution fell through into the
   following arms.
+  The arms are sibling `if`s over `_s`, not an `else if` chain, so a block
+  whose last statement answers nothing (a `for`, an assignment, an `if`
+  without `else`) ends in a bare `return;` — it fell into the next arm, and a
+  `_` arm ran after it (`run/case_arm_ending_in_for`).
 - **A one-parameter arm block binds the subject** (`_ { v -> … }`): the arm
   lambda's single parameter is `const v = _s;` at the top of the arm — the only
   scope where the subject is in hand. The checker types it as the subject
@@ -1199,7 +1203,21 @@ codegen/
   `Acc@1 = case C of true -> …, Acc@2; _ -> Acc end` and
   `Acc@3 = lists:foldl(fun(X, Acc@1) -> …, Acc@2 end, Acc, Xs)`; several
   variables travel as a tuple. Arms are built first (the group's fresh versions
-  are known only afterwards). Arms ending in `return`,
+  are known only afterwards). A statement `case` whose arms reassign such
+  variables is the same shape (`mutatingCaseExpr`): every clause answers the
+  group at its own versions, `{Total@3, Seen@3} = case X of 1 -> …, {Total@1,
+  Seen}; … end`, and `collectMutations` looks through a statement `case`'s arms
+  (a block arm's statements, an expression arm as one statement), so a loop
+  threads what an arm writes. A `val` / `var` declared inside the scanned
+  statements is the branch's own and never a reassignment of the enclosing
+  name (`locals` is one flat set per function, so a `var k` of an earlier
+  sibling branch is in it; a later sibling's `var k` was threaded out of a
+  clause that never bound it). Every clause of `caseNode` restores the
+  versions it found — a pattern binder at a fresh version (`val kids = case c
+  { Cell(kids) -> kids; … }`) or a write in one arm is not current in the next
+  arm nor after the `case` — and so does `earlyReturnIfExpr` after its
+  returning then-arm, whose writes never reach the rest it nests in the false
+  arm (`run/var_written_in_branch_read_after`). Arms ending in `return`,
   indexed/`await`/yielding loops keep the plain lowering; the older
   `var acc = …; xs.forEach(…)` fold fusion still takes precedence.
   A receiver mutation counts as a reassignment (`receiverMutation`): a
@@ -2187,6 +2205,12 @@ codegen/
   []}` on an empty list) and stores `element(2, …)` back into the local's slot
   — through the var's memory for a module-level `var`, from two slots
   `countLocalsInExpr` reserves — answering `element(1, …)`.
+  `collectMutations` looks through a statement `case`'s arms too (a `case` in a
+  `for` body that reassigned the frame's names lost them at the end of the
+  round), and a `val` / `var` declared in the scanned statements is the
+  branch's own. A block arm whose value is a `push` on a local
+  (`_ { out.push(x); }`) rebinds the local as the statement does
+  (`lowerArmBody`).
 - **`val assert P = e catch h`** binds P's names from the value either path
   answers — `e` when it matched, `h` otherwise — with a second
   `emitSubPattern` after the `case` (a mismatch raises `{badmatch, V}`); bound

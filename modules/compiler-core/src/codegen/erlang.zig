@@ -6391,6 +6391,18 @@ const Emitter = struct {
                 },
                 else => return null,
             },
+            .collection => |col| {
+                if (col.kind != .case) return null;
+                const c = col.kind.case;
+                if (!this.returnThrows()) for (c.arms) |arm| {
+                    if (arm.body == .jump and arm.body.jump.kind == .@"return") return null;
+                    if (arm.body == .function and arm.body.function.kind.syntax == .lambda and
+                        bodyEndsWithReturn(arm.body.function.kind.body)) return null;
+                };
+                try this.collectMutations(b.arena, &.{stmt}, &.{}, &names);
+                if (names.items.len == 0) return null;
+                return try this.mutatingCaseExpr(b, c.subjects, c.arms, names.items);
+            },
             .loop => |lp| {
                 // The annotated loop is a value (decision 105): `exprNode`.
                 if (lp.generator != null) return null;
@@ -6914,7 +6926,18 @@ const Emitter = struct {
 
     /// Append (once each) the outer variables that `stmts` reassigns. `shadowed`
     /// names are bound by the construct itself (loop/lambda params) and skipped.
-    fn collectMutations(this: *Emitter, gpa: std.mem.Allocator, stmts: []const ast.Stmt, shadowed: []const []const u8, out: *std.ArrayListUnmanaged([]const u8)) anyerror!void {
+    ///
+    /// A `val` / `var` declared inside `stmts` is shadowed too, for the
+    /// statements after it and everything nested in them: it is the branch's
+    /// own variable, never the enclosing one. `locals` cannot tell the two
+    /// apart — it is one flat set per function, so a `var k` of an earlier
+    /// sibling branch is in it — and a `var k` of a later sibling was taken for
+    /// the outer `k` and threaded out of a branch that never bound it
+    /// (`variable 'K' is unbound`).
+    fn collectMutations(this: *Emitter, gpa: std.mem.Allocator, stmts: []const ast.Stmt, outer_shadowed: []const []const u8, out: *std.ArrayListUnmanaged([]const u8)) anyerror!void {
+        var scope: std.ArrayListUnmanaged([]const u8) = .empty;
+        defer scope.deinit(gpa);
+        try scope.appendSlice(gpa, outer_shadowed);
         for (stmts) |s| {
             // `it.next()` advances `it` (decision 122): a loop that steps a
             // sequence by hand threads it like a reassigned variable.
@@ -6922,16 +6945,17 @@ const Emitter = struct {
             defer sites.deinit(gpa);
             try this.collectSeqNexts(gpa, s.expr, &sites);
             for (sites.items) |site| {
-                if (containsName(shadowed, site.name) or containsName(out.items, site.name)) continue;
+                if (containsName(scope.items, site.name) or containsName(out.items, site.name)) continue;
                 try out.append(gpa, site.name);
             }
         }
         for (stmts) |s| switch (s.expr) {
             .binding => |b| switch (b.kind) {
+                .localBind => |lb| try scope.append(gpa, lb.name),
                 .assign => |a| switch (a.target) {
                     .name => |n| {
                         if (!this.locals.contains(n)) continue;
-                        if (containsName(shadowed, n) or containsName(out.items, n)) continue;
+                        if (containsName(scope.items, n) or containsName(out.items, n)) continue;
                         try out.append(gpa, n);
                     },
                     else => {},
@@ -6940,26 +6964,46 @@ const Emitter = struct {
             },
             .branch => |br| switch (br.kind) {
                 .if_ => |if_node| {
-                    try this.collectMutations(gpa, if_node.then_, shadowed, out);
-                    if (if_node.else_) |els| try this.collectMutations(gpa, els, shadowed, out);
+                    try this.collectMutations(gpa, if_node.then_, scope.items, out);
+                    if (if_node.else_) |els| try this.collectMutations(gpa, els, scope.items, out);
                 },
                 else => {},
             },
-            .loop => |lp| try this.collectMutations(gpa, lp.body, lp.params, out),
+            .loop => |lp| try this.collectMutations(gpa, lp.body, try withNames(gpa, scope.items, lp.params), out),
+            // A statement `case` reassigns what its arms reassign: a block arm
+            // (`Pat { … }`) through its statements, an expression arm as the
+            // one statement it is. The arm's own binder (`_ { v -> … }`) is
+            // the arm's.
+            .collection => |col| if (col.kind == .case) for (col.kind.case.arms) |arm| {
+                if (arm.body == .function and arm.body.function.kind.syntax == .lambda) {
+                    const fe = arm.body.function.kind;
+                    try this.collectMutations(gpa, fe.body, try withNames(gpa, scope.items, fe.params), out);
+                } else {
+                    try this.collectMutations(gpa, &.{.{ .expr = arm.body }}, scope.items, out);
+                }
+            },
             .call => if (this.closureMutation(s.expr)) |cm| {
                 for (cm.names) |n| {
-                    if (!this.locals.contains(n) or containsName(shadowed, n) or containsName(out.items, n)) continue;
+                    if (!this.locals.contains(n) or containsName(scope.items, n) or containsName(out.items, n)) continue;
                     try out.append(gpa, n);
                 }
             } else if (this.receiverMutation(s.expr)) |n| {
                 // A module `var` is not threaded through a loop: it is read
                 // and written through its memory at each step.
                 if (!this.locals.contains(n)) continue;
-                if (containsName(shadowed, n) or containsName(out.items, n)) continue;
+                if (containsName(scope.items, n) or containsName(out.items, n)) continue;
                 try out.append(gpa, n);
-            } else if (forEachLambda(s.expr)) |each| try this.collectMutations(gpa, each.body, each.params, out),
+            } else if (forEachLambda(s.expr)) |each| try this.collectMutations(gpa, each.body, try withNames(gpa, scope.items, each.params), out),
             else => {},
         };
+    }
+
+    /// `names` followed by `more`, in `gpa`.
+    fn withNames(gpa: std.mem.Allocator, names: []const []const u8, more: []const []const u8) anyerror![]const []const u8 {
+        const all = try gpa.alloc([]const u8, names.len + more.len);
+        @memcpy(all[0..names.len], names);
+        @memcpy(all[names.len..], more);
+        return all;
     }
 
     fn containsName(names: []const []const u8, name: []const u8) bool {
@@ -7224,9 +7268,14 @@ const Emitter = struct {
             });
         }
         const cond = try this.condNode(b, if_node.cond.*);
+        // The then-arm returns, so what it writes never reaches the rest: the
+        // rest (the false arm) reads the versions from before the `if`. Left
+        // current, it read `Acc@1`, bound only in the then-arm.
+        var snapshot = try this.var_current.clone();
+        defer snapshot.deinit();
         const narrowing = try this.isNarrowing(b, if_node.cond.*);
         const then_body = try withNarrowing(b, narrowing, try this.bodyNode(b, if_node.then_, 0, arm_indent));
-        if (narrowing) |n| try n.restore(this);
+        try this.restoreVersions(&snapshot);
         return b.caseOf(cond, &.{
             .{ .patterns = try b.exprs(&.{Ast.Expr.a("true")}), .body = then_body },
             .{ .patterns = try b.exprs(&.{Ast.Expr.v("_")}), .body = try this.bodyNode(b, body, i + 1, arm_indent) },
@@ -8745,16 +8794,80 @@ const Emitter = struct {
         if (subjects.len == 1) {
             if (this.enumOfSubject(subjects[0])) |en| this.enum_hint = en;
         }
+        // Each clause is its own scope: what an arm binds — a pattern binder
+        // at a fresh version, a write in a block arm — is not bound in the
+        // next clause nor after the `case`. Left current, the next arm read a
+        // version its clause never bound, and so did the statement after the
+        // `case` (`val kids = case c { Cell(kids) -> kids; … }` read
+        // `Kids@1`, the binder, where it meant the `val`). A statement `case`
+        // whose arms reassign outer variables answers them instead
+        // (`mutatingCaseExpr`).
+        var snapshot = try this.var_current.clone();
+        defer snapshot.deinit();
         var clauses: std.ArrayListUnmanaged(Ast.Clause) = .empty;
         for (arms) |arm| {
             switch (arm.pattern) {
                 .@"or" => |pats| for (pats) |pat| {
                     try clauses.append(b.arena, try this.armClause(b, pat, arm, body_indent));
+                    try this.restoreVersions(&snapshot);
                 },
-                else => try clauses.append(b.arena, try this.armClause(b, arm.pattern, arm, body_indent)),
+                else => {
+                    try clauses.append(b.arena, try this.armClause(b, arm.pattern, arm, body_indent));
+                    try this.restoreVersions(&snapshot);
+                },
             }
         }
         return b.caseOf(subject, clauses.items);
+    }
+
+    /// `Group = case Subject of Pat -> Body, Group'; … end` — a statement
+    /// `case` whose arms reassign `names`, variables bound before it. Erlang
+    /// binds a variable once and a binding made in one clause is not visible
+    /// after the `case`, so every arm answers the group at its own versions
+    /// and the statement rebinds the group, as `mutatingIfExpr` does for an
+    /// `if`. An arm that writes none of them answers the versions it found.
+    fn mutatingCaseExpr(this: *Emitter, b: Ast.Builder, subjects: []ast.Expr, arms: []ast.CaseArm, names: []const []const u8) anyerror!Ast.Expr {
+        const subject: Ast.Expr = if (subjects.len == 1)
+            try this.exprNode(b, subjects[0])
+        else blk: {
+            const items = try b.arena.alloc(Ast.Expr, subjects.len);
+            for (subjects, 0..) |subj, i| items[i] = try this.exprNode(b, subj);
+            break :blk .{ .tuple = items };
+        };
+        const body_indent = this.indent + 2;
+        const saved_hint = this.enum_hint;
+        defer this.enum_hint = saved_hint;
+        if (subjects.len == 1) {
+            if (this.enumOfSubject(subjects[0])) |en| this.enum_hint = en;
+        }
+        var snapshot = try this.var_current.clone();
+        defer snapshot.deinit();
+        var clauses: std.ArrayListUnmanaged(Ast.Clause) = .empty;
+        for (arms) |arm| {
+            const pats: []const ast.Pattern = switch (arm.pattern) {
+                .@"or" => |alts| alts,
+                else => &.{arm.pattern},
+            };
+            for (pats) |pat| {
+                var extras: PatternExtras = .{};
+                const pattern = try this.armPatternNode(b, pat, arm.body, &extras);
+                try extras.guards.appendSlice(b.arena, try this.armGuards(b, arm.guard));
+                const stmts: []const ast.Stmt = if (arm.body == .function and arm.body.function.kind.syntax == .lambda)
+                    arm.body.function.kind.body
+                else
+                    try b.arena.dupe(ast.Stmt, &.{.{ .expr = arm.body }});
+                const body = try this.armWithGroup(b, stmts, names, body_indent);
+                try clauses.append(b.arena, .{
+                    .patterns = try b.exprs(&.{pattern}),
+                    .guards = extras.guards.items,
+                    .body = try prependStmts(b, extras.binds.items, body),
+                });
+                try this.restoreVersions(&snapshot);
+            }
+        }
+        // The group's fresh versions are only known once every arm was built.
+        const target = try this.bindVarGroupExpr(b, names);
+        return b.match(target, try b.caseOf(subject, clauses.items));
     }
 
     /// One erlang clause for one arm pattern.
