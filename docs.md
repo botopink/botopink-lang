@@ -639,9 +639,13 @@ A free function that names one is `self-param-outside-type`, refused at the
 name.
 
 The field list is always written. A record with no fields is `type Name()`,
-and with members `type Name() { … }`; braces alone declare an enum, so
-`type Name {}` or `type Name { fn … }` is `type-without-field-list`, refused
-where the `()` belongs:
+and with members `type Name() { … }`; braces holding variants declare an enum,
+and braces holding only associated functions (none taking `self`) declare a
+**namespace type** (decision 329) — `type Name { fn make() -> i32 { … } }`,
+called `Name.make()`, with no value: `Name()` is `namespace-type-construction`
+and a `self` function in it `namespace-type-self`. A `type` declared in a type's
+body is its associated type, named `Owner.Name` (decision 330). `type Name {}` is
+`type-without-field-list`, refused where the `()` belongs:
 
 ```botopink
 pub type RequestBase()
@@ -1158,13 +1162,34 @@ a + b, a - b, a * b, a / b, a % b     // arithmetic (+ also concatenates strings
 a == b, a != b, a < b, a > b, a <= b, a >= b
 !x, x && y, x || y                    // logical
 a |> f                                // pipe: f(a)
-x?.field                              // optional chaining
+x ?? d, x?.field, x?.[i], f?.(args), x!   // optionals (§ Optionals)
 ```
 
 `/` over two integers is integer division: it truncates toward zero and answers
 an integer of the operands' type, on every target (`7 / 2` is `3`, `-7 / 2` is
 `-3`). With a float operand it is float division (`7.0 / 2.0` is `3.5`). A number
 literal with a `.` or an exponent is a float (`2.5`, `1e3`, `5e-324`).
+
+### Optionals
+
+`?T` is a `T` or `null`, and it has no methods (decision 330): it is read with
+TypeScript's five operators.
+
+```text
+name ?? "anon"        // the value, or the default when it is null
+user?.address         // a member read through it: null when user is
+xs?.[0]               // an index through it
+callback?.(42)        // a call of the function it holds
+name!                 // the value; null aborts: value is null — name! at src/main.bp:3:13
+```
+
+Five rules hold them: an operator over a value that is never `null` is a compile
+error (`s?.length()` with `s: string`, and the left side of `??`); `?.` flattens —
+a member answering `?U` read through `?.` is `?U`, never `??U`; `??` beside `&&`
+or `||` takes parentheses (`(a ?? false) && b`); `x!` is checked at run time, a
+program error like `@panic`, alike on every target; and `map`, `flatMap` and
+`unwrapOr` belong to `@Result` alone (`r.unwrapOr(0)`) — there is no `result`
+namespace.
 
 ### Numbers
 

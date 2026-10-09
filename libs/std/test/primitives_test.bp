@@ -189,7 +189,7 @@ test "string replace swaps the first occurrence" {
 
 test "string at in range" {
     val s = "abc";
-    assert s.at(1).unwrapOr("none") == "b";
+    assert s.at(1) ?? "none" == "b";
 }
 
 test "string split length" {
@@ -255,33 +255,21 @@ test "function constant ignores arg" {
 
 type User(name: string)
 
-test "option map and unwrapOr" {
-    val x: ?i32 = 3;
-    val y = x.map({ n -> n * 2 });
-    assert y.unwrapOr(0) == 6;
-}
-
-test "option unwrapOr on null" {
+test "option ?? on null" {
     val z: ?i32 = null;
-    assert z.unwrapOr(7) == 7;
-}
-
-test "option flatMap" {
-    val x: ?i32 = 3;
-    val y = x.flatMap({ n -> x });
-    assert y.unwrapOr(0) == 3;
+    assert z ?? 7 == 7;
 }
 
 test "optional chaining member access" {
     val u: ?User = User(name: "ana");
     val n = u?.name;
-    assert n.unwrapOr("none") == "ana";
+    assert n ?? "none" == "ana";
 }
 
 test "optional chaining short-circuits null" {
     val v: ?User = null;
     val n = v?.name;
-    assert n.unwrapOr("none") == "none";
+    assert n ?? "none" == "none";
 }
 
 // ── result ────────────────────────────────────────────────────────────────────
@@ -295,29 +283,29 @@ fn parse(n: i32) -> @Result<i32, string> {
 }
 
 test "result.isOk and isError" {
-    assert result.isOk(parse(1));
-    assert result.isError(parse(-1));
+    assert parse(1).isOk();
+    assert parse(-1).isError();
 }
 
 test "result.map transforms ok" {
-    val r = result.map(parse(20), { x -> x * 2 + 2 });
-    assert result.unwrap(r, 0) == 42;
+    val r = parse(20).map({ x -> x * 2 + 2 });
+    assert r.unwrapOr(0) == 42;
 }
 
 test "result.map propagates error" {
-    val r = result.map(parse(-1), { x -> x * 2 });
-    assert result.isError(r);
-    assert result.unwrap(r, 7) == 7;
+    val r = parse(-1).map({ x -> x * 2 });
+    assert r.isError();
+    assert r.unwrapOr(7) == 7;
 }
 
 test "result.then chains" {
-    val r = result.then(parse(10), { x -> parse(x + 1) });
-    assert result.unwrap(r, 0) == 11;
+    val r = parse(10).flatMap({ x -> parse(x + 1) });
+    assert r.unwrapOr(0) == 11;
 }
 
 test "result.then propagates inner error" {
-    val r = result.then(parse(5), { x -> parse(0 - x) });
-    assert result.isError(r);
+    val r = parse(5).flatMap({ x -> parse(0 - x) });
+    assert r.isError();
 }
 
 // ── array ─────────────────────────────────────────────────────────────────────
@@ -591,7 +579,7 @@ test "string indexOf counts in the unit at and length count in" {
     assert s.indexOf(codepointText(8364)) == 3;
     assert s.indexOf("zz") == -1;
     assert s.indexOf("") == 0;
-    assert s.at(s.indexOf("c")).unwrapOr("") == "c";
+    assert s.at(s.indexOf("c")) ?? "" == "c";
     assert s.slice(s.indexOf("c"), s.length()).length() == 3;
 }
 
@@ -602,7 +590,7 @@ test "string lastIndexOf counts in the unit at and length count in" {
     assert s.lastIndexOf("a") == 0;
     assert s.lastIndexOf("zz") == -1;
     assert s.lastIndexOf("") == 7;
-    assert s.at(s.lastIndexOf("b")).unwrapOr("") == "b";
+    assert s.at(s.lastIndexOf("b")) ?? "" == "b";
     assert s.slice(0, s.lastIndexOf("b")).length() == 6;
 }
 

@@ -21,7 +21,7 @@
 ///
 /// `dependencies` is the object form only (decision 76):
 ///
-///   `{ "<name>": { "path": "…" } | { "git": "…", "branch"|"tag"|"rev": "…" } | { "workspace": true } }`
+///   `{ "<name>": { "path": "…" } | { "git": "…", "branch"|"tag"|"rev": "…", "subdir": "…" } | { "workspace": true } }`
 ///
 /// Every refusal here is a `Located` error — the message, the manifest file and
 /// the line/column of the offending entry — rendered in the CLI's diagnostic
@@ -197,6 +197,12 @@ pub const DepSpec = struct {
     /// `{ "workspace": true }` — the sibling member of the enclosing workspace
     /// with this entry's name.
     workspace: bool = false,
+    /// `"subdir"` of a `git` dependency (decision 344 of 1.0.12-beta): the
+    /// package lives at this directory of the repository, not at its root.
+    /// A relative path of plain segments (no `.`, `..`, empty segment or
+    /// backslash); `bpmp install` clones the repository once and resolves the
+    /// package's `path` dependencies inside the same checkout.
+    subdir: ?[]const u8 = null,
 
     pub fn isGit(self: DepSpec) bool {
         return self.git != null;
@@ -565,6 +571,13 @@ fn parseDependencies(arena: std.mem.Allocator, node: std.json.Value, text: []con
             }
             spec.workspace = true;
         }
+        if (s.get("subdir")) |v| {
+            if (v != .string) {
+                out_err.* = located(text, path, at, try std.fmt.allocPrint(arena, "dependency \"{s}\": \"subdir\" must be a string", .{name}));
+                return error.Invalid;
+            }
+            spec.subdir = try arena.dupe(u8, v.string);
+        }
         inline for (.{ "branch", "tag", "rev" }) |pin| {
             if (s.get(pin)) |v| {
                 if (v != .string) {
@@ -594,10 +607,88 @@ fn parseDependencies(arena: std.mem.Allocator, node: std.json.Value, text: []con
             out_err.* = located(text, path, at, try std.fmt.allocPrint(arena, "dependency \"{s}\" pins a ref without a \"git\" source — a pin applies to a git dependency only", .{name}));
             return error.Invalid;
         }
+        if (spec.subdir) |sub| {
+            if (spec.git == null) {
+                out_err.* = located(text, path, at, try std.fmt.allocPrint(arena, "dependency \"{s}\" names a \"subdir\" without a \"git\" source — a subdir names a package inside a git repository", .{name}));
+                return error.Invalid;
+            }
+            if (try subdirRefusal(arena, name, sub)) |msg| {
+                out_err.* = located(text, path, at, msg);
+                return error.Invalid;
+            }
+        }
         out[i] = .{ .name = try arena.dupe(u8, name), .spec = spec };
+        // One repository is one checkout (decision 344): two dependencies on
+        // one repository must name one ref, else the second's siblings would
+        // come at another commit than the first's.
+        for (out[0..i]) |prev| {
+            const pg = prev.spec.git orelse continue;
+            if (!sameRepository(pg, spec.git orelse continue)) continue;
+            if (sameRef(prev.spec.ref, spec.ref)) continue;
+            out_err.* = located(text, path, at, try std.fmt.allocPrint(
+                arena,
+                "dependencies \"{s}\" and \"{s}\" name one repository ({s}) at two refs ({s} and {s}) — one repository is one checkout; pin both at one ref",
+                .{ prev.name, name, spec.git.?, try refLabel(arena, prev.spec.ref), try refLabel(arena, spec.ref) },
+            ));
+            return error.Invalid;
+        }
         i += 1;
     }
     return out[0..i];
+}
+
+/// Why `sub`, the `"subdir"` of dependency `name`, cannot name a directory of
+/// the repository, or null. It is a relative path of plain segments: an
+/// absolute path, `..` (leaving the checkout), `.`, an empty segment and a
+/// backslash are refused — each would be a second spelling of a directory the
+/// plain form names, or a directory outside the repository.
+pub fn subdirRefusal(arena: std.mem.Allocator, name: []const u8, sub: []const u8) std.mem.Allocator.Error!?[]const u8 {
+    if (sub.len == 0)
+        return try std.fmt.allocPrint(arena, "dependency \"{s}\": \"subdir\" is empty — omit \"subdir\" for the package at the repository's root", .{name});
+    if (sub[0] == '/' or sub[0] == '\\' or (sub.len >= 2 and sub[1] == ':'))
+        return try std.fmt.allocPrint(arena, "dependency \"{s}\": \"subdir\" \"{s}\" is absolute — it names a directory of the repository, relative to its root", .{ name, sub });
+    if (std.mem.indexOfScalar(u8, sub, '\\') != null)
+        return try std.fmt.allocPrint(arena, "dependency \"{s}\": \"subdir\" \"{s}\" holds a backslash — segments are separated by \"/\"", .{ name, sub });
+    var it = std.mem.splitScalar(u8, sub, '/');
+    while (it.next()) |seg| {
+        if (std.mem.eql(u8, seg, ".."))
+            return try std.fmt.allocPrint(arena, "dependency \"{s}\": \"subdir\" \"{s}\" leaves the repository — \"..\" is not a segment of a subdir", .{ name, sub });
+        if (seg.len == 0 or std.mem.eql(u8, seg, "."))
+            return try std.fmt.allocPrint(arena, "dependency \"{s}\": \"subdir\" \"{s}\" has an empty or \".\" segment — write the directory as plain segments separated by \"/\"", .{ name, sub });
+    }
+    return null;
+}
+
+/// Two `git` URLs name one repository when they are equal once a trailing `/`
+/// and a trailing `.git` are dropped.
+pub fn sameRepository(a: []const u8, b: []const u8) bool {
+    return std.mem.eql(u8, repositoryUrl(a), repositoryUrl(b));
+}
+
+/// A `git` URL without a trailing `/` or `.git` — the spelling two dependencies
+/// on one repository share.
+pub fn repositoryUrl(url: []const u8) []const u8 {
+    var u = std.mem.trimEnd(u8, url, "/");
+    if (std.mem.endsWith(u8, u, ".git")) u = u[0 .. u.len - ".git".len];
+    return std.mem.trimEnd(u8, u, "/");
+}
+
+fn sameRef(a: DepRef, b: DepRef) bool {
+    return switch (a) {
+        .none => b == .none,
+        .branch => |x| b == .branch and std.mem.eql(u8, x, b.branch),
+        .tag => |x| b == .tag and std.mem.eql(u8, x, b.tag),
+        .rev => |x| b == .rev and std.mem.eql(u8, x, b.rev),
+    };
+}
+
+fn refLabel(arena: std.mem.Allocator, r: DepRef) std.mem.Allocator.Error![]const u8 {
+    return switch (r) {
+        .none => "the default branch",
+        .branch => |x| std.fmt.allocPrint(arena, "branch \"{s}\"", .{x}),
+        .tag => |x| std.fmt.allocPrint(arena, "tag \"{s}\"", .{x}),
+        .rev => |x| std.fmt.allocPrint(arena, "rev \"{s}\"", .{x}),
+    };
 }
 
 // ── Workspaces ─────────────────────────────────────────────────────────────────
@@ -1382,6 +1473,130 @@ test "parse: two pins, two sources, a pin without git, and workspace: false are 
         \\{ "name": "p", "dependencies": { "x": { "workspace": false } } }
     );
     try testing.expect(std.mem.indexOf(u8, ws_false, "error: dependency \"x\": \"workspace\" can only be true") != null);
+}
+
+test "parse: a git dependency's \"subdir\" names a package inside its repository (decision 344)" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const m = try parseText(arena_inst.allocator(),
+        \\{ "name": "app", "dependencies": {
+        \\  "rakun-web": { "git": "https://github.com/botopink/rakun", "tag": "v1.0", "subdir": "modules/rakun-web" },
+        \\  "rakun": { "git": "https://github.com/botopink/rakun.git", "tag": "v1.0", "subdir": "modules/rakun" },
+        \\  "erika": { "git": "https://github.com/botopink/erika.git" } } }
+    );
+    try testing.expectEqual(@as(usize, 3), m.dependencies.len);
+    try testing.expectEqualStrings("modules/rakun-web", m.dependencies[0].spec.subdir.?);
+    try testing.expectEqualStrings("v1.0", m.dependencies[0].spec.ref.tag);
+    try testing.expectEqualStrings("modules/rakun", m.dependencies[1].spec.subdir.?);
+    try testing.expect(m.dependencies[2].spec.subdir == null);
+    try testing.expect(sameRepository("https://github.com/botopink/rakun", "https://github.com/botopink/rakun.git/"));
+    try testing.expect(!sameRepository("https://github.com/botopink/rakun", "https://github.com/botopink/rakun-web"));
+}
+
+test "parse: a \"subdir\" without \"git\" is a located error" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const out = try refuse(arena_inst.allocator(),
+        \\{ "name": "p", "dependencies": {
+        \\  "web": { "path": "../rakun", "subdir": "modules/rakun-web" } } }
+    );
+    try testing.expectEqualStrings(
+        \\error: dependency "web" names a "subdir" without a "git" source — a subdir names a package inside a git repository
+        \\ --> botopink.json:2:3
+        \\  |
+        \\2 |   "web": { "path": "../rakun", "subdir": "modules/rakun-web" } } }
+        \\  |   ^^^^^
+        \\
+        \\
+    , out);
+    const ws = try refuse(arena_inst.allocator(),
+        \\{ "name": "p", "dependencies": { "web": { "workspace": true, "subdir": "modules/web" } } }
+    );
+    try testing.expect(std.mem.indexOf(u8, ws, "error: dependency \"web\" names a \"subdir\" without a \"git\" source") != null);
+}
+
+test "parse: a \"subdir\" absolute, leaving the repository, or not plain segments is a located error" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const a = arena_inst.allocator();
+    const abs = try refuse(a,
+        \\{ "name": "p", "dependencies": {
+        \\  "web": { "git": "https://e/rakun.git", "subdir": "/modules/web" } } }
+    );
+    try testing.expectEqualStrings(
+        \\error: dependency "web": "subdir" "/modules/web" is absolute — it names a directory of the repository, relative to its root
+        \\ --> botopink.json:2:3
+        \\  |
+        \\2 |   "web": { "git": "https://e/rakun.git", "subdir": "/modules/web" } } }
+        \\  |   ^^^^^
+        \\
+        \\
+    , abs);
+    for ([_][]const u8{
+        \\{ "name": "p", "dependencies": { "web": { "git": "https://e/rakun.git", "subdir": ".." } } }
+        ,
+        \\{ "name": "p", "dependencies": { "web": { "git": "https://e/rakun.git", "subdir": "../other/web" } } }
+        ,
+        \\{ "name": "p", "dependencies": { "web": { "git": "https://e/rakun.git", "subdir": "modules/../../web" } } }
+        ,
+    }) |text| {
+        const out = try refuse(a, text);
+        try testing.expect(std.mem.indexOf(u8, out, "leaves the repository — \"..\" is not a segment of a subdir") != null);
+    }
+    const drive = try refuse(a,
+        \\{ "name": "p", "dependencies": { "web": { "git": "https://e/rakun.git", "subdir": "C:/web" } } }
+    );
+    try testing.expect(std.mem.indexOf(u8, drive, "is absolute") != null);
+    const backslash = try refuse(a,
+        \\{ "name": "p", "dependencies": { "web": { "git": "https://e/rakun.git", "subdir": "modules\\web" } } }
+    );
+    try testing.expect(std.mem.indexOf(u8, backslash, "holds a backslash") != null);
+    for ([_][]const u8{
+        \\{ "name": "p", "dependencies": { "web": { "git": "https://e/rakun.git", "subdir": "." } } }
+        ,
+        \\{ "name": "p", "dependencies": { "web": { "git": "https://e/rakun.git", "subdir": "./modules/web" } } }
+        ,
+        \\{ "name": "p", "dependencies": { "web": { "git": "https://e/rakun.git", "subdir": "modules//web" } } }
+        ,
+        \\{ "name": "p", "dependencies": { "web": { "git": "https://e/rakun.git", "subdir": "modules/web/" } } }
+        ,
+    }) |text| {
+        const out = try refuse(a, text);
+        try testing.expect(std.mem.indexOf(u8, out, "has an empty or \".\" segment") != null);
+    }
+    const empty = try refuse(a,
+        \\{ "name": "p", "dependencies": { "web": { "git": "https://e/rakun.git", "subdir": "" } } }
+    );
+    try testing.expect(std.mem.indexOf(u8, empty, "\"subdir\" is empty — omit \"subdir\" for the package at the repository's root") != null);
+    const not_string = try refuse(a,
+        \\{ "name": "p", "dependencies": { "web": { "git": "https://e/rakun.git", "subdir": ["modules/web"] } } }
+    );
+    try testing.expect(std.mem.indexOf(u8, not_string, "dependency \"web\": \"subdir\" must be a string") != null);
+}
+
+test "parse: one repository at two refs is a located error naming both dependencies" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const a = arena_inst.allocator();
+    const out = try refuse(a,
+        \\{ "name": "p", "dependencies": {
+        \\  "web": { "git": "https://e/rakun.git", "tag": "v1.0", "subdir": "modules/web" },
+        \\  "core": { "git": "https://e/rakun", "branch": "feat", "subdir": "modules/core" } } }
+    );
+    try testing.expectEqualStrings(
+        \\error: dependencies "web" and "core" name one repository (https://e/rakun) at two refs (tag "v1.0" and branch "feat") — one repository is one checkout; pin both at one ref
+        \\ --> botopink.json:3:3
+        \\  |
+        \\3 |   "core": { "git": "https://e/rakun", "branch": "feat", "subdir": "modules/core" } } }
+        \\  |   ^^^^^^
+        \\
+        \\
+    , out);
+    // A pinned ref against the default branch is two refs as well.
+    const default_vs_tag = try refuse(a,
+        \\{ "name": "p", "dependencies": { "a": { "git": "https://e/r.git" }, "b": { "git": "https://e/r.git", "tag": "v1" } } }
+    );
+    try testing.expect(std.mem.indexOf(u8, default_vs_tag, "dependencies \"a\" and \"b\" name one repository (https://e/r.git) at two refs (the default branch and tag \"v1\")") != null);
 }
 
 test "parse: a workspace manifest — kind, globs, and no package field" {

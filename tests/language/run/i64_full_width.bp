@@ -42,7 +42,7 @@ pub fn main() {
     @print(ts - 1700000000000);
     @print(later(1));
     @print(later(0));
-    @print(later(1).unwrapOr(0) - 1);
+    @print(later(1) ?? 0 - 1);
     val o = later(1);
     if (o) {
         v ->

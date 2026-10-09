@@ -307,7 +307,14 @@ places, and the reason is trailing lambdas:
 - `parseExpr`'s call path carries the statement-position chain, which **does**
   consume trailing lambdas (`xs.forEach { … }`).
 
-The links are `.field`, `?.field`, `.method(args)`, `(args)` and `[index]`.
+The links are `.field`, `?.field`, `.method(args)`, `(args)` and `[index]`, plus
+decision 330's three optional links (`parseOptionalLink`, read first by both
+copies): `?.[index]` (the index carrier with `optional` set, located at the `?.`),
+`?.(args)` (a `calleeExpr` call with `optional` set) and the postfix `x!` — the
+builtin carrier `ast.non_null_builtin_name`, taken only when the `!` touches its
+operand (`x !` is not the form; the prefix `!x` is untouched). `parseNullishExpr`
+refuses `??` beside `&&` / `||` without parentheses (`nullishBesideLogical`,
+`nullish-beside-logical`, at the `??`).
 At its exit `parsePostfixChain` refuses a decided-against infix form by name
 (`absentInfixKind`: the ternary's `?`, the bitwise operators) — see
 *A decided-against form is refused by name* below.
@@ -687,12 +694,23 @@ Both are pinned by snapshots (`comments_…`, `decl_ids_…`).
 **The shape is decided by what was written (decision 138).** A field list —
 `()` included — makes a record; braces holding a variant or a section make an
 enum. A record always writes its field list: `type X()` is the empty record,
-`type X() { fn … }` one with members. `parseTypeDeclRest` refuses a `type`
-that ends up with neither (`type X {}`, `type X { fn … }`, a bare `type X`) as
-`typeWithoutFieldList` (`type-without-field-list`), located at the token after
-the name and generics — where the `()` belongs. The empty field list itself is
-legal (`parseFieldList` no longer refuses `()`), and the formatter prints `()`
-for every record with no fields.
+`type X() { fn … }` one with members. Braces holding functions and nothing
+else (no field list, no `implement`) declare a **namespace type** (decision
+329, `TypeDecl.isNamespace`): the record shape with no field and no value — no
+function in it takes `self` (`namespaceTypeSelf`, `namespace-type-self`, at the
+first `self`), and the checker refuses `X()` (`namespace-type-construction`).
+`parseTypeDeclRest` refuses a `type` that ends up with none of the three
+(`type X {}`, a bare `type X`) as `typeWithoutFieldList`
+(`type-without-field-list`), located at the token after the name and generics —
+where the `()` belongs. The empty field list itself is legal (`parseFieldList`
+no longer refuses `()`), and the formatter prints `()` for every record with no
+fields except a namespace type. A `type` (or `pub type`) inside a type's body is
+that type's associated type (decision 330 (7)): kept on its owner
+(`TypeDecl.assocTypes`, its leading comments on `TypeDecl.comments`), printed first
+in the body by the formatter, refused `assocTypeDuplicate` (`assoc-type-duplicate`)
+at its name when the body already gives that name to a function, a variant or
+another type; `comptime/nested_types.zig` hoists it as `Owner__Name` before the
+checker runs.
 
 ### Member trivia and member order (front 16's carve-out)
 

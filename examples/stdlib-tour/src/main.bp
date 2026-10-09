@@ -25,8 +25,8 @@ fn wordCounts() -> Dict<string, i32> {
 test "dict tour: insert overwrites + at returns Option" {
     val d = wordCounts();
     assert d.size() == 2;
-    assert d.at("ann").unwrapOr(0) == 3;
-    assert d.at("missing").map({ n -> n * 10 }).unwrapOr(-1) == -1;
+    assert d.at("ann") ?? 0 == 3;
+    assert d.at("missing") ?? -1 == -1;
 }
 
 // ── tour: queue (FIFO) ──────────────────────────────────────────────────────
@@ -34,7 +34,7 @@ test "dict tour: insert overwrites + at returns Option" {
 test "queue tour: fifo order over enqueue/dequeue" {
     val q = Queue.empty().enqueue("a").enqueue("b").enqueue("c");
     val r1 = q.dequeue();
-    assert r1._1.unwrapOr("?") == "a";
+    assert r1._1 ?? "?" == "a";
     assert r1._0.size() == 2;
 }
 
@@ -74,7 +74,7 @@ fn cmpInt(a: i32, b: i32) -> Order {
 
 fn insertSorted(x: i32, sorted: Array<i32>) -> Array<i32> {
     return if (sorted.isEmpty()) [x] else {
-        val head = sorted.at(0).unwrapOr(0);
+        val head = sorted.at(0) ?? 0;
         if (toInt(cmpInt(x, head)) <= 0)
             [x].append(sorted)
         else
@@ -114,7 +114,7 @@ fn bfs(q: Queue<i32>, visited: Set<i32>, acc: Array<i32>) -> Array<i32> {
     return if (q.isEmpty()) acc else {
         val deq = q.dequeue();
         val rest = deq._0;
-        val node = deq._1.unwrapOr(-1);
+        val node = deq._1 ?? -1;
         if (visited.contains(node)) bfs(rest, visited, acc) else {
             var next = rest;
             neighbors(node).forEach({ m ->
@@ -148,9 +148,9 @@ test "dict with record keys: identity-keyed (same binding hits, rebuild misses)"
     val k = Point(x: 1, y: 2);
     val d: Dict<Point, string> = Dict.empty().insert(k, "a");
     // The very same key value resolves.
-    assert d.at(k).unwrapOr("?") == "a";
+    assert d.at(k) ?? "?" == "a";
     // A structurally-equal but freshly-built key misses (reference equality).
-    assert d.at(Point(x: 1, y: 2)).unwrapOr("?") == "?";
+    assert d.at(Point(x: 1, y: 2)) ?? "?" == "?";
 }
 
 test "set of records: no structural dedup under reference equality" {

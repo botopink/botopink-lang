@@ -336,7 +336,7 @@ cat >"$LIBWORK/binprobe/src/main.bp" <<'BP'
 import {io.env} from "std";
 
 test "the compiler names itself" {
-    @print(env.read("BOTOPINK_BIN").unwrapOr("unset"));
+    @print(env.read("BOTOPINK_BIN") ?? "unset");
 }
 BP
 BP_REAL="$(cd "$(dirname "$BP_BIN")" && pwd -P)/$(basename "$BP_BIN")"

@@ -149,28 +149,28 @@ fn base64EncodeBody(s: string) -> string {
 fn base64DecodeBody(b: string) -> @Result<string, string> {
     val cs = b.chars();
     var n = cs.length;
-    while (n > 0 && cs.at(n - 1).unwrapOr("") == "=") {
+    while (n > 0 && (cs.at(n - 1) ?? "") == "=") {
         n = n - 1;
     }
     if (n % 4 == 1) throw "not base64";
     var sextets: Array<i32> = [];
     var i = 0;
     while (i < n) {
-        val v = base64Value(cs.at(i).unwrapOr(""));
+        val v = base64Value(cs.at(i) ?? "");
         if (v < 0) throw "not base64";
         sextets.push(v);
         i = i + 1;
     }
-    val last = sextets.at(n - 1).unwrapOr(0);
+    val last = sextets.at(n - 1) ?? 0;
     if (n % 4 == 2 && last % 16 != 0) throw "not base64";
     if (n % 4 == 3 && last % 4 != 0) throw "not base64";
     var bytes: Array<i32> = [];
     var g = 0;
     while (g < n) {
-        val s0 = sextets.at(g).unwrapOr(0);
-        val s1 = sextets.at(g + 1).unwrapOr(0);
-        val s2 = sextets.at(g + 2).unwrapOr(0);
-        val s3 = sextets.at(g + 3).unwrapOr(0);
+        val s0 = sextets.at(g) ?? 0;
+        val s1 = sextets.at(g + 1) ?? 0;
+        val s2 = sextets.at(g + 2) ?? 0;
+        val s3 = sextets.at(g + 3) ?? 0;
         bytes.push(s0 * 4 + s1 / 16);
         if (g + 2 < n) bytes.push((s1 % 16) * 16 + s2 / 4);
         if (g + 3 < n) bytes.push((s2 % 4) * 64 + s3);
@@ -189,8 +189,8 @@ fn hexDecodeBody(s: string) -> @Result<string, string> {
     var bytes: Array<i32> = [];
     var i = 0;
     while (i < cs.length) {
-        val hi = hexValue(cs.at(i).unwrapOr(""));
-        val lo = hexValue(cs.at(i + 1).unwrapOr(""));
+        val hi = hexValue(cs.at(i) ?? "");
+        val lo = hexValue(cs.at(i + 1) ?? "");
         if (hi < 0 || lo < 0) throw "not hex";
         bytes.push(hi * 16 + lo);
         i = i + 2;
@@ -225,7 +225,7 @@ fn percentDecodeBody(s: string) -> @Result<string, string> {
     var out: Array<string> = [];
     var i = 0;
     while (i < cs.length) {
-        val c = cs.at(i).unwrapOr("");
+        val c = cs.at(i) ?? "";
         if (c != "%") {
             out.push(c);
             i = i + 1;
@@ -277,9 +277,9 @@ fn percentDecodeBody(s: string) -> @Result<string, string> {
 // The byte `%XX` at index `i` spells, or -1 when `i` holds no `%` followed by
 // two hex digits.
 fn escapedByte(cs: Array<string>, i: i32) -> i32 {
-    if (cs.at(i).unwrapOr("") != "%") return -1;
-    val hi = hexValue(cs.at(i + 1).unwrapOr(""));
-    val lo = hexValue(cs.at(i + 2).unwrapOr(""));
+    if (cs.at(i) ?? "" != "%") return -1;
+    val hi = hexValue(cs.at(i + 1) ?? "");
+    val lo = hexValue(cs.at(i + 2) ?? "");
     if (hi < 0 || lo < 0) return -1;
     return hi * 16 + lo;
 }
@@ -331,7 +331,7 @@ fn textOfUtf8(bytes: Array<i32>) -> string {
     var upper = 191;
     var i = 0;
     while (i < bytes.length) {
-        val b = bytes.at(i).unwrapOr(0);
+        val b = bytes.at(i) ?? 0;
         if (need == 0) {
             if (b < 128) out.push(String.fromCodepoint(b)) else if (b >= 194
                 && b <= 223) {
@@ -380,18 +380,25 @@ fn base64Text(bytes: Array<i32>) -> string {
     var g = 0;
     while (g < bytes.length) {
         val n = bytes.length - g;
-        val b0 = bytes.at(g).unwrapOr(0);
-        val b1 = if (n > 1) bytes.at(g + 1).unwrapOr(0) else 0;
-        val b2 = if (n > 2) bytes.at(g + 2).unwrapOr(0) else 0;
-        out.push(alphabet.at(b0 / 4).unwrapOr(""));
-        out.push(alphabet.at((b0 % 4) * 16 + b1 / 16).unwrapOr(""));
+        val b0 = bytes.at(g) ?? 0;
+        val b1 = if (n > 1) {
+            bytes.at(g + 1) ?? 0;
+        } else 0;
+        val b2 = if (n > 2) {
+            bytes.at(g + 2) ?? 0;
+        } else 0;
+        out.push(alphabet.at(b0 / 4) ?? "");
+        out.push(alphabet.at((b0 % 4) * 16 + b1 / 16) ?? "");
         out.push(
-            if (n > 1)
-                alphabet.at((b1 % 16) * 4 + b2 / 64).unwrapOr("")
-            else
-                "=",
+            if (n > 1) {
+                alphabet.at((b1 % 16) * 4 + b2 / 64) ?? "";
+            } else "=",
         );
-        out.push(if (n > 2) alphabet.at(b2 % 64).unwrapOr("") else "=");
+        out.push(
+            if (n > 2) {
+                alphabet.at(b2 % 64) ?? "";
+            } else "=",
+        );
         g = g + 3;
     }
     return out.join("");
@@ -406,11 +413,11 @@ fn base64Value(c: string) -> i32 {
 }
 
 fn hexDigit(n: i32) -> string {
-    return "0123456789abcdef".at(n).unwrapOr("");
+    return "0123456789abcdef".at(n) ?? "";
 }
 
 fn upperHexDigit(n: i32) -> string {
-    return "0123456789ABCDEF".at(n).unwrapOr("");
+    return "0123456789ABCDEF".at(n) ?? "";
 }
 
 // The value of one hex digit, either case, or -1.

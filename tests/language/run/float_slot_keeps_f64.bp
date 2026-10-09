@@ -52,7 +52,7 @@ pub fn main() {
     @print(P(x: 1.1, n: 2) == P(x: 1.1, n: 2));
     val o: ?f64 = 1.1;
     @print(o);
-    @print(o.unwrapOr(0.0) + 1.0);
+    @print(o ?? 0.0 + 1.0);
     @print(o == 1.1);
     if (o) {
         v ->

@@ -36,8 +36,8 @@ pub fn main() {
     val u = io.random.uuidV4();
     @print(u.length);
     @print(u.split("-").map({ g -> g.length }));
-    @print(u.split("-").at(2).unwrapOr("").startsWith("4"));
-    @print("89ab".contains(u.split("-").at(3).unwrapOr("").slice(0, 1)));
+    @print((u.split("-").at(2) ?? "").startsWith("4"));
+    @print("89ab".contains((u.split("-").at(3) ?? "").slice(0, 1)));
     @print(u.split("").all({ c -> "0123456789abcdef-".contains(c) }));
     val h = io.random.randomBytes(16);
     @print(h.length);

@@ -13,27 +13,29 @@ type R(v: string)
 type Box(items: Array<R>, sizes: Array<i32>) {
     pub fn firstV(self: Self) -> string {
         val hit: Array<R> = self.items.filter({ r -> r.v != "" });
-        return hit.at(0).unwrapOr(R(v: "none")).v;
+        return (hit.at(0) ?? R(v: "none")).v;
     }
 
     pub fn size(self: Self, i: i32) -> i32 {
-        return self.sizes.at(i).unwrapOr(-1);
+        return self.sizes.at(i) ?? -1;
     }
 
     pub fn pick(self: Self, flag: bool) -> string {
-        val r = if (flag) self.items.at(0).unwrapOr(R(v: "d")) else R(v: "e");
+        val r = if (flag) {
+            self.items.at(0) ?? R(v: "d");
+        } else R(v: "e");
         return (r).v;
     }
 
     pub fn nested(self: Self) -> i32 {
-        return self.sizes.at(9).unwrapOr(self.sizes.at(0).unwrapOr(7));
+        return self.sizes.at(9) ?? (self.sizes.at(0) ?? 7);
     }
 
     pub fn pairs(self: Self) -> i32 {
         val ps = self.sizes.map({ s -> #(s, s * 10) });
         var total = 0;
         for (self.sizes) { s ->
-            val p = ps.at(0).unwrapOr(#(0, 0));
+            val p = ps.at(0) ?? #(0, 0);
             total = total + p.1;
         }
         return total;
@@ -41,20 +43,22 @@ type Box(items: Array<R>, sizes: Array<i32>) {
 }
 
 fn pick(xs: Array<R>, flag: bool) -> string {
-    val r = if (flag) xs.at(0).unwrapOr(R(v: "d")) else R(v: "e");
-    return (xs.at(1).unwrapOr(r)).v;
+    val r = if (flag) {
+        xs.at(0) ?? R(v: "d");
+    } else R(v: "e");
+    return (xs.at(1) ?? r).v;
 }
 
 fn nested(xs: Array<i32>, ys: Array<i32>) -> i32 {
-    return xs.at(5).unwrapOr(ys.at(0).unwrapOr(9));
+    return xs.at(5) ?? (ys.at(0) ?? 9);
 }
 
 fn negated(xs: Array<i32>) -> i32 {
-    return -xs.at(0).unwrapOr(1);
+    return -(xs.at(0) ?? 1);
 }
 
 fn inverted(flags: Array<bool>) -> bool {
-    return !flags.at(0).unwrapOr(false);
+    return !(flags.at(0) ?? false);
 }
 
 pub fn main() {

@@ -1,0 +1,26 @@
+//// The owner imported from a sibling module brings its associated types:
+//// constructed, annotated, matched and printed through `Shape.`.
+
+pub mod geo;
+
+import {geo.Shape};
+
+fn kindName(k: Shape.Kind) -> string {
+    return case k {
+        .Round -> "round";
+        .Square -> "square";
+    };
+}
+
+fn unbox(b: Shape.Box<string>) -> string {
+    return b.value;
+}
+
+pub fn main() {
+    val p: Shape.Point = Shape.origin();
+    @print(p.sum());
+    @print(Shape.Point(x: 4, y: 5).sum());
+    @print(kindName(Shape.Kind.Square));
+    @print(unbox(Shape.Box(value: "boxed")));
+    @print(p);
+}

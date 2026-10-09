@@ -7,7 +7,7 @@ fn main() {
     if (maybe == null) {
         @print(0);
     } else {
-        @print(maybe?.kind);
+        @print(maybe.kind);
     }
 }
 ```
@@ -17,7 +17,7 @@ fn main() {
 {module, test@main}.
 {exports, [{'_botopink_main', 0}, {main, 1}]}.
 {attributes, []}.
-{labels, 39}.
+{labels, 37}.
 
 {function, main, 0, 3}.
   {label, 2}.
@@ -39,16 +39,9 @@ fn main() {
     {jump, {f, 35}}.
   {label, 8}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_eq, {f, 36}, [{x, 0}, {atom, undefined}]}.
-    {move, {atom, undefined}, {x, 0}}.
-    {jump, {f, 38}}.
-  {label, 36}.
-    {test, is_tagged_tuple, {f, 37}, [{x, 0}, 2, {atom, test@main@@R}]}.
+    {test, is_tagged_tuple, {f, 36}, [{x, 0}, 2, {atom, test@main@@R}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 38}}.
-  {label, 37}.
-    {move, {atom, undefined}, {x, 0}}.
-  {label, 38}.
+  {label, 36}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 10}}.

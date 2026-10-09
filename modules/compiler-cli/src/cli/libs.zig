@@ -398,7 +398,7 @@ const DepClosure = struct {
             std.debug.print("\x1b[1m\x1b[31merror\x1b[0m: dependency '{s}' was not found under any library root\n", .{dep.name});
             return error.LibNotFound;
         };
-        const r_dir = try std.fs.path.resolve(self.arena, &.{r.dir});
+        const r_dir = try linkFreeDir(self.arena, self.io, r.dir);
         if (self.packages.get(dep.name)) |known| {
             if (std.mem.eql(u8, known.dir, r_dir)) return true;
             const msg = try std.fmt.allocPrint(self.arena, "\"{s}\" resolves to {s} here, but to {s} for {s} — one import name is one package in a build", .{ dep.name, r_dir, known.dir, known.by.path });
@@ -434,6 +434,23 @@ const DepClosure = struct {
         try self.order.append(self.arena, done.*);
     }
 };
+
+/// `dir`, lexically resolved — or, when `dir` itself is a symbolic link, the
+/// directory it points at. `bpmp install` links `.botopinkbuild/deps/<name>`
+/// into its store, and a git dependency with a `"subdir"` (decision 344) is a
+/// link to a package inside a checkout: its `path` dependencies (`../core`) and
+/// its enclosing workspace are the checkout's, which only the link's target
+/// reaches — resolved lexically from the link they would name
+/// `.botopinkbuild/deps/core`.
+fn linkFreeDir(arena: std.mem.Allocator, io: std.Io, dir: []const u8) ![]const u8 {
+    const lexical = try std.fs.path.resolve(arena, &.{dir});
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    _ = std.Io.Dir.cwd().readLink(io, lexical, &buf) catch return lexical;
+    return std.Io.Dir.cwd().realPathFileAlloc(io, lexical, arena) catch |e| switch (e) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => lexical,
+    };
+}
 
 /// Build the F2 fallback root list: today this is just
 /// `.botopinkbuild/deps/` — the per-project symlink store materialised by
@@ -2425,4 +2442,31 @@ test "loadDependencies: a bundled name listed in `dependencies` is refused" {
         \\{ "name": "app", "dependencies": { "std": { "path": "../std" } } }
     );
     try std.testing.expectError(error.BundledDependency, loadDependencies(std.testing.allocator, std.testing.io, proj, null));
+}
+
+test "linkFreeDir: a symbolic link resolves to its target, a directory stays as spelled (decision 344)" {
+    var arena_inst = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+    const io = std.testing.io;
+    test_scratch.remove(io, "link-free-dir");
+    defer test_scratch.remove(io, "link-free-dir");
+    // `.botopinkbuild/deps/web` as `bpmp install` writes it for a `"subdir"`:
+    // a link to `modules/web` of a checkout whose sibling is `modules/core`.
+    try writeFileP(io, test_scratch.path(io, "link-free-dir/checkout/modules/web/botopink.json"), "{ \"name\": \"web\" }");
+    try writeFileP(io, test_scratch.path(io, "link-free-dir/checkout/modules/core/botopink.json"), "{ \"name\": \"core\" }");
+    try std.Io.Dir.cwd().createDirPath(io, test_scratch.path(io, "link-free-dir/app/.botopinkbuild/deps"));
+    const target = try std.Io.Dir.cwd().realPathFileAlloc(io, test_scratch.path(io, "link-free-dir/checkout/modules/web"), arena);
+    try std.Io.Dir.cwd().symLink(io, target, test_scratch.path(io, "link-free-dir/app/.botopinkbuild/deps/web"), .{ .is_directory = true });
+
+    const via_link = try linkFreeDir(arena, io, test_scratch.path(io, "link-free-dir/app/.botopinkbuild/deps/web"));
+    try std.testing.expectEqualStrings(target, via_link);
+    // The package's `../core` is the checkout's sibling, not `deps/core`.
+    const sibling = try std.fs.path.resolve(arena, &.{ via_link, "../core" });
+    var err: ?manifest.Located = null;
+    const core = try manifest.read(arena, io, sibling, &err);
+    try std.testing.expectEqualStrings("core", core.name);
+
+    const plain = test_scratch.path(io, "link-free-dir/checkout/modules/core");
+    try std.testing.expectEqualStrings(try std.fs.path.resolve(arena, &.{plain}), try linkFreeDir(arena, io, plain));
 }

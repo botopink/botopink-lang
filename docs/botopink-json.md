@@ -62,7 +62,7 @@ anyone else.
 ```json
 "dependencies": {
   "<name>": { "path": "<relative directory>" },
-  "<name>": { "git": "<url>", "branch": "<b>" | "tag": "<t>" | "rev": "<sha>" },
+  "<name>": { "git": "<url>", "branch": "<b>" | "tag": "<t>" | "rev": "<sha>", "subdir": "<dir>" },
   "<name>": { "workspace": true }
 }
 ```
@@ -75,6 +75,24 @@ declares **exactly one source**:
 | `{ "path": "…" }` | `<project directory>/<path>`, which must hold a `botopink.json` whose `name` is the key | Honoured by the compiler and the LSP directly — no library root is consulted. `bpmp install` links it under `.botopinkbuild/deps/<name>`. |
 | `{ "git": "…", pin }` | The library named `<name>` under the **library roots** (below), then the `bpmp install` store `<project>/.botopinkbuild/deps/<name>/` | The pin is one of `branch`, `tag` or `rev` — `bpmp install` clones it; the compiler resolves by name and does not fetch. A pin without `git` is refused. |
 | `{ "workspace": true }` | The **sibling member** of the enclosing workspace named `<name>` | The only way a member depends on a sibling (decision 75). Outside a workspace it is refused. |
+
+**`"subdir"` — a package inside a git repository (decision 344).** A `git`
+dependency may name a package that is not at the repository's root:
+
+```json
+"dependencies": {
+  "rakun-web": { "git": "https://github.com/botopink/rakun", "tag": "v1.0", "subdir": "modules/rakun-web" }
+}
+```
+
+`bpmp install` clones the repository once at the pin into its store and links
+`.botopinkbuild/deps/<name>` to `<checkout>/<subdir>`, which must hold a
+package (not a workspace) whose `name` is the key. That package's `path` and
+`{ "workspace": true }` dependencies resolve from its directory inside the
+checkout (the compiler follows the link), so its siblings come at the same pin;
+each must stay inside the checkout. Two dependencies on one repository — one
+URL once a trailing `/` and `.git` are dropped — share one checkout and must
+name one pin. The compiler still resolves the dependency by name.
 
 `std` is embedded in the compiler and is never listed — it is the one package
 the compiler ships (decision 326). Every other library is declared here,
@@ -111,12 +129,20 @@ its manifest. The same directory reached through two roots is one library.
 | `"x": { "git": "…", "branch": "feat", "rev": "…" }` | `dependency "x" declares more than one pin — exactly one of "branch", "tag" or "rev"` |
 | `"x": { "path": "../x", "tag": "v1" }` | `dependency "x" pins a ref without a "git" source — a pin applies to a git dependency only` |
 | `"x": { "workspace": false }` | `dependency "x": "workspace" can only be true — { "workspace": true } names the sibling member of the enclosing workspace` |
-| `"x": { "git": 1 }` (and `path`, `branch`, `tag`, `rev`) | `dependency "x": "git" must be a string` |
+| `"x": { "git": 1 }` (and `path`, `branch`, `tag`, `rev`, `subdir`) | `dependency "x": "git" must be a string` |
+| `"x": { "path": "../r", "subdir": "modules/x" }` (a `subdir` beside `path` or `workspace`) | `dependency "x" names a "subdir" without a "git" source — a subdir names a package inside a git repository` |
+| `"x": { "git": "…", "subdir": "/modules/x" }` (also `C:/…`) | `dependency "x": "subdir" "/modules/x" is absolute — it names a directory of the repository, relative to its root` |
+| `"x": { "git": "…", "subdir": "modules/../../x" }` | `dependency "x": "subdir" "modules/../../x" leaves the repository — ".." is not a segment of a subdir` |
+| `"x": { "git": "…", "subdir": "./modules/x" }` (also `modules//x`, a trailing `/`) | `dependency "x": "subdir" "./modules/x" has an empty or "." segment — write the directory as plain segments separated by "/"` |
+| `"x": { "git": "…", "subdir": "modules\\x" }` | `dependency "x": "subdir" "modules\x" holds a backslash — segments are separated by "/"` |
+| `"x": { "git": "…", "subdir": "" }` | `dependency "x": "subdir" is empty — omit "subdir" for the package at the repository's root` |
+| `"a": { "git": "<r>", "tag": "v1" }, "b": { "git": "<r>.git", "branch": "feat" }` | `dependencies "a" and "b" name one repository (<r>.git) at two refs (tag "v1" and branch "feat") — one repository is one checkout; pin both at one ref` (on the second entry) |
 | `"otp": "26"` (any release but the compiler's) | `botopink emits Erlang for OTP 28; "otp" names 26` (on the value) |
 | a dependency of the closure whose `"otp"` differs from the project's (or the first pin's) | `"otp" names 29 here, but 28 in <first>/botopink.json — every package of a build pins one OTP release` (on the dependency's value) |
 
-Refusals at resolution time (the compiler and the LSP, located on the project's
-`dependencies` entry):
+Refusals at resolution time (the compiler and the LSP — and `bpmp install`
+where a row names it — located on the project's `dependencies` entry unless a
+row says otherwise):
 
 | Situation | Message |
 |---|---|
@@ -129,6 +155,11 @@ Refusals at resolution time (the compiler and the LSP, located on the project's
 | `{ "git": … }` whose name is a workspace under a root | `"x" is a workspace, not a package — import one of its members: a, b, c` |
 | `{ "git": … }` whose name no root carries | `dependency 'x' was not found under any library root` |
 | a `files` entry of the resolved dependency that does not exist | `dependency 'x' lists "gone.bp" in ` files `, but <path> does not exist` (located on the dependency's manifest) |
+| `bpmp install`: a `subdir` holding no manifest | `"x": subdir "modules/x" holds no botopink.json in <git> at <rev12> (looked at <checkout>/modules/x/botopink.json)` |
+| `bpmp install`: a `subdir` holding a workspace | `"x": subdir "modules/ws" is a workspace, not a package — name one of its members' subdirs: modules/ws/a, modules/ws/b` |
+| `bpmp install`: a `subdir` holding another package | `"x": subdir "modules/y" holds a package named "y" — the dependency key is the import name and must match` |
+| `bpmp install`: a `path` dependency of the package (or of its in-checkout closure) leaving the checkout, by spelling or through a symbolic link | `"y": path "../../../y" leaves the checkout of <git> — a package of a git dependency names by path only packages of its own repository` (on that package's own manifest) |
+| `bpmp install`: `botopink.lock` pinning two dependencies on one repository at two commits | `install: botopink.lock pins 'a' and 'b' at two commits of one repository — one repository is one checkout (decision 344)` (`bpmp install --update` re-pins) |
 | a host sidecar the resolved dependency does not carry | `dependency 'x' requires "./x.mjs" from module 'x/root', but no such file is in its sources (looked at <src>/sidecars/x.mjs, then <src>/x.mjs)` |
 
 ### Host sidecars

@@ -1186,6 +1186,13 @@ pub const Env = struct {
     /// `expandTrailingDefaults` can inject them at call sites — same rule as
     /// free-fn defaults; constructors take the same arity-check shape.
     ctorParams: std.StringHashMap([]const ast.Param),
+    /// Decision 329 — the namespace types in scope (`type Type { fn … }`), by
+    /// declared name: a call of the name constructs nothing and is refused.
+    namespaceTypes: std.StringHashMap(void),
+    /// Decision 330 — set while `recv?.m(args)` is typed the way it was
+    /// before the optional lost its methods (`infer.inferOptionalOperator`):
+    /// the method is the payload's, read through `?.`.
+    inOptionalChain: bool = false,
     /// Type guard function info, keyed by function name. A type guard
     /// `fn f(x: T) -> x is NarrowedT` narrows `x` from `T` to `NarrowedT`
     /// when called in an `if` condition or as a statement (assertion mode).
@@ -1279,6 +1286,7 @@ pub const Env = struct {
             .stdlibFnDecls = std.StringHashMap(ast.FnDecl).init(arena),
             .builtinDecls = std.StringHashMap(BuiltinDecl).init(arena),
             .ctorParams = std.StringHashMap([]const ast.Param).init(arena),
+            .namespaceTypes = std.StringHashMap(void).init(arena),
             .defaultInjections = std.AutoHashMap(ast.Loc, DefaultFill).init(arena),
             .fnParams = std.StringHashMap([]const ast.Param).init(arena),
             .inherentMethodParams = std.StringHashMap([]const ast.Param).init(arena),
@@ -1374,6 +1382,7 @@ pub const Env = struct {
             .stdlibFnDecls = try tmpl.stdlibFnDecls.cloneWithAllocator(arena),
             .builtinDecls = try tmpl.builtinDecls.cloneWithAllocator(arena),
             .ctorParams = try tmpl.ctorParams.cloneWithAllocator(arena),
+            .namespaceTypes = try tmpl.namespaceTypes.cloneWithAllocator(arena),
             .defaultInjections = std.AutoHashMap(ast.Loc, DefaultFill).init(arena),
             .fnParams = try tmpl.fnParams.cloneWithAllocator(arena),
             .inherentMethodParams = try tmpl.inherentMethodParams.cloneWithAllocator(arena),
@@ -1439,6 +1448,7 @@ pub const Env = struct {
         self.stdlibFnDecls.deinit();
         self.builtinDecls.deinit();
         self.ctorParams.deinit();
+        self.namespaceTypes.deinit();
         self.defaultInjections.deinit();
         self.fnParams.deinit();
         self.inherentMethodParams.deinit();

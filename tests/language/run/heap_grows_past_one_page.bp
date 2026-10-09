@@ -20,5 +20,5 @@ pub fn main() {
         j = j + 1;
     }
     @print(xs.length);
-    @print(xs.at(19999).unwrapOr(-1));
+    @print(xs.at(19999) ?? -1);
 }

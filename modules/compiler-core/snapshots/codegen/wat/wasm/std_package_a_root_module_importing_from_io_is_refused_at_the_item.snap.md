@@ -39,7 +39,7 @@ pub fn basename(path: string) -> string {
     val parts = split(path);
     val n = parts.length;
     if (n == 0) return "";
-    return parts.at(n - 1).unwrapOr("");
+    return parts.at(n - 1) ?? "";
 }
 
 // Everything except the basename — the parent directory portion. For an
@@ -66,8 +66,8 @@ pub fn extname(path: string) -> string {
     val pieces = base.split(".");
     val n = pieces.length;
     if (n <= 1) return "";
-    val head = pieces.at(0).unwrapOr("");
-    val tail = pieces.at(n - 1).unwrapOr("");
+    val head = pieces.at(0) ?? "";
+    val tail = pieces.at(n - 1) ?? "";
     // Dotfiles like ".bashrc" split into ["", "bashrc"] — no extension.
     val isDotfile = head == "" && n == 2;
     return if (isDotfile) "" else [".", tail].join("");
@@ -81,10 +81,7 @@ pub fn extname(path: string) -> string {
 // which lowers to a dead store on Erlang's immutable runtime (the same
 // trap `split` sidesteps).
 pub fn join(parts: string[]) -> string {
-    val isAbs = if (parts.length == 0)
-        false
-    else
-        isAbsolute(parts.at(0).unwrapOr(""));
+    val isAbs = if (parts.length == 0) false else isAbsolute(parts.at(0) ?? "");
     val collapsed = parts.map({ p -> split(p).join(separator) });
     val joined = collapsed.filter({ p -> p != "" }).join(separator);
     return if (isAbs) [separator, joined].join("") else joined;
@@ -114,8 +111,8 @@ pub fn normalize(path: string) -> string {
 fn commonPrefixCount(a: string[], b: string[], i: i32) -> i32 {
     if (i >= a.length) return i;
     if (i >= b.length) return i;
-    val ai = a.at(i).unwrapOr("");
-    val bi = b.at(i).unwrapOr("");
+    val ai = a.at(i) ?? "";
+    val bi = b.at(i) ?? "";
     return if (ai == bi) commonPrefixCount(a, b, i + 1) else i;
 }
 
@@ -158,7 +155,7 @@ type PathAccum(
 // recursive — no `var` rebinds.
 fn applyPieces(acc: string[], pieces: string[]) -> string[] {
     if (pieces.length == 0) return acc;
-    val p = pieces.at(0).unwrapOr("");
+    val p = pieces.at(0) ?? "";
     val rest = pieces.slice(1, pieces.length);
     val nextAcc = if (p == "..") {
         if (acc.length == 0) acc else acc.slice(0, acc.length - 1);
@@ -175,7 +172,7 @@ fn resolveStep(state: PathAccum, seg: string) -> PathAccum {
 
 fn resolveAll(segments: string[], i: i32, state: PathAccum) -> PathAccum {
     if (i >= segments.length) return state;
-    val seg = segments.at(i).unwrapOr("");
+    val seg = segments.at(i) ?? "";
     val next = resolveStep(state, seg);
     return resolveAll(segments, i + 1, next);
 }
@@ -241,8 +238,8 @@ test "path.isAbsolute distinguishes leading slash" {
 test "path.split drops empties" {
     val s = split("/usr//bin/");
     assert s.length == 2;
-    assert s.at(0).unwrapOr("") == "usr";
-    assert s.at(1).unwrapOr("") == "bin";
+    assert s.at(0) ?? "" == "usr";
+    assert s.at(1) ?? "" == "bin";
 }
 
 test "path.basename returns the last component" {
@@ -441,7 +438,8 @@ test "path.isInside treats a name starting with two dots as a name" {
   (func $basename (export "basename") (param $path i32) (result i32)
     (local $parts i32)
     (local $n i32)
-    (local $_res0 i32)
+    (local $__bp_nullish i32)
+    (local $__opt0 i32)
     local.get $path
     call $split
     local.set $parts
@@ -466,11 +464,12 @@ test "path.isInside treats a name starting with two dots as a name" {
     i32.const 1
     call $__i32_sub_chk
     call $__arr_at
-    local.set $_res0
-    local.get $_res0 ;; Option (0 = None, else Some payload)
+    local.tee $__opt0
     (if (result i32)
       (then
-    local.get $_res0 ;; Some — present value
+    local.get $__opt0
+    local.set $__bp_nullish
+    local.get $__bp_nullish
       )
       (else
     i32.const 272
@@ -561,10 +560,11 @@ test "path.isInside treats a name starting with two dots as a name" {
     (local $pieces i32)
     (local $n i32)
     (local $head i32)
+    (local $__bp_nullish i32)
     (local $tail i32)
     (local $isDotfile i32)
-    (local $_res0 i32)
-    (local $_res1 i32)
+    (local $__opt0 i32)
+    (local $__opt1 i32)
     local.get $path
     call $basename
     local.set $base
@@ -591,11 +591,12 @@ test "path.isInside treats a name starting with two dots as a name" {
     local.get $pieces
     i32.const 0
     call $__arr_at
-    local.set $_res0
-    local.get $_res0 ;; Option (0 = None, else Some payload)
+    local.tee $__opt0
     (if (result i32)
       (then
-    local.get $_res0 ;; Some — present value
+    local.get $__opt0
+    local.set $__bp_nullish
+    local.get $__bp_nullish
       )
       (else
     i32.const 272
@@ -607,11 +608,12 @@ test "path.isInside treats a name starting with two dots as a name" {
     i32.const 1
     call $__i32_sub_chk
     call $__arr_at
-    local.set $_res1
-    local.get $_res1 ;; Option (0 = None, else Some payload)
+    local.tee $__opt1
     (if (result i32)
       (then
-    local.get $_res1 ;; Some — present value
+    local.get $__opt1
+    local.set $__bp_nullish
+    local.get $__bp_nullish
       )
       (else
     i32.const 272
@@ -661,20 +663,21 @@ test "path.isInside treats a name starting with two dots as a name" {
   (func $join (export "join") (param $parts i32) (result i32)
     (local $__mem0 i32)
     (local $isAbs i32)
+    (local $__bp_nullish i32)
     (local $collapsed i32)
     (local $joined i32)
-    (local $_res0 i32)
-    (local $__iter0 i32)
-    (local $__idx0 i32)
-    (local $__len0 i32)
-    (local $__acc0 i32)
-    (local $__out0 i32)
-    (local $p i32)
+    (local $__opt0 i32)
     (local $__iter1 i32)
     (local $__idx1 i32)
     (local $__len1 i32)
     (local $__acc1 i32)
     (local $__out1 i32)
+    (local $p i32)
+    (local $__iter2 i32)
+    (local $__idx2 i32)
+    (local $__len2 i32)
+    (local $__acc2 i32)
+    (local $__out2 i32)
     local.get $parts
     i32.load ;; .length
     i32.const 0
@@ -687,11 +690,12 @@ test "path.isInside treats a name starting with two dots as a name" {
     local.get $parts
     i32.const 0
     call $__arr_at
-    local.set $_res0
-    local.get $_res0 ;; Option (0 = None, else Some payload)
+    local.tee $__opt0
     (if (result i32)
       (then
-    local.get $_res0 ;; Some — present value
+    local.get $__opt0
+    local.set $__bp_nullish
+    local.get $__bp_nullish
       )
       (else
     i32.const 272
@@ -702,50 +706,6 @@ test "path.isInside treats a name starting with two dots as a name" {
     )
     local.set $isAbs
     local.get $parts
-    local.set $__iter0
-    local.get $__iter0
-    i32.load ;; element count
-    local.set $__len0
-    i32.const 0
-    local.set $__idx0
-    local.get $__len0
-    call $__arr_new
-    local.set $__out0
-    i32.const 0
-    local.set $__acc0
-    (block $__break
-      (loop $__continue
-        local.get $__idx0
-        local.get $__len0
-        i32.ge_s
-        br_if $__break
-        local.get $__iter0
-        local.get $__idx0
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
-        local.set $p
-    local.get $__out0
-    local.get $__idx0
-    i32.const 4
-    i32.mul
-    i32.add
-    local.get $p
-    call $split
-    global.get $separator
-    call $__arr_join_str
-    i32.store offset=4
-        local.get $__idx0
-        i32.const 1
-        i32.add
-        local.set $__idx0
-        br $__continue
-      )
-    )
-    local.get $__out0
-    local.set $collapsed
-    local.get $collapsed
     local.set $__iter1
     local.get $__iter1
     i32.load ;; element count
@@ -770,30 +730,16 @@ test "path.isInside treats a name starting with two dots as a name" {
         i32.add
         i32.load offset=4
         local.set $p
-    local.get $p
-    i32.const 272
-    call $__str_eq
-    i32.eqz
-    (if
-      (then
     local.get $__out1
-    local.get $__acc1
-    i32.const 4
-    i32.mul
-    i32.add
-    local.get $__iter1
     local.get $__idx1
     i32.const 4
     i32.mul
     i32.add
-    i32.load offset=4
+    local.get $p
+    call $split
+    global.get $separator
+    call $__arr_join_str
     i32.store offset=4
-    local.get $__acc1
-    i32.const 1
-    i32.add
-    local.set $__acc1
-      )
-    )
         local.get $__idx1
         i32.const 1
         i32.add
@@ -802,9 +748,67 @@ test "path.isInside treats a name starting with two dots as a name" {
       )
     )
     local.get $__out1
-    local.get $__acc1
+    local.set $collapsed
+    local.get $collapsed
+    local.set $__iter2
+    local.get $__iter2
+    i32.load ;; element count
+    local.set $__len2
+    i32.const 0
+    local.set $__idx2
+    local.get $__len2
+    call $__arr_new
+    local.set $__out2
+    i32.const 0
+    local.set $__acc2
+    (block $__break
+      (loop $__continue
+        local.get $__idx2
+        local.get $__len2
+        i32.ge_s
+        br_if $__break
+        local.get $__iter2
+        local.get $__idx2
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load offset=4
+        local.set $p
+    local.get $p
+    i32.const 272
+    call $__str_eq
+    i32.eqz
+    (if
+      (then
+    local.get $__out2
+    local.get $__acc2
+    i32.const 4
+    i32.mul
+    i32.add
+    local.get $__iter2
+    local.get $__idx2
+    i32.const 4
+    i32.mul
+    i32.add
+    i32.load offset=4
+    i32.store offset=4
+    local.get $__acc2
+    i32.const 1
+    i32.add
+    local.set $__acc2
+      )
+    )
+        local.get $__idx2
+        i32.const 1
+        i32.add
+        local.set $__idx2
+        br $__continue
+      )
+    )
+    local.get $__out2
+    local.get $__acc2
     i32.store ;; kept count
-    local.get $__out1
+    local.get $__out2
     global.get $separator
     call $__arr_join_str
     local.set $joined
@@ -971,9 +975,10 @@ test "path.isInside treats a name starting with two dots as a name" {
   ;; lowers to a dead store on Erlang's immutable runtime).
   (func $commonPrefixCount (param $a i32) (param $b i32) (param $i i32) (result i32)
     (local $ai i32)
+    (local $__bp_nullish i32)
     (local $bi i32)
-    (local $_res0 i32)
-    (local $_res1 i32)
+    (local $__opt0 i32)
+    (local $__opt1 i32)
     local.get $i
     local.get $a
     i32.load ;; .length
@@ -1005,11 +1010,12 @@ test "path.isInside treats a name starting with two dots as a name" {
     local.get $a
     local.get $i
     call $__arr_at
-    local.set $_res0
-    local.get $_res0 ;; Option (0 = None, else Some payload)
+    local.tee $__opt0
     (if (result i32)
       (then
-    local.get $_res0 ;; Some — present value
+    local.get $__opt0
+    local.set $__bp_nullish
+    local.get $__bp_nullish
       )
       (else
     i32.const 272
@@ -1019,11 +1025,12 @@ test "path.isInside treats a name starting with two dots as a name" {
     local.get $b
     local.get $i
     call $__arr_at
-    local.set $_res1
-    local.get $_res1 ;; Option (0 = None, else Some payload)
+    local.tee $__opt1
     (if (result i32)
       (then
-    local.get $_res1 ;; Some — present value
+    local.get $__opt1
+    local.set $__bp_nullish
+    local.get $__bp_nullish
       )
       (else
     i32.const 272
@@ -1146,9 +1153,10 @@ test "path.isInside treats a name starting with two dots as a name" {
   (func $applyPieces (param $acc i32) (param $pieces i32) (result i32)
     (local $__mem0 i32)
     (local $p i32)
+    (local $__bp_nullish i32)
     (local $rest i32)
     (local $nextAcc i32)
-    (local $_res0 i32)
+    (local $__opt0 i32)
     (loop $__tail (result i32)
     local.get $pieces
     i32.load ;; .length
@@ -1167,11 +1175,12 @@ test "path.isInside treats a name starting with two dots as a name" {
     local.get $pieces
     i32.const 0
     call $__arr_at
-    local.set $_res0
-    local.get $_res0 ;; Option (0 = None, else Some payload)
+    local.tee $__opt0
     (if (result i32)
       (then
-    local.get $_res0 ;; Some — present value
+    local.get $__opt0
+    local.set $__bp_nullish
+    local.get $__bp_nullish
       )
       (else
     i32.const 272
@@ -1285,8 +1294,9 @@ test "path.isInside treats a name starting with two dots as a name" {
   )
   (func $resolveAll (param $segments i32) (param $i i32) (param $state i32) (result i32)
     (local $seg i32)
+    (local $__bp_nullish i32)
     (local $next i32)
-    (local $_res0 i32)
+    (local $__opt0 i32)
     (loop $__tail (result i32)
     local.get $i
     local.get $segments
@@ -1305,11 +1315,12 @@ test "path.isInside treats a name starting with two dots as a name" {
     local.get $segments
     local.get $i
     call $__arr_at
-    local.set $_res0
-    local.get $_res0 ;; Option (0 = None, else Some payload)
+    local.tee $__opt0
     (if (result i32)
       (then
-    local.get $_res0 ;; Some — present value
+    local.get $__opt0
+    local.set $__bp_nullish
+    local.get $__bp_nullish
       )
       (else
     i32.const 272

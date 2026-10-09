@@ -7,7 +7,7 @@ fn main() {
     if (maybe == null) {
         @print(0);
     } else {
-        @print(maybe?.kind);
+        @print(maybe.kind);
     }
 }
 ```
@@ -60,7 +60,7 @@ R.prototype.__bp = "R";
 function main() {
     const r = new R(11);
     const maybe = r;
-    (() => { if ((maybe == null)) { return __bp_print(0); } else { return __bp_print(maybe?.kind); } })();
+    (() => { if ((maybe == null)) { return __bp_print(0); } else { return __bp_print(maybe.kind); } })();
 }
 
 function _botopink_main() {

@@ -18,8 +18,8 @@ pub fn main() {
     @print(unicode.fromCodepoint(127881));
     @print(cps("aé🎉"));
     @print(unicode.codepoints("").length);
-    @print(unicode.firstCodepoint("🎉x").unwrapOr(-1));
-    @print(unicode.firstCodepoint("").unwrapOr(-1));
+    @print(unicode.firstCodepoint("🎉x") ?? -1);
+    @print(unicode.firstCodepoint("") ?? -1);
     @print(cps(unicode.normalize("e\u{301}", unicode.NormalizationForm.NFC)));
     @print(cps(unicode.normalize("é", unicode.NormalizationForm.NFD)));
     @print(cps(unicode.normalize("ﬁ²", unicode.NormalizationForm.NFKC)));

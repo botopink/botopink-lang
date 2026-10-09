@@ -1,0 +1,20 @@
+//// Decision 330 (7) — a type declared in the body of a type is its
+//// associated type, named through the owner: `Shape.Point`, `Shape.Kind`,
+//// the generic `Shape.Box<T>`.
+
+pub type Shape {
+    // A point of the shape.
+    pub type Point(x: i32, y: i32) {
+        fn sum(self: Self) -> i32 {
+            return self.x + self.y;
+        }
+    }
+
+    pub type Kind { Round, Square }
+
+    pub type Box<T>(value: T)
+
+    pub fn origin() -> Shape.Point {
+        return Shape.Point(x: 1, y: 2);
+    }
+}

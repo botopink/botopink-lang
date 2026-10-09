@@ -209,10 +209,32 @@ test "surface: type P() is the empty record (decision 138)" {
 
 test "surface: a record without its field list is type-without-field-list, where `()` belongs (decision 138)" {
     try expectError("type P {}", .typeWithoutFieldList, 1, 8);
-    try expectError("type P { fn f(self: Self) -> i32 { return 1; } }", .typeWithoutFieldList, 1, 8);
     try expectError("pub type P<T> implement B {}", .typeWithoutFieldList, 1, 15);
     try expectError("type P", .typeWithoutFieldList, 1, 7);
     try expectError("val P = type {}", .typeWithoutFieldList, 1, 14);
+}
+
+test "surface: braces holding functions declare a namespace type, whose functions take no self (decision 329)" {
+    var parsed = try parse("type P { fn f() -> i32 { return 1; } }");
+    defer parsed.deinit();
+    const t = try onlyType(parsed);
+    try std.testing.expect(t.isNamespace);
+    try std.testing.expectEqual(@as(usize, 0), t.recordFields().len);
+    try expectError("type P { fn f(self: Self) -> i32 { return 1; } }", .namespaceTypeSelf, 1, 15);
+    try expectError("type P { fn g() {} declare fn f(self: Self); }", .namespaceTypeSelf, 1, 33);
+}
+
+test "surface: a type declared in a type's body is its associated type (decision 330 (7))" {
+    var parsed = try parse("type S { pub type P(x: i32) type K { A, B } fn f() -> i32 { return 1; } }");
+    defer parsed.deinit();
+    const t = try onlyType(parsed);
+    try std.testing.expect(t.isNamespace);
+    try std.testing.expectEqual(@as(usize, 2), t.assocTypes.len);
+    try std.testing.expectEqualStrings("P", t.assocTypes[0].name);
+    try std.testing.expect(t.assocTypes[0].isPub);
+    try std.testing.expectEqualStrings("K", t.assocTypes[1].name);
+    try expectError("type S { fn P() {} type P(x: i32) }", .assocTypeDuplicate, 1, 25);
+    try expectError("type S { type P() type P(x: i32) }", .assocTypeDuplicate, 1, 24);
 }
 
 test "surface: a variant declared twice at one level is enum-variant-duplicate, at the second" {

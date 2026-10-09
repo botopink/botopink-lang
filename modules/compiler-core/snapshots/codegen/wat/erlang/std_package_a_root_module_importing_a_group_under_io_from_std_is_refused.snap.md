@@ -63,20 +63,20 @@ pub declare fn vars() -> Array<#(string, string)>;
 test "env.write + env.read round-trips a value" {
     write("BOTOPINK_TEST_KEY", "round-trip-value");
     val v = read("BOTOPINK_TEST_KEY");
-    assert v.unwrapOr("missing") == "round-trip-value";
+    assert v ?? "missing" == "round-trip-value";
 }
 
 test "env.read returns null for an unset key" {
     clear("BOTOPINK_TEST_UNSET");
     val v = read("BOTOPINK_TEST_UNSET");
-    assert v.unwrapOr("absent") == "absent";
+    assert v ?? "absent" == "absent";
 }
 
 test "env.clear cancels a prior write" {
     write("BOTOPINK_TEST_CYCLE", "alive");
     clear("BOTOPINK_TEST_CYCLE");
     val v = read("BOTOPINK_TEST_CYCLE");
-    assert v.unwrapOr("dead") == "dead";
+    assert v ?? "dead" == "dead";
 }
 
 test "env.args returns an array (possibly empty under the lib-test runner)" {

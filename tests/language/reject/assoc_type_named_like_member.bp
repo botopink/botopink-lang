@@ -1,0 +1,15 @@
+//// Decision 330 (7) — a type declared in a type's body is named through
+//// the type (`Shape.Point`), so a name the body already gives a function is
+//// refused at the type's name: `Shape.Point` names one thing.
+
+pub type Shape {
+    pub fn Point() -> i32 {
+        return 1;
+    }
+
+    pub type Point(x: i32, y: i32)
+}
+
+pub fn main() {
+    @print(Shape.Point());
+}

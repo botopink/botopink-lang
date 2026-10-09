@@ -35,7 +35,7 @@ pub type Url(
 fn splitOnce(s: string, delim: string) -> #(string, string) {
     val parts = s.split(delim);
     if (parts.length < 2) return #(s, "");
-    val head = parts.at(0).unwrapOr("");
+    val head = parts.at(0) ?? "";
     val rest = parts.slice(1, parts.length);
     val tail = rest.join(delim);
     return #(head, tail);

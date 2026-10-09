@@ -8,6 +8,8 @@
 const std = @import("std");
 const ast = @import("../ast.zig");
 const comptimeMod = @import("../comptime.zig");
+const Lexer = @import("../lexer.zig").Lexer;
+const Parser = @import("../parser.zig").Parser;
 const js = @import("./js/js_ast.zig");
 const tsEmitter = @import("./js/ts_emitter.zig");
 const crossModule = @import("./crossModule.zig");
@@ -117,6 +119,7 @@ const Builder = struct {
         var bound: std.StringHashMapUnmanaged(void) = .empty;
         var named: std.StringHashMapUnmanaged(void) = .empty;
         for (decls.items) |d| try self.scanDecl(d, &bound, &named);
+        try self.reflectionCandidates(&candidates, &named);
         var added = false;
         var pass_start: usize = decls.items.len;
         while (true) {
@@ -138,11 +141,39 @@ const Builder = struct {
         if (added) try decls.append(self.b.arena, .export_none);
     }
 
+    /// The comptime reflection records a signature names (`__Decl__Annotation`
+    /// in std's `Type.Field<T>`, whose `annotations` are `DeclAnnotation[]`):
+    /// the module never declares them — they live in the checker's prelude
+    /// (`comptime.zig` `decl_reflection_src`) — so they join the candidates,
+    /// read from that one source, only when a declaration names one.
+    fn reflectionCandidates(self: *Builder, candidates: *std.ArrayListUnmanaged(ast.DeclKind), named: *const std.StringHashMapUnmanaged(void)) Error!void {
+        var it = named.keyIterator();
+        const wanted = while (it.next()) |k| {
+            if (std.mem.startsWith(u8, k.*, decl_reflection_prefix)) break true;
+        } else false;
+        if (!wanted) return;
+        var lx = Lexer.init(comptimeMod.decl_reflection_src);
+        const tokens = try lx.scanAll(self.b.arena);
+        var p = Parser.init(tokens);
+        const prog = try p.parse(self.b.arena);
+        for (prog.decls) |d| switch (d) {
+            .type_ => |t| if (std.mem.startsWith(u8, t.name, decl_reflection_prefix)) try candidates.append(self.b.arena, d),
+            else => {},
+        };
+    }
+
+    /// The prefix of the comptime reflection records' names.
+    const decl_reflection_prefix = "__Decl__";
+
     /// The name a declaration of the program binds as a TYPE in the `.d.ts`,
     /// when it is not already public (a public one is a binding's).
     fn localTypeName(d: ast.DeclKind) ?[]const u8 {
         return switch (d) {
-            .type_ => |t| if (t.isPub) null else t.name,
+            // The comptime reflection records (`__Decl__Annotation`, … —
+            // `comptime.zig` `decl_reflection_src`) are spliced in `pub` but
+            // are no binding of the module: `Type.Field<T>`'s `annotations:
+            // DeclAnnotation[]` named one the `.d.ts` never declared.
+            .type_ => |t| if (t.isPub and !std.mem.startsWith(u8, t.name, decl_reflection_prefix)) null else t.name,
             .behavior => |b| if (b.isPub) null else b.name,
             .typeAlias => |a| if (a.isPub) null else a.name,
             .delegate => |dg| if (dg.isPub) null else dg.name,

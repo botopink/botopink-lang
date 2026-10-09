@@ -65,11 +65,19 @@ const Ctx = struct {
     }
 
     fn rewriteType(self: *Ctx, t: *ast.TypeRef) Error!void {
-        if (t.* != .named) return;
-        const name = t.named;
+        // `Owner.Name`, and the generic `Owner.Name<T>` (decision 330 (7)).
+        const name = switch (t.*) {
+            .named => |n| n,
+            .generic => |g| if (g.is_builtin) return else g.name,
+            else => return,
+        };
         const dot = std.mem.indexOfScalar(u8, name, '.') orelse return;
         if (std.mem.indexOfScalarPos(u8, name, dot + 1, '.') != null) return;
-        if (try self.resolve(name[0..dot], name[dot + 1 ..])) |mangled| t.* = .{ .named = mangled };
+        if (try self.resolve(name[0..dot], name[dot + 1 ..])) |mangled| switch (t.*) {
+            .named => t.* = .{ .named = mangled },
+            .generic => |*g| g.name = mangled,
+            else => unreachable,
+        };
     }
 
     fn rewriteExpr(self: *Ctx, e: *ast.Expr) Error!void {

@@ -29,9 +29,12 @@ keys of that object (the retired string array is `ManifestInvalid`).
 (`{ "<name>": { "git": ..., "branch"|"rev"|"tag": ... } }` or `{ "path": ... }`;
 a `{ "workspace": true }` entry is a sibling member the compiler reads from the
 tree and is skipped) keyed by their resolved 40-char commit SHA. `bpmp install` materialises each git
-dep into `<store>/<name>/<rev>/` and symlinks `<project>/.botopinkbuild/deps/<name>`
-to it (path deps are symlinked directly); the compiler's lib loader picks up
-`.botopinkbuild/deps/` as a fallback root.
+dep's repository into `<store>/<repo_key>/<rev>/` (one checkout per repository and
+commit, shared by every dependency on it) and symlinks
+`<project>/.botopinkbuild/deps/<name>` to it — or, for a `"subdir"` (decision 344),
+to `<checkout>/<subdir>` (path deps are symlinked directly); the compiler's lib
+loader picks up `.botopinkbuild/deps/` as a fallback root and resolves a linked
+package's own dependencies from the link's target.
 
 ## Tree
 
@@ -48,8 +51,12 @@ modules/bpmp/
     ├── lock.zig         ← botopink.lock read/write (object-form libs)
     ├── dep/spec.zig     ← DepSpec / DepEntry from the shared `manifest` module + `parseFromManifest` (located refusals)
     ├── dep/clone.zig    ← `git clone --quiet [--depth 1] [--branch …]` (+ checkout for `rev:`) + atomic rename into the store
-    ├── dep/resolver.zig ← plan one Action per DepEntry (clone / reuse_cas / path_symlink / skip_workspace);
-    │                      probes the store for pinned commits; each Action carries its `ref`
+    ├── dep/resolver.zig ← plan one Action per DepEntry (clone / reuse_cas / share_checkout / path_symlink /
+    │                      skip_workspace); probes the store for pinned commits; each Action carries its `ref`,
+    │                      `subdir` and `repo_key` (`repoKey`: URL's last segment + 12 hex of its SHA-256)
+    ├── dep/member.zig   ← what a git dep names inside its checkout (decision 344): the `subdir` package
+    │                      (manifest, not a workspace, its name the key) and its in-checkout `path`/`workspace`
+    │                      closure, located refusals
     ├── storage.zig      ← $BPMP_HOME layout resolution + mkdir-p
     ├── sha256.zig       ← file/byte hashing + sidecar verify
     ├── registry.zig     ← github.com URL shapes + tag/release lookups
@@ -120,7 +127,8 @@ through it.
 
 The object-form dep **store** is resolved separately (`install.zig`
 `resolveStoreRoot`): `$BPMP_HOME/store/`, else `$XDG_CACHE_HOME/bpmp/store/`,
-else `$HOME/.cache/bpmp/store/`; layout `<store>/<name>/<full-rev-40>/`.
+else `$HOME/.cache/bpmp/store/`; layout `<store>/<repo_key>/<full-rev-40>/`, one
+checkout per repository and commit (`dep/resolver.zig` `repoKey`).
 
 ## Env contract (`BOTOPINK_LIB_ROOTS`)
 
@@ -208,7 +216,7 @@ tarball + extract" flow for the binary-installing commands.
 | Command        | Behaviour                                                             |
 | -------------- | --------------------------------------------------------------------- |
 | `init`         | offline                                                               |
-| `install` / `install <name>` with object-form deps in `botopink.json` | plans each dep (`dep/resolver.zig`): reuse the store entry pinned by `botopink.lock` (or a spec `rev:`) **when `<store>/<name>/<rev>/` exists**, otherwise clone that exact rev; symlink a `path` dep (resolved against the project root); or `git clone` the entry's own `branch:`/`tag:` (default HEAD only when it names no ref). Symlinks under `.botopinkbuild/deps/` — never to a target that does not exist; writes `botopink.lock`. `<name>` restricts to one declared dep. |
+| `install` / `install <name>` with object-form deps in `botopink.json` | plans each dep (`dep/resolver.zig`): reuse the store entry pinned by `botopink.lock` (or a spec `rev:`) **when `<store>/<name>/<rev>/` exists**, otherwise clone that exact rev; symlink a `path` dep (resolved against the project root); or `git clone` the entry's own `branch:`/`tag:` (default HEAD only when it names no ref). A dep with a `"subdir"` links to `<checkout>/<subdir>`; two deps on one repository take one clone (`share_checkout`), and the lockfile's pin of one is the pin of all (two pins → refused, naming both). Before any link is written every git dep is checked (`dep/member.zig`): a `subdir` without a `botopink.json`, holding a workspace or another package's name, and a `path`/`workspace` dependency of the package's closure leaving the checkout are located refusals, exit 1, nothing linked. Symlinks under `.botopinkbuild/deps/` — never to a target that does not exist; writes `botopink.lock`. `<name>` restricts to one declared dep and every dep on its repository. |
 | `install --frozen` | object-form path, never clones (CI mode); errors naming the dep with **DEP-004** when it has no `botopink.lock` entry (and no spec `rev:`), and **DEP-005** when its pinned commit is not in the store |
 | `install --update` | object-form path; ignores the existing `botopink.lock` and re-resolves |
 | `install --dry-run` | object-form path; prints planned actions, no IO |

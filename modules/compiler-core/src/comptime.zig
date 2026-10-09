@@ -9,6 +9,7 @@ const transform = @import("./comptime/transform.zig");
 const alias_erase = @import("./comptime/alias_erase.zig");
 const std_namespace = @import("./comptime/std_namespace.zig");
 const inline_types = @import("./comptime/inline_types.zig");
+const nested_types = @import("./comptime/nested_types.zig");
 const default_fn = @import("./comptime/default_fn.zig");
 const value_or_type = @import("./comptime/value_or_type.zig");
 const evalMod = @import("./comptime/eval.zig");
@@ -872,18 +873,21 @@ fn assocOwners(
     reflection: *reflectionMod.Reflection,
 ) !std.StringHashMapUnmanaged(assocTypes.Owner) {
     var owners: std.StringHashMapUnmanaged(assocTypes.Owner) = .empty;
-    if (reflection.assoc.count() == 0) return owners;
     for (program.decls, 0..) |d, idx| switch (d) {
         .type_, .behavior => {
             const name = if (d == .type_) d.type_.name else d.behavior.name;
-            const assoc = try reflection.assocOf(arena, module_path, name);
+            var assoc = try reflection.assocOf(arena, module_path, name);
+            // Decision 330 (7): the types declared in its body.
+            if (d == .type_) assoc = try withNested(arena, assoc, d.type_);
             if (assoc.len > 0) try owners.put(arena, name, .{ .name = name, .assoc = assoc });
         },
         .use => |u| {
-            switch (u.source) {
-                .module => |m| if (std.mem.eql(u8, m, "std")) continue,
-                .root => {},
-            }
+            // An std owner answers only through the types declared in its
+            // body (decision 330 (7)); decorators run on no std module.
+            const from_std = switch (u.source) {
+                .module => |m| std.mem.eql(u8, m, "std"),
+                .root => false,
+            };
             for (u.imports) |imp| {
                 if (imp.activate) continue;
                 const leaf = imp.leaf();
@@ -891,18 +895,27 @@ fn assocOwners(
                 const path: []const u8 = found: for ([3]u2{ 0, 1, 2 }) |pass| {
                     var it = typeDeclRegistry.iterator();
                     while (it.next()) |e| {
-                        if (isStdPkgPath(e.key_ptr.*)) continue;
+                        if (isStdPkgPath(e.key_ptr.*) != from_std) continue;
                         if (!leaf_src.admits(e.key_ptr.*, pass)) continue;
                         if (e.value_ptr.contains(leaf)) break :found e.key_ptr.*;
                     }
                 } else continue;
-                const assoc = try reflection.assocOf(arena, path, leaf);
+                var assoc: []const []const u8 = if (from_std) &.{} else try reflection.assocOf(arena, path, leaf);
+                if (typeDeclRegistry.get(path).?.get(leaf)) |dk| if (dk == .type_) {
+                    assoc = try withNested(arena, assoc, dk.type_);
+                };
                 if (assoc.len > 0) try owners.put(arena, imp.name(), .{ .name = leaf, .assoc = assoc, .import = .{ .decl = idx, .item = imp } });
             }
         },
         else => {},
     };
     return owners;
+}
+
+/// `assoc` and the names of the types declared in `t`'s body (decision 330 (7)).
+fn withNested(arena: std.mem.Allocator, assoc: []const []const u8, t: ast.TypeDecl) ![]const []const u8 {
+    if (t.assocTypes.len == 0) return assoc;
+    return std.mem.concat(arena, []const u8, &.{ assoc, try nested_types.namesOf(arena, t) });
 }
 
 /// The pass-2 env replaces pass 1's, where the decorators ran: carry their
@@ -1093,7 +1106,9 @@ fn analyzeSource(
     // a module holding a default binds that function.
     const defaulted = try default_fn.expandImports(arena, try default_fn.nameAnonymous(arena, parsed), templateRegistry, registry);
     // Decision 297: a `comptime x: V | type T` parameter's two forms.
-    const expanded = try value_or_type.expand(arena, try inline_types.expand(arena, try std_namespace.expand(arena, defaulted)));
+    // Decision 330 (7): a type declared in a type's body is a top-level type
+    // under its owner's path.
+    const expanded = try nested_types.expand(arena, try value_or_type.expand(arena, try inline_types.expand(arena, try std_namespace.expand(arena, defaulted))));
     // Decision 216 (3): `Owner.Name` of an imported owner (or of this
     // module's, on a re-analysis) reaches the checker as the declared name.
     var owners = try assocOwners(arena, expanded, mod.path, typeDeclRegistry, reflection);
@@ -1312,7 +1327,7 @@ fn isIdentChar(c: u8) bool {
 /// type of one of those names takes the name (`infer.zig`
 /// `dropReflectionAlias`), so a decorator module that imports a user `Param`
 /// still reads `m.params` of a `@Decl` as the reflection's `Param`.
-const decl_reflection_src =
+pub const decl_reflection_src =
     \\pub type DeclKind { Type, Behavior, Fn, Method, Field }
     \\pub type Span(start: i32, end: i32, line: i32)
     \\pub type SourceLocation(file: string, line: i32, column: i32, fnName: string)
@@ -2545,7 +2560,9 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
         var lx = Lexer.init(spm.source);
         const tokens = try lx.scanAll(env.arena);
         var p = Parser.init(tokens);
-        const program = try embeddedStdProgram(env.arena, try stripTestDecls(try p.parse(env.arena), env.arena));
+        // Decision 330 (7): a std type's associated types are top-level types
+        // of the module (`Type.Field` is `Type__Field`).
+        const program = try nested_types.expand(env.arena, try embeddedStdProgram(env.arena, try stripTestDecls(try p.parse(env.arena), env.arena)));
         const bindings = try infer.inferProgramTyped(&env2, program);
 
         // Collect the module's public type declarations so `import {…} from

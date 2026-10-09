@@ -529,7 +529,7 @@ if have node; then
     printf '%s\n' \
       'import {io: {env, fs}} from "std";' '' \
       'test "scratch" {' \
-      '    val d = env.read("BOTOPINK_TEST_TMPDIR").unwrapOr("");' \
+      '    val d = env.read("BOTOPINK_TEST_TMPDIR") ?? "";' \
       '    @print("scratch=" + d);' \
       '    assert d.startsWith("/");' \
       '    val _w = fs.writeText(d + "/mine.txt", "x");' \
@@ -580,7 +580,7 @@ if have node; then
         'import {io: {env, fs}} from "std";' \
         'import {main.one};' '' \
         "test \"leaves a broken source in the scratch ($m)\" {" \
-        '    val d = env.read("BOTOPINK_TEST_TMPDIR").unwrapOr("");' \
+        '    val d = env.read("BOTOPINK_TEST_TMPDIR") ?? "";' \
         "    val _w = fs.writeText(d + \"/junk_$m.erl\", \"-module(junk_$m). this is not erlang\");" \
         '    assert one() == 1;' \
         '}' >"$P/test/${m}_test.bp"
@@ -900,6 +900,112 @@ printf '{ "name": "pathdep", "version": "0.1.0", "target": "commonJS", "dependen
 printf 'import { answer } from "pathlib";\n\npub fn main() {\n    @print(answer());\n}\n' >"$P/src/main.bp"
 run "$P" build
 expect_code 0 "build with a path dependency (no library root involved)"
+
+# ── a git dependency names a package inside its repository (decision 344) ────
+# `{ "git": …, "tag": …, "subdir": "modules/web" }`: `bpmp install` clones the
+# repository once at the ref, links `.botopinkbuild/deps/web` to the package at
+# the subdir, and the package's `path` sibling (`../core`) comes from the same
+# checkout — so at the same ref. The source is a local bare repository: no
+# network. BPMP_BIN points the rows at another bpmp (the parent commit's, to
+# prove they red there).
+BPMP="${BPMP_BIN:-$REPO_ROOT/zig-out/bin/bpmp}"
+echo "==> a git dependency's \"subdir\": one clone at the ref, the package and its path sibling from it"
+if have git && have node && [[ -x "$BPMP" ]]; then
+  SUBSRC="$WORK/subdir-src"; SUBBARE="$WORK/subdir-remote.git"; rm -rf "$SUBSRC" "$SUBBARE"
+  # Hermetic git: an identity, no signing, no user hooks.
+  hgit() { git -c user.name=cli-contract -c user.email=cli@contract.invalid -c commit.gpgsign=false -c tag.gpgsign=false -c core.hooksPath=/dev/null "$@"; }
+  mkdir -p "$SUBSRC/modules/web/src" "$SUBSRC/modules/core/src" "$SUBSRC/modules/ws/members/m" "$SUBSRC/modules/empty" "$SUBSRC/modules/escape"
+  printf '{ "name": "web", "version": "0.0.1", "entry": "root.bp", "files": ["root.bp"],\n  "dependencies": { "core": { "path": "../core" } } }\n' >"$SUBSRC/modules/web/botopink.json"
+  printf 'import { coreValue } from "core";\n\npub fn webValue() -> string {\n    return coreValue();\n}\n' >"$SUBSRC/modules/web/src/root.bp"
+  printf '{ "name": "core", "version": "0.0.1", "entry": "root.bp", "files": ["root.bp"] }\n' >"$SUBSRC/modules/core/botopink.json"
+  printf 'pub fn coreValue() -> string {\n    return "core at v1.0";\n}\n' >"$SUBSRC/modules/core/src/root.bp"
+  printf '{ "name": "ws", "workspaces": ["members/*"] }\n' >"$SUBSRC/modules/ws/botopink.json"
+  printf '{ "name": "m" }\n' >"$SUBSRC/modules/ws/members/m/botopink.json"
+  printf 'no botopink.json here\n' >"$SUBSRC/modules/empty/README"
+  printf '{ "name": "escape", "dependencies": { "outside": { "path": "../../../outside" } } }\n' >"$SUBSRC/modules/escape/botopink.json"
+  hgit -C "$SUBSRC" init --quiet --initial-branch=main
+  hgit -C "$SUBSRC" add .
+  hgit -C "$SUBSRC" commit --quiet -m v1.0
+  hgit -C "$SUBSRC" tag v1.0
+  printf 'pub fn coreValue() -> string {\n    return "core at main";\n}\n' >"$SUBSRC/modules/core/src/root.bp"
+  hgit -C "$SUBSRC" commit --quiet -am main
+  git clone --quiet --bare "$SUBSRC" "$SUBBARE"
+  SUBURL="file://$SUBBARE"
+
+  # bpmp_install <dir> <bpmp home> — `bpmp install` in <dir>; $OUT / $CODE as `run`.
+  bpmp_install() {
+    set +e
+    OUT="$(cd "$1" && BPMP_HOME="$2" "$BPMP" install 2>&1)"
+    CODE=$?
+    set -e
+  }
+  # subdir_app <name> <dependencies-json> — a project importing `web`.
+  subdir_app() {
+    local dir; dir="$(project "$1")"
+    printf '{ "name": "%s", "version": "0.1.0", "target": "commonJS",\n  "dependencies": %s }\n' "$1" "$2" >"$dir/botopink.json"
+    printf 'import { webValue } from "web";\n\npub fn main() {\n    @print(webValue());\n}\n' >"$dir/src/main.bp"
+    echo "$dir"
+  }
+  # checkouts <bpmp home> — how many checkouts the store holds.
+  checkouts() { find "$1/store" -mindepth 2 -maxdepth 2 -type d ! -name '.tmp-*' 2>/dev/null | wc -l | tr -d ' '; }
+
+  P="$(subdir_app subdir-web "{ \"web\": { \"git\": \"$SUBURL\", \"tag\": \"v1.0\", \"subdir\": \"modules/web\" } }")"
+  bpmp_install "$P" "$WORK/bpmp-home-web"
+  expect_code 0 "bpmp install of a subdir dependency"
+  [[ "$(readlink "$P/.botopinkbuild/deps/web")" == */modules/web ]] && ok ".botopinkbuild/deps/web links to the package at the subdir" || fail ".botopinkbuild/deps/web links to '$(readlink "$P/.botopinkbuild/deps/web" || true)', not .../modules/web"
+  [[ "$(checkouts "$WORK/bpmp-home-web")" == 1 ]] && ok "one checkout in the store" || fail "the store holds $(checkouts "$WORK/bpmp-home-web") checkouts"
+  run "$P" run
+  expect_code 0 "run with a subdir dependency whose path sibling is in the checkout"
+  expect_out "core at v1.0" "the path sibling comes at the dependency's tag"
+  expect_no_out "core at main" "not at the repository's default branch"
+
+  echo "==> two subdir dependencies on one repository at one ref share one checkout"
+  P="$(subdir_app subdir-both "{ \"web\": { \"git\": \"$SUBURL\", \"tag\": \"v1.0\", \"subdir\": \"modules/web\" },
+    \"core\": { \"git\": \"$SUBURL\", \"tag\": \"v1.0\", \"subdir\": \"modules/core\" } }")"
+  bpmp_install "$P" "$WORK/bpmp-home-both"
+  expect_code 0 "bpmp install of two subdir dependencies"
+  expect_out "core (shared checkout)" "the second takes the first's checkout"
+  [[ "$(checkouts "$WORK/bpmp-home-both")" == 1 ]] && ok "one clone for both" || fail "the store holds $(checkouts "$WORK/bpmp-home-both") checkouts"
+  run "$P" run
+  expect_code 0 "run with web and its sibling both declared"
+  expect_out "core at v1.0" "web's ../core and the project's core are one package"
+
+  echo "==> a \"subdir\" is refused, located, when it cannot name a package of the checkout"
+  # refuse_subdir <name> <dependencies-json> <message> <label> — bpmp install
+  # exits 1 with <message> located in a botopink.json, and links nothing.
+  refuse_subdir() {
+    local dir; dir="$(subdir_app "$1" "$2")"
+    bpmp_install "$dir" "$WORK/bpmp-home-refused"
+    expect_code 1 "$4: bpmp install"
+    expect_out "$3" "$4: names the problem"
+    expect_out "botopink.json:" "$4: located in a manifest"
+    [[ ! -e "$dir/.botopinkbuild/deps" ]] && ok "$4: links nothing" || fail "$4: .botopinkbuild/deps written by a refused install"
+  }
+  refuse_subdir subdir-nogit '{ "web": { "path": "../web", "subdir": "modules/web" } }' \
+    'dependency "web" names a "subdir" without a "git" source' "subdir without git"
+  run "$WORK/subdir-nogit" build
+  expect_code 1 "subdir without git: botopink build refuses the manifest too"
+  expect_out 'names a "subdir" without a "git" source' "subdir without git: the compiler's message is bpmp's"
+  refuse_subdir subdir-abs "{ \"web\": { \"git\": \"$SUBURL\", \"tag\": \"v1.0\", \"subdir\": \"/modules/web\" } }" \
+    '"subdir" "/modules/web" is absolute' "an absolute subdir"
+  refuse_subdir subdir-up "{ \"web\": { \"git\": \"$SUBURL\", \"tag\": \"v1.0\", \"subdir\": \"modules/../../web\" } }" \
+    '"subdir" "modules/../../web" leaves the repository' "a subdir leaving the repository"
+  refuse_subdir subdir-empty "{ \"web\": { \"git\": \"$SUBURL\", \"tag\": \"v1.0\", \"subdir\": \"modules/empty\" } }" \
+    "\"web\": subdir \"modules/empty\" holds no botopink.json in $SUBURL at" "a subdir with no botopink.json"
+  refuse_subdir subdir-ws "{ \"web\": { \"git\": \"$SUBURL\", \"tag\": \"v1.0\", \"subdir\": \"modules/ws\" } }" \
+    "\"web\": subdir \"modules/ws\" is a workspace, not a package — name one of its members' subdirs: modules/ws/members/m" "a subdir that is a workspace"
+  refuse_subdir subdir-name "{ \"web\": { \"git\": \"$SUBURL\", \"tag\": \"v1.0\", \"subdir\": \"modules/core\" } }" \
+    "\"web\": subdir \"modules/core\" holds a package named \"core\"" "a subdir holding another package"
+  refuse_subdir subdir-escape "{ \"escape\": { \"git\": \"$SUBURL\", \"tag\": \"v1.0\", \"subdir\": \"modules/escape\" } }" \
+    "\"outside\": path \"../../../outside\" leaves the checkout of $SUBURL" "a path dependency leaving the checkout"
+  expect_out "modules/escape/botopink.json:1:" "a path dependency leaving the checkout: located in the package's own manifest"
+  refuse_subdir subdir-tworefs "{ \"web\": { \"git\": \"$SUBURL\", \"tag\": \"v1.0\", \"subdir\": \"modules/web\" },
+    \"core\": { \"git\": \"$SUBURL\", \"branch\": \"main\", \"subdir\": \"modules/core\" } }" \
+    "dependencies \"web\" and \"core\" name one repository ($SUBURL) at two refs (tag \"v1.0\" and branch \"main\")" "one repository at two refs"
+  expect_out "botopink.json:3:5" "one repository at two refs: located at the second dependency"
+else
+  skip "a git dependency's subdir (git, node or $BPMP missing)"
+fi
 
 # ── `.mjs` sidecars (00 · 10-cli-residuals) ──────────────────────────────────
 # A `#[@External.Node("./x.mjs", …)]` lowers to a relative `require` in the

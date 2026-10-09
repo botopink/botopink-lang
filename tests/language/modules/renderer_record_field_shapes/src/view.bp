@@ -19,7 +19,7 @@ pub fn open<El>(v: ElementView<El>, e: El) -> string {
 pub type Box<T>(items: Array<T>)
 
 pub fn firstOf<T>(b: Box<T>, fallback: T) -> T {
-    return b.items.at(0).unwrapOr(fallback);
+    return b.items.at(0) ?? fallback;
 }
 
 pub fn count<El>(v: ElementView<El>, thunks: Array<fn() -> @Task<El>>) -> i32 {

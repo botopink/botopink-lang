@@ -489,8 +489,14 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         // identical.
         var sawMethodCall = false;
         while (this.check(.dot) or this.check(.questionDot) or this.check(.leftParenthesis) or
-            this.check(.leftSquareBracket))
+            this.check(.leftSquareBracket) or this.check(.bang))
         {
+            if (try parseOptionalLink(this, alloc, base)) |linked| {
+                base = linked;
+                sawMethodCall = true;
+                continue;
+            }
+            if (this.check(.bang)) break;
             // `xs[0]` — see the matching link in `parsePostfixChain`. The two
             // chain copies carry the same links; `parser/AGENTS.md` says so.
             if (this.check(.leftSquareBracket)) {
@@ -931,9 +937,9 @@ pub fn parsePipelineExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr 
 /// then `b`.
 ///
 /// It sits at the tightest binary level, just above `is` and a primary, for the
-/// reason `is` does: `a ?? 0 == 1` reads as `(a ?? 0) == 1`, `if (a ?? false)`
-/// needs no parentheses of its own, and there is no "cannot mix `??` with `||`"
-/// rule to learn. **Right-associative**, so `a ?? b ?? c` is `a ?? (b ?? c)` —
+/// reason `is` does: `a ?? 0 == 1` reads as `(a ?? 0) == 1` and `if (a ?? false)`
+/// needs no parentheses of its own. Beside `&&` / `||` it takes them
+/// (decision 330 (4), `nullishBesideLogical`). **Right-associative**, so `a ?? b ?? c` is `a ?? (b ?? c)` —
 /// the first non-null of the three.
 ///
 /// **It desugars rather than adding an operator.** `a ?? b` becomes
@@ -942,12 +948,26 @@ pub fn parsePipelineExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr 
 /// narrows it inside the branch, and is already lowered by all four backends.
 /// `ast.zig` says why a `BinOp` variant is not the shape.
 fn parseNullishExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
+    const startIdx = this.current;
     var value = try parseIsExpr(this, alloc);
     errdefer value.deinit(alloc);
     if (!this.check(.questionQuestion)) return value;
     const opTok = this.advance();
     // Right-associative: the RHS is another `??` chain, not just one operand.
     const fallback = try parseNullishExpr(this, alloc);
+    // Decision 330 (4) — `??` beside `&&` / `||` without parentheses is
+    // refused, as in TypeScript: which one binds first is not something a
+    // reader should have to know. Parenthesised, the `??` chain starts after a
+    // `(` and ends before a `)`.
+    const before: TokenKind = if (startIdx > 0) this.tokens[startIdx - 1].kind else .endOfFile;
+    if (before == .amperAmper or before == .verticalBarVerticalBar or
+        this.check(.amperAmper) or this.check(.verticalBarVerticalBar))
+    {
+        var f = fallback;
+        f.deinit(alloc);
+        this.parseError = ParseErrorInfo.fromToken(.nullishBesideLogical, opTok);
+        return ParseError.UnexpectedToken;
+    }
 
     const condPtr = try this.boxExpr(alloc, value);
     const fallbackPtr = try this.boxExprOwned(alloc, fallback);
@@ -1058,6 +1078,51 @@ fn makeIndexExpr(this: *This, alloc: std.mem.Allocator, base: Expr) ParseError!E
     } } } };
 }
 
+/// Decision 330 — the three optional links that are not a `?.member`:
+/// `recv?.[i]` (the index, `optional` set), `f?.(args)` (a call of what `f`
+/// holds, `optional` set) and the postfix `x!` (the `ast.non_null_builtin_name`
+/// carrier), written right after its operand — `x !` is not the form, and the
+/// prefix `!x` is untouched. Null when the cursor holds none of them.
+fn parseOptionalLink(this: *This, alloc: std.mem.Allocator, base: Expr) ParseError!?Expr {
+    if (this.check(.questionDot) and this.peekAt(1).kind == .leftSquareBracket) {
+        const qTok = this.advance();
+        var idx = try makeIndexExpr(this, alloc, base);
+        idx.call.loc = locFromToken(qTok);
+        idx.call.kind.call.optional = true;
+        return idx;
+    }
+    if (this.check(.questionDot) and this.peekAt(1).kind == .leftParenthesis) {
+        const qTok = this.advance();
+        const args = try this.parseCallArgs(alloc);
+        errdefer {
+            for (args) |*a| a.deinit(alloc);
+            alloc.free(args);
+        }
+        const calleePtr = try this.boxExpr(alloc, base);
+        var call = makeCall(qTok, null, "", false, args, try alloc.alloc(TrailingLambda, 0));
+        call.call.kind.call.calleeExpr = calleePtr;
+        call.call.kind.call.optional = true;
+        return call;
+    }
+    if (this.check(.bang) and this.current > 0) {
+        const bangTok = this.peek();
+        const prev = this.tokens[this.current - 1];
+        if (prev.line != bangTok.line or prev.col + prev.lexeme.len != bangTok.col) return null;
+        _ = this.advance();
+        const operandPtr = try this.boxExpr(alloc, base);
+        var args = try alloc.alloc(CallArg, 1);
+        args[0] = .{ .label = null, .value = operandPtr };
+        return Expr{ .call = .{ .loc = locFromToken(bangTok), .kind = .{ .call = .{
+            .receiver = null,
+            .callee = ast.non_null_builtin_name,
+            .is_builtin = true,
+            .args = args,
+            .trailing = &.{},
+        } } } };
+    }
+    return null;
+}
+
 /// Consume a postfix `.member` / `?.member` / `.method(args)` chain off an
 /// already-parsed `base` expression, so a literal receiver chains the same way
 /// an identifier does (`[1, 2].map(f)`, `"x".contains(y)`). Operand position:
@@ -1075,8 +1140,13 @@ fn parsePostfixChainFrom(this: *This, alloc: std.mem.Allocator, base_in: Expr, r
     var base = base_in;
     var receiverTypeArgs = receiverTypeArgs_in;
     while (this.check(.dot) or this.check(.questionDot) or this.check(.leftParenthesis) or
-        this.check(.leftSquareBracket))
+        this.check(.leftSquareBracket) or this.check(.bang))
     {
+        if (try parseOptionalLink(this, alloc, base)) |linked| {
+            base = linked;
+            continue;
+        }
+        if (this.check(.bang)) break;
         // `xs[0]` — an index expression (decision 30), a chain link like
         // `.field`, so `f(1)[0].name` is one chain. The index is an ordinary
         // expression, which is what makes `xs[0..2]` the same node.

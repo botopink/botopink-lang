@@ -27,6 +27,7 @@ scripts/
 ├── comptime_bench.sh  ← what the comptime path costs: build wall clock + the in-node compile/load/run split
 ├── macos-sim.sh       ← run a command on Linux as the macos-14 CI row would (§ Portability)
 ├── codemod-import-without-from.py ← decision 206's one-shot migration: `from "<a module of this package>"` → the brace form (§ below)
+├── codemod-optional-operators.py ← decision 330's migration: `.unwrapOr(d)` on a `?T` → `?? d`, `result.<op>(r, …)` → `r.<op>(…)` (§ below)
 ├── lib/
 │   ├── pool.sh        ← the bounded worker pool the shell runners share (sourced by ../tests/language/run.sh and check-docs.sh)
 │   └── result-store.js ← the cell-result store of run.sh and check-docs.sh: keys, lookup, save (decision 229)
@@ -677,3 +678,35 @@ ubuntu and macos.
 ## See also
 
 - [`modules/bpmp/AGENTS.md`](../modules/bpmp/AGENTS.md) — the `bpmp` CLI surface used after install.
+
+## codemod-optional-operators.py
+
+Decision 330 (1.0.12-beta `01-checker` step 31): `?T` has no methods — its surface
+is `??`, `?.`, `?.[]`, `?.()` and the postfix `!` — and the builtin `result`
+namespace goes. The script migrates a tree before the refusals reach it:
+
+```sh
+python3 scripts/codemod-optional-operators.py [--write] [--once] [--compiler <botopink>] <root>...
+```
+
+- **`result.<op>(r, …)` → `r.<op>(…)`**, textually (`then` → `flatMap`, `unwrap` →
+  `unwrapOr`; `result.map` only with two arguments; a `//` line is prose and
+  left alone).
+- **Which `.unwrapOr` reads a `?T` is the compiler's answer.** It runs `botopink
+  check` in every project under each root (a `botopink.json` that is not a
+  bare workspace) and rewrites the sites the compiler names:
+  `optional-has-no-methods` on `unwrapOr` → `recv ?? d` (the default
+  parenthesised when it holds an operator, the whole parenthesised beside a
+  postfix link, a prefix `!` / `-`, `&&` / `||`); on `map` / `flatMap` whose
+  lambda only projects its parameter (`x.map({ v -> v.name })`) → `x?.name`;
+  `optional-operator-never-null` → the operator dropped (`a ?? b` is `a`, `a?.f`
+  is `a.f`, `a!` is `a`). It repeats until the compiler names nothing it can
+  rewrite (one error per module per run); the column is the compiler's, in
+  bytes. Anything else is printed `UNDECIDED <file>:<line>:<col> <what>` and the
+  run exits 1.
+- **`--once`** stops after one compiler pass — std's sources are embedded in
+  the compiler, so its sites move only when the compiler is rebuilt.
+- The formatter (`<botopink> format`) is run over every file it changed that `format --check` left
+  alone before the first rewrite; a file that was not canonical keeps its layout, so the diff is the
+  rewrite.
+

@@ -61,7 +61,7 @@ test "erlang: a default fn body lowers a local's method by the kind its declared
         \\behavior Array<T> {
         \\    default fn firstOr(self: Self<T>, d: T) -> T {
         \\        val f = self.at(0);
-        \\        return f.unwrapOr(d);
+        \\        return f ?? d;
         \\    }
         \\}
         \\
@@ -72,7 +72,7 @@ test "erlang: a default fn body lowers a local's method by the kind its declared
         \\    val none: i32[] = [];
         \\    @print(none.firstOr(9));
         \\}
-    , "+B\nb\n1\n9\n", &.{ "(string:prefix(Tail, <<\"+\">>) =/= nomatch)", "string:uppercase(Tail)", "(fun(__BpO) -> case __BpO of undefined -> (D); __BpV0 -> __BpV0 end end)(F)" });
+    , "+B\nb\n1\n9\n", &.{ "(string:prefix(Tail, <<\"+\">>) =/= nomatch)", "string:uppercase(Tail)" });
 }
 
 test "erlang: Array.unique keeps each value's first occurrence" {

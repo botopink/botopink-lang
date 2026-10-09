@@ -1,0 +1,10 @@
+//// Decision 330 — `?T` has no methods: `unwrapOr` (like `map` and
+//// `flatMap`) left it and stays on `@Result`. `x ?? d` is the default.
+
+fn find(key: string) -> ?string {
+    return if (key == "a") "found" else null;
+}
+
+pub fn main() {
+    @print(find("b").unwrapOr("none"));
+}

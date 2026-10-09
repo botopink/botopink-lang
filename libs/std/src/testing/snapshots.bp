@@ -183,7 +183,10 @@ fn freeScratch(base: string, n: i32) -> string {
 // `botopink test` names and removes with the run) and, outside a test run,
 // under the host's tmpdir.
 fn tmpDir() -> string {
-    val base = env.read("BOTOPINK_TEST_TMPDIR").unwrapOr(os.tmpdir());
+    // The host's tmpdir is read first: a module-namespace call as the
+    // right side of `??` lowers on erlang as a method call on `os`.
+    val hostTmp = os.tmpdir();
+    val base = env.read("BOTOPINK_TEST_TMPDIR") ?? hostTmp;
     val dir = freeScratch(base, 0);
     val made = ensureDir(dir);
     return if (made.isOk()) dir else "";

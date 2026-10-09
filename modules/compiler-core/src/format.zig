@@ -1396,12 +1396,18 @@ pub const Formatter = struct {
         if (std.mem.eql(u8, c.callee, ast.index_builtin_name) and c.args.len == 2 and
             c.args[0].label == null and c.args[1].label == null)
         {
+            const optional = if (@hasField(@TypeOf(c), "optional")) c.optional else false;
             return try this.concatAll(&.{
                 try this.fmtExpr(c.args[0].value.*),
-                try this.text("["),
+                try this.text(if (optional) "?.[" else "["),
                 try this.fmtExpr(c.args[1].value.*),
                 try this.text("]"),
             });
+        }
+
+        // `x!` — decision 330 (5), as `@!(x)`.
+        if (std.mem.eql(u8, c.callee, ast.non_null_builtin_name) and c.args.len == 1 and c.args[0].label == null) {
+            return try this.concat(try this.fmtExpr(c.args[0].value.*), try this.text("!"));
         }
 
         // `x is T` — decision 8 §4, as `@is(x)` with the tested type on the
@@ -1575,7 +1581,8 @@ pub const Formatter = struct {
         // receiver: `adder(3)(4)` came back as `(4)`.
         const calleeExpr = if (@hasField(@TypeOf(c), "calleeExpr")) c.calleeExpr else null;
         const callee: *const Doc = if (calleeExpr) |ce|
-            try this.fmtExpr(ce.*)
+            // `f?.(args)` (decision 330) — the call of what an optional holds.
+            (if (is_optional) try this.concat(try this.fmtExpr(ce.*), try this.text("?.")) else try this.fmtExpr(ce.*))
         else if (c.receiver) |recv|
             try this.concatAll(&.{
                 // Decision 255 (1) — `Dict<string, unknown>.empty()`; a chain
@@ -2534,10 +2541,19 @@ pub const Formatter = struct {
         try parts.append(this.arena, try this.text(t.name));
         try parts.append(this.arena, try this.fmtGenericParams(t.genericParams));
 
-        const methodDocs = try this.arena.alloc(*const Doc, t.methods.len);
-        const methodBlanks = try this.arena.alloc(bool, t.methods.len);
-        const noGroups = try this.arena.alloc(u8, t.methods.len);
-        for (t.methods, 0..) |m, i| {
+        // Decision 330 (7) — the types declared in the body (associated
+        // types) print first, then the functions.
+        const memberCount = t.assocTypes.len + t.methods.len;
+        const methodDocs = try this.arena.alloc(*const Doc, memberCount);
+        const methodBlanks = try this.arena.alloc(bool, memberCount);
+        const noGroups = try this.arena.alloc(u8, memberCount);
+        for (t.assocTypes, 0..) |nested, i| {
+            const c = try this.withMemberComments(nested.comments, try this.fmtType(nested));
+            methodDocs[i] = c.doc;
+            methodBlanks[i] = c.blank;
+            noGroups[i] = 0;
+        }
+        for (t.methods, t.assocTypes.len..) |m, i| {
             const c = try this.withMemberComments(m.comments, try this.withTrailingComment(try this.concat(
                 try this.fmtAnnotations(m.annotations),
                 try this.fmtInterfaceMethod(m),
@@ -2548,10 +2564,11 @@ pub const Formatter = struct {
         }
 
         if (t.isRecord()) {
-            // Decision 138: the field list is always written, `()` when empty.
+            // Decision 138: the field list is always written, `()` when empty —
+            // except on a namespace type, which has none (decision 329).
             if (t.recordFields().len > 0)
                 try parts.append(this.arena, try this.fmtFieldList(t.recordFields(), t.trailingComma))
-            else
+            else if (!t.isNamespace)
                 try parts.append(this.arena, try this.text("()"));
             try this.appendImplement(&parts, t.implement);
             if (methodDocs.len > 0 or t.bodyComments.len > 0) {

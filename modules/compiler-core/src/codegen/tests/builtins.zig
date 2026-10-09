@@ -234,16 +234,12 @@ test "js: stdlib ---- Result.isOk and isError predicates" {
     );
 }
 
-test "js: stdlib ---- Option map, flatMap and unwrapOr mirror Result" {
+test "js: stdlib ---- an optional is read by its operators, not by methods (decision 330)" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type Person(name: string)
-        \\fn firstName(p: Person) -> ?string { @todo(); }
-        \\fn shout(s: string) -> ?string { @todo(); }
+        \\fn find(p: Person) -> ?Person { @todo(); }
         \\fn greet(p: Person) -> string {
-        \\    return firstName(p)
-        \\        .map({ n -> "Hello " + n })
-        \\        .flatMap({ n -> shout(n) })
-        \\        .unwrapOr("Hello stranger");
+        \\    return find(p)?.name ?? "Hello stranger";
         \\}
     );
 }

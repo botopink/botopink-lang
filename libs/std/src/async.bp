@@ -338,7 +338,7 @@ fn retryFrom<T, E>(
     val outcome = await work();
     val settled = outcome.isOk() || attempt >= policy.maxAttempts;
     if (settled) return try outcome;
-    val pause = nextDelay(policy, attempt).unwrapOr(policy.maxMillis);
+    val pause = nextDelay(policy, attempt) ?? policy.maxMillis;
     await delay(timerMillis(pause), 0);
     return try await retryFrom(policy, work, attempt + 1);
 }
@@ -551,9 +551,9 @@ test "async: runAll ---- a fallible task answers its @Result in its slot" {
     );
     assert settled.length == 3;
     val absent = errorProbe();
-    assert errorText(settled.at(0).unwrapOr(absent)) == "";
-    assert errorText(settled.at(1).unwrapOr(absent)) == "broken";
-    assert settled.at(2).unwrapOr(absent).unwrapOr("") == "fast";
+    assert errorText(settled.at(0) ?? absent) == "";
+    assert errorText(settled.at(1) ?? absent) == "broken";
+    assert (settled.at(2) ?? absent).unwrapOr("") == "fast";
 }
 
 // A settled element to stand in for the `?T` fallback of `.at(i)`. `Array.at`

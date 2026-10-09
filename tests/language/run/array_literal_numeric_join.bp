@@ -19,5 +19,5 @@ pub fn main() {
     val zs = [1, null];
     @print(zs.length);
     val ns = [null, 7, 8];
-    @print(ns.at(1).unwrapOr(null) ?? 0);
+    @print(ns.at(1) ?? null ?? 0);
 }

@@ -4,7 +4,8 @@ fn main() {
     val rows = [[1, 2], [3, 4]];
     @print(rows);
     @print(rows[1]);
-    @print(rows[1][0]);
+    val r1: i32[] = rows[1] ?? [];
+    @print(r1[0]);
     @print(rows[0]?.length);
     val xs = [10, 20, 30];
     @print(xs[0..2].length);
@@ -224,7 +225,8 @@ function main() {
     const rows = [[1, 2], [3, 4]];
     __bp_print(rows);
     __bp_print(__bp_array_at(rows, 1));
-    __bp_print(__bp_array_at(rows, 1).at(0));
+    const r1 = (() => { const __bp_nullish = __bp_array_at(rows, 1); if (__bp_nullish != null) { return __bp_nullish; } else { return []; } })();
+    __bp_print(__bp_array_at(r1, 0));
     __bp_print(__bp_array_at(rows, 0)?.length);
     const xs = [10, 20, 30];
     __bp_print(xs.slice(0, 2).length);

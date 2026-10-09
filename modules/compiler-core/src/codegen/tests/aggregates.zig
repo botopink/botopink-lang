@@ -231,10 +231,10 @@ test "js: tuple ---- chained positional access and a method on an element" {
 // SyntaxError), and `.map` on the `?T` a `find` answers is the Option map, not
 // `Array.prototype.map` over the found tuple. Prints `2` then `true` on all
 // four backends (the bare `pair.0` is `element/2` on erlang and beam).
-test "js: tuple ---- a bare digit index and an option map over a found pair" {
+test "js: tuple ---- a bare digit index and optional chaining over a found pair" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn lookup(pairs: Array<#(string, i32)>, key: string) -> ?i32 {
-        \\    return pairs.find({ pair -> pair.0 == key }).map({ pair -> pair.1 });
+        \\    return pairs.find({ pair -> pair.0 == key })?.1;
         \\}
         \\
         \\fn main() {
@@ -443,7 +443,7 @@ test "js: index ---- element, slice, open slice, string and tuple" {
         \\    @print(t[0]);
         \\    val i = 1;
         \\    @print(xs[i + 1]);
-        \\    @print([[1, 2], [3, 4]][1][0]);
+        \\    @print([[1, 2], [3, 4]][1]?.[0] ?? 0);
         \\}
     ;
     try h.assertJsContains(std.testing.allocator, src, &.{
@@ -454,7 +454,9 @@ test "js: index ---- element, slice, open slice, string and tuple" {
         "__bp_print(s.slice(1, 3));",
         "__bp_print(t[0]);",
         "__bp_print(__bp_array_at(xs, __bp_int((i + 1), -2147483648, 2147483647, \"+ on i32 at main.bp:12:17\")));",
-        "__bp_print(__bp_array_at([[1, 2], [3, 4]], 1).at(0));",
+        // `xs[k]` answers `?T`, so a second index reads through `?.[k]`
+        // (decision 330): the `if` over the first, the second inside it.
+        "const __bp_opt_13_31 = __bp_array_at([[1, 2], [3, 4]], 1); if (__bp_opt_13_31 != null) { return __bp_array_at(__bp_opt_13_31, 0); } else { return null; }",
     });
     // An open-ended range is `.slice(start, null)` here and the lazy
     // `__bp_range_from` generator everywhere else, so the helper is not pulled

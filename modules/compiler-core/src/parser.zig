@@ -226,6 +226,9 @@ pub const ParseErrorType = enum {
     /// `type P() { … }` (decision 138); braces alone are an enum's. Located
     /// where the `()` belongs.
     typeWithoutFieldList,
+    namespaceTypeSelf,
+    assocTypeDuplicate,
+    nullishBesideLogical,
     /// `#[x] type Name = T;` — an alias is a name for a type, not a
     /// declaration that carries metadata; it takes no annotation.
     typeAliasAnnotated,

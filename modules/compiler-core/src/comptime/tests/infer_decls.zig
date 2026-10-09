@@ -933,7 +933,7 @@ test "infer: std package ---- a leaf the module does not declare is refused at t
     );
 }
 
-test "infer: builtin result namespace ---- qualified calls typecheck" {
+test "infer: a @Result's methods typecheck (decision 330: no `result` namespace)" {
     try h.assertInfersOk(std.testing.allocator,
         \\fn parse(n: i32) -> @Result<i32, string> {
         \\    if (n < 0) { throw "negative"; };
@@ -941,24 +941,21 @@ test "infer: builtin result namespace ---- qualified calls typecheck" {
         \\}
         \\
         \\fn main() {
-        \\    val doubled = result.map(parse(21), { x -> x * 2 });
-        \\    val n: i32 = result.unwrap(doubled, 0);
-        \\    val ok: bool = result.isOk(parse(n));
+        \\    val doubled = parse(21).map({ x -> x * 2 });
+        \\    val n: i32 = doubled.unwrapOr(0);
+        \\    val ok: bool = parse(n).isOk();
         \\}
     );
 }
 
-// Front 20 F11 — `?T` has no `expect`. It was `unwrapOr` under a name that
-// says the absent branch is unreachable; one spelling survives, and the
-// removed one is refused rather than typed permissively (which is what an
-// unknown method on a `?T` gets, and would have turned the alias into a
-// run-time failure). `tests/language/reject/option_expect_removed.bp` carries
-// the diagnostic.
-test "infer: ?T.unwrapOr ---- the one unwrap returns the inner type" {
+// Decision 330 — `?T` has no methods; `??` is its default and answers the
+// payload. `tests/language/reject/optional_has_no_methods.bp` carries the
+// refusal of `.unwrapOr` on a `?T`.
+test "infer: the nullish default answers the inner type" {
     try h.assertInfersOk(std.testing.allocator,
         \\fn firstChar(s: string) -> ?string { @todo(); }
         \\fn main() {
-        \\    val s = firstChar("abc").unwrapOr("");
+        \\    val s: string = firstChar("abc") ?? "";
         \\    @print(s);
         \\}
     );

@@ -17,7 +17,7 @@
 const std = @import("std");
 const h = @import("helpers.zig");
 
-test "js: builtin result namespace ---- qualified call lowers inline" {
+test "js: a @Result's methods lower inline (decision 330: no `result` namespace)" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn parse(n: i32) -> @Result<i32, string> {
         \\    if (n < 0) { throw "negative"; };
@@ -25,8 +25,8 @@ test "js: builtin result namespace ---- qualified call lowers inline" {
         \\}
         \\
         \\fn main() {
-        \\    val r = result.map(parse(21), { x -> x * 2 });
-        \\    @print(result.unwrap(r, 0));
+        \\    val r = parse(21).map({ x -> x * 2 });
+        \\    @print(r.unwrapOr(0));
         \\}
     );
 }
@@ -177,7 +177,7 @@ test "js: std package ---- methods of a type answered by an imported module reso
         \\
         \\fn main() {
         \\    val d = Dict.empty().insert("a", 1);
-        \\    @print(d.at("a").unwrapOr(0));
+        \\    @print(d.at("a") ?? 0);
         \\    @print(d.insert("b", 2).size());
         \\}
     );

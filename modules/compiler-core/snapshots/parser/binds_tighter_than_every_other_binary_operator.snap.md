@@ -249,61 +249,71 @@
                       "binaryOp": {
                         "loc": {
                           "line": 4,
-                          "col": 24
+                          "col": 26
                         },
                         "op": "and",
                         "lhs": {
-                          "branch": {
+                          "collection": {
                             "loc": {
                               "line": 4,
-                              "col": 15
+                              "col": 13
                             },
                             "kind": {
-                              "if_": {
-                                "cond": {
-                                  "identifier": {
-                                    "loc": {
-                                      "line": 4,
-                                      "col": 13
-                                    },
-                                    "kind": {
-                                      "ident": "b"
+                              "grouped": {
+                                "branch": {
+                                  "loc": {
+                                    "line": 4,
+                                    "col": 16
+                                  },
+                                  "kind": {
+                                    "if_": {
+                                      "cond": {
+                                        "identifier": {
+                                          "loc": {
+                                            "line": 4,
+                                            "col": 14
+                                          },
+                                          "kind": {
+                                            "ident": "b"
+                                          }
+                                        }
+                                      },
+                                      "binding": "__bp_nullish",
+                                      "then_": [
+                                        {
+                                          "expr": {
+                                            "identifier": {
+                                              "loc": {
+                                                "line": 4,
+                                                "col": 16
+                                              },
+                                              "kind": {
+                                                "ident": "__bp_nullish"
+                                              }
+                                            }
+                                          },
+                                          "emptyLinesBefore": 0
+                                        }
+                                      ],
+                                      "else_": [
+                                        {
+                                          "expr": {
+                                            "identifier": {
+                                              "loc": {
+                                                "line": 4,
+                                                "col": 19
+                                              },
+                                              "kind": {
+                                                "ident": "false"
+                                              }
+                                            }
+                                          },
+                                          "emptyLinesBefore": 0
+                                        }
+                                      ]
                                     }
                                   }
-                                },
-                                "binding": "__bp_nullish",
-                                "then_": [
-                                  {
-                                    "expr": {
-                                      "identifier": {
-                                        "loc": {
-                                          "line": 4,
-                                          "col": 15
-                                        },
-                                        "kind": {
-                                          "ident": "__bp_nullish"
-                                        }
-                                      }
-                                    },
-                                    "emptyLinesBefore": 0
-                                  }
-                                ],
-                                "else_": [
-                                  {
-                                    "expr": {
-                                      "identifier": {
-                                        "loc": {
-                                          "line": 4,
-                                          "col": 18
-                                        },
-                                        "kind": {
-                                          "ident": "false"
-                                        }
-                                      }
-                                    },
-                                    "emptyLinesBefore": 0
-                                  }
-                                ]
+                                }
                               }
                             }
                           }
@@ -312,7 +322,7 @@
                           "identifier": {
                             "loc": {
                               "line": 4,
-                              "col": 27
+                              "col": 29
                             },
                             "kind": {
                               "ident": "true"

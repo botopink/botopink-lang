@@ -39,7 +39,7 @@ pub fn basename(path: string) -> string {
     val parts = split(path);
     val n = parts.length;
     if (n == 0) return "";
-    return parts.at(n - 1).unwrapOr("");
+    return parts.at(n - 1) ?? "";
 }
 
 // Everything except the basename — the parent directory portion. For an
@@ -66,8 +66,8 @@ pub fn extname(path: string) -> string {
     val pieces = base.split(".");
     val n = pieces.length;
     if (n <= 1) return "";
-    val head = pieces.at(0).unwrapOr("");
-    val tail = pieces.at(n - 1).unwrapOr("");
+    val head = pieces.at(0) ?? "";
+    val tail = pieces.at(n - 1) ?? "";
     // Dotfiles like ".bashrc" split into ["", "bashrc"] — no extension.
     val isDotfile = head == "" && n == 2;
     return if (isDotfile) "" else [".", tail].join("");
@@ -81,10 +81,7 @@ pub fn extname(path: string) -> string {
 // which lowers to a dead store on Erlang's immutable runtime (the same
 // trap `split` sidesteps).
 pub fn join(parts: string[]) -> string {
-    val isAbs = if (parts.length == 0)
-        false
-    else
-        isAbsolute(parts.at(0).unwrapOr(""));
+    val isAbs = if (parts.length == 0) false else isAbsolute(parts.at(0) ?? "");
     val collapsed = parts.map({ p -> split(p).join(separator) });
     val joined = collapsed.filter({ p -> p != "" }).join(separator);
     return if (isAbs) [separator, joined].join("") else joined;
@@ -114,8 +111,8 @@ pub fn normalize(path: string) -> string {
 fn commonPrefixCount(a: string[], b: string[], i: i32) -> i32 {
     if (i >= a.length) return i;
     if (i >= b.length) return i;
-    val ai = a.at(i).unwrapOr("");
-    val bi = b.at(i).unwrapOr("");
+    val ai = a.at(i) ?? "";
+    val bi = b.at(i) ?? "";
     return if (ai == bi) commonPrefixCount(a, b, i + 1) else i;
 }
 
@@ -158,7 +155,7 @@ type PathAccum(
 // recursive — no `var` rebinds.
 fn applyPieces(acc: string[], pieces: string[]) -> string[] {
     if (pieces.length == 0) return acc;
-    val p = pieces.at(0).unwrapOr("");
+    val p = pieces.at(0) ?? "";
     val rest = pieces.slice(1, pieces.length);
     val nextAcc = if (p == "..") {
         if (acc.length == 0) acc else acc.slice(0, acc.length - 1);
@@ -175,7 +172,7 @@ fn resolveStep(state: PathAccum, seg: string) -> PathAccum {
 
 fn resolveAll(segments: string[], i: i32, state: PathAccum) -> PathAccum {
     if (i >= segments.length) return state;
-    val seg = segments.at(i).unwrapOr("");
+    val seg = segments.at(i) ?? "";
     val next = resolveStep(state, seg);
     return resolveAll(segments, i + 1, next);
 }
@@ -241,8 +238,8 @@ test "path.isAbsolute distinguishes leading slash" {
 test "path.split drops empties" {
     val s = split("/usr//bin/");
     assert s.length == 2;
-    assert s.at(0).unwrapOr("") == "usr";
-    assert s.at(1).unwrapOr("") == "bin";
+    assert s.at(0) ?? "" == "usr";
+    assert s.at(1) ?? "" == "bin";
 }
 
 test "path.basename returns the last component" {
@@ -416,7 +413,12 @@ basename(Path) ->
         true ->
             <<"">>;
         _ ->
-            (fun(__BpO) -> case __BpO of undefined -> (<<"">>); __BpV0 -> __BpV0 end end)((fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Parts, '__bp_int'((N - 1), -2147483648, 2147483647, <<"integer overflow: - on i32 at src/path.bp:40:23">>)))
+            case (fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Parts, '__bp_int'((N - 1), -2147483648, 2147483647, <<"integer overflow: - on i32 at src/path.bp:40:23">>)) of
+                undefined ->
+                    <<"">>;
+                __bp_nullish ->
+                    __bp_nullish
+            end
     end.
 
 % Everything except the basename — the parent directory portion. For an
@@ -465,8 +467,18 @@ extname(Path) ->
         true ->
             <<"">>;
         _ ->
-            Head = (fun(__BpO) -> case __BpO of undefined -> (<<"">>); __BpV0 -> __BpV0 end end)((fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Pieces, 0)),
-            Tail = (fun(__BpO) -> case __BpO of undefined -> (<<"">>); __BpV1 -> __BpV1 end end)((fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Pieces, '__bp_int'((N - 1), -2147483648, 2147483647, <<"integer overflow: - on i32 at src/path.bp:68:28">>))),
+            Head = case (fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Pieces, 0) of
+                undefined ->
+                    <<"">>;
+                __bp_nullish ->
+                    __bp_nullish
+            end,
+            Tail = case (fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Pieces, '__bp_int'((N - 1), -2147483648, 2147483647, <<"integer overflow: - on i32 at src/path.bp:68:28">>)) of
+                undefined ->
+                    <<"">>;
+                __bp_nullish@1 ->
+                    __bp_nullish@1
+            end,
             % Dotfiles like ".bashrc" split into ["", "bashrc"] — no extension.
             IsDotfile = ((Head =:= <<"">>) andalso (N =:= 2)),
             case IsDotfile of
@@ -496,7 +508,12 @@ join(Parts) ->
         true ->
             false;
         false ->
-            isAbsolute((fun(__BpO) -> case __BpO of undefined -> (<<"">>); __BpV0 -> __BpV0 end end)((fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Parts, 0)))
+            isAbsolute(case (fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Parts, 0) of
+                undefined ->
+                    <<"">>;
+                __bp_nullish ->
+                    __bp_nullish
+            end)
     end,
     Collapsed = lists:map(fun(P) ->
         iolist_to_binary(lists:join(separator(), lists:map(fun(__E) -> if is_binary(__E) -> __E; is_integer(__E) -> integer_to_binary(__E); is_list(__E) -> __E; true -> iolist_to_binary(io_lib:format("~p", [__E])) end end, split(P))))
@@ -559,11 +576,21 @@ commonPrefixCount(A, B, I) ->
                 true ->
                     I;
                 _ ->
-                    Ai = (fun(__BpO) -> case __BpO of undefined -> (<<"">>); __BpV0 -> __BpV0 end end)((fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(A, I)),
-                    Bi = (fun(__BpO) -> case __BpO of undefined -> (<<"">>); __BpV1 -> __BpV1 end end)((fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(B, I)),
+                    Ai = case (fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(A, I) of
+                        undefined ->
+                            <<"">>;
+                        __bp_nullish ->
+                            __bp_nullish
+                    end,
+                    Bi = case (fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(B, I) of
+                        undefined ->
+                            <<"">>;
+                        __bp_nullish@1 ->
+                            __bp_nullish@1
+                    end,
                     case (Ai =:= Bi) of
                         true ->
-                            commonPrefixCount(A, B, '__bp_int'((I + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at src/path.bp:117:52">>));
+                            commonPrefixCount(A, B, '__bp_int'((I + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at src/path.bp:114:52">>));
                         false ->
                             I
                     end
@@ -579,7 +606,7 @@ makeUps(N) ->
         true ->
             [];
         false ->
-            [<<"..">> | makeUps('__bp_int'((N - 1), -2147483648, 2147483647, <<"integer overflow: - on i32 at src/path.bp:123:42">>))]
+            [<<"..">> | makeUps('__bp_int'((N - 1), -2147483648, 2147483647, <<"integer overflow: - on i32 at src/path.bp:120:42">>))]
     end.
 
 % The relative path from `src` to `dst` — the path you would prefix to
@@ -602,7 +629,7 @@ relative(Src, Dst) ->
     SrcParts = split(Src),
     DstParts = split(Dst),
     Common = commonPrefixCount(SrcParts, DstParts, 0),
-    Ups = makeUps('__bp_int'((erlang:length(SrcParts) - Common), -2147483648, 2147483647, <<"integer overflow: - on i32 at src/path.bp:138:39">>)),
+    Ups = makeUps('__bp_int'((erlang:length(SrcParts) - Common), -2147483648, 2147483647, <<"integer overflow: - on i32 at src/path.bp:135:39">>)),
     Downs = array_slice(DstParts, Common, erlang:length(DstParts)),
     Combined = (Ups ++ Downs),
     Joined = iolist_to_binary(lists:join(separator(), lists:map(fun(__E) -> if is_binary(__E) -> __E; is_integer(__E) -> integer_to_binary(__E); is_list(__E) -> __E; true -> iolist_to_binary(io_lib:format("~p", [__E])) end end, Combined))),
@@ -634,7 +661,12 @@ applyPieces(Acc, Pieces) ->
         true ->
             Acc;
         _ ->
-            P = (fun(__BpO) -> case __BpO of undefined -> (<<"">>); __BpV0 -> __BpV0 end end)((fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Pieces, 0)),
+            P = case (fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Pieces, 0) of
+                undefined ->
+                    <<"">>;
+                __bp_nullish ->
+                    __bp_nullish
+            end,
             Rest = array_slice(Pieces, 1, erlang:length(Pieces)),
             NextAcc = case (P =:= <<"..">>) of
                 true ->
@@ -642,7 +674,7 @@ applyPieces(Acc, Pieces) ->
                         true ->
                             Acc;
                         false ->
-                            array_slice(Acc, 0, '__bp_int'((erlang:length(Acc) - 1), -2147483648, 2147483647, <<"integer overflow: - on i32 at src/path.bp:162:63">>))
+                            array_slice(Acc, 0, '__bp_int'((erlang:length(Acc) - 1), -2147483648, 2147483647, <<"integer overflow: - on i32 at src/path.bp:159:63">>))
                     end;
                 false ->
                     (Acc ++ [P])
@@ -666,9 +698,14 @@ resolveAll(Segments, I, State) ->
         true ->
             State;
         _ ->
-            Seg = (fun(__BpO) -> case __BpO of undefined -> (<<"">>); __BpV0 -> __BpV0 end end)((fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Segments, I)),
+            Seg = case (fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Segments, I) of
+                undefined ->
+                    <<"">>;
+                __bp_nullish ->
+                    __bp_nullish
+            end,
             Next = resolveStep(State, Seg),
-            resolveAll(Segments, '__bp_int'((I + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at src/path.bp:178:35">>), Next)
+            resolveAll(Segments, '__bp_int'((I + 1), -2147483648, 2147483647, <<"integer overflow: + on i32 at src/path.bp:175:35">>), Next)
     end.
 
 % Resolve a list of path segments into a single normalised path.
@@ -709,7 +746,7 @@ withoutExtension(P) ->
         true ->
             P;
         false ->
-            string_slice(P, 0, '__bp_int'((N - erlang:length(unicode:characters_to_list(Ext))), -2147483648, 2147483647, <<"integer overflow: - on i32 at src/path.bp:208:51">>))
+            string_slice(P, 0, '__bp_int'((N - erlang:length(unicode:characters_to_list(Ext))), -2147483648, 2147483647, <<"integer overflow: - on i32 at src/path.bp:205:51">>))
     end,
     Stem.
 

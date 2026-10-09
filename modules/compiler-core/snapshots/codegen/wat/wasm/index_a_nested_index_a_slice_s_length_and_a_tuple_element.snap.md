@@ -4,7 +4,8 @@ fn main() {
     val rows = [[1, 2], [3, 4]];
     @print(rows);
     @print(rows[1]);
-    @print(rows[1][0]);
+    val r1: i32[] = rows[1] ?? [];
+    @print(r1[0]);
     @print(rows[0]?.length);
     val xs = [10, 20, 30];
     @print(xs[0..2].length);
@@ -35,11 +36,15 @@ fn main() {
     (local $__mem5 i32)
     (local $__mem6 i32)
     (local $__mem7 i32)
+    (local $__mem8 i32)
     (local $rows i32)
+    (local $r1 i32)
+    (local $__bp_nullish i32)
     (local $xs i32)
     (local $sl i32)
     (local $ps i32)
     (local $_res0 i32)
+    (local $__opt0 i32)
     (local $_res1 i32)
     i32.const 12
     call $__alloc
@@ -106,9 +111,28 @@ fn main() {
     local.get $rows
     i32.const 1
     call $__arr_at
+    local.tee $__opt0
+    (if (result i32)
+      (then
+    local.get $__opt0
+    local.set $__bp_nullish
+    local.get $__bp_nullish
+      )
+      (else
+    i32.const 4
+    call $__alloc
+    local.set $__mem3
+    local.get $__mem3
     i32.const 0
-    call $__arr_at
-    call $__print_i32
+    i32.store
+    local.get $__mem3
+      )
+    )
+    local.set $r1
+    local.get $r1
+    i32.const 0
+    call $__arr_at_box
+    call $__print_opt_i32
     local.get $rows
     i32.const 0
     call $__arr_at
@@ -116,20 +140,20 @@ fn main() {
     call $__print_i32
     i32.const 16
     call $__alloc
-    local.set $__mem3
-    local.get $__mem3
+    local.set $__mem4
+    local.get $__mem4
     i32.const 3
     i32.store
-    local.get $__mem3
+    local.get $__mem4
     i32.const 10
     i32.store offset=4
-    local.get $__mem3
+    local.get $__mem4
     i32.const 20
     i32.store offset=8
-    local.get $__mem3
+    local.get $__mem4
     i32.const 30
     i32.store offset=12
-    local.get $__mem3
+    local.get $__mem4
     local.set $xs
     local.get $xs
     i32.const 0
@@ -147,35 +171,35 @@ fn main() {
     call $__print_i32
     i32.const 12
     call $__alloc
-    local.set $__mem4
-    local.get $__mem4
-    i32.const 2
-    i32.store
-    local.get $__mem4
-    i32.const 8
-    call $__alloc
     local.set $__mem5
     local.get $__mem5
-    i32.const 1
+    i32.const 2
     i32.store
     local.get $__mem5
-    i32.const 272
-    i32.store offset=4
-    local.get $__mem5
-    i32.store offset=4
-    local.get $__mem4
     i32.const 8
     call $__alloc
     local.set $__mem6
     local.get $__mem6
-    i32.const 2
+    i32.const 1
     i32.store
     local.get $__mem6
-    i32.const 280
+    i32.const 272
     i32.store offset=4
     local.get $__mem6
+    i32.store offset=4
+    local.get $__mem5
+    i32.const 8
+    call $__alloc
+    local.set $__mem7
+    local.get $__mem7
+    i32.const 2
+    i32.store
+    local.get $__mem7
+    i32.const 280
+    i32.store offset=4
+    local.get $__mem7
     i32.store offset=8
-    local.get $__mem4
+    local.get $__mem5
     local.set $ps
     local.get $ps
     i32.const 1
@@ -644,6 +668,53 @@ fn main() {
     i32.mul
     memory.copy
     local.get $p
+  )
+  (func $__box_i32 (param $v i32) (result i32)
+    (local $p i32)
+    i32.const 4
+    call $__alloc
+    local.set $p
+    local.get $p
+    local.get $v
+    i32.store
+    local.get $p
+  )
+  (func $__arr_at_box (param $xs i32) (param $i i32) (result i32)
+    local.get $i
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+        local.get $i
+        local.get $xs
+        i32.load
+        i32.add
+        local.set $i
+      )
+    )
+    local.get $i
+    i32.const 0
+    i32.lt_s
+    local.get $i
+    local.get $xs
+    i32.load
+    i32.ge_s
+    i32.or
+    (if
+      (then
+        i32.const 0
+        return
+      )
+    )
+    local.get $xs
+    i32.const 4
+    i32.add
+    local.get $i
+    i32.const 4
+    i32.mul
+    i32.add
+    i32.load
+    call $__box_i32
   )
   (func $__print_null
     i32.const 176

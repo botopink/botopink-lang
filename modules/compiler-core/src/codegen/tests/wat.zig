@@ -293,7 +293,7 @@ test "wat: optional branch on equality and chained deref" {
         \\    if (maybe == null) {
         \\        @print(0);
         \\    } else {
-        \\        @print(maybe?.kind);
+        \\        @print(maybe.kind);
         \\    }
         \\}
     );
@@ -695,7 +695,8 @@ test "wat: index ---- a nested index, a slice's length and a tuple element" {
         \\    val rows = [[1, 2], [3, 4]];
         \\    @print(rows);
         \\    @print(rows[1]);
-        \\    @print(rows[1][0]);
+        \\    val r1: i32[] = rows[1] ?? [];
+        \\    @print(r1[0]);
         \\    @print(rows[0]?.length);
         \\    val xs = [10, 20, 30];
         \\    @print(xs[0..2].length);
@@ -2031,14 +2032,14 @@ test "wat: tuple ---- a `?T` element prints and reads as its payload or null" {
         \\fn main() {
         \\    val t = #(1, [7].at(5));
         \\    @print(t);
-        \\    @print(t._1.unwrapOr(4));
+        \\    @print(t._1 ?? 4);
         \\    @print(mixed());
         \\    val m = mixed();
         \\    @print(m._0);
         \\    @print(m._1);
         \\    @print(m._3);
         \\    val q: Q<i32> = Q(items: [5, 6]);
-        \\    @print(q.pop()._1.unwrapOr(-1));
+        \\    @print(q.pop()._1 ?? -1);
         \\}
     ,
         \\#(1, null)
@@ -2055,7 +2056,7 @@ test "wat: tuple ---- a `?T` element prints and reads as its payload or null" {
 // `o.unwrapOr(d)` keeps the payload's print shape: the `@Result`'s declared
 // payload, else a container default (`[]` says nothing). Both read a tuple's
 // string element as an integer at exit 0.
-test "wat: unwrapOr ---- the answer keeps the payload's tuple shape" {
+test "wat: the nullish default ---- the answer keeps the payload's tuple shape" {
     try h.assertWasmRunLog(std.testing.allocator,
         \\fn rows() -> @Result<Array<#(string, string)>, string> {
         \\    val xs = [#("a", "b"), #("c", "d")];
@@ -2065,7 +2066,7 @@ test "wat: unwrapOr ---- the answer keeps the payload's tuple shape" {
         \\fn main() {
         \\    val rs = rows().unwrapOr([]);
         \\    @print(rs);
-        \\    @print(rs.at(1).unwrapOr(#("", ""))._1);
+        \\    @print((rs.at(1) ?? #("", ""))._1);
         \\    @print(rs.map({ r -> r._0 }).join(","));
         \\}
     ,

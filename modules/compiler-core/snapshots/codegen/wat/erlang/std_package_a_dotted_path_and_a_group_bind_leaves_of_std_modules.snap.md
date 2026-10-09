@@ -141,8 +141,8 @@ test "dict ofEntries builds the dict of its entries, in order" {
     val d = Dict.ofEntries([#("a", 1), #("b", 2), #("c", 3)]);
     assert d.size() == 3;
     assert d.keys().join(",") == "a,b,c";
-    assert d.at("b").unwrapOr(0) == 2;
-    assert d.at("z").unwrapOr(-1) == -1;
+    assert d.at("b") ?? 0 == 2;
+    assert d.at("z") ?? -1 == -1;
     assert d.display() == "Dict(\"a\": 1, \"b\": 2, \"c\": 3)";
 }
 
@@ -150,7 +150,7 @@ test "dict ofEntries keeps the last value of a repeated key, as insert does" {
     val d = Dict.ofEntries([#("a", 1), #("b", 2), #("a", 3)]);
     val chained = Dict.empty().insert("a", 1).insert("b", 2).insert("a", 3);
     assert d.size() == 2;
-    assert d.at("a").unwrapOr(0) == 3;
+    assert d.at("a") ?? 0 == 3;
     assert d.keys().join(",") == "b,a";
     assert d.display() == chained.display();
 }
@@ -159,7 +159,7 @@ test "dict ofEntries of no entries is the empty dict, and takes any key type" {
     val none: Array<#(string, i32)> = [];
     assert Dict.ofEntries(none).isEmpty();
     val byNumber = Dict.ofEntries([#(1, "one"), #(2, "two")]);
-    assert byNumber.at(2).unwrapOr("") == "two";
+    assert byNumber.at(2) ?? "" == "two";
     assert byNumber.insert(3, "three").size() == 3;
 }
 
@@ -171,15 +171,15 @@ test "dict empty is empty" {
 
 test "dict insert and at" {
     val d = Dict.empty().insert("a", 1);
-    assert d.at("a").unwrapOr(0) == 1;
-    assert d.at("z").unwrapOr(-1) == -1;
+    assert d.at("a") ?? 0 == 1;
+    assert d.at("z") ?? -1 == -1;
 }
 
 test "dict pipeline: insert chain" {
     val d = Dict.empty().insert("x", 10).insert("y", 20).insert("z", 30);
-    assert d.at("x").unwrapOr(0) == 10;
-    assert d.at("y").unwrapOr(0) == 20;
-    assert d.at("z").unwrapOr(0) == 30;
+    assert d.at("x") ?? 0 == 10;
+    assert d.at("y") ?? 0 == 20;
+    assert d.at("z") ?? 0 == 30;
 }
 
 test "dict hasKey" {
@@ -191,13 +191,13 @@ test "dict hasKey" {
 test "dict delete removes key" {
     val d = Dict.empty().insert("a", 1).insert("b", 2).delete("a");
     assert !d.hasKey("a");
-    assert d.at("b").unwrapOr(0) == 2;
+    assert d.at("b") ?? 0 == 2;
 }
 
 test "dict insert overwrites duplicate" {
     val d = Dict.empty().insert("k", 1).insert("k", 99);
     assert d.size() == 1;
-    assert d.at("k").unwrapOr(0) == 99;
+    assert d.at("k") ?? 0 == 99;
 }
 
 test "dict size counts unique keys" {
@@ -225,42 +225,20 @@ test "dict merge right-biased" {
     val a = Dict.empty().insert("k", 1);
     val b = Dict.empty().insert("k", 99);
     val m = a.merge(b);
-    assert m.at("k").unwrapOr(0) == 99;
+    assert m.at("k") ?? 0 == 99;
 }
 
 test "dict mapValues transforms values" {
     val d = Dict.empty().insert("a", 3).insert("b", 7);
     val doubled = d.mapValues({ v -> v * 2 });
-    assert doubled.at("a").unwrapOr(0) == 6;
-    assert doubled.at("b").unwrapOr(0) == 14;
+    assert doubled.at("a") ?? 0 == 6;
+    assert doubled.at("b") ?? 0 == 14;
 }
 
-// ── option method API over `at`'s `?V` (B1: Option map/flatMap/unwrapOr) ──
+// ── `??` over `at`'s `?V` (decision 330: `?T` has no methods) ──
 
-test "option map over a present at" {
-    val some = Dict.empty().insert("a", 1).at("a");
-    assert some.map({ x -> x + 9 }).unwrapOr(0) == 10;
-}
-
-test "option map propagates absence" {
-    val none = Dict.empty().insert("a", 1).at("z");
-    assert none.map({ x -> x + 9 }).unwrapOr(-1) == -1;
-}
-
-test "option flatMap chains present" {
-    val d = Dict.empty().insert("a", 1);
-    val r = d.at("a").flatMap({ x -> d.at("a").map({ y -> x + y }) });
-    assert r.unwrapOr(0) == 2;
-}
-
-test "option flatMap short-circuits on absence" {
-    val d = Dict.empty().insert("a", 1);
-    val r = d.at("missing").flatMap({ x -> d.at("a") });
-    assert r.unwrapOr(-7) == -7;
-}
-
-test "option unwrapOr returns present value" {
-    assert Dict.empty().insert("a", 42).at("a").unwrapOr(0) == 42;
+test "?? returns the present value" {
+    assert Dict.empty().insert("a", 42).at("a") ?? 0 == 42;
 }
 
 // ── empty-collection boundary (B1) ──
@@ -269,7 +247,7 @@ test "dict empty boundary: size 0, at misses" {
     val d: Dict<string, i32> = Dict.empty();
     assert d.size() == 0;
     assert !d.hasKey("anything");
-    assert d.at("anything").unwrapOr(-1) == -1;
+    assert d.at("anything") ?? -1 == -1;
     assert d.keys().length == 0;
     assert d.values().length == 0;
 }
@@ -484,7 +462,7 @@ test "queue enqueue increases size" {
 
 test "queue peek at front" {
     val q = Queue.empty().enqueue(10).enqueue(20);
-    assert q.peek().unwrapOr(-1) == 10;
+    assert q.peek() ?? -1 == 10;
 }
 
 test "queue dequeue returns front and rest" {
@@ -492,15 +470,15 @@ test "queue dequeue returns front and rest" {
     val result = q.dequeue();
     val rest = result._0;
     val head = result._1;
-    assert head.unwrapOr(-1) == 1;
+    assert head ?? -1 == 1;
     assert rest.size() == 1;
-    assert rest.peek().unwrapOr(-1) == 2;
+    assert rest.peek() ?? -1 == 2;
 }
 
 test "queue dequeue empty yields no front item" {
     val result = Queue.empty().dequeue();
     val head = result._1;
-    assert head.unwrapOr(-99) == -99;
+    assert head ?? -99 == -99;
 }
 
 test "queue fifo order preserved" {
@@ -508,9 +486,9 @@ test "queue fifo order preserved" {
     val r1 = q.dequeue();
     val r2 = r1._0.dequeue();
     val r3 = r2._0.dequeue();
-    assert r1._1.unwrapOr(-1) == 1;
-    assert r2._1.unwrapOr(-1) == 2;
-    assert r3._1.unwrapOr(-1) == 3;
+    assert r1._1 ?? -1 == 1;
+    assert r2._1 ?? -1 == 2;
+    assert r3._1 ?? -1 == 3;
 }
 
 test "queue fromList and toList round-trip" {
@@ -525,10 +503,10 @@ test "queue empty boundary: size 0, peek + dequeue miss" {
     val q: Queue<i32> = Queue.empty();
     assert q.size() == 0;
     assert q.isEmpty();
-    assert q.peek().unwrapOr(-1) == -1;
+    assert q.peek() ?? -1 == -1;
     val r = q.dequeue();
     assert r._0.size() == 0;
-    assert r._1.unwrapOr(-1) == -1;
+    assert r._1 ?? -1 == -1;
 }
 
 // ── Order ───────────────────────────────────────────────────────────────────
@@ -702,11 +680,7 @@ shown(X) ->
 
 
 
-% ── option method API over `at`'s `?V` (B1: Option map/flatMap/unwrapOr) ──
-
-
-
-
+% ── `??` over `at`'s `?V` (decision 330: `?T` has no methods) ──
 
 
 % ── empty-collection boundary (B1) ──

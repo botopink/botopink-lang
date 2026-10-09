@@ -7,7 +7,7 @@ fn main() {
     if (maybe == null) {
         @print(0);
     } else {
-        @print(maybe?.kind);
+        @print(maybe.kind);
     }
 }
 ```
@@ -26,7 +26,7 @@ main() ->
         true ->
             '__bp_print'([0]);
         false ->
-            '__bp_print'([(fun(undefined) -> undefined; (_Opt0) -> erlang:element(2, _Opt0) end)(Maybe)])
+            '__bp_print'([erlang:element(2, Maybe)])
     end.
 
 '__bp_print'(Values) ->

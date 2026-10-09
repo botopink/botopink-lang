@@ -76,7 +76,7 @@ zig build test-cli      # all five scripts, in order, against the installed CLI
 zig build test-backends # backend_exec.sh alone
 
 # Or directly (each builds the CLI unless BOTOPINK_SKIP_BUILD=1 is set;
-# cli_contract.sh also takes BOTOPINK_BIN=<binary> to test another build):
+# cli_contract.sh also takes BOTOPINK_BIN=<binary> and BPMP_BIN=<bpmp> to test another build):
 bash modules/compiler-cli/tests/cli_contract.sh      # command contract C1–C13
 bash modules/compiler-cli/tests/test_tooling.sh      # `botopink test` behaviours
 bash modules/compiler-cli/tests/result_store.sh      # the result store of stages 8–10
@@ -113,7 +113,10 @@ stops after the first `D` that holds `repository/` — the enclosing checkout
 (`manifest.isCheckoutRoot`), so a meta worktree under `.tasks/<name>` never sees the
 main checkout's libraries a second time (decision 143). After
 those, `resolveFallbackRoots` adds `<project>/.botopinkbuild/deps/` (the symlink
-store written by `bpmp install`). `manifest.scanRoots` turns the roots into
+store written by `bpmp install`; a dependency reached through one of its links
+resolves its own dependencies from the link's target — `linkFreeDir` — so a git
+dependency with a `"subdir"` finds its `../<sibling>` and its workspace inside
+the checkout, decision 344). `manifest.scanRoots` turns the roots into
 entries — a root's child holding a manifest, or every **member** of a workspace
 found there, named by its manifest — and `<name>` resolves to the first entry so
 named (a workspace by that name is refused with its member list; a name two
@@ -431,7 +434,14 @@ Cross-command rules:
   with `ships nothing`; `build`/`check`/`test` on the umbrella are refused
   naming the members; a `path` to a sibling is refused naming the fix; the
   string-array `dependencies` is refused naming the rewrite; a `path`
-  dependency resolves with no library root at all.
+  dependency resolves with no library root at all; a git dependency's
+  `"subdir"` (decision 344), over a local bare repository: `bpmp install`
+  clones once at the tag, links the package at the subdir, and `run` reaches
+  its `path` sibling at that tag; two dependencies on the repository share one
+  checkout; every refusal (no `git`, absolute, `..`, no `botopink.json`, a
+  workspace, another package's name, a `path` leaving the checkout, two refs)
+  is located and links nothing. Those rows red against the parent's `bpmp` and
+  `botopink` (`BPMP_BIN=` / `BOTOPINK_BIN=`).
 - **A host sidecar ships through the resolved dependency, or the build fails.**
   The `.mjs` a `#[@External.Node("./x.mjs", …)]` requires is copied from the
   directory the dependency resolved to — a `{ "workspace": true }` member, a

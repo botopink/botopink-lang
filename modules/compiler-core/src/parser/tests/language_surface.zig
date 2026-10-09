@@ -274,8 +274,25 @@ test "surface R8: `??` binds tighter than every other binary operator" {
         \\fn f(a: ?i32, b: ?bool) -> bool {
         \\    val x = a ?? 0 == 1;
         \\    val y = a ?? 0 + 1;
-        \\    val z = b ?? false && true;
+        \\    val z = (b ?? false) && true;
         \\    return x;
+        \\}
+    );
+}
+
+test "surface: `??` beside `&&` or `||` takes parentheses (decision 330 (4))" {
+    try expectErrorAt("fn f(b: ?bool) -> bool { return b ?? false && true; }", .nullishBesideLogical, 1, 35);
+    try expectErrorAt("fn f(b: ?bool) -> bool { return true || b ?? false; }", .nullishBesideLogical, 1, 43);
+}
+
+test "surface: an optional index, an optional call and the postfix bang (decision 330)" {
+    try assertParser(std.testing.allocator, @src(),
+        \\fn f(xs: ?i32[], g: ?fn(i32) -> i32, s: ?string) -> i32 {
+        \\    val a = xs?.[0] ?? 0;
+        \\    val b = g?.(1) ?? 0;
+        \\    val c = s!.length();
+        \\    val d = !true;
+        \\    return a + b + c;
         \\}
     );
 }

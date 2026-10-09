@@ -18,11 +18,9 @@ pub fn main() {
     );
     val v = doc.unwrapOr(json.Json.Null);
     @print(v.kindName());
-    @print(v.field("name").unwrapOr(json.Json.Null).str());
+    @print((v.field("name") ?? json.Json.Null).str());
     @print(
-        v
-            .field("tags")
-            .unwrapOr(json.Json.Null)
+        (v.field("tags") ?? json.Json.Null)
             .items()
             .map({ t -> t.kindName() })
             .join(","),

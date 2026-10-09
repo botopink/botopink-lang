@@ -67,7 +67,7 @@ pub fn intInRange(lo: i32, hi: i32) -> i32 {
 }
 
 // Pick a random element from a non-empty array. Returns `null` for the
-// empty array — the call site should default with `?.unwrapOr(…)` rather
+// empty array — the call site should default with `?? …` rather
 // than panic. Uses a walk-up integer floor (no `Math.floor` import) so
 // the body stays self-contained.
 pub fn pick<T>(xs: Array<T>) -> ?T {
@@ -161,14 +161,14 @@ test "random.coin draws either truth value" {
 
 test "random.pick from non-empty array returns a member" {
     val xs = [1, 2, 3];
-    val r = pick(xs).unwrapOr(99);
+    val r = pick(xs) ?? 99;
     assert r >= 1;
     assert r <= 3;
 }
 
 test "random.pick from empty array returns null" {
     val empty: Array<i32> = [];
-    assert pick(empty).unwrapOr(99) == 99;
+    assert pick(empty) ?? 99 == 99;
 }
 
 test "random.intInRange yields a value in the closed interval" {
@@ -225,7 +225,7 @@ test "random.shuffle of a single-element array preserves it" {
     val xs = [42];
     val ys = shuffle(xs);
     assert ys.length == 1;
-    assert ys.at(0).unwrapOr(0) == 42;
+    assert ys.at(0) ?? 0 == 42;
 }
 
 test "random.secureToken(32) is 43 base64url characters" {
@@ -246,13 +246,13 @@ test "random.uuidV4 has the version 4 layout" {
     val groups = u.split("-");
     assert u.length == 36;
     assert groups.length == 5;
-    assert groups.at(0).unwrapOr("").length == 8;
-    assert groups.at(1).unwrapOr("").length == 4;
-    assert groups.at(2).unwrapOr("").length == 4;
-    assert groups.at(3).unwrapOr("").length == 4;
-    assert groups.at(4).unwrapOr("").length == 12;
-    assert groups.at(2).unwrapOr("").startsWith("4");
-    val variant = groups.at(3).unwrapOr("").slice(0, 1);
+    assert (groups.at(0) ?? "").length == 8;
+    assert (groups.at(1) ?? "").length == 4;
+    assert (groups.at(2) ?? "").length == 4;
+    assert (groups.at(3) ?? "").length == 4;
+    assert (groups.at(4) ?? "").length == 12;
+    assert (groups.at(2) ?? "").startsWith("4");
+    val variant = (groups.at(3) ?? "").slice(0, 1);
     assert "89ab".contains(variant);
     assert u.split("").filter({ c -> "0123456789abcdef-".contains(c) }).length
         == 36;
@@ -316,15 +316,15 @@ fn secureTokenBody(bytes: i32) -> string {
 // RFC 9562 §5.4: 16 random bytes, the version nibble 4, the variant `10`.
 fn uuidV4Body() -> string {
     val b = randomBytesOf(16);
-    val version = 64 + b.at(6).unwrapOr(0) % 16;
-    val variant = 128 + b.at(8).unwrapOr(0) % 64;
+    val version = 64 + b.at(6) ?? 0 % 16;
+    val variant = 128 + b.at(8) ?? 0 % 64;
     return hexOf(b.slice(0, 4))
         + "-"
         + hexOf(b.slice(4, 6))
         + "-"
-        + hexOf([version, b.at(7).unwrapOr(0)])
+        + hexOf([version, b.at(7) ?? 0])
         + "-"
-        + hexOf([variant, b.at(9).unwrapOr(0)])
+        + hexOf([variant, b.at(9) ?? 0])
         + "-"
         + hexOf(b.slice(10, 16));
 }
@@ -348,7 +348,7 @@ fn randomBytesOf(n: i32) -> Array<i32> {
 }
 
 fn hexDigit(n: i32) -> string {
-    return "0123456789abcdef".at(n).unwrapOr("");
+    return "0123456789abcdef".at(n) ?? "";
 }
 
 fn hexOf(bytes: Array<i32>) -> string {
@@ -362,15 +362,18 @@ fn base64UrlOf(bytes: Array<i32>) -> string {
     var g = 0;
     while (3 * g < bytes.length) {
         val n = bytes.length - 3 * g;
-        val b0 = bytes.at(3 * g).unwrapOr(0);
-        val b1 = if (n > 1) bytes.at(3 * g + 1).unwrapOr(0) else 0;
-        val b2 = if (n > 2) bytes.at(3 * g + 2).unwrapOr(0) else 0;
+        val b0 = bytes.at(3 * g) ?? 0;
+        val b1 = if (n > 1) {
+            bytes.at(3 * g + 1) ?? 0;
+        } else 0;
+        val b2 = if (n > 2) {
+            bytes.at(3 * g + 2) ?? 0;
+        } else 0;
         out = out
-            + alphabet.at(b0 / 4).unwrapOr("")
-            + alphabet.at((b0 % 4) * 16 + b1 / 16).unwrapOr("");
-        if (n > 1)
-            out = out + alphabet.at((b1 % 16) * 4 + b2 / 64).unwrapOr("");
-        if (n > 2) out = out + alphabet.at(b2 % 64).unwrapOr("");
+            + alphabet.at(b0 / 4) ?? ""
+            + alphabet.at((b0 % 4) * 16 + b1 / 16) ?? "";
+        if (n > 1) out = out + alphabet.at((b1 % 16) * 4 + b2 / 64) ?? "";
+        if (n > 2) out = out + alphabet.at(b2 % 64) ?? "";
         g = g + 1;
     }
     return out;

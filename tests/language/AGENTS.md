@@ -68,8 +68,39 @@ location), and the runner now requires every `reject/` cell's `.expect` to carry
 every refusal is located.
 Decision 138 (the empty record is `type Name()`) adds `run/type_empty_record` — `type Marker()` and
 `type MathOps() { … }` constructed and called on all four targets — and two `reject/` cells,
-`type_empty_braces` (`type Marker {}`) and `type_without_field_list` (`type MathOps { fn … }`), both
-`type-without-field-list` where the `()` belongs.
+`type_empty_braces` (`type Marker {}`), `type-without-field-list` where the `()` belongs.
+Decision 329 (a namespace type) made `type MathOps { fn … }` legal when no function takes `self`:
+`run/namespace_type` (associated functions, a generic one, one calling another, through the type, on
+all four targets), `reject/namespace_type_self` (the old `type_without_field_list` cell: a `self`
+function, refused `namespace-type-self` at the `self`) and `reject/namespace_type_construction`
+(`MathOps()` refused `namespace-type-construction` at the call); the three were refused
+`type-without-field-list` by the parent binary.
+Decision 330 (7) (a type in a type is its associated type) adds `modules/assoc_type_declared_in_body` (a
+sibling's `Shape` declares `Point` with a method, the enum `Kind` and the generic `Box<T>` in its body;
+`main` constructs, annotates, matches and prints them through `Shape.`, four targets),
+`run/std_type_field_associated` (std's `Type.Field<T>` as a parameter type after `import {types.Type}
+from "std"`, four targets) and `reject/assoc_type_named_like_member` (`pub type Point` beside `pub fn
+Point`, `assoc-type-duplicate` at the type's name); the three were parse errors or `unknown type` on the
+parent binary.
+Decision 330 (`?T` read with TypeScript's operators, `01-checker` step 31) adds `run/optional_operators`
+(`?.[i]`, `?.` flattened, the postfix `!` over a present value, four targets),
+`run/optional_call_operator` (`f?.(args)`; wasm refuses a `?.()` over a function answering a plain
+value by `wasm.expect` — `05-wasm`'s row) and `run/optional_bang_aborts` (`find("b")!` aborts after
+`found` is printed — `.exit`; commonJS's stderr names `value is null — find("b")! at
+src/main.bp:11:12`; erlang and beam abort with the text as an Erlang binary and wasm without it — the
+backends' rows), and six `reject/` cells: `optional_operator_never_null` (`s?.length()`
+with `s: string`), `nullish_never_null` (`s ?? "fallback"`), `bang_never_null` (`n!`) — each
+`optional-operator-never-null` at the operator —, `nullish_beside_logical` (`flag ?? false && true`,
+at the `??`), `optional_has_no_methods` (`.unwrapOr` on a `?string`) and `result_namespace_removed`
+(`result.isOk(…)` is an unbound `result`). `reject/option_expect_removed` now answers
+`optional-has-no-methods`. Every one was refused or accepted otherwise by the parent binary. The
+suite's `.unwrapOr` on a `?T` became `??` (`scripts/codemod-optional-operators.py`), and a second
+index of an index (`rows[1][0]`, `xs[k]` answering `?T`) is `rows[1]?.[0]` (`run/index_expression`,
+`run/array_windows`). A method after a `?.` link continues its chain (`e?.key.length()`,
+`run/optional_chain_method`): the chain runs under the `?.`'s guard.
+`run/optional_member_default` — `xs.at(k)?.field ?? d` over a present and an absent element, a string
+field, an empty array, an array built by `map` and one passed in, four targets (wasm printed the
+element's address for the `map`-built array on the parent binary).
 Decision 139 (a negative index counts from the end) adds `run/index_negative_from_end` — `xs.at(-1)`,
 `xs.at(-3)`, `xs.at(-4)` / `xs.at(3)` absent, `xs[-2]`, a negative index held in a `val`, the same for
 `String.at` / `s[-2]`, and a string array — on all four targets.

@@ -14,10 +14,6 @@ pub fn main() {
     @print(u.port);
     @print(url.parse("http://h/p").path);
     @print(
-        querystring
-            .parse("x=%20")
-            .unwrapOr([])
-            .at(0)
-            .unwrapOr(#("", ""))._1.length,
+        (querystring.parse("x=%20").unwrapOr([]).at(0) ?? #("", ""))._1.length,
     );
 }

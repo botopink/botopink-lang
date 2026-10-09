@@ -35,14 +35,14 @@ pub fn main() {
     @print(ident([1, 2]));
     @print(ident(["s", "t"]));
     val s: ?string = null;
-    @print("x" + s.unwrapOr("d"));
+    @print("x" + s ?? "d");
     val o: ?string = "v";
-    @print("y" + o.unwrapOr("d") + "z");
+    @print("y" + o ?? "d" + "z");
     @print(okOf("k").unwrapOr("e"));
     @print("r=" + okOf("k").unwrapOr("e"));
     val b: ?bool = null;
-    @print(b.unwrapOr(false));
+    @print(b ?? false);
     val w: ?string = "w";
     val d = "dflt";
-    @print(w.unwrapOr(d) + "!");
+    @print(w ?? d + "!");
 }

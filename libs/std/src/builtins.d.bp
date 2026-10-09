@@ -52,15 +52,6 @@ pub type Result<R, E> {
     declare fn isError(self: Self<R, E>) -> bool;
 }
 
-// The builtin `result` NAMESPACE exposes the same ops as Gleam-style qualified
-// calls — no import needed; a local binding named `result` shadows it:
-//
-//   result.map(r, transform)        ≡ r.map(transform)
-//   result.then(r, transform)       ≡ r.flatMap(transform)
-//   result.unwrap(r, fallback)      ≡ r.unwrapOr(fallback)
-//   result.isOk(r)                  ≡ r.isOk()
-//   result.isError(r)               ≡ r.isError()
-//
 // A `Result` value is constructed by `return`/`throw` inside a body whose
 // return carries `@Result<R, E>` (decision 118); the runtime shape is `{ ok: V } | { error: E }`
 // (JS) / `{ok, V} | {error, E}` (erlang/beam).
@@ -69,31 +60,22 @@ pub type Result<R, E> {
 
 // The optional type is `?T` — the ONLY spelling. Optional is not a concrete
 // named type: `Option<T>` / `Optional<T>` annotations are rejected with a
-// pointed diagnostic. One representation: a value, or absent. It mirrors the
-// Result method API (also inference-resolved + inline-lowered):
+// pointed diagnostic. One representation: a value, or absent.
 //
-//   fn map(self, transform: fn(value: T) -> T2) -> ?T2
-//       Apply `transform` to the present value; absence is propagated.
-//   fn flatMap(self, transform: fn(value: T) -> ?T2) -> ?T2
-//   fn unwrapOr(self, default: T) -> T
-//       The present value, or `default` when absent.
+// `?T` has no methods (decision 330): its whole surface is TypeScript's
+// operators, typed and lowered by the compiler (no declaration here):
 //
-// F11 — there is NO `expect`. It existed, declared `expect(self, default: T)
-// -> T` and lowered to `unwrapOr` on every backend, with the prose saying the
-// two were identical and the name signalling that the absent branch was
-// unreachable. A name that reads as an assertion over a signature that is a
-// fallback is the loosest reading of the stricter word, which is the shape
-// decision 67 refuses: the reader who trusts the name writes a sentinel where
-// the value may genuinely be absent, and nothing says so. The strict reading
-// — `expect(self, message: string) -> T`, failing when absent — has to invent
-// a failure the option surface does not have and lower it on four backends,
-// so it is not this front's to add. What is left is one spelling for one
-// behaviour: `unwrapOr`. `.expect(…)` on a `?T` is now an unknown method.
+//   a ?? b        `a` unless it is null, then `b`
+//   a?.f          a member read through the optional (`a?.f()` a method)
+//   a?.[i]        an index through the optional
+//   f?.(args)     a call of the function an optional holds
+//   a!            the value, or an abort naming the expression and its place
+//                 (`value is null — a! at src/main.bp:3:13`)
 //
-// There is deliberately NO `option` namespace — the ergonomic surface for
-// optionals is JS-style optional chaining (planned):
-//
-//   obj.val?.prop      obj.val?.[expr]      obj.arr?.[index]      obj.func?.(args)
+// An operator over a value that is never null is a compile error; `?.`
+// flattens (a member answering `?U` read through `?.` is `?U`); `??` beside
+// `&&` / `||` takes parentheses. `map`, `flatMap` and `unwrapOr` belong to
+// `@Result` alone.
 
 // ── the effect wrappers (decisions 118–128) ─────────────────────────────────
 //

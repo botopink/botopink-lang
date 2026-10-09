@@ -1,9 +1,9 @@
 /// Git clone wrapper for `bpmp install`.
 ///
 /// Wraps `git clone --depth 1 [--branch <branch>]` into a tmp dir under
-/// `$BPMP_HOME/store/<name>/.tmp-<pid>/`, captures the resolved commit SHA
+/// `$BPMP_HOME/store/<repo_key>/.tmp-<pid>/`, captures the resolved commit SHA
 /// via `git rev-parse HEAD`, then atomically renames the tmp dir to the
-/// final `<name>/<full-sha>/`. On any failure the tmp dir is removed so
+/// final `<repo_key>/<full-sha>/`. On any failure the tmp dir is removed so
 /// a retry doesn't leave a half-clone behind.
 ///
 /// The `path:` variant takes no clone — it returns the absolute source path
@@ -24,7 +24,8 @@ pub const TypedError = error{
 
 pub const Clone = struct {
     /// Resolved local checkout path (always absolute).
-    /// For `git` deps: `$BPMP_HOME/store/<name>/<rev>/`.
+    /// For `git` deps: `$BPMP_HOME/store/<repo_key>/<rev>/` (`name` is the
+    /// repository's store key, `resolver.repoKey`).
     /// For `path` deps: the dep's absolute source path.
     path: []const u8,
     /// Resolved 40-char commit SHA. Empty for `path:` deps.

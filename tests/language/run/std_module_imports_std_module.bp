@@ -15,7 +15,7 @@ import {querystring} from "std";
 pub fn main() {
     val pairs = querystring.parse("?n=caf%C3%A9&x=a%20b").unwrapOr([]);
     @print(pairs.length);
-    @print(pairs.at(1).unwrapOr(#("", ""))._1);
+    @print((pairs.at(1) ?? #("", ""))._1);
     @print(querystring.stringify([#("a b", "c+d")]).unwrapOr("?"));
     @print(querystring.parse("a=%ZZ").isError());
 }

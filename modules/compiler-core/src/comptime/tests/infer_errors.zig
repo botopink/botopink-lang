@@ -517,7 +517,7 @@ test "infer error: std package ---- member missing" {
     );
 }
 
-test "infer error: builtin result namespace ---- unknown function" {
+test "infer error: no builtin result namespace ---- `result` is unbound (decision 330)" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\fn parse(n: i32) -> @Result<i32, string> {
         \\    return n;

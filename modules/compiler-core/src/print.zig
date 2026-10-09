@@ -458,6 +458,24 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .caretCaption = "write `type Name()` here",
             .hint = "An empty record is `type Name();`, and one with members `type Name() { fn … }`. Braces alone declare an enum: `type Name { A, B }`.",
         },
+        .namespaceTypeSelf => .{
+            .code = "namespace-type-self",
+            .message = "a namespace type has no value, so no function in it takes `self`",
+            .caretCaption = "no value to be `self` here",
+            .hint = "A type with no field list (`type Name { fn … }`) holds associated functions only, called as `Name.f(…)`. A type whose functions take `self` writes its field list: `type Name() { fn f(self: Self) … }`.",
+        },
+        .assocTypeDuplicate => .{
+            .code = "assoc-type-duplicate",
+            .message = "a type declared in a type's body is named through it, and this name is already a member of it",
+            .caretCaption = "`Owner.Name` names one thing",
+            .hint = "A type declared in a type's body is that type's associated type (`Owner.Name`); rename it, or the function or variant it collides with.",
+        },
+        .nullishBesideLogical => .{
+            .code = "nullish-beside-logical",
+            .message = "`??` beside `&&` or `||` takes parentheses",
+            .caretCaption = "parenthesise the `??` or the logical operand",
+            .hint = "Write `(a ?? b) && c` or `a ?? (b && c)`: which one reads first is said, not remembered (as in TypeScript).",
+        },
         .typeAliasAnnotated => .{
             .code = "type-alias-annotated",
             .message = "a type alias takes no annotation",

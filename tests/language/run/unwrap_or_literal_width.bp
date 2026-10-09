@@ -14,9 +14,9 @@ fn parsed(n: i32) -> @Result<i64, string> {
 }
 
 pub fn main() {
-    val a: i64 = delay(1).unwrapOr(0);
+    val a: i64 = delay(1) ?? 0;
     @print(a);
-    @print(delay(0).unwrapOr(0) + 1);
+    @print(delay(0) ?? 0 + 1);
     @print(parsed(1).unwrapOr(0));
     @print(parsed(-1).unwrapOr(-1));
 }

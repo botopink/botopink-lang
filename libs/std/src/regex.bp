@@ -181,46 +181,46 @@ test "regex.replaceAll swaps every occurrence" {
 test "regex.splitOn breaks on the pattern" {
     val parts = splitOn(",", "a,b,c");
     assert parts.length == 3;
-    assert parts.at(0).unwrapOr("") == "a";
-    assert parts.at(2).unwrapOr("") == "c";
+    assert parts.at(0) ?? "" == "a";
+    assert parts.at(2) ?? "" == "c";
 }
 
 test "regex.match returns Some when the pattern matches" {
     val m = match("[0-9]+", "abc123def");
-    val v = m.map({ x -> x.value }).unwrapOr("");
+    val v = m?.value ?? "";
     assert v == "123";
 }
 
 test "regex.match returns absent for nomatch" {
     val m = match("[0-9]+", "abc-def");
-    val v = m.map({ x -> x.value }).unwrapOr("absent");
+    val v = m?.value ?? "absent";
     assert v == "absent";
 }
 
 test "regex.matchAll yields every match" {
     val ms = matchAll("[0-9]+", "1 a 22 b 333");
     assert ms.length == 3;
-    assert ms.at(0).map({ x -> x.value }).unwrapOr("") == "1";
-    assert ms.at(2).map({ x -> x.value }).unwrapOr("") == "333";
+    assert ms.at(0)?.value ?? "" == "1";
+    assert ms.at(2)?.value ?? "" == "333";
 }
 
 test "regex.captures answers every group, group 0 first" {
-    val gs = captures("^/blog/([^/]+)$", "/blog/hello").unwrapOr([]);
+    val gs = captures("^/blog/([^/]+)$", "/blog/hello") ?? [];
     assert gs.length == 2;
-    assert gs.at(0).unwrapOr("") == "/blog/hello";
-    assert gs.at(1).unwrapOr("") == "hello";
+    assert gs.at(0) ?? "" == "/blog/hello";
+    assert gs.at(1) ?? "" == "hello";
 }
 
 test "regex.captures of a non-match is null, not an empty array" {
     val none = captures("^/x$", "/y");
-    assert none.map({ gs -> gs.length }).unwrapOr(-1) == -1;
+    assert none == null;
 }
 
 test "regex.namedCaptures answers name/value pairs sorted by name" {
     val one = namedCaptures("(?<slug>[^/]+)", "/hello");
     assert one.length == 1;
-    assert one.at(0).map({ p -> p._0 }).unwrapOr("") == "slug";
-    assert one.at(0).map({ p -> p._1 }).unwrapOr("") == "hello";
+    assert one.at(0)?._0 ?? "" == "slug";
+    assert one.at(0)?._1 ?? "" == "hello";
     val two = namedCaptures("^/(?<year>[0-9]+)/(?<month>[0-9]+)$", "/2024/02");
     assert two.map({ p -> [p._0, p._1].join("=") }).join(",")
         == "month=02,year=2024";

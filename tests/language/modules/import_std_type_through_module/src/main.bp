@@ -10,7 +10,7 @@ import {collections.Dict as D} from "std";
 pub fn main() {
     val d = collections.Dict.empty().insert("k", 7).insert("j", 1);
     @print(d.size());
-    @print(d.at("k").unwrapOr(0));
+    @print(d.at("k") ?? 0);
     val s = collections.Set.fromList([1, 2, 2, 3]);
     @print(s.size());
     val q = collections.Queue.fromList(["a", "b"]).enqueue("c");

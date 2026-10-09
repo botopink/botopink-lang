@@ -38,10 +38,10 @@ pub fn main() {
     val t = #(1, [7].at(5));
     @print(t);
     @print(t._1);
-    @print(t._1.unwrapOr(4));
+    @print(t._1 ?? 4);
     @print(firstOf([9, 8]));
     @print(firstOf([]));
-    @print(firstOf([9])._1.unwrapOr(-1));
+    @print(firstOf([9])._1 ?? -1);
     @print(mixed());
     val m = mixed();
     @print(m._0);
@@ -50,12 +50,12 @@ pub fn main() {
     @print(m._3);
     val q: Q<i32> = Q(items: [5, 6]);
     val d = q.pop();
-    @print(d._1.unwrapOr(-1));
+    @print(d._1 ?? -1);
     @print(d._1);
     @print(d._0.items.length);
     val e: Q<i32> = Q(items: []);
-    @print(e.pop()._1.unwrapOr(-1));
+    @print(e.pop()._1 ?? -1);
     val rs = rows().unwrapOr([]);
-    @print(rs.at(1).unwrapOr(#("", ""))._1);
+    @print((rs.at(1) ?? #("", ""))._1);
     @print(rs.map({ r -> [r._0, r._1].join("=") }).join("&"));
 }

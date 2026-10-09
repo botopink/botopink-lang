@@ -505,6 +505,18 @@ class beside them. What each number is here, and what is refused:
   `Option.map` over or to a cell type is refused at the call.
 - **Arithmetic over a boxed optional is refused** (`lowerBinOp`): `xs[i]`
   answers `?T`, and `[1, 2][0] + 1` added to the box's address (`269`).
+- **`?.[]`, `?.()` and the postfix `!`** (decision 330) reach the backend as an
+  `if` over the optional with a `__bp_opt_<line>_<col>` binder
+  (`optOperatorParts`). `xs?.[k]` answers the link's own optional (`optInfoOf`
+  reads the arm), and `x!` its payload (`isStringExpr`, `isBoolExpr`,
+  `printShapeOf`, `wasmTypeOf`, `recordTypeOfExpr` read the operand's
+  `OptInfo`). A `?.()` over a function answering a plain value would need its
+  answer boxed and is refused at the operand (`lowerIfExpr`;
+  `run/optional_call_operator`'s `.wasm.expect`). `o ?? d` reads its shape and
+  its bool-ness as `o.unwrapOr(d)` does (`nullishParts`):
+  `(rs.at(1) ?? #("", ""))._1` printed the string's address. `xs.map({ n -> Y(…) })`
+  holds the record its lambda answers (`elemRecordOf`), so `built.at(1)?.id` reads the field
+  (`run/optional_member_default`).
 - **A cell enters only where its reader knows it.** An array's elements share
   one kind (`lowerElemWord`: a float anywhere in a literal makes every slot a
   cell, `[1, 2.5]`); a float pushed or prepended into an array no type says
@@ -538,7 +550,7 @@ class beside them. What each number is here, and what is refused:
   after); `@print`, `toString` and a string operand write its digits through
   `$__u64_fmt` (`print_u64`, `u64_to_str`, `u64_fmt`) — a `u64` record field
   or tuple element by the shape code `u`, a `?u64` by `$__print_opt_u64`,
-  `o.unwrapOr(d)` over a `?u64` (typed by the payload, `typeRefOf`) and a
+  `o ?? d` over a `?u64` (typed by the payload, `typeRefOf` through `nullishParts`; a `@Result`'s `unwrapOr` the same way) and a
   `?u64` a null test narrowed (`isNarrowedName`) as a `u64`. Division keeps wasm's
   own traps (`/ 0`, `MIN / -1`), where erlang raises too.
 

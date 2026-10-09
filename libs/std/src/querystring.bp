@@ -54,10 +54,10 @@ fn isControlEscape(h1: string, h2: string) -> bool {
 // which a `split("")` piece list would only re-index.
 fn scan(s: string, i: i32) -> string {
     if (i >= s.length) return "";
-    val c = s.at(i).unwrapOr("");
+    val c = s.at(i) ?? "";
     if (c == "%") {
-        val h1 = s.at(i + 1).unwrapOr("");
-        val h2 = s.at(i + 2).unwrapOr("");
+        val h1 = s.at(i + 1) ?? "";
+        val h2 = s.at(i + 2) ?? "";
         if ((isHexDigit(h1) && isHexDigit(h2)) == false)
             return "a `%` not followed by two hex digits";
         if (isControlEscape(h1, h2))
@@ -99,7 +99,7 @@ fn decodeFields(
     acc: Array<#(string, string)>,
 ) -> @Result<Array<#(string, string)>, string> {
     if (i >= fields.length) return acc;
-    val pair = try decodeField(fields.at(i).unwrapOr(""), form);
+    val pair = try decodeField(fields.at(i) ?? "", form);
     return try decodeFields(fields, i + 1, form, acc.append([pair]));
 }
 
@@ -131,7 +131,7 @@ pub fn parseForm(body: string) -> @Result<Array<#(string, string)>, string> {
 
 fn hasControlFrom(s: string, i: i32) -> bool {
     if (i >= s.length) return false;
-    if (isControl(s.at(i).unwrapOr(""))) return true;
+    if (isControl(s.at(i) ?? "")) return true;
     return hasControlFrom(s, i + 1);
 }
 
@@ -192,7 +192,7 @@ test "querystring.parse percent-decodes names and values" {
     assert pairsOf(parse("?a=%20b&k%3Dx=%26%3D%25")) == "a=> b|k=x=>&=%";
     // Two escapes that are one UTF-8 character: U+00E9.
     assert pairsOf(parse("n=caf%C3%A9")) == pairsOf(parse("n=caf%c3%a9"));
-    assert parse("n=caf%C3%A9").unwrapOr([]).at(0).unwrapOr(#("", ""))._1
+    assert (parse("n=caf%C3%A9").unwrapOr([]).at(0) ?? #("", ""))._1
         == ["caf", hexDecode("c3a9").unwrapOr("?")].join("");
 }
 

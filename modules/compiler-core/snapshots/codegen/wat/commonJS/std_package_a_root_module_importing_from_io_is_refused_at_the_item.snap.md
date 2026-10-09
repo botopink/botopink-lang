@@ -39,7 +39,7 @@ pub fn basename(path: string) -> string {
     val parts = split(path);
     val n = parts.length;
     if (n == 0) return "";
-    return parts.at(n - 1).unwrapOr("");
+    return parts.at(n - 1) ?? "";
 }
 
 // Everything except the basename — the parent directory portion. For an
@@ -66,8 +66,8 @@ pub fn extname(path: string) -> string {
     val pieces = base.split(".");
     val n = pieces.length;
     if (n <= 1) return "";
-    val head = pieces.at(0).unwrapOr("");
-    val tail = pieces.at(n - 1).unwrapOr("");
+    val head = pieces.at(0) ?? "";
+    val tail = pieces.at(n - 1) ?? "";
     // Dotfiles like ".bashrc" split into ["", "bashrc"] — no extension.
     val isDotfile = head == "" && n == 2;
     return if (isDotfile) "" else [".", tail].join("");
@@ -81,10 +81,7 @@ pub fn extname(path: string) -> string {
 // which lowers to a dead store on Erlang's immutable runtime (the same
 // trap `split` sidesteps).
 pub fn join(parts: string[]) -> string {
-    val isAbs = if (parts.length == 0)
-        false
-    else
-        isAbsolute(parts.at(0).unwrapOr(""));
+    val isAbs = if (parts.length == 0) false else isAbsolute(parts.at(0) ?? "");
     val collapsed = parts.map({ p -> split(p).join(separator) });
     val joined = collapsed.filter({ p -> p != "" }).join(separator);
     return if (isAbs) [separator, joined].join("") else joined;
@@ -114,8 +111,8 @@ pub fn normalize(path: string) -> string {
 fn commonPrefixCount(a: string[], b: string[], i: i32) -> i32 {
     if (i >= a.length) return i;
     if (i >= b.length) return i;
-    val ai = a.at(i).unwrapOr("");
-    val bi = b.at(i).unwrapOr("");
+    val ai = a.at(i) ?? "";
+    val bi = b.at(i) ?? "";
     return if (ai == bi) commonPrefixCount(a, b, i + 1) else i;
 }
 
@@ -158,7 +155,7 @@ type PathAccum(
 // recursive — no `var` rebinds.
 fn applyPieces(acc: string[], pieces: string[]) -> string[] {
     if (pieces.length == 0) return acc;
-    val p = pieces.at(0).unwrapOr("");
+    val p = pieces.at(0) ?? "";
     val rest = pieces.slice(1, pieces.length);
     val nextAcc = if (p == "..") {
         if (acc.length == 0) acc else acc.slice(0, acc.length - 1);
@@ -175,7 +172,7 @@ fn resolveStep(state: PathAccum, seg: string) -> PathAccum {
 
 fn resolveAll(segments: string[], i: i32, state: PathAccum) -> PathAccum {
     if (i >= segments.length) return state;
-    val seg = segments.at(i).unwrapOr("");
+    val seg = segments.at(i) ?? "";
     val next = resolveStep(state, seg);
     return resolveAll(segments, i + 1, next);
 }
@@ -241,8 +238,8 @@ test "path.isAbsolute distinguishes leading slash" {
 test "path.split drops empties" {
     val s = split("/usr//bin/");
     assert s.length == 2;
-    assert s.at(0).unwrapOr("") == "usr";
-    assert s.at(1).unwrapOr("") == "bin";
+    assert s.at(0) ?? "" == "usr";
+    assert s.at(1) ?? "" == "bin";
 }
 
 test "path.basename returns the last component" {
@@ -685,7 +682,7 @@ function basename(path) {
     const parts = split(path);
     const n = parts.length;
     if ((n === 0)) { return ""; }
-    return ((_o) => _o != null ? _o : (""))(__bp_array_at(parts, __bp_int((n - 1), -2147483648, 2147483647, "- on i32 at src/path.bp:40:23")));
+    return (() => { const __bp_nullish = __bp_array_at(parts, __bp_int((n - 1), -2147483648, 2147483647, "- on i32 at src/path.bp:40:23")); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })();
 }
 exports.basename = basename;
 
@@ -720,8 +717,8 @@ function extname(path) {
     const pieces = base.split(".");
     const n = pieces.length;
     if ((n <= 1)) { return ""; }
-    const head = ((_o) => _o != null ? _o : (""))(__bp_array_at(pieces, 0));
-    const tail = ((_o) => _o != null ? _o : (""))(__bp_array_at(pieces, __bp_int((n - 1), -2147483648, 2147483647, "- on i32 at src/path.bp:68:28")));
+    const head = (() => { const __bp_nullish = __bp_array_at(pieces, 0); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })();
+    const tail = (() => { const __bp_nullish = __bp_array_at(pieces, __bp_int((n - 1), -2147483648, 2147483647, "- on i32 at src/path.bp:68:28")); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })();
     // Dotfiles like ".bashrc" split into ["", "bashrc"] — no extension.;
     const isDotfile = ((head === "") && (n === 2));
     return (() => { if (isDotfile) { return ""; } else { return [".", tail].join(""); } })();
@@ -743,7 +740,7 @@ exports.extname = extname;
 // trap `split` sidesteps).
 
 function join(parts) {
-    const isAbs = (() => { if ((parts.length === 0)) { return false; } else { return isAbsolute(((_o) => _o != null ? _o : (""))(__bp_array_at(parts, 0))); } })();
+    const isAbs = (() => { if ((parts.length === 0)) { return false; } else { return isAbsolute((() => { const __bp_nullish = __bp_array_at(parts, 0); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })()); } })();
     const collapsed = parts.map((p) => {
     return split(p).join(separator);
 });
@@ -784,9 +781,9 @@ exports.normalize = normalize;
 function commonPrefixCount(a, b, i) {
     if ((i >= a.length)) { return i; }
     if ((i >= b.length)) { return i; }
-    const ai = ((_o) => _o != null ? _o : (""))(__bp_array_at(a, i));
-    const bi = ((_o) => _o != null ? _o : (""))(__bp_array_at(b, i));
-    return (() => { if (__bp_eq(ai, bi, 0)) { return commonPrefixCount(a, b, __bp_int((i + 1), -2147483648, 2147483647, "+ on i32 at src/path.bp:117:52")); } else { return i; } })();
+    const ai = (() => { const __bp_nullish = __bp_array_at(a, i); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })();
+    const bi = (() => { const __bp_nullish = __bp_array_at(b, i); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })();
+    return (() => { if (__bp_eq(ai, bi, 0)) { return commonPrefixCount(a, b, __bp_int((i + 1), -2147483648, 2147483647, "+ on i32 at src/path.bp:114:52")); } else { return i; } })();
 }
 
 // Internal: build an array of `n` ".." strings via head/tail recursion.
@@ -794,7 +791,7 @@ function commonPrefixCount(a, b, i) {
 // Avoids a `var` + `push` accumulator (the Erlang dead-store trap).
 
 function makeUps(n) {
-    return (() => { if ((n <= 0)) { return []; } else { return makeUps(__bp_int((n - 1), -2147483648, 2147483647, "- on i32 at src/path.bp:123:42")).prepend(".."); } })();
+    return (() => { if ((n <= 0)) { return []; } else { return makeUps(__bp_int((n - 1), -2147483648, 2147483647, "- on i32 at src/path.bp:120:42")).prepend(".."); } })();
 }
 
 // The relative path from `src` to `dst` — the path you would prefix to
@@ -817,7 +814,7 @@ function relative(src, dst) {
     const srcParts = split(src);
     const dstParts = split(dst);
     const common = commonPrefixCount(srcParts, dstParts, 0);
-    const ups = makeUps(__bp_int((srcParts.length - common), -2147483648, 2147483647, "- on i32 at src/path.bp:138:39"));
+    const ups = makeUps(__bp_int((srcParts.length - common), -2147483648, 2147483647, "- on i32 at src/path.bp:135:39"));
     const downs = dstParts.slice(common, dstParts.length);
     const combined = ups.concat(downs);
     const joined = combined.join(separator);
@@ -849,9 +846,9 @@ PathAccum.prototype.__bp = "PathAccum";
 
 function applyPieces(acc, pieces) {
     if ((pieces.length === 0)) { return acc; }
-    const p = ((_o) => _o != null ? _o : (""))(__bp_array_at(pieces, 0));
+    const p = (() => { const __bp_nullish = __bp_array_at(pieces, 0); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })();
     const rest = pieces.slice(1, pieces.length);
-    const nextAcc = (() => { if ((p === "..")) { return (() => { if ((acc.length === 0)) { return acc; } else { return acc.slice(0, __bp_int((acc.length - 1), -2147483648, 2147483647, "- on i32 at src/path.bp:162:63")); } })(); } else { return acc.concat([p]); } })();
+    const nextAcc = (() => { if ((p === "..")) { return (() => { if ((acc.length === 0)) { return acc; } else { return acc.slice(0, __bp_int((acc.length - 1), -2147483648, 2147483647, "- on i32 at src/path.bp:159:63")); } })(); } else { return acc.concat([p]); } })();
     return applyPieces(nextAcc, rest);
 }
 
@@ -863,12 +860,10 @@ function resolveStep(state, seg) {
 }
 
 function resolveAll(segments, i, state) {
-    while (true) {
-        if ((i >= segments.length)) { return state; }
-        const seg = ((_o) => _o != null ? _o : (""))(__bp_array_at(segments, i));
-        const next = resolveStep(state, seg);
-        { const __bp_tc1 = __bp_int((i + 1), -2147483648, 2147483647, "+ on i32 at src/path.bp:178:35"); i = __bp_tc1; state = next; continue; }
-    }
+    if ((i >= segments.length)) { return state; }
+    const seg = (() => { const __bp_nullish = __bp_array_at(segments, i); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })();
+    const next = resolveStep(state, seg);
+    return resolveAll(segments, __bp_int((i + 1), -2147483648, 2147483647, "+ on i32 at src/path.bp:175:35"), next);
 }
 
 // Resolve a list of path segments into a single normalised path.
@@ -899,7 +894,7 @@ function withoutExtension(p) {
     const ext = extname(p);
     let ext$sp = null;
     const n = ((p$sp ??= __bp_has_surrogate(p)) ? __bp_str_length(p) : p.length);
-    const stem = (() => { if ((ext === "")) { return p; } else { return p.slice(0, __bp_int((n - ((ext$sp ??= __bp_has_surrogate(ext)) ? __bp_str_length(ext) : ext.length)), -2147483648, 2147483647, "- on i32 at src/path.bp:208:51")); } })();
+    const stem = (() => { if ((ext === "")) { return p; } else { return p.slice(0, __bp_int((n - ((ext$sp ??= __bp_has_surrogate(ext)) ? __bp_str_length(ext) : ext.length)), -2147483648, 2147483647, "- on i32 at src/path.bp:205:51")); } })();
     return stem;
 }
 exports.withoutExtension = withoutExtension;

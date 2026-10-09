@@ -17,7 +17,7 @@ pub fn main() {
     @print(ch.length);
     @print(ch.at(1));
     @print(ch[0]);
-    @print(ch[0][1]);
+    @print(ch[0]?.[1]);
     for ([4, 5, 6].sliding(2)) { w ->
         @print(w.length);
     }

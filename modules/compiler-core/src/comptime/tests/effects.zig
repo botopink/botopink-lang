@@ -151,11 +151,11 @@ test "infer: net-new ---- @Result as a record field" {
 
 // `?.` optional chaining over an optional receiver yields an Option, which
 // `unwrapOr` collapses back to a concrete value.
-test "infer: net-new ---- optional chain yields an Option resolved by unwrapOr" {
+test "infer: net-new ---- optional chain yields an Option resolved by the nullish default" {
     try h.assertInfersOk(std.testing.allocator,
         \\type User(name: ?string)
         \\fn nameOf(u: ?User) -> string {
-        \\    return u?.name.unwrapOr("anon");
+        \\    return u?.name ?? "anon";
         \\}
     );
 }

@@ -1289,7 +1289,9 @@ pub fn parseParam(this: *This, alloc: std.mem.Allocator) ParseError!Param {
 //   type Name<G>(fields) implement B { methods }       → TypeDecl, record shape
 //   type Name<G> implement B { Variant, V(f: T), S { … }, methods } → enum shape
 //   type Name() { methods } / type Name()              → record with no fields
-//     (`type Name { methods }` / `type Name` are `type-without-field-list`, decision 138)
+//     (`type Name {}` / `type Name` are `type-without-field-list`, decision 138)
+//   type Name { associated fns }                       → namespace type (decision 329):
+//     no value, no `self` (`namespace-type-self`)
 //   behavior Name<G> extends B { val x: T; fn f(self: Self); default fn … { } }
 // Shape resolution and separators: specs/1.0.4-beta/12-surface-cutover/
 // type-grammar.md and separators.md.
@@ -1457,6 +1459,18 @@ pub fn parseTypeDeclRest(this: *This, alloc: std.mem.Allocator, name: []const u8
 
     var variantTrailingComma = false;
     var bodyComments: []const []const u8 = &.{};
+    // Decision 330 (7) — the types declared in the body, with their names'
+    // tokens (a name the body already gives a member is refused there).
+    var assocTypes: std.ArrayList(TypeDecl) = .empty;
+    errdefer {
+        for (assocTypes.items) |*a| a.deinit(alloc);
+        assocTypes.deinit(alloc);
+    }
+    var assocNameToks: std.ArrayList(Token) = .empty;
+    defer assocNameToks.deinit(alloc);
+    // Decision 329 — the `self` of the first function in the body that takes
+    // one: refused there when the body makes the type a namespace type.
+    var selfTok: ?Token = null;
     if (this.match(.leftBrace)) {
         var sawMethod = false;
         // A bare/payload variant not followed by `,` may only be the last item
@@ -1468,14 +1482,31 @@ pub fn parseTypeDeclRest(this: *This, alloc: std.mem.Allocator, name: []const u8
                 bodyComments = memberComments;
                 break;
             }
+            if (this.check(.type) or (this.check(.@"pub") and this.peekAt(1).kind == .type)) {
+                const nameTok = if (this.check(.@"pub")) this.peekAt(2) else this.peekAt(1);
+                var nested = parseShorthandTypeDecl(this, alloc) catch |err| {
+                    if (memberComments.len > 0) alloc.free(memberComments);
+                    return err;
+                };
+                nested.comments = memberComments;
+                try assocTypes.append(alloc, nested);
+                try assocNameToks.append(alloc, nameTok);
+                sawMethod = true;
+                needSeparator = false;
+                continue;
+            }
             if (startsTypeMember(this)) {
                 const memberAnnotations = try this.parseAnnotations(alloc);
                 const is_pub = this.match(.@"pub");
                 const is_declare = this.match(.declare);
+                const fnIdx = this.current;
                 var method = this.parseMethodDecl(alloc, is_declare, is_pub) catch |err| {
                     freeAnnotations(alloc, memberAnnotations);
                     return err;
                 };
+                if (selfTok == null and method.params.len > 0 and std.mem.eql(u8, method.params[0].name, "self")) {
+                    selfTok = firstParamToken(this, fnIdx);
+                }
                 method.annotations = memberAnnotations;
                 method.comments = memberComments;
                 method.trailingComment = takeTrailingComment(this);
@@ -1504,11 +1535,23 @@ pub fn parseTypeDeclRest(this: *This, alloc: std.mem.Allocator, name: []const u8
     }
 
     const isEnum = variants.items.len > 0 or sections.items.len > 0;
+    // Decision 329: braces holding functions and no variant declare a
+    // namespace type — `type Type { fn partial<T>(…) -> type; }` — which has
+    // no value, so no function in it takes `self` (refused at the first
+    // `self`), and it implements no behavior.
+    // `Owner.Name` names one thing: a type declared in the body under a name
+    // the body gives a function or a variant is refused at its name.
+    for (assocTypes.items, assocNameToks.items, 0..) |a, tok, i| {
+        for (methods.items) |m| if (std.mem.eql(u8, m.name, a.name)) return failAt(this, .assocTypeDuplicate, tok);
+        for (variants.items) |v| if (std.mem.eql(u8, v.name, a.name)) return failAt(this, .assocTypeDuplicate, tok);
+        for (assocTypes.items[0..i]) |b| if (std.mem.eql(u8, b.name, a.name)) return failAt(this, .assocTypeDuplicate, tok);
+    }
+    const isNamespace = !isEnum and !hasFieldList and (methods.items.len > 0 or assocTypes.items.len > 0) and implementList.len == 0;
+    if (isNamespace) if (selfTok) |t| return failAt(this, .namespaceTypeSelf, t);
     // Decision 138: a record writes its field list, even when empty —
-    // `type X()` / `type X() { … }`. `type X {}`, `type X { fn … }` and a bare
-    // `type X` are one type spelled a second way (decision 67), refused where
-    // the `()` belongs.
-    if (!isEnum and !hasFieldList) return failAt(this, .typeWithoutFieldList, fieldListTok);
+    // `type X()` / `type X() { … }`. `type X {}` and a bare `type X` are one
+    // type spelled a second way (decision 67), refused where the `()` belongs.
+    if (!isEnum and !hasFieldList and !isNamespace) return failAt(this, .typeWithoutFieldList, fieldListTok);
     const shape: ast.TypeShape = if (isEnum)
         .{ .enum_ = .{
             .variants = try variants.toOwnedSlice(alloc),
@@ -1534,7 +1577,18 @@ pub fn parseTypeDeclRest(this: *This, alloc: std.mem.Allocator, name: []const u8
         .trailingComma = if (isEnum) variantTrailingComma else fieldTrailingComma,
         .methods = methodSlice,
         .bodyComments = bodyComments,
+        .isNamespace = isNamespace,
+        .assocTypes = try assocTypes.toOwnedSlice(alloc),
     };
+}
+
+/// The first parameter's token of the function whose `fn` is at `fnIdx`: the
+/// token after the first `(` that follows the name.
+fn firstParamToken(this: *This, fnIdx: usize) Token {
+    var i = fnIdx;
+    while (i < this.current and this.tokens[i].kind != .leftParenthesis) : (i += 1) {}
+    if (i + 1 < this.current) return this.tokens[i + 1];
+    return this.tokens[fnIdx];
 }
 
 /// `Variant(field, …)` in a `type` body: the payload is the shared field list.

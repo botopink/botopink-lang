@@ -13,7 +13,7 @@ import {find} from "routes";
 fn lookup(path: string) -> string {
     val found = find(path);
     if (found == null) return "none";
-    return found.params.at("id").unwrapOr("");
+    return found.params.at("id") ?? "";
 }
 
 pub fn main() {

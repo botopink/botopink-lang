@@ -967,11 +967,11 @@ test "js: iterator fromList yields array items" {
     );
 }
 
-test "js: option method on tuple element" {
-    // A `?T` flowing through a tuple element (`result._1`) must keep its
-    // `@Option` method surface — inference resolves the tuple-index type so
-    // `.unwrapOr` lowers to `__bp_option_unwrapOr`. `== null` uses loose
-    // equality so an `undefined` none (from `Array.at`) matches.
+test "js: a tuple element's optional read by the nullish default" {
+    // A `?T` flowing through a tuple element (`result._1`) keeps its type —
+    // inference resolves the tuple-index type so `??` reads the optional
+    // (decision 330). `== null` uses loose equality so an `undefined` none
+    // (from `Array.at`) matches.
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn firstAndRest(xs: Array<i32>) -> #(Array<i32>, ?i32) {
         \\    val head = xs.at(0);
@@ -982,7 +982,7 @@ test "js: option method on tuple element" {
         \\fn main() {
         \\    val result = firstAndRest([1, 2, 3]);
         \\    val head = result._1;
-        \\    @print(head.unwrapOr(-1));
+        \\    @print(head ?? -1);
         \\    val empty = firstAndRest([]);
         \\    @print(empty._1 == null);
         \\}
@@ -1178,9 +1178,9 @@ test "js: `at` on an array default fn and on a string do not share a rename" {
     try h.assertJsRunLog(std.testing.allocator,
         \\fn main() {
         \\    val xs = [3, 4];
-        \\    @print(xs.first().unwrapOr(0));
-        \\    @print(xs.at(1).unwrapOr(0));
-        \\    @print("abc".at(1).unwrapOr("?"));
+        \\    @print(xs.first() ?? 0);
+        \\    @print(xs.at(1) ?? 0);
+        \\    @print("abc".at(1) ?? "?");
         \\}
     , "3\n4\nb\n");
 }
@@ -1194,9 +1194,9 @@ test "js: a typed array `at` beside a String default fn in use keeps its name" {
         \\fn main() {
         \\    @print("abcd".slice(1, 3));
         \\    val ys: i32[] = [7, 8];
-        \\    @print(ys.at(1).unwrapOr(0));
+        \\    @print(ys.at(1) ?? 0);
         \\    val parts = "a=1".split("=");
-        \\    @print(parts.at(0).unwrapOr(""));
+        \\    @print(parts.at(0) ?? "");
         \\}
     , "bc\n8\na\n");
 }

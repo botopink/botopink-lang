@@ -31,5 +31,5 @@ pub fn main() {
     @print(xs[0..2].length);
 
     val rows = [[1, 2], [3, 4]];
-    @print(rows[1][0]);
+    @print(rows[1]?.[0]);
 }

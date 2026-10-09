@@ -2572,6 +2572,15 @@ const Emitter = struct {
     /// entry in `records`/`record_field_types`, registered on first sight).
     fn recordTypeOfExpr(self: *Emitter, e: ast.Expr) ?[]const u8 {
         if (self.genericResultOf(e)) |a| return self.recordTypeOfExpr(a);
+        // `x!` (decision 330): the payload's record.
+        if (optOperatorParts(e)) |op| if (op.bang) if (self.optInfoOf(op.cond.*)) |oi| {
+            if (oi.rec) |r| return r;
+            if (oi.inner) |tr| switch (tr) {
+                .named => |n| return self.resolveRecordName(n),
+                .generic => |g| return self.resolveRecordName(g.name),
+                else => {},
+            };
+        };
         return switch (e) {
             .identifier => |id| switch (id.kind) {
                 .ident => |name0| blk: {
@@ -6818,6 +6827,9 @@ const Emitter = struct {
     /// `-> bool`.
     fn isBoolExpr(self: *Emitter, e: ast.Expr) bool {
         if (blockResultOf(e)) |a| return self.isBoolExpr(a);
+        // `o ?? d` reads as `o.unwrapOr(d)`; `x!` answers its payload.
+        if (nullishParts(e)) |nu| return self.isBoolExpr(nu.dflt);
+        if (optOperatorParts(e)) |op| if (op.bang) return if (self.optInfoOf(op.cond.*)) |oi| oi.bool_ else false;
         return switch (e) {
             .identifier => |id| switch (id.kind) {
                 .ident => |n| std.mem.eql(u8, n, "true") or std.mem.eql(u8, n, "false") or
@@ -9710,6 +9722,13 @@ const Emitter = struct {
     fn printShapeOf(self: *Emitter, e: ast.Expr) anyerror!?[]const u8 {
         if (self.genericResultOf(e)) |a| return self.printShapeOf(a);
         if (self.unitEnumOf(e)) |en| return try self.unitEnumShape(en);
+        // `o ?? d` (decision 330: `?T`'s `unwrapOr` is `??`) answers the
+        // payload or `d`, one type — read as `o.unwrapOr(d)` is below.
+        if (nullishParts(e)) |nu| {
+            if (self.optInfoOf(nu.opt.*)) |oi| if (oi.shape) |sh| return sh;
+            if (!isEmptyArrayLit(nu.dflt)) if (try self.printShapeOf(nu.dflt)) |sh| return sh;
+        }
+        if (optOperatorParts(e)) |op| if (op.bang) if (self.optInfoOf(op.cond.*)) |oi| if (oi.shape) |sh| return sh;
         switch (e) {
             .identifier => |id| switch (id.kind) {
                 .ident => |n| if (self.print_shape_locals.get(self.resolveName(n))) |shape| return shape,
@@ -10991,6 +11010,35 @@ const Emitter = struct {
         return .{ .optional = boxed };
     }
 
+    /// Decision 330 — an optional operator's `if` (`infer.inferOptionalOperator`,
+    /// binder `__bp_opt_<line>_<col>`): its operand, the then-arm's value, and
+    /// whether it is `x!` (the arm answers the binder itself).
+    const OptOperator = struct { cond: *ast.Expr, tail: ast.Expr, bang: bool };
+
+    fn optOperatorParts(e: ast.Expr) ?OptOperator {
+        if (e != .branch or e.branch.kind != .if_) return null;
+        const i = e.branch.kind.if_;
+        const b = i.binding orelse return null;
+        if (!std.mem.startsWith(u8, b, "__bp_opt_")) return null;
+        if (i.then_.len != 1) return null;
+        const tail = i.then_[0].expr;
+        const bang = tail == .identifier and tail.identifier.kind == .ident and std.mem.eql(u8, tail.identifier.kind.ident, b);
+        return .{ .cond = i.cond, .tail = tail, .bang = bang };
+    }
+
+    /// `o ?? d` — the parser's `if (o) { n -> n } else { d }` with the
+    /// nullish binder (`ast.nullish_binding_name`): the optional and its
+    /// default.
+    fn nullishParts(e: ast.Expr) ?struct { opt: *ast.Expr, dflt: ast.Expr } {
+        if (e != .branch or e.branch.kind != .if_) return null;
+        const i = e.branch.kind.if_;
+        const b = i.binding orelse return null;
+        if (!std.mem.eql(u8, b, ast.nullish_binding_name)) return null;
+        const els = i.else_ orelse return null;
+        if (els.len != 1) return null;
+        return .{ .opt = i.cond, .dflt = els[0].expr };
+    }
+
     /// `o.unwrapOr(d)` over an `@Option` or a `@Result`, its default written
     /// — the builtin `__bp_*_unwrapOr(o, d)`, whose second argument is `d`.
     fn isUnwrapOr(cc: anytype) bool {
@@ -11380,6 +11428,13 @@ const Emitter = struct {
     }
 
     fn typeRefOf(self: *Emitter, e: ast.Expr) ?ast.TypeRef {
+        // `o ?? d` over a `?T` answers a `T`, as `o.unwrapOr(d)` did below:
+        // a `?u64`'s payload stays a `u64`, which prints, compares and turns
+        // into text unsigned (`-1` at exit 0 once 330 spelled it `??`).
+        if (nullishParts(e)) |nu| {
+            if (self.typeRefOf(nu.opt.*)) |ot| if (ot == .optional) return ot.optional.*;
+            if (self.optInfoOf(nu.opt.*)) |oi| if (oi.inner) |inner| return inner;
+        }
         return switch (e) {
             .identifier => |id| switch (id.kind) {
                 .ident => |n0| blk: {
@@ -11597,6 +11652,15 @@ const Emitter = struct {
                     if (self.primKindAt(cc, c.loc)) |k| if (k == .array and keepsElements(cc.callee)) {
                         if (cc.receiver) |r| return self.elemRecordOf(r.*);
                     };
+                    // `xs.map({ n -> Y(…) })` holds what its lambda answers:
+                    // unregistered, `built.at(1)?.id` read the field off the
+                    // element as an address (`run/optional_member_default`).
+                    if (std.mem.eql(u8, cc.callee, "map") and cc.receiver != null and cc.args.len == 1) {
+                        if (lambdaArg(cc.args[0].value)) |lam| {
+                            const body = lam.function.kind.body;
+                            if (body.len > 0) if (self.recordTypeOfExpr(body[body.len - 1].expr)) |r| return r;
+                        }
+                    }
                 },
                 else => {},
             },
@@ -11637,6 +11701,8 @@ const Emitter = struct {
     /// The optional an expression evaluates to, when it is one.
     fn optInfoOf(self: *Emitter, e: ast.Expr) ?OptInfo {
         if (self.genericResultOf(e)) |a| return self.optInfoOf(a);
+        // `xs?.[k]`: the link's own optional, flattened (decision 330).
+        if (optOperatorParts(e)) |op| if (!op.bang) return self.optInfoOf(op.tail);
         switch (e) {
             // An `if` with no `else` in value position: absent when the
             // condition is false (its value when false is the language
@@ -12503,6 +12569,7 @@ const Emitter = struct {
     /// `@print`, none of which may go through the numeric path.
     fn isStringExpr(self: *Emitter, e: ast.Expr) bool {
         if (blockResultOf(e)) |a| return self.isStringExpr(a);
+        if (optOperatorParts(e)) |op| if (op.bang) return if (self.optInfoOf(op.cond.*)) |oi| oi.str else false;
         return switch (e) {
             .literal => |lit| switch (lit.kind) {
                 .stringLit => true,
@@ -13556,6 +13623,7 @@ const Emitter = struct {
 
     /// Best-effort wasm value type of `e`.
     fn wasmTypeOf(self: *Emitter, e: ast.Expr) []const u8 {
+        if (optOperatorParts(e)) |op| if (op.bang) if (self.optInfoOf(op.cond.*)) |oi| if (oi.cell != .none) return oi.cell.ty();
         return switch (e) {
             .literal => |lit| switch (lit.kind) {
                 .numberLit => |n| if (isNumericLiteral(n)) numLitType(n) else "i32",
@@ -14783,6 +14851,25 @@ const Emitter = struct {
         const then_void = branchIsVoid(i.then_);
         const else_void = if (i.else_) |els| branchIsVoid(els) else false;
         const as_stmt = then_void and else_void;
+
+        // Decision 330 — `recv?.[i]`, `f?.(args)` and `x!` reach every backend
+        // as an `if` over the optional with a `__bp_opt_<line>_<col>` binder
+        // (`infer.inferOptionalOperator`). This backend does not know what
+        // such an `if` answers — a boxed payload, a scalar, a string — and
+        // lowered as it stands it printed addresses: refused, located at the
+        // operand, until `05-wasm` types it.
+        if (i.binding) |name| if (std.mem.startsWith(u8, name, "__bp_opt_")) {
+            // `x!` answers the payload the binder holds, and `xs?.[k]` (or a
+            // call answering an optional) the link's own optional — absence
+            // is the `0` both arms agree on. A link answering a plain value
+            // would have to be boxed here, and is refused.
+            const supported = if (i.then_.len == 1) blk: {
+                const tail = i.then_[0].expr;
+                if (tail == .identifier and tail.identifier.kind == .ident and std.mem.eql(u8, tail.identifier.kind.ident, name)) break :blk true;
+                break :blk self.optInfoOf(tail) != null;
+            } else false;
+            if (!supported) return self.refuse(i.cond.getLoc(), "the wasm backend does not lower `?.()` over a function answering a plain value yet (decision 330)", .{});
+        };
 
         // `if (opt) { v -> … }`: the condition is the optional (0 = none), and
         // the arm binds `v` to its payload.

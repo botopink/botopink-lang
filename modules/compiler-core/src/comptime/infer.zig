@@ -228,7 +228,7 @@ fn markStdImports(env: *Env, u: ast.ImportDecl) InferError!bool {
         }
         env.lastError = TypeError.custom(
             "unknown \"std\" module in import",
-            "Available std modules: bool. (`result` is builtin — call `result.map(r, f)` without importing.)",
+            "Available std modules: bool. (A `@Result`'s `map` / `flatMap` / `unwrapOr` / `isOk` / `isError` are its methods: `r.map(f)`, no import.)",
         ).withLoc(imp.loc);
         return error.TypeError;
     }
@@ -2145,6 +2145,7 @@ fn registerRecord(env: *Env, r: ast.TypeDecl) InferError!void {
     // `expandTrailingDefaults` injects missing trailing defaults at the
     // `Config(...)` call site. Same rule as fn-decl call defaults.
     try env.ctorParams.put(r.name, try recordFieldsAsParams(env, r.recordFields()));
+    if (r.isNamespace) try env.namespaceTypes.put(r.name, {});
 
     // Inherent method signatures (self = the record instance type).
     try registerInherentMethodTypes(env, r.name, retType, &genericMap, r.methods);
@@ -7353,7 +7354,8 @@ fn isKnownBuiltinName(callee: []const u8) bool {
     // names stay known for the parser's carriers only, so one that survived a
     // degraded module is not reported as a misspelled builtin — a hand-written
     // `@is(…)` is refused in `inferCallExpr` (decision 322).
-    return std.mem.eql(u8, callee, ast.is_builtin_name) or std.mem.eql(u8, callee, ast.index_builtin_name);
+    return std.mem.eql(u8, callee, ast.is_builtin_name) or std.mem.eql(u8, callee, ast.index_builtin_name) or
+        std.mem.eql(u8, callee, ast.non_null_builtin_name);
 }
 
 fn isPrimitiveTypeName(name: []const u8) bool {
@@ -11209,6 +11211,7 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
             const recvTyped = try inferExprTyped(env, ia.receiver.*);
             const recvPtr = try makeTypedPtr(env, recvTyped);
             var recvType = recvTyped.getType().deref();
+            if (ia.optional) try refuseNeverNull(env, recvType, "?.", loc);
             if (ia.optional) {
                 if (recvType.* == .named and std.mem.eql(u8, recvType.named.name, "optional") and
                     recvType.named.args.len >= 1)
@@ -12045,11 +12048,14 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
             // could only ever have narrowed the last of them.
             var narrowings: std.ArrayListUnmanaged(CondNarrowing) = .empty;
             defer narrowings.deinit(env.arena);
+            var nullishPayload: ?*T.Type = null;
 
             if (i.binding) |binding_name| {
                 // Null-check form: `if (x) { e -> ... }` — condition is optional, not bool.
                 // Bind the unwrapped inner type to `binding_name`.
                 const condTy = condTyped.getType().deref();
+                // Decision 330 (2) — `a ?? b` with an `a` that is never null.
+                if (std.mem.eql(u8, binding_name, ast.nullish_binding_name)) try refuseNeverNull(env, condTy, "??", loc);
                 const innerTy: *T.Type = switch (condTy.*) {
                     .named => |n| if (std.mem.eql(u8, n.name, "optional") and n.args.len == 1)
                         n.args[0]
@@ -12058,6 +12064,9 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
                     else => try env.freshVar(),
                 };
                 try env.bind(binding_name, innerTy);
+                // `a ?? b`'s default is the payload's: an integer literal takes
+                // its width (`delay(n) ?? 0` over `?i64`), as `unwrapOr`'s did.
+                if (std.mem.eql(u8, binding_name, ast.nullish_binding_name)) nullishPayload = innerTy;
             } else {
                 // Check for type guard call: `if (guardName(arg, ...))`
                 // Narrow the argument's type in the then-branch.
@@ -12120,6 +12129,9 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
                 for (narrowings.items) |n| {
                     if (n.else_) |ty| try bindNarrowed(env, n.name, ty, &snapshots);
                 }
+                const savedExpected = env.expectedType;
+                if (nullishPayload) |p| env.expectedType = p;
+                defer env.expectedType = savedExpected;
                 const typed = try inferStmtsTyped(env, els);
                 try restorePatternBindings(env, snapshots.items);
                 snapshots.clearAndFree(env.arena);
@@ -13205,82 +13217,6 @@ fn associatedCallReturnType(
     return fn_.func.ret;
 }
 
-/// Resolve a builtin `result` namespace qualified call:
-/// `result.map(r, f)` / `result.then(r, f)` / `result.unwrap(r, fallback)` /
-/// `result.isOk(r)` / `result.isError(r)`. The subject `@Result<R, E>` value
-/// arrives as the first positional argument. Records a `qualified`
-/// MethodLowering at `loc` so the transform rewrites to the same
-/// `__bp_result_<op>(args…)` builtin the method form uses — every backend
-/// lowers it inline (no module emitted, no import required).
-fn inferResultNamespaceCall(
-    env: *Env,
-    recvPtr: ?*ast.TypedExpr,
-    callee: []const u8,
-    typedArgs: []ast.CallArgOf(.typed),
-    typedTrailing: []ast.TrailingLambdaOf(.typed),
-    loc: ast.Loc,
-) InferError!TypedExpr {
-    const op: envMod.MethodLowering.Op = blk: {
-        if (std.mem.eql(u8, callee, "map")) break :blk .map;
-        if (std.mem.eql(u8, callee, "then")) break :blk .flatMap;
-        if (std.mem.eql(u8, callee, "unwrap")) break :blk .unwrapOr;
-        if (std.mem.eql(u8, callee, "isOk")) break :blk .isOk;
-        if (std.mem.eql(u8, callee, "isError")) break :blk .isError;
-        env.lastError = TypeError.custom(
-            "unknown `result` namespace function",
-            "Available: map, then, unwrap, isOk, isError.",
-        ).withLoc(loc);
-        return error.TypeError;
-    };
-
-    const wantArity: usize = switch (op) {
-        .map, .flatMap, .unwrapOr => 2,
-        .isOk, .isError => 1,
-    };
-    const total = typedArgs.len + typedTrailing.len;
-    if (total != wantArity) {
-        env.lastError = TypeError.arityMismatch(callee, wantArity, total).withLoc(loc);
-        return error.TypeError;
-    }
-
-    // The subject `@Result<R, E>` is the first positional argument.
-    const okTy = try env.freshVar();
-    const errTy = try env.freshVar();
-    const subjectShape = try env.namedTypeArgs("Result", &.{ okTy, errTy });
-    try unifyAt(env, subjectShape, typedArgs[0].value.getType(), typedArgs[0].value.getLoc());
-
-    const arg1: ?*T.Type = if (typedArgs.len >= 2) typedArgs[1].value.getType() else null;
-
-    const retType: *T.Type = switch (op) {
-        .map => blk: {
-            const r2 = try env.freshVar();
-            if (arg1) |a| try unifyAt(env, a, try env.funcType(&.{okTy}, r2), loc);
-            break :blk try env.namedTypeArgs("Result", &.{ r2, errTy });
-        },
-        .flatMap => blk: {
-            const r2 = try env.freshVar();
-            const resTy = try env.namedTypeArgs("Result", &.{ r2, errTy });
-            if (arg1) |a| try unifyAt(env, a, try env.funcType(&.{okTy}, resTy), loc);
-            break :blk resTy;
-        },
-        .unwrapOr => blk: {
-            if (arg1) |a| try unifyAt(env, a, okTy, loc);
-            break :blk okTy;
-        },
-        .isOk, .isError => try env.namedType("bool"),
-    };
-
-    try env.method_lowerings.put(loc, .{ .domain = .result, .op = op, .qualified = true });
-
-    return ast.TypedExpr{ .call = .{ .loc = loc, .type_ = retType, .kind = .{ .call = .{
-        .receiver = recvPtr,
-        .callee = callee,
-        .is_builtin = false,
-        .args = typedArgs,
-        .trailing = typedTrailing,
-    } } } };
-}
-
 /// A member of a `@Result<R, E>` value is one of its builtin methods, or
 /// refused. A `@Result` is its `Ok` / `Error` carrier, not the payload:
 /// `querystring.parse(q).length` read a field off `{ok, V}` — it checked,
@@ -13340,12 +13276,34 @@ fn inferResultOptionMethod(
     // is gone. The refusal is explicit because the fallback for an unknown
     // method on a `?T` is permissive typing: without it, `.expect(…)` would
     // still compile and fail at run time, which is worse than the alias was.
-    if (isOption and std.mem.eql(u8, callee, "expect")) {
-        env.lastError = TypeError.custom(
-            diagnostics.option_expect_removed ++
-                ": `?T` has no `expect` — it was an alias of `unwrapOr` under a name that says the absent branch is unreachable",
-            "Write `unwrapOr(<default>)`, which is what it did. There is no assert-shaped unwrap on `?T`: `case` the optional, or `@panic` in the absent arm.",
-        ).withLoc(loc);
+    // Decision 330 — `?T` has no methods: its whole surface is `??`, `?.`,
+    // `?.[]`, `?.()` and the postfix `!`. `map`, `flatMap` and `unwrapOr` left
+    // it (they stay on `@Result`), and any other method is called on the
+    // value through `?.`.
+    // `recv?.m(args)` typed as it always was (`inferOptionalOperator`), and
+    // a link that continues a `?.` chain (`e?.key.length()`): the chain after
+    // a `?.` runs under its guard, as TypeScript's does, so the method is the
+    // payload's.
+    // The methods `?T` lost stay refused there unless the payload answers
+    // them itself (an array's `map`, a `@Result`'s `unwrapOr`).
+    const payloadName: []const u8 = if (named.args.len >= 1 and named.args[0].deref().* == .named) named.args[0].deref().named.name else "";
+    const lostMethod = ((std.mem.eql(u8, callee, "map") or std.mem.eql(u8, callee, "flatMap")) and !std.mem.eql(u8, payloadName, "array")) or
+        ((std.mem.eql(u8, callee, "unwrapOr") or std.mem.eql(u8, callee, "expect")) and !std.mem.eql(u8, payloadName, "Result"));
+    if (isOption and !lostMethod and (env.inOptionalChain or continuesOptionalChain(recvPtr.*))) return null;
+    if (isOption) {
+        const inner = try snapshotMod.typeNameOf(env.arena, if (named.args.len >= 1) named.args[0] else try env.freshVar());
+        const msg = try std.fmt.allocPrint(
+            env.arena,
+            "{s}: unknown method `{s}` on `?{s}` — an optional has no methods",
+            .{ diagnostics.optional_has_no_methods, callee, inner },
+        );
+        const hint: []const u8 = if (std.mem.eql(u8, callee, "unwrapOr"))
+            "Write `x ?? fallback` for the value or a default."
+        else if (std.mem.eql(u8, callee, "map") or std.mem.eql(u8, callee, "flatMap"))
+            "Read through the optional with `?.` (`x?.f()`), or narrow it (`if (x) { v -> … }`); `?.` flattens a `?U` answer."
+        else
+            try std.fmt.allocPrint(env.arena, "Call it on the value through `?.` (`x?.{s}(…)`), or narrow the optional first (`if (x) {{ v -> v.{s}(…) }}`).", .{ callee, callee });
+        env.lastError = TypeError.custom(msg, hint).withLoc(loc);
         return error.TypeError;
     }
 
@@ -13393,6 +13351,23 @@ fn inferResultOptionMethod(
         .args = typedArgs,
         .trailing = typedTrailing,
     } } } };
+}
+
+/// True when `e` is a `?.` link (`a?.b`, `a?.m()`) or a link written after
+/// one (`a?.b.c()`): the rest of a `?.` chain reads the payload.
+fn continuesOptionalChain(e: ast.TypedExpr) bool {
+    return switch (e) {
+        .identifier => |id| switch (id.kind) {
+            .identAccess => |a| a.optional or continuesOptionalChain(a.receiver.*),
+            else => false,
+        },
+        .call => |c| switch (c.kind) {
+            .call => |cc| cc.optional or (!cc.is_builtin and cc.calleeExpr == null and
+                if (cc.receiver) |r| continuesOptionalChain(r.*) else false),
+            else => false,
+        },
+        else => false,
+    };
 }
 
 /// The expectation of `unwrapOr`'s default: the payload of the `?T` /
@@ -14373,6 +14348,192 @@ fn inferIndexExpr(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr {
     return inferExprTyped(env, rewrite.*);
 }
 
+/// Decision 330 (2) — an optional operator over a value whose type is not
+/// `?T` is refused at the operator, naming the type: the value is never
+/// `null`, so the operator says something the program does not mean. An
+/// operand still a type variable is left to the rest of the check.
+fn refuseNeverNull(env: *Env, ty: *T.Type, op: []const u8, loc: ast.Loc) InferError!void {
+    const t = ty.deref();
+    if (t.* == .typeVar) return;
+    if (optionalInner(t) != null) return;
+    try refuseUnknownUse(env, t, loc, "apply an optional operator to");
+    const shown = try snapshotMod.typeNameOf(env.arena, t);
+    const msg = try std.fmt.allocPrint(
+        env.arena,
+        "{s}: `{s}` over a value that is never null — this is `{s}`, not `?{s}`",
+        .{ diagnostics.optional_operator_never_null, op, shown, shown },
+    );
+    env.lastError = TypeError.custom(msg, "`??`, `?.`, `?.[]`, `?.()` and the postfix `!` read a `?T`. Drop the operator, or give the value an optional type.").withLoc(loc);
+    return error.TypeError;
+}
+
+/// The column added to a node `inferOptionalOperator` synthesises where no
+/// written token stands (the abort of `x!`): past any written column, so its
+/// loc keys no plan of a written node.
+const optional_synthetic_col: usize = 2_000_000;
+
+/// Decision 330 — `recv?.[i]`, `f?.(args)`, `recv?.m(args)` and `x!` have no
+/// typing rule of their own: each IS the `if` over the optional it reads,
+/// with a binder of its own (`__bp_opt_<line>_<col>`, so nested ones never
+/// share an Erlang variable):
+///
+///   recv?.[i]       if (recv) { n -> n[i] } else { null }
+///   f?.(args)       if (f) { n -> n(args) } else { null }
+///   recv?.m(args)   if (recv) { n -> n.m(args) } else { null }
+///   x!              if (x) { n -> n } else { @panic("value is null — x! at <file>:<line>:<col>") }
+///
+/// The `if` is recorded under the operator's loc (`env.indexRewrites`) and
+/// typed here — for `recv?.m(args)` only typed, the call keeping its node —
+/// so the three `?.` forms answer `?U` flattened (a link answering
+/// `?U` joins `null` as `?U`, never `??U`) and `x!` answers `T`; the transform
+/// splices it in, and no backend learns a new rule. The inner link keeps a
+/// written loc of its own — the `[` or `(` after `?.`, the method's name — so
+/// the plans inference makes while typing it find it. The operand is refused
+/// first when it is never `null` (`refuseNeverNull`).
+fn inferOptionalOperator(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr {
+    const isBang = call.is_builtin and std.mem.eql(u8, call.callee, ast.non_null_builtin_name);
+    const isIndex = call.is_builtin and std.mem.eql(u8, call.callee, ast.index_builtin_name);
+    const operand: *ast.Expr = if (isBang or isIndex)
+        call.args[0].value
+    else if (call.calleeExpr) |ce|
+        ce
+    else
+        call.receiver orelse {
+            env.lastError = TypeError.custom("`?.` reads an optional, and this call has no receiver", "Write `recv?.m(…)`, `recv?.[i]` or `f?.(…)`.").withLoc(loc);
+            return error.TypeError;
+        };
+    const op: []const u8 = if (isBang) "!" else if (isIndex) "?.[]" else if (call.calleeExpr != null) "?.()" else "?.";
+    const saved = env.expectedType;
+    env.expectedType = null;
+    const typedOperand = try inferExprTyped(env, operand.*);
+    env.expectedType = saved;
+    try refuseNeverNull(env, typedOperand.getType(), op, loc);
+
+    const binder = try std.fmt.allocPrint(env.arena, "__bp_opt_{d}_{d}", .{ loc.line, loc.col });
+    const bound = try env.arena.create(ast.Expr);
+    bound.* = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = binder } } };
+    const inner = try env.arena.create(ast.Expr);
+    const elseExpr = try env.arena.create(ast.Expr);
+    // The link after `?.` is located at its own token: two columns on.
+    const linkLoc: ast.Loc = .{ .line = loc.line, .col = loc.col + 2 };
+    if (isBang) {
+        inner.* = bound.*;
+        const text = try defaultLexeme(env.arena, operand.*);
+        const start = leftmostLoc(operand);
+        const message = try std.fmt.allocPrint(env.arena, "value is null — {s}! at {s}:{d}:{d}", .{ text, env.srcPath, start.line, start.col });
+        const msgLit = try env.arena.create(ast.Expr);
+        const panicLoc: ast.Loc = .{ .line = loc.line, .col = loc.col + optional_synthetic_col };
+        msgLit.* = .{ .literal = .{ .loc = panicLoc, .kind = .{ .stringLit = message } } };
+        const args = try env.arena.alloc(ast.CallArg, 1);
+        args[0] = .{ .label = null, .value = msgLit };
+        elseExpr.* = .{ .call = .{ .loc = panicLoc, .kind = .{ .call = .{
+            .receiver = null,
+            .callee = "panic",
+            .is_builtin = true,
+            .args = args,
+            .trailing = &.{},
+        } } } };
+    } else {
+        elseExpr.* = .{ .literal = .{ .loc = loc, .kind = .null_ } };
+        var link = call;
+        link.optional = false;
+        const payload = optionalInner(typedOperand.getType().deref());
+        const isTuple = if (payload) |p| p.deref().* == .named and std.mem.eql(u8, p.deref().named.name, "tuple") else false;
+        const idx = if (isIndex) call.args[1].value else undefined;
+        if (isIndex and !isTuple and !(idx.* == .collection and idx.collection.kind == .range)) {
+            // `xs?.[k]` reads `xs.at(k)` through the optional (the index IS
+            // `at`, `inferIndexExpr`): written as the method call, which every
+            // backend lowers on a binder (wasm does not lower `n[k]` there).
+            const args = try env.arena.alloc(ast.CallArg, 1);
+            args[0] = .{ .label = null, .value = idx };
+            link = .{
+                .receiver = bound,
+                .callee = index_at_method,
+                .is_builtin = false,
+                .args = args,
+                .trailing = &.{},
+            };
+            inner.* = .{ .call = .{ .loc = linkLoc, .kind = .{ .call = link } } };
+        } else if (isIndex) {
+            const args = try env.arena.alloc(ast.CallArg, 2);
+            args[0] = .{ .label = null, .value = bound };
+            args[1] = call.args[1];
+            link.args = args;
+            inner.* = .{ .call = .{ .loc = linkLoc, .kind = .{ .call = link } } };
+        } else if (call.calleeExpr != null) {
+            link.calleeExpr = bound;
+            inner.* = .{ .call = .{ .loc = linkLoc, .kind = .{ .call = link } } };
+        } else {
+            // Typed only (below): at a loc of its own, so the plans its
+            // typing records do not land on the written call's.
+            link.receiver = bound;
+            inner.* = .{ .call = .{ .loc = .{ .line = loc.line, .col = loc.col + optional_synthetic_col }, .kind = .{ .call = link } } };
+        }
+    }
+    const isMethod = !isBang and !isIndex and call.calleeExpr == null;
+    var then_ = try env.arena.alloc(ast.Stmt, 1);
+    then_[0] = .{ .expr = inner.* };
+    var else_ = try env.arena.alloc(ast.Stmt, 1);
+    else_[0] = .{ .expr = elseExpr.* };
+    const rewrite = try env.arena.create(ast.Expr);
+    rewrite.* = .{ .branch = .{ .loc = loc, .kind = .{ .if_ = .{
+        .cond = operand,
+        .binding = binder,
+        .then_ = then_,
+        .else_ = else_,
+    } } } };
+    const typed = inferExprTyped(env, rewrite.*) catch |err| {
+        // A refusal inside the synthesised link is the written call's.
+        if (env.lastError) |*e| if (e.loc) |*l| if (l.col > optional_synthetic_col) {
+            l.col -= optional_synthetic_col;
+        };
+        return err;
+    };
+    // `recv?.m(args)` keeps its own node: the backends lower the optional
+    // method call as they did before 330 (wasm included), from the plans the
+    // call's own typing records under its loc; the `if` only types it —
+    // `?U`, flattened.
+    if (isMethod) {
+        var direct = call;
+        direct.optional = false;
+        const savedChain = env.inOptionalChain;
+        env.inOptionalChain = true;
+        defer env.inOptionalChain = savedChain;
+        var old = try inferCallExpr(env, .{ .loc = loc, .kind = .{ .call = direct } }, loc);
+        if (old == .call) {
+            old.call.type_ = typed.getType();
+            if (old.call.kind == .call) old.call.kind.call.optional = true;
+        }
+        return old;
+    }
+    try env.indexRewrites.put(loc, rewrite);
+    return typed;
+}
+
+/// Where an expression starts: the loc of its leftmost operand (`a` in
+/// `a.b.c()`, `xs` in `xs[0]`), for the location `x!`'s abort names.
+fn leftmostLoc(e: *const ast.Expr) ast.Loc {
+    return switch (e.*) {
+        .identifier => |id| switch (id.kind) {
+            .identAccess => |a| leftmostLoc(a.receiver),
+            else => id.loc,
+        },
+        .call => |c| switch (c.kind) {
+            .call => |cc| if (cc.receiver) |r|
+                leftmostLoc(r)
+            else if (cc.calleeExpr) |ce|
+                leftmostLoc(ce)
+            else if (cc.is_builtin and cc.args.len > 0 and
+                (std.mem.eql(u8, cc.callee, ast.index_builtin_name) or std.mem.eql(u8, cc.callee, ast.non_null_builtin_name)))
+                leftmostLoc(cc.args[0].value)
+            else
+                c.loc,
+            else => c.loc,
+        },
+        inline else => |n| n.loc,
+    };
+}
+
 /// The two method names the index expression rewrites to — the ones
 /// `Index<K, V>` and `Slice<V>` declare in `libs/std/src/builtins.d.bp`.
 const index_at_method = "at";
@@ -14452,6 +14613,12 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
     }
     return switch (c.kind) {
         .call => |call| {
+            // Decision 330 — `recv?.[i]`, `f?.(args)`, `recv?.m(args)` and
+            // `x!`: each is the `if` over the optional it reads, recorded for
+            // the transform (`inferOptionalOperator`).
+            if (call.optional or (call.is_builtin and std.mem.eql(u8, call.callee, ast.non_null_builtin_name))) {
+                return inferOptionalOperator(env, call, loc);
+            }
             // Front 15 handover — `.Circle(radius: 1)`: the parser chains the
             // call onto a `.dotIdent` head, so the callee arrives as an
             // expression with `callee == ""`. It is the variant constructor
@@ -14491,6 +14658,24 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                     try env.indexRewrites.put(loc, spliced);
                     return inferCallExpr(env, direct, loc);
                 }
+            }
+            // Decision 329 — a namespace type has no value: `Type()` is
+            // refused at the call, naming what the type is.
+            if (call.receiver == null and call.calleeExpr == null and !call.is_builtin and
+                env.namespaceTypes.contains(call.callee))
+            {
+                const msg = try std.fmt.allocPrint(
+                    env.arena,
+                    "{s}: `{s}` is a namespace type — it has no field list and no value, so `{s}()` constructs nothing",
+                    .{ diagnostics.namespace_type_construction, call.callee, call.callee },
+                );
+                const hint = try std.fmt.allocPrint(
+                    env.arena,
+                    "Call one of its functions through it (`{s}.f(…)`); a type with values writes its field list (`type {s}()`).",
+                    .{ call.callee, call.callee },
+                );
+                env.lastError = TypeError.custom(msg, hint).withLoc(loc);
+                return error.TypeError;
             }
             // Decision 110 — `D.empty()` for `import {Dict as D}` is
             // `Dict.empty()`: the receiver is renamed before anything reads
@@ -14566,10 +14751,8 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                 if (recvExpr.* == .identifier and recvExpr.*.identifier.kind == .ident) {
                     const rn = recvExpr.*.identifier.kind.ident;
                     // An explicit `from "std"` import wins over same-named value
-                    // bindings (e.g. the primitive type name `bool`); the builtin
-                    // `result` namespace is shadowable by a local binding.
+                    // bindings (e.g. the primitive type name `bool`).
                     if (env.stdImports.contains(rn) or
-                        (env.lookup(rn) == null and std.mem.eql(u8, rn, "result")) or
                         env.namespaces.modules.contains(rn))
                     {
                         break :blk try makeTypedPtr(env, TypedExpr{ .identifier = .{
@@ -14811,16 +14994,9 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                     return result;
                 }
             }
-            // Builtin `result` namespace: `result.map(r, f)`, `result.unwrap(r, 0)`,
-            // `result.isOk(r)`… — qualified surface over the built-in
-            // `@Result` method ops. No import needed (builtin, not a "std" module);
-            // a local value binding named `result` shadows the namespace.
             if (call.receiver) |recvExpr| {
                 if (recvExpr.* == .identifier and recvExpr.*.identifier.kind == .ident) {
                     const recvName = recvExpr.*.identifier.kind.ident;
-                    if (env.lookup(recvName) == null and std.mem.eql(u8, recvName, "result")) {
-                        return try inferResultNamespaceCall(env, typedReceiver, call.callee, typedArgs, typedTrailing, loc);
-                    }
                     // Associated interface fn (`Pair.of(a, b)`, `Array.range(0, n)`,
                     // `Function.compose(f, g)`): `recvName.callee` is registered by
                     // `registerInterfaceAssociatedFns`. Each call instantiates fresh

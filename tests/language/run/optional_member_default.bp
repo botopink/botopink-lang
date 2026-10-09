@@ -1,0 +1,24 @@
+//// Decision 330 — `xs.at(k)?.field ?? d`: a member read through the optional
+//// an index answers, defaulted by `??` — a present element, an absent one, a
+//// string field, an empty array, an array built by `map` and one passed in,
+//// on all four targets (wasm printed an address for `ys.at(0)?.id ?? 0` in
+//// another thread's measure).
+
+type Y(id: i32, name: string)
+
+fn firstId(ys: Y[]) -> i32 {
+    return ys.at(0)?.id ?? 0;
+}
+
+pub fn main() {
+    val ys = [Y(id: 7, name: "a")];
+    @print(ys.at(0)?.id ?? 0);
+    @print(ys.at(3)?.id ?? 0);
+    @print(ys.at(0)?.name ?? "-");
+    val zs: Y[] = [];
+    @print(zs.at(0)?.id ?? 5);
+    val built = [1, 2].map({ n -> Y(id: n * 10, name: "m") });
+    @print(built.at(1)?.id ?? 0);
+    @print(firstId(ys) + 1);
+    @print(firstId([]));
+}

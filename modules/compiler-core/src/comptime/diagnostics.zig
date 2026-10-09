@@ -79,13 +79,6 @@ pub const iter_mixed_yield_return: []const u8 = "iter-mixed-yield-return";
 /// `iter` / `stream` whose `E` is inferred (`infer.zig` `unifyErrorChannel`).
 pub const gen_infer_conflicting_errors: []const u8 = "gen-infer-conflicting-errors";
 
-/// Front 20 F11 — `.expect(default)` on a `?T`. It was an alias of `unwrapOr`
-/// under a name that says the absent branch is unreachable, which is the
-/// loosest reading of the stricter word (decision 67). There is one spelling
-/// now, and reaching for the old one is refused rather than typed permissively
-/// and broken at run time.
-pub const option_expect_removed: []const u8 = "option-expect-removed";
-
 /// A member of a `@Result` value that is not one of its builtin methods
 /// (`map`, `flatMap`, `unwrapOr`, `isOk`, `isError`): `parse(q).length` read a
 /// field off the `{ok, V}` / `{ok: V}` carrier — `null` on commonJS, a crash on
@@ -519,7 +512,10 @@ pub const all_codes = [_][]const u8{
     enum_variant_arity_mismatch,
     fn_param_default_trailing_only_parse,
     fn_param_arity_exceeded,
-    option_expect_removed,
+    optional_operator_never_null,
+    optional_has_no_methods,
+    nullish_beside_logical,
+    namespace_type_construction,
     result_member_not_a_method,
     break_value_outside_generator,
     break_outside_loop,
@@ -578,3 +574,18 @@ test "codes are unique (the table is the contract)" {
 
 /// 1.0.5 decision 31 — `any` is deleted; a written `any` names `unknown`.
 pub const any_type_removed: []const u8 = "any-type-removed";
+
+/// Decision 329 — `Type()` on a namespace type (`type Type { fn … }`): it has
+/// no field list and no value; its functions are called through it.
+pub const namespace_type_construction: []const u8 = "namespace-type-construction";
+
+/// Decision 330 (2) — `??`, `?.`, `?.[]`, `?.()` or the postfix `!` over a
+/// value whose type is not `?T`: it is never `null`.
+pub const optional_operator_never_null: []const u8 = "optional-operator-never-null";
+
+/// Decision 330 — `.map` / `.flatMap` / `.unwrapOr` (any method) on a `?T`:
+/// the optional has no methods; its surface is `??`, `?.`, `?.[]`, `?.()`, `!`.
+pub const optional_has_no_methods: []const u8 = "optional-has-no-methods";
+
+/// Decision 330 (4) — `??` beside `&&` / `||` without parentheses.
+pub const nullish_beside_logical: []const u8 = "nullish-beside-logical";

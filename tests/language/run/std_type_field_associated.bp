@@ -1,0 +1,15 @@
+//// Decision 330 (7) — std declares `Field<T>` in the body of its namespace
+//// type `Type`, so `Type.Field<T>` (decision 308) is a type position after
+//// `import {types.Type} from "std";`, on all four targets.
+
+import {types.Type} from "std";
+
+type Recipe(title: string)
+
+fn nameOf(f: ?Type.Field<Recipe>) -> string {
+    return f?.name ?? "none";
+}
+
+pub fn main() {
+    @print(nameOf(null));
+}

@@ -1256,7 +1256,7 @@ test "erlang: a return inside a loop's body leaves the function" {
         \\}
         \\fn find(xs: Array<i32>, t: i32) -> i32 {
         \\  var i = 0;
-        \\  while (i < xs.length) { if (xs.at(i).unwrapOr(0) == t) { return i; }; i = i + 1; };
+        \\  while (i < xs.length) { if ((xs.at(i) ?? 0) == t) { return i; }; i = i + 1; };
         \\  return -1;
         \\}
         \\fn firstBad(n: i32) -> @Result<i32, string> {
@@ -1284,7 +1284,7 @@ test "beam: a return inside a loop's body leaves the function" {
         \\}
         \\fn find(xs: Array<i32>, t: i32) -> i32 {
         \\  var i = 0;
-        \\  while (i < xs.length) { if (xs.at(i).unwrapOr(0) == t) { return i; }; i = i + 1; };
+        \\  while (i < xs.length) { if ((xs.at(i) ?? 0) == t) { return i; }; i = i + 1; };
         \\  return -1;
         \\}
         \\fn firstBad(n: i32) -> @Result<i32, string> {
@@ -1321,7 +1321,7 @@ test "erlang: a @Result/@Option op does not capture the program's own names" {
         \\  @print(load(-1).unwrapOr(r));
         \\  val o: ?i32 = 3;
         \\  val u = o;
-        \\  @print(u.unwrapOr(9));
+        \\  @print(u ?? 9);
         \\  @print(v.map({ x -> load(x + 1).unwrapOr(0) }).unwrapOr(0));
         \\  val c = conf(-1);
         \\  @print(c.unwrapOr(Conf(name: "dflt", port: 1)).port);

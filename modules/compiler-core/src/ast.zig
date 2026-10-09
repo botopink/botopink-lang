@@ -2209,6 +2209,15 @@ pub const is_builtin_name = "is";
 /// which is the same place `x is T` reached before `04-js` lowered it.
 pub const index_builtin_name = "[]";
 
+/// Decision 330 (5) — the reserved builtin-call name that carries the postfix
+/// `x!`: `call{ .callee = non_null_builtin_name, .is_builtin = true, .args =
+/// &.{ <the operand> } }`, for `index_builtin_name`'s reason. `@!(…)` does not
+/// lex, so no source writes it by hand. Inference types it as the operand's
+/// payload (`T` for `?T`; a never-null operand is refused) and records the
+/// abort it is — `x ?? @panic("value is null — x! at <file>:<line>:<col>")` —
+/// for the transform, so no backend learns a new rule.
+pub const non_null_builtin_name = "!";
+
 /// The binding name the parser gives `a ?? b`'s desugaring (decision 28).
 ///
 /// `a ?? b` becomes `if (a) { <this> -> <this> } else { b }` — the optional
@@ -3357,6 +3366,20 @@ pub const TypeDecl = struct {
     /// (decision 216). Null — the dump leaves it out — for every type written
     /// by hand. Read through `printedName`.
     displayName: ?[]const u8 = null,
+    /// Decision 329 — a namespace type: `type Name { fn … }`, no field list,
+    /// every function in its body associated (no `self`). It has no value
+    /// (`Name()` is refused); its shape is the record with no field. Left out
+    /// of the dump when false.
+    isNamespace: bool = false,
+    /// Decision 330 (7) — the types declared in this type's body, each its
+    /// associated type (`Owner.Name`, the node `decl.addType` produces,
+    /// decision 216). The compile pipeline hoists each as the top-level type
+    /// `Owner__Name` shown `Owner.Name` (`nested_types.zig`); the formatter
+    /// prints them in the body. Left out of the dump when empty.
+    assocTypes: []TypeDecl = &.{},
+    /// Comment lines written above a type declared in a type's body ("" =
+    /// blank line). Owned slice. Left out of the dump when empty.
+    comments: []const []const u8 = &.{},
 
     /// The type's name as `@print` writes it.
     pub fn printedName(this: TypeDecl) []const u8 {
@@ -3403,10 +3426,13 @@ pub const TypeDecl = struct {
         for (this.methods) |*m| m.deinit(allocator);
         allocator.free(this.methods);
         if (this.bodyComments.len > 0) allocator.free(this.bodyComments);
+        for (this.assocTypes) |*a| a.deinit(allocator);
+        if (this.assocTypes.len > 0) allocator.free(this.assocTypes);
+        if (this.comments.len > 0) allocator.free(this.comments);
     }
 
     pub fn jsonStringify(this: TypeDecl, jws: anytype) !void {
-        return stringifyOmitting(this, jws, &.{"loc"}, &.{ "bodyComments", "displayName" });
+        return stringifyOmitting(this, jws, &.{"loc"}, &.{ "bodyComments", "displayName", "isNamespace", "assocTypes", "comments" });
     }
 };
 

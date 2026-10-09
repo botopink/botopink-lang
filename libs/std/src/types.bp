@@ -12,13 +12,26 @@
 //// runs them — the checker answers the call (`01-checker` step 28 keys its
 //// resolver on these declarations).
 ////
-//// Still to be declared here, each blocked on the language spelling it:
-//// `pick` and `omit` take the fields as a variadic
-//// (`comptime ..fields: Type.Field<T>[]`, decision 267 — front 134 step 4),
-//// and the associated type `Field<T>` (decision 308), which `keys` answers,
-//// is a type declared inside this one (question `134-e`).
+//// `Type` is a namespace type (decision 329): no field list, no value, every
+//// function associated. `Field<T>` is declared in its body, so it is its
+//// associated type `Type.Field<T>` (decision 330 (7)).
+////
+//// Still to be declared here, blocked on the language spelling it: `pick`
+//// and `omit` take the fields as a variadic
+//// (`comptime ..fields: Type.Field<T>[]`, decision 267 — front 134 step 4).
 
-pub type Type() {
+pub type Type {
+    // The field of `T` (decision 308): its name, its type as the source
+    // spells it and its annotations. Its values are the fields of `T`'s
+    // declaration; nobody constructs one (`.title` names it). The reflection
+    // record `decl.fields` hands out is still `builtins.d.bp`'s `Field` until
+    // `134` step 2 makes it `Type.Field<unknown>`.
+    pub type Field<T>(
+        name: string,
+        typeName: string,
+        annotations: DeclAnnotation[],
+    )
+
     // The field key of `T`: `Type.Field<T>`, one value per field of `T`'s
     // declaration (`.title`), never a second enum.
     pub declare fn keys<T>(comptime source: type T) -> type;

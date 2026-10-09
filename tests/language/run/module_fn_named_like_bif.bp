@@ -34,7 +34,7 @@ pub fn main() {
     @print("abcd".length());
     @print([5, 6, 7].length());
     @print(hd([9, 8]));
-    @print([9, 8].at(0).unwrapOr(0));
-    @print([9, 8].at(5).unwrapOr(0));
+    @print([9, 8].at(0) ?? 0);
+    @print([9, 8].at(5) ?? 0);
     @print(p);
 }

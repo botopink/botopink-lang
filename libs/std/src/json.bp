@@ -163,7 +163,7 @@ pub type Json {
         if (hit.length == 0)
             return null
         else
-            return hit.at(0).unwrapOr(#("", Json.Null))._1;
+            return (hit.at(0) ?? #("", Json.Null))._1;
     }
 
     // A string's text; `""` for any other kind.
@@ -245,8 +245,8 @@ fn quotedChar(c: string) -> string {
     if (code < 32)
         return [
             "\\u00",
-            "0123456789abcdef".at(code / 16).unwrapOr(""),
-            "0123456789abcdef".at(code % 16).unwrapOr(""),
+            "0123456789abcdef".at(code / 16) ?? "",
+            "0123456789abcdef".at(code % 16) ?? "",
         ].join("");
     return c;
 }
@@ -274,7 +274,7 @@ fn textsOfBody(s: string) -> Array<string> {
 
 // The code point at `i`, `-1` past the end.
 fn cpAt(doc: Doc, i: i32) -> i32 {
-    return doc.cps.at(i).unwrapOr(0 - 1);
+    return doc.cps.at(i) ?? (0 - 1);
 }
 
 // Space, tab, line feed and carriage return — the four RFC 8259 §2 admits.
@@ -344,8 +344,7 @@ fn readWord(doc: Doc, i: i32, word: string) -> @Result<i32, string> {
     var k = 0;
     var ok = true;
     while (k < want.length) {
-        if (doc.chs.at(i + k).unwrapOr("") != want.at(k).unwrapOr(""))
-            ok = false;
+        if (doc.chs.at(i + k) ?? "" != want.at(k) ?? "") ok = false;
         k = k + 1;
     }
     if (!ok)
@@ -425,12 +424,7 @@ fn readValue(doc: Doc, start: i32) -> @Result<Parsed, string> {
                 }
             }
         } else if (open == null) done = true else {
-            val top = open ?? Open(
-                kind: 0,
-                name: "",
-                siblings: [],
-                outer: null,
-            );
+            val top = open;
             children.push(#(name, value));
             have = false;
             val after = skipWs(doc, i);
@@ -583,7 +577,7 @@ fn readString(doc: Doc, open: i32) -> @Result<ParsedText, string> {
                 i = esc.next;
             }
         } else {
-            parts.push(doc.chs.at(i).unwrapOr(""));
+            parts.push(doc.chs.at(i) ?? "");
             i = i + 1;
         }
     }
@@ -660,7 +654,7 @@ fn digitsFrom(doc: Doc, i: i32) -> ParsedText {
     var parts: string[] = [];
     var k = i;
     while (isDigit(cpAt(doc, k))) {
-        parts.push(doc.chs.at(k).unwrapOr(""));
+        parts.push(doc.chs.at(k) ?? "");
         k = k + 1;
     }
     return ParsedText(text: parts.join(""), next: k);
@@ -787,7 +781,7 @@ fn numeralValue(
     e10 = e10 + exponentValue(doc, f1, e1);
     // Trailing zeros only lengthen the arithmetic.
     var nd = digits.length;
-    while (nd > 0 && digits.at(nd - 1).unwrapOr(0) == 0) {
+    while (nd > 0 && (digits.at(nd - 1) ?? 0) == 0) {
         nd = nd - 1;
         e10 = e10 + 1;
     }
@@ -829,7 +823,7 @@ fn fastPath(digits: Array<i32>, nd: i32, e10: i32) -> f64 {
     var m = 0.0;
     var i = 0;
     while (i < nd) {
-        m = m * 10.0 + digitFloat(digits.at(i).unwrapOr(0));
+        m = m * 10.0 + digitFloat(digits.at(i) ?? 0);
         i = i + 1;
     }
     var p = 1.0;
@@ -872,7 +866,7 @@ fn slowPath(digits: Array<i32>, nd: i32, e10: i32) -> Conv {
     var num: Array<i32> = [];
     var i = 0;
     while (i < nd) {
-        num = bnMulAdd(num, 10, digits.at(i).unwrapOr(0));
+        num = bnMulAdd(num, 10, digits.at(i) ?? 0);
         i = i + 1;
     }
     var den: Array<i32> = [1];
@@ -982,7 +976,7 @@ fn bnMulPow10(a: Array<i32>, n: i32) -> Array<i32> {
 // Without its most significant zero limbs.
 fn bnNorm(a: Array<i32>) -> Array<i32> {
     var n = a.length;
-    while (n > 0 && a.at(n - 1).unwrapOr(0) == 0) {
+    while (n > 0 && (a.at(n - 1) ?? 0) == 0) {
         n = n - 1;
     }
     return if (n == a.length) a else a.slice(0, n);
@@ -992,7 +986,7 @@ fn bnNorm(a: Array<i32>) -> Array<i32> {
 fn bnBitLen(a: Array<i32>) -> i32 {
     val n = a.length;
     if (n == 0) return 0 else {
-        var top = a.at(n - 1).unwrapOr(0);
+        var top = a.at(n - 1) ?? 0;
         var bits = 0;
         while (top > 0) {
             top = (top - top % 2) / 2;
@@ -1008,8 +1002,8 @@ fn bnCmp(a: Array<i32>, b: Array<i32>) -> i32 {
         var i = a.length - 1;
         var r = 0;
         while (i >= 0 && r == 0) {
-            val x = a.at(i).unwrapOr(0);
-            val y = b.at(i).unwrapOr(0);
+            val x = a.at(i) ?? 0;
+            val y = b.at(i) ?? 0;
             if (x != y) r = if (x < y) -1 else 1;
             i = i - 1;
         }
@@ -1023,7 +1017,7 @@ fn bnSub(a: Array<i32>, b: Array<i32>) -> Array<i32> {
     var borrow = 0;
     var i = 0;
     while (i < a.length) {
-        var t = a.at(i).unwrapOr(0) - b.at(i).unwrapOr(0) - borrow;
+        var t = a.at(i) ?? 0 - (b.at(i) ?? 0) - borrow;
         borrow = 0;
         if (t < 0) {
             t = t + 32768;
@@ -1069,8 +1063,8 @@ fn bnShr1(a: Array<i32>) -> Array<i32> {
     var out: Array<i32> = [];
     var i = 0;
     while (i < a.length) {
-        val limb = a.at(i).unwrapOr(0);
-        val next = a.at(i + 1).unwrapOr(0);
+        val limb = a.at(i) ?? 0;
+        val next = a.at(i + 1) ?? 0;
         out.push((limb - limb % 2) / 2 + (next % 2) * 16384);
         i = i + 1;
     }
@@ -1199,10 +1193,7 @@ fn itemsEq(xs: Array<Json>, ys: Array<Json>) -> bool {
         var same = true;
         var i = 0;
         while (i < xs.length) {
-            if (jsonEq(
-                xs.at(i).unwrapOr(Json.Null),
-                ys.at(i).unwrapOr(Json.Null),
-            ).negate())
+            if (jsonEq(xs.at(i) ?? Json.Null, ys.at(i) ?? Json.Null).negate())
                 same = false;
             i = i + 1;
         }
@@ -1215,8 +1206,8 @@ fn membersEq(xs: Array<#(string, Json)>, ys: Array<#(string, Json)>) -> bool {
         var same = true;
         var i = 0;
         while (i < xs.length) {
-            val x = xs.at(i).unwrapOr(#("", Json.Null));
-            val y = ys.at(i).unwrapOr(#("", Json.Null));
+            val x = xs.at(i) ?? #("", Json.Null);
+            val y = ys.at(i) ?? #("", Json.Null);
             if ((x._0 != y._0) || jsonEq(x._1, y._1).negate()) same = false;
             i = i + 1;
         }
@@ -1623,11 +1614,11 @@ fn nestingOf(doc: Json) -> i32 {
     while (going) {
         val xs = cur.items();
         val inner = if (xs.length == 1)
-            xs.at(0).unwrapOr(Json.Null).field("a")
+            (xs.at(0) ?? Json.Null).field("a")
         else
             null;
         if (inner == null) going = false else {
-            cur = inner ?? Json.Null;
+            cur = inner;
             levels = levels + 1;
         }
     }

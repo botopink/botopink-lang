@@ -39,7 +39,7 @@ pub fn basename(path: string) -> string {
     val parts = split(path);
     val n = parts.length;
     if (n == 0) return "";
-    return parts.at(n - 1).unwrapOr("");
+    return parts.at(n - 1) ?? "";
 }
 
 // Everything except the basename — the parent directory portion. For an
@@ -66,8 +66,8 @@ pub fn extname(path: string) -> string {
     val pieces = base.split(".");
     val n = pieces.length;
     if (n <= 1) return "";
-    val head = pieces.at(0).unwrapOr("");
-    val tail = pieces.at(n - 1).unwrapOr("");
+    val head = pieces.at(0) ?? "";
+    val tail = pieces.at(n - 1) ?? "";
     // Dotfiles like ".bashrc" split into ["", "bashrc"] — no extension.
     val isDotfile = head == "" && n == 2;
     return if (isDotfile) "" else [".", tail].join("");
@@ -81,10 +81,7 @@ pub fn extname(path: string) -> string {
 // which lowers to a dead store on Erlang's immutable runtime (the same
 // trap `split` sidesteps).
 pub fn join(parts: string[]) -> string {
-    val isAbs = if (parts.length == 0)
-        false
-    else
-        isAbsolute(parts.at(0).unwrapOr(""));
+    val isAbs = if (parts.length == 0) false else isAbsolute(parts.at(0) ?? "");
     val collapsed = parts.map({ p -> split(p).join(separator) });
     val joined = collapsed.filter({ p -> p != "" }).join(separator);
     return if (isAbs) [separator, joined].join("") else joined;
@@ -114,8 +111,8 @@ pub fn normalize(path: string) -> string {
 fn commonPrefixCount(a: string[], b: string[], i: i32) -> i32 {
     if (i >= a.length) return i;
     if (i >= b.length) return i;
-    val ai = a.at(i).unwrapOr("");
-    val bi = b.at(i).unwrapOr("");
+    val ai = a.at(i) ?? "";
+    val bi = b.at(i) ?? "";
     return if (ai == bi) commonPrefixCount(a, b, i + 1) else i;
 }
 
@@ -158,7 +155,7 @@ type PathAccum(
 // recursive — no `var` rebinds.
 fn applyPieces(acc: string[], pieces: string[]) -> string[] {
     if (pieces.length == 0) return acc;
-    val p = pieces.at(0).unwrapOr("");
+    val p = pieces.at(0) ?? "";
     val rest = pieces.slice(1, pieces.length);
     val nextAcc = if (p == "..") {
         if (acc.length == 0) acc else acc.slice(0, acc.length - 1);
@@ -175,7 +172,7 @@ fn resolveStep(state: PathAccum, seg: string) -> PathAccum {
 
 fn resolveAll(segments: string[], i: i32, state: PathAccum) -> PathAccum {
     if (i >= segments.length) return state;
-    val seg = segments.at(i).unwrapOr("");
+    val seg = segments.at(i) ?? "";
     val next = resolveStep(state, seg);
     return resolveAll(segments, i + 1, next);
 }
@@ -241,8 +238,8 @@ test "path.isAbsolute distinguishes leading slash" {
 test "path.split drops empties" {
     val s = split("/usr//bin/");
     assert s.length == 2;
-    assert s.at(0).unwrapOr("") == "usr";
-    assert s.at(1).unwrapOr("") == "bin";
+    assert s.at(0) ?? "" == "usr";
+    assert s.at(1) ?? "" == "bin";
 }
 
 test "path.basename returns the last component" {
@@ -470,8 +467,8 @@ test "path.isInside treats a name starting with two dots as a name" {
     {line, [{location, "std@path.erl", 7}]}.
     {func_info, {atom, std@path}, {atom, basename}, 1}.
   {label, 15}.
-    {allocate, 3, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+    {allocate, 4, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 11}}.
@@ -481,26 +478,28 @@ test "path.isInside treats a name starting with two dots as a name" {
     {move, {x, 0}, {y, 2}}.
     {test, is_eq_exact, {f, 69}, [{y, 2}, {integer, 0}]}.
     {move, {literal, <<"">>}, {x, 0}}.
-    {deallocate, 3}.
+    {deallocate, 4}.
     return.
   {label, 69}.
     {gc_bif, '-', {f, 0}, 0, [{y, 2}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 72}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 72}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 73}}.
-  {label, 72}.
+    {test, is_ge, {f, 71}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 71}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 72}}.
+  {label, 71}.
     {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/path.bp:40:23">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 73}.
+  {label, 72}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {call, 2, {f, 75}}.
-    {test, is_eq, {f, 70}, [{x, 0}, {atom, undefined}]}.
-    {move, {literal, <<"">>}, {x, 0}}.
-    {jump, {f, 71}}.
+    {call, 2, {f, 74}}.
+    {test, is_ne_exact, {f, 70}, [{x, 0}, {atom, undefined}]}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {y, 3}, {x, 0}}.
+    {jump, {f, 77}}.
   {label, 70}.
-  {label, 71}.
-    {deallocate, 3}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 77}.
+    {deallocate, 4}.
     return.
 % Everything except the basename — the parent directory portion. For an
 % absolute path this preserves the leading `/`. For a path with no
@@ -592,8 +591,8 @@ test "path.isInside treats a name starting with two dots as a name" {
     {line, [{location, "std@path.erl", 9}]}.
     {func_info, {atom, std@path}, {atom, extname}, 1}.
   {label, 19}.
-    {allocate, 8, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}]}}.
+    {allocate, 10, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 15}}.
@@ -608,37 +607,41 @@ test "path.isInside treats a name starting with two dots as a name" {
     {move, {x, 0}, {y, 3}}.
     {test, is_ge, {f, 93}, [{integer, 1}, {y, 3}]}.
     {move, {literal, <<"">>}, {x, 0}}.
-    {deallocate, 8}.
+    {deallocate, 10}.
     return.
   {label, 93}.
     {move, {y, 2}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
-    {call, 2, {f, 75}}.
-    {test, is_eq, {f, 94}, [{x, 0}, {atom, undefined}]}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {call, 2, {f, 74}}.
+    {test, is_ne_exact, {f, 94}, [{x, 0}, {atom, undefined}]}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 4}, {x, 0}}.
     {jump, {f, 95}}.
   {label, 94}.
+    {move, {literal, <<"">>}, {x, 0}}.
   {label, 95}.
-    {move, {x, 0}, {y, 4}}.
+    {move, {x, 0}, {y, 5}}.
     {gc_bif, '-', {f, 0}, 0, [{y, 3}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 98}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 98}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 99}}.
-  {label, 98}.
+    {test, is_ge, {f, 97}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 97}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 98}}.
+  {label, 97}.
     {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/path.bp:68:28">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 99}.
+  {label, 98}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 2}, {x, 0}}.
-    {call, 2, {f, 75}}.
-    {test, is_eq, {f, 96}, [{x, 0}, {atom, undefined}]}.
-    {move, {literal, <<"">>}, {x, 0}}.
-    {jump, {f, 97}}.
+    {call, 2, {f, 74}}.
+    {test, is_ne_exact, {f, 96}, [{x, 0}, {atom, undefined}]}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {x, 0}}.
+    {jump, {f, 99}}.
   {label, 96}.
-  {label, 97}.
-    {move, {x, 0}, {y, 5}}.
     {move, {literal, <<"">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 100}, [{y, 4}, {x, 0}]}.
+  {label, 99}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {literal, <<"">>}, {x, 0}}.
+    {test, is_eq_exact, {f, 100}, [{y, 5}, {x, 0}]}.
     {move, {atom, true}, {x, 0}}.
     {jump, {f, 101}}.
   {label, 100}.
@@ -656,21 +659,21 @@ test "path.isInside treats a name starting with two dots as a name" {
   {label, 102}.
     {move, {atom, false}, {x, 0}}.
   {label, 103}.
-    {move, {x, 0}, {y, 6}}.
-    {move, {y, 6}, {x, 0}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {x, 0}}.
     {test, is_eq, {f, 106}, [{x, 0}, {atom, true}]}.
     {move, {literal, <<"">>}, {x, 0}}.
     {jump, {f, 107}}.
   {label, 106}.
     {move, nil, {x, 0}}.
-    {move, {x, 0}, {y, 7}}.
-    {move, {y, 5}, {x, 0}}.
-    {move, {y, 7}, {x, 1}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 7}, {x, 0}}.
+    {move, {y, 9}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {y, 7}}.
+    {move, {x, 0}, {y, 9}}.
     {move, {literal, <<".">>}, {x, 0}}.
-    {move, {y, 7}, {x, 1}}.
+    {move, {y, 9}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
@@ -680,7 +683,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     {move, {x, 2}, {x, 0}}.
     {call, 2, {f, 86}}.
   {label, 107}.
-    {deallocate, 8}.
+    {deallocate, 10}.
     return.
 % Join a list of path segments with the separator. Leading separator on
 % the first segment is preserved; intra-segment slashes are normalised
@@ -695,8 +698,8 @@ test "path.isInside treats a name starting with two dots as a name" {
     {line, [{location, "std@path.erl", 10}]}.
     {func_info, {atom, std@path}, {atom, join}, 1}.
   {label, 21}.
-    {allocate, 9, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}]}}.
+    {allocate, 10, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
@@ -706,41 +709,43 @@ test "path.isInside treats a name starting with two dots as a name" {
   {label, 108}.
     {move, {y, 0}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
-    {call, 2, {f, 75}}.
-    {test, is_eq, {f, 110}, [{x, 0}, {atom, undefined}]}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {call, 2, {f, 74}}.
+    {test, is_ne_exact, {f, 110}, [{x, 0}, {atom, undefined}]}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
     {jump, {f, 111}}.
   {label, 110}.
+    {move, {literal, <<"">>}, {x, 0}}.
   {label, 111}.
     {call, 1, {f, 13}}.
   {label, 109}.
-    {move, {x, 0}, {y, 1}}.
+    {move, {x, 0}, {y, 2}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
     {make_fun3, {f, 113}, 0, 0, {x, 0}, {list, []}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
-    {move, {x, 0}, {y, 2}}.
+    {move, {x, 0}, {y, 3}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
     {make_fun3, {f, 115}, 0, 0, {x, 0}, {list, []}}.
-    {move, {y, 2}, {x, 1}}.
+    {move, {y, 3}, {x, 1}}.
     {call_ext, 2, {extfunc, lists, filter, 2}}.
-    {move, {x, 0}, {y, 3}}.
+    {move, {x, 0}, {y, 4}}.
     {call, 0, {f, 7}}.
     {move, {x, 0}, {x, 1}}.
-    {move, {y, 3}, {x, 0}}.
+    {move, {y, 4}, {x, 0}}.
     {call, 2, {f, 86}}.
-    {move, {x, 0}, {y, 4}}.
-    {move, {y, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 2}, {x, 0}}.
     {test, is_eq, {f, 118}, [{x, 0}, {atom, true}]}.
     {move, nil, {x, 0}}.
-    {move, {x, 0}, {y, 5}}.
-    {move, {y, 4}, {x, 0}}.
-    {move, {y, 5}, {x, 1}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 5}, {x, 0}}.
+    {move, {y, 6}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {y, 5}}.
+    {move, {x, 0}, {y, 6}}.
     {call, 0, {f, 7}}.
-    {move, {y, 5}, {x, 1}}.
+    {move, {y, 6}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
@@ -751,9 +756,9 @@ test "path.isInside treats a name starting with two dots as a name" {
     {call, 2, {f, 86}}.
     {jump, {f, 119}}.
   {label, 118}.
-    {move, {y, 4}, {x, 0}}.
+    {move, {y, 5}, {x, 0}}.
   {label, 119}.
-    {deallocate, 9}.
+    {deallocate, 10}.
     return.
 % Collapse `//` and drop `.` segments via a `filter` over the split
 % pieces. Full `..` pop semantics are deferred: they need a stack-shaped
@@ -830,8 +835,8 @@ test "path.isInside treats a name starting with two dots as a name" {
     {line, [{location, "std@path.erl", 12}]}.
     {func_info, {atom, std@path}, {atom, commonPrefixCount}, 3}.
   {label, 25}.
-    {allocate, 5, 3}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
+    {allocate, 7, 3}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {x, 2}, {y, 2}}.
@@ -839,41 +844,45 @@ test "path.isInside treats a name starting with two dots as a name" {
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
     {test, is_ge, {f, 129}, [{y, 2}, {x, 0}]}.
     {move, {y, 2}, {x, 0}}.
-    {deallocate, 5}.
+    {deallocate, 7}.
     return.
   {label, 129}.
     {move, {y, 1}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
     {test, is_ge, {f, 130}, [{y, 2}, {x, 0}]}.
     {move, {y, 2}, {x, 0}}.
-    {deallocate, 5}.
+    {deallocate, 7}.
     return.
   {label, 130}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 2}, {x, 1}}.
-    {call, 2, {f, 75}}.
-    {test, is_eq, {f, 131}, [{x, 0}, {atom, undefined}]}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {call, 2, {f, 74}}.
+    {test, is_ne_exact, {f, 131}, [{x, 0}, {atom, undefined}]}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {y, 3}, {x, 0}}.
     {jump, {f, 132}}.
   {label, 131}.
+    {move, {literal, <<"">>}, {x, 0}}.
   {label, 132}.
-    {move, {x, 0}, {y, 3}}.
+    {move, {x, 0}, {y, 4}}.
     {move, {y, 1}, {x, 0}}.
     {move, {y, 2}, {x, 1}}.
-    {call, 2, {f, 75}}.
-    {test, is_eq, {f, 133}, [{x, 0}, {atom, undefined}]}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {call, 2, {f, 74}}.
+    {test, is_ne_exact, {f, 133}, [{x, 0}, {atom, undefined}]}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {x, 0}}.
     {jump, {f, 134}}.
   {label, 133}.
+    {move, {literal, <<"">>}, {x, 0}}.
   {label, 134}.
-    {move, {x, 0}, {y, 4}}.
-    {test, is_eq_exact, {f, 135}, [{y, 3}, {y, 4}]}.
+    {move, {x, 0}, {y, 6}}.
+    {test, is_eq_exact, {f, 135}, [{y, 4}, {y, 6}]}.
     {gc_bif, '+', {f, 0}, 0, [{y, 2}, {integer, 1}], {x, 0}}.
     {test, is_ge, {f, 137}, [{x, 0}, {integer, -2147483648}]}.
     {test, is_ge, {f, 137}, [{integer, 2147483647}, {x, 0}]}.
     {jump, {f, 138}}.
   {label, 137}.
-    {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/path.bp:117:52">>}}, {x, 0}}.
+    {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/path.bp:114:52">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
   {label, 138}.
     {move, {y, 1}, {x, 1}}.
@@ -884,7 +893,7 @@ test "path.isInside treats a name starting with two dots as a name" {
   {label, 135}.
     {move, {y, 2}, {x, 0}}.
   {label, 136}.
-    {deallocate, 5}.
+    {deallocate, 7}.
     return.
 % Internal: build an array of `n` ".." strings via head/tail recursion.
 % Avoids a `var` + `push` accumulator (the Erlang dead-store trap).
@@ -906,7 +915,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     {test, is_ge, {f, 141}, [{integer, 2147483647}, {x, 0}]}.
     {jump, {f, 142}}.
   {label, 141}.
-    {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/path.bp:123:42">>}}, {x, 0}}.
+    {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/path.bp:120:42">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
   {label, 142}.
     {call, 1, {f, 27}}.
@@ -953,7 +962,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     {test, is_ge, {f, 143}, [{integer, 2147483647}, {x, 0}]}.
     {jump, {f, 144}}.
   {label, 143}.
-    {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/path.bp:138:39">>}}, {x, 0}}.
+    {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/path.bp:135:39">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
   {label, 144}.
     {call, 1, {f, 27}}.
@@ -1003,26 +1012,28 @@ test "path.isInside treats a name starting with two dots as a name" {
     {line, [{location, "std@path.erl", 15}]}.
     {func_info, {atom, std@path}, {atom, applyPieces}, 2}.
   {label, 31}.
-    {allocate, 6, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
+    {allocate, 7, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
     {test, is_eq_exact, {f, 149}, [{x, 0}, {integer, 0}]}.
     {move, {y, 0}, {x, 0}}.
-    {deallocate, 6}.
+    {deallocate, 7}.
     return.
   {label, 149}.
     {move, {y, 1}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
-    {call, 2, {f, 75}}.
-    {test, is_eq, {f, 150}, [{x, 0}, {atom, undefined}]}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {call, 2, {f, 74}}.
+    {test, is_ne_exact, {f, 150}, [{x, 0}, {atom, undefined}]}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 2}, {x, 0}}.
     {jump, {f, 151}}.
   {label, 150}.
+    {move, {literal, <<"">>}, {x, 0}}.
   {label, 151}.
-    {move, {x, 0}, {y, 2}}.
+    {move, {x, 0}, {y, 3}}.
     {move, {y, 1}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
     {test, is_ne_exact, {f, 152}, [{x, 0}, {atom, undefined}]}.
@@ -1036,9 +1047,9 @@ test "path.isInside treats a name starting with two dots as a name" {
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, lists, nthtail, 2}}.
   {label, 153}.
-    {move, {x, 0}, {y, 3}}.
+    {move, {x, 0}, {y, 4}}.
     {move, {literal, <<"..">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 154}, [{y, 2}, {x, 0}]}.
+    {test, is_eq_exact, {f, 154}, [{y, 3}, {x, 0}]}.
     {move, {y, 0}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
     {test, is_eq_exact, {f, 156}, [{x, 0}, {integer, 0}]}.
@@ -1052,7 +1063,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     {test, is_ge, {f, 158}, [{integer, 2147483647}, {x, 0}]}.
     {jump, {f, 159}}.
   {label, 158}.
-    {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/path.bp:162:63">>}}, {x, 0}}.
+    {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/path.bp:159:63">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
   {label, 159}.
     {test, is_ne_exact, {f, 160}, [{x, 0}, {atom, undefined}]}.
@@ -1070,19 +1081,19 @@ test "path.isInside treats a name starting with two dots as a name" {
     {jump, {f, 155}}.
   {label, 154}.
     {move, nil, {x, 0}}.
-    {move, {x, 0}, {y, 4}}.
-    {move, {y, 2}, {x, 0}}.
-    {move, {y, 4}, {x, 1}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 3}, {x, 0}}.
+    {move, {y, 5}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 2, {extfunc, lists, append, 2}}.
   {label, 155}.
-    {move, {x, 0}, {y, 5}}.
-    {move, {y, 5}, {x, 0}}.
-    {move, {y, 3}, {x, 1}}.
-    {call_last, 2, {f, 31}, 6}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {x, 0}}.
+    {move, {y, 4}, {x, 1}}.
+    {call_last, 2, {f, 31}, 7}.
 
 {function, resolveStep, 2, 33}.
   {label, 32}.
@@ -1134,8 +1145,8 @@ test "path.isInside treats a name starting with two dots as a name" {
     {line, [{location, "std@path.erl", 17}]}.
     {func_info, {atom, std@path}, {atom, resolveAll}, 3}.
   {label, 35}.
-    {allocate, 5, 3}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
+    {allocate, 6, 3}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {x, 2}, {y, 2}}.
@@ -1143,34 +1154,36 @@ test "path.isInside treats a name starting with two dots as a name" {
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
     {test, is_ge, {f, 168}, [{y, 1}, {x, 0}]}.
     {move, {y, 2}, {x, 0}}.
-    {deallocate, 5}.
+    {deallocate, 6}.
     return.
   {label, 168}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
-    {call, 2, {f, 75}}.
-    {test, is_eq, {f, 169}, [{x, 0}, {atom, undefined}]}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {call, 2, {f, 74}}.
+    {test, is_ne_exact, {f, 169}, [{x, 0}, {atom, undefined}]}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {y, 3}, {x, 0}}.
     {jump, {f, 170}}.
   {label, 169}.
+    {move, {literal, <<"">>}, {x, 0}}.
   {label, 170}.
-    {move, {x, 0}, {y, 3}}.
-    {move, {y, 2}, {x, 0}}.
-    {move, {y, 3}, {x, 1}}.
-    {call, 2, {f, 33}}.
     {move, {x, 0}, {y, 4}}.
+    {move, {y, 2}, {x, 0}}.
+    {move, {y, 4}, {x, 1}}.
+    {call, 2, {f, 33}}.
+    {move, {x, 0}, {y, 5}}.
     {gc_bif, '+', {f, 0}, 0, [{y, 1}, {integer, 1}], {x, 0}}.
     {test, is_ge, {f, 171}, [{x, 0}, {integer, -2147483648}]}.
     {test, is_ge, {f, 171}, [{integer, 2147483647}, {x, 0}]}.
     {jump, {f, 172}}.
   {label, 171}.
-    {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/path.bp:178:35">>}}, {x, 0}}.
+    {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/path.bp:175:35">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
   {label, 172}.
     {move, {x, 0}, {x, 1}}.
-    {move, {y, 4}, {x, 2}}.
+    {move, {y, 5}, {x, 2}}.
     {move, {y, 0}, {x, 0}}.
-    {call_last, 3, {f, 35}, 5}.
+    {call_last, 3, {f, 35}, 6}.
 % Resolve a list of path segments into a single normalised path.
 % Absolute segments restart the accumulator (matches Node's
 % `path.resolve`); `..` pops one component; `.` drops out (already
@@ -1271,7 +1284,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     {test, is_ge, {f, 183}, [{integer, 2147483647}, {x, 0}]}.
     {jump, {f, 184}}.
   {label, 183}.
-    {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/path.bp:208:51">>}}, {x, 0}}.
+    {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/path.bp:205:51">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
   {label, 184}.
     {move, {integer, 0}, {x, 1}}.
@@ -1489,29 +1502,29 @@ test "path.isInside treats a name starting with two dots as a name" {
     {deallocate, 1}.
     return.
 
-{function, '-bp_at-', 2, 75}.
-  {label, 74}.
+{function, '-bp_at-', 2, 74}.
+  {label, 73}.
     {line, [{location, "std@path.erl", 8}]}.
     {func_info, {atom, std@path}, {atom, '-bp_at-'}, 2}.
-  {label, 75}.
+  {label, 74}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 1}}.
     {move, {x, 1}, {y, 0}}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, length, 1}}.
-    {test, is_ge, {f, 77}, [{y, 0}, {integer, 0}]}.
-    {test, is_lt, {f, 76}, [{y, 0}, {x, 0}]}.
+    {test, is_ge, {f, 76}, [{y, 0}, {integer, 0}]}.
+    {test, is_lt, {f, 75}, [{y, 0}, {x, 0}]}.
     {gc_bif, '+', {f, 0}, 0, [{y, 0}, {integer, 1}], {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext_last, 2, {extfunc, lists, nth, 2}, 2}.
-  {label, 77}.
+  {label, 76}.
     {gc_bif, '+', {f, 0}, 1, [{y, 0}, {x, 0}], {x, 0}}.
-    {test, is_ge, {f, 76}, [{x, 0}, {integer, 0}]}.
+    {test, is_ge, {f, 75}, [{x, 0}, {integer, 0}]}.
     {gc_bif, '+', {f, 0}, 1, [{x, 0}, {integer, 1}], {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext_last, 2, {extfunc, lists, nth, 2}, 2}.
-  {label, 76}.
+  {label, 75}.
     {move, {atom, undefined}, {x, 0}}.
     {deallocate, 2}.
     return.
