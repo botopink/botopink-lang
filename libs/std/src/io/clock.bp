@@ -159,13 +159,11 @@ pub declare fn toCivil(epochMillis: i64) -> Civil;
 #[@External.Erlang("""(fun(__M) -> __U = calendar:system_time_to_universal_time(__M, millisecond), __L = calendar:universal_time_to_local_time(__U), (calendar:datetime_to_gregorian_seconds(__L) - calendar:datetime_to_gregorian_seconds(__U)) div 60 end)($0)""")]
 pub declare fn offsetMinutes(epochMillis: i64) -> i32;
 
-// Internal: an `i32` read as an `i64`. An integer literal is `i32`, and
-// botopink has no widening conversion (an `i64 * 1000` is a type mismatch,
-// and so is `val k: i64 = 1000`), so the builders below take an `i32` and cross the host
-// boundary once to become `i64` — both hosts have one integer type.
-#[@External.Node("""($0)""")]
-#[@External.Erlang("""($0)""")]
-declare fn wide(n: i32) -> i64;
+// Internal: an `i32` read as an `i64` — std's `toI64()` (decision 319), which
+// every `i32` fits, so no host cell is crossed.
+fn wide(n: i32) -> i64 {
+    return n.toI64();
+}
 
 pub fn millis(n: i32) -> Duration {
     return Duration(millis: wide(n));
@@ -193,12 +191,13 @@ pub fn toMillis(d: Duration) -> i64 {
 
 // ── 1.0.11-beta front 97: a duration written as text ────────────────────────
 
-// Internal: the largest millisecond count both targets hold exactly —
-// 2^53 - 1, where a commonJS number stops counting by one. An `i64` has no
-// literal, so it crosses a cell.
-#[@External.Node("""(9007199254740991)""")]
-#[@External.Erlang("""(9007199254740991)""")]
-declare fn largestExactMillis() -> i64;
+// Internal: the largest millisecond count `parseDuration` answers — 2^53 - 1,
+// where a commonJS number stopped counting by one. Decision 319 made an `i64`
+// exact past it on every target; whether the bound stays is question
+// `97-s13-c`.
+fn largestExactMillis() -> i64 {
+    return 9007199254740991;
+}
 
 // Internal: the unit `text` ends in — `ms` before `s`, since `5ms` ends in
 // both — and `""` when it ends in none of the five.

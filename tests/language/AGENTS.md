@@ -1182,6 +1182,14 @@ and `run/integer_conversion_to_f64_inexact_aborts` (`.exit` plus a `.stderr` per
 value). They answer on commonJS, erlang and beam; wasm refuses each by `.wasm.expect` — its integer
 methods are `i32`'s, the conversions have no row, and `parseInt`'s `stringSlice0/2` is unresolved
 (that one's location points into std, so its `.expect` holds line 1 alone) — `05-wasm` rows.
+Its `io` half adds `run/std_io_i64_canonical` — `fs.stat`'s `size`, kind and `mtime` (the Node
+form reads `statSync` with `bigint: true` and answers the canonical form) and `clock.hours` /
+`clock.add` past 2^53 (`clock`'s `wide` is std's `toI64()` now, no host cell), printed as the same
+digits on commonJS, erlang and beam; wasm refuses `io/fs` by `.wasm.expect`. Its `recent` helper
+holds the `l` literal outside the `case` arm: an `l`-suffixed literal inside a `case` arm is
+emitted with its suffix on commonJS, erlang and beam (`s.mtime > 1577836800000l`, a JS
+`SyntaxError`, an `erlc` syntax error, `illegal integer` in the beam assembler) — a compiler row,
+not std's.
 
 `front/block-backends` (decision 2: an `@block`'s `return` is the block's value) adds
 `run/block_return_is_block_value` — `val x = @block { return 3; }`, a branch's `return`, a string,

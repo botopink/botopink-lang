@@ -15115,7 +15115,7 @@ fn refuseNeverNull(env: *Env, ty: *T.Type, op: []const u8, loc: ast.Loc) InferEr
 /// The column added to a node `inferOptionalOperator` synthesises where no
 /// written token stands (the abort of `x!`): past any written column, so its
 /// loc keys no plan of a written node.
-const optional_synthetic_col: usize = 2_000_000;
+const optional_synthetic_col = ast.optional_synthetic_col;
 
 /// Decision 330 — `recv?.[i]`, `f?.(args)`, `recv?.m(args)` and `x!` have no
 /// typing rule of their own: each IS the `if` over the optional it reads,

@@ -1,0 +1,38 @@
+//// `x?.m()` where `m` is a method of an enum is the method's answer when
+//// `x` is there, and `x` is evaluated once, on every target (decision 330).
+//// commonJS keeps an enum's methods as statics of its class and lowered
+//// `x?.m()` as a member call on the value: `…?.str is not a function` at
+//// run time (std's `Json`: `doc.field("src")?.str()`). An absent `x` is
+//// 01-checker step 31's open erlang/beam/wasm box, not this cell.
+
+type Val {
+    Num(n: i32),
+    Text(s: string),
+
+    fn str(self: Self) -> string {
+        return case self {
+            Text(s: t) -> t;
+            _ -> "";
+        };
+    }
+
+    fn plus(self: Self, k: i32) -> i32 {
+        return case self {
+            Num(n: v) -> v + k;
+            _ -> k;
+        };
+    }
+}
+
+fn find(kind: i32) -> ?Val {
+    @print("find");
+    if (kind == 1) return Val.Text(s: "a");
+    if (kind == 2) return Val.Num(n: 40);
+    return null;
+}
+
+pub fn main() {
+    val b = find(1);
+    @print(b?.str() ?? "none");
+    @print(find(2)?.plus(2) ?? 0);
+}

@@ -982,6 +982,9 @@ const ParamHoles = struct {
 /// function's own — a bare `continue` would target that inner loop.
 const tc_label = "__bp_tc";
 
+/// The parameter `optEnumCall`'s guard binds the receiver of `recv?.m()` to.
+const opt_recv_param = "__bp_recv";
+
 /// True when a built JS statement list holds an `await` outside any nested
 /// function — what an IIFE wrapped around it has to be `async` for (an `await`
 /// in a plain arrow does not parse). Nested arrows / functions are their own.
@@ -5629,6 +5632,9 @@ const Emitter = struct {
         // null on every path that PREPENDS a receiver to `args`, because the
         // names would then no longer line up with the argument list.
         var slots: ?[]const []const u8 = null;
+        // `recv?.m(args)` over an enum method (`enumMethodOwner`): the
+        // receiver, evaluated once and guarded around the static call.
+        var opt_recv: ?js.Expr = null;
 
         if (cc.calleeExpr) |ce| {
             // `adder(3)(4)` — what is called is the VALUE of an expression
@@ -5663,10 +5669,22 @@ const Emitter = struct {
             if (self.rewrites.get(loc)) |sym| {
                 callee = try self.b.member(.{ .name = sym }, cc.callee);
                 try args.append(self.arena(), try self.buildExpr(recv.*));
-            } else if (if (cc.optional) null else try self.enumMethodOwner(loc, cc.callee)) |owner| {
-                // An enum method: the value is the first argument.
+            } else if (try self.enumMethodOwner(if (cc.optional) .{
+                .line = loc.line,
+                .col = loc.col + ast.optional_synthetic_col,
+            } else loc, cc.callee)) |owner| {
+                // An enum method: the value is the first argument. An enum
+                // keeps its methods as statics of its class, so `recv?.m()`
+                // cannot be a member call on the value (`…?.m is not a
+                // function`): the static call is guarded below
+                // (`optEnumCall`). Its owner is the payload's, which the
+                // checker recorded on the link it typed the call through
+                // (`ast.optional_synthetic_col`).
                 callee = try self.b.member(.{ .name = owner }, cc.callee);
-                try args.append(self.arena(), try self.buildExpr(recv.*));
+                if (cc.optional) {
+                    opt_recv = try self.buildExpr(recv.*);
+                    try args.append(self.arena(), .{ .name = opt_recv_param });
+                } else try args.append(self.arena(), try self.buildExpr(recv.*));
             } else if (self.primHelper(loc, cc)) |hp| {
                 // A primitive method whose native JS method disagrees with
                 // the signature: `__bp_helper(recv, args)` (`js/js_prelude.zig`).
@@ -5771,7 +5789,25 @@ const Emitter = struct {
         for (cc.trailing) |tl| try args.append(self.arena(), try self.buildArrow(tl.params, tl.body));
 
         const arg_slice = try args.toOwnedSlice(self.arena());
+        if (opt_recv) |r| return self.optEnumCall(r, try self.b.call(callee, arg_slice));
         return if (is_new) self.b.new_(callee, arg_slice) else self.b.call(callee, arg_slice);
+    }
+
+    /// `((__bp_recv) => (__bp_recv == null ? undefined : Owner.m(__bp_recv, args)))(recv)`
+    /// — `recv?.m(args)` over an enum method, whose call is a static of the
+    /// enum's class: the receiver evaluated once, the arguments only when it
+    /// is there, `undefined` when it is not (what a native `?.` answers).
+    /// `doc.field("src")?.str()` over std's `Json` failed at run time with
+    /// `…?.str is not a function` (`run/optional_enum_method_call`).
+    fn optEnumCall(self: *Emitter, recv: js.Expr, call: js.Expr) !js.Expr {
+        const param: js.Expr = .{ .name = opt_recv_param };
+        const guarded = try self.b.ternary(
+            try self.b.binaryBare("==", param, .{ .name = "null" }),
+            .{ .name = "undefined" },
+            call,
+        );
+        const arrow = try self.b.arrowExpr(&.{js.Param.id(opt_recv_param)}, try self.b.paren(guarded));
+        return self.b.call(try self.b.paren(arrow), &.{recv});
     }
 
     /// The inclusive range of an integer type, as JS number literals, or null

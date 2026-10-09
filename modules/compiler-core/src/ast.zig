@@ -2334,6 +2334,15 @@ pub const non_null_builtin_name = "!";
 /// practice.
 pub const nullish_binding_name = "__bp_nullish";
 
+/// The column the checker adds to a node it synthesises for a decision-330
+/// operator where no written token stands (`comptime/infer.zig`
+/// `inferOptionalOperator`): past any written column, so its loc keys no plan
+/// of a written node. `recv?.m(args)` is typed through the link `v.m(args)`
+/// over the payload at `loc.col + optional_synthetic_col`, so the plans that
+/// typing records (the instance lowering naming the payload's type) are read
+/// there — commonJS reads an enum method's owner from it.
+pub const optional_synthetic_col: usize = 2_000_000;
+
 pub const TypeRef = union(enum) {
     /// Plain named type: `Int`, `string`, `Self`. Slice into source — not heap-owned.
     named: []const u8,

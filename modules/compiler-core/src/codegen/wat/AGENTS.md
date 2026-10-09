@@ -304,6 +304,11 @@ the shapes that bound a string and still reached the one body:
 - **a parameter written `Pair<T>`** binds `T` from its argument's type
   arguments (`bindParam`), and a field read through a receiver typed
   `Pair<string>` is a `string` (`recvTypeArg`): `eqPair(Pair(left: s, …))`;
+  and a field read through one whose argument is a RECORD is that record
+  (`recordTypeOfExpr`'s `identAccess` arm applies `recvTypeArg`):
+  `route.data.title` of `route: Route<string, Post>` reads `Post`'s slot —
+  it was an unknown record, so `"<h1>" + route.data.title` printed the
+  string's address (`run/generic_record_nested_field_concat`);
 - **a generic fn NAMED as an argument** whose parameter is written as a
   function type, or **bound** to a `val` written with one, is the copy that
   type binds (`specializeByFnType`, `specCopy`): `apply(same, s, "ab")`
@@ -1106,8 +1111,12 @@ so a lifted lambda's `return` stays its own). Inlined as before, the `return`
 opcode left the ENCLOSING function: `val x = @block { return 3; }` ended `main`
 before its first `@print`. The local's type is what the `return`s carry
 (`blockReturnType`), and `genericResultOf` / `isStringExpr` / `isBoolExpr` read
-the block's shape off its first returned value (`blockReturnValue`), so
-`val label = @block { …return "high"; }` concatenates as a string. A body with
+the block's shape off its first returned value (`blockReturnValue`; a
+`return` written directly in the body first, since one inside a `for` reads the
+loop's binder, which no classifier knows outside the loop), so
+`val label = @block { …return "high"; }` concatenates as a string, and so does
+`@block { for (xs) { s -> if (s != "a") return s; } return "none"; }`
+(`run/block_for_return_is_block_value`). A body with
 no `return` is inlined unchanged. Cell: `run/block_return_is_block_value`.
 
 ## Methods, binders and the module body (`00 · 05-wasm`, the rows no step named)

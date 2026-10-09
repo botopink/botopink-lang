@@ -923,10 +923,15 @@ pub declare fn copy(src: string, dest: string) -> @Result<i32, string>;
 // File metadata. Returns a `FileStat { size, mtime, isDir }` on
 // success. `mtime` is epoch milliseconds (matching `time.nowMillis()`);
 // `size` is in bytes.
-// Node: `(() => { const s = require('fs').statSync($0); return { size: s.size, mtime: Math.floor(s.mtimeMs), isDir: s.isDirectory() } })()`.
+// Node: `statSync($0, { bigint: true })`, so `size` and the nanosecond
+// `mtimeNs` arrive exact at any size; `mtime` is `mtimeNs` floored to whole
+// milliseconds, and both answer decision 319's canonical form (a `number`
+// within ±(2^53 − 1), a `BigInt` beyond) — never a `number` rounded past 2^53.
 // Erlang: `file:read_file_info/1` returns a `#file_info` record; the
-// template projects the `size`, `mtime`, and `type` fields.
-#[@External.Node("""(() => { try { const __s = require('fs').statSync($0); return { ok: { size: __s.size, mtime: Math.floor(__s.mtimeMs), isDir: __s.isDirectory() } } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
+// template projects the `size`, `mtime`, and `type` fields. Its `mtime` is
+// whole seconds × 1000 — a resolution the Node form does not share
+// (question `97-s13-d`).
+#[@External.Node("""(() => { try { const __s = require('fs').statSync($0, { bigint: true }); const __c = (__v) => (__v >= -9007199254740991n && __v <= 9007199254740991n) ? Number(__v) : __v; const __ns = __s.mtimeNs; return { ok: { size: __c(__s.size), mtime: __c((__ns - (((__ns % 1000000n) + 1000000n) % 1000000n)) / 1000000n), isDir: __s.isDirectory() } } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
 #[@External.Erlang("""(fun(__P) -> case file:read_file_info(__P, [{time, posix}]) of {ok, {file_info, __Sz, __Ty, _, _, __Mt, _, _, _, _, _, _, _, _}} -> {ok, #{size => __Sz, mtime => __Mt * 1000, isDir => (__Ty =:= directory)}}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
 pub declare fn stat(path: string) -> @Result<FileStat, string>;
 
@@ -1051,6 +1056,28 @@ test "fs.removeTree removes a tree, a file and a link, and a missing path is Ok"
 test "fs.list of the host '/' resolves Ok" {
     val r = list("/");
     assert r.isOk();
+}
+
+// Internal, test scaffolding: `stat(p)`, or a stat no file has.
+fn statOr(p: string) -> FileStat {
+    return case stat(p) {
+        Ok(s) -> s;
+        Error(_) -> FileStat(size: -1l, mtime: -1l, isDir: false);
+    };
+}
+
+test "fs.stat answers a file's size, a directory's kind and the mtime in epoch milliseconds" {
+    val dir = scratchDir();
+    writeText([dir, "/five.txt"].join(""), "12345");
+    val file = statOr([dir, "/five.txt"].join(""));
+    assert file.size == 5l;
+    assert file.isDir == false;
+    // After 2020-01-01T00:00:00Z and before 2100-01-01T00:00:00Z.
+    assert file.mtime > 1577836800000l;
+    assert file.mtime < 4102444800000l;
+    assert statOr(dir).isDir;
+    assert stat([dir, "/missing.txt"].join("")).isError();
+    removeTree(dir);
 }
 
 // Internal, test scaffolding: `<dir>/app/page.bp`, `<dir>/app/blog/page.bp`,
@@ -1414,11 +1441,21 @@ copy(Src, Dest) ->
 
 % `size` is in bytes.
 
-% Node: `(() => { const s = require('fs').statSync($0); return { size: s.size, mtime: Math.floor(s.mtimeMs), isDir: s.isDirectory() } })()`.
+% Node: `statSync($0, { bigint: true })`, so `size` and the nanosecond
+
+% `mtimeNs` arrive exact at any size; `mtime` is `mtimeNs` floored to whole
+
+% milliseconds, and both answer decision 319's canonical form (a `number`
+
+% within ±(2^53 − 1), a `BigInt` beyond) — never a `number` rounded past 2^53.
 
 % Erlang: `file:read_file_info/1` returns a `#file_info` record; the
 
-% template projects the `size`, `mtime`, and `type` fields.
+% template projects the `size`, `mtime`, and `type` fields. Its `mtime` is
+
+% whole seconds × 1000 — a resolution the Node form does not share
+
+% (question `97-s13-d`).
 
 %% external fn stat -> erlang template
 stat(Path) ->
@@ -1564,6 +1601,17 @@ removeTree(Path) ->
 
 
 
+
+
+% Internal, test scaffolding: `stat(p)`, or a stat no file has.
+
+statOr(P) ->
+    case '__bp_adopt'((fun(__P) -> case file:read_file_info(__P, [{time, posix}]) of {ok, {file_info, __Sz, __Ty, _, _, __Mt, _, _, _, _, _, _, _, _}} -> {ok, #{size => __Sz, mtime => __Mt * 1000, isDir => (__Ty =:= directory)}}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)(P), std@io@fs@@FileStat, [size, mtime, isDir]) of
+        {ok, S} ->
+            S;
+        {error, _} ->
+            {std@io@fs@@FileStat, (-1), (-1), false}
+    end.
 
 
 % Internal, test scaffolding: `<dir>/app/page.bp`, `<dir>/app/blog/page.bp`,

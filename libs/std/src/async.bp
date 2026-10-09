@@ -278,20 +278,19 @@ fn policyProblem(policy: RetryPolicy) -> string {
 }
 
 // Internal: an `i64` of milliseconds as an `f64`, and back — the whole
-// milliseconds of a delay that is never negative. botopink has no numeric
-// conversion; both hosts have one.
-#[@External.Node("""($0)""")]
+// milliseconds of a delay that is never negative. Not `toF64()`, which aborts
+// on an integer past 2^53 that no `f64` holds: the delay is a float
+// computation, and an `initialMillis` that large rounds as the float does
+// (and is then capped by `maxMillis`). The Node forms take and answer
+// decision 319's canonical form — `Number` reads a `BigInt` (`initialMillis`
+// past 2^53 − 1), and a whole number past 2^53 − 1 answers as a `BigInt`.
+#[@External.Node("""Number($0)""")]
 #[@External.Erlang("""float($0)""")]
 declare fn millisAsFloat(n: i64) -> f64;
 
-#[@External.Node("""Math.floor($0)""")]
+#[@External.Node("""((__x) => { const __f = Math.floor(__x); return Number.isSafeInteger(__f) ? __f : BigInt(__f); })($0)""")]
 #[@External.Erlang("""trunc($0)""")]
 declare fn wholeMillis(x: f64) -> i64;
-
-// Internal: `delay`'s `i32` budget from a delay `policyProblem` has bounded.
-#[@External.Node("""($0)""")]
-#[@External.Erlang("""($0)""")]
-declare fn timerMillis(n: i64) -> i32;
 
 // Internal: `initial × multiplier^(attempt − 1)`, never above `ceiling`. One
 // multiplication per attempt — the same IEEE operations in the same order on
@@ -339,7 +338,7 @@ fn retryFrom<T, E>(
     val settled = outcome.isOk() || attempt >= policy.maxAttempts;
     if (settled) return try outcome;
     val pause = nextDelay(policy, attempt) ?? policy.maxMillis;
-    await delay(timerMillis(pause), 0);
+    await delay(pause.toI32(), 0);
     return try await retryFrom(policy, work, attempt + 1);
 }
 
@@ -716,6 +715,10 @@ test "async: nextDelay ---- never answers above maxMillis" {
     );
     assert pauseText(RetryPolicy(2000000000, 1, 1.5, 2147483647), 1999999999)
         == "2147483647";
+    // An `initialMillis` past 2^53 (a `BigInt` on commonJS, decision 319) is
+    // read as the float it rounds to, then capped.
+    assert pauses(RetryPolicy(2, 9007199254740993l, 2.0, 1000), 2)
+        == "1000,1000";
 }
 
 test "async: nextDelay ---- rounds a fractional delay down, a multiplier of one keeps it" {

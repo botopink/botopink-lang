@@ -799,6 +799,12 @@ fn destructYSlots(pattern: ast.ParamDestruct) u32 {
 /// The throw of a propagating `try` inside a loop's fun (`emitTryError`).
 const try_throw_signal = "__bp_try";
 
+/// The throw of a `return` inside a loop's fun (`emitLoopReturn`). Apart from
+/// `try_throw_signal` because the two leave different scopes: a failing `try`
+/// always answers the function, a `return` answers the `@block` the loop's
+/// call site sits in when there is one (decision 2), the function otherwise.
+const return_throw_signal = "__bp_return";
+
 /// True when `body` holds a propagating `try` (a bare `try`, not
 /// `try … catch`) outside any lambda — one a loop's fun would have to carry
 /// out to the call site.
@@ -11436,24 +11442,30 @@ const Emitter = struct {
     }
 
     /// `return v` inside a loop's fun (`in_loop_lambda`): a return there only
-    /// leaves the fun, so the value is thrown as `{'__bp_try', V}` and the
-    /// loop's call site (`guardLoopCall`) answers it as the function's value —
-    /// the path a failing `try` already takes. `firstUnder(12, 10)` answered
-    /// `12` where commonJS and wasm answer `8`.
+    /// leaves the fun, so the value is thrown as `{'__bp_return', V}` and the
+    /// loop's call site (`guardLoopCall`) answers it as the value of the
+    /// `@block` it sits in, or of the function. `firstUnder(12, 10)` answered
+    /// `12` where commonJS and wasm answer `8`; a `for` inside an `@block`
+    /// answered the function where it means the block
+    /// (`run/block_for_return_is_block_value`).
     fn emitLoopReturn(self: *Emitter, value: ?ast.Expr) anyerror!void {
         if (value) |v| try self.lowerExprIntoX0(v) else try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.xr(0));
         try beamEmitter.writeTestHeap(self.out, 3, 1);
-        try beamEmitter.writePutTuple2(self.out, Dst.xr(0), &.{ Op.atom(try_throw_signal), Op.xr(0) });
+        try beamEmitter.writePutTuple2(self.out, Dst.xr(0), &.{ Op.atom(return_throw_signal), Op.xr(0) });
         try beamEmitter.writeCall(self.out, .only, 1, .{ .ext = .{ .module = "erlang", .function = "throw" } }, 0);
     }
 
     /// Emit `call` — a `lists:foreach` / `map` / `foldl` over a loop fun whose
-    /// body may throw `{'__bp_try', E}` (`emitTryError`) — inside a catch
-    /// section of this frame (`tag` is its y-slot): the thrown `E` is this
-    /// function's return value, or — when this frame is itself a loop's fun —
-    /// thrown on to the next call site. Any other raise is re-raised.
+    /// body may throw `{'__bp_try', E}` (`emitTryError`) or
+    /// `{'__bp_return', V}` (`emitLoopReturn`) — inside a catch section of this
+    /// frame (`tag` is its y-slot): the thrown `E` is this function's return
+    /// value, or — when this frame is itself a loop's fun — thrown on to the
+    /// next call site. A thrown `V` is the same, except that an `@block` of
+    /// this frame (`inBlockExit`) takes it as the block's value. Any other
+    /// raise is re-raised.
     fn guardLoopCall(self: *Emitter, tag: u32, call: anytype) anyerror!void {
         const caught = self.allocLabel();
+        const ret = self.allocLabel();
         const other = self.allocLabel();
         const done = self.allocLabel();
         try beamEmitter.writeTry(self.out, tag, caught);
@@ -11463,14 +11475,11 @@ const Emitter = struct {
         try beamEmitter.writeLabel(self.out, caught);
         try beamEmitter.writeTryCase(self.out, tag);
         try beamEmitter.writeTest(self.out, .is_eq_exact, other, &.{ Op.xr(0), Op.atom("throw") });
-        try beamEmitter.writeTest(self.out, .is_tagged_tuple, other, &.{ Op.xr(1), .{ .untagged = 2 }, Op.atom(try_throw_signal) });
-        if (self.in_loop_lambda) {
-            try beamEmitter.writeMoveOp(self.out, Op.xr(1), Dst.xr(0));
-            try beamEmitter.writeCall(self.out, .only, 1, .{ .ext = .{ .module = "erlang", .function = "throw" } }, 0);
-        } else {
-            try beamEmitter.writeGetTupleElement(self.out, Op.xr(1), 1, Dst.xr(0));
-            try self.emitReturn();
-        }
+        try beamEmitter.writeTest(self.out, .is_tagged_tuple, ret, &.{ Op.xr(1), .{ .untagged = 2 }, Op.atom(try_throw_signal) });
+        try self.answerLoopThrow(null);
+        try beamEmitter.writeLabel(self.out, ret);
+        try beamEmitter.writeTest(self.out, .is_tagged_tuple, other, &.{ Op.xr(1), .{ .untagged = 2 }, Op.atom(return_throw_signal) });
+        try self.answerLoopThrow(self.inBlockExit());
         try beamEmitter.writeLabel(self.out, other);
         try beamEmitter.writeBif(self.out, "raise", 0, &.{ Op.xr(2), Op.xr(1) }, Dst.xr(0));
         try beamEmitter.writeLabel(self.out, done);
@@ -11735,6 +11744,22 @@ const Emitter = struct {
             self.next_y += 1;
             try self.guardLoopBreak(tag, guarded);
         } else try guarded.emit(self);
+    }
+
+    /// The `{Signal, V}` in `x1` a loop's fun threw, answered at its call site:
+    /// `V` is the `@block`'s value when `block` is one of this frame, thrown on
+    /// whole from a loop's fun, and this function's value otherwise.
+    fn answerLoopThrow(self: *Emitter, block: ?BlockExit) anyerror!void {
+        if (block) |be| {
+            try beamEmitter.writeGetTupleElement(self.out, Op.xr(1), 1, Dst.xr(0));
+            try beamEmitter.writeJump(self.out, be.exit);
+        } else if (self.in_loop_lambda) {
+            try beamEmitter.writeMoveOp(self.out, Op.xr(1), Dst.xr(0));
+            try beamEmitter.writeCall(self.out, .only, 1, .{ .ext = .{ .module = "erlang", .function = "throw" } }, 0);
+        } else {
+            try beamEmitter.writeGetTupleElement(self.out, Op.xr(1), 1, Dst.xr(0));
+            try self.emitReturn();
+        }
     }
 
     /// `call.emit` inside a catch section that ends the loop on its fun's

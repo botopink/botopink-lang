@@ -584,7 +584,15 @@ codegen/
   (`import {parser.Outcome};`, decision 206) narrows exactly as `from "parser"`
   did — read through the decl's own `.root` source it named no module, and a
   record two modules declare was called without `new`. A method with no parameters that reads `self`
-  implicitly keeps the `this` body and is not lowered.
+  implicitly keeps the `this` body and is not lowered. `recv?.m(args)` over
+  an enum method (decision 330) is the same static call, guarded:
+  `((__bp_recv) => (__bp_recv == null ? undefined : Shape.area(__bp_recv)))(recv)`
+  (`optEnumCall`, `opt_recv_param`) — the receiver evaluated once, the
+  arguments only when it is there. Its owner is read at the loc of the link
+  the checker typed the call through (`ast.optional_synthetic_col`), since the
+  written `?.` call's own loc records no instance lowering; written as a member
+  call it failed with `…?.str is not a function` on std's `Json`
+  (`run/optional_enum_method_call`).
 - **User interface `default fn`s**: an interface that is not a JS global owns
   no constructor, so its instance defaults are copied as class methods into
   every local record that implements it and does not define the method
@@ -692,7 +700,14 @@ codegen/
   `throw` (a `return {error, E}` after the transform) in an `if` in a `while`
   bound the loop's variables in one arm only — `variable unsafe in 'case'`.
   The beam twin is `emitLoopReturn` (`in_loop_lambda`), caught by
-  `guardLoopCall`, which `bodyPropagates` now asks for on any `return`.
+  `guardLoopCall`, which `bodyPropagates` now asks for on any `return`. beam
+  throws it as `{'__bp_return', V}` (`return_throw_signal`), apart from a
+  failing `try`'s `'__bp_try'`, because the call site answers the two
+  differently (`answerLoopThrow`): a `try` always answers the function, a
+  `return` answers the `@block` of the call site's frame (`inBlockExit`,
+  decision 2) when there is one — `val found = @block { for (xs) { x -> if
+  (x > limit) return x; } return -1; }` answered `7` from the function where
+  it means `700` (`run/block_for_return_is_block_value`).
 - **A `@Result`/`@Option` op's fun names nothing a program writes**
   (`resultOptionNode`): `(fun(__BpR) -> case __BpR of {ok, __BpV<n>} -> …)`,
   the payload numbered per function (`opt_seq`, reset with `try_seq`) because a

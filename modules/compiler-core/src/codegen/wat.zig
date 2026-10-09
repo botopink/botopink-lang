@@ -1372,8 +1372,14 @@ fn blockBodyReturns(body: []const ast.Stmt) bool {
 /// The first value an `@block`'s body returns in its own scope (the borders of
 /// `ast.exprReturns`: a closure and a nested `@block` return for themselves, a
 /// braced `case` arm does not) — what the block answers, for the classifiers
-/// that read a value's shape off its expression (`genericResultOf`).
+/// that read a value's shape off its expression (`genericResultOf`). A
+/// `return` written directly in `body` comes first: its operands are read in
+/// the block's own scope, while one inside a loop reads the loop's binder,
+/// which no classifier knows outside the loop — `return s` from a `for` over
+/// strings made the block's `"[" + hit + "]"` print an address
+/// (`run/block_for_return_is_block_value`).
 fn blockReturnValue(body: []const ast.Stmt) ?ast.Expr {
+    for (body) |st| if (st.expr == .jump and st.expr.jump.kind == .@"return") if (st.expr.jump.kind.@"return") |v| return v.*;
     for (body) |st| if (blockReturnValueOf(st.expr)) |v| return v;
     return null;
 }
@@ -2631,7 +2637,11 @@ const Emitter = struct {
                 .identAccess => |ia| blk: {
                     const recv_ty = self.recordTypeOfExpr(ia.receiver.*) orelse break :blk null;
                     const field_ty = self.fieldTypeIn(recv_ty, ia.member) orelse break :blk null;
-                    break :blk self.resolveRecordName(field_ty);
+                    // A field declared as one of a generic record's type
+                    // parameters (`data: D` of `Route<P, D>`) is the record
+                    // the receiver's type argument names: `route.data.title`
+                    // reads `Post`'s slot, never an untyped one.
+                    break :blk self.resolveRecordName(self.recvTypeArg(ia.receiver.*, recv_ty, field_ty));
                 },
                 else => null,
             },
