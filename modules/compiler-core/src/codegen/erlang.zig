@@ -942,7 +942,7 @@ const len_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_len", .clauses
     .{
         .patterns = &.{ Ast.Expr.v("X"), Ast.Expr.v("_") },
         .guards = &.{isA("binary", "X")},
-        .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .module = "string", .name = "length", .args = &.{Ast.Expr.v("X")} } } }}),
+        .body = oneExpr(codepointCountOf(Ast.Expr.v("X"))),
         .layout = .inline_,
     },
     .{
@@ -1225,6 +1225,19 @@ const ix_to = Ast.Expr.v("To");
 const ix_zero: Ast.Expr = .{ .number = "0" };
 const ix_one: Ast.Expr = .{ .number = "1" };
 
+/// `unicode:characters_to_list(S)` — a string's codepoints. A string index
+/// counts codepoints on every target (decision 320); `string:length/1` and
+/// `string:slice/2,3` count grapheme clusters, so no helper calls them.
+fn codepointsOf(comptime s: Ast.Expr) Ast.Expr {
+    return remoteOf("unicode", "characters_to_list", &.{s});
+}
+
+/// `erlang:length(unicode:characters_to_list(S))` — a string's length in
+/// codepoints (decision 320).
+fn codepointCountOf(comptime s: Ast.Expr) Ast.Expr {
+    return bifOf("length", &.{codepointsOf(s)});
+}
+
 /// `max(X, 0)` — a negative bound is clamped, never an error.
 fn clampLow(comptime x: Ast.Expr) Ast.Expr {
     return bifOf("max", &.{ x, ix_zero });
@@ -1252,7 +1265,8 @@ fn unsupportedOf(comptime tag: []const u8, comptime args: anytype) Ast.Expr {
 ///   - a **list** by position, a negative one counted from the end
 ///     (decision 139), `undefined` outside it — the same answer `Array.at`
 ///     gives;
-///   - a **string** by character, not by byte (`string:slice/3` is UTF-8 aware);
+///   - a **string** by codepoint, not by byte nor by grapheme cluster
+///     (decision 320): the codepoint list's one-element sublist, re-encoded;
 ///   - a **tuple** by position, `undefined` outside it.
 ///
 /// A receiver with no positions raises `{bp_unsupported_index, Recv, I}` rather
@@ -1286,7 +1300,9 @@ const index_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_index", .cla
     .{
         .patterns = &.{ ix_recv, ix_i },
         .guards = &.{ isA("binary", "Recv"), isA("integer", "I"), binOpOf(">=", ix_i, ix_zero) },
-        .body = oneExpr(remoteOf("string", "slice", &.{ ix_recv, ix_i, ix_one })),
+        .body = oneExpr(remoteOf("unicode", "characters_to_binary", &.{
+            remoteOf("lists", "sublist", &.{ codepointsOf(ix_recv), binOpOf("+", ix_i, ix_one), ix_one }),
+        })),
         .layout = .inline_,
     },
     .{
@@ -1326,7 +1342,8 @@ const index_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_index", .cla
 ///
 /// `..` is half-open `[from, to)` (decision 36), so the length is `To - From`;
 /// both bounds are clamped so an out-of-range slice is short, never an error —
-/// which is `lists:sublist/3`'s and `string:slice/3`'s own behaviour.
+/// which is `lists:sublist/3`'s own behaviour. A string is sliced as its
+/// codepoint list (decision 320) and re-encoded.
 const slice_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_slice", .clauses = &.{
     .{
         .patterns = &.{ ix_recv, ix_from, Ast.Expr.a("infinity") },
@@ -1340,7 +1357,7 @@ const slice_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_slice", .cla
     .{
         .patterns = &.{ ix_recv, ix_from, Ast.Expr.a("infinity") },
         .guards = &.{isA("binary", "Recv")},
-        .body = oneExpr(remoteOf("string", "slice", &.{ ix_recv, clampLow(ix_from) })),
+        .body = oneExpr(slicedCodepointsOf(Ast.Expr.a("infinity"))),
         .layout = .inline_,
     },
     .{
@@ -1356,11 +1373,7 @@ const slice_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_slice", .cla
     .{
         .patterns = &.{ ix_recv, ix_from, ix_to },
         .guards = &.{isA("binary", "Recv")},
-        .body = oneExpr(remoteOf("string", "slice", &.{
-            ix_recv,
-            clampLow(ix_from),
-            clampLow(binOpOf("-", ix_to, clampLow(ix_from))),
-        })),
+        .body = oneExpr(slicedCodepointsOf(ix_to)),
         .layout = .inline_,
     },
     .{
@@ -1369,6 +1382,15 @@ const slice_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_slice", .cla
         .layout = .inline_,
     },
 } } };
+
+/// `unicode:characters_to_binary('__bp_slice'(unicode:characters_to_list(Recv),
+/// From, To))` — `'__bp_slice'/3`'s binary clauses slice the codepoint list
+/// through its own list clauses.
+fn slicedCodepointsOf(comptime to: Ast.Expr) Ast.Expr {
+    return remoteOf("unicode", "characters_to_binary", &.{
+        .{ .call = .{ .name = "__bp_slice", .args = &.{ codepointsOf(ix_recv), ix_from, to } } },
+    });
+}
 
 /// `'__bp_text'/1`: any term as a binary — a binary is itself, anything else
 /// its `~p` rendering. Every comptime module carries it; a typed module emits it
@@ -3676,8 +3698,8 @@ const Emitter = struct {
     }
 
     /// A bare call to a std prelude `declare fn` whose `@External.Erlang` symbol
-    /// is a template (`stringSlice1(s, start, end)` →
-    /// `string:slice(S, Start, (End - Start))`). A free function has no
+    /// is a template (`stringSlice1(s, start, end)` → the template's fun applied to
+    /// `(S, Start, End)`). A free function has no
     /// receiver (`self-param-outside-type`), so `$N` is the call's N-th
     /// positional argument, as for any other free `declare fn`. Null when the
     /// callee has no template.
@@ -6398,6 +6420,16 @@ const Emitter = struct {
                 else => return null,
             },
             .call => {
+                // A statement `@block { … }` that reassigns outer variables
+                // answers them, and the statement rebinds them:
+                // `Acc@2 = (fun() -> Acc@1 = …, Acc@1 end)()` — a fun cannot
+                // rebind what it captured, so `Acc@1` was unbound after it.
+                if (statementBlockBody(stmt.expr)) |body| {
+                    if (!hasReturn(body)) {
+                        try this.collectMutations(b.arena, body, &.{}, &names);
+                        if (names.items.len > 0) return try this.mutatingBlockExpr(b, body, names.items);
+                    }
+                }
                 // `emit(x)` on a closure that reassigns outer variables rebinds
                 // them from what it answers: `Tokens@2 = Emit(X, Tokens@1)`.
                 if (this.closureMutation(stmt.expr)) |cm| {
@@ -6798,6 +6830,56 @@ const Emitter = struct {
         const target = Ast.Expr.v(try this.arenaVar(b, name));
         this.addLocal(name);
         return b.match(target, .{ .fun = .{ .params = fun_params, .body = fun_body } });
+    }
+
+    /// The body of a statement `@block { … }` (a trailing block, no
+    /// parameters), or null.
+    fn statementBlockBody(e: ast.Expr) ?[]const ast.Stmt {
+        if (e != .call or e.call.kind != .call) return null;
+        const cc = e.call.kind.call;
+        if (!cc.is_builtin or !std.mem.eql(u8, cc.callee, "block")) return null;
+        if (cc.args.len != 0 or cc.trailing.len != 1 or cc.trailing[0].params.len != 0) return null;
+        return cc.trailing[0].body;
+    }
+
+    /// Whether `body` holds a `return` of its own — in a branch or a loop of
+    /// it, not in a lambda, whose `return` is the lambda's.
+    fn hasReturn(body: []const ast.Stmt) bool {
+        for (body) |stmt| switch (stmt.expr) {
+            .jump => |j| if (j.kind == .@"return") return true,
+            .branch => |br| switch (br.kind) {
+                .if_ => |i| {
+                    if (hasReturn(i.then_)) return true;
+                    if (i.else_) |els| if (hasReturn(els)) return true;
+                },
+                else => {},
+            },
+            .loop => |lp| if (hasReturn(lp.body)) return true,
+            else => {},
+        };
+        return false;
+    }
+
+    /// `Group@new = (fun() -> Body, Group end)()` — a statement `@block` whose
+    /// body reassigns `names` of the enclosing function and has no `return`
+    /// (the statement discards the block's value, so the fun answers the
+    /// reassigned variables instead).
+    fn mutatingBlockExpr(this: *Emitter, b: Ast.Builder, body: []const ast.Stmt, names: []const []const u8) anyerror!Ast.Expr {
+        const saved_in_loop = this.in_loop_body;
+        this.in_loop_body = false;
+        defer this.in_loop_body = saved_in_loop;
+        const saved_nested_return = this.in_nested_return;
+        this.in_nested_return = false;
+        defer this.in_nested_return = saved_nested_return;
+        const saved_block_guard = this.block_guard;
+        this.block_guard = null;
+        defer this.block_guard = saved_block_guard;
+        var snapshot = try this.var_current.clone();
+        defer snapshot.deinit();
+        const fun_body = try this.armWithGroup(b, body, names, this.indent + 1);
+        try this.restoreVersions(&snapshot);
+        const call = try b.applyParen(.{ .fun = .{ .params = &.{}, .body = fun_body } }, &.{});
+        return try b.match(try this.bindVarGroupExpr(b, names), call);
     }
 
     const ForEachLambda = struct {
@@ -7526,7 +7608,7 @@ const Emitter = struct {
                         .prim => |k| {
                             const recv = try this.exprNode(b, ia.receiver.*);
                             return switch (k) {
-                                .string => b.remote("string", "length", &.{recv}),
+                                .string => b.remote("erlang", "length", &.{try b.remote("unicode", "characters_to_list", &.{recv})}),
                                 // Qualified: a type of the module may declare
                                 // a `length/1` method, which the module then
                                 // defines under `no_auto_import`.
@@ -7544,7 +7626,7 @@ const Emitter = struct {
                         if (this.selfPrimKind(ia.receiver.*)) |k| {
                             const recv = try this.exprNode(b, ia.receiver.*);
                             return switch (k) {
-                                .string => b.remote("string", "length", &.{recv}),
+                                .string => b.remote("erlang", "length", &.{try b.remote("unicode", "characters_to_list", &.{recv})}),
                                 // Qualified: a type of the module may declare
                                 // a `length/1` method, which the module then
                                 // defines under `no_auto_import`.

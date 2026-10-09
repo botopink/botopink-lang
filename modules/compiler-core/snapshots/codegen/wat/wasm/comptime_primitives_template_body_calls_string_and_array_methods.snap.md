@@ -1622,7 +1622,7 @@ fn main() {
 )
 
 (func $fun5:__bp_prim_at/2 (param $self i32) (param $a0 i32) (param $a1 i32) (result i32)
-  (local $V___S i32) (local $V___I i32) (local $t1 i32) (local $V___N i32) (local $t2 i32) (local $t3 i32) (local $V___J i32) (local $t4 i32) (local $t5 i32) (local $t6 i32)
+  (local $V___S i32) (local $V___I i32) (local $t1 i32) (local $V___L i32) (local $t2 i32) (local $V___N i32) (local $t3 i32) (local $t4 i32) (local $V___J i32) (local $t5 i32) (local $t6 i32) (local $t7 i32) (local $t8 i32) (local $t9 i32)
   (block $raise
   (block $L1 (result i32)
   (block $L2
@@ -1631,14 +1631,14 @@ fn main() {
   local.get $a1
   local.set $V___I
   local.get $V___S
-  call $rt_string_length
+  call $rt_unicode_characters_to_list
   call $rt_pending
   br_if $raise
   local.set $t1
   (block $L4
   (block $L3
   local.get $t1
-  local.set $V___N
+  local.set $V___L
   br $L4
   )
   local.get $t1
@@ -1648,6 +1648,24 @@ fn main() {
   )
   local.get $t1
   drop
+  local.get $V___L
+  call $rt_erlang_length
+  call $rt_pending
+  br_if $raise
+  local.set $t2
+  (block $L6
+  (block $L5
+  local.get $t2
+  local.set $V___N
+  br $L6
+  )
+  local.get $t2
+  call $rt_badmatch
+  drop
+  br $raise
+  )
+  local.get $t2
+  drop
   local.get $V___I
   i64.const 0
   call $rt_int
@@ -1655,10 +1673,10 @@ fn main() {
   i32.const 0
   i32.lt_s
   call $rt_bool
-  local.set $t2
-  (block $L5 (result i32)
-  (block $L6
-  local.get $t2
+  local.set $t3
+  (block $L7 (result i32)
+  (block $L8
+  local.get $t3
   global.get $__lit
   i32.const 256
   i32.add
@@ -1666,16 +1684,16 @@ fn main() {
   call $rt_atom
   call $rt_eqx
   i32.eqz
-  br_if $L6
+  br_if $L8
   local.get $V___I
   local.get $V___N
   call $rt_add
   call $rt_pending
   br_if $raise
-  br $L5
+  br $L7
   )
-  (block $L7
-  local.get $t2
+  (block $L9
+  local.get $t3
   global.get $__lit
   i32.const 272
   i32.add
@@ -1683,28 +1701,28 @@ fn main() {
   call $rt_atom
   call $rt_eqx
   i32.eqz
-  br_if $L7
+  br_if $L9
   local.get $V___I
-  br $L5
+  br $L7
   )
-  local.get $t2
+  local.get $t3
   call $rt_case_clause
   drop
   br $raise
   )
-  local.set $t3
-  (block $L9
-  (block $L8
-  local.get $t3
+  local.set $t4
+  (block $L11
+  (block $L10
+  local.get $t4
   local.set $V___J
-  br $L9
+  br $L11
   )
-  local.get $t3
+  local.get $t4
   call $rt_badmatch
   drop
   br $raise
   )
-  local.get $t3
+  local.get $t4
   drop
   local.get $V___J
   i64.const 0
@@ -1713,22 +1731,22 @@ fn main() {
   i32.const 0
   i32.ge_s
   call $rt_bool
-  local.set $t4
-  local.get $t4
-  call $rt_truth
   local.set $t5
   local.get $t5
+  call $rt_truth
+  local.set $t6
+  local.get $t6
   i32.const 2
   i32.eq
   (if
     (then
-  local.get $t4
+  local.get $t5
   call $rt_badarg_of
   drop
   br $raise
     )
   )
-  local.get $t5
+  local.get $t6
   (if (result i32)
     (then
   local.get $V___J
@@ -1746,10 +1764,10 @@ fn main() {
   call $rt_atom
     )
   )
-  local.set $t6
-  (block $L10 (result i32)
-  (block $L11
-  local.get $t6
+  local.set $t7
+  (block $L12 (result i32)
+  (block $L13
+  local.get $t7
   global.get $__lit
   i32.const 256
   i32.add
@@ -1757,18 +1775,30 @@ fn main() {
   call $rt_atom
   call $rt_eqx
   i32.eqz
-  br_if $L11
-  local.get $V___S
+  br_if $L13
   local.get $V___J
   i64.const 1
   call $rt_int
-  call $rt_string_slice3
+  call $rt_add
   call $rt_pending
   br_if $raise
-  br $L10
+  local.get $V___L
+  call $rt_lists_nth
+  call $rt_pending
+  br_if $raise
+  local.set $t8
+  call $rt_nil
+  local.set $t9
+  local.get $t8
+  local.get $t9
+  call $rt_cons
+  call $rt_unicode_characters_to_binary
+  call $rt_pending
+  br_if $raise
+  br $L12
   )
-  (block $L12
-  local.get $t6
+  (block $L14
+  local.get $t7
   global.get $__lit
   i32.const 272
   i32.add
@@ -1776,15 +1806,15 @@ fn main() {
   call $rt_atom
   call $rt_eqx
   i32.eqz
-  br_if $L12
+  br_if $L14
   global.get $__lit
   i32.const 376
   i32.add
   i32.const 9
   call $rt_atom
-  br $L10
+  br $L12
   )
-  local.get $t6
+  local.get $t7
   call $rt_case_clause
   drop
   br $raise
@@ -2415,7 +2445,10 @@ fn main() {
   call $rt_binary_part
   call $rt_pending
   br_if $raise
-  call $rt_string_length
+  call $rt_unicode_characters_to_list
+  call $rt_pending
+  br_if $raise
+  call $rt_erlang_length
   call $rt_pending
   br_if $raise
   br $L6
@@ -2757,7 +2790,7 @@ fn main() {
 )
 
 (func $string_slice/3 (param $a0 i32) (param $a1 i32) (param $a2 i32) (result i32)
-  (local $V_Self i32) (local $V_Start i32) (local $V_End i32) (local $t1 i32)
+  (local $V_Self i32) (local $V_Start i32) (local $V_End i32) (local $t1 i32) (local $t2 i32) (local $t3 i32) (local $t4 i32) (local $t5 i32) (local $t6 i32) (local $t7 i32) (local $t8 i32) (local $t9 i32) (local $t10 i32) (local $t11 i32) (local $t12 i32)
   (block $raise
   (block $L1 (result i32)
   (block $L2
@@ -2788,14 +2821,34 @@ fn main() {
   call $rt_eqx
   i32.eqz
   br_if $L4
+  call $rt_nil
+  local.set $t2
+  global.get $__tbase
+  i32.const 9
+  i32.add
+  i32.const 3
+  local.get $t2
+  call $rt_make_fun
+  local.set $t3
   local.get $V_Self
+  local.set $t4
   local.get $V_Start
+  local.set $t5
   local.get $V_End
-  local.get $V_Start
-  call $rt_sub
+  local.set $t6
+  local.get $t3
+  i32.const 3
+  call $rt_nil
+  call $rt_fun_index
   call $rt_pending
   br_if $raise
-  call $rt_string_slice3
+  local.set $t7
+  local.get $t3
+  local.get $t4
+  local.get $t5
+  local.get $t6
+  local.get $t7
+  call_indirect (param i32 i32 i32 i32) (result i32)
   call $rt_pending
   br_if $raise
   br $L3
@@ -2810,9 +2863,31 @@ fn main() {
   call $rt_eqx
   i32.eqz
   br_if $L5
+  call $rt_nil
+  local.set $t8
+  global.get $__tbase
+  i32.const 10
+  i32.add
+  i32.const 2
+  local.get $t8
+  call $rt_make_fun
+  local.set $t9
   local.get $V_Self
+  local.set $t10
   local.get $V_Start
-  call $rt_string_slice2
+  local.set $t11
+  local.get $t9
+  i32.const 2
+  call $rt_nil
+  call $rt_fun_index
+  call $rt_pending
+  br_if $raise
+  local.set $t12
+  local.get $t9
+  local.get $t10
+  local.get $t11
+  local.get $t12
+  call_indirect (param i32 i32 i32) (result i32)
   call $rt_pending
   br_if $raise
   br $L3
@@ -2822,6 +2897,352 @@ fn main() {
   drop
   br $raise
   )
+  br $L1
+  )
+  call $rt_function_clause
+  drop
+  br $raise
+  )
+  return
+  )
+  i32.const 0
+)
+
+(func $fun10:string_slice/3 (param $self i32) (param $a0 i32) (param $a1 i32) (param $a2 i32) (result i32)
+  (local $V___S i32) (local $V___A i32) (local $V___E i32) (local $t1 i32) (local $V___L i32) (local $t2 i32) (local $V___N i32) (local $t3 i32) (local $t4 i32) (local $V___B i32) (local $t5 i32) (local $t6 i32) (local $V___F i32)
+  (block $raise
+  (block $L1 (result i32)
+  (block $L2
+  local.get $a0
+  local.set $V___S
+  local.get $a1
+  local.set $V___A
+  local.get $a2
+  local.set $V___E
+  local.get $V___S
+  call $rt_unicode_characters_to_list
+  call $rt_pending
+  br_if $raise
+  local.set $t1
+  (block $L4
+  (block $L3
+  local.get $t1
+  local.set $V___L
+  br $L4
+  )
+  local.get $t1
+  call $rt_badmatch
+  drop
+  br $raise
+  )
+  local.get $t1
+  drop
+  local.get $V___L
+  call $rt_erlang_length
+  call $rt_pending
+  br_if $raise
+  local.set $t2
+  (block $L6
+  (block $L5
+  local.get $t2
+  local.set $V___N
+  br $L6
+  )
+  local.get $t2
+  call $rt_badmatch
+  drop
+  br $raise
+  )
+  local.get $t2
+  drop
+  local.get $V___A
+  i64.const 0
+  call $rt_int
+  call $rt_cmp
+  i32.const 0
+  i32.lt_s
+  call $rt_bool
+  local.set $t3
+  (block $L7 (result i32)
+  (block $L8
+  local.get $t3
+  global.get $__lit
+  i32.const 256
+  i32.add
+  i32.const 4
+  call $rt_atom
+  call $rt_eqx
+  i32.eqz
+  br_if $L8
+  local.get $V___N
+  local.get $V___A
+  call $rt_add
+  call $rt_pending
+  br_if $raise
+  i64.const 0
+  call $rt_int
+  call $rt_erlang_max
+  call $rt_pending
+  br_if $raise
+  br $L7
+  )
+  (block $L9
+  local.get $t3
+  global.get $__lit
+  i32.const 272
+  i32.add
+  i32.const 5
+  call $rt_atom
+  call $rt_eqx
+  i32.eqz
+  br_if $L9
+  local.get $V___A
+  local.get $V___N
+  call $rt_erlang_min
+  call $rt_pending
+  br_if $raise
+  br $L7
+  )
+  local.get $t3
+  call $rt_case_clause
+  drop
+  br $raise
+  )
+  local.set $t4
+  (block $L11
+  (block $L10
+  local.get $t4
+  local.set $V___B
+  br $L11
+  )
+  local.get $t4
+  call $rt_badmatch
+  drop
+  br $raise
+  )
+  local.get $t4
+  drop
+  local.get $V___E
+  i64.const 0
+  call $rt_int
+  call $rt_cmp
+  i32.const 0
+  i32.lt_s
+  call $rt_bool
+  local.set $t5
+  (block $L12 (result i32)
+  (block $L13
+  local.get $t5
+  global.get $__lit
+  i32.const 256
+  i32.add
+  i32.const 4
+  call $rt_atom
+  call $rt_eqx
+  i32.eqz
+  br_if $L13
+  local.get $V___N
+  local.get $V___E
+  call $rt_add
+  call $rt_pending
+  br_if $raise
+  i64.const 0
+  call $rt_int
+  call $rt_erlang_max
+  call $rt_pending
+  br_if $raise
+  br $L12
+  )
+  (block $L14
+  local.get $t5
+  global.get $__lit
+  i32.const 272
+  i32.add
+  i32.const 5
+  call $rt_atom
+  call $rt_eqx
+  i32.eqz
+  br_if $L14
+  local.get $V___E
+  local.get $V___N
+  call $rt_erlang_min
+  call $rt_pending
+  br_if $raise
+  br $L12
+  )
+  local.get $t5
+  call $rt_case_clause
+  drop
+  br $raise
+  )
+  local.set $t6
+  (block $L16
+  (block $L15
+  local.get $t6
+  local.set $V___F
+  br $L16
+  )
+  local.get $t6
+  call $rt_badmatch
+  drop
+  br $raise
+  )
+  local.get $t6
+  drop
+  local.get $V___L
+  local.get $V___B
+  i64.const 1
+  call $rt_int
+  call $rt_add
+  call $rt_pending
+  br_if $raise
+  local.get $V___F
+  local.get $V___B
+  call $rt_sub
+  call $rt_pending
+  br_if $raise
+  i64.const 0
+  call $rt_int
+  call $rt_erlang_max
+  call $rt_pending
+  br_if $raise
+  call $rt_lists_sublist3
+  call $rt_pending
+  br_if $raise
+  call $rt_unicode_characters_to_binary
+  call $rt_pending
+  br_if $raise
+  br $L1
+  )
+  call $rt_function_clause
+  drop
+  br $raise
+  )
+  return
+  )
+  i32.const 0
+)
+
+(func $fun11:string_slice/3 (param $self i32) (param $a0 i32) (param $a1 i32) (result i32)
+  (local $V___S i32) (local $V___A i32) (local $t1 i32) (local $V___L i32) (local $t2 i32) (local $V___N i32) (local $t3 i32) (local $t4 i32) (local $V___B i32)
+  (block $raise
+  (block $L1 (result i32)
+  (block $L2
+  local.get $a0
+  local.set $V___S
+  local.get $a1
+  local.set $V___A
+  local.get $V___S
+  call $rt_unicode_characters_to_list
+  call $rt_pending
+  br_if $raise
+  local.set $t1
+  (block $L4
+  (block $L3
+  local.get $t1
+  local.set $V___L
+  br $L4
+  )
+  local.get $t1
+  call $rt_badmatch
+  drop
+  br $raise
+  )
+  local.get $t1
+  drop
+  local.get $V___L
+  call $rt_erlang_length
+  call $rt_pending
+  br_if $raise
+  local.set $t2
+  (block $L6
+  (block $L5
+  local.get $t2
+  local.set $V___N
+  br $L6
+  )
+  local.get $t2
+  call $rt_badmatch
+  drop
+  br $raise
+  )
+  local.get $t2
+  drop
+  local.get $V___A
+  i64.const 0
+  call $rt_int
+  call $rt_cmp
+  i32.const 0
+  i32.lt_s
+  call $rt_bool
+  local.set $t3
+  (block $L7 (result i32)
+  (block $L8
+  local.get $t3
+  global.get $__lit
+  i32.const 256
+  i32.add
+  i32.const 4
+  call $rt_atom
+  call $rt_eqx
+  i32.eqz
+  br_if $L8
+  local.get $V___N
+  local.get $V___A
+  call $rt_add
+  call $rt_pending
+  br_if $raise
+  i64.const 0
+  call $rt_int
+  call $rt_erlang_max
+  call $rt_pending
+  br_if $raise
+  br $L7
+  )
+  (block $L9
+  local.get $t3
+  global.get $__lit
+  i32.const 272
+  i32.add
+  i32.const 5
+  call $rt_atom
+  call $rt_eqx
+  i32.eqz
+  br_if $L9
+  local.get $V___A
+  local.get $V___N
+  call $rt_erlang_min
+  call $rt_pending
+  br_if $raise
+  br $L7
+  )
+  local.get $t3
+  call $rt_case_clause
+  drop
+  br $raise
+  )
+  local.set $t4
+  (block $L11
+  (block $L10
+  local.get $t4
+  local.set $V___B
+  br $L11
+  )
+  local.get $t4
+  call $rt_badmatch
+  drop
+  br $raise
+  )
+  local.get $t4
+  drop
+  local.get $V___B
+  local.get $V___L
+  call $rt_lists_nthtail
+  call $rt_pending
+  br_if $raise
+  call $rt_unicode_characters_to_binary
+  call $rt_pending
+  br_if $raise
   br $L1
   )
   call $rt_function_clause

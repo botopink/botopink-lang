@@ -94,8 +94,9 @@ test "decorator invocation: rejection points at the annotation" {
 
 test "decorator invocation: a method nothing answers is the compiler's message, naming the call in the body" {
     // 1.0.11 front 14 step 1: the refusal is the compiler's own (no runtime
-    // ran), the body's call is named by `line:col`, and the diagnostic is
-    // located at the annotation that ran the body.
+    // ran). The decorator is the module's own, so its body is checked when
+    // the evaluator refuses it (01-checker's decorator-body row): the
+    // checker's unknown method, located at the call in the body.
     try assertRejectsAt(@src(),
         \\fn check(comptime decl: @Decl) {
         \\    val n = decl.name;
@@ -104,7 +105,7 @@ test "decorator invocation: a method nothing answers is the compiler's message, 
         \\
         \\#[check]
         \\type A(x: i32)
-    , "the decorator `check` calls `.frobnicate(…)` with 2 argument(s) at 3:15, which no primitive type (string, array, int, float, bool) and no decorator host function provides", .{ 6, 3 });
+    , "unknown-primitive-method: `string` has no method `frobnicate`", .{ 3, 15 });
 }
 
 test "decorator invocation: round trip ---- a @Decl handle carries fields, methods, variants and annotations" {

@@ -806,6 +806,10 @@ function __bp_show(v, s, top, a) {
         a.push(top ? v : (("\"" + Array.from(v, (c) => ((c === "\"") || (c === "\\")) ? ("\\" + c) : (c === "\n") ? "\\n" : (c === "\r") ? "\\r" : (c === "\t") ? "\\t" : c).join("")) + "\""));
         return "%s";
     }
+    if ((typeof v === "bigint")) {
+        a.push(String(v));
+        return "%s";
+    }
     if (((typeof v === "number") && (s === "f"))) {
         a.push(Number.isInteger(v) ? v.toFixed(1) : String(v));
         return "%s";

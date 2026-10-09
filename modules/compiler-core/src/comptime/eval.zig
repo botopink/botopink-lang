@@ -74,6 +74,47 @@ fn writeListing(allocator: std.mem.Allocator, script: *std.ArrayListUnmanaged(u8
     try script.print(allocator, " → {s}\n", .{lit});
 }
 
+/// Decision 266 — a `comptime` written in a body, folded at build: the value
+/// of `te` (a `comptime <expr>` or `comptime { … }` node `error.zig`'s
+/// `isFoldable` admitted) as the plain AST the backends emit, located at
+/// `loc` — a number, a string, `true` / `false`, `null`, or an array of them.
+/// Null when the value has no such form (a record, a non-finite float): the
+/// caller leaves the node to the run-time lowering.
+pub fn foldToExpr(arena: std.mem.Allocator, te: ast.TypedExpr, loc: ast.Loc) EvalError!?*ast.Expr {
+    var root: Scope = .{};
+    return exprOfValue(arena, try valueOf(arena, &root, te), loc);
+}
+
+fn exprOfValue(arena: std.mem.Allocator, value: Value, loc: ast.Loc) EvalError!?*ast.Expr {
+    const node = try arena.create(ast.Expr);
+    switch (value) {
+        .null_ => node.* = .{ .literal = .{ .loc = loc, .kind = .null_ } },
+        .boolean => |b| node.* = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = if (b) "true" else "false" } } },
+        .string => |text| node.* = .{ .literal = .{ .loc = loc, .kind = .{ .stringLit = text } } },
+        // A negative number is one literal (`-5`, `-3.0`), as a module-level
+        // `comptime` `val`'s folded literal is (`transform.zig`
+        // `makeLiteralExpr`): a backend reading a literal's spelling (commonJS's
+        // float print shape) reads it whole.
+        .integer => |n| node.* = .{ .literal = .{ .loc = loc, .kind = .{ .numberLit = try std.fmt.allocPrint(arena, "{d}", .{n}) } } },
+        .float => |f| {
+            if (!std.math.isFinite(f)) return null;
+            var text: std.ArrayListUnmanaged(u8) = .empty;
+            try writeScalar(arena, &text, .{ .float = f }, false);
+            node.* = .{ .literal = .{ .loc = loc, .kind = .{ .numberLit = text.items } } };
+        },
+        .list => |items| {
+            const elems = try arena.alloc(ast.Expr, items.len);
+            for (items, 0..) |item, i| {
+                const e = (try exprOfValue(arena, item, loc)) orelse return null;
+                elems[i] = e.*;
+            }
+            node.* = .{ .collection = .{ .loc = loc, .kind = .{ .arrayLit = .{ .elems = elems } } } };
+        },
+        .object => return null,
+    }
+    return node;
+}
+
 // ── folding ───────────────────────────────────────────────────────────────────
 
 const Value = union(enum) {

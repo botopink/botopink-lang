@@ -25,7 +25,7 @@ fn main() {
 {module, template_module}.
 {exports, [{shout, 1}, {main, 1}]}.
 {attributes, []}.
-{labels, 226}.
+{labels, 259}.
 
 {function, '-shout/1-fun-0-', 1, 38}.
   {label, 37}.
@@ -573,76 +573,91 @@ fn main() {
   {label, 135}.
     {func_info, {atom, template_module}, {atom, '-__bp_prim_at/2-fun-3-'}, 2}.
   {label, 136}.
-    {allocate, 7, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {x, 1}, {y, 3}}.
-    {move, {y, 2}, {x, 0}}.
-    {call_ext, 1, {extfunc, string, length, 1}}.
-    {move, {x, 0}, {y, 4}}.
-    {move, {y, 4}, {y, 0}}.
+    {allocate, 8, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}]}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {x, 1}, {y, 4}}.
+    {move, {y, 3}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {y, 0}}.
     {jump, {f, 140}}.
   {label, 140}.
-    {move, {y, 3}, {x, 0}}.
-    {move, {integer, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, '<', 2}}.
-    {move, {x, 0}, {y, 4}}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 142}, [{x, 0}, {atom, true}]}.
-    {move, {y, 3}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, '+', 2}}.
-    {move, {x, 0}, {y, 6}}.
-    {move, {y, 6}, {y, 5}}.
-    {jump, {f, 141}}.
+    {move, {y, 0}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, length, 1}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {y, 1}}.
+    {jump, {f, 142}}.
   {label, 142}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 143}, [{x, 0}, {atom, false}]}.
-    {move, {y, 3}, {y, 5}}.
-    {jump, {f, 141}}.
-  {label, 143}.
-    {move, {y, 4}, {x, 0}}.
-    {case_end, {x, 0}}.
-  {label, 141}.
-    {move, {y, 5}, {y, 1}}.
-    {jump, {f, 145}}.
-  {label, 145}.
-    {move, {y, 1}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, '>=', 2}}.
+    {call_ext, 2, {extfunc, erlang, '<', 2}}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 146}, [{x, 0}, {atom, true}]}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, '<', 2}}.
-    {move, {x, 0}, {y, 6}}.
-    {move, {y, 6}, {y, 4}}.
-    {jump, {f, 148}}.
-  {label, 146}.
-    {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 147}, [{x, 0}, {atom, false}]}.
-    {move, {atom, false}, {y, 4}}.
-    {jump, {f, 148}}.
-  {label, 147}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, badarg}, {y, 5}]}}.
-    {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 148}.
+    {test, is_eq_exact, {f, 144}, [{x, 0}, {atom, true}]}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 150}, [{x, 0}, {atom, true}]}.
+    {move, {y, 1}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, '+', 2}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {y, 6}}.
+    {jump, {f, 143}}.
+  {label, 144}.
+    {move, {y, 5}, {x, 0}}.
+    {test, is_eq_exact, {f, 145}, [{x, 0}, {atom, false}]}.
+    {move, {y, 4}, {y, 6}}.
+    {jump, {f, 143}}.
+  {label, 145}.
+    {move, {y, 5}, {x, 0}}.
+    {case_end, {x, 0}}.
+  {label, 143}.
+    {move, {y, 6}, {y, 2}}.
+    {jump, {f, 147}}.
+  {label, 147}.
+    {move, {y, 2}, {x, 0}}.
+    {move, {integer, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, '>=', 2}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_eq_exact, {f, 148}, [{x, 0}, {atom, true}]}.
     {move, {y, 2}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
-    {move, {integer, 1}, {x, 2}}.
-    {call_ext_last, 3, {extfunc, string, slice, 3}, 7}.
+    {call_ext, 2, {extfunc, erlang, '<', 2}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {y, 5}}.
+    {jump, {f, 150}}.
+  {label, 148}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_eq_exact, {f, 149}, [{x, 0}, {atom, false}]}.
+    {move, {atom, false}, {y, 5}}.
+    {jump, {f, 150}}.
+  {label, 149}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, badarg}, {y, 6}]}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
   {label, 150}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 151}, [{x, 0}, {atom, false}]}.
+    {move, {y, 5}, {x, 0}}.
+    {test, is_eq_exact, {f, 152}, [{x, 0}, {atom, true}]}.
+    {move, {y, 2}, {x, 0}}.
+    {move, {integer, 1}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, '+', 2}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, lists, nth, 2}}.
+    {move, {x, 0}, {y, 6}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 6}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {x, 0}}.
+    {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 8}.
+  {label, 152}.
+    {move, {y, 5}, {x, 0}}.
+    {test, is_eq_exact, {f, 153}, [{x, 0}, {atom, false}]}.
     {move, {atom, undefined}, {x, 0}}.
-    {deallocate, 7}.
+    {deallocate, 8}.
     return.
-  {label, 151}.
-    {move, {y, 4}, {x, 0}}.
+  {label, 153}.
+    {move, {y, 5}, {x, 0}}.
     {case_end, {x, 0}}.
 
 {function, '__bp_prim_at', 2, 18}.
@@ -696,17 +711,17 @@ fn main() {
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_list, {f, 154}, [{x, 0}]}.
-    {jump, {f, 155}}.
-  {label, 155}.
+    {test, is_list, {f, 156}, [{x, 0}]}.
+    {jump, {f, 157}}.
+  {label, 157}.
     {move, {y, 1}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext_last, 2, {extfunc, lists, member, 2}, 3}.
-  {label, 154}.
+  {label, 156}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_binary, {f, 156}, [{x, 0}]}.
-    {jump, {f, 157}}.
-  {label, 157}.
+    {test, is_binary, {f, 158}, [{x, 0}]}.
+    {jump, {f, 159}}.
+  {label, 159}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, string, find, 2}}.
@@ -718,7 +733,7 @@ fn main() {
     {move, {y, 2}, {x, 0}}.
     {deallocate, 3}.
     return.
-  {label, 156}.
+  {label, 158}.
     {test_heap, 5, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, bp_unsupported_method}, {literal, <<"contains">>}, {integer, 1}, {y, 0}]}}.
     {move, {x, 0}, {y, 2}}.
@@ -734,9 +749,9 @@ fn main() {
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_binary, {f, 160}, [{x, 0}]}.
-    {jump, {f, 161}}.
-  {label, 161}.
+    {test, is_binary, {f, 162}, [{x, 0}]}.
+    {jump, {f, 163}}.
+  {label, 163}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, string, prefix, 2}}.
@@ -748,27 +763,27 @@ fn main() {
     {move, {y, 2}, {x, 0}}.
     {deallocate, 3}.
     return.
-  {label, 160}.
+  {label, 162}.
     {test_heap, 5, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, bp_unsupported_method}, {literal, <<"startsWith">>}, {integer, 1}, {y, 0}]}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
     {call_ext_last, 1, {extfunc, erlang, error, 1}, 3}.
 
-{function, '--__bp_prim_indexOf/2-fun-4--fun-5-', 3, 171}.
-  {label, 170}.
+{function, '--__bp_prim_indexOf/2-fun-4--fun-5-', 3, 173}.
+  {label, 172}.
     {func_info, {atom, template_module}, {atom, '--__bp_prim_indexOf/2-fun-4--fun-5-'}, 3}.
-  {label, 171}.
+  {label, 173}.
     {allocate, 10, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}]}}.
     {move, {x, 0}, {y, 4}}.
     {move, {x, 1}, {y, 5}}.
     {move, {x, 2}, {y, 0}}.
     {test_heap, {alloc, [{words, 1}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 171}, 4, 0, {x, 0}, {list, [{y, 0}]}}.
+    {make_fun3, {f, 173}, 4, 0, {x, 0}, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_nonempty_list, {f, 173}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 175}, [{x, 0}]}.
     {get_list, {x, 0}, {y, 6}, {y, 7}}.
     {move, {y, 6}, {y, 2}}.
     {move, {y, 7}, {y, 3}}.
@@ -777,13 +792,13 @@ fn main() {
     {call_ext, 2, {extfunc, erlang, '=:=', 2}}.
     {move, {x, 0}, {y, 8}}.
     {move, {y, 8}, {x, 0}}.
-    {test, is_eq_exact, {f, 175}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 177}, [{x, 0}, {atom, true}]}.
     {move, {y, 4}, {x, 0}}.
     {deallocate, 10}.
     return.
-  {label, 175}.
+  {label, 177}.
     {move, {y, 8}, {x, 0}}.
-    {test, is_eq_exact, {f, 176}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 178}, [{x, 0}, {atom, false}]}.
     {move, {y, 4}, {x, 0}}.
     {move, {integer, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '+', 2}}.
@@ -791,37 +806,37 @@ fn main() {
     {move, {y, 9}, {x, 0}}.
     {move, {y, 3}, {x, 1}}.
     {move, {y, 0}, {x, 2}}.
-    {call_last, 3, {f, 171}, 10}.
-  {label, 176}.
+    {call_last, 3, {f, 173}, 10}.
+  {label, 178}.
     {move, {y, 8}, {x, 0}}.
     {case_end, {x, 0}}.
-  {label, 173}.
+  {label, 175}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 177}, [{x, 0}, nil]}.
+    {test, is_eq_exact, {f, 179}, [{x, 0}, nil]}.
     {move, {integer, -1}, {x, 0}}.
     {deallocate, 10}.
     return.
-  {label, 177}.
+  {label, 179}.
     {move, {y, 4}, {x, 0}}.
     {move, {y, 5}, {x, 1}}.
     {move, {y, 0}, {x, 2}}.
     {deallocate, 10}.
-    {jump, {f, 170}}.
+    {jump, {f, 172}}.
 
-{function, '-__bp_prim_indexOf/2-fun-4-', 2, 167}.
-  {label, 166}.
+{function, '-__bp_prim_indexOf/2-fun-4-', 2, 169}.
+  {label, 168}.
     {func_info, {atom, template_module}, {atom, '-__bp_prim_indexOf/2-fun-4-'}, 2}.
-  {label, 167}.
+  {label, 169}.
     {allocate, 4, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 1}}.
     {move, {x, 1}, {y, 2}}.
     {test_heap, {alloc, [{words, 1}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 171}, 4, 0, {x, 0}, {list, [{y, 2}]}}.
+    {make_fun3, {f, 173}, 4, 0, {x, 0}, {list, [{y, 2}]}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {y, 0}}.
-    {jump, {f, 179}}.
-  {label, 179}.
+    {jump, {f, 181}}.
+  {label, 181}.
     {move, {integer, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {move, {y, 0}, {x, 2}}.
@@ -829,33 +844,33 @@ fn main() {
     {deallocate, 4}.
     return.
 
-{function, '-__bp_prim_indexOf/2-fun-6-', 2, 183}.
-  {label, 182}.
+{function, '-__bp_prim_indexOf/2-fun-6-', 2, 185}.
+  {label, 184}.
     {func_info, {atom, template_module}, {atom, '-__bp_prim_indexOf/2-fun-6-'}, 2}.
-  {label, 183}.
+  {label, 185}.
     {allocate, 6, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
     {move, {x, 0}, {y, 1}}.
     {move, {x, 1}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_eq_exact, {f, 187}, [{x, 0}, {literal, <<"">>}]}.
+    {test, is_eq_exact, {f, 189}, [{x, 0}, {literal, <<"">>}]}.
     {move, {integer, 0}, {x, 0}}.
     {deallocate, 6}.
     return.
-  {label, 187}.
+  {label, 189}.
     {move, {y, 1}, {x, 0}}.
     {move, {y, 2}, {x, 1}}.
     {call_ext, 2, {extfunc, binary, match, 2}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.
-    {test, is_eq_exact, {f, 190}, [{x, 0}, {atom, nomatch}]}.
+    {test, is_eq_exact, {f, 192}, [{x, 0}, {atom, nomatch}]}.
     {move, {integer, -1}, {x, 0}}.
     {deallocate, 6}.
     return.
-  {label, 190}.
+  {label, 192}.
     {move, {y, 3}, {x, 0}}.
-    {test, is_tuple, {f, 191}, [{x, 0}]}.
-    {test, test_arity, {f, 191}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 193}, [{x, 0}]}.
+    {test, test_arity, {f, 193}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 4}}.
     {move, {y, 4}, {y, 0}}.
     {move, {y, 1}, {x, 0}}.
@@ -864,8 +879,11 @@ fn main() {
     {call_ext, 3, {extfunc, binary, part, 3}}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 5}, {x, 0}}.
-    {call_ext_last, 1, {extfunc, string, length, 1}, 6}.
-  {label, 191}.
+    {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {x, 0}}.
+    {call_ext_last, 1, {extfunc, erlang, length, 1}, 6}.
+  {label, 193}.
     {move, {y, 3}, {x, 0}}.
     {case_end, {x, 0}}.
 
@@ -878,11 +896,11 @@ fn main() {
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_list, {f, 164}, [{x, 0}]}.
-    {jump, {f, 165}}.
-  {label, 165}.
+    {test, is_list, {f, 166}, [{x, 0}]}.
+    {jump, {f, 167}}.
+  {label, 167}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 167}, 5, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 169}, 5, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -890,13 +908,13 @@ fn main() {
     {call_fun, 2}.
     {deallocate, 3}.
     return.
-  {label, 164}.
+  {label, 166}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_binary, {f, 180}, [{x, 0}]}.
-    {jump, {f, 181}}.
-  {label, 181}.
+    {test, is_binary, {f, 182}, [{x, 0}]}.
+    {jump, {f, 183}}.
+  {label, 183}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 183}, 6, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 185}, 6, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -904,45 +922,45 @@ fn main() {
     {call_fun, 2}.
     {deallocate, 3}.
     return.
-  {label, 180}.
+  {label, 182}.
     {test_heap, 5, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, bp_unsupported_method}, {literal, <<"indexOf">>}, {integer, 1}, {y, 0}]}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
     {call_ext_last, 1, {extfunc, erlang, error, 1}, 3}.
 
-{function, '-__bp_prim_join/2-fun-7-', 1, 197}.
-  {label, 196}.
+{function, '-__bp_prim_join/2-fun-7-', 1, 199}.
+  {label, 198}.
     {func_info, {atom, template_module}, {atom, '-__bp_prim_join/2-fun-7-'}, 1}.
-  {label, 197}.
+  {label, 199}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_binary, {f, 201}, [{x, 0}]}.
-    {jump, {f, 202}}.
-  {label, 202}.
-    {move, {y, 0}, {x, 0}}.
-    {deallocate, 2}.
-    return.
-  {label, 201}.
-    {move, {y, 0}, {x, 0}}.
-    {test, is_integer, {f, 203}, [{x, 0}]}.
+    {test, is_binary, {f, 203}, [{x, 0}]}.
     {jump, {f, 204}}.
   {label, 204}.
     {move, {y, 0}, {x, 0}}.
-    {call_ext_last, 1, {extfunc, erlang, integer_to_binary, 1}, 2}.
+    {deallocate, 2}.
+    return.
   {label, 203}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_list, {f, 205}, [{x, 0}]}.
+    {test, is_integer, {f, 205}, [{x, 0}]}.
     {jump, {f, 206}}.
   {label, 206}.
     {move, {y, 0}, {x, 0}}.
-    {deallocate, 2}.
-    return.
+    {call_ext_last, 1, {extfunc, erlang, integer_to_binary, 1}, 2}.
   {label, 205}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_list, {f, 207}, [{x, 0}]}.
     {jump, {f, 208}}.
   {label, 208}.
+    {move, {y, 0}, {x, 0}}.
+    {deallocate, 2}.
+    return.
+  {label, 207}.
+    {jump, {f, 210}}.
+  {label, 210}.
     {test_heap, 2, 0}.
     {put_list, {y, 0}, nil, {x, 0}}.
     {move, {x, 0}, {y, 1}}.
@@ -962,11 +980,11 @@ fn main() {
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_list, {f, 194}, [{x, 0}]}.
-    {jump, {f, 195}}.
-  {label, 195}.
+    {test, is_list, {f, 196}, [{x, 0}]}.
+    {jump, {f, 197}}.
+  {label, 197}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 197}, 7, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 199}, 7, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
@@ -978,7 +996,7 @@ fn main() {
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
     {call_ext_last, 1, {extfunc, erlang, iolist_to_binary, 1}, 3}.
-  {label, 194}.
+  {label, 196}.
     {test_heap, 5, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, bp_unsupported_method}, {literal, <<"join">>}, {integer, 1}, {y, 0}]}}.
     {move, {x, 0}, {y, 2}}.
@@ -999,7 +1017,7 @@ fn main() {
     {call_ext, 2, {extfunc, erlang, '=/=', 2}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.
-    {test, is_eq_exact, {f, 213}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 215}, [{x, 0}, {atom, true}]}.
     {move, {y, 1}, {x, 0}}.
     {move, {integer, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '+', 2}}.
@@ -1012,15 +1030,179 @@ fn main() {
     {move, {y, 4}, {x, 1}}.
     {move, {y, 5}, {x, 2}}.
     {call_ext_last, 3, {extfunc, lists, sublist, 3}, 6}.
-  {label, 213}.
+  {label, 215}.
     {move, {y, 3}, {x, 0}}.
-    {test, is_eq_exact, {f, 214}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 216}, [{x, 0}, {atom, false}]}.
     {move, {y, 1}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext_last, 2, {extfunc, lists, nthtail, 2}, 6}.
-  {label, 214}.
+  {label, 216}.
     {move, {y, 3}, {x, 0}}.
     {case_end, {x, 0}}.
+
+{function, '-string_slice/3-fun-8-', 3, 222}.
+  {label, 221}.
+    {func_info, {atom, template_module}, {atom, '-string_slice/3-fun-8-'}, 3}.
+  {label, 222}.
+    {allocate, 10, 3}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}]}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {x, 1}, {y, 5}}.
+    {move, {x, 2}, {y, 6}}.
+    {move, {y, 4}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {y, 0}}.
+    {jump, {f, 226}}.
+  {label, 226}.
+    {move, {y, 0}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, length, 1}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {y, 1}}.
+    {jump, {f, 228}}.
+  {label, 228}.
+    {move, {y, 5}, {x, 0}}.
+    {move, {integer, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, '<', 2}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 230}, [{x, 0}, {atom, true}]}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {y, 5}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, '+', 2}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
+    {move, {integer, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, max, 2}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 8}}.
+    {jump, {f, 229}}.
+  {label, 230}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 231}, [{x, 0}, {atom, false}]}.
+    {move, {y, 5}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, min, 2}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 8}}.
+    {jump, {f, 229}}.
+  {label, 231}.
+    {move, {y, 7}, {x, 0}}.
+    {case_end, {x, 0}}.
+  {label, 229}.
+    {move, {y, 8}, {y, 2}}.
+    {jump, {f, 233}}.
+  {label, 233}.
+    {move, {y, 6}, {x, 0}}.
+    {move, {integer, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, '<', 2}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 235}, [{x, 0}, {atom, true}]}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {y, 6}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, '+', 2}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
+    {move, {integer, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, max, 2}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 8}}.
+    {jump, {f, 234}}.
+  {label, 235}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 236}, [{x, 0}, {atom, false}]}.
+    {move, {y, 6}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, min, 2}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 8}}.
+    {jump, {f, 234}}.
+  {label, 236}.
+    {move, {y, 7}, {x, 0}}.
+    {case_end, {x, 0}}.
+  {label, 234}.
+    {move, {y, 8}, {y, 3}}.
+    {jump, {f, 238}}.
+  {label, 238}.
+    {move, {y, 2}, {x, 0}}.
+    {move, {integer, 1}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, '+', 2}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 3}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, '-', 2}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {x, 0}}.
+    {move, {integer, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, max, 2}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {y, 7}, {x, 1}}.
+    {move, {y, 8}, {x, 2}}.
+    {call_ext, 3, {extfunc, lists, sublist, 3}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {x, 0}}.
+    {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 10}.
+
+{function, '-string_slice/3-fun-9-', 2, 241}.
+  {label, 240}.
+    {func_info, {atom, template_module}, {atom, '-string_slice/3-fun-9-'}, 2}.
+  {label, 241}.
+    {allocate, 8, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}]}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {x, 1}, {y, 4}}.
+    {move, {y, 3}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {y, 0}}.
+    {jump, {f, 245}}.
+  {label, 245}.
+    {move, {y, 0}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, length, 1}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {y, 1}}.
+    {jump, {f, 247}}.
+  {label, 247}.
+    {move, {y, 4}, {x, 0}}.
+    {move, {integer, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, '<', 2}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {x, 0}}.
+    {test, is_eq_exact, {f, 249}, [{x, 0}, {atom, true}]}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {y, 4}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, '+', 2}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {x, 0}}.
+    {move, {integer, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, max, 2}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {y, 6}}.
+    {jump, {f, 248}}.
+  {label, 249}.
+    {move, {y, 5}, {x, 0}}.
+    {test, is_eq_exact, {f, 250}, [{x, 0}, {atom, false}]}.
+    {move, {y, 4}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, min, 2}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {y, 6}}.
+    {jump, {f, 248}}.
+  {label, 250}.
+    {move, {y, 5}, {x, 0}}.
+    {case_end, {x, 0}}.
+  {label, 248}.
+    {move, {y, 6}, {y, 2}}.
+    {jump, {f, 252}}.
+  {label, 252}.
+    {move, {y, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, lists, nthtail, 2}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {x, 0}}.
+    {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 8}.
 
 {function, string_slice, 3, 30}.
   {label, 29}.
@@ -1036,22 +1218,30 @@ fn main() {
     {call_ext, 2, {extfunc, erlang, '=/=', 2}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.
-    {test, is_eq_exact, {f, 218}, [{x, 0}, {atom, true}]}.
-    {move, {y, 2}, {x, 0}}.
+    {test, is_eq_exact, {f, 220}, [{x, 0}, {atom, true}]}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 222}, 8, 0, {x, 0}, {list, []}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, '-', 2}}.
+    {move, {y, 2}, {x, 2}}.
+    {move, {y, 4}, {x, 3}}.
+    {call_fun, 3}.
+    {deallocate, 5}.
+    return.
+  {label, 220}.
+    {move, {y, 3}, {x, 0}}.
+    {test, is_eq_exact, {f, 239}, [{x, 0}, {atom, false}]}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 241}, 9, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {move, {y, 4}, {x, 2}}.
-    {call_ext_last, 3, {extfunc, string, slice, 3}, 5}.
-  {label, 218}.
-    {move, {y, 3}, {x, 0}}.
-    {test, is_eq_exact, {f, 219}, [{x, 0}, {atom, false}]}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
-    {call_ext_last, 2, {extfunc, string, slice, 2}, 5}.
-  {label, 219}.
+    {call_fun, 2}.
+    {deallocate, 5}.
+    return.
+  {label, 239}.
     {move, {y, 3}, {x, 0}}.
     {case_end, {x, 0}}.
 
@@ -1063,11 +1253,11 @@ fn main() {
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}, {y, 13}, {y, 14}, {y, 15}, {y, 16}, {y, 17}, {y, 18}]}}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {x, 0}}.
-    {test, is_tuple, {f, 221}, [{x, 0}]}.
-    {test, test_arity, {f, 221}, [{x, 0}, 1]}.
+    {test, is_tuple, {f, 254}, [{x, 0}]}.
+    {test, test_arity, {f, 254}, [{x, 0}, 1]}.
     {get_tuple_element, {x, 0}, 0, {y, 7}}.
     {move, {y, 7}, {y, 0}}.
-    {'try', {y, 18}, {f, 222}}.
+    {'try', {y, 18}, {f, 255}}.
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 2}}.
     {move, {x, 0}, {y, 9}}.
@@ -1079,23 +1269,23 @@ fn main() {
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {y, 8}}.
     {try_end, {y, 18}}.
-    {jump, {f, 223}}.
-  {label, 222}.
+    {jump, {f, 256}}.
+  {label, 255}.
     {try_case, {y, 18}}.
     {move, {x, 0}, {y, 9}}.
     {move, {x, 1}, {y, 10}}.
     {move, {x, 2}, {y, 11}}.
     {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 225}, [{x, 0}, {atom, throw}]}.
+    {test, is_eq_exact, {f, 258}, [{x, 0}, {atom, throw}]}.
     {move, {y, 10}, {x, 0}}.
-    {test, is_tuple, {f, 225}, [{x, 0}]}.
-    {test, test_arity, {f, 225}, [{x, 0}, 4]}.
+    {test, is_tuple, {f, 258}, [{x, 0}]}.
+    {test, test_arity, {f, 258}, [{x, 0}, 4]}.
     {get_tuple_element, {x, 0}, 0, {y, 12}}.
     {get_tuple_element, {x, 0}, 1, {y, 13}}.
     {get_tuple_element, {x, 0}, 2, {y, 14}}.
     {get_tuple_element, {x, 0}, 3, {y, 15}}.
     {move, {y, 12}, {x, 0}}.
-    {test, is_eq_exact, {f, 225}, [{x, 0}, {atom, '__bp_template_fail'}]}.
+    {test, is_eq_exact, {f, 258}, [{x, 0}, {atom, '__bp_template_fail'}]}.
     {move, {y, 13}, {y, 1}}.
     {move, {y, 14}, {y, 2}}.
     {move, {y, 15}, {y, 3}}.
@@ -1112,8 +1302,8 @@ fn main() {
     {call_ext, 1, {extfunc, json, encode, 1}}.
     {move, {x, 0}, {y, 16}}.
     {move, {y, 16}, {y, 8}}.
-    {jump, {f, 224}}.
-  {label, 225}.
+    {jump, {f, 257}}.
+  {label, 258}.
     {move, {y, 9}, {y, 4}}.
     {move, {y, 10}, {y, 5}}.
     {test_heap, 3, 0}.
@@ -1129,13 +1319,13 @@ fn main() {
     {call_ext, 1, {extfunc, json, encode, 1}}.
     {move, {x, 0}, {y, 12}}.
     {move, {y, 12}, {y, 8}}.
-    {jump, {f, 224}}.
-  {label, 224}.
-  {label, 223}.
+    {jump, {f, 257}}.
+  {label, 257}.
+  {label, 256}.
     {move, {y, 8}, {x, 0}}.
     {deallocate, 19}.
     return.
-  {label, 221}.
+  {label, 254}.
     {move, {y, 6}, {x, 0}}.
     {deallocate, 19}.
     {jump, {f, 31}}.
@@ -1172,6 +1362,29 @@ fn main() {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
+const __bp_surrogate = /[\uD800-\uDFFF]/;
+const __bp_surrogate_k = new Array(64).fill("");
+const __bp_surrogate_v = new Array(64).fill(false);
+function __bp_has_surrogate(s) {
+    const h = s.length & 63;
+    if (__bp_surrogate_k[h] === s) { return __bp_surrogate_v[h]; }
+    const p = __bp_surrogate.test(s);
+    __bp_surrogate_k[h] = s;
+    __bp_surrogate_v[h] = p;
+    return p;
+}
+
+function __bp_str_count(s, u) {
+    let n = 0;
+    for (const c of s.substring(0, u)) { n += 1; }
+    return n;
+}
+
+function __bp_str_index_of(s, sub) {
+    const u = s.indexOf(sub);
+    return (u <= 0 || !__bp_has_surrogate(s)) ? u : __bp_str_count(s, u);
+}
+
 function __bp_array_at(xs, i) { return xs.at(i) ?? null; }
 
 function __bp_eq(a, b, d) {
@@ -1191,6 +1404,10 @@ function __bp_eq(a, b, d) {
 function __bp_show(v, s, top, a) {
     if ((typeof v === "string")) {
         a.push(top ? v : (("\"" + Array.from(v, (c) => ((c === "\"") || (c === "\\")) ? ("\\" + c) : (c === "\n") ? "\\n" : (c === "\r") ? "\\r" : (c === "\t") ? "\\t" : c).join("")) + "\""));
+        return "%s";
+    }
+    if ((typeof v === "bigint")) {
+        a.push(String(v));
         return "%s";
     }
     if (((typeof v === "number") && (s === "f"))) {
@@ -1250,33 +1467,33 @@ function __bp_print() {
 //   default fn parseFloat(...)
 String.prototype.slice = function(start, end) {
     const self = this.valueOf();
-    if ((end != null)) { return ((__s, __a, __e) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, start, end); } else { return ((__s, __a) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, start); }
+    if ((end != null)) { return ((__s, __a, __e) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); const __g = __e < 0 ? Math.max(__m + __e, 0) : Math.min(__e, __m); return Array.from({ length: Math.max(__g - __d, 0) }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, start, end); } else { return ((__s, __a) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); return Array.from({ length: __m - __d }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, start); }
 };
 String.prototype.chars = function() { return (Array.from(this.valueOf())); };
 String.prototype.lines = function() { return this.valueOf().split(/\r?\n/); };
 String.prototype.words = function() { return this.valueOf().split(/[ \t\n\r]+/).filter(__w => __w.length > 0); };
-String.prototype.charCodeAt = function(index) { return ((this.valueOf().codePointAt(index) ?? -1) | 0); };
+String.prototype.charCodeAt = function(index) { return ((__s, __i) => { if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = __i >= 0 ? Array.from(__s)[__i] : undefined; return __c === undefined ? -1 : __c.codePointAt(0); } return (__s.codePointAt(__i) ?? -1) | 0; })(this.valueOf(), index); };
 String.prototype.parseInt = function() {
     const self = this.valueOf();
     const signed = (self.startsWith("-") || self.startsWith("+"));
-    const digits = (() => { if (signed) { return ((__s, __a) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, 1); } else { return self; } })();
+    const digits = (() => { if (signed) { return ((__s, __a) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); return Array.from({ length: __m - __d }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, 1); } else { return self; } })();
     return (() => { if ((/^[0-9]+$/.test(digits))) { return ((__s) => { const __n = Number(__s); return Number.isSafeInteger(__n) ? { ok: __n + 0 } : { error: 'parseInt: "' + __s + '" is out of range' } })(self); } else { return ({ error: "parseInt: \"" + self + "\" is not an integer" }); } })();
 };
 String.prototype.parseFloat = function() {
     const self = this.valueOf();
     const signed = (self.startsWith("-") || self.startsWith("+"));
     const start = (() => { if (signed) { return 1; } else { return 0; } })();
-    const lowerAt = self.indexOf("e");
-    const exponentAt = (() => { if ((lowerAt < 0)) { return self.indexOf("E"); } else { return lowerAt; } })();
-    const mantissa = (() => { if ((exponentAt < 0)) { return ((__s, __a) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, start); } else { return ((__s, __a, __e) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, start, exponentAt); } })();
-    const pointAt = self.indexOf(".");
+    const lowerAt = __bp_str_index_of(self, "e");
+    const exponentAt = (() => { if ((lowerAt < 0)) { return __bp_str_index_of(self, "E"); } else { return lowerAt; } })();
+    const mantissa = (() => { if ((exponentAt < 0)) { return ((__s, __a) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); return Array.from({ length: __m - __d }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, start); } else { return ((__s, __a, __e) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); const __g = __e < 0 ? Math.max(__m + __e, 0) : Math.min(__e, __m); return Array.from({ length: Math.max(__g - __d, 0) }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, start, exponentAt); } })();
+    const pointAt = __bp_str_index_of(self, ".");
     const pointed = ((pointAt >= 0) && (((exponentAt < 0) || (pointAt < exponentAt))));
-    const whole = (() => { if (pointed) { return ((__s, __a, __e) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, start, pointAt); } else { return mantissa; } })();
-    const fraction = (() => { if ((pointed === false)) { return "0"; } else { return (() => { if ((exponentAt < 0)) { return ((__s, __a) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, (pointAt + 1)); } else { return ((__s, __a, __e) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, (pointAt + 1), exponentAt); } })(); } })();
-    const exponent = (() => { if ((exponentAt < 0)) { return "0"; } else { return ((__s, __a) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, (exponentAt + 1)); } })();
-    const exponentMark = (() => { if ((exponentAt < 0)) { return ""; } else { return ((__s, __a, __e) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, (exponentAt + 1), (exponentAt + 2)); } })();
+    const whole = (() => { if (pointed) { return ((__s, __a, __e) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); const __g = __e < 0 ? Math.max(__m + __e, 0) : Math.min(__e, __m); return Array.from({ length: Math.max(__g - __d, 0) }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, start, pointAt); } else { return mantissa; } })();
+    const fraction = (() => { if ((pointed === false)) { return "0"; } else { return (() => { if ((exponentAt < 0)) { return ((__s, __a) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); return Array.from({ length: __m - __d }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, (pointAt + 1)); } else { return ((__s, __a, __e) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); const __g = __e < 0 ? Math.max(__m + __e, 0) : Math.min(__e, __m); return Array.from({ length: Math.max(__g - __d, 0) }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, (pointAt + 1), exponentAt); } })(); } })();
+    const exponent = (() => { if ((exponentAt < 0)) { return "0"; } else { return ((__s, __a) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); return Array.from({ length: __m - __d }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, (exponentAt + 1)); } })();
+    const exponentMark = (() => { if ((exponentAt < 0)) { return ""; } else { return ((__s, __a, __e) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); const __g = __e < 0 ? Math.max(__m + __e, 0) : Math.min(__e, __m); return Array.from({ length: Math.max(__g - __d, 0) }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, (exponentAt + 1), (exponentAt + 2)); } })();
     const exponentSigned = ((exponentMark === "-") || (exponentMark === "+"));
-    const exponentDigits = (() => { if (exponentSigned) { return ((__s, __a) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, (exponentAt + 2)); } else { return exponent; } })();
+    const exponentDigits = (() => { if (exponentSigned) { return ((__s, __a) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); return Array.from({ length: __m - __d }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, (exponentAt + 2)); } else { return exponent; } })();
     const wellFormed = (((/^[0-9]+$/.test(whole)) && (/^[0-9]+$/.test(fraction))) && (/^[0-9]+$/.test(exponentDigits)));
     return (() => { if (wellFormed) { return ((__t, __w, __f, __x) => { const __n = Number((__t.startsWith('-') ? '-' : '') + __w + '.' + __f + 'e' + __x); return Number.isFinite(__n) ? { ok: __n } : { error: 'parseFloat: "' + __t + '" overflows f64' } })(self, whole, fraction, exponent); } else { return ({ error: "parseFloat: \"" + self + "\" is not a number" }); } })();
 };

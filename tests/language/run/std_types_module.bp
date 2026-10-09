@@ -1,0 +1,8 @@
+//// Decision 307 — std declares `Type` in `types.bp` and `root.bp` exports
+//// the module: `import {types.Type} from "std"` resolves on every target.
+
+import {types.Type} from "std";
+
+pub fn main() {
+    @print("types");
+}

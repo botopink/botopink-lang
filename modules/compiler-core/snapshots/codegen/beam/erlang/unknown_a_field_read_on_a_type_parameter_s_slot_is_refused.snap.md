@@ -41,7 +41,7 @@ main() ->
     '__bp_print'([innerLength(S)]).
 
 '__bp_len'(X, _) when erlang:is_list(X) -> erlang:length(X);
-'__bp_len'(X, _) when erlang:is_binary(X) -> string:length(X);
+'__bp_len'(X, _) when erlang:is_binary(X) -> erlang:length(unicode:characters_to_list(X));
 '__bp_len'(X, Field) -> maps:get(Field, X).
 
 '__bp_print'(Values) ->

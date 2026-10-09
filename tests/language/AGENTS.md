@@ -319,7 +319,10 @@ one declaration reached twice, not decision 170's two types of one name), on all
 (a module whose string literal only spells `@TypeInfo.all` is no reader: the entry point imports it and
 catalogues its tagged function, on all four targets), and four `reject/` cells
 where the query is written: `typeinfo_all_mixed`, `typeinfo_all_needs_member`,
-`typeinfo_all_not_decorator` and `typeinfo_all_arguments`; decision 235's list form adds
+`typeinfo_all_with_ordinary_fn` and `typeinfo_all_arguments` (decision 268: `with:` is declared
+`Decorator | Decorator[]`, so an ordinary function — `typeinfo_all_with_ordinary_fn` — and a literal —
+`typeinfo_all_with_number` — are the ordinary type mismatch at the argument; `run/typeinfo_all_decorator_argument`
+accepts a decorator with arguments, a single decorator and a list of them); decision 235's list form adds
 `run/typeinfo_all_list` (two decorators in one `with:`, declaration order kept, a type carrying two
 of them answered once with both decorators' meta) and `reject/typeinfo_all_list_twice`. Decision 248
 names the one reflection builtin `@typeInfo` (the structural `TypeInfo` answer of a bare
@@ -344,7 +347,10 @@ by `is fn() -> i32` in two sibling `for` bodies, a reassigned `var f`, a second 
 on all four targets (erlang applied the first binding's `V` where the second was `V@1`).
 Decision 252 (every builtin declared, a call held to its declaration) adds
 `reject/builtin_arguments` — `@panic` given a second argument its declaration does not have,
-`builtin-arguments` at the call.
+`builtin-arguments` at the call. Decision 322 (`is` is only an operator) adds
+`reject/hand_written_is_builtin` — `@is(1)` written by hand, `unknown-builtin` at the `@`.
+Decision 307 adds `run/std_types_module` — `import {types.Type} from "std"` resolves on all four
+targets (std's `types.bp`, exported by `root.bp`).
 C-03's beam half adds `run/std_template_host_fns_across_modules` — std host functions whose
 `@External.Erlang` body is a template (`fs.exists`, `fs.readText`, `os.eol`, `process.platform`,
 `encoding.hexEncode`, `hash.sha256`, `json.quote`, `regex.matches`) called from the program's
@@ -949,6 +955,17 @@ six values on every target. The second was an erlang-only `run/` cell the emitte
 expects an enum is that enum's (`run/variant_leading_dot_expected.bp`), and one whose position
 expects nothing is refused naming both enums (`reject/variant_name_ambiguous.bp`).
 
+`modules/variant_positional_payload_same_name` — two modules each declare a payload variant `Item`
+with a different field and a third matches both positionally (commonJS printed `null`; beam bound
+the whole value, `03-beam`'s row).
+
+`run/variant_payload_wildcard_and_nested` — `Rect(w, _)`, `Rect(_, h)`, `Circle(_)` and a variant
+nested in another's payload (`Two(Rect(w, _), _)`, `Two(Circle(r), Rect(_, h))`) in one module, on
+all four targets (wasm bound `w` to 0 and answered the nested arms wrong at exit 0, `05-wasm`'s rows).
+`run/unsigned_compare_and_divide` — `u32` above 2^31 and `u64` above 2^63 compared and divided, on
+all four targets (wasm read a `u64` signed, decision 319); `u64`'s `%` past 2^53 is
+`codegen/tests/wat.zig`'s, since commonJS aborts it (`04-js`'s step 9).
+
 ### `std_default_fn_in_a_std_module`
 
 Two cells of 1.0.10-beta's `00 · 02-erlang` (`fix/std-slice-shim`), and the reason they are a group
@@ -1032,13 +1049,24 @@ wasm by a `.wasm.expect`, each a value wasm has no reader for yet: `run/optional
 `front/int-overflow` (decision 264: an integer result outside its type aborts on every target) adds
 eight abort cells, each `.exit` plus `.<target>.stderr` naming `integer overflow: <op> on <type> at
 src/main.bp:<L:C>` on commonJS, erlang and beam: `run/int_overflow_add_i32`, `run/int_overflow_mul_i64`
-(past `2^63 − 1`, so commonJS's ±(2^53 − 1) bound aborts at the same operator),
+(past `2^63 − 1`; commonJS reaches the bound through `BigInt`, decision 319),
 `run/int_overflow_negate_i32`, `run/int_overflow_plus_assign`, `run/int_division_min_by_minus_one`,
 `run/int_overflow_sub_u32`, `run/int_overflow_add_i8` and `run/int_division_by_zero` (commonJS's
 `integer division by zero`; erlang and beam raise `badarith`, wasm traps) — and
 `run/int_arith_at_bounds`, every type's bound reached by arithmetic and printed, never an abort. wasm
 traps with no text, so its half is `.exit` alone; `u32` and the narrower types check their own range
 there too (`wat.zig` `emitRangeCheck`).
+
+`04-js` steps 9 and 10 (decision 319: `i64` / `u64` hold their full range on commonJS too, a number
+below 2^53 and a `BigInt` beyond; decision 320: a string index counts codepoints there) add
+`run/i64_full_range` (past 2^53 both ways, `2^63 − 1`, `−2^63`, `/` `%` unary `-` `+=` and `==` across
+the edge, then a sum past the top that aborts), `run/int_overflow_sub_i64_min`,
+`run/int_overflow_add_u64_max` (the `u64` top, `%` and `/` past 2^53, a sum past the top; red on wasm,
+which prints the top as `-1` and traps on `18446744073709551614ul + 1ul`), `run/i64_dict_key_across_safe_edge`
+(a `Dict` and a `Set` keyed across 2^53; wasm refuses the `i64` element, `.wasm.expect`) and
+`run/string_codepoint_slice_and_code` (a negative `slice` bound, `s[-2]`, `s[4..]` and `charCodeAt`
+over `"a👍bX👍c"`); `run/wide_literal_past_js_safe_integer` lost its `.commonJS.expect` and answers
+on the four targets.
 
 `front/block-backends` (decision 2: an `@block`'s `return` is the block's value) adds
 `run/block_return_is_block_value` — `val x = @block { return 3; }`, a branch's `return`, a string,
@@ -1109,7 +1137,7 @@ program on a host binding —
 
 ```
 `f` has no `#[@External.<Target>(…)]` for the <t> backend
-std-unsupported-on-target: std/<m> has no `@external` for target '<t>'
+std-unsupported-on-target: std/<m> has no `#[@External.<Target>]` for target '<t>'
 ```
 
 — the one reason a program structurally has no row on a target. A target the build accepts, or

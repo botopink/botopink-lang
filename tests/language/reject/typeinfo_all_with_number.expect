@@ -1,0 +1,2 @@
+type mismatch: expected Decorator | Decorator[], got i32
+6:32

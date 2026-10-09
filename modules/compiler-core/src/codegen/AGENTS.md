@@ -927,7 +927,8 @@ codegen/
   sequences in the shape `'__bp_len'/2` and the `'__bp_prim_<m>'` shims already
   use: a list and a tuple by position (`undefined` outside the range — what
   `Array.at` answers, and what commonJS's `xs[0]` answers), a string by
-  **character**, not by byte (`string:slice/3` is UTF-8 aware), and anything else
+  **codepoint**, not by byte nor by grapheme cluster (decision 320: its codepoint
+  list, sliced by the list clauses and re-encoded), and anything else
   raising `{bp_unsupported_index, Recv, I}`. The range is read as two bounds
   rather than lowered as an expression — the range lowering materialises
   `lists:seq/2`, a whole list of indices, where a slice wants `From` and `To` —
@@ -1186,8 +1187,11 @@ codegen/
   a discarded statement of the body) throws `{'__bp_block', V}` to the block's own guard
   (`guardBlockReturn`), never `'__bp_try'` to the function's — `@block { if (x == 2) { return
   100; } return x; }` inside a `for` answered from the enclosing function (`run/block_return_is_block_value`).
-  A lambda resets `block_guard`. Still open: an `@block` that reassigns an enclosing `var`
-  (`acc = acc + 5;` in the body) reads the new version outside the fun, unbound (`erlc` refuses).
+  A lambda resets `block_guard`. A statement `@block` with no `return` of its own that reassigns
+  an enclosing `var` (`acc = acc + 5;`) answers the reassigned variables and the statement rebinds
+  them (`mutatingBlockExpr`: `Acc@2 = (fun() -> Acc@1 = …, Acc@1 end)()`;
+  `run/block_reassigns_enclosing_var`). Still open: the same block with a `return` in it, or in
+  value position, reads the new version outside the fun, unbound (`erlc` refuses).
 - **Mutation through branches and loops** (`mutatingExpr`): a statement-level
   `if` / `for (xs) { x -> … }` / `xs.forEach({ x -> … })` that reassigns variables
   bound before it (looking through nested `if`/`loop`/`forEach`) returns the new
@@ -1976,14 +1980,18 @@ codegen/
   the **receiver** is told apart by its runtime tag inside the helper, since the
   checker's half of decision 30 is `01-checker`'s and beam has no type at the
   call site. `'__bp_index'(Recv, Idx)`: a map → `maps:get(Idx, Recv, undefined)`,
-  a binary → `string:slice(Recv, Idx, 1)`, a tuple → `element(Idx + 1, Recv)`,
+  a binary → its one codepoint (`unicode:characters_to_list/1`, `lists:sublist/3`,
+  `unicode:characters_to_binary/1` — decision 320), a tuple → `element(Idx + 1, Recv)`,
   anything else → the bounds-checked `'-bp_at-'/2` `xs.at(i)` already uses, so
   an out-of-range index answers `undefined` instead of raising (a negative one
   counts from the end, decision 139).
   `'__bp_slice'(Recv, Start, End)` is half-open like every other `..`, with
   `End` the atom `infinity` for `xs[0..]` (the convention `lowerRange` uses): a
-  binary → `string:slice/2,3`, anything else → `lists:sublist/3`, both of which
-  clamp. Measured: `10 · 30 · undefined · e · a · [10,20] · [20,30] · el · llo`.
+  binary → its codepoint list through `lists:sublist/3`, re-encoded
+  (`writeCodepointSublist`; never `string:slice/2,3`, whose unit is the grapheme
+  cluster — decision 320), anything else → `lists:sublist/3`, which clamps. A
+  string's `.length` is `length(unicode:characters_to_list(S))` on both erlang
+  backends. Measured: `10 · 30 · undefined · e · a · [10,20] · [20,30] · el · llo`.
 - **`case` arms** (`armBlock`, `lowerArmBody`, `emitArmTail`, `bindArmParam`):
   decision 8 §5 spells an arm `Pattern { body }`, and the parser reads that
   block as a lambda (`ast.Expr.function`, `.lambda` syntax, at most one
@@ -2674,7 +2682,13 @@ first three are now enforced by the model, not by discipline:
   so the tag is always the first word. `Ok(v)`/`Err(e)` read a `@Result`'s
   `[tag, payload]`. A bare name that is a variant of some enum (`Lt ->`) is a
   tag test, not a binding. Payload bindings take the variant field's type (a
-  float field's slot holds its `f64` cell). List and multi-subject patterns have no test
+  float field's slot holds its `f64` cell). A payload holding a `_` or a nested
+  pattern (`Rect(w, _)`, `Two(Rect(w, _), r)`) tests its nested elements only
+  once the tag held, `and`ed into the tag's test, each from its slot's own
+  local (`payloadFieldLocal`, carrying the field's enum for a bare variant
+  name), and binds each plain name from its slot (`bindPayloadName`) and each
+  nested pattern from that local; a written label picks the slot
+  (`payloadSlot`). List and multi-subject patterns have no test
   yet and run their arm.
 - **A pattern binding that shadows a local of another type** (`Square(s)`
   inside `fn area(s: Shape)`) is stored in a fresh `s__<n>` local; the arm's
@@ -2989,22 +3003,25 @@ operator's result type under its operator's loc (`env.divisions` →
 `InstanceLowering.division`, an `ArithKind`; a `+=` under its binding's loc), so
 a backend checks exactly the operators whose type is a resolved integer type —
 a float, a string `+` and an operator of a generic `T` (never resolved at
-inference) are not checked. `ArithKind.range` is the type's range (`isize` /
-`usize` are `i64` / `u64`), `rangeExactDouble` the same clamped to
-±(2^53 − 1) for commonJS. A literal operand of unary `-` is a constant and not
+inference) are not checked. `ArithKind.range` is the type's range on every
+target (`isize` / `usize` are `i64` / `u64`; commonJS holds the 64-bit four as a
+number or a `BigInt`, decision 319). A literal operand of unary `-` is a constant and not
 checked. The abort's text is one on the three backends:
 `integer overflow: <op> on <type> at <file>:<line>:<col>`.
 
 | Backend | The check | Abort |
 |---|---|---|
-| commonJS | `__bp_int(<raw>, lo, hi, "<op> on <type> at <loc>")` around the JS operation (`intChecked`, `js_prelude` `int_check`); `/` is `Math.trunc(a / b)` inside it and a non-finite value (`/` or `%` by zero) is `integer division by zero` | `throw new Error(…)` |
+| commonJS | `i8` … `u32`: `__bp_int(<raw>, lo, hi, "<op> on <type> at <loc>")` around the JS operation (`intChecked`, `js_prelude` `int_check`); `/` is `Math.trunc(a / b)` inside it and a non-finite value (`/` or `%` by zero) is `integer division by zero`. `i64`, `isize`, `u64`, `usize` (decision 319): `__bp_wadd` / `wsub` / `wmul` / `wdiv` / `wmod` / `wneg(<operands>, u, "<what>")` (`wideOp`) — two numbers whose result is a safe integer answer it, anything else is computed in `BigInt` and `__bp_wnorm` aborts past the type's own bounds and answers the canonical form (a number within ±(2^53 − 1), a `BigInt` beyond); a literal past ±(2^53 − 1) is written `…n` (`numberLiteral`) | `throw new Error(…)` |
 | erlang | `'__bp_int'(<raw>, Lo, Hi, <<"integer overflow: …">>)` (`intChecked`, `int_helper_form`, inlined by `-compile({inline,['__bp_int'/4]})`); not around `rem`, which never leaves its type and raises `badarith` on `0` | `erlang:error({integer_overflow, Text})` |
 | beam | after the `gc_bif`, two `is_ge` tests against the type's ends and an inline fail block (`emitIntCheck`); not after `rem` | `erlang:error({integer_overflow, Text})`, the erlang backend's term |
 
 What it cost a tight `i32` loop (`acc = (acc + i * 3 - i % 7) % 1000003`,
 2·10^8 iterations, best of three, exec only): commonJS 764 → 1026 ms (+34 %),
 erlang 2065 → 2613 ms (+27 %; +160 % before the helper was inlined), beam
-1211 → 1823 ms (+50 %). No flag turns it off (decision 67). Not checked: a
+1211 → 1823 ms (+50 %). The same loop over `i64` on commonJS, decision 319's
+hybrid against the ±(2^53 − 1) `__bp_int` build it replaced (values below 2^53,
+best of three): 995 → 687 ms — the number fast path is cheaper than the
+range check it replaced. No flag turns it off (decision 67). Not checked: a
 module `var` under `#[@BeamMemory.Ets]` whose `+=` is the host's atomic
 counter (`ets:update_counter`). Division by zero keeps erlang's and beam's
 `badarith`. Cells: `tests/language/AGENTS.md` § The sidecars of a `run/` cell.

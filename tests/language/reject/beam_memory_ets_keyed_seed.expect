@@ -1,2 +1,2 @@
-a `keyed = true` var is re-seeded one row per entry whenever its table is re-created — `counts`'s initialiser must be `Dict.empty()` or `Dict.ofEntries([…])` of literal entries
+a `keyed: true` var is re-seeded one row per entry whenever its table is re-created — `counts`'s initialiser must be `Dict.empty()` or `Dict.ofEntries([…])` of literal entries
 9:46

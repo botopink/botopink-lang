@@ -13,7 +13,7 @@ fn main() {
 
 main() ->
     S = <<"hi ", "there">>,
-    '__bp_print'([string:length(S)]).
+    '__bp_print'([erlang:length(unicode:characters_to_list(S))]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).

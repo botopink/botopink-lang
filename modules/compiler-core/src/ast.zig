@@ -2171,8 +2171,10 @@ pub const union_type_name = "|";
 /// expression into `@is(x)` with the tested type on the node, since a type is
 /// not an expression and no AST union here may gain a variant.
 ///
-/// `is` is a keyword, so no user function is called `is` and no source can write
-/// this call by hand.
+/// `is` is a keyword, so no user function is called `is`. A source can write
+/// `@is(…)` by hand, and that call carries no `isType`: inference refuses it as
+/// `unknown-builtin` (decision 322 — `is` is only an operator, and
+/// `builtins.d.bp` declares no `is`).
 ///
 /// **What inference has to do with it** (the checker half of N21): type the call
 /// `bool`, test the *value* by §4.1 (a number by range, converting inside the

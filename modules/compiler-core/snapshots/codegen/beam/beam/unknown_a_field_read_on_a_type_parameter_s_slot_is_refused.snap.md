@@ -131,7 +131,11 @@ fn main() {
     return.
   {label, 19}.
     {test, is_binary, {f, 20}, [{x, 0}]}.
-    {call_ext_only, 1, {extfunc, string, length, 1}}.
+    {allocate, 0, 1}.
+    {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
+    {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
+    {deallocate, 0}.
+    return.
   {label, 20}.
     {move, {atom, undefined}, {x, 0}}.
     return.

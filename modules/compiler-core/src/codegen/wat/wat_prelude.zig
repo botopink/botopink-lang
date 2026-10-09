@@ -44,6 +44,8 @@ pub fn items(g: ast.HelperGroup) []const ast.Item {
         .print_opt_f64 => &.{ .{ .func = print_opt_f64_raw }, .{ .func = print_opt_f64 } },
         .print_i64 => &.{ .{ .func = print_i64_raw }, .{ .func = print_i64 } },
         .int_chk => &int_chk_items,
+        .print_u64 => &.{ .{ .func = print_u64_raw }, .{ .func = print_u64 } },
+        .u64_chk => &.{ .{ .func = u64_add_chk }, .{ .func = u64_sub_chk }, .{ .func = u64_mul_chk } },
         .print_opt_i64 => &.{ .{ .func = print_opt_i64_raw }, .{ .func = print_opt_i64 } },
         .print_opt_tagged => &.{ .{ .func = print_opt_tagged_raw }, .{ .func = print_opt_tagged } },
         .unknown => &.{ .{ .func = unknown_kind }, .{ .func = unknown_int_in }, .{ .func = unknown_as_i32 }, .{ .func = unknown_as_f64 }, .{ .func = unknown_eq } },
@@ -2328,6 +2330,49 @@ const i64_to_str = typedFunc("__i64_to_str", &.{p64("v")}, .i32, i32s(&.{ "n", "
     c32(4),          op("add"),         call("__dtoa_ws"),
     c32(dtoa_text),  op("add"),         get("n"),
     copy,            get("p"),
+});
+
+// ── `u64` / `usize`: the carrier's 64 bits, unsigned (decision 319) ──────────
+//
+// A `u64` lives in an `i64`, and every value past `2^63 − 1` has the sign bit
+// set: read as signed it printed `-8446744073709551616` for `10^19` at exit 0,
+// and `10^19 - 3·10^18` trapped in `$__i64_sub_chk`. Its digits, its checked
+// `+ - *` and (in `wat.zig`) its `/ % < > <= >=` read the bits unsigned.
+
+/// The `u64` `v` as decimal text at `dtoa_text`, its length answered.
+const u64_fmt = typedFunc("__u64_fmt", &.{p64("v")}, .i32, i32s(&.{"w"}), &.{
+    call("__dtoa_ws"), tee("w"),  c32(dtoa_text),    op("add"),
+    get("v"),          c32(1),    call("__fmt_u64"), get("w"),
+    c32(dtoa_text),    op("add"), op("sub"),
+});
+
+const print_u64_raw = typedFunc("__print_u64_raw", &.{p64("v")}, null, i32s(&.{"n"}), &.{
+    get("v"),       call("__u64_fmt"), set("n"), call("__dtoa_ws"),
+    c32(dtoa_text), op("add"),         get("n"), call("__write_bytes"),
+});
+const print_u64 = typedFunc("__print_u64", &.{p64("v")}, null, &.{}, &.{ get("v"), call("__print_u64_raw"), call("__print_nl") });
+
+/// A `u64` as a fresh string — `"n" + v`, `v.toString()`.
+const u64_to_str = typedFunc("__u64_to_str", &.{p64("v")}, .i32, i32s(&.{ "n", "p" }), &.{
+    get("v"),        call("__u64_fmt"), set("n"),
+    get("n"),        c32(4),            op("add"),
+    call("__alloc"), set("p"),          get("p"),
+    get("n"),        store(0),          get("p"),
+    c32(4),          op("add"),         call("__dtoa_ws"),
+    c32(dtoa_text),  op("add"),         get("n"),
+    copy,            get("p"),
+});
+
+const u64_add_chk = typedFunc("__u64_add_chk", &.{ p64("a"), p64("b") }, .i64, &.{l64("r")}, &.{
+    get("a"), get("b"), op64("add"), tee("r"), get("a"), op64("lt_u"), when(&.{.@"unreachable"}), get("r"),
+});
+const u64_sub_chk = typedFunc("__u64_sub_chk", &.{ p64("a"), p64("b") }, .i64, &.{}, &.{
+    get("a"), get("b"), op64("lt_u"), when(&.{.@"unreachable"}), get("a"), get("b"), op64("sub"),
+});
+const u64_mul_chk = typedFunc("__u64_mul_chk", &.{ p64("a"), p64("b") }, .i64, &.{l64("r")}, &.{
+    get("a"), get("b"),    op64("mul"), set("r"),
+    get("a"), op64("eqz"), op("eqz"),   when(&.{ get("r"), get("a"), op64("div_u"), get("b"), op64("ne"), when(&.{.@"unreachable"}) }),
+    get("r"),
 });
 
 /// An `i64` in a 4-byte word slot — a record field, a `?i64` — is the address

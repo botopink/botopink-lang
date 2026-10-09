@@ -532,6 +532,16 @@ pub const HelperGroup = enum {
     /// so a module that never asks for one renders as before.
     i32_range_chk,
     i64_range_chk,
+    /// Decision 319 — a `u64` / `usize` is `0 … 2^64 − 1` in its `i64`
+    /// carrier: `$__u64_fmt(v)` writes the carrier's bits as unsigned
+    /// digits, `$__print_u64` (+`_raw`) and `$__u64_to_str(v)` print and
+    /// stringify through it, and `$__u64_{add,sub,mul}_chk` trap where the
+    /// unsigned result leaves the range. Groups of their own, appended, so a
+    /// module that never asks for one renders as before.
+    u64_fmt,
+    print_u64,
+    u64_to_str,
+    u64_chk,
 
     /// The groups `g`'s functions call into.
     pub fn deps(g: HelperGroup) []const HelperGroup {
@@ -581,6 +591,9 @@ pub const HelperGroup = enum {
             .wasi_seed_u32 => &.{.wasi_seed_state},
             .wasi_seeded_f64 => &.{ .wasi_seed_state, .wasi_random_f64 },
             .str_from_cp => &.{.alloc},
+            .u64_fmt => &.{.dtoa},
+            .print_u64 => &.{ .print, .u64_fmt },
+            .u64_to_str => &.{ .alloc, .u64_fmt },
             else => &.{},
         };
     }
@@ -705,6 +718,12 @@ pub const Helper = enum {
     i32_range_chk,
     i64_range_chk,
     str_from_cp,
+    print_u64,
+    print_u64_raw,
+    u64_to_str,
+    u64_add_chk,
+    u64_sub_chk,
+    u64_mul_chk,
 
     pub fn symbol(h: Helper) []const u8 {
         return switch (h) {
@@ -727,6 +746,8 @@ pub const Helper = enum {
             .print_i64, .print_i64_raw => .print_i64,
             .print_opt_i64, .print_opt_i64_raw => .print_opt_i64,
             .i32_add_chk, .i32_sub_chk, .i32_mul_chk, .i64_add_chk, .i64_sub_chk, .i64_mul_chk => .int_chk,
+            .print_u64, .print_u64_raw => .print_u64,
+            .u64_add_chk, .u64_sub_chk, .u64_mul_chk => .u64_chk,
             .print_tagged_raw, .print_tagged => .print_shaped,
             .print_opt_tagged, .print_opt_tagged_raw => .print_opt_tagged,
             .unknown_kind, .unknown_int_in, .unknown_as_i32, .unknown_as_f64, .unknown_eq => .unknown,

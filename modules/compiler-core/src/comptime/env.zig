@@ -447,9 +447,10 @@ pub const ArithKind = enum {
         return k != .float;
     }
 
-    /// The type's inclusive range on a target whose integers are exact to
-    /// 64 bits (erlang, beam). `isize` / `usize` are `i64` / `u64`, as the
-    /// `is` test reads them on every target. Null for `.float`.
+    /// The type's inclusive range, on every target (commonJS holds the 64-bit
+    /// four as a number or a `BigInt`, decision 319). `isize` / `usize` are
+    /// `i64` / `u64`, as the `is` test reads them on every target. Null for
+    /// `.float`.
     pub fn range(k: ArithKind) ?struct { lo: i128, hi: i128 } {
         return switch (k) {
             .float => null,
@@ -462,15 +463,6 @@ pub const ArithKind = enum {
             .i64, .isize => .{ .lo = std.math.minInt(i64), .hi = std.math.maxInt(i64) },
             .u64, .usize => .{ .lo = 0, .hi = std.math.maxInt(u64) },
         };
-    }
-
-    /// The range commonJS can hold exactly: a JS number counts integers
-    /// exactly to ±(2^53 − 1) (docs.md § Numbers), so a 64-bit type is that
-    /// range there — a result past it aborts, never a rounded value.
-    pub fn rangeExactDouble(k: ArithKind) ?struct { lo: i128, hi: i128 } {
-        const r = k.range() orelse return null;
-        const cap: i128 = (1 << 53) - 1;
-        return .{ .lo = @max(r.lo, -cap), .hi = @min(r.hi, cap) };
     }
 };
 

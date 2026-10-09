@@ -1,2 +1,2 @@
-std-unsupported-on-target: std/erlang.nodes has no `@external` for target 'node'
+std-unsupported-on-target: std/erlang.nodes has no `#[@External.Node]` for target 'commonJS'
 11:19

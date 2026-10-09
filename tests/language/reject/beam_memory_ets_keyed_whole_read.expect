@@ -1,2 +1,2 @@
-`counts` is a `keyed = true` var: it is read one row at a time, as `counts.at(key)`
+`counts` is a `keyed: true` var: it is read one row at a time, as `counts.at(key)`
 10:12

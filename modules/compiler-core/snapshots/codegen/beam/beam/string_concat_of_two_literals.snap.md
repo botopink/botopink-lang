@@ -38,7 +38,8 @@ fn main() {
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {call_ext, 1, {extfunc, string, length, 1}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
+    {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 13}}.

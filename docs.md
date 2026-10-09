@@ -2604,7 +2604,7 @@ decorator or template body runs, never at run time):
 | `@field` | `field<T, F>(obj: T, comptime name: string) -> F` — COMPTIME-ONLY name | the declaration |
 | `@src` | `src() -> SourceLocation` — COMPTIME-ONLY (§ `@src()` and `SourceLocation`) | its own rule (`src-takes-no-arguments`) |
 | `@typeInfo` | `typeInfo<T>(comptime _: type) -> TypeInfo<T>` — COMPTIME-ONLY (§ Decorators) | its own rule (`typeinfo-unknown-declaration`, `typeinfo-unknown-member`) |
-| `@TypeInfo.all` | `all(with: unknown, member: ?string = null) -> Declared<unknown>[]`, a static `declare fn` of `TypeInfo<T>` — COMPTIME-ONLY | its own rule (`typeinfo-all-arguments`); `with:` names a decorator or a list of them, which no type spells (open question `134-b`) |
+| `@TypeInfo.all` | `all(with: Decorator \| Decorator[], member: ?string = null) -> Declared<unknown>[]`, a static `declare fn` of `TypeInfo<T>` — COMPTIME-ONLY | the declaration — `Decorator` is the type of a decorator's name (decision 268), so anything else in `with:` is the ordinary mismatch at the argument —, after its own shape rule (`typeinfo-all-arguments`) |
 | `@TypeOf` | `TypeOf<T>(value: T) -> T` — COMPTIME-ONLY | the declaration |
 | `@makeRecord` | `makeRecord<R>(fields: RecordField[]) -> R` — COMPTIME-ONLY | the declaration |
 | `@RecordKeys` | `RecordKeys(comptime _: type) -> string[]` — COMPTIME-ONLY | the declaration |
@@ -2626,7 +2626,17 @@ fn main() {
 ```
 
 Builtin names are exact: an unrecognised `@name(…)` is `error[unknown-builtin]`
-(with the nearest name when one is an edit away), never a silent `void`.
+(with the nearest name when one is an edit away), never a silent `void`. `is`
+is only an operator (decision 322): `x is T` tests a type, and a hand-written
+`@is(…)` is `error[unknown-builtin]` naming the operator.
+
+`Decorator` (declared in `builtins.d.bp`, decision 268) is the type of a
+decorator's name: a name has it when it names a function whose first parameter
+is `comptime _: @Decl` and which has a body — further arguments included —, and
+an array literal of such names is a `Decorator[]`. Nothing else is assignable to
+it, and it cannot be constructed: `@TypeInfo.all(with: 42)` and
+`@TypeInfo.all(with: someOrdinaryFn)` are the ordinary type mismatch, at the
+argument.
 
 `@panic`, `@todo` and `@trap` never return: they are declared `-> noreturn`, the
 bottom type, so a call to one stands wherever a value of any type is expected —

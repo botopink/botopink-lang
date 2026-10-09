@@ -12,7 +12,7 @@ fn n() -> i32 {
 
 n() ->
     S = <<"hello">>,
-    string:length(S).
+    erlang:length(unicode:characters_to_list(S)).
 ```
 
 ----- RUN LOG -----

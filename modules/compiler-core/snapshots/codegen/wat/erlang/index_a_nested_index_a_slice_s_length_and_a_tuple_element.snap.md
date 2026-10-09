@@ -64,7 +64,7 @@ array_slice(Self, Start, End) ->
 '__bp_prim_at'(Recv, Arg0) when erlang:is_list(Recv) ->
     (fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Recv, Arg0);
 '__bp_prim_at'(Recv, Arg0) when erlang:is_binary(Recv) ->
-    (fun(__S, __I) -> __N = string:length(__S), __J = case __I < 0 of true -> __I + __N; false -> __I end, case (__J >= 0) andalso (__J < __N) of true -> string:slice(__S, __J, 1); false -> undefined end end)(Recv, Arg0);
+    (fun(__S, __I) -> __L = unicode:characters_to_list(__S), __N = erlang:length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case (__J >= 0) andalso (__J < __N) of true -> unicode:characters_to_binary([lists:nth(__J + 1, __L)]); false -> undefined end end)(Recv, Arg0);
 '__bp_prim_at'(Recv, _) ->
     erlang:error({bp_unsupported_method, <<"at">>, 1, Recv}).
 

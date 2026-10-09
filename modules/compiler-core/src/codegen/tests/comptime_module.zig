@@ -261,7 +261,7 @@ test "comptime module: template body primitive methods dispatch through shims" {
     try expectContains(out, "'__bp_prim_startsWith'(Recv, Arg0) when erlang:is_binary(Recv) ->\n    (string:prefix(Recv, Arg0) =/= nomatch);");
     // `indexOf` / `contains` exist on both strings and arrays.
     try expectContains(out, "'__bp_prim_indexOf'(Recv, Arg0) when erlang:is_list(Recv) ->");
-    try expectContains(out, "'__bp_prim_indexOf'(Recv, Arg0) when erlang:is_binary(Recv) ->\n    (fun(__S, __X) -> case __X of <<>> -> 0; _ -> case binary:match(__S, __X) of nomatch -> -1; {__P, _} -> string:length(binary:part(__S, 0, __P)) end end end)(Recv, Arg0);");
+    try expectContains(out, "'__bp_prim_indexOf'(Recv, Arg0) when erlang:is_binary(Recv) ->\n    (fun(__S, __X) -> case __X of <<>> -> 0; _ -> case binary:match(__S, __X) of nomatch -> -1; {__P, _} -> erlang:length(unicode:characters_to_list(binary:part(__S, 0, __P))) end end end)(Recv, Arg0);");
     try expectContains(out, "'__bp_prim_contains'(Recv, Arg0) when erlang:is_list(Recv) ->\n    lists:member(Arg0, Recv);");
     try expectContains(out, "'__bp_prim_contains'(Recv, Arg0) when erlang:is_binary(Recv) ->\n    (string:find(Recv, Arg0) =/= nomatch);");
     try expectContains(out, "'__bp_prim_at'(Recv, Arg0) when erlang:is_list(Recv) ->\n    (fun(__L, __I) ->");
@@ -273,7 +273,7 @@ test "comptime module: template body primitive methods dispatch through shims" {
     try expectContains(out, "'__bp_prim_slice'(Recv, Arg0) when erlang:is_list(Recv) ->\n    array_slice(Recv, Arg0, undefined);");
     try expectContains(out, "'__bp_prim_slice'(Recv, Arg0) when erlang:is_binary(Recv) ->\n    string_slice(Recv, Arg0, undefined);");
     try expectContains(out, "string_slice(Self, Start, End) ->");
-    try expectContains(out, "string:slice(Self, Start, ((End) - (Start)))");
+    try expectContains(out, "unicode:characters_to_binary(lists:sublist(__L, __B + 1, erlang:max(__F - __B, 0))) end)(Self, Start, End)");
     try expectContains(out, "array_slice(Self, Start, End) ->");
 }
 
@@ -311,7 +311,7 @@ test "comptime module: a method named like an auto-imported BIF dispatches on th
     try expectContains(out, "'__bp_prim_floor'(C)");
     try expectContains(out, "'__bp_prim_ceil'(A)");
     try expectContains(out, "'__bp_prim_length'(Recv) when erlang:is_list(Recv) ->\n    erlang:length(Recv);");
-    try expectContains(out, "'__bp_prim_length'(Recv) when erlang:is_binary(Recv) ->\n    string:length(Recv);");
+    try expectContains(out, "'__bp_prim_length'(Recv) when erlang:is_binary(Recv) ->\n    erlang:length(unicode:characters_to_list(Recv));");
     // `abs` is declared on `Signed` and `Float`; an int receiver's controller
     // interface is `Integer` (as on the typed path), so only floats answer it.
     try expectContains(out, "'__bp_prim_abs'(Recv) when erlang:is_float(Recv) ->");

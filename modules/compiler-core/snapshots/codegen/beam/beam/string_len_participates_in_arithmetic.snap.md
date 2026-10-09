@@ -23,7 +23,8 @@ fn main() {
     {move, {literal, <<"hello">>}, {x, 0}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {call_ext, 1, {extfunc, string, length, 1}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
+    {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
     {gc_bif, '+', {f, 0}, 1, [{x, 0}, {integer, 1}], {x, 0}}.
     {test, is_ge, {f, 8}, [{x, 0}, {integer, -2147483648}]}.
     {test, is_ge, {f, 8}, [{integer, 2147483647}, {x, 0}]}.

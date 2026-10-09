@@ -1,7 +1,8 @@
-//// 1.0.11 front 14 step 1 — a decorator body (untyped) calling a method no
-//// primitive type and no host function answers is refused by the compiler
-//// itself, before any comptime runtime runs: the message names the call in the
-//// body by line and column, the caret is the annotation that ran the body.
+//// 1.0.11 front 14 step 1 — a decorator body calling a method no primitive
+//// type and no host function answers is refused by the compiler itself,
+//// before any comptime runtime runs. The decorator is the module's own, so
+//// the checker reads its body (01-checker's decorator-body row): the caret is
+//// the call in the body, the message the checker's unknown method.
 
 fn check(comptime decl: @Decl) {
     val n = decl.name;

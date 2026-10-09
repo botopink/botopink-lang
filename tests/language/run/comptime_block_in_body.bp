@@ -1,0 +1,38 @@
+//// Decision 266 (01-checker step 21, last box) — a `comptime { … }` block in a
+//// function body is evaluated at compile time: its locals, `if` and `break`
+//// fold to the value, and the backends emit the value. The parent binary
+//// lowered the block as its `break` alone on commonJS, its locals dropped
+//// (`x is not defined`), and refused it on wasm (no lowering for
+//// `comptimeBlock`).
+
+pub fn main() {
+    val d = comptime {
+        val x = 3;
+        break x * 4;
+    };
+    @print(d);
+    val s = comptime {
+        val a = "ab";
+        var b = a + "c";
+        b = b + "d";
+        break b;
+    };
+    @print(s);
+    val f = comptime {
+        val r = 1.5;
+        if (r > 1.0) break r * -2.0;
+        break 0.0;
+    };
+    @print(f);
+    val w: i64 = comptime {
+        val big = 3000000000l;
+        break big * 2l;
+    };
+    @print(w + 1l);
+    val xs = comptime {
+        break [1, 2, 3];
+    };
+    @print(xs.length());
+    val n = comptime -7 + 2;
+    @print(n);
+}

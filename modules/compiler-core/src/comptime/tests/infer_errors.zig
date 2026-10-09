@@ -1057,6 +1057,17 @@ test "infer error: unknown builtin without a near name" {
     );
 }
 
+test "infer error: hand-written is builtin is refused" {
+    // Decision 322 — `is` is only an operator: `builtins.d.bp` declares no
+    // `is`, so `@is(…)` written by hand is an unknown builtin, located at the
+    // `@` and naming `x is T`.
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    val b = @is(1);
+        \\}
+    );
+}
+
 // ── decision 38: a `val` is immutable ─────────────────────────────────────────
 
 /// The error `inferProgram` raises for `src`, rendered — no snapshot: the
@@ -1128,6 +1139,23 @@ test "infer error: an unknown `@BeamMemory` argument" {
     const msg = try typeErrorMessage(std.testing.allocator, "#[@BeamMemory.Ets(keyd = true)]\nvar x: i32 = 0;");
     defer std.testing.allocator.free(msg);
     try std.testing.expect(std.mem.indexOf(u8, msg, "unknown argument `keyd` — expected `keyed`") != null);
+}
+
+test "infer error: the `@BeamMemory` hints teach `keyed: true`, never the retired `keyed = true`" {
+    const cases = [_][]const u8{
+        // an unknown argument
+        "#[@BeamMemory.Ets(keyd: true)]\nvar x: i32 = 0;",
+        // `keyed` on another member
+        "import {collections.Dict} from \"std\";\n#[@BeamMemory.ProcessDict(keyed: true)]\nvar d: Dict<string, i32> = Dict.empty();",
+        // a `PersistentTerm` `Dict` written at run time
+        "import {collections.Dict} from \"std\";\n#[@BeamMemory.PersistentTerm]\nvar d: Dict<string, i32> = Dict.empty();\nfn f() { d = Dict.empty(); }",
+    };
+    for (cases) |src| {
+        const msg = try typeErrorMessage(std.testing.allocator, src);
+        defer std.testing.allocator.free(msg);
+        try std.testing.expect(std.mem.indexOf(u8, msg, "(keyed: true)]") != null);
+        try std.testing.expect(std.mem.indexOf(u8, msg, "keyed = true") == null);
+    }
 }
 
 test "infer error: `keyed = true` on an `i32` has no key" {
@@ -1216,7 +1244,7 @@ test "infer error: a keyed var is written only as `name = name.insert(key, value
         defer std.testing.allocator.free(src);
         const msg = try typeErrorMessage(std.testing.allocator, src);
         defer std.testing.allocator.free(msg);
-        try std.testing.expect(std.mem.indexOf(u8, msg, "`counts` is a `keyed = true` var: it is written one row at a time, as `counts = counts.insert(key, value)`") != null);
+        try std.testing.expect(std.mem.indexOf(u8, msg, "`counts` is a `keyed: true` var: it is written one row at a time, as `counts = counts.insert(key, value)`") != null);
     }
 }
 
@@ -1233,7 +1261,7 @@ test "infer error: a keyed var has no whole value to read" {
         \\fn f() -> i32 { return counts.size(); }
     );
     defer std.testing.allocator.free(msg);
-    try std.testing.expect(std.mem.indexOf(u8, msg, "`counts` is a `keyed = true` var: it is read one row at a time, as `counts.at(key)`") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "`counts` is a `keyed: true` var: it is read one row at a time, as `counts.at(key)`") != null);
 }
 
 test "infer error: a keyed seed is `Dict.empty()` or `Dict.ofEntries` of literal entries" {
@@ -1276,7 +1304,7 @@ test "infer error: a keyed var is not `pub`" {
         \\pub var counts: Dict<string, i32> = Dict.empty();
     );
     defer std.testing.allocator.free(msg);
-    try std.testing.expect(std.mem.indexOf(u8, msg, "a `keyed = true` var is not `pub`") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "a `keyed: true` var is not `pub`") != null);
 }
 
 // ── 01 R5: a pattern in binding position ──────────────────────────────────────

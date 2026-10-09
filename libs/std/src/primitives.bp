@@ -128,7 +128,10 @@ behavior Bool {
 // `implement` clause in the grammar; see `libs/std/AGENTS.md`.
 
 behavior String {
-    #[@External.Erlang("string", "length")]
+    // Codepoints on every target (decision 320): erlang's `string:length/1`
+    // counts grapheme clusters (`"e\u{301}"` is one there), so the erlang
+    // form counts the binary's decoded codepoints.
+    #[@External.Erlang("erlang:length(unicode:characters_to_list($0))")]
     #[@External.Node("length")]
     fn length(self: Self) -> i32;
 
@@ -217,18 +220,20 @@ behavior String {
     // `String.prototype.charAt`.
     // A negative index counts from the end (decision 139): `-1` is the last
     // character, and past either end is absent.
-    #[@External.Erlang("""(fun(__S, __I) -> __N = string:length(__S), __J = case __I < 0 of true -> __I + __N; false -> __I end, case (__J >= 0) andalso (__J < __N) of true -> string:slice(__S, __J, 1); false -> undefined end end)($0, $1)""")]
+    //
+    // The index counts codepoints (decision 320), so the erlang form reads the
+    // decoded codepoint list, never `string:slice/3`'s grapheme clusters.
+    #[@External.Erlang("""(fun(__S, __I) -> __L = unicode:characters_to_list(__S), __N = erlang:length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case (__J >= 0) andalso (__J < __N) of true -> unicode:characters_to_binary([lists:nth(__J + 1, __L)]); false -> undefined end end)($0, $1)""")]
     #[@External.Node("charAt")]
     fn at(self: Self, index: i32) -> ?string;
 
     // `string:str/2` takes charlists and rejects binaries (`function_clause`).
     // `binary:match/2` rejects an empty pattern, which JS finds at 0.
     // The answer is an index in the unit `at`, `slice` and `length` count in
-    // on erlang (decision 169) — `string:length/1` of the text before the
-    // match, not the match's byte offset — so `s.at(s.indexOf(x))` reads the
-    // character the search found. commonJS counts UTF-16 units in all four;
-    // the two targets differ only past a character outside the BMP.
-    #[@External.Erlang("""(fun(__S, __X) -> case __X of <<>> -> 0; _ -> case binary:match(__S, __X) of nomatch -> -1; {__P, _} -> string:length(binary:part(__S, 0, __P)) end end end)($0, $1)""")]
+    // on every target (decisions 169, 320) — the codepoints of the text
+    // before the match, not the match's byte offset — so `s.at(s.indexOf(x))`
+    // reads the character the search found.
+    #[@External.Erlang("""(fun(__S, __X) -> case __X of <<>> -> 0; _ -> case binary:match(__S, __X) of nomatch -> -1; {__P, _} -> erlang:length(unicode:characters_to_list(binary:part(__S, 0, __P))) end end end)($0, $1)""")]
     #[@External.Node("indexOf")]
     fn indexOf(self: Self, sub: string) -> i32;
 
@@ -293,12 +298,12 @@ behavior String {
     // which `??` does not catch and `| 0` turned into `0`. It also answers the
     // CODE POINT, which is what the erlang form above answers.
     #[@External.Erlang("(fun(__S, __I) -> case unicode:characters_to_list(__S, utf8) of __L when length(__L) > __I, __I >= 0 -> lists:nth(__I + 1, __L); _ -> -1 end end)($0, $1)")]
-    #[@External.Node("(($0.codePointAt($1) ?? -1) | 0)")]
+    #[@External.Node("""((__s, __i) => { if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = __i >= 0 ? Array.from(__s)[__i] : undefined; return __c === undefined ? -1 : __c.codePointAt(0); } return (__s.codePointAt(__i) ?? -1) | 0; })($0, $1)""")]
     fn charCodeAt(self: Self, index: i32) -> i32;
 
     // The last match is found over the bytes and answered in `indexOf`'s unit
-    // (decision 169): `string:length/1` of the text before it.
-    #[@External.Erlang("(fun(__S, __Sub) -> __L = byte_size(__S), __SL = byte_size(__Sub), __Find = fun __F(__I) -> case __I < 0 of true -> -1; false -> case binary:part(__S, __I, min(__SL, __L - __I)) =:= __Sub of true -> string:length(binary:part(__S, 0, __I)); false -> __F(__I - 1) end end end, __Find(__L - __SL) end)($0, $1)")]
+    // (decisions 169, 320): the codepoints of the text before it.
+    #[@External.Erlang("(fun(__S, __Sub) -> __L = byte_size(__S), __SL = byte_size(__Sub), __Find = fun __F(__I) -> case __I < 0 of true -> -1; false -> case binary:part(__S, __I, min(__SL, __L - __I)) =:= __Sub of true -> erlang:length(unicode:characters_to_list(binary:part(__S, 0, __I))); false -> __F(__I - 1) end end end, __Find(__L - __SL) end)($0, $1)")]
     #[@External.Node("lastIndexOf")]
     fn lastIndexOf(self: Self, sub: string) -> i32;
 
@@ -381,14 +386,17 @@ behavior String {
 // `String.prototype.slice` with that body, so the Node templates must not call
 // `.slice` (it would call the patch itself): they normalise the bounds the way
 // native `slice` does and cut with `substring`. Markers are positional on every
-// target: `$0` is the string, `$1` the start (decision 5).
+// target: `$0` is the string, `$1` the start (decision 5). The erlang forms
+// count codepoints (decision 320) over the decoded codepoint list — never
+// `string:slice/3`, whose unit is the grapheme cluster — and normalise the
+// bounds as the Node forms do.
 
-#[@External.Erlang("string:slice($0, $1)")]
-#[@External.Node("""((__s, __a) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })($0, $1)""")]
+#[@External.Erlang("""(fun(__S, __A) -> __L = unicode:characters_to_list(__S), __N = erlang:length(__L), __B = case __A < 0 of true -> erlang:max(__N + __A, 0); false -> erlang:min(__A, __N) end, unicode:characters_to_binary(lists:nthtail(__B, __L)) end)($0, $1)""")]
+#[@External.Node("""((__s, __a) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); return Array.from({ length: __m - __d }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })($0, $1)""")]
 declare fn stringSlice0(s: string, start: i32) -> string;
 
-#[@External.Erlang("string:slice($0, $1, (($2) - ($1)))")]
-#[@External.Node("""((__s, __a, __e) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })($0, $1, $2)""")]
+#[@External.Erlang("""(fun(__S, __A, __E) -> __L = unicode:characters_to_list(__S), __N = erlang:length(__L), __B = case __A < 0 of true -> erlang:max(__N + __A, 0); false -> erlang:min(__A, __N) end, __F = case __E < 0 of true -> erlang:max(__N + __E, 0); false -> erlang:min(__E, __N) end, unicode:characters_to_binary(lists:sublist(__L, __B + 1, erlang:max(__F - __B, 0))) end)($0, $1, $2)""")]
+#[@External.Node("""((__s, __a, __e) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); const __g = __e < 0 ? Math.max(__m + __e, 0) : Math.min(__e, __m); return Array.from({ length: Math.max(__g - __d, 0) }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })($0, $1, $2)""")]
 declare fn stringSlice1(s: string, start: i32, end: ?i32) -> string;
 
 // ── string numerals ──────────────────────────────────────────────────────────

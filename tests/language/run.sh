@@ -185,7 +185,7 @@ pool_check_jobs "$jobs" run.sh
 # program on a host binding —
 #
 #     `f` has no `#[@External.<Target>(…)]` for the <t> backend
-#     std-unsupported-on-target: std/<m> has no `@external` for target '<t>'
+#     std-unsupported-on-target: std/<m> has no `#[@External.<Target>]` for target '<t>'
 #
 #     `#[@BeamMemory]` has no meaning on the <t> backend
 #

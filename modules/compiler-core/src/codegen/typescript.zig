@@ -709,10 +709,8 @@ const Builder = struct {
     /// nothing to a host consumer.
     fn primitiveTsName(name: []const u8) ?[]const u8 {
         const numbers = [_][]const u8{
-            "i8",    "i16",   "i32", "i64",  "i128",
-            "u8",    "u16",   "u32", "u64",  "u128",
-            "f32",   "f64",   "int", "uint", "float",
-            "isize", "usize",
+            "i8",  "i16",  "i32", "i128", "u8",    "u16",
+            "u32", "u128", "f32", "f64",  "float",
         };
         for (numbers) |n| if (std.mem.eql(u8, name, n)) return "number";
         if (std.mem.eql(u8, name, "bool")) return "boolean";
@@ -730,7 +728,18 @@ const Builder = struct {
     /// primitive takes its TypeScript spelling.
     fn namedType(name: []const u8) js.TsType {
         if (name.len == 0) return .{ .name = "any" };
+        if (isWideInteger(name)) return wide_integer;
         return .{ .name = primitiveTsName(name) orelse name };
+    }
+
+    /// Decision 319 — `i64`, `isize`, `u64` and `usize` cross to JavaScript as
+    /// a number within ±(2^53 − 1) and a `BigInt` beyond.
+    const wide_integer: js.TsType = .{ .union_ = &.{ .{ .name = "number" }, .{ .name = "bigint" } } };
+
+    fn isWideInteger(name: []const u8) bool {
+        const wide = [_][]const u8{ "i64", "u64", "isize", "usize", "int", "uint" };
+        for (wide) |w| if (std.mem.eql(u8, name, w)) return true;
+        return false;
     }
 
     fn derefType(ty: comptimeMod.Type) comptimeMod.Type {

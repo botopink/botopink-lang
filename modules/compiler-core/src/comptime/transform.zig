@@ -1030,6 +1030,14 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
             expr_ptr.* = rewrite.*;
         }
     }
+    // A `comptime <expr>` / `comptime { … }` inference folded (decision 266,
+    // `infer.zig` `foldBodyComptime`) → its value; the walk carries on over
+    // the spliced literal.
+    if (expr_ptr.* == .comptime_) {
+        if (agg.src_rewrites.get(expr_ptr.comptime_.loc)) |rewrite| {
+            expr_ptr.* = rewrite.*;
+        }
+    }
     // `@typeInfo(X).name` / `….meta.<d>.<k>` (decision 216 (2)) → the string
     // constant inference answered, keyed by the access's own loc (its last
     // member's token — no builtin call shares it).

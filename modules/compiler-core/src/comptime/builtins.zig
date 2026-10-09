@@ -25,9 +25,8 @@ pub const Held = enum {
     declaration,
     /// The builtin's own rule refuses, before the declaration is consulted,
     /// every call the declaration refuses (`@src`: no argument; `@typeInfo`:
-    /// one declaration; `@TypeInfo.all`: the catalogue's labelled arguments;
-    /// `@getContext`: one type name inside a component; `@comptimeError`:
-    /// the message it raises).
+    /// one declaration; `@getContext`: one type name inside a component;
+    /// `@comptimeError`: the message it raises).
     own_rule,
     /// The declaration cannot spell what the compiler accepts; the call keeps
     /// today's acceptance until the front's open question (`question`) is
@@ -65,7 +64,7 @@ pub const table = [_]Builtin{
     .{ .name = "field", .signature = "field<T, F>(obj: T, comptime name: string) -> F", .held = .declaration, .comptime_only = true },
     .{ .name = "src", .signature = "src() -> SourceLocation", .held = .own_rule, .comptime_only = true },
     .{ .name = "typeInfo", .signature = "typeInfo<T>(comptime _: type) -> TypeInfo<T>", .held = .own_rule, .comptime_only = true },
-    .{ .name = "TypeInfo.all", .signature = "TypeInfo.all(with: unknown, member: ?string = null) -> Declared<unknown>[]", .held = .own_rule, .comptime_only = true },
+    .{ .name = "TypeInfo.all", .signature = "TypeInfo.all(with: Decorator | Decorator[], member: ?string = null) -> Declared<unknown>[]", .held = .declaration, .comptime_only = true },
     .{ .name = "TypeOf", .signature = "TypeOf<T>(value: T) -> T", .held = .declaration, .comptime_only = true },
     .{ .name = "makeRecord", .signature = "makeRecord<R>(fields: RecordField[]) -> R", .held = .declaration, .comptime_only = true },
     .{ .name = "RecordKeys", .signature = "RecordKeys(comptime _: type) -> string[]", .held = .declaration, .comptime_only = true },
@@ -75,6 +74,35 @@ pub const table = [_]Builtin{
     .{ .name = "expr", .signature = "expr<T>(comptime value: T) -> Expr<T>", .held = .declaration, .comptime_only = true },
     .{ .name = "code", .signature = "code<T>(text: string) -> Expr<T>", .held = .declaration, .comptime_only = true },
 };
+
+/// One builtin method of a builtin type, resolved by inference and lowered
+/// inline by every backend (no run-time dispatch table).
+pub const Method = struct {
+    /// The declared type the method belongs to (`Result`).
+    owner: []const u8,
+    name: []const u8,
+    /// The declaration's signature in `renderSignature`'s canonical form.
+    signature: []const u8,
+};
+
+/// Every builtin method the compiler implements on a builtin type
+/// (`infer.zig` `inferResultOptionMethod`), each held to its `declare fn`
+/// inside the owner's declaration in `builtins.d.bp`.
+pub const methods = [_]Method{
+    .{ .owner = "Result", .name = "map", .signature = "map<R2>(self: Self<R, E>, transform: fn(R) -> R2) -> Result<R2, E>" },
+    .{ .owner = "Result", .name = "flatMap", .signature = "flatMap<R2>(self: Self<R, E>, transform: fn(R) -> Result<R2, E>) -> Result<R2, E>" },
+    .{ .owner = "Result", .name = "unwrapOr", .signature = "unwrapOr(self: Self<R, E>, fallback: R) -> R" },
+    .{ .owner = "Result", .name = "isOk", .signature = "isOk(self: Self<R, E>) -> bool" },
+    .{ .owner = "Result", .name = "isError", .signature = "isError(self: Self<R, E>) -> bool" },
+};
+
+/// True when `owner` has the builtin method `name` (a row of `methods`).
+pub fn hasMethod(owner: []const u8, name: []const u8) bool {
+    for (methods) |m| {
+        if (std.mem.eql(u8, m.owner, owner) and std.mem.eql(u8, m.name, name)) return true;
+    }
+    return false;
+}
 
 /// The row of the builtin `@name`, or null when the compiler implements none.
 pub fn find(name: []const u8) ?Builtin {
@@ -194,6 +222,164 @@ fn quoteStringDefaults(alloc: std.mem.Allocator, rendered: []const u8, params: [
     return text;
 }
 
+/// One declared type of the builtin surface, as `collectTypes` reads it: its
+/// members in canonical text — `f: T` for a record field or a behavior's
+/// `val`, `V(f: T, …)` / `V` for a variant, `fn <signature>` for an instance
+/// method (`self` first; a static one is a builtin call, `table`'s).
+pub const DeclaredType = struct {
+    name: []const u8,
+    members: []const []const u8,
+};
+
+/// Every `type` and `behavior` of `sources`. A type alias whose target is an
+/// internal `__Decl__X` name (the compiler's mirrors, `comptime.zig`) names
+/// that type: `X` is reported under the alias, and every spelling of
+/// `__Decl__X` in a member is read as the alias.
+pub fn collectTypes(alloc: std.mem.Allocator, sources: []const []const u8) ![]DeclaredType {
+    var out: std.ArrayListUnmanaged(DeclaredType) = .empty;
+    const programs = try alloc.alloc(ast.Program, sources.len);
+    var aliases: std.ArrayListUnmanaged([2][]const u8) = .empty;
+    for (sources, programs) |src, *program| {
+        var lx = Lexer.init(src);
+        const tokens = try lx.scanAll(alloc);
+        var p = Parser.init(tokens);
+        program.* = try p.parse(alloc);
+        for (program.decls) |d| switch (d) {
+            .typeAlias => |a| if (a.target == .named and std.mem.startsWith(u8, a.target.named, "__Decl__"))
+                try aliases.append(alloc, .{ a.target.named, a.name }),
+            else => {},
+        };
+    }
+    for (programs) |program| {
+        for (program.decls) |d| switch (d) {
+            .type_ => |t| {
+                var members: std.ArrayListUnmanaged([]const u8) = .empty;
+                for (t.recordFields()) |f| try members.append(alloc, try std.fmt.allocPrint(alloc, "{s}: {f}", .{ f.name, f.typeRef }));
+                for (t.variants()) |v| {
+                    if (v.fields.len == 0) {
+                        try members.append(alloc, v.name);
+                        continue;
+                    }
+                    var text: std.Io.Writer.Allocating = .init(alloc);
+                    try text.writer.print("{s}(", .{v.name});
+                    for (v.fields, 0..) |f, i| try text.writer.print("{s}{s}: {f}", .{ if (i > 0) ", " else "", f.name, f.typeRef });
+                    try text.writer.writeAll(")");
+                    try members.append(alloc, try text.toOwnedSlice());
+                }
+                for (t.methods) |m| try appendInstanceMethod(alloc, &members, m);
+                try out.append(alloc, .{ .name = t.name, .members = members.items });
+            },
+            .behavior => |b| {
+                var members: std.ArrayListUnmanaged([]const u8) = .empty;
+                for (b.fields) |f| try members.append(alloc, try std.fmt.allocPrint(alloc, "{s}: {f}", .{ f.name, f.typeRef }));
+                for (b.methods) |m| try appendInstanceMethod(alloc, &members, m);
+                try out.append(alloc, .{ .name = b.name, .members = members.items });
+            },
+            else => {},
+        };
+    }
+    for (out.items) |*t| {
+        for (aliases.items) |a| {
+            if (std.mem.eql(u8, t.name, a[0])) t.name = a[1];
+        }
+        const members = try alloc.dupe([]const u8, t.members);
+        for (members) |*m| {
+            for (aliases.items) |a| m.* = try std.mem.replaceOwned(u8, alloc, m.*, a[0], a[1]);
+        }
+        t.members = members;
+    }
+    return out.items;
+}
+
+fn appendInstanceMethod(alloc: std.mem.Allocator, members: *std.ArrayListUnmanaged([]const u8), m: ast.BehaviorMethod) !void {
+    if (m.params.len == 0 or !std.mem.eql(u8, m.params[0].name, "self")) return;
+    try members.append(alloc, try std.fmt.allocPrint(alloc, "fn {s}", .{try renderSignature(alloc, null, m.name, m.genericParams, m.params, m.returnType)}));
+}
+
+/// One way a compiler mirror or a builtin method and the declarations
+/// disagree, naming the type.
+pub const TypeDrift = union(enum) {
+    /// The compiler registers type `name` (a mirror) and no declaration names it.
+    undeclared: []const u8,
+    /// Both name the type, and `member` is in one and not the other —
+    /// `in_mirror` tells which.
+    member: struct { type_name: []const u8, member: []const u8, in_mirror: bool },
+    /// A row of `methods` the owner's declaration does not declare with that
+    /// signature, or an instance method of a `methods` owner with no row.
+    method: struct { owner: []const u8, name: []const u8, table: ?[]const u8, declared: ?[]const u8 },
+};
+
+/// Every disagreement between the compiler's mirrors (`mirror_sources`) plus the
+/// builtin `methods`, and the declarations of `sources`.
+pub fn typeDrift(alloc: std.mem.Allocator, sources: []const []const u8, mirror_sources: []const []const u8) ![]TypeDrift {
+    const declared = try collectTypes(alloc, sources);
+    const mirrored = try collectTypes(alloc, mirror_sources);
+    var out: std.ArrayListUnmanaged(TypeDrift) = .empty;
+    for (mirrored) |m| {
+        const d = findType(declared, m.name) orelse {
+            try out.append(alloc, .{ .undeclared = m.name });
+            continue;
+        };
+        for (m.members) |member| if (!contains(d.members, member))
+            try out.append(alloc, .{ .member = .{ .type_name = m.name, .member = member, .in_mirror = true } });
+        for (d.members) |member| if (!contains(m.members, member))
+            try out.append(alloc, .{ .member = .{ .type_name = m.name, .member = member, .in_mirror = false } });
+    }
+    for (methods) |row| {
+        const want = try std.fmt.allocPrint(alloc, "fn {s}", .{row.signature});
+        const d = findType(declared, row.owner);
+        const got: ?[]const u8 = if (d) |t| for (t.members) |member| {
+            if (std.mem.startsWith(u8, member, "fn ") and std.mem.eql(u8, methodName(member), row.name)) break member["fn ".len..];
+        } else null else null;
+        if (got == null or !std.mem.eql(u8, want, try std.fmt.allocPrint(alloc, "fn {s}", .{got.?})))
+            try out.append(alloc, .{ .method = .{ .owner = row.owner, .name = row.name, .table = row.signature, .declared = got } });
+    }
+    for (declared) |t| {
+        const owns = for (methods) |row| {
+            if (std.mem.eql(u8, row.owner, t.name)) break true;
+        } else false;
+        if (!owns) continue;
+        for (t.members) |member| {
+            if (!std.mem.startsWith(u8, member, "fn ")) continue;
+            if (!hasMethod(t.name, methodName(member)))
+                try out.append(alloc, .{ .method = .{ .owner = t.name, .name = methodName(member), .table = null, .declared = member["fn ".len..] } });
+        }
+    }
+    return out.items;
+}
+
+fn findType(types: []const DeclaredType, name: []const u8) ?DeclaredType {
+    for (types) |t| {
+        if (std.mem.eql(u8, t.name, name)) return t;
+    }
+    return null;
+}
+
+fn contains(items: []const []const u8, item: []const u8) bool {
+    for (items) |i| {
+        if (std.mem.eql(u8, i, item)) return true;
+    }
+    return false;
+}
+
+/// The name of an `fn <signature>` member.
+fn methodName(member: []const u8) []const u8 {
+    const rest = member["fn ".len..];
+    const end = std.mem.indexOfAny(u8, rest, "<(") orelse rest.len;
+    return rest[0..end];
+}
+
+fn printTypeDrift(items: []const TypeDrift) void {
+    for (items) |item| switch (item) {
+        .undeclared => |n| std.debug.print("builtin type `{s}` is registered by the compiler (comptime.zig) and builtins.d.bp does not declare it\n", .{n}),
+        .member => |m| if (m.in_mirror)
+            std.debug.print("builtin type `{s}`: the compiler registers `{s}`, builtins.d.bp does not declare it\n", .{ m.type_name, m.member })
+        else
+            std.debug.print("builtin type `{s}`: builtins.d.bp declares `{s}`, the compiler does not register it\n", .{ m.type_name, m.member }),
+        .method => |m| std.debug.print("builtin method `{s}.{s}`: the compiler implements `{s}`, builtins.d.bp declares `{s}`\n", .{ m.owner, m.name, m.table orelse "(nothing)", m.declared orelse "(nothing)" }),
+    };
+}
+
 /// One way the table and the declarations disagree, naming the builtin.
 pub const Drift = union(enum) {
     /// The compiler implements `@name` and no declaration names it.
@@ -277,4 +463,62 @@ test "builtins: a declaration the compiler does not implement is named" {
     const items = try drift(a, &.{ extra, prelude.builtin_fns });
     try std.testing.expectEqual(@as(usize, 1), items.len);
     try std.testing.expectEqualStrings("frobnicate", items[0].unimplemented);
+}
+
+const type_mirrors = @import("../comptime.zig").builtin_type_mirrors;
+
+test "builtins: every type the compiler mirrors is declared alike, every builtin method declared" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const items = try typeDrift(arena.allocator(), &.{ prelude.builtins, prelude.builtin_fns }, &type_mirrors);
+    printTypeDrift(items);
+    try std.testing.expectEqual(@as(usize, 0), items.len);
+}
+
+test "builtins: a mirrored field the declaration lacks is named" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const changed = try std.mem.replaceOwned(u8, a, prelude.builtins, "    fnName: string,\n)", "    fnName: string,\n    offset: i32,\n)");
+    const items = try typeDrift(a, &.{ changed, prelude.builtin_fns }, &type_mirrors);
+    try std.testing.expectEqual(@as(usize, 1), items.len);
+    try std.testing.expectEqualStrings("SourceLocation", items[0].member.type_name);
+    try std.testing.expectEqualStrings("offset: i32", items[0].member.member);
+    try std.testing.expect(!items[0].member.in_mirror);
+}
+
+test "builtins: a mirror spelled under another name than its declaration is named" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    // The reflection record a handle's `annotations` hold was mirrored as
+    // `Annotation` while `builtins.d.bp` declares `DeclAnnotation`.
+    const renamed = try std.mem.replaceOwned(u8, a, prelude.builtins, "pub type DeclAnnotation(", "pub type ReflectedAnnotation(");
+    const items = try typeDrift(a, &.{ renamed, prelude.builtin_fns }, &type_mirrors);
+    var undeclared: usize = 0;
+    for (items) |item| if (item == .undeclared) {
+        try std.testing.expectEqualStrings("DeclAnnotation", item.undeclared);
+        undeclared += 1;
+    };
+    try std.testing.expectEqual(@as(usize, 1), undeclared);
+}
+
+test "builtins: a builtin method declared with another signature, or not at all, is named" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const changed = try std.mem.replaceOwned(u8, a, prelude.builtins, "declare fn isOk(self: Self<R, E>) -> bool;", "declare fn isOk(self: Self<R, E>) -> i32;");
+    const items = try typeDrift(a, &.{ changed, prelude.builtin_fns }, &type_mirrors);
+    try std.testing.expectEqual(@as(usize, 1), items.len);
+    try std.testing.expectEqualStrings("isOk", items[0].method.name);
+    try std.testing.expectEqualStrings("isOk(self: Self<R, E>) -> i32", items[0].method.declared.?);
+    const removed = try std.mem.replaceOwned(u8, a, prelude.builtins, "declare fn isError(self: Self<R, E>) -> bool;", "");
+    const gone = try typeDrift(a, &.{ removed, prelude.builtin_fns }, &type_mirrors);
+    try std.testing.expectEqual(@as(usize, 1), gone.len);
+    try std.testing.expect(gone[0].method.declared == null);
+    const extra = try std.mem.replaceOwned(u8, a, prelude.builtins, "declare fn isError(self: Self<R, E>) -> bool;", "declare fn isError(self: Self<R, E>) -> bool;\n    declare fn swap(self: Self<R, E>) -> Result<E, R>;");
+    const more = try typeDrift(a, &.{ extra, prelude.builtin_fns }, &type_mirrors);
+    try std.testing.expectEqual(@as(usize, 1), more.len);
+    try std.testing.expectEqualStrings("swap", more[0].method.name);
+    try std.testing.expect(more[0].method.table == null);
 }

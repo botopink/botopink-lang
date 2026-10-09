@@ -21,25 +21,37 @@ pub declare fn debug(value: unknown);
 
 // ── result type ──────────────────────────────────────────────────────────────
 
+// `Result<R, E>`'s methods are resolved by type inference and lowered inline
+// by every codegen backend (there is no run-time dispatch table): bodyless,
+// because the compiler is the body. The compiler's rows are
+// `comptime/builtins.zig` `methods`, held to these declarations by its drift
+// test.
 pub type Result<R, E> {
     Ok(result: R),
     Error(error: E),
+
+    // Apply `transform` to the Ok payload; an Error is propagated untouched.
+    declare fn map<R2>(
+        self: Self<R, E>,
+        transform: fn(value: R) -> R2,
+    ) -> Result<R2, E>;
+
+    // Like `map` but `transform` itself returns a Result (no nesting).
+    declare fn flatMap<R2>(
+        self: Self<R, E>,
+        transform: fn(value: R) -> Result<R2, E>,
+    ) -> Result<R2, E>;
+
+    // The Ok payload, or `fallback` when the receiver is an Error.
+    declare fn unwrapOr(self: Self<R, E>, fallback: R) -> R;
+
+    // True when the receiver is `Ok`.
+    declare fn isOk(self: Self<R, E>) -> bool;
+
+    // True when the receiver is `Error`.
+    declare fn isError(self: Self<R, E>) -> bool;
 }
 
-// `Result<R, E>` carries the following builtin methods. They are resolved by
-// type inference and lowered inline by every codegen backend (there is no
-// runtime dispatch table), so they are documented here rather than declared as
-// enum methods:
-//
-//   fn map(self, transform: fn(value: R) -> R2) -> Result<R2, E>
-//       Apply `transform` to the Ok payload; an Error is propagated untouched.
-//   fn flatMap(self, transform: fn(value: R) -> Result<R2, E>) -> Result<R2, E>
-//       Like `map` but `transform` itself returns a Result (no nesting).
-//   fn unwrapOr(self, default: R) -> R
-//       The Ok payload, or `default` when the receiver is an Error.
-//   fn isOk(self) -> bool        // true when the receiver is `Ok`
-//   fn isError(self) -> bool     // true when the receiver is `Error`
-//
 // The builtin `result` NAMESPACE exposes the same ops as Gleam-style qualified
 // calls — no import needed; a local binding named `result` shadows it:
 //
@@ -256,7 +268,8 @@ pub behavior Annotation {
 // One variant per target. The single `template` string is interpreted by the
 // codegen renderer (`comptime/primOpTemplate.zig`): if it contains `$`, it's a
 // template with positional markers over the declared parameters (`$0` is `self`
-// on a method, then `$1`, … — decision 5) and `$stringify(...)`;
+// on a method, then `$1`, … — decision 5; `$stringify(…)` is no marker and is
+// refused, `template-stringify-marker`, decision 239);
 // otherwise it's a bare host symbol (`"mod:sym"`/`"propertyName"`) the backend
 // wraps as `mod:sym(args, self)` or `recv.propertyName(args)`.
 //
@@ -323,8 +336,9 @@ pub type External implement Annotation {
 pub declare fn trap() -> noreturn;
 
 // `@block { … }` — a block that is an expression: its value is what its
-// `return`s carry (they target the block, not the enclosing fn), else its
-// tail expression's.
+// `return`s carry (they target the block, not the enclosing fn). A tail
+// expression is not its value: an `@block` used as a value with no valued
+// `return` is refused (`block-tail-value`).
 pub declare fn block<T>(body: fn() -> T) -> T;
 
 // `@field(obj, "name")` — the field `name` of `obj`, the name known at
@@ -517,11 +531,11 @@ pub type CustomNode(
     children: CustomNode[],
 )
 
-// What `ExprCustom<T>` carries: the executable expression plus the reference
+// What `@ExprCustom<T>` carries: the executable expression plus the reference
 // tree. The `code` half travels the ordinary `Expr<T>` expansion path (spliced,
 // lowered to every backend — runtime behaviour is unchanged); the `ast` half is
 // stored by call-location and is reference-only (the language server reads it).
-pub type CustomExpr<T>(
+pub type ExprCustom<T>(
     code: Expr<T>, // the botopink expression that actually runs
     ast: CustomNode, // the sub-language tree, reference only
 )
@@ -540,7 +554,7 @@ pub behavior Expr<E> {
         self: Self<E>,
         ast: CustomNode,
         code: Expr<R>,
-    ) -> CustomExpr<R>;
+    ) -> ExprCustom<R>;
     fn fail(self: Self<E>, message: string);
     fn failAt(self: Self<E>, span: Span, message: string);
 }
@@ -701,7 +715,17 @@ pub type Declared<T>(
     value: T,
 )
 
-// ── TypeInfo (decisions 216, 248, 253, 254) ─────────────────────────────────
+// ── Decorator (decision 268) ────────────────────────────────────────────────
+// The type of a decorator's NAME. A name has type `Decorator` when it names a
+// function whose first parameter is `comptime _: @Decl` (a decorator with
+// further arguments included) and which has a body; nothing else is
+// assignable to it — no literal, no ordinary function, no value of another
+// type — and it cannot be constructed or written as a value. A `Decorator[]`
+// is an array literal of such names. The checker gives a name the type where
+// a `Decorator` is expected (`infer.zig` `decoratorArgumentType`).
+pub behavior Decorator {}
+
+// ── TypeInfo (decisions 216, 248, 253, 254, 268) ─────────────────────────────
 // What `@typeInfo(T)` answers. Its members are read at compile time:
 // `name` and `meta.<decorator>.<key>` today, as string constants
 // (`typeinfo-unknown-member` refuses the others until they are answered).
@@ -709,9 +733,11 @@ pub type Declared<T>(
 // `@TypeInfo.all(with: d)` or `@TypeInfo.all(with: [a, b], member: "m")`:
 // every declaration carrying one of the listed decorators, always as
 // `Declared<unknown>[]` (decision 254), whatever the program declares — a use
-// narrows `value` with `is`. `with:` names a decorator or a list of them,
-// which no type spells (front 134's question 134-b): it is checked by the
-// catalogue's own rule (`typeinfo-all-arguments`, `typeinfo-all-not-decorator`).
+// narrows `value` with `is`. `with:` is held to its type like any argument
+// (decision 252): anything but a decorator's name, or an array of them, is
+// the ordinary mismatch at the argument. The catalogue's own rule keeps the
+// arguments' shape (`typeinfo-all-arguments`: labelled, `member:` a string
+// literal, no spread, no decorator listed twice).
 // COMPTIME-ONLY: the answer is built while the program is checked.
 // The compiler's mirror is `comptime.zig` `type_info_src`.
 pub type TypeInfo<T>(
@@ -722,7 +748,7 @@ pub type TypeInfo<T>(
     meta: DeclaredMeta[],
 ) {
     declare fn all(
-        with: unknown,
+        with: Decorator | Decorator[],
         member: ?string = null,
     ) -> Declared<unknown>[];
 }

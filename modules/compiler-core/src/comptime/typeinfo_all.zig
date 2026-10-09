@@ -200,7 +200,6 @@ pub fn plan(
         // Decision 235 — `with:` names one decorator or a list of them
         // (`with: [component, service]`): one answer, in the one order, a
         // declaration carrying two of them once.
-        const not_decorator = "`with:` names a decorator — a function whose first parameter is `comptime _: @Decl`, with a body — declared here or imported — or a list of them.";
         const with_items: []const ast.Expr = switch (with_expr.*) {
             .collection => |c| switch (c.kind) {
                 .arrayLit => |al| if (al.spread == null and al.spreadExpr == null and al.elems.len > 0)
@@ -212,7 +211,11 @@ pub fn plan(
             else => @as(*const [1]ast.Expr, with_expr)[0..1],
         };
         var decorators: std.ArrayListUnmanaged(Decorator) = .empty;
-        for (with_items) |*item| {
+        // Decision 268 — an item that names no decorator leaves the query
+        // unanswered: inference holds `with:` to its declared type
+        // (`Decorator | Decorator[]`) and refuses it as the ordinary mismatch
+        // at the argument (`infer.zig` `checkCatalogueArguments`).
+        const answered = for (with_items) |*item| {
             const spelled: []const u8 = switch (item.*) {
                 .identifier => |id| switch (id.kind) {
                     .ident => |n| n,
@@ -232,12 +235,13 @@ pub fn plan(
                 };
                 if (env.decorators.get(spelled)) |sig| if (sig.fn_decl) |dfn| if (dfn.body.len > 0)
                     break :found .{ .owner = env.comptimeOwnerOf(dfn), .name = dfn.name };
-                return refuse(arena, q.loc, "{s}: `with: {s}` names no decorator of this module or its imports", .{ diagnostics.typeinfo_all_not_decorator, spelled }, not_decorator);
+                break false;
             };
             for (decorators.items) |seen| if (std.mem.eql(u8, seen.owner, decorator.owner) and std.mem.eql(u8, seen.name, decorator.name))
                 return refuse(arena, q.loc, "{s}: `with:` lists `{s}` twice", .{ diagnostics.typeinfo_all_arguments, spelled }, arguments_hint);
             try decorators.append(arena, decorator);
-        }
+        } else true;
+        if (!answered) continue;
         // How the refusals name the query's decorators: `#[a]`, `#[a]/#[b]`.
         var label_buf: std.ArrayListUnmanaged(u8) = .empty;
         for (decorators.items, 0..) |d, i| {

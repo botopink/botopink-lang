@@ -1078,7 +1078,10 @@ fn main() {
   br $L6
   )
   local.get $V_Recv
-  call $rt_string_length
+  call $rt_unicode_characters_to_list
+  call $rt_pending
+  br_if $raise
+  call $rt_erlang_length
   call $rt_pending
   br_if $raise
   br $L1
@@ -1216,7 +1219,7 @@ fn main() {
 )
 
 (func $string_slice/3 (param $a0 i32) (param $a1 i32) (param $a2 i32) (result i32)
-  (local $V_Self i32) (local $V_Start i32) (local $V_End i32) (local $t1 i32)
+  (local $V_Self i32) (local $V_Start i32) (local $V_End i32) (local $t1 i32) (local $t2 i32) (local $t3 i32) (local $t4 i32) (local $t5 i32) (local $t6 i32) (local $t7 i32) (local $t8 i32) (local $t9 i32) (local $t10 i32) (local $t11 i32) (local $t12 i32)
   (block $raise
   (block $L1 (result i32)
   (block $L2
@@ -1247,14 +1250,34 @@ fn main() {
   call $rt_eqx
   i32.eqz
   br_if $L4
+  call $rt_nil
+  local.set $t2
+  global.get $__tbase
+  i32.const 3
+  i32.add
+  i32.const 3
+  local.get $t2
+  call $rt_make_fun
+  local.set $t3
   local.get $V_Self
+  local.set $t4
   local.get $V_Start
+  local.set $t5
   local.get $V_End
-  local.get $V_Start
-  call $rt_sub
+  local.set $t6
+  local.get $t3
+  i32.const 3
+  call $rt_nil
+  call $rt_fun_index
   call $rt_pending
   br_if $raise
-  call $rt_string_slice3
+  local.set $t7
+  local.get $t3
+  local.get $t4
+  local.get $t5
+  local.get $t6
+  local.get $t7
+  call_indirect (param i32 i32 i32 i32) (result i32)
   call $rt_pending
   br_if $raise
   br $L3
@@ -1269,9 +1292,31 @@ fn main() {
   call $rt_eqx
   i32.eqz
   br_if $L5
+  call $rt_nil
+  local.set $t8
+  global.get $__tbase
+  i32.const 4
+  i32.add
+  i32.const 2
+  local.get $t8
+  call $rt_make_fun
+  local.set $t9
   local.get $V_Self
+  local.set $t10
   local.get $V_Start
-  call $rt_string_slice2
+  local.set $t11
+  local.get $t9
+  i32.const 2
+  call $rt_nil
+  call $rt_fun_index
+  call $rt_pending
+  br_if $raise
+  local.set $t12
+  local.get $t9
+  local.get $t10
+  local.get $t11
+  local.get $t12
+  call_indirect (param i32 i32 i32) (result i32)
   call $rt_pending
   br_if $raise
   br $L3
@@ -1281,6 +1326,352 @@ fn main() {
   drop
   br $raise
   )
+  br $L1
+  )
+  call $rt_function_clause
+  drop
+  br $raise
+  )
+  return
+  )
+  i32.const 0
+)
+
+(func $fun4:string_slice/3 (param $self i32) (param $a0 i32) (param $a1 i32) (param $a2 i32) (result i32)
+  (local $V___S i32) (local $V___A i32) (local $V___E i32) (local $t1 i32) (local $V___L i32) (local $t2 i32) (local $V___N i32) (local $t3 i32) (local $t4 i32) (local $V___B i32) (local $t5 i32) (local $t6 i32) (local $V___F i32)
+  (block $raise
+  (block $L1 (result i32)
+  (block $L2
+  local.get $a0
+  local.set $V___S
+  local.get $a1
+  local.set $V___A
+  local.get $a2
+  local.set $V___E
+  local.get $V___S
+  call $rt_unicode_characters_to_list
+  call $rt_pending
+  br_if $raise
+  local.set $t1
+  (block $L4
+  (block $L3
+  local.get $t1
+  local.set $V___L
+  br $L4
+  )
+  local.get $t1
+  call $rt_badmatch
+  drop
+  br $raise
+  )
+  local.get $t1
+  drop
+  local.get $V___L
+  call $rt_erlang_length
+  call $rt_pending
+  br_if $raise
+  local.set $t2
+  (block $L6
+  (block $L5
+  local.get $t2
+  local.set $V___N
+  br $L6
+  )
+  local.get $t2
+  call $rt_badmatch
+  drop
+  br $raise
+  )
+  local.get $t2
+  drop
+  local.get $V___A
+  i64.const 0
+  call $rt_int
+  call $rt_cmp
+  i32.const 0
+  i32.lt_s
+  call $rt_bool
+  local.set $t3
+  (block $L7 (result i32)
+  (block $L8
+  local.get $t3
+  global.get $__lit
+  i32.const 144
+  i32.add
+  i32.const 4
+  call $rt_atom
+  call $rt_eqx
+  i32.eqz
+  br_if $L8
+  local.get $V___N
+  local.get $V___A
+  call $rt_add
+  call $rt_pending
+  br_if $raise
+  i64.const 0
+  call $rt_int
+  call $rt_erlang_max
+  call $rt_pending
+  br_if $raise
+  br $L7
+  )
+  (block $L9
+  local.get $t3
+  global.get $__lit
+  i32.const 160
+  i32.add
+  i32.const 5
+  call $rt_atom
+  call $rt_eqx
+  i32.eqz
+  br_if $L9
+  local.get $V___A
+  local.get $V___N
+  call $rt_erlang_min
+  call $rt_pending
+  br_if $raise
+  br $L7
+  )
+  local.get $t3
+  call $rt_case_clause
+  drop
+  br $raise
+  )
+  local.set $t4
+  (block $L11
+  (block $L10
+  local.get $t4
+  local.set $V___B
+  br $L11
+  )
+  local.get $t4
+  call $rt_badmatch
+  drop
+  br $raise
+  )
+  local.get $t4
+  drop
+  local.get $V___E
+  i64.const 0
+  call $rt_int
+  call $rt_cmp
+  i32.const 0
+  i32.lt_s
+  call $rt_bool
+  local.set $t5
+  (block $L12 (result i32)
+  (block $L13
+  local.get $t5
+  global.get $__lit
+  i32.const 144
+  i32.add
+  i32.const 4
+  call $rt_atom
+  call $rt_eqx
+  i32.eqz
+  br_if $L13
+  local.get $V___N
+  local.get $V___E
+  call $rt_add
+  call $rt_pending
+  br_if $raise
+  i64.const 0
+  call $rt_int
+  call $rt_erlang_max
+  call $rt_pending
+  br_if $raise
+  br $L12
+  )
+  (block $L14
+  local.get $t5
+  global.get $__lit
+  i32.const 160
+  i32.add
+  i32.const 5
+  call $rt_atom
+  call $rt_eqx
+  i32.eqz
+  br_if $L14
+  local.get $V___E
+  local.get $V___N
+  call $rt_erlang_min
+  call $rt_pending
+  br_if $raise
+  br $L12
+  )
+  local.get $t5
+  call $rt_case_clause
+  drop
+  br $raise
+  )
+  local.set $t6
+  (block $L16
+  (block $L15
+  local.get $t6
+  local.set $V___F
+  br $L16
+  )
+  local.get $t6
+  call $rt_badmatch
+  drop
+  br $raise
+  )
+  local.get $t6
+  drop
+  local.get $V___L
+  local.get $V___B
+  i64.const 1
+  call $rt_int
+  call $rt_add
+  call $rt_pending
+  br_if $raise
+  local.get $V___F
+  local.get $V___B
+  call $rt_sub
+  call $rt_pending
+  br_if $raise
+  i64.const 0
+  call $rt_int
+  call $rt_erlang_max
+  call $rt_pending
+  br_if $raise
+  call $rt_lists_sublist3
+  call $rt_pending
+  br_if $raise
+  call $rt_unicode_characters_to_binary
+  call $rt_pending
+  br_if $raise
+  br $L1
+  )
+  call $rt_function_clause
+  drop
+  br $raise
+  )
+  return
+  )
+  i32.const 0
+)
+
+(func $fun5:string_slice/3 (param $self i32) (param $a0 i32) (param $a1 i32) (result i32)
+  (local $V___S i32) (local $V___A i32) (local $t1 i32) (local $V___L i32) (local $t2 i32) (local $V___N i32) (local $t3 i32) (local $t4 i32) (local $V___B i32)
+  (block $raise
+  (block $L1 (result i32)
+  (block $L2
+  local.get $a0
+  local.set $V___S
+  local.get $a1
+  local.set $V___A
+  local.get $V___S
+  call $rt_unicode_characters_to_list
+  call $rt_pending
+  br_if $raise
+  local.set $t1
+  (block $L4
+  (block $L3
+  local.get $t1
+  local.set $V___L
+  br $L4
+  )
+  local.get $t1
+  call $rt_badmatch
+  drop
+  br $raise
+  )
+  local.get $t1
+  drop
+  local.get $V___L
+  call $rt_erlang_length
+  call $rt_pending
+  br_if $raise
+  local.set $t2
+  (block $L6
+  (block $L5
+  local.get $t2
+  local.set $V___N
+  br $L6
+  )
+  local.get $t2
+  call $rt_badmatch
+  drop
+  br $raise
+  )
+  local.get $t2
+  drop
+  local.get $V___A
+  i64.const 0
+  call $rt_int
+  call $rt_cmp
+  i32.const 0
+  i32.lt_s
+  call $rt_bool
+  local.set $t3
+  (block $L7 (result i32)
+  (block $L8
+  local.get $t3
+  global.get $__lit
+  i32.const 144
+  i32.add
+  i32.const 4
+  call $rt_atom
+  call $rt_eqx
+  i32.eqz
+  br_if $L8
+  local.get $V___N
+  local.get $V___A
+  call $rt_add
+  call $rt_pending
+  br_if $raise
+  i64.const 0
+  call $rt_int
+  call $rt_erlang_max
+  call $rt_pending
+  br_if $raise
+  br $L7
+  )
+  (block $L9
+  local.get $t3
+  global.get $__lit
+  i32.const 160
+  i32.add
+  i32.const 5
+  call $rt_atom
+  call $rt_eqx
+  i32.eqz
+  br_if $L9
+  local.get $V___A
+  local.get $V___N
+  call $rt_erlang_min
+  call $rt_pending
+  br_if $raise
+  br $L7
+  )
+  local.get $t3
+  call $rt_case_clause
+  drop
+  br $raise
+  )
+  local.set $t4
+  (block $L11
+  (block $L10
+  local.get $t4
+  local.set $V___B
+  br $L11
+  )
+  local.get $t4
+  call $rt_badmatch
+  drop
+  br $raise
+  )
+  local.get $t4
+  drop
+  local.get $V___B
+  local.get $V___L
+  call $rt_lists_nthtail
+  call $rt_pending
+  br_if $raise
+  call $rt_unicode_characters_to_binary
+  call $rt_pending
+  br_if $raise
   br $L1
   )
   call $rt_function_clause
@@ -1323,6 +1714,29 @@ fn main() {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
+const __bp_surrogate = /[\uD800-\uDFFF]/;
+const __bp_surrogate_k = new Array(64).fill("");
+const __bp_surrogate_v = new Array(64).fill(false);
+function __bp_has_surrogate(s) {
+    const h = s.length & 63;
+    if (__bp_surrogate_k[h] === s) { return __bp_surrogate_v[h]; }
+    const p = __bp_surrogate.test(s);
+    __bp_surrogate_k[h] = s;
+    __bp_surrogate_v[h] = p;
+    return p;
+}
+
+function __bp_str_count(s, u) {
+    let n = 0;
+    for (const c of s.substring(0, u)) { n += 1; }
+    return n;
+}
+
+function __bp_str_index_of(s, sub) {
+    const u = s.indexOf(sub);
+    return (u <= 0 || !__bp_has_surrogate(s)) ? u : __bp_str_count(s, u);
+}
+
 function __bp_array_at(xs, i) { return xs.at(i) ?? null; }
 
 function __bp_eq(a, b, d) {
@@ -1342,6 +1756,10 @@ function __bp_eq(a, b, d) {
 function __bp_show(v, s, top, a) {
     if ((typeof v === "string")) {
         a.push(top ? v : (("\"" + Array.from(v, (c) => ((c === "\"") || (c === "\\")) ? ("\\" + c) : (c === "\n") ? "\\n" : (c === "\r") ? "\\r" : (c === "\t") ? "\\t" : c).join("")) + "\""));
+        return "%s";
+    }
+    if ((typeof v === "bigint")) {
+        a.push(String(v));
         return "%s";
     }
     if (((typeof v === "number") && (s === "f"))) {
@@ -1401,33 +1819,33 @@ function __bp_print() {
 //   default fn parseFloat(...)
 String.prototype.slice = function(start, end) {
     const self = this.valueOf();
-    if ((end != null)) { return ((__s, __a, __e) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, start, end); } else { return ((__s, __a) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, start); }
+    if ((end != null)) { return ((__s, __a, __e) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); const __g = __e < 0 ? Math.max(__m + __e, 0) : Math.min(__e, __m); return Array.from({ length: Math.max(__g - __d, 0) }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, start, end); } else { return ((__s, __a) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); return Array.from({ length: __m - __d }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, start); }
 };
 String.prototype.chars = function() { return (Array.from(this.valueOf())); };
 String.prototype.lines = function() { return this.valueOf().split(/\r?\n/); };
 String.prototype.words = function() { return this.valueOf().split(/[ \t\n\r]+/).filter(__w => __w.length > 0); };
-String.prototype.charCodeAt = function(index) { return ((this.valueOf().codePointAt(index) ?? -1) | 0); };
+String.prototype.charCodeAt = function(index) { return ((__s, __i) => { if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = __i >= 0 ? Array.from(__s)[__i] : undefined; return __c === undefined ? -1 : __c.codePointAt(0); } return (__s.codePointAt(__i) ?? -1) | 0; })(this.valueOf(), index); };
 String.prototype.parseInt = function() {
     const self = this.valueOf();
     const signed = (self.startsWith("-") || self.startsWith("+"));
-    const digits = (() => { if (signed) { return ((__s, __a) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, 1); } else { return self; } })();
+    const digits = (() => { if (signed) { return ((__s, __a) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); return Array.from({ length: __m - __d }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, 1); } else { return self; } })();
     return (() => { if ((/^[0-9]+$/.test(digits))) { return ((__s) => { const __n = Number(__s); return Number.isSafeInteger(__n) ? { ok: __n + 0 } : { error: 'parseInt: "' + __s + '" is out of range' } })(self); } else { return ({ error: "parseInt: \"" + self + "\" is not an integer" }); } })();
 };
 String.prototype.parseFloat = function() {
     const self = this.valueOf();
     const signed = (self.startsWith("-") || self.startsWith("+"));
     const start = (() => { if (signed) { return 1; } else { return 0; } })();
-    const lowerAt = self.indexOf("e");
-    const exponentAt = (() => { if ((lowerAt < 0)) { return self.indexOf("E"); } else { return lowerAt; } })();
-    const mantissa = (() => { if ((exponentAt < 0)) { return ((__s, __a) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, start); } else { return ((__s, __a, __e) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, start, exponentAt); } })();
-    const pointAt = self.indexOf(".");
+    const lowerAt = __bp_str_index_of(self, "e");
+    const exponentAt = (() => { if ((lowerAt < 0)) { return __bp_str_index_of(self, "E"); } else { return lowerAt; } })();
+    const mantissa = (() => { if ((exponentAt < 0)) { return ((__s, __a) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); return Array.from({ length: __m - __d }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, start); } else { return ((__s, __a, __e) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); const __g = __e < 0 ? Math.max(__m + __e, 0) : Math.min(__e, __m); return Array.from({ length: Math.max(__g - __d, 0) }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, start, exponentAt); } })();
+    const pointAt = __bp_str_index_of(self, ".");
     const pointed = ((pointAt >= 0) && (((exponentAt < 0) || (pointAt < exponentAt))));
-    const whole = (() => { if (pointed) { return ((__s, __a, __e) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, start, pointAt); } else { return mantissa; } })();
-    const fraction = (() => { if ((pointed === false)) { return "0"; } else { return (() => { if ((exponentAt < 0)) { return ((__s, __a) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, (pointAt + 1)); } else { return ((__s, __a, __e) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, (pointAt + 1), exponentAt); } })(); } })();
-    const exponent = (() => { if ((exponentAt < 0)) { return "0"; } else { return ((__s, __a) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, (exponentAt + 1)); } })();
-    const exponentMark = (() => { if ((exponentAt < 0)) { return ""; } else { return ((__s, __a, __e) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, (exponentAt + 1), (exponentAt + 2)); } })();
+    const whole = (() => { if (pointed) { return ((__s, __a, __e) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); const __g = __e < 0 ? Math.max(__m + __e, 0) : Math.min(__e, __m); return Array.from({ length: Math.max(__g - __d, 0) }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, start, pointAt); } else { return mantissa; } })();
+    const fraction = (() => { if ((pointed === false)) { return "0"; } else { return (() => { if ((exponentAt < 0)) { return ((__s, __a) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); return Array.from({ length: __m - __d }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, (pointAt + 1)); } else { return ((__s, __a, __e) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); const __g = __e < 0 ? Math.max(__m + __e, 0) : Math.min(__e, __m); return Array.from({ length: Math.max(__g - __d, 0) }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, (pointAt + 1), exponentAt); } })(); } })();
+    const exponent = (() => { if ((exponentAt < 0)) { return "0"; } else { return ((__s, __a) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); return Array.from({ length: __m - __d }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, (exponentAt + 1)); } })();
+    const exponentMark = (() => { if ((exponentAt < 0)) { return ""; } else { return ((__s, __a, __e) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); const __g = __e < 0 ? Math.max(__m + __e, 0) : Math.min(__e, __m); return Array.from({ length: Math.max(__g - __d, 0) }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, (exponentAt + 1), (exponentAt + 2)); } })();
     const exponentSigned = ((exponentMark === "-") || (exponentMark === "+"));
-    const exponentDigits = (() => { if (exponentSigned) { return ((__s, __a) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, (exponentAt + 2)); } else { return exponent; } })();
+    const exponentDigits = (() => { if (exponentSigned) { return ((__s, __a) => { if (__a == null) __a = 0; if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = Array.from(__s); const __m = __c.length; const __d = __a < 0 ? Math.max(__m + __a, 0) : Math.min(__a, __m); return Array.from({ length: __m - __d }, (_, __i) => __c[__d + __i]).join(""); } const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, (exponentAt + 2)); } else { return exponent; } })();
     const wellFormed = (((/^[0-9]+$/.test(whole)) && (/^[0-9]+$/.test(fraction))) && (/^[0-9]+$/.test(exponentDigits)));
     return (() => { if (wellFormed) { return ((__t, __w, __f, __x) => { const __n = Number((__t.startsWith('-') ? '-' : '') + __w + '.' + __f + 'e' + __x); return Number.isFinite(__n) ? { ok: __n } : { error: 'parseFloat: "' + __t + '" overflows f64' } })(self, whole, fraction, exponent); } else { return ({ error: "parseFloat: \"" + self + "\" is not a number" }); } })();
 };

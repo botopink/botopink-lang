@@ -50,7 +50,7 @@ main() ->
     Names = [<<"ana">>, <<"bo">>],
     '__bp_print'([(fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Names, 1)]),
     S = <<"hello">>,
-    '__bp_print'([(fun(__S, __I) -> __N = string:length(__S), __J = case __I < 0 of true -> __I + __N; false -> __I end, case (__J >= 0) andalso (__J < __N) of true -> string:slice(__S, __J, 1); false -> undefined end end)(S, 1)]),
+    '__bp_print'([(fun(__S, __I) -> __L = unicode:characters_to_list(__S), __N = erlang:length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case (__J >= 0) andalso (__J < __N) of true -> unicode:characters_to_binary([lists:nth(__J + 1, __L)]); false -> undefined end end)(S, 1)]),
     '__bp_print'([string_slice(S, 1, 3)]),
     '__bp_print'([string_slice(S, 3, undefined)]),
     '__bp_print'([array_slice(Xs, 1, undefined)]).
@@ -58,9 +58,9 @@ main() ->
 string_slice(Self, Start, End) ->
     case (End =/= undefined) of
         true ->
-            string:slice(Self, Start, ((End) - (Start)));
+            (fun(__S, __A, __E) -> __L = unicode:characters_to_list(__S), __N = erlang:length(__L), __B = case __A < 0 of true -> erlang:max(__N + __A, 0); false -> erlang:min(__A, __N) end, __F = case __E < 0 of true -> erlang:max(__N + __E, 0); false -> erlang:min(__E, __N) end, unicode:characters_to_binary(lists:sublist(__L, __B + 1, erlang:max(__F - __B, 0))) end)(Self, Start, End);
         false ->
-            string:slice(Self, Start)
+            (fun(__S, __A) -> __L = unicode:characters_to_list(__S), __N = erlang:length(__L), __B = case __A < 0 of true -> erlang:max(__N + __A, 0); false -> erlang:min(__A, __N) end, unicode:characters_to_binary(lists:nthtail(__B, __L)) end)(Self, Start)
     end.
 
 array_slice(Self, Start, End) ->

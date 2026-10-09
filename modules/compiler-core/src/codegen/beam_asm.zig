@@ -3068,6 +3068,12 @@ const Emitter = struct {
                         };
                         for (ok.transformed.decls) |d| switch (d) {
                             .type_ => |e| if (!e.isRecord() and std.mem.eql(u8, e.name, name)) {
+                                // An imported enum is an enum a `case` subject
+                                // typed by it names (`enumOfSubject`): without
+                                // it a variant two enums declare (`Item`) took
+                                // the first writer's tag and matched no arm.
+                                // Parity with `erlang.zig`.
+                                try self.enum_names.put(e.name, {});
                                 _ = try self.type_owner_path.getOrPutValue(e.name, info.module);
                                 try self.rememberVariantOrder(e.name, e.variants());
                                 for (e.variants()) |v| {
@@ -7498,9 +7504,9 @@ const Emitter = struct {
     // so each shape needs an explicit operand→x-register choreography. Three
     // reusable layouts cover the directly-host-callable methods:
     //
-    //   • recv-only        `fn(Recv)`            → `lists:reverse`, `string:length`
+    //   • recv-only        `fn(Recv)`            → `lists:reverse`, `string:trim`
     //   • fun-then-list    `fn(Fun, Recv)`       → `lists:map/filter/foreach`
-    //   • recv-then-args   `fn(Recv, Arg…[Lit])` → `string:slice/2`
+    //   • recv-then-args   `fn(Recv, Arg…[Lit])` → `string:prefix/2`
     //   • arg-then-list    `fn(Arg, Recv)`       → `lists:member`
     //
     // The fun-then-list layout exploits that a `move {x,0},{x,1}` leaves the list
@@ -7562,7 +7568,10 @@ const Emitter = struct {
                 return true;
             },
             .string => {
-                if (eq(u8, callee, "slice") and cc.args.len + cc.trailing.len == 1) try self.primRecvThenArgs("string", "slice", recv_expr, cc, mode) else if (eq(u8, callee, "contains")) try self.primCmpAgainstNomatch("binary", "match", recv_expr, cc, mode) else if (eq(u8, callee, "startsWith")) try self.primCmpAgainstNomatch("string", "prefix", recv_expr, cc, mode) else return false;
+                // No `slice` here: `string:slice/2` counts grapheme clusters,
+                // and a string index counts codepoints (decision 320) — the
+                // std `default fn slice` and its Erlang templates lower it.
+                if (eq(u8, callee, "contains")) try self.primCmpAgainstNomatch("binary", "match", recv_expr, cc, mode) else if (eq(u8, callee, "startsWith")) try self.primCmpAgainstNomatch("string", "prefix", recv_expr, cc, mode) else return false;
                 return true;
             },
             .bool, .int, .float => return false,
@@ -8791,7 +8800,7 @@ const Emitter = struct {
     }
 
     /// `fn(Recv, Arg…)` — receiver stays in `x0`; the (simple) args go to
-    /// `x1…` (`string:slice(S, Start)`). A non-simple arg would need to clobber
+    /// `x1…` (`string:prefix(S, Prefix)`). A non-simple arg would need to clobber
     /// `x0`, so it falls back to the limit.
     fn primRecvThenArgs(self: *Emitter, mod: []const u8, fn_name: []const u8, recv_expr: *const ast.Expr, cc: anytype, mode: CallMode) anyerror!void {
         const st = try self.stageCall(recv_expr, cc.args, cc.trailing);
@@ -9060,8 +9069,9 @@ const Emitter = struct {
 
     /// Emit (once per module) `'__bp_index'(Recv, Idx)` — decision 30's scalar
     /// index, dispatched on the receiver's runtime tag: a map answers
-    /// `maps:get(Idx, Recv, undefined)`, a binary the one-character
-    /// `string:slice(Recv, Idx, 1)`, a tuple `element(Idx + 1, Recv)`, and
+    /// `maps:get(Idx, Recv, undefined)`, a binary the one-codepoint
+    /// `unicode:characters_to_binary(lists:sublist(unicode:characters_to_list(Recv), Idx + 1, 1))`
+    /// (decision 320: codepoints, not `string:slice/3`'s grapheme clusters), a tuple `element(Idx + 1, Recv)`, and
     /// anything else (a list) the bounds-checked `'-bp_at-'/2` the `xs.at(i)`
     /// method already uses, so an out-of-range index answers `undefined`
     /// instead of raising.
@@ -9100,9 +9110,11 @@ const Emitter = struct {
         try beamEmitter.writeLabel(self.out, not_map);
         try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
         try beamEmitter.writeTest(self.out, .is_binary, not_bin, &.{Op.xr(0)});
-        try beamEmitter.writeMoveOp(self.out, Op.yr(1), Dst.xr(1));
+        try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "unicode", .function = "characters_to_list" } }, 0);
+        try beamEmitter.writeGcBif(self.out, .add, 1, &.{ Op.yr(1), Op.int(1) }, Dst.xr(1));
         try beamEmitter.writeMoveOp(self.out, Op.int(1), Dst.xr(2));
-        try beamEmitter.writeCall(self.out, .last, 3, .{ .ext = .{ .module = "string", .function = "slice" } }, 2);
+        try beamEmitter.writeCall(self.out, .normal, 3, .{ .ext = .{ .module = "lists", .function = "sublist" } }, 0);
+        try beamEmitter.writeCall(self.out, .last, 1, .{ .ext = .{ .module = "unicode", .function = "characters_to_binary" } }, 2);
 
         try beamEmitter.writeLabel(self.out, not_bin);
         try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
@@ -9123,11 +9135,31 @@ const Emitter = struct {
         return name;
     }
 
+    /// `'__bp_slice'/3`'s binary edge, the binary in `x0`, the start in `y1`
+    /// and, when `bounded`, the length in `y2`: `L = unicode:characters_to_list(Recv)`
+    /// is parked in `y0`, then `unicode:characters_to_binary(lists:sublist(L,
+    /// Start + 1, Len))` returns, `Len` being `length(L)` on the open edge.
+    fn writeCodepointSublist(self: *Emitter, edge: enum { open, bounded }) anyerror!void {
+        try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "unicode", .function = "characters_to_list" } }, 0);
+        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(0));
+        if (edge == .open) {
+            try beamEmitter.writeGcBif(self.out, .length, 1, &.{Op.xr(0)}, Dst.xr(0));
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(2));
+        }
+        try beamEmitter.writeGcBif(self.out, .add, 0, &.{ Op.yr(1), Op.int(1) }, Dst.xr(1));
+        try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
+        try beamEmitter.writeMoveOp(self.out, Op.yr(2), Dst.xr(2));
+        try beamEmitter.writeCall(self.out, .normal, 3, .{ .ext = .{ .module = "lists", .function = "sublist" } }, 0);
+        try beamEmitter.writeCall(self.out, .last, 1, .{ .ext = .{ .module = "unicode", .function = "characters_to_binary" } }, 3);
+    }
+
     /// Emit (once per module) `'__bp_slice'(Recv, Start, End)` — decision 30's
     /// index whose index is a range, half-open like every other `..` in the
     /// language, with `End` the atom `infinity` for `xs[0..]` (the convention
-    /// `lowerRange` already uses). A binary answers `string:slice/2,3` and
-    /// anything else `lists:sublist/3`, both of which clamp instead of raising.
+    /// `lowerRange` already uses). Anything answers `lists:sublist/3`, which
+    /// clamps instead of raising; a binary is sliced as its codepoint list and
+    /// re-encoded (decision 320 — never `string:slice/2,3`, whose unit is the
+    /// grapheme cluster).
     fn ensureSliceHelper(self: *Emitter) anyerror![]const u8 {
         if (self.slice_helper_name) |n| return n;
         const name = try self.alloc.dupe(u8, "'__bp_slice'");
@@ -9157,8 +9189,7 @@ const Emitter = struct {
         try beamEmitter.writeTest(self.out, .is_eq, bounded, &.{ Op.yr(2), Op.atom("infinity") });
         try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
         try beamEmitter.writeTest(self.out, .is_binary, open_list, &.{Op.xr(0)});
-        try beamEmitter.writeMoveOp(self.out, Op.yr(1), Dst.xr(1));
-        try beamEmitter.writeCall(self.out, .last, 2, .{ .ext = .{ .module = "string", .function = "slice" } }, 3);
+        try self.writeCodepointSublist(.open);
         try beamEmitter.writeLabel(self.out, open_list);
         // `lists:sublist(Recv, Start + 1, length(Recv))` — a length larger than
         // what is left is exactly "the rest". The length is parked in `y2`,
@@ -9178,9 +9209,7 @@ const Emitter = struct {
         try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(2));
         try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
         try beamEmitter.writeTest(self.out, .is_binary, bounded_list, &.{Op.xr(0)});
-        try beamEmitter.writeMoveOp(self.out, Op.yr(1), Dst.xr(1));
-        try beamEmitter.writeMoveOp(self.out, Op.yr(2), Dst.xr(2));
-        try beamEmitter.writeCall(self.out, .last, 3, .{ .ext = .{ .module = "string", .function = "slice" } }, 3);
+        try self.writeCodepointSublist(.bounded);
         try beamEmitter.writeLabel(self.out, bounded_list);
         try beamEmitter.writeGcBif(self.out, .add, 0, &.{ Op.yr(1), Op.int(1) }, Dst.xr(1));
         try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
@@ -11687,11 +11716,12 @@ const Emitter = struct {
             .prim => |k| {
                 try self.lowerExprIntoX0(ia.receiver.*);
                 switch (k) {
-                    // `string:length/1` counts graphemes, so it has to stay a
-                    // real call (parity with the erlang backend).
+                    // A string's length counts codepoints (decision 320; parity
+                    // with the erlang backend): `length(unicode:characters_to_list(S))`,
+                    // never `string:length/1`, which counts grapheme clusters.
                     .string => {
-                        try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "string", .function = "length" } }, 0);
-                        if (dest != 0) try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(dest));
+                        try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "unicode", .function = "characters_to_list" } }, 0);
+                        try beamEmitter.writeGcBif(self.out, .length, 1, &.{Op.xr(0)}, Dst.xr(dest));
                     },
                     // `length/1` is a gc_bif, not a call: a `call_ext` here would
                     // clobber the caller-saved x-registers an enclosing argument
@@ -12176,7 +12206,13 @@ const Emitter = struct {
         try beamEmitter.writeReturn(w);
         try beamEmitter.writeLabel(w, not_list);
         try beamEmitter.writeTest(w, .is_binary, undef, &.{Op.xr(0)});
-        try beamEmitter.writeCall(w, .only, 1, .{ .ext = .{ .module = "string", .function = "length" } }, 0);
+        // Codepoints (decision 320): `length(unicode:characters_to_list(S))`,
+        // a body call, so the edge sets up a frame of its own.
+        try beamEmitter.writeAllocate(w, 0, 1);
+        try beamEmitter.writeCall(w, .normal, 1, .{ .ext = .{ .module = "unicode", .function = "characters_to_list" } }, 0);
+        try beamEmitter.writeGcBif(w, .length, 1, &.{Op.xr(0)}, Dst.xr(0));
+        try beamEmitter.writeDeallocate(w, 0);
+        try beamEmitter.writeReturn(w);
         try beamEmitter.writeLabel(w, undef);
         try beamEmitter.writeMoveOp(w, Op.atom("undefined"), Dst.xr(0));
         try beamEmitter.writeReturn(w);

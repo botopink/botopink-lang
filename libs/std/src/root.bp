@@ -30,6 +30,7 @@ pub mod encoding;
 pub mod hash;
 pub mod escape;
 pub mod async;
+pub mod types;
 pub mod erlang;
 pub mod beam;
 pub mod io;

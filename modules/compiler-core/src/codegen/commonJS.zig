@@ -1527,6 +1527,7 @@ const Emitter = struct {
     /// A prelude helper's name, marking it for emission in this module.
     fn helper(self: *Emitter, h: jsPrelude.Helper) js.Expr {
         self.helpers.insert(h);
+        for (jsPrelude.requires(h)) |r| self.helpers.insert(r);
         return .{ .name = jsPrelude.name(h) };
     }
 
@@ -3783,7 +3784,7 @@ const Emitter = struct {
                 .stringLit => |s| return .{ .lexeme_string = s },
                 // Desugared to a `+` chain by the transform pass; never reaches codegen.
                 .stringTemplate => unreachable,
-                .numberLit => |n| return .{ .number = n },
+                .numberLit => |n| return .{ .number = try self.numberLiteral(n) },
                 .null_ => return .null_,
                 .comment => |c| return .{ .comment = .{
                     .style = switch (c.kind) {
@@ -3824,7 +3825,10 @@ const Emitter = struct {
                     // host length (C3): JS spells it as the `.length` property.
                     // Inference records the primitive kind only for a typed
                     // receiver, so a record field named `len` is untouched.
-                    if (std.mem.eql(u8, ia.member, "len")) if (self.lowerings) |lw| if (lw.get(id.loc)) |il| if (il == .prim) {
+                    // Decision 320 — a string's `length` / `len` counts
+                    // codepoints (`__bp_str_length`), not UTF-16 units.
+                    if (std.mem.eql(u8, ia.member, "len") or std.mem.eql(u8, ia.member, "length")) if (self.lowerings) |lw| if (lw.get(id.loc)) |il| if (il == .prim) {
+                        if (il.prim == .string and !ia.optional) return self.b.call(self.helper(.str_length), &.{recv});
                         return self.b.memberOpt(recv, "length", ia.optional);
                     };
                     // Optional chaining maps 1:1 to native JS `?.`.
@@ -3842,6 +3846,15 @@ const Emitter = struct {
                     .add, .sub, .mul, .div, .mod => {
                         const lhs = try self.buildExpr(bin.lhs.*);
                         const rhs = try self.buildExpr(bin.rhs.*);
+                        // Decision 319 — a 64-bit result through its prelude
+                        // helper: a number while safe, a `BigInt` beyond.
+                        if (isWideKind(k)) return self.wideOp(switch (bin.op) {
+                            .add => .wide_add,
+                            .sub => .wide_sub,
+                            .mul => .wide_mul,
+                            .div => .wide_div,
+                            else => .wide_mod,
+                        }, &.{ lhs, rhs }, k, arithSymbol(bin.op), bin.loc);
                         const raw = switch (bin.op) {
                             .add => try self.b.binary("+", lhs, rhs),
                             .sub => try self.b.binary("-", lhs, rhs),
@@ -3903,7 +3916,10 @@ const Emitter = struct {
                 // Decision 264 — `-x` leaves an integer type at its minimum
                 // (`-(-128)` is no `i8`) and an unsigned one everywhere but 0.
                 // A literal operand is a constant the checker already placed.
-                if (un.op == .neg and un.expr.* != .literal) if (self.intKindAt(un.loc)) |k| return self.intChecked(out, k, "-", un.loc);
+                if (un.op == .neg and un.expr.* != .literal) if (self.intKindAt(un.loc)) |k| {
+                    if (isWideKind(k)) return self.wideOp(.wide_neg, &.{try self.buildExpr(un.expr.*)}, k, "-", un.loc);
+                    return self.intChecked(out, k, "-", un.loc);
+                };
                 // `-x` with `x = 0` is `-0` in JavaScript; an integer never is.
                 // A nonzero literal (`-1`) cannot be.
                 if (un.op == .neg and !isNonzeroLiteral(un.expr.*) and (try self.numKind(un.expr.*)).isInt()) return self.intCanon(out);
@@ -4008,6 +4024,7 @@ const Emitter = struct {
                     // The target is a name or `<name>.<field>` (the parser's two
                     // forms), so reading it again evaluates nothing twice.
                     if (a.op == .plusAssign) if (self.intKindAt(b.loc)) |k| {
+                        if (isWideKind(k)) return self.b.assign(target, "=", try self.wideOp(.wide_add, &.{ target, try self.buildExpr(a.value.*) }, k, "+=", b.loc));
                         const sum = try self.b.binary("+", target, try self.buildExpr(a.value.*));
                         return self.b.assign(target, "=", try self.intChecked(sum, k, "+=", b.loc));
                     };
@@ -4540,6 +4557,8 @@ const Emitter = struct {
     /// An integer literal in an `f64` position takes its shape from the
     /// declared type instead (`typeShape`).
     fn isFloatLiteral(text: []const u8) bool {
+        // `0xE` is an integer: a radix literal's `e` is a digit.
+        if (text.len > 2 and text[0] == '0' and std.ascii.isAlphabetic(text[1])) return false;
         return std.mem.indexOfAny(u8, text, ".eE") != null;
     }
 
@@ -4731,16 +4750,56 @@ const Emitter = struct {
     }
 
     /// `__bp_int(e, lo, hi, "<op> on <type> at <file:line:col>")` — `e`, or
-    /// the abort `js_prelude`'s `int_check` throws when it leaves `k`'s range
-    /// (a 64-bit type's is ±(2^53 − 1) on this target, `rangeExactDouble`).
+    /// the abort `js_prelude`'s `int_check` throws when it leaves `k`'s range.
+    /// A type a JS number holds whole (`i8` … `u32`); the 64-bit four go
+    /// through `wideOp`.
     fn intChecked(self: *Emitter, e: js.Expr, k: envMod.ArithKind, op: []const u8, loc: ast.Loc) !js.Expr {
-        const r = k.rangeExactDouble().?;
+        const r = k.range().?;
         return self.b.call(self.helper(.int_check), &.{
             e,
             .{ .number = try std.fmt.allocPrint(self.arena(), "{d}", .{r.lo}) },
             .{ .number = try std.fmt.allocPrint(self.arena(), "{d}", .{r.hi}) },
-            .{ .quoted = try std.fmt.allocPrint(self.arena(), "{s} on {s} at {s}:{d}:{d}", .{ op, @tagName(k), self.src_file, loc.line, loc.col }) },
+            try self.overflowWhat(k, op, loc),
         });
+    }
+
+    /// `"<op> on <type> at <file:line:col>"` — what an abort names.
+    fn overflowWhat(self: *Emitter, k: envMod.ArithKind, op: []const u8, loc: ast.Loc) !js.Expr {
+        return .{ .quoted = try std.fmt.allocPrint(self.arena(), "{s} on {s} at {s}:{d}:{d}", .{ op, @tagName(k), self.src_file, loc.line, loc.col }) };
+    }
+
+    /// Decision 319 — `__bp_w<op>(operands…, u, "<what>")`: an operation on
+    /// `i64`, `isize`, `u64` or `usize`, whose operands and answer are a
+    /// number within ±(2^53 − 1) or a `BigInt` beyond (`js_prelude`'s
+    /// `wide_*`); `u` is `1` for the unsigned two.
+    fn wideOp(self: *Emitter, h: jsPrelude.Helper, operands: []const js.Expr, k: envMod.ArithKind, op: []const u8, loc: ast.Loc) !js.Expr {
+        const args = try self.arena().alloc(js.Expr, operands.len + 2);
+        @memcpy(args[0..operands.len], operands);
+        args[operands.len] = .{ .number = if (k == .u64 or k == .usize) "1" else "0" };
+        args[operands.len + 1] = try self.overflowWhat(k, op, loc);
+        return self.b.call(self.helper(h), args);
+    }
+
+    /// The four integer types commonJS holds as a number or a `BigInt`
+    /// (decision 319).
+    fn isWideKind(k: envMod.ArithKind) bool {
+        return switch (k) {
+            .i64, .u64, .isize, .usize => true,
+            else => false,
+        };
+    }
+
+    /// Decision 319 — an integer literal past ±(2^53 − 1) is a 64-bit type's
+    /// (the checker refuses it for every narrower one) and is written as the
+    /// `BigInt` it is (`9223372036854775807n`); every other literal as it
+    /// stands, so a value is a `BigInt` exactly when a number cannot hold it.
+    fn numberLiteral(self: *Emitter, n: []const u8) ![]const u8 {
+        if (isFloatLiteral(n)) return n;
+        var clean: std.ArrayListUnmanaged(u8) = .empty;
+        for (n) |c| if (c != '_') try clean.append(self.arena(), c);
+        const v = std.fmt.parseInt(u128, clean.items, 0) catch return n;
+        if (v <= (1 << 53) - 1) return n;
+        return std.fmt.allocPrint(self.arena(), "{s}n", .{clean.items});
     }
 
     /// `(e + 0)` — `-0 + 0` is `0`, and every other number is left exactly
@@ -5554,9 +5613,9 @@ const Emitter = struct {
     }
 
     /// The inclusive range of an integer type, as JS number literals, or null
-    /// when the type is not a sized integer. `i64` / `u64` carry no range: a JS
-    /// number cannot represent their ends exactly, so the test is
-    /// `Number.isInteger` (plus `>= 0` for the unsigned one).
+    /// when the type is not a sized integer. `i64` / `u64` carry no number
+    /// range: their value is a safe-integer number or a `BigInt` (decision
+    /// 319), tested by `wideIsTest`.
     fn integerRange(name: []const u8) ?struct { lo: ?[]const u8, hi: ?[]const u8 } {
         const table = .{
             .{ "i8", "-128", "127" },                .{ "i16", "-32768", "32767" },
@@ -5573,6 +5632,29 @@ const Emitter = struct {
         return null;
     }
 
+    const WideBounds = struct { unsigned: bool, lo: []const u8, hi: []const u8 };
+
+    /// The `BigInt` range of a 64-bit integer type (decision 319), or null.
+    fn wideBounds(name: []const u8) ?WideBounds {
+        if (std.mem.eql(u8, name, "i64") or std.mem.eql(u8, name, "int") or std.mem.eql(u8, name, "isize"))
+            return .{ .unsigned = false, .lo = "-9223372036854775808n", .hi = "9223372036854775807n" };
+        if (std.mem.eql(u8, name, "u64") or std.mem.eql(u8, name, "uint") or std.mem.eql(u8, name, "usize"))
+            return .{ .unsigned = true, .lo = "0n", .hi = "18446744073709551615n" };
+        return null;
+    }
+
+    /// `x is i64`: a value of a 64-bit type is a safe-integer number or a
+    /// `BigInt` in the type's range (decision 319) —
+    /// `(typeof x === "number") ? Number.isSafeInteger(x) : (typeof x === "bigint" && x >= lo && x <= hi)`,
+    /// with `&& x >= 0` on the number side for an unsigned type.
+    fn wideIsTest(self: *Emitter, subject: js.Expr, wb: WideBounds) !js.Expr {
+        var num = try self.b.call(try self.b.member(.{ .name = "Number" }, "isSafeInteger"), &.{subject});
+        if (wb.unsigned) num = try self.b.binaryBare("&&", num, try self.b.binaryBare(">=", subject, .{ .number = "0" }));
+        var big = try self.b.binaryBare("&&", try self.typeofIs(subject, "bigint"), try self.b.binaryBare(">=", subject, .{ .number = wb.lo }));
+        big = try self.b.binaryBare("&&", big, try self.b.binaryBare("<=", subject, .{ .number = wb.hi }));
+        return self.b.paren(try self.b.ternary(try self.typeofIs(subject, "number"), num, big));
+    }
+
     /// `typeof <subject> === "<what>"`.
     fn typeofIs(self: *Emitter, subject: js.Expr, what: []const u8) !js.Expr {
         return self.b.binaryBare("===", try self.b.unary("typeof ", subject, false), .{ .quoted = what });
@@ -5583,7 +5665,7 @@ const Emitter = struct {
     fn isTestReads(t: ast.TypeRef) usize {
         return switch (t) {
             // `Enum.Variant`: the class test and the `tag` read (`isTest`).
-            .named => |n| if (isVariantPath(n)) 2 else if (integerRange(n)) |r| blk: {
+            .named => |n| if (isVariantPath(n)) 2 else if (wideBounds(n) != null) 6 else if (integerRange(n)) |r| blk: {
                 var k: usize = 2; // typeof + Number.isInteger
                 if (r.lo != null) k += 1;
                 if (r.hi != null) k += 1;
@@ -5618,6 +5700,7 @@ const Emitter = struct {
                 if (std.mem.eql(u8, n, "bool")) return self.typeofIs(subject, "boolean");
                 if (std.mem.eql(u8, n, "f32") or std.mem.eql(u8, n, "f64") or
                     std.mem.eql(u8, n, "float")) return self.typeofIs(subject, "number");
+                if (wideBounds(n)) |wb| return self.wideIsTest(subject, wb);
                 if (integerRange(n)) |r| {
                     var acc = try self.b.binaryBare("&&", try self.typeofIs(subject, "number"), try self.b.call(
                         try self.b.member(.{ .name = "Number" }, "isInteger"),

@@ -23,7 +23,8 @@ fn n() -> i32 {
     {move, {literal, <<"hello">>}, {x, 0}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {call_ext, 1, {extfunc, string, length, 1}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
+    {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
     {deallocate, 1}.
     return.
 ```

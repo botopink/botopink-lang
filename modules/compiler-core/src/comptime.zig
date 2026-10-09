@@ -1302,7 +1302,7 @@ fn isIdentChar(c: u8) bool {
 /// object `decorator_eval.zig` binds, so a body's `decl.fields`/`decl.kind`/
 /// `decl.fail(…)` type-check against the same data the runtime provides.
 ///
-/// T17 — the member records a handle hands out (`Annotation`, `Param`,
+/// T17 — the member records a handle hands out (`DeclAnnotation`, `Param`,
 /// `Field`, `Method`) are registered under internal names (`__Decl__Param`,
 /// shown `Decl.Param` in a diagnostic) that no module can declare or import,
 /// and spelled through the aliases below; a module declaring or importing a
@@ -1317,7 +1317,7 @@ const decl_reflection_src =
     \\pub type __Decl__Param(name: string, typeName: string)
     \\pub type __Decl__Field(name: string, typeName: string, annotations: __Decl__Annotation[])
     \\pub type __Decl__Method(name: string, params: __Decl__Param[], returnType: string, annotations: __Decl__Annotation[])
-    \\pub type Annotation = __Decl__Annotation;
+    \\pub type DeclAnnotation = __Decl__Annotation;
     \\pub type Param = __Decl__Param;
     \\pub type Field = __Decl__Field;
     \\pub type Method = __Decl__Method;
@@ -1376,6 +1376,12 @@ const type_info_src =
     \\    typeName: string,
     \\)
 ;
+
+/// Decision 252 — every mirror above of a type `builtins.d.bp` declares, in
+/// registration order; `comptime/builtins.zig`'s drift test holds each type
+/// they declare to its declaration (fields, variants, instance methods), the
+/// internal `__Decl__X` names read through their aliases.
+pub const builtin_type_mirrors = [_][]const u8{ decl_reflection_src, custom_ast_reflection_src, type_info_src, yield_step_src };
 
 /// `YieldStep<T>` (decision 122) — the one step of both sequences, `Yield`
 /// then `Done`, registered into the global env so an annotation, a `case` over

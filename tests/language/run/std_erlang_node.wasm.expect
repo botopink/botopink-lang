@@ -1,2 +1,2 @@
-std-unsupported-on-target: std/erlang.node has no `@external` for target 'wasm'
+std-unsupported-on-target: std/erlang.node has no `#[@External.Wasm]` for target 'wasm'
 20:19

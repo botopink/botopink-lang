@@ -83,16 +83,67 @@ pub const Helper = enum {
     /// answered inside its type's range, or an abort: `__bp_int(v, lo, hi,
     /// what)` answers `v + 0` (an integer is never `-0`, decision 214) when
     /// `lo <= v <= hi`, and otherwise throws `integer overflow: <what>` —
-    /// `<op> on <type> at <file:line:col>`. A 64-bit type's range is
-    /// ±(2^53 − 1) here, the integers a JS number holds exactly, so a result
-    /// past it aborts instead of answering a rounded value. A non-finite `v`
+    /// `<op> on <type> at <file:line:col>`. A non-finite `v`
     /// is an integer `/` or `%` by zero (`Math.trunc(7 / 0)`, `7 % 0`), which
-    /// throws `integer division by zero: <what>` — wasm traps on both.
+    /// throws `integer division by zero: <what>` — wasm traps on both. Only
+    /// the types a JS number holds whole use it (`i8` … `u32`); the 64-bit
+    /// four go through the `wide_*` helpers.
     int_check,
+    /// Decision 319 — `i64`, `isize`, `u64` and `usize` hold their full range
+    /// in a hybrid form: a value within ±(2^53 − 1) is a JS `number`, one
+    /// beyond it a `BigInt`, never the other way round (`5` is never `5n`),
+    /// so `===`, `<` and a `Map` key need no conversion. `__bp_wnorm(v, u,
+    /// what)` takes a `BigInt` result, aborts with `integer overflow: <what>`
+    /// past −2^63 … 2^63 − 1 (`u` false) or 0 … 2^64 − 1 (`u` true), and
+    /// answers the canonical form.
+    wide_norm,
+    /// `__bp_wadd(a, b, u, what)` — `a + b` on a 64-bit type: two numbers whose
+    /// sum is a safe integer (and not negative when `u`) answer it directly,
+    /// the fast path; anything else is computed in `BigInt` and normalised.
+    wide_add,
+    /// `__bp_wsub(a, b, u, what)` — `a - b`, as `wide_add`.
+    wide_sub,
+    /// `__bp_wmul(a, b, u, what)` — `a * b`, as `wide_add` (`+ 0`: an integer
+    /// is never `-0`).
+    wide_mul,
+    /// `__bp_wdiv(a, b, u, what)` — `a / b` truncated toward zero; a zero
+    /// divisor throws `integer division by zero: <what>`. Two numbers divide
+    /// as numbers (the quotient of two safe integers is exact after
+    /// `Math.trunc`); a `BigInt` operand divides as `BigInt`, which truncates.
+    wide_div,
+    /// `__bp_wmod(a, b, u, what)` — `a % b`, as `wide_div`.
+    wide_mod,
+    /// `__bp_wneg(a, u, what)` — unary `-`: `-(-2^63)` and `-x` of a nonzero
+    /// unsigned value abort.
+    wide_neg,
+    /// Decision 320 — `__bp_has_surrogate(s)` (over `/[\uD800-\uDFFF]/`), the
+    /// one test the string helpers make: a string holding no UTF-16 surrogate
+    /// counts codepoints exactly as JavaScript counts units, so it keeps the
+    /// native index; one holding a surrogate is walked by codepoint.
+    str_surrogate,
+    /// `__bp_str_count(s, u)` — the codepoints among `s`'s first `u` UTF-16
+    /// units (a lone surrogate counts as one, as `for…of` reads it).
+    str_count,
+    /// `String.length` (the property and the call): codepoints.
+    str_length,
+    /// `String.indexOf(sub)`: the codepoint index of the first match, `-1`.
+    str_index_of,
+    /// `String.lastIndexOf(sub)`: the codepoint index of the last match, `-1`.
+    str_last_index_of,
 };
 
 /// Emission order of the helpers a module uses.
-pub const order = [_]Helper{ .assert_fatal, .string_char_at, .array_at, .range_from, .structural_eq, .show, .print, .print_as, .try_unwrap, .host_task, .adopt, .yield_step, .int_check };
+pub const order = [_]Helper{ .assert_fatal, .str_surrogate, .str_count, .string_char_at, .str_length, .str_index_of, .str_last_index_of, .array_at, .range_from, .structural_eq, .show, .print, .print_as, .try_unwrap, .host_task, .adopt, .yield_step, .int_check, .wide_norm, .wide_add, .wide_sub, .wide_mul, .wide_div, .wide_mod, .wide_neg };
+
+/// The helpers `h`'s body calls, which a module calling `h` carries too.
+pub fn requires(h: Helper) []const Helper {
+    return switch (h) {
+        .wide_add, .wide_sub, .wide_mul, .wide_div, .wide_mod, .wide_neg => &.{.wide_norm},
+        .string_char_at, .str_length => &.{.str_surrogate},
+        .str_index_of, .str_last_index_of => &.{ .str_surrogate, .str_count },
+        else => &.{},
+    };
+}
 
 /// The receiver family of a primitive method call, as inference recorded it.
 pub const Receiver = enum { string, array, other };
@@ -109,6 +160,13 @@ pub fn forMethod(receiver: Receiver, method: []const u8, argc: usize) ?Helper {
         .array => .array_at,
         .other => null,
     };
+    // Decision 320 — a string index counts codepoints: the native `length`,
+    // `indexOf` and `lastIndexOf` count UTF-16 units.
+    if (receiver == .string) {
+        if (argc == 0 and std.mem.eql(u8, method, "length")) return .str_length;
+        if (argc == 1 and std.mem.eql(u8, method, "indexOf")) return .str_index_of;
+        if (argc == 1 and std.mem.eql(u8, method, "lastIndexOf")) return .str_last_index_of;
+    }
     return null;
 }
 
@@ -128,6 +186,18 @@ pub fn name(h: Helper) []const u8 {
         .adopt => "__bp_adopt",
         .yield_step => "__bp_yield_step",
         .int_check => "__bp_int",
+        .wide_norm => "__bp_wnorm",
+        .wide_add => "__bp_wadd",
+        .wide_sub => "__bp_wsub",
+        .wide_mul => "__bp_wmul",
+        .wide_div => "__bp_wdiv",
+        .wide_mod => "__bp_wmod",
+        .wide_neg => "__bp_wneg",
+        .str_surrogate => "__bp_has_surrogate",
+        .str_count => "__bp_str_count",
+        .str_length => "__bp_str_length",
+        .str_index_of => "__bp_str_index_of",
+        .str_last_index_of => "__bp_str_last_index_of",
     };
 }
 
@@ -147,7 +217,139 @@ pub fn decl(h: Helper) ast.Stmt {
         .adopt => adopt,
         .yield_step => yield_step,
         .int_check => int_check,
+        .wide_norm => wide_norm,
+        .wide_add => wideArith("__bp_wadd", "+"),
+        .wide_sub => wideArith("__bp_wsub", "-"),
+        .wide_mul => wideArith("__bp_wmul", "*"),
+        .wide_div => wideDivision("__bp_wdiv", "/", "Math.trunc(a / b) + 0"),
+        .wide_mod => wideDivision("__bp_wmod", "%", "(a % b) + 0"),
+        .wide_neg => wide_neg,
+        .str_surrogate => str_surrogate,
+        .str_count => str_count,
+        .str_length => str_length,
+        .str_index_of => strIndex("__bp_str_index_of", "indexOf"),
+        .str_last_index_of => strIndex("__bp_str_last_index_of", "lastIndexOf"),
     };
+}
+
+// ── host-text builders ───────────────────────────────────────────────────────
+// The 64-bit and codepoint helpers are a few statements each over JavaScript
+// operators the model has no node for (`BigInt(a)`, `0n`, a regular
+// expression); their expressions are fixed runtime text, never user code.
+
+fn hx(comptime text: []const u8) ast.Expr {
+    return .{ .host = &.{.{ .text = text }} };
+}
+
+fn hRet(comptime text: []const u8) ast.Stmt {
+    return .{ .return_ = hx(text) };
+}
+
+fn hConst(comptime kw: ast.Decl.Kw, comptime binding: []const u8, comptime text: []const u8) ast.Stmt {
+    return .{ .decl = .{ .kw = kw, .pattern = .{ .name = binding }, .value = hx(text) } };
+}
+
+fn hIf(comptime cond_text: []const u8, comptime then: []const ast.Stmt) ast.Stmt {
+    return .{ .if_ = .{ .cond = hx(cond_text), .then = &.{ .block = .{ .stmts = then, .layout = .spaced } } } };
+}
+
+fn hFn(comptime fn_name: []const u8, comptime param_names: []const []const u8, comptime body: []const ast.Stmt) ast.Stmt {
+    const ps = comptime blk: {
+        var out: [param_names.len]ast.Param = undefined;
+        for (param_names, 0..) |pn, k| out[k] = .{ .pattern = .{ .name = pn } };
+        const final = out;
+        break :blk final;
+    };
+    return .{ .function = .{ .name = fn_name, .params = &ps, .body = .{ .stmts = body } } };
+}
+
+/// `function __bp_wnorm(v, u, what) { … }` — see `Helper.wide_norm`.
+const wide_norm: ast.Stmt = hFn("__bp_wnorm", &.{ "v", "u", "what" }, &.{
+    hIf("u ? (v < 0n || v > 18446744073709551615n) : (v < -9223372036854775808n || v > 9223372036854775807n)", &.{
+        .{ .throw_ = hx("new Error(\"integer overflow: \" + what)") },
+    }),
+    hRet("(v >= -9007199254740991n && v <= 9007199254740991n) ? Number(v) : v"),
+});
+
+/// `function <name>(a, b, u, what) { … }` — `+`, `-` and `*` on a 64-bit type
+/// (`Helper.wide_add`): the number fast path, else `BigInt` and normalise.
+fn wideArith(comptime fn_name: []const u8, comptime op: []const u8) ast.Stmt {
+    return hFn(fn_name, &.{ "a", "b", "u", "what" }, &.{
+        hIf("typeof a === \"number\" && typeof b === \"number\"", &.{
+            hConst(.const_, "r", "a " ++ op ++ " b + 0"),
+            hIf("Number.isSafeInteger(r) && (r >= 0 || !u)", &.{hRet("r")}),
+        }),
+        hRet("__bp_wnorm(BigInt(a) " ++ op ++ " BigInt(b), u, what)"),
+    });
+}
+
+/// `function <name>(a, b, u, what) { … }` — `/` and `%` on a 64-bit type
+/// (`Helper.wide_div`). `b == 0` is loose so `0n` is zero too.
+fn wideDivision(comptime fn_name: []const u8, comptime op: []const u8, comptime fast: []const u8) ast.Stmt {
+    return hFn(fn_name, &.{ "a", "b", "u", "what" }, &.{
+        hIf("b == 0", &.{.{ .throw_ = hx("new Error(\"integer division by zero: \" + what)") }}),
+        hIf("typeof a === \"number\" && typeof b === \"number\"", &.{hRet(fast)}),
+        hRet("__bp_wnorm(BigInt(a) " ++ op ++ " BigInt(b), u, what)"),
+    });
+}
+
+/// `function __bp_wneg(a, u, what) { … }` — see `Helper.wide_neg`.
+const wide_neg: ast.Stmt = hFn("__bp_wneg", &.{ "a", "u", "what" }, &.{
+    hIf("typeof a === \"number\" && (a === 0 || !u)", &.{hRet("0 - a")}),
+    hRet("__bp_wnorm(-BigInt(a), u, what)"),
+});
+
+/// `__bp_has_surrogate(s)` — see `Helper.str_surrogate`. The regular
+/// expression fails at once on a string V8 stores one byte per character, so
+/// its cost is the call (≈20 ns); a 64-slot cache keyed by the length answers
+/// a string seen again (the same string read index by index, a handful of
+/// strings in a loop) for the cost of a comparison, which `===` makes a
+/// pointer test when the string is the same object. The cache holds at most
+/// 64 strings alive.
+const str_surrogate: ast.Stmt = .{ .group = &.{
+    hConst(.const_, "__bp_surrogate", "/[\\uD800-\\uDFFF]/"),
+    hConst(.const_, "__bp_surrogate_k", "new Array(64).fill(\"\")"),
+    hConst(.const_, "__bp_surrogate_v", "new Array(64).fill(false)"),
+    hFn("__bp_has_surrogate", &.{"s"}, &.{
+        hConst(.const_, "h", "s.length & 63"),
+        hIf("__bp_surrogate_k[h] === s", &.{hRet("__bp_surrogate_v[h]")}),
+        hConst(.const_, "p", "__bp_surrogate.test(s)"),
+        .{ .expr = hx("__bp_surrogate_k[h] = s") },
+        .{ .expr = hx("__bp_surrogate_v[h] = p") },
+        hRet("p"),
+    }),
+} };
+
+/// `function __bp_str_count(s, u) { let n = 0; for (const c of s.substring(0, u)) { n += 1; } return n; }`
+const str_count: ast.Stmt = hFn("__bp_str_count", &.{ "s", "u" }, &.{
+    hConst(.let_, "n", "0"),
+    .{ .for_of = .{
+        .pattern = .{ .name = "c" },
+        .iter = hx("s.substring(0, u)"),
+        .body = .{ .stmts = &.{.{ .expr = hx("n += 1") }}, .layout = .spaced },
+    } },
+    hRet("n"),
+});
+
+/// `function __bp_str_length(s) { … }` — see `Helper.str_length`.
+const str_length: ast.Stmt = hFn("__bp_str_length", &.{"s"}, &.{
+    hIf("!__bp_has_surrogate(s)", &.{hRet("s.length")}),
+    hConst(.let_, "n", "0"),
+    .{ .for_of = .{
+        .pattern = .{ .name = "c" },
+        .iter = hx("s"),
+        .body = .{ .stmts = &.{.{ .expr = hx("n += 1") }}, .layout = .spaced },
+    } },
+    hRet("n"),
+});
+
+/// `function <name>(s, sub) { const u = s.<native>(sub); return … }` — the
+/// native unit index, recounted in codepoints when `s` holds a surrogate.
+fn strIndex(comptime fn_name: []const u8, comptime native: []const u8) ast.Stmt {
+    return hFn(fn_name, &.{ "s", "sub" }, &.{
+        hConst(.const_, "u", "s." ++ native ++ "(sub)"),
+        hRet("(u <= 0 || !__bp_has_surrogate(s)) ? u : __bp_str_count(s, u)"),
+    });
 }
 
 // ── the helpers ──────────────────────────────────────────────────────────────
@@ -280,19 +482,23 @@ const i: ast.Expr = .{ .name = "i" };
 const zero: ast.Expr = .{ .number = "0" };
 const s_at: ast.Expr = .{ .member = .{ .object = &s, .name = "at" } };
 
-/// `function __bp_string_char_at(s, i) { return s.at(i) ?? null; }` — native
-/// `String.prototype.at` counts a negative index from the end (decision 139)
-/// and answers `undefined` outside the string, which `?? null` makes decision
-/// 47's absent.
+/// `function __bp_string_char_at(s, i) { if (!__bp_has_surrogate(s)) { return s.at(i) ?? null; } return Array.from(s).at(i) ?? null; }`
+/// — native `String.prototype.at` counts a negative index from the end
+/// (decision 139) and answers `undefined` outside the string, which `?? null`
+/// makes decision 47's absent. A string holding a surrogate is read by
+/// codepoint (decision 320): `Array.from` splits it into codepoints.
 const string_char_at: ast.Stmt = .{ .function = .{
     .name = "__bp_string_char_at",
     .params = &.{ .{ .pattern = .{ .name = "s" } }, .{ .pattern = .{ .name = "i" } } },
-    .body = .{ .stmts = &.{.{ .return_ = .{ .binary = .{
-        .op = "??",
-        .lhs = &.{ .call = .{ .callee = &s_at, .args = &.{i} } },
-        .rhs = &.null_,
-        .parens = false,
-    } } }}, .layout = .spaced },
+    .body = .{ .stmts = &.{
+        hIf("!__bp_has_surrogate(s)", &.{.{ .return_ = .{ .binary = .{
+            .op = "??",
+            .lhs = &.{ .call = .{ .callee = &s_at, .args = &.{i} } },
+            .rhs = &.null_,
+            .parens = false,
+        } } }}),
+        hRet("Array.from(s).at(i) ?? null"),
+    }, .layout = .spaced },
 } };
 
 const xs: ast.Expr = .{ .name = "xs" };
@@ -439,6 +645,15 @@ const float_branch: ast.Stmt = .{ .if_ = .{
     } }, "%s", 1),
 } };
 
+/// `if ((typeof v === "bigint")) { a.push(String(v)); return "%s"; }`
+///
+/// Decision 319 — a 64-bit integer past ±(2^53 − 1) is a `BigInt`, which
+/// `%O` writes with an `n`; the language prints its digits.
+const bigint_branch: ast.Stmt = .{ .if_ = .{
+    .cond = typeofIs(&v, "bigint"),
+    .then = &pushAndReturn(.{ .call = .{ .callee = &.{ .name = "String" }, .args = &.{v} } }, "%s", 1),
+} };
+
 /// `v.__bp + "." + v.tag` for a variant, `v.__bp` for a record — the source
 /// name of the value's type. The base class of an enum carries `__bp` and each
 /// variant subclass carries `tag`, so a variant inherits both.
@@ -532,6 +747,7 @@ const show: ast.Stmt = .{
                     .cond = .{ .binary = .{ .op = "===", .lhs = &.{ .unary = .{ .op = "typeof ", .operand = &v, .parens = false } }, .rhs = &.{ .quoted = "string" } } },
                     .then = &pushAndReturn(.{ .ternary = .{ .cond = &.{ .name = "top" }, .then = &v, .else_ = &quoted_v } }, "%s", 1),
                 } },
+                bigint_branch,
                 float_branch,
                 .{ .if_ = .{
                     .cond = callOn(&.{ .name = "Array" }, "isArray", &.{v}),
@@ -736,19 +952,59 @@ test "js_prelude: an integer outside its type's range aborts (decision 264)" {
     , aw.written());
 }
 
-test "js_prelude: a 64-bit type's range is the integers a JS number holds exactly (decision 264)" {
+test "js_prelude: a 64-bit integer is a number or a BigInt, the full range (decision 319)" {
+    var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer aw.deinit();
+    const emitter = @import("js_emitter.zig");
+    try emitter.writeStmt(&aw.writer, decl(.wide_norm), 0);
+    try aw.writer.writeByte('\n');
+    try emitter.writeStmt(&aw.writer, decl(.wide_add), 0);
+    try aw.writer.writeByte('\n');
+    try emitter.writeStmt(&aw.writer, decl(.wide_div), 0);
+    try std.testing.expectEqualStrings(
+        \\function __bp_wnorm(v, u, what) {
+        \\    if (u ? (v < 0n || v > 18446744073709551615n) : (v < -9223372036854775808n || v > 9223372036854775807n)) { throw new Error("integer overflow: " + what); }
+        \\    return (v >= -9007199254740991n && v <= 9007199254740991n) ? Number(v) : v;
+        \\}
+        \\function __bp_wadd(a, b, u, what) {
+        \\    if (typeof a === "number" && typeof b === "number") { const r = a + b + 0; if (Number.isSafeInteger(r) && (r >= 0 || !u)) { return r; } }
+        \\    return __bp_wnorm(BigInt(a) + BigInt(b), u, what);
+        \\}
+        \\function __bp_wdiv(a, b, u, what) {
+        \\    if (b == 0) { throw new Error("integer division by zero: " + what); }
+        \\    if (typeof a === "number" && typeof b === "number") { return Math.trunc(a / b) + 0; }
+        \\    return __bp_wnorm(BigInt(a) / BigInt(b), u, what);
+        \\}
+    , aw.written());
+    // A module calling an operation carries the normaliser it calls.
+    try std.testing.expectEqualSlices(Helper, &.{.wide_norm}, requires(.wide_mul));
     const ArithKind = @import("../../comptime/env.zig").ArithKind;
-    const cap: i128 = 9007199254740991;
-    try std.testing.expectEqual(-cap, ArithKind.i64.rangeExactDouble().?.lo);
-    try std.testing.expectEqual(cap, ArithKind.i64.rangeExactDouble().?.hi);
-    try std.testing.expectEqual(@as(i128, 0), ArithKind.u64.rangeExactDouble().?.lo);
-    try std.testing.expectEqual(cap, ArithKind.usize.rangeExactDouble().?.hi);
-    try std.testing.expectEqual(@as(i128, 4294967295), ArithKind.u32.rangeExactDouble().?.hi);
-    try std.testing.expectEqual(@as(i128, -128), ArithKind.i8.rangeExactDouble().?.lo);
-    try std.testing.expect(ArithKind.float.rangeExactDouble() == null);
-    // erlang and beam hold the whole 64-bit range.
     try std.testing.expectEqual(@as(i128, 18446744073709551615), ArithKind.u64.range().?.hi);
     try std.testing.expectEqual(@as(i128, -9223372036854775808), ArithKind.isize.range().?.lo);
+}
+
+test "js_prelude: a string index counts codepoints (decision 320)" {
+    var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer aw.deinit();
+    const emitter = @import("js_emitter.zig");
+    try emitter.writeStmt(&aw.writer, decl(.str_length), 0);
+    try aw.writer.writeByte('\n');
+    try emitter.writeStmt(&aw.writer, decl(.str_index_of), 0);
+    try std.testing.expectEqualStrings(
+        \\function __bp_str_length(s) {
+        \\    if (!__bp_has_surrogate(s)) { return s.length; }
+        \\    let n = 0;
+        \\    for (const c of s) { n += 1; }
+        \\    return n;
+        \\}
+        \\function __bp_str_index_of(s, sub) {
+        \\    const u = s.indexOf(sub);
+        \\    return (u <= 0 || !__bp_has_surrogate(s)) ? u : __bp_str_count(s, u);
+        \\}
+    , aw.written());
+    try std.testing.expectEqual(Helper.str_length, forMethod(.string, "length", 0).?);
+    try std.testing.expectEqual(Helper.str_last_index_of, forMethod(.string, "lastIndexOf", 1).?);
+    try std.testing.expect(forMethod(.array, "indexOf", 1) == null);
 }
 
 test "js_prelude: an open-ended range counts up lazily" {
@@ -776,7 +1032,7 @@ test "js_prelude: string at counts a negative index from the end, null out of ra
     defer aw.deinit();
     try @import("js_emitter.zig").writeStmt(&aw.writer, decl(.string_char_at), 0);
     try std.testing.expectEqualStrings(
-        "function __bp_string_char_at(s, i) { return s.at(i) ?? null; }",
+        "function __bp_string_char_at(s, i) { if (!__bp_has_surrogate(s)) { return s.at(i) ?? null; } return Array.from(s).at(i) ?? null; }",
         aw.written(),
     );
     try std.testing.expectEqual(Helper.string_char_at, forMethod(.string, "at", 1).?);

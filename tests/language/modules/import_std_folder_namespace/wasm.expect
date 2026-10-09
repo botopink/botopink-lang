@@ -1,2 +1,2 @@
-std-unsupported-on-target: std/io/clock has no `@external` for target 'wasm'
+std-unsupported-on-target: std/io/clock has no `#[@External.Wasm]` for target 'wasm'
 src/main.bp:8:9

@@ -1,7 +1,7 @@
 //// Decision 264 — an `i64` product past `2^63 − 1` aborts on every target:
-//// erlang and beam answered the bignum, commonJS a rounded double. (On
-//// commonJS the `i64` range is ±(2^53 − 1), so it aborts at the same
-//// operator, whose exact value is past both bounds.)
+//// erlang and beam answered the bignum, commonJS a rounded double. commonJS
+//// computes a product past 2^53 in `BigInt` (decision 319) and aborts at the
+//// same bound as the others.
 
 fn mul(a: i64, b: i64) -> i64 {
     return a * b;

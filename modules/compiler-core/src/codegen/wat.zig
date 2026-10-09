@@ -6118,6 +6118,10 @@ const Emitter = struct {
         }
         if (std.mem.eql(u8, t, "i64")) {
             try self.lowerValue(arg);
+            if (self.isU64Expr(arg)) {
+                try self.emit(self.builder().helper(if (last) .print_u64 else .print_u64_raw));
+                return;
+            }
             try self.emit(self.builder().helper(if (last) .print_i64 else .print_i64_raw));
             return;
         }
@@ -7009,26 +7013,35 @@ const Emitter = struct {
                 const ref = self.variantRef(v.name) orelse
                     return self.refuse(loc, "`{s}` names no variant of an enum this program declares", .{v.name});
                 try self.emitTagTest(ref, subj);
-                switch (v.payload) {
-                    .literals => |lits| for (lits, 0..) |sub, i| {
-                        // test the payload field against a nested pattern
-                        const field = try std.fmt.allocPrint(self.arena(), "__case_{d}", .{self.case_depth});
-                        self.case_depth += 1;
-                        try self.declareLocal(field, "i32");
-                        var then_c: Capture = .{};
-                        self.open(&then_c);
-                        try self.emit(.{ .local_get = subj });
-                        try self.emit(.{ .load = .{ .offset = @intCast((i + 1) * 4) } });
-                        try self.emit(.{ .local_set = field });
+                // The payload's nested patterns, read only once the tag held
+                // (a unit variant's cell has no payload slots) and `and`ed
+                // into the tag test. Each test was left on the stack beside
+                // the tag's, unread: the arm answered whatever the last
+                // one said, and a `_` or a plain name tested a slot of a
+                // value the tag had already refused.
+                const lits: []const ast.Pattern = if (v.payload == .literals) v.payload.literals else &.{};
+                var tested = false;
+                for (lits) |sub| {
+                    if (!self.patternOnlyBinds(sub)) tested = true;
+                }
+                if (tested) {
+                    var then_c: Capture = .{};
+                    self.open(&then_c);
+                    try self.emit(one);
+                    for (lits, 0..) |sub, i| {
+                        if (self.patternOnlyBinds(sub)) continue;
+                        const slot = payloadSlot(ref, v, i) orelse
+                            return self.refuse(loc, "a label of the `{s}` pattern names no field its variant declares", .{v.name});
+                        const field = try self.payloadFieldLocal(ref, subj, slot);
                         try self.emitPatternTest(sub, field, loc);
-                        const then_seq = self.seal(&then_c, .{ .value = .i32 });
-                        var else_c: Capture = .{};
-                        self.open(&else_c);
-                        try self.emit(zero);
-                        const else_seq = self.seal(&else_c, .{ .value = .i32 });
-                        try self.emit(.{ .@"if" = .{ .result = .i32, .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
-                    },
-                    else => {},
+                        try self.emit(opOf("i32", "and"));
+                    }
+                    const then_seq = self.seal(&then_c, .{ .value = .i32 });
+                    var else_c: Capture = .{};
+                    self.open(&else_c);
+                    try self.emit(zero);
+                    const else_seq = self.seal(&else_c, .{ .value = .i32 });
+                    try self.emit(.{ .@"if" = .{ .result = .i32, .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
                 }
             },
         }
@@ -7469,43 +7482,107 @@ const Emitter = struct {
                     return;
                 }
                 const ref = self.variantRef(v.name) orelse return;
-                const names: []const []const u8 = switch (v.payload) {
-                    .binding => |b| &.{b},
-                    .fields => |fs| fs,
-                    .literals => return,
-                };
-                for (names, 0..) |n0, i| {
-                    const field_ty: ?ast.TypeRef = switch (ref) {
-                        .user => |fv| if (i < fv.variant.fields.len) fv.variant.fields[i].typeRef else null,
-                        else => null,
-                    };
-                    const ty = if (field_ty) |t| watType(t) else "i32";
-                    const n = try self.bindName(n0, ty);
-                    const local_ty = self.locals.get(n) orelse ty;
-                    if (field_ty) |t| {
-                        if (isStringTypeRef(t)) try self.str_locals.put(n, {});
-                        if (isBoolTypeRef(t)) try self.bool_locals.put(n, {});
-                    }
-                    switch (ref) {
-                        .result_ok, .result_err => {
-                            const shape = self.result_subjects.get(subj) orelse ResultShape{};
-                            if ((ref == .result_ok and shape.ok_str) or (ref == .result_err and shape.err_str))
-                                try self.str_locals.put(n, {});
-                            if (if (ref == .result_ok) shape.ok else shape.err) |pt| try self.noteTypedBinder(n, pt);
-                        },
-                        else => {},
-                    }
-                    // payload slots are 4 bytes: a float field's holds its cell
-                    const slot_float = local_ty[0] == 'f';
-                    try self.emit(.{ .local_get = subj });
-                    try self.emit(.{ .load = .{ .offset = @intCast((i + 1) * 4) } });
-                    if (slot_float) try self.emitFromFloatSlot();
-                    try self.emitConvert(if (slot_float) "f64" else "i32", local_ty);
-                    try self.emit(.{ .local_set = n });
+                switch (v.payload) {
+                    .binding => |b| try self.bindPayloadName(ref, subj, 0, b),
+                    .fields => |fs| for (fs, 0..) |n0, i| {
+                        if (std.mem.eql(u8, n0, "_")) continue;
+                        const slot = payloadSlot(ref, v, i) orelse continue;
+                        try self.bindPayloadName(ref, subj, slot, n0);
+                    },
+                    // `Rect(w, _)`, `Two(Rect(w, _), r)`: a `_` binds nothing,
+                    // a plain name binds its slot as `.fields` does, and a
+                    // nested pattern binds from its slot's own local. This
+                    // returned without binding anything, so every name of the
+                    // payload read the 0 its local was declared with.
+                    .literals => |lits| for (lits, 0..) |sub, i| {
+                        if (sub == .wildcard) continue;
+                        const slot = payloadSlot(ref, v, i) orelse continue;
+                        if (sub == .ident and self.patternOnlyBinds(sub)) {
+                            if (std.mem.eql(u8, sub.ident, "_")) continue;
+                            try self.bindPayloadName(ref, subj, slot, sub.ident);
+                            continue;
+                        }
+                        const field = try self.payloadFieldLocal(ref, subj, slot);
+                        try self.bindPattern(sub, field);
+                    },
                 }
             },
             else => {},
         }
+    }
+
+    /// The payload slot (0-based, after the tag) the i-th element of a
+    /// variant pattern stands at: the declared position of the label it wrote
+    /// (§5.1 P4), else `i`. Null when the label names no declared field.
+    fn payloadSlot(ref: VariantRef, v: anytype, i: usize) ?usize {
+        if (v.labels.len > i and v.labels[i].len > 0) switch (ref) {
+            .user => |fv| {
+                for (fv.variant.fields, 0..) |f, at| if (std.mem.eql(u8, f.name, v.labels[i])) return at;
+                return null;
+            },
+            else => {},
+        };
+        return i;
+    }
+
+    /// The declared type of payload slot `slot` of the variant `ref` names;
+    /// null for `@Result`'s and an undeclared slot.
+    fn payloadFieldType(ref: VariantRef, slot: usize) ?ast.TypeRef {
+        return switch (ref) {
+            .user => |fv| if (slot < fv.variant.fields.len) fv.variant.fields[slot].typeRef else null,
+            else => null,
+        };
+    }
+
+    /// Payload slot `slot` of the variant in `subj`, in a fresh i32 local a
+    /// nested pattern is tested against and binds from — carrying the field's
+    /// declared shape: a string, a record, and the enum a nested variant
+    /// pattern resolves its bare name against (`subject_enums`).
+    fn payloadFieldLocal(self: *Emitter, ref: VariantRef, subj: []const u8, slot: usize) ![]const u8 {
+        const field = try std.fmt.allocPrint(self.arena(), "__case_{d}", .{self.case_depth});
+        self.case_depth += 1;
+        try self.declareLocal(field, "i32");
+        try self.emit(.{ .local_get = subj });
+        try self.emit(.{ .load = .{ .offset = @intCast((slot + 1) * 4) } });
+        try self.emit(.{ .local_set = field });
+        _ = self.subject_enums.remove(field);
+        if (payloadFieldType(ref, slot)) |t| {
+            if (isStringTypeRef(t)) try self.str_locals.put(field, {});
+            if (isBoolTypeRef(t)) try self.bool_locals.put(field, {});
+            try self.noteTypedBinder(field, t);
+            const tn = typeRefName(t);
+            if (self.enums.contains(tn)) try self.subject_enums.put(self.alloc, field, tn);
+        }
+        return field;
+    }
+
+    /// Bind `n0` to payload slot `slot` of the variant in `subj`, typed by the
+    /// slot's declaration.
+    fn bindPayloadName(self: *Emitter, ref: VariantRef, subj: []const u8, slot: usize, n0: []const u8) !void {
+        const field_ty = payloadFieldType(ref, slot);
+        const ty = if (field_ty) |t| watType(t) else "i32";
+        const n = try self.bindName(n0, ty);
+        const local_ty = self.locals.get(n) orelse ty;
+        if (field_ty) |t| {
+            if (isStringTypeRef(t)) try self.str_locals.put(n, {});
+            if (isBoolTypeRef(t)) try self.bool_locals.put(n, {});
+        }
+        switch (ref) {
+            .result_ok, .result_err => {
+                const shape = self.result_subjects.get(subj) orelse ResultShape{};
+                if ((ref == .result_ok and shape.ok_str) or (ref == .result_err and shape.err_str))
+                    try self.str_locals.put(n, {});
+                if (if (ref == .result_ok) shape.ok else shape.err) |pt| try self.noteTypedBinder(n, pt);
+            },
+            else => {},
+        }
+        // payload slots are 4 bytes: a float field's holds its cell
+        const slot_float = local_ty[0] == 'f';
+        try self.emit(.{ .local_get = subj });
+        try self.emit(.{ .load = .{ .offset = @intCast((slot + 1) * 4) } });
+        if (slot_float) try self.emitFromFloatSlot();
+        try self.emitConvert(if (slot_float) "f64" else "i32", local_ty);
+        try self.emit(.{ .local_set = n });
     }
 
     /// A unit variant value: its tag, or — when the enum has payload variants,
@@ -8596,7 +8673,7 @@ const Emitter = struct {
                 // below refuses them.
                 if (std.mem.eql(u8, self.wasmTypeOf(recv), "i64") and eq(u8, name, "toString")) {
                     try self.lowerValue(recv);
-                    try self.emit(b.helper(.i64_to_str));
+                    try self.emit(b.helper(if (self.isU64Expr(recv)) .u64_to_str else .i64_to_str));
                     return;
                 }
                 try self.lowerCoerced(recv, "i32");
@@ -11120,6 +11197,24 @@ const Emitter = struct {
                 },
                 else => null,
             },
+            // Decision 319 — a `u64` value, so a `val` bound to it keeps
+            // printing and comparing unsigned: an integer literal past
+            // `i64`'s top (inference stripped its `ul` and refuses it on any
+            // other type) and an operator inference typed `u64` / `usize`.
+            // `val top = 18446744073709551615ul; @print(top)` printed `-1`.
+            .literal => |lit| switch (lit.kind) {
+                .numberLit => |n| if (isPastI64Literal(n)) .{ .named = "u64" } else null,
+                else => null,
+            },
+            .binaryOp => |bin| blk: {
+                const il = self.instance_lowerings.get(bin.loc) orelse break :blk null;
+                if (il != .division) break :blk null;
+                break :blk switch (il.division) {
+                    .u64 => .{ .named = "u64" },
+                    .usize => .{ .named = "usize" },
+                    else => null,
+                };
+            },
             else => null,
         };
     }
@@ -12453,7 +12548,7 @@ const Emitter = struct {
         }
         if (std.mem.eql(u8, self.wasmTypeOf(e), "i64")) {
             try self.lowerValue(e);
-            try self.emit(self.builder().helper(.i64_to_str));
+            try self.emit(self.builder().helper(if (self.isU64Expr(e)) .u64_to_str else .i64_to_str));
             return;
         }
         try self.lowerCoerced(e, "i32");
@@ -14017,16 +14112,20 @@ const Emitter = struct {
             if (op == Op.ne) try self.emit(opOf("i32", "eqz"));
             return;
         }
+        // Decision 319 — a `u64` / `usize` holds `0 … 2^64 − 1` in its `i64`
+        // carrier, so its division, remainder and order read the bits
+        // unsigned: signed, `10^19 > 3` answered `false` at exit 0.
+        const unsigned = std.mem.eql(u8, t, "i64") and (self.isU64At(loc) or self.isU64Expr(lhs) or self.isU64Expr(rhs));
         const opname: ?[]const u8 = switch (op) {
             Op.add => "add",
             Op.sub => "sub",
             Op.mul => "mul",
-            Op.div => if (is_float) "div" else "div_s",
-            Op.mod => if (is_float) null else "rem_s",
-            Op.lt => if (is_float) "lt" else "lt_s",
-            Op.gt => if (is_float) "gt" else "gt_s",
-            Op.lte => if (is_float) "le" else "le_s",
-            Op.gte => if (is_float) "ge" else "ge_s",
+            Op.div => if (is_float) "div" else if (unsigned) "div_u" else "div_s",
+            Op.mod => if (is_float) null else if (unsigned) "rem_u" else "rem_s",
+            Op.lt => if (is_float) "lt" else if (unsigned) "lt_u" else "lt_s",
+            Op.gt => if (is_float) "gt" else if (unsigned) "gt_u" else "gt_s",
+            Op.lte => if (is_float) "le" else if (unsigned) "le_u" else "le_s",
+            Op.gte => if (is_float) "ge" else if (unsigned) "ge_u" else "ge_s",
             Op.eq => "eq",
             Op.ne => "ne",
             // wasm has no short-circuit form; `and`/`or` are bitwise on the
@@ -14063,6 +14162,20 @@ const Emitter = struct {
     /// own range when it is narrower than `t` (`emitRangeCheck`).
     fn emitArith(self: *Emitter, t: []const u8, on: []const u8, loc: ast.Loc) anyerror!void {
         const wide = std.mem.eql(u8, t, "i64");
+        // A `u64` / `usize` result is checked unsigned against the carrier's
+        // whole 64 bits (decision 319), which is its range: no range check
+        // follows.
+        if (wide and self.isU64At(loc)) {
+            const h: ?wat.Helper = if (std.mem.eql(u8, on, "add"))
+                .u64_add_chk
+            else if (std.mem.eql(u8, on, "sub"))
+                .u64_sub_chk
+            else if (std.mem.eql(u8, on, "mul"))
+                .u64_mul_chk
+            else
+                null;
+            if (h) |helper| return self.emit(self.builder().helper(helper));
+        }
         if (wide or std.mem.eql(u8, t, "i32")) {
             const h: ?wat.Helper = if (std.mem.eql(u8, on, "add"))
                 (if (wide) .i64_add_chk else .i32_add_chk)
@@ -14078,6 +14191,30 @@ const Emitter = struct {
             }
         }
         try self.emit(opOf(t, on));
+    }
+
+    /// Whether inference typed the arithmetic operator at `loc` `u64` or
+    /// `usize` — the two types whose `i64` carrier holds unsigned bits.
+    fn isU64At(self: *Emitter, loc: ast.Loc) bool {
+        const il = self.instance_lowerings.get(loc) orelse return false;
+        if (il != .division) return false;
+        return il.division == .u64 or il.division == .usize;
+    }
+
+    /// Whether `e` is a `u64` / `usize` value: its declared type, or the
+    /// type inference recorded at its operator.
+    fn isU64Expr(self: *Emitter, e: ast.Expr) bool {
+        switch (e) {
+            .binaryOp => |bin| return self.isU64At(bin.loc),
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| return self.isU64Expr(inner.*),
+                else => {},
+            },
+            else => {},
+        }
+        const tr = self.typeRefOf(e) orelse return false;
+        if (tr != .named) return false;
+        return std.mem.eql(u8, tr.named, "u64") or std.mem.eql(u8, tr.named, "usize");
     }
 
     /// Decision 264 — the checked result of the integer operator at `loc`,
@@ -14474,16 +14611,34 @@ fn radixOf(n: []const u8) ?u8 {
 
 /// A radix token's value (`_` separators allowed), or null when its digits
 /// are not the base's.
-fn radixValue(n: []const u8, base: u8) ?i64 {
+/// Whether the integer literal `n` (digits, `_` separators, an optional
+/// `0x` / `0b` / `0o` prefix) is past `i64`'s top — which only a `u64` holds.
+fn isPastI64Literal(n: []const u8) bool {
+    if (n.len == 0 or n[0] == '-') return false;
+    var buf: [160]u8 = undefined;
+    var len: usize = 0;
+    for (n) |c| if (c != '_') {
+        if (len == buf.len) return false;
+        buf[len] = c;
+        len += 1;
+    };
+    const v = std.fmt.parseInt(u128, buf[0..len], 0) catch return false;
+    return v > std.math.maxInt(i64);
+}
+
+/// The value of a radix integer token, up to `u64`'s top (decision 319:
+/// `0xFFFF_FFFF_FFFF_FFFFul` is a `u64`, and folded to a `256` placeholder
+/// when its value overflowed an `i64` here).
+fn radixValue(n: []const u8, base: u8) ?i128 {
     const neg = n[0] == '-';
     const body = if (n[0] == '-' or n[0] == '+') n[1..] else n;
-    var v: i64 = 0;
+    var v: i128 = 0;
     var any = false;
     for (body[2..]) |c| {
         if (c == '_') continue;
         const d = std.fmt.charToDigit(c, base) catch return null;
-        v = std.math.mul(i64, v, base) catch return null;
-        v = std.math.add(i64, v, d) catch return null;
+        v = v * base + d;
+        if (v > std.math.maxInt(u64)) return null;
         any = true;
     }
     if (!any) return null;

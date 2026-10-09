@@ -704,12 +704,12 @@ resolve(Segments) ->
 
 withoutExtension(P) ->
     Ext = extname(P),
-    N = string:length(P),
+    N = erlang:length(unicode:characters_to_list(P)),
     Stem = case (Ext =:= <<"">>) of
         true ->
             P;
         false ->
-            string_slice(P, 0, '__bp_int'((N - string:length(Ext)), -2147483648, 2147483647, <<"integer overflow: - on i32 at src/path.bp:208:51">>))
+            string_slice(P, 0, '__bp_int'((N - erlang:length(unicode:characters_to_list(Ext))), -2147483648, 2147483647, <<"integer overflow: - on i32 at src/path.bp:208:51">>))
     end,
     Stem.
 
@@ -766,9 +766,9 @@ array_slice(Self, Start, End) ->
 string_slice(Self, Start, End) ->
     case (End =/= undefined) of
         true ->
-            string:slice(Self, Start, ((End) - (Start)));
+            (fun(__S, __A, __E) -> __L = unicode:characters_to_list(__S), __N = erlang:length(__L), __B = case __A < 0 of true -> erlang:max(__N + __A, 0); false -> erlang:min(__A, __N) end, __F = case __E < 0 of true -> erlang:max(__N + __E, 0); false -> erlang:min(__E, __N) end, unicode:characters_to_binary(lists:sublist(__L, __B + 1, erlang:max(__F - __B, 0))) end)(Self, Start, End);
         false ->
-            string:slice(Self, Start)
+            (fun(__S, __A) -> __L = unicode:characters_to_list(__S), __N = erlang:length(__L), __B = case __A < 0 of true -> erlang:max(__N + __A, 0); false -> erlang:min(__A, __N) end, unicode:characters_to_binary(lists:nthtail(__B, __L)) end)(Self, Start)
     end.
 
 -compile({inline,['__bp_int'/4]}).

@@ -44,6 +44,9 @@ test "STD-001: import of std/io/process from wasm target reds" {
     const msg = typeErrorMessage(outcome);
     try std.testing.expect(std.mem.indexOf(u8, msg, diagnostics.std_unsupported_on_target) != null);
     try std.testing.expect(std.mem.indexOf(u8, msg, "wasm") != null);
+    // The binding's spelling is the annotation's (`#[@External.Wasm]`), not
+    // the retired `@external`.
+    try std.testing.expect(std.mem.indexOf(u8, msg, "has no `#[@External.Wasm]` for target 'wasm'") != null);
 }
 
 test "STD-001: import of std/io/process from node target is accepted" {

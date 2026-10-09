@@ -609,6 +609,16 @@ pub fn validateComptime(program: ast.Program) ?ComptimeError {
     return null;
 }
 
+/// Decision 266 — whether a `comptime` node (`comptime <expr>` or
+/// `comptime { … }`) written anywhere, a body included, holds only what
+/// `eval.zig` folds: the module-level rule (`validateComptime`) read on one
+/// node. A body's `comptime` that passes is folded at build
+/// (`infer.zig` `foldBodyComptime`).
+pub fn isFoldable(expr: ast.Expr) bool {
+    if (expr != .comptime_) return false;
+    return validateIfComptime(expr) == null;
+}
+
 fn validateDecl(decl: ast.DeclKind) ?ComptimeError {
     switch (decl) {
         .val => |v| return validateIfComptime(v.value.*),

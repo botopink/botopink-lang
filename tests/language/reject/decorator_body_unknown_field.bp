@@ -1,0 +1,18 @@
+//// 01-compiler/01-checker row "a type error in a decorator body" — the
+//// module's own decorators run before its bodies are inferred, so `decl.nope`
+//// reached the evaluator first: the parent binary reported `{error,{badkey,nope}}`
+//// at the annotation. The body is checked: an unknown field of `Decl`, located
+//// at the field.
+
+fn tagged(comptime decl: @Decl) {
+    val n = decl.nope;
+}
+
+#[tagged]
+fn work() -> i32 {
+    return 2;
+}
+
+pub fn main() {
+    @print(work());
+}

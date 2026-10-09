@@ -39,7 +39,12 @@ pub fn writeType(w: *Writer, t: Ast.TsType) Error!void {
             try w.writeByte('>');
         },
         .array => |inner| {
-            try writeType(w, inner.*);
+            // `(number | bigint)[]` — `[]` binds tighter than `|`.
+            if (inner.* == .union_) {
+                try w.writeByte('(');
+                try writeType(w, inner.*);
+                try w.writeByte(')');
+            } else try writeType(w, inner.*);
             try w.writeAll("[]");
         },
         .tuple => |elems| {

@@ -35,7 +35,7 @@ js/
 |---|---|
 | `js_ast.zig` | `Class` carries `extends`, which only an enum's variant subclass uses. `Expr` (`lexeme_string`, `quoted`, `number`, `null_`, `ident`, `name`, `this`, `member`, `index`, `call`, `new_`, `binary`, `unary`, `ternary`, `assign`, `paren`, `arrow`, `function`, `array`, `object`, `host`, `await_`, `yield_`, `comment`), `Stmt` (`expr`, `decl`, `return_`, `throw_` (required operand), `continue_`, `continue_label`, `break_`, `yield_delegate`, `if_`, `for_of`, `while_` (+ an optional `label`), `block`, `function`, `class`, `comment`, `group`), `Pattern` (`ident`, `name`, `object` — a `Prop` binds a name or nests a pattern —, `array`), `Param`, `Block` (+ `Layout`), `Class`, `Comment`, `Item`; the `.d.ts` subset `TsType` / `TsField` / `TsParam` / `TsMember` / `TsDecl` / `TsNamespace` (types only — a non-instantiated namespace promises no value); and `Builder` (arena: `ptr`, `stmtPtr`, `typePtr`, `call`, `member`, `binary`, `ternary`, `arrowBlock`, `iife`, `ifStmt`, `group`, …). |
 | `js_emitter.zig` | **Names:** `ident(name)` — the ES reserved-word rename (`delete` → `delete_`); the only place it happens. A property position is never renamed. **Strings:** `writeLexemeString` — a botopink lexeme's escape pairs pass through (the lexer validated them and the escape set is JS-compatible), raw control bytes and unescaped quotes are escaped. **Numbers:** a number literal as a member receiver is parenthesised — `(42).toString()`, because `42.` lexes as a float. **Code:** `writeExpr(w, expr, indent)`, `writeStmt(w, stmt, indent)`, `writeBlock`, `writeInline`/`writeInlineStmt`, `writePattern`, `writeComment`/`writeInlineComment`, `writeProgram(w, items)` (generated declarations separated by a blank line; runtime-support source verbatim). |
-| `js_prelude.zig` | The commonJS runtime helpers for primitive methods whose native JS method disagrees with the signature, as built `Stmt.function` nodes — never a shipped file. `Helper` (`assert_fatal`: a non-test `assert` throws with message and `file:line`; `string_char_at`: `String.at -> ?string` (the native method it wraps is `charAt`), a negative index counts from the end (decision 139), `null` out of range; `array_at`: `Array.at -> ?T`, native `xs.at(i) ?? null` — a negative index counts from the end (decision 139) and `null` stands for native `undefined` out of range (decision 47); `range_from`: an open-ended `a..` as the lazy generator `function* __bp_range_from(n)`; `structural_eq`: `__bp_eq(a, b, d)`, the run-time `==` for a pair whose static type this backend cannot name (a type parameter, a type another module declares, two different types) — arrays and tuples element-wise, a class instance by constructor plus own fields, two NaNs equal (decision 8 §6 T6, decisions 35, 210 and 214; § Structural equality); `show`: `__bp_show(v, shape, top, a)`, the text of one printed value under decision 8 §7 — a string, a `"f"`-shaped number as `5.0`, an array or tuple with spaces, a `__bp`-marked record or variant in the language's shape, `Display` when the value has one, JavaScript's `undefined` as `null` (decision 47 — `?.` and an `if` with no `else` answer JavaScript's other none), `%O` otherwise; `print` / `print_as`: `@print`'s `console.log` line over `show`, without / with the per-argument static shapes; `yield_step`: `__bp_yield_step(r)`, a generator step `{ value, done }` as the prelude enum `YieldStep` — `.next()` by hand, decision 122 — whose class the module carries through the checker's splice; `int_check`: `__bp_int(v, lo, hi, what)`, decision 264's range check — `v + 0` inside `lo..hi`, else a throw of `integer overflow: <what>` (`integer division by zero: <what>` for a non-finite `v`, an integer `/` or `%` by zero), § Integer overflow in `../AGENTS.md`), `forMethod(receiver, method, argc)` (the declaration a helper answers), `name`, `decl`, `order`. `commonJS.zig`'s `Emitter.helper` returns the name **and** marks the helper, and only marked helpers are written into the module (the `wat/wat_prelude.zig` shape). |
+| `js_prelude.zig` | The commonJS runtime helpers for primitive methods whose native JS method disagrees with the signature, as built `Stmt.function` nodes — never a shipped file. `Helper` (`assert_fatal`: a non-test `assert` throws with message and `file:line`; `string_char_at`: `String.at -> ?string` (the native method it wraps is `charAt`), a negative index counts from the end (decision 139), `null` out of range; `array_at`: `Array.at -> ?T`, native `xs.at(i) ?? null` — a negative index counts from the end (decision 139) and `null` stands for native `undefined` out of range (decision 47); `range_from`: an open-ended `a..` as the lazy generator `function* __bp_range_from(n)`; `structural_eq`: `__bp_eq(a, b, d)`, the run-time `==` for a pair whose static type this backend cannot name (a type parameter, a type another module declares, two different types) — arrays and tuples element-wise, a class instance by constructor plus own fields, two NaNs equal (decision 8 §6 T6, decisions 35, 210 and 214; § Structural equality); `show`: `__bp_show(v, shape, top, a)`, the text of one printed value under decision 8 §7 — a string, a `"f"`-shaped number as `5.0`, an array or tuple with spaces, a `__bp`-marked record or variant in the language's shape, `Display` when the value has one, JavaScript's `undefined` as `null` (decision 47 — `?.` and an `if` with no `else` answer JavaScript's other none), `%O` otherwise; `print` / `print_as`: `@print`'s `console.log` line over `show`, without / with the per-argument static shapes; `yield_step`: `__bp_yield_step(r)`, a generator step `{ value, done }` as the prelude enum `YieldStep` — `.next()` by hand, decision 122 — whose class the module carries through the checker's splice; `int_check`: `__bp_int(v, lo, hi, what)`, decision 264's range check for `i8` … `u32` — `v + 0` inside `lo..hi`, else a throw of `integer overflow: <what>` (`integer division by zero: <what>` for a non-finite `v`, an integer `/` or `%` by zero), § Integer overflow in `../AGENTS.md`; `wide_norm` / `wide_add` / `wide_sub` / `wide_mul` / `wide_div` / `wide_mod` / `wide_neg`: the 64-bit operations, § 64-bit integers below; `str_surrogate` / `str_count` / `str_length` / `str_index_of` / `str_last_index_of` (and `string_char_at`): codepoint indices, § String indices below), `requires(h)` (the helpers `h`'s body calls, marked with it), `forMethod(receiver, method, argc)` (the declaration a helper answers), `name`, `decl`, `order`. `commonJS.zig`'s `Emitter.helper` returns the name **and** marks the helper, and only marked helpers are written into the module (the `wat/wat_prelude.zig` shape). |
 | `ts_emitter.zig` | `writeDecl`'s `namespace_` writes `export declare namespace Name { … }` over `TsNamespaceItem`s (`interface Name { … }`, a nested `namespace`), indented one level per depth and without `export`/`declare` inside — an ambient namespace exports its members (an enum's sections, `typescript.zig`). `writeType`, `writeDecl` (`import` writes each name as given — `a as b` included —, `import_namespace` writes `import * as name from "…"`), `writeProgram(w, decls)` — one declaration per typed binding, separated by a blank line, a binding with no surface (`.none`) still taking its separator. `TsMember.method` carries a `modifier` (as `field` does), which is how an enum's variant factories and methods are written `static`. A `class` / `interface` / `type_alias` / `namespace_` whose `exported` is false is written `declare …` without `export` (a module-private type a public signature names, `typescript.zig` `localTypes`), and `export_none` writes `export {};`, which keeps those from being exported implicitly. |
 
 ## A comment never ends a line something else still needs
@@ -300,3 +300,53 @@ several statements (`_acc.push(v); continue;`) stays on the line.
 
 - No `print`/`writeAll` of target syntax outside these emitters.
 - Tests are inline in each file and aggregated by `../tests.zig`.
+
+## 64-bit integers (decision 319)
+
+`i64`, `isize`, `u64` and `usize` hold their full range here, as on erlang, beam
+and wasm, in a **hybrid canonical form**: a value within ±(2^53 − 1) is a JS
+`number`, one beyond it a `BigInt`, and never the other way round (`5` is never
+`5n`). So `===` (and `==`, `__bp_eq`'s `Object.is`), `<`, a `Map` key and a
+`Dict` / `Set` of std (`run/i64_dict_key_across_safe_edge`) need no conversion,
+and `i8` … `u32` stay plain numbers.
+
+| Producer | What it writes |
+|---|---|
+| `+ - * / %`, unary `-`, `+=` on the four (`commonJS.zig` `wideOp`) | `__bp_w<op>(a, b, u, "<op> on <type> at <loc>")`: two numbers whose result is a safe integer (and not negative when `u`) answer it — the fast path, a `typeof` pair and `Number.isSafeInteger`; anything else is computed in `BigInt` and `__bp_wnorm` aborts past −2^63 … 2^63 − 1 / 0 … 2^64 − 1 and narrows a value back to a number when it fits |
+| an integer literal past ±(2^53 − 1) (`numberLiteral`) | the `BigInt` literal, `9223372036854775807n` |
+| `x is i64` (`wideIsTest`) | a safe-integer number (`>= 0` for the unsigned two), or a `BigInt` within the type's bounds |
+| `@print`, string `+`, `toString()` | the digits: `__bp_show` writes a `BigInt` through `String(v)` (no `n`) |
+| the `.d.ts` (`typescript.zig`) | `number \| bigint` (`(number \| bigint)[]` in an array) |
+
+Cost: a tight `i64` loop below 2^53 (`acc = (acc + i * 3 - i % 7) % 1000003`,
+2·10^8 iterations, best of three) ran 995 ms under the ±(2^53 − 1) `__bp_int`
+build and 687 ms under the hybrid.
+
+Not covered yet, each a `TypeError` past 2^53 rather than a wrong number: std's
+Node templates over `Number` / `Signed` (`Math.min` / `max` / `abs`), the
+`default fn`s of `Integer` (`isEven`, `isOdd`, `clamp`), which are patched on
+`Number.prototype` and not on `BigInt.prototype`, and the conversions
+(`toF64()`, `toI32()`) the language does not declare yet.
+
+## String indices count codepoints (decision 320)
+
+`length`, `at`, `slice`, `indexOf`, `lastIndexOf` and `charCodeAt` count
+codepoints, as on the three other targets. A string holding no UTF-16 surrogate
+counts codepoints exactly as JavaScript counts units, so it keeps the native
+index; one holding a surrogate is walked by codepoint (`Array.from`, `for…of`).
+`length` (the property and the call), `at`, `indexOf` and `lastIndexOf` on a
+typed string are `forMethod`'s helpers (`__bp_str_length`,
+`__bp_string_char_at`, `__bp_str_index_of`, `__bp_str_last_index_of`); `slice`
+and `charCodeAt` are std's own Node cells (`libs/std/src/primitives.bp`,
+`stringSlice0` / `stringSlice1` / `charCodeAt`), which carry the same test
+inline. A JS host template receives and answers codepoint indices.
+
+The one test is `__bp_has_surrogate(s)`: `/[\uD800-\uDFFF]/.test(s)` fails at
+once on a string V8 stores one byte per character, so its cost is the call
+(≈20 ns), and a 64-slot cache keyed by the length answers a string seen again
+for a comparison (≈2 ns; `===` is a pointer test on the same string object).
+The cache keeps at most 64 strings alive. Cost: a loop of four string reads
+per iteration over four pair-free words (`length`, `indexOf`, `lastIndexOf`,
+`at`; 2·10^7 iterations, best of three): native 687 ms, helpers 850 ms
+(+24 %; +100 % without the cache) — above the 10 % the front asked, the price of
+one call and one cache probe per read.

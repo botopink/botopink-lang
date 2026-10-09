@@ -1,7 +1,7 @@
 //// Decision 255 (2) — `comptime <expr>` is `comptime { break <expr>; }`:
 //// at module level both fold to the same literal, and in a body both type
-//// and run alike. wasm lowers no comptime construct in a body (`05-wasm`'s
-//// row), so the cell is refused there (`.wasm.expect`).
+//// and run alike. A body's `comptime` folds at build (decision 266), so no
+//// backend meets it: wasm runs the cell too.
 
 val short = comptime 2 + 3;
 

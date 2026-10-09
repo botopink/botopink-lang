@@ -69,7 +69,9 @@ pub fn nowMillis() -> i64 {
 // performance.now` and stripped `this`, reding with `Value of "this"
 // must be of type Performance` at the first call site. The template
 // renders inline at every call to `monotonicTimeWithUnit(N)`.
-#[@External.Node("performance.now($0)")]
+// The answer is an `i64`: `performance.now()` is a fractional millisecond
+// count, truncated to its whole milliseconds (decision 319's canonical form).
+#[@External.Node("Math.floor(performance.now($0))")]
 #[@External.Erlang("erlang", "monotonic_time")]
 #[@External.Beam("erlang", "monotonic_time")]
 declare fn monotonicTimeWithUnit(unit: i32) -> i64;

@@ -427,9 +427,6 @@ pub const unknown_associated_fn: []const u8 = "unknown-associated-fn";
 /// `member:` where it does not apply.
 pub const typeinfo_all_arguments: []const u8 = "typeinfo-all-arguments";
 
-/// `@TypeInfo.all(with: x)` where `x` names no body-carrying decorator.
-pub const typeinfo_all_not_decorator: []const u8 = "typeinfo-all-not-decorator";
-
 /// One query over a decorator carried by functions and by types.
 pub const typeinfo_all_mixed: []const u8 = "typeinfo-all-mixed";
 
@@ -550,7 +547,6 @@ pub const all_codes = [_][]const u8{
     decorator_type_not_one_type,
     unknown_associated_fn,
     typeinfo_all_arguments,
-    typeinfo_all_not_decorator,
     typeinfo_all_mixed,
     typeinfo_all_needs_member,
     typeinfo_all_private,

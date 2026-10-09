@@ -2075,3 +2075,117 @@ test "wat: unwrapOr ---- the answer keeps the payload's tuple shape" {
         \\
     );
 }
+
+// `01-compiler/05-wasm`'s rows: a `_` in a variant's payload pattern bound
+// nothing for the names beside it (`Rect(w, _)` answered `w = 0`: the
+// pattern's binder pass returned on a payload holding anything but names), and
+// a nested variant pattern left one test per payload element on the stack,
+// unread — `Two(Rect(w, _), _)` answered whatever the last one said.
+test "wat: case ---- a `_` and a nested variant in a payload pattern" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\type Shape {
+        \\    Circle(radius: i32),
+        \\    Rect(width: i32, height: i32),
+        \\    Dot,
+        \\}
+        \\type Pair {
+        \\    Two(left: Shape, right: Shape),
+        \\}
+        \\fn widthOf(s: Shape) -> i32 {
+        \\    return case s {
+        \\        Rect(w, _) -> w;
+        \\        Circle(_) -> -1;
+        \\        Dot -> 0;
+        \\    };
+        \\}
+        \\fn leftWidth(p: Pair) -> i32 {
+        \\    return case p {
+        \\        Two(Rect(w, _), _) -> w;
+        \\        Two(Circle(r), Rect(_, h)) -> r * 1000 + h;
+        \\        Two(_, Circle(r)) -> -r;
+        \\        Two(_, _) -> 0;
+        \\    };
+        \\}
+        \\fn main() {
+        \\    @print(widthOf(Shape.Rect(4, 5)));
+        \\    @print(widthOf(Shape.Circle(3)));
+        \\    @print(leftWidth(Pair.Two(Shape.Rect(9, 1), Shape.Dot)));
+        \\    @print(leftWidth(Pair.Two(Shape.Circle(2), Shape.Rect(6, 7))));
+        \\    @print(leftWidth(Pair.Two(Shape.Dot, Shape.Circle(8))));
+        \\    @print(leftWidth(Pair.Two(Shape.Dot, Shape.Dot)));
+        \\}
+    ,
+        \\4
+        \\-1
+        \\9
+        \\2007
+        \\-8
+        \\0
+        \\
+    );
+}
+
+// Decision 319 on wasm: a `u64` holds `0 … 2^64 − 1` in its `i64` carrier.
+// Read signed, `10^19` printed `-8446744073709551616`, compared below `3`,
+// divided to a negative quotient and trapped in `$__i64_sub_chk` on
+// `10^19 - 3·10^18` — all at exit 0 but the last. Its digits, `/ % < >` and
+// checked `+ - *` now read the bits unsigned; past either end still traps.
+test "wat: arithmetic ---- a `u64` past 2^63 is unsigned in its `i64` carrier" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\fn main() {
+        \\    val w: u64 = 10000000000000000000;
+        \\    val v: u64 = 3000000000000000000;
+        \\    val m: u64 = 18446744073709551615;
+        \\    @print(w);
+        \\    @print(w > v);
+        \\    @print(v >= w);
+        \\    @print(w / v);
+        \\    @print(w % v);
+        \\    @print(w - v);
+        \\    @print(v + v + v);
+        \\    @print(m.toString());
+        \\    @print("${m / 2}");
+        \\    @print(v - w);
+        \\}
+    ,
+        \\10000000000000000000
+        \\true
+        \\false
+        \\3
+        \\1000000000000000000
+        \\7000000000000000000
+        \\9000000000000000000
+        \\18446744073709551615
+        \\9223372036854775807
+        \\RUNTIME TRAP (wasmtime):
+        \\wasm trap: wasm `unreachable` instruction executed
+        \\
+    );
+}
+
+// Decision 319 on wasm: a `val` with no annotation over a `u64` keeps its
+// type — bound to a `ul` literal past `i64`'s top (decimal or radix) or to a
+// `u64` sum. `val top = 18446744073709551615ul; @print(top)` printed `-1`
+// and `0xFFFF_FFFF_FFFF_FFFFul` folded to a `256` placeholder.
+test "wat: arithmetic ---- an unannotated `val` over a `u64` literal or sum prints unsigned" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\fn main() {
+        \\    val top = 18446744073709551615ul;
+        \\    val hex = 0xFFFF_FFFF_FFFF_FFFFul;
+        \\    val sum = 18446744073709551614ul + 1ul;
+        \\    @print(top);
+        \\    @print(hex);
+        \\    @print(sum);
+        \\    @print(top == hex);
+        \\    @print(top + 1ul);
+        \\}
+    ,
+        \\18446744073709551615
+        \\18446744073709551615
+        \\18446744073709551615
+        \\true
+        \\RUNTIME TRAP (wasmtime):
+        \\wasm trap: wasm `unreachable` instruction executed
+        \\
+    );
+}

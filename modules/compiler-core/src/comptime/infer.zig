@@ -15,6 +15,7 @@ const Env = @import("env.zig").Env;
 const envMod = @import("env.zig");
 const TypeError = @import("error.zig").TypeError;
 const errorMod = @import("error.zig");
+const evalMod = @import("eval.zig");
 const diagnostics = @import("diagnostics.zig");
 const reflectionMod = @import("reflection.zig");
 const effectChain = @import("effect_chain.zig");
@@ -484,7 +485,8 @@ fn reportStdTargetGates(env: *Env) InferError!void {
             if (names.items.len > 0) try names.appendSlice(env.arena, ", ");
             try names.appendSlice(env.arena, f.name);
         }
-        const msg = try std.fmt.allocPrint(env.arena, "{s}: std/{s} has no `@external` for target '{s}' (for {s})", .{ diagnostics.std_unsupported_on_target, gate.module, tgt, names.items });
+        const sp = try externalSpelling(env, tgt);
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: std/{s} has no `#[@External.{s}]` for target '{s}' (for {s})", .{ diagnostics.std_unsupported_on_target, gate.module, sp.member, sp.target, names.items });
         env.lastError = TypeError.custom(msg, "The import is refused: the module's host functions listed have no binding for this target. Pick a target the module supports (see libs/std/src/examples.md per-target coverage matrix).").withLoc(gate.loc);
         return error.TypeError;
     }
@@ -522,9 +524,21 @@ fn firstStdUnsupported(env: *Env, mod_name: []const u8, tgt: []const u8) ?[]cons
     return null;
 }
 
+/// `std-unsupported-on-target` speaks today's spellings: the binding is the
+/// `#[@External.<Member>(…)]` annotation (`Node`, `Erlang`, `Beam`, `Wasm` —
+/// `externalFor`'s member, the target capitalised), and the target is the one
+/// `--target` takes (`commonJS`, never the internal `node`).
+fn externalSpelling(env: *Env, tgt: []const u8) InferError!struct { member: []const u8, target: []const u8 } {
+    const member = try env.arena.dupe(u8, tgt);
+    if (member.len > 0) member[0] = std.ascii.toUpper(member[0]);
+    return .{ .member = member, .target = if (std.mem.eql(u8, tgt, "node")) "commonJS" else tgt };
+}
+
 fn refuseStdUnsupported(env: *Env, mod_name: []const u8, name: []const u8, tgt: []const u8, loc: ast.Loc) InferError!void {
-    const msg = try std.fmt.allocPrint(env.arena, "{s}: std/{s}.{s} has no `@external` for target '{s}'", .{ diagnostics.std_unsupported_on_target, mod_name, name, tgt });
-    env.lastError = TypeError.custom(msg, "Either add a per-target `@external` to the declare, or pick a target the module supports (see libs/std/src/examples.md per-target coverage matrix).").withLoc(loc);
+    const sp = try externalSpelling(env, tgt);
+    const msg = try std.fmt.allocPrint(env.arena, "{s}: std/{s}.{s} has no `#[@External.{s}]` for target '{s}'", .{ diagnostics.std_unsupported_on_target, mod_name, name, sp.member, sp.target });
+    const hint = try std.fmt.allocPrint(env.arena, "Either add a `#[@External.{s}(…)]` binding to the declare, or pick a target the module supports (see libs/std/src/examples.md per-target coverage matrix).", .{sp.member});
+    env.lastError = TypeError.custom(msg, hint).withLoc(loc);
     return error.TypeError;
 }
 
@@ -1332,7 +1346,7 @@ fn registerTypeDecl(env: *Env, decl: ast.DeclKind) InferError!void {
 
 /// T17 — the reflection records a `@Decl` hands out are declared under
 /// internal names (`__Decl__Param`, `comptime.zig` `decl_reflection_src`) and
-/// spelled `Param`, `Field`, `Method`, `Annotation` through prelude aliases. A
+/// spelled `Param`, `Field`, `Method`, `DeclAnnotation` through prelude aliases. A
 /// module that declares or imports a type of one of those names takes the
 /// name: the alias leaves this module's scope, and the handle's members keep
 /// their own identity.
@@ -4027,7 +4041,7 @@ fn runDeclDecorators(
         if (found.conflict) |c| return decoratorError(env, a, c, "Rename one of the two functions, so each name the decorator reaches is one function.");
         const support = found.fns;
         const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, dfn, support, handle, plain, &env.comptimeTraces) catch {
-            return decoratorError(env, a, "the decorator evaluator failed to run", "Decorator bodies run in a persistent `erl` process at compile time — check that `erl` and `erlc` are on PATH.");
+            return decoratorError(env, a, "the decorator evaluator failed to run", "Decorator bodies run in a persistent `erl` process at compile time — check that `erl` is on PATH.");
         };
         switch (outcome) {
             .ok => |contributions| for (contributions) |c| switch (c.kind) {
@@ -4079,7 +4093,21 @@ fn runDeclDecorators(
                 },
             },
             .fail => |fl| return decoratorError(env, a, fl.message, "raised by the decorator via `fail`/`failAt`"),
-            .err => |m| return decoratorError(env, a, m, "the decorator could not be evaluated"),
+            .err => |m| {
+                // Decorators run before any body of the module is inferred, so
+                // a type error in the module's own decorator body (`decl.nope`)
+                // reached the evaluator first and came back as its run-time
+                // failure (`{badkey,nope}`) at the annotation. Check the body
+                // now — and the module's own helpers it reaches: a type
+                // error, located in the body, is the answer.
+                if (local) {
+                    _ = try inferFnDecl(env, dfn);
+                    for (support) |sf| if (std.mem.eql(u8, env.comptimeOwnerOf(sf), env.modulePath)) {
+                        _ = try inferFnDecl(env, sf);
+                    };
+                }
+                return decoratorError(env, a, m, "the decorator could not be evaluated");
+            },
         }
     }
 }
@@ -4794,7 +4822,7 @@ fn validateMemoryAnnotations(env: *Env, v: ast.ValDecl, bindTy: *T.Type) InferEr
                 env,
                 loc,
                 try std.fmt.allocPrint(env.arena, "unknown argument `{s}` — expected `keyed`", .{label}),
-                try std.fmt.allocPrint(env.arena, "Write `#[@{s}(keyed = true)]`.", .{a.name}),
+                try std.fmt.allocPrint(env.arena, "Write `#[@{s}(keyed: true)]`.", .{a.name}),
             );
             const is_true = std.mem.eql(u8, arg, "true");
             if (!is_true and !std.mem.eql(u8, arg, "false")) return failAt(
@@ -4830,15 +4858,15 @@ fn validateMemoryAnnotations(env: *Env, v: ast.ValDecl, bindTy: *T.Type) InferEr
         if (mem.mode != .ets) return failAt(
             env,
             mem.loc orelse v.value.getLoc(),
-            try std.fmt.allocPrint(env.arena, "`keyed = true` stores one row per key in an ETS table — it is an argument of `@BeamMemory.Ets`, not of `@BeamMemory.{s}`", .{mem.mode.spelling()}),
-            "Write `#[@BeamMemory.Ets(keyed = true)]`, or drop `keyed`.",
+            try std.fmt.allocPrint(env.arena, "`keyed: true` stores one row per key in an ETS table — it is an argument of `@BeamMemory.Ets`, not of `@BeamMemory.{s}`", .{mem.mode.spelling()}),
+            "Write `#[@BeamMemory.Ets(keyed: true)]`, or drop `keyed`.",
         );
         // Its rows are read and written in THIS module, one at a time; an
         // importer would read the binding whole, and there is no whole value.
         if (v.isPub) return failAt(
             env,
             mem.loc orelse v.value.getLoc(),
-            try std.fmt.allocPrint(env.arena, "a `keyed = true` var is not `pub` — `{s}` is read one row at a time, and another module would read it whole", .{v.name}),
+            try std.fmt.allocPrint(env.arena, "a `keyed: true` var is not `pub` — `{s}` is read one row at a time, and another module would read it whole", .{v.name}),
             try std.fmt.allocPrint(env.arena, "Export a `fn` that reads the row instead: `pub fn rowOf(key: K) -> ?V {{ return {s}.at(key); }}`.", .{v.name}),
         );
         // The seed is the table's rows (decisions 168, 174): `Dict.empty()`,
@@ -4847,7 +4875,7 @@ fn validateMemoryAnnotations(env: *Env, v: ast.ValDecl, bindTy: *T.Type) InferEr
         if (!isKeyedSeed(v.value.*)) return failAt(
             env,
             v.value.getLoc(),
-            try std.fmt.allocPrint(env.arena, "a `keyed = true` var is re-seeded one row per entry whenever its table is re-created — `{s}`'s initialiser must be `Dict.empty()` or `Dict.ofEntries([…])` of literal entries", .{v.name}),
+            try std.fmt.allocPrint(env.arena, "a `keyed: true` var is re-seeded one row per entry whenever its table is re-created — `{s}`'s initialiser must be `Dict.empty()` or `Dict.ofEntries([…])` of literal entries", .{v.name}),
             try std.fmt.allocPrint(env.arena, "Write `var {s} = Dict.empty();`, or its rows as literals: `Dict.ofEntries([#(\"a\", 1)])`.", .{v.name}),
         );
     } else if (mem.mode == .ets and !ast.isMemorySeed(v.value.*)) return failAt(
@@ -4886,7 +4914,7 @@ fn refuseMemoryWrite(env: *Env, name: []const u8, plus: bool, value: *const ast.
             loc,
             try std.fmt.allocPrint(env.arena, "a `PersistentTerm` var is written once, at load — `{s}` cannot be assigned", .{name}),
             if (typeIsDict(mv.ty))
-                "Initialise it in the declaration, or use `#[@BeamMemory.Ets(keyed = true)]` if it changes."
+                "Initialise it in the declaration, or use `#[@BeamMemory.Ets(keyed: true)]` if it changes."
             else
                 "Initialise it in the declaration, or use `#[@BeamMemory.Ets]` if it changes.",
         ),
@@ -4981,15 +5009,15 @@ fn checkKeyedWrite(env: *Env, name: []const u8, plus: bool, value: *const ast.Ex
     const recv = row orelse return failAt(
         env,
         loc,
-        try std.fmt.allocPrint(env.arena, "`{s}` is a `keyed = true` var: it is written one row at a time, as `{s} = {s}.insert(key, value)`", .{ name, name, name }),
-        "Under `keyed = true` the `Dict` lives one ETS row per key; there is no whole value to replace.",
+        try std.fmt.allocPrint(env.arena, "`{s}` is a `keyed: true` var: it is written one row at a time, as `{s} = {s}.insert(key, value)`", .{ name, name, name }),
+        "Under `keyed: true` the `Dict` lives one ETS row per key; there is no whole value to replace.",
     );
     const cc = value.call.kind.call;
     if (ast.exprMentions(cc.args[0].value.*, name) or ast.exprMentions(cc.args[1].value.*, name)) return failAt(
         env,
         loc,
         try std.fmt.allocPrint(env.arena, "`{s}` is an `@BeamMemory.Ets` var: a write that recomputes it from its own value can lose one of two concurrent runs", .{name}),
-        try std.fmt.allocPrint(env.arena, "Under `keyed = true` a row is written whole — `{s} = {s}.insert(key, value)` with a key and a value that do not read `{s}`.", .{ name, name, name }),
+        try std.fmt.allocPrint(env.arena, "Under `keyed: true` a row is written whole — `{s} = {s}.insert(key, value)` with a key and a value that do not read `{s}`.", .{ name, name, name }),
     );
     try env.keyedRowAccess.put(env.arena, recv.identifier.loc, {});
 }
@@ -5003,8 +5031,8 @@ fn refuseKeyedWholeRead(env: *Env, name: []const u8, ty: *T.Type, loc: ast.Loc) 
     return failAt(
         env,
         loc,
-        try std.fmt.allocPrint(env.arena, "`{s}` is a `keyed = true` var: it is read one row at a time, as `{s}.at(key)`", .{ name, name }),
-        try std.fmt.allocPrint(env.arena, "Under `keyed = true` the `Dict` lives one ETS row per key; there is no whole value to read. Read a row with `{s}.at(key)`, write one with `{s} = {s}.insert(key, value)`.", .{ name, name, name }),
+        try std.fmt.allocPrint(env.arena, "`{s}` is a `keyed: true` var: it is read one row at a time, as `{s}.at(key)`", .{ name, name }),
+        try std.fmt.allocPrint(env.arena, "Under `keyed: true` the `Dict` lives one ETS row per key; there is no whole value to read. Read a row with `{s}.at(key)`, write one with `{s} = {s}.insert(key, value)`.", .{ name, name, name }),
     );
 }
 
@@ -5714,8 +5742,10 @@ fn refuseFallingOffTheEnd(env: *Env, f: ast.FnDecl, retType: *T.Type) InferError
 /// a `return` / `throw`, an `if`/`else` or `case` whose every branch ends that
 /// way, a `loop { }` (left only by `break` or `return`), or a call to a
 /// `noreturn` builtin. Conservative the right way: anything it cannot read is
-/// "may fall through" only where the statement plainly has no exit.
-fn stmtsMayFallThrough(env: *Env, stmts: []const ast.Stmt) bool {
+/// "may fall through" only where the statement plainly has no exit. Read on
+/// either phase: a fn's parsed body, and a typed `@block` body (decision 2's
+/// value-position block, `inferBuiltinCallReturnType`).
+fn stmtsMayFallThrough(env: *Env, stmts: anytype) bool {
     // A trailing comment is kept as a statement by the parser and is not one.
     var n = stmts.len;
     while (n > 0) : (n -= 1) {
@@ -5726,7 +5756,7 @@ fn stmtsMayFallThrough(env: *Env, stmts: []const ast.Stmt) bool {
     return true;
 }
 
-fn exprMayFallThrough(env: *Env, e: ast.Expr) bool {
+fn exprMayFallThrough(env: *Env, e: anytype) bool {
     return switch (e) {
         .jump => |j| switch (j.kind) {
             .@"return", .throw_, .@"break", .@"continue" => false,
@@ -6286,7 +6316,7 @@ fn expandTemplateCallViaRuntime(
     const outcome = templateEval.evaluate(env.arena, ctx.io, ctx.build_root, env.comptimeOwnerOf(tfn), tfn, captures, plainArgs, &env.comptimeTraces) catch {
         env.lastError = TypeError.custom(
             "the template evaluator failed to run",
-            "Template bodies run in a persistent `erl` process at compile time — check that `erl` and `erlc` are on PATH.",
+            "Template bodies run in a persistent `erl` process at compile time — check that `erl` is on PATH.",
         ).withLoc(loc);
         return error.TypeError;
     };
@@ -7003,8 +7033,8 @@ fn inferBuiltinCallReturnType(
     if (std.mem.eql(u8, callee, "block") and typedTrailing.len >= 1 and env.lastTrailingReturnTargets.len >= 1) {
         const target = env.lastTrailingReturnTargets[0];
         const td = target.deref();
+        const asStatement = if (env.statementBlockLoc) |sl| sl.line == loc.line and sl.col == loc.col else false;
         if (td.* == .typeVar and td.typeVar.state == .unbound) {
-            const asStatement = if (env.statementBlockLoc) |sl| sl.line == loc.line and sl.col == loc.col else false;
             if (!asStatement) {
                 env.lastError = TypeError.custom(
                     try std.fmt.allocPrint(env.arena, "{s}: an `@block` used as a value has no valued `return` — its tail expression is not its value", .{diagnostics.block_tail_value}),
@@ -7013,6 +7043,17 @@ fn inferBuiltinCallReturnType(
                 return error.TypeError;
             }
             return env.namedType("void");
+        }
+        // A valued `return` on some paths and none on the fall-through
+        // (`@block { if (c) return 3; 4 }`): every path of a value-position
+        // block leaves through `return` (decision 2) — the tail is no value,
+        // so the fall-through path has none. Refused like the tail form.
+        if (!asStatement and stmtsMayFallThrough(env, typedTrailing[0].body)) {
+            env.lastError = TypeError.custom(
+                try std.fmt.allocPrint(env.arena, "{s}: an `@block` used as a value can reach its end without a `return` — every path must `return` a value", .{diagnostics.block_tail_value}),
+                "End every path of the block with `return <value>;` (or `throw` / `@panic(…)`), or use the block as a statement.",
+            ).withLoc(loc);
+            return error.TypeError;
         }
         return target;
     }
@@ -7269,8 +7310,9 @@ fn isKnownBuiltinName(callee: []const u8) bool {
     if (builtinsMod.find(callee) != null) return true;
     // The parser's own sugar: `x is T` lands as the `is` builtin and `xs[i]`
     // as the `[]` builtin call. Both are intercepted in `inferCallExpr`; the
-    // names stay known so one that survived a degraded module is not reported
-    // as a misspelled builtin.
+    // names stay known for the parser's carriers only, so one that survived a
+    // degraded module is not reported as a misspelled builtin — a hand-written
+    // `@is(…)` is refused in `inferCallExpr` (decision 322).
     return std.mem.eql(u8, callee, ast.is_builtin_name) or std.mem.eql(u8, callee, ast.index_builtin_name);
 }
 
@@ -7295,10 +7337,31 @@ fn checkBuiltinArguments(
     typedTrailing: []ast.TrailingLambdaOf(.typed),
     loc: ast.Loc,
 ) InferError!void {
+    const args = try env.arena.alloc(BuiltinArgument, typedArgs.len);
+    for (typedArgs, args) |a, *out| out.* = .{ .label = a.label, .type_ = a.value.getType(), .loc = a.value.getLoc() };
+    return checkDeclaredArguments(env, callee, args, typedTrailing.len, loc);
+}
+
+/// One argument of a builtin call, as `checkDeclaredArguments` reads it.
+const BuiltinArgument = struct {
+    label: ?[]const u8,
+    type_: *T.Type,
+    loc: ast.Loc,
+};
+
+/// `checkBuiltinArguments` over arguments typed by their caller — the
+/// catalogue types `with:` by `decoratorArgumentType` (decision 268).
+fn checkDeclaredArguments(
+    env: *Env,
+    callee: []const u8,
+    typedArgs: []const BuiltinArgument,
+    trailing: usize,
+    loc: ast.Loc,
+) InferError!void {
     const row = builtinsMod.find(callee) orelse return;
     if (row.held != .declaration) return;
     const decl = env.builtinDecls.get(callee) orelse return;
-    const given = typedArgs.len + typedTrailing.len;
+    const given = typedArgs.len + trailing;
     const refuse = struct {
         fn f(e: *Env, sig: []const u8, comptime fmt: []const u8, args: anytype, l: ast.Loc) InferError {
             const what = std.fmt.allocPrint(e.arena, fmt, args) catch return error.OutOfMemory;
@@ -7320,21 +7383,21 @@ fn checkBuiltinArguments(
     for (typedArgs) |a| {
         const at: usize = if (a.label) |label| blk: {
             for (decl.params, 0..) |p, i| if (std.mem.eql(u8, p.name, label)) break :blk i;
-            return refuse(env, row.signature, "`@{s}` has no parameter `{s}`", .{ callee, label }, a.value.getLoc());
+            return refuse(env, row.signature, "`@{s}` has no parameter `{s}`", .{ callee, label }, a.loc);
         } else blk: {
             while (next < bound.len and bound[next]) next += 1;
             break :blk next;
         };
         if (at >= bound.len or bound[at]) {
-            return refuse(env, row.signature, "`@{s}` takes {d} argument{s}", .{ callee, decl.params.len, if (decl.params.len == 1) "" else "s" }, a.value.getLoc());
+            return refuse(env, row.signature, "`@{s}` takes {d} argument{s}", .{ callee, decl.params.len, if (decl.params.len == 1) "" else "s" }, a.loc);
         }
         bound[at] = true;
         const p = decl.params[at];
         if (p.typeRef == .typeparam) continue;
         const want = try resolveTypeRefInContext(env, p.typeRef, genericMap);
-        try unifyArgument(env, want, a.value.getType(), a.value.getLoc());
+        try unifyArgument(env, want, a.type_, a.loc);
     }
-    for (typedTrailing) |_| {
+    for (0..trailing) |_| {
         while (next < bound.len and bound[next]) next += 1;
         if (next >= bound.len) return refuse(env, row.signature, "`@{s}` takes no trailing lambda", .{callee}, loc);
         bound[next] = true;
@@ -7344,6 +7407,53 @@ fn checkBuiltinArguments(
             return refuse(env, row.signature, "`@{s}` needs `{s}`", .{ callee, p.name }, loc);
         }
     }
+}
+
+/// Decision 268 — `@TypeInfo.all(…)`'s arguments against its declaration.
+/// `with:` is typed by `decoratorArgumentType`; every other argument by
+/// inference.
+fn checkCatalogueArguments(env: *Env, call: anytype, loc: ast.Loc) InferError!void {
+    const args = try env.arena.alloc(BuiltinArgument, call.args.len);
+    for (call.args, args) |a, *out| {
+        const is_with = if (a.label) |l| std.mem.eql(u8, l, "with") else false;
+        const ty = if (is_with) (try decoratorArgumentType(env, a.value.*)) orelse (try inferExprTyped(env, a.value.*)).getType() else (try inferExprTyped(env, a.value.*)).getType();
+        out.* = .{ .label = a.label, .type_ = ty, .loc = a.value.getLoc() };
+    }
+    return checkDeclaredArguments(env, "TypeInfo.all", args, call.trailing.len, loc);
+}
+
+/// Decision 268 — the type `Decorator` is held only by a decorator's name: a
+/// name (`component`, `web.route`) of a function whose first parameter is
+/// `comptime _: @Decl` and which has a body is a `Decorator`, an array literal
+/// of such names a `Decorator[]`. Null for anything else, which then keeps the
+/// type inference gives it — no other value is assignable to `Decorator`.
+fn decoratorArgumentType(env: *Env, e: ast.Expr) InferError!?*T.Type {
+    if (e == .collection and e.collection.kind == .arrayLit) {
+        const al = e.collection.kind.arrayLit;
+        if (al.elems.len == 0 or al.spread != null or al.spreadExpr != null) return null;
+        for (al.elems) |elem| if (!namesDecorator(env, elem)) return null;
+        return try env.namedTypeArgs("array", &.{try env.namedType(decorator_type_name)});
+    }
+    if (!namesDecorator(env, e)) return null;
+    return try env.namedType(decorator_type_name);
+}
+
+/// The builtin type of a decorator's name (`builtins.d.bp`, decision 268).
+const decorator_type_name = "Decorator";
+
+fn namesDecorator(env: *Env, e: ast.Expr) bool {
+    if (e != .identifier) return false;
+    const spelled: []const u8 = switch (e.identifier.kind) {
+        .ident => |n| n,
+        .identAccess => |ia| if (ia.receiver.* == .identifier and ia.receiver.identifier.kind == .ident)
+            std.fmt.allocPrint(env.arena, "{s}.{s}", .{ ia.receiver.identifier.kind.ident, ia.member }) catch return false
+        else
+            return false,
+        else => return false,
+    };
+    const sig = env.decorators.get(spelled) orelse return false;
+    const f = sig.fn_decl orelse return false;
+    return f.body.len > 0;
 }
 
 /// `unknown-builtin: unknown builtin \`@name\`` — with the nearest known name
@@ -10763,28 +10873,6 @@ fn refuseIntegerOutOfRange(env: *Env, digits: []const u8, typeName: []const u8, 
     return error.TypeError;
 }
 
-/// Decision 247 — a 64-bit integer literal past `2^53` has no exact value on
-/// commonJS, whose numbers are doubles: refused there at the literal, so the
-/// program never prints a different number than it wrote. The other targets
-/// hold it.
-fn refuseBeyondJsSafeInteger(env: *Env, digits: []const u8, typeName: []const u8, loc: ast.Loc) InferError!void {
-    const tgt = env.target orelse return;
-    // The driver names the commonJS target `node`.
-    if (!std.mem.eql(u8, tgt, "node") and !std.mem.eql(u8, tgt, "commonJS")) return;
-    const wide = [_][]const u8{ "i64", "u64", "isize", "usize" };
-    const isWide = for (wide) |w| {
-        if (std.mem.eql(u8, w, typeName)) break true;
-    } else false;
-    if (!isWide) return;
-    var clean: std.ArrayListUnmanaged(u8) = .empty;
-    for (digits) |c| if (c != '_') try clean.append(env.arena, c);
-    const v = std.fmt.parseInt(i128, clean.items, 0) catch std.math.maxInt(i128);
-    if (v <= (1 << 53)) return;
-    const msg = try std.fmt.allocPrint(env.arena, "the `{s}` literal `{s}` is past 2^53, which commonJS cannot hold exactly", .{ typeName, digits });
-    env.lastError = TypeError.custom(msg, "A commonJS number is a double: an integer above 9007199254740992 loses digits (decision 247). Keep the value within 2^53 on this target, or build for erlang, beam or wasm.").withLoc(loc);
-    return error.TypeError;
-}
-
 /// Decision 247 — a number pattern matches only a subject of its type: a
 /// suffixed literal its suffix's type, a floating one `f64`, an integer one
 /// any integer type (the subject's, within range). A subject that is a
@@ -10874,7 +10962,6 @@ fn inferLiteralExpr(env: *Env, lit: ast.LiteralExprOf(.untyped), loc: ast.Loc) I
                 };
                 if (!lexerMod.numberSuffixIsFloat(parts.suffix)) {
                     try refuseIntegerOutOfRange(env, parts.digits, typeName, loc);
-                    try refuseBeyondJsSafeInteger(env, parts.digits, typeName, loc);
                 }
                 const text = try lexerMod.numberBackendText(env.arena, n);
                 if (!env.indexRewrites.contains(loc)) {
@@ -13153,10 +13240,6 @@ fn inferResultNamespaceCall(
     } } } };
 }
 
-/// The builtin methods of a `@Result<R, E>` value — `inferResultOptionMethod`
-/// resolves each; `libs/std/src/builtins.d.bp` documents them.
-const result_methods = [_][]const u8{ "map", "flatMap", "unwrapOr", "isOk", "isError" };
-
 /// A member of a `@Result<R, E>` value is one of its builtin methods, or
 /// refused. A `@Result` is its `Ok` / `Error` carrier, not the payload:
 /// `querystring.parse(q).length` read a field off `{ok, V}` — it checked,
@@ -13171,7 +13254,10 @@ fn refuseResultMemberAccess(env: *Env, recvTy: *T.Type, member: []const u8, is_c
     // A program's own `type Result { … }` is that type, with its own fields
     // and methods (`unknownField` answers for it), not the builtin carrier.
     if (env.lookupTypeDef("Result") != null) return;
-    if (is_call) for (result_methods) |m| if (std.mem.eql(u8, m, member)) return;
+    // The builtin methods of a `@Result<R, E>` value — `inferResultOptionMethod`
+    // resolves each; `comptime/builtins.zig` `methods` holds them to
+    // `libs/std/src/builtins.d.bp` (decision 252).
+    if (is_call and builtinsMod.hasMethod("Result", member)) return;
     const msg = try std.fmt.allocPrint(
         env.arena,
         diagnostics.result_member_not_a_method ++ ": `{s}` is not a member of a `@Result` — take the payload with `try` or `unwrapOr(<default>)` first; a `@Result`'s methods are `map`, `flatMap`, `unwrapOr`, `isOk` and `isError`",
@@ -14398,6 +14484,11 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                 return error.TypeError;
             }
             if (call.is_builtin and std.mem.eql(u8, call.callee, "TypeInfo.all")) {
+                // Decision 268 — the arguments are held to the declaration
+                // (`with: Decorator | Decorator[]`) like any builtin's: a
+                // `with:` that names no decorator is the ordinary mismatch at
+                // the argument. `typeinfo_all.plan` answered no such query.
+                try checkCatalogueArguments(env, call, loc);
                 // Decision 216 (4) — the answer `typeinfo_all.plan` built for
                 // this call; tooling that runs no decorator reads an empty one.
                 const answer = env.typeinfoAll.get(loc) orelse empty: {
@@ -14609,6 +14700,16 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                 // nothing typed it, so `inferBuiltinCallReturnType` had no arm
                 // for the name and the call came out `void`.
                 if (std.mem.eql(u8, call.callee, ast.is_builtin_name)) {
+                    // Decision 322 — `is` is only an operator. The parser's carrier
+                    // of `x is T` always sets `isType`; a call without it is a
+                    // hand-written `@is(…)`, and `builtins.d.bp` declares no `is`.
+                    if (call.isType == null) {
+                        env.lastError = TypeError.custom(
+                            diagnostics.unknown_builtin ++ ": unknown builtin `@is` — `is` is an operator",
+                            "Test a type with the operator: `x is T`.",
+                        ).withLoc(loc);
+                        return error.TypeError;
+                    }
                     if (call.isType) |tested| if (tested == .typeparam and tested.typeparam.len == 0) {
                         // Decision 297 — `x is type` is folded where `x` is a
                         // `comptime x: V | type T` parameter (`value_or_type.zig`);
@@ -16298,13 +16399,35 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
     };
 }
 
+/// Decision 266 — a `comptime` is evaluated at compile time everywhere. One
+/// `eval.zig` folds (`errorMod.isFoldable`: literals, operators, the block's
+/// own locals, `if`, `break`) is answered here and its value recorded in
+/// `env.srcRewrites` under the node's loc; the transform splices it in place
+/// of the node in every body it walks (`transform.zig` `rewriteExpr`), so no
+/// backend meets a folded `comptime` (a body's `comptime { … }` used to reach
+/// commonJS as its `break` value alone, its locals dropped, and wasm not at
+/// all). A module-level `val`'s `comptime` keeps its own path
+/// (`comptime.zig` `evaluateComptime`), which never reads this entry. A node
+/// the folder cannot read (a call, a loop — step 21's comptime-runtime boxes)
+/// is left as it was.
+fn foldBodyComptime(env: *Env, ct: ast.ComptimeExprOf(.untyped), typed: TypedExpr, loc: ast.Loc) InferError!void {
+    if (!errorMod.isFoldable(.{ .comptime_ = ct })) return;
+    const folded = evalMod.foldToExpr(env.arena, typed, loc) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.UnsupportedComptimeValue => return,
+    } orelse return;
+    try env.srcRewrites.put(loc, folded);
+}
+
 /// Infer type for comptime expressions (comptime, assert, assertPattern).
 fn inferComptimeExpr(env: *Env, ct: ast.ComptimeExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
     return switch (ct.kind) {
         .comptimeExpr => |e| {
             const typed = try inferExprTyped(env, e.*);
             const typedPtr = try makeTypedPtr(env, typed);
-            return TypedExpr{ .comptime_ = .{ .loc = loc, .type_ = typed.getType(), .kind = .{ .comptimeExpr = typedPtr } } };
+            const node = TypedExpr{ .comptime_ = .{ .loc = loc, .type_ = typed.getType(), .kind = .{ .comptimeExpr = typedPtr } } };
+            try foldBodyComptime(env, ct, node, loc);
+            return node;
         },
 
         .comptimeBlock => |cb| {
@@ -16327,9 +16450,11 @@ fn inferComptimeExpr(env: *Env, ct: ast.ComptimeExprOf(.untyped), loc: ast.Loc) 
                 }
                 break :blk found orelse try env.namedType("void");
             };
-            return TypedExpr{ .comptime_ = .{ .loc = loc, .type_ = bodyType, .kind = .{ .comptimeBlock = .{
+            const node = TypedExpr{ .comptime_ = .{ .loc = loc, .type_ = bodyType, .kind = .{ .comptimeBlock = .{
                 .body = typedBody,
             } } } };
+            try foldBodyComptime(env, ct, node, loc);
+            return node;
         },
 
         .assert => |a| {
