@@ -15,8 +15,10 @@ std/
 ├── botopink.json            ← `files` lists the three core files below
 ├── test/                    ← compiled in test mode against the global env (no `mod` needed)
 │   ├── result_test.bp       ← `@Result` method surface
-│   ├── primitives_test.bp   ← tests of the `primitives.bp` interfaces, `String.parseInt` / `parseFloat` included (green on commonJS + erlang)
-│   └── primitives_gaps_test.bp ← primitive tests that hit a compiler gap, each gap named with its owning front
+│   ├── primitives_test.bp   ← tests of the `primitives.bp` interfaces, `String.parseInt` / `parseFloat`, the integer methods past 2^53 and the conversions included (green on commonJS + erlang)
+│   ├── primitives_gaps_test.bp ← primitive tests that hit a compiler gap, each gap named with its owning front
+│   └── unicode_test.bp      ← `unicode.normalize` against `tools/unicode-gen/NormalizationTest.txt`, every line of its six parts (§ unicode)
+├── tools/unicode-gen/       ← the generator of `src/unicode_tables.bp` (Zig, run by `zig build gen-unicode` — not part of the package) and the vendored Unicode data it reads (§ unicode)
 └── src/
     ├── root.bp              ← module-tree root: eighteen `pub mod` lines — the sixteen root modules, `pub mod io;`, `pub mod testing;` (decision 106)
     │                        — core files flattened into the global type env (`std_core_files` in build.zig):
@@ -26,6 +28,7 @@ std/
     │                        — the PURE root: same input, same output; imports nothing from `io/` (`std-root-imports-io`)
     ├── collections.bp       ← `Dict`, `Set`, `Queue`, `Order` (was `dict`, `sets`, `queue`, `order`)
     ├── math.bp  path.bp  url.bp  querystring.bp  json.bp  regex.bp  unicode.bp  string_builder.bp
+    ├── unicode_tables.bp    ← GENERATED (`zig build gen-unicode`), never edited: `unicode`'s normalization data; a private `mod` of `root.bp` (§ unicode)
     ├── encoding.bp          ← base64 (was `base64`), hex, percent, the form codec
     ├── hash.bp              ← hex digests (was `crypto`), the base64url/HMAC digests, content hashes (was `content_hash`)
     ├── escape.bp  async.bp
@@ -85,7 +88,7 @@ at the source string. Embedded in a consumer's build the same import names
 | `querystring` | The query-string CODEC (RFC 3986 §3.4 and the form flavour): `parse(query)` and `parseForm(body)` -> `@Result<Array<#(string, string)>, string>` — split on `&` (empty fields dropped, duplicates kept in order), each field on its FIRST `=` (no `=` → empty value), both sides percent-decoded; `parse` strips a leading `?` and keeps `+`, `parseForm` reads `+` as a space and strips nothing. REFUSED (rakun's 03r-e rule, as an `Error`): a `%` not followed by two hex digits, an escape sequence that is not UTF-8, a control character (U+0000–U+001F, U+007F) raw or as its escape. `stringify(pairs) -> @Result<string, string>` percent-encodes both sides over the RFC 3986 unreserved set (`a b` → `a%20b`, `+` → `%2B`) and refuses a control character, so its text reads back through either parser. The percent codec is `encoding`'s, imported (`import {encoding.percentEncode, encoding.percentDecode, encoding.hexDecode};` — a std module imports another by the brace form, decision 309; `from "std"` inside std is `error[module-import-with-from]`); the refusals are decided in botopink before either cell runs. Walks strings by `at`, so a `%` reads its two digits by index. Runs on commonJS, erlang and beam; wasm refuses the import (STD-001: `encoding`'s cells have no wasm binding) |
 | `io.clock` | `nowMillis`, `monotonicMillis`, `measureMillis`, `formatIso8601`; front 01: `type Civil(year, month, day, hour, minute, second, weekday)` (UTC, ISO weekday Monday = 1), `type Duration(millis: i64)`, `parseIso8601` (`@Result<i64, string>`, RFC 3339 with the offset REQUIRED — Node's lenient `Date.parse` is gated by a shape check), `toCivil`, `offsetMinutes` (host timezone, minutes EAST of UTC), `millis`/`seconds`/`minutes`/`hours` (take `i32`: a literal is `i32` and never widens, so they cross a private identity cell `wide`), `add`, `toMillis`, `sleep(ms)` (synchronous: `Atomics.wait` / `timer:sleep`), `deadline(d)` (an absolute epoch reading), `isExpired(at)`; front 97: `parseDuration(text) -> @Result<i64, string>` — milliseconds of digits followed by ONE unit, `ms` `s` `m` `h` `d` (`"30s"` → `30000`); no unit, a fraction, a sign, whitespace, an uppercase unit, two units and the empty string are `Error("clock.parseDuration: \"<text>\" is not a duration: digits, then one unit of ms, s, m, h or d")`, and a duration beyond 2^53 − 1 milliseconds is `… is out of range` (the count through `string.parseInt()`, the product against the private cell `largestExactMillis`); pure `.bp`, the same texts on both targets |
 | `url` | `type Url`, `parse`, `serialize` |
-| `unicode` | `fromCodepoint` (a `fn:` body over `String.fromCodepoint` on all four targets, decision 262), `firstCodepoint`, `codepoints`, `type NormalizationForm`, `normalize` |
+| `unicode` | `fromCodepoint` (a `fn:` body over `String.fromCodepoint` on all four targets, decision 262), `firstCodepoint`, `codepoints`, `type NormalizationForm`, `normalize(s, form)` — NFC, NFD, NFKC, NFKD by std's own botopink body on all four targets, over the generated `unicode_tables` (decision 333 (A), § unicode): no host normalizer, so every target answers the same for every code point; text whose code points are all below U+00A0 comes back as it is. Builds and runs on wasm (`run/std_unicode_on_every_target`, one `.out`) |
 | `io.process` | `exit`, `cwd`, `platform`, `pid` (`arch` is `io.os`'s — the duplicate was folded); front 01: `type Exit(status, stdout, stderr)`, `run(cmd, args)` (no shell; `@Result<Exit, string>` — a process that ran is `Ok` whatever its status, `Error` only when it could not start; Erlang folds stderr into stdout through `stderr_to_stdout`, so `stderr` is `""` there), `runShell(cmd)` (`/bin/sh -c`, stdout+stderr as text, STATUS-LOSING on both targets). No `onSignal`: a closure handed to a host cell is unverified on erlang |
 | `io.os` | `hostname`, `arch`, `cpuCount`, `tmpdir`, `userInfo` (`type UserInfo`), `eol`. `userInfo`'s Erlang template builds the record's run-time tuple by hand, so it names the type's module atom — `'std@io@os@@UserInfo'`; it still read `'std@os@@UserInfo'` from before the module moved under `io/`, which no test saw until another std module imported `io.os` (`testing.snapshots`, front 97) and `u.username` became a call into the type's module: `{error,undef}` |
 | `io.env` | `read`, `write`, `clear`, `args`, `vars` (`get`/`set` are keywords) |
@@ -269,11 +272,10 @@ end of `io/random.bp`; `run/std_random_on_every_target`). A body here avoids
 what the wasm backend cannot do yet (`codegen/wat/AGENTS.md` § Host bindings:
 `Array.range` / `repeat`); no
 std module holds a module-level `var` (on erlang it lowers to `std@beam`,
-which a std module does not import). `encoding` and `querystring` build and
-run on wasm (their `fn:` bodies, decision 238). The other group-1 modules
-(`unicode`, `json`) stay refused on wasm until a decision binds their last
-cells: `unicode`'s four `normalize*` (`decisions-pending.md` 05w-i — `fromCodepoint`,
-`firstCodepointOrZero` and `codepoints` have `fn:` bodies), `json.parse` /
+which a std module does not import). `encoding`, `querystring` and `unicode`
+build and run on wasm (their `fn:` bodies, decision 238; `unicode.normalize`
+is plain botopink, decision 333 (A)). The other group-1 module, `json`, stays
+refused on wasm until a decision binds its last cells: `json.parse` /
 `json.stringify` (05w-j — every other `json` cell is bound; its
 `parseFloat` test helper is inlined into its test, since `parseFloat` has no
 wasm lowering and a top-level helper refused the module). Group 3 of decision 230 — `io/http`
@@ -281,6 +283,51 @@ wasm lowering and a top-level helper refused the module). Group 3 of decision 23
 eight cells), `testing/asserts` (`canonical`) — is refused on wasm by a located
 `std-unsupported-on-target`; whether that refusal is the design waits on the
 maintainer (`97-a`, `97-b`, `97-c`, `110-a`).
+
+## unicode — the generated normalization tables
+
+`unicode.normalize` is std's botopink body on every target (decision 333 (A)):
+decompose recursively (compatibility mappings too for NFKC / NFKD), put each
+run of non-starters in canonical order (a stable sort by combining class),
+then for NFC / NFKC recompose every unblocked pair whose primary composite is
+not excluded; Hangul syllables decompose and compose by the algorithm
+(Unicode §3.12). Its data is `src/unicode_tables.bp`, **generated, never
+edited**: `combiningClass(cp)`, `canonicalDecomposition(cp)` and
+`compatibilityDecomposition(cp)` (one level each — a tagged mapping only in the
+second), `primaryComposite(first, second)` (0 for none) and `version()`. Each is
+a `case` over the code point that dispatches to leaf functions of at most 64
+arms — a single `case` of two thousand arms is past the beam assembler's limit
+for one function — and the file is written at the formatter's canonical form.
+
+- **The generator** — `tools/unicode-gen/main.zig`, built for the host and run by
+  `zig build gen-unicode` (registered by one line of the root `build.zig`, which
+  calls `tools/unicode-gen/build_step.zig`); nothing else of the build runs it:
+  the generated file is committed and embedded like any std module. It reads
+  `UnicodeData.txt`, `CompositionExclusions.txt` and
+  `DerivedNormalizationProps.txt`, vendored beside it, and refuses to write
+  unless every vendored file matches its SHA-256 in `tools/unicode-gen/manifest.json`
+  and the exclusions it derives (the listed ones, the singletons, the
+  non-starter decompositions) are exactly `Full_Composition_Exclusion`.
+- **The pinned version** — Unicode 17.0.0 (`manifest.json` `version`, `unicode_tables.version()`).
+- **The conformance test** — `test/unicode_test.bp` reads the vendored
+  `NormalizationTest.txt` (hashed by the same manifest) and checks every line of
+  each of its six parts under the four forms, each part's line count pinned;
+  `botopink test [--target erlang|beam] --filter NormalizationTest` reads
+  `7 passed, 0 failed`. The file's other invariant (every code point not in part
+  1 is its own normal form) is not walked: 1.1 million code points × 4 forms.
+- **A Unicode bump** is one commit: replace the four `.txt` files with the new
+  version's (`https://www.unicode.org/Public/<version>/ucd/`), write their
+  SHA-256 and the version into `manifest.json`, run `zig build gen-unicode`,
+  update the version and the per-part line counts `test/unicode_test.bp` pins,
+  and run the conformance test on commonJS and erlang.
+- **Where the tables live** — a flat sibling, `src/unicode_tables.bp`, declared
+  `mod unicode_tables;` (private) in `root.bp` and imported by `unicode.bp` as
+  `import {unicode_tables as tables};` (private in std's own tree; the embedded
+  registry carries no visibility, so a consumer's `import {unicode_tables} from
+  "std"` still resolves — front 97's compiler residual 11). The module tree resolves a `mod` only to
+  `<name>.bp` or `<name>/mod.bp` beside the declaring file, so a
+  `unicode/tables.bp` under the file module `unicode.bp` is unreachable
+  (`decisions-pending.md` 97-s16-a).
 
 ## Tests
 
@@ -408,7 +455,9 @@ gone, not aliased (decision 127).
   it (`scanDeclareFnExternal`) and stop on a parse failure, and
   `codegen/tests/builtins.zig` pins that it parses — so a form the parser refuses
   here reds a test, not a build.
-- No Zig in `libs/std/` — loader/glue changes belong in `build.zig` / `compiler-core`.
+- No Zig in `libs/std/` — loader/glue changes belong in `build.zig` / `compiler-core`. The one
+  exception is `tools/unicode-gen/`, the generator decision 333 (A) places beside the package
+  (§ unicode): a build tool, never embedded, never imported by the compiler.
 - `get`/`set`/`test`/`from`/`assert` are keywords (`new`, `delegate` and `const` are identifiers since 06 N27) — pick other names (`empty`/`at`/`insert`, `matches`, `src`, `asserts`).
 - Array equality in assertions uses `.join(...)` (`==` on arrays is reference equality in JS) — or `asserts.deepEquals`, which renders both sides on the same host.
 - An `if (a < b || c > d)` condition does not parse today (the condition grammar stops at `||`); bind it to a `val` first (`asserts.between` does). A parser gap, not a std one.
@@ -483,13 +532,15 @@ method has accepted.
 
 | | accepted — the WHOLE string | `Error` (the text names the input) |
 |---|---|---|
-| `parseInt` | an optional `+` / `-`, then digits `0`–`9` (`"-0"` is `0`, `"007"` is `7`) | anything else — `""`, `"4 2"`, `"42x"`, `"0x2A"`, `"4.2"`, `"1e3"`, `"-"`: `parseInt: "<input>" is not an integer` · a numeral beyond ±9007199254740991 (2^53 − 1): `parseInt: "<input>" is out of range` |
+| `parseInt` | an optional `+` / `-`, then digits `0`–`9` (`"-0"` is `0`, `"007"` is `7`) | anything else — `""`, `"4 2"`, `"42x"`, `"0x2A"`, `"4.2"`, `"1e3"`, `"-"`: `parseInt: "<input>" is not an integer` · a numeral past the `i64` range, −2^63 … 2^63 − 1: `parseInt: "<input>" is out of range` |
 | `parseFloat` | an optional sign, digits, an optional `.` with digits on both sides, an optional `e` / `E` exponent with an optional sign (`"1e3"`, `"+2.50E-2"`, `"42"`) | anything else — `".5"`, `"1."`, `"1e"`, `"NaN"`, `"Infinity"`, `"0x10"`, `" 1"`, `""`: `parseFloat: "<input>" is not a number` · an overflow: `parseFloat: "<input>" overflows f64`. An underflow is `0.0` |
 
-- **The integer range is the one every target counts exactly.** An `i64` is a JavaScript number on
-  commonJS, which stops counting by one at 2^53; `binary_to_integer/1` is exact at any size. Refusing
-  past ±(2^53 − 1) on both is what makes the two answer the same value for every input (measured:
-  `"9007199254740993"` is `9007199254740992` under `Number` and exact under Erlang).
+- **The integer range is `i64`'s, exact on every target** (decision 176 as amended by 319). The
+  Node cell reads the digits as a `BigInt` — never `Number`, under which `"9007199254740993"` is
+  `9007199254740992` — and answers 319's canonical form: a `number` within ±(2^53 − 1), a `BigInt`
+  beyond; `binary_to_integer/1` is exact at any size, and the erlang cell bounds it at the type's
+  ends (written `1 bsl 63`: beam's template reader takes no literal past 64 bits).
+  `tests/language` `run/string_parse_int_i64_range` pins both ends on commonJS, erlang and beam.
 - **`parseFloat` is the host's correctly rounded conversion** (`Number` / `binary_to_float/1`) of the
   numeral rewritten as `<digits>.<digits>e<exponent>` — the one form `binary_to_float/1` reads (it
   refuses `1e3` and `1.`). It answers `json.decode`'s `f64` bit for bit: `json.bp`'s test
@@ -524,6 +575,36 @@ method has accepted.
   bodies.
 - Tests: `test/primitives_test.bp` (six tests — the accepted forms, every refusal's text, the range
   and the rounding boundaries) and the `json.bp` agreement test.
+
+## Integers past 2^53 and the conversions (decision 319)
+
+An `i64` / `u64` holds its whole range on every target; commonJS holds a value within ±(2^53 − 1)
+as a `number` and one beyond as a `BigInt` (`modules/compiler-core/src/codegen/js/AGENTS.md` § 64-bit integers). The numeric tower's
+methods answer alike on both sides of that edge:
+
+- **`min`, `max`, `abs`, `isEven`, `isOdd`, `clamp`.** The emitter patches every numeric-tower
+  method on `BigInt.prototype` as well as `Number.prototype` (`commonJS.zig` `prototypeAssign`), and
+  each Node form here takes either kind: `min` / `max` / `abs` are written out with `<` (exact across
+  the kinds) and answer an operand as it came — with `Math.*`'s answer on every pair of numbers
+  (`NaN`, `-0`), and never calling `Math.min(` (a form that names `.min(` fails the guard
+  "no prelude template calls the method it patches") — and `isEven` / `isOdd` take `% 2n` on a
+  `BigInt`. `Float`'s `abs` carries the same form as `Signed`'s, since both patch
+  `Number.prototype.abs`. `clamp` is the `default fn` over
+  `max` / `min`. `tests/language` `run/i64_number_methods_past_js_safe`.
+- **The conversions** `toI32()`, `toI64()`, `toU32()`, `toU64()` and `toF64()` are `Integer`'s, so
+  every integer width has the five. Each answers the value when the target type holds it exactly and
+  otherwise aborts naming the value and the type — `toI32: 2147483648 does not fit i32`,
+  `toF64: 9007199254740993 has no exact f64` — never a wrap, a saturation or a rounding. The erlang
+  forms raise `{integer_overflow, What}` as an overflowing operator does; the Node forms throw
+  `integer overflow: <What>` and answer the canonical form. `run/integer_conversions_exact`,
+  `run/integer_conversion_to_i32_aborts`, `run/integer_conversion_to_f64_inexact_aborts`.
+- **wasm** lowers a primitive method from its own table (`wat.zig`), whose integer rows are `i32`'s:
+  a method called on an `i64` is refused there (`would narrow this i64 value to an i32 slot`), and the
+  five conversions have no row (`has no lowering for the int method toI32/0`). The cells pin both
+  refusals by `.wasm.expect` — rows of `01-compiler/05-wasm`.
+- `abs` of the type's minimum (`-2^63`, `-2^31`) answers `2^63` / `2^31`, a value outside the type,
+  on commonJS, erlang and beam alike: whether it aborts as an overflowing operator does is question
+  `97-s13-a` (`decisions-pending.md`).
 
 ## `behavior Index` / `behavior Slice` (decision 63, amended)
 

@@ -16,6 +16,9 @@
 //// The ambient modules (`primitives.bp`, `builtins.d.bp`, `builtins_fns.d.bp`) are
 //// flattened into the global type env rather than imported, so they are wired
 //// separately by the build and are not declared here.
+////
+//// `mod unicode_tables;` (private) is the generated data of `unicode`
+//// (`zig build gen-unicode`, decision 333 (A)) — not an importable module.
 
 pub mod collections;
 pub mod math;
@@ -25,6 +28,7 @@ pub mod querystring;
 pub mod json;
 pub mod regex;
 pub mod unicode;
+mod unicode_tables;
 pub mod string_builder;
 pub mod encoding;
 pub mod hash;

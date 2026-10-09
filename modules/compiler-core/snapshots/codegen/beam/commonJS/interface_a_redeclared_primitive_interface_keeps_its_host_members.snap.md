@@ -55,13 +55,13 @@ function __bp_print() {
 //   fn max(...)
 //   default fn clamp(...)
 //   default fn clampTo(...)
-Number.prototype.min = function(other) { return Math.min(this.valueOf(), other); };
-Number.prototype.max = function(other) { return Math.max(this.valueOf(), other); };
-Number.prototype.clamp = function(lo, hi) {
+BigInt.prototype.min = Number.prototype.min = function(other) { return ((__a, __b) => (__a !== __a || __b !== __b) ? NaN : (__b < __a || (__b === __a && Object.is(__b, -0))) ? __b : __a)(this.valueOf(), other); };
+BigInt.prototype.max = Number.prototype.max = function(other) { return ((__a, __b) => (__a !== __a || __b !== __b) ? NaN : (__b > __a || (__b === __a && Object.is(__a, -0))) ? __b : __a)(this.valueOf(), other); };
+BigInt.prototype.clamp = Number.prototype.clamp = function(lo, hi) {
     const self = this.valueOf();
     return self.max(lo).min(hi);
 };
-Number.prototype.clampTo = function(lo, hi) {
+BigInt.prototype.clampTo = Number.prototype.clampTo = function(lo, hi) {
     const self = this.valueOf();
     return self.max(lo).min(hi);
 };

@@ -402,10 +402,10 @@ refuses `io/fs`, decision 241's group 3).
 targets: `run/std_encoding_on_every_target` (base64, base64url, hex, percent and form codecs over
 ASCII to astral text, each decoder's refusal) and `run/std_querystring_on_every_target` (query and
 form bodies, each refusal); `run/std_json_on_every_target` (writers, `unquote`, `decode` and its
-accessors, the host round-trip) and `run/std_unicode_on_every_target` (`fromCodepoint`,
-`codepoints`, `firstCodepoint`, the four normalization forms) run on three and are refused on wasm by
-name (`.wasm.expect`) until `decisions-pending.md` 05w-j / 05w-i bind `json.parse` / `stringify` and
-`normalize` there. Two cells pin the wrong answers wasm gave those families at exit 0, each failing
+accessors, the host round-trip) runs on three and is refused on wasm by name (`.wasm.expect`) until
+`decisions-pending.md` 05w-j binds `json.parse` / `stringify` there; `run/std_unicode_on_every_target`
+(`fromCodepoint`, `codepoints`, `firstCodepoint`, the four normalization forms — std's botopink
+normalizer, decision 333 (A)) has one `.out` for the four targets. Two cells pin the wrong answers wasm gave those families at exit 0, each failing
 on the parent binary: `run/std_namespace_calls_same_name` (`querystring.parse` and `url.parse`
 through their namespaces — the mangled one's receiver was dropped) and `run/tuple_optional_element`
 (a `?T` in a tuple — printed, read through `._N`, a generic method's `#(Q<T>, ?T)`, and
@@ -598,7 +598,10 @@ its argument's shape, `unwrapOr` its default's — wasm printed a string's addre
 present first variant is not absent — wasm printed the ordinal or trapped),
 `run/case_multi_subject_patterns` (a multi-subject `case` over literals, strings, type arms, variant
 binders and guards — wasm answered the first arm, beam matched a string or a type arm on anything,
-commonJS never bound a variant's payload), `run/behavior_implemented_by_enum` (an enum implementing a
+commonJS never bound a variant's payload), `run/case_or_pattern_alternatives` (an or-pattern
+over unit variants, numbers, strings, payload variants with a wildcard, a literal or a label and
+`..`, a guarded arm, tuples, a range and a block arm — beam tested a number alternative alone, so
+`C | D -> true` answered `false` and `A | B` raised `case_clause`), `run/behavior_implemented_by_enum` (an enum implementing a
 behavior, called through a value of the behavior — commonJS, erlang and beam),
 `run/behavior_method_result_chained` and `reject/behavior_method_result_typed` (a behavior method's
 call answers its declared type, so a primitive method chains on it — commonJS called `length`,
@@ -1122,6 +1125,17 @@ which prints the top as `-1` and traps on `18446744073709551614ul + 1ul`), `run/
 `run/string_codepoint_slice_and_code` (a negative `slice` bound, `s[-2]`, `s[4..]` and `charCodeAt`
 over `"a👍bX👍c"`); `run/wide_literal_past_js_safe_integer` lost its `.commonJS.expect` and answers
 on the four targets.
+
+`02/97` step 13 (decision 319, std's half) adds `run/i64_number_methods_past_js_safe` — `min`, `max`,
+`clamp`, `abs`, `isEven`, `isOdd` on `i64` and `u64` values past 2^53 (commonJS threw
+`big.isEven is not a function`: the methods were patched on `Number.prototype` alone) —,
+`run/string_parse_int_i64_range` (`parseInt` reads −2^63 … 2^63 − 1 and refuses one past either end;
+the parent refused past ±(2^53 − 1)), `run/integer_conversions_exact` (`toI32`, `toI64`, `toU32`,
+`toU64`, `toF64` at the bounds and past 2^53) and two aborts, `run/integer_conversion_to_i32_aborts`
+and `run/integer_conversion_to_f64_inexact_aborts` (`.exit` plus a `.stderr` per target naming the
+value). They answer on commonJS, erlang and beam; wasm refuses each by `.wasm.expect` — its integer
+methods are `i32`'s, the conversions have no row, and `parseInt`'s `stringSlice0/2` is unresolved
+(that one's location points into std, so its `.expect` holds line 1 alone) — `05-wasm` rows.
 
 `front/block-backends` (decision 2: an `@block`'s `return` is the block's value) adds
 `run/block_return_is_block_value` — `val x = @block { return 3; }`, a branch's `return`, a string,

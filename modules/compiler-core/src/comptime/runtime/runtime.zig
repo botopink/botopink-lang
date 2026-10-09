@@ -36,6 +36,7 @@ const persistent_wat = @import("persistent_wat.zig");
 const watProgram = @import("wat/program.zig");
 const beamProgram = @import("beam/program.zig");
 const trace = @import("../trace.zig");
+const stages = @import("stages.zig");
 
 pub const ComptimeRuntime = configMod.ComptimeRuntime;
 
@@ -173,11 +174,15 @@ pub fn evalOn(arena: std.mem.Allocator, io: std.Io, r: ComptimeRuntime, host: []
 /// the lowering refuses is a `compile_error` naming it, as on the wat runtime
 /// — never a module run some other way.
 fn evalBeam(arena: std.mem.Allocator, io: std.Io, host: []const u8, module: []const u8, code: []const u8, arg: []const u8) EvalError!Result {
+    const t_lower = stages.start();
     const built = try beamProgram.build(module, try placeholderOf(arena, host), code);
+    stages.stop(.lower, t_lower);
     const ok = switch (built) {
         .ok => |o| o,
         .refused => |why| return .{ .response = .{ .compile_error = try std.fmt.allocPrint(arena, "the BEAM runtime does not take {s}", .{why}) } },
     };
+    const t_frame = stages.start();
+    defer stages.stop(.frame, t_frame);
     const response = persistent_beam.evalBeamWithArg(arena, io, ok.beam, module, arg) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         else => {
@@ -202,12 +207,14 @@ fn placeholderOf(arena: std.mem.Allocator, host: []const u8) EvalError![]const u
 }
 
 fn evalWat(arena: std.mem.Allocator, module: []const u8, code: []const u8, arg: []const u8) EvalError!Result {
+    const t_lower = stages.start();
     const built = try watProgram.build(module, code);
+    stages.stop(.lower, t_lower);
     const ok = switch (built) {
         .ok => |o| o,
         .refused => |why| return .{ .response = .{ .compile_error = try arena.dupe(u8, why) } },
     };
-    const response = try persistent_wat.evalWithArg(arena, ok.wasm, arg);
+    const response = try persistent_wat.evalWithArg(arena, module, ok.wasm, arg);
     return .{ .response = switch (response) {
         .ok => |b| .{ .ok = b },
         .compile_error => |b| .{ .compile_error = b },
@@ -225,8 +232,10 @@ pub const Listing = struct {
 
 /// The listing of the module this thread's runtime ran. On the BEAM runtime:
 /// the module as BEAM assembly (`beam/program.zig`), then `main/1`'s argument
-/// as `%%` comments (the tail of `erl_listing`, the Erlang listing the
-/// evaluator rendered) — or the refusal. On the wat runtime: the generated
+/// as `%%` comments (`erl_listing` from its `%% main/1 argument` line on: the
+/// template and decorator evaluators pass only that part,
+/// `template_eval.argumentListing`; `block_eval` its whole Erlang listing) —
+/// or the refusal. On the wat runtime: the generated
 /// module's functions as lowered to wasm (`wat/program.zig`), then the same
 /// argument comments as `;;` lines — or the refusal.
 pub fn listingOf(arena: std.mem.Allocator, host: []const u8, module: []const u8, code: []const u8, erl_listing: []const u8) EvalError!Listing {

@@ -43,6 +43,7 @@ const formatMod = @import("../format.zig");
 const hostRuntime = @import("./runtime/runtime.zig");
 const preludeMod = @import("./runtime/prelude.zig");
 const etf = @import("./runtime/etf.zig");
+const stages = @import("./runtime/stages.zig");
 const trace = @import("./trace.zig");
 
 // ── results ───────────────────────────────────────────────────────────────────
@@ -115,27 +116,27 @@ pub fn evaluate(
 ) EvalError!Outcome {
     _ = build_root;
     var unsupported: erlang.UnsupportedMethod = .{};
+    const t_module = stages.start();
     const source = buildModule(arena, owner, tfn, support, types, captures, plainArgs, &unsupported) catch |err| switch (err) {
         error.UnsupportedMethod => return .{ .err = try unsupportedText(arena, "template", tfn.name, unsupported) },
         else => |e| return e,
     };
+    stages.stop(.module, t_module);
 
     // The runtime is the target's (decision 84, `runtime/runtime.zig`); the
     // dispatcher stages the module for the BEAM runtime or lowers it for wat.
-    const result = try hostRuntime.evalWithArg(
-        arena,
-        io,
-        "template",
-        source.module,
-        source.code,
-        try etf.encode(arena, source.argument),
-    );
+    const t_encode = stages.start();
+    const arg = try etf.encode(arena, source.argument);
+    stages.stop(.encode, t_encode);
+    const result = try hostRuntime.evalWithArg(arena, io, "template", source.module, source.code, arg);
     const response = switch (result) {
         .response => |r| r,
         .unavailable => |why| return .{ .err = why },
     };
     if (traces) |list| {
-        const listing = try hostRuntime.listingOf(arena, "template", source.module, source.code, source.listing);
+        const t_listing = stages.start();
+        defer stages.stop(.listing, t_listing);
+        const listing = try hostRuntime.listingOf(arena, "template", source.module, source.code, try argumentListing(arena, source.argument));
         try list.append(arena, .{
             .kind = .template,
             .name = tfn.name,
@@ -148,6 +149,8 @@ pub fn evaluate(
             },
         });
     }
+    const t_outcome = stages.start();
+    defer stages.stop(.outcome, t_outcome);
     return switch (response) {
         .ok => |stdout| parseOutcome(arena, stdout),
         .compile_error => |detail| .{ .err = try errorText(arena, "the template module did not compile", detail) },
@@ -155,36 +158,15 @@ pub fn evaluate(
     };
 }
 
-// ── one module, once per process ──────────────────────────────────────────────
+// ── the registry lock ────────────────────────────────────────────────────────
 //
-// After step 2 a module's atom is the hash of code that carries nothing from the
-// call site, so every call site of one declaration derives the same atom, the
-// same bytes on disk and the same listing. `emitComptimeModule` re-parses the
-// embedded `primitives.bp` and `erlang_bifs.d.bp` preludes on every emit
-// (`codegen/erlang.zig`'s `collectPrimErlangDispatch` and
-// `loadAutoImportedBifsFromPrelude`, both documented as throwaway per emit), so
-// re-rendering a module the process has already rendered is the single most
-// expensive thing left in an evaluation: **16.1 ms**, measured over 20
-// `buildModule` calls.
-//
-// This registry removes the repeats. It is keyed by the module atom — the
-// content hash of the compilable module — so a hit is the same text by
-// construction, never a guess about declaration identity. Entries are
-// process-lifetime and bounded by the declarations in the build, not by the call
-// sites.
+// The emit memo below (and the decorator evaluator's, which shares it) is
+// process-wide. An atomic spin-lock, as `runtime/persistent_beam.zig` uses for
+// the pipes: the critical sections are a hash lookup and an insert, and
+// parallel test binaries are the only contenders. Storage outlives every
+// caller arena and is never freed.
 
-const Rendered = struct {
-    /// The listing without the argument comment: the part that is the same for
-    /// every call site (`listingWithArgument` adds the rest per evaluation).
-    listing: []const u8,
-};
-
-/// Serialises the registry. An atomic spin-lock, as `runtime/persistent_beam.zig`
-/// uses for the pipes: the critical sections are a hash lookup and an insert,
-/// and parallel test binaries are the only contenders.
 var rendered_lock: std.atomic.Value(u8) = .init(0);
-var rendered_modules: std.StringHashMapUnmanaged(Rendered) = .empty;
-/// Registry storage outlives every caller arena and is never freed.
 const rendered_alloc = std.heap.page_allocator;
 
 fn lockRendered() void {
@@ -195,39 +177,9 @@ fn unlockRendered() void {
     rendered_lock.store(0, .release);
 }
 
-/// The cached listing of `module`, or null when this process has not rendered it.
-pub fn cachedListing(module: []const u8) ?[]const u8 {
-    lockRendered();
-    defer unlockRendered();
-    const entry = rendered_modules.get(module) orelse return null;
-    return entry.listing;
-}
-
-/// Record `listing` for `module` and return the stored copy.
-pub fn rememberListing(module: []const u8, listing: []const u8) std.mem.Allocator.Error![]const u8 {
-    const key = try rendered_alloc.dupe(u8, module);
-    errdefer rendered_alloc.free(key);
-    const owned = try rendered_alloc.dupe(u8, listing);
-    errdefer rendered_alloc.free(owned);
-
-    lockRendered();
-    defer unlockRendered();
-    const slot = try rendered_modules.getOrPut(rendered_alloc, key);
-    if (slot.found_existing) {
-        // Another thread rendered the same module first; its text is this text.
-        rendered_alloc.free(key);
-        rendered_alloc.free(owned);
-        return slot.value_ptr.listing;
-    }
-    slot.value_ptr.* = .{ .listing = owned };
-    return owned;
-}
-
 // ── one emit per declaration ──────────────────────────────────────────────────
 //
-// The listing registry above is keyed by the module atom, which is the hash of
-// the emitted code — so it saves the listing emit but not the compilable one:
-// every call site still ran `emitComptimeModule`, and with it the re-lex and
+// Every call site used to run `emitComptimeModule`, and with it the re-lex and
 // re-parse of the embedded `builtins.d.bp` and `primitives.bp`
 // (`collectBuiltinErlangDispatch`) — 55 % of an N=200 build's samples (front 14
 // step 2). The code is a function of the declarations lowered and of `main/1`'s
@@ -335,9 +287,6 @@ const Module = struct {
     /// capture, so every call site of one declaration derives the same atom.
     module: []const u8,
     code: []const u8,
-    /// The lowered body and `main/1`, with the argument as a comment
-    /// (`trace.Entry.listing` on the BEAM runtime).
-    listing: []const u8,
     /// `main/1`'s argument: one tuple element per parameter.
     argument: Term,
 };
@@ -436,20 +385,22 @@ fn lexemeBytes(arena: std.mem.Allocator, s: []const u8) std.mem.Allocator.Error!
     return out.items;
 }
 
-/// The listing with `main/1`'s argument under it, one commented `ArgN = …` per
-/// tuple element. The capture is no longer part of the module, and a snapshot
-/// that showed it has to keep showing it — it is the input half of the
-/// evaluation the reply answers.
+/// `main/1`'s argument as `%%` comment lines, one `ArgN = …` per tuple
+/// element, after the `%% main/1 argument` header — the per-call half of a
+/// trace listing: `runtime.listingOf` puts it under the runtime's own listing
+/// of the module (BEAM assembly, or wasm with the lines as `;;`). The capture is
+/// no longer part of the module, and a snapshot that showed it has to keep
+/// showing it — it is the input half of the evaluation the reply answers.
+/// Rendered only when a trace is kept (`evaluate`'s `traces`).
 ///
 /// Each element goes through `writeExpr`, not `writeTerm`: the expression writer
 /// is the one that wraps a map or a list over several lines, so a capture reads
 /// in a snapshot exactly as it read when it was a literal inside `main/0`.
 /// `writeTermAt` does not wrap a tuple, which is why the tuple is unpacked here
 /// rather than printed whole.
-pub fn listingWithArgument(arena: std.mem.Allocator, listing: []const u8, argument: Term) EvalError![]const u8 {
+pub fn argumentListing(arena: std.mem.Allocator, argument: Term) EvalError![]const u8 {
     var out: std.Io.Writer.Allocating = .init(arena);
     const w = &out.writer;
-    try w.writeAll(listing);
     try w.writeAll("\n%% main/1 argument — an external term, not part of the module");
     if (argument.tuple.len == 0) {
         try w.writeAll(": {}\n");
@@ -671,7 +622,7 @@ fn buildModule(
     decls[0] = .{ .@"fn" = tfn };
     for (support, 1..) |f, i| decls[i] = .{ .@"fn" = f };
     @memcpy(decls[1 + support.len ..], types);
-    var config: erlang.ComptimeModule = .{
+    const config: erlang.ComptimeModule = .{
         .host_enums = &.{ "BindingKind", "DeclKind" },
         .host_records = &host_records,
         .exports = &.{.{ .name = "main", .arity = 1 }},
@@ -703,21 +654,7 @@ fn buildModule(
     const module = emitted.module;
     const renamed = emitted.code;
 
-    // What snapshots show: the lowered body, `main/1` and the argument as a
-    // comment. `resident` stays set: it decides where a method call lowers, so
-    // dropping it would make the listing diverge from the module that ran.
-    // Rendered once per module (`Rendered`), not once per call site.
-    const listing = cachedListing(module) orelse blk: {
-        config.listing = true;
-        const fresh = erlang.emitComptimeModule(arena, placeholder_module, .{ .decls = decls }, config) catch return error.EvalFailed;
-        break :blk try rememberListing(module, fresh);
-    };
-    return .{
-        .module = module,
-        .code = renamed,
-        .listing = try listingWithArgument(arena, listing, argument),
-        .argument = argument,
-    };
+    return .{ .module = module, .code = renamed, .argument = argument };
 }
 
 /// How each parameter of `tfn` reaches the body. A captured `@Expr` is always a
@@ -850,6 +787,52 @@ pub fn captureToTerm(arena: std.mem.Allocator, cap: *const template.CapturedExpr
     entries[5] = Term.field("bindings", Term.listOf(bindings.items));
     entries[6] = Term.field("words", Term.listOf(word_terms));
     return Term.mapOf(entries);
+}
+
+/// `infer.zig`'s memo key of a template call (hole-free captures only; the
+/// caller decides when there is none): the callee, each capture's text with the
+/// scope entries of its **words** (decision 237 — the bindings `captureToTerm`
+/// carries, so the key is O(text) like the argument, never O(scope)), and each
+/// plain argument's lexeme. Two call sites with the same key send the body the
+/// same text, the same bindings and the same plain arguments. A word the scope
+/// lacks is part of the key as a miss: adding that name to the scope later is a
+/// different key, never a stale hit.
+pub fn memoKey(
+    arena: std.mem.Allocator,
+    callee: []const u8,
+    captures: []const template.CapturedExpr,
+    plainArgs: []const template.PlainArg,
+) std.mem.Allocator.Error![]const u8 {
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    try buf.appendSlice(arena, callee);
+    for (captures) |cap| {
+        const text = cap.text orelse "";
+        try buf.append(arena, 0);
+        try buf.appendSlice(arena, text);
+        const scope = cap.scope orelse continue;
+        try buf.append(arena, 0);
+        var words: Words = .empty;
+        try appendWords(arena, &words, text);
+        for (words.keys()) |word| {
+            try buf.appendSlice(arena, word);
+            if (scope.entries.getPtr(word)) |e| {
+                try buf.append(arena, 1);
+                try buf.appendSlice(arena, e.kind.variantName());
+                try buf.append(arena, 1);
+                try buf.appendSlice(arena, e.declName);
+                try buf.append(arena, 1);
+                try buf.appendSlice(arena, e.identity);
+            }
+            try buf.append(arena, 2);
+        }
+    }
+    for (plainArgs) |pa| {
+        try buf.append(arena, 0);
+        try buf.appendSlice(arena, pa.paramName);
+        try buf.append(arena, 1);
+        try buf.appendSlice(arena, pa.source);
+    }
+    return buf.toOwnedSlice(arena);
 }
 
 /// The distinct words of a capture's text, in order of first appearance.
@@ -1117,8 +1100,9 @@ test "template module: one module per declaration, the capture as the argument" 
     try std.testing.expectEqualStrings("alpha", first.argument.tuple[0].map[1].value.binary);
     try std.testing.expectEqualStrings("a much longer literal", second.argument.tuple[0].map[1].value.binary);
     // The listing keeps showing the capture, which is no longer in the module.
-    try std.testing.expect(std.mem.indexOf(u8, first.listing, "%% main/1 argument") != null);
-    try std.testing.expect(std.mem.indexOf(u8, first.listing, "alpha") != null);
+    const shown = try argumentListing(arena, first.argument);
+    try std.testing.expect(std.mem.indexOf(u8, shown, "%% main/1 argument") != null);
+    try std.testing.expect(std.mem.indexOf(u8, shown, "alpha") != null);
 
     // C-01 — the owning module's path is in the atom and decodes back; the
     // same body declared in another module is another module, and one no

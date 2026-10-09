@@ -53,29 +53,33 @@ function __bp_print() {
 //   fn min(...)
 //   fn max(...)
 //   default fn clamp(...)
-Number.prototype.min = function(other) { return Math.min(this.valueOf(), other); };
-Number.prototype.max = function(other) { return Math.max(this.valueOf(), other); };
-Number.prototype.clamp = function(lo, hi) {
+BigInt.prototype.min = Number.prototype.min = function(other) { return ((__a, __b) => (__a !== __a || __b !== __b) ? NaN : (__b < __a || (__b === __a && Object.is(__b, -0))) ? __b : __a)(this.valueOf(), other); };
+BigInt.prototype.max = Number.prototype.max = function(other) { return ((__a, __b) => (__a !== __a || __b !== __b) ? NaN : (__b > __a || (__b === __a && Object.is(__a, -0))) ? __b : __a)(this.valueOf(), other); };
+BigInt.prototype.clamp = Number.prototype.clamp = function(lo, hi) {
     const self = this.valueOf();
     return self.max(lo).min(hi);
 };
 
 // behavior Signed extends Integer
 //   fn abs(...)
-Number.prototype.abs = function() { return Math.abs(this.valueOf()); };
+BigInt.prototype.abs = Number.prototype.abs = function() { return ((__a) => (__a < 0 || Object.is(__a, -0)) ? -__a : __a)(this.valueOf()); };
 
 // behavior Integer extends Number
 //   fn toString(...)
 //   default fn isEven(...)
 //   default fn isOdd(...)
-Number.prototype.isEven = function() {
-    const self = this.valueOf();
-    return ((self % 2) === 0);
-};
-Number.prototype.isOdd = function() {
-    const self = this.valueOf();
-    return ((self % 2) !== 0);
-};
+//   fn toI32(...)
+//   fn toI64(...)
+//   fn toU32(...)
+//   fn toU64(...)
+//   fn toF64(...)
+BigInt.prototype.isEven = Number.prototype.isEven = function() { return ((__a) => typeof __a === "bigint" ? __a % 2n === 0n : __a % 2 === 0)(this.valueOf()); };
+BigInt.prototype.isOdd = Number.prototype.isOdd = function() { return ((__a) => typeof __a === "bigint" ? __a % 2n !== 0n : __a % 2 !== 0)(this.valueOf()); };
+BigInt.prototype.toI32 = Number.prototype.toI32 = function() { return ((__v) => { if (__v >= -2147483648 && __v <= 2147483647) { return Number(__v); } throw new Error("integer overflow: toI32: " + __v + " does not fit i32"); })(this.valueOf()); };
+BigInt.prototype.toI64 = Number.prototype.toI64 = function() { return ((__v) => { if (__v >= -9223372036854775808n && __v <= 9223372036854775807n) { return __v; } throw new Error("integer overflow: toI64: " + __v + " does not fit i64"); })(this.valueOf()); };
+BigInt.prototype.toU32 = Number.prototype.toU32 = function() { return ((__v) => { if (__v >= 0 && __v <= 4294967295) { return Number(__v); } throw new Error("integer overflow: toU32: " + __v + " does not fit u32"); })(this.valueOf()); };
+BigInt.prototype.toU64 = Number.prototype.toU64 = function() { return ((__v) => { if (__v >= 0 && __v <= 18446744073709551615n) { return __v; } throw new Error("integer overflow: toU64: " + __v + " does not fit u64"); })(this.valueOf()); };
+BigInt.prototype.toF64 = Number.prototype.toF64 = function() { return ((__v) => { const __f = Number(__v); if (typeof __v !== "bigint" || BigInt(__f) === __v) { return __f; } throw new Error("integer overflow: toF64: " + __v + " has no exact f64"); })(this.valueOf()); };
 
 function main() {
     const n = (-5);

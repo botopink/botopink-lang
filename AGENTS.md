@@ -61,6 +61,7 @@ zig build test-vscode   # VS Code extension unit tests — scripts/test-vscode.s
 zig build test-language # botopink language tests (tests/language/run.sh; `-- --compiler <botopink>` to run another binary)
 zig build test-docs     # every `botopink` fence of docs.md/README.md compiles (scripts/check-docs.sh)
 zig build clean-tmp     # reap scratch dirs older than 1 day (also runs before `zig build test`)
+zig build gen-unicode   # regenerate libs/std/src/unicode_tables.bp from the pinned Unicode data (libs/std/AGENTS.md § unicode)
 zig build compiler-web  # compiler-core for the browser → zig-out/web/ (wasm32-wasi; `-Doptimize=ReleaseSmall` is the shipped size)
 zig build test-web      # the browser build's smoke test under node (modules/compiler-web/tests/smoke.js)
 ```

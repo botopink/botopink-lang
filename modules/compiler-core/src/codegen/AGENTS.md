@@ -2033,6 +2033,11 @@ codegen/
   A one-parameter arm (`_ { n -> … }`) binds `n` to the subject, which
   `lowerCase` parks in one stack slot allocated only when some arm asks for it —
   so a `case` with no binder arm keeps the assembly it had (01's defect 3).
+  An or-pattern arm (`p | q -> body`) is lowered as one arm per alternative,
+  each with the arm's guard and body (`lowerCaseArm`, erlang's clause per
+  alternative), so every alternative is tested whatever its shape and binds its
+  own names; `countCaseArmLocals` counts each alternative's slots. Only a
+  number alternative was tested before — `C | D -> true` matched nothing.
   A pattern keeps the path the author wrote (`Shape.Circle`, `.Circle`), but the
   constructor emits the bare atom `'Circle'`, so `variantTag` and the `.ident`
   arm take the last `.`-separated segment (`bareVariantName`); §5.1 P8 — a name

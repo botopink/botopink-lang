@@ -48,7 +48,7 @@ function __bp_print() {
 
 // behavior Signed extends Integer
 //   fn abs(...)
-Number.prototype.abs = function() { return Math.abs(this.valueOf()); };
+BigInt.prototype.abs = Number.prototype.abs = function() { return ((__a) => (__a < 0 || Object.is(__a, -0)) ? -__a : __a)(this.valueOf()); };
 
 function mag(n) {
     return n.abs();

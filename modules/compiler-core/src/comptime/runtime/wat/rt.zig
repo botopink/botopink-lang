@@ -21,8 +21,9 @@
 //! runtime that ran it.
 //!
 //! Memory is one bump arena per evaluation (`rt_init`), grown with
-//! `memory.grow`; nothing is ever freed — a module is instantiated fresh for
-//! every evaluation.
+//! `memory.grow`; nothing is ever freed — every evaluation starts from the
+//! module's load-time memory (`persistent_wat.zig` resets the instance it
+//! keeps per module to its load-time pages, bytes and globals).
 const std = @import("std");
 const builtin = @import("builtin");
 

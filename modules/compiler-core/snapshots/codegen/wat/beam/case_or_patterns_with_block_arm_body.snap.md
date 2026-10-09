@@ -14,7 +14,7 @@ val parity = case 5 {
 {module, test@main}.
 {exports, [{'_botopink_init', 0}]}.
 {attributes, []}.
-{labels, 10}.
+{labels, 11}.
 
 {function, parity, 0, 3}.
   {label, 2}.
@@ -28,14 +28,18 @@ val parity = case 5 {
     {call_ext, 2, {extfunc, persistent_term, get, 2}}.
     {test, is_eq_exact, {f, 6}, [{x, 0}, {atom, '$bp_unset'}]}.
     {move, {integer, 5}, {x, 0}}.
-    {test, is_ne_exact, {f, 8}, [{x, 0}, {integer, 0}]}.
-    {test, is_ne_exact, {f, 8}, [{x, 0}, {integer, 2}]}.
-    {test, is_ne_exact, {f, 8}, [{x, 0}, {integer, 4}]}.
-    {jump, {f, 9}}.
+    {test, is_eq, {f, 8}, [{x, 0}, {integer, 0}]}.
+    {move, {literal, <<"even">>}, {x, 0}}.
+    {jump, {f, 7}}.
   {label, 8}.
+    {test, is_eq, {f, 9}, [{x, 0}, {integer, 2}]}.
     {move, {literal, <<"even">>}, {x, 0}}.
     {jump, {f, 7}}.
   {label, 9}.
+    {test, is_eq, {f, 10}, [{x, 0}, {integer, 4}]}.
+    {move, {literal, <<"even">>}, {x, 0}}.
+    {jump, {f, 7}}.
+  {label, 10}.
     {move, {literal, <<"odd">>}, {x, 0}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.

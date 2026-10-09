@@ -1,12 +1,11 @@
-//// std/unicode — Unicode codepoint primitives, cross-backend.
+//// std/unicode — Unicode codepoint primitives and normalization, cross-backend.
 ////
 //// Reference:
 ////   Node.js  — https://nodejs.org/api/
-////              (`String.prototype.codePointAt`, `String.fromCodePoint`,
-////               `String.prototype.normalize`)
+////              (`String.prototype.codePointAt`, `String.fromCodePoint`)
 ////   Erlang   — https://www.erlang.org/doc/apps/stdlib/unicode.html
-////              (`unicode:characters_to_list`, `unicode:characters_to_binary`,
-////               `unicode:characters_to_nfc_binary`)
+////              (`unicode:characters_to_list`)
+////   UAX #15  — https://www.unicode.org/reports/tr15/ (normalization forms)
 ////
 //// `codepoints(s)` decomposes a string into its sequence of Unicode
 //// codepoints (the i32 representation each backend hands back as an
@@ -16,16 +15,18 @@
 //// the typed `#[@External.<Target>]` annotation form (migrated in
 //// `external-target-libs-migration` F5-partial, c828308).
 ////
-//// `normalize(s, form)` selects one of the four NFC/NFD/NFKC/NFKD forms
-//// by pure-bp dispatch over `NormalizationForm` enum, calling per-form
-//// host fns wrapped in their own `#[@External]` annotations. Node uses
-//// `String.prototype.normalize('<form>')`; Erlang uses
-//// `unicode:characters_to_nfc_binary/1` (and the matching NFD/NFKC/NFKD
-//// variants). The per-form templates retain the `#[@External.Node(…)]`
-//// shape (rather than the typed `#[@External.Node]` form) because the
-//// `when(argc == 1):` arity-branched form lives in the legacy
-//// annotation grammar; once the `when-argc-removal` keystone lands the
-//// four per-form declares can migrate together.
+//// `normalize(s, form)` renders `s` under NFC, NFD, NFKC or NFKD by std's
+//// own botopink body on all four targets (decision 333 (A)) — no host
+//// normalizer is asked, so every target answers the same for every code
+//// point, under the one Unicode version `unicode_tables.bp` was generated
+//// from (`zig build gen-unicode`, `libs/std/AGENTS.md` § unicode): decompose
+//// (recursively; compatibility mappings too for NFKC / NFKD), put each run
+//// of non-starters in canonical order (a stable sort by combining class),
+//// then, for NFC / NFKC, recompose every unblocked pair whose primary
+//// composite is not excluded. Hangul syllables decompose and compose by the
+//// algorithm of Unicode §3.12, not by the tables.
+
+import {unicode_tables as tables};
 
 // The one-character string of the scalar value `cp` (decision 262): every
 // target runs `fromCodepointBody`, a call of the primitive
@@ -82,36 +83,173 @@ fn codepointsBody(s: string) -> Array<i32> {
 // Which Unicode normalization form to apply (NFC, NFD, NFKC, NFKD).
 pub type NormalizationForm { NFC, NFD, NFKC, NFKD }
 
-// The four forms are host calls on Node and erlang; wasm has no host and no
-// binding yet (`decisions-pending.md` 05w-i), so the module is refused there.
-
-#[@External.Node("""($0.normalize('NFC'))""")]
-#[@External.Erlang("unicode:characters_to_nfc_binary($0)")]
-declare fn normalizeNfc(s: string) -> string;
-
-#[@External.Node("""($0.normalize('NFD'))""")]
-#[@External.Erlang("unicode:characters_to_nfd_binary($0)")]
-declare fn normalizeNfd(s: string) -> string;
-
-#[@External.Node("""($0.normalize('NFKC'))""")]
-#[@External.Erlang("unicode:characters_to_nfkc_binary($0)")]
-declare fn normalizeNfkc(s: string) -> string;
-
-#[@External.Node("""($0.normalize('NFKD'))""")]
-#[@External.Erlang("unicode:characters_to_nfkd_binary($0)")]
-declare fn normalizeNfkd(s: string) -> string;
-
-// Render `s` under the selected Unicode normalization form. Each form
-// dispatches to a per-target host fn; the bp-side dispatch keeps the
-// surface a single `pub fn` while the per-target shape stays one BIF.
+// Render `s` under the normalization form `form` (UAX #15). Text whose code
+// points are all below U+00A0 is the same under every form and comes back
+// as it is.
 pub fn normalize(s: string, form: NormalizationForm) -> string {
-    val out = case form {
-        NFC -> normalizeNfc(s);
-        NFD -> normalizeNfd(s);
-        NFKC -> normalizeNfkc(s);
-        _ -> normalizeNfkd(s);
+    val cps = codepoints(s);
+    if (cps.all({ c -> c < 160 })) return s;
+    // One arm per form: beam lowers an or-pattern `NFKC | NFKD` to no test at
+    // all (front 97's compiler residual 10).
+    val compat = case form {
+        NFKC -> true;
+        NFKD -> true;
+        _ -> false;
     };
+    val compose = case form {
+        NFC -> true;
+        NFKC -> true;
+        _ -> false;
+    };
+    val ordered = canonicalOrder(decompose(cps, compat));
+    val out = if (compose) recompose(ordered) else ordered;
+    return out.map({ c -> fromCodepoint(c) }).join("");
+}
+
+// ── the algorithm ────────────────────────────────────────────────────────────
+
+// Hangul (Unicode §3.12): the syllables U+AC00…U+D7A3 are LV or LVT
+// sequences of the conjoining jamo L U+1100…, V U+1161…, T U+11A7… (T index
+// 0 is "no trailing consonant").
+val hangulSBase = 44032;
+
+val hangulLBase = 4352;
+
+val hangulVBase = 4449;
+
+val hangulTBase = 4519;
+
+val hangulLCount = 19;
+
+val hangulVCount = 21;
+
+val hangulTCount = 28;
+
+val hangulNCount = 588;
+
+val hangulSCount = 11172;
+
+fn isHangulSyllable(cp: i32) -> bool {
+    val above = cp >= hangulSBase;
+    return above && cp < hangulSBase + hangulSCount;
+}
+
+fn hangulDecomposition(cp: i32) -> Array<i32> {
+    val index = cp - hangulSBase;
+    val t = index % hangulTCount;
+    val vt = index % hangulNCount;
+    val l = hangulLBase + (index - vt) / hangulNCount;
+    val v = hangulVBase + (vt - t) / hangulTCount;
+    if (t == 0) return [l, v];
+    return [l, v, hangulTBase + t];
+}
+
+// The full decomposition of `cp`: its mapping, decomposed again until no
+// code point maps. A compatibility mapping is followed only when `compat`
+// and the code point has no canonical one.
+fn fullDecomposition(cp: i32, compat: bool) -> Array<i32> {
+    if (isHangulSyllable(cp)) return hangulDecomposition(cp);
+    val canonical = tables.canonicalDecomposition(cp);
+    val mapping: Array<i32> = if (canonical.length > 0)
+        canonical
+    else if (compat)
+        tables.compatibilityDecomposition(cp)
+    else
+        canonical;
+    if (mapping.length == 0) return [cp];
+    var out: Array<i32> = [];
+    for (mapping) { m ->
+        out = out.append(fullDecomposition(m, compat));
+    }
     return out;
+}
+
+fn decompose(cps: Array<i32>, compat: bool) -> Array<i32> {
+    var out: Array<i32> = [];
+    for (cps) { c ->
+        out = out.append(fullDecomposition(c, compat));
+    }
+    return out;
+}
+
+// The canonical ordering algorithm: every run of non-starters (combining
+// class > 0) sorted by class, stably — marks of one class keep their order.
+fn canonicalOrder(cps: Array<i32>) -> Array<i32> {
+    var out: Array<i32> = [];
+    var run: Array<i32> = [];
+    for (cps) { c ->
+        val k = tables.combiningClass(c);
+        if (k == 0) {
+            out = out.append(run).append([c]);
+            run = [];
+        } else run = insertByClass(run, c, k);
+    }
+    return out.append(run);
+}
+
+// `c` (of class `k`) placed into `run`, which is sorted by class, after
+// every mark whose class is at most `k`.
+fn insertByClass(run: Array<i32>, c: i32, k: i32) -> Array<i32> {
+    val at = run.count({ x -> tables.combiningClass(x) <= k });
+    return run.slice(0, at).append([c]).append(run.slice(at, run.length));
+}
+
+// The canonical composition algorithm over a canonically ordered sequence:
+// each character is composed with the last starter when nothing between
+// them blocks it — no character in between, or the last one in between of
+// a lower class than its own — and the pair has a primary composite.
+// `pending` holds the characters after the starter that did not compose
+// (all non-starters: a starter that does not compose becomes the next
+// starter), `lastClass` the class of the last of them.
+fn recompose(cps: Array<i32>) -> Array<i32> {
+    var out: Array<i32> = [];
+    var starter = -1;
+    var pending: Array<i32> = [];
+    var lastClass = 0;
+    for (cps) { c ->
+        val k = tables.combiningClass(c);
+        val adjacent = pending.length == 0;
+        val unblocked = adjacent || lastClass < k;
+        val open = starter >= 0 && unblocked;
+        val composite = if (open) primaryComposite(starter, c) else 0;
+        if (composite != 0) starter = composite else if (k == 0) {
+            out = withStarter(out, starter, pending);
+            starter = c;
+            pending = [];
+            lastClass = 0;
+        } else {
+            pending = pending.append([c]);
+            lastClass = k;
+        }
+    }
+    return withStarter(out, starter, pending);
+}
+
+// `out` followed by the starter (none when negative) and what followed it.
+fn withStarter(
+    out: Array<i32>,
+    starter: i32,
+    pending: Array<i32>,
+) -> Array<i32> {
+    if (starter < 0) return out.append(pending);
+    return out.append([starter]).append(pending);
+}
+
+// The primary composite of `first` then `second`, or 0: Hangul LV and LVT by
+// the algorithm, every other pair from the tables.
+fn primaryComposite(first: i32, second: i32) -> i32 {
+    val lIndex = first - hangulLBase;
+    val vIndex = second - hangulVBase;
+    val isL = lIndex >= 0 && lIndex < hangulLCount;
+    val isV = vIndex >= 0 && vIndex < hangulVCount;
+    if (isL && isV)
+        return hangulSBase + (lIndex * hangulVCount + vIndex) * hangulTCount;
+    val tIndex = second - hangulTBase;
+    val isLv = isHangulSyllable(first)
+        && (first - hangulSBase) % hangulTCount == 0;
+    val isT = tIndex > 0 && tIndex < hangulTCount;
+    if (isLv && isT) return first + tIndex;
+    return tables.primaryComposite(first, second);
 }
 
 // ── tests ────────────────────────────────────────────────────────────────────
@@ -168,4 +306,61 @@ test "unicode.normalize NFKC is a no-op on ASCII" {
 test "unicode.normalize NFKD is a no-op on ASCII" {
     val s = normalize("abc", NormalizationForm.NFKD);
     assert s == "abc";
+}
+
+// Non-ASCII text is built from code points: the erlang backend truncates a
+// `\u{…}` literal above U+007F to one latin1 byte.
+fn text(cps: Array<i32>) -> string {
+    return cps.map({ c -> fromCodepoint(c) }).join("");
+}
+
+fn codes(s: string) -> string {
+    return codepoints(s).map({ c -> c.toString() }).join(" ");
+}
+
+test "unicode.normalize NFKD of U+01C5 is 68 122 780" {
+    assert codes(normalize(text([453]), NormalizationForm.NFKD))
+        == "68 122 780";
+}
+
+test "unicode.normalize NFC composes e + U+0301 to U+00E9" {
+    assert codes(normalize(text([101, 769]), NormalizationForm.NFC)) == "233";
+}
+
+test "unicode.normalize NFD decomposes U+1E69 recursively" {
+    assert codes(normalize(text([7785]), NormalizationForm.NFD))
+        == "115 803 775";
+}
+
+test "unicode.normalize orders marks by combining class, stably" {
+    val s = text([97, 769, 803, 776, 800]);
+    assert codes(normalize(s, NormalizationForm.NFD)) == "97 803 800 769 776";
+}
+
+test "unicode.normalize NFC leaves an excluded composition decomposed" {
+    assert codes(normalize(text([2392]), NormalizationForm.NFC)) == "2325 2364";
+}
+
+test "unicode.normalize NFC does not compose across a blocking mark" {
+    assert codes(normalize(text([97, 773, 769]), NormalizationForm.NFC))
+        == "97 773 769";
+}
+
+test "unicode.normalize NFC composes past a mark of a lower class" {
+    val s = text([97, 803, 803, 770]);
+    assert codes(normalize(s, NormalizationForm.NFC)) == "7853 803";
+}
+
+test "unicode.normalize decomposes and composes Hangul by the algorithm" {
+    assert codes(normalize(text([54620]), NormalizationForm.NFD))
+        == "4370 4449 4523";
+    assert codes(normalize(text([4370, 4449, 4523]), NormalizationForm.NFC))
+        == "54620";
+    assert codes(normalize(text([4370, 4449]), NormalizationForm.NFC))
+        == "54616";
+}
+
+test "unicode.normalize NFKC folds a ligature and a superscript" {
+    assert codes(normalize(text([64257, 178]), NormalizationForm.NFKC))
+        == "102 105 50";
 }

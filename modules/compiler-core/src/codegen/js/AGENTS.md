@@ -324,11 +324,12 @@ Cost: a tight `i64` loop below 2^53 (`acc = (acc + i * 3 - i % 7) % 1000003`,
 2·10^8 iterations, best of three) ran 995 ms under the ±(2^53 − 1) `__bp_int`
 build and 687 ms under the hybrid.
 
-Not covered yet, each a `TypeError` past 2^53 rather than a wrong number: std's
-Node templates over `Number` / `Signed` (`Math.min` / `max` / `abs`), the
-`default fn`s of `Integer` (`isEven`, `isOdd`, `clamp`), which are patched on
-`Number.prototype` and not on `BigInt.prototype`, and the conversions
-(`toF64()`, `toI32()`) the language does not declare yet.
+A primitive method of the numeric tower is patched on both prototypes —
+`BigInt.prototype.m = Number.prototype.m = function…` (`commonJS.zig`
+`prototypeAssign`) — so a `BigInt` receiver reaches std's `min`, `max`, `abs`,
+`isEven`, `isOdd`, `clamp` and the conversions `toI32()` … `toF64()`; std's Node
+forms take either kind and answer the canonical one (`libs/std/AGENTS.md`
+§ Integers past 2^53, front `02/97` step 13).
 
 ## String indices count codepoints (decision 320)
 

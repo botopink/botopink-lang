@@ -45,7 +45,9 @@ libs/
 
 ## Conventions
 
-- Packages here are `.bp`-only — no Zig under `libs/`. Embed glue lives in
+- Packages here are `.bp`-only — no Zig under `libs/` but std's table generator,
+  `std/tools/unicode-gen/` (decision 333 (A), run by `zig build gen-unicode`, never
+  embedded — `std/AGENTS.md` § unicode). Embed glue lives in
   `build.zig` (the generated table, std its one row) and
   `modules/compiler-core/src/comptime/stdlib/prelude.zig`.
 - The package has its own `botopink.json` and `AGENTS.md`; update the

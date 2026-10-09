@@ -2919,12 +2919,21 @@ const Emitter = struct {
         return self.prelude_iface_externals.get(key);
     }
 
-    /// `Owner.prototype.name = function(params) { … };`
+    /// `Owner.prototype.name = function(params) { … };` — for the numeric
+    /// tower `BigInt.prototype.name = Number.prototype.name = …`: an `i64` /
+    /// `u64` past ±(2^53 − 1) is a `BigInt` (decision 319), and its methods
+    /// are the same patches (std's Node forms take either kind).
     fn prototypeAssign(self: *Emitter, owner: []const u8, name: []const u8, f: js.FunctionExpr) !js.Stmt {
-        return .{ .expr = try self.b.assign(
+        const patch = try self.b.assign(
             try self.b.member(try self.b.member(.{ .name = owner }, "prototype"), name),
             "=",
             .{ .function = f },
+        );
+        if (!std.mem.eql(u8, owner, "Number")) return .{ .expr = patch };
+        return .{ .expr = try self.b.assign(
+            try self.b.member(try self.b.member(.{ .name = "BigInt" }, "prototype"), name),
+            "=",
+            patch,
         ) };
     }
 

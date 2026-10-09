@@ -1,0 +1,2 @@
+the wasm backend has no lowering for the int method `toI32/0`
+10:34

@@ -24,7 +24,7 @@ scripts/
 ├── check-test-scratch.sh ← refuses a cwd-anchored `.botopinkbuild` path inside a `test` block or a `tests/` file (part of `zig build test`)
 ├── snap_audit.sh      ← read-only audit of every *.snap.md (7 modes)
 ├── beam_export_audit.sh ← assemble every beam snapshot module with every function exported
-├── comptime_bench.sh  ← what the comptime path costs: build wall clock + the in-node compile/load/run split
+├── comptime_bench.sh  ← what the comptime path costs: build wall clock + the in-compiler stage split
 ├── macos-sim.sh       ← run a command on Linux as the macos-14 CI row would (§ Portability)
 ├── codemod-import-without-from.py ← decision 206's one-shot migration: `from "<a module of this package>"` → the brace form (§ below)
 ├── codemod-optional-operators.py ← decision 330's migration: `.unwrapOr(d)` on a `?T` → `?? d`, `result.<op>(r, …)` → `r.<op>(…)` (§ below)
@@ -633,26 +633,25 @@ scripts/snap_audit.sh --mode=review  --trace=/tmp/snap.trace
 
 ## comptime_bench.sh
 
-`scripts/comptime_bench.sh [--n LIST] [--repeat R] [--reps N] [--target T]
-[--project DIR]… [--keep] [--no-build]` — the measurement
-[`specs/1.0.5-beta/14-comptime-on-beam/`](../../../specs/1.0.5-beta/14-comptime-on-beam/README.md)
-is built on, so its numbers are re-measured on the reader's machine instead of quoted. Not a gate
-stage: it builds projects and spends tens of seconds inside `erl`.
-
-Two instruments, `evidence.md`'s E-1 and E-2:
+`scripts/comptime_bench.sh [--n LIST] [--repeat R] [--target T] [--project DIR]… [--keep]
+[--no-build]` — the measurement
+[`specs/1.0.12-beta/01-compiler/14-comptime-on-beam/`](../../../specs/1.0.12-beta/01-compiler/14-comptime-on-beam/README.md)
+step 2 is held to, and whose table `18-comptime-runtimes` step 3 records, re-measured on the
+reader's machine instead of quoted. Not a gate stage: it builds projects for tens of seconds.
 
 | Instrument | What it measures |
 | ---------- | ---------------- |
-| E-1 | wall clock of one `botopink build`, best of `--repeat`, over a generated project with N call sites of **one** template whose literals are all distinct — so the memo cache in `comptime/infer.zig` never hits and each call site is a real evaluation. Reports the `.erl` modules and bytes the build left behind, and the marginal ms per evaluation. |
-| E-2 | the in-node split — `compile:file` / `code:load_binary` / `main()` — measured inside a single `erl` over every module under the project's `.botopinkbuild/tmp/{template,decorator}`, `--reps` timed rounds after one untimed warm-up call each. |
+| E-1 | wall clock of one `botopink build`, best of `--repeat`, over a generated project with N call sites of **one** template whose literals are all distinct — so the memo cache in `comptime/infer.zig` never hits and each call site is a real evaluation — and the marginal ms per evaluation between consecutive N. |
+| E-2 | the in-compiler split: one more build of the largest N (and of each `--project`), not one of the timed ones, with `BOTOPINK_COMPTIME_STAGES=<file>` (`modules/compiler-core/src/comptime/runtime/stages.zig`); one row per stage — runs, total, and ms per evaluation (an evaluation is one `module` line) — in the order an evaluation meets them: `memo_key`, `module`, `encode`, `lower`, `instance` / `run` (wat runtime), `frame` (BEAM runtime; its first run carries the `erl` spawn), `listing`, `outcome`, then `TOTAL`. |
 
-Every project is generated or copied into a `mktemp -d` (deleted unless `--keep`): the script writes
+`--target` picks the comptime runtime through decision 84: `commonJS` (default) and `wasm` evaluate
+on the wat runtime, `erlang` and `beam` on the BEAM one — those two need `erl` (OTP 28). Every
+project is generated or copied into a `mktemp -d` (deleted unless `--keep`): the script writes
 nothing inside a repository. `--project DIR` copies a real project out of its checkout and builds it
 there — a workspace member (a `{ "workspace": true }` dependency) is built inside a copy of its
-enclosing workspace, and refused when no ancestor `botopink.json` declares `workspaces`; `BOTOPINK_LIB_ROOTS` is inherited, which is how a project whose libraries live in a sibling
-checkout resolves them. A module that takes its data as an argument exports `main/1` rather than
-`main/0` and cannot be run without that argument, so the `main()` column reads `-` for it while the
-compile columns — what this front moves — stay comparable across steps.
+enclosing workspace, and refused when no ancestor `botopink.json` declares `workspaces`;
+`BOTOPINK_LIB_ROOTS` is inherited, which is how a project whose libraries live in a sibling
+checkout resolves them.
 
 ## beam_export_audit.sh
 

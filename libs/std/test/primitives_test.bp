@@ -434,8 +434,8 @@ test "string words splits on whitespace runs" {
 
 // ── string numerals (1.0.11-beta front 97) ───────────────────────────────────
 // `parseInt` / `parseFloat` decide in botopink which strings are numerals, so
-// every refusal below is the same text on every target. An `i64` has no
-// literal, so an integer answer is compared through `toString`.
+// every refusal below is the same text on every target. An integer answer is
+// compared through `toString`.
 
 // What `s.parseInt()` answers, as text: the integer, or the refusal.
 fn parsedInt(s: string) -> string {
@@ -478,18 +478,44 @@ test "string parseInt refuses anything but a sign and digits, naming the input" 
     assert parsedInt("1_000") == "parseInt: \"1_000\" is not an integer";
 }
 
-test "string parseInt answers the integers every target counts exactly" {
+test "string parseInt answers every i64 exactly" {
     assert parsedInt("9007199254740991") == "9007199254740991";
-    assert parsedInt("-9007199254740991") == "-9007199254740991";
-    assert parsedInt("0009007199254740991") == "9007199254740991";
-    assert parsedInt("9007199254740992")
-        == "parseInt: \"9007199254740992\" is out of range";
-    assert parsedInt("-9007199254740992")
-        == "parseInt: \"-9007199254740992\" is out of range";
-    assert parsedInt("9007199254740993")
-        == "parseInt: \"9007199254740993\" is out of range";
+    assert parsedInt("9007199254740993") == "9007199254740993";
+    assert parsedInt("-9007199254740993") == "-9007199254740993";
+    assert parsedInt("9223372036854775807") == "9223372036854775807";
+    assert parsedInt("-9223372036854775808") == "-9223372036854775808";
+    assert parsedInt("0009223372036854775807") == "9223372036854775807";
+    assert "9007199254740993".parseInt().unwrapOr(0l) == 9007199254740993l;
+    assert parsedInt("9223372036854775808")
+        == "parseInt: \"9223372036854775808\" is out of range";
+    assert parsedInt("-9223372036854775809")
+        == "parseInt: \"-9223372036854775809\" is out of range";
     assert parsedInt("99999999999999999999999999")
         == "parseInt: \"99999999999999999999999999\" is out of range";
+}
+
+// ── integers past 2^53 and the conversions (decision 319) ────────────────────
+
+fn grow(a: i64, b: i64) -> i64 {
+    return a + b;
+}
+
+test "integer methods answer past 2^53" {
+    val big = grow(9007199254740991l, 2l);
+    assert big.isOdd();
+    assert grow(big, 1l).isEven();
+    assert big.min(5l) == 5l;
+    assert big.max(5l) == big;
+    assert grow(0l, -big).abs() == big;
+    assert big.clamp(0l, 9007199254740991l) == 9007199254740991l;
+}
+
+test "integer conversions answer the value when it fits" {
+    assert 2147483647l.toI32() == 2147483647;
+    assert grow(9007199254740991l, 2l).toU64() == 9007199254740993ul;
+    assert 9223372036854775807ul.toI64() == 9223372036854775807l;
+    assert 4294967295l.toU32() == 4294967295u;
+    assert grow(9007199254740991l, 3l).toF64() == 9007199254740994.0;
 }
 
 test "string parseFloat reads a decimal numeral" {

@@ -31,10 +31,11 @@ fn main() {
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_ne_exact, {f, 11}, [{x, 0}, {integer, 6}]}.
-    {test, is_ne_exact, {f, 11}, [{x, 0}, {integer, 7}]}.
-    {jump, {f, 12}}.
+    {test, is_eq, {f, 11}, [{x, 0}, {integer, 6}]}.
+    {move, {literal, <<"weekend">>}, {x, 0}}.
+    {jump, {f, 10}}.
   {label, 11}.
+    {test, is_eq, {f, 12}, [{x, 0}, {integer, 7}]}.
     {move, {literal, <<"weekend">>}, {x, 0}}.
     {jump, {f, 10}}.
   {label, 12}.

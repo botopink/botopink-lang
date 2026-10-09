@@ -14,13 +14,20 @@
 // `extends` and carry no duplicated members. Declared (host-backed) methods use
 // `#[@External.Erlang(…), @External.Node(…)]`; pure-logic ops carry none.
 
+// commonJS holds an `i64` / `u64` past ±(2^53 − 1) as a `BigInt` (decision 319),
+// and the emitter patches these methods on `BigInt.prototype` as well as on
+// `Number.prototype`. A Node form here therefore takes a `number` or a
+// `BigInt` and answers the canonical one. `Math.*` throws a `TypeError` on a
+// `BigInt`, so `min` / `max` / `abs` are written out with `<` (exact across
+// the two kinds), answering an operand as it came, and keep `Math.*`'s
+// answers on numbers: a `NaN` operand is `NaN`, `-0` is below `0`.
 behavior Number {
     #[@External.Erlang("erlang", "min")]
-    #[@External.Node("Math", "min")]
+    #[@External.Node("""((__a, __b) => (__a !== __a || __b !== __b) ? NaN : (__b < __a || (__b === __a && Object.is(__b, -0))) ? __b : __a)($0, $1)""")]
     fn min(self: Self, other: Self) -> Self;
 
     #[@External.Erlang("erlang", "max")]
-    #[@External.Node("Math", "max")]
+    #[@External.Node("""((__a, __b) => (__a !== __a || __b !== __b) ? NaN : (__b > __a || (__b === __a && Object.is(__a, -0))) ? __b : __a)($0, $1)""")]
     fn max(self: Self, other: Self) -> Self;
 
     default fn clamp(self: Self, lo: Self, hi: Self) -> Self {
@@ -33,18 +40,51 @@ behavior Integer extends Number {
     #[@External.Node("toString")]
     fn toString(self: Self) -> string;
 
+    #[@External.Node("""((__a) => typeof __a === "bigint" ? __a % 2n === 0n : __a % 2 === 0)($0)""")]
     default fn isEven(self: Self) -> bool {
         return self % 2 == 0;
     }
 
+    #[@External.Node("""((__a) => typeof __a === "bigint" ? __a % 2n !== 0n : __a % 2 !== 0)($0)""")]
     default fn isOdd(self: Self) -> bool {
         return self % 2 != 0;
     }
+
+    // ── conversions (decision 319) ───────────────────────────────────────
+    // Explicit and exact: the value when the target type holds it, else an
+    // abort naming the value and the type — never a wrap, a saturation or a
+    // rounding. One form per target type, whatever the receiver's width. The
+    // erlang forms raise as an overflowing operator does
+    // (`{integer_overflow, What}`); the Node forms take a `number` or a
+    // `BigInt` and answer the canonical form (a `BigInt` only past
+    // ±(2^53 − 1)).
+
+    #[@External.Erlang("""(fun(__V) when __V >= -2147483648, __V =< 2147483647 -> __V; (__V) -> erlang:error({integer_overflow, <<"toI32: ", (integer_to_binary(__V))/binary, " does not fit i32">>}) end)($0)""")]
+    #[@External.Node("""((__v) => { if (__v >= -2147483648 && __v <= 2147483647) { return Number(__v); } throw new Error("integer overflow: toI32: " + __v + " does not fit i32"); })($0)""")]
+    fn toI32(self: Self) -> i32;
+
+    #[@External.Erlang("""(fun(__V) when __V >= -(1 bsl 63), __V < (1 bsl 63) -> __V; (__V) -> erlang:error({integer_overflow, <<"toI64: ", (integer_to_binary(__V))/binary, " does not fit i64">>}) end)($0)""")]
+    #[@External.Node("""((__v) => { if (__v >= -9223372036854775808n && __v <= 9223372036854775807n) { return __v; } throw new Error("integer overflow: toI64: " + __v + " does not fit i64"); })($0)""")]
+    fn toI64(self: Self) -> i64;
+
+    #[@External.Erlang("""(fun(__V) when __V >= 0, __V =< 4294967295 -> __V; (__V) -> erlang:error({integer_overflow, <<"toU32: ", (integer_to_binary(__V))/binary, " does not fit u32">>}) end)($0)""")]
+    #[@External.Node("""((__v) => { if (__v >= 0 && __v <= 4294967295) { return Number(__v); } throw new Error("integer overflow: toU32: " + __v + " does not fit u32"); })($0)""")]
+    fn toU32(self: Self) -> u32;
+
+    #[@External.Erlang("""(fun(__V) when __V >= 0, __V < (1 bsl 64) -> __V; (__V) -> erlang:error({integer_overflow, <<"toU64: ", (integer_to_binary(__V))/binary, " does not fit u64">>}) end)($0)""")]
+    #[@External.Node("""((__v) => { if (__v >= 0 && __v <= 18446744073709551615n) { return __v; } throw new Error("integer overflow: toU64: " + __v + " does not fit u64"); })($0)""")]
+    fn toU64(self: Self) -> u64;
+
+    // The `f64` equal to the integer; an integer between two `f64`s (past
+    // 2^53 an `f64` counts by two, then by four, …) aborts.
+    #[@External.Erlang("""(fun(__V) -> __F = float(__V), case trunc(__F) =:= __V of true -> __F; false -> erlang:error({integer_overflow, <<"toF64: ", (integer_to_binary(__V))/binary, " has no exact f64">>}) end end)($0)""")]
+    #[@External.Node("""((__v) => { const __f = Number(__v); if (typeof __v !== "bigint" || BigInt(__f) === __v) { return __f; } throw new Error("integer overflow: toF64: " + __v + " has no exact f64"); })($0)""")]
+    fn toF64(self: Self) -> f64;
 }
 
 behavior Signed extends Integer {
     #[@External.Erlang("erlang", "abs")]
-    #[@External.Node("Math", "abs")]
+    #[@External.Node("""((__a) => (__a < 0 || Object.is(__a, -0)) ? -__a : __a)($0)""")]
     fn abs(self: Self) -> Self;
 }
 
@@ -55,8 +95,9 @@ behavior Float extends Number {
     #[@External.Node("toString")]
     fn toString(self: Self) -> string;
 
+    // Patched on `Number.prototype` as `Signed`'s `abs` is: the same form.
     #[@External.Erlang("erlang", "abs")]
-    #[@External.Node("Math", "abs")]
+    #[@External.Node("""((__a) => (__a < 0 || Object.is(__a, -0)) ? -__a : __a)($0)""")]
     fn abs(self: Self) -> Self;
 
     #[@External.Erlang("math", "floor")]
@@ -312,10 +353,10 @@ behavior String {
     // fraction, an exponent, `0x2A` and the empty string are an `Error` naming
     // the input. Which strings are numerals is decided here, in botopink, so
     // every target refuses the same inputs; the host cell converts digits it
-    // is never asked to judge. The answer is an `i64` every target holds
-    // exactly: a numeral beyond ±9007199254740991 (2^53 - 1, where a commonJS
-    // number stops counting by one) is an `Error` on every target
-    // (decision 176).
+    // is never asked to judge. The answer is any `i64`, exact on every
+    // target: a numeral past −2^63 … 2^63 − 1 is an `Error` on every target
+    // (decision 176 as amended by 319; commonJS answers a `BigInt` past
+    // ±(2^53 − 1)).
     //
     // The body calls a method on `self` only, and free cells for the rest —
     // see `libs/std/AGENTS.md` § String numerals for the three emitter gaps
@@ -411,9 +452,10 @@ declare fn stringSlice1(s: string, start: i32, end: ?i32) -> string;
 declare fn stringIsDigits(s: string) -> bool;
 
 // The integer `<sign><digits>` spells; the out-of-range `Error`, naming the
-// numeral, beyond ±(2^53 - 1).
-#[@External.Erlang("""(fun(__S) -> __N = binary_to_integer(__S), case abs(__N) =< 9007199254740991 of true -> {ok, __N}; false -> {error, <<"parseInt: ", 34, __S/binary, 34, " is out of range">>} end end)($0)""")]
-#[@External.Node("""((__s) => { const __n = Number(__s); return Number.isSafeInteger(__n) ? { ok: __n + 0 } : { error: 'parseInt: "' + __s + '" is out of range' } })($0)""")]
+// numeral, past the `i64` range. The Node form reads the digits as a `BigInt`
+// and answers 319's canonical form (a `number` within ±(2^53 − 1)).
+#[@External.Erlang("""(fun(__S) -> __N = binary_to_integer(__S), case (__N >= -(1 bsl 63)) andalso (__N < (1 bsl 63)) of true -> {ok, __N}; false -> {error, <<"parseInt: ", 34, __S/binary, 34, " is out of range">>} end end)($0)""")]
+#[@External.Node("""((__s) => { const __n = BigInt(__s); return (__n >= -9223372036854775808n && __n <= 9223372036854775807n) ? { ok: (__n >= -9007199254740991n && __n <= 9007199254740991n) ? Number(__n) : __n } : { error: 'parseInt: "' + __s + '" is out of range' } })($0)""")]
 declare fn stringToInteger(numeral: string) -> @Result<i64, string>;
 
 // The `f64` the numeral `text` spells, read from its accepted pieces as

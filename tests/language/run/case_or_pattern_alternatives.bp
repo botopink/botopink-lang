@@ -1,0 +1,119 @@
+//// An or-pattern `p | q` matches when any alternative matches, whatever each
+//// alternative's shape: unit variants (qualified and bare), numbers, strings,
+//// variants with a payload (a wildcard, a literal, a label with `..`) beside a
+//// unit variant, a guard over the arm, a tuple and a range among the
+//// alternatives, and a block arm that reads the subject. beam tested a number
+//// alternative and dropped every other shape, so `C | D -> true` answered
+//// `false`, and an arm of bare variants matched nothing (`case_clause`).
+
+type Card {
+    A,
+    B,
+    C,
+    D,
+}
+
+type Shape {
+    Circle(r: i32),
+    Square(side: i32),
+    Rect(w: i32, h: i32),
+    Empty,
+}
+
+fn late(c: Card) -> bool {
+    return case c {
+        Card.C | Card.D -> true;
+        _ -> false;
+    };
+}
+
+fn early(c: Card) -> string {
+    return case c {
+        A | B -> "early";
+        C -> "c";
+        D -> "d";
+    };
+}
+
+fn small(n: i32) -> string {
+    return case n {
+        1 | 2 | 3 -> "small";
+        10...19 | 100 -> "teen or hundred";
+        _ -> "other";
+    };
+}
+
+fn greeting(s: string) -> string {
+    return case s {
+        "hi" | "hello" -> "greeting";
+        "bye" -> "farewell";
+        _ -> "unknown";
+    };
+}
+
+fn round(s: Shape) -> string {
+    return case s {
+        Shape.Circle(_) | Shape.Empty -> "round";
+        Shape.Square(1) | Shape.Rect(w: 1, ..) -> "unit";
+        Shape.Square(_) | Shape.Rect(_, _) -> "angular";
+    };
+}
+
+fn shown(s: Shape, loud: bool) -> string {
+    return case s {
+        Shape.Circle(_) | Shape.Square(_) if loud -> "LOUD";
+        Shape.Circle(_) | Shape.Square(_) -> "quiet";
+        _ -> "hidden";
+    };
+}
+
+fn pair(p: #(i32, i32)) -> string {
+    return case p {
+        #(0, _) | #(_, 0) -> "zero";
+        _ -> "nonzero";
+    };
+}
+
+fn mixed(n: i32) -> string {
+    return case n {
+        0 | 7 { k ->
+            "zero or seven: " + k.toString();
+        }
+        _ -> "else";
+    };
+}
+
+pub fn main() {
+    @print(late(Card.A));
+    @print(late(Card.B));
+    @print(late(Card.C));
+    @print(late(Card.D));
+    @print(early(Card.A));
+    @print(early(Card.B));
+    @print(early(Card.C));
+    @print(early(Card.D));
+    @print(small(2));
+    @print(small(15));
+    @print(small(100));
+    @print(small(4));
+    @print(greeting("hi"));
+    @print(greeting("hello"));
+    @print(greeting("bye"));
+    @print(greeting("yo"));
+    @print(round(Shape.Circle(r: 4)));
+    @print(round(Shape.Empty));
+    @print(round(Shape.Square(side: 1)));
+    @print(round(Shape.Rect(w: 1, h: 3)));
+    @print(round(Shape.Square(side: 6)));
+    @print(round(Shape.Rect(w: 2, h: 3)));
+    @print(shown(Shape.Circle(r: 9), true));
+    @print(shown(Shape.Square(side: 2), true));
+    @print(shown(Shape.Square(side: 2), false));
+    @print(shown(Shape.Empty, true));
+    @print(pair(#(0, 5)));
+    @print(pair(#(5, 0)));
+    @print(pair(#(5, 5)));
+    @print(mixed(0));
+    @print(mixed(7));
+    @print(mixed(3));
+}

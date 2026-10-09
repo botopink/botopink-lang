@@ -24,6 +24,7 @@ const template = @import("template.zig");
 const primOpTemplate = @import("primOpTemplate.zig");
 const builtinsMod = @import("builtins.zig");
 const templateEval = @import("template_eval.zig");
+const stages = @import("runtime/stages.zig");
 const decoratorEval = @import("decorator_eval.zig");
 const dslHygiene = @import("dsl_hygiene.zig");
 const specializeMod = @import("specialize.zig");
@@ -6282,11 +6283,11 @@ fn expandTemplateCallViaRuntime(
         ).withLoc(loc);
         return error.TypeError;
     }
-    // Memoize by callee + capture texts + scope JSON + plain arg values —
-    // hole-free captures only: a holed template's expansion embeds the call
-    // site's own hole expressions, so equal text parts at two sites would alias
-    // the wrong holes. Scope JSON catches scope-change invalidation (a binding
-    // added/removed between builds).
+    // Memoize by callee + capture texts + the scope entries of their words +
+    // plain arg values (`templateEval.memoKey`, decision 237: O(text), never
+    // O(scope)) — hole-free captures only: a holed template's expansion embeds
+    // the call site's own hole expressions, so equal text parts at two sites
+    // would alias the wrong holes.
     var holed = false;
     for (captures) |cap| {
         if (cap.text == null) holed = true;
@@ -6300,26 +6301,9 @@ fn expandTemplateCallViaRuntime(
         const d = retType.deref();
         break :blk d.* == .named and std.mem.eql(u8, d.named.name, "CustomExpr");
     };
-    const memoKey: ?[]const u8 = if (holed or isCustomRet) null else blk: {
-        var buf: std.ArrayListUnmanaged(u8) = .empty;
-        buf.appendSlice(env.arena, tfn.name) catch return error.OutOfMemory;
-        for (captures) |cap| {
-            buf.append(env.arena, 0) catch return error.OutOfMemory;
-            buf.appendSlice(env.arena, cap.text.?) catch return error.OutOfMemory;
-            if (cap.scope) |scope| {
-                buf.append(env.arena, 0) catch return error.OutOfMemory;
-                const scopeJson = scope.toJsonAlloc(env.arena) catch return error.OutOfMemory;
-                buf.appendSlice(env.arena, scopeJson) catch return error.OutOfMemory;
-            }
-        }
-        for (plainArgs) |pa| {
-            buf.append(env.arena, 0) catch return error.OutOfMemory;
-            buf.appendSlice(env.arena, pa.paramName) catch return error.OutOfMemory;
-            buf.append(env.arena, 1) catch return error.OutOfMemory;
-            buf.appendSlice(env.arena, pa.source) catch return error.OutOfMemory;
-        }
-        break :blk buf.toOwnedSlice(env.arena) catch return error.OutOfMemory;
-    };
+    const t_memo = stages.start();
+    const memoKey: ?[]const u8 = if (holed or isCustomRet) null else try templateEval.memoKey(env.arena, tfn.name, captures, plainArgs);
+    stages.stop(.memo_key, t_memo);
     if (memoKey) |key| {
         if (env.templateEvalCache.get(key)) |cached| {
             return finishExpansion(env, cached, retType, loc);

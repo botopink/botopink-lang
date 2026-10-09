@@ -31,6 +31,7 @@ const Term = @import("../codegen/beam/term.zig").Term;
 const hostRuntime = @import("./runtime/runtime.zig");
 const preludeMod = @import("./runtime/prelude.zig");
 const etf = @import("./runtime/etf.zig");
+const stages = @import("./runtime/stages.zig");
 const trace = @import("./trace.zig");
 
 /// Reflection of the annotated declaration (`@Decl` in `builtins.d.bp`).
@@ -106,27 +107,27 @@ pub fn evaluate(
 ) EvalError!Outcome {
     _ = build_root;
     var unsupported: erlang.UnsupportedMethod = .{};
+    const t_module = stages.start();
     const source = buildModule(arena, owner, dfn, support, types, handle, plainArgs, &unsupported) catch |err| switch (err) {
         error.UnsupportedMethod => return .{ .err = try unsupportedText(arena, "decorator", dfn.name, unsupported) },
         else => |e| return e,
     };
+    stages.stop(.module, t_module);
 
     // The runtime is the target's (decision 84, `runtime/runtime.zig`); the
     // dispatcher stages the module for the BEAM runtime or lowers it for wat.
-    const result = try hostRuntime.evalWithArg(
-        arena,
-        io,
-        "decorator",
-        source.module,
-        source.code,
-        try etf.encode(arena, source.argument),
-    );
+    const t_encode = stages.start();
+    const arg = try etf.encode(arena, source.argument);
+    stages.stop(.encode, t_encode);
+    const result = try hostRuntime.evalWithArg(arena, io, "decorator", source.module, source.code, arg);
     const response = switch (result) {
         .response => |r| r,
         .unavailable => |why| return .{ .err = why },
     };
     if (traces) |list| {
-        const listing = try hostRuntime.listingOf(arena, "decorator", source.module, source.code, source.listing);
+        const t_listing = stages.start();
+        defer stages.stop(.listing, t_listing);
+        const listing = try hostRuntime.listingOf(arena, "decorator", source.module, source.code, try templateEval.argumentListing(arena, source.argument));
         try list.append(arena, .{
             .kind = .decorator,
             .name = dfn.name,
@@ -139,6 +140,8 @@ pub fn evaluate(
             },
         });
     }
+    const t_outcome = stages.start();
+    defer stages.stop(.outcome, t_outcome);
     return switch (response) {
         .ok => |stdout| parseOutcome(arena, stdout),
         .compile_error => |detail| .{ .err = try errorText(arena, "the decorator module did not compile", detail) },
@@ -169,9 +172,6 @@ const Module = struct {
     /// annotation arguments derives the same atom.
     module: []const u8,
     code: []const u8,
-    /// The lowered body and `main/1`, with the argument as a comment
-    /// (`trace.Entry.listing` on the BEAM runtime).
-    listing: []const u8,
     /// `main/1`'s argument: the handle, then the annotation arguments.
     argument: Term,
 };
@@ -261,7 +261,7 @@ fn buildModule(
     decls[0] = .{ .@"fn" = dfn };
     for (support, 1..) |f, i| decls[i] = .{ .@"fn" = f };
     @memcpy(decls[1 + support.len ..], types);
-    var config: erlang.ComptimeModule = .{
+    const config: erlang.ComptimeModule = .{
         .host_enums = &.{"DeclKind"},
         // `decl.failAt(Span(start, end, line), msg)` builds the span map.
         .host_records = &.{.{ .name = "Span", .fields = &.{ "start", "end", "line" } }},
@@ -295,21 +295,7 @@ fn buildModule(
     const module = emitted.module;
     const renamed = emitted.code;
 
-    // What snapshots show: the lowered body, `main/1` and the argument as a
-    // comment. `resident` stays set: it decides where a method call lowers, so
-    // dropping it would make the listing diverge from the module that ran.
-    // Rendered once per module, not once per annotated declaration.
-    const listing = templateEval.cachedListing(module) orelse blk: {
-        config.listing = true;
-        const fresh = erlang.emitComptimeModule(arena, placeholder_module, .{ .decls = decls }, config) catch return error.EvalFailed;
-        break :blk try templateEval.rememberListing(module, fresh);
-    };
-    return .{
-        .module = module,
-        .code = renamed,
-        .listing = try templateEval.listingWithArgument(arena, listing, argument),
-        .argument = argument,
-    };
+    return .{ .module = module, .code = renamed, .argument = argument };
 }
 
 /// How each parameter of `dfn` reaches the body: the `@Decl` handle first, then
@@ -525,11 +511,12 @@ test "decorator module: lowered body, handle term and host glue" {
 
     // And the listing still shows it — the snapshots assert the input half of
     // the evaluation, which is no longer inside the module.
-    try std.testing.expect(std.mem.indexOf(u8, m.listing, "%% main/1 argument") != null);
+    const shown = try templateEval.argumentListing(arena, m.argument);
+    try std.testing.expect(std.mem.indexOf(u8, shown, "%% main/1 argument") != null);
     // This handle is short enough to stay on one line; a real one wraps.
-    try std.testing.expect(std.mem.indexOf(u8, m.listing, "name => <<\"Nope\">>,") != null);
-    try std.testing.expect(std.mem.indexOf(u8, m.listing, "%% Arg1 = <<\"/x\">>") != null);
-    try std.testing.expect(std.mem.indexOf(u8, m.listing, "%% Arg2 = undefined") != null);
+    try std.testing.expect(std.mem.indexOf(u8, shown, "name => <<\"Nope\">>,") != null);
+    try std.testing.expect(std.mem.indexOf(u8, shown, "%% Arg1 = <<\"/x\">>") != null);
+    try std.testing.expect(std.mem.indexOf(u8, shown, "%% Arg2 = undefined") != null);
 }
 
 test "decorator module: one module per decorator, whatever it annotates" {

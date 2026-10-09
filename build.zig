@@ -673,6 +673,9 @@ pub fn build(b: *std.Build) void {
     const test_web_step = b.step("test-web", "Run the browser build's smoke test under node");
     test_web_step.dependOn(&test_web_run.step);
 
+    // `zig build gen-unicode` — std's normalization tables (decision 333 (A)).
+    @import("libs/std/tools/unicode-gen/build_step.zig").addStep(b);
+
     // ── Run step ──────────────────────────────────────────────────────────────
 
     const run_cmd = b.addRunArtifact(cli_exe);

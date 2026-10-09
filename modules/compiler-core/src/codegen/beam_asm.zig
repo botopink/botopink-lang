@@ -943,6 +943,35 @@ fn countLocalsRec(em: *Emitter, body: []const ast.Stmt, count: *u32) void {
     for (body) |stmt| countLocalsInExpr(em, stmt.expr, count);
 }
 
+/// The y-slots one `case` arm takes in this frame. An or-pattern arm is
+/// lowered once per alternative (`Emitter.lowerCaseArm`), its guard and body
+/// with each, so each alternative counts as an arm of its own.
+fn countCaseArmLocals(em: *Emitter, arm: ast.CaseArm, count: *u32, binder_arm: *bool) void {
+    if (arm.pattern == .@"or") {
+        for (arm.pattern.@"or") |p| {
+            var alt_arm = arm;
+            alt_arm.pattern = p;
+            countCaseArmLocals(em, alt_arm, count, binder_arm);
+        }
+        return;
+    }
+    count.* += patternYSlots(arm.pattern);
+    if (Emitter.armNumericConversion(arm) != null) count.* += 1;
+    if (arm.guard) |g| {
+        countLocalsInExpr(em, g, count);
+        // The subject waits on the stack across a guard that calls.
+        if (em.exprMayCall(&em.count_strings, g)) count.* += 1;
+    }
+    // A block arm runs in THIS frame (`Emitter.armBlock`), so its own
+    // bindings take this frame's y-slots; a lambda would have opened its own.
+    if (Emitter.armBlock(arm.body)) |blk| {
+        if (blk.params.len == 1) binder_arm.* = true;
+        countLocalsRec(em, blk.stmts, count);
+    } else {
+        countLocalsInExpr(em, arm.body, count);
+    }
+}
+
 fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
     switch (e) {
         // A field read evaluates its receiver in this frame
@@ -1011,24 +1040,7 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
             .case => |c| {
                 for (c.subjects) |s| countLocalsInExpr(em, s, count);
                 var binder_arm = false;
-                for (c.arms) |arm| {
-                    count.* += patternYSlots(arm.pattern);
-                    if (Emitter.armNumericConversion(arm) != null) count.* += 1;
-                    if (arm.guard) |g| {
-                        countLocalsInExpr(em, g, count);
-                        // The subject waits on the stack across a guard that calls.
-                        if (em.exprMayCall(&em.count_strings, g)) count.* += 1;
-                    }
-                    // A block arm runs in THIS frame (`Emitter.armBlock`), so
-                    // its own bindings take this frame's y-slots; a lambda
-                    // would have opened its own.
-                    if (Emitter.armBlock(arm.body)) |blk| {
-                        if (blk.params.len == 1) binder_arm = true;
-                        countLocalsRec(em, blk.stmts, count);
-                    } else {
-                        countLocalsInExpr(em, arm.body, count);
-                    }
-                }
+                for (c.arms) |arm| countCaseArmLocals(em, arm, count, &binder_arm);
                 // The slot `lowerCase` parks the subject in for a binder arm.
                 if (binder_arm) count.* += 1;
             },
@@ -10513,161 +10525,7 @@ const Emitter = struct {
         }
 
         const end_label = self.allocLabel();
-        for (arms) |arm| {
-            switch (arm.pattern) {
-                .numberLit => |n| {
-                    const next = self.allocLabel();
-                    try beamEmitter.writeTest(self.out, .is_eq, next, &.{ Op.xr(0), Op.num(n) });
-                    try self.emitArmTail(arm, subj_y, end_label);
-                    try beamEmitter.writeLabel(self.out, next);
-                },
-                .stringLit => |s| {
-                    const next = self.allocLabel();
-                    // The subject is stashed above the live floor while `{x, 0}`
-                    // is overwritten with the literal for the comparison, and is
-                    // moved back on *both* edges: falling through to the next arm
-                    // with the literal still in `{x, 0}` made every later arm
-                    // compare literal-against-literal (`case_string_literal_patterns`
-                    // printed `hello/hi/hi`).
-                    const subj = self.scratchBase();
-                    try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(subj));
-                    const saved_live = self.raiseLive(subj + 1);
-                    try self.emitStringLiteral(s, 0);
-                    self.min_live = saved_live;
-                    try beamEmitter.writeTest(self.out, .is_eq, next, &.{ Op.xr(subj), Op.xr(0) });
-                    try beamEmitter.writeMoveOp(self.out, Op.xr(subj), Dst.xr(0));
-                    try self.emitArmTail(arm, subj_y, end_label);
-                    try beamEmitter.writeLabel(self.out, next);
-                    try beamEmitter.writeMoveOp(self.out, Op.xr(subj), Dst.xr(0));
-                },
-                .ident => |written| {
-                    const name = bareVariantName(written);
-                    // §5.1 P8 — a written path (`Maybe.None`, `.None`) is a
-                    // variant even when this module never declared the enum.
-                    if (isVariantPath(written) or self.enum_variants.contains(name)) {
-                        // A nullary enum variant (`Lt ->`) is an atom to test
-                        // against, not a name to bind. Without the test the
-                        // first arm swallowed every subject
-                        // (`HttpMethod_name('Post')` returned `<<"GET">>`).
-                        var vbuf: [256]u8 = undefined;
-                        const vatom = try atomName(self.variantTag(written), &vbuf);
-                        const next = self.allocLabel();
-                        if (!isVariantPath(written) and self.record_fields.contains(name)) {
-                            // One spelling can be BOTH a `type` this module
-                            // places and a variant some enum declares (`type
-                            // Block(…)` beside `Token.Layout { Block, … }`).
-                            // §5.3b: the SUBJECT's type says which one the arm
-                            // means, and this emitter has no subject type, so
-                            // the arm tests both — the variant's atom, else the
-                            // record's tagged tuple. Tested by the atom alone, a
-                            // `case` over `Block | Vec` matched no arm.
-                            const record_label = self.allocLabel();
-                            const arm_label = self.allocLabel();
-                            try beamEmitter.writeTest(self.out, .is_eq, record_label, &.{ Op.xr(0), Op.atom(vatom) });
-                            try beamEmitter.writeJump(self.out, arm_label);
-                            try beamEmitter.writeLabel(self.out, record_label);
-                            const testable = try self.emitTypeTestBranch(.{ .named = name }, next);
-                            if (!testable) try beamEmitter.writeJump(self.out, next);
-                            try beamEmitter.writeLabel(self.out, arm_label);
-                        } else try beamEmitter.writeTest(self.out, .is_eq, next, &.{ Op.xr(0), Op.atom(vatom) });
-                        try self.emitArmTail(arm, subj_y, end_label);
-                        try beamEmitter.writeLabel(self.out, next);
-                    } else if (std.mem.eql(u8, written, "true") or std.mem.eql(u8, written, "false") or primitiveTypeName(name)) {
-                        // `true { … }` compares the atom, and `i32 { … }` /
-                        // `string { … }` are §5.2's type tests. All three were
-                        // binders, so the first such arm took every subject.
-                        try self.emitPatternArm(arm, subj_y, end_label);
-                    } else if (self.record_fields.contains(name) or self.enum_variant_names.contains(name)) {
-                        // Decision 8 §3.3 — an arm naming a `type` is chosen by
-                        // the VALUE's own type, which half 3 put in the value.
-                        // Emitted as the bare binder it was, the first arm of a
-                        // `case` over `Person | Vec` swallowed every subject.
-                        const next = self.allocLabel();
-                        const testable = try self.emitTypeTestBranch(.{ .named = name }, next);
-                        if (!testable) try beamEmitter.writeJump(self.out, next);
-                        try self.emitArmTail(arm, subj_y, end_label);
-                        try beamEmitter.writeLabel(self.out, next);
-                    } else if (std.mem.eql(u8, name, "_")) {
-                        try self.emitArmTail(arm, subj_y, end_label);
-                    } else {
-                        const y_idx = self.next_y;
-                        self.next_y += 1;
-                        try self.reg_map.put(name, .{ .y = y_idx });
-                        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(y_idx));
-                        try self.emitArmTail(arm, subj_y, end_label);
-                    }
-                },
-                .wildcard => {
-                    try self.emitArmTail(arm, subj_y, end_label);
-                },
-                .@"or" => |pats| {
-                    const arm_label = self.allocLabel();
-                    for (pats) |p| {
-                        switch (p) {
-                            .numberLit => |n| {
-                                try beamEmitter.writeTest(self.out, .is_ne_exact, arm_label, &.{ Op.xr(0), Op.num(n) });
-                            },
-                            else => {},
-                        }
-                    }
-                    const next = self.allocLabel();
-                    try beamEmitter.writeJump(self.out, next);
-                    try beamEmitter.writeLabel(self.out, arm_label);
-                    try self.emitArmTail(arm, subj_y, end_label);
-                    try beamEmitter.writeLabel(self.out, next);
-                },
-                // Decision 8 §5's shapes the two arms below never read — a
-                // range, a tuple, `..`, labels, a literal or nested payload —
-                // are tested element by element (`emitSubPattern`). They used
-                // to reach an untested arm and match every subject.
-                .variant => |v| if (v.shape != .variant or v.rest or v.labels.len > 0 or v.payload == .literals or self.isRecordPattern(v.name)) {
-                    try self.emitPatternArm(arm, subj_y, end_label);
-                } else switch (v.payload) {
-                    .fields => |fields| {
-                        const next = self.allocLabel();
-                        var vbuf: [256]u8 = undefined;
-                        const vatom = try atomName(self.variantTag(v.name), &vbuf);
-                        try beamEmitter.writeTest(self.out, .is_tagged_tuple, next, &.{ Op.xr(0), .{ .untagged = @intCast(fields.len + 1) }, Op.atom(vatom) });
-                        for (fields, 0..) |bname, i| {
-                            try beamEmitter.writeGetTupleElement(self.out, Op.xr(0), i + 1, Dst.xr(1));
-                            const y_idx = self.next_y;
-                            self.next_y += 1;
-                            try self.reg_map.put(bname, .{ .y = y_idx });
-                            try beamEmitter.writeMoveOp(self.out, Op.xr(1), Dst.yr(y_idx));
-                        }
-                        try self.emitArmTail(arm, subj_y, end_label);
-                        try beamEmitter.writeLabel(self.out, next);
-                    },
-                    .binding => |binding| {
-                        const next = self.allocLabel();
-                        var vbuf: [256]u8 = undefined;
-                        const vatom = try atomName(self.variantTag(v.name), &vbuf);
-                        try beamEmitter.writeTest(self.out, .is_tuple, next, &.{Op.xr(0)});
-                        try beamEmitter.writeGetTupleElement(self.out, Op.xr(0), 0, Dst.xr(1));
-                        try beamEmitter.writeTest(self.out, .is_eq, next, &.{ Op.xr(1), Op.atom(vatom) });
-                        const y_idx = self.next_y;
-                        self.next_y += 1;
-                        try self.reg_map.put(binding, .{ .y = y_idx });
-                        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(y_idx));
-                        try self.emitArmTail(arm, subj_y, end_label);
-                        try beamEmitter.writeLabel(self.out, next);
-                    },
-                    .literals => unreachable, // `emitPatternArm` above
-                },
-                // Every element is tested or bound, and the length is exact
-                // unless a spread follows (`emitSubPattern`'s `.list`).
-                .list => try self.emitPatternArm(arm, subj_y, end_label),
-                .multi => |pats| {
-                    var tuple_arm = arm;
-                    tuple_arm.pattern = .{ .variant = .{
-                        .name = "",
-                        .payload = .{ .literals = @constCast(pats) },
-                        .shape = .tuple,
-                    } };
-                    try self.emitPatternArm(tuple_arm, subj_y, end_label);
-                },
-            }
-        }
+        for (arms) |arm| try self.lowerCaseArm(arm, subj_y, end_label);
         // No arm matched: every fail edge left the subject in `{x, 0}` (a
         // guard's restore block puts it back), and erlang's `case` raises
         // `{case_clause, V}` there. Falling into `end_label` answered the
@@ -10682,12 +10540,171 @@ const Emitter = struct {
         try beamEmitter.writeLabel(self.out, end_label);
     }
 
+    /// One arm of `lowerCase`: its pattern tested against the subject in
+    /// `{x, 0}`, falling through to the next arm when it does not match.
+    fn lowerCaseArm(self: *Emitter, arm: anytype, subj_y: ?u32, end_label: u32) anyerror!void {
+        switch (arm.pattern) {
+            .numberLit => |n| {
+                const next = self.allocLabel();
+                try beamEmitter.writeTest(self.out, .is_eq, next, &.{ Op.xr(0), Op.num(n) });
+                try self.emitArmTail(arm, subj_y, end_label);
+                try beamEmitter.writeLabel(self.out, next);
+            },
+            .stringLit => |s| {
+                const next = self.allocLabel();
+                // The subject is stashed above the live floor while `{x, 0}`
+                // is overwritten with the literal for the comparison, and is
+                // moved back on *both* edges: falling through to the next arm
+                // with the literal still in `{x, 0}` made every later arm
+                // compare literal-against-literal (`case_string_literal_patterns`
+                // printed `hello/hi/hi`).
+                const subj = self.scratchBase();
+                try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(subj));
+                const saved_live = self.raiseLive(subj + 1);
+                try self.emitStringLiteral(s, 0);
+                self.min_live = saved_live;
+                try beamEmitter.writeTest(self.out, .is_eq, next, &.{ Op.xr(subj), Op.xr(0) });
+                try beamEmitter.writeMoveOp(self.out, Op.xr(subj), Dst.xr(0));
+                try self.emitArmTail(arm, subj_y, end_label);
+                try beamEmitter.writeLabel(self.out, next);
+                try beamEmitter.writeMoveOp(self.out, Op.xr(subj), Dst.xr(0));
+            },
+            .ident => |written| {
+                const name = bareVariantName(written);
+                // §5.1 P8 — a written path (`Maybe.None`, `.None`) is a
+                // variant even when this module never declared the enum.
+                if (isVariantPath(written) or self.enum_variants.contains(name)) {
+                    // A nullary enum variant (`Lt ->`) is an atom to test
+                    // against, not a name to bind. Without the test the
+                    // first arm swallowed every subject
+                    // (`HttpMethod_name('Post')` returned `<<"GET">>`).
+                    var vbuf: [256]u8 = undefined;
+                    const vatom = try atomName(self.variantTag(written), &vbuf);
+                    const next = self.allocLabel();
+                    if (!isVariantPath(written) and self.record_fields.contains(name)) {
+                        // One spelling can be BOTH a `type` this module
+                        // places and a variant some enum declares (`type
+                        // Block(…)` beside `Token.Layout { Block, … }`).
+                        // §5.3b: the SUBJECT's type says which one the arm
+                        // means, and this emitter has no subject type, so
+                        // the arm tests both — the variant's atom, else the
+                        // record's tagged tuple. Tested by the atom alone, a
+                        // `case` over `Block | Vec` matched no arm.
+                        const record_label = self.allocLabel();
+                        const arm_label = self.allocLabel();
+                        try beamEmitter.writeTest(self.out, .is_eq, record_label, &.{ Op.xr(0), Op.atom(vatom) });
+                        try beamEmitter.writeJump(self.out, arm_label);
+                        try beamEmitter.writeLabel(self.out, record_label);
+                        const testable = try self.emitTypeTestBranch(.{ .named = name }, next);
+                        if (!testable) try beamEmitter.writeJump(self.out, next);
+                        try beamEmitter.writeLabel(self.out, arm_label);
+                    } else try beamEmitter.writeTest(self.out, .is_eq, next, &.{ Op.xr(0), Op.atom(vatom) });
+                    try self.emitArmTail(arm, subj_y, end_label);
+                    try beamEmitter.writeLabel(self.out, next);
+                } else if (std.mem.eql(u8, written, "true") or std.mem.eql(u8, written, "false") or primitiveTypeName(name)) {
+                    // `true { … }` compares the atom, and `i32 { … }` /
+                    // `string { … }` are §5.2's type tests. All three were
+                    // binders, so the first such arm took every subject.
+                    try self.emitPatternArm(arm, subj_y, end_label);
+                } else if (self.record_fields.contains(name) or self.enum_variant_names.contains(name)) {
+                    // Decision 8 §3.3 — an arm naming a `type` is chosen by
+                    // the VALUE's own type, which half 3 put in the value.
+                    // Emitted as the bare binder it was, the first arm of a
+                    // `case` over `Person | Vec` swallowed every subject.
+                    const next = self.allocLabel();
+                    const testable = try self.emitTypeTestBranch(.{ .named = name }, next);
+                    if (!testable) try beamEmitter.writeJump(self.out, next);
+                    try self.emitArmTail(arm, subj_y, end_label);
+                    try beamEmitter.writeLabel(self.out, next);
+                } else if (std.mem.eql(u8, name, "_")) {
+                    try self.emitArmTail(arm, subj_y, end_label);
+                } else {
+                    const y_idx = self.next_y;
+                    self.next_y += 1;
+                    try self.reg_map.put(name, .{ .y = y_idx });
+                    try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(y_idx));
+                    try self.emitArmTail(arm, subj_y, end_label);
+                }
+            },
+            .wildcard => {
+                try self.emitArmTail(arm, subj_y, end_label);
+            },
+            // `p | q -> body` is one arm per alternative, each with the
+            // arm's guard and body — erlang's clause per alternative
+            // (`erlang.zig`). Every alternative is tested and binds its
+            // own names, whatever its shape. Only a number alternative was
+            // tested before, and every other one was dropped: `C | D ->
+            // true` matched no subject.
+            .@"or" => |pats| for (pats) |p| {
+                var alt_arm = arm;
+                alt_arm.pattern = p;
+                try self.lowerCaseArm(alt_arm, subj_y, end_label);
+            },
+            // Decision 8 §5's shapes the two arms below never read — a
+            // range, a tuple, `..`, labels, a literal or nested payload —
+            // are tested element by element (`emitSubPattern`). They used
+            // to reach an untested arm and match every subject.
+            .variant => |v| if (v.shape != .variant or v.rest or v.labels.len > 0 or v.payload == .literals or self.isRecordPattern(v.name)) {
+                try self.emitPatternArm(arm, subj_y, end_label);
+            } else switch (v.payload) {
+                .fields => |fields| {
+                    const next = self.allocLabel();
+                    var vbuf: [256]u8 = undefined;
+                    const vatom = try atomName(self.variantTag(v.name), &vbuf);
+                    try beamEmitter.writeTest(self.out, .is_tagged_tuple, next, &.{ Op.xr(0), .{ .untagged = @intCast(fields.len + 1) }, Op.atom(vatom) });
+                    for (fields, 0..) |bname, i| {
+                        try beamEmitter.writeGetTupleElement(self.out, Op.xr(0), i + 1, Dst.xr(1));
+                        const y_idx = self.next_y;
+                        self.next_y += 1;
+                        try self.reg_map.put(bname, .{ .y = y_idx });
+                        try beamEmitter.writeMoveOp(self.out, Op.xr(1), Dst.yr(y_idx));
+                    }
+                    try self.emitArmTail(arm, subj_y, end_label);
+                    try beamEmitter.writeLabel(self.out, next);
+                },
+                .binding => |binding| {
+                    const next = self.allocLabel();
+                    var vbuf: [256]u8 = undefined;
+                    const vatom = try atomName(self.variantTag(v.name), &vbuf);
+                    try beamEmitter.writeTest(self.out, .is_tuple, next, &.{Op.xr(0)});
+                    try beamEmitter.writeGetTupleElement(self.out, Op.xr(0), 0, Dst.xr(1));
+                    try beamEmitter.writeTest(self.out, .is_eq, next, &.{ Op.xr(1), Op.atom(vatom) });
+                    const y_idx = self.next_y;
+                    self.next_y += 1;
+                    try self.reg_map.put(binding, .{ .y = y_idx });
+                    try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(y_idx));
+                    try self.emitArmTail(arm, subj_y, end_label);
+                    try beamEmitter.writeLabel(self.out, next);
+                },
+                .literals => unreachable, // `emitPatternArm` above
+            },
+            // Every element is tested or bound, and the length is exact
+            // unless a spread follows (`emitSubPattern`'s `.list`).
+            .list => try self.emitPatternArm(arm, subj_y, end_label),
+            .multi => |pats| {
+                var tuple_arm = arm;
+                tuple_arm.pattern = .{ .variant = .{
+                    .name = "",
+                    .payload = .{ .literals = @constCast(pats) },
+                    .shape = .tuple,
+                } };
+                try self.emitPatternArm(tuple_arm, subj_y, end_label);
+            },
+        }
+    }
+
     /// Whether `arm` takes every subject: no guard, and `_` or a plain binder
     /// (the branch of `lowerCase` that only moves the subject to a slot).
     fn armCatchesAll(self: *Emitter, arm: anytype) bool {
         if (arm.guard != null) return false;
         return switch (arm.pattern) {
             .wildcard => true,
+            // An alternative that takes every subject (`0 | n`).
+            .@"or" => |pats| for (pats) |p| {
+                var alt_arm = arm;
+                alt_arm.pattern = p;
+                if (self.armCatchesAll(alt_arm)) break true;
+            } else false,
             .ident => |written| blk: {
                 const name = bareVariantName(written);
                 if (isVariantPath(written) or self.enum_variants.contains(name)) break :blk false;

@@ -1,10 +1,9 @@
-//// `std/unicode` on all four targets (`01-compiler/05-wasm` step 5):
-//// `fromCodepoint` over `String.fromCodepoint` (decision 262), `codepoints`
-//// and `firstCodepoint` by code point — an astral character is one — and the
-//// four normalization forms over composed, decomposed and compatibility text.
-//// On wasm `codepoints` and `firstCodepoint` are bound with `fn:` bodies;
-//// the four `normalize` cells have no binding yet (`decisions-pending.md`
-//// 05w-i), so the module is refused there (`.wasm.expect`).
+//// `std/unicode` on all four targets (`01-compiler/05-wasm` step 5, `02/97`
+//// step 16): `fromCodepoint` over `String.fromCodepoint` (decision 262),
+//// `codepoints` and `firstCodepoint` by code point — an astral character is
+//// one — and the four normalization forms over composed, decomposed and
+//// compatibility text, by std's own botopink normalizer over the generated
+//// Unicode tables on every target (decision 333 (A)) — one `.out`.
 
 import {unicode} from "std";
 

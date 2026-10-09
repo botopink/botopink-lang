@@ -1,16 +1,20 @@
 #!/usr/bin/env bash
 # comptime_bench.sh — what the comptime path costs, on this machine.
 #
-# Every claim of `specs/1.0.5-beta/14-comptime-on-beam/` is a time measurement,
-# so the measurement lives here rather than in the document. Two instruments,
-# the ones `evidence.md` calls E-1 and E-2:
+# Every budget of `specs/1.0.12-beta/01-compiler/14-comptime-on-beam/` (and the
+# table of `18-comptime-runtimes` step 3) is a time measurement, so the
+# measurement lives here rather than in the document. Two instruments:
 #
 #   E-1  wall clock of one `botopink build`, best of `--repeat` runs, over a
 #        generated project with N call sites of ONE template whose literals are
 #        all distinct (so the memo cache in `comptime/infer.zig` never hits).
-#   E-2  the in-node split — `compile:file` / `code:load_binary` / `main()` —
-#        measured inside a single `erl` over the modules a build left behind in
-#        `.botopinkbuild/tmp/{template,decorator}`.
+#   E-2  the in-compiler split — where an evaluation's time goes, stage by
+#        stage — from one more build of the largest N (and of each `--project`)
+#        run with `BOTOPINK_COMPTIME_STAGES=<file>`
+#        (`modules/compiler-core/src/comptime/runtime/stages.zig`): the
+#        compiler appends `<stage> TAB <ns>` per timed stage, and the table
+#        sums them. Modules travel to the runtime in-frame (BEAM, cmd 4) or
+#        in-process (wasm3), so there is nothing on disk to time separately.
 #
 # Nothing is written inside a repository: every project is generated into a
 # `mktemp -d` and deleted unless `--keep` is given.
@@ -18,19 +22,18 @@
 # Usage:
 #   scripts/comptime_bench.sh [--n 0,1,10,50,100,200] [--repeat 5]
 #                             [--project <dir>] [--target commonJS]
-#                             [--reps 50] [--keep] [--no-build]
+#                             [--keep] [--no-build]
 #
 #   --n LIST      call-site counts for the generated project (default 0,10,200;
 #                 `--n ''` skips the generated project entirely)
 #   --repeat R    builds per N; the minimum is reported (default 3)
 #   --project D   also copy D into a scratch tree, build it, and report its
-#                 in-node split. Repeatable. A `path:` dependency of D is
+#                 split. Repeatable. A `path:` dependency of D is
 #                 copied beside it, so a git dependency must already be
 #                 vendored there; a workspace member (`{ "workspace": true }`)
 #                 is built inside a copy of its enclosing workspace.
-#   --target T    build target (default commonJS — a JavaScript build pays the
-#                 whole comptime cost, which is the point)
-#   --reps N      in-node repetitions per module (default 20, after a warm-up)
+#   --target T    build target (default commonJS — the wat runtime; `erlang`
+#                 and `beam` evaluate on the BEAM runtime, decision 84)
 #   --keep        leave the scratch tree in place and print its path
 #   --no-build    do not run `zig build` first
 #
@@ -40,13 +43,12 @@
 #   BOTOPINK_LIB_ROOTS=../../repository scripts/comptime_bench.sh --n '' \
 #       --project ../../repository/erika/examples/erika-linq
 #
-# Exit 0 when every build succeeded, 1 otherwise. `erl` and `erlc` are required
-# for the in-node split; without them the E-1 table is still printed.
+# Exit 0 when every build succeeded, 1 otherwise. `erl` (OTP 28) is required
+# for the `erlang` and `beam` targets only.
 set -euo pipefail
 
 ns="0,10,200"
 repeat=3
-reps=20
 target="commonJS"
 keep=0
 do_build=1
@@ -56,12 +58,11 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --n) ns="${2-}"; shift 2 ;;
         --repeat) repeat="${2-}"; shift 2 ;;
-        --reps) reps="${2-}"; shift 2 ;;
         --target) target="${2-}"; shift 2 ;;
         --project) projects+=("${2-}"); shift 2 ;;
         --keep) keep=1; shift ;;
         --no-build) do_build=0; shift ;;
-        -h|--help) sed -n '2,38p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,45p' "$0"; exit 0 ;;
         *) echo "comptime_bench: unknown argument '$1'" >&2; exit 1 ;;
     esac
 done
@@ -82,127 +83,42 @@ else
     trap 'rm -rf "$scratch"' EXIT
 fi
 
-have_erl=1
-command -v erl >/dev/null 2>&1 || have_erl=0
-
-# ── the in-node harness (E-2) ─────────────────────────────────────────────────
+# ── E-2: the in-compiler split ────────────────────────────────────────────────
 #
-# One `erl`, one pass per module: compile it once to warm the code server, then
-# `--reps` timed rounds of `compile:file/2`, `code:load_binary/3` and, when the
-# module exports it, `main/0`. A module that takes its data as an argument
-# exports `main/1` instead; its body cannot be run without that argument, so the
-# run column reads `-` and the compile columns — which are what this front moves
-# — stay comparable across every step.
-bench_erl="$scratch/bp_comptime_bench.erl"
-cat > "$bench_erl" <<'ERL'
--module(bp_comptime_bench).
--export([main/1]).
-
-main([RepsS | Files]) ->
-    Reps = list_to_integer(RepsS),
-    Rows = [row(F, Reps) || F <- Files],
-    lists:foreach(fun print_row/1, Rows),
-    print_total(Rows),
-    halt(0);
-main(_) ->
-    halt(2).
-
-row(File, Reps) ->
-    case compile:file(File, [binary, return]) of
-        {ok, Mod, Beam} -> row(File, Reps, Mod, Beam);
-        {ok, Mod, Beam, _W} -> row(File, Reps, Mod, Beam);
-        {error, _, _} -> {File, error, 0, 0.0, 0.0, none, 0}
-    end.
-
-row(File, Reps, Mod, Beam) ->
-    {module, _} = code:load_binary(Mod, "", Beam),
-    Lines = lines(File),
-    Compile = avg(fun() -> compile:file(File, [binary, return]) end, Reps),
-    %% Before the load round: `code:load_binary/3` repeated leaves old versions
-    %% for the code server to reap, and the first calls after it are charged for
-    %% that rather than for the body.
-    Run = case lists:member({main, 0}, Mod:module_info(exports)) of
-        true -> {ok, avg(fun() -> catch Mod:main() end, Reps)};
-        false -> none
-    end,
-    Load = avg(fun() -> code:load_binary(Mod, "", Beam) end, Reps),
-    {File, Lines, byte_size(Beam), Compile, Load, Run, Reps}.
-
-%% Milliseconds per call. One untimed call first: the first `Mod:main()` of a
-%% run loads whatever the body reaches (`json`, `string`, …) and would otherwise
-%% be charged to whichever module happens to be measured first.
-avg(F, Reps) ->
-    _ = F(),
-    T0 = erlang:monotonic_time(microsecond),
-    lists:foreach(fun(_) -> F() end, lists:seq(1, Reps)),
-    T1 = erlang:monotonic_time(microsecond),
-    (T1 - T0) / (Reps * 1000).
-
-lines(File) ->
-    case file:read_file(File) of
-        {ok, Bin} -> length(binary:split(Bin, <<"\n">>, [global]));
-        _ -> 0
-    end.
-
-print_row({File, error, _, _, _, _, _}) ->
-    io:format("  ~-44s  ~s~n", [filename:basename(File), "did not compile"]);
-print_row({File, Lines, BeamSize, Compile, Load, Run, _}) ->
-    io:format("  ~-44s ~6b ~13.3f ~13.3f ~10s ~10b~n",
-              [filename:basename(File), Lines, Compile, Load, run_text(Run), BeamSize]).
-
-run_text(none) -> "-";
-run_text({ok, Ms}) -> lists:flatten(io_lib:format("~.3f", [Ms])).
-
-print_total(Rows) ->
-    Ok = [R || R <- Rows, element(2, R) =/= error],
-    Compile = lists:sum([element(4, R) || R <- Ok]),
-    Load = lists:sum([element(5, R) || R <- Ok]),
-    %% `-` when no module exported `main/0`: after step 2 they export `main/1`
-    %% and cannot be run without their argument.
-    Run = case [Ms || {_, _, _, _, _, {ok, Ms}, _} <- Ok] of
-        [] -> none;
-        Runs -> {ok, lists:sum(Runs)}
-    end,
-    Beam = lists:sum([element(3, R) || R <- Ok]),
-    io:format("  ~-44s ~6s ~13.3f ~13.3f ~10s ~10b~n",
-              ["TOTAL (" ++ integer_to_list(length(Ok)) ++ " modules)", "", Compile, Load, run_text(Run), Beam]).
-ERL
-
-if [ "$have_erl" -eq 1 ]; then
-    erlc -o "$scratch" "$bench_erl" >/dev/null 2>&1 || have_erl=0
-fi
-
-# comptime_modules <dir> [subdir…]: every `.erl` the build left behind, one per
-# line. A missing directory is not an error — a project with no template and no
-# decorator writes neither — so `find`'s status is dropped deliberately.
-comptime_modules() {
-    local dir="$1"; shift
-    local sub
-    for sub in "$@"; do
-        find "$dir/.botopinkbuild/tmp/$sub" -maxdepth 1 -name '*.erl' 2>/dev/null || true
-    done | sort
-}
-
-# in_node <label> <project-dir>: the E-2 table over every module the build left
-# behind under that project's `.botopinkbuild/tmp/`.
-in_node() {
+# stage_split <label> <project-dir>: one more build of the project (not one of the
+# timed ones — writing the stage lines costs a few microseconds each) with the
+# stage clock on, then one row per stage: how many times it ran, its total, and
+# its share of one evaluation (total / evaluations, where an evaluation is one
+# `module` line — a memo hit in `infer.zig` evaluates nothing). Stages that did
+# not run (`frame` on the wat runtime, `instance`/`run` on the BEAM one) are
+# absent. The rows' order is the order an evaluation meets them.
+stage_split() {
     local label="$1" dir="$2"
-    local files=()
-    while IFS= read -r f; do files+=("$f"); done < <(comptime_modules "$dir" template decorator)
-    if [ "${#files[@]}" -eq 0 ]; then
-        printf '\nin-node split — %s: no comptime module was written\n' "$label"
-        return
+    local stages_file="$scratch/stages.$(basename "$dir")"
+    rm -rf "$dir/.botopinkbuild" "$dir/out" "$stages_file"
+    (cd "$dir" && BOTOPINK_COMPTIME_STAGES="$stages_file" "$botopink" build --target "$target" >/dev/null 2>&1) \
+        || { printf '\nsplit — %s: the build failed\n' "$label"; return 1; }
+    if [ ! -s "$stages_file" ]; then
+        printf '\nsplit — %s: no comptime evaluation ran\n' "$label"
+        return 0
     fi
-    if [ "$have_erl" -eq 0 ]; then
-        printf '\nin-node split — %s: erl/erlc unavailable, skipped (%d modules on disk)\n' \
-               "$label" "${#files[@]}"
-        return
-    fi
-    printf '\nin-node split — %s (%d modules, %s reps each, after a warm-up)\n\n' \
-           "$label" "${#files[@]}" "$reps"
-    printf '  %-44s %6s %13s %13s %10s %10s\n' \
-           "module" "lines" "compile:file" "load_binary" "main()" ".beam B"
-    erl -noshell -pa "$scratch" -run bp_comptime_bench main "$reps" "${files[@]}"
+    printf '\nsplit — %s, target %s (one build, stage clock on)\n\n' "$label" "$target"
+    awk -F '\t' '
+        { total[$1] += $2; count[$1]++ }
+        END {
+            evals = count["module"] + 0
+            n = split("memo_key module encode lower instance run frame listing outcome", order, " ")
+            printf "  %-10s %8s %12s %12s\n", "stage", "runs", "total (ms)", "ms/eval"
+            sum = 0
+            for (i = 1; i <= n; i++) {
+                s = order[i]
+                if (!(s in count)) continue
+                per = (evals > 0 ? total[s] / evals / 1e6 : 0)
+                printf "  %-10s %8d %12.1f %12.3f\n", s, count[s], total[s] / 1e6, per
+                sum += total[s]
+            }
+            printf "  %-10s %8d %12.1f %12.3f\n", "TOTAL", evals, sum / 1e6, (evals > 0 ? sum / evals / 1e6 : 0)
+        }' "$stages_file"
 }
 
 # ── E-1: the generated N-call-site project ────────────────────────────────────
@@ -252,8 +168,8 @@ status=0
 if [ -n "$ns" ]; then
     printf 'generated project — one template, N distinct call sites, target %s (min of %d builds)\n\n' \
            "$target" "$repeat"
-    printf '  %5s %14s %9s %12s %12s\n' "N" "build (ms)" "modules" ".erl bytes" "ms/eval"
-    prev_n=""; prev_ms=""; last_dir=""
+    printf '  %5s %14s %12s\n' "N" "build (ms)" "ms/eval"
+    prev_n=""; prev_ms=""; last_dir=""; last_n=""
     IFS=',' read -r -a n_list <<< "$ns"
     for n in "${n_list[@]}"; do
         n="$(echo "$n" | tr -d '[:space:]')"
@@ -261,17 +177,16 @@ if [ -n "$ns" ]; then
         dir="$scratch/gen-$n"
         gen_project "$dir" "$n"
         ms="$(build_min "$dir")" || { status=1; printf '  %5s %14s\n' "$n" "BUILD FAILED"; continue; }
-        mods=$(comptime_modules "$dir" template decorator | grep -c . || true)
-        bytes=$(comptime_modules "$dir" template decorator | xargs -r stat -c '%s' \
-                | awk '{s += $1} END {print s + 0}')
         slope="—"
         if [ -n "$prev_n" ] && [ "$n" -gt "$prev_n" ]; then
             slope=$(awk -v a="$prev_ms" -v b="$ms" -v c="$prev_n" -v d="$n" 'BEGIN {printf "%.1f", (b - a) / (d - c)}')
         fi
-        printf '  %5s %14s %9s %12s %12s\n' "$n" "$ms" "$mods" "$bytes" "$slope"
-        prev_n="$n"; prev_ms="$ms"; last_dir="$dir"
+        printf '  %5s %14s %12s\n' "$n" "$ms" "$slope"
+        prev_n="$n"; prev_ms="$ms"; last_dir="$dir"; last_n="$n"
     done
-    [ -n "$last_dir" ] && in_node "generated N=$prev_n" "$last_dir"
+    if [ -n "$last_dir" ]; then
+        stage_split "generated N=$last_n" "$last_dir" || status=1
+    fi
 fi
 
 # ── a real project ────────────────────────────────────────────────────────────
@@ -318,7 +233,7 @@ for p in ${projects+"${projects[@]}"}; do
     printf '\nproject %s — %s (min of %d builds)\n\n' "$name" "$p" "$repeat"
     ms="$(build_min "$dir")" || { status=1; printf '  build FAILED\n'; continue; }
     printf '  build (ms): %s\n' "$ms"
-    in_node "$name" "$dir"
+    stage_split "$name" "$dir" || status=1
 done
 
 exit "$status"
