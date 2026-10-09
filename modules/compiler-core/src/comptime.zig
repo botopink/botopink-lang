@@ -727,45 +727,81 @@ fn orderReaders(
     var others: std.ArrayListUnmanaged(Module) = .empty;
     var reader_programs: std.ArrayListUnmanaged(?ast.Program) = .empty;
     var other_programs: std.ArrayListUnmanaged(?ast.Program) = .empty;
+    var reader_tokens: std.ArrayListUnmanaged([]const Token) = .empty;
+    var other_tokens: std.ArrayListUnmanaged([]const Token) = .empty;
     for (modules) |m| {
         // A module that does not parse is no reader; its own analysis
         // reports the parse error.
         var lx = Lexer.init(m.source);
-        const program: ?ast.Program = if (lx.scanAll(arena)) |tokens| parsed: {
+        const tokens: []const Token = lx.scanAll(arena) catch &.{};
+        const program: ?ast.Program = if (tokens.len > 0) parsed: {
             var p = Parser.init(tokens);
             break :parsed p.parse(arena) catch null;
-        } else |_| null;
+        } else null;
         if (program != null and try typeinfoAll.reads(arena, program.?)) {
             try readers.append(arena, m);
             try reader_programs.append(arena, program);
+            try reader_tokens.append(arena, tokens);
             try reflection.readers.put(arena, m.path, {});
         } else {
             try others.append(arena, m);
             try other_programs.append(arena, program);
+            try other_tokens.append(arena, tokens);
         }
     }
     if (readers.items.len == 0) return modules;
     try others.appendSlice(arena, readers.items);
     try other_programs.appendSlice(arena, reader_programs.items);
-    for (others.items, other_programs.items, 0..) |m, maybe_program, idx| {
+    try other_tokens.appendSlice(arena, reader_tokens.items);
+    for (others.items, other_programs.items, other_tokens.items, 0..) |m, maybe_program, tokens, idx| {
         const program = maybe_program orelse continue;
         scan: for (program.decls) |d| switch (d) {
-            .use => |u| for (u.imports) |imp| {
-                for ([_]bool{ false, true }) |whole| switch (try u.leafSource(imp, arena, whole)) {
-                    .module => |path| for (readers.items) |r| {
-                        if (std.mem.eql(u8, r.path, m.path)) continue;
-                        if (!std.mem.eql(u8, path, r.path) and !std.mem.eql(u8, std.fs.path.basename(r.path), path)) continue;
-                        const msg = try std.fmt.allocPrint(arena, "{s}: `{s}` reads `@TypeInfo.all`, so it answers for the whole program and no module imports it", .{ diagnostics.typeinfo_all_imported, r.path });
-                        try refusals.put(arena, idx, validation.TypeError.custom(msg, "Move what this module needs out of the entry point into a module of its own; the entry point imports it, never the other way round.").withLoc(imp.loc));
+            .use => |u| {
+                // Decision 353 — `import pkg from "pkg"` binds the package's
+                // default function: a reader holding it is imported too, and
+                // refused at the handle (it used to be dropped from the
+                // importer's scope, `unbound variable` at the use).
+                if (u.package) |handle| {
+                    const pkg = u.source.packageName() orelse handle;
+                    for (readers.items, reader_programs.items) |r, rp| {
+                        if (std.mem.eql(u8, r.path, m.path) or !ast.ImportSource.ofPackage(pkg, r.path)) continue;
+                        const holds_default = for ((rp orelse continue).decls) |rd| {
+                            if (rd == .@"fn" and rd.@"fn".isDefault) break true;
+                        } else false;
+                        if (!holds_default) continue;
+                        const msg = try std.fmt.allocPrint(arena, "{s}: `{s}` reads `@TypeInfo.all`, so it answers for the whole program and no module imports it — `import {s}` binds its default function", .{ diagnostics.typeinfo_all_imported, r.path, handle });
+                        try refusals.put(arena, idx, validation.TypeError.custom(msg, "Move the default function out of the reading module, or read the catalogue in the template function's body: a template body's query answers for the program that expands it (decision 353).").withLoc(handleLoc(tokens, handle)));
                         break :scan;
-                    },
-                    .root => {},
-                };
+                    }
+                }
+                for (u.imports) |imp| {
+                    for ([_]bool{ false, true }) |whole| switch (try u.leafSource(imp, arena, whole)) {
+                        .module => |path| for (readers.items) |r| {
+                            if (std.mem.eql(u8, r.path, m.path)) continue;
+                            if (!std.mem.eql(u8, path, r.path) and !std.mem.eql(u8, std.fs.path.basename(r.path), path)) continue;
+                            const msg = try std.fmt.allocPrint(arena, "{s}: `{s}` reads `@TypeInfo.all`, so it answers for the whole program and no module imports it", .{ diagnostics.typeinfo_all_imported, r.path });
+                            try refusals.put(arena, idx, validation.TypeError.custom(msg, "Move what this module needs out of the entry point into a module of its own; the entry point imports it, never the other way round.").withLoc(imp.loc));
+                            break :scan;
+                        },
+                        .root => {},
+                    };
+                }
             },
             else => {},
         };
     }
     return others.items;
+}
+
+/// Where `import <handle>` writes its handle: the identifier after an
+/// `import` keyword (the import declaration keeps no location of its own).
+fn handleLoc(tokens: []const Token, handle: []const u8) ast.Loc {
+    for (tokens, 0..) |t, i| {
+        if (t.kind != .import or i + 1 >= tokens.len) continue;
+        const next = tokens[i + 1];
+        if (std.mem.eql(u8, next.lexeme, handle)) return .{ .line = next.line, .col = next.col };
+    }
+    return .{ .line = 1, .col = 1 };
 }
 
 /// Decision 216 (3) — every `decl.addType(name, source)` of pass 1, parsed as
@@ -1593,6 +1629,70 @@ fn embeddedStdProgram(arena: std.mem.Allocator, program: ast.Program) !ast.Progr
     var out = program;
     out.decls = decls;
     return out;
+}
+
+/// The file an embedded std module was built from, as its checkout names it:
+/// `std/path` is `libs/std/src/path.bp`.
+fn embeddedStdFile(arena: std.mem.Allocator, path: []const u8) ![]const u8 {
+    return std.fmt.allocPrint(arena, "libs/std/src/{s}.bp", .{path["std/".len..]});
+}
+
+/// Lex and parse an embedded std module. One that does not is a defect of
+/// this build, met before any program module is read: its diagnostic is
+/// printed located at the std file (`embeddedStdDiagnostic`) and the build
+/// stops with `error.EmbeddedStdRefused`. A bare `try` answered the CLI's
+/// `compilation failed` / `UnexpectedToken`, naming no file and no line — a
+/// reserved word used as a name in a `libs/std/src` file read that way.
+pub fn parseEmbeddedStd(arena: std.mem.Allocator, path: []const u8, source: []const u8) !ast.Program {
+    var lx = Lexer.init(source);
+    const tokens = lx.scanAll(arena) catch |err| {
+        if (err == error.OutOfMemory) return err;
+        std.debug.print("{s}", .{try embeddedStdDiagnostic(arena, path, source, &lx, null)});
+        return error.EmbeddedStdRefused;
+    };
+    var p = Parser.init(tokens);
+    return p.parse(arena) catch |err| {
+        if (err == error.OutOfMemory) return err;
+        std.debug.print("{s}", .{try embeddedStdDiagnostic(arena, path, source, null, &p)});
+        return error.EmbeddedStdRefused;
+    };
+}
+
+/// The located diagnostic of an embedded std module that did not lex
+/// (`lexer`) or parse (`parser`): the parse error rendered as any module's
+/// is (`print.render`), at `libs/std/src/<module>.bp`.
+pub fn embeddedStdDiagnostic(arena: std.mem.Allocator, path: []const u8, source: []const u8, lexer: ?*const Lexer, parser: ?*const Parser) ![]const u8 {
+    const file = try embeddedStdFile(arena, path);
+    if (parser) |p| {
+        const info = p.parseError orelse blk: {
+            if (p.tokens.len == 0) break :blk null;
+            break :blk @import("./parser.zig").ParseErrorInfo.fromToken(.unexpectedToken, p.tokens[@min(p.current, p.tokens.len - 1)]);
+        };
+        if (info) |i| return @import("./print.zig").renderAlloc(arena, i, source, file);
+    }
+    if (lexer) |lx| if (lx.lexError) |le| {
+        const start = @min(le.start, source.len);
+        var line: usize = 1;
+        var col: usize = 1;
+        for (source[0..start]) |c| {
+            if (c == '\n') {
+                line += 1;
+                col = 1;
+            } else col += 1;
+        }
+        return std.fmt.allocPrint(arena,
+            \\error: {s}
+            \\ --> {s}:{d}:{d}
+            \\
+            \\
+        , .{ @import("./lexer.zig").lexicalErrorMessage(le), file, line, col });
+    };
+    return std.fmt.allocPrint(arena,
+        \\error: the embedded std module does not parse
+        \\ --> {s}
+        \\
+        \\
+    , .{file});
 }
 
 /// The std modules `source` (a std module) imports — `import {json};` or a
@@ -2557,12 +2657,9 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
             const program = try stripTestDecls(try p.parse(env.arena), env.arena);
             _ = try infer.inferProgram(&env2, program);
         }
-        var lx = Lexer.init(spm.source);
-        const tokens = try lx.scanAll(env.arena);
-        var p = Parser.init(tokens);
         // Decision 330 (7): a std type's associated types are top-level types
         // of the module (`Type.Field` is `Type__Field`).
-        const parsed_std = try embeddedStdProgram(env.arena, try stripTestDecls(try p.parse(env.arena), env.arena));
+        const parsed_std = try embeddedStdProgram(env.arena, try stripTestDecls(try parseEmbeddedStd(env.arena, spm.path, spm.source), env.arena));
         // `Owner.Name` written in the module's own source — a member of
         // `Type` taking `Type.Field<T>` — names that one top-level type, as
         // `analyzeSource` rewrites it for a program's module; left dotted, an
@@ -2927,6 +3024,68 @@ pub fn compile(
     const prev_runtime = hostRuntime.select(hostRuntime.forTarget(if (target_name) |t| ast.ExternalLookup.of(t).member else null));
     defer _ = hostRuntime.select(prev_runtime);
 
+    // Decision 353 — a template body's `@TypeInfo.all` answers for the whole
+    // program, every module's decorators applied. A session answers it from
+    // the catalogue as it stands when the template is expanded; when a module
+    // analysed later added an entry to an answer (`staleTemplateRead`), the
+    // modules are compiled again with the first session's complete catalogue
+    // as the oracle the answers are read from.
+    var first = try compileOnce(allocator, modules, io, build_root, target_name, null);
+    if (try staleTemplateRead(first.session.arena.allocator(), first.reflection) == null) return first.session;
+    var second = compileOnce(allocator, modules, io, build_root, target_name, first.reflection) catch |err| {
+        first.session.deinit(allocator);
+        return err;
+    };
+    first.session.deinit(allocator);
+    // The oracle answered every read; one the final catalogue still disagrees
+    // with means the catalogue depends on what the template answered.
+    if (try staleTemplateRead(second.session.arena.allocator(), second.reflection)) |read| {
+        try refuseStaleRead(allocator, &second.session, read);
+    }
+    return second.session;
+}
+
+/// The first template-body answer of the session that the session's final
+/// catalogue answers differently, or null (decision 353).
+fn staleTemplateRead(arena: std.mem.Allocator, reflection: *const reflectionMod.Reflection) !?reflectionMod.TemplateRead {
+    for (reflection.templateReads.items) |read| {
+        const now = switch (try typeinfoAll.templateAnswerText(arena, reflection, read.query, read.loc)) {
+            .ok => |t| t,
+            .refused => return read,
+        };
+        if (!std.mem.eql(u8, now, read.text)) return read;
+    }
+    return null;
+}
+
+/// The module that expanded `read` refused at the expansion: its answer,
+/// given from a complete catalogue, changed that catalogue.
+fn refuseStaleRead(allocator: std.mem.Allocator, session: *ComptimeSession, read: reflectionMod.TemplateRead) !void {
+    const arena = session.arena.allocator();
+    const msg = try std.fmt.allocPrint(arena, "{s}: the template expanded here reads `@TypeInfo.all(with: {s})`, and the declarations its answer builds change that catalogue", .{ diagnostics.typeinfo_all_template_unstable, read.query.label });
+    const te = validation.TypeError.custom(msg, "A template's answer cannot add or remove a declaration carrying the decorators it reads: the catalogue it answers is the program's, decided before any template runs.").withLoc(read.loc);
+    for (session.outputs.items) |*o| {
+        const path = if (std.mem.eql(u8, o.name, "main")) "" else o.name;
+        if (!std.mem.eql(u8, path, read.module) and !std.mem.eql(u8, o.name, read.module)) continue;
+        o.outcome = .{ .typeError = te };
+        return;
+    }
+    _ = allocator;
+}
+
+const CompiledOnce = struct {
+    session: ComptimeSession,
+    reflection: *reflectionMod.Reflection,
+};
+
+fn compileOnce(
+    allocator: std.mem.Allocator,
+    modules: []const Module,
+    io: std.Io,
+    build_root: ?[]const u8,
+    target_name: ?[]const u8,
+    oracle: ?*const reflectionMod.Reflection,
+) !CompiledOnce {
     var session = ComptimeSession{
         .arena = std.heap.ArenaAllocator.init(allocator),
         .outputs = .empty,
@@ -2940,7 +3099,9 @@ pub fn compile(
     var decorator_registry = std.StringHashMap(ast.FnDecl).init(arena_alloc);
     var extension_registry = std.StringHashMap(std.StringHashMap(ast.ImplementDecl)).init(arena_alloc);
     // Decision 216 — what decorators record for reflection, for this session.
-    var reflection = reflectionMod.Reflection.init(arena_alloc);
+    const reflection = try arena_alloc.create(reflectionMod.Reflection);
+    reflection.* = reflectionMod.Reflection.init(arena_alloc);
+    reflection.oracle = oracle;
     var default_dsl = DefaultDsl.init(arena_alloc);
 
     // `from "std"` imports pull the embedded std modules into the compilation.
@@ -2948,7 +3109,7 @@ pub fn compile(
     // sources and `resolveImports` binds `from "<lib>"` through the shared
     // registry — the core names no specific lib (std is the one exception).
     var reader_refusals: std.AutoHashMapUnmanaged(usize, validation.TypeError) = .empty;
-    const all_modules = try orderReaders(arena_alloc, try expandStdImports(arena_alloc, modules, target_name), &reflection, &reader_refusals);
+    const all_modules = try orderReaders(arena_alloc, try expandStdImports(arena_alloc, modules, target_name), reflection, &reader_refusals);
 
     for (all_modules, 0..) |mod, idx| {
         const name: []const u8 = if (mod.path.len > 0) mod.path else "main";
@@ -2959,7 +3120,7 @@ pub fn compile(
         const analysis = try analyzeModule(arena_alloc, mod, &registry, &type_decl_registry, &template_registry, &decorator_registry, &extension_registry, .{
             .io = io,
             .build_root = build_root orelse name,
-        }, false, target_name, &reflection);
+        }, false, target_name, reflection);
 
         switch (analysis) {
             .parseError => |se| {
@@ -3108,7 +3269,7 @@ pub fn compile(
         }
     }
 
-    return session;
+    return .{ .session = session, .reflection = reflection };
 }
 
 test "importsPackage: the `from` keyword and the quoted name, dotted or not" {

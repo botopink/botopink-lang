@@ -260,13 +260,17 @@ codegen/
   than the shape is worth; a call through anything but the function's own name
   (`this.m(…)`, a value holding the function); a function that creates a
   closure reading one of its parameters (the closure outlives the round that
-  made it, so reassigning the parameter would change what it sees); one that
+  made it, so reassigning the parameter would change what it sees — an
+  immediately invoked plain arrow or `function` is NOT such a closure: it runs
+  to completion in its round, so the `??` lowering's IIFE reading `xs` / `i`
+  keeps the loop, std `path.resolveAll` included, while a closure nested in
+  it still counts — `NameScan.immediateBody`); one that
   names `arguments` (sloppy mode maps it onto the parameters); one with a
   destructuring or defaulted parameter (nothing to assign to); one that binds
   its own name locally; and anything but a plain `function` — a generator's
   `return f(…)` resumes an iterator rather than ending one, and an `async`
   one's answer is a promise. Pinned by
-  `tests/language/run/self_tail_recursion.bp` (every target) and three
+  `tests/language/run/self_tail_recursion.bp` (every target) and five
   `control_flow.zig` cells that RUN.
 - **`.len`**: `s.len` / `arr.len` on a typed string/array (inference records
   `.prim` in `instance_lowerings`, threaded in as `Emitter.lowerings`) emits
@@ -303,7 +307,8 @@ codegen/
   so while the annotation read `#[@External.Node("reverse")]` commonJS alone
   also reversed the receiver — a fold that read it again answered one thing
   there and another everywhere else, at exit 0. It names `toReversed`
-  (ES2023, node 20) since `fix/js-instanceof-boundary`, and the rename is
+  (ES2023, in node since 20; the floor is node 22 — std's `fs.glob` calls
+  `fs.globSync` — and CI installs 22) since `fix/js-instanceof-boundary`, and the rename is
   type-naive, so it reaches every `.reverse()` call site and not only the ones
   inference typed. Pinned by
   `tests/language/run/array_reverse_answers_a_new_array.bp`, which reads the
@@ -1194,8 +1199,13 @@ codegen/
   A lambda resets `block_guard`. A statement `@block` with no `return` of its own that reassigns
   an enclosing `var` (`acc = acc + 5;`) answers the reassigned variables and the statement rebinds
   them (`mutatingBlockExpr`: `Acc@2 = (fun() -> Acc@1 = …, Acc@1 end)()`;
-  `run/block_reassigns_enclosing_var`). Still open: the same block with a `return` in it, or in
-  value position, reads the new version outside the fun, unbound (`erlc` refuses).
+  `run/block_reassigns_enclosing_var`). The same block with a `return` in it, or in value
+  position, sets `block_group` while its body is lowered: every `return` answers `{V, Group}` (the
+  value, the names at their versions there — thrown to the block's guard or the fun's last
+  expression alike) and the call site rebinds the group (`valueBlockExpr`:
+  `element(1, {_, Acc@2} = (fun() -> …, {V, Acc@1} end)())`;
+  `run/block_value_reassigns_enclosing_var`, a `for`'s `return` in `tests/erlang.zig`). A lambda
+  resets `block_group`.
 - **Mutation through branches and loops** (`mutatingExpr`): a statement-level
   `if` / `for (xs) { x -> … }` / `xs.forEach({ x -> … })` that reassigns variables
   bound before it (looking through nested `if`/`loop`/`forEach`) returns the new
@@ -2978,7 +2988,12 @@ first three are now enforced by the model, not by discipline:
   nothing is not a failure, so the two can only be told apart by how the process
   ended. `.ok` = exited 0; `.failed` = ran, non-zero exit (deterministic —
   recordable and cacheable); `.unavailable` = missing binary, spawn error or
-  timeout (host-dependent — never recorded, never cached, RUN LOG stays empty).
+  timeout (host-dependent — never recorded, never cached, RUN LOG stays empty);
+  `.interrupted` = ran but did not end by its own exit — a signal (Ctrl-C, a
+  kill, a cut output), a stop, or an `erl` that printed its break handler's
+  `BREAK: (a)bort …` (which then halts with status 0) — treated as
+  `.unavailable`: a stored one was replayed by every later run until the cache
+  was deleted (`tests/runtime_scratch.zig`, "never cached").
   Inferring failure from an empty buffer is what kept BEAM from ever executing
   and made an `erlc` warning swallow the whole run (spec 06 H1/H2).
 - **What makes a RUN LOG**:

@@ -19,6 +19,7 @@ const evalMod = @import("eval.zig");
 const blockEval = @import("block_eval.zig");
 const diagnostics = @import("diagnostics.zig");
 const reflectionMod = @import("reflection.zig");
+const typeinfoAll = @import("typeinfo_all.zig");
 const effectChain = @import("effect_chain.zig");
 const template = @import("template.zig");
 const primOpTemplate = @import("primOpTemplate.zig");
@@ -639,6 +640,7 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     try refuseUnknownAnnotations(env, program);
     try validateExternalInline(env, program);
     try invokeDecorators(env, program);
+    try noteTemplateQueries(env, program);
     env.assocTypesPending = false;
     if (env.contributions.items.len > 0 or env.memberContributions.items.len > 0 or env.typeContributions.items.len > 0 or env.typeinfoAllPending) {
         return list.toOwnedSlice(env.arena);
@@ -776,6 +778,7 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
     try refuseUnknownAnnotations(env, program);
     try validateExternalInline(env, program);
     try invokeDecorators(env, program);
+    try noteTemplateQueries(env, program);
     env.assocTypesPending = false;
     if (env.contributions.items.len > 0 or env.memberContributions.items.len > 0 or env.typeContributions.items.len > 0 or env.typeinfoAllPending) {
         // A decorator `@emit`ed code: the spliced re-analysis (`analyzeSource`)
@@ -4376,6 +4379,30 @@ fn moduleFileName(path: []const u8) []const u8 {
     return path[i + 1 ..];
 }
 
+/// Decision 353 — each `@TypeInfo.all(…)` written in a template function's
+/// body, its arguments resolved here, in the template's own module (the
+/// decorators `with:` names are this module's or its imports'), and recorded
+/// in the session's reflection under the template's owner and name. The
+/// expansion answers it (`expandTemplateCallViaRuntime`) for the program the
+/// call is compiled in. A query whose arguments break the catalogue's rule is
+/// refused here, at the query; one whose `with:` names no decorator is left to
+/// `checkCatalogueArguments` when the body is checked.
+fn noteTemplateQueries(env: *Env, program: ast.Program) InferError!void {
+    const r = env.reflection orelse return;
+    for (try typeinfoAll.collectTemplates(env.arena, program)) |t| {
+        var resolved: std.ArrayListUnmanaged(reflectionMod.TemplateQuery) = .empty;
+        for (t.queries) |q| switch (try typeinfoAll.resolve(env.arena, env, program, env.modulePath, q)) {
+            .ok => |rq| try resolved.append(env.arena, rq),
+            .unanswered => {},
+            .refused => |te| {
+                env.lastError = te;
+                return error.TypeError;
+            },
+        };
+        try r.templateQueries.put(r.arena, try reflectionMod.Reflection.templateKey(r.arena, env.modulePath, t.name), resolved.items);
+    }
+}
+
 fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
     if (env.skipDecoratorInvoke) return; // second pass: contributions already spliced
     if (env.decorators.count() == 0) return;
@@ -6287,7 +6314,10 @@ fn expandTemplateCall(
     retType: *T.Type,
     loc: ast.Loc,
 ) InferError!TypedExpr {
-    const body = classifyTemplateBody(tfn, captures) orelse {
+    // Decision 353 — a body reading the program's catalogue is never reduced
+    // by inspection: its queries are answered where the module is built.
+    const reads_catalogue = (try templateQueriesOf(env, env.comptimeOwnerOf(tfn), tfn)).len > 0;
+    const body = (if (reads_catalogue) null else classifyTemplateBody(tfn, captures)) orelse {
         // Not reducible by inspection — run the body in the eval runtime
         // (F6-full). Tooling paths carry no eval context and keep the error.
         if (env.templateEval != null) {
@@ -6415,9 +6445,15 @@ fn expandTemplateCallViaRuntime(
         const own = if (i == 0) owner.len == 0 or std.mem.eql(u8, owner, env.modulePath) else if (env.fnDecls.get(f.name)) |g| g.body.ptr == f.body.ptr else false;
         c.* = if (own) try templateEval.relabelTupleReads(env.arena, &env.tupleLabelReads, f) else f;
     }
+    // Decision 353 — the body's `@TypeInfo.all(…)` queries answered for the
+    // program this call is compiled in; the module carries the records the
+    // answers build.
+    const answered = try answerTemplateQueries(env, owner, carried[0], loc);
+    carried[0] = answered.decl;
     const reached = try blockEval.typesReached(env, carried, &templateEval.injected_names);
     const support = try std.mem.concat(env.arena, ast.FnDecl, &.{ carried[1..], reached.fns });
-    const outcome = templateEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, carried[0], support, reached.types, captures, plainArgs, &env.comptimeTraces) catch {
+    const types = try std.mem.concat(env.arena, ast.DeclKind, &.{ reached.types, answered.types });
+    const outcome = templateEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, carried[0], support, types, captures, plainArgs, &env.comptimeTraces) catch {
         env.lastError = TypeError.custom(
             "the template evaluator failed to run",
             "Template bodies run in a persistent `erl` process at compile time — check that `erl` is on PATH.",
@@ -6505,6 +6541,48 @@ fn expandTemplateCallViaRuntime(
         env.templateEvalCache.put(key, expansion) catch return error.OutOfMemory;
     }
     return finishExpansion(env, expansion, retType, loc);
+}
+
+/// The records a template body's catalogue answer builds (`Declared`,
+/// `DeclaredMeta`), as the template's comptime module declares them.
+const template_declared_src =
+    \\type DeclaredMeta(key: string, value: string)
+    \\type Declared(name: string, module: string, meta: DeclaredMeta[], returnTypeName: string, value: unknown)
+;
+
+/// The queries a template function's body writes (`noteTemplateQueries`, by
+/// its owner and name), or none.
+fn templateQueriesOf(env: *Env, owner: []const u8, tfn: ast.FnDecl) InferError![]const reflectionMod.TemplateQuery {
+    const r = env.reflection orelse return &.{};
+    return r.templateQueries.get(try reflectionMod.Reflection.templateKey(env.arena, owner, tfn.name)) orelse &.{};
+}
+
+/// Decision 353 — `tfn` with each `@TypeInfo.all(…)` of its body replaced by
+/// the answer for the program this expansion (at `loc`) is compiled in
+/// (`typeinfo_all.answerForTemplate`), every answer recorded for the session's
+/// staleness check (`Reflection.templateReads`), and the record declarations
+/// the answers build. A rule of the catalogue the answer breaks is refused at
+/// the expansion.
+fn answerTemplateQueries(env: *Env, owner: []const u8, tfn: ast.FnDecl, loc: ast.Loc) InferError!struct { decl: ast.FnDecl, types: []const ast.DeclKind } {
+    const queries = try templateQueriesOf(env, owner, tfn);
+    if (queries.len == 0) return .{ .decl = tfn, .types = &.{} };
+    const r = env.reflection.?;
+    var answers: std.AutoHashMapUnmanaged(ast.Loc, *const ast.Expr) = .empty;
+    for (queries) |q| switch (try typeinfoAll.answerForTemplate(env.arena, r, q, loc)) {
+        .ok => |a| {
+            try answers.put(env.arena, q.loc, a.expr);
+            try r.templateReads.append(r.arena, .{ .module = env.modulePath, .loc = loc, .query = q, .text = a.text });
+        },
+        .refused => |te| {
+            env.lastError = te;
+            return error.TypeError;
+        },
+    };
+    var lx = Lexer.init(template_declared_src);
+    const tokens = lx.scanAll(env.arena) catch return error.OutOfMemory;
+    var p = Parser.init(tokens);
+    const decls = p.parse(env.arena) catch return error.OutOfMemory;
+    return .{ .decl = try typeinfoAll.substitute(env.arena, tfn, &answers), .types = decls.decls };
 }
 
 /// Decision 112 — the names the template's LIBRARY wrote into `parsed` (the
@@ -10988,6 +11066,16 @@ fn isIntegerLiteral(e: ast.Expr) bool {
     };
 }
 
+/// `isIntegerLiteral`, or a unary `-` of one (`-9007199254740991`): either
+/// takes its width from the other operand of an arithmetic or comparison
+/// operator. Decision 319 range-checks the literal in that width, so a negated
+/// one typed `i32` by default (`value >= -9007199254740991` over an `i64`) was
+/// refused where the positive one on the other side was not.
+fn isIntegerLiteralOperand(e: ast.Expr) bool {
+    if (e == .unaryOp and e.unaryOp.op == .neg) return isIntegerLiteral(e.unaryOp.expr.*);
+    return isIntegerLiteral(e);
+}
+
 /// Whether a number literal is a float: a fraction, a decimal exponent
 /// (`5e-324`, `1e10`; `0x1E` is an integer) or a floating suffix (`1f`).
 fn isFloatLiteralText(n: []const u8) bool {
@@ -10998,14 +11086,27 @@ fn isFloatLiteralText(n: []const u8) bool {
 /// Decision 247 — an integer literal's digits fit the integer type it is
 /// (`300u8` and `val b: u8 = 300` are refused at the literal). Radix and `_`
 /// separators read as written; a literal past `i128` is past every type.
+/// Decision 319 — an integer literal is a value of its type: suffixed or not
+/// (an unsuffixed one has the type its position asks for, `i32` otherwise), it
+/// is refused at the literal when the type has no such value. The operand of a
+/// unary `-` (`env.negatingLiteral`) is read as the negative value, so each
+/// signed type's minimum is written as itself (`-9223372036854775808l`), and an
+/// unsigned type takes no negative one.
 fn refuseIntegerOutOfRange(env: *Env, digits: []const u8, typeName: []const u8, loc: ast.Loc) InferError!void {
     var clean: std.ArrayListUnmanaged(u8) = .empty;
     for (digits) |c| if (c != '_') try clean.append(env.arena, c);
-    const v = std.fmt.parseInt(i128, clean.items, 0) catch std.math.maxInt(i128);
-    const max: i128 = if (std.mem.eql(u8, typeName, "i8")) std.math.maxInt(i8) else if (std.mem.eql(u8, typeName, "u8")) std.math.maxInt(u8) else if (std.mem.eql(u8, typeName, "i16")) std.math.maxInt(i16) else if (std.mem.eql(u8, typeName, "u16")) std.math.maxInt(u16) else if (std.mem.eql(u8, typeName, "i32")) std.math.maxInt(i32) else if (std.mem.eql(u8, typeName, "u32")) std.math.maxInt(u32) else if (std.mem.eql(u8, typeName, "i64") or std.mem.eql(u8, typeName, "isize")) std.math.maxInt(i64) else std.math.maxInt(u64);
-    if (v <= max) return;
-    const msg = try std.fmt.allocPrint(env.arena, "the literal `{s}` does not fit `{s}` (at most {d})", .{ digits, typeName, max });
-    env.lastError = TypeError.custom(msg, "An integer literal is a value of its type, and the type has no such value (decision 247): write a wider type's suffix (`l`, `ul`) or annotate the position with one.").withLoc(loc);
+    const magnitude = std.fmt.parseInt(i128, clean.items, 0) catch std.math.maxInt(i128);
+    const v: i128 = if (env.negatingLiteral) -magnitude else magnitude;
+    const Range = struct { min: i128, max: i128 };
+    const range: Range = inline for (.{ i8, u8, i16, u16, i32, u32, i64, u64, isize, usize }) |I| {
+        if (std.mem.eql(u8, typeName, @typeName(I))) break .{ .min = std.math.minInt(I), .max = std.math.maxInt(I) };
+    } else .{ .min = std.math.minInt(i64), .max = std.math.maxInt(u64) };
+    if (v >= range.min and v <= range.max) return;
+    const msg = if (v > range.max)
+        try std.fmt.allocPrint(env.arena, "the literal `{s}` does not fit `{s}` (at most {d})", .{ digits, typeName, range.max })
+    else
+        try std.fmt.allocPrint(env.arena, "the literal `-{s}` does not fit `{s}` (at least {d})", .{ digits, typeName, range.min });
+    env.lastError = TypeError.custom(msg, "An integer literal is a value of its type, and the type has no such value (decision 319): write a wider type's suffix (`l`, `ul`) or annotate the position with one.").withLoc(loc);
     return error.TypeError;
 }
 
@@ -11123,6 +11224,7 @@ fn inferLiteralExpr(env: *Env, lit: ast.LiteralExprOf(.untyped), loc: ast.Loc) I
                 return error.TypeError;
             }
             const width: []const u8 = expectedIntegerType(env) orelse "i32";
+            try refuseIntegerOutOfRange(env, parts.digits, width, loc);
             break :blk TypedExpr{ .literal = .{ .loc = loc, .type_ = try env.namedType(width), .kind = .{ .numberLit = n } } };
         },
         .null_ => blk: {
@@ -11318,6 +11420,17 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
             // variable, so `a.x` on an `unknown` checks silently.
             try refuseUnknownUse(env, recvType, loc, "read a field of");
             try refuseResultMemberAccess(env, recvType, ia.member, false, loc);
+            // Decision 353 — a template body's catalogue is answered at build,
+            // where a declaration of the program is no value: its `value` is
+            // refused at the read (`name`, `module`, `meta`, `returnTypeName`
+            // are answered).
+            if (env.inTemplateFn and recvType.* == .named and std.mem.eql(u8, recvType.named.name, "Declared") and std.mem.eql(u8, ia.member, "value")) {
+                env.lastError = TypeError.custom(
+                    diagnostics.typeinfo_all_template_value ++ ": a template body reads the catalogue at build, where a declaration of the program is no value",
+                    "Read `name`, `module`, `meta` and `returnTypeName` of the entry; the declaration's value is the program's, at run time.",
+                ).withLoc(loc);
+                return error.TypeError;
+            }
             // Decision 45 (1.0.5) — a member read off a `?T` is an error
             // naming `?.`: the value may be absent, and a plain `.` used to
             // check and then read a field off `null` (or, through a tuple
@@ -11452,7 +11565,7 @@ fn inferBinaryOpExpr(env: *Env, binop: ast.BinOpExprOf(.untyped), loc: ast.Loc) 
     const outerExpected = env.expectedType;
     env.expectedType = if (arithmeticOp and expectedIntegerType(env) != null) outerExpected else null;
     // A literal on the left is typed after the right, from it.
-    const lhsIsLiteral = numericOp and isIntegerLiteral(binop.lhs.*) and !isIntegerLiteral(binop.rhs.*);
+    const lhsIsLiteral = numericOp and isIntegerLiteralOperand(binop.lhs.*) and !isIntegerLiteralOperand(binop.rhs.*);
     const early_rhs: ?TypedExpr = if (lhsIsLiteral) try inferExprTypedExpecting(env, binop.rhs.*, env.expectedType) else null;
     const lhsTyped = if (early_rhs) |r|
         try inferExprTypedExpecting(env, binop.lhs.*, equalityOperandExpectation(binop.op, r.getType()))
@@ -11494,7 +11607,7 @@ fn inferBinaryOpExpr(env: *Env, binop: ast.BinOpExprOf(.untyped), loc: ast.Loc) 
     // `TypeInfoKind.Record` even where another enum also declares `Record`.
     const rhsTyped = if (early_rhs) |r|
         r
-    else if (binop.op == .eq or binop.op == .ne or (numericOp and isIntegerLiteral(binop.rhs.*)))
+    else if (binop.op == .eq or binop.op == .ne or (numericOp and isIntegerLiteralOperand(binop.rhs.*)))
         try inferExprTypedExpecting(env, binop.rhs.*, equalityOperandExpectation(binop.op, lhsTyped.getType()))
     else
         try inferExprTyped(env, binop.rhs.*);
@@ -11601,7 +11714,15 @@ fn inferBinaryOpExpr(env: *Env, binop: ast.BinOpExprOf(.untyped), loc: ast.Loc) 
 
 /// Infer type for unary operation expressions
 fn inferUnaryOpExpr(env: *Env, unaryop: ast.UnaryOpExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
-    const operandTyped = try inferExprTyped(env, unaryop.expr.*);
+    // Decision 319 — `-<integer literal>` is range-checked as the negative
+    // value (`refuseIntegerOutOfRange`); any other operand is a value of its own.
+    const saved_negating = env.negatingLiteral;
+    env.negatingLiteral = unaryop.op == .neg and unaryop.expr.* == .literal and unaryop.expr.literal.kind == .numberLit;
+    const operandTyped = inferExprTyped(env, unaryop.expr.*) catch |e| {
+        env.negatingLiteral = saved_negating;
+        return e;
+    };
+    env.negatingLiteral = saved_negating;
     const operandPtr = try makeTypedPtr(env, operandTyped);
     return switch (unaryop.op) {
         .not => blk: {
@@ -13292,19 +13413,21 @@ fn associatedCallReturnType(
     const sig = try instantiateType(env, sigRaw, &seen, .allVars);
     const fn_ = sig.deref();
     if (fn_.* != .func) return null;
-    // A trailing lambda's value type is not available here, and a mismatched
-    // arity is the plain-call path's diagnostic, not this one's — leave both to
-    // the fallback rather than unify against the wrong slots.
-    if (typedTrailing.len > 0 or fn_.func.params.len != typedArgs.len) return null;
+    // A trailing lambda's value type is not available here — leave it to the
+    // fallback rather than unify against the wrong slots.
+    if (typedTrailing.len > 0) return null;
     // 01 — a label names the parameter it fills: `Box.make(count: 5,
-    // label: "a")` is checked and lowered in declaration order, never zipped.
-    if (env.getInherentMethodParams(typeName, callee)) |declared| if (declared.len == fn_.func.params.len) {
-        if (try planLabelledCall(env, callee, declared, typedArgs, loc)) |plan| {
-            try env.defaultInjections.put(loc, plan);
-            try unifyFilledArgs(env, plan, fn_.func.params, typedArgs);
-            return fn_.func.ret;
-        }
-    };
+    // label: "a")` is checked and lowered in declaration order, never zipped;
+    // C-04 — a short call is filled from the declared defaults. Both as a
+    // std module's fn is (`planQualifiedCall`).
+    if (try planQualifiedCall(env, callee, env.getInherentMethodParams(typeName, callee), fn_.func.params, typedArgs, 0, loc) != null) return fn_.func.ret;
+    // Any other count is the call's arity error: `Bag.of("p", "q")` against
+    // one parameter used to fall through to the fallback, which checked
+    // nothing, and compiled.
+    if (fn_.func.params.len != typedArgs.len) {
+        env.lastError = TypeError.arityMismatch(callee, fn_.func.params.len, typedArgs.len).withLoc(loc);
+        return error.TypeError;
+    }
     for (typedArgs, fn_.func.params) |ta, p| {
         try unifyAt(env, p, ta.value.getType(), ta.value.getLoc());
     }
@@ -14904,7 +15027,11 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                     break :empty node;
                 };
                 env.usesDeclared = true;
-                try env.srcRewrites.put(loc, answer);
+                // Decision 353 — a template body's query keeps its call: it is
+                // answered where the template is expanded, and the transform
+                // (which splices a rewrite into the shared declaration) would
+                // hand every importer this empty stand-in.
+                if (!env.inTemplateFn) try env.srcRewrites.put(loc, answer);
                 // Decision 254 — the answer is `Declared<unknown>[]`, one
                 // fixed type whatever the program declares: every entry's
                 // `value` is `unknown`, and a use narrows it with `is`.

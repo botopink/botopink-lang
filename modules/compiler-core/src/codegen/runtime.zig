@@ -22,6 +22,11 @@
 //!   - `.unavailable` — the tool could not be run at all: missing binary,
 //!     spawn error or timeout. Host-dependent, so it is never recorded and
 //!     never cached; the RUN LOG stays empty as if the run never happened.
+//!   - `.interrupted` — the tool ran but did not end by its own exit: a
+//!     signal (Ctrl-C, a kill, a cut output), a stop, or an `erl` that went
+//!     through its break handler (`BREAK: (a)bort …`, which then halts with
+//!     status 0). Treated as `.unavailable`: never recorded, never cached —
+//!     a stored one would be replayed by every later run.
 //!
 //! What each stage does with that status:
 //!
@@ -69,6 +74,25 @@ fn isProcessSuccess(term: std.process.Child.Term) bool {
     };
 }
 
+/// The banner `erl`'s break handler prints when the emulator receives SIGINT.
+/// With stdin at EOF the handler then halts the emulator with exit status 0,
+/// so the exit status alone reads an interrupted run as a pass.
+const ERL_BREAK_BANNER = "BREAK: (a)bort";
+
+/// How a spawn that ran ended: `.ok` / `.failed` only when the process ended
+/// by its own exit, `.interrupted` otherwise — a signal, a stop, an unknown
+/// end, or an `erl` that went through its break handler.
+fn classifyEnd(tool: []const u8, term: std.process.Child.Term, stdout: []const u8, stderr: []const u8) RunStatus {
+    switch (term) {
+        .exited => {},
+        else => return .interrupted,
+    }
+    if (std.mem.eql(u8, tool, "erl") and
+        (std.mem.indexOf(u8, stdout, ERL_BREAK_BANNER) != null or
+            std.mem.indexOf(u8, stderr, ERL_BREAK_BANNER) != null)) return .interrupted;
+    return if (isProcessSuccess(term)) .ok else .failed;
+}
+
 /// Default runtime execution timeout — 2 minutes.
 /// Generous enough for cold erlc/erl (~2s worst case), short enough that
 /// a hung suite doesn't waste CI minutes. `std.process.run`'s built-in
@@ -81,9 +105,14 @@ const RUNTIME_TIMEOUT_NS: i96 = 120 * std.time.ns_per_s;
 pub const RunStatus = enum {
     /// Ran and exited 0.
     ok,
-    /// Ran and exited non-zero (or died on a signal). Deterministic for the
-    /// same inputs, so the outcome may be recorded and cached.
+    /// Ran and exited non-zero by its own exit. Deterministic for the same
+    /// inputs, so the outcome may be recorded and cached.
     failed,
+    /// Ran but did not end by its own exit: killed by a signal (an
+    /// interrupted run, a cut output), stopped, or an `erl` interrupted into
+    /// its break handler. Says nothing about the program — never recorded,
+    /// never cached.
+    interrupted,
     /// Never ran: missing binary, spawn error or timeout. Host-dependent —
     /// never recorded in a snapshot, never cached.
     unavailable,
@@ -119,7 +148,7 @@ fn runCaptured(
     defer allocator.free(result.stderr);
     defer allocator.free(result.stdout);
 
-    const status: RunStatus = if (isProcessSuccess(result.term)) .ok else .failed;
+    const status = classifyEnd(argv[0], result.term, result.stdout, result.stderr);
 
     if (result.stderr.len == 0) return .{ .output = try allocator.dupe(u8, result.stdout), .status = status };
 
@@ -247,15 +276,16 @@ pub const CACHE_ROOT = ".botopinkbuild/runtime-cache";
 
 /// Bumped whenever the harness changes what it records for unchanged inputs
 /// (the exit-status contract, compile-error capture, the cwd of the spawns,
-/// the package-first scratch-file atom of decision 109).
+/// the package-first scratch-file atom of decision 109, a run not ended by
+/// its own exit never stored).
 /// Folded into `cacheKey` so entries written by an older harness miss instead
 /// of masking the change — a warm cache must never hide a harness defect.
-pub const HARNESS_VERSION = "5-package-atoms";
+pub const HARNESS_VERSION = "6-own-exit";
 
 /// Hash (harness version + target_tag + module_name + code + aux entries)
 /// into a 64-char hex SHA256 key. Each component is length-prefixed so two
 /// layouts can never collide (e.g. `aaa`+`bbb` vs `a`+`aabbb`).
-fn cacheKey(out: *[64]u8, target: []const u8, module_name: []const u8, code: []const u8, aux: []const AuxFile) void {
+pub fn cacheKey(out: *[64]u8, target: []const u8, module_name: []const u8, code: []const u8, aux: []const AuxFile) void {
     var h = std.crypto.hash.sha2.Sha256.init(.{});
     var lenbuf: [8]u8 = undefined;
 
@@ -282,7 +312,7 @@ fn cacheKey(out: *[64]u8, target: []const u8, module_name: []const u8, code: []c
 
 /// Read a cache hit; null on miss / corruption. Caller owns the slice
 /// (a `OK:`-prefixed entry returns just the payload bytes).
-fn cacheRead(allocator: std.mem.Allocator, io: anytype, key: []const u8) ?[]u8 {
+pub fn cacheRead(allocator: std.mem.Allocator, io: anytype, key: []const u8) ?[]u8 {
     var path_buf: [128]u8 = undefined;
     const path = std.fmt.bufPrint(&path_buf, "{s}/{s}", .{ CACHE_ROOT, key }) catch return null;
     const raw = std.Io.Dir.cwd().readFileAlloc(io, path, allocator, .unlimited) catch return null;
@@ -578,7 +608,7 @@ pub fn executeTestModule(allocator: std.mem.Allocator, io: anytype, target: Test
     try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = filename, .data = code });
 
     const ran = try runCaptured(allocator, io, &.{ runner, basename }, tmp_dir, RUNTIME_TIMEOUT_NS);
-    if (ran.status == .unavailable) {
+    if (ran.status == .unavailable or ran.status == .interrupted) {
         allocator.free(ran.output);
         return allocator.dupe(u8, "");
     }
@@ -658,7 +688,7 @@ pub fn executeErlang(allocator: std.mem.Allocator, erl_code: []const u8, module_
         defer allocator.free(compiled.output);
         switch (compiled.status) {
             .ok => {},
-            .unavailable => return allocator.dupe(u8, ""),
+            .unavailable, .interrupted => return allocator.dupe(u8, ""),
             .failed => {
                 const log = try compileFailureLog(allocator, "erlc", compiled.output);
                 cacheWrite(io, allocator, &key, log);
@@ -694,7 +724,7 @@ pub fn executeErlang(allocator: std.mem.Allocator, erl_code: []const u8, module_
         defer allocator.free(aux_compiled.output);
         switch (aux_compiled.status) {
             .ok => {},
-            .unavailable => return allocator.dupe(u8, ""),
+            .unavailable, .interrupted => return allocator.dupe(u8, ""),
             .failed => {
                 const log = try compileFailureLog(allocator, "erlc", aux_compiled.output);
                 cacheWrite(io, allocator, &key, log);
@@ -773,7 +803,7 @@ pub fn executeBeamAsm(allocator: std.mem.Allocator, asm_code: []const u8, module
         defer allocator.free(assembled.output);
         switch (assembled.status) {
             .ok => {},
-            .unavailable => return allocator.dupe(u8, ""),
+            .unavailable, .interrupted => return allocator.dupe(u8, ""),
             .failed => {
                 const log = try compileFailureLog(allocator, "erlc +from_asm", assembled.output);
                 cacheWrite(io, allocator, &key, log);
@@ -811,7 +841,7 @@ pub fn executeBeamAsm(allocator: std.mem.Allocator, asm_code: []const u8, module
         defer allocator.free(aux_assembled.output);
         switch (aux_assembled.status) {
             .ok => {},
-            .unavailable => return allocator.dupe(u8, ""),
+            .unavailable, .interrupted => return allocator.dupe(u8, ""),
             .failed => {
                 const log = try compileFailureLog(allocator, "erlc +from_asm", aux_assembled.output);
                 cacheWrite(io, allocator, &key, log);
@@ -878,6 +908,12 @@ pub fn executeWat(allocator: std.mem.Allocator, wat_code: []const u8, wasm_binar
     defer allocator.free(result.stdout);
     defer allocator.free(result.stderr);
     const combined = try std.mem.concat(allocator, u8, &.{ result.stdout, result.stderr });
+    // A `wasmtime` that did not end by its own exit is not a trap: nothing
+    // to record, nothing to cache.
+    if (classifyEnd("wasmtime", result.term, result.stdout, result.stderr) == .interrupted) {
+        allocator.free(combined);
+        return allocator.dupe(u8, "");
+    }
     if (isProcessSuccess(result.term)) {
         cacheWrite(io, allocator, &key, combined);
         return combined;

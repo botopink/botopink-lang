@@ -223,3 +223,33 @@ test "erlang: a list pattern that is a spread alone binds the whole list" {
         \\}
     , "all 3\nall 0\n[4, 5]\n", &.{"Every = case"});
 }
+
+test "erlang: an `@block` reassigning an enclosing `var` answers it with every `return`" {
+    // The block is a fun, which cannot rebind what it captured: `Seen@1` bound
+    // inside it was unbound after it, and `erlc` refused the module. Every
+    // `return` of the block answers `{V, Group}` — here the one thrown out of
+    // the `for` to the block's guard, and the one at the body's end — and the
+    // call site rebinds the group (`valueBlockExpr`). The loop's `return` is
+    // pinned here rather than in `run/block_value_reassigns_enclosing_var`: beam
+    // answers it from the function (an open 03-beam row).
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn firstOver(xs: i32[], limit: i32) -> i32 {
+        \\    var seen = 0;
+        \\    val found = @block {
+        \\        for (xs) { x ->
+        \\            seen = seen + 1;
+        \\            if (x > limit) {
+        \\                return x;
+        \\            };
+        \\        };
+        \\        return -1;
+        \\    };
+        \\    return found * 100 + seen;
+        \\}
+        \\
+        \\pub fn main() {
+        \\    @print(firstOver([1, 7, 3], 5));
+        \\    @print(firstOver([1, 2], 5));
+        \\}
+    , "702\n-98\n", &.{"erlang:element(1, {_, Seen@"});
+}

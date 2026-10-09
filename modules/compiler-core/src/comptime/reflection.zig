@@ -11,6 +11,7 @@
 //! importer, analysed later, reads them, so meta travels with the declaration
 //! the way its exports do.
 const std = @import("std");
+const ast = @import("../ast.zig");
 const envMod = @import("env.zig");
 
 /// One `decl.setMeta(key, value)`.
@@ -42,6 +43,35 @@ pub const DeclaredEntry = struct {
     pub const Kind = enum { function, type_, behavior };
 };
 
+/// A decorator's identity: its declaring module and its own name.
+pub const DecoratorId = struct { owner: []const u8, name: []const u8 };
+
+/// Decision 353 — one `@TypeInfo.all(…)` written in a template function's
+/// body, its arguments resolved in the template's own module (the decorators
+/// `with:` names, `member:`). It is answered where the template is expanded,
+/// for the program that expansion is compiled in (`typeinfo_all.zig`
+/// `answerForTemplate`).
+pub const TemplateQuery = struct {
+    /// The call's location in the template's body.
+    loc: ast.Loc,
+    decorators: []const DecoratorId,
+    member: ?[]const u8,
+    /// How refusals name the decorators: `#[a]`, `#[a]/#[b]`.
+    label: []const u8,
+};
+
+/// One answer given to a template body's query: where the expansion was
+/// (`module`, `loc` — the template call), the template's query, and the
+/// answer's text. Compared with the final catalogue after the session
+/// (`comptime.zig` `compile`): an answer given before a later module's
+/// decorators ran is stale.
+pub const TemplateRead = struct {
+    module: []const u8,
+    loc: ast.Loc,
+    query: TemplateQuery,
+    text: []const u8,
+};
+
 pub const Reflection = struct {
     arena: std.mem.Allocator,
     /// `envMod.declIdentity(module, name)` → the declaration's entries, in the
@@ -58,6 +88,16 @@ pub const Reflection = struct {
     /// The module paths that read `@TypeInfo.all` — analysed after every
     /// other module; none of them answers another's query.
     readers: std.StringHashMapUnmanaged(void) = .empty,
+    /// Decision 353 — `templateKey(owner, name)` → the queries of that
+    /// template function's body, recorded when its module is analysed.
+    templateQueries: std.StringHashMapUnmanaged([]const TemplateQuery) = .empty,
+    /// Every answer a template body's query was given in this session.
+    templateReads: std.ArrayListUnmanaged(TemplateRead) = .empty,
+    /// The complete catalogue of an earlier session over the same modules:
+    /// when set, a template body's query is answered from it, so an expansion
+    /// sees declarations of modules analysed after it (`comptime.zig`
+    /// `compile`'s second session).
+    oracle: ?*const Reflection = null,
 
     pub fn init(arena: std.mem.Allocator) Reflection {
         return .{ .arena = arena };
@@ -103,6 +143,11 @@ pub const Reflection = struct {
         var e = entry;
         e.seq = self.declared.items.len;
         try self.declared.append(self.arena, e);
+    }
+
+    /// The key `templateQueries` holds a template function's queries under.
+    pub fn templateKey(arena: std.mem.Allocator, owner: []const u8, name: []const u8) ![]const u8 {
+        return std.fmt.allocPrint(arena, "{s}\x00{s}", .{ owner, name });
     }
 
     /// Every entry of the declaration, in set order; empty when none.

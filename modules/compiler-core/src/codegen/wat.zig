@@ -13710,7 +13710,7 @@ const Emitter = struct {
                 else => "i32",
             },
             .unaryOp => |un| switch (un.op) {
-                .neg => self.wasmTypeOf(un.expr.*),
+                .neg => if (negatedMinimum(un.expr.*)) |m| m.ty else self.wasmTypeOf(un.expr.*),
                 .not => "i32",
             },
             .binaryOp => |bin| switch (bin.op) {
@@ -14632,6 +14632,10 @@ const Emitter = struct {
     }
 
     fn lowerNeg(self: *Emitter, inner: ast.Expr, loc: ast.Loc) anyerror!void {
+        // Decision 319 — a type's minimum written as itself: `0 - 2^63` traps
+        // the checked `sub` and `2^31` alone reads as an `i64`, so the
+        // negated literal is the constant.
+        if (negatedMinimum(inner)) |m| return self.emit(constOf(m.ty, m.text));
         const t = self.wasmTypeOf(inner);
         if (t[0] == 'f') {
             try self.lowerValue(inner);
@@ -15100,6 +15104,27 @@ const Emitter = struct {
 /// language gives it (`1e3`, `2.5`), and the only one that holds `5e-324` or
 /// `1.7976931348623157e308`; it was an `f32.const`, where the first is `0`. A
 /// radix integer (`0xFE`) is an `i32` whatever letters its digits use.
+/// The operand of a unary `-` that is an integer literal of magnitude `2^31`
+/// or `2^63`: the minimum of `i32` / `i64` written as itself (decision 319),
+/// as the constant it is. Null for any other operand.
+fn negatedMinimum(e: ast.Expr) ?struct { ty: []const u8, text: []const u8 } {
+    if (e != .literal or e.literal.kind != .numberLit) return null;
+    const n = e.literal.kind.numberLit;
+    if (n.len == 0 or n[0] == '-' or n[0] == '+') return null;
+    const v: i128 = if (radixOf(n)) |r| radixValue(n, r) orelse return null else blk: {
+        var acc: i128 = 0;
+        for (n) |c| switch (c) {
+            '0'...'9' => acc = std.math.add(i128, std.math.mul(i128, acc, 10) catch return null, c - '0') catch return null,
+            '_' => {},
+            else => return null,
+        };
+        break :blk acc;
+    };
+    if (v == -@as(i128, std.math.minInt(i32))) return .{ .ty = "i32", .text = "-2147483648" };
+    if (v == -@as(i128, std.math.minInt(i64))) return .{ .ty = "i64", .text = "-9223372036854775808" };
+    return null;
+}
+
 fn numLitType(n: []const u8) []const u8 {
     if (radixOf(n)) |r| {
         const v = radixValue(n, r) orelse return "i32";
@@ -15183,7 +15208,7 @@ fn exprNumType(e: ast.Expr) []const u8 {
             else => "i32",
         },
         .unaryOp => |un| switch (un.op) {
-            .neg => exprNumType(un.expr.*),
+            .neg => if (negatedMinimum(un.expr.*)) |m| m.ty else exprNumType(un.expr.*),
             else => "i32",
         },
         .binaryOp => |bin| exprNumType(bin.lhs.*),

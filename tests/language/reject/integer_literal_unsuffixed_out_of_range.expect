@@ -1,0 +1,2 @@
+the literal `3000000000` does not fit `i32` (at most 2147483647)
+6:18

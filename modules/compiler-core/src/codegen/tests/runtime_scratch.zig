@@ -81,3 +81,64 @@ test "executeJavaScript on a throwing aux-module run leaves no .tmp-exec-* root 
         try std.testing.expect(!std.mem.startsWith(u8, entry.name, ".tmp-exec-"));
     }
 }
+
+// A run that did not end by its own exit — killed by a signal, or an `erl`
+// interrupted into its break handler — says nothing about the program, so the
+// runtime cache never stores it: a stored one is replayed by every later run
+// until the cache is deleted.
+
+/// Fails (and removes the entry) when the runtime cache holds `code`'s run.
+fn expectNotCached(target: []const u8, module_name: []const u8, code: []const u8) !void {
+    var key: [64]u8 = undefined;
+    runtime.cacheKey(&key, target, module_name, code, &.{});
+    if (runtime.cacheRead(std.testing.allocator, std.testing.io, &key)) |hit| {
+        std.testing.allocator.free(hit);
+        var path_buf: [128]u8 = undefined;
+        const path = try std.fmt.bufPrint(&path_buf, "{s}/{s}", .{ runtime.CACHE_ROOT, &key });
+        std.Io.Dir.cwd().deleteFile(std.testing.io, path) catch {};
+        return error.InterruptedRunCached;
+    }
+}
+
+test "executeJavaScript: a run killed by a signal is never cached" {
+    const alloc = std.testing.allocator;
+    // The nonce keeps the key fresh, so an entry an older harness wrote
+    // cannot answer for this run.
+    var nonce: [8]u8 = undefined;
+    std.testing.io.random(&nonce);
+    const js = try std.fmt.allocPrint(alloc,
+        \\// {x}
+        \\console.log("partial");
+        \\process.kill(process.pid, "SIGKILL");
+        \\
+    , .{std.mem.readInt(u64, &nonce, .little)});
+    defer alloc.free(js);
+    const log = try runtime.executeJavaScript(alloc, js, &.{}, std.testing.io);
+    defer alloc.free(log);
+    try expectNotCached("node+check", "", js);
+}
+
+test "executeErlang: an erl interrupted into its break handler is never cached" {
+    const alloc = std.testing.allocator;
+    var nonce: [8]u8 = undefined;
+    std.testing.io.random(&nonce);
+    // SIGINT sends erl to its break handler (`BREAK: (a)bort …`); with stdin
+    // at EOF the handler halts the emulator with exit status 0, so the exit
+    // status alone reads it as a pass.
+    const erl = try std.fmt.allocPrint(alloc,
+        \\-module(test@main).
+        \\-export(['_botopink_main'/0]).
+        \\%% {x}
+        \\'_botopink_main'() ->
+        \\    io:format("before~n", []),
+        \\    os:cmd("kill -INT " ++ os:getpid()),
+        \\    timer:sleep(5000),
+        \\    io:format("after~n", []).
+        \\
+    , .{std.mem.readInt(u64, &nonce, .little)});
+    defer alloc.free(erl);
+    const log = try runtime.executeErlang(alloc, erl, "main", &.{}, std.testing.io);
+    defer alloc.free(log);
+    try std.testing.expect(std.mem.indexOf(u8, log, "after") == null);
+    try expectNotCached("erlang", "main", erl);
+}

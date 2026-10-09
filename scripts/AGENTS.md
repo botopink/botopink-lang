@@ -508,8 +508,8 @@ run on the same worker pool as the cells.
 
 ## check-docs.sh
 
-`scripts/check-docs.sh [--compiler <botopink>] [--doc <file>]… [--list] [--jobs <n>] [--self-test]`
-(`zig build test-docs`) — extracts every ```` ```botopink ```` fence of the user
+`scripts/check-docs.sh [--compiler <botopink>] [--doc <file>]… [--list] [--jobs <n>] [--self-test]
+[--cold] [--store-root <dir>] [--lib-root <dir>]…` (`zig build test-docs`) — extracts every ```` ```botopink ```` fence of the user
 docs (default `docs.md README.md`) into a scratch project and runs `botopink
 check` on it. An HTML comment on the line above the fence chooses the treatment:
 
@@ -558,7 +558,11 @@ such project, `library`, is named on a `never stored` line). The harness's nine
 fences always run. The exit line is preceded by `result store: <N> fences — <R>
 run, <S> from store` (a fence judged without the compiler counts as run);
 `--cold` never reads the store and writes its passes, `--store-root <dir>`
-keeps it elsewhere.
+keeps it elsewhere. `--lib-root <dir>` (repeatable) replaces the default
+library roots: every package the roots hold is hashed whole into each key, so
+a symbolic link anywhere in a sibling's tree (`vscode-extension/node_modules`)
+makes every check unstorable — `modules/compiler-cli/tests/result_store.sh`
+names its own root and never reads a sibling checkout.
 
 ## check-test-scratch.sh
 

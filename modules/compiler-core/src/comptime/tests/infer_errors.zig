@@ -1144,6 +1144,21 @@ test "infer error: `#[@BeamMemory.Ets]` on a `val` is refused" {
     try std.testing.expect(std.mem.indexOf(u8, msg, "needs a `var`") != null);
 }
 
+test "infer error: an integer literal out of its type's range cites decision 319, suffixed or not" {
+    const cases = [_][]const u8{
+        "fn main() { val b = 300u8; @print(b); }",
+        "fn main() { val e: i32 = 3000000000; @print(e); }",
+        "fn main() { val k: i8 = -129; @print(k); }",
+    };
+    for (cases) |src| {
+        const msg = try typeErrorMessage(std.testing.allocator, src);
+        defer std.testing.allocator.free(msg);
+        try std.testing.expect(std.mem.indexOf(u8, msg, "does not fit") != null);
+        try std.testing.expect(std.mem.indexOf(u8, msg, "(decision 319)") != null);
+        try std.testing.expect(std.mem.indexOf(u8, msg, "247") == null);
+    }
+}
+
 test "infer: a `var` may be assigned, locally and at module level" {
     try h.assertInfersOk(std.testing.allocator, "var hits: i32 = 0;\nfn bump() { hits += 1; var y = 0; y = hits; }");
 }

@@ -845,11 +845,13 @@ PathAccum.prototype.__bp = "PathAccum";
 // recursive — no `var` rebinds.
 
 function applyPieces(acc, pieces) {
-    if ((pieces.length === 0)) { return acc; }
-    const p = (() => { const __bp_nullish = __bp_array_at(pieces, 0); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })();
-    const rest = pieces.slice(1, pieces.length);
-    const nextAcc = (() => { if ((p === "..")) { return (() => { if ((acc.length === 0)) { return acc; } else { return acc.slice(0, __bp_int((acc.length - 1), -2147483648, 2147483647, "- on i32 at src/path.bp:159:63")); } })(); } else { return acc.concat([p]); } })();
-    return applyPieces(nextAcc, rest);
+    while (true) {
+        if ((pieces.length === 0)) { return acc; }
+        const p = (() => { const __bp_nullish = __bp_array_at(pieces, 0); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })();
+        const rest = pieces.slice(1, pieces.length);
+        const nextAcc = (() => { if ((p === "..")) { return (() => { if ((acc.length === 0)) { return acc; } else { return acc.slice(0, __bp_int((acc.length - 1), -2147483648, 2147483647, "- on i32 at src/path.bp:159:63")); } })(); } else { return acc.concat([p]); } })();
+        { acc = nextAcc; pieces = rest; continue; }
+    }
 }
 
 function resolveStep(state, seg) {
@@ -860,10 +862,12 @@ function resolveStep(state, seg) {
 }
 
 function resolveAll(segments, i, state) {
-    if ((i >= segments.length)) { return state; }
-    const seg = (() => { const __bp_nullish = __bp_array_at(segments, i); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })();
-    const next = resolveStep(state, seg);
-    return resolveAll(segments, __bp_int((i + 1), -2147483648, 2147483647, "+ on i32 at src/path.bp:175:35"), next);
+    while (true) {
+        if ((i >= segments.length)) { return state; }
+        const seg = (() => { const __bp_nullish = __bp_array_at(segments, i); if (__bp_nullish != null) { return __bp_nullish; } else { return ""; } })();
+        const next = resolveStep(state, seg);
+        { const __bp_tc1 = __bp_int((i + 1), -2147483648, 2147483647, "+ on i32 at src/path.bp:175:35"); i = __bp_tc1; state = next; continue; }
+    }
 }
 
 // Resolve a list of path segments into a single normalised path.

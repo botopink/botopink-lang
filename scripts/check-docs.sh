@@ -4,7 +4,7 @@
 #
 # Usage:
 #   scripts/check-docs.sh [--compiler <botopink>] [--doc <file>]… [--list] [--jobs <n>] [--self-test]
-#                         [--cold] [--store-root <dir>]
+#                         [--cold] [--store-root <dir>] [--lib-root <dir>]…
 #
 #   --compiler  the `botopink` binary; default <repo>/zig-out/bin/botopink
 #   --doc       a markdown file to check (relative to the repository, or
@@ -18,6 +18,9 @@
 #               are written to it (below); `scripts/gate.sh --cold` passes it
 #   --store-root  the result store's directory; default
 #               <repo>/.botopinkbuild/cache/results/docs
+#   --lib-root  a library root a fence's `dependencies` resolve through, in
+#               place of the default list (below); repeatable. A harness test
+#               names its own, so its keys never read a sibling checkout
 #
 # A fence is ```botopink. What the checker does with it is decided by an HTML
 # comment on the line just above the fence (invisible in rendered markdown, and
@@ -97,6 +100,8 @@ list=0
 self_test_only=0
 cold=0
 store_dir=""
+given_lib_roots=()
+have_lib_roots=0  # as `have_docs`
 while [ $# -gt 0 ]; do
     case "$1" in
         --compiler) compiler="$2"; shift 2 ;;
@@ -110,6 +115,8 @@ while [ $# -gt 0 ]; do
         --cold) cold=1; shift ;;
         --store-root) store_dir="$2"; shift 2 ;;
         --store-root=*) store_dir="${1#*=}"; shift ;;
+        --lib-root) given_lib_roots+=("$2"); have_lib_roots=1; shift 2 ;;
+        --lib-root=*) given_lib_roots+=("${1#*=}"); have_lib_roots=1; shift ;;
         -h|--help) sed -n '2,80p' "$0"; exit 0 ;;
         *) echo "check-docs.sh: unknown argument '$1'" >&2; exit 2 ;;
     esac
@@ -124,10 +131,18 @@ fi
 # `libs/` (std), then the sibling library checkouts — next to this repository
 # in the meta workspace (`repository/<lib>`), or under `repository/` when they
 # are checked out inside it (CI's layout).
+# `--lib-root` replaces the list: every root named, none found.
 lib_roots="$repo/libs"
 for r in "$repo/.." "$repo/repository"; do
     [ -d "$r" ] && lib_roots="$lib_roots:$(cd "$r" && pwd)"
 done
+if [ "$have_lib_roots" -eq 1 ]; then
+    lib_roots=""
+    for r in "${given_lib_roots[@]}"; do
+        [ -d "$r" ] || { echo "check-docs.sh: --lib-root: no such directory: $r" >&2; exit 2; }
+        lib_roots="${lib_roots:+$lib_roots:}$(cd "$r" && pwd)"
+    done
+fi
 # shellcheck source=lib/pool.sh
 . "$here/lib/pool.sh"
 [ -n "$jobs" ] || jobs="$(pool_default_jobs)"

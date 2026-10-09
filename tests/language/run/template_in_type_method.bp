@@ -1,0 +1,43 @@
+//// A string template in a method body: a `pub type`'s `pub fn`, an enum's
+//// method and a behavior's `default fn`. The method-body walk left every
+//// template as written, and each backend met `stringTemplate => unreachable`
+//// (`return "${n}: ${joined}";`).
+
+behavior Named {
+    fn name(self: Self) -> string;
+
+    default fn greet(self: Self) -> string {
+        return "hello, ${self.name()}!";
+    }
+}
+
+pub type Bag(items: string[]) implement Named {
+    pub fn label(self: Self, n: i32) -> string {
+        val joined = self.items.join(",");
+        return "${n}: ${joined}";
+    }
+
+    fn name(self: Self) -> string {
+        return "bag of ${self.items.length}";
+    }
+}
+
+type Shape {
+    Circle(r: i32),
+    Square(s: i32),
+
+    fn describe(self: Self) -> string {
+        return case self {
+            Circle(r) -> "circle r=${r}";
+            Square(s) -> "square ${s}x${s}";
+        };
+    }
+}
+
+pub fn main() {
+    val b = Bag(items: ["p", "q"]);
+    @print(b.label(2));
+    @print(b.greet());
+    @print(Shape.Circle(r: 3).describe());
+    @print(Shape.Square(s: 4).describe());
+}

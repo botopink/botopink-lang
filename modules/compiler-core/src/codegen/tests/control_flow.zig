@@ -1831,6 +1831,48 @@ test "js: self tail call ---- a closure over a parameter keeps the recursion" {
     try h.assertJsRunLog(std.testing.allocator, src, "6\n");
 }
 
+// An immediately invoked function is not a closure: it runs to completion in
+// the round that calls it. `??` lowers to one that reads the parameters
+// (`xs.at(i) ?? ""`), and the closure scan refused the loop for it — std's
+// `path.resolveAll` recursed once per segment on commonJS.
+test "js: self tail call ---- a `??` IIFE reading a parameter keeps the loop" {
+    const src =
+        \\fn count(xs: string[], i: i32, acc: i32) -> i32 {
+        \\    if (i >= xs.length) return acc;
+        \\    val s = xs.at(i) ?? "";
+        \\    return count(xs, i + 1, acc + s.length);
+        \\}
+        \\fn main() {
+        \\    @print(count(["ab", "c", "def"], 0, 0));
+        \\}
+    ;
+    try h.assertJsContains(std.testing.allocator, src, &.{
+        "    while (true) {",
+        "const s = (() => { const __bp_nullish = __bp_array_at(xs, i);",
+        "i = __bp_tc1;",
+        "continue;",
+    });
+    try h.assertJsRunLog(std.testing.allocator, src, "6\n");
+}
+
+// A closure inside the IIFE is still a closure: it can outlive the round.
+test "js: self tail call ---- a closure inside an IIFE keeps the recursion" {
+    const src =
+        \\fn tally(n: i32, acc: i32) -> i32 {
+        \\    if (n == 0) return acc;
+        \\    val xs = [1, 2].at(0) ?? [1, 2].map({ x -> x * n }).length;
+        \\    return tally(n - 1, acc + xs);
+        \\}
+        \\fn main() {
+        \\    @print(tally(3, 0));
+        \\}
+    ;
+    try h.assertJsContains(std.testing.allocator, src, &.{
+        "return tally(",
+    });
+    try h.assertJsRunLog(std.testing.allocator, src, "3\n");
+}
+
 // ── front 02-erlang step 2: decision 8 at run time, by value ──────────────────
 
 test "erlang: unknown ---- `is`, type arms and `==` answer by value" {

@@ -130,7 +130,7 @@ test` — it needs host runtimes on `PATH`:
 
 | Backend    | Tool                     | Install hint                                     |
 | ---------- | ------------------------ | ------------------------------------------------ |
-| `commonJS` | `node` ≥ 20              | https://nodejs.org/en/download                   |
+| `commonJS` | `node` ≥ 22              | https://nodejs.org/en/download                   |
 | `erlang`   | `escript` (OTP)          | `apt-get install erlang` · `brew install erlang` |
 | `beam`     | `escript` + `erlc` (OTP) | same as erlang                                   |
 | `wasm`     | `wasmtime`               | `curl https://wasmtime.dev/install.sh \| bash`   |

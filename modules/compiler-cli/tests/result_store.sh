@@ -106,7 +106,11 @@ exec "$REAL_WASMTIME" "\$@"
 SH
 chmod +x "$WORK"/shim-*/*
 
-# A copy of the library root (`from "std"`), outside every walk-up path.
+# A copy of the library root (`from "std"`), outside every walk-up path. Every
+# runner is handed it: the default roots of `check-docs.sh` are this
+# checkout's `libs/` and every sibling under the meta workspace's
+# `repository/`, hashed whole into each key — a sibling's install (a symbolic
+# link in `vscode-extension/node_modules`) made every fence unstorable.
 mkdir -p "$WORK/lang"
 cp -R "$REPO_ROOT/libs" "$WORK/lang/libs"
 rm -rf "$WORK"/lang/libs/*/.botopinkbuild
@@ -265,7 +269,8 @@ nope();
 MD
 docs() {
   set +e
-  out="$(bash "$REPO_ROOT/scripts/check-docs.sh" --doc "$DOC" --compiler "$SHIM" --store-root "$WORK/store-docs" "$@" 2>&1)"
+  out="$(bash "$REPO_ROOT/scripts/check-docs.sh" --doc "$DOC" --compiler "$SHIM" --store-root "$WORK/store-docs" \
+    --lib-root "$WORK/lang/libs" "$@" 2>&1)"
   code=$?
   set -e
   [[ $code -eq 0 ]] || { echo "$out" >&2; fail "check-docs.sh failed (exit $code)"; }

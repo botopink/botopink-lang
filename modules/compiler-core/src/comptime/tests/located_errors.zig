@@ -74,3 +74,32 @@ test "C-21: every type error a reject cell raises carries a location" {
     }
     try std.testing.expect(type_errors > 50);
 }
+
+// An embedded std module is parsed before any program module is read, from
+// the source the build embedded. One that does not parse — a reserved word
+// used as a name in a `libs/std/src` file — reached the CLI as
+// `compilation failed` / `UnexpectedToken`, with no file and no line. It is
+// located at the std file it was built from, rendered as any module's parse
+// error is, and the build stops with `error.EmbeddedStdRefused`.
+test "an embedded std module that does not parse is located at its libs/std/src file" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const src =
+        \\pub fn ok() -> i32 {
+        \\    return 1;
+        \\}
+        \\
+        \\fn reservedProbe(from: string) -> string {
+        \\    return from;
+        \\}
+        \\
+    ;
+    var lx = @import("../../lexer.zig").Lexer.init(src);
+    var p = @import("../../parser.zig").Parser.init(try lx.scanAll(a));
+    try std.testing.expectError(error.UnexpectedToken, p.parse(a));
+    const text = try comptimeMod.embeddedStdDiagnostic(a, "std/path", src, null, &p);
+    try std.testing.expect(std.mem.indexOf(u8, text, "error[reserved-word-as-name]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, "--> libs/std/src/path.bp:5:18") != null);
+    try std.testing.expectError(error.EmbeddedStdRefused, comptimeMod.parseEmbeddedStd(a, "std/path", src));
+}

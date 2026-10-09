@@ -715,6 +715,10 @@ pub const Env = struct {
     /// 06 N30 — the annotation being resolved (`x: Foo` → `Foo`'s column), so an
     /// unknown type name reds at the annotation. Set through `atTypeRef`.
     typeRefLoc: ?ast.Loc = null,
+    /// Decision 319 — set while the operand of a unary `-` that is an integer
+    /// literal is inferred: the literal's range check reads `-<digits>`, so
+    /// `-9223372036854775808l` is `i64`'s minimum, not `2^63` out of range.
+    negatingLiteral: bool = false,
     /// 00 · 01-checker — the type the expression at the position being inferred
     /// is expected to produce, when the site knows it: a `val`'s annotation, a
     /// declared parameter, the body's return target, an array literal's element

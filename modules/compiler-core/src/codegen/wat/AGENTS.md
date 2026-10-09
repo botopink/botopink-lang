@@ -601,7 +601,10 @@ class beside them. What each number is here, and what is refused:
   from the tuple's print shape (`noteTupleElemByShape`) — `val #(a, b) = t`
   printed the string `b` as its address.
 - **Integers do not wrap** (`emitArith`, `int_chk`): an `i32` `+`/`-`/`*`
-  (and a negation, a `+=`) is computed in `i64` and checked back; an `i64`
+  (and a negation, a `+=`) is computed in `i64` and checked back — except a
+  type's minimum written as itself (`-2147483648`, `-9223372036854775808l`,
+  decision 319; `negatedMinimum`), the constant: `0 - 2^63` trapped the
+  checked `sub`, and `2^31` alone read as an `i64` the slot refused; an `i64`
   one by the signs or by dividing back. A result outside the type traps —
   commonJS and erlang answer the wide number, which no `i32` holds; wasm
   answered the wrapped one at exit 0. A type narrower than its carrier —

@@ -34,7 +34,7 @@ zig-out/bin/botopink new hello && cd hello
 
 | Target     | Output | Runner                          |
 |------------|--------|---------------------------------|
-| `commonJS` | `.js`  | `node` ≥ 20                     |
+| `commonJS` | `.js`  | `node` ≥ 22                     |
 | `erlang`   | `.erl` | `escript` (OTP)                 |
 | `beam`     | `.S`   | `erlc +from_asm` + `erl` (OTP)  |
 | `wasm`     | `.wat` | `wasmtime`                      |

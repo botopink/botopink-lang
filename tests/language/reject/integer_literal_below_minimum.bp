@@ -1,0 +1,7 @@
+//// Decision 319 — a negated integer literal is the negative value, and
+//// `-129` is below `i8`'s minimum: refused at the literal.
+
+pub fn main() {
+    val k: i8 = -129;
+    @print(k);
+}

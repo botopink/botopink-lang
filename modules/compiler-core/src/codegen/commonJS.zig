@@ -1053,7 +1053,8 @@ const NameScan = struct {
             .ident, .name => |n| s.hit(n, c),
             .member => |m| s.expr(m.object.*, c),
             .index => |ix| s.expr(ix.object.*, c) or s.expr(ix.index.*, c),
-            .call, .new_ => |cl| s.expr(cl.callee.*, c) or s.exprs(cl.args, c),
+            .call => |cl| (s.immediateBody(cl.callee.*, c) orelse s.expr(cl.callee.*, c)) or s.exprs(cl.args, c),
+            .new_ => |cl| s.expr(cl.callee.*, c) or s.exprs(cl.args, c),
             .binary => |b| s.expr(b.lhs.*, c) or s.expr(b.rhs.*, c),
             .unary => |u| s.expr(u.operand.*, c),
             .ternary => |t| s.expr(t.cond.*, c) or s.expr(t.then.*, c) or s.expr(t.else_.*, c),
@@ -1086,6 +1087,26 @@ const NameScan = struct {
             },
             .await_ => |x| s.expr(x.*, c),
             .yield_ => |x| if (x) |v| s.expr(v.*, c) else false,
+        };
+    }
+
+    /// The callee of an immediately invoked function (`(() => { … })()`, the
+    /// `??` lowering's IIFE among them) runs to completion inside the round
+    /// that calls it, so its body is scanned in the caller's zone, not as a
+    /// closure — a closure nested in it is still one. Null for every other
+    /// callee, which is scanned as an expression (where an arrow or function
+    /// body is the closure zone). A `function*` or `async function` callee
+    /// answers a generator or a promise that runs later, so only a plain arrow
+    /// (an `Arrow` is never `async`) and a plain `function` count.
+    fn immediateBody(s: NameScan, callee: js.Expr, c: bool) ?bool {
+        return switch (callee) {
+            .paren => |p| s.immediateBody(p.*, c),
+            .arrow => |a| switch (a.body) {
+                .expr => |x| s.expr(x.*, c),
+                .block => |b| s.stmts(b.stmts, c),
+            },
+            .function => |f| if (std.mem.eql(u8, f.keyword, "function")) s.stmts(f.body.stmts, c) else null,
+            else => null,
         };
     }
 

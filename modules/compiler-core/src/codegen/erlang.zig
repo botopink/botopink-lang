@@ -3098,6 +3098,12 @@ const Emitter = struct {
     /// never to the function's (`returnNode`), and the flag records that the
     /// guard is needed. A lambda resets it — its `return` is its own.
     block_guard: ?*bool = null,
+    /// Set while the body of an `@block` that reassigns `var`s of the
+    /// enclosing function is lowered: those names. Every `return` of the block
+    /// answers `{V, Group}` — the value and the names at their versions there —
+    /// and the call site rebinds the group from it (`valueBlockExpr`). A
+    /// lambda resets it, as it resets `block_guard`.
+    block_group: ?[]const []const u8 = null,
     /// 06 C13 — the host-backed fn whose `#[@External.Erlang(…)]` is missing,
     /// filled at the throw site so `codegenEmit` can turn
     /// `error.MissingExternalTarget` into a located diagnostic naming it.
@@ -6745,7 +6751,11 @@ const Emitter = struct {
     /// and a `throw` in a `@Result` fn (a `return` of `{error, E}` after the
     /// transform) inside an `if` inside a `while` bound the loop's variables
     /// in one arm only — erlc's `variable unsafe in 'case'`.
-    fn returnNode(this: *Emitter, b: Ast.Builder, value: Ast.Expr) anyerror!Ast.Expr {
+    fn returnNode(this: *Emitter, b: Ast.Builder, raw_value: Ast.Expr) anyerror!Ast.Expr {
+        const value = if (this.block_group) |names|
+            try b.tuple(&.{ raw_value, try this.varGroupExpr(b, names) })
+        else
+            raw_value;
         if (!this.returnThrows()) return value;
         if (this.block_guard) |used| {
             used.* = true;
@@ -6826,6 +6836,9 @@ const Emitter = struct {
         const saved_block_guard = this.block_guard;
         this.block_guard = null;
         defer this.block_guard = saved_block_guard;
+        const saved_block_group = this.block_group;
+        this.block_group = null;
+        defer this.block_group = saved_block_group;
         // Its body answers the group, not a value a thrown `return` could be:
         // a `return` inside a loop in it keeps the old shape.
         const saved_guarded = this.fn_guarded;
@@ -6889,12 +6902,36 @@ const Emitter = struct {
         const saved_block_guard = this.block_guard;
         this.block_guard = null;
         defer this.block_guard = saved_block_guard;
+        const saved_block_group = this.block_group;
+        this.block_group = null;
+        defer this.block_group = saved_block_group;
         var snapshot = try this.var_current.clone();
         defer snapshot.deinit();
         const fun_body = try this.armWithGroup(b, body, names, this.indent + 1);
         try this.restoreVersions(&snapshot);
         const call = try b.applyParen(.{ .fun = .{ .params = &.{}, .body = fun_body } }, &.{});
         return try b.match(try this.bindVarGroupExpr(b, names), call);
+    }
+
+    /// `element(1, {_, Group@new} = (fun() -> …, {V, Group} end)())` — an
+    /// `@block` whose body reassigns `names` of the enclosing function, its
+    /// value used or not. A fun cannot rebind what it captured, so `Acc@1`
+    /// bound inside it was unbound after it (`erlc` refused the module): every
+    /// `return` answers the value with the group at its versions there
+    /// (`returnNode` under `block_group`), and the match rebinds the group
+    /// outside. The block's state (`in_loop_body`, `in_nested_return`,
+    /// `block_guard`) is the caller's, already set.
+    fn valueBlockExpr(this: *Emitter, b: Ast.Builder, body: []const ast.Stmt, names: []const []const u8, guard_used: *bool) anyerror!Ast.Expr {
+        this.block_group = names;
+        var snapshot = try this.var_current.clone();
+        defer snapshot.deinit();
+        const raw_body = try this.bodyNode(b, body, 0, this.indent + 1);
+        this.block_group = null;
+        try this.restoreVersions(&snapshot);
+        const fun_body = if (guard_used.*) try this.guardBlockReturn(b, raw_body) else raw_body;
+        const call = try b.applyParen(.{ .fun = .{ .params = &.{}, .body = fun_body } }, &.{});
+        const bound = try b.match(try b.tuple(&.{ Ast.Expr.v("_"), try this.bindVarGroupExpr(b, names) }), call);
+        return b.remote("erlang", "element", &.{ .{ .number = "1" }, bound });
     }
 
     const ForEachLambda = struct {
@@ -7795,6 +7832,9 @@ const Emitter = struct {
                 const saved_block_guard = this.block_guard;
                 this.block_guard = null;
                 defer this.block_guard = saved_block_guard;
+                const saved_block_group = this.block_group;
+                this.block_group = null;
+                defer this.block_group = saved_block_group;
                 // A `fun` is a function of its own: a `return` (or a `try`)
                 // thrown from a loop inside it is caught by ITS guard, not by
                 // the enclosing function's.
@@ -8198,6 +8238,14 @@ const Emitter = struct {
             var guard_used = false;
             this.block_guard = &guard_used;
             defer this.block_guard = saved_block_guard;
+            const saved_block_group = this.block_group;
+            this.block_group = null;
+            defer this.block_group = saved_block_group;
+            if (cc.args.len == 0 and cc.trailing.len == 1 and cc.trailing[0].params.len == 0) {
+                var names: std.ArrayListUnmanaged([]const u8) = .empty;
+                try this.collectMutations(b.arena, cc.trailing[0].body, &.{}, &names);
+                if (names.items.len > 0) return this.valueBlockExpr(b, cc.trailing[0].body, names.items, &guard_used);
+            }
             const raw_body: Ast.Body = if (cc.args.len == 1) blk: {
                 const arg = cc.args[0].value;
                 if (arg.* != .function) return error.InvalidArgs;

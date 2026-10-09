@@ -373,7 +373,14 @@ where the query is written: `typeinfo_all_mixed`, `typeinfo_all_needs_member`,
 `typeinfo_all_with_ordinary_fn` and `typeinfo_all_arguments` (decision 268: `with:` is declared
 `Decorator | Decorator[]`, so an ordinary function — `typeinfo_all_with_ordinary_fn` — and a literal —
 `typeinfo_all_with_number` — are the ordinary type mismatch at the argument; `run/typeinfo_all_decorator_argument`
-accepts a decorator with arguments, a single decorator and a list of them); decision 235's list form adds
+accepts a decorator with arguments, a single decorator and a list of them); decision 353 (a template function's body reads the catalogue of the program that expands it) adds
+`modules/template_reads_program_catalogue` (a package's `pub default fn` counting the application's
+`#[theme]` — one, declared in a module analysed after another expands the template — and an empty
+`#[palette]`, on all four targets), two project refusals at the expansion, `template_catalogue_two_themes`
+(the template's own `e.fail` naming both declarations) and `template_catalogue_private`
+(`typeinfo-all-private`), `typeinfo_all_imported_package_default` (`import cat from "cat"` naming a
+reader's default fn, `typeinfo-all-imported` at the handle) and `reject/typeinfo_all_template_value`
+(a template body reading an entry's `value`); decision 235's list form adds
 `run/typeinfo_all_list` (two decorators in one `with:`, declaration order kept, a type carrying two
 of them answered once with both decorators' meta) and `reject/typeinfo_all_list_twice`. Decision 248
 names the one reflection builtin `@typeInfo` (the structural `TypeInfo` answer of a bare

@@ -2443,6 +2443,17 @@ the build — the package, its dependencies, std — in module-path order, then
 declaration order, and the reading module's own declarations; a module that
 reads it is imported by nobody (`typeinfo-all-imported`), and every declaration
 it answers from another module is `pub` (`typeinfo-all-private`).
+A template function's body may read the catalogue too (decision 353): there,
+`@TypeInfo.all(with: d)` answers for the program that expands the call — every
+module's declarations carrying `d`, every module's decorators applied —, not for
+the library that declares the template, so a library's `pub default fn` finds
+the application's `#[theme]`. Such a module is no reader (it may be imported); a
+query written in a function the template only calls still makes its module one.
+The catalogue's rules hold, refused at the expansion; an entry's `name`,
+`module`, `meta` and `returnTypeName` are answered, and its `value` — a
+declaration of the program — is no value at build: the template body's read of
+it is `typeinfo-all-template-value`. An import of a reader's default function
+(`import pkg from "pkg"`) is `typeinfo-all-imported` at the handle.
 `with:` may list several decorators (decision 235):
 `@TypeInfo.all(with: [service, repository], member: "make")` answers every
 declaration carrying any of them in the same one order, a declaration carrying
@@ -2988,7 +2999,7 @@ it would need a per-type default it cannot synthesize.
 
 | Target     | Output | Runner                      |
 |------------|--------|-----------------------------|
-| `commonJS` | `.js`  | `node` ≥ 20                 |
+| `commonJS` | `.js`  | `node` ≥ 22                 |
 | `erlang`   | `.erl` | `escript` (OTP)             |
 | `beam`     | `.S`   | `erlc +from_asm` + `erl`    |
 | `wasm`     | `.wat` | `wasmtime`                  |

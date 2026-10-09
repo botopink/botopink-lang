@@ -446,6 +446,14 @@ pub const typeinfo_all_private: []const u8 = "typeinfo-all-private";
 /// An import of a module that reads `@TypeInfo.all`.
 pub const typeinfo_all_imported: []const u8 = "typeinfo-all-imported";
 
+/// Decision 353 — a template body reads `value` of a catalogue entry: a
+/// declaration of the program is no value at build.
+pub const typeinfo_all_template_value: []const u8 = "typeinfo-all-template-value";
+
+/// Decision 353 — a template's answer changes the catalogue it read: the
+/// declarations its expansion builds add or drop an entry of the answer.
+pub const typeinfo_all_template_unstable: []const u8 = "typeinfo-all-template-unstable";
+
 /// `decl.setMeta` from a field's or a method's decorator: meta describes a
 /// top-level declaration, the one `@typeInfo` reflects.
 pub const decorator_meta_on_member: []const u8 = "decorator-meta-on-member";
@@ -564,6 +572,8 @@ pub const all_codes = [_][]const u8{
     typeinfo_all_needs_member,
     typeinfo_all_private,
     typeinfo_all_imported,
+    typeinfo_all_template_value,
+    typeinfo_all_template_unstable,
     decorator_meta_on_member,
     decorator_meta_duplicate,
     typeinfo_all_on_function,

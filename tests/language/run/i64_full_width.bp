@@ -1,8 +1,9 @@
 //// An `i64` holds every value of its width — in a local, a parameter, a
 //// return, a record field and a `?i64` — and prints, compares, divides and
-//// turns into text by that value. So does a `u32` past `2^31`, and an integer
-//// literal past the `i32` range. (Values stay below `2^53`, where commonJS's
-//// numbers are exact.)
+//// turns into text by that value. So does a `u32` past `2^31`, and an `l`
+//// literal past the `i32` range — an unsuffixed one with nothing asking is an
+//// `i32` (247), refused past its range (319). (Values stay below `2^53`, where
+//// commonJS's numbers are exact.)
 ////
 //// The wasm gap this pins (`00 · gate-wasm-wrong-answers`): an `i64` was
 //// lowered as an `i32`, so `val a: i64 = 4294967295` printed `-1`, `a / 2`
@@ -50,5 +51,5 @@ pub fn main() {
     }
     val u: u32 = 4294967295;
     @print(u);
-    @print(4294967296);
+    @print(4294967296l);
 }

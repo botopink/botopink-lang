@@ -85,10 +85,10 @@ const Aggregator = struct {
     /// a method), `result_jump_lowerings` (a method returning `@Result`
     /// wraps its `return` / `throw` like a fn — it was compiled as a plain
     /// function: a `throw` escaped as a host exception and a `return` was not
-    /// an `Ok`), `index_rewrites` and `default_injections` is empty and the
-    /// one unconditional rewrite (the `${}` template desugar) is skipped, so a
+    /// an `Ok`), `index_rewrites` and `default_injections` is empty, so a
     /// method body lowers byte-for-byte as before 1.0.10-beta except for those
-    /// rewrites. Lowering method
+    /// rewrites and the one unconditional rewrite, the `${}` template desugar
+    /// (no backend lowers a template). Lowering method
     /// bodies through the full walk is a separate change: it moves
     /// `record_method_with_todo_placeholder` on erlang (`@todo()` gets its
     /// default injected there as it does in a fn body).
@@ -287,18 +287,17 @@ pub fn transform(
         // parsed AST. 1.0.10-beta's `@src()` (decision 73) is the first
         // inference-recorded rewrite a method body must receive, so they ride
         // the `src_only` aggregator: the splice and nothing else (see the
-        // field's doc for what the full walk would move).
-        if (src_rewrites.count() > 0 or method_lowerings.count() > 0 or result_jump_lowerings.count() > 0) {
-            if (decl.* == .type_) {
-                for (decl.type_.methods) |*m| {
-                    const body = m.body orelse continue;
-                    for (body) |*stmt| rewriteStmt(&src_agg, empty_fn_decls, empty_ct_arrays, stmt) catch return error.OutOfMemory;
-                }
+        // field's doc for what the full walk would move). The walk runs
+        // whatever the maps hold: the template desugar is unconditional.
+        if (decl.* == .type_) {
+            for (decl.type_.methods) |*m| {
+                const body = m.body orelse continue;
+                for (body) |*stmt| rewriteStmt(&src_agg, empty_fn_decls, empty_ct_arrays, stmt) catch return error.OutOfMemory;
             }
-            if (decl.* == .implement) {
-                for (decl.implement.methods) |*m| {
-                    for (m.body) |*stmt| rewriteStmt(&src_agg, empty_fn_decls, empty_ct_arrays, stmt) catch return error.OutOfMemory;
-                }
+        }
+        if (decl.* == .implement) {
+            for (decl.implement.methods) |*m| {
+                for (m.body) |*stmt| rewriteStmt(&src_agg, empty_fn_decls, empty_ct_arrays, stmt) catch return error.OutOfMemory;
             }
         }
         // A behavior's `default fn` bodies are inferred like method bodies
@@ -1209,18 +1208,12 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
         },
         .literal => |*lit| switch (lit.kind) {
             .stringTemplate => |t| {
-                // The method-body walk only splices `@src()` — recurse into the
-                // holes and leave the template as written.
-                if (agg.src_only) {
-                    for (t.parts) |p| switch (p) {
-                        .expr => |e| rewriteExpr(agg, fn_decls, comptime_arrays, e) catch return ScanError.OutOfMemory,
-                        .text => {},
-                    };
-                    return;
-                }
                 // Desugar `"a ${x} b"` into the `+` chain `"a " + x + " b"` so
                 // every backend emits it exactly like written-out string
-                // concatenation (the typed/eval path desugars in infer).
+                // concatenation (the typed/eval path desugars in infer). Both
+                // aggregators: no backend lowers a template, and a method
+                // body's (`return "${n}: ${joined}";` in a type's fn) reached
+                // each one's `stringTemplate => unreachable`.
                 const arena = agg.spec_cache.arena;
                 const loc = lit.loc;
                 var acc: ?*ast.Expr = null;

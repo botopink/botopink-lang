@@ -1,0 +1,8 @@
+//// Decision 319 — an unsuffixed integer literal is a value of the type its
+//// position asks for, and `3000000000` is past `i32`: refused at the literal,
+//// as a suffixed one is (`integer_suffix_out_of_range`). It was accepted.
+
+pub fn main() {
+    val e: i32 = 3000000000;
+    @print(e);
+}
