@@ -1,3 +1,0 @@
-pub fn splitPath(p: string) -> string[] {
-    return ["own", p];
-}

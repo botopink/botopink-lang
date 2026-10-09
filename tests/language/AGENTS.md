@@ -208,11 +208,9 @@ bad(x); })` refused at the `try`) and `run/lambda_result_return_try` (a lambda u
 `Box<T>` each build a `Box(run: { … })` under the fallible field, one `Box<?T>`, one
 `Box<Array<T>>`, on all four targets; the parent binary refused the second as `expected ?_[], got
 ?_` (the lambda's expectation was the constructor's registration-time cells).
-`modules/shorthand_import_beside_bundled_package` (decision 170, another front's finding) — the
-shorthand `import {splitPath};` resolves to the project's own `config` although the bundled
-`routing` (loaded by a second import) declares `splitPath` in its internal module `routing/match`; it
-was `ambiguous-import-use` on the parent binary. On all four targets since `encoding` binds every
-cell on wasm (`01-compiler/05-wasm` step 5; its `"targets"` narrowing no longer stood).
+The cell `modules/shorthand_import_beside_bundled_package` (decision 170) was deleted with decision
+326: its subject — a shorthand import beside a bundled package — left when `routing` stopped being
+bundled, and the shorthand itself goes with decision 337 (`01-compiler/129`).
 Step 7 (decision 148) adds `reject/captured_var_write_in_lambda` (`run({ -> n = n + 1; 1; }, 0)` is
 `captured-var-write` at `n =`; accepted by the parent binary) and `run/closure_capture_statement_position`
 (a `forEach` body, a local closure called as a statement — directly, in a `for` body and in a
@@ -278,20 +276,22 @@ is its `run/` twin on all four targets (`botopink test` runs neither wasm nor be
 calling std's `at` / `length` / `filter` / `all` / `contains` / `join` on `self`, taking a `T` and a
 `Self<T>`, answering `?T`, `T`, `Self<T>`, a bool and a string over integers, strings and records —
 on all four targets (wasm trapped: the copy did not substitute `Self<T>`).
-Decision 206 (`from` names a package — std, a bundled package or a declared dependency — and a
+Decision 206 (`from` names a package — std or a declared dependency — and a
 module of the importing package is imported by its path inside the braces) adds three `modules/`
 cells. `import_own_module_with_from` is the refusal: `import {area, perimeter as around} from
 "geometry";` over the package's own `geometry` is `error[module-import-with-from]` at the source
 string, writing the brace form, by `<target>.expect` on all four targets (it compiled and ran on the
 parent binary). `import_bundled_package_beside_own_module` — a package with a module `log` of its own
-imports `{Level, levelName} from "log"` and reaches the bundled `log`, and `log.levelName as
-ownLevelName` reaches its module; `"targets"` excludes wasm, where `log` reaches host functions with
-no wasm binding (refused on the parent binary: `Level` "not exported by the named module" `log`).
+imports `{Level, levelName} from "log"` and reaches the dependency `log` (a `deps/log` fixture
+declared by `path` since decision 326 took `log` out of the compiler), and `log.levelName as
+ownLevelName` reaches its module; on all four targets — the fixture is pure, so the wasm
+narrowing the bundled `log`'s host functions needed went with it (refused on the parent binary:
+`Level` "not exported by the named module" `log`).
 `import_module_path_in_braces` — nested paths (`components.card.Card`,
 `reliability.policy.nextDelay as policyDelay`) beside a local `nextDelay`, on all four targets. The
 suite's own imports of a module of their package were migrated by
 `scripts/codemod-import-without-from.py`; `method_on_unimported_type` is the case that showed the
-need: its `import {logger} from "log";`, meant for its own `log.bp`, loaded the bundled `log`.
+need: its `import {logger} from "log";`, meant for its own `log.bp`, loaded the then-bundled `log`.
 Decision 141 adds `run/external_template_refused_on_beam` — an `@External.Erlang` template with a
 macro runs on erlang and is a located build error on beam naming the construct (`.beam.expect`); beam
 no longer evaluates a template it cannot compile from source at run time.
@@ -1216,9 +1216,8 @@ refusal lines are in the front's README):
 | `run/task_throw_resolves_error` | commonJS | erlang, wasm, beam — `observe` |
 | `modules/manifest_targets_host_binding` | erlang beam (`"targets"`) | commonJS, wasm — `magnitude` |
 | `modules/erlang_host_sidecar_in_a_test` (test kind) | erlang beam (`"targets"`) | commonJS — `hello` |
-| `modules/import_bundled_package_beside_own_module` | commonJS erlang beam (`"targets"`) | wasm — `std/json.quote` |
 
-Thirty-seven exclusions; the run prints `narrowings: 37 exclusions audited — each stands on a host binding
+Thirty-six exclusions; the run prints `narrowings: 36 exclusions audited — each stands on a host binding
 the target does not have`. No other `modules/` manifest carries `"targets"`: the field used to be
 boilerplate (`["commonJS", "erlang", "wasm"]` in 33 cells, `["commonJS", "erlang"]` in 14) that the
 runner ignored — honoured as written it would have taken beam away from 33 passing cells — and a

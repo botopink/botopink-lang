@@ -129,7 +129,7 @@ loaded here. `shipMjsSidecars` resolves an owning lib's `.mjs` through the same
 root list, and never writes outside the output directory: a `require` whose path
 escapes it (a lib's `../../src/x.mjs` authored for its own build) ships the file to
 `<out>/<lib>/<base>` (project-own: `<out>/<base>`) and rewrites that module's
-`require` to reach it. The bundled packages (`std` and the libraries `build.zig`'s `bundled_packages` names — decisions 115–117) are the exception to "declared, then found on disk": `libs.loadDependencies` loads the ones a module imports from the copy embedded in the binary, and refuses one listed in `dependencies`.
+`require` to reach it. `std` — the one bundled package (decision 326) — is the exception to "declared, then found on disk": it is embedded in the binary, and `libs.loadDependencies` refuses it listed in `dependencies`. Every other library (`routing`, `actions`, … included) is declared and found on disk like any dependency.
 
 `shipErlSidecars` is the erlang counterpart: a `#[@External.Erlang("host",
 "fn")]` lowers to `host:fn(…)`, and `host` is a module the library authors in
@@ -292,16 +292,16 @@ Cross-command rules:
   in src/ or test/" and a test could not import a nested module (onze F5,
   `tests/language/modules/src_at_package_root`).
 - **`from` names a package; an import names something.** `import … from
-  "<name>"` must resolve to a package — `std`, a bundled package or a declared
+  "<name>"` must resolve to a package — `std` or a declared
   dependency (`<dep>` or `<dep>.<module>`) — and a package wins its name over a
   module of this package named like it (decision 206: `from "log"` is the
-  bundled `log` beside a module `log`). A `from` naming a module of this
+  dependency `log` beside a module `log`). A `from` naming a module of this
   package (the `mod` tree, dotted path) is `error[module-import-with-from]`,
   located at the source string with an excerpt, writing the brace form as the
   fix (`"geometry" is a module of this package — write import
   {geometry.area};`, `resolver.braceForm`; pinned by
   `tests/language/modules/import_own_module_with_from`). A `from` naming the
-  package ITSELF is the same refusal, std and every bundled package included,
+  package ITSELF is the same refusal, std included,
   in `src/`, `test/` and a dependency's own sources alike (decision 309:
   `"shapes" is this package — write import {geometry.area};`;
   `tests/language/modules/import_own_package_with_from`,

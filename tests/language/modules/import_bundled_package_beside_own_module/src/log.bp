@@ -1,4 +1,4 @@
-//// A module of this package named like the bundled package `log`, declaring
+//// A module of this package named like the dependency `log`, declaring
 //// a `levelName` of its own.
 
 pub fn levelName(level: i32) -> string {

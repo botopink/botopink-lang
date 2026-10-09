@@ -788,7 +788,7 @@ pub fn importSourceProblems(
 }
 
 /// The refusal one `from "<raw>"` of `mods[importer]` earns, or null when it
-/// names std, a bundled package or a declared dependency. `own` is the
+/// names std or a declared dependency. `own` is the
 /// importing package's name (`""` when the caller does not know it).
 fn sourceProblem(
     mods: []const Module,
@@ -802,8 +802,8 @@ fn sourceProblem(
 ) Error!?Diagnostic {
     if (firstSegment(ref.raw).len == 0) return null; // malformed; the parser reports it
     // Decision 309 — `from` never names the importing package itself, std
-    // and the bundled packages included (tested before the bundled names, so
-    // std's own `from "std"` is refused): a module of the package is imported
+    // included (tested before the bundled name, so std's own `from "std"`
+    // is refused): a module of the package is imported
     // by its path inside the braces, and the rest of the source after the
     // package name is that path's start (`from "shapes.circle"` inside
     // `shapes` → `import {circle.…};`).
@@ -823,16 +823,16 @@ fn sourceProblem(
             .own_package = true,
         };
     }
-    // `std` and every other bundled package resolve with no
-    // `dependencies` entry (decisions 115–117).
+    // `std`, the one bundled package (decision 326), resolves with no
+    // `dependencies` entry.
     if (bp.comptime_pipeline.bundledPackage(firstSegment(ref.raw)) != null) return null;
     if (symbolInList(deps, firstSegment(ref.raw))) return null;
     var slashed_buf: [512]u8 = undefined;
     const slashed = slashPath(&slashed_buf, ref.raw) orelse return null;
     // Decision 206 — `from` names a package, never a module of this
     // one: the module is imported by its path inside the braces. A
-    // package wins the name (it was tested first), so a bundled
-    // package added later never changes what an import means.
+    // package wins the name (it was tested first), so a dependency
+    // declared later never changes what an import means.
     if (analysis.paths.contains(slashed)) return .{
         .kind = Error.ModuleImportWithFrom,
         .name = ref.raw,
@@ -1367,8 +1367,8 @@ test "checkImportSources: a package wins its name over a module of the package n
     defer arena.deinit();
     const sa = arena.allocator();
 
-    // Decision 206 — the bundled `log` and the dependency `rakun` are what
-    // `from` names, although this package has modules `log` and `rakun`.
+    // Decision 206 — the dependencies `log` and `rakun` are what `from`
+    // names, although this package has modules `log` and `rakun`.
     var mods = [_]Module{
         .{ .path = "main", .source =
         \\import {Level} from "log";
@@ -1382,7 +1382,7 @@ test "checkImportSources: a package wins its name over a module of the package n
     const files = [_][]const u8{ "src/main.bp", "src/log.bp", "src/rakun.bp" };
     const analysis = analyzeModules(sa, &mods);
     var diag: Diagnostic = .{ .kind = Error.RootNotFound };
-    const deps = [_][]const u8{"rakun"};
+    const deps = [_][]const u8{ "log", "rakun" };
     try checkImportSources(&mods, &files, analysis, &deps, "", sa, &diag); // no error
     // …and neither draws an edge to the module named like the package, nor
     // asks it for the symbol.

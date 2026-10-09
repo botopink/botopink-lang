@@ -5,37 +5,36 @@
 
 Code written **in** botopink that ships with the language core, kept separate
 from the Zig toolchain under [`../modules/`](../modules/AGENTS.md). The
-dependency arrow runs one way: the compiler embeds the **bundled packages** —
-`libs/std` and the libraries named in `build.zig`'s `bundled_packages`
-(decisions 115–117) — and a lib never depends on toolchain internals.
+dependency arrow runs one way: the compiler embeds `libs/std` — the **one**
+bundled package (decision 326) — and a lib never depends on toolchain internals.
 
-A bundled package is imported by name (`from "routing"`) with no `dependencies`
-entry, from the copy inside the compiler binary; listing one in `dependencies`
-is refused. Every bundled library besides `std` is `.bp` only (target-native
-code is an inline `#[@External.…]` template — no `.erl`/`.mjs`; `build.zig`
-refuses a non-`.bp` `files` entry), runs on erlang and commonJS (erlang first in
-`targets`), and imports `std` and other bundled packages only. Adding one is:
-the directory with its `botopink.json` + `AGENTS.md`, its name in
-`build.zig`'s `bundled_packages` (after every bundled package it imports), a row
-below, and its directory in `scripts/format-check.sh`'s `TREES`.
+std is imported by name (`from "std"`) with no `dependencies` entry, from the
+copy inside the compiler binary; listing it in `dependencies` is refused.
 
-The other libraries (`emilia`, `erika`, `jhonstart`, `onze`, `rakun`) are sibling
-projects under `repository/` in the meta workspace, reached via `from "<name>"`
-through the multi-root resolver (`BOTOPINK_LIB_ROOTS`, then
-`repository/botopink-lang/libs`, `repository/`, `libs/` — see
-`modules/compiler-cli/src/cli/libs.zig`).
+Every other library is a repository of its own — `routing`, `http`, `actions`,
+`validation`, `log` (moved out of this directory with their history by
+`03-bundled-libs/138`), `cardume`, `emilia`, `erika`, `jhonstart`, `onze`,
+`rakun` — a sibling project under `repository/` in the meta workspace. A program
+that imports one declares it in `dependencies` like any library (decision 242):
+
+```json
+"dependencies": { "routing": { "git": "https://github.com/botopink/routing.git", "branch": "feat" } }
+```
+
+Inside the meta checkout that entry resolves by name through the multi-root
+resolver (`BOTOPINK_LIB_ROOTS`, then `repository/botopink-lang/libs`,
+`repository/`, `libs/` — see `modules/compiler-cli/src/cli/libs.zig`), elsewhere
+through the install store; without it, `from "routing"` is
+`unresolved import source "routing" — declare it in botopink.json "dependencies"`.
+A new shared package is born as a repository under the same rule — nothing in
+this directory, `build.zig` or `scripts/format-check.sh` registers it.
 
 ## Tree
 
 ```text
 libs/
 ├── AGENTS.md          ← you are here
-├── std/               ← standard library (embedded in the compiler)
-├── routing/           ← bundled route matcher + routing wires (decision 115)
-├── http/              ← bundled codecs of HTTP semantics (decision 196)
-├── actions/           ← bundled server-action protocol (decision 116)
-├── validation/        ← bundled constraint validation (decision 116)
-└── log/               ← bundled levels, renderers, error digest, Logger (decisions 194, 195)
+└── std/               ← standard library (embedded in the compiler)
 ```
 
 ## Packages
@@ -43,20 +42,13 @@ libs/
 | Package | Provides | Embedded in compiler? | AGENTS |
 |---|---|---|---|
 | `std/` | primitive interfaces, builtins, and the importable `std` modules | yes — `build.zig` embeds the files; `modules/compiler-core/src/comptime/stdlib/prelude.zig` exposes them | [link](std/AGENTS.md) |
-| `routing/` | the route matcher and the routing wires both halves run — route table, `k`/`z` blobs, URL rules, navigation signals (`nav:`), the `:param` grammar; pure `.bp`, erlang + commonJS, imports std only | yes — bundled by name (decision 115, `01-std/04-routing-lib` Step 2) | [link](routing/AGENTS.md) |
-| `http/` | the codecs of HTTP semantics rakun and onze both read and write — `cookie` (first-wins reader, decision 181; `Set-Cookie` writer), `accept` (the strict q-value, decision 182; `Accept` / `Accept-Encoding` / `Accept-Language`), `mime`, `status`, `date` (HTTP-date), `byteRange`, `cacheControl`; no wire parser, no compression; pure `.bp`, erlang + commonJS, imports std only | yes — bundled by name (decision 196, `1.0.11-beta/03-bundled-libs/104-http`) | [link](http/AGENTS.md) |
-| `actions/` | the server-action protocol both halves read and write — the `state` grammar and `ActionState`, the v1 envelope (`redirect` derived from `n`), the JSON-RPC body, `refresh`; pure `.bp`, erlang + commonJS, imports std and routing only, names no field or header | yes — bundled by name (decision 116, `01-std/05-actions-lib` Step 6) | [link](actions/AGENTS.md) |
-| `validation/` | constraint markers, `#[validated]`, `#[schema]` (a `Json` document decoded into a typed record, every violation at its path), the violation report and constraint table, typed coercion — one source for erlang and commonJS; the message lookup is injected (`setMessageSource`) | yes — bundled by name (decision 116, `01-std/06-validation-lib` Step 5) | [link](validation/AGENTS.md) |
-| `log/` | the five levels, `LogRecord`, the ECS / GELF / logstash / plain renderers, the one error digest (`errorDigest`, decision 194) and a `Logger` whose sink is injected (`setSink`; default: OTP `logger` / node `console`) — `Logger.logError` writes the error record and answers its digest; `.bp` only — three inline host cells (the sink slot, the default write) —, erlang + commonJS, imports std only | yes — bundled by name (decision 195, `03-bundled-libs/106-log` Step 1) | [link](log/AGENTS.md) |
 
 ## Conventions
 
-- Packages here are `.bp`-only — no Zig under `libs/`. Embed/loader glue lives
-  in `build.zig` (`bundled_packages`, the generated table) and
-  `modules/compiler-core/src/comptime/stdlib/prelude.zig`; the CLI
-  (`compiler-cli/src/cli/libs.zig`) and the LSP (`language-server/src/project_graph.zig`)
-  load a non-std bundled package's modules as `<pkg>/<stem>`.
-- Each package has its own `botopink.json` and `AGENTS.md`; update the
+- Packages here are `.bp`-only — no Zig under `libs/`. Embed glue lives in
+  `build.zig` (the generated table, std its one row) and
+  `modules/compiler-core/src/comptime/stdlib/prelude.zig`.
+- The package has its own `botopink.json` and `AGENTS.md`; update the
   `AGENTS.md` in the same change that touches the package's layout or contents.
 - Library-specific code never goes into `modules/compiler-core` (enforced by the
   lib-agnostic gate in `zig build test`).

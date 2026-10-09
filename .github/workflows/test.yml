@@ -22,7 +22,8 @@
 #         `botopink` over the one the others run. `test-web` is the gate's
 #         stage 12 (decision 231) and keeps the default mode, as the gate runs it.
 #   libs  every sibling library checked out next to botopink-lang
-#         (emilia, erika, jhonstart, onze, rakun at `feat`) plus libs/std,
+#         (emilia, erika, jhonstart, onze, rakun, actions, http, log,
+#         routing, validation at `feat`) plus libs/std,
 #         compiled and tested on every runnable target by `zig build test-libs
 #         -Doptimize=ReleaseSafe` (a library without tests is still compiled).
 #         The manifest decides the matrix: a member runs on the targets its
@@ -216,19 +217,33 @@ jobs:
 
       # Every `botopink` fence in docs.md and README.md compiles and every
       # `reject` fence is refused (scripts/check-docs.sh). docs.md's
-      # library-dependency example declares `erika`, which the harness
-      # resolves by name under `repository/` — the same place the libs job
-      # puts the sibling libraries — so erika is checked out there first.
+      # library-dependency examples declare `erika`, `log`, `routing`,
+      # `actions` and `validation` (decision 326: std is the one package the
+      # compiler ships), which the harness resolves by name under
+      # `repository/` — the same place the libs job puts the sibling
+      # libraries — so they are checked out there first.
       - name: Checkout erika (docs.md's library-dependency fence)
         uses: actions/checkout@v5
         with: { repository: botopink/erika, ref: feat, path: repository/erika }
+      - name: Checkout log (docs.md's import_with_from fence)
+        uses: actions/checkout@v5
+        with: { repository: botopink/log, ref: feat, path: repository/log }
+      - name: Checkout routing (docs.md's shared-libraries fence)
+        uses: actions/checkout@v5
+        with: { repository: botopink/routing, ref: feat, path: repository/routing }
+      - name: Checkout actions (docs.md's shared-libraries fence)
+        uses: actions/checkout@v5
+        with: { repository: botopink/actions, ref: feat, path: repository/actions }
+      - name: Checkout validation (docs.md's shared-libraries fence)
+        uses: actions/checkout@v5
+        with: { repository: botopink/validation, ref: feat, path: repository/validation }
 
       - name: zig build test-docs (ReleaseSafe)
         shell: bash
         run: zig build test-docs -Doptimize=ReleaseSafe
 
-      # Every `.d.ts` the commonJS backend emits for libs/ (std and the
-      # bundled packages), the example projects (erika, checked out above, is
+      # Every `.d.ts` the commonJS backend emits for libs/std (the one
+      # package the compiler ships), the example projects (erika, checked out above, is
       # generic-loader-binding's dependency) and the tests/language/modules
       # cells passes `tsc --noEmit --strict`
       # (scripts/tsc-check.sh; typescript pinned, through npx).
@@ -269,6 +284,23 @@ jobs:
       - name: Checkout rakun
         uses: actions/checkout@v5
         with: { repository: botopink/rakun, ref: feat, path: repository/rakun }
+      # The shared libraries (decision 326: repositories of their own since
+      # 03-bundled-libs/138, no longer bundled with the compiler).
+      - name: Checkout actions
+        uses: actions/checkout@v5
+        with: { repository: botopink/actions, ref: feat, path: repository/actions }
+      - name: Checkout http
+        uses: actions/checkout@v5
+        with: { repository: botopink/http, ref: feat, path: repository/http }
+      - name: Checkout log
+        uses: actions/checkout@v5
+        with: { repository: botopink/log, ref: feat, path: repository/log }
+      - name: Checkout routing
+        uses: actions/checkout@v5
+        with: { repository: botopink/routing, ref: feat, path: repository/routing }
+      - name: Checkout validation
+        uses: actions/checkout@v5
+        with: { repository: botopink/validation, ref: feat, path: repository/validation }
 
       - name: Install Zig
         uses: mlugg/setup-zig@v2

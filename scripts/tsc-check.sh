@@ -3,9 +3,9 @@
 # `tsc` accepts, and every `.js` it emits is a module `node --check` parses
 # (1.0.11-beta 01-compiler/04-js step 3 and its gate, C-18 of 1.0.10-beta).
 #
-# A scratch `botopink build --target commonJS --typescript` of every library
-# the compiler ships (`libs/<pkg>/`: `std` and every bundled package — their
-# `.d.ts` is what a host TypeScript consumer of a botopink build reads), of
+# A scratch `botopink build --target commonJS --typescript` of the library
+# the compiler ships (`libs/std/` — decision 326: std alone; its `.d.ts` is
+# what a host TypeScript consumer of a botopink build reads), of
 # every project under `examples/` and of every `tests/language/modules/<cell>/`,
 # then
 # `tsc --noEmit --strict --lib es2022 --module commonjs` over each build's
@@ -59,7 +59,7 @@ projects=()
 if [ "$#" -gt 0 ]; then
     projects=("$@")
 else
-    for p in libs/*/ examples/*/ tests/language/modules/*/; do
+    for p in libs/std/ examples/*/ tests/language/modules/*/; do
         p="${p%/}"
         [ -f "$p/botopink.json" ] || continue
         [ -f "$p/commonJS.expect" ] && continue

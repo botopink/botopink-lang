@@ -65,7 +65,7 @@ pub fn run(
     // core never names a lib; it only sees these as ordinary `Module[]` and
     // resolves `from "<lib>"` through the shared import registry. `std` is the
     // embedded exception and is not loaded here.
-    const dep_modules = libs.loadDependencies(gpa, io, proj, env_map, &.{project_modules}) catch |err| {
+    const dep_modules = libs.loadDependencies(gpa, io, proj, env_map) catch |err| {
         reportDependencyError(err);
         return 1;
     };

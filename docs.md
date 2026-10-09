@@ -130,9 +130,8 @@ pub default Tree;
 
 ### Imports
 
-`from "<name>"` names a **package** — std, a bundled package (`routing`,
-`http`, `actions`, `validation`, `log`) or a declared dependency — and nothing
-else (decision 206). A module of the importing package is imported by its path
+`from "<name>"` names a **package** — std or a dependency declared in
+`botopink.json` — and nothing else (decision 206). A module of the importing package is imported by its path
 inside the braces, with no `from`; and an import that names no module at all is
 the shorthand, which resolves the sibling module that exports the names.
 
@@ -189,7 +188,7 @@ package, the brace form reaches the module and `from` the package:
 // src/main.bp
 pub mod log;
 import {log.levelName as ownLevel};    // this package's module `log`
-import {Level, levelName} from "log";  // the bundled package `log`
+import {Level, levelName} from "log";  // the dependency `log`
 
 pub fn main() {
     @print(ownLevel(2));               // own:2
@@ -205,8 +204,21 @@ pub fn levelName(level: i32) -> string {
 }
 ```
 
-A package wins its name: `from "log"` is the bundled `log` although the package
-has a module `log` of its own, so a bundled package added later never changes
+<!-- docs-check: project import_with_from botopink.json -->
+```json
+{
+  "name": "app",
+  "version": "0.0.1",
+  "src": "src/",
+  "target": "commonJS",
+  "dependencies": {
+    "log": { "git": "https://github.com/botopink/log.git", "branch": "feat" }
+  }
+}
+```
+
+A package wins its name: `from "log"` is the dependency `log` although the package
+has a module `log` of its own, so a dependency declared later never changes
 what an existing import means — an import that could have meant the module is
 already the brace form. `from` naming a module of the package is refused at the
 source string, and the refusal writes the import as it is spelled instead
@@ -370,28 +382,43 @@ import {of, erika} from "erika";   // a library dependency
 }
 ```
 
-**Bundled packages.** `std` is not the only package the compiler ships. The
-libraries both halves of an application run — `routing` (the route matcher,
-the route-table / `k` / `z` / URL-rule wires, the `nav:` navigation signals,
-the `:param` grammar), `actions` (the server-action protocol) and `validation`
-(constraints, `#[validated]`, the violation report) — are bundled with it and
-imported by name exactly as `std` is, with no `dependencies` entry:
+**std is the one package the compiler ships.** Every other library — the ones
+both halves of an application run included: `routing` (the route matcher, the
+route-table / `k` / `z` / URL-rule wires, the `nav:` navigation signals, the
+`:param` grammar), `actions` (the server-action protocol), `validation`
+(constraints, `#[validated]`, the violation report), `http` (the codecs of HTTP
+semantics) and `log` (levels, renderers, the error digest) — is a repository of
+its own, declared in `dependencies` like `erika` above:
 
+<!-- docs-check: project shared src/main.bp -->
 ```botopink
 import {match.matchPath, table.parseTable} from "routing";
 import {envelope.writeEnvelope} from "actions";
 import {decorators.validated} from "validation";
 ```
 
-A bundled library is `.bp` source only (target-native code is an inline
-`#[@External.…]` template, never a sidecar file), imports `std` and other
-bundled packages and nothing else, and runs on erlang and commonJS. The copy
-inside the compiler is the one a program gets — never a directory of the same
-name on disk — and listing a bundled name in `dependencies` is refused where it
-is written.
+<!-- docs-check: project shared botopink.json -->
+```json
+{
+  "name": "app",
+  "version": "0.0.1",
+  "src": "src/",
+  "target": "commonJS",
+  "dependencies": {
+    "routing": { "git": "https://github.com/botopink/routing.git", "branch": "feat" },
+    "actions": { "git": "https://github.com/botopink/actions.git", "branch": "feat" },
+    "validation": { "git": "https://github.com/botopink/validation.git", "branch": "feat" }
+  }
+}
+```
+
+Without the entry, `from "routing"` is refused where it is written:
+`unresolved import source "routing" — declare it in botopink.json "dependencies"`.
+Listing `std` in `dependencies` is refused too — the compiler's copy is the one a
+program gets.
 
 A `from` that names neither a module of this package, nor a declared
-dependency, nor a bundled package is an error — it is reported where it is
+dependency, nor std is an error — it is reported where it is
 written, rather than binding nothing in silence.
 
 ## Bindings

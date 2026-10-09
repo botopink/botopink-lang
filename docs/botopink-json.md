@@ -76,12 +76,23 @@ declares **exactly one source**:
 | `{ "git": "…", pin }` | The library named `<name>` under the **library roots** (below), then the `bpmp install` store `<project>/.botopinkbuild/deps/<name>/` | The pin is one of `branch`, `tag` or `rev` — `bpmp install` clones it; the compiler resolves by name and does not fetch. A pin without `git` is refused. |
 | `{ "workspace": true }` | The **sibling member** of the enclosing workspace named `<name>` | The only way a member depends on a sibling (decision 75). Outside a workspace it is refused. |
 
-`std` is embedded in the compiler and is never listed.
+`std` is embedded in the compiler and is never listed — it is the one package
+the compiler ships (decision 326). Every other library is declared here,
+`routing` as any other:
+
+```json
+"dependencies": {
+  "routing": { "git": "https://github.com/botopink/routing.git", "branch": "feat" }
+}
+```
+
+Without the entry, `from "routing"` is refused at the import:
+`unresolved import source "routing" — declare it in botopink.json "dependencies"`.
 
 **Library roots** (where a `git` dependency is found by name, in order):
 `BOTOPINK_LIB_ROOTS` entries (`:`-separated on POSIX); then, for each ancestor
 `D` of the project directory, nearest first: `D` itself when `D/botopink.json`
-is a workspace (its members), `D/repository/botopink-lang/libs` (the bundled
+is a workspace (its members), `D/repository/botopink-lang/libs` (the embedded
 `std`), `D/repository` (sibling libraries), `D/libs`; then
 `<project>/.botopinkbuild/deps` (the `bpmp install` store). A root contributes
 every immediate child directory holding a `botopink.json` — as a package named

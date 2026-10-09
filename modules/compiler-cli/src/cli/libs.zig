@@ -51,9 +51,8 @@ pub const Error = error{
     /// the located diagnostic (the path looked for, the manifest line) has
     /// already been printed.
     LibFileNotFound,
-    /// The manifest lists a bundled package (`std`, or one of the libraries
-    /// the compiler ships — decisions 115–117) in `dependencies`; the located
-    /// diagnostic has already been printed.
+    /// The manifest lists `std` — the one package the compiler ships (decision
+    /// 326) — in `dependencies`; the located diagnostic has already been printed.
     BundledDependency,
     /// A module of a dependency imports a package that dependency does not
     /// declare, or a module of itself with `from` — the same refusal its own
@@ -252,19 +251,17 @@ pub fn freeRoots(gpa: std.mem.Allocator, roots: [][]const u8) void {
 ///   * nothing carries the name → `LibNotFound` (named on stderr). No library
 ///     root at all is not an error: `path` and `workspace` need none.
 ///
-/// Then the bundled packages (decisions 115–117): every non-std library the
-/// compiler embeds that a module of `scan`, a dependency, or another bundled
-/// package imports with `from "<name>"` is appended as the ordinary modules
-/// `<name>/<stem>` — from the copy inside the compiler binary, never from
-/// disk, so `from "routing"` means the same thing inside the meta workspace as
-/// in an installed compiler. A bundled name listed in `dependencies` is a
-/// located refusal (`BundledDependency`).
+/// `std` is the one bundled package (decision 326): embedded in the compiler,
+/// imported with no declaration, and refused in `dependencies`
+/// (`BundledDependency`). Every other package — `routing`, `actions`, … — is a
+/// library like any other: declared here, resolved like the entries above, and
+/// `from "<name>"` without the declaration is decision 242's unresolved import
+/// source (the module-tree resolver's refusal).
 pub fn loadDependencies(
     gpa: std.mem.Allocator,
     io: std.Io,
     proj: config.ProjectConfig,
     env_map: EnvMap,
-    scan: []const []const Module,
 ) ![]Module {
     var modules: std.ArrayListUnmanaged(Module) = .empty;
     // On error, free what was accumulated, then the list backing — in this order
@@ -287,10 +284,7 @@ pub fn loadDependencies(
         return error.BundledDependency;
     }
 
-    if (proj.dependencies.len == 0) {
-        try appendBundled(gpa, proj.name, scan, &modules);
-        return try modules.toOwnedSlice(gpa);
-    }
+    if (proj.dependencies.len == 0) return try modules.toOwnedSlice(gpa);
 
     const roots = try resolveLibRoots(gpa, io, env_map);
     defer freeRoots(gpa, roots);
@@ -308,7 +302,6 @@ pub fn loadDependencies(
     const fallback_entries = try manifest.scanRoots(arena, io, fallback_roots);
 
     try loadClosure(gpa, io, arena, proj.manifest, proj.dir, proj.dependencies, entries, fallback_entries, &modules);
-    try appendBundled(gpa, proj.name, scan, &modules);
     return try modules.toOwnedSlice(gpa);
 }
 
@@ -365,9 +358,9 @@ fn loadClosure(
 ///
 /// Refused, located on the entry that brought it in: an import name two
 /// packages of the build resolve to two directories (one `<name>/` prefix
-/// cannot hold both), and a cycle between packages (neither can come first). A
-/// bundled name (decisions 115–117) is skipped — the embedded copy follows, and
-/// a dependency's own build is the one that refuses listing it.
+/// cannot hold both), and a cycle between packages (neither can come first).
+/// `std`, the one bundled package (decision 326), is skipped — it is embedded,
+/// and a dependency's own build is the one that refuses listing it.
 const DepClosure = struct {
     arena: std.mem.Allocator,
     io: std.Io,
@@ -388,7 +381,7 @@ const DepClosure = struct {
     };
 
     /// Resolve `dep`, an entry of the package at `dir` whose manifest is `by`.
-    /// False for a bundled name, which is not a package of the closure.
+    /// False for `std`, the bundled package, which is not a package of the closure.
     fn resolve(self: *DepClosure, by: manifest.Manifest, dir: []const u8, dep: manifest.DepEntry) !bool {
         if (bp.comptime_pipeline.bundledPackage(dep.name) != null) return false;
         const abs_dir = try std.fs.path.resolve(self.arena, &.{dir});
@@ -441,98 +434,6 @@ const DepClosure = struct {
         try self.order.append(self.arena, done.*);
     }
 };
-
-/// Append, to `out`, the embedded modules of every bundled package some module
-/// of `scan` or of `out` itself imports — until no new package is named (a
-/// bundled library may import another: `actions` imports `routing`). The
-/// bundled modules go FIRST, so they compile before whatever imports them.
-/// A package whose name is the project's own is never loaded: inside
-/// `libs/routing` the sources are the project.
-fn appendBundled(
-    gpa: std.mem.Allocator,
-    project_name: []const u8,
-    scan: []const []const Module,
-    out: *std.ArrayListUnmanaged(Module),
-) !void {
-    const pkgs = bp.comptime_pipeline.bundled_packages;
-    var loaded = [_]bool{false} ** pkgs.len;
-    var added: std.ArrayListUnmanaged(Module) = .empty;
-    defer added.deinit(gpa);
-    errdefer for (added.items) |m| {
-        gpa.free(m.path);
-        gpa.free(m.source);
-        gpa.free(m.srcPath);
-    };
-    var changed = true;
-    while (changed) {
-        changed = false;
-        for (pkgs, 0..) |pkg, i| {
-            if (loaded[i] or pkg.modules.len == 0) continue;
-            if (std.mem.eql(u8, pkg.name, project_name)) continue;
-            var named = false;
-            for (scan) |mods| {
-                for (mods) |m| if (bp.comptime_pipeline.importsPackage(m.source, pkg.name)) {
-                    named = true;
-                };
-            }
-            for (out.items) |m| if (bp.comptime_pipeline.importsPackage(m.source, pkg.name)) {
-                named = true;
-            };
-            for (added.items) |m| if (bp.comptime_pipeline.importsPackage(m.source, pkg.name)) {
-                named = true;
-            };
-            if (!named) continue;
-            loaded[i] = true;
-            changed = true;
-            for (pkg.modules) |bm| {
-                const path = try std.fmt.allocPrint(gpa, "{s}/{s}", .{ pkg.name, bm.stem });
-                errdefer gpa.free(path);
-                const source = try gpa.dupe(u8, bm.source);
-                errdefer gpa.free(source);
-                // `@src().file` (decision 73) is relative to the package root.
-                const src_path = try std.fmt.allocPrint(gpa, "src/{s}", .{bm.file});
-                errdefer gpa.free(src_path);
-                try added.append(gpa, .{ .path = path, .source = source, .srcPath = src_path });
-            }
-        }
-    }
-    if (added.items.len == 0) return;
-    // Dependency order between bundled packages: a package is placed after
-    // every bundled package it imports (`routing` before `actions`).
-    var ordered: std.ArrayListUnmanaged(Module) = .empty;
-    defer ordered.deinit(gpa);
-    var placed = [_]bool{false} ** pkgs.len;
-    var progress = true;
-    while (progress) {
-        progress = false;
-        for (pkgs, 0..) |pkg, i| {
-            if (!loaded[i] or placed[i]) continue;
-            var ready = true;
-            for (pkgs, 0..) |other, j| {
-                if (j == i or !loaded[j] or placed[j]) continue;
-                for (pkg.modules) |bm| if (bp.comptime_pipeline.importsPackage(bm.source, other.name)) {
-                    ready = false;
-                };
-            }
-            if (!ready) continue;
-            placed[i] = true;
-            progress = true;
-            for (added.items) |m| if (std.mem.startsWith(u8, m.path, pkg.name) and m.path.len > pkg.name.len and m.path[pkg.name.len] == '/') {
-                try ordered.append(gpa, m);
-            };
-        }
-    }
-    // A cycle between bundled packages would leave some unplaced; keep them in
-    // table order rather than drop them (the checker reports the cycle).
-    for (pkgs, 0..) |pkg, i| {
-        if (!loaded[i] or placed[i]) continue;
-        for (added.items) |m| if (std.mem.startsWith(u8, m.path, pkg.name) and m.path.len > pkg.name.len and m.path[pkg.name.len] == '/') {
-            try ordered.append(gpa, m);
-        };
-    }
-    try out.insertSlice(gpa, 0, ordered.items);
-    added.clearRetainingCapacity();
-}
 
 /// Build the F2 fallback root list: today this is just
 /// `.botopinkbuild/deps/` — the per-project symlink store materialised by
@@ -666,8 +567,8 @@ fn loadOne(
 
 /// The import-source rule a package's own build applies (`resolver.checkSources`,
 /// decisions 206, 242 and 309), applied to dependency `dep`'s modules `mods`
-/// (read from `files`) against ITS manifest `m`: a `from` names std, a bundled
-/// package or a package `m` declares, and never `dep` itself or a module of
+/// (read from `files`) against ITS manifest `m`: a `from` names std or a
+/// package `m` declares, and never `dep` itself or a module of
 /// it. A consumer used to compile the import of a package the dependency does
 /// not declare with nothing bound, and answered `unbound variable` at the
 /// first use — in the dependency's module, with no word of the import that
@@ -2018,7 +1919,7 @@ test "loadDependencies with no deps touches no filesystem" {
     const proj = try config.parse(arena.allocator(),
         \\{ "name": "p" }
     );
-    const mods = try loadDependencies(std.testing.allocator, std.testing.io, proj, null, &.{});
+    const mods = try loadDependencies(std.testing.allocator, std.testing.io, proj, null);
     defer freeModules(std.testing.allocator, mods);
     try std.testing.expectEqual(@as(usize, 0), mods.len);
 }
@@ -2499,39 +2400,22 @@ test "renderMissingFile names the path it looked for and the manifest entry" {
     , aw.written());
 }
 
-test "loadDependencies: a bundled package a module imports is loaded from the compiler, first, as <pkg>/<stem>" {
-    const gpa = std.testing.allocator;
-    var pkg: ?bp.comptime_pipeline.BundledPackage = null;
-    for (bp.comptime_pipeline.bundled_packages) |p| {
-        if (p.modules.len > 0) {
-            pkg = p;
-            break;
-        }
-    }
-    const bundled = pkg orelse return;
-    var arena = std.heap.ArenaAllocator.init(gpa);
+test "loadDependencies: the compiler embeds std alone — an import of another package loads nothing undeclared" {
+    // Decision 326: `std` is the one bundled package; `routing`, `actions`,
+    // `http`, `log` and `validation` are libraries a program declares.
+    const pkgs = bp.comptime_pipeline.bundled_packages;
+    try std.testing.expectEqual(@as(usize, 1), pkgs.len);
+    try std.testing.expectEqualStrings("std", pkgs[0].name);
+    try std.testing.expect(bp.comptime_pipeline.bundledPackage("routing") == null);
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const proj = try config.parse(arena.allocator(),
         \\{ "name": "app" }
     );
-    const src = try std.fmt.allocPrint(arena.allocator(), "import {{x}} from \"{s}\";\n", .{bundled.name});
-    const main: Module = .{ .path = "main", .source = src, .srcPath = "src/main.bp" };
-    const mods = try loadDependencies(gpa, std.testing.io, proj, null, &.{&.{main}});
-    defer freeModules(gpa, mods);
-    try std.testing.expectEqual(bundled.modules.len, mods.len);
-    const first = try std.fmt.allocPrint(arena.allocator(), "{s}/{s}", .{ bundled.name, bundled.modules[0].stem });
-    try std.testing.expectEqualStrings(first, mods[0].path);
-    try std.testing.expectEqualStrings(bundled.modules[0].source, mods[0].source);
-
-    // Nothing imports it → nothing is loaded; the project IS the package → not loaded.
-    const none = try loadDependencies(gpa, std.testing.io, proj, null, &.{});
-    defer freeModules(gpa, none);
-    try std.testing.expectEqual(@as(usize, 0), none.len);
-    const self_text = try std.fmt.allocPrint(arena.allocator(), "{{ \"name\": \"{s}\" }}", .{bundled.name});
-    const self_proj = try config.parse(arena.allocator(), self_text);
-    const own = try loadDependencies(gpa, std.testing.io, self_proj, null, &.{&.{main}});
-    defer freeModules(gpa, own);
-    try std.testing.expectEqual(@as(usize, 0), own.len);
+    const mods = try loadDependencies(std.testing.allocator, std.testing.io, proj, null);
+    defer freeModules(std.testing.allocator, mods);
+    try std.testing.expectEqual(@as(usize, 0), mods.len);
 }
 
 test "loadDependencies: a bundled name listed in `dependencies` is refused" {
@@ -2540,5 +2424,5 @@ test "loadDependencies: a bundled name listed in `dependencies` is refused" {
     const proj = try config.parse(arena.allocator(),
         \\{ "name": "app", "dependencies": { "std": { "path": "../std" } } }
     );
-    try std.testing.expectError(error.BundledDependency, loadDependencies(std.testing.allocator, std.testing.io, proj, null, &.{}));
+    try std.testing.expectError(error.BundledDependency, loadDependencies(std.testing.allocator, std.testing.io, proj, null));
 }

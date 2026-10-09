@@ -33,12 +33,8 @@ botopink-lang/                 ← language core (this project)
 │   ├── test-scratch/          ← `test_scratch` — per-process scratch paths; the test modules only
 │   ├── test-shard/            ← the compiler-core test runner: the suite split across processes (`-Dtest-shards`)
 │   └── wasm3/                 ← vendored wasm3 (C): the wat comptime runtime runs on it, in-process
-├── libs/                      ← bundled .bp libraries — see libs/AGENTS.md
-│   ├── std/                   ← standard library
-│   ├── routing/               ← bundled route matcher + routing wires (decision 115)
-│   ├── actions/               ← bundled server-action protocol (decision 116)
-│   ├── validation/            ← bundled constraint validation (decision 116)
-│   └── log/                   ← bundled levels, renderers, error digest, Logger over an injected sink (decisions 194, 195)
+├── libs/                      ← the bundled .bp library — see libs/AGENTS.md
+│   └── std/                   ← standard library, the one package the compiler ships (decision 326)
 ├── examples/                  ← non-framework .bp example programs
 ├── tests/language/            ← botopink language tests of decision 8 (case, tuples, loop) — see tests/language/AGENTS.md
 └── scripts/                   ← installers, release packing, snapshot audit, git hooks
@@ -264,7 +260,7 @@ run is [`scripts/gate.sh`](scripts/gate.sh) — stages 1–4 one after the other
 8. `zig build test-libs` (every visible library on the targets its manifest declares — a cell that exists is green or the stage fails; a library without tests is still compiled; every target a `"targets"` list excludes is audited, and an exclusion that is not structural fails the stage);
 9. `zig build test-language` (tests/language on commonJS, erlang, wasm and beam — decision 8's `case`, tuples and `loop`; every `.targets` / manifest `"targets"` narrowing audited against the compiler's host-binding refusal, after the runner's own `--self-test`);
 10. `zig build test-docs` (every `botopink` fence of `docs.md` and `README.md` compiles);
-11. `scripts/tsc-check.sh` (every `.d.ts` a commonJS build of `libs/` — std and the bundled packages —, the example projects and `tests/language/modules` emits passes `tsc --noEmit --strict`, typescript pinned, through `npx`, and every `.js` it emits passes `node --check`).
+11. `scripts/tsc-check.sh` (every `.d.ts` a commonJS build of `libs/std` — the one package the compiler ships —, the example projects and `tests/language/modules` emits passes `tsc --noEmit --strict`, typescript pinned, through `npx`, and every `.js` it emits passes `node --check`).
 
 Stages 8–10 keep a cell-result store (decision 229): a warm run answers a cell
 from a stored pass only when its key — the compiler's build and its sources
