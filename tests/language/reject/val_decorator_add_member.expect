@@ -1,0 +1,2 @@
+decorator-member-without-type: `#[helper]` on the val `limit` calls `decl.addMember`
+8:3

@@ -407,6 +407,23 @@ names the one reflection builtin `@typeInfo` (the structural `TypeInfo` answer o
 the lowercase `@typeinfo(…)` / `@typeinfo.all(…)` where it is written (`typeinfo-lowercase`).
 Decision 253 makes the catalogue the static `@TypeInfo.all` of the builtin type:
 `reject/typeinfo_all_on_function` refuses `@typeInfo.all(…)` (`typeinfo-all-on-function`).
+Decision 356 (a decorator on a `val` runs, and the `val` is catalogued) adds `run/val_decorator_catalogue`
+(`DeclKind.Val`, the declared type as `returnType` and `returnTypeName`, `setMeta` read by
+`@typeInfo(<val>)`, both `val`s answered by `@TypeInfo.all`, four targets) and five `reject/` cells at the
+annotation or the query: `val_decorator_on_var` (a decorator on a module `var`, refused until `116-c` is decided), `val_decorator_runs` (`#[mark] pub val one = 1;` fails with the decorator's
+message — the parent binary printed `1`), `val_decorator_add_member` and `val_decorator_add_type`
+(`decorator-member-without-type` / `decorator-type-without-owner`, "the val") and
+`typeinfo_all_val_and_fn` (`typeinfo-all-mixed`: a `val` and a function under one query). Decision 361
+(std's `bpp` annotations; front 116 step 1) adds five `reject/` cells where std's decorators refuse a
+role's place — `bpp_html_on_val`, `bpp_style_on_val`, `bpp_html_not_template` (a function not
+answering `@ExprCustom<R>`), `bpp_prelude_on_fn`, `bpp_style_prelude_on_fn` — and ten `modules/bpp_*`
+projects over a fixture package `markup` (not jhonstart): `bpp_roles_found` (the key, the roles
+`#[bpp.html]` and `#[bpp.htmlPrelude]`, no `.bpp` file: accepted, four targets) and nine refused on every
+target — at the `"bpp"` key `bpp_key_object_form`, `bpp_key_not_a_dependency`, `bpp_html_missing`,
+`bpp_html_twice` and `bpp_prelude_twice` (naming the declarations), in the package's file
+`bpp_prelude_holds_declaration` and `bpp_role_not_pub`, at the `.bpp` file `bpp_file_without_key`
+(line 1) and `bpp_style_section_without_style` (its `--- style ---` line). Every one was red on the
+parent binary.
 Decision 254 types the answer `Declared<unknown>[]` whatever the program declares:
 `run/typeinfo_all_unknown_value` catalogues two functions of different signatures in one answer
 (each naming its declared return type, `returnTypeName` — decision 256; `run/typeinfo_all_list` reads

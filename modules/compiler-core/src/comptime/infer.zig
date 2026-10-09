@@ -3926,6 +3926,18 @@ fn validateDecorators(env: *Env, program: ast.Program) InferError!void {
     if (env.decorators.count() == 0) return;
     for (program.decls) |decl| switch (decl) {
         .@"fn" => |f| try checkDecoratorAnnotations(env, program, f.annotations, .{ .name = f.name, .type_ = try fnDeclType(env, f.name) }),
+        // Decision 356 — a decorator on a module-level `val` runs like one on a `fn`;
+        // `@Decl<T>` binds `T` to the `val`'s type.
+        .val => |v| {
+            // Decision 356 names a `val`; a module `var` with a decorator is
+            // refused at the annotation until it is decided (`116-c`).
+            if (v.mutable) for (v.annotations) |a| {
+                if (a.is_builtin or !env.decorators.contains(a.name)) continue;
+                const msg = try std.fmt.allocPrint(env.arena, "`#[{s}]` annotates the module `var` `{s}`, and a decorator runs on a `val`, never on a `var`", .{ a.name, v.name });
+                return decoratorError(env, a, msg, "Declare the binding with `val`, or move the decorator to a `val` or a `fn` that reads it.");
+            };
+            try checkDecoratorAnnotations(env, program, v.annotations, .{ .name = v.name, .type_ = try fnDeclType(env, v.name) });
+        },
         .type_ => |tdecl| {
             const self = try typeDeclType(env, tdecl.name);
             try checkDecoratorAnnotations(env, program, tdecl.annotations, .{ .name = tdecl.name, .type_ = self });
@@ -4013,15 +4025,16 @@ fn refuseUnknownAnnotationList(env: *Env, anns: []const ast.Annotation) InferErr
 
 /// The declaration a decorator application annotates, as decision 280 (2)
 /// reads it: its name (diagnostics) and its type — the type itself, a field's
-/// type, a function's type — which `@Decl<T>` binds `T` to; null where the
+/// type, a function's or a `val`'s type — which `@Decl<T>` binds `T` to; null where the
 /// declaration has none (a method).
 const DecoratedDecl = struct {
     name: []const u8,
     type_: ?*T.Type,
 };
 
-/// A function's type as its signature registered it, copied so a decorator's
-/// `@Decl<…>` pattern binds against it without touching the binding.
+/// A function's type as its signature registered it — or a module-level
+/// `val`'s binding type (decision 356) — copied so a decorator's `@Decl<…>`
+/// pattern binds against it without touching the binding.
 fn fnDeclType(env: *Env, name: []const u8) InferError!?*T.Type {
     const t = env.lookup(name) orelse return null;
     var seen = std.AutoHashMap(*T.TypeCell, *T.Type).init(env.arena);
@@ -4666,7 +4679,8 @@ fn runDeclDecorators(
             .name = handle.name,
             .kind = d.kind,
             .isPub = d.isPub,
-            .returnTypeName = if (d.kind == .function) handle.returnType else "",
+            // A `val`'s is its declared type as written (decision 356), `""` when none.
+            .returnTypeName = if (d.kind == .function or d.kind == .val) handle.returnType else "",
             .decorator_owner = env.comptimeOwnerOf(dfn),
             .decorator_name = dfn.name,
             .seq = 0,
@@ -4713,8 +4727,8 @@ fn runDeclDecorators(
                 // `analyzeSource` (decision 216 (1)).
                 .member => {
                     const target = memberOwner orelse {
-                        const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` on the function `{s}` calls `decl.addMember`, and a member belongs to a type", .{ diagnostics.decorator_member_without_type, a.name, handle.name });
-                        return decoratorError(env, a, msg, "`decl.addMember(source)` adds to the annotated `type` or `behavior` (or to the type that owns an annotated field or method); a function has no body to add to.");
+                        const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` on the {s} `{s}` calls `decl.addMember`, and a member belongs to a type", .{ diagnostics.decorator_member_without_type, a.name, ownerlessKindWord(handle.kind), handle.name });
+                        return decoratorError(env, a, msg, "`decl.addMember(source)` adds to the annotated `type` or `behavior` (or to the type that owns an annotated field or method); a function or a `val` has no body to add to.");
                     };
                     try env.memberContributions.append(env.arena, .{ .target = target, .source = c.source, .loc = a.loc, .decorator = a.name });
                 },
@@ -4722,8 +4736,8 @@ fn runDeclDecorators(
                 // associated type of the owner, merged as `__Owner__Name`.
                 .assoc => {
                     const assoc_owner = memberOwner orelse {
-                        const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` on the function `{s}` calls `decl.addType`, and an associated type belongs to a type", .{ diagnostics.decorator_type_without_owner, a.name, handle.name });
-                        return decoratorError(env, a, msg, "`decl.addType(name, source)` declares a type named through the annotated `type` or `behavior` (`City.Columns`); a function has none.");
+                        const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` on the {s} `{s}` calls `decl.addType`, and an associated type belongs to a type", .{ diagnostics.decorator_type_without_owner, a.name, ownerlessKindWord(handle.kind), handle.name });
+                        return decoratorError(env, a, msg, "`decl.addType(name, source)` declares a type named through the annotated `type` or `behavior` (`City.Columns`); a function or a `val` has none.");
                     };
                     const valid = c.name.len > 0 and std.ascii.isUpper(c.name[0]) and for (c.name) |ch| {
                         if (!std.ascii.isAlphanumeric(ch)) break false;
@@ -4772,6 +4786,12 @@ fn runDeclDecorators(
             },
         }
     }
+}
+
+/// How a refusal names a declaration with no owner type: a `val` (decision
+/// 356) or a function.
+fn ownerlessKindWord(kind: []const u8) []const u8 {
+    return if (std.mem.eql(u8, kind, "Val")) "val" else "function";
 }
 
 /// A closed default (`comptimeMod.isClosedDefault`) as the source lexeme an
@@ -4986,6 +5006,23 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
                 .annotations = f.annotations,
             };
             try runDeclDecorators(env, ctx, f.annotations, h, null, .{ .kind = .function, .isPub = f.isPub });
+        },
+        // Decision 356 — a module-level `val` reflects as `DeclKind.Val`:
+        // its name and its declared type as written (`""` when none). It
+        // owns no type, so `decl.addMember` / `decl.addType` are refused at
+        // the annotation; `decl.setMeta` records meta like a `fn`'s, and the
+        // `val` is an entry of `@TypeInfo.all`. A module `var` never gets
+        // here with a decorator: `validateDecorators` refuses it first.
+        .val => |v| {
+            const h = decoratorEval.DeclHandle{
+                .kind = "Val",
+                .name = v.name,
+                .fields = &.{},
+                .methods = &.{},
+                .returnType = if (v.typeAnnotation) |tr| try declTypeName(env.arena, tr) else "",
+                .annotations = v.annotations,
+            };
+            try runDeclDecorators(env, ctx, v.annotations, h, null, .{ .kind = .val, .isPub = v.isPub });
         },
         .type_ => |tdecl| switch (tdecl.shape) {
             .record => {

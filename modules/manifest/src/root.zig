@@ -326,6 +326,11 @@ pub const Manifest = struct {
     /// `"wasm": { "host": … }` (decision 334): the runtime a wasm build binds
     /// to; absent means `wasi`. Read on the project being built only.
     wasm_host: WasmHost = .wasi,
+    /// `"bpp": "<package>"` (decision 361): the dependency whose declarations
+    /// std's `bpp` annotations mark — the four roles a `.bpp` file unfolds
+    /// onto. Null when the manifest has no key. Read on the project being
+    /// built only (`compiler-cli` `bpp.zig`).
+    bpp: ?[]const u8 = null,
 
     pub fn isWorkspace(self: Manifest) bool {
         return self.kind == .workspace;
@@ -405,7 +410,7 @@ pub fn parse(arena: std.mem.Allocator, text: []const u8, path: []const u8, out_e
         m.workspaces = globs;
         // A workspace is not a package: nothing compiles from it and nothing
         // imports it, so the package fields have no meaning here.
-        for ([_][]const u8{ "src", "files", "entry", "dependencies", "wasm" }) |field| {
+        for ([_][]const u8{ "src", "files", "entry", "dependencies", "wasm", "bpp" }) |field| {
             if (obj.get(field) != null) {
                 out_err.* = located(text, path, locateKey(text, field), try std.fmt.allocPrint(
                     arena,
@@ -423,7 +428,25 @@ pub fn parse(arena: std.mem.Allocator, text: []const u8, path: []const u8, out_e
     if (obj.get("dependencies")) |deps_val| {
         m.dependencies = try parseDependencies(arena, deps_val, text, path, out_err);
     }
+    if (obj.get("bpp")) |v| m.bpp = try parseBpp(arena, v, m.dependencies, text, path, out_err);
     return m;
+}
+
+/// `"bpp"` (decision 361, amending 284 and 338 (6)): one package name, a
+/// dependency of this manifest — the package whose declarations std's `bpp`
+/// annotations mark. The object form `{"default", "style"}` is gone, refused
+/// at the key naming the string form; any other non-string too; a name that
+/// is not an entry of `"dependencies"` is refused at the value.
+fn parseBpp(arena: std.mem.Allocator, v: std.json.Value, deps: []const DepEntry, text: []const u8, path: []const u8, out_err: *?Located) Error![]const u8 {
+    if (v != .string) {
+        out_err.* = located(text, path, locateKey(text, "bpp"), "\"bpp\" is a package name — write \"bpp\": \"jhonstart\"");
+        return error.Invalid;
+    }
+    for (deps) |d| {
+        if (std.mem.eql(u8, d.name, v.string)) return v.string;
+    }
+    out_err.* = located(text, path, locateEntry(text, "bpp", v.string), try std.fmt.allocPrint(arena, "\"bpp\" names \"{s}\", which is not a dependency — the package that unfolds .bpp files is an entry of \"dependencies\"", .{v.string}));
+    return error.Invalid;
 }
 
 /// Read `<dir>/botopink.json` and `parse` it; the manifest's `path` is the
@@ -1848,6 +1871,44 @@ test "parse: a \"wasm\" that names no known host, or anything beside it, is a lo
     try expectHead(try refuse(a,
         \\{ "name": "app", "wasm": { "host": "wasi", "jspi": true } }
     ), "error: \"wasm\" has no field \"jspi\" — its one field is \"host\": { \"host\": \"wasi\" | \"browser\" }", "--> botopink.json:1:44");
+}
+
+test "parse: \"bpp\" is one package name, a dependency (decision 361)" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const a = arena_inst.allocator();
+    try testing.expectEqualStrings("jhonstart", (try parseText(a,
+        \\{ "name": "app", "dependencies": { "jhonstart": { "path": "../jhonstart" } }, "bpp": "jhonstart" }
+    )).bpp.?);
+    try testing.expectEqual(@as(?[]const u8, null), (try parseText(a,
+        \\{ "name": "app" }
+    )).bpp);
+}
+
+test "parse: the object form of \"bpp\", a non-string and a name that is no dependency are located errors (decision 361)" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const a = arena_inst.allocator();
+    try testing.expectEqualStrings(
+        \\error: "bpp" is a package name — write "bpp": "jhonstart"
+        \\ --> botopink.json:1:71
+        \\  |
+        \\1 | { "name": "app", "dependencies": { "jhonstart": { "path": "../j" } }, "bpp": { "default": "jhonstart" } }
+        \\  |                                                                       ^^^^^
+        \\
+        \\
+    , try refuse(a,
+        \\{ "name": "app", "dependencies": { "jhonstart": { "path": "../j" } }, "bpp": { "default": "jhonstart" } }
+    ));
+    try expectHead(try refuse(a,
+        \\{ "name": "app", "bpp": ["jhonstart"] }
+    ), "error: \"bpp\" is a package name — write \"bpp\": \"jhonstart\"", "--> botopink.json:1:18");
+    try expectHead(try refuse(a,
+        \\{ "name": "app", "dependencies": { "jhonstart": { "path": "../j" } }, "bpp": "jhonstrat" }
+    ), "error: \"bpp\" names \"jhonstrat\", which is not a dependency — the package that unfolds .bpp files is an entry of \"dependencies\"", "--> botopink.json:1:78");
+    try expectHead(try refuse(a,
+        \\{ "name": "w", "workspaces": ["m/*"], "bpp": "jhonstart" }
+    ), "error: a workspace manifest cannot carry \"bpp\" — a workspace declares members, it is not a package; move \"bpp\" to the member's own botopink.json", "--> botopink.json:1:39");
 }
 
 test "otp: a release the compiler does not emit for is refused, located at the value (decision 228)" {

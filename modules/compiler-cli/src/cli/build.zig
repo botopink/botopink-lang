@@ -336,6 +336,9 @@ pub fn reportDependencyError(err: anyerror) void {
         error.BundledDependency => {},
         // Already rendered, located at the dependency's import.
         error.ImportSourceRefused => {},
+        // Already rendered (decision 361): at the `"bpp"` key, at a role
+        // declaration of the package it names, or at a `.bpp` file's line.
+        error.BppRefused => {},
         else => reporter.errMsg("failed to load project dependencies"),
     }
 }

@@ -27,6 +27,7 @@ const arglist = @import("./arglist.zig");
 const otp = @import("./otp.zig");
 const resolver = @import("./resolver.zig");
 const sources = @import("./sources.zig");
+const bpp = @import("./bpp.zig");
 /// Test-only: the one way a test spells a path it writes to (per process, so a
 /// second `zig build test` over this checkout cannot empty it mid-test).
 /// `build.zig` gives this module to the test modules alone.
@@ -284,6 +285,14 @@ pub fn loadDependencies(
         return error.BundledDependency;
     }
 
+    // Decision 361 — the `.bpp` files of the project: with no `"bpp"` key the
+    // first one is refused at the file; with one, the roles of the package it
+    // names are checked once that package is loaded (`loadClosure`).
+    var bpp_arena = std.heap.ArenaAllocator.init(gpa);
+    defer bpp_arena.deinit();
+    const bpp_files = try bpp.scanBppFiles(bpp_arena.allocator(), io, proj.srcDir());
+    if (proj.manifest.bpp == null and bpp_files.len > 0) return bpp.refuseUnnamed(bpp_arena.allocator(), bpp_files);
+
     if (proj.dependencies.len == 0) return try modules.toOwnedSlice(gpa);
 
     const roots = try resolveLibRoots(gpa, io, env_map);
@@ -301,7 +310,7 @@ pub fn loadDependencies(
     const entries = try manifest.scanRoots(arena, io, roots);
     const fallback_entries = try manifest.scanRoots(arena, io, fallback_roots);
 
-    try loadClosure(gpa, io, arena, proj.manifest, proj.dir, proj.dependencies, entries, fallback_entries, &modules);
+    try loadClosure(gpa, io, arena, proj.manifest, proj.dir, proj.dependencies, entries, fallback_entries, &modules, bpp_files);
     return try modules.toOwnedSlice(gpa);
 }
 
@@ -318,6 +327,9 @@ fn loadClosure(
     entries: []const manifest.Entry,
     fallback_entries: []const manifest.Entry,
     out: *std.ArrayListUnmanaged(Module),
+    /// The project's `.bpp` files (decision 361), checked against the roles
+    /// of the package `project.bpp` names.
+    bpp_files: []const bpp.BppFile,
 ) !void {
     var closure: DepClosure = .{ .arena = arena, .io = io, .entries = entries, .fallback_entries = fallback_entries };
     // The project's own entries are resolved first, so the directory each of
@@ -339,6 +351,35 @@ fn loadClosure(
         error.OutOfMemory => return error.OutOfMemory,
     };
     for (closure.order.items) |pkg| try loadOne(gpa, io, pkg.dir, pkg.manifest, pkg.name, out);
+    if (project.bpp) |name| try checkBppRoles(arena, io, project, closure.packages.get(name).?, out.items, bpp_files);
+}
+
+/// Decision 361 — the roles std's `bpp` annotations mark in the package the
+/// project's `"bpp"` names (`bpp.checkPackage`), and the project's `.bpp`
+/// files against them (`bpp.checkStyleSections`). `pkg` is the closure's
+/// entry for that name: `"bpp"` is refused unless it names a dependency
+/// (`manifest.parse`), and every dependency is in the closure.
+fn checkBppRoles(
+    arena: std.mem.Allocator,
+    io: std.Io,
+    project: manifest.Manifest,
+    pkg: DepClosure.Package,
+    loaded: []const Module,
+    bpp_files: []const bpp.BppFile,
+) !void {
+    var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const cwd = cwd_buf[0..try std.process.currentPath(io, &cwd_buf)];
+    var mods: std.ArrayListUnmanaged(bpp.PackageModule) = .empty;
+    for (pkg.manifest.files) |file| {
+        const path = try std.fmt.allocPrint(arena, "{s}/{s}", .{ pkg.name, stripSourceExt(file) });
+        const mod = for (loaded) |m| {
+            if (std.mem.eql(u8, m.path, path)) break m;
+        } else continue;
+        const on_disk = try std.fs.path.join(arena, &.{ pkg.dir, pkg.manifest.src, file });
+        try mods.append(arena, .{ .module = mod, .file = try std.fs.path.relative(arena, cwd, null, cwd, on_disk) });
+    }
+    const roles = try bpp.checkPackage(arena, project, pkg.name, mods.items);
+    try bpp.checkStyleSections(arena, pkg.name, roles, bpp_files);
 }
 
 /// The packages a build compiles: every dependency the project declares, every
@@ -2206,7 +2247,7 @@ fn closureOf(arena: std.mem.Allocator, io: std.Io, comptime root: []const u8, te
         }
         out.deinit(gpa);
     }
-    try loadClosure(gpa, io, arena, m, app_dir, m.dependencies, entries, &.{}, &out);
+    try loadClosure(gpa, io, arena, m, app_dir, m.dependencies, entries, &.{}, &out, &.{});
     var names: std.ArrayListUnmanaged(u8) = .empty;
     for (out.items, 0..) |mod, i| {
         if (i > 0) try names.append(arena, ' ');

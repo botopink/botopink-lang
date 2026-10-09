@@ -32,7 +32,8 @@ pub const DeclaredEntry = struct {
     kind: Kind,
     isPub: bool,
     /// Decision 256 — a function's declared return type as the source spells
-    /// it (`Clock`); `""` for a type or a behavior.
+    /// it (`Clock`), a `val`'s declared type (decision 356, `""` when none);
+    /// `""` for a type or a behavior.
     returnTypeName: []const u8 = "",
     /// The decorator's identity: its declaring module and its own name.
     decorator_owner: []const u8,
@@ -40,7 +41,8 @@ pub const DeclaredEntry = struct {
     /// Order of recording — source order inside a module.
     seq: usize,
 
-    pub const Kind = enum { function, type_, behavior };
+    /// `val` — decision 356: a module-level `val` a decorator annotates.
+    pub const Kind = enum { function, type_, behavior, val };
 };
 
 /// A decorator's identity: its declaring module and its own name.

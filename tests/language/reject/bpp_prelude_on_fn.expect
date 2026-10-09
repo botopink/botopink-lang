@@ -1,0 +1,2 @@
+#[bpp.htmlPrelude] annotates the marker `val` of a prelude module (`pub val prelude = bpp.Prelude();`) — `prelude` is not a val
+7:3

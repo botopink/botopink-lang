@@ -478,7 +478,7 @@ recognize → reflect → invoke → apply; marker meaning lives in the lib body
 - `registerFnSignatures` calls `registerDecoratorSig` for every top-level `fn`
   and `delegate`, recording the trailing params and the body-carrying `FnDecl`
   in `env.decorators`.
-- The reflection cluster (`type DeclKind { Type, Behavior, Fn, Method, Field }` +
+- The reflection cluster (`type DeclKind { Type, Behavior, Fn, Method, Field, Val }` +
   `type Decl`/`Field`/`Method`/`Param`/`Annotation`/`Span`)
   is registered by `registerStdlib` from `decl_reflection_src` (a mirror of
   `libs/std/src/builtins.d.bp` — keep in sync). `Decl` is a record so the array
@@ -510,9 +510,11 @@ recognize → reflect → invoke → apply; marker meaning lives in the lib body
   parameter, `ast.Param.loc`) and a `comptime` default on any other function
   or method (`refuseComptimeDefaults`, `comptime-default-outside-decorator`
   at the default — no call site fills one), then walks every declaration's annotations
-  (record/enum/fn/interface + methods + record fields) with the declaration's
-  type (`DecoratedDecl`: a fn's signature copied, a type with fresh generics,
-  a field's declared type; null for a method) and `checkDecoratorArgs`
+  (record/enum/fn/module-level `val` (decision 356)/interface + methods +
+  record fields) with the declaration's type (`DecoratedDecl`: a fn's
+  signature or a `val`'s binding type copied, a type with fresh generics, a
+  field's declared type; null for a method); a decorator on a module `var` is
+  refused at the annotation (`116-c`) and `checkDecoratorArgs`
   type-checks `#[name(args)]` for recognized decorators:
   `mapDecoratorArgs` meets the arguments with the parameters (positional
   first, then labelled by name, a variadic last parameter taking the rest;
@@ -541,7 +543,12 @@ recognize → reflect → invoke → apply; marker meaning lives in the lib body
   location (`decoratorArgValue`).
 - **Invocation:** `invokeDecorators` (skipped when `env.skipDecoratorInvoke` or
   no `env.templateEval`) builds a `decorator_eval.DeclHandle` per annotated
-  decl — `Fn`, `Type` (a record shape with `FieldHandle`s, an enum shape with
+  decl — `Fn`, `Val` (a module-level `val`, decision 356 — a decorator on a module `var` is refused by `validateDecorators` at the annotation, question `116-c`: its name and
+  its declared type as written, `""` when none; it owns no type, so
+  `addMember` / `addType` are refused at the annotation naming "the val", and
+  it is catalogued as `DeclaredEntry.Kind.val` — one `@TypeInfo.all` query
+  answers functions, `val`s or types, `typeinfo_all.zig` `kindClass`),
+  `Type` (a record shape with `FieldHandle`s, an enum shape with
   `variants`), `Behavior`, plus
   per-`Field` and per-`Method` handles — and `runDeclDecorators` calls
   `decoratorEval.evaluate` for each body-carrying decorator with one

@@ -1,0 +1,28 @@
+//// Decision 356 — a decorator on a module-level `val` runs over a `@Decl` of
+//// kind `DeclKind.Val`: `name`, `returnType` the declared type as written
+//// (`""` when none), and `setMeta` records meta read back by
+//// `@typeInfo(<val>)`. The `val` is an entry of `@TypeInfo.all`, with its
+//// declared type as `returnTypeName`. On the parent binary the decorator was
+//// dropped silently (`DeclKind.Val` did not exist).
+
+fn setting(comptime decl: @Decl, comptime key: string) {
+    if (decl.kind != DeclKind.Val) decl.fail("#[setting] annotates a val");
+    decl.setMeta("key", key);
+    decl.setMeta("declared", decl.returnType);
+}
+
+#[setting("port")]
+pub val port: i32 = 8080;
+
+#[setting("host")]
+pub val host = "localhost";
+
+pub fn main() {
+    @print(@typeInfo(port).meta.setting.key);
+    @print(@typeInfo(port).meta.setting.declared);
+    @print("[" + @typeInfo(host).meta.setting.declared + "]");
+    val all = @TypeInfo.all(with: setting);
+    @print(all.length);
+    all.forEach({ d -> @print(d.name + " " + d.returnTypeName) });
+    @print(port + 1);
+}

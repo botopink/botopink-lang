@@ -1,0 +1,14 @@
+//// Decision 356 runs a decorator on a module-level `val`; on a module `var`
+//// it is refused at the annotation (question `116-c` open). The parent binary
+//// dropped the decorator silently and printed `1`.
+
+fn mark(comptime decl: @Decl) {
+    decl.setMeta("seen", "yes");
+}
+
+#[mark]
+var count = 1;
+
+pub fn main() {
+    @print(count);
+}

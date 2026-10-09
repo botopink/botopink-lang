@@ -1,0 +1,5 @@
+type Props(title: string)
+--- style ---
+.title { font-size: 2rem; }
+---
+<h1 class="title">{props.title}</h1>

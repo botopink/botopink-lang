@@ -1,0 +1,2 @@
+decorator-type-without-owner: `#[helper]` on the val `limit` calls `decl.addType`
+8:3

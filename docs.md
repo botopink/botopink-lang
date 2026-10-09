@@ -318,7 +318,7 @@ does what it wants.
 
 | Where | Modules |
 |---|---|
-| the root (pure) | `collections` (`Dict`, `Set`, `Queue`, `Order` — a constructor is called on its type: `Dict.empty()`, `Dict.ofEntries([#("a", 1)])`, `Set.fromList(xs)`), `math`, `path`, `url`, `querystring`, `json`, `regex`, `unicode`, `string_builder`, `encoding`, `hash`, `escape`, `async`; `erlang` and `beam` (the target's surface) |
+| the root (pure) | `collections` (`Dict`, `Set`, `Queue`, `Order` — a constructor is called on its type: `Dict.empty()`, `Dict.ofEntries([#("a", 1)])`, `Set.fromList(xs)`), `math`, `path`, `url`, `querystring`, `json`, `regex`, `unicode`, `string_builder`, `encoding`, `hash`, `escape`, `async`, `bpp` (the four annotations a framework marks its `.bpp` roles with — `#[bpp.html]`, `#[bpp.style]`, `#[bpp.htmlPrelude]`, `#[bpp.stylePrelude]` — and `Prelude`, decision 361); `erlang` and `beam` (the target's surface) |
 | `io` | `io.fs`, `io.http`, `io.net`, `io.clock`, `io.random`, `io.os`, `io.env`, `io.process` |
 | `testing` | `testing.asserts`, `testing.snapshots`, `testing.mocks` |
 
@@ -2431,10 +2431,15 @@ the decorator produces goes to one of four places (decision 216):
 | the program's catalogue | (every declaration a decorator runs over) | `@TypeInfo.all(with: entity)` at an entry point |
 
 A member or an associated type from a field's or a method's decorator belongs
-to the type that owns it; a function has none (`decorator-member-without-type`,
-`decorator-type-without-owner`). A decorator adds and never replaces: a name
+to the type that owns it; a function and a module-level `val` have none
+(`decorator-member-without-type`, `decorator-type-without-owner`). A decorator
+on a `val` runs like one on a `fn` (decision 356): `decl.kind` is
+`DeclKind.Val`, `decl.returnType` the declared type as written (`""` when
+none), `setMeta` is legal, and the `val` is an entry of `@TypeInfo.all` — one
+query answers functions, `val`s or types, never two of them
+(`typeinfo-all-mixed`). A decorator adds and never replaces: a name
 the type already has is `decorator-member-duplicate` / `decorator-type-duplicate`.
-Meta describes a top-level declaration — a `type`, a `behavior` or a `fn` — and
+Meta describes a top-level declaration — a `type`, a `behavior`, a `fn` or a `val` — and
 each key is set once (`decorator-meta-duplicate`); a read naming a key the
 decorator did not set is `typeinfo-meta-missing`.
 A record-shaped type's members are closed: a call through the type names an

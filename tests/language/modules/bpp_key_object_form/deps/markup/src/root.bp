@@ -1,0 +1,7 @@
+//// The fixture package `markup` (front 116, decision 361): its default
+//// module holds the markup's unfold target, `prelude` the prelude marker.
+//// It is not jhonstart: the toolchain finds its roles by std's `bpp`
+//// annotations alone.
+
+pub default mod markup;
+pub mod prelude;

@@ -573,6 +573,10 @@ pub type DeclKind {
     Fn,
     Method,
     Field,
+    // Decision 356 — a module-level `val`: `name`, `returnType` its declared
+    // type as written (`""` when none); `setMeta` is legal, `addMember` /
+    // `addType` are refused (a `val` owns no type).
+    Val,
 }
 
 // One annotation entry on a reflected declaration (`#[name(args…)]`). `args`
@@ -639,7 +643,7 @@ pub behavior Decl<T> {
     // (`decl.addMember("pub fn fromRow(r: Row) -> Self { … }")`). It is
     // ordinary run-time code of the type and travels with it to every
     // importer. From a field's or a method's decorator it joins the type that
-    // owns the field or method; from a function's it is refused
+    // owns the field or method; from a function's or a `val`'s it is refused
     // (`decorator-member-without-type`), and so is a name the type already
     // has (`decorator-member-duplicate`) or a source that is not one `fn`
     // (`decorator-member-not-one-fn`).
@@ -649,9 +653,9 @@ pub behavior Decl<T> {
     // declaration, under this decorator's own name: `decl.setMeta("table",
     // "cities")` in `#[entity]` is read anywhere the declaration is reached as
     // `@typeInfo(City).meta.entity.table`, a string constant. It never becomes
-    // run-time code. Set from a `type`'s, a `behavior`'s or a `fn`'s
-    // decorator (a field's or a method's is `decorator-meta-on-member`), each
-    // key once (`decorator-meta-duplicate`).
+    // run-time code. Set from a `type`'s, a `behavior`'s, a `fn`'s or a
+    // `val`'s (decision 356) decorator (a field's or a method's is
+    // `decorator-meta-on-member`), each key once (`decorator-meta-duplicate`).
     fn setMeta(self: Self, key: string, value: string);
 
     // Decision 216 (3) — declare a type that belongs to the annotated one,
@@ -661,7 +665,7 @@ pub behavior Decl<T> {
     // an enum shape (`"{ Small, Large }"`) — and imported with its owner.
     // `source` is the shape as it follows the name in a declaration. From a
     // field's or a method's decorator it belongs to the owning type; from a
-    // function's it is refused (`decorator-type-without-owner`), as are a
+    // function's or a `val`'s it is refused (`decorator-type-without-owner`), as are a
     // name that is not a type name (`decorator-type-name`), one the owner
     // already answers (`decorator-type-duplicate`) and a source that is not
     // the shape of one type (`decorator-type-not-one-type`).
@@ -673,9 +677,10 @@ pub behavior Decl<T> {
 // then declaration order. `meta` is what `d` set on it (`decl.setMeta`);
 // `value` is the function itself, or for a type a thunk calling the
 // associated fn the query names (`@TypeInfo.all(with: d, member: "m")`),
-// typed `unknown` (decision 254). `returnTypeName` is a function's declared
-// return type as the source spells it (`"Clock"`), `""` for a type (decision
-// 256). The compiler's mirror is `comptime.zig`
+// typed `unknown` (decision 254), or the `val` itself for a `val` (decision
+// 356). `returnTypeName` is a function's declared return type as the source
+// spells it (`"Clock"`), a `val`'s declared type (`""` when none), `""` for a
+// type (decision 256). The compiler's mirror is `comptime.zig`
 // `decl_reflection_src`.
 pub type DeclaredMeta(
     key: string,

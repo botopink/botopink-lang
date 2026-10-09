@@ -315,25 +315,33 @@ fn entriesFor(arena: std.mem.Allocator, reflection: *const reflectionMod.Reflect
 /// at `at`. `own` is the reading module, whose private declarations it reaches
 /// directly; null for a template body's query.
 fn checkEntries(arena: std.mem.Allocator, q: Resolved, entries: []const reflectionMod.DeclaredEntry, own: ?[]const u8, at: ast.Loc) Error!?TypeError {
+    // One kind per query: functions, `val`s (decision 356) or types.
+    var first: [3][]const u8 = .{ "", "", "" };
+    for (entries) |e| {
+        const c = @intFromEnum(kindClass(e.kind));
+        if (first[c].len == 0) first[c] = e.name;
+    }
+    const words = [3][]const u8{ "function", "val", "type" };
+    var a: ?usize = null;
+    var b: ?usize = null;
+    for (first, 0..) |name, c| {
+        if (name.len == 0) continue;
+        if (a == null) a = c else if (b == null) b = c;
+    }
+    if (b) |second| {
+        const one = a.?;
+        return try refusal(arena, at, "{s}: `{s}` is carried by the {s} `{s}` and by the {s} `{s}`, and one query answers one kind of value", .{ diagnostics.typeinfo_all_mixed, q.label, words[one], first[one], words[second], first[second] }, "Catalogue functions, `val`s and types with distinct decorators, or distinct queries.");
+    }
     var fns: usize = 0;
     for (entries) |e| {
-        if (e.kind == .function) fns += 1;
-    }
-    if (fns > 0 and fns < entries.len) {
-        var first_fn: []const u8 = "";
-        var first_type: []const u8 = "";
-        for (entries) |e| {
-            if (e.kind == .function and first_fn.len == 0) first_fn = e.name;
-            if (e.kind != .function and first_type.len == 0) first_type = e.name;
-        }
-        return try refusal(arena, at, "{s}: `{s}` is carried by the function `{s}` and by the type `{s}`, and one query answers one kind of value", .{ diagnostics.typeinfo_all_mixed, q.label, first_fn, first_type }, "Catalogue functions and types with two decorators, or two queries.");
+        if (kindClass(e.kind) != .type_) fns += 1;
     }
     const of_types = entries.len > fns;
     if (of_types and q.member == null) {
         return try refusal(arena, at, "{s}: `{s}` is carried by the type `{s}`, and a type is no value: name the associated fn each entry calls", .{ diagnostics.typeinfo_all_needs_member, q.label, entries[0].name }, "Write `@TypeInfo.all(with: <decorator>, member: \"<associated fn>\")`; each `value` is then `{ -> T.<associated fn>() }`.");
     }
     if (!of_types and q.member != null and entries.len > 0) {
-        return try refusal(arena, at, "{s}: `{s}` is carried by functions, and `member:` names an associated fn of a type", .{ diagnostics.typeinfo_all_arguments, q.label }, "A function's entry is the function itself; leave `member:` out.");
+        return try refusal(arena, at, "{s}: `{s}` is carried by {s}, and `member:` names an associated fn of a type", .{ diagnostics.typeinfo_all_arguments, q.label, if (kindClass(entries[0].kind) == .val) "`val`s" else "functions" }, "A function's or a `val`'s entry is the declaration itself; leave `member:` out.");
     }
     for (entries) |e| {
         const mine = if (own) |o| std.mem.eql(u8, e.module, o) else false;
@@ -341,6 +349,18 @@ fn checkEntries(arena: std.mem.Allocator, q: Resolved, entries: []const reflecti
             return try refusal(arena, at, "{s}: `{s}` of `{s}` carries `{s}` and is not `pub`, so the catalogue cannot reach it", .{ diagnostics.typeinfo_all_private, e.name, e.module, q.label }, "Make the declaration `pub`: the entry point reaches every declaration it catalogues through an import.");
     }
     return null;
+}
+
+/// The kind a query answers: a function and a `val` (decision 356) are
+/// values, each its own kind; a `type` and a `behavior` are types.
+const KindClass = enum(u2) { function, val, type_ };
+
+fn kindClass(k: reflectionMod.DeclaredEntry.Kind) KindClass {
+    return switch (k) {
+        .function => .function,
+        .val => .val,
+        .type_, .behavior => .type_,
+    };
 }
 
 /// One entry as `<ctor>(name: …, module: …, meta: […], returnTypeName: …, value: <value>)`.
@@ -412,7 +432,7 @@ pub fn plan(
         const entries = try entriesFor(arena, reflection, rq, module_path);
         if (try checkEntries(arena, rq, entries, module_path, q.loc)) |te| return .{ .refused = te };
         const of_types = for (entries) |e| {
-            if (e.kind != .function) break true;
+            if (kindClass(e.kind) == .type_) break true;
         } else false;
 
         // ── the answer ───────────────────────────────────────────────────

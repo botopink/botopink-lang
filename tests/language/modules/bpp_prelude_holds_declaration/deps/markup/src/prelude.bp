@@ -1,0 +1,10 @@
+//// The fixture's prelude module: its imports, and the marker.
+
+import {bpp} from "std";
+
+#[bpp.htmlPrelude]
+pub val prelude = bpp.Prelude();
+
+pub fn helper() -> i32 {
+    return 1;
+}

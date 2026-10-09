@@ -1,0 +1,6 @@
+//// The fixture's prelude module: its imports, and the marker.
+
+import {bpp} from "std";
+
+#[bpp.htmlPrelude]
+val prelude = bpp.Prelude();
