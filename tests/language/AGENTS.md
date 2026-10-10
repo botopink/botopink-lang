@@ -123,6 +123,13 @@ written (`.wasm.expect`, `language-gaps.md`); and the refusals `reject/component
 the parent binary. Decision 354 took the base out of the wrapper, so `reject/component_two_bases`,
 `reject/use_two_bases`, `reject/use_owner_mismatch` (decision 96's one base per body) and the arity
 cells `reject/component_one_type_argument` / `reject/context_two_type_arguments` left with it.
+Decisions 352 and 354, as `styled` registers through them (`08-bpp/119` step 1), add
+`run/context_sheet_registers` — a context whose value holds a writer function, provided at the root; a
+component computed at render reads it at its body's top and hands the writer its rule each time it
+runs; a component run through a function value under a provider that keeps nothing registers nothing,
+one that reads no context registers nothing — and `run/context_sheet_unbound` (`context-unbound`
+naming the context, `.exit` and the three `.stderr`s); erlang, beam and commonJS run them, wasm refuses
+the first `use` (`.wasm.expect`).
 Decision 357 (the rules of hooks) adds `reject/use_in_if`, `reject/use_in_loop`, `reject/use_in_lambda`
 and `reject/use_after_early_return` (`use-not-top-level`, naming the construct or the line) and
 `run/use_conditional_argument` (a condition inside `use provide`'s argument, an `if` that does not
