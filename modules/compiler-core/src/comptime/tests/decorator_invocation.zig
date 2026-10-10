@@ -438,3 +438,35 @@ test "decorator invocation: a helper of another module builds that module's reco
     for (replies) |r| std.debug.print("{s}\n", .{r});
     return error.TestExpectedContains;
 }
+
+test "comptime: round trip ---- a decorator's host function runs its runtime's cell, the reply byte-identical (decision 341)" {
+    // 01-compiler/14 step 6. `bang` carries both cells — the BEAM runtime
+    // runs its `@External.Erlang` template, the wat runtime the botopink
+    // function its `@External.Wasm("fn:…")` names — and std's
+    // `hash.contentHash` travels with its own two, renamed beside the
+    // decorator (`host_cells.zig`). The `@emit` reply is the same text on
+    // both runtimes.
+    const src =
+        \\import {hash} from "std";
+        \\#[@External.Node("""($0 + "!")"""),
+        \\  @External.Erlang("""<<($0)/binary, "!">>"""),
+        \\  @External.Wasm("fn:bangBody")]
+        \\declare fn bang(value: string) -> string;
+        \\fn bangBody(value: string) -> string {
+        \\    return value + "!";
+        \\}
+        \\fn labelled(comptime decl: @Decl) {
+        \\    @emit("pub fn label() -> string { return \"" + bang(decl.name) + hash.contentHash(decl.name) + "\"; }");
+        \\}
+        \\#[labelled]
+        \\type Point(x: i32, y: i32)
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const replies = try h.repliesIdenticalAcrossRuntimes(std.testing.allocator, arena.allocator(), @src(), &.{.{ .path = "", .source = src }});
+    var found = false;
+    for (replies) |r| {
+        if (std.mem.indexOf(u8, r, "Point!de553cf") != null) found = true;
+    }
+    try std.testing.expect(found);
+}

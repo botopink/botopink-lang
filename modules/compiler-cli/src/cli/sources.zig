@@ -57,6 +57,7 @@ pub fn load(
             // No explicit root yet — fall back to the legacy blind walk so
             // unmigrated packages keep building (deprecated for one release).
             const mods = try scanner.scanSources(gpa, io, src_dir);
+            for (mods) |*m| m.targets = bp.Targets.of(proj.manifest.targets);
             if (mods.len > 0) {
                 reporter.warnMsg("no module-tree root (src/main.bp or src/root.bp) — using the deprecated implicit src/ scan");
                 reporter.hintMsg("declare a root with `mod` declarations; the implicit scan will be removed in a future release");
@@ -72,6 +73,9 @@ pub fn load(
     for (res.orphans) |o| {
         reporter.warnDetail("module not reached by any `mod` path — not compiled:", o.file);
     }
+    // Decision 341 — the package's declared targets decide which host cells
+    // its decorators need (`Module.targets`).
+    for (res.modules) |*m| m.targets = bp.Targets.of(proj.manifest.targets);
     return .{ .modules = res.modules, .orphans = res.orphans };
 }
 

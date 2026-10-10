@@ -10,6 +10,7 @@ const memberFnMod = @import("member_fn.zig");
 const T = @import("./types.zig");
 const template = @import("./template.zig");
 const trace = @import("./trace.zig");
+const hostCells = @import("./host_cells.zig");
 
 // ── type definitions ──────────────────────────────────────────────────────────
 
@@ -1367,6 +1368,22 @@ pub const Env = struct {
     /// imported function itself, under that name) — what a decorator of this
     /// module carries when its body calls it (`infer.decoratorSupport`).
     importedFnSupport: std.StringHashMapUnmanaged([]const ast.FnDecl) = .empty,
+    /// Decision 341 — every std function as a comptime module carries it
+    /// (`host_cells.zig` `StdFn`: named `__bp_std__<module>__<name>`, its
+    /// own std calls renamed so), keyed by that name. Built once, by
+    /// `comptime.registerStdlib` into the std template, and shared read-only
+    /// by every env cloned from it; null where no std was registered.
+    stdCarried: ?*const hostCells.StdCarried = null,
+    /// Decision 341 — this module's functions with their std calls renamed
+    /// (`host_cells.zig` `Writer.rewrite`), by body address: one copy per
+    /// function, so two closures carrying it carry one function.
+    stdRewritten: std.AutoHashMapUnmanaged(usize, ast.FnDecl) = .empty,
+    /// 01-compiler/14 step 8 (decision 355) — an imported `val` whose
+    /// initializer its module knew at build, by the local name the import
+    /// binds: the value as `block_eval.termJson` wrote it when the module
+    /// exported it (`comptime.zig` `registerExports`). A template's hole
+    /// naming it is known at build (`block_eval.knownAtBuild`).
+    importedBuildValues: std.StringHashMapUnmanaged([]const u8) = .empty,
     /// A template this module IMPORTS, by its body's address (as
     /// `comptimeOwners`), with the functions of its own module its body
     /// reaches (`infer.decoratorSupport`, exported by `comptime.zig`
@@ -1610,6 +1627,7 @@ pub const Env = struct {
             .customAstByLoc = std.AutoHashMap(ast.Loc, CustomAstEntry).init(arena),
             .templateEvalCache = std.StringHashMap(*const ast.Expr).init(arena),
             .nextId = tmpl.nextId,
+            .stdCarried = tmpl.stdCarried,
             .nextTypeId = tmpl.nextTypeId,
             .level = 0,
             .lastError = null,

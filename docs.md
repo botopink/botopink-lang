@@ -2608,7 +2608,7 @@ the literal follow.
 **A hole known at build** (decision 355). Each `Interp` part of `q.parts()`
 carries `known` and `value`: `known` is true when the hole's value is known
 while the program compiles — a literal, a `comptime` value, a `val` of the
-module whose initializer is known at build, or a template call (another
+module — or one another module exports — whose initializer is known at build, or a template call (another
 expansion) whose every argument is — and `value` is that value, read as data
 (a record is its fields); for any other hole (a parameter, a local, a call)
 `known` is false and `value` is `null`, and the hole is the program's to
@@ -3194,6 +3194,60 @@ fn main() {
     @print(@typeInfo(Users).meta.repository.statements);
 }
 ```
+
+#### Host functions at compile time (decision 341)
+
+A body that runs at build — a decorator's, a template's, a `comptime` — may
+call a host function: it travels into the comptime module with the cell of
+the runtime that evaluates it. The comptime runtime follows the target
+(decision 84): `erlang` and `beam` builds evaluate on the BEAM runtime, which
+runs the `@External.Erlang` cell (or an `@External.Beam("module", "symbol")`
+one); `commonJS`, `typescript` and `wasm` builds on the wat runtime, which
+runs the function an `@External.Wasm("fn:…")` binding names (an `op:` or
+`wasi:` binding does not run there). `@External.Node` never serves: there is
+no Node at compile time. std's functions travel too, through a namespace or a
+leaf import — `comptime hash.contentHash("hello")` is `"f923099"` on the four
+targets.
+
+What a decorator may call is decided when its package is compiled, never at a
+consumer's build: a host function it reaches — in its body, in a function of
+its module, through a std or an imported function — needs the cell of every
+comptime runtime the package's `botopink.json` `targets` use (`erlang` /
+`beam` → `@External.Erlang`, `commonJS` / `typescript` / `wasm` →
+`@External.Wasm`, no `targets` → both), or the call is refused
+(`decorator-host-cell-missing`), naming the function, the missing cell and the
+reason. Give every host function a decorator may reach both cells.
+
+```botopink
+import {hash} from "std";
+
+#[@External.Node("""($0 + "!")"""),
+  @External.Erlang("""<<($0)/binary, "!">>"""),
+  @External.Wasm("fn:bangBody")]
+declare fn bang(value: string) -> string;
+
+fn bangBody(value: string) -> string {
+    return value + "!";
+}
+
+fn labelled(comptime decl: @Decl) {
+    @emit("pub fn label() -> string { return \"" + bang(decl.name) + hash.contentHash(decl.name) + "\"; }");
+}
+
+#[labelled]
+type Point(x: i32, y: i32)
+
+fn main() {
+    @print(label());    // Point!de553cf
+}
+```
+
+Each invocation is independent (decision 343): a decorator's answer depends
+on the declaration it annotates alone, so a body writing a module-level `var`
+— directly or through a function of its module — is refused at the write
+(`decorator-writes-module-var`). A catalogue, and a duplicate across
+declarations, is read at the entry point with `@TypeInfo.all(with: …)` and
+refused there, at compile time, naming both declarations.
 
 ### Host bindings
 

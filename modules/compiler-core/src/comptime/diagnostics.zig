@@ -230,6 +230,16 @@ pub const bigint_widened: []const u8 = "bigint-widened";
 /// Decision 332 (question 139-a) — `is` / a type pattern over a `bigint`, or
 /// testing for one: its type is static.
 pub const bigint_type_test: []const u8 = "bigint-type-test";
+/// Decision 341 — a host function a decorator reaches lacks the cell of a
+/// comptime runtime its package's declared `targets` use (`@External.Erlang`
+/// / `@External.Beam` for erlang and beam, `@External.Wasm` for commonJS,
+/// typescript and wasm; none declared needs both). Fires from
+/// `comptime/host_cells.zig` `checkDecorators`, located at the call.
+pub const decorator_host_cell_missing: []const u8 = "decorator-host-cell-missing";
+/// Decision 343 — a decorator body writes a module-level `var`: each
+/// invocation is independent. Fires from `comptime/decorator_eval.zig`
+/// `moduleVarWrite`, located at the write.
+pub const decorator_writes_module_var: []const u8 = "decorator-writes-module-var";
 /// Decision 297 — `x is type` where `x` is no `comptime x: V | type T`
 /// parameter.
 pub const is_type_outside_value_or_type: []const u8 = "is-type-outside-value-or-type";
@@ -689,6 +699,8 @@ pub const all_codes = [_][]const u8{
     comptime_bigint,
     bigint_widened,
     bigint_type_test,
+    decorator_host_cell_missing,
+    decorator_writes_module_var,
     is_type_outside_value_or_type,
     type_arg_read,
     captured_var_write,

@@ -37,6 +37,9 @@ const assocTypes = @import("./comptime/assoc_types.zig");
 const typeinfoAll = @import("./comptime/typeinfo_all.zig");
 const hostRuntime = @import("./comptime/runtime/runtime.zig");
 const templateEval = @import("./comptime/template_eval.zig");
+const hostCells = @import("./comptime/host_cells.zig");
+const decoratorEval = @import("./comptime/decorator_eval.zig");
+const blockEval = @import("./comptime/block_eval.zig");
 
 // ── Re-exports for external consumers ────────────────────────────────────────
 
@@ -1251,6 +1254,19 @@ fn analyzeSource(
         },
         else => return err,
     };
+    // Decision 341 — a host function a decorator of this module reaches has
+    // the cell of every comptime runtime its package's targets use; decided
+    // when the package is compiled, never at a consumer's build.
+    if (try hostCells.checkDecorators(&env, program.decls, mod.targets, infer.isDecoratorParams)) |te| {
+        env.deinit();
+        return .{ .typeError = te };
+    }
+    // Decision 343 — each decorator invocation is independent: a body
+    // writing a module-level `var` is refused at the write.
+    if (try decoratorEval.checkIndependent(arena, program.decls, infer.isDecoratorParams)) |te| {
+        env.deinit();
+        return .{ .typeError = te };
+    }
     const bindings = infer.inferProgramTyped(&env, program) catch |err| switch (err) {
         error.TypeError => {
             const te = inline_types.locatedAtCall(env.lastError orelse validation.TypeError{ .kind = .{ .unboundVariable = "" } });
@@ -2196,6 +2212,11 @@ fn resolveImports(
                         const conflict = if (decoratorRegistry.get(try decoratorConflictKey(env.arena, owner, name))) |c| c.name else null;
                         try infer.registerImportedDecorator(env, local, dfn, owner, support.items, conflict);
                     };
+                    // 01-compiler/14 step 8 — an imported `val` its module
+                    // knew at build: a template hole naming it reads the value.
+                    if (owner.len > 0) if (decoratorRegistry.get(try buildValueKey(env.arena, owner, name))) |carrier| {
+                        try env.importedBuildValues.put(env.arena, local, carrier.name);
+                    };
                     // An imported plain function, with what it reaches in its
                     // own module: a decorator of THIS module that calls it
                     // carries it (`infer.decoratorSupport`). Bound under the
@@ -2279,6 +2300,12 @@ fn decoratorClosureKey(arena: std.mem.Allocator, path: []const u8, name: []const
     return std.fmt.allocPrint(arena, "{s}\x00{s}\x00closure\x00{d}", .{ path, name, i });
 }
 
+/// Key of an exported `val`'s build value (`block_eval.exportedBuildValue`),
+/// carried, as a conflict is, in a bodyless `FnDecl`'s name.
+fn buildValueKey(arena: std.mem.Allocator, path: []const u8, name: []const u8) ![]const u8 {
+    return std.fmt.allocPrint(arena, "{s}\x00{s}\x00build", .{ path, name });
+}
+
 /// Key of an exported decorator's `infer.Support.conflict`. The registry holds
 /// `FnDecl`s, so the message rides in a bodyless one's name
 /// (`conflictCarrier`) — never a function anything calls.
@@ -2294,6 +2321,27 @@ fn relabelLocal(arena: std.mem.Allocator, env: *const envMod.Env, fns: *const st
     const own = fns.get(f.name) orelse return f;
     if (own.body.ptr != f.body.ptr) return f;
     return templateEval.relabelTupleReads(arena, &env.tupleLabelReads, f);
+}
+
+/// `f` as a comptime module of an importer carries it: its `same` calls
+/// lowered (decision 371) and, a function of this module (`fns`), its std
+/// calls renamed (decision 341, `host_cells.Writer`); a function another
+/// module brought was renamed when that module exported it.
+fn exportedFn(arena: std.mem.Allocator, env: *envMod.Env, hosts: *hostCells.Writer, fns: *const std.StringHashMap(ast.FnDecl), f: ast.FnDecl) !ast.FnDecl {
+    const lowered = try infer.lowerDecoratorSame(arena, env, fns, f);
+    const own = fns.get(f.name) orelse return lowered;
+    if (own.body.ptr != f.body.ptr) return lowered;
+    return hosts.rewriteAs(f, lowered);
+}
+
+/// `support` (what `head` reaches) exported as `exportedFn` exports each
+/// function, followed by the host and std functions the lot reaches
+/// (`host_cells.hostSupport`, decision 341).
+fn exportedSupport(arena: std.mem.Allocator, env: *envMod.Env, hosts: *hostCells.Writer, fns: *const std.StringHashMap(ast.FnDecl), head: ast.FnDecl, support: []const ast.FnDecl) ![]const ast.FnDecl {
+    const out = try arena.alloc(ast.FnDecl, support.len);
+    for (support, out) |sf, *o| o.* = try exportedFn(arena, env, hosts, fns, sf);
+    const reached = try hostCells.hostSupport(env, fns, try std.mem.concat(arena, ast.FnDecl, &.{ &.{head}, out }));
+    return std.mem.concat(arena, ast.FnDecl, &.{ out, reached });
 }
 
 /// A function whose return is a template type (`-> @Expr<T>`, …): expanded at
@@ -2385,6 +2433,13 @@ fn pkgKey(path: []const u8) []const u8 {
 /// imported type reads it (`infer.registerImportedTypeClosure`): `Outer`'s
 /// fields name `Other`, which `Outer`'s module took from a third one.
 pub const imported_type_scope_prefix = "\x00";
+
+/// The key under which a module's type-declaration map holds a type it
+/// declares without `pub`: `"\x01" ++ name`. No import spells it; only a
+/// comptime module carrying a function of that module reads it
+/// (`block_eval.findDeclared`, 01-compiler/14 — emilia's `classRules` builds
+/// its private `Placed`).
+pub const private_type_prefix = "\x01";
 
 /// Onze F2 — record in `typeDecls` the types this module imports, and the
 /// imported-type scope of the modules they come from, under
@@ -2492,6 +2547,9 @@ fn registerExports(
     // does), resolved through the module's import scope
     // (`addImportedTypeScope`).
     try written_names.eraseTypeAliases(arena, decls, &env.typeAliases);
+    // Decision 341 — what this module exports for a comptime module carries
+    // its std calls renamed to the std functions it carries with it.
+    var hosts = try hostCells.Writer.init(env, decls);
     for (bindings) |b| {
         if (b.name.len == 0 or b.decl == .use) continue;
         if (declares_template and (b.decl == .@"fn" or b.decl == .val)) {
@@ -2516,6 +2574,12 @@ fn registerExports(
         if (is_pub) {
             const ty = env.lookup(b.name) orelse b.type_;
             try exports.put(b.name, ty);
+            // 01-compiler/14 step 8 — a `val` known at build exports its
+            // value: an importer's template hole naming it reads it at build
+            // (decision 355, `block_eval.exportedBuildValue`).
+            if (b.decl == .val) if (env.templateEval) |ctx| if (try blockEval.exportedBuildValue(env, ctx.io, b.decl.val)) |json| {
+                try decoratorRegistry.put(try buildValueKey(arena, path, b.name), conflictCarrier(json));
+            };
             // `pub` nominal type declarations export their full AST decl too, so
             // the importing module can re-register the `TypeDef` (implements /
             // contextBase / fields) — not just the constructor value. Mirrors
@@ -2523,7 +2587,11 @@ fn registerExports(
             // `pub`-only. Non-pub types still export their constructor (above)
             // for value use, but carry no cross-module `TypeDef`.
             switch (b.decl) {
-                .type_ => |t| if (t.isPub) try typeDecls.put(b.name, b.decl),
+                // A private one under `private_type_prefix`, which no import
+                // spells: a function this module exports constructs it, and
+                // a comptime module of an importer carries the function
+                // (`block_eval.findDeclared`).
+                .type_ => |t| if (t.isPub) try typeDecls.put(b.name, b.decl) else try typeDecls.put(try std.mem.concat(arena, u8, &.{ private_type_prefix, b.name }), b.decl),
                 // A `pub behavior` too: an importer learns which methods it
                 // declares (`Env.importedBehaviorDecls`) — it registers no
                 // `TypeDef` from it.
@@ -2538,7 +2606,7 @@ fn registerExports(
                     // Its tuple label reads by position (`relabelTupleReads`):
                     // the importer lowers the body untyped, without this
                     // module's inference.
-                    if (rt.isTemplateReturnType()) try templateRegistry.put(try comptimeRegistryKey(arena, path, b.name), try templateEval.relabelTupleReads(arena, &env.tupleLabelReads, f));
+                    if (rt.isTemplateReturnType()) try templateRegistry.put(try comptimeRegistryKey(arena, path, b.name), try hosts.rewriteAs(f, try templateEval.relabelTupleReads(arena, &env.tupleLabelReads, f)));
                 }
                 // C-04 across a module boundary — a function exports its
                 // parameters as written, so an importer's short call is filled
@@ -2565,13 +2633,16 @@ fn registerExports(
                     // Decision 371 — a decorator travels with its `same` calls
                     // lowered (`decorator_same.zig`), its own and those of the
                     // functions of this module it reaches.
-                    try decoratorRegistry.put(try comptimeRegistryKey(arena, path, b.name), try infer.lowerDecoratorSame(arena, env, &fns, f));
+                    const head = try exportedFn(arena, env, &hosts, &fns, f);
+                    try decoratorRegistry.put(try comptimeRegistryKey(arena, path, b.name), head);
                     // The functions its body reaches travel with it
                     // (`decoratorSupportKey`) — its module's and the ones the
                     // module imports: the importer's module declares none of
-                    // them, and the decorator module needs them.
+                    // them, and the decorator module needs them; decision
+                    // 341's host and std functions after them.
                     const support = try infer.decoratorSupport(arena, fns, &env.importedFnSupport, f);
-                    for (support.fns, 0..) |sf, i| try decoratorRegistry.put(try decoratorSupportKey(arena, path, b.name, i), try infer.lowerDecoratorSame(arena, env, &fns, sf));
+                    const carried = try exportedSupport(arena, env, &hosts, &fns, head, support.fns);
+                    for (carried, 0..) |sf, i| try decoratorRegistry.put(try decoratorSupportKey(arena, path, b.name, i), sf);
                     if (support.conflict) |c| try decoratorRegistry.put(try decoratorConflictKey(arena, path, b.name), conflictCarrier(c));
                 } else if (isTemplateFn(f)) {
                     // A template carries the functions its body reaches the
@@ -2580,7 +2651,15 @@ fn registerExports(
                     // module declares none of them. Same keys as a
                     // decorator's — a template is never one.
                     const support = try infer.decoratorSupport(arena, fns, &env.importedFnSupport, f);
-                    for (support.fns, 0..) |sf, i| try decoratorRegistry.put(try decoratorSupportKey(arena, path, b.name, i), try relabelLocal(arena, env, &fns, sf));
+                    const relabelled = try arena.alloc(ast.FnDecl, support.fns.len);
+                    for (support.fns, relabelled) |sf, *r| {
+                        const rl = try relabelLocal(arena, env, &fns, sf);
+                        const own = if (fns.get(sf.name)) |g| g.body.ptr == sf.body.ptr else false;
+                        r.* = if (own) try hosts.rewriteAs(sf, rl) else rl;
+                    }
+                    const head = templateRegistry.get(try comptimeRegistryKey(arena, path, b.name)) orelse f;
+                    const carried = try std.mem.concat(arena, ast.FnDecl, &.{ relabelled, try hostCells.hostSupport(env, &fns, try std.mem.concat(arena, ast.FnDecl, &.{ &.{head}, relabelled })) });
+                    for (carried, 0..) |sf, i| try decoratorRegistry.put(try decoratorSupportKey(arena, path, b.name, i), sf);
                     if (support.conflict) |c| try decoratorRegistry.put(try decoratorConflictKey(arena, path, b.name), conflictCarrier(c));
                 } else if (infer.isCarriableFn(f)) {
                     // A plain `pub fn` carries itself and what it reaches
@@ -2588,10 +2667,12 @@ fn registerExports(
                     // that imports it can call it: entry 0 is the function,
                     // the rest are the functions of this module (and of its
                     // own imports) its body reaches.
-                    try decoratorRegistry.put(try decoratorClosureKey(arena, path, b.name, 0), try infer.lowerDecoratorSame(arena, env, &fns, f));
+                    const head = try exportedFn(arena, env, &hosts, &fns, f);
+                    try decoratorRegistry.put(try decoratorClosureKey(arena, path, b.name, 0), head);
                     const support = try infer.decoratorSupport(arena, fns, &env.importedFnSupport, f);
                     if (support.conflict == null) {
-                        for (support.fns, 1..) |sf, i| try decoratorRegistry.put(try decoratorClosureKey(arena, path, b.name, i), try infer.lowerDecoratorSame(arena, env, &fns, sf));
+                        const carried = try exportedSupport(arena, env, &hosts, &fns, head, support.fns);
+                        for (carried, 1..) |sf, i| try decoratorRegistry.put(try decoratorClosureKey(arena, path, b.name, i), sf);
                     }
                 }
             }
@@ -2801,6 +2882,9 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
     // A std module may import another (`import {json} from "std"`): each is
     // inferred after the ones it imports, and sees their exports, types and
     // functions exactly as a program's module does.
+    // Decision 341 — each std module's declarations, for the functions a
+    // comptime module carries (`host_cells.buildStdCarried`, below).
+    var carried_modules: std.ArrayListUnmanaged(hostCells.StdModule) = .empty;
     for (try stdModuleOrder(env.arena)) |spm_index| {
         const spm = std_pkg_modules[spm_index];
         const mod_name = spm.path["std/".len..];
@@ -2850,6 +2934,7 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
         };
         const program = try assocTypes.expand(env.arena, try nested_types.expand(env.arena, parsed_std), &std_owners);
         const bindings = try infer.inferProgramTyped(&env2, program);
+        try carried_modules.append(env.arena, .{ .name = mod_name, .decls = program.decls });
 
         // Collect the module's public type declarations so `import {…} from
         // "std"` can register them into the importing env (type export —
@@ -2901,6 +2986,7 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
         }
         try env.stdModules.put(mod_name, exports);
     }
+    env.stdCarried = try hostCells.buildStdCarried(env.arena, carried_modules.items, &env.stdModules);
 }
 
 /// Collect the comptime `val` entries of `bindings` and fold them, returning

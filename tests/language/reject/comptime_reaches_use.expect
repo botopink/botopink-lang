@@ -1,0 +1,2 @@
+the comptime reaches `use context.context(…)` at 16:13 in `label`, and a `comptime` runs with no render tree
+21:15

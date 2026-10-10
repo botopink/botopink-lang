@@ -1,0 +1,17 @@
+//// A host function with both cells, and a function others import that
+//// calls it and a std host function.
+
+import {hash} from "std";
+
+#[@External.Node("""($0 + "!")""")]
+#[@External.Erlang("""<<($0)/binary, "!">>""")]
+#[@External.Wasm("fn:bangBody")]
+declare fn bang(value: string) -> string;
+
+fn bangBody(value: string) -> string {
+    return value + "!";
+}
+
+pub fn shout(s: string) -> string {
+    return bang(s.toUpper()) + " " + hash.contentHash(s);
+}

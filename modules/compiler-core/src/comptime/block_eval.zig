@@ -45,6 +45,7 @@ const etf = @import("./runtime/etf.zig");
 const trace = @import("./trace.zig");
 const diagnostics = @import("./diagnostics.zig");
 const formatMod = @import("../format.zig");
+const hostCells = @import("./host_cells.zig");
 
 pub const Error = error{OutOfMemory};
 
@@ -110,7 +111,7 @@ pub const Prepared = struct {
 /// Every name the block declares (its locals, loop and lambda parameters, `if`
 /// bindings): an identifier among them is no top-level function, and a lambda
 /// that reads one captures the block's state.
-fn declaredNames(arena: std.mem.Allocator, body: []const ast.Stmt) Error!std.StringHashMapUnmanaged(void) {
+pub fn declaredNames(arena: std.mem.Allocator, body: []const ast.Stmt) Error!std.StringHashMapUnmanaged(void) {
     var names: std.StringHashMapUnmanaged(void) = .empty;
     var w = NameWalk{ .arena = arena, .out = &names, .declared_only = true };
     for (body) |s| try w.expr(s.expr);
@@ -239,7 +240,7 @@ const NameWalk = struct {
     }
 };
 
-fn mayHoldNames(comptime U: type) bool {
+pub fn mayHoldNames(comptime U: type) bool {
     return switch (@typeInfo(U)) {
         .int, .float, .bool, .@"enum", .void, .comptime_int, .comptime_float, .@"fn", .@"opaque", .null, .undefined => false,
         .pointer => |p| if (p.child == u8) false else if (@typeInfo(p.child) == .@"fn" or @typeInfo(p.child) == .@"opaque") false else true,
@@ -267,6 +268,11 @@ fn readFree(arena: std.mem.Allocator, out: *std.StringHashMapUnmanaged(void), bo
         for (params) |p| if (std.mem.eql(u8, p.name, n.*)) continue :outer;
         try out.put(arena, n.*, {});
     }
+}
+
+/// `readFree` for another file of the comptime pipeline (`host_cells.zig`).
+pub fn readFreeNames(arena: std.mem.Allocator, out: *std.StringHashMapUnmanaged(void), body: []const ast.Stmt, params: []const ast.Param) Error!void {
+    return readFree(arena, out, body, params);
 }
 
 fn readMethodNames(arena: std.mem.Allocator, out: *std.StringHashMapUnmanaged(void), body: []const ast.Stmt) Error!void {
@@ -761,7 +767,16 @@ pub fn prepare(env: *Env, ct: ast.ComptimeExprOf(.untyped)) Error!Prepared {
     var p = Preparer{ .env = env, .arena = arena, .declared = try declaredNames(arena, block), .rw = Rewrites.of(env) };
     const copied = try p.clone([]const ast.Stmt, block);
     const body = try breaksToReturns(arena, @constCast(copied));
-    return .{ .value = synthFn(value_fn, body), .makers = p.makers.items };
+    return withStdCalls(env, .{ .value = synthFn(value_fn, body), .makers = p.makers.items });
+}
+
+/// Decision 341 — `prepared` with its std calls renamed to the functions the
+/// module carries (`host_cells.Writer`): the node loads no std module.
+fn withStdCalls(env: *Env, prepared: Prepared) Error!Prepared {
+    var writer = try hostCells.Writer.init(env, env.moduleDecls);
+    const makers = try env.arena.dupe(Maker, prepared.makers);
+    for (makers) |*m| m.decl = try writer.rewrite(m.decl);
+    return .{ .value = try writer.rewrite(prepared.value), .makers = makers };
 }
 
 // ── what the module carries ──────────────────────────────────────────────────
@@ -779,6 +794,7 @@ pub const Support = struct {
 /// anything, with the helper functions of the type's own module they reach.
 pub fn collectSupport(env: *Env, prepared: Prepared) Error!Support {
     const arena = env.arena;
+    var writer = try hostCells.Writer.init(env, env.moduleDecls);
     var names: std.StringHashMapUnmanaged(void) = .empty;
     var methods: std.StringHashMapUnmanaged(void) = .empty;
     var fns: std.ArrayListUnmanaged(ast.FnDecl) = .empty;
@@ -809,7 +825,7 @@ pub fn collectSupport(env: *Env, prepared: Prepared) Error!Support {
                 // A host function (`#[@External.Erlang(…)]`) is carried as
                 // its declaration: the module calls the host.
                 if ((f.body.len == 0 and !f.isExternal()) or isComptimeOnly(f)) continue;
-                const g = try expandedFn(env, f);
+                const g = try writer.rewrite(try expandedFn(env, f));
                 try fns.append(arena, g);
                 try readFn(arena, &names, &methods, g);
                 changed = true;
@@ -866,6 +882,14 @@ pub fn collectSupport(env: *Env, prepared: Prepared) Error!Support {
         decl.annotations = &.{};
         try out_types.append(arena, .{ .type_ = decl });
     }
+    // Decision 341 — the host functions and std functions the code reaches,
+    // and what a `fn:` binding names.
+    const reached = try std.mem.concat(arena, ast.FnDecl, &.{ &.{prepared.value}, makerDecls: {
+        const ms = try arena.alloc(ast.FnDecl, prepared.makers.len);
+        for (ms, prepared.makers) |*d, m| d.* = m.decl;
+        break :makerDecls ms;
+    }, fns.items });
+    try fns.appendSlice(arena, try hostCells.hostSupport(env, &env.fnDecls, reached));
     return .{ .fns = fns.items, .types = out_types.items };
 }
 
@@ -988,6 +1012,65 @@ pub fn unresolvedSectionPath(env: *Env, support: Support) Error!?[]const u8 {
     }
     return null;
 }
+
+/// 01-compiler/14 step 8, question `14s8-e` (a) — a `use` the `comptime`
+/// reaches in a function it carries (`use context(StyledContext)` in a
+/// component a `comptime` calls): a `comptime` runs with no render tree, so
+/// nothing provides what the `use` reads (decision 354 (3)). Refused at the
+/// `comptime`, naming the `use` and its function, where the run used to stop
+/// at whatever the provider's absence broke first (an unsupported `.add(…)`).
+pub fn useReached(env: *Env, prepared: Prepared, support: Support) Error!?[]const u8 {
+    var w = UseWalk{};
+    for (prepared.value.body) |*st| w.walk(ast.Expr, &st.expr);
+    var in_fn: []const u8 = "";
+    if (w.found == null) for (support.fns) |f| {
+        for (f.body) |*st| w.walk(ast.Expr, &st.expr);
+        if (w.found != null) {
+            in_fn = f.name;
+            break;
+        }
+    };
+    const loc = w.found orelse return null;
+    const shown = if (w.callee.len > 0) try hostCells.display(env.arena, w.callee) else "…";
+    if (in_fn.len > 0) return try std.fmt.allocPrint(env.arena, "the comptime reaches `use {s}(…)` at {d}:{d} in `{s}`, and a `comptime` runs with no render tree: nothing provides what the `use` reads (decision 354 (3))", .{ shown, loc.line, loc.col, try hostCells.display(env.arena, in_fn) });
+    return try std.fmt.allocPrint(env.arena, "the comptime holds `use {s}(…)` at {d}:{d}, and a `comptime` runs with no render tree: nothing provides what the `use` reads (decision 354 (3))", .{ shown, loc.line, loc.col });
+}
+
+const UseWalk = struct {
+    found: ?ast.Loc = null,
+    callee: []const u8 = "",
+
+    fn walk(self: *UseWalk, comptime U: type, ptr: *const U) void {
+        if (self.found != null) return;
+        if (U == ast.Expr) switch (ptr.*) {
+            .useHook => |u| {
+                self.found = u.loc;
+                if (u.kind.inner.* == .call and u.kind.inner.call.kind == .call) self.callee = u.kind.inner.call.kind.call.callee;
+                return;
+            },
+            else => {},
+        };
+        if (U == ast.TypeRef or U == ast.Pattern) return;
+        switch (@typeInfo(U)) {
+            .@"struct" => |st| inline for (st.fields) |fl| {
+                if (fl.is_comptime) continue;
+                if (comptime mayHoldNames(fl.type)) self.walk(fl.type, &@field(ptr.*, fl.name));
+            },
+            .@"union" => |u| if (u.tag_type != null) switch (ptr.*) {
+                inline else => |*payload| if (comptime mayHoldNames(@TypeOf(payload.*))) self.walk(@TypeOf(payload.*), payload),
+            },
+            .optional => |o| if (ptr.*) |*inner| self.walk(o.child, inner),
+            .pointer => |pt| switch (pt.size) {
+                .one => if (comptime mayHoldNames(pt.child)) self.walk(pt.child, ptr.*),
+                .slice => if (comptime mayHoldNames(pt.child)) {
+                    for (ptr.*) |*e| self.walk(pt.child, e);
+                },
+                else => {},
+            },
+            else => {},
+        }
+    }
+};
 
 /// Whether `f`'s body writes a section path: a decorator's function that
 /// does is inferred before the decorator runs (`infer.sameLoweredFn`), so
@@ -1208,6 +1291,18 @@ fn findDeclared(env: *Env, name: []const u8) ?FoundType {
         if (found != null) return null;
         found = d.type_;
     }
+    if (found) |t| return .{ .decl = t, .helpers = &.{} };
+    // A type another module declares without `pub`, which a function it
+    // exported constructs (`comptime.private_type_prefix`): one module of
+    // the build declares it, or the name is ambiguous and nothing is carried.
+    const key = std.mem.concat(env.arena, u8, &.{ "\x01", name }) catch return null;
+    var pit = registry.iterator();
+    while (pit.next()) |e| {
+        const d = e.value_ptr.get(key) orelse continue;
+        if (d != .type_) continue;
+        if (found != null) return null;
+        found = d.type_;
+    }
     return if (found) |t| .{ .decl = t, .helpers = &.{} } else null;
 }
 
@@ -1282,16 +1377,24 @@ fn hostForms(b: Ast.Builder, makers: usize) Error![]const Ast.Form {
     return forms;
 }
 
-fn buildModule(arena: std.mem.Allocator, owner: []const u8, prepared: Prepared, support: Support, unsupported: *erlang.UnsupportedMethod, why: *[]const u8) (Error || error{ UnsupportedMethod, EmitFailed, EvalFailed })!Module {
+fn buildModule(arena: std.mem.Allocator, owner: []const u8, prepared: Prepared, support: Support, unsupported: *erlang.UnsupportedMethod, why: *[]const u8) (Error || error{ UnsupportedMethod, EmitFailed, EvalFailed, HostCell })!Module {
     const b: Ast.Builder = .{ .arena = arena };
     const forms = try hostForms(b, prepared.makers.len);
     const resident = try preludeMod.decoratorForms(b);
 
-    var decls: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
-    try decls.append(arena, .{ .@"fn" = prepared.value });
-    for (prepared.makers) |m| try decls.append(arena, .{ .@"fn" = m.decl });
-    for (support.fns) |f| try decls.append(arena, .{ .@"fn" = f });
-    try decls.appendSlice(arena, support.types);
+    var all: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
+    try all.append(arena, .{ .@"fn" = prepared.value });
+    for (prepared.makers) |m| try all.append(arena, .{ .@"fn" = m.decl });
+    for (support.fns) |f| try all.append(arena, .{ .@"fn" = f });
+    try all.appendSlice(arena, support.types);
+    // Decision 341 — each host function as this runtime runs it.
+    const decls: std.ArrayListUnmanaged(ast.DeclKind) = .{ .items = switch (try hostCells.forRuntime(arena, all.items)) {
+        .ok => |d| d,
+        .refused => |msg| {
+            why.* = msg;
+            return error.HostCell;
+        },
+    }, .capacity = 0 };
 
     var config: erlang.ComptimeModule = .{
         .host_records = &prelude_records,
@@ -1337,6 +1440,7 @@ pub fn evaluate(
     var why: []const u8 = "";
     const m = buildModule(arena, owner, prepared, support, &unsupported, &why) catch |err| switch (err) {
         error.EmitFailed => return .{ .err = try std.fmt.allocPrint(arena, "the comptime block could not be lowered for the comptime runtime ({s})", .{why}) },
+        error.HostCell => return .{ .err = why },
         error.UnsupportedMethod => return .{ .err = try std.fmt.allocPrint(
             arena,
             "the comptime block calls `.{s}(…)` with {d} argument(s) at {d}:{d}, which no primitive type and no type the block reaches provides",
@@ -1781,7 +1885,7 @@ pub fn knownAtBuild(env: *Env, e: *const ast.Expr, depth: usize) bool {
         },
         .identifier => |id| switch (id.kind) {
             .ident => |name| std.mem.eql(u8, name, "true") or std.mem.eql(u8, name, "false") or
-                if (moduleVal(env, name)) |v| knownAtBuild(env, v.value, depth + 1) else false,
+                if (moduleVal(env, name)) |v| knownAtBuild(env, v.value, depth + 1) else importedBuildValue(env, name) != null,
             else => false,
         },
         .comptime_ => |ct| ct.kind == .comptimeExpr or ct.kind == .comptimeBlock,
@@ -1816,6 +1920,11 @@ pub fn holeValue(env: *Env, io: std.Io, hole: *const ast.Expr) Error!HoleValue {
         },
         else => break,
     };
+    // A `val` another module exports, its value computed when it exported it.
+    if (e.* == .identifier and e.identifier.kind == .ident) if (importedBuildValue(env, e.identifier.kind.ident)) |json| {
+        if (try jsonTerm(env.arena, json)) |t| return .{ .build = t };
+        return .render;
+    };
     switch (e.*) {
         .literal => |lit| switch (lit.kind) {
             .stringLit => |lexeme| if (try templateEval.lexemeBytes(env.arena, lexeme)) |bytes| return .{ .build = Term.str(bytes) },
@@ -1837,6 +1946,7 @@ pub fn holeValue(env: *Env, io: std.Io, hole: *const ast.Expr) Error!HoleValue {
     const support = try collectSupport(env, prepared);
     if (try unexpandedTemplateCall(env, prepared, support)) |msg| return .{ .refused = .{ .message = msg, .loc = loc } };
     if (try unresolvedSectionPath(env, support)) |msg| return .{ .refused = .{ .message = msg, .loc = loc } };
+    if (try useReached(env, prepared, support)) |msg| return .{ .refused = .{ .message = msg, .loc = loc } };
     const outcome = evaluate(env.arena, io, env.modulePath, prepared, support, &env.comptimeTraces) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.EvalFailed => return .{ .refused = .{ .message = "the comptime evaluator failed to run", .loc = loc } },
@@ -1845,6 +1955,84 @@ pub fn holeValue(env: *Env, io: std.Io, hole: *const ast.Expr) Error!HoleValue {
         .value => |v| if (try valueTerm(env.arena, v)) |t| .{ .build = t } else .render,
         .err => |msg| .{ .refused = .{ .message = msg, .loc = loc } },
     };
+}
+
+/// The build value of the imported `val` `name` (`Env.importedBuildValues`),
+/// unless a local or a parameter of the body being inferred shadows it.
+fn importedBuildValue(env: *Env, name: []const u8) ?[]const u8 {
+    if (env.localBindDepth(name) != null) return null;
+    return env.importedBuildValues.get(name);
+}
+
+/// 01-compiler/14 step 8 — the build value of the exported `val` `v`, as
+/// `termJson` writes it, when its initializer is known at build (decision
+/// 355): what an importer's hole naming it reads (`Env.importedBuildValues`).
+/// Null when it is computed at render, or raises (the importer's hole then
+/// is computed at render, as before). Evaluated without a trace: the
+/// module's comptime snapshots record what its program evaluates.
+pub fn exportedBuildValue(env: *Env, io: std.Io, v: ast.ValDecl) Error!?[]const u8 {
+    if (v.mutable or !knownAtBuild(env, v.value, 0)) return null;
+    const saved = env.comptimeTraces;
+    env.comptimeTraces = .empty;
+    defer env.comptimeTraces = saved;
+    return switch (try holeValue(env, io, v.value)) {
+        .build => |t| try termJson(env.arena, t),
+        else => null,
+    };
+}
+
+/// `t` in the reply's JSON (`'__bp_lift'/2`'s shape, `readValue` reads it
+/// back): an export's build value travels as text through the registry.
+pub fn termJson(arena: std.mem.Allocator, t: Term) Error![]const u8 {
+    var out: std.Io.Writer.Allocating = .init(arena);
+    writeTermJson(&out.writer, t) catch return error.OutOfMemory;
+    return out.written();
+}
+
+fn writeTermJson(w: *std.Io.Writer, t: Term) std.Io.Writer.Error!void {
+    switch (t) {
+        .atom => |a| if (std.mem.eql(u8, a, "undefined")) try w.writeAll("null") else {
+            try w.writeAll("{\"atom\":");
+            try std.json.Stringify.encodeJsonString(a, .{}, w);
+            try w.writeAll("}");
+        },
+        .binary => |b| try std.json.Stringify.encodeJsonString(b, .{}, w),
+        .integer => |n| try w.print("{d}", .{n}),
+        .float => |f| try w.print("{{\"float\":{e}}}", .{f}),
+        .boolean => |b| try w.writeAll(if (b) "true" else "false"),
+        .nil => try w.writeAll("[]"),
+        .list, .tuple => |items| {
+            if (t == .tuple) try w.writeAll("{\"tuple\":");
+            try w.writeAll("[");
+            for (items, 0..) |item, i| {
+                if (i > 0) try w.writeAll(",");
+                try writeTermJson(w, item);
+            }
+            try w.writeAll("]");
+            if (t == .tuple) try w.writeAll("}");
+        },
+        .map => |entries| {
+            try w.writeAll("{\"record\":{");
+            for (entries, 0..) |e, i| {
+                if (i > 0) try w.writeAll(",");
+                const key = switch (e.key) {
+                    .atom => |a| a,
+                    .binary => |b| b,
+                    else => "",
+                };
+                try std.json.Stringify.encodeJsonString(key, .{}, w);
+                try w.writeAll(":");
+                try writeTermJson(w, e.value);
+            }
+            try w.writeAll("}}");
+        },
+    }
+}
+
+/// The term `termJson` wrote, or null when it does not read back.
+fn jsonTerm(arena: std.mem.Allocator, text: []const u8) Error!?Term {
+    const parsed = std.json.parseFromSliceLeaky(std.json.Value, arena, text, .{ .allocate = .alloc_always }) catch return null;
+    return valueTerm(arena, try readValue(arena, parsed));
 }
 
 /// `v` as the term a template module reads (a record is its untagged map, a

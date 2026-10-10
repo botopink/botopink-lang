@@ -28,6 +28,7 @@ const builtinsMod = @import("builtins.zig");
 const templateEval = @import("template_eval.zig");
 const stages = @import("runtime/stages.zig");
 const decoratorEval = @import("decorator_eval.zig");
+const hostCells = @import("host_cells.zig");
 const decoratorSameMod = @import("decorator_same.zig");
 const dslHygiene = @import("dsl_hygiene.zig");
 const specializeMod = @import("specialize.zig");
@@ -5101,13 +5102,18 @@ fn runDeclDecorators(
         // Decision 371 — this module's functions the run reaches are typed
         // first when they compare decorators, and their `same` calls lowered;
         // or when they write a section path, and the path resolved.
-        const runDfn = if (local) try sameLoweredFn(env, program, dfn) else dfn;
+        // Decision 341 — the std calls of this module's functions renamed to
+        // the std functions the module carries (`host_cells.zig`), which
+        // join the support with the host functions the run reaches.
+        var hosts = try hostCells.Writer.init(env, program.decls);
+        const runDfn = if (local) try hosts.rewrite(try sameLoweredFn(env, program, dfn)) else dfn;
         const erasedSupport = try env.arena.alloc(ast.FnDecl, support.len);
         for (support, 0..) |sf, k| {
             const own = local and k < found.fns.len and std.mem.eql(u8, env.comptimeOwnerOf(sf), env.modulePath);
-            erasedSupport[k] = try exprParam.eraseForRun(env.arena, if (own) try sameLoweredFn(env, program, sf) else sf, isDecoratorParams(sf.params));
+            erasedSupport[k] = try exprParam.eraseForRun(env.arena, if (own) try hosts.rewrite(try sameLoweredFn(env, program, sf)) else sf, isDecoratorParams(sf.params));
         }
-        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, try exprParam.eraseForRun(env.arena, runDfn, true), erasedSupport, reached.types, try completeHandle(env, try withMethodMeta(env, handle, memberOwner)), plain, capture, &env.comptimeTraces) catch {
+        const runSupport = if (local) try std.mem.concat(env.arena, ast.FnDecl, &.{ erasedSupport, try hostCells.hostSupport(env, &env.fnDecls, try std.mem.concat(env.arena, ast.FnDecl, &.{ &.{runDfn}, erasedSupport })) }) else erasedSupport;
+        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, try exprParam.eraseForRun(env.arena, runDfn, true), runSupport, reached.types, try completeHandle(env, try withMethodMeta(env, handle, memberOwner)), plain, capture, &env.comptimeTraces) catch {
             return decoratorError(env, a, "the decorator evaluator failed to run", "Decorator bodies run in a persistent `erl` process at compile time — check that `erl` is on PATH.");
         };
         switch (outcome) {
@@ -8461,11 +8467,14 @@ fn expandTemplateCallViaRuntime(
     // A local function's tuple label reads were recorded by this module's
     // inference (`Env.tupleLabelReads`); an imported one's were applied when
     // its module exported it.
+    // Decision 341 — the std calls of this module's functions renamed to the
+    // std functions the module carries (`host_cells.zig`).
+    var hosts = try hostCells.Writer.init(env, env.moduleDecls);
     const carried = try env.arena.alloc(ast.FnDecl, 1 + found.fns.len);
     for (carried, 0..) |*c, i| {
         const f = if (i == 0) tfn else found.fns[i - 1];
         const own = if (i == 0) owner.len == 0 or std.mem.eql(u8, owner, env.modulePath) else if (env.fnDecls.get(f.name)) |g| g.body.ptr == f.body.ptr else false;
-        c.* = if (own) try templateEval.relabelTupleReads(env.arena, &env.tupleLabelReads, f) else f;
+        c.* = if (own) try hosts.rewrite(try templateEval.relabelTupleReads(env.arena, &env.tupleLabelReads, f)) else f;
     }
     // Decision 353 — the body's `@TypeInfo.all(…)` queries answered for the
     // program this call is compiled in; the module carries the records the
@@ -8473,7 +8482,11 @@ fn expandTemplateCallViaRuntime(
     const answered = try answerTemplateQueries(env, owner, carried[0], loc);
     carried[0] = answered.decl;
     const reached = try blockEval.typesReached(env, carried, &templateEval.injected_names);
-    const support = try std.mem.concat(env.arena, ast.FnDecl, &.{ carried[1..], reached.fns });
+    // The host functions and std functions the run reaches (decision 341); an
+    // imported template's travelled with its export.
+    const own_template = owner.len == 0 or std.mem.eql(u8, owner, env.modulePath);
+    const hosted: []const ast.FnDecl = if (own_template) try hostCells.hostSupport(env, &env.fnDecls, carried) else &.{};
+    const support = try std.mem.concat(env.arena, ast.FnDecl, &.{ carried[1..], reached.fns, hosted });
     const types = try std.mem.concat(env.arena, ast.DeclKind, &.{ reached.types, answered.types });
     const valued = try withHoleValues(env, ctx.io, captures);
     const outcome = templateEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, carried[0], support, types, valued, plainArgs, &env.comptimeTraces) catch {
@@ -19809,6 +19822,10 @@ fn foldBodyComptime(env: *Env, ct: ast.ComptimeExprOf(.untyped), typed: TypedExp
     }
     if (try blockEval.unresolvedSectionPath(env, support)) |msg| {
         env.lastError = TypeError.custom(msg, "A section path is resolved where it is inferred (`docs.md` § Sections of an enum); a `comptime` carries the resolved constructor.").withLoc(loc);
+        return error.TypeError;
+    }
+    if (try blockEval.useReached(env, prepared, support)) |msg| {
+        env.lastError = TypeError.custom(msg, "A `use` reads its provider in a render tree; compute the value in the program, below the render's provider, or reach what the `comptime` needs through its arguments (01-compiler/14 question `14s8-e`).").withLoc(loc);
         return error.TypeError;
     }
     const outcome = blockEval.evaluate(env.arena, ctx.io, env.modulePath, prepared, support, &env.comptimeTraces) catch |err| switch (err) {

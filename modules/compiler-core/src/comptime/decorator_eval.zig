@@ -34,6 +34,10 @@ const etf = @import("./runtime/etf.zig");
 const stages = @import("./runtime/stages.zig");
 const trace = @import("./trace.zig");
 const typedMeta = @import("./typed_meta.zig");
+const hostCells = @import("./host_cells.zig");
+const blockEval = @import("./block_eval.zig");
+const diagnostics = @import("./diagnostics.zig");
+const validation = @import("./error.zig");
 
 /// Reflection of the annotated declaration (`@Decl` in `builtins.d.bp`).
 pub const DeclHandle = struct {
@@ -149,9 +153,11 @@ pub fn evaluate(
 ) EvalError!Outcome {
     _ = build_root;
     var unsupported: erlang.UnsupportedMethod = .{};
+    var refused: []const u8 = "";
     const t_module = stages.start();
-    const source = buildModule(arena, owner, dfn, support, types, handle, plainArgs, capture, &unsupported) catch |err| switch (err) {
+    const source = buildModule(arena, owner, dfn, support, types, handle, plainArgs, capture, &unsupported, &refused) catch |err| switch (err) {
         error.UnsupportedMethod => return .{ .err = try unsupportedText(arena, "decorator", dfn.name, unsupported) },
+        error.HostCell => return .{ .err = refused },
         else => |e| return e,
     };
     stages.stop(.module, t_module);
@@ -312,7 +318,9 @@ fn buildModule(
     plainArgs: []const template.PlainArg,
     capture: ?*const template.CapturedExpr,
     unsupported: *erlang.UnsupportedMethod,
-) (EvalError || error{UnsupportedMethod})!Module {
+    /// Why a host function cannot run on this runtime (`error.HostCell`).
+    refused: *[]const u8,
+) (EvalError || error{ UnsupportedMethod, HostCell })!Module {
     const b: Ast.Builder = .{ .arena = arena };
     const plans = if (capture) |cap| try annotationPlans(arena, dfn, handle, cap) else try argPlans(arena, dfn, handle, plainArgs);
     // Decision 311 — a template annotation's body reads its literal through
@@ -324,10 +332,18 @@ fn buildModule(
         try mainForms(b, dfn, plans, false);
     const resident = try preludeMod.decoratorForms(b);
 
-    const decls = try arena.alloc(ast.DeclKind, 1 + support.len + types.len);
-    decls[0] = .{ .@"fn" = dfn };
-    for (support, 1..) |f, i| decls[i] = .{ .@"fn" = f };
-    @memcpy(decls[1 + support.len ..], types);
+    const all = try arena.alloc(ast.DeclKind, 1 + support.len + types.len);
+    all[0] = .{ .@"fn" = dfn };
+    for (support, 1..) |f, i| all[i] = .{ .@"fn" = f };
+    @memcpy(all[1 + support.len ..], types);
+    // Decision 341 — each host function as this runtime runs it.
+    const decls = switch (try hostCells.forRuntime(arena, all)) {
+        .ok => |d| d,
+        .refused => |msg| {
+            refused.* = msg;
+            return error.HostCell;
+        },
+    };
     const config: erlang.ComptimeModule = .{
         .host_enums = &.{"DeclKind"},
         // `decl.failAt(Span(start, end, line), msg)` builds the span map.
@@ -652,7 +668,8 @@ test "decorator module: lowered body, handle term and host glue" {
     };
     const args = [_]template.PlainArg{.{ .paramName = "path", .source = "\"/x\"" }};
     var unsupported: erlang.UnsupportedMethod = .{};
-    const m = try buildModule(arena, "", dfn, &.{}, &.{}, handle, &args, null, &unsupported);
+    var refused: []const u8 = "";
+    const m = try buildModule(arena, "", dfn, &.{}, &.{}, handle, &args, null, &unsupported, &refused);
 
     // A2: the atom names the declaration, not just a hash of the body, and it
     // decodes back to `{gen, package "bp", "comptime", "dec", "route", <16 hex>}`.
@@ -721,6 +738,7 @@ test "decorator module: one module per decorator, whatever it annotates" {
     const dfn = program.decls[0].@"fn";
 
     var unsupported: erlang.UnsupportedMethod = .{};
+    var refused: []const u8 = "";
     const first = try buildModule(arena, "", dfn, &.{}, &.{}, .{
         .kind = "Type",
         .name = "Alpha",
@@ -728,7 +746,7 @@ test "decorator module: one module per decorator, whatever it annotates" {
         .methods = &.{},
         .returnType = "",
         .annotations = &.{},
-    }, &.{}, null, &unsupported);
+    }, &.{}, null, &unsupported, &refused);
     const second = try buildModule(arena, "", dfn, &.{}, &.{}, .{
         .kind = "Type",
         .name = "Omega",
@@ -736,7 +754,7 @@ test "decorator module: one module per decorator, whatever it annotates" {
         .methods = &.{},
         .returnType = "",
         .annotations = &.{},
-    }, &.{}, null, &unsupported);
+    }, &.{}, null, &unsupported, &refused);
 
     try std.testing.expectEqualStrings(first.module, second.module);
     try std.testing.expectEqualStrings(first.code, second.code);
@@ -776,4 +794,108 @@ test "decorator outcome: ok / fail / error replies" {
 
     const garbage = try parseOutcome(arena, "not json");
     try std.testing.expect(garbage == .err);
+}
+
+// ── independent invocations (decision 343) ──────────────────────────────────
+
+/// A write of a module-level `var` by a decorator body.
+pub const VarWrite = struct { name: []const u8, loc: ast.Loc };
+
+/// Decision 343 — the first module-level `var` (of `decls`) the decorator
+/// `dfn` writes — in its body, or in a function of this module the body calls
+/// — when no local or parameter of that function names it. Each invocation is
+/// independent: a decorator's answer depends on its declaration alone, so a
+/// write that would carry state from one declaration to the next is refused
+/// at the write, before the body runs (it used to read `unbound variable` at
+/// the `var`'s first read).
+pub fn moduleVarWrite(arena: std.mem.Allocator, decls: []const ast.DeclKind, dfn: ast.FnDecl) std.mem.Allocator.Error!?VarWrite {
+    var vars: std.StringHashMapUnmanaged(void) = .empty;
+    var fns: std.StringHashMapUnmanaged(ast.FnDecl) = .empty;
+    for (decls) |d| switch (d) {
+        .val => |v| if (v.mutable) try vars.put(arena, v.name, {}),
+        .@"fn" => |f| try fns.put(arena, f.name, f),
+        else => {},
+    };
+    if (vars.count() == 0) return null;
+    var seen: std.StringHashMapUnmanaged(void) = .empty;
+    var queue: std.ArrayListUnmanaged(ast.FnDecl) = .empty;
+    try queue.append(arena, dfn);
+    try seen.put(arena, dfn.name, {});
+    var i: usize = 0;
+    while (i < queue.items.len) : (i += 1) {
+        const f = queue.items[i];
+        const declared = try blockEval.declaredNames(arena, f.body);
+        var w = WriteWalk{ .arena = arena, .vars = &vars };
+        for (f.body) |*st| try w.walk(ast.Expr, &st.expr);
+        for (w.writes.items) |wr| {
+            if (declared.contains(wr.name)) continue;
+            for (f.params) |p| {
+                if (std.mem.eql(u8, p.name, wr.name)) break;
+            } else return wr;
+        }
+        for (w.calls.items) |callee| {
+            if (seen.contains(callee)) continue;
+            const g = fns.get(callee) orelse continue;
+            if (g.body.len == 0) continue;
+            try seen.put(arena, callee, {});
+            try queue.append(arena, g);
+        }
+    }
+    return null;
+}
+
+const WriteWalk = struct {
+    arena: std.mem.Allocator,
+    vars: *const std.StringHashMapUnmanaged(void),
+    writes: std.ArrayListUnmanaged(VarWrite) = .empty,
+    calls: std.ArrayListUnmanaged([]const u8) = .empty,
+
+    fn walk(self: *WriteWalk, comptime U: type, ptr: *const U) std.mem.Allocator.Error!void {
+        if (U == ast.Expr) switch (ptr.*) {
+            .binding => |b| switch (b.kind) {
+                .assign => |a| switch (a.target) {
+                    .name => |n| if (self.vars.contains(n)) try self.writes.append(self.arena, .{ .name = n, .loc = b.loc }),
+                    else => {},
+                },
+                else => {},
+            },
+            .call => |c| if (c.kind == .call and !c.kind.call.is_builtin and c.kind.call.receiver == null) {
+                try self.calls.append(self.arena, c.kind.call.callee);
+            },
+            else => {},
+        };
+        if (U == ast.TypeRef or U == ast.Pattern) return;
+        switch (@typeInfo(U)) {
+            .@"struct" => |st| inline for (st.fields) |fl| {
+                if (fl.is_comptime) continue;
+                if (comptime blockEval.mayHoldNames(fl.type)) try self.walk(fl.type, &@field(ptr.*, fl.name));
+            },
+            .@"union" => |u| if (u.tag_type != null) switch (ptr.*) {
+                inline else => |*payload| if (comptime blockEval.mayHoldNames(@TypeOf(payload.*))) try self.walk(@TypeOf(payload.*), payload),
+            },
+            .optional => |o| if (ptr.*) |*inner| try self.walk(o.child, inner),
+            .pointer => |pt| switch (pt.size) {
+                .one => if (comptime blockEval.mayHoldNames(pt.child)) try self.walk(pt.child, ptr.*),
+                .slice => if (comptime blockEval.mayHoldNames(pt.child)) {
+                    for (ptr.*) |*e| try self.walk(pt.child, e);
+                },
+                else => {},
+            },
+            else => {},
+        }
+    }
+};
+
+/// Decision 343 — the first decorator of `decls` writing a module-level
+/// `var` (`moduleVarWrite`), refused at the write.
+pub fn checkIndependent(arena: std.mem.Allocator, decls: []const ast.DeclKind, isDecorator: anytype) std.mem.Allocator.Error!?validation.TypeError {
+    for (decls) |d| {
+        if (d != .@"fn") continue;
+        const dfn = d.@"fn";
+        if (dfn.body.len == 0 or !isDecorator(dfn.params)) continue;
+        const w = try moduleVarWrite(arena, decls, dfn) orelse continue;
+        const msg = try std.fmt.allocPrint(arena, "{s}: the decorator `{s}` writes the module-level `var` `{s}` — each decorator invocation is independent: its answer depends on the declaration it annotates alone (decision 343)", .{ diagnostics.decorator_writes_module_var, dfn.name, w.name });
+        return validation.TypeError.custom(msg, "Read a catalogue at the entry point with `@TypeInfo.all(with: …)` — a duplicate across declarations is refused there, naming both — instead of collecting it in a module-level `var`.").withLoc(w.loc);
+    }
+    return null;
 }

@@ -1,0 +1,20 @@
+//// Decision 341 — the cells a decorator's host function needs are those of
+//// the package's declared `targets`: this package declares erlang and beam,
+//// whose decorators run on the BEAM runtime, so `bang` needs its
+//// `@External.Erlang` cell alone (`reject/decorator_host_cell_missing` is
+//// the same declaration in a package declaring no targets).
+
+#[@External.Node("""($0 + "!")""")]
+#[@External.Erlang("""<<($0)/binary, "!">>""")]
+declare fn bang(value: string) -> string;
+
+fn sized(comptime decl: @Decl) {
+    @emit("pub fn summary() -> string { return \"" + bang(decl.name) + "\"; }");
+}
+
+#[sized]
+type Point(x: i32, y: i32)
+
+pub fn main() {
+    @print(summary());
+}

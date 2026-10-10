@@ -410,6 +410,23 @@ and back into this module; the parent's comptime module called an undefined `Pad
 and `run/comptime_record_pattern` (a record matched on the comptime runtime as its untagged map — a
 constructor pattern in an arm and in a `val`, `is`, an arm naming `Block`, a record and a section's
 variant; the parent's lowering failed `MissingPackage`).
+`01-compiler/14` step 6 (decisions 341, 343) adds `run/decorator_host_cells` (a decorator body calls
+a host function with both cells and std's `hash.contentHash` through its namespace and a leaf
+import — the BEAM runtime runs the `@External.Erlang` cell, the wat runtime the `fn:` binding's
+function; four targets, one output; the parent binary was `call to undefined function bang/1`),
+`modules/decorator_imported_host_function` (the same through an imported function and an imported
+decorator: the export carries its host and std functions), `modules/decorator_host_cell_targets` (a
+package declaring `erlang` and `beam` needs the Erlang cell alone; its excluded commonJS and wasm
+are refused for the missing host binding of the wat comptime runtime), `reject/decorator_host_cell_missing`
+(no `targets`, no `@External.Wasm`: `decorator-host-cell-missing` at the call),
+`reject/decorator_writes_module_var` (`decorator-writes-module-var` at the write, through a function
+of the module; the parent binary said `unbound variable`) and `reject/typeinfo_all_duplicate_at_entry`
+(two commands of one name refused at the entry point's `@TypeInfo.all`, naming both). Step 8 adds
+`run/comptime_std_host_function` (`comptime hash.contentHash(…)`, T19, four targets — the parent
+binary refused `.contentHash(…)`) and `modules/hole_imported_val_known_at_build` (a hole naming an
+imported `val` known at build is written at build; the parent binary computed it at render), and
+`reject/comptime_reaches_use` (question `14s8-e` (a): a `comptime` calling a component that reads a
+context is refused naming the `use`).
 `01-compiler/14` step 8 (decision 355) adds `run/styled_holes_known_at_build` (a template of the
 cell's own reads each hole's `known` / `value`: a literal, a `val`, another expansion with no
 run-time hole and a `comptime` are written at build, a parameter and a call computed at render —

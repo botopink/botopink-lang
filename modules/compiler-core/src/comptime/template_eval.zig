@@ -32,6 +32,7 @@
 /// methods (`q.text()`, `q.parts()`, `q.lookup(name)`, …) lower to the resident
 /// host functions.
 const std = @import("std");
+const hostCells = @import("./host_cells.zig");
 const ast = @import("../ast.zig");
 const template = @import("./template.zig");
 const erlang = @import("../codegen/erlang.zig");
@@ -116,9 +117,11 @@ pub fn evaluate(
 ) EvalError!Outcome {
     _ = build_root;
     var unsupported: erlang.UnsupportedMethod = .{};
+    var refused: []const u8 = "";
     const t_module = stages.start();
-    const source = buildModule(arena, owner, tfn, support, types, captures, plainArgs, &unsupported) catch |err| switch (err) {
+    const source = buildModule(arena, owner, tfn, support, types, captures, plainArgs, &unsupported, &refused) catch |err| switch (err) {
         error.UnsupportedMethod => return .{ .err = try unsupportedText(arena, "template", tfn.name, unsupported) },
+        error.HostCell => return .{ .err = refused },
         else => |e| return e,
     };
     stages.stop(.module, t_module);
@@ -612,16 +615,26 @@ fn buildModule(
     captures: []const template.CapturedExpr,
     plainArgs: []const template.PlainArg,
     unsupported: *erlang.UnsupportedMethod,
-) (EvalError || error{UnsupportedMethod})!Module {
+    /// Why a host function cannot run on this runtime (`error.HostCell`).
+    refused: *[]const u8,
+) (EvalError || error{ UnsupportedMethod, HostCell })!Module {
     const b: Ast.Builder = .{ .arena = arena };
     const plans = try argPlans(arena, tfn, captures, plainArgs);
     const forms = try mainForms(b, tfn, plans);
     const resident = try preludeMod.templateForms(b);
 
-    const decls = try arena.alloc(ast.DeclKind, 1 + support.len + types.len);
-    decls[0] = .{ .@"fn" = tfn };
-    for (support, 1..) |f, i| decls[i] = .{ .@"fn" = f };
-    @memcpy(decls[1 + support.len ..], types);
+    const all = try arena.alloc(ast.DeclKind, 1 + support.len + types.len);
+    all[0] = .{ .@"fn" = tfn };
+    for (support, 1..) |f, i| all[i] = .{ .@"fn" = f };
+    @memcpy(all[1 + support.len ..], types);
+    // Decision 341 — each host function as this runtime runs it.
+    const decls = switch (try hostCells.forRuntime(arena, all)) {
+        .ok => |d| d,
+        .refused => |msg| {
+            refused.* = msg;
+            return error.HostCell;
+        },
+    };
     const config: erlang.ComptimeModule = .{
         .host_enums = &.{ "BindingKind", "DeclKind" },
         .host_records = &host_records,
@@ -1100,10 +1113,11 @@ test "template module: one module per declaration, the capture as the argument" 
     }.of;
 
     var unsupported: erlang.UnsupportedMethod = .{};
+    var refused: []const u8 = "";
     const one = try capture(arena, "alpha");
     const two = try capture(arena, "a much longer literal");
-    const first = try buildModule(arena, "", tfn, &.{}, &.{}, &.{one}, &.{}, &unsupported);
-    const second = try buildModule(arena, "", tfn, &.{}, &.{}, &.{two}, &.{}, &unsupported);
+    const first = try buildModule(arena, "", tfn, &.{}, &.{}, &.{one}, &.{}, &unsupported, &refused);
+    const second = try buildModule(arena, "", tfn, &.{}, &.{}, &.{two}, &.{}, &unsupported, &refused);
 
     // Two call sites with different literals, one module — the difference is
     // entirely in `main/1`'s argument.
@@ -1126,7 +1140,7 @@ test "template module: one module per declaration, the capture as the argument" 
     // same body declared in another module is another module, and one no
     // module owns keeps the compiler's own `bp@comptime`.
     try std.testing.expect(std.mem.startsWith(u8, first.module, "bp@comptime__tpl__shout__"));
-    const owned = try buildModule(arena, "ui/panel", tfn, &.{}, &.{}, &.{one}, &.{}, &unsupported);
+    const owned = try buildModule(arena, "ui/panel", tfn, &.{}, &.{}, &.{one}, &.{}, &unsupported, &refused);
     try std.testing.expect(std.mem.startsWith(u8, owned.module, "bp@comptime@ui@panel__tpl__shout__"));
     try std.testing.expect(std.mem.startsWith(u8, owned.code, "-module(bp@comptime@ui@panel__tpl__shout__"));
     const decoded = try crossModule.decodeAtom(arena, owned.module);
@@ -1134,7 +1148,7 @@ test "template module: one module per declaration, the capture as the argument" 
     try std.testing.expectEqualStrings("comptime/ui/panel", decoded.path);
     try std.testing.expectEqualStrings("tpl", decoded.kind);
     try std.testing.expectEqualStrings("shout", decoded.decl);
-    const elsewhere = try buildModule(arena, "ui/card", tfn, &.{}, &.{}, &.{one}, &.{}, &unsupported);
+    const elsewhere = try buildModule(arena, "ui/card", tfn, &.{}, &.{}, &.{one}, &.{}, &unsupported, &refused);
     try std.testing.expect(!std.mem.eql(u8, owned.module, elsewhere.module));
     // The hash segment is the body's, whoever owns it.
     try std.testing.expectEqualStrings(first.module[first.module.len - 16 ..], owned.module[owned.module.len - 16 ..]);

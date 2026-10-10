@@ -1,0 +1,23 @@
+//// Question `14s8-e` (a), 01-compiler/14 step 8 — a `comptime` that calls a
+//// component reading a context reaches a `use` with no render tree around
+//// it (decision 354 (3)): nothing provides `ThemeContext`. Refused at the
+//// `comptime`, naming the `use` and the function holding it; the run used
+//// to stop at whatever the provider's absence broke first.
+
+import {context.Context, context.provide, context.context} from "std";
+
+type Theme(mode: string)
+
+type Element(text: string) implement @Renderable
+
+pub val ThemeContext = Context<Theme>();
+
+fn label() -> @Component<Element> {
+    val t = use context(ThemeContext);
+    return Element(text: t.mode);
+}
+
+pub fn main() {
+    val pre = comptime label();
+    @print(pre.text);
+}

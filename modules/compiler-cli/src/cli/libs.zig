@@ -616,7 +616,9 @@ fn loadOne(
 
         // The package is the path's first segment (`<dep>/<stem>`), a slice
         // of the path so `freeModules` owns it with it.
-        try out.append(gpa, .{ .path = mod_path, .source = source, .declaration = isDeclFile(file), .srcPath = src_path, .package = mod_path[0..dep.len] });
+        // Decision 341: the dependency's declared targets decide which host
+        // cells its decorators need.
+        try out.append(gpa, .{ .path = mod_path, .source = source, .declaration = isDeclFile(file), .srcPath = src_path, .package = mod_path[0..dep.len], .targets = bp.Targets.of(m.targets) });
         try file_paths.append(arena, try std.fs.path.relative(arena, cwd, null, cwd, file_path));
     }
     try checkImportSources(arena, dep, m, file_paths.items, out.items[first..]);
