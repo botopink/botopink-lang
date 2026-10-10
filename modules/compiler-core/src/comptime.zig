@@ -13,6 +13,7 @@ const inline_types = @import("./comptime/inline_types.zig");
 const nested_types = @import("./comptime/nested_types.zig");
 const default_fn = @import("./comptime/default_fn.zig");
 const value_or_type = @import("./comptime/value_or_type.zig");
+const expr_param = @import("./comptime/expr_param.zig");
 const evalMod = @import("./comptime/eval.zig");
 const format = @import("./format.zig");
 pub const trace = @import("./comptime/trace.zig");
@@ -2960,7 +2961,7 @@ pub fn compileTypesOnly(
                     while (sit.next()) |e| try fn_decls.put(e.key_ptr.*, e.value_ptr.*);
                 }
                 for (succ.bindings) |b| {
-                    if (b.decl == .@"fn") try fn_decls.put(b.name, b.decl.@"fn");
+                    if (b.decl == .@"fn") try fn_decls.put(b.name, try expr_param.eraseFn(arena_alloc, b.decl.@"fn", infer.isDecoratorParams(b.decl.@"fn".params)));
                 }
 
                 const empty_vals = std.StringHashMap([]const u8).init(arena_alloc);
@@ -2995,7 +2996,7 @@ pub fn compileTypesOnly(
                 const transformed = blk_t: {
                     const t = transform.transform(
                         arena_alloc,
-                        program_for_transform,
+                        try expr_param.eraseProgram(arena_alloc, program_for_transform, infer.isDecoratorParams),
                         fn_decls,
                         std.StringHashMap([]const ast.TypedExpr).init(arena_alloc),
                         empty_vals,
@@ -3244,7 +3245,7 @@ fn compileOnce(
                 }
                 for (succ.bindings) |b| {
                     if (b.decl == .@"fn") {
-                        try fn_decls.put(b.name, b.decl.@"fn");
+                        try fn_decls.put(b.name, try expr_param.eraseFn(arena_alloc, b.decl.@"fn", infer.isDecoratorParams(b.decl.@"fn".params)));
                     }
                     if (b.typedExpr) |te| {
                         switch (te) {
@@ -3287,7 +3288,7 @@ fn compileOnce(
                 };
                 const transformed = try value_or_type.withTwinImports(arena_alloc, try withImportSourcesNamed(arena_alloc, try withImportTypeAliasesErased(arena_alloc, try alias_erase.erase(arena_alloc, try withYieldStepDecl(arena_alloc, try withDeclaredDecls(arena_alloc, try withSourceLocationDecl(arena_alloc, try withSynthesisedEnumDecls(
                     arena_alloc,
-                    try withUsedAssocInterfaces(arena_alloc, try withTemplateHygiene(arena_alloc, try context_lower.lower(arena_alloc, try transform.transform(arena_alloc, program_for_transform, fn_decls, comptime_arrays, ct.comptime_vals, &succ.env.method_lowerings, &succ.env.templateExpansions, &succ.env.srcRewrites, &succ.env.result_jump_lowerings, &succ.env.stdArrayLowerings, &succ.env.enumSectionRewrites, &succ.env.indexRewrites, &succ.env.optionalNullCases, succ.env.ctorParams, &succ.env.defaultInjections, &succ.env.resultPatternLocs, &succ.env.namespaces), &succ.env), &succ.env, declaresTemplateFn(program_for_transform.decls)), &succ.env),
+                    try withUsedAssocInterfaces(arena_alloc, try withTemplateHygiene(arena_alloc, try context_lower.lower(arena_alloc, try transform.transform(arena_alloc, try expr_param.eraseProgram(arena_alloc, program_for_transform, infer.isDecoratorParams), fn_decls, comptime_arrays, ct.comptime_vals, &succ.env.method_lowerings, &succ.env.templateExpansions, &succ.env.srcRewrites, &succ.env.result_jump_lowerings, &succ.env.stdArrayLowerings, &succ.env.enumSectionRewrites, &succ.env.indexRewrites, &succ.env.optionalNullCases, succ.env.ctorParams, &succ.env.defaultInjections, &succ.env.resultPatternLocs, &succ.env.namespaces), &succ.env), &succ.env, declaresTemplateFn(program_for_transform.decls)), &succ.env),
                     &succ.env,
                 ), &succ.env), &succ.env), &succ.env), &succ.env.typeAliases), &succ.env), &succ.env), &succ.env.typeArgTwins);
 

@@ -85,7 +85,7 @@ test "infer: pub fn with local val binding in body" {
 
 test "infer: pub fn with comptime params" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\pub fn repeat(s comptime: string, n comptime: i32) -> string {
+        \\pub fn repeat(s comptime: @Expr<string>, n comptime: @Expr<i32>) -> string {
         \\    @todo();
         \\}
         \\val r = repeat("hi", 3);

@@ -11,6 +11,7 @@ const patterns = @import("parser/patterns.zig");
 const decl_grammar = @import("parser/decls.zig");
 const exprs = @import("parser/exprs.zig");
 const template_markers = @import("parser/template_markers.zig");
+const expr_params = @import("parser/expr_params.zig");
 
 pub const Token = token.Token;
 pub const TokenKind = token.TokenKind;
@@ -541,6 +542,9 @@ pub const Parser = struct {
             }, failure.tok);
             return ParseError.UnexpectedToken;
         }
+        // Decision 364: a non-template function's `comptime x: @Expr<T>`
+        // carries `T` in its `typeRef` (`parser/expr_params.zig`).
+        expr_params.unwrapProgram(alloc, &program);
         return program;
     }
 

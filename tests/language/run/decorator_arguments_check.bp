@@ -3,7 +3,10 @@
 //// `@Decl<T>` binds `T` to the annotated declaration, so `rule` is checked
 //// as an `fn(v: Account) -> bool` and `at` as a field of `Account` (`.confirm`,
 //// `Type.Field<T>` of decision 308); `code` takes a variant written as
-//// declared. The body reads the field key's `name` and the variant as values.
+//// declared. The body reads the field key's `name` and the variant as values,
+//// each `x.value` of its `comptime x: @Expr<T>` (decision 364); `rule` is an
+//// `@Expr` of a function, which has no `.value` — the function form is told
+//// apart by the declaration's kind (question `s35-b`).
 
 import {types.Type} from "std";
 
@@ -11,20 +14,20 @@ pub type Code { Custom, Required, TooShort, Mismatch }
 
 fn check<T>(
     comptime decl: @Decl<T>,
-    comptime message: string,
-    comptime rule: ?fn(v: T) -> bool = null,
-    comptime at: ?Type.Field<T> = null,
-    comptime code: Code = .Custom,
+    comptime message: @Expr<string>,
+    comptime rule: @Expr<?fn(v: T) -> bool> = null,
+    comptime at: @Expr<?Type.Field<T>> = null,
+    comptime code: @Expr<Code> = .Custom,
 ) {
-    if (rule == null) {
-        if (decl.kind != DeclKind.Fn || decl.returnType != "bool")
+    if (decl.kind == DeclKind.Fn) {
+        if (decl.returnType != "bool")
             decl.fail("#[check] without `rule` annotates an `fn(x) -> bool`");
-        decl.setMeta("rule", message);
+        decl.setMeta("rule", message.value);
         return;
     }
-    val key = at?.name ?? "type";
-    val kind = if (code == Code.Mismatch) "mismatch" else "custom";
-    decl.setMeta(key, message + " (" + kind + ")");
+    val key = at.value?.name ?? "type";
+    val kind = if (code.value == Code.Mismatch) "mismatch" else "custom";
+    decl.setMeta(key, message.value + " (" + kind + ")");
 }
 
 #[check("passwords differ", passwordsMatch, at = .confirm)]

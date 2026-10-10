@@ -2,10 +2,10 @@
 ```botopink
 val COMMANDS = comptime ["calc", "noop", "help"];
 
-fn execute(comptime slug: string, input: i32) -> i32 {
+fn execute(comptime slug: @Expr<string>, input: i32) -> i32 {
     var output = 0;
     for (COMMANDS) { cmd ->
-        if (cmd == slug) {
+        if (cmd == slug.value) {
             if (cmd == "calc") {
                 output = input * 2;
             } else if (cmd == "noop") {

@@ -1,0 +1,11 @@
+//// Decision 364 (4) — the rule holds wherever the parameter is declared: an
+//// ordinary function's `comptime n: i32` is refused at the parameter, naming
+//// `@Expr<i32>`.
+
+fn twice(comptime n: i32) -> i32 {
+    return n * 2;
+}
+
+pub fn main() {
+    @print(twice(2));
+}

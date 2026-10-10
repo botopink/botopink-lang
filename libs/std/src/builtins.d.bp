@@ -245,7 +245,7 @@ pub behavior Component<R> extends Task {}
 // code) make of it.
 
 pub behavior Annotation {
-    default fn checkAnnotation(self: Self, comptime decl: Decl) {}
+    default fn checkAnnotation(self: Self, comptime decl: @Decl) {}
 }
 
 // ── External — host-backed lowering ──────────────────────────────────────────
@@ -328,7 +328,7 @@ pub declare fn block<T>(body: fn() -> T) -> T;
 // `@field(obj, "name")` — the field `name` of `obj`, the name known at
 // compile time: typed as that field when `obj` is a known non-generic record,
 // otherwise left open. COMPTIME-ONLY name.
-pub declare fn field<T, F>(obj: T, comptime name: string) -> F;
+pub declare fn field<T, F>(obj: T, comptime name: @Expr<string>) -> F;
 
 // `@src()` — the place it is written, as a `SourceLocation` (decision 73;
 // the section below). COMPTIME-ONLY: rewritten into the constructor call.
@@ -343,7 +343,7 @@ pub declare fn module() -> module;
 // are string constants (the only members read today). COMPTIME-ONLY: no
 // run-time code. The program's catalogue is the static `@TypeInfo.all` of the
 // answer's type (below).
-pub declare fn typeInfo<T>(comptime _: type) -> TypeInfo<T>;
+pub declare fn typeInfo<T>(comptime _: @Expr<type>) -> TypeInfo<T>;
 
 // `@TypeOf(value)` — the type of `value`, as the expression's type.
 // COMPTIME-ONLY.
@@ -354,11 +354,11 @@ pub declare fn TypeOf<T>(value: T) -> T;
 pub declare fn makeRecord<R>(fields: RecordField[]) -> R;
 
 // `@RecordKeys(T)` — the field names of the record type `T`. COMPTIME-ONLY.
-pub declare fn RecordKeys(comptime _: type) -> string[];
+pub declare fn RecordKeys(comptime _: @Expr<type>) -> string[];
 
 // `@comptimeError(message)` — fails the check with `comptime error:
 // <message>` at the call. COMPTIME-ONLY.
-pub declare fn comptimeError(comptime message: string) -> noreturn;
+pub declare fn comptimeError(comptime message: @Expr<string>) -> noreturn;
 
 // Contribute generated top-level declarations to the program from a decorator
 // body. `@emit("pub val userServiceSingleton = …")` parses `source` as botopink
@@ -375,7 +375,7 @@ pub declare fn compilerError(message: string) -> noreturn;
 // `@expr(value)` lifts a comptime value as code, `@code(text)` parses
 // generated source text; both only inside a template function
 // (`-> @Expr<…>`). COMPTIME-ONLY.
-pub declare fn expr<T>(comptime value: T) -> Expr<T>;
+pub declare fn expr<T>(comptime value: @Expr<T>) -> Expr<T>;
 
 pub declare fn code<T>(text: string) -> Expr<T>;
 

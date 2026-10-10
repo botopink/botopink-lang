@@ -7,8 +7,8 @@ pub fn sql(comptime q: @Expr<string>) -> @Expr<string> {
     return q;
 }
 
-fn twice(comptime n: i32) -> i32 {
-    return n * 2;
+fn twice(comptime n: @Expr<i32>) -> i32 {
+    return n.value * 2;
 }
 
 test "an @Expr parameter captures the call-site text" {

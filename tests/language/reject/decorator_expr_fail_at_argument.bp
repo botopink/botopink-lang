@@ -1,0 +1,15 @@
+//// Decision 364 (3) — `x.fail("…")` in a decorator reports at `x`'s
+//// argument, not at the annotation: the upper bound below the lower one is
+//// refused at the `1`.
+
+fn sizeBetween(comptime decl: @Decl, comptime min: @Expr<i32>, comptime max: @Expr<i32>) {
+    if (min.value > max.value) max.fail("the upper bound is below the lower one");
+}
+
+type Form(
+    #[sizeBetween(5, 1)] name: string,
+)
+
+pub fn main() {
+    @print("unreached");
+}

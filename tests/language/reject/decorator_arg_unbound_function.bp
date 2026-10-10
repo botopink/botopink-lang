@@ -8,12 +8,12 @@ pub type Code { Custom, Mismatch }
 
 fn check<T>(
     comptime decl: @Decl<T>,
-    comptime message: string,
-    comptime rule: ?fn(v: T) -> bool = null,
-    comptime at: ?Type.Field<T> = null,
-    comptime code: Code = .Custom,
+    comptime message: @Expr<string>,
+    comptime rule: @Expr<?fn(v: T) -> bool> = null,
+    comptime at: @Expr<?Type.Field<T>> = null,
+    comptime code: @Expr<Code> = .Custom,
 ) {
-    decl.setMeta("message", message);
+    decl.setMeta("message", message.value);
 }
 
 type Account(password: string, confirm: string)

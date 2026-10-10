@@ -4,7 +4,7 @@
 
 type Box<T>(value: T)
 
-fn pick<T>(comptime s: Box<T> | type T) -> string {
+fn pick<T>(comptime s: @Expr<Box<T> | type T>) -> string {
     return if (s is type) "type" else "value";
 }
 

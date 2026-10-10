@@ -33,6 +33,7 @@ const specializeMod = @import("specialize.zig");
 const unifyMod = @import("unify.zig");
 const snapshotMod = @import("snapshot.zig");
 const valueOrType = @import("value_or_type.zig");
+const exprParam = @import("expr_param.zig");
 /// `unify` raises its `TypeError` unlocated: it sees types, not source. Every
 /// call is `unifyAt` (which stamps the location it is given) or sits under a
 /// caller that stamps one with `locateLast` — 01 step 9: no type error leaves
@@ -3926,6 +3927,7 @@ fn validateExternalAnnotation(env: *Env, f: ast.FnDecl, a: ast.Annotation) Infer
 /// elsewhere, and an unknown bare marker stays lenient (a lib may not be loaded).
 fn validateDecorators(env: *Env, program: ast.Program) InferError!void {
     try refuseNonComptimeDecoratorParams(env, program);
+    try refuseBareComptimeParams(env, program);
     if (env.decorators.count() == 0) return;
     for (program.decls) |decl| switch (decl) {
         .@"fn" => |f| try checkDecoratorAnnotations(env, program, f.annotations, .{ .name = f.name, .type_ = try fnDeclType(env, f.name) }),
@@ -4098,6 +4100,40 @@ fn refuseNonComptimeDecoratorParams(env: *Env, program: ast.Program) InferError!
     }
 }
 
+/// Decision 364 (4) — every `comptime` parameter other than `@Decl` is the
+/// user's expression, `comptime x: @Expr<T>`: a decorator's, a template
+/// function's, any function's, a method's, a `declare fn`'s. `comptime x: T`
+/// is refused at the parameter, naming `@Expr<T>`. (The parser reads a
+/// non-template function's wrapper off — `Param.exprWrapped`.)
+fn refuseBareComptimeParams(env: *Env, program: ast.Program) InferError!void {
+    for (program.decls) |decl| switch (decl) {
+        .@"fn" => |f| try refuseBareComptime(env, f.name, f.params),
+        .delegate => |d| try refuseBareComptime(env, d.name, d.params),
+        .type_ => |t| try refuseBareComptimeInType(env, t),
+        .behavior => |b| for (b.methods) |m| try refuseBareComptime(env, m.name, m.params),
+        .implement => |i| for (i.methods) |m| try refuseBareComptime(env, m.name, m.params),
+        .extend => |e| for (e.methods) |m| try refuseBareComptime(env, m.name, m.params),
+        else => {},
+    };
+}
+
+fn refuseBareComptimeInType(env: *Env, t: ast.TypeDecl) InferError!void {
+    for (t.methods) |m| try refuseBareComptime(env, m.name, m.params);
+    for (t.assocTypes) |inner| try refuseBareComptimeInType(env, inner);
+}
+
+fn refuseBareComptime(env: *Env, owner: []const u8, params: []const ast.Param) InferError!void {
+    for (params) |p| {
+        if (p.modifier != .@"comptime" or p.exprWrapped) continue;
+        if (p.typeRef.isExprType() or p.typeRef.isDeclType()) continue;
+        const written = try std.fmt.allocPrint(env.arena, "{f}", .{p.typeRef});
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}`'s parameter `{s}` is `comptime {s}: {s}` — a `comptime` parameter is `comptime {s}: @Expr<{s}>`", .{ diagnostics.comptime_param_not_expr, owner, p.name, p.name, written, p.name, written });
+        const hint = try std.fmt.allocPrint(env.arena, "A `comptime` parameter is the user's expression, checked against `{s}` at the argument; the body reads its value at build with `{s}.value` (decision 364).", .{ written, p.name });
+        env.lastError = TypeError.custom(msg, hint).withLoc(if (p.loc.line != 0) p.loc else p.typeLoc);
+        return error.TypeError;
+    }
+}
+
 /// A `comptime` parameter takes a default only in a decorator (decision 280
 /// (0)), where the annotation that leaves it out hands the body the default:
 /// no call site of an ordinary function fills one, so it is refused at the
@@ -4243,6 +4279,10 @@ fn checkDecoratorArgs(env: *Env, program: ast.Program, a: ast.Annotation, sig: e
     const values = try env.arena.alloc(envMod.DecoratorArgValue, sig.params.len);
     for (sig.params, 0..) |p, j| {
         const isType = p.typeRef == .typeparam;
+        // Decision 364 (2) — what the body does with the parameter: an
+        // argument not known at build is refused only where the body reads
+        // it; one it never reads reaches it as `undefined`.
+        const use: exprParam.Use = if (sig.fn_decl) |dfn| exprParam.useOf(dfn, p.name) else .{};
         if (p.variadic) {
             const elem: ?*T.Type = if (wants[j]) |w| blk: {
                 const d = w.deref();
@@ -4250,18 +4290,24 @@ fn checkDecoratorArgs(env: *Env, program: ast.Program, a: ast.Annotation, sig: e
             } else null;
             var joined: std.ArrayListUnmanaged(u8) = .empty;
             try joined.append(env.arena, '[');
+            var known = true;
             for (map.rest, 0..) |i, k| {
-                const e = try checkDecoratorArg(env, program, a, i, p, elem);
+                const e = try checkDecoratorArg(env, program, a, i, p, elem, use);
+                if (!e.known) known = false;
                 if (k > 0) try joined.appendSlice(env.arena, ", ");
-                try joined.appendSlice(env.arena, (try decoratorArgValue(env, program, e.*, a.args[i], elem, false, 0)).source);
+                if (e.known) try joined.appendSlice(env.arena, (try decoratorArgValue(env, program, e.expr.*, a.args[i], elem, false, 0)).source);
             }
             try joined.append(env.arena, ']');
-            values[j] = .{ .source = joined.items, .built = true };
+            values[j] = if (known) .{ .source = joined.items, .built = true } else .{ .source = "undefined", .built = false, .absent = true };
             continue;
         }
         if (map.slots[j]) |i| {
-            const e = try checkDecoratorArg(env, program, a, i, p, wants[j]);
-            values[j] = try decoratorArgValue(env, program, e.*, a.args[i], wants[j], isType, 0);
+            const e = try checkDecoratorArg(env, program, a, i, p, wants[j], use);
+            values[j] = if (e.known)
+                try decoratorArgValue(env, program, e.expr.*, a.args[i], wants[j], isType, 0)
+            else
+                .{ .source = "undefined", .built = false, .absent = true };
+            values[j].loc = a.argLoc(i);
         } else {
             const d = p.default.?;
             values[j] = try decoratorArgValue(env, program, d, try defaultLexeme(env.arena, d), wants[j], isType, 0);
@@ -4359,23 +4405,37 @@ fn decoratorArgNotKnownAt(env: *Env, program: ast.Program, e: ast.Expr, depth: u
     }
 }
 
-/// One argument against its parameter (decision 280 (1), (3), (4)).
-fn checkDecoratorArg(env: *Env, program: ast.Program, a: ast.Annotation, i: usize, p: ast.Param, want: ?*T.Type) InferError!*ast.Expr {
+/// One argument against its parameter (decision 280 (1), (3), (4)): the
+/// argument as an expression, and whether it is known while the program
+/// compiles (decision 364 (2)).
+const CheckedDecoratorArg = struct { expr: *ast.Expr, known: bool };
+
+fn checkDecoratorArg(env: *Env, program: ast.Program, a: ast.Annotation, i: usize, p: ast.Param, want: ?*T.Type, use: exprParam.Use) InferError!CheckedDecoratorArg {
     const loc = a.argLoc(i) orelse ast.Loc{ .line = 0, .col = 0 };
     const e = try parseDecoratorArg(env, a.args[i], loc);
-    try checkDecoratorArgExpr(env, program, a, i, e, p, want, loc);
-    return e;
+    const known = try checkDecoratorArgExpr(env, program, a, i, e, p, want, loc, use);
+    return .{ .expr = e, .known = known };
 }
 
-fn checkDecoratorArgExpr(env: *Env, program: ast.Program, a: ast.Annotation, i: usize, e: *ast.Expr, p: ast.Param, want: ?*T.Type, loc: ast.Loc) InferError!void {
-    if (p.typeRef == .typeparam) return checkDecoratorTypeArg(env, program, a, e.*, p, loc);
-    if (decoratorArgNotKnownAt(env, program, e.*, 0)) |at| {
-        const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]`'s argument `{s}` is not known while the program compiles", .{ diagnostics.decorator_arg_not_comptime, a.name, a.args[i] });
-        env.lastError = TypeError.custom(msg, "A decorator argument is a literal, a function, a type, a field `.name`, a variant, or a value built from those by a constructor (decision 280).").withLoc(at);
-        return error.TypeError;
+fn checkDecoratorArgExpr(env: *Env, program: ast.Program, a: ast.Annotation, i: usize, e: *ast.Expr, p: ast.Param, want: ?*T.Type, loc: ast.Loc, use: exprParam.Use) InferError!bool {
+    if (p.typeRef == .typeparam) {
+        try checkDecoratorTypeArg(env, program, a, e.*, p, loc);
+        return true;
     }
-    const w = want orelse return;
-    if (e.* == .identifier and e.identifier.kind == .dotIdent) return checkDotNameArg(env, a, e.identifier.kind.dotIdent, p, w, loc);
+    // Decision 364 (2) — an argument not known at build (a call of a
+    // function, a module `var`, a `val` holding one) is the program's to
+    // evaluate: refused only where the body reads the parameter.
+    const unknownAt = decoratorArgNotKnownAt(env, program, e.*, 0);
+    if (unknownAt) |at| if (use.reads) {
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]`'s argument `{s}` is not known while the program compiles, and the decorator reads `{s}.value`", .{ diagnostics.decorator_value_not_comptime, a.name, a.args[i], p.name });
+        env.lastError = TypeError.custom(msg, "`.value` answers an argument known at build — a literal, a variant, a field `.name`, a `val` or a constructor of those (decision 364 (2)); hand any other expression on to the program.").withLoc(at);
+        return error.TypeError;
+    };
+    const w = want orelse return unknownAt == null;
+    if (e.* == .identifier and e.identifier.kind == .dotIdent) {
+        try checkDotNameArg(env, a, e.identifier.kind.dotIdent, p, w, loc);
+        return unknownAt == null;
+    }
     // The parameter's type is the argument's expectation, as a call's is
     // (an integer literal takes the integer type asked for, `.Name` its enum).
     const prevExpected = env.expectedType;
@@ -4402,6 +4462,14 @@ fn checkDecoratorArgExpr(env: *Env, program: ast.Program, a: ast.Annotation, i: 
         },
         else => |x| return x,
     };
+    // Decision 364 (3) — a type parameter the annotation binds to a function
+    // type: the body's `.value` would call it at build.
+    if (use.value and isFunctionValueType(w)) {
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]`'s `{s}` is a function here, and the decorator reads `{s}.value`", .{ diagnostics.expr_value_of_function, a.name, p.name, p.name });
+        env.lastError = TypeError.custom(msg, "A function's body is not called while the program compiles (decision 364 (3)).").withLoc(loc);
+        return error.TypeError;
+    }
+    return unknownAt == null;
 }
 
 /// A type as a decorator diagnostic spells it: a function `fn(A) -> R`, an
@@ -4698,8 +4766,8 @@ fn runDeclDecorators(
         var plain = try env.arena.alloc(template.PlainArg, values.len);
         var builtFns: std.ArrayListUnmanaged(ast.FnDecl) = .empty;
         for (values, 0..) |v, j| {
-            plain[j] = .{ .paramName = sig.params[j].name, .source = v.source };
-            if (!v.built) continue;
+            plain[j] = .{ .paramName = sig.params[j].name, .source = v.source, .absent = v.absent };
+            if (!v.built or v.absent) continue;
             const fname = try std.fmt.allocPrint(env.arena, "__bp_decorator_arg_{d}", .{j + 1});
             try builtFns.append(env.arena, try builtArgFn(env, fname, v.source));
             plain[j].call = fname;
@@ -4721,7 +4789,11 @@ fn runDeclDecorators(
         const carried = try std.mem.concat(env.arena, ast.FnDecl, &.{ &.{dfn}, found.fns, builtFns.items });
         const reached = try blockEval.typesReached(env, carried, &.{ "DeclKind", "Span", "Decl" });
         const support = try std.mem.concat(env.arena, ast.FnDecl, &.{ found.fns, reached.fns, builtFns.items });
-        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, dfn, support, reached.types, try completeHandle(env, handle), plain, &env.comptimeTraces) catch {
+        // Decision 364 — the body reads `x.value`; the module holds the value
+        // in `x` (`expr_param.zig`), and `x.fail(m)` names its argument.
+        const erasedSupport = try env.arena.alloc(ast.FnDecl, support.len);
+        for (support, 0..) |sf, k| erasedSupport[k] = try exprParam.eraseFn(env.arena, sf, isDecoratorParams(sf.params));
+        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, try exprParam.eraseFn(env.arena, dfn, true), erasedSupport, reached.types, try completeHandle(env, handle), plain, &env.comptimeTraces) catch {
             return decoratorError(env, a, "the decorator evaluator failed to run", "Decorator bodies run in a persistent `erl` process at compile time — check that `erl` is on PATH.");
         };
         switch (outcome) {
@@ -4773,7 +4845,14 @@ fn runDeclDecorators(
                     }
                 },
             },
-            .fail => |fl| return decoratorError(env, a, fl.message, "raised by the decorator via `fail`/`failAt`"),
+            .fail => |fl| {
+                // Decision 364 (3) — `x.fail(…)` reports at `x`'s argument.
+                if (fl.arg) |j| if (j < values.len) if (values[j].loc) |l| {
+                    env.lastError = TypeError.custom(fl.message, "raised by the decorator via `fail` on this argument").withLoc(l);
+                    return error.TypeError;
+                };
+                return decoratorError(env, a, fl.message, "raised by the decorator via `fail`/`failAt`");
+            },
             .err => |m| {
                 // Decorators run before any body of the module is inferred, so
                 // a type error in the module's own decorator body (`decl.nope`)
@@ -5931,10 +6010,17 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
                 .list => {}, // List destructuring — no bindings to infer
                 .ctor => {}, // Constructor destructuring — handled by pattern matching
             }
+        } else if (p.exprWrapped) {
+            // Decision 364 — the body holds the argument as the user's
+            // expression, `Expr<T>`; its value is `x.value`.
+            try env.bind(p.name, try env.namedTypeArgs("Expr", &.{ty}));
         } else {
             try env.bind(p.name, ty);
         }
     }
+    const savedParams = env.currentParams;
+    env.currentParams = f.params;
+    defer env.currentParams = savedParams;
 
     // Infer return type.
     const retType = if (f.returnType) |rt|
@@ -6240,8 +6326,12 @@ fn inferTypeMethods(
                     try env.namedType("void");
                 break :blk try env.funcType(fparams, fret);
             } else try resolveParamType(env, p, genericMap);
-            try env.bind(p.name, ty);
+            // Decision 364 — a `comptime x: @Expr<T>` is read `x.value`.
+            try env.bind(p.name, if (p.exprWrapped) try env.namedTypeArgs("Expr", &.{ty}) else ty);
         }
+        const savedParams = env.currentParams;
+        env.currentParams = m.params;
+        defer env.currentParams = savedParams;
 
         // Scope the return-type-derived `use`/effect context to this body.
         const savedFnCtx = env.fnContext;
@@ -6651,6 +6741,21 @@ fn captureExprArg(
         return error.TypeError;
     }
 
+    // Decision 364 (2) — `q.value` answers the literal known at build: a
+    // literal with a `${…}` hole is not, and is refused at the argument when
+    // the template reads it.
+    const valueRead = if (env.templateFns.get(callee)) |tfn| exprParam.useOf(tfn, param.paramName).value else false;
+    if (valueRead and rawArg.* == .literal and rawArg.literal.kind == .stringTemplate) {
+        const holed = for (rawArg.literal.kind.stringTemplate.parts) |part| {
+            if (part == .expr) break true;
+        } else false;
+        if (holed) {
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}`'s argument has a `${{…}}` hole, so it is not known while the program compiles, and the template reads `{s}.value`", .{ diagnostics.template_value_not_known, callee, param.paramName });
+            env.lastError = TypeError.custom(msg, "`.value` answers a literal without holes (decision 364 (2)); read the parts with `.parts()`.").withLoc(typedArg.value.getLoc());
+            return error.TypeError;
+        }
+    }
+
     const litLoc = rawArg.getLoc();
     return template.CapturedExpr{
         .callee = callee,
@@ -6662,6 +6767,7 @@ fn captureExprArg(
         .loc = litLoc,
         .modulePath = env.modulePath,
         .scope = env.scopeSnapshot,
+        .valueRead = valueRead,
     };
 }
 
@@ -12048,6 +12154,15 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
                     if (tupleMemberIndex(ia.member)) |idx| {
                         if (idx < recvNamed.args.len) outType = recvNamed.args[idx];
                     }
+                } else if (std.mem.eql(u8, recvNamed.name, "Expr") and recvNamed.args.len == 1) {
+                    // Decision 364 (2), (3) — `x.value` is the expression's
+                    // value at build: `T`, unless `T` is a function or a type.
+                    if (!std.mem.eql(u8, ia.member, "value")) {
+                        env.lastError = TypeError.unknownField("Expr", ia.member).withLoc(loc);
+                        return error.TypeError;
+                    }
+                    try refuseExprValueRead(env, ia.receiver.*, recvNamed.args[0], loc);
+                    outType = recvNamed.args[0];
                 } else if (env.lookupTypeDef(recvNamed.name)) |td| {
                     switch (td) {
                         .record, .struct_ => {
@@ -12087,6 +12202,53 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
             } } } };
         },
     };
+}
+
+/// The `comptime x: @Expr<T>` parameter of the function being inferred that
+/// `e` names, if any.
+fn exprParamNamed(env: *Env, e: ast.Expr) ?ast.Param {
+    if (e != .identifier or e.identifier.kind != .ident) return null;
+    return exprParamOfName(env, e.identifier.kind.ident);
+}
+
+fn exprParamOfName(env: *Env, name: ?[]const u8) ?ast.Param {
+    const n = name orelse return null;
+    for (env.currentParams) |p| if (p.exprWrapped and std.mem.eql(u8, p.name, n)) return p;
+    return null;
+}
+
+/// The name a typed identifier reads, null for any other node.
+fn typedIdentName(e: ast.TypedExpr) ?[]const u8 {
+    if (e != .identifier) return null;
+    return switch (e.identifier.kind) {
+        .ident => |n| n,
+        else => null,
+    };
+}
+
+/// Decision 364 (3) — an `@Expr` of a function or a type has no `.value`:
+/// the function's body is not called and the type not inspected while the
+/// program compiles. Refused at the read.
+fn refuseExprValueRead(env: *Env, receiver: ast.Expr, inner: *T.Type, loc: ast.Loc) InferError!void {
+    const name: []const u8 = if (receiver == .identifier and receiver.identifier.kind == .ident) receiver.identifier.kind.ident else "the expression";
+    if (exprParamNamed(env, receiver)) |p| if (p.typeRef == .typeparam) {
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is an `@Expr` of a type, which has no `.value`", .{ diagnostics.expr_value_of_type, name });
+        env.lastError = TypeError.custom(msg, "A type is not inspected while the program compiles (decision 364 (3)): hand it on to the program.").withLoc(loc);
+        return error.TypeError;
+    };
+    if (isFunctionValueType(inner)) {
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is an `@Expr` of a function, which has no `.value`", .{ diagnostics.expr_value_of_function, name });
+        env.lastError = TypeError.custom(msg, "A function's body is not called while the program compiles (decision 364 (3)): hand it on to the program, which calls it at run time.").withLoc(loc);
+        return error.TypeError;
+    }
+}
+
+/// A function type, or an optional one.
+fn isFunctionValueType(t: *T.Type) bool {
+    const d = t.deref();
+    if (d.* == .func) return true;
+    if (d.* == .named and std.mem.eql(u8, d.named.name, "optional") and d.named.args.len == 1) return d.named.args[0].deref().* == .func;
+    return false;
 }
 
 /// Infer type for binary operation expressions
@@ -14195,6 +14357,22 @@ fn inferTemplateMethod(
 
     var op: envMod.TemplateOp = undefined;
     var retType: *T.Type = undefined;
+
+    // Decision 364 — a `comptime` parameter's `@Expr` (not a template's
+    // capture) answers `.value`, and in a decorator `.fail(…)`, located at
+    // the argument.
+    if (std.mem.eql(u8, named.name, "Expr")) if (exprParamOfName(env, typedIdentName(recvPtr.*))) |p| {
+        // `rule.value(x)` calls the function at build: refused as its read.
+        if (std.mem.eql(u8, callee, "value") and named.args.len == 1) {
+            const recvExpr: ast.Expr = .{ .identifier = .{ .loc = recvPtr.getLoc(), .kind = .{ .ident = p.name } } };
+            try refuseExprValueRead(env, recvExpr, named.args[0], loc);
+        }
+        if (!(env.inDecoratorFn and std.mem.eql(u8, callee, "fail"))) {
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is a `comptime` parameter, whose `@Expr` answers `.value`{s} — not `.{s}(…)`", .{ diagnostics.expr_param_method, p.name, if (env.inDecoratorFn) " and `.fail(…)`" else "", callee });
+            env.lastError = TypeError.custom(msg, "Read the argument's value at build with `x.value` (decision 364); a template function's capture is the one `@Expr` with the template methods.").withLoc(loc);
+            return error.TypeError;
+        }
+    };
 
     if (std.mem.eql(u8, named.name, "Expr")) {
         if (std.mem.eql(u8, callee, "value")) {

@@ -7,14 +7,17 @@
 
 import {types.Type} from "std";
 
-fn entity<T>(comptime decl: @Decl<T>, comptime table: string) {
-    decl.setMeta("table", table);
+fn entity<T>(comptime decl: @Decl<T>, comptime table: @Expr<string>) {
+    decl.setMeta("table", table.value);
 }
 
-fn index<T>(comptime decl: @Decl<T>, comptime ..fields: Type.Field<T>[]) {
+fn index<T>(
+    comptime decl: @Decl<T>,
+    comptime ..fields: @Expr<Type.Field<T>[]>,
+) {
     decl.setMeta(
         "columns",
-        fields
+        fields.value
             .map(
                 { f -> f.name + ":" + f.typeName + ":" + f.annotations.length.toString() },
             )
@@ -22,11 +25,11 @@ fn index<T>(comptime decl: @Decl<T>, comptime ..fields: Type.Field<T>[]) {
     );
 }
 
-fn unique<T>(comptime decl: @Decl<T>, comptime field: Type.Field<T>) {
-    decl.setMeta("column", field.name);
+fn unique<T>(comptime decl: @Decl<T>, comptime field: @Expr<Type.Field<T>>) {
+    decl.setMeta("column", field.value.name);
 }
 
-fn column<T>(comptime decl: @Decl<T>, comptime name: string) {
+fn column<T>(comptime decl: @Decl<T>, comptime name: @Expr<string>) {
     if (decl.kind != DeclKind.Field) decl.fail("#[column] annotates a field");
 }
 

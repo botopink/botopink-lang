@@ -1,0 +1,30 @@
+//// Decisions 280 (0), 364 (2), example 1 — `message.value` answers an
+//// argument known while the program compiles: a call of a function (`env(…)`)
+//// is not, and is refused at the call — a constructor of known values is.
+//// The body reads `message`; one it never reads may be any expression
+//// (`run/decorator_expr_unread_argument`).
+
+import {types.Type} from "std";
+
+pub type Code { Custom, Mismatch }
+
+fn check<T>(
+    comptime decl: @Decl<T>,
+    comptime message: @Expr<string>,
+    comptime rule: @Expr<?fn(v: T) -> bool> = null,
+    comptime at: @Expr<?Type.Field<T>> = null,
+    comptime code: @Expr<Code> = .Custom,
+) {
+    decl.setMeta("message", message.value);
+}
+
+fn env(name: string) -> string {
+    return name;
+}
+
+#[check(env("MSG"))]
+type Account(password: string, confirm: string)
+
+pub fn main() {
+    @print("unreached");
+}

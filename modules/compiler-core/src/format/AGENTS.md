@@ -233,3 +233,8 @@ a single-expression `if` block drops its braces, a `\\` line string prints as `"
 
 Nothing known, as of 2026-09-26: the five sibling libraries formatted as scratch copies lose no
 token and no comment (a lexical multiset comparison per file), and every package `check`s as before.
+
+**A `comptime` parameter's `@Expr<T>`** (decision 364): the parser reads the
+wrapper off a non-template function's parameter (`Param.exprWrapped`,
+`parser/expr_params.zig`); `fmtParam` prints `@Expr<` + `T` + `>` back, so
+`format(parse(src))` keeps the spelling.

@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn build(comptime prefix: string, name: string) -> string {
-    return prefix + ": " + name;
+fn build(comptime prefix: @Expr<string>, name: string) -> string {
+    return prefix.value + ": " + name;
 }
 
 fn main() {

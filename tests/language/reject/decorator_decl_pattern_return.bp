@@ -8,9 +8,9 @@ type Route<P>(params: P)
 
 fn page<P>(
     comptime decl: @Decl<fn(route: Route<P>) -> View>,
-    comptime seg: string,
+    comptime seg: @Expr<string>,
 ) {
-    decl.setMeta("seg", seg);
+    decl.setMeta("seg", seg.value);
 }
 
 #[page("blog")]

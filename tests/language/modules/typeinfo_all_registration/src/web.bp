@@ -1,8 +1,8 @@
 //// The framework: `#[route(path)]` marks a page function and records its
 //// path; `#[component]` gives a type the member its catalogue calls.
 
-pub fn route(comptime decl: @Decl, comptime path: string) {
-    decl.setMeta("path", path);
+pub fn route(comptime decl: @Decl, comptime path: @Expr<string>) {
+    decl.setMeta("path", path.value);
     if (decl.kind != DeclKind.Fn)
         decl.fail("#[route] must annotate a function");
 }

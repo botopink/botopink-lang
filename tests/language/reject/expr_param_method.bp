@@ -1,0 +1,17 @@
+//// Decision 364 — a `comptime` parameter's `@Expr` answers `.value` (and, in
+//// a decorator, `.fail(…)`); a template's capture is the one `@Expr` with the
+//// template methods. `.text()` on a decorator's parameter is refused at the
+//// call.
+
+fn note(comptime decl: @Decl, comptime message: @Expr<string>) {
+    decl.setMeta("message", message.text());
+}
+
+#[note("x")]
+fn f() -> i32 {
+    return 1;
+}
+
+pub fn main() {
+    @print(f());
+}

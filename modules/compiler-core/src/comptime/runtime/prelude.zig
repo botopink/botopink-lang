@@ -52,6 +52,7 @@ pub const decorator_module = "bp_comptime_decorator";
 pub const template_fail_tag = "__bp_template_fail";
 /// `'__bp_decorator_fail'` — the decorator twin.
 pub const decorator_fail_tag = "__bp_decorator_fail";
+
 /// `{'__bp_code', Source}` — what `build`/`code`/`ref` return and `'__bp_reply'`
 /// matches.
 pub const code_tag = "__bp_code";
@@ -64,6 +65,10 @@ pub const lookup_not_a_word_tail = "\"): not a word of the template's text; a te
 pub const emitted_key = "__bp_emitted";
 
 pub const Error = Ast.Builder.Error;
+
+/// Decision 364 (3) — the function a decorator body's `x.fail(m)` becomes
+/// (`comptime/expr_param.zig`): `'__bp_failArg'(Index, Message)`.
+pub const fail_arg_fn = "__bp_failArg";
 
 /// One prelude module: its atom and the Erlang source built for it.
 pub const Module = struct {
@@ -261,6 +266,12 @@ pub fn decoratorForms(b: Ast.Builder) Error![]const Ast.Form {
                 try b.clause(&.{A("undefined")}, &.{}, &.{try b.list(&.{})}),
                 try b.clause(&.{V("Sources")}, &.{}, &.{V("Sources")}),
             }),
+        }),
+        // Decision 364 (3) — `x.fail(m)` on a decorator parameter
+        // (`comptime/expr_param.zig`): the span names the parameter's index
+        // after the `@Decl` one, and the checker reports at its argument.
+        try b.function(fail_arg_fn, &.{ V("Index"), V("Message") }, &.{}, &.{
+            try b.remote("erlang", "throw", &.{try b.tuple(&.{ fail_tag, V("Message"), try b.map(&.{Ast.field("arg", V("Index"))}) })}),
         }),
     });
     try forms.appendSlice(b.arena, &erlang.comptime_helper_forms);

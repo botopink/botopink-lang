@@ -407,9 +407,30 @@ pub const type_alias_name_taken: []const u8 = "type-alias-name-taken";
 /// decorator's arguments exist only while the program compiles.
 pub const decorator_param_not_comptime: []const u8 = "decorator-param-not-comptime";
 
-/// A decorator argument that is not known while the program compiles — a
-/// function call (`env("X")`), a module `var`, or a `val` holding one.
-pub const decorator_arg_not_comptime: []const u8 = "decorator-arg-not-comptime";
+// ── decision 364 — every `comptime` parameter is `comptime x: @Expr<T>` ─────
+
+/// `comptime x: T` without `@Expr` (other than `@Decl`), at the parameter.
+pub const comptime_param_not_expr: []const u8 = "comptime-param-not-expr";
+
+/// `x.value` of an `@Expr` of a function: its body is not called while the
+/// program compiles.
+pub const expr_value_of_function: []const u8 = "expr-value-of-function";
+
+/// `x.value` of an `@Expr` of a type: the type is not inspected while the
+/// program compiles.
+pub const expr_value_of_type: []const u8 = "expr-value-of-type";
+
+/// A decorator argument not known while the program compiles whose parameter
+/// the body reads (`key.value`), at the argument.
+pub const decorator_value_not_comptime: []const u8 = "decorator-value-not-comptime";
+
+/// A template reads `q.value` of an argument with a `${…}` hole: not known
+/// while the program compiles, refused at the argument.
+pub const template_value_not_known: []const u8 = "template-value-not-known";
+
+/// A method of a `comptime` parameter's `@Expr` other than `.fail(…)` in a
+/// decorator: the parameter answers `.value`.
+pub const expr_param_method: []const u8 = "expr-param-method";
 
 /// A `comptime` parameter with a default outside a decorator: no call site
 /// fills it (decision 280 (0) gives the default to decorators).
@@ -579,7 +600,12 @@ pub const all_codes = [_][]const u8{
     inline_type_position,
     behavior_member_redeclared,
     decorator_param_not_comptime,
-    decorator_arg_not_comptime,
+    comptime_param_not_expr,
+    expr_value_of_function,
+    expr_value_of_type,
+    decorator_value_not_comptime,
+    expr_param_method,
+    template_value_not_known,
     comptime_default_outside_decorator,
     decorator_member_without_type,
     decorator_member_duplicate,

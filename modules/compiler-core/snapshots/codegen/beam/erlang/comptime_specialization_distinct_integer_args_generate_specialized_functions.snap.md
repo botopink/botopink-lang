@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn multiply(comptime factor: i32, x: i32) -> i32 {
-    return x * factor;
+fn multiply(comptime factor: @Expr<i32>, x: i32) -> i32 {
+    return x * factor.value;
 }
 
 fn main() {

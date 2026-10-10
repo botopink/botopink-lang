@@ -5,9 +5,9 @@
 //// declared type as `returnTypeName`. On the parent binary the decorator was
 //// dropped silently (`DeclKind.Val` did not exist).
 
-fn setting(comptime decl: @Decl, comptime key: string) {
+fn setting(comptime decl: @Decl, comptime key: @Expr<string>) {
     if (decl.kind != DeclKind.Val) decl.fail("#[setting] annotates a val");
-    decl.setMeta("key", key);
+    decl.setMeta("key", key.value);
     decl.setMeta("declared", decl.returnType);
 }
 

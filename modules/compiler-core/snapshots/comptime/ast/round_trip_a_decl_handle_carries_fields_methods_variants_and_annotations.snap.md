@@ -1,8 +1,8 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn column(comptime decl: @Decl, comptime name: string) { }
-fn describe(comptime decl: @Decl, comptime label: string) {
-    var out = decl.name + "[" + label + "]";
+fn column(comptime decl: @Decl, comptime name: @Expr<string>) { }
+fn describe(comptime decl: @Decl, comptime label: @Expr<string>) {
+    var out = decl.name + "[" + label.value + "]";
     for (decl.annotations) { a -> out = out + " @" + a.name + "(" + a.args.join(",") + ")"; };
     for (decl.fields) { f ->
         out = out + " field " + f.name + ":" + f.typeName;
@@ -108,7 +108,7 @@ pub fn describeMode() -> string {
       "return_type": "void",
       "body": [
         {
-          "source": "var out = decl.name + \"[\" + label + \"]\";"
+          "source": "var out = decl.name + \"[\" + label.value + \"]\";"
         },
         {
           "source": "for (decl.annotations) { a -> out = out + \" @\" + a.name + \"(\" + a.args.join(\",\") + \")\"; };"

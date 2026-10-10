@@ -700,14 +700,14 @@ Decision 280 (`01-checker` step 24, typed comptime decorator arguments) adds, on
 `run/decorator_arguments_check` (example 1 of `01-checker/examples/decorator-arguments-280.md`: a
 function `rule`, a field key `at: .confirm`, a variant `code: .Mismatch` and the function form),
 `run/decorator_decl_pattern` (`@Decl<fn(e: E) -> unknown>`), `run/decorator_type_argument`
-(`comptime t: type`), `run/decorator_function_arguments` (`paths:` / `head:` typed by the page's
+(`comptime t: @Expr<type>`), `run/decorator_function_arguments` (`paths:` / `head:` typed by the page's
 `P`, `D`), `run/decorator_record_argument` (`Cache<T>` through a module `val`),
 `run/decorator_field_keys` (`index(.state, .name)`, `unique(.code)`, the field's annotations in the
 key) `run/decorator_argument_values` (an array keeps its length, defaults, labels, a variant) and
 `modules/decorator_typed_arguments_import` (an imported decorator's `Type.Field<T>` and enum, the
 importer importing neither),
 and 19 `reject/` cells, each at the argument unless named: `decorator_param_not_comptime` (at the
-parameter), `comptime_default_outside_decorator` (at the default), `decorator_arg_not_comptime`,
+parameter), `comptime_default_outside_decorator` (at the default), `decorator_value_not_comptime` (renamed by 364),
 `decorator_arg_unbound_function`, `decorator_arg_function_mismatch`, `decorator_arg_unknown_field`,
 `decorator_arg_label_unknown`, `decorator_variant_case`, `decorator_field_key_{unknown,case,too_many}`,
 `decorator_function_argument_mismatch`, `decorator_record_argument_{mismatch,string}`,
@@ -715,6 +715,23 @@ parameter), `comptime_default_outside_decorator` (at the default), `decorator_ar
 annotation) and `decorator_check_without_rule_not_bool` (the body's `decl.fail`, at the annotation).
 `reject/decorator_argument_kind` now carets the argument with the typed mismatch, and every
 decorator of the cells writes its parameters `comptime`.
+
+Decision 364 (`01-checker` step 35, every `comptime` parameter is `comptime x: @Expr<T>`) rewrote
+every `comptime` parameter of the suite to `@Expr<T>` and its reads to `x.value` (a value-or-type
+parameter keeps `x is type`; a `Box<T>`'s field is `s.value.value`), and adds, on the four targets,
+`run/decorator_expr_value` (`.value` of a string, a number, a `bool`, a variant, a record, a field
+key and an array in a decorator; an ordinary function's `n.value`, specialised; a template's
+`q.value` of a literal without holes) and `run/decorator_expr_unread_argument` (an argument not known
+at build whose parameter the body never reads is accepted), and the refusals
+`reject/comptime_param_not_expr` and `reject/comptime_param_not_expr_function` (`comptime x: T`, at
+the parameter, naming `@Expr<T>`), `reject/decorator_value_not_comptime` (`message.value` of
+`env("MSG")`, at the call — the old `decorator_arg_not_comptime`), `reject/decorator_call_expr_fn`
+(`rule.value(…)`, `expr-value-of-function`), `reject/decorator_inspect_expr_type` (`t.value`,
+`expr-value-of-type`), `reject/decorator_expr_fail_at_argument` (`max.fail(…)` at the argument),
+`reject/expr_param_method` (`message.text()`) and `reject/template_value_not_known` (a holed literal's
+`q.value`), each red on the parent binary. `run/decorator_arguments_check` and
+`reject/decorator_check_without_rule_not_bool` tell the function form by `decl.kind` (an `@Expr` of
+a function has no `.value`, question `s35-b`).
 
 Every cell is copied into its own scratch project, so a parse error fails only that cell. Test names
 start with the decision-8 section they pin (`test "§5.4 …"`) when there is one, so a failure points at

@@ -358,6 +358,10 @@ pub const Formatter = struct {
         } else if (p.inlineFields) |fs|
             // Decision 207 — an inline parameter type prints as written.
             try this.concat(try this.text("type"), try this.fmtFieldList(fs, false))
+        else if (p.exprWrapped)
+            // Decision 364 — the parser read `@Expr<T>`'s `T` off a
+            // non-template function's `comptime` parameter; it prints as written.
+            try this.concatAll(&.{ try this.text("@Expr<"), try this.fmtTypeRef(p.typeRef), try this.text(">") })
         else
             try this.fmtTypeRef(p.typeRef);
         const defaultDoc: *const Doc = if (p.default) |d|

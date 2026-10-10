@@ -9,13 +9,13 @@ type Box<T>(value: T)
 
 type User(name: string)
 
-fn pick<T>(comptime s: Box<T> | type T) -> string {
+fn pick<T>(comptime s: @Expr<Box<T> | type T>) -> string {
     return if (s is type) "type" else "value";
 }
 
-fn orDefault<T>(comptime s: Box<T> | type T, fallback: T) -> T {
+fn orDefault<T>(comptime s: @Expr<Box<T> | type T>, fallback: T) -> T {
     if (s is type) return fallback;
-    return s.value;
+    return s.value.value;
 }
 
 pub fn main() {

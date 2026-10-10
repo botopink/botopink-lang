@@ -6,7 +6,7 @@
 //// `t.startsWith()` and printed `false` for `"abc"`. `endsWith` is a plain
 //// function of another arity, called beside the method of its name.
 
-pub fn startsWith(comptime decl: @Decl, comptime prefix: string) {
+pub fn startsWith(comptime decl: @Decl, comptime prefix: @Expr<string>) {
     if (decl.kind != DeclKind.Field)
         decl.fail("#[startsWith] must annotate a field");
 }

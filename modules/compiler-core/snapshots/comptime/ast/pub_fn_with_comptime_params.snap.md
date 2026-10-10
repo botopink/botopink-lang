@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-pub fn repeat(s comptime: string, n comptime: i32) -> string {
+pub fn repeat(s comptime: @Expr<string>, n comptime: @Expr<i32>) -> string {
     @todo();
 }
 val r = repeat("hi", 3);

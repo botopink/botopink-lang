@@ -7,7 +7,8 @@
 //// (`type Id = i32`) stays transparent.
 ////
 //// Every function here runs only at compile time and takes every parameter
-//// `comptime`, so a call needs no `comptime` keyword. The bodies are the
+//// `comptime x: @Expr<T>` (decision 364), so a call needs no `comptime`
+//// keyword. The bodies are the
 //// compiler's: bodyless, without `#[@External.<Target>]`, because no target
 //// runs them — the checker answers the call (`01-checker` step 28 keys its
 //// resolver on these declarations).
@@ -15,7 +16,7 @@
 //// `Type` is a namespace type (decision 329): no field list, no value, every
 //// function associated. `Field<T>` is declared in its body, so it is its
 //// associated type `Type.Field<T>` (decision 330 (7)). `pick` and `omit`
-//// take the fields as a variadic (`comptime ..fields: Type.Field<T>[]`,
+//// take the fields as a variadic (`comptime ..fields: @Expr<Type.Field<T>[]>`,
 //// decision 267): `Type.pick(Recipe, .title, .servings)`.
 
 pub type Type {
@@ -32,31 +33,31 @@ pub type Type {
 
     // The field key of `T`: `Type.Field<T>`, one value per field of `T`'s
     // declaration (`.title`), never a second enum.
-    pub declare fn keys<T>(comptime source: type T) -> type;
+    pub declare fn keys<T>(comptime source: @Expr<type T>) -> type;
 
     // Every field `F` of `T` made `?F`.
-    pub declare fn partial<T>(comptime source: type T) -> type;
+    pub declare fn partial<T>(comptime source: @Expr<type T>) -> type;
 
     // Every field `?F` of `T` made `F` — every `?` goes: `required` does not
     // know what was optional before a `partial`.
-    pub declare fn required<T>(comptime source: type T) -> type;
+    pub declare fn required<T>(comptime source: @Expr<type T>) -> type;
 
     // The fields of `first`, then those of `second`; a field on both sides is
     // an error (`omit` it first: nothing overrides silently).
     pub declare fn merge<A, B>(
-        comptime first: type A,
-        comptime second: type B,
+        comptime first: @Expr<type A>,
+        comptime second: @Expr<type B>,
     ) -> type;
 
     // The fields of `T` named in `fields`, in the order `T` declares them.
     pub declare fn pick<T>(
-        comptime source: type T,
-        comptime ..fields: Type.Field<T>[],
+        comptime source: @Expr<type T>,
+        comptime ..fields: @Expr<Type.Field<T>[]>,
     ) -> type;
 
     // The fields of `T` but those named in `fields`.
     pub declare fn omit<T>(
-        comptime source: type T,
-        comptime ..fields: Type.Field<T>[],
+        comptime source: @Expr<type T>,
+        comptime ..fields: @Expr<Type.Field<T>[]>,
     ) -> type;
 }

@@ -88,8 +88,8 @@ test "js: comptime val ---- comptime val folds arithmetic to literal" {
 
 test "js: comptime specialization ---- distinct string args generate specialized functions" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn build(prefix comptime: string, name: string) -> string {
-        \\    return prefix + ": " + name;
+        \\fn build(prefix comptime: @Expr<string>, name: string) -> string {
+        \\    return prefix.value + ": " + name;
         \\}
         \\
         \\fn main() {
@@ -105,8 +105,8 @@ test "js: comptime specialization ---- distinct string args generate specialized
 
 test "js: comptime specialization ---- distinct integer args generate specialized functions" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn multiply(comptime factor: i32, x: i32) -> i32 {
-        \\    return x * factor;
+        \\fn multiply(comptime factor: @Expr<i32>, x: i32) -> i32 {
+        \\    return x * factor.value;
         \\}
         \\
         \\fn main() {
@@ -125,8 +125,8 @@ test "js: comptime specialization ---- distinct integer args generate specialize
 // above with the modifier spelled before the name.)
 test "js: comptime specialization ---- same string arg reuses specialized function" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn build(comptime prefix: string, name: string) -> string {
-        \\    return prefix + ": " + name;
+        \\fn build(comptime prefix: @Expr<string>, name: string) -> string {
+        \\    return prefix.value + ": " + name;
         \\}
         \\
         \\fn main() {
@@ -142,8 +142,8 @@ test "js: comptime specialization ---- comptime val used as specialization argum
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val base = comptime 10 + 5;
         \\
-        \\fn scale(comptime factor: i32, value: i32) -> i32 {
-        \\    return value * factor;
+        \\fn scale(comptime factor: @Expr<i32>, value: i32) -> i32 {
+        \\    return value * factor.value;
         \\}
         \\
         \\fn main() {
@@ -156,7 +156,7 @@ test "js: comptime specialization ---- comptime val used as specialization argum
 
 test "js: comptime specialization ---- constrained type meta-kind specializes per value" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn coerce(comptime v: type string | int | bool, x: i32) -> i32 {
+        \\fn coerce(comptime v: @Expr<type string | int | bool>, x: i32) -> i32 {
         \\    return x;
         \\}
         \\
@@ -170,7 +170,7 @@ test "js: comptime specialization ---- constrained type meta-kind specializes pe
 
 test "js: comptime specialization ---- simple function body without loop" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn execute(comptime slug: string, input: i32) -> i32 {
+        \\fn execute(comptime slug: @Expr<string>, input: i32) -> i32 {
         \\    return input + 0;
         \\}
         \\
@@ -186,10 +186,10 @@ test "js: comptime loop unrolling ---- single if condition resolved per element"
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val COMMANDS = comptime ["calc", "noop", "help"];
         \\
-        \\fn execute(comptime slug: string, input: i32) -> i32 {
+        \\fn execute(comptime slug: @Expr<string>, input: i32) -> i32 {
         \\    var output = 0;
         \\    for (COMMANDS) { cmd ->
-        \\        if (cmd == slug) {
+        \\        if (cmd == slug.value) {
         \\            output = input * 2;
         \\        };
         \\    };
@@ -207,10 +207,10 @@ test "js: comptime loop unrolling ---- nested if-else chain fully folded" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val COMMANDS = comptime ["calc", "noop", "help"];
         \\
-        \\fn execute(comptime slug: string, input: i32) -> i32 {
+        \\fn execute(comptime slug: @Expr<string>, input: i32) -> i32 {
         \\    var output = 0;
         \\    for (COMMANDS) { cmd ->
-        \\        if (cmd == slug) {
+        \\        if (cmd == slug.value) {
         \\            if (cmd == "calc") {
         \\                output = input * 2;
         \\            } else if (cmd == "noop") {
@@ -232,10 +232,10 @@ test "js: comptime loop unrolling ---- case expression folded inside unrolled lo
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val COMMANDS = comptime ["calc", "noop", "help"];
         \\
-        \\fn execute(comptime slug: string, input: i32) -> i32 {
+        \\fn execute(comptime slug: @Expr<string>, input: i32) -> i32 {
         \\    var output = 0;
         \\    for (COMMANDS) { cmd ->
-        \\        if (cmd == slug) {
+        \\        if (cmd == slug.value) {
         \\            output = case cmd {
         \\                "calc" -> input * 2;
         \\                "noop" -> input;
@@ -257,10 +257,10 @@ test "js: comptime partial ---- runtime array loop preserved, comptime param spe
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val COMMANDS = ["calc", "noop", "help"];
         \\
-        \\fn execute(comptime slug: string, input: i32) -> i32 {
+        \\fn execute(comptime slug: @Expr<string>, input: i32) -> i32 {
         \\    var output = 0;
         \\    for (COMMANDS) { cmd ->
-        \\        if (cmd == slug) {
+        \\        if (cmd == slug.value) {
         \\            output = input * 2;
         \\        };
         \\    };

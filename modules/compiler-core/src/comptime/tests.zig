@@ -33,6 +33,7 @@ test {
     _ = @import("./inline_types.zig");
     _ = @import("./default_fn.zig");
     _ = @import("./value_or_type.zig");
+    _ = @import("./expr_param.zig");
     _ = @import("./diagnostics.zig");
     _ = @import("./reflection.zig");
     _ = @import("./hooks.zig");

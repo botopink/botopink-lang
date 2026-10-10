@@ -2,8 +2,8 @@
 ```botopink
 val base = comptime 10 + 5;
 
-fn scale(comptime factor: i32, value: i32) -> i32 {
-    return value * factor;
+fn scale(comptime factor: @Expr<i32>, value: i32) -> i32 {
+    return value * factor.value;
 }
 
 fn main() {

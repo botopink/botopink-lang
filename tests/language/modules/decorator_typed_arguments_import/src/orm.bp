@@ -2,15 +2,18 @@ import {types.Type} from "std";
 
 pub type Order { Asc, Desc }
 
-pub fn index<T>(comptime decl: @Decl<T>, comptime ..fields: Type.Field<T>[]) {
-    decl.setMeta("columns", fields.map({ f -> f.name }).join(","));
+pub fn index<T>(
+    comptime decl: @Decl<T>,
+    comptime ..fields: @Expr<Type.Field<T>[]>,
+) {
+    decl.setMeta("columns", fields.value.map({ f -> f.name }).join(","));
 }
 
 pub fn sorted<T>(
     comptime decl: @Decl<T>,
-    comptime by: Type.Field<T>,
-    comptime order: Order = .Asc,
+    comptime by: @Expr<Type.Field<T>>,
+    comptime order: @Expr<Order> = .Asc,
 ) {
-    val dir = if (order == Order.Desc) " desc" else " asc";
-    decl.setMeta("sort", by.name + dir);
+    val dir = if (order.value == Order.Desc) " desc" else " asc";
+    decl.setMeta("sort", by.value.name + dir);
 }

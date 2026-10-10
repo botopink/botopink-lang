@@ -1318,7 +1318,10 @@ fn matchVariadic(this: *This) bool {
 /// Decision 267 — a variadic's type is written `T[]` and it takes no
 /// default: refused here, the type at its first token, the default at `=`.
 fn checkVariadicParam(this: *This, alloc: std.mem.Allocator, typeRef: ast.TypeRef, typeTok: Token) ParseError!void {
-    if (typeRef != .array) {
+    // Decision 364 — a `comptime` variadic is `comptime ..xs: @Expr<T[]>`: the
+    // array is the expression's type.
+    const declared = if (typeRef.isExprType() and typeRef.generic.args.len == 1) typeRef.generic.args[0] else typeRef;
+    if (declared != .array) {
         var t = typeRef;
         t.deinit(alloc);
         this.parseError = ParseErrorInfo.fromToken(.variadicNotArray, typeTok);

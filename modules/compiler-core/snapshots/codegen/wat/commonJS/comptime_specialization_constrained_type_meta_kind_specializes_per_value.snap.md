@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn coerce(comptime v: type string | int | bool, x: i32) -> i32 {
+fn coerce(comptime v: @Expr<type string | int | bool>, x: i32) -> i32 {
     return x;
 }
 

@@ -870,21 +870,34 @@ fn main() {
 }
 ```
 
+Every `comptime` parameter other than `@Decl` is the caller's **expression**,
+`comptime x: @Expr<T>` (decision 364) — a decorator's, a template function's,
+any function's, a method's, a `declare fn`'s: the argument is checked against
+`T` where it is written, and the body reads its value with `x.value`, known
+while the program compiles. `comptime x: T` is `comptime-param-not-expr` at the
+parameter, naming `@Expr<T>`. `.value` of an `@Expr` of a function is
+`expr-value-of-function` and of a type `expr-value-of-type`, at the read: a
+function's body is not called and a type not inspected while the program
+compiles. A `comptime` parameter's `@Expr` answers `.value` (and, in a
+decorator, `.fail(…)`, § Decorators); any other method of it is
+`expr-param-method` — the template methods (`text()`, `parts()`, …) are a
+template capture's (§ Template functions).
+
 A `comptime` parameter may take **a value or a type** (decision 297):
-`comptime source: Box<T> | type T`. A `Box<T>` argument binds `T` from it; a
-type argument binds `T` to that type; the body tells them apart with
+`comptime source: @Expr<Box<T> | type T>`. A `Box<T>` argument binds `T` from
+it; a type argument binds `T` to that type; the body tells them apart with
 `source is type`, decided while the program compiles — only the branch taken
 is emitted, and where `source is type` holds, reading `source` is
-`type-arg-read`. The argument of any `comptime` parameter is known at compile
-time: a local or a non-`comptime` parameter is `comptime-arg-not-known` at the
-argument.
+`type-arg-read`. The argument of an ordinary function's `comptime` parameter is
+known at compile time: a local or a non-`comptime` parameter is
+`comptime-arg-not-known` at the argument.
 
 ```botopink
 type Box<T>(value: T)
 
-fn orDefault<T>(comptime source: Box<T> | type T, fallback: T) -> T {
+fn orDefault<T>(comptime source: @Expr<Box<T> | type T>, fallback: T) -> T {
     if (source is type) return fallback;
-    return source.value;
+    return source.value.value;
 }
 
 fn main() {
@@ -2399,7 +2412,10 @@ does not import is imported where the value is written.
 ### Template functions
 
 A function taking `comptime q: @Expr<…>` expands at the call site; `@expr`
-lifts a comptime value back into code.
+lifts a comptime value back into code. `q.value` is the literal's value when
+it has no `${…}` hole (decision 364 (2)); a holed literal is not known at
+build, and a template that reads `q.value` refuses it at the argument
+(`template-value-not-known`) — its parts are read with `q.parts()`.
 
 ```botopink
 pub fn conf<T>(comptime q: @Expr<string>) -> @Expr<T> {
@@ -2505,11 +2521,11 @@ fn main() {
 ```
 
 ```botopink
-fn entity(comptime decl: @Decl, comptime table: string) {
+fn entity(comptime decl: @Decl, comptime table: @Expr<string>) {
     var cols: string[] = [];
     decl.fields.forEach({ f -> cols.push(f.name + ": string") });
-    decl.setMeta("table", table);
-    decl.addMember("pub fn table() -> string { return \"" + table + "\"; }");
+    decl.setMeta("table", table.value);
+    decl.addMember("pub fn table() -> string { return \"" + table.value + "\"; }");
     decl.addType("Columns", "(" + cols.join(", ") + ")");
 }
 
@@ -2531,24 +2547,28 @@ fn main() {
 A decorator's arguments are typed compile-time values (decision 280), checked
 where they are written, as a call's are:
 
-1. **Every parameter after `@Decl` is `comptime`**, written out — the argument
-   exists only while the program compiles; what runs later comes from the
-   decorator's outputs. A parameter without it is
-   `decorator-param-not-comptime` at the parameter. A `comptime` parameter may
+1. **Every parameter after `@Decl` is `comptime x: @Expr<T>`**, written out —
+   the argument is the user's expression, checked against `T` where it is
+   written (decision 364); what runs later comes from the decorator's outputs.
+   A parameter without `comptime` is `decorator-param-not-comptime` at the
+   parameter, and one without `@Expr` `comptime-param-not-expr`. A `comptime` parameter may
    take a default, which an annotation that leaves it out gets — a literal,
    `null`, a variant `.Name`, or an array or tuple of those; outside a
    decorator no call fills one, and a `comptime` default there is
    `comptime-default-outside-decorator` at the default.
 2. **An argument may be of any type** — a string, a number, an array, a
    record built by its constructor (directly or through a module `val`), a
-   variant, a function, a type (`comptime t: type`), a field. It is checked
+   variant, a function, a type (`comptime t: @Expr<type>`), a field. It is checked
    against its parameter's type at the argument (an integer literal takes the
    integer type asked for, decision 247), positional arguments first and
    labelled ones by name (`at: .confirm`); a variadic last parameter (decision
-   267) takes the positional arguments left. A value not known at compile time —
-   a function call such as `env("X")`, a module `var` — is
-   `decorator-arg-not-comptime` at it. The body receives each value as it is:
-   `[1, 2]` has length 2.
+   267) takes the positional arguments left. The body reads each argument's
+   value with `x.value`, as it is: `[1, 2]`'s has length 2. An argument not
+   known at compile time — a function call such as `env("X")`, a module `var`
+   — is refused at it (`decorator-value-not-comptime`) when the body reads the
+   parameter; a body that never reads it accepts any expression of `T`.
+   `x.fail("…")` refuses the declaration at `x`'s argument, not at the
+   annotation.
 3. **`@Decl<P>` names the shape of the annotated declaration** — a type, a
    field's type, a function's type — and binds the type parameters `P` names,
    through a pattern too: `@Decl<fn(e: E) -> unknown>` binds `E` to the
@@ -2569,13 +2589,13 @@ import {types.Type} from "std";
 
 type Level { Low, High }
 
-fn index<T>(comptime decl: @Decl<T>, comptime ..fields: Type.Field<T>[]) {
-    decl.setMeta("columns", fields.map({ f -> f.name }).join(","));
+fn index<T>(comptime decl: @Decl<T>, comptime ..fields: @Expr<Type.Field<T>[]>) {
+    decl.setMeta("columns", fields.value.map({ f -> f.name }).join(","));
 }
 
-fn mark(comptime decl: @Decl, comptime sizes: i32[], comptime level: Level = .Low) {
-    decl.setMeta("sizes", sizes.length.toString());
-    decl.setMeta("level", if (level == Level.High) "high" else "low");
+fn mark(comptime decl: @Decl, comptime sizes: @Expr<i32[]>, comptime level: @Expr<Level> = .Low) {
+    decl.setMeta("sizes", sizes.value.length.toString());
+    decl.setMeta("level", if (level.value == Level.High) "high" else "low");
 }
 
 #[index(.state, .name), mark([1, 2], level: .High)]
@@ -2588,9 +2608,11 @@ fn main() {
 }
 ```
 
-What a decorator body reads of a function or a type argument is not decided
-yet (question `s24-a`): both are checked at the argument, and the body receives
-the name as written.
+A function or a type argument is checked at the argument and never run at
+build (decision 364 (3)): its `@Expr` has no `.value` (`expr-value-of-function`,
+`expr-value-of-type`, at the read). How a body hands an `@Expr` on to the
+program — typed meta, a member, emitted code — is in § Decided, not yet
+implemented.
 
 `@typeInfo` is the one reflection builtin (decision 248): `.name` and
 `.meta.<decorator>.<key>` read a declaration, the static `@TypeInfo.all(…)` of
@@ -2639,8 +2661,8 @@ two of them once, its `meta` what the listed decorators set; a decorator listed
 twice is `typeinfo-all-arguments`.
 
 ```botopink
-fn route(comptime decl: @Decl, comptime path: string) {
-    decl.setMeta("path", path);
+fn route(comptime decl: @Decl, comptime path: @Expr<string>) {
+    decl.setMeta("path", path.value);
 }
 
 #[route("/about")]
@@ -2727,7 +2749,7 @@ pub declare fn parse(input: string) -> i32;
 
 A declaration takes the signature a `fn` does — generic parameters, `comptime`
 parameters, any return type — with or without an annotation. A parameter it
-has no name for is written `_` (`declare fn typeInfo<T>(comptime _: type) ->
+has no name for is written `_` (`declare fn typeInfo<T>(comptime _: @Expr<type>) ->
 TypeInfo<T>;`); `_` is a bodyless declaration's placeholder, and a
 function with a body refuses it (`discard-param-with-body`).
 
@@ -2985,17 +3007,17 @@ decorator or template body runs, never at run time):
 | `@trap` | `trap() -> noreturn` | the declaration |
 | `@block` | `block<T>(body: fn() -> T) -> T` — `@block { … }`, its value what its `return`s carry | the declaration |
 | `@module` | `module() -> module` | refused at every call (`builtin-not-lowered`) |
-| `@field` | `field<T, F>(obj: T, comptime name: string) -> F` — COMPTIME-ONLY name | the declaration |
+| `@field` | `field<T, F>(obj: T, comptime name: @Expr<string>) -> F` — COMPTIME-ONLY name | the declaration |
 | `@src` | `src() -> SourceLocation` — COMPTIME-ONLY (§ `@src()` and `SourceLocation`) | its own rule (`src-takes-no-arguments`) |
-| `@typeInfo` | `typeInfo<T>(comptime _: type) -> TypeInfo<T>` — COMPTIME-ONLY (§ Decorators) | its own rule (`typeinfo-unknown-declaration`, `typeinfo-unknown-member`) |
+| `@typeInfo` | `typeInfo<T>(comptime _: @Expr<type>) -> TypeInfo<T>` — COMPTIME-ONLY (§ Decorators) | its own rule (`typeinfo-unknown-declaration`, `typeinfo-unknown-member`) |
 | `@TypeInfo.all` | `all(with: Decorator \| Decorator[], member: ?string = null) -> Declared<unknown>[]`, a static `declare fn` of `TypeInfo<T>` — COMPTIME-ONLY | the declaration — `Decorator` is the type of a decorator's name (decision 268), so anything else in `with:` is the ordinary mismatch at the argument —, after its own shape rule (`typeinfo-all-arguments`) |
 | `@TypeOf` | `TypeOf<T>(value: T) -> T` — COMPTIME-ONLY | the declaration |
 | `@makeRecord` | `makeRecord<R>(fields: RecordField[]) -> R` — COMPTIME-ONLY | the declaration |
-| `@RecordKeys` | `RecordKeys(comptime _: type) -> string[]` — COMPTIME-ONLY | the declaration |
-| `@comptimeError` | `comptimeError(comptime message: string) -> noreturn` — COMPTIME-ONLY | its own rule (the message it raises) |
+| `@RecordKeys` | `RecordKeys(comptime _: @Expr<type>) -> string[]` — COMPTIME-ONLY | the declaration |
+| `@comptimeError` | `comptimeError(comptime message: @Expr<string>) -> noreturn` — COMPTIME-ONLY | its own rule (the message it raises) |
 | `@emit` | `emit(source: string)` — COMPTIME-ONLY, a decorator body | the declaration |
 | `@compilerError` | `compilerError(message: string) -> noreturn` — COMPTIME-ONLY, a decorator or template body | the declaration |
-| `@expr` / `@code` | `expr<T>(comptime value: T) -> Expr<T>`, `code<T>(text: string) -> Expr<T>` — COMPTIME-ONLY, a template body | the declaration |
+| `@expr` / `@code` | `expr<T>(comptime value: @Expr<T>) -> Expr<T>`, `code<T>(text: string) -> Expr<T>` — COMPTIME-ONLY, a template body | the declaration |
 
 A call the declaration refuses — more arguments than it declares, a parameter
 without a default left out, a label naming no parameter — is
@@ -3354,6 +3376,7 @@ closes it, or says that it has none yet. Every row below was re-derived by
 | Rule | Today | Closes with |
 |---|---|---|
 | A decorator's output goes to one of the four places of § Decorators; **module-level `@emit` is gone** (decision 216), refused by name with the four places in its message | `@emit(source)` still compiles, splicing loose declarations into the module: the libraries' sites move to the four places first | `01-compiler/130-decorator-outputs` steps 5–6 |
+| A decorator body hands a `comptime` parameter's `@Expr` on — to typed meta (decision 298), a member, emitted code — and the program evaluates it at run time (decision 364 (1)): `decl.addMeta(Check(message: message, rule: rule))` calls `rule` at validation | no output takes an `@Expr`: `decl.setMeta`, `decl.addMember` and `@emit` take strings, so a body reads a parameter only as `x.value` (or reports with `x.fail`), and a function or a type argument is checked and never reaches the program; the channel is question `s35-a` | `01-compiler/01-checker` step 35, with `01-compiler/130` step 8 (typed meta) |
 | A block-shaped statement ends itself: **no** `;` after the closing brace of an `if`, a loop or a `case` in statement position | the `;` is **optional** there: the parser accepts both, `botopink format` prints none, and the compiler's own trees are migrated — a library or a `tests/language` cell that still writes it compiles | 1.0.10-beta C-13, in decision 132's order: each library drops the `;` (`botopink format`), then `tests/language`, then the parser refuses it (`blockStatementSemicolon`) |
 
 A row leaves this table when the compiler accepts the form, and the form is then

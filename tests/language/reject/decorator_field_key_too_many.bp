@@ -3,12 +3,12 @@
 
 import {types.Type} from "std";
 
-fn index<T>(comptime decl: @Decl<T>, comptime ..fields: Type.Field<T>[]) {
-    decl.setMeta("columns", fields.map({ f -> f.name }).join(","));
+fn index<T>(comptime decl: @Decl<T>, comptime ..fields: @Expr<Type.Field<T>[]>) {
+    decl.setMeta("columns", fields.value.map({ f -> f.name }).join(","));
 }
 
-fn unique<T>(comptime decl: @Decl<T>, comptime field: Type.Field<T>) {
-    decl.setMeta("column", field.name);
+fn unique<T>(comptime decl: @Decl<T>, comptime field: @Expr<Type.Field<T>>) {
+    decl.setMeta("column", field.value.name);
 }
 
 #[unique(.code, .name)]

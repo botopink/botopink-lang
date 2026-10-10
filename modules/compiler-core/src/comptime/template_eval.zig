@@ -779,7 +779,11 @@ pub fn captureToTerm(arena: std.mem.Allocator, cap: *const template.CapturedExpr
         try bindings.append(arena, Term.mapOf(be));
     }
 
-    const entries = try arena.alloc(Term.MapEntry, 7);
+    // Decision 364 (2) — `q.value`, when the template reads it: the literal's
+    // value (it has no hole — the checker refuses the read of a holed one at
+    // the argument).
+    const entries = try arena.alloc(Term.MapEntry, if (cap.valueRead) 8 else 7);
+    if (cap.valueRead) entries[7] = Term.field("value", Term.str(text.items));
     entries[0] = .{ .key = Term.atomOf("__bp_capture"), .value = Term.str(cap.paramName) };
     entries[1] = Term.field("text", Term.str(text.items));
     entries[2] = Term.field("parts", Term.listOf(parts.items));

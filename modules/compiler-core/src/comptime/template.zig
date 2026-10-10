@@ -150,6 +150,10 @@ pub const CapturedExpr = struct {
     /// null when the hole is computed at render (`block_eval.holeValue`).
     /// Empty when none was computed (a hole-less literal, the V1 driver).
     holeValues: []const ?Term = &.{},
+    /// Decision 364 (2) — the template reads `q.value`: the capture carries
+    /// the literal's value (a literal without a hole; the checker refuses the
+    /// read of a holed one at the argument).
+    valueRead: bool = false,
 };
 
 // ── second-layer context ──────────────────────────────────────────────────────
@@ -168,6 +172,10 @@ pub const PlainArg = struct {
     /// array, a record, a variant, a field key, `null`): the zero-argument
     /// function of the decorator module that builds it, called in its place.
     call: ?[]const u8 = null,
+    /// Decision 364 — a decorator argument not known while the program
+    /// compiles, whose parameter the body never reads: it reaches the body as
+    /// `undefined`.
+    absent: bool = false,
 
     /// The lexeme as an Erlang expression: a string literal becomes a binary
     /// (botopink escapes resolved at render), `true`/`false` atoms, integers and

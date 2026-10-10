@@ -9,9 +9,9 @@ type Cache<T>(name: string)
 
 fn cacheable<A, T>(
     comptime decl: @Decl<fn(a: A) -> T>,
-    comptime cache: Cache<T>,
+    comptime cache: @Expr<Cache<T>>,
 ) {
-    decl.setMeta("cache", cache.name);
+    decl.setMeta("cache", cache.value.name);
 }
 
 #[cacheable("products")]

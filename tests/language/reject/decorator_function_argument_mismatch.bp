@@ -12,10 +12,10 @@ type User(name: string)
 
 fn page<P>(
     comptime decl: @Decl<fn(route: Route<P>) -> View>,
-    comptime seg: string,
-    comptime paths: ?fn() -> P[] = null,
+    comptime seg: @Expr<string>,
+    comptime paths: @Expr<?fn() -> P[]> = null,
 ) {
-    decl.setMeta("seg", seg);
+    decl.setMeta("seg", seg.value);
 }
 
 fn allUsers() -> User[] {

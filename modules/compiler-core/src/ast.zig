@@ -1600,6 +1600,14 @@ pub const Param = struct {
     /// last, a second one, a default on it and a type that is not `T[]`.
     /// Dumped only when set.
     variadic: bool = false,
+    /// Decision 364 — `comptime x: @Expr<T>` on a function that is not a
+    /// template (a decorator, any other function, a method, a `declare fn`):
+    /// the parser keeps `T` in `typeRef`, so every rule that reads a
+    /// `comptime` parameter's type reads `T`, and sets this
+    /// (`parser/expr_params.zig`). The body reads `x` as an `Expr<T>`
+    /// (`x.value`), and the formatter prints `@Expr<T>` back. A template
+    /// function's `@Expr` parameters keep the wrapper. Dumped only when set.
+    exprWrapped: bool = false,
 
     /// Dumped without `typeLoc`: the location is a diagnostic aid, not surface.
     pub fn jsonStringify(this: Param, jws: anytype) !void {
@@ -1624,6 +1632,10 @@ pub const Param = struct {
         }
         if (this.variadic) {
             try jws.objectField("variadic");
+            try jws.write(true);
+        }
+        if (this.exprWrapped) {
+            try jws.objectField("exprWrapped");
             try jws.write(true);
         }
         try jws.endObject();

@@ -3,8 +3,8 @@
 //// run-time value, `comptime-arg-not-known` at the argument. The parent binary
 //// accepted `twice(k)` and the erlang build failed (`twice/1 undefined`).
 
-fn twice(comptime n: i32) -> i32 {
-    return n * 2;
+fn twice(comptime n: @Expr<i32>) -> i32 {
+    return n.value * 2;
 }
 
 pub fn main() {

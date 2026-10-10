@@ -18,11 +18,11 @@ type Post(title: string, body: string)
 
 fn page<P, D>(
     comptime decl: @Decl<fn(route: Route<P, D>) -> View>,
-    comptime seg: string,
-    comptime paths: ?fn() -> #(P, D)[] = null,
-    comptime head: ?fn(p: P, d: D) -> Head = null,
+    comptime seg: @Expr<string>,
+    comptime paths: @Expr<?fn() -> #(P, D)[]> = null,
+    comptime head: @Expr<?fn(p: P, d: D) -> Head> = null,
 ) {
-    decl.setMeta("seg", seg);
+    decl.setMeta("seg", seg.value);
 }
 
 #[page("blog/[slug]", paths = allPosts, head = postHead)]

@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn execute(comptime slug: string, input: i32) -> i32 {
+fn execute(comptime slug: @Expr<string>, input: i32) -> i32 {
     return input + 0;
 }
 

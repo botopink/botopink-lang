@@ -578,6 +578,13 @@ pub const DecoratorArgValue = struct {
     /// variant, a field key, `null` — rather than handed over as a literal
     /// term (a string, a number, a `bool`).
     built: bool,
+    /// Decision 364 — the argument is not known while the program compiles
+    /// and the body never reads the parameter: nothing is built, the body
+    /// receives `undefined`.
+    absent: bool = false,
+    /// Where the argument is written; null for a default. `x.fail(…)`
+    /// reports there (decision 364 (3)).
+    loc: ?ast.Loc = null,
 };
 
 pub const DecoratorSig = struct {
@@ -722,6 +729,11 @@ pub const Env = struct {
     /// — the fn name, `Type.method` for a method, the test name (or `test_<idx>`)
     /// inside a `test` block, `""` at module level. A lambda does not change it.
     currentFnName: []const u8 = "",
+    /// Decision 364 — the parameters of the function whose body is being
+    /// inferred: a `comptime x: @Expr<T>` among them (`Param.exprWrapped`) is
+    /// read `x.value`, never `.value` of a type, and answers no other method
+    /// but a decorator's `.fail(…)`.
+    currentParams: []const ast.Param = &.{},
     /// `@src()` rewrites (decision 73): call-site location → the untyped
     /// `SourceLocation(file: …, line: …, column: …, fnName: …)` constructor call
     /// the transform pass splices in its place, so every backend lowers the

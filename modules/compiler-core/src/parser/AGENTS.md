@@ -42,6 +42,7 @@ parser/
 │                     the 1.0.3 `type`/`behavior` declarations: `parseTypeDecl`/`parseShorthandTypeDecl`
 │                     (shared `parseFieldList`, shape resolution, `type-*` diagnostics), `parseBehaviorDecl`/`parseShorthandBehaviorDecl`
 │                     (member separators: bodyless members end with `;` — `member-comma-separator` / `member-missing-semicolon`)
+├── expr_params.zig    ← decision 364: after the parse, a non-template function's `comptime x: @Expr<T>` keeps `T` in `Param.typeRef`, `Param.exprWrapped` set (`unwrapProgram`, run by `Parser.parse`)
 ├── template_markers.zig ← decision 5: `@External` template markers are positional over the declared parameters
 │                     (`$0` is `self` on a method). `Parser.parse` runs `normalizeProgram` once: it translates each
 │                     template to the renderers' receiver convention (`primOpTemplate.receiver_marker`, `$N` shifted;
@@ -182,11 +183,11 @@ The unannotated `declare fn` (a `DelegateDecl`, top-level shorthand or `val f =
 declare fn(…)`) reads its signature with **`parseSignature`** — `parseGenericParams`,
 `parseParamList`, `-> parseTypeRef` — the one a behavior's `fn` member
 (`parseBehaviorMethod`, `parseMethodDecl`) reads too, from the same pieces
-`parseFnBody` uses. So `pub declare fn field<T, F>(obj: T, comptime name: string) -> F;`
+`parseFnBody` uses. So `pub declare fn field<T, F>(obj: T, comptime name: @Expr<string>) -> F;`
 and `-> Component<T, any>` parse; the delegate used to take no generics and a
 one-token return.
 
-**`_` as a parameter name** (`comptime _: type`) is a bodyless declaration's
+**`_` as a parameter name** (`comptime _: @Expr<type>`) is a bodyless declaration's
 placeholder: `consumeParamName` accepts it and notes it in `Parser.discardParam`
 (reset by `parseParamList`), and every signature that goes on to a body —
 `parseFnBody`, `parseMethodDecl`, `parseImplementMethod`, a `default fn` behavior
@@ -648,7 +649,7 @@ The `@[name(…)]` annotation-block opener (spec 05 §5.12) is **rejected** with
 so the stale form reaches that diagnostic instead of a bare unexpected-token
 error. Annotation blocks are `#[…]`; `@` marks a builtin annotation inside one. A block
 written one annotation per line may end with a comma (`#[\n    a(…),\n]`, decision 280’s example).
-A `comptime` parameter takes a default (`comptime code: Code = .Custom`) — a decorator's; the
+A `comptime` parameter takes a default (`comptime code: @Expr<Code> = .Custom`) — a decorator's; the
 checker refuses one elsewhere (`comptime-default-outside-decorator`) — and every parameter records
 where it starts (`Param.loc`, the refusal site of `decorator-param-not-comptime`).
 
@@ -781,7 +782,7 @@ that uses none of them dumps exactly as it did before they existed.
   `decls.zig`). The parser only records the modifier — uniqueness is validated in
   inference, and the resolver/driver (`comptime.zig`) binds the handle.
 - **`type T` as a union member (decision 297)**: `startsTypeRef` takes `type`,
-  so `comptime s: Box<T> | type T` parses (a `typeparam` member) and `x is type`
+  so `comptime s: @Expr<Box<T> | type T>` parses (a `typeparam` member) and `x is type`
   tests the meta-kind; `parseTypeRef` frees a refused union's first member
   once (it used to free it twice — a panic on `| type T` before `type` began a
   type).
@@ -822,3 +823,18 @@ follows, and `failRemovedDeclKeyword` records a located diagnostic:
 `removed-record-literal`; `{` in type position is `removed-record-type`. The
 messages (`print.zig`) name the 1.0.3 spelling. The words stay usable as
 ordinary identifiers (`val record = 1`).
+
+## Every `comptime` parameter is an `@Expr<T>` (decision 364)
+
+`comptime x: @Expr<T>` parses as any builtin generic. Once the program is
+parsed, `expr_params.zig` `unwrapProgram` (called by `Parser.parse`, after the
+template markers) walks every `fn`, `declare fn`, type / behavior /
+`implement` / `extend` method and associated type: a function whose return is
+not a template (`-> @Expr<…>`, `-> @ExprCustom<…>`) has each `comptime`
+parameter's `@Expr<T>` read off — `typeRef` is `T`, `exprWrapped` is set (the
+wrapper's argument slice freed). A template keeps its wrapper (the checker
+captures that argument). `comptime ..xs: @Expr<T[]>` is a variadic:
+`checkVariadicParam` reads the array through the wrapper. The AST dump shows
+`"exprWrapped": true` only when set; the formatter prints `@Expr<T>` back. That
+`comptime x: T` without `@Expr` is an error is the checker's
+(`comptime-param-not-expr`, `../comptime/AGENTS.md`).

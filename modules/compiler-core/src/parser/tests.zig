@@ -16,4 +16,5 @@ test {
     _ = @import("tests/decision255.zig");
     _ = @import("tests/decision247.zig");
     _ = @import("tests/decision280.zig");
+    _ = @import("expr_params.zig");
 }

@@ -13,7 +13,7 @@ pub type ConsoleMail(prefix: string) implement MailSender {
     }
 }
 
-fn conditionalOnMissingBean(comptime decl: @Decl, comptime t: type) {
+fn conditionalOnMissingBean(comptime decl: @Decl, comptime t: @Expr<type>) {
     decl.setMeta("bean", decl.name);
 }
 

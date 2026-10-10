@@ -1,2 +1,0 @@
-decorator-arg-not-comptime: `#[check]`'s argument `env("MSG")` is not known while the program compiles
-23:9

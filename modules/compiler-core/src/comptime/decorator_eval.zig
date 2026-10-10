@@ -86,8 +86,10 @@ pub const Contribution = struct {
 pub const Outcome = union(enum) {
     /// Accepted; the body's outputs in call order.
     ok: []const Contribution,
-    /// Rejected by the body (`decl.fail` / `decl.failAt` / `@compilerError`).
-    fail: struct { message: []const u8, span: ?template.Span },
+    /// Rejected by the body (`decl.fail` / `decl.failAt` / `@compilerError`,
+    /// or `x.fail` on a parameter — decision 364 (3): `arg` is its index
+    /// after the `@Decl` one).
+    fail: struct { message: []const u8, span: ?template.Span, arg: ?usize = null },
     /// The evaluator itself failed (module did not compile, body raised, …).
     err: []const u8,
 };
@@ -337,6 +339,11 @@ fn argPlans(
             plan.* = .{ .term = Term.undefined_atom, .expr = Ast.Expr.a("undefined"), .bound = false };
             continue;
         }
+        // Decision 364 — an argument not known at build the body never reads.
+        if (plainArgs[i].absent) {
+            plan.* = .{ .term = Term.undefined_atom, .expr = Ast.Expr.a("undefined"), .bound = false };
+            continue;
+        }
         if (plainArgs[i].call) |builder| {
             plan.* = .{ .term = Term.undefined_atom, .expr = .{ .call = .{ .name = builder, .args = &.{} } }, .bound = false };
             continue;
@@ -443,7 +450,16 @@ const Reply = struct {
     kind: []const u8,
     contributions: []const ReplyItem = &.{},
     message: []const u8 = "",
-    span: ?template.Span = null,
+    span: ?ReplySpan = null,
+};
+
+/// A `fail`'s span: `decl.failAt`'s `Span(start, end, line)`, or `x.fail`'s
+/// argument (decision 364 (3) — `'__bp_failArg'/2` throws `#{arg => J}`).
+const ReplySpan = struct {
+    start: usize = 0,
+    end: usize = 0,
+    line: usize = 0,
+    arg: ?usize = null,
 };
 
 fn parseOutcome(arena: std.mem.Allocator, stdout: []const u8) EvalError!Outcome {
@@ -463,7 +479,8 @@ fn parseOutcome(arena: std.mem.Allocator, stdout: []const u8) EvalError!Outcome 
     }
     if (std.mem.eql(u8, reply.kind, "fail")) return .{ .fail = .{
         .message = if (reply.message.len > 0) reply.message else "decorator rejected the declaration",
-        .span = reply.span,
+        .span = if (reply.span) |sp| (if (sp.arg == null) template.Span{ .start = sp.start, .end = sp.end, .line = sp.line } else null) else null,
+        .arg = if (reply.span) |sp| sp.arg else null,
     } };
     return .{ .err = if (reply.message.len > 0) reply.message else "decorator evaluation failed" };
 }
@@ -478,7 +495,7 @@ test "decorator module: lowered body, handle term and host glue" {
     const lexerMod = @import("../lexer.zig");
     const parserMod = @import("../parser.zig");
     var lx = lexerMod.Lexer.init(
-        \\fn getMapping(comptime decl: @Decl, comptime path: string, comptime verb: string) {
+        \\fn getMapping(comptime decl: @Decl, comptime path: @Expr<string>, comptime verb: @Expr<string>) {
         \\    if (decl.kind != DeclKind.Method) { decl.fail("#[getMapping] must annotate a method"); }
         \\}
     );
@@ -605,6 +622,10 @@ test "decorator outcome: ok / fail / error replies" {
 
     const at = try parseOutcome(arena, "{\"kind\":\"fail\",\"message\":\"bad\",\"span\":{\"start\":1,\"end\":4,\"line\":2}}");
     try std.testing.expectEqual(@as(usize, 4), at.fail.span.?.end);
+
+    const arg = try parseOutcome(arena, "{\"kind\":\"fail\",\"message\":\"low\",\"span\":{\"arg\":1}}");
+    try std.testing.expectEqual(@as(?usize, 1), arg.fail.arg);
+    try std.testing.expect(arg.fail.span == null);
 
     const err = try parseOutcome(arena, "{\"kind\":\"error\",\"message\":\"{error,badarg}\"}");
     try std.testing.expectEqualStrings("{error,badarg}", err.err);

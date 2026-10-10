@@ -2,20 +2,20 @@
 
 pub fn mark(
     comptime decl: @Decl,
-    comptime label: string,
-    comptime loud: bool = false,
-    comptime times: i32 = -1,
-    comptime tail: string = ".",
+    comptime label: @Expr<string>,
+    comptime loud: @Expr<bool> = false,
+    comptime times: @Expr<i32> = -1,
+    comptime tail: @Expr<string> = ".",
 ) {
-    val shown = if (loud) label.toUpper() else label;
+    val shown = if (loud.value) label.value.toUpper() else label.value;
     @emit(
         "pub fn "
             + decl.name
             + "Mark() -> string { return \""
             + shown
             + ":"
-            + times.toString()
-            + tail
+            + times.value.toString()
+            + tail.value
             + "\"; }",
     );
 }

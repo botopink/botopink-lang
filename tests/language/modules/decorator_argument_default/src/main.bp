@@ -11,15 +11,15 @@ import {mark} from "marks";
 
 fn note(
     comptime decl: @Decl,
-    comptime text: string = "n",
-    comptime size: f64 = 2.5,
+    comptime text: @Expr<string> = "n",
+    comptime size: @Expr<f64> = 2.5,
 ) {
     @emit(
         "pub fn "
             + decl.name
             + "Note() -> string { return \""
-            + text
-            + size.toString()
+            + text.value
+            + size.value.toString()
             + "\"; }",
     );
 }
