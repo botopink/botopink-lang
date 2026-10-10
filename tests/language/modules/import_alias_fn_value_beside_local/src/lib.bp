@@ -1,0 +1,5 @@
+//// The module whose `pick` the consumer imports under another name.
+
+pub fn pick(n: i32) -> i32 {
+    return n * 100;
+}

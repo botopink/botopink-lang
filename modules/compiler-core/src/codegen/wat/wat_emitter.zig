@@ -66,11 +66,14 @@ pub fn renderComponent(alloc: std.mem.Allocator, w: *Writer, module: ast.Module)
     try ast.validateModule(m);
     var has_init = false;
     var has_start = false;
+    var has_host = false;
     for (m.items) |it| switch (it) {
         .import => |im| if (std.mem.eql(u8, im.module, "wasi_snapshot_preview1")) {
             for (preview1_adapted) |n| {
                 if (std.mem.eql(u8, n, im.name)) break;
             } else return error.UnadaptedPreview1Import;
+        } else if (std.mem.eql(u8, im.module, "bp_host")) {
+            has_host = true;
         },
         .func => |f| for (f.exports) |e| {
             if (std.mem.eql(u8, e, "_start")) has_start = true;
@@ -80,16 +83,21 @@ pub fn renderComponent(alloc: std.mem.Allocator, w: *Writer, module: ast.Module)
     };
 
     try w.writeAll(component_imports);
+    if (has_host) try w.writeAll(component_host_imports);
     try w.writeAll("  (core module $main\n");
     for (m.items) |it| try renderItem(w, it);
     try w.writeAll("  )\n");
     try w.writeAll(component_adapter_head);
+    if (has_host) try w.writeAll(component_host_shim);
+    try w.writeAll(if (has_host) component_main_hosted else component_main_plain);
+    try w.writeAll(component_adapter_rest);
     if (has_init) try w.writeAll("    (import \"main\" \"__bp_init\" (func $init))\n");
     if (has_start) try w.writeAll("    (import \"main\" \"_start\" (func $start))\n");
     try w.writeAll(component_adapter_body);
     if (has_init) try w.writeAll("      call $init\n");
     if (has_start) try w.writeAll("      call $start\n");
     try w.writeAll(component_adapter_tail);
+    if (has_host) try w.writeAll(component_host_adapter);
     if (has_start) try w.writeAll(component_run_export);
     try w.writeAll(")\n");
 }
@@ -134,7 +142,20 @@ const component_adapter_head =
     \\      local.get 0 local.get 1 i32.const 1 call_indirect (type $random_get))
     \\  )
     \\  (core instance $shim (instantiate $p1_shim))
+    \\
+;
+
+const component_main_plain =
     \\  (core instance $main (instantiate $main (with "wasi_snapshot_preview1" (instance $shim))))
+    \\
+;
+
+const component_main_hosted =
+    \\  (core instance $main (instantiate $main (with "wasi_snapshot_preview1" (instance $shim)) (with "bp_host" (instance $bp_shim))))
+    \\
+;
+
+const component_adapter_rest =
     \\  (core module $p1_scratch (memory (export "memory") 1))
     \\  (core instance $scratch (instantiate $p1_scratch))
     \\  (alias core export $scratch "memory" (core memory $scratch_memory))
@@ -231,6 +252,95 @@ const component_adapter_tail =
     \\    (export "$imports" (table $shim "$imports"))
     \\    (export "fd_write" (func $adapter "fd_write"))
     \\    (export "random_get" (func $adapter "random_get"))))))
+    \\
+;
+
+// ── the host tasks' adapter (decisions 392–394, front 140 step 4) ───────────
+//
+// A module whose tasks wait on the host imports `bp_host`: `delay(ms) -> h`,
+// `wait(handles, n, ready) -> k` and `drop(h)` (`wat_prelude.zig`). On `wasi`
+// they are `wasi:clocks/monotonic-clock`'s `subscribe-duration`,
+// `wasi:io/poll`'s `poll` and the pollable's drop, through trampolines the
+// fixup fills once `$main`'s memory exists — the preview 1 adapter's shape.
+// `poll` reads its list from, and writes its answer into, a scratch memory of
+// its own (`$bp_scratch`, whose `realloc` answers one fixed region: a poll
+// answers one list, copied out before the next).
+
+const component_host_imports =
+    \\  (import "wasi:io/poll@0.2.0" (instance $poll
+    \\    (export "pollable" (type $p (sub resource)))
+    \\    (export "poll" (func (param "in" (list (borrow $p))) (result (list u32))))
+    \\  ))
+    \\  (alias export $poll "pollable" (type $pollable_t))
+    \\  (import "wasi:clocks/monotonic-clock@0.2.0" (instance $clock
+    \\    (export "pollable" (type $p (eq $pollable_t)))
+    \\    (export "subscribe-duration" (func (param "when" u64) (result (own $p))))
+    \\  ))
+    \\
+;
+
+const component_host_shim =
+    \\  (core module $bp_shim_m
+    \\    (type $delay (func (param i32) (result i32)))
+    \\    (type $wait (func (param i32 i32 i32) (result i32)))
+    \\    (type $drop (func (param i32)))
+    \\    (table (export "$imports") 3 3 funcref)
+    \\    (func (export "delay") (type $delay)
+    \\      local.get 0 i32.const 0 call_indirect (type $delay))
+    \\    (func (export "wait") (type $wait)
+    \\      local.get 0 local.get 1 local.get 2 i32.const 1 call_indirect (type $wait))
+    \\    (func (export "drop") (type $drop)
+    \\      local.get 0 i32.const 2 call_indirect (type $drop))
+    \\  )
+    \\  (core instance $bp_shim (instantiate $bp_shim_m))
+    \\
+;
+
+const component_host_adapter =
+    \\  (core module $bp_scratch_m
+    \\    (memory (export "memory") 1)
+    \\    (func (export "realloc") (param i32 i32 i32 i32) (result i32) i32.const 32768))
+    \\  (core instance $bp_scratch (instantiate $bp_scratch_m))
+    \\  (alias core export $bp_scratch "memory" (core memory $bp_scratch_memory))
+    \\  (alias core export $bp_scratch "realloc" (core func $bp_realloc))
+    \\  (core func $subscribe (canon lower (func $clock "subscribe-duration")))
+    \\  (core func $poll_list (canon lower (func $poll "poll") (memory $bp_scratch_memory) (realloc $bp_realloc)))
+    \\  (core func $drop_pollable (canon resource.drop $pollable_t))
+    \\  (core module $bp_adapter_m
+    \\    (import "main" "memory" (memory $m 0))
+    \\    (import "scratch" "memory" (memory $s 1))
+    \\    (import "p2" "subscribe" (func $subscribe (param i64) (result i32)))
+    \\    (import "p2" "poll" (func $poll (param i32 i32 i32)))
+    \\    (import "p2" "drop" (func $drop (param i32)))
+    \\    (func (export "delay") (param $ms i32) (result i32)
+    \\      local.get $ms i64.extend_i32_u i64.const 1000000 i64.mul call $subscribe)
+    \\    (func (export "wait") (param $handles i32) (param $n i32) (param $ready i32) (result i32)
+    \\      (local $list i32) (local $k i32)
+    \\      i32.const 8192 local.get $handles local.get $n i32.const 4 i32.mul memory.copy $s $m
+    \\      i32.const 8192 local.get $n i32.const 0 call $poll
+    \\      i32.const 0 i32.load $s local.set $list
+    \\      i32.const 4 i32.load $s local.set $k
+    \\      local.get $ready local.get $list local.get $k i32.const 4 i32.mul memory.copy $m $s
+    \\      local.get $k)
+    \\    (func (export "drop") (param $h i32)
+    \\      local.get $h call $drop)
+    \\  )
+    \\  (core instance $bp_p2 (export "subscribe" (func $subscribe)) (export "poll" (func $poll_list)) (export "drop" (func $drop_pollable)))
+    \\  (core instance $bp_adapter (instantiate $bp_adapter_m
+    \\    (with "main" (instance $main))
+    \\    (with "scratch" (instance $bp_scratch))
+    \\    (with "p2" (instance $bp_p2))))
+    \\  (core module $bp_fixup
+    \\    (import "" "$imports" (table 3 3 funcref))
+    \\    (import "" "delay" (func $delay (param i32) (result i32)))
+    \\    (import "" "wait" (func $wait (param i32 i32 i32) (result i32)))
+    \\    (import "" "drop" (func $drop (param i32)))
+    \\    (elem (i32.const 0) func $delay $wait $drop))
+    \\  (core instance (instantiate $bp_fixup (with "" (instance
+    \\    (export "$imports" (table $bp_shim "$imports"))
+    \\    (export "delay" (func $bp_adapter "delay"))
+    \\    (export "wait" (func $bp_adapter "wait"))
+    \\    (export "drop" (func $bp_adapter "drop"))))))
     \\
 ;
 
@@ -649,9 +759,22 @@ test "every runtime helper group renders with its deps, and only with them" {
         defer items.deinit(alloc);
         if (set.has(.print)) try items.append(alloc, .{ .import = prelude.fd_write_import });
         if (set.has(.wasi_random_f64)) try items.append(alloc, .{ .import = prelude.random_get_import });
+        if (set.has(.task_host)) {
+            try items.append(alloc, .{ .import = prelude.bp_host_delay_import });
+            try items.append(alloc, .{ .import = prelude.bp_host_wait_import });
+            try items.append(alloc, .{ .import = prelude.bp_host_drop_import });
+        }
         try items.append(alloc, .{ .global = .{ .name = "__heap_ptr", .ty = .i32, .mutable = true, .init = "256" } });
         for (prelude.order) |og| {
-            if (set.has(og)) try items.appendSlice(alloc, prelude.items(og));
+            if (!set.has(og)) continue;
+            // `wat.zig`'s substitution: the `wasi` host's poll beside host tasks.
+            if (og == .task_poll and set.has(.task_host)) {
+                try items.append(alloc, .{ .func = prelude.task_host_poll_wasi });
+                continue;
+            }
+            // … and the `browser` host's export beside them.
+            if (og == .task_host) try items.append(alloc, .{ .func = prelude.bp_ready });
+            try items.appendSlice(alloc, prelude.items(og));
         }
         var discard: std.Io.Writer.Discarding = .init(&.{});
         renderModule(&discard.writer, .{ .items = items.items }) catch |err| {

@@ -6,7 +6,7 @@
 //! |---|---|
 //! | `op:<opcode>` | one numeric wasm instruction over the declared parameters (`op:f64.floor`) |
 //! | `fn:<name>` | a private botopink `fn` of the same module, with the same signature |
-//! | `wasi:<adapter>` | a compiler adapter over WASI preview1 (`wasi_snapshot_preview1`), from `adapters` |
+//! | `wasi:<adapter>` | a compiler adapter over the host (WASI preview 1 through the component, or the `browser` loader's JavaScript), from `adapters` |
 //!
 //! The arguments are always the declared parameters, in order — there are no
 //! markers, no expression text and no way to name an address: nothing a
@@ -39,12 +39,53 @@ pub const Op = struct {
     yields_bool: bool = false,
 };
 
-/// A WASI preview1 adapter: the compiler-owned bridge from a WASI call to a
-/// botopink value. `helper` is the prelude function the binding calls.
+/// A type an adapter answering `@Task<T>` spells, over the declaration's one
+/// type parameter `T` (decision 393): checked by shape, never by the word a
+/// `T` happens to be.
+pub const Shape = enum {
+    i32,
+    /// The type parameter itself.
+    t,
+    /// `@Task<T>`.
+    task_t,
+    /// `@Task<Array<T>>` (`T[]`).
+    task_array_t,
+    /// `Array<@Task<T>>` — started tasks.
+    array_task_t,
+    /// `Array<fn() -> @Task<T>>` — unstarted ones.
+    array_thunk_task_t,
+    /// Anything else.
+    other,
+
+    pub fn text(sh: Shape) []const u8 {
+        return switch (sh) {
+            .i32 => "i32",
+            .t => "T",
+            .task_t => "@Task<T>",
+            .task_array_t => "@Task<Array<T>>",
+            .array_task_t => "Array<@Task<T>>",
+            .array_thunk_task_t => "Array<fn() -> @Task<T>>",
+            .other => "another type",
+        };
+    }
+};
+
+/// An adapter answering `@Task<T>` over a generic `T` (decision 393): its
+/// parameters' and result's shapes.
+pub const TaskSig = struct { params: []const Shape, result: Shape };
+
+/// A host adapter: the compiler-owned bridge from a host call to a botopink
+/// value. `helper` is the prelude function the binding calls. Each has an
+/// implementation per host — WASI preview 2 through the `wasi` component's
+/// adapter, JavaScript in the `browser` loader — so one list serves both
+/// (decision 394).
 pub const Adapter = struct {
     name: []const u8,
-    params: []const Slot,
-    result: ?Slot,
+    params: []const Slot = &.{},
+    result: ?Slot = null,
+    /// Set for an adapter answering `@Task<T>`: checked by shape instead of
+    /// `params` / `result`.
+    task: ?TaskSig = null,
     /// What the adapter answers, for `docs.md`'s table and the diagnostics.
     what: []const u8,
 };
@@ -59,6 +100,10 @@ pub const adapters = [_]Adapter{
     .{ .name = "random_f64", .params = &.{}, .result = .f64, .what = "a uniform `f64` in `[0.0, 1.0)` from 53 bits of `random_get`" },
     .{ .name = "seed_u32", .params = &.{.i32}, .result = null, .what = "seeds the module's Mulberry32 stream with the word's bits" },
     .{ .name = "seeded_f64", .params = &.{}, .result = .f64, .what = "the next Mulberry32 draw in `[0.0, 1.0)`, or `random_f64`'s before any seed" },
+    .{ .name = "delay", .task = .{ .params = &.{ .i32, .t }, .result = .task_t }, .what = "a task that settles with the value once the milliseconds have passed on the host's monotonic clock (`wasi:clocks/monotonic-clock` and `wasi:io/poll` on `wasi`, `setTimeout` on `browser`)" },
+    .{ .name = "race", .task = .{ .params = &.{.array_task_t}, .result = .task_t }, .what = "the first of the started tasks to settle (the first settled one in input order when some already are); an empty list traps" },
+    .{ .name = "race_of", .task = .{ .params = &.{.array_thunk_task_t}, .result = .task_t }, .what = "each thunk called in order — its task runs to its first `await` — then raced; an empty list traps" },
+    .{ .name = "spawn_all", .task = .{ .params = &.{.array_thunk_task_t}, .result = .task_array_t }, .what = "each thunk called in order; the answers in input order once the last has settled" },
 };
 
 pub const Binding = union(enum) {
@@ -76,6 +121,10 @@ pub const Signature = struct {
     params: []const ?Slot,
     result: ?Slot,
     result_other: bool = false,
+    /// The declaration's parameter shapes over its one type parameter
+    /// (decision 393) — null when it declares no type parameter or several.
+    shapes: ?[]const Shape = null,
+    result_shape: Shape = .other,
 };
 
 /// A refused binding: the message, owned by the caller's allocator.
@@ -100,6 +149,13 @@ pub fn parse(alloc: std.mem.Allocator, text: []const u8, sig: Signature) !Result
     if (std.mem.startsWith(u8, text, "wasi:")) {
         const name = text["wasi:".len..];
         const ad = findAdapter(name) orelse return refused(alloc, "`#[@External.Wasm(\"{s}\")]`: `{s}` is not a WASI adapter — the adapters are listed in docs.md § Host bindings ({s})", .{ text, name, adapterNames() });
+        if (ad.task) |ts| {
+            const ok = if (sig.shapes) |shapes| shapes.len == ts.params.len and std.mem.eql(Shape, shapes, ts.params) and sig.result_shape == ts.result else false;
+            if (ok) return .{ .ok = .{ .wasi = ad } };
+            const shape = try taskSigText(alloc, ts);
+            defer alloc.free(shape);
+            return refused(alloc, "`#[@External.Wasm(\"{s}\")]`: the adapter `{s}` is `{s}` over one type parameter `T`; the declaration's signature differs", .{ text, name, shape });
+        }
         if (sig.params.len != ad.params.len or !slotsEql(sig.params, ad.params) or !resultEql(sig, ad.result)) {
             const takes = try slotsText(alloc, ad.params);
             defer alloc.free(takes);
@@ -166,6 +222,21 @@ fn slotsText(alloc: std.mem.Allocator, ss: []const Slot) ![]u8 {
         try buf.appendSlice(alloc, @tagName(s));
     }
     try buf.append(alloc, ')');
+    return buf.toOwnedSlice(alloc);
+}
+
+/// `(i32, T) -> @Task<T>` — an adapter's shape as `docs.md` writes it,
+/// owned by the caller.
+pub fn taskSigText(alloc: std.mem.Allocator, ts: TaskSig) ![]u8 {
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    errdefer buf.deinit(alloc);
+    try buf.append(alloc, '(');
+    for (ts.params, 0..) |p, i| {
+        if (i > 0) try buf.appendSlice(alloc, ", ");
+        try buf.appendSlice(alloc, p.text());
+    }
+    try buf.appendSlice(alloc, ") -> ");
+    try buf.appendSlice(alloc, ts.result.text());
     return buf.toOwnedSlice(alloc);
 }
 
@@ -336,6 +407,20 @@ test "host binding: the three forms and their refusals" {
         const r = try parse(a, "wasi:clock_time_get", .{ .params = &.{}, .result = .f64 });
         defer a.free(r.refused.message);
         try std.testing.expect(std.mem.indexOf(u8, r.refused.message, "is not a WASI adapter") != null);
+    }
+    {
+        const r = try parse(a, "wasi:delay", .{ .params = &.{ .i32, null }, .result = null, .result_other = true, .shapes = &.{ .i32, .t }, .result_shape = .task_t });
+        try std.testing.expectEqualStrings("delay", r.ok.wasi.name);
+    }
+    {
+        const r = try parse(a, "wasi:delay", .{ .params = &.{null}, .result = null, .result_other = true, .shapes = &.{.t}, .result_shape = .task_t });
+        defer a.free(r.refused.message);
+        try std.testing.expect(std.mem.indexOf(u8, r.refused.message, "is `(i32, T) -> @Task<T>` over one type parameter `T`") != null);
+    }
+    {
+        const r = try parse(a, "wasi:race_of", .{ .params = &.{null}, .result = null, .result_other = true, .shapes = null });
+        defer a.free(r.refused.message);
+        try std.testing.expect(std.mem.indexOf(u8, r.refused.message, "`(Array<fn() -> @Task<T>>) -> @Task<T>`") != null);
     }
     {
         const r = try parse(a, "$0 + 1", f64x1);

@@ -1,0 +1,36 @@
+//// Decision 392 (1) — a task starts when it is made and runs to its first
+//// `await`; it settles once, and every `await` of it answers that value. `work`
+//// prints before its first `await`, so its line comes before the caller's
+//// `made` on every target — node's Promise, erlang's eager call and wasm's state
+//// machine alike — and nothing is printed after an `await` of a task still
+//// running (the order of effects between tasks is no target's contract).
+
+#[@External.Node("""((__ms, __v) => new Promise((__r) => setTimeout(() => __r(__v), __ms)))($0, $1)""")]
+#[@External.Erlang("""(fun(__M, __V) -> timer:sleep(__M), __V end)($0, $1)""")]
+#[@External.Wasm("wasi:delay")]
+declare fn delay<T>(millis: i32, value: T) -> @Task<T>;
+
+fn work(label: string) -> @Task<string> {
+    @print("started " + label);
+    val v = await delay(5, label);
+    return v + "!";
+}
+
+fn run() -> @Task<void> {
+    val t = work("a");
+    @print("made");
+    val first = await t;
+    val again = await t;
+    @print(first + " " + again);
+    val b = async {
+        @print("block started");
+        val w = await work("b");
+        return w;
+    };
+    @print("block made");
+    @print(await b);
+}
+
+pub fn main() {
+    run();
+}

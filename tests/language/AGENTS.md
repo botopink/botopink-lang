@@ -31,7 +31,9 @@ leaves in scope, on commonJS/erlang/wasm — and three `reject/` cells: `import_
 second item) and `import_group_modifier` (`*` on a node that opens braces); the third,
 `import_alias_on_type`, is now `modules/import_alias_on_type` — decision 110 made `as` legal on a type
 and a type alias (`01-checker`), and the cell imports `Point as P`, `Pair as Two` and std's
-`Dict as D` and runs on all four targets; `modules/import_alias_static_call` covers the alias in
+`Dict as D` and runs on all four targets; `modules/import_alias_fn_value_beside_local` an aliased import's function value beside a local
+function of the leaf's name (wasm read the bare name, the local one, until front 140's thread resolved
+the alias to the owner's mangled declaration); `modules/import_alias_static_call` covers the alias in
 expression position — an associated call (`P.origin()`) and a unit and a payload variant (`S.Dark`,
 `S.Custom(9)`) — which inference renames to the declared type for the backends.
 Step 6 (decision 110 rule 2, 111 through the namespace) adds `modules/import_std_folder_namespace`
@@ -891,7 +893,15 @@ unbound, `wasm.expect`); its step 6 adds `modules/wasm_host_browser_runs` (a `br
 `node` through its loader, the `.Browser` binding read) and makes the wasm column two runs — `run.sh`'s
 `exec_run` runs a wasm cell on the `wasi` host (wasmtime) and on the `browser` host (node), and a cell
 whose two exit statuses or stdouts differ fails naming both; a project cell whose botopink.json names
-`"wasm"` runs on that host alone), and `enum_section_*` (1.0.10-beta's `00 · 01-checker`: which enum a
+`"wasm"` runs on that host alone); its steps 4–5 (decisions 392–394: `@Task` on wasm a resumable
+state machine over the scheduler, one adapter list for both hosts) add `run/wasm_host_async` (`delay`,
+`race`, `raceOf`, `spawnAll` declared with std's Node and BEAM bindings and the `wasi:` adapters —
+`raceOf` answers the first thunk to settle, `"b"` on every target and both hosts),
+`run/task_starts_when_made` (a task runs to its first `await` when made, settles once),
+`run/task_resumes_in_place` (loops, `if`, `try`, `try … catch`, a method, a generic fn and an
+`async { }` block suspending on a real timer), and two wasm refusals with `wasm.expect` —
+`run/task_await_after_call_refused_on_wasm` (a call before an `await` in its statement) and
+`run/external_wasm_task_adapter_shape` (an adapter declared off its shape), and `enum_section_*` (1.0.10-beta's `00 · 01-checker`: which enum a
 leading-dot section path names — `run/enum_section_expected_type`, where two enums carry
 `.Color.Red.500` and every spelling is resolved by the type its position expects, and
 `reject/enum_section_ambiguous_path`, where the position expects nothing and the refusal names both

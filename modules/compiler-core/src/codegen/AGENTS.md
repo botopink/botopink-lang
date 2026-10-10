@@ -3262,7 +3262,7 @@ no effect: it lowers as a plain function on every backend (decision 123).
 | Return | commonJS | erlang | beam_asm | wat |
 |---|---|---|---|---|
 | `-> @Result<T, E>` | plain `function`; `__bp_ok`/`__bp_error` build `{ok: V}`/`{error: E}`; `try`/`catch` via `"error" in _r` | plain fun; `{ok, V}`/`{error, E}`; `try`/`catch` → `case … of` | plain local; `put_tuple2` pair; `try`/`catch` → `is_tagged_tuple` | `[tag, payload]` in linear memory; `try`/`catch` → `if` on the tag |
-| `-> @Task<T>` | `async function`; a `@Result` value layer is the `-> @Result` lowering inside it — a `throw` resolves the Promise with `{error: e}` and never rejects (decision 120) | eager (`@Task<T>` is `T`, `await` is identity) | eager | eager |
+| `-> @Task<T>` | `async function`; a `@Result` value layer is the `-> @Result` lowering inside it — a `throw` resolves the Promise with `{error: e}` and never rejects (decision 120) | eager (`@Task<T>` is `T`, `await` is identity) | eager | a task: a resumable state machine over the prelude's scheduler (decision 392, `wat/AGENTS.md` § `@Task` as a state machine) |
 | `-> @Iterator<T>` (yields) | `function*` (`return <iter>` → `yield*`) | eager; a body of only `yield`s → list | eager body | eager body |
 | `-> @Stream<T>` (yields) | `async function*` | eager | eager body | eager body |
 | `-> @Component<T>` | `async function` when its hooks node is asynchronous, a plain `function` when synchronous (decision 375; a method, a lambda and a `default fn` always `async`); `use f()` / a call → `await f()`, no `await` on a synchronous one | plain fun | plain local | plain func |
@@ -3318,7 +3318,8 @@ in a plain arrow does not parse.
 `syntax = .asyncBlock`: commonJS `(async function() { … })()` (`buildAsyncBlock`,
 its own expression-`try` guard); erlang `(fun() -> … end)()`; beam the lambda
 then `call_fun 0`; wasm the lifted lambda called in place through the table
-(`lowerAsyncBlock`). Its `return`s are the closure's, so they leave the block.
+(`lowerAsyncBlock`), a state machine answering the block's task (decision
+392). Its `return`s are the closure's, so they leave the block.
 
 `iter` / `stream` loops (decision 125) reach every backend as the prefixed
 `loop` node (`LoopExprOf.generator` = `.iterator` / `.stream`): the parser

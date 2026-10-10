@@ -574,6 +574,32 @@ pub const HelperGroup = enum {
     /// `$__print_opt_u64` (+`_raw`) — a `?u64`, the address of its cell,
     /// written through `$__print_u64_raw`. Appended, as the `u64` groups.
     print_opt_u64,
+    /// Decision 392 — the scheduler a `@Task<T>` runs on: the task record
+    /// (`$__task_new`, `$__task_start`, `$__task_pending`, `$__task_listen`,
+    /// `$__task_wait`), settling once and waking what waits
+    /// (`$__task_settle_{i32,i64,f64}`, `$__task_wake`), the ready queue
+    /// (`$__task_enqueue`, `$__task_drain`), an `await` outside a state
+    /// machine (`$__task_block_on`) and the end of `_start` (`$__task_finish`).
+    task,
+    /// `$__task_resume(t)` — the step of the asynchronous function a task
+    /// runs. The prelude's form traps; `wat.zig` substitutes the module's own
+    /// dispatch over its state machines (one `kind` per function).
+    task_resume,
+    /// `$__task_host_poll() -> i32` — waits for the host tasks pending and
+    /// settles the ready ones, `1` when it waited. The prelude's form answers
+    /// `0` (nothing to wait on — the `browser` host waits in its loader);
+    /// `wat.zig` substitutes `wasi:io/poll`'s when the module has host tasks.
+    task_poll,
+    /// The host tasks pending (`$__task_host_add`, `$__task_host_settle`).
+    task_host,
+    /// `$__task_delay(ms, v)` — decision 393's `wasi:delay`.
+    task_delay,
+    /// `$__task_race(xs)` — `wasi:race`, the first task to settle.
+    task_race,
+    /// `$__task_race_of(fs)` — `wasi:race_of`, each thunk started, then raced.
+    task_race_of,
+    /// `$__task_spawn_all(fs)` — `wasi:spawn_all`, the answers in input order.
+    task_spawn_all,
 
     /// The groups `g`'s functions call into.
     pub fn deps(g: HelperGroup) []const HelperGroup {
@@ -627,6 +653,12 @@ pub const HelperGroup = enum {
             .print_u64 => &.{ .print, .u64_fmt },
             .print_opt_u64 => &.{ .print, .print_opt, .print_u64 },
             .u64_to_str => &.{ .alloc, .u64_fmt },
+            .task => &.{ .alloc, .task_resume, .task_poll },
+            .task_host => &.{.task},
+            .task_delay => &.{.task_host},
+            .task_race => &.{.task},
+            .task_race_of => &.{ .task_race, .arr_new },
+            .task_spawn_all => &.{ .task, .arr_new },
             else => &.{},
         };
     }
@@ -759,6 +791,27 @@ pub const Helper = enum {
     u64_mul_chk,
     print_opt_u64,
     print_opt_u64_raw,
+    task_new,
+    task_start,
+    task_pending,
+    task_listen,
+    task_wait,
+    task_settle_i32,
+    task_settle_i64,
+    task_settle_f64,
+    task_wake,
+    task_enqueue,
+    task_drain,
+    task_block_on,
+    task_finish,
+    task_resume,
+    task_host_poll,
+    task_host_add,
+    task_host_settle,
+    task_delay,
+    task_race,
+    task_race_of,
+    task_spawn_all,
 
     pub fn symbol(h: Helper) []const u8 {
         return switch (h) {
@@ -788,6 +841,9 @@ pub const Helper = enum {
             .print_opt_tagged, .print_opt_tagged_raw => .print_opt_tagged,
             .unknown_kind, .unknown_int_in, .unknown_as_i32, .unknown_as_f64, .unknown_eq => .unknown,
             .print_unknown, .print_unknown_raw => .print_unknown,
+            .task_new, .task_start, .task_pending, .task_listen, .task_wait, .task_settle_i32, .task_settle_i64, .task_settle_f64, .task_wake, .task_enqueue, .task_drain, .task_block_on, .task_finish => .task,
+            .task_host_poll => .task_poll,
+            .task_host_add, .task_host_settle => .task_host,
             inline else => |t| @field(HelperGroup, @tagName(t)),
         };
     }

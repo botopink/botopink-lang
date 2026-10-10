@@ -149,7 +149,23 @@ fn eagerTypeRef(t: ast.TypeRef) ast.TypeRef {
     };
 }
 
+/// Decision 392 — a `@Task<T>` value is the task that settles with its `T`
+/// (`wat_prelude.zig`'s task record): the `i32` word of its address, whatever
+/// `T` is. `await` reads the `T` out of it (`Emitter.lowerAwait`).
+fn isTaskTypeRef(t: ast.TypeRef) bool {
+    return switch (t) {
+        .generic => |g| g.is_builtin and g.args.len == 1 and std.mem.eql(u8, g.name, "Task"),
+        else => false,
+    };
+}
+
+/// The `T` of a `@Task<T>`.
+fn taskValueTypeRef(t: ast.TypeRef) ?ast.TypeRef {
+    return if (isTaskTypeRef(t)) t.generic.args[0] else null;
+}
+
 fn watType(t0: ast.TypeRef) []const u8 {
+    if (isTaskTypeRef(t0)) return "i32";
     const t = eagerTypeRef(t0);
     switch (t) {
         .named => |n| {
@@ -1250,6 +1266,15 @@ fn emitWat(
     if (em.b.helpers.has(.print)) try items.append(ar, .{ .import = prelude.fd_write_import });
     // Decision 238's `wasi:` adapters each bring the WASI call they make.
     if (em.b.helpers.has(.wasi_random_f64)) try items.append(ar, .{ .import = prelude.random_get_import });
+    // Decision 393's host tasks: the host's timer, and on `wasi` its poll
+    // (the `browser` loader answers from the event loop, `__bp_ready`).
+    if (em.b.helpers.has(.task_host)) {
+        try items.append(ar, .{ .import = prelude.bp_host_delay_import });
+        if (artifact != .browser) {
+            try items.append(ar, .{ .import = prelude.bp_host_wait_import });
+            try items.append(ar, .{ .import = prelude.bp_host_drop_import });
+        }
+    }
 
     try items.append(ar, .{ .memory = .{ .@"export" = "memory", .min_pages = 1 } });
 
@@ -1297,6 +1322,20 @@ fn emitWat(
             try items.append(ar, .{ .func = f });
             continue;
         };
+        // Decision 392 — the module's own state machines, and its host's poll.
+        if (group == .task_resume) {
+            try items.append(ar, .{ .func = try em.taskResumeFunc() });
+            continue;
+        }
+        if (group == .task_poll and em.b.helpers.has(.task_host) and artifact != .browser) {
+            try items.append(ar, .{ .func = prelude.task_host_poll_wasi });
+            continue;
+        }
+        if (group == .task_host and artifact == .browser) {
+            try items.appendSlice(ar, prelude.items(group));
+            try items.append(ar, .{ .func = prelude.bp_ready });
+            continue;
+        }
         try items.appendSlice(ar, prelude.items(group));
     }
 
@@ -1837,6 +1876,17 @@ const Emitter = struct {
     /// module emits them under. Each is registered and emitted like a bodied
     /// `fn` (`registerFn`, `emitHostBinding`).
     host_bindings: std.StringHashMapUnmanaged(HostBound) = .empty,
+    /// Decision 392 — the state machine whose body is being lowered: an
+    /// asynchronous function (`-> @Task<T>`, an `async { }` block) suspends
+    /// at its `await`s (`lowerAwait`) and re-enters its statements by
+    /// resume index (`emitStmt`'s guard). Null in every other body.
+    machine: ?Machine = null,
+    /// The step function of every state machine, by its `kind` — the index
+    /// `$__task_resume` dispatches on (`taskResumeFunc`).
+    task_kinds: std.ArrayListUnmanaged([]const u8) = .empty,
+    /// The symbols whose call answers a task (`@Task<T>`): every function
+    /// declaring the return, each specialisation, each bound adapter.
+    task_syms: std.StringHashMapUnmanaged(void) = .empty,
     /// 06 C13 — set when the emit fails with `error.MissingExternalTarget`, so
     /// the driver gets a located diagnostic naming the fn and this backend
     /// instead of the bare error name.
@@ -2091,6 +2141,8 @@ const Emitter = struct {
         self.host_fns.deinit();
         self.external_missing.deinit();
         self.host_bindings.deinit(self.alloc);
+        self.task_kinds.deinit(self.alloc);
+        self.task_syms.deinit(self.alloc);
         self.aliases.deinit();
         self.pattern_locals.deinit();
         self.assoc_needed.deinit(self.alloc);
@@ -2177,13 +2229,16 @@ const Emitter = struct {
         });
         if (f.returnType != null and f.typeGuardParam == null) {
             const rt = f.returnType.?;
+            if (isTaskTypeRef(rt)) try self.task_syms.put(self.alloc, f.name, {});
             if (isStringTypeRef(rt)) try self.str_fns.put(f.name, {});
             if (isBoolTypeRef(rt)) try self.bool_fns.put(f.name, {});
             if (arrayElemOfTypeRef(rt)) |ek| try self.fn_arr_elem.put(f.name, ek);
             if (resultOfString(rt)) try self.result_str_fns.put(f.name, {});
             if (resultShapeOfTypeRef(rt)) |shape| try self.result_shape_fns.put(f.name, shape);
             try self.fn_ret_typerefs.put(f.name, try self.eraseOptTypeParam(&.{}, f.genericParams, rt));
-            if (genericResultIndex(f.genericParams, ptrefs.items, rt)) |ix|
+            // A `-> @Task<T>` answers what binds its `T` once awaited — the
+            // shape readers see a task as its value (decision 392).
+            if (genericResultIndex(f.genericParams, ptrefs.items, taskValueTypeRef(rt) orelse rt)) |ix|
                 try self.generic_result_arg.put(self.alloc, f.name, ix);
         } else if (f.returnType == null and self.bodyReturnsString(f.body)) {
             // The specialisation pass clears the return type of the
@@ -2295,8 +2350,13 @@ const Emitter = struct {
         for (program.decls) |decl| switch (decl) {
             .use => |u| for (u.imports) |imp| {
                 const alias = imp.alias orelse continue;
-                const leaf = imp.leaf();
-                if (std.mem.eql(u8, alias, leaf)) continue;
+                const leaf0 = imp.leaf();
+                if (std.mem.eql(u8, alias, leaf0)) continue;
+                // The owner's function was mangled (`lib/pick`) when this
+                // module declares the same name: the alias means the owner's,
+                // so a function VALUE of it (`val f = other`) is the owner's
+                // too — the bare name was this module's own `pick`.
+                const leaf = (try self.linkedTarget(u, imp)) orelse leaf0;
                 // An imported module-level `pub val` under an alias: the global
                 // the linked owner defines is the declared name; every table a
                 // read consults answers the alias as it answers the leaf, and
@@ -2319,6 +2379,16 @@ const Emitter = struct {
             },
             else => {},
         };
+    }
+
+    /// The mangled name of the linked function an import names, when its
+    /// owner's declaration was mangled (`emitWat`'s link step); null otherwise.
+    fn linkedTarget(self: *Emitter, u: anytype, imp: anytype) !?[]const u8 {
+        const c = self.cross orelse return null;
+        const ar = self.arena();
+        const src = try u.leafSource(imp, ar, false);
+        const info = c.picked(imp.leaf(), src, null) orelse return null;
+        return self.link_mangled.get(try linkKey(ar, info.module, imp.leaf()));
     }
 
     /// Register `alias` for the linked global `leaf` in every per-global table.
@@ -2390,6 +2460,7 @@ const Emitter = struct {
             // `$__print_i32`, which writes a **pointer** (`276` for `"doc:hi"`,
             // `444` for `["a", "b"]`) or `0`/`1` for a bool.
             if (m.returnType) |rt| {
+                if (isTaskTypeRef(rt)) try self.task_syms.put(self.alloc, sym, {});
                 try self.fn_ret_typerefs.put(sym, try self.eraseOptTypeParam(owner_tparams, m.genericParams, rt));
                 if (isStringTypeRef(rt)) try self.str_fns.put(sym, {});
                 if (isBoolTypeRef(rt)) try self.bool_fns.put(sym, {});
@@ -4011,7 +4082,21 @@ const Emitter = struct {
         }
         const rslot: ?hostBinding.Slot = if (f.returnType) |rt| slotOf(rt) else null;
         const result_other = if (f.returnType) |rt| rslot == null and !isNamedTypeRef(rt, "void") else false;
-        const parsed = try hostBinding.parse(ar, ext.symbol, .{ .params = slots.items, .result = rslot, .result_other = result_other });
+        // Decision 393 — the shapes an adapter answering `@Task<T>` is
+        // checked by, over the declaration's one type parameter.
+        var shapes: ?[]const hostBinding.Shape = null;
+        var result_shape: hostBinding.Shape = .other;
+        if (f.genericParams.len == 1) {
+            const tp = f.genericParams[0].name;
+            var list: std.ArrayListUnmanaged(hostBinding.Shape) = .empty;
+            for (f.params) |p| {
+                if (std.mem.eql(u8, p.name, "self")) continue;
+                try list.append(ar, taskShapeOf(p.typeRef, tp));
+            }
+            shapes = list.items;
+            if (f.returnType) |rt| result_shape = taskShapeOf(rt, tp);
+        }
+        const parsed = try hostBinding.parse(ar, ext.symbol, .{ .params = slots.items, .result = rslot, .result_other = result_other, .shapes = shapes, .result_shape = result_shape });
         const binding = switch (parsed) {
             .refused => |r| return self.refuse(ann_loc, "{s} (on `{s}`)", .{ r.message, f.name }),
             .ok => |b| b,
@@ -4031,6 +4116,68 @@ const Emitter = struct {
                 name;
         }
         return bound;
+    }
+
+    /// The shape `t` spells over the type parameter `tp` (decision 393).
+    fn taskShapeOf(t: ast.TypeRef, tp: []const u8) hostBinding.Shape {
+        const isTp = struct {
+            fn f(x: ast.TypeRef, name: []const u8) bool {
+                return x == .named and std.mem.eql(u8, x.named, name);
+            }
+        }.f;
+        switch (t) {
+            .named => |n| {
+                if (std.mem.eql(u8, n, tp)) return .t;
+                if (std.mem.eql(u8, n, "i32")) return .i32;
+                return .other;
+            },
+            else => {},
+        }
+        if (taskValueTypeRef(t)) |inner| {
+            if (isTp(inner, tp)) return .task_t;
+            if (arrayElemRef(inner)) |el| if (isTp(el, tp)) return .task_array_t;
+            return .other;
+        }
+        if (arrayElemRef(t)) |el| {
+            if (taskValueTypeRef(el)) |v| if (isTp(v, tp)) return .array_task_t;
+            if (el == .function and el.function.params.len == 0) if (taskValueTypeRef(el.function.returnType.*)) |v| if (isTp(v, tp)) return .array_thunk_task_t;
+        }
+        return .other;
+    }
+
+    /// The element type of `T[]` / `Array<T>`.
+    fn arrayElemRef(t: ast.TypeRef) ?ast.TypeRef {
+        return switch (t) {
+            .array => |el| el.*,
+            .generic => |g| if (std.mem.eql(u8, g.name, "Array") and g.args.len == 1) g.args[0] else null,
+            else => null,
+        };
+    }
+
+    /// Decision 393 — a task adapter carries its `T` in the task's word, so a
+    /// float or an `i64` `T` reaching one is refused where the call is
+    /// written: `delay`'s value by `lowerCoerced`, the tasks handed to `race`,
+    /// `race_of` and `spawn_all` here.
+    fn refuseWideTaskValues(self: *Emitter, cc: anytype) !void {
+        for (cc.args) |a| {
+            const arg = a.value.*;
+            if (arg == .collection and arg.collection.kind == .arrayLit) for (arg.collection.kind.arrayLit.elems) |el| {
+                const tail: ast.Expr = if (el == .function and el.function.kind.syntax == .lambda and el.function.kind.body.len > 0)
+                    el.function.kind.body[el.function.kind.body.len - 1].expr
+                else
+                    el;
+                if (!self.isTaskExpr(tail)) continue;
+                const ty = self.awaitedType(tail);
+                if (!std.mem.eql(u8, ty, "i32"))
+                    return self.refuse(el.getLoc(), "`{s}` carries a task's value in one word on wasm: a task answering an `{s}` has no lowering here (decision 393)", .{ cc.callee, ty });
+            };
+            const t = self.typeRefOf(arg) orelse continue;
+            const el = arrayElemRef(t) orelse continue;
+            const v = taskValueTypeRef(el) orelse (if (el == .function) taskValueTypeRef(el.function.returnType.*) else null) orelse continue;
+            const ty = watType(v);
+            if (!std.mem.eql(u8, ty, "i32"))
+                return self.refuse(arg.getLoc(), "`{s}` carries a task's value in one word on wasm: a task answering an `{s}` has no lowering here (decision 393)", .{ cc.callee, ty });
+        }
     }
 
     /// The numeric slot a written type spells for decision 238's checks;
@@ -4068,6 +4215,16 @@ const Emitter = struct {
                 if (std.mem.eql(u8, ad.name, "random_f64")) break :blk self.builder().helper(.wasi_random_f64);
                 if (std.mem.eql(u8, ad.name, "seed_u32")) break :blk self.builder().helper(.wasi_seed_u32);
                 if (std.mem.eql(u8, ad.name, "seeded_f64")) break :blk self.builder().helper(.wasi_seeded_f64);
+                if (std.mem.eql(u8, ad.name, "delay")) break :blk self.builder().helper(.task_delay);
+                if (std.mem.eql(u8, ad.name, "race")) break :blk self.builder().helper(.task_race);
+                if (std.mem.eql(u8, ad.name, "race_of")) {
+                    self.uses_table = true;
+                    break :blk self.builder().helper(.task_race_of);
+                }
+                if (std.mem.eql(u8, ad.name, "spawn_all")) {
+                    self.uses_table = true;
+                    break :blk self.builder().helper(.task_spawn_all);
+                }
                 unreachable; // every listed adapter has its helper (`host_binding.zig` `adapters`)
             },
         };
@@ -4078,7 +4235,7 @@ const Emitter = struct {
         // (`seed_u32`) leaves the stack empty, so the wrapper answers the 0
         // the caller drops.
         const yields = switch (hb.binding) {
-            .wasi => |ad| ad.result != null,
+            .wasi => |ad| ad.result != null or ad.task != null,
             else => true,
         };
         if (result != null and !yields) try lines.append(ar, .{ .indent = 4, .instr = constOf(@tagName(result.?), "0") });
@@ -4104,7 +4261,10 @@ const Emitter = struct {
             return;
         }
         const has_result = fnHasResult(f);
-        self.resetFnState(if (has_result) watTypeOpt(f.returnType) else null);
+        // Decision 392 — `-> @Task<T>`: the body is a state machine whose
+        // answer is the task's `T` (`emitStateMachine`).
+        const is_task = if (f.returnType) |rt| isTaskTypeRef(rt) else false;
+        self.resetFnState(if (is_task) watTypeOpt(taskValueTypeRef(f.returnType.?)) else if (has_result) watTypeOpt(f.returnType) else null);
         self.fn_tparams = f.genericParams;
         defer self.fn_tparams = &.{};
         const outer_template = self.cur_template;
@@ -4114,14 +4274,13 @@ const Emitter = struct {
             (if (f.returnType) |rt| resultShapeOfTypeRef(rt) != null else false);
 
         // An effect fn is async/generator — except `-> @Result` (the
-        // checked-Result value), which is a plain function. WASM is
-        // single-threaded and eager here: a `@Task<T>` is `T` (`await` is
-        // identity, decision 120); full generator state-machine lowering is
-        // not yet implemented. `-> @Component` is a plain function too
+        // checked-Result value), which is a plain function. A `@Task<T>` is
+        // a state machine over the scheduler (decision 392); an `@Iterator` /
+        // `@Stream` runs eagerly. `-> @Component` is a plain function too
         // (decision 88: it gates `use`).
         if (f.effect != null and f.effect.? != .result and f.effect.? != .component) {
             try self.itemComment(switch (f.effect.?) {
-                .task => "@Task — eager lowering",
+                .task => "@Task — a state machine (decision 392)",
                 .iterator => "@Iterator — eager lowering",
                 else => "@Stream — eager lowering",
             });
@@ -4143,6 +4302,8 @@ const Emitter = struct {
         try self.declareScratch("_try", countTrys(f.body));
         try self.declareScratch("__mem", self.countMems(f.body));
         try self.emitLocalDecls(f.body);
+        if (is_task) try self.beginMachine(f.body);
+        defer self.machine = null;
 
         // An `@Iterator` / `@Stream` body runs eagerly: every `yield` is
         // appended to one array, which is what the fn returns.
@@ -4150,7 +4311,8 @@ const Emitter = struct {
             (e == .iterator or e == .stream) and has_result and bodyYieldsDeep(f.body)
         else
             false;
-        if (!accumulates) try self.noteSelfTailCalls(f);
+        // A state machine's `return f(…)` answers a task: it is never a loop.
+        if (!accumulates and !is_task) try self.noteSelfTailCalls(f);
         const rendered = if (accumulates) try self.renderAccumulatingBody(f.body) else try self.renderBody(f.body, f);
         const body = if (self.tail_self_used) try self.wrapTailLoop(rendered) else rendered;
 
@@ -4160,14 +4322,16 @@ const Emitter = struct {
             if (std.mem.eql(u8, p.name, "self")) continue;
             try params.append(ar, wat.Builder.param(try self.paramSymbol(p, i), vt(watType(p.typeRef))));
         }
-        try self.item(.{ .func = try self.builder().func(.{
+        const func = try self.builder().func(.{
             .name = f.name,
             .exports = if (f.isPub) try ar.dupe([]const u8, &.{f.name}) else &.{},
             .params = params.items,
-            .result = if (has_result) vt(self.cur_result) else null,
+            .result = if (has_result or is_task) vt(self.cur_result) else null,
             .locals = try self.localLines(),
             .body = body,
-        }) });
+        });
+        if (is_task) return self.emitStateMachine(func);
+        try self.item(.{ .func = func });
     }
 
     /// Emit each `implement`/`extend` method as a linear-memory function
@@ -4250,7 +4414,10 @@ const Emitter = struct {
             null;
         defer self.cur_template = outer_template;
         const has_result = m.returnType != null or methodHasResult(body);
-        const result_ty: []const u8 = if (m.returnType) |rt| memberValType(rt) else "i32";
+        // Decision 392 — a method answering `@Task<T>` is a state machine
+        // too, its body answering the `T`.
+        const is_task = if (m.returnType) |rt| isTaskTypeRef(rt) else false;
+        const result_ty: []const u8 = if (m.returnType) |rt| memberValType(taskValueTypeRef(rt) orelse rt) else "i32";
         self.resetFnState(if (has_result) result_ty else null);
         // What `return v` coerces to — a `-> ?i32` method boxes its scalar,
         // as a fn does (`emitFn`). Unset here, `Registry.at` returned the bare
@@ -4299,6 +4466,8 @@ const Emitter = struct {
         try self.declareScratch("_try", countTrys(body));
         try self.declareScratch("__mem", self.countMems(body));
         try self.emitLocalDecls(body);
+        if (is_task) try self.beginMachine(body);
+        defer self.machine = null;
 
         // A method declared `-> @Iterator<T>` / `-> @Stream<T>` runs eagerly
         // like a fn does (`emitFn`): every `yield` is appended to one array,
@@ -4316,13 +4485,15 @@ const Emitter = struct {
         for (m.params, 0..) |p, i| {
             try params.append(ar, wat.Builder.param(try self.paramSymbol(p, i), vt(memberValType(p.typeRef))));
         }
-        try self.item(.{ .func = try self.builder().func(.{
+        const func = try self.builder().func(.{
             .name = try std.fmt.allocPrint(ar, "{s}_{s}", .{ owner, m.name }),
             .params = params.items,
             .result = if (has_result) vt(result_ty) else null,
             .locals = try self.localLines(),
             .body = seq,
-        }) });
+        });
+        if (is_task) return self.emitStateMachine(func);
+        try self.item(.{ .func = func });
     }
 
     /// A method whose declared return is an `@Iterator<T>` / `@Stream<T>` —
@@ -5317,6 +5488,10 @@ const Emitter = struct {
         // The wrapper itself returns nothing, so a value-returning `main` would
         // leave its result on the stack — invalid wasm. Discard it.
         if (main_returns_value) try self.emit(.drop);
+        // Decision 392 — the tasks `main` started run on: the ready ones,
+        // and on `wasi` the host's answers as they come (the `browser`
+        // host's loader drives the rest from the event loop).
+        if (self.b.helpers.has(.task)) try self.emitC(self.builder().helper(.task_finish), "the tasks main started");
         const body = self.seal(&c, .none);
 
         try self.item(.{ .func = try self.builder().func(.{
@@ -5347,6 +5522,14 @@ const Emitter = struct {
     }
 
     fn emitStmt(self: *Emitter, stmt: ast.Stmt, keep_value: bool) anyerror!Tail {
+        // Decision 392 — a statement of a state machine runs under its
+        // resume guard. The one whose value a body answers is not guarded:
+        // re-entering never reaches it before the resume index.
+        if (self.machine != null and !keep_value) return self.emitGuardedStmt(stmt);
+        return self.emitStmtNormalised(stmt, keep_value);
+    }
+
+    fn emitStmtNormalised(self: *Emitter, stmt: ast.Stmt, keep_value: bool) anyerror!Tail {
         const outer_loc = self.stmt_loc;
         self.stmt_loc = stmt.expr.getLoc();
         defer self.stmt_loc = outer_loc;
@@ -5367,7 +5550,8 @@ const Emitter = struct {
     fn emitStmtRaw(self: *Emitter, stmt: ast.Stmt, keep_value: bool) anyerror!Tail {
         switch (stmt.expr) {
             .jump => |j| switch (j.kind) {
-                .@"return" => |r| {
+                .@"return" => |r0| {
+                    const r = try self.adoptTask(r0);
                     if (self.block_ret) |br| {
                         try self.emitBlockReturn(br, if (r) |val| val.* else null);
                         return .terminated;
@@ -5415,8 +5599,8 @@ const Emitter = struct {
                     return .none;
                 },
                 .await_ => |av| {
-                    try self.lowerExpr(av.*);
-                    return self.exprTail(av.*);
+                    try self.lowerAwait(av.*);
+                    return if (self.isTaskExpr(av.*)) .value else self.exprTail(av.*);
                 },
                 .@"break" => |br| {
                     if (br.value) |v| {
@@ -5808,7 +5992,7 @@ const Emitter = struct {
                     (if (self.yield_target != null) Tail.terminated else Tail.value)
                 else if (self.loop_depth > 0) Tail.terminated else Tail.none,
                 .yield => |jl| if (jl.value != null and self.yield_target == null) Tail.value else Tail.none,
-                .await_ => |a| self.exprTail(a.*),
+                .await_ => |a| if (self.isTaskExpr(a.*)) Tail.value else self.exprTail(a.*),
             },
             .collection => |col| switch (col.kind) {
                 .grouped => |inner| self.exprTail(inner.*),
@@ -6060,7 +6244,8 @@ const Emitter = struct {
                 .range => return self.refuse(e.getLoc(), "the wasm backend has no lowering for a range outside an index or a pattern", .{}),
             },
             .jump => |j| switch (j.kind) {
-                .@"return" => |r| {
+                .@"return" => |r0| {
+                    const r = try self.adoptTask(r0);
                     if (self.block_ret) |br| {
                         try self.emitBlockReturn(br, if (r) |val| val.* else null);
                         return;
@@ -6073,7 +6258,7 @@ const Emitter = struct {
                 .try_ => |val| {
                     if (val) |v| try self.lowerTryPropagate(v.*);
                 },
-                .await_ => |av| try self.lowerExpr(av.*),
+                .await_ => |av| try self.lowerAwait(av.*),
                 .@"break" => |br| {
                     if (br.value) |v| {
                         if (self.yield_target != null) {
@@ -6950,6 +7135,7 @@ const Emitter = struct {
     /// `-> bool`.
     fn isBoolExpr(self: *Emitter, e: ast.Expr) bool {
         if (blockResultOf(e)) |a| return self.isBoolExpr(a);
+        if (asyncBlockValue(e)) |a| return self.isBoolExpr(a);
         // `o ?? d` reads as `o.unwrapOr(d)`; `x!` answers its payload.
         if (nullishParts(e)) |nu| return self.isBoolExpr(nu.dflt);
         if (optOperatorParts(e)) |op| if (op.bang) return if (self.optInfoOf(op.cond.*)) |oi| oi.bool_ else false;
@@ -6999,9 +7185,18 @@ const Emitter = struct {
             try self.emit(zero);
             return;
         }
-        const subj_local = try std.fmt.allocPrint(self.arena(), "__case_{d}", .{self.case_depth});
+        // In a state machine every `case` keeps its subject in a local of its
+        // own, which the frame saves and re-entry reads back (decision 392).
+        const subj_local = if (self.machine != null) blk: {
+            const n = try std.fmt.allocPrint(self.arena(), "__case_{d}_{d}", .{ self.case_depth, self.loop_seq });
+            self.loop_seq += 1;
+            break :blk n;
+        } else try std.fmt.allocPrint(self.arena(), "__case_{d}", .{self.case_depth});
         self.case_depth += 1;
         try self.declareLocal(subj_local, "i32");
+        const start_lo = if (self.machine) |m| m.next else 0;
+        var start: Capture = .{};
+        self.open(&start);
         // A multi-subject `case` lowers each subject once, into its own
         // local below; the first one's is copied into `subj_local` there.
         if (c.subjects.len == 1) {
@@ -7033,6 +7228,7 @@ const Emitter = struct {
                 try self.emit(.{ .local_set = subj_local });
             }
         };
+        try self.guardStart(&start, start_lo);
 
         try self.emitCaseArms(c.arms, subj_local, 0);
     }
@@ -8450,6 +8646,7 @@ const Emitter = struct {
                     return self.refuse(arg.getLoc(), "the wasm backend has one body for generic `{s}`, where `{s}`'s type parameter is a word: a float or an `i64` in it has no lowering", .{ cc.callee, p.name });
             }
         }
+        if (self.host_bindings.get(cc.callee)) |hb| if (hb.binding == .wasi and hb.binding.wasi.task != null) try self.refuseWideTaskValues(cc);
         if (self.fn_sigs.get(cc.callee)) |sig| {
             var base: usize = 0;
             // `recv.m(a)` against a top-level `fn m(self, a)`: the receiver is
@@ -10373,15 +10570,601 @@ const Emitter = struct {
         origin: ?ast.Loc = null,
         /// Set for a trampoline standing for a top-level fn used as a value.
         fn_ref: ?[]const u8 = null,
+        /// An `async { }` block: its closure answers the task the block's
+        /// state machine runs (decision 392).
+        async_block: bool = false,
     };
 
-    /// `async { … }` (decision 124): the Task is eager here — the block is
-    /// lifted like a lambda and its closure called in place, so a `return`
-    /// inside it leaves the block, not the enclosing function.
+    // ── decision 392: an asynchronous function is a state machine ───────────
+    //
+    // `fn f(a) -> @Task<T> { … await t … }` (an `async { }` block and a method
+    // answering `@Task` alike) lowers to three functions:
+    //
+    //   $f(a) -> i32          the task: a frame holding every local, the
+    //                         arguments stored in it, `$__task_start(kind,
+    //                         frame)` — the task starts when it is made and
+    //                         runs to its first `await` (392 (1))
+    //   $f__body(task) -> T   the body, entered again at the resume index the
+    //                         frame holds: every local restored from it, and
+    //                         `$__seek` set until that index is reached
+    //   $f__step(task)        `$f__body`, then the task settled with its
+    //                         answer — unless the body suspended
+    //
+    // An `await` on a task still pending saves every local into the frame,
+    // records its index there and returns; `$__task_wake` puts the task back
+    // in the ready queue when the awaited one settles. Entered again, a
+    // statement runs only when the resume index is inside it (`emitStmt`),
+    // an `if`'s condition, a `case`'s subject and a loop's start are read
+    // back instead of evaluated (`lowerCondition`, `guardStart`), and the
+    // `await` the index names clears `$__seek` and answers the settled
+    // value. So a loop, a `try` and a `case` holding an `await` are resumed
+    // in place. A synchronous function is untouched.
+
+    /// The state machine being lowered: the next resume index (0 is "from
+    /// the top").
+    const Machine = struct { next: u32 = 1 };
+
+    /// The comment line `lowerAwait` writes where a suspension saves the
+    /// frame; `emitStateMachine` replaces it with the stores once every local
+    /// of the function is known.
+    const save_marker = "\x00bp-task-save";
+    const sm_task = "__task";
+    const sm_frame = "__frame";
+    const sm_seek = "__seek";
+    const sm_state = "__state";
+
+    fn isMachineLocal(name: []const u8) bool {
+        inline for (.{ sm_task, sm_frame, sm_seek, sm_state }) |n| if (std.mem.eql(u8, name, n)) return true;
+        return false;
+    }
+
+    /// Open a state machine over the function whose state was just reset.
+    fn beginMachine(self: *Emitter, body: []const ast.Stmt) !void {
+        try self.checkAwaitOrder(body);
+        self.machine = .{};
+        inline for (.{ sm_task, sm_frame, sm_seek, sm_state }) |n| try self.declareLocal(n, "i32");
+    }
+
+    /// Whether `e` answers a task (decision 392): a call of a function, a
+    /// method or an adapter declaring `@Task<T>`, an `async { }` block, a
+    /// function value whose type answers one, a name or a field of that
+    /// type. Anything else is awaited as the value it is — an eager
+    /// `@Component` is its own value here.
+    fn isTaskExpr(self: *Emitter, e: ast.Expr) bool {
+        return switch (e) {
+            .function => |f| f.kind.syntax == .asyncBlock,
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| self.isTaskExpr(inner.*),
+                else => false,
+            },
+            .call => |c| switch (c.kind) {
+                .call => |cc| blk: {
+                    if (cc.is_builtin) break :blk false;
+                    if (cc.receiver != null) if (self.recordMethodSym(cc, c.loc)) |sym| break :blk self.task_syms.contains(sym);
+                    if (self.calleeSymbol(cc, c.loc)) |sym| if (self.task_syms.contains(sym)) break :blk true;
+                    if (self.valueCallTypeRef(cc)) |t| break :blk isTaskTypeRef(t);
+                    break :blk false;
+                },
+                else => false,
+            },
+            .identifier => if (self.typeRefOf(e)) |t| isTaskTypeRef(t) else false,
+            else => false,
+        };
+    }
+
+    /// `return t` in a state machine, `t` a task: the machine answers what
+    /// `t` settles with — a Promise returned from an `async function` is
+    /// adopted the same way — so it is `return await t`.
+    fn adoptTask(self: *Emitter, r: ?*ast.Expr) !?*ast.Expr {
+        const v = r orelse return null;
+        if (self.machine == null or !self.isTaskExpr(v.*)) return v;
+        const e = try self.reg_arena.allocator().create(ast.Expr);
+        e.* = .{ .jump = .{ .loc = v.getLoc(), .kind = .{ .await_ = v } } };
+        return e;
+    }
+
+    /// The wasm type of the value a task `e` settles with.
+    fn awaitedType(self: *Emitter, e: ast.Expr) []const u8 {
+        if (e == .function) return "i32";
+        if (e == .collection and e.collection.kind == .grouped) return self.awaitedType(e.collection.kind.grouped.*);
+        const t = self.typeRefOf(e) orelse return "i32";
+        const inner = taskValueTypeRef(t) orelse return "i32";
+        return watType(inner);
+    }
+
+    /// `await e` (decision 392). On a task, inside a state machine: the task
+    /// is evaluated into `$__aw<k>` unless the machine is re-entering past
+    /// this point; still pending, the machine suspends here — the frame
+    /// saved, `k` recorded, the task waited on — and when it is entered
+    /// again with index `k` the value is read from the settled task:
+    ///
+    ///     (block $__aw<k>
+    ///       local.get $__seek
+    ///       (if (then  ;; re-entering: here, before here, or inside the operand
+    ///         … i32.const k i32.eq (if (then i32.const 0 local.set $__seek br $__aw<k>))
+    ///         … br_if $__aw<k>))
+    ///       <operand> local.set $__aw<k>
+    ///       local.get $__aw<k> call $__task_pending
+    ///       (if (then … save the frame, k, return)))
+    ///     local.get $__aw<k> <T>.load offset=8
+    ///
+    /// Outside a state machine (an eager `@Component` body) the scheduler
+    /// runs until the task settles (`$__task_block_on`). On anything that
+    /// is not a task `await` is the identity it has always been here.
+    fn lowerAwait(self: *Emitter, operand: ast.Expr) anyerror!void {
+        if (!self.isTaskExpr(operand)) return self.lowerExpr(operand);
+        const vty = self.awaitedType(operand);
+        const load: Instr = .{ .load = .{ .ty = vt(vty), .offset = 8 } };
+        if (self.machine == null) {
+            try self.lowerCoerced(operand, "i32");
+            try self.emit(self.builder().helper(.task_block_on));
+            try self.emitC(load, "the settled value");
+            return;
+        }
+        const lo = self.machine.?.next;
+        var op_c: Capture = .{};
+        self.open(&op_c);
+        try self.lowerCoerced(operand, "i32");
+        const op_seq = self.seal(&op_c, .{ .value = .i32 });
+        const k = self.machine.?.next;
+        self.machine.?.next += 1;
+        const ra = self.reg_arena.allocator();
+        const aw = try std.fmt.allocPrint(ra, "__aw{d}", .{k});
+        const label = aw;
+        try self.declareLocal(aw, "i32");
+
+        var c: Capture = .{};
+        self.open(&c);
+        // Re-entering: at this `await` the value is read; before it (an
+        // earlier `await` of the statement) the settled task is read back;
+        // inside the operand, the operand runs to the `await` it holds.
+        {
+            var seek_c: Capture = .{};
+            self.open(&seek_c);
+            try self.emit(.{ .local_get = sm_state });
+            try self.emit(try self.constInt(k));
+            try self.emit(opOf("i32", "eq"));
+            {
+                var hit_c: Capture = .{};
+                self.open(&hit_c);
+                try self.emit(zero);
+                try self.emit(.{ .local_set = sm_seek });
+                try self.emitC(.{ .br = label }, "resumed here");
+                const hit = self.seal(&hit_c, .terminated);
+                try self.emit(.{ .@"if" = .{ .then = .{ .seq = hit } } });
+            }
+            if (lo < k) {
+                try self.emit(.{ .local_get = sm_state });
+                try self.emit(try self.constInt(lo));
+                try self.emit(opOf("i32", "lt_u"));
+                try self.emit(.{ .local_get = sm_state });
+                try self.emit(try self.constInt(k));
+                try self.emit(opOf("i32", "gt_u"));
+                try self.emit(opOf("i32", "or"));
+                try self.emitC(.{ .br_if = label }, "resuming past this await");
+            } else try self.emitC(.{ .br = label }, "resuming past this await");
+            const seek = self.seal(&seek_c, .none);
+            try self.emit(.{ .local_get = sm_seek });
+            try self.emit(.{ .@"if" = .{ .then = .{ .seq = seek } } });
+        }
+        for (op_seq.lines) |l| try self.cur.?.append(self.arena(), l);
+        try self.emit(.{ .local_set = aw });
+        try self.emit(.{ .local_get = aw });
+        try self.emit(self.builder().helper(.task_pending));
+        {
+            var sus_c: Capture = .{};
+            self.open(&sus_c);
+            try self.emit(.{ .local_get = aw });
+            try self.emit(.{ .local_get = sm_task });
+            try self.emit(self.builder().helper(.task_wait));
+            try self.emit(.{ .comment = save_marker });
+            try self.emit(.{ .local_get = sm_frame });
+            try self.emit(try self.constInt(k));
+            try self.emitC(.{ .store = .{} }, "the resume index");
+            try self.emit(one);
+            try self.emit(.{ .global_set = "__task_suspended" });
+            try self.pushZero();
+            try self.emitC(.@"return", "suspended");
+            const sus = self.seal(&sus_c, .terminated);
+            try self.emit(.{ .@"if" = .{ .then = .{ .seq = sus } } });
+        }
+        const inner = self.seal(&c, .none);
+        try self.emit(.{ .block = .{ .kind = .block, .label = label, .body = inner } });
+        try self.emit(.{ .local_get = aw });
+        try self.emitC(load, "the settled value");
+    }
+
+    /// `!$__seek || lo <= $__state <= hi` — the condition a statement (or a
+    /// loop's start, a `case`'s subject) runs under in a state machine: always
+    /// once the resume index is reached, and before it only when the index is
+    /// one of its own `await`s. `range` null: it holds none.
+    fn emitRunsWhileSeeking(self: *Emitter, range: ?[2]u32) !void {
+        try self.emit(.{ .local_get = sm_seek });
+        try self.emit(opOf("i32", "eqz"));
+        const r = range orelse return;
+        try self.emit(.{ .local_get = sm_state });
+        try self.emit(try self.constInt(r[0]));
+        try self.emit(opOf("i32", "ge_u"));
+        try self.emit(.{ .local_get = sm_state });
+        try self.emit(try self.constInt(r[1]));
+        try self.emit(opOf("i32", "le_u"));
+        try self.emit(opOf("i32", "and"));
+        try self.emit(opOf("i32", "or"));
+    }
+
+    /// The resume indices handed out since `lo`, as a range.
+    fn awaitRange(self: *Emitter, lo: u32) ?[2]u32 {
+        const m = self.machine orelse return null;
+        return if (m.next > lo) .{ lo, m.next - 1 } else null;
+    }
+
+    /// `seq` (it leaves nothing) run under `emitRunsWhileSeeking`.
+    fn emitGuarded(self: *Emitter, seq: Seq, range: ?[2]u32) !void {
+        try self.emitRunsWhileSeeking(range);
+        try self.emit(.{ .@"if" = .{ .then = .{ .seq = seq } } });
+    }
+
+    /// A statement of a state machine, run under `emitRunsWhileSeeking`.
+    fn emitGuardedStmt(self: *Emitter, stmt: ast.Stmt) anyerror!Tail {
+        const lo = self.machine.?.next;
+        var c: Capture = .{};
+        self.open(&c);
+        const tail = try self.emitStmtNormalised(stmt, false);
+        const seq = self.seal(&c, if (tail == .terminated) .terminated else .none);
+        try self.emitGuarded(seq, self.awaitRange(lo));
+        return .none;
+    }
+
+    /// A loop's start (its iterable, its counters) in a state machine: run
+    /// under `emitRunsWhileSeeking`, so re-entering the loop keeps the
+    /// counters the frame restored. Outside one, emitted as it is.
+    fn guardStart(self: *Emitter, start: *Capture, lo: u32) !void {
+        const seq = self.seal(start, .none);
+        if (self.machine == null) {
+            for (seq.lines) |l| try self.cur.?.append(self.arena(), l);
+            return;
+        }
+        try self.emitGuarded(seq, self.awaitRange(lo));
+    }
+
+    /// An `if`'s condition (`tee` names the local an optional binding keeps
+    /// it in). In a state machine the value is kept in a local the frame
+    /// saves, and re-entering reads it back instead of evaluating the
+    /// condition again — unless an `await` is inside it.
+    fn lowerCondition(self: *Emitter, cond: ast.Expr, tee: ?[]const u8) anyerror!void {
+        if (self.machine == null) {
+            if (tee) |t| {
+                try self.lowerCoerced(cond, "i32");
+                try self.emit(.{ .local_tee = t });
+            } else try self.lowerExpr(cond);
+            return;
+        }
+        const lo = self.machine.?.next;
+        var c: Capture = .{};
+        self.open(&c);
+        const keep = tee orelse blk: {
+            const n = try std.fmt.allocPrint(self.reg_arena.allocator(), "__cnd{d}", .{self.loop_seq});
+            self.loop_seq += 1;
+            try self.declareLocal(n, "i32");
+            break :blk n;
+        };
+        try self.lowerCoerced(cond, "i32");
+        try self.emit(.{ .local_tee = keep });
+        const seq = self.seal(&c, .{ .value = .i32 });
+        if (self.awaitRange(lo) != null) {
+            for (seq.lines) |l| try self.cur.?.append(self.arena(), l);
+            return;
+        }
+        var back_c: Capture = .{};
+        self.open(&back_c);
+        try self.emitC(.{ .local_get = keep }, "the condition, read back");
+        const back = self.seal(&back_c, .{ .value = .i32 });
+        try self.emit(.{ .local_get = sm_seek });
+        try self.emit(.{ .@"if" = .{ .result = .i32, .then = .{ .seq = back }, .@"else" = .{ .seq = seq } } });
+    }
+
+    /// Decision 392 — `fn`'s lowered body as a state machine (§ above): `f`
+    /// is the function the body would have been, its `result` the task's
+    /// value type.
+    fn emitStateMachine(self: *Emitter, f: wat.Func) !void {
+        const ar = self.arena();
+        const ty: ValType = f.result orelse .i32;
+        var slots: std.ArrayListUnmanaged(wat.Local) = .empty;
+        for (f.params) |p| try slots.append(ar, .{ .name = p.name, .ty = p.ty });
+        var body_locals: std.ArrayListUnmanaged(wat.Local) = .empty;
+        for (f.params) |p| try body_locals.append(ar, .{ .name = p.name, .ty = p.ty });
+        for (f.locals) |group| for (group) |l| {
+            if (std.mem.eql(u8, l.name, sm_task)) continue;
+            try body_locals.append(ar, l);
+            if (!isMachineLocal(l.name)) try slots.append(ar, l);
+        };
+        const kind = self.task_kinds.items.len;
+        const body_name = try std.fmt.allocPrint(ar, "{s}__body", .{f.name});
+        const step_name = try std.fmt.allocPrint(ar, "{s}__step", .{f.name});
+        try self.task_kinds.append(self.alloc, step_name);
+
+        var saves: std.ArrayListUnmanaged(wat.Line) = .empty;
+        var restores: std.ArrayListUnmanaged(wat.Line) = .empty;
+        for (slots.items, 0..) |s, i| {
+            const at: wat.MemArg = .{ .ty = s.ty, .offset = @intCast(8 + 8 * i) };
+            try saves.appendSlice(ar, &.{ .{ .instr = .{ .local_get = sm_frame } }, .{ .instr = .{ .local_get = s.name } }, .{ .instr = .{ .store = at } } });
+            try restores.appendSlice(ar, &.{ .{ .instr = .{ .local_get = sm_frame } }, .{ .instr = .{ .load = at } }, .{ .instr = .{ .local_set = s.name } } });
+        }
+
+        // $f — the task.
+        var start: std.ArrayListUnmanaged(wat.Line) = .empty;
+        try start.appendSlice(ar, &.{
+            .{ .instr = try self.constInt(8 + 8 * slots.items.len), .comment = "the frame: the resume index, then every local" },
+            .{ .instr = self.builder().helper(.alloc) },
+            .{ .instr = .{ .local_set = "__fr" } },
+        });
+        for (f.params, 0..) |p, i| try start.appendSlice(ar, &.{
+            .{ .instr = .{ .local_get = "__fr" } },
+            .{ .instr = .{ .local_get = p.name } },
+            .{ .instr = .{ .store = .{ .ty = p.ty, .offset = @intCast(8 + 8 * i) } } },
+        });
+        try start.appendSlice(ar, &.{
+            .{ .instr = try self.constInt(kind), .comment = step_name },
+            .{ .instr = .{ .local_get = "__fr" } },
+            .{ .instr = self.builder().helper(.task_start), .comment = "runs to its first await" },
+        });
+        try self.item(.{ .func = try self.builder().func(.{
+            .name = f.name,
+            .exports = f.exports,
+            .params = f.params,
+            .result = .i32,
+            .locals = try self.builder().localLines(&.{.{ .name = "__fr", .ty = .i32 }}),
+            .body = .{ .lines = start.items, .stack = .{ .value = .i32 } },
+        }) });
+
+        // $f__body — entered again at the frame's resume index.
+        var lines: std.ArrayListUnmanaged(wat.Line) = .empty;
+        try lines.appendSlice(ar, &.{
+            .{ .instr = .{ .local_get = sm_task } },
+            .{ .instr = .{ .load = .{ .offset = 16 } } },
+            .{ .instr = .{ .local_set = sm_frame } },
+        });
+        try lines.appendSlice(ar, restores.items);
+        try lines.appendSlice(ar, &.{
+            .{ .instr = .{ .local_get = sm_frame } },
+            .{ .instr = .{ .load = .{} }, .comment = "the resume index" },
+            .{ .instr = .{ .local_tee = sm_state } },
+            .{ .instr = zero },
+            .{ .instr = opOf("i32", "ne") },
+            .{ .instr = .{ .local_set = sm_seek } },
+        });
+        const replaced = try self.withFrameSaves(f.body, saves.items);
+        try lines.appendSlice(ar, replaced.lines);
+        try self.item(.{ .func = try self.builder().func(.{
+            .name = body_name,
+            .params = &.{wat.Builder.param(sm_task, .i32)},
+            .result = f.result,
+            .locals = try self.builder().localLines(body_locals.items),
+            .body = .{ .lines = lines.items, .stack = replaced.stack },
+        }) });
+
+        // $f__step — the body, then the task settled unless it suspended.
+        var step: std.ArrayListUnmanaged(wat.Line) = .empty;
+        try step.append(ar, .{ .instr = .{ .local_get = sm_task } });
+        try step.append(ar, .{ .instr = .{ .call = body_name } });
+        if (f.result == null) try step.append(ar, .{ .instr = zero });
+        try step.append(ar, .{ .instr = .{ .local_set = "__v" } });
+        try step.append(ar, .{ .instr = .{ .global_get = "__task_suspended" } });
+        try step.append(ar, .{ .instr = .{ .@"if" = .{ .then = .{ .seq = .{ .lines = try ar.dupe(wat.Line, &.{
+            .{ .instr = zero },
+            .{ .instr = .{ .global_set = "__task_suspended" } },
+            .{ .instr = .@"return" },
+        }), .stack = .terminated } } } } });
+        try step.append(ar, .{ .instr = .{ .local_get = sm_task } });
+        try step.append(ar, .{ .instr = .{ .local_get = "__v" } });
+        try step.append(ar, .{ .instr = self.builder().helper(switch (ty) {
+            .i64 => .task_settle_i64,
+            .f64, .f32 => .task_settle_f64,
+            .i32 => .task_settle_i32,
+        }) });
+        try self.item(.{ .func = try self.builder().func(.{
+            .name = step_name,
+            .params = &.{wat.Builder.param(sm_task, .i32)},
+            .locals = try self.builder().localLines(&.{.{ .name = "__v", .ty = if (ty == .f32) .f64 else ty }}),
+            .body = .{ .lines = step.items, .stack = .none },
+        }) });
+    }
+
+    /// `seq` with each `save_marker` line replaced by `saves`.
+    fn withFrameSaves(self: *Emitter, seq: Seq, saves: []const wat.Line) !Seq {
+        const ar = self.arena();
+        var out: std.ArrayListUnmanaged(wat.Line) = .empty;
+        for (seq.lines) |l| switch (l.instr) {
+            .comment => |t| if (std.mem.eql(u8, t, save_marker))
+                try out.appendSlice(ar, saves)
+            else
+                try out.append(ar, l),
+            .@"if" => |n| {
+                var m = n;
+                m.then.seq = try self.withFrameSaves(n.then.seq, saves);
+                if (n.@"else") |e| {
+                    var ee = e;
+                    ee.seq = try self.withFrameSaves(e.seq, saves);
+                    m.@"else" = ee;
+                }
+                var nl = l;
+                nl.instr = .{ .@"if" = m };
+                try out.append(ar, nl);
+            },
+            .block => |bk| {
+                var m = bk;
+                m.body = try self.withFrameSaves(bk.body, saves);
+                var nl = l;
+                nl.instr = .{ .block = m };
+                try out.append(ar, nl);
+            },
+            else => try out.append(ar, l),
+        };
+        return .{ .lines = out.items, .stack = seq.stack };
+    }
+
+    /// `$__task_resume(t)` — the step of the state machine a task runs, by
+    /// its `kind` (`task_kinds`).
+    fn taskResumeFunc(self: *Emitter) !wat.Func {
+        const ar = self.arena();
+        var lines: std.ArrayListUnmanaged(wat.Line) = .empty;
+        try lines.appendSlice(ar, &.{
+            .{ .instr = .{ .local_get = "t" } },
+            .{ .instr = .{ .load = .{ .offset = 20 } }, .comment = "kind" },
+            .{ .instr = .{ .local_set = "k" } },
+        });
+        for (self.task_kinds.items, 0..) |step, i| {
+            try lines.appendSlice(ar, &.{
+                .{ .instr = .{ .local_get = "k" } },
+                .{ .instr = try self.constInt(i) },
+                .{ .instr = opOf("i32", "eq") },
+                .{ .instr = .{ .@"if" = .{ .then = .{ .seq = .{ .lines = try ar.dupe(wat.Line, &.{
+                    .{ .instr = .{ .local_get = "t" } },
+                    .{ .instr = .{ .call = step } },
+                    .{ .instr = .@"return" },
+                }), .stack = .terminated } } } } },
+            });
+        }
+        try lines.append(ar, .{ .instr = .@"unreachable" });
+        return self.builder().func(.{
+            .name = "__task_resume",
+            .params = &.{wat.Builder.param("t", .i32)},
+            .locals = try self.builder().localLines(&.{.{ .name = "k", .ty = .i32 }}),
+            .body = .{ .lines = lines.items, .stack = .terminated },
+        });
+    }
+
+    /// Decision 392 — a state machine re-enters the statement of the `await`
+    /// it suspended at, reading back what it passed on the way (conditions,
+    /// subjects, loop starts) and skipping the statements before it; an
+    /// operand evaluated before the `await` in its own statement runs again.
+    /// A call there would run twice (it may print, or answer otherwise the
+    /// second time), so it is refused — bound to a `val` first, it is a
+    /// statement of its own.
+    fn checkAwaitOrder(self: *Emitter, body: []const ast.Stmt) !void {
+        _ = try self.awaitOrderStmts(body, false);
+    }
+
+    /// Each statement of `body` walked from `dirty`; true when one of them
+    /// calls something.
+    fn awaitOrderStmts(self: *Emitter, body: []const ast.Stmt, dirty: bool) anyerror!bool {
+        var any = false;
+        for (body) |st| {
+            var d = dirty;
+            try self.awaitOrderExpr(st.expr, &d);
+            if (d) any = true;
+        }
+        return any;
+    }
+
+    /// A constructor call allocates and runs nothing: evaluated again, it
+    /// builds the same value.
+    fn isPureCall(self: *Emitter, cc: anytype) bool {
+        if (cc.is_builtin or cc.receiver != null) return false;
+        return self.records.contains(cc.callee) or std.mem.eql(u8, cc.callee, "Ok") or std.mem.eql(u8, cc.callee, "Error");
+    }
+
+    fn awaitOrderExpr(self: *Emitter, e: ast.Expr, dirty: *bool) anyerror!void {
+        switch (e) {
+            .jump => |j| switch (j.kind) {
+                .await_ => |a| {
+                    if (dirty.*) return self.refuse(j.loc, "the wasm backend resumes an `await` by entering its statement again, and a call evaluated before it in that statement would run twice — bind the call's result to a `val` before the statement (decision 392)", .{});
+                    var d = false;
+                    try self.awaitOrderExpr(a.*, &d);
+                },
+                .@"return", .throw_, .try_ => |v| if (v) |x| try self.awaitOrderExpr(x.*, dirty),
+                inline .@"break", .yield => |jl| if (jl.value) |x| try self.awaitOrderExpr(x.*, dirty),
+                else => {},
+            },
+            .identifier => |id| switch (id.kind) {
+                .identAccess => |ia| try self.awaitOrderExpr(ia.receiver.*, dirty),
+                else => {},
+            },
+            .binaryOp => |b| {
+                try self.awaitOrderExpr(b.lhs.*, dirty);
+                try self.awaitOrderExpr(b.rhs.*, dirty);
+            },
+            .unaryOp => |u| try self.awaitOrderExpr(u.expr.*, dirty),
+            .call => |c| switch (c.kind) {
+                .call => |cc| {
+                    if (cc.receiver) |r| try self.awaitOrderExpr(r.*, dirty);
+                    for (cc.args) |a| try self.awaitOrderExpr(a.value.*, dirty);
+                    for (cc.trailing) |t| if (try self.awaitOrderStmts(t.body, dirty.*)) {
+                        dirty.* = true;
+                    };
+                    if (!self.isPureCall(cc)) dirty.* = true;
+                },
+                .pipeline => |pl| {
+                    try self.awaitOrderExpr(pl.lhs.*, dirty);
+                    try self.awaitOrderExpr(pl.rhs.*, dirty);
+                    dirty.* = true;
+                },
+            },
+            .branch => |b| switch (b.kind) {
+                .if_ => |i| {
+                    const before = dirty.*;
+                    try self.awaitOrderExpr(i.cond.*, dirty);
+                    if (try self.awaitOrderStmts(i.then_, before)) dirty.* = true;
+                    if (i.else_) |els| if (try self.awaitOrderStmts(els, before)) {
+                        dirty.* = true;
+                    };
+                },
+                .tryCatch => |tc| {
+                    try self.awaitOrderExpr(tc.expr.*, dirty);
+                    try self.awaitOrderExpr(tc.handler.*, dirty);
+                },
+            },
+            .binding => |b| switch (b.kind) {
+                .localBind => |lb| try self.awaitOrderExpr(lb.value.*, dirty),
+                .localBindDestruct => |lb| try self.awaitOrderExpr(lb.value.*, dirty),
+                .assign => |a| try self.awaitOrderExpr(a.value.*, dirty),
+            },
+            .loop => |lp| {
+                const before = dirty.*;
+                try self.awaitOrderExpr(lp.iter.*, dirty);
+                if (try self.awaitOrderStmts(lp.body, before)) dirty.* = true;
+            },
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| try self.awaitOrderExpr(inner.*, dirty),
+                .case => |cs| {
+                    const before = dirty.*;
+                    for (cs.subjects) |sj| try self.awaitOrderExpr(sj, dirty);
+                    for (cs.arms) |arm| {
+                        var ad = before;
+                        if (arm.guard) |g| try self.awaitOrderExpr(g, &ad);
+                        if (armLambda(arm.body)) |al| {
+                            if (try self.awaitOrderStmts(al.body, ad)) ad = true;
+                        } else try self.awaitOrderExpr(arm.body, &ad);
+                        if (ad) dirty.* = true;
+                    }
+                },
+                .tupleLit => |tl| for (tl.elems) |el| try self.awaitOrderExpr(el, dirty),
+                .arrayLit => |al| for (al.elems) |el| try self.awaitOrderExpr(el, dirty),
+                .behaviorLit => |il| for (il.fields) |f| try self.awaitOrderExpr(f.value.*, dirty),
+                .range => |r| {
+                    try self.awaitOrderExpr(r.start.*, dirty);
+                    if (r.end) |x| try self.awaitOrderExpr(x.*, dirty);
+                },
+            },
+            .useHook => |uh| {
+                try self.awaitOrderExpr(uh.kind.inner.*, dirty);
+                dirty.* = true;
+            },
+            else => {},
+        }
+    }
+
+    /// `async { … }` (decision 124): the block is lifted like a lambda and
+    /// its closure called in place, so a `return` inside it leaves the block,
+    /// not the enclosing function. The closure is a state machine (decision
+    /// 392): the call answers the block's task, started and run to its first
+    /// `await`.
     fn lowerAsyncBlock(self: *Emitter, body: []const ast.Stmt) anyerror!void {
-        const slot = try std.fmt.allocPrint(self.reg_arena.allocator(), "__async{d}", .{self.lambdas.items.len});
+        const idx = self.lambdas.items.len;
+        const slot = try std.fmt.allocPrint(self.reg_arena.allocator(), "__async{d}", .{idx});
         try self.declareLocal(slot, "i32");
         try self.lowerLambdaValue(&.{}, body, null);
+        self.lambdas.items[idx].async_block = true;
         try self.emit(.{ .local_set = slot });
         try self.emitC(.{ .local_get = slot }, "the block's environment");
         try self.emitIndirect(slot, 0);
@@ -10839,6 +11622,7 @@ const Emitter = struct {
             try self.declareScratch("_try", countTrys(l.body));
             try self.declareScratch("__mem", self.countMems(l.body));
             try self.emitLocalDecls(l.body);
+            if (l.async_block) try self.beginMachine(l.body);
             const tail_type: ?[]const u8 = if (l.body.len > 0) self.wasmTypeOf(l.body[l.body.len - 1].expr) else null;
             const tail = try self.emitBody(l.body, true);
             // A closure answers through the indirect call's `i32` word: a
@@ -10849,13 +11633,16 @@ const Emitter = struct {
             self.stmt_loc = outer_loc;
         }
         const body = self.seal(&c, .{ .value = .i32 });
-        try self.item(.{ .func = try self.builder().func(.{
+        defer self.machine = null;
+        const func = try self.builder().func(.{
             .name = l.name,
             .params = params.items,
             .result = .i32,
             .locals = try self.localLines(),
             .body = body,
-        }) });
+        });
+        if (l.async_block) return self.emitStateMachine(func);
+        try self.item(.{ .func = func });
     }
 
     /// Decision 262 — an associated host primitive of a prelude behavior,
@@ -11222,6 +12009,7 @@ const Emitter = struct {
     /// `ident("a")` is a string, `ident(true)` a bool.
     fn genericResultArg(self: *Emitter, cc: anytype) ?ast.Expr {
         if (cc.receiver != null or cc.is_builtin or cc.calleeExpr != null) return null;
+        if (self.taskAdapterProxy(cc)) |p| return p;
         const ix = self.generic_result_arg.get(cc.callee) orelse return null;
         for (cc.args) |a| if (a.label != null) return null;
         return if (ix < cc.args.len) cc.args[ix].value.* else null;
@@ -11537,8 +12325,77 @@ const Emitter = struct {
                 .call => |cc| blockResultOf(e) orelse self.genericResultArg(cc),
                 else => null,
             },
+            // A task's value is read off the task (decision 392).
+            .jump => |j| switch (j.kind) {
+                .await_ => |a| a.*,
+                else => null,
+            },
+            .function => asyncBlockValue(e),
             else => null,
         };
+    }
+
+    /// An `async { }` block's first `return` value — what the shape readers
+    /// see the block's task as (decision 392).
+    fn asyncBlockValue(e: ast.Expr) ?ast.Expr {
+        if (e != .function or e.function.kind.syntax != .asyncBlock) return null;
+        const body = e.function.kind.body;
+        var v = blockReturnValue(body) orelse if (body.len > 0) body[body.len - 1].expr else return null;
+        // A name the block binds is read in the outer scope by its value:
+        // `async { val w = await work(); return w; }` answers what `work`'s
+        // task does.
+        var hops: u8 = 0;
+        while (hops < 8) : (hops += 1) {
+            const n = plainIdentName(v) orelse break;
+            const bound = for (body) |st| {
+                if (st.expr == .binding and st.expr.binding.kind == .localBind and std.mem.eql(u8, st.expr.binding.kind.localBind.name, n))
+                    break st.expr.binding.kind.localBind.value.*;
+            } else break;
+            v = bound;
+        }
+        return v;
+    }
+
+    /// A type a written name spells that is not a type parameter.
+    fn namesConcreteType(self: *Emitter, n: []const u8) bool {
+        if (isScalarName(n)) return true;
+        inline for (.{ "string", "bool", "void" }) |k| if (std.mem.eql(u8, n, k)) return true;
+        return self.records.contains(n) or self.enums.contains(n) or self.resolveRecordName(n) != null;
+    }
+
+    /// Decision 393 — what a task adapter over a generic `T` answers once
+    /// awaited, as an expression the shape readers can classify (they read a
+    /// task as its value): `race`'s first task, `race_of`'s first thunk's
+    /// answer, `spawn_all`'s thunks' answers as an array. (`delay`'s is its
+    /// value argument, `generic_result_arg`.)
+    fn taskAdapterProxy(self: *Emitter, cc: anytype) ?ast.Expr {
+        const hb = self.host_bindings.get(cc.callee) orelse return null;
+        if (hb.binding != .wasi or hb.binding.wasi.task == null or cc.args.len == 0) return null;
+        const name = hb.binding.wasi.name;
+        const arg = cc.args[0].value.*;
+        if (arg != .collection or arg.collection.kind != .arrayLit) return null;
+        const elems = arg.collection.kind.arrayLit.elems;
+        if (elems.len == 0) return null;
+        if (std.mem.eql(u8, name, "race")) return taskValueExpr(elems[0]);
+        const thunks = std.mem.eql(u8, name, "race_of") or std.mem.eql(u8, name, "spawn_all");
+        if (!thunks) return null;
+        if (std.mem.eql(u8, name, "race_of")) return taskValueExpr(thunkTail(elems[0]) orelse return null);
+        const ra = self.reg_arena.allocator();
+        const out = ra.alloc(ast.Expr, elems.len) catch return null;
+        for (elems, out) |el, *o| o.* = taskValueExpr(thunkTail(el) orelse return null);
+        return .{ .collection = .{ .loc = arg.collection.loc, .kind = .{ .arrayLit = .{ .elems = out } } } };
+    }
+
+    /// The expression a thunk `{ -> e }` answers.
+    fn thunkTail(e: ast.Expr) ?ast.Expr {
+        if (e != .function or e.function.kind.syntax != .lambda or e.function.kind.body.len == 0) return null;
+        return e.function.kind.body[e.function.kind.body.len - 1].expr;
+    }
+
+    /// A task's value as the shape readers see it: an `async { }` block's
+    /// first `return`, any other task as itself.
+    fn taskValueExpr(e: ast.Expr) ast.Expr {
+        return asyncBlockValue(e) orelse e;
     }
 
     fn isScalarName(n: []const u8) bool {
@@ -11676,6 +12533,8 @@ const Emitter = struct {
                     if (self.ctorTypeRef(cc) catch null) |t| break :blk t;
                     if (self.genericRetByFnArg(cc) catch null) |t| break :blk t;
                     if (self.specializedCallee(cc) catch null) |sym| break :blk self.fn_ret_typerefs.get(sym);
+                    // A call answering a task is one (`isTaskExpr` reads it).
+                    if (self.task_syms.contains(cc.callee)) if (self.fn_ret_typerefs.get(cc.callee)) |t| break :blk t;
                     if (self.genericResultArg(cc)) |a| break :blk self.typeRefOf(a);
                     break :blk self.fn_ret_typerefs.get(cc.callee);
                 },
@@ -11711,6 +12570,27 @@ const Emitter = struct {
             // `val top = 18446744073709551615ul; @print(top)` printed `-1`.
             .literal => |lit| switch (lit.kind) {
                 .numberLit => |n| if (isPastI64Literal(n)) .{ .named = "u64" } else null,
+                else => null,
+            },
+            // An `async { }` block is a task whose `T` no type is written for.
+            .function => |f| blk: {
+                if (f.kind.syntax != .asyncBlock) break :blk null;
+                const args = self.reg_arena.allocator().alloc(ast.TypeRef, 1) catch break :blk null;
+                args[0] = .{ .named = tparam_marker };
+                break :blk .{ .generic = .{ .name = "Task", .args = args, .is_builtin = true } };
+            },
+            // Decision 392 — `await t` answers the task's `T`; a task adapter's
+            // `T` is the argument that binds it.
+            .jump => |j| switch (j.kind) {
+                .await_ => |a| blk: {
+                    const inner = self.typeRefOf(a.*);
+                    if (inner) |t| if (taskValueTypeRef(t)) |v| {
+                        if (v != .named or self.namesConcreteType(v.named)) break :blk v;
+                        if (self.genericResultOf(a.*)) |pr| break :blk self.typeRefOf(pr);
+                        break :blk null;
+                    };
+                    break :blk inner;
+                },
                 else => null,
             },
             .binaryOp => |bin| blk: {
@@ -12742,6 +13622,7 @@ const Emitter = struct {
     /// `@print`, none of which may go through the numeric path.
     fn isStringExpr(self: *Emitter, e: ast.Expr) bool {
         if (blockResultOf(e)) |a| return self.isStringExpr(a);
+        if (asyncBlockValue(e)) |a| return self.isStringExpr(a);
         if (optOperatorParts(e)) |op| if (op.bang) return if (self.optInfoOf(op.cond.*)) |oi| oi.str else false;
         return switch (e) {
             .literal => |lit| switch (lit.kind) {
@@ -13512,6 +14393,11 @@ const Emitter = struct {
         // `"abc"`, exit 0).
         if (self.elemRecordOf(lp.iter.*)) |r| try self.local_types.put(elem, r);
 
+        // The loop's start; a state machine re-entering the loop keeps the
+        // counters its frame restored (decision 392, `guardStart`).
+        const start_lo = if (self.machine) |m| m.next else 0;
+        var start: Capture = .{};
+        self.open(&start);
         try self.lowerCoerced(lp.iter.*, "i32");
         try self.emit(.{ .local_set = base });
         self.installShadow(elem0, elem);
@@ -13520,6 +14406,7 @@ const Emitter = struct {
         try self.emit(.{ .local_set = len });
         try self.emit(zero);
         try self.emit(.{ .local_set = cur });
+        try self.guardStart(&start, start_lo);
 
         var loop_c: Capture = .{};
         self.open(&loop_c);
@@ -13740,7 +14627,23 @@ const Emitter = struct {
     fn lowerConditionLoop(self: *Emitter, lp: anytype, result: ?[]const u8) anyerror!void {
         var loop_c: Capture = .{};
         self.open(&loop_c);
+        // A state machine re-entering the loop is inside an iteration: the
+        // condition held (decision 392). One holding an `await` runs.
+        const cond_lo = if (self.machine) |m| m.next else 0;
+        var cond_c: Capture = .{};
+        self.open(&cond_c);
         try self.lowerCoerced(lp.iter.*, "i32");
+        const cond = self.seal(&cond_c, .{ .value = .i32 });
+        if (self.machine == null or self.awaitRange(cond_lo) != null) {
+            for (cond.lines) |l| try self.cur.?.append(self.arena(), l);
+        } else {
+            var in_c: Capture = .{};
+            self.open(&in_c);
+            try self.emitC(one, "re-entering: inside an iteration");
+            const inside = self.seal(&in_c, .{ .value = .i32 });
+            try self.emit(.{ .local_get = sm_seek });
+            try self.emit(.{ .@"if" = .{ .result = .i32, .then = .{ .seq = inside }, .@"else" = .{ .seq = cond } } });
+        }
         try self.emitAt(8, opOf("i32", "eqz"));
         try self.emitAt(8, .{ .br_if = break_label });
         try self.emitIterationBody(lp.body);
@@ -13758,8 +14661,12 @@ const Emitter = struct {
         const param = try self.bindTarget(param0);
         try self.declareLocal(param, "i32");
 
+        const start_lo = if (self.machine) |m| m.next else 0;
+        var start: Capture = .{};
+        self.open(&start);
         try self.lowerCoerced(r.start.*, "i32");
         try self.emit(.{ .local_set = param });
+        try self.guardStart(&start, start_lo);
         self.installShadow(param0, param);
 
         var loop_c: Capture = .{};
@@ -13874,6 +14781,11 @@ const Emitter = struct {
                 else => "i32",
             },
             .useHook => |uh| self.wasmTypeOf(uh.kind.inner.*),
+            // Decision 392 — what the task settles with.
+            .jump => |j| switch (j.kind) {
+                .await_ => |a| if (self.isTaskExpr(a.*)) self.awaitedType(a.*) else self.wasmTypeOf(a.*),
+                else => "i32",
+            },
             else => "i32",
         };
     }
@@ -15056,10 +15968,9 @@ const Emitter = struct {
             try self.declareLocal(t, "i32");
             break :blk t;
         } else null;
-        if (bind_tmp) |t| {
-            try self.lowerCoerced(i.cond.*, "i32");
-            try self.emit(.{ .local_tee = t });
-        } else try self.lowerExpr(i.cond.*);
+        // In a state machine the condition is read back on re-entry
+        // (decision 392, `lowerCondition`).
+        try self.lowerCondition(i.cond.*, bind_tmp);
         // The value's own type: an arm answering a float makes the whole `if`
         // one (`ifValueType`). It was the enclosing function's result type
         // whatever the arms answered, so `val m = if (d < 0.0) { 0.0 - d }

@@ -53,6 +53,16 @@ pub fn items(g: ast.HelperGroup) []const ast.Item {
         .print_unknown => &.{ .{ .func = print_unknown_raw }, .{ .func = print_unknown } },
         .wasi_seed_state => &.{ .{ .global = seed_state_global }, .{ .global = seeded_global } },
         .dtoa => &dtoa_items,
+        .task => &.{
+            .{ .global = task_head_global }, .{ .global = task_tail_global }, .{ .global = task_suspended_global },
+            .{ .func = task_new },           .{ .func = task_start },         .{ .func = task_pending },
+            .{ .func = task_listen },        .{ .func = task_wait },          .{ .func = task_settle_i32 },
+            .{ .func = task_settle_i64 },    .{ .func = task_settle_f64 },    .{ .func = task_wake },
+            .{ .func = task_enqueue },       .{ .func = task_drain },         .{ .func = task_block_on },
+            .{ .func = task_finish },
+        },
+        .task_poll => &.{.{ .func = task_host_poll }},
+        .task_host => &.{ .{ .global = task_hosts_global }, .{ .func = task_host_add }, .{ .func = task_host_settle } },
         .print_opt => &.{
             .{ .func = print_null },         .{ .func = print_opt_i32_raw }, .{ .func = print_opt_i32 },
             .{ .func = print_opt_bool_raw }, .{ .func = print_opt_bool },    .{ .func = print_opt_str_raw },
@@ -2693,3 +2703,320 @@ const assert_fail = func("__assert_fail", &.{ "where", "msg" }, null, &.{}, &.{
     }),
     c32(188),     c32(10),                                                         store8(0),                     c32(188),     c32(1),                                                          call("__write_err"),
 });
+
+// ── decision 392's scheduler (`@Task<T>`, front `01-compiler/140` step 4) ──────
+//
+// A task is a 40-byte record: `+0` its state (0 pending, 1 settled), `+4` the
+// head of what waits on it, `+8` its value (8 bytes: an `i32` word, an `i64`
+// or an `f64`), `+16` the frame of the asynchronous function it runs, `+20` the
+// function's `kind` (`$__task_resume` dispatches on it; `-1` for a host task or
+// a combinator), `+24` its link in the ready queue, `+28` / `+32` a
+// combinator's own words (`spawn_all`: the answers' array, the count left).
+// What waits on a task is a 16-byte node: `+0` the next node, `+4` its kind
+// (0 a suspended task to resume, 1 a `race` to settle, 2 a slot of a
+// `spawn_all`), `+8` the task it serves, `+12` the slot.
+
+const task_head_global = ast.Global{ .name = "__task_head", .ty = .i32, .mutable = true, .init = "0" };
+const task_tail_global = ast.Global{ .name = "__task_tail", .ty = .i32, .mutable = true, .init = "0" };
+/// Set by a state machine's body when it suspended at an `await` instead of
+/// answering: its step reads it and leaves the task pending.
+const task_suspended_global = ast.Global{ .name = "__task_suspended", .ty = .i32, .mutable = true, .init = "0" };
+const task_hosts_global = ast.Global{ .name = "__task_hosts", .ty = .i32, .mutable = true, .init = "0" };
+
+fn gget(comptime n: []const u8) Instr {
+    return .{ .global_get = n };
+}
+fn gset(comptime n: []const u8) Instr {
+    return .{ .global_set = n };
+}
+const load64: Instr = .{ .load = .{ .ty = .i64, .offset = 8 } };
+const store64: Instr = .{ .store = .{ .ty = .i64, .offset = 8 } };
+
+/// A pending task of `kind` over `frame`.
+const task_new = func("__task_new", &.{ "kind", "frame" }, .i32, i32s(&.{"t"}), &.{
+    c32(40),  call("__alloc"), set("t"),
+    get("t"), get("kind"),     store(20),
+    get("t"), get("frame"),    store(16),
+    get("t"),
+});
+
+/// A task made and run to its first `await` — a task starts when it is made
+/// (decision 392 (1)).
+const task_start = func("__task_start", &.{ "kind", "frame" }, .i32, i32s(&.{"t"}), &.{
+    get("kind"), get("frame"), call("__task_new"), tee("t"), call("__task_resume"), get("t"),
+});
+
+const task_pending = func("__task_pending", &.{"t"}, .i32, &.{}, &.{ get("t"), load(0), op("eqz") });
+
+/// `target` waits on `t` as a node of `kind` (slot `index`).
+const task_listen = func("__task_listen", &.{ "t", "kind", "target", "index" }, null, i32s(&.{"n"}), &.{
+    c32(16),   call("__alloc"), set("n"),
+    get("n"),  get("t"),        load(4),
+    store(0),  get("n"),        get("kind"),
+    store(4),  get("n"),        get("target"),
+    store(8),  get("n"),        get("index"),
+    store(12), get("t"),        get("n"),
+    store(4),
+});
+
+/// The suspended task `w` resumes when `t` settles.
+const task_wait = func("__task_wait", &.{ "t", "w" }, null, &.{}, &.{
+    get("t"), c32(0), get("w"), c32(0), call("__task_listen"),
+});
+
+const task_settle_i32 = func("__task_settle_i32", &.{ "t", "v" }, null, &.{}, &.{
+    get("t"), get("v"), store(8), get("t"), call("__task_wake"),
+});
+const task_settle_i64 = typedFunc("__task_settle_i64", &.{ p32("t"), p64("v") }, null, &.{}, &.{
+    get("t"), get("v"), store64, get("t"), call("__task_wake"),
+});
+const task_settle_f64 = typedFunc("__task_settle_f64", &.{ p32("t"), .{ .name = "v", .ty = .f64 } }, null, &.{}, &.{
+    get("t"), get("v"), .{ .store = .{ .ty = .f64, .offset = 8 } }, get("t"), call("__task_wake"),
+});
+
+/// `t` settles — once: a settled task is never settled again (the losers of
+/// a `race`). What waits on it, in the order it began waiting: a suspended
+/// task joins the ready queue, a `race` settles with this value, a
+/// `spawn_all` slot takes it and the combinator settles with the array when
+/// its last slot is filled.
+const task_wake = func("__task_wake", &.{"t"}, null, i32s(&.{ "n", "m", "r", "k", "w" }), &.{
+    get("t"), load(0), when(&.{ret}),
+    get("t"), c32(1),  store(0),
+    get("t"), load(4), set("n"),
+    get("t"), c32(0),  store(4),
+    loop(&.{
+        get("n"), op("eqz"), brk,
+        get("n"), load(0),   set("m"),
+        get("n"), get("r"),  store(0),
+        get("n"), set("r"),  get("m"),
+        set("n"), again,
+    }),
+    loop(&.{
+        get("r"), op("eqz"), brk,
+        get("r"), load(4),   set("k"),
+        get("r"), load(8),   set("w"),
+        get("k"), op("eqz"), when(&.{ get("w"), call("__task_enqueue") }),
+        get("k"), c32(1),    op("eq"),
+        when(&.{
+            get("w"),                                                                       load(0), op("eqz"),
+            when(&.{ get("w"), get("t"), load64, store64, get("w"), call("__task_wake") }),
+        }),
+        get("k"), c32(2),    op("eq"),
+        when(&.{
+            get("w"), load(28), c32(4),    op("add"),                                                                         get("r"), load(12), c32(4), op("mul"), op("add"),
+            get("t"), load(8),  store(0),  get("w"),                                                                          get("w"), load(32), c32(1), op("sub"), store(32),
+            get("w"), load(32), op("eqz"), when(&.{ get("w"), get("w"), load(28), store(8), get("w"), call("__task_wake") }),
+        }),
+        get("r"), load(0),   set("r"),
+        again,
+    }),
+});
+
+const task_enqueue = func("__task_enqueue", &.{"t"}, null, &.{}, &.{
+    get("t"),            c32(0),                                                                                        store(24),
+    gget("__task_tail"), whenElse(&.{ gget("__task_tail"), get("t"), store(24) }, &.{ get("t"), gset("__task_head") }), get("t"),
+    gset("__task_tail"),
+});
+
+/// Resume the ready tasks until none is left.
+const task_drain = func("__task_drain", &.{}, null, i32s(&.{"t"}), &.{
+    loop(&.{
+        gget("__task_head"), tee("t"),                                op("eqz"),           brk,
+        get("t"),            load(24),                                gset("__task_head"), gget("__task_head"),
+        op("eqz"),           when(&.{ c32(0), gset("__task_tail") }), get("t"),            call("__task_resume"),
+        again,
+    }),
+});
+
+/// `await t` where no state machine can suspend (a `@Component` body runs in
+/// place): the ready tasks run until `t` settles. A task still waiting on the
+/// host then traps — on both hosts alike: the `browser` host cannot wait in
+/// place, so neither does `wasi` (decision 394's parity) — rather than answer
+/// a value it does not have.
+const task_block_on = func("__task_block_on", &.{"t"}, .i32, i32s(&.{"r"}), &.{
+    loop(&.{
+        get("t"),                                load(0),             brk,
+        gget("__task_head"),                     tee("r"),            op("eqz"),
+        when(&.{.@"unreachable"}),               get("r"),            load(24),
+        gset("__task_head"),                     gget("__task_head"), op("eqz"),
+        when(&.{ c32(0), gset("__task_tail") }), get("r"),            call("__task_resume"),
+        again,
+    }),
+    get("t"),
+});
+
+/// What `_start` runs after `main`: the ready tasks, and the host's answers as
+/// they come, until nothing is left to run or to wait on here.
+const task_finish = func("__task_finish", &.{}, null, &.{}, &.{
+    loop(&.{ call("__task_drain"), call("__task_host_poll"), op("eqz"), brk, again }),
+});
+
+/// The prelude's dispatch: no state machine — `wat.zig` substitutes the
+/// module's (`Emitter.taskResumeFunc`).
+const task_resume = func("__task_resume", &.{"t"}, null, &.{}, &.{.@"unreachable"});
+
+/// The prelude's host poll: nothing to wait on here. The `browser` host waits
+/// in its loader, which calls `__bp_ready` as the event loop answers.
+const task_host_poll = func("__task_host_poll", &.{}, .i32, &.{}, &.{c32(0)});
+
+/// A host task's pollable joins the pending list.
+const task_host_add = func("__task_host_add", &.{ "h", "t" }, null, i32s(&.{"n"}), &.{
+    c32(12),  call("__alloc"),      set("n"),
+    get("n"), gget("__task_hosts"), store(0),
+    get("n"), get("h"),             store(4),
+    get("n"), get("t"),             store(8),
+    get("n"), gset("__task_hosts"),
+});
+
+/// The host answered pollable `h`: its task leaves the pending list and
+/// settles. `1` when `h` was pending.
+const task_host_settle = func("__task_host_settle", &.{"h"}, .i32, i32s(&.{ "p", "n" }), &.{
+    gget("__task_hosts"), set("n"),
+    loop(&.{
+        get("n"), op("eqz"), brk,
+        get("n"), load(4),   get("h"),
+        op("eq"),
+        when(&.{
+            get("p"),
+            whenElse(&.{ get("p"), get("n"), load(0), store(0) }, &.{ get("n"), load(0), gset("__task_hosts") }),
+            get("n"),
+            load(8),
+            call("__task_wake"),
+            c32(1),
+            ret,
+        }),
+        get("n"), set("p"),  get("n"),
+        load(0),  set("n"),  again,
+    }),
+    c32(0),
+});
+
+/// The `wasi` host's poll (`wasi:io/poll`'s `poll` through the component's
+/// adapter, `bp_host.wait`): every pending pollable in one list, the ready
+/// ones settled and dropped. `0` when nothing is pending.
+pub const task_host_poll_wasi = func("__task_host_poll", &.{}, .i32, i32s(&.{ "n", "buf", "out", "k", "i", "node", "h" }), &.{
+    gget("__task_hosts"),                                                                                                     set("node"),
+    loop(&.{ get("node"), op("eqz"), brk, get("n"), c32(1), op("add"), set("n"), get("node"), load(0), set("node"), again }), get("n"),
+    op("eqz"),                                                                                                                when(&.{ c32(0), ret }),
+    get("n"),                                                                                                                 c32(4),
+    op("mul"),                                                                                                                call("__alloc"),
+    set("buf"),                                                                                                               get("n"),
+    c32(4),                                                                                                                   op("mul"),
+    call("__alloc"),                                                                                                          set("out"),
+    gget("__task_hosts"),                                                                                                     set("node"),
+    loop(&.{
+        get("node"), op("eqz"), brk,
+        get("buf"),  get("i"),  c32(4),
+        op("mul"),   op("add"), get("node"),
+        load(4),     store(0),  get("i"),
+        c32(1),      op("add"), set("i"),
+        get("node"), load(0),   set("node"),
+        again,
+    }),
+    get("buf"),                                                                                                               get("n"),
+    get("out"),                                                                                                               call("bp_host_wait"),
+    set("k"),                                                                                                                 c32(0),
+    set("i"),
+    loop(&.{
+        get("i"),             get("k"),                   op("ge_u"), brk,
+        get("buf"),           get("out"),                 get("i"),   c32(4),
+        op("mul"),            op("add"),                  load(0),    c32(4),
+        op("mul"),            op("add"),                  load(0),    set("h"),
+        get("h"),             call("__task_host_settle"), .drop,      get("h"),
+        call("bp_host_drop"), get("i"),                   c32(1),     op("add"),
+        set("i"),             again,
+    }),
+    c32(1),
+});
+
+/// `wasi:delay` — a task holding `v`, settled when the host's pollable for
+/// `ms` milliseconds is ready (`bp_host.delay`: `wasi:clocks/monotonic-clock`'s
+/// `subscribe-duration` on `wasi`, `setTimeout` on `browser`). A negative
+/// duration is `0`.
+const task_delay = func("__task_delay", &.{ "ms", "v" }, .i32, i32s(&.{"t"}), &.{
+    get("ms"),             c32(0),   op("lt_s"),              when(&.{ c32(0), set("ms") }),
+    c32(-1),               c32(0),   call("__task_new"),      set("t"),
+    get("t"),              get("v"), store(8),                get("ms"),
+    call("bp_host_delay"), get("t"), call("__task_host_add"), get("t"),
+});
+
+/// `wasi:race` — the first of `xs` to settle: one settled already, the first
+/// in input order; else the task waits on all of them. An empty list traps.
+const task_race = func("__task_race", &.{"xs"}, .i32, i32s(&.{ "n", "i", "t", "r" }), &([_]Instr{
+    get("xs"), load(0),   set("n"),
+    get("n"),  op("eqz"), when(&.{.@"unreachable"}),
+    c32(-1),   c32(0),    call("__task_new"),
+    set("r"),
+    loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk } ++ slot("xs", "i") ++ [_]Instr{
+        load(0),                                                                                       set("t"),
+        get("t"),                                                                                      load(0),
+        when(&.{ get("r"), get("t"), load64, store64, get("r"), call("__task_wake"), get("r"), ret }), get("i"),
+        c32(1),                                                                                        op("add"),
+        set("i"),                                                                                      again,
+    })),
+    c32(0),    set("i"),
+} ++ [_]Instr{
+    loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk } ++ slot("xs", "i") ++ [_]Instr{
+        load(0),  c32(1), get("r"),  c32(0),   call("__task_listen"),
+        get("i"), c32(1), op("add"), set("i"), again,
+    })),
+    get("r"),
+}));
+
+/// `wasi:race_of` — every thunk of `fs` called in order (each task starts and
+/// runs to its first `await`), then raced.
+const task_race_of = func("__task_race_of", &.{"fs"}, .i32, i32s(&.{ "n", "i", "xs", "f" }), &([_]Instr{
+    get("fs"), load(0),             set("n"),
+    get("n"),  call("__arr_new"),   set("xs"),
+    loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk } ++ slot("fs", "i") ++ [_]Instr{ load(0), set("f") } ++ slot("xs", "i") ++ [_]Instr{
+        get("f"),                                                      get("f"),  load(0),
+        .{ .call_indirect = .{ .params = &.{.i32}, .result = .i32 } }, store(0),  get("i"),
+        c32(1),                                                        op("add"), set("i"),
+        again,
+    })),
+    get("xs"), call("__task_race"),
+}));
+
+/// `wasi:spawn_all` — every thunk of `fs` called in order; the task settles
+/// with their answers in input order once the last of them has settled.
+const task_spawn_all = func("__task_spawn_all", &.{"fs"}, .i32, i32s(&.{ "n", "i", "out", "f", "t", "r" }), &([_]Instr{
+    get("fs"), load(0),           set("n"),
+    get("n"),  call("__arr_new"), set("out"),
+    c32(-1),   c32(0),            call("__task_new"),
+    set("r"),  get("r"),          get("out"),
+    store(28), get("r"),          get("n"),
+    store(32),
+    loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk } ++ slot("fs", "i") ++ [_]Instr{
+        load(0),   set("f"),
+        get("f"),  get("f"),
+        load(0),   .{ .call_indirect = .{ .params = &.{.i32}, .result = .i32 } },
+        set("t"),  get("t"),
+        load(0),
+        whenElse(&([_]Instr{} ++ slot("out", "i") ++ [_]Instr{
+            get("t"), load(8),   store(0),
+            get("r"), get("r"),  load(32),
+            c32(1),   op("sub"), store(32),
+        }), &.{ get("t"), c32(2), get("r"), get("i"), call("__task_listen") }),
+        get("i"),  c32(1),
+        op("add"), set("i"),
+        again,
+    })),
+} ++ [_]Instr{
+    get("r"),                                                                  load(32), op("eqz"),
+    when(&.{ get("r"), get("out"), store(8), get("r"), call("__task_wake") }), get("r"),
+}));
+
+/// The host functions decision 393's adapters reach (`wat_emitter`'s
+/// component adapter on `wasi`, the loader's JavaScript on `browser`).
+pub const bp_host_delay_import = ast.Import{ .module = "bp_host", .name = "delay", .func = "bp_host_delay", .type = .{ .params = &.{.i32}, .result = .i32 } };
+pub const bp_host_wait_import = ast.Import{ .module = "bp_host", .name = "wait", .func = "bp_host_wait", .type = .{ .params = &.{ .i32, .i32, .i32 }, .result = .i32 } };
+pub const bp_host_drop_import = ast.Import{ .module = "bp_host", .name = "drop", .func = "bp_host_drop", .type = .{ .params = &.{.i32} } };
+
+/// The `browser` host's loader calls this export when the event loop answers
+/// host task `h` (decision 394): the task settles and the ready tasks run.
+pub const bp_ready = ast.Func{
+    .name = "__bp_ready",
+    .exports = &.{"__bp_ready"},
+    .params = &.{.{ .name = "h", .ty = .i32 }},
+    .body = indented(seqOf(&.{ get("h"), call("__task_host_settle"), .drop, call("__task_drain") }, .none), 4),
+};

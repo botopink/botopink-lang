@@ -11,6 +11,15 @@
 //! host (`wat_ast.host_init_export`, `wat_ast.startAsExport`) and `_start`. A
 //! trap rejects the module's top-level `await`: node prints it and exits 1.
 //! Node runs the loader as it is (`botopink run`, `node <name>.mjs`).
+//!
+//! Decisions 392–394 — the host tasks. A module whose tasks wait on the host
+//! imports `bp_host.delay(ms) -> id` (`wat_prelude.zig`): here a `setTimeout`
+//! re-armed until `performance.now()` has passed the deadline (a timer may
+//! fire early by the loop's cached time), whose firing queues the id. After
+//! `_start` the loader drives the module from the event loop — no JSPI: while
+//! a host task is pending it waits for the next answer and hands it to the
+//! module's `__bp_ready(id)`, which settles the task and runs the ready ones,
+//! the same state machines `wasi`'s poll resumes.
 
 const std = @import("std");
 
@@ -67,18 +76,50 @@ const body =
     \\    return 0;
     \\  },
     \\};
-    \\const { instance } = await WebAssembly.instantiate(bytes, { wasi_snapshot_preview1 });
+    \\let hostSeq = 0;
+    \\let hostPending = 0;
+    \\const hostReady = [];
+    \\let hostWake = null;
+    \\function hostAnswer(id) {
+    \\  hostReady.push(id);
+    \\  if (hostWake) {
+    \\    const w = hostWake;
+    \\    hostWake = null;
+    \\    w();
+    \\  }
+    \\}
+    \\const bp_host = {
+    \\  delay(ms) {
+    \\    const id = ++hostSeq;
+    \\    hostPending++;
+    \\    const end = performance.now() + ms;
+    \\    const tick = () => {
+    \\      const left = end - performance.now();
+    \\      if (left > 0) setTimeout(tick, Math.ceil(left));
+    \\      else hostAnswer(id);
+    \\    };
+    \\    setTimeout(tick, ms);
+    \\    return id;
+    \\  },
+    \\};
+    \\const { instance } = await WebAssembly.instantiate(bytes, { wasi_snapshot_preview1, bp_host });
     \\memory = instance.exports.memory;
     \\if (instance.exports.__bp_init) instance.exports.__bp_init();
     \\if (instance.exports._start) instance.exports._start();
+    \\while (hostPending > 0) {
+    \\  if (hostReady.length === 0) await new Promise((r) => { hostWake = r; });
+    \\  hostPending--;
+    \\  instance.exports.__bp_ready(hostReady.shift());
+    \\}
     \\
 ;
 
-test "the loader names the module beside it and serves the two preview 1 imports" {
+test "the loader names the module beside it, serves the two preview 1 imports and drives the host tasks" {
     const out = try render(std.testing.allocator, "main.wasm");
     defer std.testing.allocator.free(out);
     try std.testing.expect(std.mem.indexOf(u8, out, "const url = new URL(\"./main.wasm\", import.meta.url);\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "  fd_write(fd, iovs, n, written) {") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "  random_get(buf, len) {") != null);
-    try std.testing.expect(std.mem.endsWith(u8, out, "if (instance.exports._start) instance.exports._start();\n"));
+    try std.testing.expect(std.mem.indexOf(u8, out, "if (instance.exports._start) instance.exports._start();\n") != null);
+    try std.testing.expect(std.mem.endsWith(u8, out, "  instance.exports.__bp_ready(hostReady.shift());\n}\n"));
 }

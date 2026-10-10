@@ -2300,9 +2300,25 @@ one whose hooks node is asynchronous (decision 375), is an `async function`
 and its caller awaits; `async { }` is `(async () => { … })()`.
 **A `throw` in a `@Task<@Result<…>>` does not reject the Promise: it resolves
 with the `Error` value** — JavaScript that consumes a botopink function reads
-the `{ Error: … }` it answers instead of catching a rejection. On erlang, beam
-and wasm a `@Task` is eager, `await` is the identity and `async { }` runs the
+the `{ Error: … }` it answers instead of catching a rejection. On erlang and
+beam a `@Task` is eager, `await` is the identity and `async { }` runs the
 block in place.
+
+**On wasm a `@Task` behaves as a Promise** (decision 392): a task starts when
+it is made and runs to its first `await`; `await` on a task still pending
+suspends the body while other tasks run; a task settles once. A `-> @Task<T>`
+function, a method answering one and an `async { }` block compile to a
+resumable state machine — the locals live in a frame on the heap, and the
+body is entered again at the `await` it suspended at, inside a loop, an `if`,
+a `case` or a `try` alike — and the module's scheduler resumes a task when
+what it awaits settles: after `main`, it runs the ready tasks and waits on the
+host's pending pollables (`wasi:io/poll` on `wasi`; on `browser` the loader
+waits on the JavaScript event loop and hands each answer back — no JSPI). A
+synchronous function is untouched. A call evaluated before an `await` in the
+same statement is refused where it is written — re-entering the statement
+would run it twice; bind it to a `val` first. A `@Component` body stays eager
+on wasm: an `await` of a task there runs the ready tasks until it settles, and
+traps — on both hosts — when the task still waits on the host.
 
 ### Iterators and streams
 
@@ -3198,7 +3214,7 @@ arguments are always the declared parameters, in order.
 |---|---|
 | `op:<opcode>` | one numeric wasm instruction (`op:f64.floor`, `op:i32.add`, `op:f64.lt`, `op:f64.convert_i32_s`); the declared parameter and return types must be exactly the instruction's — a comparison or `eqz` answers `bool` |
 | `fn:<name>` | a private (not `pub`) `fn` of the same module, with a body, taking the same parameter types in the same order and answering the same type — the algorithm stays in the library, in botopink |
-| `wasi:<adapter>` | a compiler adapter over WASI preview1 (`wasi_snapshot_preview1`), one of the list below |
+| `wasi:<adapter>` | a compiler adapter over the host, one of the list below — each has an implementation per host (WASI preview 2 through the `wasi` component, JavaScript in the `browser` loader), so one list serves both (decision 394) |
 
 ```botopink
 #[@External.Node("Math", "floor"),
@@ -3222,6 +3238,25 @@ fn roundHalfUp(x: f64) -> f64 {
 | `random_f64` | `() -> f64` | a uniform `f64` in `[0.0, 1.0)` from 53 bits of `random_get` (an errno from the host traps) |
 | `seed_u32` | `(i32) -> void` | nothing; seeds the module's one Mulberry32 stream with the word's bits — no WASI call: the state a seeded stream needs, which no botopink module holds on every target |
 | `seeded_f64` | `() -> f64` | the stream's next draw in `[0.0, 1.0)` — Mulberry32 as the commonJS sidecar of `std/io/random` draws it, so a seed gives the same draws there and here —, or `random_f64`'s draw before any seed |
+| `delay` | `(i32, T) -> @Task<T>` | a task that settles with the value once the milliseconds have passed on the host's monotonic clock (`wasi:clocks/monotonic-clock` and `wasi:io/poll` on `wasi`, `setTimeout` on `browser`); a negative duration is `0` |
+| `race` | `(Array<@Task<T>>) -> @Task<T>` | the first of the started tasks to settle — the first settled one in input order when some already are; an empty list traps |
+| `race_of` | `(Array<fn() -> @Task<T>>) -> @Task<T>` | each thunk called in order (its task runs to its first `await`), then raced; an empty list traps |
+| `spawn_all` | `(Array<fn() -> @Task<T>>) -> @Task<Array<T>>` | each thunk called in order; the answers in input order once the last has settled |
+
+An adapter answering `@Task<T>` (decision 393) is declared over one type
+parameter and checked by **shape** at the annotation — the signature in the
+table, whatever `T` is — and the compiler makes the pending task the host's
+pollable backs:
+
+```botopink
+#[@External.Node("""new Promise((__r) => setTimeout(() => __r($1), $0))"""),
+  @External.Erlang("""(fun(__M, __V) -> timer:sleep(__M), __V end)($0, $1)"""),
+  @External.Wasm("wasi:delay")]
+pub declare fn pause<T>(millis: i32, value: T) -> @Task<T>;
+```
+
+The task carries its `T` in one word: a task adapter reached with a float or
+an `i64` value is refused at the call.
 
 Anything else — another prefix, an opcode the backend does not bind, an opcode
 whose type differs from the signature, a `fn:` naming no private bodied fn of
