@@ -1945,13 +1945,22 @@ pub declare fn exists(path: string) -> bool;
 pub declare fn list(path: string) -> @Result<string[], string>;
 
 // Create directory at `path`. Use `mkdirRecursive` to create
-// intermediate parents (the spec's `recursive: bool = true` overload
-// gates on default-fn-param-default support landing).
+// intermediate parents.
 // Node: `require('fs').mkdirSync($0)`.
 // Erlang: `file:make_dir/1`.
 #[@External.Node("""(() => { try { require('fs').mkdirSync($0); return { ok: 0 } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
 #[@External.Erlang("""(fun(__P) -> case file:make_dir(__P) of ok -> {ok, 0}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
 pub declare fn mkdir(path: string) -> @Result<i32, string>;
+
+// Create the directory at `path` and every missing directory above it. A
+// directory that is already there is `Ok` too; a path that exists as anything
+// else (a file) is an `Error`. What the snapshot library (`snap`) makes the
+// directory of a `.snap` with (decision 391).
+// Node: `require('fs').mkdirSync($0, { recursive: true })`.
+// Erlang: `filelib:ensure_path/1`.
+#[@External.Node("""(() => { try { require('fs').mkdirSync($0, { recursive: true }); return { ok: 0 } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
+#[@External.Erlang("""(fun(__P) -> case filelib:ensure_path(__P) of ok -> {ok, 0}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
+pub declare fn mkdirRecursive(path: string) -> @Result<i32, string>;
 
 // Delete the FILE at `path`. A directory — empty or not — is an `Error` on
 // both hosts (`ERR_FS_EISDIR` / `eperm`); `removeTree` removes one.
@@ -2100,6 +2109,20 @@ test "fs.removeTree removes a tree, a file and a link, and a missing path is Ok"
     assert removeTree([dir, "/app"].join("")).isOk();
     assert removeTree(dir).isOk();
     assert exists(dir).negate();
+}
+
+test "fs.mkdirRecursive makes a directory with its parents and is Ok on one that is there" {
+    val dir = scratchDir();
+    val deep = [dir, "/a/b/c"].join("");
+    assert mkdirRecursive(deep).isOk();
+    assert stat(deep).unwrapOr(
+        FileStat(size: 0l, mtime: 0l, isDir: false),
+    ).isDir;
+    assert mkdirRecursive(deep).isOk();
+    writeText([dir, "/file.txt"].join(""), "x");
+    assert mkdirRecursive([dir, "/file.txt"].join("")).isError();
+    assert mkdirRecursive([dir, "/file.txt/sub"].join("")).isError();
+    removeTree(dir);
 }
 
 test "fs.list of the host '/' resolves Ok" {
@@ -2348,9 +2371,9 @@ test "fs.glob of a root that does not exist answers the empty list" {
 ----- BEAM ASSEMBLY -- std/io/fs.S
 ```erlang
 {module, std@io@fs}.
-{exports, [{readText, 1}, {writeText, 2}, {exists, 1}, {list, 1}, {mkdir, 1}, {rm, 1}, {copy, 2}, {stat, 1}, {walk, 1}, {glob, 2}, {removeTree, 1}]}.
+{exports, [{readText, 1}, {writeText, 2}, {exists, 1}, {list, 1}, {mkdir, 1}, {mkdirRecursive, 1}, {rm, 1}, {copy, 2}, {stat, 1}, {walk, 1}, {glob, 2}, {removeTree, 1}]}.
 {attributes, []}.
-{labels, 406}.
+{labels, 419}.
 %%% std/io/fs — synchronous filesystem primitives, cross-backend.
 %%% 
 %%% Reference:
@@ -2417,8 +2440,7 @@ test "fs.glob of a root that does not exist answers the empty list" {
   {label, 66}.
     {call_only, 1, {f, 51}}.
 % Create directory at `path`. Use `mkdirRecursive` to create
-% intermediate parents (the spec's `recursive: bool = true` overload
-% gates on default-fn-param-default support landing).
+% intermediate parents.
 % Node: `require('fs').mkdirSync($0)`.
 % Erlang: `file:make_dir/1`.
 
@@ -2428,28 +2450,41 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {func_info, {atom, std@io@fs}, {atom, mkdir}, 1}.
   {label, 79}.
     {call_only, 1, {f, 68}}.
+% Create the directory at `path` and every missing directory above it. A
+% directory that is already there is `Ok` too; a path that exists as anything
+% else (a file) is an `Error`. What the snapshot library (`snap`) makes the
+% directory of a `.snap` with (decision 391).
+% Node: `require('fs').mkdirSync($0, { recursive: true })`.
+% Erlang: `filelib:ensure_path/1`.
+
+{function, mkdirRecursive, 1, 92}.
+  {label, 91}.
+    {line, [{location, "std@io@fs.erl", 6}]}.
+    {func_info, {atom, std@io@fs}, {atom, mkdirRecursive}, 1}.
+  {label, 92}.
+    {call_only, 1, {f, 81}}.
 % Delete the FILE at `path`. A directory — empty or not — is an `Error` on
 % both hosts (`ERR_FS_EISDIR` / `eperm`); `removeTree` removes one.
 % Node: `require('fs').rmSync($0)`.
 % Erlang: `file:delete/1`.
 
-{function, rm, 1, 92}.
-  {label, 91}.
-    {line, [{location, "std@io@fs.erl", 6}]}.
+{function, rm, 1, 105}.
+  {label, 104}.
+    {line, [{location, "std@io@fs.erl", 7}]}.
     {func_info, {atom, std@io@fs}, {atom, rm}, 1}.
-  {label, 92}.
-    {call_only, 1, {f, 81}}.
+  {label, 105}.
+    {call_only, 1, {f, 94}}.
 % Copy file from `src` to `dest`. Reds when `src` is missing or
 % `dest` already exists (Node's default `copyFileSync` semantics).
 % Node: `require('fs').copyFileSync($0, $1)`.
 % Erlang: `file:copy/2` (returns `{ok, BytesCopied}` or `{error, _}`).
 
-{function, copy, 2, 105}.
-  {label, 104}.
-    {line, [{location, "std@io@fs.erl", 7}]}.
+{function, copy, 2, 118}.
+  {label, 117}.
+    {line, [{location, "std@io@fs.erl", 8}]}.
     {func_info, {atom, std@io@fs}, {atom, copy}, 2}.
-  {label, 105}.
-    {call_only, 2, {f, 94}}.
+  {label, 118}.
+    {call_only, 2, {f, 107}}.
 % File metadata. Returns a `FileStat { size, mtime, isDir }` on
 % success. `mtime` is epoch milliseconds (matching `time.nowMillis()`);
 % `size` is in bytes.
@@ -2462,16 +2497,16 @@ test "fs.glob of a root that does not exist answers the empty list" {
 % whole seconds × 1000 — a resolution the Node form does not share
 % (question `97-s13-d`).
 
-{function, stat, 1, 118}.
-  {label, 117}.
-    {line, [{location, "std@io@fs.erl", 8}]}.
+{function, stat, 1, 131}.
+  {label, 130}.
+    {line, [{location, "std@io@fs.erl", 9}]}.
     {func_info, {atom, std@io@fs}, {atom, stat}, 1}.
-  {label, 118}.
+  {label, 131}.
     {allocate, 0, 1}.
-    {call, 1, {f, 107}}.
+    {call, 1, {f, 120}}.
     {move, {atom, std@io@fs@@FileStat}, {x, 1}}.
     {move, {literal, [size, mtime, isDir]}, {x, 2}}.
-    {call_last, 3, {f, 341}, 0}.
+    {call_last, 3, {f, 354}, 0}.
 % ── 1.0.10-beta front 01 additions ──────────────────────────────────────────
 % Every REGULAR FILE under `root`, recursively, as paths relative to `root`
 % with `/` separators, sorted — the same set on both targets (the two hosts
@@ -2493,12 +2528,12 @@ test "fs.glob of a root that does not exist answers the empty list" {
 % normalised (`dir/.` + `app` is `dir/app`), so a prefix measured on the root
 % as written cut two characters too many when the root ended in `/.`.
 
-{function, walk, 1, 180}.
-  {label, 179}.
-    {line, [{location, "std@io@fs.erl", 9}]}.
+{function, walk, 1, 193}.
+  {label, 192}.
+    {line, [{location, "std@io@fs.erl", 10}]}.
     {func_info, {atom, std@io@fs}, {atom, walk}, 1}.
-  {label, 180}.
-    {call_only, 1, {f, 120}}.
+  {label, 193}.
+    {call_only, 1, {f, 133}}.
 % The entries under `root` matching the glob `pattern`, as paths relative to
 % `root` with `/` separators, sorted, each once. The pattern is read segment
 % by segment, by ONE rule on both targets (decision 177 — the narrower of what
@@ -2522,12 +2557,12 @@ test "fs.glob of a root that does not exist answers the empty list" {
 % `filelib:wildcard/2` — with the dot rule applied over its answer, since
 % `filelib:wildcard` matches dot names and `globSync` matches `{.a,b}`.
 
-{function, glob, 2, 325}.
-  {label, 324}.
-    {line, [{location, "std@io@fs.erl", 10}]}.
+{function, glob, 2, 338}.
+  {label, 337}.
+    {line, [{location, "std@io@fs.erl", 11}]}.
     {func_info, {atom, std@io@fs}, {atom, glob}, 2}.
-  {label, 325}.
-    {call_only, 2, {f, 182}}.
+  {label, 338}.
+    {call_only, 2, {f, 195}}.
 % Remove `path` and everything under it: a file, a link (the link, never its
 % target) or a directory tree. A path that is not there is `Ok` too — the
 % caller wanted it gone. What a test fixture is cleared with, and what the
@@ -2536,12 +2571,12 @@ test "fs.glob of a root that does not exist answers the empty list" {
 % Node: `rmSync(path, { recursive: true, force: true })`.
 % Erlang: `file:del_dir_r/1`.
 
-{function, removeTree, 1, 339}.
-  {label, 338}.
-    {line, [{location, "std@io@fs.erl", 11}]}.
+{function, removeTree, 1, 352}.
+  {label, 351}.
+    {line, [{location, "std@io@fs.erl", 12}]}.
     {func_info, {atom, std@io@fs}, {atom, removeTree}, 1}.
-  {label, 339}.
-    {call_only, 1, {f, 327}}.
+  {label, 352}.
+    {call_only, 1, {f, 340}}.
 % Internal, test scaffolding: a fresh, unique, empty directory under the
 % host's tmpdir. Private — every `walk`/`glob` test makes its fixture tree in
 % one of these and removes it with `removeTree`, so a run leaves nothing under
@@ -2557,31 +2592,31 @@ test "fs.glob of a root that does not exist answers the empty list" {
 
 {function, statOr, 1, 3}.
   {label, 2}.
-    {line, [{location, "std@io@fs.erl", 12}]}.
+    {line, [{location, "std@io@fs.erl", 13}]}.
     {func_info, {atom, std@io@fs}, {atom, statOr}, 1}.
   {label, 3}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 1, {f, 107}}.
+    {call, 1, {f, 120}}.
     {move, {atom, std@io@fs@@FileStat}, {x, 1}}.
     {move, {literal, [size, mtime, isDir]}, {x, 2}}.
-    {call, 3, {f, 341}}.
-    {test, is_tagged_tuple, {f, 352}, [{x, 0}, 2, {atom, ok}]}.
+    {call, 3, {f, 354}}.
+    {test, is_tagged_tuple, {f, 365}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {jump, {f, 351}}.
-  {label, 352}.
-    {test, is_tagged_tuple, {f, 353}, [{x, 0}, 2, {atom, error}]}.
+    {jump, {f, 364}}.
+  {label, 365}.
+    {test, is_tagged_tuple, {f, 366}, [{x, 0}, 2, {atom, error}]}.
     {move, {atom, false}, {x, 0}}.
     {test_heap, 5, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, std@io@fs@@FileStat}, {integer, -1}, {integer, -1}, {x, 0}]}}.
-    {jump, {f, 351}}.
-  {label, 353}.
+    {jump, {f, 364}}.
+  {label, 366}.
     {case_end, {x, 0}}.
-  {label, 351}.
+  {label, 364}.
     {deallocate, 2}.
     return.
 % Internal, test scaffolding: `<dir>/app/page.bp`, `<dir>/app/blog/page.bp`,
@@ -2589,7 +2624,7 @@ test "fs.glob of a root that does not exist answers the empty list" {
 
 {function, makeFixtureTree, 1, 5}.
   {label, 4}.
-    {line, [{location, "std@io@fs.erl", 13}]}.
+    {line, [{location, "std@io@fs.erl", 14}]}.
     {func_info, {atom, std@io@fs}, {atom, makeFixtureTree}, 1}.
   {label, 5}.
     {allocate, 6, 1}.
@@ -2611,7 +2646,7 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 355}}.
+    {call, 2, {f, 368}}.
     {call, 1, {f, 68}}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
@@ -2629,7 +2664,7 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 355}}.
+    {call, 2, {f, 368}}.
     {call, 1, {f, 68}}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
@@ -2647,7 +2682,7 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 355}}.
+    {call, 2, {f, 368}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"root page">>}, {x, 0}}.
     {move, {x, 1}, {x, 2}}.
@@ -2670,7 +2705,7 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 355}}.
+    {call, 2, {f, 368}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"blog page">>}, {x, 0}}.
     {move, {x, 1}, {x, 2}}.
@@ -2693,7 +2728,7 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 355}}.
+    {call, 2, {f, 368}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"notes">>}, {x, 0}}.
     {move, {x, 1}, {x, 2}}.
@@ -2709,13 +2744,13 @@ test "fs.glob of a root that does not exist answers the empty list" {
 
 {function, walkFixture, 1, 7}.
   {label, 6}.
-    {line, [{location, "std@io@fs.erl", 14}]}.
+    {line, [{location, "std@io@fs.erl", 15}]}.
     {func_info, {atom, std@io@fs}, {atom, walkFixture}, 1}.
   {label, 7}.
     {allocate, 5, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
     {move, {x, 0}, {y, 0}}.
-    {call, 0, {f, 361}}.
+    {call, 0, {f, 374}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {call, 1, {f, 5}}.
@@ -2735,38 +2770,38 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 355}}.
-    {call, 1, {f, 120}}.
-    {test, is_tagged_tuple, {f, 377}, [{x, 0}, 2, {atom, ok}]}.
+    {call, 2, {f, 368}}.
+    {call, 1, {f, 133}}.
+    {test, is_tagged_tuple, {f, 390}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 378}}.
-  {label, 377}.
+    {jump, {f, 391}}.
+  {label, 390}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
     {move, {literal, <<"<error>">>}, {x, 0}}.
     {move, {y, 3}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
-  {label, 378}.
+  {label, 391}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 1}, {x, 0}}.
-    {call, 1, {f, 327}}.
+    {call, 1, {f, 340}}.
     {move, {literal, <<",">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 4}, {x, 0}}.
-    {call_last, 2, {f, 355}, 5}.
+    {call_last, 2, {f, 368}, 5}.
 % Internal, test scaffolding: the same, with the root spelled relative to the
 % working directory — `<prefix><path from the cwd to the fixture>`.
 
 {function, walkFixtureFromCwd, 1, 9}.
   {label, 8}.
-    {line, [{location, "std@io@fs.erl", 15}]}.
+    {line, [{location, "std@io@fs.erl", 16}]}.
     {func_info, {atom, std@io@fs}, {atom, walkFixtureFromCwd}, 1}.
   {label, 9}.
     {allocate, 8, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}]}}.
     {move, {x, 0}, {y, 0}}.
-    {call, 0, {f, 361}}.
+    {call, 0, {f, 374}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {call, 1, {f, 5}}.
@@ -2777,7 +2812,7 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
-    {call, 0, {f, 380}}.
+    {call, 0, {f, 393}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, std@path, relative, 2}}.
     {move, {y, 2}, {x, 1}}.
@@ -2793,52 +2828,52 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 355}}.
+    {call, 2, {f, 368}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.
-    {call, 1, {f, 120}}.
-    {test, is_tagged_tuple, {f, 389}, [{x, 0}, 2, {atom, ok}]}.
+    {call, 1, {f, 133}}.
+    {test, is_tagged_tuple, {f, 402}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 390}}.
-  {label, 389}.
+    {jump, {f, 403}}.
+  {label, 402}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 4}}.
     {move, {literal, <<"<error>">>}, {x, 0}}.
     {move, {y, 4}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
-  {label, 390}.
+  {label, 403}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 1}, {x, 0}}.
-    {call, 1, {f, 327}}.
+    {call, 1, {f, 340}}.
     {move, {literal, <<",">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 5}, {x, 0}}.
-    {call_last, 2, {f, 355}, 8}.
+    {call_last, 2, {f, 368}, 8}.
 % Internal, test scaffolding: the `Error` of `walk(root)`, `""` when it walked.
 
 {function, walkRefusal, 1, 11}.
   {label, 10}.
-    {line, [{location, "std@io@fs.erl", 16}]}.
+    {line, [{location, "std@io@fs.erl", 17}]}.
     {func_info, {atom, std@io@fs}, {atom, walkRefusal}, 1}.
   {label, 11}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 1, {f, 120}}.
-    {test, is_tagged_tuple, {f, 392}, [{x, 0}, 2, {atom, ok}]}.
+    {call, 1, {f, 133}}.
+    {test, is_tagged_tuple, {f, 405}, [{x, 0}, 2, {atom, ok}]}.
     {move, {literal, <<"">>}, {x, 0}}.
-    {jump, {f, 391}}.
-  {label, 392}.
-    {test, is_tagged_tuple, {f, 393}, [{x, 0}, 2, {atom, error}]}.
+    {jump, {f, 404}}.
+  {label, 405}.
+    {test, is_tagged_tuple, {f, 406}, [{x, 0}, 2, {atom, error}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {jump, {f, 391}}.
-  {label, 393}.
+    {jump, {f, 404}}.
+  {label, 406}.
     {case_end, {x, 0}}.
-  {label, 391}.
+  {label, 404}.
     {deallocate, 2}.
     return.
 % Internal, test scaffolding: the fixture tree plus the names decision 177 is
@@ -2847,7 +2882,7 @@ test "fs.glob of a root that does not exist answers the empty list" {
 
 {function, makeGlobTree, 1, 13}.
   {label, 12}.
-    {line, [{location, "std@io@fs.erl", 17}]}.
+    {line, [{location, "std@io@fs.erl", 18}]}.
     {func_info, {atom, std@io@fs}, {atom, makeGlobTree}, 1}.
   {label, 13}.
     {allocate, 14, 1}.
@@ -2871,7 +2906,7 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 355}}.
+    {call, 2, {f, 368}}.
     {call, 1, {f, 68}}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
@@ -2889,7 +2924,7 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 355}}.
+    {call, 2, {f, 368}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"cached">>}, {x, 0}}.
     {move, {x, 1}, {x, 2}}.
@@ -2912,7 +2947,7 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 355}}.
+    {call, 2, {f, 368}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"hidden">>}, {x, 0}}.
     {move, {x, 1}, {x, 2}}.
@@ -2935,7 +2970,7 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 355}}.
+    {call, 2, {f, 368}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"draft">>}, {x, 0}}.
     {move, {x, 1}, {x, 2}}.
@@ -2960,10 +2995,10 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 355}}.
+    {call, 2, {f, 368}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 5}, {x, 0}}.
-    {call, 2, {f, 395}}.
+    {call, 2, {f, 408}}.
     {move, {literal, <<"page.bp">>}, {x, 0}}.
     {move, {x, 0}, {y, 7}}.
     {move, nil, {x, 0}}.
@@ -2982,10 +3017,10 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 355}}.
+    {call, 2, {f, 368}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 7}, {x, 0}}.
-    {call, 2, {f, 395}}.
+    {call, 2, {f, 408}}.
     {move, {literal, <<"missing.bp">>}, {x, 0}}.
     {move, {x, 0}, {y, 9}}.
     {move, nil, {x, 0}}.
@@ -3004,10 +3039,10 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 355}}.
+    {call, 2, {f, 368}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 9}, {x, 0}}.
-    {call, 2, {f, 395}}.
+    {call, 2, {f, 408}}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 14}.
     return.
@@ -3016,13 +3051,13 @@ test "fs.glob of a root that does not exist answers the empty list" {
 
 {function, globbed, 1, 15}.
   {label, 14}.
-    {line, [{location, "std@io@fs.erl", 18}]}.
+    {line, [{location, "std@io@fs.erl", 19}]}.
     {func_info, {atom, std@io@fs}, {atom, globbed}, 1}.
   {label, 15}.
     {allocate, 7, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
     {move, {x, 0}, {y, 0}}.
-    {call, 0, {f, 361}}.
+    {call, 0, {f, 374}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {call, 1, {f, 13}}.
@@ -3042,28 +3077,28 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 355}}.
+    {call, 2, {f, 368}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 2, {f, 182}}.
-    {test, is_tagged_tuple, {f, 404}, [{x, 0}, 2, {atom, ok}]}.
+    {call, 2, {f, 195}}.
+    {test, is_tagged_tuple, {f, 417}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 405}}.
-  {label, 404}.
+    {jump, {f, 418}}.
+  {label, 417}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
     {move, {literal, <<"<error>">>}, {x, 0}}.
     {move, {y, 3}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
-  {label, 405}.
+  {label, 418}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 1}, {x, 0}}.
-    {call, 1, {f, 327}}.
+    {call, 1, {f, 340}}.
     {move, {literal, <<",">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 4}, {x, 0}}.
-    {call_last, 2, {f, 355}, 7}.
+    {call_last, 2, {f, 368}, 7}.
 
 {function, '__bp_tpl_0-t/1-fun-0-', 1, 21}.
   {label, 20}.
@@ -3385,7 +3420,7 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {call_ext, 1, {extfunc, file, delete, 1}}.
+    {call_ext, 1, {extfunc, filelib, ensure_path, 1}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
     {test, is_eq_exact, {f, 89}, [{x, 0}, {atom, ok}]}.
@@ -3437,10 +3472,70 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {deallocate, 2}.
     return.
 
-{function, '__bp_tpl_6-t/2-fun-0-', 2, 98}.
+{function, '__bp_tpl_6-t/1-fun-0-', 1, 98}.
   {label, 97}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_6-t/2-fun-0-'}, 2}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_6-t/1-fun-0-'}, 1}.
   {label, 98}.
+    {allocate, 6, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {call_ext, 1, {extfunc, file, delete, 1}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 2}, {x, 0}}.
+    {test, is_eq_exact, {f, 102}, [{x, 0}, {atom, ok}]}.
+    {move, {literal, {ok, 0}}, {x, 0}}.
+    {deallocate, 6}.
+    return.
+  {label, 102}.
+    {move, {y, 2}, {x, 0}}.
+    {test, is_tuple, {f, 103}, [{x, 0}]}.
+    {test, test_arity, {f, 103}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 3}}.
+    {get_tuple_element, {x, 0}, 1, {y, 4}}.
+    {move, {y, 3}, {x, 0}}.
+    {test, is_eq_exact, {f, 103}, [{x, 0}, {atom, error}]}.
+    {move, {y, 4}, {y, 0}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 0}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {literal, [126, 112]}, {x, 0}}.
+    {move, {y, 5}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
+    {move, {x, 0}, {y, 5}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 5}]}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {x, 0}}.
+    {deallocate, 6}.
+    return.
+  {label, 103}.
+    {move, {y, 2}, {x, 0}}.
+    {case_end, {x, 0}}.
+
+{function, '__bp_tpl_6', 1, 94}.
+  {label, 93}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_6'}, 1}.
+  {label, 94}.
+    {allocate, 2, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 98}, 0, 0, {x, 0}, {list, []}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {call_fun, 1}.
+    {deallocate, 2}.
+    return.
+
+{function, '__bp_tpl_7-t/2-fun-0-', 2, 111}.
+  {label, 110}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_7-t/2-fun-0-'}, 2}.
+  {label, 111}.
     {allocate, 7, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
     {move, {x, 0}, {y, 1}}.
@@ -3450,22 +3545,22 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {call_ext, 2, {extfunc, file, copy, 2}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.
-    {test, is_tuple, {f, 102}, [{x, 0}]}.
-    {test, test_arity, {f, 102}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 115}, [{x, 0}]}.
+    {test, test_arity, {f, 115}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 4}}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 102}, [{x, 0}, {atom, ok}]}.
+    {test, is_eq_exact, {f, 115}, [{x, 0}, {atom, ok}]}.
     {move, {literal, {ok, 0}}, {x, 0}}.
     {deallocate, 7}.
     return.
-  {label, 102}.
+  {label, 115}.
     {move, {y, 3}, {x, 0}}.
-    {test, is_tuple, {f, 103}, [{x, 0}]}.
-    {test, test_arity, {f, 103}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 116}, [{x, 0}]}.
+    {test, test_arity, {f, 116}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 4}}.
     {get_tuple_element, {x, 0}, 1, {y, 5}}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 103}, [{x, 0}, {atom, error}]}.
+    {test, is_eq_exact, {f, 116}, [{x, 0}, {atom, error}]}.
     {move, {y, 5}, {y, 0}}.
     {test_heap, 2, 0}.
     {put_list, {y, 0}, nil, {x, 0}}.
@@ -3483,20 +3578,20 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {move, {y, 6}, {x, 0}}.
     {deallocate, 7}.
     return.
-  {label, 103}.
+  {label, 116}.
     {move, {y, 3}, {x, 0}}.
     {case_end, {x, 0}}.
 
-{function, '__bp_tpl_6', 2, 94}.
-  {label, 93}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_6'}, 2}.
-  {label, 94}.
+{function, '__bp_tpl_7', 2, 107}.
+  {label, 106}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_7'}, 2}.
+  {label, 107}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 98}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 111}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -3505,10 +3600,10 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {deallocate, 3}.
     return.
 
-{function, '__bp_tpl_7-t/1-fun-0-', 1, 111}.
-  {label, 110}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_7-t/1-fun-0-'}, 1}.
-  {label, 111}.
+{function, '__bp_tpl_8-t/1-fun-0-', 1, 124}.
+  {label, 123}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_8-t/1-fun-0-'}, 1}.
+  {label, 124}.
     {allocate, 13, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}]}}.
     {move, {x, 0}, {y, 3}}.
@@ -3517,21 +3612,21 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {call_ext, 2, {extfunc, file, read_file_info, 2}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_tuple, {f, 115}, [{x, 0}]}.
-    {test, test_arity, {f, 115}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 128}, [{x, 0}]}.
+    {test, test_arity, {f, 128}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 5}}.
     {get_tuple_element, {x, 0}, 1, {y, 6}}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 115}, [{x, 0}, {atom, ok}]}.
+    {test, is_eq_exact, {f, 128}, [{x, 0}, {atom, ok}]}.
     {move, {y, 6}, {x, 0}}.
-    {test, is_tuple, {f, 115}, [{x, 0}]}.
-    {test, test_arity, {f, 115}, [{x, 0}, 14]}.
+    {test, is_tuple, {f, 128}, [{x, 0}]}.
+    {test, test_arity, {f, 128}, [{x, 0}, 14]}.
     {get_tuple_element, {x, 0}, 0, {y, 7}}.
     {get_tuple_element, {x, 0}, 1, {y, 8}}.
     {get_tuple_element, {x, 0}, 2, {y, 9}}.
     {get_tuple_element, {x, 0}, 5, {y, 10}}.
     {move, {y, 7}, {x, 0}}.
-    {test, is_eq_exact, {f, 115}, [{x, 0}, {atom, file_info}]}.
+    {test, is_eq_exact, {f, 128}, [{x, 0}, {atom, file_info}]}.
     {move, {y, 8}, {y, 0}}.
     {move, {y, 9}, {y, 1}}.
     {move, {y, 10}, {y, 2}}.
@@ -3552,14 +3647,14 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {move, {y, 11}, {x, 0}}.
     {deallocate, 13}.
     return.
-  {label, 115}.
+  {label, 128}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_tuple, {f, 116}, [{x, 0}]}.
-    {test, test_arity, {f, 116}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 129}, [{x, 0}]}.
+    {test, test_arity, {f, 129}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 5}}.
     {get_tuple_element, {x, 0}, 1, {y, 6}}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 116}, [{x, 0}, {atom, error}]}.
+    {test, is_eq_exact, {f, 129}, [{x, 0}, {atom, error}]}.
     {move, {y, 6}, {y, 0}}.
     {test_heap, 2, 0}.
     {put_list, {y, 0}, nil, {x, 0}}.
@@ -3577,19 +3672,19 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {move, {y, 7}, {x, 0}}.
     {deallocate, 13}.
     return.
-  {label, 116}.
+  {label, 129}.
     {move, {y, 4}, {x, 0}}.
     {case_end, {x, 0}}.
 
-{function, '__bp_tpl_7', 1, 107}.
-  {label, 106}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_7'}, 1}.
-  {label, 107}.
+{function, '__bp_tpl_8', 1, 120}.
+  {label, 119}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_8'}, 1}.
+  {label, 120}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 111}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 124}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -3597,10 +3692,10 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {deallocate, 2}.
     return.
 
-{function, '__bp_tpl_8---t/1-fun-0--fun-1--fun-2-', 5, 140}.
-  {label, 139}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_8---t/1-fun-0--fun-1--fun-2-'}, 5}.
-  {label, 140}.
+{function, '__bp_tpl_9---t/1-fun-0--fun-1--fun-2-', 5, 153}.
+  {label, 152}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_9---t/1-fun-0--fun-1--fun-2-'}, 5}.
+  {label, 153}.
     {allocate, 12, 5}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}]}}.
     {move, {x, 0}, {y, 6}}.
@@ -3613,13 +3708,13 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {call_ext, 2, {extfunc, filename, join, 2}}.
     {move, {x, 0}, {y, 8}}.
     {move, {y, 8}, {y, 3}}.
-    {jump, {f, 144}}.
-  {label, 144}.
+    {jump, {f, 157}}.
+  {label, 157}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 146}, [{x, 0}, nil]}.
+    {test, is_eq_exact, {f, 159}, [{x, 0}, nil]}.
     {move, {y, 6}, {y, 8}}.
-    {jump, {f, 145}}.
-  {label, 146}.
+    {jump, {f, 158}}.
+  {label, 159}.
     {move, {literal, [47]}, {x, 0}}.
     {move, {y, 6}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '++', 2}}.
@@ -3629,31 +3724,31 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {call_ext, 2, {extfunc, erlang, '++', 2}}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {y, 8}}.
-    {jump, {f, 145}}.
-  {label, 145}.
+    {jump, {f, 158}}.
+  {label, 158}.
     {move, {y, 8}, {y, 4}}.
-    {jump, {f, 149}}.
-  {label, 149}.
+    {jump, {f, 162}}.
+  {label, 162}.
     {move, {y, 3}, {x, 0}}.
     {call_ext, 1, {extfunc, file, read_file_info, 1}}.
     {move, {x, 0}, {y, 8}}.
     {move, {y, 8}, {x, 0}}.
-    {test, is_tuple, {f, 151}, [{x, 0}]}.
-    {test, test_arity, {f, 151}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 164}, [{x, 0}]}.
+    {test, test_arity, {f, 164}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 9}}.
     {get_tuple_element, {x, 0}, 1, {y, 10}}.
     {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 151}, [{x, 0}, {atom, ok}]}.
+    {test, is_eq_exact, {f, 164}, [{x, 0}, {atom, ok}]}.
     {move, {y, 10}, {y, 5}}.
     {move, {integer, 3}, {x, 0}}.
     {move, {y, 5}, {x, 1}}.
-    {bif, element, {f, 151}, [{x, 0}, {x, 1}], {x, 0}}.
+    {bif, element, {f, 164}, [{x, 0}, {x, 1}], {x, 0}}.
     {move, {x, 0}, {y, 11}}.
     {move, {y, 11}, {x, 0}}.
     {move, {atom, directory}, {x, 1}}.
-    {test, is_eq_exact, {f, 151}, [{x, 0}, {x, 1}]}.
-    {jump, {f, 152}}.
-  {label, 152}.
+    {test, is_eq_exact, {f, 164}, [{x, 0}, {x, 1}]}.
+    {jump, {f, 165}}.
+  {label, 165}.
     {move, {y, 3}, {x, 0}}.
     {move, {y, 4}, {x, 1}}.
     {move, {y, 7}, {x, 2}}.
@@ -3661,24 +3756,24 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {call_fun, 3}.
     {deallocate, 12}.
     return.
-  {label, 151}.
+  {label, 164}.
     {move, {y, 8}, {x, 0}}.
-    {test, is_tuple, {f, 153}, [{x, 0}]}.
-    {test, test_arity, {f, 153}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 166}, [{x, 0}]}.
+    {test, test_arity, {f, 166}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 9}}.
     {get_tuple_element, {x, 0}, 1, {y, 10}}.
     {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 153}, [{x, 0}, {atom, ok}]}.
+    {test, is_eq_exact, {f, 166}, [{x, 0}, {atom, ok}]}.
     {move, {y, 10}, {y, 5}}.
     {move, {integer, 3}, {x, 0}}.
     {move, {y, 5}, {x, 1}}.
-    {bif, element, {f, 153}, [{x, 0}, {x, 1}], {x, 0}}.
+    {bif, element, {f, 166}, [{x, 0}, {x, 1}], {x, 0}}.
     {move, {x, 0}, {y, 11}}.
     {move, {y, 11}, {x, 0}}.
     {move, {atom, regular}, {x, 1}}.
-    {test, is_eq_exact, {f, 153}, [{x, 0}, {x, 1}]}.
-    {jump, {f, 154}}.
-  {label, 154}.
+    {test, is_eq_exact, {f, 166}, [{x, 0}, {x, 1}]}.
+    {jump, {f, 167}}.
+  {label, 167}.
     {move, {y, 4}, {x, 0}}.
     {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
     {move, {x, 0}, {y, 11}}.
@@ -3691,19 +3786,19 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {move, {y, 11}, {x, 0}}.
     {deallocate, 12}.
     return.
-  {label, 153}.
+  {label, 166}.
     {move, {y, 8}, {x, 0}}.
-    {test, is_tuple, {f, 155}, [{x, 0}]}.
-    {test, test_arity, {f, 155}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 168}, [{x, 0}]}.
+    {test, test_arity, {f, 168}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 9}}.
     {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 155}, [{x, 0}, {atom, ok}]}.
+    {test, is_eq_exact, {f, 168}, [{x, 0}, {atom, ok}]}.
     {move, {y, 7}, {x, 0}}.
     {deallocate, 12}.
     return.
-  {label, 155}.
+  {label, 168}.
     {move, {y, 8}, {x, 0}}.
-    {test, is_eq_exact, {f, 156}, [{x, 0}, {literal, {error, enoent}}]}.
+    {test, is_eq_exact, {f, 169}, [{x, 0}, {literal, {error, enoent}}]}.
     {move, {y, 4}, {x, 0}}.
     {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
     {move, {x, 0}, {y, 9}}.
@@ -3716,76 +3811,76 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {move, {y, 9}, {x, 0}}.
     {deallocate, 12}.
     return.
-  {label, 156}.
+  {label, 169}.
     {move, {y, 8}, {x, 0}}.
-    {test, is_tuple, {f, 157}, [{x, 0}]}.
-    {test, test_arity, {f, 157}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 170}, [{x, 0}]}.
+    {test, test_arity, {f, 170}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 9}}.
     {get_tuple_element, {x, 0}, 1, {y, 10}}.
     {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 157}, [{x, 0}, {atom, error}]}.
+    {test, is_eq_exact, {f, 170}, [{x, 0}, {atom, error}]}.
     {move, {y, 10}, {y, 3}}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, bp_fs_walk}, {y, 3}]}}.
     {move, {x, 0}, {y, 11}}.
     {move, {y, 11}, {x, 0}}.
     {call_ext_last, 1, {extfunc, erlang, throw, 1}, 12}.
-  {label, 157}.
+  {label, 170}.
     {move, {y, 8}, {x, 0}}.
     {case_end, {x, 0}}.
 
-{function, '__bp_tpl_8--t/1-fun-0--fun-1-', 3, 133}.
-  {label, 132}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_8--t/1-fun-0--fun-1-'}, 3}.
-  {label, 133}.
+{function, '__bp_tpl_9--t/1-fun-0--fun-1-', 3, 146}.
+  {label, 145}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_9--t/1-fun-0--fun-1-'}, 3}.
+  {label, 146}.
     {allocate, 9, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}]}}.
     {move, {x, 0}, {y, 2}}.
     {move, {x, 1}, {y, 3}}.
     {move, {x, 2}, {y, 4}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 133}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 146}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 2}, {x, 0}}.
     {call_ext, 1, {extfunc, file, list_dir, 1}}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_tuple, {f, 137}, [{x, 0}]}.
-    {test, test_arity, {f, 137}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 150}, [{x, 0}]}.
+    {test, test_arity, {f, 150}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 6}}.
     {get_tuple_element, {x, 0}, 1, {y, 7}}.
     {move, {y, 6}, {x, 0}}.
-    {test, is_eq_exact, {f, 137}, [{x, 0}, {atom, error}]}.
+    {test, is_eq_exact, {f, 150}, [{x, 0}, {atom, error}]}.
     {move, {y, 7}, {y, 1}}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, bp_fs_walk}, {y, 1}]}}.
     {move, {x, 0}, {y, 8}}.
     {move, {y, 8}, {x, 0}}.
     {call_ext_last, 1, {extfunc, erlang, throw, 1}, 9}.
-  {label, 137}.
+  {label, 150}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_tuple, {f, 138}, [{x, 0}]}.
-    {test, test_arity, {f, 138}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 151}, [{x, 0}]}.
+    {test, test_arity, {f, 151}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 6}}.
     {get_tuple_element, {x, 0}, 1, {y, 7}}.
     {move, {y, 6}, {x, 0}}.
-    {test, is_eq_exact, {f, 138}, [{x, 0}, {atom, ok}]}.
+    {test, is_eq_exact, {f, 151}, [{x, 0}, {atom, ok}]}.
     {move, {y, 7}, {y, 1}}.
     {test_heap, {alloc, [{words, 3}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 140}, 1, 0, {x, 0}, {list, [{y, 2}, {y, 3}, {y, 0}]}}.
+    {make_fun3, {f, 153}, 1, 0, {x, 0}, {list, [{y, 2}, {y, 3}, {y, 0}]}}.
     {move, {x, 0}, {y, 8}}.
     {move, {y, 8}, {x, 0}}.
     {move, {y, 4}, {x, 1}}.
     {move, {y, 1}, {x, 2}}.
     {call_ext_last, 3, {extfunc, lists, foldl, 3}, 9}.
-  {label, 138}.
+  {label, 151}.
     {move, {y, 5}, {x, 0}}.
     {case_end, {x, 0}}.
 
-{function, '__bp_tpl_8-t/1-fun-0-', 1, 124}.
-  {label, 123}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_8-t/1-fun-0-'}, 1}.
-  {label, 124}.
+{function, '__bp_tpl_9-t/1-fun-0-', 1, 137}.
+  {label, 136}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_9-t/1-fun-0-'}, 1}.
+  {label, 137}.
     {allocate, 13, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}]}}.
     {move, {x, 0}, {y, 2}}.
@@ -3793,26 +3888,26 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {y, 0}}.
-    {jump, {f, 128}}.
-  {label, 128}.
+    {jump, {f, 141}}.
+  {label, 141}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, filelib, is_dir, 1}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.
-    {test, is_eq_exact, {f, 130}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 143}, [{x, 0}, {atom, false}]}.
     {move, {literal, {error, <<"enotdir">>}}, {x, 0}}.
     {deallocate, 13}.
     return.
-  {label, 130}.
+  {label, 143}.
     {move, {y, 3}, {x, 0}}.
-    {test, is_eq_exact, {f, 131}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 144}, [{x, 0}, {atom, true}]}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 133}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 146}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {y, 1}}.
-    {jump, {f, 159}}.
-  {label, 159}.
-    {'try', {y, 12}, {f, 160}}.
+    {jump, {f, 172}}.
+  {label, 172}.
+    {'try', {y, 12}, {f, 173}}.
     {move, {y, 0}, {x, 0}}.
     {move, nil, {x, 1}}.
     {move, nil, {x, 2}}.
@@ -3820,35 +3915,35 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {call_fun, 3}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 5}, {y, 0}}.
-    {jump, {f, 163}}.
-  {label, 163}.
+    {jump, {f, 176}}.
+  {label, 176}.
     {move, nil, {y, 5}}.
     {move, {y, 0}, {y, 6}}.
-  {label, 165}.
+  {label, 178}.
     {move, {y, 6}, {x, 0}}.
-    {test, is_nonempty_list, {f, 166}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 179}, [{x, 0}]}.
     {get_list, {x, 0}, {y, 7}, {y, 6}}.
     {move, {y, 7}, {x, 0}}.
-    {test, is_tuple, {f, 165}, [{x, 0}]}.
-    {test, test_arity, {f, 165}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 178}, [{x, 0}]}.
+    {test, test_arity, {f, 178}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 8}}.
     {get_tuple_element, {x, 0}, 1, {y, 9}}.
     {move, {y, 8}, {x, 0}}.
-    {test, is_eq_exact, {f, 165}, [{x, 0}, {atom, dangling}]}.
+    {test, is_eq_exact, {f, 178}, [{x, 0}, {atom, dangling}]}.
     {move, {y, 9}, {y, 1}}.
     {test_heap, 2, 0}.
     {put_list, {y, 1}, {y, 5}, {x, 0}}.
     {move, {x, 0}, {y, 5}}.
-    {jump, {f, 165}}.
-  {label, 166}.
+    {jump, {f, 178}}.
+  {label, 179}.
     {move, {y, 6}, {x, 0}}.
-    {test, is_nil, {f, 167}, [{x, 0}]}.
-    {jump, {f, 164}}.
-  {label, 167}.
+    {test, is_nil, {f, 180}, [{x, 0}]}.
+    {jump, {f, 177}}.
+  {label, 180}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, bad_generator}, {y, 6}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 164}.
+  {label, 177}.
     {move, {y, 5}, {x, 0}}.
     {call_ext, 1, {extfunc, lists, reverse, 1}}.
     {move, {x, 0}, {y, 6}}.
@@ -3856,58 +3951,58 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {call_ext, 1, {extfunc, lists, sort, 1}}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_nonempty_list, {f, 169}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 182}, [{x, 0}]}.
     {get_list, {x, 0}, {y, 7}, {y, 8}}.
     {move, {y, 7}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_binary, {f, 170}, [{x, 0}]}.
+    {test, is_binary, {f, 183}, [{x, 0}]}.
     {test_heap, 8, 0}.
     {put_list, {literal, <<"\"">>}, nil, {x, 0}}.
     {put_list, {y, 1}, {x, 0}, {x, 0}}.
     {put_list, {literal, <<"\"">>}, {x, 0}, {x, 0}}.
     {put_list, {literal, <<"fs.walk: dangling link ">>}, {x, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
-    {jump, {f, 171}}.
-  {label, 170}.
+    {jump, {f, 184}}.
+  {label, 183}.
     {move, {atom, badarg}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 171}.
+  {label, 184}.
     {move, {x, 0}, {y, 9}}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 9}]}}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {y, 6}}.
-    {jump, {f, 168}}.
-  {label, 169}.
+    {jump, {f, 181}}.
+  {label, 182}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 172}, [{x, 0}, nil]}.
+    {test, is_eq_exact, {f, 185}, [{x, 0}, nil]}.
     {move, nil, {y, 7}}.
     {move, {y, 0}, {y, 8}}.
-  {label, 174}.
+  {label, 187}.
     {move, {y, 8}, {x, 0}}.
-    {test, is_nonempty_list, {f, 175}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 188}, [{x, 0}]}.
     {get_list, {x, 0}, {y, 9}, {y, 8}}.
     {move, {y, 9}, {x, 0}}.
-    {test, is_tuple, {f, 174}, [{x, 0}]}.
-    {test, test_arity, {f, 174}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 187}, [{x, 0}]}.
+    {test, test_arity, {f, 187}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 10}}.
     {get_tuple_element, {x, 0}, 1, {y, 11}}.
     {move, {y, 10}, {x, 0}}.
-    {test, is_eq_exact, {f, 174}, [{x, 0}, {atom, file}]}.
+    {test, is_eq_exact, {f, 187}, [{x, 0}, {atom, file}]}.
     {move, {y, 11}, {y, 0}}.
     {test_heap, 2, 0}.
     {put_list, {y, 0}, {y, 7}, {x, 0}}.
     {move, {x, 0}, {y, 7}}.
-    {jump, {f, 174}}.
-  {label, 175}.
+    {jump, {f, 187}}.
+  {label, 188}.
     {move, {y, 8}, {x, 0}}.
-    {test, is_nil, {f, 176}, [{x, 0}]}.
-    {jump, {f, 173}}.
-  {label, 176}.
+    {test, is_nil, {f, 189}, [{x, 0}]}.
+    {jump, {f, 186}}.
+  {label, 189}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, bad_generator}, {y, 8}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 173}.
+  {label, 186}.
     {move, {y, 7}, {x, 0}}.
     {call_ext, 1, {extfunc, lists, reverse, 1}}.
     {move, {x, 0}, {y, 8}}.
@@ -3918,28 +4013,28 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 7}]}}.
     {move, {x, 0}, {y, 7}}.
     {move, {y, 7}, {y, 6}}.
-    {jump, {f, 168}}.
-  {label, 172}.
+    {jump, {f, 181}}.
+  {label, 185}.
     {move, {y, 5}, {x, 0}}.
     {case_end, {x, 0}}.
-  {label, 168}.
+  {label, 181}.
     {move, {y, 6}, {y, 4}}.
     {try_end, {y, 12}}.
-    {jump, {f, 161}}.
-  {label, 160}.
+    {jump, {f, 174}}.
+  {label, 173}.
     {try_case, {y, 12}}.
     {move, {x, 0}, {y, 5}}.
     {move, {x, 1}, {y, 6}}.
     {move, {x, 2}, {y, 7}}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 178}, [{x, 0}, {atom, throw}]}.
+    {test, is_eq_exact, {f, 191}, [{x, 0}, {atom, throw}]}.
     {move, {y, 6}, {x, 0}}.
-    {test, is_tuple, {f, 178}, [{x, 0}]}.
-    {test, test_arity, {f, 178}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 191}, [{x, 0}]}.
+    {test, test_arity, {f, 191}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 8}}.
     {get_tuple_element, {x, 0}, 1, {y, 9}}.
     {move, {y, 8}, {x, 0}}.
-    {test, is_eq_exact, {f, 178}, [{x, 0}, {atom, bp_fs_walk}]}.
+    {test, is_eq_exact, {f, 191}, [{x, 0}, {atom, bp_fs_walk}]}.
     {move, {y, 9}, {y, 0}}.
     {test_heap, 2, 0}.
     {put_list, {y, 0}, nil, {x, 0}}.
@@ -3955,30 +4050,30 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 10}]}}.
     {move, {x, 0}, {y, 10}}.
     {move, {y, 10}, {y, 4}}.
-    {jump, {f, 177}}.
-  {label, 178}.
+    {jump, {f, 190}}.
+  {label, 191}.
     {move, {y, 5}, {x, 0}}.
     {move, {y, 6}, {x, 1}}.
     {move, {y, 7}, {x, 2}}.
     raw_raise.
-  {label, 177}.
-  {label, 161}.
+  {label, 190}.
+  {label, 174}.
     {move, {y, 4}, {x, 0}}.
     {deallocate, 13}.
     return.
-  {label, 131}.
+  {label, 144}.
     {move, {y, 3}, {x, 0}}.
     {case_end, {x, 0}}.
 
-{function, '__bp_tpl_8', 1, 120}.
-  {label, 119}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_8'}, 1}.
-  {label, 120}.
+{function, '__bp_tpl_9', 1, 133}.
+  {label, 132}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_9'}, 1}.
+  {label, 133}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 124}, 2, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 137}, 2, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -3986,10 +4081,10 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {deallocate, 2}.
     return.
 
-{function, '__bp_tpl_9--t/2-fun-0--fun-1-', 1, 205}.
-  {label, 204}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_9--t/2-fun-0--fun-1-'}, 1}.
-  {label, 205}.
+{function, '__bp_tpl_10--t/2-fun-0--fun-1-', 1, 218}.
+  {label, 217}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_10--t/2-fun-0--fun-1-'}, 1}.
+  {label, 218}.
     {allocate, 6, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
     {move, {x, 0}, {y, 1}}.
@@ -3997,12 +4092,12 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {call_ext, 1, {extfunc, file, read_link_info, 1}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_tuple, {f, 209}, [{x, 0}]}.
-    {test, test_arity, {f, 209}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 222}, [{x, 0}]}.
+    {test, test_arity, {f, 222}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 3}}.
     {get_tuple_element, {x, 0}, 1, {y, 4}}.
     {move, {y, 3}, {x, 0}}.
-    {test, is_eq_exact, {f, 209}, [{x, 0}, {atom, ok}]}.
+    {test, is_eq_exact, {f, 222}, [{x, 0}, {atom, ok}]}.
     {move, {y, 4}, {y, 0}}.
     {move, {integer, 3}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
@@ -4015,15 +4110,15 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {move, {y, 5}, {x, 0}}.
     {deallocate, 6}.
     return.
-  {label, 209}.
+  {label, 222}.
     {move, {atom, false}, {x, 0}}.
     {deallocate, 6}.
     return.
 
-{function, '__bp_tpl_9---t/2-fun-0--fun-2--fun-3-', 1, 218}.
-  {label, 217}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_9---t/2-fun-0--fun-2--fun-3-'}, 1}.
-  {label, 218}.
+{function, '__bp_tpl_10---t/2-fun-0--fun-2--fun-3-', 1, 231}.
+  {label, 230}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_10---t/2-fun-0--fun-2--fun-3-'}, 1}.
+  {label, 231}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -4031,108 +4126,108 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {move, {literal, [42, 63, 91, 123]}, {x, 1}}.
     {call_ext_last, 2, {extfunc, lists, member, 2}, 1}.
 
-{function, '__bp_tpl_9--t/2-fun-0--fun-2-', 1, 214}.
-  {label, 213}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_9--t/2-fun-0--fun-2-'}, 1}.
-  {label, 214}.
+{function, '__bp_tpl_10--t/2-fun-0--fun-2-', 1, 227}.
+  {label, 226}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_10--t/2-fun-0--fun-2-'}, 1}.
+  {label, 227}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 218}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 231}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext_last, 2, {extfunc, lists, any, 2}, 2}.
 
-{function, '__bp_tpl_9--t/2-fun-0--fun-4-', 2, 224}.
-  {label, 223}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_9--t/2-fun-0--fun-4-'}, 2}.
-  {label, 224}.
+{function, '__bp_tpl_10--t/2-fun-0--fun-4-', 2, 237}.
+  {label, 236}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_10--t/2-fun-0--fun-4-'}, 2}.
+  {label, 237}.
     {allocate, 9, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}]}}.
     {move, {x, 0}, {y, 1}}.
     {move, {x, 1}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_eq_exact, {f, 228}, [{x, 0}, {literal, [42]}]}.
+    {test, is_eq_exact, {f, 241}, [{x, 0}, {literal, [42]}]}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, file, list_dir, 1}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_tuple, {f, 230}, [{x, 0}]}.
-    {test, test_arity, {f, 230}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 243}, [{x, 0}]}.
+    {test, test_arity, {f, 243}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 6}}.
     {get_tuple_element, {x, 0}, 1, {y, 7}}.
     {move, {y, 6}, {x, 0}}.
-    {test, is_eq_exact, {f, 230}, [{x, 0}, {atom, ok}]}.
+    {test, is_eq_exact, {f, 243}, [{x, 0}, {atom, ok}]}.
     {move, {y, 7}, {y, 0}}.
     {move, {y, 0}, {y, 5}}.
-    {jump, {f, 229}}.
-  {label, 230}.
+    {jump, {f, 242}}.
+  {label, 243}.
     {move, nil, {y, 5}}.
-    {jump, {f, 229}}.
-  {label, 229}.
+    {jump, {f, 242}}.
+  {label, 242}.
     {move, {y, 5}, {y, 3}}.
-    {jump, {f, 227}}.
-  {label, 228}.
-    {'try', {y, 8}, {f, 233}}.
+    {jump, {f, 240}}.
+  {label, 241}.
+    {'try', {y, 8}, {f, 246}}.
     {move, {y, 2}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, filelib, wildcard, 2}}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 5}, {y, 4}}.
     {try_end, {y, 8}}.
-    {jump, {f, 234}}.
-  {label, 233}.
+    {jump, {f, 247}}.
+  {label, 246}.
     {try_case, {y, 8}}.
     {move, {x, 0}, {y, 5}}.
     {move, {x, 1}, {y, 6}}.
     {move, {x, 2}, {y, 7}}.
     {move, nil, {y, 4}}.
-    {jump, {f, 235}}.
-  {label, 235}.
-  {label, 234}.
+    {jump, {f, 248}}.
+  {label, 248}.
+  {label, 247}.
     {move, {y, 4}, {y, 3}}.
-    {jump, {f, 227}}.
-  {label, 227}.
+    {jump, {f, 240}}.
+  {label, 240}.
     {move, {y, 3}, {y, 0}}.
-    {jump, {f, 238}}.
-  {label, 238}.
+    {jump, {f, 251}}.
+  {label, 251}.
     {move, nil, {y, 3}}.
     {move, {y, 0}, {y, 4}}.
-  {label, 240}.
+  {label, 253}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_nonempty_list, {f, 241}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 254}, [{x, 0}]}.
     {get_list, {x, 0}, {y, 5}, {y, 4}}.
     {move, {y, 5}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {bif, hd, {f, 240}, [{x, 0}], {x, 0}}.
+    {bif, hd, {f, 253}, [{x, 0}], {x, 0}}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {x, 0}}.
     {move, {integer, 46}, {x, 1}}.
-    {test, is_ne_exact, {f, 243}, [{x, 0}, {x, 1}]}.
-    {jump, {f, 244}}.
-  {label, 243}.
+    {test, is_ne_exact, {f, 256}, [{x, 0}, {x, 1}]}.
+    {jump, {f, 257}}.
+  {label, 256}.
     {move, {y, 2}, {x, 0}}.
-    {bif, hd, {f, 240}, [{x, 0}], {x, 0}}.
+    {bif, hd, {f, 253}, [{x, 0}], {x, 0}}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {x, 0}}.
     {move, {integer, 46}, {x, 1}}.
-    {test, is_eq_exact, {f, 240}, [{x, 0}, {x, 1}]}.
-  {label, 244}.
+    {test, is_eq_exact, {f, 253}, [{x, 0}, {x, 1}]}.
+  {label, 257}.
     {test_heap, 2, 0}.
     {put_list, {y, 0}, {y, 3}, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
-    {jump, {f, 240}}.
-  {label, 241}.
+    {jump, {f, 253}}.
+  {label, 254}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_nil, {f, 242}, [{x, 0}]}.
-    {jump, {f, 239}}.
-  {label, 242}.
+    {test, is_nil, {f, 255}, [{x, 0}]}.
+    {jump, {f, 252}}.
+  {label, 255}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, bad_generator}, {y, 4}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 239}.
+  {label, 252}.
     {move, {y, 3}, {x, 0}}.
     {call_ext, 1, {extfunc, lists, reverse, 1}}.
     {move, {x, 0}, {y, 4}}.
@@ -4140,20 +4235,20 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {deallocate, 9}.
     return.
 
-{function, '__bp_tpl_9--t/2-fun-0--fun-5-', 2, 248}.
-  {label, 247}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_9--t/2-fun-0--fun-5-'}, 2}.
-  {label, 248}.
+{function, '__bp_tpl_10--t/2-fun-0--fun-5-', 2, 261}.
+  {label, 260}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_10--t/2-fun-0--fun-5-'}, 2}.
+  {label, 261}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_eq_exact, {f, 250}, [{x, 0}, nil]}.
+    {test, is_eq_exact, {f, 263}, [{x, 0}, nil]}.
     {move, {y, 1}, {x, 0}}.
     {deallocate, 3}.
     return.
-  {label, 250}.
+  {label, 263}.
     {move, {literal, [47]}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '++', 2}}.
@@ -4166,10 +4261,10 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {deallocate, 3}.
     return.
 
-{function, '__bp_tpl_9---t/2-fun-0--fun-6--fun-7-', 7, 261}.
-  {label, 260}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_9---t/2-fun-0--fun-6--fun-7-'}, 7}.
-  {label, 261}.
+{function, '__bp_tpl_10---t/2-fun-0--fun-6--fun-7-', 7, 274}.
+  {label, 273}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_10---t/2-fun-0--fun-6--fun-7-'}, 7}.
+  {label, 274}.
     {allocate, 11, 7}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}]}}.
     {move, {x, 0}, {y, 7}}.
@@ -4184,22 +4279,22 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {call_ext, 2, {extfunc, filename, join, 2}}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {y, 5}}.
-    {jump, {f, 265}}.
-  {label, 265}.
+    {jump, {f, 278}}.
+  {label, 278}.
     {move, {y, 2}, {x, 0}}.
     {move, {y, 7}, {x, 1}}.
     {move, {y, 1}, {x, 2}}.
     {call_fun, 2}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {y, 6}}.
-    {jump, {f, 267}}.
-  {label, 267}.
+    {jump, {f, 280}}.
+  {label, 280}.
     {move, {y, 5}, {x, 0}}.
     {move, {y, 3}, {x, 1}}.
     {call_fun, 1}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 269}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 282}, [{x, 0}, {atom, true}]}.
     {test_heap, 2, 0}.
     {put_list, {y, 6}, {y, 8}, {x, 0}}.
     {move, {x, 0}, {y, 10}}.
@@ -4211,23 +4306,23 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {call_fun, 4}.
     {deallocate, 11}.
     return.
-  {label, 269}.
+  {label, 282}.
     {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 270}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 283}, [{x, 0}, {atom, false}]}.
     {test_heap, 2, 0}.
     {put_list, {y, 6}, {y, 8}, {x, 0}}.
     {move, {x, 0}, {y, 10}}.
     {move, {y, 10}, {x, 0}}.
     {deallocate, 11}.
     return.
-  {label, 270}.
+  {label, 283}.
     {move, {y, 9}, {x, 0}}.
     {case_end, {x, 0}}.
 
-{function, '__bp_tpl_9---t/2-fun-0--fun-6--fun-8-', 8, 273}.
-  {label, 272}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_9---t/2-fun-0--fun-6--fun-8-'}, 8}.
-  {label, 273}.
+{function, '__bp_tpl_10---t/2-fun-0--fun-6--fun-8-', 8, 286}.
+  {label, 285}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_10---t/2-fun-0--fun-6--fun-8-'}, 8}.
+  {label, 286}.
     {allocate, 11, 8}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}]}}.
     {move, {x, 0}, {y, 7}}.
@@ -4243,14 +4338,14 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {call_ext, 2, {extfunc, filename, join, 2}}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {y, 6}}.
-    {jump, {f, 277}}.
-  {label, 277}.
+    {jump, {f, 290}}.
+  {label, 290}.
     {move, {y, 6}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_fun, 1}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 279}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 292}, [{x, 0}, {atom, true}]}.
     {move, {y, 5}, {x, 0}}.
     {move, {y, 7}, {x, 1}}.
     {move, {y, 4}, {x, 2}}.
@@ -4264,20 +4359,20 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {call_fun, 4}.
     {deallocate, 11}.
     return.
-  {label, 279}.
+  {label, 292}.
     {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 280}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 293}, [{x, 0}, {atom, false}]}.
     {move, {y, 8}, {x, 0}}.
     {deallocate, 11}.
     return.
-  {label, 280}.
+  {label, 293}.
     {move, {y, 9}, {x, 0}}.
     {case_end, {x, 0}}.
 
-{function, '__bp_tpl_9---t/2-fun-0--fun-6--fun-9-', 8, 299}.
-  {label, 298}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_9---t/2-fun-0--fun-6--fun-9-'}, 8}.
-  {label, 299}.
+{function, '__bp_tpl_10---t/2-fun-0--fun-6--fun-9-', 8, 312}.
+  {label, 311}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_10---t/2-fun-0--fun-6--fun-9-'}, 8}.
+  {label, 312}.
     {allocate, 11, 8}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}]}}.
     {move, {x, 0}, {y, 8}}.
@@ -4293,31 +4388,31 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {call_ext, 2, {extfunc, filename, join, 2}}.
     {move, {x, 0}, {y, 10}}.
     {move, {y, 10}, {y, 6}}.
-    {jump, {f, 303}}.
-  {label, 303}.
+    {jump, {f, 316}}.
+  {label, 316}.
     {move, {y, 2}, {x, 0}}.
     {move, {y, 8}, {x, 1}}.
     {move, {y, 1}, {x, 2}}.
     {call_fun, 2}.
     {move, {x, 0}, {y, 10}}.
     {move, {y, 10}, {y, 7}}.
-    {jump, {f, 305}}.
-  {label, 305}.
+    {jump, {f, 318}}.
+  {label, 318}.
     {move, {y, 3}, {x, 0}}.
-    {test, is_eq_exact, {f, 307}, [{x, 0}, nil]}.
+    {test, is_eq_exact, {f, 320}, [{x, 0}, nil]}.
     {test_heap, 2, 0}.
     {put_list, {y, 7}, {y, 9}, {x, 0}}.
     {move, {x, 0}, {y, 10}}.
     {move, {y, 10}, {x, 0}}.
     {deallocate, 11}.
     return.
-  {label, 307}.
+  {label, 320}.
     {move, {y, 6}, {x, 0}}.
     {move, {y, 4}, {x, 1}}.
     {call_fun, 1}.
     {move, {x, 0}, {y, 10}}.
     {move, {y, 10}, {x, 0}}.
-    {test, is_eq_exact, {f, 310}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 323}, [{x, 0}, {atom, true}]}.
     {move, {y, 3}, {x, 0}}.
     {move, {y, 6}, {x, 1}}.
     {move, {y, 7}, {x, 2}}.
@@ -4326,20 +4421,20 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {call_fun, 4}.
     {deallocate, 11}.
     return.
-  {label, 310}.
+  {label, 323}.
     {move, {y, 10}, {x, 0}}.
-    {test, is_eq_exact, {f, 311}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 324}, [{x, 0}, {atom, false}]}.
     {move, {y, 9}, {x, 0}}.
     {deallocate, 11}.
     return.
-  {label, 311}.
+  {label, 324}.
     {move, {y, 10}, {x, 0}}.
     {case_end, {x, 0}}.
 
-{function, '__bp_tpl_9--t/2-fun-0--fun-6-', 8, 255}.
-  {label, 254}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_9--t/2-fun-0--fun-6-'}, 8}.
-  {label, 255}.
+{function, '__bp_tpl_10--t/2-fun-0--fun-6-', 8, 268}.
+  {label, 267}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_10--t/2-fun-0--fun-6-'}, 8}.
+  {label, 268}.
     {allocate, 19, 8}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}, {y, 13}, {y, 14}, {y, 15}, {y, 16}, {y, 17}, {y, 18}]}}.
     {move, {x, 0}, {y, 9}}.
@@ -4351,29 +4446,29 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {move, {x, 6}, {y, 2}}.
     {move, {x, 7}, {y, 3}}.
     {test_heap, {alloc, [{words, 4}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 255}, 1, 0, {x, 0}, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
+    {make_fun3, {f, 268}, 1, 0, {x, 0}, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 257}, [{x, 0}, nil]}.
+    {test, is_eq_exact, {f, 270}, [{x, 0}, nil]}.
     {move, {y, 11}, {x, 0}}.
-    {test, is_eq_exact, {f, 257}, [{x, 0}, nil]}.
+    {test, is_eq_exact, {f, 270}, [{x, 0}, nil]}.
     {move, {y, 12}, {x, 0}}.
     {deallocate, 19}.
     return.
-  {label, 257}.
+  {label, 270}.
     {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 258}, [{x, 0}, nil]}.
+    {test, is_eq_exact, {f, 271}, [{x, 0}, nil]}.
     {test_heap, 2, 0}.
     {put_list, {y, 11}, {y, 12}, {x, 0}}.
     {move, {x, 0}, {y, 13}}.
     {move, {y, 13}, {x, 0}}.
     {deallocate, 19}.
     return.
-  {label, 258}.
+  {label, 271}.
     {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 259}, [{x, 0}, {literal, [[42, 42]]}]}.
+    {test, is_eq_exact, {f, 272}, [{x, 0}, {literal, [[42, 42]]}]}.
     {test_heap, {alloc, [{words, 5}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 261}, 2, 0, {x, 0}, {list, [{y, 10}, {y, 0}, {y, 11}, {y, 1}, {y, 4}]}}.
+    {make_fun3, {f, 274}, 2, 0, {x, 0}, {list, [{y, 10}, {y, 0}, {y, 11}, {y, 1}, {y, 4}]}}.
     {move, {x, 0}, {y, 13}}.
     {move, {y, 10}, {x, 0}}.
     {move, {literal, [42]}, {x, 1}}.
@@ -4384,16 +4479,16 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {move, {y, 12}, {x, 1}}.
     {move, {y, 14}, {x, 2}}.
     {call_ext_last, 3, {extfunc, lists, foldl, 3}, 19}.
-  {label, 259}.
+  {label, 272}.
     {move, {y, 9}, {x, 0}}.
-    {test, is_nonempty_list, {f, 271}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 284}, [{x, 0}]}.
     {get_list, {x, 0}, {y, 13}, {y, 14}}.
     {move, {y, 13}, {x, 0}}.
-    {test, is_eq_exact, {f, 271}, [{x, 0}, {literal, [42, 42]}]}.
+    {test, is_eq_exact, {f, 284}, [{x, 0}, {literal, [42, 42]}]}.
     {move, {y, 14}, {y, 5}}.
     {move, {y, 9}, {y, 6}}.
     {test_heap, {alloc, [{words, 6}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 273}, 3, 0, {x, 0}, {list, [{y, 10}, {y, 1}, {y, 4}, {y, 6}, {y, 0}, {y, 11}]}}.
+    {make_fun3, {f, 286}, 3, 0, {x, 0}, {list, [{y, 10}, {y, 1}, {y, 4}, {y, 6}, {y, 0}, {y, 11}]}}.
     {move, {x, 0}, {y, 15}}.
     {move, {y, 5}, {x, 0}}.
     {move, {y, 10}, {x, 1}}.
@@ -4403,7 +4498,7 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {move, {y, 1}, {x, 5}}.
     {move, {y, 2}, {x, 6}}.
     {move, {y, 3}, {x, 7}}.
-    {call, 8, {f, 255}}.
+    {call, 8, {f, 268}}.
     {move, {x, 0}, {y, 16}}.
     {move, {y, 10}, {x, 0}}.
     {move, {literal, [42]}, {x, 1}}.
@@ -4414,9 +4509,9 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {move, {y, 16}, {x, 1}}.
     {move, {y, 17}, {x, 2}}.
     {call_ext_last, 3, {extfunc, lists, foldl, 3}, 19}.
-  {label, 271}.
+  {label, 284}.
     {move, {y, 9}, {x, 0}}.
-    {test, is_nonempty_list, {f, 281}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 294}, [{x, 0}]}.
     {get_list, {x, 0}, {y, 13}, {y, 14}}.
     {move, {y, 13}, {y, 6}}.
     {move, {y, 14}, {y, 5}}.
@@ -4425,49 +4520,49 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {call_fun, 1}.
     {move, {x, 0}, {y, 15}}.
     {move, {y, 15}, {x, 0}}.
-    {test, is_eq_exact, {f, 283}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 296}, [{x, 0}, {atom, false}]}.
     {move, {y, 10}, {x, 0}}.
     {move, {y, 6}, {x, 1}}.
     {call_ext, 2, {extfunc, filename, join, 2}}.
     {move, {x, 0}, {y, 16}}.
     {move, {y, 16}, {y, 7}}.
-    {jump, {f, 285}}.
-  {label, 285}.
+    {jump, {f, 298}}.
+  {label, 298}.
     {move, {y, 11}, {x, 0}}.
     {move, {y, 6}, {x, 1}}.
     {move, {y, 0}, {x, 2}}.
     {call_fun, 2}.
     {move, {x, 0}, {y, 16}}.
     {move, {y, 16}, {y, 8}}.
-    {jump, {f, 287}}.
-  {label, 287}.
+    {jump, {f, 300}}.
+  {label, 300}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 289}, [{x, 0}, nil]}.
+    {test, is_eq_exact, {f, 302}, [{x, 0}, nil]}.
     {move, {y, 7}, {x, 0}}.
     {call_ext, 1, {extfunc, file, read_link_info, 1}}.
     {move, {x, 0}, {y, 16}}.
     {move, {y, 16}, {x, 0}}.
-    {test, is_tuple, {f, 291}, [{x, 0}]}.
-    {test, test_arity, {f, 291}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 304}, [{x, 0}]}.
+    {test, test_arity, {f, 304}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 17}}.
     {move, {y, 17}, {x, 0}}.
-    {test, is_eq_exact, {f, 291}, [{x, 0}, {atom, ok}]}.
+    {test, is_eq_exact, {f, 304}, [{x, 0}, {atom, ok}]}.
     {test_heap, 2, 0}.
     {put_list, {y, 8}, {y, 12}, {x, 0}}.
     {move, {x, 0}, {y, 18}}.
     {move, {y, 18}, {x, 0}}.
     {deallocate, 19}.
     return.
-  {label, 291}.
+  {label, 304}.
     {move, {y, 12}, {x, 0}}.
     {deallocate, 19}.
     return.
-  {label, 289}.
+  {label, 302}.
     {move, {y, 7}, {x, 0}}.
     {call_ext, 1, {extfunc, filelib, is_dir, 1}}.
     {move, {x, 0}, {y, 16}}.
     {move, {y, 16}, {x, 0}}.
-    {test, is_eq_exact, {f, 295}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 308}, [{x, 0}, {atom, true}]}.
     {move, {y, 5}, {x, 0}}.
     {move, {y, 7}, {x, 1}}.
     {move, {y, 8}, {x, 2}}.
@@ -4476,21 +4571,21 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {move, {y, 1}, {x, 5}}.
     {move, {y, 2}, {x, 6}}.
     {move, {y, 3}, {x, 7}}.
-    {call_last, 8, {f, 255}, 19}.
-  {label, 295}.
+    {call_last, 8, {f, 268}, 19}.
+  {label, 308}.
     {move, {y, 16}, {x, 0}}.
-    {test, is_eq_exact, {f, 296}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 309}, [{x, 0}, {atom, false}]}.
     {move, {y, 12}, {x, 0}}.
     {deallocate, 19}.
     return.
-  {label, 296}.
+  {label, 309}.
     {move, {y, 16}, {x, 0}}.
     {case_end, {x, 0}}.
-  {label, 283}.
+  {label, 296}.
     {move, {y, 15}, {x, 0}}.
-    {test, is_eq_exact, {f, 297}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 310}, [{x, 0}, {atom, true}]}.
     {test_heap, {alloc, [{words, 6}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 299}, 4, 0, {x, 0}, {list, [{y, 10}, {y, 0}, {y, 11}, {y, 5}, {y, 1}, {y, 4}]}}.
+    {make_fun3, {f, 312}, 4, 0, {x, 0}, {list, [{y, 10}, {y, 0}, {y, 11}, {y, 5}, {y, 1}, {y, 4}]}}.
     {move, {x, 0}, {y, 16}}.
     {move, {y, 10}, {x, 0}}.
     {move, {y, 6}, {x, 1}}.
@@ -4501,10 +4596,10 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {move, {y, 12}, {x, 1}}.
     {move, {y, 17}, {x, 2}}.
     {call_ext_last, 3, {extfunc, lists, foldl, 3}, 19}.
-  {label, 297}.
+  {label, 310}.
     {move, {y, 15}, {x, 0}}.
     {case_end, {x, 0}}.
-  {label, 281}.
+  {label, 294}.
     {move, {y, 9}, {x, 0}}.
     {move, {y, 10}, {x, 1}}.
     {move, {y, 11}, {x, 2}}.
@@ -4514,12 +4609,12 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {move, {y, 2}, {x, 6}}.
     {move, {y, 3}, {x, 7}}.
     {deallocate, 19}.
-    {jump, {f, 254}}.
+    {jump, {f, 267}}.
 
-{function, '__bp_tpl_9-t/2-fun-0-', 2, 186}.
-  {label, 185}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_9-t/2-fun-0-'}, 2}.
-  {label, 186}.
+{function, '__bp_tpl_10-t/2-fun-0-', 2, 199}.
+  {label, 198}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_10-t/2-fun-0-'}, 2}.
+  {label, 199}.
     {allocate, 16, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}, {y, 13}, {y, 14}, {y, 15}]}}.
     {move, {x, 0}, {y, 7}}.
@@ -4528,14 +4623,14 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {y, 0}}.
-    {jump, {f, 190}}.
-  {label, 190}.
+    {jump, {f, 203}}.
+  {label, 203}.
     {move, {y, 7}, {x, 0}}.
     {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {y, 1}}.
-    {jump, {f, 192}}.
-  {label, 192}.
+    {jump, {f, 205}}.
+  {label, 205}.
     {move, nil, {y, 9}}.
     {move, {y, 1}, {x, 0}}.
     {move, {literal, [47]}, {x, 1}}.
@@ -4543,9 +4638,9 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {call_ext, 3, {extfunc, string, split, 3}}.
     {move, {x, 0}, {y, 11}}.
     {move, {y, 11}, {y, 10}}.
-  {label, 194}.
+  {label, 207}.
     {move, {y, 10}, {x, 0}}.
-    {test, is_nonempty_list, {f, 195}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 208}, [{x, 0}]}.
     {get_list, {x, 0}, {y, 12}, {y, 10}}.
     {move, {y, 12}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
@@ -4553,76 +4648,76 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {call_ext, 2, {extfunc, erlang, '=/=', 2}}.
     {move, {x, 0}, {y, 13}}.
     {move, {y, 13}, {x, 0}}.
-    {test, is_eq_exact, {f, 197}, [{x, 0}, {atom, true}]}.
-    {jump, {f, 199}}.
-  {label, 197}.
+    {test, is_eq_exact, {f, 210}, [{x, 0}, {atom, true}]}.
+    {jump, {f, 212}}.
+  {label, 210}.
     {move, {y, 13}, {x, 0}}.
-    {test, is_eq_exact, {f, 198}, [{x, 0}, {atom, false}]}.
-    {jump, {f, 194}}.
-  {label, 198}.
+    {test, is_eq_exact, {f, 211}, [{x, 0}, {atom, false}]}.
+    {jump, {f, 207}}.
+  {label, 211}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, bad_filter}, {y, 13}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 199}.
+  {label, 212}.
     {move, {y, 2}, {x, 0}}.
     {move, {literal, [46]}, {x, 1}}.
-    {test, is_ne_exact, {f, 194}, [{x, 0}, {x, 1}]}.
+    {test, is_ne_exact, {f, 207}, [{x, 0}, {x, 1}]}.
     {test_heap, 2, 0}.
     {put_list, {y, 2}, {y, 9}, {x, 0}}.
     {move, {x, 0}, {y, 9}}.
-    {jump, {f, 194}}.
-  {label, 195}.
+    {jump, {f, 207}}.
+  {label, 208}.
     {move, {y, 10}, {x, 0}}.
-    {test, is_nil, {f, 196}, [{x, 0}]}.
-    {jump, {f, 193}}.
-  {label, 196}.
+    {test, is_nil, {f, 209}, [{x, 0}]}.
+    {jump, {f, 206}}.
+  {label, 209}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, bad_generator}, {y, 10}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 193}.
+  {label, 206}.
     {move, {y, 9}, {x, 0}}.
     {call_ext, 1, {extfunc, lists, reverse, 1}}.
     {move, {x, 0}, {y, 10}}.
     {move, {y, 10}, {y, 2}}.
-    {jump, {f, 201}}.
-  {label, 201}.
+    {jump, {f, 214}}.
+  {label, 214}.
     {move, {literal, [47]}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, lists, suffix, 2}}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {y, 1}}.
-    {jump, {f, 203}}.
-  {label, 203}.
+    {jump, {f, 216}}.
+  {label, 216}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 205}, 5, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 218}, 5, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {y, 3}}.
-    {jump, {f, 212}}.
-  {label, 212}.
+    {jump, {f, 225}}.
+  {label, 225}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 214}, 6, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 227}, 6, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {y, 4}}.
-    {jump, {f, 222}}.
-  {label, 222}.
+    {jump, {f, 235}}.
+  {label, 235}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 224}, 7, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 237}, 7, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {y, 5}}.
-    {jump, {f, 246}}.
-  {label, 246}.
+    {jump, {f, 259}}.
+  {label, 259}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 248}, 8, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 261}, 8, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {y, 6}}.
-    {jump, {f, 253}}.
-  {label, 253}.
+    {jump, {f, 266}}.
+  {label, 266}.
     {test_heap, {alloc, [{words, 4}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 255}, 1, 0, {x, 0}, {list, [{y, 6}, {y, 3}, {y, 5}, {y, 4}]}}.
+    {make_fun3, {f, 268}, 1, 0, {x, 0}, {list, [{y, 6}, {y, 3}, {y, 5}, {y, 4}]}}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {y, 4}}.
-    {jump, {f, 313}}.
-  {label, 313}.
+    {jump, {f, 326}}.
+  {label, 326}.
     {move, nil, {y, 9}}.
     {move, {y, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
@@ -4635,16 +4730,16 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {call_ext, 1, {extfunc, lists, usort, 1}}.
     {move, {x, 0}, {y, 11}}.
     {move, {y, 11}, {y, 10}}.
-  {label, 315}.
+  {label, 328}.
     {move, {y, 10}, {x, 0}}.
-    {test, is_nonempty_list, {f, 316}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 329}, [{x, 0}]}.
     {get_list, {x, 0}, {y, 12}, {y, 10}}.
     {move, {y, 12}, {y, 2}}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, 'not', 1}}.
     {move, {x, 0}, {y, 14}}.
     {move, {y, 14}, {x, 0}}.
-    {test, is_eq_exact, {f, 318}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 331}, [{x, 0}, {atom, false}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 2}, {x, 1}}.
     {call_ext, 2, {extfunc, filename, join, 2}}.
@@ -4654,45 +4749,45 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {call_fun, 1}.
     {move, {x, 0}, {y, 15}}.
     {move, {y, 15}, {y, 13}}.
-    {jump, {f, 320}}.
-  {label, 318}.
+    {jump, {f, 333}}.
+  {label, 331}.
     {move, {y, 14}, {x, 0}}.
-    {test, is_eq_exact, {f, 319}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 332}, [{x, 0}, {atom, true}]}.
     {move, {atom, true}, {y, 13}}.
-    {jump, {f, 320}}.
-  {label, 319}.
+    {jump, {f, 333}}.
+  {label, 332}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, badarg}, {y, 14}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 320}.
+  {label, 333}.
     {move, {y, 13}, {x, 0}}.
-    {test, is_eq_exact, {f, 321}, [{x, 0}, {atom, true}]}.
-    {jump, {f, 323}}.
-  {label, 321}.
+    {test, is_eq_exact, {f, 334}, [{x, 0}, {atom, true}]}.
+    {jump, {f, 336}}.
+  {label, 334}.
     {move, {y, 13}, {x, 0}}.
-    {test, is_eq_exact, {f, 322}, [{x, 0}, {atom, false}]}.
-    {jump, {f, 315}}.
-  {label, 322}.
+    {test, is_eq_exact, {f, 335}, [{x, 0}, {atom, false}]}.
+    {jump, {f, 328}}.
+  {label, 335}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, bad_filter}, {y, 13}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 323}.
+  {label, 336}.
     {move, {y, 2}, {x, 0}}.
     {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
     {move, {x, 0}, {y, 13}}.
     {test_heap, 2, 0}.
     {put_list, {y, 13}, {y, 9}, {x, 0}}.
     {move, {x, 0}, {y, 9}}.
-    {jump, {f, 315}}.
-  {label, 316}.
+    {jump, {f, 328}}.
+  {label, 329}.
     {move, {y, 10}, {x, 0}}.
-    {test, is_nil, {f, 317}, [{x, 0}]}.
-    {jump, {f, 314}}.
-  {label, 317}.
+    {test, is_nil, {f, 330}, [{x, 0}]}.
+    {jump, {f, 327}}.
+  {label, 330}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, bad_generator}, {y, 10}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 314}.
+  {label, 327}.
     {move, {y, 9}, {x, 0}}.
     {call_ext, 1, {extfunc, lists, reverse, 1}}.
     {move, {x, 0}, {y, 10}}.
@@ -4703,16 +4798,16 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {deallocate, 16}.
     return.
 
-{function, '__bp_tpl_9', 2, 182}.
-  {label, 181}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_9'}, 2}.
-  {label, 182}.
+{function, '__bp_tpl_10', 2, 195}.
+  {label, 194}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_10'}, 2}.
+  {label, 195}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 186}, 9, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 199}, 9, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -4721,10 +4816,10 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {deallocate, 3}.
     return.
 
-{function, '__bp_tpl_10-t/1-fun-0-', 1, 331}.
-  {label, 330}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_10-t/1-fun-0-'}, 1}.
-  {label, 331}.
+{function, '__bp_tpl_11-t/1-fun-0-', 1, 344}.
+  {label, 343}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_11-t/1-fun-0-'}, 1}.
+  {label, 344}.
     {allocate, 6, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
     {move, {x, 0}, {y, 1}}.
@@ -4732,24 +4827,24 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {call_ext, 1, {extfunc, file, del_dir_r, 1}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_eq_exact, {f, 335}, [{x, 0}, {atom, ok}]}.
+    {test, is_eq_exact, {f, 348}, [{x, 0}, {atom, ok}]}.
     {move, {literal, {ok, 0}}, {x, 0}}.
     {deallocate, 6}.
     return.
-  {label, 335}.
+  {label, 348}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_eq_exact, {f, 336}, [{x, 0}, {literal, {error, enoent}}]}.
+    {test, is_eq_exact, {f, 349}, [{x, 0}, {literal, {error, enoent}}]}.
     {move, {literal, {ok, 0}}, {x, 0}}.
     {deallocate, 6}.
     return.
-  {label, 336}.
+  {label, 349}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_tuple, {f, 337}, [{x, 0}]}.
-    {test, test_arity, {f, 337}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 350}, [{x, 0}]}.
+    {test, test_arity, {f, 350}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 3}}.
     {get_tuple_element, {x, 0}, 1, {y, 4}}.
     {move, {y, 3}, {x, 0}}.
-    {test, is_eq_exact, {f, 337}, [{x, 0}, {atom, error}]}.
+    {test, is_eq_exact, {f, 350}, [{x, 0}, {atom, error}]}.
     {move, {y, 4}, {y, 0}}.
     {test_heap, 2, 0}.
     {put_list, {y, 0}, nil, {x, 0}}.
@@ -4767,19 +4862,19 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {move, {y, 5}, {x, 0}}.
     {deallocate, 6}.
     return.
-  {label, 337}.
+  {label, 350}.
     {move, {y, 2}, {x, 0}}.
     {case_end, {x, 0}}.
 
-{function, '__bp_tpl_10', 1, 327}.
-  {label, 326}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_10'}, 1}.
-  {label, 327}.
+{function, '__bp_tpl_11', 1, 340}.
+  {label, 339}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_11'}, 1}.
+  {label, 340}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 331}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 344}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -4787,41 +4882,41 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {deallocate, 2}.
     return.
 
-{function, '__bp_adopt', 3, 341}.
-  {label, 340}.
-    {line, [{location, "std@io@fs.erl", 8}]}.
+{function, '__bp_adopt', 3, 354}.
+  {label, 353}.
+    {line, [{location, "std@io@fs.erl", 9}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_adopt'}, 3}.
-  {label, 341}.
-    {test, is_map, {f, 346}, [{x, 0}]}.
+  {label, 354}.
+    {test, is_map, {f, 359}, [{x, 0}]}.
     {allocate, 1, 3}.
     {move, {x, 1}, {y, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call, 2, {f, 343}}.
+    {call, 2, {f, 356}}.
     {test_heap, 2, 1}.
     {put_list, {y, 0}, {x, 0}, {x, 0}}.
     {call_ext_last, 1, {extfunc, erlang, list_to_tuple, 1}, 1}.
-  {label, 346}.
-    {test, is_list, {f, 347}, [{x, 0}]}.
-    {call_only, 3, {f, 345}}.
-  {label, 347}.
-    {test, is_tagged_tuple, {f, 348}, [{x, 0}, 2, {atom, ok}]}.
+  {label, 359}.
+    {test, is_list, {f, 360}, [{x, 0}]}.
+    {call_only, 3, {f, 358}}.
+  {label, 360}.
+    {test, is_tagged_tuple, {f, 361}, [{x, 0}, 2, {atom, ok}]}.
     {allocate, 0, 3}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {call, 3, {f, 341}}.
+    {call, 3, {f, 354}}.
     {test_heap, 3, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 0}]}}.
     {deallocate, 0}.
     return.
-  {label, 348}.
+  {label, 361}.
     return.
 
-{function, '-bp_adopt_fields-', 2, 343}.
-  {label, 342}.
-    {line, [{location, "std@io@fs.erl", 8}]}.
+{function, '-bp_adopt_fields-', 2, 356}.
+  {label, 355}.
+    {line, [{location, "std@io@fs.erl", 9}]}.
     {func_info, {atom, std@io@fs}, {atom, '-bp_adopt_fields-'}, 2}.
-  {label, 343}.
-    {test, is_nonempty_list, {f, 349}, [{x, 0}]}.
+  {label, 356}.
+    {test, is_nonempty_list, {f, 362}, [{x, 0}]}.
     {allocate, 2, 2}.
     {move, {x, 1}, {y, 1}}.
     {get_list, {x, 0}, {x, 0}, {y, 0}}.
@@ -4830,96 +4925,96 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {move, {y, 1}, {x, 1}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 2, {f, 343}}.
+    {call, 2, {f, 356}}.
     {test_heap, 2, 1}.
     {put_list, {y, 1}, {x, 0}, {x, 0}}.
     {deallocate, 2}.
     return.
-  {label, 349}.
+  {label, 362}.
     {move, nil, {x, 0}}.
     return.
 
-{function, '-bp_adopt_each-', 3, 345}.
-  {label, 344}.
-    {line, [{location, "std@io@fs.erl", 8}]}.
+{function, '-bp_adopt_each-', 3, 358}.
+  {label, 357}.
+    {line, [{location, "std@io@fs.erl", 9}]}.
     {func_info, {atom, std@io@fs}, {atom, '-bp_adopt_each-'}, 3}.
-  {label, 345}.
-    {test, is_nonempty_list, {f, 350}, [{x, 0}]}.
+  {label, 358}.
+    {test, is_nonempty_list, {f, 363}, [{x, 0}]}.
     {allocate, 3, 3}.
     {move, {x, 1}, {y, 1}}.
     {move, {x, 2}, {y, 2}}.
     {get_list, {x, 0}, {x, 0}, {y, 0}}.
-    {call, 3, {f, 341}}.
+    {call, 3, {f, 354}}.
     {move, {y, 0}, {x, 3}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 3}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {move, {y, 2}, {x, 2}}.
-    {call, 3, {f, 345}}.
+    {call, 3, {f, 358}}.
     {test_heap, 2, 1}.
     {put_list, {y, 0}, {x, 0}, {x, 0}}.
     {deallocate, 3}.
     return.
-  {label, 350}.
+  {label, 363}.
     {move, nil, {x, 0}}.
     return.
 
-{function, '-bp_stringify-', 1, 357}.
-  {label, 356}.
-    {line, [{location, "std@io@fs.erl", 14}]}.
+{function, '-bp_stringify-', 1, 370}.
+  {label, 369}.
+    {line, [{location, "std@io@fs.erl", 15}]}.
     {func_info, {atom, std@io@fs}, {atom, '-bp_stringify-'}, 1}.
-  {label, 357}.
+  {label, 370}.
     {allocate, 0, 1}.
-    {test, is_binary, {f, 358}, [{x, 0}]}.
+    {test, is_binary, {f, 371}, [{x, 0}]}.
     {deallocate, 0}.
     return.
-  {label, 358}.
-    {test, is_integer, {f, 359}, [{x, 0}]}.
+  {label, 371}.
+    {test, is_integer, {f, 372}, [{x, 0}]}.
     {call_ext_last, 1, {extfunc, erlang, integer_to_binary, 1}, 0}.
-  {label, 359}.
+  {label, 372}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 1}}.
     {move, {literal, <<"~p">>}, {x, 0}}.
     {call_ext_last, 2, {extfunc, io_lib, format, 2}, 0}.
 
-{function, '-bp_join-', 2, 355}.
-  {label, 354}.
-    {line, [{location, "std@io@fs.erl", 14}]}.
+{function, '-bp_join-', 2, 368}.
+  {label, 367}.
+    {line, [{location, "std@io@fs.erl", 15}]}.
     {func_info, {atom, std@io@fs}, {atom, '-bp_join-'}, 2}.
-  {label, 355}.
+  {label, 368}.
     {allocate, 1, 2}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 1}, {y, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 357}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 370}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 2, {extfunc, lists, join, 2}}.
     {call_ext_last, 1, {extfunc, erlang, iolist_to_binary, 1}, 1}.
 
-{function, '__bp_tpl_11-t/0-fun-0-', 0, 365}.
-  {label, 364}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_11-t/0-fun-0-'}, 0}.
-  {label, 365}.
+{function, '__bp_tpl_12-t/0-fun-0-', 0, 378}.
+  {label, 377}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_12-t/0-fun-0-'}, 0}.
+  {label, 378}.
     {allocate, 3, 0}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {literal, [84, 77, 80, 68, 73, 82]}, {x, 0}}.
     {call_ext, 1, {extfunc, os, getenv, 1}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 369}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 382}, [{x, 0}, {atom, false}]}.
     {move, {literal, [47, 116, 109, 112]}, {y, 2}}.
-    {jump, {f, 368}}.
-  {label, 369}.
+    {jump, {f, 381}}.
+  {label, 382}.
     {move, {y, 1}, {y, 0}}.
     {move, {y, 0}, {y, 2}}.
-    {jump, {f, 368}}.
-  {label, 368}.
+    {jump, {f, 381}}.
+  {label, 381}.
     {move, {y, 2}, {y, 0}}.
-    {jump, {f, 372}}.
-  {label, 372}.
+    {jump, {f, 385}}.
+  {label, 385}.
     {move, {literal, [positive]}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, unique_integer, 1}}.
     {move, {x, 0}, {y, 1}}.
@@ -4935,77 +5030,77 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {call_ext, 2, {extfunc, filename, join, 2}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {y, 0}}.
-    {jump, {f, 374}}.
-  {label, 374}.
+    {jump, {f, 387}}.
+  {label, 387}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, file, make_dir, 1}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 375}, [{x, 0}, {atom, ok}]}.
-    {jump, {f, 376}}.
-  {label, 375}.
+    {test, is_eq_exact, {f, 388}, [{x, 0}, {atom, ok}]}.
+    {jump, {f, 389}}.
+  {label, 388}.
     {move, {y, 1}, {x, 0}}.
     {badmatch, {x, 0}}.
-  {label, 376}.
+  {label, 389}.
     {move, {y, 0}, {x, 0}}.
     {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 3}.
 
-{function, '__bp_tpl_11', 0, 361}.
-  {label, 360}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_11'}, 0}.
-  {label, 361}.
+{function, '__bp_tpl_12', 0, 374}.
+  {label, 373}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_12'}, 0}.
+  {label, 374}.
     {allocate, 1, 0}.
     {init_yregs, {list, [{y, 0}]}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 365}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 378}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call_fun, 0}.
     {deallocate, 1}.
     return.
 
-{function, '__bp_tpl_12-t/0-fun-0-', 0, 384}.
-  {label, 383}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_12-t/0-fun-0-'}, 0}.
-  {label, 384}.
+{function, '__bp_tpl_13-t/0-fun-0-', 0, 397}.
+  {label, 396}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_13-t/0-fun-0-'}, 0}.
+  {label, 397}.
     {allocate, 4, 0}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {call_ext, 0, {extfunc, file, get_cwd, 0}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_tuple, {f, 387}, [{x, 0}]}.
-    {test, test_arity, {f, 387}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 400}, [{x, 0}]}.
+    {test, test_arity, {f, 400}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 2}}.
     {get_tuple_element, {x, 0}, 1, {y, 3}}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_eq_exact, {f, 387}, [{x, 0}, {atom, ok}]}.
+    {test, is_eq_exact, {f, 400}, [{x, 0}, {atom, ok}]}.
     {move, {y, 3}, {y, 0}}.
-    {jump, {f, 388}}.
-  {label, 387}.
+    {jump, {f, 401}}.
+  {label, 400}.
     {move, {y, 1}, {x, 0}}.
     {badmatch, {x, 0}}.
-  {label, 388}.
+  {label, 401}.
     {move, {y, 0}, {x, 0}}.
     {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 4}.
 
-{function, '__bp_tpl_12', 0, 380}.
-  {label, 379}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_12'}, 0}.
-  {label, 380}.
+{function, '__bp_tpl_13', 0, 393}.
+  {label, 392}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_13'}, 0}.
+  {label, 393}.
     {allocate, 1, 0}.
     {init_yregs, {list, [{y, 0}]}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 384}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 397}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call_fun, 0}.
     {deallocate, 1}.
     return.
 
-{function, '__bp_tpl_13-t/2-fun-0-', 2, 399}.
-  {label, 398}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_13-t/2-fun-0-'}, 2}.
-  {label, 399}.
+{function, '__bp_tpl_14-t/2-fun-0-', 2, 412}.
+  {label, 411}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14-t/2-fun-0-'}, 2}.
+  {label, 412}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -5015,26 +5110,26 @@ test "fs.glob of a root that does not exist answers the empty list" {
     {call_ext, 2, {extfunc, file, make_symlink, 2}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_eq_exact, {f, 402}, [{x, 0}, {atom, ok}]}.
-    {jump, {f, 403}}.
-  {label, 402}.
+    {test, is_eq_exact, {f, 415}, [{x, 0}, {atom, ok}]}.
+    {jump, {f, 416}}.
+  {label, 415}.
     {move, {y, 2}, {x, 0}}.
     {badmatch, {x, 0}}.
-  {label, 403}.
+  {label, 416}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 3}.
     return.
 
-{function, '__bp_tpl_13', 2, 395}.
-  {label, 394}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_13'}, 2}.
-  {label, 395}.
+{function, '__bp_tpl_14', 2, 408}.
+  {label, 407}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14'}, 2}.
+  {label, 408}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 399}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 412}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.

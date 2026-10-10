@@ -92,7 +92,7 @@ test ".d.ts: a union is `A | B`, not `|<A, B>` (step 6 T3)" {
 
 // A public signature naming a type the module keeps private: a `type` written
 // without `pub`, and the prelude record `SourceLocation` the comptime pass
-// splices into a module that names it (std's `testing/snapshots` —
+// splices into a module that names it (the `snap` library's root —
 // `pub fn path(loc: SourceLocation)`). The `.js` defines each class and
 // exports none of them; the `.d.ts` named them and declared nothing, which
 // `tsc --strict` refused (`Cannot find name 'SourceLocation'`). Each is

@@ -432,6 +432,32 @@ test "string words splits on whitespace runs" {
     assert ws.length == 3;
 }
 
+test "string normalizeNewlines turns CRLF into LF and keeps a lone CR" {
+    assert "a\r\nb\r\n".normalizeNewlines() == "a\nb\n";
+    assert "a\nb".normalizeNewlines() == "a\nb";
+    assert "a\rb\r\n\r\nc".normalizeNewlines() == "a\rb\n\nc";
+    assert "".normalizeNewlines() == "";
+}
+
+test "string trimTrailingNewlines drops newlines only" {
+    assert "a\n\n\n".trimTrailingNewlines() == "a";
+    assert "a \n".trimTrailingNewlines() == "a ";
+    assert "a\n b\n".trimTrailingNewlines() == "a\n b";
+    assert "a \t".trimTrailingNewlines() == "a \t";
+    assert "\n\n".trimTrailingNewlines() == "";
+    assert "".trimTrailingNewlines() == "";
+}
+
+test "string firstDifferingLine is 1-based, 0 for equal texts" {
+    assert "a\nb\nc".firstDifferingLine("a\nb\nd") == 3;
+    assert "x".firstDifferingLine("y") == 1;
+    assert "a\nb".firstDifferingLine("a\nb") == 0;
+    assert "".firstDifferingLine("") == 0;
+    assert "a".firstDifferingLine("a\nb") == 2;
+    assert "a\nb".firstDifferingLine("a") == 2;
+    assert "a\n".firstDifferingLine("a") == 2;
+}
+
 // ── string numerals (1.0.11-beta front 97) ───────────────────────────────────
 // `parseInt` / `parseFloat` decide in botopink which strings are numerals, so
 // every refusal below is the same text on every target. An integer answer is

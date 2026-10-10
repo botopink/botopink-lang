@@ -399,6 +399,9 @@ function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } t
 //   fn chars(...)
 //   fn lines(...)
 //   fn words(...)
+//   fn normalizeNewlines(...)
+//   fn trimTrailingNewlines(...)
+//   fn firstDifferingLine(...)
 //   fn charCodeAt(...)
 //   fn lastIndexOf(...)
 //   default fn parseInt(...)
@@ -410,6 +413,9 @@ String.prototype.slice = function(start, end) {
 String.prototype.chars = function() { return (Array.from(this.valueOf())); };
 String.prototype.lines = function() { return this.valueOf().split(/\r?\n/); };
 String.prototype.words = function() { return this.valueOf().split(/[ \t\n\r]+/).filter(__w => __w.length > 0); };
+String.prototype.normalizeNewlines = function() { return this.valueOf().replaceAll("\r\n", "\n"); };
+String.prototype.trimTrailingNewlines = function() { return this.valueOf().replace(/\n+$/, ""); };
+String.prototype.firstDifferingLine = function(other) { return ((__a, __b) => { const __x = __a.split("\n"), __y = __b.split("\n"); let __i = 0; while (__i < __x.length && __i < __y.length && __x[__i] === __y[__i]) __i++; return (__i === __x.length && __i === __y.length) ? 0 : __i + 1 })(this.valueOf(), other); };
 String.prototype.charCodeAt = function(index) { return ((__s, __i) => { if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = __i >= 0 ? Array.from(__s)[__i] : undefined; return __c === undefined ? -1 : __c.codePointAt(0); } return (__s.codePointAt(__i) ?? -1) | 0; })(this.valueOf(), index); };
 String.prototype.parseInt = function() {
     const self = this.valueOf();
@@ -1057,13 +1063,22 @@ pub declare fn exists(path: string) -> bool;
 pub declare fn list(path: string) -> @Result<string[], string>;
 
 // Create directory at `path`. Use `mkdirRecursive` to create
-// intermediate parents (the spec's `recursive: bool = true` overload
-// gates on default-fn-param-default support landing).
+// intermediate parents.
 // Node: `require('fs').mkdirSync($0)`.
 // Erlang: `file:make_dir/1`.
 #[@External.Node("""(() => { try { require('fs').mkdirSync($0); return { ok: 0 } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
 #[@External.Erlang("""(fun(__P) -> case file:make_dir(__P) of ok -> {ok, 0}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
 pub declare fn mkdir(path: string) -> @Result<i32, string>;
+
+// Create the directory at `path` and every missing directory above it. A
+// directory that is already there is `Ok` too; a path that exists as anything
+// else (a file) is an `Error`. What the snapshot library (`snap`) makes the
+// directory of a `.snap` with (decision 391).
+// Node: `require('fs').mkdirSync($0, { recursive: true })`.
+// Erlang: `filelib:ensure_path/1`.
+#[@External.Node("""(() => { try { require('fs').mkdirSync($0, { recursive: true }); return { ok: 0 } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
+#[@External.Erlang("""(fun(__P) -> case filelib:ensure_path(__P) of ok -> {ok, 0}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
+pub declare fn mkdirRecursive(path: string) -> @Result<i32, string>;
 
 // Delete the FILE at `path`. A directory — empty or not — is an `Error` on
 // both hosts (`ERR_FS_EISDIR` / `eperm`); `removeTree` removes one.
@@ -1212,6 +1227,20 @@ test "fs.removeTree removes a tree, a file and a link, and a missing path is Ok"
     assert removeTree([dir, "/app"].join("")).isOk();
     assert removeTree(dir).isOk();
     assert exists(dir).negate();
+}
+
+test "fs.mkdirRecursive makes a directory with its parents and is Ok on one that is there" {
+    val dir = scratchDir();
+    val deep = [dir, "/a/b/c"].join("");
+    assert mkdirRecursive(deep).isOk();
+    assert stat(deep).unwrapOr(
+        FileStat(size: 0l, mtime: 0l, isDir: false),
+    ).isDir;
+    assert mkdirRecursive(deep).isOk();
+    writeText([dir, "/file.txt"].join(""), "x");
+    assert mkdirRecursive([dir, "/file.txt"].join("")).isError();
+    assert mkdirRecursive([dir, "/file.txt/sub"].join("")).isError();
+    removeTree(dir);
 }
 
 test "fs.list of the host '/' resolves Ok" {
@@ -1593,9 +1622,7 @@ exports.list = list;
 
 // Create directory at `path`. Use `mkdirRecursive` to create
 
-// intermediate parents (the spec's `recursive: bool = true` overload
-
-// gates on default-fn-param-default support landing).
+// intermediate parents.
 
 // Node: `require('fs').mkdirSync($0)`.
 
@@ -1604,6 +1631,22 @@ exports.list = list;
 // mkdir: per-call template (see annotation)
 function mkdir(path) { return (() => { try { require('fs').mkdirSync(path); return { ok: 0 } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })(); }
 exports.mkdir = mkdir;
+
+// Create the directory at `path` and every missing directory above it. A
+
+// directory that is already there is `Ok` too; a path that exists as anything
+
+// else (a file) is an `Error`. What the snapshot library (`snap`) makes the
+
+// directory of a `.snap` with (decision 391).
+
+// Node: `require('fs').mkdirSync($0, { recursive: true })`.
+
+// Erlang: `filelib:ensure_path/1`.
+
+// mkdirRecursive: per-call template (see annotation)
+function mkdirRecursive(path) { return (() => { try { require('fs').mkdirSync(path, { recursive: true }); return { ok: 0 } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })(); }
+exports.mkdirRecursive = mkdirRecursive;
 
 // Delete the FILE at `path`. A directory — empty or not — is an `Error` on
 
@@ -1918,6 +1961,9 @@ export declare function list(path: string): { ok: string[] } | { error: string }
 
 
 export declare function mkdir(path: string): { ok: number } | { error: string };
+
+
+export declare function mkdirRecursive(path: string): { ok: number } | { error: string };
 
 
 export declare function rm(path: string): { ok: number } | { error: string };

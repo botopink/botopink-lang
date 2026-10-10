@@ -99,8 +99,8 @@ const Builder = struct {
 
     /// A public signature may name a type the module keeps private — a
     /// `type` written without `pub`, or a prelude record the comptime pass
-    /// spliced in (`pub fn path(loc: SourceLocation)` in std's
-    /// `testing/snapshots`). The `.js` defines its class and exports nothing
+    /// spliced in (`pub fn path(loc: SourceLocation)` in the
+    /// `snap` library). The `.js` defines its class and exports nothing
     /// for it; the `.d.ts` named it and declared nothing, which `tsc` refuses
     /// (`Cannot find name 'SourceLocation'`). Each such name — and, to a
     /// fixpoint, each private type those declarations name in turn — is

@@ -545,7 +545,7 @@ pub behavior Expr<E> {
 //
 // `@src()` takes no arguments and no trailing lambda — `@src(x)` is
 // `error[src-takes-no-arguments]`. It is a value like any other, so
-// `@src().line` reads a field in place. `std/asserts` and `std/snapshots`
+// `@src().line` reads a field in place. `std/asserts` and the `snap` library
 // are written against the caller's `@src()`: a helper never takes its own.
 //
 // The declaration the checker registers is the one in `comptime.zig`'s

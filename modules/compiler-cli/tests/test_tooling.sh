@@ -106,17 +106,20 @@ failrun commonJS
 if command -v escript >/dev/null 2>&1; then failrun erlang; fi
 
 # ── botopink test names every snapshot candidate it leaves ─────────────────────
-# `testing.snapshots` writes `<path>.new` for a missing or a mismatched snapshot;
-# the run lists each one after the results (stderr under --json).
+# The `snap` library writes `<path>.new` for a missing or a mismatched snapshot;
+# the run lists each one after the results (stderr under --json). The test
+# below writes the candidate itself with std's `io.fs`, so the run needs no
+# library.
 echo "==> [snapshots] botopink test lists the .snap.new candidates"
 SNAPWORK="$(mktemp -d)"
 mkdir -p "$SNAPWORK/src"
 printf '{ "name": "snapdemo", "version": "0.0.1", "src": "src/" }\n' >"$SNAPWORK/botopink.json"
 cat >"$SNAPWORK/src/main.bp" <<'BP'
-import {testing.snapshots} from "std";
+import {io.fs} from "std";
 
 test "snap: first" {
-    try snapshots.assertText(@src(), "hello");
+    try fs.mkdirRecursive("src/__snapshots__/snap");
+    try fs.writeText("src/__snapshots__/snap/first.snap.new", "hello");
 }
 BP
 set +e

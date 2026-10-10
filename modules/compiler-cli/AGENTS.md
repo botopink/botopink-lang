@@ -495,7 +495,7 @@ dependency's is `<its src>/<file>` with a trailing `/` of `src` dropped
 (`libs.loadOne`).
 
 After the results the run lists every snapshot candidate the project holds —
-each `*.snap.new` `testing.snapshots` wrote for a missing or a mismatched
+each `*.snap.new` the `snap` library wrote for a missing or a mismatched
 snapshot, package-relative, dot directories and `node_modules` not entered
 (`snapshotCandidates`):
 

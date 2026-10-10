@@ -99,6 +99,9 @@ function __bp_print() {
 //   fn chars(...)
 //   fn lines(...)
 //   fn words(...)
+//   fn normalizeNewlines(...)
+//   fn trimTrailingNewlines(...)
+//   fn firstDifferingLine(...)
 //   fn charCodeAt(...)
 //   fn lastIndexOf(...)
 //   default fn parseInt(...)
@@ -110,6 +113,9 @@ String.prototype.slice = function(start, end) {
 String.prototype.chars = function() { return (Array.from(this.valueOf())); };
 String.prototype.lines = function() { return this.valueOf().split(/\r?\n/); };
 String.prototype.words = function() { return this.valueOf().split(/[ \t\n\r]+/).filter(__w => __w.length > 0); };
+String.prototype.normalizeNewlines = function() { return this.valueOf().replaceAll("\r\n", "\n"); };
+String.prototype.trimTrailingNewlines = function() { return this.valueOf().replace(/\n+$/, ""); };
+String.prototype.firstDifferingLine = function(other) { return ((__a, __b) => { const __x = __a.split("\n"), __y = __b.split("\n"); let __i = 0; while (__i < __x.length && __i < __y.length && __x[__i] === __y[__i]) __i++; return (__i === __x.length && __i === __y.length) ? 0 : __i + 1 })(this.valueOf(), other); };
 String.prototype.charCodeAt = function(index) { return ((__s, __i) => { if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = __i >= 0 ? Array.from(__s)[__i] : undefined; return __c === undefined ? -1 : __c.codePointAt(0); } return (__s.codePointAt(__i) ?? -1) | 0; })(this.valueOf(), index); };
 String.prototype.parseInt = function() {
     const self = this.valueOf();

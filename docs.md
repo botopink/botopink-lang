@@ -329,7 +329,7 @@ does what it wants.
 |---|---|
 | the root (pure) | `collections` (`Dict`, `Set`, `Queue`, `Order` — a constructor is called on its type: `Dict.empty()`, `Dict.ofEntries([#("a", 1)])`, `Set.fromList(xs)`), `math`, `path`, `url`, `querystring`, `json`, `regex`, `unicode`, `string_builder`, `encoding`, `hash`, `escape`, `async`, `bpp` (the four annotations a framework marks its `.bpp` roles with — `#[bpp.html]`, `#[bpp.style]`, `#[bpp.htmlPrelude]`, `#[bpp.stylePrelude]` — and `Prelude`, decision 361); `erlang` and `beam` (the target's surface) |
 | `io` | `io.fs`, `io.http`, `io.net`, `io.clock`, `io.random`, `io.os`, `io.env`, `io.process` |
-| `testing` | `testing.asserts`, `testing.snapshots`, `testing.mocks` |
+| `testing` | `testing.asserts`, `testing.mocks` (`testing.snapshots` is the `snap` library, decision 391) |
 
 ```botopink
 import {collections: {Dict, Set}, io: {fs, clock}, testing.asserts} from "std";
@@ -3461,7 +3461,7 @@ time — every backend emits the same code it emits for the constructor call
 `@src()` takes no arguments and no trailing lambda (`@src(1)` is
 `error[src-takes-no-arguments]`). It is a value like any other: `@src().line`
 reads a field in place. Its consumer is the test contract — `std/testing/asserts`
-messages and `std/testing/snapshots` paths are computed from the caller's `@src()`.
+messages and the `snap` library's paths are computed from the caller's `@src()`.
 
 ## Tests
 

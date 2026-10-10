@@ -26,7 +26,7 @@
 //// `libs/std/src/sidecars/` therefore still holds exactly one file
 //// (`random.mjs`).
 ////
-//// **STD-001.** Unlike `asserts` and `snapshots`, the eight cells here are
+//// **STD-001.** Unlike `asserts`, the eight cells here are
 //// `pub declare fn`: the code `#[mock]` adds to the CONSUMER's behavior calls
 //// `invoke`/`key`/`newMock`, so they have to be exported. They carry Node and
 //// Erlang templates only, so `import {mocks} from "std"` is refused on beam and

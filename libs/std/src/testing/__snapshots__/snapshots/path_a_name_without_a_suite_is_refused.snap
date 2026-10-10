@@ -1,5 +1,0 @@
-botopink-snap 1
-test: snapshots: path ---- a name without a suite is refused
-subject: text
-
-snapshots: test name needs a suite - write "<suite>: <description>"

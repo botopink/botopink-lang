@@ -896,13 +896,22 @@ pub declare fn exists(path: string) -> bool;
 pub declare fn list(path: string) -> @Result<string[], string>;
 
 // Create directory at `path`. Use `mkdirRecursive` to create
-// intermediate parents (the spec's `recursive: bool = true` overload
-// gates on default-fn-param-default support landing).
+// intermediate parents.
 // Node: `require('fs').mkdirSync($0)`.
 // Erlang: `file:make_dir/1`.
 #[@External.Node("""(() => { try { require('fs').mkdirSync($0); return { ok: 0 } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
 #[@External.Erlang("""(fun(__P) -> case file:make_dir(__P) of ok -> {ok, 0}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
 pub declare fn mkdir(path: string) -> @Result<i32, string>;
+
+// Create the directory at `path` and every missing directory above it. A
+// directory that is already there is `Ok` too; a path that exists as anything
+// else (a file) is an `Error`. What the snapshot library (`snap`) makes the
+// directory of a `.snap` with (decision 391).
+// Node: `require('fs').mkdirSync($0, { recursive: true })`.
+// Erlang: `filelib:ensure_path/1`.
+#[@External.Node("""(() => { try { require('fs').mkdirSync($0, { recursive: true }); return { ok: 0 } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
+#[@External.Erlang("""(fun(__P) -> case filelib:ensure_path(__P) of ok -> {ok, 0}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
+pub declare fn mkdirRecursive(path: string) -> @Result<i32, string>;
 
 // Delete the FILE at `path`. A directory — empty or not — is an `Error` on
 // both hosts (`ERR_FS_EISDIR` / `eperm`); `removeTree` removes one.
@@ -1051,6 +1060,20 @@ test "fs.removeTree removes a tree, a file and a link, and a missing path is Ok"
     assert removeTree([dir, "/app"].join("")).isOk();
     assert removeTree(dir).isOk();
     assert exists(dir).negate();
+}
+
+test "fs.mkdirRecursive makes a directory with its parents and is Ok on one that is there" {
+    val dir = scratchDir();
+    val deep = [dir, "/a/b/c"].join("");
+    assert mkdirRecursive(deep).isOk();
+    assert stat(deep).unwrapOr(
+        FileStat(size: 0l, mtime: 0l, isDir: false),
+    ).isDir;
+    assert mkdirRecursive(deep).isOk();
+    writeText([dir, "/file.txt"].join(""), "x");
+    assert mkdirRecursive([dir, "/file.txt"].join("")).isError();
+    assert mkdirRecursive([dir, "/file.txt/sub"].join("")).isError();
+    removeTree(dir);
 }
 
 test "fs.list of the host '/' resolves Ok" {
@@ -1299,7 +1322,7 @@ test "fs.glob of a root that does not exist answers the empty list" {
 ----- ERLANG -- std/io/fs.erl
 ```erlang
 -module(std@io@fs).
--export([readText/1, writeText/2, exists/1, list/1, mkdir/1, rm/1, copy/2, stat/1, walk/1, glob/2, removeTree/1]).
+-export([readText/1, writeText/2, exists/1, list/1, mkdir/1, mkdirRecursive/1, rm/1, copy/2, stat/1, walk/1, glob/2, removeTree/1]).
 
 %% behavior Bool
 
@@ -1399,9 +1422,7 @@ list(Path) ->
 
 % Create directory at `path`. Use `mkdirRecursive` to create
 
-% intermediate parents (the spec's `recursive: bool = true` overload
-
-% gates on default-fn-param-default support landing).
+% intermediate parents.
 
 % Node: `require('fs').mkdirSync($0)`.
 
@@ -1410,6 +1431,22 @@ list(Path) ->
 %% external fn mkdir -> erlang template
 mkdir(Path) ->
     (fun(__P) -> case file:make_dir(__P) of ok -> {ok, 0}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)(Path).
+
+% Create the directory at `path` and every missing directory above it. A
+
+% directory that is already there is `Ok` too; a path that exists as anything
+
+% else (a file) is an `Error`. What the snapshot library (`snap`) makes the
+
+% directory of a `.snap` with (decision 391).
+
+% Node: `require('fs').mkdirSync($0, { recursive: true })`.
+
+% Erlang: `filelib:ensure_path/1`.
+
+%% external fn mkdirRecursive -> erlang template
+mkdirRecursive(Path) ->
+    (fun(__P) -> case filelib:ensure_path(__P) of ok -> {ok, 0}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)(Path).
 
 % Delete the FILE at `path`. A directory — empty or not — is an `Error` on
 
@@ -1598,6 +1635,7 @@ removeTree(Path) ->
 % inline test as a separate process; the temp filenames are seeded with
 
 % `time.nowMillis()` for cross-run uniqueness.)
+
 
 
 

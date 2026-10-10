@@ -832,7 +832,7 @@ pub fn run(
         std.Io.File.stdout().writeStreamingAll(io, buf.items) catch {};
     }
 
-    // `testing.snapshots` writes `<path>.new` on a mismatch or a missing
+    // the `snap` library writes `<path>.new` on a mismatch or a missing
     // snapshot, and nothing else says so: name every candidate the project
     // holds, after the results (stderr under `--json`, which keeps stdout
     // JSONL).
@@ -914,7 +914,7 @@ test "hasRunnerSummary: a finished runner's line, and a crash without one" {
 }
 
 /// Every `*.snap.new` under the project (the cwd), package-relative with `/`
-/// separators, sorted — the candidates `testing.snapshots` wrote. Dot
+/// separators, sorted — the candidates the `snap` library wrote. Dot
 /// directories (`.botopinkbuild`, `.git`) and `node_modules` are not entered.
 fn snapshotCandidates(arena: std.mem.Allocator, io: std.Io) ![]const []const u8 {
     var root = try std.Io.Dir.cwd().openDir(io, ".", .{ .iterate = true });

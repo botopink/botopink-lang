@@ -328,6 +328,25 @@ behavior String {
     #[@External.Node("""$0.split(/[ \t\n\r]+/).filter(__w => __w.length > 0)""")]
     fn words(self: Self) -> string[];
 
+    // `\r\n` -> `\n`: the text as a unix host writes it. A lone `\r` stays.
+    #[@External.Erlang("""binary:replace($0, <<"\r\n">>, <<"\n">>, [global])""")]
+    #[@External.Node("""$0.replaceAll("\r\n", "\n")""")]
+    fn normalizeNewlines(self: Self) -> string;
+
+    // The text without its trailing `\n` characters - only newlines, not
+    // spaces or tabs (`trimEnd` takes all whitespace): whitespace inside or
+    // before them is kept. `"a\n\n"` is `"a"`, `"a \n"` is `"a "`.
+    #[@External.Erlang("""re:replace($0, "\\n+\\z", "", [{return, binary}])""")]
+    #[@External.Node("""$0.replace(/\n+$/, "")""")]
+    fn trimTrailingNewlines(self: Self) -> string;
+
+    // The 1-based number of the first line (lines split on `\n`) where the
+    // two texts differ, `0` when they are equal. A text that is a prefix of
+    // the other, in whole lines, differs at the line after its last.
+    #[@External.Erlang("""(fun(__A, __B) -> (fun __F([__H | __T1], [__H | __T2], __N) -> __F(__T1, __T2, __N + 1); __F([], [], _) -> 0; __F(_, _, __N) -> __N + 1 end)(binary:split(__A, <<"\n">>, [global]), binary:split(__B, <<"\n">>, [global]), 0) end)($0, $1)""")]
+    #[@External.Node("""((__a, __b) => { const __x = __a.split("\n"), __y = __b.split("\n"); let __i = 0; while (__i < __x.length && __i < __y.length && __x[__i] === __y[__i]) __i++; return (__i === __x.length && __i === __y.length) ? 0 : __i + 1 })($0, $1)""")]
+    fn firstDifferingLine(self: Self, other: string) -> i32;
+
     // A template on a behavior method becomes a PROTOTYPE PATCH on commonJS
     // (`String.prototype.charCodeAt = …`), so it must not name the method it
     // patches: `$0.charCodeAt($1)` called the patch it had just installed and
