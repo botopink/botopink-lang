@@ -1,0 +1,11 @@
+cities
+name,state
+1.5
+audited
+high
+no alias
+2
+name 1 unique
+state 2 shared
+no other
+0

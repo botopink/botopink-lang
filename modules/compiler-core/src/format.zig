@@ -2500,7 +2500,12 @@ pub const Formatter = struct {
         }
         try parts.append(this.arena, try this.text(f.name));
         try parts.append(this.arena, try this.text(": "));
-        try parts.append(this.arena, try this.fmtTypeRef(f.typeRef));
+        // Decision 370 (1) — the parser read `@Expr<T>`'s `T` off a record
+        // field; it prints as written.
+        if (f.exprWrapped)
+            try parts.append(this.arena, try this.concatAll(&.{ try this.text("@Expr<"), try this.fmtTypeRef(f.typeRef), try this.text(">") }))
+        else
+            try parts.append(this.arena, try this.fmtTypeRef(f.typeRef));
         if (f.default) |d| {
             try parts.append(this.arena, try this.text(" = "));
             try parts.append(this.arena, try this.fmtExpr(d));

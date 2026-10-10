@@ -15,6 +15,7 @@
 const std = @import("std");
 const ast = @import("../ast.zig");
 const memberFn = @import("member_fn.zig");
+const typedMeta = @import("typed_meta.zig");
 
 /// The decorator prelude's function `x.fail(m)` becomes.
 pub const fail_arg_fn = @import("runtime/prelude.zig").fail_arg_fn;
@@ -33,6 +34,9 @@ const Ctx = struct {
     /// program's code, not the body's.
     declName: ?[]const u8 = null,
     members: usize = 0,
+    /// Decision 298 — each `decl.setMeta(v)` / `decl.addMeta(v)` hands the
+    /// runtime `'__bp_typedMeta'(k, v)`, `k` in `typed_meta.collect`'s order.
+    metas: usize = 0,
 };
 
 /// `f` with every read of a `comptime x: @Expr<T>` parameter erased; `f`
@@ -163,6 +167,25 @@ fn clone(comptime T: type, ctx: *Ctx, v: T) error{OutOfMemory}!T {
             out.call.kind.call.args = args;
             return out;
         };
+        // `decl.setMeta(v)` / `decl.addMeta(v)` → `__bp_typedMeta(k, v)`
+        // (decision 298); in `v`, a parameter handed to an `@Expr<T>` field
+        // is `__bp_ExprRef(__bp_expr: j)` (370 (1)) — the program reads the
+        // argument, never its value.
+        if (ctx.declName) |dn| if (typedMeta.asCall(v, dn)) |mc| {
+            var out = v;
+            const c = v.call.kind.call;
+            const args = try ctx.arena.alloc(ast.CallArg, 2);
+            const idx = try ctx.arena.create(ast.Expr);
+            idx.* = .{ .literal = .{ .loc = mc.loc, .kind = .{ .numberLit = try std.fmt.allocPrint(ctx.arena, "{d}", .{ctx.metas}) } } };
+            ctx.metas += 1;
+            args[0] = .{ .label = null, .value = idx };
+            args[1] = .{ .label = null, .value = try metaValue(ctx, mc.value.*) };
+            out.call.kind.call.receiver = null;
+            out.call.kind.call.callee = typedMeta.typed_meta_fn;
+            out.call.kind.call.args = args;
+            out.call.kind.call.trailing = c.trailing;
+            return out;
+        };
         // `x.value` → `x`.
         if (v == .identifier and v.identifier.kind == .identAccess) {
             const ia = v.identifier.kind.identAccess;
@@ -220,6 +243,37 @@ fn clone(comptime T: type, ctx: *Ctx, v: T) error{OutOfMemory}!T {
     }
 }
 
+/// A typed meta value (decision 298) with every argument that is a bare
+/// `comptime x: @Expr<T>` parameter replaced by `__bp_ExprRef(__bp_expr: j)`
+/// (370 (1)); the rest erased as anywhere else.
+fn metaValue(ctx: *Ctx, e: ast.Expr) error{OutOfMemory}!*ast.Expr {
+    const out = try ctx.arena.create(ast.Expr);
+    out.* = try clone(ast.Expr, ctx, e);
+    if (typedMeta.ctorOf(e) == null) return out;
+    const c = e.call.kind.call;
+    const args = try ctx.arena.alloc(ast.CallArg, c.args.len);
+    for (c.args, 0..) |a, i| {
+        args[i] = out.call.kind.call.args[i];
+        const k = indexOf(ctx, a.value.*) orelse continue;
+        const loc = a.value.getLoc();
+        const j = try ctx.arena.create(ast.Expr);
+        j.* = .{ .literal = .{ .loc = loc, .kind = .{ .numberLit = try std.fmt.allocPrint(ctx.arena, "{d}", .{ctx.indices[k]}) } } };
+        const refArgs = try ctx.arena.alloc(ast.CallArg, 1);
+        refArgs[0] = .{ .label = typedMeta.expr_ref_field, .value = j };
+        const ref = try ctx.arena.create(ast.Expr);
+        ref.* = .{ .call = .{ .loc = loc, .kind = .{ .call = .{
+            .receiver = null,
+            .callee = typedMeta.expr_ref_record,
+            .is_builtin = false,
+            .args = refArgs,
+            .trailing = &.{},
+        } } } };
+        args[i].value = ref;
+    }
+    out.call.kind.call.args = args;
+    return out;
+}
+
 /// How a body uses the parameter `name`.
 pub const Use = struct {
     /// `name` is read other than as the receiver of `.fail(…)`: its value is
@@ -231,7 +285,9 @@ pub const Use = struct {
 
 /// How `f`'s body uses its parameter `name`.
 /// A read inside a member function a decorator hands to `decl.addMember(name,
-/// fn…)` is the program's, at run time (decision 370 (2)): it is not a use.
+/// fn…)` is the program's, at run time (decision 370 (2)): it is not a use;
+/// nor is the parameter handed as it is to a typed meta value's field
+/// (`decl.addMeta(Check(rule: rule))`, 370 (1)).
 pub fn useOf(f: ast.FnDecl, name: []const u8) Use {
     var u: Use = .{};
     walk([]ast.Stmt, name, memberFn.declParamName(f), f.body, &u);
@@ -243,6 +299,18 @@ fn walk(comptime T: type, name: []const u8, declName: ?[]const u8, v: T, u: *Use
         if (declName) |dn| if (memberFn.asCall(v, dn)) |mc| {
             walk(ast.Expr, name, declName, mc.name.*, u);
             return;
+        };
+        // Decision 370 (1) — a parameter handed to a typed meta value's
+        // field as it is (`Check(rule: rule)`) is the program's, read where
+        // the meta is read: it is not a use.
+        if (declName) |dn| if (typedMeta.asCall(v, dn)) |mc| {
+            if (typedMeta.ctorOf(mc.value.*)) |ctor| {
+                for (ctor.args) |a| {
+                    if (isName(a.value.*, name)) continue;
+                    walk(ast.Expr, name, declName, a.value.*, u);
+                }
+                return;
+            }
         };
         if (v == .identifier) switch (v.identifier.kind) {
             .ident => |n| if (std.mem.eql(u8, n, name)) {
@@ -318,6 +386,38 @@ test "`x.value` is `x`, and a decorator's `x.fail(m)` names its argument" {
     try std.testing.expect(std.mem.indexOf(u8, text, "key == \"\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "__bp_failArg(1, \"empty\")") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "key + n.toString()") != null);
+}
+
+test "a typed meta call hands the runtime its index; a parameter given to an `@Expr` field is a reference" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const lexer = @import("../lexer.zig");
+    const parser = @import("../parser.zig");
+    const format = @import("../format.zig");
+    var lx = lexer.Lexer.init(
+        \\fn check(comptime decl: @Decl, comptime table: @Expr<string>, comptime rule: @Expr<fn(v: i32) -> bool>) {
+        \\    decl.setMeta(Entity(table: table.value));
+        \\    decl.addMeta(Check(message: "m", rule: rule));
+        \\}
+    );
+    var p = parser.Parser.init(try lx.scanAll(arena));
+    const f = (try p.parse(arena)).decls[0].@"fn";
+    const erased = try eraseFn(arena, f, true);
+    var fm = format.Formatter.init(arena);
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    for (erased.body) |st| {
+        try buf.appendSlice(arena, try format.render(arena, try fm.fmtExpr(st.expr), 200));
+        try buf.append(arena, '\n');
+    }
+    try std.testing.expectEqualStrings(
+        \\__bp_typedMeta(0, Entity(table: table))
+        \\__bp_typedMeta(1, Check(message: "m", rule: __bp_ExprRef(__bp_expr: 1)))
+        \\
+    , buf.items);
+    // Handed on as it is, `rule` is the program's: no use of its value.
+    try std.testing.expect(!useOf(f, "rule").reads);
+    try std.testing.expect(useOf(f, "table").value);
 }
 
 test "a body's use of a parameter: read, `.value`, `.fail` only" {

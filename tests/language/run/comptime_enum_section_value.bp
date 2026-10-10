@@ -1,0 +1,65 @@
+//// `docs.md` § Sections of an enum, decision 331 — a value under a section
+//// (`.Pad.All.4`) crosses into the comptime runtime and back on both
+//// runtimes (BEAM for erlang and beam, WAT for commonJS and wasm): as an
+//// argument, inside an array, inside a payload variant, and as the value
+//// written into the program. The parent binary read the path as a chain of
+//// map reads on the comptime runtime: `{error,{badmap,'Pad'}}` at the
+//// `comptime`.
+
+type Tok {
+    Pad {
+        All {
+            4,
+            8,
+        }
+        X {
+            2,
+        }
+    }
+    Bold,
+    Hover(inner: Tok[]),
+}
+
+fn name(t: Tok) -> string {
+    return case t {
+        Pad(p) -> case p {
+            All(a) -> case a {
+                __4 -> "pad-all-4";
+                __8 -> "pad-all-8";
+            };
+            X(x) -> case x {
+                __2 -> "pad-x-2";
+            };
+        };
+        Bold -> "bold";
+        Hover(inner) -> "hover(" + names(inner) + ")";
+    };
+}
+
+fn names(ts: Tok[]) -> string {
+    return ts.map({ t -> name(t) }).join(",");
+}
+
+fn first(ts: Tok[]) -> Tok {
+    return ts[0] ?? .Bold;
+}
+
+fn padX() -> Tok {
+    return .Pad.X.2;
+}
+
+pub fn main() {
+    val one = comptime name(.Pad.All.8);
+    @print(one);
+    val many = comptime names([.Pad.All.4, .Bold, Tok.Pad.X.2]);
+    @print(many);
+    val nested = comptime names([.Hover([.Pad.All.4, .Hover([.Pad.X.2])])]);
+    @print(nested);
+    val picked: Tok = comptime first([.Pad.All.8, .Bold]);
+    @print(name(picked));
+    val built: Tok = comptime padX();
+    @print(name(built));
+    val list: Tok[] = comptime [.Pad.All.4, Tok.Hover([.Pad.All.8]), .Bold];
+    @print(names(list));
+    @print(picked == Tok.Pad.All.8);
+}

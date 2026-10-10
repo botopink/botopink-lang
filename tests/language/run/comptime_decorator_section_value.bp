@@ -1,0 +1,49 @@
+//// `docs.md` § Sections of an enum, decisions 331 and 364 — a decorator's
+//// `@Expr<T>.value` holds a value under a section (`#[mark(.Pad.All.4)]`),
+//// and a function of the module the decorator reaches may write one
+//// (`fallback()`): both cross into the decorator's comptime module as the
+//// qualified constructor inference resolved, on both runtimes. The parent
+//// binary re-read the argument and the body as written, untyped:
+//// `{error,{badmap,'Pad'}}` at the annotation.
+
+type Tok {
+    Pad {
+        All {
+            4,
+            8,
+        }
+    }
+    Bold,
+}
+
+fn label(t: Tok) -> string {
+    return case t {
+        Pad(p) -> case p {
+            All(a) -> case a {
+                __4 -> "pad-4";
+                __8 -> "pad-8";
+            };
+        };
+        Bold -> "bold";
+    };
+}
+
+fn fallback() -> Tok {
+    return .Pad.All.8;
+}
+
+fn mark(comptime decl: @Decl, comptime ..tokens: @Expr<Tok[]>) {
+    decl.setMeta("labels", tokens.value.map({ t -> label(t) }).join(","));
+    decl.setMeta("fallback", label(fallback()));
+}
+
+#[mark(.Pad.All.4, .Bold, Tok.Pad.All.8)]
+fn styled() -> string {
+    return "styled";
+}
+
+pub fn main() {
+    @print(@typeInfo(styled).meta.mark.labels);
+    @print(@typeInfo(styled).meta.mark.fallback);
+    @print(styled());
+}

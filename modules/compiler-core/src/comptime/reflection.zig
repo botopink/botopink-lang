@@ -1,6 +1,8 @@
 //! What decorators record about the program for reflection to read back
 //! (decision 216): the comptime meta of each declaration (`decl.setMeta`, read
-//! as `@typeInfo(X).meta.<decorator>.<key>`) and the associated types of each
+//! as `@typeInfo(X).meta.<decorator>.<key>`), its typed meta values keyed by
+//! their record type (decision 298: `decl.setMeta(v)` / `decl.addMeta(v)`,
+//! read as `@typeInfo(X).meta(T)` / `.metaAll(T)`), the associated types of each
 //! owner (`decl.addType`, named `Owner.Name`), and every top-level declaration
 //! a decorator ran over (`@TypeInfo.all(with: d)`).
 //!
@@ -14,6 +16,7 @@ const std = @import("std");
 const ast = @import("../ast.zig");
 const envMod = @import("env.zig");
 const hooksMod = @import("hooks.zig");
+const typedMetaMod = @import("typed_meta.zig");
 
 /// One `decl.setMeta(key, value)`.
 pub const MetaEntry = struct {
@@ -23,6 +26,29 @@ pub const MetaEntry = struct {
     decorator: []const u8,
     key: []const u8,
     value: []const u8,
+};
+
+/// Decision 298 — one typed meta value a decorator recorded on a declaration
+/// (`decl.setMeta(v)` / `decl.addMeta(v)`), keyed by its record type.
+pub const TypedMetaEntry = struct {
+    /// The record type's identity: the module declaring it and its name there.
+    typeModule: []const u8,
+    typeName: []const u8,
+    /// Whether the type is a `pub` one — what a reader in another module can
+    /// name (`typeinfo_all.zig` imports it under an alias).
+    typePub: bool,
+    /// The constructor's arguments as source, `(table: "cities")`
+    /// (`typed_meta.render`).
+    args: []const u8,
+    /// `addMeta`: the type's values repeat on the declaration.
+    repeat: bool,
+    /// Decision 370 (1) — some field holds an argument as the annotation
+    /// wrote it, so the value is built only where those names resolve: the
+    /// annotation's module (`annotationModule`).
+    hasExpr: bool,
+    annotationModule: []const u8,
+    /// The decorator's own name, for refusals.
+    decorator: []const u8,
 };
 
 /// One top-level declaration carrying a body-carrying decorator — what
@@ -44,6 +70,16 @@ pub const DeclaredEntry = struct {
 
     /// `val` — decision 356: a module-level `val` a decorator annotates.
     pub const Kind = enum { function, type_, behavior, val };
+};
+
+/// Decision 298 — the record type one typed meta call of a decorator's body
+/// names, resolved where the decorator is declared, with the shape of each of
+/// its fields (`typed_meta.Shape`).
+pub const MetaCallType = struct {
+    module: []const u8,
+    name: []const u8,
+    isPub: bool,
+    fields: []const typedMetaMod.FieldShape,
 };
 
 /// A decorator's identity: its declaring module and its own name.
@@ -80,6 +116,14 @@ pub const Reflection = struct {
     /// `envMod.declIdentity(module, name)` → the declaration's entries, in the
     /// order its decorators set them.
     meta: std.StringHashMapUnmanaged(std.ArrayListUnmanaged(MetaEntry)) = .empty,
+    /// Decision 298 — `envMod.declIdentity(module, name)` → the declaration's
+    /// typed meta values, in the order its decorators recorded them.
+    typedMeta: std.StringHashMapUnmanaged(std.ArrayListUnmanaged(TypedMetaEntry)) = .empty,
+    /// Decision 298 — `decoratorKey(module, decorator)` → the record type of
+    /// each typed meta call of its body (`typed_meta.collect`'s order), as
+    /// the decorator's own module resolved it (`infer.zig`
+    /// `checkTypedMetaCalls`).
+    decoratorMetaTypes: std.StringHashMapUnmanaged([]const MetaCallType) = .empty,
     /// `envMod.declIdentity(module, owner)` → the names of the owner's
     /// associated types (`decl.addType`, decision 216 (3)), in declaration
     /// order. Read by `assoc_types.zig` to resolve `Owner.Name` in the owner's
@@ -122,6 +166,32 @@ pub const Reflection = struct {
         }
         try slot.value_ptr.append(self.arena, entry);
         return true;
+    }
+
+    /// Decision 298 — record one typed meta value; false when it is a second
+    /// value of a type the declaration holds once (`setMeta` twice, or a type
+    /// both set and added — `decorator-meta-twice`).
+    pub fn addTypedMeta(self: *Reflection, module: []const u8, name: []const u8, entry: TypedMetaEntry) !bool {
+        const id = try envMod.declIdentity(self.arena, module, name);
+        const slot = try self.typedMeta.getOrPut(self.arena, id);
+        if (!slot.found_existing) slot.value_ptr.* = .empty;
+        for (slot.value_ptr.items) |e| {
+            if (!std.mem.eql(u8, e.typeModule, entry.typeModule) or !std.mem.eql(u8, e.typeName, entry.typeName)) continue;
+            if (!e.repeat or !entry.repeat) return false;
+        }
+        try slot.value_ptr.append(self.arena, entry);
+        return true;
+    }
+
+    /// Every typed meta value of the declaration, in record order.
+    pub fn typedMetaOf(self: *const Reflection, arena: std.mem.Allocator, module: []const u8, name: []const u8) ![]const TypedMetaEntry {
+        const id = try envMod.declIdentity(arena, module, name);
+        return if (self.typedMeta.get(id)) |list| list.items else &.{};
+    }
+
+    /// The key `decoratorMetaTypes` holds a decorator's call types under.
+    pub fn decoratorKey(arena: std.mem.Allocator, module: []const u8, decorator: []const u8) ![]const u8 {
+        return std.fmt.allocPrint(arena, "{s}\x00{s}", .{ module, decorator });
     }
 
     /// Record that `owner` has the associated type `name`; false when it
@@ -176,4 +246,22 @@ test "reflection: a key is set once per decorator, and read back in order" {
     try std.testing.expectEqual(@as(usize, 2), got.len);
     try std.testing.expectEqualStrings("cities", got[0].value);
     try std.testing.expectEqual(@as(usize, 0), (try r.metaOf(arena_state.allocator(), "app/models", "Town")).len);
+}
+
+test "reflection: a typed meta value is set once per type, added as often as written" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    var r = Reflection.init(arena_state.allocator());
+    const entity: TypedMetaEntry = .{ .typeModule = "app/orm", .typeName = "Entity", .typePub = true, .args = "(table: \"a\")", .repeat = false, .hasExpr = false, .annotationModule = "app/models", .decorator = "entity" };
+    var index = entity;
+    index.typeName = "Index";
+    index.repeat = true;
+    try std.testing.expect(try r.addTypedMeta("app/models", "City", entity));
+    try std.testing.expect(!try r.addTypedMeta("app/models", "City", entity));
+    try std.testing.expect(try r.addTypedMeta("app/models", "City", index));
+    try std.testing.expect(try r.addTypedMeta("app/models", "City", index));
+    var set = index;
+    set.repeat = false;
+    try std.testing.expect(!try r.addTypedMeta("app/models", "City", set));
+    try std.testing.expectEqual(@as(usize, 3), (try r.typedMetaOf(arena_state.allocator(), "app/models", "City")).len);
 }

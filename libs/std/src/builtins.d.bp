@@ -675,7 +675,30 @@ pub behavior Decl<T> {
     // run-time code. Set from a `type`'s, a `behavior`'s, a `fn`'s or a
     // `val`'s (decision 356) decorator (a field's or a method's is
     // `decorator-meta-on-member`), each key once (`decorator-meta-duplicate`).
+    //
+    // Decision 298 — `decl.setMeta(v)`, one argument: a typed meta value,
+    // keyed by its record type, never by the decorator's name —
+    // `decl.setMeta(Entity(table: table.value))` is read
+    // `@typeInfo(City).meta(Entity)` (`?Entity`) wherever `City` and `Entity`
+    // are reached, and on a `@TypeInfo.all` entry (`d.meta(Entity)`). One
+    // value of a type per declaration (`decorator-meta-twice` at the second).
+    // `v` is the record's constructor written at the call
+    // (`decorator-meta-not-record`), each field data the compiler rebuilds
+    // where the meta is read — a string, an integer, a float, a `bool`, a
+    // variant of an enum without payloads, an array or an optional of those
+    // (`decorator-meta-field-type`) — or an `@Expr<T>` field (decision 370
+    // (1)) given one of the decorator's `comptime x: @Expr<T>` parameters as it
+    // is (`decorator-meta-expr-arg`): the argument is spliced where the meta
+    // is read and runs there. The checker answers the one-argument call itself
+    // (`infer.zig` `inferTypedMetaCall`); the two-argument string form above
+    // goes once the library sites are migrated (130 step 8).
     fn setMeta(self: Self, key: string, value: string);
+
+    // Decision 298 — `decl.addMeta(v)`: a typed meta value that repeats —
+    // two `#[index(…)]` add two `Index`, read `@typeInfo(City).metaAll(Index)`
+    // (`Index[]`). A type is recorded by `setMeta` or by `addMeta` on a
+    // declaration, never both. The rules on `v` are `setMeta(v)`'s.
+    fn addMeta<T>(self: Self, value: T);
 
     // Decision 216 (3) — declare a type that belongs to the annotated one,
     // named through it: `decl.addType("Columns", "(id: string)")` on `City`
@@ -694,6 +717,9 @@ pub behavior Decl<T> {
 // Decision 216 (4) — what `@TypeInfo.all(with: d)` answers: one `Declared`
 // per declaration of the program carrying the decorator `d`, by module path
 // then declaration order. `meta` is what `d` set on it (`decl.setMeta`);
+// `typedMeta` carries every typed meta value of the declaration
+// (decision 298), read `d.meta(T)` / `d.metaAll(T)` — in the program, not in a
+// decorator's or a template's body (`typeinfo-meta-at-build`);
 // `value` is the function itself, or for a type a thunk calling the
 // associated fn the query names (`@TypeInfo.all(with: d, member: "m")`),
 // typed `unknown` (decision 254), or the `val` itself for a `val` (decision
@@ -706,12 +732,22 @@ pub type DeclaredMeta(
     value: string,
 )
 
+// Decision 298 — one typed meta value an entry carries: `key` the record
+// type's identity, `value` a thunk building it. Read through `d.meta(T)` /
+// `d.metaAll(T)`, which the checker answers (`infer.zig`
+// `inferDeclaredMetaRead`); never written by a program.
+pub type DeclaredTypedMeta(
+    key: string,
+    value: unknown,
+)
+
 pub type Declared<T>(
     name: string,
     module: string,
     meta: DeclaredMeta[],
     returnTypeName: string,
     value: T,
+    typedMeta: DeclaredTypedMeta[],
 )
 
 // ── Hooks (decision 277) ────────────────────────────────────────────────────
@@ -782,6 +818,12 @@ pub behavior Decorator {
 // What `@typeInfo(T)` answers. Its members are read at compile time:
 // `name` and `meta.<decorator>.<key>` today, as string constants
 // (`typeinfo-unknown-member` refuses the others until they are answered).
+// Decision 298 — `@typeInfo(X).meta(T)` (`?T`) and `.metaAll(T)` (`T[]`)
+// answer the typed meta values the declaration's decorators recorded of the
+// record type `T` (`decl.setMeta(v)` / `decl.addMeta(v)`), written back as
+// their constructors in the read's place: `meta(T)` over several values is
+// `typeinfo-meta-several`; a value with `@Expr<T>` fields is read in the
+// annotation's module (`typeinfo-meta-expr-elsewhere`, question `130-s8-b`).
 // `all` is the program's catalogue, a STATIC method called as
 // `@TypeInfo.all(with: d)` or `@TypeInfo.all(with: [a, b], member: "m")`:
 // every declaration carrying one of the listed decorators, always as

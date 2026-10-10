@@ -3461,6 +3461,12 @@ pub const Field = struct {
     /// Where the field's type annotation starts (06 N30). `{0,0}` when
     /// synthesised. Left out of the AST dump.
     typeLoc: Loc = .{ .line = 0, .col = 0 },
+    /// Decision 370 (1) — a record field written `@Expr<T>`: the parser read
+    /// the wrapper off (`parser/expr_params.zig`), `typeRef` holds `T`. To the
+    /// program the field is a `T`; a decorator fills it in a typed meta value
+    /// with a parameter's `@Expr`, spliced where the meta is read
+    /// (`comptime/typed_meta.zig`). Dumped only when set.
+    exprWrapped: bool = false,
 
     pub fn deinit(this: *Field, allocator: std.mem.Allocator) void {
         this.typeRef.deinit(allocator);
@@ -3491,6 +3497,10 @@ pub const Field = struct {
         if (this.trailingComment) |c| {
             try jws.objectField("trailingComment");
             try jws.write(c);
+        }
+        if (this.exprWrapped) {
+            try jws.objectField("exprWrapped");
+            try jws.write(true);
         }
         try jws.endObject();
     }

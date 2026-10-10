@@ -70,6 +70,14 @@ pub const Error = Ast.Builder.Error;
 /// (`comptime/expr_param.zig`): `'__bp_failArg'(Index, Message)`.
 pub const fail_arg_fn = "__bp_failArg";
 
+/// Decision 298 — the function `decl.setMeta(v)` / `decl.addMeta(v)` becomes
+/// in a decorator body (`typed_meta.typed_meta_fn`).
+pub const typed_meta_fn = "__bp_typedMeta";
+
+/// The prelude's walk of a typed meta value before it is encoded
+/// (`'__bp_metaJson'/1`): `undefined` (a comptime `null`) becomes `null`.
+const meta_json_fn = "__bp_metaJson";
+
 /// One prelude module: its atom and the Erlang source built for it.
 pub const Module = struct {
     name: []const u8,
@@ -262,6 +270,36 @@ pub fn decoratorForms(b: Ast.Builder) Error![]const Ast.Form {
         }),
         try b.function("addType", &.{ V("_Decl"), V("Name"), V("Source") }, &.{}, &.{
             try b.call("__bp_contribute", &.{try b.map(&.{ Ast.field("kind", Ast.str("assoc")), Ast.field("name", V("Name")), Ast.field("source", V("Source")) })}),
+        }),
+        // Decision 298 — `decl.setMeta(v)` / `decl.addMeta(v)`: the body hands
+        // the call's index (`expr_param.eraseFn`, `typed_meta.collect`'s
+        // order) and the record it built, which the compiler writes back as
+        // the constructor's arguments (`typed_meta.render`).
+        try b.function(typed_meta_fn, &.{ V("Index"), V("Value") }, &.{}, &.{
+            try b.call("__bp_contribute", &.{try b.map(&.{ Ast.field("kind", Ast.str("typedMeta")), Ast.field("index", V("Index")), Ast.field("data", try b.call(meta_json_fn, &.{V("Value")})) })}),
+        }),
+        // A comptime `null` is the atom `undefined`, which `json:encode`
+        // writes as the string "undefined" — the same text as that string:
+        // the value is walked first, `undefined` becoming `null`.
+        try b.functionClauses(meta_json_fn, &.{
+            try b.clause(&.{A("undefined")}, &.{}, &.{A("null")}),
+            try b.clause(&.{V("V")}, &.{try b.call("is_map", &.{V("V")})}, &.{
+                try b.remote("maps", "from_list", &.{.{ .list_comp = .{
+                    .element = try b.ptr(try b.tuple(&.{ V("K"), try b.call(meta_json_fn, &.{V("X")}) })),
+                    .qualifiers = try b.arena.dupe(Ast.ListComp.Qualifier, &.{
+                        .{ .generator = .{ .pattern = try b.tuple(&.{ V("K"), V("X") }), .list = try b.remote("maps", "to_list", &.{V("V")}) } },
+                    }),
+                } }}),
+            }),
+            try b.clause(&.{V("V")}, &.{try b.call("is_list", &.{V("V")})}, &.{
+                .{ .list_comp = .{
+                    .element = try b.ptr(try b.call(meta_json_fn, &.{V("X")})),
+                    .qualifiers = try b.arena.dupe(Ast.ListComp.Qualifier, &.{
+                        .{ .generator = .{ .pattern = V("X"), .list = V("V") } },
+                    }),
+                } },
+            }),
+            try b.clause(&.{V("V")}, &.{}, &.{V("V")}),
         }),
         try b.function("__bp_contribute", &.{V("Item")}, &.{}, &.{
             try b.remote("erlang", "put", &.{ key, try b.cons(&.{V("Item")}, try b.call("__bp_emitted", &.{})) }),

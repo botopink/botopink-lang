@@ -1006,6 +1006,17 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
             expr_ptr.* = rewrite.*;
         }
     }
+    // Decision 298 — `@typeInfo(X).meta(T)` / `.metaAll(T)` and `d.meta(T)` /
+    // `d.metaAll(T)` → the answer inference built (`infer.zig`
+    // `inferTypedMetaRead`, `inferDeclaredMetaRead`), keyed by the call's
+    // loc; the answer's own nodes sit on lines of their own, so the walk
+    // carries on over it without matching again.
+    if (expr_ptr.* == .call and expr_ptr.call.kind == .call and !expr_ptr.call.kind.call.is_builtin) {
+        const callee = expr_ptr.call.kind.call.callee;
+        if (std.mem.eql(u8, callee, "meta") or std.mem.eql(u8, callee, "metaAll")) {
+            if (agg.src_rewrites.get(expr_ptr.call.loc)) |rewrite| expr_ptr.* = rewrite.*;
+        }
+    }
     // A `comptime <expr>` / `comptime { … }` inference folded (decision 266,
     // `infer.zig` `foldBodyComptime`) → its value; the walk carries on over
     // the spliced literal.

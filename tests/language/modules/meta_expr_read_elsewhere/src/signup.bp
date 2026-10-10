@@ -1,0 +1,18 @@
+//// The checks are written here, beside the private rule they name.
+
+pub type Check<T>(message: @Expr<string>, rule: @Expr<fn(v: T) -> bool>)
+
+pub fn check<T>(
+    comptime decl: @Decl<T>,
+    comptime message: @Expr<string>,
+    comptime rule: @Expr<fn(v: T) -> bool>,
+) {
+    decl.addMeta(Check(message: message, rule: rule));
+}
+
+fn passwordsMatch(a: Signup) -> bool {
+    return a.password == a.confirm;
+}
+
+#[check("the passwords differ", passwordsMatch)]
+pub type Signup(password: string, confirm: string)

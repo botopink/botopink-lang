@@ -1,0 +1,25 @@
+//// The decorators and the meta records they write.
+
+pub type Entity(table: string)
+
+pub type Index(column: string)
+
+pub fn entity(comptime decl: @Decl, comptime table: @Expr<string>) {
+    decl.setMeta(Entity(table: table.value));
+}
+
+pub fn index(comptime decl: @Decl, comptime column: @Expr<string>) {
+    decl.addMeta(Index(column: column.value));
+}
+
+pub fn describe(ds: Declared<unknown>[]) -> string {
+    var parts: string[] = [];
+    for (ds) { d ->
+        var columns: string[] = [];
+        for (d.metaAll(Index)) { i ->
+            columns.push(i.column);
+        }
+        parts.push(d.name + "(" + columns.join(",") + ")");
+    }
+    return parts.join(" ");
+}

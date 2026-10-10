@@ -1,0 +1,17 @@
+//// Decision 370 (1) — an `@Expr<T>` field of a meta record is filled with
+//// one of the decorator's `comptime x: @Expr<T>` parameters as it is: the
+//// annotation's expression is spliced where the meta is read. A literal
+//// written in the decorator's body is refused at the argument.
+
+pub type Check(message: @Expr<string>)
+
+fn check(comptime decl: @Decl) {
+    decl.addMeta(Check(message: "fixed"));
+}
+
+#[check]
+type Signup(handle: string)
+
+pub fn main() {
+    @print(@typeInfo(Signup).metaAll(Check).length);
+}

@@ -556,6 +556,52 @@ pub const typeinfo_unknown_declaration: []const u8 = "typeinfo-unknown-declarati
 /// `@typeInfo(X).meta.<decorator>.<key>` naming a key that decorator did not set.
 pub const typeinfo_meta_missing: []const u8 = "typeinfo-meta-missing";
 
+// ── decision 298 — typed meta, keyed by its type; 370 (1) its `@Expr` fields ──
+
+/// Decision 298 — a second `decl.setMeta(v)` of one record type on one
+/// declaration, or a type recorded by both `setMeta` and `addMeta` there:
+/// refused at the annotation whose decorator recorded the second.
+pub const decorator_meta_twice: []const u8 = "decorator-meta-twice";
+
+/// Decision 298 — `decl.setMeta(v)` / `decl.addMeta(v)` whose value is not a
+/// record type's constructor written at the call (the type is the key, read
+/// where the decorator is declared): refused at the argument.
+pub const decorator_meta_not_record: []const u8 = "decorator-meta-not-record";
+
+/// Decision 298 — a field of a meta record whose type is neither data the
+/// compiler rebuilds where the meta is read (a string, an integer, a float, a
+/// `bool`, a variant of an enum without payloads, an array or an optional of
+/// those) nor `@Expr<T>` (370 (1)): refused at the call, naming the field.
+pub const decorator_meta_field_type: []const u8 = "decorator-meta-field-type";
+
+/// Decision 370 (1) — an `@Expr<T>` field of a meta record given anything but
+/// one of the decorator's `comptime x: @Expr<T>` parameters, or such a
+/// parameter given to a field that is no `@Expr<T>` (read `x.value` there):
+/// refused at the argument.
+pub const decorator_meta_expr_arg: []const u8 = "decorator-meta-expr-arg";
+
+/// Decision 298 — `meta(T)` / `metaAll(T)` whose `T` names no record type of
+/// the module or its imports.
+pub const typeinfo_meta_type: []const u8 = "typeinfo-meta-type";
+
+/// Decision 298 — `@typeInfo(X).meta(T)` where the declaration holds more than
+/// one `T` (recorded with `decl.addMeta`): read them with `metaAll(T)`.
+pub const typeinfo_meta_several: []const u8 = "typeinfo-meta-several";
+
+/// Decision 370 (1) — a meta value with `@Expr<T>` fields read in a module
+/// other than the one whose annotation wrote the expressions: whose scope
+/// resolves a spliced expression's names there is question `130-s8-b`.
+pub const typeinfo_meta_expr_elsewhere: []const u8 = "typeinfo-meta-expr-elsewhere";
+
+/// Decision 298 — `d.meta(T)` / `d.metaAll(T)` on a `Declared` inside a
+/// decorator's or a template's body: the catalogue's typed meta is run-time
+/// data of the program, absent while it compiles.
+pub const typeinfo_meta_at_build: []const u8 = "typeinfo-meta-at-build";
+
+/// Decision 298 with 372 — a typed meta read of a declaration of this module
+/// that a `.hooks`-reading decorator annotates, before that decorator ran.
+pub const typeinfo_meta_hooks_pending: []const u8 = "typeinfo-meta-hooks-pending";
+
 // ── Lookup table — every code (skipping aliases & reserved-empties) ─────────
 
 pub const all_codes = [_][]const u8{
@@ -681,6 +727,15 @@ pub const all_codes = [_][]const u8{
     typeinfo_unknown_member,
     typeinfo_unknown_declaration,
     typeinfo_meta_missing,
+    decorator_meta_twice,
+    decorator_meta_not_record,
+    decorator_meta_field_type,
+    decorator_meta_expr_arg,
+    typeinfo_meta_type,
+    typeinfo_meta_several,
+    typeinfo_meta_expr_elsewhere,
+    typeinfo_meta_at_build,
+    typeinfo_meta_hooks_pending,
 };
 
 test "every reserved code has a stable, non-empty spelling" {

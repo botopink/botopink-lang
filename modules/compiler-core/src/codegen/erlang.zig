@@ -9078,6 +9078,7 @@ const Emitter = struct {
         if (pat == .variant and pat.variant.shape == .variant) {
             const v = pat.variant;
             if (!this.enum_variant_names.contains(v.name) and this.record_fields.contains(v.name)) {
+                if (this.untyped) return this.untypedRecordPattern(b, v, null);
                 var items: std.ArrayListUnmanaged(Ast.Expr) = .empty;
                 try items.append(b.arena, Ast.Expr.a(try this.recordTagAtom(v.name)));
                 switch (v.payload) {
@@ -9181,6 +9182,8 @@ const Emitter = struct {
                     // record, and the `case` fell through to `case_clause`.
                     const record_tag = !isVariantPath(v.name) and !this.enum_variants.contains(v.name) and
                         !this.enum_variant_names.contains(v.name) and this.record_fields.contains(v.name);
+                    // A comptime module's record is its untagged map.
+                    if (record_tag and this.untyped) return this.untypedRecordPattern(b, v, extras);
                     try items.append(b.arena, Ast.Expr.a(if (record_tag) try this.recordTagAtom(v.name) else this.variantTag(v.name)));
                     switch (v.payload) {
                         .binding => |binding| try items.append(b.arena, Ast.Expr.v(try this.patternBindVar(b, binding))),
@@ -9995,6 +9998,7 @@ const Emitter = struct {
                     return acc;
                 }
                 if (this.record_fields.get(n)) |fields| {
+                    if (this.untyped) return try untypedRecordTest(b, subject, fields);
                     return try this.taggedShapeTest(b, subject, try this.recordTagAtom(n), fields.len + 1);
                 }
                 if (this.enum_variant_names.get(n)) |variants| {
@@ -10073,6 +10077,39 @@ const Emitter = struct {
         );
         const first = try b.remote("erlang", "element", &.{ Ast.Expr.t(Term.int(1)), subject });
         return b.binop("andalso", acc, try b.binop("=:=", first, Ast.Expr.a(tag)));
+    }
+
+    /// A comptime module's record (`untyped`) is the untagged map its
+    /// constructor builds — `#{x => 1, y => 2}` — so it carries no tag to
+    /// test: `is_map(V) andalso is_map_key(<field>, V) …`, one key per
+    /// declared field. The type's own atom is a package's, and a comptime
+    /// module belongs to none (`crossModule.erlAtom`: `MissingPackage`).
+    fn untypedRecordTest(b: Ast.Builder, subject: Ast.Expr, fields: []const []const u8) anyerror!Ast.Expr {
+        var acc = try b.remote("erlang", "is_map", &.{subject});
+        for (fields) |f| acc = try b.binop("andalso", acc, try b.remote("erlang", "is_map_key", &.{ Ast.Expr.a(f), subject }));
+        return acc;
+    }
+
+    /// A record's constructor pattern in a comptime module: the map pattern
+    /// of the fields it names (`Point(x: 0, ..)` → `#{x := 0}`), each placed
+    /// by the record's declared field order as a tagged pattern's slot is.
+    fn untypedRecordPattern(this: *Emitter, b: Ast.Builder, v: anytype, extras: ?*PatternExtras) anyerror!Ast.Expr {
+        const declared = this.record_fields.get(v.name) orelse &.{};
+        var out: std.ArrayListUnmanaged(Ast.MapField) = .empty;
+        switch (v.payload) {
+            .binding => |binding| if (declared.len > 0) {
+                try out.append(b.arena, Ast.exactField(declared[0], Ast.Expr.v(try this.patternBindVar(b, binding))));
+            },
+            .fields, .literals => {
+                const slots = try this.variantPayloadSlots(b, v, extras);
+                for (slots, 0..) |slot, at| {
+                    if (at >= declared.len) break;
+                    if (slot == .variable and std.mem.eql(u8, slot.variable, "_")) continue;
+                    try out.append(b.arena, Ast.exactField(declared[at], slot));
+                }
+            },
+        }
+        return .{ .map = out.items };
     }
 
     /// `x is T` in expression position. The test reads the subject more than

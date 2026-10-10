@@ -44,6 +44,7 @@ const preludeMod = @import("./runtime/prelude.zig");
 const etf = @import("./runtime/etf.zig");
 const trace = @import("./trace.zig");
 const diagnostics = @import("./diagnostics.zig");
+const formatMod = @import("../format.zig");
 
 pub const Error = error{OutOfMemory};
 
@@ -54,8 +55,9 @@ const maker_prefix = "__bp_fn_";
 /// The record types the comptime prelude declares (`comptime.zig`
 /// `decl_reflection_src`) that an `@TypeInfo.all` answer constructs.
 const prelude_records = [_]erlang.HostRecord{
-    .{ .name = "Declared", .fields = &.{ "name", "module", "meta", "returnTypeName", "value" } },
+    .{ .name = "Declared", .fields = &.{ "name", "module", "meta", "returnTypeName", "value", "typedMeta" } },
     .{ .name = "DeclaredMeta", .fields = &.{ "key", "value" } },
+    .{ .name = "DeclaredTypedMeta", .fields = &.{ "key", "value" } },
     .{ .name = "SourceLocation", .fields = &.{ "file", "line", "column", "fnName" } },
 };
 
@@ -308,6 +310,175 @@ const MethodWalk = struct {
     }
 };
 
+/// An untyped rewrite by the location of the node it replaces
+/// (`Env.enumSectionRewrites`, `Env.indexRewrites`).
+pub const SectionRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr);
+
+/// The two channels inference records an enum value's qualified form in,
+/// read by `sectionRewrite`.
+pub const Rewrites = struct {
+    sections: *const SectionRewrites,
+    index: *const SectionRewrites,
+
+    pub fn of(env: *const Env) Rewrites {
+        return .{ .sections = &env.enumSectionRewrites, .index = &env.indexRewrites };
+    }
+
+    fn empty(self: Rewrites) bool {
+        return self.sections.count() == 0 and self.index.count() == 0;
+    }
+};
+
+/// The node `e` stands for once inference's untyped rewrite of an enum
+/// value is applied — `comptime/transform.zig`'s reading of the same
+/// channels: a section path (`.Pad.All.4`, an `identAccess` at the chain's
+/// outer location) is the qualified constructor (`Tok.Pad(_inner:
+/// __Tok__Pad.All(_inner: __Tok__Pad__All.__4))`); a call takes the
+/// rewrite's callee, and its arguments when the rewrite carries any (a tuple
+/// element called by its label, a record update); a leading-dot variant
+/// (`.Bold`), a leading-dot constructor (`.Hover(…)`) and a section's payload
+/// leaf (`.Color.Hex(…)`) are the qualified forms inference resolved
+/// (`Env.indexRewrites`). Null when nothing was recorded for `e`.
+fn sectionRewrite(rw: Rewrites, e: ast.Expr) ?ast.Expr {
+    switch (e) {
+        .identifier => |id| switch (id.kind) {
+            .identAccess => if (rw.sections.get(id.loc)) |r| return r.*,
+            .dotIdent => if (rw.index.get(id.loc)) |r| if (r.* == .identifier) return r.*,
+            else => {},
+        },
+        .call => |c| if (c.kind == .call) {
+            if (!c.kind.call.is_builtin and (c.kind.call.calleeExpr != null or isPathReceiver(c.kind.call.receiver))) {
+                if (rw.index.get(c.loc)) |r| if (r.* != .jump) return r.*;
+            }
+            const r = rw.sections.get(c.loc) orelse return null;
+            if (r.* != .call or r.call.kind != .call) return null;
+            var out = c;
+            out.kind.call.callee = r.call.kind.call.callee;
+            if (r.call.kind.call.args.len > 0) out.kind.call.args = r.call.kind.call.args;
+            return .{ .call = out };
+        },
+        else => {},
+    }
+    return null;
+}
+
+/// `transform.zig`'s `isPathReceiver`: a receiver written as a path.
+fn isPathReceiver(receiver: ?*ast.Expr) bool {
+    const r = receiver orelse return false;
+    if (r.* != .identifier) return false;
+    return switch (r.identifier.kind) {
+        .dotIdent, .identAccess => true,
+        else => false,
+    };
+}
+
+/// `f` with inference's untyped rewrites of its module applied
+/// (`sectionRewrite`) — what a module exports for an importer to carry into
+/// its comptime module (`comptime.zig` `registerExports`), whose own
+/// rewrites are keyed by its own locations and say nothing of `f`'s.
+pub fn sectionRewritten(arena: std.mem.Allocator, rw: Rewrites, f: ast.FnDecl) Error!ast.FnDecl {
+    if (rw.empty()) return f;
+    var w = RewriteWalk{ .rw = rw };
+    for (f.body) |*st| w.walk(ast.Expr, &st.expr);
+    if (!w.found) return f;
+    var c = SectionCopier{ .arena = arena, .rw = rw };
+    var out = f;
+    out.body = try c.clone([]ast.Stmt, f.body);
+    return out;
+}
+
+/// `e` with inference's untyped rewrites applied (`sectionRewrite`), or
+/// null when `e` holds none — a decorator argument whose source text the
+/// decorator module re-reads (`infer.decoratorArgValue`).
+pub fn sectionRewrittenExpr(arena: std.mem.Allocator, rw: Rewrites, e: ast.Expr) Error!?ast.Expr {
+    if (rw.empty()) return null;
+    var w = RewriteWalk{ .rw = rw };
+    w.walk(ast.Expr, &e);
+    if (!w.found) return null;
+    var c = SectionCopier{ .arena = arena, .rw = rw };
+    return try c.clone(ast.Expr, e);
+}
+
+/// Whether a body holds a node `sectionRewrite` replaces.
+const RewriteWalk = struct {
+    rw: Rewrites,
+    found: bool = false,
+
+    fn walk(self: *RewriteWalk, comptime U: type, ptr: *const U) void {
+        if (self.found) return;
+        if (U == ast.Expr) if (sectionRewrite(self.rw, ptr.*) != null) {
+            self.found = true;
+            return;
+        };
+        if (U == ast.TypeRef or U == ast.Pattern) return;
+        switch (@typeInfo(U)) {
+            .@"struct" => |st| inline for (st.fields) |fl| {
+                if (fl.is_comptime) continue;
+                if (comptime mayHoldNames(fl.type)) self.walk(fl.type, &@field(ptr.*, fl.name));
+            },
+            .@"union" => |u| if (u.tag_type != null) switch (ptr.*) {
+                inline else => |*payload| if (comptime mayHoldNames(@TypeOf(payload.*))) self.walk(@TypeOf(payload.*), payload),
+            },
+            .optional => |o| if (ptr.*) |*inner| self.walk(o.child, inner),
+            .pointer => |pt| switch (pt.size) {
+                .one => if (comptime mayHoldNames(pt.child)) self.walk(pt.child, ptr.*),
+                .slice => if (comptime mayHoldNames(pt.child)) {
+                    for (ptr.*) |*e| self.walk(pt.child, e);
+                },
+                else => {},
+            },
+            else => {},
+        }
+    }
+};
+
+/// A copy of a body with every `sectionRewrite` applied, nothing else.
+const SectionCopier = struct {
+    arena: std.mem.Allocator,
+    rw: Rewrites,
+
+    fn clone(self: *SectionCopier, comptime U: type, v: U) Error!U {
+        const w: U = if (U == ast.Expr) (sectionRewrite(self.rw, v) orelse v) else v;
+        switch (@typeInfo(U)) {
+            .@"struct" => |st| {
+                var out: U = w;
+                inline for (st.fields) |fl| {
+                    if (fl.is_comptime) continue;
+                    if (comptime mayHoldNames(fl.type)) @field(out, fl.name) = try self.clone(fl.type, @field(w, fl.name));
+                }
+                return out;
+            },
+            .@"union" => |u| {
+                if (u.tag_type == null) return w;
+                switch (w) {
+                    inline else => |payload, tag| {
+                        const P = @TypeOf(payload);
+                        if (comptime !mayHoldNames(P)) return w;
+                        return @unionInit(U, @tagName(tag), try self.clone(P, payload));
+                    },
+                }
+            },
+            .optional => |o| return if (w) |inner| try self.clone(o.child, inner) else null,
+            .pointer => |pt| switch (pt.size) {
+                .one => {
+                    if (comptime !mayHoldNames(pt.child)) return w;
+                    const n = try self.arena.create(pt.child);
+                    n.* = try self.clone(pt.child, w.*);
+                    return n;
+                },
+                .slice => {
+                    if (comptime !mayHoldNames(pt.child)) return w;
+                    const out = try self.arena.alloc(pt.child, w.len);
+                    for (w, 0..) |e, i| out[i] = try self.clone(pt.child, e);
+                    return out;
+                },
+                else => return w,
+            },
+            else => return w,
+        }
+    }
+};
+
 /// Copies the block into the synthetic function's body, applying what the
 /// transform would (an `@TypeInfo.all` answer, `@src()`) and routing each
 /// liftable function value through a maker.
@@ -328,11 +499,22 @@ const Preparer = struct {
     /// Evaluating a hole's build value (`holeValue`): a module-level `val`
     /// the code reads is its initializer — `knownAtBuild` admitted it.
     inline_vals: usize = 0,
+    /// The untyped rewrites inference recorded for the code being copied
+    /// (`Env.enumSectionRewrites` of the module that wrote it), applied as
+    /// the transform applies them: the comptime module is emitted from the
+    /// AST as written, where a section path (`.Pad.All.__4`) is a chain of
+    /// map reads (`{badmap, 'Pad'}`).
+    rw: Rewrites,
 
     fn clone(self: *Preparer, comptime U: type, v: U) Error!U {
         if (U == ast.Expr) {
             if (try self.replace(v)) |r| return r;
         }
+        return self.copyNode(U, v);
+    }
+
+    /// `v` copied, each child through `clone`.
+    fn copyNode(self: *Preparer, comptime U: type, v: U) Error!U {
         switch (@typeInfo(U)) {
             .@"struct" => |s| {
                 var out: U = v;
@@ -372,7 +554,14 @@ const Preparer = struct {
         }
     }
 
-    fn replace(self: *Preparer, e: ast.Expr) Error!?ast.Expr {
+    fn replace(self: *Preparer, written: ast.Expr) Error!?ast.Expr {
+        const rewritten = sectionRewrite(self.rw, written);
+        const e = rewritten orelse written;
+        if (try self.replaceOne(e)) |r| return r;
+        return if (rewritten != null) try self.copyNode(ast.Expr, e) else null;
+    }
+
+    fn replaceOne(self: *Preparer, e: ast.Expr) Error!?ast.Expr {
         // 01-compiler/14 step 8 — a template call the block (or a function
         // it carries) reaches is the code its expansion built
         // (`Env.templateExpansions`, by the call's location), copied with the
@@ -569,7 +758,7 @@ pub fn prepare(env: *Env, ct: ast.ComptimeExprOf(.untyped)) Error!Prepared {
         },
         else => &.{},
     };
-    var p = Preparer{ .env = env, .arena = arena, .declared = try declaredNames(arena, block) };
+    var p = Preparer{ .env = env, .arena = arena, .declared = try declaredNames(arena, block), .rw = Rewrites.of(env) };
     const copied = try p.clone([]const ast.Stmt, block);
     const body = try breaksToReturns(arena, @constCast(copied));
     return .{ .value = synthFn(value_fn, body), .makers = p.makers.items };
@@ -681,17 +870,26 @@ pub fn collectSupport(env: *Env, prepared: Prepared) Error!Support {
 }
 
 /// `f` with every template call of its body replaced by its expansion
-/// (`Env.templateExpansions`): the comptime module is emitted from the AST as
-/// written, where a template call has no lowering. A function of this module
+/// (`Env.templateExpansions`) and every section path by its qualified
+/// constructor (`Env.enumSectionRewrites`): the comptime module is emitted
+/// from the AST as written, where a template call has no lowering and a
+/// section path is a chain of map reads. A function of this module
 /// whose body was not inferred yet has no expansion recorded and is left as
 /// written — its template call is refused at the `comptime`
 /// (`unexpandedTemplateCall`).
 fn expandedFn(env: *Env, f: ast.FnDecl) Error!ast.FnDecl {
-    if (!try holdsExpansion(env, f.body)) return f;
-    var p = Preparer{ .env = env, .arena = env.arena, .declared = .empty, .expansions_only = true };
+    if (!try holdsExpansion(env, f.body) and !holdsSectionRewrite(Rewrites.of(env), f.body)) return f;
+    var p = Preparer{ .env = env, .arena = env.arena, .declared = .empty, .expansions_only = true, .rw = Rewrites.of(env) };
     var out = f;
     out.body = @constCast(try p.clone([]const ast.Stmt, f.body));
     return out;
+}
+
+fn holdsSectionRewrite(rw: Rewrites, body: []const ast.Stmt) bool {
+    if (rw.empty()) return false;
+    var w = RewriteWalk{ .rw = rw };
+    for (body) |*st| w.walk(ast.Expr, &st.expr);
+    return w.found;
 }
 
 fn holdsExpansion(env: *Env, body: []const ast.Stmt) Error!bool {
@@ -774,6 +972,102 @@ pub fn unexpandedTemplateCall(env: *Env, prepared: Prepared, support: Support) E
     return try std.fmt.allocPrint(env.arena, "the comptime reaches the template call `{s}` at {d}:{d}, which is not expanded where the comptime runs", .{ w.callee, loc.line, loc.col });
 }
 
+/// A section path (`.Pad.All.4`, `Tok.Pad.All.4`) left as written in a
+/// function of this module the comptime carries — declared after the
+/// `comptime`, so its body was not inferred and no rewrite was recorded
+/// (`Env.enumSectionRewrites`) — would be a chain of map reads on the
+/// runtime (`{badmap, 'Pad'}`): the `comptime` is refused, naming the path,
+/// as `unexpandedTemplateCall` refuses a template call.
+pub fn unresolvedSectionPath(env: *Env, support: Support) Error!?[]const u8 {
+    for (support.fns) |f| {
+        if (!env.fnDecls.contains(f.name)) continue;
+        var w = PathWalk{ .env = env };
+        for (f.body) |*st| w.walk(ast.Expr, &st.expr);
+        const loc = w.found orelse continue;
+        return try std.fmt.allocPrint(env.arena, "the comptime reaches the section path `{s}` at {d}:{d} in `{s}`, which is not resolved where the comptime runs — declare `{s}` before the `comptime` in this module", .{ w.text, loc.line, loc.col, f.name, f.name });
+    }
+    return null;
+}
+
+/// Whether `f`'s body writes a section path: a decorator's function that
+/// does is inferred before the decorator runs (`infer.sameLoweredFn`), so
+/// the path is resolved in the module the decorator runs in.
+pub fn writesSectionPath(env: *Env, f: ast.FnDecl) bool {
+    var w = PathWalk{ .env = env, .any = true };
+    for (f.body) |*st| w.walk(ast.Expr, &st.expr);
+    return w.found != null;
+}
+
+/// The first section path of a body no rewrite answers (with `any`, the
+/// first one).
+const PathWalk = struct {
+    env: *Env,
+    any: bool = false,
+    found: ?ast.Loc = null,
+    text: []const u8 = "",
+
+    fn walk(self: *PathWalk, comptime U: type, ptr: *const U) void {
+        if (self.found != null) return;
+        if (U == ast.Expr) if (sectionPathText(self.env, ptr.*)) |text| {
+            if (self.any or !self.env.enumSectionRewrites.contains(ptr.identifier.loc)) {
+                self.found = pathStart(ptr.*);
+                self.text = text;
+            }
+            return;
+        };
+        if (U == ast.TypeRef or U == ast.Pattern) return;
+        switch (@typeInfo(U)) {
+            .@"struct" => |st| inline for (st.fields) |fl| {
+                if (fl.is_comptime) continue;
+                if (comptime mayHoldNames(fl.type)) self.walk(fl.type, &@field(ptr.*, fl.name));
+            },
+            .@"union" => |u| if (u.tag_type != null) switch (ptr.*) {
+                inline else => |*payload| if (comptime mayHoldNames(@TypeOf(payload.*))) self.walk(@TypeOf(payload.*), payload),
+            },
+            .optional => |o| if (ptr.*) |*inner| self.walk(o.child, inner),
+            .pointer => |pt| switch (pt.size) {
+                .one => if (comptime mayHoldNames(pt.child)) self.walk(pt.child, ptr.*),
+                .slice => if (comptime mayHoldNames(pt.child)) {
+                    for (ptr.*) |*e| self.walk(pt.child, e);
+                },
+                else => {},
+            },
+            else => {},
+        }
+    }
+};
+
+/// Where a member chain is written: its root's location (the chain's own
+/// is its last member's).
+fn pathStart(e: ast.Expr) ast.Loc {
+    var at = e;
+    while (at == .identifier and at.identifier.kind == .identAccess) at = at.identifier.kind.identAccess.receiver.*;
+    return at.getLoc();
+}
+
+/// `e` as the section path it is written as — a member chain rooted at a
+/// leading dot (`.Pad.All.4`), or at an enum carrying sections with two
+/// members or more (`Tok.Pad.All`) — or null.
+fn sectionPathText(env: *Env, e: ast.Expr) ?[]const u8 {
+    if (e != .identifier or e.identifier.kind != .identAccess) return null;
+    var members: usize = 0;
+    var at = e;
+    while (at == .identifier and at.identifier.kind == .identAccess) : (members += 1) at = at.identifier.kind.identAccess.receiver.*;
+    if (at != .identifier) return null;
+    switch (at.identifier.kind) {
+        .dotIdent => {},
+        .ident => |root| {
+            if (members < 2) return null;
+            const found = findDeclared(env, root) orelse return null;
+            if (found.decl.sections().len == 0) return null;
+        },
+        else => return null,
+    }
+    var f = formatMod.Formatter.init(env.arena);
+    const doc = f.fmtExpr(e) catch return "";
+    return formatMod.render(env.arena, doc, std.math.maxInt(u16)) catch "";
+}
+
 fn fnListed(list: []const ast.FnDecl, f: ast.FnDecl) bool {
     for (list) |g| if (std.mem.eql(u8, g.name, f.name)) return true;
     return false;
@@ -801,7 +1095,8 @@ fn readTypeRef(arena: std.mem.Allocator, names: *std.StringHashMapUnmanaged(void
 fn readTypeShape(arena: std.mem.Allocator, names: *std.StringHashMapUnmanaged(void), decl: ast.TypeDecl) Error!void {
     switch (decl.shape) {
         .record => |fields| for (fields) |f| try readTypeRef(arena, names, f.typeRef),
-        .enum_ => {},
+        // A payload's types — a section wrapper's `__Tok__Pad` among them.
+        .enum_ => |e| for (e.variants) |v| for (v.fields) |f| try readTypeRef(arena, names, f.typeRef),
     }
 }
 
@@ -816,6 +1111,69 @@ const FoundType = struct { decl: ast.TypeDecl, helpers: []const ast.FnDecl };
 /// where both are written on the same line, so a step that finds two answers
 /// none of them.
 fn findType(env: *Env, name: []const u8) ?FoundType {
+    const found = findDeclared(env, name) orelse return sectionType(env, name);
+    return .{ .decl = withSectionWrappers(env.arena, found.decl) catch return null, .helpers = found.helpers };
+}
+
+/// A section of an enum (`docs.md` § Sections of an enum) is a type of its
+/// own, `__<Enum>__<Section>[__<Sub>…]` — the name inference registers it
+/// under (`infer.registerEnumSection`) and the rewrites construct
+/// (`__Tok__Pad.All(…)`). No module declares it: it is built here from the
+/// enum's declaration, with the `__` prefix on a numeric leaf (`__4`) and
+/// a wrapper variant `<Sub>(_inner: __<Enum>__<Section>__<Sub>)` per
+/// sub-section, as `comptime.zig` `withSynthesisedEnumDecls` gives the
+/// backends.
+fn sectionType(env: *Env, name: []const u8) ?FoundType {
+    if (name.len < 3 or !std.mem.startsWith(u8, name, "__")) return null;
+    var segs = std.mem.splitSequence(u8, name[2..], "__");
+    const outer_name = segs.next() orelse return null;
+    if (outer_name.len == 0) return null;
+    const outer = findDeclared(env, outer_name) orelse return null;
+    var sections = outer.decl.sections();
+    var at: ?ast.EnumSection = null;
+    while (segs.next()) |seg| {
+        const next = for (sections) |sec| {
+            if (std.mem.eql(u8, sec.name, seg)) break sec;
+        } else return null;
+        at = next;
+        sections = next.sections;
+    }
+    const sec = at orelse return null;
+    const variants = env.arena.alloc(ast.EnumVariant, sec.variants.len + sec.sections.len) catch return null;
+    for (sec.variants, 0..) |v, i| {
+        variants[i] = v;
+        if (v.numeric) variants[i].name = std.fmt.allocPrint(env.arena, "__{s}", .{v.name}) catch return null;
+    }
+    for (sec.sections, 0..) |sub, i| variants[sec.variants.len + i] = sectionWrapper(env.arena, name, sub.name) catch return null;
+    return .{
+        .decl = .{ .name = name, .isPub = false, .shape = .{ .enum_ = .{ .variants = variants } } },
+        .helpers = outer.helpers,
+    };
+}
+
+/// `decl` with a wrapper variant `<Section>(_inner: __<Enum>__<Section>)` per
+/// section of its body (`comptime.zig` `enrichEnumWithSectionWrappers`): the
+/// emitter places a section's tag only through it.
+fn withSectionWrappers(arena: std.mem.Allocator, decl: ast.TypeDecl) Error!ast.TypeDecl {
+    const sections = decl.sections();
+    if (sections.len == 0) return decl;
+    const variants = decl.variants();
+    const merged = try arena.alloc(ast.EnumVariant, variants.len + sections.len);
+    @memcpy(merged[0..variants.len], variants);
+    const prefix = try std.fmt.allocPrint(arena, "__{s}", .{decl.name});
+    for (sections, 0..) |sec, i| merged[variants.len + i] = try sectionWrapper(arena, prefix, sec.name);
+    var out = decl;
+    out.shape = .{ .enum_ = .{ .variants = merged } };
+    return out;
+}
+
+fn sectionWrapper(arena: std.mem.Allocator, owner: []const u8, section: []const u8) Error!ast.EnumVariant {
+    const fields = try arena.alloc(ast.Field, 1);
+    fields[0] = .{ .name = "_inner", .typeRef = .{ .named = try std.fmt.allocPrint(arena, "{s}__{s}", .{ owner, section }) }, .default = null };
+    return .{ .name = section, .fields = fields, .numeric = false };
+}
+
+fn findDeclared(env: *Env, name: []const u8) ?FoundType {
     for (env.moduleDecls) |d| switch (d) {
         .type_ => |t| if (std.mem.eql(u8, t.name, name)) return .{ .decl = t, .helpers = ownFns(env) },
         else => {},
@@ -1134,6 +1492,8 @@ const Lifter = struct {
                 return try self.node(.{ .collection = .{ .loc = loc, .kind = .{ .arrayLit = .{ .elems = elems } } } });
             },
             .tuple => |items| {
+                if (try self.variant(items, hint, loc)) |n| return n;
+                if (self.refusal != null) return null;
                 const labels: []const []const u8 = if (hint) |h| switch (h.deref().*) {
                     .named => |n| if (n.labels.len == items.len) n.labels else &.{},
                     else => &.{},
@@ -1158,7 +1518,13 @@ const Lifter = struct {
                     .trailing = &.{},
                 } } } });
             },
-            .atom => |a| return self.refuse("{s}: the value is the atom `{s}`, which names no construction of the program", .{ diagnostics.comptime_value_not_liftable, a }),
+            .atom => |a| {
+                if (enumHint(self.env, hint)) |en| if (variantOf(en.def, a, 0)) |unit| {
+                    const recv = try self.enumReceiver(en.name);
+                    return try self.node(.{ .identifier = .{ .loc = loc, .kind = .{ .identAccess = .{ .receiver = recv, .member = unit.name } } } });
+                };
+                return self.refuse("{s}: the value is the atom `{s}`, which names no construction of the program", .{ diagnostics.comptime_value_not_liftable, a });
+            },
             .function => |index| {
                 const i = index orelse return self.refuse("{s}: the value is a lambda that captures the comptime block's state — only a declared function, or a lambda reading nothing the block declares, is lifted", .{diagnostics.comptime_value_not_liftable});
                 if (i >= self.prepared.makers.len) return self.refuse("{s}: the value is a function the comptime block did not write", .{diagnostics.comptime_value_not_liftable});
@@ -1166,6 +1532,39 @@ const Lifter = struct {
             },
             .resource => return self.refuse("{s}: the value is a resource — a process, a port or a reference lives only while the comptime block runs", .{diagnostics.comptime_value_not_liftable}),
         }
+    }
+
+    /// An enum's payload variant — `{Tag, F1, …}` in the untyped module — as
+    /// its constructor call, `Tok.Tag(f1: …)`, when the expected type is an
+    /// enum declaring `Tag` with that many fields. A section is its wrapper
+    /// variant (`Tok.Pad(_inner: __Tok__Pad.All(_inner: __Tok__Pad__All.__4))`,
+    /// the shape inference's rewrite of `.Pad.All.4` builds), each payload
+    /// lifted against its field's type. Null when the hint names no such
+    /// variant: the tuple is a tuple.
+    fn variant(self: *Lifter, items: []const Value, hint: ?*T.Type, loc: ast.Loc) Error!?*ast.Expr {
+        if (items.len < 2 or items[0] != .atom) return null;
+        const en = enumHint(self.env, hint) orelse return null;
+        const v = variantOf(en.def, items[0].atom, items.len - 1) orelse return null;
+        const args = try self.arena.alloc(ast.CallArg, v.fields.len);
+        for (v.fields, items[1..], 0..) |f, item, i| {
+            const fv = try self.value(item, f.type_, self.nextLoc()) orelse return null;
+            args[i] = .{ .label = f.name, .value = fv };
+        }
+        return try self.node(.{ .call = .{ .loc = loc, .kind = .{ .call = .{
+            .receiver = try self.enumReceiver(en.name),
+            .callee = v.name,
+            .is_builtin = false,
+            .args = args,
+            .trailing = &.{},
+        } } } });
+    }
+
+    /// The enum a variant is written through: a section's own name
+    /// (`__Tok__Pad`, which no import names), else the declared name
+    /// (`constructorName`).
+    fn enumReceiver(self: *Lifter, name: []const u8) Error!*ast.Expr {
+        const spelled = if (std.mem.startsWith(u8, name, "__")) name else try self.constructorName(name);
+        return try self.node(.{ .identifier = .{ .loc = self.nextLoc(), .kind = .{ .ident = spelled } } });
     }
 
     /// 01-compiler/14 step 8 — the record type `name`'s constructor, as the
@@ -1235,6 +1634,23 @@ const Lifter = struct {
         return match;
     }
 };
+
+const EnumHint = struct { name: []const u8, def: envMod.TypeDef.Enum };
+
+/// The enum `hint` names (`?Tok` is `Tok`), as inference registered it —
+/// its section wrappers included.
+fn enumHint(env: *Env, hint: ?*T.Type) ?EnumHint {
+    var h = (hint orelse return null).deref();
+    if (h.* == .named and std.mem.eql(u8, h.named.name, "optional") and h.named.args.len == 1) h = h.named.args[0].deref();
+    if (h.* != .named) return null;
+    const def = env.lookupTypeDef(h.named.name) orelse return null;
+    return if (def == .enum_) .{ .name = h.named.name, .def = def.enum_ } else null;
+}
+
+fn variantOf(en: envMod.TypeDef.Enum, tag: []const u8, arity: usize) ?envMod.VariantDef {
+    for (en.variants) |v| if (std.mem.eql(u8, v.name, tag) and v.fields.len == arity) return v;
+    return null;
+}
 
 /// Columns past any source line's width: a lifted node's location.
 const lifted_col_base: usize = 1 << 24;
@@ -1414,12 +1830,13 @@ pub fn holeValue(env: *Env, io: std.Io, hole: *const ast.Expr) Error!HoleValue {
     }
     const loc = hole.getLoc();
     const ct: ast.ComptimeExprOf(.untyped) = .{ .loc = loc, .kind = .{ .comptimeExpr = @constCast(e) } };
-    var p = Preparer{ .env = env, .arena = env.arena, .declared = .empty, .inline_vals = 1 };
+    var p = Preparer{ .env = env, .arena = env.arena, .declared = .empty, .inline_vals = 1, .rw = Rewrites.of(env) };
     const one = try env.arena.alloc(ast.Stmt, 1);
     one[0] = .{ .expr = .{ .jump = .{ .loc = loc, .kind = .{ .@"return" = try p.clone(*ast.Expr, ct.kind.comptimeExpr) } } } };
     const prepared: Prepared = .{ .value = synthFn(value_fn, one), .makers = p.makers.items };
     const support = try collectSupport(env, prepared);
     if (try unexpandedTemplateCall(env, prepared, support)) |msg| return .{ .refused = .{ .message = msg, .loc = loc } };
+    if (try unresolvedSectionPath(env, support)) |msg| return .{ .refused = .{ .message = msg, .loc = loc } };
     const outcome = evaluate(env.arena, io, env.modulePath, prepared, support, &env.comptimeTraces) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.EvalFailed => return .{ .refused = .{ .message = "the comptime evaluator failed to run", .loc = loc } },

@@ -1,0 +1,19 @@
+//// `docs.md` § Sections of an enum, decision 331 — an imported enum's
+//// section value crosses the comptime runtime both ways: an imported
+//// function writing a section path (`defaultPad()`) and one dispatching on
+//// it (`label`) are carried, a path written here is an argument, and the
+//// value is written back into this module as the imported enum's qualified
+//// constructor. The parent binary read `.Pad.All.4` as a chain of map
+//// reads: `{error,{badmap,'Pad'}}` at the `comptime`.
+
+pub mod tok;
+import {tok.Tok, tok.defaultPad, tok.label};
+
+pub fn main() {
+    @print(comptime label(defaultPad()));
+    @print(comptime label(Tok.Hover([.Pad.All.4, .Bold])));
+    val t: Tok = comptime defaultPad();
+    @print(label(t));
+    val ts: Tok[] = comptime [.Pad.All.4, Tok.Hover([.Pad.All.8])];
+    @print(ts.map({ x -> label(x) }).join(" "));
+}

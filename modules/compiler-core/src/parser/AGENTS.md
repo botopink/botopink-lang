@@ -42,7 +42,7 @@ parser/
 │                     the 1.0.3 `type`/`behavior` declarations: `parseTypeDecl`/`parseShorthandTypeDecl`
 │                     (shared `parseFieldList`, shape resolution, `type-*` diagnostics), `parseBehaviorDecl`/`parseShorthandBehaviorDecl`
 │                     (member separators: bodyless members end with `;` — `member-comma-separator` / `member-missing-semicolon`)
-├── expr_params.zig    ← decision 364: after the parse, a non-template function's `comptime x: @Expr<T>` keeps `T` in `Param.typeRef`, `Param.exprWrapped` set (`unwrapProgram`, run by `Parser.parse`)
+├── expr_params.zig    ← decision 364: after the parse, a non-template function's `comptime x: @Expr<T>` keeps `T` in `Param.typeRef`, `Param.exprWrapped` set (`unwrapProgram`, run by `Parser.parse`); decision 370 (1): a record field's `@Expr<T>` likewise (`Field.exprWrapped`)
 ├── template_markers.zig ← decision 5: `@External` template markers are positional over the declared parameters
 │                     (`$0` is `self` on a method). `Parser.parse` runs `normalizeProgram` once: it translates each
 │                     template to the renderers' receiver convention (`primOpTemplate.receiver_marker`, `$N` shifted;
@@ -842,6 +842,9 @@ parameter's `@Expr<T>` read off — `typeRef` is `T`, `exprWrapped` is set (the
 wrapper's argument slice freed). A template keeps its wrapper (the checker
 captures that argument). `comptime ..xs: @Expr<T[]>` is a variadic:
 `checkVariadicParam` reads the array through the wrapper. The AST dump shows
-`"exprWrapped": true` only when set; the formatter prints `@Expr<T>` back. That
+`"exprWrapped": true` only when set; the formatter prints `@Expr<T>` back. A
+record field written `@Expr<T>` (decision 370 (1), a typed meta record's field)
+is read off the same way — `Field.typeRef` is `T`, `Field.exprWrapped` set,
+dumped and printed back alike. That
 `comptime x: T` without `@Expr` is an error is the checker's
 (`comptime-param-not-expr`, `../comptime/AGENTS.md`).

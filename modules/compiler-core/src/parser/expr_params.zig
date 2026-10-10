@@ -9,7 +9,9 @@
 //! the transform's specialisation, a backend's signature) reads `T`, and
 //! `Param.exprWrapped` says the body holds an `Expr<T>` (`x.value`, the
 //! checker's `infer.zig`; `comptime/expr_param.zig` erases the read for the
-//! code that runs). The formatter prints `@Expr<T>` back.
+//! code that runs). The formatter prints `@Expr<T>` back. A record field
+//! written `@Expr<T>` (decision 370 (1)) is read off the same way
+//! (`Field.exprWrapped`): to the program it is a `T`.
 
 const std = @import("std");
 const ast = @import("../ast.zig");
@@ -31,6 +33,17 @@ pub fn unwrapProgram(alloc: std.mem.Allocator, program: *ast.Program) void {
 fn unwrapType(alloc: std.mem.Allocator, t: *ast.TypeDecl) void {
     for (t.methods) |*m| unwrap(alloc, m.params, m.returnType);
     for (t.assocTypes) |*inner| unwrapType(alloc, inner);
+    // Decision 370 (1) — a record field written `@Expr<T>` is a `T` to the
+    // program; a typed meta value a decorator records fills it with a
+    // parameter's `@Expr` (`comptime/typed_meta.zig`).
+    if (t.isRecord()) for (t.recordFields()) |*f| {
+        if (!f.typeRef.isExprType()) continue;
+        const g = f.typeRef.generic;
+        if (g.args.len != 1) continue;
+        f.typeRef = g.args[0];
+        alloc.free(g.args);
+        f.exprWrapped = true;
+    };
 }
 
 fn unwrap(alloc: std.mem.Allocator, params: []ast.Param, returnType: ?ast.TypeRef) void {
@@ -73,4 +86,23 @@ test "a decorator's and a function's `@Expr` parameters are unwrapped, a templat
     const kit = program.decls[3].type_;
     try std.testing.expect(kit.methods[0].params[0].exprWrapped);
     try std.testing.expect(kit.methods[0].params[0].typeRef == .typeparam);
+}
+
+test "a record field written `@Expr<T>` is unwrapped, every other field kept" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const lexer = @import("../lexer.zig");
+    const parser = @import("../parser.zig");
+    var lx = lexer.Lexer.init(
+        \\pub type Check<T>(message: @Expr<string>, rule: @Expr<fn(v: T) -> bool>, code: string)
+    );
+    var p = parser.Parser.init(try lx.scanAll(arena));
+    const program = try p.parse(arena);
+    const fields = program.decls[0].type_.recordFields();
+    try std.testing.expect(fields[0].exprWrapped);
+    try std.testing.expectEqualStrings("string", fields[0].typeRef.named);
+    try std.testing.expect(fields[1].exprWrapped);
+    try std.testing.expect(fields[1].typeRef == .function);
+    try std.testing.expect(!fields[2].exprWrapped);
 }

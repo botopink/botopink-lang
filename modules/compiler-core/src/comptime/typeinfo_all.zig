@@ -7,9 +7,14 @@
 //!
 //!     Declared<unknown>(name: "about", module: "app/about",
 //!              meta: [DeclaredMeta(key: "path", value: "/about")],
-//!              returnTypeName: "string", value: about)
+//!              returnTypeName: "string", value: about,
+//!              typedMeta: [DeclaredTypedMeta(key: "app@about@@Route",
+//!                               value: { -> Route(path: "/about") })])
 //!
-//! `meta` is what `d` set on the declaration (`decl.setMeta`), in set order.
+//! `meta` is what `d` set on the declaration (`decl.setMeta`), in set order;
+//! `typedMeta` every typed meta value its decorators recorded (decision
+//! 298), one thunk each, keyed by the record type's identity and read by
+//! `d.meta(T)` / `d.metaAll(T)`.
 //! `returnTypeName` is a function's declared return type as the source spells
 //! it, `""` for a type (decision 256), so a catalogue can be keyed by the type
 //! a provider answers.
@@ -363,8 +368,9 @@ fn kindClass(k: reflectionMod.DeclaredEntry.Kind) KindClass {
     };
 }
 
-/// One entry as `<ctor>(name: …, module: …, meta: […], returnTypeName: …, value: <value>)`.
-fn writeEntry(text: *std.ArrayListUnmanaged(u8), arena: std.mem.Allocator, reflection: *const reflectionMod.Reflection, q: Resolved, e: reflectionMod.DeclaredEntry, ctor: []const u8, value: []const u8) Error!void {
+/// One entry as `<ctor>(name: …, module: …, meta: […], returnTypeName: …,
+/// value: <value>, typedMeta: <slots>)`.
+fn writeEntry(text: *std.ArrayListUnmanaged(u8), arena: std.mem.Allocator, reflection: *const reflectionMod.Reflection, q: Resolved, e: reflectionMod.DeclaredEntry, ctor: []const u8, value: []const u8, slots: []const u8) Error!void {
     try text.print(arena, "{s}(name: ", .{ctor});
     try quoted(text, arena, e.name);
     try text.appendSlice(arena, ", module: ");
@@ -388,7 +394,59 @@ fn writeEntry(text: *std.ArrayListUnmanaged(u8), arena: std.mem.Allocator, refle
     try quoted(text, arena, e.returnTypeName);
     try text.appendSlice(arena, ", value: ");
     try text.appendSlice(arena, value);
+    try text.appendSlice(arena, ", typedMeta: ");
+    try text.appendSlice(arena, slots);
     try text.append(arena, ')');
+}
+
+/// Decision 298 — the typed meta values of the declaration `e` as the entry
+/// carries them: `[DeclaredTypedMeta(key: "<type identity>", value: { -> T(…) }), …]`,
+/// read by `d.meta(T)` / `d.metaAll(T)` (`infer.zig`
+/// `inferDeclaredMetaRead`). A record type of another module is named through
+/// an import the answer adds (`imports`), so it is `pub`
+/// (`typeinfo-all-private`); a value holding expressions an annotation wrote
+/// is built only in that annotation's module (`typeinfo-meta-expr-elsewhere`,
+/// question `130-s8-b`).
+fn typedSlots(
+    arena: std.mem.Allocator,
+    reflection: *const reflectionMod.Reflection,
+    e: reflectionMod.DeclaredEntry,
+    module_path: []const u8,
+    imports: *std.ArrayListUnmanaged(ast.DeclKind),
+    alias_seq: *usize,
+    at: ast.Loc,
+) Error!union(enum) { ok: []const u8, refused: TypeError } {
+    var text: std.ArrayListUnmanaged(u8) = .empty;
+    try text.append(arena, '[');
+    for (try reflection.typedMetaOf(arena, e.module, e.name), 0..) |m, i| {
+        const mine = std.mem.eql(u8, m.typeModule, module_path);
+        if (!mine and !m.typePub)
+            return .{ .refused = try refusal(arena, at, "{s}: `{s}` of `{s}` carries the meta type `{s}` of `{s}`, which is not `pub`, so the catalogue cannot carry it", .{ diagnostics.typeinfo_all_private, e.name, e.module, m.typeName, m.typeModule }, "Make the meta record `pub`: the entry point builds each typed meta value of the entries it catalogues through an import (decision 298).") };
+        if (m.hasExpr and !std.mem.eql(u8, m.annotationModule, module_path))
+            return .{ .refused = try refusal(arena, at, "{s}: the `{s}` that `#[{s}]` records on `{s}` holds expressions written in `{s}`, and this catalogue is built in `{s}`", .{ diagnostics.typeinfo_meta_expr_elsewhere, m.typeName, m.decorator, e.name, m.annotationModule, module_path }, "An `@Expr<T>` field is spliced where the meta is read; whose scope resolves its names in another module is question `130-s8-b`.") };
+        const ref: []const u8 = if (mine) m.typeName else ref: {
+            // Capitalised: a constructor reached under an alias takes its
+            // fields' labels (`infer.zig`'s aliased constructor).
+            const alias = try std.fmt.allocPrint(arena, "Bp__ti_{d}", .{alias_seq.*});
+            alias_seq.* += 1;
+            var imp: std.ArrayListUnmanaged(u8) = .empty;
+            try imp.print(arena, "import {{{s} as {s}}} from ", .{ m.typeName, alias });
+            try quoted(&imp, arena, m.typeModule);
+            try imp.append(arena, ';');
+            var lx = Lexer.init(imp.items);
+            const toks = lx.scanAll(arena) catch return error.OutOfMemory;
+            var p = Parser.init(toks);
+            const parsed = p.parse(arena) catch return error.OutOfMemory;
+            try imports.appendSlice(arena, parsed.decls);
+            break :ref alias;
+        };
+        if (i > 0) try text.appendSlice(arena, ", ");
+        try text.appendSlice(arena, "DeclaredTypedMeta(key: ");
+        try quoted(&text, arena, try envMod.declIdentity(arena, m.typeModule, m.typeName));
+        try text.print(arena, ", value: {{ -> {s}{s} }})", .{ ref, m.args });
+    }
+    try text.append(arena, ']');
+    return .{ .ok = text.items };
 }
 
 /// `val __bp_ti = <text>;` parsed, its tokens on line `line`: the answer's
@@ -455,7 +513,11 @@ pub fn plan(
                 break :ref alias;
             };
             const value = if (of_types) try std.fmt.allocPrint(arena, "{{ -> {s}.{s}() }}", .{ ref, rq.member.? }) else ref;
-            try writeEntry(&text, arena, reflection, rq, e, "Declared<unknown>", value);
+            const slots = switch (try typedSlots(arena, reflection, e, module_path, &imports, &alias_seq, q.loc)) {
+                .ok => |t| t,
+                .refused => |te| return .{ .refused = te },
+            };
+            try writeEntry(&text, arena, reflection, rq, e, "Declared<unknown>", value, slots);
         }
         try text.append(arena, ']');
 
@@ -505,7 +567,8 @@ pub fn templateAnswerText(arena: std.mem.Allocator, source: *const reflectionMod
     try text.append(arena, '[');
     for (entries, 0..) |e, i| {
         if (i > 0) try text.appendSlice(arena, ", ");
-        try writeEntry(&text, arena, source, q, e, "Declared", "null");
+        // A template body reads no entry's typed meta (`typeinfo-meta-at-build`).
+        try writeEntry(&text, arena, source, q, e, "Declared", "null", "[]");
     }
     try text.append(arena, ']');
     return .{ .ok = text.items };

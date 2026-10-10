@@ -33,6 +33,7 @@ const preludeMod = @import("./runtime/prelude.zig");
 const etf = @import("./runtime/etf.zig");
 const stages = @import("./runtime/stages.zig");
 const trace = @import("./trace.zig");
+const typedMeta = @import("./typed_meta.zig");
 
 /// Reflection of the annotated declaration (`@Decl` in `builtins.d.bp`).
 pub const DeclHandle = struct {
@@ -81,9 +82,14 @@ pub const Contribution = struct {
     name: []const u8 = "",
     /// Decision 370 (2) — `decl.addMember(name, fn…)`: which of the body's
     /// member functions (`member_fn.collect`'s order) the call handed.
+    /// Decision 298 — `decl.setMeta(v)` / `decl.addMeta(v)`: which of the
+    /// body's typed meta calls (`typed_meta.collect`'s order) it was.
     index: usize = 0,
+    /// Decision 298 — the record the typed meta call built, as JSON (an
+    /// untagged map: its type is the call's, `typed_meta.render`).
+    data: ?std.json.Value = null,
 
-    pub const Kind = enum { emit, member, memberFn, meta, assoc };
+    pub const Kind = enum { emit, member, memberFn, meta, assoc, typedMeta };
 };
 
 pub const Outcome = union(enum) {
@@ -287,6 +293,9 @@ fn buildModule(
             .{ .name = "Span", .fields = &.{ "start", "end", "line" } },
             .{ .name = "__bp_FieldKey", .fields = &.{ "name", "typeName", "annotations" } },
             .{ .name = "__bp_DeclAnnotation", .fields = &.{ "name", "args", "decorator" } },
+            // Decision 370 (1) — a parameter handed to a typed meta value's
+            // `@Expr<T>` field (`expr_param.eraseFn`).
+            .{ .name = typedMeta.expr_ref_record, .fields = &.{typedMeta.expr_ref_field} },
         },
         .exports = &.{.{ .name = "main", .arity = 1 }},
         .forms = forms,
@@ -447,6 +456,7 @@ const ReplyItem = struct {
     value: []const u8 = "",
     name: []const u8 = "",
     index: usize = 0,
+    data: ?std.json.Value = null,
 };
 
 /// The JSON object `main/0` returns.
@@ -477,7 +487,7 @@ fn parseOutcome(arena: std.mem.Allocator, stdout: []const u8) EvalError!Outcome 
         for (reply.contributions, 0..) |item, i| {
             const kind = std.meta.stringToEnum(Contribution.Kind, item.kind) orelse
                 return .{ .err = try errorText(arena, "the decorator evaluator returned an unknown output kind", item.kind) };
-            out[i] = .{ .kind = kind, .source = item.source, .key = item.key, .value = item.value, .name = item.name, .index = item.index };
+            out[i] = .{ .kind = kind, .source = item.source, .key = item.key, .value = item.value, .name = item.name, .index = item.index, .data = item.data };
         }
         return .{ .ok = out };
     }
@@ -630,6 +640,11 @@ test "decorator outcome: ok / fail / error replies" {
     const arg = try parseOutcome(arena, "{\"kind\":\"fail\",\"message\":\"low\",\"span\":{\"arg\":1}}");
     try std.testing.expectEqual(@as(?usize, 1), arg.fail.arg);
     try std.testing.expect(arg.fail.span == null);
+
+    const meta = try parseOutcome(arena, "{\"kind\":\"ok\",\"contributions\":[{\"kind\":\"typedMeta\",\"index\":1,\"data\":{\"table\":\"cities\"}}]}");
+    try std.testing.expectEqual(Contribution.Kind.typedMeta, meta.ok[0].kind);
+    try std.testing.expectEqual(@as(usize, 1), meta.ok[0].index);
+    try std.testing.expectEqualStrings("cities", meta.ok[0].data.?.object.get("table").?.string);
 
     const err = try parseOutcome(arena, "{\"kind\":\"error\",\"message\":\"{error,badarg}\"}");
     try std.testing.expectEqualStrings("{error,badarg}", err.err);

@@ -1,0 +1,31 @@
+//// `docs.md` § Sections of an enum, decision 331 — a `comptime` reaching a
+//// function of this module declared after it carries a body inference has
+//// not read yet, so a section path there (`.Pad.All.8`) is unresolved: the
+//// `comptime` is refused, naming the path, the function and the remedy, as
+//// a template call there is (01-compiler/14 step 8). The parent binary ran
+//// the path as a chain of map reads: `{error,{badmap,'Pad'}}`.
+
+type Tok {
+    Pad {
+        All {
+            4,
+            8,
+        }
+    }
+    Bold,
+}
+
+fn label(t: Tok) -> string {
+    return case t {
+        Pad(_p) -> "pad";
+        Bold -> "bold";
+    };
+}
+
+pub fn main() {
+    @print(comptime label(later()));
+}
+
+fn later() -> Tok {
+    return .Pad.All.8;
+}

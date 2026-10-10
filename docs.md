@@ -2494,6 +2494,34 @@ the `comptime` is refused, naming the call. A record the `comptime` answers is
 written back as its type's constructor; a type of another module that this one
 does not import is imported where the value is written.
 
+An enum value crosses a `comptime` both ways, a leaf under a section included
+(§ Sections of an enum): `comptime name(.Pad.All.4)` passes it in — alone, in
+an array, inside a payload variant — and a `comptime` whose type is the enum
+writes its answer back as the enum's constructor. A section path written in a
+function the `comptime` reaches is resolved where that function is inferred,
+so, as with a template call, the function is declared before the `comptime` —
+otherwise the `comptime` is refused, naming the path. A decorator's argument
+(`#[mark(.Pad.All.4)]`, read as `tokens.value`) and the functions a decorator
+reaches carry the same values.
+
+```botopink
+type Tok {
+    Pad {
+        All { 4, 8 }
+    }
+    Bold,
+}
+
+fn first(ts: Tok[]) -> Tok {
+    return ts[0] ?? .Bold;
+}
+
+fn main() {
+    val t: Tok = comptime first([.Pad.All.8, .Bold]);    // written as Tok.Pad.All.8
+    @print(t == Tok.Pad.All.8);                          // true
+}
+```
+
 ### Template functions
 
 A function taking `comptime q: @Expr<…>` expands at the call site; `@expr`
@@ -2576,7 +2604,8 @@ the decorator produces goes to one of four places (decision 216):
 | Place | Written | Read |
 |---|---|---|
 | a member of the annotated type | `decl.addMember("pub fn table() -> string { … }")` | `City.table()`, `c.describe()` — run-time code of the type, imported with it |
-| comptime meta, per decorator | `decl.setMeta("table", "cities")` | `@typeInfo(City).meta.entity.table` — a string constant, never run-time code |
+| comptime meta, a typed value keyed by its type (decision 298) | `decl.setMeta(Entity(table: "cities"))`, `decl.addMeta(Index(column: "name"))` | `@typeInfo(City).meta(Entity)` → `?Entity`, `.metaAll(Index)` → `Index[]`, and on a `@TypeInfo.all` entry — the values written back where they are read |
+| comptime meta, per decorator (decision 216 (2); goes once the library sites are migrated, 130 step 8) | `decl.setMeta("table", "cities")` | `@typeInfo(City).meta.entity.table` — a string constant, never run-time code |
 | an associated type | `decl.addType("Columns", "(name: string)")` | `City.Columns` in a type position, `City.Columns(name: "n")`, imported with its owner |
 | the program's catalogue | (every declaration a decorator runs over) | `@TypeInfo.all(with: entity)` at an entry point |
 
@@ -2745,11 +2774,107 @@ another module hands a member that reads only its parameters, its own locals
 and primitive types (`decorator-member-fn-imported-name`): whose scope
 resolves any other name it writes is question `s35-g`. The source text of an
 argument never reaches an output (`rule.text()` is `expr-param-method`, 370
-(3)). Typed meta — a record whose fields are `@Expr<T>` (370 (1)) — is in §
-Decided, not yet implemented.
+(3)). The other channel is typed meta whose record has `@Expr<T>` fields
+(370 (1), § Typed meta below).
+
+### Typed meta (decision 298)
+
+A decorator's meta is a typed value keyed by its record type, never by the
+decorator's name: `decl.setMeta(Entity(table: table.value))` records one
+`Entity` on the declaration, `decl.addMeta(Index(column: c.value))` one more
+`Index` each time. A reader names the type — `@typeInfo(City).meta(Entity)` is
+an `?Entity` (`null` when nothing recorded one), `@typeInfo(City).metaAll(Index)`
+an `Index[]` —, so a renamed decorator changes no reader, two decorators may
+write one type, and who may read is who sees the type. The values are built at
+build time and written back as their constructors where they are read: each
+field is a string, an integer, a float, a `bool`, a variant of an enum without
+payloads, an array or an optional of those (`decorator-meta-field-type`), and
+the value is the record's constructor written at the call
+(`decorator-meta-not-record`), in the decorator's own body.
+
+```botopink
+type Entity(table: string, audited: bool)
+type Index(column: string)
+
+fn entity(comptime decl: @Decl, comptime table: @Expr<string>) {
+    decl.setMeta(Entity(table: table.value, audited: decl.name == "City"));
+}
+
+fn index(comptime decl: @Decl, comptime column: @Expr<string>) {
+    decl.addMeta(Index(column: column.value));
+}
+
+#[entity("cities")]
+#[index("name")]
+#[index("state")]
+type City(name: string, state: string)
+
+fn main() {
+    @print(@typeInfo(City).meta(Entity)?.table ?? "none");     // cities
+    @print(@typeInfo(City).metaAll(Index).length);              // 2
+    @print(@typeInfo(City).metaAll(Entity).length);             // 1
+}
+```
+
+A type is recorded once per declaration with `setMeta` — a second value of it,
+or one added with `addMeta` beside it, is `decorator-meta-twice` at the
+annotation that recorded it —, and `meta(T)` over several values is
+`typeinfo-meta-several` (read them with `metaAll(T)`). Meta describes a
+top-level declaration (`decorator-meta-on-member` from a field's or a method's
+decorator).
+
+<!-- docs-check: reject decorator-meta-twice -->
+```botopink
+type Entity(table: string)
+
+fn entity(comptime decl: @Decl, comptime table: @Expr<string>) {
+    decl.setMeta(Entity(table: table.value));
+}
+
+#[entity("cities")]
+#[entity("towns")]
+type City(name: string)
+
+fn main() {
+    @print(@typeInfo(City).meta(Entity)?.table ?? "none");
+}
+```
+
+A meta record may hold `@Expr<T>` fields (decision 370 (1)): the decorator
+hands one of its `comptime x: @Expr<T>` parameters on as it is, and the value
+is built in the reading program with the expression spliced where the
+annotation wrote it — a rule is called, a message evaluated, at run time, never
+while the program compiles. Such a field takes a parameter and nothing else,
+and a parameter goes to no other field (`decorator-meta-expr-arg`; a plain field
+reads `x.value`). The expressions name the annotation's module, so the value is
+read there (`typeinfo-meta-expr-elsewhere` in another module — whose scope would
+resolve them is question `130-s8-b`).
+
+```botopink
+pub type Check<T>(message: @Expr<string>, rule: @Expr<fn(v: T) -> bool>)
+
+fn check<T>(comptime decl: @Decl<T>, comptime message: @Expr<string>, comptime rule: @Expr<fn(v: T) -> bool>) {
+    decl.addMeta(Check(message: message, rule: rule));
+}
+
+fn passwordsMatch(s: Signup) -> bool {
+    return s.password == s.confirm;
+}
+
+#[check("the passwords differ", passwordsMatch)]
+type Signup(password: string, confirm: string)
+
+fn main() {
+    val s = Signup(password: "a", confirm: "b");
+    for (@typeInfo(Signup).metaAll(Check)) { c ->
+        if (!c.rule(s)) @print(c.message);                     // the passwords differ
+    }
+}
+```
 
 `@typeInfo` is the one reflection builtin (decision 248): `.name` and
-`.meta.<decorator>.<key>` read a declaration, the static `@TypeInfo.all(…)` of
+`.meta.<decorator>.<key>` read a declaration, `.meta(T)` / `.metaAll(T)` its
+typed meta (§ Typed meta), the static `@TypeInfo.all(…)` of
 its type the program (decision 253; `@typeInfo.all` is `typeinfo-all-on-function`),
 and `@typeInfo(T)` used as a value is a `TypeInfo<T>` (decision 253; its members
 other than `name` and `meta` are `typeinfo-unknown-member` until they are answered). The lowercase
@@ -2768,7 +2893,12 @@ fn main() {
 `d`, so an entry point builds its catalogue explicitly — no module registers
 itself when it loads. The answer is always a `Declared<unknown>[]` (decision 254)
 — one type whatever the program declares —, each entry a
-`Declared<unknown>(name, module, meta, returnTypeName, value)`: `meta` is what `d` set on it,
+`Declared<unknown>(name, module, meta, returnTypeName, value, typedMeta)`: `meta` is what `d` set on it,
+`d.meta(T)` / `d.metaAll(T)` the typed meta its decorators recorded (decision
+298; carried in `typedMeta`, one thunk per value, and built through an import
+the answer adds, so the record type is `pub` — `typeinfo-all-private`; a
+generic record is read through `@typeInfo` — question `130-s8-d`; not in a
+decorator's or a template's body, `typeinfo-meta-at-build`),
 `returnTypeName` a function's declared return type as written (`""` for a type, decision 256),
 `value` the function itself, or for a type a thunk calling the associated fn
 named by `member:` (`@TypeInfo.all(with: component, member: "register")`), typed
@@ -3556,7 +3686,6 @@ closes it, or says that it has none yet. Every row below was re-derived by
 | Rule | Today | Closes with |
 |---|---|---|
 | A decorator's output goes to one of the four places of § Decorators; **module-level `@emit` is gone** (decision 216), refused by name with the four places in its message | `@emit(source)` still compiles, splicing loose declarations into the module: the libraries' sites move to the four places first | `01-compiler/130-decorator-outputs` steps 5–6 |
-| A decorator body hands a `comptime` parameter's `@Expr` on to typed meta (decisions 298, 370 (1)) and the program evaluates it at run time: `decl.addMeta(Check(message: message, rule: rule))`, a record with `@Expr<T>` fields built in the reading program, each expression spliced where it was written | `decl.setMeta` takes strings and no meta record holds an `@Expr`; the typed member (370 (2), § Decorators) is the channel that is built | `01-compiler/130` step 8 |
 | A block-shaped statement ends itself: **no** `;` after the closing brace of an `if`, a loop or a `case` in statement position | the `;` is **optional** there: the parser accepts both, `botopink format` prints none, and the compiler's own trees are migrated — a library or a `tests/language` cell that still writes it compiles | 1.0.10-beta C-13, in decision 132's order: each library drops the `;` (`botopink format`), then `tests/language`, then the parser refuses it (`blockStatementSemicolon`) |
 
 A row leaves this table when the compiler accepts the form, and the form is then

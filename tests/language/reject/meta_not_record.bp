@@ -1,0 +1,20 @@
+//// Decision 298 — the type is the meta's key: `decl.setMeta(v)` takes a
+//// record type's constructor written at the call, read where the decorator is
+//// declared. A value built elsewhere is refused at the argument.
+
+type Entity(table: string)
+
+fn make(t: string) -> Entity {
+    return Entity(table: t);
+}
+
+fn entity(comptime decl: @Decl, comptime table: @Expr<string>) {
+    decl.setMeta(make(table.value));
+}
+
+#[entity("cities")]
+type City(name: string)
+
+pub fn main() {
+    @print(@typeInfo(City).meta(Entity)?.table ?? "none");
+}

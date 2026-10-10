@@ -36,6 +36,7 @@ const snapshotMod = @import("snapshot.zig");
 const valueOrType = @import("value_or_type.zig");
 const exprParam = @import("expr_param.zig");
 const memberFn = @import("member_fn.zig");
+const typedMeta = @import("typed_meta.zig");
 /// `unify` raises its `TypeError` unlocated: it sees types, not source. Every
 /// call is `unifyAt` (which stamps the location it is given) or sits under a
 /// caller that stamps one with `locateLast` — 01 step 9: no type error leaves
@@ -3943,6 +3944,7 @@ fn validateExternalAnnotation(env: *Env, f: ast.FnDecl, a: ast.Annotation) Infer
 fn validateDecorators(env: *Env, program: ast.Program) InferError!void {
     try refuseNonComptimeDecoratorParams(env, program);
     try refuseBareComptimeParams(env, program);
+    try checkTypedMetaCalls(env, program);
     if (env.decorators.count() == 0) return;
     for (program.decls) |decl| switch (decl) {
         .@"fn" => |f| try checkDecoratorAnnotations(env, program, f.annotations, .{ .name = f.name, .type_ = try fnDeclType(env, f.name) }),
@@ -4651,6 +4653,10 @@ fn decoratorArgValue(env: *Env, program: ast.Program, e: ast.Expr, lexeme: []con
         },
         else => {},
     }
+    // A section path (`.Pad.All.4`) is its qualified constructor
+    // (`Tok.Pad(_inner: …)`): the decorator module re-reads the source as
+    // written, untyped, where the path is a chain of map reads.
+    if (try blockEval.sectionRewrittenExpr(env.arena, blockEval.Rewrites.of(env), e)) |r| return .{ .source = try defaultLexeme(env.arena, r), .built = true };
     return .{ .source = lexeme, .built = true };
 }
 
@@ -4832,7 +4838,8 @@ fn runDeclDecorators(
         // Decision 364 — the body reads `x.value`; the module holds the value
         // in `x` (`expr_param.zig`), and `x.fail(m)` names its argument.
         // Decision 371 — this module's functions the run reaches are typed
-        // first when they compare decorators, and their `same` calls lowered.
+        // first when they compare decorators, and their `same` calls lowered;
+        // or when they write a section path, and the path resolved.
         const runDfn = if (local) try sameLoweredFn(env, program, dfn) else dfn;
         const erasedSupport = try env.arena.alloc(ast.FnDecl, support.len);
         for (support, 0..) |sf, k| {
@@ -4848,7 +4855,7 @@ fn runDeclDecorators(
                 // gives the program no code (`refuseHooksReaderOutputs`
                 // refuses the call where it is written; this is the call
                 // reached some other way, at the annotation).
-                if (phase == .hooksReaders and c.kind != .meta) {
+                if (phase == .hooksReaders and c.kind != .meta and c.kind != .typedMeta) {
                     const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` reads `.hooks` and gives the program code (`{s}`)", .{ diagnostics.decorator_hooks_output, a.name, switch (c.kind) {
                         .emit => "@emit",
                         .member => "addMember",
@@ -4900,6 +4907,9 @@ fn runDeclDecorators(
                         };
                         try env.typeContributions.append(env.arena, .{ .owner = assoc_owner, .name = c.name, .source = c.source, .loc = a.loc, .decorator = a.name });
                     },
+                    // `decl.setMeta(v)` / `decl.addMeta(v)` (decision 298) — a
+                    // typed value keyed by its record type.
+                    .typedMeta => try recordTypedMeta(env, a, dfn, handle, values, c),
                     // `decl.setMeta(key, value)` (decision 216 (2)) — recorded in
                     // the session's reflection under the decorator's own name,
                     // before any body of this module is inferred (a `.hooks`
@@ -5021,13 +5031,492 @@ fn memberFnSource(
     return memberFn.render(env.arena, c.name, func, splices, typeArgs, target) catch return error.OutOfMemory;
 }
 
+// ── decision 298 — typed meta, keyed by its type; 370 (1) its `@Expr` fields ─
+
+/// The type declaration `name` of `module` as this analysis sees it: the
+/// module's own declarations, else what the registry holds for `module`.
+fn typeDeclAt(env: *Env, own: []const ast.DeclKind, module: []const u8, name: []const u8) ?ast.TypeDecl {
+    if (std.mem.eql(u8, module, env.modulePath)) {
+        for (own) |d| switch (d) {
+            .type_ => |t| if (std.mem.eql(u8, t.name, name)) return t,
+            else => {},
+        };
+        return null;
+    }
+    const registry = env.typeDeclRegistry orelse return null;
+    const decls = registry.get(module) orelse return null;
+    const d = decls.get(name) orelse return null;
+    return if (d == .type_) d.type_ else null;
+}
+
+/// The record type a typed meta value's constructor names, resolved in this
+/// module: its own type, an imported one (an alias answers the declaration),
+/// or `ns.Name` through a namespace import.
+fn metaCtorTarget(env: *Env, own: []const ast.DeclKind, ctor: typedMeta.Ctor) ?struct { module: []const u8, decl: ast.TypeDecl } {
+    if (ctor.namespace) |ns| {
+        const path = env.namespaces.paths.get(ns) orelse return null;
+        const d = typeDeclAt(env, own, path, ctor.name) orelse return null;
+        return .{ .module = path, .decl = d };
+    }
+    if (typeDeclAt(env, own, env.modulePath, ctor.name)) |d| return .{ .module = env.modulePath, .decl = d };
+    const o = env.importOwners.get(ctor.name) orelse return null;
+    const d = typeDeclAt(env, own, o.owner, o.name) orelse return null;
+    return .{ .module = o.owner, .decl = d };
+}
+
+/// What a field of a meta record declared in `module` holds, or null when
+/// the compiler cannot rebuild it where the meta is read
+/// (`decorator-meta-field-type`).
+fn metaFieldShape(env: *Env, own: []const ast.DeclKind, module: []const u8, tr: ast.TypeRef) InferError!?typedMeta.Shape {
+    switch (tr) {
+        .named => |n| {
+            if (typedMeta.primitiveShape(n)) |s| return s;
+            const d = typeDeclAt(env, own, module, n) orelse return null;
+            if (d.isRecord() or d.variants().len == 0 or d.sections().len > 0 or d.genericParams.len > 0) return null;
+            for (d.variants()) |v| if (v.fields.len > 0 or v.numeric) return null;
+            return .variant;
+        },
+        .array => |inner| {
+            const s = (try metaFieldShape(env, own, module, inner.*)) orelse return null;
+            const p = try env.arena.create(typedMeta.Shape);
+            p.* = s;
+            return .{ .array = p };
+        },
+        .generic => |g| {
+            if (g.is_builtin or !std.mem.eql(u8, g.name, "Array") or g.args.len != 1) return null;
+            const s = (try metaFieldShape(env, own, module, g.args[0])) orelse return null;
+            const p = try env.arena.create(typedMeta.Shape);
+            p.* = s;
+            return .{ .array = p };
+        },
+        .optional => |inner| {
+            const s = (try metaFieldShape(env, own, module, inner.*)) orelse return null;
+            if (s == .optional) return null;
+            const p = try env.arena.create(typedMeta.Shape);
+            p.* = s;
+            return .{ .optional = p };
+        },
+        else => return null,
+    }
+}
+
+/// Decision 298 — every typed meta call of each decorator this module
+/// declares, checked where it is written and its record type recorded for
+/// the annotations that run it (`Reflection.decoratorMetaTypes`): the value
+/// is a record type's constructor written at the call
+/// (`decorator-meta-not-record`), each field of it data the compiler rebuilds
+/// where the meta is read or an `@Expr<T>` (`decorator-meta-field-type`), and
+/// an `@Expr<T>` field given one of the decorator's `comptime x: @Expr<T>`
+/// parameters as it is — such a parameter given to no other field
+/// (`decorator-meta-expr-arg`, 370 (1)).
+fn checkTypedMetaCalls(env: *Env, program: ast.Program) InferError!void {
+    for (program.decls) |decl| {
+        if (decl != .@"fn") continue;
+        const f = decl.@"fn";
+        if (f.body.len == 0) continue;
+        const declName = memberFn.declParamName(f) orelse continue;
+        const calls = try typedMeta.collect(env.arena, f, declName);
+        if (calls.len == 0) continue;
+        const types = try env.arena.alloc(reflectionMod.MetaCallType, calls.len);
+        for (calls, 0..) |call, k| {
+            const verb = if (call.repeat) typedMeta.add_meta else typedMeta.set_meta;
+            const ctor = typedMeta.ctorOf(call.value.*) orelse {
+                const msg = try std.fmt.allocPrint(env.arena, "{s}: `decl.{s}(…)` records a value of a record type, written as its constructor at the call", .{ diagnostics.decorator_meta_not_record, verb });
+                env.lastError = TypeError.custom(msg, "The type is the meta's key (decision 298): `decl.setMeta(Entity(table: t.value))`, read `@typeInfo(X).meta(Entity)`.").withLoc(call.value.getLoc());
+                return error.TypeError;
+            };
+            const target = metaCtorTarget(env, program.decls, ctor) orelse {
+                const msg = try std.fmt.allocPrint(env.arena, "{s}: `decl.{s}({s}(…))` names no record type of this module or its imports", .{ diagnostics.decorator_meta_not_record, verb, ctor.name });
+                env.lastError = TypeError.custom(msg, "A meta value is a record — `type Entity(table: string)` — declared here or imported.").withLoc(call.value.getLoc());
+                return error.TypeError;
+            };
+            if (!target.decl.isRecord()) {
+                const msg = try std.fmt.allocPrint(env.arena, "{s}: `decl.{s}({s}(…))` names a type that is not a record", .{ diagnostics.decorator_meta_not_record, verb, ctor.name });
+                env.lastError = TypeError.custom(msg, "A meta value is a record — `type Entity(table: string)`.").withLoc(call.value.getLoc());
+                return error.TypeError;
+            }
+            const fields = target.decl.recordFields();
+            const shapes = try env.arena.alloc(typedMeta.FieldShape, fields.len);
+            for (fields, 0..) |fld, i| {
+                const shape: typedMeta.Shape = if (fld.exprWrapped) .expr else (try metaFieldShape(env, program.decls, target.module, fld.typeRef)) orelse {
+                    const msg = try std.fmt.allocPrint(env.arena, "{s}: the field `{s}: {f}` of the meta record `{s}` holds no data the compiler rebuilds where the meta is read", .{ diagnostics.decorator_meta_field_type, fld.name, fld.typeRef, target.decl.name });
+                    env.lastError = TypeError.custom(msg, "A meta field is a string, an integer, a float, a `bool`, a variant of an enum without payloads, an array or an optional of those — or `@Expr<T>`, filled with a decorator parameter (decision 370 (1)).").withLoc(call.value.getLoc());
+                    return error.TypeError;
+                };
+                shapes[i] = .{ .name = fld.name, .shape = shape };
+            }
+            // Each argument against its field: an `@Expr<T>` field takes a
+            // parameter's `@Expr` as it is, and such a parameter goes nowhere else.
+            for (ctor.args, 0..) |arg, i| {
+                const fi: ?usize = if (arg.label) |lbl| for (fields, 0..) |fld, j| {
+                    if (std.mem.eql(u8, fld.name, lbl)) break j;
+                } else null else if (i < fields.len) i else null;
+                const field = fields[fi orelse continue];
+                const param = metaExprParam(f, arg.value.*);
+                if (field.exprWrapped and param == null) {
+                    const msg = try std.fmt.allocPrint(env.arena, "{s}: the field `{s}` of `{s}` is an `@Expr<{f}>`, filled with one of the decorator's `comptime x: @Expr<T>` parameters as it is", .{ diagnostics.decorator_meta_expr_arg, field.name, target.decl.name, field.typeRef });
+                    env.lastError = TypeError.custom(msg, "Hand the parameter on — `Check(rule: rule)` —: the expression the annotation wrote is spliced where the meta is read (decision 370 (1)).").withLoc(arg.value.getLoc());
+                    return error.TypeError;
+                }
+                if (!field.exprWrapped and param != null) {
+                    const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is an `@Expr`, and the field `{s}` of `{s}` is a `{f}`", .{ diagnostics.decorator_meta_expr_arg, param.?, field.name, target.decl.name, field.typeRef });
+                    env.lastError = TypeError.custom(msg, "Read the value known at build with `.value` (decision 364 (2)), or declare the field `@Expr<T>` to hand the expression on (decision 370 (1)).").withLoc(arg.value.getLoc());
+                    return error.TypeError;
+                }
+            }
+            types[k] = .{ .module = target.module, .name = target.decl.name, .isPub = target.decl.isPub, .fields = shapes };
+        }
+        const r = env.reflection orelse continue;
+        try r.decoratorMetaTypes.put(r.arena, try reflectionMod.Reflection.decoratorKey(r.arena, env.modulePath, f.name), types);
+    }
+}
+
+/// The name of `f`'s `comptime x: @Expr<T>` parameter `e` is, written bare;
+/// null for anything else.
+fn metaExprParam(f: ast.FnDecl, e: ast.Expr) ?[]const u8 {
+    if (e != .identifier or e.identifier.kind != .ident) return null;
+    const n = e.identifier.kind.ident;
+    for (f.params[1..]) |p| if (p.exprWrapped and std.mem.eql(u8, p.name, n)) return n;
+    return null;
+}
+
+/// Whether `call` is `<declName>.setMeta(v)` / `<declName>.addMeta(v)`.
+fn isTypedMetaOn(call: anytype, declName: []const u8) bool {
+    if (call.is_builtin or call.args.len != 1 or call.trailing.len != 0) return false;
+    if (!std.mem.eql(u8, call.callee, typedMeta.set_meta) and !std.mem.eql(u8, call.callee, typedMeta.add_meta)) return false;
+    const r = call.receiver orelse return false;
+    return r.* == .identifier and r.identifier.kind == .ident and std.mem.eql(u8, r.identifier.kind.ident, declName);
+}
+
+/// Decision 298 — `decl.setMeta(v)` / `decl.addMeta(v)` in a decorator's body:
+/// `v` is typed as written, each `comptime x: @Expr<T>` parameter handed to
+/// an `@Expr<T>` field read as its `T` (370 (1); `checkTypedMetaCalls` held
+/// the shape where the decorator is declared).
+fn inferTypedMetaCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr {
+    const value = call.args[0].value.*;
+    const ctor = typedMeta.ctorOf(value) orelse {
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `decl.{s}(…)` records a value of a record type, written as its constructor at the call", .{ diagnostics.decorator_meta_not_record, call.callee });
+        env.lastError = TypeError.custom(msg, "The type is the meta's key (decision 298): `decl.setMeta(Entity(table: t.value))`, read `@typeInfo(X).meta(Entity)`.").withLoc(value.getLoc());
+        return error.TypeError;
+    };
+    const Rebound = struct { name: []const u8, was: *T.Type };
+    var rebound: std.ArrayListUnmanaged(Rebound) = .empty;
+    for (ctor.args) |arg| {
+        if (arg.value.* != .identifier or arg.value.identifier.kind != .ident) continue;
+        const n = arg.value.identifier.kind.ident;
+        const p = for (env.currentParams) |p| {
+            if (p.exprWrapped and std.mem.eql(u8, p.name, n)) break p;
+        } else continue;
+        const was = env.lookup(p.name) orelse continue;
+        const d = was.deref();
+        const inner = if (d.* == .named and std.mem.eql(u8, d.named.name, "Expr") and d.named.args.len == 1) d.named.args[0] else continue;
+        try rebound.append(env.arena, .{ .name = p.name, .was = was });
+        try env.bind(p.name, inner);
+    }
+    const valueTyped = try env.arena.create(TypedExpr);
+    valueTyped.* = blk: {
+        defer for (rebound.items) |r| env.bind(r.name, r.was) catch {};
+        break :blk try inferExprTyped(env, value);
+    };
+    const recv = try env.arena.create(TypedExpr);
+    recv.* = try inferExprTyped(env, call.receiver.?.*);
+    const typedArgs = try env.arena.alloc(ast.CallArgOf(.typed), 1);
+    typedArgs[0] = .{ .label = call.args[0].label, .value = valueTyped };
+    return TypedExpr{ .call = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .{ .call = .{
+        .receiver = recv,
+        .callee = call.callee,
+        .is_builtin = false,
+        .args = typedArgs,
+        .trailing = &.{},
+    } } } };
+}
+
+/// Decision 298 — record the value one typed meta call of `dfn`'s body built
+/// (`c.index`, `c.data`) on the declaration `handle` names: written back as
+/// its constructor's arguments, each `@Expr<T>` field as the annotation wrote
+/// the argument (370 (1)). Refused at the annotation: a field's or a method's
+/// decorator (`decorator-meta-on-member`), a second value of a type the
+/// declaration holds once (`decorator-meta-twice`).
+fn recordTypedMeta(
+    env: *Env,
+    a: ast.Annotation,
+    dfn: ast.FnDecl,
+    handle: decoratorEval.DeclHandle,
+    values: []const envMod.DecoratorArgValue,
+    c: decoratorEval.Contribution,
+) InferError!void {
+    const declName = memberFn.declParamName(dfn) orelse return decoratorError(env, a, "the decorator has no `@Decl` handle", "");
+    const calls = try typedMeta.collect(env.arena, dfn, declName);
+    const verb = if (c.index < calls.len and calls[c.index].repeat) typedMeta.add_meta else typedMeta.set_meta;
+    const is_member = std.mem.eql(u8, handle.kind, "Field") or std.mem.eql(u8, handle.kind, "Method");
+    if (is_member) {
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` on the {s} `{s}` calls `decl.{s}`, and meta describes a top-level declaration", .{ diagnostics.decorator_meta_on_member, a.name, if (std.mem.eql(u8, handle.kind, "Field")) "field" else "method", handle.name, verb });
+        return decoratorError(env, a, msg, "`@typeInfo(X)` reflects a `type`, a `behavior`, a `fn` or a `val`; record the meta from a decorator on the declaration itself.");
+    }
+    const r = env.reflection orelse return;
+    const owner = env.comptimeOwnerOf(dfn);
+    const types = r.decoratorMetaTypes.get(try reflectionMod.Reflection.decoratorKey(env.arena, owner, dfn.name)) orelse &.{};
+    if (c.index >= calls.len or c.index >= types.len or c.data == null)
+        return decoratorError(env, a, "the decorator evaluator handed back a typed meta value the body does not record", "Report it: `decl.setMeta(v)` / `decl.addMeta(v)` are numbered in source order.");
+    const mt = types[c.index];
+    const lexemes = try env.arena.alloc([]const u8, values.len);
+    for (values, 0..) |v, j| lexemes[j] = v.lexeme;
+    var bad: []const u8 = "";
+    const args = typedMeta.render(env.arena, mt.fields, c.data.?, lexemes, &bad) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.Mismatch => {
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` records a `{s}` on `{s}` whose field `{s}` the compiler cannot write back", .{ diagnostics.decorator_meta_field_type, a.name, mt.name, handle.name, bad });
+            return decoratorError(env, a, msg, "A meta field holds data known at build — a string, a number, a `bool`, a variant — or a decorator parameter's `@Expr` (decision 370 (1)).");
+        },
+    };
+    const hasExpr = for (mt.fields) |fs| {
+        if (fs.shape == .expr and c.data.?.object.get(fs.name) != null) break true;
+    } else false;
+    if (!try r.addTypedMeta(env.modulePath, handle.name, .{
+        .typeModule = mt.module,
+        .typeName = mt.name,
+        .typePub = mt.isPub,
+        .args = args,
+        .repeat = c.index < calls.len and calls[c.index].repeat,
+        .hasExpr = hasExpr,
+        .annotationModule = env.modulePath,
+        .decorator = dfn.name,
+    })) {
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` records a second `{s}` on `{s}`, which holds one", .{ diagnostics.decorator_meta_twice, a.name, mt.name, handle.name });
+        return decoratorError(env, a, msg, "`decl.setMeta(v)` stores one value of its type per declaration (decision 298); a value that repeats is recorded with `decl.addMeta(v)` — every one, never mixed with `setMeta` — and read with `metaAll(T)`.");
+    }
+}
+
+/// The record type a typed meta read names (`meta(Entity)`, `meta(orm.Entity)`):
+/// its identity and a fresh instance of its type.
+const MetaReadType = struct { module: []const u8, name: []const u8, spelled: []const u8, instance: *T.Type, generic: bool };
+
+fn metaReadType(env: *Env, call: anytype, loc: ast.Loc) InferError!MetaReadType {
+    const fail = struct {
+        fn at(e: *Env, l: ast.Loc, callee: []const u8) InferError {
+            const msg = std.fmt.allocPrint(e.arena, "{s}: `{s}(T)` takes one record type of this module or its imports — `{s}(Entity)`, `{s}(orm.Entity)`", .{ diagnostics.typeinfo_meta_type, callee, callee, callee }) catch return error.OutOfMemory;
+            e.lastError = TypeError.custom(msg, "The meta's key is its record type (decision 298).").withLoc(l);
+            return error.TypeError;
+        }
+    }.at;
+    if (call.args.len != 1 or call.trailing.len != 0 or call.args[0].label != null) return fail(env, loc, call.callee);
+    const arg = call.args[0].value.*;
+    const target = reflectedDecl(env, arg) orelse return fail(env, arg.getLoc(), call.callee);
+    const d = typeDeclAt(env, env.moduleDecls, target.module, target.name) orelse return fail(env, arg.getLoc(), call.callee);
+    if (!d.isRecord()) return fail(env, arg.getLoc(), call.callee);
+    const ctorType: ?*T.Type = switch (arg.identifier.kind) {
+        .ident => |n| env.lookup(n) orelse env.typeOnlyCtors.get(n),
+        .identAccess => |ia| blk: {
+            const exports = env.namespaces.modules.getPtr(ia.receiver.identifier.kind.ident) orelse break :blk null;
+            break :blk exports.get(ia.member);
+        },
+        else => null,
+    };
+    const ct = ctorType orelse return fail(env, arg.getLoc(), call.callee);
+    var seen = std.AutoHashMap(*T.TypeCell, *T.Type).init(env.arena);
+    defer seen.deinit();
+    const inst = try instantiateType(env, ct, &seen, .allVars);
+    const instance = if (inst.deref().* == .func) inst.deref().func.ret else return fail(env, arg.getLoc(), call.callee);
+    const spelled = switch (arg.identifier.kind) {
+        .ident => |n| n,
+        .identAccess => |ia| try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ ia.receiver.identifier.kind.ident, ia.member }),
+        else => unreachable,
+    };
+    return .{ .module = target.module, .name = target.name, .spelled = spelled, .instance = instance, .generic = d.genericParams.len > 0 };
+}
+
+/// A typed meta read's answer parsed on a line of its own past the module's
+/// (`Env.typedMetaLines`).
+fn typedMetaRewrite(env: *Env, text: []const u8) InferError!*ast.Expr {
+    if (env.typedMetaLines == 0) env.typedMetaLines = typed_meta_first_line;
+    const line = env.typedMetaLines;
+    env.typedMetaLines += 1;
+    const prefix = "val __bp_tm = ";
+    const src = try std.fmt.allocPrint(env.arena, "{s}{s};", .{ prefix, text });
+    var lx = Lexer.init(src);
+    const tokens = env.arena.dupe(lexerMod.Token, lx.scanAll(env.arena) catch return error.OutOfMemory) catch return error.OutOfMemory;
+    for (tokens) |*t| t.line += line;
+    var p = Parser.init(tokens);
+    const parsed = p.parse(env.arena) catch return error.OutOfMemory;
+    if (parsed.decls.len != 1 or parsed.decls[0] != .val) return error.OutOfMemory;
+    const node = try env.arena.create(ast.Expr);
+    node.* = parsed.decls[0].val.value.*;
+    return node;
+}
+
+/// Where typed meta answers start: past any module's own lines.
+const typed_meta_first_line: usize = 1_000_000;
+
+/// Decision 298 — `@typeInfo(X).meta(T)` → `?T`, `@typeInfo(X).metaAll(T)` →
+/// `T[]`: the values the declaration's decorators recorded of the record type
+/// `T`, answered at compile time — the constructors written back in the
+/// read's place (`[T(…)].first()`, `[T(…), …]`) and typed here, in this
+/// module, so an `@Expr<T>` field's expression (370 (1)) is checked and run
+/// where it was written. Refused at the read: `T` naming no record type
+/// (`typeinfo-meta-type`), `meta(T)` over several values
+/// (`typeinfo-meta-several`), a value with `@Expr` fields read in another
+/// module than the annotation's (`typeinfo-meta-expr-elsewhere`), and a
+/// declaration of this module a `.hooks` reader annotates, before it ran
+/// (`typeinfo-meta-hooks-pending`).
+fn inferTypedMetaRead(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr {
+    const one = std.mem.eql(u8, call.callee, "meta");
+    const info = call.receiver.?.call.kind.call;
+    if (info.args.len != 1 or info.trailing.len != 0) {
+        env.lastError = TypeError.custom(diagnostics.typeinfo_unknown_declaration ++ ": `@typeInfo` takes one declaration — `@typeInfo(City)`, `@typeInfo(models.City)`", null).withLoc(call.receiver.?.call.loc);
+        return error.TypeError;
+    }
+    const target = reflectedDecl(env, info.args[0].value.*) orelse {
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `@typeInfo` reflects a declaration this module declares or imports, and this names none", .{diagnostics.typeinfo_unknown_declaration});
+        env.lastError = TypeError.custom(msg, "Name a `type`, `behavior` or `fn` of this module, an imported one, or one through a namespace import (`models.City`).").withLoc(info.args[0].value.getLoc());
+        return error.TypeError;
+    };
+    const mt = try metaReadType(env, call, loc);
+
+    var found: std.ArrayListUnmanaged(reflectionMod.TypedMetaEntry) = .empty;
+    if (env.reflection) |r| if (env.templateEval != null) {
+        if (!env.hooksReadersRan and std.mem.eql(u8, target.module, env.modulePath)) {
+            var it = env.hooksReaders.keyIterator();
+            while (it.next()) |k| {
+                if (!std.mem.startsWith(u8, k.*, target.name) or k.len <= target.name.len or k.*[target.name.len] != 0) continue;
+                const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` carries a decorator that reads `.hooks`, which records its meta after this read", .{ diagnostics.typeinfo_meta_hooks_pending, target.name });
+                env.lastError = TypeError.custom(msg, "A typed meta read of a declaration a `.hooks` reader annotates is answered in another module (decision 372 runs such a decorator after the module's bodies); question `130-s8-c`.").withLoc(loc);
+                return error.TypeError;
+            }
+        }
+        for (try r.typedMetaOf(env.arena, target.module, target.name)) |e| {
+            if (std.mem.eql(u8, e.typeModule, mt.module) and std.mem.eql(u8, e.typeName, mt.name)) try found.append(env.arena, e);
+        }
+    };
+    if (one and found.items.len > 1) {
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` holds {d} `{s}` values, and `meta({s})` answers one", .{ diagnostics.typeinfo_meta_several, target.name, found.items.len, mt.name, mt.spelled });
+        env.lastError = TypeError.custom(msg, "Read every one with `metaAll(T)`; `decl.addMeta(v)` records a value that repeats (decision 298).").withLoc(loc);
+        return error.TypeError;
+    }
+    var text: std.ArrayListUnmanaged(u8) = .empty;
+    try text.append(env.arena, '[');
+    for (found.items, 0..) |e, i| {
+        if (e.hasExpr and !std.mem.eql(u8, e.annotationModule, env.modulePath)) {
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: the `{s}` that `#[{s}]` records on `{s}` holds expressions written in `{s}`, and this read is in `{s}`", .{ diagnostics.typeinfo_meta_expr_elsewhere, mt.name, e.decorator, target.name, e.annotationModule, env.modulePath });
+            env.lastError = TypeError.custom(msg, "An `@Expr<T>` field is spliced where the meta is read; whose scope resolves its names in another module is question `130-s8-b`. Read it in the module of the annotation.").withLoc(loc);
+            return error.TypeError;
+        }
+        if (i > 0) try text.appendSlice(env.arena, ", ");
+        try text.print(env.arena, "{s}{s}", .{ mt.spelled, e.args });
+    }
+    try text.append(env.arena, ']');
+    if (one) try text.appendSlice(env.arena, ".first()");
+    const rewrite = try typedMetaRewrite(env, text.items);
+    try env.srcRewrites.put(loc, rewrite);
+    const typed = try inferExprTyped(env, rewrite.*);
+    const want = try env.namedTypeArgs(if (one) "optional" else "array", &.{mt.instance});
+    try unifyAt(env, want, typed.getType(), loc);
+    return typed;
+}
+
+/// Decision 298 — `d.meta(T)` → `?T`, `d.metaAll(T)` → `T[]` on a
+/// `@TypeInfo.all` entry: the values its decorators recorded of the record
+/// type `T`, carried by the entry (`Declared.typedMeta`, one thunk per
+/// value, keyed by the type's identity — `typeinfo_all.zig`) and read with
+/// the module's `declared__metaAll__<T>` (`typed_meta.withMetaHelper`). Not in a decorator's or a template's
+/// body: the entries are run-time data (`typeinfo-meta-at-build`).
+fn inferDeclaredMetaRead(env: *Env, call: anytype, recv: *ast.TypedExpr, loc: ast.Loc) InferError!TypedExpr {
+    _ = recv;
+    if (env.inDecoratorFn or env.inTemplateFn) {
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}(T)` on a catalogue entry reads run-time data, and this body runs while the program compiles", .{ diagnostics.typeinfo_meta_at_build, call.callee });
+        env.lastError = TypeError.custom(msg, "Read an entry's typed meta in the program; a decorator's or a template's body reads `@typeInfo(X).meta(T)` (decision 298).").withLoc(loc);
+        return error.TypeError;
+    }
+    const one = std.mem.eql(u8, call.callee, "meta");
+    const mt = try metaReadType(env, call, loc);
+    if (mt.generic) {
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}({s})` on a catalogue entry names a generic record, whose type arguments this read cannot spell", .{ diagnostics.typeinfo_meta_type, call.callee, mt.spelled });
+        env.lastError = TypeError.custom(msg, "Read a generic meta record with `@typeInfo(X).meta(T)` / `.metaAll(T)`; through a `@TypeInfo.all` entry is question `130-s8-d`.").withLoc(call.args[0].value.getLoc());
+        return error.TypeError;
+    }
+    const key = try envMod.declIdentity(env.arena, mt.module, mt.name);
+    const reader = try typedMeta.metaAllFnName(env.arena, mt.spelled);
+    if (env.lookup(reader) == null) {
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}({s})` on a catalogue entry names a record type this module neither declares nor imports by that name", .{ diagnostics.typeinfo_meta_type, call.callee, mt.spelled });
+        env.lastError = TypeError.custom(msg, "Import the meta record (`import {orm.Entity};`) or reach it through a namespace import (`orm.Entity`).").withLoc(call.args[0].value.getLoc());
+        return error.TypeError;
+    }
+    // `declared__metaAll__<T>(<receiver>.typedMeta, "<key>")`, `.first()` for `meta`.
+    const line = blk: {
+        if (env.typedMetaLines == 0) env.typedMetaLines = typed_meta_first_line;
+        defer env.typedMetaLines += 1;
+        break :blk env.typedMetaLines;
+    };
+    const at = struct {
+        fn l(ln: usize, col: usize) ast.Loc {
+            return .{ .line = ln, .col = col };
+        }
+    }.l;
+    const slots = try env.arena.create(ast.Expr);
+    slots.* = .{ .identifier = .{ .loc = at(line, 1), .kind = .{ .identAccess = .{ .receiver = call.receiver.?, .member = declared_meta_slots_field } } } };
+    const keyLit = try env.arena.create(ast.Expr);
+    var keyText: std.ArrayListUnmanaged(u8) = .empty;
+    try typedMeta.writeBpString(env.arena, &keyText, key);
+    keyLit.* = .{ .literal = .{ .loc = at(line, 2), .kind = .{ .stringLit = keyText.items[1 .. keyText.items.len - 1] } } };
+    const args = try env.arena.alloc(ast.CallArg, 2);
+    args[0] = .{ .label = null, .value = slots };
+    args[1] = .{ .label = null, .value = keyLit };
+    var rewrite = try env.arena.create(ast.Expr);
+    // The module's own reader of `T` (`typed_meta.withMetaHelper`).
+    rewrite.* = .{ .call = .{ .loc = at(line, 3), .kind = .{ .call = .{
+        .receiver = null,
+        .callee = reader,
+        .is_builtin = false,
+        .args = args,
+        .trailing = &.{},
+    } } } };
+    if (one) {
+        const all = rewrite;
+        rewrite = try env.arena.create(ast.Expr);
+        rewrite.* = .{ .call = .{ .loc = at(line, 4), .kind = .{ .call = .{
+            .receiver = all,
+            .callee = "first",
+            .is_builtin = false,
+            .args = &.{},
+            .trailing = &.{},
+        } } } };
+    }
+    env.usesDeclared = true;
+    try env.srcRewrites.put(loc, rewrite);
+    const typed = try inferExprTyped(env, rewrite.*);
+    const want = try env.namedTypeArgs(if (one) "optional" else "array", &.{mt.instance});
+    try unifyAt(env, want, typed.getType(), loc);
+    return typed;
+}
+
+/// The `Declared` field that carries an entry's typed meta and the record of
+/// one value (`comptime.zig` `decl_reflection_src`).
+pub const declared_meta_slots_field = "typedMeta";
+pub const declared_meta_slot_type = "DeclaredTypedMeta";
+
+/// Whether `t` is a `Declared<…>` (`@TypeInfo.all`'s entry).
+fn isDeclaredType(t: *T.Type) bool {
+    const d = t.deref();
+    return d.* == .named and std.mem.eql(u8, d.named.name, "Declared");
+}
+
+/// Whether `t` is the `@Decl` handle's type.
+fn isDeclHandleType(t: *T.Type) bool {
+    const d = t.deref();
+    return d.* == .named and std.mem.eql(u8, d.named.name, "Decl");
+}
+
 /// Decision 371 — `f`, a function of this module a decorator's run reaches,
 /// with its `same` calls lowered (`decorator_same.zig`). A decorator runs
 /// before the module's bodies are inferred, so a body that writes `same` is
 /// inferred now — once, after the module's imports and `val`s are bound as
 /// Pass 2 binds them — and its calls are typed and recorded before it runs.
+/// A body that writes a section path (`.Pad.All.4`) is inferred now too, and
+/// carried with the qualified constructor inference recorded for the path
+/// (`block_eval.sectionRewritten`): the decorator module reads the body
+/// untyped, where the path is a chain of map reads.
 fn sameLoweredFn(env: *Env, program: ast.Program, f: ast.FnDecl) InferError!ast.FnDecl {
-    if (f.body.len == 0 or !decoratorSameMod.mentionsSame(f)) return f;
+    const sections = f.body.len > 0 and blockEval.writesSectionPath(env, f);
+    if (f.body.len == 0 or !(decoratorSameMod.mentionsSame(f) or sections)) return f;
     const gop = try env.decoratorBodiesChecked.getOrPut(env.arena, @intFromPtr(f.body.ptr));
     if (!gop.found_existing) {
         if (!env.earlyValsBound) {
@@ -5038,7 +5527,8 @@ fn sameLoweredFn(env: *Env, program: ast.Program, f: ast.FnDecl) InferError!ast.
         }
         _ = try inferFnDecl(env, f);
     }
-    return decoratorSameMod.lower(env.arena, &env.decoratorSame, f);
+    const lowered = if (decoratorSameMod.mentionsSame(f)) try decoratorSameMod.lower(env.arena, &env.decoratorSame, f) else f;
+    return if (sections) try blockEval.sectionRewritten(env.arena, blockEval.Rewrites.of(env), lowered) else lowered;
 }
 
 /// Decision 372 — the two phases a module's decorators run in: every
@@ -7540,7 +8030,8 @@ fn expandTemplateCallViaRuntime(
 /// `DeclaredMeta`), as the template's comptime module declares them.
 const template_declared_src =
     \\type DeclaredMeta(key: string, value: string)
-    \\type Declared(name: string, module: string, meta: DeclaredMeta[], returnTypeName: string, value: unknown)
+    \\type DeclaredTypedMeta(key: string, value: unknown)
+    \\type Declared(name: string, module: string, meta: DeclaredMeta[], returnTypeName: string, value: unknown, typedMeta: DeclaredTypedMeta[])
 ;
 
 /// The queries a template function's body writes (`noteTemplateQueries`, by
@@ -16273,6 +16764,19 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
             {
                 return inferMemberFnCall(env, call, loc);
             }
+            // Decision 298 — `decl.setMeta(v)` / `decl.addMeta(v)` in a
+            // decorator's body: a typed meta value.
+            if (env.inDecoratorFn and env.currentParams.len > 0 and isDecoratorParams(env.currentParams) and
+                isTypedMetaOn(call, env.currentParams[0].name))
+            {
+                return inferTypedMetaCall(env, call, loc);
+            }
+            // Decision 298 — `@typeInfo(X).meta(T)` / `.metaAll(T)`.
+            if (!call.is_builtin and call.calleeExpr == null and (std.mem.eql(u8, call.callee, "meta") or std.mem.eql(u8, call.callee, "metaAll"))) {
+                if (call.receiver) |r| if (r.* == .call and r.call.kind == .call and r.call.kind.call.is_builtin and std.mem.eql(u8, r.call.kind.call.callee, "typeInfo")) {
+                    return inferTypedMetaRead(env, call, loc);
+                };
+            }
             // Decision 330 — `recv?.[i]`, `f?.(args)`, `recv?.m(args)` and
             // `x!`: each is the `if` over the optional it reads, recorded for
             // the transform (`inferOptionalOperator`).
@@ -16445,6 +16949,19 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
             // Decision 371 — `d.same(other)` on a `Decorator`.
             if (typedReceiver) |rp| if (!call.is_builtin and call.calleeExpr == null and std.mem.eql(u8, call.callee, "same") and isDecoratorType(rp.getType())) {
                 return inferDecoratorSame(env, call, rp, loc);
+            };
+            // Decision 298 — `d.meta(T)` / `d.metaAll(T)` on a catalogue entry.
+            if (typedReceiver) |rp| if (!call.is_builtin and call.calleeExpr == null and (std.mem.eql(u8, call.callee, "meta") or std.mem.eql(u8, call.callee, "metaAll")) and isDeclaredType(rp.getType())) {
+                return inferDeclaredMetaRead(env, call, rp, loc);
+            };
+            // Decision 298 — a typed meta value is recorded in the decorator's
+            // own body, on its `@Decl` parameter (`typed_meta.collect`).
+            if (typedReceiver) |rp| if (!call.is_builtin and isDeclHandleType(rp.getType()) and
+                (std.mem.eql(u8, call.callee, typedMeta.add_meta) or (std.mem.eql(u8, call.callee, typedMeta.set_meta) and call.args.len == 1)))
+            {
+                const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}(v)` records typed meta from the decorator's own body, on its `@Decl` parameter", .{ diagnostics.decorator_meta_not_record, call.callee });
+                env.lastError = TypeError.custom(msg, "Call `decl.setMeta(v)` / `decl.addMeta(v)` in the decorator itself: the value is read back by its type where the decorator is declared (decision 298).").withLoc(loc);
+                return error.TypeError;
             };
 
             // Decision 267 — a callee whose last parameter is variadic takes
@@ -18480,6 +18997,10 @@ fn foldBodyComptime(env: *Env, ct: ast.ComptimeExprOf(.untyped), typed: TypedExp
     const support = try blockEval.collectSupport(env, prepared);
     if (try blockEval.unexpandedTemplateCall(env, prepared, support)) |msg| {
         env.lastError = TypeError.custom(msg, "A template call is expanded where it is inferred (01-compiler/14 step 8); a `comptime` carries its expansion.").withLoc(loc);
+        return error.TypeError;
+    }
+    if (try blockEval.unresolvedSectionPath(env, support)) |msg| {
+        env.lastError = TypeError.custom(msg, "A section path is resolved where it is inferred (`docs.md` § Sections of an enum); a `comptime` carries the resolved constructor.").withLoc(loc);
         return error.TypeError;
     }
     const outcome = blockEval.evaluate(env.arena, ctx.io, env.modulePath, prepared, support, &env.comptimeTraces) catch |err| switch (err) {

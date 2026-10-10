@@ -1,0 +1,13 @@
+//// Decision 370 (1) — a meta value with `@Expr<T>` fields is built where it
+//// is read, each expression spliced as the annotation wrote it. Read in a
+//// module other than the annotation's, whose scope would resolve the names
+//// the expressions write (`passwordsMatch`) is question `130-s8-b`: the read
+//// is refused (`typeinfo-meta-expr-elsewhere`).
+
+pub mod signup;
+import {signup.Signup};
+import {signup.Check};
+
+pub fn main() {
+    @print(@typeInfo(Signup).metaAll(Check).length);
+}

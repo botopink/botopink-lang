@@ -887,6 +887,11 @@ pub const Env = struct {
     /// Decision 372 — the meta reads waiting for a `.hooks` reader of this
     /// module, answered (or refused, `typeinfo-meta-missing`) when it ran.
     deferredMetaReads: std.ArrayListUnmanaged(DeferredMetaRead) = .empty,
+    /// Decision 298 — the lines a typed meta read's answer is parsed on, one
+    /// per read, past every line of the module (`infer.zig`
+    /// `typedMetaRewriteLine`): no node of an answer shares a location with
+    /// the module's own code or with another answer.
+    typedMetaLines: usize = 0,
     /// Decision 354 (8) — every call whose value is, or may resolve to, a
     /// `@Component<R>`, by location, with that type: the calls that pass the
     /// hidden context map (`context_lower.zig`).

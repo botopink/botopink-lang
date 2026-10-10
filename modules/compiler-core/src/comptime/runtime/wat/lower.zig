@@ -174,6 +174,7 @@ const bifs = [_]Bif{
     .{ .module = "erlang", .name = "is_list", .arity = 1, .rt = "rt_erlang_is_list" },
     .{ .module = "erlang", .name = "is_tuple", .arity = 1, .rt = "rt_erlang_is_tuple" },
     .{ .module = "erlang", .name = "is_map", .arity = 1, .rt = "rt_erlang_is_map" },
+    .{ .module = "erlang", .name = "is_map_key", .arity = 2, .rt = "rt_maps_is_key" },
     .{ .module = "erlang", .name = "is_function", .arity = 1, .rt = "rt_erlang_is_function" },
     .{ .module = "erlang", .name = "is_boolean", .arity = 1, .rt = "rt_erlang_is_boolean" },
     .{ .module = "erlang", .name = "put", .arity = 2, .rt = "rt_erlang_put" },

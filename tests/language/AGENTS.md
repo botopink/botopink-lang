@@ -379,6 +379,19 @@ reading nothing the block declares, written back as the reference and the lambda
 catalogue shape) and `reject/comptime_value_not_liftable` (a lambda capturing the block's `val`,
 `comptime-value-not-liftable` at the `comptime`; the resource half is `block_eval.zig`'s unit test —
 the WAT runtime has no process to answer, so no one cell refuses it the same way on both runtimes).
+06-emilia/34 step 5's two comptime rows (a nested-section enum value at comptime; emilia's dispatcher
+at comptime) add `run/comptime_enum_section_value` (`.Pad.All.8` as an argument, in an array, inside
+a payload variant, and written back from `comptime first(…)`, `comptime padX()` and an array — four
+targets; the parent binary raised `{error,{badmap,'Pad'}}`), `run/comptime_decorator_section_value`
+(`#[mark(.Pad.All.4, .Bold, Tok.Pad.All.8)]` read as `tokens.value`, and a function the decorator
+reaches writing `.Pad.All.8`; the parent raised `{badmap,'Pad'}` at the annotation),
+`modules/comptime_imported_section_path` (an imported enum's section value from an imported function
+and back into this module; the parent's comptime module called an undefined `Pad/1`),
+`reject/comptime_section_path_declared_after` (a section path in a function declared after the
+`comptime` that reaches it, refused naming the path and the function, as a template call there is)
+and `run/comptime_record_pattern` (a record matched on the comptime runtime as its untagged map — a
+constructor pattern in an arm and in a `val`, `is`, an arm naming `Block`, a record and a section's
+variant; the parent's lowering failed `MissingPackage`).
 `01-compiler/14` step 8 (decision 355) adds `run/styled_holes_known_at_build` (a template of the
 cell's own reads each hole's `known` / `value`: a literal, a `val`, another expansion with no
 run-time hole and a `comptime` are written at build, a parameter and a call computed at render —
@@ -785,6 +798,22 @@ of a decorator in another module, reading only its parameters and locals) and
 `reject/decorator_member_captures` (a local of the decorator's body),
 `reject/decorator_member_captures_handle` (`decl`) and `reject/decorator_member_type` (a field's
 `fn(self: T)`, `T` the field's type), each red on the parent binary.
+
+Decision 298 (`01-compiler/130` step 8) — typed meta keyed by its record type — adds, on the four
+targets, `run/meta_typed` (`decl.setMeta(Entity(…))` read `@typeInfo(City).meta(Entity)`, two
+`decl.addMeta(Index(…))` read `metaAll(Index)`, every field shape written back — string, array,
+float, `bool`, variant, optional —, `null` / `[]` for a type nothing recorded),
+`modules/meta_typed_catalogue` (`d.meta(Entity)` / `d.metaAll(Index)` on `@TypeInfo.all` entries,
+here and in a function of another module the entries are handed to),
+`modules/meta_catalogue_private_type` (`typeinfo-all-private` for a private meta record) and
+`modules/meta_expr_read_elsewhere` (`typeinfo-meta-expr-elsewhere`, question `130-s8-b`), and the
+refusals `reject/meta_twice`, `reject/meta_not_record`, `reject/meta_field_type`,
+`reject/meta_several`, `reject/meta_read_not_type`, `reject/meta_add_outside_decorator`,
+`reject/meta_read_at_build` and `reject/meta_catalogue_generic` (question `130-s8-d`). Decision 370
+(1) adds `run/meta_expr_field` (`decl.addMeta(Check(message: message, rule: rule))`, `Check`'s
+fields `@Expr<T>`: the reader calls `rule` and evaluates `message` — `t("signup.mismatch")` — at run
+time, never at build) with `reject/meta_expr_field_literal` and
+`reject/meta_expr_param_plain_field` (`decorator-meta-expr-arg`). Each red on the parent binary.
 
 Every cell is copied into its own scratch project, so a parse error fails only that cell. Test names
 start with the decision-8 section they pin (`test "§5.4 …"`) when there is one, so a failure points at

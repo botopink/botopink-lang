@@ -1,0 +1,7 @@
+pad-all-8
+pad-all-4,bold,pad-x-2
+hover(pad-all-4,hover(pad-x-2))
+pad-all-8
+pad-x-2
+pad-all-4,hover(pad-all-8),bold
+true

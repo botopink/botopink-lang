@@ -15,6 +15,7 @@ const default_fn = @import("./comptime/default_fn.zig");
 const value_or_type = @import("./comptime/value_or_type.zig");
 const expr_param = @import("./comptime/expr_param.zig");
 const derived_types = @import("./comptime/derived_types.zig");
+const typed_meta = @import("./comptime/typed_meta.zig");
 const evalMod = @import("./comptime/eval.zig");
 const format = @import("./format.zig");
 pub const trace = @import("./comptime/trace.zig");
@@ -405,10 +406,13 @@ fn withSourceLocationDecl(arena: std.mem.Allocator, prog: ast.Program, env: *con
 /// Decision 216 (4) — the prelude records `@TypeInfo.all` answers with
 /// (`Declared<T>`, `DeclaredMeta`), spliced into a module that names them the
 /// way `withSourceLocationDecl` splices `SourceLocation`: private, per module.
+/// Decision 298 — with them the record of one typed meta value an entry
+/// carries (`DeclaredTypedMeta`); the function a `d.meta(T)` / `d.metaAll(T)`
+/// read calls is the module's own (`typed_meta.withMetaHelper`).
 fn withDeclaredDecls(arena: std.mem.Allocator, prog: ast.Program, env: *const envMod.Env) !ast.Program {
     if (!env.usesDeclared) return prog;
     for (prog.decls) |d| switch (d) {
-        .type_ => |t| if (std.mem.eql(u8, t.name, "Declared") or std.mem.eql(u8, t.name, "DeclaredMeta")) return prog,
+        .type_ => |t| if (std.mem.eql(u8, t.name, "Declared") or std.mem.eql(u8, t.name, "DeclaredMeta") or std.mem.eql(u8, t.name, "DeclaredTypedMeta")) return prog,
         else => {},
     };
     var lx = Lexer.init(declared_decl_src);
@@ -425,7 +429,8 @@ fn withDeclaredDecls(arena: std.mem.Allocator, prog: ast.Program, env: *const en
 /// entries, private. Keep the two in sync.
 const declared_decl_src =
     \\type DeclaredMeta(key: string, value: string)
-    \\type Declared<T>(name: string, module: string, meta: DeclaredMeta[], returnTypeName: string, value: T)
+    \\type DeclaredTypedMeta(key: string, value: unknown)
+    \\type Declared<T>(name: string, module: string, meta: DeclaredMeta[], returnTypeName: string, value: T, typedMeta: DeclaredTypedMeta[])
 ;
 
 /// The declaration `withSourceLocationDecl` splices: private (the record is
@@ -1199,9 +1204,11 @@ fn analyzeSource(
     // Decision 330 (7): a type declared in a type's body is a top-level type
     // under its owner's path.
     const nested = try nested_types.expand(arena, try value_or_type.expand(arena, try inline_types.expand(arena, try std_namespace.expand(arena, defaulted))));
+    // Decision 298: a module that reads a catalogue entry's typed meta
+    // (`d.meta(T)`) declares the function the read calls, inferred with it.
     // Decision 307: `pub val RecipeTitle = Type.pick(Recipe, .title);` is the
     // record declaration it answers.
-    const expanded = switch (try derived_types.expand(arena, nested, .{ .ctx = typeDeclRegistry, .find = derivedTypeSource })) {
+    const expanded = switch (try derived_types.expand(arena, try typed_meta.withMetaHelper(arena, nested), .{ .ctx = typeDeclRegistry, .find = derivedTypeSource })) {
         .ok => |p| p,
         .refused => |te| {
             env.deinit();
@@ -1447,7 +1454,8 @@ pub const decl_reflection_src =
     \\pub type Field = __Decl__Field;
     \\pub type Method = __Decl__Method;
     \\pub type DeclaredMeta(key: string, value: string)
-    \\pub type Declared<T>(name: string, module: string, meta: DeclaredMeta[], returnTypeName: string, value: T)
+    \\pub type DeclaredTypedMeta(key: string, value: unknown)
+    \\pub type Declared<T>(name: string, module: string, meta: DeclaredMeta[], returnTypeName: string, value: T, typedMeta: DeclaredTypedMeta[])
     \\pub type TypeInfo<T>(
     \\    name: string,
     \\    module: string,
@@ -1477,6 +1485,7 @@ pub const decl_reflection_src =
     \\    declare fn failAt(self: Self, span: Span, message: string);
     \\    declare fn addMember(self: Self, source: string);
     \\    declare fn setMeta(self: Self, key: string, value: string);
+    \\    declare fn addMeta<T>(self: Self, value: T);
     \\    declare fn addType(self: Self, name: string, source: string);
     \\}
 ;

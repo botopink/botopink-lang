@@ -1,0 +1,11 @@
+//// Decision 298 — the entry point builds each typed meta value of the
+//// entries it catalogues through an import of the record type, so the type is
+//// `pub`: `models`' private `Entity` is refused at the query
+//// (`typeinfo-all-private`).
+
+pub mod models;
+import {models.entity};
+
+pub fn main() {
+    @print(@TypeInfo.all(with: entity, member: "make").length);
+}

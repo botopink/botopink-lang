@@ -1290,6 +1290,18 @@ codegen/
   them — `Toks@3 = Emit(X, Toks)` — and counts as a mutation for an enclosing
   `if`/`loop`/`forEach` (`closureMutation`). A call whose value is used keeps the
   plain application.
+- **Comptime modules — records:** a comptime module's record is the untagged
+  map its constructor builds, never `{TypeAtom, …}`: the type atom is a
+  package's (`crossModule.erlAtom`) and a comptime module belongs to none
+  (`MissingPackage`, measured on emilia's dispatcher, whose `case` over
+  `Token.Layout` names `Block`, a section variant and a record). So under
+  `untyped` a record's constructor pattern — a `case` arm's
+  (`patternNodeExtra`) and a `val`'s (`ctorBindPattern`) — is the map pattern
+  of the fields it names (`untypedRecordPattern`: `Rule(selector: s, ..)` →
+  `#{selector := S}`), and `typeTestNode` tests a record as `is_map(V)
+  andalso is_map_key(<field>, V)` per declared field (`untypedRecordTest`),
+  which `is` and an arm naming a record that is also a variant use
+  (`run/comptime_record_pattern`).
 - **Comptime modules:** `emitComptimeModule(alloc, name, program, .{ host_enums,
   host_records, exports, forms, resident, listing, unsupported_method })` lowers an untyped decorator/template body with
   the same emitter — `host_enums` join `enum_names` (`DeclKind.Type` →
