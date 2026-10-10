@@ -1484,7 +1484,10 @@ fn collectNamesInExpr(ctx: anytype, e: ast.Expr) anyerror!void {
         .useHook => |uh| try walk(ctx, uh.kind.inner.*),
         .call => |c| switch (c.kind) {
             .call => |cc| {
-                if (cc.receiver) |r| try walk(ctx, r.*) else if (!cc.is_builtin) try ctx.add(cc.callee);
+                // `adder(3)(4)`: the callee is the value of an expression,
+                // whose names a closure captures too (decision 388's
+                // `(h(…))(scope)` in a component's lambda).
+                if (cc.calleeExpr) |ce| try walk(ctx, ce.*) else if (cc.receiver) |r| try walk(ctx, r.*) else if (!cc.is_builtin) try ctx.add(cc.callee);
                 for (cc.args) |arg| try walk(ctx, arg.value.*);
                 for (cc.trailing) |t| {
                     const mark = scopeMark(ctx);

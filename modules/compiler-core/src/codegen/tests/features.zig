@@ -242,7 +242,8 @@ test "js: import ---- named imports" {
 // does. The component carries `#[@use]`, the effect that lets a body
 // activate a hook.
 test "codegen ---- use object destructure is a plain call" {
-    try h.assertJsSingle(std.testing.allocator, @src(),
+    // Decision 388: the wasm backend refuses the scope lowering (354-wasm).
+    try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
         \\val Element = type() implement @Renderable
         \\fn state(initial: i32) -> @Component<i32> {
         \\    return initial;
@@ -258,7 +259,8 @@ test "codegen ---- use object destructure is a plain call" {
 // `push : fn(action: i32) -> i32`), so the hook's `R` is a tuple here — the
 // lowering is the same plain call followed by the destructure.
 test "codegen ---- use tuple destructure is a plain call" {
-    try h.assertJsSingle(std.testing.allocator, @src(),
+    // Decision 388: the wasm backend refuses the scope lowering (354-wasm).
+    try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
         \\val Element = type() implement @Renderable
         \\fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Component<#(i32, fn(action: i32) -> i32)> {
         \\    val push = { action -> f(base, action) };
@@ -273,7 +275,8 @@ test "codegen ---- use tuple destructure is a plain call" {
 }
 
 test "codegen ---- use memo is a plain call with no inferred deps" {
-    try h.assertJsSingle(std.testing.allocator, @src(),
+    // Decision 388: the wasm backend refuses the scope lowering (354-wasm).
+    try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
         \\val Element = type() implement @Renderable
         \\fn state(initial: i32) -> @Component<i32> {
         \\    return initial;
@@ -290,7 +293,8 @@ test "codegen ---- use memo is a plain call with no inferred deps" {
 }
 
 test "codegen ---- use effect void hook is a plain call" {
-    try h.assertJsSingle(std.testing.allocator, @src(),
+    // Decision 388: the wasm backend refuses the scope lowering (354-wasm).
+    try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
         \\val Element = type() implement @Renderable
         \\fn cleanup() {
         \\    0;

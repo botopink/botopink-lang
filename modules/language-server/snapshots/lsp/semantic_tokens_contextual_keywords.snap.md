@@ -34,7 +34,7 @@ fn f(xs: i32[], g: Grid, http: Http) -> @Task<i32> {
   (2,12) +5  keyword  "async"
   (2,20) +6  keyword  "return"
   (3,4) +3  keyword  "val"
-  (3,8) +3  function [declaration]  "all"
+  (3,8) +3  variable [declaration]  "all"
   (3,14) +5  variable  "async"
   (3,20) +5  method  "allOf"
   (3,27) +1  variable  "t"
@@ -105,7 +105,7 @@ fn f(xs: i32[], g: Grid, http: Http) -> @Task<i32> {
   0 4 5 9 0
   0 8 6 9 0
   1 4 3 9 0
-  0 4 3 4 1
+  0 4 3 7 1
   0 6 5 7 0
   0 6 5 5 0
   0 7 1 7 0

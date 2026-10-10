@@ -135,6 +135,8 @@ fn noteStdContextName(env: *Env, u: ast.ImportDecl, imp: ast.ImportPath, local: 
         .provide
     else if (std.mem.eql(u8, leaf, "context"))
         .context
+    else if (std.mem.eql(u8, leaf, "RenderScope"))
+        .render_scope
     else
         return;
     try env.stdContextNames.put(env.arena, local, which);
@@ -7371,10 +7373,6 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     // Decision 354 — a component's body (its `R` implements `@Renderable`)
     // may `use provide`; where it first renders a child is tracked per body.
     if (env.fnContext) |*fc| fc.renderable = f.effect == .component and isComponentType(env, retType);
-    // Decision 354 (8) — the hidden context map follows the TYPE: an aliased
-    // `-> View` takes it as `-> @Component<Element>` does.
-    if (retType.deref().* == .named and std.mem.eql(u8, retType.deref().named.name, "Component"))
-        try env.componentFns.put(env.arena, f.name, {});
     const savedFirstRender = env.firstRenderAt;
     env.firstRenderAt = null;
     defer env.firstRenderAt = savedFirstRender;
@@ -12658,7 +12656,7 @@ pub fn inferExprTyped(env: *Env, expr: ast.Expr) InferError!TypedExpr {
             try checkStdContextCall(env, c);
             const typedCall = try inferCallExpr(env, c, c.loc);
             try noteComponentCall(env, c, typedCall);
-            try noteHostCall(env, c, typedCall);
+            try noteHostCall(env, c);
             try noteAsyncCall(env, c, typedCall);
             break :blk inferComponentCall(env, c, try applyReceiverTypeArgs(env, c, try applyExplicitTypeArgs(env, c, typedCall)));
         },
@@ -12952,12 +12950,13 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
             if (env.lookup(name)) |ty| {
                 try refuseAmbiguousVariant(env, name, ty, loc);
                 try refuseKeyedWholeRead(env, name, ty, loc);
-                if (env.localBindDepth(name) == null) if (env.stdContextNames.get(name)) |which| if (which != .context_type)
+                if (env.localBindDepth(name) == null) if (env.stdContextNames.get(name)) |which| if (which == .provide or which == .context)
                     return refuseContextHookWithoutUse(env, name, loc);
                 // A generic fn referenced as a value (`val f = identity;`,
                 // `xs.map(identity)`) gets its own instantiation — the
                 // scheme's `.generic` vars must never reach `unify`.
                 const inst = try instantiateGenericType(env, ty);
+                try noteComponentValue(env, name, inst, loc);
                 return TypedExpr{ .identifier = .{ .loc = loc, .type_ = inst, .kind = .{ .ident = name } } };
             }
             env.lastError = try unboundAt(env, name, loc);
@@ -13919,6 +13918,15 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                     null,
                 ).withLoc(loc);
                 return error.TypeError;
+            }
+            // Decision 388 (4) — an `await` of a component value runs it: in a
+            // component body with the children's scope, outside every body
+            // with `RenderScope.root()` (`context_lower.zig` reads the type
+            // once it is resolved).
+            switch (deref.*) {
+                .named => |n| if (std.mem.eql(u8, n.name, "Component")) try env.componentAwaits.put(env.arena, loc, rawTy),
+                .typeVar => try env.componentAwaits.put(env.arena, loc, rawTy),
+                else => {},
             }
             const ty = try markResultSource(env, unwrapTaskType(rawTy) orelse rawTy, .await_);
             return TypedExpr{ .jump = .{ .loc = loc, .type_ = ty, .kind = .{ .await_ = valPtr } } };
@@ -15222,6 +15230,43 @@ fn refuseResultMemberAccess(env: *Env, recvTy: *T.Type, member: []const u8, is_c
     return error.TypeError;
 }
 
+/// Decision 388 (2) — `c.run(scope)` on a `@Component<R>` value: runs the
+/// lambda the component value is with `scope` (a `RenderScope`, std's
+/// `context` module), answering `@Task<Rendered<R>>` — the body's result and
+/// the scope its `use provide`s made for its children; a `@Task` because
+/// whether the node is asynchronous (375) is not in the type. Recorded for
+/// the lowering (`Env.componentRuns`, `context_lower.zig`). Null for any other
+/// receiver or method.
+fn inferComponentRun(
+    env: *Env,
+    recvPtr: *ast.TypedExpr,
+    callee: []const u8,
+    typedArgs: []ast.CallArgOf(.typed),
+    typedTrailing: []ast.TrailingLambdaOf(.typed),
+    loc: ast.Loc,
+) InferError!?ast.TypedExpr {
+    if (!std.mem.eql(u8, callee, "run")) return null;
+    const recvTy = recvPtr.getType().deref();
+    if (recvTy.* != .named or !std.mem.eql(u8, recvTy.named.name, "Component") or recvTy.named.args.len != 1) return null;
+    if (typedArgs.len != 1 or typedArgs[0].label != null or typedTrailing.len != 0) {
+        env.lastError = TypeError.custom(
+            "`run` takes the scope to run the component with, and nothing else: `c.run(scope)` (decision 388)",
+            "Pass a `RenderScope` — `RenderScope.root()` outside every render, or the scope a parent's `run` answered.",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+    try unifyAt(env, try env.namedType("RenderScope"), typedArgs[0].value.getType(), typedArgs[0].value.getLoc());
+    const rendered = try env.namedTypeArgs("Rendered", &.{recvTy.named.args[0]});
+    try env.componentRuns.put(env.arena, loc, {});
+    return TypedExpr{ .call = .{ .loc = loc, .type_ = try env.namedTypeArgs("Task", &.{rendered}), .kind = .{ .call = .{
+        .receiver = recvPtr,
+        .callee = callee,
+        .is_builtin = false,
+        .args = typedArgs,
+        .trailing = typedTrailing,
+    } } } };
+}
+
 /// Resolve a builtin method call on a `@Result<R, E>` or `@Option<T>` receiver
 /// (`.map` / `.flatMap` / `.unwrapOr` / `.isOk` / `.isError`).
 ///
@@ -16233,28 +16278,13 @@ fn hostCallee(env: *Env, c: ast.CallExprOf(.untyped)) InferError!?hooksMod.DeclR
     return if (info.host) ref else null;
 }
 
-/// Decision 374 — a call of a host function: a `@Component` lambda among its
-/// arguments captures the map where it is written, and a declared
-/// `@Component` function named as one is wrapped in a lambda that does
-/// (`context_lower.zig` reads both tables).
-fn noteHostCall(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExpr) InferError!void {
+/// Decision 388 — a call of a host function: what a host answers is the
+/// host's own value, never a lambda over a `RenderScope`, so a `use` or an
+/// `await` of it runs nothing (`context_lower.zig`).
+fn noteHostCall(env: *Env, c: ast.CallExprOf(.untyped)) InferError!void {
     if (c.kind != .call or c.kind.call.is_builtin) return;
     _ = try hostCallee(env, c) orelse return;
     try env.hostCalls.put(env.arena, c.loc, {});
-    for (c.kind.call.args, 0..) |a, i| {
-        const v = a.value.*;
-        if (v != .identifier or v.identifier.kind != .ident) continue;
-        const name = v.identifier.kind.ident;
-        if (env.localBindDepth(name) != null) continue;
-        const declared = (env.fnDecls.contains(name) and env.ownDecls.contains(name)) or env.importOwners.contains(name);
-        if (!declared) continue;
-        const ty = typedCallArgType(typed, i) orelse continue;
-        const d = ty.deref();
-        if (d.* != .func) continue;
-        const ret = d.func.ret.deref();
-        if (ret.* != .named or !std.mem.eql(u8, ret.named.name, "Component")) continue;
-        try env.hostComponentRefs.put(env.arena, v.identifier.loc, ty);
-    }
 }
 
 /// Decision 357 — enter a construct a `use` may not stand in (a branch, a
@@ -16282,6 +16312,7 @@ fn stdContextCallee(env: *Env, c: ast.CallExprOf(.untyped)) ?envMod.StdContextNa
         if (std.mem.eql(u8, call.callee, "Context")) return .context_type;
         if (std.mem.eql(u8, call.callee, "provide")) return .provide;
         if (std.mem.eql(u8, call.callee, "context")) return .context;
+        if (std.mem.eql(u8, call.callee, "RenderScope")) return .render_scope;
         return null;
     }
     if (env.localBindDepth(call.callee) != null) return null;
@@ -16307,6 +16338,15 @@ fn checkStdContextCall(env: *Env, c: ast.CallExprOf(.untyped)) InferError!void {
         .provide, .context => {
             if (env.useOperandLoc) |at| if (std.meta.eql(at, c.loc)) return;
             return refuseContextHookWithoutUse(env, c.kind.call.callee, c.loc);
+        },
+        // Decision 388 (2) — a scope is opaque: the render library holds the
+        // ones `run` answers, and the first comes from `RenderScope.root()`.
+        .render_scope => {
+            env.lastError = TypeError.custom(
+                diagnostics.render_scope_construction ++ ": a `RenderScope` is made only by `RenderScope.root()` — every other scope is the one a component's `run` answered (decision 388)",
+                "Start a render with `c.run(RenderScope.root())` and run each child with the `scope` its parent's `Rendered` holds.",
+            ).withLoc(c.loc);
+            return error.TypeError;
         },
     }
 }
@@ -16432,7 +16472,7 @@ fn hookCalleeDecl(env: *Env, c: ast.CallExprOf(.untyped)) InferError!?hooksMod.D
     if (call.is_builtin or call.calleeExpr != null) return null;
     if (stdContextCallee(env, c)) |which| return switch (which) {
         .provide, .context => .{ .module = "std/context", .name = call.callee },
-        .context_type => null,
+        .context_type, .render_scope => null,
     };
     if (call.receiver) |r| {
         if (r.* != .identifier or r.identifier.kind != .ident) return null;
@@ -16569,9 +16609,57 @@ fn noteHookUse(env: *Env, operand: ast.Expr, loc: ast.Loc) InferError!void {
 fn noteHookCall(env: *Env, c: ast.CallExprOf(.untyped), ty: *T.Type) InferError!void {
     if (env.inUseOperand) if (env.useOperandLoc) |at| if (std.meta.eql(at, c.loc)) return;
     const callee = try hookCalleeDecl(env, c) orelse return;
+    // Decision 389 — a declared function whose own return is no `@Component`
+    // (`fn first<T>(xs: T[]) -> T`) answers one only through its type
+    // arguments: what generic code answers is a component value the checker
+    // does not follow — an edge with `callee: null`, and no synchronous mark.
+    if (c.kind == .call and c.kind.call.receiver == null) if (env.lookup(c.kind.call.callee)) |declared| {
+        const d = declared.deref();
+        if (d.* == .func) {
+            const r = d.func.ret.deref();
+            const component = r.* == .named and std.mem.eql(u8, r.named.name, "Component");
+            if (!component) {
+                const b = env.hookBuilder orelse return;
+                try b.dynamicCalls.append(env.arena, .{ .type_ = ty, .at = c.loc });
+                return;
+            }
+        }
+    };
     try env.hookTargets.put(env.arena, c.loc, .{ .ref = callee, .type_ = ty });
     const b = env.hookBuilder orelse return;
     try b.calls.append(env.arena, .{ .call = .{ .callee = callee, .at = c.loc }, .type_ = ty });
+}
+
+/// Decision 389 — a `@Component` function named as a value in the body being
+/// recorded (`itens.map(Card)`, `val c = Card;`, a record field, any call's
+/// argument): under 388 a component value is rendered wherever its lambda
+/// lands, so naming it reaches it — an edge as a call is. A local of that name
+/// is a value the checker does not follow here (a parameter is called, and
+/// that call is the edge).
+fn noteComponentValue(env: *Env, name: []const u8, ty: *T.Type, loc: ast.Loc) InferError!void {
+    const b = env.hookBuilder orelse return;
+    if (env.localBindDepth(name) != null) return;
+    const d = ty.deref();
+    if (d.* != .func) return;
+    const ret = d.func.ret.deref();
+    if (ret.* != .named or !std.mem.eql(u8, ret.named.name, "Component")) return;
+    const callee: hooksMod.DeclRef = blk: {
+        if (env.fnDecls.get(name)) |f| if (env.ownDecls.contains(name)) {
+            if (isHookHost(f)) return;
+            break :blk .{
+                .module = env.modulePath,
+                .name = f.name,
+                .returnTypeName = if (f.returnType) |rt| try declTypeName(env.arena, rt) else "",
+            };
+        };
+        if (env.importOwners.get(name)) |o| {
+            const ref = try importedHookDecl(env, o.owner, o.name);
+            if (env.reflection) |r| if (r.hookFns.get(try envMod.declIdentity(env.arena, o.owner, o.name))) |info| if (info.host) return;
+            break :blk ref;
+        }
+        return;
+    };
+    try b.calls.append(env.arena, .{ .call = .{ .callee = callee, .at = loc }, .type_ = ret });
 }
 
 /// Decision 375 — what a call written in the body being recorded says of the
@@ -16590,7 +16678,7 @@ fn noteAsyncCall(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExpr) Infer
         return;
     }
     if (try hookCalleeDecl(env, c) != null) return;
-    try b.dynamicCalls.append(env.arena, typed.getType());
+    try b.dynamicCalls.append(env.arena, .{ .type_ = typed.getType(), .at = c.loc });
 }
 
 /// The top-level function of this module `f` is (methods and lambdas are not).
@@ -16609,15 +16697,37 @@ fn finishHookNode(env: *Env, f: ast.FnDecl, b: *hooksMod.Builder) InferError!voi
         if (d.* == .named and std.mem.eql(u8, d.named.name, "Component")) try calls.append(env.arena, pc.call);
     }
     // Decision 375 — a call of a function value or a method answering
-    // `@Component<R>`, or one whose type is still open, cannot be followed.
+    // `@Component<R>`, or one whose type is still open, cannot be followed:
+    // the node is asynchronous, and (389) the call is an edge with `callee:
+    // null`, its reader deciding on the safe side.
     var isAsync = b.is_async;
-    for (b.dynamicCalls.items) |ty| switch (ty.deref().*) {
-        .named => |n| if (std.mem.eql(u8, n.name, "Component")) {
-            isAsync = true;
-        },
-        .typeVar => isAsync = true,
-        else => {},
+    // Decision 388 — a function typed by an alias of `@Component` (`->
+    // StyledView`) is no component body (118: the alias activates nothing):
+    // it answers a lambda another body made, which may run asynchronously,
+    // so a run of what it answers is awaited.
+    const writtenComponent = if (f.returnType) |rt| rt == .generic and rt.generic.is_builtin and std.mem.eql(u8, rt.generic.name, "Component") else false;
+    if (!writtenComponent) if (env.lookup(f.name)) |declared| {
+        const d = declared.deref();
+        if (d.* == .func) {
+            const r = d.func.ret.deref();
+            if (r.* == .named and std.mem.eql(u8, r.named.name, "Component")) isAsync = true;
+        }
     };
+    for (b.dynamicCalls.items) |dc| {
+        const follows = switch (dc.type_.deref().*) {
+            .named => |n| std.mem.eql(u8, n.name, "Component"),
+            .typeVar => true,
+            else => false,
+        };
+        if (!follows) continue;
+        isAsync = true;
+        try calls.append(env.arena, .{ .callee = null, .at = dc.at });
+    }
+    std.mem.sort(hooksMod.Call, calls.items, {}, struct {
+        fn lt(_: void, a: hooksMod.Call, z: hooksMod.Call) bool {
+            return hooksMod.before(a.at, z.at);
+        }
+    }.lt);
     try env.hookNodes.put(env.arena, f.name, .{
         .function = .{
             .module = env.modulePath,
@@ -16664,7 +16774,10 @@ fn markHookAsync(env: *Env) InferError!void {
             if (n.is_async) continue;
             const reaches = blk: {
                 for (n.uses) |u| if (u.hook) |h| if (try hookTargetAsync(env, h)) break :blk true;
-                for (n.calls) |c| if (try hookTargetAsync(env, c.callee)) break :blk true;
+                for (n.calls) |c| {
+                    const callee = c.callee orelse break :blk true;
+                    if (try hookTargetAsync(env, callee)) break :blk true;
+                }
                 break :blk false;
             };
             if (reaches) {
@@ -18004,6 +18117,11 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                     return dispatched;
                 }
 
+                // Decision 388 (2) — `c.run(scope)` on a component value.
+                if (try inferComponentRun(env, recvPtr, call.callee, typedArgs, typedTrailing, loc)) |ran| {
+                    return ran;
+                }
+
                 // Builtin `@Result` / `@Option` methods — type-check and record
                 // the lowering decision.
                 if (try inferResultOptionMethod(env, recvPtr, call.callee, typedArgs, typedTrailing, loc)) |dispatched| {
@@ -19144,11 +19262,7 @@ fn inferFunctionExprExpected(
         }
         env.memberFnAt = null;
     }
-    const typed = try inferFunctionExprExpectedInner(env, func, loc, expected, params_only);
-    // Decision 354 (8) — a lambda whose type answers `@Component<R>` takes the
-    // hidden context map (`context_lower.zig` reads its resolved type).
-    if (func.kind.syntax != .asyncBlock) try env.componentLambdas.put(env.arena, loc, .{ .type_ = typed.getType(), .params = func.kind.params.len });
-    return typed;
+    return inferFunctionExprExpectedInner(env, func, loc, expected, params_only);
 }
 
 fn inferFunctionExprExpectedInner(

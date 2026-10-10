@@ -1,0 +1,44 @@
+//// Decisions 388 and 121 — a bare `try` in a `@Component<@Result<…>>` body
+//// leaves the body early with the error, and the component's lambda still
+//// answers it as the body's result: `load("")` is `Error("empty")` read by
+//// `Page`, `load("x")` the value. `load` reads a context before its `try`,
+//// so it runs with the scope `Page` received — the one `Root` provided.
+
+import {context.Context, context.provide, context.context} from "std";
+
+type View(text: string) implement @Renderable
+
+pub val UnitContext = Context<string>();
+
+fn parse(s: string) -> @Result<i32, string> {
+    if (s == "") throw "empty";
+    return 7;
+}
+
+fn load(s: string) -> @Component<@Result<string, string>> {
+    val unit = use context(UnitContext);
+    val n = try parse(s);
+    return (n + 1).toString() + unit;
+}
+
+fn Page(s: string) -> @Component<View> {
+    val r = use load(s);
+    val text = case r {
+        Ok(v) -> v;
+        Error(e) -> "error " + e;
+    };
+    return View(text: text);
+}
+
+fn Root(s: string) -> @Component<View> {
+    use provide(UnitContext, "kg");
+    val p = Page(s);
+    return View(text: p.text);
+}
+
+pub fn main() -> @Task<void> {
+    val a = await Root("x");
+    @print(a.text);
+    val b = await Root("");
+    @print(b.text);
+}

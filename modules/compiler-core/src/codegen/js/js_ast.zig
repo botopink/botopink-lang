@@ -140,6 +140,9 @@ pub const Assign = struct {
 pub const Arrow = struct {
     params: []const Param = &.{},
     body: Body,
+    /// `async (p) => …` — the arrow's body awaits (decision 388: a
+    /// component's lambda that runs an asynchronous child).
+    is_async: bool = false,
 
     pub const Body = union(enum) {
         /// `(p) => expr`.

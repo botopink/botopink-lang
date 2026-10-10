@@ -12,7 +12,7 @@ registered in [`../test_root.zig`](../test_root.zig) — add new suites there.
 tests/
 ├── AGENTS.md
 ├── _warmup.zig           ← runs first: lazy-inits compiler-core's stdlib template
-├── helpers.zig           ← assertion + setup helpers (compile, compileEval, multi-module)
+├── helpers.zig           ← assertion + setup helpers (compile, compileEval, multi-module); `bindings()` reads the test document's own module (`TEST_URI`), as the server reads the active document's — never a module the session embedded before it
 ├── snapshot.zig          ← snapshot read/write + the per-request renderers
 ├── snapshot_test.zig     ← unit tests for `snapshot.appendSourceWithCursor`
 ├── messages.zig          ← JSON-RPC frame reader (`messages.readMessage`)

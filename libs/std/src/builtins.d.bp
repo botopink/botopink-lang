@@ -219,14 +219,24 @@ pub behavior Slice<V> {
 // What a body reads from above it is a context: std's `context` module
 // declares `Context<T>` and the two hooks `provide(ctx, value)` and
 // `context(ctx) -> T` (`use` only, inside a render tree — never in a
-// decorator body, a template body or a `comptime { … }`). Every `@Component`
-// function takes a hidden context map; `provide` makes the children's map and
-// `context` looks it up, `context-unbound` at run time when no provider is
-// above.
+// decorator body, a template body or a `comptime { … }`). A `@Component<R>`
+// at run time is a lambda over an opaque `RenderScope` (decision 388): a call
+// only makes it, and the render library runs it — `c.run(scope)` answers
+// `@Task<Rendered<R>>` (std's `context`), the result and the scope the body's
+// `provide`s made for its children. In a body `await c` runs `c` with the
+// children's scope, outside every body with `RenderScope.root()`; `context`
+// looks the received scope up, `context-unbound` at run time when no provider
+// is above.
 
 pub behavior Renderable {}
 
-pub behavior Component<R> extends Task {}
+pub behavior Component<R> extends Task {
+    // Decision 388 (2) — run the component's lambda with `scope` (std's
+    // `context.RenderScope`): its result and the scope its body's `use
+    // provide`s made for its children (`context.Rendered<R>`). A `Task`,
+    // since whether the node is asynchronous (375) is not in the type.
+    fn run(self: Self<R>, scope: RenderScope) -> Task<Rendered<R>>;
+}
 
 // ── annotation marker ────────────────────────────────────────────────────────
 //
@@ -760,9 +770,14 @@ pub type Declared<T>(
 
 // ── Hooks (decision 277) ────────────────────────────────────────────────────
 // What `decl.hooks` lists. A `HookNode` holds only what is written in one
-// function (`function`): each `use h(…)` (`HookUse`) and each call of a
-// `@Component` function (`HookCall`), the calls a template builds from tags
-// included, both in body order. `at` is `"<module>:<line>:<column>"` (the
+// function (`function`): each `use h(…)` (`HookUse`) and each edge to a
+// `@Component` (`HookCall`), both in body order — a call of a `@Component`
+// function (the calls a template builds from tags included) and, decision
+// 389, such a function named as a value (`itens.map(Card)`, a `val`, a record
+// field, any call's argument: a component value is rendered wherever its
+// lambda lands, 388). A component value the checker cannot follow — a
+// function value called, a method, what generic code answers — is a
+// `HookCall` with `callee: null`; its reader decides on the safe side. `at` is `"<module>:<line>:<column>"` (the
 // entry module is `main`). A cycle is an edge back to a listed node; a host
 // function and std's `provide` / `context` get no node. In a decorator body a
 // `Declared`'s `value` is `null` — no function of the program runs while it
@@ -775,7 +790,8 @@ pub type Declared<T>(
 // answering `@Task` (or `@Component`, which extends it), or calls what the
 // checker cannot follow — a function value or a method answering
 // `@Component<R>`, a `use` with `hook: null`; a cycle is asynchronous when any
-// node in it is. commonJS emits a synchronous component as a plain `function`.
+// node in it is. On commonJS a synchronous component's lambda (388) is a
+// plain arrow that awaits nothing, and a call of one is not awaited.
 //
 // `HookUse.hook` is the hook's declaration, `null` for a `use` over a function
 // value; `annotations` are the hook's own; `typeArgs` the `use`'s explicit
@@ -792,7 +808,7 @@ pub type HookUse(
 )
 
 pub type HookCall(
-    callee: Declared<unknown>,
+    callee: ?Declared<unknown>,
     at: string,
 )
 

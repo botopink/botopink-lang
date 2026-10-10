@@ -1497,7 +1497,7 @@ pub const decl_reflection_src =
     \\    typeArgs: TypeInfo<unknown>[],
     \\    context: ?Declared<unknown>,
     \\)
-    \\pub type HookCall(callee: Declared<unknown>, at: string)
+    \\pub type HookCall(callee: ?Declared<unknown>, at: string)
     \\pub type HookNode(function: Declared<unknown>, uses: HookUse[], calls: HookCall[], async: bool)
     \\pub type Decl(
     \\    kind: DeclKind,
@@ -1652,6 +1652,16 @@ fn expandStdImports(arena: std.mem.Allocator, modules: []const Module, target_na
     var any = false;
     const beam_target = if (target_name) |t| std.mem.eql(u8, t, "erlang") or std.mem.eql(u8, t, "beam") else false;
     for (modules) |mod| {
+        // Decision 388 — a program that writes `@Component` needs std's
+        // `context` module: every component is lowered to a lambda over its
+        // `RenderScope`, and an `await` of one in any module runs it with
+        // `RenderScope.root()` (`comptime/context_lower.zig`).
+        if (!isStdPkgPath(mod.path) and std.mem.indexOf(u8, mod.source, "@Component") != null) {
+            for (std_pkg_modules, 0..) |spm, i| if (std.mem.eql(u8, spm.path, "std/context")) {
+                needed[i] = true;
+                any = true;
+            };
+        }
         var lx = Lexer.init(mod.source);
         const tokens = lx.scanAll(arena) catch continue;
         var p = Parser.init(tokens);

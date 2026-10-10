@@ -38,8 +38,10 @@ fn widget(n: i32) -> @Component<@Result<i32, string>> {
     return c + v;
 }
 
-pub fn main() {
+// Decision 388 — a call only makes the component's lambda: `main` awaits
+// it, which runs it with `RenderScope.root()`.
+pub fn main() -> @Task<void> {
     @print(try doubled(21) catch 0);
     @print(try doubled(0 - 1) catch 7);
-    widget(41);
+    await widget(41);
 }

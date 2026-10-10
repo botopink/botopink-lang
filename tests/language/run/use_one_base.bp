@@ -30,6 +30,8 @@ fn Widget(n: i32) -> @Component<Element> {
     return Element(count: c + k + m);
 }
 
-pub fn main() {
-    Widget(10);
+// Decision 388 — a call only makes the component's lambda: `main` awaits
+// it, which runs it with `RenderScope.root()`.
+pub fn main() -> @Task<void> {
+    await Widget(10);
 }

@@ -42,6 +42,8 @@ fn Handler() -> @Component<RequestScope> {
     return RequestScope(id: "r-7");
 }
 
-pub fn main() {
-    Handler();
+// Decision 388 — a call only makes the component's lambda: `main` awaits
+// it, which runs it with `RenderScope.root()`.
+pub fn main() -> @Task<void> {
+    await Handler();
 }

@@ -4,9 +4,13 @@
 //! **One node per function**, holding only what is written in it: each `use
 //! h(…)` (`Use` — the hook's declaration with its own annotations, the `use`'s
 //! explicit type arguments, and for std's `provide` / `context` the context
-//! object, decision 354 (4)) and each call of a `@Component` function (`Call`
-//! — the calls a template such as `html` builds from tags included, since the
-//! node is recorded while the body is inferred). The checker records a node
+//! object, decision 354 (4)) and each edge to a `@Component` (`Call`) — a call
+//! of a `@Component` function (the calls a template such as `html` builds
+//! from tags included, since the node is recorded while the body is
+//! inferred), such a function named as a value (decision 389: under 388 a
+//! component value is rendered wherever its lambda lands, so naming it
+//! reaches it), and a component value the checker cannot follow (a function
+//! value called, a method, what generic code answers) with `callee: null`. The checker records a node
 //! as it infers a top-level function's body (`infer.zig` `inferFnDecl`,
 //! `Env.hookBuilder`); a module's nodes are published to the session
 //! (`Reflection.hookFns`) when its analysis ends, so an importer reads the
@@ -17,7 +21,8 @@
 //! node reachable through its `use`s and calls — breadth-first, each node's
 //! `use`s and calls in body order, each function once (`infer.zig`
 //! `declHooks`). A cycle is an edge back to a listed node. A `use` over a
-//! function value enters with `hook: null` and reaches nothing; a host
+//! function value enters with `hook: null` and reaches nothing, as a call
+//! edge with `callee: null` does (389: its reader decides on the safe side); a host
 //! function (`declare fn`, `#[@External…]`) and std's compiler-lowered
 //! `provide` / `context` get no node. The compiler names no stage, marker or
 //! library: what the list means is the reading decorator's.
@@ -27,8 +32,8 @@
 //! `@Component`, which extends it), calls what the checker cannot follow, or
 //! reaches an asynchronous node — computed over the module's nodes once its
 //! bodies are inferred (`infer.zig` `markHookAsync`), an imported node read
-//! as its module published it. commonJS emits a synchronous component as a
-//! plain `function` and no `await` on a call of one.
+//! as its module published it. commonJS runs a synchronous component's
+//! lambda (decision 388) with no `await`, and its body awaits nothing.
 const std = @import("std");
 const ast = @import("../ast.zig");
 const Term = @import("../codegen/beam/term.zig").Term;
@@ -76,9 +81,13 @@ pub const Use = struct {
     context: ?DeclRef = null,
 };
 
-/// One call of a `@Component` function written in the function.
+/// One edge to a `@Component` written in the function (decision 389): a call
+/// of a `@Component` function, or such a function named as a value (`val
+/// cards = itens.map(Card);` — under 388 naming it is enough to reach it). A
+/// component value the checker cannot follow — a function value called, a
+/// method, what generic code answers — has `callee: null`.
 pub const Call = struct {
-    callee: DeclRef,
+    callee: ?DeclRef,
     at: ast.Loc,
 };
 
@@ -117,9 +126,12 @@ pub const Builder = struct {
     /// Decision 375 — what the body writes that makes the node asynchronous
     /// by itself (`Node.async` before its edges are followed).
     is_async: bool = false,
-    /// Decision 375 — the calls of a function value or a method, by type: one
-    /// that resolves to `@Component<R>` (or stays open) cannot be followed.
-    dynamicCalls: std.ArrayListUnmanaged(*T.Type) = .empty,
+    /// Decision 375 — the calls of a function value or a method, by type and
+    /// place: one that resolves to `@Component<R>` (or stays open) cannot be
+    /// followed — an edge with `callee: null` (389) and an asynchronous node.
+    dynamicCalls: std.ArrayListUnmanaged(DynamicCall) = .empty,
+
+    pub const DynamicCall = struct { type_: *T.Type, at: ast.Loc };
 
     pub const PendingCall = struct { call: Call, type_: *T.Type };
 };
@@ -157,7 +169,7 @@ pub fn nodesToTerm(arena: std.mem.Allocator, nodes: []const Node, meta: MetaSour
         for (n.uses, 0..) |u, j| uses[j] = try useTerm(arena, n.function.module, u, meta);
         const calls = try arena.alloc(Term, n.calls.len);
         for (n.calls, 0..) |c, j| calls[j] = Term.mapOf(try arena.dupe(Term.MapEntry, &.{
-            Term.field("callee", try declaredTerm(arena, c.callee, meta)),
+            Term.field("callee", if (c.callee) |callee| try declaredTerm(arena, callee, meta) else Term.undefined_atom),
             Term.field("at", Term.str(try atText(arena, n.function.module, c.at))),
         }));
         out[i] = Term.mapOf(try arena.dupe(Term.MapEntry, &.{

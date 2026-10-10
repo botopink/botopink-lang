@@ -106,8 +106,14 @@ pub const CompileHandle = struct {
     }
 
     /// Returns bindings from the first successful output, or null if failed.
+    /// The bindings of the test's own module (`TEST_URI`), as the server
+    /// reads the active document's (`CompileResult.bindingsFor`) — never a
+    /// module the session embedded before it (std's `context` before any
+    /// source writing `@Component`, decision 388; an imported std module).
     pub fn bindings(self: *const CompileHandle) ?[]const comptime_pipeline.TypedBinding {
+        const path = lsp_types.uriToPath(TEST_URI);
         for (self.result.session.outputs.items) |output| {
+            if (!std.mem.eql(u8, output.name, path)) continue;
             if (output.outcome == .ok) return output.outcome.ok.bindings;
         }
         return null;

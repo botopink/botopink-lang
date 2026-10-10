@@ -179,13 +179,9 @@ pub const FnContext = struct {
     renderable: bool = false,
 };
 
-/// Decision 354 — what a name imported from std's `context` module declares.
-pub const StdContextName = enum { context_type, provide, context };
-
-/// Decision 354 (8) — a lambda recorded for the hidden context map: its type
-/// and its parameter count as written, so a lambda that already took the map
-/// parameter is not lowered again.
-pub const ComponentLambda = struct { type_: *T.Type, params: usize };
+/// Decision 354 — what a name imported from std's `context` module declares;
+/// decision 388's `RenderScope`, made only by `RenderScope.root()`.
+pub const StdContextName = enum { context_type, provide, context, render_scope };
 
 /// Decision 371 — one `d.same(other)` on a `Decorator`: `other` is the
 /// identity (`declIdentity`) of the decorator the argument names, or null when
@@ -210,9 +206,9 @@ pub const DeferredMetaRead = struct {
 /// resolved to `@Component<R>` is one commonJS may leave unawaited.
 pub const HookTarget = struct { ref: hooksMod.DeclRef, type_: ?*T.Type };
 
-/// Decision 354 (8) — one `use provide(ctx, value)` / `use context(ctx)`:
-/// which hook, the context's identity (`declIdentity` of the `val` that
-/// declares it — the run-time key of the hidden map) and the `T` it carries.
+/// Decision 354 — one `use provide(ctx, value)` / `use context(ctx)`: which
+/// hook, the context's identity (`declIdentity` of the `val` that declares it
+/// — the run-time key in a `RenderScope`, 388) and the `T` it carries.
 pub const ContextUse = struct {
     kind: enum { provide, read },
     key: []const u8,
@@ -854,8 +850,8 @@ pub const Env = struct {
     /// Decision 354 — the module-level `val`s of this module declared
     /// `= Context<T>()`, by name.
     declaredContexts: std.StringHashMapUnmanaged(void) = .empty,
-    /// Decision 354 (8) — each `use provide(…)` / `use context(…)`, by the
-    /// `use`'s location: what the hidden context map lowers it to.
+    /// Decision 354 — each `use provide(…)` / `use context(…)`, by the
+    /// `use`'s location: what the scope lowering makes of it (388 (4)).
     contextUses: std.AutoHashMapUnmanaged(ast.Loc, ContextUse) = .empty,
     /// Decision 277 — the hook node of the top-level function whose body is
     /// being inferred (`hooks.zig`): each `use` and each `@Component` call
@@ -907,27 +903,24 @@ pub const Env = struct {
     /// `typedMetaRewriteLine`): no node of an answer shares a location with
     /// the module's own code or with another answer.
     typedMetaLines: usize = 0,
-    /// Decision 354 (8) — every call whose value is, or may resolve to, a
-    /// `@Component<R>`, by location, with that type: the calls that pass the
-    /// hidden context map (`context_lower.zig`).
+    /// Decision 388 — every call whose value is, or may resolve to, a
+    /// `@Component<R>`, by location, with that type: a call makes the
+    /// component's lambda, and a call `inferComponentCall` renders in a body
+    /// runs it with the body's children scope (`context_lower.zig`).
     componentCalls: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,
-    /// Decision 354 (8) — every lambda, by location, with its type: one that
-    /// answers `@Component<R>` takes the hidden context map.
-    componentLambdas: std.AutoHashMapUnmanaged(ast.Loc, ComponentLambda) = .empty,
-    /// Decision 374 — every call of a host function (a bodyless `declare fn`,
+    /// Decision 388 — every written `await` whose operand is, or may resolve
+    /// to, a `@Component<R>`, by the `await`'s location, with the operand's
+    /// type: in a component body it runs the value with the children's scope,
+    /// outside every body with `RenderScope.root()` (`context_lower.zig`).
+    componentAwaits: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,
+    /// Decision 388 (2) — every `c.run(scope)` on a `@Component<R>` value, by
+    /// the call's location: lowered to the call of the lambda `c` is.
+    componentRuns: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
+    /// Decision 388 — every call of a host function (a bodyless `declare fn`,
     /// an `#[@External…]` binding — this module's or an imported one), by
-    /// location: a `@Component` lambda that is one of its arguments captures
-    /// the map where it is written (`context_lower.zig`).
+    /// location: a host answering `@Component<R>` answers the host's own
+    /// value, never a lambda over a scope, so nothing runs it.
     hostCalls: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
-    /// Decision 374 — a declared function answering `@Component<R>` named as
-    /// an argument of a host call (`__jhTryComponent(Page)`), by the name's
-    /// location, with its type: lowered to a lambda that calls it with the
-    /// map in scope there.
-    hostComponentRefs: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,
-    /// Decision 354 (8) — the module's functions whose resolved return is
-    /// `@Component<R>` (written, or through an alias such as `View`), by name:
-    /// the ones that take the hidden context map.
-    componentFns: std.StringHashMapUnmanaged(void) = .empty,
     /// Runtime-backed template evaluation context (F6-full). Null in tooling
     /// paths — non-V1 template bodies then raise the V1 driver error.
     templateEval: ?TemplateEvalCtx = null,

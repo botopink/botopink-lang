@@ -1,0 +1,74 @@
+//// Decision 388 (3) — the render library holds the scopes: a component value
+//// is a lambda over a `RenderScope`, and the library runs the root with
+//// `RenderScope.root()`, then each child of the tree with the scope its
+//// parent's `run` answered. `Root` provides `light`; the `Label` it renders
+//// in its own body (a call the checker renders, an `await` of it) runs with
+//// `Root`'s children scope. `Root` places `Page` in the tree as a value
+//// (`map(Page)`), `Page` provides `dark` and places two `Label`s: `render`
+//// runs each with the scope its parent answered, so `Page` reads `light`
+//// above it and both labels read `dark`. A value the library keeps for later
+//// (a `Suspense` fill, a retry) runs with the scope it kept: `render` hands
+//// the host a thunk `{ -> c.run(scope) }` — `hostNow` calls it at once,
+//// `hostStash` keeps the last one and `main` runs it twice after every
+//// render has returned. Nothing is captured: the scope travels explicitly.
+
+import {context.Context, context.provide, context.context, context.RenderScope, context.Rendered} from "std";
+
+type Theme(mode: string)
+
+type View(text: string, kids: @Component<View>[]) implement @Renderable
+
+pub val ThemeContext = Context<Theme>();
+
+#[@External.Node("""($0)()""")]
+#[@External.Erlang("""($0)()""")]
+declare fn hostNow(f: fn() -> @Task<Rendered<View>>) -> @Task<Rendered<View>>;
+
+#[@External.Node("""(globalThis.__bpScopeStash = $0, undefined)""")]
+#[@External.Erlang("""persistent_term:put(bp_scope_stash, $0)""")]
+declare fn hostStash(f: fn() -> @Task<Rendered<View>>) -> void;
+
+#[@External.Node("""globalThis.__bpScopeStash""")]
+#[@External.Erlang("""persistent_term:get(bp_scope_stash)""")]
+declare fn hostStashed() -> fn() -> @Task<Rendered<View>>;
+
+fn Label(prefix: string) -> @Component<View> {
+    val t = use context(ThemeContext);
+    return View(text: prefix + t.mode, kids: []);
+}
+
+fn Page(title: string) -> @Component<View> {
+    val above = use context(ThemeContext);
+    use provide(ThemeContext, Theme(mode: "dark"));
+    return View(
+        text: title + "(" + above.mode + ")",
+        kids: ["a:", "b:"].map(Label),
+    );
+}
+
+fn Root() -> @Component<View> {
+    use provide(ThemeContext, Theme(mode: "light"));
+    val own = Label("root:");
+    return View(text: own.text, kids: ["page"].map(Page));
+}
+
+// The library: run `c` with `scope`, then each child with the scope `c`'s
+// run answered.
+fn render(c: @Component<View>, scope: RenderScope) -> @Task<string> {
+    hostStash({ -> c.run(scope) });
+    val r = await hostNow({ -> c.run(scope) });
+    var out = r.value.text;
+    for (r.value.kids) { k ->
+        val inner = await render(k, r.scope);
+        out = out + " " + inner;
+    }
+    return out;
+}
+
+pub fn main() -> @Task<void> {
+    @print(await render(Root(), RenderScope.root()));
+    val later = hostStashed();
+    val first = await later();
+    val second = await later();
+    @print(first.value.text + " " + second.value.text);
+}

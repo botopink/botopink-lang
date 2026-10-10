@@ -148,11 +148,27 @@ runs; a component run through a function value under a provider that keeps nothi
 one that reads no context registers nothing — and `run/context_sheet_unbound` (`context-unbound`
 naming the context, `.exit` and the three `.stderr`s); erlang, beam and commonJS run them, wasm refuses
 the first `use` (`.wasm.expect`).
-Decision 374 (a host-called `@Component` thunk captures the map) adds `run/context_host_thunk` — a lambda
-written as a host argument read below a provider (a host that calls it at once, one that passes its own
-argument, a declared component named as the argument, and one the host keeps and `main` calls twice after
-the render) — erlang, beam and commonJS, red on the parent (`context-unbound` on commonJS, `badarity` on
-erlang and beam); wasm refuses the first `use` (`.wasm.expect`).
+Decision 388 (a `@Component` is a lambda over a `RenderScope`, `01-compiler/134` step 6 box 4b) replaced
+374's capture: `run/context_host_thunk` left with it, and `run/render_scope_library` holds the scope in
+the library instead — a renderer that runs the root with `RenderScope.root()` and each child with the
+scope its parent's `run` answered, hands a host a thunk `{ -> c.run(scope) }` at once and keeps one the
+host runs twice after the render. `run/component_is_lambda` (a call runs nothing; `itens.map(Card)`
+answers lambdas a tree's runner runs with `Lista`'s scope; generic code keeps them), `run/component_run_root`
+(`c.run(scope)` answers the result and the children's scope; `await c` outside every body runs it with
+`RenderScope.root()`), `run/component_try_in_body` (a bare `try` in a `@Component<@Result<…>>` body),
+`run/component_alias_answers_value` (a function typed by an alias of `@Component` is no component body, 118:
+it answers the lambda another body made — `styled`'s `-> StyledView`) and
+`reject/render_scope_construction` (`RenderScope(…)` refused, `render-scope-construction`) cover the rest;
+erlang, beam and commonJS run them, and the wasm backend refuses every module the scope lowering reached
+at its first component (`.wasm.expect` on every component cell, `language-gaps.md` row 354-wasm). A
+component called as a statement outside a body runs nothing now, so `run/effect_chain`,
+`run/effect_context_await`, `run/use_one_base`, `run/component_result_try_await` and
+`run/component_hook_and_component` `await` it in `main`, and `run/component_sync_plain_function` reads
+375's mark through `run`. Decision 389 (a component named as a value is a reached node; a value the checker
+cannot follow an edge with `callee: null`) adds `run/decl_hooks_component_value` (`map(Card)`, a `val`, a
+record field, a lambda answering one) and `run/decl_hooks_dynamic_call` (a parameter, a method and a
+generic answer as `null` edges, the node asynchronous), each red on the parent binary; the `decl.hooks`
+readers of the other cells read `HookCall.callee` as the `?Declared<unknown>` it is now.
 Decision 375 (`HookNode.async`) adds `run/decl_hooks_async` (a synchronous `Card` and `Header`, an awaiting
 `Comments`, a page `async` through it with no written `await`, a cycle, a function value) and
 `modules/decl_hooks_async_imported` (an imported node's mark) on the four targets, and

@@ -1,0 +1,57 @@
+//// Decision 389 — a component value the checker cannot follow is an edge
+//// with `callee: null` (s23-d's (b)): `Page` calls a parameter (`render()`),
+//// a method answering a component (`menu.view()`) and what generic code
+//// answers (`first(cards)`, `first` declared `-> T`). Each enters in body
+//// order as `null` and reaches nothing — `Card`, named as a value, is the one
+//// node reached — and makes the node asynchronous (375, the conservative
+//// answer: `~`); its reader decides on the safe side (277: such a page is
+//// per-request).
+
+type View(text: string) implement @Renderable
+
+type Menu(title: string) {
+    fn view(self: Self) -> @Component<View> {
+        return View(text: self.title);
+    }
+}
+
+// Renders `decl.hooks` into one meta string `main` prints: each node as
+// `fn(uses: […], calls: […])`, an edge with `callee: null` as `null`, an
+// asynchronous node (375) marked `~`.
+fn graph(comptime decl: @Decl) {
+    var nodes: string[] = [];
+    decl.hooks.forEach({ n ->
+        var calls: string[] = [];
+        n.calls.forEach({ c ->
+            val k = c.callee;
+            val name = if (k == null) "null" else k.name;
+            calls.push(name + "@" + c.at);
+        });
+        val mark = if (n.async) "~" else "";
+        nodes.push(
+            n.function.name + mark + "(calls: [" + calls.join(", ") + "])",
+        );
+    });
+    decl.setMeta("nodes", nodes.join(" "));
+}
+
+fn first<T>(xs: T[]) -> T {
+    return xs[0]!;
+}
+
+fn Card(n: i32) -> @Component<View> {
+    return View(text: n.toString());
+}
+
+#[graph]
+fn Page(render: fn() -> @Component<View>, menu: Menu) -> @Component<View> {
+    val a = render();
+    val m = menu.view();
+    val cards = [1, 2].map(Card);
+    val c = first(cards);
+    return View(text: a.text + m.text + c.text);
+}
+
+pub fn main() {
+    @print(@typeInfo(Page).meta.graph.nodes);
+}

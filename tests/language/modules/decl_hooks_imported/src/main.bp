@@ -21,9 +21,11 @@ fn graph(comptime decl: @Decl) {
             uses.push(name + anns.join(""));
         });
         var calls: string[] = [];
-        n.calls.forEach(
-            { c -> calls.push(c.callee.module + "." + c.callee.name + "@" + c.at) },
-        );
+        n.calls.forEach({ c ->
+            val k = c.callee;
+            val name = if (k == null) "null" else k.module + "." + k.name;
+            calls.push(name + "@" + c.at);
+        });
         nodes.push(
             n.function.module
                 + "."

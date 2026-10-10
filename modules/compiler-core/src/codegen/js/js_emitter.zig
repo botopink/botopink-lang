@@ -174,6 +174,7 @@ pub fn writeExpr(w: *Writer, e: Ast.Expr, indent: usize) Error!void {
             try w.writeByte(')');
         },
         .arrow => |a| {
+            if (a.is_async) try w.writeAll("async ");
             try writeParams(w, a.params, indent);
             try w.writeAll(" => ");
             switch (a.body) {

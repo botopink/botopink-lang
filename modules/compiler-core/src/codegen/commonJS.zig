@@ -3737,11 +3737,16 @@ const Emitter = struct {
         self.expr_try_used = false;
         defer self.expr_try_used = prev_expr_try;
         const lambda_body = try self.guardExprTry(try self.buildLambdaBody(body), self.current_indent);
-        return self.b.arrowBlock(ps, .{
+        var arrow = try self.b.arrowBlock(ps, .{
             .stmts = lambda_body,
             .layout = .fixed,
             .indent = self.current_indent,
         });
+        // Decision 388 — a lambda whose own body awaits (a component's lambda
+        // running an asynchronous child) is an `async` arrow; one that awaits
+        // nothing stays plain, so a synchronous component answers its value.
+        if (AwaitScan.stmts(lambda_body)) arrow.arrow.is_async = true;
+        return arrow;
     }
 
     // ── try/catch lowering ────────────────────────────────────────────────────

@@ -15,6 +15,63 @@
 /// statically. See `codegen/AGENTS.md` §wat.
 const std = @import("std");
 const context_lower = @import("../comptime/context_lower.zig");
+
+/// Decision 388 — one of std's `context` functions the scope lowering calls.
+fn isScopeLoweringFn(name: []const u8) bool {
+    for (context_lower.lowered_fns) |f| if (std.mem.eql(u8, name, f)) return true;
+    return false;
+}
+
+/// Decision 388 — where a module with no component of its own first runs
+/// one (an `await` of an imported component, `RenderScope.root()`): the
+/// first call of the scope lowering's functions, in declaration order.
+fn firstScopeCall(program: ast.Program) ?ast.Loc {
+    for (program.decls) |d| switch (d) {
+        .@"fn" => |f| for (f.body) |*st| if (findScopeCall(ast.Stmt, st)) |l| return l,
+        .@"test" => |t| for (t.body) |*st| if (findScopeCall(ast.Stmt, st)) |l| return l,
+        else => {},
+    };
+    return null;
+}
+
+fn findScopeCall(comptime X: type, ptr: *const X) ?ast.Loc {
+    if (X == ast.Expr) {
+        if (ptr.* == .call and ptr.call.kind == .call and ptr.call.kind.call.receiver == null and isScopeLoweringFn(ptr.call.kind.call.callee)) return ptr.call.loc;
+    }
+    if (X == ast.Loc or X == ast.TypeRef or X == ast.ImportDecl) return null;
+    switch (@typeInfo(X)) {
+        .@"struct" => |st| inline for (st.fields) |f| {
+            if (f.is_comptime) continue;
+            if (comptime holdsExpr(f.type)) if (findScopeCall(f.type, &@field(ptr.*, f.name))) |l| return l;
+        },
+        .@"union" => |u| if (u.tag_type != null) {
+            switch (ptr.*) {
+                inline else => |*payload| if (comptime holdsExpr(@TypeOf(payload.*))) {
+                    if (findScopeCall(@TypeOf(payload.*), payload)) |l| return l;
+                },
+            }
+        },
+        .optional => |o| if (ptr.*) |*inner| return findScopeCall(o.child, inner),
+        .pointer => |p| switch (p.size) {
+            .one => if (comptime holdsExpr(p.child)) return findScopeCall(p.child, ptr.*),
+            .slice => if (comptime holdsExpr(p.child)) {
+                for (ptr.*) |*e| if (findScopeCall(p.child, e)) |l| return l;
+            },
+            else => {},
+        },
+        else => {},
+    }
+    return null;
+}
+
+fn holdsExpr(comptime X: type) bool {
+    return switch (@typeInfo(X)) {
+        .@"struct", .@"union" => X != ast.Loc and X != ast.TypeRef,
+        .optional => |o| holdsExpr(o.child),
+        .pointer => |p| p.child != u8 and @typeInfo(p.child) != .@"fn" and @typeInfo(p.child) != .@"opaque" and holdsExpr(p.child),
+        else => false,
+    };
+}
 const comptimeMod = @import("../comptime.zig");
 const moduleOutput = @import("./moduleOutput.zig");
 const configMod = @import("./config.zig");
@@ -1175,6 +1232,7 @@ fn emitWat(
         }
     }
     try em.checkHostBindings(decls.items, owner.items, linked, own_program, module_name);
+    try em.refuseScopeLowering(own_program);
     const program: ast.Program = .{ .decls = decls.items };
     try em.registerTypes(program);
     try em.collectExtensions(program);
@@ -3119,20 +3177,12 @@ const Emitter = struct {
         };
     }
 
-    /// Decision 354 (8) — the hidden context map a `@Component` function
-    /// receives (`context_lower.zig`) is already an `unknown` value: passed
-    /// on, it is not boxed again.
-    fn isContextMapIdent(value: ast.Expr) bool {
-        if (value != .identifier or value.identifier.kind != .ident) return false;
-        return std.mem.eql(u8, value.identifier.kind.ident, context_lower.map_param);
-    }
-
     /// Lower `value` as the `unknown` value it becomes in such a slot: as it
     /// is when it already is one or carries its own header, `0` for `null`,
     /// else boxed by its static shape — a function value under its arity's
     /// descriptor (decision 254), its payload the closure cell.
     fn lowerAsUnknown(self: *Emitter, value: ast.Expr) anyerror!void {
-        if (isNullLit(value) or self.isUnknownExpr(value) or self.isTaggedValue(value) or isContextMapIdent(value)) {
+        if (isNullLit(value) or self.isUnknownExpr(value) or self.isTaggedValue(value)) {
             try self.lowerCoerced(value, "i32");
             return;
         }
@@ -4045,6 +4095,33 @@ const Emitter = struct {
     /// binding outside the vocabulary is refused at its annotation, in a
     /// linked module at the consumer's import (`foreign_origin`). A
     /// `declare fn` with no wasm binding is left to `external_missing`.
+    /// Decision 388 — a `@Component` is a lambda over a `RenderScope`, and
+    /// the scope lowering (`context_lower.zig`) calls std's `context`
+    /// functions through `unknown` slots written after inference, which this
+    /// backend boxes and unboxes only by a static type it reads from
+    /// inference: a module the lowering reached is refused, located at its
+    /// first component or at its first call of the lowering, until the wasm
+    /// lowering of the render scope lands (`language-gaps.md` row 354-wasm).
+    fn refuseScopeLowering(self: *Emitter, own_program: ast.Program) !void {
+        var lowered = false;
+        for (own_program.decls) |d| if (d == .use) for (d.use.imports) |imp| if (imp.alias) |a| {
+            if (isScopeLoweringFn(a)) lowered = true;
+        };
+        if (!lowered) return;
+        var at: ?ast.Loc = null;
+        for (own_program.decls) |d| switch (d) {
+            .@"fn" => |f| if (f.body.len == 1 and f.body[0].expr == .jump and f.body[0].expr.jump.kind == .@"return") {
+                const r = f.body[0].expr.jump.kind.@"return" orelse continue;
+                if (r.* != .function or r.function.kind.params.len != 1) continue;
+                if (!std.mem.eql(u8, r.function.kind.params[0], context_lower.scope_param)) continue;
+                at = f.nameLoc;
+                break;
+            },
+            else => {},
+        };
+        return self.refuse(at orelse firstScopeCall(own_program), "the wasm backend does not lower a component yet: a `@Component` is a lambda over a `RenderScope` (decision 388), lowered on erlang, beam and commonJS", .{});
+    }
+
     fn checkHostBindings(
         self: *Emitter,
         decls: []const ast.DeclKind,
@@ -6155,16 +6232,16 @@ const Emitter = struct {
                 defer self.call_loc = outer_call;
                 switch (c.kind) {
                     .call => |cc| {
-                        // Decision 354 (8) — a `use provide` / `use context`
-                        // lowered to std's `context.push` / `context.find`
-                        // carries a value through an `unknown` slot the lowering
-                        // wrote after inference, and this backend boxes and
-                        // unboxes a value only by a static type it reads from
-                        // inference: refused, located at the `use`, until the
-                        // wasm lowering of the hidden map lands
+                        // Decision 388 — a `@Component` is a lambda over a
+                        // `RenderScope`, and std's `context` functions the
+                        // lowering calls (`context_lower.zig`) carry values
+                        // through `unknown` slots written after inference,
+                        // which this backend boxes and unboxes only by a static
+                        // type it reads from inference: refused, located, until
+                        // the wasm lowering of the render scope lands
                         // (`language-gaps.md` row 354-wasm).
-                        if (cc.receiver == null and (std.mem.eql(u8, cc.callee, context_lower.push_fn) or std.mem.eql(u8, cc.callee, context_lower.find_fn)))
-                            return self.refuse(c.loc, "the wasm backend does not lower a context yet: `use provide` / `use context` (decision 354 (8)) runs on erlang, beam and commonJS", .{});
+                        if (cc.receiver == null and isScopeLoweringFn(cc.callee))
+                            return self.refuse(c.loc, "the wasm backend does not lower a component yet: a `@Component` is a lambda over a `RenderScope` (decision 388), lowered on erlang, beam and commonJS", .{});
                         // Static extension dispatch (F6) — resolve to the mangled
                         // linear-memory function `$<target>_<method>` before the
                         // ordinary call-kind handling.

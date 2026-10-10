@@ -15,7 +15,11 @@ fn graph(comptime decl: @Decl) {
             uses.push(if (h == null) "null" else h.name + "@" + u.at);
         });
         var calls: string[] = [];
-        n.calls.forEach({ c -> calls.push(c.callee.name + "@" + c.at) });
+        n.calls.forEach({ c ->
+            val k = c.callee;
+            val name = if (k == null) "null" else k.name;
+            calls.push(name + "@" + c.at);
+        });
         nodes.push(
             n.function.name
                 + "(uses: ["

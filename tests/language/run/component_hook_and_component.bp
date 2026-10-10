@@ -6,7 +6,7 @@
 //// `counter` is a hook that composes a hook with `use` and awaits a Task
 //// (`@Component ⊃ @Task`); `Widget` is a COMPONENT (its `T` implements
 //// `@Renderable`) holding `use` and `await` in one body, and `main`
-//// CALLS it.
+//// awaits it (decision 388: the call only makes its lambda).
 ////
 //// Printed from inside `Widget`: commonJS lowers every `@Component` return to an
 //// `async function` (decision 120) and hands `main` a Promise.
@@ -39,6 +39,8 @@ fn Widget(n: i32) -> @Component<Element> {
     return Element(count: c + v);
 }
 
-pub fn main() {
-    Widget(1);
+// Decision 388 — a call only makes the component's lambda: `main` awaits
+// it, which runs it with `RenderScope.root()`.
+pub fn main() -> @Task<void> {
+    await Widget(1);
 }

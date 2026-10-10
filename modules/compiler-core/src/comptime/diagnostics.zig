@@ -185,6 +185,7 @@ pub const context_hook_without_use: []const u8 = "context-hook-without-use";
 /// Decision 354 (2) — a `Context<T>()` that is not a module-level `val`'s
 /// whole initializer: a context's identity is its declaration (281).
 pub const context_not_declared: []const u8 = "context-not-declared";
+pub const render_scope_construction: []const u8 = "render-scope-construction";
 
 // ── `@src()` (1.0.10-beta front 01-std, decision 73) ─────────────────────────
 /// `@src(…)` was given an argument or a trailing lambda — the builtin takes none.
@@ -624,6 +625,7 @@ pub const all_codes = [_][]const u8{
     use_outside_render_tree,
     context_provide_outside_component,
     context_not_declared,
+    render_scope_construction,
     context_provide_after_render,
     context_hook_without_use,
     variadic_spread,
