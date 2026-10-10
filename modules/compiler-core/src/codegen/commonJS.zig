@@ -114,7 +114,7 @@ pub fn codegenEmit(
                 // driver as a located diagnostic naming the function, not as
                 // the bare error name that aborted the whole build.
                 var missing: ?moduleOutput.MissingExternal = null;
-                const js_src = emitJs(alloc, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, &ok.js_method_renames, &ok.instance_lowerings, module_test_mode, ct.name, ct.srcPath, &cross, &missing) catch |err| {
+                const js_src = emitJs(alloc, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, &ok.js_method_renames, &ok.instance_lowerings, module_test_mode, ct.name, ct.srcPath, &cross, &missing, .{ .fns = &ok.sync_fns, .calls = &ok.sync_calls }) catch |err| {
                     const me = missing orelse return err;
                     try results.append(alloc, .{
                         .name = ct.name,
@@ -130,7 +130,7 @@ pub fn codegenEmit(
 
                 // Generate TypeScript typedefs if configured.
                 const typedef: ?[]u8 = if (config.typeDefLanguage) |_|
-                    try emitTypeDef(alloc, ok.bindings, &cross, type_exports.items, ct.name, ok.transformed.decls)
+                    try emitTypeDef(alloc, ok.bindings, &cross, type_exports.items, ct.name, ok.transformed.decls, &ok.sync_fns)
                 else
                     null;
 
@@ -167,9 +167,28 @@ fn emitJs(
     cross: ?*const CrossModule,
     /// 06 C13 — set when the emit fails with `error.MissingExternalTarget`.
     missing: ?*?moduleOutput.MissingExternal,
+    sync: SyncMarks,
 ) ![]u8 {
-    return try emitProgramOptsX(alloc, program, comptime_vals, rewrites, renames, lowerings, test_mode, module_name, src_file, cross, missing);
+    return try emitProgramOptsX(alloc, program, comptime_vals, rewrites, renames, lowerings, test_mode, module_name, src_file, cross, missing, sync);
 }
+
+/// Decision 375 — what the hooks list says is synchronous in one module.
+pub const SyncMarks = struct {
+    /// The top-level functions whose node is synchronous.
+    fns: ?*const std.StringHashMapUnmanaged(void) = null,
+    /// The calls and `use`s, by location, of a synchronous component or hook.
+    calls: ?*const std.AutoHashMapUnmanaged(ast.Loc, void) = null,
+
+    pub fn syncFn(self: SyncMarks, name: []const u8) bool {
+        const f = self.fns orelse return false;
+        return f.contains(name);
+    }
+
+    pub fn syncCall(self: SyncMarks, loc: ast.Loc) bool {
+        const c = self.calls orelse return false;
+        return c.contains(loc);
+    }
+};
 
 fn emitTypeDef(
     alloc: std.mem.Allocator,
@@ -178,8 +197,9 @@ fn emitTypeDef(
     type_exports: []const tsEmit.TypeExport,
     module_name: []const u8,
     program_decls: []const ast.DeclKind,
+    sync_fns: *const std.StringHashMapUnmanaged(void),
 ) ![]u8 {
-    return try tsEmit.emitProgram(alloc, bindings, cross, type_exports, module_name, program_decls);
+    return try tsEmit.emitProgram(alloc, bindings, cross, type_exports, module_name, program_decls, sync_fns);
 }
 
 // ── emit ──────────────────────────────────────────────────────────────────────
@@ -318,7 +338,7 @@ pub fn emitProgramOpts(
     test_mode: bool,
     module_name: []const u8,
 ) ![]u8 {
-    return emitProgramOptsX(alloc, program, comptime_vals, rewrites, null, null, test_mode, module_name, "", null, null);
+    return emitProgramOptsX(alloc, program, comptime_vals, rewrites, null, null, test_mode, module_name, "", null, null, .{});
 }
 
 /// The test-mode preamble: a throwing assert helper the runner can catch.
@@ -407,6 +427,7 @@ fn emitProgramOptsX(
     src_file: []const u8,
     cross: ?*const CrossModule,
     missing: ?*?moduleOutput.MissingExternal,
+    sync: SyncMarks,
 ) ![]u8 {
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
@@ -417,6 +438,7 @@ fn emitProgramOptsX(
     };
     em.renames = renames;
     em.lowerings = lowerings;
+    em.sync = sync;
     em.test_mode = test_mode;
     em.module_name = module_name;
     em.src_file = if (src_file.len > 0) src_file else try std.fmt.allocPrint(arena.allocator(), "{s}.bp", .{module_name});
@@ -1294,6 +1316,11 @@ const Emitter = struct {
     /// `.prim`). commonJS reads it only to spell a primitive `len` as the
     /// native `.length` property. Null in the standalone paths.
     lowerings: ?*const std.AutoHashMap(ast.Loc, envMod.InstanceLowering) = null,
+    /// Decision 375 — the hooks list's synchronous marks (`OkData.sync_fns`,
+    /// `sync_calls`): a synchronous component or hook is a plain `function`
+    /// and a call or `use` of one is not awaited. Empty in the standalone
+    /// paths, where every component stays an `async function`.
+    sync: SyncMarks = .{},
     /// Decision 320's string reads hoisted per binding in the function being
     /// built (`js/str_slots.zig`): the reads that skip the per-read surrogate
     /// test, and the slots their bindings declare. Null outside a `fn`.
@@ -2366,9 +2393,25 @@ const Emitter = struct {
         } }});
     }
 
+    /// `use h()` is the call, awaited — a hook is an `async function`
+    /// (decision 104) — unless the hooks list marks `h` synchronous
+    /// (decision 375). erlang, wasm and beam keep the bare call.
+    fn useHookExpr(self: *Emitter, uh: anytype) anyerror!js.Expr {
+        const inner = try self.buildExpr(uh.kind.inner.*);
+        if (self.sync.syncCall(uh.loc)) return inner;
+        return self.b.await_(inner);
+    }
+
+    /// Decision 375 — a top-level `@Component` function whose hooks node is
+    /// synchronous is a plain `function`; every other effect keeps its shape.
+    fn fnShape(self: *Emitter, f: ast.FnDecl) FnShape {
+        if (f.effect) |e| if (e == .component and self.sync.syncFn(f.name)) return .{};
+        return effectShape(f.effect);
+    }
+
     fn buildFn(self: *Emitter, f: ast.FnDecl) anyerror!js.Stmt {
         self.try_seq = 0;
-        const shape = effectShape(f.effect);
+        const shape = self.fnShape(f);
         const prev_in_generator = self.in_generator;
         self.in_generator = shape.is_generator;
         defer self.in_generator = prev_in_generator;
@@ -3500,7 +3543,7 @@ const Emitter = struct {
             // Decision 104 — every `#[@use]` body is an `async function` here,
             // so a hook answers a Promise and `use` awaits it; the body that
             // writes `use` is `#[@use]` too, so the `await` is always legal.
-            .useHook => |uh| return .{ .expr = try self.b.await_(try self.buildExpr(uh.kind.inner.*)) },
+            .useHook => |uh| return .{ .expr = try self.useHookExpr(uh) },
             // An `if` whose branches jump out (`return`, `break`, `continue`)
             // is a JS `if` statement: a jump cannot leave the IIFE the value
             // form wraps it in.
@@ -4059,7 +4102,12 @@ const Emitter = struct {
                     self.expr_try_used = true;
                     return self.b.call(self.helper(.try_unwrap), &.{try self.buildExpr(val.*)});
                 },
-                .await_ => |av| return self.b.await_(try self.buildExpr(av.*)),
+                .await_ => |av| {
+                    // Decision 375 — no `await` on a call of a synchronous
+                    // component (written or spliced by the checker).
+                    if (av.* == .call and self.sync.syncCall(av.call.loc)) return self.buildExpr(av.*);
+                    return self.b.await_(try self.buildExpr(av.*));
+                },
                 // Generator `yield` (loop-accumulator yields are lowered at
                 // the `.loop` site, so reaching here means an `#[@resultGenerator]`
                 // / `#[@generator]` / `#[@futureGenerator]` body).
@@ -4144,7 +4192,7 @@ const Emitter = struct {
             // 88), and on this target the hook is an `async function`
             // (decision 104), so `use state(0)` is `await state(0)`. erlang,
             // wasm and beam keep the bare call — their `@Future` is eager.
-            .useHook => |uh| return self.b.await_(try self.buildExpr(uh.kind.inner.*)),
+            .useHook => |uh| return self.useHookExpr(uh),
 
             .call => |c| switch (c.kind) {
                 .call => |cc| return self.buildCall(c.loc, cc),

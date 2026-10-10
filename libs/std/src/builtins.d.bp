@@ -725,6 +725,14 @@ pub type Declared<T>(
 // compiles — and its `meta` is every entry the declaration's decorators set,
 // keyed `<decorator>.<key>`.
 //
+// `HookNode.async` (decision 375) is `true` when the function's body writes
+// `await` or `async { … }`, `use`s an asynchronous hook or calls an
+// asynchronous component (a written `await` or not), calls a host function
+// answering `@Task` (or `@Component`, which extends it), or calls what the
+// checker cannot follow — a function value or a method answering
+// `@Component<R>`, a `use` with `hook: null`; a cycle is asynchronous when any
+// node in it is. commonJS emits a synchronous component as a plain `function`.
+//
 // `HookUse.hook` is the hook's declaration, `null` for a `use` over a function
 // value; `annotations` are the hook's own; `typeArgs` the `use`'s explicit
 // type arguments (`use params<BlogParams>()` → `[BlogParams]`, a record's
@@ -748,6 +756,7 @@ pub type HookNode(
     function: Declared<unknown>,
     uses: HookUse[],
     calls: HookCall[],
+    async: bool,
 )
 
 // ── Decorator (decision 268) ────────────────────────────────────────────────

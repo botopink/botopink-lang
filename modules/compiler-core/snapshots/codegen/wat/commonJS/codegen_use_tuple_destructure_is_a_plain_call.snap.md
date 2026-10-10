@@ -20,15 +20,15 @@ class Element {
 }
 Element.prototype.__bp = "Element";
 
-async function optimistic(bpContextMap__, base, f) {
+function optimistic(bpContextMap__, base, f) {
     const push = (action) => {
     return f(base, action);
 };
     return [base, push];
 }
 
-async function LikeWidget(bpContextMap__) {
-    const [ shown, push ] = await optimistic(bpContextMap__, 12, (c, a) => {
+function LikeWidget(bpContextMap__) {
+    const [ shown, push ] = optimistic(bpContextMap__, 12, (c, a) => {
     return __bp_int((c + a), -2147483648, 2147483647, "+ on i32 at main.bp:7:57");
 });
     push(shown);

@@ -21,6 +21,14 @@
 //! function (`declare fn`, `#[@External…]`) and std's compiler-lowered
 //! `provide` / `context` get no node. The compiler names no stage, marker or
 //! library: what the list means is the reading decorator's.
+//!
+//! **`async`** (decision 375) marks a node asynchronous: a body that writes
+//! `await` / `async { … }`, calls a host function answering `@Task` (or
+//! `@Component`, which extends it), calls what the checker cannot follow, or
+//! reaches an asynchronous node — computed over the module's nodes once its
+//! bodies are inferred (`infer.zig` `markHookAsync`), an imported node read
+//! as its module published it. commonJS emits a synchronous component as a
+//! plain `function` and no `await` on a call of one.
 const std = @import("std");
 const ast = @import("../ast.zig");
 const Term = @import("../codegen/beam/term.zig").Term;
@@ -79,6 +87,13 @@ pub const Node = struct {
     function: DeclRef,
     uses: []const Use,
     calls: []const Call,
+    /// Decision 375 — the node is asynchronous: its body writes `await` or
+    /// `async { … }`, calls a host function answering `@Task` or
+    /// `@Component`, calls what the checker cannot follow (a function value
+    /// or a method answering `@Component<R>`, a `use` with `hook: null`), or
+    /// reaches an asynchronous node through a `use` or a call (`infer.zig`
+    /// `markHookAsync`, a cycle asynchronous when any node in it is).
+    is_async: bool = false,
 };
 
 /// A top-level function of a module, as the session knows it.
@@ -99,6 +114,12 @@ pub const FnInfo = struct {
 pub const Builder = struct {
     uses: std.ArrayListUnmanaged(Use) = .empty,
     calls: std.ArrayListUnmanaged(PendingCall) = .empty,
+    /// Decision 375 — what the body writes that makes the node asynchronous
+    /// by itself (`Node.async` before its edges are followed).
+    is_async: bool = false,
+    /// Decision 375 — the calls of a function value or a method, by type: one
+    /// that resolves to `@Component<R>` (or stays open) cannot be followed.
+    dynamicCalls: std.ArrayListUnmanaged(*T.Type) = .empty,
 
     pub const PendingCall = struct { call: Call, type_: *T.Type };
 };
@@ -143,6 +164,7 @@ pub fn nodesToTerm(arena: std.mem.Allocator, nodes: []const Node, meta: MetaSour
             Term.field("function", try declaredTerm(arena, n.function, meta)),
             Term.field("uses", Term.listOf(uses)),
             Term.field("calls", Term.listOf(calls)),
+            Term.field("async", .{ .boolean = n.is_async }),
         }));
     }
     return out;

@@ -146,6 +146,17 @@ runs; a component run through a function value under a provider that keeps nothi
 one that reads no context registers nothing — and `run/context_sheet_unbound` (`context-unbound`
 naming the context, `.exit` and the three `.stderr`s); erlang, beam and commonJS run them, wasm refuses
 the first `use` (`.wasm.expect`).
+Decision 374 (a host-called `@Component` thunk captures the map) adds `run/context_host_thunk` — a lambda
+written as a host argument read below a provider (a host that calls it at once, one that passes its own
+argument, a declared component named as the argument, and one the host keeps and `main` calls twice after
+the render) — erlang, beam and commonJS, red on the parent (`context-unbound` on commonJS, `badarity` on
+erlang and beam); wasm refuses the first `use` (`.wasm.expect`).
+Decision 375 (`HookNode.async`) adds `run/decl_hooks_async` (a synchronous `Card` and `Header`, an awaiting
+`Comments`, a page `async` through it with no written `await`, a cycle, a function value) and
+`modules/decl_hooks_async_imported` (an imported node's mark) on the four targets, and
+`run/component_sync_plain_function` (commonJS only, `.targets` — the host `pending` has only a Node binding:
+a call of a synchronous `Card` answers no `Promise`, one of the asynchronous `Post` does); each red on the
+parent binary.
 Decision 357 (the rules of hooks) adds `reject/use_in_if`, `reject/use_in_loop`, `reject/use_in_lambda`
 and `reject/use_after_early_return` (`use-not-top-level`, naming the construct or the line) and
 `run/use_conditional_argument` (a condition inside `use provide`'s argument, an `if` that does not

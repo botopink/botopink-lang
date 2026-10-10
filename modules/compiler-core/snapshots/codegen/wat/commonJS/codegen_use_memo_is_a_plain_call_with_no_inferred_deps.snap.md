@@ -22,17 +22,17 @@ class Element {
 }
 Element.prototype.__bp = "Element";
 
-async function state(bpContextMap__, initial) {
+function state(bpContextMap__, initial) {
     return initial;
 }
 
-async function memo(bpContextMap__) {
+function memo(bpContextMap__) {
     return 0;
 }
 
-async function Counter(bpContextMap__) {
-    const { count, setCount } = await state(bpContextMap__, 0);
-    const doubled = await memo(bpContextMap__, () => {
+function Counter(bpContextMap__) {
+    const { count, setCount } = state(bpContextMap__, 0);
+    const doubled = memo(bpContextMap__, () => {
     return __bp_int((count * 2), -2147483648, 2147483647, "* on i32 at main.bp:10:46");
 });
     return new Element();

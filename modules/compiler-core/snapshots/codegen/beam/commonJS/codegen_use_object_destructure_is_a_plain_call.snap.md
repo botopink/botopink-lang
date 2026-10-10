@@ -16,12 +16,12 @@ class Element {
 }
 Element.prototype.__bp = "Element";
 
-async function state(bpContextMap__, initial) {
+function state(bpContextMap__, initial) {
     return initial;
 }
 
-async function Counter(bpContextMap__) {
-    const { count, setCount } = await state(bpContextMap__, 0);
+function Counter(bpContextMap__) {
+    const { count, setCount } = state(bpContextMap__, 0);
     return new Element();
 }
 ```

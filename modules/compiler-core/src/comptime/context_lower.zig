@@ -165,13 +165,51 @@ const Lowering = struct {
     }
 
     /// A call of a host function passes no map: the host's signature is the
-    /// host's. A `@Component` function value handed to it keeps the hidden
-    /// map as its first parameter — a host stores it opaquely, and a host that
-    /// calls one passes the map first (`null` when it has none).
+    /// host's. Decision 374 — a `@Component` lambda written as one of its
+    /// arguments takes no hidden map: its body reads the map of the body it
+    /// is written in, as a closure reads a local, so the host's call (now,
+    /// later or twice) keeps every provider above. A declared `@Component`
+    /// function named as an argument is wrapped the same way (`{ -> Page() }`).
+    /// Any other `@Component` value (a parameter, a local) keeps the hidden
+    /// map as its first parameter (`134-i`).
     fn lowerHostCall(self: *Lowering, cc: anytype) !void {
         if (cc.receiver) |r| try self.walk(ast.Expr, r);
-        for (cc.args) |*a| try self.walk(ast.Expr, a.value);
+        for (cc.args) |*a| try self.lowerHostArg(a.value);
         for (cc.trailing) |*t| try self.walk(@TypeOf(t.*), t);
+    }
+
+    fn lowerHostArg(self: *Lowering, e: *ast.Expr) !void {
+        switch (e.*) {
+            .function => |*f| if (f.kind.syntax != .asyncBlock) {
+                if (self.env.componentLambdas.get(f.loc)) |rec| if (returnsComponent(rec.type_)) {
+                    for (f.kind.body) |*s| try self.walk(ast.Stmt, s);
+                    return;
+                };
+            },
+            .identifier => |id| if (id.kind == .ident) if (self.env.hostComponentRefs.get(id.loc)) |ty| {
+                e.* = try self.hostThunk(id.kind.ident, ty, id.loc);
+                return;
+            },
+            else => {},
+        }
+        try self.walk(ast.Expr, e);
+    }
+
+    /// `{ a0, a1 -> C(<map>, a0, a1) }` — a declared `@Component` function
+    /// handed to a host, closing over the map in scope where it is named.
+    fn hostThunk(self: *Lowering, name: []const u8, ty: *T.Type, loc: ast.Loc) !ast.Expr {
+        const d = ty.deref();
+        const arity = d.func.params.len;
+        const params = try self.arena.alloc([]const u8, arity);
+        const args = try self.arena.alloc(*ast.Expr, arity + 1);
+        args[0] = try self.mapArg(if (componentValue(d.func.ret)) |r| isRenderable(self.env, r) else true, loc);
+        for (0..arity) |i| {
+            params[i] = try std.fmt.allocPrint(self.arena, "bpHostArg__{d}", .{i});
+            args[i + 1] = try self.ident(params[i], loc);
+        }
+        const body = try self.arena.alloc(ast.Stmt, 1);
+        body[0] = .{ .expr = try self.call(name, args, loc) };
+        return .{ .function = .{ .loc = loc, .kind = .{ .syntax = .lambda, .params = params, .body = body } } };
     }
 
     fn lowerBody(self: *Lowering, body: []ast.Stmt, component: bool) !void {
@@ -209,11 +247,11 @@ const Lowering = struct {
             },
             .call => |*c| if (c.kind == .call) {
                 const cc = &c.kind.call;
-                if (cc.receiver == null and !cc.is_builtin) if (self.hosts.get(cc.callee)) |params| {
-                    _ = params;
+                const own_host = cc.receiver == null and !cc.is_builtin and self.hosts.contains(cc.callee);
+                if (own_host or self.env.hostCalls.contains(c.loc)) {
                     try self.lowerHostCall(cc);
                     return true;
-                };
+                }
                 if (self.env.componentCalls.get(c.loc)) |recs| if (recordFor(recs, cc.callee)) |rec| if (componentValue(rec.type_)) |r| {
                     const args = try self.arena.alloc(ast.CallArg, cc.args.len + 1);
                     args[0] = .{ .label = null, .value = try self.mapArg(isRenderable(self.env, r), c.loc) };
@@ -476,6 +514,12 @@ pub fn lower(arena: std.mem.Allocator, program: ast.Program, env_const: *const E
         // function-typed field keeps its written arity, the values in it the
         // hidden map.
         .type_ => |*t| for (t.methods) |*m| try low.fixTypes(ast.BehaviorMethod, m),
+        // A host's parameters are the host's (decision 374): a `@Component`
+        // thunk handed to it takes no map.
+        .@"fn" => |*f| if (f.body.len == 0) {
+            if (f.returnType) |*rt| try low.fixTypes(ast.TypeRef, rt);
+        } else try low.fixTypes(ast.DeclKind, d),
+        .delegate => |*dg| if (dg.returnType) |*rt| try low.fixTypes(ast.TypeRef, rt),
         else => try low.fixTypes(ast.DeclKind, d),
     };
     if (!low.uses_std) return .{ .decls = decls };

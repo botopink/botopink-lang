@@ -211,6 +211,11 @@ pub const DeferredMetaRead = struct {
 /// and its parameter count (matched as `ComponentCall.callee` is).
 pub const ComponentLambda = struct { type_: *T.Type, params: usize };
 
+/// Decision 375 — the declaration a call or a `use` names, with the call's
+/// type (null for a `use`, whose operand is a hook): only a call whose type
+/// resolved to `@Component<R>` is one commonJS may leave unawaited.
+pub const HookTarget = struct { ref: hooksMod.DeclRef, type_: ?*T.Type };
+
 /// Decision 354 (8) — one `use provide(ctx, value)` / `use context(ctx)`:
 /// which hook, the context's identity (`declIdentity` of the `val` that
 /// declares it — the run-time key of the hidden map) and the `T` it carries.
@@ -845,6 +850,18 @@ pub const Env = struct {
     /// body has been inferred, by name; published to the session
     /// (`Reflection.hookFns`) when the analysis ends.
     hookNodes: std.StringHashMapUnmanaged(hooksMod.Node) = .empty,
+    /// Decision 375 — the declaration each call of a `@Component` function
+    /// and each `use` of a declared hook names, by the call's (the `use`'s)
+    /// location, wherever it is written: whether the target's node is
+    /// synchronous decides whether commonJS awaits it.
+    hookTargets: std.AutoHashMapUnmanaged(ast.Loc, HookTarget) = .empty,
+    /// Decision 375 — this module's top-level functions whose node is
+    /// synchronous (`infer.zig` `markHookAsync`): commonJS emits a plain
+    /// `function` for one answering `@Component<R>`.
+    syncFns: std.StringHashMapUnmanaged(void) = .empty,
+    /// Decision 375 — the calls and `use`s (by `hookTargets`' location) whose
+    /// target's node is synchronous: commonJS emits no `await` there.
+    syncCalls: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
     /// Decision 371 — each `d.same(other)` on a `Decorator` this module's
     /// inference typed, by the call's location (`infer.zig`
     /// `inferDecoratorSame`): the comptime runtime reads it as `==` of two
@@ -877,6 +894,16 @@ pub const Env = struct {
     /// Decision 354 (8) — every lambda, by location, with its type: one that
     /// answers `@Component<R>` takes the hidden context map.
     componentLambdas: std.AutoHashMapUnmanaged(ast.Loc, ComponentLambda) = .empty,
+    /// Decision 374 — every call of a host function (a bodyless `declare fn`,
+    /// an `#[@External…]` binding — this module's or an imported one), by
+    /// location: a `@Component` lambda that is one of its arguments captures
+    /// the map where it is written (`context_lower.zig`).
+    hostCalls: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
+    /// Decision 374 — a declared function answering `@Component<R>` named as
+    /// an argument of a host call (`__jhTryComponent(Page)`), by the name's
+    /// location, with its type: lowered to a lambda that calls it with the
+    /// map in scope there.
+    hostComponentRefs: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,
     /// Decision 354 (8) — the module's functions whose resolved return is
     /// `@Component<R>` (written, or through an alias such as `View`), by name:
     /// the ones that take the hidden context map.

@@ -685,6 +685,8 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
             try list.append(env.arena, b);
         }
     }
+    // Decision 375 — the nodes' `async` marks, before a `.hooks` reader reads them.
+    try markHookAsync(env);
     // Decision 372 — the decorators that read `.hooks` run over the bodies.
     try runHooksReaders(env, program);
 
@@ -869,6 +871,8 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
             },
         }
     }
+    // Decision 375 — the nodes' `async` marks, before a `.hooks` reader reads them.
+    try markHookAsync(env);
     // Decision 372 — the decorators that read `.hooks` run over the bodies.
     try runHooksReaders(env, program);
 
@@ -11602,6 +11606,8 @@ pub fn inferExprTyped(env: *Env, expr: ast.Expr) InferError!TypedExpr {
             try checkStdContextCall(env, c);
             const typedCall = try inferCallExpr(env, c, c.loc);
             try noteComponentCall(env, c, typedCall);
+            try noteHostCall(env, c, typedCall);
+            try noteAsyncCall(env, c, typedCall);
             break :blk inferComponentCall(env, c, try applyReceiverTypeArgs(env, c, try applyExplicitTypeArgs(env, c, typedCall)));
         },
 
@@ -12840,6 +12846,8 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
             // A component call written as `await`'s own operand keeps its
             // `@Component<T>` — the `await` is written, not spliced
             // (`inferComponentCall`); a call nested in its arguments still renders.
+            // Decision 375 — a body that writes `await` is asynchronous.
+            if (env.hookBuilder) |b| b.is_async = true;
             const prevAwaitOperand = env.awaitOperandLoc;
             env.awaitOperandLoc = if (e.* == .call) e.call.loc else null;
             const valTyped = inferExprTyped(env, e.*) catch |err| {
@@ -15163,6 +15171,46 @@ fn noteComponentCall(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExpr) I
     gop.value_ptr.* = grown;
 }
 
+/// The host function a call names — a bodyless `declare fn` or an
+/// `#[@External…]` binding of this module, or one an imported module
+/// published as a host — or null. std's `provide` / `context` are lowered
+/// where they are written and are no host.
+fn hostCallee(env: *Env, c: ast.CallExprOf(.untyped)) InferError!?hooksMod.DeclRef {
+    const ref = try hookCalleeDecl(env, c) orelse return null;
+    if (std.mem.eql(u8, ref.module, "std/context")) return null;
+    if (std.mem.eql(u8, ref.module, env.modulePath)) {
+        const f = env.fnDecls.get(ref.name) orelse return null;
+        return if (isHookHost(f)) ref else null;
+    }
+    const r = env.reflection orelse return null;
+    const info = r.hookFns.get(try envMod.declIdentity(env.arena, ref.module, ref.name)) orelse return null;
+    return if (info.host) ref else null;
+}
+
+/// Decision 374 — a call of a host function: a `@Component` lambda among its
+/// arguments captures the map where it is written, and a declared
+/// `@Component` function named as one is wrapped in a lambda that does
+/// (`context_lower.zig` reads both tables).
+fn noteHostCall(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExpr) InferError!void {
+    if (c.kind != .call or c.kind.call.is_builtin) return;
+    _ = try hostCallee(env, c) orelse return;
+    try env.hostCalls.put(env.arena, c.loc, {});
+    for (c.kind.call.args, 0..) |a, i| {
+        const v = a.value.*;
+        if (v != .identifier or v.identifier.kind != .ident) continue;
+        const name = v.identifier.kind.ident;
+        if (env.localBindDepth(name) != null) continue;
+        const declared = (env.fnDecls.contains(name) and env.ownDecls.contains(name)) or env.importOwners.contains(name);
+        if (!declared) continue;
+        const ty = typedCallArgType(typed, i) orelse continue;
+        const d = ty.deref();
+        if (d.* != .func) continue;
+        const ret = d.func.ret.deref();
+        if (ret.* != .named or !std.mem.eql(u8, ret.named.name, "Component")) continue;
+        try env.hostComponentRefs.put(env.arena, v.identifier.loc, ty);
+    }
+}
+
 /// Decision 357 — enter a construct a `use` may not stand in (a branch, a
 /// loop, a lambda, …); the outermost one names it. Answers the value to
 /// restore on the way out.
@@ -15431,13 +15479,23 @@ fn hookTypeArg(env: *Env, tr: ast.TypeRef) InferError!hooksMod.TypeArg {
 /// `use`'s explicit type arguments, and for std's `provide` / `context` the
 /// context object it names (decision 354 (4)).
 fn noteHookUse(env: *Env, operand: ast.Expr, loc: ast.Loc) InferError!void {
+    const isCall = operand == .call and operand.call.kind == .call;
+    const target: ?hooksMod.DeclRef = if (isCall) try hookCalleeDecl(env, operand.call) else null;
+    if (target) |t| try env.hookTargets.put(env.arena, loc, .{ .ref = t, .type_ = null });
     const b = env.hookBuilder orelse return;
-    if (operand != .call or operand.call.kind != .call) {
+    // Decision 375 — a `use` the checker cannot follow (`hook: null`), or of
+    // a host hook (no node: a host's `@Component` extends `@Task`), makes
+    // the node asynchronous.
+    if (target == null) b.is_async = true;
+    if (isCall) if (try hostCallee(env, operand.call) != null) {
+        b.is_async = true;
+    };
+    if (!isCall) {
         return b.uses.append(env.arena, .{ .hook = null, .annotations = &.{}, .at = loc, .typeArgs = &.{} });
     }
     const c = operand.call;
     const call = c.kind.call;
-    const hook = try hookCalleeDecl(env, c);
+    const hook = target;
     var typeArgs: std.ArrayListUnmanaged(hooksMod.TypeArg) = .empty;
     if (call.typeArgs) |tas| for (tas) |ta| try typeArgs.append(env.arena, try hookTypeArg(env, ta));
     var context: ?hooksMod.DeclRef = null;
@@ -15463,10 +15521,30 @@ fn noteHookUse(env: *Env, operand: ast.Expr, loc: ast.Loc) InferError!void {
 /// recorded (its type read when the body is done). The operand of a `use` is
 /// the `use`'s, and a call of a function value names no declaration.
 fn noteHookCall(env: *Env, c: ast.CallExprOf(.untyped), ty: *T.Type) InferError!void {
-    const b = env.hookBuilder orelse return;
     if (env.inUseOperand) if (env.useOperandLoc) |at| if (std.meta.eql(at, c.loc)) return;
     const callee = try hookCalleeDecl(env, c) orelse return;
+    try env.hookTargets.put(env.arena, c.loc, .{ .ref = callee, .type_ = ty });
+    const b = env.hookBuilder orelse return;
     try b.calls.append(env.arena, .{ .call = .{ .callee = callee, .at = c.loc }, .type_ = ty });
+}
+
+/// Decision 375 — what a call written in the body being recorded says of the
+/// node's asynchrony by itself: a host function answering `@Task` (or
+/// `@Component`, which extends it) makes it asynchronous; a call of a
+/// function value or a method is kept by type, to be read when the body is
+/// done (`finishHookNode`). A call of a declaration is followed through its
+/// node (`markHookAsync`); the operand of a `use` is the `use`'s.
+fn noteAsyncCall(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExpr) InferError!void {
+    const b = env.hookBuilder orelse return;
+    if (c.kind != .call or c.kind.call.is_builtin) return;
+    if (env.inUseOperand) if (env.useOperandLoc) |at| if (std.meta.eql(at, c.loc)) return;
+    if (stdContextCallee(env, c) != null) return;
+    if (try hostCallee(env, c) != null) {
+        if (unwrapTaskType(typed.getType()) != null) b.is_async = true;
+        return;
+    }
+    if (try hookCalleeDecl(env, c) != null) return;
+    try b.dynamicCalls.append(env.arena, typed.getType());
 }
 
 /// The top-level function of this module `f` is (methods and lambdas are not).
@@ -15484,6 +15562,16 @@ fn finishHookNode(env: *Env, f: ast.FnDecl, b: *hooksMod.Builder) InferError!voi
         const d = pc.type_.deref();
         if (d.* == .named and std.mem.eql(u8, d.named.name, "Component")) try calls.append(env.arena, pc.call);
     }
+    // Decision 375 — a call of a function value or a method answering
+    // `@Component<R>`, or one whose type is still open, cannot be followed.
+    var isAsync = b.is_async;
+    for (b.dynamicCalls.items) |ty| switch (ty.deref().*) {
+        .named => |n| if (std.mem.eql(u8, n.name, "Component")) {
+            isAsync = true;
+        },
+        .typeVar => isAsync = true,
+        else => {},
+    };
     try env.hookNodes.put(env.arena, f.name, .{
         .function = .{
             .module = env.modulePath,
@@ -15492,7 +15580,66 @@ fn finishHookNode(env: *Env, f: ast.FnDecl, b: *hooksMod.Builder) InferError!voi
         },
         .uses = b.uses.items,
         .calls = calls.items,
+        .is_async = isAsync,
     });
+}
+
+/// Decision 375 — whether the declaration `ref` names is asynchronous: std's
+/// `provide` / `context` are not; this module's function by its node; another
+/// module's as that module published it; a host function, or a declaration
+/// with no node, is (the conservative answer).
+fn hookTargetAsync(env: *Env, ref: hooksMod.DeclRef) InferError!bool {
+    if (std.mem.eql(u8, ref.module, "std/context")) return false;
+    if (std.mem.eql(u8, ref.module, env.modulePath)) {
+        const f = env.fnDecls.get(ref.name) orelse return true;
+        if (isHookHost(f)) return true;
+        const n = env.hookNodes.get(ref.name) orelse return true;
+        return n.is_async;
+    }
+    const r = env.reflection orelse return true;
+    const info = r.hookFns.get(try envMod.declIdentity(env.arena, ref.module, ref.name)) orelse return true;
+    if (info.host) return true;
+    const n = info.node orelse return true;
+    return n.is_async;
+}
+
+/// Decision 375 — mark this module's nodes once its bodies are inferred: a
+/// node reaching an asynchronous one through a `use` or a call is
+/// asynchronous, so a cycle is asynchronous when any node in it is (the
+/// marks only grow, until none changes). Then record what commonJS reads:
+/// the synchronous functions and the calls and `use`s of one.
+fn markHookAsync(env: *Env) InferError!void {
+    var changed = true;
+    while (changed) {
+        changed = false;
+        var it = env.hookNodes.iterator();
+        while (it.next()) |e| {
+            const n = e.value_ptr;
+            if (n.is_async) continue;
+            const reaches = blk: {
+                for (n.uses) |u| if (u.hook) |h| if (try hookTargetAsync(env, h)) break :blk true;
+                for (n.calls) |c| if (try hookTargetAsync(env, c.callee)) break :blk true;
+                break :blk false;
+            };
+            if (reaches) {
+                n.is_async = true;
+                changed = true;
+            }
+        }
+    }
+    env.syncFns.clearRetainingCapacity();
+    var nit = env.hookNodes.iterator();
+    while (nit.next()) |e| if (!e.value_ptr.is_async) try env.syncFns.put(env.arena, e.key_ptr.*, {});
+    env.syncCalls.clearRetainingCapacity();
+    var tit = env.hookTargets.iterator();
+    while (tit.next()) |e| {
+        const t = e.value_ptr.*;
+        if (t.type_) |ty| {
+            const d = ty.deref();
+            if (d.* != .named or !std.mem.eql(u8, d.named.name, "Component")) continue;
+        }
+        if (!try hookTargetAsync(env, t.ref)) try env.syncCalls.put(env.arena, e.key_ptr.*, {});
+    }
 }
 
 /// A host function — `declare fn`, an `#[@External…]` binding — or std's
@@ -17784,6 +17931,8 @@ fn inferFunctionExpr(env: *Env, func: ast.FunctionExprOf(.untyped), loc: ast.Loc
 /// context: it awaits (it IS a Task), never `use`s (not the `@Component`
 /// body) and never yields; the enclosing labels are closed.
 fn inferAsyncBlock(env: *Env, func: ast.FunctionExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
+    // Decision 375 — a body that writes `async { … }` is asynchronous.
+    if (env.hookBuilder) |b| b.is_async = true;
     const fk = func.kind;
     // The expected `@Task<X>`, when the position says one (`val t: @Task<i32> = async { … }`).
     const expectedValue: ?*T.Type = blk: {

@@ -1810,10 +1810,15 @@ fn Widget(on: bool) -> @Component<Element> {
 }
 ```
 
-**Lowering.** `use f(x)` is `f(x)` on erlang, wasm and beam, and `await f(x)`
-on commonJS, where every `@Component` body is an `async function` — awaiting or
-not, as a `@Task` one is — so every `@Component` answers a Promise and every
-caller awaits it (decisions 88 and 104). The prefix is the activation the
+**Lowering.** `use f(x)` is `f(x)` on erlang, wasm and beam. On commonJS a
+`@Component` function whose hooks node is asynchronous (`HookNode.async`,
+decision 375 — it writes `await` or `async { … }`, or reaches an asynchronous
+hook, component or host task) is an `async function`, and a `use` or call of
+it is awaited (`await f(x)`); a synchronous one is a plain `function`, and a
+`use` or call of it is not awaited, written or not — `await` stays legal on
+any component, a no-op on a synchronous one. A method, a lambda and a
+`default fn` answering `@Component` are `async function`s (they have no
+node). The prefix is the activation the
 checker validated, not a rename: nothing is turned into `useState`, no
 dependency array is inferred — a function that takes one declares it as a
 parameter (`memo(compute, deps)`). A client runtime supplies hook semantics
@@ -1860,7 +1865,14 @@ fn App() -> @Component<Element> {
 Every `@Component` function takes a hidden context map (its first parameter,
 after `self` on a method): `provide` makes the map its children receive,
 `context` looks it up, and a call outside every `@Component` body passes the
-empty map (`comptime/context_lower.zig`). erlang, beam and commonJS run it; the
+empty map (`comptime/context_lower.zig`). A `@Component` lambda written as an
+argument of a host function (a bodyless `declare fn`, an `#[@External…]`
+binding) takes no map: it reads the map of the body it is written in, as a
+closure reads a local, so the host's call — now, later or twice — keeps every
+provider above it; a declared component named as such an argument is wrapped
+the same way (`hostNow(Page)` passes `{ -> Page() }`), and a lambda's own
+parameters stay (decision 374). A lambda handed to a botopink function takes
+the map, passed by the call that runs it. erlang, beam and commonJS run it; the
 wasm backend refuses a `use provide` / `use context` where it is written, and
 a component reached from a `comptime` evaluation does not take the map yet
 (`language-gaps.md` row 354-wasm, 354-comptime).
@@ -2283,8 +2295,9 @@ fn both() -> @Task<@Result<string, string>> {
   different error types are `gen-infer-conflicting-errors`, asking for an
   annotation: `val x: @Task<@Result<User, string>> = async { … };`.
 
-**Per backend.** On commonJS every `@Task` (and `@Component`) function is an
-`async function` and its caller awaits; `async { }` is `(async () => { … })()`.
+**Per backend.** On commonJS every `@Task` function, and every `@Component`
+one whose hooks node is asynchronous (decision 375), is an `async function`
+and its caller awaits; `async { }` is `(async () => { … })()`.
 **A `throw` in a `@Task<@Result<…>>` does not reject the Promise: it resolves
 with the `Error` value** — JavaScript that consumes a botopink function reads
 the `{ Error: … }` it answers instead of catching a rejection. On erlang, beam
@@ -2814,7 +2827,7 @@ a type, a field, a method and a `val`. A node holds only what is written in its
 
 | Record | Fields |
 |---|---|
-| `HookNode` | `function: Declared<unknown>`, `uses: HookUse[]`, `calls: HookCall[]` |
+| `HookNode` | `function: Declared<unknown>`, `uses: HookUse[]`, `calls: HookCall[]`, `async: bool` (decision 375) |
 | `HookUse` — one `use h(…)` | `hook: ?Declared<unknown>` (`null` over a function value), `annotations: DeclAnnotation[]` (the hook's own), `at: string`, `typeArgs: TypeInfo<unknown>[]` (`use params<BlogParams>()` → `BlogParams`, its fields as the checker spells them), `context: ?Declared<unknown>` (the context object of a `use provide(C, …)` / `use context(C)`, decision 354 (4); `null` for any other hook) |
 | `HookCall` — one call of a `@Component` function | `callee: Declared<unknown>`, `at: string` |
 
@@ -2823,7 +2836,14 @@ A call a template builds from a tag counts as written. `at` is
 to a listed node; a host function (`declare fn`, `#[@External…]`) and std's
 `provide` / `context` get no node. Each node is recorded once, when its
 function's body is checked, and an importer reads the nodes of the functions
-it reaches in another module. In a decorator body a `Declared`'s `value` is
+it reaches in another module. A node is `async` when its body writes `await`
+or `async { … }`; when it `use`s an asynchronous hook or calls an asynchronous
+component, written `await` or not; when it calls a host function answering
+`@Task` (or `@Component`, which extends it); or when it calls what the checker
+cannot follow — a function value or a method answering `@Component<R>`, a
+`use` with `hook: null`. A cycle is asynchronous when any node in it is; every
+other node is synchronous (a page may then be rendered without streaming), and
+commonJS emits a synchronous component as a plain `function`. In a decorator body a `Declared`'s `value` is
 `null` (no function of the program runs while it compiles) and its `meta` is
 every entry its declaration's decorators set, keyed `<decorator>.<key>`. A
 `DeclAnnotation`'s `decorator` is the `Decorator` its name names — an alias
@@ -3549,7 +3569,8 @@ names, and fatal when the match fails), a `//` comment inside a loop body, a
 **effect on a record method** (`fn iter(self: Self) -> @Iterator<i32>` in a
 `type … { … }` body is a generator method, walked by `for (b.iter()) { x -> … }`),
 and `await` inside a `@Component` body (an `async function` on commonJS, awaited
-by every caller).
+by every caller; a `@Component` whose hooks node is synchronous is a plain
+`function`, decision 375).
 
 A default on an **imported function** is filled at the call like a local
 one's when it is closed — a literal, `true` / `false`, `null`, a sign, an array

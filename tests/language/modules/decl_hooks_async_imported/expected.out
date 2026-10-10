@@ -1,0 +1,2 @@
+main.Page: sync, ui.session: sync, ui.Avatar: sync
+main.Wall: async, ui.Posts: async

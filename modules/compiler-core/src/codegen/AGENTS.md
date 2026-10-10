@@ -3194,7 +3194,8 @@ std's body stopped calling a method on an optional and the erlang emitter types 
   `hookTakesDeps`, `buildHookCall`, `buildHookDeps`, `hook_state` are gone: the
   emitted name was never declared, and the client runtime supplies hook
   semantics through what `f` does. A `-> @Component` body is an `async function`
-  on commonJS and a plain function on erlang, wasm and beam (their `@Task` is
+  on commonJS — a plain `function` when its hooks node is synchronous (decision
+  375, `SyncMarks`) — and a plain function on erlang, wasm and beam (their `@Task` is
   eager; the three eager-lowering sites exclude it beside `-> @Result`). A record/struct with fields (incl. `record implement … { fields }`)
   emits a real constructor (`emitStruct` — field initializers become param
   defaults).
@@ -3252,7 +3253,7 @@ no effect: it lowers as a plain function on every backend (decision 123).
 | `-> @Task<T>` | `async function`; a `@Result` value layer is the `-> @Result` lowering inside it — a `throw` resolves the Promise with `{error: e}` and never rejects (decision 120) | eager (`@Task<T>` is `T`, `await` is identity) | eager | eager |
 | `-> @Iterator<T>` (yields) | `function*` (`return <iter>` → `yield*`) | eager; a body of only `yield`s → list | eager body | eager body |
 | `-> @Stream<T>` (yields) | `async function*` | eager | eager body | eager body |
-| `-> @Component<T>` | `async function` (every body, awaiting or not); `use f()` → `await f()` | plain fun | plain local | plain func |
+| `-> @Component<T>` | `async function` when its hooks node is asynchronous, a plain `function` when synchronous (decision 375; a method, a lambda and a `default fn` always `async`); `use f()` / a call → `await f()`, no `await` on a synchronous one | plain fun | plain local | plain func |
 
 A sequence whose item is `@Result<U, E>` (decision 122): the transform writes
 `yield v` with `v: U` as `yield __bp_ok(v)` and `throw e` as
@@ -3337,10 +3338,15 @@ copy. A receiver that is not a local answers its first step and advances
 nothing. `run/yield_step_next.bp` runs the four; `features.zig`'s two
 `next by hand` rows snapshot them.
 
-Decision 104: `effectShape` answers `async function` for every `@Component`
-body — a hook and a component alike — as it does for `@Task`, so every caller
-receives a Promise and awaits it. `typescript.zig` maps `@Task<T>` and
-`@Component<T>` to `Promise<T>`, `@Iterator<T>` to `IterableIterator<T>` and
+Decision 375 (amending 104): `effectShape` answers `async function` for a
+`@Component` body as it does for `@Task`, except a top-level function whose
+hooks node is synchronous (`HookNode.async == false`, `OkData.sync_fns`):
+`Emitter.fnShape` makes it a plain `function`. A call or `use` whose target is
+synchronous (`OkData.sync_calls`, by location — the written `await`, the
+checker's spliced one and `use` alike) emits no `await` (`useHookExpr`, the
+`.await_` arm); a call the checker cannot follow keeps it. `typescript.zig`
+maps `@Task<T>` and `@Component<T>` to `Promise<T>` — a synchronous
+top-level `@Component<R>` function to `R` (`fnReturnType`) — `@Iterator<T>` to `IterableIterator<T>` and
 `@Stream<T>` to `AsyncGenerator<T>` (decisions 120, 122, 128).
 `tests/language/run/effect_context_await.bp` and `run/effect_chain.bp` print
 every value from inside the `@Component` body, since a caller reads a promise on

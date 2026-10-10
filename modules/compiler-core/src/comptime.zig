@@ -161,6 +161,13 @@ pub const ComptimeOutput = struct {
         /// Decision 57 — the warnings inference recorded for this module
         /// (`Env.warnings`), each located, none of them failing the module.
         warnings: []const TypeError = &.{},
+        /// Decision 375 — this module's top-level functions whose hooks node
+        /// is synchronous (`Env.syncFns`): commonJS emits one answering
+        /// `@Component<R>` as a plain `function`, its typedef the value.
+        sync_fns: std.StringHashMapUnmanaged(void) = .empty,
+        /// Decision 375 — the calls and `use`s of a synchronous component or
+        /// hook, by location (`Env.syncCalls`): commonJS emits no `await` there.
+        sync_calls: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
     };
 };
 
@@ -1413,7 +1420,8 @@ fn isIdentChar(c: u8) bool {
 /// `decl.fail(…)` type-check against the same data the runtime provides.
 ///
 /// Decision 277 — `decl.hooks: HookNode[]` (`comptime/hooks.zig`), with
-/// `HookUse`, `HookCall` and the `TypeInfo<T>` a `use`'s type argument is; a
+/// `HookUse`, `HookCall` and the `TypeInfo<T>` a `use`'s type argument is
+/// (`HookNode.async`, decision 375); a
 /// `DeclAnnotation` carries the `Decorator` it names.
 ///
 /// T17 — the member records a handle hands out (`DeclAnnotation`, `Param`,
@@ -1455,7 +1463,7 @@ pub const decl_reflection_src =
     \\    context: ?Declared<unknown>,
     \\)
     \\pub type HookCall(callee: Declared<unknown>, at: string)
-    \\pub type HookNode(function: Declared<unknown>, uses: HookUse[], calls: HookCall[])
+    \\pub type HookNode(function: Declared<unknown>, uses: HookUse[], calls: HookCall[], async: bool)
     \\pub type Decl(
     \\    kind: DeclKind,
     \\    name: string,
@@ -3108,6 +3116,8 @@ pub fn compileTypesOnly(
                         .comptime_traces = succ.env.comptimeTraces.items,
                         .template_expansions = succ.env.templateExpansions.count(),
                         .warnings = succ.env.warnings.items,
+                        .sync_fns = succ.env.syncFns,
+                        .sync_calls = succ.env.syncCalls,
                     } },
                 });
             },
@@ -3378,6 +3388,8 @@ fn compileOnce(
                         .comptime_traces = succ.env.comptimeTraces.items,
                         .template_expansions = succ.env.templateExpansions.count(),
                         .warnings = succ.env.warnings.items,
+                        .sync_fns = succ.env.syncFns,
+                        .sync_calls = succ.env.syncCalls,
                     } },
                 });
             },

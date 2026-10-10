@@ -23,12 +23,12 @@ function cleanup() {
     0;
 }
 
-async function effect(bpContextMap__) {
+function effect(bpContextMap__) {
     return 0;
 }
 
-async function Widget(bpContextMap__) {
-    await effect(bpContextMap__, () => {
+function Widget(bpContextMap__) {
+    effect(bpContextMap__, () => {
     return cleanup();
 });
     return new Element();

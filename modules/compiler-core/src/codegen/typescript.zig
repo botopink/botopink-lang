@@ -56,10 +56,14 @@ pub fn emitProgram(
     /// Its `type`s are, beside the bindings, where a private type a public
     /// signature names is declared from (`Builder.localTypes`).
     program_decls: []const ast.DeclKind,
+    /// Decision 375 — the module's top-level functions whose hooks node is
+    /// synchronous: a `@Component<R>` one answers `R`, not `Promise<R>`, as
+    /// the plain `function` the `.js` holds does. Null: none.
+    sync_fns: ?*const std.StringHashMapUnmanaged(void),
 ) ![]u8 {
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
-    var bld = Builder{ .b = .{ .arena = arena.allocator() }, .cross = cross, .type_exports = type_exports, .module_name = module_name };
+    var bld = Builder{ .b = .{ .arena = arena.allocator() }, .cross = cross, .type_exports = type_exports, .module_name = module_name, .sync_fns = sync_fns };
 
     var decls: std.ArrayListUnmanaged(js.TsDecl) = .empty;
     for (bindings) |binding| try decls.append(bld.b.arena, try bld.binding(binding));
@@ -77,6 +81,7 @@ const Builder = struct {
     cross: ?*const crossModule.CrossModule = null,
     type_exports: []const TypeExport = &.{},
     module_name: []const u8 = "",
+    sync_fns: ?*const std.StringHashMapUnmanaged(void) = null,
     /// What `Self` spells inside the declaration being built — the class with
     /// its own type parameters (`Dict<K, V>`). TypeScript has no `Self`.
     self_type: ?js.TsType = null,
@@ -440,8 +445,19 @@ const Builder = struct {
         return .{ .func = .{
             .name = try self.genericName(f.name, f.genericParams),
             .params = try self.params(f.params),
-            .ret = try self.returnType(f.returnType),
+            .ret = try self.fnReturnType(f),
         } };
+    }
+
+    /// Decision 375 — a synchronous `@Component<R>` function answers `R`.
+    fn fnReturnType(self: *Builder, f: ast.FnDecl) Error!js.TsType {
+        const syncs = self.sync_fns orelse return self.returnType(f.returnType);
+        const e = f.effect orelse return self.returnType(f.returnType);
+        if (e != .component or !syncs.contains(f.name)) return self.returnType(f.returnType);
+        const rt = f.returnType orelse return self.returnType(f.returnType);
+        if (rt == .generic and rt.generic.is_builtin and std.mem.eql(u8, rt.generic.name, "Component") and rt.generic.args.len >= 1)
+            return self.typeRef(rt.generic.args[0]);
+        return self.returnType(f.returnType);
     }
 
     fn record(self: *Builder, r: ast.TypeDecl) Error!js.TsDecl {
