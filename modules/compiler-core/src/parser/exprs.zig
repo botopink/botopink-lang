@@ -2247,7 +2247,9 @@ pub fn parseForExpr(this: *This, alloc: std.mem.Allocator) ParseError!LoopExpr {
     const awaitLoop = this.match(.await);
     const label = try parseLoopLabel(this);
     _ = try this.consume(.leftParenthesis);
-    const iterExpr = if (this.check(.@"try") or this.check(.await)) try this.parseExpr(alloc) else try this.parseRangeExpr(alloc);
+    // Decision 395 (3) — `for (comptime @typeInfo(T).metaAll(C)) { c -> … }`:
+    // a `comptime` begins the iterable as `try` and `await` do.
+    const iterExpr = if (this.check(.@"try") or this.check(.await) or this.check(.@"comptime")) try this.parseExpr(alloc) else try this.parseRangeExpr(alloc);
     const iterPtr = try this.boxExprOwned(alloc, iterExpr);
     errdefer {
         iterPtr.deinit(alloc);

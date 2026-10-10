@@ -36,6 +36,7 @@ test {
     _ = @import("./value_or_type.zig");
     _ = @import("./expr_param.zig");
     _ = @import("./member_fn.zig");
+    _ = @import("./written_names.zig");
     _ = @import("./typed_meta.zig");
     _ = @import("./diagnostics.zig");
     _ = @import("./reflection.zig");

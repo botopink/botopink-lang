@@ -507,6 +507,7 @@ fn linkRenames(
     cross: ?*const CrossModule,
     module_name: []const u8,
     program: ast.Program,
+    linked_module: bool,
     out: *std.StringHashMapUnmanaged([]const u8),
 ) !void {
     for (program.decls) |d| switch (d) {
@@ -537,7 +538,18 @@ fn linkRenames(
             const c = cross orelse continue;
             const src = try u.leafSource(imp, arena, false);
             const info = c.picked(imp.leaf(), src, null) orelse continue;
-            const m = mangled.get(try linkKey(arena, info.module, imp.leaf())) orelse continue;
+            const m = mangled.get(try linkKey(arena, info.module, imp.leaf())) orelse {
+                // A LINKED module's aliased import of a function no other
+                // module declares (`import {defaultMessage as
+                // __bp_tpl_rules__defaultMessage} from "rules"` — a hygiene
+                // alias, decisions 112 and 384): its calls mean the one
+                // declaration, by its declared name. The linked module's
+                // `use` items never reach `registerSymbols`, so without this
+                // the alias was an unresolved call wherever its code is
+                // reached from another module.
+                if (linked_module) if (imp.alias) |al| if (!std.mem.eql(u8, al, imp.leaf())) try out.put(arena, al, imp.leaf());
+                continue;
+            };
             try out.put(arena, imp.alias orelse imp.leaf(), m);
         },
         else => {},
@@ -1122,13 +1134,13 @@ fn emitWat(
     // Every module whose calls reach a mangled function gets those calls
     // rewritten to the mangled name, in a copy of its declarations (the
     // module's own program is shared with its own emission).
-    if (em.link_mangled.count() > 0) {
+    if (em.link_mangled.count() > 0 or linked.len > 0) {
         var maps = try ar0.alloc(std.StringHashMapUnmanaged([]const u8), linked.len + 1);
         for (maps, 0..) |*m, i| {
             m.* = .empty;
             const mod_name = if (i < linked.len) linked[i].name else module_name;
             const prog = if (i < linked.len) linked[i].program else own_program;
-            try linkRenames(ar0, &em.link_mangled, cross, mod_name, prog, m);
+            try linkRenames(ar0, &em.link_mangled, cross, mod_name, prog, i < linked.len, m);
         }
         for (decls.items, owner.items) |*d, from| {
             if (maps[from].count() == 0) continue;

@@ -289,10 +289,16 @@ pub const TypeArg = struct { name: []const u8, spelled: []const u8 };
 
 const placeholder_prefix = "__bp_member_arg_";
 
+/// Decision 384 — a name the decorator's module wrote, renamed in the member
+/// to the alias it is bound under where the member joins its type.
+pub const Rename = struct { from: []const u8, to: []const u8 };
+
 /// The member `func` becomes on the type: `pub fn <name>(<params>) -> R { … }`,
 /// each read of a spliced parameter replaced by its argument — bare when the
-/// argument is one name, parenthesised otherwise — and each type parameter by
-/// its spelling (`Self` when it is the owner itself).
+/// argument is one name, parenthesised otherwise —, each type parameter by its
+/// spelling (`Self` when a type names the owner itself; the owner's name where
+/// an expression reads the parameter, `@typeInfo(T)` — decision 395), and each
+/// name of `renames` by its alias (decision 384).
 pub fn render(
     arena: std.mem.Allocator,
     name: []const u8,
@@ -300,9 +306,10 @@ pub fn render(
     splices: []const Splice,
     typeArgs: []const TypeArg,
     owner: []const u8,
+    renames: []const Rename,
 ) ![]const u8 {
     const bound = try boundNames(arena, func.kind.params, func.kind.body);
-    var sub: Substitution = .{ .arena = arena, .splices = splices, .typeArgs = typeArgs, .owner = owner, .bound = &bound };
+    var sub: Substitution = .{ .arena = arena, .splices = splices, .typeArgs = typeArgs, .owner = owner, .bound = &bound, .renames = renames };
     var f = func;
     f.kind.body = try sub.clone([]ast.Stmt, func.kind.body);
     const pts = try arena.alloc(ast.TypeRef, func.kind.paramTypes.len);
@@ -347,11 +354,26 @@ const Substitution = struct {
     typeArgs: []const TypeArg,
     owner: []const u8,
     bound: *const std.StringHashMapUnmanaged(void),
+    renames: []const Rename = &.{},
 
     fn spliceIndex(self: *const Substitution, n: []const u8) ?usize {
         if (self.bound.contains(n)) return null;
         for (self.splices, 0..) |s, i| if (std.mem.eql(u8, s.param, n)) return i;
         return null;
+    }
+
+    /// What a free name the member reads becomes: a type parameter its
+    /// binding's spelling, a name of `renames` its alias; null otherwise.
+    fn renamed(self: *const Substitution, n: []const u8) ?[]const u8 {
+        if (self.bound.contains(n)) return null;
+        for (self.typeArgs) |ta| if (std.mem.eql(u8, ta.name, n)) return ta.spelled;
+        for (self.renames) |r| if (std.mem.eql(u8, r.from, n)) return r.to;
+        return null;
+    }
+
+    fn renamedType(self: *const Substitution, n: []const u8) []const u8 {
+        for (self.renames) |r| if (std.mem.eql(u8, r.from, n)) return r.to;
+        return n;
     }
 
     fn placeholder(self: *const Substitution, j: usize) ![]const u8 {
@@ -364,7 +386,7 @@ const Substitution = struct {
                 for (self.typeArgs) |ta| if (std.mem.eql(u8, ta.name, n)) {
                     return .{ .named = if (std.mem.eql(u8, ta.spelled, self.owner)) "Self" else ta.spelled };
                 };
-                return t;
+                return .{ .named = self.renamedType(n) };
             },
             .array => |a| {
                 const p = try self.arena.create(ast.TypeRef);
@@ -383,7 +405,7 @@ const Substitution = struct {
                 r.* = try self.typeRef(f.returnType.*);
                 return .{ .function = .{ .params = try self.typeRefs(f.params), .returnType = r, .paramNames = f.paramNames } };
             },
-            .generic => |g| return .{ .generic = .{ .name = g.name, .args = try self.typeRefs(g.args), .is_builtin = g.is_builtin } },
+            .generic => |g| return .{ .generic = .{ .name = if (g.is_builtin) g.name else self.renamedType(g.name), .args = try self.typeRefs(g.args), .is_builtin = g.is_builtin } },
             .typeparam => return t,
         }
     }
@@ -398,20 +420,30 @@ const Substitution = struct {
     fn clone(self: *Substitution, comptime T: type, v: T) error{OutOfMemory}!T {
         if (T == ast.TypeRef) return self.typeRef(v);
         if (T == ast.Expr) switch (v) {
-            .identifier => |id| if (id.kind == .ident) if (self.spliceIndex(id.kind.ident)) |j| {
-                var out = v;
-                out.identifier.kind = .{ .ident = try self.placeholder(j) };
-                return out;
+            .identifier => |id| if (id.kind == .ident) {
+                if (self.spliceIndex(id.kind.ident)) |j| {
+                    var out = v;
+                    out.identifier.kind = .{ .ident = try self.placeholder(j) };
+                    return out;
+                }
+                if (self.renamed(id.kind.ident)) |to| {
+                    var out = v;
+                    out.identifier.kind = .{ .ident = to };
+                    return out;
+                }
             },
             .call => |c| if (c.kind == .call) {
                 const cc = c.kind.call;
-                if (cc.receiver == null and cc.calleeExpr == null and !cc.is_builtin) if (self.spliceIndex(cc.callee)) |j| {
-                    var out = v;
-                    out.call.kind.call.callee = try self.placeholder(j);
-                    out.call.kind.call.args = try self.clone(@TypeOf(cc.args), cc.args);
-                    out.call.kind.call.trailing = try self.clone(@TypeOf(cc.trailing), cc.trailing);
-                    return out;
-                };
+                if (cc.receiver == null and cc.calleeExpr == null and !cc.is_builtin) {
+                    const callee: ?[]const u8 = if (self.spliceIndex(cc.callee)) |j| try self.placeholder(j) else self.renamed(cc.callee);
+                    if (callee) |to| {
+                        var out = v;
+                        out.call.kind.call.callee = to;
+                        out.call.kind.call.args = try self.clone(@TypeOf(cc.args), cc.args);
+                        out.call.kind.call.trailing = try self.clone(@TypeOf(cc.trailing), cc.trailing);
+                        return out;
+                    }
+                }
             },
             else => {},
         };
@@ -482,8 +514,9 @@ test "a member function: collected in order, its free names, rendered with each 
     const text = try render(arena, "validate", found[0], &.{
         .{ .param = "message", .lexeme = "t(\"signup.mismatch\")" },
         .{ .param = "rule", .lexeme = "passwordsMatch" },
-    }, &.{.{ .name = "T", .spelled = "Signup" }}, "Signup");
-    try std.testing.expect(std.mem.startsWith(u8, text, "pub fn validate(self: Self) -> Violation[] {"));
+    }, &.{.{ .name = "T", .spelled = "Signup" }}, "Signup", &.{.{ .from = "Violation", .to = "__bp_tpl_rules__Violation" }});
+    try std.testing.expect(std.mem.startsWith(u8, text, "pub fn validate(self: Self) -> __bp_tpl_rules__Violation[] {"));
+    try std.testing.expect(std.mem.indexOf(u8, text, "return [__bp_tpl_rules__Violation(field: \"confirm\", message: m)];") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "if (passwordsMatch(self))") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "val m = (t(\"signup.mismatch\"));") != null);
 }

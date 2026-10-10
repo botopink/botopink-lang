@@ -1,0 +1,23 @@
+//// Decision 384 — the member's `Violation` resolves in `rules`, never as
+//// this module's own `Violation`: the member is not captured. This module
+//// would then hold two types declared `Violation`, which one module cannot
+//// until decision 310 is built (`language-gaps.md`'s row of
+//// `import_two_types_one_name`): refused at the annotation; once 310 is in
+//// the cell becomes an accept cell printing `1` and `7`.
+
+pub mod rules;
+import {rules.check};
+
+pub type Violation(code: i32)
+
+fn passwordsMatch(a: Signup) -> bool {
+    return a.password == a.confirm;
+}
+
+#[check(passwordsMatch)]
+pub type Signup(password: string, confirm: string)
+
+pub fn main() {
+    @print(Signup(password: "a", confirm: "b").validate().length);
+    @print(Violation(code: 7).code);
+}

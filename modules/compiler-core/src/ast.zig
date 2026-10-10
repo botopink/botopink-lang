@@ -3159,7 +3159,12 @@ fn collectExprNames(gpa: std.mem.Allocator, e: Expr, out: *std.ArrayListUnmanage
             },
             else => {},
         },
-        .function => |f| try collectNames(gpa, f.kind.body, out),
+        // A typed function expression is the member a decorator hands to
+        // `decl.addMember(name, fn…)` (decision 370 (2)): it runs with the
+        // program, never while it compiles, so the names it reads are no
+        // support of the decorator (decision 395 — `#[validated]`'s member
+        // reaching the run-time checks).
+        .function => |f| if (!f.kind.isTyped()) try collectNames(gpa, f.kind.body, out),
         .comptime_ => {},
     }
 }

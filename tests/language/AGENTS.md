@@ -794,8 +794,9 @@ targets, `run/decorator_expr_rule_called` (`rule` is `passwordsMatch`, called by
 time), `run/decorator_expr_message_runtime` (`message` is `t("signup.mismatch")`, evaluated at run
 time each time the member reaches it, never at build), `modules/decorator_member_fn_import` (a member
 of a decorator in another module, reading only its parameters and locals) and
-`modules/decorator_member_fn_imported_name` (one naming a declaration of the decorator's module,
-`decorator-member-fn-imported-name`, question `s35-g`, refused on every target), and the refusals
+`modules/decorator_member_fn_imported_name` (one naming a type and a private helper of the
+decorator's module — decision 384: each resolves there, the user's own same-named helper is not
+captured; it was `decorator-member-fn-imported-name` on the parent binary), and the refusals
 `reject/fn_expr_typed`, `reject/decorator_member_not_fn`, `reject/decorator_member_fn_untyped`,
 `reject/decorator_member_captures` (a local of the decorator's body),
 `reject/decorator_member_captures_handle` (`decl`) and `reject/decorator_member_type` (a field's
@@ -808,7 +809,9 @@ float, `bool`, variant, optional —, `null` / `[]` for a type nothing recorded)
 `modules/meta_typed_catalogue` (`d.meta(Entity)` / `d.metaAll(Index)` on `@TypeInfo.all` entries,
 here and in a function of another module the entries are handed to),
 `modules/meta_catalogue_private_type` (`typeinfo-all-private` for a private meta record) and
-`modules/meta_expr_read_elsewhere` (`typeinfo-meta-expr-elsewhere`, question `130-s8-b`), and the
+`modules/meta_expr_read_elsewhere` (decision 385: `main` reads `signup`'s `Check` and `Note`, by
+`@typeInfo` and through `@TypeInfo.all`, calling `signup`'s private rule and hint, its own
+same-named functions not captured; it was `typeinfo-meta-expr-elsewhere` on the parent binary), and the
 refusals `reject/meta_twice`, `reject/meta_not_record`, `reject/meta_field_type`,
 `reject/meta_several`, `reject/meta_read_not_type`, `reject/meta_add_outside_decorator`,
 `reject/meta_read_at_build` and `reject/meta_catalogue_generic` (question `130-s8-d`). Decision 370
@@ -816,6 +819,13 @@ refusals `reject/meta_twice`, `reject/meta_not_record`, `reject/meta_field_type`
 fields `@Expr<T>`: the reader calls `rule` and evaluates `message` — `t("signup.mismatch")` — at run
 time, never at build) with `reject/meta_expr_field_literal` and
 `reject/meta_expr_param_plain_field` (`decorator-meta-expr-arg`). Each red on the parent binary.
+
+Decisions 384 and 395 add, on the four targets, `run/member_reads_own_meta` (`#[validated]`'s
+member reads `for (comptime @typeInfo(T).metaAll(Check))`, typed `Check<T>[]` in the decorator's
+body and answered with `Conta`'s two `#[check]`s where the member is rendered; the rules and messages
+run with the program) and `modules/decorator_member_type_same_name` (a member naming its module's
+`Violation` where the annotated module declares one: `import-name-collision` at the annotation until
+decision 310 is built), and `modules/decorator_member_type_travels` (an importer of the annotated type calls the member whose signature names the decorator module's `Violation`, which the importer never imports; on wasm the linked module's hygiene alias resolves by `wat.zig` `linkRenames`). Each red on the parent binary.
 
 Every cell is copied into its own scratch project, so a parse error fails only that cell. Test names
 start with the decision-8 section they pin (`test "§5.4 …"`) when there is one, so a failure points at

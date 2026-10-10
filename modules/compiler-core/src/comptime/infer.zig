@@ -36,6 +36,7 @@ const snapshotMod = @import("snapshot.zig");
 const valueOrType = @import("value_or_type.zig");
 const exprParam = @import("expr_param.zig");
 const memberFn = @import("member_fn.zig");
+const writtenNames = @import("written_names.zig");
 const typedMeta = @import("typed_meta.zig");
 /// `unify` raises its `TypeError` unlocated: it sees types, not source. Every
 /// call is `unifyAt` (which stamps the location it is given) or sits under a
@@ -702,6 +703,9 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     try reportStdTargetGates(env);
     try reportOffBeamMemory(env);
     try publishHookFns(env, program);
+    // Decisions 384, 385 — what each name resolves to here, for the code
+    // another module reads from this one.
+    try writtenNames.publish(env, program);
 
     return list.toOwnedSlice(env.arena);
 }
@@ -888,6 +892,9 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
     try reportStdTargetGates(env);
     try reportOffBeamMemory(env);
     try publishHookFns(env, program);
+    // Decisions 384, 385 — what each name resolves to here, for the code
+    // another module reads from this one.
+    try writtenNames.publish(env, program);
 
     return list.toOwnedSlice(env.arena);
 }
@@ -4961,11 +4968,10 @@ fn runDeclDecorators(
 /// gives `target`: the body's `c.index`-th member function
 /// (`member_fn.collect`), each decorator parameter it reads replaced by the
 /// argument as the annotation wrote it, each type parameter by what the
-/// annotation bound it to. Refused at the annotation: a `self` that is not
-/// `target`, a type parameter left unbound (`decorator-member-type`), and —
-/// for a decorator declared in another module — a name the member reads or a
-/// type it writes that is neither a parameter nor its own
-/// (`decorator-member-fn-imported-name`: whose scope resolves it is `s35-g`).
+/// annotation bound it to — and, for a decorator declared in another module,
+/// every other name it writes renamed to resolve in the decorator's module
+/// (decision 384, `memberRenames`). Refused at the annotation: a `self` that
+/// is not `target` and a type parameter left unbound (`decorator-member-type`).
 fn memberFnSource(
     env: *Env,
     a: ast.Annotation,
@@ -5009,26 +5015,52 @@ fn memberFnSource(
     const splices = try env.arena.alloc(memberFn.Splice, values.len);
     for (values, 0..) |v, j| splices[j] = .{ .param = sig.params[j].name, .lexeme = v.lexeme };
 
-    if (!local) {
-        for (try memberFn.freeNames(env.arena, func)) |n| {
-            const isParam = for (splices) |sp| {
-                if (std.mem.eql(u8, sp.param, n.name)) break true;
-            } else false;
-            if (isParam) continue;
-            const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]`'s member `{s}` names `{s}`, and the decorator is declared in another module", .{ diagnostics.decorator_member_fn_imported_name, a.name, c.name, n.name });
-            return decoratorError(env, a, msg, "Which module's scope resolves a name a library's member function writes is open (question s35-g); until it is answered such a member reads only the decorator's parameters and its own locals.");
-        }
-        for (try memberFn.typeNames(env.arena, func)) |n| {
-            if (isPrimitiveTypeName(n) or std.mem.eql(u8, n, "Self")) continue;
-            const isTypeParam = for (typeArgs) |ta| {
-                if (std.mem.eql(u8, ta.name, n)) break true;
-            } else false;
-            if (isTypeParam) continue;
-            const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]`'s member `{s}` names the type `{s}`, and the decorator is declared in another module", .{ diagnostics.decorator_member_fn_imported_name, a.name, c.name, n });
-            return decoratorError(env, a, msg, "Which module's scope resolves a name a library's member function writes is open (question s35-g); until it is answered such a member names only primitive types and the decorator's type parameters.");
-        }
+    // Decision 384 — a decorator of another module: each name its member
+    // writes beyond the parameters resolves where the decorator wrote it.
+    const renames: []const memberFn.Rename = if (local) &.{} else try memberRenames(env, a, dfn, c, func, splices, typeArgs);
+    return memberFn.render(env.arena, c.name, func, splices, typeArgs, target, renames) catch return error.OutOfMemory;
+}
+
+/// Decision 384 — the names a member of a decorator declared in another
+/// module writes, each renamed to the alias of what it resolves to in the
+/// decorator's module (`written_names.zig`, `Reflection.scopes`): a value
+/// bound by this module's re-analysis, a type imported by it under the alias
+/// (`Env.hygieneImports`). The parameters, the member's own locals and the
+/// decorator's type parameters are left alone, as is a name the decorator's
+/// module neither declares nor imports (a builtin, a prelude name). A type
+/// this module already holds under the same name from elsewhere is refused at
+/// the annotation (`import-name-collision`, decision 310's gap).
+fn memberRenames(
+    env: *Env,
+    a: ast.Annotation,
+    dfn: ast.FnDecl,
+    c: decoratorEval.Contribution,
+    func: ast.FunctionExpr,
+    splices: []const memberFn.Splice,
+    typeArgs: []const memberFn.TypeArg,
+) InferError![]const memberFn.Rename {
+    const r = env.reflection orelse return &.{};
+    const owner = env.comptimeOwnerOf(dfn);
+    var out: std.ArrayListUnmanaged(memberFn.Rename) = .empty;
+    var names: std.ArrayListUnmanaged([]const u8) = .empty;
+    for (try memberFn.freeNames(env.arena, func)) |n| try names.append(env.arena, n.name);
+    for (try memberFn.typeNames(env.arena, func)) |n| {
+        if (!isPrimitiveTypeName(n) and !std.mem.eql(u8, n, "Self")) try names.append(env.arena, n);
     }
-    return memberFn.render(env.arena, c.name, func, splices, typeArgs, target) catch return error.OutOfMemory;
+    next: for (names.items) |n| {
+        for (splices) |sp| if (std.mem.eql(u8, sp.param, n)) continue :next;
+        for (typeArgs) |ta| if (std.mem.eql(u8, ta.name, n)) continue :next;
+        for (out.items) |done| if (std.mem.eql(u8, done.from, n)) continue :next;
+        const w = (try r.written(env.arena, owner, n)) orelse continue;
+        if (w.isType and writtenNames.typeNameTaken(env, w.module, w.name)) {
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]`'s member `{s}` names `{s}`'s type `{s}`, and this module holds another type declared `{s}`; a type is told apart by its declared name, so one module holds one type of a name", .{ diagnostics.import_name_collision, a.name, c.name, w.module, w.name, w.name });
+            return decoratorError(env, a, msg, "Rename this module's own type, or annotate the type from a module that holds no other type of that name (decision 310's gap).");
+        }
+        const alias = if (w.isType) try writtenNames.typeAliasOf(env.arena, w.module, w.name) else try envMod.templateAlias(env.arena, w.module, w.name);
+        try out.append(env.arena, .{ .from = n, .to = alias });
+        try env.hygieneImports.append(env.arena, .{ .alias = alias, .module = w.module, .name = w.name, .isType = w.isType });
+    }
+    return out.items;
 }
 
 // ── decision 298 — typed meta, keyed by its type; 370 (1) its `@Expr` fields ─
@@ -5354,10 +5386,13 @@ const typed_meta_first_line: usize = 1_000_000;
 /// module, so an `@Expr<T>` field's expression (370 (1)) is checked and run
 /// where it was written. Refused at the read: `T` naming no record type
 /// (`typeinfo-meta-type`), `meta(T)` over several values
-/// (`typeinfo-meta-several`), a value with `@Expr` fields read in another
-/// module than the annotation's (`typeinfo-meta-expr-elsewhere`), and a
-/// declaration of this module a `.hooks` reader annotates, before it ran
-/// (`typeinfo-meta-hooks-pending`).
+/// (`typeinfo-meta-several`), and a declaration of this module a `.hooks`
+/// reader annotates, before it ran (`typeinfo-meta-hooks-pending`). A value
+/// with `@Expr` fields read in another module than the annotation's has each
+/// name the annotation wrote bound where it was written (decision 385,
+/// `written_names.zig`). In a member a decorator hands on, `@typeInfo(T)` of
+/// the decorator's type parameter is the read's type alone (decision 395 (1),
+/// `typedMetaReadOfTypeParam`).
 fn inferTypedMetaRead(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr {
     const one = std.mem.eql(u8, call.callee, "meta");
     const info = call.receiver.?.call.kind.call;
@@ -5365,6 +5400,7 @@ fn inferTypedMetaRead(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedEx
         env.lastError = TypeError.custom(diagnostics.typeinfo_unknown_declaration ++ ": `@typeInfo` takes one declaration — `@typeInfo(City)`, `@typeInfo(models.City)`", null).withLoc(call.receiver.?.call.loc);
         return error.TypeError;
     }
+    if (try typedMetaReadOfTypeParam(env, call, info.args[0].value.*, loc, one)) |typed| return typed;
     const target = reflectedDecl(env, info.args[0].value.*) orelse {
         const msg = try std.fmt.allocPrint(env.arena, "{s}: `@typeInfo` reflects a declaration this module declares or imports, and this names none", .{diagnostics.typeinfo_unknown_declaration});
         env.lastError = TypeError.custom(msg, "Name a `type`, `behavior` or `fn` of this module, an imported one, or one through a namespace import (`models.City`).").withLoc(info.args[0].value.getLoc());
@@ -5395,19 +5431,48 @@ fn inferTypedMetaRead(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedEx
     var text: std.ArrayListUnmanaged(u8) = .empty;
     try text.append(env.arena, '[');
     for (found.items, 0..) |e, i| {
-        if (e.hasExpr and !std.mem.eql(u8, e.annotationModule, env.modulePath)) {
-            const msg = try std.fmt.allocPrint(env.arena, "{s}: the `{s}` that `#[{s}]` records on `{s}` holds expressions written in `{s}`, and this read is in `{s}`", .{ diagnostics.typeinfo_meta_expr_elsewhere, mt.name, e.decorator, target.name, e.annotationModule, env.modulePath });
-            env.lastError = TypeError.custom(msg, "An `@Expr<T>` field is spliced where the meta is read; whose scope resolves its names in another module is question `130-s8-b`. Read it in the module of the annotation.").withLoc(loc);
-            return error.TypeError;
-        }
+        // Decision 385 — the annotation's names resolve where it wrote them.
+        var renamed: usize = 0;
+        const args = if (e.hasExpr and !std.mem.eql(u8, e.annotationModule, env.modulePath))
+            try writtenNames.renameArgs(env.arena, e.args, writtenNames.Binder{ .env = env, .module = e.annotationModule, .renamed = &renamed }, &renamed)
+        else
+            e.args;
         if (i > 0) try text.appendSlice(env.arena, ", ");
-        try text.print(env.arena, "{s}{s}", .{ mt.spelled, e.args });
+        try text.print(env.arena, "{s}{s}", .{ mt.spelled, args });
     }
     try text.append(env.arena, ']');
     if (one) try text.appendSlice(env.arena, ".first()");
     const rewrite = try typedMetaRewrite(env, text.items);
     try env.srcRewrites.put(loc, rewrite);
     const typed = try inferExprTyped(env, rewrite.*);
+    const want = try env.namedTypeArgs(if (one) "optional" else "array", &.{mt.instance});
+    try unifyAt(env, want, typed.getType(), loc);
+    return typed;
+}
+
+/// `@typeInfo(X).meta(T)` / `.metaAll(T)` (decision 298).
+fn isTypedMetaRead(e: ast.Expr) bool {
+    if (e != .call or e.call.kind != .call) return false;
+    const call = e.call.kind.call;
+    if (call.is_builtin or call.calleeExpr != null) return false;
+    if (!std.mem.eql(u8, call.callee, "meta") and !std.mem.eql(u8, call.callee, "metaAll")) return false;
+    const r = call.receiver orelse return false;
+    return r.* == .call and r.call.kind == .call and r.call.kind.call.is_builtin and std.mem.eql(u8, r.call.kind.call.callee, "typeInfo");
+}
+
+/// Decision 395 (1) — `@typeInfo(T).meta(C)` / `.metaAll(C)` in a member a
+/// decorator hands on (`Env.memberFnGenerics`), `T` a type parameter of the
+/// decorator: typed as the read's type (`?C<…>` / `C<…>[]`) and answered
+/// nowhere — the member runs only where it is rendered into the annotated
+/// type's module, `T` spelled as the type (`member_fn.render`), where the read
+/// is answered and the member checked again (395 (2)). Null for any other
+/// read.
+fn typedMetaReadOfTypeParam(env: *Env, call: anytype, arg: ast.Expr, loc: ast.Loc, one: bool) InferError!?TypedExpr {
+    if (arg != .identifier or arg.identifier.kind != .ident) return null;
+    const generics = env.memberFnGenerics orelse return null;
+    if (!generics.contains(arg.identifier.kind.ident)) return null;
+    const mt = try metaReadType(env, call, loc);
+    const typed = try inferExprTyped(env, (try typedMetaRewrite(env, if (one) "[].first()" else "[]")).*);
     const want = try env.namedTypeArgs(if (one) "optional" else "array", &.{mt.instance});
     try unifyAt(env, want, typed.getType(), loc);
     return typed;
@@ -18358,6 +18423,8 @@ fn inferMemberFnCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExp
     env.inDecoratorFn = false;
     env.decoratorBody = null;
     env.memberFnAt = func.loc;
+    const savedMemberGenerics = env.memberFnGenerics;
+    env.memberFnGenerics = &generics;
     const fnTyped = try env.arena.create(TypedExpr);
     fnTyped.* = blk: {
         defer {
@@ -18365,6 +18432,7 @@ fn inferMemberFnCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExp
             env.inDecoratorFn = savedInDecorator;
             env.decoratorBody = savedBody;
             env.memberFnAt = null;
+            env.memberFnGenerics = savedMemberGenerics;
         }
         break :blk try inferFunctionExprExpected(env, func, func.loc, expected, false);
     };
@@ -19045,6 +19113,14 @@ fn inferComptimeExpr(env: *Env, ct: ast.ComptimeExprOf(.untyped), loc: ast.Loc) 
             env.comptimeDepth -= 1;
             const typedPtr = try makeTypedPtr(env, typed);
             const node = TypedExpr{ .comptime_ = .{ .loc = loc, .type_ = typed.getType(), .kind = .{ .comptimeExpr = typedPtr } } };
+            // Decision 395 (3) — `comptime @typeInfo(X).metaAll(C)`: the
+            // checker answered the read at build (its constructors written
+            // back), so the list is the build constant; nothing runs on the
+            // comptime runtime, and each `@Expr` field runs with the program.
+            if (isTypedMetaRead(e.*)) {
+                if (env.srcRewrites.get(e.getLoc())) |answer| try env.srcRewrites.put(loc, answer);
+                return node;
+            }
             try foldBodyComptime(env, ct, node, loc);
             return node;
         },

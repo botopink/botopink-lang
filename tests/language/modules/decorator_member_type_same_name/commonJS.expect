@@ -1,0 +1,2 @@
+import-name-collision: `#[check]`'s member `validate` names `rules`'s type `Violation`, and this module holds another type declared `Violation`
+src/main.bp:17:3

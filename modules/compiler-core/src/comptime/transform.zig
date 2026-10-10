@@ -70,7 +70,12 @@ const Aggregator = struct {
     /// Stdlib array method dispatch lowerings keyed by call loc.
     std_array_lowerings: *const StdArrayLowerings,
     /// §enum-sections F2 — untyped AST rewrites for dot-shorthand chains
-    /// that the F2 path-resolver matched against an enum section path.
+    /// that the F2 path-resolver matched against an enum section path, and
+    /// the callee renames sharing the channel (a tuple label, a record
+    /// update, decision 110's `D(…)` of an imported type's alias). Applied
+    /// by BOTH aggregators: a method body — a member a decorator of another
+    /// module hands on, decision 384, constructs its type through an alias —
+    /// names them as a fn body does.
     enum_section_rewrites: *const EnumSectionRewrites,
     /// C-02 — the index expressions inference rewrote to method calls. Applied
     /// by BOTH aggregators, the `src_only` one included: an index in a method
@@ -85,7 +90,8 @@ const Aggregator = struct {
     /// a method), `result_jump_lowerings` (a method returning `@Result`
     /// wraps its `return` / `throw` like a fn — it was compiled as a plain
     /// function: a `throw` escaped as a host exception and a `return` was not
-    /// an `Ok`), `index_rewrites` and `default_injections` is empty, so a
+    /// an `Ok`), `index_rewrites`, `enum_section_rewrites` and
+    /// `default_injections` is empty, so a
     /// method body lowers byte-for-byte as before 1.0.10-beta except for those
     /// rewrites and the one unconditional rewrite, the `${}` template desugar
     /// (no backend lowers a template). Lowering method
@@ -206,15 +212,13 @@ pub fn transform(
     defer empty_te.deinit();
     var empty_sa = StdArrayLowerings.init(allocator);
     defer empty_sa.deinit();
-    var empty_es = EnumSectionRewrites.init(allocator);
-    defer empty_es.deinit();
     var empty_onc = OptionalNullCases.init(allocator);
     defer empty_onc.deinit();
     const empty_vals = std.StringHashMap([]const u8).init(allocator);
     const empty_ctor = std.StringHashMap([]const ast.Param).init(allocator);
     const empty_fn_decls = std.StringHashMap(ast.FnDecl).init(allocator);
     const empty_ct_arrays = std.StringHashMap([]const ast.TypedExpr).init(allocator);
-    var src_agg = Aggregator.init(allocator, empty_vals, method_lowerings, &empty_te, src_rewrites, result_jump_lowerings, &empty_sa, &empty_es, index_rewrites, &empty_onc, empty_ctor, default_injections);
+    var src_agg = Aggregator.init(allocator, empty_vals, method_lowerings, &empty_te, src_rewrites, result_jump_lowerings, &empty_sa, enum_section_rewrites, index_rewrites, &empty_onc, empty_ctor, default_injections);
     src_agg.src_only = true;
     agg.result_patterns = result_patterns;
     src_agg.result_patterns = result_patterns;

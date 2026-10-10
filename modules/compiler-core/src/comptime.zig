@@ -16,6 +16,7 @@ const value_or_type = @import("./comptime/value_or_type.zig");
 const expr_param = @import("./comptime/expr_param.zig");
 const derived_types = @import("./comptime/derived_types.zig");
 const typed_meta = @import("./comptime/typed_meta.zig");
+const written_names = @import("./comptime/written_names.zig");
 const evalMod = @import("./comptime/eval.zig");
 const format = @import("./format.zig");
 pub const trace = @import("./comptime/trace.zig");
@@ -224,6 +225,15 @@ fn declaresTemplateFn(decls: []const ast.DeclKind) bool {
 /// the templates) makes its private functions and values visible to those
 /// imports: `pub` from here on, where only the backends read it — the checker
 /// already refused every source import of them.
+/// Whether the module of `decls` exports its private functions and values
+/// for the code other modules read from it, and marks them `pub` for the
+/// backends: it declares a template (decision 112), a decorator handing a
+/// member on (384), or an annotation's `@Expr` meta field (385).
+fn sharesPrivates(arena: std.mem.Allocator, decls: []const ast.DeclKind, env: *const envMod.Env) !bool {
+    if (declaresTemplateFn(decls)) return true;
+    return written_names.sharesPrivates(arena, decls, env.reflection, env.modulePath);
+}
+
 fn withTemplateHygiene(arena: std.mem.Allocator, prog: ast.Program, env: *const envMod.Env, declares_template: bool) !ast.Program {
     if (env.templateImports.count() == 0 and !declares_template) return prog;
     var decls: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
@@ -1033,6 +1043,7 @@ fn analyzeMerged(
     target_name: ?[]const u8,
     reflection: *reflectionMod.Reflection,
     typeinfo_plan: ?typeinfoAll.Plan,
+    hygiene: []const envMod.HygieneImport,
 ) anyerror!AnalysisResult {
     var env = try infer.freshEnv(arena, std.heap.page_allocator);
     env.modulePath = mod.path;
@@ -1047,6 +1058,7 @@ fn analyzeMerged(
     env.skipDecoratorInvoke = true;
     env.target = target_name;
     env.typeDeclRegistry = typeDeclRegistry;
+    env.exportsRegistry = registry;
 
     // Decision 216 (3): this module's own associated types exist now. The
     // contributions an `@emit` spliced in are imports of this package too.
@@ -1067,6 +1079,7 @@ fn analyzeMerged(
         },
         else => return err,
     };
+    try written_names.bindRecorded(&env, hygiene);
     const bindings = infer.inferProgramTyped(&env, program) catch |err| switch (err) {
         error.TypeError => {
             const te = inline_types.locatedAtCall(env.lastError orelse validation.TypeError{ .kind = .{ .unboundVariable = "" } });
@@ -1168,6 +1181,7 @@ fn analyzeSource(
     // host-bound declares lack an `#[@External.<Target>(…)]` match.
     env.target = target_name;
     env.typeDeclRegistry = typeDeclRegistry;
+    env.exportsRegistry = registry;
 
     var lexer = Lexer.init(source);
     const tokens = lexer.scanAll(arena) catch |err| switch (err) {
@@ -1314,8 +1328,21 @@ fn analyzeSource(
                 },
             }
         }
+        // Decisions 384, 385 — the names a library member and a catalogue
+        // entry's `@Expr` fields wrote elsewhere: each type imported under its
+        // alias, each value bound by the re-analysis (`written_names.zig`).
+        var hygiene: std.ArrayListUnmanaged(envMod.HygieneImport) = .empty;
+        try hygiene.appendSlice(arena, env.hygieneImports.items);
+        if (typeinfo_plan) |pl| try hygiene.appendSlice(arena, pl.values);
+        if (hygiene.items.len > 0) {
+            const imports = try written_names.typeImports(arena, hygiene.items);
+            const grown = try arena.alloc(ast.DeclKind, imports.len + with_members.decls.len);
+            @memcpy(grown[0..imports.len], imports);
+            @memcpy(grown[imports.len..], with_members.decls);
+            with_members = .{ .decls = grown };
+        }
         if (try parseAndMergeContributions(arena, source, with_members, env.contributions.items)) |merged_program| {
-            var reanalysis = try analyzeMerged(arena, mod, merged_program, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, target_name, reflection, typeinfo_plan);
+            var reanalysis = try analyzeMerged(arena, mod, merged_program, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, target_name, reflection, typeinfo_plan, hygiene.items);
             if (reanalysis == .success) {
                 try keepPassOneTraces(&reanalysis.success.env, &env);
                 env.deinit();
@@ -2442,8 +2469,18 @@ fn registerExports(
     // Decision 112 — a module declaring a template exports its PRIVATE
     // functions and values too, under a key no import can spell
     // (`envMod.templatePrivateKey`): the template's own text names them, and
-    // that text resolves in this module wherever it is expanded.
-    const declares_template = declaresTemplateFn(decls);
+    // that text resolves in this module wherever it is expanded. Decisions
+    // 384, 385 — so does a module whose decorator hands a member on, or whose
+    // annotation wrote an `@Expr` meta field (`written_names.sharesPrivates`).
+    const declares_template = try sharesPrivates(arena, decls, env);
+    // Decision 384 — a member a library decorator handed on names its
+    // library's types under this module's checker-only aliases
+    // (`written_names.typeImports`); an importer re-registers the type's
+    // declaration in its own scope, where no alias is bound, so the exported
+    // declaration names each type by its declared name (as a source import
+    // does), resolved through the module's import scope
+    // (`addImportedTypeScope`).
+    try written_names.eraseTypeAliases(arena, decls, &env.typeAliases);
     for (bindings) |b| {
         if (b.name.len == 0 or b.decl == .use) continue;
         if (declares_template and (b.decl == .@"fn" or b.decl == .val)) {
@@ -3094,7 +3131,7 @@ pub fn compileTypesOnly(
                         &succ.env.resultPatternLocs,
                         &succ.env.namespaces,
                     ) catch break :blk_t program_for_transform;
-                    const hygienic = withTemplateHygiene(arena_alloc, t, &succ.env, declaresTemplateFn(program_for_transform.decls)) catch break :blk_t t;
+                    const hygienic = withTemplateHygiene(arena_alloc, t, &succ.env, sharesPrivates(arena_alloc, program_for_transform.decls, &succ.env) catch true) catch break :blk_t t;
                     const with_assoc = withUsedAssocInterfaces(arena_alloc, hygienic, &succ.env) catch break :blk_t hygienic;
                     const with_enums = withSynthesisedEnumDecls(arena_alloc, with_assoc, &succ.env) catch with_assoc;
                     const with_src = withSourceLocationDecl(arena_alloc, with_enums, &succ.env) catch with_enums;
@@ -3371,7 +3408,7 @@ fn compileOnce(
                 };
                 const transformed = try value_or_type.withTwinImports(arena_alloc, try withImportSourcesNamed(arena_alloc, try withImportTypeAliasesErased(arena_alloc, try alias_erase.erase(arena_alloc, try withYieldStepDecl(arena_alloc, try withDeclaredDecls(arena_alloc, try withSourceLocationDecl(arena_alloc, try withSynthesisedEnumDecls(
                     arena_alloc,
-                    try withUsedAssocInterfaces(arena_alloc, try withTemplateHygiene(arena_alloc, try context_lower.lower(arena_alloc, try transform.transform(arena_alloc, try expr_param.eraseProgram(arena_alloc, program_for_transform, infer.isDecoratorParams), fn_decls, comptime_arrays, ct.comptime_vals, &succ.env.method_lowerings, &succ.env.templateExpansions, &succ.env.srcRewrites, &succ.env.result_jump_lowerings, &succ.env.stdArrayLowerings, &succ.env.enumSectionRewrites, &succ.env.indexRewrites, &succ.env.optionalNullCases, succ.env.ctorParams, &succ.env.defaultInjections, &succ.env.resultPatternLocs, &succ.env.namespaces), &succ.env), &succ.env, declaresTemplateFn(program_for_transform.decls)), &succ.env),
+                    try withUsedAssocInterfaces(arena_alloc, try withTemplateHygiene(arena_alloc, try context_lower.lower(arena_alloc, try transform.transform(arena_alloc, try expr_param.eraseProgram(arena_alloc, program_for_transform, infer.isDecoratorParams), fn_decls, comptime_arrays, ct.comptime_vals, &succ.env.method_lowerings, &succ.env.templateExpansions, &succ.env.srcRewrites, &succ.env.result_jump_lowerings, &succ.env.stdArrayLowerings, &succ.env.enumSectionRewrites, &succ.env.indexRewrites, &succ.env.optionalNullCases, succ.env.ctorParams, &succ.env.defaultInjections, &succ.env.resultPatternLocs, &succ.env.namespaces), &succ.env), &succ.env, try sharesPrivates(arena_alloc, program_for_transform.decls, &succ.env)), &succ.env),
                     &succ.env,
                 ), &succ.env), &succ.env), &succ.env), &succ.env.typeAliases), &succ.env), &succ.env), &succ.env.typeArgTwins);
 

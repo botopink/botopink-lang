@@ -6202,6 +6202,19 @@ const Emitter = struct {
                             return;
                         } else |_| {}
                     }
+                    // A top-level `fn` of the FILE module named as a value
+                    // inside a type's method (`[passwordsMatch]` in a member a
+                    // decorator rendered, decision 395): the two are separate
+                    // modules (policy 3), so the file's exported fun —
+                    // erlang's `fun 'app@main':ok/1`. It was
+                    // `{unresolved_identifier, ok}`.
+                    if (self.cur_type != null) if (self.top_fns.get(n)) |arity| if (arity != std.math.maxInt(usize) and self.isFileFn(n, arity)) {
+                        const owner = try self.fileCallTarget(n, arity);
+                        var fn_buf: [256]u8 = undefined;
+                        const fn_atom = atomName(n, &fn_buf) catch n;
+                        try beamEmitter.writeMoveOp(self.out, .{ .ext_fun = .{ .module = owner, .name = fn_atom, .arity = arity } }, Dst.xr(0));
+                        return;
+                    };
                     // An imported `pub fn` named as a value (`val f = twice;`,
                     // `apply(twice, 3)`): the owner's exported function, the
                     // literal `fun lib:twice/1` — a literal, so no staged

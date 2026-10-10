@@ -1,8 +1,16 @@
-//// Decision 370 (2), `s35-g` — a member function of a decorator declared in
-//// another module reads only the decorator's parameters and its own locals.
+//// Decision 384 — a member a decorator of another module writes resolves
+//// each name where it was written: `Violation` and the private
+//// `defaultMessage` in `rules`, the rule `passwordsMatch` here, where the
+//// annotation wrote it. The user imports nothing beyond `check`, and this
+//// module's own `defaultMessage` is never captured (a same-named TYPE is
+//// `decorator_member_type_same_name`, decision 310's gap).
 
 pub mod rules;
-import {rules.check, rules.Violation};
+import {rules.check};
+
+fn defaultMessage(field: string) -> string {
+    return "user " + field;
+}
 
 fn passwordsMatch(a: Signup) -> bool {
     return a.password == a.confirm;
@@ -12,5 +20,11 @@ fn passwordsMatch(a: Signup) -> bool {
 pub type Signup(password: string, confirm: string)
 
 pub fn main() {
-    @print(Signup(password: "a", confirm: "b").validate().length);
+    val vs = Signup(password: "a", confirm: "b").validate();
+    @print(vs.length);
+    for (vs) { v ->
+        @print(v.field + ": " + v.message);
+    }
+    @print(Signup(password: "a", confirm: "a").validate().length);
+    @print(defaultMessage("x"));
 }

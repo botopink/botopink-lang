@@ -53,6 +53,7 @@ const std = @import("std");
 const ast = @import("../ast.zig");
 const envMod = @import("env.zig");
 const reflectionMod = @import("reflection.zig");
+const writtenNames = @import("written_names.zig");
 const diagnostics = @import("diagnostics.zig");
 const TypeError = @import("error.zig").TypeError;
 const Lexer = @import("../lexer.zig").Lexer;
@@ -169,6 +170,9 @@ pub const Plan = struct {
     imports: []const ast.DeclKind = &.{},
     /// Call loc → the array expression answering it.
     rewrites: std.AutoHashMapUnmanaged(ast.Loc, *const ast.Expr) = .empty,
+    /// Decision 385 — each name an entry's `@Expr` meta field wrote in its
+    /// annotation's module, bound under its alias by the re-analysis.
+    values: []const envMod.HygieneImport = &.{},
 };
 
 pub const Outcome = union(enum) {
@@ -404,15 +408,16 @@ fn writeEntry(text: *std.ArrayListUnmanaged(u8), arena: std.mem.Allocator, refle
 /// read by `d.meta(T)` / `d.metaAll(T)` (`infer.zig`
 /// `inferDeclaredMetaRead`). A record type of another module is named through
 /// an import the answer adds (`imports`), so it is `pub`
-/// (`typeinfo-all-private`); a value holding expressions an annotation wrote
-/// is built only in that annotation's module (`typeinfo-meta-expr-elsewhere`,
-/// question `130-s8-b`).
+/// (`typeinfo-all-private`); a value holding expressions an annotation of
+/// another module wrote has each of their names bound where it was written
+/// (decision 385, `values`; `written_names.zig`).
 fn typedSlots(
     arena: std.mem.Allocator,
     reflection: *const reflectionMod.Reflection,
     e: reflectionMod.DeclaredEntry,
     module_path: []const u8,
     imports: *std.ArrayListUnmanaged(ast.DeclKind),
+    values: *std.ArrayListUnmanaged(envMod.HygieneImport),
     alias_seq: *usize,
     at: ast.Loc,
 ) Error!union(enum) { ok: []const u8, refused: TypeError } {
@@ -422,8 +427,11 @@ fn typedSlots(
         const mine = std.mem.eql(u8, m.typeModule, module_path);
         if (!mine and !m.typePub)
             return .{ .refused = try refusal(arena, at, "{s}: `{s}` of `{s}` carries the meta type `{s}` of `{s}`, which is not `pub`, so the catalogue cannot carry it", .{ diagnostics.typeinfo_all_private, e.name, e.module, m.typeName, m.typeModule }, "Make the meta record `pub`: the entry point builds each typed meta value of the entries it catalogues through an import (decision 298).") };
-        if (m.hasExpr and !std.mem.eql(u8, m.annotationModule, module_path))
-            return .{ .refused = try refusal(arena, at, "{s}: the `{s}` that `#[{s}]` records on `{s}` holds expressions written in `{s}`, and this catalogue is built in `{s}`", .{ diagnostics.typeinfo_meta_expr_elsewhere, m.typeName, m.decorator, e.name, m.annotationModule, module_path }, "An `@Expr<T>` field is spliced where the meta is read; whose scope resolves its names in another module is question `130-s8-b`.") };
+        var renamed: usize = 0;
+        const args = if (m.hasExpr and !std.mem.eql(u8, m.annotationModule, module_path))
+            try writtenNames.renameArgs(arena, m.args, writtenNames.Collector{ .arena = arena, .reflection = reflection, .module = m.annotationModule, .out = values, .renamed = &renamed }, &renamed)
+        else
+            m.args;
         const ref: []const u8 = if (mine) m.typeName else ref: {
             // Capitalised: a constructor reached under an alias takes its
             // fields' labels (`infer.zig`'s aliased constructor).
@@ -443,7 +451,7 @@ fn typedSlots(
         if (i > 0) try text.appendSlice(arena, ", ");
         try text.appendSlice(arena, "DeclaredTypedMeta(key: ");
         try quoted(&text, arena, try envMod.declIdentity(arena, m.typeModule, m.typeName));
-        try text.print(arena, ", value: {{ -> {s}{s} }})", .{ ref, m.args });
+        try text.print(arena, ", value: {{ -> {s}{s} }})", .{ ref, args });
     }
     try text.append(arena, ']');
     return .{ .ok = text.items };
@@ -480,6 +488,7 @@ pub fn plan(
     var imports: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
     var line = first_line;
     var alias_seq: usize = 0;
+    var values: std.ArrayListUnmanaged(envMod.HygieneImport) = .empty;
 
     for (queries) |q| {
         const rq = switch (try resolve(arena, env, program, module_path, q)) {
@@ -513,7 +522,7 @@ pub fn plan(
                 break :ref alias;
             };
             const value = if (of_types) try std.fmt.allocPrint(arena, "{{ -> {s}.{s}() }}", .{ ref, rq.member.? }) else ref;
-            const slots = switch (try typedSlots(arena, reflection, e, module_path, &imports, &alias_seq, q.loc)) {
+            const slots = switch (try typedSlots(arena, reflection, e, module_path, &imports, &values, &alias_seq, q.loc)) {
                 .ok => |t| t,
                 .refused => |te| return .{ .refused = te },
             };
@@ -526,6 +535,7 @@ pub fn plan(
         line += 1;
     }
     out.imports = imports.items;
+    out.values = values.items;
     return .{ .ok = out };
 }
 

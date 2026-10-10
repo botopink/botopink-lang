@@ -2785,10 +2785,15 @@ program compiles (`decorator-member-captures`). Every parameter is typed
 (`decorator-member-fn-untyped`), the member is written at the call
 (`decorator-member-not-fn`), a `self` is the type the member joins and every
 type parameter it writes is bound (`decorator-member-type`), and a typed
-function expression anywhere else is `fn-expr-typed`. A decorator declared in
-another module hands a member that reads only its parameters, its own locals
-and primitive types (`decorator-member-fn-imported-name`): whose scope
-resolves any other name it writes is question `s35-g`. The source text of an
+function expression anywhere else is `fn-expr-typed`. Every other name a
+member of a decorator declared in another module writes resolves where the
+decorator wrote it (decision 384): its module's types and functions, a private
+helper included, never a same-named declaration of the annotated module — a
+type of that name declared there is `import-name-collision` at the annotation.
+In the member, `@typeInfo(T)` of the decorator's type parameter reads the
+annotated type's typed meta (decision 395): typed in the decorator's body,
+answered where the member joins the type, the list written under `comptime`
+(`for (comptime @typeInfo(T).metaAll(Check)) { c -> … }`). The source text of an
 argument never reaches an output (`rule.text()` is `expr-param-method`, 370
 (3)). The other channel is typed meta whose record has `@Expr<T>` fields
 (370 (1), § Typed meta below).
@@ -2862,9 +2867,9 @@ is built in the reading program with the expression spliced where the
 annotation wrote it — a rule is called, a message evaluated, at run time, never
 while the program compiles. Such a field takes a parameter and nothing else,
 and a parameter goes to no other field (`decorator-meta-expr-arg`; a plain field
-reads `x.value`). The expressions name the annotation's module, so the value is
-read there (`typeinfo-meta-expr-elsewhere` in another module — whose scope would
-resolve them is question `130-s8-b`).
+reads `x.value`). The expressions resolve their names where the annotation
+wrote them, wherever the value is read (decision 385): a private rule of the
+annotation's module is reached, a same-named function of the reader is not.
 
 ```botopink
 pub type Check<T>(message: @Expr<string>, rule: @Expr<fn(v: T) -> bool>)

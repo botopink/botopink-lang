@@ -328,6 +328,16 @@ pub const TemplateImport = struct {
     name: []const u8,
 };
 
+/// Decisions 384, 385 — a name another module wrote, bound in this one under
+/// `alias` (`templateAlias(module, name)`): a value through the binding and
+/// `Env.templateImports`, a type through an import the re-analysis adds.
+pub const HygieneImport = struct {
+    alias: []const u8,
+    module: []const u8,
+    name: []const u8,
+    isType: bool,
+};
+
 /// The key a module's PRIVATE function or value is exported under for its
 /// templates' text (decision 112): a NUL no source name contains, so no
 /// `import` can reach it.
@@ -1378,6 +1388,21 @@ pub const Env = struct {
     /// the module that declares it and its declared name: what a template's
     /// `lookup` answers for it (`infer.buildScopeSnapshot`).
     importOwners: std.StringHashMapUnmanaged(TemplateImport) = .empty,
+    /// Decisions 384, 385 — every module's exports the build analysed so far,
+    /// by module path (`comptime.zig`'s registry), private functions and
+    /// values of a module that shares them under `templatePrivateKey`
+    /// (`written_names.zig`). Null in tooling that analyses one module.
+    exportsRegistry: ?*const std.StringHashMap(std.StringHashMap(*T.Type)) = null,
+    /// Decisions 384, 385 — a name written in another module that this
+    /// module's re-analysis binds under its alias (`written_names.zig`): a
+    /// library member's names (`infer.memberFnSource`) and a catalogue
+    /// entry's `@Expr` names (`typeinfo_all.zig`), recorded on the first
+    /// analysis and handed to the second (`comptime.zig` `analyzeMerged`).
+    hygieneImports: std.ArrayListUnmanaged(HygieneImport) = .empty,
+    /// Decision 395 (1) — the decorator's type parameters while the member it
+    /// hands on is typed (`infer.inferMemberFnCall`): `@typeInfo(T)` of one of
+    /// them is the read's type alone (`infer.typedMetaReadOfTypeParam`).
+    memberFnGenerics: ?*const std.StringHashMap(*T.Type) = null,
     /// Decision 8 §3.2 — where an inferred union was born: the `if` or `case`
     /// whose branches disagreed. A use the union refuses names it, so the
     /// author sees the widening and not only the refusal.

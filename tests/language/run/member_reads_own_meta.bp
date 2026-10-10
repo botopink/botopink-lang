@@ -1,0 +1,57 @@
+//// Decision 395 — a typed member reads its own type's typed meta through
+//// the decorator's type parameter. In `#[validated]`'s body
+//// `@typeInfo(T).metaAll(Check)` is typed `Check<T>[]` and the member is
+//// checked against it; rendered into `Conta`, the read is answered with the
+//// two `#[check]`s and the member checked again. The list is a constant of
+//// build (`comptime`); the loop and the rules run at run time.
+
+pub type Violation(field: string, message: string)
+
+pub type Check<T>(message: @Expr<string>, rule: @Expr<fn(v: T) -> bool>)
+
+fn check<T>(
+    comptime decl: @Decl<T>,
+    comptime message: @Expr<string>,
+    comptime rule: @Expr<fn(v: T) -> bool>,
+) {
+    decl.addMeta(Check(message: message, rule: rule));
+}
+
+fn validated<T>(comptime decl: @Decl<T>) {
+    decl.addMember("validate", fn(self: T) -> Violation[] {
+        var out: Violation[] = [];
+        for (comptime @typeInfo(T).metaAll(Check)) { c ->
+            if (!c.rule(self))
+                out.push(Violation(field: "conta", message: c.message));
+        }
+        return out;
+    });
+}
+
+fn passwordsMatch(c: Conta) -> bool {
+    return c.password == c.confirm;
+}
+
+fn handleFree(c: Conta) -> bool {
+    return c.handle != "admin";
+}
+
+#[validated]
+#[check("the passwords differ", passwordsMatch)]
+#[check("the handle is taken", handleFree)]
+pub type Conta(handle: string, password: string, confirm: string)
+
+pub fn main() {
+    @print(
+        Conta(handle: "ana", password: "abc", confirm: "abc").validate().length,
+    );
+    val bad = Conta(
+        handle: "admin",
+        password: "abc",
+        confirm: "abd",
+    ).validate();
+    @print(bad.length);
+    for (bad) { v ->
+        @print(v.field + ": " + v.message);
+    }
+}

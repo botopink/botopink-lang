@@ -1,0 +1,16 @@
+//// Decision 384 — the member travels with its type: an importer of
+//// `Signup` calls `validate()`, whose signature names `rules`'s `Violation`
+//// as declared (the alias the member was checked under is the annotated
+//// module's alone), and reads the violations' fields.
+
+pub mod rules;
+pub mod models;
+import {models.Signup};
+
+pub fn main() {
+    val vs = Signup(password: "a", confirm: "b").validate();
+    @print(vs.length);
+    for (vs) { v ->
+        @print(v.field + ": " + v.message);
+    }
+}

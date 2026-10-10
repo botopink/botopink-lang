@@ -82,6 +82,15 @@ pub const MetaCallType = struct {
     fields: []const typedMetaMod.FieldShape,
 };
 
+/// Decisions 384, 385 — what a name written in a module resolves to there:
+/// the module declaring it and its declared name (an import followed to its
+/// owner), and whether it names a type.
+pub const WrittenName = struct {
+    module: []const u8,
+    name: []const u8,
+    isType: bool,
+};
+
 /// A decorator's identity: its declaring module and its own name.
 pub const DecoratorId = struct { owner: []const u8, name: []const u8 };
 
@@ -150,6 +159,12 @@ pub const Reflection = struct {
     /// sees declarations of modules analysed after it (`comptime.zig`
     /// `compile`'s second session).
     oracle: ?*const Reflection = null,
+    /// Decisions 384, 385 — `scopeKey(module, name)` → what `name` resolves
+    /// to in `module`'s scope: each top-level declaration and each import,
+    /// published when the module's analysis ends (`written_names.publish`).
+    /// A library member's names and an annotation's `@Expr` names resolve
+    /// here, where they were written, wherever they are read.
+    scopes: std.StringHashMapUnmanaged(WrittenName) = .empty,
 
     pub fn init(arena: std.mem.Allocator) Reflection {
         return .{ .arena = arena };
@@ -221,6 +236,17 @@ pub const Reflection = struct {
         var e = entry;
         e.seq = self.declared.items.len;
         try self.declared.append(self.arena, e);
+    }
+
+    /// The key `scopes` holds a module's name under.
+    pub fn scopeKey(arena: std.mem.Allocator, module: []const u8, name: []const u8) ![]const u8 {
+        return std.fmt.allocPrint(arena, "{s}\x00{s}", .{ module, name });
+    }
+
+    /// What `name` resolves to where `module` wrote it; null when the module
+    /// neither declares nor imports it (a builtin, a prelude name).
+    pub fn written(self: *const Reflection, arena: std.mem.Allocator, module: []const u8, name: []const u8) !?WrittenName {
+        return self.scopes.get(try scopeKey(arena, module, name));
     }
 
     /// The key `templateQueries` holds a template function's queries under.

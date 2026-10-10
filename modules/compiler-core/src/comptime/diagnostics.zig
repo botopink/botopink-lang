@@ -467,10 +467,6 @@ pub const decorator_member_fn_untyped: []const u8 = "decorator-member-fn-untyped
 /// with the program.
 pub const decorator_member_captures: []const u8 = "decorator-member-captures";
 
-/// A member function of a decorator declared in another module naming a
-/// declaration: whose scope resolves it is open (`s35-g`).
-pub const decorator_member_fn_imported_name: []const u8 = "decorator-member-fn-imported-name";
-
 /// A member function's types at one annotation: a `self` that is not the type
 /// the member joins, or a type parameter the annotation leaves unbound.
 pub const decorator_member_type: []const u8 = "decorator-member-type";
@@ -588,11 +584,6 @@ pub const typeinfo_meta_type: []const u8 = "typeinfo-meta-type";
 /// one `T` (recorded with `decl.addMeta`): read them with `metaAll(T)`.
 pub const typeinfo_meta_several: []const u8 = "typeinfo-meta-several";
 
-/// Decision 370 (1) — a meta value with `@Expr<T>` fields read in a module
-/// other than the one whose annotation wrote the expressions: whose scope
-/// resolves a spliced expression's names there is question `130-s8-b`.
-pub const typeinfo_meta_expr_elsewhere: []const u8 = "typeinfo-meta-expr-elsewhere";
-
 /// Decision 298 — `d.meta(T)` / `d.metaAll(T)` on a `Declared` inside a
 /// decorator's or a template's body: the catalogue's typed meta is run-time
 /// data of the program, absent while it compiles.
@@ -704,7 +695,6 @@ pub const all_codes = [_][]const u8{
     decorator_member_not_fn,
     decorator_member_fn_untyped,
     decorator_member_captures,
-    decorator_member_fn_imported_name,
     decorator_member_type,
     decorator_type_without_owner,
     decorator_type_name,
@@ -733,7 +723,6 @@ pub const all_codes = [_][]const u8{
     decorator_meta_expr_arg,
     typeinfo_meta_type,
     typeinfo_meta_several,
-    typeinfo_meta_expr_elsewhere,
     typeinfo_meta_at_build,
     typeinfo_meta_hooks_pending,
 };

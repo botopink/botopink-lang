@@ -73,6 +73,22 @@ pub fn apply(
     try ctx.walk(ast.Expr, root);
 }
 
+/// Decisions 384, 385 — renames every name of `root` one author wrote alone
+/// (an annotation's `@Expr` argument, read in another module): no span is
+/// the reader's. Names `root` binds itself keep resolving where they are.
+pub fn applyAll(arena: std.mem.Allocator, root: *ast.Expr, resolver: anytype) Error!void {
+    var ctx = Ctx(@TypeOf(resolver)){
+        .arena = arena,
+        .src = "",
+        .spans = &.{},
+        .resolver = resolver,
+        .locals = std.StringHashMap(void).init(arena),
+        .all = true,
+    };
+    try ctx.collectLocals(ast.Expr, root);
+    try ctx.walk(ast.Expr, root);
+}
+
 /// Whether a value of `T` can reach an `ast.Expr` — prunes strings, locations
 /// and type references, which the walk would otherwise visit byte by byte.
 fn mayHoldExpr(comptime T: type) bool {
@@ -91,6 +107,8 @@ fn Ctx(comptime Resolver: type) type {
         spans: []const [2]usize,
         resolver: Resolver,
         locals: std.StringHashMap(void),
+        /// Every name is the one author's (`applyAll`).
+        all: bool = false,
 
         const Self = @This();
 
@@ -115,7 +133,7 @@ fn Ctx(comptime Resolver: type) type {
 
         fn rename(self: *Self, name: []const u8, loc: ast.Loc) Error!?[]const u8 {
             if (self.locals.contains(name)) return null;
-            if (!self.libraryWrote(loc)) return null;
+            if (!self.all and !self.libraryWrote(loc)) return null;
             return try self.resolver.aliasFor(name);
         }
 
