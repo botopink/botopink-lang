@@ -1,5 +1,0 @@
-//// One of the two declarations of `parse` the consumer cannot tell apart.
-
-pub fn parse(s: string) -> string {
-    return "a:" + s;
-}

@@ -38,7 +38,7 @@ export declare class Meter {
 
 ----- SOURCE CODE -- main.bp
 ```botopink
-import { Meter };
+import { hostlib.Meter };
 
 pub fn main() {
     @print(Meter(base: 40).plus(2));

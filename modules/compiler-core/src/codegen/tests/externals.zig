@@ -250,7 +250,7 @@ test "js: external ---- an imported host-backed declare fn is wrapped by its own
         .{
             .path = "main",
             .source =
-            \\import { hostKey, hostLen, nodeOnly };
+            \\import { hostlib.hostKey, hostlib.hostLen, hostlib.nodeOnly };
             \\
             \\pub fn main() {
             \\    @print(hostKey(42));
@@ -324,7 +324,7 @@ test "js: external ---- a host-backed method on an imported type is answered by 
         .{
             .path = "main",
             .source =
-            \\import { Meter };
+            \\import { hostlib.Meter };
             \\
             \\pub fn main() {
             \\    @print(Meter(base: 40).plus(2));

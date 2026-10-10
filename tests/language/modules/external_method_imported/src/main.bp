@@ -5,10 +5,10 @@
 //// refuses the call where it is written (`wasm.expect`).
 
 pub mod meter;
-import {meter.Meter, meter.meter};
+import {meter.Meter, meter.meter as newMeter};
 
 pub fn main() {
-    val m = meter(40);
+    val m = newMeter(40);
     @print(m.plus(2));
     @print(Meter(base: 7).tag("id"));
 }

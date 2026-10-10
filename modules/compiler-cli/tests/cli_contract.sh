@@ -833,8 +833,8 @@ cat >"$WS/modules/acme-web/botopink.json" <<'JSON'
   "dependencies": { "acme": { "workspace": true } } }
 JSON
 printf 'import { core } from "acme";\n\npub fn web() -> i32 {\n    return core() + 1;\n}\n' >"$WS/modules/acme-web/src/root.bp"
-# The flat `test/` suite imports the package it tests with a bare import.
-printf 'import { web };\n\ntest "the sibling member is reachable" {\n    assert web() == 42;\n}\n' >"$WS/modules/acme-web/test/web_test.bp"
+# The flat `test/` suite imports the package it tests by its module's path.
+printf 'import { root.web };\n\ntest "the sibling member is reachable" {\n    assert web() == 42;\n}\n' >"$WS/modules/acme-web/test/web_test.bp"
 cat >"$WS/modules/acme-empty/botopink.json" <<'JSON'
 {
   "name": "acme-empty", "version": "0.0.1", "target": "commonJS", "entry": "root.bp" }

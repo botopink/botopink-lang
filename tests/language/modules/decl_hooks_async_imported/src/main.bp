@@ -7,7 +7,6 @@
 
 pub mod ui;
 
-import {ui};
 import {ui.session as currentUser, ui.Element};
 
 fn graph(comptime decl: @Decl) {

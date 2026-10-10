@@ -33,7 +33,7 @@ plus(Self, N) ->
 
 ----- SOURCE CODE -- main.bp
 ```botopink
-import { Meter };
+import { hostlib.Meter };
 
 pub fn main() {
     @print(Meter(base: 40).plus(2));

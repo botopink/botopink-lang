@@ -441,14 +441,19 @@ codegen/
   `exports.X` (its `.d.ts` declares it exported, and a module-object consumer
   such as `order.Order` needs it), while a `pub implement` is exported only
   when another module imports it.
-- **The `import { … };` shorthand** (1.0.5-beta decision 3) names no module, so
-  it resolves exactly the way a `from "<pkg>"` import does: name by name through
-  the cross-module export index, one `require("<prefix><owner>.js")` per owning
-  module. It used to fall through to a branch that wrote the literal word —
-  `require("./module")` at the project root, `require("../module")` under a
-  package prefix — a path nothing emits, so the program built and then died at
-  run time. The namespace-handle block below is skipped for it: the shorthand
-  names no package, so there is no handle to bind.
+- **An import with no `from`** (1.0.5-beta decision 3) names its module by its
+  path (decisions 206, 337 — the shorthand `import { x };` is refused by the
+  checker), and resolves name by name through the cross-module export index,
+  one `require("<prefix><owner>.js")` per owning module. It used to fall through
+  to a branch that wrote the literal word — `require("./module")` at the project
+  root, `require("../module")` under a package prefix — a path nothing emits, so
+  the program built and then died at run time. The namespace-handle block below
+  is skipped for it: it names no package, so there is no handle to bind.
+- **wasm: a linked module's aliased imports** (decision 337): the module wasm
+  links into the entry's program keeps its own import aliases (`import
+  {store.top as tt};`, a namespace call's `__bp_ns_store__top`); `linkRenames`
+  rewrites each to the declared name when that name was not mangled, so the
+  linked body calls what the entry emits (`modules/import_nested_module_namespace`).
 - **A path and a group bind their leaf (decision 107)**: every backend reads
   `imp.leaf()` (the exported name), `imp.name()` (the local binding — the
   alias when written) and `ImportDecl.leafSource` (the module the prefix

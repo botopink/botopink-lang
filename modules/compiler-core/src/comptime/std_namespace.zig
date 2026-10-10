@@ -318,7 +318,7 @@ const Ctx = struct {
     }
 };
 
-fn mayHoldExpr(comptime T: type) bool {
+pub fn mayHoldExpr(comptime T: type) bool {
     return switch (@typeInfo(T)) {
         .int, .float, .bool, .@"enum", .void, .comptime_int, .comptime_float, .@"fn", .@"opaque" => false,
         .pointer => |p| if (@typeInfo(p.child) == .@"fn" or @typeInfo(p.child) == .@"opaque") false else if (p.size == .slice) mayHoldExpr(p.child) else true,

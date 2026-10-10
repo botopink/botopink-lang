@@ -1,0 +1,2 @@
+import-name-collision: `config` is declared here and is the module `mod config;` declares
+src/main.bp:6:4

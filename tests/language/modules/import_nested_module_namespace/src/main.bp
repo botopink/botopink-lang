@@ -1,0 +1,10 @@
+//// docs.md § Imports — an item whose whole path names a module binds a
+//// namespace, a nested one too: `import {store.cache};` in a sibling of
+//// `store` binds `cache` (`store/mod.bp` declares `pub mod cache;`).
+
+mod store;
+mod report;
+
+pub fn main() {
+    @print(report.summary());
+}

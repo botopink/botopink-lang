@@ -634,6 +634,17 @@ pub const Server = struct {
         // Inside `from "…"` the answer is a module list, not a binding list.
         if (try engine.moduleCompletion(self.gpa, source, pos, &self.index)) |mod_items|
             return mod_items;
+        // Decision 337 — after `ns.` where a `mod` of this document binds `ns`:
+        // the module's `pub` declarations.
+        {
+            var ga = std.heap.ArenaAllocator.init(self.gpa);
+            defer ga.deinit();
+            const g_others = self.graphOthers(ga.allocator(), uri) catch &.{};
+            if (try engine.modNamespaceCompletion(self.gpa, source, pos, g_others)) |items| {
+                if (items.len > 0) return items;
+                self.gpa.free(items);
+            }
+        }
 
         var result = self.compileWithGraph(uri, source) catch
             return engine.completion(self.gpa, source, pos, &.{});

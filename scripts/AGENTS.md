@@ -26,7 +26,7 @@ scripts/
 ├── beam_export_audit.sh ← assemble every beam snapshot module with every function exported
 ├── comptime_bench.sh  ← what the comptime path costs: build wall clock + the in-compiler stage split
 ├── macos-sim.sh       ← run a command on Linux as the macos-14 CI row would (§ Portability)
-├── codemod-import-without-from.py ← decision 206's one-shot migration: `from "<a module of this package>"` → the brace form (§ below)
+├── codemod-import-without-from.py ← decision 206's one-shot migration: `from "<a module of this package>"` → the brace form; `--shorthand`, decision 337's: `import {x};` → `import {<module>.x};` (§ below)
 ├── codemod-optional-operators.py ← decision 330's migration: `.unwrapOr(d)` on a `?T` → `?? d`, `result.<op>(r, …)` → `r.<op>(…)` (§ below)
 ├── codemod-component-contexts.py ← decision 354's migration: `@Component<C, R>` → `@Component<R>`, `@Context<C>` → `@Renderable`, `use @getContext(T)` reported (§ below)
 ├── lib/
@@ -369,8 +369,16 @@ The script rewrites every import whose `from` named a module of its own
 package, over any number of trees at once:
 
 ```sh
-python3 scripts/codemod-import-without-from.py [--write] [--format <botopink>] <root>...
+python3 scripts/codemod-import-without-from.py [--write] [--shorthand] [--format <botopink>] <root>...
 ```
+
+- **`--shorthand` (decision 337).** Rewrites the shorthand instead: an import
+  with no `from` whose item's first segment names no module of the package
+  (`import {splitPath};`) gets the path of the one module of the package (its
+  `src/` tree, plus the flat `test/` suite for a test file) that declares the
+  name `pub` — the fix `shorthand-import` writes. Two declarers, or none, is
+  `UNDECIDED`; a package whose directory holds a `*.expect` naming
+  `shorthand-import` is left alone.
 
 - **What it rewrites.** `import {a, b as c} from "x.y";` → `import {x.y.a, x.y.b as c};`
   (`x/y` → `x.y`), every leaf behind its dotted path — the spelling `botopink

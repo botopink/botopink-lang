@@ -5,13 +5,13 @@
 //// or an array / tuple literal of those.
 
 pub mod pad;
-import {pad.pad};
+import {pad.pad as padTo};
 import {tag, pair} from "tags";
 
 pub fn main() {
-    @print(pad("7"));
-    @print(pad("7", 2));
-    @print(pad("7", fill: "0"));
+    @print(padTo("7"));
+    @print(padTo("7", 2));
+    @print(padTo("7", fill: "0"));
     @print(tag("a"));
     @print(tag("b", ["x", "y"]));
     @print(tag("c", closed: true));

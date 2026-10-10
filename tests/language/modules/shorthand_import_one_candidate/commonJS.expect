@@ -1,0 +1,2 @@
+shorthand-import: `splitPath` names no module of this package — write import {config.splitPath};
+src/main.bp:7:9

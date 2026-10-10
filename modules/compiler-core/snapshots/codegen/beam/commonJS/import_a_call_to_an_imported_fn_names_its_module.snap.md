@@ -27,7 +27,7 @@ export declare function twice(x: number): number;
 
 ----- SOURCE CODE -- b.bp
 ```botopink
-import { twice };
+import { a.twice };
 
 pub fn quad(x: i32) -> i32 {
     return twice(twice(x));

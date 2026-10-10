@@ -1,0 +1,9 @@
+pub type Pair(a: string, b: string)
+
+pub fn splitPath(p: string) -> string {
+    return p.replace("/", " ");
+}
+
+pub fn join(p: Pair) -> string {
+    return p.a + "+" + p.b;
+}

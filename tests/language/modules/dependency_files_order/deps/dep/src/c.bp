@@ -1,4 +1,4 @@
-import {Leaf};
+import {leaf.Leaf};
 
 pub fn seven() -> i32 {
     return Leaf(v: 7).v;

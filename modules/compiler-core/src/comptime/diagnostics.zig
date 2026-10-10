@@ -361,6 +361,22 @@ pub const import_name_collision: []const u8 = "import-name-collision";
 /// raises it — it is the one stage that knows which modules are the package's.
 pub const module_import_with_from: []const u8 = "module-import-with-from";
 
+/// Decision 337 (1) — an import item with no `from` whose first segment names
+/// no module of the package (`import {splitPath};`, the shorthand). Located at
+/// the item; the fix is written: the path of the one module of the package
+/// that declares the name `pub` (`write import {config.splitPath};`), the
+/// candidates when several do, `unresolved import` when none does.
+pub const shorthand_import: []const u8 = "shorthand-import";
+
+/// Decision 337 (2) — `import {config};` in the module that declares `mod
+/// config;`: `mod` already binds the namespace there. Located at the item;
+/// the fix is to delete it.
+pub const redundant_module_import: []const u8 = "redundant-module-import";
+
+/// Decision 337 (2) — `mod1.mod2` through a namespace from outside `mod1`'s
+/// subtree, where `mod1` declares `mod mod2;` (not `pub`). Located at `mod2`.
+pub const private_module: []const u8 = "private-module";
+
 /// Decision 107 — `as` on an activated item (`import {PatoNada* as Voa}`).
 /// An activation opts an extension in BY NAME (the dispatch rewrite emits
 /// `PatoNada.swim(donald)`), so a renamed binding would never be the one the
@@ -659,6 +675,9 @@ pub const all_codes = [_][]const u8{
     std_unsupported_on_target,
     import_name_collision,
     module_import_with_from,
+    shorthand_import,
+    redundant_module_import,
+    private_module,
     import_alias_on_activation,
     std_root_imports_io,
     fn_param_default_trailing_only,

@@ -448,7 +448,7 @@ fn analyzeModules(sa: std.mem.Allocator, mods: []const Module) Analysis {
     const broken = sa.alloc(bool, mods.len) catch return empty;
     for (mods, 0..) |m, i| {
         const refs = collectModuleRefs(sa, m.source, &owner, i) catch ModuleRefs{ .imports = &.{}, .exports = &.{}, .sources = &.{} };
-        imports[i] = refs.imports;
+        imports[i] = namespaceEdges(sa, m.path, refs, paths) catch refs.imports;
         exports[i] = refs.exports;
         sources[i] = refs.sources;
         broken[i] = refs.broken;
@@ -456,13 +456,43 @@ fn analyzeModules(sa: std.mem.Allocator, mods: []const Module) Analysis {
     return .{ .owner = owner, .imports = imports, .exports = exports, .sources = sources, .paths = paths, .broken = broken };
 }
 
-/// The module an import DEPENDS on: the one its `from "<mod>"` names, when that
-/// is a project module; none, when the clause names std or a library; and the
-/// symbol's owner only for an import written with no `from` clause.
+/// Decision 337 — `refs.imports` plus an edge to every module a dotted name
+/// of the module walks: its root a `mod` child of the module (`mod config;`
+/// then `config.f()`) or a local an import binds to a module (`import
+/// {mod1};`), and each further segment a module under the last
+/// (`mod1.mod2.f()` reaches `mod1` and `mod1/mod2`).
+fn namespaceEdges(sa: std.mem.Allocator, path: []const u8, refs: ModuleRefs, paths: std.StringHashMapUnmanaged(usize)) ![]const ImportRef {
+    if (refs.chains.len == 0) return refs.imports;
+    var out: std.ArrayListUnmanaged(ImportRef) = .empty;
+    try out.appendSlice(sa, refs.imports);
+    for (refs.chains) |chain| {
+        var key: ?[]const u8 = null;
+        for (refs.mods) |m| if (std.mem.eql(u8, m, chain[0])) {
+            const nested = try std.fmt.allocPrint(sa, "{s}/{s}", .{ path, m });
+            if (paths.contains(nested)) key = nested else if (std.mem.indexOfScalar(u8, path, '/') == null and paths.contains(m)) key = m;
+        };
+        if (key == null) for (refs.bindings) |b| if (std.mem.eql(u8, b.local, chain[0]) and paths.contains(b.path)) {
+            key = b.path;
+        };
+        var at = key orelse continue;
+        try out.append(sa, .{ .from = null, .symbol = at });
+        for (chain[1..]) |seg| {
+            const next = try std.fmt.allocPrint(sa, "{s}/{s}", .{ at, seg });
+            if (!paths.contains(next)) break;
+            try out.append(sa, .{ .from = null, .symbol = next });
+            at = next;
+        }
+    }
+    return out.items;
+}
+
+/// The module an import DEPENDS on: the one its path names (an item with no
+/// `from`, decisions 206 and 337), or none, when its `from` names std or a
+/// package.
 ///
-/// `Analysis.owner` maps a bare symbol name to the FIRST module that exports
-/// it, over the whole package — and a name is unique inside a module, never
-/// over a program (`libs/std` declares `parse` in `json`, in `querystring` and
+/// It used to be the symbol's owner for a bare item: `Analysis.owner` maps a
+/// bare symbol name to the FIRST module that exports it, over the whole
+/// package — and a name is unique inside a module, never over a program (`libs/std` declares `parse` in `json`, in `querystring` and
 /// in `url`). So two modules exporting one name drew the edge to the wrong one
 /// and the module actually imported was left with no edge at all: it sorted
 /// AFTER its own importer, was not in the registry when that importer resolved
@@ -492,7 +522,10 @@ fn importOwner(analysis: Analysis, ref: ImportRef) ?usize {
     if (ref.has_from) return null;
     if (analysis.paths.get(whole)) |i| return i;
     if (ref.from) |from| if (analysis.paths.get(from)) |i| return i;
-    return analysis.owner.get(ref.symbol);
+    // Decision 337 — an item with no `from` names its module by its path;
+    // the shorthand (`import {splitPath};`), which named none and was drawn to
+    // the first module exporting the name, is refused by the checker.
+    return null;
 }
 
 /// Reorder `mods` in place so that every module precedes the modules that
@@ -566,7 +599,7 @@ fn orderByDependencies(sa: std.mem.Allocator, mods: []Module, analysis: Analysis
 /// variable 'base'`), while the package's own build — ordered by
 /// `orderByDependencies` — resolved the same modules. The edges are the
 /// project's (`analyzeModules`, `importOwner`) read with the package prefix
-/// stripped, so `from "a"`, `from "<prefix>.a"` and a bare `import {Leaf};`
+/// stripped, so `from "a"`, `from "<prefix>.a"` and `import {leaf.Leaf};`
 /// all count. Each step places the first module in `files` order whose
 /// imports are all placed, so a package whose list is already in import order
 /// keeps it; a cycle keeps the rest in `files` order and the checker names
@@ -622,7 +655,7 @@ test "orderPackageModules: a module follows the siblings it imports; the rest ke
     var mods = [_]Module{
         .{ .path = "dep/root", .source = "pub mod a;\npub mod b;\npub mod c;\npub mod leaf;\n" },
         .{ .path = "dep/b", .source = "import {a.base};\npub fn derived() -> i32 { return base() + 1; }\n" },
-        .{ .path = "dep/c", .source = "import {Leaf};\npub fn seven() -> i32 { return Leaf(v: 7).v; }\n" },
+        .{ .path = "dep/c", .source = "import {leaf.Leaf};\npub fn seven() -> i32 { return Leaf(v: 7).v; }\n" },
         .{ .path = "dep/d", .source = "import {base} from \"dep.a\";\npub fn two() -> i32 { return base() * 2; }\n" },
         .{ .path = "dep/a", .source = "pub fn base() -> i32 { return 1; }\n" },
         .{ .path = "dep/leaf", .source = "pub type Leaf(v: i32)\n" },
@@ -960,12 +993,22 @@ const ModuleRefs = struct {
     imports: []const ImportRef,
     exports: []const []const u8,
     sources: []const SourceRef = &.{},
+    /// Decision 337 — the names the module's `mod` declarations bind, every
+    /// local an import with no `from` binds with the module path it names
+    /// (`import {mod1.mod2};` → `mod2` → `mod1/mod2`), and every dotted name
+    /// the module reads (`comptime_pipeline.namespaceChains`): a chain that
+    /// walks a module namespace is an edge to each module it reaches.
+    mods: []const []const u8 = &.{},
+    bindings: []const Binding = &.{},
+    chains: []const []const []const u8 = &.{},
     /// The module does not lex or parse, so its exports are unknown rather
     /// than empty (onze F8).
     broken: bool = false,
 };
 
 const Loc = struct { line: usize, col: usize };
+
+const Binding = struct { local: []const u8, path: []const u8 };
 
 /// The location of every `from "<name>"` string literal in `tokens`, in source
 /// order. `from` is a keyword of its own and appears only in an import, so the
@@ -1005,7 +1048,10 @@ fn collectModuleRefs(
     var imps: std.ArrayListUnmanaged(ImportRef) = .empty;
     var exps: std.ArrayListUnmanaged([]const u8) = .empty;
     var srcs: std.ArrayListUnmanaged(SourceRef) = .empty;
+    var mods: std.ArrayListUnmanaged([]const u8) = .empty;
+    var bindings: std.ArrayListUnmanaged(Binding) = .empty;
     for (program.decls) |decl| switch (decl) {
+        .mod => |m| try mods.append(sa, m.name),
         .@"fn" => |f| if (f.isPub) try registerExport(sa, owner, &exps, f.name, idx),
         .val => |v| if (v.isPub) try registerExport(sa, owner, &exps, v.name, idx),
         .type_ => |t| if (t.isPub) try registerExport(sa, owner, &exps, t.name, idx),
@@ -1028,6 +1074,7 @@ fn collectModuleRefs(
                 .module => |m| if (std.mem.eql(u8, m, "std")) null else try dotsToSlashes(sa, m),
             };
             for (u.imports) |imp| {
+                if (u.source == .root and !imp.activate) try bindings.append(sa, .{ .local = imp.name(), .path = try imp.fullPath(sa) });
                 // The imported symbol's definition name is its last path segment
                 // (an `as` alias renames only the local binding, not the export).
                 // A qualified item (decision 107 — `shapes.circle.name`, or the
@@ -1055,6 +1102,9 @@ fn collectModuleRefs(
         .imports = try imps.toOwnedSlice(sa),
         .exports = try exps.toOwnedSlice(sa),
         .sources = try srcs.toOwnedSlice(sa),
+        .mods = mods.items,
+        .bindings = bindings.items,
+        .chains = bp.comptime_pipeline.namespaceChains(sa, program) catch &.{},
     };
 }
 

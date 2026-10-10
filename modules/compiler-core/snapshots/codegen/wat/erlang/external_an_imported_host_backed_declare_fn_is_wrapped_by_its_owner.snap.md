@@ -34,7 +34,7 @@ hostLen(Xs) ->
 
 ----- SOURCE CODE -- main.bp
 ```botopink
-import { hostKey, hostLen, nodeOnly };
+import { hostlib.hostKey, hostlib.hostLen, hostlib.nodeOnly };
 
 pub fn main() {
     @print(hostKey(42));

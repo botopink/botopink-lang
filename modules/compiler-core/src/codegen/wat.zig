@@ -596,6 +596,12 @@ fn linkRenames(
             const c = cross orelse continue;
             const src = try u.leafSource(imp, arena, false);
             const info = c.picked(imp.leaf(), src, null) orelse continue;
+            // An aliased item of a linked module (`import {store.top as
+            // tt};`, a namespace call's `__bp_ns_store__top`) calls the
+            // function by its declared name when that name was not mangled:
+            // the alias is the linked module's own spelling, and the linked
+            // body is emitted under the program's names (decision 337's
+            // namespace from a module that is not the entry).
             const m = mangled.get(try linkKey(arena, info.module, imp.leaf())) orelse {
                 // A LINKED module's aliased import of a function no other
                 // module declares (`import {defaultMessage as
@@ -605,7 +611,7 @@ fn linkRenames(
                 // `use` items never reach `registerSymbols`, so without this
                 // the alias was an unresolved call wherever its code is
                 // reached from another module.
-                if (linked_module) if (imp.alias) |al| if (!std.mem.eql(u8, al, imp.leaf())) try out.put(arena, al, imp.leaf());
+                if (linked_module) if (imp.alias) |al| if (info.kind == .@"fn" and !std.mem.eql(u8, al, imp.leaf())) try out.put(arena, al, imp.leaf());
                 continue;
             };
             try out.put(arena, imp.alias orelse imp.leaf(), m);
@@ -1191,7 +1197,8 @@ fn emitWat(
     }
     // Every module whose calls reach a mangled function gets those calls
     // rewritten to the mangled name, in a copy of its declarations (the
-    // module's own program is shared with its own emission).
+    // module's own program is shared with its own emission); a linked
+    // module's aliased imports are rewritten to the declared names.
     if (em.link_mangled.count() > 0 or linked.len > 0) {
         var maps = try ar0.alloc(std.StringHashMapUnmanaged([]const u8), linked.len + 1);
         for (maps, 0..) |*m, i| {

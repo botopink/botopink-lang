@@ -77,6 +77,70 @@ Leaf modules are single files; folder modules use a `mod.bp` entry point.
 declaring module's subtree. Only `pub` declarations are visible outside their
 module.
 
+**`mod` binds the module it declares** (decision 337). In the module that
+declares it, `mod config;` (or `pub mod config;`) binds `config` as a namespace,
+as `import {config};` binds it elsewhere — `config.splitPath(x)`, a type
+`config.Pair` in a signature, a constructor `config.Pair(…)`, a variant path,
+a function as a value, with no import. The namespace walks a folder module's
+tree: with `src/text/mod.bp` declaring `pub mod split;`, `mod text;` alone
+reaches `text.split.splitPath(x)` — each step a `pub mod` and the leaf `pub`; a
+plain `mod split;` is private to `text`'s subtree, and `text.split` from outside
+it is `private-module` at `split`. A sibling or nested module reaches `config`
+only by import (`import {config};`, `import {text.split};`). There is no
+combined form and no re-export syntax: a folder's `mod.bp` exposes a
+submodule's declaration with a value or a type of the same name — `pub val
+splitPath = split.splitPath;`, `pub type Pair = split.Pair;` — which is that
+declaration, not a second one, so the name has one public path
+(`text.splitPath`) and the submodule can stay private.
+
+<!-- docs-check: project mod_namespace src/main.bp -->
+```botopink
+// src/main.bp
+pub mod config;
+mod text;
+
+fn show(p: text.Pair) -> string {
+    return p.a + "+" + p.b;
+}
+
+fn main() {
+    @print(config.label("x"));               // [x]
+    @print(text.splitPath("a/b"));           // a b
+    @print(show(text.Pair(a: "c", b: "d"))); // c+d
+}
+```
+
+<!-- docs-check: project mod_namespace src/config.bp -->
+```botopink
+// src/config.bp
+pub fn label(s: string) -> string {
+    return "[" + s + "]";
+}
+```
+
+<!-- docs-check: project mod_namespace src/text/mod.bp -->
+```botopink
+// src/text/mod.bp
+mod split;
+
+pub val splitPath = split.splitPath;
+pub type Pair = split.Pair;
+```
+
+<!-- docs-check: project mod_namespace src/text/split.bp -->
+```botopink
+// src/text/split.bp
+pub type Pair(a: string, b: string)
+
+pub fn splitPath(p: string) -> string {
+    return p.replace("/", " ");
+}
+```
+
+In the declaring module `import {config};` is a second spelling of the
+namespace, `redundant-module-import` at the item (delete it); a top-level
+declaration named like a declared module is `import-name-collision`.
+
 #### A module's default function
 
 A module may have one **default function**, which its importer names
@@ -132,8 +196,10 @@ pub default Tree;
 
 `from "<name>"` names a **package** — std or a dependency declared in
 `botopink.json` — and nothing else (decision 206). A module of the importing package is imported by its path
-inside the braces, with no `from`; and an import that names no module at all is
-the shorthand, which resolves the sibling module that exports the names.
+inside the braces, with no `from`. An import always names where its names come
+from (decision 337): an item with no `from` whose first segment names no module
+of the package — `import {perimeter};` — is `shorthand-import` at the item, its
+fix written (below).
 
 <!-- docs-check: project imports src/main.bp -->
 ```botopink
@@ -141,7 +207,6 @@ the shorthand, which resolves the sibling module that exports the names.
 import {math} from "std";              // a module of the std package
 import {geometry.area};                // a module of this package, by its path
 import {shapes.circle.name};           // a nested module path
-import {perimeter};                    // the shorthand — the sibling that exports it
 
 pub mod geometry;
 pub mod shapes;
@@ -149,7 +214,6 @@ pub mod shapes;
 fn main() {
     @print(area(3, 4));             // 12
     @print(name());                 // circle
-    @print(perimeter(3, 4));        // 14
     @print(math.abs(0.0 - 1.0));    // 1
 }
 ```
@@ -159,10 +223,6 @@ fn main() {
 // src/geometry.bp
 pub fn area(w: i32, h: i32) -> i32 {
     return w * h;
-}
-
-pub fn perimeter(w: i32, h: i32) -> i32 {
-    return (w + h) * 2;
 }
 ```
 
@@ -178,6 +238,20 @@ pub mod circle;
 pub fn name() -> string {
     return "circle";
 }
+```
+
+The shorthand is refused at the item, and the refusal writes the import as it
+is spelled instead: the path of the one module of the package that declares the
+name `pub`, every candidate when several do, `unresolved import` when none does
+(pinned by `tests/language/modules/shorthand_import_one_candidate`,
+`shorthand_import_several_candidates` and `reject/shorthand_import`):
+
+```text
+// src/main.bp — `pub mod geometry;` declares `pub fn perimeter`
+import {perimeter};
+
+error: shorthand-import: `perimeter` names no module of this package — write import {geometry.perimeter};
+ --> src/main.bp:2:9
 ```
 
 `from` never names a module of this package. Beside a module named like a
@@ -238,8 +312,7 @@ hold a module of one name — a CSS library's `theme` and a component library's 
 they are two modules: inside the first, `import {theme.Ns};` names its own `theme`, inside
 the second its own, and a project's `theme` is a third. Neither import is ambiguous, and
 neither `Ns` is ever read as the other's — in the checker, in every backend's module names
-and calls, in the `.d.ts` and at compile time. The shorthand inside a dependency resolves
-among that package's modules only. Pinned by
+and calls, in the `.d.ts` and at compile time. Pinned by
 `tests/language/modules/two_packages_one_module_name`.
 
 **A path and a group are one tree, and only the leaf enters scope.** An item
@@ -260,11 +333,11 @@ extension as `collections.ArraySets*` — and on a node that opens braces they
 are a syntax error (`import-group-modifier`). Two items binding one name are
 `import-name-collision` at the second item (`import {url.parse, json.parse}`);
 an alias on either side clears it (`url.parse as parseUrl, json: {parse as
-parseJson}`). One item that reaches two declarations — a bare `import {parse};`
-while two modules of the package declare `pub fn parse` — is not refused itself:
-every **use** of the name is, where it is written, naming both
-(`ambiguous-import-use`), and the item that says which (`import {a.parse}`) is
-the way out. An alias reaches a type and a type alias too (decision 110):
+parseJson}`). One item that reaches two declarations — `import {parse} from
+"kit"` while two modules of the package `kit` declare `pub fn parse` — is not
+refused itself: every **use** of the name is, where it is written, naming both
+(`ambiguous-import-use`), and the item that names the module (`import
+{a.parse} from "kit"`) is the way out. An alias reaches a type and a type alias too (decision 110):
 `import {collections.Dict as D}` brings `D`, a name for `Dict` in the program's
 own text — the emitted code keeps `Dict`. An activation cannot be renamed
 (`import-alias-on-activation`). A leaf that names a folder is a namespace of

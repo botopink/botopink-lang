@@ -1,0 +1,14 @@
+//// Decision 337 (3) — a folder's `mod.bp` re-exports with a value, no syntax
+//// of its own: `text/mod.bp` keeps `mod split;` private and declares `pub val
+//// splitPath = split.splitPath;` and `pub type Pair = split.Pair;`. The name
+//// has one public path (`text.splitPath`), and the type is `split`'s own, not
+//// a second one: a `text.Pair` built here is what `split.join` takes.
+
+mod text;
+mod user;
+
+pub fn main() {
+    @print(text.splitPath("a/b"));
+    @print(text.join(text.Pair(a: "x", b: "y")));
+    @print(user.run());
+}

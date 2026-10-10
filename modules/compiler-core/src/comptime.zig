@@ -9,6 +9,8 @@ const transform = @import("./comptime/transform.zig");
 const context_lower = @import("comptime/context_lower.zig");
 const alias_erase = @import("./comptime/alias_erase.zig");
 const std_namespace = @import("./comptime/std_namespace.zig");
+const mod_tree = @import("./comptime/mod_tree.zig");
+const mod_namespace = @import("./comptime/mod_namespace.zig");
 const inline_types = @import("./comptime/inline_types.zig");
 const nested_types = @import("./comptime/nested_types.zig");
 const default_fn = @import("./comptime/default_fn.zig");
@@ -359,9 +361,8 @@ fn withImportTypeAliasesErased(arena: std.mem.Allocator, prog: ast.Program, env:
 }
 
 /// Each import item another module the backends would also read declares
-/// (`env.itemOwners` — a bundled package beside a shorthand, decision 170; a
-/// module of this package beside `from "<pkg>"` or a package beside a module
-/// path, decision 206) leaves its import for an import of its own that names
+/// (`env.itemOwners` — a module of this package beside `from "<pkg>"` or a
+/// package beside a module path, decision 206) leaves its import for an import of its own that names
 /// the module it resolved to by its key (`ImportSource.key`, `config` or
 /// `log/levels` — written `import {charOf} from "config";` when formatted),
 /// the item reduced to its leaf and its alias, so the backends' name-keyed
@@ -965,7 +966,7 @@ fn assocOwners(
             for (u.imports) |imp| {
                 if (imp.activate) continue;
                 const leaf = imp.leaf();
-                const leaf_src = try u.leafSource(imp, arena, false);
+                const leaf_src = try itemSource(u, imp, arena);
                 const path: []const u8 = found: for ([3]u2{ 0, 1, 2 }) |pass| {
                     var it = typeDeclRegistry.iterator();
                     while (it.next()) |e| {
@@ -992,8 +993,7 @@ fn assocOwners(
 /// first, then the wider passes). An item with no `from` answers its module's
 /// key — the package plus the path (`ImportSource.key`, decisions 170, 337) —
 /// and every pass admits that one module alone, so a source named in two
-/// packages' same-named modules is the importing package's, never the other;
-/// the shorthand (`import {Box};`) in a dependency reads its own package alone.
+/// packages' same-named modules is the importing package's, never the other.
 fn derivedTypeSource(ctx: *const anyopaque, arena: std.mem.Allocator, decl: ast.ImportDecl, imp: ast.ImportPath) error{OutOfMemory}!?ast.DeclKind {
     const typeDeclRegistry: *const std.StringHashMap(std.StringHashMap(ast.DeclKind)) = @ptrCast(@alignCast(ctx));
     const from_std = switch (decl.source) {
@@ -1001,15 +1001,12 @@ fn derivedTypeSource(ctx: *const anyopaque, arena: std.mem.Allocator, decl: ast.
         .root, .key => false,
     };
     const leaf = imp.leaf();
-    const leaf_src = try decl.leafSource(imp, arena, false);
+    const leaf_src = try itemSource(decl, imp, arena);
     for ([3]u2{ 0, 1, 2 }) |pass| {
         var it = typeDeclRegistry.iterator();
         while (it.next()) |e| {
             if (isStdPkgPath(e.key_ptr.*) != from_std) continue;
             if (!leaf_src.admits(e.key_ptr.*, pass)) continue;
-            // The shorthand in a dependency reaches its own package's modules
-            // alone (`outsideShorthandReach`).
-            if (decl.source == .root and decl.ownPackage.len > 0 and !ast.ImportSource.ofPackage(decl.ownPackage, e.key_ptr.*)) continue;
             if (e.value_ptr.get(leaf)) |dk| return dk;
         }
     }
@@ -1209,7 +1206,16 @@ fn analyzeSource(
     // Decision 309 — an embedded std module's brace imports name `std/<path>`.
     // A dependency's module marks its imports with its package, so a path
     // item names that package's module (decisions 170, 337).
-    const parsed = if (isStdPkgPath(mod.path)) try embeddedStdProgram(arena, parsed_as_written) else try ast.ImportDecl.withOwnPackage(arena, parsed_as_written, mod.package);
+    const marked = if (isStdPkgPath(mod.path)) try embeddedStdProgram(arena, parsed_as_written) else try ast.ImportDecl.withOwnPackage(arena, parsed_as_written, mod.package);
+    // Decision 337: `mod m;` binds the namespace `m`, and a module namespace
+    // of the package is walked as std's is (`mod_namespace.zig`).
+    const parsed = if (reflection.modTree) |tree| switch (try mod_namespace.expand(arena, marked, tree, mod.path, mod.package)) {
+        .ok => |p| p,
+        .refused => |te| {
+            env.deinit();
+            return .{ .typeError = te };
+        },
+    } else marked;
     // Decisions 110 / 111 on the use side: `io.fs.f()` through a folder
     // namespace and `collections.Dict.empty()` through a module one reach the
     // checker and the backends as the one-dot forms they lower.
@@ -1417,6 +1423,9 @@ pub const bundled_packages = @import("std_prelude").bundled_packages;
 /// Decision 206 — the code of the refusal of `from "<a module of this
 /// package>"`, for the driver that raises it (the CLI's module-tree resolver).
 pub const module_import_with_from = diagnostics.module_import_with_from;
+/// Decision 337 — every dotted name a module reads outside its imports, for
+/// the CLI's dependency order (`mod_namespace.chains`).
+pub const namespaceChains = mod_namespace.chains;
 
 /// The bundled package called `name`, or null — `from "<name>"` resolves to it
 /// wherever the import is written.
@@ -1607,23 +1616,52 @@ pub fn isStdModule(key: []const u8) bool {
     return false;
 }
 
-/// Decision 170 — the shorthand import (`import {x};`, no `from`) names "the
-/// sibling that exports it": it resolves among the importing package's own
-/// modules and never reaches a BUNDLED package (`http/lexical`, `routing/match`)
-/// or std, which are reached only by naming them (`from "http"`, `from
-/// "std"`). Without it a bundled package loaded by any module of the program
-/// made the importer's own `charOf` `ambiguous-import-use`. A module of the
-/// bundled package itself keeps its siblings in reach.
-fn outsideShorthandReach(env: *envMod.Env, u: ast.ImportDecl, path: []const u8) bool {
-    if (u.source != .root) return false;
-    // A module of a dependency reaches its own package's modules alone: a
-    // module is its package plus its path, and another package's `theme` is
-    // never this package's sibling (decisions 170, 337).
-    if (u.ownPackage.len > 0) return !ast.ImportSource.ofPackage(u.ownPackage, path);
-    const seg = path[0 .. std.mem.indexOfScalar(u8, path, '/') orelse return false];
-    if (bundledPackage(seg) == null) return false;
-    const own = env.modulePath[0 .. std.mem.indexOfScalar(u8, env.modulePath, '/') orelse env.modulePath.len];
-    return !std.mem.eql(u8, own, seg);
+/// The module a lookup of `imp`'s leaf admits (`ImportSource.admits`): the
+/// module its prefix names (`ImportDecl.leafSource`) — and, for an item with
+/// no `from` and no path (`import {config};`), the module the item itself
+/// names. Decision 337 refuses the shorthand (`refuseShorthand`), so such an
+/// item names a module of the package, and a symbol of that name is looked
+/// up there and nowhere else: no bare name reaches another module, a
+/// dependency's or std's.
+fn itemSource(u: ast.ImportDecl, imp: ast.ImportPath, arena: std.mem.Allocator) !ast.ImportSource {
+    return u.leafSource(imp, arena, u.source == .root and !imp.isQualified());
+}
+
+/// Decision 337 (1) — `error[shorthand-import]` at an item with no `from`
+/// whose first segment names no module of the package, its fix written: the
+/// path of the one module of the package that declares the name `pub`, the
+/// candidates when several do, `unresolved import` when none does.
+fn refuseShorthand(env: *envMod.Env, tree: *const mod_tree.Tree, u: ast.ImportDecl, imp: ast.ImportPath) error{ TypeError, OutOfMemory } {
+    const a = env.arena;
+    const name = imp.segments[0];
+    const who = try tree.declarers(a, u.ownPackage, env.modulePath, name);
+    var item: std.ArrayListUnmanaged(u8) = .empty;
+    try item.appendSlice(a, try imp.dotted(a));
+    if (imp.activate) try item.append(a, '*');
+    if (imp.alias) |al| try item.print(a, " as {s}", .{al});
+    const hint = "An import names where its names come from: a module of this package by its path inside the braces (`import {config.splitPath};`), a package with `from` (`import {path.basename} from \"std\";`).";
+    const msg = switch (who.len) {
+        0 => try std.fmt.allocPrint(a, "{s}: unresolved import `{s}` — `{s}` names no module of this package, and no module of it declares `{s}` `pub`", .{ diagnostics.shorthand_import, item.items, name, name }),
+        1 => try std.fmt.allocPrint(a, "{s}: `{s}` names no module of this package — write import {{{s}.{s}}};", .{ diagnostics.shorthand_import, name, try dottedKey(a, u.ownPackage, who[0]), item.items }),
+        else => blk: {
+            var fixes: std.ArrayListUnmanaged(u8) = .empty;
+            for (who, 0..) |k, i| {
+                if (i > 0) try fixes.appendSlice(a, if (i + 1 == who.len) " or " else ", ");
+                try fixes.print(a, "import {{{s}.{s}}};", .{ try dottedKey(a, u.ownPackage, k), item.items });
+            }
+            break :blk try std.fmt.allocPrint(a, "{s}: `{s}` names no module of this package, and {d} modules declare it `pub` — write {s}", .{ diagnostics.shorthand_import, name, who.len, fixes.items });
+        },
+    };
+    env.lastError = validation.TypeError.custom(msg, hint).withLoc(imp.loc);
+    return error.TypeError;
+}
+
+/// A module key as an import item spells its path in the package
+/// (`a/log/levels` in `a` → `log.levels`).
+fn dottedKey(arena: std.mem.Allocator, package: []const u8, key: []const u8) ![]const u8 {
+    const out = try arena.dupe(u8, mod_tree.localPath(package, key));
+    std.mem.replaceScalar(u8, out, '/', '.');
+    return out;
 }
 
 /// Decision 206 — the package an import `from "<pkg>"` is confined to: `pkg`
@@ -1942,6 +1980,12 @@ fn resolveImports(
                 // module of the importing package named like it.
                 const scope = packageScope(registry, u.source);
                 for (u.imports) |imp| {
+                    // Decision 337 — an item with no `from` names a module of
+                    // the package by its first segment; the shorthand
+                    // (`import {splitPath};`) is refused, its fix written.
+                    if (u.source == .root and u.package == null and !u.activationOnly) if (env.reflection) |r| if (r.modTree) |tree| if (tree.known) {
+                        if (!tree.isModule(try mod_tree.keyIn(env.arena, u.ownPackage, imp.segments[0]))) return refuseShorthand(env, tree, u, imp);
+                    };
                     if (from_std) {
                         // `import {bool} from "std"` — handled inside
                         // inference (`inferProgramTyped` marks `stdImports`,
@@ -1958,7 +2002,18 @@ fn resolveImports(
                     // `name == local`, `leaf_src == u.source`.
                     const name = imp.leaf();
                     const local = imp.name();
-                    const leaf_src = try u.leafSource(imp, env.arena, false);
+                    var leaf_src = try itemSource(u, imp, env.arena);
+                    // Decision 337 (3) — a name the module re-exports
+                    // (`pub val splitPath = mod2.splitPath;`, `pub type Pair =
+                    // mod2.Pair;`) is the declaration it names: looked up
+                    // there, and the backends told so (`itemOwners`).
+                    var redirected = false;
+                    if (leaf_src == .key) if (env.reflection) |r| if (r.modTree) |tree| {
+                        if (try tree.reexportOf(env.arena, leaf_src.key, name)) |re| {
+                            leaf_src = .{ .key = re.owner };
+                            redirected = true;
+                        }
+                    };
                     // Decision 107's namespace form over a module of this
                     // package or a dependency: the item's whole path names a
                     // module (`import {jwt} from "sec"` → `sec/jwt`, `import
@@ -2029,7 +2084,7 @@ fn resolveImports(
                         var dit = typeDeclRegistry.iterator();
                         while (dit.next()) |e| {
                             if (isStdPkgPath(e.key_ptr.*)) continue;
-                            if (!leaf_src.admits(e.key_ptr.*, pass) or outsideShorthandReach(env, u, e.key_ptr.*) or outOfScope(scope, e.key_ptr.*)) continue;
+                            if (!leaf_src.admits(e.key_ptr.*, pass) or outOfScope(scope, e.key_ptr.*)) continue;
                             if (e.value_ptr.get(name)) |type_decl| {
                                 // A behavior is not re-registered as a type:
                                 // its value binding below stays what it was,
@@ -2083,7 +2138,7 @@ fn resolveImports(
                         var oit = registry.iterator();
                         while (oit.next()) |e| {
                             if (isStdPkgPath(e.key_ptr.*)) continue;
-                            if (!leaf_src.admits(e.key_ptr.*, pass) or outsideShorthandReach(env, u, e.key_ptr.*) or outOfScope(scope, e.key_ptr.*)) continue;
+                            if (!leaf_src.admits(e.key_ptr.*, pass) or outOfScope(scope, e.key_ptr.*)) continue;
                             if (e.value_ptr.contains(name)) {
                                 owner = e.key_ptr.*;
                                 break;
@@ -2092,19 +2147,19 @@ fn resolveImports(
                     }
                     // Another module the backends' name-keyed lookup would also
                     // read declares the name — one this lookup left out of
-                    // reach: a bundled package beside the shorthand (decision
-                    // 170), a module of this package beside `from "<pkg>"`, or
+                    // reach: a module of this package beside `from "<pkg>"`, or
                     // the package `log` beside the module path `log.levelName`
                     // (decision 206). The backends must be told which module
                     // the item names (`withImportSourcesNamed`); std is never
                     // in such a scan.
+                    if (redirected and owner.len > 0) try env.itemOwners.put(env.arena, imp.loc, owner);
                     if (owner.len > 0) {
                         var xit = registry.iterator();
                         while (xit.next()) |e| {
                             const k = e.key_ptr.*;
                             if (isStdPkgPath(k) or std.mem.eql(u8, k, owner)) continue;
                             if (!e.value_ptr.contains(name)) continue;
-                            const left_out = outsideShorthandReach(env, u, k) or outOfScope(scope, k);
+                            const left_out = outOfScope(scope, k);
                             if (!left_out and !leaf_src.admits(k, 0) and !leaf_src.admits(k, 1)) continue;
                             try env.itemOwners.put(env.arena, imp.loc, owner);
                             break;
@@ -2125,7 +2180,7 @@ fn resolveImports(
                             var ait = registry.iterator();
                             while (ait.next()) |e| {
                                 if (isStdPkgPath(e.key_ptr.*)) continue;
-                                if (!leaf_src.admits(e.key_ptr.*, pass) or outsideShorthandReach(env, u, e.key_ptr.*) or outOfScope(scope, e.key_ptr.*)) continue;
+                                if (!leaf_src.admits(e.key_ptr.*, pass) or outOfScope(scope, e.key_ptr.*)) continue;
                                 if (e.value_ptr.contains(name)) try owners.append(env.arena, e.key_ptr.*);
                             }
                             if (owners.items.len == 0) continue;
@@ -2147,7 +2202,7 @@ fn resolveImports(
                             var it = registry.iterator();
                             while (it.next()) |e| {
                                 if (isStdPkgPath(e.key_ptr.*)) continue;
-                                if (!leaf_src.admits(e.key_ptr.*, pass) or outsideShorthandReach(env, u, e.key_ptr.*) or outOfScope(scope, e.key_ptr.*)) continue;
+                                if (!leaf_src.admits(e.key_ptr.*, pass) or outOfScope(scope, e.key_ptr.*)) continue;
                                 if (e.value_ptr.get(name)) |ty| {
                                     try env.bind(local, ty);
                                     // The types its signature names come
@@ -3099,6 +3154,9 @@ pub fn compileTypesOnly(
     // registry — the core names no specific lib (std is the one exception).
     var reader_refusals: std.AutoHashMapUnmanaged(usize, validation.TypeError) = .empty;
     const all_modules = try orderReaders(arena_alloc, try expandStdImports(arena_alloc, modules, null), &reflection, &reader_refusals);
+    const tree = try arena_alloc.create(mod_tree.Tree);
+    tree.* = try mod_tree.build(arena_alloc, all_modules);
+    reflection.modTree = tree;
 
     for (all_modules, 0..) |mod, idx| {
         const name: []const u8 = if (mod.path.len > 0) mod.path else "main";
@@ -3378,6 +3436,9 @@ fn compileOnce(
     // registry — the core names no specific lib (std is the one exception).
     var reader_refusals: std.AutoHashMapUnmanaged(usize, validation.TypeError) = .empty;
     const all_modules = try orderReaders(arena_alloc, try expandStdImports(arena_alloc, modules, target_name), reflection, &reader_refusals);
+    const tree = try arena_alloc.create(mod_tree.Tree);
+    tree.* = try mod_tree.build(arena_alloc, all_modules);
+    reflection.modTree = tree;
 
     for (all_modules, 0..) |mod, idx| {
         const name: []const u8 = if (mod.path.len > 0) mod.path else "main";

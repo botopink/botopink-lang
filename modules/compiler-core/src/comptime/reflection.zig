@@ -17,6 +17,7 @@ const ast = @import("../ast.zig");
 const envMod = @import("env.zig");
 const hooksMod = @import("hooks.zig");
 const typedMetaMod = @import("typed_meta.zig");
+const modTreeMod = @import("mod_tree.zig");
 
 /// One `decl.setMeta(key, value)`.
 pub const MetaEntry = struct {
@@ -165,6 +166,10 @@ pub const Reflection = struct {
     /// A library member's names and an annotation's `@Expr` names resolve
     /// here, where they were written, wherever they are read.
     scopes: std.StringHashMapUnmanaged(WrittenName) = .empty,
+    /// Decision 337 — the session's module tree (`mod_tree.zig`): which
+    /// modules an import with no `from` may name, and what a `mod` binds.
+    /// Null for a session built without one (a test's lone module).
+    modTree: ?*const modTreeMod.Tree = null,
 
     pub fn init(arena: std.mem.Allocator) Reflection {
         return .{ .arena = arena };

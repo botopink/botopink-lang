@@ -359,7 +359,7 @@ test "js: import ---- a call to an imported fn names its module" {
         .{
             .path = "b",
             .source =
-            \\import { twice };
+            \\import { a.twice };
             \\
             \\pub fn quad(x: i32) -> i32 {
             \\    return twice(twice(x));
@@ -373,13 +373,13 @@ test "js: import ---- a call to an imported fn names its module" {
     });
 }
 
-test "js: import ---- the shorthand resolves a sibling inside a dependency" {
-    // 1.0.5-beta decision 3: `import { … };` names no module and used to emit
-    // the literal word — `require("./module")` at the project root and
-    // `require("../module")` one level down, neither of which exists, which is
-    // what made two of the shipped examples build and then die at run time. A
-    // module under a package prefix (`web/api`) reaches its sibling back through
-    // the output root, so the path is `../web/shapes.js`. The project-root half
+test "js: import ---- a sibling's path inside a dependency requires its own file" {
+    // 1.0.5-beta decision 3: an import with no `from` used to emit the literal
+    // word — `require("./module")` at the project root and `require("../module")`
+    // one level down, neither of which exists, which is what made two of the
+    // shipped examples build and then die at run time. A module under a package
+    // prefix (`web/api`) reaches its sibling (`import { shapes.mk };`, decision
+    // 337) back through the output root, so the path is `../web/shapes.js`. The project-root half
     // of the row is pinned with a RUN LOG by `import ---- a call to an imported
     // fn names its module`, whose log was empty until this landed.
     //
@@ -391,6 +391,7 @@ test "js: import ---- the shorthand resolves a sibling inside a dependency" {
         &.{
             .{
                 .path = "web/shapes",
+                .package = "web",
                 .source =
                 \\pub fn mk(v: i32) -> i32 {
                 \\    return v;
@@ -399,8 +400,9 @@ test "js: import ---- the shorthand resolves a sibling inside a dependency" {
             },
             .{
                 .path = "web/api",
+                .package = "web",
                 .source =
-                \\import { mk };
+                \\import { shapes.mk };
                 \\
                 \\pub fn serve() -> i32 {
                 \\    return mk(7);

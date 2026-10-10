@@ -26,7 +26,18 @@ declared — names that package and keeps its `from` (`rakun-app`'s module
 A package whose directory holds a `*.expect` naming `module-import-with-from`
 (the language suite's cell pinning the refusal) is left alone.
 
-    scripts/codemod-import-without-from.py [--write] [--format BOTOPINK] ROOT...
+    scripts/codemod-import-without-from.py [--write] [--shorthand] [--format BOTOPINK] ROOT...
+
+With `--shorthand` it rewrites decision 337's shorthand instead: an import
+with no `from` whose item's first segment names no module of the package
+(`import {splitPath};`) gets the path of the one module of the package that
+declares the name `pub` — the fix `error[shorthand-import]` writes:
+
+    import {splitPath, Pair as P};   ->  import {config.splitPath, geometry.Pair as P};
+
+An item two modules declare, or none, is UNDECIDED (the refusal lists the
+candidates, or answers `unresolved import`). A package whose directory holds a
+`*.expect` naming `shorthand-import` is left alone.
 
 Without `--write` it only reports. It prints one line per rewritten import and
 a final tally; an import it cannot decide is printed as `UNDECIDED` and left
@@ -84,6 +95,9 @@ def module_path_of(rel):
     return rel
 
 
+PINNED = "module-import-with-from"
+
+
 class Package:
     def __init__(self, directory, manifest, nested):
         self.dir = directory
@@ -101,7 +115,7 @@ class Package:
         # The language suite's cell that pins the refusal of the old form
         # (a `<target>.expect` naming `module-import-with-from`) keeps it.
         self.pins_refusal = any(
-            f.endswith(".expect") and "module-import-with-from" in open(os.path.join(directory, f), encoding="utf-8").read()
+            f.endswith(".expect") and PINNED in open(os.path.join(directory, f), encoding="utf-8").read()
             for f in os.listdir(directory)
         )
         self._collect()
@@ -218,6 +232,25 @@ EXPORT_RE = re.compile(
     r"(?:fn|val|var|type|behavior|mod|implement|extend)\s+([A-Za-z_][A-Za-z0-9_]*)",
     re.M,
 )
+
+
+SHORTHAND_EXPORT_RE = re.compile(
+    r"^[ \t]*(?:#\[[^\n]*\][ \t]*\n[ \t]*)*pub\s+(?:default\s+)?(?:declare\s+)?"
+    r"(?:fn|val|var|type|behavior|enum|struct)\s+([A-Za-z_][A-Za-z0-9_]*)",
+    re.M,
+)
+
+
+def pub_names_of(path, cache={}):
+    """The names a module declares `pub` (a `pub mod` is a module, not a name)."""
+    if path not in cache:
+        try:
+            with open(path, encoding="utf-8") as f:
+                text = blank_comments_and_strings(f.read())
+        except OSError:
+            text = ""
+        cache[path] = set(SHORTHAND_EXPORT_RE.findall(text))
+    return cache[path]
 
 
 def exports_of(path, cache={}):
@@ -411,6 +444,69 @@ def process_file(pkg, file, write, report):
     return len(edits), len(undecided)
 
 
+ITEM_SPLIT_RE = re.compile(r"^(\s*)([A-Za-z_][A-Za-z0-9_]*)")
+
+
+def names_module(own, seg):
+    return seg in own or any(p.startswith(seg + "/") for p in own)
+
+
+def process_file_shorthand(pkg, file, write, report):
+    """Decision 337: every shorthand item of `file` behind the path of the one
+    module of its package that declares the name `pub`."""
+    with open(file, encoding="utf-8") as f:
+        text = f.read()
+    blank = blank_comments_and_strings(text)
+    own = pkg.own_modules(file)
+    me = pkg.module_of(file)
+    edits, undecided = [], []
+    for m in IMPORT_RE.finditer(blank):
+        open_at = m.end() - 1
+        depth, i = 0, open_at
+        while i < len(blank):
+            if blank[i] == "{":
+                depth += 1
+            elif blank[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        close_at = i
+        if FROM_RE.match(blank, close_at + 1):
+            continue
+        inner_blank = blank[open_at + 1 : close_at]
+        line = text.count("\n", 0, m.start()) + 1
+        where = "%s:%d" % (file, line)
+        for a, b in split_items(inner_blank):
+            t = inner_blank[a:b]
+            im = ITEM_SPLIT_RE.match(t)
+            if not im:
+                undecided.append((where, t.strip(), "an item the codemod does not read"))
+                continue
+            seg = im.group(2)
+            if names_module(own, seg):
+                continue
+            cands = sorted(p for p, f in own.items() if p != me and seg in pub_names_of(f))
+            if len(cands) != 1:
+                why = "declared `pub` by " + ", ".join(cands) if cands else "declared `pub` by no module of the package"
+                undecided.append((where, seg, why))
+                continue
+            at = open_at + 1 + a + len(im.group(1))
+            edits.append((at, cands[0].replace("/", ".") + ".", where, seg))
+    for e in undecided:
+        report.append("UNDECIDED %s  {%s}: %s" % e)
+    if not edits:
+        return 0, len(undecided)
+    out = text
+    for at, prefix, where, seg in reversed(edits):
+        report.append("rewrite   %s  {%s} -> {%s%s}" % (where, seg, prefix, seg))
+        out = out[:at] + prefix + out[at:]
+    if write:
+        with open(file, "w", encoding="utf-8") as f:
+            f.write(out)
+    return len(edits), len(undecided)
+
+
 def is_canonical(botopink, file):
     if not botopink:
         return False
@@ -419,12 +515,16 @@ def is_canonical(botopink, file):
 
 
 def main(argv):
+    global PINNED
     write = "--write" in argv
+    shorthand = "--shorthand" in argv
+    if shorthand:
+        PINNED = "shorthand-import"
     botopink = None
     roots = []
     it = iter(argv)
     for a in it:
-        if a == "--write":
+        if a in ("--write", "--shorthand"):
             continue
         if a == "--format":
             botopink = next(it)
@@ -444,7 +544,7 @@ def main(argv):
         if pkg.pins_refusal:
             continue
         canonical = write and is_canonical(botopink, f)
-        n, u = process_file(pkg, f, write, report)
+        n, u = (process_file_shorthand if shorthand else process_file)(pkg, f, write, report)
         undecided += u
         if n:
             files_changed.append(f)

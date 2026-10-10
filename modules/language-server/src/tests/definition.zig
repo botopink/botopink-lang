@@ -701,3 +701,60 @@ test "definition: tuple element chain — t._0.field jumps to field decl on elem
     try std.testing.expectEqual(@as(u32, 1), td.?.location.range.start.line);
     try std.testing.expectEqualStrings("value", sliceAt(tuple_source, td.?.location.range));
 }
+
+// Decision 337 — `mod config;` binds the namespace `config`: a member read
+// through it, and through a folder module's `pub mod` (`text.split.f`), jumps
+// to the `pub` declaration in the module the chain names.
+test "definition: a member through the namespace a `mod` binds jumps into its module" {
+    const gpa = std.testing.allocator;
+    const main_src =
+        \\pub mod config;
+        \\mod text;
+        \\pub fn main() {
+        \\    @print(config.label("x"));
+        \\    @print(text.split.splitPath("a/b"));
+        \\}
+    ;
+    const others = [_]engine.ModuleSource{
+        .{ .uri = "file:///p/src/config.bp", .source = "pub fn label(s: string) -> string {\n    return s;\n}\n" },
+        .{ .uri = "file:///p/src/text/mod.bp", .source = "pub mod split;\n" },
+        .{ .uri = "file:///p/src/text/split.bp", .source = "fn hidden() {}\npub fn splitPath(p: string) -> string {\n    return p;\n}\n" },
+    };
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    var lexer = h.Lexer.init(main_src);
+    const tokens = try lexer.scanAll(arena.allocator());
+    {
+        const td = (try engine.definitionMember(gpa, "file:///p/src/main.bp", main_src, posOf(main_src, "label", 1, 1), tokens, &.{}, &others)) orelse return error.NoDefinition;
+        defer gpa.free(td.location.uri);
+        try std.testing.expectEqualStrings("file:///p/src/config.bp", td.location.uri);
+        try std.testing.expectEqual(@as(u32, 0), td.location.range.start.line);
+    }
+    {
+        const td = (try engine.definitionMember(gpa, "file:///p/src/main.bp", main_src, posOf(main_src, "splitPath", 1, 1), tokens, &.{}, &others)) orelse return error.NoDefinition;
+        defer gpa.free(td.location.uri);
+        try std.testing.expectEqualStrings("file:///p/src/text/split.bp", td.location.uri);
+        try std.testing.expectEqual(@as(u32, 1), td.location.range.start.line);
+    }
+}
+
+test "completion: after the namespace a `mod` binds, the module's pub declarations" {
+    const gpa = std.testing.allocator;
+    const main_src =
+        \\pub mod config;
+        \\pub fn main() {
+        \\    config.
+        \\}
+    ;
+    const others = [_]engine.ModuleSource{
+        .{ .uri = "file:///p/src/config.bp", .source = "pub fn label(s: string) -> string {\n    return s;\n}\nfn hidden() {}\npub type Pair(a: i32)\n" },
+    };
+    const items = (try engine.modNamespaceCompletion(gpa, main_src, h.pos(2, 11), &others)) orelse return error.NoCompletion;
+    defer {
+        for (items) |it| gpa.free(it.label);
+        gpa.free(items);
+    }
+    try std.testing.expectEqual(@as(usize, 2), items.len);
+    try std.testing.expectEqualStrings("label", items[0].label);
+    try std.testing.expectEqualStrings("Pair", items[1].label);
+}

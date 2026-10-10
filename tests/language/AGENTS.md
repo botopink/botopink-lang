@@ -343,6 +343,26 @@ bad(x); })` refused at the `try`) and `run/lambda_result_return_try` (a lambda u
 The cell `modules/shorthand_import_beside_bundled_package` (decision 170) was deleted with decision
 326: its subject — a shorthand import beside a bundled package — left when `routing` stopped being
 bundled, and the shorthand itself goes with decision 337 (`01-compiler/129`).
+Decision 337 (`01-compiler/129` steps 1–2) adds `modules/mod_binds_namespace` (`mod config;` binds
+`config`: a call, a function as a value, a type in a signature, a constructor and a variant path,
+no import), `modules/mod_namespace_cascade` (`mod geo;` alone reaches `geo.plane.distance(…)` and
+`geo.plane.Point` through `geo/mod.bp`'s `pub mod plane;`), `modules/mod_reexport_by_val` (a
+folder's `mod.bp` re-exports by value and by type — `pub val splitPath = split.splitPath;`, `pub
+type Pair = split.Pair;` — the submodule private, the type `split`'s own), and
+`modules/import_nested_module_namespace` (`import {store.cache};` in a sibling binds `cache`), all
+four targets; four refusals on every target by `<target>.expect` — `private_module_through_namespace`
+(`geo.plane` through a plain `mod plane;`, `private-module` at `plane`), `redundant_module_import`
+(`import {config};` beside `pub mod config;`), `declaration_named_like_module` (`fn config()` beside
+`mod config;`, `import-name-collision`) and `shorthand_import_one_candidate` (`import {splitPath};`,
+`shorthand-import`, the fix `import {config.splitPath};`) — and `reject/shorthand_import` (no module
+declares the name: `unresolved import`). They are `modules/` cells, not `reject/` ones: each needs a
+second module. The shorthands the suite wrote are their module paths now (`dependency_files_order`,
+`sibling_import_in_a_dependency`); an `import {m};` beside `pub mod m;` is gone (`decl_hooks_imported`,
+`decl_hooks_async_imported`, `decorator_meta_import`, `decorator_same`, `labelled_call_by_label`,
+`namespace_import_module`), and an item named like the module `mod` binds is aliased
+(`default_argument_across_modules`' `pad.pad as padTo`, `default_argument_open_across_modules`'
+`greet.greet as greetFrom`, `external_method_imported`'s `meter.meter as newMeter`) — the second
+binding of one name is `import-name-collision`.
 Step 7 (decision 148) adds `reject/captured_var_write_in_lambda` (`run({ -> n = n + 1; 1; }, 0)` is
 `captured-var-write` at `n =`; accepted by the parent binary) and `run/closure_capture_statement_position`
 (a `forEach` body, a local closure called as a statement — directly, in a `for` body and in a
@@ -650,7 +670,7 @@ parent binary: `run/task_await_in_if_block` (an `if` block that `await`s without
 `@Task` body — commonJS lowered it into a plain arrow and the module did not load),
 `run/task_void_return_in_if_block` (a bare `return;` in an `if` block of a `@Task<void>` body — wasm
 emitted a `return` with nothing on the stack), `modules/dependency_files_order` (a dependency whose
-`files` lists every importer before what it imports, `import {a.base};` and a bare `import {Leaf};`),
+`files` lists every importer before what it imports, `import {a.base};` and `import {leaf.Leaf};`),
 `run/external_erlang_host_module_missing` (`.targets` `erlang beam`: an `@External.Erlang` module that is
 neither shipped nor in the Erlang code path is a located build error on both, `.erlang.expect` and
 `.beam.expect`),
@@ -752,9 +772,10 @@ namespace and `"std"` call paths, and a namespace call filled from its default; 
 `reject/label_on_function_value` (a label in a call of a function value, `label-on-function-value`),
 `modules/behavior_from_host_declare` (a host `declare fn -> Greeter`, here and in a third module,
 meets a `Greeter` parameter of the behavior's module — the checker half already held; wasm refuses
-the host templates by `wasm.expect`), `modules/import_ambiguous_use` (a bare `import {parse};` over two
-modules declaring `pub fn parse` — the use is `ambiguous-import-use`, located, naming both, on every
-target by `<target>.expect`), `modules/import_ambiguous_unused` (the same import unread compiles),
+the host templates by `wasm.expect`), `modules/shorthand_import_several_candidates` (a bare `import {parse};` over two
+modules declaring `pub fn parse` — decision 337's `shorthand-import` at the item, both candidates
+written, on every target by `<target>.expect`; it was `import_ambiguous_use`, the use refused, and
+its sibling `import_ambiguous_unused` — the import unread compiled — is gone with the shorthand),
 `run/std_decorator_through_namespace` (`#[mocks.mock]` after `import {testing.mocks} from "std"`
 gives `Repo` the factory `Repo.mock()` and its stubs answer; wasm refuses the import by `.wasm.expect`),
 `reject/std_decorator_unknown_through_handle` (`#[mocks.mokc]` is `unknown-annotation`),
@@ -1224,8 +1245,8 @@ the rest of a `?.` chain, its absent probes read through `??`; erlang's and beam
 and 03's.
 
 `modules/sibling_import_in_a_dependency` is a local-dependency cell for 1.0.10-beta `00 · 04-js`
-step 5: a `mod` sibling imported with no `from` (`pub mod leaf; import {Twig};`), once in the
-project and once inside `deps/tree/` (`api.bp`'s `import {Leaf};`). commonJS used to write the
+step 5: a `mod` sibling imported with no `from` (`pub mod leaf; import {leaf.Twig};`), once in the
+project and once inside `deps/tree/` (`api.bp`'s `import {leaf.Leaf};`). commonJS used to write the
 literal word `module` as the path — `require("./module")` / `require("../module")` — so such a
 program built and then died with `Cannot find module`. Green on all four targets.
 

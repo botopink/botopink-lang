@@ -38,7 +38,7 @@ pub fn twice(x: i32) -> i32 {
 
 ----- SOURCE CODE -- b.bp
 ```botopink
-import { twice };
+import { a.twice };
 
 pub fn quad(x: i32) -> i32 {
     return twice(twice(x));

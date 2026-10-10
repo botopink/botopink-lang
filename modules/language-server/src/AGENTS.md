@@ -77,6 +77,14 @@ in `engine.zig`, add a test in [`tests/`](tests/AGENTS.md) (register it in
   walk — locals from `collectLocalScope` plus the module's own declarations from
   `moduleDecls`. Answering `null` there left the editor with no completion for
   any file carrying a type error, or being typed (front 14 step 1).
+- **The namespace a `mod` binds is followed** (decision 337; front 26 step 8's
+  carve-out). After `ns.` where the document declares `mod ns;`,
+  `Server.completionItems` answers `engine.modNamespaceCompletion` — the `pub`
+  declarations and `pub mod` children of the module the chain names (`config.`,
+  `text.split.`) — before the compile; go-to-definition on `config.splitPath` /
+  `text.split.splitPath` jumps to the `pub` declaration there
+  (`definitionMember`'s `.unknown` arm, `modNamespaceModule`: the graph file
+  `<segs…>.bp` or `<segs…>/mod.bp`).
 - **Two word lists mirror the compiler and must not drift.** `isKeyword` is
   `keywordOrIdent` in `compiler-core/src/lexer.zig` (plus `true`/`false`, which
   the lexer reads as identifiers) — it decides what `prepareRename` refuses and

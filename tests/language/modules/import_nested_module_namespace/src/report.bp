@@ -1,0 +1,6 @@
+import {store.cache};
+
+pub fn summary() -> string {
+    val e = cache.Entry(key: "k", hits: 3);
+    return e.key + ":" + cache.hits(e).toString();
+}

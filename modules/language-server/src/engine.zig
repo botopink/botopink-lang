@@ -1486,6 +1486,15 @@ pub fn definitionMember(
             // ON `_N` itself has nothing to jump to.
             .tuple => return null,
             .unknown => {
+                // Decision 337 — `config.splitPath` / `mod1.mod2.f` through the
+                // namespace a `mod` of this document binds: the member's `pub`
+                // declaration in the module the chain names.
+                if (modNamespaceModule(tokens, others, segs)) |m| {
+                    var lexer = Lexer.init(m.source);
+                    const mod_tokens = lexer.scanAll(arena) catch return null;
+                    if (try findDeclLocation(gpa, m.uri, name, mod_tokens, true)) |loc| return .{ .location = loc };
+                    return null;
+                }
                 // §E E2 — `Iface.method(...)` (associated-fn call): the head
                 // identifier is an interface name, not a value binding. Scan
                 // the active file + project graph for `interface <head>` and
@@ -1541,6 +1550,89 @@ fn posInToken(tok: Token, pos: proto.Position) bool {
     if (pos.line != tok.line -| 1) return false;
     const col0: u32 = @intCast(tok.col -| 1);
     return pos.character >= col0 and pos.character < col0 + @as(u32, @intCast(tok.lexeme.len));
+}
+
+/// Whether the document declares `mod <name>;` / `pub mod <name>;`.
+fn declaresMod(tokens: []const Token, name: []const u8) bool {
+    var i: usize = 0;
+    while (i + 1 < tokens.len) : (i += 1) {
+        if (tokens[i].kind != .mod) continue;
+        if (tokens[i + 1].kind == .identifier and std.mem.eql(u8, tokens[i + 1].lexeme, name)) return true;
+    }
+    return false;
+}
+
+/// Decision 337 — the module a namespace chain names (`config`, `mod1.mod2`)
+/// when its head is a `mod` the document declares: the module whose file is
+/// `<segs…>.bp` or `<segs…>/mod.bp` beside the document's own.
+fn modNamespaceModule(tokens: []const Token, others: []const ModuleSource, segs: []const []const u8) ?ModuleSource {
+    if (segs.len == 0 or !declaresMod(tokens, segs[0])) return null;
+    var buf: [512]u8 = undefined;
+    var w: usize = 0;
+    for (segs) |seg| {
+        if (w + seg.len + 1 >= buf.len) return null;
+        buf[w] = '/';
+        @memcpy(buf[w + 1 .. w + 1 + seg.len], seg);
+        w += seg.len + 1;
+    }
+    const tail = buf[0..w];
+    var best: ?ModuleSource = null;
+    for (others) |m| {
+        const path = lsp_types.uriToPath(m.uri);
+        if (std.mem.endsWith(u8, path, ".bp") and std.mem.endsWith(u8, path[0 .. path.len - ".bp".len], tail)) return m;
+        if (std.mem.endsWith(u8, path, "/mod.bp") and std.mem.endsWith(u8, path[0 .. path.len - "/mod.bp".len], tail)) best = m;
+    }
+    return best;
+}
+
+/// Decision 337 — completion after `ns.` where `ns` is a namespace a `mod` of
+/// the document binds (`config.▮`, `mod1.mod2.▮`): the module's `pub`
+/// declarations and its `pub mod` children. Null when the receiver is no such
+/// namespace. Caller owns the items.
+pub fn modNamespaceCompletion(
+    gpa: std.mem.Allocator,
+    source: []const u8,
+    pos: proto.Position,
+    others: []const ModuleSource,
+) !?[]proto.CompletionItem {
+    const offset = lsp_types.positionToOffset(source, pos);
+    var start = offset;
+    while (start > 0 and isIdentCont(source[start - 1])) start -= 1;
+    if (start == 0 or source[start - 1] != '.') return null;
+    const prefix = source[start..offset];
+    var arena_inst = std.heap.ArenaAllocator.init(gpa);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+    const segs = receiverChain(arena, source, start) orelse return null;
+    var lexer = Lexer.init(source);
+    const tokens = lexer.scanAll(arena) catch return null;
+    const m = modNamespaceModule(tokens, others, segs) orelse return null;
+    var mod_lexer = Lexer.init(m.source);
+    const mod_tokens = mod_lexer.scanAll(arena) catch return null;
+    var items: std.ArrayList(proto.CompletionItem) = .empty;
+    errdefer {
+        for (items.items) |it| gpa.free(it.label);
+        items.deinit(gpa);
+    }
+    var i: usize = 0;
+    while (i + 2 < mod_tokens.len) : (i += 1) {
+        if (mod_tokens[i].kind != .@"pub") continue;
+        var k = i + 1;
+        if (mod_tokens[k].kind == .default) k += 1;
+        if (k + 1 >= mod_tokens.len) break;
+        const kind: u32 = switch (mod_tokens[k].kind) {
+            .@"fn" => proto.CompletionItemKind.Function,
+            .val => proto.CompletionItemKind.Variable,
+            .type => proto.CompletionItemKind.Class,
+            .behavior => proto.CompletionItemKind.Interface,
+            .mod => proto.CompletionItemKind.Module,
+            else => continue,
+        };
+        const name_tok = mod_tokens[k + 1];
+        if (name_tok.kind != .identifier or !std.mem.startsWith(u8, name_tok.lexeme, prefix)) continue;
+        try items.append(gpa, .{ .label = try gpa.dupe(u8, name_tok.lexeme), .kind = kind });
+    }
+    return try items.toOwnedSlice(gpa);
 }
 
 /// Locates the module file backing a `mod <name>` reference: the dependency

@@ -6,7 +6,6 @@
 
 pub mod local;
 
-import {local};
 import {serverOnly as srv, check} from "web";
 
 #[check]

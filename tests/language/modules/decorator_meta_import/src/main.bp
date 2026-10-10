@@ -6,7 +6,6 @@ pub mod orm;
 pub mod models;
 import {models.City};
 import {models.City as Town};
-import {models};
 
 pub fn main() {
     @print(@typeInfo(City).meta.entity.table);

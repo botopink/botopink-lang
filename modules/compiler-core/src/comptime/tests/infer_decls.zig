@@ -472,18 +472,19 @@ test "infer: import source ---- a project's own module wins over a dependency's 
     for (session.outputs.items) |out| try std.testing.expect(out.outcome == .ok);
 }
 
-// The refusal that stays: a bare `import {NotFound};` names no module, the
-// name reaches both declarations, and the use is refused naming both.
-test "infer: import source ---- a bare import over same-named pub fns is ambiguous at its use" {
+// Decision 337: a bare `import {NotFound};` names no module of the package —
+// the shorthand — and is refused at the item, every module that declares the
+// name `pub` written as a fix.
+test "infer: import source ---- the shorthand over same-named pub fns lists the candidates" {
     const err = (try consumerTypeError("routes",
         \\import {NotFound};
         \\pub fn page() -> string {
         \\    return NotFound();
         \\}
-    , "comptime/import_source_bare_ambiguous")) orelse return error.ExpectedAmbiguousImportUse;
+    , "comptime/import_source_bare_ambiguous")) orelse return error.ExpectedShorthandImport;
     defer std.testing.allocator.free(err);
     try std.testing.expectEqualStrings(
-        "ambiguous-import-use: `NotFound` is imported from two declarations — declared `pub` by `app/blog/not_found` and by `app/not_found` — and this use does not say which",
+        "shorthand-import: `NotFound` names no module of this package, and 2 modules declare it `pub` — write import {app.blog.not_found.NotFound}; or import {app.not_found.NotFound};",
         err,
     );
 }

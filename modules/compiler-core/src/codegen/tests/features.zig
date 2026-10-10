@@ -644,26 +644,26 @@ test "js: import ---- disk-lib namespace merges across the lib's modules" {
 }
 
 test "js: import ---- a sibling module imported with no `from` requires its own path" {
-    // `pub mod leaf; import { Leaf };` — the import names no module, and the
-    // emitter used to write the literal word: `require("./module")` in a
-    // project, `require("../module")` inside a dependency, which is how
-    // a library's examples built and then died (04-js step 5). The path is the
+    // `pub mod leaf; import { leaf.Leaf };` — the emitter used to write the
+    // literal word for an import with no `from`: `require("./module")` in a
+    // project, `require("../module")` inside a dependency, which is how a
+    // library's examples built and then died (04-js step 5). The path is the
     // sibling's own, relative to the importing module, in both shapes; the
     // RUN LOG is `tests/language/modules/sibling_import_in_a_dependency`'s.
     try h.assertConsumerJs(std.testing.allocator, &.{
         .{ .path = "leaf", .source = "pub type Leaf(v: i32)\n" },
         .{ .path = "", .source =
         \\pub mod leaf;
-        \\import { Leaf };
+        \\import { leaf.Leaf };
         \\fn main() {
         \\    @print(Leaf(v: 7).v);
         \\}
         },
     }, &.{"const { Leaf } = require(\"./leaf.js\");"}, &.{"./module"});
     try h.assertModuleJs(std.testing.allocator, &.{
-        .{ .path = "tree/leaf", .source = "pub type Leaf(v: i32)\n" },
-        .{ .path = "tree/api", .source =
-        \\import { Leaf };
+        .{ .path = "tree/leaf", .package = "tree", .source = "pub type Leaf(v: i32)\n" },
+        .{ .path = "tree/api", .package = "tree", .source =
+        \\import { leaf.Leaf };
         \\pub fn seven() -> i32 {
         \\    return Leaf(v: 7).v;
         \\}
