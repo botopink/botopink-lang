@@ -1,0 +1,56 @@
+//// A field may be named by a word the target language reserves: `class`
+//// is a botopink name like any other. commonJS wrote the record's
+//// constructor as `constructor(class, id) { this.class = class; … }` and the
+//// whole program was a `SyntaxError` before `main` ran; the parameter is a
+//// binding (`class_`, as a destructured `class` and a parameter named
+//// `class` already were) and the property keeps the field's name, so
+//// construction, a read, a destructuring, a positional pattern, an update
+//// and the printed record agree on every target. A payload variant's field
+//// is the same constructor. wasm bound a destructured string field as a
+//// number (`class + "!"` printed an address plus `!`).
+
+type Tag(class: string, id: i32)
+
+type Node {
+    Leaf(class: string),
+    Empty,
+}
+
+fn spread(t: Tag) -> string {
+    val { class, id } = t;
+    return class + "#" + id.toString();
+}
+
+fn positional(t: Tag) -> string {
+    val assert Tag(c, i) = t;
+    return c + "@" + i.toString();
+}
+
+fn make(class: string) -> Tag {
+    return Tag(class: class, id: 0);
+}
+
+fn leafClass(n: Node) -> string {
+    return case n {
+        .Leaf(c) {
+            c;
+        }
+        .Empty {
+            "none";
+        }
+    };
+}
+
+pub fn main() {
+    val t = Tag(class: "btn", id: 1);
+    @print(t.class);
+    @print(spread(t));
+    @print(positional(t));
+    @print(t);
+    @print(make("card").class);
+    val u = Tag(..t, class: "link");
+    @print(u.class);
+    @print(Node.Leaf(class: "leaf"));
+    @print(leafClass(.Leaf(class: "x")));
+    @print(leafClass(.Empty));
+}

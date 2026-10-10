@@ -1,0 +1,4 @@
+//// The package root of `a`: its `shape` and the `user` deriving from it.
+
+pub mod shape;
+pub mod user;

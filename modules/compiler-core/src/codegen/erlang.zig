@@ -9106,6 +9106,9 @@ const Emitter = struct {
                 if (isVariantPath(n)) return Ast.Expr.a(this.variantTag(n));
                 // `#(true, n)`: a boolean literal is matched, never bound.
                 if (std.mem.eql(u8, n, "true") or std.mem.eql(u8, n, "false")) return Ast.Expr.a(n);
+                // `Box(label: null, n: k)`: `null` is the absent value's atom,
+                // matched; bound as the variable `Null` it matched anything.
+                if (std.mem.eql(u8, n, "null")) return Ast.Expr.a("undefined");
                 if (this.enum_variants.contains(n)) {
                     // One spelling can be BOTH a `type` this module places and
                     // a variant some enum declares (`type Block(…)` beside

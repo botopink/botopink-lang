@@ -1,0 +1,117 @@
+//// A `case` arm over a RECORD's constructor pattern, its fields written by
+//// label (decision 8 §5.1 P4) — in the declared order, swapped, with `..`,
+//// positionally, nested, with a literal field and under a guard, over one
+//// record and over a union of two.
+////
+//// commonJS tested the record as an enum variant, `_s.tag === "Dog"` — a
+//// record instance carries no `tag`, so no arm ever matched and the `case`
+//// printed `null` (the `_` arm answered for the union); the test is the
+//// record's class, as an arm naming the record bare already was. wasm bound
+//// a `?i32` field read off the pattern as a plain word, so `"${a ?? 0}"`
+//// printed the box's address.
+
+type Dog(name: string, breed: string, age: ?i32 = null)
+
+type Cat(name: string, lives: i32)
+
+type Owner(who: string, dog: Dog)
+
+type Pair(a: i32, b: i32)
+
+fn show(d: Dog) -> string {
+    return case d {
+        Dog(name: n, breed: b, age: a) {
+            n + "/" + b + "/" + "${a ?? 0}";
+        }
+    };
+}
+
+fn swapped(d: Dog) -> string {
+    return case d {
+        Dog(age: a, breed: b, name: n) {
+            n + " " + b + " " + "${a ?? 0}";
+        }
+    };
+}
+
+fn breedOf(d: Dog) -> string {
+    return case d {
+        Dog(breed: b, ..) {
+            b;
+        }
+    };
+}
+
+fn positional(d: Dog) -> string {
+    return case d {
+        Dog(n, b, a) {
+            n + "-" + b + "-" + "${a ?? 0}";
+        }
+    };
+}
+
+fn pet(p: Dog | Cat) -> string {
+    return case p {
+        Dog(name: n, breed: b, ..) {
+            "dog " + n + " " + b;
+        }
+        Cat(lives: l, name: n) {
+            "cat " + n + " " + l.toString();
+        }
+        _ {
+            "?";
+        }
+    };
+}
+
+fn owner(o: Owner) -> string {
+    return case o {
+        Owner(dog: Dog(breed: b, name: n, ..), who: w) {
+            w + ":" + n + "/" + b;
+        }
+    };
+}
+
+fn pairs(p: Pair) -> string {
+    return case p {
+        Pair(b: 0, a: x) {
+            "b0 " + x.toString();
+        }
+        Pair(b: y, a: 0) {
+            "a0 " + y.toString();
+        }
+        _ {
+            "other";
+        }
+    };
+}
+
+fn guarded(d: Dog) -> string {
+    return case d {
+        Dog(breed: b, ..) when (b == "lab") {
+            "lab!";
+        }
+        _ {
+            "no";
+        }
+    };
+}
+
+pub fn main() {
+    val rex = Dog(name: "rex", breed: "lab", age: 3);
+    val max = Dog(name: "max", breed: "pug");
+    @print(show(rex));
+    @print(show(max));
+    @print(swapped(rex));
+    @print(breedOf(max));
+    @print(positional(rex));
+    @print(positional(max));
+    @print(pet(rex));
+    @print(pet(Cat(name: "tom", lives: 9)));
+    @print(owner(Owner(who: "ann", dog: rex)));
+    @print(pairs(Pair(a: 5, b: 0)));
+    @print(pairs(Pair(a: 0, b: 6)));
+    @print(pairs(Pair(a: 1, b: 1)));
+    @print(guarded(rex));
+    @print(guarded(max));
+}

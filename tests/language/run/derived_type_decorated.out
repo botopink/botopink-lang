@@ -1,0 +1,3 @@
+RecipePatch true (title: ?string #label, description: ?string, servings: ?i32)
+RecipeTitle true (title: string #label)
+Feijoada

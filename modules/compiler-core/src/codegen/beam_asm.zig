@@ -10240,6 +10240,10 @@ const Emitter = struct {
                 const name = bareVariantName(written);
                 if (std.mem.eql(u8, written, "true") or std.mem.eql(u8, written, "false")) {
                     try beamEmitter.writeTest(self.out, .is_eq_exact, fail, &.{ Op.xr(src), Op.atom(written) });
+                } else if (std.mem.eql(u8, written, "null")) {
+                    // `Box(label: null, n: k)`: the absent value's atom is
+                    // tested; bound as a name it took every field.
+                    try beamEmitter.writeTest(self.out, .is_eq_exact, fail, &.{ Op.xr(src), Op.atom("undefined") });
                 } else if (isVariantPath(written) or self.enum_variants.contains(name)) {
                     var vbuf: [256]u8 = undefined;
                     const vatom = try atomName(self.variantTag(written), &vbuf);

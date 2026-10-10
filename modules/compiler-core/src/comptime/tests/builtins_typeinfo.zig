@@ -174,76 +174,18 @@ test "comptimeError: string literal raises custom error" {
     );
 }
 
-// ── mergeRecords ────────────────────────────────────────────────────────────
+// ── std's `Type` (decision 307) ─────────────────────────────────────────────
+//
+// `Type.merge` / `partial` / `omit` / `pick` / `required` answer a NEW record
+// named after its `val` — `comptime/derived_types.zig`'s unit tests and
+// `tests/language`'s `run/derived_type_*` and `reject/derived_type_*` cells
+// (a snapshot here would embed std's `types.bp`). The bare names the checker
+// once intercepted (`mergeRecords`, `partial`, `omit`, `pick`) are unbound.
 
-test "mergeRecords: disjoint records merge correctly" {
-    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\type User(name: string, id: i32)
-        \\type Timestamps(createdAt: string, updatedAt: string)
-        \\val Merged = mergeRecords(User, Timestamps);
-    );
-}
-
-test "mergeRecords: same-name same-type deduplicates" {
-    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\type A(x: i32, y: string)
-        \\type B(x: i32, z: bool)
-        \\val Merged = mergeRecords(A, B);
-    );
-}
-
-test "mergeRecords: conflict raises error" {
+test "Type: the bare `mergeRecords` is an unbound name" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\type A(x: i32)
-        \\type B(x: string)
+        \\type B(y: string)
         \\val Merged = mergeRecords(A, B);
-    );
-}
-
-// ── partial ─────────────────────────────────────────────────────────────────
-
-test "partial: record fields become optional" {
-    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\type Config(port: i32, host: string)
-        \\val PartialCfg = partial(Config);
-    );
-}
-
-test "partial: empty record works" {
-    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\type Empty()
-        \\val PartialE = partial(Empty);
-    );
-}
-
-// ── omit ────────────────────────────────────────────────────────────────────
-
-test "omit: remove a single field" {
-    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\type FullUser(id: i32, name: string, password: string)
-        \\val PublicUser = omit(FullUser, "password");
-    );
-}
-
-test "omit: non-existent field raises error" {
-    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\type User(id: i32)
-        \\val NoField = omit(User, "email");
-    );
-}
-
-// ── pick ────────────────────────────────────────────────────────────────────
-
-test "pick: keep specified fields" {
-    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\type FullUser(id: i32, name: string, password: string)
-        \\val NameOnly = pick(FullUser, ["name", "id"]);
-    );
-}
-
-test "pick: field email not found raises type error" {
-    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\type User(id: i32, name: string)
-        \\val BadPick = pick(User, ["email"]);
     );
 }

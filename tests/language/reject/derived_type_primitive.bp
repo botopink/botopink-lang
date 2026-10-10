@@ -1,0 +1,7 @@
+//// Decision 307 — a primitive is no record: refused at the argument.
+
+import {types.Type} from "std";
+
+pub val MaybeInt = Type.partial(i32);
+
+pub fn main() {}

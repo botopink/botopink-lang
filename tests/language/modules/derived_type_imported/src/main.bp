@@ -1,0 +1,28 @@
+//// Decision 307 — an imported derived type is a parameter type and a
+//// constructor; a module derives from an imported record and from an
+//// imported derived type, on all four targets.
+
+pub mod attrs;
+
+import {attrs.AnchorProps, attrs.GlobalAttrs};
+import {types.Type} from "std";
+
+val IdOnly = Type.pick(GlobalAttrs, .id);
+
+val Link = Type.omit(AnchorProps, .target);
+
+fn a(props: AnchorProps) -> string {
+    val lang = props.lang ?? "en";
+    return "<a href=\"${props.href}\" lang=\"${lang}\">";
+}
+
+fn plain(link: Link) -> string {
+    return link.href;
+}
+
+pub fn main() {
+    @print(a(AnchorProps(href: "/home", lang: "pt")));
+    @print(a(AnchorProps(href: "/about")));
+    @print(IdOnly(id: "main").id ?? "-");
+    @print(plain(Link(href: "/x")));
+}

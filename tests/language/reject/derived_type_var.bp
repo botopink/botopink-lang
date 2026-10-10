@@ -1,0 +1,12 @@
+//// Decision 307 — a derived type is bound by a `val`, never a `var`.
+
+import {types.Type} from "std";
+
+type Recipe(
+    title: string,
+    description: ?string,
+)
+
+pub var Patch = Type.partial(Recipe);
+
+pub fn main() {}

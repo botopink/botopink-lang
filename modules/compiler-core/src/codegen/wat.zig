@@ -1743,6 +1743,10 @@ const Emitter = struct {
     /// Set for the one arm body a primitive-type arm opens: its binder is the
     /// payload the test proved, unboxed (`lowerArmBody` reads and clears it).
     arm_unbox: ?PrimTest = null,
+    /// Set while a tested arm naming a RECORD (`DogB { d -> … }`, decision 8
+    /// §3.3) lowers its body: the binder is that record, whatever the union
+    /// subject is (`emitArmChain` sets it, `lowerArmBody` reads and clears it).
+    arm_record: ?[]const u8 = null,
     /// `<Behavior>.<method>` → its declaration: what a behavior literal's
     /// field lambda is written against.
     behavior_methods: std.StringHashMapUnmanaged(ast.BehaviorMethod) = .empty,
@@ -3419,6 +3423,17 @@ const Emitter = struct {
     /// payload variant (those are allocated; an all-unit enum's member is the
     /// bare ordinal). An array or a tuple HOLDING one does not: the container
     /// is printed by its shape, and the shape codes have no record arm yet.
+    /// The enum with a payload variant a name or a field read is declared
+    /// as (`val p: Place`, `a.place`) — the declaration says so, not the
+    /// value's spelling.
+    fn payloadEnumOfName(self: *Emitter, e: ast.Expr) ?[]const u8 {
+        if (e != .identifier) return null;
+        const t = self.typeRefOf(e) orelse return null;
+        if (t != .named) return null;
+        const variants = self.enums.get(t.named) orelse return null;
+        return if (enumHasPayload(variants)) t.named else null;
+    }
+
     fn isTaggedValue(self: *Emitter, e: ast.Expr) bool {
         if (self.recordTypeOfExpr(e)) |rt| return self.records.contains(rt);
         switch (e) {
@@ -5655,6 +5670,13 @@ const Emitter = struct {
                                 try self.emitLoadOffset(off);
                                 // A float or `i64` field holds its cell.
                                 if (recv_rty) |rty| try self.emitFromCell(fieldCellOf(self.fieldTypeIn(rty, fld.field_name) orelse ""));
+                                // The binder is the field's type, as `.ctor`'s
+                                // below: a string field concatenates as text.
+                                if (recv_rty) |rty| if (self.fieldTypeIn(rty, fld.field_name)) |ft| {
+                                    if (std.mem.eql(u8, ft, "string")) try self.str_locals.put(fld.bind_name, {});
+                                    if (std.mem.eql(u8, ft, "bool")) try self.bool_locals.put(fld.bind_name, {});
+                                    if (self.resolveRecordName(ft)) |sub| try self.local_types.put(fld.bind_name, sub);
+                                };
                                 try self.emit(.{ .local_set = fld.bind_name });
                             }
                         },
@@ -6290,6 +6312,16 @@ const Emitter = struct {
         // site. A variant of an ALL-UNIT enum is the ordinal itself, with no
         // allocation and so no header, and still has no printed form: it is
         // refused rather than reading four bytes behind an integer.
+        // A field or a name declared as an enum with a payload variant
+        // (`a.place`, `val p: Place`): every value of it — a unit variant too
+        // — is a tagged cell carrying its variant's descriptor. Neither
+        // `namedShapeOf` nor `isTaggedValue` reads a declared type, and the
+        // numeric printer answered the cell's address.
+        if (self.payloadEnumOfName(arg) != null) {
+            try self.lowerCoerced(arg, "i32");
+            try self.emit(self.builder().helper(if (last) .print_tagged else .print_tagged_raw));
+            return;
+        }
         if (self.namedShapeOf(arg)) |ns| {
             // A record that may be ABSENT — `es.at(0)`, or a name bound to one.
             // The tagged printer reads a header four bytes behind the value, so
@@ -7112,6 +7144,9 @@ const Emitter = struct {
         defer self.scopeRestore(scope_mark);
         const unbox = self.arm_unbox;
         self.arm_unbox = null;
+        // Read once: a `case` nested in the body binds its own arms.
+        const record = self.arm_record;
+        self.arm_record = null;
         const lam = armLambda(body) orelse {
             try self.lowerCoerced(body, self.cur_result);
             return;
@@ -7137,7 +7172,7 @@ const Emitter = struct {
             const p = lam.params[0];
             try self.declareLocal(p, "i32");
             if (self.str_locals.contains(subj)) try self.str_locals.put(p, {});
-            if (self.local_types.get(subj)) |t| try self.local_types.put(p, t);
+            if (record orelse self.local_types.get(subj)) |t| try self.local_types.put(p, t);
             try self.emit(.{ .local_get = subj });
             try self.emit(.{ .local_set = p });
         }
@@ -7211,7 +7246,7 @@ const Emitter = struct {
             // a written path is a variant, never a binding (§5.1 P8); a name
             // that is a `type` this module declares is decision 8 §3.3's arm,
             // tested by the value's own header, not a binding either
-            .ident => |n| !isBoolLitName(n) and !isVariantPath(n) and self.findVariant(n) == null and !self.namesATestableType(n),
+            .ident => |n| !isLitPatternName(n) and !isVariantPath(n) and self.findVariant(n) == null and !self.namesATestableType(n),
             .multi => |pats| for (pats) |sub| {
                 if (!self.patternIsIrrefutable(sub)) break false;
             } else true,
@@ -7254,6 +7289,12 @@ const Emitter = struct {
                 try self.emit(.{ .local_get = subj });
                 try self.emit(if (n[0] == 't') one else zero);
                 try self.emit(opOf("i32", "eq"));
+            } else if (std.mem.eql(u8, n, "null")) {
+                // `Box(label: null, n: k)`: an optional field is absent when
+                // its word is `0`. Bound as a local named `null`, the arm
+                // took every value.
+                try self.emit(.{ .local_get = subj });
+                try self.emit(opOf("i32", "eqz"));
             } else {
                 // A written path is a variant, never a binding (§5.1 P8), so
                 // `.Ok` and `Shape.Circle` test a tag; a path no enum here
@@ -7400,13 +7441,20 @@ const Emitter = struct {
     fn patternOnlyBinds(self: *Emitter, p: ast.Pattern) bool {
         return switch (p) {
             .wildcard => true,
-            .ident => |n| !isBoolLitName(n) and !isVariantPath(n) and self.findVariant(n) == null and !self.records.contains(n),
+            .ident => |n| !isLitPatternName(n) and !isVariantPath(n) and self.findVariant(n) == null and !self.records.contains(n),
             else => false,
         };
     }
 
     fn isBoolLitName(n: []const u8) bool {
         return std.mem.eql(u8, n, "true") or std.mem.eql(u8, n, "false");
+    }
+
+    /// `true`, `false` and `null` ride on `Pattern.ident`
+    /// (`parser/patterns.zig` `parseSimplePattern`): literals a pattern
+    /// tests, never names it binds.
+    fn isLitPatternName(n: []const u8) bool {
+        return isBoolLitName(n) or std.mem.eql(u8, n, "null");
     }
 
     /// Element `i` of the tuple `subj` holds — its shape code (`s`, `i`, `(…)`),
@@ -7769,6 +7817,11 @@ const Emitter = struct {
         if (std.mem.eql(u8, ft, "string")) try self.str_locals.put(n, {});
         if (std.mem.eql(u8, ft, "bool")) try self.bool_locals.put(n, {});
         if (self.resolveRecordName(ft)) |r| try self.local_types.put(n, r);
+        // The binder carries the field's whole declared type, as a parameter
+        // does: `Dog(age: a)` over `age: ?i32` is a `?i32`, so `a ?? 0`
+        // unboxes it — read as a plain word, `"${a ?? 0}"` printed the box's
+        // address.
+        if (self.fieldTypeRefIn(rty, fname)) |t| try self.noteTypedBinder(n, t);
     }
 
     /// The local a multi-subject `case` holds its i-th subject in.
@@ -7787,7 +7840,7 @@ const Emitter = struct {
                 if (sub == .ident and self.unknown_subjects.contains(local) and primTestOf(.{ .named = sub.ident }) != null) continue;
                 try self.bindPattern(sub, local);
             },
-            .ident => |n0| if (!isBoolLitName(n0) and !isVariantPath(n0) and self.findVariant(n0) == null) {
+            .ident => |n0| if (!isLitPatternName(n0) and !isVariantPath(n0) and self.findVariant(n0) == null) {
                 const n = try self.bindName(n0, "i32");
                 if (self.str_locals.contains(subj)) try self.str_locals.put(n, {});
                 try self.emit(.{ .local_get = subj });
@@ -7961,11 +8014,21 @@ const Emitter = struct {
         self.open(&then_c);
         const arm_aliases = try self.aliases.clone();
         try self.bindPattern(arms[idx].pattern, subj);
+        // An arm naming a record over a union subject (`DogB { d -> … }`):
+        // the binder is the record the test proved. It took the subject's
+        // type, which a union has none of, so `d.name` printed an address.
+        const prev_record = self.arm_record;
+        defer self.arm_record = prev_record;
+        self.arm_record = switch (arms[idx].pattern) {
+            .ident => |n| if (!isVariantPath(n) and self.findVariant(n) == null and self.records.contains(n)) n else null,
+            else => null,
+        };
         if (arms[idx].guard) |g| {
             try self.emitGuardChain(arms, subj, idx, g);
         } else {
             try self.lowerArmBody(body, subj);
         }
+        self.arm_record = prev_record;
         self.restoreAliases(arm_aliases);
         const then_seq = self.seal(&then_c, .{ .value = ty });
 
@@ -12566,6 +12629,25 @@ const Emitter = struct {
     fn fieldShape(self: *Emitter, t: ?ast.TypeRef) anyerror![]const u8 {
         const tref = t orelse return "i";
         if (try self.typeRefShape(tref)) |shape| return shape;
+        // An enum with a payload variant is a pointer to a tagged `[tag, …]`
+        // cell, every value of it — a unit variant too — carrying its
+        // variant's descriptor, so it prints by its header like a record. An
+        // optional field prints by its payload's shape behind `?` / `!`
+        // (`optElemShape`). Both fell to `i`, so `place: Place.Here` and
+        // `maybe: ?Target` printed the cell's address.
+        switch (tref) {
+            .named => |n| if (self.enums.contains(n) and !self.isAllUnitEnum(n)) return "T",
+            .optional => |inner| {
+                if (inner.* == .named and self.enums.contains(inner.named)) {
+                    // `?Color` boxes the ordinal (`optInfoOfTypeRef`): `!`
+                    // reads the box, then the enum's own names.
+                    if (self.isAllUnitEnum(inner.named)) return try std.fmt.allocPrint(self.arena(), "!{s}", .{try self.unitEnumShape(inner.named)});
+                    return "?T";
+                }
+                if (self.optInfoOfTypeRef(tref)) |oi| if (try self.optElemShape(oi, null)) |sh| return sh;
+            },
+            else => {},
+        }
         const code = scalarCode(tref) orelse 'i';
         return switch (code) {
             's' => "s",

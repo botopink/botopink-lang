@@ -1277,12 +1277,43 @@ fn expandTrailingDefaultsWithParams(agg: *Aggregator, params: []const ast.Param,
         // value teardown via the `is_default_inj` flag.
         new_args[i] = .{
             .label = null,
-            .value = @constCast(&params[i].default.?),
+            .value = try injectedDefault(agg, &params[i]),
             .comments = &.{},
             .is_default_inj = true,
         };
     }
     c.args = new_args;
+}
+
+/// The expression a parameter's declared default is injected as at a call
+/// that omits it. A leading-dot unit variant (`target: Target = .Top`) is
+/// written out qualified by the parameter's declared enum — `Target.Top`,
+/// the form inference splices for a `.Top` the call writes (`indexRewrites`,
+/// 01 step 12), since the default's own node was typed in its declaration,
+/// never at the call. Injected bare, commonJS read `Top` (a `ReferenceError`)
+/// and beam the atom `'Top'` (printed `'Top'`). Any other default is the
+/// parameter's own node, unchanged.
+fn injectedDefault(agg: *Aggregator, param: *const ast.Param) !*ast.Expr {
+    const dflt = &param.default.?;
+    if (dflt.* != .identifier or dflt.identifier.kind != .dotIdent) return @constCast(dflt);
+    const enum_name = switch (param.typeRef) {
+        .named => |n| n,
+        .optional => |inner| switch (inner.*) {
+            .named => |n| n,
+            else => return @constCast(dflt),
+        },
+        else => return @constCast(dflt),
+    };
+    // A section path (`Token.Layout`) or a builtin spelling is not one plain
+    // name to qualify with; it keeps the written node.
+    if (enum_name.len == 0 or std.mem.indexOfScalar(u8, enum_name, '.') != null or !std.ascii.isUpper(enum_name[0])) return @constCast(dflt);
+    const arena = agg.spec_cache.arena;
+    const loc = dflt.identifier.loc;
+    const recv = try arena.create(ast.Expr);
+    recv.* = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = enum_name } } };
+    const qualified = try arena.create(ast.Expr);
+    qualified.* = .{ .identifier = .{ .loc = loc, .kind = .{ .identAccess = .{ .receiver = recv, .member = dflt.identifier.kind.dotIdent } } } };
+    return qualified;
 }
 
 fn expandTrailingDefaults(agg: *Aggregator, fn_decl: ast.FnDecl, c: anytype) !void {
@@ -1405,7 +1436,7 @@ fn applyDefaultFill(agg: *Aggregator, fill: envMod.DefaultFill, c: anytype) !voi
         } else {
             new_args[pi] = .{
                 .label = null,
-                .value = @constCast(&fill.params[pi].default.?),
+                .value = try injectedDefault(agg, &fill.params[pi]),
                 .comments = &.{},
                 .is_default_inj = true,
             };

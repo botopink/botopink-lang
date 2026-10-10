@@ -1,0 +1,87 @@
+//// `null` written as a field's pattern tests that the field is absent; it
+//// binds nothing. The parser read `null` (like `true` / `false`) as a plain
+//// binder, so the payload kept the `fields` shape and every backend bound a
+//// name `null`: commonJS wrote `const { label: null } = _s` (a
+//// `SyntaxError`), and erlang, beam and wasm matched any field — the first
+//// arm answered for every value. Labelled, positional, beside a literal, on
+//// an `?i32` field and beside `true` / `false`.
+
+type Box(label: ?string, n: i32)
+
+type Count(hits: ?i32, name: string)
+
+type Flag(on: bool, n: i32)
+
+fn describe(b: Box) -> string {
+    return case b {
+        Box(label: null, n: k) {
+            "empty " + k.toString();
+        }
+        Box(label: l, n: k) {
+            "full " + k.toString();
+        }
+    };
+}
+
+fn positional(b: Box) -> string {
+    return case b {
+        Box(null, _) {
+            "none";
+        }
+        Box(l, _) {
+            "some";
+        }
+    };
+}
+
+fn literal(b: Box) -> string {
+    return case b {
+        Box(label: "x", n: 2) {
+            "x2";
+        }
+        Box(label: null, n: 0) {
+            "null0";
+        }
+        _ {
+            "other";
+        }
+    };
+}
+
+fn hits(c: Count) -> string {
+    return case c {
+        Count(hits: null, name: n) {
+            n + " never";
+        }
+        Count(hits: h, name: n) {
+            n + " " + (h ?? 0).toString();
+        }
+    };
+}
+
+fn flag(f: Flag) -> string {
+    return case f {
+        Flag(on: true, n: k) {
+            "on " + k.toString();
+        }
+        Flag(on: false, n: k) {
+            "off " + k.toString();
+        }
+    };
+}
+
+pub fn main() {
+    @print(describe(Box(label: null, n: 1)));
+    @print(describe(Box(label: "x", n: 2)));
+    @print(positional(Box(label: null, n: 1)));
+    @print(positional(Box(label: "y", n: 1)));
+    @print(literal(Box(label: "x", n: 2)));
+    @print(literal(Box(label: null, n: 0)));
+    @print(literal(Box(label: null, n: 3)));
+    @print(literal(Box(label: "y", n: 2)));
+    @print(hits(Count(hits: null, name: "a")));
+    @print(hits(Count(hits: 0, name: "b")));
+    @print(hits(Count(hits: 4, name: "c")));
+    @print(flag(Flag(on: true, n: 1)));
+    @print(flag(Flag(on: false, n: 2)));
+}

@@ -2440,11 +2440,14 @@ const Emitter = struct {
             const params = try self.arena().alloc(js.Param, r.recordFields().len);
             const assigns = try self.arena().alloc(js.Stmt, r.recordFields().len);
             for (r.recordFields(), 0..) |f, i| {
-                params[i] = .{ .pattern = .{ .name = f.name } };
+                // A field may be named by a JS reserved word (`class`): the
+                // parameter is a binding (`.ident`, renamed `class_`), the
+                // property keeps the field's name.
+                params[i] = .{ .pattern = .{ .ident = f.name } };
                 assigns[i] = .{ .expr = try self.b.assign(
                     try self.b.member(.this, f.name),
                     "=",
-                    .{ .name = f.name },
+                    .{ .ident = f.name },
                 ) };
             }
             ctor = .{ .params = params, .body = .{ .stmts = assigns, .indent = 1 } };
@@ -2618,11 +2621,11 @@ const Emitter = struct {
                 const assigns = try self.arena().alloc(js.Stmt, v.fields.len + 1);
                 assigns[0] = .{ .expr = try self.b.call(.{ .name = "super" }, &.{}) };
                 for (v.fields, 0..) |f, i| {
-                    params[i] = .{ .pattern = .{ .name = f.name } };
+                    params[i] = .{ .pattern = .{ .ident = f.name } };
                     assigns[i + 1] = .{ .expr = try self.b.assign(
                         try self.b.member(.this, f.name),
                         "=",
-                        .{ .name = f.name },
+                        .{ .ident = f.name },
                     ) };
                 }
                 ctor = .{ .params = params, .body = .{ .stmts = assigns, .indent = 1 } };
@@ -2630,7 +2633,7 @@ const Emitter = struct {
                 // `Shape.Circle(5)` stays a call, so the factory keeps every
                 // construction site in the language byte-identical.
                 const args = try self.arena().alloc(js.Expr, v.fields.len);
-                for (v.fields, 0..) |f, i| args[i] = .{ .name = f.name };
+                for (v.fields, 0..) |f, i| args[i] = .{ .ident = f.name };
                 try members.append(self.arena(), .{
                     .kind = .static_method,
                     .name = v.name,
@@ -2711,8 +2714,8 @@ const Emitter = struct {
                 const args = try self.arena().alloc(js.Expr, m.params.len);
                 args[0] = .this;
                 for (m.params[1..], 0..) |p, i| {
-                    fwd_params[i] = .{ .pattern = .{ .name = p.name } };
-                    args[i + 1] = .{ .name = p.name };
+                    fwd_params[i] = .{ .pattern = .{ .ident = p.name } };
+                    args[i + 1] = .{ .ident = p.name };
                 }
                 try members.append(self.arena(), .{
                     .kind = .method,
@@ -6115,6 +6118,7 @@ const Emitter = struct {
     /// matches anything, so it contributes no test.
     fn isBindingName(self: *Emitter, name: []const u8) bool {
         if (name.len == 0) return false;
+        if (isKeywordLiteralPattern(name)) return false;
         if (isVariantPath(name) or primitiveTypeName(name)) return false;
         if (self.unit_variant_names.contains(name) or self.variant_fields.contains(name)) return false;
         return !std.ascii.isUpper(name[0]);
@@ -6238,6 +6242,14 @@ const Emitter = struct {
             // every copy, every module and every package boundary, and it is
             // what `variantTest` and the payload arms have always used.
             .ident => |n| {
+                // `null` / `true` / `false` written as a field's pattern
+                // (`Box(label: null, n: k)`) test the field; `null` is the
+                // loose `==`, as an optional's absence is everywhere else.
+                if (isKeywordLiteralPattern(n)) return try self.b.binaryBare(
+                    if (std.mem.eql(u8, n, "null")) "==" else "===",
+                    subject,
+                    .{ .name = n },
+                );
                 const bare = bareVariantName(n);
                 // A primitive type spelling is decision 8 §5.2's type-test arm
                 // (`case x { i32 { … } string { … } }`), tested by §4.1's
@@ -6353,11 +6365,20 @@ const Emitter = struct {
     /// the payload, `.Some(#(a, b))` tests the tuple.
     fn variantTest(self: *Emitter, v: anytype, subject: js.Expr) anyerror!js.Expr {
         const bare = bareVariantName(v.name);
-        const declared = self.payloadSlots(v.name, false);
+        // A RECORD's constructor pattern (`Dog(name: n, breed: b)`) is the
+        // class test an arm naming the record makes (`.ident` above), and its
+        // payload reads the record's declared fields: a record instance
+        // carries no `tag`, so the `tag` compare failed every arm and the
+        // `case` answered `undefined` (printed `null`).
+        const record = !isVariantPath(v.name) and self.record_fields.contains(bare) and !self.isDeclaredVariantName(bare);
+        const declared = self.payloadSlots(v.name, record);
         if (declared == .none) if (resultKey(bare)) |key| {
             return try self.b.binaryBare("in", .{ .quoted = key }, subject);
         };
-        var acc = try self.b.binaryBare("===", try self.b.member(subject, "tag"), .{ .quoted = bare });
+        var acc = if (record)
+            try self.isTest(.{ .named = bare }, subject)
+        else
+            try self.b.binaryBare("===", try self.b.member(subject, "tag"), .{ .quoted = bare });
         if (v.payload == .literals) for (v.payload.literals, 0..) |p, i| {
             const key = variantFieldKey(v, declared, i) orelse continue;
             const t = try self.patternTest(p, try self.b.member(subject, key)) orelse continue;
@@ -6790,6 +6811,12 @@ const Emitter = struct {
         };
     }
 };
+
+/// `null`, `true` and `false` ride on `Pattern.ident` (`parser/patterns.zig`
+/// `parseSimplePattern`): a literal to test, never a name to bind.
+fn isKeywordLiteralPattern(name: []const u8) bool {
+    return std.mem.eql(u8, name, "null") or std.mem.eql(u8, name, "true") or std.mem.eql(u8, name, "false");
+}
 
 /// `Result.Ok` / `Result.Err` / `Result.Error` — how the transform writes an
 /// `Ok(…)` / `Error(…)` pattern over a `@Result` subject

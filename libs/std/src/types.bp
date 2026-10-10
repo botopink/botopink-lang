@@ -10,8 +10,9 @@
 //// `comptime x: @Expr<T>` (decision 364), so a call needs no `comptime`
 //// keyword. The bodies are the
 //// compiler's: bodyless, without `#[@External.<Target>]`, because no target
-//// runs them — the checker answers the call (`01-checker` step 28 keys its
-//// resolver on these declarations).
+//// runs them — the compiler answers `partial`, `required`, `pick`, `omit` and
+//// `merge` with the record declaration they derive, keyed on this `Type`
+//// (`comptime/derived_types.zig`); `keys` is not answered yet.
 ////
 //// `Type` is a namespace type (decision 329): no field list, no value, every
 //// function associated. `Field<T>` is declared in its body, so it is its

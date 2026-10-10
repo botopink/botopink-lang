@@ -462,7 +462,11 @@ trailing `..` (P7), a `#(…)` tuple pattern (P6), an `A...B` inclusive range
 (§5.2) and a pattern nested inside a payload (`.Some(#(a, b))`). One payload
 production serves variants and tuples; a payload of nothing but plain binders
 keeps the `fields` shape every existing consumer knows, anything else becomes
-`literals`. `ast.zig` documents the node each shape lands on and what inference
+`literals`. `null`, `true` and `false` land on `.ident` but are not binders
+(`isPlainBinder`): `Box(label: null, n: k)` is `literals`, and every backend
+tests the field (`commonJS` `isKeywordLiteralPattern`, erlang's `undefined`
+atom, beam's `is_eq_exact`, wasm's `eqz`) — kept as `fields` it was bound as a
+name `null` (`tests/language/run/case_record_field_null`). `ast.zig` documents the node each shape lands on and what inference
 owes it.
 
 Five located refusals, all in `print.zig`: `pattern-range-exclusive` (`1..9` —

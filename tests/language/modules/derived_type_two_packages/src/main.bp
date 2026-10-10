@@ -1,0 +1,21 @@
+//// Two packages each have a module named `shape` declaring a record `Box`
+//// of different fields, and each package's `user` derives a type from its
+//// own `Box` (decision 307). A derived type's imported source is found by
+//// its module's key — the package plus the path (170, 337) — so `a`'s
+//// `Type.pick(Box, .width, .label)` and `b`'s `Type.omit(Box, .depth)` read
+//// their own package's `Box`; the project's own `shape` is a third module.
+
+pub mod shape;
+
+import {shape.Box};
+import {describeA} from "a";
+import {describeB} from "b";
+import {types.Type} from "std";
+
+val Named = Type.pick(Box, .name);
+
+pub fn main() {
+    @print(describeA());
+    @print(describeB());
+    @print(Named(name: "own").name);
+}

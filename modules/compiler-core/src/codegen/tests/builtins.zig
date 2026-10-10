@@ -174,10 +174,10 @@ test "js: builtin ---- @print expression" {
     );
 }
 
-// A user declaration named like a comptime type-manipulation builtin
-// (`pick`, `omit`, `partial`, `mergeRecords`, `mapFields`) is called as
-// declared: the inference intercept only claims a bare name the scope does not
-// bind (std-surface 6a — `libs/std/src/random.bp` declares `pick`).
+// A user declaration named like one of the type functions the checker once
+// intercepted (`pick`, `omit`, `partial`, `mergeRecords`, `mapFields`) is called as
+// declared: they are std's `Type.pick` & co. now (decision 307), and a bare
+// name is the module's own (`libs/std/src/random.bp` declares `pick`).
 test "js: builtin ---- user fns named like type-manipulation builtins call their own bodies" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn pick(n: i32) -> i32 { return n + 1; }

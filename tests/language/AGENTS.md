@@ -75,6 +75,22 @@ all four targets), `reject/namespace_type_self` (the old `type_without_field_lis
 function, refused `namespace-type-self` at the `self`) and `reject/namespace_type_construction`
 (`MathOps()` refused `namespace-type-construction` at the call); the three were refused
 `type-without-field-list` by the parent binary.
+Decision 307 (a derived type, `01-checker` step 28) adds `run/derived_type_functions` (`Type.pick`,
+`omit`, `partial`, `required` and `merge`, chained and nested, each constructed, read, passed as a
+parameter, told apart from its source by `is` and printed by its own name, on all four targets),
+`run/derived_type_decorated` (a decorator on the `val` sees a type whose fields keep the source's
+annotations, `partial`'s typed `?T`) and `modules/derived_type_imported` (an exported
+`Type.merge` as a parameter type and a constructor, a module deriving from an imported record and
+from an imported derived type), with eleven `reject/derived_type_*` cells — a string field, an
+unknown field, a field named twice, no field, an `omit` leaving none, an enum and a primitive
+source, a field on both sides of a `merge`, the call in a body, a `var`, and the bare `partial(…)`
+(an unbound name); every one red on the parent binary.
+`modules/derived_type_two_packages` derives over two packages' same-named modules: dependencies `a`
+and `b` each hold `shape` with a record `Box` of different fields, each package's `user` derives
+from its own `Box` (`Type.pick` in `a`, `Type.omit` in `b`) and the project has a `shape` of its
+own — the imported source is found by its module's key (the package plus the path, decisions 170
+and 337), four targets; read by basename, `b`'s `omit(Box, .depth)` met `a`'s `Box` (`unknown field
+'depth'`).
 Decision 330 (7) (a type in a type is its associated type) adds `modules/assoc_type_declared_in_body` (a
 sibling's `Shape` declares `Point` with a method, the enum `Kind` and the generic `Box<T>` in its body;
 `main` constructs, annotates, matches and prints them through `Shape.`, four targets),

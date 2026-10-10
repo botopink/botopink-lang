@@ -1,0 +1,13 @@
+//// Decision 307 over two packages' same-named modules (170, 337): `b`
+//// imports its own `shape` by its path, so `Box` is `b/shape`'s and the
+//// derived type omits from `b`'s fields, never `a/shape`'s.
+
+import {shape.Box};
+import {types.Type} from "std";
+
+pub val Tinted = Type.omit(Box, .depth);
+
+pub fn describeB() -> string {
+    val t = Tinted(color: "red");
+    return "b:" + t.color;
+}

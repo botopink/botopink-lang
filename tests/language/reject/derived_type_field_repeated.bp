@@ -1,0 +1,12 @@
+//// Decision 307 — a field named twice is refused at the second.
+
+import {types.Type} from "std";
+
+type Recipe(
+    title: string,
+    description: ?string,
+)
+
+pub val RecipeTitle = Type.pick(Recipe, .title, .title);
+
+pub fn main() {}

@@ -1,0 +1,2 @@
+derived-type-outside-val: a derived type is bound by a module-level `val` with no type annotation — `Patch` is a `var`
+10:22

@@ -427,10 +427,15 @@ fn parsePatternPayload(
 }
 
 /// True for a payload element that is a plain binding name — an identifier
-/// with no dot, which is a variable and not a variant path.
+/// with no dot, which is a variable and not a variant path. `null`, `true`
+/// and `false` ride on `.ident` too (`parseSimplePattern`) but are literals,
+/// never binders: `Box(label: null, n: k)` lands as `literals`, so a backend
+/// tests the field instead of binding a name `null` (which matched anything
+/// on erlang, beam and wasm and was a `SyntaxError` on commonJS).
 fn isPlainBinder(pat: Pattern) bool {
     return switch (pat) {
-        .ident => |n| std.mem.indexOfScalar(u8, n, '.') == null,
+        .ident => |n| std.mem.indexOfScalar(u8, n, '.') == null and
+            !std.mem.eql(u8, n, "null") and !std.mem.eql(u8, n, "true") and !std.mem.eql(u8, n, "false"),
         else => false,
     };
 }

@@ -1,0 +1,12 @@
+//// Decision 307 — an `omit` leaving no field is refused at the call.
+
+import {types.Type} from "std";
+
+type Recipe(
+    title: string,
+    description: ?string,
+)
+
+pub val Empty = Type.omit(Recipe, .title, .description);
+
+pub fn main() {}

@@ -14,6 +14,7 @@ const nested_types = @import("./comptime/nested_types.zig");
 const default_fn = @import("./comptime/default_fn.zig");
 const value_or_type = @import("./comptime/value_or_type.zig");
 const expr_param = @import("./comptime/expr_param.zig");
+const derived_types = @import("./comptime/derived_types.zig");
 const evalMod = @import("./comptime/eval.zig");
 const format = @import("./format.zig");
 pub const trace = @import("./comptime/trace.zig");
@@ -960,6 +961,36 @@ fn assocOwners(
     return owners;
 }
 
+/// Decision 307 — the declaration an import item names, for a derived type's
+/// source in another module (`derived_types.ImportLookup`): the module found
+/// the way `assocOwners` finds an imported owner (the module the source names
+/// first, then the wider passes). An item with no `from` answers its module's
+/// key — the package plus the path (`ImportSource.key`, decisions 170, 337) —
+/// and every pass admits that one module alone, so a source named in two
+/// packages' same-named modules is the importing package's, never the other;
+/// the shorthand (`import {Box};`) in a dependency reads its own package alone.
+fn derivedTypeSource(ctx: *const anyopaque, arena: std.mem.Allocator, decl: ast.ImportDecl, imp: ast.ImportPath) error{OutOfMemory}!?ast.DeclKind {
+    const typeDeclRegistry: *const std.StringHashMap(std.StringHashMap(ast.DeclKind)) = @ptrCast(@alignCast(ctx));
+    const from_std = switch (decl.source) {
+        .module => |m| std.mem.eql(u8, m, "std"),
+        .root, .key => false,
+    };
+    const leaf = imp.leaf();
+    const leaf_src = try decl.leafSource(imp, arena, false);
+    for ([3]u2{ 0, 1, 2 }) |pass| {
+        var it = typeDeclRegistry.iterator();
+        while (it.next()) |e| {
+            if (isStdPkgPath(e.key_ptr.*) != from_std) continue;
+            if (!leaf_src.admits(e.key_ptr.*, pass)) continue;
+            // The shorthand in a dependency reaches its own package's modules
+            // alone (`outsideShorthandReach`).
+            if (decl.source == .root and decl.ownPackage.len > 0 and !ast.ImportSource.ofPackage(decl.ownPackage, e.key_ptr.*)) continue;
+            if (e.value_ptr.get(leaf)) |dk| return dk;
+        }
+    }
+    return null;
+}
+
 /// `assoc` and the names of the types declared in `t`'s body (decision 330 (7)).
 fn withNested(arena: std.mem.Allocator, assoc: []const []const u8, t: ast.TypeDecl) ![]const []const u8 {
     if (t.assocTypes.len == 0) return assoc;
@@ -1160,7 +1191,16 @@ fn analyzeSource(
     // Decision 297: a `comptime x: V | type T` parameter's two forms.
     // Decision 330 (7): a type declared in a type's body is a top-level type
     // under its owner's path.
-    const expanded = try nested_types.expand(arena, try value_or_type.expand(arena, try inline_types.expand(arena, try std_namespace.expand(arena, defaulted))));
+    const nested = try nested_types.expand(arena, try value_or_type.expand(arena, try inline_types.expand(arena, try std_namespace.expand(arena, defaulted))));
+    // Decision 307: `pub val RecipeTitle = Type.pick(Recipe, .title);` is the
+    // record declaration it answers.
+    const expanded = switch (try derived_types.expand(arena, nested, .{ .ctx = typeDeclRegistry, .find = derivedTypeSource })) {
+        .ok => |p| p,
+        .refused => |te| {
+            env.deinit();
+            return .{ .typeError = te };
+        },
+    };
     // Decision 216 (3): `Owner.Name` of an imported owner (or of this
     // module's, on a re-analysis) reaches the checker as the declared name.
     var owners = try assocOwners(arena, expanded, mod.path, typeDeclRegistry, reflection);

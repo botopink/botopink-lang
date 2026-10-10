@@ -1,0 +1,8 @@
+Anchor(href: "/x", target: Target.Top, place: Place.Here, fallback: Target.Bottom)
+Target.Top
+Place.Here
+Target.Bottom
+Anchor(href: "/y", target: Target.Bottom, place: Place.There(name: "q"), fallback: null)
+Place.There(name: "w")
+Pin(n: 1, at: Target.Bottom)
+Target.Bottom

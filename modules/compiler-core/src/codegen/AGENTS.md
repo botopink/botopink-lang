@@ -214,6 +214,18 @@ codegen/
   `tests/language/modules/package_variant_identity/`, which one package cannot
   express. `is`/`val assert` still test `instanceof` (below) and inherit the
   same limit wherever a class is re-emitted.
+- **`null` / `true` / `false` as a field's pattern are tests**
+  (`isKeywordLiteralPattern`, read by `patternTest` and `isBindingName`):
+  `Box(label: null, n: k)` is `_s.label == null` (the loose `==` an absence is
+  everywhere), never `const null = …` — a `SyntaxError` before `main` ran
+  (`tests/language/run/case_record_field_null`).
+- **A record's constructor pattern is the record's class test** (`variantTest`):
+  `Dog(name: n, breed: b)` — labelled, swapped, with `..`, positional or
+  nested — over a name `record_fields` holds and no variant of the module
+  declares is `_s instanceof Dog`, its payload read off the record's declared
+  fields (`payloadSlots(…, true)`), as the bare `Dog` arm already was. It was
+  the variant's `_s.tag === "Dog"`, which no record carries: every arm failed
+  and the `case` printed `null` (`tests/language/run/case_record_labelled_fields`).
 - **One spelling can name both a `type` and a variant, and the arm tests
   BOTH** (`patternTest`'s `.ident`, `isDeclaredVariantName`). Decision 8 §5.3b
   says which one a `case` arm means — the SUBJECT's type does, and a section's
@@ -1092,7 +1104,9 @@ codegen/
   `codegen/tests/erlang.zig`.
 - **`true` / `false` in a pattern are matched** (`patternNodeExtra`, and the
   `..` tuple's element guard in `tuplePatternNode`): `#(true, n)` was
-  `{True, N}`, a binder, and the first arm took every tuple.
+  `{True, N}`, a binder, and the first arm took every tuple. `null` is the
+  atom `undefined`: `Box(label: null, n: k)` was `{…, Null, K}` and took every
+  box (`tests/language/run/case_record_field_null`).
 - **A record's constructor pattern carries the record's tag**: `Point(x: 0, ..)`
   and `Point(x: 0, y: y)` in a `case` are `{'<pkg>@<path>@@Point', 0, _}`
   (`recordTagAtom`, decision 109), what the constructor builds — the bare
@@ -2085,8 +2099,9 @@ codegen/
 - **Case patterns** (`emitPatternArm`, `emitSubPattern`, decision 8 §5; C-06's
   and C-07 D4's beam halves): every shape the `.fields`/`.binding` arms never
   read — a range, a tuple, `..`, labels, a literal or nested payload, a
-  primitive type name, `true`/`false` — is tested from `{x, 0}` element by
-  element. Tests fall through on a match and jump to the next arm; nothing is
+  primitive type name, `true`/`false`, `null` (the atom `undefined`,
+  `is_eq_exact`; it was bound and took every field — `run/case_record_field_null`)
+  — is tested from `{x, 0}` element by element. Tests fall through on a match and jump to the next arm; nothing is
   written below the scratch base, so the subject is intact on the fail edge; each
   binder takes a y-slot (`patternYSlots` counts nested ones). `A...B` is two
   `is_ge` tests in term order (numeric, or byte order for string bounds). `#(…)`

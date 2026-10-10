@@ -26,6 +26,7 @@ comptime/
 ├── context_lower.zig  ← decision 354 (8): the hidden context map, lowered on the transformed AST
 ├── alias_erase.zig    ← type aliases erased for the backends (reflective `TypeRef` walk; a return alias of a wrapper stays)
 ├── inline_types.zig   ← decision 207: a parameter's inline `type(…)` becomes a record `BpInline__<fn>__<param>` of the module, and a call's field labels its constructor call (`expand`, run by `analyzeSource` after `std_namespace`)
+├── derived_types.zig  ← decision 307: `pub val RecipeTitle = Type.pick(Recipe, .title);` — a module-level `val` over std's `Type.partial` / `required` / `pick` / `omit` / `merge` (the receiver bound to std's `types.Type`) becomes the record declaration it answers, named after the `val`, its annotations on the type and each field the source's (`expand`, run by `analyzeSource` after `nested_types`; an imported source through `comptime.zig` `derivedTypeSource`, by its module's key — the package plus the path, decisions 170 and 337 — and a dependency's shorthand within its own package; `modules/derived_type_two_packages`); the `derived-type-*` refusals
 ├── expr_param.zig     ← decision 364: a non-template function's `comptime x: @Expr<T>` (`Param.exprWrapped`) — `eraseFn` / `eraseProgram` turn `x.value` into `x` for the code that runs (the transformed program and `fn_decls`, `comptime.zig`; a decorator's body and support, `infer.zig` `runDeclDecorators`), and a decorator's `x.fail(m)` into the prelude's `'__bp_failArg'(j, m)`; `useOf` answers whether a body reads a parameter (and its `.value`)
 ├── value_or_type.zig  ← decision 297: `comptime x: @Expr<V | type T>` — the function keeps its value form (`typeRef` = `V`, `Param.typeArgOf` = `T`, `x is type` folded false) and gains a type-form twin `<f>__type` without `x` (`x is type` true); `infer.zig` types a type argument as `V` with `T` bound to it and records the call's rewrite to the twin (`noteTypeArgCall`, `env.typeArgTwins`), `withTwinImports` brings the twin along an import; a `comptime` parameter's argument that reads a run-time value is `comptime-arg-not-known` (280 (0))
 ├── default_fn.zig     ← decision 289: an anonymous `pub default fn (…)` named `default` (a keyword no source spells); `import {m.card};` naming a module that holds a default rewritten to `import {m.card.<default> as card};` (`analyzeSource`, first; the default registered under `default_fn.key(path)` in `templateRegistry` by `registerExports`)
@@ -899,6 +900,15 @@ arguments in declaration order and the checker unifies each with the parameter i
 Reached by the plain fn / record-constructor path, a qualified enum-variant constructor, a
 primitive's interface `default fn` and an instance method. A `..` spread (a record update) is not
 planned.
+
+An injected default is the parameter's own node (`injectedDefault`, shared by `applyDefaultFill`
+and `expandTrailingDefaultsWithParams`) — except a leading-dot unit variant (`target: Target =
+.Top`), which is written out `Target.Top`, qualified by the parameter's declared enum (a plain name,
+or a `?` over one): the default was typed in its declaration and no call-site rewrite
+(`indexRewrites`) reached it, so commonJS read a bare `Top` (`ReferenceError`) and beam the atom
+`'Top'` (`tests/language/modules/imported_enum_field`). A section path keeps the written node. The
+qualifier is the declared name: a consumer that does not import the enum still cannot name it —
+the import closure's, not this fill's.
 
 ## A default travels with an imported function (C-04 across a module boundary)
 

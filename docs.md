@@ -948,6 +948,63 @@ against the other. Nothing of the alias reaches the emitted program.
   `@Result<i32, ParseError>` value along, and the capabilities (`throw`, `try`,
   `await`, …) are granted only by the wrapper written literally in the return.
 
+### Derived types
+
+```botopink
+import {types.Type} from "std";
+
+type Recipe(title: string, description: ?string, servings: i32 = 2)
+type Dog(name: string, age: ?i32)
+type Breed(breed: string)
+
+pub val RecipeTitle = Type.pick(Recipe, .title);         // type RecipeTitle(title: string)
+pub val RecipeBrief = Type.omit(Recipe, .description);   // type RecipeBrief(title: string, servings: i32 = 2)
+pub val RecipePatch = Type.partial(Recipe);              // every field `?T`
+pub val RecipeFull = Type.required(RecipePatch);         // every `?` goes
+pub val DogWithBreed = Type.merge(Dog, Breed);           // Dog's fields, then Breed's
+
+fn titleOf(t: RecipeTitle) -> string { return t.title; }
+```
+
+A derived type (decision 307) is a **new** record type answered at build by one
+of std's `Type` functions and bound by a module-level `val`, whose name it takes.
+It is nominal — `RecipeTitle` in diagnostics and printed values, its own type
+for `is` and `case`, never its source's — and usable everywhere a type is
+written: a parameter, a return, a field, an annotation, a constructor call
+(`RecipeTitle(title: "…")`), an export and an import
+(`import {recipes.RecipeTitle};`). Two `val`s over the same call are two types.
+
+- Each field is the source's as declared — its type, its default, its
+  annotations (the markers a decorator reads). `partial` makes each field `?T`;
+  `required` takes the `?` off each one, and a `null` default with it.
+- `pick` keeps the named fields in the order the source declares them; `omit`
+  drops them; `merge` lists the first record's fields, then the second's.
+- A decorator on the `val` sees a type declaration (`decl.kind` is
+  `DeclKind.Type`, `decl.fields` the derived fields):
+  `#[validated] pub val RecipePatch = Type.partial(Recipe);`.
+- The source is a record — of the module, imported, a local alias of one,
+  another derived type (in any order), or a nested call
+  (`Type.merge(Type.merge(GlobalAttrs, AriaAttrs), AnchorAttrs)`). From an
+  imported record, a field's default that names a binding of its own module does
+  not travel (as an imported function's default does not): the field is then
+  supplied at every construction.
+- The functions are `Type`'s: `import {types.Type} from "std";` (an alias
+  included); a bare `partial(Recipe)` is an unbound name.
+
+Refused, each at what it is about: a field written as a string
+(`derived-type-field-string`, naming `.title`), a field the source does not
+declare (the `Type.Field<T>` error, `unknown field 'titel' on type 'Recipe'`), a
+field named twice, `pick` / `omit` with no field or an `omit` leaving none
+(`derived-type-fields`), a source that is not a record — an enum, a namespace
+type, a primitive, a record with type parameters, an imported alias
+(`derived-type-source-not-record`), a field on both sides of a `merge`
+(`derived-type-merge-duplicate`: nothing overrides silently, `omit` it first),
+the wrong number of arguments or a labelled one (`derived-type-arguments`), and
+the call anywhere but as the whole initializer of a module-level `val` without a
+type annotation — a local, a `var`, an argument (`derived-type-outside-val`).
+`Type.keys(T)` (`Type.Field<T>`, decision 308) is not a record derivation and is
+not answered yet.
+
 ### Union types, `unknown`, and `is`
 
 A union type is written `A | B`. `unknown` holds any value and, unlike a union,

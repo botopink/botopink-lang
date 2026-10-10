@@ -1,0 +1,2 @@
+derived-type-source-not-record: `Type.partial` takes a record type; `i32` is a primitive type
+5:33

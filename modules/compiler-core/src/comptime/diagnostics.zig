@@ -575,6 +575,12 @@ pub const all_codes = [_][]const u8{
     optional_has_no_methods,
     nullish_beside_logical,
     namespace_type_construction,
+    derived_type_field_string,
+    derived_type_fields,
+    derived_type_source_not_record,
+    derived_type_merge_duplicate,
+    derived_type_arguments,
+    derived_type_outside_val,
     result_member_not_a_method,
     break_value_outside_generator,
     break_outside_loop,
@@ -647,6 +653,31 @@ pub const any_type_removed: []const u8 = "any-type-removed";
 /// Decision 329 — `Type()` on a namespace type (`type Type { fn … }`): it has
 /// no field list and no value; its functions are called through it.
 pub const namespace_type_construction: []const u8 = "namespace-type-construction";
+
+/// Decision 307 — a field of `Type.pick` / `Type.omit` written as a string
+/// (`"title"`): a field is `Type.Field<T>`, written `.title`
+/// (`comptime/derived_types.zig`).
+pub const derived_type_field_string: []const u8 = "derived-type-field-string";
+
+/// Decision 307 — `Type.pick` / `Type.omit` with no field, a field named
+/// twice, or an `omit` leaving no field.
+pub const derived_type_fields: []const u8 = "derived-type-fields";
+
+/// Decision 307 — a derived type's source is not a record type: an enum, a
+/// namespace type, a primitive, a generic record, a value.
+pub const derived_type_source_not_record: []const u8 = "derived-type-source-not-record";
+
+/// Decision 307 — `Type.merge(A, B)` with a field on both sides: nothing
+/// overrides silently.
+pub const derived_type_merge_duplicate: []const u8 = "derived-type-merge-duplicate";
+
+/// Decision 307 — a `Type` function called with the wrong number of
+/// arguments, a labelled one or a trailing lambda.
+pub const derived_type_arguments: []const u8 = "derived-type-arguments";
+
+/// Decision 307 — a derivation anywhere but as the whole initializer of a
+/// module-level `val` with no type annotation (a local, a default, a `var`).
+pub const derived_type_outside_val: []const u8 = "derived-type-outside-val";
 
 /// Decision 330 (2) — `??`, `?.`, `?.[]`, `?.()` or the postfix `!` over a
 /// value whose type is not `?T`: it is never `null`.

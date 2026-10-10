@@ -604,7 +604,11 @@ class beside them. What each number is here, and what is refused:
   (`holdElemParam`), and a `for` / HOF element that is a tuple or an array
   takes its shape (`noteElemShape`), as a destructured tuple element does
   from the tuple's print shape (`noteTupleElemByShape`) — `val #(a, b) = t`
-  printed the string `b` as its address.
+  printed the string `b` as its address. A record destructuring
+  (`val { class, id } = t`, `localBindDestruct` `.names`) types each binder by
+  its field as the constructor form `val Tag(c, i) = t` does (`str_locals`,
+  `bool_locals`, `local_types`): a string binder concatenated as a number
+  (`run/record_field_reserved_word`).
 - **Integers do not wrap** (`emitArith`, `int_chk`): an `i32` `+`/`-`/`*`
   (and a negation, a `+=`) is computed in `i64` and checked back — except a
   type's minimum written as itself (`-2147483648`, `-9223372036854775808l`,
@@ -816,7 +820,13 @@ without walking past the variants before it.
   other) writes decision 8 §7's text: `Point(x: 1, y: 2)`, `Shape.Dot`,
   `Shape.Circle(radius: 4)`. The shape walker gained a `T` arm that calls it, so
   a container of records names each element's type — `[Point(x: 1, y: 2), …]` —
-  read from each element's own header, not from the print site.
+  read from each element's own header, not from the print site. A field whose
+  declared type is an enum with a payload variant is `T` too, and an optional
+  field is its payload's `?X` / `!X` (`fieldShape`: `?Place` is `?T`, `?Target`
+  over an all-unit enum `!E…`, `?string` `?s`); each fell to `i` and printed the
+  cell's address (`place: 316`). `@print` of a name or a field DECLARED as such
+  an enum (`payloadEnumOfName`, read before `namedShapeOf`) is the tagged
+  printer for the same reason (`modules/imported_enum_field`).
 * `x is T` and a `case` arm naming a type are `subj >= 256 && load(subj - 4) ==
   <descriptor>`, an enum's variants joined by `or` (`lowerIsCall`,
   `emitNamedTypeTest`). The bounds guard is load-bearing: an `i32` that is not a
@@ -937,7 +947,11 @@ tests the value's header (`recordPatternType`, `emitNamedTypeTest`) and binds
 each name from the field it stands at, by label when one is written
 (`recordPatternField`, `recordFieldAccess` — the ordinary field read, a boxed
 float included). It tested and bound nothing
-(`run/val_assert_record_pattern.bp`).
+(`run/val_assert_record_pattern.bp`). Each binder carries the field's whole
+declared type (`noteFieldBinder` → `noteTypedBinder`, as a parameter does), so
+`Dog(age: a)` over `age: ?i32` is a `?i32` and `"${a ?? 0}"` unboxes it — read
+as a plain word it printed the box's address
+(`run/case_record_labelled_fields.bp`).
 
 **A generic call answers its argument's shape** (`generic_result_arg`,
 `genericResultArg`): `fn ident<T>(x: T) -> T` has one body, so `ident("a")`
@@ -974,6 +988,7 @@ Three pattern shapes had no wasm test, and two of them answered at exit 0:
 | a tuple pattern in a `case` (`#(0, s)`, `#(a, ..)`, `#(#(0, b), s)`) | refused — `` `` names no variant `` | `emitTuplePatternTest` / `bindTuplePattern`: each element that tests something is loaded from its slot (`i * 4`, no header) and tested in the chain a variant's payload literals use; a binder takes the element's shape (`noteTupleElemLocal`: a string prints as text, a float is read from its slot's cell); `..` skips the rest |
 | a list pattern (`[]`, `[x]`, `[1, b]`, `[a, ..rest]`) | **irrefutable** — `[x]` took a `[]` arm, exit 0 | `emitListPatternTest`: the length (exactly the elements, or at least them with a spread), then each number literal; `bindListPattern` binds each element by the array's element shape and a named spread to `$__arr_slice(xs, n, …)`. Only `[..]` / `[..rest]` is irrefutable (`patternIsIrrefutable`) |
 | `true` / `false` inside a pattern | a **binder** named `true` — every arm matched, exit 0 | the bool literal (`isBoolLitName`): `subj == 1` / `subj == 0` |
+| `null` inside a pattern (`Box(label: null, n: k)`) | a **binder** named `null` — every arm matched, exit 0 | the absent word (`isLitPatternName`, never a binder): `subj == 0` (`run/case_record_field_null`) |
 
 The subject local carries what the patterns read (`noteSubjectShape`, in
 `lowerCase` and `lowerAssertPattern`): a tuple's or an array's print shape,
@@ -1099,7 +1114,12 @@ The one producer that ever lifted a block was the `case` arm: a `Pattern { … }
 arm arrives as an `ast.Expr.function`, and lowering it as a *value* put the body in
 the table and left the arm answering a closure-cell address
 (`case_or_patterns_with_block_arm_body` recorded `$__lambda0` plus a 4-byte cell).
-`lowerArmBody` inlines it instead. `@block { … }` is inlined by `lowerBuiltin`,
+`lowerArmBody` inlines it instead. Its binder (`DogB { d -> … }`) is the
+record a tested arm names when the arm names one (`arm_record`, set by
+`emitArmChain`, read and cleared by `lowerArmBody` so a nested `case` binds its
+own), else the subject's type: over a `DogB | CatB` union it took the subject's,
+which a union has none of, and `d.name` printed an address
+(`run/case_record_union_binder.bp`). `@block { … }` is inlined by `lowerBuiltin`,
 and a bare `{ 1 + 2 }` in value position does not parse at all ("this token cannot
 appear here"). So decision 2's enforcement leaves nothing dead here.
 
