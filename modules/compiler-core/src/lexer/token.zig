@@ -152,4 +152,7 @@ pub const Token = struct {
     /// `source[offset..offset + lexeme.len]` is the token's text, so this is
     /// the value diagnostics and LSP ranges are built from.
     offset: usize = 0,
+    /// The template expansion whose built code the token was scanned from
+    /// (decision 429, `ast.Loc.expansion`); 0 for written code.
+    expansion: u32 = 0,
 };

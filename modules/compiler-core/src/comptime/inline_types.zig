@@ -96,7 +96,7 @@ const Ctx = struct {
         const ctor = try self.arena.create(ast.Expr);
         // Every loc-keyed table of the checker needs the constructor call at a
         // place no written node holds: the outer call's line, past any column.
-        const ctorLoc: ast.Loc = .{ .line = e.call.loc.line, .col = e.call.loc.col + synthetic_col * (f.index + 1) };
+        const ctorLoc: ast.Loc = .{ .line = e.call.loc.line, .col = e.call.loc.col + synthetic_col * (f.index + 1), .expansion = e.call.loc.expansion };
         ctor.* = .{ .call = .{ .loc = ctorLoc, .kind = .{ .call = .{
             .receiver = null,
             .callee = f.type_name,

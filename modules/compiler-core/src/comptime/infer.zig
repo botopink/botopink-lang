@@ -7851,7 +7851,7 @@ fn expandTemplateCall(
 
     const expansion: *const ast.Expr = switch (body) {
         .capture, .lifted => |node| node,
-        .code => |src| parseCodeText(env, src) orelse {
+        .code => |src| parseCodeText(env, src, builtCodeOrigin(env, captures, loc)) orelse {
             env.lastError = TypeError.custom(
                 "the `@code(…)` text does not parse as an expression",
                 "The string handed to `@code` must be a single well-formed botopink expression.",
@@ -8011,14 +8011,15 @@ fn expandTemplateCallViaRuntime(
 
     const expansion: *const ast.Expr = switch (outcome) {
         .code => |src| blk: {
-            const parsed = parseCodeText(env, src) orelse {
+            const origin = builtCodeOrigin(env, captures, loc);
+            const parsed = parseCodeText(env, src, origin) orelse {
                 env.lastError = TypeError.custom(
                     "the code built by the template does not parse as an expression",
                     "`build(…)`/`@code(…)` output must be a single well-formed botopink expression.",
                 ).withLoc(loc);
                 return error.TypeError;
             };
-            try applyDslHygiene(env, tfn, @constCast(parsed), src, captures);
+            try applyDslHygiene(env, tfn, @constCast(parsed), src, origin, captures);
             // Splice the caller's `${…}` hole expressions back in place of
             // the `__bp_hole_<param>_<i>` placeholders the template embedded.
             substituteHoles(@constCast(parsed), captures);
@@ -8034,14 +8035,15 @@ fn expandTemplateCallViaRuntime(
         .custom => |c| blk: {
             // The `code` half is spliced exactly like a plain `.code` outcome —
             // runtime/codegen never learn it came from `q.custom`.
-            const parsed = parseCodeText(env, c.code) orelse {
+            const origin = builtCodeOrigin(env, captures, loc);
+            const parsed = parseCodeText(env, c.code, origin) orelse {
                 env.lastError = TypeError.custom(
                     "the code built by the template does not parse as an expression",
                     "`q.custom(tree, code)` — the `code` must be a single well-formed botopink expression (e.g. from `q.build(…)`).",
                 ).withLoc(loc);
                 return error.TypeError;
             };
-            try applyDslHygiene(env, tfn, @constCast(parsed), c.code, captures);
+            try applyDslHygiene(env, tfn, @constCast(parsed), c.code, origin, captures);
             substituteHoles(@constCast(parsed), captures);
             // The `ast` half: the reference tree the template built.
             const root = template.parseCustomNodeFromTree(env.arena, c.ast) catch return error.OutOfMemory;
@@ -8138,7 +8140,7 @@ fn answerTemplateQueries(env: *Env, owner: []const u8, tfn: ast.FnDecl, loc: ast
 /// built code of `src`) resolve in the library's module (`dsl_hygiene.zig`);
 /// the consumer's text keeps resolving here. A template declared in this very
 /// module has one author's scope and is left alone.
-fn applyDslHygiene(env: *Env, tfn: ast.FnDecl, parsed: *ast.Expr, src: []const u8, captures: []const template.CapturedExpr) InferError!void {
+fn applyDslHygiene(env: *Env, tfn: ast.FnDecl, parsed: *ast.Expr, src: []const u8, origin: ast.Loc, captures: []const template.CapturedExpr) InferError!void {
     const owner = env.comptimeOwnerOf(tfn);
     if (std.mem.eql(u8, owner, env.modulePath)) return;
     const exports = env.templateOwnerExports.get(owner) orelse return;
@@ -8164,7 +8166,7 @@ fn applyDslHygiene(env: *Env, tfn: ast.FnDecl, parsed: *ast.Expr, src: []const u
         }
     };
     const spans = try dslHygiene.userSpans(env.arena, src, captures);
-    try dslHygiene.apply(env.arena, parsed, src, spans, Resolver{ .env = env, .owner = owner, .exports = exports });
+    try dslHygiene.apply(env.arena, parsed, src, origin, spans, Resolver{ .env = env, .owner = owner, .exports = exports });
 }
 
 /// Replace `__bp_hole_<param>_<i>` placeholder identifiers in freshly parsed
@@ -8464,11 +8466,28 @@ fn classifyTemplateBody(tfn: ast.FnDecl, captures: []const template.CapturedExpr
     }
 }
 
+/// Decision 429 — where an expansion's built code is located: a new
+/// expansion id of this module, at the line and column of the literal the
+/// template reads (`q.source()`, the first capture) or, with no capture, of
+/// the call.
+fn builtCodeOrigin(env: *Env, captures: []const template.CapturedExpr, loc: ast.Loc) ast.Loc {
+    env.expansionCount += 1;
+    const at = if (captures.len > 0) captures[0].loc else loc;
+    return .{ .line = at.line, .col = at.col, .expansion = env.expansionCount };
+}
+
 /// Parse `@code` source text into an expression (allocated in the env arena).
-/// Null when the text fails to lex/parse as a single expression.
-fn parseCodeText(env: *Env, src: []const u8) ?*const ast.Expr {
+/// Null when the text fails to lex/parse as a single expression. Every token
+/// is located at `origin` (decision 429, `builtCodeOrigin`): its offset in
+/// `src` read from the literal's line and column, in `origin`'s expansion.
+fn parseCodeText(env: *Env, src: []const u8, origin: ast.Loc) ?*const ast.Expr {
     var lx = Lexer.init(src);
     const tokens = lx.scanAll(env.arena) catch return null;
+    for (@constCast(tokens)) |*tok| {
+        if (tok.line == 1) tok.col += origin.col -| 1;
+        tok.line += origin.line -| 1;
+        tok.expansion = origin.expansion;
+    }
     var p = Parser.init(tokens);
     const node = env.arena.create(ast.Expr) catch return null;
     node.* = p.parseExpr(env.arena) catch return null;
@@ -8762,7 +8781,7 @@ fn inferBuiltinCallReturnType(
     if (std.mem.eql(u8, callee, "block") and typedTrailing.len >= 1 and env.lastTrailingReturnTargets.len >= 1) {
         const target = env.lastTrailingReturnTargets[0];
         const td = target.deref();
-        const asStatement = if (env.statementBlockLoc) |sl| sl.line == loc.line and sl.col == loc.col else false;
+        const asStatement = if (env.statementBlockLoc) |sl| sl.eql(loc) else false;
         if (td.* == .typeVar and td.typeVar.state == .unbound) {
             if (!asStatement) {
                 env.lastError = TypeError.custom(
@@ -14303,7 +14322,7 @@ fn rewriteRecordUpdate(env: *Env, c: anytype, fields: anytype, loc: ast.Loc) Inf
             const bl = b.getLoc();
             const read = try env.arena.create(ast.Expr);
             read.* = .{ .identifier = .{
-                .loc = .{ .line = bl.line, .col = bl.col | (@as(usize, fi + 1) << (@bitSizeOf(usize) / 2)) },
+                .loc = .{ .line = bl.line, .col = bl.col | (@as(usize, fi + 1) << (@bitSizeOf(usize) / 2)), .expansion = bl.expansion },
                 .kind = .{ .identAccess = .{ .receiver = b, .member = fd.name } },
             } };
             _ = try inferExpr(env, read.*);
@@ -15348,7 +15367,7 @@ fn markResultSource(env: *Env, ty: *T.Type, source: errorMod.ResultOrigin.Source
 fn noteInferredResult(env: *Env, result: *T.Type, body: []const ast.Stmt) InferError!void {
     const at = ast.bodyFirstFail(body) orelse return;
     const by: errorMod.ResultOrigin.MadeBy = if (ast.bodyFirstThrow(body)) |t|
-        (if (t.line == at.line and t.col == at.col) .throw_ else .try_)
+        (if (t.eql(at)) .throw_ else .try_)
     else
         .try_;
     try env.resultOrigins.put(env.arena, result, .{ .made_at = at, .made_by = by });
@@ -15714,17 +15733,11 @@ fn noteComponentCall(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExpr) I
         else => return,
     }
     try noteHookCall(env, c, ty);
-    const rec: envMod.ComponentCall = .{ .type_ = ty, .callee = c.kind.call.callee };
+    // A call walked twice keeps the type its first walk recorded; built code
+    // is located by its expansion (decision 429), so no other call shares
+    // the location.
     const gop = try env.componentCalls.getOrPut(env.arena, c.loc);
-    if (!gop.found_existing) {
-        gop.value_ptr.* = try env.arena.dupe(envMod.ComponentCall, &.{rec});
-        return;
-    }
-    // Two template expansions' built code can share a location: keep each.
-    const grown = try env.arena.alloc(envMod.ComponentCall, gop.value_ptr.len + 1);
-    @memcpy(grown[0..gop.value_ptr.len], gop.value_ptr.*);
-    grown[gop.value_ptr.len] = rec;
-    gop.value_ptr.* = grown;
+    if (!gop.found_existing) gop.value_ptr.* = ty;
 }
 
 /// The host function a call names — a bodyless `declare fn` or an
@@ -16535,20 +16548,23 @@ fn inferOptionalOperator(env: *Env, call: anytype, loc: ast.Loc) InferError!Type
     env.expectedType = saved;
     try refuseNeverNull(env, typedOperand.getType(), op, loc);
 
-    const binder = try std.fmt.allocPrint(env.arena, "__bp_opt_{d}_{d}", .{ loc.line, loc.col });
+    const binder = if (loc.expansion == 0)
+        try std.fmt.allocPrint(env.arena, "__bp_opt_{d}_{d}", .{ loc.line, loc.col })
+    else
+        try std.fmt.allocPrint(env.arena, "__bp_opt_{d}_{d}_{d}", .{ loc.line, loc.col, loc.expansion });
     const bound = try env.arena.create(ast.Expr);
     bound.* = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = binder } } };
     const inner = try env.arena.create(ast.Expr);
     const elseExpr = try env.arena.create(ast.Expr);
     // The link after `?.` is located at its own token: two columns on.
-    const linkLoc: ast.Loc = .{ .line = loc.line, .col = loc.col + 2 };
+    const linkLoc: ast.Loc = .{ .line = loc.line, .col = loc.col + 2, .expansion = loc.expansion };
     if (isBang) {
         inner.* = bound.*;
         const text = try defaultLexeme(env.arena, operand.*);
         const start = leftmostLoc(operand);
         const message = try std.fmt.allocPrint(env.arena, "value is null — {s}! at {s}:{d}:{d}", .{ text, env.srcPath, start.line, start.col });
         const msgLit = try env.arena.create(ast.Expr);
-        const panicLoc: ast.Loc = .{ .line = loc.line, .col = loc.col + optional_synthetic_col };
+        const panicLoc: ast.Loc = .{ .line = loc.line, .col = loc.col + optional_synthetic_col, .expansion = loc.expansion };
         msgLit.* = .{ .literal = .{ .loc = panicLoc, .kind = .{ .stringLit = message } } };
         const args = try env.arena.alloc(ast.CallArg, 1);
         args[0] = .{ .label = null, .value = msgLit };
@@ -16593,7 +16609,7 @@ fn inferOptionalOperator(env: *Env, call: anytype, loc: ast.Loc) InferError!Type
             // Typed only (below): at a loc of its own, so the plans its
             // typing records do not land on the written call's.
             link.receiver = bound;
-            inner.* = .{ .call = .{ .loc = .{ .line = loc.line, .col = loc.col + optional_synthetic_col }, .kind = .{ .call = link } } };
+            inner.* = .{ .call = .{ .loc = .{ .line = loc.line, .col = loc.col + optional_synthetic_col, .expansion = loc.expansion }, .kind = .{ .call = link } } };
         }
     }
     const isMethod = !isBang and !isIndex and call.calleeExpr == null;
@@ -17910,7 +17926,7 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                             } else {
                                 const vloc = call.args[ai].value.getLoc();
                                 const labelCol = if (vloc.col > lbl.len + 2) vloc.col - lbl.len - 2 else vloc.col;
-                                env.lastError = TypeError.unknownField(call.callee, lbl).withLoc(.{ .line = vloc.line, .col = labelCol });
+                                env.lastError = TypeError.unknownField(call.callee, lbl).withLoc(.{ .line = vloc.line, .col = labelCol, .expansion = vloc.expansion });
                                 return error.TypeError;
                             };
                             try unifyArgument(env, f.params[idx], ta.value.getType(), ta.value.getLoc());
@@ -18631,7 +18647,7 @@ fn inferFunctionExprExpected(
     // Decision 370 (2) — a function expression's types are written only on
     // the member a decorator hands to `decl.addMember(name, fn…)`.
     if (func.kind.isTyped()) {
-        const admitted = if (env.memberFnAt) |at| at.line == loc.line and at.col == loc.col else false;
+        const admitted = if (env.memberFnAt) |at| at.eql(loc) else false;
         if (!admitted) {
             env.lastError = TypeError.custom(
                 diagnostics.fn_expr_typed ++ ": a function expression writes its parameters' types and its return only as the member a decorator hands to `decl.addMember(name, fn(…) -> R { … })`",

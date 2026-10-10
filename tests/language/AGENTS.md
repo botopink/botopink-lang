@@ -403,6 +403,14 @@ under its alias, and a record of the package's type written back where the modul
 it — the parent binary aborted the compiler), `run/comptime_interpolation_in_called_fn` (`"${…}"` in
 a function a `comptime` calls), `reject/comptime_template_call_declared_after` and
 `reject/hole_known_at_build_raises`.
+`01-checker` step 41 (decision 429) adds `run/template_two_alike_expansions` (two expansions of one
+template whose built code sits at the same offsets — `r.length` over an array and `r.w` over a
+record; the parent binary lowered the first with the second's field access on erlang),
+`run/template_default_arg_two_expansions` (a call that leaves out a default argument and a call of a
+one-parameter function at the same offset of two expansions; the parent binary filled the default
+into the second, `footer/2 undefined` on erlang) — four targets, no padding — and
+`reject/template_built_code_diagnostic_located` (a diagnostic in built code at the literal's line and
+column plus its offset; the parent binary located it at `1:20`).
 `test/program_primitive_behavior_extends_std` and `reject/program_primitive_behavior_redeclares_std`
 (another front's finding) — a program's own `behavior String` adds members to std's `String` (its
 default fns call `slice`, `startsWith`, `length` on `self`, and std's members answer beside them),

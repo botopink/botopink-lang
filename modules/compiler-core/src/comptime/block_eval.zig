@@ -1454,7 +1454,7 @@ const Lifter = struct {
     /// key their lowerings by location, and the root's is the `comptime`'s.
     fn nextLoc(self: *Lifter) ast.Loc {
         self.env.comptimeLiftSeq += 1;
-        return .{ .line = self.root.line, .col = lifted_col_base + self.env.comptimeLiftSeq };
+        return .{ .line = self.root.line, .col = lifted_col_base + self.env.comptimeLiftSeq, .expansion = self.root.expansion };
     }
 
     fn refuse(self: *Lifter, comptime fmt: []const u8, args: anytype) Error!?*ast.Expr {

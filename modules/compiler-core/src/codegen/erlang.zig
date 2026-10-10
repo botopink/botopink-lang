@@ -219,7 +219,7 @@ pub fn keyedSeedRows(arena: std.mem.Allocator, seed: ast.Expr) ![]const ast.Expr
 /// A key no other key equals: a `comptime` one, by where it is written.
 fn uniqueKeyText(arena: std.mem.Allocator, e: ast.Expr) ![]const u8 {
     const loc = e.getLoc();
-    return std.fmt.allocPrint(arena, "@{d}:{d}", .{ loc.line, loc.col });
+    return std.fmt.allocPrint(arena, "@{d}:{d}:{d}", .{ loc.line, loc.col, loc.expansion });
 }
 
 /// A seed key as text two equal keys share — the literal path of
@@ -6264,7 +6264,10 @@ const Emitter = struct {
     /// The subject is staged in `BpAssert<n>` because the arm used to re-emit
     /// it — `case parse(X) of {ok, N} -> parse(X); …` called `parse/1` twice.
     fn assertPatternStmts(this: *Emitter, b: Ast.Builder, ap: anytype, loc: ast.Loc) anyerror![]const Ast.Stmt {
-        const tmp = try std.fmt.allocPrint(b.arena, "BpAssert{d}_{d}", .{ loc.line, loc.col });
+        const tmp = if (loc.expansion == 0)
+            try std.fmt.allocPrint(b.arena, "BpAssert{d}_{d}", .{ loc.line, loc.col })
+        else
+            try std.fmt.allocPrint(b.arena, "BpAssert{d}_{d}_{d}", .{ loc.line, loc.col, loc.expansion });
         const subject = try this.exprNode(b, ap.expr.*);
         this.pattern_discard = true;
         const check = try this.ctorBindPattern(b, ap.pattern);

@@ -53,16 +53,21 @@ pub fn userSpans(arena: std.mem.Allocator, src: []const u8, captures: []const te
 /// Renames the library's names in `root` (the parsed built code of `src`).
 /// `resolve` answers a name the owner module declares with the alias to bind
 /// it under, or null when the owner does not declare it.
+/// `origin` is where the built code's first byte is located (decision 429,
+/// `ast.Loc`: the literal's line and column), so a node's location reads back
+/// as its offset in `src`.
 pub fn apply(
     arena: std.mem.Allocator,
     root: *ast.Expr,
     src: []const u8,
+    origin: ast.Loc,
     spans: []const [2]usize,
     resolver: anytype,
 ) Error!void {
     var ctx = Ctx(@TypeOf(resolver)){
         .arena = arena,
         .src = src,
+        .origin = origin,
         .spans = spans,
         .resolver = resolver,
         .locals = std.StringHashMap(void).init(arena),
@@ -80,6 +85,7 @@ pub fn applyAll(arena: std.mem.Allocator, root: *ast.Expr, resolver: anytype) Er
     var ctx = Ctx(@TypeOf(resolver)){
         .arena = arena,
         .src = "",
+        .origin = .{ .line = 0, .col = 0 },
         .spans = &.{},
         .resolver = resolver,
         .locals = std.StringHashMap(void).init(arena),
@@ -104,6 +110,7 @@ fn Ctx(comptime Resolver: type) type {
     return struct {
         arena: std.mem.Allocator,
         src: []const u8,
+        origin: ast.Loc,
         spans: []const [2]usize,
         resolver: Resolver,
         locals: std.StringHashMap(void),
@@ -112,15 +119,23 @@ fn Ctx(comptime Resolver: type) type {
 
         const Self = @This();
 
+        /// The offset in `src` of a node of this expansion: its location
+        /// less the origin's line, and on the first line the origin's column.
         fn offsetOf(self: *const Self, loc: ast.Loc) ?usize {
-            if (loc.line == 0 or loc.col == 0) return null;
+            if (loc.expansion != self.origin.expansion) return null;
+            const firstLine = @max(self.origin.line, 1);
+            const firstCol = @max(self.origin.col, 1);
+            if (loc.line < firstLine or loc.col == 0) return null;
+            const builtLine = loc.line - firstLine + 1;
+            if (builtLine == 1 and loc.col < firstCol) return null;
+            const builtCol = if (builtLine == 1) loc.col - firstCol + 1 else loc.col;
             var line: usize = 1;
             var i: usize = 0;
-            while (line < loc.line) : (i += 1) {
+            while (line < builtLine) : (i += 1) {
                 if (i >= self.src.len) return null;
                 if (self.src[i] == '\n') line += 1;
             }
-            const off = i + loc.col - 1;
+            const off = i + builtCol - 1;
             return if (off <= self.src.len) off else null;
         }
 

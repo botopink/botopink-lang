@@ -487,11 +487,12 @@ pub const Parser = struct {
         return 0;
     }
 
-    /// Creates a Loc from a Token's line and column.
+    /// Creates a Loc from a Token's line, column and expansion.
     pub fn locFromToken(tok: Token) Loc {
         return .{
             .line = tok.line,
             .col = tok.col,
+            .expansion = tok.expansion,
         };
     }
 
@@ -1087,7 +1088,7 @@ pub const Parser = struct {
     /// parser just built).
     fn tokenAt(this: *This, loc: Loc, kind: TokenKind) Token {
         for (this.tokens) |tok| {
-            if (tok.kind == kind and tok.line == loc.line and tok.col == loc.col) return tok;
+            if (tok.kind == kind and tok.line == loc.line and tok.col == loc.col and tok.expansion == loc.expansion) return tok;
         }
         return this.peek();
     }
@@ -1359,7 +1360,7 @@ pub const Parser = struct {
             .labels = if (any_label) try labels.toOwnedSlice(alloc) else &.{},
             .argLocs = try argLocs.toOwnedSlice(alloc),
             .is_builtin = is_builtin,
-            .loc = .{ .line = name_start.line, .col = name_start.col },
+            .loc = .{ .line = name_start.line, .col = name_start.col, .expansion = name_start.expansion },
         };
     }
 

@@ -5706,6 +5706,7 @@ const Emitter = struct {
             } else if (try self.enumMethodOwner(if (cc.optional) .{
                 .line = loc.line,
                 .col = loc.col + ast.optional_synthetic_col,
+                .expansion = loc.expansion,
             } else loc, cc.callee)) |owner| {
                 // An enum method: the value is the first argument. An enum
                 // keeps its methods as statics of its class, so `recv?.m()`

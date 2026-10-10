@@ -2548,6 +2548,7 @@ fn retargetHoleTokens(holeTokens: []Token, tok: Token, content: []const u8, hole
         ht.line = pos.line;
         ht.col = pos.col;
         ht.offset = pos.offset;
+        ht.expansion = tok.expansion;
     }
 }
 

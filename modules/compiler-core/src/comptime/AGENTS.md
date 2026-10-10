@@ -345,6 +345,25 @@ like `code`, tree via `template.parseCustomNodeFromTree` into
 concrete `@Expr<T>` / `CustomExpr<T>` bound, and records it in
 `env.templateExpansions`; transform substitutes it and drops the template fns.
 
+Built code is located by its expansion (decision 429): `builtCodeOrigin` hands
+each parse of built text (`@code`, `code`, `custom`) the module's next id
+(`Env.expansionCount`) and the literal's line and column (`q.source()`, the
+first capture; the call with none), and `parseCodeText` stamps every token with
+both — `ast.Loc` is (line, column, expansion), its line and column the offset
+in the built string read from the literal. So a diagnostic in built code points
+at the literal, and every plan keyed by location reads the pair: each
+`AutoHashMap(ast.Loc, …)` of `Env` and the backends (the default-argument plan
+`defaultInjections`, C-04; `instanceLowerings` / `method_lowerings` /
+`dispatchRewrites`, the erlang field-access and lambda plans;
+`componentCalls` / `componentLambdas`; …), `Loc.eql` where two locations are
+compared, and the names made from a location (`__bp_opt_…`, erlang's
+`BpAssert…`, wat's `__anon_L…_C…`) carry a non-zero expansion. `dsl_hygiene`
+reads a node's offset back through the same origin. A synthetic location made
+from a node's (`loc.col + optional_synthetic_col`, an inline type's ctor, a
+lifted node) keeps the node's expansion. `run/template_two_alike_expansions`,
+`run/template_default_arg_two_expansions`,
+`reject/template_built_code_diagnostic_located`.
+
 Holed templates: each `${…}` part is exposed to the body as a
 `__bp_hole_<param>_<i>` placeholder; `substituteHoles` splices the caller's hole
 AST back after parsing and walks every expression-bearing position (closure/fn

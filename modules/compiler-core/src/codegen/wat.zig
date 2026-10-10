@@ -3573,7 +3573,11 @@ const Emitter = struct {
     /// `i32.const 0` stub the historic path already produced.
     fn ensureAnonRecord(self: *Emitter, loc: ast.Loc, rl: anytype) ![]const u8 {
         const ra = self.reg_arena.allocator();
-        const name = try std.fmt.allocPrint(ra, "__anon_L{d}_C{d}", .{ loc.line, loc.col });
+        // Built code (decision 429) names its expansion too.
+        const name = if (loc.expansion == 0)
+            try std.fmt.allocPrint(ra, "__anon_L{d}_C{d}", .{ loc.line, loc.col })
+        else
+            try std.fmt.allocPrint(ra, "__anon_L{d}_C{d}_E{d}", .{ loc.line, loc.col, loc.expansion });
         if (self.records.contains(name)) return name;
         const names = try ra.alloc([]const u8, rl.fields.len);
         const types = try ra.alloc([]const u8, rl.fields.len);

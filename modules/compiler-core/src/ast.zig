@@ -354,10 +354,38 @@ pub const ModDecl = struct {
     }
 };
 
-/// Source location of a node: line and column (both 1-based).
+/// Source location of a node: line and column (both 1-based), and the template
+/// expansion whose built code holds it (decision 429). A node the programmer
+/// wrote has `expansion` 0. A node of template-built code has the id its
+/// expansion took (`infer.parseCodeText`), and its line and column are its
+/// offset in the built string read from the literal's own line and column
+/// (`q.source()`) — so a diagnostic in built code points at the literal, and
+/// two expansions whose code sits at the same offsets are two locations. Every
+/// plan keyed by a location (an `AutoHashMap(ast.Loc, …)`, `Loc.eql`) reads the
+/// pair.
 pub const Loc = struct {
     line: usize,
     col: usize,
+    expansion: u32 = 0,
+
+    pub fn eql(a: Loc, b: Loc) bool {
+        return a.line == b.line and a.col == b.col and a.expansion == b.expansion;
+    }
+
+    /// The JSON dump names the expansion only for built code, so a dump of
+    /// written code is unchanged.
+    pub fn jsonStringify(this: Loc, jws: anytype) !void {
+        try jws.beginObject();
+        try jws.objectField("line");
+        try jws.write(this.line);
+        try jws.objectField("col");
+        try jws.write(this.col);
+        if (this.expansion != 0) {
+            try jws.objectField("expansion");
+            try jws.write(this.expansion);
+        }
+        try jws.endObject();
+    }
 };
 
 // ── Statement types ───────────────────────────────────────────────────────────

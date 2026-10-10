@@ -182,12 +182,10 @@ pub const FnContext = struct {
 /// Decision 354 — what a name imported from std's `context` module declares.
 pub const StdContextName = enum { context_type, provide, context };
 
-/// Decision 354 (8) — a call recorded for the hidden context map: its value's
-/// type and the callee it names. The lowering matches the callee too, since a
-/// template's built code can share a location with another expansion's
-/// (`language-gaps.md`, "Two template expansions in one module share the
-/// locations of their built code").
-pub const ComponentCall = struct { type_: *T.Type, callee: []const u8 };
+/// Decision 354 (8) — a lambda recorded for the hidden context map: its type
+/// and its parameter count as written, so a lambda that already took the map
+/// parameter is not lowered again.
+pub const ComponentLambda = struct { type_: *T.Type, params: usize };
 
 /// Decision 371 — one `d.same(other)` on a `Decorator`: `other` is the
 /// identity (`declIdentity`) of the decorator the argument names, or null when
@@ -206,10 +204,6 @@ pub const DeferredMetaRead = struct {
     decorator: []const u8,
     key: []const u8,
 };
-
-/// Decision 354 (8) — a lambda recorded for the hidden context map: its type
-/// and its parameter count (matched as `ComponentCall.callee` is).
-pub const ComponentLambda = struct { type_: *T.Type, params: usize };
 
 /// Decision 375 — the declaration a call or a `use` names, with the call's
 /// type (null for a `use`, whose operand is a hook): only a call whose type
@@ -905,7 +899,7 @@ pub const Env = struct {
     /// Decision 354 (8) — every call whose value is, or may resolve to, a
     /// `@Component<R>`, by location, with that type: the calls that pass the
     /// hidden context map (`context_lower.zig`).
-    componentCalls: std.AutoHashMapUnmanaged(ast.Loc, []const ComponentCall) = .empty,
+    componentCalls: std.AutoHashMapUnmanaged(ast.Loc, *T.Type) = .empty,
     /// Decision 354 (8) — every lambda, by location, with its type: one that
     /// answers `@Component<R>` takes the hidden context map.
     componentLambdas: std.AutoHashMapUnmanaged(ast.Loc, ComponentLambda) = .empty,
@@ -930,6 +924,11 @@ pub const Env = struct {
     /// texts) → the expanded expression. The expansion is still re-inferred
     /// per call site; only the external evaluation is skipped.
     templateEvalCache: std.StringHashMap(*const ast.Expr),
+    /// Decision 429 — the last expansion id this module handed out: each
+    /// template expansion whose code is parsed from built text takes the
+    /// next one (`infer.parseCodeText`), and its nodes carry it in
+    /// `ast.Loc.expansion`.
+    expansionCount: u32 = 0,
     /// Monotonically increasing counter for fresh type variable IDs.
     nextId: T.TypeId,
     /// Monotonically increasing counter for type definition IDs (record$$0, struct$$1, ...).
@@ -1969,7 +1968,7 @@ pub const Env = struct {
     /// recorded at the same location with the same text is not repeated.
     pub fn warn(self: *Env, w: @import("error.zig").TypeError) !void {
         for (self.warnings.items) |seen| {
-            const same_loc = if (seen.loc) |a| (if (w.loc) |b| a.line == b.line and a.col == b.col else false) else w.loc == null;
+            const same_loc = if (seen.loc) |a| (if (w.loc) |b| a.eql(b) else false) else w.loc == null;
             if (!same_loc) continue;
             if (seen.kind == .custom and w.kind == .custom and std.mem.eql(u8, seen.kind.custom.message, w.kind.custom.message)) return;
         }

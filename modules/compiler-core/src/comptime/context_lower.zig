@@ -252,7 +252,7 @@ const Lowering = struct {
                     try self.lowerHostCall(cc);
                     return true;
                 }
-                if (self.env.componentCalls.get(c.loc)) |recs| if (recordFor(recs, cc.callee)) |rec| if (componentValue(rec.type_)) |r| {
+                if (self.env.componentCalls.get(c.loc)) |ty| if (componentValue(ty)) |r| {
                     const args = try self.arena.alloc(ast.CallArg, cc.args.len + 1);
                     args[0] = .{ .label = null, .value = try self.mapArg(isRenderable(self.env, r), c.loc) };
                     @memcpy(args[1..], cc.args);
@@ -328,11 +328,6 @@ fn mayHoldExpr(comptime N: type) bool {
 
 /// The record of the call naming `callee` at a location (two template
 /// expansions' built code can share one).
-fn recordFor(recs: []const envMod.ComponentCall, callee: []const u8) ?envMod.ComponentCall {
-    for (recs) |r| if (std.mem.eql(u8, r.callee, callee)) return r;
-    return null;
-}
-
 /// A deep copy of `v`: every node behind a pointer or a slice is copied, and
 /// text (`[]const u8`) is shared, being immutable.
 fn deepCopy(comptime N: type, arena: std.mem.Allocator, v: N) anyerror!N {

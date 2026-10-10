@@ -1,0 +1,20 @@
+//// Decision 429 — template-built code is located by its expansion, and a
+//// diagnostic in it maps to the literal's own line and column for the
+//// reader (`q.source()`): offset 0 of the built string is the literal's
+//// column, and `r.d` sits 19 bytes into it. A first expansion whose code
+//// sits at the same offsets reads `r.w` and is accepted.
+
+pub type Box(w: i32, h: i32)
+
+// The built code is the literal's own text.
+pub fn code<T>(comptime q: @Expr<string>) -> @Expr<T> {
+    return q.build(q.text());
+}
+
+pub fn main() {
+    val boxes = [Box(w: 2, h: 3)];
+    val widths = code "boxes.map({ r -> r.w })";
+    val depths = code "boxes.map({ r -> r.d })";
+    @print(widths);
+    @print(depths);
+}

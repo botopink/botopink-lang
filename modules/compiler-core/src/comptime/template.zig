@@ -277,15 +277,15 @@ pub fn mapSpanToLoc(capture: *const CapturedExpr, span: Span) ast.Loc {
         }
         if (line == 0) {
             // Still on the literal's own line: content sits after the opening quote.
-            return .{ .line = capture.loc.line, .col = capture.loc.col + 1 + upto };
+            return .{ .line = capture.loc.line, .col = capture.loc.col + 1 + upto, .expansion = capture.loc.expansion };
         }
-        return .{ .line = capture.loc.line + line, .col = upto - lineStart + 1 };
+        return .{ .line = capture.loc.line + line, .col = upto - lineStart + 1, .expansion = capture.loc.expansion };
     }
     // Holes present — line-based fallback.
     // `span.line` is 1-based (line 1 = the opening `"""` line); subtract 1 so
     // line 1 maps to capture.loc.line and line N maps to capture.loc.line + N-1.
-    if (capture.multiline) return .{ .line = capture.loc.line + span.line -| 1, .col = 1 };
-    return .{ .line = capture.loc.line, .col = capture.loc.col };
+    if (capture.multiline) return .{ .line = capture.loc.line + span.line -| 1, .col = 1, .expansion = capture.loc.expansion };
+    return capture.loc;
 }
 
 /// Build the rustc-style diagnostic for `fail`/`failAt`: `msg` points at the
