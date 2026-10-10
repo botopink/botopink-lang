@@ -1,0 +1,9 @@
+pub fn pin(comptime decl: @Decl, comptime at: @Expr<i32> = 7) {
+    @emit(
+        "pub fn "
+            + decl.name
+            + "Pin() -> string { return \"pin"
+            + at.value.toString()
+            + "\"; }",
+    );
+}

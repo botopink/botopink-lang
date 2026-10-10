@@ -1,0 +1,13 @@
+//// Decision 319 — an `i64` difference below −2^63 aborts on every target;
+//// commonJS reaches the bound through `BigInt` (decision 264 aborted it at
+//// −(2^53 − 1) there).
+
+fn sub(a: i64, b: i64) -> i64 {
+    return a - b;
+}
+
+pub fn main() {
+    @print(sub(-9223372036854775807l, 1l));
+    @print(sub(-9223372036854775807l, 2l));
+    @print("unreachable");
+}

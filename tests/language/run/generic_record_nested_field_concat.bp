@@ -1,0 +1,24 @@
+//// A record field read through a generic record's field and joined into a
+//// string by `+` is the field's text on every target. wasm read the
+//// generic field `data: D` as an untyped slot, so `route.data.title`
+//// concatenated the string's address: `<h1>332</h1>` at exit 0.
+
+type Route<P, D>(params: P, data: D)
+
+type Post(title: string, views: i32)
+
+fn show(route: Route<string, Post>) -> string {
+    return "<h1>" + route.data.title + "</h1>";
+}
+
+fn views(route: Route<string, Post>) -> string {
+    return route.params + ":" + route.data.views;
+}
+
+pub fn main() {
+    val r = Route(params: "x", data: Post(title: "A", views: 3));
+    @print(show(r));
+    @print(views(r));
+    @print(r.data.title + "!");
+    @print(r.data);
+}

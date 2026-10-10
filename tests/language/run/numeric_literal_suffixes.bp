@@ -1,0 +1,46 @@
+//// Decision 247 — Kotlin's suffixes, lower case, for every numeric type:
+//// `1.5f` is an `f32`, `1d` an `f64`, `42l` an `i64`, `42u` a `u32`, `42ul` a
+//// `u64`, `7u8` / `7i8` / `7u16` / `7i16` / `7isize` / `7usize` their types;
+//// an unsuffixed integer still takes the integer type its position asks for
+//// (`val k: i64 = 1`); a suffix types a number pattern, and the suffix is
+//// stripped before any backend sees the literal. Each line was refused by the
+//// parent binary (`1.5f` was the number `1.5` and the identifier `f`).
+
+fn small(v: f32) -> f32 {
+    return v;
+}
+
+fn wide(v: i64) -> i64 {
+    return v;
+}
+
+fn kind(n: u8) -> string {
+    return case n {
+        0u8 -> "zero";
+        1 -> "one";
+        _ -> "many";
+    };
+}
+
+pub fn main() {
+    val x: f64 = 1d;
+    @print(x);
+    @print(small(1.5f));
+    @print(wide(42l));
+    val k: i64 = 1;
+    @print(k);
+    @print(42u);
+    @print(42ul);
+    @print(7u8);
+    @print(7i8);
+    @print(7u16);
+    @print(7i16);
+    @print(7isize);
+    @print(7usize);
+    @print(kind(0u8));
+    @print(kind(1u8));
+    @print(kind(9u8));
+    @print(255ul);
+    @print(1_000l);
+    @print(2.5e1d);
+}

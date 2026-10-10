@@ -1,0 +1,12 @@
+//// Decision 307 — `Type.pick` / `Type.omit` take at least one field.
+
+import {types.Type} from "std";
+
+type Recipe(
+    title: string,
+    description: ?string,
+)
+
+pub val Nothing = Type.pick(Recipe);
+
+pub fn main() {}

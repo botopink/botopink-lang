@@ -1,0 +1,12 @@
+//// A package's template whose built code calls the package's own function,
+//// which builds the package's record.
+
+pub type Badge(label: string, size: i32)
+
+pub fn makeBadge(label: string) -> Badge {
+    return Badge(label: label, size: label.length);
+}
+
+pub default fn badge(comptime t: @Expr<string>) -> @Expr<Badge> {
+    return t.build("makeBadge(\"" + t.text() + "\")");
+}

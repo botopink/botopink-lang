@@ -1,0 +1,12 @@
+//// Decision 309 — inside a package, `from "<its own name>"` is refused as 206
+//// refuses `from "<a module of this package>"`: at the source string, the
+//// fix written. This package is `shapes`; its module `geometry` is imported
+//// by its path inside the braces, with no `from`. No package is exempt — std
+//// imports its own modules the same way (`import {path.relative};`).
+
+pub mod geometry;
+import {geometry.area} from "shapes";
+
+pub fn main() {
+    @print(area(3, 4));
+}

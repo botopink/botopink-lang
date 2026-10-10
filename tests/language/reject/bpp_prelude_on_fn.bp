@@ -1,0 +1,14 @@
+//// Decision 361 — a prelude is a module, and a module takes no annotation
+//// (315): `#[bpp.htmlPrelude]` marks the marker `val` the prelude module
+//// declares, and on a function it is refused at the annotation.
+
+import {bpp} from "std";
+
+#[bpp.htmlPrelude]
+pub fn prelude() -> i32 {
+    return 1;
+}
+
+pub fn main() {
+    @print(prelude());
+}

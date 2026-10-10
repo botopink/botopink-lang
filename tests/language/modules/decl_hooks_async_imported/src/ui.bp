@@ -1,0 +1,24 @@
+//// The library half of `decl_hooks_async_imported`: a synchronous hook, a
+//// synchronous component that reads it, and a component that awaits. Its
+//// nodes are published with their `async` marks when this module's analysis
+//// ends.
+
+pub type Element(text: string) implement @Renderable
+
+pub fn session() -> @Component<string> {
+    return "alice";
+}
+
+pub fn Avatar() -> @Component<Element> {
+    val s = use session();
+    return Element(text: "avatar " + s);
+}
+
+fn loadPosts() -> @Task<string> {
+    return "3 posts";
+}
+
+pub fn Posts() -> @Component<Element> {
+    val text = await loadPosts();
+    return Element(text: text);
+}

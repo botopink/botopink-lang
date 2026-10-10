@@ -1,0 +1,29 @@
+//// Two modules of one program each declare a module-level `val limit` — an
+//// `i32` in one, a `string` in the other — and each module's own reads (in a
+//// function, in another `val`'s initialiser, beside a parameter that shadows
+//// it, a `var` each module writes), the importer's plain import and its aliased one all reach the `limit`
+//// they mean.
+////
+//// The wasm gap this pins (`00 · 05-wasm`): wasm links every module into one
+//// namespace, and a function is mangled per module, but a `val` two modules
+//// declared still trapped at its use. The second declaration is now mangled
+//// too (`two/limit`), and every read that means it reaches that global.
+
+pub mod one;
+pub mod two;
+import {one.limit, one.viaOne, one.doubled, one.hitOne};
+import {two.limit as label, two.viaTwo, two.shout, two.shadow, two.hitTwo};
+
+pub fn main() {
+    @print(limit);
+    @print(label);
+    @print(viaOne());
+    @print(viaTwo());
+    @print(doubled);
+    @print(shout);
+    @print(shadow("param"));
+    @print(hitOne());
+    @print(hitTwo());
+    @print(hitOne());
+    @print(hitTwo());
+}

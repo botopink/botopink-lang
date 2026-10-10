@@ -1,0 +1,16 @@
+//// Decision 216 (1) — a member belongs to a type: `decl.addMember` from a
+//// decorator on a function is refused at the annotation (a function has no
+//// body to add a member to).
+
+fn helper(comptime decl: @Decl) {
+    decl.addMember("pub fn extra() -> i32 { return 1; }");
+}
+
+#[helper]
+fn work() -> i32 {
+    return 2;
+}
+
+pub fn main() {
+    @print(work());
+}

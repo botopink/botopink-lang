@@ -1,0 +1,7 @@
+mod split;
+
+pub val splitPath = split.splitPath;
+
+pub val join = split.join;
+
+pub type Pair = split.Pair;

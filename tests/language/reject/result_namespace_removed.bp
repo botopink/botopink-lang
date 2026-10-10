@@ -1,0 +1,12 @@
+//// Decision 330 (6) — the builtin `result` namespace is gone: a `@Result`'s
+//// `map`, `flatMap`, `unwrapOr`, `isOk` and `isError` are its methods
+//// (`r.isOk()`), and `result` is an unbound name.
+
+fn parse(n: i32) -> @Result<i32, string> {
+    if (n < 0) throw "negative";
+    return n;
+}
+
+pub fn main() {
+    @print(result.isOk(parse(1)));
+}

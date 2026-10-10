@@ -1,0 +1,16 @@
+//// Decision 255 (2) — the decision's own line: `val d: Dict<string, unknown>
+//// = comptime Dict.empty();` types as its block form does, in a body. Decision
+//// 266 / 331: both run on the comptime runtime and the record is written into
+//// the program as its constructor (`Dict(pairs: [])`), so wasm builds it too —
+//// the parent binary refused it there (`.wasm.expect`, no lowering for
+//// `comptimeExpr`).
+
+import {collections.Dict} from "std";
+
+pub fn main() {
+    val d: Dict<string, unknown> = comptime Dict.empty();
+    val e: Dict<string, unknown> = comptime {
+        break Dict.empty();
+    };
+    @print(d.size() == e.size());
+}

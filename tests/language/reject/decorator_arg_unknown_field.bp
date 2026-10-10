@@ -1,0 +1,28 @@
+//// Decisions 280 (3), 308, example 1 — `.name` against `Type.Field<T>` names
+//// a field of the `T` that `@Decl<T>` bound: a field the type does not
+//// declare is refused at the `.name`.
+
+import {types.Type} from "std";
+
+pub type Code { Custom, Mismatch }
+
+fn check<T>(
+    comptime decl: @Decl<T>,
+    comptime message: @Expr<string>,
+    comptime rule: @Expr<?fn(v: T) -> bool> = null,
+    comptime at: @Expr<?Type.Field<T>> = null,
+    comptime code: @Expr<Code> = .Custom,
+) {
+    decl.setMeta("message", message.value);
+}
+
+fn passwordsMatch(a: Account) -> bool {
+    return a.password == a.confirm;
+}
+
+#[check("passwords differ", passwordsMatch, at = .confrim)]
+type Account(password: string, confirm: string)
+
+pub fn main() {
+    @print("unreached");
+}

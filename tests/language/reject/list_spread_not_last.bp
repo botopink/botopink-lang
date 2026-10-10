@@ -1,0 +1,9 @@
+//// 1.0.10-beta `00 · 15-language-surface` step 3 — a spread in an array
+//// literal is its last element, `[1, 2, ..rest]`. Refused at the element after
+//// the spread; the kind existed before the front and nothing raised it.
+
+pub fn main() {
+    val a = [1, 2];
+    val b = [..a, 3];
+    @print(b.length.toString());
+}

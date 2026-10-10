@@ -1,0 +1,2 @@
+an increment of an `@BeamMemory.Ets` var is atomic only on an integer — `total` is a `f64`
+10:5

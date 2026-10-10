@@ -1,0 +1,14 @@
+//// Decision 8 §5.4 — a missing variant makes the case non-exhaustive.
+
+type Shape {
+    Circle(radius: i32),
+    Rect(width: i32, height: i32),
+}
+
+pub fn main() {
+    val s = Shape.Circle(radius: 1);
+    val y = case s {
+        .Circle(r) { r }
+    };
+    @print(y);
+}

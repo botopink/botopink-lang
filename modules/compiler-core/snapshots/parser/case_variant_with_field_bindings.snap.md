@@ -99,7 +99,10 @@
                                     "g",
                                     "b"
                                   ]
-                                }
+                                },
+                                "shape": "variant",
+                                "labels": [],
+                                "rest": false
                               }
                             },
                             "body": {

@@ -1,0 +1,19 @@
+Color.Blue
+Color.Green
+Color.Red
+[Color.Red, Color.Blue]
+Car(name: "a", color: Color.Green)
+Color.Green
+Color.Blue
+[Color.Red, Color.Green]
+Color.Green
+null
+Color.Blue
+Color.Green
+Color.Red
+false
+Color.Red
+Color.Red
+null
+true
+Color.Blue

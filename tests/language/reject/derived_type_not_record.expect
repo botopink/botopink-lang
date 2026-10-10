@@ -1,0 +1,2 @@
+derived-type-source-not-record: `Type.partial` takes a record type; `Fish` is an enum
+11:34

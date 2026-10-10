@@ -1,0 +1,2 @@
+card: skin.brand -> string named=brand, palettes 0
+page: skin.brand -> string named=brand, palettes 0

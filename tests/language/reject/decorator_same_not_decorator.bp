@@ -1,0 +1,24 @@
+//// Decision 371 — `Decorator.same(other)` takes a `Decorator`: a decorator's
+//// name or a `DeclAnnotation.decorator`. A string spelling the name is no
+//// decorator — the comparison is by declaration, never by the name — and is
+//// refused at the argument.
+
+fn serverOnly(comptime decl: @Decl) {
+    val _n = decl.name;
+}
+
+fn check(comptime decl: @Decl) {
+    decl.annotations.forEach({ a ->
+        if (a.decorator.same("serverOnly")) decl.fail("server only");
+    });
+}
+
+#[check]
+#[serverOnly]
+fn Page() -> string {
+    return "p";
+}
+
+pub fn main() {
+    @print(Page());
+}

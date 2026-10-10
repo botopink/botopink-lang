@@ -1,0 +1,16 @@
+//// Decisions 120 and 121 of 1.0.10-beta (front 24, § Cells "`@Task` and
+//// failure") — a Task never fails: `throw` needs a `@Result` in some layer of
+//// the return, and `@Task<i32>` has none. Refused at the `throw`.
+////
+//// Line 1 is the shared tail of the code on purpose: the README's table names
+//// `effect-try-without-fallible-channel` for `throw` and `try` alike, while the
+//// checker at `82e32e36` answers a `throw` with
+//// `effect-throw-without-fallible-channel` — whether the two merge is the
+//// README's open point 2, and this cell holds either answer.
+
+fn answer(n: i32) -> @Task<i32> {
+    if (n < 0) { throw "negative"; };
+    return n;
+}
+
+pub fn main() { answer(1); }

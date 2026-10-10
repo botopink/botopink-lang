@@ -1,0 +1,38 @@
+//// Decision 385 — an `@Expr<T>` meta field read in another module resolves
+//// its names where the annotation wrote them: `main` reads `signup`'s
+//// `Check` and calls its private `passwordsMatch`; this module's own
+//// `passwordsMatch` and `hint` are never captured. The `@TypeInfo.all`
+//// route answers the same (a non-generic record: a generic one through a
+//// catalogue entry is question `130-s8-d`).
+
+pub mod signup;
+import {signup.Signup};
+import {signup.Check};
+import {signup.Note};
+import {signup.note};
+
+fn passwordsMatch(a: Signup) -> bool {
+    return true;
+}
+
+fn hint() -> string {
+    return "main's hint";
+}
+
+pub fn main() {
+    val s = Signup(password: "a", confirm: "b");
+    val checks = @typeInfo(Signup).metaAll(Check);
+    @print(checks.length);
+    for (checks) { c ->
+        @print(c.rule(s));
+        @print(c.message);
+    }
+    @print(@typeInfo(Signup).meta(Note)?.text ?? "none");
+    for (@TypeInfo.all(with: note, member: "make")) { d ->
+        for (d.metaAll(Note)) { n ->
+            @print(d.name + ": " + n.text);
+        }
+    }
+    @print(passwordsMatch(s));
+    @print(hint());
+}

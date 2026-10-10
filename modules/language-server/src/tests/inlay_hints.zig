@@ -64,3 +64,29 @@ test "inlayHints: lambda parameter types" {
     ;
     try run(std.testing.allocator, "inlay_hints_lambda_params", source);
 }
+
+// ── front 11 carve-out: a `val` of a declared type is hinted by the type's name ──
+//
+// The hint goes through `renderType`, which prints a `named` type verbatim; a
+// record or enum instance is named by the declaration alone (`Point`, `Shape`),
+// never by the constructor binding's `type Name(…)` / `type Name { … }` text
+// that `buildRecordDeclName` / `buildEnumDeclName` build (C-19).
+
+test "inlayHints: a val of a record type is hinted `: Name`" {
+    const source =
+        \\pub type Point(x: i32, y: i32)
+        \\val p = Point(1, 2);
+    ;
+    try run(std.testing.allocator, "inlay_hints_val_record", source);
+}
+
+test "inlayHints: a val of an enum type is hinted `: Name`" {
+    const source =
+        \\pub type Shape {
+        \\    Circle(radius: f64),
+        \\    Square,
+        \\}
+        \\val s = Shape.Square;
+    ;
+    try run(std.testing.allocator, "inlay_hints_val_enum", source);
+}

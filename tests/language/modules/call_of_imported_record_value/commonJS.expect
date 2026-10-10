@@ -1,0 +1,2 @@
+callee-not-a-function: `settings` is a value of type `Settings`, not a function
+src/main.bp:10:12

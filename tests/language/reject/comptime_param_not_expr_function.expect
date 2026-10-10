@@ -1,0 +1,2 @@
+comptime-param-not-expr: `twice`'s parameter `n` is `comptime n: i32` — a `comptime` parameter is `comptime n: @Expr<i32>`
+5:10

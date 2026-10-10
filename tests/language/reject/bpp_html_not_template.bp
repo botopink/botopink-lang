@@ -1,0 +1,14 @@
+//// Decision 361 — `#[bpp.html]` marks a template function answering
+//// `@ExprCustom<R>` (275 reads `R` from it): a plain function is refused at
+//// the annotation, naming what it answers.
+
+import {bpp} from "std";
+
+#[bpp.html]
+pub fn page() -> i32 {
+    return 1;
+}
+
+pub fn main() {
+    @print(page());
+}

@@ -1,0 +1,28 @@
+//// onze finding F6 — a one-argument `s.slice(1)` as the value of an `if`
+//// branch. The transform walked an `if` branch's statements only when they
+//// were a call, a binding, a jump, a nested branch or a loop, so the `slice`
+//// under the `+` never received its default `end`: erlang emitted
+//// `string_slice(S, 1)` against the `string_slice/3` it defines, and the
+//// module did not compile. The array half and a string template in a
+//// branch are the same walk.
+
+fn page(s: string) -> string {
+    return if (s == "/") "index.html" else s.slice(1) + "/index.html";
+}
+
+fn rest(xs: Array<i32>, skip: bool) -> i32 {
+    return if (skip) xs.slice(1).length else xs.length;
+}
+
+fn label(n: i32) -> string {
+    return if (n > 1) "${n} items" else "one item";
+}
+
+pub fn main() {
+    @print(page("/"));
+    @print(page("/about"));
+    @print(rest([1, 2, 3], true));
+    @print(rest([1, 2, 3], false));
+    @print(label(3));
+    @print(label(1));
+}

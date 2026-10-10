@@ -1,0 +1,43 @@
+//// The right operand of `&&` runs only where the left one held, and the right
+//// operand of `||` only where it failed, so each reads the names the left
+//// operand's null test narrows: `x != null && x.f` and `x == null || x.f`.
+//// The same holds inside an `if` and a `while` condition, and the body of
+//// `while (x != null)` reads `x` narrowed as an `if` branch does. A narrowed
+//// `var` is assigned its declared type (`x = x.next`, a `?Node`), and the
+//// assignment ends the narrowing.
+
+type Node(v: i32, next: ?Node)
+
+fn positive(x: ?Node) -> bool {
+    return x != null && x.v > 0;
+}
+
+fn absentOrPositive(x: ?Node) -> bool {
+    return x == null || x.v > 0;
+}
+
+fn headIfPositive(x: ?Node) -> i32 {
+    if (x != null && x.v > 0) return x.v;
+    return 0;
+}
+
+fn sum(head: ?Node) -> i32 {
+    var x = head;
+    var total = 0;
+    while (x != null && x.v < 100) {
+        total = total + x.v;
+        x = x.next;
+    }
+    return total;
+}
+
+pub fn main() {
+    val list = Node(v: 1, next: Node(v: 2, next: Node(v: 300, next: null)));
+    @print(positive(list));
+    @print(positive(null));
+    @print(absentOrPositive(null));
+    @print(absentOrPositive(Node(v: -1, next: null)));
+    @print(headIfPositive(list));
+    @print(headIfPositive(Node(v: -4, next: null)));
+    @print(sum(list));
+}

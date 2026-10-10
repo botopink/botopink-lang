@@ -1,0 +1,15 @@
+//// A reader: `names` calls `@TypeInfo.all` outside a template body, so the
+//// module answers for the whole program — and it also holds the package's
+//// default function.
+
+pub fn tagged(comptime decl: @Decl) {
+    decl.setMeta("tag", decl.name);
+}
+
+pub fn names() -> string {
+    return @TypeInfo.all(with: tagged).map({ e -> e.name }).join(",");
+}
+
+pub default fn cat(comptime e: @Expr<string>) -> @Expr<string> {
+    return e;
+}

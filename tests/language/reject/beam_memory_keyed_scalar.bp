@@ -1,0 +1,7 @@
+//// Decisions 41 and 51 — `keyed = true` is a `Dict`-only argument: it stores
+//// one row per key, and an `i32` has no key.
+
+#[@BeamMemory.Ets(keyed = true)]
+var hits: i32 = 0;
+
+pub fn main() { @print(hits); }

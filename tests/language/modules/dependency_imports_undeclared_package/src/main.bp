@@ -1,0 +1,12 @@
+//// Decision 242, inside a dependency — `starter` imports `from "core"` and
+//// does not declare it. This package declares both, so `core` is in the
+//// build, but a package names only what its own botopink.json declares: the
+//// refusal `starter`'s own build gives is the one this build gives, located
+//// at the source string in `starter`'s module — where it used to compile with
+//// nothing bound and answer `unbound variable 'greet'`.
+
+import {start} from "starter";
+
+pub fn main() {
+    @print(start());
+}

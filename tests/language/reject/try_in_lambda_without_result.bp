@@ -1,0 +1,20 @@
+//// Decision 147 (lg-a) — a lambda's return is its expected type's. Under
+//// `forEach`'s expected `fn(item: T) -> void` a `try` has no fallible channel
+//// and is refused at the `try`; it used to check, and the `Error` was dropped
+//// by the callee (`run()` answered `Ok(2)`).
+
+fn bad(x: i32) -> @Result<i32, string> {
+    if (x > 1) throw "big";
+    return x;
+}
+
+fn run() -> @Result<i32, string> {
+    [1, 2].forEach({ x ->
+        try bad(x);
+    });
+    return 2;
+}
+
+pub fn main() {
+    @print(run().isOk());
+}

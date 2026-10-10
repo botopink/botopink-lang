@@ -1,0 +1,2 @@
+effect-try-without-fallible-channel: `try` in a lambda needs a `@Result` in the lambda's expected return
+13:9

@@ -1,0 +1,16 @@
+//// Decision 103 of 1.0.10-beta — a `for await` over a `@Stream<@Result<T, E>>`
+//// is an `await` and a `try` in the body that iterates it. A `#[@result]` body
+//// grants `try` but not `await`, so the loop is refused there, naming the level
+//// it would need (decision 67 — located, no flag).
+
+fn stream(n: i32) -> @Stream<@Result<i32, string>> {
+    yield n;
+}
+
+fn total(n: i32) -> @Result<i32, string> {
+    var acc = 0;
+    for await (stream(n)) { x -> acc = acc + x; };
+    return acc;
+}
+
+pub fn main() { @print(try total(3) catch 0); }

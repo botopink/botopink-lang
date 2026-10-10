@@ -1,0 +1,27 @@
+//// Decision 107 — an import bound under an alias names the owner's function
+//// even where the importing module declares a function of the same name: a
+//// direct call (`other(1)`) and a function VALUE of the alias (`val f = other`,
+//// passed as an argument) both reach `lib`'s `pick`, never this module's own,
+//// on every target. wasm mangles the owner's declaration (`lib/pick`) and read
+//// the value through the bare name, calling the local `pick`.
+
+pub mod lib;
+
+import {lib.pick as other};
+
+fn pick(n: i32) -> i32 {
+    return n + 1;
+}
+
+fn apply(f: fn(n: i32) -> i32, n: i32) -> i32 {
+    return f(n);
+}
+
+pub fn main() {
+    @print(other(1));
+    @print(pick(1));
+    val f = other;
+    @print(f(2));
+    @print(apply(other, 3));
+    @print(apply(pick, 3));
+}

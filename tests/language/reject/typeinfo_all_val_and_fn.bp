@@ -1,0 +1,19 @@
+//// Decision 356 — a `val` is its own kind in the catalogue: one query
+//// answers one kind of value, so a decorator carried by a `val` and by a
+//// function is refused at the query, naming both.
+
+fn tag(comptime decl: @Decl) {
+    decl.setMeta("seen", "yes");
+}
+
+#[tag]
+pub val limit = 2;
+
+#[tag]
+pub fn twice() -> i32 {
+    return 4;
+}
+
+pub fn main() {
+    @print(@TypeInfo.all(with: tag).length);
+}

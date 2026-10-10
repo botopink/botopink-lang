@@ -1,0 +1,2 @@
+optional-operator-never-null: `?.` over a value that is never null
+7:15

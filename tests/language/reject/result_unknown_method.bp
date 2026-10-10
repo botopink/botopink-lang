@@ -1,0 +1,13 @@
+//// The call half of `reject/result_field_read`: a method of a `@Result`
+//// that is not one of its own (`map`, `flatMap`, `unwrapOr`, `isOk`,
+//// `isError`) was typed permissively and failed at run time. It is refused,
+//// located at the method name.
+
+fn half(n: i32) -> @Result<i32, string> {
+    if (n % 2 == 0) return n / 2;
+    throw "odd";
+}
+
+pub fn main() {
+    @print(half(4).get());
+}

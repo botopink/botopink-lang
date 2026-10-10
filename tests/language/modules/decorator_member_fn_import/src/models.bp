@@ -1,0 +1,15 @@
+//// `#[rule]` gives `Range` its member here: `holds` is `ordered`, `label` the
+//// call `reason("range")`, each spliced where the member uses it.
+
+import {rules.rule};
+
+fn ordered(r: Range) -> bool {
+    return r.low <= r.high;
+}
+
+fn reason(what: string) -> string {
+    return what + " out of order";
+}
+
+#[rule(ordered, reason("range"))]
+pub type Range(low: i32, high: i32)

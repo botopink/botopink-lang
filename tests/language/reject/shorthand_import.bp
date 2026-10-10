@@ -1,0 +1,9 @@
+//// Decision 337 (1) — an import with no `from` names a module of the package
+//// by its first segment. `splitPath` names none, and no module declares it:
+//// `shorthand-import`, `unresolved import`, at the item.
+
+import {splitPath};
+
+pub fn main() {
+    @print(splitPath("a/b"));
+}

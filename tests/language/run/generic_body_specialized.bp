@@ -1,0 +1,51 @@
+//// A generic function's body answers for the type its call binds: a
+//// method on a value of the type parameter (`x.toString()`), a float through
+//// one, a behavior's generic associated `default fn`, and a generic `type`'s
+//// method comparing two keys built differently (`Dict<string, string>.at`
+//// over a key `split` made at run time). wasm had one body for every type,
+//// every type parameter an `i32` word: `toString` found no lowering and
+//// trapped, `1.5` came back `1`, a string came back as its address, and two
+//// equal strings were two different words.
+
+import {collections.Dict} from "std";
+
+behavior Seq<A> {
+    default fn firstOr(xs: Array<A>, d: A) -> A {
+        return xs.at(0) ?? d;
+    }
+}
+
+fn describe<T>(x: T) -> string {
+    return x.toString();
+}
+
+fn ident<T>(x: T) -> T {
+    return x;
+}
+
+fn pair<T>(a: T, b: T) -> Array<T> {
+    return [a, b];
+}
+
+fn same<T>(a: T, b: T) -> bool {
+    return a == b;
+}
+
+pub fn main() {
+    @print(Seq.firstOr([3, 4], 0));
+    @print(Seq.firstOr(["x"], "none"));
+    @print(describe(5));
+    @print(describe("s"));
+    @print(describe(true));
+    @print(ident(1.5));
+    @print(ident(2.5) + 1.0);
+    @print(pair("a", "b"));
+    @print(pair(1, 2));
+    val built = "k=v".split("=").at(0) ?? "";
+    @print(same(built, "k"));
+    @print(same(3, 4));
+    var d: Dict<string, string> = Dict.empty();
+    d = d.insert(built, "found");
+    @print(d.at("k") ?? "none");
+    @print(d.at("z") ?? "none");
+}

@@ -1,0 +1,7 @@
+//// Decision 332 — a position asking for a `bigint` takes no unsuffixed literal (decision 247):
+//// `2` is an integer of a fixed width, `2n` the `bigint`.
+
+pub fn main() {
+    val x: bigint = 2;
+    @print(x);
+}

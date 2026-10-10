@@ -1,0 +1,2 @@
+#[bpp.html] annotates a template function answering `@ExprCustom<R>` — `page` answers `i32`
+7:3

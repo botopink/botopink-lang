@@ -1,0 +1,12 @@
+//// Decision 334 — one wasm binding per host. Two `host: .Wasi` bindings on
+//// one `declare fn` would leave the compiler reading one and dropping the
+//// other; the second is refused at its annotation.
+
+#[@External.Node("Math", "floor")]
+#[@External.Wasm("op:f64.floor", host = .Wasi)]
+#[@External.Wasm("op:f64.ceil", host = .Wasi)]
+declare fn roundOf(x: f64) -> f64;
+
+pub fn main() {
+    @print(roundOf(2.5));
+}

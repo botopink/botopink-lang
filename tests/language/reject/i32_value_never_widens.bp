@@ -1,0 +1,12 @@
+//// Decision 209 — only a LITERAL fits an expected `f64`: an `i32` value is
+//// never widened implicitly, so passing `n` to an `f64` parameter is the
+//// type mismatch at the argument.
+
+fn half(v: f64) -> f64 {
+    return v / 2.0;
+}
+
+pub fn main() {
+    val n = 5;
+    @print(half(n));
+}

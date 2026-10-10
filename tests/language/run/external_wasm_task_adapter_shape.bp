@@ -1,0 +1,17 @@
+//// Decision 393 — an adapter answering `@Task<T>` is checked by shape at the
+//// annotation: `wasi:delay` is `(i32, T) -> @Task<T>` over one type parameter,
+//// and a declaration of another shape is refused there on wasm
+//// (`wasm.expect`). The other targets bind their own templates and run it.
+
+#[@External.Node("""((__ms, __v) => new Promise((__r) => setTimeout(() => __r(__v), __ms)))($0, $1)""")]
+#[@External.Erlang("""(fun(__M, __V) -> timer:sleep(__M), __V end)($0, $1)""")]
+#[@External.Wasm("wasi:delay")]
+declare fn later(millis: i32, value: string) -> @Task<string>;
+
+fn run() -> @Task<void> {
+    @print(await later(1, "done"));
+}
+
+pub fn main() {
+    run();
+}

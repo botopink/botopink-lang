@@ -1,0 +1,43 @@
+//// A `case` over a union of RECORDS whose arm names the record and binds the
+//// matched value in its body (`DogB { d -> … }`, decision 8 §3.3 and §5.1
+//// P1): the binder is that record, so its fields read as declared — a
+//// string, an integer, an array, an optional — and with a guard on the arm.
+////
+//// wasm gave the binder the SUBJECT's type, which a union does not have, so
+//// every field read as a bare word: `d.name` printed an address
+//// (`dog 324 3`, `cat 332`). The other targets were right.
+
+type DogB(name: string, age: i32, tags: string[])
+
+type CatB(name: string, owner: ?string)
+
+fn describe(p: DogB | CatB) -> string {
+    return case p {
+        DogB { d ->
+            "dog " + d.name + " " + d.age.toString() + " " + d.tags.join(",");
+        }
+        CatB { c ->
+            "cat " + c.name + " " + (c.owner ?? "stray");
+        }
+    };
+}
+
+fn guarded(p: DogB | CatB) -> string {
+    return case p {
+        DogB when (p is DogB) { d ->
+            "guarded " + d.name;
+        }
+        _ {
+            "other";
+        }
+    };
+}
+
+pub fn main() {
+    val rex = DogB(name: "rex", age: 3, tags: ["a", "b"]);
+    @print(describe(rex));
+    @print(describe(CatB(name: "tom", owner: null)));
+    @print(describe(CatB(name: "kit", owner: "ann")));
+    @print(guarded(rex));
+    @print(guarded(CatB(name: "tom", owner: null)));
+}

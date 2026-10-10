@@ -1,0 +1,2 @@
+Page(uses: [user]) user(uses: [])
+Account bob ok

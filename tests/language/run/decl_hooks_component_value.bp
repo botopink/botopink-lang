@@ -1,0 +1,80 @@
+//// Decision 389 — a `@Component` named as a value in a body is a reached
+//// node of the hooks list, as a call is: under 388 a component value is
+//// rendered wherever its lambda lands, so naming it reaches it. `Lista`
+//// names `Card` as an argument of a call (`itens.map(Card)`), `Badge` as the
+//// value of a `val`, `Row` as a record field, and writes a lambda answering
+//// a component (`{ i -> Tag(i) }`, a call inside it). Each is an edge in body
+//// order, and each node is listed: `Card`'s `use session()` is reached from
+//// `Lista` (so a page listing cards is per-request, never a wrong static
+//// prerender).
+
+type Item(name: string)
+
+type View(text: string, kids: @Component<View>[]) implement @Renderable
+
+type Slot(view: fn(item: Item) -> @Component<View>)
+
+// Renders `decl.hooks` into one meta string `main` prints: each node as
+// `fn(uses: […], calls: […])`, an edge with `callee: null` as `null`, an
+// asynchronous node (375) marked `~`.
+fn graph(comptime decl: @Decl) {
+    var nodes: string[] = [];
+    decl.hooks.forEach({ n ->
+        var uses: string[] = [];
+        n.uses.forEach({ u ->
+            val h = u.hook;
+            uses.push(if (h == null) "null" else h.name);
+        });
+        var calls: string[] = [];
+        n.calls.forEach({ c ->
+            val k = c.callee;
+            val name = if (k == null) "null" else k.name;
+            calls.push(name + "@" + c.at);
+        });
+        val mark = if (n.async) "~" else "";
+        nodes.push(
+            n.function.name
+                + mark
+                + "(uses: ["
+                + uses.join(", ")
+                + "], calls: ["
+                + calls.join(", ")
+                + "])",
+        );
+    });
+    decl.setMeta("nodes", nodes.join(" "));
+}
+
+fn session() -> @Component<string> {
+    return "s";
+}
+
+fn Card(item: Item) -> @Component<View> {
+    val s = use session();
+    return View(text: s + item.name, kids: []);
+}
+
+fn Badge(item: Item) -> @Component<View> {
+    return View(text: item.name, kids: []);
+}
+
+fn Row(item: Item) -> @Component<View> {
+    return View(text: item.name, kids: []);
+}
+
+fn Tag(item: Item) -> @Component<View> {
+    return View(text: item.name, kids: []);
+}
+
+#[graph]
+fn Lista(itens: Item[]) -> @Component<View> {
+    val cards = itens.map(Card);
+    val pick = Badge;
+    val slot = Slot(view: Row);
+    val tags = itens.map({ i -> Tag(i) });
+    return View(text: "lista", kids: cards);
+}
+
+pub fn main() {
+    @print(@typeInfo(Lista).meta.graph.nodes);
+}

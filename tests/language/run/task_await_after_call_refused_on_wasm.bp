@@ -1,0 +1,26 @@
+//// Decision 392 — wasm resumes an `await` by entering its statement again, so a
+//// call evaluated before the `await` in the same statement would run twice
+//// there: wasm refuses it at the `await` (`wasm.expect`), and binding the call
+//// to a `val` first is the form every target runs. commonJS, erlang and beam
+//// run it as written.
+
+fn label(s: string) -> string {
+    @print("label " + s);
+    return s;
+}
+
+fn answer(n: i32) -> @Task<i32> {
+    return n * 2;
+}
+
+fn pair(a: string, b: i32) -> string {
+    return a + b.toString();
+}
+
+fn run() -> @Task<void> {
+    @print(pair(label("x"), await answer(21)));
+}
+
+pub fn main() {
+    run();
+}

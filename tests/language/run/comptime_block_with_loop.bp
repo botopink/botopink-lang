@@ -1,0 +1,36 @@
+//// Decisions 266, 331 (01-checker step 21) — a `comptime` with a call and a
+//// loop runs on the comptime runtime (BEAM for erlang and beam, WAT for
+//// commonJS and wasm), never on the target, and its value is written into
+//// the program: `comptime two()` emits `2`, the block below emits `6`. The
+//// parent binary lowered both as run-time code: erlang refused the block
+//// (`variable 'D@4' is unbound`), commonJS read `d` before it was bound and
+//// wasm had no lowering for `comptimeExpr`.
+
+fn add(a: i32, b: i32) -> i32 {
+    return a + b;
+}
+
+fn two() -> i32 {
+    return 2;
+}
+
+pub fn main() {
+    val a = comptime two();
+    @print(a);
+    val d = comptime {
+        var d = 0;
+        for ([1, 2, 3]) { b ->
+            d = add(d, b);
+        }
+        break d;
+    };
+    @print(d);
+    val words = comptime {
+        var out: string[] = [];
+        for (["a", "bc", "def"]) { w ->
+            out.push(w + w.length().toString());
+        }
+        break out;
+    };
+    @print(words);
+}

@@ -17,7 +17,9 @@ const h = @import("helpers.zig");
 test "js: comptime folding ---- integer addition folds to literal" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val v1 = comptime 1 + 1;
-        \\@print(v1);
+        \\fn main() {
+        \\    @print(v1);
+        \\}
     );
 }
 
@@ -26,7 +28,9 @@ test "js: comptime folding ---- block with break value inlines result" {
         \\val t = comptime {
         \\    break 2 + 22;
         \\};
-        \\@print(t);
+        \\fn main() {
+        \\    @print(t);
+        \\}
     );
 }
 
@@ -35,7 +39,9 @@ test "js: comptime folding ---- float multiplication folds to literal" {
         \\val pi2 = comptime {
         \\    break 3.14 * 2.0;
         \\};
-        \\@print(pi2);
+        \\fn main() {
+        \\    @print(pi2);
+        \\}
     );
 }
 
@@ -44,16 +50,24 @@ test "js: comptime folding ---- multiplication binds tighter than addition" {
         \\val n = comptime {
         \\    break 2 + 3 * 4;
         \\};
-        \\@print(n);
+        \\fn main() {
+        \\    @print(n);
+        \\}
     );
 }
 
+// `greeting` is a declared module-level runtime `val`, so the error is the
+// comptime scope rule (a comptime block may not read a runtime binding), not
+// an undeclared name.
 test "js: comptime validation ---- runtime identifier inside comptime raises error" {
     try h.assertJsError(std.testing.allocator, @src(),
+        \\val greeting = "hi";
         \\val msg = comptime {
         \\    break greeting;
         \\};
-        \\@print(msg);
+        \\fn main() {
+        \\    @print(msg);
+        \\}
     );
 }
 
@@ -66,48 +80,60 @@ test "js: comptime val ---- runtime val with string literal" {
 test "js: comptime val ---- comptime val folds arithmetic to literal" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val result = comptime 10 + 20;
-        \\@print(result);
+        \\fn main() {
+        \\    @print(result);
+        \\}
     );
 }
 
 test "js: comptime specialization ---- distinct string args generate specialized functions" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn build(prefix comptime: string, name: string) -> string {
-        \\    return prefix + ": " + name;
+        \\fn build(prefix comptime: @Expr<string>, name: string) -> string {
+        \\    return prefix.value + ": " + name;
         \\}
         \\
         \\fn main() {
         \\    val r1 = build("INFO", "Sistema iniciado");
         \\    val r2 = build("WARN", "Memória alta");
         \\    val r3 = build("INFO", "Log replicado");
+        \\    @print(r1);
+        \\    @print(r2);
+        \\    @print(r3);
         \\}
     );
 }
 
 test "js: comptime specialization ---- distinct integer args generate specialized functions" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn multiply(comptime factor: i32, x: i32) -> i32 {
-        \\    return x * factor;
+        \\fn multiply(comptime factor: @Expr<i32>, x: i32) -> i32 {
+        \\    return x * factor.value;
         \\}
         \\
-        \\fn calculate() {
+        \\fn main() {
         \\    val double = multiply(2, 21);
         \\    val triple = multiply(3, 21);
         \\    val doubleAgain = multiply(2, 10);
+        \\    @print(double);
+        \\    @print(triple);
+        \\    @print(doubleAgain);
         \\}
     );
 }
 
+// Every call passes the same comptime `prefix`, so only one specialisation
+// (`build_$0`) may be emitted. (It used to repeat the distinct-args fixture
+// above with the modifier spelled before the name.)
 test "js: comptime specialization ---- same string arg reuses specialized function" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn build(comptime prefix: string, name: string) -> string {
-        \\    return prefix + ": " + name;
+        \\fn build(comptime prefix: @Expr<string>, name: string) -> string {
+        \\    return prefix.value + ": " + name;
         \\}
         \\
         \\fn main() {
         \\    val r1 = build("INFO", "Sistema iniciado");
-        \\    val r2 = build("WARN", "Memória alta");
-        \\    val r3 = build("INFO", "Log replicado");
+        \\    val r2 = build("INFO", "Log replicado");
+        \\    @print(r1);
+        \\    @print(r2);
         \\}
     );
 }
@@ -116,8 +142,8 @@ test "js: comptime specialization ---- comptime val used as specialization argum
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val base = comptime 10 + 5;
         \\
-        \\fn scale(comptime factor: i32, value: i32) -> i32 {
-        \\    return value * factor;
+        \\fn scale(comptime factor: @Expr<i32>, value: i32) -> i32 {
+        \\    return value * factor.value;
         \\}
         \\
         \\fn main() {
@@ -130,7 +156,7 @@ test "js: comptime specialization ---- comptime val used as specialization argum
 
 test "js: comptime specialization ---- constrained type meta-kind specializes per value" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn coerce(comptime v: type string | int | bool, x: i32) -> i32 {
+        \\fn coerce(comptime v: @Expr<type string | int | bool>, x: i32) -> i32 {
         \\    return x;
         \\}
         \\
@@ -144,7 +170,7 @@ test "js: comptime specialization ---- constrained type meta-kind specializes pe
 
 test "js: comptime specialization ---- simple function body without loop" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn execute(comptime slug: string, input: i32) -> i32 {
+        \\fn execute(comptime slug: @Expr<string>, input: i32) -> i32 {
         \\    return input + 0;
         \\}
         \\
@@ -160,10 +186,10 @@ test "js: comptime loop unrolling ---- single if condition resolved per element"
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val COMMANDS = comptime ["calc", "noop", "help"];
         \\
-        \\fn execute(comptime slug: string, input: i32) -> i32 {
+        \\fn execute(comptime slug: @Expr<string>, input: i32) -> i32 {
         \\    var output = 0;
-        \\    loop (COMMANDS) { cmd ->
-        \\        if (cmd == slug) {
+        \\    for (COMMANDS) { cmd ->
+        \\        if (cmd == slug.value) {
         \\            output = input * 2;
         \\        };
         \\    };
@@ -181,10 +207,10 @@ test "js: comptime loop unrolling ---- nested if-else chain fully folded" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val COMMANDS = comptime ["calc", "noop", "help"];
         \\
-        \\fn execute(comptime slug: string, input: i32) -> i32 {
+        \\fn execute(comptime slug: @Expr<string>, input: i32) -> i32 {
         \\    var output = 0;
-        \\    loop (COMMANDS) { cmd ->
-        \\        if (cmd == slug) {
+        \\    for (COMMANDS) { cmd ->
+        \\        if (cmd == slug.value) {
         \\            if (cmd == "calc") {
         \\                output = input * 2;
         \\            } else if (cmd == "noop") {
@@ -206,10 +232,10 @@ test "js: comptime loop unrolling ---- case expression folded inside unrolled lo
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val COMMANDS = comptime ["calc", "noop", "help"];
         \\
-        \\fn execute(comptime slug: string, input: i32) -> i32 {
+        \\fn execute(comptime slug: @Expr<string>, input: i32) -> i32 {
         \\    var output = 0;
-        \\    loop (COMMANDS) { cmd ->
-        \\        if (cmd == slug) {
+        \\    for (COMMANDS) { cmd ->
+        \\        if (cmd == slug.value) {
         \\            output = case cmd {
         \\                "calc" -> input * 2;
         \\                "noop" -> input;
@@ -231,10 +257,10 @@ test "js: comptime partial ---- runtime array loop preserved, comptime param spe
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val COMMANDS = ["calc", "noop", "help"];
         \\
-        \\fn execute(comptime slug: string, input: i32) -> i32 {
+        \\fn execute(comptime slug: @Expr<string>, input: i32) -> i32 {
         \\    var output = 0;
-        \\    loop (COMMANDS) { cmd ->
-        \\        if (cmd == slug) {
+        \\    for (COMMANDS) { cmd ->
+        \\        if (cmd == slug.value) {
         \\            output = input * 2;
         \\        };
         \\    };
@@ -262,12 +288,19 @@ test "js: comptime basic ---- comptime val and plain function coexist" {
     );
 }
 
+// A `comptime { … }` block has its own scope: a local `val` is declared,
+// folded, and visible to the `break` expression (`comptime/error.zig`
+// `validateBody` + `comptime/eval.zig` `Scope`), as `docs.md` ("Compile-time
+// evaluation") shows. Folds to `20`.
 test "js: comptime ---- block with break" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val result = comptime {
         \\    val x = 10;
         \\    break x * 2;
         \\};
+        \\fn main() {
+        \\    @print(result);
+        \\}
     );
 }
 
@@ -302,7 +335,7 @@ test "js: template end to end ---- holed html via parts() runs" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\pub fn html(comptime q: @Expr<string>) -> @Expr<string> {
         \\    var acc = "\"\"";
-        \\    loop (q.parts()) { p ->
+        \\    for (q.parts()) { p ->
         \\        if (p.kind == "Text") {
         \\            acc = acc + " + \"" + p.text + "\"";
         \\        };
@@ -344,7 +377,7 @@ test "js: template end to end ---- cross-module html mirrors the canonical examp
             .source =
             \\pub fn html(comptime q: @Expr<string>) -> @Expr<string> {
             \\    var acc = "\"\"";
-            \\    loop (q.parts()) { p ->
+            \\    for (q.parts()) { p ->
             \\        if (p.kind == "Text") {
             \\            acc = acc + " + \"" + p.text + "\"";
             \\        };
@@ -359,7 +392,7 @@ test "js: template end to end ---- cross-module html mirrors the canonical examp
         .{
             .path = "",
             .source =
-            \\import {html} from "view";
+            \\import {view.html};
             \\
             \\val name = "world";
             \\
@@ -377,32 +410,107 @@ test "js: template end to end ---- cross-module html mirrors the canonical examp
     });
 }
 
+// `Binding.ref()` splices the caller-scope binding back as a bare reference:
+// the template host now emits `ref/1` next to `lookup/2`
+// (`comptime/template_eval.zig`), so `b.ref()` expands to the identifier
+// `greeting` — not to its value — and the module prints `ola mundo`.
+// (The user fn is named `refer`; a user `pick` would also win over the `pick`
+// type-manipulation builtin since std-surface 6a, but `refer` keeps the slug.)
+// The miss path is an `else` arm, not a statement after the `if`: in a template
+// body lowered by `codegen/erlang.zig` `emitComptimeModule`, a `return` inside
+// an if-arm does not leave the function — the `case` value is discarded and the
+// next statement runs anyway (visible in the `COMPTIME ERLANG` section of
+// `runtime_template_body_lookup_miss_drives_control_flow`, where the miss hides
+// it). That lowering gap is owned by the codegen/erlang side, not by comptime.
 test "js: template end to end ---- lookup().ref() splices a caller-scope reference" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val greeting = "ola mundo";
-        \\pub fn pick(comptime q: @Expr<string>) -> @Expr<string> {
+        \\pub fn refer(comptime q: @Expr<string>) -> @Expr<string> {
         \\    val hit = q.lookup("greeting");
         \\    if (hit) { b ->
         \\        return b.ref();
+        \\    } else {
+        \\        return q.fail("greeting not found in caller scope");
         \\    };
-        \\    return q.fail("greeting not found in caller scope");
         \\}
-        \\val s = pick "x";
+        \\val s = refer "greeting";
         \\fn main() {
         \\    @print(s);
         \\}
     );
 }
 
-test "js: template end to end ---- yaml model computes a typed record" {
+test "js: template end to end ---- yaml model computes a labeled tuple" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\pub fn conf<T>(comptime q: @Expr<string>) -> @Expr<T> {
         \\    val t = q.text();
-        \\    return @expr(record { port: 8000 + t.length, debug: true });
+        \\    val port = 8000 + t.length;
+        \\    val debug = true;
+        \\    return @expr(#(port, debug));
         \\}
         \\val cfg = conf "yaml";
         \\fn main() {
         \\    @print(cfg.port + 1);
+        \\}
+    );
+}
+
+test "js: comptime ---- a constant division by zero is a located comptime error (C4b)" {
+    try h.assertJsError(std.testing.allocator, @src(),
+        \\val q = comptime 1 / 0;
+    );
+}
+
+test "js: comptime ---- negating a string is a located comptime error (C4b)" {
+    try h.assertJsError(std.testing.allocator, @src(),
+        \\val q = comptime -"s";
+    );
+}
+
+// Decisions 266, 331 (01-checker step 21) — a `comptime` with a call and a
+// loop runs on the comptime runtime, never on the target: the `COMPTIME
+// REPLY` is the same on the BEAM and the WAT runtime (the runtime-parity
+// audit compares the two snapshot trees), and every backend emits `2` and `6`
+// where the source wrote the two `comptime`s.
+test "js: comptime runtime ---- a block with a call and a loop is evaluated at build" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn add(a: i32, b: i32) -> i32 {
+        \\    return a + b;
+        \\}
+        \\
+        \\fn two() -> i32 {
+        \\    return 2;
+        \\}
+        \\
+        \\fn main() {
+        \\    val a = comptime two();
+        \\    @print(a);
+        \\    val d = comptime {
+        \\        var d = 0;
+        \\        for ([1, 2, 3]) { b -> d = add(d, b); }
+        \\        break d;
+        \\    };
+        \\    @print(d);
+        \\}
+    );
+}
+
+// Decision 331 — a record and a declared function lifted: the record the
+// block built is written as its constructor, the function as its name, and a
+// lambda reading nothing the block declares as the lambda.
+test "js: comptime runtime ---- a record holding a function reference is lifted" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\type Op(name: string, run: fn() -> i32, twice: fn() -> i32)
+        \\
+        \\fn two() -> i32 {
+        \\    return 2;
+        \\}
+        \\
+        \\fn main() {
+        \\    val op = comptime Op(name: "two" + "!", run: two, twice: { -> two() * 2 });
+        \\    @print(op.name);
+        \\    @print(op.run());
+        \\    @print(op.twice());
         \\}
     );
 }

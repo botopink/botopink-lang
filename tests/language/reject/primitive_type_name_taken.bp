@@ -1,0 +1,18 @@
+//// 01-compiler/01-checker row `primitive-type-name-taken` (`language-gaps.md`
+//// row "A function named like a primitive type shadows the type in its
+//// module") — a module-level `fn` named `string` took the type's name: every
+//// `string` annotation of the module read as the function, and the parent
+//// binary reported it far away, at `greet`'s parameter. Refused at the
+//// declaration's name.
+
+pub fn string() -> i32 {
+    return 1;
+}
+
+fn greet(name: string) -> string {
+    return "hi " + name;
+}
+
+pub fn main() {
+    @print(greet("x"));
+}

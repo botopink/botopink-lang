@@ -1,0 +1,12 @@
+//// Decision 307 — a field on both sides of `Type.merge` is refused at the
+//// second argument: nothing overrides silently (`omit` it first).
+
+import {types.Type} from "std";
+
+type Dog(name: string, age: ?i32)
+
+type Pet(name: string, owner: string)
+
+pub val DogPet = Type.merge(Dog, Pet);
+
+pub fn main() {}

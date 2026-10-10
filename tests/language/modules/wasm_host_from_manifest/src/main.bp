@@ -1,0 +1,16 @@
+//// Decision 334 — the build names its host in botopink.json, and the host
+//// picks the binding. This project builds for `"wasm": { "host": "browser" }`,
+//// and `floorOf` binds wasm on the `wasi` host only: a browser build has no
+//// binding for it, so wasm refuses the call (`wasm.expect`) exactly as it
+//// refuses a host function bound to another target — while commonJS, erlang
+//// and beam, which read no `"wasm"`, run it.
+
+#[@External.Node("Math", "floor")]
+#[@External.Erlang("math", "floor")]
+#[@External.Beam("math", "floor")]
+#[@External.Wasm("op:f64.floor", host = .Wasi)]
+declare fn floorOf(x: f64) -> f64;
+
+pub fn main() {
+    @print(floorOf(2.5));
+}

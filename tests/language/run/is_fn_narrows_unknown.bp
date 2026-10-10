@@ -1,0 +1,40 @@
+//// Decision 254 — `x is fn(<params>) -> T` narrows an `unknown` to that
+//// function type, with a run-time check, and a call through the narrowed name
+//// type-checks against it. A factory stored as `unknown` (the shape rakun's
+//// bean registry holds) is narrowed and called; a value of another arity, or
+//// no function at all, fails the test.
+
+type Clock(zone: string)
+
+fn makeClock() -> Clock {
+    return Clock(zone: "UTC");
+}
+
+fn twice(n: i32) -> i32 {
+    return n * 2;
+}
+
+fn build(factory: unknown) -> string {
+    if (factory is fn() -> Clock) return factory().zone;
+    return "not a factory";
+}
+
+fn apply(f: unknown, n: i32) -> i32 {
+    if (f is fn(i32) -> i32) return f(n);
+    return -1;
+}
+
+pub fn main() {
+    val stored: unknown = makeClock;
+    @print(build(stored));
+    @print(build({ -> Clock(zone: "BRT") }));
+    @print(build(twice));
+    @print(build("text"));
+    @print(build(42));
+    @print(apply(twice, 21));
+    @print(apply({ x -> x + 1 }, 1));
+    @print(apply(makeClock, 1));
+    val two: unknown = { a, b -> a };
+    @print(two is fn(i32, i32) -> i32);
+    @print(two is fn(i32) -> i32);
+}

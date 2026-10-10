@@ -1,0 +1,13 @@
+//// 02-std-and-packaging/97-std-dedupe step 13, decision 319 — `toF64()` of an integer no `f64`
+//// holds exactly aborts naming the value, on every target: `2^53 + 1` is never rounded to
+//// `2^53`, while `2^53 + 2` converts. The parent declared no `toF64`.
+
+fn grow(a: i64, b: i64) -> i64 {
+    return a + b;
+}
+
+pub fn main() {
+    @print(grow(9007199254740991l, 3l).toF64() == 9007199254740994.0);
+    @print(grow(9007199254740991l, 2l).toF64());
+    @print("unreachable");
+}

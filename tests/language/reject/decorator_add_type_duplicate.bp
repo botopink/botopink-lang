@@ -1,0 +1,19 @@
+//// Decision 216 (3) — an owner's associated types have one name each: a
+//// second `Columns` (from this decorator or another) is refused at the
+//// annotation that adds it.
+
+fn entity(comptime decl: @Decl) {
+    decl.addType("Columns", "(id: string)");
+}
+
+fn table(comptime decl: @Decl) {
+    decl.addType("Columns", "(name: string)");
+}
+
+#[entity]
+#[table]
+type City(id: i32)
+
+pub fn main() {
+    @print(City(id: 1).id);
+}

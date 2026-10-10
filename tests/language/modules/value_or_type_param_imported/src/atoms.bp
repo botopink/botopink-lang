@@ -1,0 +1,8 @@
+//// A library function whose `comptime` parameter takes a value or a type.
+
+pub type Box<T>(value: T)
+
+pub fn describe<T>(comptime s: @Expr<Box<T> | type T>, fallback: T) -> T {
+    if (s is type) return fallback;
+    return s.value.value;
+}

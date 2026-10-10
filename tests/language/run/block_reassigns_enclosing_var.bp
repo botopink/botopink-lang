@@ -1,0 +1,10 @@
+//// An `@block` that reassigns an enclosing `var`: the write is seen after
+//// the block on every target (erlc refused the module, `Acc@1` unbound).
+
+pub fn main() {
+    var acc = 1;
+    @block{
+        acc = acc + 5;
+    };
+    @print(acc);
+}

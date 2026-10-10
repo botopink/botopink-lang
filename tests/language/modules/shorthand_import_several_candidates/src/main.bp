@@ -1,0 +1,14 @@
+//// Decision 337 (1) — a bare `import {parse};` over a project whose modules
+//// `a` and `b` both declare `pub fn parse` names no module of the package:
+//// refused at the item, `shorthand-import`, every candidate written as a fix.
+//// It used to bind nothing and refuse each use (`ambiguous-import-use`, decision
+//// 170), and an unread one compiled; that refusal stays for `from "<pkg>"`
+//// alone (`modules/import_ambiguous_from_package`).
+
+pub mod a;
+pub mod b;
+import {parse};
+
+pub fn main() {
+    @print(parse("x"));
+}

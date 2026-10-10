@@ -1,0 +1,13 @@
+pub mod registry;
+pub mod component;
+import {registry.registered, registry.register, registry.unregisterLast};
+import {component.componentName};
+
+pub fn main() {
+    @print(componentName());
+    @print(registered());
+    register("second");
+    @print(registered());
+    @print(unregisterLast());
+    @print(registered());
+}

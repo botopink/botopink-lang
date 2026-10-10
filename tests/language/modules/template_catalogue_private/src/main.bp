@@ -1,0 +1,10 @@
+//// Decision 353 — a template body's catalogue keeps the catalogue's rule: a
+//// declaration of another module it answers is `pub`. `skin.brand` is
+//// private, so the expansion is refused, at the call.
+
+pub mod skin;
+import looks from "looks";
+
+pub fn main() {
+    @print(looks "page");
+}

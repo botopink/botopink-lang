@@ -1,0 +1,45 @@
+//// Decisions 388 and 118 — a function typed by an alias of `@Component`
+//// (`-> StyledView`) is no component body: the alias types it and activates
+//// nothing, so it answers the lambda another body made (`styledView`'s), not
+//// a lambda of its own. `Render` awaits what a function value typed by the
+//// alias answers below its provider, so `styledView` reads `Render`'s sheet;
+//// `Outer` awaits `badge("blue")` in its own body, run with `Outer`'s
+//// children scope.
+
+import {context.Context, context.provide, context.context} from "std";
+
+type Styled(className: string) implement @Renderable
+
+type StyledView = @Component<Styled>;
+
+type Sheet(name: string)
+
+pub val SheetContext = Context<Sheet>();
+
+fn styledView(c: string) -> @Component<Styled> {
+    val s = use context(SheetContext);
+    return Styled(className: c + "@" + s.name);
+}
+
+fn badge(c: string) -> StyledView {
+    return styledView(c);
+}
+
+fn Render(view: fn() -> StyledView) -> @Component<Styled> {
+    use provide(SheetContext, Sheet(name: "render"));
+    val out = await view();
+    return out;
+}
+
+fn Outer() -> @Component<Styled> {
+    use provide(SheetContext, Sheet(name: "outer"));
+    val b = await badge("blue");
+    return b;
+}
+
+pub fn main() -> @Task<void> {
+    val r = await Render({ -> badge("red") });
+    @print(r.className);
+    val o = await Outer();
+    @print(o.className);
+}

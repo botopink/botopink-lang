@@ -1,0 +1,6 @@
+ok user1
+error user 0 does not exist
+ok Hello, user2
+error user -1 does not exist
+user3
+guest

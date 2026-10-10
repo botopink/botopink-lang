@@ -1,0 +1,10 @@
+//// 01-compiler/01-checker row "`@block` tail form refused" (decision 2) — an
+//// `@block` used as a value takes what its `return`s carry, never its tail
+//// expression: `val a = @block { 1 + 2 };` has no valued `return` and is
+//// `block-tail-value` at the block. The parent binary typed the block by its
+//// tail and printed `3` on erlang, beam and wasm, `null` on commonJS.
+
+pub fn main() {
+    val a = @block { 1 + 2 };
+    @print(a);
+}

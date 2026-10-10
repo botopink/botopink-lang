@@ -1,0 +1,32 @@
+//// Status row "a full-arity labelled call is still zipped positionally": a
+//// label names the parameter it fills, on every call path — an associated
+//// fn (`Box.make`), a function imported as a leaf, one called through a
+//// namespace import (`helper.describe`, and `helper.pad` filled from its
+//// default), and a `"std"` module's function (`asserts.greaterThan`). Each
+//// used to be checked, and lowered, against the parameter at the argument's
+//// own index: `expected string, got i32` at the first label, and the std call
+//// answered `ok` for `3 > 5`. commonJS, erlang and beam run it; on wasm
+//// `testing.asserts` does not build (its `deepEquals` calls a host function
+//// with no wasm binding, refused called or not — decision 146), so the import
+//// that links it is refused (`wasm.expect`).
+
+pub mod helper;
+import {helper.describe, helper.Box};
+import {testing.asserts} from "std";
+
+fn verdict(r: @Result<void, string>) -> string {
+    return case r {
+        Ok(_) -> "ok";
+        Error(_) -> "refused";
+    };
+}
+
+pub fn main() {
+    @print(Box.make(count: 3, label: "b="));
+    @print(describe(s: "a=", n: 1));
+    @print(helper.describe(s: "c=", n: 4));
+    @print(helper.pad("p"));
+    @print(helper.pad(width: 7, s: "q"));
+    @print(verdict(asserts.greaterThan(bound: 5, actual: 3)));
+    @print(verdict(asserts.greaterThan(bound: 3, actual: 5)));
+}

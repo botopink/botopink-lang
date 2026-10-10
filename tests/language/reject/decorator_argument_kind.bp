@@ -1,0 +1,12 @@
+//// C-21, decision 280 — a decorator argument of the wrong type is refused AT
+//// the argument: the parameter's type checks it as a call's argument is
+//// checked, and the caret sits on the value that does not fit.
+
+fn value(comptime decl: @Decl, comptime key: @Expr<string>) { }
+
+#[value(42)]
+type A(x: i32)
+
+pub fn main() {
+    @print(A(x: 1).x);
+}

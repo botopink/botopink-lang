@@ -1,0 +1,13 @@
+//// Decision 356 — a `val` owns no type: `decl.addType` from a decorator on a
+//// `val` is refused at the annotation, as on a function.
+
+fn helper(comptime decl: @Decl) {
+    decl.addType("Columns", "(id: string)");
+}
+
+#[helper]
+pub val limit = 2;
+
+pub fn main() {
+    @print(limit);
+}

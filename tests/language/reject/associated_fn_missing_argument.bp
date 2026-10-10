@@ -1,0 +1,14 @@
+//// A type's associated fn called without a required argument (no default
+//// declared) is the arity error, at the call — it compiled, as a call with
+//// too many arguments did.
+
+type Bag(items: string[]) {
+    fn of(x: string, y: string) -> Bag {
+        return Bag(items: [x, y]);
+    }
+}
+
+pub fn main() {
+    val b = Bag.of("p");
+    @print(b.items.length);
+}

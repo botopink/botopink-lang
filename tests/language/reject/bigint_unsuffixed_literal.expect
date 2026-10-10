@@ -1,0 +1,2 @@
+the integer literal `2` is not a `bigint` — write `2n`
+5:21

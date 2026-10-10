@@ -1,0 +1,33 @@
+//// `language-gaps.md` row 31 — two `case` arms whose values are functions of
+//// one signature join into that function type, not a `fn | fn` union: `pick`
+//// answers `fn(string) -> string` from a named function in one arm and a
+//// call answering one in the other, and the result is applied.
+
+type Mode {
+    Plain(label: string),
+    Loud,
+}
+
+fn keep(x: string) -> string {
+    return x;
+}
+
+fn shout(x: string) -> string {
+    return x + "!";
+}
+
+fn loud() -> fn(x: string) -> string {
+    return shout;
+}
+
+fn pick(m: Mode) -> fn(x: string) -> string {
+    return case m {
+        Plain(label) -> keep;
+        _ -> loud();
+    };
+}
+
+pub fn main() {
+    @print(pick(Mode.Plain(label: "t"))("a"));
+    @print(pick(Mode.Loud)("b"));
+}

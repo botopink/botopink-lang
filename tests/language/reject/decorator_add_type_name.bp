@@ -1,0 +1,14 @@
+//// Decision 216 (3) — an associated type is named like a type: one
+//// identifier starting with an upper-case letter (`City.Columns`), refused
+//// at the annotation otherwise.
+
+fn entity(comptime decl: @Decl) {
+    decl.addType("columns", "(id: string)");
+}
+
+#[entity]
+type City(id: i32)
+
+pub fn main() {
+    @print(City(id: 1).id);
+}

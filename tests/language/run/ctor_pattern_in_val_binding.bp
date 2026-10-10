@@ -1,0 +1,13 @@
+//// JS-4 — a one-variant type's constructor in binding position is a plain
+//// destructure: `val Label(t, w) = …` binds both names (01's R5 admits it
+//// because it cannot fail). beam bound nothing and aborted with
+//// `{unresolved_identifier, t}` (`03-beam` step 1).
+
+type Tag {
+    Label(t: i32, w: i32),
+}
+
+pub fn main() {
+    val Label(t, w) = Tag.Label(t: 2, w: 5);
+    @print(t + w);
+}

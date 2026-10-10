@@ -1,0 +1,2 @@
+`#[@External.Wasm("wasi:delay")]`: the adapter `delay` is `(i32, T) -> @Task<T>` over one type parameter `T`
+8:3

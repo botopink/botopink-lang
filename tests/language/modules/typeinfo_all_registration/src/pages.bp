@@ -1,0 +1,14 @@
+//// Two pages. Nobody imports this module: the entry point finds its pages
+//// by reflection.
+
+import {web.route};
+
+#[route("/blog")]
+pub fn blog() -> string {
+    return "the blog";
+}
+
+#[route("/blog/latest")]
+pub fn latest() -> string {
+    return "the latest post";
+}

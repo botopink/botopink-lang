@@ -1,0 +1,8 @@
+//// 01-compiler/01-checker step 26 (decision 297) — `x is type` asks which
+//// form a `comptime x: V | type T` parameter took; on anything else it
+//// tests nothing and is refused at the `is`.
+
+pub fn main() {
+    val n = 3;
+    @print(n is type);
+}

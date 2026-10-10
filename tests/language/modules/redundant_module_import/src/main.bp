@@ -1,0 +1,10 @@
+//// Decision 337 (2) — in the module that declares `mod config;` the
+//// namespace is already bound: `import {config};` there is a second spelling,
+//// refused at the item (`redundant-module-import`, fix: delete it).
+
+pub mod config;
+import {config};
+
+pub fn main() {
+    @print(config.name());
+}

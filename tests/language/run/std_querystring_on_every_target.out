@@ -1,0 +1,11 @@
+n=café|x=a b|e=|k=
+a=1|a=2|b=🎉
+
+q=a+b
+q=a b|r=+
+?x=1
+error
+error
+a%20b=c%2Bd&%C3%A9=%F0%9F%8E%89&k=
+
+true

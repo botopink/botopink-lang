@@ -9,8 +9,8 @@
 # in `codegen/tests/js_control_flow.zig`. This script proves the emitted code
 # actually executes and asserts the boolean result, which a snapshot cannot.
 #
-# It is an end-to-end test (builds the `botopink` CLI, spawns node/escript/erl),
-# so it is NOT part of `zig build test` — run it directly:
+# It is an end-to-end test (spawns node/escript/erl), so it is NOT part of
+# `zig build test`; `zig build test-cli` runs it, or run it directly:
 #
 #     bash modules/compiler-cli/tests/mutual_recursion.sh
 #
@@ -30,8 +30,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 FIXTURE_DIR="$SCRIPT_DIR/mutual_recursion"
 
-echo "==> building botopink CLI"
-( cd "$REPO_ROOT" && zig build )
+# `zig build test-cli` sets BOTOPINK_SKIP_BUILD=1 (the CLI is installed by the
+# step's dependency) so a `zig build` is never nested inside one.
+if [[ -z "${BOTOPINK_SKIP_BUILD:-}" ]]; then
+  echo "==> building botopink CLI"
+  ( cd "$REPO_ROOT" && zig build )
+fi
 
 BP_BIN="$REPO_ROOT/zig-out/bin/botopink"
 if [[ ! -x "$BP_BIN" ]]; then
@@ -58,18 +62,37 @@ else
 fi
 
 # ── beam ──────────────────────────────────────────────────────────────────────
-# `botopink run --target beam` only writes the .S artifact, so assemble it with
-# `erlc +from_asm` and invoke `main:main()`, which returns `isEven(10)` — the
-# atom `true` when the bare-`if` base case falls through to the recursive call.
+# The program prints nothing, so `botopink run --target beam` has nothing to
+# compare: build the .S, assemble it with `erlc +from_asm` and invoke
+# `main:main()`, which returns `isEven(10)` — the atom `true` when the bare-`if`
+# base case falls through to the recursive call.
 if command -v erlc >/dev/null 2>&1 && command -v erl >/dev/null 2>&1; then
   echo "==> beam: build --target beam, erlc +from_asm, run main:main()"
   "$BP_BIN" build --target beam
-  erlc +from_asm -o out out/main.S
+  # 13 half 1: `out/beam/<atom>.S` — an erlang/BEAM artifact is named by its
+  # module atom, which `erlc` requires to equal the file's basename; the atom
+  # starts with the package, `mutual_recursion` (decision 109).
+  erlc +from_asm -o out out/beam/mutual_recursion@main.S
   erl -noshell -pa out -eval \
-    'case main:main() of true -> io:format("  beam: main:main() => true~n"), halt(0); X -> io:format("  beam: WRONG result ~p~n", [X]), halt(1) end'
+    'case mutual_recursion@main:main() of true -> io:format("  beam: main:main() => true~n"), halt(0); X -> io:format("  beam: WRONG result ~p~n", [X]), halt(1) end'
 else
   echo "==> beam: SKIPPED (erlc/erl not on PATH)"
 fi
+
+# A `wasi` build writes a WASI preview 2 component (decision 334), whose one
+# export is `wasi:cli/run`; the module the backend lowered is embedded in it as
+# `(core module $main …)`. `--invoke main` reaches that module: print it on its
+# own (`(module …)`, its `__bp_init` the start a component drops) so wasmtime
+# runs it as the core module it is. The component itself runs in
+# `tests/language` (`botopink run --target wasm`).
+core_module() {
+  # The module's last line is the `  )` just before the shim's module.
+  awk '
+    /^  \(core module \$main$/ { inside = 1; print "(module"; next }
+    inside && /^  \(core module \$p1_shim$/ { print ")"; exit }
+    inside { if (held != "") print held; held = $0; sub(/ \(export "__bp_init"\)/, "", held) }
+  ' "$1"
+}
 
 # ── wasm ──────────────────────────────────────────────────────────────────────
 # `botopink run --target wasm` would spawn wasmtime on the module's `_start`,
@@ -78,7 +101,9 @@ fi
 if command -v wasmtime >/dev/null 2>&1; then
   echo "==> wasm: build --target wasm, wasmtime --invoke main"
   "$BP_BIN" build --target wasm
-  wasm_result="$(wasmtime --invoke main out/main.wat 2>/dev/null | tail -1 | tr -d '[:space:]')"
+  head -1 out/main.wat | grep -qx '(component' || { echo "  wasm: out/main.wat is not a component" >&2; exit 1; }
+  core_module out/main.wat > out/main.core.wat
+  wasm_result="$(wasmtime --invoke main out/main.core.wat 2>/dev/null | tail -1 | tr -d '[:space:]')"
   if [[ "$wasm_result" == "1" ]]; then
     echo "  wasm: main() => 1 (true)"
   else

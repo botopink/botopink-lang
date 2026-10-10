@@ -1,0 +1,9 @@
+//// `shout` reaches this module's private `wrap`.
+
+fn wrap(s: string) -> string {
+    return "<" + s + ">";
+}
+
+pub fn shout(s: string) -> string {
+    return wrap(s.toUpper());
+}

@@ -1,0 +1,2 @@
+`roundOf` binds wasm twice for host 'browser' — one `#[@External.Wasm]` per host
+7:3

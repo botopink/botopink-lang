@@ -1,0 +1,29 @@
+//// Decision 298 — typed meta travels with the catalogue: each
+//// `@TypeInfo.all` entry carries the typed meta values its declaration's
+//// decorators recorded, read `d.meta(Entity)` → `?Entity` and
+//// `d.metaAll(Index)` → `Index[]` — here, and in a function of another
+//// module the entries are handed to (`orm.describe`). The record types are
+//// another module's; the entry point names them through the import the
+//// answer adds.
+
+pub mod orm;
+pub mod models;
+import {orm.Entity};
+import {orm.Index};
+import {orm.entity};
+import {orm.describe};
+
+pub fn main() {
+    val all = @TypeInfo.all(with: entity, member: "make");
+    for (all) { d ->
+        val e = d.meta(Entity);
+        @print(
+            d.name
+                + " "
+                + (e?.table ?? "none")
+                + " "
+                + d.metaAll(Index).length.toString(),
+        );
+    }
+    @print(describe(all));
+}

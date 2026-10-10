@@ -8,22 +8,22 @@
 // wrong result. See `tasks/v0.beta.9/specs/mutual-recursion.md`.
 
 pub fn main() -> bool {
-  return isEven(10);
+    return isEven(10);
 }
 
 fn isEven(n: i32) -> bool {
-  if (n == 0) { return true; };
-  return isOdd(n - 1);
+    if (n == 0) return true;
+    return isOdd(n - 1);
 }
 
 fn isOdd(n: i32) -> bool {
-  if (n == 0) { return false; };
-  return isEven(n - 1);
+    if (n == 0) return false;
+    return isEven(n - 1);
 }
 
 test "mutual recursion resolves across declaration order" {
-  assert isEven(10) == true;
-  assert isOdd(10) == false;
-  assert isEven(7) == false;
-  assert isOdd(7) == true;
+    assert isEven(10) == true;
+    assert isOdd(10) == false;
+    assert isEven(7) == false;
+    assert isOdd(7) == true;
 }

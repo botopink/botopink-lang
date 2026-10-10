@@ -1,0 +1,16 @@
+//// Decision 353 — `looks "…"` is a package's template function whose body
+//// reads `@TypeInfo.all(with: theme)`. The answer is the catalogue of this
+//// program: the one `#[theme]` is `skin.brand`, declared in a module analysed
+//// after `cards` expands the template (module order), and it is answered
+//// there too; `#[palette]` is carried by nothing, so its answer is empty. The
+//// package is no reader: importing its default function is legal.
+
+pub mod cards;
+pub mod skin;
+import looks from "looks";
+import {cards.card};
+
+pub fn main() {
+    @print(card());
+    @print(looks "page");
+}

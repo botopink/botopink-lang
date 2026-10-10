@@ -1,0 +1,9 @@
+//// `fn Tree` calls itself by name; `pub default Tree;` makes it the module's
+//// default, exported under the importer's name.
+
+fn Tree(depth: i32) -> string {
+    if (depth == 0) return "leaf";
+    return "node(" + Tree(depth - 1) + ")";
+}
+
+pub default Tree;

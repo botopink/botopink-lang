@@ -1,0 +1,4 @@
+//// `a/shape` — `b` has a `shape` module too, declaring a `Box` of other
+//// fields.
+
+pub type Box(width: i32, height: i32, label: string)

@@ -1,0 +1,37 @@
+//// Decision 375 — `HookNode.async` across modules: each reached function
+//// of `ui` enters with the mark its own module published. `Page` `use`s
+//// `ui`'s synchronous `session` through an alias and renders `ui.Avatar`
+//// through the namespace — every node `sync`. `Wall` renders `ui.Posts`,
+//// which awaits: `Posts` is `async`, and so is `Wall`, which writes no
+//// `await`.
+
+pub mod ui;
+
+import {ui.session as currentUser, ui.Element};
+
+fn graph(comptime decl: @Decl) {
+    var nodes: string[] = [];
+    decl.hooks.forEach({ n ->
+        val mark = if (n.async) "async" else "sync";
+        nodes.push(n.function.module + "." + n.function.name + ": " + mark);
+    });
+    decl.setMeta("nodes", nodes.join(", "));
+}
+
+#[graph]
+fn Page() -> @Component<Element> {
+    val who = use currentUser();
+    val a = ui.Avatar();
+    return Element(text: who + " " + a.text);
+}
+
+#[graph]
+fn Wall() -> @Component<Element> {
+    val p = ui.Posts();
+    return Element(text: p.text);
+}
+
+pub fn main() {
+    @print(@typeInfo(Page).meta.graph.nodes);
+    @print(@typeInfo(Wall).meta.graph.nodes);
+}

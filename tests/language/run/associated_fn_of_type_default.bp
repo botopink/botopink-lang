@@ -1,0 +1,15 @@
+//// A type's associated fn called short is filled from the declared default,
+//// and a labelled call is taken in declaration order — the way a std
+//// module's fn is (`planQualifiedCall`).
+
+type Bag(items: string[]) {
+    fn of(x: string, y: string = "d") -> Bag {
+        return Bag(items: [x, y]);
+    }
+}
+
+pub fn main() {
+    @print(Bag.of("p").items.join(","));
+    @print(Bag.of(y: "b", x: "a").items.join(","));
+    @print(Bag.of("x", "y").items.join(","));
+}

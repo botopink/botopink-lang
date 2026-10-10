@@ -1,0 +1,47 @@
+//// Decision 332 — a `bigint` held by a record field, a `?bigint` field, a tuple, an array and an
+//// optional prints its digits and compares by value on the four targets: wasm's slot holds the
+//// block's address, printed by the `n` shape code and compared by `$__bn_cmp` (as an `i32` word,
+//// the address printed and two equal values built apart compared unequal).
+
+type Ledger(total: bigint, last: ?bigint)
+
+fn three() -> bigint {
+    return 1n + 2n;
+}
+
+pub fn main() {
+    val l = Ledger(total: 123456789012345678901234567890n * 10n, last: null);
+    @print(l);
+    @print(l.total + 1n);
+    @print(
+        Ledger(total: three(), last: three()) == Ledger(total: 3n, last: 3n),
+    );
+    @print(Ledger(total: three(), last: null) == Ledger(total: 3n, last: 3n));
+    val pair = #(three() * 1000000000000000000000n, "big");
+    @print(pair);
+    @print(pair == #(3000000000000000000000n, "big"));
+    val xs: bigint[] = [three(), 40000000000000000000000n];
+    @print(xs);
+    @print(xs == [3n, 40000000000000000000000n]);
+    @print(xs[1]);
+    @print(xs.at(5));
+    var total = 0n;
+    for (xs) { x ->
+        total += x;
+    }
+    @print(total);
+    @print(xs.fold(1n, { acc, x -> acc * x }));
+    val maybe: ?bigint = if (total > 0n) total else null;
+    @print(maybe);
+    @print(maybe == three() + 40000000000000000000000n);
+    val label = case three() {
+        3n -> "three";
+        _ -> "other";
+    };
+    @print(label);
+    val band = case total {
+        0n...9n -> "small";
+        _ -> "large";
+    };
+    @print(band);
+}

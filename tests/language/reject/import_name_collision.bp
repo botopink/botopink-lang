@@ -1,0 +1,9 @@
+//// Decision 107 — a leaf collision is `import-name-collision`, located at the
+//// second item, in either spelling. `url.parse as parseUrl, json: {parse as
+//// parseJson}` is the remedy (`modules/import_tree` binds aliases that way).
+
+import {url.parse, json: {parse}} from "std";
+
+pub fn main() {
+    @print(parse("http://a").isOk());
+}

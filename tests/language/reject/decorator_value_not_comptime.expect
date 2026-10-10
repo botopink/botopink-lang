@@ -1,0 +1,2 @@
+decorator-value-not-comptime: `#[check]`'s argument `env("MSG")` is not known while the program compiles, and the decorator reads `message.value`
+25:9

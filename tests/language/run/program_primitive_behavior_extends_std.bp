@@ -1,0 +1,37 @@
+//// The `run/` twin of `test/program_primitive_behavior_extends_std.bp`, so
+//// wasm and beam run it too (`botopink test` runs neither): a program's own
+//// `behavior String` and `behavior Number` extend std's — their default fns
+//// call std's members on `self`, typed as the primitive, and std's members
+//// still answer beside them. wasm trapped on every program-declared default
+//// fn of a primitive (`prim method not lowered on wasm`); it calls a copy of
+//// the default with `Self` written as the receiver's primitive.
+
+behavior String {
+    default fn tailShout(self: Self) -> string {
+        val tail = self.slice(1);
+        return if (tail.startsWith("+")) tail.toUpper() else tail;
+    }
+
+    default fn twiceLen(self: Self) -> i32 {
+        return self.length() * 2;
+    }
+}
+
+behavior Number {
+    default fn clampTo(self: Self, lo: Self, hi: Self) -> Self {
+        return self.max(lo).min(hi);
+    }
+}
+
+pub fn main() {
+    @print("a+b".tailShout());
+    @print("ab".tailShout());
+    @print("abc".twiceLen());
+    val word = "x+yz";
+    @print(word.tailShout().length());
+    @print("x".startsWith("x"));
+    @print("ab".slice(1));
+    val n: i32 = 50;
+    @print(n.clampTo(0, 10));
+    @print(3.clampTo(5, 9));
+}

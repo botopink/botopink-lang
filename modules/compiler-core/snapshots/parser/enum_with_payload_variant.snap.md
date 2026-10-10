@@ -2,7 +2,7 @@
 {
   "decls": [
     {
-      "enum": {
+      "type_": {
         "name": "Color",
         "id": 1,
         "isPub": false,
@@ -12,53 +12,60 @@
         "annotations": [],
         "genericParams": [],
         "implement": [],
-        "variants": [
-          {
-            "name": "Red",
-            "fields": [],
-            "numeric": false
-          },
-          {
-            "name": "Green",
-            "fields": [],
-            "numeric": false
-          },
-          {
-            "name": "Blue",
-            "fields": [],
-            "numeric": false
-          },
-          {
-            "name": "Rgb",
-            "fields": [
+        "shape": {
+          "enum_": {
+            "variants": [
               {
-                "name": "r",
-                "typeRef": {
-                  "named": "i32"
-                },
-                "default": null
+                "name": "Red",
+                "fields": [],
+                "numeric": false
               },
               {
-                "name": "g",
-                "typeRef": {
-                  "named": "i32"
-                },
-                "default": null
+                "name": "Green",
+                "fields": [],
+                "numeric": false
               },
               {
-                "name": "b",
-                "typeRef": {
-                  "named": "i32"
-                },
-                "default": null
+                "name": "Blue",
+                "fields": [],
+                "numeric": false
+              },
+              {
+                "name": "Rgb",
+                "fields": [
+                  {
+                    "name": "r",
+                    "typeRef": {
+                      "named": "i32"
+                    },
+                    "default": null,
+                    "annotations": []
+                  },
+                  {
+                    "name": "g",
+                    "typeRef": {
+                      "named": "i32"
+                    },
+                    "default": null,
+                    "annotations": []
+                  },
+                  {
+                    "name": "b",
+                    "typeRef": {
+                      "named": "i32"
+                    },
+                    "default": null,
+                    "annotations": []
+                  }
+                ],
+                "numeric": false
               }
             ],
-            "numeric": false
+            "sections": []
           }
-        ],
+        },
         "trailingComma": true,
-        "methods": [],
-        "sections": []
+        "methods": []
       }
     }
   ]

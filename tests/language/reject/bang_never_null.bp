@@ -1,0 +1,7 @@
+//// Decision 330 (2) — the postfix `!` over a value that is never null is
+//// refused at the `!`.
+
+pub fn main() {
+    val n = 3;
+    @print(n!);
+}

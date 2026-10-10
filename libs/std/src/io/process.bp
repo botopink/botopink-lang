@@ -1,0 +1,133 @@
+//// std/io/process — host process introspection, cross-backend.
+////
+//// Reference:
+////   Node.js  — https://nodejs.org/api/process.html
+////              (`process.exit`, `process.cwd`, `process.platform`,
+////               `process.pid`)
+////   Erlang   — https://www.erlang.org/doc/apps/stdlib/erlang.html#halt-1
+////              (`erlang:halt/1`, `file:get_cwd/0`, `os:type/0`,
+////               `os:getpid/0`)
+////
+//// Most calls are method-on-class chains (`process.cwd()`, `os.getpid()`)
+//// or property reads (`process.platform`). The §A2 commonJS template
+//// dispatch (`a7c6d07`) + erlang twin (`52d6101`) make both shapes
+//// feasible without the legacy alias path that strips the receiver.
+////
+//// The 0-arg fns use the `when(argc == 0): "<tmpl>"` arity-branched
+//// shape rather than a bare template string —
+//// `primOpTemplate.looksLikeTemplate` reads the `$` discriminator, and
+//// a 0-arg lowering has no `$N` to embed, so the arity branch keeps
+//// the template-path dispatch.
+
+// Exit the current process with the given status code.
+// Node: `process.exit(code)` (chained method — §A2 template).
+// Erlang: `erlang:halt(code)` (bare BIF).
+#[@External.Node("process", "exit")]
+#[@External.Erlang("erlang", "halt")]
+#[@External.Beam("erlang", "halt")]
+pub declare fn exit(code: i32) -> void;
+
+// Current working directory of the host process.
+// Node: `process.cwd()` (method on `process` — §A2 template).
+// Erlang: `file:get_cwd()` returns `{ok, Path}` (charlist); the
+// template extracts and stringifies it.
+#[@External.Node("process.cwd()")]
+#[@External.Erlang("""(fun() -> {ok, __P} = file:get_cwd(), list_to_binary(__P) end)()""")]
+pub declare fn cwd() -> string;
+
+// Host platform string — `'linux'`, `'darwin'`, `'win32'`, etc.
+// Node: bare `process.platform` (property access).
+// Erlang: `os:type()` returns `{unix, linux}` / `{win32, nt}` /
+// `{unix, darwin}`; the template extracts the SECOND element (the
+// flavor, matching the Node `process.platform` shape) and stringifies
+// it. Read-time match — the first element is the family (unix/win32).
+#[@External.Node("process.platform")]
+#[@External.Erlang("""(fun() -> {_, __Flavor} = os:type(), atom_to_binary(__Flavor, utf8) end)()""")]
+pub declare fn platform() -> string;
+
+// Host process id.
+// Node: `process.pid` (property — i32 in JS, stored as Number).
+// Erlang: `os:getpid()` returns a string list; the template parses
+// it to an integer.
+#[@External.Node("process.pid")]
+#[@External.Erlang("list_to_integer(os:getpid())")]
+pub declare fn pid() -> i32;
+
+// ── 1.0.10-beta front 01 additions ──────────────────────────────────────────
+//
+// Child processes. The five introspections above are not edited. Signals
+// (`onSignal`) are not here: a closure handed to a host cell is unverified on
+// the Erlang target (`language-gaps.md`).
+
+// What a child process left behind. `stderr` is split out on Node; on Erlang
+// the port folds it into `stdout` (`stderr_to_stdout`) and `stderr` is `""`
+// — a caller that needs the two apart on both targets redirects through a
+// file and says so.
+pub type Exit(
+    status: i32,
+    stdout: string,
+    stderr: string,
+)
+
+// Run the executable `cmd` (looked up on `PATH` when it has no `/`) with
+// `args`, no shell, and wait for it. A process that RAN is `Ok` whatever its
+// status — a non-zero exit is an `Exit` carrying that status. `Error` means
+// it could not be started (not found, not executable).
+// Node: `child_process.spawnSync`; a start failure is `r.error`, not a throw.
+// Erlang: `open_port({spawn_executable, Path}, [exit_status, …])`, the path
+// from `os:find_executable/1`, the output gathered until `exit_status`.
+#[@External.Node("""(() => { const __r = require('child_process').spawnSync($0, $1, { encoding: 'utf8' }); return __r.error ? { error: String(__r.error.message ?? __r.error) } : { ok: { status: __r.status ?? -1, stdout: __r.stdout ?? '', stderr: __r.stderr ?? '' } } })()""")]
+#[@External.Erlang("""(fun(__C, __A) -> __X = case string:find(__C, <<"/">>) of nomatch -> os:find_executable(binary_to_list(__C)); _ -> binary_to_list(__C) end, case __X of false -> {error, iolist_to_binary([<<"process.run: not found: ">>, __C])}; _ -> try open_port({spawn_executable, __X}, [binary, exit_status, stderr_to_stdout, {args, [binary_to_list(__Y) || __Y <- __A]}]) of __P -> __L = fun __F(__Acc) -> receive {__Q, {data, __D}} when __Q =:= __P -> __F([__D | __Acc]); {__Q, {exit_status, __S}} when __Q =:= __P -> {__S, iolist_to_binary(lists:reverse(__Acc))} end end, {__St, __Out} = __L([]), {ok, #{status => __St, stdout => __Out, stderr => <<>>}} catch _:__E -> {error, iolist_to_binary(io_lib:format("process.run: ~p", [__E]))} end end end)($0, $1)""")]
+pub declare fn run(cmd: string, args: string[]) -> @Result<Exit, string>;
+
+// Run `cmd` through `/bin/sh -c` and answer its output, stdout and stderr
+// together. STATUS-LOSING on both targets: the answer is text only, so a
+// failing command is indistinguishable from a quiet one — `os:cmd/1` answers
+// output only on Erlang, and the Node cell matches it. Use `run` when the
+// status matters.
+// Node: `spawnSync('/bin/sh', ['-c', 'exec 2>&1; ' + cmd])`.
+// Erlang: `os:cmd/1` (which runs `/bin/sh -c` and folds stderr in).
+#[@External.Node("""(require('child_process').spawnSync('/bin/sh', ['-c', 'exec 2>&1; ' + $0], { encoding: 'utf8' }).stdout ?? '')""")]
+#[@External.Erlang("""unicode:characters_to_binary(os:cmd(binary_to_list($0)))""")]
+pub declare fn runShell(cmd: string) -> string;
+
+// ── tests ────────────────────────────────────────────────────────────────────
+
+test "process.cwd is non-empty" {
+    val w = cwd();
+    assert w.length > 0;
+}
+
+test "process.platform is one of the known host families" {
+    val p = platform();
+    val knownLinux = p == "linux";
+    val knownDarwin = p == "darwin";
+    val knownWin = p == "win32";
+    assert knownLinux || knownDarwin || knownWin;
+}
+
+test "process.pid is positive" {
+    val p = pid();
+    assert p > 0;
+}
+
+test "process.run answers the child's status and stdout" {
+    val r = run("echo", ["hi"]);
+    assert r.isOk();
+    assert r.map({ e -> e.status }).unwrapOr(-1) == 0;
+    assert r.map({ e -> e.stdout }).unwrapOr("").startsWith("hi");
+}
+
+test "process.run of a missing binary is an Error, not a crash" {
+    assert run("definitely-not-a-binary-bp-std", []).isError();
+}
+
+test "process.run of a failing child is Ok carrying its status" {
+    val r = run("sh", ["-c", "exit 3"]);
+    assert r.map({ e -> e.status }).unwrapOr(-1) == 3;
+}
+
+test "process.runShell answers output and loses the status" {
+    assert runShell("echo hi").startsWith("hi");
+    assert runShell("exit 3") == "";
+}

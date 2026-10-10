@@ -51,14 +51,14 @@ test "typeInfo: void type returns TypeInfo" {
 
 test "typeInfo: record type returns TypeInfo" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Point = record { x: i32, y: string };
+        \\val Point = type(x: i32, y: string);
         \\val info = @typeInfo(Point);
     );
 }
 
 test "typeInfo: enum type returns TypeInfo" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Color = enum { Red, Blue };
+        \\val Color = type { Red, Blue };
         \\val info = @typeInfo(Color);
     );
 }
@@ -94,7 +94,8 @@ test "TypeOf: string literal returns string" {
 
 test "TypeOf: record value returns record type" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val p = record { x: 1, y: 2 };
+        \\type Point(x: i32, y: i32)
+        \\val p = Point(x: 1, y: 2);
         \\val PType = @TypeOf(p);
     );
 }
@@ -129,14 +130,14 @@ test "makeRecord: multiple fields returns record type" {
 
 test "RecordKeys: record type returns string array" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Point = record { x: i32, y: string };
+        \\val Point = type(x: i32, y: string);
         \\val keys = @RecordKeys(Point);
     );
 }
 
 test "RecordKeys: single field record returns string array" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Box = record { value: i32 };
+        \\val Box = type(value: i32);
         \\val keys = @RecordKeys(Box);
     );
 }
@@ -145,34 +146,23 @@ test "RecordKeys: single field record returns string array" {
 
 test "field: record value field access" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val p = record { x: 1, y: 2 };
+        \\type Point(x: i32, y: i32)
+        \\val p = Point(x: 1, y: 2);
         \\val xVal = @field(p, "x");
     );
 }
 
-// ── TypeInfo, RecordField, EnumVariant are known types ───────────────────────
+// ── TypeInfo<T> and RecordField are known types ─────────────────────────────
 
-test "typeInfo: TypeInfo enum is a known type" {
+test "typeInfo: TypeInfo record is a known type" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val ti: TypeInfo = TypeInfo.Int;
+        \\val ti: TypeInfo<i32> = @typeInfo(i32);
     );
 }
 
 test "typeInfo: RecordField is a known type" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\val rf = RecordField(name: "x", typeName: "i32");
-    );
-}
-
-test "typeInfo: EnumVariant is a known type" {
-    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val ev = EnumVariant(name: "Red", fields: []);
-    );
-}
-
-test "typeInfo: TypeInfoKind is a known type" {
-    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val kind: TypeInfoKind = TypeInfoKind.Int;
     );
 }
 
@@ -184,76 +174,18 @@ test "comptimeError: string literal raises custom error" {
     );
 }
 
-// ── mergeRecords ────────────────────────────────────────────────────────────
+// ── std's `Type` (decision 307) ─────────────────────────────────────────────
+//
+// `Type.merge` / `partial` / `omit` / `pick` / `required` answer a NEW record
+// named after its `val` — `comptime/derived_types.zig`'s unit tests and
+// `tests/language`'s `run/derived_type_*` and `reject/derived_type_*` cells
+// (a snapshot here would embed std's `types.bp`). The bare names the checker
+// once intercepted (`mergeRecords`, `partial`, `omit`, `pick`) are unbound.
 
-test "mergeRecords: disjoint records merge correctly" {
-    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\record User { name: string, id: i32 }
-        \\record Timestamps { createdAt: string, updatedAt: string }
-        \\val Merged = mergeRecords(User, Timestamps);
-    );
-}
-
-test "mergeRecords: same-name same-type deduplicates" {
-    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\record A { x: i32, y: string }
-        \\record B { x: i32, z: bool }
+test "Type: the bare `mergeRecords` is an unbound name" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\type A(x: i32)
+        \\type B(y: string)
         \\val Merged = mergeRecords(A, B);
-    );
-}
-
-test "mergeRecords: conflict raises error" {
-    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\record A { x: i32 }
-        \\record B { x: string }
-        \\val Merged = mergeRecords(A, B);
-    );
-}
-
-// ── partial ─────────────────────────────────────────────────────────────────
-
-test "partial: record fields become optional" {
-    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\record Config { port: i32, host: string }
-        \\val PartialCfg = partial(Config);
-    );
-}
-
-test "partial: empty record works" {
-    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\record Empty {}
-        \\val PartialE = partial(Empty);
-    );
-}
-
-// ── omit ────────────────────────────────────────────────────────────────────
-
-test "omit: remove a single field" {
-    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\record FullUser { id: i32, name: string, password: string }
-        \\val PublicUser = omit(FullUser, "password");
-    );
-}
-
-test "omit: non-existent field raises error" {
-    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\record User { id: i32 }
-        \\val NoField = omit(User, "email");
-    );
-}
-
-// ── pick ────────────────────────────────────────────────────────────────────
-
-test "pick: keep specified fields" {
-    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\record FullUser { id: i32, name: string, password: string }
-        \\val NameOnly = pick(FullUser, ["name", "id"]);
-    );
-}
-
-test "pick: field email not found raises type error" {
-    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\record User { id: i32, name: string }
-        \\val BadPick = pick(User, ["email"]);
     );
 }

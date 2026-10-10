@@ -1,0 +1,6 @@
+#[@External.Erlang("orm_host", "table")]
+declare fn table(name: string) -> string;
+
+pub fn describe(name: string) -> string {
+    return table(name);
+}

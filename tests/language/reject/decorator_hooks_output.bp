@@ -1,0 +1,17 @@
+//// Decision 372 — a decorator that reads `decl.hooks` runs after the
+//// module's bodies and only records meta or refuses: a member it would add
+//// comes too late for the bodies already inferred, so `decl.addMember` in it
+//// is refused at the call.
+
+fn graph(comptime decl: @Decl) {
+    val count = decl.hooks.length;
+    decl.setMeta("count", count.toString());
+    decl.addMember("pub fn extra() -> i32 { return 1; }");
+}
+
+#[graph]
+pub type Account(name: string)
+
+pub fn main() {
+    @print(Account(name: "a").name);
+}

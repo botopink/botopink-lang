@@ -29,9 +29,7 @@ pub fn run(ctx: cli.Context, args: []const []const u8) anyerror!u8 {
     var check = false;
     var toolchain = false;
     for (args) |a| {
-        if (std.mem.eql(u8, a, "--check")) check = true
-        else if (std.mem.eql(u8, a, "--toolchain")) toolchain = true
-        else if (std.mem.eql(u8, a, "-h") or std.mem.eql(u8, a, "--help")) {
+        if (std.mem.eql(u8, a, "--check")) check = true else if (std.mem.eql(u8, a, "--toolchain")) toolchain = true else if (std.mem.eql(u8, a, "-h") or std.mem.eql(u8, a, "--help")) {
             common.writeStdout(ctx,
                 \\bpmp self update [--check] [--toolchain]
                 \\

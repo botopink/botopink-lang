@@ -1,0 +1,8 @@
+//// Decision 330 (2) — an optional operator over a value that is never null
+//// is refused at the operator, naming the type: `s?.length()` with
+//// `s: string` says something the program does not mean.
+
+pub fn main() {
+    val s = "abc";
+    @print(s?.length());
+}

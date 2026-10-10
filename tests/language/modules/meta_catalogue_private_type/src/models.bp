@@ -1,0 +1,14 @@
+//// An entity whose meta record is private to this module.
+
+type Entity(table: string)
+
+pub fn entity(comptime decl: @Decl, comptime table: @Expr<string>) {
+    decl.setMeta(Entity(table: table.value));
+}
+
+#[entity("cities")]
+pub type City(name: string) {
+    pub fn make() -> string {
+        return "city";
+    }
+}

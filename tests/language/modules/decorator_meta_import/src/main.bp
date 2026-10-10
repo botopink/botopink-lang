@@ -1,0 +1,15 @@
+//// Decision 216 (2) — meta travels with the declaration: an importer reads it
+//// through a plain import, an alias (the declaration's own name answers
+//// `.name`) and the module as a namespace (`models.Person`).
+
+pub mod orm;
+pub mod models;
+import {models.City};
+import {models.City as Town};
+
+pub fn main() {
+    @print(@typeInfo(City).meta.entity.table);
+    @print(@typeInfo(Town).meta.entity.table);
+    @print(@typeInfo(Town).name);
+    @print(@typeInfo(models.Person).meta.entity.table);
+}

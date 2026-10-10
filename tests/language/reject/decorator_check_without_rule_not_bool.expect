@@ -1,0 +1,2 @@
+#[check] without `rule` annotates an `fn(x) -> bool`
+23:3

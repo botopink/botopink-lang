@@ -1,0 +1,16 @@
+//// The use that cannot tell. Each import names its module, so each is an
+//// answered question — but both bind `title`, and one name is one declaration.
+//// The second item is `import-name-collision`, located, naming both modules,
+//// on every target; `as` on either is the remedy
+//// (`import_same_fn_name_two_aliases`). The second import used to replace the
+//// first without a word, and the backends disagreed on which one the call
+//// reached: commonJS answered `app`, erlang and wasm `blog`.
+
+pub mod app;
+
+import {app.page.title};
+import {app.blog.page.title};
+
+pub fn main() {
+    @print(title());
+}

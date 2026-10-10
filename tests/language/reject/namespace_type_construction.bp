@@ -1,0 +1,13 @@
+//// Decision 329 — a namespace type (`type Name { fn … }`, every function
+//// associated) has no value: `Name()` is refused at the call.
+
+type MathOps {
+    fn double(x: i32) -> i32 {
+        return x * 2;
+    }
+}
+
+pub fn main() {
+    val ops = MathOps();
+    @print(MathOps.double(2));
+}

@@ -1,0 +1,21 @@
+//// The decorator lives in a library module of its own. Its member names
+//// `Violation`, a type of this module, and `defaultMessage`, a private
+//// helper: each resolves here, where the decorator wrote it (decision 384).
+
+pub type Violation(field: string, message: string)
+
+fn defaultMessage(field: string) -> string {
+    return field + " is invalid";
+}
+
+pub fn check<T>(
+    comptime decl: @Decl<T>,
+    comptime rule: @Expr<fn(v: T) -> bool>,
+) {
+    decl.addMember("validate", fn(self: T) -> Violation[] {
+        if (rule(self)) return [];
+        return [
+            Violation(field: "confirm", message: defaultMessage("confirm")),
+        ];
+    });
+}

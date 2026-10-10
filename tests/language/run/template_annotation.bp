@@ -1,0 +1,103 @@
+//// Decision 311 — the template annotation `#[f "…"]`: the template call
+//// `f "…"` written as an annotation. `query` is a template function whose
+//// second parameter receives the annotated declaration (question s29-a); the
+//// literal is captured unevaluated, as at a call site, and each `${…}` hole
+//// resolves in the annotated declaration's scope — a method's parameters, by
+//// name and type. What the template records goes where a decorator's does:
+//// typed meta of the method, read by the owner's decorator on
+//// `decl.methods` (`m.meta(Query)`, question s29-b: a method's decorators
+//// run before its owner's), and typed meta of a function, read by
+//// `@typeInfo(f).meta(Query)`. A template annotation sits beside a
+//// decorator, and its literal may be `"""…"""`. `decl.params` is a
+//// method's own parameter list.
+
+pub type Query(sql: string, params: string[])
+
+fn query(comptime q: @Expr<string>, comptime decl: @Decl) -> @Expr<string> {
+    var text = "";
+    var params: string[] = [];
+    for (q.parts()) { p ->
+        if (p.kind == "Interp") {
+            params.push(p.code);
+            text = text + "$" + params.length.toString();
+        } else text = text + p.text;
+    }
+    val declared = decl.params
+        .map({ p -> p.name + ": " + p.typeName })
+        .join(", ");
+    if (params.length == 0)
+        decl.fail(
+            "a query of `"
+                + decl.name
+                + "("
+                + declared
+                + ")` binds no parameter",
+        );
+    val sql = text
+        .split("\n")
+        .map({ l -> l.trim() })
+        .filter({ l -> l.length > 0 })
+        .join(" ");
+    decl.setMeta(Query(sql: sql, params: params));
+    return q.build("\"\"");
+}
+
+fn repository(comptime decl: @Decl) {
+    var lines: string[] = [];
+    for (decl.methods) { m ->
+        val found = m.meta(Query);
+        if (found != null) {
+            val names = m.params.map({ p -> p.name }).join(", ");
+            val audit = m.meta(Audit);
+            val mark = if (audit != null)
+                " (audit " + audit.level.toString() + ")"
+            else
+                "";
+            lines.push(
+                m.name
+                    + "("
+                    + names
+                    + "): "
+                    + found.sql
+                    + " <- "
+                    + found.params.join(", ")
+                    + mark,
+            );
+        }
+    }
+    decl.setMeta("statements", lines.join(" | "));
+}
+
+pub type Audit(level: i32)
+
+fn audited(comptime decl: @Decl, comptime level: @Expr<i32>) {
+    decl.setMeta(Audit(level: level.value));
+}
+
+#[repository]
+behavior Users {
+    #[query "select * from users where id = ${id} limit 1"]
+    fn find(self: Self, id: i32) -> string;
+
+    #[audited(2)]
+    #[query """
+        select * from users
+         where name = ${name}
+           and age > ${minAge}
+    """]
+    fn byName(self: Self, name: string, minAge: i32) -> string;
+
+    fn count(self: Self) -> i32;
+}
+
+#[query "delete from sessions where user = ${user}"]
+fn logout(user: string) -> string {
+    return user + " out";
+}
+
+pub fn main() {
+    @print(@typeInfo(Users).meta.repository.statements);
+    val m = @typeInfo(logout).meta(Query);
+    @print(m!.sql + " <- " + m!.params.join(", "));
+    @print(logout("ana"));
+}

@@ -1,0 +1,2 @@
+type mismatch: `#[cacheable]`'s `cache` expects `Cache<Product[]>`, got `string`
+17:13

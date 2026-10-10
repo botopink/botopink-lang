@@ -1,0 +1,15 @@
+//// Decision 206 — `from "log"` names the dependency `log` although this
+//// package has a module `log` of its own: `from` names a package and never a
+//// module of the importing package, so a dependency declared later never
+//// changes what an import means. The module is reached by its path inside
+//// the braces. (The package was the bundled `log` until decision 326; the
+//// rule is the same for every package, so the cell declares a fixture.)
+
+pub mod log;
+import {log.levelName as ownLevelName};
+import {Level, levelName} from "log";
+
+pub fn main() {
+    @print(ownLevelName(2));
+    @print(levelName(Level.Warn));
+}

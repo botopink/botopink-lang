@@ -1,0 +1,42 @@
+//// Decision 277 — a `use` over a function value names no declaration: it
+//// enters with `hook: null` and reaches nothing.
+
+type Element(text: string) implement @Renderable
+
+// Renders `decl.hooks` into one meta string `main` prints: each node as
+// `fn(uses: […], calls: […])`, a `use` over a function value as `null`.
+fn graph(comptime decl: @Decl) {
+    var nodes: string[] = [];
+    decl.hooks.forEach({ n ->
+        var uses: string[] = [];
+        n.uses.forEach({ u ->
+            val h = u.hook;
+            uses.push(if (h == null) "null" else h.name + "@" + u.at);
+        });
+        var calls: string[] = [];
+        n.calls.forEach({ c ->
+            val k = c.callee;
+            val name = if (k == null) "null" else k.name;
+            calls.push(name + "@" + c.at);
+        });
+        nodes.push(
+            n.function.name
+                + "(uses: ["
+                + uses.join(", ")
+                + "], calls: ["
+                + calls.join(", ")
+                + "])",
+        );
+    });
+    decl.setMeta("nodes", nodes.join(" "));
+}
+
+#[graph]
+fn Page(read: fn() -> @Component<string>) -> @Component<Element> {
+    val v = use read();
+    return Element(text: v);
+}
+
+pub fn main() {
+    @print(@typeInfo(Page).meta.graph.nodes);
+}

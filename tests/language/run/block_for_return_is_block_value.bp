@@ -1,0 +1,31 @@
+//// A `return` from a `for` inside an `@block` is the block's value, never
+//// the enclosing function's, on every target (decision 2). beam lowered the
+//// `for` as a loop function of the enclosing frame whose `return` left that
+//// frame: `firstAbove` answered `7` where it means `700`.
+
+fn firstAbove(xs: Array<i32>, limit: i32) -> i32 {
+    val found = @block{
+        for (xs) { x ->
+            if (x > limit) return x;
+        }
+        return -1;
+    };
+    return found * 100;
+}
+
+fn labelOf(xs: Array<string>) -> string {
+    val hit = @block{
+        for (xs) { s ->
+            if (s != "a") return s;
+        }
+        return "none";
+    };
+    return "[" + hit + "]";
+}
+
+pub fn main() {
+    @print(firstAbove([1, 7, 9], 5));
+    @print(firstAbove([1, 2], 5));
+    @print(labelOf(["a", "abc", "abcd"]));
+    @print(labelOf(["a"]));
+}

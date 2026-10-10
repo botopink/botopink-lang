@@ -1,0 +1,12 @@
+//// Decision 334 — `host:` names the runtime a wasm binding serves: `.Wasi`
+//// (wasmtime, WASI preview 2) or `.Browser` (JS imports, JSPI). Any other
+//// value names no host, and is refused at the annotation rather than read as
+//// "every host".
+
+#[@External.Node("Math", "floor")]
+#[@External.Wasm("op:f64.floor", host = .Deno)]
+declare fn floorOf(x: f64) -> f64;
+
+pub fn main() {
+    @print(floorOf(2.5));
+}

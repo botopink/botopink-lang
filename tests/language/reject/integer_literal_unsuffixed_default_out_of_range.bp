@@ -1,0 +1,7 @@
+//// Decision 319 — an unsuffixed integer literal with nothing asking is an
+//// `i32`, and `3000000000` is past it: refused at the literal.
+
+pub fn main() {
+    val e = 3000000000;
+    @print(e);
+}

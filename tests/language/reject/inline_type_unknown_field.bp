@@ -1,0 +1,11 @@
+//// Decision 207 — a diagnostic about an inline parameter type names it by its
+//// owner: a field the type does not declare is read off `the props of
+//// `link``.
+
+fn link(props: type(href: string)) -> string {
+    return props.label;
+}
+
+pub fn main() {
+    @print(link(href: "/a"));
+}

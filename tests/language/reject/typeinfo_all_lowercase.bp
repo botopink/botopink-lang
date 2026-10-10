@@ -1,0 +1,12 @@
+//// Decision 248 — `@typeinfo.all(…)` is refused where it is written, naming
+//// `@TypeInfo.all`.
+
+fn route(comptime decl: @Decl) {}
+
+#[route]
+pub fn home() -> string { return "home"; }
+
+pub fn main() {
+    val all = @typeinfo.all(with: route);
+    @print(all.length);
+}

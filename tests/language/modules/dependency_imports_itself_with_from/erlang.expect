@@ -1,0 +1,2 @@
+error[module-import-with-from]: "starter" is this package — write import {greet.hello};
+deps/starter/src/root.bp:2:27

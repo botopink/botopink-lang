@@ -1,6 +1,6 @@
 ----- SOURCE
 ```botopink
-fn f(a: i32) { return a; }
+fn f<T>(a: T) -> T { return a; }
    ↑
 ```
 
@@ -8,5 +8,5 @@ fn f(a: i32) { return a; }
 kind: markdown
 
 ```botopink
-fn f(a: i32)
+fn f<T>(a: T) -> T
 ```

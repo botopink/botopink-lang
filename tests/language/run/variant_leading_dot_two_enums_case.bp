@@ -1,0 +1,33 @@
+//// The tail of the enum-path fix: two enums declare `Red`, and the
+//// single-segment leading dot takes its enum from the position's expected
+//// type — a `val`'s annotation, a declared parameter — and a `case` over each
+//// enum matches its own `Red`. The checker half no longer reproduces (commonJS
+//// was a `ReferenceError`, erlang bound `Warm.Red` to a `Cool`); wasm's half
+//// landed after it.
+
+type Warm { Red, Orange }
+
+type Cool { Blue, Red }
+
+fn coolName(c: Cool) -> string {
+    return case c {
+        Blue -> "blue";
+        Red -> "cool red";
+    };
+}
+
+fn warmName(c: Warm) -> string {
+    return case c {
+        Orange -> "orange";
+        Red -> "warm red";
+    };
+}
+
+pub fn main() {
+    val c: Cool = .Red;
+    @print(coolName(c));
+    val w: Warm = .Red;
+    @print(warmName(w));
+    @print(coolName(.Red));
+    @print(warmName(.Red));
+}

@@ -1,0 +1,17 @@
+//// `Array.lastIndexOf` — the last index of an item by `indexOf`'s equality, `-1`
+//// when absent. `Array` did not declare it: erlang once emitted a call to an
+//// undefined `lastIndexOf/2`, invisible until the second target ran, and the
+//// checker then refused it on every target (`unknown-primitive-method`).
+//// Integers, strings and an empty array, on all four targets.
+
+pub fn main() {
+    val xs = [1, 2, 3, 2, 1];
+    @print(xs.lastIndexOf(2));
+    @print(xs.lastIndexOf(1));
+    @print(xs.lastIndexOf(9));
+    @print(xs.indexOf(2));
+    val ss = ["a", "b", "a"];
+    @print(ss.lastIndexOf("a"));
+    val empty: Array<i32> = [];
+    @print(empty.lastIndexOf(1));
+}

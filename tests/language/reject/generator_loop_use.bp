@@ -1,0 +1,22 @@
+//// Decisions 105 and 357 — an annotated loop is closed: its body has only its
+//// own capabilities, never the enclosing fn's. Inside a `@Component` fn an
+//// `iter loop` may not `use`: the body runs later, on demand, and a lazy
+//// `use` would activate a hook outside the render — and a `use` stands at the
+//// top level of its body only (`use-not-top-level`, naming the loop).
+
+type Element(count: i32) implement @Renderable
+type State(value: i32)
+
+fn state(initial: i32) -> @Component<State> {
+    return State(value: initial);
+}
+
+fn Counter() -> @Component<Element> {
+    val g = iter loop {
+        val s = use state(0);
+        break s.value;
+    };
+    return Element(count: 1);
+}
+
+pub fn main() { @print(1); }

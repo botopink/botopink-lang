@@ -1,0 +1,12 @@
+//// Decision 207 — an inline parameter type is a top-level `fn`'s: on a
+//// method's parameter it is `inline-type-position` at the annotation.
+
+type Box(v: i32) {
+    fn scaled(self: Self, by: type(n: i32)) -> i32 {
+        return self.v * by.n;
+    }
+}
+
+pub fn main() {
+    @print(Box(v: 2).v);
+}

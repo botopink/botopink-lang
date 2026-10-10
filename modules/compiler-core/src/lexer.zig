@@ -50,6 +50,138 @@ pub const LexerError = error{
     LexicalError,
 };
 
+// ── Numeric literal parts (decision 247) ─────────────────────────────────────
+
+/// A number token split into the digits a backend writes and the suffix the
+/// checker reads (decision 247). `floating` is a fraction or an exponent;
+/// `radix` a `0x` / `0o` / `0b` literal.
+pub const NumberParts = struct {
+    digits: []const u8,
+    suffix: []const u8,
+    floating: bool,
+    radix: bool,
+};
+
+/// Splits a `numberLiteral` lexeme the way `scanNumber` built it: the
+/// digits (with their `_` separators, the fraction and the exponent) and the
+/// letters glued after them. The one reading of a literal's text — the parser
+/// validates the suffix, the checker types it, and both strip it from what the
+/// backends see.
+pub fn splitNumber(lexeme: []const u8) NumberParts {
+    const isDigitByte = struct {
+        fn f(c: u8) bool {
+            return c >= '0' and c <= '9';
+        }
+    }.f;
+    if (lexeme.len >= 2 and lexeme[0] == '0' and std.mem.indexOfScalar(u8, "xXoObB", lexeme[1]) != null) {
+        const radix: u8 = switch (lexeme[1]) {
+            'x', 'X' => 16,
+            'o', 'O' => 8,
+            else => 2,
+        };
+        var i: usize = 2;
+        while (i < lexeme.len and (lexeme[i] == '_' or Lexer.isValidRadixDigit(lexeme[i], radix))) i += 1;
+        return .{ .digits = lexeme[0..i], .suffix = lexeme[i..], .floating = false, .radix = true };
+    }
+    var i: usize = 0;
+    var floating = false;
+    const digitRun = struct {
+        fn f(text: []const u8, start: usize) usize {
+            var j = start;
+            while (j < text.len) {
+                if (isDigitByte(text[j])) {
+                    j += 1;
+                } else if (text[j] == '_' and j + 1 < text.len and isDigitByte(text[j + 1])) {
+                    j += 1;
+                } else break;
+            }
+            return j;
+        }
+    }.f;
+    i = digitRun(lexeme, i);
+    if (i + 1 < lexeme.len and lexeme[i] == '.' and isDigitByte(lexeme[i + 1])) {
+        floating = true;
+        i = digitRun(lexeme, i + 1);
+    }
+    if (i < lexeme.len and (lexeme[i] == 'e' or lexeme[i] == 'E')) {
+        var j = i + 1;
+        if (j < lexeme.len and (lexeme[j] == '+' or lexeme[j] == '-')) j += 1;
+        if (j < lexeme.len and isDigitByte(lexeme[j])) {
+            floating = true;
+            while (j < lexeme.len and isDigitByte(lexeme[j])) j += 1;
+            i = j;
+        }
+    }
+    return .{ .digits = lexeme[0..i], .suffix = lexeme[i..], .floating = floating, .radix = false };
+}
+
+/// Decision 247 — the suffixes and the type each one gives its literal.
+pub const number_suffixes = [_]struct { suffix: []const u8, typeName: []const u8 }{
+    .{ .suffix = "f", .typeName = "f32" },
+    .{ .suffix = "d", .typeName = "f64" },
+    .{ .suffix = "l", .typeName = "i64" },
+    .{ .suffix = "u", .typeName = "u32" },
+    .{ .suffix = "ul", .typeName = "u64" },
+    .{ .suffix = "i8", .typeName = "i8" },
+    .{ .suffix = "i16", .typeName = "i16" },
+    .{ .suffix = "u8", .typeName = "u8" },
+    .{ .suffix = "u16", .typeName = "u16" },
+    .{ .suffix = "isize", .typeName = "isize" },
+    .{ .suffix = "usize", .typeName = "usize" },
+    // Decision 332 — an integer of any size.
+    .{ .suffix = "n", .typeName = "bigint" },
+};
+
+/// The type a suffix gives (`"ul"` → `"u64"`); null for anything else.
+pub fn numberSuffixType(suffix: []const u8) ?[]const u8 {
+    for (number_suffixes) |s| if (std.mem.eql(u8, s.suffix, suffix)) return s.typeName;
+    return null;
+}
+
+/// The suffix `written` spells in upper case (`"UL"` → `"ul"`); null when its
+/// lower-case form is no suffix either.
+pub fn numberSuffixLowercase(written: []const u8) ?[]const u8 {
+    for (number_suffixes) |s| if (std.ascii.eqlIgnoreCase(s.suffix, written)) return s.suffix;
+    return null;
+}
+
+/// Decision 247 — what a backend writes for a number literal: the digits
+/// without the suffix; a floating suffix on integer digits spelt as a float
+/// (`1d` → `1.0`, `1_000f` → `1000.0`). The lexeme itself without a suffix.
+/// Decision 332 — a `bigint` literal keeps its `n` (`42n`, `0xFFn`): the
+/// one literal whose backend text names its type, so every backend tells it
+/// from a fixed-width integer without the checker's types (`isBigintText`,
+/// `bigintDigits`).
+pub fn numberBackendText(allocator: std.mem.Allocator, lexeme: []const u8) std.mem.Allocator.Error![]const u8 {
+    const parts = splitNumber(lexeme);
+    if (parts.suffix.len == 0) return lexeme;
+    if (std.mem.eql(u8, parts.suffix, "n")) return lexeme;
+    if (!numberSuffixIsFloat(parts.suffix) or parts.floating) return parts.digits;
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    for (parts.digits) |c| if (c != '_') try out.append(allocator, c);
+    try out.appendSlice(allocator, ".0");
+    return out.toOwnedSlice(allocator);
+}
+
+/// Decision 332 — whether a literal's (backend) text is a `bigint` literal
+/// (`42n`, `0xFFn`).
+pub fn isBigintText(text: []const u8) bool {
+    if (text.len < 2 or text[text.len - 1] != 'n') return false;
+    const parts = splitNumber(text);
+    return std.mem.eql(u8, parts.suffix, "n");
+}
+
+/// Decision 332 — a `bigint` literal's digits without the `n`, as written
+/// (`_` separators and a `0x` / `0o` / `0b` prefix kept): `42n` → `42`.
+pub fn bigintDigits(text: []const u8) []const u8 {
+    return if (isBigintText(text)) text[0 .. text.len - 1] else text;
+}
+
+/// Whether a suffix makes a floating literal (`f`, `d`).
+pub fn numberSuffixIsFloat(suffix: []const u8) bool {
+    return std.mem.eql(u8, suffix, "f") or std.mem.eql(u8, suffix, "d");
+}
+
 // ── Lexer ─────────────────────────────────────────────────────────────────────
 
 pub const Lexer = struct {
@@ -59,6 +191,13 @@ pub const Lexer = struct {
     line: usize,
     /// Byte offset where the current line started (for column computation).
     lineStart: usize,
+    /// `line` as it was when the current token started. Multi-line tokens
+    /// (`"""…"""`, `\\ …` line strings) advance `line` while scanning, so
+    /// `addToken` stamps this instead: a token's location is where it STARTS.
+    tokenLine: usize,
+    /// `lineStart` as it was when the current token started — the base the
+    /// token's column is measured from.
+    tokenLineStart: usize,
     tokens: std.ArrayList(Token),
     /// Populated when scanAll returns LexerError.LexicalError
     lexError: ?LexicalError,
@@ -70,6 +209,8 @@ pub const Lexer = struct {
             .current = 0,
             .line = 1,
             .lineStart = 0,
+            .tokenLine = 1,
+            .tokenLineStart = 0,
             .tokens = .empty,
             .lexError = null,
         };
@@ -82,9 +223,17 @@ pub const Lexer = struct {
     pub fn scanAll(self: *Lexer, allocator: std.mem.Allocator) LexerError![]const Token {
         while (!self.isAtEnd()) {
             self.start = self.current;
+            self.tokenLine = self.line;
+            self.tokenLineStart = self.lineStart;
             try self.scanToken(allocator);
         }
-        try self.tokens.append(allocator, .{ .kind = .endOfFile, .lexeme = "", .line = self.line, .col = self.current - self.lineStart + 1 });
+        try self.tokens.append(allocator, .{
+            .kind = .endOfFile,
+            .lexeme = "",
+            .line = self.line,
+            .col = self.current - self.lineStart + 1,
+            .offset = self.current,
+        });
         return self.tokens.items;
     }
 
@@ -117,6 +266,10 @@ pub const Lexer = struct {
             '?' => {
                 if (self.matchChar('.')) {
                     try self.addToken(.questionDot, allocator);
+                } else if (self.matchChar('?')) {
+                    // `??` — the nullish default (decision 28). Tried before
+                    // the bare `?`, the way `..` is tried before `.`.
+                    try self.addToken(.questionQuestion, allocator);
                 } else {
                     try self.addToken(.questionMark, allocator);
                 }
@@ -126,8 +279,9 @@ pub const Lexer = struct {
             // Each `\\`-prefixed line contributes the rest of the line;
             // consecutive lines join with newlines. The token spans every
             // line; the parser strips the prefixes and materializes the
-            // content. Like `"""` scanning, `lineStart` is NOT advanced so
-            // the token's col stays at the opening `\\`.
+            // content. `line`/`lineStart` follow the embedded newlines (so
+            // the tokens AFTER the literal are located correctly); the token
+            // itself is stamped at its opening `\\` from `tokenLine`.
             '\\' => {
                 if (!self.matchChar('\\')) return LexerError.UnexpectedCharacter;
                 while (!self.isAtEnd() and self.peek() != '\n') _ = self.advance();
@@ -140,6 +294,7 @@ pub const Lexer = struct {
                     if (look + 1 >= self.source.len or self.source[look] != '\\' or self.source[look + 1] != '\\') break;
                     _ = self.advance(); // the newline
                     self.line += 1;
+                    self.lineStart = self.current;
                     while (self.peek() == ' ' or self.peek() == '\t' or self.peek() == '\r') _ = self.advance();
                     _ = self.advance(); // first backslash
                     _ = self.advance(); // second backslash
@@ -259,18 +414,47 @@ pub const Lexer = struct {
             },
 
             // ── '&', '&&' ────────────────────────────────────────────────────
+            // A lone `&` is a token, not a lexical error: the parser refuses
+            // it by name (`bitwise-operator-absent`) where an expression could
+            // have continued, so the reader is told what the language has
+            // instead of "unexpected character" (front 15 step 3).
             '&' => {
                 if (self.matchChar('&')) {
                     try self.addToken(.amperAmper, allocator);
                 } else {
-                    return LexerError.UnexpectedCharacter;
+                    try self.addToken(.ampersand, allocator);
                 }
             },
 
-            // ── '.', '..' ────────────────────────────────────────────────────
+            // ── '^' ───────────────────────────────────────────────────────────
+            // Same reason as the lone `&`: a token the parser names.
+            '^' => try self.addToken(.caret, allocator),
+
+            // ── `'a'` — a character literal the language does not have ──────
+            // Scanned as one token up to the closing `'` on the same line (an
+            // escaped `\'` does not close it), or to the end of the line, so
+            // `parsePrimary` refuses the whole literal as `char-literal-absent`
+            // and names the one-character string. An unterminated one is the
+            // same token: the parser's refusal covers both spellings.
+            '\'' => {
+                while (!self.isAtEnd() and self.peek() != '\'' and self.peek() != '\n') {
+                    if (self.peek() == '\\' and self.peekNext() != '\n' and self.peekNext() != 0) _ = self.advance();
+                    _ = self.advance();
+                }
+                _ = self.matchChar('\'');
+                try self.addToken(.charLiteral, allocator);
+            },
+
+            // ── '.', '..', '...' ─────────────────────────────────────────────
             '.' => {
                 if (self.matchChar('.')) {
-                    try self.addToken(.dotDot, allocator);
+                    // `...` is a pattern's inclusive range (decision 8 §5.2);
+                    // `..` stays iteration and slicing.
+                    if (self.matchChar('.')) {
+                        try self.addToken(.dotDotDot, allocator);
+                    } else {
+                        try self.addToken(.dotDot, allocator);
+                    }
                 } else {
                     try self.addToken(.dot, allocator);
                 }
@@ -314,7 +498,7 @@ pub const Lexer = struct {
         var depth: usize = 1;
         while (!self.isAtEnd() and depth > 0) {
             const ch = self.peek();
-            if (ch == '\n') self.line += 1;
+            if (ch == '\n') self.newlineAt();
             if (ch == '{') {
                 depth += 1;
             } else if (ch == '}') {
@@ -322,7 +506,7 @@ pub const Lexer = struct {
             } else if (ch == '"') {
                 _ = self.advance(); // opening '"'
                 while (!self.isAtEnd() and self.peek() != '"') {
-                    if (self.peek() == '\n') self.line += 1;
+                    if (self.peek() == '\n') self.newlineAt();
                     if (self.peek() == '\\') _ = self.advance();
                     if (self.isAtEnd()) return LexerError.UnterminatedString;
                     _ = self.advance();
@@ -340,7 +524,7 @@ pub const Lexer = struct {
                 try self.scanInterpolation();
                 continue;
             }
-            if (self.peek() == '\n') self.line += 1;
+            if (self.peek() == '\n') self.newlineAt();
             if (self.peek() == '\\') {
                 _ = self.advance(); // consume '\'
                 if (self.isAtEnd()) return LexerError.UnterminatedString;
@@ -385,7 +569,7 @@ pub const Lexer = struct {
                 try self.scanInterpolation();
                 continue;
             }
-            if (self.peek() == '\n') self.line += 1;
+            if (self.peek() == '\n') self.newlineAt();
             if (self.peek() == '\\') {
                 _ = self.advance(); // consume '\'
                 if (self.isAtEnd()) return LexerError.UnterminatedString;
@@ -473,6 +657,15 @@ pub const Lexer = struct {
     // ── number scanning with 0b, 0o, 0x support ──────────────────────────────
 
     fn scanNumber(self: *Lexer, firstDigit: u8, allocator: std.mem.Allocator) LexerError!void {
+        // A digit right after a member `.` is a positional index (`t.0.1`,
+        // `p.0.toString()`): integer digits only, never a float or a radix.
+        if (self.tokens.items.len > 0) {
+            const prev = self.tokens.items[self.tokens.items.len - 1];
+            if (prev.kind == .dot and prev.offset + 1 == self.start) {
+                while (!self.isAtEnd() and isDigit(self.peek())) _ = self.advance();
+                return self.addToken(.numberLiteral, allocator);
+            }
+        }
         if (firstDigit == '0' and !self.isAtEnd()) {
             const prefix = self.peek();
             switch (prefix) {
@@ -508,7 +701,16 @@ pub const Lexer = struct {
             if (!isDigit(ch)) break;
             _ = self.advance();
         }
-        if (!self.isAtEnd() and self.peek() == '.' and self.peekNext() != '.') {
+        // A `.` continues the number only when a DIGIT follows it. The guard
+        // used to read `peekNext() != '.'`, which kept `1..9` a range and made
+        // everything else a fractional part — so `42.toString()` lexed as the
+        // number `42.` followed by `toString`, and `"ab".toUpperCase()` parsed
+        // while the integer form did not (front 15, `libs/std` declares
+        // `Integer.toString`). Testing for a digit keeps the `..` range (a `.`
+        // is not a digit) and keeps `1.5`, `1_000.5`, `1e10` and `0xFF`
+        // unchanged; `42.` with nothing after the point is now `42` and a `.`,
+        // which is the tuple-access spelling `t.0.first` needs too.
+        if (!self.isAtEnd() and self.peek() == '.' and isDigit(self.peekNext())) {
             _ = self.advance();
             while (!self.isAtEnd()) {
                 const ch = self.peek();
@@ -525,16 +727,31 @@ pub const Lexer = struct {
                 _ = self.advance();
             }
         }
-        // Check for scientific notation: e.g. 1.0e10 or 1e10
+        // Check for scientific notation: e.g. 1.0e10 or 1e10. The exponent
+        // is one only with digits (after an optional sign): `1e` and `1ex`
+        // leave the `e` to the suffix run below, where the parser refuses it
+        // by name (decision 247).
         if (!self.isAtEnd() and (self.peek() == 'e' or self.peek() == 'E')) {
-            _ = self.advance();
-            // Optional sign for exponent
-            if (!self.isAtEnd() and (self.peek() == '+' or self.peek() == '-')) {
+            const signed = self.peekNext() == '+' or self.peekNext() == '-';
+            const firstExpDigit = if (signed) self.peekNextNext() else self.peekNext();
+            if (isDigit(firstExpDigit)) {
                 _ = self.advance();
+                if (signed) _ = self.advance();
+                while (!self.isAtEnd() and isDigit(self.peek())) _ = self.advance();
             }
-            while (!self.isAtEnd() and isDigit(self.peek())) _ = self.advance();
         }
+        self.scanNumberSuffix();
         try self.addToken(.numberLiteral, allocator);
+    }
+
+    /// Decision 247 — the letters glued to a number are part of its token:
+    /// a suffix (`1.5f`, `42ul`, `7i16`) or a spelling the parser refuses by
+    /// name (`42L`, `2x`, `1e`). The lexer keeps the run whole and decides
+    /// nothing about it, so every refusal is located and named in one place
+    /// (`Parser.numberLiteralSuffix`).
+    fn scanNumberSuffix(self: *Lexer) void {
+        if (self.isAtEnd() or !isAlpha(self.peek())) return;
+        while (!self.isAtEnd() and (isAlphaNumeric(self.peek()) or self.peek() == '_')) _ = self.advance();
     }
 
     fn scanRadixNumber(self: *Lexer, radix: u8, allocator: std.mem.Allocator) LexerError!void {
@@ -548,6 +765,11 @@ pub const Lexer = struct {
                 continue;
             }
             if (!isAlphaNumeric(ch)) break;
+
+            // Decision 247 — a letter that is not a digit of the radix starts
+            // the suffix run (`0xFFul`, `0b101u8`; the parser refuses `0b1f`):
+            // the radix's own letters win (`0x1f` is 31).
+            if (hasDigits and isAlpha(ch) and !isValidRadixDigit(ch, radix)) break;
 
             if (!isValidRadixDigit(ch, radix)) {
                 self.lexError = .{
@@ -571,6 +793,7 @@ pub const Lexer = struct {
             return LexerError.LexicalError;
         }
 
+        self.scanNumberSuffix();
         try self.addToken(.numberLiteral, allocator);
     }
 
@@ -616,12 +839,27 @@ pub const Lexer = struct {
         return self.current >= self.source.len;
     }
 
+    /// Records the newline sitting at `current` (not consumed yet) as a line
+    /// break: the next line starts one byte later. Called from the scanners
+    /// that walk over embedded newlines (`"…"`, `"""…"""`, `${…}`) so that
+    /// every token following a multi-line literal still gets a column
+    /// measured from ITS own line.
+    fn newlineAt(self: *Lexer) void {
+        self.line += 1;
+        self.lineStart = self.current + 1;
+    }
+
+    /// Appends the token that spans `start..current`. Its location is where it
+    /// STARTS (`tokenLine`/`tokenLineStart`, snapshotted by `scanAll` before
+    /// the token was scanned), so a `"""…"""` or `\\ …` literal that advanced
+    /// `line` while scanning is still stamped with its opening line.
     fn addToken(self: *Lexer, kind: TokenKind, allocator: std.mem.Allocator) LexerError!void {
         try self.tokens.append(allocator, .{
             .kind = kind,
             .lexeme = self.source[self.start..self.current],
-            .line = self.line,
-            .col = self.start - self.lineStart + 1,
+            .line = self.tokenLine,
+            .col = self.start - self.tokenLineStart + 1,
+            .offset = self.start,
         });
     }
 
@@ -645,7 +883,7 @@ pub const Lexer = struct {
             (c >= 'A' and c <= 'F');
     }
 
-    fn isValidRadixDigit(c: u8, radix: u8) bool {
+    pub fn isValidRadixDigit(c: u8, radix: u8) bool {
         return switch (radix) {
             2 => c == '0' or c == '1',
             8 => c >= '0' and c <= '7',
@@ -660,43 +898,37 @@ pub const Lexer = struct {
         if (std.mem.eql(u8, text, "_")) return .underscore;
         if (std.mem.eql(u8, text, "as")) return .as;
         if (std.mem.eql(u8, text, "assert")) return .assert;
-        if (std.mem.eql(u8, text, "auto")) return .auto;
         if (std.mem.eql(u8, text, "await")) return .await;
         if (std.mem.eql(u8, text, "case")) return .case;
         // 'const' is not a surface keyword in botopink; use 'val' instead.
         if (std.mem.eql(u8, text, "default")) return .default;
-        if (std.mem.eql(u8, text, "delegate")) return .delegate;
-        if (std.mem.eql(u8, text, "derive")) return .derive;
         if (std.mem.eql(u8, text, "else")) return .@"else";
-        if (std.mem.eql(u8, text, "enum")) return .@"enum";
         if (std.mem.eql(u8, text, "extend")) return .extend;
         if (std.mem.eql(u8, text, "extends")) return .extends;
         if (std.mem.eql(u8, text, "fn")) return .@"fn";
         if (std.mem.eql(u8, text, "for")) return .@"for";
         if (std.mem.eql(u8, text, "from")) return .from;
-        if (std.mem.eql(u8, text, "get")) return .get;
         if (std.mem.eql(u8, text, "if")) return .@"if";
         if (std.mem.eql(u8, text, "implement")) return .implement;
-        if (std.mem.eql(u8, text, "is")) return .@"is";
+        if (std.mem.eql(u8, text, "is")) return .is;
         if (std.mem.eql(u8, text, "import")) return .import;
         // `let` is an alias for `val` (immutable binding)
-        if (std.mem.eql(u8, text, "macro")) return .macro;
         if (std.mem.eql(u8, text, "mod")) return .mod;
-        if (std.mem.eql(u8, text, "new")) return .new;
-        if (std.mem.eql(u8, text, "opaque")) return .@"opaque";
-        if (std.mem.eql(u8, text, "private")) return .private;
         if (std.mem.eql(u8, text, "pub")) return .@"pub";
         if (std.mem.eql(u8, text, "return")) return .@"return";
         if (std.mem.eql(u8, text, "Self")) return .selfType;
-        if (std.mem.eql(u8, text, "set")) return .set;
         if (std.mem.eql(u8, text, "test")) return .@"test";
         if (std.mem.eql(u8, text, "throw")) return .throw;
-        if (std.mem.eql(u8, text, "interface")) return .interface;
+        // `record`, `enum` and `interface` left the keyword table in 1.0.3: they
+        // lex as identifiers and the parser reports them where a declaration starts.
+        if (std.mem.eql(u8, text, "behavior")) return .behavior;
         if (std.mem.eql(u8, text, "type")) return .type;
-        if (std.mem.eql(u8, text, "record")) return .record;
+        // decision 8 §2 — `unknown` is a type, never a name.
+        if (std.mem.eql(u8, text, "unknown")) return .unknown;
         if (std.mem.eql(u8, text, "use")) return .use;
         if (std.mem.eql(u8, text, "val")) return .val;
         if (std.mem.eql(u8, text, "var")) return .@"var";
+        if (std.mem.eql(u8, text, "while")) return .@"while";
         if (std.mem.eql(u8, text, "comptime")) return .@"comptime";
         if (std.mem.eql(u8, text, "syntax")) return .syntax;
         if (std.mem.eql(u8, text, "break")) return .@"break";
@@ -718,13 +950,11 @@ pub const Lexer = struct {
 /// used as an identifier in botopink.
 pub fn isReservedWord(kind: TokenKind) bool {
     return switch (kind) {
-        .auto,
-        .delegate,
         .@"else",
         .implement,
-        .macro,
         .@"test",
-        .derive,
+        // decision 8 §2 — `unknown` names the type and nothing else.
+        .unknown,
         => true,
         else => false,
     };
@@ -733,13 +963,10 @@ pub fn isReservedWord(kind: TokenKind) bool {
 /// Returns the lexeme string for a reserved word TokenKind.
 pub fn reservedWordLexeme(kind: TokenKind) []const u8 {
     return switch (kind) {
-        .auto => "auto",
-        .delegate => "delegate",
         .@"else" => "else",
         .implement => "implement",
-        .macro => "macro",
         .@"test" => "test",
-        .derive => "derive",
+        .unknown => "unknown",
         else => "<unknown>",
     };
 }

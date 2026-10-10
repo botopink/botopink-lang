@@ -1,0 +1,6 @@
+pub mod greet;
+import {greet.hello} from "starter";
+
+pub fn start() -> string {
+    return hello();
+}

@@ -1,0 +1,10 @@
+//// Decision 353 — `import cat from "cat"` binds the default function of a
+//// module that reads `@TypeInfo.all` outside a template body: refused at the
+//// handle (`typeinfo-all-imported`), where it used to drop the reader from
+//// this module's scope and fail at the use (`unbound variable 'cat'`).
+
+import cat from "cat";
+
+pub fn main() {
+    @print(cat "x");
+}

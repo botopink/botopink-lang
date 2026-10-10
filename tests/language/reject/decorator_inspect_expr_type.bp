@@ -1,0 +1,20 @@
+//// Decision 364 (3) — an `@Expr` of a type has no `.value`: the type is not
+//// inspected while the program compiles. Reading it is refused at the read.
+
+pub behavior MailSender {
+    fn send(self: Self, to: string) -> string;
+}
+
+fn conditionalOnMissingBean(comptime decl: @Decl, comptime t: @Expr<type>) {
+    val bean = t.value;
+    decl.setMeta("bean", decl.name);
+}
+
+#[conditionalOnMissingBean(MailSender)]
+fn consoleMail() -> string {
+    return "console";
+}
+
+pub fn main() {
+    @print("unreached");
+}

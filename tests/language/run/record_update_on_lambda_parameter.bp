@@ -1,0 +1,39 @@
+//// The update form on a lambda parameter keeps the fields it does not write:
+//// `xs.map({ b -> Brk(..b, active: false) })` answers whole records — on
+//// commonJS and erlang the other fields were absent (front 121's gap). A
+//// lambda's last statement is its value, and the walk that completes the
+//// update never reached a call at statement position.
+
+type Brk(id: i32, label: string, active: bool, image: bool)
+
+fn show(b: Brk) -> string {
+    val a = if (b.active) "on" else "off";
+    val i = if (b.image) "img" else "txt";
+    return "${b.id}:${b.label}:${a}:${i}";
+}
+
+pub fn main() {
+    val xs = [
+        Brk(id: 1, label: "a", active: true, image: false),
+        Brk(id: 2, label: "b", active: true, image: true),
+    ];
+    val ys = xs.map({ b -> Brk(..b, active: false) });
+    for (ys) { b ->
+        @print(show(b));
+    }
+    val zs = xs.map({ b -> if (b.image) b else Brk(..b, label: "z") });
+    for (zs) { b ->
+        @print(show(b));
+    }
+    val twice = xs.map({ b -> Brk(..b, id: b.id * 10, active: false) });
+    for (twice) { b ->
+        @print(show(b));
+    }
+    val blocks = xs.map({ b ->
+        val n = b.id + 100;
+        Brk(..b, id: n);
+    });
+    for (blocks) { b ->
+        @print(show(b));
+    }
+}

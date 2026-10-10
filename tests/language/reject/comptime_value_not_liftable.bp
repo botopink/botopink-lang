@@ -1,0 +1,11 @@
+//// Decision 331 — a lambda that captures the `comptime` block's state has no
+//// construction in the emitted program: the block's `base` exists only while
+//// the build runs. Refused at the `comptime` (`comptime-value-not-liftable`).
+
+pub fn main() {
+    val add = comptime {
+        val base = 10;
+        break { x -> x + base };
+    };
+    @print(add(1));
+}

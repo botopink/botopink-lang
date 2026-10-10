@@ -3,54 +3,67 @@
 > Path: `libs/`
 > Parent: [`../AGENTS.md`](../AGENTS.md)
 
-Code written **in** botopink — the **bundled** `.bp` libraries shipped with
-the language core, kept separate from the Zig/TS toolchain under
-[`../modules/`](../modules/AGENTS.md). The dependency arrow runs one way:
-`modules/compiler-core` consumes `libs/std`; a lib never depends on the
-toolchain's internals.
+Code written **in** botopink that ships with the language core, kept separate
+from the Zig toolchain under [`../modules/`](../modules/AGENTS.md). The
+dependency arrow runs one way: the compiler embeds `libs/std` — the **one**
+bundled package (decision 326) — and a lib never depends on toolchain internals.
 
-The **frameworks** (`erika`, `jhonstart`, `onze`, `rakun`) live as sibling
-projects under `repository/` — not here. They are reached via `from "<name>"`
-through the multi-root resolver (the resolver walks `repository/botopink-lang/libs`
-then `repository/` then a legacy `libs/`). See the [workspace
-overview](../../AGENTS.md) for the per-project entry points.
+std is imported by name (`from "std"`) with no `dependencies` entry, from the
+copy inside the compiler binary; listing it in `dependencies` is refused.
 
-Each library is a package with its own `botopink.json` and `AGENTS.md`,
-mirroring the shape of `std/`.
+Every other library is a repository of its own — `routing`, `http`, `actions`,
+`validation`, `log` (moved out of this directory with their history by
+`03-bundled-libs/138`), `cardume`, `emilia`, `erika`, `jhonstart`, `onze`,
+`rakun` — a sibling project under `repository/` in the meta workspace. A program
+that imports one declares it in `dependencies` like any library (decision 242):
+
+```json
+"dependencies": { "routing": { "git": "https://github.com/botopink/routing.git", "branch": "feat" } }
+```
+
+Inside the meta checkout that entry resolves by name through the multi-root
+resolver (`BOTOPINK_LIB_ROOTS`, then `repository/botopink-lang/libs`,
+`repository/`, `libs/` — see `modules/compiler-cli/src/cli/libs.zig`), elsewhere
+through the install store; without it, `from "routing"` is
+`unresolved import source "routing" — declare it in botopink.json "dependencies"`.
+A new shared package is born as a repository under the same rule — nothing in
+this directory, `build.zig` or `scripts/format-check.sh` registers it.
 
 ## Tree
 
 ```text
 libs/
 ├── AGENTS.md          ← you are here
-├── std/               ← standard library (embedded prelude + interfaces)
-├── server/            ← framework-agnostic HTTP backing (real node-`http`, `from "server"`)
-└── client/            ← client-side interfaces (scaffold)
+└── std/               ← standard library (embedded in the compiler)
 ```
 
 ## Packages
 
 | Package | Provides | Embedded in compiler? | AGENTS |
 |---|---|---|---|
-| `std/` | builtin types, primitives, Array/String, builtins — loaded into the type `Env` at infer time | yes (`modules/compiler-core/src/comptime/stdlib/prelude.zig`, wired in root `build.zig`) | [link](std/AGENTS.md) |
-| `server/` | framework-agnostic HTTP backing — node-`http` server (`serverServe`/`serverStop`) behind `#[@External.<targert>(...)]` | no — reached via `from "server"` (real; rakun's transport) | [link](server/AGENTS.md) |
-| `client/` | HTTP client / request interfaces | no — inert scaffold | [link](client/AGENTS.md) |
+| `std/` | primitive interfaces, builtins, and the importable `std` modules | yes — `build.zig` embeds the files; `modules/compiler-core/src/comptime/stdlib/prelude.zig` exposes them | [link](std/AGENTS.md) |
 
 ## Conventions
 
-- `.bp` declarations stay declarative — interface/method **signatures only**, no
-  bodies. Codegen supplies implementations per target.
-- Only `std` is embedded today. `client` is still a scaffold; `server` is a real
-  **application-level** lib reached via `from "server"`, opted into per project,
-  never prelude-embedded or wired into `build.zig`. Embedding a lib into stdlib
-  loading / the type `Env` is a deliberate, separate task.
-- Packages here are `.bp`-only — no Zig under `libs/`. The embed/loader glue
-  lives in `modules/compiler-core/src/comptime/stdlib/prelude.zig`.
-- Framework libs (`erika`/`jhonstart`/`onze`/`rakun`) are siblings under
-  `repository/`, not here — extracting them keeps the language core
-  framework-agnostic and lets each framework ship + version independently.
-- Every directory ships its own `AGENTS.md`; update it in the same change that
-  touches the directory's layout or contents.
+- Packages here are `.bp`-only — no Zig under `libs/` but std's table generator,
+  `std/tools/unicode-gen/` (decision 333 (A), run by `zig build gen-unicode`, never
+  embedded — `std/AGENTS.md` § unicode). Embed glue lives in
+  `build.zig` (the generated table, std its one row) and
+  `modules/compiler-core/src/comptime/stdlib/prelude.zig`.
+- The package has its own `botopink.json` and `AGENTS.md`; update the
+  `AGENTS.md` in the same change that touches the package's layout or contents.
+- Library-specific code never goes into `modules/compiler-core` (enforced by the
+  lib-agnostic gate in `zig build test`).
+- **A shared primitive lands in std first, and each copy is deleted by the
+  owner of the file it sits in.** What two libraries need — a string → number
+  parser, a reader over `json.Json`, a retry loop, a duration parser, a key
+  derivation — is written once in `libs/std` (decisions 115–116: what is
+  generic goes to std; `.bp` only, both targets, a `#[@External.<Target>]`
+  template where a host is needed), under its natural name (decision 170). A
+  library then calls std's and removes its own in a step of the front that owns
+  that file — never the std front editing a library, and never a library
+  growing a second copy while std lacks the first. A module that needs two
+  declarations of one name meanwhile imports them under an alias.
 
 ## See also
 

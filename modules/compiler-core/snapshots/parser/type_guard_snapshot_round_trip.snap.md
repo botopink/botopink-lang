@@ -30,9 +30,12 @@
           }
         ],
         "returnType": {
-          "named": "string"
+          "named": "bool"
         },
         "typeGuardParam": "x",
+        "typeGuardType": {
+          "named": "string"
+        },
         "body": [
           {
             "expr": {

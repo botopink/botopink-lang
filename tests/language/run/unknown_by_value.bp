@@ -1,0 +1,70 @@
+//// Decision 8 §2, §4.1 and §5.2 through `unknown`, by running — the wasm half
+//// of `00 · 05-wasm` step 2 (D1–D4). `test/case_unknown.bp` and
+//// `test/type_identity_unknown.bp` state the same rules, and `botopink test`
+//// does not run wasm, which is why this cell exists.
+////
+//// On wasm a value entering an `unknown` slot carries a header behind its
+//// pointer (the one C-01 gave every declared value): a primitive is boxed with
+//// a descriptor naming what it is, and `is`, a type arm, `==` and `@print` ask
+//// the box. Before the box, `x is i32` trapped and a type arm was a binding that
+//// matched everything — `number 364`, a heap address, at exit 0.
+////
+//// The unknown floats are not printed: commonJS stores nothing extra (§11), so
+//// `2.0` in an `unknown` slot prints `2` there where wasm prints `2.0`.
+
+fn describe(x: unknown) -> string {
+    return case x {
+        i32 { n ->
+            "number " + n.toString();
+        }
+        string when (x == "") {
+            "empty text";
+        }
+        string { s ->
+            "text " + s;
+        }
+        _ {
+            "other";
+        }
+    };
+}
+
+fn show(x: unknown) -> string {
+    if (x is i32) return "i32";
+    if (x is string) return "string";
+    if (x is bool) return "bool";
+    return "other";
+}
+
+fn plusOne(x: unknown) -> i32 {
+    var got = 0;
+    if (x is i32) got = x + 1;
+    return got;
+}
+
+pub fn main() {
+    val a: unknown = 3.0;
+    @print(describe(a));
+    val b: unknown = 2.5;
+    @print(describe(b));
+    val e: unknown = "";
+    @print(describe(e));
+    val t: unknown = "hi";
+    @print(describe(t));
+    val c: unknown = true;
+    @print(describe(c));
+    @print(show(1));
+    @print(show("s"));
+    @print(show(2.5));
+    @print(show(true));
+    val two: unknown = 2.0;
+    @print(two == 2);
+    @print(two == 3);
+    @print(t == "hi");
+    @print(plusOne(2.0));
+    @print(plusOne("x"));
+    @print(300 is i8);
+    @print(100 is i8);
+    @print(2 is f64);
+    @print(t);
+}

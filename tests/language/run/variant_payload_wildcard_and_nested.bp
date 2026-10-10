@@ -1,0 +1,51 @@
+//// A `_` inside a variant's payload pattern skips that field and binds
+//// nothing, and a variant pattern nested in another's payload tests the inner
+//// variant and binds its fields (decision 8 § 5.1 P4) — one module, every
+//// target. wasm bound `w` in `Rect(w, _)` to 0 and answered a nested
+//// `Two(Rect(w, _), _)` wrong at exit 0.
+
+type Shape {
+    Circle(radius: i32),
+    Rect(width: i32, height: i32),
+    Dot,
+}
+
+type Pair {
+    Two(left: Shape, right: Shape),
+}
+
+fn widthOf(s: Shape) -> i32 {
+    return case s {
+        Rect(w, _) -> w;
+        Circle(_) -> -1;
+        Dot -> 0;
+    };
+}
+
+fn heightOf(s: Shape) -> i32 {
+    return case s {
+        Rect(_, h) -> h;
+        _ -> -2;
+    };
+}
+
+fn leftWidth(p: Pair) -> i32 {
+    return case p {
+        Two(Rect(w, _), _) -> w;
+        Two(Circle(r), Rect(_, h)) -> r * 1000 + h;
+        Two(_, Circle(r)) -> -r;
+        Two(_, _) -> 0;
+    };
+}
+
+pub fn main() {
+    @print(widthOf(Shape.Rect(4, 5)));
+    @print(widthOf(Shape.Circle(3)));
+    @print(widthOf(Shape.Dot));
+    @print(heightOf(Shape.Rect(4, 5)));
+    @print(heightOf(Shape.Dot));
+    @print(leftWidth(Pair.Two(Shape.Rect(9, 1), Shape.Dot)));
+    @print(leftWidth(Pair.Two(Shape.Circle(2), Shape.Rect(6, 7))));
+    @print(leftWidth(Pair.Two(Shape.Dot, Shape.Circle(8))));
+    @print(leftWidth(Pair.Two(Shape.Dot, Shape.Dot)));
+}

@@ -1,0 +1,15 @@
+//// `b/theme` — `a` has a `theme` module too, declaring `Ns` and `make`.
+
+pub type Ns(size: i32, unit: string) {
+    fn show(self: Self) -> string {
+        return "b:" + self.size.toString() + self.unit;
+    }
+}
+
+pub fn make() -> Ns {
+    return Ns(size: 4, unit: "px");
+}
+
+pub fn tag(comptime q: @Expr<string>) -> @Expr<string> {
+    return q.build("\"b-" + q.text() + "\"");
+}

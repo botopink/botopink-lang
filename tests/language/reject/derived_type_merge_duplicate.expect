@@ -1,0 +1,2 @@
+derived-type-merge-duplicate: field `name` is on both sides of `Type.merge(Dog, Pet)`
+10:34

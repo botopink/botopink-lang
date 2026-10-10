@@ -1,0 +1,190 @@
+// std — `unicode.normalize` against the conformance file of the Unicode
+// version its tables were generated from (decision 333 (A)):
+// `tools/unicode-gen/NormalizationTest.txt`, vendored beside the generator and
+// pinned by its SHA-256 in `tools/unicode-gen/manifest.json`. One test per part
+// of the file (six in 17.0), every line of it: with the columns c1…c5,
+//
+//   NFC:  c2 == NFC(c1) == NFC(c2) == NFC(c3),   c4 == NFC(c4) == NFC(c5)
+//   NFD:  c3 == NFD(c1) == NFD(c2) == NFD(c3),   c5 == NFD(c4) == NFD(c5)
+//   NFKC: c4 == NFKC(c1) == … == NFKC(c5)
+//   NFKD: c5 == NFKD(c1) == … == NFKD(c5)
+//
+// and each part's line count is pinned, so a file that reads short fails.
+// The file's other invariant — every code point not listed in part 1 is its
+// own normal form under the four — is not walked here: 1.1 million code
+// points, four forms each, is past what a `botopink test` cell spends. Run by
+// `botopink test` from `libs/std/` (the path is relative to it).
+
+import {unicode};
+import {unicode.NormalizationForm};
+import {io.fs};
+
+fn hexDigit(c: i32) -> i32 {
+    if (c <= 57) return c - 48;
+    return c - 55;
+}
+
+// `"1E0A 0307"` → the string of those code points.
+fn column(field: string) -> string {
+    val cps = field
+        .split(" ")
+        .filter({ h -> h != "" })
+        .map({ h ->
+            unicode.codepoints(h).fold(0, { acc, c -> acc * 16 + hexDigit(c) });
+        });
+    return cps.map({ c -> unicode.fromCodepoint(c) }).join("");
+}
+
+fn codes(s: string) -> string {
+    return unicode.codepoints(s).map({ c -> c.toString() }).join(" ");
+}
+
+// `"<line>: <form>(c<i>) is <got>, expected <want>"`, or `""`.
+fn mismatch(
+    line: string,
+    form: NormalizationForm,
+    name: string,
+    cols: Array<string>,
+    indices: Array<i32>,
+    want: i32,
+) -> string {
+    val expected = cols.at(want) ?? "";
+    val bad = indices.filter({ i ->
+        unicode.normalize(cols.at(i) ?? "", form) != expected;
+    });
+    if (bad.length == 0) return "";
+    val i = bad.at(0) ?? 0;
+    val got = unicode.normalize(cols.at(i) ?? "", form);
+    return [
+        line,
+        ": ",
+        name,
+        "(c",
+        (i + 1).toString(),
+        ") is ",
+        codes(got),
+        ", expected ",
+        codes(expected),
+    ].join("");
+}
+
+// Every failure of the lines of `@Part<part>`, and how many lines it has.
+fn checkPart(part: string) -> #(i32, Array<string>) {
+    val file = fs
+        .readText("tools/unicode-gen/NormalizationTest.txt")
+        .unwrapOr("");
+    val header = ["@Part", part].join("");
+    var inPart = false;
+    var count = 0;
+    var failures: Array<string> = [];
+    for (file.split("\n")) { line ->
+        if (line.startsWith("@Part")) inPart = line.startsWith(header) else {
+            val data = inPart && !line.startsWith("#") && line != "";
+            if (data) {
+                count = count + 1;
+                val cols = line.split(";").take(5).map({ f -> column(f) });
+                val all = [0, 1, 2, 3, 4];
+                val found = [
+                    mismatch(
+                        line,
+                        NormalizationForm.NFC,
+                        "NFC",
+                        cols,
+                        [0, 1, 2],
+                        1,
+                    ),
+                    mismatch(
+                        line,
+                        NormalizationForm.NFC,
+                        "NFC",
+                        cols,
+                        [3, 4],
+                        3,
+                    ),
+                    mismatch(
+                        line,
+                        NormalizationForm.NFD,
+                        "NFD",
+                        cols,
+                        [0, 1, 2],
+                        2,
+                    ),
+                    mismatch(
+                        line,
+                        NormalizationForm.NFD,
+                        "NFD",
+                        cols,
+                        [3, 4],
+                        4,
+                    ),
+                    mismatch(
+                        line,
+                        NormalizationForm.NFKC,
+                        "NFKC",
+                        cols,
+                        all,
+                        3,
+                    ),
+                    mismatch(
+                        line,
+                        NormalizationForm.NFKD,
+                        "NFKD",
+                        cols,
+                        all,
+                        4,
+                    ),
+                ].filter({ m -> m != "" });
+                failures = failures.append(found);
+            }
+        }
+    }
+    return #(count, failures);
+}
+
+fn report(failures: Array<string>) -> i32 {
+    failures.take(10).forEach({ f -> @print(f) });
+    return failures.length;
+}
+
+test "unicode NormalizationTest.txt is the pinned version's" {
+    val file = fs
+        .readText("tools/unicode-gen/NormalizationTest.txt")
+        .unwrapOr("");
+    assert file.startsWith("# NormalizationTest-17.0.0.txt");
+}
+
+test "unicode NormalizationTest.txt part 0 (specific cases)" {
+    val r = checkPart("0");
+    assert report(r.1) == 0;
+    assert r.0 == 45;
+}
+
+test "unicode NormalizationTest.txt part 1 (character by character)" {
+    val r = checkPart("1");
+    assert report(r.1) == 0;
+    assert r.0 == 17086;
+}
+
+test "unicode NormalizationTest.txt part 2 (canonical order)" {
+    val r = checkPart("2");
+    assert report(r.1) == 0;
+    assert r.0 == 1936;
+}
+
+test "unicode NormalizationTest.txt part 3 (PRI #29)" {
+    val r = checkPart("3");
+    assert report(r.1) == 0;
+    assert r.0 == 194;
+}
+
+test "unicode NormalizationTest.txt part 4 (canonical closures)" {
+    val r = checkPart("4");
+    assert report(r.1) == 0;
+    assert r.0 == 735;
+}
+
+test "unicode NormalizationTest.txt part 5 (chained primary composites)" {
+    val r = checkPart("5");
+    assert report(r.1) == 0;
+    assert r.0 == 38;
+}

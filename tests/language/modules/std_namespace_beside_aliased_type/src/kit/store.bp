@@ -1,0 +1,5 @@
+pub type Dict(initialMs: i32)
+
+pub fn make(ms: i32) -> Dict {
+    return Dict(initialMs: ms);
+}

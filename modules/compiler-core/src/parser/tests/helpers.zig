@@ -74,6 +74,8 @@ pub fn slugFromSrc(comptime loc: std.builtin.SourceLocation) []const u8 {
 }
 
 pub fn assertParser(allocator: Allocator, comptime loc: std.builtin.SourceLocation, src: []const u8) !void {
+    const trace_prev = snapMod.traceEnter(loc);
+    defer snapMod.traceLeave(trace_prev);
     var l = Lexer.init(src);
     const tokens = try l.scanAll(allocator);
     defer l.deinit(allocator);
@@ -106,11 +108,31 @@ pub fn expectParseError(
         owned.deinit(allocator);
         return error.TestExpectedParseError;
     } else |_| {
-        const pe = p.parseError orelse return;
+        // A parse that fails without filling `parseError` renders NOTHING for
+        // the user. Two tests used to pass vacuously through an early return
+        // here (spec 06 / snapshot review, errors.zig:66 and :94), so this is
+        // a failure, not a skip.
+        const pe = p.parseError orelse return error.TestParseErrorInfoMissing;
         const actual = try print.renderAlloc(allocator, pe, src, "<test>");
         defer allocator.free(actual);
         try expectEqualOutput(allocator, expected, actual);
     }
+}
+
+/// The parse fails with `kind`, located at `line:col` (1-based) — the harness
+/// of a NAMED refusal: a form the language decides against has its own
+/// `ParseErrorType` and a location, so a test pins both and never the text.
+pub fn expectErrorAt(src: []const u8, kind: parserMod.ParseErrorType, line: usize, col: usize) !void {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var l = lexerMod.Lexer.init(src);
+    const tokens = try l.scanAll(a);
+    var p = parserMod.Parser.initWithSource(tokens, src);
+    if (p.parse(a)) |_| return error.TestExpectedParseError else |_| {}
+    const pe = p.parseError orelse return error.TestParseErrorInfoMissing;
+    try std.testing.expectEqual(kind, pe.kind);
+    try std.testing.expectEqual([2]usize{ line, col }, [2]usize{ pe.line, pe.col });
 }
 
 pub fn expectParseFails(allocator: std.mem.Allocator, src: []const u8) !void {
@@ -161,4 +183,23 @@ pub fn expectEqualOutput(
     }
     std.debug.print("-------------------------------------------------------------\n\n", .{});
     if (hasDiff) return error.TestOutputMismatch;
+}
+
+/// `a` and `b` both parse, to the same AST dump — two spellings of one program.
+pub fn expectSameAst(allocator: Allocator, a: []const u8, b: []const u8) !void {
+    const dumpA = try dumpProgram(allocator, a);
+    defer allocator.free(dumpA);
+    const dumpB = try dumpProgram(allocator, b);
+    defer allocator.free(dumpB);
+    try expectEqualOutput(allocator, dumpA, dumpB);
+}
+
+fn dumpProgram(allocator: Allocator, src: []const u8) ![]u8 {
+    var l = Lexer.init(src);
+    const tokens = try l.scanAll(allocator);
+    defer l.deinit(allocator);
+    var p = Parser.init(tokens);
+    var program = try p.parse(allocator);
+    defer program.deinit(allocator);
+    return std.json.Stringify.valueAlloc(allocator, program, .{ .whitespace = .indent_2 });
 }

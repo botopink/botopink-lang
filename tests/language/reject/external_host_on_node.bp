@@ -1,0 +1,10 @@
+//// Decision 334 — a host is the runtime a wasm build binds to, so `host:` is
+//// `External.Wasm`'s alone. Written on `External.Node` it is a switch nothing
+//// reads, refused at the annotation.
+
+#[@External.Node("Math", "floor", host = .Wasi)]
+declare fn floorOf(x: f64) -> f64;
+
+pub fn main() {
+    @print(floorOf(2.5));
+}

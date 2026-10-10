@@ -1,0 +1,25 @@
+//// Decision 280 (2) — a record argument whose type is tied to the annotated
+//// function: `Cache<T>` must be the cache of what the function returns.
+
+type Product(name: string)
+
+type Cache<T>(name: string)
+
+fn cacheable<A, T>(
+    comptime decl: @Decl<fn(a: A) -> T>,
+    comptime cache: @Expr<Cache<T>>,
+) {
+    decl.setMeta("cache", cache.value.name);
+}
+
+val products = Cache<Product[]>("products");
+
+#[cacheable(products)]
+fn byCategory(c: string) -> Product[] {
+    return [Product(name: c)];
+}
+
+pub fn main() {
+    @print(@typeInfo(byCategory).meta.cacheable.cache);
+    @print(byCategory("tea")[0]?.name ?? "none");
+}

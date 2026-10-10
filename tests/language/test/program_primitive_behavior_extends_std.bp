@@ -1,0 +1,30 @@
+//// A program's own `behavior String` EXTENDS std's: its members are added to
+//// std's `String`, so std's `startsWith`, `slice` and `length` answer on
+//// `self` inside the program's default fns (typed as the primitive `string`)
+//// and on any string beside them. It used to replace std's `String` for the
+//// whole program (`unknown-primitive-method` for `"x".startsWith`) and type
+//// `self` as the nominal `String`. A `test/` cell: wasm traps on any
+//// program-declared default fn of a primitive (`05-wasm`'s row); beam answers
+//// as commonJS and erlang.
+
+behavior String {
+    default fn tailShout(self: Self) -> string {
+        val tail = self.slice(1);
+        return if (tail.startsWith("+")) tail.toUpper() else tail;
+    }
+
+    default fn twiceLen(self: Self) -> i32 {
+        return self.length() * 2;
+    }
+}
+
+test "a program's String member calls std's members on self" {
+    assert "a+b".tailShout() == "+B";
+    assert "ab".tailShout() == "b";
+    assert "abc".twiceLen() == 6;
+}
+
+test "std's String members still answer beside the program's" {
+    assert "x".startsWith("x");
+    assert "ab".slice(1) == "b";
+}

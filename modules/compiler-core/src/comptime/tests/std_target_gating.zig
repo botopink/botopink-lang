@@ -1,15 +1,19 @@
-//! STD-001 — `from "std"` imports red on a target with no `@external` coverage.
+//! STD-001 — `from "std"` imports red on a target no host binding covers.
 //!
 //! The CLI codegen path (`codegen.generate` + `cli/check.zig`) threads its target
 //! name through `comptimeMod.compile` → `analyzeSource`, which sets
 //! `env.target` so `markStdImports` reads `env.stdModuleFns` and rejects any
-//! imported std module whose `pub declare fn` lacks an `@external(<target>, …)`
-//! match. The non-codegen paths (LSP, comptime tests) pass `null` and the
+//! imported std module whose `pub declare fn` carries no
+//! `#[@External.<Target>(…)]` for that target. The non-codegen paths (LSP, comptime tests) pass `null` and the
 //! check stays off.
 
 const std = @import("std");
 const comptimeMod = @import("../../comptime.zig");
 const diagnostics = @import("../diagnostics.zig");
+/// Test-only: the one way a test spells a path it writes to (per process, so a
+/// second `zig build test` over this checkout cannot empty it mid-test).
+/// `build.zig` gives this module to the test modules alone.
+const test_scratch = @import("test_scratch");
 
 fn typeErrorMessage(outcome: anytype) []const u8 {
     return switch (outcome.typeError.kind) {
@@ -25,13 +29,13 @@ fn projectOutcome(session: anytype) @TypeOf(session.outputs.items[0].outcome) {
     return items[items.len - 1].outcome;
 }
 
-test "STD-001: import of std/process from wasm target reds" {
+test "STD-001: import of std/io/process from wasm target reds" {
     const io = std.testing.io;
     var session = try comptimeMod.compile(
         std.testing.allocator,
-        &.{.{ .path = "main.bp", .source = "import {process} from \"std\";\n" }},
+        &.{.{ .path = "main.bp", .source = "import {io.process} from \"std\";\n" }},
         io,
-        ".botopinkbuild/comptime/std_target_gating_wasm",
+        test_scratch.path(io, "comptime/std_target_gating_wasm"),
         "wasm",
     );
     defer session.deinit(std.testing.allocator);
@@ -40,15 +44,18 @@ test "STD-001: import of std/process from wasm target reds" {
     const msg = typeErrorMessage(outcome);
     try std.testing.expect(std.mem.indexOf(u8, msg, diagnostics.std_unsupported_on_target) != null);
     try std.testing.expect(std.mem.indexOf(u8, msg, "wasm") != null);
+    // The binding's spelling is the annotation's (`#[@External.Wasm]`), not
+    // the retired `@external`.
+    try std.testing.expect(std.mem.indexOf(u8, msg, "has no `#[@External.Wasm]` for target 'wasm'") != null);
 }
 
-test "STD-001: import of std/process from node target is accepted" {
+test "STD-001: import of std/io/process from node target is accepted" {
     const io = std.testing.io;
     var session = try comptimeMod.compile(
         std.testing.allocator,
-        &.{.{ .path = "main.bp", .source = "import {process} from \"std\";\n" }},
+        &.{.{ .path = "main.bp", .source = "import {io.process} from \"std\";\n" }},
         io,
-        ".botopinkbuild/comptime/std_target_gating_node",
+        test_scratch.path(io, "comptime/std_target_gating_node"),
         "node",
     );
     defer session.deinit(std.testing.allocator);
@@ -59,9 +66,9 @@ test "STD-001: null target keeps the check off (tooling parity)" {
     const io = std.testing.io;
     var session = try comptimeMod.compile(
         std.testing.allocator,
-        &.{.{ .path = "main.bp", .source = "import {process} from \"std\";\n" }},
+        &.{.{ .path = "main.bp", .source = "import {io.process} from \"std\";\n" }},
         io,
-        ".botopinkbuild/comptime/std_target_gating_null",
+        test_scratch.path(io, "comptime/std_target_gating_null"),
         null,
     );
     defer session.deinit(std.testing.allocator);

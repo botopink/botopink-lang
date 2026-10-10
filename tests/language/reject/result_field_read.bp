@@ -1,0 +1,14 @@
+//// A `@Result` is its `Ok` / `Error` carrier, not the payload, so a member
+//// that is not one of its methods (`map`, `flatMap`, `unwrapOr`, `isOk`,
+//// `isError`) is refused, located at the member, naming `try` and `unwrapOr`.
+//// `querystring.parse("a=1").length` — `parse` answers
+//// `@Result<Array<#(string, string)>, string>` — used to check, print `null`
+//// on commonJS and crash on erlang. A call of another name (`r.length()`) is
+//// refused the same way (`reject/result_unknown_method`).
+
+import {querystring} from "std";
+
+pub fn main() {
+    val fields = querystring.parse("a=1").length;
+    @print(fields);
+}

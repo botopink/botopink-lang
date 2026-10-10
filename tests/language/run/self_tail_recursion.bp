@@ -1,0 +1,37 @@
+//// 1.0.10-beta `00 · 04-js` D6 — a function that calls ITSELF in tail position
+//// must not grow the stack. Measured by rakun's front 05: `std`'s
+//// `random.intInRange` walks one frame per unit of range (its `floorWalk`
+//// helper is hand-written tail recursion), so a range of a few thousand killed
+//// the program on node and nowhere else — erlang and beam drop the frame, node
+//// does not, and commonJS emitted a plain JS call.
+////
+//// The bound is a VARIABLE on purpose: a literal one could be folded and hide
+//// the depth. 20 000 is above the ceiling the old lowering had and below the
+//// one wasm still has, measured at `3b1e2468` + this front's fix:
+////
+////   commonJS  the old `return sumDown(n - 1, …)` shape: 10 000 ok, 20 000
+////             `RangeError: Maximum call stack size exceeded`
+////   wasm      still recursion (`codegen/wat.zig` belongs to another front):
+////             30 000 ok, 40 000 `wasm trap: call stack exhausted`
+////   erlang    no ceiling that matters — a tail-recursive VM
+////
+//// `depth` is the other half of the rule and is deliberately shallow: the
+//// recursion there is under an operator, so it is NOT a tail call and still
+//// uses the stack on every backend. That is the documented limit, not an
+//// oversight — see `docs.md` § Recursion.
+
+fn sumDown(n: i32, acc: i32) -> i32 {
+    if (n == 0) return acc;
+    return sumDown(n - 1, acc + n);
+}
+
+fn depth(n: i32) -> i32 {
+    if (n == 0) return 0;
+    return 1 + depth(n - 1);
+}
+
+pub fn main() {
+    val bound = 20000;
+    @print(sumDown(bound, 0));
+    @print(depth(100));
+}

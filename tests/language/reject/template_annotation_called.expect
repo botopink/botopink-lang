@@ -1,0 +1,2 @@
+template-annotation-only: `sql` takes the annotated declaration (`comptime decl: @Decl`), so it is written as an annotation `#[sql "…"]`, never called
+13:13

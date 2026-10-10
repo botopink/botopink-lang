@@ -1,0 +1,56 @@
+//// Decision 307 — a decorator on a derived type's `val` sees a type
+//// declaration: `decl.kind` is `DeclKind.Type`, `decl.fields` the derived
+//// fields, each keeping the source field's annotations (its markers), and
+//// `Type.partial` writes each field's type `?T` — what the decorator emits
+//// runs on all four targets.
+
+import {types.Type} from "std";
+
+fn label(comptime decl: @Decl, comptime text: @Expr<string>) {}
+
+fn schema(comptime decl: @Decl) {
+    val isType = decl.kind == DeclKind.Type;
+    val fields = decl.fields
+        .map({ f ->
+            f.name
+                + ": "
+                + f.typeName
+                + f.annotations.map({ a -> " #" + a.name }).join("");
+        })
+        .join(", ");
+    @emit(
+        "pub fn "
+            + decl.name
+            + "Schema() -> string { return \""
+            + decl.name
+            + " "
+            + isType.toString()
+            + " ("
+            + fields
+            + ")\"; }",
+    );
+}
+
+type Recipe(
+    #[label("Title")] title: string,
+    description: ?string,
+    servings: i32 = 2,
+)
+
+#[schema]
+val RecipePatch = Type.partial(Recipe);
+
+#[schema]
+val RecipeTitle = Type.pick(Recipe, .title);
+
+pub fn main() {
+    @print(RecipePatchSchema());
+    @print(RecipeTitleSchema());
+    @print(
+        RecipePatch(
+            title: "Feijoada",
+            description: null,
+            servings: null,
+        ).title ?? "-",
+    );
+}

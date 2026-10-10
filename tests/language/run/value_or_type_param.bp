@@ -1,0 +1,31 @@
+//// 01-compiler/01-checker step 26 (decision 297) — a `comptime` parameter
+//// that takes a value or a type: `comptime s: Box<T> | type T`. A `Box<T>`
+//// value binds `T` from it, a type binds `T` to itself (`orDefault(User, …)`
+//// answers a `User`), and `s is type` tells them apart at compile time — the
+//// branch it does not take is not emitted. The parent binary panicked in the
+//// parser on `| type T`.
+
+type Box<T>(value: T)
+
+type User(name: string)
+
+fn pick<T>(comptime s: @Expr<Box<T> | type T>) -> string {
+    return if (s is type) "type" else "value";
+}
+
+fn orDefault<T>(comptime s: @Expr<Box<T> | type T>, fallback: T) -> T {
+    if (s is type) return fallback;
+    return s.value.value;
+}
+
+pub fn main() {
+    @print(pick(Box(value: 1)));
+    @print(pick(string));
+    @print(pick(User));
+    val n: i32 = orDefault(Box(value: 4), 9);
+    val m: i32 = orDefault(i32, 9);
+    val u: User = orDefault(User, User(name: "ana"));
+    @print(n);
+    @print(m);
+    @print(u.name);
+}

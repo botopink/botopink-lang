@@ -1,0 +1,48 @@
+//// `std/io/random` on all four targets (decision 238, `01-compiler/05-wasm`
+//// step 5): on wasm `float` is `wasi:random_f64`, `seed` / `seededFloat`
+//// the `wasi:seed_u32` / `wasi:seeded_f64` adapters (the commonJS sidecar's
+//// Mulberry32 — the same draws after the same `seed`; erlang's `exsplus`
+//// draws others), and `shuffle`, `secureToken`, `uuidV4` and `randomBytes`
+//// private `fn:` bodies — a selection shuffle over one-element slices, bytes
+//// drawn from `random_get`. Each line prints what every target agrees on.
+
+import {io} from "std";
+
+pub fn main() {
+    val r = io.random.float();
+    @print(r >= 0.0 && r < 1.0);
+    val unseeded = io.random.seededFloat();
+    @print(unseeded >= 0.0 && unseeded < 1.0);
+    io.random.seed(42);
+    val a = io.random.seededFloat();
+    val a2 = io.random.seededFloat();
+    io.random.seed(42);
+    @print(a == io.random.seededFloat());
+    @print(a != a2);
+    @print(a >= 0.0 && a < 1.0);
+    val ys = io.random.shuffle([1, 2, 3, 4, 5]);
+    @print(ys.length);
+    @print(ys.fold(0, { acc, y -> acc + y }));
+    @print([1, 2, 3, 4, 5].all({ x -> ys.contains(x) }));
+    val empty: Array<i32> = [];
+    @print(io.random.shuffle(empty).length);
+    val words = io.random.shuffle(["a", "b", "c"]);
+    @print(words.contains("a") && words.contains("b") && words.contains("c"));
+    val t = io.random.secureToken(32);
+    @print(t.length);
+    @print(t.contains("+") || t.contains("/") || t.contains("="));
+    @print(io.random.secureToken(0) == "");
+    @print(io.random.secureToken(16) != io.random.secureToken(16));
+    val u = io.random.uuidV4();
+    @print(u.length);
+    @print(u.split("-").map({ g -> g.length }));
+    @print((u.split("-").at(2) ?? "").startsWith("4"));
+    @print("89ab".contains((u.split("-").at(3) ?? "").slice(0, 1)));
+    @print(u.split("").all({ c -> "0123456789abcdef-".contains(c) }));
+    val h = io.random.randomBytes(16);
+    @print(h.length);
+    @print(h.split("").all({ c -> "0123456789abcdef".contains(c) }));
+    @print(io.random.randomBytes(0) == "");
+    val n = io.random.intInRange(1, 6);
+    @print(n >= 1 && n <= 6);
+}

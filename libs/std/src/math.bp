@@ -13,38 +13,49 @@
 
 // ── constants ────────────────────────────────────────────────────────────────
 
-pub val pi:     f64 = 3.141592653589793;
-pub val e:      f64 = 2.718281828459045;
-pub val tau:    f64 = 6.283185307179586;
-pub val sqrt2:  f64 = 1.4142135623730951;
-pub val ln2:    f64 = 0.6931471805599453;
-pub val ln10:   f64 = 2.302585092994046;
-pub val log2e:  f64 = 1.4426950408889634;
+pub val pi: f64 = 3.141592653589793;
+
+pub val e: f64 = 2.718281828459045;
+
+pub val tau: f64 = 6.283185307179586;
+
+pub val sqrt2: f64 = 1.4142135623730951;
+
+pub val ln2: f64 = 0.6931471805599453;
+
+pub val ln10: f64 = 2.302585092994046;
+
+pub val log2e: f64 = 1.4426950408889634;
+
 pub val log10e: f64 = 0.4342944819032518;
 
 // ── arithmetic + rounding ────────────────────────────────────────────────────
 // `abs` works on `f64`. Integer abs lives on the numeric tower
-// (`primitives.d.bp` Signed). `minF`/`maxF` are the float variants — the
+// (`primitives.bp` Signed). `minF`/`maxF` are the float variants — the
 // generic ones live on `Number`.
 
-#[@External.Node("Math", "abs"),
-  @External.Erlang("erlang", "abs"),
-  @External.Beam("erlang", "abs")]
+#[@External.Node("Math", "abs")]
+#[@External.Erlang("erlang", "abs")]
+#[@External.Beam("erlang", "abs")]
+#[@External.Wasm("op:f64.abs")]
 pub declare fn abs(x: f64) -> f64;
 
-#[@External.Node("Math", "floor"),
-  @External.Erlang("math", "floor"),
-  @External.Beam("math", "floor")]
+#[@External.Node("Math", "floor")]
+#[@External.Erlang("math", "floor")]
+#[@External.Beam("math", "floor")]
+#[@External.Wasm("op:f64.floor")]
 pub declare fn floor(x: f64) -> f64;
 
-#[@External.Node("Math", "round"),
-  @External.Erlang("erlang", "round"),
-  @External.Beam("erlang", "round")]
+#[@External.Node("Math", "round")]
+#[@External.Erlang("erlang", "round")]
+#[@External.Beam("erlang", "round")]
+#[@External.Wasm("fn:roundHalfUp")]
 pub declare fn round(x: f64) -> f64;
 
-#[@External.Node("Math", "trunc"),
-  @External.Erlang("erlang", "trunc"),
-  @External.Beam("erlang", "trunc")]
+#[@External.Node("Math", "trunc")]
+#[@External.Erlang("erlang", "trunc")]
+#[@External.Beam("erlang", "trunc")]
+#[@External.Wasm("op:f64.trunc")]
 pub declare fn trunc(x: f64) -> f64;
 
 // `ceil(x) = -floor(-x)` — a pure-botopink derivation that avoids the
@@ -56,25 +67,19 @@ pub fn ceil(x: f64) -> f64 {
 // `sign` returns -1.0, 0.0, or 1.0 depending on the input's sign.
 // Pure-botopink; sidesteps the inline-case template the spec describes.
 pub fn sign(x: f64) -> f64 {
-    return if (x > 0.0) {
-        1.0;
-    } else {
-        if (x < 0.0) {
-            0.0 - 1.0;
-        } else {
-            0.0;
-        };
-    };
+    return if (x > 0.0) 1.0 else if (x < 0.0) 0.0 - 1.0 else 0.0;
 }
 
-#[@External.Node("Math", "min"),
-  @External.Erlang("erlang", "min"),
-  @External.Beam("erlang", "min")]
+#[@External.Node("Math", "min")]
+#[@External.Erlang("erlang", "min")]
+#[@External.Beam("erlang", "min")]
+#[@External.Wasm("op:f64.min")]
 pub declare fn minF(a: f64, b: f64) -> f64;
 
-#[@External.Node("Math", "max"),
-  @External.Erlang("erlang", "max"),
-  @External.Beam("erlang", "max")]
+#[@External.Node("Math", "max")]
+#[@External.Erlang("erlang", "max")]
+#[@External.Beam("erlang", "max")]
+#[@External.Wasm("op:f64.max")]
 pub declare fn maxF(a: f64, b: f64) -> f64;
 
 pub fn clamp(x: f64, lo: f64, hi: f64) -> f64 {
@@ -83,44 +88,49 @@ pub fn clamp(x: f64, lo: f64, hi: f64) -> f64 {
 
 // ── powers + roots + exp/log ─────────────────────────────────────────────────
 
-#[@External.Node("Math", "sqrt"),
-  @External.Erlang("math", "sqrt"),
-  @External.Beam("math", "sqrt")]
+#[@External.Node("Math", "sqrt")]
+#[@External.Erlang("math", "sqrt")]
+#[@External.Beam("math", "sqrt")]
+#[@External.Wasm("op:f64.sqrt")]
 pub declare fn sqrt(x: f64) -> f64;
 
-#[@External.Node("Math", "pow"),
-  @External.Erlang("math", "pow"),
-  @External.Beam("math", "pow")]
+#[@External.Node("fn:powBody")]
+#[@External.Erlang("fn:powBody")]
+#[@External.Beam("fn:powBody")]
+#[@External.Wasm("fn:powBody")]
 pub declare fn pow(x: f64, y: f64) -> f64;
 
 // `cbrt(x)` via `pow(x, 1/3)`, honouring sign for negatives. Pure-botopink;
 // node has `Math.cbrt` but the erlang side has no BIF — composition is uniform.
 pub fn cbrt(x: f64) -> f64 {
-    return if (x >= 0.0) {
-        pow(x, 0.3333333333333333);
-    } else {
+    return if (x >= 0.0)
+        pow(x, 0.3333333333333333)
+    else
         0.0 - pow(0.0 - x, 0.3333333333333333);
-    };
 }
 
-#[@External.Node("Math", "exp"),
-  @External.Erlang("math", "exp"),
-  @External.Beam("math", "exp")]
+#[@External.Node("Math", "exp")]
+#[@External.Erlang("fn:expBody")]
+#[@External.Beam("fn:expBody")]
+#[@External.Wasm("fn:expBody")]
 pub declare fn exp(x: f64) -> f64;
 
-#[@External.Node("Math", "log"),
-  @External.Erlang("math", "log"),
-  @External.Beam("math", "log")]
+#[@External.Node("Math", "log")]
+#[@External.Erlang("fn:lnBody")]
+#[@External.Beam("fn:lnBody")]
+#[@External.Wasm("fn:lnBody")]
 pub declare fn ln(x: f64) -> f64;
 
-#[@External.Node("Math", "log2"),
-  @External.Erlang("math", "log2"),
-  @External.Beam("math", "log2")]
+#[@External.Node("Math", "log2")]
+#[@External.Erlang("fn:log2Body")]
+#[@External.Beam("fn:log2Body")]
+#[@External.Wasm("fn:log2Body")]
 pub declare fn log2(x: f64) -> f64;
 
-#[@External.Node("Math", "log10"),
-  @External.Erlang("math", "log10"),
-  @External.Beam("math", "log10")]
+#[@External.Node("Math", "log10")]
+#[@External.Erlang("fn:log10Body")]
+#[@External.Beam("fn:log10Body")]
+#[@External.Wasm("fn:log10Body")]
 pub declare fn log10(x: f64) -> f64;
 
 // `hypot(x, y) = sqrt(x*x + y*y)` — pure-botopink composition.
@@ -130,55 +140,2245 @@ pub fn hypot(x: f64, y: f64) -> f64 {
 
 // ── trigonometry ─────────────────────────────────────────────────────────────
 
-#[@External.Node("Math", "sin"),
-  @External.Erlang("math", "sin"),
-  @External.Beam("math", "sin")]
+#[@External.Node("Math", "sin")]
+#[@External.Erlang("fn:sinBody")]
+#[@External.Beam("fn:sinBody")]
+#[@External.Wasm("fn:sinBody")]
 pub declare fn sin(x: f64) -> f64;
 
-#[@External.Node("Math", "cos"),
-  @External.Erlang("math", "cos"),
-  @External.Beam("math", "cos")]
+#[@External.Node("Math", "cos")]
+#[@External.Erlang("fn:cosBody")]
+#[@External.Beam("fn:cosBody")]
+#[@External.Wasm("fn:cosBody")]
 pub declare fn cos(x: f64) -> f64;
 
-#[@External.Node("Math", "tan"),
-  @External.Erlang("math", "tan"),
-  @External.Beam("math", "tan")]
+#[@External.Node("Math", "tan")]
+#[@External.Erlang("fn:tanBody")]
+#[@External.Beam("fn:tanBody")]
+#[@External.Wasm("fn:tanBody")]
 pub declare fn tan(x: f64) -> f64;
 
-#[@External.Node("Math", "asin"),
-  @External.Erlang("math", "asin"),
-  @External.Beam("math", "asin")]
+#[@External.Node("Math", "asin")]
+#[@External.Erlang("fn:asinBody")]
+#[@External.Beam("fn:asinBody")]
+#[@External.Wasm("fn:asinBody")]
 pub declare fn asin(x: f64) -> f64;
 
-#[@External.Node("Math", "acos"),
-  @External.Erlang("math", "acos"),
-  @External.Beam("math", "acos")]
+#[@External.Node("Math", "acos")]
+#[@External.Erlang("fn:acosBody")]
+#[@External.Beam("fn:acosBody")]
+#[@External.Wasm("fn:acosBody")]
 pub declare fn acos(x: f64) -> f64;
 
-#[@External.Node("Math", "atan"),
-  @External.Erlang("math", "atan"),
-  @External.Beam("math", "atan")]
+#[@External.Node("Math", "atan")]
+#[@External.Erlang("fn:atanBody")]
+#[@External.Beam("fn:atanBody")]
+#[@External.Wasm("fn:atanBody")]
 pub declare fn atan(x: f64) -> f64;
 
-#[@External.Node("Math", "atan2"),
-  @External.Erlang("math", "atan2"),
-  @External.Beam("math", "atan2")]
+#[@External.Node("Math", "atan2")]
+#[@External.Erlang("fn:atan2Body")]
+#[@External.Beam("fn:atan2Body")]
+#[@External.Wasm("fn:atan2Body")]
 pub declare fn atan2(y: f64, x: f64) -> f64;
 
-#[@External.Node("Math", "sinh"),
-  @External.Erlang("math", "sinh"),
-  @External.Beam("math", "sinh")]
+#[@External.Node("Math", "sinh")]
+#[@External.Erlang("fn:sinhBody")]
+#[@External.Beam("fn:sinhBody")]
+#[@External.Wasm("fn:sinhBody")]
 pub declare fn sinh(x: f64) -> f64;
 
-#[@External.Node("Math", "cosh"),
-  @External.Erlang("math", "cosh"),
-  @External.Beam("math", "cosh")]
+#[@External.Node("Math", "cosh")]
+#[@External.Erlang("fn:coshBody")]
+#[@External.Beam("fn:coshBody")]
+#[@External.Wasm("fn:coshBody")]
 pub declare fn cosh(x: f64) -> f64;
 
-#[@External.Node("Math", "tanh"),
-  @External.Erlang("math", "tanh"),
-  @External.Beam("math", "tanh")]
+#[@External.Node("Math", "tanh")]
+#[@External.Erlang("fn:tanhBody")]
+#[@External.Beam("fn:tanhBody")]
+#[@External.Wasm("fn:tanhBody")]
 pub declare fn tanh(x: f64) -> f64;
+
+// ── the bodies (decisions 238, 263) ────────────────────────────────────────
+// Each transcendental's `fn:` binding names one of these private bodies:
+// erlang, beam and wasm run them, so a transcendental answers the same bits
+// on every target and every OS — not the platform libm OTP's `math:*` calls,
+// which differs by an ulp between glibc and Apple's (`tan(1.0)`, `asin(0.5)`).
+// commonJS keeps `Math.*`, because they are a port of the fdlibm code (Sun
+// Microsystems, 1993) Node's V8 answers `Math.*` with
+// (`deps/v8/src/base/ieee754.cc`): the same operations in the same order, so
+// every target's answer is the commonJS answer bit for bit. `pow` is the one
+// commonJS runs too (below). fdlibm reads and writes the two 32-bit words of
+// a double; botopink has no bit operation, so the words are read and written
+// with arithmetic that is exact (`highWord`, `lowWord`, `fromWords`,
+// `withLowZero`). One part is not ported: the reduction of a trigonometric
+// argument beyond 2^19·π/2 (`__kernel_rem_pio2`), which panics rather than
+// answer a wrong value. wasm has an instruction for `abs`, `floor`, `trunc`,
+// `sqrt`, `minF` and `maxF` (`op:`), which every target leaves to its host:
+// IEEE 754 makes them exact.
+
+// `Math.round`: V8's `Float64RoundUp(x)`, less one when that is more than a
+// half above `x` — a half rounds UP (`round(2.5)` is 3, `round(-2.5)` is -2)
+// and `-0.4` answers `-0`. `f64.nearest` rounds a half to even, which is why
+// this is not an `op:`.
+fn roundHalfUp(x: f64) -> f64 {
+    val up = -1.0 * floor(-1.0 * x);
+    return if (up - 0.5 > x) up - 1.0 else up;
+}
+
+// `s · h · h`: an overflow to ±Infinity (`h` = 1e300) or an underflow to ±0
+// (`h` = 1e-300) as fdlibm writes them, with `h` a parameter so no target
+// folds the product at compile time.
+fn timesHuge(s: f64, h: f64) -> f64 {
+    return s * h * h;
+}
+
+// 2^k for a whole k in -1074..1023 — every step exact.
+fn twoTo(k: f64) -> f64 {
+    var r = 1.0;
+    var n = k;
+    while (n >= 32.0) {
+        r = r * 4294967296.0;
+        n = n - 32.0;
+    }
+    while (n >= 1.0) {
+        r = r * 2.0;
+        n = n - 1.0;
+    }
+    while (n <= -32.0) {
+        r = r * 2.3283064365386963e-10;
+        n = n + 32.0;
+    }
+    while (n <= -1.0) {
+        r = r * 0.5;
+        n = n + 1.0;
+    }
+    return r;
+}
+
+// e with 2^e ≤ ax < 2^(e+1), for a positive finite ax.
+fn exponentOf(ax: f64) -> f64 {
+    var v = ax;
+    var e = 0.0;
+    while (v >= 4294967296.0) {
+        v = v * 2.3283064365386963e-10;
+        e = e + 32.0;
+    }
+    while (v >= 2.0) {
+        v = v * 0.5;
+        e = e + 1.0;
+    }
+    while (v < 2.3283064365386963e-10) {
+        v = v * 4294967296.0;
+        e = e - 32.0;
+    }
+    while (v < 1.0) {
+        v = v * 2.0;
+        e = e - 1.0;
+    }
+    return e;
+}
+
+// The 52-bit significand of a subnormal |x| as a whole number.
+fn subnormalBits(ax: f64) -> f64 {
+    return (ax * twoTo(1000.0)) * twoTo(74.0);
+}
+
+// fdlibm's `hx & 0x7fffffff`: the high 32-bit word of |x| as a whole number.
+fn highWord(x: f64) -> f64 {
+    if (x != x) return 2146959360.0;
+    val ax = abs(x);
+    if (isZero(ax)) return 0.0;
+    if (ax > 1.7976931348623157e308) return 2146435072.0;
+    val e = exponentOf(ax);
+    if (e < -1022.0) return floor(subnormalBits(ax) / 4294967296.0);
+    val m = ax * twoTo(0.0 - e);
+    return (e + 1023.0) * 1048576.0 + floor((m - 1.0) * 1048576.0);
+}
+
+// fdlibm's low word: the low 32 bits of |x|'s significand.
+fn lowWord(x: f64) -> f64 {
+    val ax = abs(x);
+    if (x != x || isZero(ax) || ax > 1.7976931348623157e308) return 0.0;
+    val e = exponentOf(ax);
+    val bits = if (e < -1022.0)
+        subnormalBits(ax)
+    else
+        (ax * twoTo(0.0 - e) - 1.0) * 4503599627370496.0;
+    return bits - floor(bits / 4294967296.0) * 4294967296.0;
+}
+
+// The positive double whose words are `hw` (below the sign) and `lw`.
+fn fromWords(hw: f64, lw: f64) -> f64 {
+    val ef = floor(hw / 1048576.0);
+    val frac = (hw - ef * 1048576.0) * 4294967296.0 + lw;
+    if (isZero(ef)) return (frac * twoTo(-1000.0)) * twoTo(-74.0);
+    return (1.0 + frac / 4503599627370496.0) * twoTo(ef - 1023.0);
+}
+
+// fdlibm's `SET_LOW_WORD(x, 0)`.
+fn withLowZero(x: f64) -> f64 {
+    val v = fromWords(highWord(x), 0.0);
+    return if (signBit(x)) -1.0 * v else v;
+}
+
+// Whether `v` carries a minus sign — `-0.0` included (fdlibm's `hx < 0`).
+// commonJS and wasm compare `-0.0` equal to `0.0` and tell the two apart by
+// `1 / v`; erlang and beam compare them unequal (`=:=`) and have no `1 / 0`.
+fn signBit(v: f64) -> bool {
+    if (v < 0.0) return true;
+    if (v > 0.0) return false;
+    if (v == 0.0 && v == -0.0) return 1.0 / v < 0.0;
+    return v == -0.0;
+}
+
+// Whether `v` is `0.0` or `-0.0` — on every target: `v == 0.0` is false for
+// `-0.0` on erlang and beam (`=:=`).
+fn isZero(v: f64) -> bool {
+    return v >= 0.0 && v <= 0.0;
+}
+
+// The exponent field of x's high word (`(hx >> 20) & 0x7ff`).
+fn exponentField(x: f64) -> f64 {
+    return floor(highWord(x) / 1048576.0);
+}
+
+// ── exp, expm1 ───────────────────────────────────────────────────────────────
+
+fn expBody(x: f64) -> f64 {
+    val hx = highWord(x);
+    val neg = signBit(x);
+    if (hx >= 1082535490.0) {
+        if (hx >= 2146435072.0) {
+            if (x != x) return x + x;
+            return if (neg) 0.0 else x;
+        }
+        if (x > 7.09782712893383973096e+02) return timesHuge(1.0, 1.0e300);
+        if (x < -7.45133219101941108420e+02)
+            return timesHuge(1.0, 9.33263618503218878990e-302);
+    }
+    var hi = 0.0;
+    var lo = 0.0;
+    var k = 0.0;
+    var r = x;
+    if (hx > 1071001154.0) {
+        if (hx < 1072734898.0) {
+            if (x == 1.0) return 2.718281828459045;
+            if (neg) {
+                hi = x + 6.93147180369123816490e-01;
+                lo = -1.90821492927058770002e-10;
+                k = -1.0;
+            } else {
+                hi = x - 6.93147180369123816490e-01;
+                lo = 1.90821492927058770002e-10;
+                k = 1.0;
+            }
+        } else {
+            val half = if (neg) -0.5 else 0.5;
+            k = trunc(1.44269504088896338700e+00 * x + half);
+            hi = x - k * 6.93147180369123816490e-01;
+            lo = k * 1.90821492927058770002e-10;
+        }
+        r = hi - lo;
+    } else if (hx < 1043333120.0) return 1.0 + x;
+    val t = r * r;
+    val twopk = if (k >= -1021.0) twoTo(k) else twoTo(k + 1000.0);
+    val c = r
+        - t
+            * (1.66666666666666019037e-01
+                + t
+                    * (-2.77777777770155933842e-03
+                        + t
+                            * (6.61375632143793436117e-05
+                                + t
+                                    * (-1.65339022054652515390e-06
+                                        + t * 4.13813679705723846039e-08))));
+    if (isZero(k)) return 1.0 - ((r * c) / (c - 2.0) - r);
+    val y = 1.0 - ((lo - (r * c) / (2.0 - c)) - hi);
+    if (k >= -1021.0) {
+        if (k == 1024.0) return y * 2.0 * 8.988465674311579539e307;
+        return y * twopk;
+    }
+    return y * twopk * 9.33263618503218878990e-302;
+}
+
+fn expm1Body(x: f64) -> f64 {
+    val hx = highWord(x);
+    val neg = signBit(x);
+    if (hx >= 1078159482.0) {
+        if (hx >= 1082535490.0) {
+            if (hx >= 2146435072.0) {
+                if (x != x) return x + x;
+                return if (neg) -1.0 else x;
+            }
+            if (x > 7.09782712893383973096e+02) return timesHuge(1.0, 1.0e300);
+        }
+        if (neg && x + 1.0e-300 < 0.0) return 1.0e-300 - 1.0;
+    }
+    var k = 0.0;
+    var r = x;
+    var c = 0.0;
+    if (hx > 1071001154.0) {
+        var hi = 0.0;
+        var lo = 0.0;
+        if (hx < 1072734898.0) {
+            if (!neg) {
+                hi = x - 6.93147180369123816490e-01;
+                lo = 1.90821492927058770002e-10;
+                k = 1.0;
+            } else {
+                hi = x + 6.93147180369123816490e-01;
+                lo = -1.90821492927058770002e-10;
+                k = -1.0;
+            }
+        } else {
+            val half = if (neg) -0.5 else 0.5;
+            k = trunc(1.44269504088896338700e+00 * x + half);
+            hi = x - k * 6.93147180369123816490e-01;
+            lo = k * 1.90821492927058770002e-10;
+        }
+        r = hi - lo;
+        c = (hi - r) - lo;
+    } else if (hx < 1016070144.0) return x;
+    val hfx = 0.5 * r;
+    val hxs = r * hfx;
+    val r1 = 1.0
+        + hxs
+            * (-3.33333333333331316428e-02
+                + hxs
+                    * (1.58730158725481460165e-03
+                        + hxs
+                            * (-7.93650757867487942473e-05
+                                + hxs
+                                    * (4.00821782732936239552e-06
+                                        + hxs * -2.01099218183624371326e-07))));
+    val t = 3.0 - r1 * hfx;
+    var e = hxs * ((r1 - t) / (6.0 - r * t));
+    if (isZero(k)) return r - (r * e - hxs);
+    val twopk = twoTo(k);
+    e = r * (e - c) - c;
+    e = e - hxs;
+    if (k == -1.0) return 0.5 * (r - e) - 0.5;
+    if (k == 1.0)
+        return if (r < -0.25) -2.0 * (e - (r + 0.5)) else 1.0 + 2.0 * (r - e);
+    if (k <= -2.0 || k > 56.0) {
+        val y = 1.0 - (e - r);
+        val scaled = if (k == 1024.0)
+            y * 2.0 * 8.98846567431158e+307
+        else
+            y * twopk;
+        return scaled - 1.0;
+    }
+    if (k < 20.0) {
+        val t2 = fromWords(1072693248.0 - twoTo(21.0 - k), 0.0);
+        return (t2 - (e - r)) * twopk;
+    }
+    val t3 = fromWords((1023.0 - k) * 1048576.0, 0.0);
+    return ((r - (e + t3)) + 1.0) * twopk;
+}
+
+// ── logarithms ───────────────────────────────────────────────────────────────
+
+// fdlibm's answer for what is not a positive finite number.
+fn logSpecial(x: f64) -> f64 {
+    if (x != x || x > 1.7976931348623157e308) return x + x;
+    if (x < 0.0) return (x - x) / (x - x);
+    return -1.0 / (x * x);
+}
+
+// `x` with its exponent set to 0 (or -1, when the mantissa's high bits pass
+// √2's — fdlibm's `(hx + 0x95f64) & 0x100000`), and how much the exponent
+// moved: `logScaled(x, 0)` answers the scaled `x`, `logScaled(x, 1)` the `k`.
+fn logScaled(x: f64, which: f64) -> f64 {
+    var k = 0.0;
+    var v = x;
+    if (x < 2.2250738585072014e-308) {
+        k = -54.0;
+        v = x * 1.80143985094819840000e+16;
+    }
+    val hw = highWord(v);
+    val ef = floor(hw / 1048576.0);
+    val m20 = hw - ef * 1048576.0;
+    val up = m20 + 614244.0 >= 1048576.0;
+    val carry = if (up) 1.0 else 0.0;
+    k = k + ef - 1023.0 + carry;
+    if (which > 0.5) return k;
+    val field = if (up) 1071644672.0 else 1072693248.0;
+    return fromWords(field + m20, lowWord(v));
+}
+
+// The high mantissa bits (`hx & 0xfffff`) the scaled `x` came from.
+fn logMantissaBits(x: f64) -> f64 {
+    val v = if (x < 2.2250738585072014e-308)
+        x * 1.80143985094819840000e+16
+    else
+        x;
+    val hw = highWord(v);
+    return hw - floor(hw / 1048576.0) * 1048576.0;
+}
+
+fn lnBody(x: f64) -> f64 {
+    if (x != x || x <= 0.0 || x > 1.7976931348623157e308) return logSpecial(x);
+    val k = logScaled(x, 1.0);
+    val f = logScaled(x, 0.0) - 1.0;
+    val m20 = logMantissaBits(x);
+    val ln2Hi = 6.93147180369123816490e-01;
+    val ln2Lo = 1.90821492927058770002e-10;
+    if (m20 >= 1048574.0 || isZero(m20)) {
+        if (isZero(f)) return if (isZero(k)) 0.0 else k * ln2Hi + k * ln2Lo;
+        val rr = f * f * (0.5 - 0.33333333333333333 * f);
+        return if (isZero(k)) f - rr else k * ln2Hi - ((rr - k * ln2Lo) - f);
+    }
+    val s = f / (2.0 + f);
+    val z = s * s;
+    val w = z * z;
+    val t1 = w
+        * (3.999999999940941908e-01
+            + w * (2.222219843214978396e-01 + w * 1.531383769920937332e-01));
+    val t2 = z
+        * (6.666666666666735130e-01
+            + w
+                * (2.857142874366239149e-01
+                    + w
+                        * (1.818357216161805012e-01
+                            + w * 1.479819860511658591e-01)));
+    val rr = t2 + t1;
+    if (m20 >= 398458.0 && m20 <= 440401.0) {
+        val hfsq = 0.5 * f * f;
+        return if (isZero(k))
+            f - (hfsq - s * (hfsq + rr))
+        else
+            k * ln2Hi - ((hfsq - (s * (hfsq + rr) + k * ln2Lo)) - f);
+    }
+    return if (isZero(k))
+        f - s * (f - rr)
+    else
+        k * ln2Hi - ((s * (f - rr) - k * ln2Lo) - f);
+}
+
+// fdlibm's `k_log1p(f)`.
+fn logOnePlusTail(f: f64) -> f64 {
+    val s = f / (2.0 + f);
+    val z = s * s;
+    val w = z * z;
+    val t1 = w
+        * (3.999999999940941908e-01
+            + w * (2.222219843214978396e-01 + w * 1.531383769920937332e-01));
+    val t2 = z
+        * (6.666666666666735130e-01
+            + w
+                * (2.857142874366239149e-01
+                    + w
+                        * (1.818357216161805012e-01
+                            + w * 1.479819860511658591e-01)));
+    val hfsq = 0.5 * f * f;
+    return s * (hfsq + (t2 + t1));
+}
+
+fn log2Body(x: f64) -> f64 {
+    if (x != x || x <= 0.0 || x > 1.7976931348623157e308) return logSpecial(x);
+    if (x == 1.0) return 0.0;
+    val y = logScaled(x, 1.0);
+    val f = logScaled(x, 0.0) - 1.0;
+    val hfsq = 0.5 * f * f;
+    val r = logOnePlusTail(f);
+    val hi = withLowZero(f - hfsq);
+    val lo = (f - hi) - hfsq + r;
+    val valHi = hi * 1.44269504072144627571e+00;
+    val valLo = (lo + hi) * 1.67517131648865118353e-10
+        + lo * 1.44269504072144627571e+00;
+    val w = y + valHi;
+    return (valLo + ((y - w) + valHi)) + w;
+}
+
+fn log10Body(x: f64) -> f64 {
+    if (x != x || x <= 0.0 || x > 1.7976931348623157e308) return logSpecial(x);
+    if (x == 1.0) return 0.0;
+    var k = 0.0;
+    var v = x;
+    if (x < 2.2250738585072014e-308) {
+        k = -54.0;
+        v = x * 1.80143985094819840000e+16;
+    }
+    val hw = highWord(v);
+    val ef = floor(hw / 1048576.0);
+    k = k + ef - 1023.0;
+    val i = if (k < 0.0) 1.0 else 0.0;
+    val scaled = fromWords(
+        hw - ef * 1048576.0 + (1023.0 - i) * 1048576.0,
+        lowWord(v),
+    );
+    val y = k + i;
+    val z = y * 3.69423907715893078616e-13
+        + 4.34294481903251816668e-01 * lnBody(scaled);
+    return z + y * 3.01029995663611771306e-01;
+}
+
+// ── pow ──────────────────────────────────────────────────────────────────────
+// glibc's `pow` (`sysdeps/ieee754/dbl-64/e_pow.c`, the algorithm since glibc
+// 2.28, from Arm's optimized-routines) as x86-64 glibc runs it: the
+// `__ieee754_pow_fma` build, whose compiler fused each `a * b + c` it could
+// into one rounding. Every target runs this body (decision 259), so a pow is
+// the same bits everywhere and Linux's `Math.pow` and `math:pow` bit for bit:
+// `pow(158.42161580281933, 2.853827476501465)` is `1896229.4525711867`.
+// log|x| is carried in double-double from a 128-entry table (`powInvc`,
+// `powLogc`, `powLogctail` — glibc's `__pow_log_data`), e^(y·log|x|) from the
+// 128 values of 2^(j/128) (`expHead`, `expTail` — `__exp_data`); the tables
+// are glibc 2.44's, read from its libm. glibc's word operations are exact
+// arithmetic here and each fused multiply-add is computed exactly
+// (`fusedMultiplyAdd`). The special values are glibc's, after ECMA-262's two
+// (`pow(x, NaN)` and `pow(±1, ±Infinity)` are NaN, where C answers 1), so
+// commonJS answers what `Math.pow` answered.
+
+// a + b − s exactly, for s the rounded sum (Knuth's two-sum).
+fn sumError(a: f64, b: f64, s: f64) -> f64 {
+    val bb = s - a;
+    return (a - (s - bb)) + (b - bb);
+}
+
+// a·b − p exactly, for p the rounded product (Dekker's two-product).
+fn productError(a: f64, b: f64, p: f64) -> f64 {
+    val ca = 134217729.0 * a;
+    val ah = ca - (ca - a);
+    val al = a - ah;
+    val cb = 134217729.0 * b;
+    val bh = cb - (cb - b);
+    val bl = b - bh;
+    return ((ah * bh - p) + ah * bl + al * bh) + al * bl;
+}
+
+// The power of two of s's leading bit, for a normal s ≠ 0 (Rump, Zimmermann,
+// Boldo and Melquiond's `ufp`: φ = 2^52 + 1, ψ = 1 − 2^-53).
+fn unitInFirstPlace(s: f64) -> f64 {
+    val q = 4503599627370497.0 * s;
+    val r = 0.9999999999999999 * q;
+    return abs(q - r);
+}
+
+// a + b rounded to odd: the exact sum when it is a double, else the one of
+// its two neighbours whose last significand bit is 1.
+fn sumRoundedToOdd(a: f64, b: f64) -> f64 {
+    val s = a + b;
+    val err = sumError(a, b, s);
+    if (isZero(err)) return s;
+    val f = unitInFirstPlace(s);
+    val ulp = f * 2.220446049250313e-16;
+    val mag = abs(s);
+    val m = mag / ulp;
+    if (m - 2.0 * floor(m * 0.5) == 1.0) return s;
+    val away = (err > 0.0) == (s > 0.0);
+    val stepped = if (away)
+        mag + ulp
+    else if (mag == f)
+        mag - ulp * 0.5
+    else
+        mag - ulp;
+    return if (s > 0.0) stepped else -1.0 * stepped;
+}
+
+// fma(a, b, c): a·b + c rounded once (Boldo and Melquiond's emulation — the
+// exact product, a two-sum, one sum rounded to odd, one rounding to nearest).
+fn fusedMultiplyAdd(a: f64, b: f64, c: f64) -> f64 {
+    val uh = a * b;
+    val ul = productError(a, b, uh);
+    val th = c + uh;
+    val tl = sumError(c, uh, th);
+    return th + sumRoundedToOdd(tl, ul);
+}
+
+// 0 when `y` is not a whole number, 1 when it is odd, 2 when it is even
+// (glibc's `checkint`).
+fn wholeKind(y: f64) -> f64 {
+    if (floor(y) != y) return 0.0;
+    if (abs(y) >= 9007199254740992.0) return 2.0;
+    val half = y * 0.5;
+    return if (floor(half) == half) 2.0 else 1.0;
+}
+
+fn powBody(x: f64, y: f64) -> f64 {
+    if (y != y) return y;
+    val ax = abs(x);
+    val ay = abs(y);
+    val inf = 1.7976931348623157e308;
+    if (ay > inf && ax == 1.0) return y - y;
+    if (isZero(y) || x == 1.0) return 1.0;
+    if (x != x) return x + y;
+    if (ay > inf) return if ((ax < 1.0) == (y > 0.0)) 0.0 else ay;
+    val odd = wholeKind(y) == 1.0;
+    val nx = signBit(x);
+    if (isZero(ax) || ax > inf) {
+        // ±0 and ±Infinity: x², negated for an odd power of a negative x
+        val x2 = if (nx && odd) -1.0 * (x * x) else x * x;
+        return if (y < 0.0) 1.0 / x2 else x2;
+    }
+    if (nx && isZero(wholeKind(y))) return (x - x) / (x - x);
+    if (ay < 2.710505431213761e-20 || ay >= 9.223372036854776e18) {
+        if (ax == 1.0) return 1.0;
+        if (ay < 2.710505431213761e-20)
+            return if (ax > 1.0) 1.0 + y else 1.0 - y;
+        return if ((ax > 1.0) == (y > 0.0))
+            timesHuge(1.0, 1.0e300)
+        else
+            timesHuge(1.0, 1.0e-300);
+    }
+    // log|x| = k·ln2 + log c + log1p(z/c − 1), |x| = 2^k·z with z in
+    // [0x1.69555p-1, 0x1.69555p0) and c near the middle of z's subinterval
+    val sub = ax < 2.2250738585072014e-308;
+    val xs = if (sub) ax * 4503599627370496.0 else ax;
+    val e = exponentOf(xs);
+    val m = xs * twoTo(0.0 - e);
+    val big = m >= 1.4114580154418945;
+    val z = if (big) m * 0.5 else m;
+    val kz = if (big) e + 1.0 else e;
+    val k = if (sub) kz - 52.0 else kz;
+    val i = if (z < 1.0)
+        floor((z - 0.7057290077209473) * 256.0)
+    else
+        floor((z - 1.0) * 128.0 + 75.3333740234375);
+    val invc = powInvc(i);
+    val logc = powLogc(i);
+    val zc = z * invc;
+    val r = (zc - 1.0) + productError(z, invc, zc);
+    val t1 = k * 0.6931471805598903 + logc;
+    val t2 = t1 + r;
+    val lo1 = fusedMultiplyAdd(k, 5.497923018708371e-14, powLogctail(i));
+    val lo2 = t1 - t2 + r;
+    val ar = -0.5 * r;
+    val ar2 = r * ar;
+    val ar3 = r * ar2;
+    val lhi = t2 + ar2;
+    val lo3 = productError(ar, r, ar2);
+    val lo4 = t2 - lhi + ar2;
+    val q = fusedMultiplyAdd(
+        ar2,
+        fusedMultiplyAdd(
+            ar2,
+            fusedMultiplyAdd(r, 1.0000415263675542, -1.142909628459501),
+            fusedMultiplyAdd(r, -0.6666666663487739, 0.7999999995323976),
+        ),
+        fusedMultiplyAdd(r, 0.5000000000000007, -0.6666666666666679),
+    );
+    val llo = fusedMultiplyAdd(ar3, q, lo1 + lo2 + lo3 + lo4);
+    val l = lhi + llo;
+    val ltail = lhi - l + llo;
+    // e^(y·log|x|), y·log|x| carried as ehi + elo
+    val ehi = y * l;
+    val elo = fusedMultiplyAdd(y, ltail, productError(y, l, ehi));
+    return powExp(ehi, elo, nx && odd);
+}
+
+// glibc's `exp_inline`: ±e^(x + xtail), the sign minus when `neg`.
+fn powExp(x: f64, xtail: f64, neg: bool) -> f64 {
+    val s = if (neg) -1.0 else 1.0;
+    val ax = abs(x);
+    if (ax < 5.551115123125783e-17) return s * (1.0 + x);
+    if (ax >= 1024.0)
+        return if (x < 0.0) timesHuge(s, 1.0e-300) else timesHuge(s, 1.0e300);
+    // x = k·ln2/128 + r, e^x = 2^(k/128)·e^r, j = k mod 128
+    val kd = fusedMultiplyAdd(184.6649652337873, x, 6755399441055744.0)
+        - 6755399441055744.0;
+    val r = fusedMultiplyAdd(
+        kd,
+        -1.2864023111638346e-14,
+        fusedMultiplyAdd(kd, -0.005415212348111709, x),
+    )
+        + xtail;
+    val j = kd - 128.0 * floor(kd / 128.0);
+    val r2 = r * r;
+    val tmp = fusedMultiplyAdd(
+        r2 * r2,
+        fusedMultiplyAdd(r, 0.008333335853059549, 0.0416666808410674),
+        fusedMultiplyAdd(
+            r2,
+            fusedMultiplyAdd(r, 0.16666666666665886, 0.49999999999996786),
+            expTail(j) + r,
+        ),
+    );
+    val n = (kd - j) / 128.0;
+    if (ax < 512.0) {
+        val scale = s * expHead(j) * twoTo(n);
+        return fusedMultiplyAdd(scale, tmp, scale);
+    }
+    // glibc's `specialcase`: the scale's exponent kept in range, then the
+    // result scaled — rounded once more in the subnormal range
+    if (kd > 0.0) {
+        val big = s * expHead(j) * twoTo(n - 1009.0);
+        return 5.486124068793689e303 * fusedMultiplyAdd(big, tmp, big);
+    }
+    val scale = s * expHead(j) * twoTo(n + 1022.0);
+    val st = scale * tmp;
+    val v = scale + st;
+    if (abs(v) >= 1.0) return 2.2250738585072014e-308 * v;
+    val one = if (v < 0.0) -1.0 else 1.0;
+    val lo0 = scale - v + st;
+    val hi = one + v;
+    val lo = one - hi + v + lo0;
+    val w = (hi + lo) - one;
+    val wz = if (w > 0.0 || w < 0.0) w else s * 0.0;
+    return 2.2250738585072014e-308 * wz;
+}
+
+// `__pow_log_data.tab[i].invc`: 1/c for the i-th of the 128 subintervals of
+// [0x1.69555p-1, 0x1.69555p0) — a number of few bits, so z/c − 1 is exact.
+fn powInvc(i: f64) -> f64 {
+    return if (i < 64.0) {
+        if (i < 32.0) {
+            if (i < 16.0) {
+                if (i < 8.0) {
+                    if (i < 4.0) {
+                        if (i < 2.0) {
+                            if (i < 1.0) 1.4140625 else 1.40625;
+                        } else if (i < 3.0) 1.3984375 else 1.390625;
+                    } else if (i < 6.0) {
+                        if (i < 5.0) 1.3828125 else 1.375;
+                    } else if (i < 7.0) 1.3671875 else 1.359375;
+                } else if (i < 12.0) {
+                    if (i < 10.0) {
+                        if (i < 9.0) 1.3515625 else 1.34375;
+                    } else if (i < 11.0) 1.3359375 else 1.3359375;
+                } else if (i < 14.0) {
+                    if (i < 13.0) 1.328125 else 1.3203125;
+                } else if (i < 15.0) 1.3125 else 1.3046875;
+            } else if (i < 24.0) {
+                if (i < 20.0) {
+                    if (i < 18.0) {
+                        if (i < 17.0) 1.296875 else 1.2890625;
+                    } else if (i < 19.0) 1.2890625 else 1.28125;
+                } else if (i < 22.0) {
+                    if (i < 21.0) 1.2734375 else 1.265625;
+                } else if (i < 23.0) 1.2578125 else 1.25;
+            } else if (i < 28.0) {
+                if (i < 26.0) {
+                    if (i < 25.0) 1.25 else 1.2421875;
+                } else if (i < 27.0) 1.234375 else 1.2265625;
+            } else if (i < 30.0) {
+                if (i < 29.0) 1.2265625 else 1.21875;
+            } else if (i < 31.0) 1.2109375 else 1.203125;
+        } else if (i < 48.0) {
+            if (i < 40.0) {
+                if (i < 36.0) {
+                    if (i < 34.0) {
+                        if (i < 33.0) 1.203125 else 1.1953125;
+                    } else if (i < 35.0) 1.1875 else 1.1875;
+                } else if (i < 38.0) {
+                    if (i < 37.0) 1.1796875 else 1.171875;
+                } else if (i < 39.0) 1.171875 else 1.1640625;
+            } else if (i < 44.0) {
+                if (i < 42.0) {
+                    if (i < 41.0) 1.15625 else 1.1484375;
+                } else if (i < 43.0) 1.1484375 else 1.140625;
+            } else if (i < 46.0) {
+                if (i < 45.0) 1.140625 else 1.1328125;
+            } else if (i < 47.0) 1.125 else 1.125;
+        } else if (i < 56.0) {
+            if (i < 52.0) {
+                if (i < 50.0) {
+                    if (i < 49.0) 1.1171875 else 1.109375;
+                } else if (i < 51.0) 1.109375 else 1.1015625;
+            } else if (i < 54.0) {
+                if (i < 53.0) 1.1015625 else 1.09375;
+            } else if (i < 55.0) 1.0859375 else 1.0859375;
+        } else if (i < 60.0) {
+            if (i < 58.0) {
+                if (i < 57.0) 1.078125 else 1.078125;
+            } else if (i < 59.0) 1.0703125 else 1.0625;
+        } else if (i < 62.0) {
+            if (i < 61.0) 1.0625 else 1.0546875;
+        } else if (i < 63.0) 1.0546875 else 1.046875;
+    } else if (i < 96.0) {
+        if (i < 80.0) {
+            if (i < 72.0) {
+                if (i < 68.0) {
+                    if (i < 66.0) {
+                        if (i < 65.0) 1.046875 else 1.0390625;
+                    } else if (i < 67.0) 1.0390625 else 1.03125;
+                } else if (i < 70.0) {
+                    if (i < 69.0) 1.03125 else 1.0234375;
+                } else if (i < 71.0) 1.015625 else 1.015625;
+            } else if (i < 76.0) {
+                if (i < 74.0) {
+                    if (i < 73.0) 1.0078125 else 1.0078125;
+                } else if (i < 75.0) 1.0 else 1.0;
+            } else if (i < 78.0) {
+                if (i < 77.0) 0.9921875 else 0.984375;
+            } else if (i < 79.0) 0.9765625 else 0.96875;
+        } else if (i < 88.0) {
+            if (i < 84.0) {
+                if (i < 82.0) {
+                    if (i < 81.0) 0.9609375 else 0.953125;
+                } else if (i < 83.0) 0.9453125 else 0.94140625;
+            } else if (i < 86.0) {
+                if (i < 85.0) 0.93359375 else 0.92578125;
+            } else if (i < 87.0) 0.91796875 else 0.9140625;
+        } else if (i < 92.0) {
+            if (i < 90.0) {
+                if (i < 89.0) 0.90625 else 0.8984375;
+            } else if (i < 91.0) 0.89453125 else 0.88671875;
+        } else if (i < 94.0) {
+            if (i < 93.0) 0.8828125 else 0.875;
+        } else if (i < 95.0) 0.87109375 else 0.86328125;
+    } else if (i < 112.0) {
+        if (i < 104.0) {
+            if (i < 100.0) {
+                if (i < 98.0) {
+                    if (i < 97.0) 0.859375 else 0.8515625;
+                } else if (i < 99.0) 0.84765625 else 0.83984375;
+            } else if (i < 102.0) {
+                if (i < 101.0) 0.8359375 else 0.83203125;
+            } else if (i < 103.0) 0.82421875 else 0.8203125;
+        } else if (i < 108.0) {
+            if (i < 106.0) {
+                if (i < 105.0) 0.8125 else 0.80859375;
+            } else if (i < 107.0) 0.8046875 else 0.80078125;
+        } else if (i < 110.0) {
+            if (i < 109.0) 0.79296875 else 0.7890625;
+        } else if (i < 111.0) 0.78515625 else 0.78125;
+    } else if (i < 120.0) {
+        if (i < 116.0) {
+            if (i < 114.0) {
+                if (i < 113.0) 0.7734375 else 0.76953125;
+            } else if (i < 115.0) 0.765625 else 0.76171875;
+        } else if (i < 118.0) {
+            if (i < 117.0) 0.7578125 else 0.75390625;
+        } else if (i < 119.0) 0.74609375 else 0.7421875;
+    } else if (i < 124.0) {
+        if (i < 122.0) {
+            if (i < 121.0) 0.73828125 else 0.734375;
+        } else if (i < 123.0) 0.73046875 else 0.7265625;
+    } else if (i < 126.0) {
+        if (i < 125.0) 0.72265625 else 0.71875;
+    } else if (i < 127.0) 0.71484375 else 0.7109375;
+}
+
+// `__pow_log_data.tab[i].logc`: log c, its last bits rounded away so
+// k·ln2hi + logc is exact.
+fn powLogc(i: f64) -> f64 {
+    return if (i < 64.0) {
+        if (i < 32.0) {
+            if (i < 16.0) {
+                if (i < 8.0) {
+                    if (i < 4.0) {
+                        if (i < 2.0) {
+                            if (i < 1.0)
+                                -0.3464667673462145
+                            else
+                                -0.34092658697056777;
+                        } else if (i < 3.0)
+                            -0.3353555419211034
+                        else
+                            -0.3297532863724655;
+                    } else if (i < 6.0) {
+                        if (i < 5.0)
+                            -0.32411946865420305
+                        else
+                            -0.31845373111855224;
+                    } else if (i < 7.0)
+                        -0.31275571000389846
+                    else
+                        -0.3070250352949415;
+                } else if (i < 12.0) {
+                    if (i < 10.0) {
+                        if (i < 9.0)
+                            -0.3012613305781997
+                        else
+                            -0.2954642128938758;
+                    } else if (i < 11.0)
+                        -0.28963329258306203
+                    else
+                        -0.28963329258306203;
+                } else if (i < 14.0) {
+                    if (i < 13.0)
+                        -0.28376817313062475
+                    else
+                        -0.27786845100342816;
+                } else if (i < 15.0)
+                    -0.2719337154836694
+                else
+                    -0.2659635484970977;
+            } else if (i < 24.0) {
+                if (i < 20.0) {
+                    if (i < 18.0) {
+                        if (i < 17.0)
+                            -0.25995752443691345
+                        else
+                            -0.25391520998095984;
+                    } else if (i < 19.0)
+                        -0.25391520998095984
+                    else
+                        -0.2478361639045943;
+                } else if (i < 22.0) {
+                    if (i < 21.0) -0.2417199368871934 else -0.23556607131274632;
+                } else if (i < 23.0)
+                    -0.22937410106487732
+                else
+                    -0.22314355131425145;
+            } else if (i < 28.0) {
+                if (i < 26.0) {
+                    if (i < 25.0)
+                        -0.22314355131425145
+                    else
+                        -0.21687393830063684;
+                } else if (i < 27.0) -0.21056476910735 else -0.2042155414286526;
+            } else if (i < 30.0) {
+                if (i < 29.0) -0.2042155414286526 else -0.19782574332987224;
+            } else if (i < 31.0) -0.19139485299967873 else -0.18492233849406148;
+        } else if (i < 48.0) {
+            if (i < 40.0) {
+                if (i < 36.0) {
+                    if (i < 34.0) {
+                        if (i < 33.0)
+                            -0.18492233849406148
+                        else
+                            -0.1784076574728033;
+                    } else if (i < 35.0)
+                        -0.17185025692663203
+                    else
+                        -0.17185025692663203;
+                } else if (i < 38.0) {
+                    if (i < 37.0) -0.1652495728952772 else -0.15860503017665906;
+                } else if (i < 39.0)
+                    -0.15860503017665906
+                else
+                    -0.15191604202584585;
+            } else if (i < 44.0) {
+                if (i < 42.0) {
+                    if (i < 41.0) -0.1451820098444614 else -0.13840232285906495;
+                } else if (i < 43.0)
+                    -0.13840232285906495
+                else
+                    -0.131576357788731;
+            } else if (i < 46.0) {
+                if (i < 45.0) -0.131576357788731 else -0.12470347850091912;
+            } else if (i < 47.0) -0.11778303565643 else -0.11778303565643;
+        } else if (i < 56.0) {
+            if (i < 52.0) {
+                if (i < 50.0) {
+                    if (i < 49.0)
+                        -0.11081436634026431
+                    else
+                        -0.10379679368168127;
+                } else if (i < 51.0)
+                    -0.10379679368168127
+                else
+                    -0.09672962645856842;
+            } else if (i < 54.0) {
+                if (i < 53.0) -0.09672962645856842 else -0.089612158689647;
+            } else if (i < 55.0) -0.08244366921110213 else -0.08244366921110213;
+        } else if (i < 60.0) {
+            if (i < 58.0) {
+                if (i < 57.0) -0.07522342123763792 else -0.07522342123763792;
+            } else if (i < 59.0) -0.06795066190852594 else -0.06062462181648698;
+        } else if (i < 62.0) {
+            if (i < 61.0) -0.06062462181648698 else -0.053244514518837605;
+        } else if (i < 63.0) -0.053244514518837605 else -0.045809536031242715;
+    } else if (i < 96.0) {
+        if (i < 80.0) {
+            if (i < 72.0) {
+                if (i < 68.0) {
+                    if (i < 66.0) {
+                        if (i < 65.0)
+                            -0.045809536031242715
+                        else
+                            -0.038318864302141264;
+                    } else if (i < 67.0)
+                        -0.038318864302141264
+                    else
+                        -0.03077165866670839;
+                } else if (i < 70.0) {
+                    if (i < 69.0)
+                        -0.03077165866670839
+                    else
+                        -0.023167059281490765;
+                } else if (i < 71.0)
+                    -0.015504186535963527
+                else
+                    -0.015504186535963527;
+            } else if (i < 76.0) {
+                if (i < 74.0) {
+                    if (i < 73.0)
+                        -0.0077821404420319595
+                    else
+                        -0.0077821404420319595;
+                } else if (i < 75.0) 0.0 else 0.0;
+            } else if (i < 78.0) {
+                if (i < 77.0) 0.007843177461040796 else 0.01574835696817445;
+            } else if (i < 79.0) 0.023716526617363343 else 0.03174869831457272;
+        } else if (i < 88.0) {
+            if (i < 84.0) {
+                if (i < 82.0) {
+                    if (i < 81.0)
+                        0.039845908547249564
+                    else
+                        0.048009219186383234;
+                } else if (i < 83.0)
+                    0.056239718322899535
+                else
+                    0.06038051098892083;
+            } else if (i < 86.0) {
+                if (i < 85.0) 0.06871389254808946 else 0.07711730334438016;
+            } else if (i < 87.0) 0.08559193033545398 else 0.08985632912185793;
+        } else if (i < 92.0) {
+            if (i < 90.0) {
+                if (i < 89.0) 0.09844007281321865 else 0.10709813555638448;
+            } else if (i < 91.0) 0.11145544092528326 else 0.12022742699821265;
+        } else if (i < 94.0) {
+            if (i < 93.0) 0.12464244520731427 else 0.13353139262449076;
+        } else if (i < 95.0) 0.13800567301939282 else 0.14701474296180095;
+    } else if (i < 112.0) {
+        if (i < 104.0) {
+            if (i < 100.0) {
+                if (i < 98.0) {
+                    if (i < 97.0) 0.15154989812720032 else 0.16068238169043525;
+                } else if (i < 99.0)
+                    0.16528009093906348
+                else
+                    0.17453941635187675;
+            } else if (i < 102.0) {
+                if (i < 101.0) 0.17920142945774842 else 0.18388527877016259;
+            } else if (i < 103.0) 0.1933193110035063 else 0.19806991376208316;
+        } else if (i < 108.0) {
+            if (i < 106.0) {
+                if (i < 105.0) 0.20763936477828793 else 0.21245865121420593;
+            } else if (i < 107.0) 0.21730127569003344 else 0.22216746534115828;
+        } else if (i < 110.0) {
+            if (i < 109.0) 0.2319714654378231 else 0.2369097470783572;
+        } else if (i < 111.0) 0.24187253642048745 else 0.2468600779315011;
+    } else if (i < 120.0) {
+        if (i < 116.0) {
+            if (i < 114.0) {
+                if (i < 113.0) 0.2569104137850218 else 0.26197371574153294;
+            } else if (i < 115.0) 0.2670627852490952 else 0.27217788591576664;
+        } else if (i < 118.0) {
+            if (i < 117.0) 0.27731928541618345 else 0.28248725557466514;
+        } else if (i < 119.0) 0.29290401643288533 else 0.29815337231912054;
+    } else if (i < 124.0) {
+        if (i < 122.0) {
+            if (i < 121.0) 0.3034304294199046 else 0.30873548164959175;
+        } else if (i < 123.0) 0.3140688276249648 else 0.31943077076641657;
+    } else if (i < 126.0) {
+        if (i < 125.0) 0.3248216194012912 else 0.33024168687052224;
+    } else if (i < 127.0) 0.3356912916381134 else 0.3411707574027787;
+}
+
+// `__pow_log_data.tab[i].logctail`: log c − logc.
+fn powLogctail(i: f64) -> f64 {
+    return if (i < 64.0) {
+        if (i < 32.0) {
+            if (i < 16.0) {
+                if (i < 8.0) {
+                    if (i < 4.0) {
+                        if (i < 2.0) {
+                            if (i < 1.0)
+                                5.929407345889625e-15
+                            else
+                                -2.544157440035963e-14;
+                        } else if (i < 3.0)
+                            -3.443525940775045e-14
+                        else
+                            -2.500123826022799e-15;
+                    } else if (i < 6.0) {
+                        if (i < 5.0)
+                            -8.929337133850617e-15
+                        else
+                            1.7625431312172662e-14;
+                    } else if (i < 7.0)
+                        1.5688303180062087e-15
+                    else
+                        2.9655274673691784e-14;
+                } else if (i < 12.0) {
+                    if (i < 10.0) {
+                        if (i < 9.0)
+                            3.7923164802093147e-14
+                        else
+                            3.993416384387844e-14;
+                    } else if (i < 11.0)
+                        1.9352855826489123e-14
+                    else
+                        1.9352855826489123e-14;
+                } else if (i < 14.0) {
+                    if (i < 13.0)
+                        -1.9852665484979036e-14
+                    else
+                        -2.814323765595281e-14;
+                } else if (i < 15.0)
+                    2.7643769993528702e-14
+                else
+                    -4.025092402293806e-14;
+            } else if (i < 24.0) {
+                if (i < 20.0) {
+                    if (i < 18.0) {
+                        if (i < 17.0)
+                            -1.2621729398885316e-14
+                        else
+                            -3.600176732637335e-15;
+                    } else if (i < 19.0)
+                        -3.600176732637335e-15
+                    else
+                        1.3029797173308663e-14;
+                } else if (i < 22.0) {
+                    if (i < 21.0)
+                        4.8230289429940886e-14
+                    else
+                        -2.0592242769647135e-14;
+                } else if (i < 23.0)
+                    3.149265065191484e-14
+                else
+                    4.169796584527195e-14;
+            } else if (i < 28.0) {
+                if (i < 26.0) {
+                    if (i < 25.0)
+                        4.169796584527195e-14
+                    else
+                        2.2477465222466186e-14;
+                } else if (i < 27.0)
+                    3.6507188831790577e-16
+                else
+                    -3.827767260205414e-14;
+            } else if (i < 30.0) {
+                if (i < 29.0)
+                    -3.827767260205414e-14
+                else
+                    -4.7641388950792196e-14;
+            } else if (i < 31.0)
+                4.9278276214647115e-14
+            else
+                4.9485167661250996e-14;
+        } else if (i < 48.0) {
+            if (i < 40.0) {
+                if (i < 36.0) {
+                    if (i < 34.0) {
+                        if (i < 33.0)
+                            4.9485167661250996e-14
+                        else
+                            -1.5003333854266542e-14;
+                    } else if (i < 35.0)
+                        -2.7194441649495324e-14
+                    else
+                        -2.7194441649495324e-14;
+                } else if (i < 38.0) {
+                    if (i < 37.0)
+                        -2.99659267292569e-14
+                    else
+                        2.0472357800461955e-14;
+                } else if (i < 39.0)
+                    2.0472357800461955e-14
+                else
+                    3.879296723063646e-15;
+            } else if (i < 44.0) {
+                if (i < 42.0) {
+                    if (i < 41.0)
+                        -3.6506824353335045e-14
+                    else
+                        -5.4183331379008994e-14;
+                } else if (i < 43.0)
+                    -5.4183331379008994e-14
+                else
+                    1.1729485484531301e-14;
+            } else if (i < 46.0) {
+                if (i < 45.0)
+                    1.1729485484531301e-14
+                else
+                    -3.811763084710266e-14;
+            } else if (i < 47.0)
+                4.654729747598445e-14
+            else
+                4.654729747598445e-14;
+        } else if (i < 56.0) {
+            if (i < 52.0) {
+                if (i < 50.0) {
+                    if (i < 49.0)
+                        -2.5799991283069902e-14
+                    else
+                        3.7700471749674615e-14;
+                } else if (i < 51.0)
+                    3.7700471749674615e-14
+                else
+                    1.7306161136093256e-14;
+            } else if (i < 54.0) {
+                if (i < 53.0)
+                    1.7306161136093256e-14
+                else
+                    -4.012913552726574e-14;
+            } else if (i < 55.0)
+                2.7541708360737882e-14
+            else
+                2.7541708360737882e-14;
+        } else if (i < 60.0) {
+            if (i < 58.0) {
+                if (i < 57.0)
+                    5.0396178134370583e-14
+                else
+                    5.0396178134370583e-14;
+            } else if (i < 59.0)
+                1.8195060030168815e-14
+            else
+                5.213620639136504e-14;
+        } else if (i < 62.0) {
+            if (i < 61.0) 5.213620639136504e-14 else 2.532168943117445e-14;
+        } else if (i < 63.0) 2.532168943117445e-14 else -5.148849572685811e-14;
+    } else if (i < 96.0) {
+        if (i < 80.0) {
+            if (i < 72.0) {
+                if (i < 68.0) {
+                    if (i < 66.0) {
+                        if (i < 65.0)
+                            -5.148849572685811e-14
+                        else
+                            4.6652946995830086e-15;
+                    } else if (i < 67.0)
+                        4.6652946995830086e-15
+                    else
+                        -4.529814257790929e-14;
+                } else if (i < 70.0) {
+                    if (i < 69.0)
+                        -4.529814257790929e-14
+                    else
+                        -4.361324067851568e-14;
+                } else if (i < 71.0)
+                    -1.7274567499706107e-15
+                else
+                    -1.7274567499706107e-15;
+            } else if (i < 76.0) {
+                if (i < 74.0) {
+                    if (i < 73.0)
+                        -2.298941004620351e-14
+                    else
+                        -2.298941004620351e-14;
+                } else if (i < 75.0) 0.0 else 0.0;
+            } else if (i < 78.0) {
+                if (i < 77.0)
+                    -1.4902732911301337e-14
+                else
+                    -3.527980389655325e-14;
+            } else if (i < 79.0)
+                -4.730054772033249e-14
+            else
+                7.580310369375161e-15;
+        } else if (i < 88.0) {
+            if (i < 84.0) {
+                if (i < 82.0) {
+                    if (i < 81.0)
+                        -4.9893776716773285e-14
+                    else
+                        -2.262629393030674e-14;
+                } else if (i < 83.0)
+                    -2.345674491018699e-14
+                else
+                    -1.3352588834854848e-14;
+            } else if (i < 86.0) {
+                if (i < 85.0)
+                    -3.765296820388875e-14
+                else
+                    5.1128335719851986e-14;
+            } else if (i < 87.0)
+                -5.046674438470119e-14
+            else
+                3.1218748807418837e-15;
+        } else if (i < 92.0) {
+            if (i < 90.0) {
+                if (i < 89.0)
+                    3.3871241029241416e-14
+                else
+                    -1.7376727386423858e-14;
+            } else if (i < 91.0)
+                3.957125899799804e-14
+            else
+                -5.2849453521890294e-14;
+        } else if (i < 94.0) {
+            if (i < 93.0) -3.767012502308738e-14 else 3.1859736349078334e-14;
+        } else if (i < 95.0) 5.0900642926060466e-14 else 8.710783796122478e-15;
+    } else if (i < 112.0) {
+        if (i < 104.0) {
+            if (i < 100.0) {
+                if (i < 98.0) {
+                    if (i < 97.0)
+                        6.157896229122976e-16
+                    else
+                        3.821577743916796e-14;
+                } else if (i < 99.0)
+                    3.9440046718453496e-14
+                else
+                    2.2924522154618074e-14;
+            } else if (i < 102.0) {
+                if (i < 101.0)
+                    -3.742530094732263e-14
+                else
+                    -2.5223102140407338e-14;
+            } else if (i < 103.0)
+                -1.0320443688698849e-14
+            else
+                1.0634128304268335e-14;
+        } else if (i < 108.0) {
+            if (i < 106.0) {
+                if (i < 105.0)
+                    -4.3425422595242564e-14
+                else
+                    -1.2527395755711364e-14;
+            } else if (i < 107.0)
+                -5.204008743405884e-14
+            else
+                -3.979844515951702e-15;
+        } else if (i < 110.0) {
+            if (i < 109.0) -4.7955860343296286e-14 else 5.015686013791602e-16;
+        } else if (i < 111.0)
+            -7.252318953240293e-16
+        else
+            2.4688324156011588e-14;
+    } else if (i < 120.0) {
+        if (i < 116.0) {
+            if (i < 114.0) {
+                if (i < 113.0) 5.465121253624792e-15 else 4.102651071698446e-14;
+            } else if (i < 115.0)
+                -4.996736502345936e-14
+            else
+                4.903580708156347e-14;
+        } else if (i < 118.0) {
+            if (i < 117.0) 5.089628039500759e-14 else 1.1782016386565151e-14;
+        } else if (i < 119.0)
+            4.727452940514406e-14
+        else
+            -4.4204083338755686e-14;
+    } else if (i < 124.0) {
+        if (i < 122.0) {
+            if (i < 121.0) 1.548345993498083e-14 else 2.1522127491642888e-14;
+        } else if (i < 123.0)
+            1.1054030169005386e-14
+        else
+            -5.534326352070679e-14;
+    } else if (i < 126.0) {
+        if (i < 125.0) -5.351646604259541e-14 else 5.4612144489920215e-14;
+    } else if (i < 127.0) 2.8136969901227338e-14 else -1.156568624616423e-14;
+}
+
+// 2^(j/128) rounded to the nearest double (`__exp_data.tab[2j + 1]` with
+// its exponent bits restored).
+fn expHead(j: f64) -> f64 {
+    return if (j < 64.0) {
+        if (j < 32.0) {
+            if (j < 16.0) {
+                if (j < 8.0) {
+                    if (j < 4.0) {
+                        if (j < 2.0) {
+                            if (j < 1.0) 1.0 else 1.0054299011128027;
+                        } else if (j < 3.0)
+                            1.0108892860517005
+                        else
+                            1.016378314910953;
+                    } else if (j < 6.0) {
+                        if (j < 5.0) 1.0218971486541166 else 1.0274459491187637;
+                    } else if (j < 7.0)
+                        1.0330248790212284
+                    else
+                        1.0386341019613787;
+                } else if (j < 12.0) {
+                    if (j < 10.0) {
+                        if (j < 9.0) 1.0442737824274138 else 1.0499440858006872;
+                    } else if (j < 11.0)
+                        1.0556451783605572
+                    else
+                        1.061377227289262;
+                } else if (j < 14.0) {
+                    if (j < 13.0) 1.0671404006768237 else 1.0729348675259756;
+                } else if (j < 15.0) 1.0787607977571199 else 1.0846183622133092;
+            } else if (j < 24.0) {
+                if (j < 20.0) {
+                    if (j < 18.0) {
+                        if (j < 17.0)
+                            1.0905077326652577
+                        else
+                            1.0964290818163769;
+                    } else if (j < 19.0)
+                        1.102382583307841
+                    else
+                        1.1083684117236787;
+                } else if (j < 22.0) {
+                    if (j < 21.0) 1.1143867425958924 else 1.1204377524096067;
+                } else if (j < 23.0) 1.1265216186082418 else 1.1326385195987192;
+            } else if (j < 28.0) {
+                if (j < 26.0) {
+                    if (j < 25.0) 1.1387886347566916 else 1.1449721444318042;
+                } else if (j < 27.0) 1.1511892299529827 else 1.1574400736337511;
+            } else if (j < 30.0) {
+                if (j < 29.0) 1.1637248587775775 else 1.1700437696832502;
+            } else if (j < 31.0) 1.1763969916502812 else 1.182784710984341;
+        } else if (j < 48.0) {
+            if (j < 40.0) {
+                if (j < 36.0) {
+                    if (j < 34.0) {
+                        if (j < 33.0) 1.189207115002721 else 1.1956643920398273;
+                    } else if (j < 35.0)
+                        1.202156731452703
+                    else
+                        1.2086843236265816;
+                } else if (j < 38.0) {
+                    if (j < 37.0) 1.215247359980469 else 1.2218460329727576;
+                } else if (j < 39.0) 1.22848053610687 else 1.2351510639369334;
+            } else if (j < 44.0) {
+                if (j < 42.0) {
+                    if (j < 41.0) 1.241857812073484 else 1.2486009771892048;
+                } else if (j < 43.0) 1.255380757024691 else 1.2621973503942507;
+            } else if (j < 46.0) {
+                if (j < 45.0) 1.2690509571917332 else 1.275941778396392;
+            } else if (j < 47.0) 1.2828700160787783 else 1.2898358734066657;
+        } else if (j < 56.0) {
+            if (j < 52.0) {
+                if (j < 50.0) {
+                    if (j < 49.0) 1.2968395546510096 else 1.3038812651919358;
+                } else if (j < 51.0) 1.3109612115247644 else 1.318079601266064;
+            } else if (j < 54.0) {
+                if (j < 53.0) 1.3252366431597413 else 1.3324325470831615;
+            } else if (j < 55.0) 1.339667524053303 else 1.3469417862329458;
+        } else if (j < 60.0) {
+            if (j < 58.0) {
+                if (j < 57.0) 1.3542555469368927 else 1.3616090206382248;
+            } else if (j < 59.0) 1.3690024229745905 else 1.3764359707545302;
+        } else if (j < 62.0) {
+            if (j < 61.0) 1.383909881963832 else 1.3914243757719262;
+        } else if (j < 63.0) 1.3989796725383112 else 1.4065759938190154;
+    } else if (j < 96.0) {
+        if (j < 80.0) {
+            if (j < 72.0) {
+                if (j < 68.0) {
+                    if (j < 66.0) {
+                        if (j < 65.0)
+                            1.4142135623730951
+                        else
+                            1.4218926021691656;
+                    } else if (j < 67.0)
+                        1.42961333839197
+                    else
+                        1.4373759974489824;
+                } else if (j < 70.0) {
+                    if (j < 69.0) 1.4451808069770467 else 1.4530279958490526;
+                } else if (j < 71.0) 1.460917794180647 else 1.4688504333369818;
+            } else if (j < 76.0) {
+                if (j < 74.0) {
+                    if (j < 73.0) 1.4768261459394993 else 1.4848451658727524;
+                } else if (j < 75.0) 1.4929077282912648 else 1.5010140696264256;
+            } else if (j < 78.0) {
+                if (j < 77.0) 1.5091644275934228 else 1.5173590411982147;
+            } else if (j < 79.0) 1.5255981507445384 else 1.533881997840956;
+        } else if (j < 88.0) {
+            if (j < 84.0) {
+                if (j < 82.0) {
+                    if (j < 81.0) 1.5422108254079407 else 1.550584877685;
+                } else if (j < 83.0) 1.559004400237837 else 1.567469639965553;
+            } else if (j < 86.0) {
+                if (j < 85.0) 1.5759808451078865 else 1.5845382652524937;
+            } else if (j < 87.0) 1.593142151342267 else 1.6017927556826934;
+        } else if (j < 92.0) {
+            if (j < 90.0) {
+                if (j < 89.0) 1.6104903319492543 else 1.6192351351948637;
+            } else if (j < 91.0) 1.6280274218573478 else 1.6368674497669644;
+        } else if (j < 94.0) {
+            if (j < 93.0) 1.645755478153965 else 1.6546917676561943;
+        } else if (j < 95.0) 1.6636765803267364 else 1.6727101796415966;
+    } else if (j < 112.0) {
+        if (j < 104.0) {
+            if (j < 100.0) {
+                if (j < 98.0) {
+                    if (j < 97.0) 1.681792830507429 else 1.6909247992693053;
+                } else if (j < 99.0) 1.7001063537185235 else 1.709337763100463;
+            } else if (j < 102.0) {
+                if (j < 101.0) 1.718619298122478 else 1.7279512309618377;
+            } else if (j < 103.0) 1.7373338352737062 else 1.746767386199169;
+        } else if (j < 108.0) {
+            if (j < 106.0) {
+                if (j < 105.0) 1.7562521603732995 else 1.7657884359332727;
+            } else if (j < 107.0) 1.7753764925265212 else 1.785016611318935;
+        } else if (j < 110.0) {
+            if (j < 109.0) 1.7947090750031072 else 1.804454167806624;
+        } else if (j < 111.0) 1.8142521755003989 else 1.8241033854070534;
+    } else if (j < 120.0) {
+        if (j < 116.0) {
+            if (j < 114.0) {
+                if (j < 113.0) 1.8340080864093424 else 1.843966568958626;
+            } else if (j < 115.0) 1.8539791250833855 else 1.864046048397789;
+        } else if (j < 118.0) {
+            if (j < 117.0) 1.8741676341103 else 1.8843441790323345;
+        } else if (j < 119.0) 1.8945759815869656 else 1.9048633418176741;
+    } else if (j < 124.0) {
+        if (j < 122.0) {
+            if (j < 121.0) 1.9152065613971474 else 1.925605943636125;
+        } else if (j < 123.0) 1.9360617934922943 else 1.9465744175792332;
+    } else if (j < 126.0) {
+        if (j < 125.0) 1.9571441241754002 else 1.9677712232331759;
+    } else if (j < 127.0) 1.978456026387951 else 1.9891988469672663;
+}
+
+// `__exp_data.tab[2j]`: 2^(j/128) / expHead(j) − 1.
+fn expTail(j: f64) -> f64 {
+    return if (j < 64.0) {
+        if (j < 32.0) {
+            if (j < 16.0) {
+                if (j < 8.0) {
+                    if (j < 4.0) {
+                        if (j < 2.0) {
+                            if (j < 1.0) 0.0 else 9.447885451727066e-17;
+                        } else if (j < 3.0)
+                            -1.507066976926039e-17
+                        else
+                            -5.679155082825012e-17;
+                    } else if (j < 6.0) {
+                        if (j < 5.0)
+                            4.9997448722726326e-17
+                        else
+                            -4.823683599994895e-17;
+                    } else if (j < 7.0)
+                        7.357846871247418e-18
+                    else
+                        5.773230223741951e-17;
+                } else if (j < 12.0) {
+                    if (j < 10.0) {
+                        if (j < 9.0)
+                            8.189317638195515e-17
+                        else
+                            5.326891139980878e-17;
+                    } else if (j < 11.0)
+                        1.6665881442326747e-18
+                    else
+                        -1.128113245461828e-17;
+                } else if (j < 14.0) {
+                    if (j < 13.0)
+                        -7.402825309426177e-17
+                    else
+                        -3.578659767309563e-18;
+                } else if (j < 15.0)
+                    -6.170654745608695e-17
+                else
+                    2.919139999949279e-17;
+            } else if (j < 24.0) {
+                if (j < 20.0) {
+                    if (j < 18.0) {
+                        if (j < 17.0)
+                            -2.7939114859515733e-17
+                        else
+                            -5.399285355184285e-17;
+                    } else if (j < 19.0)
+                        4.776959425256223e-17
+                    else
+                        -7.927701432338473e-17;
+                } else if (j < 22.0) {
+                    if (j < 21.0)
+                        9.341710609905046e-17
+                    else
+                        -5.534520675707472e-17;
+                } else if (j < 23.0)
+                    4.585670326662351e-17
+                else
+                    2.8582430411116143e-17;
+            } else if (j < 28.0) {
+                if (j < 26.0) {
+                    if (j < 25.0)
+                        7.826573258636076e-17
+                    else
+                        4.053626906769216e-17;
+                } else if (j < 27.0)
+                    2.823784425951061e-17
+                else
+                    -7.882802262487991e-17;
+            } else if (j < 30.0) {
+                if (j < 29.0)
+                    3.2904726646008416e-17
+                else
+                    -1.5792094703347882e-18;
+            } else if (j < 31.0)
+                4.721368121170128e-17
+            else
+                1.3045277096919659e-17;
+        } else if (j < 48.0) {
+            if (j < 40.0) {
+                if (j < 36.0) {
+                    if (j < 34.0) {
+                        if (j < 33.0)
+                            3.3484623336251524e-17
+                        else
+                            3.8611199774925664e-17;
+                    } else if (j < 35.0)
+                        5.527550048505249e-17
+                    else
+                        -3.927184172445234e-17;
+                } else if (j < 38.0) {
+                    if (j < 37.0)
+                        -6.346552106729483e-17
+                    else
+                        -8.684417614865944e-17;
+                } else if (j < 39.0)
+                    -1.5456342819397733e-17
+                else
+                    -8.70763476495455e-17;
+            } else if (j < 44.0) {
+                if (j < 42.0) {
+                    if (j < 41.0)
+                        3.750854201303127e-17
+                    else
+                        -6.616854503526488e-17;
+                } else if (j < 43.0)
+                    -5.346099009198751e-18
+                else
+                    -2.443726321015018e-17;
+            } else if (j < 46.0) {
+                if (j < 45.0) 2.1023049675215714e-18 else 7.771067937501065e-17;
+            } else if (j < 47.0)
+                1.3357510088834541e-17
+            else
+                6.938291696959204e-17;
+        } else if (j < 56.0) {
+            if (j < 52.0) {
+                if (j < 50.0) {
+                    if (j < 49.0)
+                        1.9572585293112036e-17
+                    else
+                        6.632256961675804e-17;
+                } else if (j < 51.0)
+                    -5.478069123926778e-17
+                else
+                    -4.140839310392624e-17;
+            } else if (j < 54.0) {
+                if (j < 53.0)
+                    -2.1571477251208752e-17
+                else
+                    -3.8287766552120535e-17;
+            } else if (j < 55.0)
+                6.663804589232195e-17
+            else
+                2.3936187400285282e-17;
+        } else if (j < 60.0) {
+            if (j < 58.0) {
+                if (j < 57.0) 5.68648095791174e-17 else 1.1264523354521684e-18;
+            } else if (j < 59.0)
+                7.007875046906994e-17
+            else
+                -5.0119214278381254e-17;
+        } else if (j < 62.0) {
+            if (j < 61.0) -4.8923067513522756e-17 else -3.5260089953269434e-17;
+        } else if (j < 63.0) -6.872303720902018e-17 else 5.001446664133532e-18;
+    } else if (j < 96.0) {
+        if (j < 80.0) {
+            if (j < 72.0) {
+                if (j < 68.0) {
+                    if (j < 66.0) {
+                        if (j < 65.0)
+                            -6.835808657661922e-17
+                        else
+                            -1.1307344092910212e-17;
+                    } else if (j < 67.0)
+                        -8.416011634717156e-18
+                    else
+                        -2.9247977035436566e-17;
+                } else if (j < 70.0) {
+                    if (j < 69.0)
+                        -2.092304381843353e-17
+                    else
+                        -3.9778645875427124e-17;
+                } else if (j < 71.0)
+                    -3.833464968654295e-17
+                else
+                    5.763611164480894e-17;
+            } else if (j < 76.0) {
+                if (j < 74.0) {
+                    if (j < 73.0)
+                        -2.3591094770850053e-17
+                    else
+                        7.260074661098575e-17;
+                } else if (j < 75.0)
+                    9.50689710108796e-18
+                else
+                    -4.272956133839906e-17;
+            } else if (j < 78.0) {
+                if (j < 77.0)
+                    -6.735219232374683e-17
+                else
+                    -2.8396044410430936e-17;
+            } else if (j < 79.0)
+                -7.226635472101257e-17
+            else
+                5.786121003395918e-17;
+        } else if (j < 88.0) {
+            if (j < 84.0) {
+                if (j < 82.0) {
+                    if (j < 81.0)
+                        5.1548301170786783e-17
+                    else
+                        -9.416257568878152e-18;
+                } else if (j < 83.0)
+                    2.4253985766689806e-17
+                else
+                    -6.604314051707707e-17;
+            } else if (j < 86.0) {
+                if (j < 85.0)
+                    -6.432131775424189e-18
+                else
+                    -1.2204007601863921e-17;
+            } else if (j < 87.0)
+                -6.336161863401293e-17
+            else
+                -3.7800879246373815e-17;
+        } else if (j < 92.0) {
+            if (j < 90.0) {
+                if (j < 89.0)
+                    1.5341410053603723e-17
+                else
+                    1.2932855580427452e-17;
+            } else if (j < 91.0)
+                -4.123367330661149e-17
+            else
+                4.703083974463456e-17;
+        } else if (j < 94.0) {
+            if (j < 93.0) -6.152602891550265e-17 else 5.827849326195279e-17;
+        } else if (j < 95.0) 3.540948262646183e-17 else -3.2741571320938764e-17;
+    } else if (j < 112.0) {
+        if (j < 104.0) {
+            if (j < 100.0) {
+                if (j < 98.0) {
+                    if (j < 97.0)
+                        4.875160526227062e-17
+                    else
+                        -5.718569790077838e-17;
+                } else if (j < 99.0)
+                    -4.719539664590972e-18
+                else
+                    -5.773451958805706e-17;
+            } else if (j < 102.0) {
+                if (j < 101.0)
+                    -1.0772487078934056e-17
+                else
+                    -6.221808618533911e-17;
+            } else if (j < 103.0)
+                1.821405440362259e-17
+            else
+                -6.155536546227639e-17;
+        } else if (j < 108.0) {
+            if (j < 106.0) {
+                if (j < 105.0)
+                    1.685487290628973e-17
+                else
+                    5.3581249177694816e-17;
+            } else if (j < 107.0)
+                3.621615935336894e-17
+            else
+                8.588379527574144e-18;
+        } else if (j < 110.0) {
+            if (j < 109.0) 1.01562190116415e-17 else -2.869134889187244e-17;
+        } else if (j < 111.0) -5.495118966122005e-17 else -5.56965572431627e-17;
+    } else if (j < 120.0) {
+        if (j < 116.0) {
+            if (j < 114.0) {
+                if (j < 113.0)
+                    1.790126907604513e-17
+                else
+                    -3.2211766346200164e-17;
+            } else if (j < 115.0)
+                5.265370768556274e-17
+            else
+                3.5089866402403033e-17;
+        } else if (j < 118.0) {
+            if (j < 117.0) -3.266924100901318e-17 else -4.3657593008079375e-17;
+        } else if (j < 119.0)
+            1.7963932659833022e-17
+        else
+            3.4300925275214166e-17;
+    } else if (j < 124.0) {
+        if (j < 122.0) {
+            if (j < 121.0) -5.545065618639427e-17 else -5.149009745457733e-17;
+        } else if (j < 123.0) 5.336805878514151e-17 else 3.498978661192973e-17;
+    } else if (j < 126.0) {
+        if (j < 125.0) 4.5784915277060095e-17 else -5.241934575393899e-17;
+    } else if (j < 127.0) 2.0414278897578303e-17 else 4.124842848606488e-18;
+}
+
+// ── trigonometry ─────────────────────────────────────────────────────────────
+
+// fdlibm's `__ieee754_rem_pio2` for |x| up to 2^19·π/2: `which` 0 answers the
+// quadrant n, 1 and 2 the remainder's head and tail. A larger |x| needs
+// `__kernel_rem_pio2`, which is not ported — refused by a panic.
+fn remPio2(x: f64, which: f64) -> f64 {
+    val neg = signBit(x);
+    val ix = highWord(x);
+    var n = 0.0;
+    var y0 = x;
+    var y1 = 0.0;
+    if (ix <= 1072243195.0) n = 0.0 else if (ix < 1073928572.0) {
+        val sgn = if (neg) -1.0 else 1.0;
+        var z = x - sgn * 1.57079632673412561417e+00;
+        if (ix != 1073291771.0) {
+            y0 = z - sgn * 6.07710050650619224932e-11;
+            y1 = (z - y0) - sgn * 6.07710050650619224932e-11;
+        } else {
+            z = z - sgn * 6.07710050630396597660e-11;
+            y0 = z - sgn * 2.02226624879595063154e-21;
+            y1 = (z - y0) - sgn * 2.02226624879595063154e-21;
+        }
+        n = sgn;
+    } else if (ix <= 1094263291.0) {
+        val t = abs(x);
+        n = trunc(t * 6.36619772367581382433e-01 + 0.5);
+        var r = t - n * 1.57079632673412561417e+00;
+        var w = n * 6.07710050650619224932e-11;
+        if (n < 32.0 && ix != highWord(n * 1.5707963267948966))
+            y0 = r - w
+        else {
+            val j = floor(ix / 1048576.0);
+            y0 = r - w;
+            if (j - exponentField(y0) > 16.0) {
+                var tt = r;
+                w = n * 6.07710050630396597660e-11;
+                r = tt - w;
+                w = n * 2.02226624879595063154e-21 - ((tt - r) - w);
+                y0 = r - w;
+                if (j - exponentField(y0) > 49.0) {
+                    tt = r;
+                    w = n * 2.02226624871116645580e-21;
+                    r = tt - w;
+                    w = n * 8.47842766036889956997e-32 - ((tt - r) - w);
+                    y0 = r - w;
+                }
+            }
+        }
+        y1 = (r - y0) - w;
+        if (neg) {
+            y0 = -1.0 * y0;
+            y1 = -1.0 * y1;
+            n = -1.0 * n;
+        }
+    } else if (ix >= 2146435072.0) {
+        y0 = x - x;
+        y1 = y0;
+    } else @panic(
+        "math: a trigonometric argument beyond 2^19 · π/2 is not reduced on wasm",
+    );
+    return if (which < 0.5) n else if (which < 1.5) y0 else y1;
+}
+
+fn kernelCos(x: f64, y: f64) -> f64 {
+    val ix = highWord(x);
+    if (ix < 1044381696.0) return 1.0;
+    val z = x * x;
+    val r = z
+        * (4.16666666666666019037e-02
+            + z
+                * (-1.38888888888741095749e-03
+                    + z
+                        * (2.48015872894767294178e-05
+                            + z
+                                * (-2.75573143513906633035e-07
+                                    + z
+                                        * (2.08757232129817482790e-09
+                                            + z
+                                                * -1.13596475577881948265e-11)))));
+    if (ix < 1070805811.0) return 1.0 - (0.5 * z - (z * r - x * y));
+    val qx = if (ix > 1072234496.0) 0.28125 else fromWords(ix - 2097152.0, 0.0);
+    val iz = 0.5 * z - qx;
+    val a = 1.0 - qx;
+    return a - (iz - (z * r - x * y));
+}
+
+fn kernelSin(x: f64, y: f64, iy: f64) -> f64 {
+    if (highWord(x) < 1044381696.0) return x;
+    val z = x * x;
+    val v = z * x;
+    val r = 8.33333333332248946124e-03
+        + z
+            * (-1.98412698298579493134e-04
+                + z
+                    * (2.75573137070700676789e-06
+                        + z
+                            * (-2.50507602534068634195e-08
+                                + z * 1.58969099521155010221e-10)));
+    if (isZero(iy)) return x + v * (-1.66666666666666324348e-01 + z * r);
+    return x - ((z * (0.5 * y - v * r) - y) - v * -1.66666666666666324348e-01);
+}
+
+// fdlibm's `__kernel_tan`: tan(x + y) for `iy` 1, -1/tan(x + y) for -1.
+fn kernelTan(x0: f64, y0: f64, iy: f64) -> f64 {
+    val neg = signBit(x0);
+    val ix = highWord(x0);
+    if (ix < 1043333120.0) {
+        if (isZero(ix) && isZero(lowWord(x0)) && iy == -1.0)
+            return 1.0 / abs(x0);
+        if (iy == 1.0) return x0;
+        val w0 = x0 + y0;
+        val z0 = withLowZero(w0);
+        val v0 = y0 - (z0 - x0);
+        val a0 = -1.0 / w0;
+        val t0 = withLowZero(a0);
+        val s0 = 1.0 + t0 * z0;
+        return t0 + a0 * (s0 + t0 * v0);
+    }
+    var x = x0;
+    var y = y0;
+    val big = ix >= 1072010280.0;
+    if (big) {
+        if (neg) {
+            x = -1.0 * x;
+            y = -1.0 * y;
+        }
+        val zb = 7.85398163397448278999e-01 - x;
+        val wb = 3.06161699786838301793e-17 - y;
+        x = zb + wb;
+        y = 0.0;
+    }
+    val z = x * x;
+    val w = z * z;
+    var r = 1.33333333333201242699e-01
+        + w
+            * (2.18694882948595424599e-02
+                + w
+                    * (3.59207910759131235356e-03
+                        + w
+                            * (5.88041240820264096874e-04
+                                + w
+                                    * (7.81794442939557092300e-05
+                                        + w * -1.85586374855275456654e-05))));
+    val v = z
+        * (5.39682539762260521377e-02
+            + w
+                * (8.86323982359930005737e-03
+                    + w
+                        * (1.45620945432529025516e-03
+                            + w
+                                * (2.46463134818469906812e-04
+                                    + w
+                                        * (7.14072491382608190305e-05
+                                            + w
+                                                * 2.59073051863633712884e-05)))));
+    val s = z * x;
+    r = y + z * (s * (r + v) + y);
+    r = r + 3.33333333333334091986e-01 * s;
+    val ww = x + r;
+    if (big) {
+        val sign = if (neg) -1.0 else 1.0;
+        return sign * (iy - 2.0 * (x - (ww * ww / (ww + iy) - r)));
+    }
+    if (iy == 1.0) return ww;
+    val z2 = withLowZero(ww);
+    val v2 = r - (z2 - x);
+    val a = -1.0 / ww;
+    val t = withLowZero(a);
+    val s2 = 1.0 + t * z2;
+    return t + a * (s2 + t * v2);
+}
+
+// n mod 4 in 0..3 (fdlibm's `n & 3`).
+fn quadrantOf(n: f64) -> f64 {
+    return n - 4.0 * floor(n * 0.25);
+}
+
+fn sinBody(x: f64) -> f64 {
+    val ix = highWord(x);
+    if (ix <= 1072243195.0) return kernelSin(x, 0.0, 0.0);
+    if (ix >= 2146435072.0) return x - x;
+    val q = quadrantOf(remPio2(x, 0.0));
+    val y0 = remPio2(x, 1.0);
+    val y1 = remPio2(x, 2.0);
+    return if (q < 0.5)
+        kernelSin(y0, y1, 1.0)
+    else if (q < 1.5)
+        kernelCos(y0, y1)
+    else if (q < 2.5)
+        -1.0 * kernelSin(y0, y1, 1.0)
+    else
+        -1.0 * kernelCos(y0, y1);
+}
+
+fn cosBody(x: f64) -> f64 {
+    val ix = highWord(x);
+    if (ix <= 1072243195.0) return kernelCos(x, 0.0);
+    if (ix >= 2146435072.0) return x - x;
+    val q = quadrantOf(remPio2(x, 0.0));
+    val y0 = remPio2(x, 1.0);
+    val y1 = remPio2(x, 2.0);
+    return if (q < 0.5)
+        kernelCos(y0, y1)
+    else if (q < 1.5)
+        -1.0 * kernelSin(y0, y1, 1.0)
+    else if (q < 2.5)
+        -1.0 * kernelCos(y0, y1)
+    else
+        kernelSin(y0, y1, 1.0);
+}
+
+fn tanBody(x: f64) -> f64 {
+    val ix = highWord(x);
+    if (ix <= 1072243195.0) return kernelTan(x, 0.0, 1.0);
+    if (ix >= 2146435072.0) return x - x;
+    val odd = quadrantOf(remPio2(x, 0.0))
+        - 2.0 * floor(quadrantOf(remPio2(x, 0.0)) * 0.5);
+    return kernelTan(remPio2(x, 1.0), remPio2(x, 2.0), 1.0 - 2.0 * odd);
+}
+
+fn asinPoly(t: f64) -> f64 {
+    val p = t
+        * (1.66666666666666657415e-01
+            + t
+                * (-3.25565818622400915405e-01
+                    + t
+                        * (2.01212532134862925881e-01
+                            + t
+                                * (-4.00555345006794114027e-02
+                                    + t
+                                        * (7.91534994289814532176e-04
+                                            + t
+                                                * 3.47933107596021167570e-05)))));
+    val q = 1.0
+        + t
+            * (-2.40339491173441421878e+00
+                + t
+                    * (2.02094576023350569471e+00
+                        + t
+                            * (-6.88283971605453293030e-01
+                                + t * 7.70381505559019352791e-02)));
+    return p / q;
+}
+
+fn asinBody(x: f64) -> f64 {
+    val ix = highWord(x);
+    if (ix >= 1072693248.0) {
+        if (ix == 1072693248.0 && isZero(lowWord(x)))
+            return x * 1.57079632679489655800e+00
+                + x * 6.12323399573676603587e-17;
+        return (x - x) / (x - x);
+    }
+    if (ix < 1071644672.0) {
+        if (ix < 1044381696.0) return x;
+        return x + x * asinPoly(x * x);
+    }
+    val w = 1.0 - abs(x);
+    val t = w * 0.5;
+    val s = sqrt(t);
+    var res = 0.0;
+    if (ix >= 1072640819.0)
+        res = 1.57079632679489655800e+00
+            - (2.0 * (s + s * asinPoly(t)) - 6.12323399573676603587e-17)
+    else {
+        val ws = withLowZero(s);
+        val c = (t - ws * ws) / (s + ws);
+        val p = 2.0 * s * asinPoly(t) - (6.12323399573676603587e-17 - 2.0 * c);
+        val q = 7.85398163397448278999e-01 - 2.0 * ws;
+        res = 7.85398163397448278999e-01 - (p - q);
+    }
+    return if (x > 0.0) res else -1.0 * res;
+}
+
+fn acosBody(x: f64) -> f64 {
+    val ix = highWord(x);
+    val pio2Hi = 1.57079632679489655800e+00;
+    val pio2Lo = 6.12323399573676603587e-17;
+    if (ix >= 1072693248.0) {
+        if (ix == 1072693248.0 && isZero(lowWord(x)))
+            return if (x > 0.0)
+                0.0
+            else
+                3.14159265358979311600e+00 + 2.0 * pio2Lo;
+        return (x - x) / (x - x);
+    }
+    if (ix < 1071644672.0) {
+        if (ix <= 1012924416.0) return pio2Hi + pio2Lo;
+        return pio2Hi - (x - (pio2Lo - x * asinPoly(x * x)));
+    }
+    if (x < 0.0) {
+        val z = (1.0 + x) * 0.5;
+        val s = sqrt(z);
+        val w = asinPoly(z) * s - pio2Lo;
+        return 3.14159265358979311600e+00 - 2.0 * (s + w);
+    }
+    val z = (1.0 - x) * 0.5;
+    val s = sqrt(z);
+    val df = withLowZero(s);
+    val c = (z - df * df) / (s + df);
+    val w = asinPoly(z) * s + c;
+    return 2.0 * (df + w);
+}
+
+fn atanBody(x: f64) -> f64 {
+    val ix = highWord(x);
+    val neg = signBit(x);
+    if (ix >= 1141899264.0) {
+        if (x != x) return x + x;
+        return if (neg)
+            -1.57079632679489655800e+00 - 6.12323399573676603587e-17
+        else
+            1.57079632679489655800e+00 + 6.12323399573676603587e-17;
+    }
+    var id = -1.0;
+    var t = x;
+    if (ix < 1071382528.0) {
+        if (ix < 1044381696.0) return x;
+    } else {
+        val ax = abs(x);
+        if (ix < 1072889856.0) {
+            if (ix < 1072037888.0) {
+                id = 0.0;
+                t = (2.0 * ax - 1.0) / (2.0 + ax);
+            } else {
+                id = 1.0;
+                t = (ax - 1.0) / (ax + 1.0);
+            }
+        } else if (ix < 1073971200.0) {
+            id = 2.0;
+            t = (ax - 1.5) / (1.0 + 1.5 * ax);
+        } else {
+            id = 3.0;
+            t = -1.0 / ax;
+        }
+    }
+    val z = t * t;
+    val w = z * z;
+    val s1 = z
+        * (3.33333333333329318027e-01
+            + w
+                * (1.42857142725034663711e-01
+                    + w
+                        * (9.09088713343650656196e-02
+                            + w
+                                * (6.66107313738753120669e-02
+                                    + w
+                                        * (4.97687799461593236017e-02
+                                            + w
+                                                * 1.62858201153657823623e-02)))));
+    val s2 = w
+        * (-1.99999999998764832476e-01
+            + w
+                * (-1.11111104054623557880e-01
+                    + w
+                        * (-7.69187620504482999495e-02
+                            + w
+                                * (-5.83357013379057348645e-02
+                                    + w * -3.65315727442169155270e-02))));
+    if (id < 0.0) return t - t * (s1 + s2);
+    val hi = if (id < 0.5)
+        4.63647609000806093515e-01
+    else if (id < 1.5)
+        7.85398163397448278999e-01
+    else if (id < 2.5)
+        9.82793723247329054082e-01
+    else
+        1.57079632679489655800e+00;
+    val lo = if (id < 0.5)
+        2.26987774529616870924e-17
+    else if (id < 1.5)
+        3.06161699786838301793e-17
+    else if (id < 2.5)
+        1.39033110312309984516e-17
+    else
+        6.12323399573676603587e-17;
+    val zz = hi - ((t * (s1 + s2) - lo) - t);
+    return if (neg) -1.0 * zz else zz;
+}
+
+fn atan2Body(y: f64, x: f64) -> f64 {
+    if (x != x || y != y) return x + y;
+    if (x == 1.0) return atanBody(y);
+    val piV = 3.1415926535897931160E+00;
+    val piLo = 1.2246467991473531772E-16;
+    val halfPi = 1.5707963267948965580E+00;
+    val quarterPi = 7.8539816339744827900E-01;
+    val ny = signBit(y);
+    val nx = signBit(x);
+    val my = if (ny) 1.0 else 0.0;
+    val mx = if (nx) 2.0 else 0.0;
+    val m = my + mx;
+    if (isZero(y)) return if (m < 1.5) y else if (m < 2.5) piV else -1.0 * piV;
+    if (isZero(x)) return if (ny) -1.0 * halfPi else halfPi;
+    val ix = highWord(x);
+    val iy = highWord(y);
+    if (ix == 2146435072.0) {
+        if (iy == 2146435072.0)
+            return if (m < 0.5)
+                quarterPi
+            else if (m < 1.5)
+                -1.0 * quarterPi
+            else if (m < 2.5)
+                3.0 * quarterPi
+            else
+                -3.0 * quarterPi;
+        return if (m < 0.5)
+            0.0
+        else if (m < 1.5)
+            -1.0 * 0.0
+        else if (m < 2.5)
+            piV
+        else
+            -1.0 * piV;
+    }
+    if (iy == 2146435072.0) return if (ny) -1.0 * halfPi else halfPi;
+    val k = floor((iy - ix) / 1048576.0);
+    var mm = m;
+    var z = 0.0;
+    if (k > 60.0) {
+        z = halfPi + 0.5 * piLo;
+        mm = m - 2.0 * floor(m * 0.5);
+    } else if (nx && k < -60.0) z = 0.0 else z = atanBody(abs(y / x));
+    return if (mm < 0.5)
+        z
+    else if (mm < 1.5)
+        -1.0 * z
+    else if (mm < 2.5)
+        piV - (z - piLo)
+    else
+        (z - piLo) - piV;
+}
+
+// ── hyperbolic functions ─────────────────────────────────────────────────────
+
+fn sinhBody(x: f64) -> f64 {
+    val h = if (x < 0.0) -0.5 else 0.5;
+    val ax = abs(x);
+    if (ax < 22.0) {
+        if (ax < 3.725290298461914e-9) return x;
+        val t = expm1Body(ax);
+        if (ax < 1.0) return h * (2.0 * t - t * t / (t + 1.0));
+        return h * (t + t / (t + 1.0));
+    }
+    if (ax < 709.7822265625) return h * expBody(ax);
+    if (ax <= 710.4758600739439) {
+        val w = expBody(0.5 * ax);
+        val t = h * w;
+        return t * w;
+    }
+    return x * 1.0e307;
+}
+
+fn coshBody(x: f64) -> f64 {
+    val ix = highWord(x);
+    if (ix < 1071001155.0) {
+        val t = expm1Body(abs(x));
+        val w = 1.0 + t;
+        if (ix < 1015021568.0) return w;
+        return 1.0 + (t * t) / (w + w);
+    }
+    if (ix < 1077280768.0) {
+        val t = expBody(abs(x));
+        return 0.5 * t + 0.5 / t;
+    }
+    if (ix < 1082535490.0) return 0.5 * expBody(abs(x));
+    if (abs(x) <= 710.4758600739439) {
+        val w = expBody(0.5 * abs(x));
+        val t = 0.5 * w;
+        return t * w;
+    }
+    if (ix >= 2146435072.0) return x * x;
+    return timesHuge(1.0, 1.0e300);
+}
+
+fn tanhBody(x: f64) -> f64 {
+    val ix = highWord(x);
+    val neg = signBit(x);
+    if (ix >= 2146435072.0) return if (!neg) 1.0 / x + 1.0 else 1.0 / x - 1.0;
+    var z = 0.0;
+    if (ix < 1077280768.0) {
+        if (ix < 1043333120.0) return x;
+        if (ix >= 1072693248.0) {
+            val t = expm1Body(2.0 * abs(x));
+            z = 1.0 - 2.0 / (t + 2.0);
+        } else {
+            val t = expm1Body(-2.0 * abs(x));
+            z = (-1.0 * t) / (t + 2.0);
+        }
+    } else z = 1.0 - 1.0e-300;
+    return if (!neg) z else -1.0 * z;
+}
 
 // ── tests ────────────────────────────────────────────────────────────────────
 

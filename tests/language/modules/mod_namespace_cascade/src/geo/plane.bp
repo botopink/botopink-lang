@@ -1,0 +1,5 @@
+pub type Point(x: i32, y: i32)
+
+pub fn distance(a: Point, b: Point) -> i32 {
+    return (b.x - a.x) + (b.y - a.y);
+}

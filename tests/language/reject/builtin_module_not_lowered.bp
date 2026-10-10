@@ -1,0 +1,8 @@
+//// `@module()` is declared `-> module` in `builtins.d.bp`, but no target
+//// lowers it: commonJS emitted `@module()` verbatim and erlang called an
+//// undefined `module/0`. The checker refuses it at the `@`.
+
+pub fn main() {
+    val m = @module();
+    @print("unreachable");
+}

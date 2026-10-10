@@ -1,0 +1,33 @@
+//// The checks are written here, beside the private rule and hint they name.
+
+pub type Check<T>(message: @Expr<string>, rule: @Expr<fn(v: T) -> bool>)
+
+pub type Note(text: @Expr<string>)
+
+pub fn check<T>(
+    comptime decl: @Decl<T>,
+    comptime message: @Expr<string>,
+    comptime rule: @Expr<fn(v: T) -> bool>,
+) {
+    decl.addMeta(Check(message: message, rule: rule));
+}
+
+pub fn note(comptime decl: @Decl, comptime text: @Expr<string>) {
+    decl.addMeta(Note(text: text));
+}
+
+fn passwordsMatch(a: Signup) -> bool {
+    return a.password == a.confirm;
+}
+
+fn hint() -> string {
+    return "signup's hint";
+}
+
+#[check("the passwords differ", passwordsMatch)]
+#[note(hint())]
+pub type Signup(password: string, confirm: string) {
+    pub fn make() -> string {
+        return "signup";
+    }
+}

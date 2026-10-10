@@ -1,0 +1,12 @@
+//// Decision 329 — braces holding functions and no variant declare a
+//// namespace type, which has no value: a function in it that takes `self`
+//// is refused at the `self` (1.0.10-beta decision 138's record writes its
+//// field list: `type MathOps() { fn double(self: Self, …) … }`).
+
+type MathOps {
+    fn double(self: Self, x: i32) -> i32 { return x * 2; }
+}
+
+pub fn main() {
+    @print(MathOps.double(2));
+}

@@ -1,0 +1,6 @@
+//// A catalogued type of this package, two modules deep.
+
+import {marks.service} from "kit";
+
+#[service]
+pub type Part(tag: string)

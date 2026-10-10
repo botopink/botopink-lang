@@ -1,0 +1,22 @@
+//// Decision 364 (2) — an argument not known at build (a call of a function)
+//// is refused only where the decorator reads its parameter's `.value`
+//// (`reject/decorator_value_not_comptime`): `#[audit]` never reads `message`,
+//// so `label("x")` is accepted and the body runs.
+
+fn label(key: string) -> string {
+    return key + "!";
+}
+
+fn audit(comptime decl: @Decl, comptime message: @Expr<string>) {
+    decl.setMeta("audited", decl.name);
+}
+
+#[audit(label("signup.mismatch"))]
+fn signup() -> i32 {
+    return 1;
+}
+
+pub fn main() {
+    @print(@typeInfo(signup).meta.audit.audited);
+    @print(signup());
+}

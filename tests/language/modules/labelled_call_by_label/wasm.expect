@@ -1,0 +1,2 @@
+`canonical` has no `#[@External.<Target>(…)]` for the wasm backend — in `std/testing/asserts`, which this import links
+src/main.bp:15:9

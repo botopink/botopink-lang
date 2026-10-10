@@ -1,0 +1,14 @@
+//// Decision 8 §6 T4 — a tuple label whose element is a function is called
+//// through its label; `jhonstart`'s `reducer` returns exactly this shape.
+
+fn counter(start: i32) -> #(value: i32, bump: fn(n: i32) -> i32) {
+    val value = start;
+    val bump = { n -> n + 1 };
+    return #(value, bump);
+}
+
+test "§6 T4 a labeled function element is called through its label" {
+    val c = counter(1);
+    assert c.value == 1;
+    assert c.bump(8) == 9;
+}

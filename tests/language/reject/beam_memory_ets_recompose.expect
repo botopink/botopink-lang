@@ -1,0 +1,2 @@
+`hits` is an `@BeamMemory.Ets` var: a write that recomputes it from its own value can lose one of two concurrent runs
+10:5

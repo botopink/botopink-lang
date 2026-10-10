@@ -1,0 +1,6 @@
+import {theme} from "looks";
+
+#[theme]
+pub fn brand() -> string {
+    return "brand";
+}

@@ -1,0 +1,2 @@
+`External.Wasm`'s `host` is `.Wasi` or `.Browser`, got `.Deno`
+7:3

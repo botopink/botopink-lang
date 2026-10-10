@@ -1,0 +1,14 @@
+//// Decision 307 — a derived type is exported like any type: `AnchorProps`
+//// is the merge of two records (decision 351's layering), named after its
+//// `val`.
+
+import {types.Type} from "std";
+
+pub type GlobalAttrs(
+    id: ?string = null,
+    lang: ?string = null,
+)
+
+pub type AnchorAttrs(href: string, target: ?string = null)
+
+pub val AnchorProps = Type.merge(GlobalAttrs, AnchorAttrs);

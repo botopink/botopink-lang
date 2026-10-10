@@ -1,0 +1,2 @@
+the wasm backend does not lower `?.()` over a function answering a plain value yet (decision 330)
+12:12

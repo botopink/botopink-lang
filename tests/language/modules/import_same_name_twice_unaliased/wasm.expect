@@ -1,0 +1,2 @@
+`title` is already bound by the import of `title` from `app/page`; `title` from `app/blog/page` would bind it again
+src/main.bp:12:9

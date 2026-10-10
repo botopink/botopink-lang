@@ -1,0 +1,68 @@
+//// Decision 8 §4.1 × §4.2 — `is` tests the value, not where it came from: one
+//// test per form that may follow `is`, each asked of the same ten values held
+//// in `unknown` — an integer, an integral float, a fractional float, a number
+//// out of `i8`'s range, a string, a bool, a record, an enum variant with a
+//// payload, a tuple and a generic record — written as one mark per value
+//// (`T` holds, `.` does not). A test cell runs on commonJS, erlang and beam;
+//// `run/is_truth_table` is the same table on four targets.
+
+type Point(x: i32, y: i32)
+
+type Box<T>(item: T)
+
+type Shape { Dot, Circle(r: i32) }
+
+fn values() -> unknown[] {
+    val int: unknown = 1;
+    val integral: unknown = 2.0;
+    val fraction: unknown = 2.5;
+    val wide: unknown = 300;
+    val text: unknown = "s";
+    val flag: unknown = true;
+    val point: unknown = Point(x: 1, y: 2);
+    val shape: unknown = Shape.Circle(r: 3);
+    val pair: unknown = #(1, "a");
+    val box: unknown = Box(item: 1);
+    return [int, integral, fraction, wide, text, flag, point, shape, pair, box];
+}
+
+fn marks(holds: bool[]) -> string {
+    var text = "";
+    for (holds) { h ->
+        val mark = if (h) "T" else ".";
+        text = text + mark;
+    }
+    return text;
+}
+
+test "§4.2 an integer type holds for an integral number within its range" {
+    assert marks(values().map({ v -> v is i32 })) == "TT.T......";
+    assert marks(values().map({ v -> v is i8 })) == "TT........";
+    assert marks(values().map({ v -> v is u8 })) == "TT........";
+}
+
+test "§4.2 f64 holds for any number" {
+    assert marks(values().map({ v -> v is f64 })) == "TTTT......";
+}
+
+test "§4.2 string and bool hold for the primitive" {
+    assert marks(values().map({ v -> v is string })) == "....T.....";
+    assert marks(values().map({ v -> v is bool })) == ".....T....";
+}
+
+test "§4.2 a named type holds for its constructor, a variant for its type" {
+    assert marks(values().map({ v -> v is Point })) == "......T...";
+    assert marks(values().map({ v -> v is Shape })) == ".......T..";
+    assert marks(values().map({ v -> v is Box<unknown> })) == ".........T";
+}
+
+test "§4.2 a tuple type holds for its arity and each element" {
+    assert marks(values().map({ v -> v is #(i32, string) })) == "........T.";
+}
+
+test "§4.1 inside `if (a is i32)` the integral float is the i32" {
+    val a: unknown = 2.0;
+    var got = 0;
+    if (a is i32) got = a + 1;
+    assert got == 3;
+}

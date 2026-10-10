@@ -1,0 +1,30 @@
+//// Decision 280 (1), (2), example 1 — `rule` is an `fn(v: T) -> bool` with
+//// `T` the annotated type: a function over another type is refused at the
+//// argument, both types spelled.
+
+import {types.Type} from "std";
+
+pub type Code { Custom, Mismatch }
+
+fn check<T>(
+    comptime decl: @Decl<T>,
+    comptime message: @Expr<string>,
+    comptime rule: @Expr<?fn(v: T) -> bool> = null,
+    comptime at: @Expr<?Type.Field<T>> = null,
+    comptime code: @Expr<Code> = .Custom,
+) {
+    decl.setMeta("message", message.value);
+}
+
+type Order(total: i32)
+
+fn orderTotal(o: Order) -> bool {
+    return o.total > 0;
+}
+
+#[check("no total", orderTotal)]
+type Account(password: string, confirm: string)
+
+pub fn main() {
+    @print("unreached");
+}

@@ -1,0 +1,31 @@
+//// A `?u64` past `2^63 − 1` prints and turns into text by its unsigned
+//// digits — printed whole, narrowed by a binder or by a null test, through
+//// `toString`, `??` and a string `+`, as a tuple element — on every
+//// target. wasm wrote a `?u64` through the signed `?i64` printer and typed
+//// `??`'s answer as a bare `i64`: `18446744073709551615` came out
+//// `-1` at exit 0.
+
+fn find(found: bool) -> ?u64 {
+    if (found) return 18446744073709551615;
+    return null;
+}
+
+pub fn main() {
+    val o = find(true);
+    @print(o);
+    @print(find(false));
+    @print(o ?? 0);
+    @print((o ?? 0).toString());
+    @print("o=" + (o ?? 1));
+    if (o) {
+        v ->
+        @print(v.toString());
+    }
+    if (o != null) {
+        @print(o.toString());
+        @print(o);
+    }
+    val t = #(o, find(false), 7);
+    @print(t);
+    @print(t.0 ?? 0);
+}

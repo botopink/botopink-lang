@@ -1,0 +1,14 @@
+//// 01 R2 — importing a type brings the closure of the types its declaration
+//// mentions: `User(role: Role)` is usable without naming `Role`.
+
+pub type Role(name: string)
+
+pub type User(role: Role) {
+    pub fn roleName(self: Self) -> string {
+        return self.role.name;
+    }
+}
+
+pub fn makeUser() -> User {
+    return User(role: Role(name: "admin"));
+}

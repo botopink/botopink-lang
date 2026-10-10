@@ -1,0 +1,10 @@
+//// A decorator that reports the name of the function it annotates, and one
+//// named like the file `m/page.bp` it is used in.
+
+pub fn named(comptime decl: @Decl) {
+    @emit("pub fn doubleName() -> string { return \"" + decl.name + "\"; }");
+}
+
+pub fn page(comptime decl: @Decl) {
+    @emit("pub fn pageName() -> string { return \"" + decl.name + "\"; }");
+}

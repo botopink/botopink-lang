@@ -1,0 +1,12 @@
+//// An `if` expression begins an expression; it is never the operand of an
+//// operator — decision 137's reading of `try` / `await`, applied to `if`.
+//// `1 + if (c) { 2 } else { 3 }` is refused at the `if` as `if-operand`, with
+//// the fix-it that binds the value first: `val x = if …; 1 + x`.
+
+fn f(c: bool) -> i32 {
+    return 1 + if (c) { 2 } else { 3 };
+}
+
+pub fn main() {
+    @print(f(true));
+}

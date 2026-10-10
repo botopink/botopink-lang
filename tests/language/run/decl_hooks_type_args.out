@@ -1,0 +1,1 @@
+params<main.BlogParams(slug: string, id: i32)> title<>

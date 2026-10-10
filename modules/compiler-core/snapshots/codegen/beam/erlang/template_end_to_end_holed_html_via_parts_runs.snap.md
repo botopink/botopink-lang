@@ -1,0 +1,314 @@
+----- SOURCE CODE -- main.bp
+```botopink
+pub fn html(comptime q: @Expr<string>) -> @Expr<string> {
+    var acc = "\"\"";
+    for (q.parts()) { p ->
+        if (p.kind == "Text") {
+            acc = acc + " + \"" + p.text + "\"";
+        };
+        if (p.kind == "Interp") {
+            acc = acc + " + " + p.code;
+        };
+    };
+    return q.build(acc);
+}
+val name = "world";
+val page = html """<p>${name}</p>""";
+fn main() {
+    @print(page);
+}
+```
+
+----- COMPTIME BEAM ASSEMBLY -- template html
+```erlang
+{module, template_module}.
+{exports, [{html, 1}, {main, 1}]}.
+{attributes, []}.
+{labels, 35}.
+
+{function, '-html/1-fun-0-', 2, 10}.
+  {label, 9}.
+    {func_info, {atom, template_module}, {atom, '-html/1-fun-0-'}, 2}.
+  {label, 10}.
+    {allocate, 8, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}]}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {x, 1}, {y, 3}}.
+    {move, {atom, kind}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
+    {call_ext, 2, {extfunc, maps, get, 2}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 4}, {x, 0}}.
+    {move, {literal, <<"Text">>}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, '=:=', 2}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 4}, {x, 0}}.
+    {test, is_eq_exact, {f, 14}, [{x, 0}, {atom, true}]}.
+    {move, {y, 3}, {x, 0}}.
+    {move, {literal, <<" + \"">>}, {x, 1}}.
+    {call_ext, 2, {extfunc, bp_comptime_template, '__bp_add', 2}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {atom, text}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
+    {call_ext, 2, {extfunc, maps, get, 2}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 6}, {x, 0}}.
+    {move, {y, 7}, {x, 1}}.
+    {call_ext, 2, {extfunc, bp_comptime_template, '__bp_add', 2}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {x, 0}}.
+    {move, {literal, <<"\"">>}, {x, 1}}.
+    {call_ext, 2, {extfunc, bp_comptime_template, '__bp_add', 2}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {y, 0}}.
+    {jump, {f, 16}}.
+  {label, 16}.
+    {move, {y, 0}, {y, 5}}.
+    {jump, {f, 13}}.
+  {label, 14}.
+    {move, {y, 3}, {y, 5}}.
+    {jump, {f, 13}}.
+  {label, 13}.
+    {move, {y, 5}, {y, 0}}.
+    {jump, {f, 19}}.
+  {label, 19}.
+    {move, {atom, kind}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
+    {call_ext, 2, {extfunc, maps, get, 2}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 4}, {x, 0}}.
+    {move, {literal, <<"Interp">>}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, '=:=', 2}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 4}, {x, 0}}.
+    {test, is_eq_exact, {f, 21}, [{x, 0}, {atom, true}]}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {literal, <<" + ">>}, {x, 1}}.
+    {call_ext, 2, {extfunc, bp_comptime_template, '__bp_add', 2}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {atom, code}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
+    {call_ext, 2, {extfunc, maps, get, 2}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 6}, {x, 0}}.
+    {move, {y, 7}, {x, 1}}.
+    {call_ext, 2, {extfunc, bp_comptime_template, '__bp_add', 2}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {y, 1}}.
+    {jump, {f, 23}}.
+  {label, 23}.
+    {move, {y, 1}, {y, 5}}.
+    {jump, {f, 20}}.
+  {label, 21}.
+    {move, {y, 0}, {y, 5}}.
+    {jump, {f, 20}}.
+  {label, 20}.
+    {move, {y, 5}, {y, 0}}.
+    {jump, {f, 26}}.
+  {label, 26}.
+    {move, {y, 0}, {x, 0}}.
+    {deallocate, 8}.
+    return.
+
+{function, html, 1, 2}.
+  {label, 1}.
+    {func_info, {atom, template_module}, {atom, html}, 1}.
+  {label, 2}.
+    {allocate, 4, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {literal, <<"\"\"">>}, {y, 0}}.
+    {jump, {f, 8}}.
+  {label, 8}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 10}, 0, 0, {x, 0}, {list, []}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 1}, {x, 0}}.
+    {call_ext, 1, {extfunc, bp_comptime_template, parts, 1}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {y, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {move, {y, 3}, {x, 2}}.
+    {call_ext, 3, {extfunc, lists, foldl, 3}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 2}, {y, 0}}.
+    {jump, {f, 28}}.
+  {label, 28}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext_last, 2, {extfunc, bp_comptime_template, build, 2}, 4}.
+
+{function, main, 1, 4}.
+  {label, 3}.
+    {func_info, {atom, template_module}, {atom, main}, 1}.
+  {label, 4}.
+    {allocate, 16, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}, {y, 13}, {y, 14}, {y, 15}]}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {y, 3}, {x, 0}}.
+    {test, is_tuple, {f, 30}, [{x, 0}]}.
+    {test, test_arity, {f, 30}, [{x, 0}, 1]}.
+    {get_tuple_element, {x, 0}, 0, {y, 4}}.
+    {move, {y, 4}, {y, 0}}.
+    {'try', {y, 15}, {f, 31}}.
+    {move, {y, 0}, {x, 0}}.
+    {call, 1, {f, 2}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {x, 0}}.
+    {call_ext, 1, {extfunc, bp_comptime_template, '__bp_reply', 1}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {x, 0}}.
+    {call_ext, 1, {extfunc, json, encode, 1}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {y, 5}}.
+    {try_end, {y, 15}}.
+    {jump, {f, 32}}.
+  {label, 31}.
+    {try_case, {y, 15}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {x, 1}, {y, 7}}.
+    {move, {x, 2}, {y, 8}}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_eq_exact, {f, 34}, [{x, 0}, {atom, throw}]}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_tuple, {f, 34}, [{x, 0}]}.
+    {test, test_arity, {f, 34}, [{x, 0}, 4]}.
+    {get_tuple_element, {x, 0}, 0, {y, 9}}.
+    {get_tuple_element, {x, 0}, 1, {y, 10}}.
+    {get_tuple_element, {x, 0}, 2, {y, 11}}.
+    {get_tuple_element, {x, 0}, 3, {y, 12}}.
+    {move, {y, 9}, {x, 0}}.
+    {test, is_eq_exact, {f, 34}, [{x, 0}, {atom, '__bp_template_fail'}]}.
+    {move, {y, 10}, {y, 0}}.
+    {move, {y, 11}, {y, 1}}.
+    {move, {y, 12}, {y, 2}}.
+    {move, {y, 0}, {x, 0}}.
+    {call_ext, 1, {extfunc, bp_comptime_template, '__bp_text', 1}}.
+    {move, {x, 0}, {y, 13}}.
+    {move, {y, 2}, {x, 0}}.
+    {call_ext, 1, {extfunc, bp_comptime_template, '__bp_json', 1}}.
+    {move, {x, 0}, {y, 14}}.
+    {move, {literal, #{}}, {x, 0}}.
+    {put_map_assoc, {f, 0}, {x, 0}, {x, 0}, 1, {list, [{atom, kind}, {literal, <<"fail">>}, {atom, message}, {y, 13}, {atom, param}, {y, 1}, {atom, span}, {y, 14}]}}.
+    {move, {x, 0}, {y, 13}}.
+    {move, {y, 13}, {x, 0}}.
+    {call_ext, 1, {extfunc, json, encode, 1}}.
+    {move, {x, 0}, {y, 13}}.
+    {move, {y, 13}, {y, 5}}.
+    {jump, {f, 33}}.
+  {label, 34}.
+    {move, {y, 6}, {y, 0}}.
+    {move, {y, 7}, {y, 1}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
+    {call_ext, 1, {extfunc, bp_comptime_template, '__bp_text', 1}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {literal, #{}}, {x, 0}}.
+    {put_map_assoc, {f, 0}, {x, 0}, {x, 0}, 1, {list, [{atom, kind}, {literal, <<"error">>}, {atom, message}, {y, 9}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {x, 0}}.
+    {call_ext, 1, {extfunc, json, encode, 1}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 5}}.
+    {jump, {f, 33}}.
+  {label, 33}.
+  {label, 32}.
+    {move, {y, 5}, {x, 0}}.
+    {deallocate, 16}.
+    return.
+  {label, 30}.
+    {move, {y, 3}, {x, 0}}.
+    {deallocate, 16}.
+    {jump, {f, 3}}.
+
+%% main/1 argument — an external term, not part of the module:
+%% Arg0 = #{
+%%     '__bp_capture' => <<"q">>,
+%%     text => <<"<p>__bp_hole_q_0</p>">>,
+%%     parts => [
+%%         #{
+%%             kind => <<"Text">>,
+%%             text => <<"<p>">>,
+%%             span => #{start => 0, 'end' => 3, line => 1}
+%%         },
+%%         #{
+%%             kind => <<"Interp">>,
+%%             code => <<"__bp_hole_q_0">>,
+%%             span => #{start => 3, 'end' => 16, line => 1},
+%%             known => true,
+%%             value => <<"world">>
+%%         },
+%%         #{
+%%             kind => <<"Text">>,
+%%             text => <<"</p>">>,
+%%             span => #{start => 16, 'end' => 20, line => 1}
+%%         }
+%%     ],
+%%     source => #{file => <<"">>, line => 14, col => 17},
+%%     context => #{
+%%         source => #{file => <<"">>, line => 14, col => 17},
+%%         text => <<"<p>__bp_hole_q_0</p>">>,
+%%         multiline => true
+%%     },
+%%     bindings => [],
+%%     words => [<<"p">>]
+%% }
+```
+
+----- COMPTIME REPLY -- template html
+```json
+{
+  "kind": "code",
+  "source": "\"\" + \"<p>\" + __bp_hole_q_0 + \"</p>\""
+}
+```
+
+----- ERLANG -- main.erl
+```erlang
+-module(test@main).
+-export(['_botopink_main'/0, main/1]).
+-export([main/0, name/0, page/0]).
+
+name() ->
+    <<"world">>.
+
+page() ->
+    <<"<p>", (name())/binary, "</p>">>.
+
+main() ->
+    '__bp_print'([page()]).
+
+'__bp_print'(Values) ->
+    io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
+
+'__bp_show'(V, true) when erlang:is_binary(V) -> V;
+'__bp_show'(V, _) when erlang:is_binary(V) -> [$", [case C of $" -> "\\\""; $\\ -> "\\\\"; $\n -> "\\n"; $\r -> "\\r"; $\t -> "\\t"; _ -> C end || C <- unicode:characters_to_list(V)], $"];
+'__bp_show'(V, _) when erlang:is_list(V) -> [$[, lists:join(", ", ['__bp_show'(E, false) || E <- V]), $]];
+'__bp_show'(V, _) when erlang:is_tuple(V), erlang:tuple_size(V) > 0, erlang:is_atom(erlang:element(1, V)), erlang:element(1, V) =/= true, erlang:element(1, V) =/= false, erlang:element(1, V) =/= undefined -> '__bp_tagged'(erlang:element(1, V), V);
+'__bp_show'(V, _) when erlang:is_tuple(V) -> ["#(", lists:join(", ", ['__bp_show'(E, false) || E <- erlang:tuple_to_list(V)]), $)];
+'__bp_show'(undefined, _) -> "null";
+'__bp_show'(V, _) when erlang:is_atom(V), V =/= true, V =/= false, V =/= undefined -> '__bp_tagged'(V, V);
+'__bp_show'(V, _) -> io_lib:format("~p", [V]).
+
+'__bp_tagged'(A, V) ->
+    M = case string:split(erlang:atom_to_list(A), "__v__") of [P, _] -> erlang:list_to_atom(P); _ -> A end,
+    case code:ensure_loaded(M) =:= {module, M} andalso erlang:function_exported(M, '__bp_format', 1) of true -> '__bp_render'(erlang:apply(M, '__bp_format', [V])); false -> io_lib:format("~p", [V]) end.
+
+'__bp_render'({text, T}) -> T;
+'__bp_render'({variant, N, []}) -> N;
+'__bp_render'({_, N, Fs}) -> [N, $(, lists:join(", ", [[K, ": ", '__bp_show'(Val, false)] || {K, Val} <- Fs]), $)].
+
+'_botopink_main'() ->
+    io:setopts(standard_io, [{encoding, unicode}]),
+    main().
+
+main(_Args) ->
+    '_botopink_main'().
+```
+
+----- RUN LOG -----
+```logs
+<p>world</p>
+```

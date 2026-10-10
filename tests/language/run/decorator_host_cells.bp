@@ -1,0 +1,43 @@
+//// Decision 341 (01-compiler/14 step 6) — a decorator body calls a host
+//// function, and the function travels into the decorator module with the
+//// cell of the runtime that runs it: `@External.Erlang` on the BEAM runtime
+//// (erlang, beam), the function `@External.Wasm("fn:…")` names on the wat
+//// runtime (commonJS, wasm). A std host function travels the same way,
+//// reached through its namespace (`hash.contentHash`) or a leaf import
+//// (`contentHash`), with the private functions of its module it needs. Both
+//// cells answer the same, so the four targets print the same. Before, every
+//// such call was `call to undefined function bang/1` in the decorator module.
+
+import {hash} from "std";
+import {hash.contentHash as digest} from "std";
+
+#[@External.Node("""($0 + "!")""")]
+#[@External.Erlang("""<<($0)/binary, "!">>""")]
+#[@External.Wasm("fn:bangBody")]
+declare fn bang(value: string) -> string;
+
+fn bangBody(value: string) -> string {
+    return value + "!";
+}
+
+fn tagged(name: string) -> string {
+    return bang(name) + " " + hash.contentHash(name);
+}
+
+fn labelled(comptime decl: @Decl) {
+    @emit(
+        "pub fn label() -> string { return \""
+            + tagged(decl.name)
+            + " "
+            + digest("héllo €")
+            + "\"; }",
+    );
+}
+
+#[labelled]
+type Point(x: i32, y: i32)
+
+pub fn main() {
+    @print(label());
+    @print(bang("run") + " " + hash.contentHash("Point"));
+}

@@ -1,0 +1,23 @@
+//// Decision 329 — a type with no field list whose functions are all
+//// associated is a namespace type: its functions are called through it,
+//// generic ones too, on all four targets.
+
+type MathOps {
+    fn double(x: i32) -> i32 {
+        return x * 2;
+    }
+
+    pub fn first<T>(xs: T[], fallback: T) -> T {
+        return xs.at(0) ?? fallback;
+    }
+
+    fn quadruple(n: i32) -> i32 {
+        return MathOps.double(MathOps.double(n));
+    }
+}
+
+pub fn main() {
+    @print(MathOps.double(21));
+    @print(MathOps.first([7, 8], 0));
+    @print(MathOps.quadruple(5));
+}

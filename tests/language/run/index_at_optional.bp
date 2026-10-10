@@ -1,0 +1,33 @@
+//// Decision 63 (amended 2026-09-19), the `libs/std` half — `Dict.lookup` and
+//// `String.charAt` became `at`, the one reader name every indexable type has
+//// (`e065b564`, C-02's std half). Called by name, `at` is the feature decision
+//// 30 kept distinct from the index: it answers `?V`, and an absent key or index
+//// is `null` — decision 47's one spelling for absent.
+////
+//// The cell prints a present and an absent probe for each of the two renamed
+//// readers. `Array.at` past the end is deliberately not here: it answers
+//// `undefined` on commonJS at `85f883bd` (decision 47's row, the `array_at`
+//// helper on every backend — C-18), and it would hide this cell's claim behind
+//// that one.
+////
+//// Measured at `85f883bd` (2026-09-20):
+////
+////   commonJS  `1`, `null`, `b`, `null` — correct
+////   erlang    `1`, `undefined`, `b`, `undefined` — the absent optional prints
+////             the atom, not `null` (decision 47, C-18)
+////   wasm      `1`, `null`, `b`, `null` — correct: `Dict.at`'s `?V` over a
+////             type parameter is boxed (C-18's wasm half; unboxed, the absent
+////             key printed `0`), and `String.at` has its `$__str_at` lowering,
+////             which `run/string_at.bp` pins on all four targets
+
+import {collections.Dict} from "std";
+
+pub fn main() {
+    val d = Dict.empty().insert("a", 1);
+    @print(d.at("a"));
+    @print(d.at("zz"));
+
+    val s = "abc";
+    @print(s.at(1));
+    @print(s.at(7));
+}

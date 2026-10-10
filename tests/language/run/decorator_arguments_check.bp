@@ -1,0 +1,58 @@
+//// Decision 280, example 1 (`01-checker/examples/decorator-arguments-280.md`)
+//// — `#[check]` on a type and on a function. Every parameter is `comptime`;
+//// `@Decl<T>` binds `T` to the annotated declaration, so `rule` is checked
+//// as an `fn(v: Account) -> bool` and `at` as a field of `Account` (`.confirm`,
+//// `Type.Field<T>` of decision 308); `code` takes a variant written as
+//// declared. The body reads the field key's `name` and the variant as values,
+//// each `x.value` of its `comptime x: @Expr<T>` (decision 364); `rule` is an
+//// `@Expr` of a function, which has no `.value` — the function form is told
+//// apart by the declaration's kind (question `s35-b`).
+
+import {types.Type} from "std";
+
+pub type Code { Custom, Required, TooShort, Mismatch }
+
+fn check<T>(
+    comptime decl: @Decl<T>,
+    comptime message: @Expr<string>,
+    comptime rule: @Expr<?fn(v: T) -> bool> = null,
+    comptime at: @Expr<?Type.Field<T>> = null,
+    comptime code: @Expr<Code> = .Custom,
+) {
+    if (decl.kind == DeclKind.Fn) {
+        if (decl.returnType != "bool")
+            decl.fail("#[check] without `rule` annotates an `fn(x) -> bool`");
+        decl.setMeta("rule", message.value);
+        return;
+    }
+    val key = at.value?.name ?? "type";
+    val kind = if (code.value == Code.Mismatch) "mismatch" else "custom";
+    decl.setMeta(key, message.value + " (" + kind + ")");
+}
+
+#[check("passwords differ", passwordsMatch, at = .confirm)]
+#[check("handle taken", handleFree, at = .handle, code = .Mismatch)]
+pub type Account(handle: string, password: string, confirm: string)
+
+fn passwordsMatch(a: Account) -> bool {
+    return a.password == a.confirm;
+}
+
+fn handleFree(a: Account) -> bool {
+    return a.handle != "admin";
+}
+
+#[check("the password holds the handle")]
+fn passwordNotHandle(a: Account) -> bool {
+    return !a.password.contains(a.handle);
+}
+
+pub fn main() {
+    @print(@typeInfo(Account).meta.check.confirm);
+    @print(@typeInfo(Account).meta.check.handle);
+    @print(@typeInfo(passwordNotHandle).meta.check.rule);
+    val a = Account(handle: "ana", password: "abc", confirm: "abd");
+    @print(passwordsMatch(a));
+    @print(handleFree(a));
+    @print(passwordNotHandle(a));
+}

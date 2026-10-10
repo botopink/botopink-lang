@@ -1,0 +1,24 @@
+//// Decision 280 (4) — `.Name` resolves the name exactly as declared, case
+//// included: `.custom` against `Custom` is the missing-name error, at the
+//// argument.
+
+import {types.Type} from "std";
+
+pub type Code { Custom, Mismatch }
+
+fn check<T>(
+    comptime decl: @Decl<T>,
+    comptime message: @Expr<string>,
+    comptime rule: @Expr<?fn(v: T) -> bool> = null,
+    comptime at: @Expr<?Type.Field<T>> = null,
+    comptime code: @Expr<Code> = .Custom,
+) {
+    decl.setMeta("message", message.value);
+}
+
+#[check("taken", code = .custom)]
+type Account(password: string, confirm: string)
+
+pub fn main() {
+    @print("unreached");
+}

@@ -1,0 +1,60 @@
+//// Decision 364 (2) — every `comptime` parameter is `comptime x: @Expr<T>`,
+//// and `x.value` answers the argument's value at build when it is known and
+//// `T` is data: a string, a number, a `bool`, a variant, a record, a field
+//// key, an array. The same `.value` reads an ordinary function's `comptime`
+//// parameter (the call specialised) and a template's literal without holes.
+
+import {types.Type} from "std";
+
+pub type Level { Low, High }
+
+pub type Limits(min: i32, max: i32)
+
+fn mark<T>(
+    comptime decl: @Decl<T>,
+    comptime label: @Expr<string>,
+    comptime weight: @Expr<f64>,
+    comptime loud: @Expr<bool>,
+    comptime level: @Expr<Level>,
+    comptime limits: @Expr<Limits>,
+    comptime key: @Expr<Type.Field<T>>,
+    comptime tags: @Expr<string[]>,
+) {
+    val shown = if (loud.value) label.value.toUpper() else label.value;
+    val lvl = if (level.value == Level.High) "high" else "low";
+    decl.setMeta(
+        "mark",
+        shown
+            + " "
+            + weight.value.toString()
+            + " "
+            + lvl
+            + " "
+            + limits.value.min.toString()
+            + ".."
+            + limits.value.max.toString()
+            + " "
+            + key.value.name
+            + " "
+            + tags.value.join("+"),
+    );
+}
+
+#[mark("city", 2.5, true, .High, Limits(min: 1, max: 9), .name, ["a", "b"])]
+pub type City(code: string, name: string)
+
+fn scale(comptime n: @Expr<i32>, x: i32) -> i32 {
+    return x * n.value;
+}
+
+fn shout(comptime q: @Expr<string>) -> @Expr<string> {
+    val loud = q.value.toUpper() + "!";
+    return @expr(loud);
+}
+
+pub fn main() {
+    @print(@typeInfo(City).meta.mark.mark);
+    @print(scale(3, 7));
+    @print(scale(5, 2));
+    @print(shout "hello");
+}

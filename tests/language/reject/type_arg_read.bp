@@ -1,0 +1,16 @@
+//// 01-compiler/01-checker step 26 (decision 297) — where `s is type` holds,
+//// `s` is a type and has no value: reading it there is `type-arg-read`, at
+//// the read.
+
+type Box<T>(value: T)
+
+fn peek<T>(comptime s: @Expr<Box<T> | type T>) -> string {
+    if (s is type) {
+        return s.value.value;
+    }
+    return "v";
+}
+
+pub fn main() {
+    @print(peek(Box(value: "x")));
+}

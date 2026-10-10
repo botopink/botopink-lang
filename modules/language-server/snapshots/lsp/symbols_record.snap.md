@@ -1,7 +1,9 @@
 ----- SOURCE
 ```botopink
-val Point = record { x: i32, y: i32 };
+val Point = type(x: i32, y: i32);
 ```
 
 ----- DOCUMENT SYMBOLS
-Point  [Variable]  selection: (0,4)–(0,9)
+Point  [Struct]  range: (0,4)–(0,32)  selection: (0,4)–(0,9)
+  x  [Field]  range: (0,17)–(0,18)  selection: (0,17)–(0,18)
+  y  [Field]  range: (0,25)–(0,26)  selection: (0,25)–(0,26)

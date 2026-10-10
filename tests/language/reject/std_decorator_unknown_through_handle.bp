@@ -1,0 +1,14 @@
+//// A std module's decorator is `#[<handle>.<fn>]`; through the handle of a
+//// `from "std"` namespace import, a name that is not one of the module's
+//// decorators is refused at the annotation. It used to do nothing, silently.
+
+import {testing.mocks} from "std";
+
+#[mocks.mokc]
+pub behavior Repo {
+    fn find(self: Self, id: i32) -> string;
+}
+
+pub fn main() {
+    @print(0);
+}

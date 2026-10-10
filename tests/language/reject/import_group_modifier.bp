@@ -1,0 +1,8 @@
+//// Decision 107 — `*` and `as` belong to the leaf; on a node that opens braces
+//// they are a syntax error, not a silent activation of the namespace.
+
+import {collections* : {Dict}} from "std";
+
+pub fn main() {
+    @print(1);
+}

@@ -1,0 +1,29 @@
+//// 01-compiler/14 step 8, decision 355 — a hole whose value is known at build
+//// is evaluated while the program compiles, as a `comptime` is (decision
+//// 331). `boom` is a `val` whose initializer is an expansion with no run-time
+//// hole, so `${boom}` is known at build; its code raises there, and the hole
+//// is refused at the hole rather than read as computed at render.
+
+pub fn crash(s: string) -> string {
+    @panic("crash: " + s);
+    return s;
+}
+
+pub fn raising(comptime t: @Expr<string>) -> @Expr<string> {
+    return t.build("crash(\"" + t.text() + "\")");
+}
+
+pub fn quote(comptime t: @Expr<string>) -> @Expr<string> {
+    for (t.parts()) { part ->
+        if (part.kind == "Interp" && part.known) return t.build("\"known\"");
+    }
+    return t.build("\"render\"");
+}
+
+pub val boom = raising "x";
+
+pub val read = quote "${boom}";
+
+pub fn main() {
+    @print(read);
+}

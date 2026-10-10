@@ -1,0 +1,27 @@
+//// Decision 280 (2), example 5 — `Cache<T>`'s `T` is what the annotated
+//// function returns: a cache of another type is refused at the argument,
+//// read through the module `val` that holds it.
+
+type Product(name: string)
+
+type User(name: string)
+
+type Cache<T>(name: string)
+
+fn cacheable<A, T>(
+    comptime decl: @Decl<fn(a: A) -> T>,
+    comptime cache: @Expr<Cache<T>>,
+) {
+    decl.setMeta("cache", cache.value.name);
+}
+
+val users = Cache<User[]>("users");
+
+#[cacheable(users)]
+fn byCategory(c: string) -> Product[] {
+    return [Product(name: c)];
+}
+
+pub fn main() {
+    @print(byCategory("tea").length);
+}

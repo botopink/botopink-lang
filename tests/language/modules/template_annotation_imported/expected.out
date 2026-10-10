@@ -1,0 +1,2 @@
+find: select * from users where id = $1 limit 1 <- id
+delete from s where u = $1

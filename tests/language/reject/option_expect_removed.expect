@@ -1,0 +1,2 @@
+optional-has-no-methods: unknown method `expect` on `?i32`
+16:22

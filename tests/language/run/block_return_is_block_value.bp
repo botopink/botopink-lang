@@ -1,0 +1,84 @@
+//// An `@block`'s `return` is the block's value, never the enclosing
+//// function's (decision 2; `ast.exprReturns` keeps it out of the function's
+//// scope). On the parent binary beam and wasm returned from the ENCLOSING
+//// function — `main` printed nothing after the first block and `grade` dropped
+//// its tail — and erlang threw a `return` from a block inside a loop to the
+//// function's guard, so `skipTwo` answered `1`.
+
+fn grade(n: i32) -> string {
+    val label = @block{
+        if (n > 5) return "high";
+        return "low";
+    };
+    return label + "!";
+}
+
+fn twice(n: i32) -> i32 {
+    val doubled = @block{
+        return n * 2;
+    };
+    return doubled + 0;
+}
+
+fn half(x: f64) -> f64 {
+    val h = @block{
+        return x / 2.0;
+    };
+    return h;
+}
+
+fn classify(n: i32) -> string {
+    val s = @block{
+        case n {
+            0 {
+                return "zero";
+            }
+            _ {
+                return "other";
+            }
+        }
+    };
+    return s;
+}
+
+fn nested(n: i32) -> i32 {
+    val a = @block{
+        val b = @block{
+            return n + 1;
+        };
+        return b * 10;
+    };
+    return a;
+}
+
+fn skipTwo() -> i32 {
+    var total = 0;
+    for ([1, 2, 3]) { x ->
+        val v = @block{
+            if (x == 2) return 100;
+            return x;
+        };
+        total = total + v;
+    }
+    return total;
+}
+
+pub fn main() {
+    val x = @block{
+        return 3;
+    };
+    @print(x);
+    @print(grade(9));
+    @print(grade(1));
+    @print(twice(21));
+    @print(half(5.0));
+    @print(classify(0));
+    @print(classify(3));
+    @print(nested(4));
+    @print(skipTwo());
+    @block{
+        @print("inside");
+        return;
+    };
+    @print("after");
+}

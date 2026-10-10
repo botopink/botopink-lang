@@ -1,0 +1,23 @@
+//// Decision 280 (2), example 4 — the pattern names the return type too: a
+//// `#[page]` that answers a `string` where the pattern asks for a `View` is
+//// refused at the annotation.
+
+type View(html: string)
+
+type Route<P>(params: P)
+
+fn page<P>(
+    comptime decl: @Decl<fn(route: Route<P>) -> View>,
+    comptime seg: @Expr<string>,
+) {
+    decl.setMeta("seg", seg.value);
+}
+
+#[page("blog")]
+fn blog(route: Route<string>) -> string {
+    return route.params;
+}
+
+pub fn main() {
+    @print(blog(Route(params: "x")));
+}

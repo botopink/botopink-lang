@@ -1,0 +1,14 @@
+//// Decision 330 — `f?.(args)` calls the function an optional holds, and is
+//// absent when the optional is. On commonJS, erlang and beam; wasm refuses a
+//// `?.()` over a function answering a plain value (it would have to box the
+//// answer — `05-wasm`).
+
+fn adder(present: bool) -> ?fn(i32) -> i32 {
+    val add: fn(i32) -> i32 = { n -> n + 1 };
+    return if (present) add else null;
+}
+
+pub fn main() {
+    @print(adder(true)?.(41) ?? 0);
+    @print(adder(false)?.(41) ?? -3);
+}

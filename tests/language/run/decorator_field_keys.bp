@@ -1,0 +1,50 @@
+//// Decisions 280 (3), 308, 267, example 6 — fields as arguments: `.name`
+//// resolves against the `T` of `Type.Field<T>`, which `@Decl<T>` binds to
+//// the annotated type; the variadic `..fields` takes any number of them. The
+//// body reads each as the `Type.Field<T>` record — its `name`, its
+//// `typeName` and its annotations, as `decl.fields` hands them out. On a
+//// field, `@Decl<T>` is the field's type.
+
+import {types.Type} from "std";
+
+fn entity<T>(comptime decl: @Decl<T>, comptime table: @Expr<string>) {
+    decl.setMeta("table", table.value);
+}
+
+fn index<T>(
+    comptime decl: @Decl<T>,
+    comptime ..fields: @Expr<Type.Field<T>[]>,
+) {
+    decl.setMeta(
+        "columns",
+        fields.value
+            .map(
+                { f -> f.name + ":" + f.typeName + ":" + f.annotations.length.toString() },
+            )
+            .join(","),
+    );
+}
+
+fn unique<T>(comptime decl: @Decl<T>, comptime field: @Expr<Type.Field<T>>) {
+    decl.setMeta("column", field.value.name);
+}
+
+fn column<T>(comptime decl: @Decl<T>, comptime name: @Expr<string>) {
+    if (decl.kind != DeclKind.Field) decl.fail("#[column] annotates a field");
+}
+
+#[entity("cities")]
+#[index(.state, .name)]
+#[unique(.code)]
+pub type City(
+    code: string,
+    name: string,
+    #[column("state_name")] state: string,
+)
+
+pub fn main() {
+    @print(@typeInfo(City).meta.entity.table);
+    @print(@typeInfo(City).meta.index.columns);
+    @print(@typeInfo(City).meta.unique.column);
+    @print(City(code: "SP", name: "São Paulo", state: "SP").name);
+}

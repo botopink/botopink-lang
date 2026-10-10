@@ -1,0 +1,6 @@
+import {marks.tagged};
+
+#[tagged]
+fn hidden() -> i32 {
+    return 1;
+}

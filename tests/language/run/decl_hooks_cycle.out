@@ -1,0 +1,1 @@
+A(uses: [], calls: [B@main:42:13]) B(uses: [], calls: [A@main:36:13])

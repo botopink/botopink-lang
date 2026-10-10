@@ -1,0 +1,93 @@
+----- SOURCE CODE -- main.bp
+```botopink
+fn render(words: Array<string>) -> string {
+    var out = "";
+    var count = 0;
+    val emit = { w ->
+        out = out + "<" + w + ">";
+        count = count + 1;
+    };
+    emit("start");
+    for (words) { w -> emit(w); };
+    return out + " " + count.toString();
+}
+fn main() {
+    @print(render(["a", "b"]));
+}
+```
+
+----- JAVASCRIPT -- main.js
+```javascript
+function __bp_show(v, s, top, a) {
+    if ((typeof v === "string")) {
+        a.push(top ? v : (("\"" + Array.from(v, (c) => ((c === "\"") || (c === "\\")) ? ("\\" + c) : (c === "\n") ? "\\n" : (c === "\r") ? "\\r" : (c === "\t") ? "\\t" : c).join("")) + "\""));
+        return "%s";
+    }
+    if ((typeof v === "bigint")) {
+        a.push(String(v));
+        return "%s";
+    }
+    if (((typeof v === "number") && (s === "f"))) {
+        a.push(Number.isInteger(v) ? v.toFixed(1) : String(v));
+        return "%s";
+    }
+    if (Array.isArray(v)) {
+        const t = ((s != null) && (s[0] === "#"));
+        return (((t ? "#(" : "[") + v.map((e, i) => __bp_show(e, (s == null) ? null : t ? s[i + 1] : s[1], false, a)).join(", ")) + (t ? ")" : "]"));
+    }
+    if (((v != null) && (typeof v.__bp === "string"))) {
+        if ((typeof v.display === "function")) {
+            a.push(v.display());
+            return "%s";
+        }
+        const k = Object.keys(v);
+        return (((typeof v.tag === "string") ? ((v.__bp + ".") + v.tag) : v.__bp) + ((k.length === 0) ? "" : (("(" + k.map((n) => ((n + ": ") + __bp_show(v[n], null, false, a))).join(", ")) + ")")));
+    }
+    if ((v === undefined)) return "null";
+    a.push(v);
+    return "%O";
+}
+
+function __bp_print() {
+    const a = [];
+    const f = Array.from(arguments, (v, i) => __bp_show(v, null, true, a)).join(" ");
+    console.log.apply(console, [f, ...a]);
+}
+
+function __bp_int(v, lo, hi, what) { if (v >= lo && v <= hi) { return v + 0; } throw new Error((Number.isFinite(v) ? "integer overflow: " : "integer division by zero: ") + what); }
+
+function render(words) {
+    let out = "";
+    let count = 0;
+    const emit = (w) => {
+    out = (((out + "<") + w) + ">");
+    count = __bp_int((count + 1), -2147483648, 2147483647, "+ on i32 at main.bp:6:23");
+};
+    emit("start");
+    for (const w of words) {
+    emit(w);
+}
+    return ((out + " ") + count.toString());
+}
+
+function main() {
+    __bp_print(render(["a", "b"]));
+}
+
+function _botopink_main() {
+    main();
+}
+_botopink_main();
+```
+
+----- TYPESCRIPT TYPEDEF -- main.d.ts
+```typescript
+
+
+
+```
+
+----- RUN LOG -----
+```logs
+<start><a><b> 3
+```

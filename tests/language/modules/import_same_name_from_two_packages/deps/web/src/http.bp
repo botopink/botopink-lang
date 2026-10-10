@@ -1,0 +1,5 @@
+pub type Response(status: i32)
+
+pub fn ok() -> Response {
+    return Response(status: 200);
+}

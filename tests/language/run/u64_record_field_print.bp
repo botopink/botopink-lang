@@ -1,0 +1,19 @@
+//// A `u64` record field past `2^63 − 1` prints its unsigned digits wherever
+//// the record is printed — the record itself, one nested in another, an
+//// array of them — on every target. wasm's shape printer wrote every 64-bit
+//// field through the signed formatter: `Big(n: 18446744073709551615)`
+//// printed `Big(n: -1)` at exit 0 (decision 319).
+
+type Big(n: u64, label: string)
+
+type Pair(left: Big, right: i64)
+
+pub fn main() {
+    val top: u64 = 18446744073709551615;
+    val half: u64 = 9223372036854775808;
+    val b = Big(n: top, label: "top");
+    @print(b);
+    @print(b.n);
+    @print(Pair(left: Big(n: half, label: "half"), right: -1));
+    @print([b, Big(n: 0, label: "zero")]);
+}

@@ -3,6 +3,7 @@ const std = @import("std");
 const h = @import("./helpers.zig");
 const snap = @import("./snapshot.zig");
 const engine = @import("../engine.zig");
+const proto = @import("../protocol.zig");
 
 // ── R1 — includes declaration ──
 
@@ -105,6 +106,11 @@ test "references: cursor on literal returns empty" {
 }
 
 // ── R5 — ranges corretos ──────────────────────────────────────────────────────
+//
+// No snapshot: this source is `references_include_decl`'s with one usage fewer,
+// and its rendered output was a strict subset of that file's. What is left here
+// is the part a snapshot cannot state — that *every* returned range covers
+// exactly the identifier token, end included — so it is asserted in full below.
 
 test "references: returned ranges match token positions" {
     const gpa = std.testing.allocator;
@@ -123,16 +129,19 @@ test "references: returned ranges match token positions" {
         gpa.free(locs);
     }
 
-    // The declaration 'x' is on line 0
-    var found_decl = false;
-    for (locs) |loc| {
-        if (loc.range.start.line == 0) {
-            try std.testing.expectEqual(@as(u32, 4), loc.range.start.character);
-            found_decl = true;
-        }
+    // Declaration (0,4)–(0,5) and usage (1,8)–(1,9); `x` is one char wide, so a
+    // range that is off by one in either direction is caught here.
+    try std.testing.expectEqual(@as(usize, 2), locs.len);
+    const want = [_]proto.Range{
+        .{ .start = .{ .line = 0, .character = 4 }, .end = .{ .line = 0, .character = 5 } },
+        .{ .start = .{ .line = 1, .character = 8 }, .end = .{ .line = 1, .character = 9 } },
+    };
+    for (want, 0..) |w, i| {
+        try std.testing.expectEqual(w.start.line, locs[i].range.start.line);
+        try std.testing.expectEqual(w.start.character, locs[i].range.start.character);
+        try std.testing.expectEqual(w.end.line, locs[i].range.end.line);
+        try std.testing.expectEqual(w.end.character, locs[i].range.end.character);
     }
-    try std.testing.expect(found_decl);
-    try snap.assertReferences(gpa, "references_ranges", source, h.pos(0, 4), locs);
 }
 
 // ── R6 — fn references ──

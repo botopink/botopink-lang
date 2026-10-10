@@ -1,0 +1,7 @@
+//// std/testing — the test harness (decision 106): assertions and mocks.
+//// Impure by nature (`mocks` records calls) and entered only under
+//// `botopink test`; may import from `io` and the root. The snapshot engine
+//// left std for the `snap` library (decision 391).
+
+pub mod asserts;
+pub mod mocks;

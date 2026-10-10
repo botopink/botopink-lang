@@ -1,0 +1,3 @@
+//// A module whose default function is named in it, for its own recursion.
+
+pub mod tree;

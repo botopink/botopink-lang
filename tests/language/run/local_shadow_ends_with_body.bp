@@ -1,0 +1,24 @@
+//// 01 step 13 — a local that shadows a module declaration shadows it only in
+//// the body that declares it. `first` binds a local `p`; `second` calls the
+//// module's `p`. Before the fix the local retyped `p` for every later
+//// declaration: `type mismatch: expected string, got Thing` at `p("x")`.
+
+pub fn p(label: string) -> string {
+    return "p:" + label;
+}
+
+type Thing(n: i32)
+
+fn first() -> i32 {
+    val p = Thing(n: 3);
+    return p.n;
+}
+
+fn second() -> string {
+    return p("x");
+}
+
+pub fn main() {
+    @print(first());
+    @print(second());
+}

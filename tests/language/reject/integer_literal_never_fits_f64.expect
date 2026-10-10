@@ -1,0 +1,2 @@
+the integer literal `1` is not an `f64` — write `1d` or `1.0`
+7:18

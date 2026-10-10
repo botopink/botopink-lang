@@ -1,0 +1,50 @@
+//// Decisions 277, 293 — a `HookUse` carries the `use`'s explicit type
+//// arguments as `TypeInfo`: `use params<BlogParams>(…)` hands the decorator
+//// `BlogParams`, its module and its fields with their types, which a route
+//// decorator checks against its pattern. A `use` without type arguments
+//// carries none.
+
+type Element(text: string) implement @Renderable
+
+type BlogParams(slug: string, id: i32)
+
+fn args(comptime decl: @Decl) {
+    var out: string[] = [];
+    decl.hooks.forEach({ n ->
+        n.uses.forEach({ u ->
+            var tas: string[] = [];
+            u.typeArgs.forEach({ t ->
+                var fields: string[] = [];
+                t.fields.forEach(
+                    { f -> fields.push(f.name + ": " + f.typeName) },
+                );
+                tas.push(
+                    t.module + "." + t.name + "(" + fields.join(", ") + ")",
+                );
+            });
+            val h = u.hook;
+            val name = if (h == null) "null" else h.name;
+            out.push(name + "<" + tas.join(", ") + ">");
+        });
+    });
+    decl.setMeta("uses", out.join(" "));
+}
+
+fn params<P>(fallback: P) -> @Component<P> {
+    return fallback;
+}
+
+fn title() -> @Component<string> {
+    return "post";
+}
+
+#[args]
+fn Post() -> @Component<Element> {
+    val p = use params<BlogParams>(BlogParams(slug: "hello", id: 1));
+    val t = use title();
+    return Element(text: t + " " + p.slug);
+}
+
+pub fn main() {
+    @print(@typeInfo(Post).meta.args.uses);
+}

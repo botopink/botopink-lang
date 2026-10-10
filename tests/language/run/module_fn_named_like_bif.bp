@@ -1,0 +1,40 @@
+//// A module function named like an Erlang auto-imported BIF (`element/2`,
+//// `apply/2`, `length/1`, `hd/1`) is the program's own function, and the
+//// backend's own field reads, dynamic calls, lengths and printing never reach
+//// it — nor does a std template's bare `length(…)` (`Array.at`'s bound).
+//// Erlang read `p.y` as `element(3, P)` — the module's `element/2` — and
+//// answered `{error, badarg}` at run time (language-gaps T13).
+
+pub type Point(x: i32, y: i32)
+
+fn element(name: string, value: string) -> string {
+    return name + "=" + value;
+}
+
+fn apply(f: fn(i32) -> i32, v: i32) -> i32 {
+    return f(v) + 100;
+}
+
+fn length(s: string) -> i32 {
+    return 42;
+}
+
+fn hd(xs: i32[]) -> i32 {
+    return -1;
+}
+
+pub fn main() {
+    val p = Point(x: 3, y: 4);
+    @print(p.y);
+    @print(element("k", "v"));
+    @print(apply({ n -> n * 2 }, p.x));
+    val twice = { n -> n * 2 };
+    @print(twice(p.y));
+    @print(length("abc"));
+    @print("abcd".length());
+    @print([5, 6, 7].length());
+    @print(hd([9, 8]));
+    @print([9, 8].at(0) ?? 0);
+    @print([9, 8].at(5) ?? 0);
+    @print(p);
+}

@@ -1,0 +1,32 @@
+//// An `@block` with a `return` that reassigns a `var` of the enclosing function: the
+//// reassignment is visible after the block, and the block's value is its
+//// `return`'s — from the body's end and from an `if` arm. On
+//// erlang the block is a fun, which cannot rebind what it captured: `erlc`
+//// refused the module (`Acc@1` unbound).
+
+pub fn main() {
+    var acc = 1;
+    var label = "a";
+    val r = @block{
+        acc = acc + 10;
+        label = label + "b";
+        return acc * 2;
+    };
+    @print(acc, label, r);
+
+    val s = @block{
+        if (acc > 5) {
+            acc = acc - 5;
+            return "big";
+        }
+        acc = 0;
+        return "small";
+    };
+    @print(acc, s);
+
+    @block{
+        acc = acc + 1;
+        return acc;
+    };
+    @print(acc);
+}

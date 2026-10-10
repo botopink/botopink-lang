@@ -1,0 +1,22 @@
+//// Decision 353 — a template body reads the program's catalogue at build,
+//// where a declaration of the program is no value: `value` is refused at the
+//// read (`name`, `module`, `meta` and `returnTypeName` are answered).
+
+pub fn mark(comptime decl: @Decl) {
+    decl.setMeta("m", decl.name);
+}
+
+pub fn first(comptime e: @Expr<string>) -> @Expr<string> {
+    val all = @TypeInfo.all(with: mark);
+    val v = all.map({ d -> d.value });
+    return @expr(e.text() + v.length.toString());
+}
+
+#[mark]
+pub fn job() -> i32 {
+    return 1;
+}
+
+pub fn main() {
+    @print(first "x");
+}

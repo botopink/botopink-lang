@@ -1,0 +1,14 @@
+//// 01-compiler/01-checker step 25 (decision 289) — `pub default <name>;`
+//// names a function the module declares; a name no `fn` declares is
+//// `default-unknown` at the name. The parent binary refused the line as an
+//// unexpected token, naming nothing.
+
+fn render() -> string {
+    return "x";
+}
+
+pub default nope;
+
+pub fn main() {
+    @print(render());
+}

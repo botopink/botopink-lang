@@ -9,10 +9,17 @@ const envMod = @import("../env.zig");
 const inferMod = @import("../infer.zig");
 const comptimeMod = @import("../../comptime.zig");
 const template = @import("../template.zig");
+/// Test-only: the one way a test spells a path it writes to (per process, so a
+/// second `zig build test` over this checkout cannot empty it mid-test).
+/// `build.zig` gives this module to the test modules alone.
+const test_scratch = @import("test_scratch");
+const templateEval = @import("../template_eval.zig");
+const erlEmitter = @import("../../codegen/beam/erl_emitter.zig");
 const Lexer = lexerMod.Lexer;
 const Parser = parserMod.Parser;
 const Env = envMod.Env;
 const h = @import("helpers.zig");
+const hostRuntime = @import("../runtime/runtime.zig");
 
 /// Parse + infer `src` into `env` (builtins + stdlib preloaded). The caller
 /// owns `env` (deinit) and the arena everything is allocated in.
@@ -112,9 +119,9 @@ test "template: scope snapshot lookup ---- hit and miss" {
     defer env.deinit();
 
     try inferInto(&env, alloc,
-        \\pub record Button {
+        \\pub type Button(
         \\    label: string,
-        \\}
+        \\)
         \\pub fn html(comptime template: @Expr<string>) -> @Expr<string> {
         \\    return template;
         \\}
@@ -213,6 +220,8 @@ test "template: fail span maps into the caller's template" {
 
     const desc = try h.renderTypeError(std.testing.allocator, src, err);
     defer std.testing.allocator.free(desc);
+    const trace_prev = snapMod.traceEnter(@src());
+    defer snapMod.traceLeave(trace_prev);
     try snapMod.checkText(std.testing.allocator, "comptime/templates/fail_span_in_template", desc);
 }
 
@@ -243,9 +252,9 @@ test "template: context exposes declaration position and scope for second-layer 
     defer env.deinit();
 
     try inferInto(&env, alloc,
-        \\pub record Button {
+        \\pub type Button(
         \\    label: string,
-        \\}
+        \\)
         \\pub fn dsl(comptime template: @Expr<string>) -> @Expr<string> {
         \\    return template;
         \\}
@@ -254,12 +263,28 @@ test "template: context exposes declaration position and scope for second-layer 
         \\""";
     );
 
+    // The capture reaches the template body (`q.context()`, `q.source()`,
+    // `q.bindings()`, …) as this map.
     const captures = try onlyCaptures(&env);
-    const json = try template.contextJsonAlloc(&captures[0], std.testing.allocator);
-    defer std.testing.allocator.free(json);
-    try std.testing.expectEqualStrings(
-        \\{"file":"","line":7,"col":13,"multiline":true,"text":"\n<Button/>\n","scope":{"Button":"Record_","dsl":"Fn","c":"Val"}}
-    , json);
+    var term_out: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer term_out.deinit();
+    try erlEmitter.writeTerm(&term_out.writer, try templateEval.captureToTerm(alloc, &captures[0]));
+    const term = term_out.written();
+    const expected = [_][]const u8{
+        "'__bp_capture' => <<\"template\">>",
+        "source => #{file => <<\"\">>, line => 7, col => 13}",
+        "text => <<\"\\n<Button/>\\n\">>, multiline => true}",
+        // Decision 237: only the scope entries the text names — `dsl` and `c`
+        // are in scope but not words of `<Button/>`.
+        "bindings => [#{name => <<\"Button\">>, kind => 'Record_', identity => <<\"main@@Button\">>, local => <<\"Button\">>}]",
+        "words => [<<\"Button\">>]",
+    };
+    for (expected) |needle| {
+        if (std.mem.indexOf(u8, term, needle) == null) {
+            std.debug.print("\nmissing:\n{s}\nin:\n{s}\n", .{ needle, term });
+            return error.TestExpectedContains;
+        }
+    }
 }
 
 test "infer: context/source/bindings/build methods typecheck against std.syntax" {
@@ -370,7 +395,7 @@ test "infer error: template body not expandable by the V1 driver (F6)" {
 /// which silently hides template-evaluation failures.
 fn assertCompilesOk(comptime loc: std.builtin.SourceLocation, src: []const u8) !void {
     const io = std.testing.io;
-    const build_root = comptime h.buildRootPathFromSrc(loc);
+    const build_root = h.buildRootPathFromSrc(io, loc);
     var session = try comptimeMod.compile(
         std.testing.allocator,
         &.{.{ .path = "", .source = src }},
@@ -390,6 +415,31 @@ fn assertCompilesOk(comptime loc: std.builtin.SourceLocation, src: []const u8) !
 
 // ── F6-full: runtime-backed template bodies ───────────────────────────────────
 
+test "comptime: runtime template body ---- a method nothing answers is refused at the call in the body" {
+    // 1.0.11 front 14 step 1, the template half: a template body is typed, so
+    // the checker refuses the call itself, located at the method name in the
+    // body — no runtime is asked. (A decorator body is untyped; its twin is
+    // `decorator invocation: a method nothing answers …`.)
+    const src =
+        \\pub fn shout(comptime q: @Expr<string>) -> @Expr<string> {
+        \\    val t = q.text();
+        \\    return q.build(t.frobnicate());
+        \\}
+        \\val s = shout "hey";
+    ;
+    const io = std.testing.io;
+    const build_root = h.buildRootPathFromSrc(io, @src());
+    var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, build_root, null);
+    defer session.deinit(std.testing.allocator);
+    const outcome = session.outputs.items[0].outcome;
+    try std.testing.expect(outcome == .typeError);
+    const message = try outcome.typeError.message(std.testing.allocator);
+    defer std.testing.allocator.free(message);
+    const at = outcome.typeError.loc orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqualStrings("unknown-primitive-method: `string` has no method `frobnicate`", message);
+    try std.testing.expectEqual([2]usize{ 3, 22 }, [2]usize{ at.line, at.col });
+}
+
 test "comptime: runtime template body ---- text() + build() end to end" {
     const src =
         \\pub fn shout(comptime q: @Expr<string>) -> @Expr<string> {
@@ -404,9 +454,9 @@ test "comptime: runtime template body ---- text() + build() end to end" {
 
 test "comptime: runtime template body ---- lookup miss drives control flow" {
     const src =
-        \\pub record Button {
+        \\pub type Button(
         \\    label: string,
-        \\}
+        \\)
         \\pub fn need(comptime t: @Expr<string>) -> @Expr<string> {
         \\    val hit = t.lookup("Buttom");
         \\    if (hit) { b ->
@@ -414,7 +464,7 @@ test "comptime: runtime template body ---- lookup miss drives control flow" {
         \\    };
         \\    return t.build("\"ok\"");
         \\}
-        \\val r = need "x";
+        \\val r = need "<Buttom/>";
     ;
     try assertCompilesOk(@src(), src);
     try h.assertComptimeAstSingle(std.testing.allocator, @src(), src);
@@ -446,7 +496,7 @@ test "template: runtime fail() maps into the caller's template" {
         std.testing.allocator,
         &.{.{ .path = "", .source = src }},
         io,
-        ".botopinkbuild/comptime/runtime_fail_maps_into_template",
+        test_scratch.path(io, "comptime/runtime_fail_maps_into_template"),
         null,
     );
     defer session.deinit(std.testing.allocator);
@@ -466,7 +516,7 @@ test "comptime: runtime template body ---- parts() with a hole splices the calle
     const src =
         \\pub fn html(comptime q: @Expr<string>) -> @Expr<string> {
         \\    var acc = "\"\"";
-        \\    loop (q.parts()) { p ->
+        \\    for (q.parts()) { p ->
         \\        if (p.kind == "Text") {
         \\            acc = acc + " + \"" + p.text + "\"";
         \\        };
@@ -481,6 +531,290 @@ test "comptime: runtime template body ---- parts() with a hole splices the calle
     ;
     try assertCompilesOk(@src(), src);
     try h.assertComptimeAstSingle(std.testing.allocator, @src(), src);
+}
+
+// ── the term round trip, per shape (front 14 step 3) ──────────────────────────
+//
+// A capture reaches the body as `main/1`'s argument, an external term
+// (`runtime/etf.zig`); each fixture reads the shape back in the body, answers
+// it in the reply, and requires the reply byte-identical on the BEAM and the
+// wat runtime (`h.repliesIdenticalAcrossRuntimes`) beside the per-runtime
+// exchange snapshots (`comptime/runtime/{beam,wat}/`).
+
+test "comptime: round trip ---- a holed template's parts carry a record, an array and an optional" {
+    const src =
+        \\pub type Point(x: i32, y: i32)
+        \\pub fn holes<T>(comptime q: @Expr<string>) -> @Expr<T> {
+        \\    var codes: Array<string> = [];
+        \\    var texts = "";
+        \\    var spans = "";
+        \\    for (q.parts()) { p ->
+        \\        if (p.kind == "Interp") { codes.push(p.code); };
+        \\        if (p.kind == "Text") { texts = texts + p.text; };
+        \\        spans = spans + p.span.start.toString() + "-" + p.span.end.toString() + ";";
+        \\    };
+        \\    return q.build("#(" + codes.join(", ") + ", \"" + texts + "\", \"" + spans + "\")");
+        \\}
+        \\val origin = Point(x: 3, y: 4);
+        \\val xs = [1, 2, 3];
+        \\val maybe: ?i32 = null;
+        \\val got = holes """p=${origin} xs=${xs} m=${maybe}""";
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const replies = try h.repliesIdenticalAcrossRuntimes(std.testing.allocator, arena.allocator(), @src(), &.{.{ .path = "", .source = src }});
+    try std.testing.expectEqual(@as(usize, 1), replies.len);
+    // Three holes, each its placeholder in order, the text between them, and
+    // every part's span — the capture's `parts` list survived the trip whole.
+    try std.testing.expectEqualStrings(
+        \\{"kind":"code","source":"#(__bp_hole_q_0, __bp_hole_q_1, __bp_hole_q_2, \"p= xs= m=\", \"0-2;2-15;15-19;19-32;32-35;35-48;\")"}
+    , replies[0]);
+    try h.assertComptimeAstSingle(std.testing.allocator, @src(), src);
+}
+
+test "comptime: round trip ---- an @ExprCustom reference tree names a declaration of another module" {
+    const shapes =
+        \\pub type Item(id: i32)
+    ;
+    const main =
+        \\import {Item} from "shapes";
+        \\pub fn dsl<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
+        \\    val code = e.build("41");
+        \\    val leaf = CustomNode(kind: "field", span: Span(7, 9, 1), label: "property", ref: e.lookup("Item"), children: []);
+        \\    val root = CustomNode(kind: "select", span: Span(0, 6, 1), label: "keyword", ref: null, children: [leaf]);
+        \\    return e.custom(root, code);
+        \\}
+        \\val rows = dsl "select id from Item";
+    ;
+    const modules: []const @import("../../module.zig").Module = &.{
+        .{ .path = "shapes", .source = shapes },
+        .{ .path = "", .source = main },
+    };
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const replies = try h.repliesIdenticalAcrossRuntimes(std.testing.allocator, arena.allocator(), @src(), modules);
+    try std.testing.expectEqual(@as(usize, 1), replies.len);
+    // The leaf's `ref` is the binding `lookup` answered at the call site: the
+    // declaration's own name and identity in `shapes`, and the name the call
+    // site spells.
+    try std.testing.expect(std.mem.indexOf(u8, replies[0], "\"identity\":\"shapes@@Item\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, replies[0], "\"kind\":\"custom\"") != null);
+
+    const io = std.testing.io;
+    var session = try comptimeMod.compile(std.testing.allocator, modules, io, h.buildRootPathFromSrc(io, @src()), null);
+    defer session.deinit(std.testing.allocator);
+    const out = session.outputs.items[session.outputs.items.len - 1];
+    try std.testing.expect(out.outcome == .ok);
+    const entries = out.outcome.ok.custom_ast;
+    try std.testing.expectEqual(@as(usize, 1), entries.len);
+    const root = entries[0].root;
+    try std.testing.expectEqualStrings("select", root.kind);
+    try std.testing.expect(root.ref == null);
+    try std.testing.expectEqual(@as(usize, 1), root.children.len);
+    const ref = root.children[0].ref orelse return error.TestExpectedRef;
+    try std.testing.expectEqualStrings("Item", ref.name);
+    // `ref.kind` is not asserted: an imported record reads as `Fn` here (the
+    // import binds its constructor) where a local one reads `Record_` — the
+    // scope snapshot's classification, not the round trip (reported to 01).
+    try std.testing.expectEqualStrings("shapes@@Item", ref.identity);
+    try std.testing.expectEqualStrings("Item", ref.local);
+    try std.testing.expectEqual(@as(usize, 7), root.children[0].span.start);
+
+    try h.assertComptimeAst(std.testing.allocator, @src(), modules);
+}
+
+test "comptime: round trip ---- a hole known at build reaches the body as its value (decision 355)" {
+    // 01-compiler/14 step 8. `${label}` names a `val` holding a literal,
+    // `${pt}` a `val` whose initializer is another expansion with no run-time
+    // hole (its value is the record that expansion's code builds, evaluated on
+    // the comptime runtime), `${dyn()}` a call: computed at render.
+    const src =
+        \\pub type Point(x: i32, y: i32)
+        \\pub fn mk(comptime q: @Expr<string>) -> @Expr<Point> {
+        \\    return q.build("Point(x: " + q.text().length.toString() + ", y: 2)");
+        \\}
+        \\fn flag(b: bool) -> string {
+        \\    return if (b) "known" else "render";
+        \\}
+        \\fn pointText(p: Point) -> string {
+        \\    return p.x.toString() + "," + p.y.toString();
+        \\}
+        \\fn asText(s: string) -> string {
+        \\    return s;
+        \\}
+        \\pub fn probe(comptime q: @Expr<string>) -> @Expr<string> {
+        \\    var out = "";
+        \\    var k = 0;
+        \\    for (q.parts()) { p ->
+        \\        if (p.kind == "Interp") {
+        \\            out = out + flag(p.known);
+        \\            if (k == 0) out = out + "=" + asText(p.value);
+        \\            if (k == 1) out = out + "=" + pointText(p.value);
+        \\            out = out + ";";
+        \\            k = k + 1;
+        \\        }
+        \\    }
+        \\    return q.build("\"" + out + "\"");
+        \\}
+        \\fn dyn() -> string {
+        \\    return "d";
+        \\}
+        \\pub val label = "a";
+        \\pub val pt = mk "abc";
+        \\pub val got = probe """${label} ${pt} ${dyn()}""";
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const replies = try h.repliesIdenticalAcrossRuntimes(std.testing.allocator, arena.allocator(), @src(), &.{.{ .path = "", .source = src }});
+    var found = false;
+    for (replies) |r| {
+        if (std.mem.indexOf(u8, r, "known=a;known=3,2;render;") != null) found = true;
+    }
+    try std.testing.expect(found);
+}
+
+// ── decision 237: a capture carries only the bindings its text names ─────────
+
+test "decision 237: the capture's bindings are the scope entries its text names, in text order" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var env = try freshTestEnv(alloc);
+    defer env.deinit();
+
+    try inferInto(&env, alloc,
+        \\pub type Card(
+        \\    title: string,
+        \\)
+        \\pub type Badge(
+        \\    n: i32,
+        \\)
+        \\val unrelated = 1;
+        \\pub fn dsl(comptime template: @Expr<string>) -> @Expr<string> {
+        \\    return template;
+        \\}
+        \\val a = dsl "<Card title=\"x\"><Badge/></Card> 9lives _x Badge";
+        \\val b = dsl "cfg-0";
+    );
+
+    var it = env.exprCaptures.iterator();
+    var seen: usize = 0;
+    while (it.next()) |e| {
+        for (e.value_ptr.*) |*cap| {
+            var term_out: std.Io.Writer.Allocating = .init(std.testing.allocator);
+            defer term_out.deinit();
+            try erlEmitter.writeTerm(&term_out.writer, try templateEval.captureToTerm(alloc, cap));
+            const term = term_out.written();
+            const text = cap.text.?;
+            const expected: []const []const u8 = if (std.mem.eql(u8, text, "cfg-0")) &.{
+                // `cfg-0`: one word, `cfg`, which the scope lacks — no binding.
+                "bindings => []",
+                "words => [<<\"cfg\">>]",
+            } else &.{
+                // A word is identifier-shaped: `9lives` is not one (nor is
+                // `lives` inside it), `_x` is; a repeated word counts once. Not
+                // `unrelated`, `dsl`, `a`, `b`: the text does not spell them.
+                "bindings => [#{name => <<\"Card\">>, kind => 'Record_', identity => <<\"main@@Card\">>, local => <<\"Card\">>}, #{name => <<\"Badge\">>, kind => 'Record_', identity => <<\"main@@Badge\">>, local => <<\"Badge\">>}]",
+                "words => [<<\"Card\">>, <<\"title\">>, <<\"x\">>, <<\"Badge\">>, <<\"_x\">>]",
+            };
+            for (expected) |needle| {
+                if (std.mem.indexOf(u8, term, needle) == null) {
+                    std.debug.print("\nmissing:\n{s}\nin:\n{s}\n", .{ needle, term });
+                    return error.TestExpectedContains;
+                }
+            }
+            seen += 1;
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 2), seen);
+}
+
+test "decision 237 ---- a text that names nothing in scope carries no binding" {
+    const src =
+        \\val cfg_1 = "unread";
+        \\pub fn conf(comptime q: @Expr<string>) -> @Expr<i32> {
+        \\    val n = q.bindings().length;
+        \\    return @expr(n);
+        \\}
+        \\val n = conf "cfg-0";
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const replies = try h.repliesIdenticalAcrossRuntimes(std.testing.allocator, arena.allocator(), @src(), &.{.{ .path = "", .source = src }});
+    try std.testing.expectEqual(@as(usize, 1), replies.len);
+    try std.testing.expectEqualStrings(
+        \\{"kind":"value","value":0}
+    , replies[0]);
+    try h.assertComptimeAstSingle(std.testing.allocator, @src(), src);
+}
+
+test "decision 237 ---- lookup of a word of the text finds its binding" {
+    const src =
+        \\pub type Card(
+        \\    title: string,
+        \\)
+        \\pub type Badge(
+        \\    n: i32,
+        \\)
+        \\val unrelated = 1;
+        \\pub fn ui(comptime q: @Expr<string>) -> @Expr<string> {
+        \\    val count = q.bindings().length;
+        \\    val hit = q.lookup("Badge");
+        \\    if (hit) { b ->
+        \\        return q.build("\"" + b.name + "/" + b.local + "\"");
+        \\    } else {
+        \\        return q.fail("Badge is a word of the text and in scope");
+        \\    };
+        \\}
+        \\val s = ui "<Card title=\"x\"><Badge/></Card>";
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const replies = try h.repliesIdenticalAcrossRuntimes(std.testing.allocator, arena.allocator(), @src(), &.{.{ .path = "", .source = src }});
+    try std.testing.expectEqual(@as(usize, 1), replies.len);
+    try std.testing.expectEqualStrings(
+        \\{"kind":"code","source":"\"Badge/Badge\""}
+    , replies[0]);
+    try h.assertComptimeAstSingle(std.testing.allocator, @src(), src);
+}
+
+test "decision 237 ---- lookup of a name outside the text is a located error" {
+    // `Button` is in scope but the text does not spell it: the template fails
+    // at its literal on both runtimes, never `undefined`.
+    const src =
+        \\pub type Button(
+        \\    label: string,
+        \\)
+        \\pub fn need(comptime t: @Expr<string>) -> @Expr<string> {
+        \\    val hit = t.lookup("Button");
+        \\    if (hit) { b ->
+        \\        return t.build("\"hit\"");
+        \\    } else {
+        \\        return t.build("\"miss\"");
+        \\    };
+        \\}
+        \\val r = need "<Card/>";
+    ;
+    const io = std.testing.io;
+    const prev_rt = hostRuntime.force(.beam);
+    defer _ = hostRuntime.force(prev_rt);
+    for ([_]hostRuntime.ComptimeRuntime{ .beam, .wat }) |rt| {
+        _ = hostRuntime.force(rt);
+        var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, h.buildRootPathFromSrc(io, @src()), null);
+        defer session.deinit(std.testing.allocator);
+        try std.testing.expectEqual(@as(usize, 1), session.outputs.items.len);
+        const outcome = session.outputs.items[0].outcome;
+        try std.testing.expect(outcome == .typeError);
+        const message = try outcome.typeError.message(std.testing.allocator);
+        defer std.testing.allocator.free(message);
+        try std.testing.expectEqualStrings(
+            \\lookup("Button"): not a word of the template's text; a template capture carries only the bindings whose name its text spells
+        , message);
+        // Located at the template literal the body was handed.
+        const at = outcome.typeError.loc orelse return error.TestUnexpectedResult;
+        try std.testing.expectEqual([2]usize{ 12, 14 }, [2]usize{ at.line, at.col });
+    }
+    try h.assertComptimeCompileError(std.testing.allocator, @src(), src);
 }
 
 // ── @ExprCustom carrier (expr-custom) ─────────────────────────────────────────
@@ -506,14 +840,14 @@ test "infer: a fn returning @ExprCustom<T> is recognized as a template fn" {
 
 test "comptime: q.custom executes `code` identically + the tree is retrievable by loc" {
     const src =
-        \\pub record Item { id: i32 }
+        \\pub type Item(id: i32)
         \\pub fn dsl<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
         \\    val code = e.build("41");
         \\    val leaf = CustomNode(kind: "field", span: Span(5, 9, 1), label: "property", ref: e.lookup("Item"), children: []);
         \\    val root = CustomNode(kind: "select", span: Span(0, 6, 1), label: "keyword", ref: null, children: [leaf]);
         \\    return e.custom(root, code);
         \\}
-        \\val rows = dsl "select id";
+        \\val rows = dsl "select id from Item";
         \\val answer = rows + 1;
     ;
     const io = std.testing.io;
@@ -521,7 +855,7 @@ test "comptime: q.custom executes `code` identically + the tree is retrievable b
         std.testing.allocator,
         &.{.{ .path = "", .source = src }},
         io,
-        ".botopinkbuild/comptime/expr_custom_carrier",
+        test_scratch.path(io, "comptime/expr_custom_carrier"),
         null,
     );
     defer session.deinit(std.testing.allocator);
@@ -565,6 +899,54 @@ test "comptime: q.custom executes `code` identically + the tree is retrievable b
     try std.testing.expectEqualStrings("Record_", leaf.ref.?.kind);
 }
 
+test "decision 112: lookup answers the declaration's identity, never the alias" {
+    // `e.lookup("surface")` for `import {area as surface}` resolves at the call
+    // site and answers `area` — its own name and `<package>@<path>@@<Decl>` —
+    // while `ref()` still splices the name the call site spells. The library's
+    // private `double` in the built text resolves in the library (row 1 of
+    // decision 112's table).
+    const lib =
+        \\pub fn area(w: i32, h: i32) -> i32 { return w * h; }
+        \\fn double(x: i32) -> i32 { return x * 2; }
+        \\pub default fn shapesdsl<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
+        \\    val code = e.build("double(" + e.text() + ")");
+        \\    val root = CustomNode(kind: "call", span: Span(0, 7, 1), label: "keyword", ref: e.lookup("surface"), children: []);
+        \\    return e.custom(root, code);
+        \\}
+    ;
+    const main =
+        \\import shapesdsl, {area as surface} from "shapesdsl";
+        \\val x = shapesdsl "surface(4, 5)";
+    ;
+    const io = std.testing.io;
+    var session = try comptimeMod.compile(
+        std.testing.allocator,
+        &.{
+            .{ .path = "shapesdsl/root", .source = "pub default mod shapesdsl;" },
+            .{ .path = "shapesdsl/shapesdsl", .source = lib },
+            .{ .path = "", .source = main },
+        },
+        io,
+        test_scratch.path(io, "comptime/dsl_hygiene_lookup"),
+        null,
+    );
+    defer session.deinit(std.testing.allocator);
+
+    const out = session.outputs.items[session.outputs.items.len - 1];
+    if (out.outcome == .typeError) {
+        const desc = try h.renderTypeError(std.testing.allocator, main, out.outcome.typeError);
+        defer std.testing.allocator.free(desc);
+        std.debug.print("\nunexpected type error:\n{s}\n", .{desc});
+    }
+    try std.testing.expect(out.outcome == .ok);
+    const entries = out.outcome.ok.custom_ast;
+    try std.testing.expectEqual(@as(usize, 1), entries.len);
+    const ref = entries[0].root.ref orelse return error.TestExpectedRef;
+    try std.testing.expectEqualStrings("area", ref.name);
+    try std.testing.expectEqualStrings("shapesdsl@shapesdsl@@area", ref.identity);
+    try std.testing.expectEqualStrings("surface", ref.local);
+}
+
 test "gate: the @ExprCustom carrier code names no sub-language" {
     // HARD RULE (expr-custom): the core carries a generic `CustomNode` tree and
     // never branches on a lib's opaque `kind`/`label` tags. The two
@@ -598,7 +980,10 @@ test "infer: anonymous record literal types structurally and fields resolve" {
     defer env.deinit();
 
     try inferInto(&env, alloc,
-        \\val cfg = (record { server: record { port: 8080 }, debug: true });
+        \\val port = 8080;
+        \\val server = #(port);
+        \\val debug = true;
+        \\val cfg = #(server, debug);
         \\val p = cfg.server.port;
         \\val d = cfg.debug;
     );
@@ -608,12 +993,13 @@ test "infer: anonymous record literal types structurally and fields resolve" {
 
 test "infer error: unknown field on an anonymous record" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val cfg = (record { port: 8080 });
+        \\val port = 8080;
+        \\val cfg = #(port);
         \\val x = cfg.prot;
     );
 }
 
-test "comptime: yaml model ---- static record lift reveals the structure (V1 driver)" {
+test "comptime: yaml model ---- a lifted tuple reveals its element types (V1 driver)" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -622,11 +1008,11 @@ test "comptime: yaml model ---- static record lift reveals the structure (V1 dri
 
     try inferInto(&env, alloc,
         \\pub fn conf<T>(comptime q: @Expr<string>) -> @Expr<T> {
-        \\    return @expr(record { port: 8080, debug: true });
+        \\    return @expr(#(8080, true));
         \\}
         \\val cfg = conf "server:";
-        \\val p = cfg.port + 1;
-        \\val d = cfg.debug;
+        \\val p = cfg.0 + 1;
+        \\val d = cfg.1;
     );
     try std.testing.expectEqualStrings("i32", env.lookup("p").?.deref().named.name);
     try std.testing.expectEqualStrings("bool", env.lookup("d").?.deref().named.name);
@@ -823,10 +1209,10 @@ test "comptime: net-new ---- nested template call inside a template body" {
 
 test "template: markup DSL ---- <Component/> tags resolve to calls" {
     try assertCompilesOk(@src(),
-        \\val Element = record implement @Context<Element, Element> { }
-        \\fn fragment(items: Element[]) -> Element { Element(); }
-        \\fn Page1() -> Element { Element(); }
-        \\fn Page2() -> Element { Element(); }
+        \\val Element = type() implement @Renderable
+        \\fn fragment(items: Element[]) -> Element { return Element(); }
+        \\fn Page1() -> Element { return Element(); }
+        \\fn Page2() -> Element { return Element(); }
         \\pub fn html(comptime q: @Expr<string>) -> @Expr<Element> {
         \\    return q.build("fragment([Page1(), Page2()])");
         \\}
@@ -836,12 +1222,12 @@ test "template: markup DSL ---- <Component/> tags resolve to calls" {
 
 test "template: markup DSL ---- ${expr} splices as a text child" {
     try assertCompilesOk(@src(),
-        \\val Element = record implement @Context<Element, Element> { }
-        \\fn fragment(items: Element[]) -> Element { Element(); }
-        \\fn text(value: string) -> Element { Element(); }
+        \\val Element = type() implement @Renderable
+        \\fn fragment(items: Element[]) -> Element { return Element(); }
+        \\fn text(value: string) -> Element { return Element(); }
         \\pub fn html(comptime q: @Expr<string>) -> @Expr<Element> {
         \\    var acc = "fragment([";
-        \\    loop (q.parts()) { p ->
+        \\    for (q.parts()) { p ->
         \\        if (p.kind == "Interp") {
         \\            acc = acc + "text(" + p.code + "),";
         \\        };
@@ -851,4 +1237,143 @@ test "template: markup DSL ---- ${expr} splices as a text child" {
         \\val name = "world";
         \\val page = html """<p>${name}</p>""";
     );
+}
+
+// ── decision 331: a template module carries what its body reaches ────────────
+//
+// Front 118's three rows, each run on both comptime runtimes with the replies
+// required byte-identical (`h.repliesIdenticalAcrossRuntimes`).
+
+test "decision 331: a template body calls its module's functions, a recursive one and an imported one" {
+    // The template module held the template alone: every call was `the BEAM
+    // runtime does not take call to undefined function wrap/1 (in shout/1)`
+    // (the wat runtime the same). It carries the functions its body reaches
+    // now — `helper` (private), `depth` (recursive), `wrap` imported with
+    // the private `inner` it calls — expanded in the declaring module and in
+    // an importer alike.
+    const text =
+        \\fn inner(s: string) -> string {
+        \\    return "<" + s + ">";
+        \\}
+        \\pub fn wrap(s: string) -> string {
+        \\    return inner(s);
+        \\}
+    ;
+    const tags =
+        \\import {wrap} from "text";
+        \\fn helper(s: string) -> string {
+        \\    return "[" + s + "]";
+        \\}
+        \\fn depth(n: i32) -> i32 {
+        \\    return if (n <= 0) 0 else 1 + depth(n - 1);
+        \\}
+        \\pub fn shout(comptime q: @Expr<string>) -> @Expr<string> {
+        \\    return q.build("\"" + wrap(helper(q.text())) + depth(3).toString() + "\"");
+        \\}
+        \\val here = shout "in";
+    ;
+    const main =
+        \\import {shout} from "tags";
+        \\fn twice(s: string) -> string {
+        \\    return s + s;
+        \\}
+        \\pub fn echo(comptime q: @Expr<string>) -> @Expr<string> {
+        \\    return q.build("\"" + twice(q.text()) + "\"");
+        \\}
+        \\val a = shout "ab";
+        \\val b = echo "xy";
+    ;
+    const modules: []const @import("../../module.zig").Module = &.{
+        .{ .path = "text", .source = text },
+        .{ .path = "tags", .source = tags },
+        .{ .path = "", .source = main },
+    };
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const replies = try h.repliesIdenticalAcrossRuntimes(std.testing.allocator, arena.allocator(), @src(), modules);
+    try std.testing.expectEqual(@as(usize, 3), replies.len);
+    try std.testing.expectEqualStrings(
+        \\{"kind":"code","source":"\"<[in]>3\""}
+    , replies[0]);
+    try std.testing.expectEqualStrings(
+        \\{"kind":"code","source":"\"<[ab]>3\""}
+    , replies[1]);
+    try std.testing.expectEqualStrings(
+        \\{"kind":"code","source":"\"xyxy\""}
+    , replies[2]);
+}
+
+test "decision 331: a template body reads a labelled tuple element by its label" {
+    // `x.kind` lowered as a map read in the template module — `{error,
+    // {badmap, {<<"ab">>, 2}}}` on both runtimes — where an ordinary function
+    // reads the element by position. A label read is the position inference
+    // recorded for it: a local, an array element in a loop, a helper's
+    // parameter, and a template another module exports.
+    const pairs =
+        \\fn kindOf(x: #(kind: string, n: i32)) -> string {
+        \\    return x.kind;
+        \\}
+        \\pub fn pairs(comptime q: @Expr<string>) -> @Expr<string> {
+        \\    val items: #(kind: string, n: i32)[] = [#(q.text(), 1), #("z", 2)];
+        \\    var out = "";
+        \\    for (items) { it ->
+        \\        out = out + it.kind + it.n.toString() + ";";
+        \\    };
+        \\    return q.build("\"" + out + kindOf(#("w", 7)) + "\"");
+        \\}
+    ;
+    const main =
+        \\import {pairs} from "pairs";
+        \\pub fn probe(comptime q: @Expr<string>) -> @Expr<string> {
+        \\    val x: #(kind: string, n: i32) = #(q.text(), 2);
+        \\    return q.build("\"" + x.kind + x.n.toString() + "\"");
+        \\}
+        \\val a = probe "ab";
+        \\val b = pairs "xy";
+    ;
+    const modules: []const @import("../../module.zig").Module = &.{
+        .{ .path = "pairs", .source = pairs },
+        .{ .path = "", .source = main },
+    };
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const replies = try h.repliesIdenticalAcrossRuntimes(std.testing.allocator, arena.allocator(), @src(), modules);
+    try std.testing.expectEqual(@as(usize, 2), replies.len);
+    try std.testing.expectEqualStrings(
+        \\{"kind":"code","source":"\"ab2\""}
+    , replies[0]);
+    try std.testing.expectEqualStrings(
+        \\{"kind":"code","source":"\"xy1;z2;w\""}
+    , replies[1]);
+}
+
+test "decision 331: a template body of more variables than a frame holds compiles on both runtimes" {
+    // Every Erlang variable took a Y register (the BEAM) or a local (wat) of
+    // its own: 1200 rebindings of one `var` were `{load_binary, …, badfile}`
+    // and `wasm3: compiling function overran its stack height limit`. Slots
+    // whose ranges never overlap are shared now.
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const ar = arena.allocator();
+    var src: std.ArrayListUnmanaged(u8) = .empty;
+    try src.appendSlice(ar,
+        \\pub fn big(comptime q: @Expr<string>) -> @Expr<string> {
+        \\    var s = q.text();
+        \\    var n = 0;
+        \\
+    );
+    for (0..1200) |i| {
+        try src.print(ar, "    s = s + \"{c}\";\n", .{@as(u8, 'a' + @as(u8, @intCast(i % 26)))});
+        try src.appendSlice(ar, "    n = n + 1;\n");
+    }
+    try src.appendSlice(ar,
+        \\    return q.build("\"" + s.slice(0, 6) + n.toString() + "\"");
+        \\}
+        \\val got = big "q";
+    );
+    const replies = try h.repliesIdenticalAcrossRuntimes(std.testing.allocator, ar, @src(), &.{.{ .path = "", .source = src.items }});
+    try std.testing.expectEqual(@as(usize, 1), replies.len);
+    try std.testing.expectEqualStrings(
+        \\{"kind":"code","source":"\"qabcde1200\""}
+    , replies[0]);
 }

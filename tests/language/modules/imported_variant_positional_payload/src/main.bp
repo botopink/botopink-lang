@@ -1,0 +1,43 @@
+//// A positional payload pattern over a variant of a type declared in
+//// ANOTHER module binds the variant's field at that position (decision 8
+//// § 5.1 P4), on every target. commonJS read a property named after the
+//// binding (`r`, `w`) when the enum was not declared in the module of the
+//// `case`, so `area` died on `undefined * undefined` there while erlang
+//// answered the field.
+////
+//// - `Circle(r)` and `Rect(w, h)` read `radius`, `width`, `height`;
+//// - `unit()` builds the value in the declaring module;
+//// - a payload whose fields are themselves `Shape`s (`Two(l, r)`), and a
+////   `val assert`,
+////   read the same fields.
+
+mod shapes;
+
+import {shapes.Shape, shapes.Pair, shapes.unit};
+
+fn area(s: Shape) -> i32 {
+    return case s {
+        Circle(r) -> r * r * 3;
+        Rect(w, h) -> w * h;
+        Dot -> 0;
+    };
+}
+
+fn leftArea(p: Pair) -> i32 {
+    return case p {
+        Two(l, r) -> area(l) * 100 + area(r);
+    };
+}
+
+fn radiusOf(s: Shape) -> i32 {
+    val assert Circle(r) = s catch -1;
+    return r;
+}
+
+pub fn main() {
+    @print(area(Shape.Circle(2)));
+    @print(area(Shape.Rect(4, 5)));
+    @print(area(unit()));
+    @print(leftArea(Pair.Two(Shape.Rect(9, 1), Shape.Circle(1))));
+    @print(radiusOf(Shape.Circle(11)));
+}

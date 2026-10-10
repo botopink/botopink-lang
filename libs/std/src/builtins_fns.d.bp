@@ -7,14 +7,14 @@
 //// FFI form, not a delegate); `parseFnDecl` reads the `default` value off
 //// each Param.
 ////
-//// Surface bookkeeping (the doc-only fns in `builtins.d.bp`): `field<T,F>` /
-//// `trap` / `emit` / `module` / `getContex<T>` keep their declarative form
-//// in `builtins.d.bp` (no default, so they don't need this parse path).
+//// Every other builtin fn is declared in `builtins.d.bp` (decision 252); the
+//// compiler's table (`comptime/builtins.zig`) is held to both files by a unit
+//// test. None of those carries a trailing default, so none needs this path.
 
-#[@External.Erlang("erlang:error({todo, $0})"),
-  @External.Node("(() => { throw new Error($0) })()")]
-declare fn todo(message: string = "not implemented") -> noreturn;
+#[@External.Erlang("erlang:error({todo, $0})")]
+#[@External.Node("(() => { throw new Error($0) })()")]
+pub declare fn todo(message: string = "not implemented") -> noreturn;
 
-#[@External.Erlang("erlang:error({panic, $0})"),
-  @External.Node("(() => { throw new Error($0) })()")]
-declare fn panic(message: string = "panic") -> noreturn;
+#[@External.Erlang("erlang:error({panic, $0})")]
+#[@External.Node("(() => { throw new Error($0) })()")]
+pub declare fn panic(message: string = "panic") -> noreturn;

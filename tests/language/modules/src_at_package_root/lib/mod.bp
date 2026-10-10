@@ -1,0 +1,3 @@
+//// The folder index of `lib`.
+
+pub mod db;

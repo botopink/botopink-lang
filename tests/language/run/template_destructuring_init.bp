@@ -1,0 +1,17 @@
+//// Decision 425 — a template call expands wherever an expression may stand:
+//// as a destructuring initializer.
+
+fn pair(comptime q: @Expr<string>) -> @Expr<#(i32, string)> {
+    return q.build(
+        "#(" + q.text().length.toString() + ", \"" + q.text() + "\")",
+    );
+}
+
+fn twice(comptime q: @Expr<string>) -> @Expr<string> {
+    return q.build("\"" + q.text() + q.text() + "\"");
+}
+
+pub fn main() {
+    val #(n, text) = pair "abc";
+    @print(n.toString() + " " + text + " " + twice "z");
+}

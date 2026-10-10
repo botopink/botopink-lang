@@ -1,0 +1,29 @@
+//// The enum: a section leaf `Layout.Break.After` and a top-level payload
+//// variant `After(inner: Token[])` share a name. The path and the position's
+//// expected type tell them apart (`docs.md` § Sections of an enum).
+
+pub type Token {
+    Layout {
+        Break {
+            Before,
+            After,
+        }
+    }
+    After(inner: Token[]),
+    Plain,
+}
+
+pub fn render(t: Token) -> string {
+    return case t {
+        After(inner) -> "after " + inner.length().toString();
+        Plain -> "plain";
+        Layout(_x) -> "layout";
+    };
+}
+
+pub fn breakToCss(b: Token.Layout.Break) -> string {
+    return case b {
+        Before -> "break-before";
+        After -> "break-after";
+    };
+}

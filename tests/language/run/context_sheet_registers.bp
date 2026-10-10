@@ -1,0 +1,59 @@
+//// Decisions 352, 354 — the mechanism `styled` registers through (front 119
+//// step 1). A context's value is a record holding a writer function,
+//// provided at the render's root; a component computed at render reads it
+//// with `use context(…)` at the top of its body and hands the writer its
+//// rule every time it runs (`badge` twice: two lines).
+//// A part run through a function value under a provider that keeps nothing
+//// (`quiet`, `styled`'s `splice`) registers nothing; a component that reads
+//// no context (`constant`) registers nothing; one standing on its own
+//// (`alone`) registers itself.
+
+import {context.Context, context.provide, context.context} from "std";
+
+type Rule(name: string, text: string) implement @Renderable
+
+type SheetWriter(layer: string, add: fn(layer: string, rule: Rule))
+
+pub val SheetContext = Context<SheetWriter>();
+
+fn printed(layer: string, rule: Rule) -> void {
+    @print("registered " + layer + " " + rule.name + " " + rule.text);
+}
+
+fn discard(layer: string, rule: Rule) -> void {}
+
+fn computed(name: string, parts: Rule[]) -> @Component<Rule> {
+    val sheet = use context(SheetContext);
+    var text = name;
+    for (parts) { r ->
+        text = text + "+" + r.text;
+    }
+    val out = Rule(name: name, text: text);
+    sheet.add(sheet.layer, out);
+    return out;
+}
+
+fn quiet(view: fn() -> @Component<Rule>) -> @Component<Rule> {
+    use provide(SheetContext, SheetWriter(layer: "", add: discard));
+    val r = await view();
+    return r;
+}
+
+fn constant(name: string) -> @Component<Rule> {
+    return Rule(name: name, text: name);
+}
+
+fn Root() -> @Component<Rule> {
+    use provide(SheetContext, SheetWriter(layer: "components", add: printed));
+    val a = await computed("badge", [quiet({ -> computed("pad", []) })]);
+    val b = await computed("badge", [quiet({ -> computed("pad", []) })]);
+    val c = await constant("tab");
+    val d = await computed("alone", []);
+    @print(a.text + " " + b.text + " " + c.text + " " + d.text);
+    return a;
+}
+
+pub fn main() -> @Task<void> {
+    val r = await Root();
+    @print("root " + r.name);
+}

@@ -1,0 +1,2 @@
+import-name-collision: this module would hold two types declared `App` — `srv`'s and `site`'s
+src/main.bp:9:9

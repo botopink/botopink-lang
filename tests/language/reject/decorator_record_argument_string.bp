@@ -1,0 +1,24 @@
+//// Decisions 280 (1), 281, example 5 — the cache is the record itself, not
+//// its name: a string against `Cache<T>` is refused at the argument.
+
+type Product(name: string)
+
+type User(name: string)
+
+type Cache<T>(name: string)
+
+fn cacheable<A, T>(
+    comptime decl: @Decl<fn(a: A) -> T>,
+    comptime cache: @Expr<Cache<T>>,
+) {
+    decl.setMeta("cache", cache.value.name);
+}
+
+#[cacheable("products")]
+fn byCategory(c: string) -> Product[] {
+    return [Product(name: c)];
+}
+
+pub fn main() {
+    @print(byCategory("tea").length);
+}

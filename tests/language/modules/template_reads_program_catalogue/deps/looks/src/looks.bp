@@ -1,0 +1,39 @@
+//// A library's template function reading the program's catalogue
+//// (decision 353): `@TypeInfo.all(with: theme)` in its body answers for the
+//// program that expands `looks "…"`, every module's decorators applied —
+//// not for this package, which declares no `#[theme]` of its own.
+
+pub fn theme(comptime decl: @Decl) {
+    decl.setMeta("named", decl.name);
+}
+
+pub fn palette(comptime decl: @Decl) {
+    decl.setMeta("named", decl.name);
+}
+
+pub default fn looks(comptime e: @Expr<string>) -> @Expr<string> {
+    val themes = @TypeInfo.all(with: theme);
+    val palettes = @TypeInfo.all(with: palette);
+    if (themes.length > 1)
+        e.fail(
+            "looks: two #[theme] declarations: "
+                + themes.map({ t -> t.module + "." + t.name }).join(", "),
+        );
+    val chosen = if (themes.length == 0)
+        "default"
+    else
+        themes
+            .map({ t ->
+                t.module
+                    + "."
+                    + t.name
+                    + " -> "
+                    + t.returnTypeName
+                    + " "
+                    + t.meta.map({ m -> m.key + "=" + m.value }).join(",");
+            })
+            .join("");
+    return @expr(
+        e.text() + ": " + chosen + ", palettes " + palettes.length.toString(),
+    );
+}

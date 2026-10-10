@@ -1,0 +1,25 @@
+//// 02-std-and-packaging/97-std-dedupe step 13, decisions 176 and 319 — `string.parseInt()` reads
+//// every `i64`: −2^63 … 2^63 − 1 is `Ok` on every target, one past either end is `Error` naming the
+//// numeral. The parent bounded it at ±(2^53 − 1), so `"9007199254740992"` was out of range.
+
+fn parsed(s: string) -> string {
+    return case s.parseInt() {
+        Ok(n) -> n.toString();
+        Error(reason) -> reason;
+    };
+}
+
+pub fn main() {
+    @print(parsed("9007199254740991"));
+    @print(parsed("9007199254740992"));
+    @print(parsed("-9007199254740993"));
+    @print(parsed("9223372036854775807"));
+    @print(parsed("-9223372036854775808"));
+    @print(parsed("+0009223372036854775807"));
+    @print(parsed("9223372036854775808"));
+    @print(parsed("-9223372036854775809"));
+    @print(parsed("99999999999999999999999999"));
+    val n = "9007199254740993".parseInt().unwrapOr(0l);
+    @print(n + 2l);
+    @print(n - 2l == 9007199254740991l);
+}

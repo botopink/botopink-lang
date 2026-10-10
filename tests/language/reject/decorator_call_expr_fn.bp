@@ -1,0 +1,19 @@
+//// Decision 364 (3) — an `@Expr` of a function has no `.value`: its body is
+//// not called while the program compiles. Calling the rule in the decorator
+//// is refused at the read; the program calls it at run time.
+
+fn passwordsMatch(a: Signup) -> bool {
+    return a.password == a.confirm;
+}
+
+fn check<T>(comptime decl: @Decl<T>, comptime rule: @Expr<fn(v: T) -> bool>) {
+    if (rule.value(Signup(password: "a", confirm: "a")))
+        decl.setMeta("rule", "holds");
+}
+
+#[check(passwordsMatch)]
+type Signup(password: string, confirm: string)
+
+pub fn main() {
+    @print("unreached");
+}

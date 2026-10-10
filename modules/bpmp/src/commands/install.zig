@@ -19,9 +19,15 @@ const lockfile = @import("../lockfile.zig");
 const storage = @import("../storage.zig");
 const semver = @import("../semver.zig");
 const dep_spec = @import("../dep/spec.zig");
+/// Test-only: the one way a test spells a path it writes to (per process, so a
+/// second `zig build test` over this checkout cannot empty it mid-test).
+/// `build.zig` gives this module to the test modules alone.
+const test_scratch = @import("test_scratch");
 const dep_clone = @import("../dep/clone.zig");
 const dep_resolver = @import("../dep/resolver.zig");
 const dep_lock = @import("../lock.zig");
+const dep_member = @import("../dep/member.zig");
+const shared_manifest = @import("manifest");
 
 pub fn run(ctx: cli.Context, args: []const []const u8) anyerror!u8 {
     var positional: ?[]const u8 = null;
@@ -51,12 +57,11 @@ pub fn run(ctx: cli.Context, args: []const []const u8) anyerror!u8 {
         }
     }
 
-    // Object-form deps dispatch: if the local `botopink.json` carries any
-    // object-form entry, install those into `$BPMP_HOME/store/` + write
-    // `botopink.lock`. The legacy compiler-distribution replay path still
-    // fires if the local project has no manifest (e.g. a globally invoked
-    // bpmp) or if the manifest's `dependencies` is the legacy bare-name
-    // array form.
+    // Dependency install: if the local `botopink.json` declares any
+    // dependency (the object form is the only form — decision 76), install
+    // those into `$BPMP_HOME/store/` + write `botopink.lock`. The
+    // compiler-distribution replay path still fires if the local project has
+    // no manifest (e.g. a globally invoked bpmp) or declares no dependency.
     if (try maybeRunDepInstall(ctx, .{
         .single_name = positional,
         .frozen = frozen,
@@ -81,10 +86,12 @@ const DepInstallOpts = struct {
     dry_run: bool,
 };
 
-/// Detect + handle object-form deps. Returns:
-///   - null  → no object-form deps in this project; fall through to the
-///     legacy compiler-distribution flow.
-///   - code  → object-form flow handled the install; this is the exit code.
+/// Detect + handle the project's dependencies. Returns:
+///   - null  → no dependencies in this project; fall through to the
+///     compiler-distribution flow.
+///   - code  → the dependency flow handled the install; this is the exit code.
+/// A refused `botopink.json` (a string-array `dependencies`, an entry without a
+/// source, …) is printed located and is exit 1.
 fn maybeRunDepInstall(ctx: cli.Context, opts: DepInstallOpts) !?u8 {
     var arena = std.heap.ArenaAllocator.init(ctx.gpa);
     defer arena.deinit();
@@ -92,36 +99,39 @@ fn maybeRunDepInstall(ctx: cli.Context, opts: DepInstallOpts) !?u8 {
 
     const data = std.Io.Dir.cwd().readFileAlloc(ctx.io, "botopink.json", a, .limited(64 * 1024)) catch return null;
 
-    var diags: std.ArrayListUnmanaged(dep_spec.Diagnostic) = .empty;
-    const deps = try dep_spec.parseFromManifest(a, data, &diags);
-    for (diags.items) |d| {
-        const code_str = switch (d.code) {
-            .invalid_json => "DEP-001 (invalid JSON)",
-            .invalid_shape => "DEP-001",
-            .missing_source => "DEP-002",
-            .ambiguous_ref => "DEP-003",
-        };
-        if (d.name.len > 0) {
-            common.warnMsgFmt(ctx, "botopink.json:dependencies.{s}: {s}", .{ d.name, code_str });
-        } else {
-            common.warnMsgFmt(ctx, "botopink.json:dependencies: {s}", .{code_str});
-        }
-    }
+    var err: ?shared_manifest.Located = null;
+    const project = shared_manifest.parse(a, data, shared_manifest.FILENAME, &err) catch |e| switch (e) {
+        error.Invalid => {
+            err.?.print();
+            return 1;
+        },
+        error.OutOfMemory => return error.OutOfMemory,
+    };
 
-    if (!dep_spec.anySpec(deps)) return null;
+    if (!dep_spec.anySpec(project.dependencies)) return null;
 
-    return try runDepInstall(ctx, deps, opts);
+    return try runDepInstall(ctx, project, opts);
 }
 
-fn runDepInstall(ctx: cli.Context, deps: []const dep_spec.DepEntry, opts: DepInstallOpts) !u8 {
+/// One `.botopinkbuild/deps/<name>` link the install writes once every
+/// dependency has been fetched and checked.
+const Link = struct {
+    name: []const u8,
+    target: []const u8,
+};
+
+fn runDepInstall(ctx: cli.Context, project: shared_manifest.Manifest, opts: DepInstallOpts) !u8 {
     var arena = std.heap.ArenaAllocator.init(ctx.gpa);
     defer arena.deinit();
     const a = arena.allocator();
+    const deps = project.dependencies;
 
     const store_root = try resolveStoreRoot(a, ctx);
     const project_root = try cwdAbs(a, ctx);
 
-    // Filter when invoked with a positional `<name>`.
+    // Filter when invoked with a positional `<name>`. Every dependency on the
+    // named one's repository comes along: they share one checkout (decision
+    // 344), so they are fetched — and pinned — together.
     var filtered: []const dep_spec.DepEntry = deps;
     if (opts.single_name) |name| {
         var found: ?dep_spec.DepEntry = null;
@@ -132,9 +142,13 @@ fn runDepInstall(ctx: cli.Context, deps: []const dep_spec.DepEntry, opts: DepIns
         if (found == null) {
             return common.errFmt("install: '{s}' is not in botopink.json:dependencies", .{name});
         }
-        const buf = try a.alloc(dep_spec.DepEntry, 1);
-        buf[0] = found.?;
-        filtered = buf;
+        var group: std.ArrayListUnmanaged(dep_spec.DepEntry) = .empty;
+        for (deps) |d| {
+            const same = std.mem.eql(u8, d.name, name) or
+                (found.?.spec.git != null and d.spec.git != null and shared_manifest.sameRepository(found.?.spec.git.?, d.spec.git.?));
+            if (same) try group.append(a, d);
+        }
+        filtered = group.items;
     }
 
     // Load existing lockfile (if any) so we can prefer pinned revs.
@@ -144,13 +158,27 @@ fn runDepInstall(ctx: cli.Context, deps: []const dep_spec.DepEntry, opts: DepIns
         existing = dep_lock.read(ctx.gpa, ctx.io, project_root) catch null;
     }
 
-    var p = dep_resolver.plan(ctx.gpa, filtered, store_root, .{
+    var failed_name: []const u8 = "";
+    var failed_other: []const u8 = "";
+    var p = dep_resolver.plan(ctx.gpa, ctx.io, filtered, store_root, .{
         .frozen = opts.frozen,
         .lock_in = if (existing) |*lf| lf else null,
+        .failed_name = &failed_name,
+        .failed_other = &failed_other,
     }) catch |err| switch (err) {
         dep_resolver.Error.FrozenMissingEntry => {
-            const code = common.errMsg("install --frozen: at least one dep is missing a lockfile entry (DEP-004)");
+            const code = common.errFmt("install --frozen: '{s}' has no lockfile entry (DEP-004)", .{failed_name});
             common.hintMsg("run `bpmp install` (without --frozen) first");
+            return code;
+        },
+        dep_resolver.Error.FrozenStoreMiss => {
+            const code = common.errFmt("install --frozen: the pinned commit of '{s}' is not in the store {s} (DEP-005)", .{ failed_name, store_root });
+            common.hintMsg("run `bpmp install` (without --frozen) to fetch it");
+            return code;
+        },
+        dep_resolver.Error.LockDivergent => {
+            const code = common.errFmt("install: botopink.lock pins '{s}' and '{s}' at two commits of one repository — one repository is one checkout (decision 344)", .{ failed_name, failed_other });
+            common.hintMsg("run `bpmp install --update` to pin both at one commit");
             return code;
         },
         dep_resolver.Error.StoreRootMissing => {
@@ -165,60 +193,86 @@ fn runDepInstall(ctx: cli.Context, deps: []const dep_spec.DepEntry, opts: DepIns
         for (p.actions) |act| {
             common.printf(ctx, "  {s}  {s}", .{ kindLabel(act.kind), act.name });
             if (act.rev.len > 0) common.printf(ctx, " @ {s}", .{act.rev[0..@min(act.rev.len, 12)]});
+            if (act.subdir) |sub| common.printf(ctx, " (subdir {s})", .{sub});
             common.printf(ctx, "\n", .{});
         }
         return 0;
     }
 
-    // Execute the plan + collect lockfile entries.
+    // Fetch every dependency and check what it names before any link is
+    // written: a refusal leaves `.botopinkbuild/deps/` as it was.
+    var links: std.ArrayListUnmanaged(Link) = .empty;
     var lock_entries: std.ArrayListUnmanaged(dep_lock.Entry) = .empty;
-    defer lock_entries.deinit(ctx.gpa);
+    // Checkout root + commit of each repository fetched by this install.
+    const Checkout = struct { root: []const u8, rev: []const u8 };
+    var checkouts: std.StringArrayHashMapUnmanaged(Checkout) = .empty;
 
     for (p.actions) |act| {
-        switch (act.kind) {
-            .skip_legacy => {},
+        const checkout: Checkout = switch (act.kind) {
+            .skip_workspace => continue,
             .path_symlink => {
-                const link_path = try std.fs.path.join(a, &.{ project_root, ".botopinkbuild", "deps", act.name });
-                try ensureSymlink(ctx, act.path.?, link_path);
-                try lock_entries.append(ctx.gpa, .{
-                    .name = try ctx.gpa.dupe(u8, act.name),
+                // A relative `path:` is relative to the project, not to the link's
+                // directory — link the resolved absolute path.
+                const target = try std.fs.path.resolve(a, &.{ project_root, act.path.? });
+                std.Io.Dir.cwd().access(ctx.io, target, .{}) catch
+                    return common.errFmt("install: path dependency '{s}' does not exist: {s}", .{ act.name, act.path.? });
+                try links.append(a, .{ .name = act.name, .target = target });
+                try lock_entries.append(a, .{
+                    .name = try a.dupe(u8, act.name),
                     .git = "",
                     .rev = "",
-                    .path = try ctx.gpa.dupe(u8, act.path.?),
-                    .fetched_at = try isoNowOwned(ctx, ctx.gpa),
+                    .path = try a.dupe(u8, act.path.?),
+                    .fetched_at = try isoNowOwned(ctx, a),
                 });
                 common.printf(ctx, "  ✓ {s} (path) → {s}\n", .{ act.name, act.path.? });
+                continue;
             },
-            .reuse_cas => {
-                const link_path = try std.fs.path.join(a, &.{ project_root, ".botopinkbuild", "deps", act.name });
-                try ensureSymlink(ctx, act.store_path, link_path);
-                try lock_entries.append(ctx.gpa, .{
-                    .name = try ctx.gpa.dupe(u8, act.name),
-                    .git = try ctx.gpa.dupe(u8, act.git),
-                    .rev = try ctx.gpa.dupe(u8, act.rev),
-                    .fetched_at = try isoNowOwned(ctx, ctx.gpa),
-                });
-                common.printf(ctx, "  ✓ {s} (CAS) @ {s}\n", .{ act.name, act.rev[0..@min(act.rev.len, 12)] });
+            .reuse_cas => blk: {
+                std.Io.Dir.cwd().access(ctx.io, act.store_path, .{}) catch
+                    return common.errFmt("install: store entry for '{s}' vanished: {s}", .{ act.name, act.store_path });
+                common.printf(ctx, "  ✓ {s} (CAS) @ {s}", .{ act.name, act.rev[0..@min(act.rev.len, 12)] });
+                break :blk .{ .root = act.store_path, .rev = act.rev };
             },
-            .clone => {
-                // Reconstruct the original DepSpec for the cloner from the action.
-                var s: dep_spec.DepSpec = .{ .git = act.git };
-                if (act.rev.len > 0) s.ref = .{ .rev = act.rev };
-                var cl = dep_clone.materialise(ctx.gpa, ctx.io, act.name, s, store_root, project_root) catch |err| {
+            .clone => blk: {
+                var cl = materialiseClone(ctx.gpa, ctx.io, act, store_root, project_root) catch |err| {
                     return common.errFmt("install: failed to clone {s}: {s}", .{ act.name, @errorName(err) });
                 };
                 defer cl.deinit(ctx.gpa);
-                const link_path = try std.fs.path.join(a, &.{ project_root, ".botopinkbuild", "deps", act.name });
-                try ensureSymlink(ctx, cl.path, link_path);
-                try lock_entries.append(ctx.gpa, .{
-                    .name = try ctx.gpa.dupe(u8, act.name),
-                    .git = try ctx.gpa.dupe(u8, act.git),
-                    .rev = try ctx.gpa.dupe(u8, cl.rev),
-                    .fetched_at = try isoNowOwned(ctx, ctx.gpa),
-                });
-                common.printf(ctx, "  ✓ {s} (clone) @ {s}\n", .{ act.name, cl.rev[0..@min(cl.rev.len, 12)] });
+                const co: Checkout = .{ .root = try a.dupe(u8, cl.path), .rev = try a.dupe(u8, cl.rev) };
+                common.printf(ctx, "  ✓ {s} (clone) @ {s}", .{ act.name, co.rev[0..@min(co.rev.len, 12)] });
+                break :blk co;
             },
-        }
+            .share_checkout => blk: {
+                // The plan puts the repository's `.clone` first.
+                const co = checkouts.get(act.repo_key).?;
+                common.printf(ctx, "  ✓ {s} (shared checkout) @ {s}", .{ act.name, co.rev[0..@min(co.rev.len, 12)] });
+                break :blk co;
+            },
+        };
+        if (act.subdir) |sub| common.printf(ctx, " → {s}", .{sub});
+        common.printf(ctx, "\n", .{});
+        try checkouts.put(a, act.repo_key, checkout);
+
+        var err: ?shared_manifest.Located = null;
+        const target = dep_member.check(a, ctx.io, project, act.name, .{ .git = act.git, .subdir = act.subdir }, checkout.root, checkout.rev, &err) catch |e| switch (e) {
+            error.Invalid => {
+                err.?.print();
+                return 1;
+            },
+            error.OutOfMemory => return error.OutOfMemory,
+        };
+        try links.append(a, .{ .name = act.name, .target = target });
+        try lock_entries.append(a, .{
+            .name = try a.dupe(u8, act.name),
+            .git = try a.dupe(u8, act.git),
+            .rev = try a.dupe(u8, checkout.rev),
+            .fetched_at = try isoNowOwned(ctx, a),
+        });
+    }
+
+    for (links.items) |l| {
+        const link_path = try std.fs.path.join(a, &.{ project_root, ".botopinkbuild", "deps", l.name });
+        try ensureSymlink(ctx.io, l.target, link_path);
     }
 
     // Merge with existing entries that weren't touched (single-dep install).
@@ -229,24 +283,15 @@ fn runDepInstall(ctx: cli.Context, deps: []const dep_spec.DepEntry, opts: DepIns
                 seen = true;
                 break;
             };
-            if (!seen) try lock_entries.append(ctx.gpa, .{
-                .name = try ctx.gpa.dupe(u8, e.name),
-                .git = try ctx.gpa.dupe(u8, e.git),
-                .rev = try ctx.gpa.dupe(u8, e.rev),
-                .path = if (e.path) |pp| try ctx.gpa.dupe(u8, pp) else null,
-                .fetched_at = try ctx.gpa.dupe(u8, e.fetched_at),
+            if (!seen) try lock_entries.append(a, .{
+                .name = try a.dupe(u8, e.name),
+                .git = try a.dupe(u8, e.git),
+                .rev = try a.dupe(u8, e.rev),
+                .path = if (e.path) |pp| try a.dupe(u8, pp) else null,
+                .fetched_at = try a.dupe(u8, e.fetched_at),
             });
         }
     }
-
-    // Cleanup heap copies after write.
-    defer for (lock_entries.items) |e| {
-        ctx.gpa.free(@constCast(e.name));
-        ctx.gpa.free(@constCast(e.git));
-        ctx.gpa.free(@constCast(e.rev));
-        if (e.path) |pp| ctx.gpa.free(@constCast(pp));
-        ctx.gpa.free(@constCast(e.fetched_at));
-    };
 
     try dep_lock.write(ctx.gpa, ctx.io, project_root, lock_entries.items);
     common.printf(ctx, "bpmp install: wrote {s}\n", .{dep_lock.LOCKFILE_NAME});
@@ -257,8 +302,9 @@ fn kindLabel(k: dep_resolver.Action.Kind) []const u8 {
     return switch (k) {
         .clone => "clone     ",
         .reuse_cas => "reuse-cas ",
+        .share_checkout => "shared    ",
         .path_symlink => "link path ",
-        .skip_legacy => "skip      ",
+        .skip_workspace => "workspace ",
     };
 }
 
@@ -277,16 +323,33 @@ fn cwdAbs(arena: std.mem.Allocator, ctx: cli.Context) ![]const u8 {
     return arena.dupe(u8, buf[0..n]);
 }
 
-fn ensureSymlink(ctx: cli.Context, target_abs: []const u8, link_path: []const u8) !void {
+/// Execute a `.clone` action: materialise the action's own git source + ref
+/// (`branch:`/`tag:`/`rev:`) into the store. The ref comes from the plan, so a
+/// first install of a `branch: "feat"` dep checks out `feat`, not default HEAD.
+fn materialiseClone(
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    act: dep_resolver.Action,
+    store_root: []const u8,
+    project_root: []const u8,
+) !dep_clone.Clone {
+    return dep_clone.materialise(gpa, io, act.repo_key, act.cloneSpec(), store_root, project_root);
+}
+
+/// Point `link_path` at `target_abs`, replacing whatever was there. Refuses
+/// (`error.SymlinkTargetMissing`) when the target does not exist, so a store
+/// miss can never leave a dangling `.botopinkbuild/deps/<name>` behind.
+fn ensureSymlink(io: std.Io, target_abs: []const u8, link_path: []const u8) !void {
+    std.Io.Dir.cwd().access(io, target_abs, .{}) catch return error.SymlinkTargetMissing;
     if (std.fs.path.dirname(link_path)) |d| {
-        std.Io.Dir.cwd().createDirPath(ctx.io, d) catch |err| switch (err) {
+        std.Io.Dir.cwd().createDirPath(io, d) catch |err| switch (err) {
             error.PathAlreadyExists => {},
             else => return err,
         };
     }
-    std.Io.Dir.cwd().deleteFile(ctx.io, link_path) catch {};
-    std.Io.Dir.cwd().deleteTree(ctx.io, link_path) catch {};
-    try std.Io.Dir.cwd().symLink(ctx.io, target_abs, link_path, .{ .is_directory = true });
+    std.Io.Dir.cwd().deleteFile(io, link_path) catch {};
+    std.Io.Dir.cwd().deleteTree(io, link_path) catch {};
+    try std.Io.Dir.cwd().symLink(io, target_abs, link_path, .{ .is_directory = true });
 }
 
 fn isoNowOwned(ctx: cli.Context, gpa: std.mem.Allocator) ![]const u8 {
@@ -344,17 +407,63 @@ const HELP =
     \\
     \\Specs: `<ver>` exact, `^<ver>`, `~<ver>`, `>=<ver>`, `feat`, `latest` (default).
     \\
+    \\A new dependency is written as `{ "<name>": { "git": "<url>" } }` (decision 76):
+    \\`<name>` is `<owner>/<name>` (a GitHub repository), a git URL, or a bare
+    \\name under $BPMP_DEFAULT_ORG.
+    \\
 ;
+
+/// The `dependencies` entry `bpmp install <spec>` writes: the import name and
+/// the git URL it comes from.
+const InstallSource = struct {
+    name: []const u8,
+    git: []const u8,
+};
+
+/// `<owner>/<name>` → GitHub; a URL (`https://…`, `git@…`) → as given, name
+/// from its last segment; a bare `<name>` → under `$BPMP_DEFAULT_ORG`, else null.
+fn resolveInstallSource(a: std.mem.Allocator, ctx: cli.Context, arg: []const u8) !?InstallSource {
+    if (std.mem.indexOf(u8, arg, "://") != null or std.mem.startsWith(u8, arg, "git@")) {
+        var base = std.fs.path.basename(arg);
+        if (std.mem.endsWith(u8, base, ".git")) base = base[0 .. base.len - ".git".len];
+        if (base.len == 0) return null;
+        return .{ .name = base, .git = arg };
+    }
+    if (std.mem.indexOfScalar(u8, arg, '/')) |slash| {
+        const owner = arg[0..slash];
+        const name = arg[slash + 1 ..];
+        if (owner.len == 0 or name.len == 0 or std.mem.indexOfScalar(u8, name, '/') != null) return null;
+        return .{ .name = name, .git = try std.fmt.allocPrint(a, "https://github.com/{s}/{s}.git", .{ owner, name }) };
+    }
+    const env = ctx.env_map orelse return null;
+    const org = env.get("BPMP_DEFAULT_ORG") orelse return null;
+    if (org.len == 0) return null;
+    return .{ .name = arg, .git = try std.fmt.allocPrint(a, "https://github.com/{s}/{s}.git", .{ org, arg }) };
+}
 
 fn installSingle(ctx: cli.Context, spec: []const u8, allow_unlocked: bool) !u8 {
     _ = allow_unlocked;
-    var name = spec;
+    var arg = spec;
     var constraint: []const u8 = "latest";
-    if (std.mem.indexOfScalar(u8, spec, '@')) |at| {
-        name = spec[0..at];
-        constraint = spec[at + 1 ..];
+    if (std.mem.lastIndexOfScalar(u8, spec, '@')) |at| {
+        // `git@github.com:…` has an `@` of its own; a constraint follows the last one
+        // only when what follows does not look like a host.
+        if (std.mem.indexOfScalar(u8, spec[at + 1 ..], ':') == null and std.mem.indexOfScalar(u8, spec[at + 1 ..], '/') == null) {
+            arg = spec[0..at];
+            constraint = spec[at + 1 ..];
+        }
     }
-    if (name.len == 0) return common.errMsg("install: missing package name");
+    if (arg.len == 0) return common.errMsg("install: missing package name");
+
+    var arena = std.heap.ArenaAllocator.init(ctx.gpa);
+    defer arena.deinit();
+    const source = (try resolveInstallSource(arena.allocator(), ctx, arg)) orelse {
+        return common.errFmt(
+            "install: '{s}' has no source — a dependency is {{ \"{s}\": {{ \"git\": \"…\" }} }} (decision 76); write `bpmp install <owner>/{s}[@<spec>]`, a git URL, or set BPMP_DEFAULT_ORG",
+            .{ arg, arg, arg },
+        );
+    };
+    const name = source.name;
 
     // Update manifest with the new dep — this is the offline-safe half. The
     // resolver/download half follows once the live HTTP layer lands.
@@ -363,7 +472,7 @@ fn installSingle(ctx: cli.Context, spec: []const u8, allow_unlocked: bool) !u8 {
         else => return err,
     };
     defer m.deinit();
-    try m.addDependency(ctx.gpa, name, constraint);
+    try m.addDependency(ctx.gpa, name, constraint, source.git);
     try manifest.write(ctx.gpa, ctx.io, ".", &m);
 
     common.printf(ctx,
@@ -381,7 +490,7 @@ fn replayLockfile(ctx: cli.Context) !u8 {
             return 1;
         },
         error.SchemaMismatch => {
-            common.hintMsg("schema mismatch — run `bpmp sync --update` to regenerate the lockfile");
+            common.hintMsg("schema mismatch — this bpmp cannot migrate botopink.lock.json; move it aside and re-add each package with `bpmp install <name>`");
             return 1;
         },
         else => return err,
@@ -418,4 +527,297 @@ fn existsDir(io: std.Io, path: []const u8) bool {
     var d = std.Io.Dir.cwd().openDir(io, path, .{}) catch return false;
     d.close(io);
     return true;
+}
+
+// ── tests ─────────────────────────────────────────────────────────────────────
+
+const testing = std.testing;
+
+/// Empty a scratch directory under the test cwd (`modules/bpmp`);
+/// `.botopinkbuild/` is git-ignored.
+fn resetDir(dir: []const u8) void {
+    std.Io.Dir.cwd().deleteTree(testing.io, dir) catch {};
+}
+
+fn absTestPath(gpa: std.mem.Allocator, rel: []const u8) ![]u8 {
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const n = try std.process.currentPath(testing.io, &buf);
+    return std.fs.path.resolve(gpa, &.{ buf[0..n], rel });
+}
+
+/// Run `git <args>` in `cwd` with an identity and no user hooks/signing, so the
+/// fixture repo is hermetic. `error.SkipZigTest` when git is not installed.
+fn gitRun(gpa: std.mem.Allocator, cwd: []const u8, args: []const []const u8) ![]u8 {
+    var argv: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer argv.deinit(gpa);
+    try argv.appendSlice(gpa, &.{
+        "git",
+        "-c",
+        "user.name=bpmp-test",
+        "-c",
+        "user.email=bpmp@test.invalid",
+        "-c",
+        "commit.gpgsign=false",
+        "-c",
+        "tag.gpgsign=false",
+        "-c",
+        "core.hooksPath=/dev/null",
+    });
+    try argv.appendSlice(gpa, args);
+    const result = std.process.run(gpa, testing.io, .{
+        .argv = argv.items,
+        .cwd = .{ .path = cwd },
+    }) catch |err| switch (err) {
+        error.FileNotFound => return error.SkipZigTest,
+        else => return err,
+    };
+    defer gpa.free(result.stderr);
+    switch (result.term) {
+        .exited => |code| if (code != 0) {
+            gpa.free(result.stdout);
+            return error.GitFailed;
+        },
+        else => {
+            gpa.free(result.stdout);
+            return error.GitFailed;
+        },
+    }
+    return result.stdout;
+}
+
+fn gitHead(gpa: std.mem.Allocator, cwd: []const u8, rev: []const u8) ![]u8 {
+    const out = try gitRun(gpa, cwd, &.{ "rev-parse", rev });
+    defer gpa.free(out);
+    return gpa.dupe(u8, std.mem.trim(u8, out, " \t\r\n"));
+}
+
+/// A repo whose default branch `main` and branch `feat` / tag `v1.0.0` point
+/// at three different commits.
+fn makeFixtureRepo(gpa: std.mem.Allocator, repo: []const u8) !void {
+    try std.Io.Dir.cwd().createDirPath(testing.io, repo);
+    gpa.free(try gitRun(gpa, repo, &.{ "init", "--quiet", "--initial-branch=main" }));
+    gpa.free(try gitRun(gpa, repo, &.{ "commit", "--quiet", "--allow-empty", "-m", "main" }));
+    gpa.free(try gitRun(gpa, repo, &.{ "checkout", "--quiet", "-b", "feat" }));
+    gpa.free(try gitRun(gpa, repo, &.{ "commit", "--quiet", "--allow-empty", "-m", "feat" }));
+    gpa.free(try gitRun(gpa, repo, &.{ "checkout", "--quiet", "-b", "release", "main" }));
+    gpa.free(try gitRun(gpa, repo, &.{ "commit", "--quiet", "--allow-empty", "-m", "release" }));
+    gpa.free(try gitRun(gpa, repo, &.{ "tag", "v1.0.0" }));
+    gpa.free(try gitRun(gpa, repo, &.{ "checkout", "--quiet", "main" }));
+}
+
+test "ensureSymlink: a missing target is refused and leaves no link" {
+    const dir = test_scratch.path(testing.io, "bpmp-tests/install-symlink-missing");
+    resetDir(dir);
+    defer std.Io.Dir.cwd().deleteTree(testing.io, dir) catch {};
+    const link = test_scratch.path(testing.io, "bpmp-tests/install-symlink-missing/deps/x");
+    try testing.expectError(error.SymlinkTargetMissing, ensureSymlink(testing.io, test_scratch.path(testing.io, "bpmp-tests/install-symlink-missing/store/x/nope"), link));
+    try testing.expectError(error.FileNotFound, std.Io.Dir.cwd().access(testing.io, link, .{}));
+}
+
+test "ensureSymlink: an existing target is linked, replacing the old link" {
+    const gpa = testing.allocator;
+    const dir = test_scratch.path(testing.io, "bpmp-tests/install-symlink-replace");
+    resetDir(dir);
+    defer std.Io.Dir.cwd().deleteTree(testing.io, dir) catch {};
+    try std.Io.Dir.cwd().createDirPath(testing.io, test_scratch.path(testing.io, "bpmp-tests/install-symlink-replace/store/a"));
+    try std.Io.Dir.cwd().createDirPath(testing.io, test_scratch.path(testing.io, "bpmp-tests/install-symlink-replace/store/b"));
+    try std.Io.Dir.cwd().writeFile(testing.io, .{ .sub_path = test_scratch.path(testing.io, "bpmp-tests/install-symlink-replace/store/b/marker"), .data = "b" });
+    const a_abs = try absTestPath(gpa, test_scratch.path(testing.io, "bpmp-tests/install-symlink-replace/store/a"));
+    defer gpa.free(a_abs);
+    const b_abs = try absTestPath(gpa, test_scratch.path(testing.io, "bpmp-tests/install-symlink-replace/store/b"));
+    defer gpa.free(b_abs);
+
+    const link = test_scratch.path(testing.io, "bpmp-tests/install-symlink-replace/deps/x");
+    try ensureSymlink(testing.io, a_abs, link);
+    try ensureSymlink(testing.io, b_abs, link);
+    try std.Io.Dir.cwd().access(testing.io, test_scratch.path(testing.io, "bpmp-tests/install-symlink-replace/deps/x/marker"), .{});
+}
+
+test "install --frozen against an empty store fails before any symlink" {
+    const dir = test_scratch.path(testing.io, "bpmp-tests/install-frozen-empty-store");
+    resetDir(dir);
+    defer std.Io.Dir.cwd().deleteTree(testing.io, dir) catch {};
+    const rev = "0123456789abcdef0123456789abcdef01234567";
+    const entries = [_]dep_spec.DepEntry{.{
+        .name = "j",
+        .spec = .{ .git = "https://e/j.git", .ref = .{ .rev = rev } },
+    }};
+    var failed: []const u8 = "";
+    const r = dep_resolver.plan(testing.allocator, testing.io, &entries, test_scratch.path(testing.io, "bpmp-tests/install-frozen-empty-store/store"), .{
+        .frozen = true,
+        .failed_name = &failed,
+    });
+    try testing.expectError(dep_resolver.Error.FrozenStoreMiss, r);
+    try testing.expectEqualStrings("j", failed);
+    try testing.expectError(error.FileNotFound, std.Io.Dir.cwd().access(testing.io, test_scratch.path(testing.io, "bpmp-tests/install-frozen-empty-store/deps"), .{}));
+}
+
+test "first install of a branch: dep checks out that branch, not default HEAD" {
+    const gpa = testing.allocator;
+    const dir = test_scratch.path(testing.io, "bpmp-tests/install-clone-branch");
+    resetDir(dir);
+    defer std.Io.Dir.cwd().deleteTree(testing.io, dir) catch {};
+    const repo = test_scratch.path(testing.io, "bpmp-tests/install-clone-branch/repo");
+    try makeFixtureRepo(gpa, repo);
+    const main_rev = try gitHead(gpa, repo, "main");
+    defer gpa.free(main_rev);
+    const feat_rev = try gitHead(gpa, repo, "feat");
+    defer gpa.free(feat_rev);
+    try testing.expect(!std.mem.eql(u8, main_rev, feat_rev));
+
+    const repo_abs = try absTestPath(gpa, repo);
+    defer gpa.free(repo_abs);
+    const url = try std.fmt.allocPrint(gpa, "file://{s}", .{repo_abs});
+    defer gpa.free(url);
+    const store = try absTestPath(gpa, test_scratch.path(testing.io, "bpmp-tests/install-clone-branch/store"));
+    defer gpa.free(store);
+
+    const entries = [_]dep_spec.DepEntry{.{ .name = "j", .spec = .{ .git = url, .ref = .{ .branch = "feat" } } }};
+    var p = try dep_resolver.plan(gpa, testing.io, &entries, store, .{});
+    defer p.deinit();
+    try testing.expectEqual(dep_resolver.Action.Kind.clone, p.actions[0].kind);
+
+    var cl = try materialiseClone(gpa, testing.io, p.actions[0], store, "/unused");
+    defer cl.deinit(gpa);
+    try testing.expectEqualStrings(feat_rev, cl.rev);
+}
+
+test "first install of a tag: dep checks out that tag, not default HEAD" {
+    const gpa = testing.allocator;
+    const dir = test_scratch.path(testing.io, "bpmp-tests/install-clone-tag");
+    resetDir(dir);
+    defer std.Io.Dir.cwd().deleteTree(testing.io, dir) catch {};
+    const repo = test_scratch.path(testing.io, "bpmp-tests/install-clone-tag/repo");
+    try makeFixtureRepo(gpa, repo);
+    const main_rev = try gitHead(gpa, repo, "main");
+    defer gpa.free(main_rev);
+    const tag_rev = try gitHead(gpa, repo, "v1.0.0^{commit}");
+    defer gpa.free(tag_rev);
+    try testing.expect(!std.mem.eql(u8, main_rev, tag_rev));
+
+    const repo_abs = try absTestPath(gpa, repo);
+    defer gpa.free(repo_abs);
+    const url = try std.fmt.allocPrint(gpa, "file://{s}", .{repo_abs});
+    defer gpa.free(url);
+    const store = try absTestPath(gpa, test_scratch.path(testing.io, "bpmp-tests/install-clone-tag/store"));
+    defer gpa.free(store);
+
+    const entries = [_]dep_spec.DepEntry{.{ .name = "j", .spec = .{ .git = url, .ref = .{ .tag = "v1.0.0" } } }};
+    var p = try dep_resolver.plan(gpa, testing.io, &entries, store, .{});
+    defer p.deinit();
+
+    var cl = try materialiseClone(gpa, testing.io, p.actions[0], store, "/unused");
+    defer cl.deinit(gpa);
+    try testing.expectEqualStrings(tag_rev, cl.rev);
+}
+
+test "install of a pinned rev: (store miss) checks out that exact commit" {
+    const gpa = testing.allocator;
+    const dir = test_scratch.path(testing.io, "bpmp-tests/install-clone-rev");
+    resetDir(dir);
+    defer std.Io.Dir.cwd().deleteTree(testing.io, dir) catch {};
+    const repo = test_scratch.path(testing.io, "bpmp-tests/install-clone-rev/repo");
+    try makeFixtureRepo(gpa, repo);
+    const feat_rev = try gitHead(gpa, repo, "feat");
+    defer gpa.free(feat_rev);
+
+    const repo_abs = try absTestPath(gpa, repo);
+    defer gpa.free(repo_abs);
+    const url = try std.fmt.allocPrint(gpa, "file://{s}", .{repo_abs});
+    defer gpa.free(url);
+    const store = try absTestPath(gpa, test_scratch.path(testing.io, "bpmp-tests/install-clone-rev/store"));
+    defer gpa.free(store);
+
+    const entries = [_]dep_spec.DepEntry{.{ .name = "j", .spec = .{ .git = url, .ref = .{ .rev = feat_rev } } }};
+    var p = try dep_resolver.plan(gpa, testing.io, &entries, store, .{});
+    defer p.deinit();
+    try testing.expectEqual(dep_resolver.Action.Kind.clone, p.actions[0].kind);
+
+    var cl = try materialiseClone(gpa, testing.io, p.actions[0], store, "/unused");
+    defer cl.deinit(gpa);
+    try testing.expectEqualStrings(feat_rev, cl.rev);
+
+    // The commit is now in the store: a re-plan (even --frozen) reuses it.
+    var again = try dep_resolver.plan(gpa, testing.io, &entries, store, .{ .frozen = true });
+    defer again.deinit();
+    try testing.expectEqual(dep_resolver.Action.Kind.reuse_cas, again.actions[0].kind);
+}
+
+/// A repository holding two packages (decision 344): `modules/web` depends on
+/// its sibling `modules/core` by path. Tag `v1.0` has core's `value.txt` at
+/// "v1"; `main` moved on to "v2".
+fn makeSubdirRepo(gpa: std.mem.Allocator, repo: []const u8) !void {
+    const io = testing.io;
+    try std.Io.Dir.cwd().createDirPath(io, repo);
+    gpa.free(try gitRun(gpa, repo, &.{ "init", "--quiet", "--initial-branch=main" }));
+    const files = [_]struct { []const u8, []const u8 }{
+        .{ "modules/web/botopink.json", "{ \"name\": \"web\", \"dependencies\": { \"core\": { \"path\": \"../core\" } } }\n" },
+        .{ "modules/core/botopink.json", "{ \"name\": \"core\" }\n" },
+        .{ "modules/core/value.txt", "v1\n" },
+    };
+    for (files) |f| {
+        const path = try std.fs.path.join(gpa, &.{ repo, f[0] });
+        defer gpa.free(path);
+        try std.Io.Dir.cwd().createDirPath(io, std.fs.path.dirname(path).?);
+        try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = f[1] });
+    }
+    gpa.free(try gitRun(gpa, repo, &.{ "add", "." }));
+    gpa.free(try gitRun(gpa, repo, &.{ "commit", "--quiet", "-m", "v1" }));
+    gpa.free(try gitRun(gpa, repo, &.{ "tag", "v1.0" }));
+    const value = try std.fs.path.join(gpa, &.{ repo, "modules/core/value.txt" });
+    defer gpa.free(value);
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = value, .data = "v2\n" });
+    gpa.free(try gitRun(gpa, repo, &.{ "commit", "--quiet", "-am", "v2" }));
+}
+
+test "install of two subdir dependencies on one repository: one clone at the tag, the member and its sibling inside it" {
+    const gpa = testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const dir = test_scratch.path(testing.io, "bpmp-tests/install-subdir");
+    resetDir(dir);
+    defer std.Io.Dir.cwd().deleteTree(testing.io, dir) catch {};
+    const repo = test_scratch.path(testing.io, "bpmp-tests/install-subdir/repo");
+    try makeSubdirRepo(gpa, repo);
+
+    const url = try std.fmt.allocPrint(a, "file://{s}", .{try absTestPath(a, repo)});
+    const store = try absTestPath(a, test_scratch.path(testing.io, "bpmp-tests/install-subdir/store"));
+    const text = try std.fmt.allocPrint(a,
+        \\{{ "name": "app", "dependencies": {{
+        \\  "web": {{ "git": "{s}", "tag": "v1.0", "subdir": "modules/web" }},
+        \\  "core": {{ "git": "{s}.git", "tag": "v1.0", "subdir": "modules/core" }} }} }}
+    , .{ url, url });
+    var perr: ?shared_manifest.Located = null;
+    const project = try shared_manifest.parse(a, text, "botopink.json", &perr);
+
+    var p = try dep_resolver.plan(gpa, testing.io, project.dependencies, store, .{});
+    defer p.deinit();
+    try testing.expectEqual(dep_resolver.Action.Kind.clone, p.actions[0].kind);
+    try testing.expectEqual(dep_resolver.Action.Kind.share_checkout, p.actions[1].kind);
+
+    var cl = try materialiseClone(gpa, testing.io, p.actions[0], store, "/unused");
+    defer cl.deinit(gpa);
+    const tag_rev = try gitHead(gpa, repo, "v1.0^{commit}");
+    defer gpa.free(tag_rev);
+    try testing.expectEqualStrings(tag_rev, cl.rev);
+
+    var err: ?shared_manifest.Located = null;
+    const web_dir = try dep_member.check(a, testing.io, project, "web", project.dependencies[0].spec, cl.path, cl.rev, &err);
+    const core_dir = try dep_member.check(a, testing.io, project, "core", project.dependencies[1].spec, cl.path, cl.rev, &err);
+    try testing.expectEqualStrings(try std.fs.path.join(a, &.{ cl.path, "modules/web" }), web_dir);
+    try testing.expectEqualStrings(try std.fs.path.join(a, &.{ cl.path, "modules/core" }), core_dir);
+    // web's `../core` is the sibling at the same tag, not main's.
+    const sibling = try std.fs.path.resolve(a, &.{ web_dir, "../core/value.txt" });
+    const value = try std.Io.Dir.cwd().readFileAlloc(testing.io, sibling, a, .limited(64));
+    try testing.expectEqualStrings("v1\n", value);
+
+    // One checkout of the repository in the store.
+    const repo_dir = try std.fs.path.join(a, &.{ store, p.actions[0].repo_key });
+    var d = try std.Io.Dir.cwd().openDir(testing.io, repo_dir, .{ .iterate = true });
+    defer d.close(testing.io);
+    var it = d.iterate();
+    var n: usize = 0;
+    while (try it.next(testing.io)) |_| n += 1;
+    try testing.expectEqual(@as(usize, 1), n);
 }

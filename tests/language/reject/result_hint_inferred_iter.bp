@@ -1,0 +1,17 @@
+//// Front 24 E3.9 (decisions 122 and 125 of 1.0.10-beta; README § Step E3,
+//// item 9) — an `iter` loop with a `throw` of its own yields `@Result` items
+//// without anyone writing the `@Result`: the `for` that reads them gets the
+//// `for`-item hint (`try r`) AND the location of the `throw` that made the
+//// items `@Result`s. Located at the file only, like `reject/result_hint_for_item.bp`.
+
+fn count(xs: string[]) -> i32 {
+    val items = iter for (xs) { x ->
+        if (x == "stop") { throw "stopped"; };
+        yield 1;
+    };
+    var acc = 0;
+    for (items) { r -> acc = acc + r; };
+    return acc;
+}
+
+pub fn main() { @print(count(["a"])); }

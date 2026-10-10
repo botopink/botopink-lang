@@ -1,0 +1,20 @@
+//// Decision 341 — a host function a decorator reaches needs the cell of
+//// every comptime runtime its package's declared `targets` use; this package
+//// declares none, so the decorator runs on the BEAM and the wat runtime and
+//// `bang` has no `@External.Wasm`. Refused at the call when the package is
+//// compiled, whatever the build's target; `@External.Node` never serves.
+
+#[@External.Node("""($0 + "!")""")]
+#[@External.Erlang("""<<($0)/binary, "!">>""")]
+declare fn bang(value: string) -> string;
+
+fn sized(comptime decl: @Decl) {
+    @emit("pub fn summary() -> string { return \"" + bang(decl.name) + "\"; }");
+}
+
+#[sized]
+type Point(x: i32, y: i32)
+
+pub fn main() {
+    @print(summary());
+}

@@ -1,0 +1,7 @@
+//// Decision 332, question 139-a — `is` does not test a `bigint`: no target tells one from another
+//// integer at run time, and a value typed `bigint` is one by its type.
+
+pub fn main() {
+    val x = 5n;
+    @print(x is i32);
+}

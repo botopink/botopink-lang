@@ -1,0 +1,5 @@
+pub type Entry(key: string, hits: i32)
+
+pub fn hits(e: Entry) -> i32 {
+    return e.hits;
+}

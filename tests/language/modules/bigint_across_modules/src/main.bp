@@ -1,0 +1,14 @@
+//// Decision 332 — a `bigint` crosses a module boundary: a sibling's `pub fn` takes and answers
+//// one, a `pub` record holds one, and a `pub val` is one; commonJS's `.d.ts` types each `bigint`
+//// (`scripts/tsc-check.sh` reads it), and the four targets print the same digits.
+
+mod numbers;
+
+import {numbers.factorial, numbers.Tally, numbers.googolish, numbers.add};
+
+pub fn main() {
+    @print(factorial(30));
+    val t = Tally(count: 2, sum: factorial(25));
+    @print(add(t, googolish).sum);
+    @print(googolish);
+}

@@ -1,0 +1,8 @@
+//// Decision 105 — `loop (…)` does not exist: `for (xs) { x -> … }` iterates a
+//// collection, a range or a generator, `while (cond) { … }` repeats while the
+//// condition holds. Refused at the keyword, naming both (decision 67: no flag).
+
+pub fn main() {
+    val xs = [1, 2, 3];
+    loop (xs) { x -> @print(x); };
+}

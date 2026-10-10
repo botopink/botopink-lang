@@ -1,0 +1,13 @@
+//// A float held under a type parameter — a generic record's field, a
+//// generic variant's payload — is the float on commonJS, erlang and beam.
+//// wasm holds a float in a 4-byte slot as the address of its cell, and the
+//// one body that reads `T` takes that address for the value: `300` printed
+//// for `Box(value: 1.5).value` at exit 0 (`00 · gate-wasm-wrong-answers`).
+//// Until a reader knows the cell, wasm refuses the value where it enters.
+
+type Box<T>(value: T)
+
+pub fn main() {
+    val b = Box(value: 1.5);
+    @print(b.value);
+}

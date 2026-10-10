@@ -1,0 +1,23 @@
+//// Decision 354 (3) — `use` exists only where there is a render tree; a
+//// `comptime { … }` is compile-time evaluation with none. Refused at the
+//// `use`.
+
+import {context.Context, context.provide, context.context} from "std";
+
+type Theme(mode: string)
+
+type Element(text: string) implement @Renderable
+
+pub val ThemeContext = Context<Theme>();
+
+fn Label() -> @Component<Element> {
+    val mode = comptime {
+        val t = use context(ThemeContext);
+        break t.mode;
+    };
+    return Element(text: mode);
+}
+
+pub fn main() {
+    Label();
+}

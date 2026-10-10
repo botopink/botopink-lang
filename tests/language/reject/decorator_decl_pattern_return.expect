@@ -1,0 +1,2 @@
+`#[page]` expects a declaration of type `fn(Route<P>) -> View`, and `blog` is `fn(Route<string>) -> string`
+16:3

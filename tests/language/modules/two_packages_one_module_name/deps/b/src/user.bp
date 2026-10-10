@@ -1,0 +1,22 @@
+//// `b`'s own `theme`, imported by its path (206, 309, 337): the module is
+//// `b/theme`, never `a/theme` — at run time, in the template `tag` expands,
+//// and in the `comptime` value the compile-time runtime evaluates. `Ns` is
+//// not imported here: the type `make()` answers is `b/theme`'s, the module
+//// it is imported from.
+
+import {theme.make};
+import {theme.tag};
+
+val early = comptime make().show();
+
+pub fn describeB() -> string {
+    val n = make();
+    return n.show()
+        + " "
+        + n.size.toString()
+        + n.unit
+        + " "
+        + tag("y")
+        + " "
+        + early;
+}

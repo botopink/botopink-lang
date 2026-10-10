@@ -1,0 +1,108 @@
+----- SOURCE CODE -- main.bp
+```botopink
+fn main() {
+    val rows = [[1, 2], [3, 4]];
+    @print(rows);
+    @print(rows[1]);
+    val r1: i32[] = rows[1] ?? [];
+    @print(r1[0]);
+    @print(rows[0]?.length);
+    val xs = [10, 20, 30];
+    @print(xs[0..2].length);
+    val sl = xs[0..2];
+    @print(sl.length);
+    val ps = [#(1, "a"), #(2, "b")];
+    @print(ps[1]);
+}
+```
+
+----- ERLANG -- main.erl
+```erlang
+-module(test@main).
+-export(['_botopink_main'/0, main/1]).
+
+%% behavior Array
+
+array_range(Start, Stop) ->
+    case (Start >= Stop) of
+        true ->
+            [];
+        false ->
+            Head = Start,
+            [Head] ++ (array_range((Start + 1), Stop))
+    end.
+
+array_repeat(Value, Times) ->
+    case (Times =< 0) of
+        true ->
+            [];
+        false ->
+            Head = Value,
+            [Head] ++ (array_repeat(Value, (Times - 1)))
+    end.
+
+main() ->
+    Rows = [[1, 2], [3, 4]],
+    '__bp_print'([Rows]),
+    '__bp_print'([(fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Rows, 1)]),
+    R1 = case (fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Rows, 1) of
+        undefined ->
+            [];
+        __bp_nullish ->
+            __bp_nullish
+    end,
+    '__bp_print'([(fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(R1, 0)]),
+    '__bp_print'([erlang:length((fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Rows, 0))]),
+    Xs = [10, 20, 30],
+    '__bp_print'([erlang:length(array_slice(Xs, 0, 2))]),
+    Sl = array_slice(Xs, 0, 2),
+    '__bp_print'([erlang:length(Sl)]),
+    Ps = [{1, <<"a">>}, {2, <<"b">>}],
+    '__bp_print'([(fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Ps, 1)]).
+
+array_slice(Self, Start, End) ->
+    case (End =/= undefined) of
+        true ->
+            lists:sublist(Self, (Start) + 1, ((End) - (Start)));
+        false ->
+            lists:nthtail(Start, Self)
+    end.
+
+'__bp_print'(Values) ->
+    io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
+
+'__bp_show'(V, true) when erlang:is_binary(V) -> V;
+'__bp_show'(V, _) when erlang:is_binary(V) -> [$", [case C of $" -> "\\\""; $\\ -> "\\\\"; $\n -> "\\n"; $\r -> "\\r"; $\t -> "\\t"; _ -> C end || C <- unicode:characters_to_list(V)], $"];
+'__bp_show'(V, _) when erlang:is_list(V) -> [$[, lists:join(", ", ['__bp_show'(E, false) || E <- V]), $]];
+'__bp_show'(V, _) when erlang:is_tuple(V), erlang:tuple_size(V) > 0, erlang:is_atom(erlang:element(1, V)), erlang:element(1, V) =/= true, erlang:element(1, V) =/= false, erlang:element(1, V) =/= undefined -> '__bp_tagged'(erlang:element(1, V), V);
+'__bp_show'(V, _) when erlang:is_tuple(V) -> ["#(", lists:join(", ", ['__bp_show'(E, false) || E <- erlang:tuple_to_list(V)]), $)];
+'__bp_show'(undefined, _) -> "null";
+'__bp_show'(V, _) when erlang:is_atom(V), V =/= true, V =/= false, V =/= undefined -> '__bp_tagged'(V, V);
+'__bp_show'(V, _) -> io_lib:format("~p", [V]).
+
+'__bp_tagged'(A, V) ->
+    M = case string:split(erlang:atom_to_list(A), "__v__") of [P, _] -> erlang:list_to_atom(P); _ -> A end,
+    case code:ensure_loaded(M) =:= {module, M} andalso erlang:function_exported(M, '__bp_format', 1) of true -> '__bp_render'(erlang:apply(M, '__bp_format', [V])); false -> io_lib:format("~p", [V]) end.
+
+'__bp_render'({text, T}) -> T;
+'__bp_render'({variant, N, []}) -> N;
+'__bp_render'({_, N, Fs}) -> [N, $(, lists:join(", ", [[K, ": ", '__bp_show'(Val, false)] || {K, Val} <- Fs]), $)].
+
+'_botopink_main'() ->
+    io:setopts(standard_io, [{encoding, unicode}]),
+    main().
+
+main(_Args) ->
+    '_botopink_main'().
+```
+
+----- RUN LOG -----
+```logs
+[[1, 2], [3, 4]]
+[3, 4]
+3
+2
+2
+2
+#(2, "b")
+```

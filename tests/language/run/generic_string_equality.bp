@@ -1,0 +1,94 @@
+//// `==` between two values of a type parameter compares strings by content
+//// on every target, whichever way the type parameter is bound: by a call's
+//// arguments, by an array's elements, by a record's constructor or a
+//// generic call's result answering one, by a parameter written `Pair<T>`,
+//// by a variant's payload, and by the function type a generic fn is handed
+//// to or bound under. Every string here is built at
+//// run time, so no two of them are one literal. wasm has one body per
+//// generic function and compared WORDS where nothing specialised it — the
+//// record, the generic result, the `Pair<T>` parameter, the element of an
+//// array of records and the fn handed or bound as a value answered `false`
+//// (`01-compiler/05-wasm` step 2).
+
+type Box<T>(value: T) {
+    fn holds(self: Self<T>, other: T) -> bool {
+        return self.value == other;
+    }
+}
+
+type Pair<A>(left: A, right: A) {
+    fn matched(self: Self<A>) -> bool {
+        return self.left == self.right;
+    }
+}
+
+type Maybe<T> {
+    Some(value: T),
+    None,
+}
+
+fn same<T>(a: T, b: T) -> bool {
+    return a == b;
+}
+
+fn differ<T>(a: T, b: T) -> bool {
+    return a != b;
+}
+
+fn contains<T>(xs: T[], x: T) -> bool {
+    var found = false;
+    for (xs) { e ->
+        if (e == x) found = true;
+    }
+    return found;
+}
+
+fn someIs<T>(m: Maybe<T>, x: T) -> bool {
+    return case m {
+        Maybe.Some(value: v) {
+            v == x;
+        }
+        Maybe.None {
+            false;
+        }
+    };
+}
+
+fn firstOr<T>(xs: T[], d: T) -> T {
+    return xs.at(0) ?? d;
+}
+
+fn mk<T>(a: T, b: T) -> Pair<T> {
+    return Pair(left: a, right: b);
+}
+
+fn eqPair<T>(p: Pair<T>) -> bool {
+    return p.left == p.right;
+}
+
+fn apply(f: fn(a: string, b: string) -> bool, x: string, y: string) -> bool {
+    return f(x, y);
+}
+
+pub fn main() {
+    val built = "a" + "b";
+    val key = "x=ab".split("=").at(1) ?? "";
+    @print(same(built, "ab"));
+    @print(same(key, built));
+    @print(differ(key, "ab"));
+    @print(same(1, 1));
+    @print(contains(["zz", "ab"], key));
+    @print(Box(value: key).holds("ab"));
+    @print(Box(value: 3).holds(4));
+    @print(someIs(Maybe.Some(value: built), "ab"));
+    @print(same(firstOr(["x", "y"], ""), "x"));
+    @print(Pair(left: built, right: "ab").matched());
+    @print(Pair(left: built, right: "ba").matched());
+    @print(mk(built, key).matched());
+    @print([Pair(left: built, right: key)].map({ p -> p.matched() }));
+    @print(apply(same, built, "ab"));
+    @print(apply(differ, built, "ab"));
+    @print(eqPair(Pair(left: built, right: key)));
+    val held: fn(a: string, b: string) -> bool = same;
+    @print(held(built, "ab"));
+}

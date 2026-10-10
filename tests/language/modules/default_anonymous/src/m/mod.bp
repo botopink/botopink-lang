@@ -1,0 +1,4 @@
+//// Two modules whose default function has no name of its own.
+
+pub mod double;
+pub mod page;

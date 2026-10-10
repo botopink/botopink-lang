@@ -1,0 +1,71 @@
+//// Decision 375 — each node of `decl.hooks` carries `async`. A page over a
+//// synchronous `Card` (through `Header`) and an awaiting `Comments`: `Card`
+//// and `Header` write no `await` and reach nothing asynchronous, so both are
+//// `false`; `Comments` writes `await`, so it is `true`; `Page` writes no
+//// `await` but calls `Comments`, so it is `true`. `Ring` and `Link` call each
+//// other and `Link` awaits: the cycle is asynchronous. `Feed` calls a
+//// function value answering `@Component`, which the checker cannot follow:
+//// `true`.
+
+type Element(text: string) implement @Renderable
+
+// Renders `decl.hooks` into one meta string `main` prints: each node as
+// `name: sync` or `name: async`.
+fn graph(comptime decl: @Decl) {
+    var nodes: string[] = [];
+    decl.hooks.forEach({ n ->
+        val mark = if (n.async) "async" else "sync";
+        nodes.push(n.function.name + ": " + mark);
+    });
+    decl.setMeta("nodes", nodes.join(", "));
+}
+
+fn loadComments() -> @Task<string> {
+    return "2 comments";
+}
+
+fn Card(title: string) -> @Component<Element> {
+    return Element(text: title);
+}
+
+fn Header() -> @Component<Element> {
+    val c = Card("title");
+    return Element(text: c.text);
+}
+
+fn Comments() -> @Component<Element> {
+    val text = await loadComments();
+    return Element(text: text);
+}
+
+#[graph]
+fn Page() -> @Component<Element> {
+    val h = Header();
+    val c = Comments();
+    return Element(text: h.text + " " + c.text);
+}
+
+#[graph]
+fn Ring(depth: i32) -> @Component<Element> {
+    if (depth == 0) return Element(text: "ring");
+    val l = Link(depth - 1);
+    return Element(text: l.text);
+}
+
+fn Link(depth: i32) -> @Component<Element> {
+    val text = await loadComments();
+    val r = Ring(depth);
+    return Element(text: r.text + " " + text);
+}
+
+#[graph]
+fn Feed(render: fn() -> @Component<Element>) -> @Component<Element> {
+    val item = render();
+    return Element(text: item.text);
+}
+
+pub fn main() {
+    @print(@typeInfo(Page).meta.graph.nodes);
+    @print(@typeInfo(Ring).meta.graph.nodes);
+    @print(@typeInfo(Feed).meta.graph.nodes);
+}

@@ -1,0 +1,2 @@
+decorator-host-cell-missing: `bang` has no @External.Wasm; the package declares no targets, so its decorators run on the BEAM and the wat runtime
+12:54

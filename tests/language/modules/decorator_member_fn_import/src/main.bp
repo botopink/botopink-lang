@@ -1,0 +1,12 @@
+//// Decision 370 (2) — a member a decorator of another module hands to
+//// `decl.addMember(name, fn…)` travels with the type like any member: an
+//// importer calls `r.check()`, and the rule runs at run time.
+
+pub mod rules;
+pub mod models;
+import {models.Range};
+
+pub fn main() {
+    @print(Range(low: 1, high: 2).check());
+    @print(Range(low: 3, high: 2).check());
+}

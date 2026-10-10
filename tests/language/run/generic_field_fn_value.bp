@@ -1,0 +1,67 @@
+//// A function stored in a generic record's field answers what the function
+//// answers, wherever it is called: through the field (`h.value("b")`),
+//// through an untyped local the field was read into, and through a record a
+//// generic function built. `Box<T>(value: T)` alone is enough — the field is
+//// written `T`, so the call's result type is the type argument's return.
+//// A LAMBDA in the field is typed the same way: by the calls through the
+//// field or through a local read from it, by a `val`'s annotation, by the
+//// parameter the record is passed to, and by the function's return type.
+//// wasm printed the string result's heap address (front 130's row), and a
+//// lambda's string parameter as an integer (`300?`).
+
+type Box<T>(value: T)
+
+fn shout(s: string) -> string {
+    return s + "!";
+}
+
+fn isBig(n: i32) -> bool {
+    return n > 10;
+}
+
+fn inc(n: i32) -> i32 {
+    return n + 1;
+}
+
+fn wrap<T>(v: T) -> Box<T> {
+    return Box(value: v);
+}
+
+fn run(b: Box<fn(s: string) -> string>) -> string {
+    val f = b.value;
+    return f("q");
+}
+
+fn make() -> Box<fn(s: string) -> string> {
+    return Box(value: { s -> s + "#" });
+}
+
+pub fn main() {
+    val h = Box(value: shout);
+    val k = h.value;
+    @print(k("a"));
+    @print(h.value("b"));
+    val p = Box(value: isBig);
+    val q = p.value;
+    @print(q(11));
+    @print(q(3));
+    val c = Box(value: inc);
+    val g = c.value;
+    @print(g(5));
+    val w = wrap(shout);
+    val z = w.value;
+    @print(z("c"));
+    val lam = Box(value: { s -> s + "?" });
+    val lf = lam.value;
+    @print(lf("d"));
+    @print(lam.value("e"));
+    val num = Box(value: { x -> x * 2 });
+    val nf = num.value;
+    @print(nf(21));
+    val typed: Box<fn(s: string) -> string> = Box(value: { s -> s + "~" });
+    val tf = typed.value;
+    @print(tf("t"));
+    @print(run(Box(value: { s -> s + "!" })));
+    val mf = make().value;
+    @print(mf("m"));
+}

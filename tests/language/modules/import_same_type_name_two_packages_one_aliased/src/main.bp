@@ -1,0 +1,16 @@
+//// 01-compiler/01-checker row 33 (`language-gaps.md` "An `as` alias of an
+//// imported type still binds the declared name") re-measured in its exact
+//// shape: two packages each declare `App`, one imported plain and one under
+//// an alias. It no longer binds the wrong type — it is refused at the aliased
+//// item (imp-a: one module holds one type of a name until the backends tell
+//// types apart by module). The parent binary named the first package `srv:`.
+
+import {App} from "srv";
+import {App as SiteApp, makeSite} from "site";
+
+pub fn main() {
+    val a = App(port: 1, basePath: "");
+    val s: SiteApp = makeSite();
+    @print(a.describe());
+    @print(s.render());
+}

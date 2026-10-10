@@ -1,0 +1,11 @@
+//// Decision 105 — `yield :label` names the generator scope it feeds (a fn's
+//// signature label, an annotated loop's), never a plain loop: a loop has no
+//// array to feed any more.
+
+fn doubled(xs: i32[]) -> @Iterator<i32> :out {
+    for :inner (xs) { x ->
+        yield :inner x * 2;
+    };
+}
+
+pub fn main() { @print(1); }

@@ -1,12 +1,20 @@
 /// Argument parsing for `botopink-lib-test`.
 ///
 ///   botopink-lib-test [--target <t>[,<t>…] | --target all]
-///                     [--lib <name>] [--filter <s>] [--strict] [--bin <path>]
+///                     [--lib <name>]… [--filter <s>] [--strict] [--bin <path>]
+///                     [--jobs <n>] [--json] [--list] [--cold] [--store-root <dir>]
+///
+/// `--lib` is repeatable: every name given runs, in the order given, in one
+/// report (decision 258); a name given twice runs once.
 ///
 /// `--target` is repeatable and comma-separated. It accepts every codegen target
 /// plus the alias `node` → `commonJS`, and both the `--target <t>` and
 /// `--target=<t>` spellings. The default target set is `commonJS,erlang` — the two
 /// backends `botopink test` runs today. `all` expands to every *supported* target.
+///
+/// There is no flag that runs a target a manifest excludes: the manifest's
+/// `"targets"` list decides which (lib, target) pairs are cells, and an excluded
+/// pair is audited instead (`runner.captureAudit`).
 const std = @import("std");
 
 // ── Target ──────────────────────────────────────────────────────────────────────
@@ -23,6 +31,16 @@ pub const Target = enum {
 
     /// Targets `botopink test` runs today; `--target all` expands to these.
     pub const supported = [_]Target{ .commonJS, .erlang };
+
+    /// Whether `botopink test` runs this target today (`supported`). A target
+    /// a manifest excludes is audited only when this holds: an exclusion of a
+    /// target no cell can run on hides nothing the run could have measured.
+    pub fn isSupported(self: Target) bool {
+        for (supported) |t| {
+            if (t == self) return true;
+        }
+        return false;
+    }
 
     /// Parse a target name. Accepts the `node` alias for `commonJS`.
     pub fn fromString(s: []const u8) ?Target {
@@ -49,8 +67,9 @@ pub const Target = enum {
 pub const Options = struct {
     /// Requested targets, in order, de-duplicated. Owned by the caller's arena.
     targets: []const Target = &.{},
-    /// Restrict to a single lib under `libs/`; null → every lib.
-    lib: ?[]const u8 = null,
+    /// `--lib <name>`, repeatable (decision 258): the libs to run, in the
+    /// order given, de-duplicated; empty → every lib.
+    libs: []const []const u8 = &.{},
     /// Forwarded to `botopink test --filter`.
     filter: ?[]const u8 = null,
     /// Treat an unsupported target as a failure instead of a skip.
@@ -66,12 +85,31 @@ pub const Options = struct {
     /// injected, plus per-cell `{"event":"cell_summary",…}` and a final
     /// `{"event":"run_summary",…}` record. Text-mode matrix is skipped.
     json: bool = false,
+    /// `--jobs <n>` — how many cells run at once. `null` → the runner's
+    /// default (`main.defaultJobs`: the CPU count, bounded by available
+    /// memory). Scheduling only: every cell runs either way, and the output is
+    /// emitted in discovery order, byte for byte what `--jobs 1` prints.
+    jobs: ?usize = null,
+    /// `--list` — print the plan and spawn nothing: one
+    /// `<lib>\t<target>\t<kind>` line per (lib, target) pair, in discovery
+    /// order. The lines whose kind starts with `cell:` are the cells the
+    /// manifests declare; `audit` is an excluded pair the run would audit.
+    list: bool = false,
+    /// `--cold` — do not read the cell-result store (`result_store.zig`):
+    /// every spawning cell runs, and its passes are written (decision 249).
+    /// `scripts/gate.sh --cold` passes it. It changes what is executed, never
+    /// a verdict.
+    cold: bool = false,
+    /// `--store-root <dir>` — keep the result store in `<dir>` instead of each
+    /// library's `<cache root>/.botopinkbuild/cache/results/lib-test/`.
+    store_root: ?[]const u8 = null,
 };
 
 pub const ParseError = error{
     MissingArgument,
     InvalidTarget,
     UnknownFlag,
+    InvalidJobs,
 } || std.mem.Allocator.Error;
 
 /// Parse `args` (the slice *after* the program name). Allocations land in `arena`.
@@ -79,6 +117,7 @@ pub fn parse(arena: std.mem.Allocator, args: []const []const u8) ParseError!Opti
     var opts: Options = .{};
     var targets: std.ArrayListUnmanaged(Target) = .empty;
     var lib_roots: std.ArrayListUnmanaged([]const u8) = .empty;
+    var libs: std.ArrayListUnmanaged([]const u8) = .empty;
 
     var i: usize = 0;
     while (i < args.len) : (i += 1) {
@@ -99,12 +138,18 @@ pub fn parse(arena: std.mem.Allocator, args: []const []const u8) ParseError!Opti
             i += 1;
             if (i >= args.len) return error.MissingArgument;
             try lib_roots.append(arena, args[i]);
+        } else if (splitEq(a, "--store-root")) |v| {
+            opts.store_root = v;
+        } else if (std.mem.eql(u8, a, "--store-root")) {
+            i += 1;
+            if (i >= args.len) return error.MissingArgument;
+            opts.store_root = args[i];
         } else if (splitEq(a, "--lib")) |v| {
-            opts.lib = v;
+            try appendLib(arena, &libs, v);
         } else if (std.mem.eql(u8, a, "--lib")) {
             i += 1;
             if (i >= args.len) return error.MissingArgument;
-            opts.lib = args[i];
+            try appendLib(arena, &libs, args[i]);
         } else if (splitEq(a, "--filter")) |v| {
             opts.filter = v;
         } else if (std.mem.eql(u8, a, "--filter")) {
@@ -117,10 +162,20 @@ pub fn parse(arena: std.mem.Allocator, args: []const []const u8) ParseError!Opti
             i += 1;
             if (i >= args.len) return error.MissingArgument;
             opts.bin = args[i];
+        } else if (splitEq(a, "--jobs")) |v| {
+            opts.jobs = try parseJobs(v);
+        } else if (std.mem.eql(u8, a, "--jobs")) {
+            i += 1;
+            if (i >= args.len) return error.MissingArgument;
+            opts.jobs = try parseJobs(args[i]);
         } else if (std.mem.eql(u8, a, "--strict")) {
             opts.strict = true;
         } else if (std.mem.eql(u8, a, "--json")) {
             opts.json = true;
+        } else if (std.mem.eql(u8, a, "--list")) {
+            opts.list = true;
+        } else if (std.mem.eql(u8, a, "--cold")) {
+            opts.cold = true;
         } else {
             return error.UnknownFlag;
         }
@@ -134,7 +189,19 @@ pub fn parse(arena: std.mem.Allocator, args: []const []const u8) ParseError!Opti
 
     opts.targets = try targets.toOwnedSlice(arena);
     opts.lib_roots = try lib_roots.toOwnedSlice(arena);
+    opts.libs = try libs.toOwnedSlice(arena);
     return opts;
+}
+
+/// Append one `--lib` name, skipping a name already given so a lib never runs
+/// twice; the first mention keeps its place.
+fn appendLib(
+    arena: std.mem.Allocator,
+    out: *std.ArrayListUnmanaged([]const u8),
+    name: []const u8,
+) ParseError!void {
+    for (out.items) |have| if (std.mem.eql(u8, have, name)) return;
+    try out.append(arena, name);
 }
 
 /// Append every target named in `spec` (a single name, `all`, or a comma-list)
@@ -170,6 +237,13 @@ fn appendUnique(
     try out.append(arena, t);
 }
 
+/// A positive decimal worker count; `0` or anything else is refused.
+fn parseJobs(v: []const u8) ParseError!usize {
+    const n = std.fmt.parseUnsigned(usize, v, 10) catch return error.InvalidJobs;
+    if (n == 0) return error.InvalidJobs;
+    return n;
+}
+
 /// If `a` is exactly `flag` followed by `=`, return the value after `=`
 /// (possibly empty). Otherwise null.
 fn splitEq(a: []const u8, flag: []const u8) ?[]const u8 {
@@ -191,7 +265,7 @@ test "default targets are commonJS + erlang" {
     try testing.expectEqual(Target.commonJS, opts.targets[0]);
     try testing.expectEqual(Target.erlang, opts.targets[1]);
     try testing.expect(!opts.strict);
-    try testing.expect(opts.lib == null);
+    try testing.expectEqual(@as(usize, 0), opts.libs.len);
 }
 
 test "node alias maps to commonJS" {
@@ -246,12 +320,13 @@ test "--lib, --filter, --strict, --bin" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const opts = try parse(arena.allocator(), &.{
-        "--lib",         "rakun",
+        "--lib",         "acme",
         "--filter",      "router",
         "--strict",      "--bin",
         "/tmp/botopink",
     });
-    try testing.expectEqualStrings("rakun", opts.lib.?);
+    try testing.expectEqual(@as(usize, 1), opts.libs.len);
+    try testing.expectEqualStrings("acme", opts.libs[0]);
     try testing.expectEqualStrings("router", opts.filter.?);
     try testing.expect(opts.strict);
     try testing.expectEqualStrings("/tmp/botopink", opts.bin.?);
@@ -260,8 +335,8 @@ test "--lib, --filter, --strict, --bin" {
 test "--lib=name (= form)" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
-    const opts = try parse(arena.allocator(), &.{"--lib=onze"});
-    try testing.expectEqualStrings("onze", opts.lib.?);
+    const opts = try parse(arena.allocator(), &.{"--lib=acme-web"});
+    try testing.expectEqualStrings("acme-web", opts.libs[0]);
 }
 
 test "invalid target rejected" {
@@ -274,6 +349,36 @@ test "missing argument rejected" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     try testing.expectError(error.MissingArgument, parse(arena.allocator(), &.{"--lib"}));
+}
+
+test "isSupported: the targets `botopink test` runs today" {
+    try testing.expect(Target.commonJS.isSupported());
+    try testing.expect(Target.erlang.isSupported());
+    try testing.expect(!Target.beam.isSupported());
+    try testing.expect(!Target.wasm.isSupported());
+}
+
+test "--list is off by default and set by the flag" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const off = try parse(arena.allocator(), &.{});
+    try testing.expect(!off.list);
+    const on = try parse(arena.allocator(), &.{"--list"});
+    try testing.expect(on.list);
+}
+
+test "--cold and --store-root: the store is read unless --cold, in its default place unless named" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const warm = try parse(arena.allocator(), &.{});
+    try testing.expect(!warm.cold);
+    try testing.expect(warm.store_root == null);
+    const cold = try parse(arena.allocator(), &.{ "--cold", "--store-root", "/s" });
+    try testing.expect(cold.cold);
+    try testing.expectEqualStrings("/s", cold.store_root.?);
+    const eq = try parse(arena.allocator(), &.{"--store-root=/t"});
+    try testing.expectEqualStrings("/t", eq.store_root.?);
+    try testing.expectError(error.MissingArgument, parse(arena.allocator(), &.{"--store-root"}));
 }
 
 test "unknown flag rejected" {
@@ -310,5 +415,34 @@ test "--lib-root does not shadow --lib" {
         "--lib",      "foo",
     });
     try testing.expectEqualStrings("/store", opts.lib_roots[0]);
-    try testing.expectEqualStrings("foo", opts.lib.?);
+    try testing.expectEqualStrings("foo", opts.libs[0]);
+}
+
+test "--lib is repeatable: every name, in the order given, once (decision 258)" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const opts = try parse(arena.allocator(), &.{
+        "--lib",       "zeta",
+        "--lib=alpha", "--lib",
+        "zeta",        "--lib",
+        "mid",
+    });
+    try testing.expectEqual(@as(usize, 3), opts.libs.len);
+    try testing.expectEqualStrings("zeta", opts.libs[0]);
+    try testing.expectEqualStrings("alpha", opts.libs[1]);
+    try testing.expectEqualStrings("mid", opts.libs[2]);
+}
+
+test "--jobs takes a positive count, both spellings; 0 and junk are refused" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const unset = try parse(arena.allocator(), &.{});
+    try testing.expect(unset.jobs == null);
+    const space = try parse(arena.allocator(), &.{ "--jobs", "3" });
+    try testing.expectEqual(@as(usize, 3), space.jobs.?);
+    const eq = try parse(arena.allocator(), &.{"--jobs=1"});
+    try testing.expectEqual(@as(usize, 1), eq.jobs.?);
+    try testing.expectError(error.InvalidJobs, parse(arena.allocator(), &.{ "--jobs", "0" }));
+    try testing.expectError(error.InvalidJobs, parse(arena.allocator(), &.{"--jobs=many"}));
+    try testing.expectError(error.MissingArgument, parse(arena.allocator(), &.{"--jobs"}));
 }

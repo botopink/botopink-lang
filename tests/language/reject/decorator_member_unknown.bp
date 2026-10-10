@@ -1,0 +1,22 @@
+//// Decision 216 (1) — a type's members are closed: a call through the type
+//// names an associated fn it declares, by hand or through a decorator's
+//// `decl.addMember`. `City.revisions()` is refused where it is written: the
+//// decorator added `fromName` only.
+
+fn entity(comptime decl: @Decl) {
+    decl.addMember(
+        "pub fn fromName(n: string) -> "
+            + decl.name
+            + " { return "
+            + decl.name
+            + "(name: n); }",
+    );
+}
+
+#[entity]
+type City(name: string)
+
+pub fn main() {
+    @print(City.fromName("Recife").name);
+    @print(City.revisions().length);
+}

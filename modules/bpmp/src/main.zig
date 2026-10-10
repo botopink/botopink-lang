@@ -105,4 +105,11 @@ test {
     _ = @import("./extract.zig");
     _ = @import("./resolver.zig");
     _ = @import("./release.zig");
+    _ = @import("./dep/spec.zig");
+    _ = @import("./dep/clone.zig");
+    _ = @import("./dep/resolver.zig");
+    _ = @import("./dep/member.zig");
+    _ = @import("./lock.zig");
+    _ = @import("./commands/install.zig");
+    _ = @import("./commands/sync.zig");
 }

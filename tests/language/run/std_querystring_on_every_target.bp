@@ -1,0 +1,32 @@
+//// `std/querystring` on all four targets (`01-compiler/05-wasm` step 5): its
+//// percent codec is `encoding`'s, bound with `fn:` on wasm, so a query string
+//// and a form body read and write the same pairs on every target —
+//// UTF-8 escapes, `+` in a form body, an empty value, a missing `=`, and each
+//// refusal (a bad escape, an escape that is not UTF-8, a control character).
+
+import {querystring} from "std";
+
+fn show(r: @Result<Array<#(string, string)>, string>) -> string {
+    return if (r.isError())
+        "error"
+    else
+        r.unwrapOr([]).map({ p -> [p._0, "=", p._1].join("") }).join("|");
+}
+
+pub fn main() {
+    @print(show(querystring.parse("?n=caf%C3%A9&x=a%20b&e=&k")));
+    @print(show(querystring.parse("a=1&a=2&b=%F0%9F%8E%89")));
+    @print(show(querystring.parse("")));
+    @print(show(querystring.parse("q=a+b")));
+    @print(show(querystring.parseForm("q=a+b&r=%2B")));
+    @print(show(querystring.parseForm("?x=1")));
+    @print(show(querystring.parse("a=%ZZ")));
+    @print(show(querystring.parse("a=%C3")));
+    @print(
+        querystring
+            .stringify([#("a b", "c+d"), #("é", "🎉"), #("k", "")])
+            .unwrapOr("?"),
+    );
+    @print(querystring.stringify([]).unwrapOr("?"));
+    @print(querystring.stringify([#("a\nb", "c")]).isError());
+}

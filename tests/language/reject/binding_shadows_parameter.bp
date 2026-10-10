@@ -1,0 +1,12 @@
+//// Decision 152 (01c-d) — a parameter is the first binding of its name in
+//// the body: `val x = 2;` in `fn f(x: i32)` is `binding-redeclared` at the
+//// `val`.
+
+fn f(x: i32) -> i32 {
+    val x = 2;
+    return x;
+}
+
+pub fn main() {
+    @print(f(1));
+}

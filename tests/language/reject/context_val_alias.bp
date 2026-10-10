@@ -1,0 +1,16 @@
+//// Decision 354 (2) — a module-level `val` naming another context would give
+//// one context two identities: only `Context<T>()` declares one.
+
+import {context.Context, context.provide, context.context} from "std";
+
+type Theme(mode: string)
+
+type Element(text: string) implement @Renderable
+
+pub val ThemeContext = Context<Theme>();
+
+pub val Alias = ThemeContext;
+
+pub fn main() {
+    @print("unreached");
+}

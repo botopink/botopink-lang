@@ -1,0 +1,13 @@
+//// Design §5(a), front 17 step 4 — a `PersistentTerm` var is written once, at
+//// load: every `persistent_term:put` scans every process heap, and `-on_load`
+//// re-runs on every code reload, so a value written at run time is erased by
+//// the next one (`999` → `101`, measured). Refused at the assignment, on every
+//// target — the annotation's contract does not depend on where it runs.
+
+#[@BeamMemory.PersistentTerm]
+var version: i32 = 101;
+
+pub fn main() {
+    version = 102;
+    @print(version);
+}

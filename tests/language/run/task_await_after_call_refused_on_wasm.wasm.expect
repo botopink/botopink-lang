@@ -1,0 +1,2 @@
+the wasm backend resumes an `await` by entering its statement again, and a call evaluated before it in that statement would run twice
+21:29

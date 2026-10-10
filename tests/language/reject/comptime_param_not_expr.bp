@@ -1,0 +1,12 @@
+//// Decision 364 (4) — every `comptime` parameter other than `@Decl` is the
+//// user's expression, `comptime x: @Expr<T>`: a decorator's parameter written
+//// `comptime path: string` is refused at the parameter, naming
+//// `@Expr<string>`.
+
+fn route(comptime decl: @Decl, comptime path: string) {
+    decl.setMeta("path", path);
+}
+
+pub fn main() {
+    @print("unreached");
+}
