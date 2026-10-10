@@ -91,14 +91,14 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .message = "a numeric suffix is written in lower case",
             .caretCaption = "write",
             .lexemeInCaption = true,
-            .hint = "The suffixes are `f` (f32), `d` (f64), `l` (i64), `u` (u32), `ul` (u64), `i8`, `i16`, `u8`, `u16`, `isize` and `usize`, lower case only (decision 247): `42l`, `1.5f`.",
+            .hint = "The suffixes are `f` (f32), `d` (f64), `l` (i64), `u` (u32), `ul` (u64), `i8`, `i16`, `u8`, `u16`, `isize`, `usize` and `n` (bigint, decision 332), lower case only (decision 247): `42l`, `1.5f`, `42n`.",
         },
         .numberSuffixUnknown => .{
             .code = "number-suffix-unknown",
             .message = "the letters after this number are not a numeric suffix",
             .caretCaption = "not a suffix:",
             .lexemeInCaption = true,
-            .hint = "A number takes one of `f`, `d`, `l`, `u`, `ul`, `i8`, `i16`, `u8`, `u16`, `isize`, `usize` (decision 247); anything else glued to it is an error — separate a name from a number with an operator or a space.",
+            .hint = "A number takes one of `f`, `d`, `l`, `u`, `ul`, `i8`, `i16`, `u8`, `u16`, `isize`, `usize` (decision 247) or `n` (bigint, decision 332); anything else glued to it is an error — separate a name from a number with an operator or a space.",
         },
         .numberSuffixFloatOnRadix => .{
             .code = "number-suffix-float-on-radix",
@@ -110,7 +110,7 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .code = "number-suffix-integer-on-float",
             .message = "a literal with a fraction or an exponent is floating and takes `f` or `d` only",
             .caretCaption = "an integer suffix",
-            .hint = "Drop the fraction for an integer (`42l`), or write a floating suffix (`1.5f`, `1.5d`) — decision 247.",
+            .hint = "Drop the fraction for an integer (`42l`, `42n`), or write a floating suffix (`1.5f`, `1.5d`) — decision 247; a `bigint` (decision 332) is an integer.",
         },
         .numberExponentWithoutDigits => .{
             .code = "number-exponent-without-digits",

@@ -85,6 +85,7 @@ const wasmBinary = @import("./wat/wasm_binary_emitter.zig");
 const prelude = @import("./wat/wat_prelude.zig");
 const hostBinding = @import("./wat/host_binding.zig");
 const hostFnBinding = @import("./hostFnBinding.zig");
+const lexerMod = @import("../lexer.zig");
 
 const CrossModule = crossModule.CrossModule;
 
@@ -1395,6 +1396,12 @@ fn emitWat(
         // Decision 392 — the module's own state machines, and its host's poll.
         if (group == .task_resume) {
             try items.append(ar, .{ .func = try em.taskResumeFunc() });
+            continue;
+        }
+        // Decision 332 — a module holding `bigint`s prints one in a container
+        // by the `n` shape code.
+        if (group == .print_shaped and em.b.helpers.has(.bigint)) {
+            try items.appendSlice(ar, &prelude.print_shaped_items_bigint);
             continue;
         }
         if (group == .task_poll and em.b.helpers.has(.task_host) and artifact != .browser) {
@@ -3182,6 +3189,10 @@ const Emitter = struct {
     /// else boxed by its static shape — a function value under its arity's
     /// descriptor (decision 254), its payload the closure cell.
     fn lowerAsUnknown(self: *Emitter, value: ast.Expr) anyerror!void {
+        // Decision 332 — a union's `bigint` member: the boxes here have no
+        // `bigint` kind yet (the checker keeps a `bigint` out of `unknown`).
+        if (self.isBigintExpr(value) or self.isOptBigintExpr(value) or self.ifBigintArm(value))
+            return self.refuse(value.getLoc(), "the wasm backend has no `bigint` in a union yet", .{});
         if (isNullLit(value) or self.isUnknownExpr(value) or self.isTaggedValue(value)) {
             try self.lowerCoerced(value, "i32");
             return;
@@ -5877,8 +5888,15 @@ const Emitter = struct {
                                 .{ .global_get = name });
                             const t = self.locals.get(name) orelse
                                 self.global_types.get(name) orelse "i32";
-                            try self.lowerCoerced(a.value.*, t);
-                            try self.emitArith(t, "add", b.loc);
+                            // Decision 332 — `x += y` over `bigint`s is a fresh block.
+                            if (self.isBigintAt(b.loc)) {
+                                try self.lowerValue(a.value.*);
+                                try self.emit(zero);
+                                try self.emit(self.builder().helper(.bn_add));
+                            } else {
+                                try self.lowerCoerced(a.value.*, t);
+                                try self.emitArith(t, "add", b.loc);
+                            }
                             try self.emit(if (self.locals.contains(name))
                                 .{ .local_set = name }
                             else
@@ -5912,7 +5930,12 @@ const Emitter = struct {
                                 try self.emit(.{ .local_get = mem });
                                 try self.emit(.{ .local_get = mem });
                                 try self.emit(.{ .load = .{ .offset = off } });
-                                if (cell != .none) {
+                                if (self.isBigintAt(b.loc)) {
+                                    // Decision 332 — the field holds the block's address.
+                                    try self.lowerValue(a.value.*);
+                                    try self.emit(zero);
+                                    try self.emit(self.builder().helper(.bn_add));
+                                } else if (cell != .none) {
                                     try self.emitFromCell(cell);
                                     try self.lowerCoerced(a.value.*, cell.ty());
                                     try self.emitArith(cell.ty(), "add", b.loc);
@@ -6151,6 +6174,9 @@ const Emitter = struct {
             .useHook => |uh| try self.lowerExpr(uh.kind.inner.*),
             .literal => |lit| switch (lit.kind) {
                 .numberLit => |n| {
+                    // Decision 332 — a `bigint` literal is its block, interned
+                    // as a data segment (`lowerBigintLiteral`).
+                    if (lexerMod.isBigintText(n)) return self.lowerBigintLiteral(n);
                     // The comptime folder parks *rendered* values (arrays,
                     // records, …) in a `numberLit` node, so the text is not
                     // always a numeral. `f32.const ["calc", …]` is a parse
@@ -6268,6 +6294,7 @@ const Emitter = struct {
                             try self.emit(self.builder().helper(h));
                             return;
                         }
+                        if (self.bigintAssoc(cc)) |which| return self.lowerBigintAssoc(which, cc);
                         if (self.assocSym(cc)) |sym_tmp| {
                             const generic = try self.arena().dupe(u8, sym_tmp);
                             const spec = try self.specializeFor(generic, cc.args);
@@ -6573,6 +6600,34 @@ const Emitter = struct {
     /// through `$__print_i32`, so a string printed as its *address* and a bool
     /// as `0`/`1`.
     fn lowerPrintArg(self: *Emitter, arg: ast.Expr, last: bool) anyerror!void {
+        // Decision 332 — a `bigint` prints its digits (`$__bn_to_str`); a
+        // `?bigint` has no reader here yet.
+        if (self.isOptBigintExpr(arg)) {
+            // The block's address, or `0` for absence.
+            const tmp = try self.declRes();
+            try self.lowerValue(arg);
+            try self.emit(.{ .local_tee = tmp });
+            try self.emit(opOf("i32", "eqz"));
+            var then_c: Capture = .{};
+            self.open(&then_c);
+            try self.emit(self.builder().helper(.print_null));
+            const then_seq = self.seal(&then_c, .none);
+            var else_c: Capture = .{};
+            self.open(&else_c);
+            try self.emit(.{ .local_get = tmp });
+            try self.emit(self.builder().helper(.bn_to_str));
+            try self.emit(self.builder().helper(.print_str_raw));
+            const else_seq = self.seal(&else_c, .none);
+            try self.emit(.{ .@"if" = .{ .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
+            if (last) try self.emit(self.builder().helper(.print_nl));
+            return;
+        }
+        if (self.isBigintExpr(arg)) {
+            try self.lowerValue(arg);
+            try self.emit(self.builder().helper(.bn_to_str));
+            try self.emit(self.builder().helper(if (last) .print_str else .print_str_raw));
+            return;
+        }
         // A value of a generic `type` that declares `display` prints through
         // `$__display_of`, which calls the ONE generic body of that method:
         // a call no specialisation reached (`refuseUnboundTemplateCalls`).
@@ -7616,6 +7671,14 @@ const Emitter = struct {
                 } else try self.emit(one);
             },
             .numberLit => |n| {
+                if (lexerMod.isBigintText(n)) {
+                    // Decision 332 — the subject is a block: equal by value.
+                    try self.emit(.{ .local_get = subj });
+                    try self.lowerBigintLiteral(n);
+                    try self.emit(self.builder().helper(.bn_cmp));
+                    try self.emit(opOf("i32", "eqz"));
+                    return;
+                }
                 try self.emit(.{ .local_get = subj });
                 const t = numLitType(n);
                 // the subject local is i32; a float literal is compared as one
@@ -7797,6 +7860,7 @@ const Emitter = struct {
             'f' => "f64",
             'l' => "i64",
             'u' => "u64",
+            'n' => "bigint",
             else => null,
         };
         if (scalar) |t| try self.local_typerefs.put(n, .{ .named = t });
@@ -7914,6 +7978,15 @@ const Emitter = struct {
     fn emitRangeBound(self: *Emitter, bound: ast.Pattern, subj: []const u8, cmp: []const u8, loc: ast.Loc) anyerror!void {
         switch (bound) {
             .numberLit => |n| {
+                if (lexerMod.isBigintText(n)) {
+                    // Decision 332 — `subj <cmp> bound` by `$__bn_cmp`'s sign.
+                    try self.emit(.{ .local_get = subj });
+                    try self.lowerBigintLiteral(n);
+                    try self.emit(self.builder().helper(.bn_cmp));
+                    try self.emit(zero);
+                    try self.emit(opOf("i32", cmp));
+                    return;
+                }
                 try self.emit(.{ .local_get = subj });
                 const t = numLitType(n);
                 if (t[0] == 'f') {
@@ -8914,7 +8987,7 @@ const Emitter = struct {
                         .bool_ => .bool,
                         .str => .string,
                         .arr => .array,
-                        .f64, .none => null,
+                        .f64, .i64, .none => null,
                     };
                 },
                 else => {},
@@ -8965,7 +9038,7 @@ const Emitter = struct {
             .bool_ => .{ .boxed = true, .bool_ = true },
             .str => .{ .boxed = false, .str = true },
             .arr => .{ .boxed = false },
-            .f64, .none => null,
+            .f64, .i64, .none => null,
         };
     }
 
@@ -9009,7 +9082,8 @@ const Emitter = struct {
     }
 
     /// What a primitive method leaves on the stack. Null: no wasm lowering.
-    const PrimRes = enum { i32, f64, bool_, str, arr, none };
+    /// `i64` is `bigint.toI64()`'s (decision 332).
+    const PrimRes = enum { i32, i64, f64, bool_, str, arr, none };
 
     /// The primitive kinds a behavior of `primitives.bp` covers — the ones a
     /// program's own `behavior <Name>` extends (01-checker). Arrays are not
@@ -9040,6 +9114,7 @@ const Emitter = struct {
             .int => "i32",
             .float => "f64",
             .array => "i32",
+            .bigint => "bigint",
         };
     }
 
@@ -9187,6 +9262,8 @@ const Emitter = struct {
                 .{ "clamp", 2, .f64 }, .{ "floor", 0, .f64 },      .{ "ceil", 0, .f64 },
                 .{ "round", 0, .f64 }, .{ "squareRoot", 0, .f64 }, .{ "toString", 0, .str },
             },
+            // Decision 332 — through the `bigint` group.
+            .bigint => &.{ .{ "toString", 0, .str }, .{ "toI64", 0, .i64 }, .{ "toF64", 0, .f64 } },
         };
         for (rows) |r| {
             if (r[1] == argc and std.mem.eql(u8, r[0], name)) return r[2];
@@ -9451,6 +9528,15 @@ const Emitter = struct {
             },
             .string => try self.lowerStringMethod(cc),
             .array => try self.lowerArrayMethod(cc),
+            .bigint => {
+                try self.lowerCoerced(recv, "i32");
+                try self.emit(b.helper(if (eq(u8, name, "toString"))
+                    .bn_to_str
+                else if (eq(u8, name, "toI64"))
+                    .bn_to_i64
+                else
+                    .bn_to_f64));
+            },
         }
     }
 
@@ -10287,6 +10373,13 @@ const Emitter = struct {
             },
             // A written record type: the element carries its own declaration.
             .named => |n| {
+                // Decision 332 — a `bigint` slot holds its block's address,
+                // printed by the `n` code, which the `bigint` group's module
+                // links (`print_shaped_items_bigint`).
+                if (std.mem.eql(u8, n, "bigint")) {
+                    _ = self.builder().helper(.bn_to_str);
+                    return "n";
+                }
                 if (self.records.contains(n)) return "T";
                 if (self.isAllUnitEnum(n)) return try self.unitEnumShape(n);
             },
@@ -11738,6 +11831,204 @@ const Emitter = struct {
         try self.item(.{ .func = func });
     }
 
+    // ── decision 332: `bigint` ───────────────────────────────────────────────
+    //
+    // A `bigint` is the address of an immutable block (`wat_prelude.zig`
+    // § bigint): `[L][limb0][limb1]…`, `L` the limbs' byte count, negated for
+    // a negative value. Its operations are the `bigint` helper group, linked
+    // only when a module calls one; a literal is a data segment.
+
+    /// Whether inference typed the operator at `loc` `bigint`.
+    fn isBigintAt(self: *Emitter, loc: ast.Loc) bool {
+        const il = self.instance_lowerings.get(loc) orelse return false;
+        return il == .division and il.division == .bigint;
+    }
+
+    /// Whether `e` is a `bigint` value.
+    fn isBigintExpr(self: *Emitter, e: ast.Expr) bool {
+        const t = self.typeRefOf(e) orelse return false;
+        return t == .named and std.mem.eql(u8, t.named, "bigint");
+    }
+
+    /// Whether `e` is an `if` one of whose arms answers a `bigint` (in a
+    /// union with the other's type).
+    fn ifBigintArm(self: *Emitter, e: ast.Expr) bool {
+        const br = switch (e) {
+            .branch => |b| b,
+            else => return false,
+        };
+        const i = switch (br.kind) {
+            .if_ => |x| x,
+            else => return false,
+        };
+        for ([_]?[]const ast.Stmt{ i.then_, i.else_ }) |maybe| {
+            const body = maybe orelse continue;
+            if (body.len == 0) continue;
+            if (self.isBigintExpr(body[body.len - 1].expr)) return true;
+        }
+        return false;
+    }
+
+    /// `bigint` / `?bigint` for an `if` one of whose arms answers a `bigint`
+    /// (the other a `bigint` too, or `null`); null otherwise.
+    fn ifBigintTypeRef(self: *Emitter, i: anytype) ?ast.TypeRef {
+        var big = false;
+        var absent = false;
+        for ([_]?[]const ast.Stmt{ i.then_, i.else_ }) |maybe| {
+            const body = maybe orelse return null;
+            if (body.len == 0) return null;
+            const last = body[body.len - 1].expr;
+            if (isNullLit(last)) {
+                absent = true;
+            } else if (self.isBigintExpr(last)) {
+                big = true;
+            } else if (self.isOptBigintExpr(last)) {
+                big = true;
+                absent = true;
+            } else return null;
+        }
+        if (!big) return null;
+        if (!absent) return .{ .named = "bigint" };
+        const inner = self.reg_arena.allocator().create(ast.TypeRef) catch return null;
+        inner.* = .{ .named = "bigint" };
+        return .{ .optional = inner };
+    }
+
+    /// Whether `e` is a `?bigint` (its block's address, or `0`).
+    fn isOptBigintExpr(self: *Emitter, e: ast.Expr) bool {
+        const t = self.typeRefOf(e) orelse return false;
+        return t == .optional and t.optional.* == .named and std.mem.eql(u8, t.optional.named, "bigint");
+    }
+
+    const BigintAssoc = enum { of, parse };
+
+    /// `BigInt.of(n)` / `BigInt.parse(text)` — the program's `bigint.of(n)`
+    /// / `bigint.parse(text)`, which inference names by the behavior.
+    fn bigintAssoc(self: *Emitter, cc: anytype) ?BigintAssoc {
+        const rn = receiverName(cc) orelse return null;
+        if (!std.mem.eql(u8, rn, "BigInt") or cc.args.len != 1 or cc.trailing.len != 0) return null;
+        if (self.locals.contains(rn) or self.globals.contains(rn) or self.records.contains(rn) or self.enums.contains(rn)) return null;
+        if (std.mem.eql(u8, cc.callee, "of")) return .of;
+        if (std.mem.eql(u8, cc.callee, "parse")) return .parse;
+        return null;
+    }
+
+    /// A `bigint` literal (`42n`, `0xFFn`): its magnitude's limbs interned as
+    /// a data segment, whose length word is the block's `L` (a literal is
+    /// never negative — `-5n` is a negation). The address is the value.
+    fn lowerBigintLiteral(self: *Emitter, text: []const u8) anyerror!void {
+        const digits = lexerMod.bigintDigits(text);
+        var clean: std.ArrayListUnmanaged(u8) = .empty;
+        var base: u8 = 10;
+        var body = digits;
+        if (digits.len > 2 and digits[0] == '0' and std.ascii.isAlphabetic(digits[1])) {
+            base = switch (digits[1]) {
+                'x', 'X' => 16,
+                'o', 'O' => 8,
+                else => 2,
+            };
+            body = digits[2..];
+        }
+        for (body) |c| if (c != '_') try clean.append(self.arena(), c);
+        var m = try std.math.big.int.Managed.init(self.arena());
+        try m.setString(base, clean.items);
+        var bytes: std.ArrayListUnmanaged(u8) = .empty;
+        for (m.toConst().limbs[0..m.len()]) |limb| {
+            var buf: [@sizeOf(std.math.big.Limb)]u8 = undefined;
+            std.mem.writeInt(std.math.big.Limb, &buf, limb, .little);
+            try bytes.appendSlice(self.arena(), &buf);
+        }
+        // Whole `u32` limbs, none zero on top.
+        while (bytes.items.len % 4 != 0) try bytes.append(self.arena(), 0);
+        while (bytes.items.len >= 4 and std.mem.allEqual(u8, bytes.items[bytes.items.len - 4 ..], 0)) bytes.items.len -= 4;
+        const seg = try self.internString(bytes.items);
+        try self.emitCf(try self.constInt(seg.offset), "bigint {s}", .{digits});
+    }
+
+    /// `lhs <op> rhs` over two `bigint`s: arithmetic through the group's
+    /// helpers (`/` truncates, `%` takes the dividend's sign, a zero divisor
+    /// traps), a comparison through `$__bn_cmp`.
+    fn lowerBigintBinOp(self: *Emitter, op: anytype, lhs: ast.Expr, rhs: ast.Expr) anyerror!void {
+        const Op = @TypeOf(op);
+        const b = self.builder();
+        try self.lowerValue(lhs);
+        try self.lowerValue(rhs);
+        switch (op) {
+            Op.add, Op.sub => {
+                try self.emit(try self.constInt(@as(i32, if (op == Op.sub) 1 else 0)));
+                try self.emit(b.helper(.bn_add));
+            },
+            Op.mul => try self.emit(b.helper(.bn_mul)),
+            Op.div, Op.mod => {
+                try self.emit(try self.constInt(@as(i32, if (op == Op.mod) 1 else 0)));
+                try self.emit(b.helper(.bn_divmod));
+            },
+            Op.eq, Op.ne, Op.lt, Op.gt, Op.lte, Op.gte => {
+                try self.emit(b.helper(.bn_cmp));
+                try self.emit(zero);
+                try self.emit(opOf("i32", switch (op) {
+                    Op.eq => "eq",
+                    Op.ne => "ne",
+                    Op.lt => "lt_s",
+                    Op.gt => "gt_s",
+                    Op.lte => "le_s",
+                    else => "ge_s",
+                }));
+            },
+            else => return self.refuse(lhs.getLoc(), "the wasm backend has no `{s}` over `bigint` operands", .{@tagName(op)}),
+        }
+    }
+
+    /// `bigint.of(n)` / `bigint.parse(text)`. `parse` answers the `@Result`
+    /// pair: `Ok` holding the block, or `Error` holding the text the other
+    /// targets write.
+    fn lowerBigintAssoc(self: *Emitter, which: BigintAssoc, cc: anytype) anyerror!void {
+        const b = self.builder();
+        switch (which) {
+            .of => {
+                try self.lowerCoerced(callArg(cc, 0).?, "i64");
+                try self.emit(b.helper(.bn_of));
+            },
+            .parse => {
+                const text = try self.declRes();
+                const p = try self.declRes();
+                const out = try self.declRes();
+                try self.lowerCoerced(callArg(cc, 0).?, "i32");
+                try self.emit(.{ .local_tee = text });
+                try self.emit(b.helper(.bn_from_str));
+                try self.emit(.{ .local_set = p });
+                try self.allocResultPair(out);
+                try self.emit(.{ .local_get = p });
+                var then_c: Capture = .{};
+                self.open(&then_c);
+                try self.emit(.{ .local_get = out });
+                try self.emit(zero);
+                try self.emitC(.{ .store = .{} }, "Ok tag");
+                try self.emit(.{ .local_get = out });
+                try self.emit(.{ .local_get = p });
+                try self.emitC(.{ .store = .{ .offset = 4 } }, "payload");
+                const then_seq = self.seal(&then_c, .none);
+                var else_c: Capture = .{};
+                self.open(&else_c);
+                try self.emit(.{ .local_get = out });
+                try self.emit(one);
+                try self.emitC(.{ .store = .{} }, "Error tag");
+                try self.emit(.{ .local_get = out });
+                const head = try self.internString("bigint.parse: \"");
+                const tail = try self.internString("\" is not an integer");
+                try self.emit(try self.constInt(head.offset));
+                try self.emit(.{ .local_get = text });
+                try self.emit(b.helper(.str_concat));
+                try self.emit(try self.constInt(tail.offset));
+                try self.emit(b.helper(.str_concat));
+                try self.emitC(.{ .store = .{ .offset = 4 } }, "payload");
+                const else_seq = self.seal(&else_c, .none);
+                try self.emit(.{ .@"if" = .{ .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
+                try self.emit(.{ .local_get = out });
+            },
+        }
+    }
+
     /// Decision 262 — an associated host primitive of a prelude behavior,
     /// lowered to its prelude helper: `String.fromCodepoint(cp)` is
     /// `$__str_from_cp`, which writes the code point's UTF-8 bytes and traps on
@@ -12577,8 +12868,15 @@ const Emitter = struct {
                         // A `?T` element of a tuple no type is written for
                         // names its payload by its print shape (`?u`).
                         if (self.optInfoOf(cc.args[0].value.*)) |oi| if (oi.inner) |inner| break :blk inner;
+                        // Decision 332 — `r.unwrapOr(0n)` over a `@Result`
+                        // answers the `bigint` its fallback is.
+                        if (std.mem.eql(u8, cc.callee, "__bp_result_unwrapOr") and self.isBigintExpr(cc.args[1].value.*)) break :blk .{ .named = "bigint" };
                     }
                     if (cc.is_builtin) break :blk null;
+                    // Decision 332 — `bigint.of(n)` answers a `bigint`, and so
+                    // does `xs.fold(0n, f)`: a fold answers its accumulator.
+                    if (self.bigintAssoc(cc)) |which| if (which == .of) break :blk .{ .named = "bigint" };
+                    if (cc.receiver != null and std.mem.eql(u8, cc.callee, "fold") and cc.args.len > 0) if (self.primKindAt(cc, c.loc)) |k| if (k == .array and self.isBigintExpr(cc.args[0].value.*)) break :blk .{ .named = "bigint" };
                     // Inside a specialisation a primitive method's result is
                     // typed by what it answers, so the next link of a chain
                     // (`self.max(lo).min(hi)`) and a `val` bound to one
@@ -12597,6 +12895,7 @@ const Emitter = struct {
                             .str => "string",
                             .bool_ => "bool",
                             .f64 => "f64",
+                            .i64 => "i64",
                             .i32 => if (k == .float and !std.mem.eql(u8, cc.callee, "length")) null else "i32",
                             .arr, .none => null,
                         };
@@ -12662,7 +12961,15 @@ const Emitter = struct {
             // other type) and an operator inference typed `u64` / `usize`.
             // `val top = 18446744073709551615ul; @print(top)` printed `-1`.
             .literal => |lit| switch (lit.kind) {
-                .numberLit => |n| if (isPastI64Literal(n)) .{ .named = "u64" } else null,
+                .numberLit => |n| if (lexerMod.isBigintText(n)) .{ .named = "bigint" } else if (isPastI64Literal(n)) .{ .named = "u64" } else null,
+                else => null,
+            },
+            // Decision 332 — `-x` of a `bigint` is one.
+            .unaryOp => |un| if (un.op == .neg and self.isBigintAt(un.loc)) .{ .named = "bigint" } else null,
+            // Decision 332 — an `if` answering a `bigint` (`?bigint` when the
+            // other arm is `null`).
+            .branch => |br| switch (br.kind) {
+                .if_ => |i| self.ifBigintTypeRef(i),
                 else => null,
             },
             // An `async { }` block is a task whose `T` no type is written for.
@@ -12692,6 +12999,7 @@ const Emitter = struct {
                 break :blk switch (il.division) {
                     .u64 => .{ .named = "u64" },
                     .usize => .{ .named = "usize" },
+                    .bigint => .{ .named = "bigint" },
                     else => null,
                 };
             },
@@ -12741,7 +13049,8 @@ const Emitter = struct {
     /// answers it, because a record's NAME is wanted too.
     fn elemIsPointer(self: *Emitter, recv: ast.Expr) bool {
         const sh = (self.printShapeOf(recv) catch null) orelse return false;
-        return sh.len >= 2 and sh[0] == '[' and (sh[1] == '[' or sh[1] == '(');
+        // Decision 332 — a `bigint` element is its block's address, never `0`.
+        return sh.len >= 2 and sh[0] == '[' and (sh[1] == '[' or sh[1] == '(' or sh[1] == 'n');
     }
 
     /// Whether one element of `recv` is a bool — its print shape is `[b`. The
@@ -13601,6 +13910,11 @@ const Emitter = struct {
     /// every field before this existed.
     fn fieldShape(self: *Emitter, t: ?ast.TypeRef) anyerror![]const u8 {
         const tref = t orelse return "i";
+        // Decision 332 — a `?bigint` field is its block's address or `0`.
+        if (tref == .optional and tref.optional.* == .named and std.mem.eql(u8, tref.optional.named, "bigint")) {
+            _ = self.builder().helper(.bn_to_str);
+            return "?n";
+        }
         if (try self.typeRefShape(tref)) |shape| return shape;
         // An enum with a payload variant is a pointer to a tagged `[tag, …]`
         // cell, every value of it — a unit variant too — carrying its
@@ -14014,6 +14328,13 @@ const Emitter = struct {
     /// backend's E2 fix follows (`integer_to_binary/1`). It used to be added as
     /// if it were a string pointer.
     fn lowerConcatOperand(self: *Emitter, e: ast.Expr) anyerror!void {
+        // Decision 332 — a `bigint` joins a string as its digits.
+        if (self.isOptBigintExpr(e))
+            return self.refuse(e.getLoc(), "the wasm backend has no text for a `?bigint` yet", .{});
+        if (self.isBigintExpr(e)) {
+            try self.lowerValue(e);
+            return self.emit(self.builder().helper(.bn_to_str));
+        }
         if (self.optInfoOf(e)) |oi| {
             // none renders as `undefined`, the text the other targets print
             const tmp = try std.fmt.allocPrint(self.arena(), "__opt{d}", .{self.loop_seq});
@@ -14861,7 +15182,8 @@ const Emitter = struct {
                     if (self.primKindAt(cc, c.loc)) |k| {
                         // `xs.fold(init, f)` answers what its accumulator holds.
                         if (k == .array and std.mem.eql(u8, cc.callee, "fold") and cc.args.len > 0) break :blk self.wasmTypeOf(cc.args[0].value.*);
-                        break :blk if (self.primRes(k, cc) == .f64) "f64" else "i32";
+                        const res = self.primRes(k, cc);
+                        break :blk if (res == .f64) "f64" else if (res == .i64) "i64" else "i32";
                     }
                     if (self.recordMethodSym(cc, c.loc)) |sym| {
                         if (self.fn_sigs.get(sym)) |sig| break :blk sig.result orelse "i32";
@@ -14994,6 +15316,16 @@ const Emitter = struct {
                     try self.emit(self.builder().helper(.str_eq));
                     i += 1;
                 },
+                // Decision 332 — a `bigint` element: the values its blocks hold.
+                'n' => {
+                    try self.emit(.{ .local_get = a });
+                    try self.emit(.{ .load = .{ .offset = @intCast(off) } });
+                    try self.emit(.{ .local_get = b });
+                    try self.emit(.{ .load = .{ .offset = @intCast(off) } });
+                    try self.emit(self.builder().helper(.bn_cmp));
+                    try self.emit(opOf("i32", "eqz"));
+                    i += 1;
+                },
                 // A 64-bit element: the values its two cells hold.
                 'l', 'u' => {
                     try self.emit(.{ .local_get = a });
@@ -15086,6 +15418,7 @@ const Emitter = struct {
             's' => return .{ .named = "string" },
             'l' => return .{ .named = "i64" },
             'u' => return .{ .named = "u64" },
+            'n' => return .{ .named = "bigint" },
             '[' => {
                 const inner = (try self.eqTypeOfShape(sh[1..])) orelse return null;
                 const p = try ar.create(ast.TypeRef);
@@ -15364,6 +15697,17 @@ const Emitter = struct {
             try self.emit(self.builder().helper(.str_eq));
             return;
         }
+        // Decision 332 — a `bigint` slot is its block's address: equal when
+        // the values are (`$__bn_cmp`), never by the addresses.
+        if (std.mem.eql(u8, n, "bigint")) {
+            try self.eqPushAddr(a);
+            try self.emit(.{ .load = .{ .offset = a.off } });
+            try self.eqPushAddr(b);
+            try self.emit(.{ .load = .{ .offset = b.off } });
+            try self.emit(self.builder().helper(.bn_cmp));
+            try self.emit(opOf("i32", "eqz"));
+            return;
+        }
         if (fieldCellOf(n) == .i64 and slot != .word) {
             for ([_]EqAddr{ a, b }) |x| {
                 try self.eqPushAddr(x);
@@ -15632,6 +15976,16 @@ const Emitter = struct {
             if (op == Op.ne) try self.emit(opOf("i32", "eqz"));
             return;
         }
+        // Decision 332 — a `?bigint` is its block's address or `0`: two of
+        // them (or one and a `bigint`) are equal when both are absent or both
+        // hold equal values (`$__bn_eq_opt`), never by the addresses.
+        if ((op == Op.eq or op == Op.ne) and (self.isOptBigintExpr(lhs) or self.isOptBigintExpr(rhs))) {
+            try self.lowerValue(lhs);
+            try self.lowerValue(rhs);
+            try self.emit(self.builder().helper(.bn_eq_opt));
+            if (op == Op.ne) try self.emit(opOf("i32", "eqz"));
+            return;
+        }
         // A boxed optional against a value: equal only when present and its
         // payload is equal (`null == 0` is false, as on the other targets).
         const lopt = self.optInfoOf(lhs);
@@ -15669,6 +16023,12 @@ const Emitter = struct {
             if (op == Op.ne) try self.emit(opOf("i32", "eqz"));
             return;
         }
+        // Decision 332 — two `bigint`s (the checker allows no other pair):
+        // their blocks through the group's helpers, never the ALU over the
+        // two addresses.
+        if ((self.isBigintAt(loc) or self.isBigintExpr(lhs) or self.isBigintExpr(rhs)) and
+            !(self.isStringExpr(lhs) or self.isStringExpr(rhs)))
+            return self.lowerBigintBinOp(op, lhs, rhs);
         // String operands: concatenation and comparison run through
         // linear-memory helpers rather than the numeric ALU. This used to fire
         // only for literal==literal, so `s == "yes"` compared *pointers* and
@@ -15751,6 +16111,11 @@ const Emitter = struct {
     }
 
     fn lowerNeg(self: *Emitter, inner: ast.Expr, loc: ast.Loc) anyerror!void {
+        // Decision 332 — a `bigint` negates into a fresh block.
+        if (self.isBigintAt(loc) or self.isBigintExpr(inner)) {
+            try self.lowerValue(inner);
+            return self.emit(self.builder().helper(.bn_neg));
+        }
         // Decision 319 — a type's minimum written as itself: `0 - 2^63` traps
         // the checked `sub` and `2^31` alone reads as an `i64`, so the
         // negated literal is the constant.
@@ -16244,6 +16609,8 @@ fn negatedMinimum(e: ast.Expr) ?struct { ty: []const u8, text: []const u8 } {
 }
 
 fn numLitType(n: []const u8) []const u8 {
+    // Decision 332 — a `bigint` literal is the address of its block.
+    if (lexerMod.isBigintText(n)) return "i32";
     if (radixOf(n)) |r| {
         const v = radixValue(n, r) orelse return "i32";
         return if (v > std.math.maxInt(i32) or v < std.math.minInt(i32)) "i64" else "i32";

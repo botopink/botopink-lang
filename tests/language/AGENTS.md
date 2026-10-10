@@ -1421,6 +1421,22 @@ emitted with its suffix on commonJS, erlang and beam (`s.mtime > 1577836800000l`
 `SyntaxError`, an `erlc` syntax error, `illegal integer` in the beam assembler) — a compiler row,
 not std's.
 
+`01-compiler/139` (decision 332: `bigint`, an integer of any size, one value on the four targets)
+adds `run/bigint_arithmetic` (2^101 by a loop, a product of two 40-digit numbers, `/` and `%` with
+negative operands, the comparisons, `toString`, `+=`, unary `-`, `bigint.of` past `i64`,
+`bigint.parse` of a numeral and of four non-numerals, `toI64`, `toF64`, hex and `_` literals —
+checked against Python's integers), `run/bigint_in_containers` (a record field, a `?bigint` field, a
+tuple, an array, `xs[i]`, a fold, an `if` answering a `?bigint`, `==` over each built apart, a number
+pattern and a range), `run/bigint_to_i64_aborts` (`.exit`, and `toI64: 9223372036854775808 does not
+fit i64` on commonJS, erlang and beam), `run/bigint_division_by_zero` (`.exit`, commonJS's
+`integer division by zero: / on bigint at src/main.bp:10:14`), `modules/bigint_across_modules` (a
+sibling's `pub fn`, `pub` record and `pub val` holding `bigint`s; its `.d.ts` through
+`scripts/tsc-check.sh`), and the refusals `reject/bigint_literal_fraction` (`1.5n`, at the suffix),
+`reject/bigint_plus_int_literal` (`2n + 1`, at the `1`), `reject/bigint_unsuffixed_literal`
+(`val x: bigint = 2`), `reject/bigint_into_i64` (`val x: i64 = 2n`) and, question 139-a's answer,
+`reject/bigint_type_test` (`x is i32` over a `bigint`), `reject/bigint_into_unknown` and
+`reject/bigint_comptime`. Every one was refused by the parent binary (`number-suffix-unknown`).
+
 `front/block-backends` (decision 2: an `@block`'s `return` is the block's value) adds
 `run/block_return_is_block_value` — `val x = @block { return 3; }`, a branch's `return`, a string,
 an `f64`, a `case` arm's `return`, a nested `@block`, a block inside a `for` and a statement block

@@ -89,12 +89,14 @@ fn primIfaceChain(k: envMod.PrimKind) []const []const u8 {
         .bool => &.{"Bool"},
         .int => &.{ "I32", "I64", "Signed", "U32", "U64", "Integer", "Number" },
         .float => &.{ "F64", "F32", "Float", "Number" },
+        // Decision 332 — `bigint`'s own interface, outside the tower.
+        .bigint => &.{"BigInt"},
     };
 }
 
 /// The primitive kind whose chain contains `iface` (`Number` answers `.int`).
 fn primKindForIface(iface: []const u8) ?envMod.PrimKind {
-    for ([_]envMod.PrimKind{ .array, .string, .bool, .int, .float }) |k| {
+    for ([_]envMod.PrimKind{ .array, .string, .bool, .int, .float, .bigint }) |k| {
         for (primIfaceChain(k)) |name| {
             if (std.mem.eql(u8, name, iface)) return k;
         }
@@ -115,6 +117,8 @@ fn fnArityNoSelf(f: ast.FnDecl) usize {
 /// True when a number literal's token is a numeral (`42`, `-1.5`, `1e3`).
 fn isNumericToken(t: []const u8) bool {
     if (t.len == 0) return false;
+    // Decision 332 — a `bigint` literal (`42n`) is the VM's integer.
+    if (erlEmitter.bigintNumeralDigits(t)) |digits| return isNumericToken(digits);
     for (t, 0..) |c, i| {
         if (std.ascii.isDigit(c) or c == '.' or c == '_' or c == 'e' or c == 'E') continue;
         if ((c == '-' or c == '+') and (i == 0 or t[i - 1] == 'e' or t[i - 1] == 'E')) continue;
@@ -7608,7 +7612,7 @@ const Emitter = struct {
                 if (eq(u8, callee, "contains")) try self.primCmpAgainstNomatch("binary", "match", recv_expr, cc, mode) else if (eq(u8, callee, "startsWith")) try self.primCmpAgainstNomatch("string", "prefix", recv_expr, cc, mode) else return false;
                 return true;
             },
-            .bool, .int, .float => return false,
+            .bool, .int, .float, .bigint => return false,
         }
     }
 

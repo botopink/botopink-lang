@@ -128,6 +128,8 @@ pub const number_suffixes = [_]struct { suffix: []const u8, typeName: []const u8
     .{ .suffix = "u16", .typeName = "u16" },
     .{ .suffix = "isize", .typeName = "isize" },
     .{ .suffix = "usize", .typeName = "usize" },
+    // Decision 332 — an integer of any size.
+    .{ .suffix = "n", .typeName = "bigint" },
 };
 
 /// The type a suffix gives (`"ul"` → `"u64"`); null for anything else.
@@ -146,14 +148,33 @@ pub fn numberSuffixLowercase(written: []const u8) ?[]const u8 {
 /// Decision 247 — what a backend writes for a number literal: the digits
 /// without the suffix; a floating suffix on integer digits spelt as a float
 /// (`1d` → `1.0`, `1_000f` → `1000.0`). The lexeme itself without a suffix.
+/// Decision 332 — a `bigint` literal keeps its `n` (`42n`, `0xFFn`): the
+/// one literal whose backend text names its type, so every backend tells it
+/// from a fixed-width integer without the checker's types (`isBigintText`,
+/// `bigintDigits`).
 pub fn numberBackendText(allocator: std.mem.Allocator, lexeme: []const u8) std.mem.Allocator.Error![]const u8 {
     const parts = splitNumber(lexeme);
     if (parts.suffix.len == 0) return lexeme;
+    if (std.mem.eql(u8, parts.suffix, "n")) return lexeme;
     if (!numberSuffixIsFloat(parts.suffix) or parts.floating) return parts.digits;
     var out: std.ArrayListUnmanaged(u8) = .empty;
     for (parts.digits) |c| if (c != '_') try out.append(allocator, c);
     try out.appendSlice(allocator, ".0");
     return out.toOwnedSlice(allocator);
+}
+
+/// Decision 332 — whether a literal's (backend) text is a `bigint` literal
+/// (`42n`, `0xFFn`).
+pub fn isBigintText(text: []const u8) bool {
+    if (text.len < 2 or text[text.len - 1] != 'n') return false;
+    const parts = splitNumber(text);
+    return std.mem.eql(u8, parts.suffix, "n");
+}
+
+/// Decision 332 — a `bigint` literal's digits without the `n`, as written
+/// (`_` separators and a `0x` / `0o` / `0b` prefix kept): `42n` → `42`.
+pub fn bigintDigits(text: []const u8) []const u8 {
+    return if (isBigintText(text)) text[0 .. text.len - 1] else text;
 }
 
 /// Whether a suffix makes a floating literal (`f`, `d`).

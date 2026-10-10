@@ -276,6 +276,8 @@ fn receiverIsSelf(recv: ast.Expr) bool {
 pub fn isBoxedPrototype(owner: []const u8) bool {
     return std.mem.eql(u8, owner, "Boolean") or
         std.mem.eql(u8, owner, "Number") or
+        // Decision 332 — `bigint`'s `BigInt.prototype` patches.
+        std.mem.eql(u8, owner, "BigInt") or
         std.mem.eql(u8, owner, "String");
 }
 
@@ -4001,6 +4003,14 @@ const Emitter = struct {
                     .add, .sub, .mul, .div, .mod => {
                         const lhs = try self.buildExpr(bin.lhs.*);
                         const rhs = try self.buildExpr(bin.rhs.*);
+                        // Decision 332 — a `bigint` is a `BigInt`: `+ - *`
+                        // never overflow, `/` truncates toward zero and `%`
+                        // takes the dividend's sign natively; a zero divisor
+                        // throws 264's text (`__bp_bdiv` / `__bp_bmod`).
+                        if (k == .bigint) return switch (bin.op) {
+                            .div, .mod => self.b.call(self.helper(if (bin.op == .div) .big_div else .big_mod), &.{ lhs, rhs, try self.overflowWhat(k, arithSymbol(bin.op), bin.loc) }),
+                            else => self.b.binary(arithSymbol(bin.op), lhs, rhs),
+                        };
                         // Decision 319 — a 64-bit result through its prelude
                         // helper: a number while safe, a `BigInt` beyond.
                         if (isWideKind(k)) return self.wideOp(switch (bin.op) {
@@ -4072,6 +4082,8 @@ const Emitter = struct {
                 // (`-(-128)` is no `i8`) and an unsigned one everywhere but 0.
                 // A literal operand is a constant the checker already placed.
                 if (un.op == .neg and un.expr.* != .literal) if (self.intKindAt(un.loc)) |k| {
+                    // Decision 332 — `-x` of a `BigInt` never leaves `bigint`.
+                    if (k == .bigint) return out;
                     if (isWideKind(k)) return self.wideOp(.wide_neg, &.{try self.buildExpr(un.expr.*)}, k, "-", un.loc);
                     return self.intChecked(out, k, "-", un.loc);
                 };
@@ -4184,6 +4196,7 @@ const Emitter = struct {
                     // The target is a name or `<name>.<field>` (the parser's two
                     // forms), so reading it again evaluates nothing twice.
                     if (a.op == .plusAssign) if (self.intKindAt(b.loc)) |k| {
+                        if (k == .bigint) return self.b.assign(target, op_str, try self.buildExpr(a.value.*));
                         if (isWideKind(k)) return self.b.assign(target, "=", try self.wideOp(.wide_add, &.{ target, try self.buildExpr(a.value.*) }, k, "+=", b.loc));
                         const sum = try self.b.binary("+", target, try self.buildExpr(a.value.*));
                         return self.b.assign(target, "=", try self.intChecked(sum, k, "+=", b.loc));
@@ -4782,6 +4795,8 @@ const Emitter = struct {
                         .prim => |k| switch (k) {
                             .array => "Array",
                             .string => "String",
+                            // Decision 332 — `b.toF64()` prints as the float it is.
+                            .bigint => "BigInt",
                             else => break :blk null,
                         },
                         .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type => break :blk null,
@@ -4814,6 +4829,9 @@ const Emitter = struct {
         int_lit,
         int,
         float,
+        /// Decision 332 — a `bigint`, a `BigInt`: never `-0`, and `+ 0`
+        /// would throw (a `BigInt` mixes with no number).
+        big,
 
         fn isInt(k: NumKind) bool {
             return k == .int or k == .int_lit;
@@ -4829,7 +4847,7 @@ const Emitter = struct {
     fn numKind(self: *Emitter, e: ast.Expr) anyerror!NumKind {
         switch (e) {
             .literal => |lit| switch (lit.kind) {
-                .numberLit => |n| return if (isFloatLiteral(n)) .float else .int_lit,
+                .numberLit => |n| return if (lexerMod.isBigintText(n)) .big else if (isFloatLiteral(n)) .float else .int_lit,
                 else => return .unknown,
             },
             .unaryOp => |un| return if (un.op == .neg) self.numKind(un.expr.*) else .unknown,
@@ -4839,10 +4857,12 @@ const Emitter = struct {
             },
             .binaryOp => |bin| switch (bin.op) {
                 .add, .sub, .mul, .mod, .div => {
+                    if (self.lowerings) |lw| if (lw.get(bin.loc)) |il| if (il == .division and il.division == .bigint) return .big;
                     if (bin.op == .div) if (self.lowerings) |lw| if (lw.get(bin.loc)) |il| if (il == .division)
                         return if (il.division.isInt()) .int else .float;
                     const l = try self.numKind(bin.lhs.*);
                     const r = try self.numKind(bin.rhs.*);
+                    if (l == .big or r == .big) return .big;
                     if (l == .float or r == .float) return .float;
                     if (l == .int or r == .int) return .int;
                     if (l == .int_lit and r == .int_lit) return .int_lit;
@@ -4854,7 +4874,7 @@ const Emitter = struct {
         }
         const t = (try self.staticTypeOf(e)) orelse return .unknown;
         return switch (t) {
-            .named => |n| if (isIntTypeName(n)) .int else if (eqIsFloat(t)) .float else .unknown,
+            .named => |n| if (isIntTypeName(n)) .int else if (std.mem.eql(u8, n, "bigint")) .big else if (eqIsFloat(t)) .float else .unknown,
             else => .unknown,
         };
     }
@@ -4864,7 +4884,7 @@ const Emitter = struct {
     fn isIntArith(self: *Emitter, lhs: ast.Expr, rhs: ast.Expr) anyerror!bool {
         const l = try self.numKind(lhs);
         const r = try self.numKind(rhs);
-        if (l == .float or r == .float) return false;
+        if (l == .float or r == .float or l == .big or r == .big) return false;
         return l == .int or r == .int or (l == .int_lit and r == .int_lit);
     }
 
@@ -4954,6 +4974,8 @@ const Emitter = struct {
     /// `BigInt` it is (`9223372036854775807n`); every other literal as it
     /// stands, so a value is a `BigInt` exactly when a number cannot hold it.
     fn numberLiteral(self: *Emitter, n: []const u8) ![]const u8 {
+        // Decision 332 — a `bigint` literal is JavaScript's own (`42n`).
+        if (lexerMod.isBigintText(n)) return n;
         if (isFloatLiteral(n)) return n;
         var clean: std.ArrayListUnmanaged(u8) = .empty;
         for (n) |c| if (c != '_') try clean.append(self.arena(), c);
@@ -4974,8 +4996,9 @@ const Emitter = struct {
     /// (`===`, or the loose `==` against a `null` literal).
     fn isPrimTypeName(n: []const u8) bool {
         const prims = [_][]const u8{
-            "i8",    "u8",    "i16", "u16", "i32",  "u32",    "i64",  "u64",
-            "isize", "usize", "f32", "f64", "bool", "string", "void", "char",
+            "i8",     "u8",    "i16", "u16", "i32",  "u32",    "i64",  "u64",
+            "isize",  "usize", "f32", "f64", "bool", "string", "void", "char",
+            "bigint",
         };
         for (prims) |p| if (std.mem.eql(u8, n, p)) return true;
         return false;
@@ -5055,7 +5078,7 @@ const Emitter = struct {
     fn staticTypeOf(self: *Emitter, e: ast.Expr) anyerror!?ast.TypeRef {
         return switch (e) {
             .literal => |lit| switch (lit.kind) {
-                .numberLit => |n| eqNamed(if (isFloatLiteral(n)) "f64" else "i32"),
+                .numberLit => |n| eqNamed(if (lexerMod.isBigintText(n)) "bigint" else if (isFloatLiteral(n)) "f64" else "i32"),
                 .stringLit, .stringTemplate => eqNamed("string"),
                 else => null,
             },
@@ -5155,6 +5178,7 @@ const Emitter = struct {
                             .string => "String",
                             .int, .float => "Number",
                             .bool => "Bool",
+                            .bigint => "BigInt",
                         },
                         else => break :blk null,
                     };

@@ -116,6 +116,13 @@ pub const Helper = enum {
     /// `__bp_wneg(a, u, what)` — unary `-`: `-(-2^63)` and `-x` of a nonzero
     /// unsigned value abort.
     wide_neg,
+    /// Decision 332 — `__bp_bdiv(a, b, what)`: `a / b` over two `bigint`s
+    /// (`BigInt`s), which truncates toward zero; a zero divisor throws
+    /// `integer division by zero: <what>` (264's text) where `BigInt` would
+    /// throw its own `RangeError`.
+    big_div,
+    /// `__bp_bmod(a, b, what)` — `a % b`, as `big_div` (the dividend's sign).
+    big_mod,
     /// Decision 320 — `__bp_has_surrogate(s)` (over `/[\uD800-\uDFFF]/`), the
     /// one test the string helpers make: a string holding no UTF-16 surrogate
     /// counts codepoints exactly as JavaScript counts units, so it keeps the
@@ -133,7 +140,7 @@ pub const Helper = enum {
 };
 
 /// Emission order of the helpers a module uses.
-pub const order = [_]Helper{ .assert_fatal, .str_surrogate, .str_count, .string_char_at, .str_length, .str_index_of, .str_last_index_of, .array_at, .range_from, .structural_eq, .show, .print, .print_as, .try_unwrap, .host_task, .adopt, .yield_step, .int_check, .wide_norm, .wide_add, .wide_sub, .wide_mul, .wide_div, .wide_mod, .wide_neg };
+pub const order = [_]Helper{ .assert_fatal, .str_surrogate, .str_count, .string_char_at, .str_length, .str_index_of, .str_last_index_of, .array_at, .range_from, .structural_eq, .show, .print, .print_as, .try_unwrap, .host_task, .adopt, .yield_step, .int_check, .wide_norm, .wide_add, .wide_sub, .wide_mul, .wide_div, .wide_mod, .wide_neg, .big_div, .big_mod };
 
 /// The helpers `h`'s body calls, which a module calling `h` carries too.
 pub fn requires(h: Helper) []const Helper {
@@ -193,6 +200,8 @@ pub fn name(h: Helper) []const u8 {
         .wide_div => "__bp_wdiv",
         .wide_mod => "__bp_wmod",
         .wide_neg => "__bp_wneg",
+        .big_div => "__bp_bdiv",
+        .big_mod => "__bp_bmod",
         .str_surrogate => "__bp_has_surrogate",
         .str_count => "__bp_str_count",
         .str_length => "__bp_str_length",
@@ -224,6 +233,8 @@ pub fn decl(h: Helper) ast.Stmt {
         .wide_div => wideDivision("__bp_wdiv", "/", "Math.trunc(a / b) + 0"),
         .wide_mod => wideDivision("__bp_wmod", "%", "(a % b) + 0"),
         .wide_neg => wide_neg,
+        .big_div => bigDivision("__bp_bdiv", "/"),
+        .big_mod => bigDivision("__bp_bmod", "%"),
         .str_surrogate => str_surrogate,
         .str_count => str_count,
         .str_length => str_length,
@@ -290,6 +301,15 @@ fn wideDivision(comptime fn_name: []const u8, comptime op: []const u8, comptime 
         hIf("b == 0", &.{.{ .throw_ = hx("new Error(\"integer division by zero: \" + what)") }}),
         hIf("typeof a === \"number\" && typeof b === \"number\"", &.{hRet(fast)}),
         hRet("__bp_wnorm(BigInt(a) " ++ op ++ " BigInt(b), u, what)"),
+    });
+}
+
+/// `function <name>(a, b, what) { … }` — `/` and `%` over two `bigint`s
+/// (`Helper.big_div`).
+fn bigDivision(comptime fn_name: []const u8, comptime op: []const u8) ast.Stmt {
+    return hFn(fn_name, &.{ "a", "b", "what" }, &.{
+        hIf("b === 0n", &.{.{ .throw_ = hx("new Error(\"integer division by zero: \" + what)") }}),
+        hRet("a " ++ op ++ " b"),
     });
 }
 
@@ -988,6 +1008,20 @@ test "js_prelude: a 64-bit integer is a number or a BigInt, the full range (deci
     const ArithKind = @import("../../comptime/env.zig").ArithKind;
     try std.testing.expectEqual(@as(i128, 18446744073709551615), ArithKind.u64.range().?.hi);
     try std.testing.expectEqual(@as(i128, -9223372036854775808), ArithKind.isize.range().?.lo);
+}
+
+test "js_prelude: a bigint divides as a BigInt, a zero divisor named (decision 332)" {
+    var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer aw.deinit();
+    const emitter = @import("js_emitter.zig");
+    try emitter.writeStmt(&aw.writer, decl(.big_div), 0);
+    try std.testing.expectEqualStrings(
+        \\function __bp_bdiv(a, b, what) {
+        \\    if (b === 0n) { throw new Error("integer division by zero: " + what); }
+        \\    return a / b;
+        \\}
+    , aw.written());
+    try std.testing.expect(@import("../../comptime/env.zig").ArithKind.bigint.range() == null);
 }
 
 test "js_prelude: a string index counts codepoints (decision 320)" {

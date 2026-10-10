@@ -1,0 +1,8 @@
+//// Decision 332, question 139-a — a `bigint` is not computed at compile time yet: the folder and
+//// the comptime runtimes hold a 64-bit integer (a value past it was refused unlocated).
+
+val squared = comptime 99999999999999999999n * 99999999999999999999n;
+
+pub fn main() {
+    @print(squared);
+}

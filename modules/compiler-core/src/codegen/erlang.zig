@@ -2990,6 +2990,8 @@ fn primIfaceForKind(k: envMod.PrimKind) ?[]const u8 {
         // unsigned receiver, so starting from the signed interface is safe.
         .int => "Signed",
         .float => "Float",
+        // Decision 332 — `bigint`'s own interface, outside the tower.
+        .bigint => "BigInt",
     };
 }
 
@@ -4154,7 +4156,7 @@ const Emitter = struct {
     /// on a shared parent (`Number.clamp`) answers `.int` — the chain walk from
     /// either numeric kind passes through `Number`, so the dispatch is the same.
     fn primKindForIface(this: *const Emitter, iface: []const u8) ?envMod.PrimKind {
-        for ([_]envMod.PrimKind{ .array, .string, .bool, .int, .float }) |k| {
+        for ([_]envMod.PrimKind{ .array, .string, .bool, .int, .float, .bigint }) |k| {
             const head = primIfaceForKind(k) orelse continue;
             var iface_walk = PrimIfaceWalker.init(this, head, &this.prim_iface_chain);
             while (iface_walk.next()) |name| {
@@ -10217,7 +10219,7 @@ const Emitter = struct {
             // this covers a numeric receiver the interface chain doesn't know.
             .int => if (eq(u8, callee, "toString")) return try b.remote("erlang", "integer_to_binary", &.{try this.exprNode(b, recv.*)}),
             .float => if (eq(u8, callee, "toString")) return try b.remote("erlang", "float_to_binary", &.{try this.exprNode(b, recv.*)}),
-            .string, .bool => {},
+            .string, .bool, .bigint => {},
         }
         // Array default fns without an `@external` annotation (or a chained call
         // the inferer didn't tag) use the canonical host op directly.

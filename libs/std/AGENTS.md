@@ -632,6 +632,20 @@ methods answer alike on both sides of that edge:
   on commonJS, erlang and beam alike: whether it aborts as an overflowing operator does is question
   `97-s13-a` (`decisions-pending.md`).
 
+## `bigint` — `behavior BigInt` (decision 332)
+
+`bigint`'s surface is `primitives.bp`'s `behavior BigInt`, outside the numeric tower (a `bigint`
+mixes with no other number): `toString()`, `toI64()` (aborts past −2^63 … 2^63 − 1, `toI64: <v> does
+not fit i64`), `toF64()` (aborts unless exact, `toF64: <v> has no exact f64`), and two associated host
+primitives of decision 262's form, written through the type's own name — `bigint.of(n: i64)` and
+`bigint.parse(text)` (`@Result<bigint, string>`: an optional sign and digits of any length, else
+`bigint.parse: "<text>" is not an integer`). The checker renames the receiver to `BigInt` for the
+backends. commonJS patches the methods on `BigInt.prototype`, which the tower's patch writes too (an
+`i64` past 2^53 is a `BigInt`): `BigInt.toI64`'s and `Integer.toI64`'s Node forms are one text, which
+answers 319's canonical form (a `number` within ±(2^53 − 1)), and the two `toF64` forms are one text,
+so the two patches are one function whichever runs last. wasm lowers the five itself (`wat.zig`, the
+`bigint` helper group). `docs.md` § Numbers.
+
 ## `behavior Index` / `behavior Slice` (decision 63, amended)
 
 `builtins.d.bp` declares both, ambient like `Display` and for the same reason: an index expression

@@ -605,7 +605,7 @@ running off the end would hand out: a `@Result` in any layer has a value (`Ok` o
 
 ### Primitives
 
-`i32`, `i64`, `u32`, `u64`, `f32`, `f64`, `string`, `bool`, `void`.
+`i32`, `i64`, `u32`, `u64`, `f32`, `f64`, `bigint`, `string`, `bool`, `void`.
 Their methods are declared in `libs/std/src/primitives.bp`.
 
 ### type — records
@@ -1129,7 +1129,7 @@ lower case, gives the literal its type wherever it stands:
 1.5f   2f     // f32          42u    // u32
 1.5d   1d     // f64          42ul   // u64
 42l           // i64          42u8  42u16  42usize
-42i8  42i16  42isize
+42i8  42i16  42isize          123456789012345678901234567890n   // bigint
 ```
 
 A literal never changes type to fit: an integer literal where a float is
@@ -1138,8 +1138,8 @@ and `1.5f`. `f` and `d` go on decimal literals only (in `0x…` they are hex
 digits); a radix literal takes an integer suffix (`0xFFul`). An uppercase
 suffix (`42L`), letters that are no suffix (`10px`) and an exponent without
 digits (`1e`) are refused at the suffix. A number pattern matches a subject of
-its own type, and on commonJS an `l` / `ul` literal past 2^53 is refused, since
-a double cannot hold it.
+its own type. `n` makes an integer literal a `bigint` of any size (§ Numbers);
+it takes no fraction or exponent (`1.5n` is refused at the suffix).
 
 <!-- docs-check: body -->
 ```botopink
@@ -1289,6 +1289,7 @@ integer overflow: + on i32 at src/main.bp:7:14
 | `i16` / `u16` | −32768 … 32767 / 0 … 65535 |
 | `i32` / `u32` | −2^31 … 2^31 − 1 / 0 … 2^32 − 1 |
 | `i64`, `isize` / `u64`, `usize` | −2^63 … 2^63 − 1 / 0 … 2^64 − 1 |
+| `bigint` | any integer: no range, never an overflow (below) |
 
 On commonJS an `i64` (and `isize`, `u64`, `usize`) holds the integers a JS
 number counts exactly, ±(2^53 − 1): a result past that bound aborts there too,
@@ -1296,6 +1297,42 @@ never a rounded value. An integer `/` or `%` by zero aborts on every target
 (commonJS names it `integer division by zero`). A `%` never leaves its type.
 No flag turns the check off (decision 67); wrapping arithmetic, where an
 algorithm wants it, is written with an explicit operation.
+
+`bigint` is an integer of any size (decision 332): `+`, `-`, `*`, `/`, `%`, a
+unary `-`, `+=`, the comparisons and `==` over two `bigint`s answer exactly and
+never overflow; `/` truncates toward zero and `%` takes the dividend's sign, as
+for the other integers, and `/` or `%` by zero aborts. Its literal is suffixed
+`n` (`2n`); an unsuffixed literal is never one, and a `bigint` mixes with no
+other number — the crossing is written: `bigint.of(n)` (an `i64`) and
+`bigint.parse(text)` (`@Result<bigint, string>`, a decimal numeral of any
+length) in, `toString()`, `toI64()` and `toF64()` out, each conversion aborting
+when the value does not fit (`toI64: 9223372036854775808 does not fit i64`).
+erlang and beam hold the VM's own integer, commonJS a `BigInt` (`.d.ts`
+`bigint`), and wasm a block of 32-bit limbs its runtime computes on. A `bigint`
+does not widen to `unknown`, `is` does not test one (a value typed `bigint` is
+one), and a `comptime` does not compute one yet.
+
+<!-- docs-check: body -->
+```botopink
+val two: bigint = 2n;
+var x = two;
+var i = 0;
+while (i < 100) {
+    x = x * two;
+    i += 1;
+}
+@print(x);
+@print(-7n / 2n);
+@print(bigint.of(9223372036854775807l) + 1n);
+val small: i64 = (x / x).toI64();
+```
+
+<!-- docs-check: reject the integer literal `1` is not a `bigint` — write `1n` -->
+```botopink
+fn main() {
+    val x = 2n + 1;
+}
+```
 
 `==` compares by value on every target: two records, tuples, arrays or enum
 variants are equal when they have the same type and their fields are equal, field

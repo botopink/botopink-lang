@@ -9552,6 +9552,9 @@ fn checkDeclaredArguments(
             if (next >= va) {
                 const p = decl.params[va];
                 const want = try resolveTypeRefInContext(env, p.typeRef.array.*, genericMap);
+                // Decision 332 — `@print(b)` writes a `bigint`'s digits; the
+                // builtin's `unknown` is no run-time box a test reads.
+                if (unifyMod.isUnknown(want) and unifyMod.mentionsBigint(a.type_)) continue;
                 try unifyArgument(env, want, a.type_, a.loc);
                 continue;
             }
@@ -9585,6 +9588,56 @@ fn checkDeclaredArguments(
             return refuse(env, row.signature, "`@{s}` needs `{s}`", .{ callee, p.name }, loc);
         }
     }
+}
+
+/// Decision 332 — the primitive a call's receiver names as a type, when it
+/// names one with associated functions (`bigint`) and no binding shadows it.
+fn primitiveStaticReceiver(env: *Env, recv: ast.Expr) ?[]const u8 {
+    if (recv != .identifier or recv.identifier.kind != .ident) return null;
+    const name = recv.identifier.kind.ident;
+    if (!std.mem.eql(u8, name, "bigint")) return null;
+    // `registerBuiltins` binds each primitive's name to its type; a local
+    // binding of the name holds a value of another type.
+    if (env.lookup(name)) |t| if (!t.deref().isNamed(name)) return null;
+    return name;
+}
+
+/// Decision 332 — `bigint.of(n)` / `bigint.parse(text)`: the associated host
+/// primitives of `primitives.bp`'s `behavior BigInt` (decision 262's form,
+/// `String.fromCodepoint`'s), called through the type's own name. Each
+/// argument is inferred against its parameter (so `bigint.of(5)` reads `5`
+/// as the `i64` it is passed as), and the backends read `BigInt.of(…)`
+/// through the index channel — the call every one of them renders from its
+/// template. A name `BigInt` does not declare is refused at the call.
+fn inferPrimitiveStaticCall(env: *Env, call: anytype, recv: *ast.Expr, loc: ast.Loc) InferError!TypedExpr {
+    const owner = recv.identifier.kind.ident;
+    const iface = primitiveInterfaceName(owner) orelse unreachable;
+    const key = try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ iface, call.callee });
+    const fnTy = env.lookup(key) orelse {
+        const msg = try std.fmt.allocPrint(env.arena, "`{s}` has no associated function `{s}`", .{ owner, call.callee });
+        env.lastError = TypeError.custom(msg, "`bigint`'s associated functions are `bigint.of(n)` and `bigint.parse(text)` (`primitives.bp`, decision 332); its methods are called on a value (`x.toString()`).").withLoc(loc);
+        return error.TypeError;
+    };
+    const params: []const *T.Type = if (fnTy.deref().* == .func) fnTy.deref().func.params else &.{};
+    const typedArgs = try env.arena.alloc(ast.CallArgOf(.typed), call.args.len);
+    for (call.args, typedArgs, 0..) |a, *out, i| {
+        const want: ?*T.Type = if (a.label == null and i < params.len) params[i] else null;
+        const typed = try inferExprTypedExpecting(env, a.value.*, want);
+        out.* = .{ .label = a.label, .value = try makeTypedPtr(env, typed) };
+    }
+    const typedTrailing = try env.arena.alloc(ast.TrailingLambdaOf(.typed), 0);
+    const typedRecv = try env.arena.create(ast.TypedExpr);
+    typedRecv.* = .{ .identifier = .{ .loc = recv.getLoc(), .type_ = try env.namedType(owner), .kind = .{ .ident = iface } } };
+    const typed = try inferAssociatedFnCall(env, iface, call.callee, fnTy, typedRecv, typedArgs, typedTrailing, loc);
+    // The program the backends lower calls the behavior by its name: the
+    // receiver is renamed through the index channel, as decision 110's alias
+    // is (`D.empty()`).
+    if (!env.indexRewrites.contains(recv.getLoc())) {
+        const ifaceRecv = try env.arena.create(ast.Expr);
+        ifaceRecv.* = .{ .identifier = .{ .loc = recv.getLoc(), .kind = .{ .ident = iface } } };
+        try env.indexRewrites.put(recv.getLoc(), ifaceRecv);
+    }
+    return typed;
 }
 
 /// Decision 268 — `@TypeInfo.all(…)`'s arguments against its declaration.
@@ -11050,7 +11103,18 @@ fn bindPatternNamesForSubject(
             // §5.2 — a bare type name is a type pattern, not a binder: it tests
             // the value and binds nothing. The arm's own binder is its lambda
             // parameter (`i32 { n -> … }`), bound by `inferCaseArmBody`.
-            if (try typePatternType(env, pattern, subjectType) != null) return;
+            if (try typePatternType(env, pattern, subjectType)) |tested| {
+                // Decision 332 (question 139-a) — as `is`: no type pattern
+                // tests for a `bigint` or tests one.
+                if (unifyMod.mentionsBigint(tested) or unifyMod.mentionsBigint(subjectType)) {
+                    env.lastError = TypeError.custom(
+                        diagnostics.bigint_type_test ++ ": a type pattern does not test a `bigint`",
+                        "A `bigint`'s type is static (decision 332): match its value (`0n`, `1n...9n`) instead.",
+                    );
+                    return error.TypeError;
+                }
+                return;
+            }
             // C8 — a binder names the matched value itself.
             try saveAndBindPatternName(env, snapshots, name, subjectType);
         },
@@ -11916,9 +11980,9 @@ fn requireNumericOperand(env: *Env, ty: *T.Type, op: []const u8, loc: ast.Loc) I
 /// against one of them can never match. Every other unregistered name stays
 /// permissive (a forward reference, or an imported type).
 pub const scalar_type_names = [_][]const u8{
-    "i8",       "u8",    "i16", "u16", "i32",  "u32",    "i64",  "u64",
-    "isize",    "usize", "f32", "f64", "bool", "string", "void", "v128",
-    "noreturn",
+    "i8",       "u8",     "i16", "u16", "i32",  "u32",    "i64",  "u64",
+    "isize",    "usize",  "f32", "f64", "bool", "string", "void", "v128",
+    "noreturn", "bigint",
 };
 
 /// Decision 8 § 9 — a `val assert` variant pattern must name a variant the
@@ -12713,6 +12777,29 @@ fn equalityOperandExpectation(op: @FieldType(ast.BinOpExprOf(.untyped), "op"), o
     return other;
 }
 
+/// Decision 332 — whether the written type `t` is or holds `bigint`.
+fn typeRefMentionsBigint(t: ast.TypeRef) bool {
+    return switch (t) {
+        .named => |n| std.mem.eql(u8, n, "bigint"),
+        .optional => |inner| typeRefMentionsBigint(inner.*),
+        .array => |inner| typeRefMentionsBigint(inner.*),
+        .generic => |g| for (g.args) |a| {
+            if (typeRefMentionsBigint(a)) break true;
+        } else false,
+        else => if (t.tupleElems()) |elems| for (elems) |e| {
+            if (typeRefMentionsBigint(e)) break true;
+        } else false else false,
+    };
+}
+
+/// Decision 332 — whether the position of a literal asks for a `bigint`
+/// (through one `?T`).
+fn expectsBigint(env: *Env) bool {
+    var t = (env.expectedType orelse return false).deref();
+    if (t.* == .named and std.mem.eql(u8, t.named.name, "optional") and t.named.args.len == 1) t = t.named.args[0].deref();
+    return t.* == .named and t.named.args.len == 0 and std.mem.eql(u8, t.named.name, "bigint");
+}
+
 /// Decision 247 — the floating type the position of a literal expects
 /// (through one `?T`): `"f64"`, `"f32"`, or null.
 fn expectedFloatType(env: *Env) ?[]const u8 {
@@ -12866,10 +12953,11 @@ fn inferLiteralExpr(env: *Env, lit: ast.LiteralExprOf(.untyped), loc: ast.Loc) I
             if (parts.suffix.len != 0) {
                 const typeName = lexerMod.numberSuffixType(parts.suffix) orelse {
                     const msg = try std.fmt.allocPrint(env.arena, "`{s}` is not a numeric suffix", .{parts.suffix});
-                    env.lastError = TypeError.custom(msg, "The suffixes are `f`, `d`, `l`, `u`, `ul`, `i8`, `i16`, `u8`, `u16`, `isize`, `usize` (decision 247).").withLoc(loc);
+                    env.lastError = TypeError.custom(msg, "The suffixes are `f`, `d`, `l`, `u`, `ul`, `i8`, `i16`, `u8`, `u16`, `isize`, `usize` (decision 247) and `n` (decision 332).").withLoc(loc);
                     return error.TypeError;
                 };
-                if (!lexerMod.numberSuffixIsFloat(parts.suffix)) {
+                // Decision 332 — a `bigint` has no range to leave.
+                if (!lexerMod.numberSuffixIsFloat(parts.suffix) and !std.mem.eql(u8, typeName, "bigint")) {
                     try refuseIntegerOutOfRange(env, parts.digits, typeName, loc);
                 }
                 const text = try lexerMod.numberBackendText(env.arena, n);
@@ -12893,6 +12981,13 @@ fn inferLiteralExpr(env: *Env, lit: ast.LiteralExprOf(.untyped), loc: ast.Loc) I
                 const suffix: []const u8 = if (std.mem.eql(u8, want, "f32")) "f" else "d";
                 const msg = try std.fmt.allocPrint(env.arena, "the integer literal `{s}` is not an `{s}` — write `{s}{s}` or `{s}`", .{ n, want, n, suffix, if (std.mem.eql(u8, want, "f32")) try std.fmt.allocPrint(env.arena, "{s}f", .{asFloat}) else asFloat });
                 env.lastError = TypeError.custom(msg, "A literal without a suffix never changes type to fit (decision 247, which reverses decision 209): an integer literal is an integer, and a float is written as one.").withLoc(loc);
+                return error.TypeError;
+            }
+            // Decision 332 — an unsuffixed literal is never a `bigint` (247):
+            // the position asking for one is answered with the spelling.
+            if (expectsBigint(env)) {
+                const msg = try std.fmt.allocPrint(env.arena, "the integer literal `{s}` is not a `bigint` — write `{s}n`", .{ n, n });
+                env.lastError = TypeError.custom(msg, "A literal without a suffix never changes type to fit (decision 247): the `n` suffix makes an integer literal a `bigint` (decision 332).").withLoc(loc);
                 return error.TypeError;
             }
             const width: []const u8 = expectedIntegerType(env) orelse "i32";
@@ -15695,6 +15790,7 @@ fn primKindOfName(typeName: []const u8) ?envMod.PrimKind {
         .{ .t = "u64", .k = .int },
         .{ .t = "f32", .k = .float },
         .{ .t = "f64", .k = .float },
+        .{ .t = "bigint", .k = .bigint },
     };
     for (map) |e| if (std.mem.eql(u8, typeName, e.t)) return e.k;
     return null;
@@ -15967,6 +16063,7 @@ fn primitiveInterfaceName(typeName: []const u8) ?[]const u8 {
         .{ .t = "u64", .i = "U64" },
         .{ .t = "f32", .i = "F32" },
         .{ .t = "f64", .i = "F64" },
+        .{ .t = "bigint", .i = "BigInt" },
     };
     for (map) |e| if (std.mem.eql(u8, typeName, e.t)) return e.i;
     return null;
@@ -15975,7 +16072,7 @@ fn primitiveInterfaceName(typeName: []const u8) ?[]const u8 {
 /// The primitive a controller interface of `primitives.bp` is the behavior
 /// of (`String` → `string`), the inverse of `primitiveInterfaceName`.
 fn primitiveOfInterface(iface: []const u8) ?[]const u8 {
-    const prims = [_][]const u8{ "array", "bool", "string", "i32", "i64", "u32", "u64", "f32", "f64" };
+    const prims = [_][]const u8{ "array", "bool", "string", "i32", "i64", "u32", "u64", "f32", "f64", "bigint" };
     for (prims) |p| if (primitiveInterfaceName(p)) |i| if (std.mem.eql(u8, i, iface)) return p;
     return null;
 }
@@ -17517,6 +17614,12 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                 direct.kind.call.receiver = recv;
                 return inferCallExpr(env, direct, loc);
             };
+            // Decision 332 — `bigint.of(n)` / `bigint.parse(text)`: an
+            // associated function of the primitive, declared in
+            // `primitives.bp`'s `behavior BigInt`.
+            if (call.receiver) |re| if (!call.is_builtin and call.calleeExpr == null and primitiveStaticReceiver(env, re.*) != null) {
+                return inferPrimitiveStaticCall(env, call, re, loc);
+            };
             // 01 step 12 — a section path whose leaf is a payload variant
             // (`.Color.Hex("#abc")`, `Token.Color.Hex("#abc")`).
             if (call.receiver) |re| {
@@ -17824,6 +17927,16 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                         return error.TypeError;
                     };
                     if (call.isType) |tested| {
+                        // Decision 332 (question 139-a) — no run-time test
+                        // tells a `bigint` from another integer: `is` neither
+                        // tests for one nor tests one.
+                        if (typeRefMentionsBigint(tested) or (typedArgs.len == 1 and unifyMod.mentionsBigint(typedArgs[0].value.getType()))) {
+                            env.lastError = TypeError.custom(
+                                diagnostics.bigint_type_test ++ ": `is` does not test a `bigint`",
+                                "A `bigint`'s type is static (decision 332): a value typed `bigint` is one, and nothing else is.",
+                            ).withLoc(loc);
+                            return error.TypeError;
+                        }
                         try checkIsTestableType(env, tested, loc);
                         if (typedArgs.len == 1) try warnAlwaysFalseIs(env, typedArgs[0].value.getType(), tested, loc);
                     }
@@ -19663,6 +19776,16 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
 /// Tooling that runs no comptime runtime (`env.templateEval` null) leaves a
 /// node the folder cannot read as it was.
 fn foldBodyComptime(env: *Env, ct: ast.ComptimeExprOf(.untyped), typed: TypedExpr, loc: ast.Loc) InferError!void {
+    // Decision 332 — a `bigint` has no compile-time value yet: the folder and
+    // the comptime runtimes hold a 64-bit integer, and a value past it was
+    // refused unlocated or read back wrong. Refused at the `comptime`.
+    if (unifyMod.mentionsBigint(typed.getType())) {
+        env.lastError = TypeError.custom(
+            diagnostics.comptime_bigint ++ ": a `bigint` is not computed at compile time yet",
+            "The compile-time evaluator holds a 64-bit integer (decision 332, front 01-compiler/139): compute the `bigint` when the program runs — drop the `comptime`.",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
     if (errorMod.isFoldable(.{ .comptime_ = ct })) {
         const folded = evalMod.foldToExpr(env.arena, typed, loc) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,

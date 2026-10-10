@@ -64,7 +64,7 @@ behavior Integer extends Number {
     fn toI32(self: Self) -> i32;
 
     #[@External.Erlang("""(fun(__V) when __V >= -(1 bsl 63), __V < (1 bsl 63) -> __V; (__V) -> erlang:error({integer_overflow, <<"toI64: ", (integer_to_binary(__V))/binary, " does not fit i64">>}) end)($0)""")]
-    #[@External.Node("""((__v) => { if (__v >= -9223372036854775808n && __v <= 9223372036854775807n) { return __v; } throw new Error("integer overflow: toI64: " + __v + " does not fit i64"); })($0)""")]
+    #[@External.Node("""((__v) => { if (__v >= -9223372036854775808n && __v <= 9223372036854775807n) { return (__v >= -9007199254740991n && __v <= 9007199254740991n) ? Number(__v) : __v; } throw new Error("integer overflow: toI64: " + __v + " does not fit i64"); })($0)""")]
     fn toI64(self: Self) -> i64;
 
     #[@External.Erlang("""(fun(__V) when __V >= 0, __V =< 4294967295 -> __V; (__V) -> erlang:error({integer_overflow, <<"toU32: ", (integer_to_binary(__V))/binary, " does not fit u32">>}) end)($0)""")]
@@ -131,6 +131,51 @@ behavior U64 extends Integer {}
 behavior F32 extends Float {}
 
 behavior F64 extends Float {}
+
+// ── bigint (decision 332) ─────────────────────────────────────────────────────
+// An integer of any size, its literal suffixed `n` (`123…890n`): `+ - * / %`,
+// unary `-`, `+=`, the comparisons and `==` over two `bigint`s, never an
+// overflow; `/` truncates toward zero, `%` takes the dividend's sign, `/` or
+// `%` by zero aborts. erlang and beam hold the VM's own integer, commonJS a
+// `BigInt` (always a `BigInt`, never 319's hybrid), wasm its runtime library.
+// Not a width of the tower above: a `bigint` mixes with no other integer type,
+// and crossing is written — `bigint.of(n)` / `bigint.parse(text)` in, `toI64()`
+// / `toF64()` out. The two associated functions are host primitives of
+// decision 262's form (`String.fromCodepoint`'s), written through the type's
+// own name. commonJS patches the methods on `BigInt.prototype`, which the
+// tower patches too (an `i64` past 2^53 is a `BigInt`): each Node form here is
+// the tower's own text, so the two patches are one function whichever runs
+// last.
+behavior BigInt {
+    // `bigint.of(n)` — the `bigint` equal to `n`.
+    #[@External.Erlang("$0")]
+    #[@External.Node("BigInt($0)")]
+    fn of(n: i64) -> bigint;
+
+    // `bigint.parse(text)` — the integer a decimal numeral spells: an optional
+    // `+` or `-`, then the digits `0`–`9` and nothing else, of any length (the
+    // numerals `string.parseInt()` reads, with no range); anything else is an
+    // `Error` naming the input.
+    #[@External.Erlang("""(fun(__S) -> __D = case __S of <<"-", __R/binary>> -> __R; <<"+", __R/binary>> -> __R; _ -> __S end, case (__D =/= <<>>) andalso lists:all(fun(__C) -> (__C >= 48) andalso (__C =< 57) end, binary_to_list(__D)) of true -> {ok, binary_to_integer(__S)}; false -> {error, <<"bigint.parse: ", 34, __S/binary, 34, " is not an integer">>} end end)($0)""")]
+    #[@External.Node("""((__s) => /^[+-]?[0-9]+$/.test(__s) ? { ok: BigInt(__s) } : { error: 'bigint.parse: "' + __s + '" is not an integer' })($0)""")]
+    fn parse(text: string) -> @Result<bigint, string>;
+
+    #[@External.Erlang("erlang", "integer_to_binary")]
+    #[@External.Node("toString")]
+    fn toString(self: Self) -> string;
+
+    // The `i64` equal to the value; past −2^63 … 2^63 − 1 an abort naming
+    // the value (decision 264's text, as `Integer.toI64`).
+    #[@External.Erlang("""(fun(__V) when __V >= -(1 bsl 63), __V < (1 bsl 63) -> __V; (__V) -> erlang:error({integer_overflow, <<"toI64: ", (integer_to_binary(__V))/binary, " does not fit i64">>}) end)($0)""")]
+    #[@External.Node("""((__v) => { if (__v >= -9223372036854775808n && __v <= 9223372036854775807n) { return (__v >= -9007199254740991n && __v <= 9007199254740991n) ? Number(__v) : __v; } throw new Error("integer overflow: toI64: " + __v + " does not fit i64"); })($0)""")]
+    fn toI64(self: Self) -> i64;
+
+    // The `f64` equal to the value; one between two `f64`s aborts, never
+    // rounds (decision 319's conversions).
+    #[@External.Erlang("""(fun(__V) -> __F = try float(__V) catch error:badarg -> erlang:error({integer_overflow, <<"toF64: ", (integer_to_binary(__V))/binary, " has no exact f64">>}) end, case trunc(__F) =:= __V of true -> __F; false -> erlang:error({integer_overflow, <<"toF64: ", (integer_to_binary(__V))/binary, " has no exact f64">>}) end end)($0)""")]
+    #[@External.Node("""((__v) => { const __f = Number(__v); if (typeof __v !== "bigint" || BigInt(__f) === __v) { return __f; } throw new Error("integer overflow: toF64: " + __v + " has no exact f64"); })($0)""")]
+    fn toF64(self: Self) -> f64;
+}
 
 // ── boolean ───────────────────────────────────────────────────────────────────
 

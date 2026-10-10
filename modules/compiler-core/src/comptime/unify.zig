@@ -7,6 +7,7 @@ const std = @import("std");
 const T = @import("./types.zig");
 const Env = @import("env.zig").Env;
 const TypeError = @import("error.zig").TypeError;
+const diagnostics = @import("diagnostics.zig");
 
 pub const UnifyError = error{ TypeError, OutOfMemory };
 
@@ -15,6 +16,22 @@ pub const UnifyError = error{ TypeError, OutOfMemory };
 /// refuses it as a user name, so nothing else can be spelled this way.
 pub fn isUnknown(ty: *T.Type) bool {
     return ty.deref().isNamed("unknown");
+}
+
+/// Decision 332 — whether `t` is or holds a `bigint`.
+pub fn mentionsBigint(t: *T.Type) bool {
+    const d = t.deref();
+    return switch (d.*) {
+        .named => |n| blk: {
+            if (std.mem.eql(u8, n.name, "bigint")) break :blk true;
+            for (n.args) |a| if (mentionsBigint(a)) break :blk true;
+            break :blk false;
+        },
+        .union_ => |ms| for (ms) |m| {
+            if (mentionsBigint(m)) break true;
+        } else false,
+        else => false,
+    };
 }
 
 /// Unify types `a` and `b`.  Both are dereferenced first so link chains
@@ -53,6 +70,17 @@ fn unifyTypes(env: *Env, a: *T.Type, b: *T.Type) UnifyError!void {
     // nothing but `unknown`. The rule has to sit above the match because it
     // holds against every kind on the other side, not only `.named`.
     if (isUnknown(ta)) {
+        // Decision 332 (question 139-a) — a `bigint` never widens to
+        // `unknown`: no target can tell it from another integer at run time
+        // (erlang holds one integer, commonJS's `i64` past 2^53 is a `BigInt`
+        // too), so a test on the `unknown` would answer per target.
+        if (mentionsBigint(tb)) {
+            env.lastError = TypeError.custom(
+                diagnostics.bigint_widened ++ ": a `bigint` does not widen to `unknown`",
+                "A `bigint` is told from another integer by its static type alone (decision 332): keep it typed `bigint`, or convert it (`b.toString()`, `b.toI64()`).",
+            );
+            return error.TypeError;
+        }
         // A value inference has not worked out yet is pinned to `unknown`
         // rather than left free: the annotation is the only thing known about
         // it. The recursive call lands in the `.typeVar` arm below — `ta` is

@@ -63,6 +63,14 @@ pub fn items(g: ast.HelperGroup) []const ast.Item {
         },
         .task_poll => &.{.{ .func = task_host_poll }},
         .task_host => &.{ .{ .global = task_hosts_global }, .{ .func = task_host_add }, .{ .func = task_host_settle } },
+        .bigint => &.{
+            .{ .func = bn_n },      .{ .func = bn_at },     .{ .func = bn_new },    .{ .func = bn_fix },
+            .{ .func = bn_cmpm },   .{ .func = bn_addm },   .{ .func = bn_subm },   .{ .func = bn_add },
+            .{ .func = bn_neg },    .{ .func = bn_mul },    .{ .func = bn_divw },   .{ .func = bn_ge },
+            .{ .func = bn_subw },   .{ .func = bn_divmod }, .{ .func = bn_cmp },    .{ .func = bn_of },
+            .{ .func = bn_to_i64 }, .{ .func = bn_to_f64 }, .{ .func = bn_to_str }, .{ .func = bn_from_str },
+            .{ .func = bn_eq_opt },
+        },
         .print_opt => &.{
             .{ .func = print_null },         .{ .func = print_opt_i32_raw }, .{ .func = print_opt_i32 },
             .{ .func = print_opt_bool_raw }, .{ .func = print_opt_bool },    .{ .func = print_opt_str_raw },
@@ -2501,12 +2509,13 @@ const print_quoted_raw = func("__print_quoted_raw", &.{"s"}, null, i32s(&.{ "n",
 /// shape (semantics decision 1a). Shape codes: `i` an i32, `b` a bool, `f` an
 /// `f64` cell, `l` / `u` an `i64` / `u64` cell, `s` a string (quoted), `[X` an array of `X` — `[e1, e2]` —,
 /// `?X` / `!X` a `?T` (`null`, or `X` over the slot / over its box's word),
-/// `(XY…)` a tuple — `#(e1, e2)` —, and `E k [ <n> Enum.Variant ] * k` a value
+/// `(XY…)` a tuple — `#(e1, e2)` —, `n` a `bigint` (in a module that links
+/// the `bigint` group, `print_shaped_raw_bigint`), and `E k [ <n> Enum.Variant ] * k` a value
 /// of an all-unit enum, whose ordinal picks one of the `k` names. With `go` =
 /// 0 nothing is written and nothing is read through `v`: the call only
 /// measures a shape, which is how an array finds the end of its element shape
 /// when it has no element.
-const print_shaped_raw = func("__print_shaped_raw", &.{ "v", "sh", "go" }, .i32, i32s(&.{ "c", "n", "i", "p", "e" }), &.{
+const print_shaped_raw_body = [_]Instr{
     get("sh"),                                                                                                  load8(0),                                                                                                   set("c"),
     get("c"),                                                                                                   c32('i'),                                                                                                   op("eq"),
     when(&.{ get("go"), when(&.{ get("v"), call("__print_i32_raw") }), get("sh"), c32(1), op("add"), ret }),    get("c"),                                                                                                   c32('b'),
@@ -2617,7 +2626,28 @@ const print_shaped_raw = func("__print_shaped_raw", &.{ "v", "sh", "go" }, .i32,
         op("add"), ret,
     })),
     get("sh"),                                                                                                  c32(1),                                                                                                     op("add"),
-});
+};
+
+const print_shaped_raw = func("__print_shaped_raw", &.{ "v", "sh", "go" }, .i32, i32s(&.{ "c", "n", "i", "p", "e" }), &print_shaped_raw_body);
+
+/// Decision 332 — `$__print_shaped_raw` with the `n` code: a `bigint` slot,
+/// the address of its block, written as its digits (`$__bn_to_str`). The
+/// module substitutes this form when it links the `bigint` group, so a
+/// module without one renders as before.
+const print_shaped_raw_bigint = func("__print_shaped_raw", &.{ "v", "sh", "go" }, .i32, i32s(&.{ "c", "n", "i", "p", "e" }), &([_]Instr{
+    get("sh"), load8(0), c32('n'), op("eq"),
+    when(&.{
+        get("go"),
+        when(&.{ get("v"), call("__bn_to_str"), set("e"), get("e"), c32(4), op("add"), get("e"), load(0), call("__write_bytes") }),
+        get("sh"),
+        c32(1),
+        op("add"),
+        ret,
+    }),
+} ++ print_shaped_raw_body));
+
+/// `print_shaped`'s forms with `print_shaped_raw_bigint` in its place.
+pub const print_shaped_items_bigint = [_]ast.Item{ .{ .func = print_quoted_raw }, .{ .func = print_tagged_raw }, .{ .func = print_tagged }, .{ .func = print_shaped_raw_bigint } };
 
 /// A `?T` box: a fresh 4-byte cell holding `v`.
 const box_i32 = func("__box_i32", &.{"v"}, .i32, i32s(&.{"p"}), &.{
@@ -3020,3 +3050,477 @@ pub const bp_ready = ast.Func{
     .params = &.{.{ .name = "h", .ty = .i32 }},
     .body = indented(seqOf(&.{ get("h"), call("__task_host_settle"), .drop, call("__task_drain") }, .none), 4),
 };
+
+// ── decision 332: `bigint`, an integer of any size ──────────────────────────
+//
+// A `bigint` is a pointer to an immutable block `[L][limb0][limb1]…`: `L` is
+// the limbs' byte count (four per limb), negated for a negative value, `0` for
+// zero; the limbs are little-endian `u32`s, normalised (no zero limb on top),
+// so a value has one spelling and a positive literal is a data segment of the
+// string layout. Every operation allocates its answer (`$__alloc`). The
+// division is schoolbook: by one limb through `$__bn_divw` (the decimal text
+// divides by 10^9 that way), by more a bit at a time — quadratic, and the
+// numbers a program writes are short.
+
+const bn_b2: Instr = .{ .br_if = "b2" };
+const bn_c2: Instr = .{ .br = "c2" };
+const extU: Instr = .{ .convert = "i64.extend_i32_u" };
+const wrap: Instr = .{ .convert = "i32.wrap_i64" };
+const trap: Instr = .@"unreachable";
+
+/// The count of limbs of `p`.
+const bn_n = func("__bn_n", &.{"p"}, .i32, i32s(&.{"l"}), &.{
+    get("p"),                                          load(0),  set("l"),
+    get("l"),                                          c32(0),   op("lt_s"),
+    when(&.{ c32(0), get("l"), op("sub"), set("l") }), get("l"), c32(2),
+    op("shr_u"),
+});
+
+/// The address of limb `i` of `p`.
+const bn_at = func("__bn_at", &.{ "p", "i" }, .i32, &.{}, &.{
+    get("p"), c32(4), op("add"), get("i"), c32(2), op("shl"), op("add"),
+});
+
+/// A fresh block of `n` zero limbs, `L` its byte count.
+const bn_new = func("__bn_new", &.{"n"}, .i32, i32s(&.{ "p", "i" }), &.{
+    get("n"), c32(2),   op("shl"), c32(4),    op("add"), call("__alloc"),                                                                                                                                      set("p"),
+    get("p"), get("n"), c32(2),    op("shl"), store(0),  loop(&.{ get("i"), get("n"), op("ge_u"), brk, get("p"), get("i"), call("__bn_at"), c32(0), store(0), get("i"), c32(1), op("add"), set("i"), again }), get("p"),
+});
+
+/// `p` normalised: its top zero limbs dropped from `L` (read as a count),
+/// then negated when `neg` and nonzero.
+const bn_fix = func("__bn_fix", &.{ "p", "neg" }, .i32, i32s(&.{ "n", "l" }), &.{
+    get("p"),                                          load(0),  c32(2),    op("shr_u"), set("n"),
+    loop(&.{
+        get("n"),  op("eqz"),       brk,
+        get("p"),  get("n"),        c32(1),
+        op("sub"), call("__bn_at"), load(0),
+        brk,       get("n"),        c32(1),
+        op("sub"), set("n"),        again,
+    }),
+    get("n"),                                          c32(2),   op("shl"), set("l"),    get("neg"),
+    when(&.{ c32(0), get("l"), op("sub"), set("l") }), get("p"), get("l"),  store(0),    get("p"),
+});
+
+/// `-1` / `0` / `1` as `|a|` is below, equal to or above `|b|`.
+const bn_cmpm = func("__bn_cmpm", &.{ "a", "b" }, .i32, i32s(&.{ "an", "bn", "i", "x", "y" }), &.{
+    get("a"),                call("__bn_n"),           set("an"),
+    get("b"),                call("__bn_n"),           set("bn"),
+    get("an"),               get("bn"),                op("gt_u"),
+    when(&.{ c32(1), ret }), get("an"),                get("bn"),
+    op("lt_u"),              when(&.{ c32(-1), ret }), get("an"),
+    set("i"),
+    loop(&.{
+        get("i"),                 op("eqz"),  brk,
+        get("i"),                 c32(1),     op("sub"),
+        set("i"),                 get("a"),   get("i"),
+        call("__bn_at"),          load(0),    set("x"),
+        get("b"),                 get("i"),   call("__bn_at"),
+        load(0),                  set("y"),   get("x"),
+        get("y"),                 op("gt_u"), when(&.{ c32(1), ret }),
+        get("x"),                 get("y"),   op("lt_u"),
+        when(&.{ c32(-1), ret }), again,
+    }),
+    c32(0),
+});
+
+/// `|a| + |b|`, negative when `neg`.
+const bn_addm = func("__bn_addm", &.{ "a", "b", "neg" }, .i32, &.{ l32("an"), l32("bn"), l32("t"), l32("r"), l32("i"), l64("s"), l64("c") }, &.{
+    get("a"),                                                                                                                               call("__bn_n"),   set("an"),
+    get("b"),                                                                                                                               call("__bn_n"),   set("bn"),
+    get("an"),                                                                                                                              get("bn"),        op("lt_u"),
+    when(&.{ get("a"), set("t"), get("b"), set("a"), get("t"), set("b"), get("an"), set("t"), get("bn"), set("an"), get("t"), set("bn") }), get("an"),        c32(1),
+    op("add"),                                                                                                                              call("__bn_new"), set("r"),
+    loop(&.{
+        get("i"),        get("an"),                                                                                       op("ge_u"),      brk,
+        get("a"),        get("i"),                                                                                        call("__bn_at"), load(0),
+        extU,            set("s"),                                                                                        get("i"),        get("bn"),
+        op("lt_u"),      when(&.{ get("s"), get("b"), get("i"), call("__bn_at"), load(0), extU, op64("add"), set("s") }), get("s"),        get("c"),
+        op64("add"),     set("s"),                                                                                        get("r"),        get("i"),
+        call("__bn_at"), get("s"),                                                                                        wrap,            store(0),
+        get("s"),        c64(32),                                                                                         op64("shr_u"),   set("c"),
+        get("i"),        c32(1),                                                                                          op("add"),       set("i"),
+        again,
+    }),
+    get("r"),                                                                                                                               get("an"),        call("__bn_at"),
+    get("c"),                                                                                                                               wrap,             store(0),
+    get("r"),                                                                                                                               get("neg"),       call("__bn_fix"),
+});
+
+/// `|a| - |b|` where `|a| >= |b|`, negative when `neg`.
+const bn_subm = func("__bn_subm", &.{ "a", "b", "neg" }, .i32, &.{ l32("an"), l32("bn"), l32("r"), l32("i"), l64("s"), l64("c") }, &.{
+    get("a"),  call("__bn_n"),   set("an"),
+    get("b"),  call("__bn_n"),   set("bn"),
+    get("an"), call("__bn_new"), set("r"),
+    loop(&.{
+        get("i"),        get("an"),                                                                                       op("ge_u"),      brk,
+        get("a"),        get("i"),                                                                                        call("__bn_at"), load(0),
+        extU,            set("s"),                                                                                        get("i"),        get("bn"),
+        op("lt_u"),      when(&.{ get("s"), get("b"), get("i"), call("__bn_at"), load(0), extU, op64("sub"), set("s") }), get("s"),        get("c"),
+        op64("sub"),     set("s"),                                                                                        get("r"),        get("i"),
+        call("__bn_at"), get("s"),                                                                                        wrap,            store(0),
+        get("s"),        c64(63),                                                                                         op64("shr_u"),   set("c"),
+        get("i"),        c32(1),                                                                                          op("add"),       set("i"),
+        again,
+    }),
+    get("r"),  get("neg"),       call("__bn_fix"),
+});
+
+/// `x + y`, or `x - y` when `flip`.
+const bn_add = func("__bn_add", &.{ "x", "y", "flip" }, .i32, i32s(&.{ "xs", "ys" }), &.{
+    get("x"),                                                          load(0),                                                           c32(0),    op("lt_s"),        set("xs"),
+    get("y"),                                                          load(0),                                                           c32(0),    op("lt_s"),        get("flip"),
+    op("xor"),                                                         set("ys"),                                                         get("xs"), get("ys"),         op("eq"),
+    when(&.{ get("x"), get("y"), get("xs"), call("__bn_addm"), ret }), get("x"),                                                          get("y"),  call("__bn_cmpm"), c32(0),
+    op("ge_s"),                                                        when(&.{ get("x"), get("y"), get("xs"), call("__bn_subm"), ret }), get("y"),  get("x"),          get("ys"),
+    call("__bn_subm"),
+});
+
+/// `-x`.
+const bn_neg = func("__bn_neg", &.{"x"}, .i32, i32s(&.{ "n", "r" }), &.{
+    get("x"), call("__bn_n"),   set("n"),
+    get("n"), call("__bn_new"), set("r"),
+    get("r"), c32(4),           op("add"),
+    get("x"), c32(4),           op("add"),
+    get("n"), c32(2),           op("shl"),
+    copy,     get("r"),         c32(0),
+    get("x"), load(0),          op("sub"),
+    store(0), get("r"),
+});
+
+/// `x * y`, schoolbook.
+const bn_mul = func("__bn_mul", &.{ "x", "y" }, .i32, &.{ l32("an"), l32("bn"), l32("r"), l32("i"), l32("j"), l64("ai"), l64("t"), l64("c") }, &.{
+    get("x"),         call("__bn_n"), set("an"),
+    get("y"),         call("__bn_n"), set("bn"),
+    get("an"),        op("eqz"),      get("bn"),
+    op("eqz"),        op("or"),       when(&.{ c32(0), call("__bn_new"), ret }),
+    get("an"),        get("bn"),      op("add"),
+    call("__bn_new"), set("r"),
+    loop(&.{
+        get("i"),        get("an"), op("ge_u"),      brk,
+        get("x"),        get("i"),  call("__bn_at"), load(0),
+        extU,            set("ai"), c64(0),          set("c"),
+        c32(0),          set("j"),
+        loopAs("b2", "c2", &.{
+            get("j"),      get("bn"), op("ge_u"),      bn_b2,
+            get("ai"),     get("y"),  get("j"),        call("__bn_at"),
+            load(0),       extU,      op64("mul"),     get("r"),
+            get("i"),      get("j"),  op("add"),       call("__bn_at"),
+            load(0),       extU,      op64("add"),     get("c"),
+            op64("add"),   set("t"),  get("r"),        get("i"),
+            get("j"),      op("add"), call("__bn_at"), get("t"),
+            wrap,          store(0),  get("t"),        c64(32),
+            op64("shr_u"), set("c"),  get("j"),        c32(1),
+            op("add"),     set("j"),  bn_c2,
+        }),
+        get("r"),        get("i"),  get("bn"),       op("add"),
+        call("__bn_at"), get("c"),  wrap,            store(0),
+        get("i"),        c32(1),    op("add"),       set("i"),
+        again,
+    }),
+    get("r"),         get("x"),       load(0),
+    get("y"),         load(0),        op("xor"),
+    c32(0),           op("lt_s"),     call("__bn_fix"),
+});
+
+/// The `n` limbs at `w` divided in place by the word `d`; the remainder.
+const bn_divw = func("__bn_divw", &.{ "w", "n", "d" }, .i32, &.{ l32("i"), l64("r"), l64("cur"), l64("dd") }, &.{
+    get("d"), extU,     set("dd"),
+    get("n"), set("i"),
+    loop(&.{
+        get("i"),    op("eqz"),     brk,
+        get("i"),    c32(1),        op("sub"),
+        set("i"),    get("r"),      c64(32),
+        op64("shl"), get("w"),      get("i"),
+        c32(2),      op("shl"),     op("add"),
+        load(0),     extU,          op64("or"),
+        set("cur"),  get("w"),      get("i"),
+        c32(2),      op("shl"),     op("add"),
+        get("cur"),  get("dd"),     op64("div_u"),
+        wrap,        store(0),      get("cur"),
+        get("dd"),   op64("rem_u"), set("r"),
+        again,
+    }),
+    get("r"), wrap,
+});
+
+/// Whether the `m + 1` limbs of `r` hold at least the `m` limbs of `y`.
+const bn_ge = func("__bn_ge", &.{ "r", "y", "m" }, .i32, i32s(&.{ "i", "a", "b" }), &.{
+    get("r"), get("m"), call("__bn_at"), load(0), when(&.{ c32(1), ret }),
+    get("m"), set("i"),
+    loop(&.{
+        get("i"),                op("eqz"),  brk,
+        get("i"),                c32(1),     op("sub"),
+        set("i"),                get("r"),   get("i"),
+        call("__bn_at"),         load(0),    set("a"),
+        get("y"),                get("i"),   call("__bn_at"),
+        load(0),                 set("b"),   get("a"),
+        get("b"),                op("gt_u"), when(&.{ c32(1), ret }),
+        get("a"),                get("b"),   op("lt_u"),
+        when(&.{ c32(0), ret }), again,
+    }),
+    c32(1),
+});
+
+/// The `m + 1` limbs of `r` less the `m` limbs of `y`, in place.
+const bn_subw = func("__bn_subw", &.{ "r", "y", "m" }, null, &.{ l32("i"), l64("s"), l64("c") }, &.{
+    loop(&.{
+        get("i"),    get("m"), c32(1),          op("add"),                                                                                       op("ge_u"),      brk,
+        get("r"),    get("i"), call("__bn_at"), load(0),                                                                                         extU,            set("s"),
+        get("i"),    get("m"), op("lt_u"),      when(&.{ get("s"), get("y"), get("i"), call("__bn_at"), load(0), extU, op64("sub"), set("s") }), get("s"),        get("c"),
+        op64("sub"), set("s"), get("r"),        get("i"),                                                                                        call("__bn_at"), get("s"),
+        wrap,        store(0), get("s"),        c64(63),                                                                                         op64("shr_u"),   set("c"),
+        get("i"),    c32(1),   op("add"),       set("i"),                                                                                        again,
+    }),
+});
+
+/// `x / y` truncated toward zero, or — when `rem` — `x % y` with `x`'s sign.
+/// A zero `y` traps (an integer `/` or `%` by zero aborts, decision 264).
+const bn_divmod = func("__bn_divmod", &.{ "x", "y", "rem" }, .i32, i32s(&.{ "an", "bn", "q", "r", "t", "k", "j", "cb", "v", "ad" }), &.{
+    get("x"),         call("__bn_n"),                                                                     set("an"),
+    get("y"),         call("__bn_n"),                                                                     set("bn"),
+    get("bn"),        op("eqz"),                                                                          when(&.{trap}),
+    get("x"),         get("y"),                                                                           call("__bn_cmpm"),
+    c32(0),           op("lt_s"),                                                                         when(&.{ get("rem"), when(&.{ get("x"), ret }), c32(0), call("__bn_new"), ret }),
+    get("an"),        call("__bn_new"),                                                                   set("q"),
+    get("bn"),        c32(1),                                                                             op("eq"),
+    when(&.{
+        get("q"), c32(4),   op("add"), get("x"),  c32(4),   op("add"), get("an"),         c32(2),     op("shl"),        copy,
+        get("q"), c32(4),   op("add"), get("an"), get("y"), load(4),   call("__bn_divw"), set("t"),   get("rem"),       when(&.{ c32(1), call("__bn_new"), set("r"), get("r"), get("t"), store(4), get("r"), get("x"), load(0), c32(0), op("lt_s"), call("__bn_fix"), ret }),
+        get("q"), get("x"), load(0),   get("y"),  load(0),  op("xor"), c32(0),            op("lt_s"), call("__bn_fix"), ret,
+    }),
+    get("bn"),        c32(1),                                                                             op("add"),
+    call("__bn_new"), set("r"),                                                                           get("an"),
+    c32(5),           op("shl"),                                                                          set("k"),
+    loop(&.{
+        get("k"),    op("eqz"),       brk,
+        get("k"),    c32(1),          op("sub"),
+        set("k"),    c32(0),          set("cb"),
+        c32(0),      set("j"),
+        loopAs("b2", "c2", &.{
+            get("j"),    get("bn"), op("gt_u"),      bn_b2,
+            get("r"),    get("j"),  call("__bn_at"), set("ad"),
+            get("ad"),   load(0),   set("v"),        get("ad"),
+            get("v"),    c32(1),    op("shl"),       get("cb"),
+            op("or"),    store(0),  get("v"),        c32(31),
+            op("shr_u"), set("cb"), get("j"),        c32(1),
+            op("add"),   set("j"),  bn_c2,
+        }),
+        get("r"),    get("r"),        load(4),
+        get("x"),    get("k"),        c32(5),
+        op("shr_u"), call("__bn_at"), load(0),
+        get("k"),    c32(31),         op("and"),
+        op("shr_u"), c32(1),          op("and"),
+        op("or"),    store(4),        get("r"),
+        get("y"),    get("bn"),       call("__bn_ge"),
+        when(&.{
+            get("r"),        get("y"),  get("bn"), call("__bn_subw"),
+            get("q"),        get("k"),  c32(5),    op("shr_u"),
+            call("__bn_at"), set("ad"), get("ad"), get("ad"),
+            load(0),         c32(1),    get("k"),  c32(31),
+            op("and"),       op("shl"), op("or"),  store(0),
+        }),
+        again,
+    }),
+    get("rem"),       when(&.{ get("r"), get("x"), load(0), c32(0), op("lt_s"), call("__bn_fix"), ret }), get("q"),
+    get("x"),         load(0),                                                                            get("y"),
+    load(0),          op("xor"),                                                                          c32(0),
+    op("lt_s"),       call("__bn_fix"),
+});
+
+/// `-1` / `0` / `1` as `x` is below, equal to or above `y`.
+const bn_cmp = func("__bn_cmp", &.{ "x", "y" }, .i32, i32s(&.{ "xs", "ys", "c" }), &.{
+    get("x"),  load(0),           c32(0),   op("lt_s"),                                                   set("xs"),
+    get("y"),  load(0),           c32(0),   op("lt_s"),                                                   set("ys"),
+    get("xs"), get("ys"),         op("ne"), when(&.{ get("xs"), when(&.{ c32(-1), ret }), c32(1), ret }), get("x"),
+    get("y"),  call("__bn_cmpm"), set("c"), get("xs"),                                                    when(&.{ c32(0), get("c"), op("sub"), ret }),
+    get("c"),
+});
+
+/// The `bigint` equal to the `i64` `v`.
+const bn_of = typedFunc("__bn_of", &.{p64("v")}, .i32, &.{ l32("r"), l32("neg"), l64("m") }, &.{
+    get("v"), c64(0),           op64("lt_s"),  set("neg"),
+    get("v"), set("m"),         get("neg"),    when(&.{ c64(0), get("v"), op64("sub"), set("m") }),
+    c32(2),   call("__bn_new"), set("r"),      get("r"),
+    get("m"), wrap,             store(4),      get("r"),
+    get("m"), c64(32),          op64("shr_u"), wrap,
+    store(8), get("r"),         get("neg"),    call("__bn_fix"),
+});
+
+/// The `i64` equal to `x`; a value past −2^63 … 2^63 − 1 traps (`toI64()`).
+const bn_to_i64 = typedFunc("__bn_to_i64", &.{p32("x")}, .i64, &.{ l32("n"), l64("m") }, &.{
+    get("x"),                                                                                  call("__bn_n"), set("n"),
+    get("n"),                                                                                  c32(2),         op("gt_u"),
+    when(&.{trap}),                                                                            get("n"),       when(&.{ get("x"), load(4), extU, set("m") }),
+    get("n"),                                                                                  c32(2),         op("eq"),
+    when(&.{ get("m"), get("x"), load(8), extU, c64(32), op64("shl"), op64("or"), set("m") }), get("x"),       load(0),
+    c32(0),                                                                                    op("lt_s"),     when(&.{ get("m"), c64(-9223372036854775808), op64("gt_u"), when(&.{trap}), c64(0), get("m"), op64("sub"), ret }),
+    get("m"),                                                                                  c64(0),         op64("lt_s"),
+    when(&.{trap}),                                                                            get("m"),
+});
+
+/// The `f64` equal to `x`; one no `f64` holds exactly traps (`toF64()`).
+const bn_to_f64 = typedFunc("__bn_to_f64", &.{p32("x")}, .f64, &.{ l32("n"), l32("bits"), l32("z"), l32("tz"), l32("w"), l32("s"), l64("v"), .{ .name = "f", .ty = .f64 } }, &.{
+    get("x"),                                   call("__bn_n"),                                                                                                                       set("n"),
+    get("n"),                                   op("eqz"),                                                                                                                            when(&.{ cF("0"), ret }),
+    get("n"),                                   c32(1),                                                                                                                               op("sub"),
+    c32(5),                                     op("shl"),                                                                                                                            c32(32),
+    get("x"),                                   get("n"),                                                                                                                             c32(1),
+    op("sub"),                                  call("__bn_at"),                                                                                                                      load(0),
+    op("clz"),                                  op("sub"),                                                                                                                            op("add"),
+    set("bits"),                                loop(&.{ get("x"), get("z"), call("__bn_at"), load(0), brk, get("z"), c32(1), op("add"), set("z"), again }),                          get("z"),
+    c32(5),                                     op("shl"),                                                                                                                            get("x"),
+    get("z"),                                   call("__bn_at"),                                                                                                                      load(0),
+    op("ctz"),                                  op("add"),                                                                                                                            set("tz"),
+    get("bits"),                                get("tz"),                                                                                                                            op("sub"),
+    c32(53),                                    op("gt_u"),                                                                                                                           when(&.{trap}),
+    get("bits"),                                c32(1024),                                                                                                                            op("gt_u"),
+    when(&.{trap}),                             get("tz"),                                                                                                                            c32(5),
+    op("shr_u"),                                set("w"),                                                                                                                             get("tz"),
+    c32(31),                                    op("and"),                                                                                                                            set("s"),
+    get("x"),                                   get("w"),                                                                                                                             call("__bn_at"),
+    load(0),                                    extU,                                                                                                                                 set("v"),
+    get("w"),                                   c32(1),                                                                                                                               op("add"),
+    get("n"),                                   op("lt_u"),                                                                                                                           when(&.{ get("v"), get("x"), get("w"), c32(1), op("add"), call("__bn_at"), load(0), extU, c64(32), op64("shl"), op64("or"), set("v") }),
+    get("v"),                                   get("s"),                                                                                                                             extU,
+    op64("shr_u"),                              set("v"),                                                                                                                             get("s"),
+    when(&.{
+        get("w"),                                                                                                                                                             c32(2), op("add"), get("n"), op("lt_u"),
+        when(&.{ get("v"), get("x"), get("w"), c32(2), op("add"), call("__bn_at"), load(0), extU, c64(64), get("s"), extU, op64("sub"), op64("shl"), op64("or"), set("v") }),
+    }),
+    get("v"),                                   cv("f64.convert_i64_u"),                                                                                                              set("f"),
+    get("tz"),                                  when(&.{ get("f"), c64(1023), get("tz"), extU, op64("add"), c64(52), op64("shl"), cv("f64.reinterpret_i64"), opF("mul"), set("f") }), get("x"),
+    load(0),                                    c32(0),                                                                                                                               op("lt_s"),
+    when(&.{ get("f"), opF("neg"), set("f") }), get("f"),
+});
+
+/// `x`'s decimal digits as a fresh string (a `-` first when negative).
+const bn_to_str = func("__bn_to_str", &.{"x"}, .i32, i32s(&.{ "n", "w", "wn", "ch", "k", "i", "j", "len", "s", "pos", "c", "first", "cnt", "neg" }), &.{
+    get("x"),        call("__bn_n"),                                                                         set("n"),
+    get("n"),        op("eqz"),                                                                              when(&.{ c32(5), call("__alloc"), set("s"), get("s"), c32(1), store(0), get("s"), c32('0'), store8(4), get("s"), ret }),
+    get("n"),        c32(2),                                                                                 op("shl"),
+    call("__alloc"), set("w"),                                                                               get("w"),
+    get("x"),        c32(4),                                                                                 op("add"),
+    get("n"),        c32(2),                                                                                 op("shl"),
+    copy,            get("n"),                                                                               set("wn"),
+    get("n"),        c32(32),                                                                                op("mul"),
+    c32(29),         op("div_u"),                                                                            c32(2),
+    op("add"),       c32(2),                                                                                 op("shl"),
+    call("__alloc"), set("ch"),
+    loop(&.{
+        get("wn"), op("eqz"),       brk,
+        get("ch"), get("k"),        c32(2),
+        op("shl"), op("add"),       get("w"),
+        get("wn"), c32(1000000000), call("__bn_divw"),
+        store(0),  get("k"),        c32(1),
+        op("add"), set("k"),
+        loopAs("b2", "c2", &.{
+            get("wn"), op("eqz"), bn_b2,
+            get("w"),  get("wn"), c32(1),
+            op("sub"), c32(2),    op("shl"),
+            op("add"), load(0),   bn_b2,
+            get("wn"), c32(1),    op("sub"),
+            set("wn"), bn_c2,
+        }),
+        again,
+    }),
+    get("ch"),       get("k"),                                                                               c32(1),
+    op("sub"),       c32(2),                                                                                 op("shl"),
+    op("add"),       load(0),                                                                                set("first"),
+    get("first"),    set("c"),                                                                               loop(&.{ get("cnt"), c32(1), op("add"), set("cnt"), get("c"), c32(10), op("div_u"), tee("c"), op("eqz"), brk, again }),
+    get("x"),        load(0),                                                                                c32(0),
+    op("lt_s"),      set("neg"),                                                                             get("neg"),
+    get("cnt"),      op("add"),                                                                              get("k"),
+    c32(1),          op("sub"),                                                                              c32(9),
+    op("mul"),       op("add"),                                                                              set("len"),
+    get("len"),      c32(4),                                                                                 op("add"),
+    call("__alloc"), set("s"),                                                                               get("s"),
+    get("len"),      store(0),                                                                               get("s"),
+    c32(4),          op("add"),                                                                              set("pos"),
+    get("neg"),      when(&.{ get("pos"), c32('-'), store8(0), get("pos"), c32(1), op("add"), set("pos") }), get("first"),
+    set("c"),        get("cnt"),                                                                             set("i"),
+    loop(&.{
+        get("i"),    op("eqz"),  brk,
+        get("i"),    c32(1),     op("sub"),
+        set("i"),    get("pos"), get("i"),
+        op("add"),   get("c"),   c32(10),
+        op("rem_u"), c32('0'),   op("add"),
+        store8(0),   get("c"),   c32(10),
+        op("div_u"), set("c"),   again,
+    }),
+    get("pos"),      get("cnt"),                                                                             op("add"),
+    set("pos"),      get("k"),                                                                               c32(1),
+    op("sub"),       set("j"),
+    loop(&.{
+        get("j"),   op("eqz"), brk,
+        get("j"),   c32(1),    op("sub"),
+        set("j"),   get("ch"), get("j"),
+        c32(2),     op("shl"), op("add"),
+        load(0),    set("c"),  c32(9),
+        set("i"),
+        loopAs("b2", "c2", &.{
+            get("i"),    op("eqz"),  bn_b2,
+            get("i"),    c32(1),     op("sub"),
+            set("i"),    get("pos"), get("i"),
+            op("add"),   get("c"),   c32(10),
+            op("rem_u"), c32('0'),   op("add"),
+            store8(0),   get("c"),   c32(10),
+            op("div_u"), set("c"),   bn_c2,
+        }),
+        get("pos"), c32(9),    op("add"),
+        set("pos"), again,
+    }),
+    get("s"),
+});
+
+/// The `bigint` a decimal numeral spells — an optional `+` or `-`, then one
+/// or more digits and nothing else — or `0` (no pointer) for any other text.
+const bn_from_str = func("__bn_from_str", &.{"s"}, .i32, &.{ l32("len"), l32("i"), l32("neg"), l32("r"), l32("rn"), l32("j"), l32("d"), l64("t"), l64("carry") }, &.{
+    get("s"),                                         load(0),                      set("len"),
+    get("len"),                                       op("eqz"),                    when(&.{ c32(0), ret }),
+    get("s"),                                         load8(4),                     set("d"),
+    get("d"),                                         c32('-'),                     op("eq"),
+    when(&.{ c32(1), set("neg"), c32(1), set("i") }), get("d"),                     c32('+'),
+    op("eq"),                                         when(&.{ c32(1), set("i") }), get("i"),
+    get("len"),                                       op("ge_u"),                   when(&.{ c32(0), ret }),
+    get("i"),                                         set("j"),
+    loop(&.{
+        get("j"),  get("len"), op("ge_u"),              brk,
+        get("s"),  c32(4),     op("add"),               get("j"),
+        op("add"), load8(0),   c32('0'),                op("sub"),
+        c32(9),    op("gt_u"), when(&.{ c32(0), ret }), get("j"),
+        c32(1),    op("add"),  set("j"),                again,
+    }),
+    get("len"),                                       c32(3),                       op("shr_u"),
+    c32(2),                                           op("add"),                    call("__bn_new"),
+    set("r"),
+    loop(&.{
+        get("i"),     get("len"),   op("ge_u"), brk,
+        get("s"),     c32(4),       op("add"),  get("i"),
+        op("add"),    load8(0),     c32('0'),   op("sub"),
+        extU,         set("carry"), c32(0),     set("j"),
+        loopAs("b2", "c2", &.{
+            get("j"),        get("rn"), op("ge_u"),      bn_b2,
+            get("r"),        get("j"),  call("__bn_at"), load(0),
+            extU,            c64(10),   op64("mul"),     get("carry"),
+            op64("add"),     set("t"),  get("r"),        get("j"),
+            call("__bn_at"), get("t"),  wrap,            store(0),
+            get("t"),        c64(32),   op64("shr_u"),   set("carry"),
+            get("j"),        c32(1),    op("add"),       set("j"),
+            bn_c2,
+        }),
+        get("carry"), c64(0),       op64("ne"), when(&.{ get("r"), get("rn"), call("__bn_at"), get("carry"), wrap, store(0), get("rn"), c32(1), op("add"), set("rn") }),
+        get("i"),     c32(1),       op("add"),  set("i"),
+        again,
+    }),
+    get("r"),                                         get("rn"),                    c32(2),
+    op("shl"),                                        store(0),                     get("r"),
+    get("neg"),                                       call("__bn_fix"),
+});
+
+/// `x == y` over two `?bigint`s (the block's address or `0`): both absent, or
+/// both present and equal.
+const bn_eq_opt = func("__bn_eq_opt", &.{ "x", "y" }, .i32, &.{}, &.{
+    get("x"),                                      op("eqz"), get("y"), op("eqz"),        op("or"),
+    when(&.{ get("x"), get("y"), op("eq"), ret }), get("x"),  get("y"), call("__bn_cmp"), op("eqz"),
+});

@@ -292,6 +292,20 @@ fn isDecimalNumeral(text: []const u8) bool {
     return true;
 }
 
+/// Decision 332 — the digits of a `bigint` literal's text (`42n` → `42`,
+/// `0xFFn` → `0xFF`), or null for any other text.
+pub fn bigintNumeralDigits(text: []const u8) ?[]const u8 {
+    if (text.len < 2 or text[text.len - 1] != 'n' or !std.ascii.isDigit(text[0])) return null;
+    const digits = text[0 .. text.len - 1];
+    const base: u8 = radixOf(digits) orelse 10;
+    for (digits[if (base == 10) 0 else 2..]) |c| {
+        if (c == '_') continue;
+        const v = std.fmt.charToDigit(c, base) catch return null;
+        _ = v;
+    }
+    return digits;
+}
+
 /// Whether a botopink number token is a float: a decimal numeral with a `.`
 /// or an exponent. `0x1E` is an integer.
 pub fn isFloatNumeral(text: []const u8) bool {
@@ -304,7 +318,10 @@ pub fn isFloatNumeral(text: []const u8) bool {
 /// is the float — and spells a radix integer `16#FF`, not `0xFF`. Every other
 /// token (a decimal integer, a float with a `.`, digit separators included)
 /// is already Erlang.
-pub fn writeNumber(w: *Writer, text: []const u8) Writer.Error!void {
+pub fn writeNumber(w: *Writer, text_in: []const u8) Writer.Error!void {
+    // Decision 332 — a `bigint` literal (`42n`, `0xFFn`) is the VM's own
+    // integer, which has no size: the digits without the `n`.
+    const text = bigintNumeralDigits(text_in) orelse text_in;
     if (radixOf(text)) |base| {
         try w.print("{d}#", .{base});
         return w.writeAll(text[2..]);
@@ -330,6 +347,8 @@ test "writeNumber spells every botopink numeral as an Erlang number" {
         .{ "0xFF", "16#FF" },
         .{ "0b101", "2#101" },
         .{ "0o17", "8#17" },
+        .{ "123456789012345678901234567890n", "123456789012345678901234567890" },
+        .{ "0xFFn", "16#FF" },
         .{ "[\"one\"]", "[\"one\"]" },
     };
     for (cases) |c| {

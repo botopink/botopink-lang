@@ -1219,6 +1219,31 @@ the literal does (`isIntegerLiteralOperand`): `value >= -9007199254740991` over 
 `i32`, which the range check then refused (validation's `vSafeInt`). `run/i64_full_width` writes its
 literal past the `i32` range with `l`: unsuffixed and with nothing asking it is an `i32` (247).
 
+## `bigint`, an integer of any size (decision 332, front `01-compiler/139`)
+
+`bigint` is a primitive (`Env.registerBuiltins`, `scalar_type_names`), its literal suffixed `n`
+(`lexer.number_suffixes`): `inferLiteralExpr` types `42n` `bigint` with no range check, and the
+literal keeps its `n` in the program the backends lower (`lexer.numberBackendText` — the one
+literal whose text names its type, `lexer.isBigintText`). An unsuffixed literal where a `bigint` is
+expected is refused at the literal naming the spelling (`expectsBigint`: `val x: bigint = 2` and
+`2n + 1` — the right operand takes the left one's type — answer `write 2n` / `write 1n`). `bigint`
+is not in `isIntType`: it joins no numeric promotion, so `2n * a` with `a: i64` and `2n + 1.5` are
+the ordinary mismatch, located at the right operand. An arithmetic operator over two records
+`ArithKind.bigint` (`range()` null: no overflow check on any backend). The methods are
+`primitives.bp`'s `behavior BigInt` (`primitiveInterfaceName`, `PrimKind.bigint`); `bigint.of(n)` /
+`bigint.parse(text)` (`inferPrimitiveStaticCall`, entered when the receiver names the primitive and no
+binding shadows it — `registerBuiltins` binds a primitive's name to its type) type each argument
+against the associated function's parameter (`bigint.of(5)` reads `5` as an `i64`) through
+`inferAssociatedFnCall`, and rename the receiver to `BigInt` through `env.indexRewrites` (decision
+110's alias channel), so every backend renders decision 262's associated host primitive. Question
+139-a's answer (the most restrictive reading, built): a `bigint` does not widen to `unknown`
+(`unify.zig`, `bigint-widened`; `@print`'s variadic `unknown` takes one — `checkDeclaredArguments`),
+`is` and a type pattern neither test for one nor test a subject that holds one (`bigint-type-test`),
+and a `comptime` whose value holds one is refused at the `comptime` (`foldBodyComptime`,
+`comptime-bigint`: the folder and the comptime runtimes hold 64 bits). Cells:
+`run/bigint_arithmetic`, `run/bigint_in_containers`, `run/bigint_to_i64_aborts`,
+`run/bigint_division_by_zero`, `modules/bigint_across_modules`, `reject/bigint_*`.
+
 ## One variant table, four symptoms (01 step 12)
 
 Every enum variant's constructor is bound under its bare name in `Env.bindings`, where the last

@@ -442,7 +442,9 @@ pub const StdArrayLowering = struct {
 /// The builtin-primitive family of a method-call receiver. Lets a backend that
 /// has no native method dispatch (erlang/beam/wasm) map `xs.map(f)` /
 /// `s.toUpper()` / `n.abs()` to the host's equivalent (`lists:map(F, Xs)`, …).
-pub const PrimKind = enum { array, string, bool, int, float };
+/// `bigint` is a family of its own (decision 332): its methods are
+/// `primitives.bp`'s `BigInt`, never the fixed-width tower's.
+pub const PrimKind = enum { array, string, bool, int, float, bigint };
 
 /// How a value-receiver instance call `recv.method(args)` lowers on backends
 /// without native method dispatch. Recorded by inference keyed by call loc.
@@ -507,6 +509,8 @@ pub const ArithKind = enum {
     u64,
     isize,
     usize,
+    /// Decision 332 — an integer of any size: no range, never an overflow.
+    bigint,
 
     pub fn isInt(k: ArithKind) bool {
         return k != .float;
@@ -515,10 +519,10 @@ pub const ArithKind = enum {
     /// The type's inclusive range, on every target (commonJS holds the 64-bit
     /// four as a number or a `BigInt`, decision 319). `isize` / `usize` are
     /// `i64` / `u64`, as the `is` test reads them on every target. Null for
-    /// `.float`.
+    /// `.float`, and for `.bigint`, which has no range (decision 332).
     pub fn range(k: ArithKind) ?struct { lo: i128, hi: i128 } {
         return switch (k) {
-            .float => null,
+            .float, .bigint => null,
             .i8 => .{ .lo = -128, .hi = 127 },
             .u8 => .{ .lo = 0, .hi = 255 },
             .i16 => .{ .lo = -32768, .hi = 32767 },
@@ -2028,7 +2032,9 @@ pub const Env = struct {
     pub fn registerBuiltins(self: *Env) !void {
         const primitives = [_][]const u8{
             // integer types
-            "i8",  "u8",  "i16",  "u16",    "i32",  "u32",  "i64",      "u64",  "isize", "usize",
+            "i8",     "u8",  "i16", "u16",  "i32",    "u32",  "i64",  "u64",      "isize", "usize",
+            // Decision 332 — an integer of any size
+            "bigint",
             // float types
             "f32", "f64",
             // other primitives

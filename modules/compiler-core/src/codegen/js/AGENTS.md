@@ -331,6 +331,19 @@ A primitive method of the numeric tower is patched on both prototypes —
 forms take either kind and answer the canonical one (`libs/std/AGENTS.md`
 § Integers past 2^53, front `02/97` step 13).
 
+## `bigint` (decision 332)
+
+A `bigint` is always a JavaScript `BigInt` — never 319's hybrid: its literal is JavaScript's own
+(`42n`, `numberLiteral` keeps the `n` the checker left on it), and an operator inference typed
+`bigint` (`ArithKind.bigint`) is the native one: `+ - *`, unary `-` and `+=` as written (no range,
+no `+ 0` canonicalisation — a `BigInt` mixes with no number, `NumKind.big`), `/` and `%` through
+`__bp_bdiv` / `__bp_bmod` (`js_prelude` `big_div` / `big_mod`), which throw decision 264's
+`integer division by zero: / on bigint at <file:line:col>` where `BigInt` would throw its own
+`RangeError`. `===`, `<` and `__bp_show` read a `BigInt` natively. `bigint.of(n)` is `BigInt(n)` (an
+`i64` in either form) and the methods are the prototype patches of std's `behavior BigInt`
+(`isBoxedPrototype` unwraps `this`). The `.d.ts` spells it `bigint` (`typescript.zig` passes the name
+through); `modules/bigint_across_modules` puts one through `scripts/tsc-check.sh`.
+
 ## String indices count codepoints (decision 320)
 
 `length`, `at`, `slice`, `indexOf`, `lastIndexOf` and `charCodeAt` count

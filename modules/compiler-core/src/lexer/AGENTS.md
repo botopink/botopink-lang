@@ -134,3 +134,12 @@ Testing for a digit subsumes the `..` guard (a `.` is not a digit) and leaves
 spelling that changes meaning is `42.` with nothing after the point: two tokens
 now, `42` and `.`, where it used to be one float — write `42.0`. Asserted in
 `tests/basics.zig`, because this is the riskiest line the front touched.
+
+## `n` is `bigint`'s suffix (decision 332)
+
+`number_suffixes` holds `n` → `bigint`: an integer literal of any size (`123…890n`, `0xFFn`,
+`1_000n`). It is an integer suffix, so `1.5n` and `1e3n` are the parser's
+`number-suffix-integer-on-float` and `42N` its `number-suffix-uppercase`. `numberBackendText` keeps
+the `n` (every other suffix leaves): the backends read a `bigint` literal by its text
+(`isBigintText`, `bigintDigits`) — commonJS writes it as JavaScript's own, erlang and beam strip the
+`n` (`beam/erl_emitter.zig` `bigintNumeralDigits`), wasm interns its limbs.

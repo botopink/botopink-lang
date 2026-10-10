@@ -1,0 +1,6 @@
+//// Decision 332 — `n` is an integer suffix: a literal with a fraction takes `f` or `d` only.
+
+pub fn main() {
+    val x = 1.5n;
+    @print(x);
+}

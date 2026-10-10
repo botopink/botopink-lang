@@ -430,13 +430,16 @@ fn dataSegment(w: *Writer, d: ast.DataSegment) Error!void {
         @truncate(d.len_prefix >> 24),
     };
     for (prefix) |c| try w.print("\\{x:0>2}", .{c});
+    // A segment that is no UTF-8 text — a `bigint` literal's limbs (decision
+    // 332) — writes every byte past ASCII escaped: the text format is UTF-8.
+    const binary = !std.unicode.utf8ValidateSlice(d.bytes);
     for (d.bytes) |c| switch (c) {
         '\n' => try w.writeAll("\\n"),
         '"' => try w.writeAll("\\\""),
         '\\' => try w.writeAll("\\\\"),
         '\t' => try w.writeAll("\\t"),
         '\r' => try w.writeAll("\\r"),
-        else => if (c < 0x20)
+        else => if (c < 0x20 or (binary and c >= 0x7f))
             try w.print("\\{x:0>2}", .{c})
         else
             try w.writeByte(c),

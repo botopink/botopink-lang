@@ -221,6 +221,15 @@ pub const comptime_arg_not_known: []const u8 = "comptime-arg-not-known";
 /// port, a reference), a non-finite float, a record no reached type declares.
 /// Fires from `comptime/block_eval.zig`'s lift, located at the `comptime`.
 pub const comptime_value_not_liftable: []const u8 = "comptime-value-not-liftable";
+/// Decision 332 — a `comptime` whose value is (or holds) a `bigint`: the
+/// compile-time evaluator holds a 64-bit integer (front `01-compiler/139`).
+pub const comptime_bigint: []const u8 = "comptime-bigint";
+/// Decision 332 (question 139-a) — a `bigint` widened to `unknown` or into a
+/// union: no target tells it from another integer at run time.
+pub const bigint_widened: []const u8 = "bigint-widened";
+/// Decision 332 (question 139-a) — `is` / a type pattern over a `bigint`, or
+/// testing for one: its type is static.
+pub const bigint_type_test: []const u8 = "bigint-type-test";
 /// Decision 297 — `x is type` where `x` is no `comptime x: V | type T`
 /// parameter.
 pub const is_type_outside_value_or_type: []const u8 = "is-type-outside-value-or-type";
@@ -677,6 +686,9 @@ pub const all_codes = [_][]const u8{
     primitive_type_name_taken,
     comptime_arg_not_known,
     comptime_value_not_liftable,
+    comptime_bigint,
+    bigint_widened,
+    bigint_type_test,
     is_type_outside_value_or_type,
     type_arg_read,
     captured_var_write,

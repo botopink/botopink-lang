@@ -24,7 +24,7 @@ fn expectOneNumberToken(src: []const u8) !void {
 }
 
 test "decision 247: a suffix stays in the number's token" {
-    for ([_][]const u8{ "1.5f", "1d", "42l", "42u", "42ul", "7i8", "7i16", "7u8", "7u16", "7isize", "7usize", "0xFFul", "0b101u8", "1_000l", "2.5e1d", "42L", "10px", "1e" }) |src| try expectOneNumberToken(src);
+    for ([_][]const u8{ "1.5f", "1d", "42l", "42u", "42ul", "7i8", "7i16", "7u8", "7u16", "7isize", "7usize", "0xFFul", "0b101u8", "1_000l", "2.5e1d", "42L", "10px", "1e", "42n", "0xFFn" }) |src| try expectOneNumberToken(src);
 }
 
 test "decision 247: splitNumber separates digits and suffix" {
@@ -38,6 +38,8 @@ test "decision 247: splitNumber separates digits and suffix" {
     try expectSplit("0x1f", "0x1f", "", false);
     try expectSplit("0x1ful", "0x1f", "ul", false);
     try expectSplit("0b1f", "0b1", "f", false);
+    try expectSplit("123456789012345678901234567890n", "123456789012345678901234567890", "n", false);
+    try expectSplit("0xFFn", "0xFF", "n", false);
 }
 
 test "decision 247: a suffix's type and the backend's text" {
@@ -54,6 +56,20 @@ test "decision 247: a suffix's type and the backend's text" {
     try std.testing.expectEqualStrings("42", try lexerMod.numberBackendText(a, "42"));
 }
 
+test "decision 332: a bigint literal keeps its `n` for the backends" {
+    try std.testing.expectEqualStrings("bigint", lexerMod.numberSuffixType("n").?);
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    try std.testing.expectEqualStrings("1_000n", try lexerMod.numberBackendText(a, "1_000n"));
+    try std.testing.expect(lexerMod.isBigintText("42n"));
+    try std.testing.expect(lexerMod.isBigintText("0xFFn"));
+    try std.testing.expect(!lexerMod.isBigintText("42"));
+    try std.testing.expect(!lexerMod.isBigintText("0xFF"));
+    try std.testing.expectEqualStrings("0xFF", lexerMod.bigintDigits("0xFFn"));
+    try std.testing.expectEqualStrings("42", lexerMod.bigintDigits("42"));
+}
+
 test "decision 247: every refused spelling is named at its suffix" {
     try expectErrorAt("val n = 42L;", .numberSuffixUppercase, 1, 11);
     try expectErrorAt("val n = 1.5F;", .numberSuffixUppercase, 1, 12);
@@ -62,6 +78,10 @@ test "decision 247: every refused spelling is named at its suffix" {
     try expectErrorAt("val n = 0o7d;", .numberSuffixFloatOnRadix, 1, 12);
     try expectErrorAt("val n = 1.5u;", .numberSuffixIntegerOnFloat, 1, 12);
     try expectErrorAt("val n = 1e3l;", .numberSuffixIntegerOnFloat, 1, 12);
+    // Decision 332 — `n` is an integer suffix: never on a fraction or an exponent.
+    try expectErrorAt("val n = 1.5n;", .numberSuffixIntegerOnFloat, 1, 12);
+    try expectErrorAt("val n = 1e3n;", .numberSuffixIntegerOnFloat, 1, 12);
+    try expectErrorAt("val n = 42N;", .numberSuffixUppercase, 1, 11);
     try expectErrorAt("val n = 1e;", .numberExponentWithoutDigits, 1, 10);
     try expectErrorAt("val n = case x { 1L -> 1; _ -> 0; };", .numberSuffixUppercase, 1, 19);
 }

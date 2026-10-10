@@ -3113,7 +3113,10 @@ inference) are not checked. `ArithKind.range` is the type's range on every
 target (`isize` / `usize` are `i64` / `u64`; commonJS holds the 64-bit four as a
 number or a `BigInt`, decision 319). A literal operand of unary `-` is a constant and not
 checked. The abort's text is one on the three backends:
-`integer overflow: <op> on <type> at <file>:<line>:<col>`.
+`integer overflow: <op> on <type> at <file>:<line>:<col>`. `ArithKind.bigint`
+(decision 332) has no range: no backend checks it — erlang and beam answer the VM's integer,
+commonJS the native `BigInt` operator (`/` and `%` through `__bp_bdiv` / `__bp_bmod`, which name a
+zero divisor as 264 does), wasm its `bigint` helper group (`wat/AGENTS.md` § `bigint`).
 
 | Backend | The check | Abort |
 |---|---|---|

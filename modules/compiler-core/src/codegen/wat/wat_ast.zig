@@ -600,6 +600,17 @@ pub const HelperGroup = enum {
     task_race_of,
     /// `$__task_spawn_all(fs)` — `wasi:spawn_all`, the answers in input order.
     task_spawn_all,
+    /// Decision 332 — `bigint`, an integer of any size: a pointer to an
+    /// immutable `[L][limb0][limb1]…` block, `L` the limbs' byte count
+    /// negated for a negative value (`0` is zero), the limbs little-endian
+    /// `u32`s with no zero limb on top — a positive literal is a data segment
+    /// of the string layout. `$__bn_add(x, y, flip)`, `$__bn_neg`,
+    /// `$__bn_mul`, `$__bn_divmod(x, y, rem)` (truncating, traps on a zero
+    /// divisor), `$__bn_cmp`, `$__bn_of(i64)`, `$__bn_to_i64` (traps past the
+    /// range), `$__bn_to_f64` (traps unless exact), `$__bn_to_str`,
+    /// `$__bn_from_str` (`0` for no numeral) and their parts. One group,
+    /// appended, linked only when a module uses `bigint`.
+    bigint,
 
     /// The groups `g`'s functions call into.
     pub fn deps(g: HelperGroup) []const HelperGroup {
@@ -659,6 +670,7 @@ pub const HelperGroup = enum {
             .task_race => &.{.task},
             .task_race_of => &.{ .task_race, .arr_new },
             .task_spawn_all => &.{ .task, .arr_new },
+            .bigint => &.{.alloc},
             else => &.{},
         };
     }
@@ -812,6 +824,27 @@ pub const Helper = enum {
     task_race,
     task_race_of,
     task_spawn_all,
+    bn_n,
+    bn_at,
+    bn_new,
+    bn_fix,
+    bn_cmpm,
+    bn_addm,
+    bn_subm,
+    bn_add,
+    bn_neg,
+    bn_mul,
+    bn_divw,
+    bn_ge,
+    bn_subw,
+    bn_divmod,
+    bn_cmp,
+    bn_of,
+    bn_to_i64,
+    bn_to_f64,
+    bn_to_str,
+    bn_from_str,
+    bn_eq_opt,
 
     pub fn symbol(h: Helper) []const u8 {
         return switch (h) {
@@ -844,6 +877,7 @@ pub const Helper = enum {
             .task_new, .task_start, .task_pending, .task_listen, .task_wait, .task_settle_i32, .task_settle_i64, .task_settle_f64, .task_wake, .task_enqueue, .task_drain, .task_block_on, .task_finish => .task,
             .task_host_poll => .task_poll,
             .task_host_add, .task_host_settle => .task_host,
+            .bn_n, .bn_at, .bn_new, .bn_fix, .bn_cmpm, .bn_addm, .bn_subm, .bn_add, .bn_neg, .bn_mul, .bn_divw, .bn_ge, .bn_subw, .bn_divmod, .bn_cmp, .bn_of, .bn_to_i64, .bn_to_f64, .bn_to_str, .bn_from_str, .bn_eq_opt => .bigint,
             inline else => |t| @field(HelperGroup, @tagName(t)),
         };
     }
