@@ -725,6 +725,11 @@ pub const all_codes = [_][]const u8{
     typeinfo_meta_several,
     typeinfo_meta_at_build,
     typeinfo_meta_hooks_pending,
+    template_annotation_not_template,
+    template_annotation_call_form,
+    template_annotation_without_decl,
+    template_annotation_only,
+    template_call_unexpanded,
 };
 
 test "every reserved code has a stable, non-empty spelling" {
@@ -779,3 +784,29 @@ pub const optional_has_no_methods: []const u8 = "optional-has-no-methods";
 
 /// Decision 330 (4) — `??` beside `&&` / `||` without parentheses.
 pub const nullish_beside_logical: []const u8 = "nullish-beside-logical";
+
+// ── decision 311 — the template annotation `#[f "…"]` ───────────────────────
+
+/// Decision 311 — `#[f "…"]` naming a function that is not a template
+/// function (a decorator, an ordinary function) or naming nothing: refused at
+/// the annotation.
+pub const template_annotation_not_template: []const u8 = "template-annotation-not-template";
+
+/// Decision 311 — `#[f(…)]` / `#[f]` naming a template function: a template
+/// is written as an annotation `#[f "…"]`; refused at the annotation.
+pub const template_annotation_call_form: []const u8 = "template-annotation-call-form";
+
+/// Decision 311, question s29-a — `#[f "…"]` naming a template function that
+/// declares no `comptime decl: @Decl<…>` beside its literal: what it builds
+/// has nowhere to go; refused at the annotation.
+pub const template_annotation_without_decl: []const u8 = "template-annotation-without-decl";
+
+/// Decision 311, question s29-a — `f "…"` calling a template function that
+/// takes the annotated declaration's `@Decl`: it is written only as an
+/// annotation; refused at the call.
+pub const template_annotation_only: []const u8 = "template-annotation-only";
+
+/// Decision 425 — a call of a template function that inference did not
+/// expand: it would reach a backend as a run-time call of a function that
+/// exists only at build. Refused at the call.
+pub const template_call_unexpanded: []const u8 = "template-call-unexpanded";

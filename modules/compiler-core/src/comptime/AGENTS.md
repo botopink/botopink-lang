@@ -675,6 +675,77 @@ recognize → reflect → invoke → apply; marker meaning lives in the lib body
   `infer.registerImportedDecorator`, so `#[name(args)]` in an importing module
   both arg-checks and runs the body (mirror of the template registry path).
 
+## The template annotation `#[f "…"]` (decision 311, `01-checker` step 29)
+
+The parser keeps `#[f "…"]` / `#[f """…"""]` as `ast.Annotation.template` (the
+literal as written, `templateLoc` where it starts; `args` empty). `f` is a
+template function whose second parameter is the handle —
+`fn f(comptime q: @Expr<…>, comptime decl: @Decl<…>) -> @Expr<…>`,
+`member_fn.isTemplateAnnotation` (question s29-a); `member_fn.declParamIndex`
+/ `declParamName` answer `1` / `decl` for it, so everything keyed on a
+decorator's handle — `typed_meta.collect`, `member_fn.collect`,
+`checkTypedMetaCalls`, the body's `decl.setMeta(v)` / `decl.addMember(name,
+fn…)` typing (`infer.zig` `currentDeclParam`) and `expr_param.eraseFn` — reads
+the template's body as a decorator's.
+
+- **Check** (`infer.zig`): `checkTemplateAnnotations` (from
+  `validateDecorators`) resolves the name with `templateFnNamed` (an imported
+  template, or a local one from `Env.fnDecls` — decorators run before the
+  bodies that fill `Env.templateFns`) and refuses at the annotation
+  `template-annotation-not-template`, `template-annotation-without-decl` and,
+  for `#[f(…)]` / `#[f]` naming a template, `template-annotation-call-form`; a
+  call `f "…"` of an annotation template is `template-annotation-only` at the
+  call. `checkTemplateAnnotationHoles` (after Pass 2, every module name bound)
+  types each `${…}` hole in the annotated declaration's scope — a function's
+  or a method's parameters (a method's `Self` its owner), then the module's —
+  so an unknown name is the ordinary unbound-name error at the hole
+  (`annotatedSites` lists every annotation with its declaration).
+- **Run**: `runDeclDecorators` takes a template annotation as a decorator whose
+  function is the template (`DecoratorSig` with no parameters of its own):
+  `templateAnnotationCapture` captures the literal as `captureExprArg` does at
+  a call site (`parseDecoratorArg` re-reads it at its own location; `q.value`
+  of a holed literal is `template-value-not-known` at the literal), and
+  `decorator_eval.evaluate` gets it as `capture`: `annotationPlans` binds the
+  capture term (`template_eval.captureToTerm`) to `q` and the handle to
+  `decl`, the module (emit key `ann`) carries `prelude.captureForms` — the
+  template prelude's capture API and result constructors — beside `main/1`,
+  and imports the decorator prelude for the handle. A `lookup/2` failure
+  (template tag) and `q.fail` / `decl.fail` are reported at the annotation;
+  the value the body returns is not used. The outputs are a decorator's;
+  `unplaceholderContributions` rewrites each `__bp_hole_<q>_<i>` in a source
+  or a typed meta string into the hole's expression as written
+  (`parser/exprs.zig` `holeSources`), so a meta names the method's parameter.
+- **`decl.params`**: `DeclHandle.params` (`paramHandles`) — a function's or a
+  method's own parameters, `Param(name, typeName)`, `self` included.
+- **A method's typed meta** (question s29-b): `invokeDecorators` runs a
+  type's or a behavior's methods' decorators before the owner's;
+  `recordTypedMeta` keeps a method's value in `Env.methodTypedMeta`
+  (`recordMethodTypedMeta`, `decorator_eval.metaValueTerm` — the record's
+  map, a variant its atom; `decorator-meta-twice` per method and type) and
+  `withMethodMeta` puts the owner's on its handle, each `decl.methods` entry
+  carrying `meta => [#{type, value}]`. The owner's body reads `m.meta(T)` /
+  `m.metaAll(T)` (`inferMethodMetaRead`: `?T` / `T[]`, `T` written by its
+  declared name), which `expr_param.eraseForRun` turns into the prelude's
+  `'__bp_methodMeta'/2` / `'__bp_methodMetaAll'/2`; `typed_meta.withMetaHelper`
+  skips decorator and template bodies (such a read is no catalogue read).
+
+**Decision 425 — a template call expands wherever an expression may stand.**
+Inference expands every template call it types (`Env.templateExpansions` by
+the call's location); `transform.zig` splices them in a function's and a
+`test`'s body, and — through the method-body aggregator (`src_agg`, which now
+carries the expansions) — in a type's, an `implement`'s and a behavior
+default's method bodies; `rewriteStmt` walks a destructuring initializer
+(`localBindDestruct`). A record field's or a top-level function parameter's
+default holding a template call is inferred once after Pass 2
+(`expandTemplateFieldDefaults`), so the default fill (`injectedDefault`, which
+shares the node) carries the expansion. `refuseUnexpandedTemplateCalls`
+(`UnexpandedTemplateCall`, a reflective AST walk skipping template and
+decorator bodies) refuses any call of a template function left without an
+expansion, at the call (`template-call-unexpanded`). Cells:
+`run/template_in_type_method`, `run/template_destructuring_init`,
+`run/template_in_lambda`, `run/template_in_argument`,
+`run/template_in_field_default`, `run/template_in_case_arm`.
+
 ## Every `comptime` parameter is an `@Expr<T>` (decision 364)
 
 Every `comptime` parameter other than `@Decl` is written `comptime x:

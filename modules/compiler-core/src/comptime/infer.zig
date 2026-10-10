@@ -46,6 +46,7 @@ const unifyUnlocated = unifyMod.unify;
 const Lexer = @import("../lexer.zig").Lexer;
 const lexerMod = @import("../lexer.zig");
 const Parser = @import("../parser.zig").Parser;
+const exprsMod = @import("../parser/exprs.zig");
 const Module = @import("../module.zig").Module;
 const comptimeMod = @import("../comptime.zig");
 const formatMod = @import("../format.zig");
@@ -687,6 +688,13 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
             try list.append(env.arena, b);
         }
     }
+    // Decision 311 — a template annotation's `${…}` holes, typed in the
+    // annotated declaration's scope once every module-level name is bound.
+    try checkTemplateAnnotationHoles(env, program);
+    // Decision 425 — a template call written as a record field's default
+    // expands where it is written; the fill copies the expansion.
+    try expandTemplateFieldDefaults(env, program);
+    try refuseUnexpandedTemplateCalls(env, program);
     // Decision 375 — the nodes' `async` marks, before a `.hooks` reader reads them.
     try markHookAsync(env);
     // Decision 372 — the decorators that read `.hooks` run over the bodies.
@@ -876,6 +884,13 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
             },
         }
     }
+    // Decision 311 — a template annotation's `${…}` holes, typed in the
+    // annotated declaration's scope once every module-level name is bound.
+    try checkTemplateAnnotationHoles(env, program);
+    // Decision 425 — a template call written as a record field's default
+    // expands where it is written; the fill copies the expansion.
+    try expandTemplateFieldDefaults(env, program);
+    try refuseUnexpandedTemplateCalls(env, program);
     // Decision 375 — the nodes' `async` marks, before a `.hooks` reader reads them.
     try markHookAsync(env);
     // Decision 372 — the decorators that read `.hooks` run over the bodies.
@@ -3952,6 +3967,7 @@ fn validateDecorators(env: *Env, program: ast.Program) InferError!void {
     try refuseNonComptimeDecoratorParams(env, program);
     try refuseBareComptimeParams(env, program);
     try checkTypedMetaCalls(env, program);
+    try checkTemplateAnnotations(env, program);
     if (env.decorators.count() == 0) return;
     for (program.decls) |decl| switch (decl) {
         .@"fn" => |f| try checkDecoratorAnnotations(env, program, f.annotations, .{ .name = f.name, .type_ = try fnDeclType(env, f.name) }),
@@ -3980,6 +3996,232 @@ fn validateDecorators(env: *Env, program: ast.Program) InferError!void {
             for (i.methods) |m| try checkDecoratorAnnotations(env, program, m.annotations, .{ .name = m.name, .type_ = null });
         },
         else => {},
+    };
+}
+
+/// Every annotation list of `program` — a function's, a `val`'s, a type's, its
+/// fields' and methods', a behavior's and its methods' — with the declaration
+/// it annotates: the parameters and type parameters in scope for a template
+/// annotation's holes (decision 311), and the owner a method's `Self` names.
+const AnnotatedSite = struct {
+    anns: []const ast.Annotation,
+    params: []const ast.Param = &.{},
+    generics: []const ast.GenericParam = &.{},
+    owner: ?[]const u8 = null,
+    ownerGenerics: []const ast.GenericParam = &.{},
+    name: []const u8,
+};
+
+fn annotatedSites(env: *Env, program: ast.Program) InferError![]const AnnotatedSite {
+    var out: std.ArrayListUnmanaged(AnnotatedSite) = .empty;
+    for (program.decls) |decl| switch (decl) {
+        .@"fn" => |f| try out.append(env.arena, .{ .anns = f.annotations, .params = f.params, .generics = f.genericParams, .name = f.name }),
+        .val => |v| try out.append(env.arena, .{ .anns = v.annotations, .name = v.name }),
+        .type_ => |t| {
+            try out.append(env.arena, .{ .anns = t.annotations, .name = t.name });
+            if (t.shape == .record) for (t.recordFields()) |fld| try out.append(env.arena, .{ .anns = fld.annotations, .name = fld.name });
+            for (t.methods) |m| try out.append(env.arena, .{ .anns = m.annotations, .params = m.params, .generics = m.genericParams, .owner = t.name, .ownerGenerics = t.genericParams, .name = m.name });
+        },
+        .behavior => |b| {
+            try out.append(env.arena, .{ .anns = b.annotations, .name = b.name });
+            for (b.methods) |m| try out.append(env.arena, .{ .anns = m.annotations, .params = m.params, .generics = m.genericParams, .owner = b.name, .ownerGenerics = b.genericParams, .name = m.name });
+        },
+        else => {},
+    };
+    return out.items;
+}
+
+/// Decision 425 — a record field's (or a function parameter's) default that holds a template call
+/// (`type Conf(label: string = dbl "x")`) is inferred against the field's type,
+/// which expands it (`Env.templateExpansions` under the call's location): the
+/// constructor's default fill (`transform.zig` `injectedDefault`) shares the
+/// node, so every call that leaves the field out gets the expansion. Any other
+/// default keeps its own checks.
+fn expandTemplateFieldDefaults(env: *Env, program: ast.Program) InferError!void {
+    for (program.decls) |d| {
+        // A function's parameter default, the same way: the call's fill
+        // shares the node.
+        if (d == .@"fn") {
+            const f = d.@"fn";
+            if (memberFn.declParamIndex(f) != null) continue;
+            if (f.returnType) |rt| if (rt.isTemplateReturnType()) continue;
+            var genericMap = std.StringHashMap(*T.Type).init(env.arena);
+            defer genericMap.deinit();
+            for (f.genericParams) |gp| try genericMap.put(gp.name, try env.freshVar());
+            for (f.params) |p| {
+                const dv = p.default orelse continue;
+                var finder: UnexpandedTemplateCall = .{ .env = env };
+                finder.walk(ast.Expr, dv);
+                if (finder.found == null) continue;
+                const typed = try inferExprTyped(env, dv);
+                if (p.fnType == null and p.destruct == null) try unifyAt(env, try resolveParamType(env, p, genericMap), typed.getType(), dv.getLoc());
+            }
+            continue;
+        }
+        if (d != .type_ or d.type_.shape != .record) continue;
+        const t = d.type_;
+        for (t.recordFields()) |fld| {
+            const dv = fld.default orelse continue;
+            var finder: UnexpandedTemplateCall = .{ .env = env };
+            finder.walk(ast.Expr, dv);
+            if (finder.found == null) continue;
+            const typed = try inferExprTyped(env, dv);
+            if (try fieldDeclType(env, t, fld)) |want| try unifyAt(env, want, typed.getType(), dv.getLoc());
+        }
+    }
+}
+
+/// Decision 425 — a template function exists only while the program
+/// compiles, so a call of one that inference did not expand (no
+/// `Env.templateExpansions` entry under its location) would reach a backend as
+/// a run-time call of a function that is not there. Refused at the call
+/// (`template-call-unexpanded`), never left to run as `undefined`. A
+/// template's or a decorator's own body runs at build and is not walked.
+fn refuseUnexpandedTemplateCalls(env: *Env, program: ast.Program) InferError!void {
+    var finder: UnexpandedTemplateCall = .{ .env = env };
+    for (program.decls) |d| {
+        if (d == .@"fn") {
+            const f = d.@"fn";
+            if (memberFn.declParamIndex(f) != null) continue;
+            if (f.returnType) |rt| if (rt.isTemplateReturnType()) continue;
+        }
+        finder.walk(ast.DeclKind, d);
+        if (finder.found) |c| {
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s} \"…\"` calls a template function here, where the compiler does not expand it", .{ diagnostics.template_call_unexpanded, c.callee });
+            env.lastError = TypeError.custom(msg, "A template call expands wherever an expression may stand (decision 425); this position was missed — report it.").withLoc(c.loc);
+            return error.TypeError;
+        }
+    }
+}
+
+const UnexpandedTemplateCall = struct {
+    env: *Env,
+    found: ?struct { callee: []const u8, loc: ast.Loc } = null,
+
+    fn walk(self: *UnexpandedTemplateCall, comptime V: type, v: V) void {
+        if (self.found != null) return;
+        if (V == ast.Expr) if (v == .call and v.call.kind == .call) {
+            const c = v.call.kind.call;
+            if (!c.is_builtin and c.receiver == null and c.calleeExpr == null and
+                templateFnNamed(self.env, c.callee) != null and
+                !self.env.templateExpansions.contains(v.call.loc))
+            {
+                self.found = .{ .callee = c.callee, .loc = v.call.loc };
+                return;
+            }
+        };
+        switch (@typeInfo(V)) {
+            .pointer => |ptr| switch (ptr.size) {
+                .one => if (@typeInfo(ptr.child) != .@"fn" and @typeInfo(ptr.child) != .@"opaque") self.walk(ptr.child, v.*),
+                .slice => if (ptr.child != u8) for (v) |item| self.walk(ptr.child, item),
+                else => {},
+            },
+            .optional => |o| if (v) |x| self.walk(o.child, x),
+            .@"struct" => |st| inline for (st.fields) |fl| {
+                if (!fl.is_comptime) self.walk(fl.type, @field(v, fl.name));
+            },
+            .@"union" => |un| if (un.tag_type != null) switch (v) {
+                inline else => |payload| self.walk(@TypeOf(payload), payload),
+            },
+            else => {},
+        }
+    }
+};
+
+/// Whether any annotation of `program` is a template annotation `#[f "…"]`.
+fn hasTemplateAnnotation(env: *Env, program: ast.Program) InferError!bool {
+    for (try annotatedSites(env, program)) |site| for (site.anns) |a| {
+        if (a.template != null) return true;
+    };
+    return false;
+}
+
+/// The template function `name` names: an imported one, or one of this
+/// module's (`Env.fnDecls` — decorators run before the bodies that register
+/// a local template in `Env.templateFns`).
+fn templateFnNamed(env: *Env, name: []const u8) ?ast.FnDecl {
+    if (env.templateFns.get(name)) |t| return t;
+    const f = env.fnDecls.get(name) orelse return null;
+    const rt = f.returnType orelse return null;
+    return if (rt.isTemplateReturnType()) f else null;
+}
+
+/// Decision 311 — the template annotation `#[f "…"]`. `f` is a template
+/// function written as an annotation, taking the annotated declaration's
+/// handle beside its literal (`memberFn.isTemplateAnnotation`, question s29-a);
+/// refused at the annotation: a name that is no template function
+/// (`template-annotation-not-template`), a template that takes no `@Decl`
+/// (`template-annotation-without-decl`), and the call form `#[f(…)]` / `#[f]`
+/// naming a template function (`template-annotation-call-form`, naming
+/// `#[f "…"]`).
+fn checkTemplateAnnotations(env: *Env, program: ast.Program) InferError!void {
+    for (try annotatedSites(env, program)) |site| for (site.anns) |a| {
+        if (a.is_builtin) continue;
+        const at = a.loc orelse ast.Loc{ .line = 1, .col = 1 };
+        const tfn = templateFnNamed(env, a.name);
+        if (a.template == null) {
+            const t = tfn orelse continue;
+            if (env.decorators.contains(a.name)) continue;
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}{s}]` names the template function `{s}`, which is written as an annotation `#[{s} \"…\"]`", .{ diagnostics.template_annotation_call_form, a.name, if (a.args.len > 0) "(…)" else "", a.name, a.name });
+            const hint = if (memberFn.isTemplateAnnotation(t))
+                "A template function takes its literal unevaluated: write the literal after the name, `#[f \"…\"]` or `#[f \"\"\"…\"\"\"]` (decision 311)."
+            else
+                "A template function takes its literal unevaluated: write the literal after the name, `#[f \"…\"]` — and declare `comptime decl: @Decl` beside its `comptime q: @Expr<…>` (decision 311).";
+            env.lastError = TypeError.custom(msg, hint).withLoc(at);
+            return error.TypeError;
+        }
+        const t = tfn orelse {
+            const what: []const u8 = if (env.decorators.contains(a.name))
+                "a decorator"
+            else if (env.lookup(a.name)) |ty| (if (ty.deref().* == .func) "a function that is not a template function" else "not a function") else "not declared";
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s} \"…\"]` names `{s}`, which is {s}", .{ diagnostics.template_annotation_not_template, a.name, a.name, what });
+            env.lastError = TypeError.custom(msg, "A template annotation names a template function — `fn f(comptime q: @Expr<…>, comptime decl: @Decl) -> @Expr<…>` —; a decorator is written `#[f(…)]` (decision 311).").withLoc(at);
+            return error.TypeError;
+        };
+        if (!memberFn.isTemplateAnnotation(t)) {
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s} \"…\"]` names the template function `{s}`, which takes no `comptime decl: @Decl` beside its literal", .{ diagnostics.template_annotation_without_decl, a.name, a.name });
+            env.lastError = TypeError.custom(msg, "Written as an annotation, a template receives the annotated declaration as its second parameter — `fn f(comptime q: @Expr<…>, comptime decl: @Decl) -> @Expr<…>` — and records its outputs on it (decision 311, question s29-a).").withLoc(at);
+            return error.TypeError;
+        }
+    };
+}
+
+/// Decision 311 — a template annotation's `${…}` holes resolve in the
+/// annotated declaration's scope: on a function or a method its parameters,
+/// by name and type (a method's `self` is its owner, `Self`); any other name
+/// in the module's scope, its imports included (112). Each hole is typed
+/// there, so an unknown name is the ordinary unbound-name error at the hole.
+fn checkTemplateAnnotationHoles(env: *Env, program: ast.Program) InferError!void {
+    for (try annotatedSites(env, program)) |site| for (site.anns) |a| {
+        const written = a.template orelse continue;
+        if (a.is_builtin or a.templateLoc == null) continue;
+        if (std.mem.indexOf(u8, written, "${") == null) continue;
+        const node = try parseDecoratorArg(env, written, a.templateLoc.?);
+        if (node.* != .literal or node.literal.kind != .stringTemplate) continue;
+
+        var bodyLog: std.ArrayListUnmanaged(Env.BindUndo) = .empty;
+        const outerScope = env.openBodyScope(&bodyLog);
+        defer env.closeBodyScope(&bodyLog, outerScope, site.name);
+        var genericMap = std.StringHashMap(*T.Type).init(env.arena);
+        defer genericMap.deinit();
+        if (site.owner) |owner| {
+            const selfArgs = try env.arena.alloc(*T.Type, site.ownerGenerics.len);
+            for (site.ownerGenerics, 0..) |gp, i| {
+                selfArgs[i] = try env.freshVar();
+                try genericMap.put(gp.name, selfArgs[i]);
+            }
+            try genericMap.put("Self", if (selfArgs.len == 0) try env.namedType(owner) else try env.namedTypeArgs(owner, selfArgs));
+        }
+        for (site.generics) |gp| try genericMap.put(gp.name, try env.freshVar());
+        for (site.params) |p| {
+            if (p.destruct != null or p.fnType != null) continue;
+            const ty = try resolveParamType(env, p, genericMap);
+            try env.bind(p.name, if (p.exprWrapped) try env.namedTypeArgs("Expr", &.{ty}) else ty);
+        }
+        for (node.literal.kind.stringTemplate.parts) |part| switch (part) {
+            .expr => |hole| _ = try inferExprTyped(env, hole.*),
+            .text => {},
+        };
     };
 }
 
@@ -4789,9 +5031,15 @@ fn runDeclDecorators(
 ) InferError!void {
     for (anns) |a| {
         if (a.is_builtin) continue;
-        const sig = env.decorators.get(a.name) orelse continue;
+        // Decision 311 — `#[f "…"]` runs the template function `f` over the
+        // declaration: the literal its `q`, the handle its `decl`
+        // (`checkTemplateAnnotations` refused any other shape first).
+        const tfn: ?ast.FnDecl = if (a.template != null) templateFnNamed(env, a.name) orelse continue else null;
+        if (tfn) |t| if (!memberFn.isTemplateAnnotation(t)) continue;
+        const sig: envMod.DecoratorSig = if (tfn) |t| .{ .params = &.{}, .fn_decl = t } else env.decorators.get(a.name) orelse continue;
         const dfn = sig.fn_decl orelse continue; // bodyless `declare fn` marker
         if (dfn.body.len == 0) continue; // empty body — nothing to run
+        const capture: ?*const template.CapturedExpr = if (tfn) |t| try templateAnnotationCapture(env, a, t) else null;
         // Decision 372 — a decorator that reads `.hooks` runs in the second
         // phase, after the module's bodies; every other one in the first.
         const readsHooks = try decoratorReadsHooks(env, a);
@@ -4832,6 +5080,10 @@ fn runDeclDecorators(
         const local = std.mem.eql(u8, owner, env.modulePath);
         const found: Support = if (local)
             try decoratorSupport(env.arena, env.fnDecls, &env.importedFnSupport, dfn)
+        else if (tfn != null)
+            // An imported template brings what its module computed
+            // (`expandTemplateCallViaRuntime`'s rule).
+            (if (env.importedTemplateSupport.get(@intFromPtr(dfn.body.ptr))) |ts| Support{ .fns = ts.fns, .conflict = ts.conflict } else Support{ .fns = &.{} })
         else
             .{ .fns = sig.support, .conflict = sig.conflict };
         if (found.conflict) |c| return decoratorError(env, a, c, "Rename one of the two functions, so each name the decorator reaches is one function.");
@@ -4840,7 +5092,7 @@ fn runDeclDecorators(
         // (`block_eval.typesReached`); the evaluator's own (`DeclKind`,
         // `Span`) are injected by it.
         const carried = try std.mem.concat(env.arena, ast.FnDecl, &.{ &.{dfn}, found.fns, builtFns.items });
-        const reached = try blockEval.typesReached(env, carried, &.{ "DeclKind", "Span", "Decl" });
+        const reached = try blockEval.typesReached(env, carried, if (tfn != null) &(templateEval.injected_names ++ [_][]const u8{ "DeclKind", "Decl" }) else &.{ "DeclKind", "Span", "Decl" });
         const support = try std.mem.concat(env.arena, ast.FnDecl, &.{ found.fns, reached.fns, builtFns.items });
         // Decision 364 — the body reads `x.value`; the module holds the value
         // in `x` (`expr_param.zig`), and `x.fail(m)` names its argument.
@@ -4851,13 +5103,13 @@ fn runDeclDecorators(
         const erasedSupport = try env.arena.alloc(ast.FnDecl, support.len);
         for (support, 0..) |sf, k| {
             const own = local and k < found.fns.len and std.mem.eql(u8, env.comptimeOwnerOf(sf), env.modulePath);
-            erasedSupport[k] = try exprParam.eraseFn(env.arena, if (own) try sameLoweredFn(env, program, sf) else sf, isDecoratorParams(sf.params));
+            erasedSupport[k] = try exprParam.eraseForRun(env.arena, if (own) try sameLoweredFn(env, program, sf) else sf, isDecoratorParams(sf.params));
         }
-        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, try exprParam.eraseFn(env.arena, runDfn, true), erasedSupport, reached.types, try completeHandle(env, handle), plain, &env.comptimeTraces) catch {
+        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, try exprParam.eraseForRun(env.arena, runDfn, true), erasedSupport, reached.types, try completeHandle(env, try withMethodMeta(env, handle, memberOwner)), plain, capture, &env.comptimeTraces) catch {
             return decoratorError(env, a, "the decorator evaluator failed to run", "Decorator bodies run in a persistent `erl` process at compile time — check that `erl` is on PATH.");
         };
         switch (outcome) {
-            .ok => |contributions| for (contributions) |c| {
+            .ok => |raw| for (if (capture) |cap| try unplaceholderContributions(env.arena, raw, cap.paramName, try holeSourcesOf(env.arena, a.template.?)) else raw) |c| {
                 // Decision 372 — the bodies are inferred: a `.hooks` reader
                 // gives the program no code (`refuseHooksReaderOutputs`
                 // refuses the call where it is written; this is the call
@@ -4916,7 +5168,7 @@ fn runDeclDecorators(
                     },
                     // `decl.setMeta(v)` / `decl.addMeta(v)` (decision 298) — a
                     // typed value keyed by its record type.
-                    .typedMeta => try recordTypedMeta(env, a, dfn, handle, values, c),
+                    .typedMeta => try recordTypedMeta(env, a, dfn, handle, values, c, memberOwner),
                     // `decl.setMeta(key, value)` (decision 216 (2)) — recorded in
                     // the session's reflection under the decorator's own name,
                     // before any body of this module is inferred (a `.hooks`
@@ -4962,6 +5214,107 @@ fn runDeclDecorators(
             },
         }
     }
+}
+
+/// Decision 311 — the literal of a template annotation `#[f "…"]` captured as
+/// a call site's is (`captureExprArg`): unevaluated, with its location, module
+/// and origin scope; `q.value` reads only a literal without a hole
+/// (`template-value-not-known` at the literal, decision 364 (2)).
+fn templateAnnotationCapture(env: *Env, a: ast.Annotation, tfn: ast.FnDecl) InferError!*const template.CapturedExpr {
+    const written = a.template.?;
+    const at = a.templateLoc orelse a.loc orelse ast.Loc{ .line = 1, .col = 1 };
+    const node = try parseDecoratorArg(env, written, at);
+    const q = tfn.params[0].name;
+    const holed = node.* == .literal and node.literal.kind == .stringTemplate;
+    const text: ?[]const u8 = if (node.* == .literal and node.literal.kind == .stringLit) node.literal.kind.stringLit else null;
+    const valueRead = exprParam.useOf(tfn, q).value;
+    if (valueRead and holed) {
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s} \"…\"]`'s literal has a `${{…}}` hole, so it is not known while the program compiles, and the template reads `{s}.value`", .{ diagnostics.template_value_not_known, a.name, q });
+        env.lastError = TypeError.custom(msg, "`.value` answers a literal without holes (decision 364 (2)); read the parts with `.parts()`.").withLoc(at);
+        return error.TypeError;
+    }
+    const cap = try env.arena.create(template.CapturedExpr);
+    cap.* = .{
+        .callee = a.name,
+        .paramIndex = 0,
+        .paramName = q,
+        .node = node,
+        .text = text,
+        .multiline = std.mem.startsWith(u8, written, "\"\"\""),
+        .loc = at,
+        .modulePath = env.modulePath,
+        .scope = env.scopeSnapshot,
+        .valueRead = valueRead,
+    };
+    return cap;
+}
+
+/// The source of each `${…}` hole of a template annotation's literal, in order.
+fn holeSourcesOf(arena: std.mem.Allocator, written: []const u8) InferError![]const []const u8 {
+    const quote: usize = if (std.mem.startsWith(u8, written, "\"\"\"")) 3 else 1;
+    if (written.len < 2 * quote) return &.{};
+    return exprsMod.holeSources(arena, written[quote .. written.len - quote]);
+}
+
+/// Decision 311 — a template annotation's outputs name a hole the way built
+/// code does, by its placeholder (`__bp_hole_<q>_<i>`, a part's `code`); where
+/// the output is written each placeholder becomes the expression the hole
+/// holds, as written (a method's parameter, by name). Every string an output
+/// carries is rewritten: a source and a typed meta value's strings.
+fn unplaceholderContributions(
+    arena: std.mem.Allocator,
+    contributions: []const decoratorEval.Contribution,
+    q: []const u8,
+    holes: []const []const u8,
+) InferError![]const decoratorEval.Contribution {
+    if (holes.len == 0) return contributions;
+    const out = try arena.dupe(decoratorEval.Contribution, contributions);
+    for (out) |*c| {
+        c.source = try unplaceholder(arena, c.source, q, holes);
+        c.value = try unplaceholder(arena, c.value, q, holes);
+        if (c.data) |d| c.data = try unplaceholderJson(arena, d, q, holes);
+    }
+    return out;
+}
+
+fn unplaceholderJson(arena: std.mem.Allocator, v: std.json.Value, q: []const u8, holes: []const []const u8) InferError!std.json.Value {
+    switch (v) {
+        .string => |s| return .{ .string = try unplaceholder(arena, s, q, holes) },
+        .array => |arr| {
+            var na = std.json.Array.init(arena);
+            for (arr.items) |item| try na.append(try unplaceholderJson(arena, item, q, holes));
+            return .{ .array = na };
+        },
+        .object => |obj| {
+            var no: std.json.ObjectMap = .{};
+            var it = obj.iterator();
+            while (it.next()) |e| try no.put(arena, e.key_ptr.*, try unplaceholderJson(arena, e.value_ptr.*, q, holes));
+            return .{ .object = no };
+        },
+        else => return v,
+    }
+}
+
+fn unplaceholder(arena: std.mem.Allocator, s: []const u8, q: []const u8, holes: []const []const u8) InferError![]const u8 {
+    const prefix = try std.fmt.allocPrint(arena, "__bp_hole_{s}_", .{q});
+    if (std.mem.indexOf(u8, s, prefix) == null) return s;
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    var i: usize = 0;
+    while (i < s.len) {
+        if (std.mem.startsWith(u8, s[i..], prefix)) {
+            var j = i + prefix.len;
+            while (j < s.len and std.ascii.isDigit(s[j])) j += 1;
+            const n = std.fmt.parseInt(usize, s[i + prefix.len .. j], 10) catch null;
+            if (n) |k| if (k < holes.len) {
+                try out.appendSlice(arena, holes[k]);
+                i = j;
+                continue;
+            };
+        }
+        try out.append(arena, s[i]);
+        i += 1;
+    }
+    return out.items;
 }
 
 /// Decision 370 (2) — the source of the member `decl.addMember(c.name, fn…)`
@@ -5212,6 +5565,15 @@ fn metaExprParam(f: ast.FnDecl, e: ast.Expr) ?[]const u8 {
     return null;
 }
 
+/// The `@Decl` parameter of the body being inferred — a decorator's first, a
+/// template annotation function's second (decision 311) —, null elsewhere.
+fn currentDeclParam(env: *Env) ?[]const u8 {
+    const ps = env.currentParams;
+    if (env.inDecoratorFn and ps.len > 0 and isDecoratorParams(ps)) return ps[0].name;
+    if (env.inTemplateFn and memberFn.isTemplateAnnotationParams(ps)) return ps[1].name;
+    return null;
+}
+
 /// Whether `call` is `<declName>.setMeta(v)` / `<declName>.addMeta(v)`.
 fn isTypedMetaOn(call: anytype, declName: []const u8) bool {
     if (call.is_builtin or call.args.len != 1 or call.trailing.len != 0) return false;
@@ -5276,10 +5638,17 @@ fn recordTypedMeta(
     handle: decoratorEval.DeclHandle,
     values: []const envMod.DecoratorArgValue,
     c: decoratorEval.Contribution,
+    memberOwner: ?[]const u8,
 ) InferError!void {
     const declName = memberFn.declParamName(dfn) orelse return decoratorError(env, a, "the decorator has no `@Decl` handle", "");
     const calls = try typedMeta.collect(env.arena, dfn, declName);
     const verb = if (c.index < calls.len and calls[c.index].repeat) typedMeta.add_meta else typedMeta.set_meta;
+    // Question s29-b — a method's typed meta (313: a repository method's
+    // query) is recorded for its owner's decorators, which run after it and
+    // read it on `decl.methods` (`m.meta(T)`).
+    if (std.mem.eql(u8, handle.kind, "Method")) if (memberOwner) |owner| {
+        return recordMethodTypedMeta(env, a, dfn, handle, c, calls, owner);
+    };
     const is_member = std.mem.eql(u8, handle.kind, "Field") or std.mem.eql(u8, handle.kind, "Method");
     if (is_member) {
         const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` on the {s} `{s}` calls `decl.{s}`, and meta describes a top-level declaration", .{ diagnostics.decorator_meta_on_member, a.name, if (std.mem.eql(u8, handle.kind, "Field")) "field" else "method", handle.name, verb });
@@ -5317,6 +5686,56 @@ fn recordTypedMeta(
         const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` records a second `{s}` on `{s}`, which holds one", .{ diagnostics.decorator_meta_twice, a.name, mt.name, handle.name });
         return decoratorError(env, a, msg, "`decl.setMeta(v)` stores one value of its type per declaration (decision 298); a value that repeats is recorded with `decl.addMeta(v)` — every one, never mixed with `setMeta` — and read with `metaAll(T)`.");
     }
+}
+
+/// Question s29-b — one typed meta value a method's decorator recorded, kept
+/// for the owner's decorators (`Env.methodTypedMeta`) as the term their body
+/// reads: one value of a type per method (`decorator-meta-twice`), a type
+/// recorded by `setMeta` or by `addMeta`, never both.
+fn recordMethodTypedMeta(
+    env: *Env,
+    a: ast.Annotation,
+    dfn: ast.FnDecl,
+    handle: decoratorEval.DeclHandle,
+    c: decoratorEval.Contribution,
+    calls: []const typedMeta.Call,
+    owner: []const u8,
+) InferError!void {
+    const r = env.reflection orelse return;
+    const types = r.decoratorMetaTypes.get(try reflectionMod.Reflection.decoratorKey(env.arena, env.comptimeOwnerOf(dfn), dfn.name)) orelse &.{};
+    if (c.index >= calls.len or c.index >= types.len or c.data == null)
+        return decoratorError(env, a, "the decorator evaluator handed back a typed meta value the body does not record", "Report it: `decl.setMeta(v)` / `decl.addMeta(v)` are numbered in source order.");
+    const mt = types[c.index];
+    const repeat = calls[c.index].repeat;
+    for (env.methodTypedMeta.items) |m| {
+        if (!std.mem.eql(u8, m.owner, owner) or !std.mem.eql(u8, m.method, handle.name) or !std.mem.eql(u8, m.typeName, mt.name)) continue;
+        if (repeat and m.repeat) continue;
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]` records a second `{s}` on `{s}.{s}`, which holds one", .{ diagnostics.decorator_meta_twice, a.name, mt.name, owner, handle.name });
+        return decoratorError(env, a, msg, "`decl.setMeta(v)` stores one value of its type per declaration (decision 298); a value that repeats is recorded with `decl.addMeta(v)` — every one, never mixed with `setMeta` — and read with `metaAll(T)`.");
+    }
+    try env.methodTypedMeta.append(env.arena, .{
+        .owner = owner,
+        .method = handle.name,
+        .typeName = mt.name,
+        .repeat = repeat,
+        .value = try decoratorEval.metaValueTerm(env.arena, mt.fields, c.data.?),
+    });
+}
+
+/// `handle` with the typed meta its methods recorded (question s29-b), for a
+/// type's or a behavior's own decorators; `handle` itself otherwise.
+fn withMethodMeta(env: *Env, handle: decoratorEval.DeclHandle, owner: ?[]const u8) InferError!decoratorEval.DeclHandle {
+    if (handle.methods.len == 0 or env.methodTypedMeta.items.len == 0) return handle;
+    if (!std.mem.eql(u8, handle.kind, "Type") and !std.mem.eql(u8, handle.kind, "Behavior")) return handle;
+    const o = owner orelse return handle;
+    var found: std.ArrayListUnmanaged(decoratorEval.MethodMeta) = .empty;
+    for (env.methodTypedMeta.items) |m| {
+        if (!std.mem.eql(u8, m.owner, o)) continue;
+        try found.append(env.arena, .{ .method = m.method, .typeName = m.typeName, .value = m.value });
+    }
+    var out = handle;
+    out.methodMeta = found.items;
+    return out;
 }
 
 /// The record type a typed meta read names (`meta(Entity)`, `meta(orm.Entity)`):
@@ -5562,6 +5981,44 @@ pub const declared_meta_slot_type = "DeclaredTypedMeta";
 fn isDeclaredType(t: *T.Type) bool {
     const d = t.deref();
     return d.* == .named and std.mem.eql(u8, d.named.name, "Declared");
+}
+
+/// Whether `t` is a `decl.methods` entry's type (`Decl.Method`,
+/// `comptime.zig` `decl_reflection_src`).
+fn isReflectedMethodType(t: *T.Type) bool {
+    const d = t.deref();
+    return d.* == .named and (std.mem.eql(u8, d.named.name, "__Decl__Method") or std.mem.eql(u8, d.named.name, "Method"));
+}
+
+/// Question s29-b — `m.meta(T)` / `m.metaAll(T)` on a `decl.methods` entry, in
+/// a decorator's (or a template annotation's) body: `?T` / `T[]`, the typed
+/// meta the method's decorators recorded (they run before the owner's), read
+/// while the program compiles (`expr_param.eraseForRun`). `T` is a record
+/// type written by its declared name (the run looks it up by that name).
+fn inferMethodMetaRead(env: *Env, call: anytype, recv: *ast.TypedExpr, loc: ast.Loc) InferError!TypedExpr {
+    const one = std.mem.eql(u8, call.callee, "meta");
+    if (currentDeclParam(env) == null) {
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}(T)` on a `decl.methods` entry is read by a decorator's body", .{ diagnostics.typeinfo_meta_type, call.callee });
+        env.lastError = TypeError.custom(msg, "A method's typed meta is read while the program compiles, by its owner's decorator (question s29-b).").withLoc(loc);
+        return error.TypeError;
+    }
+    const mt = try metaReadType(env, call, loc);
+    if (!std.mem.eql(u8, mt.spelled, mt.name) or mt.generic) {
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}({s})` on a `decl.methods` entry names the record by another name than its declaration's `{s}`, or a generic record", .{ diagnostics.typeinfo_meta_type, call.callee, mt.spelled, mt.name });
+        env.lastError = TypeError.custom(msg, "Write the meta record as it is declared — `m.meta(Query)` —: the method's values are keyed by that name (question s29-b).").withLoc(call.args[0].value.getLoc());
+        return error.TypeError;
+    }
+    const argTyped = try env.arena.create(TypedExpr);
+    argTyped.* = try inferExprTyped(env, call.args[0].value.*);
+    const typedArgs = try env.arena.alloc(ast.CallArgOf(.typed), 1);
+    typedArgs[0] = .{ .label = null, .value = argTyped };
+    return TypedExpr{ .call = .{ .loc = loc, .type_ = try env.namedTypeArgs(if (one) "optional" else "array", &.{mt.instance}), .kind = .{ .call = .{
+        .receiver = recv,
+        .callee = call.callee,
+        .is_builtin = false,
+        .args = typedArgs,
+        .trailing = &.{},
+    } } } };
 }
 
 /// Whether `t` is the `@Decl` handle's type.
@@ -5903,7 +6360,7 @@ fn invokeDecorators(env: *Env, program: ast.Program, phase: DecoratorPhase) Infe
     // Second pass: contributions already spliced. The `.hooks` readers run
     // in the analysis that infers the bodies, whichever it is.
     if (phase == .plain and env.skipDecoratorInvoke) return;
-    if (env.decorators.count() == 0) return;
+    if (env.decorators.count() == 0 and !try hasTemplateAnnotation(env, program)) return;
     const ctx = env.templateEval orelse return;
     for (program.decls) |decl| switch (decl) {
         .@"fn" => |f| {
@@ -5916,6 +6373,7 @@ fn invokeDecorators(env: *Env, program: ast.Program, phase: DecoratorPhase) Infe
                 .returnType = if (f.returnType) |rt| try declTypeName(env.arena, rt) else "",
                 .annotations = f.annotations,
                 .hooks = if (phase == .hooksReaders) try declHooksTerm(env, f) else &.{},
+                .params = try paramHandles(env, f.params),
             };
             try runDeclDecorators(env, ctx, program, phase, f.annotations, h, null, .{ .kind = .function, .isPub = f.isPub });
         },
@@ -5946,6 +6404,21 @@ fn invokeDecorators(env: *Env, program: ast.Program, phase: DecoratorPhase) Infe
                         .annotations = fld.annotations,
                     };
                 }
+                // Question s29-b — a method's decorators run before its
+                // owner's, which read the typed meta they recorded on
+                // `decl.methods` (`m.meta(T)`, 313's repository).
+                for (tdecl.methods) |m| {
+                    const mh = decoratorEval.DeclHandle{
+                        .kind = "Method",
+                        .name = m.name,
+                        .fields = &.{},
+                        .methods = &.{},
+                        .returnType = if (m.returnType) |rt| try declTypeName(env.arena, rt) else "",
+                        .annotations = m.annotations,
+                        .params = try paramHandles(env, m.params),
+                    };
+                    try runDeclDecorators(env, ctx, program, phase, m.annotations, mh, tdecl.name, null);
+                }
                 const h = decoratorEval.DeclHandle{
                     .kind = "Type",
                     .name = tdecl.name,
@@ -5966,6 +6439,16 @@ fn invokeDecorators(env: *Env, program: ast.Program, phase: DecoratorPhase) Infe
                     };
                     try runDeclDecorators(env, ctx, program, phase, fld.annotations, fh, tdecl.name, null);
                 }
+            },
+            .enum_ => {
+                const vs = tdecl.variants();
+                const secs = tdecl.sections();
+                const names = try env.arena.alloc([]const u8, vs.len + secs.len);
+                for (vs, 0..) |v, i| names[i] = v.name;
+                for (secs, 0..) |sec, i| names[vs.len + i] = sec.name;
+                // Question s29-b — a method's decorators run before its
+                // owner's, which read the typed meta they recorded on
+                // `decl.methods` (`m.meta(T)`, 313's repository).
                 for (tdecl.methods) |m| {
                     const mh = decoratorEval.DeclHandle{
                         .kind = "Method",
@@ -5974,16 +6457,10 @@ fn invokeDecorators(env: *Env, program: ast.Program, phase: DecoratorPhase) Infe
                         .methods = &.{},
                         .returnType = if (m.returnType) |rt| try declTypeName(env.arena, rt) else "",
                         .annotations = m.annotations,
+                        .params = try paramHandles(env, m.params),
                     };
                     try runDeclDecorators(env, ctx, program, phase, m.annotations, mh, tdecl.name, null);
                 }
-            },
-            .enum_ => {
-                const vs = tdecl.variants();
-                const secs = tdecl.sections();
-                const names = try env.arena.alloc([]const u8, vs.len + secs.len);
-                for (vs, 0..) |v, i| names[i] = v.name;
-                for (secs, 0..) |sec, i| names[vs.len + i] = sec.name;
                 const h = decoratorEval.DeclHandle{
                     .kind = "Type",
                     .name = tdecl.name,
@@ -5994,17 +6471,6 @@ fn invokeDecorators(env: *Env, program: ast.Program, phase: DecoratorPhase) Infe
                     .annotations = tdecl.annotations,
                 };
                 try runDeclDecorators(env, ctx, program, phase, tdecl.annotations, h, tdecl.name, .{ .kind = .type_, .isPub = tdecl.isPub });
-                for (tdecl.methods) |m| {
-                    const mh = decoratorEval.DeclHandle{
-                        .kind = "Method",
-                        .name = m.name,
-                        .fields = &.{},
-                        .methods = &.{},
-                        .returnType = if (m.returnType) |rt| try declTypeName(env.arena, rt) else "",
-                        .annotations = m.annotations,
-                    };
-                    try runDeclDecorators(env, ctx, program, phase, m.annotations, mh, tdecl.name, null);
-                }
             },
         },
         .behavior => |i| {
@@ -6019,6 +6485,19 @@ fn invokeDecorators(env: *Env, program: ast.Program, phase: DecoratorPhase) Infe
                     .annotations = &.{},
                 };
             }
+            // Question s29-b — a method's decorators run before its owner's.
+            for (i.methods) |m| {
+                const mh = decoratorEval.DeclHandle{
+                    .kind = "Method",
+                    .name = m.name,
+                    .fields = &.{},
+                    .methods = &.{},
+                    .returnType = if (m.returnType) |rt| try declTypeName(env.arena, rt) else "",
+                    .annotations = m.annotations,
+                    .params = try paramHandles(env, m.params),
+                };
+                try runDeclDecorators(env, ctx, program, phase, m.annotations, mh, i.name, null);
+            }
             const h = decoratorEval.DeclHandle{
                 .kind = "Behavior",
                 .name = i.name,
@@ -6028,20 +6507,18 @@ fn invokeDecorators(env: *Env, program: ast.Program, phase: DecoratorPhase) Infe
                 .annotations = i.annotations,
             };
             try runDeclDecorators(env, ctx, program, phase, i.annotations, h, i.name, .{ .kind = .behavior, .isPub = i.isPub });
-            for (i.methods) |m| {
-                const mh = decoratorEval.DeclHandle{
-                    .kind = "Method",
-                    .name = m.name,
-                    .fields = &.{},
-                    .methods = &.{},
-                    .returnType = if (m.returnType) |rt| try declTypeName(env.arena, rt) else "",
-                    .annotations = m.annotations,
-                };
-                try runDeclDecorators(env, ctx, program, phase, m.annotations, mh, i.name, null);
-            }
         },
         else => {},
     };
+}
+
+/// `decl.params` — a function's or a method's own parameters as the handle
+/// carries them (`01-checker` step 29, decision 280): each name and its type
+/// as written, `self` included.
+fn paramHandles(env: *Env, params: []const ast.Param) InferError![]const decoratorEval.ParamHandle {
+    const out = try env.arena.alloc(decoratorEval.ParamHandle, params.len);
+    for (params, 0..) |p, i| out[i] = .{ .name = p.name, .typeName = try declTypeName(env.arena, p.typeRef) };
+    return out;
 }
 
 /// The index of the element labeled `label` (decision 8 §6), or null when no
@@ -6889,7 +7366,7 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     // Decision 370 (2) — what a member function handed to `decl.addMember`
     // may not read.
     const savedDecoratorBody = env.decoratorBody;
-    env.decoratorBody = if (env.inDecoratorFn) f.body else null;
+    env.decoratorBody = if (env.inDecoratorFn or memberFn.isTemplateAnnotation(f)) f.body else null;
     defer env.decoratorBody = savedDecoratorBody;
     // Decision 354 — a component's body (its `R` implements `@Renderable`)
     // may `use provide`; where it first renders a child is tracked per body.
@@ -16840,18 +17317,14 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
         .call => |call| {
             // Decision 370 (2) — `decl.addMember(name, fn…)` in a decorator's
             // body: the member function is the program's code.
-            if (env.inDecoratorFn and env.currentParams.len > 0 and isDecoratorParams(env.currentParams) and
-                call.args.len == 2 and memberFn.isAddMemberOn(call, env.currentParams[0].name))
-            {
+            if (currentDeclParam(env)) |declName| if (call.args.len == 2 and memberFn.isAddMemberOn(call, declName)) {
                 return inferMemberFnCall(env, call, loc);
-            }
+            };
             // Decision 298 — `decl.setMeta(v)` / `decl.addMeta(v)` in a
             // decorator's body: a typed meta value.
-            if (env.inDecoratorFn and env.currentParams.len > 0 and isDecoratorParams(env.currentParams) and
-                isTypedMetaOn(call, env.currentParams[0].name))
-            {
+            if (currentDeclParam(env)) |declName| if (isTypedMetaOn(call, declName)) {
                 return inferTypedMetaCall(env, call, loc);
-            }
+            };
             // Decision 298 — `@typeInfo(X).meta(T)` / `.metaAll(T)`.
             if (!call.is_builtin and call.calleeExpr == null and (std.mem.eql(u8, call.callee, "meta") or std.mem.eql(u8, call.callee, "metaAll"))) {
                 if (call.receiver) |r| if (r.* == .call and r.call.kind == .call and r.call.kind.call.is_builtin and std.mem.eql(u8, r.call.kind.call.callee, "typeInfo")) {
@@ -17030,6 +17503,12 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
             // Decision 371 — `d.same(other)` on a `Decorator`.
             if (typedReceiver) |rp| if (!call.is_builtin and call.calleeExpr == null and std.mem.eql(u8, call.callee, "same") and isDecoratorType(rp.getType())) {
                 return inferDecoratorSame(env, call, rp, loc);
+            };
+            // Question s29-b — `m.meta(T)` / `m.metaAll(T)` on a
+            // `decl.methods` entry: the typed meta the method's decorators
+            // recorded, read at build.
+            if (typedReceiver) |rp| if (!call.is_builtin and call.calleeExpr == null and (std.mem.eql(u8, call.callee, "meta") or std.mem.eql(u8, call.callee, "metaAll")) and isReflectedMethodType(rp.getType())) {
+                return inferMethodMetaRead(env, call, rp, loc);
             };
             // Decision 298 — `d.meta(T)` / `d.metaAll(T)` on a catalogue entry.
             if (typedReceiver) |rp| if (!call.is_builtin and call.calleeExpr == null and (std.mem.eql(u8, call.callee, "meta") or std.mem.eql(u8, call.callee, "metaAll")) and isDeclaredType(rp.getType())) {
@@ -17755,6 +18234,14 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                     // `expr` meta-kind params capture their argument unevaluated
                     // instead of unifying it against `expr T` (expr-templates F4).
                     const exprParams = env.lookupExprParams(call.callee);
+                    // Decision 311, question s29-a — a template taking the
+                    // annotated declaration's `@Decl` is written only as an
+                    // annotation, `#[f "…"]`.
+                    if (templateFnNamed(env, call.callee)) |tfn| if (memberFn.isTemplateAnnotation(tfn)) {
+                        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` takes the annotated declaration (`comptime {s}: @Decl`), so it is written as an annotation `#[{s} \"…\"]`, never called", .{ diagnostics.template_annotation_only, call.callee, tfn.params[1].name, call.callee });
+                        env.lastError = TypeError.custom(msg, "A template called in an expression has no declaration to record on; write the template without the `@Decl` parameter for a call site (decision 311, question s29-a).").withLoc(loc);
+                        return error.TypeError;
+                    };
 
                     var spreadCount: usize = 0;
                     var nonSpreadCount: usize = 0;

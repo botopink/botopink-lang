@@ -1932,6 +1932,14 @@ pub const Annotation = struct {
     /// decorator argument is refused at the argument). Empty for a
     /// synthesized annotation; diagnostic metadata, never serialized.
     argLocs: []const Loc = &.{},
+    /// Decision 311 — the template annotation `#[f "…"]` / `#[f """…"""]`:
+    /// the template call `f "…"` written as an annotation. The literal as
+    /// written, quotes included — a node of its own beside the call form
+    /// (`args` is then empty); the checker parses it again and captures it
+    /// unevaluated, as at a call site (`infer.zig` `checkTemplateAnnotation`).
+    template: ?[]const u8 = null,
+    /// Where the template annotation's literal starts.
+    templateLoc: ?Loc = null,
 
     /// Where argument `i` starts, or the annotation's own location.
     pub fn argLoc(this: Annotation, i: usize) ?Loc {
@@ -1967,6 +1975,10 @@ pub const Annotation = struct {
         try jws.write(this.name);
         try jws.objectField("args");
         try jws.write(this.writtenArgs());
+        if (this.template) |t| {
+            try jws.objectField("template");
+            try jws.write(t);
+        }
         if (this.labels.len > 0) {
             try jws.objectField("labels");
             try jws.write(this.labels);

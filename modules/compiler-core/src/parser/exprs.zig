@@ -2456,6 +2456,20 @@ fn findInterpStart(s: []const u8, from: usize) ?usize {
     return null;
 }
 
+/// The source of each `${…}` hole of a string literal's content, in order
+/// (decision 311: a template annotation's outputs name a hole by the
+/// expression written in it). An unterminated hole ends the list.
+pub fn holeSources(alloc: std.mem.Allocator, content: []const u8) std.mem.Allocator.Error![]const []const u8 {
+    var out: std.ArrayList([]const u8) = .empty;
+    var cursor: usize = 0;
+    while (findInterpStart(content, cursor)) |start| {
+        const close = findInterpEnd(content, start + 1) orelse break;
+        try out.append(alloc, std.mem.trim(u8, content[start + 2 .. close], " \t\r\n"));
+        cursor = close + 1;
+    }
+    return out.toOwnedSlice(alloc);
+}
+
 /// Index of the `}` matching the `{` at `open` (brace-depth and nested-string
 /// aware — mirrors `Lexer.scanInterpolation`), or null when unterminated.
 fn findInterpEnd(s: []const u8, open: usize) ?usize {
@@ -2569,6 +2583,18 @@ fn materializeLineString(alloc: std.mem.Allocator, lexeme: []const u8) ParseErro
         try buf.appendSlice(alloc, if (trimmed.len >= 2) trimmed[2..] else "");
     }
     return buf.toOwnedSlice(alloc);
+}
+
+/// A `"…"` or `"""…"""` token as the string expression a tagged call's
+/// argument is (decision 311: the template annotation `#[f "…"]` reads its
+/// literal through the same path as `f "…"`).
+pub fn parseStringToken(this: *This, alloc: std.mem.Allocator, strTok: Token) ParseError!Expr {
+    const multiline = strTok.kind != .stringLiteral;
+    const content = switch (strTok.kind) {
+        .multilineStringLiteral => strTok.lexeme[3 .. strTok.lexeme.len - 3],
+        else => strTok.lexeme[1 .. strTok.lexeme.len - 1],
+    };
+    return makeStringExpr(this, alloc, strTok, content, multiline);
 }
 
 /// Builds either a plain `stringLit` or, when the content contains `${…}`

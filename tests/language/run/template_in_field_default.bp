@@ -1,0 +1,19 @@
+//// Decision 425 — a template call expands wherever an expression may stand:
+//// as a record field's default and a parameter's default, for every call that
+//// leaves it out.
+
+fn twice(comptime q: @Expr<string>) -> @Expr<string> {
+    return q.build("\"" + q.text() + q.text() + "\"");
+}
+
+type Conf(label: string = twice "x" + "!", size: i32 = 1)
+
+fn greet(name: string = twice "na") -> string {
+    return "hi " + name;
+}
+
+pub fn main() {
+    @print(Conf().label);
+    @print(Conf(size: 2).label + Conf(label: "own").label);
+    @print(greet());
+}

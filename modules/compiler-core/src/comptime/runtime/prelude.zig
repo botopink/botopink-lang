@@ -74,6 +74,11 @@ pub const fail_arg_fn = "__bp_failArg";
 /// in a decorator body (`typed_meta.typed_meta_fn`).
 pub const typed_meta_fn = "__bp_typedMeta";
 
+/// Question s29-b — the functions `m.meta(T)` / `m.metaAll(T)` on a
+/// `decl.methods` entry become in a decorator body (`expr_param.eraseForRun`).
+pub const method_meta_fn = "__bp_methodMeta";
+pub const method_meta_all_fn = "__bp_methodMetaAll";
+
 /// The prelude's walk of a typed meta value before it is encoded
 /// (`'__bp_metaJson'/1`): `undefined` (a comptime `null`) becomes `null`.
 const meta_json_fn = "__bp_metaJson";
@@ -227,6 +232,30 @@ pub fn templateForms(b: Ast.Builder) Error![]const Ast.Form {
     return forms.items;
 }
 
+/// Decision 311 — the capture API a template annotation's body reads its
+/// literal through (`text/1`, `parts/1`, `source/1`, `context/1`,
+/// `bindings/1`, `lookup/2`, `ref/1`) and the result constructors its
+/// `return` builds (`build/2`, `custom/3`, `expr/1`, `code/1`): the template
+/// prelude's forms of those names. A template annotation runs on the
+/// decorator prelude (its handle's `fail`, `setMeta`, …), so these are
+/// rendered into its module instead of imported — a second resident would
+/// clash with the decorator's `fail/2` / `failAt/3` / `compilerError/1`, which
+/// are not carried (the handle's report at the annotation).
+pub fn captureForms(b: Ast.Builder) Error![]const Ast.Form {
+    const names = [_][]const u8{ "text", "parts", "source", "context", "bindings", "lookup", "ref", "build", "custom", "expr", "code" };
+    var out: std.ArrayListUnmanaged(Ast.Form) = .empty;
+    for (try templateForms(b)) |form| switch (form) {
+        .function => |f| for (names) |n| {
+            if (std.mem.eql(u8, f.name, n)) {
+                try out.append(b.arena, form);
+                break;
+            }
+        },
+        else => {},
+    };
+    return out.items;
+}
+
 /// The host functions of `bp_comptime_decorator`. `fail`/`failAt`/
 /// `compilerError` throw a tagged rejection `main/0` catches; `emit` accumulates
 /// sources in the process dictionary, newest first, and `'__bp_emitted'/0` reads
@@ -309,6 +338,25 @@ pub fn decoratorForms(b: Ast.Builder) Error![]const Ast.Form {
             try b.caseOf(try b.remote("erlang", "get", &.{key}), &.{
                 try b.clause(&.{A("undefined")}, &.{}, &.{try b.list(&.{})}),
                 try b.clause(&.{V("Sources")}, &.{}, &.{V("Sources")}),
+            }),
+        }),
+        // Question s29-b — `m.meta(T)` / `m.metaAll(T)` on a `decl.methods`
+        // entry (`comptime/expr_param.zig` `eraseForRun`): the values of
+        // record type `T` the method's decorators recorded, `undefined` /
+        // `[]` when none.
+        try b.function(method_meta_all_fn, &.{ try b.map(&.{Ast.exactField("meta", V("Metas"))}), V("Type") }, &.{}, &.{
+            .{ .list_comp = .{
+                .element = try b.ptr(V("Value")),
+                .qualifiers = try b.arena.dupe(Ast.ListComp.Qualifier, &.{
+                    .{ .generator = .{ .pattern = try b.map(&.{ Ast.exactField("type", V("T")), Ast.exactField("value", V("Value")) }), .list = V("Metas") } },
+                    .{ .filter = .{ .binop = .{ .op = "=:=", .lhs = try b.ptr(V("T")), .rhs = try b.ptr(V("Type")), .parens = false } } },
+                }),
+            } },
+        }),
+        try b.function(method_meta_fn, &.{ V("Method"), V("Type") }, &.{}, &.{
+            try b.caseOf(try b.call(method_meta_all_fn, &.{ V("Method"), V("Type") }), &.{
+                try b.clause(&.{try b.cons(&.{V("First")}, V("_"))}, &.{}, &.{V("First")}),
+                try b.clause(&.{try b.list(&.{})}, &.{}, &.{A("undefined")}),
             }),
         }),
         // Decision 364 (3) — `x.fail(m)` on a decorator parameter

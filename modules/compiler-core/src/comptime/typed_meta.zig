@@ -168,7 +168,17 @@ const helper_first_line: usize = 2_000_000;
 /// every backend lowers a typed body.
 pub fn withMetaHelper(arena: std.mem.Allocator, program: ast.Program) !ast.Program {
     var finder: ReadFinder = .{ .arena = arena };
-    try finder.walk([]const ast.DeclKind, program.decls);
+    // A decorator's or a template's body runs while the program compiles: a
+    // `meta(T)` read there is a `decl.methods` entry's (question s29-b), never
+    // a catalogue entry's (refused there, `typeinfo-meta-at-build`).
+    for (program.decls) |d| {
+        if (d == .@"fn") {
+            const f = d.@"fn";
+            if (memberFn.declParamIndex(f) != null) continue;
+            if (f.returnType) |rt| if (rt.isTemplateReturnType()) continue;
+        }
+        try finder.walk(ast.DeclKind, d);
+    }
     if (finder.types.count() == 0) return program;
     const lexer = @import("../lexer.zig");
     const Parser = @import("../parser.zig").Parser;

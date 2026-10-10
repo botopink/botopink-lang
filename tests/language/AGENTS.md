@@ -834,6 +834,23 @@ body and answered with `Conta`'s two `#[check]`s where the member is rendered; t
 run with the program) and `modules/decorator_member_type_same_name` (a member naming its module's
 `Violation` where the annotated module declares one: `import-name-collision` at the annotation until
 decision 310 is built), and `modules/decorator_member_type_travels` (an importer of the annotated type calls the member whose signature names the decorator module's `Violation`, which the importer never imports; on wasm the linked module's hygiene alias resolves by `wat.zig` `linkRenames`). Each red on the parent binary.
+Decision 311 (`01-checker` step 29 — the template annotation `#[f "…"]`) adds, on the four targets,
+`run/template_annotation`: a template `query(comptime q: @Expr<string>, comptime decl: @Decl)`
+written on a behavior's methods (`"…"` and `"""…"""`, beside a decorator) and on a function, each
+hole resolving to the declaration's parameter by name, the method's typed meta read by the
+behavior's `#[repository]` on `decl.methods` (`m.meta(Query)`, `m.meta(Audit)`, question `s29-b`),
+the function's by `@typeInfo(logout).meta(Query)`, and `decl.params` on a method;
+`modules/template_annotation_imported` (the template, a helper its body calls and the owner's
+decorator declared in another module); and the refusals
+`reject/template_annotation_call_form` (`#[f(…)]` naming a template), `reject/template_annotation_not_template`
+(a decorator at `#[f "…"]`), `reject/template_annotation_unknown_hole` (a hole naming no parameter —
+the unbound-name error at the hole), `reject/template_annotation_without_decl` and
+`reject/template_annotation_called` (question `s29-a`). Each red on the parent binary.
+Decision 425 (a template call expands wherever an expression may stand, `01-checker` step 29) adds,
+on the four targets, `run/template_in_type_method`, `run/template_destructuring_init` and
+`run/template_in_field_default` (a field's and a parameter's default) — red on the parent binary
+(`twice is not defined` at run time) — and `run/template_in_lambda`, `run/template_in_argument`,
+`run/template_in_case_arm`, which the parent already expanded.
 
 Every cell is copied into its own scratch project, so a parse error fails only that cell. Test names
 start with the decision-8 section they pin (`test "§5.4 …"`) when there is one, so a failure points at

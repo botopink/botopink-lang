@@ -1,0 +1,23 @@
+//// Decision 425 — a template call expands wherever an expression may stand:
+//// in a `case` arm.
+
+fn twice(comptime q: @Expr<string>) -> @Expr<string> {
+    return q.build("\"" + q.text() + q.text() + "\"");
+}
+
+fn label(n: i32) -> string {
+    return case n {
+        1 -> twice "gh";
+        _ -> "other";
+    };
+}
+
+pub fn main() {
+    @print(label(1));
+    @print(label(2));
+    val k = case label(1) {
+        "ghgh" -> twice "ok";
+        _ -> "no";
+    };
+    @print(k);
+}

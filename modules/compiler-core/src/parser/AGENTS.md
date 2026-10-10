@@ -90,6 +90,7 @@ parser/
     ├── surface.zig       ← the 1.0.3 surface: `type` shapes, the field list, `behavior`, separators, and old-vs-new AST equality
     ├── decision8.zig     ← decision 8's grammar, one section per row: `unknown` (N19), union types (N20), `is` (N21), `case` arms (N22)
     ├── decision280.zig   ← decision 280's parser half: a `comptime` parameter's default and location (`Param.loc`), a decorator argument as one located expression span, the trailing comma of an annotation list
+    ├── decision311.zig   ← decision 311's parser half: the template annotation `#[f "…"]` / `#[f """…"""]` (`parser.zig` `parseAnnotationCall` → `Annotation.template` + `templateLoc`, the literal as written; its holes parsed by `exprs.zig` `parseStringToken`, so a malformed one is a parse error), alone and inside a list, its AST dump; a builtin `@` annotation takes no literal
     ├── decision255.zig   ← decision 255's two expression forms: a type application before a member (`Dict<string, unknown>.empty()`, the comparisons that stay comparisons) and `comptime <expr>`, each with its `botopink format` round-trip
     ├── effect_rejections.zig ← parser-level `#[@<effect>]` rejections (R1/R2/R5…; R5 carets the second annotation, 01 R9)
     └── language_surface.zig  ← front 15's rows: the forms the documents write against the grammar (R1 the `T[]` suffix, R2 the postfix chain, R3 a number as a receiver, R4 the shared block body, R5 the index expression, R7 a bodyless `fn`, R8 `??`, R9 the catch-all names its token, R10 the decided-against forms refused by name)

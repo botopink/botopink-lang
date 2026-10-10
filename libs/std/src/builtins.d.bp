@@ -611,6 +611,10 @@ pub type Field(
 )
 
 // One method of a reflected record/struct/enum, with its own annotations.
+// Question s29-b — a method's decorators run before its owner's, and the
+// owner's body reads the typed meta they recorded on the entry: `m.meta(T)`
+// (`?T`) / `m.metaAll(T)` (`T[]`), `T` the record written by its declared
+// name; the checker answers the call (`infer.zig` `inferMethodMetaRead`).
 pub type Method(
     name: string,
     params: Param[],
@@ -644,6 +648,10 @@ pub behavior Decl<T> {
     // functions, breadth-first in body order, each function once. Empty for
     // any other declaration.
     val hooks: HookNode[];
+    // A function's or a method's own parameters, in order (`01-checker` step
+    // 29, decision 280): a method's `@Decl` carries its parameter list as a
+    // `decl.methods` entry does. Empty for any other declaration.
+    val params: Param[];
 
     fn fail(self: Self, message: string);
     fn failAt(self: Self, span: Span, message: string);

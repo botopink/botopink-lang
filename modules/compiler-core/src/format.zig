@@ -2299,7 +2299,13 @@ pub const Formatter = struct {
         defer docs.deinit(this.arena);
         for (annotations) |ann| {
             const prefix: []const u8 = if (ann.is_builtin) "@" else "";
-            if (ann.writtenArgs().len == 0) {
+            // Decision 311 — the template annotation prints as written: the
+            // name, one space, the literal (`"…"` or `"""…"""`) untouched.
+            if (ann.template) |lit| {
+                try docs.append(this.arena, try this.text(
+                    try std.fmt.allocPrint(this.arena, "#[{s} {s}]", .{ ann.name, lit }),
+                ));
+            } else if (ann.writtenArgs().len == 0) {
                 try docs.append(this.arena, try this.text(
                     try std.fmt.allocPrint(this.arena, "#[{s}{s}]", .{ prefix, ann.name }),
                 ));
@@ -2492,7 +2498,9 @@ pub const Formatter = struct {
         }
         for (f.annotations) |ann| {
             const prefix: []const u8 = if (ann.is_builtin) "@" else "";
-            const annText = if (ann.writtenArgs().len == 0)
+            const annText = if (ann.template) |lit|
+                try std.fmt.allocPrint(this.arena, "#[{s} {s}] ", .{ ann.name, lit })
+            else if (ann.writtenArgs().len == 0)
                 try std.fmt.allocPrint(this.arena, "#[{s}{s}] ", .{ prefix, ann.name })
             else
                 try std.fmt.allocPrint(this.arena, "#[{s}{s}({s})] ", .{ prefix, ann.name, try std.mem.join(this.arena, ", ", ann.writtenArgs()) });

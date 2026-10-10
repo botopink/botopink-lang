@@ -1248,6 +1248,24 @@ pub const Parser = struct {
             break :blk @as([*]const u8, @ptrFromInt(begin))[0 .. end - begin];
         };
 
+        // Decision 311 — `#[f "…"]` / `#[f """…"""]`: the template call
+        // `f "…"` written as an annotation. The literal is kept as written (a
+        // node of its own beside the call form) and read again by the checker,
+        // which captures it unevaluated; its `${…}` holes are parsed here so a
+        // malformed hole is a parse error at the literal.
+        if (!is_builtin and (this.check(.stringLiteral) or this.check(.multilineStringLiteral))) {
+            const strTok = this.advance();
+            var probe = try exprs.parseStringToken(this, alloc, strTok);
+            probe.deinit(alloc);
+            return Annotation{
+                .name = name,
+                .args = &.{},
+                .template = strTok.lexeme,
+                .templateLoc = locFromToken(strTok),
+                .loc = .{ .line = name_start.line, .col = name_start.col },
+            };
+        }
+
         var args: std.ArrayList([]const u8) = .empty;
         errdefer args.deinit(alloc);
         // One entry per argument: the label written before it, or `""`.

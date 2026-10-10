@@ -2608,13 +2608,24 @@ fn greet(who: string) -> string {
 }
 ```
 
+A template call expands wherever an expression may stand (decision 425): a
+function's or a type's method body, a destructuring initializer
+(`val #(n, total) = f "…";`), a lambda, an argument, a record field's or a
+parameter's default (each call that leaves it out gets the expansion), a
+`case` arm. A call the compiler did not expand is refused where it is
+written (`template-call-unexpanded`), never left to run as a call of a
+function that exists only at build.
+
+A template whose second parameter is `comptime decl: @Decl` is written as an
+annotation, `#[f "…"]` — § Template annotations below.
+
 ### Decorators
 
 A decorator is a function whose first parameter is `comptime decl: @Decl`;
 `#[name(args)]` runs it at compile time over the declaration it annotates, the
 annotation's arguments after the handle. `decl` reflects the declaration
 (`kind`, `name`, `fields`, `variants`, `methods`, `returnType`,
-`annotations`, and a function's `hooks`, § The hooks a function reaches), `decl.fail(message)` refuses it at the annotation, and what
+`annotations`, a function's or a method's own `params`, and a function's `hooks`, § The hooks a function reaches), `decl.fail(message)` refuses it at the annotation, and what
 the decorator produces goes to one of four places (decision 216):
 
 | Place | Written | Read |
@@ -3067,6 +3078,83 @@ fn clientOnly(comptime decl: @Decl) {
 #[clientOnly]
 fn Widget() -> string {
     return "w";
+}
+```
+
+### Template annotations (decision 311)
+
+The template call `f "…"` may be written as an annotation, `#[f "…"]` or
+`#[f """…"""]`, alone or in a `#[a, b]` list. `f` is a template function
+whose first parameter is the literal, `comptime q: @Expr<…>`, and whose second
+receives the annotated declaration, `comptime decl: @Decl<…>` (question
+`s29-a`). Such a function is written only as an annotation; a template for a
+call site declares no `@Decl`:
+
+- the literal is captured unevaluated, as at a call site: `q.text()`,
+  `q.parts()` (each hole an `Interp` part whose `code` names it), `q.lookup`,
+  `q.value` for a literal without a hole;
+- a `${…}` hole resolves in the annotated declaration's scope — on a function
+  or a method its parameters, by name and type (a method's `self` is
+  `Self`) —, every other name in the module's scope, its imports included
+  (decision 112); a name it does not declare is the ordinary unbound-name
+  error at the hole;
+- what the body records goes where a decorator's does (decision 216): typed
+  meta (decision 298), a member, an associated type, a loose declaration. A
+  string an output carries names a hole by the expression written in it —
+  the part's `code` placeholder becomes `id` where the meta is recorded;
+- the value it returns is not used: an annotation has no call site to splice
+  it into. `q.fail(m)` / `decl.fail(m)` refuse the declaration at the
+  annotation.
+
+Refused at the annotation: a name that is not a template function
+(`template-annotation-not-template`), a template that takes no `@Decl`
+(`template-annotation-without-decl`) and the call form `#[f(…)]` or `#[f]`
+naming a template function (`template-annotation-call-form`, naming
+`#[f "…"]`); a call `f "…"` of a template that takes a `@Decl` is
+`template-annotation-only` at the call.
+
+**A method's typed meta, read by its owner's decorator** (question `s29-b`).
+A method's decorators — a template annotation and a `#[d(…)]` alike — run
+before its owner's, and the typed meta they record (`decl.setMeta(v)`,
+`decl.addMeta(v)`) is read by the owner's decorator on a `decl.methods` entry:
+`m.meta(T)` is a `?T`, `m.metaAll(T)` a `T[]`, `T` the record written by its
+declared name. A field's decorator still records no meta
+(`decorator-meta-on-member`).
+
+```botopink
+pub type Query(sql: string, params: string[])
+
+fn query(comptime q: @Expr<string>, comptime decl: @Decl) -> @Expr<string> {
+    var sql = "";
+    var params: string[] = [];
+    for (q.parts()) { p ->
+        if (p.kind == "Interp") {
+            params.push(p.code);
+            sql = sql + "$" + params.length.toString();
+        } else sql = sql + p.text;
+    }
+    decl.setMeta(Query(sql: sql, params: params));
+    return q.build("\"\"");
+}
+
+fn repository(comptime decl: @Decl) {
+    var lines: string[] = [];
+    for (decl.methods) { m ->
+        val found = m.meta(Query);
+        if (found != null) lines.push(m.name + ": " + found.sql + " <- " + found.params.join(", "));
+    }
+    decl.setMeta("statements", lines.join(" | "));
+}
+
+#[repository]
+behavior Users {
+    #[query "select * from users where id = ${id} limit 1"]
+    fn find(self: Self, id: i32) -> string;
+}
+
+fn main() {
+    // find: select * from users where id = $1 limit 1 <- id
+    @print(@typeInfo(Users).meta.repository.statements);
 }
 ```
 

@@ -1,0 +1,2 @@
+template-annotation-without-decl: `#[shout "…"]` names the template function `shout`, which takes no `comptime decl: @Decl` beside its literal
+10:3

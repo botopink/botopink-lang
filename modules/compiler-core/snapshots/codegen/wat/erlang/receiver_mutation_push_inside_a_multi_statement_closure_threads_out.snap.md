@@ -783,7 +783,8 @@ fn main() {
 ;;     methods => [],
 ;;     returnType => <<"">>,
 ;;     annotations => [#{name => <<"component">>, args => [], decorator => <<"main@@component">>}],
-;;     hooks => []
+;;     hooks => [],
+;;     params => []
 ;; }
 ```
 

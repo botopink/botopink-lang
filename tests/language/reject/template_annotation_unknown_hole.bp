@@ -1,0 +1,28 @@
+//// Decision 311 — a `${…}` hole of a template annotation resolves in the
+//// annotated declaration's scope: on a method, its parameters by name and
+//// type. A name the method does not declare is the ordinary unbound-name
+//// error at the hole.
+
+type Query(sql: string)
+
+fn sql(comptime q: @Expr<string>, comptime decl: @Decl) -> @Expr<string> {
+    decl.addMember(
+        "pub fn "
+            + decl.name
+            + "Text() -> string { return \""
+            + q.text()
+            + "\"; }",
+    );
+    return q.build("\"\"");
+}
+
+type Users(n: i32) {
+    #[sql "select * from users where id = ${userId}"]
+    pub fn find(self: Self, id: i32) -> i32 {
+        return id + self.n;
+    }
+}
+
+pub fn main() {
+    @print(Users(n: 1).find(2).toString());
+}

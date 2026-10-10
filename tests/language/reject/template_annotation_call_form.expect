@@ -1,0 +1,2 @@
+template-annotation-call-form: `#[sql(…)]` names the template function `sql`, which is written as an annotation `#[sql "…"]`
+11:3

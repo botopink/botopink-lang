@@ -1037,3 +1037,61 @@ test "format: a variadic parameter keeps its `..`" {
         \\) -> type;
     );
 }
+
+// Decision 311 (`01-checker` step 29, `16-formatter` step 9) — the template
+// annotation `#[f "…"]` prints as written, the literal untouched: a one-line
+// literal with a hole, a `"""…"""` literal across lines, on a method, on a
+// function and on a field.
+test "format: template annotation ---- one-line literal on a method" {
+    try h.assertFormat(std.testing.allocator,
+        \\type Users(n: i32) {
+        \\    #[sql "select * from users where id = ${id} limit 1"]
+        \\    pub fn find(self: Self, id: i32) -> i32 {
+        \\        return id;
+        \\    }
+        \\}
+    );
+}
+
+test "format: template annotation ---- multiline literal on a function" {
+    try h.assertFormat(std.testing.allocator,
+        \\#[sql """
+        \\    select *
+        \\      from users
+        \\     where id = ${id}
+        \\"""]
+        \\fn find(id: i32) -> i32 {
+        \\    return id;
+        \\}
+    );
+}
+
+test "format: template annotation ---- on a field" {
+    try h.assertFormat(std.testing.allocator,
+        \\type Row(#[col "user_id"] id: i32)
+    );
+}
+
+test "format: template annotation ---- idempotent and lossless beside a decorator" {
+    try h.assertIdempotent(std.testing.allocator,
+        \\#[mark]
+        \\#[sql "a ${b} c"]
+        \\fn f(b: string) {}
+    );
+    try h.assertLossless(std.testing.allocator,
+        \\#[mark]
+        \\#[sql """x ${b}"""]
+        \\fn f(b: string) {}
+    );
+}
+
+test "format: template annotation ---- inside a list prints one block each, as every list does" {
+    try h.assertFormatAs(std.testing.allocator,
+        \\#[mark, sql "a ${b}"]
+        \\fn f(b: string) {}
+    ,
+        \\#[mark]
+        \\#[sql "a ${b}"]
+        \\fn f(b: string) {}
+    );
+}

@@ -619,6 +619,17 @@ pub const DecoratorArgValue = struct {
     lexeme: []const u8 = "",
 };
 
+/// Question s29-b — one typed meta value recorded on a method: its owner,
+/// the method, the record type's declared name, whether the type repeats
+/// (`addMeta`), and the value as the build-time term a decorator body reads.
+pub const MethodTypedMeta = struct {
+    owner: []const u8,
+    method: []const u8,
+    typeName: []const u8,
+    repeat: bool,
+    value: @import("../codegen/beam/term.zig").Term,
+};
+
 pub const DecoratorSig = struct {
     params: []const ast.Param,
     fn_decl: ?ast.FnDecl = null,
@@ -1271,6 +1282,11 @@ pub const Env = struct {
     /// decorator / template evaluation in this module, in order (snapshots).
     /// Allocated in `arena`.
     comptimeTraces: std.ArrayListUnmanaged(trace.Entry) = .empty,
+    /// Question s29-b — the typed meta a method's decorators recorded
+    /// (decision 298 on a method, 313), in recording order: the owner's own
+    /// decorators run after its methods' and read it on `decl.methods`
+    /// (`m.meta(T)` / `m.metaAll(T)`, `decorator_eval.DeclHandle.methodMeta`).
+    methodTypedMeta: std.ArrayListUnmanaged(MethodTypedMeta) = .empty,
     /// Decision 57 (1.0.5-beta) — the checker's warning channel: diagnostics
     /// that do not stop the compilation, each a located `TypeError` rendered
     /// like an error. Filled through `warn`; surfaced as `OkData.warnings`.

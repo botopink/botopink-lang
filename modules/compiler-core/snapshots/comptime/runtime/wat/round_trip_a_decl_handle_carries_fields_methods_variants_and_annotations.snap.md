@@ -1094,7 +1094,8 @@ val m = describeMode();
 ;;                 #{name => <<"by">>, typeName => <<"i32">>}
 ;;             ],
 ;;             returnType => <<"Point">>,
-;;             annotations => []
+;;             annotations => [],
+;;             meta => []
 ;;         }
 ;;     ],
 ;;     returnType => <<"">>,
@@ -1105,7 +1106,8 @@ val m = describeMode();
 ;;             decorator => <<"main@@describe">>
 ;;         }
 ;;     ],
-;;     hooks => []
+;;     hooks => [],
+;;     params => []
 ;; }
 ;; Arg1 = <<"record">>
 ```
@@ -2171,7 +2173,8 @@ val m = describeMode();
 ;;             name => <<"label">>,
 ;;             params => [#{name => <<"self">>, typeName => <<"Self">>}],
 ;;             returnType => <<"string">>,
-;;             annotations => []
+;;             annotations => [],
+;;             meta => []
 ;;         }
 ;;     ],
 ;;     returnType => <<"">>,
@@ -2182,7 +2185,8 @@ val m = describeMode();
 ;;             decorator => <<"main@@describe">>
 ;;         }
 ;;     ],
-;;     hooks => []
+;;     hooks => [],
+;;     params => []
 ;; }
 ;; Arg1 = <<"enum">>
 ```

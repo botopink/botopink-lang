@@ -16,6 +16,7 @@ const std = @import("std");
 const ast = @import("../ast.zig");
 const memberFn = @import("member_fn.zig");
 const typedMeta = @import("typed_meta.zig");
+const preludeMod = @import("runtime/prelude.zig");
 
 /// The decorator prelude's function `x.fail(m)` becomes.
 pub const fail_arg_fn = @import("runtime/prelude.zig").fail_arg_fn;
@@ -37,11 +38,38 @@ const Ctx = struct {
     /// Decision 298 — each `decl.setMeta(v)` / `decl.addMeta(v)` hands the
     /// runtime `'__bp_typedMeta'(k, v)`, `k` in `typed_meta.collect`'s order.
     metas: usize = 0,
+    /// Question s29-b — rewrite a typed meta read on a `decl.methods` entry
+    /// (`eraseForRun`).
+    methodMeta: bool = false,
 };
 
 /// `f` with every read of a `comptime x: @Expr<T>` parameter erased; `f`
 /// itself when it has none. `decorator` set: `f` is a decorator (its first
 /// parameter `@Decl`), and `x.fail(m)` is located at the argument.
+/// `eraseFn` for the module a decorator (or a template annotation) runs in:
+/// besides the erasure, a typed meta read on a `decl.methods` entry —
+/// `m.meta(T)` / `m.metaAll(T)`, `T` a record type written by its name, on
+/// anything but `@typeInfo(…)` (question s29-b) — becomes
+/// `__bp_methodMeta(m, "T")` / `__bp_methodMetaAll(m, "T")`, answered by the
+/// decorator prelude from the handle's `meta` entries. The checker typed the
+/// read (`infer.zig` `inferMethodMetaRead`); a catalogue entry's run-time read
+/// is refused in such a body (`typeinfo-meta-at-build`), so nothing else is
+/// rewritten.
+pub fn eraseForRun(arena: std.mem.Allocator, f: ast.FnDecl, decorator: bool) !ast.FnDecl {
+    var names: std.ArrayListUnmanaged([]const u8) = .empty;
+    var indices: std.ArrayListUnmanaged(usize) = .empty;
+    for (f.params, 0..) |p, i| {
+        if (!p.exprWrapped) continue;
+        try names.append(arena, p.name);
+        try indices.append(arena, if (decorator and i > 0) i - 1 else i);
+    }
+    const declName: ?[]const u8 = if (decorator) memberFn.declParamName(f) else null;
+    var ctx: Ctx = .{ .arena = arena, .names = names.items, .indices = indices.items, .failArg = decorator, .declName = declName, .methodMeta = true };
+    var out = f;
+    out.body = try clone([]ast.Stmt, &ctx, f.body);
+    return out;
+}
+
 pub fn eraseFn(arena: std.mem.Allocator, f: ast.FnDecl, decorator: bool) !ast.FnDecl {
     var names: std.ArrayListUnmanaged([]const u8) = .empty;
     var indices: std.ArrayListUnmanaged(usize) = .empty;
@@ -186,6 +214,30 @@ fn clone(comptime T: type, ctx: *Ctx, v: T) error{OutOfMemory}!T {
             out.call.kind.call.trailing = c.trailing;
             return out;
         };
+        // `m.meta(T)` / `m.metaAll(T)` → `__bp_methodMeta(m, "T")` (s29-b).
+        if (ctx.methodMeta and v == .call and v.call.kind == .call) {
+            const c = v.call.kind.call;
+            const one = std.mem.eql(u8, c.callee, "meta");
+            if (!c.is_builtin and c.args.len == 1 and c.trailing.len == 0 and (one or std.mem.eql(u8, c.callee, "metaAll"))) if (c.receiver) |r| {
+                const onTypeInfo = r.* == .call and r.call.kind == .call and r.call.kind.call.is_builtin and std.mem.eql(u8, r.call.kind.call.callee, "typeInfo");
+                const arg = c.args[0].value.*;
+                if (!onTypeInfo and arg == .identifier and arg.identifier.kind == .ident) {
+                    const tname = arg.identifier.kind.ident;
+                    if (tname.len > 0 and std.ascii.isUpper(tname[0])) {
+                        var out = v;
+                        const args = try ctx.arena.alloc(ast.CallArg, 2);
+                        args[0] = .{ .label = null, .value = try clone(*ast.Expr, ctx, r) };
+                        const lit = try ctx.arena.create(ast.Expr);
+                        lit.* = .{ .literal = .{ .loc = arg.getLoc(), .kind = .{ .stringLit = tname } } };
+                        args[1] = .{ .label = null, .value = lit };
+                        out.call.kind.call.receiver = null;
+                        out.call.kind.call.callee = if (one) preludeMod.method_meta_fn else preludeMod.method_meta_all_fn;
+                        out.call.kind.call.args = args;
+                        return out;
+                    }
+                }
+            };
+        }
         // `x.value` → `x`.
         if (v == .identifier and v.identifier.kind == .identAccess) {
             const ia = v.identifier.kind.identAccess;

@@ -1,0 +1,34 @@
+//// Decision 311 — a template annotation whose template is declared in another
+//// module: `query` and the helper its body calls travel with it, and the
+//// owner's decorator `repository` (imported too) reads the method's typed meta.
+
+pub type Query(sql: string, params: string[])
+
+fn placeholder(n: i32) -> string {
+    return "$" + n.toString();
+}
+
+pub fn query(comptime q: @Expr<string>, comptime decl: @Decl) -> @Expr<string> {
+    var text = "";
+    var params: string[] = [];
+    for (q.parts()) { p ->
+        if (p.kind == "Interp") {
+            params.push(p.code);
+            text = text + placeholder(params.length);
+        } else text = text + p.text;
+    }
+    decl.setMeta(Query(sql: text, params: params));
+    return q.build("\"\"");
+}
+
+pub fn repository(comptime decl: @Decl) {
+    var lines: string[] = [];
+    for (decl.methods) { m ->
+        val found = m.meta(Query);
+        if (found != null)
+            lines.push(
+                m.name + ": " + found.sql + " <- " + found.params.join(", "),
+            );
+    }
+    decl.setMeta("statements", lines.join(" | "));
+}

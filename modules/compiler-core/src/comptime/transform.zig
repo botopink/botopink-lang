@@ -207,9 +207,8 @@ pub fn transform(
 
     // The method-body aggregator (`src_only`): the `@src()` splice, the
     // `@Result`/`@Option` method lowerings, the `@Result` jump wrappings,
-    // index rewrites and default fills.
-    var empty_te = TemplateExpansions.init(allocator);
-    defer empty_te.deinit();
+    // index rewrites, default fills and — decision 425 — the template
+    // expansions: a template call in a method body expands as in a fn's.
     var empty_sa = StdArrayLowerings.init(allocator);
     defer empty_sa.deinit();
     var empty_onc = OptionalNullCases.init(allocator);
@@ -218,7 +217,7 @@ pub fn transform(
     const empty_ctor = std.StringHashMap([]const ast.Param).init(allocator);
     const empty_fn_decls = std.StringHashMap(ast.FnDecl).init(allocator);
     const empty_ct_arrays = std.StringHashMap([]const ast.TypedExpr).init(allocator);
-    var src_agg = Aggregator.init(allocator, empty_vals, method_lowerings, &empty_te, src_rewrites, result_jump_lowerings, &empty_sa, enum_section_rewrites, index_rewrites, &empty_onc, empty_ctor, default_injections);
+    var src_agg = Aggregator.init(allocator, empty_vals, method_lowerings, template_expansions, src_rewrites, result_jump_lowerings, &empty_sa, enum_section_rewrites, index_rewrites, &empty_onc, empty_ctor, default_injections);
     src_agg.src_only = true;
     agg.result_patterns = result_patterns;
     src_agg.result_patterns = result_patterns;
@@ -740,7 +739,9 @@ fn rewriteStmt(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
         .binding => |*b| switch (b.kind) {
             .localBind => |lb| rewriteExpr(agg, fn_decls, comptime_arrays, lb.value) catch return ScanError.OutOfMemory,
             .assign => |a| rewriteExpr(agg, fn_decls, comptime_arrays, a.value) catch return ScanError.OutOfMemory,
-            else => {},
+            // Decision 425 — a destructuring initializer is an expression like
+            // any other: a template call there expands (`val #(n, t) = f "…";`).
+            .localBindDestruct => |lb| rewriteExpr(agg, fn_decls, comptime_arrays, lb.value) catch return ScanError.OutOfMemory,
         },
         .jump => {
             _ = try tryLowerResultJump(agg, &stmt.expr);

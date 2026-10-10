@@ -52,11 +52,45 @@ pub fn isAddMemberOn(c: anytype, declName: []const u8) bool {
     return std.mem.eql(u8, r.identifier.kind.ident, declName) and std.mem.eql(u8, c.callee, add_member) and !c.is_builtin;
 }
 
-/// The `@Decl` parameter's name of a decorator, null for any other function.
+/// The `@Decl` parameter's name of a decorator or a template annotation
+/// function (`declParamIndex`), null for any other function.
 pub fn declParamName(f: ast.FnDecl) ?[]const u8 {
+    const i = declParamIndex(f) orelse return null;
+    return f.params[i].name;
+}
+
+/// Where the `@Decl` handle is in `f`'s parameters: first in a decorator
+/// (`comptime decl: @Decl<…>`), second in a template annotation function
+/// (decision 311, `isTemplateAnnotation`); null for any other function.
+pub fn declParamIndex(f: ast.FnDecl) ?usize {
     if (f.params.len == 0) return null;
-    const p = f.params[0];
-    return if (p.modifier == .@"comptime" and p.typeRef.isDeclType()) p.name else null;
+    if (isDeclParam(f.params[0])) return 0;
+    if (isTemplateAnnotation(f)) return 1;
+    return null;
+}
+
+fn isDeclParam(p: ast.Param) bool {
+    return p.modifier == .@"comptime" and p.typeRef.isDeclType();
+}
+
+/// Decision 311 — a template function written as an annotation, `#[f "…"]`:
+/// a template function (`-> @Expr<…>` / `-> @ExprCustom<…>`) whose first
+/// parameter is the literal, `comptime q: @Expr<…>`, and whose second is the
+/// annotated declaration's handle, `comptime decl: @Decl<…>` (question s29-a:
+/// the handle is declared beside `q`, and such a function is called only as an
+/// annotation).
+pub fn isTemplateAnnotation(f: ast.FnDecl) bool {
+    const rt = f.returnType orelse return false;
+    if (!rt.isTemplateReturnType()) return false;
+    return isTemplateAnnotationParams(f.params);
+}
+
+/// The parameter shape of `isTemplateAnnotation`: `comptime q: @Expr<…>`, then
+/// `comptime decl: @Decl<…>`.
+pub fn isTemplateAnnotationParams(params: []const ast.Param) bool {
+    if (params.len < 2) return false;
+    const q = params[0];
+    return q.modifier == .@"comptime" and q.typeRef.isExprType() and isDeclParam(params[1]);
 }
 
 // ── the member functions of a body, in order ────────────────────────────────

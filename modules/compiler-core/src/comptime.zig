@@ -1507,7 +1507,8 @@ pub const decl_reflection_src =
     \\    methods: __Decl__Method[],
     \\    returnType: string,
     \\    annotations: __Decl__Annotation[],
-    \\    hooks: HookNode[]) {
+    \\    hooks: HookNode[],
+    \\    params: __Decl__Param[]) {
     \\    declare fn fail(self: Self, message: string);
     \\    declare fn failAt(self: Self, span: Span, message: string);
     \\    declare fn addMember(self: Self, source: string);

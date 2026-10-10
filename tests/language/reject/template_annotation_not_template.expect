@@ -1,0 +1,2 @@
+template-annotation-not-template: `#[mark "…"]` names `mark`, which is a decorator
+8:3

@@ -56,7 +56,23 @@ pub const DeclHandle = struct {
     /// annotation name of the handle names (`infer.zig`
     /// `annotationDecoratorId`).
     decoratorIds: []const DecoratorId = &.{},
+    /// `decl.params` — a function's or a method's own parameters, as written
+    /// (decision 280, closed by `01-checker` step 29: a method's `@Decl`
+    /// carries its parameter list); empty for every other declaration.
+    params: []const ParamHandle = &.{},
+    /// Question s29-b — the typed meta each method recorded (its decorators
+    /// run before the owner's), read on a `decl.methods` entry as
+    /// `m.meta(T)` / `m.metaAll(T)`.
+    methodMeta: []const MethodMeta = &.{},
 };
+
+/// One typed meta value of a method: the record type's declared name and the
+/// value as the map a record is in the body (`metaValueTerm`).
+pub const MethodMeta = struct { method: []const u8, typeName: []const u8, value: Term };
+
+/// One parameter of a reflected function or method (`Param` in
+/// `builtins.d.bp`): its name and its type as the source spells it.
+pub const ParamHandle = struct { name: []const u8, typeName: []const u8 };
 
 /// An annotation name and the identity of the decorator it names.
 pub const DecoratorId = struct { name: []const u8, id: []const u8 };
@@ -124,13 +140,17 @@ pub fn evaluate(
     types: []const ast.DeclKind,
     handle: DeclHandle,
     plainArgs: []const template.PlainArg,
+    /// Decision 311 — a template annotation `#[f "…"]`: `dfn` is the template
+    /// function, its first parameter the literal (this capture) and its second
+    /// the handle. Null for a decorator.
+    capture: ?*const template.CapturedExpr,
     /// Receives what was sent to and returned by the runtime (snapshots); null skips it.
     traces: ?*std.ArrayListUnmanaged(trace.Entry),
 ) EvalError!Outcome {
     _ = build_root;
     var unsupported: erlang.UnsupportedMethod = .{};
     const t_module = stages.start();
-    const source = buildModule(arena, owner, dfn, support, types, handle, plainArgs, &unsupported) catch |err| switch (err) {
+    const source = buildModule(arena, owner, dfn, support, types, handle, plainArgs, capture, &unsupported) catch |err| switch (err) {
         error.UnsupportedMethod => return .{ .err = try unsupportedText(arena, "decorator", dfn.name, unsupported) },
         else => |e| return e,
     };
@@ -206,10 +226,11 @@ const placeholder_module = "decorator_module";
 /// are resident (`runtime/prelude.zig`), reached by the `-import`
 /// `emitComptimeModule` writes. Nothing here depends on the declaration it runs
 /// over any more — that is what makes the module's hash a hash of the decorator.
-fn mainForms(b: Ast.Builder, dfn: ast.FnDecl, plans: []const templateEval.ArgPlan) Ast.Builder.Error![]const Ast.Form {
+fn mainForms(b: Ast.Builder, dfn: ast.FnDecl, plans: []const templateEval.ArgPlan, annotation: bool) Ast.Builder.Error![]const Ast.Form {
     const V = Ast.Expr.v;
     const A = Ast.Expr.a;
     const fail_tag = A(preludeMod.decorator_fail_tag);
+    const template_fail_tag = A(preludeMod.template_fail_tag);
     const emitted_key = A(preludeMod.emitted_key);
 
     // <decorator>(Handle, Arg1, …): parameters after the `@Decl` one bind the
@@ -225,6 +246,39 @@ fn mainForms(b: Ast.Builder, dfn: ast.FnDecl, plans: []const templateEval.ArgPla
         }
     }.json;
 
+    const all_catches = [_]Ast.Clause{
+        .{
+            .patterns = try b.exprs(&.{try b.exception(A("throw"), try b.tuple(&.{ fail_tag, V("Message"), V("Span") }))}),
+            .body = try b.body(&.{try encode(b, &.{
+                Ast.field("kind", Ast.str("fail")),
+                Ast.field("message", try b.call("__bp_text", &.{V("Message")})),
+                Ast.field("span", V("Span")),
+            })}),
+        },
+        // Decision 311 — a template annotation's capture API (`lookup/2`)
+        // fails with the template's tag; it is reported at the annotation,
+        // as the handle's own `fail` is.
+        .{
+            .patterns = try b.exprs(&.{try b.exception(A("throw"), try b.tuple(&.{ template_fail_tag, V("Message"), V("_Param"), V("_Span") }))}),
+            .body = try b.body(&.{try encode(b, &.{
+                Ast.field("kind", Ast.str("fail")),
+                Ast.field("message", try b.call("__bp_text", &.{V("Message")})),
+                Ast.field("span", A("null")),
+            })}),
+        },
+        .{
+            .patterns = try b.exprs(&.{try b.exception(V("Class"), V("Reason"))}),
+            .body = try b.body(&.{try encode(b, &.{
+                Ast.field("kind", Ast.str("error")),
+                Ast.field("message", try b.call("__bp_text", &.{try b.tuple(&.{ V("Class"), V("Reason") })})),
+            })}),
+        },
+    };
+    const catches: []const Ast.Clause = if (annotation)
+        try b.arena.dupe(Ast.Clause, &all_catches)
+    else
+        try b.arena.dupe(Ast.Clause, &.{ all_catches[0], all_catches[2] });
+
     const main_body = try b.body(&.{
         try b.remote("erlang", "erase", &.{emitted_key}),
         .{ .try_catch = .{
@@ -235,23 +289,7 @@ fn mainForms(b: Ast.Builder, dfn: ast.FnDecl, plans: []const templateEval.ArgPla
                     Ast.field("contributions", try b.remote("lists", "reverse", &.{emitted})),
                 }),
             }),
-            .catches = try b.arena.dupe(Ast.Clause, &.{
-                .{
-                    .patterns = try b.exprs(&.{try b.exception(A("throw"), try b.tuple(&.{ fail_tag, V("Message"), V("Span") }))}),
-                    .body = try b.body(&.{try encode(b, &.{
-                        Ast.field("kind", Ast.str("fail")),
-                        Ast.field("message", try b.call("__bp_text", &.{V("Message")})),
-                        Ast.field("span", V("Span")),
-                    })}),
-                },
-                .{
-                    .patterns = try b.exprs(&.{try b.exception(V("Class"), V("Reason"))}),
-                    .body = try b.body(&.{try encode(b, &.{
-                        Ast.field("kind", Ast.str("error")),
-                        Ast.field("message", try b.call("__bp_text", &.{try b.tuple(&.{ V("Class"), V("Reason") })})),
-                    })}),
-                },
-            }),
+            .catches = catches,
         } },
     });
 
@@ -272,11 +310,18 @@ fn buildModule(
     types: []const ast.DeclKind,
     handle: DeclHandle,
     plainArgs: []const template.PlainArg,
+    capture: ?*const template.CapturedExpr,
     unsupported: *erlang.UnsupportedMethod,
 ) (EvalError || error{UnsupportedMethod})!Module {
     const b: Ast.Builder = .{ .arena = arena };
-    const plans = try argPlans(arena, dfn, handle, plainArgs);
-    const forms = try mainForms(b, dfn, plans);
+    const plans = if (capture) |cap| try annotationPlans(arena, dfn, handle, cap) else try argPlans(arena, dfn, handle, plainArgs);
+    // Decision 311 — a template annotation's body reads its literal through
+    // the capture API (`q.text()`, `q.parts()`, `q.build(…)`), rendered into
+    // the module beside `main/1`; the handle's API is the resident prelude's.
+    const forms = if (capture != null)
+        try std.mem.concat(arena, Ast.Form, &.{ try mainForms(b, dfn, plans, true), try preludeMod.captureForms(b) })
+    else
+        try mainForms(b, dfn, plans, false);
     const resident = try preludeMod.decoratorForms(b);
 
     const decls = try arena.alloc(ast.DeclKind, 1 + support.len + types.len);
@@ -309,7 +354,7 @@ fn buildModule(
     const argument = try templateEval.argumentTerm(arena, plans);
     // Emitted once per decorator and plan, not once per annotated declaration
     // (`template_eval` § one emit per declaration).
-    const key = try templateEval.emitKey(arena, "dec", owner, decls, plans);
+    const key = try templateEval.emitKey(arena, if (capture != null) "ann" else "dec", owner, decls, plans);
     const emitted: templateEval.Emitted = (if (key) |k| templateEval.cachedEmit(k) else null) orelse blk: {
         const code = erlang.emitComptimeModule(arena, placeholder_module, .{ .decls = decls }, config) catch |err|
             return if (err == error.UnsupportedComptimeMethod) error.UnsupportedMethod else error.EvalFailed;
@@ -369,6 +414,23 @@ fn argPlans(
     return plans;
 }
 
+/// Decision 311 — how a template annotation's parameters reach the body: the
+/// literal's capture first (`q`, as `template_eval.captureToTerm` builds it at
+/// a call site), the `@Decl` handle second; any further parameter the
+/// annotation gives nothing is `undefined`.
+fn annotationPlans(
+    arena: std.mem.Allocator,
+    dfn: ast.FnDecl,
+    handle: DeclHandle,
+    capture: *const template.CapturedExpr,
+) EvalError![]const templateEval.ArgPlan {
+    const plans = try arena.alloc(templateEval.ArgPlan, @max(dfn.params.len, 2));
+    plans[0] = .{ .term = try templateEval.captureToTerm(arena, capture), .expr = Ast.Expr.v("Arg0"), .bound = true };
+    plans[1] = .{ .term = try handleToTerm(arena, handle), .expr = Ast.Expr.v("Arg1"), .bound = true };
+    for (plans[2..]) |*plan| plan.* = .{ .term = Term.undefined_atom, .expr = Ast.Expr.a("undefined"), .bound = false };
+    return plans;
+}
+
 // ── handle ────────────────────────────────────────────────────────────────────
 
 /// The `@Decl` handle as a BEAM term — the map the decorator body reads
@@ -393,18 +455,37 @@ pub fn handleToTerm(arena: std.mem.Allocator, handle: DeclHandle) std.mem.Alloca
             pe[1] = Term.field("typeName", Term.str(try typeName(arena, p.typeRef)));
             params[j] = Term.mapOf(pe);
         }
-        const entries = try arena.alloc(Term.MapEntry, 4);
+        // Question s29-b — `meta`: `[#{type => <<"Query">>, value => V}]`,
+        // what `'__bp_methodMeta'/2` reads.
+        var metas: std.ArrayListUnmanaged(Term) = .empty;
+        for (handle.methodMeta) |mm| {
+            if (!std.mem.eql(u8, mm.method, m.name)) continue;
+            const me = try arena.alloc(Term.MapEntry, 2);
+            me[0] = Term.field("type", Term.str(mm.typeName));
+            me[1] = Term.field("value", mm.value);
+            try metas.append(arena, Term.mapOf(me));
+        }
+        const entries = try arena.alloc(Term.MapEntry, 5);
         entries[0] = Term.field("name", Term.str(m.name));
         entries[1] = Term.field("params", Term.listOf(params));
         entries[2] = Term.field("returnType", Term.str(if (m.returnType) |rt| try typeName(arena, rt) else ""));
         entries[3] = Term.field("annotations", try annotationsToTerm(arena, m.annotations, handle.decoratorIds));
+        entries[4] = Term.field("meta", Term.listOf(metas.items));
         methods[i] = Term.mapOf(entries);
     }
 
     const variants = try arena.alloc(Term, handle.variants.len);
     for (handle.variants, 0..) |v, i| variants[i] = Term.str(v);
 
-    const entries = try arena.alloc(Term.MapEntry, 8);
+    const params = try arena.alloc(Term, handle.params.len);
+    for (handle.params, 0..) |p, i| {
+        const pe = try arena.alloc(Term.MapEntry, 2);
+        pe[0] = Term.field("name", Term.str(p.name));
+        pe[1] = Term.field("typeName", Term.str(p.typeName));
+        params[i] = Term.mapOf(pe);
+    }
+
+    const entries = try arena.alloc(Term.MapEntry, 9);
     entries[0] = Term.field("kind", Term.atomOf(handle.kind));
     entries[1] = Term.field("name", Term.str(handle.name));
     entries[2] = Term.field("fields", Term.listOf(fields));
@@ -413,7 +494,48 @@ pub fn handleToTerm(arena: std.mem.Allocator, handle: DeclHandle) std.mem.Alloca
     entries[5] = Term.field("returnType", Term.str(handle.returnType));
     entries[6] = Term.field("annotations", try annotationsToTerm(arena, handle.annotations, handle.decoratorIds));
     entries[7] = Term.field("hooks", Term.listOf(handle.hooks));
+    entries[8] = Term.field("params", Term.listOf(params));
     return Term.mapOf(entries);
+}
+
+/// Question s29-b — a typed meta value (the JSON `'__bp_typedMeta'/2`
+/// replied, an untagged map) as the build-time term a decorator body reads:
+/// the record's map, each field by its shape — a string a binary, a number,
+/// a `bool`, a variant its atom, an array a list, `null` `undefined`. An
+/// `@Expr<T>` field (370 (1)) has no value at build and reads `undefined`.
+pub fn metaValueTerm(arena: std.mem.Allocator, fields: []const typedMeta.FieldShape, data: std.json.Value) std.mem.Allocator.Error!Term {
+    if (data != .object) return Term.undefined_atom;
+    const entries = try arena.alloc(Term.MapEntry, fields.len);
+    for (fields, 0..) |f, i| {
+        const v = data.object.get(f.name) orelse std.json.Value{ .null = {} };
+        entries[i] = Term.field(f.name, if (f.shape == .expr) Term.undefined_atom else try shapeTerm(arena, f.shape, v));
+    }
+    return Term.mapOf(entries);
+}
+
+fn shapeTerm(arena: std.mem.Allocator, written: typedMeta.Shape, v: std.json.Value) std.mem.Allocator.Error!Term {
+    const shape: typedMeta.Shape = switch (written) {
+        .optional => |p| p.*,
+        else => written,
+    };
+    return switch (v) {
+        .null => Term.undefined_atom,
+        .bool => |b| .{ .boolean = b },
+        .integer => |n| Term.int(n),
+        .float => |x| .{ .float = x },
+        .number_string => |t| Term.str(t),
+        .string => |t| if (shape == .variant) Term.atomOf(t) else Term.str(t),
+        .array => |arr| blk: {
+            const inner: typedMeta.Shape = switch (shape) {
+                .array => |p| p.*,
+                else => shape,
+            };
+            const items = try arena.alloc(Term, arr.items.len);
+            for (arr.items, 0..) |item, i| items[i] = try shapeTerm(arena, inner, item);
+            break :blk Term.listOf(items);
+        },
+        .object => Term.undefined_atom,
+    };
 }
 
 /// A type reference as the source spells it (`TypeRef.format`) — the same
@@ -432,8 +554,11 @@ fn typeName(arena: std.mem.Allocator, tr: ast.TypeRef) std.mem.Allocator.Error![
 fn annotationsToTerm(arena: std.mem.Allocator, anns: []const ast.Annotation, ids: []const DecoratorId) std.mem.Allocator.Error!Term {
     const items = try arena.alloc(Term, anns.len);
     for (anns, 0..) |a, i| {
-        const args = try arena.alloc(Term, a.args.len);
-        for (a.args, 0..) |arg, j| args[j] = Term.str(arg);
+        // Decision 311 — a template annotation's one argument is its
+        // literal, as written.
+        const written: []const []const u8 = if (a.template) |t| &.{t} else a.args;
+        const args = try arena.alloc(Term, written.len);
+        for (written, 0..) |arg, j| args[j] = Term.str(arg);
         const id = for (ids) |d| {
             if (std.mem.eql(u8, d.name, a.name)) break d.id;
         } else a.name;
@@ -527,7 +652,7 @@ test "decorator module: lowered body, handle term and host glue" {
     };
     const args = [_]template.PlainArg{.{ .paramName = "path", .source = "\"/x\"" }};
     var unsupported: erlang.UnsupportedMethod = .{};
-    const m = try buildModule(arena, "", dfn, &.{}, &.{}, handle, &args, &unsupported);
+    const m = try buildModule(arena, "", dfn, &.{}, &.{}, handle, &args, null, &unsupported);
 
     // A2: the atom names the declaration, not just a hash of the body, and it
     // decodes back to `{gen, package "bp", "comptime", "dec", "route", <16 hex>}`.
@@ -603,7 +728,7 @@ test "decorator module: one module per decorator, whatever it annotates" {
         .methods = &.{},
         .returnType = "",
         .annotations = &.{},
-    }, &.{}, &unsupported);
+    }, &.{}, null, &unsupported);
     const second = try buildModule(arena, "", dfn, &.{}, &.{}, .{
         .kind = "Type",
         .name = "Omega",
@@ -611,7 +736,7 @@ test "decorator module: one module per decorator, whatever it annotates" {
         .methods = &.{},
         .returnType = "",
         .annotations = &.{},
-    }, &.{}, &unsupported);
+    }, &.{}, null, &unsupported);
 
     try std.testing.expectEqualStrings(first.module, second.module);
     try std.testing.expectEqualStrings(first.code, second.code);
