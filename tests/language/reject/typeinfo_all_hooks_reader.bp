@@ -1,0 +1,21 @@
+//// Decision 372 — a decorator that reads `decl.hooks` runs after the
+//// module's bodies; a catalogue of it read in the same module is spliced while
+//// those bodies are inferred and could not carry the meta it sets, so the
+//// query is refused at the decorator's name (the parent binary answered it
+//// with the meta; a run after the bodies would have answered without it).
+
+type Element(text: string) implement @Renderable
+
+fn graph(comptime decl: @Decl) {
+    decl.setMeta("count", decl.hooks.length.toString());
+}
+
+#[graph]
+pub fn Page() -> @Component<Element> {
+    return Element(text: "x");
+}
+
+pub fn main() {
+    val all = @TypeInfo.all(with: graph);
+    all.forEach({ d -> @print(d.name) });
+}

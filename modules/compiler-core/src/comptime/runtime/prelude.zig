@@ -251,6 +251,12 @@ pub fn decoratorForms(b: Ast.Builder) Error![]const Ast.Form {
         try b.function("addMember", &.{ V("_Decl"), V("Source") }, &.{}, &.{
             try b.call("__bp_contribute", &.{try b.map(&.{ Ast.field("kind", Ast.str("member")), Ast.field("source", V("Source")) })}),
         }),
+        // Decision 370 (2) — `decl.addMember(name, fn…)`: the function is the
+        // program's code, so the body hands its index (`expr_param.eraseFn`,
+        // `member_fn.collect`'s order) and the name it gets.
+        try b.function("addMember", &.{ V("_Decl"), V("Name"), V("Index") }, &.{}, &.{
+            try b.call("__bp_contribute", &.{try b.map(&.{ Ast.field("kind", Ast.str("memberFn")), Ast.field("name", V("Name")), Ast.field("index", V("Index")) })}),
+        }),
         try b.function("setMeta", &.{ V("_Decl"), V("Key"), V("Value") }, &.{}, &.{
             try b.call("__bp_contribute", &.{try b.map(&.{ Ast.field("kind", Ast.str("meta")), Ast.field("key", V("Key")), Ast.field("value", V("Value")) })}),
         }),

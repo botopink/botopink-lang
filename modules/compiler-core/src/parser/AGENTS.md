@@ -51,7 +51,10 @@ parser/
 │                     out-of-range `$N` with a located `template-self-marker` / `template-stringify-marker` /
 │                     `template-marker-out-of-range`
 ├── exprs.zig      ← expression sub-grammar: precedence climbing, primary/pipeline/local-bind/lambda/loops/range,
-│                     string templates (`${…}` re-scan), tagged calls. The loops are decision 105's three keywords,
+│                     string templates (`${…}` re-scan), tagged calls. `fn(a, b) { … }` is a function expression; decision
+│                     370 (2) gives it typed parameters and a return — `fn(self: T) -> R { … }`, every parameter typed or
+│                     none (`FunctionExpr.paramTypes` / `.returnType`), admitted by the checker only as a decorator's
+│                     `decl.addMember(name, fn…)` (`comptime/member_fn.zig`). The loops are decision 105's three keywords,
 │                     one parser each and one `LoopExpr` node (`keyword` says which): `parseForExpr` —
 │                     `for [await] [:label] (iter) { x -> … }` over a collection, a range (`a..b` exclusive,
 │                     `a...b` inclusive — `parseRangeExpr` reads both tokens) or a generator, binding exactly one

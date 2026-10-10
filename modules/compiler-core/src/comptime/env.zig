@@ -6,6 +6,7 @@ const std = @import("std");
 const ast = @import("../ast.zig");
 const reflectionMod = @import("reflection.zig");
 const hooksMod = @import("hooks.zig");
+const memberFnMod = @import("member_fn.zig");
 const T = @import("./types.zig");
 const template = @import("./template.zig");
 const trace = @import("./trace.zig");
@@ -187,6 +188,24 @@ pub const StdContextName = enum { context_type, provide, context };
 /// (`language-gaps.md`, "Two template expansions in one module share the
 /// locations of their built code").
 pub const ComponentCall = struct { type_: *T.Type, callee: []const u8 };
+
+/// Decision 371 — one `d.same(other)` on a `Decorator`: `other` is the
+/// identity (`declIdentity`) of the decorator the argument names, or null when
+/// the argument is a `Decorator` value (`b.decorator`) read as written.
+pub const DecoratorSame = struct { other: ?[]const u8 };
+
+/// Decision 372 — a `@typeInfo(X).meta.<decorator>.<key>` read of this
+/// module's `X` whose decorator reads `.hooks` and had not run when the read
+/// was inferred: `rewrite` is the string literal `srcRewrites` holds at `loc`,
+/// filled once the decorator ran (`infer.zig` `answerDeferredMetaReads`).
+pub const DeferredMetaRead = struct {
+    loc: ast.Loc,
+    rewrite: *ast.Expr,
+    module: []const u8,
+    name: []const u8,
+    decorator: []const u8,
+    key: []const u8,
+};
 
 /// Decision 354 (8) — a lambda recorded for the hidden context map: its type
 /// and its parameter count (matched as `ComponentCall.callee` is).
@@ -585,6 +604,10 @@ pub const DecoratorArgValue = struct {
     /// Where the argument is written; null for a default. `x.fail(…)`
     /// reports there (decision 364 (3)).
     loc: ?ast.Loc = null,
+    /// Decision 370 (2) — the expression as the annotation wrote it (a
+    /// default as the decorator declared it): what a member function the
+    /// decorator hands to `decl.addMember(name, fn…)` reads in its place.
+    lexeme: []const u8 = "",
 };
 
 pub const DecoratorSig = struct {
@@ -770,6 +793,13 @@ pub const Env = struct {
     /// first parameter is `comptime _: @Decl`): compile-time evaluation with
     /// no render tree, where `use` is refused (`use-outside-render-tree`).
     inDecoratorFn: bool = false,
+    /// Decision 370 (2) — the body of the decorator being inferred: a member
+    /// function it hands to `decl.addMember(name, fn…)` reads none of its
+    /// locals (`infer.zig` `inferMemberFnCall`). Null outside a decorator.
+    decoratorBody: ?[]const ast.Stmt = null,
+    /// Decision 370 (2) — the typed function expression `inferMemberFnCall`
+    /// admits; every other typed one is `fn-expr-typed` at it.
+    memberFnAt: ?ast.Loc = null,
     /// Decision 354 (3) — the number of `comptime { … }` / `comptime <expr>`
     /// enclosing the position being inferred; `use` is refused inside one.
     comptimeDepth: u32 = 0,
@@ -815,9 +845,31 @@ pub const Env = struct {
     /// body has been inferred, by name; published to the session
     /// (`Reflection.hookFns`) when the analysis ends.
     hookNodes: std.StringHashMapUnmanaged(hooksMod.Node) = .empty,
-    /// Decision 277 — the module-level `val`s were bound ahead of Pass 2 for
-    /// a body inferred while decorators run (`infer.zig` `declHooks`).
-    hookValsBound: bool = false,
+    /// Decision 371 — each `d.same(other)` on a `Decorator` this module's
+    /// inference typed, by the call's location (`infer.zig`
+    /// `inferDecoratorSame`): the comptime runtime reads it as `==` of two
+    /// identities (`decorator_same.zig`).
+    decoratorSame: std.AutoHashMapUnmanaged(ast.Loc, DecoratorSame) = .empty,
+    /// Decision 371 — this module's functions a decorator of it runs, inferred
+    /// ahead of the run so its `same` calls are typed (by body pointer).
+    decoratorBodiesChecked: std.AutoHashMapUnmanaged(usize, void) = .empty,
+    /// Decision 371 — the module's imports and `val`s were bound ahead of
+    /// Pass 2 for a decorator body inferred before its run.
+    earlyValsBound: bool = false,
+    /// Decision 372 — `"<declaration>\x00<decorator>"` for each annotation of
+    /// a top-level declaration of this module whose decorator reads `.hooks`
+    /// (`infer.zig` `noteHooksReaders`): such a decorator runs after Pass 2,
+    /// so a `@typeInfo(X).meta.<decorator>.<key>` read inferred before it ran
+    /// is answered once it has (`deferredMetaReads`).
+    hooksReaders: std.StringHashMapUnmanaged(void) = .empty,
+    /// Decision 372 — the identity of each decorator in `hooksReaders`: a
+    /// `@TypeInfo.all` listing one is refused (`typeinfo-all-hooks-reader`).
+    hooksReaderIds: std.StringHashMapUnmanaged(void) = .empty,
+    /// Decision 372 — the `.hooks` readers of this analysis have run.
+    hooksReadersRan: bool = false,
+    /// Decision 372 — the meta reads waiting for a `.hooks` reader of this
+    /// module, answered (or refused, `typeinfo-meta-missing`) when it ran.
+    deferredMetaReads: std.ArrayListUnmanaged(DeferredMetaRead) = .empty,
     /// Decision 354 (8) — every call whose value is, or may resolve to, a
     /// `@Component<R>`, by location, with that type: the calls that pass the
     /// hidden context map (`context_lower.zig`).
@@ -1147,6 +1199,10 @@ pub const Env = struct {
     /// `checkDecoratorArgs` writes it once the arguments are typed,
     /// `runDeclDecorators` reads it. Allocated in `arena`.
     decoratorArgValues: std.AutoHashMapUnmanaged(ast.Loc, []const DecoratorArgValue) = .empty,
+    /// Decision 370 (2) — each decorator type parameter as one annotation
+    /// bound it (`check<T>` on `Signup`: `T` is `Signup`), keyed like
+    /// `decoratorArgValues`: a member function's types are spelled with them.
+    decoratorTypeArgs: std.AutoHashMapUnmanaged(ast.Loc, []const memberFnMod.TypeArg) = .empty,
     /// Decision 216 (3) — set on the first analysis of a module whose
     /// decorators have not run yet: a dotted type name `Owner.Name` whose
     /// owner is a type is accepted unresolved (`resolveTypeName`), since the

@@ -267,6 +267,59 @@ fn walk(comptime X: type, ptr: *const X, member: []const u8) bool {
     return false;
 }
 
+// ── what a `.hooks` reader may write ─────────────────────────────────────────
+
+/// Decision 372 — a call that gives the program code: `@emit(…)`, or
+/// `addMember(…)` / `addType(…)` on a receiver (`decl.addMember(…)`). A
+/// decorator that reads `.hooks` runs after the module's bodies and may only
+/// record meta or refuse, so such a call in it is refused where it is written.
+pub const OutputCall = struct { name: []const u8, at: ast.Loc };
+
+/// The first output call written in `f`'s body, in source order of the walk.
+pub fn outputCall(f: ast.FnDecl) ?OutputCall {
+    for (f.body) |*s| if (findOutput(ast.Stmt, s)) |c| return c;
+    return null;
+}
+
+fn findOutput(comptime X: type, ptr: *const X) ?OutputCall {
+    if (X == ast.Expr) {
+        if (ptr.* == .call and ptr.call.kind == .call) {
+            const c = ptr.call.kind.call;
+            if (c.is_builtin and std.mem.eql(u8, c.callee, "emit")) return .{ .name = "@emit", .at = ptr.call.loc };
+            if (!c.is_builtin and c.receiver != null and
+                (std.mem.eql(u8, c.callee, "addMember") or std.mem.eql(u8, c.callee, "addType")))
+                return .{ .name = c.callee, .at = ptr.call.loc };
+        }
+    }
+    if (X == ast.ImportDecl) return null;
+    switch (@typeInfo(X)) {
+        .@"struct" => |s| inline for (s.fields) |f| {
+            if (f.is_comptime) continue;
+            if (comptime mayHoldExpr(f.type)) if (findOutput(f.type, &@field(ptr.*, f.name))) |c| return c;
+        },
+        .@"union" => |u| if (u.tag_type != null) {
+            switch (ptr.*) {
+                inline else => |*payload| if (comptime mayHoldExpr(@TypeOf(payload.*))) {
+                    if (findOutput(@TypeOf(payload.*), payload)) |c| return c;
+                },
+            }
+        },
+        .optional => |o| if (ptr.*) |*inner| return findOutput(o.child, inner),
+        .pointer => |p| switch (p.size) {
+            .one => if (comptime mayHoldExpr(p.child)) return findOutput(p.child, ptr.*),
+            .slice => if (comptime mayHoldExpr(p.child)) {
+                for (ptr.*) |*e| if (findOutput(p.child, e)) |c| return c;
+            },
+            else => {},
+        },
+        .array => |arr| if (comptime mayHoldExpr(arr.child)) {
+            for (ptr) |*e| if (findOutput(arr.child, e)) |c| return c;
+        },
+        else => {},
+    }
+    return null;
+}
+
 fn mayHoldExpr(comptime X: type) bool {
     return switch (@typeInfo(X)) {
         .int, .float, .bool, .@"enum", .void, .comptime_int, .comptime_float, .@"fn", .@"opaque" => false,

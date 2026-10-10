@@ -1,0 +1,5 @@
+//// The package root of `web`: a marker decorator and the decorator that
+//// looks for it among a declaration's annotations.
+
+pub mod markers;
+pub mod check;

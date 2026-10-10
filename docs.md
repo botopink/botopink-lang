@@ -1319,6 +1319,12 @@ val total = xs
     .fold(0, { acc, n -> acc + n });    // 12
 ```
 
+A lambda's parameters take the types of the position it is passed to or the
+`val` it is bound to; `fn(a, b) { … }` is the same function written with
+`fn`. The typed form `fn(x: T) -> R { … }` is the member a decorator hands to
+`decl.addMember(name, fn…)` alone (§ Decorators, decision 370 (2)); anywhere
+else it is `fn-expr-typed`.
+
 The pipe operator `|>` is left-associative.
 
 ### Line width
@@ -2676,9 +2682,58 @@ fn main() {
 
 A function or a type argument is checked at the argument and never run at
 build (decision 364 (3)): its `@Expr` has no `.value` (`expr-value-of-function`,
-`expr-value-of-type`, at the read). How a body hands an `@Expr` on to the
-program — typed meta, a member, emitted code — is in § Decided, not yet
-implemented.
+`expr-value-of-type`, at the read). The body hands an `@Expr` on to the program
+through a typed member (decision 370 (2)) — `decl.addMember(name, fn…)` with
+the member written as a function expression at the call, its parameters and
+its return typed:
+
+```botopink
+pub type Violation(field: string, message: string)
+
+fn check<T>(
+    comptime decl: @Decl<T>,
+    comptime message: @Expr<string>,
+    comptime rule: @Expr<fn(v: T) -> bool>,
+) {
+    decl.addMember("validate", fn(self: T) -> Violation[] {
+        if (rule(self)) return [];
+        return [Violation(field: "confirm", message: message)];
+    });
+}
+
+fn passwordsMatch(a: Signup) -> bool {
+    return a.password == a.confirm;
+}
+
+fn t(key: string) -> string {
+    return key;
+}
+
+#[check(t("signup.mismatch"), passwordsMatch)]
+pub type Signup(password: string, confirm: string)
+// Signup(password: "a", confirm: "b").validate() calls passwordsMatch and
+// t("signup.mismatch") at run time
+```
+
+The member is the program's code: inside it each `@Expr<T>` parameter is a
+`T`, and the type receives `pub fn validate(self: Self) -> Violation[] { … }`
+with each parameter's argument spliced where the member uses it, as the
+annotation wrote it — evaluated at run time, each time that use is reached, so
+an argument not known at build (`t("…")`) is accepted where the body never
+reads `.value`. The decorator's type parameters take what the annotation bound
+them to (`T` is `Signup`, written `Self`). The member reads nothing else of the
+decorator's body: the `@Decl` handle and its locals exist only while the
+program compiles (`decorator-member-captures`). Every parameter is typed
+(`decorator-member-fn-untyped`), the member is written at the call
+(`decorator-member-not-fn`), a `self` is the type the member joins and every
+type parameter it writes is bound (`decorator-member-type`), and a typed
+function expression anywhere else is `fn-expr-typed`. A decorator declared in
+another module hands a member that reads only its parameters, its own locals
+and primitive types (`decorator-member-fn-imported-name`): whose scope
+resolves any other name it writes is question `s35-g`. The source text of an
+argument never reaches an output (`rule.text()` is `expr-param-method`, 370
+(3)). Typed meta — a record whose fields are `@Expr<T>` (370 (1)) — is in §
+Decided, not yet implemented.
 
 `@typeInfo` is the one reflection builtin (decision 248): `.name` and
 `.meta.<decorator>.<key>` read a declaration, the static `@TypeInfo.all(…)` of
@@ -2773,8 +2828,29 @@ it reaches in another module. In a decorator body a `Declared`'s `value` is
 every entry its declaration's decorators set, keyed `<decorator>.<key>`. A
 `DeclAnnotation`'s `decorator` is the `Decorator` its name names — an alias
 (`#[srv]` after `import {serverOnly as srv}`) and a namespace give the
-declaration, never the spelling. Decorators run before bodies: a function whose
-list a decorator reads is checked then, after the module's imports and `val`s.
+declaration, never the spelling.
+
+**A decorator that reads `.hooks` runs last** (decision 372, provisional). A
+module's decorators run in two phases: first every decorator that reads no
+`.hooks` — the ones that add members and associated types —, then the module's
+bodies are checked with every member and type already there, then each
+decorator that reads `.hooks` (in its body or a function it reaches) runs over
+them. So a page may call a member another decorator of its module adds
+(`Account(…).validate()` above `#[check(…)] pub type Account`). Such a
+decorator records meta or refuses, nothing else: `@emit`, `decl.addMember` (a
+source or a typed `fn…`) and `decl.addType` in it are `decorator-hooks-output`, at the call, whether or not
+it annotates anything. A `@typeInfo(X).meta` read of its meta in the same module
+is answered once it ran; a `@TypeInfo.all(with: d)` in the module of a
+declaration `#[d]` annotates is `typeinfo-all-hooks-reader` at `d` — its answer
+is built before `d` runs (read the catalogue from another module).
+
+**Comparing decorators** (decision 371). `a.decorator.same(other)` answers
+whether two decorators are one declaration: `other` is a decorator's name — an
+alias and a namespace resolved where it is written — or another `Decorator`
+(`b.decorator`); a same-named decorator of another module or package is
+`false`, and anything else is no `Decorator` (a string spelling the name is a
+type mismatch at the argument). `is` stays a keyword and `==` on two
+`Decorator`s has no meaning.
 
 ```botopink
 type Element(text: string) implement @Renderable
@@ -2802,6 +2878,24 @@ fn Page() -> @Component<Element> {
 
 fn main() {
     @print(@typeInfo(Page).meta.graph.nodes);       // Page/1 user/1 session/0
+}
+```
+
+```botopink
+fn serverOnly(comptime decl: @Decl) {
+    val _n = decl.name;
+}
+
+// Refuses a function marked `serverOnly`, however the mark is spelled.
+fn clientOnly(comptime decl: @Decl) {
+    decl.annotations.forEach({ a ->
+        if (a.decorator.same(serverOnly)) decl.fail("`" + decl.name + "` runs on the server");
+    });
+}
+
+#[clientOnly]
+fn Widget() -> string {
+    return "w";
 }
 ```
 
@@ -3442,7 +3536,7 @@ closes it, or says that it has none yet. Every row below was re-derived by
 | Rule | Today | Closes with |
 |---|---|---|
 | A decorator's output goes to one of the four places of § Decorators; **module-level `@emit` is gone** (decision 216), refused by name with the four places in its message | `@emit(source)` still compiles, splicing loose declarations into the module: the libraries' sites move to the four places first | `01-compiler/130-decorator-outputs` steps 5–6 |
-| A decorator body hands a `comptime` parameter's `@Expr` on — to typed meta (decision 298), a member, emitted code — and the program evaluates it at run time (decision 364 (1)): `decl.addMeta(Check(message: message, rule: rule))` calls `rule` at validation | no output takes an `@Expr`: `decl.setMeta`, `decl.addMember` and `@emit` take strings, so a body reads a parameter only as `x.value` (or reports with `x.fail`), and a function or a type argument is checked and never reaches the program; the channel is question `s35-a` | `01-compiler/01-checker` step 35, with `01-compiler/130` step 8 (typed meta) |
+| A decorator body hands a `comptime` parameter's `@Expr` on to typed meta (decisions 298, 370 (1)) and the program evaluates it at run time: `decl.addMeta(Check(message: message, rule: rule))`, a record with `@Expr<T>` fields built in the reading program, each expression spliced where it was written | `decl.setMeta` takes strings and no meta record holds an `@Expr`; the typed member (370 (2), § Decorators) is the channel that is built | `01-compiler/130` step 8 |
 | A block-shaped statement ends itself: **no** `;` after the closing brace of an `if`, a loop or a `case` in statement position | the `;` is **optional** there: the parser accepts both, `botopink format` prints none, and the compiler's own trees are migrated — a library or a `tests/language` cell that still writes it compiles | 1.0.10-beta C-13, in decision 132's order: each library drops the `;` (`botopink format`), then `tests/language`, then the parser refuses it (`blockStatementSemicolon`) |
 
 A row leaves this table when the compiler accepts the form, and the form is then

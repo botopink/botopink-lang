@@ -1514,16 +1514,39 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         _ = try this.consume(.leftParenthesis);
         var params: std.ArrayList([]const u8) = .empty;
         errdefer params.deinit(alloc);
+        // Decision 370 (2) — `fn(self: T) -> R { … }`: every parameter typed
+        // or none, the return written after `->`. The checker admits the
+        // typed form only as a decorator's `decl.addMember(name, fn…)`.
+        var paramTypes: std.ArrayList(ast.TypeRef) = .empty;
+        errdefer paramTypes.deinit(alloc);
         while (!this.check(.rightParenthesis) and !this.check(.endOfFile)) {
-            try params.append(alloc, (try this.consume(.identifier)).lexeme);
+            const nameTok = try this.consume(.identifier);
+            try params.append(alloc, nameTok.lexeme);
+            if (this.match(.colon)) {
+                if (paramTypes.items.len + 1 != params.items.len) {
+                    this.parseError = ParseErrorInfo.fromToken(.unexpectedToken, this.peek());
+                    return ParseError.UnexpectedToken;
+                }
+                try paramTypes.append(alloc, try this.parseTypeRef(alloc));
+            } else if (paramTypes.items.len > 0) {
+                this.parseError = ParseErrorInfo.fromToken(.unexpectedToken, this.peek());
+                return ParseError.UnexpectedToken;
+            }
             if (!this.match(.comma)) break;
         }
         _ = try this.consume(.rightParenthesis);
+        if (paramTypes.items.len > 0 and paramTypes.items.len != params.items.len) {
+            this.parseError = ParseErrorInfo.fromToken(.unexpectedToken, this.peek());
+            return ParseError.UnexpectedToken;
+        }
+        const returnType: ?ast.TypeRef = if (this.match(.rightArrow)) try this.parseTypeRef(alloc) else null;
         const body = try this.parseFnBodyInBraces(alloc);
         return Expr{ .function = .{ .loc = locFromToken(fnTok), .kind = .{
             .syntax = .fnExpr,
             .params = try params.toOwnedSlice(alloc),
             .body = body,
+            .paramTypes = try paramTypes.toOwnedSlice(alloc),
+            .returnType = returnType,
         } } };
     }
 

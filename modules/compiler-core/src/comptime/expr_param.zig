@@ -14,6 +14,7 @@
 
 const std = @import("std");
 const ast = @import("../ast.zig");
+const memberFn = @import("member_fn.zig");
 
 /// The decorator prelude's function `x.fail(m)` becomes.
 pub const fail_arg_fn = @import("runtime/prelude.zig").fail_arg_fn;
@@ -26,6 +27,12 @@ const Ctx = struct {
     indices: []const usize,
     /// Rewrite `x.fail(m)` (a decorator body).
     failArg: bool,
+    /// Decision 370 (2) — a decorator's `@Decl` parameter: each
+    /// `decl.addMember(name, fn…)` hands the runtime the function's index
+    /// (`member_fn.collect`'s order) instead of the function, which is the
+    /// program's code, not the body's.
+    declName: ?[]const u8 = null,
+    members: usize = 0,
 };
 
 /// `f` with every read of a `comptime x: @Expr<T>` parameter erased; `f`
@@ -39,8 +46,9 @@ pub fn eraseFn(arena: std.mem.Allocator, f: ast.FnDecl, decorator: bool) !ast.Fn
         try names.append(arena, p.name);
         try indices.append(arena, if (decorator and i > 0) i - 1 else i);
     }
-    if (names.items.len == 0) return f;
-    var ctx: Ctx = .{ .arena = arena, .names = names.items, .indices = indices.items, .failArg = decorator };
+    const declName: ?[]const u8 = if (decorator) memberFn.declParamName(f) else null;
+    if (names.items.len == 0 and declName == null) return f;
+    var ctx: Ctx = .{ .arena = arena, .names = names.items, .indices = indices.items, .failArg = decorator, .declName = declName };
     var out = f;
     out.body = try clone([]ast.Stmt, &ctx, f.body);
     return out;
@@ -141,6 +149,20 @@ fn indexOf(ctx: *const Ctx, e: ast.Expr) ?usize {
 /// A deep copy of `v` with the reads erased. Strings are shared.
 fn clone(comptime T: type, ctx: *Ctx, v: T) error{OutOfMemory}!T {
     if (T == ast.Expr) {
+        // `decl.addMember(name, fn…)` → `decl.addMember(name, <k>)` (370 (2)).
+        if (ctx.declName) |dn| if (memberFn.asCall(v, dn)) |mc| {
+            var out = v;
+            const c = v.call.kind.call;
+            const args = try ctx.arena.alloc(ast.CallArg, 2);
+            args[0] = c.args[0];
+            args[0].value = try clone(*ast.Expr, ctx, mc.name);
+            const idx = try ctx.arena.create(ast.Expr);
+            idx.* = .{ .literal = .{ .loc = mc.loc, .kind = .{ .numberLit = try std.fmt.allocPrint(ctx.arena, "{d}", .{ctx.members}) } } };
+            ctx.members += 1;
+            args[1] = .{ .label = c.args[1].label, .value = idx };
+            out.call.kind.call.args = args;
+            return out;
+        };
         // `x.value` → `x`.
         if (v == .identifier and v.identifier.kind == .identAccess) {
             const ia = v.identifier.kind.identAccess;
@@ -208,14 +230,20 @@ pub const Use = struct {
 };
 
 /// How `f`'s body uses its parameter `name`.
+/// A read inside a member function a decorator hands to `decl.addMember(name,
+/// fn…)` is the program's, at run time (decision 370 (2)): it is not a use.
 pub fn useOf(f: ast.FnDecl, name: []const u8) Use {
     var u: Use = .{};
-    walk([]ast.Stmt, name, f.body, &u);
+    walk([]ast.Stmt, name, memberFn.declParamName(f), f.body, &u);
     return u;
 }
 
-fn walk(comptime T: type, name: []const u8, v: T, u: *Use) void {
+fn walk(comptime T: type, name: []const u8, declName: ?[]const u8, v: T, u: *Use) void {
     if (T == ast.Expr) {
+        if (declName) |dn| if (memberFn.asCall(v, dn)) |mc| {
+            walk(ast.Expr, name, declName, mc.name.*, u);
+            return;
+        };
         if (v == .identifier) switch (v.identifier.kind) {
             .ident => |n| if (std.mem.eql(u8, n, name)) {
                 u.reads = true;
@@ -231,29 +259,29 @@ fn walk(comptime T: type, name: []const u8, v: T, u: *Use) void {
         if (v == .call and v.call.kind == .call) {
             const c = v.call.kind.call;
             if (c.receiver) |r| if (std.mem.eql(u8, c.callee, "fail") and isName(r.*, name)) {
-                walk(@TypeOf(c.args), name, c.args, u);
-                walk(@TypeOf(c.trailing), name, c.trailing, u);
+                walk(@TypeOf(c.args), name, declName, c.args, u);
+                walk(@TypeOf(c.trailing), name, declName, c.trailing, u);
                 return;
             };
         }
     }
     switch (@typeInfo(T)) {
         .pointer => |ptr| switch (ptr.size) {
-            .one => walk(ptr.child, name, v.*, u),
+            .one => walk(ptr.child, name, declName, v.*, u),
             .slice => {
                 if (ptr.child == u8) return;
-                for (v) |item| walk(ptr.child, name, item, u);
+                for (v) |item| walk(ptr.child, name, declName, item, u);
             },
             else => {},
         },
-        .optional => |o| if (v) |x| walk(o.child, name, x, u),
+        .optional => |o| if (v) |x| walk(o.child, name, declName, x, u),
         .@"struct" => |st| inline for (st.fields) |f| {
-            if (!f.is_comptime) walk(f.type, name, @field(v, f.name), u);
+            if (!f.is_comptime) walk(f.type, name, declName, @field(v, f.name), u);
         },
         .@"union" => |un| {
             if (un.tag_type == null) return;
             switch (v) {
-                inline else => |payload| walk(@TypeOf(payload), name, payload, u),
+                inline else => |payload| walk(@TypeOf(payload), name, declName, payload, u),
             }
         },
         else => {},

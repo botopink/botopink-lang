@@ -1,0 +1,16 @@
+//// Decision 370 (2), `s35-g` — a member function of a decorator declared in
+//// another module reads only the decorator's parameters and its own locals.
+
+pub mod rules;
+import {rules.check, rules.Violation};
+
+fn passwordsMatch(a: Signup) -> bool {
+    return a.password == a.confirm;
+}
+
+#[check(passwordsMatch)]
+pub type Signup(password: string, confirm: string)
+
+pub fn main() {
+    @print(Signup(password: "a", confirm: "b").validate().length);
+}

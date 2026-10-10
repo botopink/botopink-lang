@@ -1,0 +1,2 @@
+decorator-member-fn-imported-name: `#[check]`'s member `validate` names `Violation`, and the decorator is declared in another module
+src/main.bp:11:3

@@ -449,6 +449,32 @@ pub const decorator_member_duplicate: []const u8 = "decorator-member-duplicate";
 /// `decl.addMember(source)` whose source is not exactly one `fn` member.
 pub const decorator_member_not_one_fn: []const u8 = "decorator-member-not-one-fn";
 
+// ── decision 370 (2) — a typed member carrying the parameters' `@Expr`s ─────
+
+/// A typed function expression (`fn(x: T) -> R { … }`) anywhere but the
+/// member a decorator hands to `decl.addMember(name, fn…)`.
+pub const fn_expr_typed: []const u8 = "fn-expr-typed";
+
+/// `decl.addMember(name, f)` whose `f` is not a function expression written at
+/// the call: the member's body is where the parameters' `@Expr`s are spliced.
+pub const decorator_member_not_fn: []const u8 = "decorator-member-not-fn";
+
+/// A member function with a parameter whose type is not written.
+pub const decorator_member_fn_untyped: []const u8 = "decorator-member-fn-untyped";
+
+/// A member function reading the decorator's `@Decl` handle or a local of the
+/// decorator's body: those exist while the program compiles, the member runs
+/// with the program.
+pub const decorator_member_captures: []const u8 = "decorator-member-captures";
+
+/// A member function of a decorator declared in another module naming a
+/// declaration: whose scope resolves it is open (`s35-g`).
+pub const decorator_member_fn_imported_name: []const u8 = "decorator-member-fn-imported-name";
+
+/// A member function's types at one annotation: a `self` that is not the type
+/// the member joins, or a type parameter the annotation leaves unbound.
+pub const decorator_member_type: []const u8 = "decorator-member-type";
+
 /// `decl.addType` from a decorator on a `fn`: an associated type belongs to a type.
 pub const decorator_type_without_owner: []const u8 = "decorator-type-without-owner";
 
@@ -475,6 +501,12 @@ pub const typeinfo_all_arguments: []const u8 = "typeinfo-all-arguments";
 /// One query over a decorator carried by functions and by types.
 pub const typeinfo_all_mixed: []const u8 = "typeinfo-all-mixed";
 
+/// Decision 372 — `@TypeInfo.all(with: d)` in a module where `#[d]` reads
+/// `.hooks` and annotates a declaration of that module: `d` runs after the
+/// module's bodies, so the answer could not carry the meta it sets. Refused at
+/// the decorator's name in `with:` (question s23-i).
+pub const typeinfo_all_hooks_reader: []const u8 = "typeinfo-all-hooks-reader";
+
 /// A query over types without `member:` — a type is no value.
 pub const typeinfo_all_needs_member: []const u8 = "typeinfo-all-needs-member";
 
@@ -499,6 +531,12 @@ pub const decorator_meta_on_member: []const u8 = "decorator-meta-on-member";
 
 /// A decorator setting one of its keys twice on one declaration.
 pub const decorator_meta_duplicate: []const u8 = "decorator-meta-duplicate";
+
+/// Decision 372 — `@emit`, `addMember` or `addType` in a decorator that reads
+/// `.hooks` (in its body or a function it reaches): such a decorator runs
+/// after the module's bodies are inferred and may only record meta or refuse.
+/// Refused at the call.
+pub const decorator_hooks_output: []const u8 = "decorator-hooks-output";
 
 /// Decision 253 — `@typeInfo.all(…)`: the catalogue is the static method
 /// `@TypeInfo.all` of the builtin type `TypeInfo`, refused where it is written.
@@ -616,6 +654,12 @@ pub const all_codes = [_][]const u8{
     decorator_member_without_type,
     decorator_member_duplicate,
     decorator_member_not_one_fn,
+    fn_expr_typed,
+    decorator_member_not_fn,
+    decorator_member_fn_untyped,
+    decorator_member_captures,
+    decorator_member_fn_imported_name,
+    decorator_member_type,
     decorator_type_without_owner,
     decorator_type_name,
     decorator_type_duplicate,
@@ -623,6 +667,7 @@ pub const all_codes = [_][]const u8{
     unknown_associated_fn,
     typeinfo_all_arguments,
     typeinfo_all_mixed,
+    typeinfo_all_hooks_reader,
     typeinfo_all_needs_member,
     typeinfo_all_private,
     typeinfo_all_imported,
@@ -630,6 +675,7 @@ pub const all_codes = [_][]const u8{
     typeinfo_all_template_unstable,
     decorator_meta_on_member,
     decorator_meta_duplicate,
+    decorator_hooks_output,
     typeinfo_all_on_function,
     typeinfo_lowercase,
     typeinfo_unknown_member,

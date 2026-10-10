@@ -5,6 +5,11 @@
 
 Formatter tests. The Wadler-Lindig pretty-printer itself is at `../format.zig`.
 
+`fmtFnExpr` prints a function expression's parameter types and `-> R` when
+they are written (decision 370 (2), `FunctionExpr.paramTypes` / `.returnType`):
+`fn(self: T) -> Violation[] { … }` round-trips, an untyped `fn(a, b) { … }` is
+printed as before (`tests/expressions.zig`).
+
 ## Tree
 
 ```text

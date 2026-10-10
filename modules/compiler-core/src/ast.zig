@@ -997,11 +997,47 @@ pub fn FunctionExprOf(comptime phase: Phase) type {
         /// Parameter names (inferred types). Empty for no-param functions.
         params: []const []const u8,
         body: []StmtOf(phase),
+        /// Decision 370 (2) — `fn(self: T) -> R { … }`: each parameter's type
+        /// as written, one per `params` entry, or empty when none is written.
+        /// The checker admits the typed form only as the member a decorator
+        /// hands to `decl.addMember(name, fn…)` (`comptime/member_fn.zig`).
+        paramTypes: []const TypeRef = &.{},
+        /// The `-> R` a typed function expression writes; null when none.
+        returnType: ?TypeRef = null,
+
+        /// Dumped without the decision-370 fields unless they are written, so
+        /// an untyped function expression dumps as it always did.
+        pub fn jsonStringify(this: @This(), jws: anytype) !void {
+            try jws.beginObject();
+            try jws.objectField("syntax");
+            try jws.write(this.syntax);
+            try jws.objectField("params");
+            try jws.write(this.params);
+            try jws.objectField("body");
+            try jws.write(this.body);
+            if (this.paramTypes.len > 0) {
+                try jws.objectField("paramTypes");
+                try jws.write(this.paramTypes);
+            }
+            if (this.returnType) |rt| {
+                try jws.objectField("returnType");
+                try jws.write(rt);
+            }
+            try jws.endObject();
+        }
+
+        /// Whether a parameter type or a return type is written.
+        pub fn isTyped(this: @This()) bool {
+            return this.paramTypes.len > 0 or this.returnType != null;
+        }
 
         pub fn deinit(this: *@This(), allocator: std.mem.Allocator) void {
             allocator.free(this.params);
             for (this.body) |*s| s.deinit(allocator);
             allocator.free(this.body);
+            for (this.paramTypes) |*t| @constCast(t).deinit(allocator);
+            allocator.free(this.paramTypes);
+            if (this.returnType) |*t| @constCast(t).deinit(allocator);
         }
     };
 

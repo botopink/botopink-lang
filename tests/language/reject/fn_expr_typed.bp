@@ -1,0 +1,10 @@
+//// Decision 370 (2) — a function expression writes its parameters' types and
+//// its return only as the member a decorator hands to `decl.addMember(name,
+//// fn…)`. Anywhere else the lambda takes the types of its position.
+
+pub fn main() {
+    val inc = fn(x: i32) -> i32 {
+        return x + 1;
+    };
+    @print(inc(1));
+}

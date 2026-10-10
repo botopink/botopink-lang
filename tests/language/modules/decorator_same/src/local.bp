@@ -1,0 +1,5 @@
+//// The project's own `serverOnly` — named like `web`'s, declared here.
+
+pub fn serverOnly(comptime decl: @Decl) {
+    val _n = decl.name;
+}

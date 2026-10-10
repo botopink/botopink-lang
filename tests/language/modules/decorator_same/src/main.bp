@@ -1,0 +1,27 @@
+//// Decision 371 — `Decorator.same(other)` compares two decorators by their
+//// declaration, never by the name written. `web`'s `serverOnly` under the
+//// alias `srv` is `web/markers`'s; the project's own `serverOnly`, reached
+//// through the namespace `local`, has the same name and is another
+//// declaration of another package — `same` answers false for it.
+
+pub mod local;
+
+import {local};
+import {serverOnly as srv, check} from "web";
+
+#[check]
+#[srv]
+fn Aliased() -> string {
+    return "a";
+}
+
+#[check]
+#[local.serverOnly]
+fn SameName() -> string {
+    return "b";
+}
+
+pub fn main() {
+    @print(@typeInfo(Aliased).meta.check.ids);
+    @print(@typeInfo(SameName).meta.check.ids);
+}

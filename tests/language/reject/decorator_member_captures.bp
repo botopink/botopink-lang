@@ -1,0 +1,25 @@
+//// Decision 370 (2) — a member function uses the decorator's parameters, each
+//// `@Expr` spliced where it was written, and what its own body declares. A
+//// local of the decorator's body exists only while the program compiles: the
+//// member reading it is refused at the read.
+
+pub type Violation(field: string, message: string)
+
+fn check<T>(comptime decl: @Decl<T>, comptime rule: @Expr<fn(v: T) -> bool>) {
+    val field = decl.name;
+    decl.addMember("validate", fn(self: T) -> Violation[] {
+        if (rule(self)) return [];
+        return [Violation(field: field, message: "invalid")];
+    });
+}
+
+fn passwordsMatch(a: Signup) -> bool {
+    return a.password == a.confirm;
+}
+
+#[check(passwordsMatch)]
+pub type Signup(password: string, confirm: string)
+
+pub fn main() {
+    @print("unreached");
+}

@@ -834,7 +834,7 @@ pub const Formatter = struct {
             .useHook => |uh| this.concat(try this.text("use "), try this.fmtExpr(uh.kind.inner.*)),
             .function => |func| switch (func.kind.syntax) {
                 .lambda => try this.fmtLambdaAt(func.loc.line, func.kind.params, func.kind.body, true),
-                .fnExpr => try this.fmtFnExpr(func.kind.params, func.kind.body),
+                .fnExpr => try this.fmtFnExpr(func.kind.params, func.kind.body, func.kind.paramTypes, func.kind.returnType),
                 // `async { … }` (decision 124): the block's statements, one per
                 // line, like any body.
                 .asyncBlock => if (func.kind.body.len == 0)
@@ -1867,27 +1867,38 @@ pub const Formatter = struct {
         }));
     }
 
-    fn fmtFnExpr(this: *Formatter, params: []const []const u8, body: []ast.Stmt) !*const Doc {
+    fn fmtFnExpr(this: *Formatter, params: []const []const u8, body: []ast.Stmt, paramTypes: []const ast.TypeRef, returnType: ?ast.TypeRef) !*const Doc {
         // The one statement-sequence printer — this body had a copy of its
         // loop that kept no trailing comment on its statement's line.
         const inner = try this.fmtStmtSeq(body);
+        // Decision 370 (2) — a typed function expression's `-> R`.
+        const ret = if (returnType) |rt| try this.concatAll(&.{
+            try this.text("-> "),
+            try this.fmtTypeRef(rt),
+            try this.text(" "),
+        }) else this.nil();
 
         if (params.len == 0) {
             return this.concatAll(&.{
                 try this.text("fn() "),
+                ret,
                 try this.surroundBreak("{", inner, "}"),
             });
         }
 
-        // `fn(a, b) { ... }`
+        // `fn(a, b) { ... }`, `fn(a: A, b: B) -> R { ... }`
         var paramDocs = try this.arena.alloc(*const Doc, params.len);
-        for (params, 0..) |p, i| paramDocs[i] = try this.text(p);
+        for (params, 0..) |p, i| paramDocs[i] = if (paramTypes.len == params.len)
+            try this.concat(try this.text(try std.fmt.allocPrint(this.arena, "{s}: ", .{p})), try this.fmtTypeRef(paramTypes[i]))
+        else
+            try this.text(p);
         const paramList = try this.join(paramDocs, try this.text(", "));
 
         return this.forceBreak(try this.concatAll(&.{
             try this.text("fn("),
             paramList,
             try this.text(") "),
+            ret,
             try this.surroundBreak("{", inner, "}"),
         }));
     }

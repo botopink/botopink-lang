@@ -1,0 +1,2 @@
+decorator-member-not-fn: `decl.addMember(name, f)` takes the member as a function expression written at the call
+12:32

@@ -1427,7 +1427,9 @@ pub const decl_reflection_src =
     \\pub type DeclKind { Type, Behavior, Fn, Method, Field, Val }
     \\pub type Span(start: i32, end: i32, line: i32)
     \\pub type SourceLocation(file: string, line: i32, column: i32, fnName: string)
-    \\pub behavior Decorator {}
+    \\pub behavior Decorator {
+    \\    fn same(self: Self, other: Decorator) -> bool;
+    \\}
     \\pub type __Decl__Annotation(name: string, args: string[], decorator: Decorator)
     \\pub type __Decl__Param(name: string, typeName: string)
     \\pub type __Decl__Field(name: string, typeName: string, annotations: __Decl__Annotation[])
@@ -2495,13 +2497,16 @@ fn registerExports(
                 var fns = std.StringHashMap(ast.FnDecl).init(arena);
                 for (decls) |d| if (d == .@"fn") try fns.put(d.@"fn".name, d.@"fn");
                 if (infer.isDecoratorParams(f.params)) {
-                    try decoratorRegistry.put(try comptimeRegistryKey(arena, path, b.name), f);
+                    // Decision 371 — a decorator travels with its `same` calls
+                    // lowered (`decorator_same.zig`), its own and those of the
+                    // functions of this module it reaches.
+                    try decoratorRegistry.put(try comptimeRegistryKey(arena, path, b.name), try infer.lowerDecoratorSame(arena, env, &fns, f));
                     // The functions its body reaches travel with it
                     // (`decoratorSupportKey`) — its module's and the ones the
                     // module imports: the importer's module declares none of
                     // them, and the decorator module needs them.
                     const support = try infer.decoratorSupport(arena, fns, &env.importedFnSupport, f);
-                    for (support.fns, 0..) |sf, i| try decoratorRegistry.put(try decoratorSupportKey(arena, path, b.name, i), sf);
+                    for (support.fns, 0..) |sf, i| try decoratorRegistry.put(try decoratorSupportKey(arena, path, b.name, i), try infer.lowerDecoratorSame(arena, env, &fns, sf));
                     if (support.conflict) |c| try decoratorRegistry.put(try decoratorConflictKey(arena, path, b.name), conflictCarrier(c));
                 } else if (isTemplateFn(f)) {
                     // A template carries the functions its body reaches the
@@ -2518,10 +2523,10 @@ fn registerExports(
                     // that imports it can call it: entry 0 is the function,
                     // the rest are the functions of this module (and of its
                     // own imports) its body reaches.
-                    try decoratorRegistry.put(try decoratorClosureKey(arena, path, b.name, 0), f);
+                    try decoratorRegistry.put(try decoratorClosureKey(arena, path, b.name, 0), try infer.lowerDecoratorSame(arena, env, &fns, f));
                     const support = try infer.decoratorSupport(arena, fns, &env.importedFnSupport, f);
                     if (support.conflict == null) {
-                        for (support.fns, 1..) |sf, i| try decoratorRegistry.put(try decoratorClosureKey(arena, path, b.name, i), sf);
+                        for (support.fns, 1..) |sf, i| try decoratorRegistry.put(try decoratorClosureKey(arena, path, b.name, i), try infer.lowerDecoratorSame(arena, env, &fns, sf));
                     }
                 }
             }

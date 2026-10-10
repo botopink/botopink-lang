@@ -1,0 +1,2 @@
+decorator-member-captures: the member reads `decl`, the decorator's `@Decl` handle, which exists only while the program compiles
+6:16

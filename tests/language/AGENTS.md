@@ -160,6 +160,19 @@ component once, calls in body order), `run/decl_hooks_custom_hook` (a hook's own
 `run/decl_hooks_context` (each `provide` / `context` with its context object, 354 (4); wasm refuses the
 `use`) and `modules/decl_hooks_imported` (another module's nodes, a hook through an alias with its own
 annotations), on the four targets but where named; each red on the parent binary (`unknown field 'hooks'`).
+Decision 371 (`Decorator.same`) adds `modules/decorator_same` — a package `web` whose `check` compares
+each annotation's `decorator` with `serverOnly` and with itself: `#[srv]` under `import {serverOnly as srv}
+from "web"` is `web`'s, the project's own `serverOnly` reached as `#[local.serverOnly]` is another
+declaration (`other`); four targets — and `reject/decorator_same_not_decorator` (`same("serverOnly")`, a
+type mismatch at the argument); the parent binary had no `same`. Decision 372 (a `.hooks` reader runs
+after the module's bodies) adds `run/decl_hooks_reads_member` — `#[graph]`'s `Page` calls
+`Account(…).validate()`, which `#[check]` adds below it; four targets, red on the parent binary
+(`'validate' is not declared`) — and `reject/decorator_hooks_output` (`decl.addMember` in a decorator
+reading `decl.hooks`, `decorator-hooks-output` at the call; accepted by the parent binary),
+`reject/decorator_hooks_output_member_fn` (the same refusal of decision 370's typed
+`decl.addMember(name, fn…)`) and
+`reject/typeinfo_all_hooks_reader` (`@TypeInfo.all(with: graph)` in the module of `#[graph]`'s `Page`;
+answered by the parent binary).
 Decision 139 (a negative index counts from the end) adds `run/index_negative_from_end` — `xs.at(-1)`,
 `xs.at(-3)`, `xs.at(-4)` / `xs.at(3)` absent, `xs[-2]`, a negative index held in a `val`, the same for
 `String.at` / `s[-2]`, and a string array — on all four targets.
@@ -748,6 +761,19 @@ the parameter, naming `@Expr<T>`), `reject/decorator_value_not_comptime` (`messa
 `q.value`), each red on the parent binary. `run/decorator_arguments_check` and
 `reject/decorator_check_without_rule_not_bool` tell the function form by `decl.kind` (an `@Expr` of
 a function has no `.value`, question `s35-b`).
+
+Decision 370 (2) (`01-checker` step 35 box 3) — a decorator hands its parameters' `@Expr`s on to the
+program through a typed member, `decl.addMember(name, fn(self: T) -> R { … })` — adds, on the four
+targets, `run/decorator_expr_rule_called` (`rule` is `passwordsMatch`, called by `validate` at run
+time), `run/decorator_expr_message_runtime` (`message` is `t("signup.mismatch")`, evaluated at run
+time each time the member reaches it, never at build), `modules/decorator_member_fn_import` (a member
+of a decorator in another module, reading only its parameters and locals) and
+`modules/decorator_member_fn_imported_name` (one naming a declaration of the decorator's module,
+`decorator-member-fn-imported-name`, question `s35-g`, refused on every target), and the refusals
+`reject/fn_expr_typed`, `reject/decorator_member_not_fn`, `reject/decorator_member_fn_untyped`,
+`reject/decorator_member_captures` (a local of the decorator's body),
+`reject/decorator_member_captures_handle` (`decl`) and `reject/decorator_member_type` (a field's
+`fn(self: T)`, `T` the field's type), each red on the parent binary.
 
 Every cell is copied into its own scratch project, so a parse error fails only that cell. Test names
 start with the decision-8 section they pin (`test "§5.4 …"`) when there is one, so a failure points at

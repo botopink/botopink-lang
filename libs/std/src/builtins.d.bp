@@ -657,6 +657,15 @@ pub behavior Decl<T> {
     // (`decorator-member-without-type`), and so is a name the type already
     // has (`decorator-member-duplicate`) or a source that is not one `fn`
     // (`decorator-member-not-one-fn`).
+    //
+    // Decision 370 (2) — `decl.addMember(name, fn(self: T) -> R { … })`: the
+    // member written as a function expression at the call, every parameter
+    // typed. It is the program's code: each `comptime x: @Expr<T>` parameter
+    // is a `T` in it, spliced where the member uses it as the annotation
+    // wrote the argument, and the type receives `pub fn <name>(…) -> R`. It
+    // reads neither the handle nor a local of the decorator's body
+    // (`decorator-member-captures`); the checker answers the two-argument
+    // call itself (`infer.zig` `inferMemberFnCall`).
     fn addMember(self: Self, source: string);
 
     // Decision 216 (2) — record a comptime fact about the annotated
@@ -749,7 +758,16 @@ pub type HookNode(
 // type — and it cannot be constructed or written as a value. A `Decorator[]`
 // is an array literal of such names. The checker gives a name the type where
 // a `Decorator` is expected (`infer.zig` `decoratorArgumentType`).
-pub behavior Decorator {}
+//
+// Decision 371 — `a.decorator.same(serverOnly)` compares two decorators by
+// their declaration, never by the name written: an alias (`#[srv]` after
+// `import {serverOnly as srv}`) and a namespace (`markers.serverOnly`) are
+// resolved where each is written, and a same-named decorator of another
+// module or package is another declaration (`false`). `is` stays a keyword;
+// `==` on two `Decorator`s has no meaning.
+pub behavior Decorator {
+    fn same(self: Self, other: Decorator) -> bool;
+}
 
 // ── TypeInfo (decisions 216, 248, 253, 254, 268) ─────────────────────────────
 // What `@typeInfo(T)` answers. Its members are read at compile time:

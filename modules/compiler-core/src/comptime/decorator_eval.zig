@@ -77,10 +77,13 @@ pub const Contribution = struct {
     key: []const u8 = "",
     value: []const u8 = "",
     /// `decl.addType(name, source)` — the associated type's name (its shape
-    /// is `source`).
+    /// is `source`); `decl.addMember(name, fn…)` — the member's name.
     name: []const u8 = "",
+    /// Decision 370 (2) — `decl.addMember(name, fn…)`: which of the body's
+    /// member functions (`member_fn.collect`'s order) the call handed.
+    index: usize = 0,
 
-    pub const Kind = enum { emit, member, meta, assoc };
+    pub const Kind = enum { emit, member, memberFn, meta, assoc };
 };
 
 pub const Outcome = union(enum) {
@@ -443,6 +446,7 @@ const ReplyItem = struct {
     key: []const u8 = "",
     value: []const u8 = "",
     name: []const u8 = "",
+    index: usize = 0,
 };
 
 /// The JSON object `main/0` returns.
@@ -473,7 +477,7 @@ fn parseOutcome(arena: std.mem.Allocator, stdout: []const u8) EvalError!Outcome 
         for (reply.contributions, 0..) |item, i| {
             const kind = std.meta.stringToEnum(Contribution.Kind, item.kind) orelse
                 return .{ .err = try errorText(arena, "the decorator evaluator returned an unknown output kind", item.kind) };
-            out[i] = .{ .kind = kind, .source = item.source, .key = item.key, .value = item.value, .name = item.name };
+            out[i] = .{ .kind = kind, .source = item.source, .key = item.key, .value = item.value, .name = item.name, .index = item.index };
         }
         return .{ .ok = out };
     }

@@ -1,0 +1,15 @@
+//// The decorator lives in a library module of its own, and its member names
+//// `Violation`, a type of this module. Which module's scope resolves it in
+//// the annotated type's module is open (`s35-g`): refused at the annotation.
+
+pub type Violation(field: string, message: string)
+
+pub fn check<T>(
+    comptime decl: @Decl<T>,
+    comptime rule: @Expr<fn(v: T) -> bool>,
+) {
+    decl.addMember("validate", fn(self: T) -> Violation[] {
+        if (rule(self)) return [];
+        return [Violation(field: "confirm", message: "invalid")];
+    });
+}
