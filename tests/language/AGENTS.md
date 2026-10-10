@@ -1069,6 +1069,16 @@ project and once inside `deps/tree/` (`api.bp`'s `import {Leaf};`). commonJS use
 literal word `module` as the path — `require("./module")` / `require("../module")` — so such a
 program built and then died with `Cannot find module`. Green on all four targets.
 
+`modules/two_packages_one_module_name` pins decisions 170 and 337's module identity — a module is
+its package plus its path. Dependencies `a` and `b` each hold `theme` (`Ns` with different fields,
+`make`, a template `tag`), each package's `user` imports its own `theme` by path (`b`'s without
+importing `Ns`) and evaluates a `comptime make().show()`, and the project has a `theme` of its own:
+the checker, the four backends' module names and cross-module calls, the `.d.ts` and the comptime
+runtime keep the three apart. The parent binary refused `a/user`'s import on commonJS, erlang and
+beam (`make` is declared `pub` by `a/theme` and by `b/theme`) and wasm (`cannot resolve the call
+make/0`); four targets now (the real case: `emilia/theme` beside `styled/theme` under
+`jhonstart-emilia`, where erlang tagged emilia's `Ns` with `styled@theme@@Ns__v__…`).
+
 `modules/field_name_collision` is the third cell that needs two modules to say anything, and the
 defect it pins is **invisible in one file**. A record is a tagged tuple on erlang, so a field read is
 a POSITION, and the position comes from the field's NAME alone when the receiver's type was lost —

@@ -426,7 +426,7 @@ fn collectLinks(
                 const owns = if (cross.picked(imp.leaf(), leaf_src, null)) |info|
                     std.mem.eql(u8, info.module, o.name)
                 else
-                    whole.namesModule(o.name) or std.mem.eql(u8, crossModule.moduleBasename(o.name), imp.leaf());
+                    whole.namesModule(o.name) or (whole != .key and std.mem.eql(u8, crossModule.moduleBasename(o.name), imp.leaf()));
                 if (!owns or visited.contains(o.name)) continue;
                 const ok = switch (o.outcome) {
                     .ok => |*ok| ok,
@@ -504,13 +504,16 @@ fn linkRenames(
             // Without it the receiver was dropped and `url.parse(…)` called
             // whichever `parse` kept the bare name (`querystring`'s), at
             // exit 0.
-            const whole = try u.leafSource(imp, arena, true);
-            if (whole == .module) {
+            const whole_module: ?[]const u8 = switch (try u.leafSource(imp, arena, true)) {
+                .module, .key => |m| m,
+                .root => null,
+            };
+            if (whole_module) |wm| {
                 const ns = imp.alias orelse imp.leaf();
                 var it = mangled.iterator();
                 while (it.next()) |e| {
                     const sep = std.mem.indexOfScalar(u8, e.key_ptr.*, 0) orelse continue;
-                    if (!std.mem.eql(u8, e.key_ptr.*[0..sep], whole.module)) continue;
+                    if (!std.mem.eql(u8, e.key_ptr.*[0..sep], wm)) continue;
                     const key = try std.fmt.allocPrint(arena, "{s}.{s}", .{ ns, e.key_ptr.*[sep + 1 ..] });
                     try out.put(arena, key, e.value_ptr.*);
                 }

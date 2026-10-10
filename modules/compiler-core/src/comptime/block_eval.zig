@@ -808,7 +808,13 @@ fn readTypeShape(arena: std.mem.Allocator, names: *std.StringHashMapUnmanaged(vo
 const FoundType = struct { decl: ast.TypeDecl, helpers: []const ast.FnDecl };
 
 /// The declaration of the type `name`: this module's, then std's, then the
-/// one module of the build declaring it.
+/// one this module imports under that name (its declaring module, decisions
+/// 170 and 337), then the one module this module imports from that declares
+/// it (`make()` of `a/theme` answering `a/theme`'s `Ns`), then the one module
+/// of the build declaring it. A type is its module plus its name: two
+/// modules declaring `Ns` — `a/theme` and `b/theme` — are two types even
+/// where both are written on the same line, so a step that finds two answers
+/// none of them.
 fn findType(env: *Env, name: []const u8) ?FoundType {
     for (env.moduleDecls) |d| switch (d) {
         .type_ => |t| if (std.mem.eql(u8, t.name, name)) return .{ .decl = t, .helpers = ownFns(env) },
@@ -820,12 +826,28 @@ fn findType(env: *Env, name: []const u8) ?FoundType {
         else => {},
     };
     const registry = env.typeDeclRegistry orelse return null;
+    if (env.importedTypeDecls.get(name)) |imported| {
+        const d = (registry.get(imported.module) orelse return null).get(imported.name) orelse return null;
+        return if (d == .type_) .{ .decl = d.type_, .helpers = &.{} } else null;
+    }
+    var from_imports: ?ast.TypeDecl = null;
+    var from_module: []const u8 = "";
+    var oit = env.importOwners.valueIterator();
+    while (oit.next()) |o| {
+        if (std.mem.eql(u8, o.owner, from_module)) continue;
+        const d = (registry.get(o.owner) orelse continue).get(name) orelse continue;
+        if (d != .type_) continue;
+        if (from_imports != null) return null;
+        from_imports = d.type_;
+        from_module = o.owner;
+    }
+    if (from_imports) |t| return .{ .decl = t, .helpers = &.{} };
     var found: ?ast.TypeDecl = null;
     var it = registry.iterator();
     while (it.next()) |e| {
         const d = e.value_ptr.get(name) orelse continue;
         if (d != .type_) continue;
-        if (found) |f| if (f.loc.line != d.type_.loc.line or f.loc.col != d.type_.loc.col) return null;
+        if (found != null) return null;
         found = d.type_;
     }
     return if (found) |t| .{ .decl = t, .helpers = &.{} } else null;

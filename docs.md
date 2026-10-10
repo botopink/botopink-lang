@@ -233,6 +233,15 @@ error[module-import-with-from]: "geometry" is a module of this package — write
  --> src/main.bp:1:20
 ```
 
+**A module is its package plus its path** (decisions 170, 337). Two packages may each
+hold a module of one name — a CSS library's `theme` and a component library's `theme` — and
+they are two modules: inside the first, `import {theme.Ns};` names its own `theme`, inside
+the second its own, and a project's `theme` is a third. Neither import is ambiguous, and
+neither `Ns` is ever read as the other's — in the checker, in every backend's module names
+and calls, in the `.d.ts` and at compile time. The shorthand inside a dependency resolves
+among that package's modules only. Pinned by
+`tests/language/modules/two_packages_one_module_name`.
+
 **A path and a group are one tree, and only the leaf enters scope.** An item
 may walk into a module (`shapes.circle.name`), and several items under one
 prefix may be grouped (`shapes: {circle: {name}, helpers: {seven}}`) — both

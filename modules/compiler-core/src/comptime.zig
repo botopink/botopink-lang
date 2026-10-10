@@ -340,10 +340,12 @@ fn withImportTypeAliasesErased(arena: std.mem.Allocator, prog: ast.Program, env:
 /// (`env.itemOwners` — a bundled package beside a shorthand, decision 170; a
 /// module of this package beside `from "<pkg>"` or a package beside a module
 /// path, decision 206) leaves its import for an import of its own that names
-/// the module it resolved to by its key (`import {charOf} from "config";`,
-/// `import {levelName} from "log/levels";`), the item reduced to its leaf and
-/// its alias, so the backends' name-keyed lookup reads the checker's answer
-/// instead of meeting the other declaration beside it.
+/// the module it resolved to by its key (`ImportSource.key`, `config` or
+/// `log/levels` — written `import {charOf} from "config";` when formatted),
+/// the item reduced to its leaf and its alias, so the backends' name-keyed
+/// lookup reads the checker's answer, exactly that module, instead of
+/// meeting the other declaration beside it (a key never reads as a basename:
+/// the root package's `config` is not a dependency's `x/config`).
 fn withImportSourcesNamed(arena: std.mem.Allocator, prog: ast.Program, env: *const envMod.Env) !ast.Program {
     if (env.itemOwners.count() == 0) return prog;
     var out: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
@@ -360,7 +362,7 @@ fn withImportSourcesNamed(arena: std.mem.Allocator, prog: ast.Program, env: *con
                     leaf.segments = try arena.dupe([]const u8, &.{imp.leaf()});
                     var nu = u;
                     nu.imports = try arena.dupe(ast.ImportPath, &.{leaf});
-                    nu.source = .{ .module = owner };
+                    nu.source = .{ .key = owner };
                     try out.append(arena, .{ .use = nu });
                 } else try kept.append(arena, imp);
             }
@@ -738,7 +740,8 @@ fn orderReaders(
         const tokens: []const Token = lx.scanAll(arena) catch &.{};
         const program: ?ast.Program = if (tokens.len > 0) parsed: {
             var p = Parser.init(tokens);
-            break :parsed p.parse(arena) catch null;
+            const parsed = p.parse(arena) catch break :parsed null;
+            break :parsed try ast.ImportDecl.withOwnPackage(arena, parsed, m.package);
         } else null;
         if (program != null and try typeinfoAll.reads(arena, program.?)) {
             try readers.append(arena, m);
@@ -778,6 +781,13 @@ fn orderReaders(
                 }
                 for (u.imports) |imp| {
                     for ([_]bool{ false, true }) |whole| switch (try u.leafSource(imp, arena, whole)) {
+                        // A `.key` is one module: the package plus the path.
+                        .key => |key| for (readers.items) |r| {
+                            if (std.mem.eql(u8, r.path, m.path) or !std.mem.eql(u8, key, r.path)) continue;
+                            const msg = try std.fmt.allocPrint(arena, "{s}: `{s}` reads `@TypeInfo.all`, so it answers for the whole program and no module imports it", .{ diagnostics.typeinfo_all_imported, r.path });
+                            try refusals.put(arena, idx, validation.TypeError.custom(msg, "Move what this module needs out of the entry point into a module of its own; the entry point imports it, never the other way round.").withLoc(imp.loc));
+                            break :scan;
+                        },
                         .module => |path| for (readers.items) |r| {
                             if (std.mem.eql(u8, r.path, m.path)) continue;
                             if (!std.mem.eql(u8, path, r.path) and !std.mem.eql(u8, std.fs.path.basename(r.path), path)) continue;
@@ -924,7 +934,7 @@ fn assocOwners(
             // body (decision 330 (7)); decorators run on no std module.
             const from_std = switch (u.source) {
                 .module => |m| std.mem.eql(u8, m, "std"),
-                .root => false,
+                .root, .key => false,
             };
             for (u.imports) |imp| {
                 if (imp.activate) continue;
@@ -995,9 +1005,11 @@ fn analyzeMerged(
     env.target = target_name;
     env.typeDeclRegistry = typeDeclRegistry;
 
-    // Decision 216 (3): this module's own associated types exist now.
-    var owners = try assocOwners(arena, merged_in, mod.path, typeDeclRegistry, reflection);
-    const program = try assocTypes.expand(arena, merged_in, &owners);
+    // Decision 216 (3): this module's own associated types exist now. The
+    // contributions an `@emit` spliced in are imports of this package too.
+    const merged = try ast.ImportDecl.withOwnPackage(arena, merged_in, mod.package);
+    var owners = try assocOwners(arena, merged, mod.path, typeDeclRegistry, reflection);
+    const program = try assocTypes.expand(arena, merged, &owners);
 
     if (validation.validateComptime(program)) |err_info| {
         env.deinit();
@@ -1135,7 +1147,9 @@ fn analyzeSource(
         else => return err,
     };
     // Decision 309 — an embedded std module's brace imports name `std/<path>`.
-    const parsed = if (isStdPkgPath(mod.path)) try embeddedStdProgram(arena, parsed_as_written) else parsed_as_written;
+    // A dependency's module marks its imports with its package, so a path
+    // item names that package's module (decisions 170, 337).
+    const parsed = if (isStdPkgPath(mod.path)) try embeddedStdProgram(arena, parsed_as_written) else try ast.ImportDecl.withOwnPackage(arena, parsed_as_written, mod.package);
     // Decisions 110 / 111 on the use side: `io.fs.f()` through a folder
     // namespace and `collections.Dict.empty()` through a module one reach the
     // checker and the backends as the one-dot forms they lower.
@@ -1497,8 +1511,12 @@ pub fn isStdModule(key: []const u8) bool {
 /// "std"`). Without it a bundled package loaded by any module of the program
 /// made the importer's own `charOf` `ambiguous-import-use`. A module of the
 /// bundled package itself keeps its siblings in reach.
-fn outsideShorthandReach(env: *envMod.Env, source: ast.ImportSource, path: []const u8) bool {
-    if (source != .root) return false;
+fn outsideShorthandReach(env: *envMod.Env, u: ast.ImportDecl, path: []const u8) bool {
+    if (u.source != .root) return false;
+    // A module of a dependency reaches its own package's modules alone: a
+    // module is its package plus its path, and another package's `theme` is
+    // never this package's sibling (decisions 170, 337).
+    if (u.ownPackage.len > 0) return !ast.ImportSource.ofPackage(u.ownPackage, path);
     const seg = path[0 .. std.mem.indexOfScalar(u8, path, '/') orelse return false];
     if (bundledPackage(seg) == null) return false;
     const own = env.modulePath[0 .. std.mem.indexOfScalar(u8, env.modulePath, '/') orelse env.modulePath.len];
@@ -1622,6 +1640,7 @@ fn importsStd(u: ast.ImportDecl, in_std: bool) bool {
     if (u.package != null or u.activationOnly) return false;
     return switch (u.source) {
         .module => |m| std.mem.eql(u8, m, "std"),
+        .key => false,
         .root => in_std,
     };
 }
@@ -1775,7 +1794,7 @@ fn resolveImports(
             .use => |u| {
                 const from_std = switch (u.source) {
                     .module => |m| std.mem.eql(u8, m, "std"),
-                    .root => false,
+                    .root, .key => false,
                 };
                 // Package-namespace import (`import pkg [, { … }] [from "…"]`):
                 // bind `pkg` to the package's `pub default fn` (aliased under the
@@ -1841,7 +1860,7 @@ fn resolveImports(
                         // (`import {canvas} from "shapes"` for `shapes/canvas`'s
                         // own `canvas`).
                         switch (try u.leafSource(imp, env.arena, true)) {
-                            .module => |path| if (registry.get(path)) |exports| if (exports.contains(name)) break :blk true,
+                            .module, .key => |path| if (registry.get(path)) |exports| if (exports.contains(name)) break :blk true,
                             .root => {},
                         }
                         var sit = registry.iterator();
@@ -1853,7 +1872,7 @@ fn resolveImports(
                         break :blk false;
                     };
                     if (!imp.activate and !names_symbol) switch (try u.leafSource(imp, env.arena, true)) {
-                        .module => |path| if (!isStdPkgPath(path)) if (registry.get(path)) |exports| {
+                        .module, .key => |path| if (!isStdPkgPath(path)) if (registry.get(path)) |exports| {
                             try env.namespaces.modules.put(env.arena, local, exports);
                             try env.namespaces.paths.put(env.arena, local, path);
                             var eit = exports.keyIterator();
@@ -1897,7 +1916,7 @@ fn resolveImports(
                         var dit = typeDeclRegistry.iterator();
                         while (dit.next()) |e| {
                             if (isStdPkgPath(e.key_ptr.*)) continue;
-                            if (!leaf_src.admits(e.key_ptr.*, pass) or outsideShorthandReach(env, u.source, e.key_ptr.*) or outOfScope(scope, e.key_ptr.*)) continue;
+                            if (!leaf_src.admits(e.key_ptr.*, pass) or outsideShorthandReach(env, u, e.key_ptr.*) or outOfScope(scope, e.key_ptr.*)) continue;
                             if (e.value_ptr.get(name)) |type_decl| {
                                 // A behavior is not re-registered as a type:
                                 // its value binding below stays what it was,
@@ -1951,7 +1970,7 @@ fn resolveImports(
                         var oit = registry.iterator();
                         while (oit.next()) |e| {
                             if (isStdPkgPath(e.key_ptr.*)) continue;
-                            if (!leaf_src.admits(e.key_ptr.*, pass) or outsideShorthandReach(env, u.source, e.key_ptr.*) or outOfScope(scope, e.key_ptr.*)) continue;
+                            if (!leaf_src.admits(e.key_ptr.*, pass) or outsideShorthandReach(env, u, e.key_ptr.*) or outOfScope(scope, e.key_ptr.*)) continue;
                             if (e.value_ptr.contains(name)) {
                                 owner = e.key_ptr.*;
                                 break;
@@ -1972,7 +1991,7 @@ fn resolveImports(
                             const k = e.key_ptr.*;
                             if (isStdPkgPath(k) or std.mem.eql(u8, k, owner)) continue;
                             if (!e.value_ptr.contains(name)) continue;
-                            const left_out = outsideShorthandReach(env, u.source, k) or outOfScope(scope, k);
+                            const left_out = outsideShorthandReach(env, u, k) or outOfScope(scope, k);
                             if (!left_out and !leaf_src.admits(k, 0) and !leaf_src.admits(k, 1)) continue;
                             try env.itemOwners.put(env.arena, imp.loc, owner);
                             break;
@@ -1993,7 +2012,7 @@ fn resolveImports(
                             var ait = registry.iterator();
                             while (ait.next()) |e| {
                                 if (isStdPkgPath(e.key_ptr.*)) continue;
-                                if (!leaf_src.admits(e.key_ptr.*, pass) or outsideShorthandReach(env, u.source, e.key_ptr.*) or outOfScope(scope, e.key_ptr.*)) continue;
+                                if (!leaf_src.admits(e.key_ptr.*, pass) or outsideShorthandReach(env, u, e.key_ptr.*) or outOfScope(scope, e.key_ptr.*)) continue;
                                 if (e.value_ptr.contains(name)) try owners.append(env.arena, e.key_ptr.*);
                             }
                             if (owners.items.len == 0) continue;
@@ -2015,7 +2034,7 @@ fn resolveImports(
                             var it = registry.iterator();
                             while (it.next()) |e| {
                                 if (isStdPkgPath(e.key_ptr.*)) continue;
-                                if (!leaf_src.admits(e.key_ptr.*, pass) or outsideShorthandReach(env, u.source, e.key_ptr.*) or outOfScope(scope, e.key_ptr.*)) continue;
+                                if (!leaf_src.admits(e.key_ptr.*, pass) or outsideShorthandReach(env, u, e.key_ptr.*) or outOfScope(scope, e.key_ptr.*)) continue;
                                 if (e.value_ptr.get(name)) |ty| {
                                     try env.bind(local, ty);
                                     // The types its signature names come
@@ -2288,7 +2307,7 @@ fn addImportedTypeScope(
         const u = d.use;
         const from_std = switch (u.source) {
             .module => |m| std.mem.eql(u8, m, "std"),
-            .root => false,
+            .root, .key => false,
         };
         if (from_std) {
             // A std type leaf (`import {collections.Dict} from "std"`) is in

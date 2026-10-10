@@ -13,4 +13,11 @@ pub const Module = struct {
     /// `<name>.bp`, the same spelling the test runners print (`main.bp:12`);
     /// the CLI's scanner/resolver/libs loaders fill it in for package modules.
     srcPath: []const u8 = "",
+    /// The dependency package the module was loaded from — the first segment
+    /// of `path` (`a` for `a/theme`) — or empty for a module of the root
+    /// package. A module is its package plus its path (decisions 170, 337):
+    /// the checker marks each import with it (`ImportDecl.ownPackage`), so
+    /// `import {theme.make};` in `a/user` names `a/theme` and never another
+    /// package's `theme`. The CLI's dependency loader fills it in.
+    package: []const u8 = "",
 };

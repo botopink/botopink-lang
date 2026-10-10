@@ -58,20 +58,20 @@ pub fn expandImports(
         if (u.package != null or u.activationOnly) continue;
         switch (u.source) {
             .module => |m| if (std.mem.eql(u8, m, "std")) continue,
-            .root => {},
+            .root, .key => {},
         }
         var items: ?[]ast.ImportPath = null;
         for (u.imports, 0..) |imp, ii| {
             if (imp.activate) continue;
             const whole = switch (try u.leafSource(imp, arena, true)) {
-                .module => |p| p,
+                .module, .key => |p| p,
                 .root => continue,
             };
             const def = defaults.get(try key(arena, whole)) orelse continue;
             // A symbol of the prefix module named like the item wins.
             if (imp.isQualified()) {
                 switch (try u.leafSource(imp, arena, false)) {
-                    .module => |prefix| if (exports.get(prefix)) |ex| if (ex.contains(imp.leaf())) continue,
+                    .module, .key => |prefix| if (exports.get(prefix)) |ex| if (ex.contains(imp.leaf())) continue,
                     .root => {},
                 }
             }

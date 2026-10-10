@@ -120,7 +120,7 @@ fn noteStdContextName(env: *Env, u: ast.ImportDecl, imp: ast.ImportPath, local: 
     const src = try u.leafSource(imp, env.arena, false);
     const module = switch (src) {
         .module => |m| m,
-        .root => return,
+        .root, .key => return,
     };
     if (!std.mem.eql(u8, module, "std/context")) return;
     const leaf = imp.leaf();
@@ -149,6 +149,7 @@ fn checkStdRootPurity(env: *Env, u: ast.ImportDecl) InferError!void {
     if (std.mem.indexOfScalar(u8, name, '/') != null) return;
     const into_std = switch (u.source) {
         .root => true,
+        .key => false,
         .module => |m| std.mem.eql(u8, m, "std"),
     };
     if (!into_std) return;
@@ -176,7 +177,7 @@ fn markStdImports(env: *Env, u: ast.ImportDecl) InferError!bool {
     try noteImportBindings(env, u);
     const from_std = switch (u.source) {
         .module => |m| std.mem.eql(u8, m, "std"),
-        .root => false,
+        .root, .key => false,
     };
     if (!from_std) return false;
     for (u.imports) |imp| {
@@ -291,7 +292,7 @@ fn noteExplicitTypeNames(env: *Env, program: ast.Program) InferError!void {
         .use => |u| {
             const from_std = switch (u.source) {
                 .module => |m| std.mem.eql(u8, m, "std"),
-                .root => false,
+                .root, .key => false,
             };
             for (u.imports) |imp| {
                 const leaf = imp.leaf();
@@ -312,7 +313,7 @@ fn noteExplicitTypeNames(env: *Env, program: ast.Program) InferError!void {
                 // A package's own item (no module prefix — row 33's
                 // `import {App} from "pkg";`) is named by the package alone.
                 const label = switch (u.source) {
-                    .module => |m| if (prefix.len == 0) m else try std.fmt.allocPrint(env.arena, "{s}:{s}", .{ m, prefix }),
+                    .module, .key => |m| if (prefix.len == 0) m else try std.fmt.allocPrint(env.arena, "{s}:{s}", .{ m, prefix }),
                     .root => prefix,
                 };
                 // The item's identity is the module that declares what it
@@ -434,7 +435,7 @@ fn registerStdImportDecorators(env: *Env, program: ast.Program) InferError!void 
         const u = decl.use;
         const from_std = switch (u.source) {
             .module => |m| std.mem.eql(u8, m, "std"),
-            .root => false,
+            .root, .key => false,
         };
         if (!from_std) continue;
         for (u.imports) |imp| {

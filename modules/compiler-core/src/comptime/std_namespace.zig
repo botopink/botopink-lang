@@ -346,7 +346,7 @@ pub fn expand(arena: std.mem.Allocator, program: ast.Program) Error!ast.Program 
         .use => |u| {
             const from_std = switch (u.source) {
                 .module => |m| std.mem.eql(u8, m, "std"),
-                .root => false,
+                .root, .key => false,
             };
             if (!from_std) continue;
             for (u.imports) |imp| {
@@ -375,7 +375,7 @@ pub fn expand(arena: std.mem.Allocator, program: ast.Program) Error!ast.Program 
         .use => |u| {
             const from_std = switch (u.source) {
                 .module => |m| std.mem.eql(u8, m, "std"),
-                .root => false,
+                .root, .key => false,
             };
             if (!from_std) continue;
             var kept: std.ArrayListUnmanaged(ast.ImportPath) = .empty;

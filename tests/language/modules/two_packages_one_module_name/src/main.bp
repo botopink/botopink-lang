@@ -1,0 +1,20 @@
+//// Two packages each have a module named `theme` declaring `Ns` and `make`,
+//// and each package's `user` imports its own `theme` by path; the project has
+//// a `theme` of its own too. A module is its package plus its path (170,
+//// 337): `a/theme`, `b/theme` and the project's `theme` are three modules, so
+//// no import is ambiguous and neither `Ns` is read as the other's — in the
+//// checker, in every backend's module names and cross-module calls, and in
+//// the comptime runtimes. The parent binary refused `a/user`'s import
+//// (`make` is declared `pub` by `a/theme` and by `b/theme`).
+
+pub mod theme;
+
+import {theme.make};
+import {describeA} from "a";
+import {describeB} from "b";
+
+pub fn main() {
+    @print(describeA());
+    @print(describeB());
+    @print(make());
+}

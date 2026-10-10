@@ -1790,7 +1790,7 @@ pub fn importClosure(
                 const owns = if (picked_info) |info|
                     std.mem.eql(u8, info.module, o.name)
                 else
-                    whole.namesModule(o.name) or std.mem.eql(u8, moduleBasename(o.name), imp.leaf());
+                    whole.namesModule(o.name) or (whole != .key and std.mem.eql(u8, moduleBasename(o.name), imp.leaf()));
                 if (!owns or visited.contains(o.name)) continue;
                 const ok = switch (o.outcome) {
                     .ok => |*ok| ok,

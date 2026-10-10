@@ -16,7 +16,7 @@ src/
 ├── test_root.zig         ← aggregates each stage's tests.zig barrel
 ├── test_warmup.zig       ← pre-warms the stdlib template env before other tests
 ├── otp.zig               ← the one OTP release check every `erl` / `erlc` / `escript` spawn goes through (decision 228)
-├── module.zig            ← `Module` struct — input module representation (`srcPath`: the package-relative display path `@src().file` answers)
+├── module.zig            ← `Module` struct — input module representation (`srcPath`: the package-relative display path `@src().file` answers; `package`: the dependency it was loaded from, empty for the root package — a module is its package plus its path, `comptime/AGENTS.md` § A module is its package plus its path)
 ├── ast.zig               ← AST node types (categorised)
 ├── lexer.zig             ← Lexer (delegates to lexer/token.zig)
 ├── parser.zig            ← Parser struct + token cursor + shared helpers (sub-grammars in parser/)

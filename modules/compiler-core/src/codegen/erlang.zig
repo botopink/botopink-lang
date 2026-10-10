@@ -4896,9 +4896,19 @@ const Emitter = struct {
         for (program.decls) |decl| switch (decl) {
             .use => |u| for (u.imports) |imp| {
                 const name = imp.leaf();
+                // The enum the item names is the one its source picks — a
+                // module is its package plus its path, so `import {theme.Ns};`
+                // in `emilia/…` is `emilia/theme`'s `Ns` and never
+                // `styled/theme`'s (decisions 170, 337); a namespace item
+                // over a module of the package (`.key`) names that module.
+                const leaf_src = try u.leafSource(imp, self.atom_arena.allocator(), false);
+                const whole = try u.leafSource(imp, self.atom_arena.allocator(), true);
+                const named: ?[]const u8 = if (self.cross) |xc| (if (xc.picked(name, leaf_src, null)) |info| info.module else null) else null;
                 for (self.enum_exports) |ee| {
                     if (std.mem.eql(u8, ee.module, self.module_name)) continue;
-                    if (!std.mem.eql(u8, ee.name, name) and !std.mem.eql(u8, crossModule.moduleBasename(ee.module), name)) continue;
+                    const by_name = std.mem.eql(u8, ee.name, name) and (if (named) |m| std.mem.eql(u8, m, ee.module) else self.cross == null);
+                    const by_module = if (whole == .key) whole.namesModule(ee.module) else std.mem.eql(u8, crossModule.moduleBasename(ee.module), name);
+                    if (!by_name and !by_module) continue;
                     try self.enum_variants_known.put(ee.name, {});
                     _ = try self.type_owner_path.getOrPutValue(ee.name, ee.module);
                     try self.rememberVariantOrder(ee.name, ee.variants);
@@ -4939,7 +4949,7 @@ const Emitter = struct {
                     // second case — remember it, so a method call on a value of
                     // that type dispatches through the value (`behaviorMethodNode`).
                     if (isModuleRef(name)) try self.imported_behaviors.put(self.alloc, name, {});
-                    try self.collectNamespaceModuleTypes(xc, name);
+                    try self.collectNamespaceModuleTypes(xc, name, try u.leafSource(imp, self.atom_arena.allocator(), true));
                     continue;
                 };
                 switch (info.kind) {
@@ -5052,12 +5062,19 @@ const Emitter = struct {
         return .of(path);
     }
 
-    fn collectNamespaceModuleTypes(self: *Emitter, xc: *const CrossModule, ns: []const u8) !void {
-        var it = xc.exports.iterator();
-        while (it.next()) |e| {
-            const info = e.value_ptr.*;
+    /// The types of the module a namespace item names (`import {order} from
+    /// "std"`, `import {theme};`). `whole` is the item's whole path as a
+    /// source: a module of the importing package (`.key`) is that module
+    /// alone — another package's module of the same name is not it — and a
+    /// `from` keeps the basename reading.
+    fn collectNamespaceModuleTypes(self: *Emitter, xc: *const CrossModule, ns: []const u8, whole: ast.ImportSource) !void {
+        // Every declaration of a name (`owners`), not the one `exports` kept:
+        // `a/theme` and `b/theme` may both declare `Ns`.
+        var it = xc.owners.iterator();
+        while (it.next()) |e| for (e.value_ptr.*) |info| {
             if (info.kind != .record and info.kind != .@"enum") continue;
-            if (!std.mem.eql(u8, crossModule.moduleBasename(info.module), ns)) continue;
+            const named = if (whole == .key) whole.namesModule(info.module) else std.mem.eql(u8, crossModule.moduleBasename(info.module), ns);
+            if (!named) continue;
             if (std.mem.eql(u8, info.module, self.module_name)) continue;
             // The type's own module (policy 3), for its associated fns and its
             // methods alike.
@@ -5068,7 +5085,7 @@ const Emitter = struct {
                 const gop = try self.imported_fns.getOrPut(m.name);
                 if (!gop.found_existing) gop.value_ptr.* = owner;
             }
-        }
+        };
     }
 
     /// Owning module atom of an imported function called with `arity`
@@ -5348,7 +5365,7 @@ const Emitter = struct {
             .use => |u| {
                 const from_std = switch (u.source) {
                     .module => |m| std.mem.eql(u8, m, "std"),
-                    .root => false,
+                    .root, .key => false,
                 };
                 if (!from_std) continue;
                 for (u.imports) |imp| {

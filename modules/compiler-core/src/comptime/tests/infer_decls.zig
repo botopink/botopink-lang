@@ -392,9 +392,9 @@ test "infer: import source ---- a dotted module path names its module among same
 test "infer: import source ---- a module path below the importer's package names its module" {
     const io = std.testing.io;
     const modules = [_]Module{
-        .{ .path = "site/app/not_found", .source = same_name_pages[0].source },
-        .{ .path = "site/app/blog/not_found", .source = same_name_pages[1].source },
-        .{ .path = "site/routes", .source =
+        .{ .path = "site/app/not_found", .source = same_name_pages[0].source, .package = "site" },
+        .{ .path = "site/app/blog/not_found", .source = same_name_pages[1].source, .package = "site" },
+        .{ .path = "site/routes", .package = "site", .source =
         \\import {app.blog.not_found.NotFound};
         \\pub fn page() -> string {
         \\    return NotFound();
@@ -406,6 +406,48 @@ test "infer: import source ---- a module path below the importer's package names
     for (session.outputs.items) |out| try std.testing.expect(out.outcome == .ok);
 }
 
+// A module is its package plus its path (decisions 170, 337): `a` and `b`
+// each hold a `theme` declaring `Ns` and `make`, with different fields, and
+// each package's `user` imports its own by path. Read as the bare `theme`, the
+// import named both, and the checker bound whichever the registry walk reached
+// first — `b/user` read `a/theme`'s `Ns` (`unknown field size`).
+test "infer: import source ---- two packages' modules of one name are two modules" {
+    const io = std.testing.io;
+    const modules = [_]Module{
+        .{ .path = "a/theme", .package = "a", .source =
+        \\pub type Ns(label: string)
+        \\pub fn make() -> Ns {
+        \\    return Ns(label: "red");
+        \\}
+        },
+        .{ .path = "b/theme", .package = "b", .source =
+        \\pub type Ns(size: i32)
+        \\pub fn make() -> Ns {
+        \\    return Ns(size: 4);
+        \\}
+        },
+        .{ .path = "a/user", .package = "a", .source =
+        \\import {theme.make};
+        \\import {theme.Ns};
+        \\pub fn label() -> string {
+        \\    val n: Ns = make();
+        \\    return n.label;
+        \\}
+        },
+        .{ .path = "b/user", .package = "b", .source =
+        \\import {theme.make};
+        \\import {theme.Ns};
+        \\pub fn size() -> i32 {
+        \\    val n: Ns = make();
+        \\    return n.size;
+        \\}
+        },
+    };
+    var session = try comptimeMod.compile(std.testing.allocator, &modules, io, test_scratch.path(io, "comptime/import_source_two_packages_one_module_name"), null);
+    defer session.deinit(std.testing.allocator);
+    for (session.outputs.items) |out| try std.testing.expect(out.outcome == .ok);
+}
+
 // The full path is read first: a project's own `app/not_found` is the one
 // `import {app.not_found.NotFound};` names, although a dependency's module
 // has the same path below its package and declares the name too.
@@ -413,7 +455,7 @@ test "infer: import source ---- a project's own module wins over a dependency's 
     const io = std.testing.io;
     const modules = [_]Module{
         same_name_pages[0],
-        .{ .path = "site/app/not_found", .source =
+        .{ .path = "site/app/not_found", .package = "site", .source =
         \\pub fn NotFound() -> i32 {
         \\    return 404;
         \\}

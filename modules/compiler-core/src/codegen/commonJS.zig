@@ -3122,7 +3122,7 @@ const Emitter = struct {
             // namespace handle to bind — only the per-name `require`s above.
             // No import is named `""`, so the block below never fires for it.
             const lib_name = switch (u.source) {
-                .module => |name| name,
+                .module, .key => |name| name,
                 .root => "",
             };
             var names_lib = false;
@@ -3189,7 +3189,7 @@ const Emitter = struct {
             .pattern = .{ .object = .{ .props = try props.toOwnedSlice(self.arena()) } },
             .value = try self.requireCall(switch (u.source) {
                 .root => try std.fmt.allocPrint(self.arena(), "{s}module", .{req_prefix}),
-                .module => |name| name,
+                .module, .key => |name| name,
             }),
         } };
     }

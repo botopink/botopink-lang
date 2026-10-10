@@ -198,6 +198,10 @@ Library resolution (`modules/compiler-cli/src/cli/libs.zig`): roots from
 `D/repository/botopink-lang/libs`, `D/repository`, `D/libs` — up to the first `D`
 that holds `repository/` (the enclosing checkout, `manifest.isCheckoutRoot`), so a
 meta worktree under `.tasks/<name>` sees only its own libraries (decision 143).
+Each loaded module carries its package (`Module.package`); a module is its package plus
+its path, so two packages' `theme` modules are two modules to the checker, every backend
+and the comptime runtimes (decisions 170, 337 — `compiler-core/src/comptime/AGENTS.md`
+§ A module is its package plus its path).
 
 ## Conventions
 

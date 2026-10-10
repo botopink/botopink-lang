@@ -1505,6 +1505,27 @@ the call as `ambiguous-import-use` (`refuseShadowedStdSignature`), since the che
 std's type as the module's (`run/std_namespace_beside_own_type`,
 `modules/std_namespace_beside_aliased_type`, `reject/std_namespace_signature_names_shadowed_type`).
 
+## A module is its package plus its path (decisions 170, 337)
+
+Two packages may each hold a module of one name — `emilia/theme` and `styled/theme` — and they
+are two modules. `Module.package` (filled by the CLI's dependency loader, empty for the root
+package) is stamped on every import of the module before any lookup reads it
+(`ast.ImportDecl.withOwnPackage`, in `analyzeSource`, `analyzeMerged` and `orderReaders`), so
+`ImportDecl.leafSource` answers an item with no `from` (`import {theme.make};`) as
+`ImportSource.key` — the registry key of exactly that module (`emilia/theme`; `theme` in the root
+package). A `.key` never widens: `namesModule` is byte equality, `inPackage` is false and every
+pass of `admits` admits that one module, so neither the basename reading (`theme` naming any
+`…/theme`) nor the whole-program pass reaches another package's module. The shorthand
+(`import {make};`) in a dependency resolves among its own package's modules only
+(`outsideShorthandReach`). `withImportSourcesNamed` hands the backends the checker's answer as a
+`.key` too, so a root module `config` is never read as a dependency's `x/config`. The comptime
+block runtime finds a type the block reaches (`block_eval.findType`) by module: the one the module
+imports under that name, else the one module it imports from that declares it, else the one module
+of the build — two answers at any step answer none (it used to compare locations, and two `Ns`
+declared on the same line of two packages' `theme` were one). Cell:
+`tests/language/modules/two_packages_one_module_name`, four targets; unit test `infer: import
+source ---- two packages' modules of one name are two modules`.
+
 ## A behavior's `default fn` body is checked (another front's finding)
 
 The typed `.behavior` arm runs `inferBehaviorDefaultBodies`: every `default fn` that carries a body

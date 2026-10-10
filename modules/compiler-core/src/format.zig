@@ -2262,7 +2262,7 @@ pub const Formatter = struct {
         } else try this.concatAll(&.{ try this.text("import "), try this.commaList("{", items, "}") });
         return switch (u.source) {
             .root => head,
-            .module => |name| this.concatAll(&.{
+            .module, .key => |name| this.concatAll(&.{
                 head,
                 try this.text(try std.fmt.allocPrint(this.arena, " from \"{s}\"", .{name})),
             }),

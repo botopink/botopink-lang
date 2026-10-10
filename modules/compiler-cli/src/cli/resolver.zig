@@ -1024,6 +1024,7 @@ fn collectModuleRefs(
             // package module; `from "std"`, a lib, or a bare import → null.
             const from: ?[]const u8 = switch (u.source) {
                 .root => null,
+                .key => |k| k,
                 .module => |m| if (std.mem.eql(u8, m, "std")) null else try dotsToSlashes(sa, m),
             };
             for (u.imports) |imp| {

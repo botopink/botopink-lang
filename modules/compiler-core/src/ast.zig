@@ -130,6 +130,14 @@ pub const ImportSource = union(enum) {
     root,
     /// `import { … } from "name";` — resolves from a named dependency.
     module: []const u8,
+    /// One module, by its registry key — the package plus the path (decisions
+    /// 170, 337): `a/theme` for the `theme` of dependency `a`, `theme` for the
+    /// root package's. Never written in source: `ImportDecl.leafSource`
+    /// answers it for an item that names a module of the importing package by
+    /// its path (`import {theme.make};`). It names exactly that module — no
+    /// basename reading, no package widening, no whole-program pass — so two
+    /// packages that each hold a `theme` are two modules to every lookup.
+    key: []const u8,
 
     /// Whether `path` is the module this source NAMES. The question every
     /// name-keyed import index used to skip: a symbol name is unique only
@@ -153,6 +161,7 @@ pub const ImportSource = union(enum) {
     pub fn namesModule(this: ImportSource, path: []const u8) bool {
         const m = switch (this) {
             .root => return false,
+            .key => |key| return std.mem.eql(u8, key, path),
             .module => |name| name,
         };
         if (spellsPath(m, path)) return true;
@@ -186,7 +195,7 @@ pub const ImportSource = union(enum) {
     /// own `app/page` wins over a dependency's `<package>/app/page`.
     pub fn inPackage(this: ImportSource, path: []const u8) bool {
         const m = switch (this) {
-            .root => return false,
+            .root, .key => return false,
             .module => |name| name,
         };
         if (m.len == 0 or path.len <= m.len) return false;
@@ -215,7 +224,7 @@ pub const ImportSource = union(enum) {
     /// (`import {log.logger};`). Null for `.root`.
     pub fn packageName(this: ImportSource) ?[]const u8 {
         const m = switch (this) {
-            .root => return null,
+            .root, .key => return null,
             .module => |name| name,
         };
         const end = std.mem.indexOfAny(u8, m, "./") orelse m.len;
@@ -234,8 +243,11 @@ pub const ImportSource = union(enum) {
 
     /// The three widening passes of a name-keyed import lookup: 0 — the module
     /// the source names (`namesModule`), 1 — the source read across a package
-    /// boundary (`inPackage`), 2 — the whole program.
+    /// boundary (`inPackage`), 2 — the whole program. A `.key` never widens:
+    /// every pass admits its one module and no other, so a name the module
+    /// does not declare is unresolved rather than found in another package.
     pub fn admits(this: ImportSource, path: []const u8, pass: u2) bool {
+        if (this == .key) return this.namesModule(path);
         return switch (pass) {
             0 => this.namesModule(path),
             1 => this.inPackage(path),
@@ -260,6 +272,31 @@ pub const ImportDecl = struct {
     comment: ?[]const u8 = null,
     /// `////` module-level documentation
     moduleComment: ?[]const u8 = null,
+    /// The package of the module that wrote the import, as its modules' paths
+    /// begin (`a` for `a/user`), empty for the root package — set by the
+    /// checker from `Module.package` before any lookup reads the import
+    /// (`withOwnPackage`). It makes a path item absolute: `import
+    /// {theme.make};` in `a/user` names `a/theme` and never `b/theme`
+    /// (decisions 170, 337). Left out of the dump.
+    ownPackage: []const u8 = "",
+
+    pub fn jsonStringify(this: ImportDecl, jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{"ownPackage"}, &.{});
+    }
+
+    /// `program` with every import marking `package` as the package that wrote
+    /// it (`ownPackage`). The declarations are copied; `program` is unchanged.
+    pub fn withOwnPackage(arena: std.mem.Allocator, program: Program, package: []const u8) !Program {
+        if (package.len == 0) return program;
+        const decls = try arena.dupe(DeclKind, program.decls);
+        for (decls) |*d| switch (d.*) {
+            .use => |*u| u.ownPackage = package,
+            else => {},
+        };
+        var out = program;
+        out.decls = decls;
+        return out;
+    }
 
     /// The module a qualified item's leaf lives in, as the source a lookup
     /// narrows by (`ImportSource.namesModule`): `import {io.fs.readText} from
@@ -271,12 +308,17 @@ pub const ImportDecl = struct {
     /// path: the item names a module (`io.fs` → `std/io/fs`) rather than a
     /// symbol of one. A composed answer is a `/` path whatever the source's
     /// spelling (`import {c} from "a.b"` → `a/b/c`): callers look it up as a
-    /// registry key, and `a.b/c` is the key of nothing.
+    /// registry key, and `a.b/c` is the key of nothing. An item with no
+    /// `from` names a module of the importing package (206, 309, 337), so
+    /// its answer is that module's key — the package plus the path
+    /// (`ownPackage`): `a/theme` in dependency `a`, `theme` in the root
+    /// package, never another package's `theme`.
     pub fn leafSource(this: ImportDecl, imp: ImportPath, alloc: std.mem.Allocator, whole: bool) !ImportSource {
         if (!whole and !imp.isQualified()) return this.source;
         const rel = if (whole) try imp.fullPath(alloc) else try imp.prefixPath(alloc);
         return switch (this.source) {
-            .root => .{ .module = rel },
+            .root => .{ .key = if (this.ownPackage.len == 0) rel else try std.fmt.allocPrint(alloc, "{s}/{s}", .{ this.ownPackage, rel }) },
+            .key => |key| .{ .key = try std.fmt.allocPrint(alloc, "{s}/{s}", .{ key, rel }) },
             .module => |pkg| blk: {
                 const path = try std.fmt.allocPrint(alloc, "{s}/{s}", .{ pkg, rel });
                 std.mem.replaceScalar(u8, path[0..pkg.len], '.', '/');

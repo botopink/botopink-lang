@@ -2939,7 +2939,7 @@ const Emitter = struct {
             .use => |u| {
                 const from_std = switch (u.source) {
                     .module => |m| std.mem.eql(u8, m, "std"),
-                    .root => false,
+                    .root, .key => false,
                 };
                 if (!from_std) continue;
                 for (u.imports) |imp| {
@@ -3016,7 +3016,7 @@ const Emitter = struct {
             .use => |u| {
                 const from_std = switch (u.source) {
                     .module => |m| std.mem.eql(u8, m, "std"),
-                    .root => false,
+                    .root, .key => false,
                 };
                 if (!from_std) continue;
                 for (u.imports) |imp| {
