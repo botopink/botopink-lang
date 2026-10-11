@@ -2,13 +2,11 @@
 //! their bytes, recursively.
 //!
 //! A reply is `json:encode` of an Erlang map, and a map's iteration order is
-//! the BEAM's atom-table order for atom keys — which atoms the node created
-//! first, a matter of which modules it happened to load and when. The wat
-//! runtime cannot reproduce that order, and nothing should depend on it: the
-//! `COMPTIME REPLY` snapshot section (`trace.zig`) and a map lifted by `@expr`
-//! (`template_eval.zig` `typedValue` — a labeled tuple, whose field order is
-//! its type) read the reply in this order on both runtimes, and the parity
-//! check (`runtime.equivalent`) compares replies in it.
+//! an atom-table order for atom keys — which atoms were created first, an
+//! accident the wasm runtime approximates (`rt.zig` `atomRank`) and nothing
+//! should depend on: the `COMPTIME REPLY` snapshot section (`trace.zig`) and a
+//! map lifted by `@expr` (`template_eval.zig` `typedValue` — a labeled tuple,
+//! whose field order is its type) read the reply in this order.
 const std = @import("std");
 
 /// Sort every object of `v` by key, in place.

@@ -17,36 +17,16 @@ const GenerateResult = @import(".././moduleOutput.zig").GenerateResult;
 const comptimeMod = @import("../../comptime.zig");
 const validation = @import("../../comptime/error.zig");
 const ctSnapshot = @import("../../comptime/snapshot.zig");
-const hostRuntime = @import("../../comptime/runtime/runtime.zig");
 
-/// `codegen.generate` with every comptime evaluation run on **both** runtimes
-/// (front 18 step 3, `comptime/runtime/runtime.zig` `parity`): the fixture's
-/// own runtime answers — the target's, decision 84 — and the other one is
-/// asked the same question. A difference fails the fixture with both answers
-/// printed; the doubled snapshot tree of step 4 is the recorded form of the
-/// same invariant.
+/// `codegen.generate`, the harness's one entry: every comptime evaluation
+/// runs on the wasm runtime, whatever the fixture's target (decision 434).
 pub fn generate(
     allocator: Allocator,
     modules: []const Module,
     io: std.Io,
     cfg: config.Config,
 ) !std.ArrayListUnmanaged(ModuleOutput) {
-    var parity: hostRuntime.Parity = .{ .alloc = allocator };
-    defer parity.deinit();
-    const prev = hostRuntime.parity;
-    hostRuntime.parity = &parity;
-    defer hostRuntime.parity = prev;
-    var outputs = try codegen.generate(allocator, modules, io, cfg);
-    if (parity.mismatches.items.len > 0) {
-        var aw: std.Io.Writer.Allocating = .init(allocator);
-        defer aw.deinit();
-        parity.report(&aw.writer) catch {};
-        std.debug.print("\ncomptime runtimes disagree ({s}, {d} of {d} evaluations):{s}\n", .{ @tagName(cfg.targetSource), parity.mismatches.items.len, parity.evaluations, aw.written() });
-        for (outputs.items) |*o| o.result.deinit(allocator);
-        outputs.deinit(allocator);
-        return error.ComptimeRuntimeParity;
-    }
-    return outputs;
+    return codegen.generate(allocator, modules, io, cfg);
 }
 
 /// Every target the harness compiles for. `packages` is the implicit test
@@ -76,28 +56,11 @@ pub const configs = [_]config.Config{
     },
 };
 
-/// The comptime runtimes every snapshot is recorded under (front 18 step 4,
-/// decision 85): `snapshots/codegen/<runtime>/<target>/<slug>.snap.md`.
-pub const runtimes = [_]config.ComptimeRuntime{ .beam, .wat };
-
-/// `base` once per comptime runtime, each with `comptime_runtime` set — the
-/// generations a snapshot-writing helper loops over.
-fn perRuntime(comptime base: []const config.Config) [base.len * runtimes.len]config.Config {
-    var out: [base.len * runtimes.len]config.Config = undefined;
-    for (runtimes, 0..) |rt, r| {
-        for (base, 0..) |c, i| {
-            out[r * base.len + i] = c;
-            out[r * base.len + i].comptime_runtime = rt;
-        }
-    }
-    return out;
-}
-
-/// Every target × every comptime runtime: what `assertJs` and
-/// `assertJsError` record.
-pub const snapshot_configs = perRuntime(&configs);
-/// The two `botopink test` targets × every runtime (`assertJsTestMode`).
-pub const test_mode_configs = perRuntime(configs[0..2]);
+/// Every target: what `assertJs` and `assertJsError` record, one snapshot
+/// tree `snapshots/codegen/<target>/` (decision 434: one comptime runtime).
+pub const snapshot_configs = configs;
+/// The two `botopink test` targets (`assertJsTestMode`).
+pub const test_mode_configs = configs[0..2].*;
 
 pub fn slugify(comptime s: []const u8) []const u8 {
     const n: usize = comptime blk: {
@@ -591,7 +554,7 @@ pub fn assertJsTestMode(allocator: Allocator, comptime loc: std.builtin.SourceLo
     var first_err: ?anyerror = null;
     var any_module_failed = false;
 
-    for (test_mode_configs) |c| { // commonJS/node + erlang, per runtime
+    for (test_mode_configs) |c| { // commonJS/node + erlang
         var cfg = c;
         cfg.build_root = build_root_path;
         cfg.test_mode = true;

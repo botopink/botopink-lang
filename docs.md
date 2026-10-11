@@ -3271,25 +3271,32 @@ fn main() {
 #### Host functions at compile time (decision 341)
 
 A body that runs at build — a decorator's, a template's, a `comptime` — may
-call a host function: it travels into the comptime module with the cell of
-the runtime that evaluates it. The comptime runtime follows the target
-(decision 84): `erlang` and `beam` builds evaluate on the BEAM runtime, which
-runs the `@External.Erlang` cell (or an `@External.Beam("module", "symbol")`
-one); `commonJS`, `typescript` and `wasm` builds on the wat runtime, which
-runs the function an `@External.Wasm("fn:…")` binding names (an `op:` or
-`wasi:` binding does not run there). `@External.Node` never serves: there is
-no Node at compile time. std's functions travel too, through a namespace or a
-leaf import — `comptime hash.contentHash("hello")` is `"f923099"` on the four
-targets.
+call a host function: it travels into the comptime module. Comptime runs on
+one runtime, wasm (wasm3 inside the compiler), whatever the build's target
+(decision 434): a compile starts no `erl`. A host function reached there
+answers by the first of three sources it has: its std-wasm implementation
+(std's own host functions, written in Zig and compiled to wasm), the
+beam-to-wasm translation of its `@External.Erlang` cell (or an
+`@External.Beam("module", "symbol")` one), or the botopink function its
+`@External.Wasm("fn:…")` binding names (an `op:` or `wasi:` binding does not
+run there). `@External.Node` never serves: there is no Node at compile time.
+std's functions travel too, through a namespace or a leaf import —
+`comptime hash.contentHash("hello")` is `"f923099"` on the four targets, one
+answer whatever the target.
 
 What a decorator may call is decided when its package is compiled, never at a
-consumer's build: a host function it reaches — in its body, in a function of
-its module, through a std or an imported function — needs the cell of every
-comptime runtime the package's `botopink.json` `targets` use (`erlang` /
-`beam` → `@External.Erlang`, `commonJS` / `typescript` / `wasm` →
-`@External.Wasm`, no `targets` → both), or the call is refused
-(`decorator-host-cell-missing`), naming the function, the missing cell and the
-reason. Give every host function a decorator may reach both cells.
+consumer's build, and whatever the package's `targets` (decision 434): a host
+function it reaches — in its body, in a function of its module, through a std
+or an imported function — needs one of the three sources the comptime runtime
+answers by: a std-wasm implementation (std's own host functions), the
+beam-to-wasm translation of its `@External.Erlang` (or `@External.Beam("module",
+"symbol")`) cell, or its `@External.Wasm("fn:…")` cell. None is refused at the
+call (`comptime-host-cell-unavailable`), naming the function and the three
+sources; an Erlang cell beam-to-wasm does not convert — it converts a measured
+subset of opcodes and BIFs (decision 435) — is refused naming what is missing
+(`comptime-beam-call-not-converted`: `` beam-to-wasm does not convert
+`re:replace/4` ``), even with an `@External.Wasm("fn:…")` cell after it: that
+cell is not tried (decision 439).
 
 ```botopink
 import {hash} from "std";

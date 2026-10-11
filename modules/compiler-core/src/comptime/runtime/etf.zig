@@ -4,13 +4,15 @@
 //! baked into the generated module as a literal map: 230 of the 295 lines of the
 //! smallest realistic module, and the only part of it that differs between two
 //! call sites of the same template. Encoded here instead, it travels beside the
-//! call as bytes the node hands to `binary_to_term/1`, and the module is left
+//! call as bytes the runtime decodes (`rt.zig`'s ETF reader, `binary_to_term/1`'s
+//! format), and the module is left
 //! with nothing that depends on the call site — so one module serves every call
 //! site of a declaration.
 //!
-//! **Not source text re-parsed in the node.** That shape existed (the beam
+//! **Not source text re-parsed at comptime.** That shape existed (the beam
 //! backend's retired `'__bp_erl_eval'/2`) and measured ≈ 50× a direct call
-//! (`codegen/beam/AGENTS.md`); `binary_to_term/1` is a decode, not a compile.
+//! (`codegen/beam/AGENTS.md`); a term decode is not a compile. `beam_file.zig`
+//! writes a `.beam`'s `LitT` literals with it too.
 //!
 //! Only the variants `Term` has are written, in the minimal encoding for each:
 //!

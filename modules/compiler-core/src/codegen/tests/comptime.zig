@@ -468,10 +468,9 @@ test "js: comptime ---- negating a string is a located comptime error (C4b)" {
 }
 
 // Decisions 266, 331 (01-checker step 21) — a `comptime` with a call and a
-// loop runs on the comptime runtime, never on the target: the `COMPTIME
-// REPLY` is the same on the BEAM and the WAT runtime (the runtime-parity
-// audit compares the two snapshot trees), and every backend emits `2` and `6`
-// where the source wrote the two `comptime`s.
+// loop runs on the comptime runtime (wasm, decision 434), never on the
+// target: every backend emits `2` and `6` where the source wrote the two
+// `comptime`s.
 test "js: comptime runtime ---- a block with a call and a loop is evaluated at build" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn add(a: i32, b: i32) -> i32 {

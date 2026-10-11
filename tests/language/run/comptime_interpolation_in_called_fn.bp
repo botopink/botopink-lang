@@ -2,7 +2,7 @@
 //// comptime module is emitted from the function as written, where `"${…}"`
 //// had no lowering (the erlang emitter's `stringTemplate => unreachable`
 //// aborted the compiler); each hole is now its text, joined to the literal
-//// parts, on both comptime runtimes.
+//// parts, on the comptime runtime.
 
 fn label(n: i32, b: bool, s: string) -> string {
     return "n=${n} b=${b} s=${s}";

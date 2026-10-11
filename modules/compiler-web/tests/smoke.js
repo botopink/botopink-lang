@@ -72,8 +72,8 @@ fn main() {
 }
 `;
 
-// What the native compiler records for COMPTIME (its commonJS build, the wat
-// runtime; the BEAM answers the same — `comptime/runtime/parity.zig`).
+// What the native compiler records for COMPTIME (the wasm comptime runtime,
+// whatever the target — decision 434).
 const NATIVE_TEMPLATE_REPLY = `----- COMPTIME REPLY -- template shout
 \`\`\`json
 {
@@ -133,11 +133,11 @@ const NATIVE_DECORATOR_REPLY = `----- COMPTIME REPLY -- decorator describe
   assert(typeof broken.modules[0].diagnostic === "string" && broken.modules[0].diagnostic.includes("main.bp:"), "the diagnostic is rendered and located");
   assert(broken.modules[0].code === "", "a failed module has no artifact");
 
-  // The decorator + template program: on commonJS and wasm its comptime runs
-  // on the wat runtime (decision 84) — lowered by the compiler, run by the
+  // The decorator + template program: on every target its comptime runs on
+  // the wasm runtime (decision 434) — lowered by the compiler, run by the
   // page's engine through `bp_host` — and answers what the native compiler
-  // answers; erlang needs the BEAM, which a page does not have.
-  for (const target of ["commonJS", "wasm"]) {
+  // answers.
+  for (const target of ["commonJS", "wasm", "erlang", "beam"]) {
     compiler.reset();
     compiler.addSource("main", COMPTIME);
     const ct = compiler.compile(target);
@@ -147,11 +147,6 @@ const NATIVE_DECORATOR_REPLY = `----- COMPTIME REPLY -- decorator describe
     assert(trace.includes(NATIVE_DECORATOR_REPLY), `${target}: the decorator's COMPTIME REPLY equals the native one`);
     assert(ct.modules[0].code.includes("BROWSER"), `${target}: the expansion is in the generated code`);
   }
-  compiler.reset();
-  compiler.addSource("main", COMPTIME);
-  const ctErl = compiler.compile("erlang");
-  assert(ctErl.status === 1, "erlang: a program with a template is refused in the page");
-  assert(String(ctErl.modules[0].diagnostic).includes("no BEAM runtime in this build of the compiler"), "erlang: the refusal names the missing BEAM");
 
   let threw = false;
   try {

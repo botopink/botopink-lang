@@ -5,13 +5,13 @@
 //! the atom is the content hash of the text, so a hit is the same program.
 //!
 //! A construct the lowering cannot take is a **refusal** naming it
-//! (`Built.refused`), which the evaluator reports as the module not compiling —
-//! the same channel the BEAM runtime uses for an `erlc` rejection.
+//! (`Built.refused`), which the evaluator reports as the module not compiling.
 const std = @import("std");
 const ep = @import("erl_parse.zig");
 const lower = @import("lower.zig");
 const link = @import("link.zig");
 const preludeMod = @import("../prelude.zig");
+const cells = @import("cells.zig");
 const watEmitter = @import("../../../codegen/wat/wat_emitter.zig");
 
 /// The runtime's bytes, compiled from `rt.zig` for `wasm32-freestanding` by
@@ -107,7 +107,7 @@ fn buildUncached(ar: std.mem.Allocator, code: []const u8) Error!Built {
     }
 
     var lf: lower.Failure = .{};
-    const lowered = lower.lowerProgram(ar, .{ .modules = mods.items }, &lf) catch |err| switch (err) {
+    const lowered = lower.lowerProgram(ar, .{ .modules = mods.items, .cells = try cells.modulesIn(ar, code) }, &lf) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.Unsupported => return .{ .refused = try std.fmt.allocPrint(ar, "the wat runtime does not take {s}", .{lf.message}) },
     };

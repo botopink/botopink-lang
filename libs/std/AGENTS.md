@@ -479,7 +479,7 @@ gone, not aliased (decision 127).
   `s.slice(2)` does, and `xs.slice(2, null)` on an ARRAY answers `0` on wasm and
   `badarith` on beam where commonJS and erlang answer. Unowned; it is
   `String.slice` / `Array.slice`'s lowering of a `null` bound. The wasm trap is
-  what `snapshots/codegen/beam/wasm/string_slice_without_end_arg_slices_to_source_length.snap.md`
+  what `snapshots/codegen/wasm/string_slice_without_end_arg_slices_to_source_length.snap.md`
   records since C-04 — the snapshot used to pin the arity error, which hid it.
 - **Three parser/emitter shapes measured 2026-09-21 writing `async.bp`, each with
   a one-line workaround, none of them owned by std.**
@@ -575,7 +575,7 @@ method has accepted.
 - Runs on commonJS, erlang and beam (the Erlang templates). On wasm a call traps (`unreachable`),
   as `"a b".words()` and every other template-only `String` method does — the wasm front's.
 - Both are prototype patches on commonJS (`String.prototype.parseInt = …`), so the nine
-  `snapshots/codegen/{beam,wat}/commonJS/*` snapshots that print the `String` prelude carry the two
+  `snapshots/codegen/commonJS/*` snapshots that print the `String` prelude carry the two
   bodies.
 - Tests: `test/primitives_test.bp` (six tests — the accepted forms, every refusal's text, the range
   and the rounding boundaries) and the `json.bp` agreement test.
@@ -592,7 +592,7 @@ privately before it left std:
 | `s.trimTrailingNewlines()` | `s` without its trailing `\n` characters — newlines only, never spaces or tabs (`trimEnd` takes all whitespace) |
 | `a.firstDifferingLine(b)` | the 1-based number of the first line (split on `\n`) where the two texts differ; a text that is a prefix of the other in whole lines differs at the line after its last; `0` when they are equal |
 
-Tests: `test/primitives_test.bp` (three). The nine `snapshots/codegen/{beam,wat}/commonJS/*`
+Tests: `test/primitives_test.bp` (three). The nine `snapshots/codegen/commonJS/*`
 snapshots that print the `String` prelude carry the three templates.
 
 ## Integers past 2^53 and the conversions (decision 319)

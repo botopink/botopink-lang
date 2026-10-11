@@ -17,10 +17,9 @@
 //! | `memo_key` | `infer.zig`'s template memo key (`templateEval.memoKey`) |
 //! | `module` | the evaluator's `buildModule` (emit memo key, emit or memo hit, argument plan) |
 //! | `encode` | the argument as external term format (`etf.encode`) |
-//! | `lower` | the module's runtime program: `wat/program.zig` / `beam/program.zig` (a cache hit after the first) |
+//! | `lower` | the module's runtime program: `wat/program.zig` (a cache hit after the first) |
 //! | `instance` | wat: the module's wasm3 instance (`persistent_wat.zig`: environment, runtime, parse, load — or the reset of a kept one) |
 //! | `run` | wat: `bp_init`, the argument's copy, `bp_main` and the reply's read-back |
-//! | `frame` | BEAM: cmd 4 (first time only) + cmd 3's round trip (`persistent_beam.evalBeamWithArg`) |
 //! | `listing` | the trace listing of the evaluation (`runtime.listingOf` + its argument comment) |
 //! | `outcome` | the reply parsed into the evaluator's outcome |
 const std = @import("std");
@@ -28,7 +27,7 @@ const builtin = @import("builtin");
 
 pub const env_name = "BOTOPINK_COMPTIME_STAGES";
 
-pub const Stage = enum { memo_key, module, encode, lower, instance, run, frame, listing, outcome };
+pub const Stage = enum { memo_key, module, encode, lower, instance, run, listing, outcome };
 
 const supported = !builtin.cpu.arch.isWasm() and builtin.link_libc;
 

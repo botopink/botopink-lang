@@ -1,0 +1,20 @@
+//// Decisions 434, 435 — beam-to-wasm converts a named subset: the opcodes and
+//// BIFs 144 B-00b measured, each served by the comptime runtime. `tidy`'s
+//// Erlang cell calls `re:replace/4`, which it does not convert: the call is
+//// refused when the package is compiled, naming the function and the call
+//// that is missing.
+
+#[@External.Node("""$0.replace(/a/g, "b")""")]
+#[@External.Erlang("""iolist_to_binary(re:replace($0, <<"a">>, <<"b">>, [global]))""")]
+declare fn tidy(value: string) -> string;
+
+fn sized(comptime decl: @Decl) {
+    @emit("pub fn summary() -> string { return \"" + tidy(decl.name) + "\"; }");
+}
+
+#[sized]
+type Point(x: i32, y: i32)
+
+pub fn main() {
+    @print(summary());
+}

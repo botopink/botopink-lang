@@ -13,7 +13,6 @@ const inferMod = @import("../infer.zig");
 const comptimeMod = @import("../../comptime.zig");
 const errorMod = @import("../error.zig");
 const snapshot = @import("../snapshot.zig");
-const hostRuntime = @import("../runtime/runtime.zig");
 const replyOrder = @import("../runtime/reply_order.zig");
 const Module = @import("../../module.zig").Module;
 const format = @import("../../format.zig");
@@ -132,12 +131,6 @@ pub fn assertComptimeAstExpecting(
 
     const build_root_path = buildRootPathFromSrc(io, loc);
 
-    // The session is compiled once per comptime runtime (front 18 step 4):
-    // the AST is recorded from the BEAM pass and must be the same text on
-    // wat; each pass's decorator/template exchanges are recorded under
-    // `comptime/runtime/<runtime>/`.
-    const prev_rt = hostRuntime.force(.beam);
-    defer _ = hostRuntime.force(prev_rt);
     var session = try comptimeMod.compile(allocator, modules, io, build_root_path, null);
     defer session.deinit(allocator);
 
@@ -146,11 +139,6 @@ pub fn assertComptimeAstExpecting(
     for (session.outputs.items) |output| {
         try outputs.append(allocator, output);
     }
-
-    _ = hostRuntime.force(.wat);
-    var wat_session = try comptimeMod.compile(allocator, modules, io, build_root_path, null);
-    defer wat_session.deinit(allocator);
-    _ = hostRuntime.force(.beam);
 
     // One snapshot per test, under `comptime/ast/`. The AST snapshot never
     // included the per-runtime script, so the four `comptime/{node,erlang,wasm,
@@ -161,23 +149,9 @@ pub fn assertComptimeAstExpecting(
     snapshot.assertComptimeAst(allocator, base_slug, outputs.items) catch |err| {
         first_err = err;
     };
-    snapshot.assertComptimeExchange(allocator, "beam", base_slug, outputs.items) catch |err| {
+    snapshot.assertComptimeExchange(allocator, base_slug, outputs.items) catch |err| {
         if (first_err == null) first_err = err;
     };
-    snapshot.assertComptimeExchange(allocator, "wat", base_slug, wat_session.outputs.items) catch |err| {
-        if (first_err == null) first_err = err;
-    };
-    {
-        const beam_ast = try snapshot.buildSnapshotMulti(allocator, outputs.items);
-        defer allocator.free(beam_ast);
-        const wat_ast = try snapshot.buildSnapshotMulti(allocator, wat_session.outputs.items);
-        defer allocator.free(wat_ast);
-        if (!std.mem.eql(u8, beam_ast, wat_ast)) {
-            std.debug.print("\n{s}: the typed AST differs between the comptime runtimes\n--- beam\n{s}\n--- wat\n{s}\n", .{ base_slug, beam_ast, wat_ast });
-            if (first_err == null) first_err = error.ComptimeAstDiffersByRuntime;
-        }
-    }
-
     // H3/H9 — the snapshot above now carries a `COMPILE DIAGNOSTIC` section for
     // every module that did not compile. Report it as a failure too, so a test
     // whose source stopped compiling cannot keep passing on a recorded error.
@@ -321,14 +295,13 @@ pub fn assertInfersOk(
 }
 
 /// Front 14 step 3 — the term round trip, read off the replies: `modules` is
-/// compiled once per comptime runtime (the capture or the `@Decl` handle reaches
-/// the BEAM as an external term, `runtime/etf.zig`, and the wat runtime as the
-/// same bytes in its linear memory), every module must compile on both, at
-/// least one evaluation must run, and every evaluation's reply — the
-/// `COMPTIME REPLY` section, keys sorted — must be byte-identical across the
-/// two. Returns the canonical replies in evaluation order (owned by `arena`), for the
-/// caller's own assertions on what the body read back.
-pub fn repliesIdenticalAcrossRuntimes(
+/// compiled (the capture or the `@Decl` handle reaches the wasm comptime
+/// runtime as external-term bytes in its linear memory, `runtime/etf.zig`),
+/// every module must compile, at least one evaluation must run, and each
+/// evaluation's reply — the `COMPTIME REPLY` section, keys sorted — is
+/// returned in evaluation order (owned by `arena`), for the caller's own
+/// assertions on what the body read back.
+pub fn canonicalReplies(
     allocator: std.mem.Allocator,
     arena: std.mem.Allocator,
     comptime loc: std.builtin.SourceLocation,
@@ -336,34 +309,19 @@ pub fn repliesIdenticalAcrossRuntimes(
 ) ![]const []const u8 {
     const io = std.testing.io;
     const build_root = buildRootPathFromSrc(io, loc);
-    const prev_rt = hostRuntime.force(.beam);
-    defer _ = hostRuntime.force(prev_rt);
-    var beam = try comptimeMod.compile(allocator, modules, io, build_root, null);
-    defer beam.deinit(allocator);
-    _ = hostRuntime.force(.wat);
-    var wat = try comptimeMod.compile(allocator, modules, io, build_root, null);
-    defer wat.deinit(allocator);
+    var session = try comptimeMod.compile(allocator, modules, io, build_root, null);
+    defer session.deinit(allocator);
 
     var replies: std.ArrayListUnmanaged([]const u8) = .empty;
-    try std.testing.expectEqual(beam.outputs.items.len, wat.outputs.items.len);
-    for (beam.outputs.items, wat.outputs.items) |b, w| {
-        if (b.outcome != .ok or w.outcome != .ok) {
-            std.debug.print("\nmodule '{s}' did not compile on both runtimes (beam: {s}, wat: {s})\n", .{ b.name, @tagName(b.outcome), @tagName(w.outcome) });
+    for (session.outputs.items) |o| {
+        if (o.outcome != .ok) {
+            std.debug.print("\nmodule '{s}' did not compile ({s})\n", .{ o.name, @tagName(o.outcome) });
             return error.ModuleDidNotCompile;
         }
-        const bt = b.outcome.ok.comptime_traces;
-        const wt = w.outcome.ok.comptime_traces;
-        try std.testing.expectEqual(bt.len, wt.len);
-        for (bt, wt) |be, we| {
-            try std.testing.expectEqual(be.kind, we.kind);
-            try std.testing.expectEqualStrings(be.name, we.name);
+        for (o.outcome.ok.comptime_traces) |e| {
             // The section a snapshot records: the reply read with sorted keys
-            // (`runtime/reply_order.zig` — a map's key order is the node's
-            // atom table, not part of the answer); a non-JSON reply as is.
-            const bc = (try replyOrder.canonical(arena, be.reply)) orelse be.reply;
-            const wc = (try replyOrder.canonical(arena, we.reply)) orelse we.reply;
-            try std.testing.expectEqualStrings(bc, wc);
-            try replies.append(arena, bc);
+            // (`runtime/reply_order.zig`); a non-JSON reply as is.
+            try replies.append(arena, (try replyOrder.canonical(arena, e.reply)) orelse e.reply);
         }
     }
     try std.testing.expect(replies.items.len > 0);

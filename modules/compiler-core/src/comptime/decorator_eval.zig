@@ -1,4 +1,5 @@
-/// Decorator invocation on the comptime runtimes (`runtime/runtime.zig`).
+/// Decorator invocation on the comptime runtime (`runtime/runtime.zig`; wasm for
+/// every target, decision 434).
 ///
 /// A decorator is a comptime function whose first parameter is `comptime _:
 /// @Decl`. When `#[d(args)]` is applied to a declaration, the core reflects that
@@ -6,17 +7,16 @@
 ///
 ///   decorator `FnDecl` ─ codegen/erlang.zig `emitComptimeModule` ─ `main/1` → Erlang text
 ///   handle + args ─ `Term` ─ comptime/runtime/etf ─ external term ─┐
-///     → comptime/runtime/runtime `evalWithArg`: on BEAM the text   │
-///       lowered to `.beam` bytes (runtime/beam/), loaded once, then │
-///       `<module>:main(<term>)`; on wat the text lowered to wasm ←─┘
+///     → comptime/runtime/runtime `evalWithArg`: the text lowered   │
+///       to wasm once per module, run with the handle's term ←──────┘
 ///     → JSON `{kind, contributions | message | span}` → `Outcome`
 ///
 /// The body is lowered by the regular Erlang backend (untyped mode), so every
 /// construct that backend supports works in a decorator. The host functions the
 /// body calls (`decl.fail`, `decl.failAt`, `@compilerError`, `@emit`,
 /// `decl.addMember`, `decl.setMeta`, `decl.addType` — decision 216) are plain
-/// Erlang functions resident in `bp_comptime_decorator`, built once at server
-/// warmup (`runtime/prelude.zig`) and reached by the `-import`
+/// Erlang functions resident in `bp_comptime_decorator`, parsed once per
+/// process (`runtime/prelude.zig`) and reached by the `-import`
 /// `emitComptimeModule` writes; only `main/1` is generated, and it carries nothing
 /// from the declaration it runs over — so one module serves every declaration a
 /// decorator annotates with the same annotation arguments.
@@ -162,16 +162,12 @@ pub fn evaluate(
     };
     stages.stop(.module, t_module);
 
-    // The runtime is the target's (decision 84, `runtime/runtime.zig`); the
-    // dispatcher stages the module for the BEAM runtime or lowers it for wat.
+    // The comptime runtime is wasm for every target (decision 434,
+    // `runtime/runtime.zig`).
     const t_encode = stages.start();
     const arg = try etf.encode(arena, source.argument);
     stages.stop(.encode, t_encode);
-    const result = try hostRuntime.evalWithArg(arena, io, "decorator", source.module, source.code, arg);
-    const response = switch (result) {
-        .response => |r| r,
-        .unavailable => |why| return .{ .err = why },
-    };
+    const response = try hostRuntime.evalWithArg(arena, io, "decorator", source.module, source.code, arg);
     if (traces) |list| {
         const t_listing = stages.start();
         defer stages.stop(.listing, t_listing);
@@ -179,8 +175,7 @@ pub fn evaluate(
         try list.append(arena, .{
             .kind = .decorator,
             .name = dfn.name,
-            .listing = listing.text,
-            .lang = listing.lang,
+            .listing = listing,
             .reply = switch (response) {
                 .ok => |stdout| stdout,
                 .compile_error => |detail| try std.fmt.allocPrint(arena, "compile error: {s}", .{detail}),

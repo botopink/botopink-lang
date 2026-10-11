@@ -12,9 +12,9 @@
   and its `_start` called; what it prints is the "run" tab.
 
   The sample with a decorator and a template runs its comptime in the page on
-  commonJS and wasm (the wat runtime: the compiler lowers the bodies, the
-  page's engine runs them — no request leaves the page); on erlang/beam it is
-  refused, a page having no BEAM. Everything else — the checker, the four
+  every target (the wasm comptime runtime, decision 434: the compiler lowers
+  the bodies, the page's engine runs them — no request leaves the page).
+  Everything else — the checker, the four
   emitters, the diagnostics — is the native compiler byte for byte.
 -->
 <html lang="en">

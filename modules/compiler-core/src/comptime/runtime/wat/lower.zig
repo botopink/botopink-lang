@@ -30,6 +30,8 @@
 const std = @import("std");
 const ep = @import("erl_parse.zig");
 const wat = @import("../../../codegen/wat/wat_ast.zig");
+const stdWasm = @import("std_wasm");
+const bw = @import("beam_to_wasm");
 
 pub const Error = error{ OutOfMemory, Unsupported };
 
@@ -125,7 +127,18 @@ const rt_sigs = std.StaticStringMap(RtSig).initComptime(.{
 /// A BIF the runtime answers: `module:name/arity` → the export that does it.
 const Bif = struct { module: []const u8, name: []const u8, arity: usize, rt: []const u8 };
 
-const bifs = [_]Bif{
+const bifs = otp_bifs ++ std_wasm_bifs;
+
+/// The std functions std-wasm serves whole (`stdWasm.functions`): a call
+/// `bp_std_wasm:<symbol>(…)` — what `host_cells.forRuntime` makes of a std
+/// host function std-wasm implements — is the runtime's `rt_std_<symbol>`.
+const std_wasm_bifs = blk: {
+    var out: [stdWasm.functions.len]Bif = undefined;
+    for (stdWasm.functions, 0..) |f, i| out[i] = .{ .module = stdWasm.erlang_module, .name = f.symbol, .arity = f.arity, .rt = "rt_std_" ++ f.symbol };
+    break :blk out;
+};
+
+const otp_bifs = [_]Bif{
     // erlang
     .{ .module = "erlang", .name = "element", .arity = 2, .rt = "rt_erlang_element" },
     .{ .module = "erlang", .name = "setelement", .arity = 3, .rt = "rt_erlang_setelement" },
@@ -271,6 +284,20 @@ const bifs = [_]Bif{
     .{ .module = "json", .name = "encode", .arity = 1, .rt = "rt_json_encode" },
 };
 
+/// The BIF table as beam-to-wasm reads it: a translated `.beam`'s
+/// `call_ext` binds to the same exports a lowered call does (`cells.zig`).
+pub const beam_to_wasm_bifs: []const bw.Bif = blk: {
+    var out: [bifs.len]bw.Bif = undefined;
+    for (bifs, 0..) |b, i| out[i] = .{ .module = b.module, .name = b.name, .arity = b.arity, .rt = b.rt };
+    const fixed = out;
+    break :blk &fixed;
+};
+
+comptime {
+    // beam-to-wasm's view of the term ABI is this runtime's.
+    if (bw.runtime.kind_binary != @intFromEnum(Kind.binary)) @compileError("beam-to-wasm's binary kind is not rt.zig's");
+}
+
 fn findBif(module: []const u8, name: []const u8, arity: usize) ?Bif {
     for (bifs) |b| {
         if (b.arity == arity and std.mem.eql(u8, b.module, module) and std.mem.eql(u8, b.name, name)) return b;
@@ -293,6 +320,9 @@ const FnKey = struct { module: usize, name: []const u8, arity: usize };
 pub const Program = struct {
     /// The generated module first, then the preludes it imports.
     modules: []const ep.Module,
+    /// The host functions' Erlang cells the generated module calls
+    /// (`bp_cell_<hash>:t(…)`), translated by beam-to-wasm (`cells.zig`).
+    cells: []const bw.ir.Module = &.{},
 };
 
 pub const Output = struct {
@@ -325,6 +355,8 @@ const Lowerer = struct {
     /// The lowered functions of the generated module (not `main/1`, not the
     /// prelude's) — what the `COMPTIME WAT` listing shows.
     listed: std.ArrayListUnmanaged([]const u8) = .empty,
+    /// The translated cell functions the program calls, by symbol.
+    cells_queued: std.StringArrayHashMapUnmanaged(*const bw.ir.Function) = .empty,
 
     fn refuse(l: *Lowerer, comptime fmt: []const u8, args: anytype) Error {
         const what = std.fmt.allocPrint(l.ar, fmt, args) catch return error.OutOfMemory;
@@ -375,6 +407,23 @@ const Lowerer = struct {
                 if (l.findFunction(mi, name, arity) == null) return null;
                 return try l.queue(.{ .module = mi, .name = name, .arity = arity });
             }
+        }
+        return null;
+    }
+
+    /// The symbol of function `name/arity` of translated cell module
+    /// `module`, queued for emission (`emitCellFunction`); null when no cell
+    /// module of the program is named so.
+    fn cellFunction(l: *Lowerer, module: []const u8, name: []const u8, arity: usize) Error!?[]const u8 {
+        for (l.prog.cells) |m| {
+            if (!std.mem.eql(u8, m.name, module)) continue;
+            for (m.functions) |*f| {
+                if (f.arity != arity or !std.mem.startsWith(u8, f.name, name) or f.name.len <= name.len or f.name[name.len] != '/') continue;
+                const sym = try sanitize(l.ar, try std.fmt.allocPrint(l.ar, "{s}:{s}", .{ m.name, f.name }));
+                if (!l.cells_queued.contains(sym)) try l.cells_queued.put(l.ar, sym, f);
+                return sym;
+            }
+            return l.refuse("{s}:{s}/{d}: the translated cell has no such function", .{ module, name, arity });
         }
         return null;
     }
@@ -857,6 +906,13 @@ fn lowerNamedCall(x: Ctx, module_name: ?[]const u8, name: []const u8, args: []co
         try x.check();
         return;
     }
+    // A host function's Erlang cell, translated by beam-to-wasm.
+    if (module_name) |m| if (try l.cellFunction(m, name, args.len)) |sym| {
+        try lowerArgs(x, args);
+        try x.e(.{ .call = sym });
+        try x.check();
+        return;
+    };
     const mod = module_name orelse "erlang";
     if (!qualified and !isAutoImported(name, args.len)) {
         return l.refuse("call to undefined function {s}/{d}", .{ name, args.len });
@@ -1860,6 +1916,66 @@ fn lowerFunction(l: *Lowerer, sym: []const u8, k: FnKey) Error!void {
     try finishFunction(l, &f, sym, &.{}, params.items, body);
 }
 
+/// A function beam-to-wasm translated, as a function of this module: its
+/// registers are locals (`x0…` the first `arity` its parameters), its
+/// instruction tree mapped node for node; it is listed after the generated
+/// module's functions.
+fn emitCellFunction(l: *Lowerer, sym: []const u8, f: bw.ir.Function) Error!void {
+    var params: std.ArrayListUnmanaged(wat.Param) = .empty;
+    var locals: std.ArrayListUnmanaged(wat.Local) = .empty;
+    for (0..f.x_regs) |i| {
+        const n = try std.fmt.allocPrint(l.ar, "x{d}", .{i});
+        if (i < f.arity) try params.append(l.ar, .{ .name = n, .ty = .i32 }) else try locals.append(l.ar, .{ .name = n, .ty = .i32 });
+    }
+    for (0..f.y_regs) |i| try locals.append(l.ar, .{ .name = try std.fmt.allocPrint(l.ar, "y{d}", .{i}), .ty = .i32 });
+    try locals.append(l.ar, .{ .name = "pc", .ty = .i32 });
+    var body: Code = .empty;
+    try cellInstrs(l, &body, f.body);
+    try l.listed.append(l.ar, sym);
+    try l.funcs.append(l.ar, .{ .func = .{
+        .name = sym,
+        .params = params.items,
+        .result = .i32,
+        .locals = try l.ar.dupe([]const wat.Local, &.{locals.items}),
+        .body = .{ .lines = body.items, .stack = .terminated },
+    } });
+}
+
+fn cellInstrs(l: *Lowerer, c: *Code, instrs: []const bw.ir.Instr) Error!void {
+    const ar = l.ar;
+    for (instrs) |i| switch (i) {
+        .get => |r| try emit(c, ar, .{ .local_get = try std.fmt.allocPrint(ar, "{f}", .{r}) }),
+        .set => |r| try emit(c, ar, .{ .local_set = try std.fmt.allocPrint(ar, "{f}", .{r}) }),
+        .get_pc => try emit(c, ar, .{ .local_get = "pc" }),
+        .set_pc => try emit(c, ar, .{ .local_set = "pc" }),
+        .i32_const => |v| try emit(c, ar, .{ .@"const" = .{ .ty = .i32, .text = try std.fmt.allocPrint(ar, "{d}", .{v}) } }),
+        .i64_const => |v| try emit(c, ar, .{ .@"const" = .{ .ty = .i64, .text = try std.fmt.allocPrint(ar, "{d}", .{v}) } }),
+        .bytes => |b| {
+            const off = try l.literal(b);
+            try emit(c, ar, .{ .global_get = "__lit" });
+            try emit(c, ar, .{ .@"const" = .{ .ty = .i32, .text = try std.fmt.allocPrint(ar, "{d}", .{off}) } });
+            try emit(c, ar, .{ .op = .{ .ty = .i32, .name = "add" } });
+            try emit(c, ar, .{ .@"const" = .{ .ty = .i32, .text = try std.fmt.allocPrint(ar, "{d}", .{b.len}) } });
+        },
+        .rt => |name| {
+            if (!rt_sigs.has(name) and !isBifRt(name)) return l.refuse("the translated cell calls {s}, which the runtime does not export", .{name});
+            try l.useRt(name);
+            try emit(c, ar, .{ .call = name });
+        },
+        .block => |b| {
+            var inner: Code = .empty;
+            try cellInstrs(l, &inner, b.body);
+            try block(c, ar, if (b.loop) .loop else .block, b.label, null, inner);
+        },
+        .br => |lbl| try emit(c, ar, .{ .br = lbl }),
+        .br_if => |lbl| try emit(c, ar, .{ .br_if = lbl }),
+        .i32_eq => try emit(c, ar, .{ .op = .{ .ty = .i32, .name = "eq" } }),
+        .drop => try emit(c, ar, .drop),
+        .ret => try emit(c, ar, .@"return"),
+        .trap => try emit(c, ar, .@"unreachable"),
+    };
+}
+
 /// Lower `prog` (the generated module first) into a wat module that imports
 /// the runtime and exports `bp_init` and `bp_main`.
 pub fn lowerProgram(ar: std.mem.Allocator, prog: Program, failure: *Failure) Error!Output {
@@ -1876,6 +1992,8 @@ pub fn lowerProgram(ar: std.mem.Allocator, prog: Program, failure: *Failure) Err
         const k = l.queued.values()[i];
         try lowerFunction(&l, sym, k);
     }
+
+    for (l.cells_queued.keys(), l.cells_queued.values()) |sym, f| try emitCellFunction(&l, sym, f.*);
 
     // bp_init(): the arena starts past the literals.
     {

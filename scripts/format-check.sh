@@ -22,7 +22,7 @@
 #
 # A reformat that moves a text something else quotes carries that with it, in
 # the same commit: `libs/std`'s source is quoted verbatim by the
-# `compiler-core/snapshots/codegen/{beam,wat}/*/std_package_*` snapshots and two
+# `compiler-core/snapshots/codegen/*/std_package_*` snapshots and two
 # of `language-server/snapshots/lsp/` (re-recorded, differing by the quoted
 # text alone), and a `modules/<cell>/<target>.expect` pins a `<file>:<L>:<C>`
 # the reformat of that file can move.

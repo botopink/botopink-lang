@@ -216,12 +216,12 @@ set -e
 expect_code 1 "test --target erlang with OTP 29 first on PATH"
 expect_out "and \`erl\` on PATH is OTP 29" "test names the refused release"
 
-# The comptime node goes through the same check (compiler-core `otp.zig`), and
-# only an erlang / beam build starts it: decision 84 evaluates a commonJS
-# build's comptime on the in-process wat runtime. So a commonJS build that runs
-# a template spawns no `erl` at all — not even the probe — and builds with OTP
-# 29 first on PATH, while the same program on erlang is refused.
-echo "==> the OTP release: comptime on commonJS spawns no erl; on erlang it is refused"
+# Comptime runs on the in-process wasm runtime for every target (decision 434):
+# compiling a template spawns no `erl` at all — not even the probe — on
+# commonJS (a build) and on erlang (`check`, which compiles without the
+# target's own toolchain). An erlang `build` is still refused by the target's
+# release check (decision 228), before anything is compiled.
+echo "==> the OTP release: comptime spawns no erl on any target; an erlang build is refused by its release check"
 P="$(project otp-comptime)"
 printf '%s\n' 'pub fn twice(comptime q: @Expr<string>) -> @Expr<i32> {' '    val n = q.text().length;' '    return @expr(n * 2);' '}' '' 'pub fn main() {' '    @print(twice "abcd");' '}' >"$P/src/main.bp"
 mkdir -p "$WORK/otp29rec"; : >"$WORK/otp29rec.log"
@@ -239,7 +239,15 @@ OUT="$(cd "$P" && PATH="$WORK/otp29rec:$PATH" "$BP" build --target erlang 2>&1)"
 CODE=$?
 set -e
 expect_code 1 "erlang build of the same program, OTP 29 first on PATH"
-expect_out "and \`erl\` on PATH is OTP 29" "refused before the comptime node starts"
+expect_out "and \`erl\` on PATH is OTP 29" "refused by the erlang target's release check"
+: >"$WORK/otp29rec.log"
+printf '{ "name": "otp-comptime", "version": "0.1.0", "target": "erlang" }\n' >"$P/botopink.json"
+set +e
+OUT="$(cd "$P" && PATH="$WORK/otp29rec:$PATH" "$BP" check 2>&1)"
+CODE=$?
+set -e
+expect_code 0 "erlang check running a template, OTP 29 first on PATH"
+[[ ! -s "$WORK/otp29rec.log" ]] && ok "erlang comptime spawned no erl" || fail "erlang comptime spawned: $(tr '\n' ';' <"$WORK/otp29rec.log")"
 
 # A manifest may pin the release, within what the compiler emits for.
 echo "==> the OTP release: a manifest's \"otp\" names 28, and a closure agrees"

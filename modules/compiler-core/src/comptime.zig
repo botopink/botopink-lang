@@ -37,7 +37,6 @@ const diagnostics = @import("./comptime/diagnostics.zig");
 const reflectionMod = @import("./comptime/reflection.zig");
 const assocTypes = @import("./comptime/assoc_types.zig");
 const typeinfoAll = @import("./comptime/typeinfo_all.zig");
-const hostRuntime = @import("./comptime/runtime/runtime.zig");
 const templateEval = @import("./comptime/template_eval.zig");
 const hostCells = @import("./comptime/host_cells.zig");
 const decoratorEval = @import("./comptime/decorator_eval.zig");
@@ -1260,10 +1259,10 @@ fn analyzeSource(
         },
         else => return err,
     };
-    // Decision 341 — a host function a decorator of this module reaches has
-    // the cell of every comptime runtime its package's targets use; decided
-    // when the package is compiled, never at a consumer's build.
-    if (try hostCells.checkDecorators(&env, program.decls, mod.targets, infer.isDecoratorParams)) |te| {
+    // Decisions 341, 434 — a host function a decorator of this module reaches
+    // has one of the comptime runtime's three sources; decided when the
+    // package is compiled, never at a consumer's build.
+    if (try hostCells.checkDecorators(&env, program.decls, infer.isDecoratorParams)) |te| {
         env.deinit();
         return .{ .typeError = te };
     }
@@ -3128,10 +3127,6 @@ pub fn compileTypesOnly(
     modules: []const Module,
     eval_ctx: ?envMod.TemplateEvalCtx,
 ) !ComptimeSession {
-    // No target: decision 84's default, beam (the language server's pass).
-    const prev_runtime = hostRuntime.select(hostRuntime.forTarget(null));
-    defer _ = hostRuntime.select(prev_runtime);
-
     var session = ComptimeSession{
         .arena = std.heap.ArenaAllocator.init(allocator),
         .outputs = .empty,
@@ -3342,14 +3337,6 @@ pub fn compile(
     build_root: ?[]const u8,
     target_name: ?[]const u8,
 ) !ComptimeSession {
-    // Decision 84: this compilation's decorator and template bodies run on the
-    // target's VM (`comptime/runtime/runtime.zig` `forTarget`) — chosen here,
-    // once, so no driver can compile for a target and evaluate on the other one.
-    // A wasm build's lookup carries its host (`wasm.browser`, decision 334);
-    // the runtime is the member's.
-    const prev_runtime = hostRuntime.select(hostRuntime.forTarget(if (target_name) |t| ast.ExternalLookup.of(t).member else null));
-    defer _ = hostRuntime.select(prev_runtime);
-
     // Decision 353 — a template body's `@TypeInfo.all` answers for the whole
     // program, every module's decorators applied. A session answers it from
     // the catalogue as it stands when the template is expanded; when a module

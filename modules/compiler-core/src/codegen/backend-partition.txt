@@ -25,9 +25,10 @@
 #     every comptime body, on every target, is lowered to Erlang through them
 #     (comptime/decorator_eval.zig, template_eval.zig, runtime/prelude.zig); so the
 #     erlang target has no file of its own
-#   codegen/beam/asm_text.zig, beam_file.zig, term.zig, opcodes.zig — the BEAM comptime
-#     runtime assembles with them
-#   codegen/wat/* — the wat comptime runtime (commonJS and wasm builds) lowers and
+#   codegen/beam/asm_text.zig, beam_file.zig, term.zig, opcodes.zig, erl_template.zig —
+#     the comptime runtime assembles a host function's Erlang cell with them for
+#     beam-to-wasm (comptime/runtime/wat/cells.zig)
+#   codegen/* — the wat comptime runtime (commonJS and wasm builds) lowers and
 #     links with them
 #   codegen/hostMethods.zig, crossModule.zig, patterns.zig, moduleOutput.zig,
 #     config.zig, runtime.zig — every backend reads them

@@ -17,30 +17,33 @@
 //! - **A bodyless host function travels with its cells** — this module's own
 //!   (`declare fn`), an imported one, a std one — and with the function its
 //!   `@External.Wasm("fn:…")` binding names (`hostSupport`).
-//! - **Each runtime runs its own cell** (`forRuntime`): the BEAM runtime the
-//!   `@External.Erlang` one (or `@External.Beam("module", "symbol")`, the call
-//!   the beam backend reads as one), the wat runtime the `@External.Wasm` one
-//!   — a `fn:` binding is a call of the botopink function it names; an
-//!   `op:` / `wasi:` binding does not run there yet (which forms do, and their
-//!   bridge to the term layout, are front 18's). `@External.Node` never
-//!   serves: there is no Node at comptime (decision 84).
+//! - **The comptime runtime resolves each host function in order** (decision 434
+//!   (4), `forRuntime`): its std-wasm implementation (`modules/std-wasm`,
+//!   `stdWasm.functions`: `stdWasmSymbol`, `servedByStdWasm`), else the
+//!   beam-to-wasm translation of its `@External.Erlang` cell (or
+//!   `@External.Beam("module", "symbol")` pair: `erlangCellOf`,
+//!   `runtime/wat/cells.zig`, `callingCell`), else the botopink function its
+//!   `@External.Wasm("fn:…")` binding names (`callOf`); none → refused naming
+//!   the function and the three sources (`comptime-host-cell-unavailable`).
+//!   An Erlang cell beam-to-wasm does not convert is refused at the call,
+//!   naming what is missing (`comptime-beam-call-not-converted`): the
+//!   `fn:` cell after it is not tried (decision 439). `@External.Node` never
+//!   serves: there is no Node at comptime.
 //!
 //! What a decorator may call is decided when its package is compiled
-//! (`checkDecorators`): a host function it reaches needs the cell of every
-//! comptime runtime its package's declared `targets` use — `erlang` / `beam`
-//! the BEAM runtime's, `commonJS` / `typescript` / `wasm` the wat runtime's,
-//! none declared both — or the call is refused, naming the function, the
-//! missing cell and the reason. The answer depends on the declared targets,
-//! never on the build's target.
+//! (`checkDecorators`, decisions 341, 434): a host function it reaches needs
+//! one of the three sources (`unservedReason`), or the call is refused,
+//! located, naming the function and what is missing. The answer is one for
+//! every target, whatever the package's `targets`.
 const std = @import("std");
 const ast = @import("../ast.zig");
 const envMod = @import("./env.zig");
 const Env = envMod.Env;
-const hostRuntime = @import("./runtime/runtime.zig");
 const blockEval = @import("./block_eval.zig");
 const diagnostics = @import("./diagnostics.zig");
 const validation = @import("./error.zig");
-const Targets = @import("../module.zig").Targets;
+const stdWasm = @import("std_wasm");
+const cells = @import("runtime/wat/cells.zig");
 
 pub const Error = error{OutOfMemory};
 
@@ -415,40 +418,100 @@ pub fn hostSupport(env: *Env, local: anytype, fns: []const ast.FnDecl) Error![]c
 
 pub const Selected = union(enum) {
     ok: []ast.DeclKind,
-    /// A host function the runtime evaluating the module has no cell to run.
+    /// A host function none of the comptime sources serves.
     refused: []const u8,
 };
 
-/// `decls` (a comptime module's) with each host function as the runtime that
-/// evaluates the module runs it (`hostRuntime.current()`): on the BEAM
-/// runtime its `@External.Erlang` cell (an `@External.Beam("module",
-/// "symbol")` one read as that call); on the wat runtime the function its
-/// `@External.Wasm("fn:…")` binding names, called with its parameters.
+/// `decls` (a comptime module's) with each host function as the comptime
+/// runtime — wasm, for every target (decision 434) — runs it, by the first of
+/// its sources present (434 (4)): its std-wasm implementation, the
+/// beam-to-wasm translation of its Erlang / Beam cell, the botopink function
+/// its `@External.Wasm("fn:…")` binding names; none → refused. An Erlang cell
+/// beam-to-wasm does not convert is refused, its `fn:` cell not tried (439).
 pub fn forRuntime(arena: std.mem.Allocator, decls: []const ast.DeclKind) Error!Selected {
-    const wat = hostRuntime.current() == .wat;
     const out = try arena.dupe(ast.DeclKind, decls);
     for (out) |*d| {
         if (d.* != .@"fn" or !isHost(d.@"fn")) continue;
         const f = d.@"fn";
-        if (wat) {
-            const b = wasmBinding(f) orelse return .{ .refused = try std.fmt.allocPrint(arena, "`{s}` has no `#[@External.<Target>(…)]` for the wat comptime runtime, which runs a host function's `@External.Wasm` cell (decision 341)", .{try display(arena, f.name)}) };
-            if (!std.mem.startsWith(u8, b.text, "fn:")) return .{ .refused = try std.fmt.allocPrint(arena, "the host function `{s}`'s `@External.Wasm(\"{s}\")` binding does not run on the wat comptime runtime — a `fn:` binding does (decision 341)", .{ try display(arena, f.name), b.text }) };
-            d.* = .{ .@"fn" = try callOf(arena, f, b.text["fn:".len..]) };
+        if (stdWasmSymbol(f.name)) |sym| {
+            d.* = .{ .@"fn" = try servedByStdWasm(arena, f, sym) };
             continue;
         }
-        if (f.externalFor("erlang") != null) continue;
-        if (f.externalFor("beam")) |ref| if (ref.module.len > 0) {
-            var g = f;
-            g.annotations = try arena.dupe(ast.Annotation, f.annotations);
-            for (g.annotations) |*a| if (std.ascii.eqlIgnoreCase(a.name, "External.Beam")) {
-                a.name = "External.Erlang";
-            };
-            d.* = .{ .@"fn" = g };
-            continue;
+        // beam-to-wasm: the Erlang (or Beam) cell, translated — or refused.
+        if (try erlangCellOf(arena, f)) |cell| switch (cell) {
+            .ok => |module| {
+                d.* = .{ .@"fn" = try callingCell(arena, f, module) };
+                continue;
+            },
+            .refused => |why| return .{ .refused = try unavailable(arena, f, why) },
         };
-        return .{ .refused = try std.fmt.allocPrint(arena, "`{s}` has no `#[@External.<Target>(…)]` for the BEAM comptime runtime, which runs a host function's `@External.Erlang` (or `@External.Beam(\"module\", \"symbol\")`) cell (decision 341)", .{try display(arena, f.name)}) };
+        // Its `@External.Wasm("fn:…")` cell.
+        const b = wasmBinding(f) orelse return .{ .refused = try unavailable(arena, f, null) };
+        if (!std.mem.startsWith(u8, b.text, "fn:")) return .{ .refused = try unavailable(arena, f, null) };
+        d.* = .{ .@"fn" = try callOf(arena, f, b.text["fn:".len..]) };
     }
     return .{ .ok = out };
+}
+
+/// The beam-to-wasm translation of `f`'s Erlang cell — an
+/// `@External.Erlang` template or `module`/`function` pair, else an
+/// `@External.Beam("module", "function")` pair — or null when it has none.
+fn erlangCellOf(arena: std.mem.Allocator, f: ast.FnDecl) Error!?cells.Cell {
+    const ref = f.externalFor("erlang") orelse blk: {
+        const beam = f.externalFor("beam") orelse return null;
+        // An `@External.Beam("""…""")` assembly text is the beam target's.
+        if (beam.module.len == 0) return null;
+        break :blk beam;
+    };
+    if (ref.module.len == 0) return try cells.ofTemplate(ref.symbol, f.params.len);
+    return try cells.ofCall(arena, ref.module, ref.symbol, f.params.len);
+}
+
+/// `f` as a call of its translated cell, `<module>:t(…)`.
+fn callingCell(arena: std.mem.Allocator, f: ast.FnDecl, module: []const u8) Error!ast.FnDecl {
+    const args = try arena.alloc([]const u8, 2);
+    args[0] = try std.fmt.allocPrint(arena, "\"{s}\"", .{module});
+    args[1] = "\"t\"";
+    const ann = try arena.alloc(ast.Annotation, 1);
+    ann[0] = .{ .name = "External.Erlang", .args = args, .is_builtin = true };
+    var out = f;
+    out.annotations = ann;
+    return out;
+}
+
+/// The refusal of a host function none of the three sources serves at
+/// comptime (decision 434 (4)): what beam-to-wasm did not convert, when its
+/// Erlang cell was the source tried (decision 439: never a fall to its `fn:`
+/// cell); else the three sources, named.
+fn unavailable(arena: std.mem.Allocator, f: ast.FnDecl, not_converted: ?[]const u8) Error![]const u8 {
+    const name = try display(arena, f.name);
+    if (not_converted) |why| return std.fmt.allocPrint(arena, "{s}: beam-to-wasm does not convert {s} — reached at comptime from `{s}`'s @External.Erlang cell (decisions 434, 438, 439)", .{ diagnostics.comptime_beam_call_not_converted, why, name });
+    return std.fmt.allocPrint(arena, "{s}: `{s}` is reached at comptime and has no std-wasm implementation, no @External.Erlang / @External.Beam cell for beam-to-wasm, and no @External.Wasm(\"fn:…\") cell — the three sources the comptime runtime answers by (decision 434)", .{ diagnostics.comptime_host_cell_unavailable, name });
+}
+
+/// The std-wasm symbol of the carried std function `name`
+/// (`__bp_std__hash__contentHash` → `hash__contentHash`), when std-wasm
+/// serves it (`stdWasm.functions`, decision 434 (2)).
+pub fn stdWasmSymbol(name: []const u8) ?[]const u8 {
+    if (!std.mem.startsWith(u8, name, std_prefix)) return null;
+    const rest = name[std_prefix.len..];
+    for (stdWasm.functions) |sf| if (std.mem.eql(u8, sf.symbol, rest)) return sf.symbol;
+    return null;
+}
+
+/// `f` as a call of the std-wasm export that implements it: its one cell
+/// becomes `@External.Erlang("bp_std_wasm", "<symbol>")`, which the comptime
+/// module writes as `bp_std_wasm:<symbol>(…)` and the wat runtime's lowering
+/// calls as `rt_std_<symbol>`.
+fn servedByStdWasm(arena: std.mem.Allocator, f: ast.FnDecl, symbol: []const u8) Error!ast.FnDecl {
+    const args = try arena.alloc([]const u8, 2);
+    args[0] = try std.fmt.allocPrint(arena, "\"{s}\"", .{stdWasm.erlang_module});
+    args[1] = try std.fmt.allocPrint(arena, "\"{s}\"", .{symbol});
+    const ann = try arena.alloc(ast.Annotation, 1);
+    ann[0] = .{ .name = "External.Erlang", .args = args, .is_builtin = true };
+    var out = f;
+    out.annotations = ann;
+    return out;
 }
 
 /// `fn <f>(<params>) { return <target>(<params>); }` — a host function bound
@@ -478,44 +541,30 @@ fn callOf(arena: std.mem.Allocator, f: ast.FnDecl, target: []const u8) Error!ast
     return out;
 }
 
-// ── what a decorator may call (decision 341) ────────────────────────────────
+// ── what a decorator may call (decisions 341, 434) ──────────────────────────
 
-/// The cells a package's declared targets require of a host function its
-/// decorators reach.
-pub const Required = struct {
-    beam: bool,
-    wasm: bool,
-    /// The declared target that requires each, for the message.
-    beam_by: []const u8 = "",
-    wasm_by: []const u8 = "",
-
-    pub fn of(targets: ?Targets) Required {
-        const t = targets orelse return .{ .beam = true, .wasm = true };
-        return .{
-            .beam = t.erlang or t.beam,
-            .wasm = t.commonJS or t.typescript or t.wasm,
-            .beam_by = if (t.erlang) "erlang" else if (t.beam) "beam" else "",
-            .wasm_by = if (t.commonJS) "commonJS" else if (t.typescript) "typescript" else if (t.wasm) "wasm" else "",
-        };
-    }
-};
-
-fn hasBeamCell(f: ast.FnDecl) bool {
-    return f.externalFor("erlang") != null or f.externalFor("beam") != null;
-}
-
-fn hasWasmCell(f: ast.FnDecl) bool {
-    return wasmBinding(f) != null;
+/// Why the host function `f` cannot run at comptime, or null when one of the
+/// three sources serves it (decision 434 (4)): std-wasm, the beam-to-wasm
+/// translation of its Erlang / Beam cell, its `@External.Wasm("fn:…")` cell.
+/// The answer is one for every target.
+pub fn unservedReason(arena: std.mem.Allocator, f: ast.FnDecl) Error!?[]const u8 {
+    if (stdWasmSymbol(f.name) != null) return null;
+    if (try erlangCellOf(arena, f)) |cell| switch (cell) {
+        .ok => return null,
+        .refused => |why| return try unavailable(arena, f, why),
+    };
+    if (wasmBinding(f)) |b| if (std.mem.startsWith(u8, b.text, "fn:")) return null;
+    return try unavailable(arena, f, null);
 }
 
 /// Refuses, at the call, a host function a decorator of this module reaches
 /// — in its body, in a function of this module it calls, or through a std
-/// function or an imported one — that lacks a cell its package's declared
-/// targets require (decision 341). `decls` is the module as parsed; `env`
-/// holds its imports' closures (`Env.importedFnSupport`).
-pub fn checkDecorators(env: *Env, decls: []const ast.DeclKind, targets: ?Targets, isDecorator: anytype) Error!?validation.TypeError {
+/// function or an imported one — that none of the three comptime sources
+/// serves (decisions 341, 434), when the package itself is compiled. `decls`
+/// is the module as parsed; `env` holds its imports' closures
+/// (`Env.importedFnSupport`).
+pub fn checkDecorators(env: *Env, decls: []const ast.DeclKind, isDecorator: anytype) Error!?validation.TypeError {
     const arena = env.arena;
-    const req = Required.of(targets);
     var local: std.StringHashMapUnmanaged(ast.FnDecl) = .empty;
     for (decls) |d| if (d == .@"fn") try local.put(arena, d.@"fn".name, d.@"fn");
     var writer = try Writer.init(env, decls);
@@ -537,11 +586,10 @@ pub fn checkDecorators(env: *Env, decls: []const ast.DeclKind, targets: ?Targets
             for (calls.found.items) |c| {
                 if (c.ns == null and (shadow.contains(c.callee) or paramNamed(f, c.callee))) continue;
                 if (c.ns) |ns| if (shadow.contains(ns) or paramNamed(f, ns)) continue;
-                const written = if (c.ns) |ns| try std.fmt.allocPrint(arena, "{s}.{s}", .{ ns, c.callee }) else c.callee;
                 // A function of this module.
                 if (c.ns == null) if (local.get(c.callee)) |g| {
                     if (isHost(g)) {
-                        if (try missingCell(arena, req, g, written)) |msg| return located(msg, c.loc);
+                        if (try unservedReason(arena, g)) |msg| return located(msg, c.loc);
                     } else if (!seen.contains(g.name)) {
                         try seen.put(arena, g.name, {});
                         try queue.append(arena, g);
@@ -551,13 +599,13 @@ pub fn checkDecorators(env: *Env, decls: []const ast.DeclKind, targets: ?Targets
                 // A std function, and every std function it reaches.
                 const std_name: ?[]const u8 = if (c.ns) |ns| try writer.resolveNs(ns, c.callee) else try writer.resolveLeaf(c.callee);
                 if (std_name) |sn| {
-                    if (try stdMissing(env, req, sn, written)) |msg| return located(msg, c.loc);
+                    if (try stdUnserved(env, sn)) |msg| return located(msg, c.loc);
                     continue;
                 }
                 // An imported function, with its closure.
                 if (c.ns == null) if (env.importedFnSupport.get(c.callee)) |closure| {
                     for (closure) |g| if (isHost(g)) {
-                        if (try missingCell(arena, req, g, if (std.mem.eql(u8, g.name, c.callee)) written else try display(arena, g.name))) |msg| return located(msg, c.loc);
+                        if (try unservedReason(arena, g)) |msg| return located(msg, c.loc);
                     };
                 };
             }
@@ -572,12 +620,12 @@ fn paramNamed(f: ast.FnDecl, name: []const u8) bool {
 }
 
 fn located(msg: []const u8, loc: ast.Loc) validation.TypeError {
-    return validation.TypeError.custom(msg, "Give the host function the cell of every comptime runtime the package's targets use — `@External.Erlang` (or `@External.Beam`) for erlang and beam, `@External.Wasm` for commonJS and wasm — or narrow `targets` in `botopink.json`. `@External.Node` never serves a decorator: there is no Node at comptime.").withLoc(loc);
+    return validation.TypeError.custom(msg, "A host function a decorator reaches runs at comptime on the wasm runtime, for every target (decision 434): give it an `@External.Erlang` cell beam-to-wasm converts or an `@External.Wasm(\"fn:…\")` cell naming a botopink body. `@External.Node` never serves a decorator: there is no Node at comptime.").withLoc(loc);
 }
 
-/// The std function `name` (carried) and every one it reaches: the first
-/// host function among them without a required cell.
-fn stdMissing(env: *Env, req: Required, name: []const u8, written: []const u8) Error!?[]const u8 {
+/// The std function `name` (carried) and every one it reaches: the reason
+/// the first host function among them that no source serves cannot run.
+fn stdUnserved(env: *Env, name: []const u8) Error!?[]const u8 {
     const carried = env.stdCarried orelse return null;
     var seen: std.StringHashMapUnmanaged(void) = .empty;
     var queue: std.ArrayListUnmanaged([]const u8) = .empty;
@@ -589,30 +637,11 @@ fn stdMissing(env: *Env, req: Required, name: []const u8, written: []const u8) E
         try seen.put(env.arena, n, {});
         const sf = carried.get(n) orelse continue;
         if (isHost(sf.decl)) {
-            const shown = if (std.mem.eql(u8, n, name)) written else try display(env.arena, n);
-            if (try missingCell(env.arena, req, sf.decl, shown)) |msg| return msg;
-            // A `fn:` binding's target is the wat cell, not a call to check.
+            if (try unservedReason(env.arena, sf.decl)) |msg| return msg;
+            // A `fn:` binding's target is the wasm cell, not a call to check.
             continue;
         }
         for (sf.reaches) |r| try queue.append(env.arena, r);
-    }
-    return null;
-}
-
-fn missingCell(arena: std.mem.Allocator, req: Required, f: ast.FnDecl, written: []const u8) Error!?[]const u8 {
-    if (req.wasm and !hasWasmCell(f)) {
-        const why = if (req.wasm_by.len > 0)
-            try std.fmt.allocPrint(arena, "the package declares {s}, whose decorators run on the wat runtime", .{req.wasm_by})
-        else
-            "the package declares no targets, so its decorators run on the BEAM and the wat runtime";
-        return try std.fmt.allocPrint(arena, "{s}: `{s}` has no @External.Wasm; {s}", .{ diagnostics.decorator_host_cell_missing, written, why });
-    }
-    if (req.beam and !hasBeamCell(f)) {
-        const why = if (req.beam_by.len > 0)
-            try std.fmt.allocPrint(arena, "the package declares {s}, whose decorators run on the BEAM runtime", .{req.beam_by})
-        else
-            "the package declares no targets, so its decorators run on the BEAM and the wat runtime";
-        return try std.fmt.allocPrint(arena, "{s}: `{s}` has no @External.Erlang; {s}", .{ diagnostics.decorator_host_cell_missing, written, why });
     }
     return null;
 }
@@ -656,3 +685,9 @@ const CallWalk = struct {
         }
     }
 };
+
+test "stdWasmSymbol: a carried std function std-wasm serves, by its mangled name" {
+    try std.testing.expectEqualStrings("hash__contentHash", stdWasmSymbol("__bp_std__hash__contentHash").?);
+    try std.testing.expect(stdWasmSymbol("__bp_std__hash__sha256") == null);
+    try std.testing.expect(stdWasmSymbol("contentHash") == null);
+}

@@ -32,8 +32,8 @@
 #                 copied beside it, so a git dependency must already be
 #                 vendored there; a workspace member (`{ "workspace": true }`)
 #                 is built inside a copy of its enclosing workspace.
-#   --target T    build target (default commonJS — the wat runtime; `erlang`
-#                 and `beam` evaluate on the BEAM runtime, decision 84)
+#   --target T    build target (default commonJS; every target evaluates on
+#                 the wasm comptime runtime, decision 434)
 #   --keep        leave the scratch tree in place and print its path
 #   --no-build    do not run `zig build` first
 #

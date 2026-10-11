@@ -1,11 +1,10 @@
 //! `beam_file.zig`'s instruction model rendered as BEAM assembly text — the
 //! `.S` form `erlc -S` writes and `erlc +from_asm` reads back.
 //!
-//! The comptime BEAM lowering (`comptime/runtime/beam/lower.zig`) builds one
-//! `beam_file.Module` and makes two things of it: the `.beam` bytes the
-//! resident node loads (`beam_file.assemble`) and this text, which is what a
-//! `COMPTIME BEAM ASSEMBLY` snapshot section shows. One model, two renderers,
-//! so the listing cannot describe a program other than the one that ran —
+//! The beam target's template compiler (`erl_lower.zig`, BR5) builds one
+//! `beam_file.Module` per template and renders it here, into the module's
+//! `.S`; the comptime runtime assembles the same model to `.beam` bytes for
+//! beam-to-wasm (`beam_file.assemble`). One model, two renderers —
 //! and `scripts/beam_export_audit.sh` can hand the listing to `erlc +from_asm`,
 //! whose `beam_validator` checks what the loader does not.
 //!

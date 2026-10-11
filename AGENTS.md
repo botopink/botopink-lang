@@ -30,6 +30,8 @@ botopink-lang/                 ← language core (this project)
 │   ├── lib-test-runner/       ← `botopink-lib-test` (test-libs gate)
 │   ├── manifest/              ← the shared `botopink.json` model (std only; imported by the four above)
 │   ├── source-stamp/          ← `source_stamp` — a library run refuses a binary older than its checkout's sources
+│   ├── std-wasm/              ← std's host functions in Zig, compiled to wasm, served to the comptime runtime (decision 434)
+│   ├── beam-to-wasm/          ← `.beam` bytecode translated to wasm: a host function's Erlang cell at comptime (decisions 434, 435)
 │   ├── test-scratch/          ← `test_scratch` — per-process scratch paths; the test modules only
 │   ├── test-shard/            ← the compiler-core test runner: the suite split across processes (`-Dtest-shards`)
 │   └── wasm3/                 ← vendored wasm3 (C): the wat comptime runtime runs on it, in-process
@@ -49,7 +51,7 @@ Golden snapshots live inside the owning package (`modules/compiler-core/snapshot
 
 ```bash
 zig build               # botopink + botopink-lsp + botopink-lib-test + bpmp
-zig build test          # compiler-core + language-server + compiler-cli + lib-test-runner + manifest + test-scratch tests
+zig build test          # compiler-core + language-server + compiler-cli + lib-test-runner + manifest + test-scratch + std-wasm + beam-to-wasm tests
 zig build test -Dtest-filter=<name>   # only tests whose name matches
 zig build test -Dtest-shards=<n>      # compiler-core as n processes side by side (default: CPUs, at most 8) — modules/test-shard
 zig build run           # build and run the CLI
@@ -62,6 +64,7 @@ zig build test-language # botopink language tests (tests/language/run.sh; `-- --
 zig build test-docs     # every `botopink` fence of docs.md/README.md compiles (scripts/check-docs.sh)
 zig build clean-tmp     # reap scratch dirs older than 1 day (also runs before `zig build test`)
 zig build gen-unicode   # regenerate libs/std/src/unicode_tables.bp from the pinned Unicode data (libs/std/AGENTS.md § unicode)
+zig build std-wasm      # modules/std-wasm alone → zig-out/lib/std_wasm.wasm (decision 434)
 zig build compiler-web  # compiler-core for the browser → zig-out/web/ (wasm32-wasi; `-Doptimize=ReleaseSmall` is the shipped size)
 zig build test-web      # the browser build's smoke test under node (modules/compiler-web/tests/smoke.js)
 ```
@@ -81,17 +84,17 @@ no flag turns either off):
   module — see
   [`modules/test-scratch/AGENTS.md`](modules/test-scratch/AGENTS.md).
 
-Comptime evaluation spawns a persistent `erl`, so `erl` (OTP 28+, decision 86's
-floor) must be on `PATH` for `zig build test`; `botopink build/run/test --target
-erlang|beam` (and so `test-cli`, `test-libs`, `test-language`, `test-docs` and the
-gate) needs exactly the release the compiler emits for — `OTP_RELEASE` in
-`modules/manifest/src/root.zig`, printed by `botopink --version` — and refuses
-any other `erl` on `PATH` (decision 228, `modules/compiler-cli/src/cli/otp.zig`); codegen snapshot RUN LOGs also use
-`node`. `erlc` is a dependency of **`zig build` itself** (decision 83): it compiles
-the comptime node's three resident modules once per source change and the
-`.beam`s are embedded in the compiler, so a machine that only *runs* `botopink`
-needs `erl` and never `erlc` — and a machine (or CI runner) that builds it needs
-`erlc` on `PATH`, or the build stops at `run erlc`.
+Comptime runs on wasm only (decision 434): every target's decorator, template
+and `comptime` evaluation runs on the wat runtime, wasm3 inside the compiler, so
+compiling spawns no `erl` and building the compiler runs no `erlc`. `erl` / `erlc`
+(OTP 28+) are needed for the erlang and beam **targets' own** tests: the codegen
+snapshot RUN LOGs and the beam export audit under `zig build test` and the gate,
+and `botopink build/run/test --target erlang|beam` (and so `test-cli`,
+`test-libs`, `test-language`, `test-docs`), which needs exactly the release the
+compiler emits for — `OTP_RELEASE` in `modules/manifest/src/root.zig`, printed by
+`botopink --version` — and refuses any other `erl` on `PATH` (decision 228,
+`modules/compiler-cli/src/cli/otp.zig`); codegen snapshot RUN LOGs also use
+`node`.
 
 Per-test scratch dirs live under `modules/compiler-core/.botopinkbuild/tmp/<hex>/`
 (one root for every `executeJavaScript` / `executeErlang` / `executeBeamAsm`
@@ -152,7 +155,7 @@ does not mirror them. Entry points:
 | Codegen backends | [`modules/compiler-core/src/codegen/AGENTS.md`](modules/compiler-core/src/codegen/AGENTS.md) |
 | Shared BEAM term layer | [`modules/compiler-core/src/codegen/beam/AGENTS.md`](modules/compiler-core/src/codegen/beam/AGENTS.md) |
 | Comptime (infer, templates, decorators) | [`modules/compiler-core/src/comptime/AGENTS.md`](modules/compiler-core/src/comptime/AGENTS.md) |
-| Comptime `erl` runtime | [`modules/compiler-core/src/comptime/runtime/AGENTS.md`](modules/compiler-core/src/comptime/runtime/AGENTS.md) |
+| Comptime runtime (wasm) | [`modules/compiler-core/src/comptime/runtime/AGENTS.md`](modules/compiler-core/src/comptime/runtime/AGENTS.md) |
 | CLI | [`modules/compiler-cli/AGENTS.md`](modules/compiler-cli/AGENTS.md) |
 | LSP | [`modules/language-server/AGENTS.md`](modules/language-server/AGENTS.md) |
 | bpmp | [`modules/bpmp/AGENTS.md`](modules/bpmp/AGENTS.md) |
@@ -167,8 +170,8 @@ does not mirror them. Entry points:
 
 | Workflow | Trigger | What |
 | --- | --- | --- |
-| `.github/workflows/test.yml` | push / PR to `main`, `feat` | job `test`, on ubuntu-22.04 + macos-14, every step of both rows hard: `zig fmt --check modules`, `zig build test` from a cold runtime cache, the comptime runtime parity audit, `zig build test-bpmp`, the beam export audit, `zig build test-cli`, `scripts/format-check.sh`, `zig build test-language`, `zig build test-docs`, `scripts/tsc-check.sh` and `zig build test-web` — the local gate's stages minus the staged-file checks. Build mode as the gate's (decision 226): `zig build test` stays Debug; `test-bpmp`, `test-cli`, `test-language`, `test-docs` (and `test-libs` in job `libs`) pass `-Doptimize=ReleaseSafe`, exactly the `zig build` calls `scripts/gate.sh` passes `$opt` to; `test-web`, not a gate stage, keeps the default. The compiler's OTP release on both rows (decisions 227, 228): a step reads `OTP_RELEASE` from `modules/manifest/src/root.zig` (the compiler is not built yet), then `erlef/setup-beam` on linux, `brew install erlang@<release> && brew link --force erlang@<release>` plus its `bin` on `$GITHUB_PATH` on macos, then a step that fails the job unless `erl` reports that release; job `libs` reads, installs and asserts the same way. There is no windows row (1.0.11-beta gate-f: a row that cannot fail measures nothing; it returns hard or not at all). Job `libs` (ubuntu, after `test`): checks out emilia/erika/jhonstart/onze/rakun at `feat` into `repository/<name>/` and runs `zig build test-libs -Doptimize=ReleaseSafe` — every cell the manifests declare, every excluded target audited. |
-| `.github/workflows/release.yml` | tag push `v*` | Erlang/OTP: a step reads `OTP_RELEASE` from `modules/manifest/src/root.zig` (decision 228), `erlef/setup-beam` installs it on linux and windows, `brew install erlang@<release>` on macos, and a step fails the job unless `erl` reports it. 5-target matrix (`linux-{x86_64,aarch64}`, `macos-{x86_64,aarch64}`, `windows-x86_64`) → `scripts/release-pack.sh` writes `dist/<binary>-<tag>-<target>.<ext>` + `.sha256` → `softprops/action-gh-release@v2` uploads to one Release. Prerelease iff the tag contains `-`. |
+| `.github/workflows/test.yml` | push / PR to `main`, `feat` | job `test`, on ubuntu-22.04 + macos-14, every step of both rows hard: `zig fmt --check modules`, `zig build test` from a cold runtime cache, `zig build test-bpmp`, the beam export audit, `zig build test-cli`, `scripts/format-check.sh`, `zig build test-language`, `zig build test-docs`, `scripts/tsc-check.sh` and `zig build test-web` — the local gate's stages minus the staged-file checks. Build mode as the gate's (decision 226): `zig build test` stays Debug; `test-bpmp`, `test-cli`, `test-language`, `test-docs` (and `test-libs` in job `libs`) pass `-Doptimize=ReleaseSafe`, exactly the `zig build` calls `scripts/gate.sh` passes `$opt` to; `test-web`, not a gate stage, keeps the default. The compiler's OTP release on both rows (decisions 227, 228): a step reads `OTP_RELEASE` from `modules/manifest/src/root.zig` (the compiler is not built yet), then `erlef/setup-beam` on linux, `brew install erlang@<release> && brew link --force erlang@<release>` plus its `bin` on `$GITHUB_PATH` on macos, then a step that fails the job unless `erl` reports that release; job `libs` reads, installs and asserts the same way. There is no windows row (1.0.11-beta gate-f: a row that cannot fail measures nothing; it returns hard or not at all). Job `libs` (ubuntu, after `test`): checks out emilia/erika/jhonstart/onze/rakun at `feat` into `repository/<name>/` and runs `zig build test-libs -Doptimize=ReleaseSafe` — every cell the manifests declare, every excluded target audited. |
+| `.github/workflows/release.yml` | tag push `v*` | No Erlang/OTP: building runs no `erlc` (decision 434). 5-target matrix (`linux-{x86_64,aarch64}`, `macos-{x86_64,aarch64}`, `windows-x86_64`) → `scripts/release-pack.sh` writes `dist/<binary>-<tag>-<target>.<ext>` + `.sha256` → `softprops/action-gh-release@v2` uploads to one Release. Prerelease iff the tag contains `-`. |
 
 Asset naming (the contract bpmp and the install scripts rely on):
 
@@ -258,7 +261,6 @@ run is [`scripts/gate.sh`](scripts/gate.sh) — stages 1–4 one after the other
 2. `zig build -Doptimize=ReleaseSafe` — the mode `release.yml` ships, and the binaries every later stage runs (every `zig build` of the gate passes the same flag; stage 4's unit tests stay Debug);
 3. `scripts/format-check.sh` (`botopink format --check` over the compiler's canonical `.bp` trees — decision 66's caller; `TREES` in the script names them, and every tracked `.bp` is under one or structurally exempt);
 4. `zig build test` (compiler-core, language-server, CLI and lib-test-runner unit suites; `--cold` deletes `modules/compiler-core/.botopinkbuild/runtime-cache` and every `.botopinkbuild/cache/` of this checkout and each sibling library repository first, naming each — required for the run that decides a merge);
-4b. `scripts/snap_audit.sh --mode=runtime-parity` (every codegen snapshot exists under `snapshots/codegen/beam/` and `…/wat/`, and each pair is equal once the `COMPTIME BEAM ASSEMBLY`/`COMPTIME WAT` listings are set aside — front 18 step 4, decision 85; no allow-list);
 5. `zig build test-bpmp` (the package manager's unit suite);
 6. `scripts/beam_export_audit.sh` (every beam snapshot module assembles with every function exported);
 7. `zig build test-cli` (the CLI contract, test tooling, recursion and backend execution scripts);
@@ -301,59 +303,20 @@ Do not use `--no-verify`.
 
 ## Debugging tips & gotchas
 
-### Persistent BEAM node (`comptime/runtime/persistent_beam.zig`)
+### The comptime runtime (`comptime/runtime/`)
 
-Decorator and template bodies run in one long-lived `erl` process speaking
-length-prefixed binary frames over stdin/stdout: `cmd 4` = load `.beam`
-**bytes** carried in the frame and answer the module atom, `cmd 3` = call
-`<module>:main(<external term>)`. The bytes are the generated module lowered
-and assembled in Zig (`comptime/runtime/beam/`, `codegen/beam/beam_file.zig`
-— front 14 step 3); nothing on this path compiles Erlang, and the `.erl`
-commands (1, 2) are gone. A module is loaded once per **declaration** and
-every later call site sends cmd 3 alone with its own capture. Comptime
-`val`s are folded in Zig (`comptime/eval.zig`).
-
-- **`file:read/2` on `standard_io` can return a list, not a binary.** `read_frame/0`
-  converts with `list_to_binary/1` before matching `<<Len:32/unsigned-big-integer>>`;
-  keep that conversion when editing the server, or the server silently treats
-  the frame as EOF and the Zig side blocks.
-- **stdout is the frame channel only.** The server moves the default logger
-  handler to `standard_error` and runs `main/0` with `standard_error` as its
-  group leader, so `io:format/1` in a comptime body and a SIGTERM notice go to
-  `.botopinkbuild/tmp/persistent_beam/erl.<id>.stderr.log` (write-only, truncated
-  at each spawn; `<id>` is 64 random bits per process, so two compilers sharing
-  this cwd do not truncate each other's live log). A reply length above `max_frame_len` (16 MiB) fails as
-  `error.PersistentErlFrameTooLarge` with a message in `lastTransportError()`.
-- **Timeouts.** `main` runs under `EVAL_TIMEOUT_MS` (10 s) inside erl. The
-  Zig-side `readFrame` itself blocks without a timeout, so a wedged erl process
-  still hangs the caller — wrap manual runs in `timeout`.
-- **The three resident modules are embedded `.beam`s, not files** (decision 83).
-  The server source is a Zig string (`comptime/runtime/server_source.zig`,
-  `botopink_comptime_server`); beside it are the two comptime preludes
-  `bp_comptime_template` and `bp_comptime_decorator`
-  (`comptime/runtime/prelude.zig`), which carry the host glue every generated
-  module used to copy. `zig build` renders the three `.erl` with
-  `render_resident.zig` (host target), compiles them with `erlc +deterministic`
-  and hands the `.beam`s to compiler-core as anonymous imports;
-  `persistent_beam.zig` `@embedFile`s them and the spawn bootstrap
-  (`erl -noshell -eval …`) loads them from stdin — one cmd-4 frame each — before
-  `start/0` runs. Editing the server or a prelude re-runs `erlc` at the next
-  build, nothing else; `.botopinkbuild/tmp/persistent_beam/` holds only
-  `erl.<id>.stderr.log`, one per process. A generated module reaches the prelude through `-import`,
-  so a missing prelude would be a run-time failure of every comptime
-  evaluation, not a compile error. An `erl` below OTP 28 is refused by the
-  bootstrap with both releases in the message (`error.PersistentErlBelowFloor`,
-  decision 86); a `.beam` the running release cannot load is
-  `__BP_ERL_LOAD_ERROR__` — the compiler was built with a newer `erlc` than the
-  machine's `erl`.
-- **Manual testing.** Frame = `struct.pack('>I', len(payload)) + payload`, payload
-  = `b'\x04' + struct.pack('>H', len(mod)) + mod + beam_bytes` to load (a `.beam`
-  from `erlc` works as well as an assembled one), then
-  `b'\x03' + struct.pack('>H', len(mod)) + mod + term_to_binary_bytes` to call. Pipe three cmd-4
-  frames of the resident `.beam`s (find them under
-  `.zig-cache/o/*/resident-beam/`) and then the request into
-  `erl -noshell -eval "<bootstrap_eval of persistent_beam.zig>"`; the first reply
-  frame is the handshake (`ok`). Never use `-noinput` — it disables stdin reading.
+- **One runtime, wasm, in-process** (decision 434): a comptime module is the
+  Erlang text `codegen/erlang.zig`'s untyped mode writes, parsed, lowered to
+  wasm and linked into the term library (`comptime/runtime/wat/`), run on
+  wasm3 (`persistent_wat.zig`). No child process, no pipe, no file; a runaway
+  body is a runaway wasm3 call on the compiler's thread (limit 1 of
+  `comptime/runtime/AGENTS.md` § Limits) — wrap manual runs in `timeout`.
+- **A body's `io:format`** goes to a buffer in the module's own memory, never to
+  the compiler's stdout.
+- **Host functions** reached at build answer by std-wasm (`modules/std-wasm`),
+  else the beam-to-wasm translation of their Erlang cell (`modules/beam-to-wasm`,
+  `comptime/runtime/wat/cells.zig`), else their `@External.Wasm("fn:…")` cell
+  (`comptime/host_cells.zig`).
 
 ### Comptime specialization (`comptime/transform.zig`)
 

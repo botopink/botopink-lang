@@ -233,24 +233,16 @@ pub fn buildSnapshotMulti(alloc: std.mem.Allocator, outputs: []const SnapInput, 
     return try buf.toOwnedSlice(alloc);
 }
 
-/// The comptime runtime a snapshot is recorded under: the harness names it on
-/// every generation it records (`codegen/tests/helpers.zig` `snapshot_configs`);
-/// a generation that names none has no place in the tree.
-fn runtimeDir(cfg: config.Config) error{SnapshotWithoutComptimeRuntime}![]const u8 {
-    const rt = cfg.comptime_runtime orelse return error.SnapshotWithoutComptimeRuntime;
-    return @tagName(rt);
-}
-
 /// Asserts the codegen output against a snapshot file.
-/// The snapshot path is "codegen/{comptime runtime}/{targetSource}/{slug}.snap.md"
-/// (front 18 step 4, decision 85).
+/// The snapshot path is "codegen/{targetSource}/{slug}.snap.md" — one tree,
+/// the comptime runtime being wasm for every target (decision 434).
 pub fn assertCodegen(
     alloc: std.mem.Allocator,
     slug: []const u8,
     outputs: []const SnapInput,
     cfg: config.Config,
 ) !void {
-    const snapName = try std.fmt.allocPrint(alloc, "codegen/{s}/{s}/{s}", .{ try runtimeDir(cfg), @tagName(cfg.targetSource), slug });
+    const snapName = try std.fmt.allocPrint(alloc, "codegen/{s}/{s}", .{ @tagName(cfg.targetSource), slug });
     defer alloc.free(snapName);
 
     const text = try buildSnapshotMulti(alloc, outputs, cfg);
@@ -260,7 +252,7 @@ pub fn assertCodegen(
 }
 
 /// Asserts a codegen error against a snapshot file.
-/// The snapshot path is "codegen/{comptime runtime}/errors/{targetSource}/{slug}.snap.md".
+/// The snapshot path is "codegen/errors/{targetSource}/{slug}.snap.md".
 pub fn assertCodegenError(
     alloc: std.mem.Allocator,
     slug: []const u8,
@@ -275,7 +267,7 @@ pub fn assertCodegenError(
     );
     defer alloc.free(combined);
 
-    const snapName = try std.fmt.allocPrint(alloc, "codegen/{s}/errors/{s}/{s}", .{ try runtimeDir(cfg), @tagName(cfg.targetSource), slug });
+    const snapName = try std.fmt.allocPrint(alloc, "codegen/errors/{s}/{s}", .{ @tagName(cfg.targetSource), slug });
     defer alloc.free(snapName);
 
     try snapMod.checkText(alloc, snapName, combined);

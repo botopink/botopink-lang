@@ -1553,19 +1553,17 @@ pub fn buildExchange(allocator: std.mem.Allocator, outputs: []const comptimeMod.
     return try buf.toOwnedSlice(allocator);
 }
 
-/// Assert the runtime exchanges of `outputs`, evaluated on `runtime`, against
-/// `comptime/runtime/<runtime>/{slug}.snap.md` — nothing when no decorator or
-/// template ran (front 18 step 4: the AST is recorded once, the exchange once
-/// per runtime).
+/// Assert the runtime exchanges of `outputs` against
+/// `comptime/runtime/{slug}.snap.md` — nothing when no decorator or template
+/// ran (the one comptime runtime's, decision 434).
 pub fn assertComptimeExchange(
     allocator: std.mem.Allocator,
-    runtime: []const u8,
     slug: []const u8,
     outputs: []const comptimeMod.ComptimeOutput,
 ) !void {
     const text = (try buildExchange(allocator, outputs)) orelse return;
     defer allocator.free(text);
-    const snapName = try std.fmt.allocPrint(allocator, "comptime/runtime/{s}/{s}", .{ runtime, slug });
+    const snapName = try std.fmt.allocPrint(allocator, "comptime/runtime/{s}", .{slug});
     defer allocator.free(snapName);
     try snapMod.checkText(allocator, snapName, text);
 }

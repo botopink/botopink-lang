@@ -26,6 +26,10 @@
 //! keeps per module to its load-time pages, bytes and globals).
 const std = @import("std");
 const builtin = @import("builtin");
+/// std's host functions and the text and number algorithms behind the BIFs
+/// below (`modules/std-wasm`, decision 434 (2)): a comptime answer is
+/// std-wasm's, whatever the build's target.
+const stdWasm = @import("std_wasm");
 
 // ── cells ────────────────────────────────────────────────────────────────────
 
@@ -1485,97 +1489,7 @@ export fn rt_erlang_apply(f: T, args: T) T {
 
 // ── floats as text ───────────────────────────────────────────────────────────
 
-/// `float_to_binary(F, [short])`: the shortest digits that round-trip, written
-/// in fixed notation or as `D.DDDeE`, whichever is shorter (fixed on a tie);
-/// always one digit after the point at least.
-fn shortFloat(f: f64, buf: []u8) []const u8 {
-    if (f == 0) return if (std.math.signbit(f)) "-0.0" else "0.0";
-    var sci: [64]u8 = undefined;
-    const e_text = std.fmt.bufPrint(&sci, "{e}", .{f}) catch unreachable;
-    // e_text: [-]D[.DDD]e[-]X
-    var neg = false;
-    var s = e_text;
-    if (s[0] == '-') {
-        neg = true;
-        s = s[1..];
-    }
-    const e_at = std.mem.indexOfScalar(u8, s, 'e').?;
-    const mant = s[0..e_at];
-    const exp = std.fmt.parseInt(i32, s[e_at + 1 ..], 10) catch 0;
-    var digits: [32]u8 = undefined;
-    var nd: usize = 0;
-    for (mant) |c| if (c != '.') {
-        digits[nd] = c;
-        nd += 1;
-    };
-    while (nd > 1 and digits[nd - 1] == '0') nd -= 1;
-    const d = digits[0..nd];
-
-    // Scientific: D.DDDeX
-    var sbuf: [64]u8 = undefined;
-    var sl: usize = 0;
-    if (neg) {
-        sbuf[sl] = '-';
-        sl += 1;
-    }
-    sbuf[sl] = d[0];
-    sl += 1;
-    sbuf[sl] = '.';
-    sl += 1;
-    if (nd > 1) {
-        @memcpy(sbuf[sl..][0 .. nd - 1], d[1..]);
-        sl += nd - 1;
-    } else {
-        sbuf[sl] = '0';
-        sl += 1;
-    }
-    const et = std.fmt.bufPrint(sbuf[sl..], "e{d}", .{exp}) catch unreachable;
-    sl += et.len;
-
-    // Fixed.
-    var fbuf: [400]u8 = undefined;
-    var fl: usize = 0;
-    if (neg) {
-        fbuf[fl] = '-';
-        fl += 1;
-    }
-    const point: i32 = exp + 1; // digits before the point
-    if (point <= 0) {
-        fbuf[fl] = '0';
-        fbuf[fl + 1] = '.';
-        fl += 2;
-        var z: i32 = 0;
-        while (z < -point) : (z += 1) {
-            fbuf[fl] = '0';
-            fl += 1;
-        }
-        @memcpy(fbuf[fl..][0..nd], d);
-        fl += nd;
-    } else {
-        const p: usize = @intCast(point);
-        if (p >= nd) {
-            @memcpy(fbuf[fl..][0..nd], d);
-            fl += nd;
-            for (0..p - nd) |_| {
-                fbuf[fl] = '0';
-                fl += 1;
-            }
-            fbuf[fl] = '.';
-            fbuf[fl + 1] = '0';
-            fl += 2;
-        } else {
-            @memcpy(fbuf[fl..][0..p], d[0..p]);
-            fl += p;
-            fbuf[fl] = '.';
-            fl += 1;
-            @memcpy(fbuf[fl..][0 .. nd - p], d[p..]);
-            fl += nd - p;
-        }
-    }
-    const pick = if (fl <= sl) fbuf[0..fl] else sbuf[0..sl];
-    @memcpy(buf[0..pick.len], pick);
-    return buf[0..pick.len];
-}
+const shortFloat = stdWasm.number.shortFloat;
 
 // ── lists ────────────────────────────────────────────────────────────────────
 
@@ -2086,25 +2000,11 @@ fn strArg(t: T) ?[]const u8 {
     };
 }
 
-/// Code-point boundaries of UTF-8 `s`: `cps[i]` is the byte offset of the
-/// i-th code point, `cps[n] = s.len`. A `\r\n` pair counts as one grapheme,
-/// the only multi-code-point grapheme the comptime bodies meet.
+/// Grapheme boundaries of UTF-8 `s` (`stdWasm.text.graphemes`): `g[i]` is
+/// the byte offset of the i-th, `g[n] = s.len`.
 fn graphemes(s: []const u8) []usize {
     const out: [*]usize = @ptrCast(@alignCast(alloc((s.len + 1) * @sizeOf(usize))));
-    var n: usize = 0;
-    var i: usize = 0;
-    while (i < s.len) {
-        out[n] = i;
-        n += 1;
-        if (s[i] == '\r' and i + 1 < s.len and s[i + 1] == '\n') {
-            i += 2;
-            continue;
-        }
-        const len = std.unicode.utf8ByteSequenceLength(s[i]) catch 1;
-        i += if (i + len <= s.len) len else 1;
-    }
-    out[n] = s.len;
-    return out[0 .. n + 1];
+    return stdWasm.text.graphemes(out[0 .. s.len + 1], s);
 }
 
 export fn rt_string_length(t: T) T {
@@ -2120,14 +2020,13 @@ export fn rt_string_is_empty(t: T) T {
 fn caseMap(t: T, upper: bool) T {
     const s = strArg(t) orelse return &nil_cell;
     const out = alloc(s.len);
-    for (s, 0..) |c, i| out[i] = if (upper) std.ascii.toUpper(c) else std.ascii.toLower(c);
-    // Non-ASCII letters keep their bytes: OTP maps them through the Unicode
-    // tables, which this runtime does not carry.
-    for (s) |c| if (c >= 0x80) {
+    // A non-ASCII letter is the runtime's limit 3 (std-wasm refuses it rather
+    // than answer differently from a target).
+    const mapped = stdWasm.text.caseMap(out[0..s.len], s, upper) catch {
         raiseWat("string case mapping of a non-ASCII character");
         return &nil_cell;
     };
-    return strResult(t, out[0..s.len]);
+    return strResult(t, mapped);
 }
 
 export fn rt_string_uppercase(t: T) T {
@@ -2138,16 +2037,8 @@ export fn rt_string_lowercase(t: T) T {
     return caseMap(t, false);
 }
 
-fn isWhite(c: u8) bool {
-    return c == ' ' or c == '\t' or c == '\n' or c == '\r' or c == 11 or c == 12;
-}
-
 fn trimBytes(s: []const u8, dir: T) []const u8 {
-    var a: usize = 0;
-    var b: usize = s.len;
-    if (dir != a_trailing) while (a < b and isWhite(s[a])) : (a += 1) {};
-    if (dir != a_leading) while (b > a and isWhite(s[b - 1])) : (b -= 1) {};
-    return s[a..b];
+    return stdWasm.text.trim(s, if (dir == a_leading) .leading else if (dir == a_trailing) .trailing else .both);
 }
 
 export fn rt_string_trim(t: T) T {
@@ -2165,14 +2056,14 @@ export fn rt_string_find(t: T, p: T) T {
     const s = strArg(t) orelse return &nil_cell;
     const pat = strArg(p) orelse return &nil_cell;
     if (pat.len == 0) return t;
-    const i = std.mem.indexOf(u8, s, pat) orelse return a_nomatch;
+    const i = stdWasm.text.find(s, pat) orelse return a_nomatch;
     return strResult(t, s[i..]);
 }
 
 export fn rt_string_prefix(t: T, p: T) T {
     const s = strArg(t) orelse return &nil_cell;
     const pat = strArg(p) orelse return &nil_cell;
-    if (!std.mem.startsWith(u8, s, pat)) return a_nomatch;
+    if (!stdWasm.text.startsWith(s, pat)) return a_nomatch;
     return strResult(t, s[pat.len..]);
 }
 
@@ -2183,11 +2074,9 @@ export fn rt_string_equal(a: T, b: T) T {
 }
 
 fn sliceBytes(s: []const u8, start: i64, len: ?i64) []const u8 {
-    const g = graphemes(s);
-    const n = g.len - 1;
-    const from: usize = @min(n, @as(usize, @intCast(@max(start, 0))));
-    const to: usize = if (len) |l| @min(n, from + @as(usize, @intCast(@max(l, 0)))) else n;
-    return s[g[from]..g[to]];
+    const from: usize = @intCast(@max(start, 0));
+    const count: ?usize = if (len) |l| @intCast(@max(l, 0)) else null;
+    return stdWasm.text.slice(s, graphemes(s), from, count);
 }
 
 export fn rt_string_slice2(t: T, st: T) T {
@@ -2211,13 +2100,8 @@ fn split(t: T, p: T, all: bool) T {
     const sep = strArg(p) orelse return &nil_cell;
     if (sep.len == 0) return listFrom(&.{t});
     var parts: std.ArrayListUnmanaged(T) = .empty;
-    var rest = s;
-    while (std.mem.indexOf(u8, rest, sep)) |i| {
-        parts.append(arenaAllocator(), strResult(t, rest[0..i])) catch return badarg();
-        rest = rest[i + sep.len ..];
-        if (!all) break;
-    }
-    parts.append(arenaAllocator(), strResult(t, rest)) catch return badarg();
+    var it = stdWasm.text.Splitter.init(s, sep, all);
+    while (it.next()) |piece| parts.append(arenaAllocator(), strResult(t, piece)) catch return badarg();
     return listFrom(parts.items);
 }
 
@@ -2245,17 +2129,8 @@ export fn rt_string_replace(t: T, p: T, r: T) T {
 
 export fn rt_string_reverse(t: T) T {
     const s = strArg(t) orelse return &nil_cell;
-    const g = graphemes(s);
     const out = alloc(s.len);
-    var o: usize = 0;
-    var i = g.len - 1;
-    while (i > 0) {
-        i -= 1;
-        const part = s[g[i]..g[i + 1]];
-        @memcpy(out[o..][0..part.len], part);
-        o += part.len;
-    }
-    return strResult(t, out[0..s.len]);
+    return strResult(t, stdWasm.text.reverse(out[0..s.len], s, graphemes(s)));
 }
 
 export fn rt_string_to_integer(t: T) T {
@@ -2267,6 +2142,25 @@ export fn rt_string_to_integer(t: T) T {
     if (i == d0) return tuple(&.{ a_error, atomOf("no_integer") });
     const v = std.fmt.parseInt(i64, s[0..i], 10) catch return tuple(&.{ a_error, atomOf("no_integer") });
     return tuple(&.{ mkInt(v), strResult(t, s[i..]) });
+}
+
+// ── std functions std-wasm serves whole (`stdWasm.functions`) ───────────────
+// One export per entry, `rt_std_<symbol>`: a comptime module's call
+// `bp_std_wasm:<symbol>(…)` lowers to it (`lower.zig`), so the std function
+// answers std-wasm's text instead of either of its cells.
+
+export fn rt_std_hash__contentHash(t: T) T {
+    const s = strArg(t) orelse return &nil_cell;
+    var buf: [8]u8 = undefined;
+    const h = stdWasm.hash.contentHash(&buf, s) catch return badarg();
+    return binCopy(h);
+}
+
+comptime {
+    // Every served function has its export here, by name.
+    for (stdWasm.functions) |f| {
+        if (!@hasDecl(@This(), "rt_std_" ++ f.symbol)) @compileError("std-wasm serves " ++ f.module ++ "." ++ f.name ++ " but rt.zig has no rt_std_" ++ f.symbol);
+    }
 }
 
 // ── binary: and unicode: ─────────────────────────────────────────────────────
@@ -2327,16 +2221,9 @@ export fn rt_binary_match(b: T, p: T) T {
 }
 
 fn replaceBytes(s: []const u8, pat: []const u8, rep: []const u8, all: bool) T {
-    const bb = rt_bb_new();
-    var rest = s;
-    while (std.mem.indexOf(u8, rest, pat)) |i| {
-        bbPush(bb, rest[0..i]);
-        bbPush(bb, rep);
-        rest = rest[i + pat.len ..];
-        if (!all) break;
-    }
-    bbPush(bb, rest);
-    return rt_bb_end(bb);
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    stdWasm.text.replace(arenaAllocator(), &out, s, pat, rep, all) catch return badarg();
+    return binOf(out.items);
 }
 
 export fn rt_binary_replace3(b: T, p: T, r: T) T {
@@ -2643,8 +2530,7 @@ export fn rt_io_lib_format(fmt: T, args: T) T {
 }
 
 /// What a body printed (`io:format`), kept in the module's memory — never on
-/// the compiler's stdout. The BEAM runtime sends a body's prints to stderr;
-/// here they are captured and dropped with the instance.
+/// the compiler's stdout; they are captured and dropped with the instance.
 var printed: ?T = null;
 
 fn printBuffer() T {
@@ -2871,8 +2757,8 @@ export fn rt_etf_decode(ptr: [*]const u8, len: usize) T {
     return etfTerm(&r) orelse @trap();
 }
 
-/// `Class:Reason`, each as `~p` writes it — the first line of the text the
-/// BEAM runtime's `safe_call` reports for an exception out of `main`.
+/// `Class:Reason`, each as `~p` writes it — the runtime error an exception out
+/// of `main` is reported as.
 export fn rt_describe(class: T, reason: T) T {
     const bb = rt_bb_new();
     writeTerm(bb, class, true);
@@ -2882,17 +2768,3 @@ export fn rt_describe(class: T, reason: T) T {
 }
 
 // ── tests (native: the pure helpers) ─────────────────────────────────────────
-
-test "shortFloat: the shortest form, fixed on a tie" {
-    const cases = [_]struct { f64, []const u8 }{
-        .{ 0.1, "0.1" },                                     .{ 1.0e21, "1.0e21" },           .{ 1.0e20, "1.0e20" },
-        .{ 123.0, "123.0" },                                 .{ 1.0e-5, "1.0e-5" },           .{ 0.0001, "0.0001" },
-        .{ 1.0e15, "1.0e15" },                               .{ 123456789.0, "123456789.0" }, .{ 0.30000000000000004, "0.30000000000000004" },
-        .{ 1.2345678901234567e19, "1.2345678901234567e19" }, .{ -0.0, "-0.0" },               .{ 2.0e-10, "2.0e-10" },
-        .{ 1.5, "1.5" },                                     .{ 100.0, "100.0" },
-    };
-    for (cases) |c| {
-        var buf: [64]u8 = undefined;
-        try std.testing.expectEqualStrings(c[1], shortFloat(c[0], &buf));
-    }
-}

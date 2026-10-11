@@ -149,9 +149,7 @@ caller), `zig build test` (`--cold` deletes
 — the erlang verdicts, the `.beam` cache, the cell durations, the cell-result
 store, decision 225 — printing `gate: --cold deleted <dir>` for each, and passes
 `--cold` to stages 8–10, § Warm and cold),
-`snap_audit.sh --mode=runtime-parity` (front 18 step 4: the codegen tree under
-both comptime runtimes, pairs equal but for their listing sections), `zig build
-test-bpmp`, `scripts/beam_export_audit.sh`, `zig build test-cli`, `zig build
+`zig build test-bpmp`, `scripts/beam_export_audit.sh`, `zig build test-cli`, `zig build
 test-libs` (every cell the manifests declare, and an audit of every target a
 manifest excludes — § test-libs.sh), `zig build test-language` (`tests/language/`, a red cell fails
 it), `zig build test-docs`
@@ -637,7 +635,7 @@ up from this repo), runs `npm ci` when `node_modules/` is absent, then execs
 
 ## snap_audit.sh
 
-`scripts/snap_audit.sh --mode={runlog,legacy,values,coverage,runtime-parity}`, and
+`scripts/snap_audit.sh --mode={runlog,legacy,values,coverage}`, and
 `--mode={orphans,review} --trace=<file> [--reports=<dir>]` — pure shell +
 `awk` + `grep`, read-only, no build needed. Reports go to
 `build/snap-audit/<mode>.tsv` (git-ignored).
@@ -648,7 +646,6 @@ up from this repo), runs `npm ci` when `node_modules/` is absent, then execs
 | `legacy`   | Grep every snapshot's SOURCE block for retired surface (`*fn`, legacy `@external(<target>, …)`, `@[name]`, `when($argc==N)`, `string.length()`, `value:length()`). |
 | `values`   | Dump `(backend, source_sha1, path, runlog_text)` for observable codegen snapshots with a non-empty RUN LOG, for cross-checking against an external runner. |
 | `coverage` | Pivot of `runlog` by backend × label × state; printed and saved. |
-| `runtime-parity` | Front 18 step 4, a gate stage: every `codegen/<beam\|wat>/…` and `comptime/runtime/<beam\|wat>/…` file has its pair, and each pair is `diff`-equal once `withoutListings` sets aside the `COMPTIME BEAM ASSEMBLY`/`COMPTIME WAT` fenced bodies (and a legacy `COMPTIME ERLANG`) (the only text the runtimes may differ in). A difference or a missing member prints a unified diff / a `MISSING` line and exits 3 — a defect in one runtime, never re-recorded away; no allow-list. |
 | `orphans`  | `kind\tpath` for every `*.snap.md` on disk (compiler-core + language-server) that no test checked in the traced run (`orphan`), and every traced path absent from disk (`missing`). Exits 3 when either list is non-empty. |
 | `review`   | The review worksheet, `suite\tslug\ttest\tpaths\tverdict`, one row per unique snapshot: codegen per target, comptime per directory (`comptime/{ast,errors,templates}` — one file per slug since the layout dedup). `test` is the test `file:line` from the trace (comma-joined when several tests write the same path — a slug collision); a snapshot traced without a location falls back to the test-source string literal that names it (the LSP asserts take a literal slug); `ORPHAN` when no test checked it. `verdict` is seeded from the 1.0.1-beta review reports (`--reports=<dir>`, default `../../specs/1.0.1-beta/06-snapshot-review` from the bot-lang root): every table row whose `verdict` column — located by its header cell, never by index — names the slug, restricted to the row's backend cell, as `<verdict> [report:line]`; `-` when no report names it. Report rows with a verdict that name no snapshot on disk (renamed or deleted tests, tests without a snapshot, harness-level rows) go to `review-unmatched.tsv`. Exits 3 when a row has no test `file:line`. |
 
@@ -679,10 +676,10 @@ reader's machine instead of quoted. Not a gate stage: it builds projects for ten
 | Instrument | What it measures |
 | ---------- | ---------------- |
 | E-1 | wall clock of one `botopink build`, best of `--repeat`, over a generated project with N call sites of **one** template whose literals are all distinct — so the memo cache in `comptime/infer.zig` never hits and each call site is a real evaluation — and the marginal ms per evaluation between consecutive N. |
-| E-2 | the in-compiler split: one more build of the largest N (and of each `--project`), not one of the timed ones, with `BOTOPINK_COMPTIME_STAGES=<file>` (`modules/compiler-core/src/comptime/runtime/stages.zig`); one row per stage — runs, total, and ms per evaluation (an evaluation is one `module` line) — in the order an evaluation meets them: `memo_key`, `module`, `encode`, `lower`, `instance` / `run` (wat runtime), `frame` (BEAM runtime; its first run carries the `erl` spawn), `listing`, `outcome`, then `TOTAL`. |
+| E-2 | the in-compiler split: one more build of the largest N (and of each `--project`), not one of the timed ones, with `BOTOPINK_COMPTIME_STAGES=<file>` (`modules/compiler-core/src/comptime/runtime/stages.zig`); one row per stage — runs, total, and ms per evaluation (an evaluation is one `module` line) — in the order an evaluation meets them: `memo_key`, `module`, `encode`, `lower`, `instance` / `run`, `listing`, `outcome`, then `TOTAL`. |
 
-`--target` picks the comptime runtime through decision 84: `commonJS` (default) and `wasm` evaluate
-on the wat runtime, `erlang` and `beam` on the BEAM one — those two need `erl` (OTP 28). Every
+`--target` picks the build target (default `commonJS`); every target evaluates on the wasm comptime
+runtime (decision 434), and none needs `erl` to compile. Every
 project is generated or copied into a `mktemp -d` (deleted unless `--keep`): the script writes
 nothing inside a repository. `--project DIR` copies a real project out of its checkout and builds it
 there — a workspace member (a `{ "workspace": true }` dependency) is built inside a copy of its
@@ -694,17 +691,12 @@ checkout resolves them.
 
 `scripts/beam_export_audit.sh [--jobs=N] [--keep=<dir>] [<snap.md>…]` — needs
 `erlc` on `PATH`, read-only. Extracts every `----- BEAM ASSEMBLY -- <m>.S` block
-from `modules/compiler-core/snapshots/codegen/beam/beam/`, rewrites its
+from `modules/compiler-core/snapshots/codegen/beam/`, rewrites its
 `{exports, […]}` form to name **every** `{function, …}` form, and assembles it
 with `erlc +from_asm`. A recorded module exports only its entrypoints, and
 `erlc +from_asm` drops an unexported function before `beam_validator` runs, so
 a register-liveness bug in a method nothing exports stays invisible in the
-RUN LOG; this audit makes it a rejection. A `----- COMPTIME BEAM ASSEMBLY`
-block — a comptime body the compiler lowered and assembled itself and the node
-loads with no validator in between (front 14 step 3) — is assembled the same
-way, so this is where `beam_validator` reads the comptime lowering's output;
-pass `modules/compiler-core/snapshots/comptime/runtime/beam/*.snap.md` to
-cover the comptime tree's five. Each rejected module prints
+RUN LOG; this audit makes it a rejection. Each rejected module prints
 `REJECTED <slug> <module>` plus the validator's function, offset and reason;
 the last line is `beam_export_audit: <ok>/<total> modules assembled`. Exit `0`
 when every module assembled, `1` on any rejection, `2` on an argument error or

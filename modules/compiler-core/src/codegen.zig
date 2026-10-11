@@ -116,13 +116,8 @@ pub fn generateWith(
         .wasm => config.wasm_host.lookupName(),
     };
 
-    // Decision 84 is `comptimeMod.compile`'s (it picks the runtime from
-    // `target_name`); a harness that asks for a runtime explicitly
-    // (`Config.comptime_runtime`) pins it for this pass.
-    const prev_pin = if (config.comptime_runtime) |r| hostRuntime.force(r) else null;
-    defer if (config.comptime_runtime != null) {
-        _ = hostRuntime.force(prev_pin);
-    };
+    // The comptime pass runs on the wasm runtime whatever the target
+    // (decision 434); `target_name` picks each host function's lookup.
     var session = try comptimeMod.compile(allocator, modules, io, config.build_root, target_name);
     defer session.deinit(allocator);
     const outputs = try switch (config.targetSource) {

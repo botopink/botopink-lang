@@ -25,9 +25,6 @@
 #                           lib-test-runner unit suites
 #                           (--cold deletes the runtime cache and every
 #                           `.botopinkbuild/cache/` first)
-#   4b. snap_audit.sh --mode=runtime-parity  every codegen snapshot recorded
-#                           under both comptime runtimes, the pairs equal but
-#                           for their listing sections (front 18 step 4)
 #   5. zig build test-bpmp  the package manager's unit suite
 #   6. beam_export_audit.sh every beam snapshot module assembles with every
 #                           function exported (needs erlc)
@@ -341,7 +338,6 @@ if [ "$cold" -eq 1 ]; then
 fi
 launch 0 zig build test
 test_pid=$!
-launch 1 bash scripts/snap_audit.sh --mode=runtime-parity
 launch 2 zig build test-bpmp "$opt"
 launch 3 bash scripts/beam_export_audit.sh
 
@@ -467,8 +463,6 @@ report() { # <n> <stage title> <pass text> <fail text>
     check_counts "$1"
     pass "$3 — $(stage_time "$par/$1.time")"
 }
-report 1 "comptime runtime parity (snap_audit.sh --mode=runtime-parity)" "comptime runtime parity" \
-    "scripts/snap_audit.sh --mode=runtime-parity (the diff above names the pair; a difference is a defect in one runtime, never re-recorded away)"
 report 2 "zig build test-bpmp" "zig build test-bpmp" "zig build test-bpmp"
 report 3 "beam export audit" "beam export audit" \
     "scripts/beam_export_audit.sh (a REJECTED block above names the module, function and reason)"

@@ -432,13 +432,18 @@ constructor pattern in an arm and in a `val`, `is`, an arm naming `Block`, a rec
 variant; the parent's lowering failed `MissingPackage`).
 `01-compiler/14` step 6 (decisions 341, 343) adds `run/decorator_host_cells` (a decorator body calls
 a host function with both cells and std's `hash.contentHash` through its namespace and a leaf
-import — the BEAM runtime runs the `@External.Erlang` cell, the wat runtime the `fn:` binding's
-function; four targets, one output; the parent binary was `call to undefined function bang/1`),
+import — since decision 434 the wasm comptime runtime runs `bang`'s `@External.Erlang` cell through
+beam-to-wasm and `contentHash` as std-wasm's, for every target; four targets, one output; the parent binary was `call to undefined function bang/1`),
 `modules/decorator_imported_host_function` (the same through an imported function and an imported
-decorator: the export carries its host and std functions), `modules/decorator_host_cell_targets` (a
-package declaring `erlang` and `beam` needs the Erlang cell alone; its excluded commonJS and wasm
-are refused for the missing host binding of the wat comptime runtime), `reject/decorator_host_cell_missing`
-(no `targets`, no `@External.Wasm`: `decorator-host-cell-missing` at the call),
+decorator: the export carries its host and std functions), `modules/decorator_erlang_cell_only`
+(decisions 434, 435: a decorator's host function with an `@External.Erlang` cell alone answers on the
+four targets through its beam-to-wasm translation — was `decorator_host_cell_targets`, a package
+narrowed to erlang and beam), `reject/comptime_host_cell_unavailable` (decision 434 (4): a host
+function with none of the three comptime sources, refused at the call naming them — was
+`reject/decorator_host_cell_missing`), `reject/comptime_beam_call_not_converted` (decision 435: an
+Erlang cell calling `re:replace/4`, which beam-to-wasm does not convert: refused at the call naming
+the call), `reject/comptime_beam_call_not_converted_fn_after` (decision 439: the same cell with an
+`@External.Wasm("fn:…")` cell after it — still refused, the `fn:` cell not tried),
 `reject/decorator_writes_module_var` (`decorator-writes-module-var` at the write, through a function
 of the module; the parent binary said `unbound variable`) and `reject/typeinfo_all_duplicate_at_entry`
 (two commands of one name refused at the entry point's `@TypeInfo.all`, naming both). Step 8 adds
@@ -1662,7 +1667,7 @@ SHA-256 of every byte the job reads, computed by `../../scripts/lib/result-store
 |---|---|
 | compiler | `--compiler`'s build configuration (`botopink --version`'s `build:` line) and its sources partitioned by backend (`modules/compiler-core/src/codegen/backend-partition.txt`, `scripts/AGENTS.md` § Warm and cold): the shared files and the job's target's own — every target's for a `reject/` job |
 | harness | `run.sh`, `scripts/lib/pool.sh`, `scripts/lib/result-store.js` |
-| toolchain | `node --version`; the OTP release, its erts version and `OTP_VERSION`; `wasmtime --version`; the platform; `BOTOPINK_LIB_ROOTS`, `BPMP_HOME`, `ERL_*FLAGS`, `ERL_LIBS`, `ERL_COMPILER_OPTIONS`, `NODE_OPTIONS`, `NODE_PATH`, `HOME`, `LANG`, `LC_ALL`, `TZ`, `XDG_CACHE_HOME` — every runtime in every key, whatever the target (the comptime node is an `erl` on every target) |
+| toolchain | `node --version`; the OTP release, its erts version and `OTP_VERSION`; `wasmtime --version`; the platform; `BOTOPINK_LIB_ROOTS`, `BPMP_HOME`, `ERL_*FLAGS`, `ERL_LIBS`, `ERL_COMPILER_OPTIONS`, `NODE_OPTIONS`, `NODE_PATH`, `HOME`, `LANG`, `LC_ALL`, `TZ`, `XDG_CACHE_HOME` — every runtime in every key, whatever the target |
 | library root | every file under `--lib-root` (`.git` and `.botopinkbuild` left out) |
 | the cell | `test/<n>.bp`; every `run/<n>.*` or `reject/<n>.*` file (source, `.out`, `.exit`, `.<t>.expect`, `.targets`); the whole `modules/<n>/` tree — each path, directory, executable bit and content |
 | the job | the target and the job's kind (`run`, or the audit and the file that narrows) |

@@ -1,17 +1,18 @@
 //! The Erlang the comptime evaluators generate, read back as a tree.
 //!
-//! The wat runtime lowers **the same program the BEAM runtime compiles** — the
-//! `.erl` text of the generated module and of the two resident preludes — so
-//! the two runtimes cannot drift apart through two lowerings of the botopink
-//! body. This file is the front half: a tokenizer and a recursive-descent
+//! The comptime runtime (wasm, decision 434) lowers the `.erl` text of the
+//! generated module and of the two preludes, so what a botopink body means is
+//! decided once, by `codegen/erlang.zig`'s untyped mode; the beam target's
+//! template compiler (`codegen/beam/erl_template.zig`) reads its templates
+//! here too. This file is the front half: a tokenizer and a recursive-descent
 //! parser for the subset `codegen/beam/erl_emitter.zig` writes plus the host
 //! templates of `libs/std/src/primitives.bp` (`raw` nodes): module attributes,
 //! function clauses with guards, `case`/`if`/`try`/`begin`, `fun` (anonymous,
 //! named, `fun F/A`, `fun M:F/A`), list comprehensions, maps and map updates,
 //! binaries with segments, the operator table of the Erlang reference manual.
 //! `receive` (with its `after`), the send operator `!` and the old-style
-//! `catch Expr` are read too (the BEAM lowering compiles them; the wat
-//! lowering refuses them by name). `maybe`, records, macros and bit-syntax
+//! `catch Expr` are read too (`codegen/beam/erl_lower.zig` compiles them for
+//! the beam target's templates; the wat lowering refuses them by name). `maybe`, records, macros and bit-syntax
 //! sizes other than literals are not in the subset and are refused by name
 //! (`Error.Unsupported`, `failure`).
 //!

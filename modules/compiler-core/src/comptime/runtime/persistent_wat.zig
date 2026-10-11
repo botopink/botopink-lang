@@ -4,7 +4,7 @@
 //! One evaluation is one fresh wasm3 runtime (its own linear memory, so the
 //! body's arena never outlives it): `bp_init` starts the arena past the
 //! module's literals, `rt_alloc` makes room for the ETF argument the evaluator
-//! encoded with `etf.zig` (the same bytes the BEAM runtime receives), and
+//! encoded with `etf.zig`, and
 //! `bp_main(ptr, len)` answers the reply binary — the JSON `main/1` encoded —
 //! or 0 with an exception pending, whose `~p` text (`rt_describe`) is the
 //! runtime error. A trap of the engine (a stack overflow, an out-of-bounds
@@ -460,7 +460,7 @@ test "an exception keeps the instance; an engine trap drops it, and the next eva
 
 // ── the limits (`AGENTS.md` § Limits): each pinned where it raises ──────────
 
-test "limit 1: no process, mailbox or ETS table — what `safe_call` isolates is refused by name" {
+test "limit 1: no process, mailbox or ETS table — refused by name before anything runs" {
     const cases = [_]struct { []const u8, []const u8, []const u8 }{
         .{
             \\-module(bp@wat_test_limit1a).

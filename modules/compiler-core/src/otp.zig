@@ -2,8 +2,8 @@
 //! `erlc` and `escript` the compiler spawns.
 //!
 //! The compiler emits Erlang for one release, `manifest.OTP_RELEASE`. Before
-//! anything Erlang starts — the comptime node (`comptime/runtime/persistent_beam.zig`),
-//! a RUN LOG executor (`codegen/runtime.zig`), the CLI's compile check, runner
+//! anything Erlang starts — a RUN LOG executor (`codegen/runtime.zig`), the
+//! CLI's compile check, runner
 //! and host-module probe (`compiler-cli/src/cli/otp.zig`, which asks first) —
 //! `refusal` answers whether the `erl` on PATH runs that release. The probe
 //! (`erl -noshell -eval <PROBE_EVAL>`) runs once per process; every later

@@ -6,14 +6,9 @@
 # `erlc +from_asm` drops an unexported function before `beam_validator` sees
 # it — so a register bug inside a function nothing exports never surfaces in
 # the RUN LOG. This script extracts each `----- BEAM ASSEMBLY -- <m>.S` block
-# from `modules/compiler-core/snapshots/codegen/beam/beam/*.snap.md`, rewrites its
+# from `modules/compiler-core/snapshots/codegen/beam/*.snap.md`, rewrites its
 # exports form to name every `{function, Name, Arity, _}` form, and assembles
 # it. Read-only: the snapshots are not touched.
-#
-# A `----- COMPTIME BEAM ASSEMBLY` block (a comptime body the compiler
-# lowered and assembled itself, front 14 step 3) is assembled the same way:
-# the node loads it from bytes with no validator in between, so this is where
-# `beam_validator` reads it.
 #
 # Usage:
 #   scripts/beam_export_audit.sh [--jobs=N] [--keep=<dir>] [<snap.md>…]
@@ -50,9 +45,8 @@ command -v erlc >/dev/null 2>&1 || { echo "beam_export_audit: erlc not found on 
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 botlang_root="$(cd "$script_dir/.." && pwd)"
-# The beam-runtime copy is the audited one: the audit is about the TARGET,
-# and both comptime runtimes record the same `.S` (decision 85).
-snap_dir="$botlang_root/modules/compiler-core/snapshots/codegen/beam/beam"
+# The beam target's snapshots (one tree since decision 434).
+snap_dir="$botlang_root/modules/compiler-core/snapshots/codegen/beam"
 if [ "${#files[@]}" -eq 0 ]; then
     [ -d "$snap_dir" ] || { echo "beam_export_audit: $snap_dir not found" >&2; exit 2; }
     while IFS= read -r f; do files+=("$f"); done < <(find "$snap_dir" -name '*.snap.md' | sort)
@@ -94,7 +88,6 @@ for f in "${files[@]}"; do
         }
         BEGIN { idx = start; in_asm = 0; want = 0; nl = 0; nf = 0 }
         /^----- BEAM ASSEMBLY -- / { want = 1; next }
-        /^----- COMPTIME BEAM ASSEMBLY -- / { want = 1; next }
         /^----- /                  { want = 0; next }
         want && /^```erlang/       { in_asm = 1; next }
         in_asm && /^```/           { in_asm = 0; want = 0; flush(); next }

@@ -19,7 +19,6 @@ const Lexer = lexerMod.Lexer;
 const Parser = parserMod.Parser;
 const Env = envMod.Env;
 const h = @import("helpers.zig");
-const hostRuntime = @import("../runtime/runtime.zig");
 
 /// Parse + infer `src` into `env` (builtins + stdlib preloaded). The caller
 /// owns `env` (deinit) and the arena everything is allocated in.
@@ -537,9 +536,8 @@ test "comptime: runtime template body ---- parts() with a hole splices the calle
 //
 // A capture reaches the body as `main/1`'s argument, an external term
 // (`runtime/etf.zig`); each fixture reads the shape back in the body, answers
-// it in the reply, and requires the reply byte-identical on the BEAM and the
-// wat runtime (`h.repliesIdenticalAcrossRuntimes`) beside the per-runtime
-// exchange snapshots (`comptime/runtime/{beam,wat}/`).
+// it in the reply (`h.canonicalReplies`) beside the exchange snapshots
+// (`comptime/runtime/`).
 
 test "comptime: round trip ---- a holed template's parts carry a record, an array and an optional" {
     const src =
@@ -562,7 +560,7 @@ test "comptime: round trip ---- a holed template's parts carry a record, an arra
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const replies = try h.repliesIdenticalAcrossRuntimes(std.testing.allocator, arena.allocator(), @src(), &.{.{ .path = "", .source = src }});
+    const replies = try h.canonicalReplies(std.testing.allocator, arena.allocator(), @src(), &.{.{ .path = "", .source = src }});
     try std.testing.expectEqual(@as(usize, 1), replies.len);
     // Three holes, each its placeholder in order, the text between them, and
     // every part's span — the capture's `parts` list survived the trip whole.
@@ -592,7 +590,7 @@ test "comptime: round trip ---- an @ExprCustom reference tree names a declaratio
     };
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const replies = try h.repliesIdenticalAcrossRuntimes(std.testing.allocator, arena.allocator(), @src(), modules);
+    const replies = try h.canonicalReplies(std.testing.allocator, arena.allocator(), @src(), modules);
     try std.testing.expectEqual(@as(usize, 1), replies.len);
     // The leaf's `ref` is the binding `lookup` answered at the call site: the
     // declaration's own name and identity in `shapes`, and the name the call
@@ -665,7 +663,7 @@ test "comptime: round trip ---- a hole known at build reaches the body as its va
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const replies = try h.repliesIdenticalAcrossRuntimes(std.testing.allocator, arena.allocator(), @src(), &.{.{ .path = "", .source = src }});
+    const replies = try h.canonicalReplies(std.testing.allocator, arena.allocator(), @src(), &.{.{ .path = "", .source = src }});
     var found = false;
     for (replies) |r| {
         if (std.mem.indexOf(u8, r, "known=a;known=3,2;render;") != null) found = true;
@@ -740,7 +738,7 @@ test "decision 237 ---- a text that names nothing in scope carries no binding" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const replies = try h.repliesIdenticalAcrossRuntimes(std.testing.allocator, arena.allocator(), @src(), &.{.{ .path = "", .source = src }});
+    const replies = try h.canonicalReplies(std.testing.allocator, arena.allocator(), @src(), &.{.{ .path = "", .source = src }});
     try std.testing.expectEqual(@as(usize, 1), replies.len);
     try std.testing.expectEqualStrings(
         \\{"kind":"value","value":0}
@@ -770,7 +768,7 @@ test "decision 237 ---- lookup of a word of the text finds its binding" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const replies = try h.repliesIdenticalAcrossRuntimes(std.testing.allocator, arena.allocator(), @src(), &.{.{ .path = "", .source = src }});
+    const replies = try h.canonicalReplies(std.testing.allocator, arena.allocator(), @src(), &.{.{ .path = "", .source = src }});
     try std.testing.expectEqual(@as(usize, 1), replies.len);
     try std.testing.expectEqualStrings(
         \\{"kind":"code","source":"\"Badge/Badge\""}
@@ -796,10 +794,7 @@ test "decision 237 ---- lookup of a name outside the text is a located error" {
         \\val r = need "<Card/>";
     ;
     const io = std.testing.io;
-    const prev_rt = hostRuntime.force(.beam);
-    defer _ = hostRuntime.force(prev_rt);
-    for ([_]hostRuntime.ComptimeRuntime{ .beam, .wat }) |rt| {
-        _ = hostRuntime.force(rt);
+    {
         var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, h.buildRootPathFromSrc(io, @src()), null);
         defer session.deinit(std.testing.allocator);
         try std.testing.expectEqual(@as(usize, 1), session.outputs.items.len);
@@ -1241,8 +1236,8 @@ test "template: markup DSL ---- ${expr} splices as a text child" {
 
 // ── decision 331: a template module carries what its body reaches ────────────
 //
-// Front 118's three rows, each run on both comptime runtimes with the replies
-// required byte-identical (`h.repliesIdenticalAcrossRuntimes`).
+// Front 118's three rows, each run on the comptime runtime, the replies read
+// back (`h.canonicalReplies`).
 
 test "decision 331: a template body calls its module's functions, a recursive one and an imported one" {
     // The template module held the template alone: every call was `the BEAM
@@ -1290,7 +1285,7 @@ test "decision 331: a template body calls its module's functions, a recursive on
     };
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const replies = try h.repliesIdenticalAcrossRuntimes(std.testing.allocator, arena.allocator(), @src(), modules);
+    const replies = try h.canonicalReplies(std.testing.allocator, arena.allocator(), @src(), modules);
     try std.testing.expectEqual(@as(usize, 3), replies.len);
     try std.testing.expectEqualStrings(
         \\{"kind":"code","source":"\"<[in]>3\""}
@@ -1337,7 +1332,7 @@ test "decision 331: a template body reads a labelled tuple element by its label"
     };
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const replies = try h.repliesIdenticalAcrossRuntimes(std.testing.allocator, arena.allocator(), @src(), modules);
+    const replies = try h.canonicalReplies(std.testing.allocator, arena.allocator(), @src(), modules);
     try std.testing.expectEqual(@as(usize, 2), replies.len);
     try std.testing.expectEqualStrings(
         \\{"kind":"code","source":"\"ab2\""}
@@ -1371,7 +1366,7 @@ test "decision 331: a template body of more variables than a frame holds compile
         \\}
         \\val got = big "q";
     );
-    const replies = try h.repliesIdenticalAcrossRuntimes(std.testing.allocator, ar, @src(), &.{.{ .path = "", .source = src.items }});
+    const replies = try h.canonicalReplies(std.testing.allocator, ar, @src(), &.{.{ .path = "", .source = src.items }});
     try std.testing.expectEqual(@as(usize, 1), replies.len);
     try std.testing.expectEqualStrings(
         \\{"kind":"code","source":"\"qabcde1200\""}

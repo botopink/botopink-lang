@@ -9,7 +9,6 @@
 #   scripts/snap_audit.sh --mode={runlog,legacy,values,coverage}
 #   scripts/snap_audit.sh --mode=orphans --trace=<file>
 #   scripts/snap_audit.sh --mode=review  --trace=<file> [--reports=<dir>]
-#   scripts/snap_audit.sh --mode=runtime-parity
 #
 # `--trace=<file>` is the file a full `BOTOPINK_SNAP_TRACE=<file> zig build test`
 # run appended to (one `<snapshot path> TAB <test file:line|-> TAB <test fn|->`
@@ -38,7 +37,7 @@
 #               kind ∈ {orphan,unrecorded}
 #   review    The review worksheet: one row per unique snapshot.
 #             Columns: suite\tslug\ttest\tpaths\tverdict
-#               suite   codegen/<runtime>/<target> · codegen/<runtime>/errors/<target> ·
+#               suite   codegen/<target> · codegen/errors/<target> ·
 #                       comptime/<dir> (ast · errors · templates) · parser · lsp
 #               test    test file:line (comma-joined when several tests write
 #                       the same path); ORPHAN when no traced test checked it
@@ -47,33 +46,19 @@
 #                       the bot-lang root): every table row whose `verdict`
 #                       column names the slug, as `<verdict> [report:line]`,
 #                       joined by ` ; `; `-` when no report row names it
-#   runtime-parity
-#             Front 18 step 4 (decision 85): every codegen snapshot exists
-#             under both comptime runtimes — codegen/beam/<t>/<slug> and
-#             codegen/wat/<t>/<slug>, the same for errors/ and for
-#             comptime/runtime/{beam,wat}/<slug> — and every pair is equal once
-#             the listing sections are set aside (`COMPTIME BEAM ASSEMBLY` —
-#             or `COMPTIME ERLANG` for a body run from source — on beam,
-#             `COMPTIME WAT` on wat: the only text that may differ). A
-#             difference — a COMPTIME REPLY, a RUN LOG, generated code — is a
-#             defect in one runtime and is printed as a unified diff; a
-#             missing pair member too. No allow-list. Columns of
-#             runtime-parity.tsv: verdict\tpath   (verdict ∈ {equal,differs,missing})
-#             Also writes review-unmatched.tsv: every report row with a verdict
-#             that names no snapshot on disk (report_row\tverdict\tslug_cell).
 #
 # Exit codes:
 #   0  reports written
 #   1  argument error / unknown mode
 #   2  IO error (snapshots dir missing, write failure, trace missing)
 #   3  orphans: an orphan or unrecorded path exists; review: a row has no
-#      test file:line; runtime-parity: a pair differs or misses a member
+#      test file:line
 
 set -euo pipefail
 
 usage() {
     cat >&2 <<'USAGE'
-usage: scripts/snap_audit.sh --mode={runlog,legacy,values,coverage,runtime-parity}
+usage: scripts/snap_audit.sh --mode={runlog,legacy,values,coverage}
        scripts/snap_audit.sh --mode=orphans --trace=<file>
        scripts/snap_audit.sh --mode=review  --trace=<file> [--reports=<dir>]
 
@@ -97,7 +82,6 @@ for arg in "$@"; do
         --mode=coverage) mode=coverage ;;
         --mode=orphans)  mode=orphans ;;
         --mode=review)   mode=review ;;
-        --mode=runtime-parity) mode=runtime-parity ;;
         --trace=*)       trace="${arg#--trace=}" ;;
         --reports=*)     reports="${arg#--reports=}" ;;
         -h|--help)       usage; exit 0 ;;
@@ -144,19 +128,19 @@ out_dir="$botlang_root/build/snap-audit"
 mkdir -p "$out_dir"
 
 # Backend derived from the target component of the path. The codegen layout
-# is codegen/<comptime runtime>/<target>/<slug>.snap.md, plus a
-# codegen/<comptime runtime>/errors/<target>/<slug>.snap.md tree (front 18
-# step 4, decision 85: runtime ∈ {beam, wat}). The "errors" leg
+# is codegen/<target>/<slug>.snap.md, plus a codegen/errors/<target>/<slug>.snap.md
+# tree (one tree: the comptime runtime is wasm for every target, decision 434).
+# The "errors" leg
 # never carries a RUN LOG by contract — surface it under its own
 # backend label so the coverage pivot stays meaningful.
 backendOf() {
     local p="$1"
     case "$p" in
-        */codegen/*/errors/*)   echo errors ;;
-        */codegen/*/commonJS/*) echo node ;;
-        */codegen/*/erlang/*)   echo erlang ;;
-        */codegen/*/beam/*)     echo beam ;;
-        */codegen/*/wasm/*)     echo wasm ;;
+        */codegen/errors/*)   echo errors ;;
+        */codegen/commonJS/*) echo node ;;
+        */codegen/erlang/*)   echo erlang ;;
+        */codegen/beam/*)     echo beam ;;
+        */codegen/wasm/*)     echo wasm ;;
         *)                  echo unknown ;;
     esac
 }
@@ -238,54 +222,7 @@ normalizeTrace() {
         }' "$trace"
 }
 
-# A snapshot with its comptime listing sections set aside: the header line
-# of `COMPTIME BEAM ASSEMBLY` / `COMPTIME ERLANG` / `COMPTIME WAT` becomes
-# `COMPTIME LISTING` and the
-# fenced body after it is dropped — the one part the runtimes may differ in.
-withoutListings() {
-    awk '
-        /^----- COMPTIME (BEAM ASSEMBLY|ERLANG|WAT) -- / { sub(/COMPTIME (BEAM ASSEMBLY|ERLANG|WAT)/, "COMPTIME LISTING"); print; skip = 1; next }
-        skip == 1 && /^```/ { skip = 2; next }
-        skip == 2 { if ($0 ~ /^```$/) skip = 0; next }
-        { print }
-    ' "$1"
-}
-
 case "$mode" in
-    runtime-parity)
-        out="$out_dir/runtime-parity.tsv"
-        : > "$out"
-        printf 'verdict\tpath\n' >> "$out"
-        bad=0
-        pairs=0
-        comptime_runtime_dir="$comptime_dir/runtime"
-        for tree in "$codegen_dir" "$comptime_runtime_dir"; do
-            [ -d "$tree/beam" ] || [ -d "$tree/wat" ] || continue
-            while IFS= read -r rel; do
-                b="$tree/beam/$rel"
-                w="$tree/wat/$rel"
-                shown="${tree#$botlang_root/}/{beam,wat}/$rel"
-                if [ ! -f "$b" ] || [ ! -f "$w" ]; then
-                    printf 'missing\t%s\n' "$shown" >> "$out"
-                    echo "runtime-parity: MISSING $shown (beam: $([ -f "$b" ] && echo present || echo absent), wat: $([ -f "$w" ] && echo present || echo absent))" >&2
-                    bad=$((bad + 1))
-                    continue
-                fi
-                pairs=$((pairs + 1))
-                if ! diff -u --label "beam/$rel" --label "wat/$rel" <(withoutListings "$b") <(withoutListings "$w") > "$out_dir/runtime-parity.diff.tmp"; then
-                    printf 'differs\t%s\n' "$shown" >> "$out"
-                    cat "$out_dir/runtime-parity.diff.tmp" >&2
-                    bad=$((bad + 1))
-                else
-                    printf 'equal\t%s\n' "$shown" >> "$out"
-                fi
-            done < <( { [ -d "$tree/beam" ] && (cd "$tree/beam" && find . -name '*.snap.md' | sed 's|^\./||');
-                        [ -d "$tree/wat" ] && (cd "$tree/wat" && find . -name '*.snap.md' | sed 's|^\./||'); } | LC_ALL=C sort -u )
-        done
-        rm -f "$out_dir/runtime-parity.diff.tmp"
-        printf 'runtime-parity: %d pairs, %d differing or missing — %s\n' "$pairs" "$bad" "$out"
-        [ "$bad" -eq 0 ] || exit 3
-        ;;
     runlog)
         # ---- F0.1 --mode=runlog
         out="$out_dir/runlog.tsv"
@@ -554,9 +491,9 @@ role == "disk" {
     if (seg[2] == "language-server") { suite = "lsp"; fam = "lsp" }
     else if (seg[4] == "codegen") {
         fam = "codegen"
-        # codegen/<runtime>/<target>/<slug> · codegen/<runtime>/errors/<target>/<slug>
-        if (seg[6] == "errors" && n == 8) { suite = "codegen/" seg[5] "/errors/" seg[7]; be = seg[7] }
-        else { suite = "codegen/" seg[5] "/" seg[6]; be = seg[6] }
+        # codegen/<target>/<slug> · codegen/errors/<target>/<slug>
+        if (seg[5] == "errors" && n == 7) { suite = "codegen/errors/" seg[6]; be = seg[6] }
+        else { suite = "codegen/" seg[5]; be = seg[5] }
     }
     else if (seg[4] == "comptime") { fam = "comptime"; suite = "comptime/" seg[5] }
     else if (seg[4] == "parser") { suite = "parser"; fam = "parser" }

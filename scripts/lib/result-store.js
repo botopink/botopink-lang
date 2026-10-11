@@ -21,8 +21,8 @@
 //     erts version and the release's OTP_VERSION file), `wasmtime --version`,
 //     the platform, and the environment variables a compiler, a runtime or a
 //     test reads (`ENV_NAMES`) — every runtime in every key, whatever the
-//     target: the comptime node is an `erl` on every target and `node` judges
-//     the harness's JSON;
+//     target: an erlang/beam cell runs `erl` and `node` judges the harness's
+//     JSON;
 //   - the global inputs the caller names: files (the runner scripts) and trees
 //     (the library roots), each by content;
 //   - the cell's own inputs: files and whole directory trees by content, with

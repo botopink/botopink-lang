@@ -14,7 +14,7 @@
 /// **The session.** `check` asks by starting the command's one compile `erl`
 /// (`SESSION_EVAL`): it prints its release on its first line and then waits on
 /// stdin. The release is handed to compiler-core's check (`bp.otp.adopt`, the
-/// verdict the comptime node and the RUN LOG executors read), so a refused
+/// verdict the RUN LOG executors read), so a refused
 /// release ends the command there, as the separate probe did. On the release
 /// the compiler emits for, the same VM then runs, one after another, every
 /// compile job of the command (`job`): `build`'s in-memory check of the
@@ -33,10 +33,9 @@
 /// What stays a VM of its own, and why: **the program** (`run`'s `main/1`,
 /// `test`'s runners) — it is the user's code, and it must start in a clean VM
 /// with the default scheduler count (`std/io/os.bp` reads
-/// `schedulers_online`); **the comptime node** — it evaluates user comptime
-/// code, holds resident modules and is spawned lazily from compiler-core, so
-/// it keeps its own VM and the default scheduler count; `test`'s beam
-/// assembly (`erlc +from_asm`, whose `.beam` bytes record `erlc`'s options).
+/// `schedulers_online`); `test`'s beam assembly (`erlc +from_asm`, whose
+/// `.beam` bytes record `erlc`'s options). (Comptime starts no VM: it runs on
+/// the wasm runtime inside the compiler, decision 434.)
 ///
 /// **The flags.** Every VM the compiler starts gets `bp.otp.QUIET_FLAGS`
 /// (`+sbwt none +sbwtdcpu none +sbwtdio none`): an idle scheduler does not

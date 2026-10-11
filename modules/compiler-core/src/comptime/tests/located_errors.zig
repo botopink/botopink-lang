@@ -15,7 +15,6 @@
 const std = @import("std");
 const test_scratch = @import("test_scratch");
 const comptimeMod = @import("../../comptime.zig");
-const hostRuntime = @import("../runtime/runtime.zig");
 
 const reject_dir = "../../tests/language/reject";
 
@@ -44,8 +43,6 @@ test "C-21: every type error a reject cell raises carries a location" {
     // The corpus is the language tests' refusals; an empty walk measures nothing.
     try std.testing.expect(names.items.len > 100);
 
-    const prev_rt = hostRuntime.force(.beam);
-    defer _ = hostRuntime.force(prev_rt);
     const build_root = test_scratch.path(io, "comptime/located_errors");
 
     var type_errors: usize = 0;

@@ -5114,7 +5114,7 @@ fn runDeclDecorators(
         }
         const runSupport = if (local) try std.mem.concat(env.arena, ast.FnDecl, &.{ erasedSupport, try hostCells.hostSupport(env, &env.fnDecls, try std.mem.concat(env.arena, ast.FnDecl, &.{ &.{runDfn}, erasedSupport })) }) else erasedSupport;
         const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, try exprParam.eraseForRun(env.arena, runDfn, true), runSupport, reached.types, try completeHandle(env, try withMethodMeta(env, handle, memberOwner)), plain, capture, &env.comptimeTraces) catch {
-            return decoratorError(env, a, "the decorator evaluator failed to run", "Decorator bodies run in a persistent `erl` process at compile time — check that `erl` is on PATH.");
+            return decoratorError(env, a, "the decorator evaluator failed to run", "Decorator bodies run on the wasm comptime runtime inside the compiler (decision 434); this failure is the compiler's, not the body's — report it.");
         };
         switch (outcome) {
             .ok => |raw| for (if (capture) |cap| try unplaceholderContributions(env.arena, raw, cap.paramName, try holeSourcesOf(env.arena, a.template.?)) else raw) |c| {
@@ -6934,7 +6934,8 @@ fn validateMemoryAnnotations(env: *Env, v: ast.ValDecl, bindTy: *T.Type) InferEr
         // the one written: refused at the annotation, once the module is
         // inferred (`reportOffBeamMemory`), so the annotation's own rules
         // answer first and on every target. A null target (the language
-        // server, the type-only pass) is decision 84's beam.
+        // server, the type-only pass) reads the annotation as a BEAM target
+        // would.
         if (env.target) |t| if (!std.mem.eql(u8, t, "erlang") and !std.mem.eql(u8, t, "beam")) {
             if (env.offBeamMemory == null) env.offBeamMemory = loc;
         };
@@ -8492,7 +8493,7 @@ fn expandTemplateCallViaRuntime(
     const outcome = templateEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, carried[0], support, types, valued, plainArgs, &env.comptimeTraces) catch {
         env.lastError = TypeError.custom(
             "the template evaluator failed to run",
-            "Template bodies run in a persistent `erl` process at compile time — check that `erl` is on PATH.",
+            "Template bodies run on the wasm comptime runtime inside the compiler (decision 434); this failure is the compiler's, not the body's — report it.",
         ).withLoc(loc);
         return error.TypeError;
     };
@@ -19833,7 +19834,7 @@ fn foldBodyComptime(env: *Env, ct: ast.ComptimeExprOf(.untyped), typed: TypedExp
         error.EvalFailed => {
             env.lastError = TypeError.custom(
                 "the comptime evaluator failed to run",
-                "A `comptime` runs on the comptime runtime at build time (decision 331) — check that `erl` is on PATH for an erlang or beam target.",
+                "A `comptime` runs on the wasm comptime runtime inside the compiler at build time (decisions 331, 434); this failure is the compiler's, not the body's — report it.",
             ).withLoc(loc);
             return error.TypeError;
         },

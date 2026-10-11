@@ -1,7 +1,8 @@
 //! The comptime evaluators' resident prelude.
 //!
-//! A template or a decorator body is lowered into a generated Erlang module and
-//! compiled by the persistent node before it runs. Until 1.0.5-beta every one of
+//! A template or a decorator body is lowered into a generated Erlang module,
+//! which the wasm comptime runtime parses and lowers before it runs
+//! (`wat/program.zig`). Until 1.0.5-beta every one of
 //! those modules also carried the host glue — the capture API, the reply
 //! encoder, the failure throws and the untyped helpers of
 //! `codegen/erlang.zig`'s `comptime_helper_forms` — and those forms are
@@ -11,12 +12,11 @@
 //! heads). The data literal that does differ per call site is a term, which is
 //! cheap to compile.
 //!
-//! So they move here. Two modules are compiled by `erlc` at `zig build` time
-//! and embedded (decision 83, `render_resident.zig`), loaded into the node at
-//! spawn beside `botopink_comptime_server` (`persistent_beam.zig`), and a
-//! generated module reaches them by `-import`, which leaves the lowered body's
-//! own text unchanged — the BEAM lowering turns each imported call into a
-//! `call_ext` into the prelude:
+//! So they move here. Two modules, rendered from `erl_ast` forms and parsed
+//! once per process by the wat runtime (`wat/program.zig`), which lowers what
+//! a generated module reaches of them into the same wasm program; a generated
+//! module reaches them by `-import`, which leaves the lowered body's own text
+//! unchanged:
 //!
 //!   bp_comptime_template    the capture API (`text/1`, `parts/1`, `source/1`,
 //!                           `context/1`, `bindings/1`, `lookup/2`, `ref/1`),
@@ -407,8 +407,7 @@ pub fn render(arena: std.mem.Allocator, name: []const u8, forms: []const Ast.For
     return aw.toOwnedSlice();
 }
 
-/// Both prelude modules, built into `arena`. `render_resident.zig` writes them
-/// for `erlc` at `zig build` time; the wat runtime parses them.
+/// Both prelude modules, built into `arena`; the wat runtime parses them.
 pub fn modules(arena: std.mem.Allocator) ![]const Module {
     const b: Ast.Builder = .{ .arena = arena };
     const out = try arena.alloc(Module, 2);

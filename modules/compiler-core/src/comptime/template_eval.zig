@@ -1,20 +1,19 @@
-/// Template evaluation on the comptime runtimes (`runtime/runtime.zig`).
+/// Template evaluation on the comptime runtime (`runtime/runtime.zig`; wasm for
+/// every target, decision 434).
 ///
 /// When the V1 classifier in `infer.zig` cannot reduce a template body by
 /// inspection, the body runs here:
 ///
 ///   template `FnDecl` ─ codegen/erlang.zig `emitComptimeModule` ─ `main/1` → Erlang text
 ///   captures + plain args ─ `Term` ─ comptime/runtime/etf ─ external term ─┐
-///     → comptime/runtime/runtime `evalWithArg`: on the BEAM runtime the    │
-///       text lowered to `.beam` bytes (runtime/beam/) and loaded once, then │
-///       `<module>:main(<term>)` per call site; on the wat runtime the same  │
-///       text lowered to wasm ←─────────────────────────────────────────────┘
+///     → comptime/runtime/runtime `evalWithArg`: the text lowered to wasm   │
+///       once per module, run with the call site's term ←───────────────────┘
 ///     → JSON reply → `Outcome`
 ///
 /// The generated module carries the lowered body, the `'__bp_prim_…'` shims its
 /// method calls reached and `main/1` — nothing else. The capture API, the result
 /// constructors, the failure throws and the reply encoder are resident in
-/// `bp_comptime_template`, built once at server warmup
+/// `bp_comptime_template`, parsed once per process
 /// (`runtime/prelude.zig`), and reached by the `-import` `emitComptimeModule`
 /// writes, so the body's own text is the same either way. **Nothing in the
 /// module depends on the call site**, so its content hash is a hash of the
@@ -126,16 +125,12 @@ pub fn evaluate(
     };
     stages.stop(.module, t_module);
 
-    // The runtime is the target's (decision 84, `runtime/runtime.zig`); the
-    // dispatcher stages the module for the BEAM runtime or lowers it for wat.
+    // The comptime runtime is wasm for every target (decision 434,
+    // `runtime/runtime.zig`).
     const t_encode = stages.start();
     const arg = try etf.encode(arena, source.argument);
     stages.stop(.encode, t_encode);
-    const result = try hostRuntime.evalWithArg(arena, io, "template", source.module, source.code, arg);
-    const response = switch (result) {
-        .response => |r| r,
-        .unavailable => |why| return .{ .err = why },
-    };
+    const response = try hostRuntime.evalWithArg(arena, io, "template", source.module, source.code, arg);
     if (traces) |list| {
         const t_listing = stages.start();
         defer stages.stop(.listing, t_listing);
@@ -143,8 +138,7 @@ pub fn evaluate(
         try list.append(arena, .{
             .kind = .template,
             .name = tfn.name,
-            .listing = listing.text,
-            .lang = listing.lang,
+            .listing = listing,
             .reply = switch (response) {
                 .ok => |stdout| stdout,
                 .compile_error => |detail| try std.fmt.allocPrint(arena, "compile error: {s}", .{detail}),
@@ -164,8 +158,8 @@ pub fn evaluate(
 // ── the registry lock ────────────────────────────────────────────────────────
 //
 // The emit memo below (and the decorator evaluator's, which shares it) is
-// process-wide. An atomic spin-lock, as `runtime/persistent_beam.zig` uses for
-// the pipes: the critical sections are a hash lookup and an insert, and
+// process-wide. An atomic spin-lock: the critical sections are a hash lookup
+// and an insert, and
 // parallel test binaries are the only contenders. Storage outlives every
 // caller arena and is never freed.
 
@@ -654,7 +648,7 @@ fn buildModule(
             return if (err == error.UnsupportedComptimeMethod) error.UnsupportedMethod else error.EvalFailed;
         // A2: `bp@comptime@<owner path>__tpl__<template>__<16 hex>`. The Wyhash is
         // unchanged, so an identical generated body is still the identical module
-        // and re-loading it is still a no-op (`runtime/persistent_beam.zig`).
+        // and the wat runtime's caches (`runtime/wat/program.zig`) hit.
         const module = crossModule.erlDeclAtom(arena, try ownerId(arena, owner), .tpl, tfn.name, std.hash.Wyhash.hash(0, code)) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
             else => return error.EvalFailed,

@@ -1,8 +1,8 @@
 //// 01-compiler/14 step 8 (T19, with step 6's host cells) — a `comptime`
 //// calls std's `hash.contentHash`, a host function: the comptime module
-//// carries it with its runtime's cell (decision 341) — the Erlang one on the
-//// BEAM runtime, `contentHashBody` (its `@External.Wasm("fn:…")`) on the wat
-//// runtime — and the value is lifted into the program, the same string the
+//// carries it (decision 341) and the wasm comptime runtime answers it by its
+//// std-wasm implementation, for every target (decision 434) — and the value
+//// is lifted into the program, the same string the
 //// program computes when it runs. It used to be refused: the block called
 //// `.contentHash(…)`, which nothing in the comptime module provided.
 

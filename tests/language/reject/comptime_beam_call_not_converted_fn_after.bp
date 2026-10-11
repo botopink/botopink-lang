@@ -1,0 +1,24 @@
+//// Decision 439 — an Erlang cell beam-to-wasm does not convert is refused at
+//// the call, whatever follows it: `tidy`'s `@External.Wasm("fn:tidyBody")`
+//// cell is not tried, so the refusal names `re:replace/4`, never a fall to
+//// `tidyBody`'s answer.
+
+#[@External.Node("""$0.replace(/a/g, "b")""")]
+#[@External.Erlang("""iolist_to_binary(re:replace($0, <<"a">>, <<"b">>, [global]))""")]
+#[@External.Wasm("fn:tidyBody")]
+declare fn tidy(value: string) -> string;
+
+fn tidyBody(value: string) -> string {
+    return value;
+}
+
+fn sized(comptime decl: @Decl) {
+    @emit("pub fn summary() -> string { return \"" + tidy(decl.name) + "\"; }");
+}
+
+#[sized]
+type Point(x: i32, y: i32)
+
+pub fn main() {
+    @print(summary());
+}

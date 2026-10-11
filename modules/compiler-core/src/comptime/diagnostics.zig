@@ -230,12 +230,18 @@ pub const bigint_widened: []const u8 = "bigint-widened";
 /// Decision 332 (question 139-a) — `is` / a type pattern over a `bigint`, or
 /// testing for one: its type is static.
 pub const bigint_type_test: []const u8 = "bigint-type-test";
-/// Decision 341 — a host function a decorator reaches lacks the cell of a
-/// comptime runtime its package's declared `targets` use (`@External.Erlang`
-/// / `@External.Beam` for erlang and beam, `@External.Wasm` for commonJS,
-/// typescript and wasm; none declared needs both). Fires from
-/// `comptime/host_cells.zig` `checkDecorators`, located at the call.
-pub const decorator_host_cell_missing: []const u8 = "decorator-host-cell-missing";
+/// Decisions 434, 435 — a host function reached at comptime has an
+/// `@External.Erlang` / `@External.Beam` cell beam-to-wasm does not convert
+/// (an opcode, a call outside the comptime runtime's BIFs) and no
+/// `@External.Wasm` cell after it. Fires from `comptime/host_cells.zig`,
+/// naming the function and what is missing.
+pub const comptime_beam_call_not_converted: []const u8 = "comptime-beam-call-not-converted";
+/// Decisions 434, 341 — a host function reached at comptime has none of the
+/// three sources the comptime runtime answers by: a std-wasm implementation,
+/// an `@External.Erlang` / `@External.Beam` cell (beam-to-wasm), an
+/// `@External.Wasm` cell. Fires from `comptime/host_cells.zig`, naming the
+/// function and the three sources tried.
+pub const comptime_host_cell_unavailable: []const u8 = "comptime-host-cell-unavailable";
 /// Decision 343 — a decorator body writes a module-level `var`: each
 /// invocation is independent. Fires from `comptime/decorator_eval.zig`
 /// `moduleVarWrite`, located at the write.
@@ -718,7 +724,8 @@ pub const all_codes = [_][]const u8{
     comptime_bigint,
     bigint_widened,
     bigint_type_test,
-    decorator_host_cell_missing,
+    comptime_beam_call_not_converted,
+    comptime_host_cell_unavailable,
     decorator_writes_module_var,
     is_type_outside_value_or_type,
     type_arg_read,

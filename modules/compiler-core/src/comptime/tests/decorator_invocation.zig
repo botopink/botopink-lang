@@ -148,7 +148,7 @@ test "decorator invocation: round trip ---- a @Decl handle carries fields, metho
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const replies = try h.repliesIdenticalAcrossRuntimes(std.testing.allocator, arena.allocator(), @src(), &.{.{ .path = "", .source = src }});
+    const replies = try h.canonicalReplies(std.testing.allocator, arena.allocator(), @src(), &.{.{ .path = "", .source = src }});
     // `#[describe]` twice (the record, the enum) and `#[column]` once, whose
     // body is empty and answers no contribution.
     var record: ?[]const u8 = null;
@@ -201,7 +201,7 @@ test "decorator invocation: a \\u{…} literal in the body evaluates to the char
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const replies = try h.repliesIdenticalAcrossRuntimes(std.testing.allocator, arena.allocator(), @src(), &.{.{ .path = "", .source = src }});
+    const replies = try h.canonicalReplies(std.testing.allocator, arena.allocator(), @src(), &.{.{ .path = "", .source = src }});
     // U+263A, U+00E7, U+1F600, then the argument's U+2028, U+263A — each as
     // its UTF-8 bytes, the whole code point.
     const expected = "pub val smiledFace = \\\"<\xE2\x98\xBA\xC3\xA7\xF0\x9F\x98\x80>[\xE2\x80\xA8\xE2\x98\xBA]\\\";";
@@ -321,11 +321,10 @@ test "decorator invocation: @emit contributes a top-level declaration" {
     if (decoratorEmitted) return error.DecoratorFnNotDropped;
 }
 
-test "decorator invocation: the body runs on the compilation target's runtime (decision 84)" {
-    // `comptime.compile` chooses the runtime from the target name it is given,
-    // so every driver — `botopink build`, `test`, and `check` — evaluates a
-    // commonJS or wasm compilation's decorators on wat and an erlang or
-    // no-target one on the BEAM; a driver cannot forget to select.
+test "decorator invocation: the body runs on the wat runtime for every target (decision 434)" {
+    // `comptime.compile` selects the runtime itself, so every driver —
+    // `botopink build`, `test`, and `check` — evaluates decorators on wat,
+    // whatever the target name it is given, and for none.
     const io = std.testing.io;
     const build_root = h.buildRootPathFromSrc(io, @src());
     const src =
@@ -335,20 +334,16 @@ test "decorator invocation: the body runs on the compilation target's runtime (d
         \\#[singleton]
         \\type Service(x: i32)
     ;
-    const cases = [_]struct { target: ?[]const u8, lang: comptimeMod.trace.Lang }{
-        .{ .target = "node", .lang = .wat },
-        .{ .target = "wasm", .lang = .wat },
-        .{ .target = "erlang", .lang = .beam },
-        .{ .target = null, .lang = .beam },
-    };
-    for (cases) |c| {
-        var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, build_root, c.target);
+    const targets = [_]?[]const u8{ "node", "wasm", "erlang", "beam", null };
+    for (targets) |target| {
+        var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, build_root, target);
         defer session.deinit(std.testing.allocator);
         const outcome = session.outputs.items[0].outcome;
         try std.testing.expect(outcome == .ok);
         const traces = outcome.ok.comptime_traces;
         try std.testing.expect(traces.len > 0);
-        for (traces) |t| try std.testing.expectEqual(c.lang, t.lang);
+        // The listing is the wasm the module was lowered to.
+        for (traces) |t| try std.testing.expect(std.mem.indexOf(u8, t.listing, "(func ") != null);
     }
 }
 
@@ -427,7 +422,7 @@ test "decorator invocation: a helper of another module builds that module's reco
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const replies = try h.repliesIdenticalAcrossRuntimes(std.testing.allocator, arena.allocator(), @src(), &.{
+    const replies = try h.canonicalReplies(std.testing.allocator, arena.allocator(), @src(), &.{
         .{ .path = "seg", .source = lib },
         .{ .path = "", .source = src },
     });
@@ -440,12 +435,10 @@ test "decorator invocation: a helper of another module builds that module's reco
 }
 
 test "comptime: round trip ---- a decorator's host function runs its runtime's cell, the reply byte-identical (decision 341)" {
-    // 01-compiler/14 step 6. `bang` carries both cells — the BEAM runtime
-    // runs its `@External.Erlang` template, the wat runtime the botopink
-    // function its `@External.Wasm("fn:…")` names — and std's
-    // `hash.contentHash` travels with its own two, renamed beside the
-    // decorator (`host_cells.zig`). The `@emit` reply is the same text on
-    // both runtimes.
+    // 01-compiler/14 step 6, decision 434. `bang` carries both cells — the
+    // comptime runtime runs its `@External.Erlang` template through
+    // beam-to-wasm, the first source present — and std's `hash.contentHash`
+    // answers std-wasm's text (`host_cells.zig`).
     const src =
         \\import {hash} from "std";
         \\#[@External.Node("""($0 + "!")"""),
@@ -463,7 +456,7 @@ test "comptime: round trip ---- a decorator's host function runs its runtime's c
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const replies = try h.repliesIdenticalAcrossRuntimes(std.testing.allocator, arena.allocator(), @src(), &.{.{ .path = "", .source = src }});
+    const replies = try h.canonicalReplies(std.testing.allocator, arena.allocator(), @src(), &.{.{ .path = "", .source = src }});
     var found = false;
     for (replies) |r| {
         if (std.mem.indexOf(u8, r, "Point!de553cf") != null) found = true;

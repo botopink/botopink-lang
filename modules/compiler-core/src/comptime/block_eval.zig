@@ -1,7 +1,7 @@
 /// Decisions 266 and 331 — a `comptime` the Zig folder (`eval.zig`) cannot read
 /// — a call, a loop, a lambda, a record — runs on the comptime runtime (the
-/// one decorators and templates run on, `runtime/runtime.zig`: BEAM or WAT by
-/// the target, decision 84), never on the build target, and its value is
+/// one decorators and templates run on, `runtime/runtime.zig`: wasm for every
+/// target, decision 434), never on the build target, and its value is
 /// lifted back into the program as the construction every backend emits.
 ///
 ///   `comptime { … }` ─ `prepare`: a function `'__bp_ct_value'/0` over the
@@ -1449,21 +1449,16 @@ pub fn evaluate(
         error.OutOfMemory => return error.OutOfMemory,
         error.EvalFailed => return error.EvalFailed,
     };
-    const result = hostRuntime.evalWithArg(arena, io, "comptime", m.module, m.code, try etf.encode(arena, Term.tupleOf(&.{}))) catch |err| switch (err) {
+    const response = hostRuntime.evalWithArg(arena, io, "comptime", m.module, m.code, try etf.encode(arena, Term.tupleOf(&.{}))) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.EvalFailed => return error.EvalFailed,
-    };
-    const response = switch (result) {
-        .response => |r| r,
-        .unavailable => |reason| return .{ .err = reason },
     };
     if (traces) |list| {
         const listing = try hostRuntime.listingOf(arena, "comptime", m.module, m.code, m.listing);
         try list.append(arena, .{
             .kind = .@"comptime",
             .name = "block",
-            .listing = listing.text,
-            .lang = listing.lang,
+            .listing = listing,
             .reply = switch (response) {
                 .ok => |stdout| stdout,
                 .compile_error => |detail| try std.fmt.allocPrint(arena, "compile error: {s}", .{detail}),

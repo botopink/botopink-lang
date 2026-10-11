@@ -34,6 +34,10 @@ modules/
 │   ├── src/                 ← root.zig — parser, workspace expansion, discovery, resolution
 │   └── tests/fixtures/      ← the manifests its unit tests read
 ├── wasm3/                   ← vendored wasm3 (C, v0.5.0): the wat comptime runtime's engine, in-process
+├── std-wasm/                ← std's host functions in Zig, compiled to wasm: served to the comptime runtime (decision 434)
+│   └── src/                 ← root.zig (the served functions) + hash / text / number + wasm.zig (`zig build std-wasm`)
+├── beam-to-wasm/            ← `.beam` bytecode translated to wasm for the comptime runtime (decisions 434, 435)
+│   └── src/                 ← root.zig (`translate`) + chunks / code / lower / ir + testdata/
 ├── test-scratch/            ← `test_scratch` — the one way a TEST spells a path it writes to
 │   └── src/root.zig         ← per-process scratch root; given to the test modules only
 ├── source-stamp/            ← `source_stamp` — the stale-binary refusal of a library run
@@ -57,6 +61,8 @@ modules/
 | `manifest/` | library (the `botopink.json` model) | `std` only | [link](manifest/AGENTS.md) |
 | `test-scratch/` | library (`test_scratch` — per-process scratch paths for tests) | `std` only | [link](test-scratch/AGENTS.md) |
 | `source-stamp/` | library (`source_stamp` — the hash `build.zig` embeds in `botopink` and `botopink-lib-test`; a library run refuses a binary whose checkout moved) | `std` only | [link](source-stamp/AGENTS.md) |
+| `std-wasm/` | library compiled into the wat comptime runtime's `bp_wat_rt.wasm` (and `std_wasm.wasm` alone, `zig build std-wasm`) | `std` only | [link](std-wasm/AGENTS.md) |
+| `beam-to-wasm/` | library (`translate`: `.beam` → wasm functions over the comptime runtime's terms), imported by compiler-core | `std` only | [link](beam-to-wasm/AGENTS.md) |
 | `test-shard/` | the compiler-core test binary's runner (`build.zig` `.test_runner`), run as `-Dtest-shards` processes | `std` only | [link](test-shard/AGENTS.md) |
 | `wasm3/` | C sources linked into every native artifact that imports `compiler-core` (`link`), headers for its `@cImport` (`exposeHeaders`) | libc | [link](wasm3/AGENTS.md) |
 | `bpmp/` | `bpmp` executable | `manifest` only (spawns `botopink`) | [link](bpmp/AGENTS.md) |
@@ -99,8 +105,8 @@ the std modules). The lib-test-runner's unit tests run under the workspace
   and link it from the parent.
 - Codegen is implemented entirely in Zig under `compiler-core/`. There is **no**
   standalone Node.js/WASM compiler: `compiler-web/` is compiler-core itself built
-  for `wasm32-wasi`, with the comptime runtime and the RUN LOG executors compiled
-  out (`compiler-core/src/comptime/runtime/runtime.zig`).
-- Comptime evaluation (templates, decorators) runs through compiler-core's
-  persistent `erl` process (`compiler-core/src/comptime/runtime/persistent_beam.zig`);
-  the CLI and the LSP share that pipeline.
+  for `wasm32-wasi`, with the RUN LOG executors compiled out and the comptime
+  runtime's engine served by the page (`compiler-core/src/comptime/runtime/`).
+- Comptime evaluation (templates, decorators, `comptime`) runs on compiler-core's
+  wasm runtime, in-process, for every target (decision 434,
+  `compiler-core/src/comptime/runtime/`); the CLI and the LSP share that pipeline.
