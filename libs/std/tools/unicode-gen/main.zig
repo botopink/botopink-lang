@@ -1,7 +1,9 @@
-//! The generator of std's normalization tables (decision 333 (A)).
+//! The generator of std's normalization tables (decision 333 (A)) and of
+//! std-wasm's case mapping (decision 443).
 //!
-//! `zig build gen-unicode` runs this with two arguments — this directory and
-//! the output file (`libs/std/src/unicode_tables.bp`) — and it:
+//! `zig build gen-unicode` runs this with three arguments — this directory,
+//! the output file (`libs/std/src/unicode_tables.bp`) and std-wasm's case
+//! tables (`modules/std-wasm/src/case_tables.zig`) — and it:
 //!
 //!   1. checks every file `manifest.json` names against its SHA-256 (a file
 //!      that differs, is missing or is not named is an error: the tables come
@@ -16,7 +18,18 @@
 //!      `compatibilityDecomposition` and `primaryComposite`, each a `case`
 //!      split into leaf functions of at most `leaf_arms` arms (a single `case`
 //!      of two thousand arms is past the beam assembler's limit for one
-//!      function), already at the formatter's canonical form.
+//!      function), already at the formatter's canonical form;
+//!   5. reads `UnicodeData.txt`'s simple case mappings (upper, lower, title)
+//!      and `SpecialCasing.txt`'s unconditional full ones, and writes std-wasm's
+//!      `case_tables.zig`: per direction a `switch` over the code point
+//!      (runs of one offset, stepping by one or two), and the full mappings of
+//!      more than one code point packed 21 bits each. Code, not data: a
+//!      `--target wasm` program links the tables only where it maps case,
+//!      and no other std-wasm function carries them (`std_wasm_link.zig`
+//!      places std-wasm's data whenever a linked function reads it). The
+//!      conditional mappings (`Final_Sigma`, the language-specific ones) are
+//!      left out — OTP's `string:uppercase` / `lowercase` apply none, and a
+//!      wasm program answers OTP's (decision 443).
 //!
 //! Hangul syllables are not in the tables: `unicode.bp` decomposes and composes
 //! them by the algorithm (Unicode §3.12). `NormalizationTest.txt` is vendored
@@ -37,6 +50,7 @@ const data_files = [_][]const u8{
     "CompositionExclusions.txt",
     "DerivedNormalizationProps.txt",
     "NormalizationTest.txt",
+    "SpecialCasing.txt",
 };
 
 pub fn main(init: std.process.Init) void {
@@ -55,9 +69,10 @@ fn run(init: std.process.Init) !void {
     const arena = init.arena.allocator();
     const io = init.io;
     const argv = try init.minimal.args.toSlice(arena);
-    if (argv.len != 3) return fail("usage: unicode-gen <tools/unicode-gen dir> <out .bp>", .{});
+    if (argv.len != 4) return fail("usage: unicode-gen <tools/unicode-gen dir> <out .bp> <out case_tables.zig>", .{});
     const dir = argv[1];
     const out_path = argv[2];
+    const case_path = argv[3];
     const cwd = std.Io.Dir.cwd();
 
     const read = struct {
@@ -106,6 +121,7 @@ fn run(init: std.process.Init) !void {
 
     // ── 2. UnicodeData.txt ──────────────────────────────────────────────────
     var ccc = std.AutoHashMapUnmanaged(u21, u8).empty;
+    var simple_case: [3]std.AutoHashMapUnmanaged(u21, u21) = .{ .empty, .empty, .empty };
     var canonical = std.AutoHashMapUnmanaged(u21, []const u21).empty;
     var compat = std.AutoHashMapUnmanaged(u21, []const u21).empty;
     var lines = std.mem.splitScalar(u8, texts[0], '\n');
@@ -128,6 +144,8 @@ fn run(init: std.process.Init) !void {
             continue;
         }
         if (class != 0) try ccc.put(arena, cp, class);
+        // Fields 12, 13, 14: the simple uppercase, lowercase and titlecase mappings.
+        for (0..3) |k| if (fields[12 + k].len != 0) try simple_case[k].put(arena, cp, try parseCp(fields[12 + k]));
         if (fields[5].len == 0) continue;
         var mapping = fields[5];
         const tagged = mapping[0] == '<';
@@ -246,10 +264,149 @@ fn run(init: std.process.Init) !void {
 
     try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = out_path, .data = out.items });
     _ = cwd;
+
+    // ── 5. std-wasm's case tables ───────────────────────────────────────────
+    var full_case: [3]std.AutoHashMapUnmanaged(u21, []const u21) = .{ .empty, .empty, .empty };
+    try readSpecialCasing(arena, texts[4], &full_case);
+    var case_out: std.ArrayListUnmanaged(u8) = .empty;
+    const cw = Out{ .list = &case_out, .alloc = arena };
+    const case_counts = try writeCaseTables(cw, version, &simple_case, &full_case);
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = case_path, .data = case_out.items });
     std.debug.print(
         "unicode-gen: Unicode {s} → {s} ({d} bytes): {d} class runs, {d} canonical and {d} compatibility mappings, {d} composites ({d} excluded)\n",
         .{ version, out_path, out.items.len, class_rows.items.len, canonical.count(), compat.count(), pairs.items.len, derived.count() },
     );
+    std.debug.print(
+        "unicode-gen: Unicode {s} → {s} ({d} bytes): {d} / {d} / {d} upper / lower / title runs, {d} / {d} / {d} full mappings\n",
+        .{ version, case_path, case_out.items.len, case_counts[0], case_counts[1], case_counts[2], case_counts[3], case_counts[4], case_counts[5] },
+    );
+}
+
+/// `SpecialCasing.txt`'s unconditional entries — `<code>; <lower>; <title>;
+/// <upper>; # …` with no condition field — into `full[k]` (`k`: 0 upper,
+/// 1 lower, 2 title). A conditional entry (`Final_Sigma`, a language tag) is
+/// skipped: no target std-wasm answers like applies it (decision 443).
+fn readSpecialCasing(arena: std.mem.Allocator, text: []const u8, full: *[3]std.AutoHashMapUnmanaged(u21, []const u21)) !void {
+    var lines = std.mem.splitScalar(u8, text, '\n');
+    while (lines.next()) |raw| {
+        const line = std.mem.trim(u8, raw[0 .. std.mem.indexOfScalar(u8, raw, '#') orelse raw.len], " \t\r");
+        if (line.len == 0) continue;
+        var fields: [6][]const u8 = undefined;
+        var n: usize = 0;
+        var it = std.mem.splitScalar(u8, line, ';');
+        while (it.next()) |f| : (n += 1) {
+            if (n == fields.len) return fail("SpecialCasing.txt: too many fields: {s}", .{line});
+            fields[n] = std.mem.trim(u8, f, " \t");
+        }
+        if (n < 4) return fail("SpecialCasing.txt: {d} fields: {s}", .{ n, line });
+        if (n > 4 and fields[4].len != 0) continue; // a condition
+        const cp = try parseCp(fields[0]);
+        // The file orders lower, title, upper; `full` orders upper, lower, title.
+        for ([_]usize{ 3, 1, 2 }, 0..) |field, k| {
+            var cps: std.ArrayListUnmanaged(u21) = .empty;
+            var parts = std.mem.tokenizeScalar(u8, fields[field], ' ');
+            while (parts.next()) |p| try cps.append(arena, try parseCp(p));
+            if (cps.items.len == 0 or cps.items.len > 3) return fail("SpecialCasing.txt: a mapping of {d} code points: {s}", .{ cps.items.len, line });
+            try full[k].put(arena, cp, cps.items);
+        }
+    }
+}
+
+/// One run of the simple mapping: every code point of `lo..=hi` stepping by
+/// `step` maps to itself plus `delta` (the others in between map to themselves).
+const CaseRun = struct { lo: u21, hi: u21, delta: i32, step: u21 };
+
+/// std-wasm's `case_tables.zig`. Answers the run and full-mapping counts.
+fn writeCaseTables(
+    w: Out,
+    version: []const u8,
+    simple: *const [3]std.AutoHashMapUnmanaged(u21, u21),
+    full: *const [3]std.AutoHashMapUnmanaged(u21, []const u21),
+) ![6]usize {
+    try w.print(
+        \\//! std-wasm's case mapping tables — GENERATED by `zig build gen-unicode`
+        \\//! (`libs/std/tools/unicode-gen/main.zig`) from the Unicode {s} Character
+        \\//! Database files vendored beside the generator, each pinned by its SHA-256
+        \\//! in `manifest.json`. Never edit this file (decision 443; `libs/std/AGENTS.md`
+        \\//! § unicode).
+        \\//!
+        \\//! Per direction, the simple mapping of `UnicodeData.txt` as a `switch` over
+        \\//! the code point, and the unconditional full mappings of `SpecialCasing.txt`
+        \\//! that are more than the simple one, packed 21 bits per code point (`0`
+        \\//! for none). Code, not data: only a program that maps case links them.
+        \\
+        \\/// The Unicode version these tables were generated from.
+        \\pub const version = "{s}";
+        \\
+    , .{ version, version });
+    var counts: [6]usize = undefined;
+    const names = [_][]const u8{ "upper", "lower", "title" };
+    for (names, 0..) |name, k| {
+        const keys = try sortedKeys(w.alloc, u21, simple[k]);
+        var runs: std.ArrayListUnmanaged(CaseRun) = .empty;
+        for (keys) |cp| {
+            const delta = @as(i32, simple[k].get(cp).?) - @as(i32, cp);
+            if (runs.items.len > 0) {
+                const last = &runs.items[runs.items.len - 1];
+                if (last.delta == delta and cp - last.hi == last.step) {
+                    last.hi = cp;
+                    continue;
+                }
+                if (last.delta == delta and last.lo == last.hi and (cp - last.hi == 1 or cp - last.hi == 2)) {
+                    last.step = cp - last.hi;
+                    last.hi = cp;
+                    continue;
+                }
+            }
+            try runs.append(w.alloc, .{ .lo = cp, .hi = cp, .delta = delta, .step = 1 });
+        }
+        counts[k] = runs.items.len;
+        try w.print(
+            \\
+            \\/// The simple {s}case mapping of `cp` (`cp` itself when it has none).
+            \\pub fn {s}Simple(cp: u21) u21 {{
+            \\    return switch (cp) {{
+            \\
+        , .{ name, name });
+        for (runs.items) |r| {
+            var expr_buf: [64]u8 = undefined;
+            const expr = if (r.delta >= 0)
+                try std.fmt.bufPrint(&expr_buf, "cp + {d}", .{r.delta})
+            else
+                try std.fmt.bufPrint(&expr_buf, "cp - {d}", .{-r.delta});
+            if (r.lo == r.hi) {
+                try w.print("        0x{X} => {s},\n", .{ r.lo, expr });
+            } else if (r.step == 1) {
+                try w.print("        0x{X}...0x{X} => {s},\n", .{ r.lo, r.hi, expr });
+            } else {
+                try w.print("        0x{X}...0x{X} => if ((cp - 0x{X}) % 2 == 0) {s} else cp,\n", .{ r.lo, r.hi, r.lo, expr });
+            }
+        }
+        try w.print("        else => cp,\n    }};\n}}\n", .{});
+
+        // The full mappings that are more than the simple one.
+        const fkeys = try sortedKeys(w.alloc, []const u21, full[k]);
+        var n_full: usize = 0;
+        try w.print(
+            \\
+            \\/// The full {s}case mapping of `cp` when it is more than the simple one:
+            \\/// up to three code points, the first in the low 21 bits; `0` for none.
+            \\pub fn {s}Full(cp: u21) u64 {{
+            \\    return switch (cp) {{
+            \\
+        , .{ name, name });
+        for (fkeys) |cp| {
+            const m = full[k].get(cp).?;
+            if (m.len == 1 and m[0] == (simple[k].get(cp) orelse cp)) continue;
+            var v: u64 = 0;
+            for (m, 0..) |c, i| v |= @as(u64, c) << @intCast(21 * i);
+            try w.print("        0x{X} => 0x{X},\n", .{ cp, v });
+            n_full += 1;
+        }
+        try w.print("        else => 0,\n    }};\n}}\n", .{});
+        counts[3 + k] = n_full;
+    }
+    return counts;
 }
 
 const Out = struct {

@@ -497,20 +497,22 @@ test "limit 1: no process, mailbox or ETS table — refused by name before anyth
     }
 }
 
-test "limit 3: Unicode case mapping of a non-ASCII letter raises bp_wat_runtime" {
+// Decision 443 — the limit that refused a non-ASCII letter is gone: the
+// runtime maps case over all of Unicode, std-wasm's (OTP's) answer.
+test "Unicode case mapping answers OTP's: string:uppercase, lowercase and titlecase" {
     const alloc = std.testing.allocator;
     const code =
-        \\-module(bp@wat_test_limit3).
+        \\-module(bp@wat_test_case).
         \\-export([main/1]).
         \\
-        \\main({Arg0}) -> string:uppercase(Arg0).
+        \\main({Arg0}) -> [string:uppercase(Arg0), string:lowercase(<<"ΟΔΟΣ"/utf8>>), string:titlecase(<<"ǆa"/utf8>>)].
     ;
-    const r = try runSource(alloc, "bp@wat_test_limit3", code, Term.tupleOf(&.{Term.str("\xc3\xa9t\xc3\xa9")}));
+    const r = try runSource(alloc, "bp@wat_test_case", code, Term.tupleOf(&.{Term.str("\xc3\xa9t\xc3\xa9 stra\xc3\x9fe")}));
     defer alloc.free(r.payload());
-    try std.testing.expectEqualStrings("error:{bp_wat_runtime,<<\"string case mapping of a non-ASCII character\">>}", r.runtime_error);
+    try std.testing.expectEqualStrings("ÉTÉ STRASSEοδοσǅa", r.ok);
 }
 
-test "limit 4: an integer beyond 64 bits raises bp_wat_runtime" {
+test "limit 3: an integer beyond 64 bits raises bp_wat_runtime" {
     const alloc = std.testing.allocator;
     const code =
         \\-module(bp@wat_test_limit4).

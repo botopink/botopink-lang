@@ -2017,36 +2017,33 @@ export fn rt_string_is_empty(t: T) T {
     return boolAtom(s.len == 0);
 }
 
-fn caseMap(t: T, upper: bool) T {
+/// `s` with its case mapped over all of Unicode — std-wasm's, OTP's answer
+/// (decision 443: the full mappings, no final sigma).
+fn caseBytes(s: []const u8, case: stdWasm.text.Case, first_only: bool) []const u8 {
+    const n = stdWasm.text.caseLength(s, case, first_only);
+    const out = alloc(n);
+    stdWasm.text.caseInto(out[0..n], s, case, first_only);
+    return out[0..n];
+}
+
+fn caseMap(t: T, case: stdWasm.text.Case) T {
     const s = strArg(t) orelse return &nil_cell;
-    const out = alloc(s.len);
-    // A non-ASCII letter is the runtime's limit 3 (std-wasm refuses it rather
-    // than answer differently from a target).
-    const mapped = stdWasm.text.caseMap(out[0..s.len], s, upper) catch {
-        raiseWat("string case mapping of a non-ASCII character");
-        return &nil_cell;
-    };
-    return strResult(t, mapped);
+    return strResult(t, caseBytes(s, case, false));
 }
 
 export fn rt_string_uppercase(t: T) T {
-    return caseMap(t, true);
+    return caseMap(t, .upper);
 }
 
 export fn rt_string_lowercase(t: T) T {
-    return caseMap(t, false);
+    return caseMap(t, .lower);
 }
 
-/// `string:titlecase/1` — std-wasm's `text.titlecase`: the first character
-/// upper-cased (ASCII; a non-ASCII first letter is limit 3, as `caseMap`).
+/// `string:titlecase/1` — the first character's title mapping, the rest as
+/// it is (std-wasm's `text.caseInto`).
 export fn rt_string_titlecase(t: T) T {
     const s = strArg(t) orelse return &nil_cell;
-    const out = alloc(s.len);
-    const mapped = stdWasm.text.titlecase(out[0..s.len], s) catch {
-        raiseWat("string case mapping of a non-ASCII character");
-        return &nil_cell;
-    };
-    return strResult(t, mapped);
+    return strResult(t, caseBytes(s, .title, true));
 }
 
 fn trimBytes(s: []const u8, dir: T) []const u8 {
@@ -2326,6 +2323,16 @@ export fn rt_std_text__replace(t: T, p: T, w: T) T {
 
 export fn rt_std_text__replaceAll(t: T, p: T, w: T) T {
     return replaceTerm(t, p, w, true);
+}
+
+export fn rt_std_text__toUpper(t: T) T {
+    const s = strArg(t) orelse return &nil_cell;
+    return binCopy(caseBytes(s, .upper, false));
+}
+
+export fn rt_std_text__toLower(t: T) T {
+    const s = strArg(t) orelse return &nil_cell;
+    return binCopy(caseBytes(s, .lower, false));
 }
 
 export fn rt_std_text__fromCodepoint(c: T) T {

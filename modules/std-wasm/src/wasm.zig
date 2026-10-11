@@ -223,6 +223,23 @@ fn fromCodepoint(cp: i32) callconv(.c) u32 {
     return fresh(root.text.encodeCodepoint(&buf, cp) orelse @trap());
 }
 
+fn cased(s: u32, case: root.text.Case) u32 {
+    const a = arg(s);
+    const out = blank(root.text.caseLength(a, case, false));
+    root.text.caseInto(out.bytes, a, case, false);
+    return out.ptr;
+}
+
+/// `String.toUpper` over all of Unicode — OTP's answer (decision 443).
+fn toUpper(s: u32) callconv(.c) u32 {
+    return cased(s, .upper);
+}
+
+/// `String.toLower` — no final sigma, as OTP (decision 443).
+fn toLower(s: u32) callconv(.c) u32 {
+    return cased(s, .lower);
+}
+
 /// `s.slice(a, b)` in code points with `slice`'s bounds — the codegen's
 /// string slice and index (`s[a..b]`).
 fn textSlice(s: u32, a: i32, b: i32) callconv(.c) u32 {
@@ -619,6 +636,8 @@ const faces = .{
     .{ "text.replace", replace },
     .{ "text.replaceAll", replaceAll },
     .{ "text.fromCodepoint", fromCodepoint },
+    .{ "text.toUpper", toUpper },
+    .{ "text.toLower", toLower },
 };
 
 const program_faces = .{

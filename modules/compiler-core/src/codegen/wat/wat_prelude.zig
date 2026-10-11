@@ -1074,25 +1074,6 @@ const i32_max = func("__i32_max", &.{ "a", "b" }, .i32, &.{}, &.{
     when(&.{ get("a"), ret }), get("b"),
 });
 
-/// A copy of `s` with every byte in `[lo, hi]` shifted by `delta` — ASCII
-/// upper/lower case.
-const str_case = func("__str_case", &.{ "s", "lo", "hi", "delta" }, .i32, i32s(&.{ "n", "p", "i", "ch" }), &.{
-    get("s"),        load(0),  set("n"),
-    get("n"),        c32(4),   op("add"),
-    call("__alloc"), set("p"), get("p"),
-    get("n"),        store(0),
-    loop(&.{
-        get("i"),                                                  get("n"),  op("ge_u"), brk,
-        get("s"),                                                  get("i"),  op("add"),  load8(4),
-        set("ch"),                                                 get("ch"), get("lo"),  op("ge_u"),
-        get("ch"),                                                 get("hi"), op("le_u"), op("and"),
-        when(&.{ get("ch"), get("delta"), op("add"), set("ch") }), get("p"),  get("i"),   op("add"),
-        get("ch"),                                                 store8(4), get("i"),   c32(1),
-        op("add"),                                                 set("i"),  again,
-    }),
-    get("p"),
-});
-
 /// A fresh array blob of `n` elements (`[n][e0]…`), elements unset.
 const arr_new = func("__arr_new", &.{"n"}, .i32, i32s(&.{"p"}), &.{
     get("n"), c32(1),   op("add"), c32(4),   op("mul"), call("__alloc"), set("p"),

@@ -1437,6 +1437,12 @@ src/main.bp:<L:C>` on commonJS, erlang and beam: `run/int_overflow_add_i32`, `ru
 traps with no text, so its half is `.exit` alone; `u32` and the narrower types check their own range
 there too (`wat.zig` `emitRangeCheck`).
 
+144 B-00g (decision 443: case mapping over all of Unicode) adds `run/string_case_unicode` — `é`,
+`ß` → `SS`, `ǆ`, `ﬁ` → `FI`, `İ` → `i̇`, Greek and Cyrillic upper- and lower-cased with one `.out` on
+the four targets (wasm printed `é` unchanged at exit 0). The one place the targets part, the final
+sigma (a JS engine lowers a word-final `Σ` to `ς`; OTP, and so erlang, beam and wasm, to `σ`), is
+not printed here — one `.out` cannot hold both —; `codegen/tests/wat.zig` pins wasm's.
+
 `04-js` steps 9 and 10 (decision 319: `i64` / `u64` hold their full range on commonJS too, a number
 below 2^53 and a `BigInt` beyond; decision 320: a string index counts codepoints there) add
 `run/i64_full_range` (past 2^53 both ways, `2^63 − 1`, `−2^63`, `/` `%` unary `-` `+=` and `==` across

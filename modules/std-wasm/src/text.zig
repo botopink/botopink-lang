@@ -1,36 +1,167 @@
-//! The text algorithms behind std's string primitives (decision 434 (2)):
-//! what `String.toUpper`, `trim`, `split`, `contains`, `startsWith`,
+//! The text algorithms behind std's string primitives (decisions 434 (2), 442,
+//! 443): what `String.toUpper`, `trim`, `split`, `contains`, `startsWith`,
 //! `replaceAll`, `length`, `slice` and `reverse` answer at comptime, whatever
 //! the build's target (434 (5)). Pure functions over UTF-8 bytes — no term
 //! layout, no allocation of their own: a caller hands the output buffer.
 //! The wat comptime runtime's `string:` / `binary:` BIFs answer through them
 //! (`compiler-core/src/comptime/runtime/wat/rt.zig`).
 const std = @import("std");
+const case_tables = @import("case_tables.zig");
 
-pub const CaseError = error{NonAsciiLetter};
+// ── case mapping over all of Unicode (decision 443) ──────────────────────────
+//
+// `toUpper` / `toLower` / `string:titlecase` answer OTP's: the simple mapping
+// of `UnicodeData.txt` and the unconditional full mappings of
+// `SpecialCasing.txt` (`ß` → `SS`, `ﬁ` → `FI`, `İ` → `i̇`), no conditional
+// one — no final sigma (`ΟΔΟΣ` lowers to `οδοσ`, where a JS engine answers
+// `οδος`) and no language-specific rule. The tables are `case_tables.zig`,
+// generated from the Unicode data std's `unicode` reads (`zig build
+// gen-unicode`).
 
-/// `s` with its ASCII letters mapped to upper (`upper`) or lower case, into
-/// `out` (`out.len >= s.len`). A byte at or above 0x80 is
-/// `error.NonAsciiLetter`: Unicode case mapping is the comptime runtime's
-/// limit 3 (`runtime/wat/AGENTS.md`), refused rather than answered
-/// differently from a target.
-pub fn caseMap(out: []u8, s: []const u8, upper: bool) CaseError![]u8 {
-    for (s) |c| if (c >= 0x80) return error.NonAsciiLetter;
-    for (s, 0..) |c, i| out[i] = if (upper) std.ascii.toUpper(c) else std.ascii.toLower(c);
-    return out[0..s.len];
+pub const Case = enum { upper, lower, title };
+
+/// The code points `cp` maps to under `case` (one to three), into `out`.
+pub fn mapCodepoint(out: *[3]u21, cp: u21, case: Case) []const u21 {
+    var full: u64 = switch (case) {
+        .upper => case_tables.upperFull(cp),
+        .lower => case_tables.lowerFull(cp),
+        .title => case_tables.titleFull(cp),
+    };
+    if (full == 0) {
+        out[0] = switch (case) {
+            .upper => case_tables.upperSimple(cp),
+            .lower => case_tables.lowerSimple(cp),
+            .title => case_tables.titleSimple(cp),
+        };
+        return out[0..1];
+    }
+    var n: usize = 0;
+    while (full != 0) : (n += 1) {
+        out[n] = @truncate(full & 0x1F_FFFF);
+        full >>= 21;
+    }
+    return out[0..n];
 }
 
-/// `s` with its first character title-cased (`string:titlecase/1`), the rest
-/// as it is, into `out` (`out.len >= s.len`). The first character is mapped
-/// for ASCII only: a first byte at or above 0x80 is `error.NonAsciiLetter`,
-/// as `caseMap` refuses it (the comptime runtime's limit 3) — the bytes after
-/// it are never mapped, whatever they are.
-pub fn titlecase(out: []u8, s: []const u8) CaseError![]u8 {
-    if (s.len == 0) return out[0..0];
-    if (s[0] >= 0x80) return error.NonAsciiLetter;
-    @memcpy(out[0..s.len], s);
-    out[0] = std.ascii.toUpper(s[0]);
-    return out[0..s.len];
+// UTF-8 by hand, with comparisons and shifts: `std.unicode`'s decoder reads
+// a lookup table, which is std-wasm data, and a program that maps case would
+// then carry all of std-wasm's data (`std_wasm_link.zig` places it whole).
+
+/// The length of the sequence lead byte `b` starts, `0` for no lead byte.
+fn sequenceLength(b: u8) usize {
+    if (b < 0x80) return 1;
+    if (b < 0xC2) return 0;
+    if (b < 0xE0) return 2;
+    if (b < 0xF0) return 3;
+    if (b < 0xF5) return 4;
+    return 0;
+}
+
+/// No scalar value — what `decodeSequence` answers for a sequence that is not
+/// well-formed. A sentinel, not an optional: LLVM keeps a `?u21`'s null as a
+/// constant in std-wasm's data, and a program that maps case would carry it.
+const invalid: u32 = 0xFFFF_FFFF;
+
+/// The scalar value of the UTF-8 sequence `q` (`sequenceLength` bytes), or
+/// `invalid` for one that is not well-formed (a bad continuation, an
+/// overlong form, a surrogate, past U+10FFFF).
+fn decodeSequence(q: []const u8) u32 {
+    if (q.len == 1) return q[0];
+    // The lead byte's payload: `0x7F >> len` masks it (`0x1F`, `0x0F`, `0x07`).
+    var cp: u32 = q[0] & (@as(u8, 0x7F) >> @intCast(q.len));
+    for (q[1..]) |c| {
+        if (c & 0xC0 != 0x80) return invalid;
+        cp = (cp << 6) | (c & 0x3F);
+    }
+    // Overlong forms, surrogates and values past U+10FFFF, by their bytes
+    // (`sequenceLength` already refused `C0`, `C1` and `F5`…`FF`).
+    if (q[0] == 0xE0 and q[1] < 0xA0) return invalid;
+    if (q[0] == 0xED and q[1] >= 0xA0) return invalid;
+    if (q[0] == 0xF0 and q[1] < 0x90) return invalid;
+    if (q[0] == 0xF4 and q[1] >= 0x90) return invalid;
+    return cp;
+}
+
+/// The UTF-8 bytes of the scalar value `cp` into `out`.
+fn encodeScalar(out: *[4]u8, cp: u21) []const u8 {
+    if (cp < 0x80) {
+        out[0] = @intCast(cp);
+        return out[0..1];
+    }
+    if (cp < 0x800) {
+        out[0] = @intCast(0xC0 | (cp >> 6));
+        out[1] = @intCast(0x80 | (cp & 0x3F));
+        return out[0..2];
+    }
+    if (cp < 0x10000) {
+        out[0] = @intCast(0xE0 | (cp >> 12));
+        out[1] = @intCast(0x80 | ((cp >> 6) & 0x3F));
+        out[2] = @intCast(0x80 | (cp & 0x3F));
+        return out[0..3];
+    }
+    out[0] = @intCast(0xF0 | (cp >> 18));
+    out[1] = @intCast(0x80 | ((cp >> 12) & 0x3F));
+    out[2] = @intCast(0x80 | ((cp >> 6) & 0x3F));
+    out[3] = @intCast(0x80 | (cp & 0x3F));
+    return out[0..4];
+}
+
+/// Walks `s` a code point at a time, each mapped under `case` (only the
+/// first when `first_only`, `string:titlecase`), the bytes of the mapping
+/// handed to `sink`. A byte that starts no valid UTF-8 sequence passes as it
+/// is.
+fn walkCase(s: []const u8, case: Case, first_only: bool, sink: anytype) void {
+    var i: usize = 0;
+    var first = true;
+    while (i < s.len) {
+        const len = sequenceLength(s[i]);
+        const cp: u32 = if (len == 0 or i + len > s.len) invalid else decodeSequence(s[i..][0..len]);
+        if (cp == invalid) {
+            sink.bytes(s[i .. i + 1]);
+            i += 1;
+            first = false;
+            continue;
+        }
+        const c: u21 = @intCast(cp);
+        if (first or !first_only) {
+            var m: [3]u21 = undefined;
+            for (mapCodepoint(&m, c, case)) |x| {
+                var b: [4]u8 = undefined;
+                sink.bytes(encodeScalar(&b, x));
+            }
+        } else sink.bytes(s[i .. i + len]);
+        first = false;
+        i += len;
+    }
+}
+
+const Counter = struct {
+    n: usize = 0,
+    fn bytes(c: *Counter, b: []const u8) void {
+        c.n += b.len;
+    }
+};
+
+const Writer = struct {
+    out: []u8,
+    at: usize = 0,
+    fn bytes(w: *Writer, b: []const u8) void {
+        @memcpy(w.out[w.at..][0..b.len], b);
+        w.at += b.len;
+    }
+};
+
+/// How many bytes `caseInto` writes for `s`.
+pub fn caseLength(s: []const u8, case: Case, first_only: bool) usize {
+    var c: Counter = .{};
+    walkCase(s, case, first_only, &c);
+    return c.n;
+}
+
+/// `s` with its case mapped into `out` (`caseLength` bytes).
+pub fn caseInto(out: []u8, s: []const u8, case: Case, first_only: bool) void {
+    var w: Writer = .{ .out = out };
+    walkCase(s, case, first_only, &w);
 }
 
 /// The whitespace `trim` removes: space, tab, LF, CR, VT, FF.
@@ -426,21 +557,66 @@ pub fn replaceInto(out: []u8, s: []const u8, pat: []const u8, with: []const u8, 
     put(out, &o, rest);
 }
 
-test "caseMap: ASCII mapped, a non-ASCII letter refused" {
-    var buf: [16]u8 = undefined;
-    try std.testing.expectEqualStrings("HELLO, WORLD 1", try caseMap(&buf, "Hello, world 1", true));
-    try std.testing.expectEqualStrings("hello", try caseMap(&buf, "HeLLo", false));
-    try std.testing.expectError(error.NonAsciiLetter, caseMap(&buf, "héllo", true));
+fn expectCase(want: []const u8, s: []const u8, case: Case, first_only: bool) !void {
+    var buf: [64]u8 = undefined;
+    const n = caseLength(s, case, first_only);
+    caseInto(buf[0..n], s, case, first_only);
+    try std.testing.expectEqualStrings(want, buf[0..n]);
 }
 
-test "titlecase: the first character, ASCII; the rest untouched" {
-    var buf: [32]u8 = undefined;
-    try std.testing.expectEqualStrings("World", try titlecase(&buf, "world"));
-    try std.testing.expectEqualStrings("HELLO wORLD", try titlecase(&buf, "hELLO wORLD"));
-    try std.testing.expectEqualStrings("1st", try titlecase(&buf, "1st"));
-    try std.testing.expectEqualStrings("Ana é", try titlecase(&buf, "ana é"));
-    try std.testing.expectEqualStrings("", try titlecase(&buf, ""));
-    try std.testing.expectError(error.NonAsciiLetter, titlecase(&buf, "élan"));
+test "case mapping: ASCII, Latin, Greek, Cyrillic — OTP's answers" {
+    try expectCase("HELLO, WORLD 1", "Hello, world 1", .upper, false);
+    try expectCase("hello", "HeLLo", .lower, false);
+    try expectCase("ÉCOLE ÇA", "école ça", .upper, false);
+    try expectCase("école", "ÉCOLE", .lower, false);
+    try expectCase("ΣΑΣ", "σας", .upper, false);
+    try expectCase("ПРИВЕТ", "привет", .upper, false);
+    try expectCase("", "", .upper, false);
+}
+
+test "case mapping: the unconditional full mappings of SpecialCasing" {
+    try expectCase("STRASSE", "straße", .upper, false);
+    try expectCase("FI", "ﬁ", .upper, false);
+    try expectCase("ʼN", "ŉ", .upper, false);
+    try expectCase("\u{399}\u{308}\u{301}", "\u{390}", .upper, false);
+    try expectCase("i\u{307}", "\u{130}", .lower, false);
+    try expectCase("Ǆ", "ǆ", .upper, false);
+}
+
+test "case mapping: no final sigma, no language rule (OTP applies none; a JS engine answers οδος)" {
+    try expectCase("οδοσ", "ΟΔΟΣ", .lower, false);
+    try expectCase("σ", "Σ", .lower, false);
+    try expectCase("i", "I", .lower, false);
+}
+
+test "titlecase: the first character's title mapping, the rest as it is" {
+    try expectCase("World", "world", .title, true);
+    try expectCase("HELLO wORLD", "hELLO wORLD", .title, true);
+    try expectCase("1st", "1st", .title, true);
+    try expectCase("Élan é", "élan é", .title, true);
+    try expectCase("ǅx", "ǆx", .title, true);
+    try expectCase("Ssa", "ßa", .title, true);
+    try expectCase("", "", .title, true);
+}
+
+test "case mapping: a byte that starts no sequence passes as it is" {
+    try expectCase("A\xffB", "a\xffb", .upper, false);
+    try expectCase("A\xc3B", "a\xc3b", .upper, false);
+    try expectCase("\xed\xa0\x80", "\xed\xa0\x80", .upper, false);
+}
+
+test "decodeSequence and encodeScalar agree with std.unicode on every scalar value" {
+    var cp: u21 = 0;
+    while (cp <= 0x10FFFF) : (cp += 1) {
+        if (cp >= 0xD800 and cp <= 0xDFFF) continue;
+        var want: [4]u8 = undefined;
+        const n = try std.unicode.utf8Encode(cp, &want);
+        var got: [4]u8 = undefined;
+        try std.testing.expectEqualSlices(u8, want[0..n], encodeScalar(&got, cp));
+        try std.testing.expectEqual(n, sequenceLength(want[0]));
+        try std.testing.expectEqual(@as(u32, cp), decodeSequence(want[0..n]));
+        if (cp == 0x10FFFF) break;
+    }
 }
 
 test "trim: each direction" {

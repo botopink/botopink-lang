@@ -435,7 +435,7 @@ const Body = struct {
                     const name = try b.freshLabel();
                     try b.labels.append(b.ar, name);
                     var inner: std.ArrayListUnmanaged(ast.Line) = .empty;
-                    if (try b.seq(indent + 2, &inner) != .end) return error.Malformed;
+                    if (try b.seq(deeper(indent, 2), &inner) != .end) return error.Malformed;
                     _ = b.labels.pop();
                     try lines.append(b.ar, .{ .indent = indent, .instr = .{ .block = .{
                         .kind = if (op == 0x02) .block else .loop,
@@ -451,11 +451,11 @@ const Body = struct {
                     const name = try b.freshLabel();
                     try b.labels.append(b.ar, name);
                     var then: std.ArrayListUnmanaged(ast.Line) = .empty;
-                    const how = try b.seq(indent + 4, &then);
+                    const how = try b.seq(deeper(indent, 4), &then);
                     var els: ?ast.If.Arm = null;
                     if (how == .@"else") {
                         var e: std.ArrayListUnmanaged(ast.Line) = .empty;
-                        if (try b.seq(indent + 4, &e) != .end) return error.Malformed;
+                        if (try b.seq(deeper(indent, 4), &e) != .end) return error.Malformed;
                         els = .{ .seq = .{ .lines = e.items, .stack = if (result) |t| .{ .value = t } else .none } };
                     }
                     _ = b.labels.pop();
@@ -549,6 +549,16 @@ const Body = struct {
     }
 };
 
+/// The column a nested line sits at: two or four deeper, but never past
+/// `max_indent` — LLVM lowers a `switch` (the case tables, decision 443) to
+/// hundreds of nested blocks, and a column per level wrote a `.wat` of a
+/// megabyte of spaces for one `toUpper`.
+fn deeper(indent: u8, by: u8) u8 {
+    return @min(indent +| by, max_indent);
+}
+
+const max_indent = 40;
+
 /// A load or store opcode (0x28 … 0x3E) as its `MemArg`.
 fn memInstr(op: u8, offset: u32) ast.Instr {
     const L = struct { ty: ast.ValType, width: ast.Width = .full, signed: bool = false };
@@ -636,7 +646,7 @@ fn decode(ar: std.mem.Allocator, m: *const Module, names: []const []const u8, id
 
 /// `l` and everything nested in it `by` columns further in.
 fn reindent(l: *ast.Line, by: u8) void {
-    l.indent += by;
+    l.indent = deeper(l.indent, by);
     switch (l.instr) {
         .block => |*blk| for (@constCast(blk.body.lines)) |*x| reindent(x, by),
         .@"if" => |*n| {

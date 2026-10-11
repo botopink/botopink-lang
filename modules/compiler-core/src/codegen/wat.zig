@@ -1519,6 +1519,8 @@ pub const std_method_exports = [_]struct { behavior: []const u8, method: []const
     .{ .behavior = "String", .method = "replace", .export_name = "text.replace" },
     .{ .behavior = "String", .method = "replaceAll", .export_name = "text.replaceAll" },
     .{ .behavior = "String", .method = "fromCodepoint", .export_name = "text.fromCodepoint" },
+    .{ .behavior = "String", .method = "toUpper", .export_name = "text.toUpper" },
+    .{ .behavior = "String", .method = "toLower", .export_name = "text.toLower" },
 };
 
 /// The std-wasm function `behavior.method`'s `std:` cell names, or null.
@@ -9672,17 +9674,8 @@ const Emitter = struct {
         const recv = cc.receiver.?.*;
         const name: []const u8 = cc.callee;
         const eq = std.mem.eql;
-        const b = self.builder();
         if (eq(u8, name, "slice")) return self.lowerStrSlice(cc);
         try self.lowerCoerced(recv, "i32");
-        if (eq(u8, name, "toUpper") or eq(u8, name, "toLower")) {
-            const upper = eq(u8, name, "toUpper");
-            try self.emit(try self.constInt(if (upper) @as(i32, 'a') else 'A'));
-            try self.emit(try self.constInt(if (upper) @as(i32, 'z') else 'Z'));
-            try self.emit(try self.constInt(if (upper) @as(i32, -32) else 32));
-            try self.emit(b.helper(.str_case));
-            return;
-        }
         if (eq(u8, name, "toString")) return; // already the string
         // Decision 442 (2) — every other method is std-wasm's, the function
         // `primitives.bp`'s `std:` cell names (`std_method_exports`), its

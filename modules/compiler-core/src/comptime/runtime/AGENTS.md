@@ -59,11 +59,12 @@ second, which has nothing to pin.
    difference is layout, not a failure. A body reaches `~p` only through `'__bp_text'/1` (a
    non-binary term as text, `../../codegen/erlang.zig`), and no fixture or library body formats a
    term that wide.
-3. **No Unicode case mapping.** `string:uppercase` / `lowercase` of a non-ASCII letter raises
-   `{bp_wat_runtime, <<"string case mapping of a non-ASCII character">>}` instead of answering
-   (std-wasm's `text.caseMap` refuses it) — fixture `limit 3`.
-4. **No integer beyond 64 bits.** An `+`, `-` or `*` that overflows `i64`, or a float truncated
-   past it, raises `{bp_wat_runtime, <<"integer beyond 64 bits (a bignum)">>}` — fixture `limit 4`.
+3. **No integer beyond 64 bits.** An `+`, `-` or `*` that overflows `i64`, or a float truncated
+   past it, raises `{bp_wat_runtime, <<"integer beyond 64 bits (a bignum)">>}` — fixture `limit 3`.
+
+Case mapping is no limit since decision 443: `string:uppercase` / `lowercase` / `titlecase` answer
+over all of Unicode through std-wasm's `text.caseInto` — OTP's answer (the full mappings, no final
+sigma) — fixture `Unicode case mapping answers OTP's`.
 
 The core-module subset (`wat/AGENTS.md`: a linked module imports nothing — no WASI, no network, no
 timer) holds too: comptime asks no I/O of the host.

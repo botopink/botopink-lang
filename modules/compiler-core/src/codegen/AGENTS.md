@@ -2876,7 +2876,7 @@ first three are now enforced by the model, not by discipline:
   what wasm lowers and what each leaves on the stack — `exprTail`,
   `wasmTypeOf`, `isStringExpr`, `isBoolExpr` and `isArrayExpr` all read it. A
   method lowers to an opcode (`f64.floor`, `i32.rem_s`), a runtime helper
-  (`$__str_case`), a std-wasm function (`array.joinInts`, `text.split`, …), or — for `map`/`filter`/`forEach`/
+  a std-wasm function (`array.joinInts`, `text.split`, `text.toUpper`, …), or — for `map`/`filter`/`forEach`/
   `fold`/`all`/`any`/`count`/`findIndex` over a literal lambda — a counted walk
   of the array blob with the lambda's parameters bound to locals and its body
   inlined (`lowerArrayHof`). `xs.push(v)` rebinds the receiver (a name or a

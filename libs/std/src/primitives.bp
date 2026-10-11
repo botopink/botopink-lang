@@ -235,12 +235,18 @@ behavior String {
     #[@External.Wasm("std:text.split")]
     fn split(self: Self, sep: string) -> string[];
 
+    // Over all of Unicode on every target (decision 443): the full mappings
+    // (`"ß"` is `"SS"`). On wasm std-wasm's, which answers OTP's where a JS
+    // engine differs: no final sigma (`"ΟΔΟΣ".toLower()` is `"οδοσ"`, commonJS
+    // `"οδος"`).
     #[@External.Erlang("string", "uppercase")]
     #[@External.Node("toUpperCase")]
+    #[@External.Wasm("std:text.toUpper")]
     fn toUpper(self: Self) -> string;
 
     #[@External.Erlang("string", "lowercase")]
     #[@External.Node("toLowerCase")]
+    #[@External.Wasm("std:text.toLower")]
     fn toLower(self: Self) -> string;
 
     #[@External.Erlang("(string:find($0, $1) =/= nomatch)")]

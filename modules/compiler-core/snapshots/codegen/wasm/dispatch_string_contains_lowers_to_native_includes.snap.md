@@ -288,10 +288,10 @@ fn main() {
   ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
   (global $__std_sp (mut i32) (i32.const 1360))
   ;; __std_f29 — from std_wasm.wasm (sha256 61b86fc4b3a0)
-  ;; __std_f66 — from std_wasm.wasm (sha256 24e667286185)
-  ;; __std_f68 — from std_wasm.wasm (sha256 aba5f076b057)
-  ;; __std_f76 — from std_wasm.wasm (sha256 e1946fb8ca48)
-  ;; std:text.contains — from std_wasm.wasm (sha256 79a702eb496b)
+  ;; __std_f72 — from std_wasm.wasm (sha256 733208c24c47)
+  ;; __std_f73 — from std_wasm.wasm (sha256 aba5f076b057)
+  ;; __std_f83 — from std_wasm.wasm (sha256 58e846396d89)
+  ;; std:text.contains — from std_wasm.wasm (sha256 c2688fe60496)
 )
 ```
 

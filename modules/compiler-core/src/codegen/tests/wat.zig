@@ -839,7 +839,8 @@ test "wat: tuple ---- an element prints by its shape, positional and labelled" {
 
 // ── step 6: the string case primitives ──────────────────────────────────────
 
-// `"aB".toUpper()` reaches `$__str_case` on wasm. The host spellings
+// `"aB".toUpper()` reaches std-wasm's `text.toUpper` on wasm (decision 443:
+// over all of Unicode). The host spellings
 // (`toUpperCase`, JavaScript's own, which `primitives.bp` gives `toUpper`
 // through `#[@External.Node("toUpperCase")]`) used to be lowered here too; the
 // checker refuses them now (pending 0203-a, answered (b):
@@ -2059,6 +2060,22 @@ test "wat: std-wasm ---- a std: binding, trim and a float's text answer std-wasm
         \\[a ]
         \\[ a]
         \\2.5 100.0 1.0e22
+        \\
+    );
+}
+
+// Decision 443 — case mapping over all of Unicode, std-wasm's: OTP's answer
+// where a JS engine's differs. No final sigma (`ΟΔΟΣ` lowers to `οδοσ`; node
+// answers `οδος`), the unconditional full mappings (`ß` → `SS`).
+test "wat: std-wasm ---- toUpper and toLower answer OTP's over all of Unicode" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\fn main() {
+        \\    @print("straße é ǆ ﬁ".toUpper());
+        \\    @print("ΟΔΟΣ ÉCOLE".toLower());
+        \\}
+    ,
+        \\STRASSE É Ǆ FI
+        \\οδοσ école
         \\
     );
 }

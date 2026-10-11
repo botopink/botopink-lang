@@ -18,7 +18,7 @@ std/
 │   ├── primitives_test.bp   ← tests of the `primitives.bp` interfaces, `String.parseInt` / `parseFloat`, the integer methods past 2^53 and the conversions included (green on commonJS + erlang)
 │   ├── primitives_gaps_test.bp ← primitive tests that hit a compiler gap, each gap named with its owning front
 │   └── unicode_test.bp      ← `unicode.normalize` against `tools/unicode-gen/NormalizationTest.txt`, every line of its six parts (§ unicode)
-├── tools/unicode-gen/       ← the generator of `src/unicode_tables.bp` (Zig, run by `zig build gen-unicode` — not part of the package) and the vendored Unicode data it reads (§ unicode)
+├── tools/unicode-gen/       ← the generator of `src/unicode_tables.bp` and of std-wasm's `case_tables.zig` (Zig, run by `zig build gen-unicode` — not part of the package) and the vendored Unicode data it reads (§ unicode)
 └── src/
     ├── root.bp              ← module-tree root: nineteen `pub mod` lines — the seventeen root modules, `pub mod io;`, `pub mod testing;` (decision 106)
     │                        — core files flattened into the global type env (`std_core_files` in build.zig):
@@ -305,11 +305,17 @@ for one function — and the file is written at the formatter's canonical form.
   `zig build gen-unicode` (registered by one line of the root `build.zig`, which
   calls `tools/unicode-gen/build_step.zig`); nothing else of the build runs it:
   the generated file is committed and embedded like any std module. It reads
-  `UnicodeData.txt`, `CompositionExclusions.txt` and
-  `DerivedNormalizationProps.txt`, vendored beside it, and refuses to write
-  unless every vendored file matches its SHA-256 in `tools/unicode-gen/manifest.json`
-  and the exclusions it derives (the listed ones, the singletons, the
-  non-starter decompositions) are exactly `Full_Composition_Exclusion`.
+  `UnicodeData.txt`, `CompositionExclusions.txt`,
+  `DerivedNormalizationProps.txt` and `SpecialCasing.txt`, vendored beside it,
+  and refuses to write unless every vendored file matches its SHA-256 in
+  `tools/unicode-gen/manifest.json` and the exclusions it derives (the listed
+  ones, the singletons, the non-starter decompositions) are exactly
+  `Full_Composition_Exclusion`. It writes a second file from the same data:
+  std-wasm's `modules/std-wasm/src/case_tables.zig` — the simple case mappings
+  (`UnicodeData.txt` fields 12–14) and the unconditional full ones
+  (`SpecialCasing.txt`), as Zig `switch`es, which a `--target wasm` program's
+  `toUpper` / `toLower` and the comptime's `string:uppercase` / `lowercase` /
+  `titlecase` answer by (decision 443; `modules/std-wasm/AGENTS.md`).
 - **The pinned version** — Unicode 17.0.0 (`manifest.json` `version`, `unicode_tables.version()`).
 - **The conformance test** — `test/unicode_test.bp` reads the vendored
   `NormalizationTest.txt` (hashed by the same manifest) and checks every line of
@@ -317,7 +323,7 @@ for one function — and the file is written at the formatter's canonical form.
   `botopink test [--target erlang|beam] --filter NormalizationTest` reads
   `7 passed, 0 failed`. The file's other invariant (every code point not in part
   1 is its own normal form) is not walked: 1.1 million code points × 4 forms.
-- **A Unicode bump** is one commit: replace the four `.txt` files with the new
+- **A Unicode bump** is one commit: replace the five `.txt` files with the new
   version's (`https://www.unicode.org/Public/<version>/ucd/`), write their
   SHA-256 and the version into `manifest.json`, run `zig build gen-unicode`,
   update the version and the per-part line counts `test/unicode_test.bp` pins,

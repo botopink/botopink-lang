@@ -27,6 +27,7 @@ pub const text = @import("text.zig");
 pub const number = @import("number.zig");
 pub const array = @import("array.zig");
 pub const bigint = @import("bigint.zig");
+pub const case_tables = @import("case_tables.zig");
 
 /// A botopink type an export takes or answers. A `string` crosses as the
 /// program's string (the address of its `u32` length, the bytes behind it) in
@@ -119,6 +120,8 @@ pub const exports = [_]Export{
     .{ .name = "text.replace", .params = &.{ .string, .string, .string }, .result = .string },
     .{ .name = "text.replaceAll", .params = &.{ .string, .string, .string }, .result = .string },
     .{ .name = "text.fromCodepoint", .params = &.{.i32}, .result = .string },
+    .{ .name = "text.toUpper", .params = &.{.string}, .result = .string },
+    .{ .name = "text.toLower", .params = &.{.string}, .result = .string },
 };
 
 /// A wasm value type a program function takes or answers.

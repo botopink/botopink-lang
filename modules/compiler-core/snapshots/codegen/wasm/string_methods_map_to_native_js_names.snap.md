@@ -23,16 +23,10 @@ fn main() {
     i32.const 256
     local.set $s
     local.get $s
-    i32.const 97
-    i32.const 122
-    i32.const -32
-    call $__str_case
+    call $__std_text_toUpper
     call $__print_str
     local.get $s
-    i32.const 65
-    i32.const 90
-    i32.const 32
-    call $__str_case
+    call $__std_text_toLower
     call $__print_str
     local.get $s
     i32.const 272
@@ -299,59 +293,6 @@ fn main() {
     global.set $__heap_ptr
     local.get $p
   )
-  (func $__str_case (param $s i32) (param $lo i32) (param $hi i32) (param $delta i32) (result i32)
-    (local $n i32) (local $p i32) (local $i i32) (local $ch i32)
-    local.get $s
-    i32.load
-    local.set $n
-    local.get $n
-    i32.const 4
-    i32.add
-    call $__alloc
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.store
-    (block $brk
-      (loop $cont
-        local.get $i
-        local.get $n
-        i32.ge_u
-        br_if $brk
-        local.get $s
-        local.get $i
-        i32.add
-        i32.load8_u offset=4
-        local.set $ch
-        local.get $ch
-        local.get $lo
-        i32.ge_u
-        local.get $ch
-        local.get $hi
-        i32.le_u
-        i32.and
-        (if
-          (then
-            local.get $ch
-            local.get $delta
-            i32.add
-            local.set $ch
-          )
-        )
-        local.get $p
-        local.get $i
-        i32.add
-        local.get $ch
-        i32.store8 offset=4
-        local.get $i
-        i32.const 1
-        i32.add
-        local.set $i
-        br $cont
-      )
-    )
-    local.get $p
-  )
   ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
   (global $__std_sp (mut i32) (i32.const 1440))
   ;; __std_f3 — from std_wasm.wasm (sha256 b4b6f06748d6)
@@ -362,11 +303,18 @@ fn main() {
   ;; std:text.slice — from std_wasm.wasm (sha256 f25f5dcea325)
   ;; __std_f60 — from std_wasm.wasm (sha256 5ac39cdc3016)
   ;; __std_f61 — from std_wasm.wasm (sha256 cda2fb2bf3e4)
-  ;; __std_f66 — from std_wasm.wasm (sha256 24e667286185)
-  ;; __std_f68 — from std_wasm.wasm (sha256 aba5f076b057)
-  ;; __std_f86 — from std_wasm.wasm (sha256 0fd121444c0f)
-  ;; std:text.split — from std_wasm.wasm (sha256 b2acce74f14d)
-  ;; __std_f88 — from std_wasm.wasm (sha256 9a61b978847a)
+  ;; std:text.toLower — from std_wasm.wasm (sha256 e1bd0c8ad486)
+  ;; __std_f63 — from std_wasm.wasm (sha256 fca14a252eac)
+  ;; __std_f64 — from std_wasm.wasm (sha256 2f81dc7302bb)
+  ;; __std_f65 — from std_wasm.wasm (sha256 38e98c1edeed)
+  ;; __std_f66 — from std_wasm.wasm (sha256 96b721b5358a)
+  ;; __std_f67 — from std_wasm.wasm (sha256 30c514d3cfe8)
+  ;; std:text.toUpper — from std_wasm.wasm (sha256 29eab3752faf)
+  ;; __std_f72 — from std_wasm.wasm (sha256 733208c24c47)
+  ;; __std_f73 — from std_wasm.wasm (sha256 aba5f076b057)
+  ;; __std_f93 — from std_wasm.wasm (sha256 4e5f6d92c47f)
+  ;; std:text.split — from std_wasm.wasm (sha256 46268780d1fc)
+  ;; __std_f95 — from std_wasm.wasm (sha256 81c93a8cb176)
 )
 ```
 
