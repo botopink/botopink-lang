@@ -1449,6 +1449,23 @@ the four targets (wasm printed `é` unchanged at exit 0). The one place the targ
 sigma (a JS engine lowers a word-final `Σ` to `ς`; OTP, and so erlang, beam and wasm, to `σ`), is
 not printed here — one `.out` cannot hold both —; `codegen/tests/wat.zig` pins wasm's.
 
+144 B-00k (the B-00 group's Conformance step, decisions 458, 459) adds four cells, each red on the
+group's parent `239f789f`: `run/comptime_text_one_answer` (decisions 434 (5), 441, 443 — a text
+computed at comptime is std-wasm's on every target: `5.0`, `1.0e21`, `1.0e-7`, `trim` keeping a NBSP,
+`é` → `É`, `straße` → `STRASSE`, `ΟΔΟΣ` → `οδοσ` — the final sigma that one runtime `.out` cannot
+hold; the parent's wat comptime refused the non-ASCII case mapping on commonJS and wasm),
+`run/comptime_erlang_cell_never_runs_at_build` (decision 452 — `tag`'s Node, Erlang and `fn:` cells
+answer three texts, and the decorator's call prints `Point:fn` on the four targets; the parent's BEAM
+comptime printed `Point:erlang` on erlang and beam), `reject/comptime_expression_erlang_cell_never_runs`
+(decision 452 from a `comptime` expression rather than a decorator — an Erlang-only host function
+refused `comptime-host-cell-unavailable` at the `comptime`; the parent ran its Erlang cell on erlang
+and beam and refused it with decision 341's message on the wat runtime) and `modules/package_named_std` (decision 453 — a
+project whose `botopink.json` names itself `std` refused at the name, `botopink.json:1:3`, on the four
+targets by a `<target>.expect` each; the parent ran it). A wasm program's own float text, `trim` and
+final sigma (decisions 441, 443) and `NaN` / `Infinity` (444) part from commonJS's — or, for `NaN`,
+from erlang's abort — so they wait for decision 457's per-target answer (step H); `codegen/tests/wat.zig`
+pins them meanwhile, all but the NBSP `trim` keeps on wasm.
+
 `04-js` steps 9 and 10 (decision 319: `i64` / `u64` hold their full range on commonJS too, a number
 below 2^53 and a `BigInt` beyond; decision 320: a string index counts codepoints there) add
 `run/i64_full_range` (past 2^53 both ways, `2^63 − 1`, `−2^63`, `/` `%` unary `-` `+=` and `==` across
