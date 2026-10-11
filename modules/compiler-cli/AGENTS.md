@@ -196,7 +196,8 @@ shared `manifest` model (`modules/manifest/src/root.zig`, schema in
 `docs/botopink-json.md`) is the one parser: `config.zig` projects it into
 `ProjectConfig` (`name`/`version`/`target`/`entry`/`dependencies`/`files`, the
 enclosing `workspace`) and `libs.zig` reads a dependency's `src`/`files` from
-it. The bpmp-facing `botopink` (compiler version constraint) and `requires`
+it. A manifest named `std` is refused (decision 453) unless
+the project directory is the bundled `libs/std` (`manifest.isBundledStd`, asked by `config.load`; contract case "a package named std is refused at its manifest" in `tests/cli_contract.sh`). The bpmp-facing `botopink` (compiler version constraint) and `requires`
 (per-dep version constraint) pass through untouched. A refused manifest — not
 JSON, the retired string-array `dependencies`, a dependency without a source, a
 workspace where a package is needed — is a located diagnostic printed by

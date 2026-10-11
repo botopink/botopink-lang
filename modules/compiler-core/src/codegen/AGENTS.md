@@ -2823,7 +2823,7 @@ first three are now enforced by the model, not by discipline:
   stashes the base in a `$__mem{n}` local; enum payloads are `[tag, …fields]`.
 - **Strings** are length-prefixed: the value is a pointer to a 4-byte length
   word followed by the bytes (`internString`). `+` → `$__str_concat`, `==`/`!=`
-  → `$__str_eq`, slicing → `$__str_slice`. These fire on *any* string-typed
+  → `$__str_eq`, slicing → std-wasm's `text.slice`. These fire on *any* string-typed
   operand (`isStringExpr`: literals, `string` params/locals/globals, fns
   declared `-> string`), not only on literal-vs-literal — when they fired only
   for literals, `s == "yes"` compared **pointers** (passing by accident because

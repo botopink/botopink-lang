@@ -17,22 +17,19 @@
 //! - **A bodyless host function travels with its cells** — this module's own
 //!   (`declare fn`), an imported one, a std one — and with the function its
 //!   `@External.Wasm("fn:…")` binding names (`hostSupport`).
-//! - **The comptime runtime resolves each host function in order** (decision 434
-//!   (4), `forRuntime`): its std-wasm implementation — the export its
+//! - **The comptime runtime resolves each host function in order** (decisions
+//!   434 (4), 452, `forRuntime`): its std-wasm implementation — the export its
 //!   `@External.Wasm("std:<module>.<function>")` cell names (decision 440 (3),
 //!   `stdCell`, `servedByStdWasm`; there is no match by name) —, else the
-//!   beam-to-wasm translation of its `@External.Erlang` cell (`erlangCellOf`,
-//!   `runtime/wat/cells.zig`, `callingCell`), else the botopink function its
-//!   `@External.Wasm("fn:…")` binding names (`callOf`); none → refused naming
-//!   the function and the three sources (`comptime-host-cell-unavailable`).
-//!   An Erlang cell beam-to-wasm does not convert is refused at the call,
-//!   naming what is missing (`comptime-beam-call-not-converted`): the
-//!   `fn:` cell after it is not tried (decision 439). `@External.Node` never
-//!   serves: there is no Node at comptime.
+//!   botopink function its `@External.Wasm("fn:…")` binding names (`callOf`);
+//!   none → refused naming both (`comptime-host-cell-unavailable`).
+//!   `@External.Erlang` never runs at build: the cell binds the erlang and
+//!   beam targets only, and nothing in botopink calls beam-to-wasm (452).
+//!   `@External.Node` never serves: there is no Node at comptime.
 //!
 //! What a decorator may call is decided when its package is compiled
-//! (`checkDecorators`, decisions 341, 434): a host function it reaches needs
-//! one of the three sources (`unservedReason`), or the call is refused,
+//! (`checkDecorators`, decisions 341, 434, 452): a host function it reaches
+//! needs one of the two cells (`unservedReason`), or the call is refused,
 //! located, naming the function and what is missing. The answer is one for
 //! every target, whatever the package's `targets`.
 const std = @import("std");
@@ -43,7 +40,6 @@ const blockEval = @import("./block_eval.zig");
 const diagnostics = @import("./diagnostics.zig");
 const validation = @import("./error.zig");
 const stdWasm = @import("std_wasm");
-const cells = @import("runtime/wat/cells.zig");
 
 pub const Error = error{OutOfMemory};
 
@@ -424,10 +420,9 @@ pub const Selected = union(enum) {
 
 /// `decls` (a comptime module's) with each host function as the comptime
 /// runtime — wasm, for every target (decision 434) — runs it, by the first of
-/// its sources present (434 (4)): its std-wasm implementation, the
-/// beam-to-wasm translation of its Erlang / Beam cell, the botopink function
-/// its `@External.Wasm("fn:…")` binding names; none → refused. An Erlang cell
-/// beam-to-wasm does not convert is refused, its `fn:` cell not tried (439).
+/// its cells present (434 (4), 452): its std-wasm implementation, the botopink
+/// function its `@External.Wasm("fn:…")` binding names; none → refused. An
+/// `@External.Erlang` cell never runs at build.
 pub fn forRuntime(arena: std.mem.Allocator, decls: []const ast.DeclKind) Error!Selected {
     const out = try arena.dupe(ast.DeclKind, decls);
     for (out) |*d| {
@@ -440,51 +435,19 @@ pub fn forRuntime(arena: std.mem.Allocator, decls: []const ast.DeclKind) Error!S
             },
             .unknown => |name| return .{ .refused = try noStdExport(arena, f, name) },
         };
-        // beam-to-wasm: the Erlang (or Beam) cell, translated — or refused.
-        if (try erlangCellOf(arena, f)) |cell| switch (cell) {
-            .ok => |module| {
-                d.* = .{ .@"fn" = try callingCell(arena, f, module) };
-                continue;
-            },
-            .refused => |why| return .{ .refused = try unavailable(arena, f, why) },
-        };
         // Its `@External.Wasm("fn:…")` cell.
-        const b = wasmBinding(f) orelse return .{ .refused = try unavailable(arena, f, null) };
-        if (!std.mem.startsWith(u8, b.text, "fn:")) return .{ .refused = try unavailable(arena, f, null) };
+        const b = wasmBinding(f) orelse return .{ .refused = try unavailable(arena, f) };
+        if (!std.mem.startsWith(u8, b.text, "fn:")) return .{ .refused = try unavailable(arena, f) };
         d.* = .{ .@"fn" = try callOf(arena, f, b.text["fn:".len..]) };
     }
     return .{ .ok = out };
 }
 
-/// The beam-to-wasm translation of `f`'s Erlang cell — an
-/// `@External.Erlang` template or `module`/`function` pair — or null when it
-/// has none.
-fn erlangCellOf(arena: std.mem.Allocator, f: ast.FnDecl) Error!?cells.Cell {
-    const ref = f.externalFor("erlang") orelse return null;
-    if (ref.module.len == 0) return try cells.ofTemplate(ref.symbol, f.params.len);
-    return try cells.ofCall(arena, ref.module, ref.symbol, f.params.len);
-}
-
-/// `f` as a call of its translated cell, `<module>:t(…)`.
-fn callingCell(arena: std.mem.Allocator, f: ast.FnDecl, module: []const u8) Error!ast.FnDecl {
-    const args = try arena.alloc([]const u8, 2);
-    args[0] = try std.fmt.allocPrint(arena, "\"{s}\"", .{module});
-    args[1] = "\"t\"";
-    const ann = try arena.alloc(ast.Annotation, 1);
-    ann[0] = .{ .name = "External.Erlang", .args = args, .is_builtin = true };
-    var out = f;
-    out.annotations = ann;
-    return out;
-}
-
-/// The refusal of a host function none of the three sources serves at
-/// comptime (decision 434 (4)): what beam-to-wasm did not convert, when its
-/// Erlang cell was the source tried (decision 439: never a fall to its `fn:`
-/// cell); else the three sources, named.
-fn unavailable(arena: std.mem.Allocator, f: ast.FnDecl, not_converted: ?[]const u8) Error![]const u8 {
+/// The refusal of a host function neither of the two comptime cells serves
+/// (decisions 434 (4), 452), naming both.
+fn unavailable(arena: std.mem.Allocator, f: ast.FnDecl) Error![]const u8 {
     const name = try display(arena, f.name);
-    if (not_converted) |why| return std.fmt.allocPrint(arena, "{s}: beam-to-wasm does not convert {s} — reached at comptime from `{s}`'s @External.Erlang cell (decisions 434, 438, 439)", .{ diagnostics.comptime_beam_call_not_converted, why, name });
-    return std.fmt.allocPrint(arena, "{s}: `{s}` is reached at comptime and has no std-wasm implementation, no @External.Erlang cell for beam-to-wasm, and no @External.Wasm(\"fn:…\") cell — the three sources the comptime runtime answers by (decision 434)", .{ diagnostics.comptime_host_cell_unavailable, name });
+    return std.fmt.allocPrint(arena, "{s}: `{s}` is reached at comptime and has no `@External.Wasm(\"std:…\")` cell (std-wasm) and no `@External.Wasm(\"fn:…\")` cell — the two cells the comptime runtime answers by; an `@External.Erlang` cell never runs at build (decisions 434, 452)", .{ diagnostics.comptime_host_cell_unavailable, name });
 }
 
 /// What `f`'s `@External.Wasm("std:<module>.<function>")` cell names
@@ -551,25 +514,21 @@ fn callOf(arena: std.mem.Allocator, f: ast.FnDecl, target: []const u8) Error!ast
 // ── what a decorator may call (decisions 341, 434) ──────────────────────────
 
 /// Why the host function `f` cannot run at comptime, or null when one of the
-/// three sources serves it (decision 434 (4)): std-wasm, the beam-to-wasm
-/// translation of its Erlang / Beam cell, its `@External.Wasm("fn:…")` cell.
+/// two cells serves it (decisions 434 (4), 452): its `std:` cell (std-wasm),
+/// its `@External.Wasm("fn:…")` cell.
 /// The answer is one for every target.
 pub fn unservedReason(arena: std.mem.Allocator, f: ast.FnDecl) Error!?[]const u8 {
     if (stdCell(f)) |cell| switch (cell) {
         .ok => return null,
         .unknown => |name| return try noStdExport(arena, f, name),
     };
-    if (try erlangCellOf(arena, f)) |cell| switch (cell) {
-        .ok => return null,
-        .refused => |why| return try unavailable(arena, f, why),
-    };
     if (wasmBinding(f)) |b| if (std.mem.startsWith(u8, b.text, "fn:")) return null;
-    return try unavailable(arena, f, null);
+    return try unavailable(arena, f);
 }
 
 /// Refuses, at the call, a host function a decorator of this module reaches
 /// — in its body, in a function of this module it calls, or through a std
-/// function or an imported one — that none of the three comptime sources
+/// function or an imported one — that neither of the two comptime cells
 /// serves (decisions 341, 434), when the package itself is compiled. `decls`
 /// is the module as parsed; `env` holds its imports' closures
 /// (`Env.importedFnSupport`).
@@ -630,7 +589,7 @@ fn paramNamed(f: ast.FnDecl, name: []const u8) bool {
 }
 
 fn located(msg: []const u8, loc: ast.Loc) validation.TypeError {
-    return validation.TypeError.custom(msg, "A host function a decorator reaches runs at comptime on the wasm runtime, for every target (decision 434): give it an `@External.Erlang` cell beam-to-wasm converts or an `@External.Wasm(\"fn:…\")` cell naming a botopink body. `@External.Node` never serves a decorator: there is no Node at comptime.").withLoc(loc);
+    return validation.TypeError.custom(msg, "A host function a decorator reaches runs at comptime on the wasm runtime, for every target (decisions 434, 452): give it an `@External.Wasm(\"std:…\")` cell (std-wasm) or an `@External.Wasm(\"fn:…\")` cell naming a botopink body. An `@External.Erlang` cell never runs at build. `@External.Node` never serves a decorator: there is no Node at comptime.").withLoc(loc);
 }
 
 /// The std function `name` (carried) and every one it reaches: the reason

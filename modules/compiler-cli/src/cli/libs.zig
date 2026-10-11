@@ -2327,7 +2327,9 @@ test "loadOne: std resolves from the bundled root, rakun from the sibling root; 
 
     test_scratch.remove(io, "loadone");
     defer test_scratch.remove(io, "loadone");
-    // `std` is the bundled lib (`libs/std`); `rakun` is a sibling project.
+    // `std` is the bundled lib (`libs/std`, of a checkout that holds
+    // `modules/compiler-core` — decision 453); `rakun` is a sibling project.
+    try writeFileP(io, test_scratch.path(io, "loadone/ws/repository/botopink-lang/modules/compiler-core/src/root.zig"), "");
     try writeFileP(io, test_scratch.path(io, "loadone/ws/repository/botopink-lang/libs/std/botopink.json"),
         \\{ "name": "std", "src": "src/", "files": ["math.bp"] }
     );

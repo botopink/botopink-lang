@@ -19,7 +19,7 @@
 
 #[@External.Node("Math", "random")]
 #[@External.Erlang("rand", "uniform")]
-#[@External.Wasm("wasi:random_f64")]
+#[@External.Wasm("std:random.float")]
 pub declare fn float() -> f64;
 
 // Seed the Node-side userland PRNG (Mulberry32) shipped via the sidecar

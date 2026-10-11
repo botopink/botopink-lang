@@ -3,10 +3,8 @@
 //!
 //! Its input is an `@External.Erlang` template's one-function module
 //! (`erl_template.zig`): the beam target compiles every template through it
-//! into a helper of the module (BR5, `../beam_asm.zig`), and the comptime
-//! runtime assembles a host function's Erlang cell through it into the `.beam`
-//! beam-to-wasm translates (decision 434 (3),
-//! `comptime/runtime/wat/cells.zig`). It was the comptime BEAM runtime's
+//! into a helper of the module (BR5, `../beam_asm.zig`); the comptime runtime
+//! no longer reads a host function's Erlang cell (decision 452). It was the comptime BEAM runtime's
 //! lowering (front 14 step 3) until decision 434 deleted that runtime; the
 //! reader is the wat comptime runtime's, so there is one Erlang front end.
 //!

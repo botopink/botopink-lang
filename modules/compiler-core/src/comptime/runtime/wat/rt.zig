@@ -2347,6 +2347,13 @@ export fn rt_std_random__seed(s: T) T {
     return a_ok;
 }
 
+/// `random.float` is an unseeded draw (decision 456): at build it is refused
+/// as `seededFloat` is before any seed, never `comptime-host-cell-unavailable`.
+export fn rt_std_random__float() T {
+    raiseWat("an unseeded draw: a build has no entropy, call `random.seed` first (decision 451)");
+    return &nil_cell;
+}
+
 export fn rt_std_random__seededFloat() T {
     const v = random_stream.next() orelse {
         raiseWat("an unseeded draw: a build has no entropy, call `random.seed` first (decision 451)");

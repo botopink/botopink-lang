@@ -51,6 +51,7 @@ std-wasm/
 | `text.fromCodepoint` | `(i32) -> string` | `String.fromCodepoint` — no scalar value traps |
 | `text.toUpper`, `text.toLower` | `(string) -> string` | `String.toUpper` / `toLower` — over all of Unicode, OTP's answer (below) |
 | `random.seed` | `(i32) -> void` | `io.random.seed` — the stream restarts from the word's bits |
+| `random.float` | `() -> f64` | `io.random.float` (decision 456) — an unseeded draw: in a program the host's entropy (`env.bp_random_f64`, as `seededFloat` before a seed); at comptime always refused with decision 451's message, never `comptime-host-cell-unavailable` (`rt_std_random__float`) |
 | `random.seededFloat` | `() -> f64` | `io.random.seededFloat` — the next draw in `[0.0, 1.0)`; before any seed the host's entropy in a program, refused at comptime (below) |
 
 The types a `std:` cell can spell (`Type`): `string`, `f64`, `i32`, `i64`, `bool`, `void`,
@@ -126,8 +127,8 @@ seed answers the same draws on every build and every target.
     `bp_std_wasm` family (`std_wasm_bifs`) to the exports. A comptime `@compileError` in `rt.zig`
     refuses an entry without its export;
   - the OTP BIFs the comptime module's primitive methods call — `string:uppercase/1`,
-    `lowercase/1`, `titlecase/1` (reached by a `.beam` beam-to-wasm translates: its `erlc`
-    fixture, decision 438 (2)), `trim/1,2`, `find/2`, `prefix/2`, `split/2,3`, `slice/2,3`, `reverse/1`,
+    `lowercase/1`, `titlecase/1` (reached by beam-to-wasm's `erlc`
+    fixture, decision 438 (2) — a standalone utility, decision 452), `trim/1,2`, `find/2`, `prefix/2`, `split/2,3`, `slice/2,3`, `reverse/1`,
     `length/1` (graphemes), `binary:replace/3,4`, `float_to_binary/2` (`[short]`), and the `~p` /
     `json:encode` float text — answer through `text` and `number`.
 - **Read by compiler-core** (`core_mod`, `core_test_mod`, the browser build's `web_core_mod`):

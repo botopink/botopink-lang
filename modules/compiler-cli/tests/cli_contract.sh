@@ -268,6 +268,16 @@ expect_out '"otp" names 29 here, but 28 in' "the disagreement is refused"
 expect_out "otp-dep/botopink.json:1:" "located at the dependency's pin"
 expect_out "but 28 in botopink.json" "naming the project's manifest"
 
+# The package name `std` is the bundled standard library's (decision 453).
+echo "==> a package named std is refused at its manifest"
+P="$(project std-name)"
+printf '{ "name": "std", "version": "0.0.1", "target": "commonJS" }\n' >"$P/botopink.json"
+printf '%s' "$MAIN_OK" >"$P/src/main.bp"
+run "$P" build
+expect_code 1 "build of a package named std"
+expect_out "the package name \`std\` is the bundled standard library's — choose another name" "the reserved name is refused"
+expect_out "botopink.json:1:" "located at the name"
+
 # ── build --target erlang compiles what it emits ─────────────────────────────
 # A build that only transpiled proved nothing about erlang: a module the OTP
 # compiler rejects was written and the build exited 0. A host template that is

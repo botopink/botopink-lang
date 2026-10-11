@@ -723,6 +723,30 @@ test "resolve: a refused manifest is a Problem on it — the array form, and a p
     try testing.expectEqual(@as(usize, 1), app.deps.len);
 }
 
+test "resolve: a manifest named std outside the bundled libs/std is a Problem on its name (453)" {
+    const gpa = testing.allocator;
+    const io = testing.io;
+    test_scratch.remove(io, "pg-std-name");
+    defer test_scratch.remove(io, "pg-std-name");
+    try writeFileP(io, test_scratch.path(io, "pg-std-name/app/botopink.json"),
+        \\{ "name": "std", "version": "0.0.1" }
+    );
+    try writeFileP(io, test_scratch.path(io, "pg-std-name/app/src/main.bp"), "pub fn main() {}");
+
+    var arena_inst = std.heap.ArenaAllocator.init(gpa);
+    defer arena_inst.deinit();
+    const a = arena_inst.allocator();
+    var graph = ProjectGraph.init(gpa, io, null);
+    defer graph.deinit();
+
+    const app = (try graph.resolve(try absUri(a, io, test_scratch.path(io, "pg-std-name/app/src/main.bp")))) orelse return error.TestExpectedProject;
+    try testing.expectEqual(@as(usize, 1), app.problems.len);
+    try testing.expectEqualStrings("the package name `std` is the bundled standard library's — choose another name", app.problems[0].message);
+    try testing.expect(std.mem.endsWith(u8, app.problems[0].uri, "/app/botopink.json"));
+    try testing.expectEqual(@as(u32, 0), app.problems[0].line);
+    try testing.expectEqual(@as(u32, 2), app.problems[0].character);
+}
+
 test "resolve: an import of a package the project does not declare loads nothing — the compiler embeds std alone" {
     // Decision 326: `routing` is a library like any other, never a copy inside
     // the compiler; undeclared, the graph holds the project's own module only.

@@ -1666,7 +1666,7 @@ pub fn codegenEmit(
 
 // ── @External.Erlang templates ───────────────────────────────────────────────
 // The template's reading and lowering live in `beam/erl_template.zig`, shared
-// with the comptime runtime (beam-to-wasm's producer, decision 434 (3)).
+// with `erl_parse.zig`'s front end.
 
 pub const templateBody = erlTemplate.templateBody;
 pub const templateModuleText = erlTemplate.templateModuleText;

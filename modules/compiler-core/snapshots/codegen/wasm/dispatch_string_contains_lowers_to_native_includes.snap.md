@@ -297,10 +297,10 @@ fn main() {
     local.get $sp
   )
   ;; __std_f29 — from std_wasm.wasm (sha256 61b86fc4b3a0)
-  ;; __std_f74 — from std_wasm.wasm (sha256 cc5435e379ac)
-  ;; __std_f75 — from std_wasm.wasm (sha256 aba5f076b057)
-  ;; __std_f85 — from std_wasm.wasm (sha256 ac175ff583a8)
-  ;; std:text.contains — from std_wasm.wasm (sha256 c6b656d93687)
+  ;; __std_f75 — from std_wasm.wasm (sha256 16b11afd94fd)
+  ;; __std_f76 — from std_wasm.wasm (sha256 aba5f076b057)
+  ;; __std_f86 — from std_wasm.wasm (sha256 d23b6cab3b6a)
+  ;; std:text.contains — from std_wasm.wasm (sha256 3c6fd3235e2b)
 )
 ```
 

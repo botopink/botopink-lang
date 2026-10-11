@@ -127,6 +127,7 @@ pub const exports = [_]Export{
     .{ .name = "text.fromCodepoint", .params = &.{.i32}, .result = .string, .api = "String.fromCodepoint" },
     .{ .name = "text.toUpper", .params = &.{.string}, .result = .string, .api = "String.toUpper" },
     .{ .name = "text.toLower", .params = &.{.string}, .result = .string, .api = "String.toLower" },
+    .{ .name = "random.float", .params = &.{}, .result = .f64, .api = "io.random.float" },
     .{ .name = "random.seed", .params = &.{.i32}, .result = .void, .api = "io.random.seed" },
     .{ .name = "random.seededFloat", .params = &.{}, .result = .f64, .api = "io.random.seededFloat" },
 };

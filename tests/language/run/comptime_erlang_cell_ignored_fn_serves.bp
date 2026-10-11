@@ -1,7 +1,8 @@
-//// Decision 439 — an Erlang cell beam-to-wasm does not convert is refused at
-//// the call, whatever follows it: `tidy`'s `@External.Wasm("fn:tidyBody")`
-//// cell is not tried, so the refusal names `re:replace/4`, never a fall to
-//// `tidyBody`'s answer.
+//// Decision 452 — an `@External.Erlang` cell beside a `fn:` cell is ignored
+//// at build: `tidy`'s `@External.Wasm("fn:tidyBody")` cell serves the comptime
+//// call, so the decorator emits `tidyBody`'s answer on the four targets (the
+//// Erlang cell binds the erlang and beam targets alone, and is never run by
+//// the compiler).
 
 #[@External.Node("""$0.replace(/a/g, "b")""")]
 #[@External.Erlang("""iolist_to_binary(re:replace($0, <<"a">>, <<"b">>, [global]))""")]

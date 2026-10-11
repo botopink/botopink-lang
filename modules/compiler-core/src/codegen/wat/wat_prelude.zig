@@ -47,7 +47,6 @@ pub fn items(g: ast.HelperGroup) []const ast.Item {
         .arr_at => &arr_at_items,
         .str_concat => &str_concat_items,
         .str_eq => &str_eq_items,
-        .str_slice => &str_slice_items,
         .print_arr_i32 => &.{ .{ .func = print_arr_i32_raw }, .{ .func = print_arr_i32 } },
         .print_arr_f64 => &.{ .{ .func = print_arr_f64_raw }, .{ .func = print_arr_f64 } },
         .assert_fail => &.{ .{ .func = write_err }, .{ .func = assert_fail } },
@@ -85,7 +84,7 @@ pub fn items(g: ast.HelperGroup) []const ast.Item {
 }
 
 /// The order groups are appended to a module. `print` first: the others call
-/// into it. The groups added after `str_slice` follow in declaration order, so
+/// into it. The groups added after `str_eq` follow in declaration order, so
 /// a module that uses none of them renders exactly as before they existed.
 pub const order = blk: {
     const all = std.enums.values(ast.HelperGroup);
@@ -758,41 +757,6 @@ const str_eq = ast.Func{
     } },
 };
 
-const str_slice = ast.Func{
-    .name = "__str_slice",
-    .params = &.{ .{ .name = "src", .ty = .i32 }, .{ .name = "start", .ty = .i32 }, .{ .name = "end", .ty = .i32 } },
-    .result = .i32,
-    .locals = &.{&.{ .{ .name = "newlen", .ty = .i32 }, .{ .name = "dst", .ty = .i32 } }},
-    .body = .{ .stack = .{ .value = .i32 }, .lines = &.{
-        .{ .indent = 4, .instr = .{ .local_get = "end" } },
-        .{ .indent = 4, .instr = .{ .local_get = "start" } },
-        .{ .indent = 4, .instr = .{ .op = .{ .ty = .i32, .name = "sub" } } },
-        .{ .indent = 4, .instr = .{ .local_set = "newlen" } },
-        .{ .indent = 4, .instr = .{ .comment = "allocate 4 (length prefix) + newlen" } },
-        .{ .indent = 4, .instr = .{ .@"const" = .{ .ty = .i32, .text = "4" } } },
-        .{ .indent = 4, .instr = .{ .local_get = "newlen" } },
-        .{ .indent = 4, .instr = .{ .op = .{ .ty = .i32, .name = "add" } } },
-        .{ .indent = 4, .instr = .{ .call = "__alloc" } },
-        .{ .indent = 4, .instr = .{ .local_set = "dst" } },
-        .{ .indent = 4, .instr = .{ .comment = "store length prefix" } },
-        .{ .indent = 4, .instr = .{ .local_get = "dst" } },
-        .{ .indent = 4, .instr = .{ .local_get = "newlen" } },
-        .{ .indent = 4, .instr = .{ .store = .{ .ty = .i32 } } },
-        .{ .indent = 4, .instr = .{ .comment = "copy bytes: dst+4 <- src+4+start" } },
-        .{ .indent = 4, .instr = .{ .local_get = "dst" } },
-        .{ .indent = 4, .instr = .{ .@"const" = .{ .ty = .i32, .text = "4" } } },
-        .{ .indent = 4, .instr = .{ .op = .{ .ty = .i32, .name = "add" } } },
-        .{ .indent = 4, .instr = .{ .local_get = "src" } },
-        .{ .indent = 4, .instr = .{ .@"const" = .{ .ty = .i32, .text = "4" } } },
-        .{ .indent = 4, .instr = .{ .op = .{ .ty = .i32, .name = "add" } } },
-        .{ .indent = 4, .instr = .{ .local_get = "start" } },
-        .{ .indent = 4, .instr = .{ .op = .{ .ty = .i32, .name = "add" } } },
-        .{ .indent = 4, .instr = .{ .local_get = "newlen" } },
-        .{ .indent = 4, .instr = .memory_copy },
-        .{ .indent = 4, .instr = .{ .local_get = "dst" } },
-    } },
-};
-
 // ── groups ───────────────────────────────────────────────────────────────────
 
 const print_items = [_]ast.Item{
@@ -827,9 +791,6 @@ const str_concat_items = [_]ast.Item{
 };
 const str_eq_items = [_]ast.Item{
     .{ .func = str_eq },
-};
-const str_slice_items = [_]ast.Item{
-    .{ .func = str_slice },
 };
 
 // ── the builder for the helpers below ────────────────────────────────────────
@@ -1012,18 +973,6 @@ const alloc = func("__alloc", &.{"n"}, .i32, i32s(&.{ "p", "e" }), &.{
     }),
     get("e"),                .{ .global_set = heap },
     get("p"),
-});
-
-/// 1 when the `n` bytes at `a` and `b` are equal.
-const mem_eq = func("__mem_eq", &.{ "a", "b", "n" }, .i32, i32s(&.{"i"}), &.{
-    loop(&.{
-        get("i"),  get("n"),                op("ge_u"), brk,
-        get("a"),  get("i"),                op("add"),  load8(0),
-        get("b"),  get("i"),                op("add"),  load8(0),
-        op("ne"),  when(&.{ c32(0), ret }), get("i"),   c32(1),
-        op("add"), set("i"),                again,
-    }),
-    c32(1),
 });
 
 const i32_abs = func("__i32_abs", &.{"n"}, .i32, &.{}, &.{

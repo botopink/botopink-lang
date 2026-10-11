@@ -268,7 +268,7 @@ cell: private bodies under `// ── the wasm bodies` at the end of `hash.bp` �
 SHA-256/512, SHA-1, MD5, HMAC, PBKDF2, base64, the djb2 fold — in exact `f64`
 arithmetic, a word stored as two 16-bit halves, the constants the standards'
 hex read in place; `run/std_hash_{digests,macs,content}_on_every_target`) and
-`io/random` (`float` `wasi:random_f64`, `seed` / `seededFloat`
+`io/random` (`float` `std:random.float` — decision 456, the host's entropy in a program, refused at comptime —, `seed` / `seededFloat`
 `std:random.seed` / `std:random.seededFloat` — std-wasm's seeded stream, the
 sidecar's Mulberry32, which also answers at comptime on every target and
 refuses a draw before any seed there (decision 451) —, the rest `fn:` bodies at

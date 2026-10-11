@@ -446,11 +446,8 @@ pub const HelperGroup = enum {
     str_concat,
     /// `$__str_eq`.
     str_eq,
-    /// `$__str_slice`.
-    str_slice,
     // ── one helper per group from here on: the group is named after it ──
     alloc,
-    mem_eq,
     i32_abs,
     i32_min,
     i32_max,
@@ -566,7 +563,7 @@ pub const HelperGroup = enum {
     pub fn deps(g: HelperGroup) []const HelperGroup {
         return switch (g) {
             .print_str, .print_bool => &.{.print},
-            .str_concat, .str_slice => &.{.alloc},
+            .str_concat => &.{.alloc},
             .print_f64 => &.{.print},
             .box_f64 => &.{.alloc},
             .print_i64 => &.{.print},
@@ -630,9 +627,7 @@ pub const Helper = enum {
     arr_at,
     str_concat,
     str_eq,
-    str_slice,
     alloc,
-    mem_eq,
     i32_abs,
     i32_min,
     i32_max,

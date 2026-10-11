@@ -3274,30 +3274,28 @@ A body that runs at build — a decorator's, a template's, a `comptime` — may
 call a host function: it travels into the comptime module. Comptime runs on
 one runtime, wasm (wasm3 inside the compiler), whatever the build's target
 (decision 434): a compile starts no `erl`. A host function reached there
-answers by the first of three sources it has: its std-wasm implementation
+answers by the first of two cells it has: its std-wasm implementation
 (std's own host functions, written in Zig and compiled to wasm — the
 function its `@External.Wasm("std:<module>.<function>")` cell names, below),
-the beam-to-wasm translation of its `@External.Erlang` cell, or the botopink function its
-`@External.Wasm("fn:…")` binding names (an `op:` or `wasi:` binding does not
-run there). A std function is served by std-wasm only where its `std:` cell
-says so; there is no match by name. `@External.Node` never serves: there is no Node at compile time.
+or the botopink function its `@External.Wasm("fn:…")` binding names (an `op:`
+or `wasi:` binding does not run there). A std function is served by std-wasm
+only where its `std:` cell says so; there is no match by name.
+`@External.Node` never serves: there is no Node at compile time. An
+`@External.Erlang` cell never runs at build either (decision 452): it binds
+the erlang and beam targets alone, and beam-to-wasm — a standalone utility
+that translates any `.beam` set to wasm — is no part of the compiler.
 std's functions travel too, through a namespace or a leaf import —
 `comptime hash.contentHash("hello")` is `"f923099"` on the four targets, one
 answer whatever the target.
 
 What a decorator may call is decided when its package is compiled, never at a
-consumer's build, and whatever the package's `targets` (decision 434): a host
-function it reaches — in its body, in a function of its module, through a std
-or an imported function — needs one of the three sources the comptime runtime
-answers by: a std-wasm implementation (its `std:` cell), the
-beam-to-wasm translation of its `@External.Erlang` cell, or its `@External.Wasm("fn:…")` cell. None is refused at the
-call (`comptime-host-cell-unavailable`), naming the function and the three
-sources; an Erlang cell beam-to-wasm does not convert — it reads the cell's
-`.beam` whole, and refuses an opcode it has no lowering for or an OTP function
-the comptime runtime (std-wasm) does not serve (decisions 435, 438) — is refused naming what is missing
-(`comptime-beam-call-not-converted`: `` beam-to-wasm does not convert
-`re:replace/4` ``), even with an `@External.Wasm("fn:…")` cell after it: that
-cell is not tried (decision 439).
+consumer's build, and whatever the package's `targets` (decisions 434, 452): a
+host function it reaches — in its body, in a function of its module, through a
+std or an imported function — needs one of the two cells the comptime runtime
+answers by: its `std:` cell (std-wasm) or its `@External.Wasm("fn:…")` cell.
+Neither is refused at the call (`comptime-host-cell-unavailable`), naming the
+function and both cells; an `@External.Erlang` cell beside them is ignored,
+never tried.
 
 ```botopink
 import {hash} from "std";

@@ -146,7 +146,7 @@ reads were `catch continue`: a dependency no root carries, a `files` entry that
 cannot be read, and a `.bp` under the project's own `src` that cannot be read.
 A fourth is a manifest the shared model refuses (the string-array
 `dependencies`, a `path` to a sibling member, a workspace where a package is
-needed, … — `docs/botopink-json.md`): the same located error the CLI prints,
+needed, a package named `std` outside the bundled `libs/std` (decision 453) … — `docs/botopink-json.md`): the same located error the CLI prints,
 published on the manifest it is in (`problemFromLocated`).
 Each left the graph a module short and the editor blamed the *user's* file —
 every symbol the missing module exports "unbound", pointing nowhere near the line

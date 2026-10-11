@@ -264,6 +264,7 @@ application; nothing is shipped from it by design.
 | `"name": 1` (any string field that is not a string) | `"name" must be a string` |
 | `"name": "MyApp"` (a name that does not start with a lowercase letter) | `"name" must start with a lowercase letter — every erlang module atom of the package starts with it` |
 | `"name": "bp"` | `"name" cannot be "bp" — it is the compiler's own namespace, the package of a module compiled outside any botopink.json` |
+| `"name": "std"`, outside the bundled `libs/std` | `the package name \`std\` is the bundled standard library's — choose another name` (decision 453; the directory decides — `<checkout>/libs/std` of the compiler's own checkout — never the name alone) |
 | `"files": "root.bp"` (any array field that is not an array of strings) | `"files" must be an array of strings` · `"files" must be an array of strings — entry 2 is not a string` |
 
 ## Where each tool meets the manifest

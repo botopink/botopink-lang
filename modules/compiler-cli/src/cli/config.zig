@@ -134,7 +134,13 @@ pub fn load(arena: std.mem.Allocator, io: std.Io) LoadError!ProjectConfig {
     ) catch return error.ConfigNotFound;
 
     var err: ?manifest.Located = null;
-    const m = manifest.parse(arena, data, manifest.FILENAME, &err) catch |e| switch (e) {
+    // Decision 453: `std` names the bundled `libs/std` alone; the directory
+    // decides, never the `name` the manifest writes.
+    const parsed = if (manifest.isBundledStd(io, "."))
+        manifest.parseBundledStd(arena, data, manifest.FILENAME, &err)
+    else
+        manifest.parse(arena, data, manifest.FILENAME, &err);
+    const m = parsed catch |e| switch (e) {
         error.Invalid => {
             err.?.print();
             return error.ConfigInvalid;
@@ -416,7 +422,7 @@ test "files: the manifest's declared surface is read; absent is empty" {
     const arena = arena_inst.allocator();
 
     const cfg = try parse(arena,
-        \\{ "name": "std", "files": ["primitives.bp", "builtins.d.bp"] }
+        \\{ "name": "prims", "files": ["primitives.bp", "builtins.d.bp"] }
     );
     try testing.expectEqual(@as(usize, 2), cfg.files.len);
     try testing.expectEqualStrings("primitives.bp", cfg.files[0]);

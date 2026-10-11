@@ -1,2 +1,0 @@
-comptime-beam-call-not-converted: beam-to-wasm does not convert `re:replace/4` — reached at comptime from `tidy`'s @External.Erlang cell
-12:54

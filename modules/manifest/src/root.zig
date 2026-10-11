@@ -373,8 +373,46 @@ pub const Error = error{
 pub const ReadError = Error || error{NotFound};
 
 /// Parse `text` as the manifest at `path`. On `error.Invalid` the located
-/// refusal is in `out_err`; everything else is `OutOfMemory`.
+/// refusal is in `out_err`; everything else is `OutOfMemory`. A package named
+/// `std` is refused (decision 453): only `libs/std`, the bundled standard
+/// library, bears the name — `read` and `parseBundledStd` are the readers that
+/// know it is that one.
 pub fn parse(arena: std.mem.Allocator, text: []const u8, path: []const u8, out_err: *?Located) Error!Manifest {
+    return parseAs(arena, text, path, out_err, false);
+}
+
+/// `parse` of the manifest of the bundled `libs/std` itself (`isBundledStd`
+/// said so): the one manifest that may be named `std` (decision 453).
+pub fn parseBundledStd(arena: std.mem.Allocator, text: []const u8, path: []const u8, out_err: *?Located) Error!Manifest {
+    return parseAs(arena, text, path, out_err, true);
+}
+
+/// Decision 453 — the name of the bundled standard library, reserved.
+pub const STD_NAME = "std";
+
+/// Why a manifest named `std` is refused unless it is the bundled `libs/std`.
+pub const std_name_refusal = "the package name `std` is the bundled standard library's — choose another name";
+
+/// True when `dir` is the bundled standard library: `<checkout>/libs/std`,
+/// `<checkout>` being the compiler's own checkout (the directory that holds
+/// `modules/compiler-core`). Judged by the directory's real path, never by the
+/// `name` a manifest writes (decision 453).
+pub fn isBundledStd(io: std.Io, dir: []const u8) bool {
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const n = std.Io.Dir.cwd().realPathFile(io, dir, &buf) catch return false;
+    const real = buf[0..n];
+    if (!std.mem.eql(u8, std.fs.path.basename(real), STD_NAME)) return false;
+    const libs = std.fs.path.dirname(real) orelse return false;
+    if (!std.mem.eql(u8, std.fs.path.basename(libs), "libs")) return false;
+    const checkout = std.fs.path.dirname(libs) orelse return false;
+    var pbuf: [std.fs.max_path_bytes]u8 = undefined;
+    var fba = std.heap.FixedBufferAllocator.init(&pbuf);
+    const core = std.fs.path.join(fba.allocator(), &.{ checkout, "modules", "compiler-core", "src", "root.zig" }) catch return false;
+    std.Io.Dir.cwd().access(io, core, .{}) catch return false;
+    return true;
+}
+
+fn parseAs(arena: std.mem.Allocator, text: []const u8, path: []const u8, out_err: *?Located, bundled_std: bool) Error!Manifest {
     var parsed = std.json.parseFromSlice(std.json.Value, arena, text, .{}) catch {
         out_err.* = located(text, path, .{ .offset = 0, .len = 1 }, "botopink.json is not valid JSON");
         return error.Invalid;
@@ -393,6 +431,10 @@ pub fn parse(arena: std.mem.Allocator, text: []const u8, path: []const u8, out_e
     m.name = try requireString(arena, obj, "name", text, path, out_err);
     if (nameRefusal(m.name)) |why| {
         out_err.* = located(text, path, locateKey(text, "name"), why);
+        return error.Invalid;
+    }
+    if (!bundled_std and std.mem.eql(u8, m.name, STD_NAME)) {
+        out_err.* = located(text, path, locateKey(text, "name"), std_name_refusal);
         return error.Invalid;
     }
     if (try optionalString(arena, obj, "version", text, path, out_err)) |v| m.version = v;
@@ -454,7 +496,7 @@ fn parseBpp(arena: std.mem.Allocator, v: std.json.Value, deps: []const DepEntry,
 pub fn read(arena: std.mem.Allocator, io: std.Io, dir: []const u8, out_err: *?Located) ReadError!Manifest {
     const path = try std.fs.path.join(arena, &.{ dir, FILENAME });
     const text = std.Io.Dir.cwd().readFileAlloc(io, path, arena, .limited(1024 * 1024)) catch return error.NotFound;
-    return parse(arena, text, path, out_err);
+    return parseAs(arena, text, path, out_err, isBundledStd(io, dir));
 }
 
 /// True when `<dir>` is the root of the checkout the walk-up started in: it
@@ -1508,6 +1550,35 @@ test "parse: a name that cannot start an erlang atom is refused, located at the 
     // A lowercase first letter is all it asks: the rest is sanitised.
     try testing.expect(nameRefusal("acme-web") == null);
     try testing.expect(nameRefusal("myApp2") == null);
+}
+
+test "parse: a package named std is refused at its name, unless it is the bundled libs/std (453)" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const a = arena_inst.allocator();
+    const out = try refuse(a,
+        \\{ "name": "std", "version": "0.0.1" }
+    );
+    try testing.expectEqualStrings(
+        \\error: the package name `std` is the bundled standard library's — choose another name
+        \\ --> botopink.json:1:3
+        \\  |
+        \\1 | { "name": "std", "version": "0.0.1" }
+        \\  |   ^^^^^^
+        \\
+        \\
+    , out);
+    var err: ?Located = null;
+    const m = try parseBundledStd(a, "{ \"name\": \"std\" }", "botopink.json", &err);
+    try testing.expectEqualStrings("std", m.name);
+}
+
+test "isBundledStd: the checkout's libs/std by its place, not by a name" {
+    // cwd is `modules/manifest`: `../../libs/std` is the compiler's own std.
+    try testing.expect(isBundledStd(testing.io, "../../libs/std"));
+    try testing.expect(!isBundledStd(testing.io, "tests/fixtures/workspace"));
+    try testing.expect(!isBundledStd(testing.io, "../../libs"));
+    try testing.expect(!isBundledStd(testing.io, "no/such/dir"));
 }
 
 test "parse: a dependency with no source is a located error" {

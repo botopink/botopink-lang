@@ -12,9 +12,12 @@ caller's runtime table names — the comptime runtime's, whose OTP functions are
 implementations, never translated from OTP's own `.beam`. What it does not convert — an opcode, a
 call nothing serves, an operand or a literal of another kind — refuses the function that holds it,
 named; the refusal reaches a caller only when a call reaches that function, located
-(`` `re:run/3` in `mymod:f/1` ``). botopink's comptime is one caller
-(`compiler-core/src/comptime/runtime/wat/cells.zig`); the utility knows nothing of botopink the
-language.
+(`` `re:run/3` in `mymod:f/1` ``). **It has no role in botopink for now (decision 452):** the
+compiler's comptime never calls it — a host function reached at build answers by its `std:` cell
+(std-wasm) or its `@External.Wasm("fn:…")` cell, and an `@External.Erlang` cell never runs at
+build — and compiler-core imports nothing of this module (`build.zig` wires it to its own tests
+only). It stays a utility with its tests and fixtures, knowing only std-wasm; decision 439 (an
+Erlang cell it refuses is final) no longer applies.
 
 ## Standalone (decision 438 (3))
 
@@ -45,10 +48,10 @@ beam-to-wasm/
 
 ## How a translation works
 
-- **Input**: `.beam` bytes, a set. At comptime the compiler produces a cell's itself — its template
-  read and lowered the way the beam target compiles every Erlang template
-  (`compiler-core/src/codegen/beam/erl_template.zig`) and assembled by `codegen/beam/beam_file.zig`;
-  no `erlc` runs while compiling. Any other `.beam` set is handed whole (`cells.zig` `ofModules`).
+- **Input**: `.beam` bytes, a set, handed whole by the caller. The two `bp_cell_*.beam` fixtures
+  were assembled by the compiler's own assembler (a template read the way the beam target reads
+  every Erlang template) when the comptime still translated Erlang cells (decisions 434, 438);
+  they stay as measured inputs.
 - **The container**: `AtU8` in the length-byte form and OTP 28's compact form (a negative count,
   each length a compact `u`), `StrT` (what a `string` segment of `bs_create_bin` copies), `LitT`
   zlib-compressed or stored (an uncompressed size of 0, as OTP 28 writes a small table). The rest
@@ -86,12 +89,8 @@ beam-to-wasm/
   with `runtime.Kind`, `rt_eq`, `rt_eqx`, `rt_cmp`), the binary builder (`rt_bb_new`, `rt_bb_bin`,
   `rt_bb_int`, `rt_bb_utf8`, `rt_bb_end`), exceptions (`rt_pending`, `rt_clear`,
   `rt_function_clause`, `rt_badmatch`, `rt_case_clause`, `rt_if_clause`) and the operators.
-  compiler-core holds every name and kind to its `rt.zig` at its compile time
-  (`runtime/wat/lower.zig`).
-- **Output**: `ir.Module{ name, functions }` per file; compiler-core's wat lowering emits each
-  function a comptime module reaches (`bp_cell_<hash>:t/N`, or `<module>:<f>/N` of a set
-  `ofModules` kept, and every function those call) into the program (`emitCellFunction`) and lists
-  it in the `COMPTIME WAT` section.
+  The caller's runtime holds every name and kind (`runtime.Kind`) to its own term library.
+- **Output**: `ir.Module{ name, functions }` per file, for the caller to emit.
 
 ## The opcodes converted
 
@@ -109,9 +108,9 @@ no flags) and `utf8` segments. Everything else of `genop.tab` — funs (`make_fu
 (`put_map_*`, `get_map_elements`), floats (`fmove` …), `trim`, `raise`, `apply` — is refused,
 named, in the function that holds it: the set grows by a measured need (decision 435).
 
-## Measured — what a comptime evaluation reaches
+## Measured — what a comptime evaluation reached (144 B-00b, before decision 452)
 
-Two measurements (144 B-00b), each recording every comptime module's Erlang text
+Two measurements, each recording every comptime module's Erlang text
 (`runtime.evalWithArg`) and every host function `host_cells.forRuntime` carried with its cells.
 
 **Over `tests/language` (four targets, `--cold`), `zig build test` and `zig build test-libs`
@@ -120,7 +119,7 @@ Two measurements (144 B-00b), each recording every comptime module's Erlang text
 | Cell | Where | Erlang template | Served by |
 |---|---|---|---|
 | `hash.contentHash` (std) | `run/decorator_host_cells`, `run/comptime_std_host_function`, `modules/decorator_imported_host_function`, `modules/hole_imported_val_known_at_build` | djb2 template | std-wasm (`std:hash.contentHash`, decision 440) — never translated |
-| `bang` (test cell) | `run/decorator_host_cells`, `modules/decorator_imported_host_function`, `modules/decorator_erlang_cell_only`, `comptime/tests/decorator_invocation.zig` | `<<($0)/binary, "!">>` | beam-to-wasm |
+| `bang` (test cell) | `run/decorator_host_cells`, `modules/decorator_imported_host_function`, `comptime/tests/decorator_invocation.zig` | `<<($0)/binary, "!">>` | beam-to-wasm |
 | `wrap` (test cell) | `modules/decorator_imported_host_function` | `<<"<", ($0)/binary, ">">>` | beam-to-wasm |
 
 Their `.beam` (the compiler's assembler): `label`, `func_info`, `int_code_end`, `call_ext`,
@@ -164,8 +163,5 @@ not BEAM; and `erlc`'s two modules translated as a set (`translateSet`: compact 
 `LitT`, `StrT`, the call from `greeting` into `greeting_text`, local and tail calls, `get_list`,
 `gc_bif` `+`, `is_eq_exact`, `bs_create_bin`), the `module_info` functions refused only where
 reached, a module left out of the set and an OTP function the table lacks refused where the call
-is made, two files of one module. compiler-core runs the same fixture on its comptime runtime
-(`comptime/runtime/persistent_wat.zig`: `erlc's modules run …`, the answer
-`["Hello, World!",["A","B"],3,"nobody"]`, a clause none matches raising `function_clause`, a
-refused function located) and tests the producer side (`runtime/wat/cells.zig`). Regenerate the
-fixture with `erlc +deterministic greeting.erl greeting_text.erl` in `src/testdata/erlc/`.
+is made, two files of one module. Nothing else runs it: compiler-core no longer holds a consumer
+of this module (decision 452). Regenerate the fixture with `erlc +deterministic greeting.erl greeting_text.erl` in `src/testdata/erlc/`.

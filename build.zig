@@ -190,11 +190,11 @@ pub fn build(b: *std.Build) void {
     const std_wasm_step = b.step("std-wasm", "Compile modules/std-wasm's program face alone to zig-out/lib/std_wasm.wasm");
     std_wasm_step.dependOn(&b.addInstallFileWithDir(std_wasm_bin, .lib, "std_wasm.wasm").step);
 
-    // ── beam-to-wasm (decisions 434 (3), 438) ─────────────────────────────────
+    // ── beam-to-wasm (decisions 434 (3), 438, 452) ────────────────────────────
     // `.beam` bytecode translated to wasm functions over the comptime
-    // runtime's terms (`modules/beam-to-wasm`), whole module by module:
-    // compiler-core's wat comptime runtime runs a host function's Erlang cell
-    // — and any `.beam` set — through it (`comptime/runtime/wat/cells.zig`).
+    // runtime's terms (`modules/beam-to-wasm`), whole module by module — a
+    // standalone utility with its own tests; nothing in botopink (compiler-core
+    // included) imports it (decision 452).
     // Zig's `std` and std-wasm only: `requireStandalone`, at the end of
     // `build`, fails the build on any other import.
     const beam_to_wasm_mod = b.createModule(.{ .root_source_file = b.path("modules/beam-to-wasm/src/root.zig") });
@@ -217,7 +217,6 @@ pub fn build(b: *std.Build) void {
             // `OTP_RELEASE`, the one constant `src/otp.zig` checks `erl` against (decision 228).
             .{ .name = "manifest", .module = manifest_mod },
             .{ .name = "std_wasm", .module = std_wasm_mod },
-            .{ .name = "beam_to_wasm", .module = beam_to_wasm_mod },
         },
     });
     // ── the CLI's module-tree resolver, for the language server ───────────────
@@ -245,7 +244,6 @@ pub fn build(b: *std.Build) void {
             .{ .name = "test_scratch", .module = test_scratch_mod },
             .{ .name = "manifest", .module = manifest_mod },
             .{ .name = "std_wasm", .module = std_wasm_mod },
-            .{ .name = "beam_to_wasm", .module = beam_to_wasm_mod },
         },
     });
 
@@ -663,7 +661,6 @@ pub fn build(b: *std.Build) void {
             .{ .name = "std_prelude", .module = stdPreludeModule(b, web_target, std_pkg_files, pkg_table_file) },
             .{ .name = "manifest", .module = b.createModule(.{ .root_source_file = b.path("modules/manifest/src/root.zig") }) },
             .{ .name = "std_wasm", .module = std_wasm_mod },
-            .{ .name = "beam_to_wasm", .module = beam_to_wasm_mod },
         },
     });
     web_core_mod.addAnonymousImport("bp_wat_rt.wasm", .{ .root_source_file = wat_rt.getEmittedBin() });

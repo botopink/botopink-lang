@@ -620,6 +620,12 @@ fn bigParse(s: u32) callconv(.c) u32 {
 /// `io/random`'s seeded stream (decision 451 (1)): one per program, `.bss`.
 var stream: root.random.Stream = .{};
 
+/// `random.float` — an unseeded draw: the host's entropy (decision 456), the
+/// program's `$__wasi_random_f64`.
+fn float() callconv(.c) f64 {
+    return bp_random_f64();
+}
+
 /// `random.seed`.
 fn seed(s: i32) callconv(.c) void {
     stream.seed(s);
@@ -657,6 +663,7 @@ const faces = .{
     .{ "text.fromCodepoint", fromCodepoint },
     .{ "text.toUpper", toUpper },
     .{ "text.toLower", toLower },
+    .{ "random.float", float },
     .{ "random.seed", seed },
     .{ "random.seededFloat", seededFloat },
 };

@@ -432,18 +432,18 @@ constructor pattern in an arm and in a `val`, `is`, an arm naming `Block`, a rec
 variant; the parent's lowering failed `MissingPackage`).
 `01-compiler/14` step 6 (decisions 341, 343) adds `run/decorator_host_cells` (a decorator body calls
 a host function with both cells and std's `hash.contentHash` through its namespace and a leaf
-import — since decision 434 the wasm comptime runtime runs `bang`'s `@External.Erlang` cell through
-beam-to-wasm and `contentHash` as std-wasm's, for every target; four targets, one output; the parent binary was `call to undefined function bang/1`),
+import — the wasm comptime runtime runs `bang`'s `@External.Wasm("fn:…")` cell (its Erlang cell never runs at
+build, decision 452) and `contentHash` as std-wasm's, for every target; four targets, one output; the parent binary was `call to undefined function bang/1`),
 `modules/decorator_imported_host_function` (the same through an imported function and an imported
-decorator: the export carries its host and std functions), `modules/decorator_erlang_cell_only`
-(decisions 434, 435: a decorator's host function with an `@External.Erlang` cell alone answers on the
-four targets through its beam-to-wasm translation — was `decorator_host_cell_targets`, a package
-narrowed to erlang and beam), `reject/comptime_host_cell_unavailable` (decision 434 (4): a host
-function with none of the three comptime sources, refused at the call naming them — was
-`reject/decorator_host_cell_missing`), `reject/comptime_beam_call_not_converted` (decision 435: an
-Erlang cell calling `re:replace/4`, which beam-to-wasm does not convert: refused at the call naming
-the call), `reject/comptime_beam_call_not_converted_fn_after` (decision 439: the same cell with an
-`@External.Wasm("fn:…")` cell after it — still refused, the `fn:` cell not tried),
+decorator: the export carries its host and std functions),
+`reject/comptime_host_cell_unavailable` (decisions 434 (4), 452: a host function with neither a `std:` nor a
+`fn:` cell, refused at the call naming both — was `reject/decorator_host_cell_missing`),
+`reject/comptime_host_cell_unavailable_erlang_only` (decision 452: a host function with an `@External.Erlang`
+cell alone is refused the same way, the cell never run at build — was `reject/comptime_beam_call_not_converted`;
+the former run cell `modules/decorator_erlang_cell_only` is this reject),
+`run/comptime_erlang_cell_ignored_fn_serves` (decision 452: an Erlang cell beside a `fn:` cell is ignored, the
+`fn:` body answers on the four targets — was `reject/comptime_beam_call_not_converted_fn_after`, decision 439,
+which no longer applies),
 `reject/external_wasm_std_outside_std` (decision 445: a `std:` cell is std's alone — outside
 `libs/std` it is refused at the annotation on every target, naming the std function to call
 instead; it replaced `external_wasm_std_unknown` and `external_wasm_std_types`, whose refusals —

@@ -1,9 +1,8 @@
 //! An `@External.Erlang` template as Erlang source and as BEAM instructions:
 //! the one reading of a template, shared by the beam target (BR5: each
 //! template compiled at build time into a helper of the module,
-//! `../beam_asm.zig` `evalTemplate`) and the comptime runtime (a host
-//! function's Erlang cell assembled to `.beam` for beam-to-wasm,
-//! `../../comptime/runtime/wat/cells.zig`, decision 434 (3)). It reads with
+//! `../beam_asm.zig` `evalTemplate`; the comptime runtime reads no host
+//! function's Erlang cell since decision 452). It reads with
 //! `comptime/runtime/wat/erl_parse.zig` and lowers with `erl_lower.zig`, so
 //! there is one Erlang front end.
 const std = @import("std");

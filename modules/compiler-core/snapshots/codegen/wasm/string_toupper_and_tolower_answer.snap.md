@@ -286,13 +286,13 @@ fn main() {
     local.get $sp
   )
   ;; __std_f7 — from std_wasm.wasm (sha256 91fc3314249d)
-  ;; std:text.toLower — from std_wasm.wasm (sha256 05ef9046f597)
-  ;; __std_f65 — from std_wasm.wasm (sha256 1896639eef1b)
-  ;; __std_f66 — from std_wasm.wasm (sha256 2f81dc7302bb)
-  ;; __std_f67 — from std_wasm.wasm (sha256 38e98c1edeed)
-  ;; __std_f68 — from std_wasm.wasm (sha256 96b721b5358a)
-  ;; __std_f69 — from std_wasm.wasm (sha256 30c514d3cfe8)
-  ;; std:text.toUpper — from std_wasm.wasm (sha256 f46d52c95c6c)
+  ;; std:text.toLower — from std_wasm.wasm (sha256 9c7029295b3b)
+  ;; __std_f66 — from std_wasm.wasm (sha256 78d8b4024bc3)
+  ;; std:text.toUpper — from std_wasm.wasm (sha256 7583443f4594)
+  ;; __std_f68 — from std_wasm.wasm (sha256 2f81dc7302bb)
+  ;; __std_f69 — from std_wasm.wasm (sha256 38e98c1edeed)
+  ;; __std_f70 — from std_wasm.wasm (sha256 96b721b5358a)
+  ;; __std_f71 — from std_wasm.wasm (sha256 30c514d3cfe8)
 )
 ```
 

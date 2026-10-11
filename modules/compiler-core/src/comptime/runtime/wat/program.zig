@@ -11,7 +11,6 @@ const ep = @import("erl_parse.zig");
 const lower = @import("lower.zig");
 const link = @import("link.zig");
 const preludeMod = @import("../prelude.zig");
-const cells = @import("cells.zig");
 const watEmitter = @import("../../../codegen/wat/wat_emitter.zig");
 
 /// The runtime's bytes, compiled from `rt.zig` for `wasm32-freestanding` by
@@ -107,7 +106,7 @@ fn buildUncached(ar: std.mem.Allocator, code: []const u8) Error!Built {
     }
 
     var lf: lower.Failure = .{};
-    const lowered = lower.lowerProgram(ar, .{ .modules = mods.items, .cells = try cells.modulesIn(ar, code) }, &lf) catch |err| switch (err) {
+    const lowered = lower.lowerProgram(ar, .{ .modules = mods.items }, &lf) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.Unsupported => return .{ .refused = try std.fmt.allocPrint(ar, "the wat runtime does not take {s}", .{lf.message}) },
     };
