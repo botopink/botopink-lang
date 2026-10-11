@@ -17,7 +17,9 @@
 /// `name`. Which library a `dependencies` entry means is the shared
 /// `manifest.resolveDependency`: `{ "path" }` from the project's directory,
 /// `{ "workspace": true }` from the enclosing workspace, `{ "git" }` by name
-/// across the roots (`manifest.scanRoots`) and then the `bpmp install` store.
+/// across the lookup tiers (`dependencyTiers`, decision 483):
+/// `BOTOPINK_LIB_ROOTS`, the project's `.botopinkbuild/deps/` links, then the
+/// walk-up roots.
 const std = @import("std");
 const bp = @import("botopink");
 const manifest = @import("manifest");
@@ -247,9 +249,13 @@ pub fn freeRoots(gpa: std.mem.Allocator, roots: [][]const u8) void {
 /// Resolution per dep (`manifest.resolveDependency`):
 ///   * `{ "workspace": true }` — the sibling member of the enclosing workspace.
 ///   * `{ "path": … }` — `<project>/<path>`, which must hold that package.
-///   * `{ "git": … }` — by name across `resolveLibRoots` (env roots, the
-///     enclosing workspace, `repository/…`, `libs/`), then the F2 fallback
-///     `<project>/.botopinkbuild/deps/<name>/` that `bpmp install` materialises.
+///   * `{ "git": … }` — by name across `dependencyTiers` (decision 483), the
+///     first tier carrying the name wins: `BOTOPINK_LIB_ROOTS` when set; then
+///     `<project>/.botopinkbuild/deps/<name>/` — the link `bpmp install` (into
+///     its store) or `bpmp link` (into a local checkout) writes — and, for a
+///     workspace member, `<workspace root>/.botopinkbuild/deps/<name>/`; only
+///     then the walk-up roots (the enclosing workspace, `repository/…`,
+///     `libs/`) as a fallback.
 ///   * nothing carries the name → `LibNotFound` (named on stderr). No library
 ///     root at all is not an error: `path` and `workspace` need none.
 ///
@@ -299,19 +305,14 @@ pub fn loadDependencies(
     const roots = try resolveLibRoots(gpa, io, env_map);
     defer freeRoots(gpa, roots);
 
-    // F2 fallback roots: `.botopinkbuild/deps/` + (lockfile-driven) `$BPMP_HOME/store/`.
-    const fallback_roots = try resolveFallbackRoots(gpa, io, env_map);
-    defer freeRoots(gpa, fallback_roots);
-
     // No root at all is not an error here: a `path` or `{ "workspace": true }`
     // dependency needs none, and a `git` one nothing carries is named below.
     var arena_inst = std.heap.ArenaAllocator.init(gpa);
     defer arena_inst.deinit();
     const arena = arena_inst.allocator();
-    const entries = try manifest.scanRoots(arena, io, roots);
-    const fallback_entries = try manifest.scanRoots(arena, io, fallback_roots);
+    const tiers = try dependencyTiers(gpa, arena, io, env_map, proj.dir, roots);
 
-    try loadClosure(gpa, io, arena, proj.manifest, proj.dir, proj.dependencies, entries, fallback_entries, &modules, bpp_files);
+    try loadClosure(gpa, io, arena, proj.manifest, proj.dir, proj.dependencies, tiers, &modules, bpp_files);
     return try modules.toOwnedSlice(gpa);
 }
 
@@ -325,14 +326,16 @@ fn loadClosure(
     project: manifest.Manifest,
     project_dir: []const u8,
     deps: []const manifest.DepEntry,
-    entries: []const manifest.Entry,
-    fallback_entries: []const manifest.Entry,
+    /// `dependencyTiers` — every package of the closure looks its `git`
+    /// dependencies up in the project's tiers (one `.botopinkbuild/deps/`, as
+    /// one `node_modules`).
+    tiers: []const []const manifest.Entry,
     out: *std.ArrayListUnmanaged(Module),
     /// The project's `.bpp` files (decision 361), checked against the roles
     /// of the package `project.bpp` names.
     bpp_files: []const bpp.BppFile,
 ) !void {
-    var closure: DepClosure = .{ .arena = arena, .io = io, .entries = entries, .fallback_entries = fallback_entries };
+    var closure: DepClosure = .{ .arena = arena, .io = io, .tiers = tiers };
     // The project's own entries are resolved first, so the directory each of
     // its names means is the project's — a dependency that means another
     // directory by one of them is refused, not silently shadowed.
@@ -406,8 +409,7 @@ fn checkBppRoles(
 const DepClosure = struct {
     arena: std.mem.Allocator,
     io: std.Io,
-    entries: []const manifest.Entry,
-    fallback_entries: []const manifest.Entry,
+    tiers: []const []const manifest.Entry,
     /// Every package resolved so far, by import name.
     packages: std.StringArrayHashMapUnmanaged(Package) = .empty,
     /// Dependencies before dependents.
@@ -428,7 +430,7 @@ const DepClosure = struct {
         if (bp.comptime_pipeline.bundledPackage(dep.name) != null) return false;
         const abs_dir = try std.fs.path.resolve(self.arena, &.{dir});
         var err: ?manifest.Located = null;
-        const resolved = manifest.resolveDependency(self.arena, self.io, by, abs_dir, dep, self.entries, self.fallback_entries, &err) catch |e| switch (e) {
+        const resolved = manifest.resolveDependency(self.arena, self.io, by, abs_dir, dep, self.tiers, &err) catch |e| switch (e) {
             error.Invalid => {
                 err.?.print();
                 return error.LibManifestInvalid;
@@ -494,25 +496,51 @@ fn linkFreeDir(arena: std.mem.Allocator, io: std.Io, dir: []const u8) ![]const u
     };
 }
 
-/// Build the F2 fallback root list: today this is just
-/// `.botopinkbuild/deps/` — the per-project symlink store materialised by
-/// `bpmp install`. Each symlink under it points into
-/// `$BPMP_HOME/store/<name>/<rev>/`, so resolving against the symlink
-/// transparently reaches the CAS. A second-tier "$BPMP_HOME/store direct"
-/// fallback (used when `.botopinkbuild/deps/` was deleted by `clean` but
-/// `botopink.lock` still pins a rev) needs lockfile knowledge and is left
-/// for a follow-up. Caller owns the slice (free with `freeRoots`).
-pub fn resolveFallbackRoots(gpa: std.mem.Allocator, io: std.Io, env_map: EnvMap) ![][]const u8 {
-    _ = env_map;
-    var roots: std.ArrayListUnmanaged([]const u8) = .empty;
-    errdefer {
-        for (roots.items) |r| gpa.free(r);
-        roots.deinit(gpa);
-    }
+/// The tiers a `git` dependency of the project at `project_dir` (absolute) is
+/// looked up in, in order (decision 483) — each one `manifest.scanRoots`, so a
+/// name two tiers carry is the earlier tier's, never "declared by two
+/// libraries":
+///
+///   1. `BOTOPINK_LIB_ROOTS` (when set) — bpmp's package store, first;
+///   2. `manifest.depsRoots(project_dir)`, one tier each: the project's
+///      `.botopinkbuild/deps/`, then — for a workspace member — its workspace
+///      root's. Each child is a link: into the `bpmp install` store, or into a
+///      local checkout's `repository/<name>` (`bpmp link`). A link wins over
+///      the walk-up;
+///   3. `roots` (`resolveLibRoots`: the env roots again, then the walk-up to
+///      the enclosing checkout) — the fallback, scanned whole as it always
+///      was, so its own duplicate-member refusals stand.
+///
+/// Owned by `arena`.
+pub fn dependencyTiers(
+    gpa: std.mem.Allocator,
+    arena: std.mem.Allocator,
+    io: std.Io,
+    env_map: EnvMap,
+    project_dir: []const u8,
+    roots: []const []const u8,
+) ![]const []const manifest.Entry {
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const cwd = buf[0..try std.process.currentPath(io, &buf)];
+    const env_roots = try parseEnvRoots(gpa, env_map, cwd);
+    defer freeRoots(gpa, env_roots);
+    return tiersFrom(arena, io, env_roots, project_dir, roots);
+}
 
-    try addRootIfExists(gpa, io, &roots, &.{".botopinkbuild/deps"});
-
-    return roots.toOwnedSlice(gpa);
+/// `dependencyTiers` minus the environment — the roots given, for a test.
+fn tiersFrom(
+    arena: std.mem.Allocator,
+    io: std.Io,
+    env_roots: []const []const u8,
+    project_dir: []const u8,
+    roots: []const []const u8,
+) ![]const []const manifest.Entry {
+    var tiers: std.ArrayListUnmanaged([]const manifest.Entry) = .empty;
+    if (env_roots.len > 0) try tiers.append(arena, try manifest.scanRoots(arena, io, env_roots));
+    const abs_project = try std.fs.path.resolve(arena, &.{project_dir});
+    for (try manifest.depsRoots(arena, io, abs_project)) |d| try tiers.append(arena, try manifest.scanRoots(arena, io, &.{d}));
+    try tiers.append(arena, try manifest.scanRoots(arena, io, roots));
+    return tiers.toOwnedSlice(arena);
 }
 
 /// Resolve the absolute path to `$BPMP_HOME/store/` (or the XDG fallback).
@@ -735,14 +763,10 @@ fn sidecarOwner(
         for (proj.dependencies) |dep| {
             if (!std.mem.eql(u8, dep.name, lib)) continue;
 
-            const fallback_roots = try resolveFallbackRoots(gpa, io, env_map);
-            defer freeRoots(gpa, fallback_roots);
-            const entries = try manifest.scanRoots(arena, io, roots);
-            const fallback_entries = try manifest.scanRoots(arena, io, fallback_roots);
-
             var buf: [std.fs.max_path_bytes]u8 = undefined;
             const n = try std.process.currentPath(io, &buf);
-            const resolved = manifest.resolveDependency(arena, io, proj, buf[0..n], dep, entries, fallback_entries, out_err) catch |e| switch (e) {
+            const tiers = try dependencyTiers(gpa, arena, io, env_map, buf[0..n], roots);
+            const resolved = manifest.resolveDependency(arena, io, proj, buf[0..n], dep, tiers, out_err) catch |e| switch (e) {
                 // The build already compiled this dependency, so a refusal here
                 // is not reachable through `build`/`test`; it is still a located
                 // problem and never a silent null.
@@ -789,13 +813,10 @@ fn closureOwner(
     project_dir: []const u8,
     lib: []const u8,
 ) !?SidecarOwner {
-    const fallback_roots = try resolveFallbackRoots(gpa, io, env_map);
-    defer freeRoots(gpa, fallback_roots);
     var closure: DepClosure = .{
         .arena = arena,
         .io = io,
-        .entries = try manifest.scanRoots(arena, io, roots),
-        .fallback_entries = try manifest.scanRoots(arena, io, fallback_roots),
+        .tiers = try dependencyTiers(gpa, arena, io, env_map, project_dir, roots),
     };
     for (project.dependencies) |dep| _ = closure.resolve(project, project_dir, dep) catch |e| switch (e) {
         error.OutOfMemory => return error.OutOfMemory,
@@ -2253,7 +2274,7 @@ fn closureOf(arena: std.mem.Allocator, io: std.Io, comptime root: []const u8, te
         }
         out.deinit(gpa);
     }
-    try loadClosure(gpa, io, arena, m, app_dir, m.dependencies, entries, &.{}, &out, &.{});
+    try loadClosure(gpa, io, arena, m, app_dir, m.dependencies, &.{entries}, &out, &.{});
     var names: std.ArrayListUnmanaged(u8) = .empty;
     for (out.items, 0..) |mod, i| {
         if (i > 0) try names.append(arena, ' ');
@@ -2518,4 +2539,99 @@ test "linkFreeDir: a symbolic link resolves to its target, a directory stays as 
 
     const plain = test_scratch.path(io, "link-free-dir/checkout/modules/core");
     try std.testing.expectEqualStrings(try std.fs.path.resolve(arena, &.{plain}), try linkFreeDir(arena, io, plain));
+}
+
+/// The scratch tree of the decision-483 tests under `<root>`: one package
+/// `kit-x` three times — under the walk-up root `ws/repository`, under
+/// `linked/` (where a `.botopinkbuild/deps/kit-x` link points) and under
+/// `env/` (a `BOTOPINK_LIB_ROOTS` entry) — each exporting a function named
+/// after where it is; a project `ws/repository/app` that declares it by `git`
+/// and links it; `ws/repository/bare`, which declares it and links nothing;
+/// and a workspace `ws/repository/lib` whose member `modules/m` declares it,
+/// linked at the workspace root.
+fn writeTiersTree(arena: std.mem.Allocator, io: std.Io, comptime root: []const u8) !void {
+    const dep = "{ \"kit-x\": { \"git\": \"https://example.invalid/kit-x\" } }";
+    const files = [_][2][]const u8{
+        .{ "ws/repository/kit-x/botopink.json", "{ \"name\": \"kit-x\", \"files\": [\"x.bp\"] }" },
+        .{ "ws/repository/kit-x/src/x.bp", "pub fn walkup() {}" },
+        .{ "linked/kit-x/botopink.json", "{ \"name\": \"kit-x\", \"files\": [\"x.bp\"] }" },
+        .{ "linked/kit-x/src/x.bp", "pub fn linked() {}" },
+        .{ "env/kit-x/botopink.json", "{ \"name\": \"kit-x\", \"files\": [\"x.bp\"] }" },
+        .{ "env/kit-x/src/x.bp", "pub fn env() {}" },
+        .{ "ws/repository/app/botopink.json", "{ \"name\": \"app\", \"dependencies\": " ++ dep ++ " }" },
+        .{ "ws/repository/bare/botopink.json", "{ \"name\": \"bare\", \"dependencies\": " ++ dep ++ " }" },
+        .{ "ws/repository/lib/botopink.json", "{ \"name\": \"lib\", \"workspaces\": [\"modules/*\"] }" },
+        .{ "ws/repository/lib/modules/m/botopink.json", "{ \"name\": \"m\", \"dependencies\": " ++ dep ++ " }" },
+    };
+    inline for (files) |f| try writeFileP(io, test_scratch.path(io, root ++ "/" ++ f[0]), f[1]);
+    const target = try std.Io.Dir.cwd().realPathFileAlloc(io, test_scratch.path(io, root ++ "/linked/kit-x"), arena);
+    inline for (.{ root ++ "/ws/repository/app", root ++ "/ws/repository/lib" }) |project| {
+        const deps = try std.fs.path.join(arena, &.{ test_scratch.path(io, project), manifest.DEPS_DIR });
+        try std.Io.Dir.cwd().createDirPath(io, deps);
+        try std.Io.Dir.cwd().symLink(io, target, try std.fs.path.join(arena, &.{ deps, "kit-x" }), .{ .is_directory = true });
+    }
+}
+
+/// The source of `kit-x` the closure of the project at `project` loads, over
+/// the tiers `tiersFrom(env_roots, project, roots)` builds.
+fn kitXSource(arena: std.mem.Allocator, io: std.Io, project: []const u8, env_roots: []const []const u8, roots: []const []const u8) ![]const u8 {
+    const gpa = std.testing.allocator;
+    var err: ?manifest.Located = null;
+    const m = try manifest.read(arena, io, project, &err);
+    const tiers = try tiersFrom(arena, io, env_roots, project, roots);
+    var out: std.ArrayListUnmanaged(Module) = .empty;
+    defer {
+        for (out.items) |mod| {
+            gpa.free(mod.path);
+            gpa.free(mod.source);
+            gpa.free(mod.srcPath);
+        }
+        out.deinit(gpa);
+    }
+    try loadClosure(gpa, io, arena, m, project, m.dependencies, tiers, &out, &.{});
+    try std.testing.expectEqual(@as(usize, 1), out.items.len);
+    try std.testing.expectEqualStrings("kit-x/x", out.items[0].path);
+    return arena.dupe(u8, out.items[0].source);
+}
+
+test "dependencyTiers: a .botopinkbuild/deps link wins over the walk-up; BOTOPINK_LIB_ROOTS wins over a link (decision 483)" {
+    var arena_inst = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+    const io = std.testing.io;
+    test_scratch.remove(io, "deps-tiers");
+    defer test_scratch.remove(io, "deps-tiers");
+    try writeTiersTree(arena, io, "deps-tiers");
+
+    const app = test_scratch.path(io, "deps-tiers/ws/repository/app");
+    const walk_up = try rootsFrom(std.testing.allocator, io, &.{}, app);
+    defer freeRoots(std.testing.allocator, walk_up);
+    // The walk-up carries `kit-x` (ws/repository), and so does the link.
+    try std.testing.expectEqualStrings("pub fn linked() {}", try kitXSource(arena, io, app, &.{}, walk_up));
+    // Linked nowhere: the walk-up is the fallback.
+    const bare = test_scratch.path(io, "deps-tiers/ws/repository/bare");
+    try std.testing.expectEqualStrings("pub fn walkup() {}", try kitXSource(arena, io, bare, &.{}, walk_up));
+    // An env root first, before the link.
+    const env = [_][]const u8{test_scratch.path(io, "deps-tiers/env")};
+    try std.testing.expectEqualStrings("pub fn env() {}", try kitXSource(arena, io, app, &env, walk_up));
+    // A workspace member reads its workspace root's links.
+    const member = test_scratch.path(io, "deps-tiers/ws/repository/lib/modules/m");
+    try std.testing.expectEqualStrings("pub fn linked() {}", try kitXSource(arena, io, member, &.{}, walk_up));
+}
+
+test "dependencyTiers: a project whose dependencies are only .botopinkbuild/deps links resolves with no library root at all (decision 483)" {
+    var arena_inst = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+    const io = std.testing.io;
+    test_scratch.remove(io, "deps-only");
+    defer test_scratch.remove(io, "deps-only");
+    try writeTiersTree(arena, io, "deps-only");
+
+    // No `repository/`, no env root: the link is all there is.
+    const app = test_scratch.path(io, "deps-only/ws/repository/app");
+    try std.testing.expectEqualStrings("pub fn linked() {}", try kitXSource(arena, io, app, &.{}, &.{}));
+    // And without the link the name is not found.
+    const bare = test_scratch.path(io, "deps-only/ws/repository/bare");
+    try std.testing.expectError(error.LibNotFound, kitXSource(arena, io, bare, &.{}, &.{}));
 }

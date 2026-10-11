@@ -107,8 +107,8 @@ const HELP =
     \\
     \\`clean` takes no option. It deletes out/ and .botopinkbuild/ whole: the
     \\comptime scratch (.botopinkbuild/tmp/), the run directories of `test` and
-    \\the `bpmp install` links under .botopinkbuild/deps/ (run `bpmp install`
-    \\again after it) and every build cache (.botopinkbuild/cache/: the erlang
+    \\the `bpmp install` / `bpmp link` links under .botopinkbuild/deps/ (run
+    \\either again after it) and every build cache (.botopinkbuild/cache/: the erlang
     \\verdicts of `build`, the .beam files of `test --target erlang`). In a
     \\workspace member, the workspace root's .botopinkbuild/cache/ goes too.
     \\

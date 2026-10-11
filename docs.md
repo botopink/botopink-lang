@@ -3961,8 +3961,8 @@ botopink build --target erlang
 
 `botopink clean` deletes `out/` and `.botopinkbuild/` whole: the comptime
 scratch (`.botopinkbuild/tmp/`), the run directories of `botopink test` and the
-`bpmp install` links under `.botopinkbuild/deps/` — run `bpmp install` again
-after it — and every build cache (`.botopinkbuild/cache/`: the erlang verdicts
+`bpmp install` / `bpmp link` links under `.botopinkbuild/deps/` — run either
+again after it — and every build cache (`.botopinkbuild/cache/`: the erlang verdicts
 of `botopink build`, the `.beam` files of `botopink test --target erlang`). In
 a workspace member, the workspace root's `.botopinkbuild/cache/` goes too: the
 members of a workspace share one cache there.

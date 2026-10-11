@@ -133,7 +133,7 @@ fn checkClosure(
                     return error.Invalid;
                 }
             }
-            const r = (try manifest.resolveDependency(arena, io, pkg.m, pkg.dir, dep, &.{}, &.{}, out_err)) orelse continue;
+            const r = (try manifest.resolveDependency(arena, io, pkg.m, pkg.dir, dep, &.{}, out_err)) orelse continue;
             const rdir = try std.fs.path.resolve(arena, &.{r.dir});
             if (!within(checkout, rdir) or !try realWithin(arena, io, checkout, rdir)) {
                 out_err.* = pkg.m.locateEntryAt("dependencies", dep.name, try std.fmt.allocPrint(

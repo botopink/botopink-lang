@@ -180,6 +180,52 @@ test "ProjectGraph.resolveRoots: env unset is byte-identical to legacy walk-up" 
     try std.testing.expect(saw_ws_libs);
 }
 
+// ── Decision 483: `.botopinkbuild/deps/` first ─────────────────────────────────
+//
+// The editor resolves a `git` dependency as the CLI does (`libs.dependencyTiers`):
+// a link under the project's `.botopinkbuild/deps/` wins over a walk-up root
+// carrying the same name.
+
+test "project graph: a .botopinkbuild/deps link wins over the walk-up (decision 483)" {
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+    test_scratch.remove(io, "lsp-graph-deps-link");
+    defer test_scratch.remove(io, "lsp-graph-deps-link");
+
+    const pkg = "{ \"name\": \"b37lib\", \"src\": \"src/\", \"files\": [\"lib.bp\"] }";
+    const files = [_][2][]const u8{
+        // `ws/libs` is a walk-up root of `ws/app`.
+        .{ "lsp-graph-deps-link/ws/libs/b37lib/botopink.json", pkg },
+        .{ "lsp-graph-deps-link/ws/libs/b37lib/src/lib.bp", "pub fn fromWalkUp() {}\n" },
+        .{ "lsp-graph-deps-link/linked/b37lib/botopink.json", pkg },
+        .{ "lsp-graph-deps-link/linked/b37lib/src/lib.bp", "pub fn fromLink() {}\n" },
+        .{ "lsp-graph-deps-link/ws/app/botopink.json", "{ \"name\": \"app\", \"src\": \"src/\", \"dependencies\": { \"b37lib\": { \"git\": \"https://example.invalid/b37lib.git\" } } }" },
+        .{ "lsp-graph-deps-link/ws/app/src/main.bp", "val x = 1;\n" },
+    };
+    inline for (files) |f| {
+        const path = test_scratch.path(io, f[0]);
+        try std.Io.Dir.cwd().createDirPath(io, std.fs.path.dirname(path).?);
+        try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = f[1] });
+    }
+    const target = try std.Io.Dir.cwd().realPathFileAlloc(io, test_scratch.path(io, "lsp-graph-deps-link/linked/b37lib"), gpa);
+    defer gpa.free(target);
+    try std.Io.Dir.cwd().createDirPath(io, test_scratch.path(io, "lsp-graph-deps-link/ws/app/.botopinkbuild/deps"));
+    try std.Io.Dir.cwd().symLink(io, target, test_scratch.path(io, "lsp-graph-deps-link/ws/app/.botopinkbuild/deps/b37lib"), .{ .is_directory = true });
+
+    var g = graph_mod.ProjectGraph.init(gpa, io, null);
+    defer g.deinit();
+    const r = (try g.resolve(test_scratch.uri(io, "lsp-graph-deps-link/ws/app/src/main.bp"))) orelse return error.NoProject;
+    try std.testing.expectEqual(@as(usize, 0), r.problems.len);
+    var linked = false;
+    var walked = false;
+    for (r.deps) |d| {
+        if (std.mem.indexOf(u8, d.source, "fromLink") != null) linked = true;
+        if (std.mem.indexOf(u8, d.source, "fromWalkUp") != null) walked = true;
+    }
+    try std.testing.expect(linked);
+    try std.testing.expect(!walked);
+}
+
 // ── Graph problems: what `catch continue` used to swallow ─────────────────────
 //
 // A dependency no library root carries, and a `files` entry of a resolved

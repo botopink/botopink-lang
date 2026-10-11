@@ -1025,6 +1025,88 @@ else
   skip "a git dependency's subdir (git, node or $BPMP missing)"
 fi
 
+# ── `.botopinkbuild/deps/` first; `bpmp link` (decision 483) ─────────────────
+# A `git` dependency resolves from the project's `.botopinkbuild/deps/<name>`
+# before the walk-up to an enclosing `repository/`; `BOTOPINK_LIB_ROOTS` stays
+# first. `bpmp link [<checkout>]` writes those links to
+# `<checkout>/repository/<name>`, clones nothing, and names a dependency with no
+# local repository. BPMP_BIN / BOTOPINK_BIN point the rows at another build.
+echo "==> bpmp link: .botopinkbuild/deps links first, the walk-up a fallback, BOTOPINK_LIB_ROOTS before both"
+if have node && [[ -x "$BPMP" ]]; then
+  L="$WORK/l483"; rm -rf "$L"
+  # kitlib <dir> <text> — a package `kitlib` whose kitValue() answers <text>.
+  kitlib() {
+    mkdir -p "$1/src"
+    printf '{ "name": "kitlib", "version": "0.0.1", "entry": "root.bp", "files": ["root.bp"] }\n' >"$1/botopink.json"
+    printf 'pub fn kitValue() -> string {\n    return "%s";\n}\n' "$2" >"$1/src/root.bp"
+  }
+  kitlib "$L/checkout/repository/kitlib" "kitlib from the checkout"
+  kitlib "$L/meta/repository/kitlib" "kitlib from the walk-up"
+  kitlib "$L/env/kitlib" "kitlib from BOTOPINK_LIB_ROOTS"
+  # kit_app <dir> <dependencies-json> — a project printing kitValue().
+  kit_app() {
+    mkdir -p "$1/src"
+    printf '{ "name": "%s", "version": "0.1.0", "target": "commonJS", "dependencies": %s }\n' "$(basename "$1")" "$2" >"$1/botopink.json"
+    printf 'import { kitValue } from "kitlib";\n\npub fn main() {\n    @print(kitValue());\n}\n' >"$1/src/main.bp"
+  }
+  KITDEP='{ "kitlib": { "git": "https://example.invalid/kitlib.git", "branch": "feat" } }'
+  # bpmp_link <dir> [args…] — `bpmp link` in <dir>; $OUT / $CODE as `run`.
+  bpmp_link() {
+    local dir="$1"; shift
+    set +e
+    OUT="$(cd "$dir" && "$BPMP" link "$@" 2>&1)"
+    CODE=$?
+    set -e
+  }
+
+  APP="$L/meta/repository/kitapp"; kit_app "$APP" "$KITDEP"
+  run "$APP" run
+  expect_code 0 "no link: run"
+  expect_out "kitlib from the walk-up" "no link: the walk-up's repository/ answers"
+
+  bpmp_link "$APP"
+  expect_code 0 "bpmp link with no argument"
+  [[ "$(readlink "$APP/.botopinkbuild/deps/kitlib")" == */l483/meta/repository/kitlib ]] && ok "the default checkout is the enclosing one" || fail ".botopinkbuild/deps/kitlib links to '$(readlink "$APP/.botopinkbuild/deps/kitlib" || true)'"
+
+  bpmp_link "$APP" "$L/checkout"
+  expect_code 0 "bpmp link <checkout>"
+  [[ "$(readlink "$APP/.botopinkbuild/deps/kitlib")" == */l483/checkout/repository/kitlib ]] && ok "an existing link is replaced" || fail ".botopinkbuild/deps/kitlib links to '$(readlink "$APP/.botopinkbuild/deps/kitlib" || true)'"
+  run "$APP" run
+  expect_code 0 "linked: run"
+  expect_out "kitlib from the checkout" "a link wins over the walk-up"
+  expect_no_out "kitlib from the walk-up" "the walk-up is not read for a linked name"
+
+  set +e
+  OUT="$(cd "$APP" && BOTOPINK_LIB_ROOTS="$L/env" "$BP" run 2>&1)"
+  CODE=$?
+  set -e
+  expect_code 0 "BOTOPINK_LIB_ROOTS set: run"
+  expect_out "kitlib from BOTOPINK_LIB_ROOTS" "BOTOPINK_LIB_ROOTS wins over a link"
+
+  ALONE="$L/alone/kitapp"; kit_app "$ALONE" "$KITDEP"
+  run "$ALONE" build
+  expect_code 1 "no repository/ anywhere, no link: build"
+  expect_out "dependency 'kitlib' was not found under any library root" "no repository/ anywhere, no link: the dependency is named"
+  bpmp_link "$ALONE"
+  expect_code 1 "bpmp link with no enclosing checkout"
+  expect_out "holds repository/" "bpmp link with no enclosing checkout: says what it looked for"
+  bpmp_link "$ALONE" "$L/checkout"
+  expect_code 0 "bpmp link from outside every checkout"
+  run "$ALONE" run
+  expect_code 0 "only .botopinkbuild/deps links: run"
+  expect_out "kitlib from the checkout" "a project whose dependencies are only links resolves"
+
+  MISS="$L/alone/missapp"
+  kit_app "$MISS" '{ "kitlib": { "git": "https://example.invalid/kitlib.git" }, "nolib": { "git": "https://example.invalid/nolib.git" } }'
+  bpmp_link "$MISS" "$L/checkout"
+  expect_code 1 "bpmp link with a dependency the checkout does not hold"
+  expect_out "\"nolib\" has no local repository: $L/checkout/repository/nolib holds no botopink.json" "names the dependency and where it looked"
+  expect_out "botopink.json:1:" "located at the dependency's entry"
+  [[ ! -e "$MISS/.botopinkbuild/deps" ]] && ok "a refused link writes no link, not even the dependency it found" || fail ".botopinkbuild/deps written by a refused bpmp link"
+else
+  skip "bpmp link (node or $BPMP missing)"
+fi
+
 # ── `.mjs` sidecars (00 · 10-cli-residuals) ──────────────────────────────────
 # A `#[@External.Node("./x.mjs", …)]` lowers to a relative `require` in the
 # emitted module, and the CLI copies the source `.mjs` next to it. The owner of

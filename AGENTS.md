@@ -195,12 +195,20 @@ optional `rev` / `tag` / `path`). `bpmp install` consumes the object form,
 cloning each entry into its store and linking it under
 `<project>/.botopinkbuild/deps/<name>`; `botopink.lock` pins each dep to a
 commit SHA, and `bpmp install --frozen` fails when a dep has no lockfile entry.
+`bpmp link [<checkout>]` writes the same links to a local checkout instead —
+`.botopinkbuild/deps/<name>` → `<checkout>/repository/<name>`, nothing cloned, a
+dependency with no local repository named and refused (decision 483).
 
-Library resolution (`modules/compiler-cli/src/cli/libs.zig`): roots from
-`BOTOPINK_LIB_ROOTS` first, then for each ancestor `D` of cwd:
-`D/repository/botopink-lang/libs`, `D/repository`, `D/libs` — up to the first `D`
-that holds `repository/` (the enclosing checkout, `manifest.isCheckoutRoot`), so a
-meta worktree under `.tasks/<name>` sees only its own libraries (decision 143).
+Library resolution (`modules/compiler-cli/src/cli/libs.zig` `dependencyTiers`;
+the language server the same): a `git` dependency is looked up tier by tier
+(decision 483) — `BOTOPINK_LIB_ROOTS` first, then the project's
+`.botopinkbuild/deps/` links (`manifest.depsRoots`: a workspace member's own,
+then its workspace root's), and only then, as a fallback, the walk-up roots: for
+each ancestor `D` of cwd, `D/repository/botopink-lang/libs`, `D/repository`,
+`D/libs` — up to the first `D` that holds `repository/` (the enclosing checkout,
+`manifest.isCheckoutRoot`), so a meta worktree under `.tasks/<name>` sees only its
+own libraries (decision 143). A link wins over the walk-up; `path` and
+`workspace` dependencies resolve as before.
 Each loaded module carries its package (`Module.package`); a module is its package plus
 its path, so two packages' `theme` modules are two modules to the checker, every backend
 and the comptime runtimes (decisions 170, 337 — `compiler-core/src/comptime/AGENTS.md`

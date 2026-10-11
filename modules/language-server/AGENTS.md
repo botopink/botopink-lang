@@ -102,13 +102,18 @@ resolves the dependency set with the same rules the CLI driver uses:
 - `from "<lib>"` → the lib's own `botopink.json` (`src` + `files`), found by the
   shared `manifest.resolveDependency` (`modules/manifest`, the CLI's resolver):
   a `{ "path": … }` dependency from the project directory, `{ "workspace": true }`
-  from the enclosing workspace, a `{ "git": … }` one by name across the resolved
+  from the enclosing workspace, a `{ "git": … }` one by name across the CLI's
+  lookup tiers (decision 483, `ProjectGraph.dependencyTiers` — the CLI's
+  `libs.dependencyTiers`): `BOTOPINK_LIB_ROOTS`, then the project's
+  `.botopinkbuild/deps/` links and a member's workspace root's
+  (`manifest.depsRoots`), then, as the fallback, the resolved
   **root list** (`BOTOPINK_LIB_ROOTS` env entries, then for each ancestor `D` of
   the project: `D` itself when it holds a workspace manifest,
   `D/repository/botopink-lang/libs`, `D/repository`, `D/libs`, up to the first `D`
   holding `repository/` — the enclosing checkout, `manifest.isCheckoutRoot`; de-duped
-  first-occurrence-wins; every workspace found there contributes its members)
-  and then `<project>/.botopinkbuild/deps/`. `.d.bp` declaration files are kept
+  first-occurrence-wins; every workspace found there contributes its members).
+  A link wins over the walk-up (`tests/project_graph.zig`, decision 483).
+  `.d.bp` declaration files are kept
   for go-to-def but excluded from the compile (the CLI drops them too).
 - `mod` / `pub mod` siblings → every `.bp` under the project's `src/`.
 - `from "std"` → embedded, expanded inside the compiler.

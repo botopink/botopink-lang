@@ -75,7 +75,7 @@ declares **exactly one source**:
 | Source | Resolves to | Notes |
 |---|---|---|
 | `{ "path": "…" }` | `<project directory>/<path>`, which must hold a `botopink.json` whose `name` is the key | Honoured by the compiler and the LSP directly — no library root is consulted. `bpmp install` links it under `.botopinkbuild/deps/<name>`. |
-| `{ "git": "…", pin }` | The library named `<name>` under the **library roots** (below), then the `bpmp install` store `<project>/.botopinkbuild/deps/<name>/` | The pin is one of `branch`, `tag` or `rev` — `bpmp install` clones it; the compiler resolves by name and does not fetch. A pin without `git` is refused. |
+| `{ "git": "…", pin }` | The library named `<name>` in the first **lookup tier** that carries it (below): `BOTOPINK_LIB_ROOTS`, then the link `<project>/.botopinkbuild/deps/<name>/`, then the library roots of the walk-up | The pin is one of `branch`, `tag` or `rev` — `bpmp install` clones it; `bpmp link` links a local checkout instead; the compiler resolves by name and does not fetch. A pin without `git` is refused. |
 | `{ "workspace": true }` | The **sibling member** of the enclosing workspace named `<name>` | The only way a member depends on a sibling (decision 75). Outside a workspace it is refused. |
 
 **`"subdir"` — a package inside a git repository (decision 344).** A `git`
@@ -109,15 +109,42 @@ the compiler ships (decision 326). Every other library is declared here,
 Without the entry, `from "routing"` is refused at the import:
 `unresolved import source "routing" — declare it in botopink.json "dependencies"`.
 
-**Library roots** (where a `git` dependency is found by name, in order):
-`BOTOPINK_LIB_ROOTS` entries (`:`-separated on POSIX); then, for each ancestor
-`D` of the project directory, nearest first: `D` itself when `D/botopink.json`
-is a workspace (its members), `D/repository/botopink-lang/libs` (the embedded
-`std`), `D/repository` (sibling libraries), `D/libs`; then
-`<project>/.botopinkbuild/deps` (the `bpmp install` store). A root contributes
-every immediate child directory holding a `botopink.json` — as a package named
-by the directory — and every **member** of a workspace found there, named by
-its manifest. The same directory reached through two roots is one library.
+**Lookup tiers** (where a `git` dependency is found by name — decision 483,
+as `node_modules`). The first tier that carries the name answers; a name two
+tiers carry is the earlier tier's, never "declared by two libraries":
+
+1. `BOTOPINK_LIB_ROOTS` entries (`:`-separated on POSIX), when set;
+2. `<project>/.botopinkbuild/deps/` — one symbolic link per dependency, written
+   by `bpmp install` (into its store) or `bpmp link` (into a local checkout's
+   `repository/<name>`); for a workspace member, then
+   `<workspace root>/.botopinkbuild/deps/` (where `bpmp link` run at the
+   workspace root writes one link per name for every member). The link wins
+   over the walk-up;
+3. the **library roots** of the walk-up, as a fallback: for each ancestor `D`
+   of the working directory, nearest first, `D` itself when `D/botopink.json`
+   is a workspace (its members), `D/repository/botopink-lang/libs` (the
+   embedded `std`), `D/repository` (sibling libraries), `D/libs` — up to the
+   first `D` that holds `repository/` (the enclosing checkout, decision 143).
+
+A tier contributes every immediate child directory (or link to one) holding a
+`botopink.json` — as a package named by the directory — and every **member** of
+a workspace found there, named by its manifest. The same directory reached
+through two roots of one tier is one library. Every package of a build — a
+dependency's own `git` dependencies included — is looked up in the project's
+tiers: one `.botopinkbuild/deps/` serves the whole closure.
+
+**`bpmp link [<checkout>]`** writes those links without cloning anything: for
+every `git` dependency of the project's manifests (a workspace's members
+included, and, flat, the `git` dependencies of what it links),
+`.botopinkbuild/deps/<name>` → `<checkout>/repository/<name>` (a `"subdir"`
+dependency: `<checkout>/repository/<repository>/<subdir>`, `<repository>` the
+last segment of its `git` URL). `<checkout>` defaults to the nearest directory,
+from the working directory up, that holds `repository/`. A dependency whose
+local repository holds no `botopink.json` is named — `"x" has no local
+repository: <checkout>/repository/x holds no botopink.json — check it out there,
+or name another checkout`, located at its entry — and the command exits 1 with
+nothing linked; an existing link is replaced. CI keeps `bpmp install`, which
+fetches.
 
 ### Refusals
 
@@ -167,6 +194,8 @@ row says otherwise):
 | `bpmp install`: a `subdir` holding another package | `"x": subdir "modules/y" holds a package named "y" — the dependency key is the import name and must match` |
 | `bpmp install`: a `path` dependency of the package (or of its in-checkout closure) leaving the checkout, by spelling or through a symbolic link | `"y": path "../../../y" leaves the checkout of <git> — a package of a git dependency names by path only packages of its own repository` (on that package's own manifest) |
 | `bpmp install`: `botopink.lock` pinning two dependencies on one repository at two commits | `install: botopink.lock pins 'a' and 'b' at two commits of one repository — one repository is one checkout (decision 344)` (`bpmp install --update` re-pins) |
+| `bpmp link`: a `git` dependency whose `<checkout>/repository/<name>` holds no manifest | `"x" has no local repository: <checkout>/repository/x holds no botopink.json — check it out there, or name another checkout` (every such dependency named, then exit 1; nothing linked) |
+| `bpmp link`: one name linking to two directories (a project's `"subdir"` entry and a linked package's entry by name) | `"x" links to <dirA> here, but to <dirB> for <manifest> — one name is one link` |
 | a host sidecar the resolved dependency does not carry | `dependency 'x' requires "./x.mjs" from module 'x/root', but no such file is in its sources (looked at <src>/sidecars/x.mjs, then <src>/x.mjs)` |
 
 ### Host sidecars
@@ -274,5 +303,5 @@ application; nothing is shipped from it by design.
 | `botopink build/check/run/test` | the project's manifest (cwd), the enclosing workspace, each dependency's manifest | `modules/compiler-cli/src/cli/config.zig`, `libs.zig` |
 | `botopink-lsp` | the nearest manifest above the open file, the enclosing workspace, each dependency's manifest — refusals are editor diagnostics on the manifest | `modules/language-server/src/project_graph.zig` |
 | `botopink-lib-test` | every package and every workspace member under the library roots; `targets`; `files` of a library member | `modules/lib-test-runner/src/discovery.zig` |
-| `bpmp` | `dependencies` (to install), `files` (to pack), `botopink`, `requires`; writes `dependencies` entries as `{ "git": … }` | `modules/bpmp/src/manifest.zig`, `dep/spec.zig` |
+| `bpmp` | `dependencies` (to install or link), `files` (to pack), `botopink`, `requires`; writes `dependencies` entries as `{ "git": … }` | `modules/bpmp/src/manifest.zig`, `dep/spec.zig` |
 | the shared model | everything above | `modules/manifest/src/root.zig` |

@@ -9,11 +9,13 @@
 ///   * `from "<lib>"` → the lib's own `botopink.json` (`src` + `files`), found
 ///     the way the CLI finds it (`manifest.resolveDependency`): a `path`
 ///     dependency from the project's directory, `{ "workspace": true }` from the
-///     enclosing workspace, a `git` dependency by name across the resolved root
-///     list (an ancestor workspace, bundled `repository/botopink-lang/libs`,
-///     sibling `repository/`, legacy flat `libs/` — see `resolveRoots`; every
-///     workspace found there contributes its members) and then the project's
-///     `.botopinkbuild/deps/` store.
+///     enclosing workspace, a `git` dependency by name across the CLI's lookup
+///     tiers (decision 483, `dependencyTiers`): `BOTOPINK_LIB_ROOTS`, then the
+///     project's `.botopinkbuild/deps/` links (a workspace member's own, then
+///     its workspace root's), then the resolved root list as the fallback (an
+///     ancestor workspace, bundled `repository/botopink-lang/libs`, sibling
+///     `repository/`, legacy flat `libs/` — see `resolveRoots`; every
+///     workspace found there contributes its members).
 ///   * `mod` / `pub mod` siblings → every `.bp` under the project's `src/`.
 ///   * `from "std"` → handled inside the compiler (embedded), not here.
 ///
@@ -236,12 +238,10 @@ pub const ProjectGraph = struct {
                     for (roots) |r| self.gpa.free(r);
                     self.gpa.free(roots);
                 }
-                const entries = try manifest.scanRoots(a, self.io, roots);
-                const store = try std.fs.path.join(a, &.{ root, ".botopinkbuild", "deps" });
-                const fallback = try manifest.scanRoots(a, self.io, &.{store});
+                const tiers = try self.dependencyTiers(a, root, roots);
                 for (m.dependencies) |dep| {
                     var derr: ?manifest.Located = null;
-                    const resolved = manifest.resolveDependency(a, self.io, m, root, dep, entries, fallback, &derr) catch |e| switch (e) {
+                    const resolved = manifest.resolveDependency(a, self.io, m, root, dep, tiers, &derr) catch |e| switch (e) {
                         error.Invalid => {
                             try problems.append(a, try problemFromLocated(a, derr.?));
                             continue;
@@ -400,6 +400,25 @@ pub const ProjectGraph = struct {
                 .declaration = std.mem.endsWith(u8, entry.basename, ".d.bp"),
             });
         }
+    }
+
+    /// The tiers a `git` dependency of the project at `root` is looked up in —
+    /// the CLI's `libs.dependencyTiers` (decision 483), so the editor and the
+    /// build resolve one name to one directory: `BOTOPINK_LIB_ROOTS` (when
+    /// set), then each of `manifest.depsRoots(root)` (the project's
+    /// `.botopinkbuild/deps/`, then a member's workspace root's), then `roots`
+    /// (`resolveRoots`, scanned whole) as the fallback. Owned by `a`.
+    pub fn dependencyTiers(self: *ProjectGraph, a: std.mem.Allocator, root: []const u8, roots: []const []const u8) ![]const []const manifest.Entry {
+        var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
+        const cwd = cwd_buf[0..try std.process.currentPath(self.io, &cwd_buf)];
+        const env_roots = try parseEnvRoots(self.gpa, self.env_map, cwd);
+        defer freeRoots(self.gpa, env_roots);
+        var tiers: std.ArrayListUnmanaged([]const manifest.Entry) = .empty;
+        if (env_roots.len > 0) try tiers.append(a, try manifest.scanRoots(a, self.io, env_roots));
+        const abs_root = try std.fs.path.resolve(a, &.{ cwd, root });
+        for (try manifest.depsRoots(a, self.io, abs_root)) |d| try tiers.append(a, try manifest.scanRoots(a, self.io, &.{d}));
+        try tiers.append(a, try manifest.scanRoots(a, self.io, roots));
+        return tiers.toOwnedSlice(a);
     }
 
     // ── filesystem helpers ──────────────────────────────────────────────────────

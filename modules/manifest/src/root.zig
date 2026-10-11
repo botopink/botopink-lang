@@ -1097,6 +1097,37 @@ pub fn cacheDir(arena: std.mem.Allocator, root: []const u8, store: []const u8) s
     return std.fs.path.join(arena, &.{ root, CACHE_DIR, store });
 }
 
+/// Where a project's `git` dependencies are linked, relative to the project (or
+/// to its workspace root): `bpmp install` links each into its store, `bpmp link`
+/// each into a local checkout's `repository/<name>` (decision 483).
+pub const DEPS_DIR = ".botopinkbuild/deps";
+
+/// The directories whose children a `git` dependency of the project at
+/// `project_dir` (absolute) is looked up in before the walk-up roots (decision
+/// 483), in order: `<project_dir>/.botopinkbuild/deps`, then — for a workspace
+/// member — `<workspace root>/.botopinkbuild/deps`. `bpmp install` writes the
+/// first (it links the dependencies of the manifest in its working directory,
+/// and a workspace manifest declares none); `bpmp link` run at a workspace root
+/// writes the second, one link per name for every member. A directory that does
+/// not exist is listed all the same (`scanRoots` skips it). A workspace that
+/// does not expand contributes nothing here — the command that reads it
+/// reports it.
+pub fn depsRoots(arena: std.mem.Allocator, io: std.Io, project_dir: []const u8) std.mem.Allocator.Error![]const []const u8 {
+    var out: std.ArrayListUnmanaged([]const u8) = .empty;
+    try out.append(arena, try std.fs.path.join(arena, &.{ project_dir, DEPS_DIR }));
+    var err: ?Located = null;
+    const ws = enclosingWorkspace(arena, io, project_dir, &err) catch |e| switch (e) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.Invalid => null,
+    };
+    if (ws) |w| {
+        const ws_deps = try std.fs.path.join(arena, &.{ w.dir, DEPS_DIR });
+        if (!samePath(try std.fs.path.resolve(arena, &.{ws_deps}), try std.fs.path.resolve(arena, &.{out.items[0]})))
+            try out.append(arena, ws_deps);
+    }
+    return out.toOwnedSlice(arena);
+}
+
 /// A package is a library when its module tree is rooted at `root.bp` rather
 /// than `main.bp`: `entry` decides when set, else the presence of
 /// `<src>/main.bp`. A library member with no `files` ships nothing to a
@@ -1325,18 +1356,20 @@ pub const ResolvedDep = struct {
 ///   * `{ "path": … }` → `<project_dir>/<path>`, which must hold a package of
 ///     that name; a workspace, a sibling member (use `{ "workspace": true }`) and
 ///     a name mismatch are located errors;
-///   * `{ "git": … }` → the first entry named so in `entries`, then in
-///     `fallback_entries` (where `bpmp install` materialises it); an entry with
-///     a problem returns that problem; a workspace is refused with its member
-///     list; `null` when nothing carries the name.
+///   * `{ "git": … }` → the first entry named so in the first of `tiers` that
+///     carries the name (decision 483: `BOTOPINK_LIB_ROOTS`, then the project's
+///     `.botopinkbuild/deps/` links — `depsRoots` —, then the walk-up roots;
+///     each tier is one `scanRoots`, so a name in two tiers is the earlier
+///     tier's and never "declared by two libraries"); an entry with a problem
+///     returns that problem; a workspace is refused with its member list;
+///     `null` when no tier carries the name.
 pub fn resolveDependency(
     arena: std.mem.Allocator,
     io: std.Io,
     project: Manifest,
     project_dir: []const u8,
     dep: DepEntry,
-    entries: []const Entry,
-    fallback_entries: []const Entry,
+    tiers: []const []const Entry,
     out_err: *?Located,
 ) Error!?ResolvedDep {
     const at = locateEntry(project.text, "dependencies", dep.name);
@@ -1415,8 +1448,10 @@ pub fn resolveDependency(
         }
         return .{ .dir = target, .manifest = tm };
     }
-    // git: by name across the roots, then the install store.
-    const found = find(entries, dep.name) orelse find(fallback_entries, dep.name) orelse return null;
+    // git: by name, tier by tier (decision 483).
+    const found = for (tiers) |tier| {
+        if (find(tier, dep.name)) |e| break e;
+    } else return null;
     if (found.problem) |pr| {
         out_err.* = pr;
         return error.Invalid;
@@ -2176,48 +2211,102 @@ test "resolveDependency: workspace, path, git-by-name, a workspace by name, a me
     const web_dir = try std.fs.path.join(a, &.{ cwd, FIX ++ "/roots/repository/workspace/modules/acme-web" });
     var err: ?Located = null;
     const web = try read(a, io, web_dir, &err);
-    const core = (try resolveDependency(a, io, web, web_dir, web.dependencies[0], entries, &.{}, &err)).?;
+    const core = (try resolveDependency(a, io, web, web_dir, web.dependencies[0], &.{entries}, &err)).?;
     try testing.expectEqualStrings("acme", core.manifest.name);
     try testing.expect(std.mem.endsWith(u8, core.dir, "/modules/acme"));
 
     // `plain` depends on `acme-web` by name (git form) and on `local` by path.
     const plain_dir = try std.fs.path.join(a, &.{ cwd, FIX ++ "/roots/repository/plain" });
     const plain = try read(a, io, plain_dir, &err);
-    const by_name = (try resolveDependency(a, io, plain, plain_dir, plain.dependencies[0], entries, &.{}, &err)).?;
+    const by_name = (try resolveDependency(a, io, plain, plain_dir, plain.dependencies[0], &.{entries}, &err)).?;
     try testing.expectEqualStrings("acme-web", by_name.manifest.name);
-    const by_path = (try resolveDependency(a, io, plain, plain_dir, plain.dependencies[1], entries, &.{}, &err)).?;
+    const by_path = (try resolveDependency(a, io, plain, plain_dir, plain.dependencies[1], &.{entries}, &err)).?;
     try testing.expectEqualStrings("local", by_path.manifest.name);
     try testing.expect(std.mem.endsWith(u8, by_path.dir, "/roots/local"));
     // A name nothing carries is null (the caller words "not found").
-    try testing.expect((try resolveDependency(a, io, plain, plain_dir, .{ .name = "absent", .spec = .{ .git = "https://e/a.git" } }, entries, &.{}, &err)) == null);
+    try testing.expect((try resolveDependency(a, io, plain, plain_dir, .{ .name = "absent", .spec = .{ .git = "https://e/a.git" } }, &.{entries}, &err)) == null);
 
     // The workspace by name, with its members listed.
     err = null;
-    try testing.expectError(error.Invalid, resolveDependency(a, io, plain, plain_dir, .{ .name = "workspace", .spec = .{ .git = "https://e/w.git" } }, entries, &.{}, &err));
+    try testing.expectError(error.Invalid, resolveDependency(a, io, plain, plain_dir, .{ .name = "workspace", .spec = .{ .git = "https://e/w.git" } }, &.{entries}, &err));
     try testing.expectEqualStrings("\"workspace\" is a workspace, not a package — import one of its members: acme, acme-empty, acme-web, acme-app", err.?.message);
 
     // A member depending on a sibling by path (the workspace rule, at resolution time).
     err = null;
-    try testing.expectError(error.Invalid, resolveDependency(a, io, web, web_dir, .{ .name = "acme", .spec = .{ .path = "../acme" } }, entries, &.{}, &err));
+    try testing.expectError(error.Invalid, resolveDependency(a, io, web, web_dir, .{ .name = "acme", .spec = .{ .path = "../acme" } }, &.{entries}, &err));
     try testing.expectEqualStrings("\"acme\": path \"../acme\" points at the sibling member \"acme\" — use { \"workspace\": true }", err.?.message);
 
     // { "workspace": true } outside any workspace.
     err = null;
-    try testing.expectError(error.Invalid, resolveDependency(a, io, plain, plain_dir, .{ .name = "acme", .spec = .{ .workspace = true } }, entries, &.{}, &err));
+    try testing.expectError(error.Invalid, resolveDependency(a, io, plain, plain_dir, .{ .name = "acme", .spec = .{ .workspace = true } }, &.{entries}, &err));
     try testing.expect(std.mem.startsWith(u8, err.?.message, "\"acme\": { \"workspace\": true } but "));
     try testing.expect(std.mem.indexOf(u8, err.?.message, "is not a member of any workspace") != null);
 
     // A path that holds no manifest, and a path whose package has another name.
     err = null;
-    try testing.expectError(error.Invalid, resolveDependency(a, io, plain, plain_dir, .{ .name = "x", .spec = .{ .path = "../nowhere" } }, entries, &.{}, &err));
+    try testing.expectError(error.Invalid, resolveDependency(a, io, plain, plain_dir, .{ .name = "x", .spec = .{ .path = "../nowhere" } }, &.{entries}, &err));
     try testing.expect(std.mem.startsWith(u8, err.?.message, "\"x\": path \"../nowhere\" holds no botopink.json"));
     err = null;
-    try testing.expectError(error.Invalid, resolveDependency(a, io, plain, plain_dir, .{ .name = "other", .spec = .{ .path = "../../local" } }, entries, &.{}, &err));
+    try testing.expectError(error.Invalid, resolveDependency(a, io, plain, plain_dir, .{ .name = "other", .spec = .{ .path = "../../local" } }, &.{entries}, &err));
     try testing.expectEqualStrings("\"other\": path \"../../local\" holds a package named \"local\" — the dependency key is the import name and must match", err.?.message);
     // A path to a workspace.
     err = null;
-    try testing.expectError(error.Invalid, resolveDependency(a, io, plain, plain_dir, .{ .name = "ws", .spec = .{ .path = "../workspace" } }, entries, &.{}, &err));
+    try testing.expectError(error.Invalid, resolveDependency(a, io, plain, plain_dir, .{ .name = "ws", .spec = .{ .path = "../workspace" } }, &.{entries}, &err));
     try testing.expectEqualStrings("\"ws\": path \"../workspace\" is a workspace, not a package — depend on one of its members: acme, acme-empty, acme-web, acme-app", err.?.message);
+}
+
+test "resolveDependency: a git dependency answers from the first tier that carries it (decision 483)" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const a = arena_inst.allocator();
+    const io = testing.io;
+    var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const cwd = cwd_buf[0..try std.process.currentPath(io, &cwd_buf)];
+    const plain_dir = try std.fs.path.join(a, &.{ cwd, FIX ++ "/roots/repository/plain" });
+    var err: ?Located = null;
+    const plain = try read(a, io, plain_dir, &err);
+    const acme_web: DepEntry = plain.dependencies[0];
+
+    // `acme-web` is a member of `roots/other/second` and of
+    // `roots/repository/workspace`. Scanned as one tier they are "declared by
+    // two libraries"; as two tiers the first one carries it.
+    const other = try scanRoots(a, io, &.{FIX ++ "/roots/other"});
+    const repo = try scanRoots(a, io, &.{FIX ++ "/roots/repository"});
+    const first = (try resolveDependency(a, io, plain, plain_dir, acme_web, &.{ other, repo }, &err)).?;
+    try testing.expectEqualStrings(FIX ++ "/roots/other/second/modules/acme-web", first.dir);
+    const swapped = (try resolveDependency(a, io, plain, plain_dir, acme_web, &.{ repo, other }, &err)).?;
+    try testing.expectEqualStrings(FIX ++ "/roots/repository/workspace/modules/acme-web", swapped.dir);
+    // A tier that does not carry the name passes it on; no tier is null.
+    const store = try scanRoots(a, io, &.{FIX ++ "/symlinked-store/deps"});
+    const passed = (try resolveDependency(a, io, plain, plain_dir, acme_web, &.{ store, repo }, &err)).?;
+    try testing.expectEqualStrings(FIX ++ "/roots/repository/workspace/modules/acme-web", passed.dir);
+    try testing.expect((try resolveDependency(a, io, plain, plain_dir, acme_web, &.{store}, &err)) == null);
+    try testing.expect((try resolveDependency(a, io, plain, plain_dir, acme_web, &.{}, &err)) == null);
+    // One tier holding both is the refusal it always was.
+    const joint = try scanRoots(a, io, &.{ FIX ++ "/roots/other", FIX ++ "/roots/repository" });
+    err = null;
+    try testing.expectError(error.Invalid, resolveDependency(a, io, plain, plain_dir, acme_web, &.{joint}, &err));
+    try testing.expect(std.mem.indexOf(u8, err.?.message, "is declared by two libraries") != null);
+}
+
+test "depsRoots: a package's own links; a workspace member's, then its workspace root's" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const a = arena_inst.allocator();
+    const io = testing.io;
+    var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const cwd = cwd_buf[0..try std.process.currentPath(io, &cwd_buf)];
+
+    const outside = try std.fs.path.join(a, &.{ cwd, FIX ++ "/roots/local" });
+    const own = try depsRoots(a, io, outside);
+    try testing.expectEqual(@as(usize, 1), own.len);
+    try testing.expectEqualStrings(try std.fs.path.join(a, &.{ outside, DEPS_DIR }), own[0]);
+
+    const member = try std.fs.path.join(a, &.{ cwd, FIX ++ "/workspace/examples/acme-app" });
+    const both = try depsRoots(a, io, member);
+    try testing.expectEqual(@as(usize, 2), both.len);
+    try testing.expectEqualStrings(try std.fs.path.join(a, &.{ member, DEPS_DIR }), both[0]);
+    try testing.expect(std.mem.endsWith(u8, both[1], FIX ++ "/workspace/" ++ DEPS_DIR));
 }
 
 test "enclosingWorkspace: a member finds its workspace; a package outside finds none; isWorkspaceDir probes" {

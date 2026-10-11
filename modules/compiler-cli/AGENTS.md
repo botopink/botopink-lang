@@ -111,19 +111,27 @@ project directory (must hold a package of that name; a sibling member of the
 enclosing workspace is refused with `use { "workspace": true }`);
 `{ "workspace": true }` to the sibling member of the enclosing workspace
 (`config.load` finds it — `ProjectConfig.workspace`); `{ "git": … }` by name
-against an ordered **root list** (`resolveLibRoots`): `BOTOPINK_LIB_ROOTS`
-entries first, then, walking up from cwd, each ancestor `D` contributes — when
+across the **lookup tiers** (`dependencyTiers`, decision 483), the first tier
+that carries the name answering: `BOTOPINK_LIB_ROOTS` entries (when set); then
+the project's `.botopinkbuild/deps/` and, for a workspace member, its workspace
+root's (`manifest.depsRoots`, one tier each — the links `bpmp install` writes
+into its store and `bpmp link` into a local checkout's `repository/<name>`); and
+last, as the fallback, the **root list** (`resolveLibRoots`): `BOTOPINK_LIB_ROOTS`
+entries again, then, walking up from cwd, each ancestor `D` contributes — when
 present — `D` itself when its `botopink.json` is a workspace (its members),
 `D/repository/botopink-lang/libs` (bundled libs), `D/repository` (sibling
 projects), and `D/libs` (flat tree), de-duplicated first-occurrence-wins; the walk
 stops after the first `D` that holds `repository/` — the enclosing checkout
 (`manifest.isCheckoutRoot`), so a meta worktree under `.tasks/<name>` never sees the
-main checkout's libraries a second time (decision 143). After
-those, `resolveFallbackRoots` adds `<project>/.botopinkbuild/deps/` (the symlink
-store written by `bpmp install`; a dependency reached through one of its links
-resolves its own dependencies from the link's target — `linkFreeDir` — so a git
-dependency with a `"subdir"` finds its `../<sibling>` and its workspace inside
-the checkout, decision 344). `manifest.scanRoots` turns the roots into
+main checkout's libraries a second time (decision 143). Each tier is one
+`manifest.scanRoots`, so a name two tiers carry is the earlier tier's (a link
+wins over the walk-up, an env root over a link) and never "declared by two
+libraries"; every package of the closure looks its `git` dependencies up in the
+project's tiers. A dependency reached through a link resolves its own `path`
+and `workspace` dependencies from the link's target when the link is the
+package itself — `linkFreeDir` — so a git dependency with a `"subdir"` finds
+its `../<sibling>` and its workspace inside the checkout (decision 344).
+`manifest.scanRoots` turns the roots into
 entries — a root's child holding a manifest, or every **member** of a workspace
 found there, named by its manifest — and `<name>` resolves to the first entry so
 named (a workspace by that name is refused with its member list; a name two
@@ -217,7 +225,7 @@ no "files"` (decision 75).
 
 | Variable              | Read by                                  | Effect                                                                 |
 | --------------------- | ---------------------------------------- | ---------------------------------------------------------------------- |
-| `BOTOPINK_LIB_ROOTS`  | `cli/libs.zig:resolveLibRoots`           | Prepends extra lib roots before the walk-up roots.                     |
+| `BOTOPINK_LIB_ROOTS`  | `cli/libs.zig:resolveLibRoots`, `dependencyTiers` | The first lookup tier of a `git` dependency (before the `.botopinkbuild/deps/` links, decision 483), and prepended to the walk-up roots. |
 | `BOTOPINK_BIN`        | the tests `botopink test` runs — **set** by `cli/test_cmd.zig:testTmpEnv` (`TEST_BIN_ENV`) | "The compiler running me": the absolute path of this `botopink` executable, exported to every test runner when the variable is unset; a value the caller set passes through untouched. |
 | `BOTOPINK_TEST_TMPDIR` | the tests `botopink test` runs — **set** by `cli/test_cmd.zig:testTmpEnv` (`TEST_TMPDIR_ENV`) | The run's own scratch directory, absolute (§ below). |
 
@@ -451,7 +459,13 @@ Cross-command rules:
   checkout; every refusal (no `git`, absolute, `..`, no `botopink.json`, a
   workspace, another package's name, a `path` leaving the checkout, two refs)
   is located and links nothing. Those rows red against the parent's `bpmp` and
-  `botopink` (`BPMP_BIN=` / `BOTOPINK_BIN=`).
+  `botopink` (`BPMP_BIN=` / `BOTOPINK_BIN=`). Decision 483: with no link the
+  walk-up's `repository/` answers; `bpmp link` with no argument links to the
+  enclosing checkout, `bpmp link <checkout>` replaces that link and the build
+  then reads the link, not the walk-up; `BOTOPINK_LIB_ROOTS` wins over the link;
+  a project under no `repository/` resolves from its links alone; `bpmp link`
+  with no enclosing checkout, and with a dependency the checkout does not hold
+  (named, located, nothing linked), exits 1.
 - **A host sidecar ships through the resolved dependency, or the build fails.**
   The `.mjs` a `#[@External.Node("./x.mjs", …)]` requires is copied from the
   directory the dependency resolved to — a `{ "workspace": true }` member, a

@@ -8,6 +8,7 @@ const version_mod = @import("./version.zig");
 
 const cmd_init = @import("./commands/init.zig");
 const cmd_install = @import("./commands/install.zig");
+const cmd_link = @import("./commands/link.zig");
 const cmd_uninstall = @import("./commands/uninstall.zig");
 const cmd_use = @import("./commands/use.zig");
 const cmd_list = @import("./commands/list.zig");
@@ -22,6 +23,7 @@ const cmd_env = @import("./commands/env.zig");
 const TABLE = [_]cli.Command{
     .{ .name = "init", .summary = "Initialise botopink.json + lockfile in cwd", .run = cmd_init.run },
     .{ .name = "install", .summary = "Install / replay project dependencies", .run = cmd_install.run },
+    .{ .name = "link", .summary = "Link git deps to a local checkout's repository/", .run = cmd_link.run },
     .{ .name = "uninstall", .summary = "Remove a dep from manifest + lockfile", .run = cmd_uninstall.run },
     .{ .name = "use", .summary = "Switch active toolchain (`use botopink <ver>`)", .run = cmd_use.run },
     .{ .name = "list", .summary = "Show project deps / installed packages", .run = cmd_list.run },
@@ -111,5 +113,6 @@ test {
     _ = @import("./dep/member.zig");
     _ = @import("./lock.zig");
     _ = @import("./commands/install.zig");
+    _ = @import("./commands/link.zig");
     _ = @import("./commands/sync.zig");
 }

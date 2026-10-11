@@ -32,9 +32,12 @@ tree and is skipped) keyed by their resolved 40-char commit SHA. `bpmp install` 
 dep's repository into `<store>/<repo_key>/<rev>/` (one checkout per repository and
 commit, shared by every dependency on it) and symlinks
 `<project>/.botopinkbuild/deps/<name>` to it — or, for a `"subdir"` (decision 344),
-to `<checkout>/<subdir>` (path deps are symlinked directly); the compiler's lib
-loader picks up `.botopinkbuild/deps/` as a fallback root and resolves a linked
-package's own dependencies from the link's target.
+to `<checkout>/<subdir>` (path deps are symlinked directly). `bpmp link
+[<checkout>]` writes the same links to a local checkout instead (decision 483).
+The compiler and the language server look a `git` dependency up in
+`.botopinkbuild/deps/` **first** — after `BOTOPINK_LIB_ROOTS`, before the
+walk-up to an enclosing `repository/` (`manifest.depsRoots`) — and resolve a
+linked package's own `path` / `workspace` dependencies from the link's target.
 
 ## Tree
 
@@ -69,6 +72,7 @@ modules/bpmp/
         ├── common.zig          ← shared error / hint / printf helpers
         ├── init.zig            ← `bpmp init`
         ├── install.zig         ← `bpmp install [<name>[@<spec>]] [--frozen|--update|--dry-run]`
+        ├── link.zig            ← `bpmp link [<checkout>]` (decision 483): `.botopinkbuild/deps/<name>` → `<checkout>/repository/<name>`
         ├── uninstall.zig       ← `bpmp uninstall <name> [--purge]`
         ├── use.zig             ← `bpmp use botopink <ver>|latest|dev --from <dir>`
         ├── list.zig            ← `bpmp list [--installed]`
@@ -223,6 +227,7 @@ tarball + extract" flow for the binary-installing commands.
 | `install <name>[@<spec>]` (no deps declared yet) | offline manifest mutation only: writes `{ "<name>": { "git": "<url>" } }` + `requires`; `<name>` is `<owner>/<name>` (GitHub), a git URL, or a bare name under `BPMP_DEFAULT_ORG` — with no source to write it is refused (decision 76); prints a hint that pinning commit + sha256 is not wired yet |
 | `install` (no args, no object-form deps) | reads `botopink.lock.json`; reports packages already present under `$BPMP_HOME/packages/`, and only hints for missing ones (no download yet) |
 | both non-object-form `install` paths | warn when the active toolchain (`stable`) is outside the manifest's `botopink` range |
+| `link [<checkout>]` | offline, decision 483 — clones nothing, writes no lockfile. For every `git` dependency of the manifest in the working directory (a workspace root: every member's), and, flat, the `git` dependencies of each package it links (the package, or the workspace member named like the dependency) and of their in-checkout `path` / `workspace` closure: `.botopinkbuild/deps/<name>` → `<checkout>/repository/<name>` (a `"subdir"` dependency: `<checkout>/repository/<last segment of the git URL>/<subdir>`), under the working directory (a workspace root's links serve every member — `manifest.depsRoots`). `<checkout>` defaults to the nearest directory from the working directory up that holds `repository/` (`manifest.isCheckoutRoot`); one given must hold it. Every dependency whose local repository holds no `botopink.json` is printed located at its entry (`"x" has no local repository: … holds no botopink.json …`) and the command exits 1 **before any link is written**; one name at two directories is a located refusal; an existing link is replaced (`install.ensureSymlink`). `plan` computes the links without writing; tests in `link.zig`, contract rows in `compiler-cli/tests/cli_contract.sh`. A symbolic link that cannot be made (Windows without the symlink privilege) is reported naming both paths — there is no junction or copy fallback. |
 | `uninstall`    | offline (manifest + `botopink.lock.json`)                             |
 | `use botopink dev --from <dir>` | offline (sentinel file)                              |
 | `use botopink <ver>` / `use botopink latest` | **online** — `release.installOne` for each of the 4 binaries; writes the `stable` sentinel |

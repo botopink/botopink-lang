@@ -327,7 +327,7 @@ pub fn reportDependencyError(err: anyerror) void {
             reporter.errMsg("project declares dependencies but no libs/ directory was found in this or any parent directory");
             reporter.hintMsg("if your botopink.json uses the new object form ({\"<name>\": {\"git\": ...}}), run `bpmp install` to fetch deps into $BPMP_HOME first");
         },
-        error.LibNotFound => reporter.hintMsg("libraries resolve from BOTOPINK_LIB_ROOTS, then <ancestor>/repository/botopink-lang/libs, <ancestor>/repository and <ancestor>/libs, then .botopinkbuild/deps (`bpmp install`)"),
+        error.LibNotFound => reporter.hintMsg("a git dependency resolves from BOTOPINK_LIB_ROOTS, then .botopinkbuild/deps/<name> (`bpmp link` or `bpmp install`), then <ancestor>/repository/botopink-lang/libs, <ancestor>/repository and <ancestor>/libs"),
         // Already rendered, located in the manifest that is wrong.
         error.LibManifestInvalid => {},
         // Already rendered with the path and the manifest line.

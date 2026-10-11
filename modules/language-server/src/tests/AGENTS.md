@@ -76,7 +76,9 @@ tests each). `scripts/check-test-scratch.sh` refuses a hand-spelled one.
   the next write, and the loose file has no `lspCacheDir` and writes nothing —
   the scratch `HOME` stays empty in every case.
 - `project_graph.zig` writes throwaway workspaces under `lsp-roots-*` for the
-  `BOTOPINK_LIB_ROOTS` tests and `lsp-graph-*` for the graph-problem tests (a dependency no root
+  `BOTOPINK_LIB_ROOTS` tests, `lsp-graph-deps-link` for decision 483 (a
+  `.botopinkbuild/deps/` link wins over a walk-up root carrying the same name),
+  and `lsp-graph-*` for the graph-problem tests (a dependency no root
   carries, a `files` entry that cannot be read, a `.bp` of the project's own
   `src` that cannot be read — mode `000`, which asserts the diagnostic is on that
   file and skips when the run is root and can read it anyway — and a healthy

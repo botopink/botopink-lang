@@ -339,7 +339,7 @@ fn materialiseClone(
 /// Point `link_path` at `target_abs`, replacing whatever was there. Refuses
 /// (`error.SymlinkTargetMissing`) when the target does not exist, so a store
 /// miss can never leave a dangling `.botopinkbuild/deps/<name>` behind.
-fn ensureSymlink(io: std.Io, target_abs: []const u8, link_path: []const u8) !void {
+pub fn ensureSymlink(io: std.Io, target_abs: []const u8, link_path: []const u8) !void {
     std.Io.Dir.cwd().access(io, target_abs, .{}) catch return error.SymlinkTargetMissing;
     if (std.fs.path.dirname(link_path)) |d| {
         std.Io.Dir.cwd().createDirPath(io, d) catch |err| switch (err) {
