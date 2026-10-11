@@ -51,6 +51,7 @@
 /// wins.
 const std = @import("std");
 const bp = @import("botopink");
+const reporter = @import("./reporter.zig");
 
 /// The release the compiler emits for — the one constant, owned by `manifest`.
 pub const RELEASE = bp.otp.RELEASE;
@@ -238,7 +239,7 @@ pub fn job(arena: std.mem.Allocator, io: std.Io, eval: []const u8, args: []const
         .stdout_limit = .limited(16 * 1024 * 1024),
         .stderr_limit = .limited(16 * 1024 * 1024),
     });
-    if (result.stderr.len > 0) std.Io.File.stderr().writeStreamingAll(io, result.stderr) catch {};
+    if (result.stderr.len > 0) reporter.print("{s}", .{result.stderr});
     return .{ .code = switch (result.term) {
         .exited => |c| c,
         .signal, .stopped, .unknown => 1,
@@ -249,7 +250,13 @@ fn runInSession(arena: std.mem.Allocator, io: std.Io, s: *Session, eval: []const
     // The text as a job: its plain arguments and its halt are the session's.
     const t1 = try std.mem.replaceOwned(u8, arena, eval, "init:get_plain_arguments()", "BpSessionPlain");
     const t2 = try std.mem.replaceOwned(u8, arena, t1, "halt()", "BpSessionHalt(0)");
-    const text = try std.mem.replaceOwned(u8, arena, t2, "halt(", "BpSessionHalt(");
+    const t3 = try std.mem.replaceOwned(u8, arena, t2, "halt(", "BpSessionHalt(");
+    // The job runs in the command's current directory, as an `erl` of its own
+    // would: the session keeps the directory it was spawned in, and the
+    // command may have moved since (`botopink cell check` builds each cell in
+    // a scratch project of its own, `cell.zig`), while a job's paths — the
+    // list file, the output directory — are relative to where it is now.
+    const text = try std.mem.concat(arena, u8, &.{ try setCwdExpr(arena, io), t3 });
 
     var line: std.ArrayListUnmanaged(u8) = .empty;
     try line.print(arena, "{{{d},", .{online});
@@ -273,6 +280,22 @@ fn runInSession(arena: std.mem.Allocator, io: std.Io, s: *Session, eval: []const
         try out.appendSlice(arena, l);
         try out.append(arena, '\n');
     }
+}
+
+/// `ok = file:set_cwd("<the process cwd>"),` — the first expression of every
+/// session job; empty when the cwd cannot be read (the job then runs where
+/// the session is, as before).
+fn setCwdExpr(arena: std.mem.Allocator, io: std.Io) ![]const u8 {
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const n = std.process.currentPath(io, &buf) catch return "";
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    try out.appendSlice(arena, "ok = file:set_cwd(\"");
+    for (buf[0..n]) |c| {
+        if (c == '\\' or c == '"') try out.append(arena, '\\');
+        try out.append(arena, c);
+    }
+    try out.appendSlice(arena, "\"),\n");
+    return out.items;
 }
 
 /// `<<b1,b2,…>>`: any bytes, one ASCII line.

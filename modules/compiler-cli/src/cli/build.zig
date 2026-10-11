@@ -98,7 +98,7 @@ pub fn run(
     // Run the compiler. `build` emits only: the program is not executed.
     var outputs = bp.codegen.generateWith(gpa, modules, io, cfg, .{ .execute = false }) catch |err| {
         reporter.errMsg("compilation failed");
-        std.debug.print("  {s}\n", .{@errorName(err)});
+        reporter.print("  {s}\n", .{@errorName(err)});
         return 1;
     };
     defer {
@@ -208,7 +208,7 @@ fn checkErlang(
         if (err == error.FileNotFound) reporter.hintMsg("install Erlang/OTP 28+ and put `erl` on PATH");
         return false;
     };
-    if (result.stdout.len > 0) std.Io.File.stderr().writeStreamingAll(io, result.stdout) catch {};
+    if (result.stdout.len > 0) reporter.print("{s}", .{result.stdout});
     const code: u8 = result.code;
     if (code == 0) return true;
     reporter.errMsg("the OTP compiler refused emitted erlang — the build is not a program");

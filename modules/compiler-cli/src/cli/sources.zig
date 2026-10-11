@@ -165,7 +165,7 @@ pub fn reportDiag(arena: std.mem.Allocator, diag: resolver.Diagnostic) void {
             } else {
                 var aw: std.Io.Writer.Allocating = .init(arena);
                 diagnostics.renderLocatedAs(&aw.writer, "error", message, diag.file, diag.source, diag.line, diag.col, diag.name.len + 2) catch {};
-                std.debug.print("{s}", .{aw.written()});
+                reporter.print("{s}", .{aw.written()});
             }
             reporter.hintMsg("`from` names a package — std, a bundled package or a dependency declared in this package's botopink.json; a package one of them depends on is not importable until this one declares it");
         },
@@ -175,7 +175,7 @@ pub fn reportDiag(arena: std.mem.Allocator, diag: resolver.Diagnostic) void {
             const severity = std.fmt.allocPrint(arena, "error[{s}]", .{bp.comptime_pipeline.module_import_with_from}) catch "error";
             var aw: std.Io.Writer.Allocating = .init(arena);
             diagnostics.renderLocatedAs(&aw.writer, severity, message, diag.file, diag.source, diag.line, diag.col, diag.name.len + 2) catch {};
-            std.debug.print("{s}", .{aw.written()});
+            reporter.print("{s}", .{aw.written()});
             reporter.hintMsg(if (diag.own_package)
                 "`from` names another package — std, a bundled package or a dependency; this package's own modules are imported by their path inside the braces"
             else

@@ -23,6 +23,7 @@ const bp = @import("botopink");
 const manifest = @import("manifest");
 const config = @import("./config.zig");
 const diagnostics = @import("./diagnostics.zig");
+const reporter = @import("./reporter.zig");
 const arglist = @import("./arglist.zig");
 const otp = @import("./otp.zig");
 const resolver = @import("./resolver.zig");
@@ -436,7 +437,7 @@ const DepClosure = struct {
         };
         const r = resolved orelse {
             // Name the dependency here — the caller only sees the error tag.
-            std.debug.print("\x1b[1m\x1b[31merror\x1b[0m: dependency '{s}' was not found under any library root\n", .{dep.name});
+            reporter.print("\x1b[1m\x1b[31merror\x1b[0m: dependency '{s}' was not found under any library root\n", .{dep.name});
             return error.LibNotFound;
         };
         const r_dir = try linkFreeDir(self.arena, self.io, r.dir);
@@ -598,7 +599,7 @@ fn loadOne(
             else => {
                 var aw: std.Io.Writer.Allocating = .init(arena);
                 try renderMissingFile(&aw.writer, err, dep, file, file_path, m.path, m.text);
-                std.debug.print("{s}", .{aw.written()});
+                reporter.print("{s}", .{aw.written()});
                 return error.LibFileNotFound;
             },
         };
@@ -1683,12 +1684,12 @@ fn absentFromCodePath(arena: std.mem.Allocator, io: std.Io, atoms: []const []con
     // A job of the command's `erl` session (`otp.zig`) when one is open.
     const argv: []const []const u8 = &.{ "erl", "-noshell", "-noinput", "-eval", CODE_PATH_EVAL, "-extra", list };
     const result = otp.job(arena, io, CODE_PATH_EVAL, argv[6..], 1) catch |err| {
-        std.debug.print("\x1b[1m\x1b[31merror\x1b[0m: the emitted erlang calls host modules ({d}), and {s} to tell an OTP module from a missing sidecar\n", .{ atoms.len, arglist.spawnError(arena, "erl", argv, err) });
+        reporter.print("\x1b[1m\x1b[31merror\x1b[0m: the emitted erlang calls host modules ({d}), and {s} to tell an OTP module from a missing sidecar\n", .{ atoms.len, arglist.spawnError(arena, "erl", argv, err) });
         return error.SidecarRefused;
     };
     if (result.code != 0) {
         // Its stderr is already printed, above this line.
-        std.debug.print("\x1b[1m\x1b[31merror\x1b[0m: `erl` failed while looking up the host modules the emitted erlang calls\n", .{});
+        reporter.print("\x1b[1m\x1b[31merror\x1b[0m: `erl` failed while looking up the host modules the emitted erlang calls\n", .{});
         return error.SidecarRefused;
     }
     var out: std.ArrayListUnmanaged([]const u8) = .empty;

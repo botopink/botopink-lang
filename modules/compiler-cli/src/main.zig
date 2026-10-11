@@ -23,6 +23,7 @@ const new_cmd = @import("./cli/new.zig");
 const clean_cmd = @import("./cli/clean.zig");
 const test_cmd = @import("./cli/test_cmd.zig");
 const migrate_cmd = @import("./cli/migrate.zig");
+const cell_cmd = @import("./cli/cell.zig");
 const cfg = @import("./cli/config.zig");
 const otp = @import("./cli/otp.zig");
 const builtin = @import("builtin");
@@ -59,6 +60,7 @@ const HELP =
     \\  new      Create a new botopink project
     \\  clean    Remove build artifacts
     \\  migrate  Generate the module tree (mod/pub mod) from the src/ layout
+    \\  cell     Scaffold a language cell, or check cells against their snapshots
     \\  help     Show this message
     \\  version  Show the compiler version and the Erlang/OTP release it emits for
     \\
@@ -94,6 +96,14 @@ const HELP =
     \\
     \\Options for `migrate`:
     \\  --dry-run                    Report the index files without writing them
+    \\
+    \\`cell new <path>` scaffolds a cell: <path>/src/main.bp and <path>/docs.md.
+    \\`cell check <cell|directory>` builds and runs each cell on every target it
+    \\declares (all four, or those of its `targets` file) and compares each module's
+    \\answer with snapshot/output/<module>.snap and snapshot/targets/<t>/<module>.snap.
+    \\A difference writes a <file>.snap.new candidate beside it and exits 1; a new
+    \\cell gets candidates. An accepted snapshot is never overwritten, and no flag
+    \\accepts a candidate: rename it.
     \\
     \\`clean` takes no option. It deletes out/ and .botopinkbuild/ whole: the
     \\comptime scratch (.botopinkbuild/tmp/), the run directories of `test` and
@@ -192,6 +202,11 @@ fn dispatch(init: std.process.Init) !u8 {
         return clean_cmd.run(gpa, io);
     }
 
+    if (std.mem.eql(u8, cmd, "cell")) {
+        const opts = parseCellOpts(rest, &diag) catch |err| return usageError(cmd, err, diag);
+        return cell_cmd.run(gpa, io, opts, env_map);
+    }
+
     if (std.mem.eql(u8, cmd, "migrate")) {
         const opts = parseMigrateOpts(rest, &diag) catch |err| return usageError(cmd, err, diag);
         return migrate_cmd.run(gpa, io, opts);
@@ -236,6 +251,7 @@ pub const ArgError = error{
     InvalidTarget,
     UnexpectedArgument,
     MissingProjectName,
+    MissingCellCommand,
     OutOfMemory,
 };
 
@@ -252,6 +268,7 @@ fn usageError(cmd: []const u8, err: ArgError, diag: ArgDiag) u8 {
         error.InvalidTarget => std.fmt.bufPrint(&buf, "`{s}`: unsupported target '{s}' (expected commonJS, erlang, beam or wasm)", .{ cmd, diag.token }),
         error.UnexpectedArgument => std.fmt.bufPrint(&buf, "`{s}`: unexpected argument '{s}'", .{ cmd, diag.token }),
         error.MissingProjectName => std.fmt.bufPrint(&buf, "usage: botopink new <name> [--target <t>]", .{}),
+        error.MissingCellCommand => std.fmt.bufPrint(&buf, "usage: botopink cell new <path> | botopink cell check <cell|directory>", .{}),
         error.OutOfMemory => std.fmt.bufPrint(&buf, "out of memory while parsing arguments", .{}),
     } catch "invalid arguments";
     reporter.errMsg(msg);
@@ -417,6 +434,21 @@ fn parseNewOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!new_cmd.Opt
     return opts;
 }
 
+/// `cell new <path>` / `cell check <path>`: a subcommand and one path, no flag.
+fn parseCellOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!cell_cmd.Options {
+    if (args.len == 0) return error.MissingCellCommand;
+    const sub = args[0];
+    const is_new = std.mem.eql(u8, sub, "new");
+    if (!is_new and !std.mem.eql(u8, sub, "check")) return reject(sub, diag);
+    var path: ?[]const u8 = null;
+    for (args[1..]) |a| {
+        if (isFlag(a) or path != null) return reject(a, diag);
+        path = a;
+    }
+    const p = path orelse return error.MissingCellCommand;
+    return if (is_new) .{ .new = p } else .{ .check = p };
+}
+
 fn parseMigrateOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!migrate_cmd.Options {
     var opts: migrate_cmd.Options = .{};
     for (args) |a| {
@@ -443,6 +475,8 @@ fn parseNoOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!void {
 test {
     _ = @import("./cli/arglist.zig");
     _ = @import("./cli/build.zig");
+    _ = @import("./cli/cell.zig");
+    _ = @import("./cli/cell_snap.zig");
     _ = @import("./cli/check.zig");
     _ = @import("./cli/clean.zig");
     _ = @import("./cli/config.zig");
@@ -526,6 +560,20 @@ test "C12: new --target validates and stores the canonical name" {
     try std.testing.expectEqualStrings("app", o.name);
     try std.testing.expectError(error.MissingProjectName, parseNewOpts(argv(&.{}), &d));
     try std.testing.expectError(error.UnexpectedArgument, parseNewOpts(argv(&.{ "app", "other" }), &d));
+}
+
+test "cell takes `new` or `check` and one path, no flag (decision 464: no update flag)" {
+    var d: ArgDiag = .{};
+    const n = try parseCellOpts(argv(&.{ "new", "cells/hello" }), &d);
+    try std.testing.expectEqualStrings("cells/hello", n.new);
+    const c = try parseCellOpts(argv(&.{ "check", "cells" }), &d);
+    try std.testing.expectEqualStrings("cells", c.check);
+    try std.testing.expectError(error.MissingCellCommand, parseCellOpts(argv(&.{}), &d));
+    try std.testing.expectError(error.MissingCellCommand, parseCellOpts(argv(&.{"check"}), &d));
+    try std.testing.expectError(error.UnexpectedArgument, parseCellOpts(argv(&.{ "accept", "cells" }), &d));
+    try std.testing.expectError(error.UnknownFlag, parseCellOpts(argv(&.{ "check", "--update", "cells" }), &d));
+    try std.testing.expectEqualStrings("--update", d.token);
+    try std.testing.expectError(error.UnexpectedArgument, parseCellOpts(argv(&.{ "check", "a", "b" }), &d));
 }
 
 test "C12: a manifest target the compiler does not support is not degraded to commonJS" {

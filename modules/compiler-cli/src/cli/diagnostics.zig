@@ -84,7 +84,7 @@ fn printLocated(gpa: std.mem.Allocator, message: []const u8, file: []const u8, s
     var aw: std.Io.Writer.Allocating = .init(gpa);
     defer aw.deinit();
     renderLocated(&aw.writer, message, file, source, line, col, span) catch return;
-    std.debug.print("{s}", .{aw.written()});
+    reporter.print("{s}", .{aw.written()});
 }
 
 fn digitWidth(n: usize) usize {
@@ -183,7 +183,7 @@ fn printParseInfo(gpa: std.mem.Allocator, info: bp.print_errors.ParseErrorInfo, 
     var aw: std.Io.Writer.Allocating = .init(gpa);
     defer aw.deinit();
     bp.print_errors.render(&aw.writer, info, source, file) catch {};
-    std.debug.print("{s}", .{aw.written()});
+    reporter.print("{s}", .{aw.written()});
 }
 
 /// Render the error `parser.parse` just failed with.
@@ -260,8 +260,8 @@ fn printWarning(gpa: std.mem.Allocator, msg: []const u8, loc: anytype, source: [
         var aw: std.Io.Writer.Allocating = .init(gpa);
         defer aw.deinit();
         renderLocatedAs(&aw.writer, "warning", msg, file, source, l.line, l.col, 1) catch return;
-        std.debug.print("{s}", .{aw.written()});
-    } else std.debug.print("warning: {s}\n --> {s}\n\n", .{ msg, file });
+        reporter.print("{s}", .{aw.written()});
+    } else reporter.print("warning: {s}\n --> {s}\n\n", .{ msg, file });
 }
 
 /// Render the diagnostic a `generateWith` entry carries. Returns true when the
@@ -283,14 +283,14 @@ pub fn renderResult(gpa: std.mem.Allocator, io: std.Io, arena: std.mem.Allocator
 fn renderValidationError(gpa: std.mem.Allocator, ce: anytype, source: []const u8, file: []const u8) void {
     const rendered = ce.renderAlloc(gpa, source, file) catch return;
     defer gpa.free(rendered);
-    std.debug.print("{s}", .{rendered});
+    reporter.print("{s}", .{rendered});
 }
 
 fn printTypeError(gpa: std.mem.Allocator, msg: []const u8, loc: anytype, source: []const u8, file: []const u8) void {
     if (loc) |l| {
         printLocated(gpa, msg, file, source, l.line, l.col, 1);
     } else {
-        std.debug.print("error: {s}\n --> {s}\n\n", .{ msg, file });
+        reporter.print("error: {s}\n --> {s}\n\n", .{ msg, file });
     }
 }
 

@@ -1,0 +1,4 @@
+botopink-cell 1
+out 3
+abort
+stderr integer overflow: + on i32 at src/main.bp:6:14

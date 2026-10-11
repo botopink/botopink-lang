@@ -20,7 +20,10 @@ compiler-cli/
 │   │                          1 MiB ARG_MAX, and the OTP release rows: `--version`,
 │   │                          an `erl` shim answering 29 / 28, a manifest `"otp"`,
 │   │                          and `build` / `test` printing the checker warning
-│   │                          `check` prints — decision 57)
+│   │                          `check` prints — decision 57, and `botopink cell`:
+│   │                          a passing cell, a mismatch's `.snap.new` and
+│   │                          exit 1, a new cell's candidates, a departing
+│   │                          target, no majority, narrowing, malformed input)
 │   │                          against the real binary
 │   ├── mutual_recursion.sh  ← forward-ref + mutual recursion runs on every backend
 │   ├── mutual_recursion/    ← fixture project for the script above
@@ -38,6 +41,10 @@ compiler-cli/
 │   │                          `scripts/test-libs.sh`); `BOTOPINK_BIN` in a test;
 │   │                          a dependency's erlang host `.erl` is shipped and reached
 │   ├── test_tooling/        ← pass + fail fixture projects
+│   ├── cell/                ← fixture cells of `botopink cell` (§ Cells): prints,
+│   │                          aborts, departs, narrowed, refused — each green
+│   │                          under `botopink cell check`; cli_contract.sh copies
+│   │                          them before it edits one
 │   └── result_store.sh      ← the cell-result store of gate stages 8–10 (decisions
 │                              229, 249): run.sh, botopink-lib-test and check-docs.sh
 │                              over synthetic suites and a shim compiler naming an
@@ -250,6 +257,8 @@ What each command promises. A row the code does not meet yet is marked
 | `format --check [paths…]` | as above | nothing | nothing | every file parsed **and** already canonical | a file would change (one `Formatted <path>` line each, then `N file(s) would be reformatted`), or could not be read, lexed or parsed. `scripts/format-check.sh` (gate stage 3, CI) calls it over the compiler's canonical trees |
 | `new <name> [--target T]` | nothing | `<name>/{botopink.json,src/main.bp,.gitignore}` — the scaffolded `main.bp` **prints** (see "the scaffold runs" below) | nothing | scaffolded with a supported target | bad name, or a target outside `commonJS\|erlang\|beam\|wasm` |
 | `clean` | nothing | deletes `out/` and `.botopinkbuild/` whole (with `.botopinkbuild/deps/`, the `bpmp install` links, and `.botopinkbuild/cache/`, every build cache), and in a workspace member the workspace root's `.botopinkbuild/cache/` | nothing | both are gone (`Removed <dir>/` printed per success) | a delete failed |
+| `cell new <path>` | nothing | `<path>/src/main.bp` (it prints `hello`) and `<path>/docs.md` | nothing | scaffolded | `<path>` exists |
+| `cell check <cell\|directory>` | each cell (a directory holding `src/`; a directory argument is walked for them, not into a cell, a hidden directory or `node_modules`): `src/`, `snapshot/`, `targets`, an optional `botopink.json` — never `docs.md` | `<file>.snap.new` candidates under the cell's `snapshot/` (the previous run's deleted first); a scratch copy under `.botopinkbuild/tmp/cell-<id>/` of the current directory, removed when the cell ends. Never an accepted `.snap` | `node`, `erl`, `wasmtime` — the built program; the build itself runs in process | every cell answers its accepted snapshots on every target it declares, and every narrowing stands | a mismatch (candidate written, difference shown), a new cell, a tool that could not run, a malformed cell, or no cell found (§ Cells) |
 | `migrate [--dry-run]` | the `src/` tree | index files (`root.bp`/`main.bp`/`mod.bp`) — **none** under `--dry-run` | nothing | the tree is covered | `src/` unreadable |
 
 Cross-command rules:
@@ -543,6 +552,133 @@ inherits stdio so the envelope streams live.
 See [`src/AGENTS.md`](src/AGENTS.md) for the dispatch flow and
 [`src/cli/AGENTS.md`](src/cli/AGENTS.md) for the per-command list.
 
+## Cells — `botopink cell` (decision 464)
+
+A **cell** states one piece of behaviour any implementation of botopink must
+give (decision 457) — its source and its answers, no generated code:
+
+```text
+<cell>/src/<module>.bp                     the program; src/main.bp holds `pub fn main`
+<cell>/snapshot/output/<module>.snap       the answer on every target
+<cell>/snapshot/targets/<t>/<module>.snap  target <t>'s departure, only where it departs
+<cell>/targets                             the targets it is narrowed to, only when narrowed
+<cell>/docs.md                             the reference text beside it (decision 462) — never read
+<cell>/botopink.json                       optional (see choice 2 below)
+```
+
+`botopink cell new <path>` scaffolds `src/main.bp` and `docs.md`.
+`botopink cell check <cell|directory>` (`src/cli/cell.zig`) builds each cell
+**in this process** — `build.zig`'s pipeline over a scratch copy, with
+`reporter.sink` pointed at a buffer, so a refusal is read off exactly the text
+`botopink build` prints — and runs the built program (`run.programArgv`: `node`,
+`erl` after the in-session compile of every `.erl` / `.S`, `wasmtime`), its
+stdout, stderr and exit status captured, on every declared target. Then, per
+module and target, the accepted answer is `snapshot/targets/<t>/<m>.snap` when
+it exists, else `snapshot/output/<m>.snap`, else empty, and it is compared with
+what the target answered:
+
+- **equal on every target** → `ok   <cell>`; a run where every cell is ok exits 0;
+- **a departure that no longer holds** → `targets/<t>/<m>.snap.new` beside it;
+- **`output/` holds on some targets, not on others** → `targets/<t>/<m>.snap.new`
+  for each other target, reported as a departure to review;
+- **no target holds `output/`, or there is none** (a new cell: no `.snap` at
+  all, every module that answers and `main` get candidates) → the targets'
+  answers grouped: all agreeing → `output/<m>.snap.new` only; a strict majority
+  → `output/<m>.snap.new` from it and `targets/<t>/<m>.snap.new` for each other
+  target, a departure to review; no strict majority → `targets/<t>/<m>.snap.new`
+  for every target and `no majority — a person chooses …`: the tool never
+  decides the language's answer.
+
+Each candidate is printed with a line diff (`- ` accepted, `+ ` observed) and
+the run exits 1. An accepted `.snap` is never written; a person accepts a
+candidate by renaming it, as `snap`'s `.new` flow (decision 67: there is no
+update flag, and `check` refuses any flag). The candidates are the run's
+output: `check` deletes a cell's old `*.snap.new` before it runs it.
+
+A target that gives no answer fails the cell by name and writes nothing — a
+runtime that cannot be run (never skipped), a program past 300 s, a build that
+fails naming no refusal, `erl` on another OTP release, or the two wasm hosts
+disagreeing (decision 334: on wasm the cell runs as the `wasi` build under
+`wasmtime` **and** the `browser` build under `node` unless its manifest names
+its host, and both must answer alike — `tests/language/run.sh`'s rule). A
+`targets` file narrows the cell to the targets it names (blank-separated, in
+any order; an unknown target, one named twice, none or all four is malformed),
+and each target it leaves out is **audited**: `botopink build --target <t>` must
+refuse the cell on a host binding (`has no #[@External.<Target>(…)]`,
+`std-unsupported-on-target:`, `` `#[@BeamMemory]` has no meaning on the <t>
+backend``) — a build that accepts it, or refuses it otherwise, fails the cell
+(`tests/language/AGENTS.md` § Narrowing a cell). A `snapshot/` holding anything
+but `output/` and `targets/<t>/`, a departure for a target the cell does not
+run, and a malformed `.snap` (named `<file>:<line>: <reason>`) fail the cell.
+
+### The `.snap` format
+
+One module's answer, a record per line; `src/cli/cell_snap.zig` is the one
+place it is written, read and compared:
+
+```text
+botopink-cell 1                 the format and its version — always line 1
+refused <message line>          the compiler refuses the module: its `error…` line
+at <file>:<line>:<col>          … and where, when the diagnostic is located
+out <text>                      one line the program printed (`out` alone: an empty line)
+no-final-newline                the last `out` line ended without `\n`
+abort                           the program exits non-zero (the number is never pinned)
+stderr <text>                   with `abort`: the program's stderr contains <text>
+```
+
+```text
+botopink-cell 1                         botopink-cell 1
+out 3                                   refused error[namespace-type-self]: a namespace type has no value, …
+abort                                   at src/main.bp:7:15
+stderr integer overflow: + on i32 at src/main.bp:6:14
+```
+
+The records come in that order; a refusal and an output never share a file;
+a record's text is never empty; a file parses only when rendering what it
+parsed gives back its bytes, so each answer has one spelling. The header alone
+is the empty answer — a module that compiles and, for `main`, a program that
+printed nothing and exited 0 — and a missing file answers the same. Everything
+is compared exactly but `stderr`, which is a claim that the abort names its
+cause: the stderr (ANSI stripped) must contain the text, because the rest of a
+runtime's stderr — a stack trace, absolute paths, a crash-dump notice — is not
+the language's answer. `check` never writes a `stderr` line of its own; a
+candidate keeps the accepted claims that still hold.
+
+What a target answered, as `.snap`s: a build that fails gives every `error…`
+line it printed (the `N module(s) failed to compile` summary aside) with the
+first `--> <file>:<L>:<C>` under it, filed under the module that file is
+(`src/shapes/circle.bp` → `shapes/circle.snap`; an unlocated refusal is
+`main`'s) — a refusal the compiler cascades into an importer is that
+importer's answer too; a build that succeeds gives `main.snap`: stdout, and
+`abort` when the exit status is not 0 or the program died of a signal.
+
+### Choices made here, for the maintainer to confirm
+
+1. **The format** above: line-oriented records, `botopink-cell 1` as its first
+   line; an abort is `abort` with no status (decision 457 "that it aborts";
+   `tests/language/AGENTS.md` § Never pin an erlang exit status); `stderr` is
+   containment, not equality, and lives wherever the abort's words are
+   claimed — `targets/<t>/` per decision 457, `output/` allowed when every
+   target names the same text.
+2. **A departure replaces `output/` for its module on its target, whole** — it
+   is that target's full answer, not a patch over `output/` (an abort's stderr
+   claim on commonJS repeats the `out` lines).
+3. **The cell's package and manifest.** A cell without `botopink.json` is built
+   under `{ "name": "language_tests", "version": "0.0.1", "src": "src/" }`
+   (`cell.MANIFEST`) — the name every `tests/language` cell is built under
+   today, which erlang / BEAM atoms and one host template spell, so step H2's
+   migration changes no claim. A cell **may** carry its own `botopink.json`
+   (a `modules/` cell's `path` dependency, a named wasm host): decision 457's
+   shape names none.
+4. **The entry** is `src/main.bp`, required in every cell, its `main` the
+   program; the other modules are what its `mod` tree reaches. Snapshots are
+   named after the module's file under `src/` (`x/mod.bp` → `x/mod.snap`).
+5. **Majority** is strict (more than half of the targets that read `output/`):
+   two against two is no majority.
+6. **A cell whose module answers nothing** needs no file; a new cell is one
+   with no `.snap` at all, and its `main` always gets a candidate, so an empty
+   answer is accepted by a person, never by default.
+
 ## Tagging
 
 `compiler-cli` is auto-tagged on push by
@@ -573,7 +709,7 @@ $ ERL_FLAGS="-pa out" escript out/main.erl      # unchanged: no .beam exists yet
 ```
 
 The compile step is the missing half, not the code path. `cli/run.zig`
-(`runErlang`) does what the beam arm of `tests/language/run.sh` already did:
+(`erlangArgv`) does what the beam arm of `tests/language/run.sh` already did:
 
 1. what `erlc -o <out_dir>/erl` over **every** emitted `.erl`, found recursively,
    does — one `erl` reading the files from a list file (`compileAll`), since

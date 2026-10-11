@@ -49,6 +49,29 @@ pub fn run(
     const build_exit = try build_cmd.run(gpa, io, .{ .target = target, .out_dir = opts.out_dir }, env_map);
     if (build_exit != 0) return build_exit;
 
+    const argv = try programArgv(arena, io, proj, target, opts.out_dir, opts.module) orelse return 1;
+    var full = std.ArrayListUnmanaged([]const u8).empty;
+    try full.appendSlice(arena, argv);
+    for (opts.extra_args) |arg| try full.append(arena, arg);
+
+    // Spawn and wait — stdio is inherited from the parent process.
+    return spawnWait(arena, io, full.items);
+}
+
+/// The command line that runs the program `build` wrote into `out_dir` on
+/// `target`, entry `module` — after the step erlang and BEAM need first
+/// (every emitted `.erl` / `.S` compiled into `out_dir`). Null when that step
+/// failed; its refusal is printed. `botopink run` appends the program's own
+/// arguments and spawns it with inherited stdio; `botopink cell check`
+/// (`cell.zig`) spawns it with its stdout and stderr captured.
+pub fn programArgv(
+    arena: std.mem.Allocator,
+    io: std.Io,
+    proj: config.ProjectConfig,
+    target: config.Target,
+    out_dir: []const u8,
+    module: []const u8,
+) !?[]const []const u8 {
     // Resolve the entry-point file path. erlang and BEAM artifacts are named by
     // the module ATOM under `out/<target>/`; commonJS and wasm keep the mirrored
     // module-path tree (`build_cmd.artifactPath`).
@@ -57,7 +80,7 @@ pub fn run(
     const packages: bp.codegen.crossModule.Packages = .{ .root = proj.name };
     // A `browser` wasm build runs through its loader (decision 334).
     const browser = target == .wasm and proj.wasmHost() == .browser;
-    const entry_path = try build_cmd.artifactPath(arena, opts.out_dir, target, packages, opts.module, if (browser) ".mjs" else build_cmd.artifactExt(target));
+    const entry_path = try build_cmd.artifactPath(arena, out_dir, target, packages, module, if (browser) ".mjs" else build_cmd.artifactExt(target));
 
     // erlang and BEAM need two steps, not one. `escript <file>` compiles ONLY
     // the file it is handed, so every cross-module call in a multi-module
@@ -65,41 +88,22 @@ pub fn run(
     // BEAM assembly is not runnable until `erlc +from_asm` has assembled it.
     // Compile the whole output directory and run it on a code path that can
     // see all of it.
-    const entry_atom = try bp.codegen.crossModule.erlAtom(arena, packages.idOf(opts.module));
-    if (target == .erlang) return runErlang(arena, io, opts, entry_atom);
-    if (target == .beam) return runBeam(arena, io, opts, entry_atom);
-
-    // Build argv.
-    const runner: []const u8 = switch (target) {
-        .commonJS => "node",
-        .wasm => if (browser) "node" else "wasmtime",
-        .erlang => unreachable, // handled above
-        .beam => unreachable, // handled above
-    };
+    const entry_atom = try bp.codegen.crossModule.erlAtom(arena, packages.idOf(module));
+    if (target == .erlang) return erlangArgv(arena, io, out_dir, entry_atom);
+    if (target == .beam) return beamArgv(arena, io, out_dir, entry_atom);
 
     var argv = std.ArrayListUnmanaged([]const u8).empty;
-    defer argv.deinit(arena);
-    try argv.append(arena, runner);
     // A `wasi` build is a WASI preview 2 component (decision 334): `wasmtime
     // run` with `wasi:http` granted (`-S http`), which a component that
     // imports no `wasi:http` does not read.
     // A `browser` build is `node <module>.mjs`, its loader.
-    if (target == .wasm and !browser) try argv.appendSlice(arena, &.{ "run", "-S", "http" });
+    switch (target) {
+        .commonJS => try argv.append(arena, "node"),
+        .wasm => if (browser) try argv.append(arena, "node") else try argv.appendSlice(arena, &.{ "wasmtime", "run", "-S", "http" }),
+        .erlang, .beam => unreachable, // handled above
+    }
     try argv.append(arena, entry_path);
-    for (opts.extra_args) |arg| try argv.append(arena, arg);
-
-    // Spawn and wait — stdio is inherited from the parent process.
-    var child = std.process.spawn(io, .{ .argv = argv.items }) catch |err| {
-        reporter.errMsg(arglist.spawnError(arena, runner, argv.items, err));
-        return 1;
-    };
-    defer child.kill(io);
-
-    const term = try child.wait(io);
-    return switch (term) {
-        .exited => |code| code,
-        .signal, .stopped, .unknown => 1,
-    };
+    return argv.items;
 }
 
 // ── the erlang runner ─────────────────────────────────────────────────────────
@@ -123,8 +127,8 @@ pub fn run(
 /// **Exit status.** A crashing program now exits `1` (`erl`'s status) where
 /// `escript` exited `127`. The number was escript's artefact; it is not mapped
 /// back, and the command contract in `modules/compiler-cli/AGENTS.md` says so.
-fn runErlang(arena: std.mem.Allocator, io: std.Io, opts: Options, entry_atom: []const u8) !u8 {
-    const dir = try std.fmt.allocPrint(arena, "{s}/{s}", .{ opts.out_dir, std.mem.trimEnd(u8, build_cmd.targetSubdir(.erlang), "/") });
+fn erlangArgv(arena: std.mem.Allocator, io: std.Io, out_dir: []const u8, entry_atom: []const u8) !?[]const []const u8 {
+    const dir = try std.fmt.allocPrint(arena, "{s}/{s}", .{ out_dir, std.mem.trimEnd(u8, build_cmd.targetSubdir(.erlang), "/") });
 
     // Compile every emitted module, not just the entry: one left uncompiled is
     // an `undef` at run time rather than a compile error. The walk is recursive
@@ -133,15 +137,12 @@ fn runErlang(arena: std.mem.Allocator, io: std.Io, opts: Options, entry_atom: []
     try collectByExt(arena, io, dir, ".erl", &erls);
     if (erls.items.len == 0) {
         reporter.errMsg(try std.fmt.allocPrint(arena, "no .erl artifact under {s}/ — nothing to run", .{dir}));
-        return 1;
+        return null;
     }
-    {
-        const code = try compileAll(arena, io, dir, .erlang, erls.items);
-        if (code != 0) return code;
-    }
+    if (try compileAll(arena, io, dir, .erlang, erls.items) != 0) return null;
 
     const eval = try std.fmt.allocPrint(arena, "{s}:main([]), halt().", .{entry_atom});
-    return spawnWait(arena, io, try otp.erlArgv(arena, &.{ "-noshell", "-pa", dir, "-eval", eval }));
+    return try otp.erlArgv(arena, &.{ "-noshell", "-pa", dir, "-eval", eval });
 }
 
 // ── the BEAM runner ───────────────────────────────────────────────────────────
@@ -157,10 +158,10 @@ fn runErlang(arena: std.mem.Allocator, io: std.Io, opts: Options, entry_atom: []
 /// sidecar — the assembled program does, so it runs the same way outside this
 /// command.
 ///
-/// `main([])` for the reason `runErlang` gives; on BEAM `main/1` is
+/// `main([])` for the reason `erlangArgv` gives; on BEAM `main/1` is
 /// `'_botopink_main'/0`, which runs the module body and then `main/0`.
-fn runBeam(arena: std.mem.Allocator, io: std.Io, opts: Options, entry_atom: []const u8) !u8 {
-    const dir = try std.fmt.allocPrint(arena, "{s}/{s}", .{ opts.out_dir, std.mem.trimEnd(u8, build_cmd.targetSubdir(.beam), "/") });
+fn beamArgv(arena: std.mem.Allocator, io: std.Io, out_dir: []const u8, entry_atom: []const u8) !?[]const []const u8 {
+    const dir = try std.fmt.allocPrint(arena, "{s}/{s}", .{ out_dir, std.mem.trimEnd(u8, build_cmd.targetSubdir(.beam), "/") });
 
     // Every module, not just the entry: one left unassembled is an `undef` at
     // run time rather than an assembler error.
@@ -168,15 +169,12 @@ fn runBeam(arena: std.mem.Allocator, io: std.Io, opts: Options, entry_atom: []co
     try collectByExt(arena, io, dir, ".S", &asms);
     if (asms.items.len == 0) {
         reporter.errMsg(try std.fmt.allocPrint(arena, "no .S artifact under {s}/ — nothing to run", .{dir}));
-        return 1;
+        return null;
     }
-    {
-        const code = try compileAll(arena, io, dir, .beam, asms.items);
-        if (code != 0) return code;
-    }
+    if (try compileAll(arena, io, dir, .beam, asms.items) != 0) return null;
 
     const eval = try std.fmt.allocPrint(arena, "'{s}':main([]), halt().", .{entry_atom});
-    return spawnWait(arena, io, try otp.erlArgv(arena, &.{ "-noshell", "-pa", dir, "-eval", eval }));
+    return try otp.erlArgv(arena, &.{ "-noshell", "-pa", dir, "-eval", eval });
 }
 
 /// `erlc -o <dir> <files…>` (`+from_asm` for BEAM assembly), without a command
@@ -202,6 +200,7 @@ fn compileAll(arena: std.mem.Allocator, io: std.Io, dir: []const u8, kind: enum 
         return 1;
     };
     if (result.stdout.len > 0) std.Io.File.stdout().writeStreamingAll(io, result.stdout) catch {};
+    if (result.code != 0) reporter.errMsg("the OTP compiler refused the emitted program — nothing to run");
     return result.code;
 }
 

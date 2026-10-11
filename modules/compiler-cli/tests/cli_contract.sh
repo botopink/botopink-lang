@@ -1204,6 +1204,119 @@ else
   skip "1 200 modules under a deep --out (erl / erlc not on PATH)"
 fi
 
+# ── botopink cell (decision 464) ─────────────────────────────────────────────
+# `cell check` builds each cell in process and runs it on every target it
+# declares, comparing each module's answer with `snapshot/output/` and
+# `snapshot/targets/<t>/` (the `.snap` format: `cli/cell_snap.zig`). The
+# fixture cells under `tests/cell/` are copied first: a check writes its
+# candidates beside the accepted snapshots.
+echo "==> cell: check, candidates, departures, narrowing (decision 464)"
+if have node && have erl && have erlc && have wasmtime; then
+  CELLS="$WORK/cells"
+  rm -rf "$CELLS"; cp -R "$SCRIPT_DIR/cell" "$CELLS"; rm -rf "$CELLS/.botopinkbuild"
+  no_candidate() { # <dir> <label>
+    if [[ -z "$(find "$1" -name '*.snap.new')" ]]; then ok "$2"; else fail "$2: $(find "$1" -name '*.snap.new' | tr '\n' ' ')"; fi
+  }
+
+  run "$CELLS" cell check .
+  expect_code 0 "cell check over the fixture cells"
+  expect_out "cells: 5 checked — 5 passed, 0 failed" "every fixture cell passes on every target it declares"
+  expect_out "ok   narrowed" "a narrowed cell passes, its exclusions audited"
+  no_candidate "$CELLS" "a passing check writes no candidate"
+
+  # A mismatch: a candidate beside the accepted file, the difference, exit 1.
+  ACCEPTED="$(cat "$CELLS/prints/snapshot/output/main.snap")"
+  printf 'pub mod text;\nimport {text.label};\n\npub fn main() {\n    @print(label(55));\n    @print("finished");\n}\n' >"$CELLS/prints/src/main.bp"
+  run "$CELLS" cell check prints
+  expect_code 1 "cell check on a cell whose answer changed"
+  expect_out "candidate prints/snapshot/output/main.snap.new" "names the candidate"
+  expect_out "- out done" "shows the accepted line"
+  expect_out "+ out finished" "shows the observed line"
+  expect_file_out "$CELLS/prints/snapshot/output/main.snap.new" "out finished" "the candidate holds the new answer"
+  [[ "$(cat "$CELLS/prints/snapshot/output/main.snap")" == "$ACCEPTED" ]] && ok "the accepted snapshot is never overwritten" || fail "main.snap was rewritten"
+  [[ ! -e "$CELLS/prints/snapshot/targets" ]] && ok "one answer on every target is one output/ candidate" || fail "a targets/ candidate for an answer every target gives"
+  mv "$CELLS/prints/snapshot/output/main.snap.new" "$CELLS/prints/snapshot/output/main.snap"
+  run "$CELLS" cell check prints
+  expect_code 0 "a candidate accepted by renaming it passes"
+
+  # A new cell: `cell new` scaffolds it, `check` writes its candidates.
+  run "$CELLS" cell new fresh
+  expect_code 0 "cell new"
+  [[ -f "$CELLS/fresh/src/main.bp" && -f "$CELLS/fresh/docs.md" ]] && ok "cell new writes src/main.bp and docs.md" || fail "cell new: missing src/main.bp or docs.md"
+  [[ ! -e "$CELLS/fresh/snapshot" ]] && ok "cell new writes no snapshot" || fail "cell new wrote a snapshot"
+  run "$CELLS" cell new fresh
+  expect_code 1 "cell new over an existing path"
+  run "$CELLS" cell check fresh
+  expect_code 1 "cell check on a new cell"
+  expect_out "a new cell" "says the cell is new"
+  expect_file_out "$CELLS/fresh/snapshot/output/main.snap.new" "out hello" "every target agreeing: one output/ candidate"
+  [[ ! -e "$CELLS/fresh/snapshot/targets" ]] && ok "no targets/ candidate when every target agrees" || fail "a targets/ candidate for a cell every target agrees on"
+
+  # A new cell where one target departs: output/ from the majority, the
+  # departing target's own candidate, reported as a departure to review.
+  rm -rf "$CELLS/departs/snapshot"
+  run "$CELLS" cell check departs
+  expect_code 1 "cell check on a new cell with a departing target"
+  expect_file_out "$CELLS/departs/snapshot/output/main.snap.new" "out 7" "output/ holds the majority's answer"
+  expect_file_out "$CELLS/departs/snapshot/targets/wasm/main.snap.new" "refused error: \`magnitude\` has no" "the departing target gets its own candidate"
+  expect_out "departure to review" "the departure is reported for review"
+  [[ ! -e "$CELLS/departs/snapshot/targets/commonJS" ]] && ok "the agreeing targets get no departure" || fail "a departure written for an agreeing target"
+
+  # No clear majority (erlang and beam print, commonJS and wasm each refuse in
+  # their own words): one candidate per target, and a person chooses.
+  mkdir -p "$CELLS/split"; cp -R "$CELLS/narrowed/src" "$CELLS/split/src"
+  run "$CELLS" cell check split
+  expect_code 1 "cell check on a new cell with no majority"
+  expect_out "no majority — a person chooses" "leaves the choice to a person"
+  for t in commonJS erlang beam wasm; do
+    [[ -f "$CELLS/split/snapshot/targets/$t/main.snap.new" ]] && ok "no majority: a candidate for $t" || fail "no majority: no candidate for $t"
+  done
+  [[ ! -e "$CELLS/split/snapshot/output" ]] && ok "no majority: no output/ candidate" || fail "no majority: an output/ candidate was written"
+
+  # An accepted departure that no longer holds: the abort's stderr claim.
+  printf 'botopink-cell 1\nout 3\nabort\nstderr no such text\n' >"$CELLS/aborts/snapshot/targets/commonJS/main.snap"
+  run "$CELLS" cell check aborts
+  expect_code 1 "an abort whose stderr does not name the claimed cause"
+  expect_out "candidate aborts/snapshot/targets/commonJS/main.snap.new" "the candidate goes beside the departure"
+  expect_out "- stderr no such text" "the claim that no longer holds is shown"
+  [[ ! -e "$CELLS/aborts/snapshot/output/main.snap.new" ]] && ok "output/ holds on the other targets: no output/ candidate" || fail "an output/ candidate for a one-target difference"
+
+  # A narrowing the compiler does not back is refused, and a malformed one.
+  printf 'commonJS erlang beam\n' >"$CELLS/prints/targets"
+  run "$CELLS" cell check prints
+  expect_code 1 "a narrowing whose excluded target builds"
+  expect_out "wasm: excluded by \`targets\`, but \`botopink build --target wasm\` accepts the cell" "names the excluded target that builds"
+  printf 'wasm wasm\n' >"$CELLS/prints/targets"
+  run "$CELLS" cell check prints
+  expect_code 1 "a narrowing naming a target twice"
+  expect_out "\`wasm\` is named twice" "names the malformed narrowing"
+  rm "$CELLS/prints/targets"
+
+  # A malformed .snap is located; so is a departure for a target not run.
+  printf 'botopink-cell 1\nexit 0\n' >"$CELLS/prints/snapshot/output/main.snap"
+  run "$CELLS" cell check prints
+  expect_code 1 "a malformed .snap"
+  expect_out "prints/snapshot/output/main.snap:2: unknown record" "names the file and the line"
+  mkdir -p "$CELLS/narrowed/snapshot/targets/wasm"
+  run "$CELLS" cell check narrowed
+  expect_code 1 "a departure for a target the cell does not run"
+  expect_out "a departure for a target the cell does not run" "names it"
+
+  # The command line: no update flag, nothing to check is an error.
+  run "$CELLS" cell check --update prints
+  expect_code 1 "cell check --update"
+  expect_out "unknown flag '--update'" "there is no update flag"
+  run "$CELLS" cell
+  expect_code 1 "cell without a subcommand"
+  expect_out "usage: botopink cell new <path> | botopink cell check <cell|directory>" "prints the cell usage"
+  mkdir -p "$CELLS/empty"
+  run "$CELLS" cell check empty
+  expect_code 1 "cell check over a directory with no cell"
+  expect_out "no cell under empty" "says no cell was found"
+else
+  skip "botopink cell (node, erl, erlc and wasmtime are all needed)"
+fi
+
 echo
 if [[ "$failures" -gt 0 ]]; then
   echo "==> cli contract: $failures assertion(s) FAILED" >&2
