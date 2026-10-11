@@ -1,0 +1,10 @@
+//// The default module: a handle fn that shares the package's name, and a
+//// member the handle reaches.
+
+pub fn twice(n: i32) -> i32 {
+    return n * 2;
+}
+
+pub default fn shapes(comptime q: @Expr<string>) -> @ExprCustom<i32> {
+    return q.build("1");
+}

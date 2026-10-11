@@ -1894,6 +1894,7 @@ fn emitErlangModule(
         em.local_types.deinit(em.alloc);
         em.default_kinds.deinit(em.alloc);
         em.imported_behaviors.deinit(em.alloc);
+        em.lib_handles.deinit(em.alloc);
         em.imported_vals.deinit(em.alloc);
     }
     defer em.nullable_locals.deinit();
@@ -3506,6 +3507,11 @@ const Emitter = struct {
     /// `behavior` is the only such name: decision 23 gives it no run-time
     /// representation, so it never reaches the cross-module link index.
     imported_behaviors: std.StringHashMapUnmanaged(void) = .empty,
+    /// The default handle of a non-std library this module imports
+    /// (`import {shapes} from "shapes"`), name → the import's `from`. The handle
+    /// is a comptime fn with no run-time binding; a member call through it
+    /// (`shapes.twice(x)`) reaches the library's own function.
+    lib_handles: std.StringHashMapUnmanaged(ast.ImportSource) = .empty,
     /// Imported module-level `pub val`s, keyed by the name this module binds
     /// (an alias when the import wrote one): the owner emits the value as a
     /// 0-arity function (`top_vals`) and exports it, so a read here is the
@@ -4951,6 +4957,11 @@ const Emitter = struct {
                     // second case — remember it, so a method call on a value of
                     // that type dispatches through the value (`behaviorMethodNode`).
                     if (isModuleRef(name)) try self.imported_behaviors.put(self.alloc, name, {});
+                    switch (u.source) {
+                        .module => |lib| if (imp.alias == null and std.mem.eql(u8, lib, name) and !std.mem.eql(u8, lib, "std"))
+                            try self.lib_handles.put(self.alloc, name, u.source),
+                        .root, .key => {},
+                    }
                     try self.collectNamespaceModuleTypes(xc, name, try u.leafSource(imp, self.atom_arena.allocator(), true));
                     continue;
                 };
@@ -8472,6 +8483,21 @@ const Emitter = struct {
         if (recv.* == .identifier and recv.identifier.kind == .ident and this.std_imports.contains(recv.identifier.kind.ident)) {
             const owner = try this.stdModuleAtom(b, this.std_imports.get(recv.identifier.kind.ident).?);
             return b.remote(owner, cc.callee, try this.callArgs(b, null, cc));
+        }
+        // A library's default handle is also its namespace: `shapes.twice(x)`
+        // after `import {shapes} from "shapes"` calls the member `twice` of the
+        // library — a remote call into the module that declares it. The handle
+        // is a comptime fn that leaves no run-time binding, so the receiver was
+        // lowered as an unbound variable (`twice(Shapes, 21)`).
+        if (recv.* == .identifier and recv.identifier.kind == .ident and
+            this.instance_lowerings.get(loc) == null and this.rewrites.get(loc) == null)
+        {
+            if (this.cross) |xc| if (this.lib_handles.get(recv.identifier.kind.ident)) |src| {
+                if (xc.picked(cc.callee, src, cc.args.len + cc.trailing.len)) |member| {
+                    if (member.kind == .@"fn" and (!member.is_external or member.erlang_backed))
+                        return b.remote(this.atomOf(member.module), cc.callee, try this.callArgs(b, null, cc));
+                }
+            };
         }
         // Activated extension dispatch: `recv.m(args)` → the local `m(Recv, args)`
         // emitted by `extensionForms`.

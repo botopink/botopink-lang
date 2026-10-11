@@ -471,6 +471,11 @@ codegen/
   declared name in every fn table and maps it back at the `call`
   (`import_aliases`) — and for a `pub val`, in every global table
   (`aliasGlobal`), mapped back at the `global.get` (`globalName`).
+- **Default handle member (erlang)**: the handle of an imported library
+  (`import {shapes} from "shapes"`) is a comptime fn with no run-time binding;
+  `collectImportedTypes` records it in `lib_handles` (name → the import's
+  `from`) and a call through it (`shapes.twice(x)`) lowers to the remote call
+  into the module that declares `twice` (`conformance/modules/default_handle_member`).
 - **Lib namespace object**: when an import names the lib itself
   (`import {Lib} from "Lib"`) and that name has no emitted symbol, `emitUse`
   binds the lib's module object (`buildUse`: `const Lib = require(…)`, or
