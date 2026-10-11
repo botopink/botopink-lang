@@ -1,0 +1,8 @@
+val x = 42;
+
+val greeting = "hello";
+
+pub fn main() {
+    @print(x); // 42
+    @print(greeting); // hello
+}

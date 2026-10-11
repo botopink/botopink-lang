@@ -1,0 +1,6 @@
+fn main() {
+    @print("${5.0} ${1e21}");
+    @print("[" + " a\t".trim() + "]");
+    // erlang, beam, wasm: 5.0 1.0e21, then [a]
+    // commonJS:           5 1e+21, then [a]
+}

@@ -1,0 +1,9 @@
+fn link(
+    props: type(href: string, label: string, external: bool = false),
+) -> string {
+    return props.label + " <" + props.href + ">";
+}
+
+fn main() {
+    @print(link(href: "/a", label: "A")); // A </a>
+}

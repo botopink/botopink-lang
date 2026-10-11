@@ -1,0 +1,23 @@
+type Color { Red, Green, Blue }
+
+type Shape {
+    Circle(radius: f64),
+    Square(side: f64),
+}
+
+fn main() {
+    val c = Color.Red;
+    val s = Shape.Circle(radius: 2.0);
+    @print(
+        case c {
+            Red -> "red";
+            _ -> "other";
+        },
+    );
+    @print(
+        case s {
+            Circle(r) -> r;
+            Square(side) -> side;
+        },
+    ); // 2.0
+}

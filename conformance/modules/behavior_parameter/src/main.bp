@@ -1,0 +1,17 @@
+behavior Greeter {
+    fn greet(self: Self) -> string;
+}
+
+type Bob(name: string) implement Greeter {
+    fn greet(self: Self) -> string {
+        return "hi " + self.name;
+    }
+}
+
+fn welcome(g: Greeter) -> string {
+    return g.greet();
+}
+
+fn main() {
+    @print(welcome(Bob(name: "bob")));
+}

@@ -1,0 +1,11 @@
+fn show(x: ?i32) {
+    if (x) {
+        n ->
+        @print(n);
+    }
+}
+
+pub fn main() {
+    show(5); // 5
+    show(null); // nothing
+}

@@ -1,0 +1,15 @@
+type Shape {
+    Circle(radius: f64),
+    Square(side: f64),
+}
+
+fn area(shape: Shape) -> f64 {
+    return case shape {
+        Circle(radius) -> radius * radius * 3.14;
+        Square(side) -> side * side;
+    };
+}
+
+pub fn main() {
+    @print(area(Shape.Square(side: 2.0))); // 4.0
+}

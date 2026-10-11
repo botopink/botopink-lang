@@ -1,0 +1,29 @@
+pub fn shout(comptime q: @Expr<string>) -> @Expr<string> {
+    var built = "";
+    var computed = "\"\"";
+    var known = true;
+    for (q.parts()) { p ->
+        if (p.kind == "Interp") {
+            if (p.known) built = built + p.value else known = false;
+            computed = computed + " + " + p.code;
+        } else {
+            built = built + p.text;
+            computed = computed + " + \"" + p.text + "\"";
+        }
+    }
+    if (known) return q.build("\"" + built.toUpper() + "\"");
+    return q.build("(" + computed + ").toUpper()");
+}
+
+pub val name = "world";
+
+pub val fixed = shout "hello ${name}"; // "HELLO WORLD", written at build
+
+fn greet(who: string) -> string {
+    return shout "hello ${who}"; // computed when it runs
+}
+
+pub fn main() {
+    @print(fixed); // HELLO WORLD
+    @print(greet("bob")); // HELLO BOB
+}

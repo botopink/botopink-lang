@@ -1,0 +1,18 @@
+fn total(
+    a: @Result<i32, string>,
+    b: @Result<i32, string>,
+) -> @Result<i32, string> {
+    val x = try a; // not `try a + try b`
+    val y = try b;
+    return x + y;
+}
+
+fn parse(s: string) -> @Result<i32, string> {
+    if (s == "") throw "empty";
+    return s.length;
+}
+
+pub fn main() {
+    @print(total(parse("ab"), parse("abc")).unwrapOr(-1)); // 5
+    @print(total(parse("ab"), parse("")).unwrapOr(-1)); // -1
+}

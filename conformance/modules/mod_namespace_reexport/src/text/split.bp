@@ -1,0 +1,6 @@
+// src/text/split.bp
+pub type Pair(a: string, b: string)
+
+pub fn splitPath(p: string) -> string {
+    return p.replace("/", " ");
+}

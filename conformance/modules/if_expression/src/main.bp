@@ -1,0 +1,5 @@
+pub fn main() {
+    val x = 1;
+    val s = if (x > 0) "positive" else "negative";
+    @print(s); // positive
+}

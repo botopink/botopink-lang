@@ -1,0 +1,23 @@
+fn entity(comptime decl: @Decl, comptime table: @Expr<string>) {
+    var cols: string[] = [];
+    decl.fields.forEach({ f -> cols.push(f.name + ": string") });
+    decl.setMeta("table", table.value);
+    decl.addMember(
+        "pub fn table() -> string { return \"" + table.value + "\"; }",
+    );
+    decl.addType("Columns", "(" + cols.join(", ") + ")");
+}
+
+#[entity("cities")]
+type City(name: string, people: i32)
+
+fn header(c: City.Columns) -> string {
+    return c.name + "|" + c.people;
+}
+
+fn main() {
+    @print(City.table()); // cities
+    @print(@typeInfo(City).meta.entity.table); // cities
+    @print(@typeInfo(City).name); // City
+    @print(header(City.Columns(name: "n", people: "p"))); // n|p
+}

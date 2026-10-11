@@ -1,0 +1,16 @@
+//// conformance/docs.md § Mocks — the reference's example, a test suite run on commonJS, erlang
+//// and beam (`botopink test` does not run on wasm).
+
+import {testing.mocks} from "std";
+
+#[mocks.mock]
+behavior OrderRepo {
+    fn total(self: Self, id: i32) -> i32;
+}
+
+test "orders: the synthesized double answers its stub" {
+    val repo = OrderRepo.mock();
+    val _s = mocks.when(repo.total(mocks.eq(3))).thenReturn(30);
+    assert repo.total(3) == 30;
+    assert repo.total(4) == 0;
+}

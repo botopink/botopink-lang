@@ -1,0 +1,16 @@
+fn route(comptime decl: @Decl, comptime path: @Expr<string>) {
+    decl.setMeta("path", path.value);
+}
+
+#[route("/about")]
+pub fn about() -> string {
+    return "about us";
+}
+
+fn main() {
+    for (@TypeInfo.all(with: route)) { r ->
+        for (r.meta) { m ->
+            @print(r.name + " " + m.value); // about /about
+        }
+    }
+}

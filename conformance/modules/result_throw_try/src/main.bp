@@ -1,0 +1,45 @@
+type PortError { Zero, TooBig(value: i32) }
+
+fn port(n: i32) -> @Result<i32, PortError> {
+    if (n == 0) throw PortError.Zero;
+    if (n > 65535) throw PortError.TooBig(value: n);
+    return n; // becomes Ok(n)
+}
+
+fn serverPort(n: i32) -> @Result<i32, PortError> {
+    val p = try port(n); // an Error from `port` rises from here
+    return p + 1;
+}
+
+// `return` passes an existing @Result through unchanged
+fn firstOk(
+    a: @Result<i32, string>,
+    b: @Result<i32, string>,
+) -> @Result<i32, string> {
+    return case a {
+        Ok(_) -> a;
+        Error(_) -> b;
+    };
+}
+
+fn text(s: string) -> @Result<i32, string> {
+    if (s == "") throw "empty";
+    return s.length;
+}
+
+fn show(r: @Result<i32, PortError>) -> string {
+    return case r {
+        Ok(p) -> "port " + p.toString();
+        Error(e) -> case e {
+            Zero -> "zero";
+            TooBig(value) -> "too big: " + value.toString();
+        };
+    };
+}
+
+pub fn main() {
+    @print(show(serverPort(80))); // port 81
+    @print(show(serverPort(0))); // zero
+    @print(show(serverPort(70000))); // too big: 70000
+    @print(firstOk(text(""), text("abc")).unwrapOr(-1)); // 3
+}

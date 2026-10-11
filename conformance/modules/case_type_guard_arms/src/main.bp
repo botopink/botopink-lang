@@ -1,0 +1,19 @@
+fn grade(n: i32) {
+    case n {
+        i32 when (n > 100) {
+            @print("impossible");
+        }
+        0 {
+            @print("zero");
+        }
+        _ {
+            @print("something else");
+        }
+    }
+}
+
+pub fn main() {
+    grade(200); // impossible
+    grade(0); // zero
+    grade(5); // something else
+}

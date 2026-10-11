@@ -1,0 +1,9 @@
+// src/main.bp
+pub mod m;
+import {m.double};
+import {m.tree as Tree};
+
+fn main() {
+    @print(double(4)); // 8
+    @print(Tree(1)); // node(leaf)
+}

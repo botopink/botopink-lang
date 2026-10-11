@@ -1,0 +1,11 @@
+type Entry(key: string)
+
+fn firstKeyLength(entries: Entry[]) -> i32 {
+    val first = entries.at(0);
+    if (first == null) return 0;
+    return first.key.length(); // `first` is an `Entry` here, not a `?Entry`
+}
+
+pub fn main() {
+    @print(firstKeyLength([Entry(key: "abc")]));
+}

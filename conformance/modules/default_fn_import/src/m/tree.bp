@@ -1,0 +1,7 @@
+// src/m/tree.bp
+fn Tree(depth: i32) -> string {
+    if (depth == 0) return "leaf";
+    return "node(" + Tree(depth - 1) + ")";
+}
+
+pub default Tree;

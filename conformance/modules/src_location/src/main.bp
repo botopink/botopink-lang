@@ -1,0 +1,17 @@
+// A builtin record every module sees:
+//   type SourceLocation(file: string, line: i32, column: i32, fnName: string)
+
+fn where() -> SourceLocation {
+    return @src();
+}
+
+pub fn main() {
+    val loc = where();
+    @print(
+        loc.file,
+        loc.line,
+        loc.column,
+        loc.fnName,
+    ); // src/main.bp 5 12 where
+    @print(@src().fnName); // main
+}

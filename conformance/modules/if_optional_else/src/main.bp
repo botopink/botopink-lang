@@ -1,0 +1,7 @@
+pub fn main() {
+    val x: ?i32 = 5;
+    if (x) {
+        _ ->
+        @print("present");
+    } else @print("absent");
+}

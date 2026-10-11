@@ -1,0 +1,5 @@
+type City(name: string)
+
+fn main() {
+    @print(City.table());
+}

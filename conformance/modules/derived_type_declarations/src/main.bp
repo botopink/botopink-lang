@@ -1,0 +1,27 @@
+import {types.Type} from "std";
+
+type Recipe(title: string, description: ?string, servings: i32 = 2)
+
+type Dog(name: string, age: ?i32)
+
+type Breed(breed: string)
+
+pub val RecipeTitle = Type.pick(
+    Recipe,
+    .title,
+); // type RecipeTitle(title: string)
+pub val RecipeBrief = Type.omit(
+    Recipe,
+    .description,
+); // type RecipeBrief(title: string, servings: i32 = 2)
+pub val RecipePatch = Type.partial(Recipe); // every field `?T`
+pub val RecipeFull = Type.required(RecipePatch); // every `?` goes
+pub val DogWithBreed = Type.merge(Dog, Breed); // Dog's fields, then Breed's
+
+fn titleOf(t: RecipeTitle) -> string {
+    return t.title;
+}
+
+pub fn main() {
+    @print(titleOf(RecipeTitle(title: "soup"))); // soup
+}

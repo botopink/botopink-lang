@@ -1,0 +1,10 @@
+type Port(host: string, number: i32 = 80) {
+    pub fn show(self: Self, separator: string = ":") -> string {
+        return self.host + separator + self.number.toString();
+    }
+}
+
+fn main() {
+    @print(Port(host: "a").number); // 80
+    @print(Port(host: "a").show()); // a:80
+}

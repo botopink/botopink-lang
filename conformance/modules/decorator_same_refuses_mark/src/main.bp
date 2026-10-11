@@ -1,0 +1,20 @@
+fn serverOnly(comptime decl: @Decl) {
+    val _n = decl.name;
+}
+
+// Refuses a function marked `serverOnly`, however the mark is spelled.
+fn clientOnly(comptime decl: @Decl) {
+    decl.annotations.forEach({ a ->
+        if (a.decorator.same(serverOnly))
+            decl.fail("`" + decl.name + "` runs on the server");
+    });
+}
+
+#[clientOnly]
+fn Widget() -> string {
+    return "w";
+}
+
+pub fn main() {
+    @print(Widget()); // w
+}

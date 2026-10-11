@@ -1,0 +1,13 @@
+// src/main.bp
+import {math} from "std"; // a module of the std package
+import {geometry.area}; // a module of this package, by its path
+import {shapes.circle.name}; // a nested module path
+
+pub mod geometry;
+pub mod shapes;
+
+fn main() {
+    @print(area(3, 4)); // 12
+    @print(name()); // circle
+    @print(math.abs(0.0 - 1.0)); // 1.0
+}

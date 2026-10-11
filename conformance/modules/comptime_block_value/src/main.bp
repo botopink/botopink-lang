@@ -1,0 +1,8 @@
+val result = comptime {
+    val x = 10;
+    break x * 2;
+};
+
+pub fn main() {
+    @print(result); // 20
+}

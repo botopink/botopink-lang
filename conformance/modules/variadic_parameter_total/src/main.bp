@@ -1,0 +1,12 @@
+fn total(label: string, ..values: i32[]) -> string {
+    var sum = 0;
+    for (values) { v ->
+        sum = sum + v;
+    }
+    return label + ": " + sum.toString();
+}
+
+fn main() {
+    @print(total("none")); // none: 0
+    @print(total("three", 1, 2, 3)); // three: 6
+}

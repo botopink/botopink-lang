@@ -1,0 +1,13 @@
+fn box() -> #(value: i32) {
+    val value = 1;
+    return #(value); // the variable lends the label
+}
+
+fn read() -> i32 {
+    val inner = box();
+    return inner.value; // same element as inner.0
+}
+
+pub fn main() {
+    @print(read()); // 1
+}

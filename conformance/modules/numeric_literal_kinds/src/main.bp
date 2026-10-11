@@ -1,0 +1,12 @@
+pub fn main() {
+    val ratio: f32 = 0.5f;
+    val total: f64 = 10d;
+    val big = 4_000_000_000ul;
+    val mask: u8 = 255;
+    val scaled = total / 4.0;
+    @print(ratio); // 0.5
+    @print(total); // 10.0
+    @print(big); // 4000000000
+    @print(mask); // 255
+    @print(scaled); // 2.5
+}

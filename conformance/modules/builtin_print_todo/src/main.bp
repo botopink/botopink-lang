@@ -1,0 +1,11 @@
+fn greet() {
+    @print("hello");
+}
+
+fn notReady() -> i32 {
+    @todo();
+}
+
+pub fn main() {
+    greet(); // hello
+}
