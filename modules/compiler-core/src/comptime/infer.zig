@@ -3975,10 +3975,14 @@ fn refuseStdBinding(env: *Env, a: ast.Annotation, name: []const u8, params: []co
 }
 
 /// A written type as a `std:` cell's check spells it: a plain name as
-/// written (`Self` as `self_ty` spells it), anything else `another type`.
+/// written (`Self` as `self_ty` spells it), `string[]` and `?string` as
+/// std-wasm's types spell them (`std_wasm.Type`), anything else `another
+/// type`.
 fn spelledType(t: ast.TypeRef, self_ty: ?[]const u8) []const u8 {
     return switch (t) {
         .named => |n| if (std.mem.eql(u8, n, "Self")) (self_ty orelse "Self") else n,
+        .array => |e| if (std.mem.eql(u8, spelledType(e.*, self_ty), "string")) "string[]" else "another type",
+        .optional => |e| if (std.mem.eql(u8, spelledType(e.*, self_ty), "string")) "?string" else "another type",
         else => "another type",
     };
 }

@@ -27,7 +27,7 @@ fn main() {
   (data (i32.const 292) "\05\00\00\00[(ii)")
   (data (i32.const 304) "\01\00\00\00s")
   (data (i32.const 312) "\01\00\00\00z")
-  (global $__heap_ptr (mut i32) (i32.const 2288))
+  (global $__heap_ptr (mut i32) (i32.const 2320))
   (func $pairOf (param $a i32) (param $b i32) (result i32)
     (local $__mem0 i32)
     i32.const 8
@@ -377,7 +377,7 @@ fn main() {
   (func $__print_f64_raw (param $x f64)
     (local $s i32)
     local.get $x
-    call $__f64_to_str
+    call $__std_number_floatToString
     local.set $s
     local.get $s
     i32.const 4
@@ -433,10 +433,6 @@ fn main() {
     local.get $e
     global.set $__heap_ptr
     local.get $p
-  )
-  (func $__f64_to_str (param $x f64) (result i32)
-    local.get $x
-    call $__std_number_floatToString
   )
   (func $__print_quoted_raw (param $s i32)
     (local $n i32) (local $i i32) (local $ch i32) (local $e i32)
@@ -1117,108 +1113,16 @@ fn main() {
   (func $__display_of (param $v i32) (result i32)
     i32.const 0
   )
-  (global $__int_ws (mut i32) (i32.const 0))
-  (func $__int_ws (result i32)
-    global.get $__int_ws
-    i32.eqz
-    (if
-      (then
-        i32.const 48
-        call $__alloc
-        global.set $__int_ws
-      )
-    )
-    global.get $__int_ws
-  )
-  (func $__fmt_u64 (param $q i32) (param $v i64) (param $width i32) (result i32)
-    (local $t i32) (local $cnt i32)
-    call $__int_ws
-    i32.const 48
-    i32.add
-    local.set $t
-    (block $brk
-      (loop $cont
-        local.get $t
-        i32.const 1
-        i32.sub
-        local.set $t
-        local.get $t
-        local.get $v
-        i64.const 10
-        i64.rem_u
-        i32.wrap_i64
-        i32.const 48
-        i32.add
-        i32.store8
-        local.get $v
-        i64.const 10
-        i64.div_u
-        local.set $v
-        local.get $cnt
-        i32.const 1
-        i32.add
-        local.set $cnt
-        local.get $v
-        i64.eqz
-        local.get $cnt
-        local.get $width
-        i32.ge_s
-        i32.and
-        br_if $brk
-        br $cont
-      )
-    )
-    local.get $q
-    local.get $t
-    local.get $cnt
-    memory.copy
-    local.get $q
-    local.get $cnt
-    i32.add
-  )
-  (func $__i64_fmt (param $v i64) (result i32)
-    (local $w i32) (local $q i32)
-    call $__int_ws
-    local.tee $w
-    i32.const 0
-    i32.add
-    local.set $q
-    local.get $v
-    i64.const 0
-    i64.lt_s
-    (if
-      (then
-        local.get $q
-        i32.const 45
-        i32.store8
-        local.get $q
-        i32.const 1
-        i32.add
-        local.set $q
-        i64.const 0
-        local.get $v
-        i64.sub
-        local.set $v
-      )
-    )
-    local.get $q
-    local.get $v
-    i32.const 1
-    call $__fmt_u64
-    local.get $w
-    i32.const 0
-    i32.add
-    i32.sub
-  )
   (func $__print_i64_raw (param $v i64)
-    (local $n i32)
+    (local $t i32)
     local.get $v
-    call $__i64_fmt
-    local.set $n
-    call $__int_ws
-    i32.const 0
+    call $__std_number_i64Text
+    local.set $t
+    local.get $t
+    i32.const 4
     i32.add
-    local.get $n
+    local.get $t
+    i32.load
     call $__write_bytes
   )
   (func $__print_i64 (param $v i64)
@@ -1226,29 +1130,16 @@ fn main() {
     call $__print_i64_raw
     call $__print_nl
   )
-  (func $__u64_fmt (param $v i64) (result i32)
-    (local $w i32)
-    call $__int_ws
-    local.tee $w
-    i32.const 0
-    i32.add
-    local.get $v
-    i32.const 1
-    call $__fmt_u64
-    local.get $w
-    i32.const 0
-    i32.add
-    i32.sub
-  )
   (func $__print_u64_raw (param $v i64)
-    (local $n i32)
+    (local $t i32)
     local.get $v
-    call $__u64_fmt
-    local.set $n
-    call $__int_ws
-    i32.const 0
+    call $__std_number_u64Text
+    local.set $t
+    local.get $t
+    i32.const 4
     i32.add
-    local.get $n
+    local.get $t
+    i32.load
     call $__write_bytes
   )
   (func $__print_u64 (param $v i64)
@@ -1257,19 +1148,26 @@ fn main() {
     call $__print_nl
   )
   ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
-  (global $__std_sp (mut i32) (i32.const 2288))
-  (data (i32.const 320) "-Infinity\00nan\00inf\000123456789abcdef\00NaN\00-0.0\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\01\00\00\00\02\00\00\00\03\00\00\00\04\00\t\00\00\00\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\13\03\03\03\03\03\03\03\03\03\03\03\03#\03\034\04\04\04D\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\01\00\00\00\00\00\00\00\05\00\00\00\00\00\00\00\19\00\00\00\00\00\00\00}\00\00\00\00\00\00\00q\02\00\00\00\00\00\005\0c\00\00\00\00\00\00\t=\00\00\00\00\00\00-1\01\00\00\00\00\00\e1\f5\05\00\00\00\00\00e\cd\1d\00\00\00\00\00\f9\02\95\00\00\00\00\00\dd\0e\e9\02\00\00\00\00QJ\8d\0e\00\00\00\00\95s\c2H\00\00\00\00\e9A\cck\01\00\00\00\8dI\fd\1a\07\00\00\00\c1o\f2\86#\00\00\00\c5.\bc\a2\b1\00\00\00\d9\e9\ac-x\03\00\00=\91`\e4X\11\00\001\d6\e2u\bcV\00\00\f5.nM\ae\b1\01\00\c9\ea&\83gx\08\00\ed\95\c2\8f\05Z*\00\a1\ed\cc\ce\1b\c2\d3\00%\a4\00\n\8b\ca\"\04\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00@\95YiYUUTU\15UUV\04\05\15A\10TU@EQUD@EPDPUUE\00@\00@@\04D\96eUVUE@ETQA\15@U\91UUUU@Q\05\01\00\00TETTEU\05\04\00\10\04\10\14\04@\00\00\00\01@UU\15AT\04\00\00D\00\01\00\00\00\00@A\00\00DPDEPT\00UUTUeQ\00@\00@\01\00\00\01\00\05\01\00\11TQQTUU\05\00\00\00\00\01\00\00\00\00\00\00\00\00\00\00\00\00\00\00 4Pe\c0_\c9\a6R\bb\13\cb\ae\c4@\c2\18\06\c8\dfq\00\d5\a8|\f5o\0f\daX\fc'\13nGV5}$ e\02\c7\e7h\e4\8c\a4\1d\e9\e6\02h\d7\cd9ayw\fc\c2@[\ef\16y\8c\deC\ff\a7Q\f9\91\f3\b2x\f5\bd\be\11\e8W\e9\d6\e8\be\e8{\b0T\ac\8f\84\8du\1b\ea#\a4\99\e9\f9\d3\8b\b7\a3q@a\da>\15\ce\e3>\cbs\f9H\08\8c\97\b4'\d5\1bp\10\a2\bf\ef\b9\eb\852\15M\b4M\b4\9b\bbo\19\96\b6\07l\f8\e7\ee\ad6\d9\b4\f5\915\ae\13\"\"\18\afNjhM\91\da\aa=O@t\1e\9f\bd\9e\e0\06\a1\c0\98W\c2\a7\fd\a4\0e\90\17\0e}Iqs\e3 \8f\b2 \d8v\05\14;\12\85=t4\81\13C\b0\ad)z_'\f45\1c\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\10\00\00\00\00\00\00\00\00\b94\032\b7\f4\ad\14\10\db\1a\b3\08\92T\0e\r0}\95\14G\ba\1af\08\8fM&\ad\c6m\f5\98\bf\85\e2\b7E\11\ca\96\85=\92\bd\1d\eb\fc\a1\18`\dc\efR\16<\92\ae\"\0b\b8\c1\b4\83\9d-[\05b\da\1c0L~\8fN\8b\b2[\16\f4R\9f\8bV\a5\12\fb\d4\82vC\ed\8a\f0\8f\e7\f91\15e\19\18P\f1\9b\d9J\13\ee\b4(L\f0\a6\86\c1%\1f\03_\c2p\cb\9eI\16\e6B\88\9cD\eb \14\b0e\086\adn\a5\85\85\f0\ca\14\e2\fd\03\1a\0b\89\99y\d5\b1=\t\d8\da\97:5\eb\cf\10\ac6?^s\bb8\cf>gR\faD\af\ba\15")
-  ;; __std_f2 — from std_wasm.wasm (sha256 b4b6f06748d6)
-  ;; std:number.floatToString — from std_wasm.wasm (sha256 96235ea62520)
-  ;; __std_f4 — from std_wasm.wasm (sha256 8e4382201c55)
-  ;; __std_f5 — from std_wasm.wasm (sha256 9b6ec601b8aa)
-  ;; __std_f6 — from std_wasm.wasm (sha256 965ca1fa4736)
-  ;; __std_f7 — from std_wasm.wasm (sha256 a906c53b0497)
-  ;; __std_f8 — from std_wasm.wasm (sha256 440c634a9e36)
-  ;; __std_f9 — from std_wasm.wasm (sha256 4b0f1bf2af21)
-  ;; __std_f14 — from std_wasm.wasm (sha256 4c40dff46753)
-  ;; __std_f15 — from std_wasm.wasm (sha256 4d190b081720)
-  ;; __std_f16 — from std_wasm.wasm (sha256 94fc71de7e06)
+  (global $__std_sp (mut i32) (i32.const 2320))
+  (data (i32.const 320) "-Infinity\00nan\00inf\000123456789abcdef\00NaN\00-0.0\00\06\00\00\00\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f0\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\13\03\03\03\03\03\03\03\03\03\03\03\03#\03\034\04\04\04D\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\f1\00\00\01\00\00\00\02\00\00\00\03\00\00\00\04\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\01\00\00\00\00\00\00\00\05\00\00\00\00\00\00\00\19\00\00\00\00\00\00\00}\00\00\00\00\00\00\00q\02\00\00\00\00\00\005\0c\00\00\00\00\00\00\t=\00\00\00\00\00\00-1\01\00\00\00\00\00\e1\f5\05\00\00\00\00\00e\cd\1d\00\00\00\00\00\f9\02\95\00\00\00\00\00\dd\0e\e9\02\00\00\00\00QJ\8d\0e\00\00\00\00\95s\c2H\00\00\00\00\e9A\cck\01\00\00\00\8dI\fd\1a\07\00\00\00\c1o\f2\86#\00\00\00\c5.\bc\a2\b1\00\00\00\d9\e9\ac-x\03\00\00=\91`\e4X\11\00\001\d6\e2u\bcV\00\00\f5.nM\ae\b1\01\00\c9\ea&\83gx\08\00\ed\95\c2\8f\05Z*\00\a1\ed\cc\ce\1b\c2\d3\00%\a4\00\n\8b\ca\"\04\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00@\95YiYUUTU\15UUV\04\05\15A\10TU@EQUD@EPDPUUE\00@\00@@\04D\96eUVUE@ETQA\15@U\91UUUU@Q\05\01\00\00TETTEU\05\04\00\10\04\10\14\04@\00\00\00\01@UU\15AT\04\00\00D\00\01\00\00\00\00@A\00\00DPDEPT\00UUTUeQ\00@\00@\01\00\00\01\00\05\01\00\11TQQTUU\05\00\00\00\00\01\00\00\00\00\00\00\00\00\00\00\00\00\00\00 4Pe\c0_\c9\a6R\bb\13\cb\ae\c4@\c2\18\06\c8\dfq\00\d5\a8|\f5o\0f\daX\fc'\13nGV5}$ e\02\c7\e7h\e4\8c\a4\1d\e9\e6\02h\d7\cd9ayw\fc\c2@[\ef\16y\8c\deC\ff\a7Q\f9\91\f3\b2x\f5\bd\be\11\e8W\e9\d6\e8\be\e8{\b0T\ac\8f\84\8du\1b\ea#\a4\99\e9\f9\d3\8b\b7\a3q@a\da>\15\ce\e3>\cbs\f9H\08\8c\97\b4'\d5\1bp\10\a2\bf\ef\b9\eb\852\15M\b4M\b4\9b\bbo\19\96\b6\07l\f8\e7\ee\ad6\d9\b4\f5\915\ae\13\"\"\18\afNjhM\91\da\aa=O@t\1e\9f\bd\9e\e0\06\a1\c0\98W\c2\a7\fd\a4\0e\90\17\0e}Iqs\e3 \8f\b2 \d8v\05\14;\12\85=t4\81\13C\b0\ad)z_'\f45\1c\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\10\00\00\00\00\00\00\00\00\b94\032\b7\f4\ad\14\10\db\1a\b3\08\92T\0e\r0}\95\14G\ba\1af\08\8fM&\ad\c6m\f5\98\bf\85\e2\b7E\11\ca\96\85=\92\bd\1d\eb\fc\a1\18`\dc\efR\16<\92\ae\"\0b\b8\c1\b4\83\9d-[\05b\da\1c0L~\8fN\8b\b2[\16\f4R\9f\8bV\a5\12\fb\d4\82vC\ed\8a\f0\8f\e7\f91\15e\19\18P\f1\9b\d9J\13\ee\b4(L\f0\a6\86\c1%\1f\03_\c2p\cb\9eI\16\e6B\88\9cD\eb \14\b0e\086\adn\a5\85\85\f0\ca\14\e2\fd\03\1a\0b\89\99y\d5\b1=\t\d8\da\97:5\eb\cf\10\ac6?^s\bb8\cf>gR\faD\af\ba\15")
+  ;; __std_f3 — from std_wasm.wasm (sha256 b4b6f06748d6)
+  ;; std:number.floatToString — from std_wasm.wasm (sha256 253127bd9c13)
+  ;; __std_f45 — from std_wasm.wasm (sha256 432c7dfb021a)
+  ;; __std_f46 — from std_wasm.wasm (sha256 6b108dbbfcd0)
+  ;; std:number.u64Text — from std_wasm.wasm (sha256 78c6c832194d)
+  ;; __std_f54 — from std_wasm.wasm (sha256 f7b73f7668aa)
+  ;; std:number.i64Text — from std_wasm.wasm (sha256 ea80a52e5dda)
+  ;; __std_f68 — from std_wasm.wasm (sha256 aba5f076b057)
+  ;; __std_f84 — from std_wasm.wasm (sha256 d24fa6e11da1)
+  ;; __std_f90 — from std_wasm.wasm (sha256 0c6fdb2dbc87)
+  ;; __std_f91 — from std_wasm.wasm (sha256 9b6ec601b8aa)
+  ;; __std_f92 — from std_wasm.wasm (sha256 965ca1fa4736)
+  ;; __std_f93 — from std_wasm.wasm (sha256 a906c53b0497)
+  ;; __std_f94 — from std_wasm.wasm (sha256 440c634a9e36)
+  ;; __std_f95 — from std_wasm.wasm (sha256 4fb15f2ddd47)
+  ;; __std_f100 — from std_wasm.wasm (sha256 4c40dff46753)
+  ;; __std_f101 — from std_wasm.wasm (sha256 4d190b081720)
+  ;; __std_f102 — from std_wasm.wasm (sha256 94fc71de7e06)
 )
 ```
 

@@ -764,6 +764,13 @@ test "every runtime helper group renders with its deps, and only with them" {
     for (std.enums.values(ast.HelperGroup)) |g| {
         var set: ast.HelperSet = .{};
         set.require(g);
+        // `wat.zig`'s decision 442 (1): a print helper calls std-wasm for a
+        // number's text, transpiled in; std-wasm calls the program's allocator.
+        var std_arena = std.heap.ArenaAllocator.init(alloc);
+        defer std_arena.deinit();
+        var wanted: std.ArrayListUnmanaged([]const u8) = .empty;
+        for (prelude.order) |og| if (set.has(og)) try wanted.appendSlice(std_arena.allocator(), og.stdCalls());
+        if (wanted.items.len > 0) set.require(.alloc);
         var items: std.ArrayListUnmanaged(ast.Item) = .empty;
         defer items.deinit(alloc);
         if (set.has(.print)) try items.append(alloc, .{ .import = prelude.fd_write_import });
@@ -785,12 +792,9 @@ test "every runtime helper group renders with its deps, and only with them" {
             if (og == .task_host) try items.append(alloc, .{ .func = prelude.bp_ready });
             try items.appendSlice(alloc, prelude.items(og));
         }
-        // `wat.zig`'s decision 440: `$__f64_to_str` calls std-wasm, transpiled in.
-        var std_arena = std.heap.ArenaAllocator.init(alloc);
-        defer std_arena.deinit();
-        if (set.has(.f64_to_str)) {
+        if (wanted.items.len > 0) {
             var diag: @import("std_wasm_link.zig").Diag = .{};
-            const l = try @import("std_wasm_link.zig").link(std_arena.allocator(), &.{"number.floatToString"}, 256, &diag);
+            const l = try @import("std_wasm_link.zig").link(std_arena.allocator(), wanted.items, 256, &diag);
             try items.appendSlice(alloc, l.items);
         }
         var discard: std.Io.Writer.Discarding = .init(&.{});

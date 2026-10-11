@@ -2673,8 +2673,8 @@ first three are now enforced by the model, not by discipline:
   **string `at`** left it on 2026-09-21: it is the reader decision 63's
   amendment gave every indexable type (`charAt` before it), it is what `s[i]`
   rewrites to, and commonJS, erlang and beam all answered it while `s.at(1)`
-  trapped here. It lowers to `$__str_at` — `$__str_slice(s, i, i + 1)` behind an
-  `i32.ge_u` bounds test — and answers a `?string` whose absence is the pointer
+  trapped here. It lowers to std-wasm's `text.at` (decision 442 (2)) — the code
+  point at `i`, a negative `i` from the end — and answers a `?string` whose absence is the pointer
   `0`, which `optInfoOf` routes to `$__print_opt_str`; printed as a plain
   string it used to read a length out of the WASI iovec at address 0 and
   answer garbage with exit 0 — since `00 · 05-wasm` `$__print_str_raw` traps
@@ -2730,7 +2730,7 @@ first three are now enforced by the model, not by discipline:
   `@print(5.0)` writes `5.0`, `9.0` and `[115.0, 287.5, 460.0]`, where the
   printer used to drop a whole number's fraction entirely (`5`, `9`,
   `[115,287.5,460]`). The fraction digits are already written; only the "was any
-  of them non-zero" test changes. **`$__f64_to_str` is not this path**: it is
+  of them non-zero" test changes. **`number.floatToString` is not this path**: it is
   what a float concatenated into a string (`"x" + 5.0`, `5.0.toString()`) takes,
   and commonJS answers `x5` there, so it still drops the fraction.
 - **Decision 30's index expression** (`lowerIndex`): the parser lands `xs[0]`
@@ -2738,8 +2738,8 @@ first three are now enforced by the model, not by discipline:
   `(receiver, index)`, and `xs[0..2]` is the same node with a `range` where the
   index goes. One node, four readings, told apart by the receiver and by whether
   the index is a range: `xs[i]` → `$__arr_at` (the element, `0` out of range),
-  `xs[a..b]` → `$__arr_slice`, `s[i]` → `$__str_slice(s, i, i+1)` (the one-byte
-  string), `s[a..b]` → `$__str_slice`. A float array's slot holds the
+  `xs[a..b]` → std-wasm's `array.slice`, `s[i]` → `text.slice(s, i, i+1)` (the
+  one-code-point string), `s[a..b]` → `text.slice`. A float array's slot holds the
   address of the element's `f64` cell, which `$__arr_at` answers and `f64.load`
   reads. `indexArgs` is what `isStringExpr` / `isArrayExpr` / `elemKindOf` /
   `wasmTypeOf` ask, so `val sub = xs[1..]` is an array local and `s[1]` a string
@@ -2798,8 +2798,9 @@ first three are now enforced by the model, not by discipline:
   inside `fn area(s: Shape)`) is stored in a fresh `s__<n>` local; the arm's
   uses resolve to it (`resolveName`) until the arm ends.
 - **String `+` with a non-string operand** renders the operand first
-  (`lowerConcatOperand`): an integer through `$__i32_to_str`, a float through
-  `$__f64_to_str` (the same digits `$__print_f64` writes), a bool as
+  (`lowerConcatOperand`): an integer through std-wasm's `number.i32ToString`
+  (`i64ToString` / `u64ToString` by its carrier), a float through
+  `number.floatToString` (the same digits `$__print_f64` writes), a bool as
   `true`/`false` — the rule erlang's E2 fix follows (`integer_to_binary/1`).
 - **`assert cond[, msg]` is always fatal** (decision 4 of the 1.0.2-beta
   semantics decisions): a false condition writes
@@ -2875,7 +2876,7 @@ first three are now enforced by the model, not by discipline:
   what wasm lowers and what each leaves on the stack — `exprTail`,
   `wasmTypeOf`, `isStringExpr`, `isBoolExpr` and `isArrayExpr` all read it. A
   method lowers to an opcode (`f64.floor`, `i32.rem_s`), a runtime helper
-  (`$__str_case`, `$__arr_join_i32`, …), or — for `map`/`filter`/`forEach`/
+  (`$__str_case`), a std-wasm function (`array.joinInts`, `text.split`, …), or — for `map`/`filter`/`forEach`/
   `fold`/`all`/`any`/`count`/`findIndex` over a literal lambda — a counted walk
   of the array blob with the lambda's parameters bound to locals and its body
   inlined (`lowerArrayHof`). `xs.push(v)` rebinds the receiver (a name or a
@@ -3181,7 +3182,7 @@ and on beam and prints the same 84 lines on both. `Array.unique` (every
 duplicate dropped, first occurrence kept — decision 217) answers on erlang since
 std's body stopped calling a method on an optional and the erlang emitter types a
 `default fn` body's locals (§ erlang, "A `default fn` body's locals"); wasm's
-`$__arr_unique` answers the same (`run/array_unique`).
+std-wasm's `array.unique` answers the same (`run/array_unique`).
 
 ## Quick-reference rules
 
@@ -3288,7 +3289,7 @@ the checker rewrites to them): commonJS's `__bp_array_at` /
 `__bp_string_char_at` are native `.at(i) ?? null`; erlang's are
 `primitives.bp`'s `@External.Erlang` templates (`__J = I + length` when
 `I < 0`), which beam evaluates for `String.at`; beam's `'-bp_at-'/2` adds a
-`J = I + length(L)` branch; wasm's `$__arr_at`, `$__arr_at_box` and `$__str_at`
+`J = I + length(L)` branch; wasm's `$__arr_at`, `$__arr_at_box` and std-wasm's `text.at`
 add the length to a negative `i` before their bounds test. Past either end is
 the absent `?T` everywhere (`tests/language/run/index_negative_from_end`).
 
@@ -3350,7 +3351,7 @@ so a loop that steps a sequence threads it. beam calls the synth
 `'-bp_yield_step-'/1` (`{Yield, H}` or `Done`) and moves the list's tail into
 the receiver's register (`is_nonempty_list` + `get_list`). wasm
 (`lowerSequenceNext`) builds `Yield(e0)` from the blob's first slot when
-`len > 0` (else `Done`) and rebinds the local to `$__arr_slice(seq, 1, len)`, a
+`len > 0` (else `Done`) and rebinds the local to `array.slice(seq, 1, len)`, a
 copy. A receiver that is not a local answers its first step and advances
 nothing. `run/yield_step_next.bp` runs the four; `features.zig`'s two
 `next by hand` rows snapshot them.

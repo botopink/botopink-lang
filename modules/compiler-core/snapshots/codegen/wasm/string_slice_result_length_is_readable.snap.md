@@ -13,7 +13,7 @@ fn main() {
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
   (data (i32.const 256) "\06\00\00\00abcdef")
-  (global $__heap_ptr (mut i32) (i32.const 268))
+  (global $__heap_ptr (mut i32) (i32.const 272))
   (func $main
     (local $s i32)
     (local $mid i32)
@@ -22,7 +22,7 @@ fn main() {
     local.get $s
     i32.const 1
     i32.const 5
-    call $__str_cp_slice
+    call $__std_text_slice
     local.set $mid
     local.get $mid
     i32.load ;; string length
@@ -211,35 +211,6 @@ fn main() {
       )
     )
   )
-  (func $__str_slice (param $src i32) (param $start i32) (param $end i32) (result i32)
-    (local $newlen i32) (local $dst i32)
-    local.get $end
-    local.get $start
-    i32.sub
-    local.set $newlen
-    ;; allocate 4 (length prefix) + newlen
-    i32.const 4
-    local.get $newlen
-    i32.add
-    call $__alloc
-    local.set $dst
-    ;; store length prefix
-    local.get $dst
-    local.get $newlen
-    i32.store
-    ;; copy bytes: dst+4 <- src+4+start
-    local.get $dst
-    i32.const 4
-    i32.add
-    local.get $src
-    i32.const 4
-    i32.add
-    local.get $start
-    i32.add
-    local.get $newlen
-    memory.copy
-    local.get $dst
-  )
   (func $__alloc (param $n i32) (result i32)
     (local $p i32) (local $e i32)
     global.get $__heap_ptr
@@ -288,168 +259,11 @@ fn main() {
     global.set $__heap_ptr
     local.get $p
   )
-  (func $__str_cp_len (param $s i32) (result i32)
-    (local $n i32) (local $i i32) (local $k i32)
-    local.get $s
-    i32.load
-    local.set $n
-    (block $brk
-      (loop $cont
-        local.get $i
-        local.get $n
-        i32.ge_u
-        br_if $brk
-        local.get $s
-        local.get $i
-        i32.add
-        i32.load8_u offset=4
-        i32.const 192
-        i32.and
-        i32.const 128
-        i32.ne
-        (if
-          (then
-            local.get $k
-            i32.const 1
-            i32.add
-            local.set $k
-          )
-        )
-        local.get $i
-        i32.const 1
-        i32.add
-        local.set $i
-        br $cont
-      )
-    )
-    local.get $k
-  )
-  (func $__str_cp_off (param $s i32) (param $i i32) (result i32)
-    (local $n i32) (local $p i32) (local $k i32)
-    local.get $s
-    i32.load
-    local.set $n
-    (block $brk
-      (loop $cont
-        local.get $p
-        local.get $n
-        i32.ge_u
-        br_if $brk
-        local.get $s
-        local.get $p
-        i32.add
-        i32.load8_u offset=4
-        i32.const 192
-        i32.and
-        i32.const 128
-        i32.ne
-        (if
-          (then
-            local.get $k
-            local.get $i
-            i32.eq
-            (if
-              (then
-                local.get $p
-                return
-              )
-            )
-            local.get $k
-            i32.const 1
-            i32.add
-            local.set $k
-          )
-        )
-        local.get $p
-        i32.const 1
-        i32.add
-        local.set $p
-        br $cont
-      )
-    )
-    local.get $n
-  )
-  (func $__str_cp_slice (param $s i32) (param $a i32) (param $b i32) (result i32)
-    (local $n i32)
-    local.get $s
-    call $__str_cp_len
-    local.set $n
-    local.get $a
-    i32.const 0
-    i32.lt_s
-    (if
-      (then
-        local.get $a
-        local.get $n
-        i32.add
-        local.set $a
-      )
-    )
-    local.get $a
-    i32.const 0
-    i32.lt_s
-    (if
-      (then
-        i32.const 0
-        local.set $a
-      )
-    )
-    local.get $a
-    local.get $n
-    i32.gt_s
-    (if
-      (then
-        local.get $n
-        local.set $a
-      )
-    )
-    local.get $b
-    i32.const 0
-    i32.lt_s
-    (if
-      (then
-        local.get $b
-        local.get $n
-        i32.add
-        local.set $b
-      )
-    )
-    local.get $b
-    i32.const 0
-    i32.lt_s
-    (if
-      (then
-        i32.const 0
-        local.set $b
-      )
-    )
-    local.get $b
-    local.get $n
-    i32.gt_s
-    (if
-      (then
-        local.get $n
-        local.set $b
-      )
-    )
-    local.get $b
-    local.get $a
-    i32.lt_s
-    (if
-      (then
-        local.get $a
-        local.set $b
-      )
-    )
-    local.get $s
-    local.get $s
-    local.get $a
-    call $__str_cp_off
-    local.get $s
-    local.get $b
-    call $__str_cp_off
-    call $__str_slice
-  )
+  ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
+  ;; __std_f3 — from std_wasm.wasm (sha256 b4b6f06748d6)
+  ;; std:text.slice — from std_wasm.wasm (sha256 f25f5dcea325)
+  ;; __std_f60 — from std_wasm.wasm (sha256 5ac39cdc3016)
+  ;; __std_f61 — from std_wasm.wasm (sha256 cda2fb2bf3e4)
 )
 ```
 

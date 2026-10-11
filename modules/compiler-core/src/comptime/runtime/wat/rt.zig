@@ -2191,6 +2191,149 @@ export fn rt_std_number__floatToString(f: T) T {
     return binCopy(shortFloat(as(Float, f).value, &buf));
 }
 
+// `String`'s methods std-wasm implements (decision 442 (2)): a `string[]`
+// crosses as a list of binaries, a `bool` as its atom, a `?string` as the
+// binary or `undefined`. A comptime module's primitive method calls its
+// `@External.Erlang` cell; these answer a host function whose `std:` cell
+// names them.
+
+fn intArgI32(t: T) ?i32 {
+    const v = intArg(t) orelse return null;
+    return std.math.cast(i32, v) orelse {
+        _ = badarg();
+        return null;
+    };
+}
+
+fn piecesList(it0: anytype) T {
+    var it = it0;
+    var n: usize = 0;
+    while (it.next()) |_| n += 1;
+    const items = allocTerms(n);
+    it = it0;
+    for (items[0..n]) |*x| x.* = binCopy(it.next().?);
+    return listFrom(items[0..n]);
+}
+
+export fn rt_std_text__length(t: T) T {
+    const s = strArg(t) orelse return &nil_cell;
+    return mkInt(@intCast(stdWasm.text.cpLength(s)));
+}
+
+export fn rt_std_text__split(t: T, p: T) T {
+    const s = strArg(t) orelse return &nil_cell;
+    const sep = strArg(p) orelse return &nil_cell;
+    return piecesList(stdWasm.text.Split.init(s, sep));
+}
+
+export fn rt_std_text__chars(t: T) T {
+    const s = strArg(t) orelse return &nil_cell;
+    return piecesList(stdWasm.text.Split.init(s, ""));
+}
+
+export fn rt_std_text__lines(t: T) T {
+    const s = strArg(t) orelse return &nil_cell;
+    return piecesList(stdWasm.text.Lines{ .s = s });
+}
+
+export fn rt_std_text__words(t: T) T {
+    const s = strArg(t) orelse return &nil_cell;
+    return piecesList(stdWasm.text.Words{ .s = s });
+}
+
+export fn rt_std_text__contains(t: T, p: T) T {
+    const s = strArg(t) orelse return &nil_cell;
+    const x = strArg(p) orelse return &nil_cell;
+    return boolAtom(stdWasm.text.find(s, x) != null);
+}
+
+export fn rt_std_text__startsWith(t: T, p: T) T {
+    const s = strArg(t) orelse return &nil_cell;
+    const x = strArg(p) orelse return &nil_cell;
+    return boolAtom(stdWasm.text.startsWith(s, x));
+}
+
+export fn rt_std_text__endsWith(t: T, p: T) T {
+    const s = strArg(t) orelse return &nil_cell;
+    const x = strArg(p) orelse return &nil_cell;
+    return boolAtom(stdWasm.text.endsWith(s, x));
+}
+
+export fn rt_std_text__indexOf(t: T, p: T) T {
+    const s = strArg(t) orelse return &nil_cell;
+    const x = strArg(p) orelse return &nil_cell;
+    return mkInt(stdWasm.text.indexOf(s, x));
+}
+
+export fn rt_std_text__lastIndexOf(t: T, p: T) T {
+    const s = strArg(t) orelse return &nil_cell;
+    const x = strArg(p) orelse return &nil_cell;
+    return mkInt(stdWasm.text.lastIndexOf(s, x));
+}
+
+export fn rt_std_text__at(t: T, i: T) T {
+    const s = strArg(t) orelse return &nil_cell;
+    const k = intArgI32(i) orelse return &nil_cell;
+    return if (stdWasm.text.cpAt(s, k)) |c| binCopy(c) else a_undefined;
+}
+
+export fn rt_std_text__charCodeAt(t: T, i: T) T {
+    const s = strArg(t) orelse return &nil_cell;
+    const k = intArgI32(i) orelse return &nil_cell;
+    return mkInt(stdWasm.text.charCodeAt(s, k));
+}
+
+fn padTerm(t: T, w: T, p: T, start: bool) T {
+    const s = strArg(t) orelse return &nil_cell;
+    const width = intArgI32(w) orelse return &nil_cell;
+    const pad = strArg(p) orelse return &nil_cell;
+    const n = stdWasm.text.padLength(s, width, pad);
+    const out = alloc(n);
+    stdWasm.text.padInto(out[0..n], s, pad, start);
+    return binOf(out[0..n]);
+}
+
+export fn rt_std_text__padStart(t: T, w: T, p: T) T {
+    return padTerm(t, w, p, true);
+}
+
+export fn rt_std_text__padEnd(t: T, w: T, p: T) T {
+    return padTerm(t, w, p, false);
+}
+
+export fn rt_std_text__repeat(t: T, k: T) T {
+    const s = strArg(t) orelse return &nil_cell;
+    const times = intArgI32(k) orelse return &nil_cell;
+    const n = stdWasm.text.repeatLength(s, times);
+    const out = alloc(n);
+    stdWasm.text.repeatInto(out[0..n], s);
+    return binOf(out[0..n]);
+}
+
+fn replaceTerm(t: T, p: T, w: T, all: bool) T {
+    const s = strArg(t) orelse return &nil_cell;
+    const pat = strArg(p) orelse return &nil_cell;
+    const with = strArg(w) orelse return &nil_cell;
+    const n = stdWasm.text.replacedLength(s, pat, with, all);
+    const out = alloc(n);
+    stdWasm.text.replaceInto(out[0..n], s, pat, with, all);
+    return binOf(out[0..n]);
+}
+
+export fn rt_std_text__replace(t: T, p: T, w: T) T {
+    return replaceTerm(t, p, w, false);
+}
+
+export fn rt_std_text__replaceAll(t: T, p: T, w: T) T {
+    return replaceTerm(t, p, w, true);
+}
+
+export fn rt_std_text__fromCodepoint(c: T) T {
+    const cp = intArgI32(c) orelse return &nil_cell;
+    var buf: [4]u8 = undefined;
+    return binCopy(stdWasm.text.encodeCodepoint(&buf, cp) orelse return badarg());
+}
+
 comptime {
     // Every function std-wasm implements has its export here, by name.
     for (stdWasm.exports) |e| {

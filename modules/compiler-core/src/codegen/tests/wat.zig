@@ -991,7 +991,7 @@ test "wat: function value ---- a lambda in a tuple slot or a record field is app
 // through `primCallRes` and emitted
 // `unreachable ;; prim method not lowered on wasm: string.at/1`, so
 // `tests/language/run/index_at_optional.bp` died at exit 134 on this backend
-// while commonJS, erlang and beam all answered. `$__str_at` is
+// while commonJS, erlang and beam all answered. std-wasm's `text.at` is
 // `$__str_slice(s, i, i + 1)` behind one `i32.ge_u` bounds test, after a
 // negative index has been counted from the end (`i + len`, decision 139) — one
 // still negative wraps past any length and is rejected by the same compare.
@@ -1098,10 +1098,10 @@ test "wat: prim method ---- the String and Float members step 6's audit lowered"
 }
 
 // `01-compiler/05-wasm` step 1: the primitive methods step 6's audit left
-// trapping each have a lowering — `$__str_lines` / `$__str_words`, and the
-// array helpers `$__arr_unique`, `$__arr_flatten` (`flatMap` is `map` then
-// it, as `primitives.bp`'s body is), `$__arr_chunked`, `$__arr_sliding`,
-// `$__arr_fill`. The answers are commonJS's, erlang's and beam's for the same
+// trapping each have a lowering — std-wasm's `text.lines` / `text.words`, and the
+// array helpers std-wasm's `array.unique`, `array.flatten` (`flatMap` is `map` then
+// it, as `primitives.bp`'s body is), `array.chunked`, `array.sliding`,
+// `array.fill`. The answers are commonJS's, erlang's and beam's for the same
 // program (`tests/language/run/string_lines_words.bp`, `array_unique.bp`,
 // `array_flat_forms.bp`, `array_windows.bp`, `array_fill.bp`).
 test "wat: prim method ---- the methods that trapped lower: lines, words, unique, the flat forms, the windows, fill" {
@@ -1136,7 +1136,7 @@ test "wat: prim method ---- the methods that trapped lower: lines, words, unique
 }
 
 // What is left of the class is refused by name rather than answered:
-// `unique` over records (`$__arr_unique` compares words and strings; decision
+// `unique` over records (std-wasm's `array.unique` compares words and strings; decision
 // 210's structural answer has no wasm lowering yet), `flatMap` whose function
 // answers a scalar (node keeps it, erlang fails), and `flatten` over elements
 // no shape says are arrays. Each was a run-time trap; each is a located build
@@ -1958,8 +1958,9 @@ test "wat: std-wasm ---- every function std-wasm implements decodes, validates a
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const ar = arena.allocator();
-    var names: [stdWasm.exports.len][]const u8 = undefined;
+    var names: [stdWasm.exports.len + stdWasm.program.len][]const u8 = undefined;
     for (stdWasm.exports, 0..) |e, i| names[i] = e.name;
+    for (stdWasm.program, stdWasm.exports.len..) |e, i| names[i] = e.name;
     var diag: link.Diag = .{};
     const l = link.link(ar, &names, 301, &diag) catch |err| {
         std.debug.print("std-wasm: {s}\n", .{diag.message});
@@ -1977,7 +1978,7 @@ test "wat: std-wasm ---- every function std-wasm implements decodes, validates a
     const m: ast.Module = .{ .items = items.items };
     try ast.validateModule(m);
     _ = try binary.encodeModule(ar, m);
-    for (stdWasm.exports) |e| try std.testing.expect(ast.declaresCall(m, try link.entryName(ar, e.name)));
+    for (names) |name| try std.testing.expect(ast.declaresCall(m, try link.entryName(ar, name)));
     // The data starts on its alignment at or past the floor; the heap after the stack.
     var data_at: ?u32 = null;
     for (l.items) |it| if (it == .data) {
@@ -1986,8 +1987,13 @@ test "wat: std-wasm ---- every function std-wasm implements decodes, validates a
     };
     try std.testing.expect(data_at.? >= 301 and data_at.? % 8 == 0);
     try std.testing.expect(l.end > data_at.? and l.end % 16 == 0);
-    // `Float.toString`'s helper calls the function its cell names.
-    try std.testing.expectEqualStrings(@import("../wat/wat_prelude.zig").std_float_to_string, try link.entryName(ar, watCodegen.stdMethodExport("Float", "toString").?));
+    // A print helper calls std-wasm by the symbol the link gives it.
+    for (std.enums.values(ast.HelperGroup)) |g| for (g.stdCalls()) |name| {
+        try std.testing.expect(stdWasm.find(name) != null or for (stdWasm.program) |p| {
+            if (std.mem.eql(u8, p.name, name)) break true;
+        } else false);
+    };
+    try std.testing.expectEqualStrings(comptime @import("../wat/wat_prelude.zig").stdSymbol("number.floatToString"), try link.entryName(ar, watCodegen.stdMethodExport("Float", "toString").?));
 
     diag = .{};
     try std.testing.expectError(error.Unsupported, link.linkModule(ar, &.{ 0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00 }, &.{}, 0, &diag));

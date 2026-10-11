@@ -20,7 +20,7 @@ fn main() {
   (data (i32.const 264) "\09\00\00\00nonzero: ")
   (data (i32.const 280) "\09\00\00\00undefined")
   (data (i32.const 296) "\04\00\00\00null")
-  (global $__heap_ptr (mut i32) (i32.const 304))
+  (global $__heap_ptr (mut i32) (i32.const 368))
   (func $classify (param $x i32) (result i32)
     (local $__opt0 i32)
     (local $__opt1 i32)
@@ -71,7 +71,7 @@ fn main() {
       (else
     local.get $__opt2
     i32.load
-    call $__i32_to_str
+    call $__std_number_i32ToString
       )
     )
     call $__str_concat
@@ -392,82 +392,6 @@ fn main() {
     global.set $__heap_ptr
     local.get $p
   )
-  (func $__i32_to_str (param $n i32) (result i32)
-    (local $u i64) (local $pos i32) (local $len i32) (local $p i32) (local $neg i32)
-    i32.const 160
-    local.set $pos
-    local.get $n
-    i32.const 0
-    i32.lt_s
-    local.set $neg
-    local.get $n
-    i64.extend_i32_s
-    local.set $u
-    local.get $neg
-    (if
-      (then
-        i64.const 0
-        local.get $u
-        i64.sub
-        local.set $u
-      )
-    )
-    (block $brk
-      (loop $cont
-        local.get $pos
-        i32.const 1
-        i32.sub
-        local.set $pos
-        local.get $pos
-        local.get $u
-        i64.const 10
-        i64.rem_u
-        i32.wrap_i64
-        i32.const 48
-        i32.add
-        i32.store8
-        local.get $u
-        i64.const 10
-        i64.div_u
-        local.set $u
-        local.get $u
-        i64.eqz
-        br_if $brk
-        br $cont
-      )
-    )
-    local.get $neg
-    (if
-      (then
-        local.get $pos
-        i32.const 1
-        i32.sub
-        local.set $pos
-        local.get $pos
-        i32.const 45
-        i32.store8
-      )
-    )
-    i32.const 160
-    local.get $pos
-    i32.sub
-    local.set $len
-    local.get $len
-    i32.const 4
-    i32.add
-    call $__alloc
-    local.set $p
-    local.get $p
-    local.get $len
-    i32.store
-    local.get $p
-    i32.const 4
-    i32.add
-    local.get $pos
-    local.get $len
-    memory.copy
-    local.get $p
-  )
   (func $__box_i32 (param $v i32) (result i32)
     (local $p i32)
     i32.const 4
@@ -478,6 +402,13 @@ fn main() {
     i32.store
     local.get $p
   )
+  ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
+  (global $__std_sp (mut i32) (i32.const 368))
+  ;; __std_f3 — from std_wasm.wasm (sha256 b4b6f06748d6)
+  ;; __std_f44 — from std_wasm.wasm (sha256 754afbaaff1c)
+  ;; __std_f45 — from std_wasm.wasm (sha256 432c7dfb021a)
+  ;; __std_f46 — from std_wasm.wasm (sha256 6b108dbbfcd0)
+  ;; std:number.i32ToString — from std_wasm.wasm (sha256 9c0a9db10050)
 )
 ```
 

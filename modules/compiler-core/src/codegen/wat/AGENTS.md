@@ -45,8 +45,8 @@ model exists so none of them can be written again:
 | `wat_emitter.zig` | `renderModule` (validates, then `(module …)`; there is no bare-form entry point). `renderComponent(alloc, w, Module)` (decision 334, § The `wasi` host's component): the module embedded as `(core module $main …)` — its `(start …)` dropped and the start function exported `__bp_init` — inside the fixed frame `component_imports` / `component_adapter_*` / `component_run_export` (the preview 2 imports, the preview 1 shim, scratch and adapter modules, the table fixup, `wasi:cli/run`); a `wasi_snapshot_preview1` import outside `preview1_adapted` (`fd_write`, `random_get`) is `UnadaptedPreview1Import`, which `wat.zig` refuses located. Owns: the two-space item column, the four-space body column and each construct's arm columns, `$`-prefixing, folded (`(call $main)`) vs flat form, inline `(then i32.const 0 return)` arms, `offset=` suppressed when zero, and the data-segment escaping (four little-endian length bytes as `\xx`, then `\n`/`"`/`\`/`\t`/`\r`/`\xx` for control bytes). |
 | `wasm_binary_emitter.zig` | `encodeModule(alloc, Module) → []u8`: the binary format of the module the text emitter renders — validated first (`validateModule`), then sections type · import · function · table · memory · global · export · start · element · code · data, LEB128, one type per distinct signature (imports' and functions' types first, then each `call_indirect`'s), locals as runs of one type, no custom section; `memory.size` / `memory.grow` as `0x3F 0x00` / `0x40 0x00` (decision 261, a test pins the bytes). Every name the text spells is resolved to an index — functions (imports first, then definitions, in item order), globals, locals (params then declared), branch labels (depth, every `if` counted) — and a name that resolves to nothing (`UnknownName`), an operator the MVP table (`opcodes`: numeric, conversions, sign extension, `trunc_sat`) does not know (`UnknownOp`) or a numeral that does not parse (`BadNumeral`, the text format's spellings: sign, `0x`, `_`, `inf`/`nan`) is an error, never a guess. `wat.zig`'s `emitWat` renders both from one `Module` (`GenerateResult.js` the text, `.wasm` the binary); `codegen/runtime.zig`'s `executeWat` runs the **binary**, so every wasm RUN LOG is the binary emitter's answer checked against the recorded fixture. The browser build's page instantiates the same bytes. `opcodes` is public for `std_wasm_link.zig`, which decodes by the same table. `Encoder` (with `typeIndex`/`funcIndex`/`funcBody`), `Bytes`, `section`, `uleb`/`sleb`, `name`, `valType`, `funcType` and `constInstr` are public for `comptime/runtime/wat/link.zig`, which pre-seeds an `Encoder` with a prebuilt module's index spaces and encodes a lowered comptime program's functions against the merged numbering. |
 | `host_binding.zig` | **Decision 238's closed vocabulary**, pure (text and value types in, a `Binding` or a message out): `parse(alloc, text, Signature)` reads `op:<opcode>` against `findOp`'s table (the MVP numeric instructions by shape — integer `clz`/`ctz`/`popcnt`/`eqz`, the binary ops, the comparisons; float `abs`/`neg`/`ceil`/`floor`/`trunc`/`nearest`/`sqrt`, `add`…`copysign`, the comparisons; the conversions — no memory, control, local or global instruction) and checks the declared parameter and return types are exactly the opcode's (a comparison or `eqz` answers `bool`); splits `fn:<identifier>` (the module resolves it); reads `wasi:<adapter>` against `adapters` (`random_f64`, `seed_u32`, `seeded_f64`; the task adapters `delay`, `race`, `race_of`, `spawn_all`, checked by `Shape` over one type parameter — decision 393); reads `std:<module>.<function>` against `std_wasm.exports` (decision 440 (3): `Binding.std_`, its types checked by the caller — `wat.zig` with `std_wasm.matches`, the checker on every target). `instrOf` gives an `op:`'s instruction. Anything else is a `Refused` message. `codegen/tests/wat.zig` holds `adapters` and `docs.md` § Host bindings' table to each other |
-| `wat_prelude.zig` | The runtime helpers wasm has no opcode for, as `Func` nodes: `print` (`$__write_bytes`, `$__print_nl`, `$__print_sp`, `$__print_i32`, `$__print_i32_raw`, `$__memmove`), `print_str` (`$__print_str_raw` traps on a pointer below the data floor — decision 67, § below), `print_bool`, `print_f64`, `arr_at`, `str_concat`, `str_eq`, `str_slice` (transcribed line by line), then — one helper per group, built with the comptime constructors at the bottom of the file (`func`, `loop`, `when`, `whenElse`, `get`/`set`/`op`/…; `func` assigns each line the column its nesting puts it at) — `alloc` (bump, 4-byte aligned), `mem_eq`, `i32_abs`/`i32_min`/`i32_max`, `i32_to_str`, `f64_to_str` (a float's text as a fresh string: a call of `$__std_number_floatToString`, std-wasm's, transpiled in — decision 441; `print_f64_raw` writes it), `str_case` (ASCII shift of a byte range), `str_index_of`, `str_starts_with`, `str_ends_with`, `str_at` (`s.at(i)` as a `?string`: a negative `i` first counted from the end (`i + len`, decision 139, as in `$__arr_at` / `$__arr_at_box`), then `$__str_slice(s, i, i + 1)`, or `0` — absence — when `i32.ge_u` puts `i` outside `0..len`, which catches a still-negative index in the one compare `$__arr_at` needs two for), `str_split`, `str_repeat`, `str_char_code`, `str_last_index_of`, `str_pad`, `str_replace` (§ The primitive method table), `arr_new`, `arr_slice` (host bound rules), `arr_reverse`, `arr_prepend`, `arr_push`, `arr_concat`, `arr_zip`, `arr_index_of_i32`/`_str`, `arr_join_str`/`_i32`, `print_arr_i32`, `print_arr_f64` (+`_raw`, each slot's cell), `box_i32`, `arr_at_box`, `print_opt` (`$__print_null` — the bytes of `null`, decision 47's one spelling of absent, through scratch `176..180` — and `$__print_opt_i32`/`_bool`/`_str` +`_raw`), `assert_fail` (`$__write_err` — `fd_write` to fd 2 — and `$__assert_fail`, its literal text through scratch `188..208`), `print_shaped` (`$__print_quoted_raw` — a nested string, quoted with the source escapes — and `$__print_shaped_raw(v, shape, go)`, which walks a shape string — `i`/`f`/`b`/`s`, `l`/`u` (an `i64` / `u64` cell; `print_shaped` requires `print_i64` and `print_u64`), `[X`, `(XY…)`, `?X` / `!X` — writing `[a, b]` / `#(a, b)` and answering the address past the shape; `go = 0` only measures), `print_opt_tagged` (`$__print_opt_tagged` +`_raw` — a `?T` whose `T` is a record: `null` for `0`, `$__print_tagged_raw` otherwise; its own group, because the tagged printer reads a header four bytes behind the value and absence has to be answered before it is called), `display_of` (`$__display_of(v)` answering `0` — the `Display` hook `$__print_tagged_raw` calls first, which `wat.zig` replaces with the module's dispatch, § below), `unknown`, `print_unknown`, `arr_last_index_of_i32`/`_str`, and the five groups `01-compiler/05-wasm` step 1 added (§ The primitive method table): `str_lines`, `str_words`, `arr_unique`, `arr_flatten`, `arr_chunked`, `arr_sliding`, `arr_fill`; decision 240's codepoint helpers (§ String indices count codepoints): `str_cp_len`, `str_cp_off`, `str_cp_of`, `str_cp_slice`, `str_cp_at`, `str_cp_index_of`, `str_cp_last_index_of`; decision 238's adapter `wasi_random_f64` (`$__wasi_random_f64`, with `random_get_import` — 8 bytes into scratch `208..216`); decision 392's scheduler (`task`, `task_resume`, `task_poll`, `task_host`, `task_delay`, `task_race`, `task_race_of`, `task_spawn_all`, with `task_host_poll_wasi`, `bp_ready` and the `bp_host_*` imports — § `@Task` as a state machine); and § Numbers' groups: `int_fmt` (the `$__int_ws` global and function, `$__fmt_u64`, `$__i64_fmt` — an integer's digits; the transcription of V8's `BignumDtoa` that wrote a float's left with decision 441), `box_f64`, `arr_index_of_f64`, `arr_last_index_of_f64`, `arr_join_f64`, `print_i64`, `i64_to_str`, `box_i64`, `print_opt_i64`, `int_chk` (`$__i32_add_chk` … `$__i64_mul_chk`), `i32_range_chk` / `i64_range_chk` (decision 264's narrower types, groups of their own), and decision 319's `u64_fmt`, `print_u64`, `u64_to_str`, `u64_chk`, `print_opt_u64` (appended groups); decision 332's `bigint` (§ `bigint`, appended, with `print_shaped_items_bigint` — the shaped printer with the `n` code a module linking the group substitutes); `print_opt_f64` is `print_opt_f32` renamed (a `?f64` is its cell). `items(group)` returns a group's forms, `order` the order a module appends them in (declaration order, so the transcribed groups keep their place), `fd_write_import` the one host import the print group needs. Scratch layout below the data section (which starts at 256): `0..8` the WASI iovec, `8` the newline byte — and `9` the space of §7's `, ` separator (`putSep`), written beside it so the two bytes leave in one `fd_write` —, `16..32` the bool text, `64..128` the i32 digits, `128..160` the digits `$__i32_to_str` writes backwards. An `i64`'s text is built in the `$__int_ws` workspace (48 bytes: the text at `0`, the digits written backwards ending at `48`), not in scratch; a float's is std-wasm's (§ std-wasm in the program). |
-| `std_wasm_link.zig` | Decision 440 (2): `link(arena, wanted, floor, *Diag) → Linked{ items, end }` — the functions of `std_wasm.wasm` (embedded, `module_bytes`) the program reaches, decoded into the model: the exports `wanted` names (`<module>.<function>`, emitted as `entryName` — `__std_number_floatToString`) and what they call, each other function `__std_f<n>`, locals `p<n>`/`l<n>`, every block, loop and `if` labelled `b<n>` (a branch to the function's own block wraps the body in `block $fn`); the stack-pointer global `$__std_sp`, the raw data segments at the first 8-aligned address at or past `floor`, the functions. `global.get $__memory_base` is the constant base, `env.bp_alloc` is `$__alloc`, `__stack_pointer` is `$__std_sp`, initialised to the top of a stack sized from the code (each prologue's `global.get $sp; i32.const N; i32.sub`, summed along the deepest call chain); `end`, past data and stack, is where the heap starts. A module that is no side module (`dylink.0`), or holds a function table, a start function, a global of its own, another import, an export not named `std:<module>.<function>`, a passive segment, a recursive call, an `f32.const` or an opcode outside the MVP and bulk memory is `error.Unsupported`, named in `Diag`. `linkModule` takes other bytes (the tests). `Linked.funcs` lists, in the order of the functions among `items`, each one's symbol, label (`std:<module>.<function>` for an export, the symbol for a helper) and `hash` — the first 12 hex of the sha256 of its code-section entry in `std_wasm.wasm`; `emitWat` copies it into `GenerateResult.std_funcs`, and `snapshot.zig` writes each such function as the one line `;; <label> — from std_wasm.wasm (sha256 <hash>)` with its body omitted (decision 446) — the snapshot's rendering only: the emitter, `botopink build --target wasm` and the binary the RUN LOG runs keep every body. A test flips a byte inside one function and expects exactly one hash to move. |
+| `wat_prelude.zig` | The runtime helpers decision 442 (1) keeps, as `Func` nodes — what defines a value's representation or talks to the host, and nothing that only computes over values (§ What stays in `wat_prelude`): `print` (`$__write_bytes`, `$__print_nl`, `$__print_sp`, `$__print_i32`, `$__print_i32_raw`, `$__memmove`), `print_str` (`$__print_str_raw` traps on a pointer below the data floor — decision 67, § below), `print_bool`, `print_f64` (the I/O; the text is std-wasm's `number.floatToString`), `arr_at`, `str_concat`, `str_eq`, `str_slice` (transcribed line by line), then — one helper per group, built with the comptime constructors at the bottom of the file (`func`, `loop`, `when`, `whenElse`, `get`/`set`/`op`/…; `func` assigns each line the column its nesting puts it at) — `alloc` (bump, 4-byte aligned: the program's one heap, std-wasm's too), `mem_eq`, `i32_abs`/`i32_min`/`i32_max`, `str_case` (ASCII shift of a byte range), `arr_new`, `arr_push`, `print_arr_i32`, `print_arr_f64` (+`_raw`, each slot's cell), `box_i32`, `arr_at_box`, `print_opt` (`$__print_null` — the bytes of `null`, decision 47's one spelling of absent, through scratch `176..180` — and `$__print_opt_i32`/`_bool`/`_str` +`_raw`), `assert_fail` (`$__write_err` — `fd_write` to fd 2 — and `$__assert_fail`, its literal text through scratch `188..208`), `print_shaped` (`$__print_quoted_raw` — a nested string, quoted with the source escapes — and `$__print_shaped_raw(v, shape, go)`, which walks a shape string — `i`/`f`/`b`/`s`, `l`/`u` (an `i64` / `u64` cell; `print_shaped` requires `print_i64` and `print_u64`), `[X`, `(XY…)`, `?X` / `!X` — writing `[a, b]` / `#(a, b)` and answering the address past the shape; `go = 0` only measures), `print_opt_tagged` (`$__print_opt_tagged` +`_raw` — a `?T` whose `T` is a record: `null` for `0`, `$__print_tagged_raw` otherwise; its own group, because the tagged printer reads a header four bytes behind the value and absence has to be answered before it is called), `display_of` (`$__display_of(v)` answering `0` — the `Display` hook `$__print_tagged_raw` calls first, which `wat.zig` replaces with the module's dispatch, § below), `unknown`, `print_unknown`; decision 238's adapters `wasi_random_f64` (`$__wasi_random_f64`, with `random_get_import` — 8 bytes into scratch `208..216`) and the seeded stream (`wasi_seed_state`, `wasi_seed_u32`, `wasi_seeded_f64` — still here, B-00g's open question); decision 392's scheduler (`task`, `task_resume`, `task_poll`, `task_host`, `task_delay`, `task_race`, `task_race_of`, `task_spawn_all`, with `task_host_poll_wasi`, `bp_ready` and the `bp_host_*` imports — § `@Task` as a state machine); and § Numbers' groups: `box_f64`, `print_i64` (the I/O of std-wasm's `number.i64Text`), `box_i64`, `print_opt_i64`, `int_chk` (`$__i32_add_chk` … `$__i64_mul_chk`), `i32_range_chk` / `i64_range_chk` (decision 264's narrower types, groups of their own), and decision 319's `print_u64` (`number.u64Text`), `u64_chk`, `print_opt_u64`; decision 332's `bigint` — no function: the marker of a module that prints a `bigint` in a container, which substitutes `print_shaped_items_bigint` (the shaped printer with the `n` code, calling std-wasm's `bigint.toString`); `print_opt_f64` is `print_opt_f32` renamed (a `?f64` is its cell). `items(group)` returns a group's forms, `order` the order a module appends them in (declaration order, so the transcribed groups keep their place), `fd_write_import` the one host import the print group needs, `stdSymbol` the program symbol of a std-wasm function a helper calls (`HelperGroup.stdCalls` names each group's, so a module holding the group links them). Scratch layout below the data section (which starts at 256): `0..8` the WASI iovec, `8` the newline byte — and `9` the space of §7's `, ` separator (`putSep`), written beside it so the two bytes leave in one `fd_write` —, `16..32` the bool text, `64..128` the i32 digits. An `i64`'s and a `u64`'s text is std-wasm's workspace (`number.i64Text` / `u64Text`), a float's std-wasm's (§ std-wasm in the program). |
+| `std_wasm_link.zig` | Decision 440 (2): `link(arena, wanted, floor, *Diag) → Linked{ items, end }` — the functions of `std_wasm.wasm` (embedded, `module_bytes`) the program reaches, decoded into the model: the exports `wanted` names (`<module>.<function>`, emitted as `entryName` — `__std_number_floatToString`) and what they call, each other function `__std_f<n>`, locals `p<n>`/`l<n>`, every block, loop and `if` labelled `b<n>` (a branch to the function's own block wraps the body in `block $fn`); the stack-pointer global `$__std_sp`, the raw data segments at the first 8-aligned address at or past `floor`, the functions. `global.get $__memory_base` is the constant base, `env.bp_alloc` is `$__alloc`, `__stack_pointer` is `$__std_sp`, initialised to the top of a stack sized from the code (each prologue's `global.get $sp; i32.const N; i32.sub`, summed along the deepest call chain); `end`, past data and stack, is where the heap starts. std-wasm's data is placed only when a function the program reaches reads `__memory_base` (a function that addresses no table, literal or `var` of std-wasm's links none of it). A start function that only zeroes `.bss` (what wasm-ld writes for a Zig `var`) is dropped — a fresh instance's memory is zero. A module that is no side module (`dylink.0`), or holds a function table, another start function, a global of its own, another import, an export not named `std:<module>.<function>`, a passive segment, a recursive call, an `f32.const` or an opcode outside the MVP and bulk memory is `error.Unsupported`, named in `Diag`. `linkModule` takes other bytes (the tests). `Linked.funcs` lists, in the order of the functions among `items`, each one's symbol, label (`std:<module>.<function>` for an export, the symbol for a helper) and `hash` — the first 12 hex of the sha256 of its code-section entry in `std_wasm.wasm`; `emitWat` copies it into `GenerateResult.std_funcs`, and `snapshot.zig` writes each such function as the one line `;; <label> — from std_wasm.wasm (sha256 <hash>)` with its body omitted (decision 446) — the snapshot's rendering only: the emitter, `botopink build --target wasm` and the binary the RUN LOG runs keep every body. A test flips a byte inside one function and expects exactly one hash to move. |
 
 ## Consumers
 
@@ -574,7 +574,7 @@ binding `hash` and `io/random`, and each still open:
 |---|---|---|
 | `i64` was lowered as `i32` | an `i64` local, parameter, return, record field, tuple element, `?i64` and closure capture is an `i64` (§ Numbers); an `i64` in an array, a variant's payload or a `@Result` is refused where it enters — the bodies still use exact `f64` | fixed / refused |
 | a float in an array was stored as its `f32`, and `xs.at(i).unwrapOr(0.0)` on an `Array<f64>` was invalid code | every float slot holds its `f64` cell (§ Numbers); `unwrapOr` over a `?f64` answers an `f64` | fixed |
-| `Float.toString` wrote six fraction digits; a float ≥ 2^31 trapped in `$__f64_to_str` | std-wasm's shortest digits (§ Numbers, decision 441) — `0.26642920868471265` prints whole | fixed |
+| `Float.toString` wrote six fraction digits; a float ≥ 2^31 trapped in the prelude's float text | std-wasm's shortest digits (§ Numbers, decision 441) — `0.26642920868471265` prints whole | fixed |
 | `Array.range` / `Array.repeat` recurse once per element through a spread (`primitives.bp`), O(n²) memory | `Array.repeat(0, 128)` exhausts the page; the bodies double an array instead | open |
 
 ## Numbers: a float's text, the 8-byte cells, integers that do not wrap
@@ -583,9 +583,8 @@ binding `hash` and `io/random`, and each still open:
 class beside them. What each number is here, and what is refused:
 
 - **A float's text is std-wasm's** (decision 441). `@print`, `toString`,
-  `"${x}"` and `"s" + x` all write `$__f64_to_str(x)`, which calls the
-  function `Float.toString`'s `std:` cell names, `number.floatToString`,
-  transpiled into the module: OTP's `float_to_binary(x, [short])`, the text
+  `"${x}"` and `"s" + x` all call the function `Float.toString`'s `std:`
+  cell names, `number.floatToString`, transpiled into the module: OTP's `float_to_binary(x, [short])`, the text
   of erlang, beam and the comptime — the shortest digits that read back as
   `x` (Ryu), in fixed notation or as `D.DDDeE` when that is shorter (`5.0`,
   `0.30000000000000004`, `1.0e21`, `5.0e-324`, `1.152921504606847e18`), and
@@ -599,8 +598,9 @@ class beside them. What each number is here, and what is refused:
   a closure capture, a `?f64` (`OptInfo.cell = .f64` — a float array's
   `at(i)` is the slot's own cell). A cell is never written again, except a
   closure's capture, which is its own. `ElemKind.f64`, the shape code `f`,
-  `$__print_arr_f64`, `$__arr_index_of_f64` (`f64.eq`, as `Array#indexOf`),
-  `$__arr_join_f64`, `unique`'s mode 1 (the cell's bits) read the cell. It was
+  `$__print_arr_f64`, std-wasm's `array.indexOfFloat` (`f64.eq`, as
+  `Array#indexOf`), `array.joinFloats`, `array.unique`'s mode 1 (the cell's
+  bits) read the cell. It was
   narrowed to an `f32` in the slot: `[1.1]` read back `1.100000023841858`, and
   a tuple element, `join` and a record printed through its shape answered bits
   or addresses.
@@ -617,8 +617,9 @@ class beside them. What each number is here, and what is refused:
   `for` element, `==` — `$__eq_<T>` compares a tuple slot as a record
   `field`, and a tuple literal compared with a typed tuple is built with
   that tuple's widths, `lowerTupleEqAgainst`); a pattern that TESTS a 64-bit
-  element is refused. It prints (`$__print_i64`) and turns into text
-  (`$__i64_to_str`) in all its digits.
+  element is refused. It prints (`$__print_i64`, the digits std-wasm's
+  `number.i64Text`) and turns into text (`number.i64ToString`) in all its
+  digits.
 - **Nothing narrows silently.** `lowerCoerced` and `emitConvert` refuse a
   float or an `i64` asked for as a narrower word (`lossyConversion`) — the
   backstop that turns every slot with no wide reader into a located refusal:
@@ -678,7 +679,7 @@ class beside them. What each number is here, and what is refused:
   (`isU64Expr`), takes `div_u`, `rem_u`, `lt_u` … `ge_u`, and its `+ - *` the
   unsigned checks `$__u64_{add,sub,mul}_chk` (group `u64_chk`, no range check
   after); `@print`, `toString` and a string operand write its digits through
-  `$__u64_fmt` (`print_u64`, `u64_to_str`, `u64_fmt`) — a `u64` record field
+  std-wasm's `number.u64Text` / `u64ToString` (`print_u64`) — a `u64` record field
   or tuple element by the shape code `u`, a `?u64` by `$__print_opt_u64`,
   `o ?? d` over a `?u64` (typed by the payload, `typeRefOf` through `nullishParts`; a `@Result`'s `unwrapOr` the same way) and a
   `?u64` a null test narrowed (`isNarrowedName`) as a `u64`. Division keeps wasm's
@@ -701,19 +702,21 @@ std's functions written in Zig (`modules/std-wasm`) are the program's own: a
 `Float.toString` — `wat.zig` `std_method_exports`, held to the cells by
 `codegen/tests/wat.zig`) and every float turned into text call a std-wasm
 function, and `emitWat` transpiles the ones the module calls
-(`Emitter.std_exports`, plus `number.floatToString` when `$__f64_to_str` is
-linked) from `std_wasm.wasm` into it (`std_wasm_link.zig`): one module, its
+(`Emitter.std_exports`, plus each held prelude group's `HelperGroup.stdCalls`)
+from `std_wasm.wasm` into it (`std_wasm_link.zig`): one module, its
 `.wat` the whole program, the binary from the same model, no import and no host
 change. Its layout, after the program's interned data:
 
     256 … data floor  the program's data
-    base              std-wasm's data (Ryu's tables, its literals; 864 bytes), 8-aligned
+    base              std-wasm's data (Ryu's tables, its literals, its `var`s), 8-aligned —
+                      only when a linked function addresses it (`__memory_base`)
     … top             std-wasm's stack, sized from its frames; `$__std_sp` starts at `top`
     top …             the heap: `$__heap_ptr` starts at `top`, `memory` has the pages `top` needs
 
-A module that turns no float into text and calls no `std:` function links
-nothing and is unchanged. `$__str_trim`, `$__f64_fmt` and the bignum `$__dtoa`
-group left the prelude (the integer half is `int_fmt`).
+A module that calls no std-wasm function links nothing and is unchanged.
+`$__str_trim`, `$__f64_fmt` and the bignum `$__dtoa` group left the prelude
+with B-00e; every other helper that only computes over values left it with
+B-00g (§ What stays in `wat_prelude`).
 
 Size, measured 2026-10-11 against the parent compiler (`browser` host for the
 binary, which a `wasi` build writes as component text only):
@@ -729,6 +732,74 @@ The cost is std-wasm's float text (Ryu's code and tables against the bignum
 transcription it replaces); `contentHash` and `trim` are smaller than the
 bodies they replace.
 
+## What stays in `wat_prelude` (decision 442, front 144 B-00g)
+
+`wat_prelude.zig` keeps what defines a value's representation or talks to the
+host; everything that only computes over values is Zig, transpiled into the
+program as std-wasm is (§ std-wasm in the program).
+
+**The rule for a new helper (442 (3)).** It stays in `wat_prelude` when it
+reads or writes the layout the codegen decides (a box, an array's or a
+string's cell, a value's header, the heap pointer) or talks to the host (a
+WASI call, the `@Task` protocol); it is Zig — a function of
+`modules/std-wasm`, with its Zig unit tests — when it only takes values and
+answers values. A std declaration whose types a `std:` cell spells carries the
+cell (`primitives.bp`, `std_method_exports`); a function whose arguments are
+the codegen's own (code point bounds, slot words by element kind, an integer
+by its carrier, a `bigint` block) is a `root.program` entry the codegen calls
+by name (`Emitter.stdCall`).
+
+**What stays (442 (1)).** Memory and representation: `alloc` (the program's
+one heap — std-wasm imports it as `env.bp_alloc` and never brings its own),
+`mem_eq`, `box_i32` / `box_f64` / `box_i64`, `arr_at_box`, `arr_new`,
+`arr_push`, `arr_at`, `str_concat`, `str_eq`, `str_slice`. The arithmetic
+operators: `int_chk`, `u64_chk`, `i32_range_chk`, `i64_range_chk`, `i32_abs` /
+`i32_min` / `i32_max`. Output: `print` (`fd_write`, `$__write_bytes`, and
+`$__print_i32`'s digits through scratch `64..128`), `print_str`, `print_bool`,
+`print_opt*`, `print_shaped`, `print_tagged`, `print_unknown`, `display_of`,
+and the I/O half of `print_f64` / `print_i64` / `print_u64` / `print_arr_*` —
+the text is std-wasm's (`HelperGroup.stdCalls`). The language runtime: the
+`@Task` scheduler (`task*`), `unknown`, `assert_fail`. Besides those: `str_case`
+(ASCII; § the case mapping) and the seeded random (`wasi_seed_*`, an open
+question of B-00g: its draw before any seed is the host's).
+
+**What left (442 (2)), now std-wasm's** (`modules/std-wasm/AGENTS.md` has each
+function): the text helpers (`str_split`, `str_replace`, `str_pad`,
+`str_lines` / `str_words`, `str_cp_*`, `str_from_cp`, `str_char_code`,
+`str_index_of` / `str_last_index_of`, `str_starts_with` / `str_ends_with`,
+`str_repeat`, `str_at`), a number's text (`i32_to_str`, `i64_to_str`,
+`u64_to_str`, `int_fmt`, `u64_fmt`, `f64_to_str`), the array helpers
+(`arr_reverse`, `arr_slice`, `arr_concat`, `arr_prepend`, `arr_zip`,
+`arr_fill`, `arr_join_*`, `arr_index_of_*` / `arr_last_index_of_*`,
+`arr_unique`, `arr_flatten`, `arr_chunked`, `arr_sliding`) and `bigint`'s
+twenty-one `bn_*` (`bigint.zig`). Every wasm RUN LOG and `run/` cell answers
+as before (the 43 codegen snapshots that linked one show each function as one
+hash line, decision 446).
+
+**The stack.** The codegen keeps every value in wasm locals and has no stack
+pointer of its own; std-wasm's Zig code keeps its frames on a shadow stack,
+`$__std_sp`, a region `std_wasm_link.zig` sizes from the reached functions'
+frames and places below the heap — the one stack pointer the program has.
+Whether B-00g's "no second stack pointer" admits it is an open question of
+that step (the alternatives: frames on the heap, or a program face written so
+no reached function has a frame).
+
+Size, measured 2026-10-11 against the parent compiler (`browser` host for
+the binary):
+
+| Program | Before | After |
+|---|---|---|
+| hello world (`@print("hello, world")`) | 530-byte binary, 4 444-byte `.wat` | byte for byte the same — nothing linked |
+| `@print(1.5)` | 7 202-byte binary, 75 123-byte `.wat` | 7 303 (+101), 76 075 |
+| text methods (`split` / `join`, `indexOf`, `replaceAll`, `padStart`) | 1 996-byte binary, 20 678-byte `.wat` | 3 542 (+1 546), 36 939 |
+| a `bigint` program (`run/bigint_arithmetic`) | 12 021-byte binary, 124 781-byte `.wat` | 13 428 (+1 407), 142 837 |
+| onze's blog (`examples/blog`, `wasi`): the page refused alike (std `json`, `io/fs`); its 59 modules that build | 2 581 307 bytes of `.wat` | 3 006 854 (+16 %): 30 modules change, e.g. `routing/match` 135 437 → 154 055, `std/encoding` 88 294 → 111 861, `actions/state` 93 319 → 117 079 |
+
+The cost is Zig's code against the hand-written WAT it replaces, and the
+heap starting past std-wasm's stack (`std.mem.indexOf`'s table is a frame).
+std-wasm's data (Ryu's tables, the integer workspace) is placed only when a
+reached function addresses it.
+
 ## `bigint` — the runtime library (decision 332, front `01-compiler/139` step 4)
 
 A `bigint` is the address of an immutable block, `[L][limb0][limb1]…`: `L` the limbs' byte count
@@ -736,30 +807,31 @@ A `bigint` is the address of an immutable block, `[L][limb0][limb1]…`: `L` the
 no zero limb on top, so one value has one spelling. A literal (`lowerBigintLiteral`) is its
 magnitude interned as a data segment — the string layout, its length word the `L` of a positive
 value (`-5n` is a negation); a segment that is no UTF-8 text writes its bytes past ASCII escaped
-(`wat_emitter.zig` `dataSegment`). Every operation allocates its answer through the `bigint` helper
-group (`wat_prelude.zig` § bigint), linked only when a module calls one of its helpers:
+(`wat_emitter.zig` `dataSegment`). Every operation allocates its answer: std-wasm's `bigint.*` (`modules/std-wasm/src/bigint.zig`,
+decision 442 (2)), transpiled into the module, the codegen passing the blocks' addresses — the
+limbs are the Zig module's own business:
 
-| Helper | What |
+| std-wasm function | What |
 |---|---|
-| `$__bn_add(x, y, flip)` | `x + y`, or `x - y` when `flip` (sign and magnitude: `$__bn_addm` / `$__bn_subm` over `$__bn_cmpm`) |
-| `$__bn_neg`, `$__bn_mul` | `-x`; `x * y` schoolbook over `u32` limbs with `i64` carries |
-| `$__bn_divmod(x, y, rem)` | `x / y` truncated toward zero, or `x % y` with `x`'s sign; a zero `y` traps — by one limb through `$__bn_divw`, by more a bit at a time (`$__bn_ge`, `$__bn_subw`) |
-| `$__bn_cmp`, `$__bn_eq_opt` | `-1` / `0` / `1`; `==` over two `?bigint`s (absent both, or present and equal) |
-| `$__bn_of(i64)`, `$__bn_to_i64`, `$__bn_to_f64` | `bigint.of(n)`; `toI64()` traps past the range, `toF64()` unless exact (≤ 53 significant bits, below 2^1024) |
-| `$__bn_to_str`, `$__bn_from_str` | decimal text (chunks of 10^9 through `$__bn_divw`); a numeral of `bigint.parse` (`+`/`-` then digits), `0` for none — `lowerBigintAssoc` builds the `@Result` pair and its `Error` text |
+| `bigint.add(x, y, flip)` | `x + y`, or `x - y` when `flip` (sign and magnitude) |
+| `bigint.negate`, `bigint.multiply` | `-x`; `x * y` schoolbook over `u32` limbs with `u64` carries |
+| `bigint.divmod(x, y, rem)` | `x / y` truncated toward zero, or `x % y` with `x`'s sign; a zero `y` traps — by one limb through `divWord`, by more a bit at a time |
+| `bigint.compare`, `bigint.equalOptional` | `-1` / `0` / `1`; `==` over two `?bigint`s (absent both, or present and equal) |
+| `bigint.ofI64`, `bigint.toI64`, `bigint.toF64` | `bigint.of(n)`; `toI64()` traps past the range, `toF64()` unless exact (≤ 53 significant bits, below 2^1024) |
+| `bigint.toString`, `bigint.parse` | decimal text (chunks of 10^9); a numeral of `bigint.parse` (`+`/`-` then digits), `0` for none — `lowerBigintAssoc` builds the `@Result` pair and its `Error` text |
 
-Size, measured: `@print(5n)` builds a 3 414-byte core module against `@print("5")`'s 519 on the
-`browser` host — the group and `$__alloc` are ≈ 2.9 KB.
+Their Zig unit tests and a property test against `std.math.big.int` (carry, divmod, the text
+round-trip) are `zig build test`'s. Size: § What stays in `wat_prelude`.
 
 What reads a `bigint` (`isBigintExpr`, from `typeRefOf`: a literal, an operator inference typed
 `bigint` — `isBigintAt` —, `bigint.of`, a fold over one, an `if` answering one, a declared type):
 `lowerBinOp` (`lowerBigintBinOp`, before the string and structural rows), `lowerNeg`, `+=` on a local
-or a field, `@print` and a string operand (`$__bn_to_str`), the methods (`primCallRes`' `.bigint`
-rows, `PrimRes.i64` for `toI64`), a number pattern and a range bound (by `$__bn_cmp`). In a
+or a field, `@print` and a string operand (`bigint.toString`), the methods (`primCallRes`' `.bigint`
+rows, `PrimRes.i64` for `toI64`), a number pattern and a range bound (by `bigint.compare`). In a
 container the slot holds the address: the print shape `n` (`typeRefShape`, `fieldShape`; `?n` for
 a `?bigint` field) is read by `print_shaped_raw_bigint`, the shaped printer the module substitutes
-when it links the group (`print_shaped_items_bigint`), and `$__eq_<T>`, a tuple's `==` and an
-array's compare it by `$__bn_cmp` (`emitValueEq`, `emitTupleEq`, `eqTypeOfShape`); an array's
+when it holds the group (`print_shaped_items_bigint`), and `$__eq_<T>`, a tuple's `==` and an
+array's compare it by `bigint.compare` (`emitValueEq`, `emitTupleEq`, `eqTypeOfShape`); an array's
 element is a pointer (`elemIsPointer`), so `xs.at(i)` / `xs[i]` answer it unboxed, `0` its absence.
 A `?bigint` prints `null` or the digits. Refused, located: a `bigint` in a union
 (`lowerAsUnknown`, "has no `bigint` in a union yet" — erlang, beam and commonJS run it; the checker
@@ -773,12 +845,12 @@ A string is `[byte count][UTF-8 bytes]`; `length`, `at`, `slice`, `indexOf`,
 `lastIndexOf`, `s[i]` and `s[a..b]` count **codepoints**, as erlang and beam do
 (decision 169 on the fourth target), so an index one answers is one another
 reads. `lowerStringMethod`, `lowerIndex`, `lowerStrSlice`, the `.length` of
-`lowerCollectionMethod` and `lowerIdentAccess` emit the `str_cp_*` helpers,
-which count the bytes that are not `10xxxxxx` continuations; `$__str_cp_slice`
-normalises its bounds as `slice` does (a negative one from the end, clamped,
-an end before the start is the start), so an open end is the largest i32. The
-byte helpers below them (`$__str_slice`, `$__str_index_of`, …) stay the byte
-cutters the rest of the prelude uses. `run/string_index_of_codepoints`:
+`lowerCollectionMethod` and `lowerIdentAccess` call std-wasm's `text.length`,
+`text.at`, `text.indexOf`, `text.lastIndexOf` and `text.slice`, which count
+the bytes that are not `10xxxxxx` continuations; `text.slice` normalises its
+bounds as `slice` does (a negative one from the end, clamped, an end before
+the start is the start), so an open end is the largest i32. The prelude's
+`$__str_slice` stays the byte cutter its own helpers use. `run/string_index_of_codepoints`:
 `"a—bXc".indexOf("X")` is `3` and `.at(3)` is `X` on four targets (it was `5`
 and a broken byte on wasm).
 
@@ -1112,7 +1184,7 @@ Three pattern shapes had no wasm test, and two of them answered at exit 0:
 | Shape | Was | Is |
 |---|---|---|
 | a tuple pattern in a `case` (`#(0, s)`, `#(a, ..)`, `#(#(0, b), s)`) | refused — `` `` names no variant `` | `emitTuplePatternTest` / `bindTuplePattern`: each element that tests something is loaded from its slot (`i * 4`, no header) and tested in the chain a variant's payload literals use; a binder takes the element's shape (`noteTupleElemLocal`: a string prints as text, a float is read from its slot's cell); `..` skips the rest |
-| a list pattern (`[]`, `[x]`, `[1, b]`, `[a, ..rest]`) | **irrefutable** — `[x]` took a `[]` arm, exit 0 | `emitListPatternTest`: the length (exactly the elements, or at least them with a spread), then each number literal; `bindListPattern` binds each element by the array's element shape and a named spread to `$__arr_slice(xs, n, …)`. Only `[..]` / `[..rest]` is irrefutable (`patternIsIrrefutable`) |
+| a list pattern (`[]`, `[x]`, `[1, b]`, `[a, ..rest]`) | **irrefutable** — `[x]` took a `[]` arm, exit 0 | `emitListPatternTest`: the length (exactly the elements, or at least them with a spread), then each number literal; `bindListPattern` binds each element by the array's element shape and a named spread to std-wasm's `array.slice(xs, n, …)`. Only `[..]` / `[..rest]` is irrefutable (`patternIsIrrefutable`) |
 | `true` / `false` inside a pattern | a **binder** named `true` — every arm matched, exit 0 | the bool literal (`isBoolLitName`): `subj == 1` / `subj == 0` |
 | `null` inside a pattern (`Box(label: null, n: k)`) | a **binder** named `null` — every arm matched, exit 0 | the absent word (`isLitPatternName`, never a binder): `subj == 0` (`run/case_record_field_null`) |
 
@@ -1394,17 +1466,17 @@ member `libs/std/src/primitives.bp` declares — **every member is listed now**:
 
 | Family | Lowered |
 |---|---|
-| `String` | every member — `charCodeAt` (`$__str_char_code`: the code point at code-point index `i`, decoded from the UTF-8 sequence it walks to; `-1` out of range), `lastIndexOf` (`$__str_last_index_of`), `padStart`/`padEnd` (`$__str_pad`, the pad cycled), `replace`/`replaceAll` (`$__str_replace`; an empty pattern matches before every byte), `chars` (`$__str_split` on `""`, which cuts before every UTF-8 codepoint, as `split("")` does), `lines` (`$__str_lines`: cut at `\n`, a `\r` right before it dropped — node's `/\r?\n/`, erlang's `[<<"\r\n">>, <<"\n">>]` —, the last line keeping a trailing `\r`, `""` one empty line) and `words` (`$__str_words`: the runs of bytes that are not ` `/`\t`/`\n`/`\r`) |
-| `Array` | every member — `find` (`filter` then `at(0)`, the `?T` `at` answers); `lastIndexOf` (`$__arr_last_index_of_i32` / `_str` / `_f64`, `indexOf`'s equality from the last slot down); `pop` on a local, a global or a record's field (the `?T` `at(-1)` answers, then the name — or the field — rebound to `$__arr_slice(xs, 0, len - 1)`: a blob is a value, as `push` rebinds it to a grown copy; any other receiver may be an array another name holds, and is refused); `unique` (`$__arr_unique(xs, mode)`: every duplicate dropped, each value kept at its first occurrence (decision 217), `primitives.bp`'s body, compared by the element's word (`0` — an integer, a bool, an all-unit enum's ordinal), the bits of its `f64` (`1`) or a string's content (`2`), `uniqueMode` reading the receiver's shape); `flatten` / `flat` (`$__arr_flatten`, over a receiver whose shape is `[[…`); `flatMap(f)` (`map(f)` inlined, then `$__arr_flatten` — the body `primitives.bp` writes — when `f`'s tail is an array, `lambdaTailShape`); `chunked` / `sliding` (`$__arr_chunked` / `$__arr_sliding`, arrays of `$__arr_slice`s; `n <= 0` none); `fill(v)` (`$__arr_fill(len, v)`, `Array.repeat(v, xs.length)`, a float as the one cell every slot shares) |
+| `String` | every member — each through the std-wasm function its `std:` cell in `primitives.bp` names (`std_method_exports`; decision 442 (2)), `toUpper` / `toLower` aside (`$__str_case`): `charCodeAt` (`text.charCodeAt`: the code point at code-point index `i`, decoded from the UTF-8 sequence it walks to; `-1` out of range), `lastIndexOf`, `padStart`/`padEnd` (the pad cycled, by bytes), `replace`/`replaceAll` (an empty pattern matches before every byte), `chars` (one string per UTF-8 codepoint, as `split("")` does), `lines` (cut at `\n`, a `\r` right before it dropped — node's `/\r?\n/`, erlang's `[<<"\r\n">>, <<"\n">>]` —, the last line keeping a trailing `\r`, `""` one empty line) and `words` (the runs of bytes that are not ` `/`\t`/`\n`/`\r`) |
+| `Array` | every member — `find` (`filter` then `at(0)`, the `?T` `at` answers); `lastIndexOf` (std-wasm's `array.lastIndexOfWord` / `String` / `Float`, `indexOf`'s equality from the last slot down); `pop` on a local, a global or a record's field (the `?T` `at(-1)` answers, then the name — or the field — rebound to `array.slice(xs, 0, len - 1)`: a blob is a value, as `push` rebinds it to a grown copy; any other receiver may be an array another name holds, and is refused); `unique` (`array.unique(xs, mode)`: every duplicate dropped, each value kept at its first occurrence (decision 217), `primitives.bp`'s body, compared by the element's word (`0` — an integer, a bool, an all-unit enum's ordinal), the bits of its `f64` (`1`) or a string's content (`2`), `uniqueMode` reading the receiver's shape); `flatten` / `flat` (`array.flatten`, over a receiver whose shape is `[[…`); `flatMap(f)` (`map(f)` inlined, then `array.flatten` — the body `primitives.bp` writes — when `f`'s tail is an array, `lambdaTailShape`); `chunked` / `sliding` (`array.chunked` / `array.sliding`, arrays of slices; `n <= 0` none); `fill(v)` (`array.fill(len, v)`, `Array.repeat(v, xs.length)`, a float as the one cell every slot shares) |
 | `Integer`, `Bool` | all |
-| `Float` | all — `toString` (`$__f64_to_str`, `String(x)`: `5.0` → `5`, `0.1 + 0.2` → `0.30000000000000004`, as on node) |
+| `Float` | all — `toString` (`number.floatToString`, decision 441) |
 
 **What is still refused, by name** (`tests/wat.zig` `unique over records,
 flatMap over a scalar and flatten over scalars are refused at the call`; each
 trapped at run time until `00 · 110-gate-wasm`): `unique` over records, arrays
 or tuples — decision 210 now gives `[P(x: 1), P(x: 1)].unique().length` one
 answer, `1` on commonJS, erlang and beam, and this row is still a refusal
-here: `$__arr_unique` compares words and strings, and calling `$__eq_<T>` from
+here: `array.unique` compares words, float bits and strings, and calling `$__eq_<T>` from
 it is open; `flatMap` whose function answers no array known here
 (node keeps the scalar, erlang fails); `flatten` / `flat` over elements no
 shape says are arrays.

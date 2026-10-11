@@ -589,7 +589,7 @@ test "order case over Order" {
   (data (i32.const 320) "\00\00\00\00")
   (data (i32.const 324) "\0d\00\00\00R\03Set\01\05itemsi")
   (data (i32.const 344) "\0f\00\00\00R\05Queue\01\05itemsi")
-  (global $__heap_ptr (mut i32) (i32.const 364))
+  (global $__heap_ptr (mut i32) (i32.const 432))
   ;; std/collections — the four collection types, one namespace each (decision
   ;; 106): `Dict<K, V>`, `Set<T>`, `Queue<T>` and `Order`. Was the four modules
   ;; `dict`, `sets`, `queue` and `order`; the type is the namespace now, so a
@@ -676,7 +676,7 @@ test "order case over Order" {
     i32.const 264
     local.get $parts
     i32.const 276
-    call $__arr_join_str
+    call $__std_array_joinStrings
     call $__str_concat
     i32.const 284
     call $__str_concat
@@ -1031,7 +1031,7 @@ test "order case over Order" {
     local.get $__mem2
     i32.store offset=4
     local.get $__mem1
-    call $__arr_concat
+    call $__std_array_concat
     i32.store offset=4
     local.get $__mem0
     i32.const 4
@@ -1409,7 +1409,7 @@ test "order case over Order" {
       (then
     i32.const 312
     local.get $x
-    call $__i32_to_str
+    call $__std_number_i32ToString
     call $__str_concat
     i32.const 312
     call $__str_concat
@@ -1422,7 +1422,7 @@ test "order case over Order" {
     drop
     i32.const 320
     local.get $x
-    call $__i32_to_str
+    call $__std_number_i32ToString
     call $__str_concat
     return
   )
@@ -1440,7 +1440,7 @@ test "order case over Order" {
     local.get $self
     i32.load ;; .items
     local.get $x
-    call $__arr_index_of_i32
+    call $__std_array_indexOfWord
     i32.const 0
     i32.const 1
     call $__i32_sub_chk
@@ -1472,7 +1472,7 @@ test "order case over Order" {
     local.get $self
     i32.load ;; .items
     local.get $x
-    call $__arr_index_of_i32
+    call $__std_array_indexOfWord
     i32.const 0
     i32.const 1
     call $__i32_sub_chk
@@ -1501,7 +1501,7 @@ test "order case over Order" {
     local.get $x
     i32.store offset=4
     local.get $__mem1
-    call $__arr_concat
+    call $__std_array_concat
     i32.store offset=4
     local.get $__mem0
     i32.const 4
@@ -1681,7 +1681,7 @@ test "order case over Order" {
     local.get $other
     i32.load ;; .items
     local.get $x
-    call $__arr_index_of_i32
+    call $__std_array_indexOfWord
     i32.const 0
     i32.const 1
     call $__i32_sub_chk
@@ -1767,7 +1767,7 @@ test "order case over Order" {
     local.get $other
     i32.load ;; .items
     local.get $x
-    call $__arr_index_of_i32
+    call $__std_array_indexOfWord
     i32.const 0
     i32.const 1
     call $__i32_sub_chk
@@ -1943,7 +1943,7 @@ test "order case over Order" {
     local.get $item
     i32.store offset=4
     local.get $__mem1
-    call $__arr_concat
+    call $__std_array_concat
     i32.store offset=4
     local.get $__mem0
     i32.const 4
@@ -1966,7 +1966,7 @@ test "order case over Order" {
     local.get $self
     i32.load ;; .items
     i32.load ;; .length
-    call $__arr_slice
+    call $__std_array_slice
     local.set $rest
     i32.const 8
     call $__alloc
@@ -2253,82 +2253,6 @@ test "order case over Order" {
     global.set $__heap_ptr
     local.get $p
   )
-  (func $__i32_to_str (param $n i32) (result i32)
-    (local $u i64) (local $pos i32) (local $len i32) (local $p i32) (local $neg i32)
-    i32.const 160
-    local.set $pos
-    local.get $n
-    i32.const 0
-    i32.lt_s
-    local.set $neg
-    local.get $n
-    i64.extend_i32_s
-    local.set $u
-    local.get $neg
-    (if
-      (then
-        i64.const 0
-        local.get $u
-        i64.sub
-        local.set $u
-      )
-    )
-    (block $brk
-      (loop $cont
-        local.get $pos
-        i32.const 1
-        i32.sub
-        local.set $pos
-        local.get $pos
-        local.get $u
-        i64.const 10
-        i64.rem_u
-        i32.wrap_i64
-        i32.const 48
-        i32.add
-        i32.store8
-        local.get $u
-        i64.const 10
-        i64.div_u
-        local.set $u
-        local.get $u
-        i64.eqz
-        br_if $brk
-        br $cont
-      )
-    )
-    local.get $neg
-    (if
-      (then
-        local.get $pos
-        i32.const 1
-        i32.sub
-        local.set $pos
-        local.get $pos
-        i32.const 45
-        i32.store8
-      )
-    )
-    i32.const 160
-    local.get $pos
-    i32.sub
-    local.set $len
-    local.get $len
-    i32.const 4
-    i32.add
-    call $__alloc
-    local.set $p
-    local.get $p
-    local.get $len
-    i32.store
-    local.get $p
-    i32.const 4
-    i32.add
-    local.get $pos
-    local.get $len
-    memory.copy
-    local.get $p
-  )
   (func $__arr_new (param $n i32) (result i32)
     (local $p i32)
     local.get $n
@@ -2341,105 +2265,6 @@ test "order case over Order" {
     local.get $p
     local.get $n
     i32.store
-    local.get $p
-  )
-  (func $__arr_slice (param $xs i32) (param $a i32) (param $b i32) (result i32)
-    (local $n i32) (local $cnt i32) (local $p i32)
-    local.get $xs
-    i32.load
-    local.set $n
-    local.get $a
-    i32.const 0
-    i32.lt_s
-    (if
-      (then
-        local.get $n
-        local.get $a
-        i32.add
-        local.set $a
-        local.get $a
-        i32.const 0
-        i32.lt_s
-        (if
-          (then
-            i32.const 0
-            local.set $a
-          )
-        )
-      )
-      (else
-        local.get $a
-        local.get $n
-        i32.gt_s
-        (if
-          (then
-            local.get $n
-            local.set $a
-          )
-        )
-      )
-    )
-    local.get $b
-    i32.const 0
-    i32.lt_s
-    (if
-      (then
-        local.get $n
-        local.get $b
-        i32.add
-        local.set $b
-        local.get $b
-        i32.const 0
-        i32.lt_s
-        (if
-          (then
-            i32.const 0
-            local.set $b
-          )
-        )
-      )
-      (else
-        local.get $b
-        local.get $n
-        i32.gt_s
-        (if
-          (then
-            local.get $n
-            local.set $b
-          )
-        )
-      )
-    )
-    local.get $b
-    local.get $a
-    i32.sub
-    local.set $cnt
-    local.get $cnt
-    i32.const 0
-    i32.lt_s
-    (if
-      (then
-        i32.const 0
-        local.set $cnt
-      )
-    )
-    local.get $cnt
-    call $__arr_new
-    local.set $p
-    local.get $p
-    i32.const 4
-    i32.add
-    local.get $xs
-    i32.const 4
-    i32.add
-    local.get $a
-    i32.const 4
-    i32.mul
-    i32.add
-    local.get $cnt
-    i32.const 4
-    i32.mul
-    memory.copy
     local.get $p
   )
   (func $__arr_push (param $xs i32) (param $x i32) (result i32)
@@ -2471,192 +2296,6 @@ test "order case over Order" {
     i32.add
     local.get $x
     i32.store
-    local.get $p
-  )
-  (func $__arr_concat (param $a i32) (param $b i32) (result i32)
-    (local $na i32) (local $nb i32) (local $p i32)
-    local.get $a
-    i32.load
-    local.set $na
-    local.get $b
-    i32.load
-    local.set $nb
-    local.get $na
-    local.get $nb
-    i32.add
-    call $__arr_new
-    local.set $p
-    local.get $p
-    i32.const 4
-    i32.add
-    local.get $a
-    i32.const 4
-    i32.add
-    local.get $na
-    i32.const 4
-    i32.mul
-    memory.copy
-    local.get $p
-    i32.const 4
-    i32.add
-    local.get $na
-    i32.const 4
-    i32.mul
-    i32.add
-    local.get $b
-    i32.const 4
-    i32.add
-    local.get $nb
-    i32.const 4
-    i32.mul
-    memory.copy
-    local.get $p
-  )
-  (func $__arr_index_of_i32 (param $xs i32) (param $x i32) (result i32)
-    (local $n i32) (local $i i32)
-    local.get $xs
-    i32.load
-    local.set $n
-    (block $brk
-      (loop $cont
-        local.get $i
-        local.get $n
-        i32.ge_u
-        br_if $brk
-        local.get $xs
-        i32.const 4
-        i32.add
-        local.get $i
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load
-        local.get $x
-        i32.eq
-        (if
-          (then
-            local.get $i
-            return
-          )
-        )
-        local.get $i
-        i32.const 1
-        i32.add
-        local.set $i
-        br $cont
-      )
-    )
-    i32.const -1
-  )
-  (func $__arr_join_str (param $xs i32) (param $sep i32) (result i32)
-    (local $n i32) (local $i i32) (local $total i32) (local $p i32) (local $pos i32) (local $e i32)
-    local.get $xs
-    i32.load
-    local.set $n
-    (block $brk
-      (loop $cont
-        local.get $i
-        local.get $n
-        i32.ge_u
-        br_if $brk
-        local.get $total
-        local.get $xs
-        i32.const 4
-        i32.add
-        local.get $i
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load
-        i32.load
-        i32.add
-        local.set $total
-        local.get $i
-        i32.const 1
-        i32.add
-        local.set $i
-        br $cont
-      )
-    )
-    local.get $n
-    (if
-      (then
-        local.get $total
-        local.get $sep
-        i32.load
-        local.get $n
-        i32.const 1
-        i32.sub
-        i32.mul
-        i32.add
-        local.set $total
-      )
-    )
-    local.get $total
-    i32.const 4
-    i32.add
-    call $__alloc
-    local.set $p
-    local.get $p
-    local.get $total
-    i32.store
-    local.get $p
-    i32.const 4
-    i32.add
-    local.set $pos
-    i32.const 0
-    local.set $i
-    (block $brk
-      (loop $cont
-        local.get $i
-        local.get $n
-        i32.ge_u
-        br_if $brk
-        local.get $i
-        (if
-          (then
-            local.get $pos
-            local.get $sep
-            i32.const 4
-            i32.add
-            local.get $sep
-            i32.load
-            memory.copy
-            local.get $pos
-            local.get $sep
-            i32.load
-            i32.add
-            local.set $pos
-          )
-        )
-        local.get $xs
-        i32.const 4
-        i32.add
-        local.get $i
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load
-        local.set $e
-        local.get $pos
-        local.get $e
-        i32.const 4
-        i32.add
-        local.get $e
-        i32.load
-        memory.copy
-        local.get $pos
-        local.get $e
-        i32.load
-        i32.add
-        local.set $pos
-        local.get $i
-        i32.const 1
-        i32.add
-        local.set $i
-        br $cont
-      )
-    )
     local.get $p
   )
   (func $__box_i32 (param $v i32) (result i32)
@@ -3037,6 +2676,22 @@ test "order case over Order" {
     )
     local.get $r
   )
+  ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
+  (global $__std_sp (mut i32) (i32.const 432))
+  ;; __std_f3 — from std_wasm.wasm (sha256 b4b6f06748d6)
+  ;; __std_f7 — from std_wasm.wasm (sha256 91fc3314249d)
+  ;; __std_f23 — from std_wasm.wasm (sha256 d13a98c08300)
+  ;; __std_f24 — from std_wasm.wasm (sha256 fe0ded32f29d)
+  ;; __std_f25 — from std_wasm.wasm (sha256 6a251c47e9bb)
+  ;; __std_f36 — from std_wasm.wasm (sha256 8bdb3d0c8b2b)
+  ;; std:array.indexOfWord — from std_wasm.wasm (sha256 b25002ff266e)
+  ;; std:array.joinStrings — from std_wasm.wasm (sha256 be5521bc82e7)
+  ;; __std_f44 — from std_wasm.wasm (sha256 754afbaaff1c)
+  ;; __std_f45 — from std_wasm.wasm (sha256 432c7dfb021a)
+  ;; __std_f46 — from std_wasm.wasm (sha256 6b108dbbfcd0)
+  ;; std:array.concat — from std_wasm.wasm (sha256 76bea810e576)
+  ;; std:array.slice — from std_wasm.wasm (sha256 b240b9529b77)
+  ;; std:number.i32ToString — from std_wasm.wasm (sha256 9c0a9db10050)
 )
 ```
 
@@ -3072,7 +2727,7 @@ fn main() {
   (data (i32.const 344) "\0f\00\00\00R\05Queue\01\05itemsi")
   (data (i32.const 364) "\01\00\00\00a")
   (data (i32.const 372) "\01\00\00\00b")
-  (global $__heap_ptr (mut i32) (i32.const 380))
+  (global $__heap_ptr (mut i32) (i32.const 448))
   (func $Dict_display (param $self i32) (result i32)
     (local $__mem0 i32)
     (local $parts i32)
@@ -3134,7 +2789,7 @@ fn main() {
     i32.const 264
     local.get $parts
     i32.const 276
-    call $__arr_join_str
+    call $__std_array_joinStrings
     call $__str_concat
     i32.const 284
     call $__str_concat
@@ -3489,7 +3144,7 @@ fn main() {
     local.get $__mem2
     i32.store offset=4
     local.get $__mem1
-    call $__arr_concat
+    call $__std_array_concat
     i32.store offset=4
     local.get $__mem0
     i32.const 4
@@ -3865,7 +3520,7 @@ fn main() {
       (then
     i32.const 312
     local.get $x
-    call $__i32_to_str
+    call $__std_number_i32ToString
     call $__str_concat
     i32.const 312
     call $__str_concat
@@ -3878,7 +3533,7 @@ fn main() {
     drop
     i32.const 320
     local.get $x
-    call $__i32_to_str
+    call $__std_number_i32ToString
     call $__str_concat
     return
   )
@@ -3886,7 +3541,7 @@ fn main() {
     local.get $self
     i32.load ;; .items
     local.get $x
-    call $__arr_index_of_i32
+    call $__std_array_indexOfWord
     i32.const 0
     i32.const 1
     call $__i32_sub_chk
@@ -3918,7 +3573,7 @@ fn main() {
     local.get $self
     i32.load ;; .items
     local.get $x
-    call $__arr_index_of_i32
+    call $__std_array_indexOfWord
     i32.const 0
     i32.const 1
     call $__i32_sub_chk
@@ -3947,7 +3602,7 @@ fn main() {
     local.get $x
     i32.store offset=4
     local.get $__mem1
-    call $__arr_concat
+    call $__std_array_concat
     i32.store offset=4
     local.get $__mem0
     i32.const 4
@@ -4127,7 +3782,7 @@ fn main() {
     local.get $other
     i32.load ;; .items
     local.get $x
-    call $__arr_index_of_i32
+    call $__std_array_indexOfWord
     i32.const 0
     i32.const 1
     call $__i32_sub_chk
@@ -4213,7 +3868,7 @@ fn main() {
     local.get $other
     i32.load ;; .items
     local.get $x
-    call $__arr_index_of_i32
+    call $__std_array_indexOfWord
     i32.const 0
     i32.const 1
     call $__i32_sub_chk
@@ -4378,7 +4033,7 @@ fn main() {
     local.get $item
     i32.store offset=4
     local.get $__mem1
-    call $__arr_concat
+    call $__std_array_concat
     i32.store offset=4
     local.get $__mem0
     i32.const 4
@@ -4401,7 +4056,7 @@ fn main() {
     local.get $self
     i32.load ;; .items
     i32.load ;; .length
-    call $__arr_slice
+    call $__std_array_slice
     local.set $rest
     i32.const 8
     call $__alloc
@@ -4684,7 +4339,7 @@ fn main() {
     local.get $__mem2
     i32.store offset=4
     local.get $__mem1
-    call $__arr_concat
+    call $__std_array_concat
     i32.store offset=4
     local.get $__mem0
     i32.const 4
@@ -5129,82 +4784,6 @@ fn main() {
     global.set $__heap_ptr
     local.get $p
   )
-  (func $__i32_to_str (param $n i32) (result i32)
-    (local $u i64) (local $pos i32) (local $len i32) (local $p i32) (local $neg i32)
-    i32.const 160
-    local.set $pos
-    local.get $n
-    i32.const 0
-    i32.lt_s
-    local.set $neg
-    local.get $n
-    i64.extend_i32_s
-    local.set $u
-    local.get $neg
-    (if
-      (then
-        i64.const 0
-        local.get $u
-        i64.sub
-        local.set $u
-      )
-    )
-    (block $brk
-      (loop $cont
-        local.get $pos
-        i32.const 1
-        i32.sub
-        local.set $pos
-        local.get $pos
-        local.get $u
-        i64.const 10
-        i64.rem_u
-        i32.wrap_i64
-        i32.const 48
-        i32.add
-        i32.store8
-        local.get $u
-        i64.const 10
-        i64.div_u
-        local.set $u
-        local.get $u
-        i64.eqz
-        br_if $brk
-        br $cont
-      )
-    )
-    local.get $neg
-    (if
-      (then
-        local.get $pos
-        i32.const 1
-        i32.sub
-        local.set $pos
-        local.get $pos
-        i32.const 45
-        i32.store8
-      )
-    )
-    i32.const 160
-    local.get $pos
-    i32.sub
-    local.set $len
-    local.get $len
-    i32.const 4
-    i32.add
-    call $__alloc
-    local.set $p
-    local.get $p
-    local.get $len
-    i32.store
-    local.get $p
-    i32.const 4
-    i32.add
-    local.get $pos
-    local.get $len
-    memory.copy
-    local.get $p
-  )
   (func $__arr_new (param $n i32) (result i32)
     (local $p i32)
     local.get $n
@@ -5217,105 +4796,6 @@ fn main() {
     local.get $p
     local.get $n
     i32.store
-    local.get $p
-  )
-  (func $__arr_slice (param $xs i32) (param $a i32) (param $b i32) (result i32)
-    (local $n i32) (local $cnt i32) (local $p i32)
-    local.get $xs
-    i32.load
-    local.set $n
-    local.get $a
-    i32.const 0
-    i32.lt_s
-    (if
-      (then
-        local.get $n
-        local.get $a
-        i32.add
-        local.set $a
-        local.get $a
-        i32.const 0
-        i32.lt_s
-        (if
-          (then
-            i32.const 0
-            local.set $a
-          )
-        )
-      )
-      (else
-        local.get $a
-        local.get $n
-        i32.gt_s
-        (if
-          (then
-            local.get $n
-            local.set $a
-          )
-        )
-      )
-    )
-    local.get $b
-    i32.const 0
-    i32.lt_s
-    (if
-      (then
-        local.get $n
-        local.get $b
-        i32.add
-        local.set $b
-        local.get $b
-        i32.const 0
-        i32.lt_s
-        (if
-          (then
-            i32.const 0
-            local.set $b
-          )
-        )
-      )
-      (else
-        local.get $b
-        local.get $n
-        i32.gt_s
-        (if
-          (then
-            local.get $n
-            local.set $b
-          )
-        )
-      )
-    )
-    local.get $b
-    local.get $a
-    i32.sub
-    local.set $cnt
-    local.get $cnt
-    i32.const 0
-    i32.lt_s
-    (if
-      (then
-        i32.const 0
-        local.set $cnt
-      )
-    )
-    local.get $cnt
-    call $__arr_new
-    local.set $p
-    local.get $p
-    i32.const 4
-    i32.add
-    local.get $xs
-    i32.const 4
-    i32.add
-    local.get $a
-    i32.const 4
-    i32.mul
-    i32.add
-    local.get $cnt
-    i32.const 4
-    i32.mul
-    memory.copy
     local.get $p
   )
   (func $__arr_push (param $xs i32) (param $x i32) (result i32)
@@ -5347,192 +4827,6 @@ fn main() {
     i32.add
     local.get $x
     i32.store
-    local.get $p
-  )
-  (func $__arr_concat (param $a i32) (param $b i32) (result i32)
-    (local $na i32) (local $nb i32) (local $p i32)
-    local.get $a
-    i32.load
-    local.set $na
-    local.get $b
-    i32.load
-    local.set $nb
-    local.get $na
-    local.get $nb
-    i32.add
-    call $__arr_new
-    local.set $p
-    local.get $p
-    i32.const 4
-    i32.add
-    local.get $a
-    i32.const 4
-    i32.add
-    local.get $na
-    i32.const 4
-    i32.mul
-    memory.copy
-    local.get $p
-    i32.const 4
-    i32.add
-    local.get $na
-    i32.const 4
-    i32.mul
-    i32.add
-    local.get $b
-    i32.const 4
-    i32.add
-    local.get $nb
-    i32.const 4
-    i32.mul
-    memory.copy
-    local.get $p
-  )
-  (func $__arr_index_of_i32 (param $xs i32) (param $x i32) (result i32)
-    (local $n i32) (local $i i32)
-    local.get $xs
-    i32.load
-    local.set $n
-    (block $brk
-      (loop $cont
-        local.get $i
-        local.get $n
-        i32.ge_u
-        br_if $brk
-        local.get $xs
-        i32.const 4
-        i32.add
-        local.get $i
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load
-        local.get $x
-        i32.eq
-        (if
-          (then
-            local.get $i
-            return
-          )
-        )
-        local.get $i
-        i32.const 1
-        i32.add
-        local.set $i
-        br $cont
-      )
-    )
-    i32.const -1
-  )
-  (func $__arr_join_str (param $xs i32) (param $sep i32) (result i32)
-    (local $n i32) (local $i i32) (local $total i32) (local $p i32) (local $pos i32) (local $e i32)
-    local.get $xs
-    i32.load
-    local.set $n
-    (block $brk
-      (loop $cont
-        local.get $i
-        local.get $n
-        i32.ge_u
-        br_if $brk
-        local.get $total
-        local.get $xs
-        i32.const 4
-        i32.add
-        local.get $i
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load
-        i32.load
-        i32.add
-        local.set $total
-        local.get $i
-        i32.const 1
-        i32.add
-        local.set $i
-        br $cont
-      )
-    )
-    local.get $n
-    (if
-      (then
-        local.get $total
-        local.get $sep
-        i32.load
-        local.get $n
-        i32.const 1
-        i32.sub
-        i32.mul
-        i32.add
-        local.set $total
-      )
-    )
-    local.get $total
-    i32.const 4
-    i32.add
-    call $__alloc
-    local.set $p
-    local.get $p
-    local.get $total
-    i32.store
-    local.get $p
-    i32.const 4
-    i32.add
-    local.set $pos
-    i32.const 0
-    local.set $i
-    (block $brk
-      (loop $cont
-        local.get $i
-        local.get $n
-        i32.ge_u
-        br_if $brk
-        local.get $i
-        (if
-          (then
-            local.get $pos
-            local.get $sep
-            i32.const 4
-            i32.add
-            local.get $sep
-            i32.load
-            memory.copy
-            local.get $pos
-            local.get $sep
-            i32.load
-            i32.add
-            local.set $pos
-          )
-        )
-        local.get $xs
-        i32.const 4
-        i32.add
-        local.get $i
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load
-        local.set $e
-        local.get $pos
-        local.get $e
-        i32.const 4
-        i32.add
-        local.get $e
-        i32.load
-        memory.copy
-        local.get $pos
-        local.get $e
-        i32.load
-        i32.add
-        local.set $pos
-        local.get $i
-        i32.const 1
-        i32.add
-        local.set $i
-        br $cont
-      )
-    )
     local.get $p
   )
   (func $__box_i32 (param $v i32) (result i32)
@@ -5913,6 +5207,22 @@ fn main() {
     )
     local.get $r
   )
+  ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
+  (global $__std_sp (mut i32) (i32.const 448))
+  ;; __std_f3 — from std_wasm.wasm (sha256 b4b6f06748d6)
+  ;; __std_f7 — from std_wasm.wasm (sha256 91fc3314249d)
+  ;; __std_f23 — from std_wasm.wasm (sha256 d13a98c08300)
+  ;; __std_f24 — from std_wasm.wasm (sha256 fe0ded32f29d)
+  ;; __std_f25 — from std_wasm.wasm (sha256 6a251c47e9bb)
+  ;; __std_f36 — from std_wasm.wasm (sha256 8bdb3d0c8b2b)
+  ;; std:array.indexOfWord — from std_wasm.wasm (sha256 b25002ff266e)
+  ;; std:array.joinStrings — from std_wasm.wasm (sha256 be5521bc82e7)
+  ;; __std_f44 — from std_wasm.wasm (sha256 754afbaaff1c)
+  ;; __std_f45 — from std_wasm.wasm (sha256 432c7dfb021a)
+  ;; __std_f46 — from std_wasm.wasm (sha256 6b108dbbfcd0)
+  ;; std:array.concat — from std_wasm.wasm (sha256 76bea810e576)
+  ;; std:array.slice — from std_wasm.wasm (sha256 b240b9529b77)
+  ;; std:number.i32ToString — from std_wasm.wasm (sha256 9c0a9db10050)
 )
 ```
 

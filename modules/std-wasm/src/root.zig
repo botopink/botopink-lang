@@ -25,17 +25,33 @@ const std = @import("std");
 pub const hash = @import("hash.zig");
 pub const text = @import("text.zig");
 pub const number = @import("number.zig");
+pub const array = @import("array.zig");
+pub const bigint = @import("bigint.zig");
 
 /// A botopink type an export takes or answers. A `string` crosses as the
 /// program's string (the address of its `u32` length, the bytes behind it) in
-/// a wasm program, and as a binary term at comptime; an `f64` as itself.
+/// a wasm program, and as a binary term at comptime; an `f64`, an `i32` and an
+/// `i64` as themselves; a `bool` as an `i32` `0` / `1` (the atoms at
+/// comptime); a `string[]` as the program's array (`[n][s0][s1]…`, a list at
+/// comptime); a `?string` as the string or `0` (`undefined` at comptime); a
+/// `void` result as none.
 pub const Type = enum {
     string,
     f64,
+    i32,
+    i64,
+    bool,
+    void,
+    string_array,
+    opt_string,
 
     /// The type as botopink spells it.
     pub fn spelling(t: Type) []const u8 {
-        return @tagName(t);
+        return switch (t) {
+            .string_array => "string[]",
+            .opt_string => "?string",
+            else => @tagName(t),
+        };
     }
 };
 
@@ -85,6 +101,81 @@ pub const exports = [_]Export{
     .{ .name = "text.trimStart", .params = &.{.string}, .result = .string },
     .{ .name = "text.trimEnd", .params = &.{.string}, .result = .string },
     .{ .name = "number.floatToString", .params = &.{.f64}, .result = .string },
+    .{ .name = "text.length", .params = &.{.string}, .result = .i32 },
+    .{ .name = "text.split", .params = &.{ .string, .string }, .result = .string_array },
+    .{ .name = "text.chars", .params = &.{.string}, .result = .string_array },
+    .{ .name = "text.lines", .params = &.{.string}, .result = .string_array },
+    .{ .name = "text.words", .params = &.{.string}, .result = .string_array },
+    .{ .name = "text.contains", .params = &.{ .string, .string }, .result = .bool },
+    .{ .name = "text.startsWith", .params = &.{ .string, .string }, .result = .bool },
+    .{ .name = "text.endsWith", .params = &.{ .string, .string }, .result = .bool },
+    .{ .name = "text.indexOf", .params = &.{ .string, .string }, .result = .i32 },
+    .{ .name = "text.lastIndexOf", .params = &.{ .string, .string }, .result = .i32 },
+    .{ .name = "text.at", .params = &.{ .string, .i32 }, .result = .opt_string },
+    .{ .name = "text.charCodeAt", .params = &.{ .string, .i32 }, .result = .i32 },
+    .{ .name = "text.padStart", .params = &.{ .string, .i32, .string }, .result = .string },
+    .{ .name = "text.padEnd", .params = &.{ .string, .i32, .string }, .result = .string },
+    .{ .name = "text.repeat", .params = &.{ .string, .i32 }, .result = .string },
+    .{ .name = "text.replace", .params = &.{ .string, .string, .string }, .result = .string },
+    .{ .name = "text.replaceAll", .params = &.{ .string, .string, .string }, .result = .string },
+    .{ .name = "text.fromCodepoint", .params = &.{.i32}, .result = .string },
+};
+
+/// A wasm value type a program function takes or answers.
+pub const Val = enum { i32, i64, f64 };
+
+/// One function only the wasm codegen calls (decision 442 (2)): no
+/// declaration of std carries its name, because its arguments are the
+/// codegen's own — a string's code point bounds, an array's slot words
+/// whatever its element type, an integer by its carrier. A `std:` cell names
+/// none of them (`find` answers only `exports`) and the comptime runtime
+/// serves none: a comptime module calls std's methods through their own
+/// cells.
+pub const Program = struct {
+    /// `<module>.<function>`, exported as `std:<name>` as `exports` are.
+    name: []const u8,
+    params: []const Val,
+    result: ?Val,
+};
+
+/// Every function std-wasm's program face exports for the wasm codegen alone.
+pub const program = [_]Program{
+    .{ .name = "text.slice", .params = &.{ .i32, .i32, .i32 }, .result = .i32 },
+    .{ .name = "number.i32ToString", .params = &.{.i32}, .result = .i32 },
+    .{ .name = "number.i64ToString", .params = &.{.i64}, .result = .i32 },
+    .{ .name = "number.u64ToString", .params = &.{.i64}, .result = .i32 },
+    .{ .name = "number.i64Text", .params = &.{.i64}, .result = .i32 },
+    .{ .name = "number.u64Text", .params = &.{.i64}, .result = .i32 },
+    .{ .name = "array.reverse", .params = &.{.i32}, .result = .i32 },
+    .{ .name = "array.slice", .params = &.{ .i32, .i32, .i32 }, .result = .i32 },
+    .{ .name = "array.prepend", .params = &.{ .i32, .i32 }, .result = .i32 },
+    .{ .name = "array.concat", .params = &.{ .i32, .i32 }, .result = .i32 },
+    .{ .name = "array.zip", .params = &.{ .i32, .i32 }, .result = .i32 },
+    .{ .name = "array.fill", .params = &.{ .i32, .i32 }, .result = .i32 },
+    .{ .name = "array.joinStrings", .params = &.{ .i32, .i32 }, .result = .i32 },
+    .{ .name = "array.joinInts", .params = &.{ .i32, .i32 }, .result = .i32 },
+    .{ .name = "array.joinFloats", .params = &.{ .i32, .i32 }, .result = .i32 },
+    .{ .name = "array.indexOfWord", .params = &.{ .i32, .i32 }, .result = .i32 },
+    .{ .name = "array.indexOfString", .params = &.{ .i32, .i32 }, .result = .i32 },
+    .{ .name = "array.indexOfFloat", .params = &.{ .i32, .f64 }, .result = .i32 },
+    .{ .name = "array.lastIndexOfWord", .params = &.{ .i32, .i32 }, .result = .i32 },
+    .{ .name = "array.lastIndexOfString", .params = &.{ .i32, .i32 }, .result = .i32 },
+    .{ .name = "array.lastIndexOfFloat", .params = &.{ .i32, .f64 }, .result = .i32 },
+    .{ .name = "array.unique", .params = &.{ .i32, .i32 }, .result = .i32 },
+    .{ .name = "array.flatten", .params = &.{.i32}, .result = .i32 },
+    .{ .name = "array.chunked", .params = &.{ .i32, .i32 }, .result = .i32 },
+    .{ .name = "array.sliding", .params = &.{ .i32, .i32 }, .result = .i32 },
+    .{ .name = "bigint.add", .params = &.{ .i32, .i32, .i32 }, .result = .i32 },
+    .{ .name = "bigint.negate", .params = &.{.i32}, .result = .i32 },
+    .{ .name = "bigint.multiply", .params = &.{ .i32, .i32 }, .result = .i32 },
+    .{ .name = "bigint.divmod", .params = &.{ .i32, .i32, .i32 }, .result = .i32 },
+    .{ .name = "bigint.compare", .params = &.{ .i32, .i32 }, .result = .i32 },
+    .{ .name = "bigint.equalOptional", .params = &.{ .i32, .i32 }, .result = .i32 },
+    .{ .name = "bigint.ofI64", .params = &.{.i64}, .result = .i32 },
+    .{ .name = "bigint.toI64", .params = &.{.i32}, .result = .i64 },
+    .{ .name = "bigint.toF64", .params = &.{.i32}, .result = .f64 },
+    .{ .name = "bigint.toString", .params = &.{.i32}, .result = .i32 },
+    .{ .name = "bigint.parse", .params = &.{.i32}, .result = .i32 },
 };
 
 /// The export a `std:` cell names, or null when std-wasm has none of that
@@ -100,8 +191,7 @@ pub fn find(name: []const u8) ?Export {
 pub fn matches(e: Export, params: []const []const u8, result: ?[]const u8) bool {
     if (params.len != e.params.len) return false;
     for (params, e.params) |p, t| if (!std.mem.eql(u8, p, t.spelling())) return false;
-    const r = result orelse return false;
-    return std.mem.eql(u8, r, e.result.spelling());
+    return std.mem.eql(u8, result orelse "void", e.result.spelling());
 }
 
 /// `e`'s signature as botopink spells it, `(string) -> string`, into `buf`.
@@ -134,6 +224,8 @@ test {
     _ = hash;
     _ = text;
     _ = number;
+    _ = array;
+    _ = bigint;
 }
 
 test "find: an export by the name a std: cell gives it" {

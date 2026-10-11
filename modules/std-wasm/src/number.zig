@@ -128,6 +128,32 @@ fn writeInt(out: []u8, v: i32) usize {
     return n + k;
 }
 
+/// The decimal digits of the unsigned `v` into `out` (`out.len >= 20`);
+/// answers how many it wrote.
+pub fn unsignedText(out: []u8, v: u64) usize {
+    var tmp: [20]u8 = undefined;
+    var m = v;
+    var k: usize = 0;
+    while (true) {
+        tmp[k] = @intCast('0' + m % 10);
+        k += 1;
+        m /= 10;
+        if (m == 0) break;
+    }
+    for (0..k) |i| out[i] = tmp[k - 1 - i];
+    return k;
+}
+
+/// The decimal text of `v` into `out` (`out.len >= 20`), a `-` first when
+/// negative — the magnitude written unsigned, so `-2^63` (its own negation)
+/// prints whole; answers how many bytes it wrote. An `i32`'s, an `i64`'s
+/// (decision 442 (2): `i32` / `i64_to_str`).
+pub fn signedText(out: []u8, v: i64) usize {
+    if (v >= 0) return unsignedText(out, @intCast(v));
+    out[0] = '-';
+    return 1 + unsignedText(out[1..], @abs(v));
+}
+
 test "shortFloat: the shortest form, fixed on a tie" {
     const cases = [_]struct { f64, []const u8 }{
         .{ 0.1, "0.1" },                                     .{ 1.0e21, "1.0e21" },                                 .{ 1.0e20, "1.0e20" },
@@ -148,4 +174,16 @@ test "shortFloat: the values OTP has no float for" {
     try std.testing.expectEqualStrings("NaN", shortFloat(std.math.nan(f64), &buf));
     try std.testing.expectEqualStrings("Infinity", shortFloat(std.math.inf(f64), &buf));
     try std.testing.expectEqualStrings("-Infinity", shortFloat(-std.math.inf(f64), &buf));
+}
+
+test "signedText and unsignedText: every digit, the extremes" {
+    var b: [24]u8 = undefined;
+    const cases = [_]struct { i64, []const u8 }{
+        .{ 0, "0" },                                      .{ 7, "7" },                                       .{ -7, "-7" },
+        .{ 2147483647, "2147483647" },                    .{ -2147483648, "-2147483648" },                   .{ 4294967295, "4294967295" },
+        .{ std.math.maxInt(i64), "9223372036854775807" }, .{ std.math.minInt(i64), "-9223372036854775808" },
+    };
+    for (cases) |c| try std.testing.expectEqualStrings(c[1], b[0..signedText(&b, c[0])]);
+    try std.testing.expectEqualStrings("18446744073709551615", b[0..unsignedText(&b, std.math.maxInt(u64))]);
+    try std.testing.expectEqualStrings("10000000000000000000", b[0..unsignedText(&b, 10_000_000_000_000_000_000)]);
 }

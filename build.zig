@@ -183,7 +183,7 @@ pub fn build(b: *std.Build) void {
     });
     std_wasm_build.addPrefixedFileArg("-Mroot=", b.path("modules/std-wasm/src/wasm.zig"));
     const std_wasm_bin = std_wasm_build.addPrefixedOutputFileArg("-femit-bin=", "std_wasm.wasm");
-    for ([_][]const u8{ "root.zig", "hash.zig", "text.zig", "number.zig", "wasm.zig" }) |f|
+    for ([_][]const u8{ "root.zig", "hash.zig", "text.zig", "number.zig", "array.zig", "bigint.zig", "wasm.zig" }) |f|
         std_wasm_build.addFileInput(b.path(b.fmt("modules/std-wasm/src/{s}", .{f})));
     // The warning goes to a captured file, not the build's output.
     _ = std_wasm_build.captureStdErr(.{});

@@ -10,7 +10,7 @@ fn f() {
 ```wasm
 (module
   (memory (export "memory") 1)
-  (global $__heap_ptr (mut i32) (i32.const 256))
+  (global $__heap_ptr (mut i32) (i32.const 288))
   (func $f (result i32)
     (local $__mem0 i32)
     (local $items i32)
@@ -67,7 +67,7 @@ fn f() {
     local.get $__assert_0
     i32.const 2
     i32.const 2147483647
-    call $__arr_slice
+    call $__std_array_slice
     local.set $rest
     i32.const 0
   )
@@ -119,119 +119,12 @@ fn f() {
     global.set $__heap_ptr
     local.get $p
   )
-  (func $__arr_new (param $n i32) (result i32)
-    (local $p i32)
-    local.get $n
-    i32.const 1
-    i32.add
-    i32.const 4
-    i32.mul
-    call $__alloc
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.store
-    local.get $p
-  )
-  (func $__arr_slice (param $xs i32) (param $a i32) (param $b i32) (result i32)
-    (local $n i32) (local $cnt i32) (local $p i32)
-    local.get $xs
-    i32.load
-    local.set $n
-    local.get $a
-    i32.const 0
-    i32.lt_s
-    (if
-      (then
-        local.get $n
-        local.get $a
-        i32.add
-        local.set $a
-        local.get $a
-        i32.const 0
-        i32.lt_s
-        (if
-          (then
-            i32.const 0
-            local.set $a
-          )
-        )
-      )
-      (else
-        local.get $a
-        local.get $n
-        i32.gt_s
-        (if
-          (then
-            local.get $n
-            local.set $a
-          )
-        )
-      )
-    )
-    local.get $b
-    i32.const 0
-    i32.lt_s
-    (if
-      (then
-        local.get $n
-        local.get $b
-        i32.add
-        local.set $b
-        local.get $b
-        i32.const 0
-        i32.lt_s
-        (if
-          (then
-            i32.const 0
-            local.set $b
-          )
-        )
-      )
-      (else
-        local.get $b
-        local.get $n
-        i32.gt_s
-        (if
-          (then
-            local.get $n
-            local.set $b
-          )
-        )
-      )
-    )
-    local.get $b
-    local.get $a
-    i32.sub
-    local.set $cnt
-    local.get $cnt
-    i32.const 0
-    i32.lt_s
-    (if
-      (then
-        i32.const 0
-        local.set $cnt
-      )
-    )
-    local.get $cnt
-    call $__arr_new
-    local.set $p
-    local.get $p
-    i32.const 4
-    i32.add
-    local.get $xs
-    i32.const 4
-    i32.add
-    local.get $a
-    i32.const 4
-    i32.mul
-    i32.add
-    local.get $cnt
-    i32.const 4
-    i32.mul
-    memory.copy
-    local.get $p
-  )
+  ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
+  (global $__std_sp (mut i32) (i32.const 288))
+  ;; __std_f23 — from std_wasm.wasm (sha256 d13a98c08300)
+  ;; __std_f24 — from std_wasm.wasm (sha256 fe0ded32f29d)
+  ;; __std_f25 — from std_wasm.wasm (sha256 6a251c47e9bb)
+  ;; std:array.slice — from std_wasm.wasm (sha256 b240b9529b77)
 )
 ```
 

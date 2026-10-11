@@ -1,6 +1,6 @@
 //// Decision 332 — a `bigint` held by a record field, a `?bigint` field, a tuple, an array and an
 //// optional prints its digits and compares by value on the four targets: wasm's slot holds the
-//// block's address, printed by the `n` shape code and compared by `$__bn_cmp` (as an `i32` word,
+//// block's address, printed by the `n` shape code and compared by std-wasm's `bigint.compare` (as an `i32` word,
 //// the address printed and two equal values built apart compared unequal).
 
 type Ledger(total: bigint, last: ?bigint)

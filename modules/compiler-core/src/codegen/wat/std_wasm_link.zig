@@ -18,15 +18,19 @@
 //!
 //! The stack is sized from the code: each function's frame (its prologue
 //! `global.get $sp; i32.const N; i32.sub`) summed along the deepest call
-//! chain of the functions the program reaches. Anything else — a function
-//! table (`call_indirect`, `__table_base`), a start function, a global of
-//! its own, another import, an opcode outside the MVP and bulk memory, a
-//! recursive call — is refused with `error.Unsupported` naming it: std-wasm's
-//! program face is written so it needs none, and `codegen/tests/wat.zig`
-//! decodes every export of the real module.
+//! chain of the functions the program reaches. The start function wasm-ld
+//! writes to zero `.bss` (a Zig `var`) is dropped: a fresh instance's memory
+//! is zero. Anything else — a function table (`call_indirect`,
+//! `__table_base`), another start function, a global of its own, another
+//! import, an opcode outside the MVP and bulk memory, a recursive call — is
+//! refused with `error.Unsupported` naming it: std-wasm's program face is
+//! written so it needs none, and `codegen/tests/wat.zig` decodes every export
+//! of the real module.
 //!
 //! Only the functions a program reaches are decoded: the exports it names
-//! (`link`'s `wanted`) and what they call.
+//! (`link`'s `wanted`) and what they call; and std-wasm's data is placed only
+//! when one of them reads `__memory_base` (decision 442: a module calling
+//! `text.split` carries no float table).
 
 const std = @import("std");
 const ast = @import("wat_ast.zig");
@@ -190,6 +194,7 @@ fn read(ar: std.mem.Allocator, bytes: []const u8, diag: *Diag) Error!Module {
     var data: std.ArrayListUnmanaged([]const u8) = .empty;
     var m: Module = undefined;
     var dylink = false;
+    var start: ?u32 = null;
     m.table_size = 0;
     while (r.i < bytes.len) {
         const id = try r.byte();
@@ -281,7 +286,7 @@ fn read(ar: std.mem.Allocator, bytes: []const u8, diag: *Diag) Error!Module {
                     if (kind == 0) try exports.append(ar, .{ .name = name, .func = idx });
                 }
             },
-            8 => return unsupported(diag, "a start function"),
+            8 => start = try s.u32_(),
             9 => return unsupported(diag, "an element segment (a function table)"),
             10 => {
                 var n = try s.u32_();
@@ -306,6 +311,18 @@ fn read(ar: std.mem.Allocator, bytes: []const u8, diag: *Diag) Error!Module {
     if (!dylink) return unsupported(diag, "a module with no `dylink.0` section (not a position-independent side module)");
     if (m.table_size != 0) return unsupported(diag, "a function table");
     if (func_types.items.len != bodies.items.len) return error.Malformed;
+    // wasm-ld gives a side module whose data has a zero-initialised part
+    // (`.bss`: a `var` of std-wasm's) a start function that zeroes it. A
+    // fresh instance's memory is zero already, and std-wasm's region lies
+    // below the heap, so that start is a no-op here and is dropped; any other
+    // start is refused.
+    if (start) |st| {
+        if (st < func_imports.items.len) return unsupported(diag, "a start function");
+        const memory_base = for (global_imports.items, 0..) |g, gi| {
+            if (g == .memory_base) break gi;
+        } else return unsupported(diag, "a start function");
+        if (!zeroesBss(bodies.items[st - func_imports.items.len], @intCast(memory_base))) return unsupported(diag, "a start function other than the zeroing of `.bss`");
+    }
     m.types = types.items;
     m.func_imports = func_imports.items;
     m.func_import_types = func_import_types.items;
@@ -317,6 +334,30 @@ fn read(ar: std.mem.Allocator, bytes: []const u8, diag: *Diag) Error!Module {
     return m;
 }
 
+/// Whether `body` is the start wasm-ld writes for `.bss` and nothing else:
+/// no locals, then `i32.const a; global.get $__memory_base; i32.add;
+/// i32.const 0; i32.const n; memory.fill` repeated, then `end`.
+fn zeroesBss(body: []const u8, memory_base: u32) bool {
+    var r: Reader = .{ .b = body };
+    if ((r.u32_() catch return false) != 0) return false;
+    while (true) {
+        const op = r.byte() catch return false;
+        if (op == 0x0B) return r.i == body.len;
+        if (op != 0x41) return false;
+        _ = r.sleb(32) catch return false;
+        if ((r.byte() catch return false) != 0x23) return false;
+        if ((r.u32_() catch return false) != memory_base) return false;
+        if ((r.byte() catch return false) != 0x6A) return false;
+        if ((r.byte() catch return false) != 0x41) return false;
+        if ((r.sleb(32) catch return false) != 0) return false;
+        if ((r.byte() catch return false) != 0x41) return false;
+        _ = r.sleb(32) catch return false;
+        if ((r.byte() catch return false) != 0xFC) return false;
+        if ((r.u32_() catch return false) != 11) return false;
+        if ((r.byte() catch return false) != 0) return false;
+    }
+}
+
 // ── a function body, decoded ────────────────────────────────────────────────
 
 const Decoded = struct {
@@ -324,6 +365,8 @@ const Decoded = struct {
     /// Bytes the function's prologue takes off the stack pointer.
     frame: u32,
     callees: []const u32,
+    /// Whether it reads `__memory_base` — addresses std-wasm's data.
+    uses_base: bool,
 };
 
 const Body = struct {
@@ -338,6 +381,7 @@ const Body = struct {
     next_label: u32 = 0,
     fn_label_used: bool = false,
     frame: u32 = 0,
+    uses_base: bool = false,
     callees: std.ArrayListUnmanaged(u32) = .empty,
     /// The two instructions before the current one, for the prologue.
     last: [2]?ast.Instr = .{ null, null },
@@ -457,6 +501,7 @@ const Body = struct {
                         .stack_pointer => break :blk if (op == 0x23) ast.Instr{ .global_get = stack_global } else ast.Instr{ .global_set = stack_global },
                         .memory_base => {
                             if (op == 0x24) return b.refuse("a write of `__memory_base`");
+                            b.uses_base = true;
                             break :blk .{ .@"const" = .{ .ty = .i32, .text = try std.fmt.allocPrint(b.ar, "{d}", .{b.base}) } };
                         },
                         .table_base => return b.refuse("`__table_base` (a function table)"),
@@ -585,6 +630,7 @@ fn decode(ar: std.mem.Allocator, m: *const Module, names: []const []const u8, id
         .func = .{ .name = names[idx], .params = params, .result = ty.result, .locals = groups.items, .body = body },
         .frame = b.frame,
         .callees = b.callees.items,
+        .uses_base = b.uses_base,
     };
 }
 
@@ -662,17 +708,23 @@ pub fn linkModule(ar: std.mem.Allocator, bytes: []const u8, wanted: []const []co
     var size: u32 = 0;
     for (m.data) |seg| size += @intCast(seg.len);
     if (size > m.mem_size) return error.Malformed;
-    const top = std.mem.alignForward(u32, base + m.mem_size + stack_bytes, 16);
+    // std-wasm's data (its tables, literals and `var`s) is addressed through
+    // `__memory_base` alone: when no function the program reaches reads it,
+    // none of the data is placed.
+    var uses_data = false;
+    for (decoded.values()) |d| uses_data = uses_data or d.uses_base;
+    const mem_size: u32 = if (uses_data) m.mem_size else 0;
+    const top = std.mem.alignForward(u32, base + mem_size + stack_bytes, 16);
     var uses_sp = false;
     for (decoded.values()) |d| if (usesGlobal(d.func.body, stack_global)) {
         uses_sp = true;
     };
     if (uses_sp) try items.append(ar, .{ .global = .{ .name = stack_global, .ty = .i32, .mutable = true, .init = try std.fmt.allocPrint(ar, "{d}", .{top}) } });
     var off = base;
-    for (m.data) |seg| {
+    if (uses_data) for (m.data) |seg| {
         try items.append(ar, .{ .data = .{ .offset = off, .len_prefix = null, .bytes = seg } });
         off += @intCast(seg.len);
-    }
+    };
     var funcs: std.ArrayListUnmanaged(Fn) = .empty;
     for (decoded.keys(), decoded.values()) |idx, d| {
         try items.append(ar, .{ .func = d.func });

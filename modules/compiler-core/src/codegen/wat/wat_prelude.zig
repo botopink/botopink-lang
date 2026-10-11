@@ -16,12 +16,22 @@
 //! helper directly — `wat_ast.Builder.helper` hands out the symbol *and* marks
 //! its group, so a module cannot call a helper it does not define.
 //!
+//! What is here is decision 442 (1)'s list and nothing else: what defines a
+//! value's representation (the heap, boxes, the array and string cells the
+//! codegen lays out), the arithmetic operators' checks, the output (the
+//! I/O — a number's text is std-wasm's) and the language runtime (the `@Task`
+//! scheduler, `unknown`, `assert_fail`). Everything that only computes over
+//! values — text, number-to-text, arrays, `bigint` — is std-wasm's Zig,
+//! transpiled into the module (`std_wasm_link.zig`, decisions 440, 442 (2));
+//! `codegen/wat/AGENTS.md` § What stays in `wat_prelude` holds the rule.
+//!
 //! The scratch layout the print helpers assume, below the data section (which
 //! starts at 256): `0..8` the WASI iovec, `8` the newline byte — and `9` the
 //! space of §7's `, ` separator, written beside it in one call —, `16..32` the
-//! bool text, `64..128` the i32 digits. An integer's text is built in the
-//! `$__int_ws` workspace, allocated once (§ an integer as text); a float's is
-//! std-wasm's (`$__f64_to_str`, transpiled into the module — decision 440).
+//! bool text, `64..128` the i32 digits. An `i64`'s and a `u64`'s text is
+//! std-wasm's `number.i64Text` / `u64Text` (written in std-wasm's one
+//! workspace, so a print allocates nothing), a float's its
+//! `number.floatToString` (decision 441).
 
 const std = @import("std");
 const ast = @import("wat_ast.zig");
@@ -53,7 +63,6 @@ pub fn items(g: ast.HelperGroup) []const ast.Item {
         .unknown => &.{ .{ .func = unknown_kind }, .{ .func = unknown_int_in }, .{ .func = unknown_as_i32 }, .{ .func = unknown_as_f64 }, .{ .func = unknown_eq } },
         .print_unknown => &.{ .{ .func = print_unknown_raw }, .{ .func = print_unknown } },
         .wasi_seed_state => &.{ .{ .global = seed_state_global }, .{ .global = seeded_global } },
-        .int_fmt => &int_fmt_items,
         .task => &.{
             .{ .global = task_head_global }, .{ .global = task_tail_global }, .{ .global = task_suspended_global },
             .{ .func = task_new },           .{ .func = task_start },         .{ .func = task_pending },
@@ -64,14 +73,9 @@ pub fn items(g: ast.HelperGroup) []const ast.Item {
         },
         .task_poll => &.{.{ .func = task_host_poll }},
         .task_host => &.{ .{ .global = task_hosts_global }, .{ .func = task_host_add }, .{ .func = task_host_settle } },
-        .bigint => &.{
-            .{ .func = bn_n },      .{ .func = bn_at },     .{ .func = bn_new },    .{ .func = bn_fix },
-            .{ .func = bn_cmpm },   .{ .func = bn_addm },   .{ .func = bn_subm },   .{ .func = bn_add },
-            .{ .func = bn_neg },    .{ .func = bn_mul },    .{ .func = bn_divw },   .{ .func = bn_ge },
-            .{ .func = bn_subw },   .{ .func = bn_divmod }, .{ .func = bn_cmp },    .{ .func = bn_of },
-            .{ .func = bn_to_i64 }, .{ .func = bn_to_f64 }, .{ .func = bn_to_str }, .{ .func = bn_from_str },
-            .{ .func = bn_eq_opt },
-        },
+        // Decision 442 (2): `bigint`'s arithmetic is std-wasm's; the group
+        // only marks a module that prints one in a container (`stdCalls`).
+        .bigint => &.{},
         .print_opt => &.{
             .{ .func = print_null },         .{ .func = print_opt_i32_raw }, .{ .func = print_opt_i32 },
             .{ .func = print_opt_bool_raw }, .{ .func = print_opt_bool },    .{ .func = print_opt_str_raw },
@@ -154,201 +158,6 @@ const print_tagged_raw = func("__print_tagged_raw", &.{"v"}, null, i32s(&.{ "d",
 
 const print_tagged = func("__print_tagged", &.{"v"}, null, &.{}, &.{ get("v"), call("__print_tagged_raw"), call("__print_nl") });
 
-/// `s.charCodeAt(i)`: the code point at code-point index `i`, or `-1`
-/// outside `0..count` — the answer the Erlang template gives (and Node's
-/// `codePointAt` for every character of the Basic Multilingual Plane). The
-/// string is UTF-8, so the walk steps a sequence at a time — its width from
-/// the lead byte — and decodes the one it stops on. It answered the BYTE at
-/// `i`: `"héllo".charCodeAt(1)` was `195` where the other targets said `233`.
-const str_char_code = func("__str_char_code", &.{ "s", "i" }, .i32, i32s(&.{ "n", "p", "b", "w" }), &.{
-    get("i"), c32(0),  op("lt_s"), when(&.{ c32(-1), ret }),
-    get("s"), load(0), set("n"),
-    loop(&.{
-        get("p"),  get("n"),   op("ge_u"),                   when(&.{ c32(-1), ret }),
-        get("s"),  get("p"),   op("add"),                    load8(4),
-        set("b"),  c32(1),     set("w"),                     get("b"),
-        c32(0xC0), op("ge_u"), when(&.{ c32(2), set("w") }), get("b"),
-        c32(0xE0), op("ge_u"), when(&.{ c32(3), set("w") }), get("b"),
-        c32(0xF0), op("ge_u"), when(&.{ c32(4), set("w") }), get("i"),
-        op("eqz"),
-        when(&.{
-            get("w"), c32(1),    op("eq"),   when(&.{ get("b"), ret }),
-            get("b"), c32(0x80), get("w"),   op("shr_u"),
-            c32(1),   op("sub"), op("and"),  set("b"),
-            get("w"), c32(1),    op("gt_u"),
-            when(&.{
-                get("b"), c32(6),    op("shl"), get("s"),
-                get("p"), op("add"), c32(1),    op("add"),
-                load8(4), c32(0x3F), op("and"), op("or"),
-                set("b"),
-            }),
-            get("w"), c32(2),    op("gt_u"),
-            when(&.{
-                get("b"), c32(6),    op("shl"), get("s"),
-                get("p"), op("add"), c32(2),    op("add"),
-                load8(4), c32(0x3F), op("and"), op("or"),
-                set("b"),
-            }),
-            get("w"), c32(3),    op("gt_u"),
-            when(&.{
-                get("b"), c32(6),    op("shl"), get("s"),
-                get("p"), op("add"), c32(3),    op("add"),
-                load8(4), c32(0x3F), op("and"), op("or"),
-                set("b"),
-            }),
-            get("b"), ret,
-        }),
-        get("i"),  c32(1),     op("sub"),                    set("i"),
-        get("p"),  get("w"),   op("add"),                    set("p"),
-        again,
-    }),
-    c32(-1),
-});
-
-/// `s.lastIndexOf(sub)`: the last byte offset of `sub`, `-1` when absent, and
-/// the length for an empty `sub` (JavaScript's answer).
-const str_last_index_of = func("__str_last_index_of", &.{ "s", "sub" }, .i32, i32s(&.{ "n", "m", "i" }), &.{
-    get("s"),   load(0),  set("n"),
-    get("sub"), load(0),  set("m"),
-    get("n"),   get("m"), op("sub"),
-    set("i"),
-    loop(&.{
-        get("i"),  c32(0),           op("lt_s"),                brk,
-        get("s"),  c32(4),           op("add"),                 get("i"),
-        op("add"), get("sub"),       c32(4),                    op("add"),
-        get("m"),  call("__mem_eq"), when(&.{ get("i"), ret }), get("i"),
-        c32(1),    op("sub"),        set("i"),                  again,
-    }),
-    c32(-1),
-});
-
-// ── string indices in codepoints (decision 240) ──────────────────────────────
-//
-// A string is `[byte count][UTF-8 bytes]`, and `length`, `at`, `slice`,
-// `indexOf` and `lastIndexOf` count CODEPOINTS on this target, as erlang and
-// beam do (decision 169 applied to the fourth target): an index one of them
-// answers can be handed to another. A byte is a codepoint's first exactly
-// when it is not a `10xxxxxx` continuation byte, so each helper below walks
-// the bytes and counts the ones that start a sequence. The byte helpers they
-// sit on (`$__str_slice`, `$__str_index_of`, `$__str_last_index_of`) stay the
-// byte cutters and searchers the rest of the prelude uses.
-
-/// The bytes of `s` that start a codepoint, counted.
-const str_cp_len = func("__str_cp_len", &.{"s"}, .i32, i32s(&.{ "n", "i", "k" }), &.{
-    get("s"), load(0), set("n"),
-    loop(&.{
-        get("i"),                                          get("n"),  op("ge_u"), brk,
-        get("s"),                                          get("i"),  op("add"),  load8(4),
-        c32(0xC0),                                         op("and"), c32(0x80),  op("ne"),
-        when(&.{ get("k"), c32(1), op("add"), set("k") }), get("i"),  c32(1),     op("add"),
-        set("i"),                                          again,
-    }),
-    get("k"),
-});
-
-/// The byte offset where codepoint `i` (≥ 0) of `s` starts; the byte count
-/// when `s` has `i` codepoints or fewer.
-const str_cp_off = func("__str_cp_off", &.{ "s", "i" }, .i32, i32s(&.{ "n", "p", "k" }), &.{
-    get("s"), load(0), set("n"),
-    loop(&.{
-        get("p"),  get("n"),  op("ge_u"), brk,
-        get("s"),  get("p"),  op("add"),  load8(4),
-        c32(0xC0), op("and"), c32(0x80),  op("ne"),
-        when(&.{
-            get("k"), get("i"), op("eq"),  when(&.{ get("p"), ret }),
-            get("k"), c32(1),   op("add"), set("k"),
-        }),
-        get("p"),  c32(1),    op("add"),  set("p"),
-        again,
-    }),
-    get("n"),
-});
-
-/// The codepoint index of byte offset `off` of `s` — the codepoints that start
-/// before it; `-1` stays `-1` (a search that found nothing).
-const str_cp_of = func("__str_cp_of", &.{ "s", "off" }, .i32, i32s(&.{ "p", "k" }), &.{
-    get("off"), c32(0), op("lt_s"), when(&.{ c32(-1), ret }),
-    loop(&.{
-        get("p"),                                          get("off"), op("ge_u"), brk,
-        get("s"),                                          get("p"),   op("add"),  load8(4),
-        c32(0xC0),                                         op("and"),  c32(0x80),  op("ne"),
-        when(&.{ get("k"), c32(1), op("add"), set("k") }), get("p"),   c32(1),     op("add"),
-        set("p"),                                          again,
-    }),
-    get("k"),
-});
-
-/// `s.slice(a, b)` in codepoints, with `slice`'s bounds: a negative bound
-/// counts from the end, each is clamped to `0..length`, and an end before the
-/// start is the start. An open end is any bound past the length.
-const str_cp_slice = func("__str_cp_slice", &.{ "s", "a", "b" }, .i32, i32s(&.{"n"}), &.{
-    get("s"),                                            call("__str_cp_len"),         set("n"),
-    get("a"),                                            c32(0),                       op("lt_s"),
-    when(&.{ get("a"), get("n"), op("add"), set("a") }), get("a"),                     c32(0),
-    op("lt_s"),                                          when(&.{ c32(0), set("a") }), get("a"),
-    get("n"),                                            op("gt_s"),                   when(&.{ get("n"), set("a") }),
-    get("b"),                                            c32(0),                       op("lt_s"),
-    when(&.{ get("b"), get("n"), op("add"), set("b") }), get("b"),                     c32(0),
-    op("lt_s"),                                          when(&.{ c32(0), set("b") }), get("b"),
-    get("n"),                                            op("gt_s"),                   when(&.{ get("n"), set("b") }),
-    get("b"),                                            get("a"),                     op("lt_s"),
-    when(&.{ get("a"), set("b") }),                      get("s"),                     get("s"),
-    get("a"),                                            call("__str_cp_off"),         get("s"),
-    get("b"),                                            call("__str_cp_off"),         call("__str_slice"),
-});
-
-/// `s.at(i)` in codepoints, as a `?string`: a negative `i` counted from the
-/// end (decision 139), then the one-codepoint string, or `0` — absence —
-/// outside `0..length` (`$__str_at`'s unsigned compare, over the count).
-const str_cp_at = func("__str_cp_at", &.{ "s", "i" }, .i32, i32s(&.{"n"}), &.{
-    get("s"),                                            call("__str_cp_len"),    set("n"),
-    get("i"),                                            c32(0),                  op("lt_s"),
-    when(&.{ get("i"), get("n"), op("add"), set("i") }), get("i"),                get("n"),
-    op("ge_u"),                                          when(&.{ c32(0), ret }), get("s"),
-    get("i"),                                            get("i"),                c32(1),
-    op("add"),                                           call("__str_cp_slice"),
-});
-
-/// `s.indexOf(sub)` in codepoints.
-const str_cp_index_of = func("__str_cp_index_of", &.{ "s", "sub" }, .i32, &.{}, &.{
-    get("s"), get("s"), get("sub"), call("__str_index_of"), call("__str_cp_of"),
-});
-
-/// `s.lastIndexOf(sub)` in codepoints.
-const str_cp_last_index_of = func("__str_cp_last_index_of", &.{ "s", "sub" }, .i32, &.{}, &.{
-    get("s"), get("s"), get("sub"), call("__str_last_index_of"), call("__str_cp_of"),
-});
-
-/// Decision 262 — `String.fromCodepoint(cp)`: the 1–4 UTF-8 bytes of `cp` as
-/// a fresh `[n][bytes]` string. A `cp` that is no Unicode scalar value —
-/// negative or past U+10FFFF (one unsigned compare) or a surrogate
-/// (U+D800..U+DFFF) — traps, as erlang's `<<Cp/utf8>>` raises `badarg` and the
-/// Node cell throws. The last byte is written first (`p + n + 3`), then the
-/// lead byte of the length `n` returns with.
-const str_from_cp = func("__str_from_cp", &.{"cp"}, .i32, i32s(&.{ "n", "p" }), &.{
-    get("cp"),                                                                                           c32(0x10FFFF),             op("gt_u"),  when(&.{.@"unreachable"}),
-    get("cp"),                                                                                           c32(0xD800),               op("sub"),   c32(0x800),
-    op("lt_u"),                                                                                          when(&.{.@"unreachable"}), c32(1),      set("n"),
-    get("cp"),                                                                                           c32(0x80),                 op("ge_u"),  when(&.{ c32(2), set("n") }),
-    get("cp"),                                                                                           c32(0x800),                op("ge_u"),  when(&.{ c32(3), set("n") }),
-    get("cp"),                                                                                           c32(0x10000),              op("ge_u"),  when(&.{ c32(4), set("n") }),
-    get("n"),                                                                                            c32(4),                    op("add"),   call("__alloc"),
-    set("p"),                                                                                            get("p"),                  get("n"),    store(0),
-    get("n"),                                                                                            c32(1),                    op("eq"),    when(&.{ get("p"), get("cp"), store8(4), get("p"), ret }),
-    get("p"),                                                                                            get("n"),                  op("add"),   get("cp"),
-    c32(63),                                                                                             op("and"),                 c32(0x80),   op("or"),
-    store8(3),                                                                                           get("n"),                  c32(2),      op("eq"),
-    when(&.{ get("p"), get("cp"), c32(6), op("shr_u"), c32(0xC0), op("or"), store8(4), get("p"), ret }), get("p"),                  get("n"),    op("add"),
-    get("cp"),                                                                                           c32(6),                    op("shr_u"), c32(63),
-    op("and"),                                                                                           c32(0x80),                 op("or"),    store8(2),
-    get("n"),                                                                                            c32(3),                    op("eq"),    when(&.{ get("p"), get("cp"), c32(12), op("shr_u"), c32(0xE0), op("or"), store8(4), get("p"), ret }),
-    get("p"),                                                                                            get("cp"),                 c32(12),     op("shr_u"),
-    c32(63),                                                                                             op("and"),                 c32(0x80),   op("or"),
-    store8(5),                                                                                           get("p"),                  get("cp"),   c32(18),
-    op("shr_u"),                                                                                         c32(0xF0),                 op("or"),    store8(4),
-    get("p"),
-});
-
 // ── decision 238's WASI adapters (`host_binding.zig` `adapters`) ─────────────
 
 /// `random_get(buf, len)` — WASI preview1's one source of random bytes.
@@ -400,78 +209,6 @@ const wasi_seeded_f64 = typedFunc("__wasi_seeded_f64", &.{}, .f64, i32s(&.{"t"})
     get("t"),                                  c32(14),                             op("shr_u"),
     op("xor"),                                 .{ .convert = "f64.convert_i32_u" }, .{ .@"const" = .{ .ty = .f64, .text = "2.3283064365386963e-10" } },
     .{ .op = .{ .ty = .f64, .name = "mul" } },
-});
-
-/// `s.padStart(width, pad)` (`start = 1`) / `padEnd` (`start = 0`): `s` when it
-/// is already `width` long or the pad is empty, else a fresh string of `width`
-/// bytes with the pad repeated into the gap (JavaScript's cycling).
-const str_pad = func("__str_pad", &.{ "s", "width", "pad", "start" }, .i32, i32s(&.{ "n", "pl", "k", "p", "i", "at" }), &.{
-    get("s"),                  load(0),         set("n"),
-    get("pad"),                load(0),         set("pl"),
-    get("width"),              get("n"),        op("le_s"),
-    get("pl"),                 op("eqz"),       op("or"),
-    when(&.{ get("s"), ret }), get("width"),    c32(4),
-    op("add"),                 call("__alloc"), set("p"),
-    get("p"),                  get("width"),    store(0),
-    get("width"),              get("n"),        op("sub"),
-    set("k"),
-    // the text lands after the gap on `padStart`, at the front on `padEnd`
-                     get("p"),        c32(4),
-    op("add"),                 get("start"),    get("k"),
-    op("mul"),                 op("add"),       get("s"),
-    c32(4),                    op("add"),       get("n"),
-    copy,
-    // the gap starts at 0 on `padStart`, after the text on `padEnd`
-                         get("start"),    op("eqz"),
-    get("n"),                  op("mul"),       set("at"),
-    loop(&.{
-        get("i"),    get("k"),   op("ge_u"), brk,
-        get("p"),    get("at"),  op("add"),  get("i"),
-        op("add"),   get("pad"), get("i"),   get("pl"),
-        op("rem_u"), op("add"),  load8(4),   store8(4),
-        get("i"),    c32(1),     op("add"),  set("i"),
-        again,
-    }),
-    get("p"),
-});
-
-/// `s.replace(pat, with)` (`all = 0`: the first occurrence) / `replaceAll`
-/// (`all = 1`). An empty `pat` matches before every byte and at the end, as
-/// JavaScript's does: `replace` puts `with` in front, `replaceAll` around
-/// every byte.
-const str_replace = func("__str_replace", &.{ "s", "pat", "with", "all" }, .i32, i32s(&.{ "m", "n", "out", "rest", "idx", "i" }), &.{
-    get("pat"), load(0),         set("m"),
-    get("s"),   load(0),         set("n"),
-    get("m"),   op("eqz"),
-    when(&.{
-        get("with"),                                                        set("out"),
-        get("all"),
-        when(&.{loop(&.{
-            get("i"),   get("n"),   op("ge_u"),          brk,
-            get("out"), get("s"),   get("i"),            get("i"),
-            c32(1),     op("add"),  call("__str_slice"), call("__str_concat"),
-            set("out"), get("out"), get("with"),         call("__str_concat"),
-            set("out"), get("i"),   c32(1),              op("add"),
-            set("i"),   again,
-        })}),
-        get("all"),                                                         op("eqz"),
-        when(&.{ get("out"), get("s"), call("__str_concat"), set("out") }), get("out"),
-        ret,
-    }),
-    c32(4),     call("__alloc"), set("out"),
-    get("out"), c32(0),          store(0),
-    get("s"),   set("rest"),
-    loop(&.{
-        get("rest"),         get("pat"),           call("__str_index_of"), set("idx"),
-        get("idx"),          c32(-1),              op("eq"),               brk,
-        get("out"),          get("rest"),          c32(0),                 get("idx"),
-        call("__str_slice"), call("__str_concat"), set("out"),             get("out"),
-        get("with"),         call("__str_concat"), set("out"),             get("rest"),
-        get("idx"),          get("m"),             op("add"),              get("rest"),
-        load(0),             call("__str_slice"),  set("rest"),            get("all"),
-        op("eqz"),           brk,                  again,
-    }),
-    get("out"), get("rest"),     call("__str_concat"),
 });
 
 // ── decision 8 §11's box: a value in an `unknown` or union slot ──────────────
@@ -896,12 +633,13 @@ const print_f64 = ast.Func{
     } },
 };
 
-/// A float as a wasm program writes it: std-wasm's text (decision 441,
-/// `$__f64_to_str`) — `5.0`, `0.30000000000000004`, `1.0e21`.
+/// A float as a wasm program writes it: std-wasm's text (decisions 441,
+/// 442 (1): the text is std-wasm's `number.floatToString`, the I/O is here)
+/// — `5.0`, `0.30000000000000004`, `1.0e21`.
 const print_f64_raw = typedFunc("__print_f64_raw", &.{.{ .name = "x", .ty = .f64 }}, null, i32s(&.{"s"}), &.{
-    getF("x"), call("__f64_to_str"), set("s"),
-    get("s"),  c32(4),               op("add"),
-    get("s"),  load(0),              call("__write_bytes"),
+    getF("x"), call(stdSymbol("number.floatToString")), set("s"),
+    get("s"),  c32(4),                                  op("add"),
+    get("s"),  load(0),                                 call("__write_bytes"),
 });
 
 const arr_at = ast.Func{
@@ -1281,17 +1019,6 @@ fn slot(comptime base: []const u8, comptime i: []const u8) [7]Instr {
     return .{ get(base), c32(4), op("add"), get(i), c32(4), op("mul"), op("add") };
 }
 
-/// ch is one of ' ', '\t', '\n', '\r'.
-fn isSpace(comptime ch: []const u8) [15]Instr {
-    return .{
-        get(ch),  c32(32),  op("eq"),
-        get(ch),  c32(9),   op("eq"),
-        op("or"), get(ch),  c32(10),
-        op("eq"), op("or"), get(ch),
-        c32(13),  op("eq"), op("or"),
-    };
-}
-
 // ── helpers built with it ────────────────────────────────────────────────────
 
 /// Bump-allocate `n` bytes, keeping the heap pointer on a 4-byte boundary —
@@ -1347,39 +1074,6 @@ const i32_max = func("__i32_max", &.{ "a", "b" }, .i32, &.{}, &.{
     when(&.{ get("a"), ret }), get("b"),
 });
 
-/// Decimal text of an i32, as a fresh length-prefixed string. The digits are
-/// written backwards into scratch `128..160` (below the data section) and then
-/// copied out.
-const i32_to_str = func("__i32_to_str", &.{"n"}, .i32, &.{
-    .{ .name = "u", .ty = .i64 }, .{ .name = "pos", .ty = .i32 }, .{ .name = "len", .ty = .i32 },
-    .{ .name = "p", .ty = .i32 }, .{ .name = "neg", .ty = .i32 },
-}, &.{
-    c32(160),                                            set("pos"),
-    get("n"),                                            c32(0),
-    op("lt_s"),                                          set("neg"),
-    get("n"),                                            .{ .convert = "i64.extend_i32_s" },
-    set("u"),                                            get("neg"),
-    when(&.{ c64(0), get("u"), op64("sub"), set("u") }),
-    loop(&.{
-        get("pos"),                     c32(1),      op("sub"),     set("pos"),
-        get("pos"),                     get("u"),    c64(10),       op64("rem_u"),
-        .{ .convert = "i32.wrap_i64" }, c32(48),     op("add"),     store8(0),
-        get("u"),                       c64(10),     op64("div_u"), set("u"),
-        get("u"),                       op64("eqz"), brk,           again,
-    }),
-    get("neg"),                                          when(&.{ get("pos"), c32(1), op("sub"), set("pos"), get("pos"), c32(45), store8(0) }),
-    c32(160),                                            get("pos"),
-    op("sub"),                                           set("len"),
-    get("len"),                                          c32(4),
-    op("add"),                                           call("__alloc"),
-    set("p"),                                            get("p"),
-    get("len"),                                          store(0),
-    get("p"),                                            c32(4),
-    op("add"),                                           get("pos"),
-    get("len"),                                          copy,
-    get("p"),
-});
-
 /// A copy of `s` with every byte in `[lo, hi]` shifted by `delta` — ASCII
 /// upper/lower case.
 const str_case = func("__str_case", &.{ "s", "lo", "hi", "delta" }, .i32, i32s(&.{ "n", "p", "i", "ch" }), &.{
@@ -1399,148 +1093,10 @@ const str_case = func("__str_case", &.{ "s", "lo", "hi", "delta" }, .i32, i32s(&
     get("p"),
 });
 
-/// Byte offset of the first `sub` in `s`, `-1` when absent, `0` for an empty `sub`.
-const str_index_of = func("__str_index_of", &.{ "s", "sub" }, .i32, i32s(&.{ "n", "m", "i" }), &.{
-    get("s"),   load(0), set("n"),
-    get("sub"), load(0), set("m"),
-    loop(&.{
-        get("i"), get("m"),  op("add"), get("n"),         op("gt_u"),                brk,
-        get("s"), c32(4),    op("add"), get("i"),         op("add"),                 get("sub"),
-        c32(4),   op("add"), get("m"),  call("__mem_eq"), when(&.{ get("i"), ret }), get("i"),
-        c32(1),   op("add"), set("i"),  again,
-    }),
-    c32(-1),
-});
-
-const str_starts_with = func("__str_starts_with", &.{ "s", "p" }, .i32, &.{}, &.{
-    get("p"),                load(0),   get("s"), load(0),   op("gt_u"),
-    when(&.{ c32(0), ret }), get("s"),  c32(4),   op("add"), get("p"),
-    c32(4),                  op("add"), get("p"), load(0),   call("__mem_eq"),
-});
-
-const str_ends_with = func("__str_ends_with", &.{ "s", "x" }, .i32, i32s(&.{ "n", "m" }), &.{
-    get("s"),                load(0),   set("n"),
-    get("x"),                load(0),   set("m"),
-    get("m"),                get("n"),  op("gt_u"),
-    when(&.{ c32(0), ret }), get("s"),  c32(4),
-    op("add"),               get("n"),  op("add"),
-    get("m"),                op("sub"), get("x"),
-    c32(4),                  op("add"), get("m"),
-    call("__mem_eq"),
-});
-
-/// `s.at(i)` as a `?string`: a fresh one-byte string, or `0` — absence — when
-/// `i` is outside `0..len` once a negative `i` has been counted from the end
-/// (`i + len`, decision 139). A `?string` needs no box on this backend: a string
-/// IS its own pointer and `$__print_opt_str_raw` reads absence as `i32.eqz`,
-/// which is why this answers a pointer and not the `$__box_i32` cell
-/// `$__arr_at_box` builds for a scalar element. The bounds test is `$__arr_at`'s
-/// against the length prefix instead of the element count, folded into one
-/// **unsigned** compare: a negative `i` wraps past any length, so `i32.ge_u`
-/// rejects both ends where `$__arr_at` needs `lt_s` and `ge_s` together.
-const str_at = func("__str_at", &.{ "s", "i" }, .i32, &.{}, &.{
-    get("i"),                                                     c32(0),     op("lt_s"),
-    when(&.{ get("i"), get("s"), load(0), op("add"), set("i") }), get("i"),   get("s"),
-    load(0),                                                      op("ge_u"), when(&.{ c32(0), ret }),
-    get("s"),                                                     get("i"),   get("i"),
-    c32(1),                                                       op("add"),  call("__str_slice"),
-});
-
-/// Whether byte `i` of string `s` starts a UTF-8 codepoint (it is not a
-/// `10xxxxxx` continuation byte).
-fn leadByte(comptime i: []const u8) [7]Instr {
-    return .{ get("s"), get(i), op("add"), load8(4), c32(192), op("and"), c32(128) };
-}
-
-/// `s` cut at every `sep`, as an array of fresh strings. An empty `sep` cuts
-/// before every UTF-8 codepoint (`"%0Aéz"` → 5 pieces, as on the other
-/// targets); `""` answers no piece.
-const str_split = func("__str_split", &.{ "s", "sep" }, .i32, i32s(&.{ "n", "m", "i", "cnt", "arr", "start", "k" }), &([_]Instr{
-    get("s"),   load(0),           set("n"),
-    get("sep"), load(0),           set("m"),
-    get("m"),   op("eqz"),
-    when(&([_]Instr{loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk } ++ leadByte("i") ++ [_]Instr{
-        op("ne"), when(&.{ get("cnt"), c32(1), op("add"), set("cnt") }), get("i"), c32(1), op("add"), set("i"), again,
-    }))} ++ [_]Instr{ get("cnt"), call("__arr_new"), set("arr"), c32(1), set("i") } ++ [_]Instr{loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk } ++ leadByte("i") ++ [_]Instr{
-        op("ne"), when(&(slot("arr", "k") ++ [_]Instr{ get("s"), get("start"), get("i"), call("__str_slice"), store(0), get("k"), c32(1), op("add"), set("k"), get("i"), set("start") })), get("i"), c32(1), op("add"), set("i"), again,
-    }))} ++ [_]Instr{ get("n"), when(&(slot("arr", "k") ++ [_]Instr{ get("s"), get("start"), get("n"), call("__str_slice"), store(0) })), get("arr"), ret })),
-    c32(1),     set("cnt"),
-    loop(&.{
-        get("i"), get("m"),  op("add"), get("n"),         op("gt_u"),                                                                                                                                      brk,
-        get("s"), c32(4),    op("add"), get("i"),         op("add"),                                                                                                                                       get("sep"),
-        c32(4),   op("add"), get("m"),  call("__mem_eq"), whenElse(&.{ get("cnt"), c32(1), op("add"), set("cnt"), get("i"), get("m"), op("add"), set("i") }, &.{ get("i"), c32(1), op("add"), set("i") }), again,
-    }),
-    get("cnt"), call("__arr_new"), set("arr"),
-    c32(0),     set("i"),
-    loop(&.{
-        get("i"), get("m"),  op("add"), get("n"),         op("gt_u"),                                                                                                                                                                                                                                              brk,
-        get("s"), c32(4),    op("add"), get("i"),         op("add"),                                                                                                                                                                                                                                               get("sep"),
-        c32(4),   op("add"), get("m"),  call("__mem_eq"), whenElse(&(slot("arr", "k") ++ [_]Instr{ get("s"), get("start"), get("i"), call("__str_slice"), store(0), get("k"), c32(1), op("add"), set("k"), get("i"), get("m"), op("add"), tee("i"), set("start") }), &.{ get("i"), c32(1), op("add"), set("i") }), again,
-    }),
-} ++ slot("arr", "k") ++ [_]Instr{ get("s"), get("start"), get("n"), call("__str_slice"), store(0), get("arr") }));
-
-const str_repeat = func("__str_repeat", &.{ "s", "times" }, .i32, i32s(&.{ "n", "p", "i" }), &.{
-    get("s"),                         load(0),      set("n"),
-    get("times"),                     c32(0),       op("lt_s"),
-    when(&.{ c32(0), set("times") }), get("n"),     get("times"),
-    op("mul"),                        c32(4),       op("add"),
-    call("__alloc"),                  set("p"),     get("p"),
-    get("n"),                         get("times"), op("mul"),
-    store(0),
-    loop(&.{
-        get("i"), get("times"), op("ge_s"), brk,
-        get("p"), c32(4),       op("add"),  get("n"),
-        get("i"), op("mul"),    op("add"),  get("s"),
-        c32(4),   op("add"),    get("n"),   copy,
-        get("i"), c32(1),       op("add"),  set("i"),
-        again,
-    }),
-    get("p"),
-});
-
 /// A fresh array blob of `n` elements (`[n][e0]…`), elements unset.
 const arr_new = func("__arr_new", &.{"n"}, .i32, i32s(&.{"p"}), &.{
     get("n"), c32(1),   op("add"), c32(4),   op("mul"), call("__alloc"), set("p"),
     get("p"), get("n"), store(0),  get("p"),
-});
-
-/// `xs.slice(a, b)` with the host bounds rules: a negative bound counts from
-/// the end, bounds clamp to `[0, len]`, and a reversed range is empty.
-const arr_slice = func("__arr_slice", &.{ "xs", "a", "b" }, .i32, i32s(&.{ "n", "cnt", "p" }), &.{
-    get("xs"),                                                                                                                                                                                 load(0),                                                                                                                                                                                   set("n"),
-    get("a"),                                                                                                                                                                                  c32(0),                                                                                                                                                                                    op("lt_s"),
-    whenElse(&.{ get("n"), get("a"), op("add"), set("a"), get("a"), c32(0), op("lt_s"), when(&.{ c32(0), set("a") }) }, &.{ get("a"), get("n"), op("gt_s"), when(&.{ get("n"), set("a") }) }), get("b"),                                                                                                                                                                                  c32(0),
-    op("lt_s"),                                                                                                                                                                                whenElse(&.{ get("n"), get("b"), op("add"), set("b"), get("b"), c32(0), op("lt_s"), when(&.{ c32(0), set("b") }) }, &.{ get("b"), get("n"), op("gt_s"), when(&.{ get("n"), set("b") }) }), get("b"),
-    get("a"),                                                                                                                                                                                  op("sub"),                                                                                                                                                                                 set("cnt"),
-    get("cnt"),                                                                                                                                                                                c32(0),                                                                                                                                                                                    op("lt_s"),
-    when(&.{ c32(0), set("cnt") }),                                                                                                                                                            get("cnt"),                                                                                                                                                                                call("__arr_new"),
-    set("p"),                                                                                                                                                                                  get("p"),                                                                                                                                                                                  c32(4),
-    op("add"),                                                                                                                                                                                 get("xs"),                                                                                                                                                                                 c32(4),
-    op("add"),                                                                                                                                                                                 get("a"),                                                                                                                                                                                  c32(4),
-    op("mul"),                                                                                                                                                                                 op("add"),                                                                                                                                                                                 get("cnt"),
-    c32(4),                                                                                                                                                                                    op("mul"),                                                                                                                                                                                 copy,
-    get("p"),
-});
-
-const arr_reverse = func("__arr_reverse", &.{"xs"}, .i32, i32s(&.{ "n", "i", "p" }), &.{
-    get("xs"), load(0),           set("n"),
-    get("n"),  call("__arr_new"), set("p"),
-    loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk } ++ slot("p", "i") ++ [_]Instr{
-        get("xs"), get("n"), get("i"),  op("sub"), c32(4), op("mul"), op("add"), load(0), store(0),
-        get("i"),  c32(1),   op("add"), set("i"),  again,
-    })),
-    get("p"),
-});
-
-const arr_prepend = func("__arr_prepend", &.{ "xs", "x" }, .i32, i32s(&.{ "n", "p" }), &.{
-    get("xs"),         load(0),   set("n"),
-    get("n"),          c32(1),    op("add"),
-    call("__arr_new"), set("p"),  get("p"),
-    get("x"),          store(4),  get("p"),
-    c32(8),            op("add"), get("xs"),
-    c32(4),            op("add"), get("n"),
-    c32(4),            op("mul"), copy,
-    get("p"),
 });
 
 /// A copy of `xs` with `x` appended — `push` rebinds the receiver to it.
@@ -1553,282 +1109,7 @@ const arr_push = func("__arr_push", &.{ "xs", "x" }, .i32, i32s(&.{ "n", "p" }),
     c32(4),            op("mul"), copy,
 } ++ slot("p", "n") ++ [_]Instr{ get("x"), store(0), get("p") }));
 
-const arr_concat = func("__arr_concat", &.{ "a", "b" }, .i32, i32s(&.{ "na", "nb", "p" }), &([_]Instr{
-    get("a"),          load(0),   set("na"),
-    get("b"),          load(0),   set("nb"),
-    get("na"),         get("nb"), op("add"),
-    call("__arr_new"), set("p"),  get("p"),
-    c32(4),            op("add"), get("a"),
-    c32(4),            op("add"), get("na"),
-    c32(4),            op("mul"), copy,
-} ++ slot("p", "na") ++ [_]Instr{ get("b"), c32(4), op("add"), get("nb"), c32(4), op("mul"), copy, get("p") }));
-
-/// Pairs `a[i]` with `b[i]` as 2-slot tuples, truncated to the shorter array.
-const arr_zip = func("__arr_zip", &.{ "a", "b" }, .i32, i32s(&.{ "n", "i", "p", "t" }), &.{
-    get("a"),          load(0),                                 set("n"),
-    get("b"),          load(0),                                 get("n"),
-    op("lt_u"),        when(&.{ get("b"), load(0), set("n") }), get("n"),
-    call("__arr_new"), set("p"),
-    loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk, c32(8), call("__alloc"), set("t") } ++
-        .{get("t")} ++ slot("a", "i") ++ [_]Instr{ load(0), store(0), get("t") } ++ slot("b", "i") ++ [_]Instr{ load(0), store(4) } ++
-        slot("p", "i") ++ [_]Instr{ get("t"), store(0), get("i"), c32(1), op("add"), set("i"), again })),
-    get("p"),
-});
-
-const arr_index_of_i32 = func("__arr_index_of_i32", &.{ "xs", "x" }, .i32, i32s(&.{ "n", "i" }), &.{
-    get("xs"), load(0), set("n"),
-    loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk } ++ slot("xs", "i") ++ [_]Instr{
-        load(0),  get("x"), op("eq"),  when(&.{ get("i"), ret }),
-        get("i"), c32(1),   op("add"), set("i"),
-        again,
-    })),
-    c32(-1),
-});
-
-const arr_index_of_str = func("__arr_index_of_str", &.{ "xs", "x" }, .i32, i32s(&.{ "n", "i" }), &.{
-    get("xs"), load(0), set("n"),
-    loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk } ++ slot("xs", "i") ++ [_]Instr{
-        load(0),  get("x"), call("__str_eq"), when(&.{ get("i"), ret }),
-        get("i"), c32(1),   op("add"),        set("i"),
-        again,
-    })),
-    c32(-1),
-});
-
-/// `xs.lastIndexOf(x)`: `indexOf` walked from the last slot down.
-const arr_last_index_of_i32 = func("__arr_last_index_of_i32", &.{ "xs", "x" }, .i32, i32s(&.{"i"}), &.{
-    get("xs"), load(0), set("i"),
-    loop(&([_]Instr{ get("i"), op("eqz"), brk, get("i"), c32(1), op("sub"), set("i") } ++ slot("xs", "i") ++ [_]Instr{
-        load(0), get("x"), op("eq"), when(&.{ get("i"), ret }),
-        again,
-    })),
-    c32(-1),
-});
-
-const arr_last_index_of_str = func("__arr_last_index_of_str", &.{ "xs", "x" }, .i32, i32s(&.{"i"}), &.{
-    get("xs"), load(0), set("i"),
-    loop(&([_]Instr{ get("i"), op("eqz"), brk, get("i"), c32(1), op("sub"), set("i") } ++ slot("xs", "i") ++ [_]Instr{
-        load(0), get("x"), call("__str_eq"), when(&.{ get("i"), ret }),
-        again,
-    })),
-    c32(-1),
-});
-
 // ── 1.0.11 `01-compiler/05-wasm` step 1: the primitive methods that trapped ──
-
-/// Byte `i` of string `s`.
-fn byteAt(comptime i: []const u8) [5]Instr {
-    return .{ get("s"), get(i), op("add"), load8(4), set("ch") };
-}
-
-/// `s.lines()`: `s` cut at every `\n`, a `\r` right before it dropped with
-/// it — the `/\r?\n/` split node answers and the `[<<"\r\n">>, <<"\n">>]`
-/// one erlang answers. The last piece keeps a trailing `\r` (nothing follows
-/// it), and `""` is one empty line.
-const str_lines = func("__str_lines", &.{"s"}, .i32, i32s(&.{ "n", "i", "cnt", "arr", "start", "k", "e", "ch" }), &([_]Instr{
-    get("s"),   load(0),           set("n"),   c32(1), set("cnt"),
-    loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk } ++ byteAt("i") ++ [_]Instr{
-        get("ch"), c32(10), op("eq"),  when(&.{ get("cnt"), c32(1), op("add"), set("cnt") }),
-        get("i"),  c32(1),  op("add"), set("i"),
-        again,
-    })),
-    get("cnt"), call("__arr_new"), set("arr"), c32(0), set("i"),
-    loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk } ++ byteAt("i") ++ [_]Instr{
-        get("ch"), c32(10), op("eq"),
-        when(&([_]Instr{
-            get("i"),   set("e"),
-            get("e"),   get("start"),
-            op("gt_u"), when(&.{ get("s"), get("e"), op("add"), load8(3), c32(13), op("eq"), when(&.{ get("e"), c32(1), op("sub"), set("e") }) }),
-        } ++ slot("arr", "k") ++ [_]Instr{
-            get("s"), get("start"), get("e"),     call("__str_slice"), store(0),
-            get("k"), c32(1),       op("add"),    set("k"),            get("i"),
-            c32(1),   op("add"),    set("start"),
-        })),
-        get("i"),  c32(1),  op("add"),
-        set("i"),  again,
-    })),
-} ++ slot("arr", "k") ++ [_]Instr{ get("s"), get("start"), get("n"), call("__str_slice"), store(0), get("arr") }));
-
-/// `s.words()`: the maximal runs of bytes that are not ` `, `\t`, `\n` or
-/// `\r`, as fresh strings — `""` and an all-blank string answer none.
-const str_words = func("__str_words", &.{"s"}, .i32, i32s(&.{ "n", "i", "cnt", "arr", "start", "k", "inw", "ch" }), &([_]Instr{
-    get("s"),   load(0),                                                                                                  set("n"),
-    loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk } ++ byteAt("i") ++ isSpace("ch") ++ [_]Instr{
-        whenElse(&.{ c32(0), set("inw") }, &.{ get("inw"), op("eqz"), when(&.{ get("cnt"), c32(1), op("add"), set("cnt"), c32(1), set("inw") }) }),
-        get("i"),
-        c32(1),
-        op("add"),
-        set("i"),
-        again,
-    })),
-    get("cnt"), call("__arr_new"),                                                                                        set("arr"),
-    c32(0),     set("i"),                                                                                                 c32(0),
-    set("inw"),
-    loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk } ++ byteAt("i") ++ isSpace("ch") ++ [_]Instr{
-        whenElse(&.{ get("inw"), when(&(slot("arr", "k") ++ [_]Instr{
-            get("s"),   get("start"), get("i"),  call("__str_slice"), store(0),
-            get("k"),   c32(1),       op("add"), set("k"),            c32(0),
-            set("inw"),
-        })) }, &.{ get("inw"), op("eqz"), when(&.{ get("i"), set("start"), c32(1), set("inw") }) }),
-        get("i"),
-        c32(1),
-        op("add"),
-        set("i"),
-        again,
-    })),
-    get("inw"), when(&(slot("arr", "k") ++ [_]Instr{ get("s"), get("start"), get("n"), call("__str_slice"), store(0) })), get("arr"),
-}));
-
-/// The `f64` a float slot's cell holds, as its bits (`i64.load`): decision
-/// 214's `==` over floats is a total order (`Object.is` on commonJS), which
-/// is the bits' equality.
-const load_cell_bits: [2]Instr = .{ load(0), .{ .load = .{ .ty = .i64 } } };
-
-/// `xs.unique()` — every duplicate dropped, each value kept at its first
-/// occurrence, in order (decision 217), as `primitives.bp`'s body does:
-/// element `i` is kept when no element already kept equals it. `mode` names
-/// the equality: `0` the slot's word (an integer, a bool, an all-unit enum's
-/// ordinal), `1` the `f64` the slot's cell holds (`$__box_f64`), by its bits,
-/// `2` a string's content.
-const arr_unique = func("__arr_unique", &.{ "xs", "mode" }, .i32, i32s(&.{ "n", "i", "k", "out", "keep", "j" }), &([_]Instr{
-    get("xs"),  load(0),  set("n"), get("n"),   call("__arr_new"), set("out"),
-    loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk, c32(1), set("keep"), c32(0), set("j") } ++ [_]Instr{
-        loopAs("ubrk", "ucont", &([_]Instr{ get("j"), get("k"), op("ge_u"), .{ .br_if = "ubrk" }, get("mode"), c32(1), op("eq") } ++ [_]Instr{
-            whenElse(
-                &(slot("xs", "i") ++ load_cell_bits ++ slot("out", "j") ++ load_cell_bits ++ [_]Instr{ op64("ne"), set("keep") }),
-                &([_]Instr{ get("mode"), c32(2), op("eq") } ++ [_]Instr{whenElse(
-                    &(slot("xs", "i") ++ [_]Instr{load(0)} ++ slot("out", "j") ++ [_]Instr{ load(0), call("__str_eq"), op("eqz"), set("keep") }),
-                    &(slot("xs", "i") ++ [_]Instr{load(0)} ++ slot("out", "j") ++ [_]Instr{ load(0), op("ne"), set("keep") }),
-                )}),
-            ),
-            get("keep"),
-            op("eqz"),
-            .{ .br_if = "ubrk" },
-            get("j"),
-            c32(1),
-            op("add"),
-            set("j"),
-            .{ .br = "ucont" },
-        })),
-        get("keep"),
-        when(&(slot("out", "k") ++ slot("xs", "i") ++ [_]Instr{ load(0), store(0), get("k"), c32(1), op("add"), set("k") })),
-        get("i"),
-        c32(1),
-        op("add"),
-        set("i"),
-        again,
-    })),
-    get("out"), get("k"), store(0), get("out"),
-}));
-
-/// `xs.flatten()` / `xs.flat()` over an array of arrays: every inner array's
-/// slots, in order, in one fresh array.
-const arr_flatten = func("__arr_flatten", &.{"xs"}, .i32, i32s(&.{ "n", "i", "total", "out", "pos", "e" }), &([_]Instr{
-    get("xs"),    load(0),           set("n"),
-    loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk, get("total") } ++ slot("xs", "i") ++ [_]Instr{
-        load(0), load(0), op("add"), set("total"), get("i"), c32(1), op("add"), set("i"), again,
-    })),
-    get("total"), call("__arr_new"), set("out"),
-    get("out"),   c32(4),            op("add"),
-    set("pos"),   c32(0),            set("i"),
-    loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk } ++ slot("xs", "i") ++ [_]Instr{
-        load(0),    set("e"),
-        get("pos"), get("e"),
-        c32(4),     op("add"),
-        get("e"),   load(0),
-        c32(4),     op("mul"),
-        copy,       get("pos"),
-        get("e"),   load(0),
-        c32(4),     op("mul"),
-        op("add"),  set("pos"),
-        get("i"),   c32(1),
-        op("add"),  set("i"),
-        again,
-    })),
-    get("out"),
-}));
-
-/// `xs.chunked(m)`: consecutive slices of `m` elements, the last one shorter
-/// when `m` does not divide the length; `m <= 0` answers no chunk.
-const arr_chunked = func("__arr_chunked", &.{ "xs", "m" }, .i32, i32s(&.{ "n", "cnt", "out", "k" }), &([_]Instr{
-    get("m"),          c32(0),      op("le_s"),                                            when(&.{ c32(0), call("__arr_new"), ret }),
-    get("xs"),         load(0),     set("n"),                                              get("n"),
-    get("m"),          op("div_u"), set("cnt"),                                            get("n"),
-    get("m"),          op("rem_u"), when(&.{ get("cnt"), c32(1), op("add"), set("cnt") }), get("cnt"),
-    call("__arr_new"), set("out"),
-    loop(&([_]Instr{ get("k"), get("cnt"), op("ge_u"), brk } ++ slot("out", "k") ++ [_]Instr{
-        get("xs"), get("k"), get("m"),  op("mul"), get("k"), get("m"), op("mul"), get("m"), op("add"), call("__arr_slice"), store(0),
-        get("k"),  c32(1),   op("add"), set("k"),  again,
-    })),
-    get("out"),
-}));
-
-/// `xs.sliding(m)`: one slice of `m` elements per start offset
-/// (`len - m + 1` of them); `m <= 0` or `m > len` answers none.
-const arr_sliding = func("__arr_sliding", &.{ "xs", "m" }, .i32, i32s(&.{ "cnt", "out", "k" }), &([_]Instr{
-    get("m"),          c32(0),     op("le_s"),                                 when(&.{ c32(0), call("__arr_new"), ret }),
-    get("xs"),         load(0),    get("m"),                                   op("sub"),
-    c32(1),            op("add"),  set("cnt"),                                 get("cnt"),
-    c32(0),            op("le_s"), when(&.{ c32(0), call("__arr_new"), ret }), get("cnt"),
-    call("__arr_new"), set("out"),
-    loop(&([_]Instr{ get("k"), get("cnt"), op("ge_u"), brk } ++ slot("out", "k") ++ [_]Instr{
-        get("xs"), get("k"), get("k"),  get("m"), op("add"), call("__arr_slice"), store(0),
-        get("k"),  c32(1),   op("add"), set("k"), again,
-    })),
-    get("out"),
-}));
-
-/// `xs.fill(v)` — `Array.repeat(v, xs.length)`: `n` slots each holding the
-/// word `v` (a float arrives as its `f32` bits).
-const arr_fill = func("__arr_fill", &.{ "n", "v" }, .i32, i32s(&.{ "out", "i" }), &([_]Instr{
-    get("n"),   call("__arr_new"), set("out"),
-    loop(&([_]Instr{ get("i"), get("n"), op("ge_s"), brk } ++ slot("out", "i") ++ [_]Instr{
-        get("v"), store(0), get("i"), c32(1), op("add"), set("i"), again,
-    })),
-    get("out"),
-}));
-
-/// The strings of `xs` joined with `sep`, as one fresh string.
-const arr_join_str = func("__arr_join_str", &.{ "xs", "sep" }, .i32, i32s(&.{ "n", "i", "total", "p", "pos", "e" }), &.{
-    get("xs"), load(0),                                                                                                        set("n"),
-    loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk, get("total") } ++ slot("xs", "i") ++ [_]Instr{
-        load(0), load(0), op("add"), set("total"), get("i"), c32(1), op("add"), set("i"), again,
-    })),
-    get("n"),  when(&.{ get("total"), get("sep"), load(0), get("n"), c32(1), op("sub"), op("mul"), op("add"), set("total") }), get("total"),
-    c32(4),    op("add"),                                                                                                      call("__alloc"),
-    set("p"),  get("p"),                                                                                                       get("total"),
-    store(0),  get("p"),                                                                                                       c32(4),
-    op("add"), set("pos"),                                                                                                     c32(0),
-    set("i"),
-    loop(&([_]Instr{
-        get("i"), get("n"),                                                                                                                                 op("ge_u"), brk,
-        get("i"), when(&.{ get("pos"), get("sep"), c32(4), op("add"), get("sep"), load(0), copy, get("pos"), get("sep"), load(0), op("add"), set("pos") }),
-    } ++ slot("xs", "i") ++ [_]Instr{
-        load(0),    set("e"),
-        get("pos"), get("e"),
-        c32(4),     op("add"),
-        get("e"),   load(0),
-        copy,       get("pos"),
-        get("e"),   load(0),
-        op("add"),  set("pos"),
-        get("i"),   c32(1),
-        op("add"),  set("i"),
-        again,
-    })),
-    get("p"),
-});
-
-/// The decimal text of every element of `xs`, joined with `sep`.
-const arr_join_i32 = func("__arr_join_i32", &.{ "xs", "sep" }, .i32, i32s(&.{ "n", "i", "t" }), &.{
-    get("xs"), load(0),           set("n"),
-    get("n"),  call("__arr_new"), set("t"),
-    loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk } ++ slot("t", "i") ++ slot("xs", "i") ++ [_]Instr{
-        load(0),  call("__i32_to_str"), store(0),
-        get("i"), c32(1),               op("add"),
-        set("i"), again,
-    })),
-    get("t"),  get("sep"),        call("__arr_join_str"),
-});
 
 /// Writes one byte through the newline scratch cell at 8.
 fn putByte(comptime ch: comptime_int) [5]Instr {
@@ -1866,34 +1147,19 @@ fn getF(comptime n: []const u8) Instr {
     return .{ .local_get = n };
 }
 
-/// A float's text as a fresh string — `"x" + 0.1`, `"${x}"`, `x.toString()`,
-/// and what `@print` writes: std-wasm's (decisions 440, 441), the text of
-/// erlang, beam and the comptime — OTP's `float_to_binary(x, [short])`:
-/// `5.0`, `0.30000000000000004`, `1.0e21`, `5.0e-324`; `NaN`, `Infinity`,
-/// `-Infinity` for the values only a wasm program's arithmetic makes. The
-/// function `Float.toString`'s `std:` cell names, transpiled into the module
-/// (`std_wasm_link.zig`); a module that calls this links it.
-const f64_to_str = typedFunc("__f64_to_str", &.{.{ .name = "x", .ty = .f64 }}, .i32, &.{}, &.{
-    getF("x"), call(std_float_to_string),
-});
-
-/// The program function std-wasm's `number.floatToString` is emitted as
-/// (`std_wasm_link.entryName`).
-pub const std_float_to_string = "__std_number_floatToString";
-
-// ── an integer as text ───────────────────────────────────────────────────────
-//
-// An `i64`'s and a `u64`'s decimal digits are written in a workspace allocated
-// once (`$__int_ws`), so printing one allocates nothing:
-//
-//     0 the text (a sign and at most 20 digits) · 28..48 the digits, written
-//     backwards
-//
-// A float's text is std-wasm's (`$__f64_to_str`, decisions 440, 441): the
-// transcription of V8's `BignumDtoa` that wrote commonJS's text here is gone.
-
-const int_text = 0;
-const int_ws_bytes = 48;
+/// The program function a std-wasm function is emitted as
+/// (`std_wasm_link.entryName`, at comptime): `number.floatToString` →
+/// `__std_number_floatToString`. A prelude helper that writes a number calls
+/// std-wasm for its text (decision 442 (1)); the group names the function in
+/// `HelperGroup.stdCalls`, so a module holding it links it.
+pub fn stdSymbol(comptime name: []const u8) []const u8 {
+    comptime {
+        var out: [name.len]u8 = name[0..name.len].*;
+        std.mem.replaceScalar(u8, &out, '.', '_');
+        const final = out;
+        return "__std_" ++ &final;
+    }
+}
 
 fn cF(comptime text: []const u8) Instr {
     return .{ .@"const" = .{ .ty = .f64, .text = text } };
@@ -1918,48 +1184,6 @@ fn loopAs(comptime out: []const u8, comptime cont: []const u8, comptime body: []
     const inner: Instr = .{ .block = .{ .kind = .loop, .label = cont, .body = seqOf(body, .none) } };
     return .{ .block = .{ .kind = .block, .label = out, .body = seqOf(&.{inner}, .none) } };
 }
-/// The text cursor `q` writes `ch` and steps.
-fn putc(comptime ch: comptime_int) [7]Instr {
-    return .{ get("q"), c32(ch), store8(0), get("q"), c32(1), op("add"), set("q") };
-}
-
-const int_ws_global = ast.Global{ .name = "__int_ws", .ty = .i32, .mutable = true, .init = "0" };
-
-const int_ws = func("__int_ws", &.{}, .i32, &.{}, &.{
-    .{ .global_get = "__int_ws" },                                                 op("eqz"),
-    when(&.{ c32(int_ws_bytes), call("__alloc"), .{ .global_set = "__int_ws" } }), .{ .global_get = "__int_ws" },
-});
-
-/// The decimal digits of the unsigned `v` at `q`, zero-padded to `width`;
-/// answers the address past them.
-const fmt_u64 = typedFunc("__fmt_u64", &.{ p32("q"), p64("v"), p32("width") }, .i32, i32s(&.{ "t", "cnt" }), &.{
-    call("__int_ws"), c32(int_ws_bytes), op("add"),  set("t"),
-    loop(&.{
-        get("t"),           c32(1),      op("sub"),     set("t"),
-        get("t"),           get("v"),    c64(10),       op64("rem_u"),
-        cv("i32.wrap_i64"), c32('0'),    op("add"),     store8(0),
-        get("v"),           c64(10),     op64("div_u"), set("v"),
-        get("cnt"),         c32(1),      op("add"),     set("cnt"),
-        get("v"),           op64("eqz"), get("cnt"),    get("width"),
-        op("ge_s"),         op("and"),   brk,           again,
-    }),
-    get("q"),         get("t"),          get("cnt"), copy,
-    get("q"),         get("cnt"),        op("add"),
-});
-
-/// The `i64` `v` as decimal text at `int_text`, its length answered — a
-/// `-` and the magnitude, which `$__fmt_u64` writes unsigned, so `-2^63`
-/// (its own negation) prints whole.
-const i64_fmt = typedFunc("__i64_fmt", &.{p64("v")}, .i32, i32s(&.{ "w", "q" }), &.{
-    call("__int_ws"), tee("w"),  c32(int_text),     op("add"),                                                                 set("q"),
-    get("v"),         c64(0),    op64("lt_s"),      when(&(putc('-') ++ [_]Instr{ c64(0), get("v"), op64("sub"), set("v") })), get("q"),
-    get("v"),         c32(1),    call("__fmt_u64"), get("w"),                                                                  c32(int_text),
-    op("add"),        op("sub"),
-});
-
-const int_fmt_items = [_]ast.Item{
-    .{ .global = int_ws_global }, .{ .func = int_ws }, .{ .func = fmt_u64 }, .{ .func = i64_fmt },
-};
 
 // ── integer arithmetic that refuses to wrap ──────────────────────────────────
 //
@@ -2019,23 +1243,15 @@ const int_chk_items = [_]ast.Item{
 };
 
 /// An `i64` printed in all its digits. It was lowered as an `i32`:
-/// `val a: i64 = 4294967295` printed `-1`.
-const print_i64_raw = typedFunc("__print_i64_raw", &.{p64("v")}, null, i32s(&.{"n"}), &.{
-    get("v"),      call("__i64_fmt"), set("n"), call("__int_ws"),
-    c32(int_text), op("add"),         get("n"), call("__write_bytes"),
+/// `val a: i64 = 4294967295` printed `-1`. The digits are std-wasm's
+/// (`number.i64Text`, written in its one workspace, so printing allocates
+/// nothing); the I/O is here (decision 442 (1)).
+const print_i64_raw = typedFunc("__print_i64_raw", &.{p64("v")}, null, i32s(&.{"t"}), &.{
+    get("v"), call(stdSymbol("number.i64Text")), set("t"),
+    get("t"), c32(4),                            op("add"),
+    get("t"), load(0),                           call("__write_bytes"),
 });
 const print_i64 = typedFunc("__print_i64", &.{p64("v")}, null, &.{}, &.{ get("v"), call("__print_i64_raw"), call("__print_nl") });
-
-/// An `i64` as a fresh string — `"n" + v`, `v.toString()`.
-const i64_to_str = typedFunc("__i64_to_str", &.{p64("v")}, .i32, i32s(&.{ "n", "p" }), &.{
-    get("v"),        call("__i64_fmt"), set("n"),
-    get("n"),        c32(4),            op("add"),
-    call("__alloc"), set("p"),          get("p"),
-    get("n"),        store(0),          get("p"),
-    c32(4),          op("add"),         call("__int_ws"),
-    c32(int_text),   op("add"),         get("n"),
-    copy,            get("p"),
-});
 
 // ── `u64` / `usize`: the carrier's 64 bits, unsigned (decision 319) ──────────
 //
@@ -2044,29 +1260,13 @@ const i64_to_str = typedFunc("__i64_to_str", &.{p64("v")}, .i32, i32s(&.{ "n", "
 // and `10^19 - 3·10^18` trapped in `$__i64_sub_chk`. Its digits, its checked
 // `+ - *` and (in `wat.zig`) its `/ % < > <= >=` read the bits unsigned.
 
-/// The `u64` `v` as decimal text at `int_text`, its length answered.
-const u64_fmt = typedFunc("__u64_fmt", &.{p64("v")}, .i32, i32s(&.{"w"}), &.{
-    call("__int_ws"), tee("w"),  c32(int_text),     op("add"),
-    get("v"),         c32(1),    call("__fmt_u64"), get("w"),
-    c32(int_text),    op("add"), op("sub"),
-});
-
-const print_u64_raw = typedFunc("__print_u64_raw", &.{p64("v")}, null, i32s(&.{"n"}), &.{
-    get("v"),      call("__u64_fmt"), set("n"), call("__int_ws"),
-    c32(int_text), op("add"),         get("n"), call("__write_bytes"),
+/// A `u64`'s carrier bits as unsigned digits — std-wasm's `number.u64Text`.
+const print_u64_raw = typedFunc("__print_u64_raw", &.{p64("v")}, null, i32s(&.{"t"}), &.{
+    get("v"), call(stdSymbol("number.u64Text")), set("t"),
+    get("t"), c32(4),                            op("add"),
+    get("t"), load(0),                           call("__write_bytes"),
 });
 const print_u64 = typedFunc("__print_u64", &.{p64("v")}, null, &.{}, &.{ get("v"), call("__print_u64_raw"), call("__print_nl") });
-
-/// A `u64` as a fresh string — `"n" + v`, `v.toString()`.
-const u64_to_str = typedFunc("__u64_to_str", &.{p64("v")}, .i32, i32s(&.{ "n", "p" }), &.{
-    get("v"),        call("__u64_fmt"), set("n"),
-    get("n"),        c32(4),            op("add"),
-    call("__alloc"), set("p"),          get("p"),
-    get("n"),        store(0),          get("p"),
-    c32(4),          op("add"),         call("__int_ws"),
-    c32(int_text),   op("add"),         get("n"),
-    copy,            get("p"),
-});
 
 const u64_add_chk = typedFunc("__u64_add_chk", &.{ p64("a"), p64("b") }, .i64, &.{l64("r")}, &.{
     get("a"), get("b"), op64("add"), tee("r"), get("a"), op64("lt_u"), when(&.{.@"unreachable"}), get("r"),
@@ -2124,39 +1324,6 @@ const print_arr_f64 = func("__print_arr_f64", &.{"xs"}, null, &.{}, &.{ get("xs"
 const box_f64 = typedFunc("__box_f64", &.{.{ .name = "x", .ty = .f64 }}, .i32, i32s(&.{"p"}), &.{
     c32(8),                        call("__alloc"), tee("p"), getF("x"),
     .{ .store = .{ .ty = .f64 } }, get("p"),
-});
-
-/// `xs.indexOf(x)` / `xs.lastIndexOf(x)` over a float array: native
-/// `Array#indexOf`'s strict equality (`f64.eq` — `NaN` is never found, `-0`
-/// finds `0`), what commonJS answers.
-const arr_index_of_f64 = typedFunc("__arr_index_of_f64", &.{ p32("xs"), .{ .name = "x", .ty = .f64 } }, .i32, i32s(&.{ "n", "i" }), &.{
-    get("xs"), load(0), set("n"),
-    loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk } ++ slot("xs", "i") ++ [_]Instr{
-        load(0),  .{ .load = .{ .ty = .f64 } }, getF("x"), opF("eq"), when(&.{ get("i"), ret }),
-        get("i"), c32(1),                       op("add"), set("i"),  again,
-    })),
-    c32(-1),
-});
-const arr_last_index_of_f64 = typedFunc("__arr_last_index_of_f64", &.{ p32("xs"), .{ .name = "x", .ty = .f64 } }, .i32, i32s(&.{"i"}), &.{
-    get("xs"), load(0), set("i"),
-    loop(&([_]Instr{ get("i"), op("eqz"), brk, get("i"), c32(1), op("sub"), set("i") } ++ slot("xs", "i") ++ [_]Instr{
-        load(0), .{ .load = .{ .ty = .f64 } }, getF("x"), opF("eq"), when(&.{ get("i"), ret }),
-        again,
-    })),
-    c32(-1),
-});
-
-/// `xs.join(sep)` over a float array: each element as `String(x)` — the text
-/// `$__f64_to_str` writes, as `Array#join` does on commonJS.
-const arr_join_f64 = func("__arr_join_f64", &.{ "xs", "sep" }, .i32, i32s(&.{ "n", "i", "t" }), &.{
-    get("xs"), load(0),           set("n"),
-    get("n"),  call("__arr_new"), set("t"),
-    loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk } ++ slot("t", "i") ++ slot("xs", "i") ++ [_]Instr{
-        load(0),  .{ .load = .{ .ty = .f64 } }, call("__f64_to_str"), store(0),
-        get("i"), c32(1),                       op("add"),            set("i"),
-        again,
-    })),
-    get("t"),  get("sep"),        call("__arr_join_str"),
 });
 
 /// Writes the byte in local `name` through the newline scratch cell at 8.
@@ -2308,14 +1475,14 @@ const print_shaped_raw_body = [_]Instr{
 const print_shaped_raw = func("__print_shaped_raw", &.{ "v", "sh", "go" }, .i32, i32s(&.{ "c", "n", "i", "p", "e" }), &print_shaped_raw_body);
 
 /// Decision 332 — `$__print_shaped_raw` with the `n` code: a `bigint` slot,
-/// the address of its block, written as its digits (`$__bn_to_str`). The
-/// module substitutes this form when it links the `bigint` group, so a
-/// module without one renders as before.
+/// the address of its block, written as its digits (std-wasm's
+/// `bigint.toString`). The module substitutes this form when it holds the
+/// `bigint` group, so a module without one renders as before.
 const print_shaped_raw_bigint = func("__print_shaped_raw", &.{ "v", "sh", "go" }, .i32, i32s(&.{ "c", "n", "i", "p", "e" }), &([_]Instr{
     get("sh"), load8(0), c32('n'), op("eq"),
     when(&.{
         get("go"),
-        when(&.{ get("v"), call("__bn_to_str"), set("e"), get("e"), c32(4), op("add"), get("e"), load(0), call("__write_bytes") }),
+        when(&.{ get("v"), call(stdSymbol("bigint.toString")), set("e"), get("e"), c32(4), op("add"), get("e"), load(0), call("__write_bytes") }),
         get("sh"),
         c32(1),
         op("add"),
@@ -2727,477 +1894,3 @@ pub const bp_ready = ast.Func{
     .params = &.{.{ .name = "h", .ty = .i32 }},
     .body = indented(seqOf(&.{ get("h"), call("__task_host_settle"), .drop, call("__task_drain") }, .none), 4),
 };
-
-// ── decision 332: `bigint`, an integer of any size ──────────────────────────
-//
-// A `bigint` is a pointer to an immutable block `[L][limb0][limb1]…`: `L` is
-// the limbs' byte count (four per limb), negated for a negative value, `0` for
-// zero; the limbs are little-endian `u32`s, normalised (no zero limb on top),
-// so a value has one spelling and a positive literal is a data segment of the
-// string layout. Every operation allocates its answer (`$__alloc`). The
-// division is schoolbook: by one limb through `$__bn_divw` (the decimal text
-// divides by 10^9 that way), by more a bit at a time — quadratic, and the
-// numbers a program writes are short.
-
-const bn_b2: Instr = .{ .br_if = "b2" };
-const bn_c2: Instr = .{ .br = "c2" };
-const extU: Instr = .{ .convert = "i64.extend_i32_u" };
-const wrap: Instr = .{ .convert = "i32.wrap_i64" };
-const trap: Instr = .@"unreachable";
-
-/// The count of limbs of `p`.
-const bn_n = func("__bn_n", &.{"p"}, .i32, i32s(&.{"l"}), &.{
-    get("p"),                                          load(0),  set("l"),
-    get("l"),                                          c32(0),   op("lt_s"),
-    when(&.{ c32(0), get("l"), op("sub"), set("l") }), get("l"), c32(2),
-    op("shr_u"),
-});
-
-/// The address of limb `i` of `p`.
-const bn_at = func("__bn_at", &.{ "p", "i" }, .i32, &.{}, &.{
-    get("p"), c32(4), op("add"), get("i"), c32(2), op("shl"), op("add"),
-});
-
-/// A fresh block of `n` zero limbs, `L` its byte count.
-const bn_new = func("__bn_new", &.{"n"}, .i32, i32s(&.{ "p", "i" }), &.{
-    get("n"), c32(2),   op("shl"), c32(4),    op("add"), call("__alloc"),                                                                                                                                      set("p"),
-    get("p"), get("n"), c32(2),    op("shl"), store(0),  loop(&.{ get("i"), get("n"), op("ge_u"), brk, get("p"), get("i"), call("__bn_at"), c32(0), store(0), get("i"), c32(1), op("add"), set("i"), again }), get("p"),
-});
-
-/// `p` normalised: its top zero limbs dropped from `L` (read as a count),
-/// then negated when `neg` and nonzero.
-const bn_fix = func("__bn_fix", &.{ "p", "neg" }, .i32, i32s(&.{ "n", "l" }), &.{
-    get("p"),                                          load(0),  c32(2),    op("shr_u"), set("n"),
-    loop(&.{
-        get("n"),  op("eqz"),       brk,
-        get("p"),  get("n"),        c32(1),
-        op("sub"), call("__bn_at"), load(0),
-        brk,       get("n"),        c32(1),
-        op("sub"), set("n"),        again,
-    }),
-    get("n"),                                          c32(2),   op("shl"), set("l"),    get("neg"),
-    when(&.{ c32(0), get("l"), op("sub"), set("l") }), get("p"), get("l"),  store(0),    get("p"),
-});
-
-/// `-1` / `0` / `1` as `|a|` is below, equal to or above `|b|`.
-const bn_cmpm = func("__bn_cmpm", &.{ "a", "b" }, .i32, i32s(&.{ "an", "bn", "i", "x", "y" }), &.{
-    get("a"),                call("__bn_n"),           set("an"),
-    get("b"),                call("__bn_n"),           set("bn"),
-    get("an"),               get("bn"),                op("gt_u"),
-    when(&.{ c32(1), ret }), get("an"),                get("bn"),
-    op("lt_u"),              when(&.{ c32(-1), ret }), get("an"),
-    set("i"),
-    loop(&.{
-        get("i"),                 op("eqz"),  brk,
-        get("i"),                 c32(1),     op("sub"),
-        set("i"),                 get("a"),   get("i"),
-        call("__bn_at"),          load(0),    set("x"),
-        get("b"),                 get("i"),   call("__bn_at"),
-        load(0),                  set("y"),   get("x"),
-        get("y"),                 op("gt_u"), when(&.{ c32(1), ret }),
-        get("x"),                 get("y"),   op("lt_u"),
-        when(&.{ c32(-1), ret }), again,
-    }),
-    c32(0),
-});
-
-/// `|a| + |b|`, negative when `neg`.
-const bn_addm = func("__bn_addm", &.{ "a", "b", "neg" }, .i32, &.{ l32("an"), l32("bn"), l32("t"), l32("r"), l32("i"), l64("s"), l64("c") }, &.{
-    get("a"),                                                                                                                               call("__bn_n"),   set("an"),
-    get("b"),                                                                                                                               call("__bn_n"),   set("bn"),
-    get("an"),                                                                                                                              get("bn"),        op("lt_u"),
-    when(&.{ get("a"), set("t"), get("b"), set("a"), get("t"), set("b"), get("an"), set("t"), get("bn"), set("an"), get("t"), set("bn") }), get("an"),        c32(1),
-    op("add"),                                                                                                                              call("__bn_new"), set("r"),
-    loop(&.{
-        get("i"),        get("an"),                                                                                       op("ge_u"),      brk,
-        get("a"),        get("i"),                                                                                        call("__bn_at"), load(0),
-        extU,            set("s"),                                                                                        get("i"),        get("bn"),
-        op("lt_u"),      when(&.{ get("s"), get("b"), get("i"), call("__bn_at"), load(0), extU, op64("add"), set("s") }), get("s"),        get("c"),
-        op64("add"),     set("s"),                                                                                        get("r"),        get("i"),
-        call("__bn_at"), get("s"),                                                                                        wrap,            store(0),
-        get("s"),        c64(32),                                                                                         op64("shr_u"),   set("c"),
-        get("i"),        c32(1),                                                                                          op("add"),       set("i"),
-        again,
-    }),
-    get("r"),                                                                                                                               get("an"),        call("__bn_at"),
-    get("c"),                                                                                                                               wrap,             store(0),
-    get("r"),                                                                                                                               get("neg"),       call("__bn_fix"),
-});
-
-/// `|a| - |b|` where `|a| >= |b|`, negative when `neg`.
-const bn_subm = func("__bn_subm", &.{ "a", "b", "neg" }, .i32, &.{ l32("an"), l32("bn"), l32("r"), l32("i"), l64("s"), l64("c") }, &.{
-    get("a"),  call("__bn_n"),   set("an"),
-    get("b"),  call("__bn_n"),   set("bn"),
-    get("an"), call("__bn_new"), set("r"),
-    loop(&.{
-        get("i"),        get("an"),                                                                                       op("ge_u"),      brk,
-        get("a"),        get("i"),                                                                                        call("__bn_at"), load(0),
-        extU,            set("s"),                                                                                        get("i"),        get("bn"),
-        op("lt_u"),      when(&.{ get("s"), get("b"), get("i"), call("__bn_at"), load(0), extU, op64("sub"), set("s") }), get("s"),        get("c"),
-        op64("sub"),     set("s"),                                                                                        get("r"),        get("i"),
-        call("__bn_at"), get("s"),                                                                                        wrap,            store(0),
-        get("s"),        c64(63),                                                                                         op64("shr_u"),   set("c"),
-        get("i"),        c32(1),                                                                                          op("add"),       set("i"),
-        again,
-    }),
-    get("r"),  get("neg"),       call("__bn_fix"),
-});
-
-/// `x + y`, or `x - y` when `flip`.
-const bn_add = func("__bn_add", &.{ "x", "y", "flip" }, .i32, i32s(&.{ "xs", "ys" }), &.{
-    get("x"),                                                          load(0),                                                           c32(0),    op("lt_s"),        set("xs"),
-    get("y"),                                                          load(0),                                                           c32(0),    op("lt_s"),        get("flip"),
-    op("xor"),                                                         set("ys"),                                                         get("xs"), get("ys"),         op("eq"),
-    when(&.{ get("x"), get("y"), get("xs"), call("__bn_addm"), ret }), get("x"),                                                          get("y"),  call("__bn_cmpm"), c32(0),
-    op("ge_s"),                                                        when(&.{ get("x"), get("y"), get("xs"), call("__bn_subm"), ret }), get("y"),  get("x"),          get("ys"),
-    call("__bn_subm"),
-});
-
-/// `-x`.
-const bn_neg = func("__bn_neg", &.{"x"}, .i32, i32s(&.{ "n", "r" }), &.{
-    get("x"), call("__bn_n"),   set("n"),
-    get("n"), call("__bn_new"), set("r"),
-    get("r"), c32(4),           op("add"),
-    get("x"), c32(4),           op("add"),
-    get("n"), c32(2),           op("shl"),
-    copy,     get("r"),         c32(0),
-    get("x"), load(0),          op("sub"),
-    store(0), get("r"),
-});
-
-/// `x * y`, schoolbook.
-const bn_mul = func("__bn_mul", &.{ "x", "y" }, .i32, &.{ l32("an"), l32("bn"), l32("r"), l32("i"), l32("j"), l64("ai"), l64("t"), l64("c") }, &.{
-    get("x"),         call("__bn_n"), set("an"),
-    get("y"),         call("__bn_n"), set("bn"),
-    get("an"),        op("eqz"),      get("bn"),
-    op("eqz"),        op("or"),       when(&.{ c32(0), call("__bn_new"), ret }),
-    get("an"),        get("bn"),      op("add"),
-    call("__bn_new"), set("r"),
-    loop(&.{
-        get("i"),        get("an"), op("ge_u"),      brk,
-        get("x"),        get("i"),  call("__bn_at"), load(0),
-        extU,            set("ai"), c64(0),          set("c"),
-        c32(0),          set("j"),
-        loopAs("b2", "c2", &.{
-            get("j"),      get("bn"), op("ge_u"),      bn_b2,
-            get("ai"),     get("y"),  get("j"),        call("__bn_at"),
-            load(0),       extU,      op64("mul"),     get("r"),
-            get("i"),      get("j"),  op("add"),       call("__bn_at"),
-            load(0),       extU,      op64("add"),     get("c"),
-            op64("add"),   set("t"),  get("r"),        get("i"),
-            get("j"),      op("add"), call("__bn_at"), get("t"),
-            wrap,          store(0),  get("t"),        c64(32),
-            op64("shr_u"), set("c"),  get("j"),        c32(1),
-            op("add"),     set("j"),  bn_c2,
-        }),
-        get("r"),        get("i"),  get("bn"),       op("add"),
-        call("__bn_at"), get("c"),  wrap,            store(0),
-        get("i"),        c32(1),    op("add"),       set("i"),
-        again,
-    }),
-    get("r"),         get("x"),       load(0),
-    get("y"),         load(0),        op("xor"),
-    c32(0),           op("lt_s"),     call("__bn_fix"),
-});
-
-/// The `n` limbs at `w` divided in place by the word `d`; the remainder.
-const bn_divw = func("__bn_divw", &.{ "w", "n", "d" }, .i32, &.{ l32("i"), l64("r"), l64("cur"), l64("dd") }, &.{
-    get("d"), extU,     set("dd"),
-    get("n"), set("i"),
-    loop(&.{
-        get("i"),    op("eqz"),     brk,
-        get("i"),    c32(1),        op("sub"),
-        set("i"),    get("r"),      c64(32),
-        op64("shl"), get("w"),      get("i"),
-        c32(2),      op("shl"),     op("add"),
-        load(0),     extU,          op64("or"),
-        set("cur"),  get("w"),      get("i"),
-        c32(2),      op("shl"),     op("add"),
-        get("cur"),  get("dd"),     op64("div_u"),
-        wrap,        store(0),      get("cur"),
-        get("dd"),   op64("rem_u"), set("r"),
-        again,
-    }),
-    get("r"), wrap,
-});
-
-/// Whether the `m + 1` limbs of `r` hold at least the `m` limbs of `y`.
-const bn_ge = func("__bn_ge", &.{ "r", "y", "m" }, .i32, i32s(&.{ "i", "a", "b" }), &.{
-    get("r"), get("m"), call("__bn_at"), load(0), when(&.{ c32(1), ret }),
-    get("m"), set("i"),
-    loop(&.{
-        get("i"),                op("eqz"),  brk,
-        get("i"),                c32(1),     op("sub"),
-        set("i"),                get("r"),   get("i"),
-        call("__bn_at"),         load(0),    set("a"),
-        get("y"),                get("i"),   call("__bn_at"),
-        load(0),                 set("b"),   get("a"),
-        get("b"),                op("gt_u"), when(&.{ c32(1), ret }),
-        get("a"),                get("b"),   op("lt_u"),
-        when(&.{ c32(0), ret }), again,
-    }),
-    c32(1),
-});
-
-/// The `m + 1` limbs of `r` less the `m` limbs of `y`, in place.
-const bn_subw = func("__bn_subw", &.{ "r", "y", "m" }, null, &.{ l32("i"), l64("s"), l64("c") }, &.{
-    loop(&.{
-        get("i"),    get("m"), c32(1),          op("add"),                                                                                       op("ge_u"),      brk,
-        get("r"),    get("i"), call("__bn_at"), load(0),                                                                                         extU,            set("s"),
-        get("i"),    get("m"), op("lt_u"),      when(&.{ get("s"), get("y"), get("i"), call("__bn_at"), load(0), extU, op64("sub"), set("s") }), get("s"),        get("c"),
-        op64("sub"), set("s"), get("r"),        get("i"),                                                                                        call("__bn_at"), get("s"),
-        wrap,        store(0), get("s"),        c64(63),                                                                                         op64("shr_u"),   set("c"),
-        get("i"),    c32(1),   op("add"),       set("i"),                                                                                        again,
-    }),
-});
-
-/// `x / y` truncated toward zero, or — when `rem` — `x % y` with `x`'s sign.
-/// A zero `y` traps (an integer `/` or `%` by zero aborts, decision 264).
-const bn_divmod = func("__bn_divmod", &.{ "x", "y", "rem" }, .i32, i32s(&.{ "an", "bn", "q", "r", "t", "k", "j", "cb", "v", "ad" }), &.{
-    get("x"),         call("__bn_n"),                                                                     set("an"),
-    get("y"),         call("__bn_n"),                                                                     set("bn"),
-    get("bn"),        op("eqz"),                                                                          when(&.{trap}),
-    get("x"),         get("y"),                                                                           call("__bn_cmpm"),
-    c32(0),           op("lt_s"),                                                                         when(&.{ get("rem"), when(&.{ get("x"), ret }), c32(0), call("__bn_new"), ret }),
-    get("an"),        call("__bn_new"),                                                                   set("q"),
-    get("bn"),        c32(1),                                                                             op("eq"),
-    when(&.{
-        get("q"), c32(4),   op("add"), get("x"),  c32(4),   op("add"), get("an"),         c32(2),     op("shl"),        copy,
-        get("q"), c32(4),   op("add"), get("an"), get("y"), load(4),   call("__bn_divw"), set("t"),   get("rem"),       when(&.{ c32(1), call("__bn_new"), set("r"), get("r"), get("t"), store(4), get("r"), get("x"), load(0), c32(0), op("lt_s"), call("__bn_fix"), ret }),
-        get("q"), get("x"), load(0),   get("y"),  load(0),  op("xor"), c32(0),            op("lt_s"), call("__bn_fix"), ret,
-    }),
-    get("bn"),        c32(1),                                                                             op("add"),
-    call("__bn_new"), set("r"),                                                                           get("an"),
-    c32(5),           op("shl"),                                                                          set("k"),
-    loop(&.{
-        get("k"),    op("eqz"),       brk,
-        get("k"),    c32(1),          op("sub"),
-        set("k"),    c32(0),          set("cb"),
-        c32(0),      set("j"),
-        loopAs("b2", "c2", &.{
-            get("j"),    get("bn"), op("gt_u"),      bn_b2,
-            get("r"),    get("j"),  call("__bn_at"), set("ad"),
-            get("ad"),   load(0),   set("v"),        get("ad"),
-            get("v"),    c32(1),    op("shl"),       get("cb"),
-            op("or"),    store(0),  get("v"),        c32(31),
-            op("shr_u"), set("cb"), get("j"),        c32(1),
-            op("add"),   set("j"),  bn_c2,
-        }),
-        get("r"),    get("r"),        load(4),
-        get("x"),    get("k"),        c32(5),
-        op("shr_u"), call("__bn_at"), load(0),
-        get("k"),    c32(31),         op("and"),
-        op("shr_u"), c32(1),          op("and"),
-        op("or"),    store(4),        get("r"),
-        get("y"),    get("bn"),       call("__bn_ge"),
-        when(&.{
-            get("r"),        get("y"),  get("bn"), call("__bn_subw"),
-            get("q"),        get("k"),  c32(5),    op("shr_u"),
-            call("__bn_at"), set("ad"), get("ad"), get("ad"),
-            load(0),         c32(1),    get("k"),  c32(31),
-            op("and"),       op("shl"), op("or"),  store(0),
-        }),
-        again,
-    }),
-    get("rem"),       when(&.{ get("r"), get("x"), load(0), c32(0), op("lt_s"), call("__bn_fix"), ret }), get("q"),
-    get("x"),         load(0),                                                                            get("y"),
-    load(0),          op("xor"),                                                                          c32(0),
-    op("lt_s"),       call("__bn_fix"),
-});
-
-/// `-1` / `0` / `1` as `x` is below, equal to or above `y`.
-const bn_cmp = func("__bn_cmp", &.{ "x", "y" }, .i32, i32s(&.{ "xs", "ys", "c" }), &.{
-    get("x"),  load(0),           c32(0),   op("lt_s"),                                                   set("xs"),
-    get("y"),  load(0),           c32(0),   op("lt_s"),                                                   set("ys"),
-    get("xs"), get("ys"),         op("ne"), when(&.{ get("xs"), when(&.{ c32(-1), ret }), c32(1), ret }), get("x"),
-    get("y"),  call("__bn_cmpm"), set("c"), get("xs"),                                                    when(&.{ c32(0), get("c"), op("sub"), ret }),
-    get("c"),
-});
-
-/// The `bigint` equal to the `i64` `v`.
-const bn_of = typedFunc("__bn_of", &.{p64("v")}, .i32, &.{ l32("r"), l32("neg"), l64("m") }, &.{
-    get("v"), c64(0),           op64("lt_s"),  set("neg"),
-    get("v"), set("m"),         get("neg"),    when(&.{ c64(0), get("v"), op64("sub"), set("m") }),
-    c32(2),   call("__bn_new"), set("r"),      get("r"),
-    get("m"), wrap,             store(4),      get("r"),
-    get("m"), c64(32),          op64("shr_u"), wrap,
-    store(8), get("r"),         get("neg"),    call("__bn_fix"),
-});
-
-/// The `i64` equal to `x`; a value past −2^63 … 2^63 − 1 traps (`toI64()`).
-const bn_to_i64 = typedFunc("__bn_to_i64", &.{p32("x")}, .i64, &.{ l32("n"), l64("m") }, &.{
-    get("x"),                                                                                  call("__bn_n"), set("n"),
-    get("n"),                                                                                  c32(2),         op("gt_u"),
-    when(&.{trap}),                                                                            get("n"),       when(&.{ get("x"), load(4), extU, set("m") }),
-    get("n"),                                                                                  c32(2),         op("eq"),
-    when(&.{ get("m"), get("x"), load(8), extU, c64(32), op64("shl"), op64("or"), set("m") }), get("x"),       load(0),
-    c32(0),                                                                                    op("lt_s"),     when(&.{ get("m"), c64(-9223372036854775808), op64("gt_u"), when(&.{trap}), c64(0), get("m"), op64("sub"), ret }),
-    get("m"),                                                                                  c64(0),         op64("lt_s"),
-    when(&.{trap}),                                                                            get("m"),
-});
-
-/// The `f64` equal to `x`; one no `f64` holds exactly traps (`toF64()`).
-const bn_to_f64 = typedFunc("__bn_to_f64", &.{p32("x")}, .f64, &.{ l32("n"), l32("bits"), l32("z"), l32("tz"), l32("w"), l32("s"), l64("v"), .{ .name = "f", .ty = .f64 } }, &.{
-    get("x"),                                   call("__bn_n"),                                                                                                                       set("n"),
-    get("n"),                                   op("eqz"),                                                                                                                            when(&.{ cF("0"), ret }),
-    get("n"),                                   c32(1),                                                                                                                               op("sub"),
-    c32(5),                                     op("shl"),                                                                                                                            c32(32),
-    get("x"),                                   get("n"),                                                                                                                             c32(1),
-    op("sub"),                                  call("__bn_at"),                                                                                                                      load(0),
-    op("clz"),                                  op("sub"),                                                                                                                            op("add"),
-    set("bits"),                                loop(&.{ get("x"), get("z"), call("__bn_at"), load(0), brk, get("z"), c32(1), op("add"), set("z"), again }),                          get("z"),
-    c32(5),                                     op("shl"),                                                                                                                            get("x"),
-    get("z"),                                   call("__bn_at"),                                                                                                                      load(0),
-    op("ctz"),                                  op("add"),                                                                                                                            set("tz"),
-    get("bits"),                                get("tz"),                                                                                                                            op("sub"),
-    c32(53),                                    op("gt_u"),                                                                                                                           when(&.{trap}),
-    get("bits"),                                c32(1024),                                                                                                                            op("gt_u"),
-    when(&.{trap}),                             get("tz"),                                                                                                                            c32(5),
-    op("shr_u"),                                set("w"),                                                                                                                             get("tz"),
-    c32(31),                                    op("and"),                                                                                                                            set("s"),
-    get("x"),                                   get("w"),                                                                                                                             call("__bn_at"),
-    load(0),                                    extU,                                                                                                                                 set("v"),
-    get("w"),                                   c32(1),                                                                                                                               op("add"),
-    get("n"),                                   op("lt_u"),                                                                                                                           when(&.{ get("v"), get("x"), get("w"), c32(1), op("add"), call("__bn_at"), load(0), extU, c64(32), op64("shl"), op64("or"), set("v") }),
-    get("v"),                                   get("s"),                                                                                                                             extU,
-    op64("shr_u"),                              set("v"),                                                                                                                             get("s"),
-    when(&.{
-        get("w"),                                                                                                                                                             c32(2), op("add"), get("n"), op("lt_u"),
-        when(&.{ get("v"), get("x"), get("w"), c32(2), op("add"), call("__bn_at"), load(0), extU, c64(64), get("s"), extU, op64("sub"), op64("shl"), op64("or"), set("v") }),
-    }),
-    get("v"),                                   cv("f64.convert_i64_u"),                                                                                                              set("f"),
-    get("tz"),                                  when(&.{ get("f"), c64(1023), get("tz"), extU, op64("add"), c64(52), op64("shl"), cv("f64.reinterpret_i64"), opF("mul"), set("f") }), get("x"),
-    load(0),                                    c32(0),                                                                                                                               op("lt_s"),
-    when(&.{ get("f"), opF("neg"), set("f") }), get("f"),
-});
-
-/// `x`'s decimal digits as a fresh string (a `-` first when negative).
-const bn_to_str = func("__bn_to_str", &.{"x"}, .i32, i32s(&.{ "n", "w", "wn", "ch", "k", "i", "j", "len", "s", "pos", "c", "first", "cnt", "neg" }), &.{
-    get("x"),        call("__bn_n"),                                                                         set("n"),
-    get("n"),        op("eqz"),                                                                              when(&.{ c32(5), call("__alloc"), set("s"), get("s"), c32(1), store(0), get("s"), c32('0'), store8(4), get("s"), ret }),
-    get("n"),        c32(2),                                                                                 op("shl"),
-    call("__alloc"), set("w"),                                                                               get("w"),
-    get("x"),        c32(4),                                                                                 op("add"),
-    get("n"),        c32(2),                                                                                 op("shl"),
-    copy,            get("n"),                                                                               set("wn"),
-    get("n"),        c32(32),                                                                                op("mul"),
-    c32(29),         op("div_u"),                                                                            c32(2),
-    op("add"),       c32(2),                                                                                 op("shl"),
-    call("__alloc"), set("ch"),
-    loop(&.{
-        get("wn"), op("eqz"),       brk,
-        get("ch"), get("k"),        c32(2),
-        op("shl"), op("add"),       get("w"),
-        get("wn"), c32(1000000000), call("__bn_divw"),
-        store(0),  get("k"),        c32(1),
-        op("add"), set("k"),
-        loopAs("b2", "c2", &.{
-            get("wn"), op("eqz"), bn_b2,
-            get("w"),  get("wn"), c32(1),
-            op("sub"), c32(2),    op("shl"),
-            op("add"), load(0),   bn_b2,
-            get("wn"), c32(1),    op("sub"),
-            set("wn"), bn_c2,
-        }),
-        again,
-    }),
-    get("ch"),       get("k"),                                                                               c32(1),
-    op("sub"),       c32(2),                                                                                 op("shl"),
-    op("add"),       load(0),                                                                                set("first"),
-    get("first"),    set("c"),                                                                               loop(&.{ get("cnt"), c32(1), op("add"), set("cnt"), get("c"), c32(10), op("div_u"), tee("c"), op("eqz"), brk, again }),
-    get("x"),        load(0),                                                                                c32(0),
-    op("lt_s"),      set("neg"),                                                                             get("neg"),
-    get("cnt"),      op("add"),                                                                              get("k"),
-    c32(1),          op("sub"),                                                                              c32(9),
-    op("mul"),       op("add"),                                                                              set("len"),
-    get("len"),      c32(4),                                                                                 op("add"),
-    call("__alloc"), set("s"),                                                                               get("s"),
-    get("len"),      store(0),                                                                               get("s"),
-    c32(4),          op("add"),                                                                              set("pos"),
-    get("neg"),      when(&.{ get("pos"), c32('-'), store8(0), get("pos"), c32(1), op("add"), set("pos") }), get("first"),
-    set("c"),        get("cnt"),                                                                             set("i"),
-    loop(&.{
-        get("i"),    op("eqz"),  brk,
-        get("i"),    c32(1),     op("sub"),
-        set("i"),    get("pos"), get("i"),
-        op("add"),   get("c"),   c32(10),
-        op("rem_u"), c32('0'),   op("add"),
-        store8(0),   get("c"),   c32(10),
-        op("div_u"), set("c"),   again,
-    }),
-    get("pos"),      get("cnt"),                                                                             op("add"),
-    set("pos"),      get("k"),                                                                               c32(1),
-    op("sub"),       set("j"),
-    loop(&.{
-        get("j"),   op("eqz"), brk,
-        get("j"),   c32(1),    op("sub"),
-        set("j"),   get("ch"), get("j"),
-        c32(2),     op("shl"), op("add"),
-        load(0),    set("c"),  c32(9),
-        set("i"),
-        loopAs("b2", "c2", &.{
-            get("i"),    op("eqz"),  bn_b2,
-            get("i"),    c32(1),     op("sub"),
-            set("i"),    get("pos"), get("i"),
-            op("add"),   get("c"),   c32(10),
-            op("rem_u"), c32('0'),   op("add"),
-            store8(0),   get("c"),   c32(10),
-            op("div_u"), set("c"),   bn_c2,
-        }),
-        get("pos"), c32(9),    op("add"),
-        set("pos"), again,
-    }),
-    get("s"),
-});
-
-/// The `bigint` a decimal numeral spells — an optional `+` or `-`, then one
-/// or more digits and nothing else — or `0` (no pointer) for any other text.
-const bn_from_str = func("__bn_from_str", &.{"s"}, .i32, &.{ l32("len"), l32("i"), l32("neg"), l32("r"), l32("rn"), l32("j"), l32("d"), l64("t"), l64("carry") }, &.{
-    get("s"),                                         load(0),                      set("len"),
-    get("len"),                                       op("eqz"),                    when(&.{ c32(0), ret }),
-    get("s"),                                         load8(4),                     set("d"),
-    get("d"),                                         c32('-'),                     op("eq"),
-    when(&.{ c32(1), set("neg"), c32(1), set("i") }), get("d"),                     c32('+'),
-    op("eq"),                                         when(&.{ c32(1), set("i") }), get("i"),
-    get("len"),                                       op("ge_u"),                   when(&.{ c32(0), ret }),
-    get("i"),                                         set("j"),
-    loop(&.{
-        get("j"),  get("len"), op("ge_u"),              brk,
-        get("s"),  c32(4),     op("add"),               get("j"),
-        op("add"), load8(0),   c32('0'),                op("sub"),
-        c32(9),    op("gt_u"), when(&.{ c32(0), ret }), get("j"),
-        c32(1),    op("add"),  set("j"),                again,
-    }),
-    get("len"),                                       c32(3),                       op("shr_u"),
-    c32(2),                                           op("add"),                    call("__bn_new"),
-    set("r"),
-    loop(&.{
-        get("i"),     get("len"),   op("ge_u"), brk,
-        get("s"),     c32(4),       op("add"),  get("i"),
-        op("add"),    load8(0),     c32('0'),   op("sub"),
-        extU,         set("carry"), c32(0),     set("j"),
-        loopAs("b2", "c2", &.{
-            get("j"),        get("rn"), op("ge_u"),      bn_b2,
-            get("r"),        get("j"),  call("__bn_at"), load(0),
-            extU,            c64(10),   op64("mul"),     get("carry"),
-            op64("add"),     set("t"),  get("r"),        get("j"),
-            call("__bn_at"), get("t"),  wrap,            store(0),
-            get("t"),        c64(32),   op64("shr_u"),   set("carry"),
-            get("j"),        c32(1),    op("add"),       set("j"),
-            bn_c2,
-        }),
-        get("carry"), c64(0),       op64("ne"), when(&.{ get("r"), get("rn"), call("__bn_at"), get("carry"), wrap, store(0), get("rn"), c32(1), op("add"), set("rn") }),
-        get("i"),     c32(1),       op("add"),  set("i"),
-        again,
-    }),
-    get("r"),                                         get("rn"),                    c32(2),
-    op("shl"),                                        store(0),                     get("r"),
-    get("neg"),                                       call("__bn_fix"),
-});
-
-/// `x == y` over two `?bigint`s (the block's address or `0`): both absent, or
-/// both present and equal.
-const bn_eq_opt = func("__bn_eq_opt", &.{ "x", "y" }, .i32, &.{}, &.{
-    get("x"),                                      op("eqz"), get("y"), op("eqz"),        op("or"),
-    when(&.{ get("x"), get("y"), op("eq"), ret }), get("x"),  get("y"), call("__bn_cmp"), op("eqz"),
-});

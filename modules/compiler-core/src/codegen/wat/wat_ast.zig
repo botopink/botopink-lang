@@ -454,25 +454,9 @@ pub const HelperGroup = enum {
     i32_abs,
     i32_min,
     i32_max,
-    i32_to_str,
-    f64_to_str,
     str_case,
-    str_index_of,
-    str_starts_with,
-    str_ends_with,
-    str_split,
-    str_repeat,
     arr_new,
-    arr_slice,
-    arr_reverse,
-    arr_prepend,
     arr_push,
-    arr_concat,
-    arr_zip,
-    arr_index_of_i32,
-    arr_index_of_str,
-    arr_join_str,
-    arr_join_i32,
     /// `$__print_arr_i32` `$__print_arr_i32_raw`.
     print_arr_i32,
     /// `$__print_arr_f64` `$__print_arr_f64_raw`.
@@ -495,8 +479,6 @@ pub const HelperGroup = enum {
     /// prints each field by its shape, so neither is complete without the
     /// other.
     print_shaped,
-    /// `$__str_at` — `s.at(i)` as a `?string`.
-    str_at,
     /// `$__print_opt_tagged` (+`_raw`) — a `?T` whose `T` is a record. The
     /// tagged printer reads a header four bytes behind the value, so absence
     /// has to be answered before it is called. Last in declaration order, so
@@ -508,48 +490,12 @@ pub const HelperGroup = enum {
     /// module's own dispatch (one descriptor compare per type declaring
     /// `display`), so the group renders alone and a module gets its answer.
     display_of,
-    /// `$__str_char_code(s, i)` — the code point at code-point index `i`, `-1` outside the string.
-    str_char_code,
-    /// `$__str_last_index_of(s, sub)` — the last byte offset of `sub`, `-1` when absent.
-    str_last_index_of,
-    /// `$__str_pad(s, width, pad, start)` — `padStart` (`start = 1`) / `padEnd`.
-    str_pad,
-    /// `$__str_replace(s, pat, with, all)` — `replace` (`all = 0`) / `replaceAll`.
-    str_replace,
     /// The readers of decision 8 §11's box — a value in an `unknown` or union
     /// slot: `$__unknown_kind`, `$__unknown_int_in`, `$__unknown_as_i32`,
     /// `$__unknown_as_f64`, `$__unknown_eq`.
     unknown,
     /// `$__print_unknown` (+`_raw`) — such a value printed by what it holds.
     print_unknown,
-    /// `$__arr_last_index_of_i32(xs, x)` / `_str` — `xs.lastIndexOf(x)`, the
-    /// last index of `x` by `indexOf`'s equality, `-1` when absent.
-    arr_last_index_of_i32,
-    arr_last_index_of_str,
-    /// `$__str_lines(s)` / `$__str_words(s)` — `s.lines()` / `s.words()`.
-    str_lines,
-    str_words,
-    /// `$__arr_unique(xs, mode)` — `xs.unique()`, each value kept at its first
-    /// occurrence, compared by the slot's word (`0`), its `f64` (`1`) or a string's content (`2`).
-    arr_unique,
-    /// `$__arr_flatten(xs)` — `flatten` / `flat`, and `flatMap` after its `map`.
-    arr_flatten,
-    /// `$__arr_chunked(xs, m)` / `$__arr_sliding(xs, m)` — arrays of slices.
-    arr_chunked,
-    arr_sliding,
-    /// `$__arr_fill(n, v)` — `xs.fill(v)` as `Array.repeat(v, xs.length)`.
-    arr_fill,
-    /// Decision 240 — string indices in codepoints: `$__str_cp_len(s)`,
-    /// `$__str_cp_off(s, i)` (codepoint → byte offset), `$__str_cp_of(s, off)`
-    /// (byte offset → codepoint), `$__str_cp_slice(s, a, b)`, `$__str_cp_at(s, i)`,
-    /// `$__str_cp_index_of(s, sub)`, `$__str_cp_last_index_of(s, sub)`.
-    str_cp_len,
-    str_cp_off,
-    str_cp_of,
-    str_cp_slice,
-    str_cp_at,
-    str_cp_index_of,
-    str_cp_last_index_of,
     /// `$__wasi_random_f64()` — decision 238's `wasi:random_f64`, plus the
     /// `random_get` import.
     wasi_random_f64,
@@ -560,21 +506,11 @@ pub const HelperGroup = enum {
     wasi_seed_u32,
     /// `$__wasi_seeded_f64()` — `wasi:seeded_f64`.
     wasi_seeded_f64,
-    /// An integer's decimal digits: the `$__int_ws` workspace global and
-    /// function, `$__fmt_u64` and `$__i64_fmt`. A float's text is std-wasm's
-    /// (`$__f64_to_str`, decisions 440, 441).
-    int_fmt,
     /// `$__box_f64(x)` — a float's 8-byte cell, the word a float slot holds.
     box_f64,
-    /// `$__arr_index_of_f64` / `$__arr_last_index_of_f64` — `f64.eq` over the cells.
-    arr_index_of_f64,
-    arr_last_index_of_f64,
-    /// `$__arr_join_f64(xs, sep)` — each cell as `String(x)`.
-    arr_join_f64,
-    /// `$__print_i64` (+`_raw`) — an `i64` in all its digits.
+    /// `$__print_i64` (+`_raw`) — an `i64` in all its digits (std-wasm's
+    /// `number.i64Text`).
     print_i64,
-    /// `$__i64_to_str(v)` — an `i64` as a fresh string.
-    i64_to_str,
     /// `$__box_i64(v)` — an `i64`'s 8-byte cell, the word an `i64` slot holds.
     box_i64,
     /// `$__print_opt_i64` (+`_raw`) — a `?i64`, the address of its cell.
@@ -582,10 +518,6 @@ pub const HelperGroup = enum {
     /// `$__i32_{add,sub,mul}_chk` / `$__i64_…_chk` — integer arithmetic that
     /// traps where the result does not fit its type, instead of wrapping.
     int_chk,
-    /// `$__str_from_cp(cp)` — decision 262's `String.fromCodepoint(cp)`: the
-    /// code point's UTF-8 bytes as a fresh string; traps on a value that is
-    /// no Unicode scalar value (negative, a surrogate, past U+10FFFF).
-    str_from_cp,
     /// `$__i32_range_chk(v, lo, hi)` / `$__i64_range_chk` — decision 264's
     /// check of a type narrower than its carrier (`i8` in an `i32`, `u32` in
     /// an `i64`): `v` inside `lo..=hi`, a trap outside. Groups of their own,
@@ -593,14 +525,11 @@ pub const HelperGroup = enum {
     i32_range_chk,
     i64_range_chk,
     /// Decision 319 — a `u64` / `usize` is `0 … 2^64 − 1` in its `i64`
-    /// carrier: `$__u64_fmt(v)` writes the carrier's bits as unsigned
-    /// digits, `$__print_u64` (+`_raw`) and `$__u64_to_str(v)` print and
-    /// stringify through it, and `$__u64_{add,sub,mul}_chk` trap where the
-    /// unsigned result leaves the range. Groups of their own, appended, so a
-    /// module that never asks for one renders as before.
-    u64_fmt,
+    /// carrier: `$__print_u64` (+`_raw`) writes the carrier's bits as
+    /// unsigned digits (std-wasm's `number.u64Text`), and
+    /// `$__u64_{add,sub,mul}_chk` trap where the unsigned result leaves the
+    /// range.
     print_u64,
-    u64_to_str,
     u64_chk,
     /// `$__print_opt_u64` (+`_raw`) — a `?u64`, the address of its cell,
     /// written through `$__print_u64_raw`. Appended, as the `u64` groups.
@@ -633,14 +562,12 @@ pub const HelperGroup = enum {
     task_spawn_all,
     /// Decision 332 — `bigint`, an integer of any size: a pointer to an
     /// immutable `[L][limb0][limb1]…` block, `L` the limbs' byte count
-    /// negated for a negative value (`0` is zero), the limbs little-endian
-    /// `u32`s with no zero limb on top — a positive literal is a data segment
-    /// of the string layout. `$__bn_add(x, y, flip)`, `$__bn_neg`,
-    /// `$__bn_mul`, `$__bn_divmod(x, y, rem)` (truncating, traps on a zero
-    /// divisor), `$__bn_cmp`, `$__bn_of(i64)`, `$__bn_to_i64` (traps past the
-    /// range), `$__bn_to_f64` (traps unless exact), `$__bn_to_str`,
-    /// `$__bn_from_str` (`0` for no numeral) and their parts. One group,
-    /// appended, linked only when a module uses `bigint`.
+    /// negated for a negative value (`0` is zero) — a positive literal is a
+    /// data segment of the string layout. Its arithmetic is std-wasm's
+    /// (`bigint.*`, decision 442 (2)), called by the codegen with the blocks'
+    /// addresses; this group holds no function: it marks a module that prints
+    /// a `bigint` inside a container, which gets `print_shaped_raw_bigint` and
+    /// links `bigint.toString` (`stdCalls`).
     bigint,
 
     /// The groups `g`'s functions call into.
@@ -648,12 +575,9 @@ pub const HelperGroup = enum {
         return switch (g) {
             .print_str, .print_bool => &.{.print},
             .str_concat, .str_slice => &.{.alloc},
-            .print_f64 => &.{ .print, .f64_to_str },
-            .int_fmt => &.{.alloc},
+            .print_f64 => &.{.print},
             .box_f64 => &.{.alloc},
-            .arr_join_f64 => &.{ .arr_new, .f64_to_str, .arr_join_str },
-            .print_i64 => &.{ .print, .int_fmt },
-            .i64_to_str => &.{ .int_fmt, .alloc },
+            .print_i64 => &.{.print},
             .box_i64 => &.{.alloc},
             .print_opt_i64 => &.{ .print, .print_opt, .print_i64 },
             .print_arr_i32 => &.{.print},
@@ -665,43 +589,33 @@ pub const HelperGroup = enum {
             .print_opt_tagged => &.{ .print, .print_opt, .print_shaped },
             .assert_fail => &.{.print},
             .print_shaped => &.{ .print, .print_bool, .print_f64, .print_i64, .print_u64, .display_of },
-            .i32_to_str, .str_case, .str_repeat, .arr_new => &.{.alloc},
-            .f64_to_str => &.{.alloc},
-            .str_index_of, .str_starts_with, .str_ends_with => &.{.mem_eq},
-            .str_at => &.{.str_slice},
-            .str_split => &.{ .arr_new, .mem_eq, .str_slice },
-            .arr_slice, .arr_reverse, .arr_prepend, .arr_push, .arr_concat => &.{.arr_new},
-            .arr_zip => &.{ .arr_new, .alloc },
-            .arr_index_of_str, .arr_last_index_of_str => &.{.str_eq},
-            .arr_join_str => &.{.alloc},
-            .arr_join_i32 => &.{ .arr_new, .i32_to_str, .arr_join_str },
-            .str_last_index_of => &.{.mem_eq},
-            .str_pad => &.{.alloc},
-            .str_replace => &.{ .alloc, .str_concat, .str_slice, .str_index_of },
+            .str_case, .arr_new => &.{.alloc},
+            .arr_push => &.{.arr_new},
             .unknown => &.{.str_eq},
             .print_unknown => &.{ .print, .print_bool, .print_f64, .print_str, .print_opt, .print_shaped, .unknown },
-            .str_lines, .str_words => &.{ .arr_new, .str_slice },
-            .arr_unique => &.{ .arr_new, .str_eq },
-            .arr_flatten, .arr_fill => &.{.arr_new},
-            .arr_chunked, .arr_sliding => &.{ .arr_new, .arr_slice },
-            .str_cp_slice => &.{ .str_cp_len, .str_cp_off, .str_slice },
-            .str_cp_at => &.{ .str_cp_len, .str_cp_slice },
-            .str_cp_index_of => &.{ .str_cp_of, .str_index_of },
-            .str_cp_last_index_of => &.{ .str_cp_of, .str_last_index_of },
             .wasi_seed_u32 => &.{.wasi_seed_state},
             .wasi_seeded_f64 => &.{ .wasi_seed_state, .wasi_random_f64 },
-            .str_from_cp => &.{.alloc},
-            .u64_fmt => &.{.int_fmt},
-            .print_u64 => &.{ .print, .u64_fmt },
+            .print_u64 => &.{.print},
             .print_opt_u64 => &.{ .print, .print_opt, .print_u64 },
-            .u64_to_str => &.{ .alloc, .u64_fmt },
             .task => &.{ .alloc, .task_resume, .task_poll },
             .task_host => &.{.task},
             .task_delay => &.{.task_host},
             .task_race => &.{.task},
             .task_race_of => &.{ .task_race, .arr_new },
             .task_spawn_all => &.{ .task, .arr_new },
-            .bigint => &.{.alloc},
+            else => &.{},
+        };
+    }
+
+    /// The std-wasm functions `g`'s functions call (decision 442 (1)): the
+    /// text of a number a print helper writes is std-wasm's, the I/O is the
+    /// prelude's. A module that holds `g` links each (`std_wasm_link.zig`).
+    pub fn stdCalls(g: HelperGroup) []const []const u8 {
+        return switch (g) {
+            .print_f64 => &.{"number.floatToString"},
+            .print_i64 => &.{"number.i64Text"},
+            .print_u64 => &.{"number.u64Text"},
+            .bigint => &.{"bigint.toString"},
             else => &.{},
         };
     }
@@ -732,25 +646,9 @@ pub const Helper = enum {
     i32_abs,
     i32_min,
     i32_max,
-    i32_to_str,
-    f64_to_str,
     str_case,
-    str_index_of,
-    str_starts_with,
-    str_ends_with,
-    str_split,
-    str_repeat,
     arr_new,
-    arr_slice,
-    arr_reverse,
-    arr_prepend,
     arr_push,
-    arr_concat,
-    arr_zip,
-    arr_index_of_i32,
-    arr_index_of_str,
-    arr_join_str,
-    arr_join_i32,
     print_arr_i32,
     print_arr_i32_raw,
     print_arr_f64,
@@ -770,16 +668,11 @@ pub const Helper = enum {
     assert_fail,
     print_quoted_raw,
     print_shaped_raw,
-    str_at,
     print_tagged_raw,
     print_tagged,
     print_opt_tagged,
     print_opt_tagged_raw,
     display_of,
-    str_char_code,
-    str_last_index_of,
-    str_pad,
-    str_replace,
     unknown_kind,
     unknown_int_in,
     unknown_as_i32,
@@ -787,32 +680,12 @@ pub const Helper = enum {
     unknown_eq,
     print_unknown,
     print_unknown_raw,
-    arr_last_index_of_i32,
-    arr_last_index_of_str,
-    str_lines,
-    str_words,
-    arr_unique,
-    arr_flatten,
-    arr_chunked,
-    arr_sliding,
-    arr_fill,
-    str_cp_len,
-    str_cp_off,
-    str_cp_of,
-    str_cp_slice,
-    str_cp_at,
-    str_cp_index_of,
-    str_cp_last_index_of,
     wasi_random_f64,
     wasi_seed_u32,
     wasi_seeded_f64,
     box_f64,
-    arr_index_of_f64,
-    arr_last_index_of_f64,
-    arr_join_f64,
     print_i64,
     print_i64_raw,
-    i64_to_str,
     box_i64,
     print_opt_i64,
     print_opt_i64_raw,
@@ -824,10 +697,8 @@ pub const Helper = enum {
     i64_mul_chk,
     i32_range_chk,
     i64_range_chk,
-    str_from_cp,
     print_u64,
     print_u64_raw,
-    u64_to_str,
     u64_add_chk,
     u64_sub_chk,
     u64_mul_chk,
@@ -854,27 +725,6 @@ pub const Helper = enum {
     task_race,
     task_race_of,
     task_spawn_all,
-    bn_n,
-    bn_at,
-    bn_new,
-    bn_fix,
-    bn_cmpm,
-    bn_addm,
-    bn_subm,
-    bn_add,
-    bn_neg,
-    bn_mul,
-    bn_divw,
-    bn_ge,
-    bn_subw,
-    bn_divmod,
-    bn_cmp,
-    bn_of,
-    bn_to_i64,
-    bn_to_f64,
-    bn_to_str,
-    bn_from_str,
-    bn_eq_opt,
 
     pub fn symbol(h: Helper) []const u8 {
         return switch (h) {
@@ -907,7 +757,6 @@ pub const Helper = enum {
             .task_new, .task_start, .task_pending, .task_listen, .task_wait, .task_settle_i32, .task_settle_i64, .task_settle_f64, .task_wake, .task_enqueue, .task_drain, .task_block_on, .task_finish => .task,
             .task_host_poll => .task_poll,
             .task_host_add, .task_host_settle => .task_host,
-            .bn_n, .bn_at, .bn_new, .bn_fix, .bn_cmpm, .bn_addm, .bn_subm, .bn_add, .bn_neg, .bn_mul, .bn_divw, .bn_ge, .bn_subw, .bn_divmod, .bn_cmp, .bn_of, .bn_to_i64, .bn_to_f64, .bn_to_str, .bn_from_str, .bn_eq_opt => .bigint,
             inline else => |t| @field(HelperGroup, @tagName(t)),
         };
     }

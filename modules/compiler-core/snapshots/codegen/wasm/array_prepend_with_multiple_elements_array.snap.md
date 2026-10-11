@@ -8,7 +8,7 @@ val list3 = [1, 2, ..[3, 4]];
 (module
   (memory (export "memory") 1)
   (start $__init_globals)
-  (global $__heap_ptr (mut i32) (i32.const 256))
+  (global $__heap_ptr (mut i32) (i32.const 288))
   (global $list3 (mut i32) (i32.const 0))
   (func $__init_globals
     (local $__mem0 i32)
@@ -39,7 +39,7 @@ val list3 = [1, 2, ..[3, 4]];
     i32.const 4
     i32.store offset=8
     local.get $__mem1
-    call $__arr_concat
+    call $__std_array_concat
     global.set $list3
   )
   (func $__alloc (param $n i32) (result i32)
@@ -90,59 +90,11 @@ val list3 = [1, 2, ..[3, 4]];
     global.set $__heap_ptr
     local.get $p
   )
-  (func $__arr_new (param $n i32) (result i32)
-    (local $p i32)
-    local.get $n
-    i32.const 1
-    i32.add
-    i32.const 4
-    i32.mul
-    call $__alloc
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.store
-    local.get $p
-  )
-  (func $__arr_concat (param $a i32) (param $b i32) (result i32)
-    (local $na i32) (local $nb i32) (local $p i32)
-    local.get $a
-    i32.load
-    local.set $na
-    local.get $b
-    i32.load
-    local.set $nb
-    local.get $na
-    local.get $nb
-    i32.add
-    call $__arr_new
-    local.set $p
-    local.get $p
-    i32.const 4
-    i32.add
-    local.get $a
-    i32.const 4
-    i32.add
-    local.get $na
-    i32.const 4
-    i32.mul
-    memory.copy
-    local.get $p
-    i32.const 4
-    i32.add
-    local.get $na
-    i32.const 4
-    i32.mul
-    i32.add
-    local.get $b
-    i32.const 4
-    i32.add
-    local.get $nb
-    i32.const 4
-    i32.mul
-    memory.copy
-    local.get $p
-  )
+  ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
+  (global $__std_sp (mut i32) (i32.const 288))
+  ;; __std_f23 — from std_wasm.wasm (sha256 d13a98c08300)
+  ;; __std_f25 — from std_wasm.wasm (sha256 6a251c47e9bb)
+  ;; std:array.concat — from std_wasm.wasm (sha256 76bea810e576)
 )
 ```
 

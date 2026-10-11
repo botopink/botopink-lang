@@ -223,6 +223,7 @@ behavior String {
     // form counts the binary's decoded codepoints.
     #[@External.Erlang("erlang:length(unicode:characters_to_list($0))")]
     #[@External.Node("length")]
+    #[@External.Wasm("std:text.length")]
     fn length(self: Self) -> i32;
 
     // `string:split/3` answers the whole string for an empty separator, while
@@ -231,6 +232,7 @@ behavior String {
     // codepoints (`"".split("")` answers `[]`, as on JS).
     #[@External.Erlang("""(fun(__S, <<>>) -> [<<__C/utf8>> || <<__C/utf8>> <= __S]; (__S, __X) -> string:split(__S, __X, all) end)($0, $1)""")]
     #[@External.Node("split")]
+    #[@External.Wasm("std:text.split")]
     fn split(self: Self, sep: string) -> string[];
 
     #[@External.Erlang("string", "uppercase")]
@@ -243,16 +245,19 @@ behavior String {
 
     #[@External.Erlang("(string:find($0, $1) =/= nomatch)")]
     #[@External.Node("includes")]
+    #[@External.Wasm("std:text.contains")]
     fn contains(self: Self, sub: string) -> bool;
 
     #[@External.Erlang("(string:prefix($0, $1) =/= nomatch)")]
     #[@External.Node("startsWith")]
+    #[@External.Wasm("std:text.startsWith")]
     fn startsWith(self: Self, prefix: string) -> bool;
 
     // OTP has no `string:suffix/2`: the last `byte_size(suffix)` bytes are
     // compared with the suffix.
     #[@External.Erlang("""(fun(__S, __X) -> __N = byte_size(__S), __M = byte_size(__X), (__M =< __N) andalso (binary:part(__S, __N - __M, __M) =:= __X) end)($0, $1)""")]
     #[@External.Node("endsWith")]
+    #[@External.Wasm("std:text.endsWith")]
     fn endsWith(self: Self, suffix: string) -> bool;
 
     // On wasm, std-wasm's set (decision 441): space, tab, LF, CR, VT, FF —
@@ -277,6 +282,7 @@ behavior String {
     // `string:replace/3` returns an iolist, so it is flattened to a binary.
     #[@External.Erlang("iolist_to_binary(string:replace($0, $1, $2))")]
     #[@External.Node("replace")]
+    #[@External.Wasm("std:text.replace")]
     fn replace(self: Self, pattern: string, with: string) -> string;
 
     // `Slice<string>.slice` — `end` is `?i32` so an open-ended `s[1..]` can
@@ -305,6 +311,7 @@ behavior String {
     // decoded codepoint list, never `string:slice/3`'s grapheme clusters.
     #[@External.Erlang("""(fun(__S, __I) -> __L = unicode:characters_to_list(__S), __N = erlang:length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case (__J >= 0) andalso (__J < __N) of true -> unicode:characters_to_binary([lists:nth(__J + 1, __L)]); false -> undefined end end)($0, $1)""")]
     #[@External.Node("charAt")]
+    #[@External.Wasm("std:text.at")]
     fn at(self: Self, index: i32) -> ?string;
 
     // `string:str/2` takes charlists and rejects binaries (`function_clause`).
@@ -315,6 +322,7 @@ behavior String {
     // reads the character the search found.
     #[@External.Erlang("""(fun(__S, __X) -> case __X of <<>> -> 0; _ -> case binary:match(__S, __X) of nomatch -> -1; {__P, _} -> erlang:length(unicode:characters_to_list(binary:part(__S, 0, __P))) end end end)($0, $1)""")]
     #[@External.Node("indexOf")]
+    #[@External.Wasm("std:text.indexOf")]
     fn indexOf(self: Self, sub: string) -> i32;
 
     #[@External.Node("toString")]
@@ -329,9 +337,10 @@ behavior String {
     // U+10FFFF — aborts the program on every target: erlang's `/utf8`
     // segment raises `badarg` for all three, the Node cell throws a
     // `RangeError` for all three (native `String.fromCodePoint` answers a lone
-    // surrogate), and wasm's `$__str_from_cp` traps.
+    // surrogate), and wasm's std-wasm's `text.fromCodepoint` traps.
     #[@External.Erlang("<<($0)/utf8>>")]
     #[@External.Node("""((__c) => { if (!(__c >= 0 && __c <= 1114111) || (__c >= 55296 && __c <= 57343)) throw new RangeError('String.fromCodepoint: ' + __c + ' is not a Unicode scalar value'); return String.fromCodePoint(__c); })($0)""")]
+    #[@External.Wasm("std:text.fromCodepoint")]
     fn fromCodepoint(cp: i32) -> string;
 
     // ── std-tail F7.string_ext additions ────────────────────────────────────
@@ -341,30 +350,37 @@ behavior String {
 
     #[@External.Erlang("(fun(__S, __L, __P) -> __N = max(__L - byte_size(__S), 0), __PadBin = case __P of <<>> -> <<>>; _ -> list_to_binary(lists:duplicate(__N, binary:first(__P))) end, <<__PadBin/binary, __S/binary>> end)($0, $1, $2)")]
     #[@External.Node("padStart")]
+    #[@External.Wasm("std:text.padStart")]
     fn padStart(self: Self, length: i32, pad: string) -> string;
 
     #[@External.Erlang("(fun(__S, __L, __P) -> __N = max(__L - byte_size(__S), 0), __PadBin = case __P of <<>> -> <<>>; _ -> list_to_binary(lists:duplicate(__N, binary:first(__P))) end, <<__S/binary, __PadBin/binary>> end)($0, $1, $2)")]
     #[@External.Node("padEnd")]
+    #[@External.Wasm("std:text.padEnd")]
     fn padEnd(self: Self, length: i32, pad: string) -> string;
 
     #[@External.Erlang("binary:copy($0, $1)")]
     #[@External.Node("repeat")]
+    #[@External.Wasm("std:text.repeat")]
     fn repeat(self: Self, times: i32) -> string;
 
     #[@External.Erlang("(fun(__S, __P, __R) -> binary:replace(__S, __P, __R, [global]) end)($0, $1, $2)")]
     #[@External.Node("replaceAll")]
+    #[@External.Wasm("std:text.replaceAll")]
     fn replaceAll(self: Self, pattern: string, with: string) -> string;
 
     #[@External.Erlang("[<<__C/utf8>> || __C <- unicode:characters_to_list($0, utf8)]")]
     #[@External.Node("(Array.from($0))")]
+    #[@External.Wasm("std:text.chars")]
     fn chars(self: Self) -> string[];
 
     #[@External.Erlang("""binary:split($0, [<<"\r\n">>, <<"\n">>], [global])""")]
     #[@External.Node("""$0.split(/\r?\n/)""")]
+    #[@External.Wasm("std:text.lines")]
     fn lines(self: Self) -> string[];
 
     #[@External.Erlang("""[__W || __W <- binary:split($0, [<<" ">>, <<"\t">>, <<"\n">>, <<"\r">>], [global]), __W =/= <<>>]""")]
     #[@External.Node("""$0.split(/[ \t\n\r]+/).filter(__w => __w.length > 0)""")]
+    #[@External.Wasm("std:text.words")]
     fn words(self: Self) -> string[];
 
     // `\r\n` -> `\n`: the text as a unix host writes it. A lone `\r` stays.
@@ -398,12 +414,14 @@ behavior String {
     // CODE POINT, which is what the erlang form above answers.
     #[@External.Erlang("(fun(__S, __I) -> case unicode:characters_to_list(__S, utf8) of __L when length(__L) > __I, __I >= 0 -> lists:nth(__I + 1, __L); _ -> -1 end end)($0, $1)")]
     #[@External.Node("""((__s, __i) => { if (/[\u{D800}-\u{DFFF}\u{10000}-\u{10FFFF}]/u.test(__s)) { const __c = __i >= 0 ? Array.from(__s)[__i] : undefined; return __c === undefined ? -1 : __c.codePointAt(0); } return (__s.codePointAt(__i) ?? -1) | 0; })($0, $1)""")]
+    #[@External.Wasm("std:text.charCodeAt")]
     fn charCodeAt(self: Self, index: i32) -> i32;
 
     // The last match is found over the bytes and answered in `indexOf`'s unit
     // (decisions 169, 320): the codepoints of the text before it.
     #[@External.Erlang("(fun(__S, __Sub) -> __L = byte_size(__S), __SL = byte_size(__Sub), __Find = fun __F(__I) -> case __I < 0 of true -> -1; false -> case binary:part(__S, __I, min(__SL, __L - __I)) =:= __Sub of true -> erlang:length(unicode:characters_to_list(binary:part(__S, 0, __I))); false -> __F(__I - 1) end end end, __Find(__L - __SL) end)($0, $1)")]
     #[@External.Node("lastIndexOf")]
+    #[@External.Wasm("std:text.lastIndexOf")]
     fn lastIndexOf(self: Self, sub: string) -> i32;
 
     // The integer a decimal numeral spells: an optional `+` or `-`, then the

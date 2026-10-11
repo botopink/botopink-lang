@@ -331,7 +331,7 @@ test "path.isInside treats a name starting with two dots as a name" {
   (data (i32.const 284) "\02\00\00\00..")
   (data (i32.const 292) "\1b\00\00\00R\tPathAccum\02\05isAbsb\05parts[s")
   (data (i32.const 324) "\03\00\00\00../")
-  (global $__heap_ptr (mut i32) (i32.const 332))
+  (global $__heap_ptr (mut i32) (i32.const 1488))
   ;; std/path — pure-botopink path manipulation (posix forward-slash).
   ;; 
   ;; Reference:
@@ -362,7 +362,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     (local $p i32)
     local.get $path
     global.get $separator
-    call $__str_split
+    call $__std_text_split
     local.set $raw
     local.get $raw
     local.set $__iter0
@@ -430,7 +430,7 @@ test "path.isInside treats a name starting with two dots as a name" {
   (func $isAbsolute (export "isAbsolute") (param $path i32) (result i32)
     local.get $path
     global.get $separator
-    call $__str_starts_with
+    call $__std_text_startsWith
     return
   )
   ;; The last non-empty component of `path` (the file name, in the common
@@ -519,11 +519,11 @@ test "path.isInside treats a name starting with two dots as a name" {
     local.get $n
     i32.const 1
     call $__i32_sub_chk
-    call $__arr_slice
+    call $__std_array_slice
     local.set $head
     local.get $head
     global.get $separator
-    call $__arr_join_str
+    call $__std_array_joinStrings
     local.set $joined
     local.get $path
     call $isAbsolute
@@ -543,7 +543,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     i32.store offset=8
     local.get $__mem0
     i32.const 272
-    call $__arr_join_str
+    call $__std_array_joinStrings
       )
       (else
     local.get $joined
@@ -570,7 +570,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     local.set $base
     local.get $base
     i32.const 276
-    call $__str_split
+    call $__std_text_split
     local.set $pieces
     local.get $pieces
     i32.load ;; .length
@@ -648,7 +648,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     i32.store offset=8
     local.get $__mem0
     i32.const 272
-    call $__arr_join_str
+    call $__std_array_joinStrings
       )
     )
     return
@@ -738,7 +738,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     local.get $p
     call $split
     global.get $separator
-    call $__arr_join_str
+    call $__std_array_joinStrings
     i32.store offset=4
         local.get $__idx1
         i32.const 1
@@ -810,7 +810,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     i32.store ;; kept count
     local.get $__out2
     global.get $separator
-    call $__arr_join_str
+    call $__std_array_joinStrings
     local.set $joined
     local.get $isAbs
     (if (result i32)
@@ -829,7 +829,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     i32.store offset=8
     local.get $__mem0
     i32.const 272
-    call $__arr_join_str
+    call $__std_array_joinStrings
       )
       (else
     local.get $joined
@@ -933,7 +933,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     local.set $pieces
     local.get $pieces
     global.get $separator
-    call $__arr_join_str
+    call $__std_array_joinStrings
     local.set $joined
     local.get $isAbs
     (if (result i32)
@@ -952,7 +952,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     i32.store offset=8
     local.get $__mem0
     i32.const 272
-    call $__arr_join_str
+    call $__std_array_joinStrings
       )
       (else
     local.get $joined
@@ -1078,7 +1078,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     call $__i32_sub_chk
     call $makeUps
     i32.const 284
-    call $__arr_prepend
+    call $__std_array_prepend
       )
     )
     return
@@ -1120,15 +1120,15 @@ test "path.isInside treats a name starting with two dots as a name" {
     local.get $common
     local.get $dstParts
     i32.load ;; .length
-    call $__arr_slice
+    call $__std_array_slice
     local.set $downs
     local.get $ups
     local.get $downs
-    call $__arr_concat
+    call $__std_array_concat
     local.set $combined
     local.get $combined
     global.get $separator
-    call $__arr_join_str
+    call $__std_array_joinStrings
     local.set $joined
     local.get $joined
     i32.const 272
@@ -1191,7 +1191,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     i32.const 1
     local.get $pieces
     i32.load ;; .length
-    call $__arr_slice
+    call $__std_array_slice
     local.set $rest
     local.get $p
     i32.const 284
@@ -1213,7 +1213,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     i32.load ;; .length
     i32.const 1
     call $__i32_sub_chk
-    call $__arr_slice
+    call $__std_array_slice
       )
     )
       )
@@ -1229,7 +1229,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     local.get $p
     i32.store offset=4
     local.get $__mem0
-    call $__arr_concat
+    call $__std_array_concat
       )
     )
     local.set $nextAcc
@@ -1380,7 +1380,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     local.get $finalState
     i32.load offset=4 ;; .parts
     global.get $separator
-    call $__arr_join_str
+    call $__std_array_joinStrings
     local.set $joined
     local.get $finalState
     i32.load ;; .isAbs
@@ -1400,7 +1400,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     i32.store offset=8
     local.get $__mem2
     i32.const 272
-    call $__arr_join_str
+    call $__std_array_joinStrings
       )
       (else
     local.get $joined
@@ -1430,7 +1430,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     call $extname
     local.set $ext
     local.get $p
-    call $__str_cp_len
+    call $__std_text_length
     local.set $n
     local.get $ext
     i32.const 272
@@ -1444,9 +1444,9 @@ test "path.isInside treats a name starting with two dots as a name" {
     i32.const 0
     local.get $n
     local.get $ext
-    call $__str_cp_len
+    call $__std_text_length
     call $__i32_sub_chk
-    call $__str_cp_slice
+    call $__std_text_slice
       )
     )
     local.set $stem
@@ -1504,7 +1504,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     call $__str_eq
     local.get $rel
     i32.const 324
-    call $__str_starts_with
+    call $__std_text_startsWith
     i32.or
     local.set $escapes
     local.get $escapes
@@ -1587,35 +1587,6 @@ test "path.isInside treats a name starting with two dots as a name" {
     )
     i32.const 1
   )
-  (func $__str_slice (param $src i32) (param $start i32) (param $end i32) (result i32)
-    (local $newlen i32) (local $dst i32)
-    local.get $end
-    local.get $start
-    i32.sub
-    local.set $newlen
-    ;; allocate 4 (length prefix) + newlen
-    i32.const 4
-    local.get $newlen
-    i32.add
-    call $__alloc
-    local.set $dst
-    ;; store length prefix
-    local.get $dst
-    local.get $newlen
-    i32.store
-    ;; copy bytes: dst+4 <- src+4+start
-    local.get $dst
-    i32.const 4
-    i32.add
-    local.get $src
-    i32.const 4
-    i32.add
-    local.get $start
-    i32.add
-    local.get $newlen
-    memory.copy
-    local.get $dst
-  )
   (func $__alloc (param $n i32) (result i32)
     (local $p i32) (local $e i32)
     global.get $__heap_ptr
@@ -1664,282 +1635,6 @@ test "path.isInside treats a name starting with two dots as a name" {
     global.set $__heap_ptr
     local.get $p
   )
-  (func $__mem_eq (param $a i32) (param $b i32) (param $n i32) (result i32)
-    (local $i i32)
-    (block $brk
-      (loop $cont
-        local.get $i
-        local.get $n
-        i32.ge_u
-        br_if $brk
-        local.get $a
-        local.get $i
-        i32.add
-        i32.load8_u
-        local.get $b
-        local.get $i
-        i32.add
-        i32.load8_u
-        i32.ne
-        (if
-          (then
-            i32.const 0
-            return
-          )
-        )
-        local.get $i
-        i32.const 1
-        i32.add
-        local.set $i
-        br $cont
-      )
-    )
-    i32.const 1
-  )
-  (func $__str_starts_with (param $s i32) (param $p i32) (result i32)
-    local.get $p
-    i32.load
-    local.get $s
-    i32.load
-    i32.gt_u
-    (if
-      (then
-        i32.const 0
-        return
-      )
-    )
-    local.get $s
-    i32.const 4
-    i32.add
-    local.get $p
-    i32.const 4
-    i32.add
-    local.get $p
-    i32.load
-    call $__mem_eq
-  )
-  (func $__str_split (param $s i32) (param $sep i32) (result i32)
-    (local $n i32) (local $m i32) (local $i i32) (local $cnt i32) (local $arr i32) (local $start i32) (local $k i32)
-    local.get $s
-    i32.load
-    local.set $n
-    local.get $sep
-    i32.load
-    local.set $m
-    local.get $m
-    i32.eqz
-    (if
-      (then
-        (block $brk
-          (loop $cont
-            local.get $i
-            local.get $n
-            i32.ge_u
-            br_if $brk
-            local.get $s
-            local.get $i
-            i32.add
-            i32.load8_u offset=4
-            i32.const 192
-            i32.and
-            i32.const 128
-            i32.ne
-            (if
-              (then
-                local.get $cnt
-                i32.const 1
-                i32.add
-                local.set $cnt
-              )
-            )
-            local.get $i
-            i32.const 1
-            i32.add
-            local.set $i
-            br $cont
-          )
-        )
-        local.get $cnt
-        call $__arr_new
-        local.set $arr
-        i32.const 1
-        local.set $i
-        (block $brk
-          (loop $cont
-            local.get $i
-            local.get $n
-            i32.ge_u
-            br_if $brk
-            local.get $s
-            local.get $i
-            i32.add
-            i32.load8_u offset=4
-            i32.const 192
-            i32.and
-            i32.const 128
-            i32.ne
-            (if
-              (then
-                local.get $arr
-                i32.const 4
-                i32.add
-                local.get $k
-                i32.const 4
-                i32.mul
-                i32.add
-                local.get $s
-                local.get $start
-                local.get $i
-                call $__str_slice
-                i32.store
-                local.get $k
-                i32.const 1
-                i32.add
-                local.set $k
-                local.get $i
-                local.set $start
-              )
-            )
-            local.get $i
-            i32.const 1
-            i32.add
-            local.set $i
-            br $cont
-          )
-        )
-        local.get $n
-        (if
-          (then
-            local.get $arr
-            i32.const 4
-            i32.add
-            local.get $k
-            i32.const 4
-            i32.mul
-            i32.add
-            local.get $s
-            local.get $start
-            local.get $n
-            call $__str_slice
-            i32.store
-          )
-        )
-        local.get $arr
-        return
-      )
-    )
-    i32.const 1
-    local.set $cnt
-    (block $brk
-      (loop $cont
-        local.get $i
-        local.get $m
-        i32.add
-        local.get $n
-        i32.gt_u
-        br_if $brk
-        local.get $s
-        i32.const 4
-        i32.add
-        local.get $i
-        i32.add
-        local.get $sep
-        i32.const 4
-        i32.add
-        local.get $m
-        call $__mem_eq
-        (if
-          (then
-            local.get $cnt
-            i32.const 1
-            i32.add
-            local.set $cnt
-            local.get $i
-            local.get $m
-            i32.add
-            local.set $i
-          )
-          (else
-            local.get $i
-            i32.const 1
-            i32.add
-            local.set $i
-          )
-        )
-        br $cont
-      )
-    )
-    local.get $cnt
-    call $__arr_new
-    local.set $arr
-    i32.const 0
-    local.set $i
-    (block $brk
-      (loop $cont
-        local.get $i
-        local.get $m
-        i32.add
-        local.get $n
-        i32.gt_u
-        br_if $brk
-        local.get $s
-        i32.const 4
-        i32.add
-        local.get $i
-        i32.add
-        local.get $sep
-        i32.const 4
-        i32.add
-        local.get $m
-        call $__mem_eq
-        (if
-          (then
-            local.get $arr
-            i32.const 4
-            i32.add
-            local.get $k
-            i32.const 4
-            i32.mul
-            i32.add
-            local.get $s
-            local.get $start
-            local.get $i
-            call $__str_slice
-            i32.store
-            local.get $k
-            i32.const 1
-            i32.add
-            local.set $k
-            local.get $i
-            local.get $m
-            i32.add
-            local.tee $i
-            local.set $start
-          )
-          (else
-            local.get $i
-            i32.const 1
-            i32.add
-            local.set $i
-          )
-        )
-        br $cont
-      )
-    )
-    local.get $arr
-    i32.const 4
-    i32.add
-    local.get $k
-    i32.const 4
-    i32.mul
-    i32.add
-    local.get $s
-    local.get $start
-    local.get $n
-    call $__str_slice
-    i32.store
-    local.get $arr
-  )
   (func $__arr_new (param $n i32) (result i32)
     (local $p i32)
     local.get $n
@@ -1953,442 +1648,6 @@ test "path.isInside treats a name starting with two dots as a name" {
     local.get $n
     i32.store
     local.get $p
-  )
-  (func $__arr_slice (param $xs i32) (param $a i32) (param $b i32) (result i32)
-    (local $n i32) (local $cnt i32) (local $p i32)
-    local.get $xs
-    i32.load
-    local.set $n
-    local.get $a
-    i32.const 0
-    i32.lt_s
-    (if
-      (then
-        local.get $n
-        local.get $a
-        i32.add
-        local.set $a
-        local.get $a
-        i32.const 0
-        i32.lt_s
-        (if
-          (then
-            i32.const 0
-            local.set $a
-          )
-        )
-      )
-      (else
-        local.get $a
-        local.get $n
-        i32.gt_s
-        (if
-          (then
-            local.get $n
-            local.set $a
-          )
-        )
-      )
-    )
-    local.get $b
-    i32.const 0
-    i32.lt_s
-    (if
-      (then
-        local.get $n
-        local.get $b
-        i32.add
-        local.set $b
-        local.get $b
-        i32.const 0
-        i32.lt_s
-        (if
-          (then
-            i32.const 0
-            local.set $b
-          )
-        )
-      )
-      (else
-        local.get $b
-        local.get $n
-        i32.gt_s
-        (if
-          (then
-            local.get $n
-            local.set $b
-          )
-        )
-      )
-    )
-    local.get $b
-    local.get $a
-    i32.sub
-    local.set $cnt
-    local.get $cnt
-    i32.const 0
-    i32.lt_s
-    (if
-      (then
-        i32.const 0
-        local.set $cnt
-      )
-    )
-    local.get $cnt
-    call $__arr_new
-    local.set $p
-    local.get $p
-    i32.const 4
-    i32.add
-    local.get $xs
-    i32.const 4
-    i32.add
-    local.get $a
-    i32.const 4
-    i32.mul
-    i32.add
-    local.get $cnt
-    i32.const 4
-    i32.mul
-    memory.copy
-    local.get $p
-  )
-  (func $__arr_prepend (param $xs i32) (param $x i32) (result i32)
-    (local $n i32) (local $p i32)
-    local.get $xs
-    i32.load
-    local.set $n
-    local.get $n
-    i32.const 1
-    i32.add
-    call $__arr_new
-    local.set $p
-    local.get $p
-    local.get $x
-    i32.store offset=4
-    local.get $p
-    i32.const 8
-    i32.add
-    local.get $xs
-    i32.const 4
-    i32.add
-    local.get $n
-    i32.const 4
-    i32.mul
-    memory.copy
-    local.get $p
-  )
-  (func $__arr_concat (param $a i32) (param $b i32) (result i32)
-    (local $na i32) (local $nb i32) (local $p i32)
-    local.get $a
-    i32.load
-    local.set $na
-    local.get $b
-    i32.load
-    local.set $nb
-    local.get $na
-    local.get $nb
-    i32.add
-    call $__arr_new
-    local.set $p
-    local.get $p
-    i32.const 4
-    i32.add
-    local.get $a
-    i32.const 4
-    i32.add
-    local.get $na
-    i32.const 4
-    i32.mul
-    memory.copy
-    local.get $p
-    i32.const 4
-    i32.add
-    local.get $na
-    i32.const 4
-    i32.mul
-    i32.add
-    local.get $b
-    i32.const 4
-    i32.add
-    local.get $nb
-    i32.const 4
-    i32.mul
-    memory.copy
-    local.get $p
-  )
-  (func $__arr_join_str (param $xs i32) (param $sep i32) (result i32)
-    (local $n i32) (local $i i32) (local $total i32) (local $p i32) (local $pos i32) (local $e i32)
-    local.get $xs
-    i32.load
-    local.set $n
-    (block $brk
-      (loop $cont
-        local.get $i
-        local.get $n
-        i32.ge_u
-        br_if $brk
-        local.get $total
-        local.get $xs
-        i32.const 4
-        i32.add
-        local.get $i
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load
-        i32.load
-        i32.add
-        local.set $total
-        local.get $i
-        i32.const 1
-        i32.add
-        local.set $i
-        br $cont
-      )
-    )
-    local.get $n
-    (if
-      (then
-        local.get $total
-        local.get $sep
-        i32.load
-        local.get $n
-        i32.const 1
-        i32.sub
-        i32.mul
-        i32.add
-        local.set $total
-      )
-    )
-    local.get $total
-    i32.const 4
-    i32.add
-    call $__alloc
-    local.set $p
-    local.get $p
-    local.get $total
-    i32.store
-    local.get $p
-    i32.const 4
-    i32.add
-    local.set $pos
-    i32.const 0
-    local.set $i
-    (block $brk
-      (loop $cont
-        local.get $i
-        local.get $n
-        i32.ge_u
-        br_if $brk
-        local.get $i
-        (if
-          (then
-            local.get $pos
-            local.get $sep
-            i32.const 4
-            i32.add
-            local.get $sep
-            i32.load
-            memory.copy
-            local.get $pos
-            local.get $sep
-            i32.load
-            i32.add
-            local.set $pos
-          )
-        )
-        local.get $xs
-        i32.const 4
-        i32.add
-        local.get $i
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load
-        local.set $e
-        local.get $pos
-        local.get $e
-        i32.const 4
-        i32.add
-        local.get $e
-        i32.load
-        memory.copy
-        local.get $pos
-        local.get $e
-        i32.load
-        i32.add
-        local.set $pos
-        local.get $i
-        i32.const 1
-        i32.add
-        local.set $i
-        br $cont
-      )
-    )
-    local.get $p
-  )
-  (func $__str_cp_len (param $s i32) (result i32)
-    (local $n i32) (local $i i32) (local $k i32)
-    local.get $s
-    i32.load
-    local.set $n
-    (block $brk
-      (loop $cont
-        local.get $i
-        local.get $n
-        i32.ge_u
-        br_if $brk
-        local.get $s
-        local.get $i
-        i32.add
-        i32.load8_u offset=4
-        i32.const 192
-        i32.and
-        i32.const 128
-        i32.ne
-        (if
-          (then
-            local.get $k
-            i32.const 1
-            i32.add
-            local.set $k
-          )
-        )
-        local.get $i
-        i32.const 1
-        i32.add
-        local.set $i
-        br $cont
-      )
-    )
-    local.get $k
-  )
-  (func $__str_cp_off (param $s i32) (param $i i32) (result i32)
-    (local $n i32) (local $p i32) (local $k i32)
-    local.get $s
-    i32.load
-    local.set $n
-    (block $brk
-      (loop $cont
-        local.get $p
-        local.get $n
-        i32.ge_u
-        br_if $brk
-        local.get $s
-        local.get $p
-        i32.add
-        i32.load8_u offset=4
-        i32.const 192
-        i32.and
-        i32.const 128
-        i32.ne
-        (if
-          (then
-            local.get $k
-            local.get $i
-            i32.eq
-            (if
-              (then
-                local.get $p
-                return
-              )
-            )
-            local.get $k
-            i32.const 1
-            i32.add
-            local.set $k
-          )
-        )
-        local.get $p
-        i32.const 1
-        i32.add
-        local.set $p
-        br $cont
-      )
-    )
-    local.get $n
-  )
-  (func $__str_cp_slice (param $s i32) (param $a i32) (param $b i32) (result i32)
-    (local $n i32)
-    local.get $s
-    call $__str_cp_len
-    local.set $n
-    local.get $a
-    i32.const 0
-    i32.lt_s
-    (if
-      (then
-        local.get $a
-        local.get $n
-        i32.add
-        local.set $a
-      )
-    )
-    local.get $a
-    i32.const 0
-    i32.lt_s
-    (if
-      (then
-        i32.const 0
-        local.set $a
-      )
-    )
-    local.get $a
-    local.get $n
-    i32.gt_s
-    (if
-      (then
-        local.get $n
-        local.set $a
-      )
-    )
-    local.get $b
-    i32.const 0
-    i32.lt_s
-    (if
-      (then
-        local.get $b
-        local.get $n
-        i32.add
-        local.set $b
-      )
-    )
-    local.get $b
-    i32.const 0
-    i32.lt_s
-    (if
-      (then
-        i32.const 0
-        local.set $b
-      )
-    )
-    local.get $b
-    local.get $n
-    i32.gt_s
-    (if
-      (then
-        local.get $n
-        local.set $b
-      )
-    )
-    local.get $b
-    local.get $a
-    i32.lt_s
-    (if
-      (then
-        local.get $a
-        local.set $b
-      )
-    )
-    local.get $s
-    local.get $s
-    local.get $a
-    call $__str_cp_off
-    local.get $s
-    local.get $b
-    call $__str_cp_off
-    call $__str_slice
   )
   (func $__i32_add_chk (param $a i32) (param $b i32) (result i32)
     (local $r i64)
@@ -2534,6 +1793,28 @@ test "path.isInside treats a name starting with two dots as a name" {
     )
     local.get $r
   )
+  ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
+  (global $__std_sp (mut i32) (i32.const 1488))
+  ;; __std_f3 — from std_wasm.wasm (sha256 b4b6f06748d6)
+  ;; __std_f7 — from std_wasm.wasm (sha256 91fc3314249d)
+  ;; __std_f23 — from std_wasm.wasm (sha256 d13a98c08300)
+  ;; __std_f24 — from std_wasm.wasm (sha256 fe0ded32f29d)
+  ;; __std_f25 — from std_wasm.wasm (sha256 6a251c47e9bb)
+  ;; __std_f29 — from std_wasm.wasm (sha256 61b86fc4b3a0)
+  ;; std:array.joinStrings — from std_wasm.wasm (sha256 be5521bc82e7)
+  ;; std:array.concat — from std_wasm.wasm (sha256 76bea810e576)
+  ;; std:array.prepend — from std_wasm.wasm (sha256 70ef343dd21c)
+  ;; std:array.slice — from std_wasm.wasm (sha256 b240b9529b77)
+  ;; std:text.slice — from std_wasm.wasm (sha256 f25f5dcea325)
+  ;; __std_f60 — from std_wasm.wasm (sha256 5ac39cdc3016)
+  ;; __std_f61 — from std_wasm.wasm (sha256 cda2fb2bf3e4)
+  ;; __std_f66 — from std_wasm.wasm (sha256 24e667286185)
+  ;; __std_f68 — from std_wasm.wasm (sha256 aba5f076b057)
+  ;; std:text.startsWith — from std_wasm.wasm (sha256 f571e29f752f)
+  ;; __std_f86 — from std_wasm.wasm (sha256 0fd121444c0f)
+  ;; std:text.split — from std_wasm.wasm (sha256 b2acce74f14d)
+  ;; __std_f88 — from std_wasm.wasm (sha256 9a61b978847a)
+  ;; std:text.length — from std_wasm.wasm (sha256 98eb1777d3e5)
 )
 ```
 

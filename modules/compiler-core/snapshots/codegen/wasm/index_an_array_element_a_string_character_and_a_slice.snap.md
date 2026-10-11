@@ -23,7 +23,7 @@ fn main() {
   (data (i32.const 256) "\03\00\00\00ana")
   (data (i32.const 264) "\02\00\00\00bo")
   (data (i32.const 272) "\05\00\00\00hello")
-  (global $__heap_ptr (mut i32) (i32.const 284))
+  (global $__heap_ptr (mut i32) (i32.const 320))
   (func $main
     (local $__mem0 i32)
     (local $__mem1 i32)
@@ -82,22 +82,22 @@ fn main() {
     local.set $s
     local.get $s
     i32.const 1
-    call $__str_cp_at
+    call $__std_text_at
     call $__print_opt_str
     local.get $s
     i32.const 1
     i32.const 3
-    call $__str_cp_slice
+    call $__std_text_slice
     call $__print_str
     local.get $s
     i32.const 3
     i32.const 2147483647
-    call $__str_cp_slice
+    call $__std_text_slice
     call $__print_str
     local.get $xs
     i32.const 1
     i32.const 2147483647
-    call $__arr_slice
+    call $__std_array_slice
     call $__print_arr_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
@@ -371,35 +371,6 @@ fn main() {
       )
     )
   )
-  (func $__str_slice (param $src i32) (param $start i32) (param $end i32) (result i32)
-    (local $newlen i32) (local $dst i32)
-    local.get $end
-    local.get $start
-    i32.sub
-    local.set $newlen
-    ;; allocate 4 (length prefix) + newlen
-    i32.const 4
-    local.get $newlen
-    i32.add
-    call $__alloc
-    local.set $dst
-    ;; store length prefix
-    local.get $dst
-    local.get $newlen
-    i32.store
-    ;; copy bytes: dst+4 <- src+4+start
-    local.get $dst
-    i32.const 4
-    i32.add
-    local.get $src
-    i32.const 4
-    i32.add
-    local.get $start
-    i32.add
-    local.get $newlen
-    memory.copy
-    local.get $dst
-  )
   (func $__alloc (param $n i32) (result i32)
     (local $p i32) (local $e i32)
     global.get $__heap_ptr
@@ -446,119 +417,6 @@ fn main() {
     )
     local.get $e
     global.set $__heap_ptr
-    local.get $p
-  )
-  (func $__arr_new (param $n i32) (result i32)
-    (local $p i32)
-    local.get $n
-    i32.const 1
-    i32.add
-    i32.const 4
-    i32.mul
-    call $__alloc
-    local.set $p
-    local.get $p
-    local.get $n
-    i32.store
-    local.get $p
-  )
-  (func $__arr_slice (param $xs i32) (param $a i32) (param $b i32) (result i32)
-    (local $n i32) (local $cnt i32) (local $p i32)
-    local.get $xs
-    i32.load
-    local.set $n
-    local.get $a
-    i32.const 0
-    i32.lt_s
-    (if
-      (then
-        local.get $n
-        local.get $a
-        i32.add
-        local.set $a
-        local.get $a
-        i32.const 0
-        i32.lt_s
-        (if
-          (then
-            i32.const 0
-            local.set $a
-          )
-        )
-      )
-      (else
-        local.get $a
-        local.get $n
-        i32.gt_s
-        (if
-          (then
-            local.get $n
-            local.set $a
-          )
-        )
-      )
-    )
-    local.get $b
-    i32.const 0
-    i32.lt_s
-    (if
-      (then
-        local.get $n
-        local.get $b
-        i32.add
-        local.set $b
-        local.get $b
-        i32.const 0
-        i32.lt_s
-        (if
-          (then
-            i32.const 0
-            local.set $b
-          )
-        )
-      )
-      (else
-        local.get $b
-        local.get $n
-        i32.gt_s
-        (if
-          (then
-            local.get $n
-            local.set $b
-          )
-        )
-      )
-    )
-    local.get $b
-    local.get $a
-    i32.sub
-    local.set $cnt
-    local.get $cnt
-    i32.const 0
-    i32.lt_s
-    (if
-      (then
-        i32.const 0
-        local.set $cnt
-      )
-    )
-    local.get $cnt
-    call $__arr_new
-    local.set $p
-    local.get $p
-    i32.const 4
-    i32.add
-    local.get $xs
-    i32.const 4
-    i32.add
-    local.get $a
-    i32.const 4
-    i32.mul
-    i32.add
-    local.get $cnt
-    i32.const 4
-    i32.mul
-    memory.copy
     local.get $p
   )
   (func $__print_arr_i32_raw (param $xs i32)
@@ -731,200 +589,6 @@ fn main() {
     call $__print_opt_str_raw
     call $__print_nl
   )
-  (func $__str_cp_len (param $s i32) (result i32)
-    (local $n i32) (local $i i32) (local $k i32)
-    local.get $s
-    i32.load
-    local.set $n
-    (block $brk
-      (loop $cont
-        local.get $i
-        local.get $n
-        i32.ge_u
-        br_if $brk
-        local.get $s
-        local.get $i
-        i32.add
-        i32.load8_u offset=4
-        i32.const 192
-        i32.and
-        i32.const 128
-        i32.ne
-        (if
-          (then
-            local.get $k
-            i32.const 1
-            i32.add
-            local.set $k
-          )
-        )
-        local.get $i
-        i32.const 1
-        i32.add
-        local.set $i
-        br $cont
-      )
-    )
-    local.get $k
-  )
-  (func $__str_cp_off (param $s i32) (param $i i32) (result i32)
-    (local $n i32) (local $p i32) (local $k i32)
-    local.get $s
-    i32.load
-    local.set $n
-    (block $brk
-      (loop $cont
-        local.get $p
-        local.get $n
-        i32.ge_u
-        br_if $brk
-        local.get $s
-        local.get $p
-        i32.add
-        i32.load8_u offset=4
-        i32.const 192
-        i32.and
-        i32.const 128
-        i32.ne
-        (if
-          (then
-            local.get $k
-            local.get $i
-            i32.eq
-            (if
-              (then
-                local.get $p
-                return
-              )
-            )
-            local.get $k
-            i32.const 1
-            i32.add
-            local.set $k
-          )
-        )
-        local.get $p
-        i32.const 1
-        i32.add
-        local.set $p
-        br $cont
-      )
-    )
-    local.get $n
-  )
-  (func $__str_cp_slice (param $s i32) (param $a i32) (param $b i32) (result i32)
-    (local $n i32)
-    local.get $s
-    call $__str_cp_len
-    local.set $n
-    local.get $a
-    i32.const 0
-    i32.lt_s
-    (if
-      (then
-        local.get $a
-        local.get $n
-        i32.add
-        local.set $a
-      )
-    )
-    local.get $a
-    i32.const 0
-    i32.lt_s
-    (if
-      (then
-        i32.const 0
-        local.set $a
-      )
-    )
-    local.get $a
-    local.get $n
-    i32.gt_s
-    (if
-      (then
-        local.get $n
-        local.set $a
-      )
-    )
-    local.get $b
-    i32.const 0
-    i32.lt_s
-    (if
-      (then
-        local.get $b
-        local.get $n
-        i32.add
-        local.set $b
-      )
-    )
-    local.get $b
-    i32.const 0
-    i32.lt_s
-    (if
-      (then
-        i32.const 0
-        local.set $b
-      )
-    )
-    local.get $b
-    local.get $n
-    i32.gt_s
-    (if
-      (then
-        local.get $n
-        local.set $b
-      )
-    )
-    local.get $b
-    local.get $a
-    i32.lt_s
-    (if
-      (then
-        local.get $a
-        local.set $b
-      )
-    )
-    local.get $s
-    local.get $s
-    local.get $a
-    call $__str_cp_off
-    local.get $s
-    local.get $b
-    call $__str_cp_off
-    call $__str_slice
-  )
-  (func $__str_cp_at (param $s i32) (param $i i32) (result i32)
-    (local $n i32)
-    local.get $s
-    call $__str_cp_len
-    local.set $n
-    local.get $i
-    i32.const 0
-    i32.lt_s
-    (if
-      (then
-        local.get $i
-        local.get $n
-        i32.add
-        local.set $i
-      )
-    )
-    local.get $i
-    local.get $n
-    i32.ge_u
-    (if
-      (then
-        i32.const 0
-        return
-      )
-    )
-    local.get $s
-    local.get $i
-    local.get $i
-    i32.const 1
-    i32.add
-    call $__str_cp_slice
-  )
   (func $__i32_add_chk (param $a i32) (param $b i32) (result i32)
     (local $r i64)
     local.get $a
@@ -1069,6 +733,17 @@ fn main() {
     )
     local.get $r
   )
+  ;; std-wasm (decision 440): its functions, transpiled from std_wasm.wasm
+  (global $__std_sp (mut i32) (i32.const 320))
+  ;; __std_f3 — from std_wasm.wasm (sha256 b4b6f06748d6)
+  ;; __std_f23 — from std_wasm.wasm (sha256 d13a98c08300)
+  ;; __std_f24 — from std_wasm.wasm (sha256 fe0ded32f29d)
+  ;; __std_f25 — from std_wasm.wasm (sha256 6a251c47e9bb)
+  ;; std:array.slice — from std_wasm.wasm (sha256 b240b9529b77)
+  ;; std:text.slice — from std_wasm.wasm (sha256 f25f5dcea325)
+  ;; __std_f60 — from std_wasm.wasm (sha256 5ac39cdc3016)
+  ;; __std_f61 — from std_wasm.wasm (sha256 cda2fb2bf3e4)
+  ;; std:text.at — from std_wasm.wasm (sha256 90244cf87012)
 )
 ```
 

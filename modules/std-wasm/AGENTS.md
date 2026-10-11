@@ -3,12 +3,15 @@
 > Path: `modules/std-wasm/`
 > Parent: [`../AGENTS.md`](../AGENTS.md)
 
-std's host functions implemented in Zig and compiled to wasm (decisions 434 (2), 440, 441;
-front 144 B-00a, B-00e). One implementation for two consumers: the comptime runtime, on
-every target (434 (5): a comptime result is std-wasm's answer whatever `--target` says), and
-a `--target wasm` program, into which the codegen transpiles the functions it calls (440 (2)).
-A std function is served by std-wasm only where its `#[@External.Wasm("std:<module>.<function>")]`
-cell names one of `root.exports` (440 (3)) — there is no match by name.
+std's host functions implemented in Zig and compiled to wasm (decisions 434 (2), 440, 441,
+442; front 144 B-00a, B-00e, B-00g). One implementation for two consumers: the comptime
+runtime, on every target (434 (5): a comptime result is std-wasm's answer whatever `--target`
+says), and a `--target wasm` program, into which the codegen transpiles the functions it calls
+(440 (2)). A std function is served by std-wasm only where its
+`#[@External.Wasm("std:<module>.<function>")]` cell names one of `root.exports` (440 (3)) —
+there is no match by name. Everything a `--target wasm` program computes over values — text,
+a number's text, arrays, `bigint` — is here, not in the codegen's `wat_prelude` (442 (2));
+`root.program` lists the functions only the wasm codegen calls.
 
 ## Tree
 
@@ -16,11 +19,13 @@ cell names one of `root.exports` (440 (3)) — there is no match by name.
 std-wasm/
 ├── AGENTS.md      ← you are here
 └── src/
-    ├── root.zig   ← the package: `exports` (each function by its `std:` name, its botopink types), `find`, `matches`, `signatureText`, `names`, `erlang_module`; re-exports the three below
+    ├── root.zig   ← the package: `exports` (each function by its `std:` name, its botopink types), `program` (the wasm codegen's own calls, by wasm types), `find`, `matches`, `signatureText`, `names`, `erlang_module`; re-exports the five below
     ├── hash.zig   ← `hash.contentHash`
-    ├── text.zig   ← the text algorithms behind std's string primitives (case, titlecase, trim, graphemes, slice, reverse, find, split, replace)
-    ├── number.zig ← `shortFloat`: `float_to_binary(F, [short])`, std's `Float.toString` (`NaN`, `Infinity`, `-Infinity` for the values OTP has no float for)
-    └── wasm.zig   ← the program face (`zig build std-wasm`): each export over a program's own strings, allocating through `env.bp_alloc`
+    ├── text.zig   ← the text algorithms behind std's string primitives (case, titlecase, trim, graphemes, slice, reverse, find, split, replace; and a program's: code point length / offset / slice / `at`, `indexOf` / `lastIndexOf`, `charCodeAt`, `fromCodepoint`, `Split` / `Lines` / `Words`, pad, repeat, replace)
+    ├── number.zig ← `shortFloat`: `float_to_binary(F, [short])`, std's `Float.toString` (`NaN`, `Infinity`, `-Infinity` for the values OTP has no float for); `signedText` / `unsignedText`, an integer's digits
+    ├── array.zig  ← an array's algorithms over its slot words: `sliceRange`, `chunkCount`, `slidingCount`, `uniqueInto`, `search`
+    ├── bigint.zig ← `bigint`'s arithmetic over `u32` limbs (add, sub, mul, divmod, compare, decimal text both ways, `toI64`, `toF64`), tested against `std.math.big.int`
+    └── wasm.zig   ← the program face (`zig build std-wasm`): each export over a program's own strings, arrays and `bigint` blocks, allocating through `env.bp_alloc`
 ```
 
 ## The functions (`root.exports`)
@@ -32,7 +37,40 @@ std-wasm/
 | `text.trimStart` | `(string) -> string` | `String.trimStart` |
 | `text.trimEnd` | `(string) -> string` | `String.trimEnd` |
 | `number.floatToString` | `(f64) -> string` | `Float.toString` — and every float a wasm program turns into text |
+| `text.length` | `(string) -> i32` | `String.length` (code points, decision 240) |
+| `text.split`, `text.chars`, `text.lines`, `text.words` | `(string, string) -> string[]`, `(string) -> string[]` | `String.split`, `chars`, `lines`, `words` |
+| `text.contains`, `text.startsWith`, `text.endsWith` | `(string, string) -> bool` | the `String` methods of those names |
+| `text.indexOf`, `text.lastIndexOf` | `(string, string) -> i32` | code point indices |
+| `text.at` | `(string, i32) -> ?string` | `String.at` |
+| `text.charCodeAt` | `(string, i32) -> i32` | `String.charCodeAt` |
+| `text.padStart`, `text.padEnd` | `(string, i32, string) -> string` | the pad cycled, by bytes |
+| `text.repeat` | `(string, i32) -> string` | `String.repeat` |
+| `text.replace`, `text.replaceAll` | `(string, string, string) -> string` | an empty pattern matches before every byte |
+| `text.fromCodepoint` | `(i32) -> string` | `String.fromCodepoint` — no scalar value traps |
 
+The types a `std:` cell can spell (`Type`): `string`, `f64`, `i32`, `i64`, `bool`, `void`,
+`string[]`, `?string`. Each export has its comptime face, `rt.zig`'s `rt_std_<symbol>` (a
+`string[]` a list of binaries, a `bool` its atom, a `?string` the binary or `undefined`).
+
+## The program's own functions (`root.program`, decision 442 (2))
+
+What the wasm codegen calls by itself — its arguments are the codegen's, not a declaration's:
+a string's code point bounds, an array's slot words whatever its element type, an integer
+by its carrier, a `bigint` block's address. A `std:` cell names none of them (`find` reads
+`exports` alone) and the comptime runtime serves none (a comptime module reaches std's
+methods through their `@External.Erlang` cells).
+
+| Function | What the codegen calls it for |
+|---|---|
+| `text.slice(s, a, b)` | `s.slice(a, b)`, `s[a..b]`, `s[i]` — code point bounds, negative from the end, clamped |
+| `number.i32ToString`, `i64ToString`, `u64ToString` | an integer as a fresh string (`toString`, interpolation) |
+| `number.i64Text`, `u64Text` | an integer's text in std-wasm's one workspace (`[len][digits]`, overwritten by the next) — what `$__print_i64_raw` / `$__print_u64_raw` write, so a print allocates nothing |
+| `array.reverse`, `slice`, `prepend`, `concat`, `zip`, `fill`, `flatten`, `chunked`, `sliding` | `Array`'s methods, a list pattern's rest, a spread |
+| `array.joinStrings`, `joinInts`, `joinFloats` | `join` by the element kind |
+| `array.indexOfWord`, `indexOfString`, `indexOfFloat` (+ `lastIndexOf…`) | `indexOf` / `contains` / `lastIndexOf` by the element kind (`f64.eq` over a float's cell) |
+| `array.unique(xs, mode)` | `unique` — `0` the slot's word, `1` a float cell's bits, `2` a string's content |
+| `bigint.add(x, y, flip)`, `negate`, `multiply`, `divmod(x, y, rem)`, `compare`, `equalOptional` | decision 332's operators over block addresses (a zero divisor traps) |
+| `bigint.ofI64`, `toI64`, `toF64`, `toString`, `parse` | `BigInt.of`, `toI64()` / `toF64()` (trap past the range / unless exact), the digits, `BigInt.parse`'s numeral (`0` for none) |
 A `std:` cell naming no entry, or on a declaration of other types (`matches`: the parameter
 and return types as botopink spells them; a primitive behavior's `Self` is `string` on
 `String`, `f64` on `Float`), is refused at the annotation on every target
@@ -42,6 +80,10 @@ and return types as botopink spells them; a primitive behavior's `Self` is `stri
 `String.toUpper` / `toLower` are not bound: `text.caseMap` maps ASCII and refuses any other
 letter (the comptime runtime's limit 3), so it is not the function a wasm program's
 `$__str_case` is.
+
+The seeded random (`io/random`'s `seed` / `seededFloat`, `wasi:seed_u32` / `wasi:seeded_f64`)
+is still the prelude's: its draw before any seed is the host's (`$__wasi_random_f64`), and
+what the comptime answers for a `std:` cell over it is open (144 B-00g's report).
 
 ## How it is built and served
 
@@ -65,6 +107,9 @@ letter (the comptime runtime's limit 3), so it is not the function a wasm progra
 - **Into a `--target wasm` program** (decision 440 (2)): `wasm.zig` is compiled to
   `std_wasm.wasm`, a position-independent side module (`zig build-lib -dynamic -fPIC`, MVP plus
   bulk memory, `dylink.0`), embedded in compiler-core as the anonymous import `std_wasm.wasm`.
+  A Zig `var` (the integer workspace) is `.bss`: wasm-ld gives the side module a start
+  function that only zeroes it, which the decoder drops (a fresh instance's memory is zero);
+  any other start is refused.
   `codegen/wat/std_wasm_link.zig` decodes the functions a program calls into `wat_ast` and
   `wat.zig` emits them as ordinary functions of the program — one module, its `.wat` the whole
   program, no host change. The side module imports `env.memory`, `env.__memory_base` (the program

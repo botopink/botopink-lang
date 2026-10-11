@@ -1397,6 +1397,12 @@ fn emitWat(
     }
     if (em.float_eq_used) try items.append(ar, .{ .func = try em.floatEqFunc() });
 
+    // Decision 442 (1) — a print helper writes the text std-wasm makes of a
+    // number: each group's std-wasm functions are the module's too.
+    for (prelude.order) |group| {
+        if (!em.b.helpers.has(group)) continue;
+        for (group.stdCalls()) |name| try em.std_exports.put(em.alloc, name, {});
+    }
     // Decision 440 (2) — std-wasm's functions call the program's allocator.
     if (em.std_exports.count() > 0) em.b.helpers.require(.alloc);
     for (prelude.order) |group| {
@@ -1433,8 +1439,7 @@ fn emitWat(
     // Decision 440 (2) — the std-wasm functions the module calls, transpiled
     // into it: decoded from `std_wasm.wasm` into the same model, its data
     // placed after the module's own, its stack after the data, the heap
-    // after both. `$__f64_to_str` is `Float.toString`'s cell.
-    if (em.b.helpers.has(.f64_to_str)) try em.std_exports.put(em.alloc, stdMethodExport("Float", "toString").?, {});
+    // after both.
     var std_funcs: []moduleOutput.StdFunc = &.{};
     errdefer for (std_funcs) |f| {
         alloc.free(f.symbol);
@@ -1488,7 +1493,7 @@ fn emitWat(
 /// Decision 440 (3) — the primitive methods `primitives.bp` binds with a
 /// `#[@External.Wasm("std:…")]` cell, by the std-wasm function the cell
 /// names: the wasm codegen lowers each to a call of that function
-/// (`lowerStringMethod`; `Float.toString` through `$__f64_to_str`, which every
+/// (`lowerStringMethod`; `Float.toString` through `number.floatToString`, which every
 /// float-to-text path calls). `codegen/tests/wat.zig` holds this table and
 /// the cells `primitives.bp` writes to each other.
 pub const std_method_exports = [_]struct { behavior: []const u8, method: []const u8, export_name: []const u8 }{
@@ -1496,6 +1501,24 @@ pub const std_method_exports = [_]struct { behavior: []const u8, method: []const
     .{ .behavior = "String", .method = "trimStart", .export_name = "text.trimStart" },
     .{ .behavior = "String", .method = "trimEnd", .export_name = "text.trimEnd" },
     .{ .behavior = "Float", .method = "toString", .export_name = "number.floatToString" },
+    .{ .behavior = "String", .method = "length", .export_name = "text.length" },
+    .{ .behavior = "String", .method = "split", .export_name = "text.split" },
+    .{ .behavior = "String", .method = "chars", .export_name = "text.chars" },
+    .{ .behavior = "String", .method = "lines", .export_name = "text.lines" },
+    .{ .behavior = "String", .method = "words", .export_name = "text.words" },
+    .{ .behavior = "String", .method = "contains", .export_name = "text.contains" },
+    .{ .behavior = "String", .method = "startsWith", .export_name = "text.startsWith" },
+    .{ .behavior = "String", .method = "endsWith", .export_name = "text.endsWith" },
+    .{ .behavior = "String", .method = "indexOf", .export_name = "text.indexOf" },
+    .{ .behavior = "String", .method = "lastIndexOf", .export_name = "text.lastIndexOf" },
+    .{ .behavior = "String", .method = "at", .export_name = "text.at" },
+    .{ .behavior = "String", .method = "charCodeAt", .export_name = "text.charCodeAt" },
+    .{ .behavior = "String", .method = "padStart", .export_name = "text.padStart" },
+    .{ .behavior = "String", .method = "padEnd", .export_name = "text.padEnd" },
+    .{ .behavior = "String", .method = "repeat", .export_name = "text.repeat" },
+    .{ .behavior = "String", .method = "replace", .export_name = "text.replace" },
+    .{ .behavior = "String", .method = "replaceAll", .export_name = "text.replaceAll" },
+    .{ .behavior = "String", .method = "fromCodepoint", .export_name = "text.fromCodepoint" },
 };
 
 /// The std-wasm function `behavior.method`'s `std:` cell names, or null.
@@ -4393,6 +4416,8 @@ const Emitter = struct {
     fn stdSpelling(t: ast.TypeRef) []const u8 {
         return switch (t) {
             .named => |n| n,
+            .array => |e| if (std.mem.eql(u8, stdSpelling(e.*), "string")) "string[]" else "another type",
+            .optional => |e| if (std.mem.eql(u8, stdSpelling(e.*), "string")) "?string" else "another type",
             else => "another type",
         };
     }
@@ -5995,7 +6020,7 @@ const Emitter = struct {
                             if (self.isBigintAt(b.loc)) {
                                 try self.lowerValue(a.value.*);
                                 try self.emit(zero);
-                                try self.emit(self.builder().helper(.bn_add));
+                                try self.emit(try self.stdCall("bigint.add"));
                             } else {
                                 try self.lowerCoerced(a.value.*, t);
                                 try self.emitArith(t, "add", b.loc);
@@ -6037,7 +6062,7 @@ const Emitter = struct {
                                     // Decision 332 — the field holds the block's address.
                                     try self.lowerValue(a.value.*);
                                     try self.emit(zero);
-                                    try self.emit(self.builder().helper(.bn_add));
+                                    try self.emit(try self.stdCall("bigint.add"));
                                 } else if (cell != .none) {
                                     try self.emitFromCell(cell);
                                     try self.lowerCoerced(a.value.*, cell.ty());
@@ -6394,7 +6419,7 @@ const Emitter = struct {
                         if (try self.lowerRecordMethod(cc, c.loc)) return;
                         if (self.primAssocHelper(cc)) |h| {
                             try self.lowerCoerced(callArg(cc, 0).?, "i32");
-                            try self.emit(self.builder().helper(h));
+                            try self.emit(try self.stdCall(h));
                             return;
                         }
                         if (self.bigintAssoc(cc)) |which| return self.lowerBigintAssoc(which, cc);
@@ -6703,7 +6728,7 @@ const Emitter = struct {
     /// through `$__print_i32`, so a string printed as its *address* and a bool
     /// as `0`/`1`.
     fn lowerPrintArg(self: *Emitter, arg: ast.Expr, last: bool) anyerror!void {
-        // Decision 332 — a `bigint` prints its digits (`$__bn_to_str`); a
+        // Decision 332 — a `bigint` prints its digits (std-wasm's `bigint.toString`); a
         // `?bigint` has no reader here yet.
         if (self.isOptBigintExpr(arg)) {
             // The block's address, or `0` for absence.
@@ -6718,7 +6743,7 @@ const Emitter = struct {
             var else_c: Capture = .{};
             self.open(&else_c);
             try self.emit(.{ .local_get = tmp });
-            try self.emit(self.builder().helper(.bn_to_str));
+            try self.emit(try self.stdCall("bigint.toString"));
             try self.emit(self.builder().helper(.print_str_raw));
             const else_seq = self.seal(&else_c, .none);
             try self.emit(.{ .@"if" = .{ .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
@@ -6727,7 +6752,7 @@ const Emitter = struct {
         }
         if (self.isBigintExpr(arg)) {
             try self.lowerValue(arg);
-            try self.emit(self.builder().helper(.bn_to_str));
+            try self.emit(try self.stdCall("bigint.toString"));
             try self.emit(self.builder().helper(if (last) .print_str else .print_str_raw));
             return;
         }
@@ -6997,7 +7022,7 @@ const Emitter = struct {
     /// | Written | Lowering |
     /// |---|---|
     /// | `xs[i]` | `$__arr_at` — the element itself, `0` out of range |
-    /// | `xs[a..b]` | `$__arr_slice` — a fresh array, bounds clamped |
+    /// | `xs[a..b]` | std-wasm's `array.slice` — a fresh array, bounds clamped |
     /// | `s[i]` | `$__str_slice(s, i, i+1)` — the one-byte string |
     /// | `s[a..b]` | `$__str_slice` |
     ///
@@ -7070,12 +7095,12 @@ const Emitter = struct {
             if (r.end) |e| {
                 try self.lowerCoerced(e.*, "i32");
             } else {
-                // `$__str_cp_slice` and `$__arr_slice` clamp, so "to the end"
+                // std-wasm's `text.slice` and `array.slice` clamp, so "to the end"
                 // is the largest i32
                 try self.emit(try self.constInt(std.math.maxInt(i32)));
             }
             // Decision 240: a string's bounds are codepoints.
-            try self.emit(b.helper(if (is_str) .str_cp_slice else .arr_slice));
+            try self.emit(try self.stdCall(if (is_str) "text.slice" else "array.slice"));
             return;
         }
 
@@ -7090,7 +7115,7 @@ const Emitter = struct {
             try self.emit(.{ .local_get = at });
             try self.emit(one);
             try self.emit(opOf("i32", "add"));
-            try self.emit(b.helper(.str_cp_slice));
+            try self.emit(try self.stdCall("text.slice"));
             return;
         }
         if (is_arr) {
@@ -7778,7 +7803,7 @@ const Emitter = struct {
                     // Decision 332 — the subject is a block: equal by value.
                     try self.emit(.{ .local_get = subj });
                     try self.lowerBigintLiteral(n);
-                    try self.emit(self.builder().helper(.bn_cmp));
+                    try self.emit(try self.stdCall("bigint.compare"));
                     try self.emit(opOf("i32", "eqz"));
                     return;
                 }
@@ -8013,7 +8038,7 @@ const Emitter = struct {
     }
 
     /// Bind a list pattern's names: each `bind` from its slot, a named spread
-    /// to the rest of the array (`$__arr_slice`).
+    /// to the rest of the array (std-wasm's `array.slice`).
     fn bindListPattern(self: *Emitter, l: anytype, subj: []const u8) anyerror!void {
         const ek = self.arr_elem_locals.get(subj) orelse .i32;
         const sh = self.print_shape_locals.get(subj);
@@ -8039,7 +8064,7 @@ const Emitter = struct {
         try self.emit(.{ .local_get = subj });
         try self.emit(try self.constInt(@as(i32, @intCast(l.elems.len))));
         try self.emit(try self.constInt(std.math.maxInt(i32)));
-        try self.emit(self.builder().helper(.arr_slice));
+        try self.emit(try self.stdCall("array.slice"));
         try self.emit(.{ .local_set = n });
         try self.arr_locals.put(n, {});
         try self.arr_elem_locals.put(n, ek);
@@ -8082,10 +8107,10 @@ const Emitter = struct {
         switch (bound) {
             .numberLit => |n| {
                 if (lexerMod.isBigintText(n)) {
-                    // Decision 332 — `subj <cmp> bound` by `$__bn_cmp`'s sign.
+                    // Decision 332 — `subj <cmp> bound` by std-wasm's `bigint.compare`'s sign.
                     try self.emit(.{ .local_get = subj });
                     try self.lowerBigintLiteral(n);
-                    try self.emit(self.builder().helper(.bn_cmp));
+                    try self.emit(try self.stdCall("bigint.compare"));
                     try self.emit(zero);
                     try self.emit(opOf("i32", cmp));
                     return;
@@ -8700,7 +8725,7 @@ const Emitter = struct {
     /// is `i32.load offset=(N+1)*4`. Matches the string layout convention
     /// so `.len` is uniform across both. A trailing spread (`[1, 2, ..rest]`
     /// — the parser admits no other position) is the literal's elements
-    /// followed by the spread value's, through `$__arr_concat`; before, the
+    /// followed by the spread value's, through std-wasm's `array.concat`; before, the
     /// spread was dropped with a `;; note` and the array was two short.
     fn lowerArrayLit(self: *Emitter, al: anytype, loc: ast.Loc) anyerror!void {
         const total: u32 = @intCast((al.elems.len + 1) * 4);
@@ -8718,13 +8743,13 @@ const Emitter = struct {
         try self.loadBase(base);
         if (al.spreadExpr) |se| {
             try self.lowerCoerced(se.*, "i32");
-            try self.emit(self.builder().helper(.arr_concat));
+            try self.emit(try self.stdCall("array.concat"));
         } else if (al.spread) |name| {
             if (name.len == 0) return self.refuse(loc, "a bare `..` in an array literal spreads nothing", .{});
             const rest = try self.arena().create(ast.Expr);
             rest.* = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = name } } };
             try self.lowerCoerced(rest.*, "i32");
-            try self.emit(self.builder().helper(.arr_concat));
+            try self.emit(try self.stdCall("array.concat"));
         }
     }
 
@@ -9342,7 +9367,7 @@ const Emitter = struct {
                 // `Index<i32, string>.at` (decision 63's amendment) — a
                 // `?string`, absent as the pointer 0. `.str` is its stack
                 // shape; `optInfoOf` is what routes the print through
-                // `$__print_opt_str`, and `$__str_at` is the lowering.
+                // `$__print_opt_str`, and std-wasm's `text.at` is the lowering.
                 .{ "at", 1, .str },
                 // `00 · 05-wasm` step 6's audit: the rest of `primitives.bp`'s
                 // `String` that has a byte-level answer.
@@ -9433,7 +9458,7 @@ const Emitter = struct {
         return .{ .params = params, .body = body };
     }
 
-    /// `$__arr_unique`'s equality for the elements of `recv`: `0` the slot's
+    /// std-wasm's `array.unique`'s equality for the elements of `recv`: `0` the slot's
     /// word (an integer, a bool, an all-unit enum's ordinal), `1` its cell's `f64`,
     /// `2` a string's content. Null for an element whose `!=` this backend
     /// has no lowering for — a record, an array, a tuple —, which is refused.
@@ -9582,7 +9607,7 @@ const Emitter = struct {
                 // below refuses them.
                 if (std.mem.eql(u8, self.wasmTypeOf(recv), "i64") and eq(u8, name, "toString")) {
                     try self.lowerValue(recv);
-                    try self.emit(b.helper(if (self.isU64Expr(recv)) .u64_to_str else .i64_to_str));
+                    try self.emit(try self.stdCall(if (self.isU64Expr(recv)) "number.u64ToString" else "number.i64ToString"));
                     return;
                 }
                 try self.lowerCoerced(recv, "i32");
@@ -9602,7 +9627,7 @@ const Emitter = struct {
                     try self.emit(opOf("i32", "eqz"));
                     if (eq(u8, name, "isOdd")) try self.emit(opOf("i32", "eqz"));
                 } else {
-                    try self.emit(b.helper(.i32_to_str));
+                    try self.emit(try self.stdCall("number.i32ToString"));
                 }
             },
             .float => {
@@ -9623,7 +9648,7 @@ const Emitter = struct {
                 } else if (eq(u8, name, "squareRoot")) {
                     try self.emit(opOf("f64", "sqrt"));
                 } else if (eq(u8, name, "toString")) {
-                    try self.emit(b.helper(.f64_to_str));
+                    try self.emit(try self.stdCall("number.floatToString"));
                 } else {
                     // abs / floor / ceil are opcodes of the same name.
                     try self.emit(opOf("f64", name));
@@ -9633,12 +9658,12 @@ const Emitter = struct {
             .array => try self.lowerArrayMethod(cc),
             .bigint => {
                 try self.lowerCoerced(recv, "i32");
-                try self.emit(b.helper(if (eq(u8, name, "toString"))
-                    .bn_to_str
+                try self.emit(try self.stdCall(if (eq(u8, name, "toString"))
+                    "bigint.toString"
                 else if (eq(u8, name, "toI64"))
-                    .bn_to_i64
+                    "bigint.toI64"
                 else
-                    .bn_to_f64));
+                    "bigint.toF64"));
             },
         }
     }
@@ -9650,65 +9675,23 @@ const Emitter = struct {
         const b = self.builder();
         if (eq(u8, name, "slice")) return self.lowerStrSlice(cc);
         try self.lowerCoerced(recv, "i32");
-        if (eq(u8, name, "length")) {
-            // Decision 240: a string's length counts codepoints.
-            try self.emit(b.helper(.str_cp_len));
-        } else if (eq(u8, name, "toUpper") or eq(u8, name, "toLower")) {
+        if (eq(u8, name, "toUpper") or eq(u8, name, "toLower")) {
             const upper = eq(u8, name, "toUpper");
             try self.emit(try self.constInt(if (upper) @as(i32, 'a') else 'A'));
             try self.emit(try self.constInt(if (upper) @as(i32, 'z') else 'Z'));
             try self.emit(try self.constInt(if (upper) @as(i32, -32) else 32));
             try self.emit(b.helper(.str_case));
-        } else if (eq(u8, name, "trim") or eq(u8, name, "trimStart") or eq(u8, name, "trimEnd")) {
-            // Decision 441 — std-wasm's trim, which `primitives.bp`'s `std:`
-            // cells name (`std_method_exports`).
-            try self.emit(try self.stdCall(stdMethodExport("String", name).?));
-        } else if (eq(u8, name, "toString")) {
-            // already the string
-        } else if (eq(u8, name, "lines")) {
-            try self.emit(b.helper(.str_lines));
-        } else if (eq(u8, name, "words")) {
-            try self.emit(b.helper(.str_words));
-        } else if (eq(u8, name, "chars")) {
-            // One fresh string per UTF-8 codepoint: `$__str_split` with an
-            // empty separator cuts before every codepoint.
-            const empty = try self.internString("");
-            try self.emit(try self.constInt(empty.offset));
-            try self.emit(b.helper(.str_split));
-        } else if (eq(u8, name, "padStart") or eq(u8, name, "padEnd")) {
-            try self.lowerCoerced(callArg(cc, 0).?, "i32");
-            try self.lowerCoerced(callArg(cc, 1).?, "i32");
-            try self.emit(try self.constInt(@as(i32, if (eq(u8, name, "padStart")) 1 else 0)));
-            try self.emit(b.helper(.str_pad));
-        } else if (eq(u8, name, "replace") or eq(u8, name, "replaceAll")) {
-            try self.lowerCoerced(callArg(cc, 0).?, "i32");
-            try self.lowerCoerced(callArg(cc, 1).?, "i32");
-            try self.emit(try self.constInt(@as(i32, if (eq(u8, name, "replaceAll")) 1 else 0)));
-            try self.emit(b.helper(.str_replace));
-        } else {
-            try self.lowerCoerced(callArg(cc, 0).?, "i32");
-            if (eq(u8, name, "at")) {
-                try self.emit(b.helper(.str_cp_at));
-            } else if (eq(u8, name, "contains")) {
-                try self.emit(b.helper(.str_index_of));
-                try self.emit(try self.constInt(-1));
-                try self.emit(opOf("i32", "ne"));
-            } else if (eq(u8, name, "indexOf")) {
-                try self.emit(b.helper(.str_cp_index_of));
-            } else if (eq(u8, name, "startsWith")) {
-                try self.emit(b.helper(.str_starts_with));
-            } else if (eq(u8, name, "endsWith")) {
-                try self.emit(b.helper(.str_ends_with));
-            } else if (eq(u8, name, "split")) {
-                try self.emit(b.helper(.str_split));
-            } else if (eq(u8, name, "charCodeAt")) {
-                try self.emit(b.helper(.str_char_code));
-            } else if (eq(u8, name, "lastIndexOf")) {
-                try self.emit(b.helper(.str_cp_last_index_of));
-            } else {
-                try self.emit(b.helper(.str_repeat));
-            }
+            return;
         }
+        if (eq(u8, name, "toString")) return; // already the string
+        // Decision 442 (2) — every other method is std-wasm's, the function
+        // `primitives.bp`'s `std:` cell names (`std_method_exports`), its
+        // arguments as the declaration orders them.
+        const export_name = stdMethodExport("String", name) orelse
+            return self.refuseUnlessTemplate(self.call_loc, "`String.{s}` has no lowering on the wasm backend", .{name});
+        const ex = stdWasm.find(export_name).?;
+        for (ex.params[1..], 0..) |_, k| try self.lowerCoerced(callArg(cc, k).?, "i32");
+        try self.emit(try self.stdCall(export_name));
     }
 
     fn lowerArrayMethod(self: *Emitter, cc: anytype) anyerror!void {
@@ -9751,7 +9734,7 @@ const Emitter = struct {
             if (tail[0] != '[')
                 return self.refuseUnlessTemplate(self.call_loc, "`flatMap` on the wasm backend: its function answers no array, so there is nothing to flatten", .{});
             try self.lowerArrayHof(@intFromEnum(Hof.map), recv, lam, null);
-            try self.emit(b.helper(.arr_flatten));
+            try self.emit(try self.stdCall("array.flatten"));
             return;
         }
         if (eq(u8, name, "flatten") or eq(u8, name, "flat")) {
@@ -9760,7 +9743,7 @@ const Emitter = struct {
                 return self.refuseUnlessTemplate(self.call_loc, "`{s}` on the wasm backend: nothing shows that the receiver's elements are arrays", .{name});
             }
             try self.lowerCoerced(recv, "i32");
-            try self.emit(b.helper(.arr_flatten));
+            try self.emit(try self.stdCall("array.flatten"));
             return;
         }
         if (eq(u8, name, "unique")) {
@@ -9769,7 +9752,7 @@ const Emitter = struct {
             };
             try self.lowerCoerced(recv, "i32");
             try self.emit(try self.constInt(mode));
-            try self.emit(b.helper(.arr_unique));
+            try self.emit(try self.stdCall("array.unique"));
             return;
         }
         if (eq(u8, name, "fill")) {
@@ -9781,13 +9764,13 @@ const Emitter = struct {
             // cell — a cell is never written again, so sharing it is sharing
             // a value.
             try self.lowerSlotWord(v);
-            try self.emit(b.helper(.arr_fill));
+            try self.emit(try self.stdCall("array.fill"));
             return;
         }
         if (eq(u8, name, "chunked") or eq(u8, name, "sliding")) {
             try self.lowerCoerced(recv, "i32");
             try self.lowerCoerced(callArg(cc, 0).?, "i32");
-            try self.emit(b.helper(if (eq(u8, name, "chunked")) .arr_chunked else .arr_sliding));
+            try self.emit(try self.stdCall(if (eq(u8, name, "chunked")) "array.chunked" else "array.sliding"));
             return;
         }
 
@@ -9807,7 +9790,7 @@ const Emitter = struct {
         } else if (eq(u8, name, "toList")) {
             // the array itself
         } else if (eq(u8, name, "reverse")) {
-            try self.emit(b.helper(.arr_reverse));
+            try self.emit(try self.stdCall("array.reverse"));
         } else if (eq(u8, name, "rest") or eq(u8, name, "take") or eq(u8, name, "drop") or eq(u8, name, "slice")) {
             // `arr_slice` clamps its bounds, so "to the end" is the largest i32.
             const whole = try self.constInt(std.math.maxInt(i32));
@@ -9823,27 +9806,27 @@ const Emitter = struct {
                     if (isNullLit(end)) try self.emit(whole) else try self.lowerSliceEnd(end);
                 } else try self.emit(whole);
             }
-            try self.emit(b.helper(.arr_slice));
+            try self.emit(try self.stdCall("array.slice"));
         } else {
             const arg = callArg(cc, 0).?;
             if (eq(u8, name, "join")) {
                 try self.lowerCoerced(arg, "i32");
-                try self.emit(b.helper(if (elem == .str) .arr_join_str else if (elem == .f64) .arr_join_f64 else .arr_join_i32));
+                try self.emit(try self.stdCall(if (elem == .str) "array.joinStrings" else if (elem == .f64) "array.joinFloats" else "array.joinInts"));
             } else if (eq(u8, name, "lastIndexOf")) {
                 if (elem == .f64) {
                     try self.lowerCoerced(arg, "f64");
-                    try self.emit(b.helper(.arr_last_index_of_f64));
+                    try self.emit(try self.stdCall("array.lastIndexOfFloat"));
                 } else {
                     try self.lowerCoerced(arg, "i32");
-                    try self.emit(b.helper(if (elem == .str or self.isStringExpr(arg)) .arr_last_index_of_str else .arr_last_index_of_i32));
+                    try self.emit(try self.stdCall(if (elem == .str or self.isStringExpr(arg)) "array.lastIndexOfString" else "array.lastIndexOfWord"));
                 }
             } else if (eq(u8, name, "indexOf") or eq(u8, name, "contains")) {
                 if (elem == .f64) {
                     try self.lowerCoerced(arg, "f64");
-                    try self.emit(b.helper(.arr_index_of_f64));
+                    try self.emit(try self.stdCall("array.indexOfFloat"));
                 } else {
                     try self.lowerCoerced(arg, "i32");
-                    try self.emit(b.helper(if (elem == .str or self.isStringExpr(arg)) .arr_index_of_str else .arr_index_of_i32));
+                    try self.emit(try self.stdCall(if (elem == .str or self.isStringExpr(arg)) "array.indexOfString" else "array.indexOfWord"));
                 }
                 if (eq(u8, name, "contains")) {
                     try self.emit(try self.constInt(-1));
@@ -9853,7 +9836,7 @@ const Emitter = struct {
                 // `prepend` takes an element (a float as its cell), `append`
                 // and `zip` an array.
                 if (eq(u8, name, "prepend")) try self.lowerElemWord(elem, arg) else try self.lowerCoerced(arg, "i32");
-                try self.emit(b.helper(if (eq(u8, name, "prepend")) .arr_prepend else if (eq(u8, name, "append")) .arr_concat else .arr_zip));
+                try self.emit(try self.stdCall(if (eq(u8, name, "prepend")) "array.prepend" else if (eq(u8, name, "append")) "array.concat" else "array.zip"));
             }
         }
     }
@@ -9861,7 +9844,7 @@ const Emitter = struct {
     /// Decision 122 — `seq.next()` by hand. The eager sequence is an array blob
     /// (`[len][e0][e1]…`), so the step is its head: the prelude `YieldStep`'s
     /// `Yield(e0)` when `len > 0`, `Done` otherwise. A local receiver is then
-    /// rebound to the rest (`$__arr_slice(seq, 1, len)`, a copy — an alias of
+    /// rebound to the rest (std-wasm's `array.slice(seq, 1, len)`, a copy — an alias of
     /// the same sequence keeps its items), as `push` rebinds it, so the next
     /// `.next()` reads on. The item is copied as one 4-byte slot, which is
     /// what every element layout of the blob is.
@@ -9905,7 +9888,7 @@ const Emitter = struct {
             try self.emit(try self.constInt(1));
             try self.emit(.{ .local_get = seq });
             try self.emit(.{ .load = .{} });
-            try self.emit(self.builder().helper(.arr_slice));
+            try self.emit(try self.stdCall("array.slice"));
             try self.emitCf(.{ .local_set = n }, "{s} = the rest", .{n});
         }
         try self.loadTaggedBase(base);
@@ -9964,7 +9947,7 @@ const Emitter = struct {
                     try self.emitC(.{ .load = .{} }, "element count");
                     try self.emit(one);
                     try self.emit(opOf("i32", "sub"));
-                    try self.emit(b.helper(.arr_slice));
+                    try self.emit(try self.stdCall("array.slice"));
                     try self.emitCf(.{ .store = .{ .offset = off } }, ".{s} = pop", .{ia.member});
                     return;
                 };
@@ -9985,7 +9968,7 @@ const Emitter = struct {
         try self.emitC(.{ .load = .{} }, "element count");
         try self.emit(one);
         try self.emit(opOf("i32", "sub"));
-        try self.emit(b.helper(.arr_slice));
+        try self.emit(try self.stdCall("array.slice"));
         try self.emit(if (self.locals.contains(n)) .{ .local_set = n } else .{ .global_set = n });
     }
 
@@ -10480,7 +10463,7 @@ const Emitter = struct {
                 // printed by the `n` code, which the `bigint` group's module
                 // links (`print_shaped_items_bigint`).
                 if (std.mem.eql(u8, n, "bigint")) {
-                    _ = self.builder().helper(.bn_to_str);
+                    self.builder().helpers.require(.bigint);
                     return "n";
                 }
                 if (self.records.contains(n)) return "T";
@@ -12050,24 +12033,23 @@ const Emitter = struct {
 
     /// `lhs <op> rhs` over two `bigint`s: arithmetic through the group's
     /// helpers (`/` truncates, `%` takes the dividend's sign, a zero divisor
-    /// traps), a comparison through `$__bn_cmp`.
+    /// traps), a comparison through std-wasm's `bigint.compare`.
     fn lowerBigintBinOp(self: *Emitter, op: anytype, lhs: ast.Expr, rhs: ast.Expr) anyerror!void {
         const Op = @TypeOf(op);
-        const b = self.builder();
         try self.lowerValue(lhs);
         try self.lowerValue(rhs);
         switch (op) {
             Op.add, Op.sub => {
                 try self.emit(try self.constInt(@as(i32, if (op == Op.sub) 1 else 0)));
-                try self.emit(b.helper(.bn_add));
+                try self.emit(try self.stdCall("bigint.add"));
             },
-            Op.mul => try self.emit(b.helper(.bn_mul)),
+            Op.mul => try self.emit(try self.stdCall("bigint.multiply")),
             Op.div, Op.mod => {
                 try self.emit(try self.constInt(@as(i32, if (op == Op.mod) 1 else 0)));
-                try self.emit(b.helper(.bn_divmod));
+                try self.emit(try self.stdCall("bigint.divmod"));
             },
             Op.eq, Op.ne, Op.lt, Op.gt, Op.lte, Op.gte => {
-                try self.emit(b.helper(.bn_cmp));
+                try self.emit(try self.stdCall("bigint.compare"));
                 try self.emit(zero);
                 try self.emit(opOf("i32", switch (op) {
                     Op.eq => "eq",
@@ -12090,7 +12072,7 @@ const Emitter = struct {
         switch (which) {
             .of => {
                 try self.lowerCoerced(callArg(cc, 0).?, "i64");
-                try self.emit(b.helper(.bn_of));
+                try self.emit(try self.stdCall("bigint.ofI64"));
             },
             .parse => {
                 const text = try self.declRes();
@@ -12098,7 +12080,7 @@ const Emitter = struct {
                 const out = try self.declRes();
                 try self.lowerCoerced(callArg(cc, 0).?, "i32");
                 try self.emit(.{ .local_tee = text });
-                try self.emit(b.helper(.bn_from_str));
+                try self.emit(try self.stdCall("bigint.parse"));
                 try self.emit(.{ .local_set = p });
                 try self.allocResultPair(out);
                 try self.emit(.{ .local_get = p });
@@ -12134,14 +12116,14 @@ const Emitter = struct {
 
     /// Decision 262 — an associated host primitive of a prelude behavior,
     /// lowered to its prelude helper: `String.fromCodepoint(cp)` is
-    /// `$__str_from_cp`, which writes the code point's UTF-8 bytes and traps on
+    /// std-wasm's `text.fromCodepoint`, which writes the code point's UTF-8 bytes and traps on
     /// a value that is no Unicode scalar value (as erlang's `/utf8` raises and
     /// the Node cell throws). Null for any other call, and when `String` names
     /// something of the program's own.
-    fn primAssocHelper(self: *Emitter, cc: anytype) ?wat.Helper {
+    fn primAssocHelper(self: *Emitter, cc: anytype) ?[]const u8 {
         const rn = receiverName(cc) orelse return null;
         if (self.locals.contains(rn) or self.globals.contains(rn) or self.records.contains(rn) or self.enums.contains(rn)) return null;
-        if (std.mem.eql(u8, rn, "String") and std.mem.eql(u8, cc.callee, "fromCodepoint") and cc.args.len == 1 and cc.trailing.len == 0) return .str_from_cp;
+        if (std.mem.eql(u8, rn, "String") and std.mem.eql(u8, cc.callee, "fromCodepoint") and cc.args.len == 1 and cc.trailing.len == 0) return stdMethodExport("String", "fromCodepoint").?;
         return null;
     }
 
@@ -13270,7 +13252,7 @@ const Emitter = struct {
                     {
                         return self.arrayElemOpt(cc.receiver.?.*);
                     }
-                    // `s.at(i)` → `?string`: `$__str_at` answers the pointer of
+                    // `s.at(i)` → `?string`: std-wasm's `text.at` answers the pointer of
                     // a fresh one-byte string, or 0. Without this the result
                     // printed through `$__print_str`, which reads a length at
                     // address 0 — the WASI iovec — and answers whatever is
@@ -13570,7 +13552,7 @@ const Emitter = struct {
             try self.lowerValue(recv.*);
             // Decision 240: a string counts codepoints, an array its slots.
             if (self.isStringExpr(recv.*))
-                try self.emit(self.builder().helper(.str_cp_len))
+                try self.emit(try self.stdCall("text.length"))
             else
                 try self.emitC(.{ .load = .{} }, ".length (array prefix)");
             return true;
@@ -13690,7 +13672,7 @@ const Emitter = struct {
                 try self.lowerValue(ia.receiver.*);
                 // Decision 240: a string counts codepoints.
                 if (il.prim == .string)
-                    try self.emit(self.builder().helper(.str_cp_len))
+                    try self.emit(try self.stdCall("text.length"))
                 else
                     try self.emitC(.{ .load = .{} }, ".length");
                 return;
@@ -13705,7 +13687,7 @@ const Emitter = struct {
             if (self.isArrayExpr(ia.receiver.*) or self.isStringExpr(ia.receiver.*)) {
                 try self.lowerValue(ia.receiver.*);
                 if (self.isStringExpr(ia.receiver.*))
-                    try self.emit(self.builder().helper(.str_cp_len))
+                    try self.emit(try self.stdCall("text.length"))
                 else
                     try self.emitC(.{ .load = .{} }, ".length");
                 return;
@@ -14015,7 +13997,7 @@ const Emitter = struct {
         const tref = t orelse return "i";
         // Decision 332 — a `?bigint` field is its block's address or `0`.
         if (tref == .optional and tref.optional.* == .named and std.mem.eql(u8, tref.optional.named, "bigint")) {
-            _ = self.builder().helper(.bn_to_str);
+            self.builder().helpers.require(.bigint);
             return "?n";
         }
         if (try self.typeRefShape(tref)) |shape| return shape;
@@ -14436,7 +14418,7 @@ const Emitter = struct {
             return self.refuse(e.getLoc(), "the wasm backend has no text for a `?bigint` yet", .{});
         if (self.isBigintExpr(e)) {
             try self.lowerValue(e);
-            return self.emit(self.builder().helper(.bn_to_str));
+            return self.emit(try self.stdCall("bigint.toString"));
         }
         if (self.optInfoOf(e)) |oi| {
             // none renders as `undefined`, the text the other targets print
@@ -14456,13 +14438,13 @@ const Emitter = struct {
             try self.emit(.{ .local_get = tmp });
             if (oi.cell == .f64) {
                 try self.emit(.{ .load = .{ .ty = .f64 } });
-                try self.emit(self.builder().helper(.f64_to_str));
+                try self.emit(try self.stdCall("number.floatToString"));
             } else if (oi.cell == .i64) {
                 try self.emit(.{ .load = .{ .ty = .i64 } });
-                try self.emit(self.builder().helper(.i64_to_str));
+                try self.emit(try self.stdCall("number.i64ToString"));
             } else if (oi.boxed) {
                 try self.emit(.{ .load = .{} });
-                try self.emit(self.builder().helper(.i32_to_str));
+                try self.emit(try self.stdCall("number.i32ToString"));
             }
             const else_seq = self.seal(&else_c, .{ .value = .i32 });
             try self.emit(.{ .@"if" = .{ .result = .i32, .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
@@ -14486,16 +14468,16 @@ const Emitter = struct {
         }
         if (self.wasmTypeOf(e)[0] == 'f') {
             try self.lowerCoerced(e, "f64");
-            try self.emit(self.builder().helper(.f64_to_str));
+            try self.emit(try self.stdCall("number.floatToString"));
             return;
         }
         if (std.mem.eql(u8, self.wasmTypeOf(e), "i64")) {
             try self.lowerValue(e);
-            try self.emit(self.builder().helper(if (self.isU64Expr(e)) .u64_to_str else .i64_to_str));
+            try self.emit(try self.stdCall(if (self.isU64Expr(e)) "number.u64ToString" else "number.i64ToString"));
             return;
         }
         try self.lowerCoerced(e, "i32");
-        try self.emit(self.builder().helper(.i32_to_str));
+        try self.emit(try self.stdCall("number.i32ToString"));
     }
 
     /// A `recv.slice(...)` method call. Codegen is untyped, so a `slice` with a
@@ -14517,7 +14499,7 @@ const Emitter = struct {
             try self.lowerSliceEnd(cc.args[1].value.*);
         } else {
             // No end argument — or a written `null` (`s.slice(2, null)`, what
-            // `s[2..]` passes): slice to the end. `$__str_cp_slice` clamps an
+            // `s[2..]` passes): slice to the end. std-wasm's `text.slice` clamps an
             // end past the codepoint count to it, so "to the end" is the
             // largest i32. `null` lowered as `0` once made the end fall
             // before the start and the byte cutter read out of bounds.
@@ -14525,12 +14507,12 @@ const Emitter = struct {
         }
         // Decision 240: the bounds are codepoints, normalised as `slice`
         // normalises them (negative from the end, clamped).
-        try self.emit(self.builder().helper(.str_cp_slice));
+        try self.emit(try self.stdCall("text.slice"));
     }
 
     /// A slice's `end: ?i32` that is not the literal `null`: a plain `i32`, or
     /// an optional whose absence means "to the end" — the largest i32, which
-    /// `$__str_cp_slice` and `$__arr_slice` both clamp.
+    /// std-wasm's `text.slice` and `array.slice` both clamp.
     fn lowerSliceEnd(self: *Emitter, end: ast.Expr) anyerror!void {
         const oi = self.optInfoOf(end) orelse return self.lowerCoerced(end, "i32");
         if (!oi.boxed) return self.lowerCoerced(end, "i32");
@@ -15425,7 +15407,7 @@ const Emitter = struct {
                     try self.emit(.{ .load = .{ .offset = @intCast(off) } });
                     try self.emit(.{ .local_get = b });
                     try self.emit(.{ .load = .{ .offset = @intCast(off) } });
-                    try self.emit(self.builder().helper(.bn_cmp));
+                    try self.emit(try self.stdCall("bigint.compare"));
                     try self.emit(opOf("i32", "eqz"));
                     i += 1;
                 },
@@ -15801,13 +15783,13 @@ const Emitter = struct {
             return;
         }
         // Decision 332 — a `bigint` slot is its block's address: equal when
-        // the values are (`$__bn_cmp`), never by the addresses.
+        // the values are (std-wasm's `bigint.compare`), never by the addresses.
         if (std.mem.eql(u8, n, "bigint")) {
             try self.eqPushAddr(a);
             try self.emit(.{ .load = .{ .offset = a.off } });
             try self.eqPushAddr(b);
             try self.emit(.{ .load = .{ .offset = b.off } });
-            try self.emit(self.builder().helper(.bn_cmp));
+            try self.emit(try self.stdCall("bigint.compare"));
             try self.emit(opOf("i32", "eqz"));
             return;
         }
@@ -16081,11 +16063,11 @@ const Emitter = struct {
         }
         // Decision 332 — a `?bigint` is its block's address or `0`: two of
         // them (or one and a `bigint`) are equal when both are absent or both
-        // hold equal values (`$__bn_eq_opt`), never by the addresses.
+        // hold equal values (std-wasm's `bigint.equalOptional`), never by the addresses.
         if ((op == Op.eq or op == Op.ne) and (self.isOptBigintExpr(lhs) or self.isOptBigintExpr(rhs))) {
             try self.lowerValue(lhs);
             try self.lowerValue(rhs);
-            try self.emit(self.builder().helper(.bn_eq_opt));
+            try self.emit(try self.stdCall("bigint.equalOptional"));
             if (op == Op.ne) try self.emit(opOf("i32", "eqz"));
             return;
         }
@@ -16217,7 +16199,7 @@ const Emitter = struct {
         // Decision 332 — a `bigint` negates into a fresh block.
         if (self.isBigintAt(loc) or self.isBigintExpr(inner)) {
             try self.lowerValue(inner);
-            return self.emit(self.builder().helper(.bn_neg));
+            return self.emit(try self.stdCall("bigint.negate"));
         }
         // Decision 319 — a type's minimum written as itself: `0 - 2^63` traps
         // the checked `sub` and `2^31` alone reads as an `i64`, so the
