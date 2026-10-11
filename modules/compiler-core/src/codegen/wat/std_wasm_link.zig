@@ -68,7 +68,27 @@ pub const Linked = struct {
     /// The first byte past std-wasm's data and stack: where the program's
     /// heap starts.
     end: u32,
+    /// The functions among `items`, in the same order: what a snapshot shows
+    /// in place of each body (decision 446).
+    funcs: []const Fn,
 };
+
+/// One function transpiled from std-wasm, identified for a snapshot.
+pub const Fn = struct {
+    /// The program symbol (`__std_number_floatToString`, `__std_f4`).
+    symbol: []const u8,
+    /// `std:<module>.<function>` for an export, the symbol for a helper.
+    label: []const u8,
+    /// The first 12 hex digits of the sha256 of the function's bytes in
+    /// `std_wasm.wasm` (its code-section entry: locals and instructions).
+    hash: [12]u8,
+};
+
+fn hashOf(bytes: []const u8) [12]u8 {
+    var digest: [32]u8 = undefined;
+    std.crypto.hash.sha2.Sha256.hash(bytes, &digest, .{});
+    return std.fmt.bytesToHex(digest[0..6].*, .lower);
+}
 
 // ── the module, read ─────────────────────────────────────────────────────────
 
@@ -653,8 +673,15 @@ pub fn linkModule(ar: std.mem.Allocator, bytes: []const u8, wanted: []const []co
         try items.append(ar, .{ .data = .{ .offset = off, .len_prefix = null, .bytes = seg } });
         off += @intCast(seg.len);
     }
-    for (decoded.values()) |d| try items.append(ar, .{ .func = d.func });
-    return .{ .items = items.items, .end = top };
+    var funcs: std.ArrayListUnmanaged(Fn) = .empty;
+    for (decoded.keys(), decoded.values()) |idx, d| {
+        try items.append(ar, .{ .func = d.func });
+        const label = for (m.exports) |e| {
+            if (e.func == idx) break e.name;
+        } else d.func.name;
+        try funcs.append(ar, .{ .symbol = d.func.name, .label = label, .hash = hashOf(m.bodies[idx - nimp]) });
+    }
+    return .{ .items = items.items, .end = top, .funcs = funcs.items };
 }
 
 fn chain(
@@ -688,4 +715,50 @@ fn usesGlobal(s: ast.Seq, name: []const u8) bool {
         else => {},
     };
     return false;
+}
+
+// Decision 446 — a snapshot shows one line per transpiled function, keyed by
+// the hash of its bytes: a change inside one function of std_wasm.wasm moves
+// exactly that function's hash.
+test "Fn.hash ---- a change in one function's bytes changes that function's hash and no other" {
+    const alloc = std.testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const ar = arena.allocator();
+    const stdWasm = @import("std_wasm");
+    var wanted: [stdWasm.exports.len][]const u8 = undefined;
+    for (stdWasm.exports, 0..) |e, i| wanted[i] = e.name;
+    var diag: Diag = .{};
+    const base = try link(ar, &wanted, 301, &diag);
+    try std.testing.expect(base.funcs.len > 1);
+
+    const m = try read(ar, module_bytes, &diag);
+    const copy = try ar.dupe(u8, module_bytes);
+    // Flip one bit of the first byte, counting from the end of an exported
+    // function's body, whose module still links to the same set of functions.
+    var changed: ?usize = null;
+    const body = m.bodies[m.exports[0].func - m.func_imports.len];
+    const start = @intFromPtr(body.ptr) - @intFromPtr(module_bytes.ptr);
+    var at: usize = body.len;
+    while (at > 0) : (at -= 1) {
+        const off = start + at - 1;
+        copy[off] ^= 0x01;
+        defer copy[off] ^= 0x01;
+        var d2: Diag = .{};
+        const l2 = linkModule(ar, copy, &wanted, 301, &d2) catch continue;
+        if (l2.funcs.len != base.funcs.len) continue;
+        var same = true;
+        for (base.funcs, l2.funcs) |a, b| {
+            if (!std.mem.eql(u8, a.symbol, b.symbol)) same = false;
+        }
+        if (!same) continue;
+        var differing: usize = 0;
+        for (base.funcs, l2.funcs) |a, b| {
+            if (!std.mem.eql(u8, &a.hash, &b.hash)) differing += 1;
+        }
+        try std.testing.expectEqual(@as(usize, 1), differing);
+        changed = off;
+        break;
+    }
+    try std.testing.expect(changed != null);
 }

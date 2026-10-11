@@ -161,7 +161,7 @@ pub fn buildSnapshot(
             const watHdr = try std.fmt.allocPrint(alloc, "----- WASM TEXT -- {s}.wat\n```wasm\n", .{name});
             defer alloc.free(watHdr);
             try buf.appendSlice(alloc, watHdr);
-            try buf.appendSlice(alloc, result.js);
+            try writeWatModule(alloc, &buf, result.js, result.std_funcs);
             try buf.appendSlice(alloc, "```\n");
 
             if (result.run_output) |output| try writeRunLog(alloc, &buf, output);
@@ -169,6 +169,77 @@ pub fn buildSnapshot(
     }
 
     return try buf.toOwnedSlice(alloc);
+}
+
+/// Appends a wasm module's text with every function transpiled from
+/// `std_wasm.wasm` (`funcs`, decision 440) written as one line and its body
+/// omitted (decision 446):
+/// `;; std:hash.contentHash — from std_wasm.wasm (sha256 <12 hex>)`.
+/// Only this rendering changes — `text` still holds the whole function, and
+/// the binary the RUN LOG runs is complete. A function starts at its
+/// two-space `(func $<symbol>` line and ends at the next `  )` line (the
+/// emitter's item column, `wat/AGENTS.md`).
+fn writeWatModule(alloc: std.mem.Allocator, buf: *std.ArrayListUnmanaged(u8), text: []const u8, funcs: []const moduleOutput.StdFunc) !void {
+    var it = std.mem.splitScalar(u8, text, '\n');
+    var skipping = false;
+    var first = true;
+    while (it.next()) |line| {
+        if (skipping) {
+            if (std.mem.eql(u8, line, "  )")) skipping = false;
+            continue;
+        }
+        const head = "  (func $";
+        const f = if (std.mem.startsWith(u8, line, head)) stdFuncNamed(funcs, line[head.len..]) else null;
+        if (!first) try buf.append(alloc, '\n');
+        first = false;
+        if (f) |fnc| {
+            try buf.print(alloc, "  ;; {s} — from std_wasm.wasm (sha256 {s})", .{ fnc.label, &fnc.hash });
+            skipping = true;
+        } else {
+            try buf.appendSlice(alloc, line);
+        }
+    }
+}
+
+/// The std-wasm function whose symbol begins `rest` (the line after `(func $`):
+/// the symbol, then a space, the end of the line or `)`.
+fn stdFuncNamed(funcs: []const moduleOutput.StdFunc, rest: []const u8) ?moduleOutput.StdFunc {
+    for (funcs) |f| {
+        if (!std.mem.startsWith(u8, rest, f.symbol)) continue;
+        if (rest.len == f.symbol.len or rest[f.symbol.len] == ' ' or rest[f.symbol.len] == ')') return f;
+    }
+    return null;
+}
+
+test "writeWatModule writes a std-wasm function as one line and keeps the rest" {
+    const alloc = std.testing.allocator;
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    defer buf.deinit(alloc);
+    const funcs = [_]moduleOutput.StdFunc{.{ .symbol = "__std_f1", .label = "std:hash.contentHash", .hash = "0123456789ab".* }};
+    try writeWatModule(alloc, &buf,
+        \\(module
+        \\  (func $main
+        \\    call $__std_f1
+        \\  )
+        \\  (func $__std_f1 (param $p0 i32)
+        \\    local.get $p0
+        \\  )
+        \\  (func $__std_f10 (param $p0 i32)
+        \\  )
+        \\)
+        \\
+    , &funcs);
+    try std.testing.expectEqualStrings(
+        \\(module
+        \\  (func $main
+        \\    call $__std_f1
+        \\  )
+        \\  ;; std:hash.contentHash — from std_wasm.wasm (sha256 0123456789ab)
+        \\  (func $__std_f10 (param $p0 i32)
+        \\  )
+        \\)
+        \\
+    , buf.items);
 }
 
 /// Appends the `----- RUN LOG -----` section. The `botopink test` envelope

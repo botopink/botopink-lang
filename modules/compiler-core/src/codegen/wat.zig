@@ -402,6 +402,7 @@ pub fn codegenEmit(
                     .result = .{
                         .js = emitted.text,
                         .wasm = emitted.binary,
+                        .std_funcs = emitted.std_funcs,
                         .comptime_script = if (ok.comptime_script) |s| try alloc.dupe(u8, s) else null,
                         .comptime_trace = try comptimeMod.trace.renderAlloc(alloc, ok.comptime_traces),
                         .comptime_err = null,
@@ -1434,6 +1435,11 @@ fn emitWat(
     // placed after the module's own, its stack after the data, the heap
     // after both. `$__f64_to_str` is `Float.toString`'s cell.
     if (em.b.helpers.has(.f64_to_str)) try em.std_exports.put(em.alloc, stdMethodExport("Float", "toString").?, {});
+    var std_funcs: []moduleOutput.StdFunc = &.{};
+    errdefer for (std_funcs) |f| {
+        alloc.free(f.symbol);
+        alloc.free(f.label);
+    };
     if (em.std_exports.count() > 0) {
         var diag: stdWasmLink.Diag = .{};
         const linked_std = stdWasmLink.link(ar, em.std_exports.keys(), @intCast(em.next_data_offset), &diag) catch |err| switch (err) {
@@ -1444,6 +1450,16 @@ fn emitWat(
         try items.appendSlice(ar, linked_std.items);
         items.items[heap_ptr_at].global.init = try std.fmt.allocPrint(ar, "{d}", .{linked_std.end});
         items.items[memory_at].memory.min_pages = @max(1, (linked_std.end + 65535) / 65536);
+        std_funcs = try alloc.alloc(moduleOutput.StdFunc, linked_std.funcs.len);
+        for (linked_std.funcs, std_funcs, 0..) |f, *o, i| {
+            errdefer for (std_funcs[0..i]) |d| {
+                alloc.free(d.symbol);
+                alloc.free(d.label);
+            };
+            const sym = try alloc.dupe(u8, f.symbol);
+            errdefer alloc.free(sym);
+            o.* = .{ .symbol = sym, .label = try alloc.dupe(u8, f.label), .hash = f.hash };
+        }
     }
 
     // One model, two renderings: the text the snapshot records and the binary
@@ -1466,7 +1482,7 @@ fn emitWat(
     }
     const binary = try wasmBinary.encodeModule(alloc, module);
     errdefer alloc.free(binary);
-    return .{ .text = try aw.toOwnedSlice(), .binary = binary };
+    return .{ .text = try aw.toOwnedSlice(), .binary = binary, .std_funcs = std_funcs };
 }
 
 /// Decision 440 (3) — the primitive methods `primitives.bp` binds with a
@@ -1491,7 +1507,7 @@ pub fn stdMethodExport(behavior: []const u8, method: []const u8) ?[]const u8 {
 }
 
 /// What `emitWat` renders a module to: the `.wat` text and the binary module.
-const Emitted = struct { text: []u8, binary: []u8 };
+const Emitted = struct { text: []u8, binary: []u8, std_funcs: []moduleOutput.StdFunc };
 
 /// The text `emitWat` writes: the module the backend lowers (the snapshot's,
 /// the comptime runtime's), the WASI preview 2 component a `wasi` build runs,

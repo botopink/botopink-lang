@@ -131,6 +131,17 @@ pub const Unit = struct {
 /// `js` and `comptime_script` are heap-allocated; call `deinit` when done.
 /// `comptime_err` is set (and `js` is empty) when comptime validation failed.
 /// `run_output` contains stdout/stderr from executing the generated code.
+/// A function of a wasm output that was transpiled from `std_wasm.wasm`
+/// (decision 440), for the snapshot to write as one line (decision 446).
+pub const StdFunc = struct {
+    /// The `.wat` symbol, without `$`.
+    symbol: []const u8,
+    /// `std:<module>.<function>` for an export, the symbol for a helper.
+    label: []const u8,
+    /// The first 12 hex digits of the sha256 of the function's bytes.
+    hash: [12]u8,
+};
+
 pub const GenerateResult = struct {
     js: []u8,
     typedef: ?[]u8 = null,
@@ -142,6 +153,9 @@ pub const GenerateResult = struct {
     /// null on the other targets. Rendered from the same model as the text
     /// (`wat/wasm_binary_emitter.zig`), so the two cannot disagree.
     wasm: ?[]u8 = null,
+    /// The functions of `js` transpiled from `std_wasm.wasm`; owned. Only the
+    /// snapshot reads it — the text in `js` still holds their bodies.
+    std_funcs: []StdFunc = &.{},
     /// `COMPTIME ERLANG` / `COMPTIME REPLY` sections of the module's decorator
     /// and template evaluations (`comptime/trace.zig`), null when there are none.
     comptime_trace: ?[]u8 = null,
@@ -171,6 +185,11 @@ pub const GenerateResult = struct {
         if (self.typedef) |t| allocator.free(t);
         if (self.comptime_script) |s| allocator.free(s);
         if (self.wasm) |w| allocator.free(w);
+        for (self.std_funcs) |f| {
+            allocator.free(f.symbol);
+            allocator.free(f.label);
+        }
+        if (self.std_funcs.len > 0) allocator.free(self.std_funcs);
         if (self.comptime_trace) |s| allocator.free(s);
         if (self.run_output) |o| allocator.free(o);
         if (self.diagnostic) |*d| d.deinit(allocator);
