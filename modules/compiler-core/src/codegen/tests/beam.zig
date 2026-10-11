@@ -466,3 +466,27 @@ test "beam: an entry point sets standard_io to unicode before anything prints" {
         \\    {call_last, 0, {f,
     });
 }
+
+// ── a `??` before a loop closure ─────────────────────────────────────────────
+
+test "beam: a loop closure does not capture the register of an earlier `??`" {
+    // `var out = xs.at(0) ?? ""` desugars to `if (…) { v -> v }`; its binding
+    // `v` lives in a y-register only the present arm assigns. The `for` body
+    // is a closure, and its own `??` mentions the same `v`: the free-name walk
+    // took it for the outer binding and `make_fun3` read an unassigned `{y, N}`
+    // (the OTP compiler refused styled's `spliced`, 144 B-34).
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\fn joined(texts: string[], parts: string[]) -> string {
+        \\    var out = texts.at(0) ?? "";
+        \\    var k = 0;
+        \\    for (parts) { s ->
+        \\        out = out + s + texts.at(k + 1) ?? "";
+        \\        k = k + 1;
+        \\    }
+        \\    return out;
+        \\}
+        \\fn main() {
+        \\    @print(joined(["<", "|", "|", ">"], ["a", "b", "c"]));
+        \\}
+    , "<a|b|c>\n", &.{"{make_fun3, "});
+}

@@ -1449,7 +1449,16 @@ fn collectNamesInExpr(ctx: anytype, e: ast.Expr) anyerror!void {
         .branch => |br| switch (br.kind) {
             .if_ => |i| {
                 try walk(ctx, i.cond.*);
-                try walkBody(ctx, i.then_);
+                {
+                    // `if (x) { v -> … }` (and `x ?? d`, which desugars to it)
+                    // binds `v` for the then-branch only; an unbound mention
+                    // captured an earlier `v`'s y-register, assigned on one
+                    // arm alone (`unassigned` at `make_fun3`).
+                    const mark = scopeMark(ctx);
+                    defer scopeRestore(ctx, mark);
+                    if (i.binding) |b| try scopeBind(ctx, b);
+                    try walkBody(ctx, i.then_);
+                }
                 if (i.else_) |els| try walkBody(ctx, els);
             },
             .tryCatch => |tc| {
