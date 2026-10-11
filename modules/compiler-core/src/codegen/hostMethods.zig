@@ -41,7 +41,7 @@ pub fn takesSelf(m: ast.BehaviorMethod) bool {
 }
 
 /// The backends a host binding can name. `beam` reads `External.Erlang`
-/// (one annotation for the one VM, decision 437, `docs.md` § Host bindings).
+/// (one annotation for the one VM, decision 437, `conformance/docs.md` § Host bindings).
 /// `wasm` binds nothing: wasm has no host.
 pub const Target = enum {
     node,
@@ -70,7 +70,7 @@ pub fn binds(m: ast.BehaviorMethod, target: Target) bool {
         .node => bindsAnnotation(m, "node"),
         .erlang => bindsAnnotation(m, "erlang"),
         .beam => bindsAnnotation(m, "erlang"),
-        // wasm has no host (`docs.md` § Host bindings): nothing binds there.
+        // wasm has no host (`conformance/docs.md` § Host bindings): nothing binds there.
         .wasm => false,
     };
 }

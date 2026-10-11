@@ -19,7 +19,7 @@ scripts/
 ├── format-check.sh    ← `botopink format --check` over the compiler's canonical `.bp` trees (`TREES`) — decision 66's caller
 ├── test-libs.sh       ← runtime pre-flight + `botopink-lib-test` wrapper: one line per cell and per audited exclusion, one summary line (`zig build test-libs`)
 ├── test-vscode.sh     ← locate the sibling vscode-extension, `npm ci` once, `npm test` (`zig build test-vscode`)
-├── check-docs.sh      ← compiles every `botopink` fence of docs.md/README.md (`zig build test-docs`)
+├── check-docs.sh      ← every `<!-- example: … -->` of the language reference names a conformance cell (`zig build test-docs`)
 ├── tsc-check.sh       ← `tsc --noEmit --strict` over every `.d.ts`, and `node --check` over every `.js`, a commonJS build of libs/std (the one package the compiler ships), the example projects and conformance/modules emits (gate stage 11)
 ├── check-test-scratch.sh ← refuses a cwd-anchored `.botopinkbuild` path inside a `test` block or a `tests/` file (part of `zig build test`)
 ├── snap_audit.sh      ← read-only audit of every *.snap.md (7 modes)
@@ -32,8 +32,8 @@ scripts/
 ├── codemod-conformance-cells.py ← 144 B-29 step H: `tests/language/` → `conformance/` cells (`migrate`, `accept`, `audit` — § below)
 ├── lib/
 │   ├── gate-mode.sh   ← which gate a checkout runs (`front/*` → step, anything else → full) and what a changed-file list reaches, from the backend partition (sourced by gate.sh; run directly it explains a branch and a file list)
-│   ├── pool.sh        ← the bounded worker pool the shell runners share (sourced by ../conformance/run.sh and check-docs.sh)
-│   └── result-store.js ← the cell-result store of run.sh and check-docs.sh: keys, lookup, save (decision 229)
+│   ├── pool.sh        ← the bounded worker pool the shell runners share (sourced by ../conformance/run.sh)
+│   └── result-store.js ← the cell-result store of ../conformance/run.sh: keys, lookup, save (decision 229)
 └── git-hooks/
     ├── pre-commit                 ← tracked hook, enabled by `git config core.hooksPath scripts/git-hooks` (see ../AGENTS.md §Local gate)
     ├── pre-merge-commit           ← the same gate for a merge that commits by itself (git runs this hook there, not pre-commit)
@@ -151,7 +151,7 @@ caller), `zig build test` (`--cold` deletes
 `.botopinkbuild/cache/` under this checkout and each sibling library repository
 — the erlang verdicts, the `.beam` cache, the cell durations, the cell-result
 store, decision 225 — printing `gate: --cold deleted <dir>` for each, and passes
-`--cold` to stages 8–10, § Warm and cold),
+`--cold` to stages 8 and 9, § Warm and cold),
 `zig build test-bpmp`, `scripts/beam_export_audit.sh`, `zig build test-cli`, `zig build
 test-libs` (every cell the manifests declare, and an audit of every target a
 manifest excludes — § test-libs.sh), `zig build test-conformance` (`conformance/`, a red cell fails
@@ -216,7 +216,7 @@ included). Before stages 4b–12 start, `scripts/test-libs.sh --list`,
 plan of stages 8, 9 and 10, and after each of the three its own tally is held
 to its plan: `P + F + N` cells and `A + X` audits of `test-libs:` against the
 `cell:*` and `audit` lines, `cells: <J> jobs — …, <A> audits` of the language
-tests against the job lines, `docs: <N> fences` against the fence lines. A
+tests against the job lines, `docs: <N> references` against the reference lines. A
 stage that ran fewer than its plan fails the gate, green or not — a stage
 cannot be narrowed to win time. The last line is the total,
 `gate: every stage passed — 4m52s wall, 2120 CPU-s (budget 7m30s cold)`,
@@ -230,22 +230,22 @@ broken tree.
 
 ### Warm and cold
 
-Decisions 229 and 249 (front `00-gate/133-gate-speed`): stages 8, 9 and 10 keep a
+Decisions 229 and 249 (front `00-gate/133-gate-speed`): stages 8 and 9 keep a
 **cell-result store** under `.botopinkbuild/cache/results/` — `lib-test/` of
 each library's cache root (`botopink-lib-test`,
 [`../modules/lib-test-runner/AGENTS.md`](../modules/lib-test-runner/AGENTS.md)
-§ The result store), `language/` and `docs/` of this checkout (`lib/result-store.js`,
+§ The result store), `language/` of this checkout (`lib/result-store.js`,
 below). A warm run (no `--cold`) answers a job from a stored **pass** only when
 the job's key is equal — the compiler's build configuration and its sources
 partitioned by backend (below), the toolchain (`node`, the OTP release,
 `wasmtime`, the environment a compiler or runtime reads) and the SHA-256 of
 every byte the job reads; nothing decides what a change can affect.
 A failure is never stored and always runs. Each stage prints `result store: <N>
-jobs — <R> run, <S> from store` (`fences` for stage 10), and § counts holds `N`
+jobs — <R> run, <S> from store`, and § counts holds `N`
 and `R + S` to the stage's plan — the pairs of `test-libs --list` that spawn
-(`cell:test`, `cell:compile`, `audit`), the job lines of `run.sh --list`, the
-fence lines of `check-docs.sh --list`. `--cold` deletes every store with the
-other caches and passes `--cold` to the three stages, which then never read it
+(`cell:test`, `cell:compile`, `audit`), the job lines of `run.sh --list`.
+`--cold` deletes every store with the
+other caches and passes `--cold` to the two stages, which then never read it
 and write the passes they ran (decision 249): the run that decides a landing
 executes everything, and the warm run after it answers from what it ran.
 
@@ -341,8 +341,8 @@ skip stages because of it.
 `gate.sh --staged --no-conformance`: the mode is still the branch's (a `front/*` branch
 is the step gate), but the conformance stage — stage 9, `test-conformance` — does not
 run, and the run prints `gate: conformance not run (--no-conformance)` after the mode
-line. Every other stage runs as without the flag (`test-docs` is not conformance until
-144 B-29 step I moves the reference). A `--no-conformance` run never writes the
+line. Every other stage runs as without the flag (`test-docs` checks the reference's
+references and runs no cell, so it stays in the hook's gate). A `--no-conformance` run never writes the
 green-tree record and is never a full gate; a run without the flag behaves exactly as
 before. The conformance cells run in a front's Conformance step and at its landing
 (below), and the GitHub pipeline re-checks with conformance after the push.
@@ -423,7 +423,7 @@ and on every CPU, never by running less:
 | every stage that runs `botopink` | the binaries are ReleaseSafe (§ Build mode): ~12× less CPU per compile than Debug, the same output | § Build mode |
 | `test-libs` (tests that build fixtures) | a test's scratch directory (`BOTOPINK_TEST_TMPDIR`) is the run directory's sibling, so no erlang runner compiles and loads the fixture projects a build test wrote (rakun-scheduling: ~6 500 `.erl` per test module); `botopink build --target erlang` answers a source the same OTP compiler already accepted from its verdict cache (rakun's build tests: 22 builds of one closure per cell) | [`../modules/compiler-cli/src/cli/AGENTS.md`](../modules/compiler-cli/src/cli/AGENTS.md) (`test_cmd.zig`, `build.zig`) |
 | `test-conformance` | jobs (a cell: one `botopink cell check`; a test suite: one target) run on `lib/pool.sh` — the `test-libs` rule (one per CPU, bounded by `MemAvailable / 768 MiB`, each job admitted only while `procs_running` ≤ CPUs); verdicts are written one file per job and sorted before the report, so the output is byte for byte what `--jobs 1` prints. It used to be `--jobs 4` with no admission; measured under the usual shared load, 28.8 s → 18.3 s at +12 % CPU-seconds | [`../conformance/run.sh`](../conformance/run.sh) § parallel jobs |
-| `test-docs` | the `botopink check` of every fence runs on `lib/pool.sh`; the report is written in fence order with a placeholder per check and printed once the pool drains, so the output is byte for byte the serial run's. 8.5 s → 1.5 s | § check-docs.sh below |
+| `test-docs` | since 144 B-29 step I it compiles nothing: every example of the reference is a conformance cell, and the stage only checks that each reference names one (it was a `botopink check` per fence on `lib/pool.sh`, 8.5 s → 1.5 s) | § check-docs.sh below |
 
 ### One job budget (gate.sh § job budget)
 
@@ -432,9 +432,9 @@ pools of about 16 jobs on 16 CPUs, load 4.7 rising to 26 in a cold gate. Now
 `gate.sh` reads `pool_default_jobs` once, after the build (CPUs bounded by
 `MemAvailable / 768 MiB`), and passes each stage its share through the flag it
 already had: `test-libs` 50 % and `test-conformance` 30 % (`-- --jobs N`),
-`test-docs` 5 % (`-- --jobs N`), `tsc-check.sh` 10 % (`--jobs N`, new, default
-unchanged) and `test-web` `-j` 10 %, at least 1 each — 8 / 4 / 1 / 1 on 16
-CPUs. The shares follow the stages' measured CPU-seconds. Each runner keeps its
+`tsc-check.sh` 10 % (`--jobs N`, new, default unchanged) and `test-web` `-j`
+10 %, at least 1 each — 8 / 4 / 1 / 1 on 16 CPUs. `test-docs` had 5 % until 144
+B-29 step I; it reads files and takes no share. The shares follow the stages' measured CPU-seconds. Each runner keeps its
 own `procs_running` admission; no report changes. `zig build test` already runs
 beside the ReleaseSafe build (§ ahead of the build): it finishes in 1m55 inside
 the build's 3m10, with `MemAvailable` never below 10 GB of 30 GB, so it adds
@@ -495,7 +495,7 @@ file per job, printed in its own order afterwards — which is what lets
 ## lib/result-store.js
 
 Run by `node`, never sourced. The cell-result store of `../conformance/run.sh`
-and `check-docs.sh` (decision 229; `botopink-lib-test` keeps the same store in
+(decision 229; `botopink-lib-test` keeps the same store in
 Zig, `../modules/lib-test-runner/src/result_store.zig`, with the same probes and
 the same environment list). Four subcommands:
 
@@ -693,61 +693,30 @@ run on the same worker pool as the cells.
 
 ## check-docs.sh
 
-`scripts/check-docs.sh [--compiler <botopink>] [--doc <file>]… [--list] [--jobs <n>] [--self-test]
-[--cold] [--store-root <dir>] [--lib-root <dir>]…` (`zig build test-docs`) — extracts every ```` ```botopink ```` fence of the user
-docs (default `docs.md README.md`) into a scratch project and runs `botopink
-check` on it. An HTML comment on the line above the fence chooses the treatment:
+`scripts/check-docs.sh [--doc <file>]… [--list] [--self-test]` (`zig build test-docs`, the gate's
+stage 10; decisions 461, 462) — every example of the language reference names a conformance cell.
+The reference (`../conformance/docs.md`) holds no example of its own: an example is a line
+`<!-- example: modules/<cell> -->` or `<!-- example: test/<suite> -->`, alone on its line, its path
+relative to `conformance/`, and what it answers is the cell's, checked by `test-conformance`. The
+docs checked are `conformance/docs.md`, every `conformance/modules/*/docs.md` and `README.md`
+(`--doc` replaces the list):
 
-| Directive | Treatment | Verdict |
-|---|---|---|
-| none | a whole module, `src/main.bp` | must compile |
-| `<!-- docs-check: body -->` | statements wrapped in `fn main() { … }` | must compile |
-| `<!-- docs-check: project <name> <path> -->` | one file of a multi-file project — every fence with the same `<name>` is written at its `<path>` and the project is checked once, one of them at `src/main.bp`; the fence may be of any language (a ```` ```json ```` fence at `botopink.json` is the manifest, whose `dependencies` resolve by name through the library roots the script sets: `libs/`, the sibling checkouts next to the repository and under `repository/`) | the project must compile; its verdict counts for every fence written into it |
-| `<!-- docs-check: reject [body] <expectation> -->` | code the compiler must refuse; `body` wraps it in `fn main` first | `botopink check` must exit non-zero and its first `error` line must contain `<expectation>` verbatim — an error id (`iter-await`) or a message (`'f' expects 2 argument(s), got 0`); a fence that compiles, or is refused with another first diagnostic, fails (the doc claims a refusal the compiler does not make); one refusal per fence, the checker stops at the first |
+| Line | Verdict |
+|---|---|
+| `<!-- example: modules/<cell> -->` | `conformance/modules/<cell>/` holds `botopink.json` and `src/main.bp`, or the line fails: `names no cell` |
+| `<!-- example: test/<suite> -->` | `conformance/test/<suite>` is a `.bp` file or a directory holding `botopink.json`, or the line fails: `names no suite` |
+| a ```` ```botopink ```` fence | fails: a program in the reference is a cell; a table, a grammar or a layout sample is ```` ```text ```` |
+| a line opening with `<!-- docs-check:` | fails: the directive of the inline fences this script compiled until 144 B-29 step I |
+| a line opening with `<!-- example:` in another shape | fails |
 
-There is no directive that skips a fence (1.0.11-beta decision gate-e): a table,
-a grammar or a layout sample is not code and is fenced as ```` ```text ````. A
-failing fence, an unknown directive, a directive on a fence that is not
-```` ```botopink ```` (`project` excepted), a `reject` with no expectation and a
-named project with no `src/main.bp` each fail the run and name the doc and the
-fence's line. `--list` prints every fence with its directive and compiles
-nothing. Every run starts with the harness's own contract — a synthetic doc of
-nine fences with known verdicts (a `reject` that compiles ✗, one refused with
-another diagnostic ✗, the right one ✓, a `reject body` ✓, a `skip` directive ✗, a
-module that does not compile ✗, one that does ✓, a `reject` with no expectation
-✗, a `body` directive on a ```` ```text ```` fence ✗); a verdict that differs
-fails the run before the docs are judged, and `--self-test` runs only it. The
-exit line is `docs: <N> fences — <N> checked, 0 skipped, <F> failed` with
-`checked + failed = fences` (`0 skipped` is a constant). State for a named
-project lives in the scratch tree (`.name`, `.origin`, `.files`, `src/main.bp`),
-not in an associative array, so the script runs under the macOS runner's bash
-3.2. The checks run on `lib/pool.sh` (`--jobs`, default one per CPU bounded by
-memory): the report is written in fence order with a `\001CHECK <k>`
-placeholder per check, and printed after the pool has drained with each
-placeholder replaced by its verdict line, so any `--jobs` prints the serial
-run's bytes.
-
-**The result store** (§ Warm and cold). A deferred check whose key equals a
-stored pass is answered from `<repo>/.botopinkbuild/cache/results/docs/` (its
-`<k>.ok` is written before the pool starts, and the pool skips it); every other
-check runs. The key (`lib/result-store.js`) is the compiler's build and every
-backend's sources (`check` is target-independent), this
-script, `lib/pool.sh`, `lib/result-store.js`, the toolchain, every package the
-library roots hold (each child of `libs/`, of the sibling directory and of
-`repository/` that carries a `botopink.json` — what a fence's `dependencies` can
-name) and the check's own scratch project whole — the fence's text, the
-manifest, every file of a named project — with its mode and expectation; never
-the check's number or the doc's line, so moving a fence does not move its key.
-A project whose manifest has a `git` dependency is never stored (the docs' one
-such project, `library`, is named on a `never stored` line). The harness's nine
-fences always run. The exit line is preceded by `result store: <N> fences — <R>
-run, <S> from store` (a fence judged without the compiler counts as run);
-`--cold` never reads the store and writes its passes, `--store-root <dir>`
-keeps it elsewhere. `--lib-root <dir>` (repeatable) replaces the default
-library roots: every package the roots hold is hashed whole into each key, so
-a symbolic link anywhere in a sibling's tree (`vscode-extension/node_modules`)
-makes every check unstorable — `modules/compiler-cli/tests/result_store.sh`
-names its own root and never reads a sibling checkout.
+Every failure is printed `✗ <doc>:<line> <why>`; the exit line is `docs: <N> references — <M>
+missing, <F> refused lines`, and § Stage times holds `N` to the lines `--list` prints
+(`<doc>:<line>\t<path>`, one per reference). Every run starts with the harness's own contract — a
+synthetic suite and doc whose six lines get known verdicts (a reference to a cell that exists ✓, to
+one that does not ✗, to a suite ✓, a ```` ```botopink ```` fence ✗, a `docs-check` line ✗, an
+`example:` line with no path ✗); a verdict that differs fails the run before the docs are judged, and
+`--self-test` runs only it. The script reads files and runs no compiler, so it keeps no result store
+and takes no `--jobs`. bash 3.2 clean.
 
 ## check-test-scratch.sh
 

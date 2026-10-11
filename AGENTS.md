@@ -19,8 +19,6 @@ workflow.
 botopink-lang/                 ← language core (this project)
 ├── AGENTS.md                  ← you are here
 ├── README.md                  ← public-facing intro
-├── docs.md                    ← language reference (.bp syntax + semantics); every fence compiles (`zig build test-docs`)
-├── docs/                      ← botopink-json.md — the manifest schema (packages, workspaces, the dependency object) — see docs/AGENTS.md
 ├── build.zig                  ← workspace build graph
 ├── .github/workflows/         ← test.yml (push/PR) + release.yml (tags)
 ├── modules/                   ← all Zig packages — see modules/AGENTS.md
@@ -40,8 +38,10 @@ botopink-lang/                 ← language core (this project)
 ├── libs/                      ← the bundled .bp library — see libs/AGENTS.md
 │   └── std/                   ← standard library, the one package the compiler ships (decision 326)
 ├── examples/                  ← generic-loader-binding alone, waiting to move to erika — see examples/AGENTS.md
-├── conformance/               ← the conformance suite (decisions 457, 466, 475): modules/<cell>/ checked by
-│                                `botopink cell check`, test/ suites by `botopink test --json` — see conformance/AGENTS.md
+├── conformance/               ← the language reference and its conformance suite (decisions 457, 461, 462, 466, 475):
+│                                docs.md (the reference, the manifest schema included; every example a cell),
+│                                modules/<cell>/ checked by `botopink cell check`, test/ suites by
+│                                `botopink test --json` — see conformance/AGENTS.md
 └── scripts/                   ← installers, release packing, snapshot audit, git hooks
 ```
 
@@ -64,7 +64,7 @@ zig build test-backends # the wasm core module's --invoke main (modules/compiler
 zig build test-bpmp     # bpmp unit tests
 zig build test-vscode   # VS Code extension unit tests — scripts/test-vscode.sh finds the sibling checkout
 zig build test-conformance # the conformance suite (conformance/run.sh: every cell by `botopink cell check`, every test/ suite; `-- --compiler <botopink>` to run another binary)
-zig build test-docs     # every `botopink` fence of docs.md/README.md compiles (scripts/check-docs.sh)
+zig build test-docs     # every example of conformance/docs.md (and each cell's docs.md, README.md) names a conformance cell (scripts/check-docs.sh)
 zig build clean-tmp     # reap scratch dirs older than 1 day (also runs before `zig build test`)
 zig build gen-unicode   # regenerate libs/std/src/unicode_tables.bp from the pinned Unicode data (libs/std/AGENTS.md § unicode)
 zig build std-wasm      # modules/std-wasm → zig-out/lib/std_wasm.wasm, the side module a wasm program and the comptime runtime decode (decisions 440, 450)
@@ -93,7 +93,7 @@ compiling spawns no `erl` and building the compiler runs no `erlc`. `erl` / `erl
 (OTP 28+) are needed for the erlang and beam **targets' own** tests: the codegen
 snapshot RUN LOGs and the beam export audit under `zig build test` and the gate,
 and `botopink build/run/test --target erlang|beam` (and so `test-cli`,
-`test-libs`, `test-conformance`, `test-docs`), which needs exactly the release the
+`test-libs`, `test-conformance`), which needs exactly the release the
 compiler emits for — `OTP_RELEASE` in `modules/manifest/src/root.zig`, printed by
 `botopink --version` — and refuses any other `erl` on `PATH` (decision 228,
 `modules/compiler-cli/src/cli/otp.zig`); codegen snapshot RUN LOGs also use
@@ -167,8 +167,8 @@ does not mirror them. Entry points:
 | Conformance suite (the language's cells; the former `tests/language` and `examples/`) | [`conformance/AGENTS.md`](conformance/AGENTS.md) |
 | Examples (one left, waiting to move to erika) | [`examples/AGENTS.md`](examples/AGENTS.md) |
 | Scripts | [`scripts/AGENTS.md`](scripts/AGENTS.md) |
-| `.bp` language reference (user-facing) | [`docs.md`](docs.md) |
-| `botopink.json` schema (user-facing) | [`docs/botopink-json.md`](docs/botopink-json.md) · model: [`modules/manifest/AGENTS.md`](modules/manifest/AGENTS.md) |
+| `.bp` language reference (user-facing) | [`conformance/docs.md`](conformance/docs.md) — every example a cell of `conformance/modules/` |
+| `botopink.json` schema (user-facing) | [`conformance/docs.md`](conformance/docs.md) § The manifest schema · model: [`modules/manifest/AGENTS.md`](modules/manifest/AGENTS.md) |
 
 ## Release pipeline
 
@@ -222,17 +222,18 @@ and the comptime runtimes (decisions 170, 337 — `compiler-core/src/comptime/AG
 
 - **Keep AGENTS.md up to date.** Code, layout, or pipeline changes update the
   affected `AGENTS.md` in the same change.
-- **`README.md` and `docs.md` stay in sync** with language features, CLI flags
-  and syntax. Every ```` ```botopink ```` fence in them is compiled by `zig
-  build test-docs`; an HTML comment on the line above the fence says how
-  (`<!-- docs-check: body -->` wraps statements in `fn main`,
-  `<!-- docs-check: project <name> <path> -->` writes one file of a multi-file
-  project, `<!-- docs-check: reject <expectation> -->` asserts that the
-  compiler refuses the fence with the named error id or message). There is no
-  directive that skips a fence: a table or a grammar is fenced as ```` ```text ````.
-  A doc claim that the compiler does not yet honour belongs in the reference's
-  "Decided, not yet implemented" table, with the front that closes it — never
-  as an uncompiled example.
+- **The reference is `conformance/docs.md`, and every example in it is a cell**
+  (decisions 461, 462): a language feature, its syntax and its refusals are
+  written there, and an example is a line `<!-- example: modules/<cell> -->`
+  (or `test/<suite>`) naming the conformance cell that shows it — its `src/`
+  and its answer on every target, never an inline fence. Beside each cell, its
+  `docs.md` quotes the reference text it shows. `zig build test-docs` checks
+  that every example names a cell and that no ```` ```botopink ```` fence is
+  left inline; a table, a grammar or a layout sample is fenced as ```` ```text ````.
+  `README.md` keeps the tool's own documentation (install, commands, layout) and
+  links the reference. A doc claim that the compiler does not yet honour belongs
+  in the reference's "Decided, not yet implemented" table, with the front that
+  closes it — never as an example whose cell is not green.
 - **A behaviour change carries its cells** (decision 458): a step that adds,
   changes or refuses observable behaviour writes the cells that prove it under
   `conformance/modules/<cell>/` (`botopink cell new`, then `botopink cell
@@ -269,11 +270,15 @@ it and must not silently wait for it.
 
 ## Local gate
 
-**The gate every front runs before landing is `zig build test && zig build
-test-libs`**, with `zig build test` from a cold runtime cache. The full ordered
-run is [`scripts/gate.sh`](scripts/gate.sh) — stages 1–4 one after the other,
-4b–12 side by side and reported in this order, the first red one ending the run
-(`scripts/AGENTS.md` § Where the gate's time goes):
+**[`scripts/gate.sh`](scripts/gate.sh) is the one gate — the commit hook's, CI's
+and a person's** (decisions 466, 470, 477). The commit hook runs it as
+`scripts/gate.sh --staged --no-conformance`: every stage but the conformance cells
+(`conformance/`). The GitHub pipeline (`.github/workflows/test.yml`) runs
+`scripts/gate.sh --cold` WITH conformance on every push to `feat`, and a front's
+Conformance step reads that run; conformance runs locally only to reproduce a red
+it reports. Its stages — 1–4 one after the other, 4b–12 side by side and reported
+in this order, the first red one ending the run (`scripts/AGENTS.md` § Where the
+gate's time goes):
 
 1. `--staged`: conflict markers and `zig fmt --check` on staged files, and a staged snapshot candidate (`*.snap.new`, `*.snap.md.new` — `git add -f` gets past `.gitignore`) is refused; then, on every run, `zig fmt --check modules` — a `.zig` file red anywhere in the tree fails the gate, staged or not;
 2. `zig build -Doptimize=ReleaseSafe` — the mode `release.yml` ships, and the binaries every later stage runs (every `zig build` of the gate passes the same flag; stage 4's unit tests stay Debug);
@@ -284,7 +289,7 @@ run is [`scripts/gate.sh`](scripts/gate.sh) — stages 1–4 one after the other
 7. `zig build test-cli` (the CLI contract, test tooling, the result store and the wasm core module's `--invoke main`);
 8. `zig build test-libs` (every visible library on the targets its manifest declares — a cell that exists is green or the stage fails; a library without tests is still compiled; every target a `"targets"` list excludes is audited, and an exclusion that is not structural fails the stage);
 9. `zig build test-conformance` (the conformance suite, `conformance/`: every cell of `conformance/modules/` by `botopink cell check` on every target its manifest declares — its answers against `snapshot/output/` and `snapshot/targets/<t>/`, every `"targets"` narrowing audited against the compiler's host-binding refusal — and every `conformance/test/` suite by `botopink test --json` on commonJS, erlang and beam, after the runner's own `--self-test`);
-10. `zig build test-docs` (every `botopink` fence of `docs.md` and `README.md` compiles);
+10. `zig build test-docs` (every `<!-- example: … -->` of `conformance/docs.md`, of each cell's `docs.md` and of `README.md` names a conformance cell or suite, and no ```` ```botopink ```` fence is left inline — `scripts/check-docs.sh`);
 11. `scripts/tsc-check.sh` (every `.d.ts` a commonJS build of `libs/std` — the one package the compiler ships —, the example projects, every conformance cell whose commonJS answer compiles and every `conformance/test/` project emits passes `tsc --noEmit --strict`, typescript pinned, through `npx`, and every `.js` it emits passes `node --check`).
 
 **Step gate and full gate** (decision 460). The branch decides, never a flag or a
@@ -305,10 +310,10 @@ conformance after (`scripts/AGENTS.md` § Step gate and full gate).
 
 The side-by-side stages share one job budget: `gate.sh` computes it once
 (CPUs bounded by memory) and hands each stage its share through its `--jobs`
-flag — `test-libs` 50 %, `test-conformance` 30 %, `test-docs` 5 %, `tsc-check` 10 %,
+flag — `test-libs` 50 %, `test-conformance` 30 %, `tsc-check` 10 %,
 `test-web` `-j` 10 % (`scripts/AGENTS.md` § One job budget).
 
-Stages 8–10 keep a cell-result store (decision 229): a warm run answers a cell
+Stages 8 and 9 keep a cell-result store (decision 229): a warm run answers a cell
 from a stored pass only when its key — the compiler's build and its sources
 partitioned by backend (decision 249,
 `modules/compiler-core/src/codegen/backend-partition.txt`), the toolchain and

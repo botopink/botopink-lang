@@ -2,7 +2,7 @@
 //// value's own type — a parameter, an annotated `val`, a function's answer
 //// and the elements of an `Array<Request>` holding two implementers. wasm
 //// trapped (`unreachable ;; unresolved call: path/0`) at the first such call,
-//// the limit `docs.md` stated for every behavior dispatch there; commonJS,
+//// the limit `conformance/docs.md` stated for every behavior dispatch there; commonJS,
 //// erlang and beam dispatched. It now reads the type from the value's header
 //// and calls that type's method (`$__bdispatch_<method>_<n>`), and no longer
 //// reads every element of the array as the first literal's `Page`.

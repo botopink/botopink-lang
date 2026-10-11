@@ -1,5 +1,5 @@
 # pool.sh — the bounded worker pool the gate's shell runners share
-# (conformance/run.sh, scripts/check-docs.sh). Sourced, never run.
+# (conformance/run.sh). Sourced, never run.
 #
 # The rule is `botopink-lib-test`'s ("Parallel cells" in
 # modules/lib-test-runner/AGENTS.md), so every pool of the gate sizes and

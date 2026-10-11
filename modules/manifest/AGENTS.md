@@ -17,7 +17,7 @@ decision 67 (the most restrictive behaviour, no knob): every refusal is a
 `Located` error — message, file, line, column, span — rendered in the CLI's
 diagnostic shape, and nothing is parsed and ignored.
 
-The user-facing schema is [`../../docs/botopink-json.md`](../../docs/botopink-json.md);
+The user-facing schema is [`../../conformance/docs.md`](../../conformance/docs.md) § The manifest schema;
 keep the two in sync — every field and every message there is read or produced
 here.
 
@@ -74,7 +74,7 @@ test name substring (`-Dtest-filter=expand`).
 ## Rules
 
 - Add a field only when a named reader consumes it, and document it in
-  `docs/botopink-json.md` in the same commit.
+  `conformance/docs.md` § The manifest schema in the same commit.
 - A new refusal is a `Located` error with a test that shows the rendered
   message, and a row in the schema document.
 - Never accept two spellings of one thing (decision 67): the string-array

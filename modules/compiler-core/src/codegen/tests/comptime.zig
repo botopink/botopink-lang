@@ -290,7 +290,7 @@ test "js: comptime basic ---- comptime val and plain function coexist" {
 
 // A `comptime { … }` block has its own scope: a local `val` is declared,
 // folded, and visible to the `break` expression (`comptime/error.zig`
-// `validateBody` + `comptime/eval.zig` `Scope`), as `docs.md` ("Compile-time
+// `validateBody` + `comptime/eval.zig` `Scope`), as `conformance/docs.md` ("Compile-time
 // evaluation") shows. Folds to `20`.
 test "js: comptime ---- block with break" {
     try h.assertJsSingle(std.testing.allocator, @src(),

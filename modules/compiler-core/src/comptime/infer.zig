@@ -7126,7 +7126,7 @@ fn refuseMemoryWrite(env: *Env, name: []const u8, plus: bool, value: *const ast.
             // A `Dict` rewritten through its own methods is decision 42's
             // documented case, not this rule's: under `keyed = false` it is
             // read, updated and stored whole — concurrent writes to different
-            // keys can be lost, which `docs.md` states with the figure and the
+            // keys can be lost, which `conformance/docs.md` states with the figure and the
             // compiler deliberately does not warn about — and `keyed = true`
             // is the one-row-per-key form that exists to remove the race.
             .recompose => if (!typeIsDict(mv.ty)) return failAt(
@@ -19937,7 +19937,7 @@ fn foldBodyComptime(env: *Env, ct: ast.ComptimeExprOf(.untyped), typed: TypedExp
         return error.TypeError;
     }
     if (try blockEval.unresolvedSectionPath(env, support)) |msg| {
-        env.lastError = TypeError.custom(msg, "A section path is resolved where it is inferred (`docs.md` § Sections of an enum); a `comptime` carries the resolved constructor.").withLoc(loc);
+        env.lastError = TypeError.custom(msg, "A section path is resolved where it is inferred (`conformance/docs.md` § Sections of an enum); a `comptime` carries the resolved constructor.").withLoc(loc);
         return error.TypeError;
     }
     if (try blockEval.useReached(env, prepared, support)) |msg| {

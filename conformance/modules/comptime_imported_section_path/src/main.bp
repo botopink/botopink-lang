@@ -1,4 +1,4 @@
-//// `docs.md` § Sections of an enum, decision 331 — an imported enum's
+//// `conformance/docs.md` § Sections of an enum, decision 331 — an imported enum's
 //// section value crosses the comptime runtime both ways: an imported
 //// function writing a section path (`defaultPad()`) and one dispatching on
 //// it (`label`) are carried, a path written here is an argument, and the

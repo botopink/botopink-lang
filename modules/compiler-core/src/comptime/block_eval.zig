@@ -1198,7 +1198,7 @@ fn findType(env: *Env, name: []const u8) ?FoundType {
     return .{ .decl = withSectionWrappers(env.arena, found.decl) catch return null, .helpers = found.helpers };
 }
 
-/// A section of an enum (`docs.md` § Sections of an enum) is a type of its
+/// A section of an enum (`conformance/docs.md` § Sections of an enum) is a type of its
 /// own, `__<Enum>__<Section>[__<Sub>…]` — the name inference registers it
 /// under (`infer.registerEnumSection`) and the rewrites construct
 /// (`__Tok__Pad.All(…)`). No module declares it: it is built here from the

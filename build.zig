@@ -600,25 +600,22 @@ pub fn build(b: *std.Build) void {
     const test_conformance_step = b.step("test-conformance", "Run the conformance suite (conformance/)");
     test_conformance_step.dependOn(&test_conformance_run.step);
 
-    // `zig build test-docs` — every `botopink` fence of the user docs compiles
-    // (front 14 step 3). `scripts/check-docs.sh` extracts each fence into a
-    // scratch project and runs `botopink check`. A plain fence is a whole
-    // module that must compile; a comment above it says otherwise:
-    // `<!-- docs-check: body -->` (statements wrapped in `fn main`),
-    // `<!-- docs-check: project <name> <path> -->` (one file of a multi-file
-    // project) and `<!-- docs-check: reject [body] <expectation> -->` (code
-    // the compiler must refuse with that first error). No directive skips a
-    // fence: text that is not code is fenced as ```text.
+    // `zig build test-docs` — every example of the language reference names a
+    // conformance cell (decisions 461, 462): `scripts/check-docs.sh` reads
+    // `conformance/docs.md`, each cell's `docs.md` and `README.md`, and every
+    // `<!-- example: modules/<cell> -->` / `<!-- example: test/<suite> -->`
+    // must name one that exists; an inline ```botopink fence is refused (what
+    // an example answers is the cell's, checked by `test-conformance`).
     // Forwards `--` args, e.g.
-    //   zig build test-docs -- --doc docs.md --list
-    // NOT wired into `zig build test` (spawns a compiler per fence).
+    //   zig build test-docs -- --doc conformance/docs.md --list
+    // NOT wired into `zig build test`.
     const test_docs_run = b.addSystemCommand(&.{ "bash", "scripts/check-docs.sh" });
     test_docs_run.step.dependOn(b.getInstallStep());
     test_docs_run.setCwd(b.path("."));
     test_docs_run.has_side_effects = true; // spawns child compilers — never cache
     if (b.args) |args| test_docs_run.addArgs(args);
 
-    const test_docs_step = b.step("test-docs", "Compile every botopink fence in the user docs");
+    const test_docs_step = b.step("test-docs", "Check that every example of the language reference names a conformance cell");
     test_docs_step.dependOn(&test_docs_run.step);
 
     // `zig build test-backends` — the wasm core module's `--invoke main`

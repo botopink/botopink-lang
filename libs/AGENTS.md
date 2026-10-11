@@ -68,4 +68,4 @@ libs/
 ## See also
 
 - The toolchain that consumes these libs → [`../modules/AGENTS.md`](../modules/AGENTS.md).
-- `.bp` language reference (user-facing) → [`../docs.md`](../docs.md).
+- `.bp` language reference (user-facing) → [`../conformance/docs.md`](../conformance/docs.md).

@@ -1778,7 +1778,7 @@ test "wat: refusal ---- a generic body reached with nothing bound is refused at 
 // Decision 238 — what a `#[@External.Wasm("…")]` binding names: `op:` one
 // numeric instruction over the declared parameters, `fn:` a private bodied fn
 // of the same module with the same signature, `wasi:` an adapter of
-// `wat/host_binding.zig`'s list (docs.md § Host bindings). Each lowers to a
+// `wat/host_binding.zig`'s list (conformance/docs.md § Host bindings). Each lowers to a
 // function of the declared name and signature, so a call is an ordinary call.
 test "wat: host binding ---- op:, fn: and wasi: bind a declare fn" {
     try h.assertWasmRunLog(std.testing.allocator,
@@ -1908,15 +1908,15 @@ test "wat: host binding ---- an unknown form, opcode, signature, fn or adapter i
     , "is none of the four forms", 1, 3);
 }
 
-// `wat/host_binding.zig`'s `adapters` is the list `docs.md` § Host bindings
+// `wat/host_binding.zig`'s `adapters` is the list `conformance/docs.md` § Host bindings
 // documents; the test reads the table and fails in both directions — an
 // adapter the backend binds that the reference does not list, and a row the
 // backend does not bind.
-test "wat: host binding ---- the adapter list agrees with docs.md" {
+test "wat: host binding ---- the adapter list agrees with conformance/docs.md" {
     const hb = @import("../wat/host_binding.zig");
     const io = std.testing.io;
     const alloc = std.testing.allocator;
-    const docs = try std.Io.Dir.cwd().readFileAlloc(io, "../../docs.md", alloc, .limited(1 << 22));
+    const docs = try std.Io.Dir.cwd().readFileAlloc(io, "../../conformance/docs.md", alloc, .limited(1 << 22));
     defer alloc.free(docs);
     const head = "| Adapter | Signature | Answers |";
     const at = std.mem.indexOf(u8, docs, head) orelse return error.AdapterTableMissing;
@@ -1929,7 +1929,7 @@ test "wat: host binding ---- the adapter list agrees with docs.md" {
         const end = std.mem.indexOfScalarPos(u8, line, 3, '`') orelse return error.AdapterRowUnreadable;
         const name = line[3..end];
         if (hb.findAdapter(name) == null) {
-            std.debug.print("docs.md lists the adapter `{s}` and host_binding.zig binds none\n", .{name});
+            std.debug.print("conformance/docs.md lists the adapter `{s}` and host_binding.zig binds none\n", .{name});
             return error.AdapterNotBound;
         }
         rows += 1;
@@ -1938,7 +1938,7 @@ test "wat: host binding ---- the adapter list agrees with docs.md" {
         const needle = try std.fmt.allocPrint(alloc, "| `{s}` |", .{a.name});
         defer alloc.free(needle);
         if (std.mem.indexOf(u8, docs[at..], needle) == null) {
-            std.debug.print("host_binding.zig binds `{s}` and docs.md does not list it\n", .{a.name});
+            std.debug.print("host_binding.zig binds `{s}` and conformance/docs.md does not list it\n", .{a.name});
             return error.AdapterNotDocumented;
         }
     }

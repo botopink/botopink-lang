@@ -54,7 +54,7 @@ source → lex → parse → infer (HM) → transform (specialize) → codegen �
   wasm runtime, in-process, for every target (decision 434); comptime vals are
   folded in Zig — see [`src/comptime/runtime/`](src/comptime/runtime/AGENTS.md).
 - For language syntax notes (records / enums / pipeline `|>` / numeric literals
-  / etc.) see the workspace [`docs.md`](../../docs.md).
+  / etc.) see the language reference [`conformance/docs.md`](../../conformance/docs.md).
 - **Test-mode codegen** (`----- RUN LOG -----` envelope per test): each
   backend's test runner wraps every `test "name" { … }` body with a fixed
   `TEST <file>:<line> <name>` header + a fenced ```logs``` block capturing the

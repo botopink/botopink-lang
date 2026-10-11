@@ -1,4 +1,4 @@
-//// `docs.md` § Parameters with defaults — "a parameter the call names by label
+//// `conformance/docs.md` § Parameters with defaults — "a parameter the call names by label
 //// keeps the argument it was given, **whichever position it is in**". The two
 //// call shapes whose slot names a backend knows are a record constructor and
 //// an enum variant, and this cell writes each one out of declared order, in

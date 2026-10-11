@@ -8777,7 +8777,7 @@ const Emitter = struct {
     ///
     /// `decl` is the variant's declared fields when this emit can place its
     /// enum: a labelled argument then fills the slot of the field it names,
-    /// as a record constructor's does (`docs.md` § Parameters with defaults).
+    /// as a record constructor's does (`conformance/docs.md` § Parameters with defaults).
     /// Zipped by position, `Shape.Rect(height: 2, width: 5)` was built
     /// `{Rect, 2, 5}`.
     fn lowerTaggedTuple(self: *Emitter, tag: []const u8, args: anytype, decl: []const ast.Field) anyerror!void {

@@ -8534,7 +8534,7 @@ const Emitter = struct {
                 items[0] = Ast.Expr.a(this.qualifiedVariantTagOf(name, cc.callee) orelse cc.callee);
                 for (cc.args, 1..) |arg, i| items[i] = try this.exprNode(b, arg.value.*);
                 // A labelled argument fills the slot of the field it names, as
-                // a record constructor's does (`docs.md` § Parameters with
+                // a record constructor's does (`conformance/docs.md` § Parameters with
                 // defaults): zipped by position, `Shape.Rect(height: 2,
                 // width: 5)` was built `{…rect, 2, 5}` (`modules/labelled_arguments`
                 // printed `205` for `502`). The same declared fields a `case`

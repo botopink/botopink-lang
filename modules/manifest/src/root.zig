@@ -28,7 +28,7 @@
 /// shape, so the same text reaches a terminal, the runner's log and the editor.
 /// Nothing is parsed and ignored, and no field turns a refusal off (decision 67).
 ///
-/// Schema document: `docs/botopink-json.md` — keep it in sync with this file.
+/// Schema document: `conformance/docs.md` § The manifest schema — keep it in sync with this file.
 const std = @import("std");
 
 pub const FILENAME = "botopink.json";

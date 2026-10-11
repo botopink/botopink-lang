@@ -818,7 +818,7 @@ that uses none of them dumps exactly as it did before they existed.
   (`enumVariantDuplicate`, `enum-variant-duplicate`). The same name at two
   levels — a leaf `Token.Mask.Mode.Alpha` beside a top-level
   `Token.Alpha(…)` — is legal: the path and the position's expected type
-  tell them apart (`docs.md` § Sections of an enum).
+  tell them apart (`conformance/docs.md` § Sections of an enum).
 
 ## The removed 1.0.2 surface (front 12 step 4)
 

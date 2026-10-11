@@ -115,7 +115,7 @@ botopink-lib-test [--target <t>[,<t>…] | --target all] [--lib <name>]…
 | Symbol | Meaning |
 |---|---|
 | `✓` | `botopink test` passed |
-| `✗` | a red `.bp` test — the only **cell** status that fails the run. Also every cell of a lib with a **problem**, printed once per cell without a spawn: a refused manifest (`docs/botopink-json.md`), a workspace that does not expand, a name declared by two libraries, or a library member of a workspace that lists no `files` (`error: ships nothing: manifest has no "files" — …`, located on its manifest) |
+| `✗` | a red `.bp` test — the only **cell** status that fails the run. Also every cell of a lib with a **problem**, printed once per cell without a spawn: a refused manifest (`conformance/docs.md` § The manifest schema), a workspace that does not expand, a name declared by two libraries, or a library member of a workspace that lists no `files` (`error: ships nothing: manifest has no "files" — …`, located on its manifest) |
 | `–` | lib has no test blocks and **compiled** (`botopink build --target <t>`); nothing ran |
 | `~` | the target is one `botopink test` cannot run yet (beam/wasm), whether the lib declares it or excludes it. `--strict` flips it to fail. |
 | `·` | not a cell: the lib's `"targets"` list excludes the target, and the restriction audit proved the exclusion structural (see below) |

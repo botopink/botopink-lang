@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# The cell-result store of the gate's three big stages (decisions 229 and 249 of
+# The cell-result store of the gate's two big stages (decisions 229 and 249 of
 # 1.0.11-beta, front 00-gate/133-gate-speed), end to end against the installed
-# binaries: `conformance/run.sh` (stage 9), `botopink-lib-test` (stage 8,
-# through its JSON) and `scripts/check-docs.sh` (stage 10), each over a
-# synthetic suite in a scratch directory with its own `--store-root`.
+# binaries: `conformance/run.sh` (stage 9) and `botopink-lib-test` (stage 8,
+# through its JSON), each over a synthetic suite in a scratch directory with its
+# own `--store-root`. (`scripts/check-docs.sh`, stage 10, compiles nothing since
+# 144 B-29 step I and keeps no store.)
 #
 # The compiler part of a key is its build configuration and its SOURCES,
 # partitioned by backend (`modules/compiler-core/src/codegen/backend-partition.txt`).
@@ -107,10 +108,7 @@ SH
 chmod +x "$WORK"/shim-*/*
 
 # A copy of the library root (`from "std"`), outside every walk-up path. Every
-# runner is handed it: the default roots of `check-docs.sh` are this
-# checkout's `libs/` and every sibling under the meta workspace's
-# `repository/`, hashed whole into each key — a sibling's install (a symbolic
-# link in `vscode-extension/node_modules`) made every fence unstorable.
+# runner is handed it, so no key ever hashes a sibling checkout.
 mkdir -p "$WORK/lang"
 cp -R "$REPO_ROOT/libs" "$WORK/lang/libs"
 rm -rf "$WORK"/lang/libs/*/.botopinkbuild
@@ -258,42 +256,5 @@ textrun() {
 textrun; expect "text mode, first" "$text" 2 2 0
 textrun; expect "text mode, again" "$text" 2 1 1
 grep -q 'okl · commonJS (from store)' <<<"$text" || fail "a cell answered from the store says so in its header"
-
-# ── scripts/check-docs.sh ────────────────────────────────────────────────────
-echo "==> [docs] scripts/check-docs.sh answers a fence from the store only on an equal key"
-DOC="$WORK/doc.md"
-cat >"$DOC" <<'MD'
-# doc
-
-```botopink
-fn one() -> i32 { return 1; }
-```
-
-<!-- docs-check: reject body unbound variable 'nope' -->
-```botopink
-nope();
-```
-MD
-docs() {
-  set +e
-  out="$(bash "$REPO_ROOT/scripts/check-docs.sh" --doc "$DOC" --compiler "$SHIM" --store-root "$WORK/store-docs" \
-    --lib-root "$WORK/lang/libs" "$@" 2>&1)"
-  code=$?
-  set -e
-  [[ $code -eq 0 ]] || { echo "$out" >&2; fail "check-docs.sh failed (exit $code)"; }
-}
-docs; expect "first run" "$out" 2 2 0
-docs; expect "no change" "$out" 2 0 2
-sed -i.bak 's#return 1;#return 2;#' "$DOC" && rm -f "$DOC.bak"
-docs; expect "one byte of one fence" "$out" 2 1 1
-edit modules/compiler-core/src/codegen/wat.zig
-docs; expect "one line of the wasm emitter (check is target-independent: every backend is in its key)" "$out" 2 2 0
-for t in node erl wasmtime; do
-  PATH="$WORK/shim-$t:$PATH" docs; expect "another $t version" "$out" 2 2 0
-done
-docs --cold; expect "--cold" "$out" 2 2 0
-docs; expect "a warm run after --cold" "$out" 2 0 2
-rm -rf "$WORK/store-docs"
-docs; expect "a deleted store" "$out" 2 2 0
 
 echo "==> result store: OK"

@@ -9,7 +9,7 @@
 //// success is `Ok`, failure is `Error(message)`. The caller writes
 //// `try asserts.equals(a, b);` and a failure propagates to the enclosing
 //// `test` body, which ends as `FAIL <name>  (<message>)  at <file>:<line>`
-//// (the test body is a fallible context — `docs.md` § Tests). A `-test`
+//// (the test body is a fallible context — `conformance/docs.md` § Tests). A `-test`
 //// helper that is itself `-> @Result<void, string>` composes an assertion
 //// with `try` and nothing else; nothing here panics.
 ////

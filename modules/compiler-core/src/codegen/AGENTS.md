@@ -655,7 +655,7 @@ codegen/
   carries one — it is declarative.
   Inside a generator, `return <iter>` becomes `yield* <iter>; return;` and
   `for (xs) { x -> yield x; }` becomes `for…of`.
-- **A labelled argument claims its slot**: `docs.md` § Parameters with defaults
+- **A labelled argument claims its slot**: `conformance/docs.md` § Parameters with defaults
   — "a parameter the call names by label keeps the argument it was given,
   whichever position it is in". `labelledArgs` places the arguments of a
   **fully-written labelled call** into the slots their labels name, for the two
@@ -1233,7 +1233,7 @@ codegen/
   rule; no `case` is built for it, and no erlang snapshot holds one. When the checker refuses the
   tail form (01's row, the same box as `04-js` step 1), nothing in `erlang.zig` is deleted and the
   erlang snapshots do not move. A value `if` / `case` whose arm is a block (`val s = if (c) { "a" }
-  else { "b" }`, `docs.md` § If / else) is a `case` whose arms end in their value — legal, not R7's.
+  else { "b" }`, `conformance/docs.md` § If / else) is a `case` whose arms end in their value — legal, not R7's.
   The block's `return` is the BLOCK's: entering the fun resets `in_loop_body` / `in_nested_return`
   and sets `block_guard`, so a `return` the fun cannot answer as its last expression (in a loop or
   a discarded statement of the body) throws `{'__bp_block', V}` to the block's own guard
@@ -1617,7 +1617,7 @@ codegen/
   stale row back — 19 996 of 20 000 measured on beam. `beam_asm.zig` carries
   the same modes in assembly (step 5).
 - **The module body** (`'_botopink_init'/0`, `initForms`): a module-level `val` is
-  evaluated ONCE, in declaration order, at module load — `docs.md` § `val`, and
+  evaluated ONCE, in declaration order, at module load — `conformance/docs.md` § `val`, and
   what `const x = f();` does on commonJS. `'_botopink_init'/0` is that body: a
   `_`-named statement inline (it has no reader, and `val _ = …` twice would
   collide on `'_'/0`), a named `val` as the call to its 0-arity reader. It is

@@ -983,7 +983,7 @@ const ParamHoles = struct {
 //
 // It fires only where it is provably sound; what it refuses still recurses,
 // and that list is the language's documented limit (`AGENTS.md` § self tail
-// calls, `docs.md` § Recursion).
+// calls, `conformance/docs.md` § Recursion).
 
 /// The label a rewritten tail call continues when it sits inside a loop of the
 /// function's own — a bare `continue` would target that inner loop.
@@ -2193,7 +2193,7 @@ const Emitter = struct {
 
     /// `__bp_adopt(<value>, <Record>, "<path>")` when a host declaration's
     /// return type names a record class this module can reach (declared here or
-    /// imported), else `value` untouched — the boundary adoption `docs.md`
+    /// imported), else `value` untouched — the boundary adoption `conformance/docs.md`
     /// § Host bindings describes, so a host-built record carries its type's
     /// methods (a host-backed method on `Regex` answers on the object
     /// `compile` built) and prints as the record. erlang's `adoptHostResult`.
@@ -5621,7 +5621,7 @@ const Emitter = struct {
         return self.variant_fields.get(name);
     }
 
-    /// `docs.md` § Parameters with defaults — "a parameter the call names by
+    /// `conformance/docs.md` § Parameters with defaults — "a parameter the call names by
     /// label keeps the argument it was given, **whichever position it is in**".
     /// The arguments of a fully-written labelled call, moved into the slots
     /// their labels name; null when the call is not that shape, and the

@@ -47,8 +47,8 @@ compiler-cli/
 │   │                          own `botopink.json`, each green
 │   │                          under `botopink cell check`; cli_contract.sh copies
 │   │                          them before it edits one
-│   └── result_store.sh      ← the cell-result store of gate stages 8–10 (decisions
-│                              229, 249): run.sh, botopink-lib-test and check-docs.sh
+│   └── result_store.sh      ← the cell-result store of gate stages 8 and 9 (decisions
+│                              229, 249): run.sh and botopink-lib-test
 │                              over synthetic suites and a shim compiler naming an
 │                              edited copy of the sources — a pass answered from
 │                              the store, a failure run again, one byte of a cell,
@@ -88,7 +88,7 @@ zig build test-backends # backend_exec.sh alone
 # cli_contract.sh also takes BOTOPINK_BIN=<binary> and BPMP_BIN=<bpmp> to test another build):
 bash modules/compiler-cli/tests/cli_contract.sh      # command contract C1–C13
 bash modules/compiler-cli/tests/test_tooling.sh      # `botopink test` behaviours
-bash modules/compiler-cli/tests/result_store.sh      # the result store of stages 8–10
+bash modules/compiler-cli/tests/result_store.sh      # the result store of stages 8 and 9
 bash modules/compiler-cli/tests/backend_exec.sh      # the wasm core module's --invoke main
 ```
 
@@ -113,7 +113,7 @@ bash modules/compiler-cli/tests/backend_exec.sh      # the wasm core module's --
 
 `cli/libs.zig` is the driver-side half of the lib-agnostic package mechanism. A
 project's `botopink.json` `dependencies` — the object form only (decision 76;
-`docs/botopink-json.md`) — are resolved by the shared
+`conformance/docs.md` § The manifest schema) — are resolved by the shared
 `manifest.resolveDependency` (`modules/manifest`): `{ "path": … }` from the
 project directory (must hold a package of that name; a sibling member of the
 enclosing workspace is refused with `use { "workspace": true }`);
@@ -216,7 +216,7 @@ of its output-layout step — so this is recorded here, not fixed here.
 
 **Unknown `botopink.json` fields are ignored; known ones are checked.** The
 shared `manifest` model (`modules/manifest/src/root.zig`, schema in
-`docs/botopink-json.md`) is the one parser: `config.zig` projects it into
+`conformance/docs.md` § The manifest schema) is the one parser: `config.zig` projects it into
 `ProjectConfig` (`name`/`version`/`target`/`entry`/`dependencies`/`files`, the
 enclosing `workspace`) and `libs.zig` reads a dependency's `src`/`files` from
 it. A manifest named `std` is refused (decision 453) unless

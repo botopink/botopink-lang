@@ -19,7 +19,7 @@
 //!
 //! The module is pure: it reads text and value types and answers a `Binding`
 //! or a message. `wat.zig` (`checkHostBindings`) resolves `fn:` against the
-//! declaring module and lowers each form; `docs.md` § Host bindings documents
+//! declaring module and lowers each form; `conformance/docs.md` § Host bindings documents
 //! the adapters and is kept in step with `adapters` by
 //! `codegen/tests/wat.zig`'s drift test.
 
@@ -88,11 +88,11 @@ pub const Adapter = struct {
     /// Set for an adapter answering `@Task<T>`: checked by shape instead of
     /// `params` / `result`.
     task: ?TaskSig = null,
-    /// What the adapter answers, for `docs.md`'s table and the diagnostics.
+    /// What the adapter answers, for `conformance/docs.md`'s table and the diagnostics.
     what: []const u8,
 };
 
-/// The adapters a `wasi:` binding may name — the list `docs.md` § Host
+/// The adapters a `wasi:` binding may name — the list `conformance/docs.md` § Host
 /// bindings documents. Each is a prelude helper (`wat_prelude.zig`, the group
 /// of its name) named `__wasi_<name>`. `std/io/random`'s seeded stream is
 /// std-wasm's (decision 451), bound by `std:` cells, not an adapter.
@@ -151,7 +151,7 @@ pub fn parse(alloc: std.mem.Allocator, text: []const u8, sig: Signature) !Result
     }
     if (std.mem.startsWith(u8, text, "wasi:")) {
         const name = text["wasi:".len..];
-        const ad = findAdapter(name) orelse return refused(alloc, "`#[@External.Wasm(\"{s}\")]`: `{s}` is not a WASI adapter — the adapters are listed in docs.md § Host bindings ({s})", .{ text, name, adapterNames() });
+        const ad = findAdapter(name) orelse return refused(alloc, "`#[@External.Wasm(\"{s}\")]`: `{s}` is not a WASI adapter — the adapters are listed in conformance/docs.md § Host bindings ({s})", .{ text, name, adapterNames() });
         if (ad.task) |ts| {
             const ok = if (sig.shapes) |shapes| shapes.len == ts.params.len and std.mem.eql(Shape, shapes, ts.params) and sig.result_shape == ts.result else false;
             if (ok) return .{ .ok = .{ .wasi = ad } };
@@ -233,7 +233,7 @@ fn slotsText(alloc: std.mem.Allocator, ss: []const Slot) ![]u8 {
     return buf.toOwnedSlice(alloc);
 }
 
-/// `(i32, T) -> @Task<T>` — an adapter's shape as `docs.md` writes it,
+/// `(i32, T) -> @Task<T>` — an adapter's shape as `conformance/docs.md` writes it,
 /// owned by the caller.
 pub fn taskSigText(alloc: std.mem.Allocator, ts: TaskSig) ![]u8 {
     var buf: std.ArrayListUnmanaged(u8) = .empty;

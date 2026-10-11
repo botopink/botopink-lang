@@ -1,4 +1,4 @@
-//// String interpolation and the pipe operator — both documented in `docs.md`
+//// String interpolation and the pipe operator — both documented in `conformance/docs.md`
 //// and used nowhere in `libs/std` or `examples/`, so nothing else would notice
 //// them breaking.
 

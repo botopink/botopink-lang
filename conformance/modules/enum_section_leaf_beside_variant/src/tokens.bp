@@ -1,6 +1,6 @@
 //// The enum: a section leaf `Layout.Break.After` and a top-level payload
 //// variant `After(inner: Token[])` share a name. The path and the position's
-//// expected type tell them apart (`docs.md` § Sections of an enum).
+//// expected type tell them apart (`conformance/docs.md` § Sections of an enum).
 
 pub type Token {
     Layout {

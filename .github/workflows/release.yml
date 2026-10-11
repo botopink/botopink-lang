@@ -5,7 +5,7 @@
 #
 # Asset naming, target tuples, and the sha256 sidecar convention are the
 # *only* contract bpmp and the install script know — keep them in lockstep
-# with `docs/botopink-json.md` and `scripts/release-pack.sh`.
+# with `conformance/docs.md` § The manifest schema and `scripts/release-pack.sh`.
 #
 # `bpmp` is built when the bpmp module exists in `build.zig` (lands later in
 # the v0.beta.18 set). When it is missing the packaging step silently skips

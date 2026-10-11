@@ -1,10 +1,59 @@
 # Botopink language reference
 
 This reference describes the language as the compiler accepts it today. Every
-`botopink` fence here is compiled by `zig build test-docs`. A table, a grammar or
-a layout sample is not code and is fenced as `text`; a `botopink` fence that is
-a statement list, one file of a project or a refusal says so in a `docs-check`
-comment.
+example is a conformance cell (decisions 457, 461, 462): a line
+`<!-- example: modules/<cell> -->` names `conformance/modules/<cell>/`, whose
+`src/` is the program and whose `snapshot/` is its answer on every target —
+the output, or the refusal and where — checked by `zig build test-conformance`;
+`<!-- example: test/<suite> -->` names a `test` suite of `conformance/test/`.
+Beside each cell, its `docs.md` holds the text of this reference it shows.
+`zig build test-docs` checks that every example names a cell or a suite. A
+table, a grammar, a layout sample or a runner's report is not a program and is
+fenced as `text`.
+
+A first program:
+
+<!-- example: modules/greet -->
+
+| Section | What |
+|---|---|
+| *Syntax changes* | what the 1.0.4-beta surface removed |
+| *Program structure* | modules, a module's default function, imports, std and the libraries |
+| *Bindings* | `val`, `var`, `@BeamMemory`, `fn` |
+| *Types* | primitives, records, enums and their sections, `behavior`, generics, aliases, derived types, unions and `is`, narrowing |
+| *Expressions* | literals, numbers, arrays, indexing, operators, optionals, lambdas, `if`, `case`, loops, `assert`, `use` |
+| *Functions* | recursion, inline parameter types, defaults, variadics, effects, results, tasks, iterators and streams |
+| *Comptime* | `comptime`, template functions, decorators, typed meta, template annotations, host bindings |
+| *Builtins* | the builtins, what `@print` writes, a value's own type, `@src()` |
+| *Tests* | `test` blocks, mocks |
+| *Backends*, *Project manifest*, *The manifest schema* | the four targets; `botopink.json`, every field and every refusal |
+| *Migrating from the effect annotations*, *Decided, not yet implemented* | the 1.0.10-beta move; what is decided and not built |
+
+### How an example answers — a cell's snapshot
+
+A cell's answer is one `.snap` file per module (decisions 457, 475, 485):
+`snapshot/output/<module>.snap` is the answer every target gives, and
+`snapshot/targets/<target>/<module>.snap` exists only where a target departs from
+it — it refuses the module (a host binding it lacks) or names an abort in its
+runtime's words, and replaces the module's whole answer there. A cell narrowed
+to some targets names them in its `botopink.json` `"targets"`. A `.snap` is a
+record per line, in this order, one spelling per answer:
+
+```text
+botopink-cell 1          the format and its version — always line 1
+refused <message line>   the compiler refuses the module: its `error…` line
+at <file>:<line>:<col>   … and where, when the diagnostic is located
+label <text>             after `at`: the label printed beside the caret, exactly as printed;
+                         absent when the caret has none (the `hint` lines are not claimed)
+out <text>               one line the program printed (`out` alone: an empty line)
+no-final-newline         the last `out` line ended without a newline
+abort                    the program exits non-zero (the status is never pinned)
+stderr <text>            after `abort`: the program's stderr contains <text>
+```
+
+A refusal and program output never share a file, and the header alone is the
+empty answer — a module that compiles and, for `main`, a program that printed
+nothing.
 
 ## Syntax changes
 
@@ -27,12 +76,7 @@ The move from the previous surface, declaration by declaration, is in
 A Botopink program is a sequence of declarations — bindings, functions, types,
 imports, and module declarations. Execution starts at `fn main()`.
 
-```botopink
-// hello.bp
-fn main() {
-    @print("hello, botopink");
-}
-```
+<!-- example: modules/hello -->
 
 ### Modules
 
@@ -41,36 +85,7 @@ for a binary, `root.bp` for a library) declares which submodules to include;
 the compiler follows these declarations instead of compiling every `.bp` it
 finds.
 
-<!-- docs-check: project modules src/main.bp -->
-```botopink
-// src/main.bp
-import {geometry.area};
-import {shapes.describe};
-
-pub mod geometry;    // resolves src/geometry.bp
-pub mod shapes;      // resolves src/shapes/mod.bp
-
-fn main() {
-    @print(area(3, 4));    // 12
-    @print(describe());    // circle
-}
-```
-
-<!-- docs-check: project modules src/geometry.bp -->
-```botopink
-// src/geometry.bp
-pub fn area(w: i32, h: i32) -> i32 {
-    return w * h;
-}
-```
-
-<!-- docs-check: project modules src/shapes/mod.bp -->
-```botopink
-// src/shapes/mod.bp
-pub fn describe() -> string {
-    return "circle";
-}
-```
+<!-- example: modules/modules -->
 
 Leaf modules are single files; folder modules use a `mod.bp` entry point.
 `pub mod` is visible through the parent; a plain `mod` is private to its
@@ -93,49 +108,7 @@ splitPath = split.splitPath;`, `pub type Pair = split.Pair;` — which is that
 declaration, not a second one, so the name has one public path
 (`text.splitPath`) and the submodule can stay private.
 
-<!-- docs-check: project mod_namespace src/main.bp -->
-```botopink
-// src/main.bp
-pub mod config;
-mod text;
-
-fn show(p: text.Pair) -> string {
-    return p.a + "+" + p.b;
-}
-
-fn main() {
-    @print(config.label("x"));               // [x]
-    @print(text.splitPath("a/b"));           // a b
-    @print(show(text.Pair(a: "c", b: "d"))); // c+d
-}
-```
-
-<!-- docs-check: project mod_namespace src/config.bp -->
-```botopink
-// src/config.bp
-pub fn label(s: string) -> string {
-    return "[" + s + "]";
-}
-```
-
-<!-- docs-check: project mod_namespace src/text/mod.bp -->
-```botopink
-// src/text/mod.bp
-mod split;
-
-pub val splitPath = split.splitPath;
-pub type Pair = split.Pair;
-```
-
-<!-- docs-check: project mod_namespace src/text/split.bp -->
-```botopink
-// src/text/split.bp
-pub type Pair(a: string, b: string)
-
-pub fn splitPath(p: string) -> string {
-    return p.replace("/", " ");
-}
-```
+<!-- example: modules/mod_namespace_reexport -->
 
 In the declaring module `import {config};` is a second spelling of the
 namespace, `redundant-module-import` at the item (delete it); a top-level
@@ -153,44 +126,7 @@ module, not an item of it — binds the default under the path's last segment,
 default reads the file's name as `decl.name`. A second default is
 `default-twice`; `pub default nope;` naming no function is `default-unknown`.
 
-<!-- docs-check: project default_fn src/main.bp -->
-```botopink
-// src/main.bp
-pub mod m;
-import {m.double};
-import {m.tree as Tree};
-
-fn main() {
-    @print(double(4));    // 8
-    @print(Tree(1));      // node(leaf)
-}
-```
-
-<!-- docs-check: project default_fn src/m/mod.bp -->
-```botopink
-// src/m/mod.bp
-pub mod double;
-pub mod tree;
-```
-
-<!-- docs-check: project default_fn src/m/double.bp -->
-```botopink
-// src/m/double.bp
-pub default fn (x: i32) -> i32 {
-    return x * 2;
-}
-```
-
-<!-- docs-check: project default_fn src/m/tree.bp -->
-```botopink
-// src/m/tree.bp
-fn Tree(depth: i32) -> string {
-    if (depth == 0) return "leaf";
-    return "node(" + Tree(depth - 1) + ")";
-}
-
-pub default Tree;
-```
+<!-- example: modules/default_fn_import -->
 
 ### Imports
 
@@ -201,44 +137,7 @@ from (decision 337): an item with no `from` whose first segment names no module
 of the package — `import {perimeter};` — is `shorthand-import` at the item, its
 fix written (below).
 
-<!-- docs-check: project imports src/main.bp -->
-```botopink
-// src/main.bp
-import {math} from "std";              // a module of the std package
-import {geometry.area};                // a module of this package, by its path
-import {shapes.circle.name};           // a nested module path
-
-pub mod geometry;
-pub mod shapes;
-
-fn main() {
-    @print(area(3, 4));             // 12
-    @print(name());                 // circle
-    @print(math.abs(0.0 - 1.0));    // 1
-}
-```
-
-<!-- docs-check: project imports src/geometry.bp -->
-```botopink
-// src/geometry.bp
-pub fn area(w: i32, h: i32) -> i32 {
-    return w * h;
-}
-```
-
-<!-- docs-check: project imports src/shapes/mod.bp -->
-```botopink
-// src/shapes/mod.bp
-pub mod circle;
-```
-
-<!-- docs-check: project imports src/shapes/circle.bp -->
-```botopink
-// src/shapes/circle.bp
-pub fn name() -> string {
-    return "circle";
-}
-```
+<!-- example: modules/import_module_paths -->
 
 The shorthand is refused at the item, and the refusal writes the import as it
 is spelled instead: the path of the one module of the package that declares the
@@ -257,39 +156,7 @@ error: shorthand-import: `perimeter` names no module of this package — write i
 `from` never names a module of this package. Beside a module named like a
 package, the brace form reaches the module and `from` the package:
 
-<!-- docs-check: project import_with_from src/main.bp -->
-```botopink
-// src/main.bp
-pub mod log;
-import {log.levelName as ownLevel};    // this package's module `log`
-import {Level, levelName} from "log";  // the dependency `log`
-
-pub fn main() {
-    @print(ownLevel(2));               // own:2
-    @print(levelName(Level.Warn));     // warn
-}
-```
-
-<!-- docs-check: project import_with_from src/log.bp -->
-```botopink
-// src/log.bp
-pub fn levelName(level: i32) -> string {
-    return "own:" + level.toString();
-}
-```
-
-<!-- docs-check: project import_with_from botopink.json -->
-```json
-{
-  "name": "app",
-  "version": "0.0.1",
-  "src": "src/",
-  "target": "commonJS",
-  "dependencies": {
-    "log": { "git": "https://github.com/botopink/log.git", "branch": "feat" }
-  }
-}
-```
+<!-- example: modules/import_bundled_package_beside_own_module -->
 
 A package wins its name: `from "log"` is the dependency `log` although the package
 has a module `log` of its own, so a dependency declared later never changes
@@ -347,44 +214,7 @@ and a module namespace reaches its types, so `import {collections} from "std"`
 allows `collections.Dict.empty()` beside `collections.lt()` (decision 111's
 constructors are type-scoped).
 
-<!-- docs-check: project import_tree src/main.bp -->
-```botopink
-// src/main.bp
-pub mod shapes;
-import {shapes.circle.name as circleName, shapes: {helpers: {seven}}};
-import {collections.Dict, collections: {gt, reverse, toInt as rank}} from "std";
-
-fn main() {
-    @print(circleName());                  // circle
-    @print(seven());                       // 7
-    val d: Dict<string, i32> = Dict.empty();
-    @print(d.insert("a", 1).size());       // 1
-    @print(rank(reverse(gt())));           // -1
-}
-```
-
-<!-- docs-check: project import_tree src/shapes/mod.bp -->
-```botopink
-// src/shapes/mod.bp
-pub mod circle;
-pub mod helpers;
-```
-
-<!-- docs-check: project import_tree src/shapes/circle.bp -->
-```botopink
-// src/shapes/circle.bp
-pub fn name() -> string {
-    return "circle";
-}
-```
-
-<!-- docs-check: project import_tree src/shapes/helpers.bp -->
-```botopink
-// src/shapes/helpers.bp
-pub fn seven() -> i32 {
-    return 7;
-}
-```
+<!-- example: modules/import_tree_group -->
 
 **The root of std is pure.** One criterion sorts the standard library:
 `io/` is everything that talks to the world outside the process — disk,
@@ -404,9 +234,7 @@ does what it wants.
 | `io` | `io.fs`, `io.http`, `io.net`, `io.clock`, `io.random`, `io.os`, `io.env`, `io.process` |
 | `testing` | `testing.asserts`, `testing.mocks` (`testing.snapshots` is the `snap` library, decision 391) |
 
-```botopink
-import {collections: {Dict, Set}, io: {fs, clock}, testing.asserts} from "std";
-```
+<!-- example: modules/import_std_groups -->
 
 **What is generic lives in std, once.** A primitive several libraries need —
 reading a number out of text, walking a decoded JSON value, a retry loop — is
@@ -423,35 +251,13 @@ std's, and a library calls it rather than writing its own:
 | `async` | `RetryPolicy(maxAttempts, initialMillis, multiplier, maxMillis)`, `nextDelay(policy, attempt)`, `retry(policy, work)` | `nextDelay` is `?i64` — `initialMillis × multiplier^(attempt − 1)`, never above `maxMillis`, `null` past `maxAttempts`; `retry` runs a `fn() -> @Task<@Result<T, E>>` until it answers `Ok` and answers the last `Error` when every attempt failed |
 | `io.fs` | `walk(root)`, `glob(pattern, root)`, `removeTree(path)` | relative, `/`-separated, sorted paths, the same for every spelling of the root; a dangling link under `walk` is an `Error` naming it; `glob`'s `*` and `**` do not match a name starting with `.` unless the segment writes the dot, and do not descend through a link to a directory |
 
-```botopink
-import {json, hash, async, io.clock} from "std";
-import {json.Json, async.RetryPolicy} from "std";
-
-fn main() {
-    val port = "8080".parseInt();                       // Ok(8080)
-    val ratio = "2.5e-1".parseFloat();                  // Ok(0.25)
-    @print(port.isOk() && ratio.isOk());
-    val doc = json.decode("{\"name\":\"ada\",\"tags\":[\"x\"]}")
-        .unwrapOr(Json.Null);
-    val name = doc.field("name");
-    @print(if (name != null) name.str() else doc.kindName());   // ada
-    @print(doc.members().length);                       // 2
-    @print(clock.parseDuration("30s").isOk());          // true — 30000 ms
-    @print(hash.pbkdf2Sha256("password", "salt", 1, 32));
-    val policy = RetryPolicy(3, 100, 2.0, 1000);
-    @print(async.nextDelay(policy, 4) == null);         // true — 100, 200, 400, then none
-}
-```
+<!-- example: modules/std_generic_primitives -->
 
 A library is imported the same way, under the name `botopink.json` declares it
 in `dependencies`:
 
-<!-- docs-check: project library src/main.bp -->
-```botopink
-import {of, erika} from "erika";   // a library dependency
-```
+<!-- example: modules/import_bundled_package_beside_own_module -->
 
-<!-- docs-check: project library botopink.json -->
 ```json
 {
   "name": "app",
@@ -472,14 +278,12 @@ route-table / `k` / `z` / URL-rule wires, the `nav:` navigation signals, the
 semantics) and `log` (levels, renderers, the error digest) — is a repository of
 its own, declared in `dependencies` like `erika` above:
 
-<!-- docs-check: project shared src/main.bp -->
-```botopink
+```text
 import {match.matchPath, table.parseTable} from "routing";
 import {envelope.writeEnvelope} from "actions";
 import {decorators.validated} from "validation";
 ```
 
-<!-- docs-check: project shared botopink.json -->
 ```json
 {
   "name": "app",
@@ -511,28 +315,19 @@ is `reserved-word-as-name`, which names the word.
 
 ### val — immutable binding
 
-```botopink
-val x = 42;
-val greeting = "hello";
-```
+<!-- example: modules/val_binding -->
 
 Types are inferred via Hindley-Milner unification. Explicit annotations are
 optional:
 
-```botopink
-val count: i32 = 42;
-val names: string[] = ["alice", "bob"];
-```
+<!-- example: modules/val_annotated -->
 
 A `val` is immutable: assigning to it — a local or a module-level `val`, from
 any `fn` body — is a compile-time error. The rule is the same one node already
 enforced at run time (`const`); it now holds on every target before any code
 is emitted.
 
-```botopink
-val x: i32 = 0;
-// x = 1;   error: `x` is a `val` and cannot be assigned
-```
+<!-- example: modules/val_cannot_be_assigned -->
 
 A `val` at module level is part of the **module body**: it is evaluated **once**,
 in declaration order, when the module loads — before `main` runs and before the
@@ -540,19 +335,7 @@ first `test {}` block. Reading the name afterwards does not evaluate it again,
 and a `_`-named statement, which nothing reads, runs just the same. So a module
 whose initialisers have effects registers itself by being loaded:
 
-```botopink
-fn register(name: string) -> i32 {
-    @print(name);
-    return 1;
-}
-
-val _registered = register("Greeter");   // runs at module load, once
-val port = 8000 + 80;                    // read as many times as you like
-
-fn main() {
-    @print(port);
-}
-```
+<!-- example: modules/val_runs_at_module_load -->
 
 `botopink test` and `botopink build` agree on this: the module body runs in both,
 at the same point relative to the program's own code. A backend that cannot run
@@ -570,13 +353,7 @@ A `var` may be reassigned. Inside a `fn` it is a local; at module level it is
 the **process** on erlang and beam. Two writes through a `fn` and one read
 print `2`:
 
-```botopink
-var hits: i32 = 0;
-
-pub fn bump() { hits = hits + 1; }
-
-pub fn main() { bump(); bump(); @print(hits); }
-```
+<!-- example: modules/module_var -->
 
 On the BEAM the annotation `#[@BeamMemory.<member>]` widens where a module `var`
 lives beyond the process (§ `@BeamMemory`). Off the BEAM the annotation is
@@ -596,29 +373,7 @@ or `PersistentTerm`. The only argument is `keyed: true | false`, default
 list, which stores its whole value. Every part is checked at `botopink check`,
 in a project whose target is erlang or beam:
 
-<!-- docs-check: project beam_memory src/main.bp -->
-```botopink
-import {collections.Dict} from "std";
-
-#[@BeamMemory.ProcessDict]        var explicit: i32 = 0;   // the default, said out loud
-#[@BeamMemory.Ets]                var hits: i32 = 0;
-#[@BeamMemory.PersistentTerm]     var buildVersion: i32 = 101;
-#[@BeamMemory.Ets(keyed: true)]  var counts: Dict<string, i32> = Dict.empty();
-
-// #[@BeamMemory.Etz] var x: i32 = 0;
-//   error: unknown member `Etz` in `@BeamMemory` — expected `ProcessDict`, `Ets` or `PersistentTerm`
-// #[@BeamMemory.Ets(keyd: true)] var x: i32 = 0;
-//   error: unknown argument `keyd` — expected `keyed`
-// #[@BeamMemory.Ets(keyed: true)] var n: i32 = 0;
-//   error: `keyed` needs a keyed container — an `i32` has no key
-// #[@BeamMemory.Ets] val x: i32 = 0;
-//   error: `#[@BeamMemory.Ets]` needs a `var` — `x` is a `val`
-```
-
-<!-- docs-check: project beam_memory botopink.json -->
-```json
-{ "name": "app", "version": "0.0.1", "src": "src/", "target": "erlang" }
-```
+<!-- example: modules/beam_memory_annotations -->
 
 **`ProcessDict`** — one value per BEAM process, in the process dictionary: no
 setup, no owner, erased when the process ends. It is what a bare `var` means,
@@ -660,11 +415,7 @@ belongs to the module version that created it and dies with it on reload.
 
 ### fn — function
 
-```botopink
-fn add(x: i32, y: i32) -> i32 {
-    return x + y;
-}
-```
+<!-- example: modules/fn_declaration -->
 
 A value leaves a function through `return`: a block is a statement, not a value, so a `fn` whose
 return type has a value must end every path with `return` (or `@panic` / `@todo`) —
@@ -686,34 +437,18 @@ Their methods are declared in `libs/std/src/primitives.bp`.
 A `type` whose fields are written in parentheses is a record: the declaration
 mirrors construction.
 
-```botopink
-type Point(x: i32, y: i32)
-
-val p = Point(x: 1, y: 2);
-val px = p.x;
-```
+<!-- example: modules/record_construct_read -->
 
 A record is immutable: a field is never assigned. A changed copy is the update
 form — `..base` and the fields that change, by label; every other field is read
 from `base`, which is a name or a path of names (a call there is refused, since
 it would run once per copied field — bind it with `val` first):
 
-```botopink
-type Point(x: i32, y: i32)
-
-val p = Point(x: 1, y: 2);
-val q = Point(..p, y: 5);    // Point(x: 1, y: 5)
-```
+<!-- example: modules/record_update_spread -->
 
 A body adds methods:
 
-```botopink
-type Counter(n: i32) {
-    fn current(self: Self) -> i32 {
-        return self.n;
-    }
-}
-```
+<!-- example: modules/record_method -->
 
 `self` is the receiver of a method, and names nothing else: a parameter called
 `self` is written only in a `type`, `behavior`, `implement` or `extend` body.
@@ -729,51 +464,19 @@ and a `self` function in it `namespace-type-self`. A `type` declared in a type's
 body is its associated type, named `Owner.Name` (decision 330). `type Name {}` is
 `type-without-field-list`, refused where the `()` belongs:
 
-```botopink
-pub type RequestBase()
-
-type MathOps() {
-    fn double(self: Self, x: i32) -> i32 {
-        return x * 2;
-    }
-}
-```
+<!-- example: modules/record_empty -->
 
 An anonymous group of values is a tuple, not a type declaration. A tuple is
 positional at run time; a label is a compile-time name, lent by the variable
 used to build it or written in the type:
 
-```botopink
-fn box() -> #(value: i32) {
-    val value = 1;
-    return #(value);    // the variable lends the label
-}
-
-fn read() -> i32 {
-    val inner = box();
-    return inner.value;    // same element as inner.0
-}
-```
+<!-- example: modules/tuple_label_from_variable -->
 
 ### type — enums
 
 A `type` whose body lists variants is an enum:
 
-```botopink
-type Color { Red, Green, Blue }
-
-type Shape {
-    Circle(radius: f64),
-    Square(side: f64),
-}
-
-fn main() {
-    val c = Color.Red;
-    val s = Shape.Circle(radius: 2.0);
-    @print(case c { Red -> "red"; _ -> "other"; });
-    @print(case s { Circle(r) -> r; Square(side) -> side; });    // 2
-}
-```
+<!-- example: modules/enum_declaration -->
 
 A variant is built through its type — `Color.Red`, `Shape.Circle(radius: 2.0)`;
 inside a `case` pattern the bare name is enough. A bare `Red` in expression
@@ -785,20 +488,7 @@ unbound `Red` at run time), so always write the qualified form.
 An enum's body may group variants into **sections**, and a section may nest.
 A section is itself a type (`Token.Color`), and a leaf is reached by its path:
 
-```botopink
-type Token {
-    Color {
-        Red { 100, 500 }
-        Gray { 100, 500 }
-    }
-    Bold,
-}
-
-fn main() {
-    val t: Token = .Color.Red.500;
-    @print(case t { Color(_inner) -> "a colour"; Bold -> "bold"; });
-}
-```
+<!-- example: modules/enum_sections -->
 
 A variant name is declared once per level of the body (`enum-variant-duplicate`
 at the second). The same name at two levels is two members, told apart by the
@@ -813,18 +503,7 @@ expects.** More than one enum can carry the same path, so the answer is read
 from the position the path is written in — a `val`'s annotation, a declared
 parameter, the function's return type, the element type of an array literal:
 
-```botopink
-type Token  { Color { Red { 100, 500 } } }
-type Border { Color { Red { 100, 500 } } }
-
-fn onToken(t: Token) -> string { return "token"; }
-
-fn main() {
-    val a: Token = .Color.Red.500;      // Token
-    val b: Border = .Color.Red.500;     // Border
-    @print(onToken(.Color.Red.100));    // Token — the parameter says so
-}
-```
+<!-- example: modules/enum_section_path_by_expected_type -->
 
 A position that expects nothing (`val x = .Color.Red.500;`) leaves the path
 carried by two enums with nothing to choose between them, and the compiler
@@ -838,29 +517,11 @@ error: the path ".Color.Red.500" is carried by more than one enum —
 Give the position a type and it resolves — or write the path from its enum,
 which names the answer in the path itself and needs no type around it:
 
-```botopink
-type Token  { Color { Red { 100, 500 } } }
-type Border { Color { Red { 100, 500 } } }
-
-fn main() {
-    val a = Token.Color.Red.500;     // Token
-    val b = Border.Color.Red.500;    // Border
-}
-```
+<!-- example: modules/enum_section_path_qualified -->
 
 ### behavior
 
-```botopink
-behavior Printable {
-    fn print(self: Self);
-}
-
-type Person(name: string) implement Printable {
-    fn print(self: Self) {
-        @print(self.name);
-    }
-}
-```
+<!-- example: modules/behavior_declaration -->
 
 A behavior is a type: a parameter, a return, a constructor field, an annotated
 `val` or a `var` typed by it takes any type that implements it, and a call on it
@@ -868,25 +529,7 @@ dispatches to that type's method — the value's own, whatever other type declar
 a method of the same name. An imported behavior is the same type it is in its
 own module, and so is every name an imported type alias mentions.
 
-```botopink
-behavior Greeter {
-    fn greet(self: Self) -> string;
-}
-
-type Bob(name: string) implement Greeter {
-    fn greet(self: Self) -> string {
-        return "hi " + self.name;
-    }
-}
-
-fn welcome(g: Greeter) -> string {
-    return g.greet();
-}
-
-fn main() {
-    @print(welcome(Bob(name: "bob")));
-}
-```
+<!-- example: modules/behavior_parameter -->
 
 A `behavior` no type in the program implements is a **runtime boundary**: the
 host builds the value. Such a value carries its own members — a `val` member is
@@ -896,14 +539,7 @@ a connection or a handle without the program naming a concrete type.
 
 ### Generics
 
-```botopink
-fn identity<T>(x: T) -> T { return x; }
-
-type Tree<T> {
-    Leaf(value: T),
-    Node(left: Tree<T>, right: Tree<T>),
-}
-```
+<!-- example: modules/generic_fn_and_type -->
 
 Built-in generic types carry an `@` prefix: `@Result<D, E>`, `@Task<T>`,
 `@Iterator<T>`, `@Expr<T>`. Optionals are `?T`; tuples are `#(A, B)`.
@@ -916,17 +552,7 @@ argument. A declaration without type parameters writes `Self`, and so does a
 non-generic type implementing a generic behavior — the behavior's `Self<…>` is
 that type:
 
-```botopink
-type Box<T>(value: T) {
-    pub fn get(self: Self<T>) -> T { return self.value; }
-    pub fn map<U>(self: Self<T>, f: fn(x: T) -> U) -> Self<U> { return Box(value: f(self.value)); }
-}
-
-fn main() {
-    val b: Box<string> = Box(value: 1).map({ x -> "one" });
-    @print(b.get());
-}
-```
+<!-- example: modules/generic_method_map -->
 
 Type arguments may be written at a use, adjacent to the name. A function or a
 constructor takes them before its call (`first<string>([], "none")`,
@@ -937,20 +563,7 @@ as type arguments only after a type's name (an upper-case first letter) and
 only when its `>` is followed by `.` or `(`; anywhere else `<` is a comparison,
 so `a < b`, `x < y && z > w` and `f(a < b, c > d)` mean what they say.
 
-```botopink
-type Slot<T> { Full(value: T), Empty }
-
-type Box<T>(value: T) {
-    pub fn make(v: T) -> Box<T> { return Box(value: v); }
-}
-
-fn main() {
-    val b = Box<i32>.make(7);
-    val o = Slot<string>.Empty;
-    @print(b.value);
-    @print(o == Slot<string>.Empty);
-}
-```
+<!-- example: modules/explicit_type_arguments_static -->
 
 Every `comptime` parameter other than `@Decl` is the caller's **expression**,
 `comptime x: @Expr<T>` (decision 364) — a decorator's, a template function's,
@@ -974,32 +587,11 @@ is emitted, and where `source is type` holds, reading `source` is
 known at compile time: a local or a non-`comptime` parameter is
 `comptime-arg-not-known` at the argument.
 
-```botopink
-type Box<T>(value: T)
-
-fn orDefault<T>(comptime source: @Expr<Box<T> | type T>, fallback: T) -> T {
-    if (source is type) return fallback;
-    return source.value.value;
-}
-
-fn main() {
-    val n: i32 = orDefault(Box(value: 4), 0);    // 4, from the value
-    val s: string = orDefault(string, "none");   // "none", T bound to string
-    @print(n);
-    @print(s);
-}
-```
+<!-- example: modules/comptime_value_or_type_param -->
 
 ### Type aliases
 
-```botopink
-type ParseError { Empty, Bad(text: string) }
-type Id = i32;
-type Pair<A, B> = #(A, B);
-pub type Parser<T> = @Result<T, ParseError>;
-
-fn swap(p: Pair<Id, string>) -> Pair<string, Id> { return #(p.1, p.0); }
-```
+<!-- example: modules/type_alias_declarations -->
 
 `type Name<A, B> = Target;` gives an existing type another name. The alias is
 **transparent**: wherever it is written — a parameter, a return, a field, a
@@ -1023,21 +615,7 @@ against the other. Nothing of the alias reaches the emitted program.
 
 ### Derived types
 
-```botopink
-import {types.Type} from "std";
-
-type Recipe(title: string, description: ?string, servings: i32 = 2)
-type Dog(name: string, age: ?i32)
-type Breed(breed: string)
-
-pub val RecipeTitle = Type.pick(Recipe, .title);         // type RecipeTitle(title: string)
-pub val RecipeBrief = Type.omit(Recipe, .description);   // type RecipeBrief(title: string, servings: i32 = 2)
-pub val RecipePatch = Type.partial(Recipe);              // every field `?T`
-pub val RecipeFull = Type.required(RecipePatch);         // every `?` goes
-pub val DogWithBreed = Type.merge(Dog, Breed);           // Dog's fields, then Breed's
-
-fn titleOf(t: RecipeTitle) -> string { return t.title; }
-```
+<!-- example: modules/derived_type_declarations -->
 
 A derived type (decision 307) is a **new** record type answered at build by one
 of std's `Type` functions and bound by a module-level `val`, whose name it takes.
@@ -1086,21 +664,7 @@ cannot be used as another type until it has been tested — `val b: i32 = a;` on
 testing it". `x is <Type>` answers a `bool` and narrows `x` inside the branch it
 guards.
 
-```botopink
-fn describe(x: i32 | string) -> string {
-    if (x is i32) {
-        return "an integer";
-    }
-    return "a string";
-}
-
-fn read(raw: unknown) -> string {
-    if (raw is string) {
-        return raw;
-    }
-    return "not a string";
-}
-```
+<!-- example: modules/union_is_narrowing -->
 
 `x is fn(<params>) -> T` narrows an `unknown` to that function type, and a call
 through the narrowed name type-checks against it (decision 254) — the form a
@@ -1113,21 +677,7 @@ return types: erlang and beam test `is_function(F, N)`, commonJS `typeof f ===
 descriptor. A function of the right arity and another return type passes the
 test; what it answers is the caller's to trust.
 
-```botopink
-type Clock(zone: string)
-
-fn build(factory: unknown) -> string {
-    if (factory is fn() -> Clock) {
-        return factory().zone;
-    }
-    return "not a factory";
-}
-
-pub fn main() {
-    @print(build({ -> Clock(zone: "UTC") }));
-    @print(build(42));
-}
-```
+<!-- example: modules/is_function_type -->
 
 `is` tests a type; it does not bind. Read a variant's payload in a `case` arm
 (`Circle(radius) -> …`, below) and an optional with `if (x) { n -> … }`;
@@ -1153,19 +703,7 @@ These shapes narrow:
 | `if (x) { v -> … }` | `v` is the payload; `x` itself is untouched |
 | `case x { null { … } v { … } }` | `v` is the payload |
 
-```botopink
-type Entry(key: string) {}
-
-fn firstKeyLength(entries: Entry[]) -> i32 {
-    val first = entries.at(0);
-    if (first == null) { return 0; }
-    return first.key.length();     // `first` is an `Entry` here, not a `?Entry`
-}
-
-pub fn main() {
-    @print(firstKeyLength([Entry(key: "abc")]));
-}
-```
+<!-- example: modules/narrow_after_null_return -->
 
 Three shapes do **not** narrow, and each for its own reason:
 
@@ -1214,30 +752,13 @@ digits (`1e`) are refused at the suffix. A number pattern matches a subject of
 its own type. `n` makes an integer literal a `bigint` of any size (§ Numbers);
 it takes no fraction or exponent (`1.5n` is refused at the suffix).
 
-<!-- docs-check: body -->
-```botopink
-val ratio: f32 = 0.5f;
-val total: f64 = 10d;
-val big = 4_000_000_000ul;
-val mask: u8 = 255;
-val scaled = total / 4.0;
-```
+<!-- example: modules/numeric_literal_kinds -->
 
-<!-- docs-check: reject the integer literal `1` is not an `f64` -->
-```botopink
-fn main() {
-    val x: f64 = 1;
-}
-```
+<!-- example: modules/integer_literal_never_fits_f64 -->
 
 ### Arrays
 
-<!-- docs-check: body -->
-```botopink
-val xs = [1, 2, 3];
-val tail = xs.slice(1, xs.length);    // [2, 3]
-val back = xs.reverse();              // [3, 2, 1] — and xs is still [1, 2, 3]
-```
+<!-- example: modules/array_slice_reverse -->
 
 An array method **answers a value and leaves its receiver alone**, on every
 target: `reverse`, `slice`, `map` and `filter` all hand back a new array.
@@ -1250,19 +771,7 @@ target: `reverse`, `slice`, `map` and `filter` all hand back a new array.
 nothing else to hand the method. The index expression has **no typing rule of
 its own**: its type is whatever the method answers, which for `at` is `?T`.
 
-<!-- docs-check: body -->
-```botopink
-val xs = [10, 20, 30];
-val first: ?i32 = xs[0];         // xs.at(0)
-val none: ?i32 = xs[9];          // null — absent has one spelling
-val last: ?i32 = xs[-1];         // 30 — a negative index counts from the end
-val gone: ?i32 = xs.at(-4);      // null — past the front is absent too
-val tail: i32[] = xs[1..];       // xs.slice(1, null)
-val head: i32[] = xs[0..2];      // xs.slice(0, 2)
-val s = "hello";
-val c: ?string = s[1];           // "e"
-val o: ?string = s.at(-1);       // "o"
-```
+<!-- example: modules/index_and_slice_sugar -->
 
 A **negative index counts from the end**, on every backend: `xs.at(-1)` is the
 last element and `xs.at(-xs.length)` the first; an index past either end
@@ -1273,7 +782,7 @@ by key and has no position to count from.
 Which methods those are comes from two **ambient** behaviors — ambient like
 `Display`, so the syntax finds them with nothing imported:
 
-```botopink
+```text
 pub behavior Index<K, V> { fn at(self: Self<K, V>, key: K) -> ?V; }
 pub behavior Slice<V>    { fn slice(self: Self<V>, start: i32, end: ?i32) -> V; }
 ```
@@ -1283,16 +792,7 @@ answers `Index<i32, T>` and `Slice<T[]>`, `string` answers `Index<i32, string>`
 and `Slice<string>`, `Dict<K, V>` answers `Index<K, V>` — and **your own type
 becomes indexable by answering them**, with nothing added to the compiler:
 
-```botopink
-type Matrix(rows: i32[][]) implement Index<i32, i32[]> {
-    pub fn at(self: Self, key: i32) -> ?i32[] {
-        return self.rows.at(key);
-    }
-}
-
-val m = Matrix(rows: [[1, 2], [3, 4]]);
-val row: ?i32[] = m[1];          // [3, 4]
-```
+<!-- example: modules/index_user_type -->
 
 A **tuple** is the one exception, and its reason is the rule's: `t[0]` needs a
 *constant* index and answers a type *per position*, which `at(key: K) -> ?V`
@@ -1300,12 +800,7 @@ cannot say with a single `V`. A tuple index is checked directly — `t[0]` is
 `i32` and `t[1]` is `string` below, neither of them optional, and an index the
 type has no position for is refused where it is written.
 
-<!-- docs-check: body -->
-```botopink
-val t = #(1, "a");
-val n: i32 = t[0];
-val label: string = t[1];
-```
+<!-- example: modules/index_tuple_literal -->
 
 ### Operators
 
@@ -1385,27 +880,9 @@ erlang and beam hold the VM's own integer, commonJS a `BigInt` (`.d.ts`
 does not widen to `unknown`, `is` does not test one (a value typed `bigint` is
 one), and a `comptime` does not compute one yet.
 
-<!-- docs-check: body -->
-```botopink
-val two: bigint = 2n;
-var x = two;
-var i = 0;
-while (i < 100) {
-    x = x * two;
-    i += 1;
-}
-@print(x);
-@print(-7n / 2n);
-@print(bigint.of(9223372036854775807l) + 1n);
-val small: i64 = (x / x).toI64();
-```
+<!-- example: modules/bigint_arithmetic -->
 
-<!-- docs-check: reject the integer literal `1` is not a `bigint` — write `1n` -->
-```botopink
-fn main() {
-    val x = 2n + 1;
-}
-```
+<!-- example: modules/bigint_plus_int_literal -->
 
 `==` compares by value on every target: two records, tuples, arrays or enum
 variants are equal when they have the same type and their fields are equal, field
@@ -1418,16 +895,7 @@ An `f64` compares as a total order under `==`, as Java's `Double.compare` does:
 
 ### Lambdas and method chains
 
-<!-- docs-check: body -->
-```botopink
-val double = { n -> n * 2 };
-val xs = [1, 2, 3, 4];
-
-val total = xs
-    .filter({ n -> n % 2 == 0 })
-    .map({ n -> n * 2 })
-    .fold(0, { acc, n -> acc + n });    // 12
-```
+<!-- example: modules/lambda_method_chain -->
 
 A lambda's parameters take the types of the position it is passed to or the
 `val` it is bound to; `fn(a, b) { … }` is the same function written with
@@ -1466,11 +934,7 @@ content only: a hand-broken list that fits is joined.
 
 ### If / else
 
-<!-- docs-check: body -->
-```botopink
-val x = 1;
-val s = if (x > 0) { "positive" } else { "negative" };
-```
+<!-- example: modules/if_expression -->
 
 An `if` used as a value needs its `else`: `val s = if (x > 0) { "positive" };` has no value when
 the condition is false and is refused at the `if`. It stands where an expression begins — a `val` /
@@ -1481,111 +945,37 @@ never an operand: `1 + if (c) { 2 } else { 3 }`, `-if (c) 1 else 2` and `(if (c)
 A condition is a whole expression, `&&` and `||` included — the grammar's own
 parentheses close it, so nothing has to be bound to a `val` first:
 
-<!-- docs-check: body -->
-```botopink
-val a = true;
-val b = false;
-if (a && b) { @print("both"); } else if (a || b) { @print("either"); }
-```
+<!-- example: modules/if_else_if -->
 
 `if` on an optional unwraps it in the then-branch:
 
-```botopink
-fn show(x: ?i32) {
-    if (x) { n -> @print(n); }
-}
-```
+<!-- example: modules/if_optional_binder -->
 
 Write the binder `_` when the branch only asks whether the value is there:
 
-<!-- docs-check: body -->
-```botopink
-val x: ?i32 = 5;
-if (x) { _ -> @print("present"); } else { @print("absent"); }
-```
+<!-- example: modules/if_optional_else -->
 
 ### Case (pattern matching)
 
-```botopink
-type Shape {
-    Circle(radius: f64),
-    Square(side: f64),
-}
-
-fn area(shape: Shape) -> f64 {
-    return case shape {
-        Circle(radius) -> radius * radius * 3.14;
-        Square(side) -> side * side;
-    };
-}
-```
+<!-- example: modules/case_variant_fields -->
 
 List and or-patterns:
 
-```botopink
-type Color { Red, Green, Blue }
-
-fn warm(c: Color) -> bool {
-    return case c {
-        Red | Green -> true;
-        Blue -> false;
-    };
-}
-
-fn size(items: i32[]) -> string {
-    return case items {
-        [] -> "empty";
-        [x] -> "one";
-        [first, ..rest] -> "many";
-    };
-}
-```
+<!-- example: modules/case_alternatives_and_arrays -->
 
 A section of an enum is itself a type, written by its path, so a function can
 take one section instead of the whole enum:
 
-```botopink
-type Token {
-    Text { Bold, Italic },
-    Hover(inner: Token[]),
-}
-
-fn textToCss(t: Token.Text) -> string {
-    return case t {
-        Bold -> "font-weight:bold";
-        Italic -> "font-style:italic";
-    };
-}
-```
+<!-- example: modules/case_section_subtype -->
 
 An arm may also be written as a block, `<pattern> { … }`. A block arm takes an
 optional `when (…)` guard, and a pattern may be a literal, a type (`i32`) or `_`.
 
-```botopink
-fn grade(n: i32) {
-    case n {
-        i32 when (n > 100) { @print("impossible"); }
-        0 { @print("zero"); }
-        _ { @print("something else"); }
-    }
-}
-```
+<!-- example: modules/case_type_guard_arms -->
 
 A variant pattern names **every** field of its variant, or ends with `..`:
 
-```botopink
-type Shape {
-    Circle(radius: i32),
-    Rect(width: i32, height: i32),
-}
-
-fn describe(s: Shape) -> i32 {
-    return case s {
-        .Rect(width: w, ..) { w }
-        .Circle(r) { r }
-    };
-}
-```
+<!-- example: modules/case_dot_variant_patterns -->
 
 `.Rect(width: w)` without the `..` is `error: missing required field 'height' on
 type 'Rect'`, at the arm — the fields a pattern does not name are dropped, and
@@ -1595,15 +985,7 @@ A range in a pattern is `...`, inclusive at both ends — Zig's split: `...` in 
 pattern, `..` (exclusive) in a `for` and a slice. `1..9` in an arm is
 `error[pattern-range-exclusive]`, naming `...`; an open end is a guard.
 
-```botopink
-fn bucket(n: i32) -> string {
-    return case n {
-        1...9 { "digit" }
-        _ when (n < 0) { "negative" }
-        _ { "other" }
-    };
-}
-```
+<!-- example: modules/case_range_and_guard -->
 
 A name alone is not a pattern: to give the matched value a name, bind it in the
 body (`_ { n -> … }`). The one exception is the optional, below, where the name
@@ -1614,12 +996,7 @@ after the `null` arm *is* the pattern.
 A `?T` has exactly one pattern form — `null` for the absent value, then a name
 that binds what is there, already unwrapped:
 
-<!-- docs-check: body -->
-```botopink
-val x: ?i32 = 5;
-val a = case x { null { "absent" } v { "present " + v.toString() } };
-@print(a);
-```
+<!-- example: modules/optional_case_null_binder -->
 
 Two arms, in that order, and no guards. `null` comes first because a binder
 written first would match the absent value too. The binder may be `_` when the
@@ -1655,28 +1032,7 @@ A range `a..b` excludes its end and `a...b` includes it: `for (1..4)` visits
 `1 2 3`, `for (1...4)` visits `1 2 3 4`. A range is not a value — there is no
 `Range` and no `.rev()`; a countdown is a `while` or `xs.reverse()`.
 
-<!-- docs-check: body -->
-```botopink
-val xs = [1, 2, 3];
-
-for (xs) { item ->
-    @print(item);
-}
-
-for (1...3) { i ->
-    @print(i);
-}
-
-var n = 0;
-while (n < 3) {
-    n = n + 1;
-}
-
-loop {
-    n = n - 1;
-    if (n == 0) { break; }
-}
-```
+<!-- example: modules/loop_forms -->
 
 **`yield v` and `break v` need a generator scope** — a function whose return is
 `@Iterator<T>` or `@Stream<T>`, or an `iter` / `stream` loop. `yield v` emits
@@ -1690,19 +1046,7 @@ With `iter` or `stream` in front, the loop is an expression worth the iterator
 (or the stream), `T` being the type of its `yield` / `break v`. It captures the
 enclosing scope — a `var` it reassigns is its state:
 
-<!-- docs-check: body -->
-```botopink
-var count = 0;
-val doubles = iter loop {
-    count = count + 1;
-    if (count == 10) { break count * 2; }   // the last item: 20
-    yield count * 2;                          // 2 4 6 … 18
-};
-for (doubles) { d -> @print(d); }
-
-val evens = iter for ([1, 2, 3, 4]) { x -> if (x % 2 == 0) { yield x; } };
-for (evens) { e -> @print(e); }
-```
+<!-- example: modules/iter_loop_and_for -->
 
 The rules of the prefixed loop:
 
@@ -1741,30 +1085,13 @@ prefixed loop as they lower an `@Iterator` / `@Stream` function, inline.
 
 ### Assert
 
-<!-- docs-check: body -->
-```botopink
-val x = 1;
-assert x > 0;
-assert x > 0, "x must be positive";
-```
+<!-- example: modules/assert_statement -->
 
 `val assert <pattern> = <expr>;` binds the pattern's names and is **fatal** when
 the match fails, so the names below the binding are never unbound. It takes no
 `catch` — `try … catch` is the form that supplies a fallback.
 
-```botopink
-fn parse(s: string) -> @Result<i32, string> {
-    if (s == "") {
-        throw "empty input";
-    }
-    return 42;
-}
-
-fn load() {
-    val assert Ok(n) = parse("42");
-    @print(n);
-}
-```
+<!-- example: modules/val_assert_ok -->
 
 ### use — imports, activation, and hooks
 
@@ -1803,33 +1130,7 @@ a component, which may `await` too. There is no annotation: the return is the
 declaration of the effect (decision 118), and there is no base: any
 `@Component` may be `use`d in any `@Component` body.
 
-```botopink
-type Element(count: i32) implement @Renderable
-type State(value: i32, name: string)
-
-// Read with `use`: the noun, the yield.
-fn state(initial: i32) -> @Component<State> {
-    return State(value: initial, name: "state");
-}
-
-// One read with `use` composes others.
-fn counter(start: i32) -> @Component<State> {
-    val s = use state(start * 2);
-    return s;
-}
-
-// A component: its `R` implements `@Renderable`, and it may `await` too.
-fn Widget(n: i32) -> @Component<Element> {
-    val c = use state(n);
-    val {value, name} = use counter(n);
-    return Element(count: c.value + value);
-}
-
-// A plain return: an ordinary function, which activates nothing.
-fn Loading() -> Element {
-    return Element(count: 0);
-}
-```
+<!-- example: modules/component_use -->
 
 The rules, each with its diagnostic:
 
@@ -1890,35 +1191,9 @@ The rules, each with its diagnostic:
 A condition inside the argument is at the top level; around the `use`, it is
 refused:
 
-```botopink
-import {context.Context, context.provide} from "std";
+<!-- example: modules/use_conditional_argument -->
 
-type Element(text: string) implement @Renderable
-type Theme(mode: string)
-
-pub val ThemeContext = Context<Theme>();
-
-fn App(dark: bool) -> @Component<Element> {
-    use provide(ThemeContext, if (dark) Theme(mode: "dark") else Theme(mode: "light"));
-    return Element(text: "app");
-}
-```
-
-<!-- docs-check: reject use-not-top-level -->
-```botopink
-type Element(count: i32) implement @Renderable
-
-fn state(initial: i32) -> @Component<i32> {
-    return initial;
-}
-
-fn Widget(on: bool) -> @Component<Element> {
-    if (on) {
-        val n = use state(1);
-    }
-    return Element(count: 0);
-}
-```
+<!-- example: modules/use_in_if -->
 
 **Lowering.** `use f(x)` is `f(x)` on erlang, wasm and beam. On commonJS a
 `@Component` function whose hooks node is asynchronous (`HookNode.async`,
@@ -1952,25 +1227,7 @@ work it, `use`d and nothing else (`context-hook-without-use`):
 - `val t = use context(ThemeContext);` reads the value provided nearest above
   — a `Theme`; with no provider above it is `context-unbound` at run time.
 
-```botopink
-import {context.Context, context.provide, context.context} from "std";
-
-type Theme(mode: string)
-type Element(text: string) implement @Renderable
-
-pub val ThemeContext = Context<Theme>();
-
-fn Label() -> @Component<Element> {
-    val t = use context(ThemeContext);
-    return Element(text: t.mode);
-}
-
-fn App() -> @Component<Element> {
-    use provide(ThemeContext, Theme(mode: "dark"));
-    val l = Label();
-    return Element(text: "[" + l.text + "]");
-}
-```
+<!-- example: modules/context_provide_read -->
 
 Every `@Component` function takes a hidden context map (its first parameter,
 after `self` on a method): `provide` makes the map its children receive,
@@ -1999,13 +1256,7 @@ A function may call itself. When the call is the **whole** of a `return` — a
 and beam run on VMs that drop the frame. The depth of a tail-recursive walk is
 bounded by the data, not by the runtime.
 
-```botopink
-fn sumDown(n: i32, acc: i32) -> i32 {
-    if (n == 0) return acc;
-    // A tail call: the whole of the `return`. A loop, not a frame.
-    return sumDown(n - 1, acc + n);
-}
-```
+<!-- example: modules/self_tail_recursion -->
 
 Every other recursion uses the stack, and how deep it may go is the host's
 answer, not the language's:
@@ -2027,15 +1278,7 @@ between 10 000 and 20 000.
 A parameter's type may be written in place, with the field grammar of `type
 Name(…)` and no name (decision 207):
 
-```botopink
-fn link(props: type(href: string, label: string, external: bool = false)) -> string {
-    return props.label + " <" + props.href + ">";
-}
-
-fn main() {
-    @print(link(href: "/a", label: "A"));   // A </a>
-}
-```
+<!-- example: modules/inline_parameter_type -->
 
 The call builds the value from its own labelled arguments, each naming a field
 (a defaulted one may be left out); a value already of the type is passed as the
@@ -2047,16 +1290,7 @@ A diagnostic names it by its owner: ``the props of `link` ``.
 
 ### Parameters with defaults
 
-```botopink
-fn greet(name: string, greeting: string = "hello") -> string {
-    return greeting + ", " + name + "!";
-}
-
-fn main() {
-    @print(greet("world"));         // hello, world!  — `greeting` takes its default
-    @print(greet("world", "hi"));   // hi, world!
-}
-```
+<!-- example: modules/parameter_defaults -->
 
 A call **may leave out an argument whose parameter declares a default**, and the
 declared expression is what the function receives. A default may be declared on
@@ -2068,18 +1302,7 @@ parameter or field with a default is followed only by others with defaults
 (`fn lead(a: i32 = 1, b: i32)` and `type Port(number: i32 = 80, host: string)`
 are refused at `b` and `host`).
 
-```botopink
-type Port(host: string, number: i32 = 80) {
-    pub fn show(self: Self, separator: string = ":") -> string {
-        return self.host + separator + self.number.toString();
-    }
-}
-
-fn main() {
-    @print(Port(host: "a").number);   // 80
-    @print(Port(host: "a").show());   // a:80
-}
-```
+<!-- example: modules/parameter_defaults_record -->
 
 Only the parameters a call leaves out take their defaults. A parameter the call
 names by label keeps the argument it was given, whichever position it is in —
@@ -2087,12 +1310,7 @@ names by label keeps the argument it was given, whichever position it is in —
 and a parameter with no default is still **required**: leaving one out is the
 arity error it has always been.
 
-<!-- docs-check: reject 'connect' expects 2 argument(s), got 0 -->
-```botopink
-fn connect(host: string, port: i32 = 80) -> string { return host; }
-
-fn main() { connect(); }   // error: 'connect' expects 2 argument(s), got 0
-```
+<!-- example: modules/missing_required_argument -->
 
 Defaults are filled in by the checker, so every backend receives a call with
 every argument written out; no backend emits a default of its own.
@@ -2108,20 +1326,7 @@ takes defaults and labels like one (`"w" |> greet(mark: "?")`).
 
 ### A variadic parameter
 
-```botopink
-fn total(label: string, ..values: i32[]) -> string {
-    var sum = 0;
-    for (values) { v ->
-        sum = sum + v;
-    }
-    return label + ": " + sum.toString();
-}
-
-fn main() {
-    @print(total("none"));            // none: 0
-    @print(total("three", 1, 2, 3));  // three: 6
-}
-```
+<!-- example: modules/variadic_parameter_total -->
 
 `..name: T[]` as a function's **last** parameter takes zero or more positional
 arguments after the fixed ones, each checked against `T`, and the body reads
@@ -2134,15 +1339,7 @@ parameter, its type is written `T[]` and it takes no default
 on one is `variadic-label`, and there is no spread at a call — a function that
 takes an existing array declares `values: T[]`, not `..values`:
 
-<!-- docs-check: reject variadic-spread -->
-```botopink
-fn total(..values: i32[]) -> i32 { return values.length(); }
-
-fn main() {
-    val xs = [1, 2, 3];
-    @print(total(..xs));
-}
-```
+<!-- example: modules/variadic_spread_at_call -->
 
 The checker packs the arguments into one array, so erlang and beam receive one
 list argument and wasm one array; commonJS writes the function with a rest
@@ -2250,64 +1447,11 @@ The quick reference:
 A function that can fail returns `@Result<T, E>`; `throw` produces the error,
 `return` the value, and `try` propagates the error of a call.
 
-```botopink
-type PortError { Zero, TooBig(value: i32) }
-
-fn port(n: i32) -> @Result<i32, PortError> {
-    if (n == 0) { throw PortError.Zero; }
-    if (n > 65535) { throw PortError.TooBig(value: n); }
-    return n;                                  // becomes Ok(n)
-}
-
-fn serverPort(n: i32) -> @Result<i32, PortError> {
-    val p = try port(n);                       // an Error from `port` rises from here
-    return p + 1;
-}
-
-// `return` passes an existing @Result through unchanged
-fn firstOk(a: @Result<i32, string>, b: @Result<i32, string>) -> @Result<i32, string> {
-    return case a {
-        Ok(_) -> a;
-        Error(_) -> b;
-    };
-}
-```
+<!-- example: modules/result_throw_try -->
 
 Three ways to consume a `@Result`, and a fourth for when a failure is a bug:
 
-```botopink
-type PortError { Zero, TooBig(value: i32) }
-
-fn port(n: i32) -> @Result<i32, PortError> {
-    if (n == 0) { throw PortError.Zero; }
-    return n;
-}
-
-// 1) try … catch — handles it on the spot; works in ANY function
-fn portOrDefault(n: i32) -> i32 {
-    return try port(n) catch 8080;
-}
-
-// 2) try alone — propagates; needs a @Result in the return
-fn doubled(n: i32) -> @Result<i32, PortError> {
-    val p = try port(n);
-    return p * 2;
-}
-
-// 3) case — looks at both outcomes
-fn describe(n: i32) -> string {
-    return case port(n) {
-        Ok(p) -> "port " + p.toString();
-        Error(_) -> "no port";
-    };
-}
-
-// 4) val assert — fatal if it does not match
-fn mustPort() {
-    val assert Ok(p) = port(443);
-    @print(p);
-}
-```
+<!-- example: modules/result_four_ways -->
 
 **`try` and `await` begin an expression.** They stand where an expression
 starts — a statement, a `val` / `var` initializer, the right side of `=`, a
@@ -2319,13 +1463,7 @@ is ever the operand of an operator, of a unary `-` / `!`, of parentheses or of
 a `.` chain; `total + try r`, `-try x` and `(try r).length` are
 `try-await-operand`, and the fix is to bind the value first:
 
-```botopink
-fn total(a: @Result<i32, string>, b: @Result<i32, string>) -> @Result<i32, string> {
-    val x = try a;               // not `try a + try b`
-    val y = try b;
-    return x + y;
-}
-```
+<!-- example: modules/result_try_each_operand -->
 
 ### Tasks
 
@@ -2334,32 +1472,7 @@ fn total(a: @Result<i32, string>, b: @Result<i32, string>) -> @Result<i32, strin
 `@Result`, and `await` hands over that `@Result`. To propagate the error,
 combine it with `try`:
 
-```botopink
-type User(id: i32, name: string)
-
-fn fetchUser(id: i32) -> @Task<@Result<User, string>> {
-    if (id <= 0) { throw "no user " + id.toString(); }   // legal: the value is a @Result
-    return User(id: id, name: "ana");                     // a Task holding Ok(…)
-}
-
-fn greetingFor(id: i32) -> @Task<@Result<string, string>> {
-    val u = try await fetchUser(id);           // await answers the @Result; try propagates it
-    return "Hello, " + u.name;
-}
-
-fn greetingOrGuest(id: i32) -> @Task<string> {
-    val u = try await fetchUser(id) catch User(id: 0, name: "guest");
-    return "Hello, " + u.name;                 // no @Result in the return: handled here
-}
-
-fn describeUser(id: i32) -> @Task<string> {
-    val r = await fetchUser(id);               // the @Result itself
-    return case r {
-        Ok(u) -> u.name;
-        Error(e) -> "error: " + e;
-    };
-}
-```
+<!-- example: modules/task_result_await -->
 
 `await` and `try` are separate things — `await t` waits, `try r` propagates.
 With `t: @Task<@Result<U, E>>`:
@@ -2379,22 +1492,7 @@ returns a `@Task` too or hands the Task on.
 creates a `@Task` without declaring a separate function, in **any** function:
 it waits for nothing, it creates the Task.
 
-```botopink
-type User(id: i32, name: string)
-
-fn fetchUser(id: i32) -> @Task<@Result<User, string>> {
-    if (id <= 0) { throw "no user"; }
-    return User(id: id, name: "ana");
-}
-
-fn both() -> @Task<@Result<string, string>> {
-    val first = async { return try await fetchUser(1); };   // @Task<@Result<User, string>>
-    val count = async { return 2; };                         // @Task<i32>
-    val u = try await first;
-    val n = await count;
-    return u.name + n.toString();
-}
-```
+<!-- example: modules/async_block_both -->
 
 - `return v` **leaves the block** with `v`, not the enclosing function — the
   block behaves like a closure called in place;
@@ -2441,31 +1539,7 @@ a next item may need waiting. Both answer one step type (decision 122):
 - `break v` emits `v` and **ends** (≡ `yield v; break;`);
 - a bare `break` outside any inner loop ends without emitting.
 
-```botopink
-fn fibonacci(limit: i32) -> @Iterator<i32> {
-    var a = 0;
-    var b = 1;
-    var i = 0;
-    while (i < limit) {
-        yield a;
-        val t = a + b;
-        a = b;
-        b = t;
-        i = i + 1;
-    }
-}
-
-fn firstNegative(xs: i32[]) -> @Iterator<i32> {
-    for (xs) { x ->
-        if (x < 0) { break x; }               // emits the negative and ends
-        yield x;
-    }
-}
-
-fn main() {
-    for (fibonacci(10)) { n -> @print(n); }  // an ordinary function may iterate
-}
-```
+<!-- example: modules/iterator_yield_break -->
 
 **Items that can fail — `@Iterator<@Result<T, E>>`.** The iterator does not
 fail; **each item** may be an error. When the item is `@Result<U, E>` the body
@@ -2474,64 +1548,12 @@ emits it as is), `throw e` emits `Error(e)` and ends, and a `try x` that fails
 emits `Error(e)` and ends. Whoever iterates receives the `@Result` and decides —
 **`for` does no implicit `try`**:
 
-```botopink
-fn port(n: i32) -> @Result<i32, string> {
-    if (n <= 0) { throw "not a port: " + n.toString(); }
-    return n;
-}
-
-fn ports(xs: i32[]) -> @Iterator<@Result<i32, string>> {
-    for (xs) { x -> yield try port(x); }     // a failed `try` emits Error(e) and ends
-}
-
-// stop at the first error: an explicit try, under a @Result return
-fn sumPorts(xs: i32[]) -> @Result<i32, string> {
-    var total = 0;
-    for (ports(xs)) { r ->
-        val p = try r;                         // the explicit try: an Error rises from here
-        total = total + p;
-    }
-    return total;
-}
-
-// carry on past the error: a case, in any function
-fn printPorts(xs: i32[]) {
-    for (ports(xs)) { r ->
-        case r {
-            Ok(p) -> @print(p);
-            Error(e) -> @print("error: " + e);
-        }
-    }
-}
-```
+<!-- example: modules/iterator_result_items_handled -->
 
 **`@Stream<T>` — asynchronous, iterated with `for await`.** The rules above
 hold, and a failing `try await` also emits `Error(e)` and ends:
 
-```botopink
-fn fetchPage(n: i32) -> @Task<@Result<i32[], string>> {
-    if (n > 9) { throw "no page " + n.toString(); }
-    return [n, n + 1];
-}
-
-fn pages(count: i32) -> @Stream<@Result<i32[], string>> {
-    var page = 0;
-    while (page < count) {
-        val rows = try await fetchPage(page);  // failed: emits Error(e) and ends
-        yield rows;                            // emits Ok(rows)
-        page = page + 1;
-    }
-}
-
-fn countRows() -> @Task<@Result<i32, string>> {
-    var n = 0;
-    for await (pages(3)) { batch ->
-        val rows = try batch;                  // `n + (try batch).length` is refused
-        n = n + rows.length;
-    }
-    return n;
-}
-```
+<!-- example: modules/stream_pages_count -->
 
 **Iterator or factory.** A function with an `@Iterator` or `@Stream` return is
 an iterator if its own body has `yield` or `break v` (not counting closures and
@@ -2539,61 +1561,22 @@ inner `iter` / `stream` loops); otherwise it is an ordinary function that
 **returns** a ready-made iterator. Mixing the two in one body is
 `iter-mixed-yield-return`.
 
-```botopink
-fn evens(xs: i32[]) -> @Iterator<i32> {                 // an iterator: it yields
-    for (xs) { x -> if (x % 2 == 0) { yield x; } }
-}
-
-fn evensOf(xs: i32[]) -> @Iterator<i32> {               // a factory: it returns one
-    return iter for (xs) { x -> if (x % 2 == 0) { yield x; } };
-}
-```
+<!-- example: modules/iterator_vs_factory -->
 
 **A type that is iterated exposes a method** answering an iterator; there is no
 iterable behavior, and the consumer calls it — `for (grid.iter())`:
 
-```botopink
-type Grid(cells: i32[]) {
-    fn iter(self: Self) -> @Iterator<i32> {
-        for (self.cells) { c -> yield c; }
-    }
-}
-
-fn main() {
-    val g = Grid(cells: [1, 2, 3]);
-    for (g.iter()) { c -> @print(c); }
-}
-```
+<!-- example: modules/iterator_method -->
 
 The refusals, each located:
 
-<!-- docs-check: reject effect-try-without-fallible-channel -->
-```botopink
-fn g() -> @Iterator<i32> {
-    throw "x";                  // effect-try-without-fallible-channel: the item has to be
-}                               //   @Result<i32, E> to throw
-```
+<!-- example: modules/iterator_throw_without_result -->
 
-<!-- docs-check: reject iter-await -->
-```botopink
-fn h() -> @Iterator<i32> {
-    yield await count();        // iter-await: no `await` in an @Iterator — use @Stream
-}
-```
+<!-- example: modules/iter_await_refused -->
 
-<!-- docs-check: reject iter-mixed-yield-return -->
-```botopink
-fn k(xs: i32[]) -> @Iterator<i32> {
-    yield 0;
-    return evens(xs);           // iter-mixed-yield-return: an iterator (yield) and a
-}                               //   factory (return) in one body
-```
+<!-- example: modules/iter_mixed_yield_return -->
 
-<!-- docs-check: reject iterator-error-param-removed -->
-```botopink
-fn old() -> @Iterator<i32, string> { yield 0; }
-                                // iterator-error-param-removed: @Iterator<@Result<i32, string>>
-```
+<!-- example: modules/iterator_error_param_removed -->
 
 **Per backend.** On commonJS an `@Iterator` function with `yield` is a
 `function*` and a `@Stream` one an `async function*`; a factory is a plain
@@ -2604,12 +1587,7 @@ variables get the treatment ordinary closures get.
 
 ### Compile-time evaluation
 
-```botopink
-val result = comptime {
-    val x = 10;
-    break x * 2;
-};
-```
+<!-- example: modules/comptime_block_value -->
 
 A `comptime` may call the module's functions and imported ones, and they may
 interpolate (`"n=${n}"`) and call template functions: a template call the
@@ -2630,23 +1608,7 @@ otherwise the `comptime` is refused, naming the path. A decorator's argument
 (`#[mark(.Pad.All.4)]`, read as `tokens.value`) and the functions a decorator
 reaches carry the same values.
 
-```botopink
-type Tok {
-    Pad {
-        All { 4, 8 }
-    }
-    Bold,
-}
-
-fn first(ts: Tok[]) -> Tok {
-    return ts[0] ?? .Bold;
-}
-
-fn main() {
-    val t: Tok = comptime first([.Pad.All.8, .Bold]);    // written as Tok.Pad.All.8
-    @print(t == Tok.Pad.All.8);                          // true
-}
-```
+<!-- example: modules/comptime_section_value -->
 
 ### Template functions
 
@@ -2656,14 +1618,7 @@ it has no `${…}` hole (decision 364 (2)); a holed literal is not known at
 build, and a template that reads `q.value` refuses it at the argument
 (`template-value-not-known`) — its parts are read with `q.parts()`.
 
-```botopink
-pub fn conf<T>(comptime q: @Expr<string>) -> @Expr<T> {
-    val t = q.text();
-    val port = 8000 + t.length;
-    val debug = true;
-    return @expr(#(port, debug));    // the labels come from the variable names
-}
-```
+<!-- example: modules/yamlconf -->
 
 The code a template builds has two authors, and each name in it resolves in
 the scope of whoever wrote it (decision 112). Text the library writes in
@@ -2692,31 +1647,7 @@ every hole is known — `styled "${tab4} color: red;"` with `tab4 =
 styledProperty "tab-size: 4;"` is emitted as `styledConstant("s_…",
 ".s_…{tab-size:4;color:red}")` — and leave the holes to the program otherwise:
 
-```botopink
-pub fn shout(comptime q: @Expr<string>) -> @Expr<string> {
-    var built = "";
-    var computed = "\"\"";
-    var known = true;
-    for (q.parts()) { p ->
-        if (p.kind == "Interp") {
-            if (p.known) built = built + p.value else known = false;
-            computed = computed + " + " + p.code;
-        } else {
-            built = built + p.text;
-            computed = computed + " + \"" + p.text + "\"";
-        }
-    }
-    if (known) return q.build("\"" + built.toUpper() + "\"");
-    return q.build("(" + computed + ").toUpper()");
-}
-
-pub val name = "world";
-pub val fixed = shout "hello ${name}";      // "HELLO WORLD", written at build
-
-fn greet(who: string) -> string {
-    return shout "hello ${who}";            // computed when it runs
-}
-```
+<!-- example: modules/template_known_at_build -->
 
 A template call expands wherever an expression may stand (decision 425): a
 function's or a type's method body, a destructuring initializer
@@ -2762,38 +1693,9 @@ A record-shaped type's members are closed: a call through the type names an
 associated fn it declares, by hand or through `decl.addMember`, and any other
 name is `unknown-associated-fn` where the call is written.
 
-<!-- docs-check: reject unknown-associated-fn -->
-```botopink
-type City(name: string)
+<!-- example: modules/associated_fn_unknown -->
 
-fn main() {
-    @print(City.table());
-}
-```
-
-```botopink
-fn entity(comptime decl: @Decl, comptime table: @Expr<string>) {
-    var cols: string[] = [];
-    decl.fields.forEach({ f -> cols.push(f.name + ": string") });
-    decl.setMeta("table", table.value);
-    decl.addMember("pub fn table() -> string { return \"" + table.value + "\"; }");
-    decl.addType("Columns", "(" + cols.join(", ") + ")");
-}
-
-#[entity("cities")]
-type City(name: string, people: i32)
-
-fn header(c: City.Columns) -> string {
-    return c.name + "|" + c.people;
-}
-
-fn main() {
-    @print(City.table());                          // cities
-    @print(@typeInfo(City).meta.entity.table);     // cities
-    @print(@typeInfo(City).name);                  // City
-    @print(header(City.Columns(name: "n", people: "p")));   // n|p
-}
-```
+<!-- example: modules/decorator_entity_table -->
 
 A decorator's arguments are typed compile-time values (decision 280), checked
 where they are written, as a call's are:
@@ -2835,29 +1737,7 @@ where they are written, as a call's are:
    name of another system (a table, a URL, a cache key, text for a user) stays
    a string.
 
-```botopink
-import {types.Type} from "std";
-
-type Level { Low, High }
-
-fn index<T>(comptime decl: @Decl<T>, comptime ..fields: @Expr<Type.Field<T>[]>) {
-    decl.setMeta("columns", fields.value.map({ f -> f.name }).join(","));
-}
-
-fn mark(comptime decl: @Decl, comptime sizes: @Expr<i32[]>, comptime level: @Expr<Level> = .Low) {
-    decl.setMeta("sizes", sizes.value.length.toString());
-    decl.setMeta("level", if (level.value == Level.High) "high" else "low");
-}
-
-#[index(.state, .name), mark([1, 2], level: .High)]
-type City(code: string, name: string, state: string)
-
-fn main() {
-    @print(@typeInfo(City).meta.index.columns);    // state,name
-    @print(@typeInfo(City).meta.mark.sizes);       // 2
-    @print(@typeInfo(City).meta.mark.level);       // high
-}
-```
+<!-- example: modules/decorator_arguments_meta -->
 
 A function or a type argument is checked at the argument and never run at
 build (decision 364 (3)): its `@Expr` has no `.value` (`expr-value-of-function`,
@@ -2866,33 +1746,7 @@ through a typed member (decision 370 (2)) — `decl.addMember(name, fn…)` with
 the member written as a function expression at the call, its parameters and
 its return typed:
 
-```botopink
-pub type Violation(field: string, message: string)
-
-fn check<T>(
-    comptime decl: @Decl<T>,
-    comptime message: @Expr<string>,
-    comptime rule: @Expr<fn(v: T) -> bool>,
-) {
-    decl.addMember("validate", fn(self: T) -> Violation[] {
-        if (rule(self)) return [];
-        return [Violation(field: "confirm", message: message)];
-    });
-}
-
-fn passwordsMatch(a: Signup) -> bool {
-    return a.password == a.confirm;
-}
-
-fn t(key: string) -> string {
-    return key;
-}
-
-#[check(t("signup.mismatch"), passwordsMatch)]
-pub type Signup(password: string, confirm: string)
-// Signup(password: "a", confirm: "b").validate() calls passwordsMatch and
-// t("signup.mismatch") at run time
-```
+<!-- example: modules/decorator_expr_message_runtime -->
 
 The member is the program's code: inside it each `@Expr<T>` parameter is a
 `T`, and the type receives `pub fn validate(self: Self) -> Violation[] { … }`
@@ -2934,29 +1788,7 @@ payloads, an array or an optional of those (`decorator-meta-field-type`), and
 the value is the record's constructor written at the call
 (`decorator-meta-not-record`), in the decorator's own body.
 
-```botopink
-type Entity(table: string, audited: bool)
-type Index(column: string)
-
-fn entity(comptime decl: @Decl, comptime table: @Expr<string>) {
-    decl.setMeta(Entity(table: table.value, audited: decl.name == "City"));
-}
-
-fn index(comptime decl: @Decl, comptime column: @Expr<string>) {
-    decl.addMeta(Index(column: column.value));
-}
-
-#[entity("cities")]
-#[index("name")]
-#[index("state")]
-type City(name: string, state: string)
-
-fn main() {
-    @print(@typeInfo(City).meta(Entity)?.table ?? "none");     // cities
-    @print(@typeInfo(City).metaAll(Index).length);              // 2
-    @print(@typeInfo(City).metaAll(Entity).length);             // 1
-}
-```
+<!-- example: modules/meta_typed_records -->
 
 A type is recorded once per declaration with `setMeta` — a second value of it,
 or one added with `addMeta` beside it, is `decorator-meta-twice` at the
@@ -2965,22 +1797,7 @@ annotation that recorded it —, and `meta(T)` over several values is
 top-level declaration (`decorator-meta-on-member` from a field's or a method's
 decorator).
 
-<!-- docs-check: reject decorator-meta-twice -->
-```botopink
-type Entity(table: string)
-
-fn entity(comptime decl: @Decl, comptime table: @Expr<string>) {
-    decl.setMeta(Entity(table: table.value));
-}
-
-#[entity("cities")]
-#[entity("towns")]
-type City(name: string)
-
-fn main() {
-    @print(@typeInfo(City).meta(Entity)?.table ?? "none");
-}
-```
+<!-- example: modules/meta_twice -->
 
 A meta record may hold `@Expr<T>` fields (decision 370 (1)): the decorator
 hands one of its `comptime x: @Expr<T>` parameters on as it is, and the value
@@ -2992,27 +1809,7 @@ reads `x.value`). The expressions resolve their names where the annotation
 wrote them, wherever the value is read (decision 385): a private rule of the
 annotation's module is reached, a same-named function of the reader is not.
 
-```botopink
-pub type Check<T>(message: @Expr<string>, rule: @Expr<fn(v: T) -> bool>)
-
-fn check<T>(comptime decl: @Decl<T>, comptime message: @Expr<string>, comptime rule: @Expr<fn(v: T) -> bool>) {
-    decl.addMeta(Check(message: message, rule: rule));
-}
-
-fn passwordsMatch(s: Signup) -> bool {
-    return s.password == s.confirm;
-}
-
-#[check("the passwords differ", passwordsMatch)]
-type Signup(password: string, confirm: string)
-
-fn main() {
-    val s = Signup(password: "a", confirm: "b");
-    for (@typeInfo(Signup).metaAll(Check)) { c ->
-        if (!c.rule(s)) @print(c.message);                     // the passwords differ
-    }
-}
-```
+<!-- example: modules/meta_expr_rule -->
 
 `@typeInfo` is the one reflection builtin (decision 248): `.name` and
 `.meta.<decorator>.<key>` read a declaration, `.meta(T)` / `.metaAll(T)` its
@@ -3022,14 +1819,7 @@ and `@typeInfo(T)` used as a value is a `TypeInfo<T>` (decision 253; its members
 other than `name` and `meta` are `typeinfo-unknown-member` until they are answered). The lowercase
 `@typeinfo` is `typeinfo-lowercase`, naming `@typeInfo`.
 
-<!-- docs-check: reject typeinfo-lowercase -->
-```botopink
-type City(name: string)
-
-fn main() {
-    @print(@typeinfo(City).name);
-}
-```
+<!-- example: modules/typeinfo_lowercase -->
 
 `@TypeInfo.all(with: d)` answers every declaration of the program that carries
 `d`, so an entry point builds its catalogue explicitly — no module registers
@@ -3066,24 +1856,7 @@ declaration carrying any of them in the same one order, a declaration carrying
 two of them once, its `meta` what the listed decorators set; a decorator listed
 twice is `typeinfo-all-arguments`.
 
-```botopink
-fn route(comptime decl: @Decl, comptime path: @Expr<string>) {
-    decl.setMeta("path", path.value);
-}
-
-#[route("/about")]
-pub fn about() -> string {
-    return "about us";
-}
-
-fn main() {
-    for (@TypeInfo.all(with: route)) { r ->
-        for (r.meta) { m ->
-            @print(r.name + " " + m.value);        // about /about
-        }
-    }
-}
-```
+<!-- example: modules/typeinfo_all_with_decorator -->
 
 #### The hooks a function reaches — `decl.hooks`
 
@@ -3144,52 +1917,9 @@ alias and a namespace resolved where it is written — or another `Decorator`
 type mismatch at the argument). `is` stays a keyword and `==` on two
 `Decorator`s has no meaning.
 
-```botopink
-type Element(text: string) implement @Renderable
+<!-- example: modules/decl_hooks_graph -->
 
-fn graph(comptime decl: @Decl) {
-    var names: string[] = [];
-    decl.hooks.forEach({ n -> names.push(n.function.name + "/" + n.uses.length.toString()) });
-    decl.setMeta("nodes", names.join(" "));
-}
-
-fn session() -> @Component<string> {
-    return "alice";
-}
-
-fn user() -> @Component<string> {
-    val s = use session();
-    return "user " + s;
-}
-
-#[graph]
-fn Page() -> @Component<Element> {
-    val u = use user();
-    return Element(text: u);
-}
-
-fn main() {
-    @print(@typeInfo(Page).meta.graph.nodes);       // Page/1 user/1 session/0
-}
-```
-
-```botopink
-fn serverOnly(comptime decl: @Decl) {
-    val _n = decl.name;
-}
-
-// Refuses a function marked `serverOnly`, however the mark is spelled.
-fn clientOnly(comptime decl: @Decl) {
-    decl.annotations.forEach({ a ->
-        if (a.decorator.same(serverOnly)) decl.fail("`" + decl.name + "` runs on the server");
-    });
-}
-
-#[clientOnly]
-fn Widget() -> string {
-    return "w";
-}
-```
+<!-- example: modules/decorator_same_refuses_mark -->
 
 ### Template annotations (decision 311)
 
@@ -3231,42 +1961,7 @@ before its owner's, and the typed meta they record (`decl.setMeta(v)`,
 declared name. A field's decorator still records no meta
 (`decorator-meta-on-member`).
 
-```botopink
-pub type Query(sql: string, params: string[])
-
-fn query(comptime q: @Expr<string>, comptime decl: @Decl) -> @Expr<string> {
-    var sql = "";
-    var params: string[] = [];
-    for (q.parts()) { p ->
-        if (p.kind == "Interp") {
-            params.push(p.code);
-            sql = sql + "$" + params.length.toString();
-        } else sql = sql + p.text;
-    }
-    decl.setMeta(Query(sql: sql, params: params));
-    return q.build("\"\"");
-}
-
-fn repository(comptime decl: @Decl) {
-    var lines: string[] = [];
-    for (decl.methods) { m ->
-        val found = m.meta(Query);
-        if (found != null) lines.push(m.name + ": " + found.sql + " <- " + found.params.join(", "));
-    }
-    decl.setMeta("statements", lines.join(" | "));
-}
-
-#[repository]
-behavior Users {
-    #[query "select * from users where id = ${id} limit 1"]
-    fn find(self: Self, id: i32) -> string;
-}
-
-fn main() {
-    // find: select * from users where id = $1 limit 1 <- id
-    @print(@typeInfo(Users).meta.repository.statements);
-}
-```
+<!-- example: modules/template_annotation -->
 
 #### Host functions at compile time (decision 341)
 
@@ -3297,29 +1992,7 @@ Neither is refused at the call (`comptime-host-cell-unavailable`), naming the
 function and both cells; an `@External.Erlang` cell beside them is ignored,
 never tried.
 
-```botopink
-import {hash} from "std";
-
-#[@External.Node("""($0 + "!")"""),
-  @External.Erlang("""<<($0)/binary, "!">>"""),
-  @External.Wasm("fn:bangBody")]
-declare fn bang(value: string) -> string;
-
-fn bangBody(value: string) -> string {
-    return value + "!";
-}
-
-fn labelled(comptime decl: @Decl) {
-    @emit("pub fn label() -> string { return \"" + bang(decl.name) + hash.contentHash(decl.name) + "\"; }");
-}
-
-#[labelled]
-type Point(x: i32, y: i32)
-
-fn main() {
-    @print(label());    // Point!de553cf
-}
-```
+<!-- example: modules/decorator_host_cells -->
 
 Each invocation is independent (decision 343): a decorator's answer depends
 on the declaration it annotates alone, so a body writing a module-level `var`
@@ -3330,11 +2003,7 @@ refused there, at compile time, naming both declarations.
 
 ### Host bindings
 
-```botopink
-#[@External.Node("./helpers.mjs", "parse"),
-  @External.Erlang("helpers", "parse")]
-pub declare fn parse(input: string) -> i32;
-```
+<!-- example: modules/external_wasm_host_binding -->
 
 A declaration takes the signature a `fn` does — generic parameters, `comptime`
 parameters, any return type — with or without an annotation. A parameter it
@@ -3345,11 +2014,7 @@ function with a body refuses it (`discard-param-with-body`).
 A binding may also be a template, where `$0`, `$1`, … are the declared
 parameters — on a method, `self` is `$0`:
 
-```botopink
-#[@External.Node("$0.toUpperCase()"),
-  @External.Erlang("string:uppercase($0)")]
-pub declare fn shout(text: string) -> string;
-```
+<!-- example: modules/external_template_binding -->
 
 **A host function that operates on a value of one type is a method of that
 type.** It is declared inside the type's body with `declare fn`, `self` first,
@@ -3359,22 +2024,7 @@ arguments after it; the plain `("module", "symbol")` form hands the host
 function the receiver first. A host function with no such owner (`listen(port,
 backlog)`, `now()`) stays at module level.
 
-```botopink
-pub type Meter(base: i32) {
-    #[@External.Node("""($0.base + $1)"""),
-      @External.Erlang("""(element(2, $0) + $1)""")]
-    pub declare fn plus(self: Self, n: i32) -> i32;
-
-    pub fn twice(self: Self) -> i32 {
-        return self.plus(self.base);
-    }
-}
-
-fn main() {
-    val m = Meter(base: 3);
-    @print(m.plus(4));               // 7 on every backend that has a host
-}
-```
+<!-- example: modules/external_method_in_type -->
 
 Every backend lowers such a method as a real method of the type whose body is
 the binding: a class member on commonJS (an enum's is a static taking `self`,
@@ -3405,16 +2055,7 @@ targets, the same VM and the same OTP calls (decision 437). `@External.Beam` is
 gone; writing it is a located error at the annotation naming the form in force,
 never an alias.
 
-<!-- docs-check: reject `@External.Beam` binds no host -->
-```botopink
-#[@External.Erlang("math", "sqrt")]
-#[@External.Beam("math", "sqrt")]
-declare fn root(x: f64) -> f64;
-
-fn main() {
-    @print(root(16.0));
-}
-```
+<!-- example: modules/external_beam_removed -->
 
 A relative path (`"./helpers.mjs"`, `"helpers"` on erlang) names a **sidecar** the
 library keeps beside its sources, in `<src>/sidecars/` or `<src>/`. `botopink
@@ -3423,8 +2064,7 @@ directory the dependency resolved to — so it ships the same whether the librar
 is a workspace member, a `{ "path": … }` package outside every library root, or
 one of two checkouts declaring the name. A sidecar the build cannot ship is a
 located error on the `dependencies` entry that named the library, never a
-silent exit 0. See [`docs/botopink-json.md`](./docs/botopink-json.md) § Host
-sidecars.
+silent exit 0. See *The manifest schema* § Host sidecars.
 
 **A host that answers a record may build it either way.** A value knows its own
 type (§ *A value knows its own type*), and a host is the one writer the compiler
@@ -3436,17 +2076,7 @@ that already carries its type is left exactly as it is. The same holds one
 container deep — `?T`, `T[]`, `@Result<T, E>` and `@Task<T>` are looked
 through — and no deeper.
 
-```botopink
-type Point(x: i32, y: i32)
-
-#[@External.Node("({ x: 7, y: 9 })"),
-  @External.Erlang("#{x => 7, y => 9}")]
-declare fn hostPoint() -> Point;
-
-fn distance(p: Point) -> i32 {
-    return p.x + p.y;                // 16 on every backend that has a host
-}
-```
+<!-- example: modules/external_returns_record -->
 
 A field the host leaves out is the absent value, not an error — a host is not
 asked to fill a record it does not know about.
@@ -3456,11 +2086,7 @@ Declared `-> @Task<@Result<T, E>>`, a rejected Promise (Node) or an
 `{error, R}` (Erlang) becomes `Error(…)`; declared `-> @Task<T>`, a rejection is
 a fatal host failure — that form is for a host that guarantees it does not fail.
 
-```botopink
-#[@External.Node("fetch($0).then(__r => __r.text())"),
-  @External.Erlang("helpers", "get")]
-pub declare fn getText(url: string) -> @Task<@Result<string, string>>;
-```
+<!-- example: modules/host_node_task_result -->
 
 **Calling a host binding on a target it does not name is refused where the call
 is written, on every backend:**
@@ -3497,22 +2123,7 @@ written. The arguments are always the declared parameters, in order.
 | `wasi:<adapter>` | a compiler adapter over the host, one of the list below — each has an implementation per host (WASI preview 2 through the `wasi` component, JavaScript in the `browser` loader), so one list serves both (decision 394) |
 | `std:<module>.<function>` | a function std-wasm implements — std's host functions written in Zig (`modules/std-wasm`) —, which the compiler transpiles into the program; the declared parameter and return types must be exactly the function's. The same cell is what the comptime answers by, on every target (decision 440). std's alone: a `std:` cell outside `libs/std` is refused (decision 445, below) |
 
-```botopink
-#[@External.Node("Math", "floor"),
-  @External.Erlang("math", "floor"),
-  @External.Wasm("op:f64.floor")]
-pub declare fn floorOf(x: f64) -> f64;
-
-#[@External.Node("Math", "round"),
-  @External.Erlang("erlang", "round"),
-  @External.Wasm("fn:roundHalfUp")]
-pub declare fn roundOf(x: f64) -> f64;
-
-fn roundHalfUp(x: f64) -> f64 {
-    val up = -1.0 * floorOf(-1.0 * x);
-    return if (up - 0.5 > x) up - 1.0 else up;
-}
-```
+<!-- example: modules/external_wasm_op_and_fn -->
 
 The functions a `std:` binding names, and the std declarations that bind them
 — what a program calls:
@@ -3538,13 +2149,7 @@ written anywhere outside `libs/std` is refused at the annotation, on every
 target, naming the std function to call instead. std's own `hash.contentHash`
 carries one; the same declaration in a program is refused:
 
-<!-- docs-check: reject a `std:` binding is std's alone (decision 445) — call std's `hash.contentHash` instead -->
-```botopink
-#[@External.Node("""(function(__S){ var __H = 5381; for (const __C of Array.from(__S)) { __H = (Math.imul(__H, 33) + __C.codePointAt(0)) >>> 0; } return __H.toString(16); })($0)""")]
-#[@External.Erlang("""(fun(__S) -> __H = lists:foldl(fun(__C, __A) -> (__A * 33 + __C) band 16#FFFFFFFF end, 5381, unicode:characters_to_list(__S)), list_to_binary(string:lowercase(integer_to_list(__H, 16))) end)($0)""")]
-#[@External.Wasm("std:hash.contentHash")]
-pub declare fn contentHash(value: string) -> string;
-```
+<!-- example: modules/external_std_binding_refused -->
 
 **Case mapping covers all of Unicode** (decision 443) on the four targets —
 `"straße".toUpper()` is `"STRASSE"`, `"É".toLower()` is `"é"`. A wasm program
@@ -3562,14 +2167,7 @@ those words), and `trim` removes space, tab, LF, CR, VT and FF (a no-break
 space stays). A wasm program and its own comptime agree. commonJS prints with
 the JS engine and keeps its text (`5`, `1e+21`).
 
-```botopink
-fn main() {
-    @print("${5.0} ${1e21}");
-    @print("[" + " a\t".trim() + "]");
-    // erlang, beam, wasm: 5.0 1.0e21, then [a]
-    // commonJS:           5 1e+21, then [a]
-}
-```
+<!-- example: modules/float_text_and_trim -->
 
 | Adapter | Signature | Answers |
 |---|---|---|
@@ -3591,12 +2189,7 @@ parameter and checked by **shape** at the annotation — the signature in the
 table, whatever `T` is — and the compiler makes the pending task the host's
 pollable backs:
 
-```botopink
-#[@External.Node("""new Promise((__r) => setTimeout(() => __r($1), $0))"""),
-  @External.Erlang("""(fun(__M, __V) -> timer:sleep(__M), __V end)($0, $1)"""),
-  @External.Wasm("wasi:delay")]
-pub declare fn pause<T>(millis: i32, value: T) -> @Task<T>;
-```
+<!-- example: modules/task_starts_when_made -->
 
 The task carries its `T` in one word: a task adapter reached with a float or
 an `i64` value is refused at the call.
@@ -3613,7 +2206,7 @@ writes names an address: there is no raw memory in the vocabulary. A
 
 **A wasm build binds to the runtime it runs on** (decision 334). The package
 names it in `botopink.json`, `"wasm": { "host": "wasi" }` or `"browser"`
-(`docs/botopink-json.md`); absent, it is `wasi` — wasmtime and the runtimes
+(*The manifest schema*); absent, it is `wasi` — wasmtime and the runtimes
 that follow WASI preview 2. A binding may name the host it serves with
 `host:` — `#[@External.Wasm("op:f64.floor", host: .Wasi)]` beside
 `#[@External.Wasm("fn:floorBody", host: .Browser)]` —, and one written without
@@ -3656,29 +2249,14 @@ answers the same bits on every target, instead of each host's own library
 (`std/math`'s `sin`, `pow`, … run std's bodies on erlang and beam, and `pow` on
 commonJS too).
 
-```botopink
-#[@External.Node("fn:mixBody"),
-  @External.Erlang("fn:mixBody"),
-  @External.Wasm("fn:mixBody")]
-pub declare fn mix(x: f64, y: f64) -> f64;
-
-fn mixBody(a: f64, b: f64) -> f64 {
-    return a * 2.0 + b;
-}
-```
+<!-- example: modules/external_fn_body_every_target -->
 Until 2026-09-21 wasm lowered such a call to a `wasm trap`, so the program
 compiled and then died at run time where the other three refused it; it
 refuses too, and there is no flag that restores the trap.
 
 ## Builtins
 
-```botopink
-fn greet() {
-    @print("hello");
-}
-
-fn notReady() -> i32 { @todo(); }
-```
+<!-- example: modules/builtin_print_todo -->
 
 Every builtin is declared in `libs/std/src/builtins.d.bp` (`@todo` and `@panic`,
 which carry a default, in `libs/std/src/builtins_fns.d.bp`), and the compiler is
@@ -3713,12 +2291,7 @@ without a default left out, a label naming no parameter — is
 `error[builtin-arguments]` at the call, naming the declaration; an argument of
 another type is the ordinary type mismatch, at the argument.
 
-<!-- docs-check: reject builtin-arguments -->
-```botopink
-fn main() {
-    @panic("first", "second");
-}
-```
+<!-- example: modules/builtin_arguments -->
 
 Builtin names are exact: an unrecognised `@name(…)` is `error[unknown-builtin]`
 (with the nearest name when one is an edit away), never a silent `void`. `is`
@@ -3746,24 +2319,7 @@ fields, a variant names its enum, a container separates its elements with
 `", "`, and a type implementing `Display` prints its `display()` instead —
 nested inside a container too.
 
-```botopink
-type Point(x: i32, y: i32)
-type Shape { Square(side: i32), Nothing }
-
-behavior Display { fn display(self: Self) -> string; }
-type Money(cents: i32) implement Display {
-    pub fn display(self: Self) -> string { return "$" + self.cents.toString(); }
-}
-
-fn main() {
-    @print([1, 2]);                   // [1, 2]
-    @print(#(1, "a"));                // #(1, "a")
-    @print(Point(x: 1, y: 2));        // Point(x: 1, y: 2)
-    @print(Shape.Square(side: 4));    // Shape.Square(side: 4)
-    @print(Shape.Nothing);            // Shape.Nothing
-    @print([Money(cents: 1)]);        // [$1]
-}
-```
+<!-- example: modules/print_value_text -->
 
 A string prints as its text at the top level (`hi`) and quoted inside a
 container (`["hi"]`). erlang, BEAM, commonJS and wasm all write the record and
@@ -3775,14 +2331,7 @@ record's own fields instead.
 Two declarations with the same fields are two types, and their values are never
 equal:
 
-```botopink
-type Person(name: string, age: i32)
-type Vec(name: string, age: i32)
-
-test "two types with the same fields are different values" {
-    assert (Person(name: "Ana", age: 30) == Vec(name: "Ana", age: 30)) == false;
-}
-```
+<!-- example: test/type_identity.bp -->
 
 The declaration is inside the value on every backend: erlang and BEAM tag the
 term with the module the type is declared in, commonJS makes it a class.
@@ -3790,41 +2339,11 @@ term with the module the type is declared in, commonJS makes it a class.
 `is` and a `case` arm read it back — the arm is chosen by the value's own type,
 not by the annotation it arrived under:
 
-```botopink
-type Person(name: string, age: i32)
-type Vec(name: string, age: i32)
-
-fn nameOf(v: Person | Vec) -> string {
-    return case v {
-        Person { "person" }
-        Vec { "vec" }
-    };
-}
-
-test "the value decides" {
-    val u: unknown = Vec(name: "Ana", age: 30);
-    assert u is Vec;
-    assert (u is Person) == false;
-    assert nameOf(Vec(name: "Ana", age: 30)) == "vec";
-}
-```
+<!-- example: test/type_identity_case.bp -->
 
 ### `@src()` and `SourceLocation`
 
-```botopink
-// A builtin record every module sees:
-//   type SourceLocation(file: string, line: i32, column: i32, fnName: string)
-
-fn where() -> SourceLocation {
-    return @src();
-}
-
-test "src: a test knows its own name" {
-    val loc = @src();
-    @print(loc.file, loc.line, loc.column, loc.fnName);
-    // src/example.bp 10 15 src: a test knows its own name
-}
-```
+<!-- example: modules/src_location -->
 
 `@src()` is the place it is written, evaluated at compile time: the four
 fields are literals at the call site and the expression costs nothing at run
@@ -3844,11 +2363,7 @@ messages and the `snap` library's paths are computed from the caller's `@src()`.
 
 ## Tests
 
-```botopink
-test "addition works" {
-    assert 1 + 1 == 2;
-}
-```
+<!-- example: test/assert_and_try.bp -->
 
 Test blocks are declared at module level. Run with `botopink test`
 (`--target`, `--filter <substring>`). A test that spawns the compiler — to
@@ -3862,9 +2377,10 @@ ends the test as `FAIL <name>  (<e>)  at <file>:<line>` — `e` is the message
 statements after the failed `try` do not run; a `try` inside a lambda is the
 lambda's, not the test's. An assertion helper is therefore an ordinary
 `fn … -> @Result<void, string>` whose `ok` position is the empty
-`return;`:
+`return;`. What the runner prints for the failed test below is the CLI's
+contract (`modules/compiler-cli/tests/test_tooling.sh`), not a cell's:
 
-```botopink
+```text
 fn isPositive(n: i32) -> @Result<void, string> {
     if (n <= 0) { throw "asserts.isPositive: value not positive"; }
     return;
@@ -3881,35 +2397,11 @@ test "t: a propagated error fails the test" {
 matchers `eq` / `anyInt` / `anyString` pick which call a stub answers, and
 `verify(mock, spec)` checks how many matching calls were recorded. It is the
 old `onze` library, retired into std (1.0.10-beta front 01-std, decision 71).
-commonJS and erlang only — its cells are `pub declare fn` with a Node and an
-Erlang template each, so `import {testing.mocks} from "std"` is refused on beam and
-wasm, where `botopink test` does not run.
+commonJS, erlang and beam — its cells are `pub declare fn` with a Node and an
+Erlang template each (beam reads the Erlang one), so `import {testing.mocks} from "std"`
+is refused on wasm, where `botopink test` does not run.
 
-```botopink
-import {testing.mocks} from "std";
-
-behavior UserRepo {
-    fn find(self: Self, id: i32) -> string;
-}
-
-// The double: every method funnels through `mocks.invoke`, which records the
-// call and answers the matching stub value or the type-default.
-type MockUserRepo(__id: string) implement UserRepo {
-    fn find(self: Self, id: i32) -> string {
-        return mocks.invoke(self.__id, "find", [mocks.key(id)], "");
-    }
-}
-
-fn mockUserRepo() -> UserRepo { return MockUserRepo(__id: mocks.newMock()); }
-
-test "repo: eq(v) stubs only the matching argument" {
-    val repo = mockUserRepo();
-    val _s = mocks.when(repo.find(mocks.eq(7))).thenReturn("ana");
-    assert repo.find(7) == "ana";
-    assert repo.find(8) == "";
-    val _v = mocks.verify(repo, mocks.times(2)).find(mocks.anyInt());
-}
-```
+<!-- example: test/mocks_handwritten_double.bp -->
 
 `#[mocks.mock]` writes that double for you — it reflects the annotated
 `behavior`'s methods through `@Decl` and gives the behavior the associated
@@ -3922,21 +2414,7 @@ A name through the handle that is not one of the module's decorators is
 (`import {testing.mocks.mock}`) is `error[std-decorator-leaf-import]`: the code
 it adds would have no handle to name the runtime by.
 
-```botopink
-import {testing.mocks} from "std";
-
-#[mocks.mock]
-behavior OrderRepo {
-    fn total(self: Self, id: i32) -> i32;
-}
-
-test "orders: the synthesized double answers its stub" {
-    val repo = OrderRepo.mock();
-    val _s = mocks.when(repo.total(mocks.eq(3))).thenReturn(30);
-    assert repo.total(3) == 30;
-    assert repo.total(4) == 0;
-}
-```
+<!-- example: test/mocks_decorator_double.bp -->
 
 Two more limits carried over from the old library: a matched `thenThrow` is a
 host throw, not an `@Result`, so the caller catches it with `asserts.throws`
@@ -3988,7 +2466,7 @@ with exactly one source: `{ "path": "…" }`, `{ "git": "…", "branch"|"tag"|"r
 "…" }` or `{ "workspace": true }` (the sibling member of the enclosing
 workspace). A manifest with `"workspaces": ["modules/*", "examples/*"]` is a
 workspace: it declares members and is not a package. Every field, both forms
-and every refusal are in [`docs/botopink-json.md`](docs/botopink-json.md).
+and every refusal are in *The manifest schema*, below.
 
 The compiler emits Erlang for one Erlang/OTP release — `botopink --version`
 prints it (`otp: 28`) — and `botopink build`, `run` and `test` on `erlang` or
@@ -4002,6 +2480,314 @@ A manifest may pin the release too, inside what the compiler supports:
 Another value (`"otp": "26"`) is a manifest error located at the value, and
 every package of a build's closure that declares `otp` must declare the same
 release; a workspace member without one inherits its workspace's.
+
+## The manifest schema — `botopink.json`
+
+Every project, library and workspace carries a `botopink.json` at its root. One
+reader parses it for every tool — `modules/manifest/src/root.zig`, imported by
+the compiler (`botopink build/check/run/test`), the language server, the lib-test
+runner (`botopink-lib-test`, `zig build test-libs`) and `bpmp` — so the fields,
+the shapes and the refusals below are the same everywhere. A refusal is always a
+**located error**: the message, the manifest file and the line and column of the
+entry that is wrong, in the compiler's diagnostic shape:
+
+```text
+error: "dependencies" must be an object, not an array — …
+ --> botopink.json:2:3
+  |
+2 |   "dependencies": ["erika"] }
+  |   ^^^^^^^^^^^^^^
+```
+
+Nothing is parsed and ignored, and no field switches a refusal off (decision 67
+of 1.0.5-beta). Two kinds of manifest exist: a **package** and a **workspace**
+(decision 75 of 1.0.10-beta).
+
+### A package
+
+```json
+{
+  "name": "acme-web",
+  "version": "0.0.1",
+  "description": "Rakun-style web layer — commonJS and erlang",
+  "src": "src/",
+  "entry": "root.bp",
+  "target": "commonJS",
+  "targets": ["commonJS", "erlang"],
+  "files": ["root.bp", "router.bp"],
+  "dependencies": {
+    "acme": { "workspace": true },
+    "jhonstart": { "git": "https://github.com/botopink/jhonstart.git", "branch": "feat" },
+    "local-tool": { "path": "../../tools/local-tool" }
+  }
+}
+```
+
+| Field | Type | Default | Read by | Meaning |
+|---|---|---|---|---|
+| `name` | string, **required** | — | every reader | The package's **import name**: `from "acme-web"` resolves to the package named so. A workspace member is reached by this name, never by its directory. It also starts every erlang/BEAM module atom of the package (`acme_web@main`, `std@math@@PI` — decision 109 of 1.0.10-beta), so it must start with a lowercase letter, and `bp` (the compiler's own namespace) is refused. |
+| `version` | string | `"0.1.0"` | compiler, `bpmp` (`pack`, the auto-tag) | The package version. |
+| `description` | string | — | — (documentation) | One line. |
+| `src` | string | `"src/"` | compiler, LSP, loader | The source directory, relative to the manifest. `"."` roots the module tree at the manifest's own directory; `test/`, hidden directories and nested packages there are not modules of the tree. |
+| `entry` | string | detected | compiler's resolver (`compiler-cli/src/cli/resolver.zig`) | The module-tree root under `src`: `main.bp` for an application, `root.bp` for a library. When absent, `main.bp` is used if present, else `root.bp`. `entry` is followed when **this** package is built or tested; a consumer never follows it. |
+| `target` | string | `"commonJS"` | `botopink build/run/test` | The default target of `botopink build`, `run` and `test`. One of `commonJS`, `erlang`, `beam`, `wasm`; another value is refused (never degraded). |
+| `targets` | array of strings | every target | `botopink-lib-test` | The targets the runner may run this package on. Absent: every requested target. A target the list leaves out is not a cell — nothing runs it — and the exclusion is audited on every run: `botopink build --target <excluded>` must be refused for a missing host binding (`has no #[@External.<Target>(…)]`), so a package may exclude only a target it structurally cannot run on; one that builds there, or fails for another reason, fails the run. A member of a workspace inherits the workspace's `targets` when it declares none, and may only **restrict** them (below). |
+| `files` | array of strings | `[]` | the loader (`compiler-cli/src/cli/libs.zig`, `language-server/src/project_graph.zig`), `bpmp pack` | The modules a **consumer** may import, each relative to `src`; shipped as `<name>/<stem>` (`acme-web/router` → `import { … } from "acme-web.router"` / the root `root.bp` → `from "acme-web"`). The only thing a dependency's consumer sees — a library that lists no `files` ships nothing. `libs/std` uses it for the modules the compiler build embeds. |
+| `dependencies` | **object** | `{}` | compiler, LSP, runner, `bpmp` | The object form only — below. |
+| `otp` | string | the compiler's | `botopink build/check/run/test` (`compiler-cli/src/cli/config.zig`, `libs.zig`) | The Erlang/OTP release the package is built for (decision 228 of 1.0.11-beta). The compiler emits for one release (`botopink --version` prints it: `otp: 28`), and `otp` may only name that one — another value is refused, located at the value. Every package of a build's closure that declares it must declare the same release; a mismatch is refused at the later value, naming the first manifest. A member of a workspace inherits the workspace's `otp` when it declares none, and may not name another. Absent everywhere: the compiler's release applies. Whatever the manifests say, `botopink build/run/test --target erlang\|beam` refuses an `erl` on `PATH` of another release before writing anything: `` botopink emits Erlang for OTP 28, and `erl` on PATH is OTP 29 — install OTP 28 and put it on PATH ``. |
+| `wasm` | object | `{ "host": "wasi" }` | `botopink build/run --target wasm` (`compiler-cli/src/cli/config.zig`) | The runtime a wasm build binds to (decision 334 of 1.0.12-beta), its one field `host`: `"wasi"` — wasmtime and the runtimes that follow WASI preview 2 (`wasi:http`, `wasi:clocks`, `wasi:io/poll`), the default — or `"browser"` — JS imports (`fetch`, `setTimeout`, `Promise` through JSPI), which node runs too. Absent means `"wasi"`; an object without `host`, another field, or a host that is neither is refused. Read on the package being built, never on a dependency; a workspace manifest may not carry it. |
+| `bpp` | string | — | `botopink build/check/run/test` (`compiler-cli/src/cli/bpp.zig`, through `libs.zig`) | The package that unfolds the application's `.bpp` files (decision 361 of 1.0.12-beta): `"bpp": "jhonstart"`, one name, an entry of `dependencies` (refused at the value otherwise). The toolchain finds its roles in that package by std's `bpp` annotations — `#[bpp.html]` exactly once, `#[bpp.style]`, `#[bpp.htmlPrelude]`, `#[bpp.stylePrelude]` at most once each, each on a `pub` declaration, a prelude module holding its imports and its marker `val` only; a count that breaks the rule is refused at this key, naming the declarations. The object form `{ "default": …, "style": … }` is refused at the key: `"bpp" is a package name — write "bpp": "jhonstart"`. A project with `.bpp` files under `src` and no key is refused at the first file; with the key and no `#[bpp.style]` in the package, a `.bpp` style section is refused at its `--- style ---` line. The key on a project with no `.bpp` file is accepted. Read on the package being built, never on a dependency; a workspace manifest may not carry it. |
+| `botopink`, `requires` | string · object | — | `bpmp` only | `botopink`: the compiler-version constraint. `requires`: the per-dependency version constraint `bpmp install <name>@<spec>` records. The compiler passes both through unread. |
+
+Unknown fields are preserved by `bpmp` (it rewrites the file) and not read by
+anyone else.
+
+### `dependencies` — the object form (decision 76)
+
+```json
+"dependencies": {
+  "<name>": { "path": "<relative directory>" },
+  "<name>": { "git": "<url>", "branch": "<b>" | "tag": "<t>" | "rev": "<sha>", "subdir": "<dir>" },
+  "<name>": { "workspace": true }
+}
+```
+
+The key is the dependency's **import name** (`from "<name>"`) and each entry
+declares **exactly one source**:
+
+| Source | Resolves to | Notes |
+|---|---|---|
+| `{ "path": "…" }` | `<project directory>/<path>`, which must hold a `botopink.json` whose `name` is the key | Honoured by the compiler and the LSP directly — no library root is consulted. `bpmp install` links it under `.botopinkbuild/deps/<name>`. |
+| `{ "git": "…", pin }` | The library named `<name>` in the first **lookup tier** that carries it (below): `BOTOPINK_LIB_ROOTS`, then the link `<project>/.botopinkbuild/deps/<name>/`, then the library roots of the walk-up | The pin is one of `branch`, `tag` or `rev` — `bpmp install` clones it; `bpmp link` links a local checkout instead; the compiler resolves by name and does not fetch. A pin without `git` is refused. |
+| `{ "workspace": true }` | The **sibling member** of the enclosing workspace named `<name>` | The only way a member depends on a sibling (decision 75). Outside a workspace it is refused. |
+
+**`"subdir"` — a package inside a git repository (decision 344).** A `git`
+dependency may name a package that is not at the repository's root:
+
+```json
+"dependencies": {
+  "rakun-web": { "git": "https://github.com/botopink/rakun", "tag": "v1.0", "subdir": "modules/rakun-web" }
+}
+```
+
+`bpmp install` clones the repository once at the pin into its store and links
+`.botopinkbuild/deps/<name>` to `<checkout>/<subdir>`, which must hold a
+package (not a workspace) whose `name` is the key. That package's `path` and
+`{ "workspace": true }` dependencies resolve from its directory inside the
+checkout (the compiler follows the link), so its siblings come at the same pin;
+each must stay inside the checkout. Two dependencies on one repository — one
+URL once a trailing `/` and `.git` are dropped — share one checkout and must
+name one pin. The compiler still resolves the dependency by name.
+
+`std` is embedded in the compiler and is never listed — it is the one package
+the compiler ships (decision 326). Every other library is declared here,
+`routing` as any other:
+
+```json
+"dependencies": {
+  "routing": { "git": "https://github.com/botopink/routing.git", "branch": "feat" }
+}
+```
+
+Without the entry, `from "routing"` is refused at the import:
+`unresolved import source "routing" — declare it in botopink.json "dependencies"`.
+
+**Lookup tiers** (where a `git` dependency is found by name — decision 483,
+as `node_modules`). The first tier that carries the name answers; a name two
+tiers carry is the earlier tier's, never "declared by two libraries":
+
+1. `BOTOPINK_LIB_ROOTS` entries (`:`-separated on POSIX), when set;
+2. `<project>/.botopinkbuild/deps/` — one symbolic link per dependency, written
+   by `bpmp install` (into its store) or `bpmp link` (into a local checkout's
+   `repository/<name>`); for a workspace member, then
+   `<workspace root>/.botopinkbuild/deps/` (where `bpmp link` run at the
+   workspace root writes one link per name for every member). The link wins
+   over the walk-up;
+3. the **library roots** of the walk-up, as a fallback: for each ancestor `D`
+   of the working directory, nearest first, `D` itself when `D/botopink.json`
+   is a workspace (its members), `D/repository/botopink-lang/libs` (the
+   embedded `std`), `D/repository` (sibling libraries), `D/libs` — up to the
+   first `D` that holds `repository/` (the enclosing checkout, decision 143).
+
+A tier contributes every immediate child directory (or link to one) holding a
+`botopink.json` — as a package named by the directory — and every **member** of
+a workspace found there, named by its manifest. The same directory reached
+through two roots of one tier is one library. Every package of a build — a
+dependency's own `git` dependencies included — is looked up in the project's
+tiers: one `.botopinkbuild/deps/` serves the whole closure.
+
+**`bpmp link [<checkout>]`** writes those links without cloning anything: for
+every `git` dependency of the project's manifests (a workspace's members
+included, and, flat, the `git` dependencies of what it links),
+`.botopinkbuild/deps/<name>` → `<checkout>/repository/<name>` (a `"subdir"`
+dependency: `<checkout>/repository/<repository>/<subdir>`, `<repository>` the
+last segment of its `git` URL). `<checkout>` defaults to the nearest directory,
+from the working directory up, that holds `repository/`. A dependency whose
+local repository holds no `botopink.json` is named — `"x" has no local
+repository: <checkout>/repository/x holds no botopink.json — check it out there,
+or name another checkout`, located at its entry — and the command exits 1 with
+nothing linked; an existing link is replaced. CI keeps `bpmp install`, which
+fetches.
+
+#### Refusals
+
+| Manifest | Message |
+|---|---|
+| `"dependencies": ["erika"]` (the retired string array, empty included) | `"dependencies" must be an object, not an array — write { "<name>": { "path": "…" } \| { "git": "…", "branch"\|"tag"\|"rev": "…" } \| { "workspace": true } }; for example ["erika"] becomes { "erika": { "path": "../erika" } }` |
+| `"dependencies": "nope"` | `"dependencies" must be an object — { … }` |
+| `"x": "feat"` (an entry that is not an object) | `dependency "x" must be an object — { … }` |
+| `"x": { "branch": "feat" }` | `dependency "x" declares no source — one of "git", "path" or "workspace": true is required` |
+| `"x": { "path": "../x", "workspace": true }` | `dependency "x" declares more than one source — exactly one of "git", "path" or "workspace": true` |
+| `"x": { "git": "…", "branch": "feat", "rev": "…" }` | `dependency "x" declares more than one pin — exactly one of "branch", "tag" or "rev"` |
+| `"x": { "path": "../x", "tag": "v1" }` | `dependency "x" pins a ref without a "git" source — a pin applies to a git dependency only` |
+| `"x": { "workspace": false }` | `dependency "x": "workspace" can only be true — { "workspace": true } names the sibling member of the enclosing workspace` |
+| `"x": { "git": 1 }` (and `path`, `branch`, `tag`, `rev`, `subdir`) | `dependency "x": "git" must be a string` |
+| `"x": { "path": "../r", "subdir": "modules/x" }` (a `subdir` beside `path` or `workspace`) | `dependency "x" names a "subdir" without a "git" source — a subdir names a package inside a git repository` |
+| `"x": { "git": "…", "subdir": "/modules/x" }` (also `C:/…`) | `dependency "x": "subdir" "/modules/x" is absolute — it names a directory of the repository, relative to its root` |
+| `"x": { "git": "…", "subdir": "modules/../../x" }` | `dependency "x": "subdir" "modules/../../x" leaves the repository — ".." is not a segment of a subdir` |
+| `"x": { "git": "…", "subdir": "./modules/x" }` (also `modules//x`, a trailing `/`) | `dependency "x": "subdir" "./modules/x" has an empty or "." segment — write the directory as plain segments separated by "/"` |
+| `"x": { "git": "…", "subdir": "modules\\x" }` | `dependency "x": "subdir" "modules\x" holds a backslash — segments are separated by "/"` |
+| `"x": { "git": "…", "subdir": "" }` | `dependency "x": "subdir" is empty — omit "subdir" for the package at the repository's root` |
+| `"a": { "git": "<r>", "tag": "v1" }, "b": { "git": "<r>.git", "branch": "feat" }` | `dependencies "a" and "b" name one repository (<r>.git) at two refs (tag "v1" and branch "feat") — one repository is one checkout; pin both at one ref` (on the second entry) |
+| `"wasm": { "host": "deno" }` (a host that is neither `wasi` nor `browser`) | `"wasm": "host" names "deno" — a wasm build runs on "wasi" (wasmtime, WASI preview 2) or "browser" (JS imports, JSPI)` (on the value) |
+| `"wasm": "wasi"` (not an object) | `"wasm" must be an object — { "host": "wasi" \| "browser" }` |
+| `"wasm": {}` | `"wasm" names no "host" — write { "host": "wasi" \| "browser" }, or omit "wasm" for the default "wasi"` |
+| `"wasm": { "host": 1 }` | `"wasm": "host" must be a string — "wasi" or "browser"` |
+| `"wasm": { "host": "wasi", "jspi": true }` (any field beside `host`) | `"wasm" has no field "jspi" — its one field is "host": { "host": "wasi" \| "browser" }` (on the field) |
+| `"otp": "26"` (any release but the compiler's) | `botopink emits Erlang for OTP 28; "otp" names 26` (on the value) |
+| a dependency of the closure whose `"otp"` differs from the project's (or the first pin's) | `"otp" names 29 here, but 28 in <first>/botopink.json — every package of a build pins one OTP release` (on the dependency's value) |
+
+Refusals at resolution time (the compiler and the LSP — and `bpmp install`
+where a row names it — located on the project's `dependencies` entry unless a
+row says otherwise):
+
+| Situation | Message |
+|---|---|
+| `{ "workspace": true }` in a project no workspace lists | `"x": { "workspace": true } but <project>/botopink.json is not a member of any workspace — no ancestor botopink.json lists this directory under "workspaces"` |
+| `{ "workspace": true }` naming no sibling | `"x": { "workspace": true } names no member of <workspace>/botopink.json (members: a, b, c)` |
+| `{ "path": … }` holding no manifest | `"x": path "../x" holds no botopink.json (looked at <abs>/botopink.json)` |
+| `{ "path": … }` whose package has another `name` | `"x": path "../y" holds a package named "y" — the dependency key is the import name and must match` |
+| `{ "path": … }` pointing at a sibling member | `"x": path "../x" points at the sibling member "x" — use { "workspace": true }` |
+| `{ "path": … }` pointing at a workspace | `"x": path "../ws" is a workspace, not a package — depend on one of its members: a, b, c` |
+| `{ "git": … }` whose name is a workspace under a root | `"x" is a workspace, not a package — import one of its members: a, b, c` |
+| `{ "git": … }` whose name no root carries | `dependency 'x' was not found under any library root` |
+| a `files` entry of the resolved dependency that does not exist | `dependency 'x' lists "gone.bp" in ` files `, but <path> does not exist` (located on the dependency's manifest) |
+| `bpmp install`: a `subdir` holding no manifest | `"x": subdir "modules/x" holds no botopink.json in <git> at <rev12> (looked at <checkout>/modules/x/botopink.json)` |
+| `bpmp install`: a `subdir` holding a workspace | `"x": subdir "modules/ws" is a workspace, not a package — name one of its members' subdirs: modules/ws/a, modules/ws/b` |
+| `bpmp install`: a `subdir` holding another package | `"x": subdir "modules/y" holds a package named "y" — the dependency key is the import name and must match` |
+| `bpmp install`: a `path` dependency of the package (or of its in-checkout closure) leaving the checkout, by spelling or through a symbolic link | `"y": path "../../../y" leaves the checkout of <git> — a package of a git dependency names by path only packages of its own repository` (on that package's own manifest) |
+| `bpmp install`: `botopink.lock` pinning two dependencies on one repository at two commits | `install: botopink.lock pins 'a' and 'b' at two commits of one repository — one repository is one checkout (decision 344)` (`bpmp install --update` re-pins) |
+| `bpmp link`: a `git` dependency whose `<checkout>/repository/<name>` holds no manifest | `"x" has no local repository: <checkout>/repository/x holds no botopink.json — check it out there, or name another checkout` (every such dependency named, then exit 1; nothing linked) |
+| `bpmp link`: one name linking to two directories (a project's `"subdir"` entry and a linked package's entry by name) | `"x" links to <dirA> here, but to <dirB> for <manifest> — one name is one link` |
+| a host sidecar the resolved dependency does not carry | `dependency 'x' requires "./x.mjs" from module 'x/root', but no such file is in its sources (looked at <src>/sidecars/x.mjs, then <src>/x.mjs)` |
+
+#### Host sidecars
+
+A `#[@External.Node("./x.mjs", "f")]` lowers to a relative `require("./x.mjs")`
+in the emitted module. The file is the library's, not the consumer's, so
+`botopink build` and `botopink test` copy it next to the emitted JS —
+`<out>/<name>/x.mjs` for a dependency's module, `<out>/x.mjs` for the project's
+own — and rewrite the `require` when the authored path would escape the output
+directory. The `.erl` host module of an `#[@External.Erlang("host", "f")]` is
+copied the same way.
+
+Which directory a sidecar is copied *from* is the dependency this manifest
+resolved, by the rules of the table above — **not** a directory of that name
+under the library roots. A `{ "path": … }` dependency outside every root, and a
+name two checkouts of one library both declare (which the roots refuse to
+resolve, deliberately), are therefore shipped correctly. Inside that directory
+the file is looked for under the dependency's own `src`, first as
+`<src>/sidecars/<file>` and then as `<src>/<file>`. Only a library the project
+does not declare as a dependency — the embedded `std` — is found by name across
+the roots.
+
+A sidecar a module requires and the build cannot ship ends the build with a
+located error on the `dependencies` entry that named the library. There is no
+flag, environment variable or manifest field that reduces it to a warning: a
+build that exits 0 having shipped nothing is a program that dies on its first
+run instead.
+
+### A workspace (decision 75)
+
+```json
+{
+  "name": "rakun",
+  "version": "0.0.1",
+  "description": "The rakun libraries",
+  "targets": ["commonJS", "erlang"],
+  "workspaces": ["modules/*", "examples/*"]
+}
+```
+
+A manifest with `"workspaces"` is a workspace: it declares **members** and is
+never a package. `npm`'s field name, `npm`'s meaning.
+
+| Field | Meaning |
+|---|---|
+| `name`, `version`, `description` | As for a package. The name is what a lookup answers with when something imports the umbrella by mistake. |
+| `targets` | The default every member inherits when it declares none; a member may only **restrict** it. |
+| `otp` | The release every member inherits when it declares none; a member may only repeat it. |
+| `workspaces` | The member globs. Two forms: `"<dir>/*"` — every child directory of `<dir>` that holds a `botopink.json` (a child without one is not a member); `"<dir>"` — one directory, which **must** hold a `botopink.json`. Paths are inside the workspace (no `..`, no absolute path, no other `*`). |
+| `src`, `files`, `entry`, `dependencies`, `wasm` | **Refused** — a workspace compiles nothing and ships nothing. |
+
+Each member is a package whose `name` is its import name (`from "rakun-web"`).
+The runner runs every member — examples included — one row per member, and the
+umbrella has no row. A member depends on a sibling with `{ "workspace": true }`
+only. Workspaces do not nest.
+
+A member that is a **library** (its module tree is rooted at `root.bp`, not
+`main.bp`) and lists no `files` **ships nothing**: `botopink test` inside it
+fails, and the runner marks every cell `✗`, with
+
+```text
+error: ships nothing: manifest has no "files" — a workspace member that is a library lists every module a consumer may import
+ --> modules/rakun-web/botopink.json:2:3
+```
+
+An example member (`entry: main.bp`, or `src/main.bp` present) is an
+application; nothing is shipped from it by design.
+
+#### Refusals
+
+| Manifest | Message |
+|---|---|
+| a workspace with `files` (or `src`, `entry`, `dependencies`, `wasm`) | `a workspace manifest cannot carry "files" — a workspace declares members, it is not a package; move "files" to the member's own botopink.json` |
+| `"workspaces": ["modules/**"]` (or `"*/src"`, `"../x"`, `"/abs"`, `""`) | `workspaces entry "modules/**" is not a supported form — use "<dir>/*" (every child of <dir> holding a botopink.json) or a literal "<dir>" inside the workspace` |
+| `"modules/*"` when `modules/` does not exist | `workspaces entry "modules/*": <ws>/modules is not a directory that can be read` |
+| `"modules/ghost"` with no manifest there | `workspaces entry "modules/ghost": <ws>/modules/ghost/botopink.json does not exist — a literal entry names a directory holding a botopink.json` |
+| a member that is itself a workspace | `"inner" is a member of <ws>/botopink.json and cannot itself be a workspace — workspaces do not nest` (on the member's `workspaces`) |
+| two members with one `name` | `member name "dup" is declared twice in <ws>/botopink.json: <a>/botopink.json and <b>/botopink.json` (on the second member's `name`) |
+| a member naming another `otp` | `"otp" names 29 here, but 28 in <ws>/botopink.json — every package of a build pins one OTP release` (on the member's value) |
+| a member widening `targets` | `"erlang" is not one of the workspace's targets ["commonJS"] (<ws>/botopink.json) — a member may only restrict the workspace's targets` (on the member's entry) |
+| a member depending on itself | `"web" cannot depend on itself` |
+| a member's `{ "workspace": true }` naming no sibling | `"ghost": { "workspace": true } names no member of <ws>/botopink.json (members: a, b)` |
+| a member's `path` to a sibling | `"core": path "../core" points at the sibling member "core" — use { "workspace": true }` |
+| a member's `path` to the workspace | `"umbrella": path "../../" points at the workspace itself — a workspace is not a package; depend on one of its members with { "workspace": true } (members: a, b)` |
+| `botopink build/check/run/test` in the workspace directory | `<ws>/botopink.json is a workspace, not a package — run this command inside one of its members: a, b, c` |
+| two **members** with one `name` in different directories across the library roots (or a member and a package) | `"x" is declared by two libraries: <dirA> and <dirB> — a name resolves to one library; rename one of them` — on both, so neither is used (first-root-wins is what decision 75 retires; two plain packages with one name keep first-root-wins). |
+
+### Refusals common to every manifest
+
+| Manifest | Message |
+|---|---|
+| not JSON | `botopink.json is not valid JSON` |
+| not an object | `botopink.json must be a JSON object` |
+| no `name` | `botopink.json has no "name"` |
+| `"name": 1` (any string field that is not a string) | `"name" must be a string` |
+| `"name": "MyApp"` (a name that does not start with a lowercase letter) | `"name" must start with a lowercase letter — every erlang module atom of the package starts with it` |
+| `"name": "bp"` | `"name" cannot be "bp" — it is the compiler's own namespace, the package of a module compiled outside any botopink.json` |
+| `"name": "std"`, outside the bundled `libs/std` | `the package name \`std\` is the bundled standard library's — choose another name` (decision 453; the directory decides — `<checkout>/libs/std` of the compiler's own checkout — never the name alone) |
+| `"files": "root.bp"` (any array field that is not an array of strings) | `"files" must be an array of strings` · `"files" must be an array of strings — entry 2 is not a string` |
+
+### Where each tool meets the manifest
+
+| Tool | Reads | Path |
+|---|---|---|
+| `botopink build/check/run/test` | the project's manifest (cwd), the enclosing workspace, each dependency's manifest | `modules/compiler-cli/src/cli/config.zig`, `libs.zig` |
+| `botopink-lsp` | the nearest manifest above the open file, the enclosing workspace, each dependency's manifest — refusals are editor diagnostics on the manifest | `modules/language-server/src/project_graph.zig` |
+| `botopink-lib-test` | every package and every workspace member under the library roots; `targets`; `files` of a library member | `modules/lib-test-runner/src/discovery.zig` |
+| `bpmp` | `dependencies` (to install or link), `files` (to pack), `botopink`, `requires`; writes `dependencies` entries as `{ "git": … }` | `modules/bpmp/src/manifest.zig`, `dep/spec.zig` |
+| the shared model | everything above | `modules/manifest/src/root.zig` |
 
 ## Migrating from the effect annotations
 

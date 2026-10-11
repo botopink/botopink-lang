@@ -67,7 +67,7 @@ pub const Helper = enum {
     /// `{ error: <message> }` instead of rejecting.
     host_task,
     /// A host answer adopted into the record class its declaration names
-    /// (`docs.md` § Host bindings: "a plain object … is adopted into the record
+    /// (`conformance/docs.md` § Host bindings: "a plain object … is adopted into the record
     /// the declaration names"): `__bp_adopt(v, C, path)` gives a plain object
     /// `C`'s prototype — its methods and its `__bp` marker — keeping its fields,
     /// and leaves an instance of `C` (or `null`) as it is. `path` walks the

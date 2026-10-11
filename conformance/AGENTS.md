@@ -25,6 +25,7 @@ written and is red until the compiler passes it — the suite keeps no list of k
 ```text
 conformance/
 ├── AGENTS.md                ← you are here
+├── docs.md                  ← the language reference (decisions 461, 462): its index, the text no one cell owns, the manifest schema; every example a `<!-- example: … -->` line naming a cell or a suite
 ├── run.sh                   ← the runner: `zig build test-conformance`, the gate's stage 9
 ├── modules/<cell>/          ← one cell (decisions 457, 475)
 │   ├── botopink.json           its own manifest: `name`, `"targets"` when narrowed, path dependencies, a wasm host
@@ -32,7 +33,7 @@ conformance/
 │   ├── snapshot/output/<module>.snap        the answer on every target
 │   ├── snapshot/targets/<t>/<module>.snap   target <t>'s departure — only where it departs
 │   ├── deps/<lib>/             a local dependency, named by a `{ "path": "deps/<lib>" }` entry
-│   └── docs.md                 the reference text beside the cell (decision 462; written by step I)
+│   └── docs.md                 the reference text the cell shows, quoted from ../docs.md (decision 462)
 └── test/
     ├── <area>_<group>.bp    ← `test "…" { … assert … }` blocks, run by `botopink test --json`
     └── <project>/           ← a project with a `test/` tree, run by `botopink test --json`
@@ -1027,7 +1028,7 @@ asserting the VALUE, because each defect was a wrong answer rather than a crash 
 decision-28/30/33 cells `nullish_default`, `paren_receiver`, `type_suffix`, `bodyless_fn`,
 `curried_call`, `index_expression`, and the two 1.0.10-beta `00 · 04-js` cells
 `modules/labelled_arguments` — a record constructor and an enum variant written out
-of declared order, the rule being `docs.md` § Parameters with defaults, "a
+of declared order, the rule being `conformance/docs.md` § Parameters with defaults, "a
 parameter the call names by label keeps the argument it was given, whichever
 position it is in"; the values are asymmetric so a positional zip is a wrong
 ANSWER at exit 0 rather than a crash, which is how it hid — and
@@ -1621,6 +1622,27 @@ a `_` arm after an arm whose block answered nothing); `modules/case_arm_ending_i
 beam dropped a `push` that was an arm's last statement); `modules/record_update_on_lambda_parameter` —
 `xs.map({ b -> Brk(..b, active: false) })` and a block lambda ending in the update (commonJS, erlang
 and beam built `Brk(b, false)`, wasm trapped).
+
+
+## The reference — `docs.md` (decisions 461, 462)
+
+`docs.md` is botopink-lang's language reference, moved here from the repository root by 144 B-29
+step I with the manifest schema (`docs/botopink-json.md` until then, now § The manifest schema) and
+the language example of `README.md` (`modules/greet`). It holds no example of its own: an example is
+a line `<!-- example: modules/<cell> -->` or `<!-- example: test/<suite> -->`, alone on its line, its
+path relative to this directory, rendered from the cell's `src/` and `snapshot/`. Beside each cell
+the reference names, the cell's `docs.md` quotes the reference text it shows.
+
+- A fence of the reference that showed a program is a cell (or names an existing one that shows the
+  same thing); its answer is what the compiler answers, read against the text — where the two
+  disagreed, the defect is a `1-botopink-lang/144` row and the cell stays red until it lands, or the
+  stale text was rewritten. A table, a grammar, a layout sample or a runner's report is ```` ```text ````.
+- `zig build test-docs` (`scripts/check-docs.sh`, the gate's stage 10) checks that every example names
+  a cell (`botopink.json` and `src/main.bp`) or a suite, and refuses an inline ```` ```botopink ````
+  fence and a `<!-- docs-check: … -->` line.
+- § The manifest schema is kept in sync with
+  [`../modules/manifest/src/root.zig`](../modules/manifest/AGENTS.md): a field is documented only when a
+  named parser reads it, a refusal with the message a test shows; a table row per field or refusal.
 
 ## The targets
 

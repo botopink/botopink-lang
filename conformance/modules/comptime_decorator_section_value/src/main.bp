@@ -1,4 +1,4 @@
-//// `docs.md` § Sections of an enum, decisions 331 and 364 — a decorator's
+//// `conformance/docs.md` § Sections of an enum, decisions 331 and 364 — a decorator's
 //// `@Expr<T>.value` holds a value under a section (`#[mark(.Pad.All.4)]`),
 //// and a function of the module the decorator reaches may write one
 //// (`fallback()`): both cross into the decorator's comptime module as the

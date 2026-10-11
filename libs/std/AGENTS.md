@@ -167,7 +167,7 @@ an annotation whose every variant carries a payload the compiler reads (front
 - **A host function with an owner is a method of the owner.** One that
   operates on a value of one of the module's types is declared INSIDE that
   type with `declare fn`, `self` first, and called `value.m(…)` — `$0` is the
-  receiver (`docs.md` § Host bindings; `io.net`'s sockets, `regex.Regex`).
+  receiver (`conformance/docs.md` § Host bindings; `io.net`'s sockets, `regex.Regex`).
   Owner-less ones — a constructor such as `listen`/`connect`/`compile`, or a
   function over primitives, `unknown` host terms or builtin types (`@Task`) —
   stay module functions, and so does a private test instrument, since a
@@ -256,7 +256,7 @@ Templates are rendered by the commonJS, erlang and beam_asm backends; wat does
 not use them. **`#[@External.Wasm("…")]` is not a template** (decision 238): it
 is one of `op:<wasm opcode>` (the declared types must be the opcode's),
 `fn:<a private bodied fn of the same module, same signature>` or
-`wasi:<adapter>` (the list in `docs.md` § Host bindings), the arguments being
+`wasi:<adapter>` (the list in `conformance/docs.md` § Host bindings), the arguments being
 the declared parameters in order; anything else is refused at the annotation
 on a wasm build. An algorithm with no wasm instruction stays in the library as
 that private `fn` — the only std edit a wasm binding brings, never a public
@@ -651,7 +651,7 @@ backends. commonJS patches the methods on `BigInt.prototype`, which the tower's 
 `i64` past 2^53 is a `BigInt`): `BigInt.toI64`'s and `Integer.toI64`'s Node forms are one text, which
 answers 319's canonical form (a `number` within ±(2^53 − 1)), and the two `toF64` forms are one text,
 so the two patches are one function whichever runs last. wasm lowers the five itself (`wat.zig`, the
-`bigint` helper group). `docs.md` § Numbers.
+`bigint` helper group). `conformance/docs.md` § Numbers.
 
 ## `behavior Index` / `behavior Slice` (decision 63, amended)
 

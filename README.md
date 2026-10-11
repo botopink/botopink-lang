@@ -2,15 +2,8 @@
 
 A statically-typed, multi-target language that compiles to JavaScript, Erlang, BEAM assembly, and WebAssembly text.
 
-```botopink
-fn greet(name: string) -> string {
-    return "Hello, " + name + "!";
-}
-
-fn main() {
-    @print(greet("world"));   // Hello, world!
-}
-```
+The language reference is [`conformance/docs.md`](conformance/docs.md): every example in it is a
+conformance cell — its source and its answer on every target, checked by `zig build test-conformance`.
 
 ## Why Botopink
 
@@ -51,9 +44,8 @@ botopink-lang/
 │   ├── lib-test-runner/   cross-backend lib test runner
 │   └── manifest/          the shared botopink.json model (std only)
 ├── libs/std/              standard library
-├── conformance/           the conformance suite — one cell per behaviour, checked by `botopink cell check`
+├── conformance/           the language reference (docs.md) and its conformance suite — one cell per behaviour, checked by `botopink cell check`
 ├── examples/              generic-loader-binding, the erika consumer (moving to erika's examples/)
-├── docs/                  botopink-json.md — the manifest schema (packages, workspaces, dependencies)
 ├── scripts/               installers, release packing, test wrappers
 ├── build.zig              workspace build graph
 └── AGENTS.md              contributor guide
@@ -65,7 +57,7 @@ botopink-lang/
 zig build              # compile everything
 zig build test         # compiler-core, language-server, CLI and lib-test-runner unit tests
 zig build test-libs    # cross-backend lib tests
-zig build test-docs    # every botopink fence of README.md and docs.md compiles
+zig build test-docs    # every example of conformance/docs.md names a conformance cell
 zig build run          # run the CLI
 ```
 

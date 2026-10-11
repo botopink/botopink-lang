@@ -1,4 +1,4 @@
-//// `docs.md` § Sections of an enum, decision 331 — a value under a section
+//// `conformance/docs.md` § Sections of an enum, decision 331 — a value under a section
 //// (`.Pad.All.4`) crosses into the comptime runtime and back on both
 //// runtimes (BEAM for erlang and beam, WAT for commonJS and wasm): as an
 //// argument, inside an array, inside a payload variant, and as the value

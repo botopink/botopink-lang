@@ -211,7 +211,7 @@ test "infer: narrow ---- case guard variant field" {
 // failing the day the form lands". C-08 decided the form does not land: `is`
 // answers a `bool` and does not bind (decision 8 §4), `val assert <Pattern> =
 // <expr>;` is the form that binds a pattern's names into the enclosing scope,
-// and `docs.md` already lists `assert x is Some(n)` as deliberately absent. The
+// and `conformance/docs.md` already lists `assert x is Some(n)` as deliberately absent. The
 // refusal it must keep giving — `error[is-variant-binding]` — is pinned at the
 // language level by `conformance/modules/assert_is_pattern`, which is where
 // a deliberate refusal belongs.

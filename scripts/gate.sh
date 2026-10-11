@@ -41,8 +41,11 @@
 #                           every target it declares, every conformance/test/
 #                           suite by `botopink test --json`; a red cell fails
 #                           the stage
-#  10. zig build test-docs  every `botopink` fence of docs.md and README.md is
-#                           compiled (scripts/check-docs.sh)
+#  10. zig build test-docs  every `<!-- example: … -->` of the language reference
+#                           (conformance/docs.md, each cell's docs.md, README.md)
+#                           names a conformance cell or suite, and no
+#                           ```botopink fence is left inline
+#                           (scripts/check-docs.sh; decision 461)
 #  11. tsc-check.sh         every `.d.ts` the commonJS backend emits for the
 #                           conformance cells and every package under libs/
 #                           (std included) passes
@@ -67,7 +70,7 @@
 #             `zig build test`, and every `.botopinkbuild/cache/` (decision 225:
 #             the erlang verdicts, the `.beam` cache, the cell durations, the
 #             cell-result store) under this checkout and each sibling library
-#             repository, naming each, and pass `--cold` to stages 8–10, which
+#             repository, naming each, and pass `--cold` to stages 8 and 9, which
 #             then never read the result store and write the passes they ran
 #             (§ warm and cold).
 #             Required for the run that decides a merge: a stale cache entry can
@@ -453,7 +456,7 @@ bash scripts/check-docs.sh --list >"$par/plan.docs" 2>"$par/plan.docs.err" ||
 # directories, per-run `test-out/<target>/<id>/`, per-process test-scratch
 # roots); `test-cli`'s four scripts, which share `zig-out/` and fixture `out/`
 # directories, stay one stage and run in order inside it. The pools inside
-# `test-libs`, `test-conformance` and `test-docs` admit a job only while the
+# `test-libs` and `test-conformance` admit a job only while the
 # machine's runnable threads are at most its CPUs, so running them together
 # shares the CPUs rather than multiplying the load.
 #
@@ -464,13 +467,13 @@ bash scripts/check-docs.sh --list >"$par/plan.docs" 2>"$par/plan.docs.err" ||
 # printed, as the serial gate never ran them. A stage's stdout and stderr share
 # one capture file, so both reach this script's stdout in the order written.
 # ── § warm and cold ─────────────────────────────────────────────────────────
-# Decisions 229 and 249: stages 8, 9 and 10 keep a cell-result store under
+# Decisions 229 and 249: stages 8 and 9 keep a cell-result store under
 # `.botopinkbuild/cache/results/` — a cell whose key (the compiler's build and
 # its sources partitioned by backend, the toolchain, every byte the cell reads)
 # equals a stored PASS is answered from it, every other cell runs, a failure
 # always runs. Each stage prints `result store: <N> jobs — <R> run, <S> from
-# store` (`fences` for stage 10), and § counts holds R + S to the plan. `--cold`
-# passes `--cold` to the three: the store is not read, every cell runs, and the
+# store`, and § counts holds R + S to the plan. `--cold` passes `--cold` to
+# the two: the store is not read, every cell runs, and the
 # passes are written for the warm runs after it.
 cold_arg=()
 [ "$cold" -eq 0 ] || cold_arg=(--cold)
@@ -482,7 +485,8 @@ cold_arg=()
 # CPU, bounded by `MemAvailable / 768 MiB`, read now that the build is done —
 # and each stage that runs a pool gets its share of it, in proportion to the
 # CPU-seconds it measured (test-libs 2540, test-conformance 1468, the rest under
-# 300): 40 % / 40 % / 5 % / 10 %, at least 1 each. The stages keep their own
+# 300): 50 % / 30 % / 10 %, at least 1 each; test-docs reads files and runs no
+# pool. The stages keep their own
 # `--jobs` flag and admission; only the number they are given changes, so a
 # report is the bytes it was. test-cli runs its scripts one after another and
 # test-web is one wasm compile, so zig gets `-j` of its share.
@@ -494,7 +498,7 @@ share() { # <percent> — that part of the total, at least 1
     [ "$n" -ge 1 ] || n=1
     echo "$n"
 }
-echo "gate: job budget $budget_total — test-libs $(share 50), test-conformance $(share 30), test-docs $(share 5), tsc-check $(share 10)"
+echo "gate: job budget $budget_total — test-libs $(share 50), test-conformance $(share 30), tsc-check $(share 10)"
 launch 4 zig build test-cli "$opt"
 # A stage the step gate skips because the step reaches none of its cells is not
 # launched; its report line says so (§ step gate and full gate).
@@ -504,7 +508,7 @@ fi
 if [ "$run_lang" -eq 1 ]; then
     launch 6 zig build test-conformance "$opt" -- --jobs "$(share 30)" ${lang_args[@]+"${lang_args[@]}"} ${cold_arg[@]+"${cold_arg[@]}"}
 fi
-launch 7 zig build test-docs "$opt" -- --jobs "$(share 5)" ${cold_arg[@]+"${cold_arg[@]}"}
+launch 7 zig build test-docs "$opt"
 launch 8 bash scripts/tsc-check.sh --jobs "$(share 10)"
 launch 9 zig build test-web -j"$(share 10)"
 wait
@@ -553,11 +557,10 @@ check_counts() { # <n>
             echo "plan: $(grep -c . "$par/plan.conformance") jobs on $(cut -f2 "$par/plan.conformance" | sort -u | tr '\n' ' ')as --list declares"
             stored 6 "stage 9 (test-conformance)" jobs "$(grep -c . "$par/plan.conformance")"
             ;;
-        7)  # test-docs: `docs: <N> fences — …` (scripts/check-docs.sh)
-            line="$(plain "$out" | grep -E '^docs: [0-9]+ fences' | tail -1)"
-            counted 7 "stage 10 (test-docs) fences" "$(sed -nE 's/^docs: ([0-9]+) fences.*/\1/p' <<<"$line")" "$(grep -c . "$par/plan.docs")"
-            echo "plan: $(grep -c . "$par/plan.docs") fences, as --list declares"
-            stored 7 "stage 10 (test-docs)" fences "$(grep -c . "$par/plan.docs")"
+        7)  # test-docs: `docs: <N> references — …` (scripts/check-docs.sh)
+            line="$(plain "$out" | grep -E '^docs: [0-9]+ references' | tail -1)"
+            counted 7 "stage 10 (test-docs) references" "$(sed -nE 's/^docs: ([0-9]+) references.*/\1/p' <<<"$line")" "$(grep -c . "$par/plan.docs")"
+            echo "plan: $(grep -c . "$par/plan.docs") references, as --list declares"
             ;;
     esac
 }
@@ -586,7 +589,7 @@ report 5 "zig build test-libs" "zig build test-libs" "zig build test-libs"
 report 6 "zig build test-conformance" "zig build test-conformance" \
     "zig build test-conformance (a FAIL line above names the cell or the suite; a red cell's candidates and their differences follow it)"
 report 7 "zig build test-docs" "zig build test-docs" \
-    "zig build test-docs (a ✗ line above names the doc, the fence line and the error)"
+    "zig build test-docs (a ✗ line above names the doc, the line and why)"
 report 8 "tsc --noEmit over the emitted .d.ts, node --check over the emitted .js (scripts/tsc-check.sh)" "tsc-check" \
     "scripts/tsc-check.sh (the tsc error above names the project and the .d.ts; the defect is codegen/typescript.zig's)"
 report 9 "zig build test-web (the compiler built for wasm32, smoke.js under node)" "zig build test-web" \
