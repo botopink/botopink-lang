@@ -5,10 +5,10 @@ pub behavior Shape {
 }
 
 ----- ERROR
-error: `External.Wasm` declares no `inline` — the flag is read by the erlang and beam emitters only
+error: `External.Wasm` declares no `inline` — the flag is read by the erlang and beam emitters from `External.Erlang` only
   ┌─ main.bp:2:7
   │
 2 │     #[@External.Wasm("area", inline = true)]
   │       ^
 
-  hint: Delete it: on `External.Wasm` `inline` is a switch nothing reads. `External.Erlang` and `External.Beam` declare it (`builtins.d.bp`).
+  hint: Delete it: on `External.Wasm` `inline` is a switch nothing reads. `External.Erlang` alone declares it (`builtins.d.bp`).

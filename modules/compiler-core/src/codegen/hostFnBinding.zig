@@ -1,7 +1,7 @@
 //! Decision 238's `fn:` form on every backend (decisions 259, 263): a
 //! `declare fn` whose binding for the build's target is `fn:<name>` runs
 //! `<name>`, a private bodied `fn` of the same module with the same signature
-//! — `#[@External.Erlang("fn:tanBody")]`, `#[@External.Beam("fn:tanBody")]`,
+//! — `#[@External.Erlang("fn:tanBody")]`,
 //! `#[@External.Node("fn:powBody")]`, `#[@External.Wasm("fn:tanBody")]`. The
 //! arguments are the declared parameters in order.
 //!
@@ -29,8 +29,7 @@ const ComptimeOutput = comptimeMod.ComptimeOutput;
 pub const Target = enum {
     node,
     erlang,
-    /// `External.Beam`, or `External.Erlang` when the declaration has no
-    /// `External.Beam` — the vocabulary beam falls back to everywhere else.
+    /// `External.Erlang` — the beam target reads the same cell (decision 437).
     beam,
 };
 
@@ -197,12 +196,7 @@ fn bindingFor(f: ast.FnDecl, target: Target) ?struct { []const u8, ast.ExternalR
     return switch (target) {
         .node => if (f.externalFor("node")) |r| .{ "Node", r } else null,
         .erlang => if (f.externalFor("erlang")) |r| .{ "Erlang", r } else null,
-        .beam => if (f.externalFor("beam")) |r|
-            .{ "Beam", r }
-        else if (f.externalFor("erlang")) |r|
-            .{ "Erlang", r }
-        else
-            null,
+        .beam => if (f.externalFor("erlang")) |r| .{ "Erlang", r } else null,
     };
 }
 

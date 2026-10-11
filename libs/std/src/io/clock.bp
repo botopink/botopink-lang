@@ -52,7 +52,6 @@
 // `erlang:system_time/1` uses it as the divisor selector.
 #[@External.Node("Date", "now")]
 #[@External.Erlang("erlang", "system_time")]
-#[@External.Beam("erlang", "system_time")]
 declare fn systemTimeWithUnit(unit: i32) -> i64;
 
 // Milliseconds since the Unix epoch. Monotonic across reasonable clock
@@ -73,7 +72,6 @@ pub fn nowMillis() -> i64 {
 // count, truncated to its whole milliseconds (decision 319's canonical form).
 #[@External.Node("Math.floor(performance.now($0))")]
 #[@External.Erlang("erlang", "monotonic_time")]
-#[@External.Beam("erlang", "monotonic_time")]
 declare fn monotonicTimeWithUnit(unit: i32) -> i64;
 
 // Monotonic milliseconds — the host's monotonic clock, suitable for

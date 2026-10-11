@@ -61,7 +61,7 @@ pub fn normalizeProgram(alloc: std.mem.Allocator, tokens: []const Token, program
 
 const Site = enum { method, top_level };
 
-const Target = enum { node, erlang, beam, other };
+const Target = enum { node, erlang, other };
 
 fn targetOf(name: []const u8) ?Target {
     const n = if (std.mem.startsWith(u8, name, "@")) name[1..] else name;
@@ -69,7 +69,6 @@ fn targetOf(name: []const u8) ?Target {
     const t = n["External.".len..];
     if (std.mem.eql(u8, t, "Node")) return .node;
     if (std.mem.eql(u8, t, "Erlang")) return .erlang;
-    if (std.mem.eql(u8, t, "Beam")) return .beam;
     return .other;
 }
 

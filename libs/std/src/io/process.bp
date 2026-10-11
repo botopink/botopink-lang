@@ -24,7 +24,6 @@
 // Erlang: `erlang:halt(code)` (bare BIF).
 #[@External.Node("process", "exit")]
 #[@External.Erlang("erlang", "halt")]
-#[@External.Beam("erlang", "halt")]
 pub declare fn exit(code: i32) -> void;
 
 // Current working directory of the host process.

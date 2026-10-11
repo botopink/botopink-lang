@@ -304,7 +304,6 @@ pub behavior Annotation {
 pub type External implement Annotation {
     Erlang(template: string, inline: bool = false),
     Node(template: string),
-    Beam(template: string, inline: bool = false),
     Wasm(template: string),
     Typescript(template: string),
 }

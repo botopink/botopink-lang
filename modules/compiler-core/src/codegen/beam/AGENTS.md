@@ -51,14 +51,10 @@ beam/
   with `writeModuleForm`/`writeExports`/`writeAttributes`/`writeLabels` and joins
   the rendered sections with `std.mem.concat`), so it has no `print`/`writeAll`
   of target syntax of its own.
-  **The single documented exception** is `renderBeamTemplate`'s three writer
-  calls (the `Ctx.writeByte`/`Ctx.writeAll` the shared `primOpTemplate` walker
-  drives, plus the trailing `writeByte('\n')`): a `#[@External.Beam("""…""")]`
-  template body is genuine host `.S` the library author wrote, so it is spliced
-  verbatim — only its receiver/`$N`/`$args` substitutions are rendered, with
-  `writeArg`. `rg -n '\.(print|writeAll|writeByte)\(' ../beam_asm.zig` must
-  return exactly those three.
-  BR5's template helpers (`lowerTemplateFn`) are not an exception: their `.S`
+  There is no exception: `@External.Beam` (a verbatim `.S` body) is gone,
+  decision 437, so `rg -n '\.(print|writeAll|writeByte)\(' ../beam_asm.zig` must
+  return nothing.
+  BR5's template helpers (`lowerTemplateFn`): their `.S`
   is `asm_text.writeModule`'s rendering of the `beam_file` model
   `erl_lower.zig` built, spliced function by function; the
   only text the backend assembles there is the helper's Erlang *source* for the
@@ -98,9 +94,8 @@ header says how).
 
 ## `@External.Erlang` templates compiled at build time (BR5, C-24)
 
-`../beam_asm.zig` lowers a host-backed call three ways. An
-`#[@External.Beam("""…""")]` body is `.S` spliced at the call site
-(`renderBeamTemplate`), and an `#[@External.Erlang("mod", "sym")]` pair is a
+`../beam_asm.zig` lowers a host-backed call two ways (`@External.Erlang` is the
+one BEAM annotation, decision 437). An `#[@External.Erlang("mod", "sym")]` pair is a
 plain `call_ext`. An `#[@External.Erlang("…")]` **template** — Erlang *source*
 with receiver/`$N` holes (`"base64:encode($0)"`, the arity-branch
 form, the keyword form's `method = "max($args)"` — its text as written, the

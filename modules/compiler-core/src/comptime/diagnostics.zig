@@ -231,14 +231,14 @@ pub const bigint_widened: []const u8 = "bigint-widened";
 /// testing for one: its type is static.
 pub const bigint_type_test: []const u8 = "bigint-type-test";
 /// Decisions 434, 435 — a host function reached at comptime has an
-/// `@External.Erlang` / `@External.Beam` cell beam-to-wasm does not convert
+/// `@External.Erlang` cell beam-to-wasm does not convert
 /// (an opcode, a call outside the comptime runtime's BIFs) and no
 /// `@External.Wasm` cell after it. Fires from `comptime/host_cells.zig`,
 /// naming the function and what is missing.
 pub const comptime_beam_call_not_converted: []const u8 = "comptime-beam-call-not-converted";
 /// Decisions 434, 341 — a host function reached at comptime has none of the
 /// three sources the comptime runtime answers by: a std-wasm implementation,
-/// an `@External.Erlang` / `@External.Beam` cell (beam-to-wasm), an
+/// an `@External.Erlang` cell (beam-to-wasm), an
 /// `@External.Wasm` cell. Fires from `comptime/host_cells.zig`, naming the
 /// function and the three sources tried.
 pub const comptime_host_cell_unavailable: []const u8 = "comptime-host-cell-unavailable";

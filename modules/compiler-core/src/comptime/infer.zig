@@ -3732,10 +3732,11 @@ fn inferTestDecl(env: *Env, t: ast.TestDecl) InferError!void {
 /// `libs/std/src/builtins.d.bp`, and whether it declares `inline: bool = false`.
 pub const ExternalVariant = struct { name: []const u8, declares_inline: bool };
 
-/// The five `External` variants (front 20 F9). `inline` opts a `(target,
+/// The four `External` variants (front 20 F9; `Beam` is gone, decision 437). `inline` opts a `(target,
 /// method)` pair out of the dispatch table, and exactly two emitters read it —
 /// `codegen/erlang.zig` and `codegen/beam_asm.zig`, each through a
-/// `hasExternalInline` over the LAST argument — so exactly two variants declare
+/// `hasExternalInline` over the LAST argument of `External.Erlang` (the beam
+/// target reads that cell too, decision 437) — so exactly one variant declares
 /// it. On the other three a written `inline` is a switch nothing reads, which
 /// decision 67 refuses rather than accepts and ignores (`refuseUnreadInline`).
 /// `builtins.d.bp` is documentation the compiler does not parse, so the table
@@ -3744,7 +3745,6 @@ pub const ExternalVariant = struct { name: []const u8, declares_inline: bool };
 pub const external_variants = [_]ExternalVariant{
     .{ .name = "Erlang", .declares_inline = true },
     .{ .name = "Node", .declares_inline = false },
-    .{ .name = "Beam", .declares_inline = true },
     .{ .name = "Wasm", .declares_inline = false },
     .{ .name = "Typescript", .declares_inline = false },
 };
@@ -3797,11 +3797,11 @@ fn refuseUnreadInline(env: *Env, a: ast.Annotation) InferError!void {
     if (!v.declares_inline) {
         return fail(env, a, try std.fmt.allocPrint(
             env.arena,
-            "`External.{s}` declares no `inline` — the flag is read by the erlang and beam emitters only",
+            "`External.{s}` declares no `inline` — the flag is read by the erlang and beam emitters from `External.Erlang` only",
             .{v.name},
         ), try std.fmt.allocPrint(
             env.arena,
-            "Delete it: on `External.{s}` `inline` is a switch nothing reads. `External.Erlang` and `External.Beam` declare it (`builtins.d.bp`).",
+            "Delete it: on `External.{s}` `inline` is a switch nothing reads. `External.Erlang` alone declares it (`builtins.d.bp`).",
             .{v.name},
         ));
     }
@@ -3824,6 +3824,21 @@ fn refuseUnreadInline(env: *Env, a: ast.Annotation) InferError!void {
             ), "Write `inline = true` or `inline = false`.");
         }
     }
+}
+
+/// Decision 437 — `@External.Beam` is gone: `External.Erlang` binds the erlang
+/// and the beam targets (the same VM, the same OTP calls). Writing the old
+/// variant binds no host and is refused at the annotation.
+fn refuseExternalBeam(env: *Env, a: ast.Annotation) InferError!void {
+    if (!std.mem.startsWith(u8, a.name, "External.")) return;
+    if (!std.ascii.eqlIgnoreCase(a.name["External.".len..], "Beam")) return;
+    var e = TypeError.custom(
+        "`@External.Beam` binds no host — the beam target reads `@External.Erlang`",
+        "Write `#[@External.Erlang(\"<module>\", \"<function>\")]`; the beam target reads it too.",
+    );
+    if (a.loc) |l| e = e.withLoc(l);
+    env.lastError = e;
+    return error.TypeError;
 }
 
 /// Decision 334 — `host:` names the runtime a wasm binding serves, so it is
@@ -3990,7 +4005,7 @@ fn validateExternalAnnotation(env: *Env, f: ast.FnDecl, a: ast.Annotation) Infer
     }
     // target validation: the variant must name a known target.
     if (externalVariantOf(a) == null) {
-        return fail(env, fnLoc, "`@external` target must be a Target member: node, typescript, erlang, beam or wasm", "Example: #[@External.Erlang( \"string\", \"length\")]");
+        return fail(env, fnLoc, "`@external` target must be a Target member: node, typescript, erlang or wasm", "Example: #[@External.Erlang( \"string\", \"length\")]");
     }
     // `inline` (front 20 F9): read on the variants that declare it, refused on
     // the ones that do not — before the arity count, which would otherwise
@@ -4340,6 +4355,7 @@ fn refuseUnknownAnnotationList(env: *Env, anns: []const ast.Annotation) InferErr
             return error.TypeError;
         }
         try refuseLowerCaseExternal(env, a);
+        try refuseExternalBeam(env, a);
         if (ast.isRemovedEffectAnnotation(a.name)) continue;
         const family = if (std.mem.indexOfScalar(u8, a.name, '.')) |i| a.name[0..i] else a.name;
         var known = false;
@@ -7302,6 +7318,7 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     // ── `@[external(…)]` annotation validation (F1) ─────────────────────────
     for (f.annotations) |a| {
         try refuseLowerCaseExternal(env, a);
+        try refuseExternalBeam(env, a);
         if (std.mem.startsWith(u8, a.name, "External.") and a.name.len > "External.".len) {
             try validateExternalAnnotation(env, f, a);
         }

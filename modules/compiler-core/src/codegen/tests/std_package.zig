@@ -89,7 +89,6 @@ test "erlang: std package ---- a std math import and the OTP math module in one 
         \\import {math} from "std";
         \\
         \\#[@External.Erlang("math", "sqrt"),
-        \\  @External.Beam("math", "sqrt"),
         \\  @External.Node("Math", "sqrt")]
         \\declare fn otpSqrt(x: f64) -> f64;
         \\

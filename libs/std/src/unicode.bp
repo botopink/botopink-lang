@@ -34,7 +34,6 @@ import {unicode_tables as tables};
 // a surrogate, past U+10FFFF — aborts the program the same way everywhere.
 #[@External.Node("fn:fromCodepointBody")]
 #[@External.Erlang("fn:fromCodepointBody")]
-#[@External.Beam("fn:fromCodepointBody")]
 #[@External.Wasm("fn:fromCodepointBody")]
 pub declare fn fromCodepoint(cp: i32) -> string;
 

@@ -2491,7 +2491,7 @@ fn externalWrapperNeeded(f: ast.FnDecl) bool {
 
 /// Whether some module of the build binds a BEAM host of its own: a
 /// `declare fn`, or a `type` (or one of its methods), carrying
-/// `#[@External.Erlang(…)]` / `#[@External.Beam(…)]` — the beam backend's
+/// `#[@External.Erlang(…)]` — the beam backend's
 /// `buildBindsBeamHost`, the same rule. Only then can an emitted call name an
 /// `.erl` sidecar the build ships, so only then does an entry point load its
 /// siblings. A `behavior`'s bindings are the prelude's vocabulary, which names

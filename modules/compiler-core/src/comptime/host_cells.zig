@@ -21,8 +21,7 @@
 //!   (4), `forRuntime`): its std-wasm implementation — the export its
 //!   `@External.Wasm("std:<module>.<function>")` cell names (decision 440 (3),
 //!   `stdCell`, `servedByStdWasm`; there is no match by name) —, else the
-//!   beam-to-wasm translation of its `@External.Erlang` cell (or
-//!   `@External.Beam("module", "symbol")` pair: `erlangCellOf`,
+//!   beam-to-wasm translation of its `@External.Erlang` cell (`erlangCellOf`,
 //!   `runtime/wat/cells.zig`, `callingCell`), else the botopink function its
 //!   `@External.Wasm("fn:…")` binding names (`callOf`); none → refused naming
 //!   the function and the three sources (`comptime-host-cell-unavailable`).
@@ -458,15 +457,10 @@ pub fn forRuntime(arena: std.mem.Allocator, decls: []const ast.DeclKind) Error!S
 }
 
 /// The beam-to-wasm translation of `f`'s Erlang cell — an
-/// `@External.Erlang` template or `module`/`function` pair, else an
-/// `@External.Beam("module", "function")` pair — or null when it has none.
+/// `@External.Erlang` template or `module`/`function` pair — or null when it
+/// has none.
 fn erlangCellOf(arena: std.mem.Allocator, f: ast.FnDecl) Error!?cells.Cell {
-    const ref = f.externalFor("erlang") orelse blk: {
-        const beam = f.externalFor("beam") orelse return null;
-        // An `@External.Beam("""…""")` assembly text is the beam target's.
-        if (beam.module.len == 0) return null;
-        break :blk beam;
-    };
+    const ref = f.externalFor("erlang") orelse return null;
     if (ref.module.len == 0) return try cells.ofTemplate(ref.symbol, f.params.len);
     return try cells.ofCall(arena, ref.module, ref.symbol, f.params.len);
 }
@@ -490,7 +484,7 @@ fn callingCell(arena: std.mem.Allocator, f: ast.FnDecl, module: []const u8) Erro
 fn unavailable(arena: std.mem.Allocator, f: ast.FnDecl, not_converted: ?[]const u8) Error![]const u8 {
     const name = try display(arena, f.name);
     if (not_converted) |why| return std.fmt.allocPrint(arena, "{s}: beam-to-wasm does not convert {s} — reached at comptime from `{s}`'s @External.Erlang cell (decisions 434, 438, 439)", .{ diagnostics.comptime_beam_call_not_converted, why, name });
-    return std.fmt.allocPrint(arena, "{s}: `{s}` is reached at comptime and has no std-wasm implementation, no @External.Erlang / @External.Beam cell for beam-to-wasm, and no @External.Wasm(\"fn:…\") cell — the three sources the comptime runtime answers by (decision 434)", .{ diagnostics.comptime_host_cell_unavailable, name });
+    return std.fmt.allocPrint(arena, "{s}: `{s}` is reached at comptime and has no std-wasm implementation, no @External.Erlang cell for beam-to-wasm, and no @External.Wasm(\"fn:…\") cell — the three sources the comptime runtime answers by (decision 434)", .{ diagnostics.comptime_host_cell_unavailable, name });
 }
 
 /// What `f`'s `@External.Wasm("std:<module>.<function>")` cell names

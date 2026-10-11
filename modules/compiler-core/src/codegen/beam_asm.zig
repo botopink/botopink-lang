@@ -345,19 +345,19 @@ fn charlist(comptime text: []const u8) Op {
 }
 
 /// Whether `annotations` bind a host the BEAM calls — `#[@External.Erlang(…)]`
-/// or `#[@External.Beam(…)]`.
+/// (the one BEAM annotation, decision 437).
 fn bindsBeamHost(annotations: []const ast.Annotation) bool {
     for (annotations) |a| {
         if (!std.mem.startsWith(u8, a.name, "External.")) continue;
         const target = a.name["External.".len..];
-        if (std.ascii.eqlIgnoreCase(target, "erlang") or std.ascii.eqlIgnoreCase(target, "beam")) return true;
+        if (std.ascii.eqlIgnoreCase(target, "erlang")) return true;
     }
     return false;
 }
 
 /// Whether some module of the build binds a BEAM host of its own: a
 /// `declare fn`, or a `type` (or one of its methods), carrying
-/// `#[@External.Erlang(…)]` / `#[@External.Beam(…)]`. Only then can an emitted
+/// `#[@External.Erlang(…)]`. Only then can an emitted
 /// `call_ext` name a module the build ships as an `.erl` sidecar, so only then
 /// does the entry carry `'__bp_load_siblings'/0`.
 ///
@@ -2368,18 +2368,6 @@ const Emitter = struct {
     /// the irreducible cases (`++` ops, inline funs, BIF aliases) stay in the
     /// `emitPrimMethod` switch fallback.
     prim_erlang_dispatch: std.StringHashMap(PrimErlangCall),
-    /// §A6 BEAM-target template bodies (v0.beta.22 front 03). `<Iface>.<method>`
-    /// → multi-line `.S` body string with the receiver / `$0..$N` / `$args` markers
-    /// (source templates are positional — the parser maps them, decision 5).
-    /// Populated from `#[@External.Beam("""…""")]` (or legacy `external(beam,
-    /// """…""")`) annotations on primitive interface methods. The BEAM dispatch
-    /// path (`tryEmitPrimAnnotation`) consults this map FIRST — when an entry
-    /// exists, the template wins over both the inline `emitPrimMethod` arm and
-    /// any erlang-derived dispatch in `prim_erlang_dispatch`. Substitution
-    /// convention: the receiver marker → `{x, 0}`, `$N` → `{x, N+1}`, `$args` → the
-    /// comma-separated `{x, 1..N}` list. The consumer pre-loads `recv` into
-    /// `x0` and each positional arg into `x_{i+1}` before rendering.
-    prim_beam_templates: std.StringHashMap([]const u8),
     /// §D2 — modules imported from the `"std"` package (e.g. `import {math}
     /// from "std"` → `"math"`). A qualified call whose receiver is in this
     /// set lowers to a remote `call_ext` into the lowercase module atom,
@@ -2550,7 +2538,6 @@ const Emitter = struct {
             .interface_assoc = std.StringHashMap(void).init(alloc),
             .user_behavior_methods = std.StringHashMap(void).init(alloc),
             .prim_erlang_dispatch = std.StringHashMap(PrimErlangCall).init(alloc),
-            .prim_beam_templates = std.StringHashMap([]const u8).init(alloc),
             .std_imports = std.StringHashMap([]const u8).init(alloc),
             .imported_fn_owners = std.StringHashMap(ImportedFn).init(alloc),
             .top_vals = std.StringHashMap(void).init(alloc),
@@ -2623,12 +2610,6 @@ const Emitter = struct {
             if (entry.value_ptr.arity_branches.len > 0) self.alloc.free(entry.value_ptr.arity_branches);
         }
         self.prim_erlang_dispatch.deinit();
-        var bt = self.prim_beam_templates.iterator();
-        while (bt.next()) |entry| {
-            self.alloc.free(entry.key_ptr.*);
-            self.alloc.free(entry.value_ptr.*);
-        }
-        self.prim_beam_templates.deinit();
         self.std_imports.deinit();
         self.imported_fn_owners.deinit();
         self.imported_val_owners.deinit(self.alloc);
@@ -2735,37 +2716,11 @@ const Emitter = struct {
     fn collectIfaceErlangDispatch(self: *Emitter, iface: ast.BehaviorDecl) !void {
         var slots: [16][]const u8 = undefined;
         for (iface.methods) |m| {
-            // §A6 BEAM-target template path (v0.beta.22 front 03): an
-            // `@External.Beam("""…""")` annotation with a single body arg
-            // (the template form — `bref.module.len == 0`) wins over the
-            // erlang-derived dispatch + the inline `emitPrimMethod` switch.
-            // The body lands in `prim_beam_templates` keyed on `<Iface>.<m>`;
-            // `tryEmitPrimAnnotation` renders it after pre-loading recv into
-            // `{x, 0}` and each positional arg into `{x, i+1}`. The 2-body-arg
-            // form `@External.Beam("mod", "sym")` is the legacy host-call
-            // shape — it stays out of `prim_beam_templates` and flows through
-            // the erlang/dispatch path's bare-symbol case (same call_ext
-            // shape). `looksLikeTemplate` is NOT the discriminator here: many
-            // valid BEAM bodies (e.g. a single `{call_ext, ...}.` for a
-            // 0-arg method) carry no `$`-marker yet are still template form.
-            if (m.externalFor("beam")) |bref| {
-                if (bref.module.len == 0 and
-                    !hasExternalInline(m.annotations, "beam"))
-                {
-                    const bkey = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ iface.name, m.name });
-                    if (self.prim_beam_templates.contains(bkey)) {
-                        self.alloc.free(bkey);
-                    } else {
-                        try self.prim_beam_templates.put(bkey, try self.alloc.dupe(u8, bref.symbol));
-                    }
-                }
-            }
             // `prim-op-annotation` arity-branch entries are stored verbatim
             // here too — `tryEmitPrimAnnotation` short-circuits on them so
             // BEAM's inline switch keeps owning the lowering (slice etc).
             if (ast.externalHasArityBranches(m.annotations, "erlang")) {
-                if (hasExternalInline(m.annotations, "erlang") or
-                    hasExternalInline(m.annotations, "beam")) continue;
+                if (hasExternalInline(m.annotations, "erlang")) continue;
                 const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ iface.name, m.name });
                 if (self.prim_erlang_dispatch.contains(key)) {
                     self.alloc.free(key);
@@ -2792,12 +2747,9 @@ const Emitter = struct {
                 continue;
             }
             const ref = m.externalFor("erlang") orelse continue;
-            // BEAM reads the erlang annotation as its source of truth (no
-            // separate `#[@External.Beam(…)]` is used in `primitives.bp`), so
-            // either an `inline: true` on the erlang annotation OR on an
-            // explicit beam one marks the method irreducible on BEAM.
-            if (hasExternalInline(m.annotations, "erlang") or
-                hasExternalInline(m.annotations, "beam")) continue;
+            // BEAM reads the erlang annotation (decision 437), so an
+            // `inline: true` on it marks the method irreducible on BEAM.
+            if (hasExternalInline(m.annotations, "erlang")) continue;
             const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ iface.name, m.name });
             if (self.prim_erlang_dispatch.contains(key)) {
                 self.alloc.free(key);
@@ -4566,8 +4518,7 @@ const Emitter = struct {
     }
 
     /// The wrapper `f` needs (`hostDeclareWrapperNeeded`), or null when it has
-    /// none: a `self`-first declaration, an `@External.Beam` template body (its
-    /// call sites inline it), an arity-branched set with no branch for the
+    /// none: a `self`-first declaration, an arity-branched set with no branch for the
     /// declared count, a `module:symbol(…)` target with no marker (every call
     /// site refuses it) and a template the build-time lowering refuses (decision 141 — each call
     /// site of it is then the located build error). A template is compiled here,
@@ -4576,7 +4527,6 @@ const Emitter = struct {
     fn hostWrapperFor(self: *Emitter, f: ast.FnDecl) anyerror!?HostWrapper {
         if (!hostDeclareWrapperNeeded(f)) return null;
         if (f.params.len > 0 and std.mem.eql(u8, f.params[0].name, "self")) return null;
-        if (f.externalFor("beam")) |b| if (b.module.len == 0) return null;
         const template_raw = if (ast.externalHasArityBranches(f.annotations, "erlang"))
             ast.externalArityBranchFor(f.annotations, "erlang", f.params.len) orelse return null
         else blk: {
@@ -7630,8 +7580,8 @@ const Emitter = struct {
     };
 
     /// True when some interface on `k`'s chain declares `callee`. The three
-    /// tables `emitPrimMethod` walks — the `@External.Beam` bodies, the
-    /// erlang-derived dispatch and the bodied `default fn`s — are all keyed
+    /// tables `emitPrimMethod` walks — the erlang-derived
+    /// dispatch and the bodied `default fn`s — are all keyed
     /// `"<Iface>.<method>"`, so this asks them without emitting anything.
     /// Conservative by construction: a name no table names keeps the abort the
     /// call site already had.
@@ -7639,7 +7589,6 @@ const Emitter = struct {
         var b: [128]u8 = undefined;
         for (primIfaceChain(k)) |iface_name| {
             const key = std.fmt.bufPrint(&b, "{s}.{s}", .{ iface_name, callee }) catch return false;
-            if (self.prim_beam_templates.contains(key)) return true;
             if (self.prim_erlang_dispatch.contains(key)) return true;
             if (self.iface_defaults.contains(key)) return true;
         }
@@ -7851,8 +7800,7 @@ const Emitter = struct {
         }
     }
 
-    /// A call to a host-backed `declare fn`: its `@External.Beam` `.S` body,
-    /// else its `@External.Erlang` target — `module:symbol` as a `call_ext`,
+    /// A call to a host-backed `declare fn`: its `@External.Erlang` target — `module:symbol` as a `call_ext`,
     /// a template compiled at build time into a helper (BR5). A fn with no beam or
     /// erlang target fails the lowering (`MissingExternalTarget`), like the
     /// other backends.
@@ -7878,12 +7826,6 @@ const Emitter = struct {
         self.missing_external = .{ .name = f.name, .target = "beam", .loc = loc };
         const argc = cc.args.len + cc.trailing.len;
         const self_first = f.params.len > 0 and std.mem.eql(u8, f.params[0].name, "self");
-        if (f.externalFor("beam")) |ref| {
-            if (ref.module.len == 0 and !self_first) {
-                try self.renderBeamTemplate(ref.symbol, null, cc, mode);
-                return;
-            }
-        }
         var exprs: [max_staged]ast.Expr = undefined;
         if (cc.args.len > max_staged) return error.TooManyOperands;
         for (cc.args, 0..) |arg, i| exprs[i] = arg.value.*;
@@ -8087,18 +8029,8 @@ const Emitter = struct {
         var b: [128]u8 = undefined;
         const key = for (primIfaceChain(k)) |iface_name| {
             const kk = std.fmt.bufPrint(&b, "{s}.{s}", .{ iface_name, callee }) catch return false;
-            if (self.prim_beam_templates.contains(kk) or self.prim_erlang_dispatch.contains(kk)) break kk;
+            if (self.prim_erlang_dispatch.contains(kk)) break kk;
         } else return false;
-        // §A6 BEAM-target template path (v0.beta.22 front 03): an
-        // `@External.Beam("""…""")` annotation whose body carries the receiver /
-        // `$0..$N` / `$args` markers renders as multi-line `.S` after pre-
-        // loading `recv` into `x0` and each positional arg into `x_{i+1}`.
-        // Wins over both the erlang-derived dispatch below AND the inline
-        // `emitPrimMethod` arm — the template author owns the full lowering.
-        if (self.prim_beam_templates.get(key)) |body| {
-            try self.renderBeamTemplate(body, recv_expr, cc, mode);
-            return true;
-        }
         const call = self.prim_erlang_dispatch.get(key) orelse return false;
         // `prim-op-annotation` template form (erlang only for now): BEAM has not
         // migrated, so fall through to the inline switch below for these. The
@@ -8136,55 +8068,6 @@ const Emitter = struct {
             return true;
         }
         return false;
-    }
-
-    /// §A6 BEAM-target template renderer (v0.beta.22 front 03). Stages `recv`
-    /// and the positional args (`stageCall`) and places them in `x0` and
-    /// `x_{i+1}`, then walks `body` via the shared `comptime/primOpTemplate.zig`
-    /// renderer with a BEAM-aware ctx that substitutes the receiver marker → `{x, 0}`,
-    /// `$N` → `{x, N+1}`, and `$args` → the comma-separated `{x, 1..N}` list
-    /// (mirroring the BEAM call_ext arg convention).
-    ///
-    /// **Tail mode**: `mode == .tail` appends `emitReturn` after the
-    /// template body. The author can also choose to end the body with a
-    /// `call_ext_last` / explicit `return.` — the trailing `return.` is
-    /// idempotent (the loader collapses adjacent returns).
-    fn renderBeamTemplate(self: *Emitter, body: []const u8, recv_expr: ?*const ast.Expr, cc: anytype, mode: CallMode) anyerror!void {
-        const argc_usize = cc.args.len + cc.trailing.len;
-        // `recv` into `{x, 0}` and argument `i` into `{x, i + 1}` (a bare
-        // `declare fn` call has no receiver: argument `i` is `{x, i}`).
-        const st = try self.stageCall(recv_expr, cc.args, cc.trailing);
-        try self.placeStaged(&st);
-        const arg_base: usize = @intFromBool(recv_expr != null);
-
-        const Ctx = struct {
-            emitter: *Emitter,
-            argc: usize,
-            arg_base: usize,
-            pub fn writeByte(c: *@This(), ch: u8) anyerror!void {
-                try c.emitter.out.writeByte(ch);
-            }
-            pub fn writeAll(c: *@This(), s: []const u8) anyerror!void {
-                try c.emitter.out.writeAll(s);
-            }
-            pub fn emitRecv(c: *@This()) anyerror!void {
-                try beamEmitter.writeArg(c.emitter.out, Op.xr(0));
-            }
-            pub fn emitArg(c: *@This(), idx: usize) anyerror!void {
-                try beamEmitter.writeArg(c.emitter.out, Op.xr(idx + c.arg_base));
-            }
-        };
-        var ctx = Ctx{ .emitter = self, .argc = argc_usize, .arg_base = arg_base };
-        try primOpTemplate.render(body, &ctx);
-        // `unquoteAnnotationArg` strips ONE trailing `\n` from a `"""…"""`
-        // body so the author's natural multi-line form (one stmt per line,
-        // closing `"""` on its own line) renders without an empty trailing
-        // line. Add the newline back so the rendered body's last `.` lands
-        // on its own line — matching every `bodyPrint("...".\n", ...)`
-        // statement an inline arm would emit.
-        if (body.len == 0 or body[body.len - 1] != '\n') try self.out.writeByte('\n');
-
-        if (mode == .tail) try self.emitReturn();
     }
 
     /// `fn(Recv)` — the sole operand is the receiver, lowered straight into `x0`.

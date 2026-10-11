@@ -40,8 +40,8 @@ pub fn takesSelf(m: ast.BehaviorMethod) bool {
     return m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self");
 }
 
-/// The backends a host binding can name. `beam` reads `External.Beam` and
-/// falls back to `External.Erlang` (one vocabulary, `docs.md` § Host bindings).
+/// The backends a host binding can name. `beam` reads `External.Erlang`
+/// (one annotation for the one VM, decision 437, `docs.md` § Host bindings).
 /// `wasm` binds nothing: wasm has no host.
 pub const Target = enum {
     node,
@@ -69,10 +69,7 @@ pub fn binds(m: ast.BehaviorMethod, target: Target) bool {
     return switch (target) {
         .node => bindsAnnotation(m, "node"),
         .erlang => bindsAnnotation(m, "erlang"),
-        // `lowerExternalCall` reads an `External.Beam` body only on a
-        // declaration without a receiver; a method taking `self` falls back to
-        // its erlang binding.
-        .beam => bindsAnnotation(m, "erlang") or (bindsAnnotation(m, "beam") and !takesSelf(m)),
+        .beam => bindsAnnotation(m, "erlang"),
         // wasm has no host (`docs.md` § Host bindings): nothing binds there.
         .wasm => false,
     };

@@ -1234,15 +1234,11 @@ test "js: string methods map to native JS names" {
     );
 }
 
-// v0.beta.22 front 03 (beam-target-template-output) F2 + F0/F1 e2e gate.
-// Pins that the BEAM-target template path emits a `call_ext` to
-// `string:suffix/2` for `s.endsWith("foo")` instead of the previous
-// `%% prim method not lowered on beam (complex arg)` placeholder. The
-// pre-load convention (`recv → {x, 0}`, `arg → {x, 1}`) is what the
-// `#[@External.Beam("""    {call_ext, 2, {extfunc, string, suffix, 2}}.""")]`
-// annotation on `String.endsWith` in `libs/std/src/primitives.bp`
-// expects — the same body the comptime-evaluated template produces.
-test "beam template path: endsWith lowers via @External.Beam single-line body" {
+// `String.endsWith` is an `@External.Erlang` template (OTP has no
+// `string:suffix/2`), which the beam target compiles at build time into a
+// helper (decision 437: the one BEAM annotation); the snapshots pin the JS
+// lowering and the beam helper.
+test "beam template path: endsWith lowers via its @External.Erlang template" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
         \\    val s = "foobar";

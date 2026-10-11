@@ -196,10 +196,10 @@ an annotation whose every variant carries a payload the compiler reads (front
   runs; on a `declare fn` it emits `require("./file.mjs")`, which throws unless
   the file is shipped next to the emitted module. Name the native method, write
   a template, or keep host code in a sidecar (below).
-- **`inline`** — `#[@External.Erlang("…", inline = true)]` (or `@External.Beam`)
+- **`inline`** — `#[@External.Erlang("…", inline = true)]`
   opts the `(target, method)` pair out of the dispatch table so the emitter's
-  hand-coded shape keeps emitting. Only those two variants declare it, because
-  only the erlang and beam emitters read it (`hasExternalInline`, over the last
+  hand-coded shape keeps emitting. Only that variant declares it, because
+  only the erlang and beam emitters read it (both through `External.Erlang`, `hasExternalInline` over the last
   argument); on `Node` / `Wasm` / `Typescript`, anywhere but last, or with a
   non-bool value it is refused at the annotation (front 20 F9, decision 67 —
   `comptime/infer.zig` `external_variants`, kept in step with the
@@ -248,10 +248,8 @@ prelude template calls the method it patches`
 shape. `charCodeAt` names native `codePointAt`, which no behavior member
 patches, and which is also what the `?? -1` was written for: out of range it
 answers `undefined` where `charCodeAt` answers `NaN`, which `??` does not catch
-and `| 0` turned into `0` — commonJS answered `0` where erlang answered `-1`. `@External.Beam` bodies are `.S`
-instructions: the receiver arrives in `{x, 0}`, argument N in `{x, N+1}`, the
-result leaves in `{x, 0}`, and a `gc_bif` live count must cover every
-register it reads or that is read later. Arity branching
+and `| 0` turned into `0` — commonJS answered `0` where erlang answered `-1`.
+Arity branching
 (`when(argc == N): "<template>"`) is also parsed (`ast.parseArityBranchArg`).
 
 Templates are rendered by the commonJS, erlang and beam_asm backends; wat does

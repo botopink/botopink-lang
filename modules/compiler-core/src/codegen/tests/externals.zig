@@ -410,15 +410,14 @@ test "js: external ---- no prelude template calls the method it patches" {
     try std.testing.expect(seen >= 5);
 }
 
-// Decisions 238, 263 — `fn:<name>` on `@External.Node`, `@External.Erlang`
-// and `@External.Beam`: the declared fn runs `<name>`, a private bodied fn of
+// Decisions 238, 263, 437 — `fn:<name>` on `@External.Node` and
+// `@External.Erlang` (which the beam target reads too): the declared fn runs `<name>`, a private bodied fn of
 // the same module with the same signature, the parameters passed in order
 // (`hostFnBinding.zig`). It is an ordinary function on each backend, so a
 // call, its value and a `pub` export behave like any other function's.
 const fn_binding_program =
     \\#[@External.Node("fn:mixBody")]
     \\#[@External.Erlang("fn:mixBody")]
-    \\#[@External.Beam("fn:mixBody")]
     \\#[@External.Wasm("fn:mixBody")]
     \\pub declare fn mix(x: f64, y: f64) -> f64;
     \\fn mixBody(a: f64, b: f64) -> f64 {
@@ -450,8 +449,7 @@ test "erlang: external ---- fn: binds a declare fn to a private body" {
     try h.assertErlangRunLog(std.testing.allocator, fn_binding_program, fn_binding_out, &.{"mixBody(A, B)"});
 }
 
-// beam reads `@External.Beam` and, on a declaration without one (`greet`),
-// the `@External.Erlang` binding — as everywhere else.
+// beam reads the `@External.Erlang` binding (decision 437).
 test "beam: external ---- fn: binds a declare fn to a private body" {
     try h.assertBeamRunLog(std.testing.allocator, fn_binding_program, fn_binding_out, &.{});
 }
@@ -462,26 +460,26 @@ test "beam: external ---- fn: binds a declare fn to a private body" {
 test "host backends: external ---- a fn: binding that names no private fn of the same signature is refused at the annotation" {
     const cases = [_]struct { src: []const u8, needle: []const u8 }{
         .{ .src =
-        \\#[@External.Node("fn:mixBodx"), @External.Erlang("fn:mixBodx"), @External.Beam("fn:mixBodx")]
+        \\#[@External.Node("fn:mixBodx"), @External.Erlang("fn:mixBodx")]
         \\declare fn mix(x: f64) -> f64;
         \\fn mixBody(x: f64) -> f64 { return x; }
         \\fn main() { @print(mix(1.5)); }
         , .needle = "this module declares no fn `mixBodx`" },
         .{ .src =
-        \\#[@External.Node("fn:mixBody"), @External.Erlang("fn:mixBody"), @External.Beam("fn:mixBody")]
+        \\#[@External.Node("fn:mixBody"), @External.Erlang("fn:mixBody")]
         \\declare fn mix(x: f64) -> f64;
-        \\#[@External.Node("Math", "abs"), @External.Erlang("erlang", "abs"), @External.Beam("erlang", "abs")]
+        \\#[@External.Node("Math", "abs"), @External.Erlang("erlang", "abs")]
         \\declare fn mixBody(x: f64) -> f64;
         \\fn main() { @print(mix(1.5)); }
         , .needle = "`mixBody` has no body of its own to run" },
         .{ .src =
-        \\#[@External.Node("fn:mixBody"), @External.Erlang("fn:mixBody"), @External.Beam("fn:mixBody")]
+        \\#[@External.Node("fn:mixBody"), @External.Erlang("fn:mixBody")]
         \\declare fn mix(x: f64) -> f64;
         \\pub fn mixBody(x: f64) -> f64 { return x; }
         \\fn main() { @print(mix(1.5)); }
         , .needle = "`mixBody` is `pub`" },
         .{ .src =
-        \\#[@External.Node("fn:mixBody"), @External.Erlang("fn:mixBody"), @External.Beam("fn:mixBody")]
+        \\#[@External.Node("fn:mixBody"), @External.Erlang("fn:mixBody")]
         \\declare fn mix(x: f64) -> f64;
         \\fn mixBody(x: f64, y: f64) -> f64 { return x + y; }
         \\fn main() { @print(mix(1.5)); }
@@ -490,6 +488,6 @@ test "host backends: external ---- a fn: binding that names no private fn of the
     for (cases) |c| {
         try h.assertJsRefusedAt(std.testing.allocator, c.src, c.needle, 1, 3);
         try h.assertErlangRefusedAt(std.testing.allocator, c.src, c.needle, 1, 33);
-        try h.assertBeamRefusedAt(std.testing.allocator, c.src, c.needle, 1, 65);
+        try h.assertBeamRefusedAt(std.testing.allocator, c.src, c.needle, 1, 33);
     }
 }

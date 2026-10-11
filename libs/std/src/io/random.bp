@@ -19,7 +19,6 @@
 
 #[@External.Node("Math", "random")]
 #[@External.Erlang("rand", "uniform")]
-#[@External.Beam("rand", "uniform")]
 #[@External.Wasm("wasi:random_f64")]
 pub declare fn float() -> f64;
 

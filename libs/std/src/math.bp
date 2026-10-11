@@ -36,25 +36,21 @@ pub val log10e: f64 = 0.4342944819032518;
 
 #[@External.Node("Math", "abs")]
 #[@External.Erlang("erlang", "abs")]
-#[@External.Beam("erlang", "abs")]
 #[@External.Wasm("op:f64.abs")]
 pub declare fn abs(x: f64) -> f64;
 
 #[@External.Node("Math", "floor")]
 #[@External.Erlang("math", "floor")]
-#[@External.Beam("math", "floor")]
 #[@External.Wasm("op:f64.floor")]
 pub declare fn floor(x: f64) -> f64;
 
 #[@External.Node("Math", "round")]
 #[@External.Erlang("erlang", "round")]
-#[@External.Beam("erlang", "round")]
 #[@External.Wasm("fn:roundHalfUp")]
 pub declare fn round(x: f64) -> f64;
 
 #[@External.Node("Math", "trunc")]
 #[@External.Erlang("erlang", "trunc")]
-#[@External.Beam("erlang", "trunc")]
 #[@External.Wasm("op:f64.trunc")]
 pub declare fn trunc(x: f64) -> f64;
 
@@ -72,13 +68,11 @@ pub fn sign(x: f64) -> f64 {
 
 #[@External.Node("Math", "min")]
 #[@External.Erlang("erlang", "min")]
-#[@External.Beam("erlang", "min")]
 #[@External.Wasm("op:f64.min")]
 pub declare fn minF(a: f64, b: f64) -> f64;
 
 #[@External.Node("Math", "max")]
 #[@External.Erlang("erlang", "max")]
-#[@External.Beam("erlang", "max")]
 #[@External.Wasm("op:f64.max")]
 pub declare fn maxF(a: f64, b: f64) -> f64;
 
@@ -90,13 +84,11 @@ pub fn clamp(x: f64, lo: f64, hi: f64) -> f64 {
 
 #[@External.Node("Math", "sqrt")]
 #[@External.Erlang("math", "sqrt")]
-#[@External.Beam("math", "sqrt")]
 #[@External.Wasm("op:f64.sqrt")]
 pub declare fn sqrt(x: f64) -> f64;
 
 #[@External.Node("fn:powBody")]
 #[@External.Erlang("fn:powBody")]
-#[@External.Beam("fn:powBody")]
 #[@External.Wasm("fn:powBody")]
 pub declare fn pow(x: f64, y: f64) -> f64;
 
@@ -111,25 +103,21 @@ pub fn cbrt(x: f64) -> f64 {
 
 #[@External.Node("Math", "exp")]
 #[@External.Erlang("fn:expBody")]
-#[@External.Beam("fn:expBody")]
 #[@External.Wasm("fn:expBody")]
 pub declare fn exp(x: f64) -> f64;
 
 #[@External.Node("Math", "log")]
 #[@External.Erlang("fn:lnBody")]
-#[@External.Beam("fn:lnBody")]
 #[@External.Wasm("fn:lnBody")]
 pub declare fn ln(x: f64) -> f64;
 
 #[@External.Node("Math", "log2")]
 #[@External.Erlang("fn:log2Body")]
-#[@External.Beam("fn:log2Body")]
 #[@External.Wasm("fn:log2Body")]
 pub declare fn log2(x: f64) -> f64;
 
 #[@External.Node("Math", "log10")]
 #[@External.Erlang("fn:log10Body")]
-#[@External.Beam("fn:log10Body")]
 #[@External.Wasm("fn:log10Body")]
 pub declare fn log10(x: f64) -> f64;
 
@@ -142,61 +130,51 @@ pub fn hypot(x: f64, y: f64) -> f64 {
 
 #[@External.Node("Math", "sin")]
 #[@External.Erlang("fn:sinBody")]
-#[@External.Beam("fn:sinBody")]
 #[@External.Wasm("fn:sinBody")]
 pub declare fn sin(x: f64) -> f64;
 
 #[@External.Node("Math", "cos")]
 #[@External.Erlang("fn:cosBody")]
-#[@External.Beam("fn:cosBody")]
 #[@External.Wasm("fn:cosBody")]
 pub declare fn cos(x: f64) -> f64;
 
 #[@External.Node("Math", "tan")]
 #[@External.Erlang("fn:tanBody")]
-#[@External.Beam("fn:tanBody")]
 #[@External.Wasm("fn:tanBody")]
 pub declare fn tan(x: f64) -> f64;
 
 #[@External.Node("Math", "asin")]
 #[@External.Erlang("fn:asinBody")]
-#[@External.Beam("fn:asinBody")]
 #[@External.Wasm("fn:asinBody")]
 pub declare fn asin(x: f64) -> f64;
 
 #[@External.Node("Math", "acos")]
 #[@External.Erlang("fn:acosBody")]
-#[@External.Beam("fn:acosBody")]
 #[@External.Wasm("fn:acosBody")]
 pub declare fn acos(x: f64) -> f64;
 
 #[@External.Node("Math", "atan")]
 #[@External.Erlang("fn:atanBody")]
-#[@External.Beam("fn:atanBody")]
 #[@External.Wasm("fn:atanBody")]
 pub declare fn atan(x: f64) -> f64;
 
 #[@External.Node("Math", "atan2")]
 #[@External.Erlang("fn:atan2Body")]
-#[@External.Beam("fn:atan2Body")]
 #[@External.Wasm("fn:atan2Body")]
 pub declare fn atan2(y: f64, x: f64) -> f64;
 
 #[@External.Node("Math", "sinh")]
 #[@External.Erlang("fn:sinhBody")]
-#[@External.Beam("fn:sinhBody")]
 #[@External.Wasm("fn:sinhBody")]
 pub declare fn sinh(x: f64) -> f64;
 
 #[@External.Node("Math", "cosh")]
 #[@External.Erlang("fn:coshBody")]
-#[@External.Beam("fn:coshBody")]
 #[@External.Wasm("fn:coshBody")]
 pub declare fn cosh(x: f64) -> f64;
 
 #[@External.Node("Math", "tanh")]
 #[@External.Erlang("fn:tanhBody")]
-#[@External.Beam("fn:tanhBody")]
 #[@External.Wasm("fn:tanhBody")]
 pub declare fn tanh(x: f64) -> f64;
 

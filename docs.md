@@ -3277,8 +3277,7 @@ one runtime, wasm (wasm3 inside the compiler), whatever the build's target
 answers by the first of three sources it has: its std-wasm implementation
 (std's own host functions, written in Zig and compiled to wasm — the
 function its `@External.Wasm("std:<module>.<function>")` cell names, below),
-the beam-to-wasm translation of its `@External.Erlang` cell (or an
-`@External.Beam("module", "symbol")` one), or the botopink function its
+the beam-to-wasm translation of its `@External.Erlang` cell, or the botopink function its
 `@External.Wasm("fn:…")` binding names (an `op:` or `wasi:` binding does not
 run there). A std function is served by std-wasm only where its `std:` cell
 says so; there is no match by name. `@External.Node` never serves: there is no Node at compile time.
@@ -3291,8 +3290,7 @@ consumer's build, and whatever the package's `targets` (decision 434): a host
 function it reaches — in its body, in a function of its module, through a std
 or an imported function — needs one of the three sources the comptime runtime
 answers by: a std-wasm implementation (its `std:` cell), the
-beam-to-wasm translation of its `@External.Erlang` (or `@External.Beam("module",
-"symbol")`) cell, or its `@External.Wasm("fn:…")` cell. None is refused at the
+beam-to-wasm translation of its `@External.Erlang` cell, or its `@External.Wasm("fn:…")` cell. None is refused at the
 call (`comptime-host-cell-unavailable`), naming the function and the three
 sources; an Erlang cell beam-to-wasm does not convert — it converts a measured
 subset of opcodes and BIFs (decision 435) — is refused naming what is missing
@@ -3394,13 +3392,30 @@ error naming the capitalised form (`` `#[@external]` binds no host — an extern
 target is written `External.<Target>` ``), rather than a function left silently
 without a host.
 
-`inline = true`, written last on `External.Erlang` or `External.Beam`, opts the
-declaration out of the dispatch table so the backend's hand-coded shape keeps
-emitting. Those two variants alone declare it, because the erlang and beam
-emitters alone read it. Written on `Node`, `Wasm` or `Typescript`, anywhere but
-last, or with a value that is not a bool, it would be a switch nothing reads, so
-it is refused at the annotation (`` `External.Node` declares no `inline` — the
-flag is read by the erlang and beam emitters only ``).
+`inline = true`, written last on `External.Erlang`, opts the declaration out of
+the dispatch table so the backend's hand-coded shape keeps emitting. That
+variant alone declares it, because the erlang and beam emitters, which both
+read `External.Erlang`, alone read it. Written on `Node`, `Wasm` or
+`Typescript`, anywhere but last, or with a value that is not a bool, it would
+be a switch nothing reads, so it is refused at the annotation (`` `External.Node`
+declares no `inline` — the flag is read by the erlang and beam emitters from
+`External.Erlang` only ``).
+
+One annotation binds the BEAM: `External.Erlang` serves the erlang and the beam
+targets, the same VM and the same OTP calls (decision 437). `@External.Beam` is
+gone; writing it is a located error at the annotation naming the form in force,
+never an alias.
+
+<!-- docs-check: reject `@External.Beam` binds no host -->
+```botopink
+#[@External.Erlang("math", "sqrt")]
+#[@External.Beam("math", "sqrt")]
+declare fn root(x: f64) -> f64;
+
+fn main() {
+    @print(root(16.0));
+}
+```
 
 A relative path (`"./helpers.mjs"`, `"helpers"` on erlang) names a **sidecar** the
 library keeps beside its sources, in `<src>/sidecars/` or `<src>/`. `botopink
@@ -3608,7 +3623,7 @@ with `node <module>.mjs`. Every wasm program prints the same on both hosts:
 answers differ.
 
 **`fn:<name>` binds a declaration on every target** (decisions 238, 263). On
-`@External.Node`, `@External.Erlang` and `@External.Beam` a single string
+`@External.Node` and `@External.Erlang` (which the beam target reads) a single string
 starting with `fn:` is not a host expression or a template: it is the same form
 as on wasm — a private `fn` of the same module, with a body, taking the same
 parameter types in the same order and answering the same type — and it is
@@ -3620,7 +3635,6 @@ commonJS too).
 ```botopink
 #[@External.Node("fn:mixBody"),
   @External.Erlang("fn:mixBody"),
-  @External.Beam("fn:mixBody"),
   @External.Wasm("fn:mixBody")]
 pub declare fn mix(x: f64, y: f64) -> f64;
 

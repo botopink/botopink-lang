@@ -234,12 +234,10 @@ behavior String {
     fn split(self: Self, sep: string) -> string[];
 
     #[@External.Erlang("string", "uppercase")]
-    #[@External.Beam("""    {call_ext, 1, {extfunc, string, uppercase, 1}}.""")]
     #[@External.Node("toUpperCase")]
     fn toUpper(self: Self) -> string;
 
     #[@External.Erlang("string", "lowercase")]
-    #[@External.Beam("""    {call_ext, 1, {extfunc, string, lowercase, 1}}.""")]
     #[@External.Node("toLowerCase")]
     fn toLower(self: Self) -> string;
 
@@ -251,28 +249,15 @@ behavior String {
     #[@External.Node("startsWith")]
     fn startsWith(self: Self, prefix: string) -> bool;
 
-    // OTP has no `string:suffix/2`. Both erlang forms compare the last
-    // `byte_size(suffix)` bytes with the suffix. The BEAM body cannot branch, so
-    // it clamps the start offset to 0 arithmetically (`(D + abs(D)) div 2`);
-    // when the suffix is longer than the string the part is the whole string,
-    // whose size differs, so the comparison is false.
+    // OTP has no `string:suffix/2`: the last `byte_size(suffix)` bytes are
+    // compared with the suffix.
     #[@External.Erlang("""(fun(__S, __X) -> __N = byte_size(__S), __M = byte_size(__X), (__M =< __N) andalso (binary:part(__S, __N - __M, __M) =:= __X) end)($0, $1)""")]
-    #[@External.Beam("""    {gc_bif, byte_size, {f, 0}, 2, [$0], {x, 2}}.
-    {gc_bif, byte_size, {f, 0}, 3, [$1], {x, 3}}.
-    {gc_bif, '-', {f, 0}, 4, [{x, 2}, {x, 3}], {x, 3}}.
-    {gc_bif, abs, {f, 0}, 4, [{x, 3}], {x, 4}}.
-    {gc_bif, '+', {f, 0}, 5, [{x, 3}, {x, 4}], {x, 3}}.
-    {gc_bif, 'div', {f, 0}, 4, [{x, 3}, {integer, 2}], {x, 3}}.
-    {gc_bif, '-', {f, 0}, 4, [{x, 2}, {x, 3}], {x, 2}}.
-    {gc_bif, binary_part, {f, 0}, 4, [$0, {x, 3}, {x, 2}], {x, 0}}.
-    {bif, '=:=', {f, 0}, [{x, 0}, $1], {x, 0}}.""")]
     #[@External.Node("endsWith")]
     fn endsWith(self: Self, suffix: string) -> bool;
 
     // On wasm, std-wasm's set (decision 441): space, tab, LF, CR, VT, FF —
     // a no-break space stays.
     #[@External.Erlang("string", "trim")]
-    #[@External.Beam("""    {call_ext, 1, {extfunc, string, trim, 1}}.""")]
     #[@External.Node("trim")]
     #[@External.Wasm("std:text.trim")]
     fn trim(self: Self) -> string;
@@ -670,7 +655,6 @@ behavior Array<T> {
     // reader (ES2023; node 20, which is the floor CI installs), so the answer
     // is the same shape with no prototype patch and no helper.
     #[@External.Erlang("lists", "reverse")]
-    #[@External.Beam("""    {call_ext, 1, {extfunc, lists, reverse, 1}}.""")]
     #[@External.Node("toReversed")]
     fn reverse(self: Self<T>) -> Self<T>;
 

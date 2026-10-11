@@ -816,15 +816,16 @@ test "infer: external ---- fn no body typechecks" {
     );
 }
 
-// Front 20 F9 — `inline` on the two variants that declare it is accepted, in
-// both spellings the parser reads (`inline = true` and the bare trailing bool).
-test "infer: external ---- inline on erlang and beam typechecks" {
+// Front 20 F9, decision 437 — `inline` on the one variant that declares it
+// (`External.Erlang`) is accepted, in both spellings the parser reads
+// (`inline = true` and the bare trailing bool).
+test "infer: external ---- inline on erlang typechecks" {
     try h.assertInfersOk(std.testing.allocator,
-        \\#[@External.Erlang("max($args)", inline = true),
-        \\  @External.Beam("""
-        \\  {call_ext, 2, {extfunc, erlang, max, 2}}.
-        \\  """, true)]
+        \\#[@External.Erlang("max($args)", inline = true)]
         \\pub declare fn biggest(a: i32, b: i32) -> i32;
+        \\
+        \\#[@External.Erlang("min($args)", true)]
+        \\pub declare fn smallest(a: i32, b: i32) -> i32;
         \\
         \\fn main() {
         \\    val n = biggest(1, 2);
