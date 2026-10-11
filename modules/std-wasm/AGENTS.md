@@ -3,9 +3,12 @@
 > Path: `modules/std-wasm/`
 > Parent: [`../AGENTS.md`](../AGENTS.md)
 
-std's host functions implemented in Zig and compiled to wasm (decision 434 (2), front 144
-B-00a). A std function reached at comptime answers std-wasm's text, whatever the build's
-target (434 (5)), and needs no per-binding `@External.Wasm` cell to run there.
+std's host functions implemented in Zig and compiled to wasm (decisions 434 (2), 440, 441;
+front 144 B-00a, B-00e). One implementation for two consumers: the comptime runtime, on
+every target (434 (5): a comptime result is std-wasm's answer whatever `--target` says), and
+a `--target wasm` program, into which the codegen transpiles the functions it calls (440 (2)).
+A std function is served by std-wasm only where its `#[@External.Wasm("std:<module>.<function>")]`
+cell names one of `root.exports` (440 (3)) — there is no match by name.
 
 ## Tree
 
@@ -13,37 +16,70 @@ target (434 (5)), and needs no per-binding `@External.Wasm` cell to run there.
 std-wasm/
 ├── AGENTS.md      ← you are here
 └── src/
-    ├── root.zig   ← the package: `functions` (the std functions served whole), `find`, `erlang_module`; re-exports the three below
+    ├── root.zig   ← the package: `exports` (each function by its `std:` name, its botopink types), `find`, `matches`, `signatureText`, `names`, `erlang_module`; re-exports the three below
     ├── hash.zig   ← `hash.contentHash`
     ├── text.zig   ← the text algorithms behind std's string primitives (case, trim, graphemes, slice, reverse, find, split, replace)
-    ├── number.zig ← `shortFloat`: `float_to_binary(F, [short])`, std's `Float.toString`
-    └── wasm.zig   ← the package alone as a wasm module (`zig build std-wasm`): C-ABI exports over linear memory
+    ├── number.zig ← `shortFloat`: `float_to_binary(F, [short])`, std's `Float.toString` (`NaN`, `Infinity`, `-Infinity` for the values OTP has no float for)
+    └── wasm.zig   ← the program face (`zig build std-wasm`): each export over a program's own strings, allocating through `env.bp_alloc`
 ```
+
+## The functions (`root.exports`)
+
+| `std:` name | Types | Bound by (std) |
+|---|---|---|
+| `hash.contentHash` | `(string) -> string` | `hash.contentHash` |
+| `text.trim` | `(string) -> string` | `String.trim` (`primitives.bp`) |
+| `text.trimStart` | `(string) -> string` | `String.trimStart` |
+| `text.trimEnd` | `(string) -> string` | `String.trimEnd` |
+| `number.floatToString` | `(f64) -> string` | `Float.toString` — and every float a wasm program turns into text |
+
+A `std:` cell naming no entry, or on a declaration of other types (`matches`: the parameter
+and return types as botopink spells them; a primitive behavior's `Self` is `string` on
+`String`, `f64` on `Float`), is refused at the annotation on every target
+(`comptime/infer.zig` `refuseStdBinding`; cells `reject/external_wasm_std_unknown`,
+`reject/external_wasm_std_types`).
+
+`String.toUpper` / `toLower` are not bound: `text.caseMap` maps ASCII and refuses any other
+letter (the comptime runtime's limit 3), so it is not the function a wasm program's
+`$__str_case` is.
 
 ## How it is built and served
 
-- **Into the comptime runtime.** Root `build.zig` creates one `std_wasm` module (no target: each
-  importer compiles it for its own) and gives it to the wat comptime runtime's term library
+- **Into the comptime runtime.** Root `build.zig` creates one `std_wasm` module (no target:
+  each importer compiles it for its own) and gives it to the wat comptime runtime's term library
   (`compiler-core/src/comptime/runtime/wat/rt.zig`, compiled to `bp_wat_rt.wasm` for
-  `wasm32-freestanding`, MVP): the `.wasm` the comptime runtime links every lowered comptime module
-  into carries std-wasm. `rt.zig` serves it two ways:
-  - each entry of `functions` is an export `rt_std_<symbol>` (`rt_std_hash__contentHash`); a
-    comptime module calls it as `bp_std_wasm:<symbol>(…)` — `host_cells.forRuntime` rewrites a
-    std host function std-wasm serves to that one cell (`servedByStdWasm`), and
-    `runtime/wat/lower.zig`'s BIF table maps the `bp_std_wasm` family (`std_wasm_bifs`) to the
-    exports. A comptime `@compileError` in `rt.zig` refuses an entry without its export;
+  `wasm32-freestanding`, MVP). `rt.zig` serves it two ways:
+  - each entry of `exports` is a runtime export `rt_std_<symbol>` (`rt_std_hash__contentHash`,
+    the name's dot written `__`); a comptime module calls it as `bp_std_wasm:<symbol>(…)` —
+    `host_cells.forRuntime` rewrites a host function whose `std:` cell names the entry to that one
+    cell (`stdCell`, `servedByStdWasm`), and `runtime/wat/lower.zig`'s BIF table maps the
+    `bp_std_wasm` family (`std_wasm_bifs`) to the exports. A comptime `@compileError` in `rt.zig`
+    refuses an entry without its export;
   - the OTP BIFs the comptime module's primitive methods call — `string:uppercase/1`,
     `lowercase/1`, `trim/1,2`, `find/2`, `prefix/2`, `split/2,3`, `slice/2,3`, `reverse/1`,
-    `length/1` (graphemes), `binary:replace/3,4`, `float_to_binary/2` (`[short]`), and the `~p` / `json:encode` float text — answer through
-    `text` and `number`.
+    `length/1` (graphemes), `binary:replace/3,4`, `float_to_binary/2` (`[short]`), and the `~p` /
+    `json:encode` float text — answer through `text` and `number`.
 - **Read by compiler-core** (`core_mod`, `core_test_mod`, the browser build's `web_core_mod`):
-  `host_cells.zig` reads `functions` to know what std-wasm serves.
-- **Alone**: `zig build std-wasm` → `zig-out/lib/std_wasm.wasm` (`wasm.zig`): `std_alloc`,
-  `std_reset`, `std_hash_contentHash`, `std_text_caseMap`, `std_text_trim`,
-  `std_number_floatToString` — a text argument `(ptr, len)`, a text answer packed
-  `ptr << 32 | len` in a `u64` (all ones when refused). The face a `--target wasm` program links
-  (144 B-00e).
-- **Tests**: `zig build test` runs `src/root.zig`'s tests (one per function and algorithm).
+  `host_cells.zig`, `infer.zig` and `codegen/wat/host_binding.zig` read `exports`.
+- **Into a `--target wasm` program** (decision 440 (2)): `wasm.zig` is compiled to
+  `std_wasm.wasm`, a position-independent side module (`zig build-lib -dynamic -fPIC`, MVP plus
+  bulk memory, `dylink.0`), embedded in compiler-core as the anonymous import `std_wasm.wasm`.
+  `codegen/wat/std_wasm_link.zig` decodes the functions a program calls into `wat_ast` and
+  `wat.zig` emits them as ordinary functions of the program — one module, its `.wat` the whole
+  program, no host change. The side module imports `env.memory`, `env.__memory_base` (the program
+  places the data after its own), `env.__stack_pointer` (a program global, a stack after the
+  data sized from the code's frames) and `env.bp_alloc` (the program's `$__alloc`). It holds no
+  function table, no start function and no pointer in its data — which is why `shortFloat` takes
+  Ryu's digits from `std.fmt.float.render` and writes the exponent by hand rather than through
+  `std.Io.Writer`, whose vtable is a function table: the decoder refuses all three.
+- **The export names are the cells' text** (`std:hash.contentHash`), never the bare
+  `hash.contentHash`: Zig names `hash.zig`'s own `contentHash` that, so an export of that name
+  resolves to itself, and the optimizer compiles the recursion to `unreachable`.
+- **Built by a `Run` of `zig build-lib`**, not `addLibrary`: wasm-ld warns that a shared library
+  is "not yet stable" for every side module, and the build runner fails a compile step on any
+  linker stderr. The warning goes to a captured file; a failed compile still fails the step.
+- **Tests**: `zig build test` runs `src/root.zig`'s tests (one per function and algorithm);
+  `codegen/tests/wat.zig` decodes every export (`wat: std-wasm ---- …`).
 
 ## Measured — what a comptime evaluation reaches (144 B-00a, 2026-10-11)
 
@@ -55,7 +91,7 @@ every host function `host_cells.forRuntime` carried were recorded (686 modules).
 
 | Function | BEAM runtime cell (before 434) | wat runtime cell (before 434) | std-wasm |
 |---|---|---|---|
-| `hash.contentHash` | `@External.Erlang` template (djb2 over `unicode:characters_to_list`, `integer_to_list(H, 16)`, `string:lowercase`) | `@External.Wasm("fn:contentHashBody")` (the botopink body) | `hash.contentHash`, export `rt_std_hash__contentHash` |
+| `hash.contentHash` | `@External.Erlang` template (djb2 over `unicode:characters_to_list`, `integer_to_list(H, 16)`, `string:lowercase`) | `@External.Wasm("fn:contentHashBody")` (the botopink body, deleted by 440: the cell is `std:hash.contentHash`) | `hash.contentHash`, export `rt_std_hash__contentHash` |
 
 No library build carries a host function at comptime; `unicode`, `json` and std's other modules
 reach comptime only as botopink bodies lowered with the module.

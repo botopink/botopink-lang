@@ -420,16 +420,14 @@ fn func(w: *Writer, f: ast.Func) Error!void {
 }
 
 /// `(data (i32.const off) "…")` — the four-byte little-endian length prefix
-/// every string carries, then the bytes.
+/// every string carries, then the bytes; a raw segment (no prefix) is its
+/// bytes alone.
 fn dataSegment(w: *Writer, d: ast.DataSegment) Error!void {
     try w.print("  (data (i32.const {d}) \"", .{d.offset});
-    const prefix = [4]u8{
-        @truncate(d.len_prefix),
-        @truncate(d.len_prefix >> 8),
-        @truncate(d.len_prefix >> 16),
-        @truncate(d.len_prefix >> 24),
-    };
-    for (prefix) |c| try w.print("\\{x:0>2}", .{c});
+    if (d.len_prefix) |len| {
+        const prefix = [4]u8{ @truncate(len), @truncate(len >> 8), @truncate(len >> 16), @truncate(len >> 24) };
+        for (prefix) |c| try w.print("\\{x:0>2}", .{c});
+    }
     // A segment that is no UTF-8 text — a `bigint` literal's limbs (decision
     // 332) — writes every byte past ASCII escaped: the text format is UTF-8.
     const binary = !std.unicode.utf8ValidateSlice(d.bytes);
@@ -478,6 +476,7 @@ fn line(w: *Writer, l: ast.Line) Error!void {
 fn ifForm(w: *Writer, col: u8, n: ast.If) Error!void {
     try indent(w, col);
     try w.writeAll("(if");
+    if (n.label) |l| try w.print(" ${s}", .{l});
     if (n.result) |r| try w.print(" (result {s})", .{r.text()});
     try w.writeAll("\n");
     try arm(w, col + 2, "then", n.then);
@@ -531,12 +530,12 @@ fn instr(w: *Writer, i: ast.Instr) Error!void {
         .convert => |o| try w.writeAll(o),
         .load => |m| {
             try w.print("{s}.load", .{m.ty.text()});
-            if (m.width == .byte) try w.writeAll("8_u");
+            if (m.width.bits()) |b| try w.print("{d}_{s}", .{ b, if (m.signed) "s" else "u" });
             if (m.offset != 0) try w.print(" offset={d}", .{m.offset});
         },
         .store => |m| {
             try w.print("{s}.store", .{m.ty.text()});
-            if (m.width == .byte) try w.writeAll("8");
+            if (m.width.bits()) |b| try w.print("{d}", .{b});
             if (m.offset != 0) try w.print(" offset={d}", .{m.offset});
         },
         .call => |n| try w.print("call ${s}", .{n}),
@@ -555,6 +554,13 @@ fn instr(w: *Writer, i: ast.Instr) Error!void {
         .@"return" => try w.writeAll("return"),
         .@"unreachable" => try w.writeAll("unreachable"),
         .memory_copy => try w.writeAll("memory.copy"),
+        .memory_fill => try w.writeAll("memory.fill"),
+        .select => try w.writeAll("select"),
+        .br_table => |t| {
+            try w.writeAll("br_table");
+            for (t.labels) |l| try w.print(" ${s}", .{l});
+            try w.print(" ${s}", .{t.default});
+        },
         .memory_size => try w.writeAll("memory.size"),
         .memory_grow => try w.writeAll("memory.grow"),
         .comment => |text| try w.print(";; {s}", .{text}),
@@ -778,6 +784,14 @@ test "every runtime helper group renders with its deps, and only with them" {
             // … and the `browser` host's export beside them.
             if (og == .task_host) try items.append(alloc, .{ .func = prelude.bp_ready });
             try items.appendSlice(alloc, prelude.items(og));
+        }
+        // `wat.zig`'s decision 440: `$__f64_to_str` calls std-wasm, transpiled in.
+        var std_arena = std.heap.ArenaAllocator.init(alloc);
+        defer std_arena.deinit();
+        if (set.has(.f64_to_str)) {
+            var diag: @import("std_wasm_link.zig").Diag = .{};
+            const l = try @import("std_wasm_link.zig").link(std_arena.allocator(), &.{"number.floatToString"}, 256, &diag);
+            try items.appendSlice(alloc, l.items);
         }
         var discard: std.Io.Writer.Discarding = .init(&.{});
         renderModule(&discard.writer, .{ .items = items.items }) catch |err| {

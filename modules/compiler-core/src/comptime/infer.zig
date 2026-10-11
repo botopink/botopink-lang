@@ -29,6 +29,7 @@ const templateEval = @import("template_eval.zig");
 const stages = @import("runtime/stages.zig");
 const decoratorEval = @import("decorator_eval.zig");
 const hostCells = @import("host_cells.zig");
+const stdWasm = @import("std_wasm");
 const decoratorSameMod = @import("decorator_same.zig");
 const dslHygiene = @import("dsl_hygiene.zig");
 const specializeMod = @import("specialize.zig");
@@ -3891,15 +3892,79 @@ fn validateExternalInline(env: *Env, program: ast.Program) InferError!void {
             for (m.annotations) |a| {
                 try refuseUnreadInline(env, a);
                 try refuseHostArg(env, a);
+                try refuseStdBinding(env, a, m.name, m.params, m.returnType, null);
             }
         },
         .behavior => |i| for (i.methods) |m| {
             for (m.annotations) |a| {
                 try refuseUnreadInline(env, a);
                 try refuseHostArg(env, a);
+                try refuseStdBinding(env, a, m.name, m.params, m.returnType, selfSpelling(i.name));
             }
         },
         else => {},
+    };
+}
+
+/// The type `Self` spells in a primitive behavior a `std:` cell may bind
+/// (decision 440 (3)): a `String`'s is `string`, a `Float`'s `f64` — the
+/// carrier a wasm program holds any float in. Null elsewhere: a `Self` there
+/// is no type a std-wasm function takes.
+fn selfSpelling(behavior: []const u8) ?[]const u8 {
+    if (std.mem.eql(u8, behavior, "String")) return "string";
+    if (std.mem.eql(u8, behavior, "Float") or std.mem.eql(u8, behavior, "F64")) return "f64";
+    return null;
+}
+
+/// Decision 440 (3) — `#[@External.Wasm("std:<module>.<function>")]` names a
+/// function std-wasm implements (`std_wasm.exports`), with the declaration's
+/// parameter and return types exactly. A name std-wasm lacks, or other
+/// types, is refused at the annotation, on every target: the one cell serves
+/// the wasm codegen and the comptime runtime alike.
+fn refuseStdBinding(env: *Env, a: ast.Annotation, name: []const u8, params: []const ast.Param, ret: ?ast.TypeRef, self_ty: ?[]const u8) InferError!void {
+    const v = externalVariantOf(a) orelse return;
+    if (!std.mem.eql(u8, v.name, "Wasm")) return;
+    const ref = ast.externalRefOf(a, "wasm") orelse ast.externalRefOf(a, "wasm.browser") orelse return;
+    if (ref.module.len > 0 or !std.mem.startsWith(u8, ref.symbol, hostCells.std_cell_prefix)) return;
+    const fname = ref.symbol[hostCells.std_cell_prefix.len..];
+    var e: TypeError = undefined;
+    if (stdWasm.find(fname)) |ex| {
+        const spelled = try env.arena.alloc([]const u8, params.len);
+        for (params, spelled) |p, *out| out.* = spelledType(p.typeRef, self_ty);
+        const r: ?[]const u8 = if (ret) |rt| spelledType(rt, self_ty) else null;
+        if (stdWasm.matches(ex, spelled, r)) return;
+        var buf: [128]u8 = undefined;
+        var have: std.ArrayListUnmanaged(u8) = .empty;
+        try have.append(env.arena, '(');
+        for (spelled, 0..) |t, i| {
+            if (i > 0) try have.appendSlice(env.arena, ", ");
+            try have.appendSlice(env.arena, t);
+        }
+        try have.appendSlice(env.arena, ") -> ");
+        try have.appendSlice(env.arena, r orelse "void");
+        e = TypeError.custom(try std.fmt.allocPrint(
+            env.arena,
+            "`#[@External.Wasm(\"{s}\")]` on `{s}`: std-wasm's `{s}` is `{s}`, and `{s}` is declared `{s}` — a `std:` binding takes exactly its function's types (decision 440)",
+            .{ ref.symbol, name, fname, stdWasm.signatureText(ex, &buf), name, have.items },
+        ), "Declare the function with std-wasm's types, or bind it otherwise (`fn:<private fn>`).");
+    } else {
+        e = TypeError.custom(try std.fmt.allocPrint(
+            env.arena,
+            "`#[@External.Wasm(\"{s}\")]` on `{s}`: std-wasm implements no `{s}` (decision 440)",
+            .{ ref.symbol, name, fname },
+        ), try std.fmt.allocPrint(env.arena, "A `std:` binding names one of std-wasm's functions: {s}.", .{stdWasm.names}));
+    }
+    if (a.loc) |l| e = e.withLoc(l);
+    env.lastError = e;
+    return error.TypeError;
+}
+
+/// A written type as a `std:` cell's check spells it: a plain name as
+/// written (`Self` as `self_ty` spells it), anything else `another type`.
+fn spelledType(t: ast.TypeRef, self_ty: ?[]const u8) []const u8 {
+    return switch (t) {
+        .named => |n| if (std.mem.eql(u8, n, "Self")) (self_ty orelse "Self") else n,
+        else => "another type",
     };
 }
 
@@ -7242,6 +7307,7 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
         }
     }
     try refuseWasmHostTwice(env, f);
+    for (f.annotations) |a| try refuseStdBinding(env, a, f.name, f.params, f.returnType, null);
 
     // Build generic map.
     var genericMap = std.StringHashMap(*T.Type).init(env.arena);

@@ -30,7 +30,7 @@ botopink-lang/                 ← language core (this project)
 │   ├── lib-test-runner/       ← `botopink-lib-test` (test-libs gate)
 │   ├── manifest/              ← the shared `botopink.json` model (std only; imported by the four above)
 │   ├── source-stamp/          ← `source_stamp` — a library run refuses a binary older than its checkout's sources
-│   ├── std-wasm/              ← std's host functions in Zig, compiled to wasm, served to the comptime runtime (decision 434)
+│   ├── std-wasm/              ← std's host functions in Zig, compiled to wasm: the comptime runtime's and a `--target wasm` program's, bound by `std:` cells (decisions 434, 440)
 │   ├── beam-to-wasm/          ← `.beam` bytecode translated to wasm: a host function's Erlang cell at comptime (decisions 434, 435)
 │   ├── test-scratch/          ← `test_scratch` — per-process scratch paths; the test modules only
 │   ├── test-shard/            ← the compiler-core test runner: the suite split across processes (`-Dtest-shards`)
@@ -64,7 +64,7 @@ zig build test-language # botopink language tests (tests/language/run.sh; `-- --
 zig build test-docs     # every `botopink` fence of docs.md/README.md compiles (scripts/check-docs.sh)
 zig build clean-tmp     # reap scratch dirs older than 1 day (also runs before `zig build test`)
 zig build gen-unicode   # regenerate libs/std/src/unicode_tables.bp from the pinned Unicode data (libs/std/AGENTS.md § unicode)
-zig build std-wasm      # modules/std-wasm alone → zig-out/lib/std_wasm.wasm (decision 434)
+zig build std-wasm      # modules/std-wasm's program face → zig-out/lib/std_wasm.wasm, the side module a wasm program transpiles (decision 440)
 zig build compiler-web  # compiler-core for the browser → zig-out/web/ (wasm32-wasi; `-Doptimize=ReleaseSmall` is the shipped size)
 zig build test-web      # the browser build's smoke test under node (modules/compiler-web/tests/smoke.js)
 ```
@@ -313,8 +313,8 @@ Do not use `--no-verify`.
   `comptime/runtime/AGENTS.md` § Limits) — wrap manual runs in `timeout`.
 - **A body's `io:format`** goes to a buffer in the module's own memory, never to
   the compiler's stdout.
-- **Host functions** reached at build answer by std-wasm (`modules/std-wasm`),
-  else the beam-to-wasm translation of their Erlang cell (`modules/beam-to-wasm`,
+- **Host functions** reached at build answer by std-wasm (`modules/std-wasm`) —
+  the function their `@External.Wasm("std:…")` cell names (decision 440) —, else the beam-to-wasm translation of their Erlang cell (`modules/beam-to-wasm`,
   `comptime/runtime/wat/cells.zig`), else their `@External.Wasm("fn:…")` cell
   (`comptime/host_cells.zig`).
 

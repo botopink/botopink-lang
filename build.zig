@@ -149,12 +149,18 @@ pub fn build(b: *std.Build) void {
     // Fixtures under modules/manifest/tests/fixtures are read relative to cwd.
     run_manifest_tests.setCwd(b.path("modules/manifest"));
 
-    // ── std-wasm (decision 434 (2)) ───────────────────────────────────────────
+    // ── std-wasm (decisions 434 (2), 440) ──────────────────────────────────────
     // std's host functions in Zig (`modules/std-wasm`): compiled into the wat
     // comptime runtime's term library below (`bp_wat_rt.wasm`), read by
-    // compiler-core for the table of the functions it serves, and compiled
-    // alone to `std_wasm.wasm` by `zig build std-wasm`. No target: each
-    // importer compiles it for its own.
+    // compiler-core for the table of the functions it implements, and
+    // compiled alone — its program face, `wasm.zig` — to `std_wasm.wasm`, a
+    // position-independent side module (`dylink.0`: `__memory_base`,
+    // `__table_base`, `__stack_pointer` imported) that compiler-core embeds and
+    // the wasm codegen decodes into a `--target wasm` program
+    // (`codegen/wat/std_wasm_link.zig`, decision 440 (2)). MVP plus bulk
+    // memory: the codegen emits `memory.copy` already. wasm-ld warns that a
+    // shared library is "not yet stable" when it links it; the module is read
+    // by our own decoder, never by a dynamic loader.
     const std_wasm_mod = b.createModule(.{ .root_source_file = b.path("modules/std-wasm/src/root.zig") });
     const std_wasm_tests = b.addTest(.{
         .root_module = b.createModule(.{
@@ -164,22 +170,25 @@ pub fn build(b: *std.Build) void {
         .filters = test_filters,
     });
     const run_std_wasm_tests = b.addRunArtifact(std_wasm_tests);
-    const std_wasm_lib = b.addExecutable(.{
-        .name = "std_wasm",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("modules/std-wasm/src/wasm.zig"),
-            .target = b.resolveTargetQuery(.{
-                .cpu_arch = .wasm32,
-                .os_tag = .freestanding,
-                .cpu_model = .{ .explicit = &std.Target.wasm.cpu.mvp },
-            }),
-            .optimize = .ReleaseSmall,
-        }),
+    // A `Run` of `zig build-lib`, not `addLibrary`: wasm-ld prints its
+    // "creating shared libraries … is not yet stable" warning for every
+    // side module, and the build runner fails a compile step on any linker
+    // stderr. The module is read by our own decoder, never by a dynamic
+    // loader. Its sources are the step's inputs; a failed compile still fails
+    // the step (non-zero exit).
+    const std_wasm_build = b.addSystemCommand(&.{
+        b.graph.zig_exe, "build-lib",           "-dynamic",              "-fPIC",          "-rdynamic",
+        "-target",       "wasm32-freestanding", "-mcpu=mvp+bulk_memory", "-OReleaseSmall", "--name",
+        "std_wasm",
     });
-    std_wasm_lib.entry = .disabled;
-    std_wasm_lib.rdynamic = true;
-    const std_wasm_step = b.step("std-wasm", "Compile modules/std-wasm alone to zig-out/lib/std_wasm.wasm");
-    std_wasm_step.dependOn(&b.addInstallArtifact(std_wasm_lib, .{ .dest_dir = .{ .override = .lib } }).step);
+    std_wasm_build.addPrefixedFileArg("-Mroot=", b.path("modules/std-wasm/src/wasm.zig"));
+    const std_wasm_bin = std_wasm_build.addPrefixedOutputFileArg("-femit-bin=", "std_wasm.wasm");
+    for ([_][]const u8{ "root.zig", "hash.zig", "text.zig", "number.zig", "wasm.zig" }) |f|
+        std_wasm_build.addFileInput(b.path(b.fmt("modules/std-wasm/src/{s}", .{f})));
+    // The warning goes to a captured file, not the build's output.
+    _ = std_wasm_build.captureStdErr(.{});
+    const std_wasm_step = b.step("std-wasm", "Compile modules/std-wasm's program face alone to zig-out/lib/std_wasm.wasm");
+    std_wasm_step.dependOn(&b.addInstallFileWithDir(std_wasm_bin, .lib, "std_wasm.wasm").step);
 
     // ── beam-to-wasm (decision 434 (3)) ───────────────────────────────────────
     // `.beam` bytecode translated to wasm functions over the comptime
@@ -263,6 +272,8 @@ pub fn build(b: *std.Build) void {
     wat_rt.root_module.export_symbol_names = &.{"__heap_base"};
     for ([_]*std.Build.Module{ core_mod, core_test_mod }) |mod| {
         mod.addAnonymousImport("bp_wat_rt.wasm", .{ .root_source_file = wat_rt.getEmittedBin() });
+        // Decision 440 (2): std-wasm's program face, decoded into a `--target wasm` program.
+        mod.addAnonymousImport("std_wasm.wasm", .{ .root_source_file = std_wasm_bin });
     }
     // wasm3 runs it in-process on every native build (`persistent_wat.zig`).
     wasm3.exposeHeaders(b, core_mod);
@@ -654,6 +665,7 @@ pub fn build(b: *std.Build) void {
         },
     });
     web_core_mod.addAnonymousImport("bp_wat_rt.wasm", .{ .root_source_file = wat_rt.getEmittedBin() });
+    web_core_mod.addAnonymousImport("std_wasm.wasm", .{ .root_source_file = std_wasm_bin });
     const web_exe = b.addExecutable(.{
         .name = "botopink",
         .root_module = b.createModule(.{

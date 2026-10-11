@@ -91,8 +91,12 @@ behavior Signed extends Integer {
 behavior Float extends Number {
     // `float_to_binary/1` prints scientific notation (`1.50000000000000000000e+00`);
     // `short` is the shortest text that reads back as the same float (`1.5`).
+    // On wasm, std-wasm's text (decisions 440, 441): the erlang target's,
+    // and the one a wasm program writes for a float anywhere — `@print`,
+    // `"${x}"`. commonJS keeps the JS engine's.
     #[@External.Erlang("float_to_binary($0, [short])")]
     #[@External.Node("toString")]
+    #[@External.Wasm("std:number.floatToString")]
     fn toString(self: Self) -> string;
 
     // Patched on `Number.prototype` as `Signed`'s `abs` is: the same form.
@@ -265,18 +269,23 @@ behavior String {
     #[@External.Node("endsWith")]
     fn endsWith(self: Self, suffix: string) -> bool;
 
+    // On wasm, std-wasm's set (decision 441): space, tab, LF, CR, VT, FF —
+    // a no-break space stays.
     #[@External.Erlang("string", "trim")]
     #[@External.Beam("""    {call_ext, 1, {extfunc, string, trim, 1}}.""")]
     #[@External.Node("trim")]
+    #[@External.Wasm("std:text.trim")]
     fn trim(self: Self) -> string;
 
     // `string:trim/1` strips both ends; `/2` takes the direction.
     #[@External.Erlang("string:trim($0, leading)")]
     #[@External.Node("trimStart")]
+    #[@External.Wasm("std:text.trimStart")]
     fn trimStart(self: Self) -> string;
 
     #[@External.Erlang("string:trim($0, trailing)")]
     #[@External.Node("trimEnd")]
+    #[@External.Wasm("std:text.trimEnd")]
     fn trimEnd(self: Self) -> string;
 
     // Replaces the first occurrence, like JS `replace` with a string pattern.

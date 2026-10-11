@@ -3275,11 +3275,13 @@ call a host function: it travels into the comptime module. Comptime runs on
 one runtime, wasm (wasm3 inside the compiler), whatever the build's target
 (decision 434): a compile starts no `erl`. A host function reached there
 answers by the first of three sources it has: its std-wasm implementation
-(std's own host functions, written in Zig and compiled to wasm), the
-beam-to-wasm translation of its `@External.Erlang` cell (or an
+(std's own host functions, written in Zig and compiled to wasm — the
+function its `@External.Wasm("std:<module>.<function>")` cell names, below),
+the beam-to-wasm translation of its `@External.Erlang` cell (or an
 `@External.Beam("module", "symbol")` one), or the botopink function its
 `@External.Wasm("fn:…")` binding names (an `op:` or `wasi:` binding does not
-run there). `@External.Node` never serves: there is no Node at compile time.
+run there). A std function is served by std-wasm only where its `std:` cell
+says so; there is no match by name. `@External.Node` never serves: there is no Node at compile time.
 std's functions travel too, through a namespace or a leaf import —
 `comptime hash.contentHash("hello")` is `"f923099"` on the four targets, one
 answer whatever the target.
@@ -3288,7 +3290,7 @@ What a decorator may call is decided when its package is compiled, never at a
 consumer's build, and whatever the package's `targets` (decision 434): a host
 function it reaches — in its body, in a function of its module, through a std
 or an imported function — needs one of the three sources the comptime runtime
-answers by: a std-wasm implementation (std's own host functions), the
+answers by: a std-wasm implementation (its `std:` cell), the
 beam-to-wasm translation of its `@External.Erlang` (or `@External.Beam("module",
 "symbol")`) cell, or its `@External.Wasm("fn:…")` cell. None is refused at the
 call (`comptime-host-cell-unavailable`), naming the function and the three
@@ -3470,15 +3472,16 @@ such a wrapper names its `targets`, or the declaration gains the other
 target's binding.
 
 wasm has no host of its own, so `@External.Wasm` does not name a host symbol
-or carry target text: it is **one string from a closed vocabulary of three
-forms** (decision 238), read and checked where the annotation is written. The
-arguments are always the declared parameters, in order.
+or carry target text: it is **one string from a closed vocabulary of four
+forms** (decisions 238, 440), read and checked where the annotation is
+written. The arguments are always the declared parameters, in order.
 
 | Form | Binds the declaration to |
 |---|---|
 | `op:<opcode>` | one numeric wasm instruction (`op:f64.floor`, `op:i32.add`, `op:f64.lt`, `op:f64.convert_i32_s`); the declared parameter and return types must be exactly the instruction's — a comparison or `eqz` answers `bool` |
 | `fn:<name>` | a private (not `pub`) `fn` of the same module, with a body, taking the same parameter types in the same order and answering the same type — the algorithm stays in the library, in botopink |
 | `wasi:<adapter>` | a compiler adapter over the host, one of the list below — each has an implementation per host (WASI preview 2 through the `wasi` component, JavaScript in the `browser` loader), so one list serves both (decision 394) |
+| `std:<module>.<function>` | a function std-wasm implements — std's host functions written in Zig (`modules/std-wasm`) —, which the compiler transpiles into the program; the declared parameter and return types must be exactly the function's. The same cell is what the comptime answers by, on every target (decision 440) |
 
 ```botopink
 #[@External.Node("Math", "floor"),
@@ -3494,6 +3497,43 @@ pub declare fn roundOf(x: f64) -> f64;
 fn roundHalfUp(x: f64) -> f64 {
     val up = -1.0 * floorOf(-1.0 * x);
     return if (up - 0.5 > x) up - 1.0 else up;
+}
+```
+
+The functions a `std:` binding names, and the std declarations that bind them:
+
+| Function | Signature | Bound by |
+|---|---|---|
+| `hash.contentHash` | `(string) -> string` | `hash.contentHash` |
+| `text.trim` | `(string) -> string` | `String.trim` |
+| `text.trimStart` | `(string) -> string` | `String.trimStart` |
+| `text.trimEnd` | `(string) -> string` | `String.trimEnd` |
+| `number.floatToString` | `(f64) -> string` | `Float.toString` — and every float a wasm program turns into text: `@print`, `"${x}"`, `"x" + x` |
+
+```botopink
+#[@External.Node("""(function(__S){ var __H = 5381; for (const __C of Array.from(__S)) { __H = (Math.imul(__H, 33) + __C.codePointAt(0)) >>> 0; } return __H.toString(16); })($0)""")]
+#[@External.Erlang("""(fun(__S) -> __H = lists:foldl(fun(__C, __A) -> (__A * 33 + __C) band 16#FFFFFFFF end, 5381, unicode:characters_to_list(__S)), list_to_binary(string:lowercase(integer_to_list(__H, 16))) end)($0)""")]
+#[@External.Wasm("std:hash.contentHash")]
+pub declare fn contentHash(value: string) -> string;
+```
+
+**A wasm program writes std-wasm's text** (decision 441). Where std-wasm's
+answer differs from a JS engine's, a `--target wasm` program answers
+std-wasm's — the text of erlang, beam and the comptime: a float is OTP's
+`float_to_binary(F, [short])`, the shortest digits that read back as the same
+`f64`, in fixed notation or as `D.DDDeE` when that is shorter (`"${5.0}"` and
+`5.0.toString()` are `5.0`, `1e21` is `1.0e21`, `0.000001` is `1.0e-6`; `NaN`,
+`Infinity`, `-Infinity`, which only a wasm program's arithmetic makes, are
+those words), and `trim` removes space, tab, LF, CR, VT and FF (a no-break
+space stays). A wasm program and its own comptime agree. commonJS prints with
+the JS engine and keeps its text (`5`, `1e+21`).
+
+```botopink
+fn main() {
+    @print("${5.0} ${1e21}");
+    @print("[" + " a\t".trim() + "]");
+    // erlang, beam, wasm: 5.0 1.0e21, then [a]
+    // commonJS:           5 1e+21, then [a]
 }
 ```
 
@@ -3525,7 +3565,9 @@ an `i64` value is refused at the call.
 Anything else — another prefix, an opcode the backend does not bind, an opcode
 whose type differs from the signature, a `fn:` naming no private bodied fn of
 the module (or a `pub` one, or one of another signature), an adapter not in
-the list, a template with `$` markers — is an error at the annotation. No
+the list, a `std:` naming a function std-wasm does not implement or declared
+with other types, a template with `$` markers — is an error at the
+annotation; a `std:` one on every target, since the comptime reads it too. No
 runtime-helper name of the backend is part of a binding and nothing a binding
 writes names an address: there is no raw memory in the vocabulary. A
 `declare fn` with no `@External.Wasm` keeps the refusal above at its call.

@@ -18,8 +18,9 @@
 //!   (`declare fn`), an imported one, a std one — and with the function its
 //!   `@External.Wasm("fn:…")` binding names (`hostSupport`).
 //! - **The comptime runtime resolves each host function in order** (decision 434
-//!   (4), `forRuntime`): its std-wasm implementation (`modules/std-wasm`,
-//!   `stdWasm.functions`: `stdWasmSymbol`, `servedByStdWasm`), else the
+//!   (4), `forRuntime`): its std-wasm implementation — the export its
+//!   `@External.Wasm("std:<module>.<function>")` cell names (decision 440 (3),
+//!   `stdCell`, `servedByStdWasm`; there is no match by name) —, else the
 //!   beam-to-wasm translation of its `@External.Erlang` cell (or
 //!   `@External.Beam("module", "symbol")` pair: `erlangCellOf`,
 //!   `runtime/wat/cells.zig`, `callingCell`), else the botopink function its
@@ -433,10 +434,13 @@ pub fn forRuntime(arena: std.mem.Allocator, decls: []const ast.DeclKind) Error!S
     for (out) |*d| {
         if (d.* != .@"fn" or !isHost(d.@"fn")) continue;
         const f = d.@"fn";
-        if (stdWasmSymbol(f.name)) |sym| {
-            d.* = .{ .@"fn" = try servedByStdWasm(arena, f, sym) };
-            continue;
-        }
+        if (stdCell(f)) |cell| switch (cell) {
+            .ok => |e| {
+                d.* = .{ .@"fn" = try servedByStdWasm(arena, f, e) };
+                continue;
+            },
+            .unknown => |name| return .{ .refused = try noStdExport(arena, f, name) },
+        };
         // beam-to-wasm: the Erlang (or Beam) cell, translated — or refused.
         if (try erlangCellOf(arena, f)) |cell| switch (cell) {
             .ok => |module| {
@@ -489,24 +493,33 @@ fn unavailable(arena: std.mem.Allocator, f: ast.FnDecl, not_converted: ?[]const 
     return std.fmt.allocPrint(arena, "{s}: `{s}` is reached at comptime and has no std-wasm implementation, no @External.Erlang / @External.Beam cell for beam-to-wasm, and no @External.Wasm(\"fn:…\") cell — the three sources the comptime runtime answers by (decision 434)", .{ diagnostics.comptime_host_cell_unavailable, name });
 }
 
-/// The std-wasm symbol of the carried std function `name`
-/// (`__bp_std__hash__contentHash` → `hash__contentHash`), when std-wasm
-/// serves it (`stdWasm.functions`, decision 434 (2)).
-pub fn stdWasmSymbol(name: []const u8) ?[]const u8 {
-    if (!std.mem.startsWith(u8, name, std_prefix)) return null;
-    const rest = name[std_prefix.len..];
-    for (stdWasm.functions) |sf| if (std.mem.eql(u8, sf.symbol, rest)) return sf.symbol;
-    return null;
+/// What `f`'s `@External.Wasm("std:<module>.<function>")` cell names
+/// (decision 440 (3)): the std-wasm export, or the name when std-wasm has
+/// none of it (the checker refuses that at the annotation,
+/// `infer.refuseStdBinding`); null when `f` has no `std:` cell.
+pub fn stdCell(f: ast.FnDecl) ?union(enum) { ok: stdWasm.Export, unknown: []const u8 } {
+    const b = wasmBinding(f) orelse return null;
+    if (!std.mem.startsWith(u8, b.text, std_cell_prefix)) return null;
+    const name = b.text[std_cell_prefix.len..];
+    return if (stdWasm.find(name)) |e| .{ .ok = e } else .{ .unknown = name };
 }
 
-/// `f` as a call of the std-wasm export that implements it: its one cell
+/// The prefix of a binding std-wasm serves (decision 440 (3)).
+pub const std_cell_prefix = "std:";
+
+fn noStdExport(arena: std.mem.Allocator, f: ast.FnDecl, name: []const u8) Error![]const u8 {
+    return std.fmt.allocPrint(arena, "{s}: `{s}`'s @External.Wasm(\"std:{s}\") names no function std-wasm implements (decision 440)", .{ diagnostics.comptime_host_cell_unavailable, try display(arena, f.name), name });
+}
+
+/// `f` as a call of the std-wasm export its `std:` cell names: its one cell
 /// becomes `@External.Erlang("bp_std_wasm", "<symbol>")`, which the comptime
 /// module writes as `bp_std_wasm:<symbol>(…)` and the wat runtime's lowering
 /// calls as `rt_std_<symbol>`.
-fn servedByStdWasm(arena: std.mem.Allocator, f: ast.FnDecl, symbol: []const u8) Error!ast.FnDecl {
+fn servedByStdWasm(arena: std.mem.Allocator, f: ast.FnDecl, e: stdWasm.Export) Error!ast.FnDecl {
+    var buf: [128]u8 = undefined;
     const args = try arena.alloc([]const u8, 2);
     args[0] = try std.fmt.allocPrint(arena, "\"{s}\"", .{stdWasm.erlang_module});
-    args[1] = try std.fmt.allocPrint(arena, "\"{s}\"", .{symbol});
+    args[1] = try std.fmt.allocPrint(arena, "\"{s}\"", .{e.symbolInto(&buf)});
     const ann = try arena.alloc(ast.Annotation, 1);
     ann[0] = .{ .name = "External.Erlang", .args = args, .is_builtin = true };
     var out = f;
@@ -548,7 +561,10 @@ fn callOf(arena: std.mem.Allocator, f: ast.FnDecl, target: []const u8) Error!ast
 /// translation of its Erlang / Beam cell, its `@External.Wasm("fn:…")` cell.
 /// The answer is one for every target.
 pub fn unservedReason(arena: std.mem.Allocator, f: ast.FnDecl) Error!?[]const u8 {
-    if (stdWasmSymbol(f.name) != null) return null;
+    if (stdCell(f)) |cell| switch (cell) {
+        .ok => return null,
+        .unknown => |name| return try noStdExport(arena, f, name),
+    };
     if (try erlangCellOf(arena, f)) |cell| switch (cell) {
         .ok => return null,
         .refused => |why| return try unavailable(arena, f, why),
@@ -686,8 +702,14 @@ const CallWalk = struct {
     }
 };
 
-test "stdWasmSymbol: a carried std function std-wasm serves, by its mangled name" {
-    try std.testing.expectEqualStrings("hash__contentHash", stdWasmSymbol("__bp_std__hash__contentHash").?);
-    try std.testing.expect(stdWasmSymbol("__bp_std__hash__sha256") == null);
-    try std.testing.expect(stdWasmSymbol("contentHash") == null);
+test "stdCell: the export a std: cell names, and a name std-wasm lacks" {
+    var ann = [_]ast.Annotation{.{ .name = "External.Wasm", .args = &.{"\"std:hash.contentHash\""}, .is_builtin = true }};
+    const f: ast.FnDecl = .{ .isPub = true, .name = "contentHash", .genericParams = &.{}, .params = &.{}, .returnType = null, .body = &.{}, .annotations = &ann };
+    try std.testing.expectEqualStrings("hash.contentHash", stdCell(f).?.ok.name);
+    var bad = [_]ast.Annotation{.{ .name = "External.Wasm", .args = &.{"\"std:hash.sha256\""}, .is_builtin = true }};
+    const g: ast.FnDecl = .{ .isPub = true, .name = "sha256", .genericParams = &.{}, .params = &.{}, .returnType = null, .body = &.{}, .annotations = &bad };
+    try std.testing.expectEqualStrings("hash.sha256", stdCell(g).?.unknown);
+    var fnc = [_]ast.Annotation{.{ .name = "External.Wasm", .args = &.{"\"fn:body\""}, .is_builtin = true }};
+    const h: ast.FnDecl = .{ .isPub = true, .name = "h", .genericParams = &.{}, .params = &.{}, .returnType = null, .body = &.{}, .annotations = &fnc };
+    try std.testing.expect(stdCell(h) == null);
 }

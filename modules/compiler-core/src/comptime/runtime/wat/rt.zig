@@ -2144,10 +2144,12 @@ export fn rt_string_to_integer(t: T) T {
     return tuple(&.{ mkInt(v), strResult(t, s[i..]) });
 }
 
-// ── std functions std-wasm serves whole (`stdWasm.functions`) ───────────────
+// ── the functions std-wasm implements (`stdWasm.exports`) ───────────────────
 // One export per entry, `rt_std_<symbol>`: a comptime module's call
-// `bp_std_wasm:<symbol>(…)` lowers to it (`lower.zig`), so the std function
-// answers std-wasm's text instead of either of its cells.
+// `bp_std_wasm:<symbol>(…)` — what `host_cells.forRuntime` makes of a host
+// function whose `@External.Wasm("std:<module>.<function>")` cell names the
+// entry (decision 440 (3)) — lowers to it (`lower.zig`). A `string` crosses
+// as a binary, an `f64` as a float.
 
 export fn rt_std_hash__contentHash(t: T) T {
     const s = strArg(t) orelse return &nil_cell;
@@ -2156,10 +2158,31 @@ export fn rt_std_hash__contentHash(t: T) T {
     return binCopy(h);
 }
 
+export fn rt_std_text__trim(t: T) T {
+    const s = strArg(t) orelse return &nil_cell;
+    return binCopy(stdWasm.text.trim(s, .both));
+}
+
+export fn rt_std_text__trimStart(t: T) T {
+    const s = strArg(t) orelse return &nil_cell;
+    return binCopy(stdWasm.text.trim(s, .leading));
+}
+
+export fn rt_std_text__trimEnd(t: T) T {
+    const s = strArg(t) orelse return &nil_cell;
+    return binCopy(stdWasm.text.trim(s, .trailing));
+}
+
+export fn rt_std_number__floatToString(f: T) T {
+    if (tagOf(f) != .float) return badarg();
+    var buf: [64]u8 = undefined;
+    return binCopy(shortFloat(as(Float, f).value, &buf));
+}
+
 comptime {
-    // Every served function has its export here, by name.
-    for (stdWasm.functions) |f| {
-        if (!@hasDecl(@This(), "rt_std_" ++ f.symbol)) @compileError("std-wasm serves " ++ f.module ++ "." ++ f.name ++ " but rt.zig has no rt_std_" ++ f.symbol);
+    // Every function std-wasm implements has its export here, by name.
+    for (stdWasm.exports) |e| {
+        if (!@hasDecl(@This(), "rt_std_" ++ e.symbol())) @compileError("std-wasm implements " ++ e.name ++ " but rt.zig has no rt_std_" ++ e.symbol());
     }
 }
 

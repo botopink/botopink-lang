@@ -129,12 +129,13 @@ const Bif = struct { module: []const u8, name: []const u8, arity: usize, rt: []c
 
 const bifs = otp_bifs ++ std_wasm_bifs;
 
-/// The std functions std-wasm serves whole (`stdWasm.functions`): a call
-/// `bp_std_wasm:<symbol>(…)` — what `host_cells.forRuntime` makes of a std
-/// host function std-wasm implements — is the runtime's `rt_std_<symbol>`.
+/// The functions std-wasm implements (`stdWasm.exports`): a call
+/// `bp_std_wasm:<symbol>(…)` — what `host_cells.forRuntime` makes of a host
+/// function whose `std:` cell names one (decision 440 (3)) — is the
+/// runtime's `rt_std_<symbol>`.
 const std_wasm_bifs = blk: {
-    var out: [stdWasm.functions.len]Bif = undefined;
-    for (stdWasm.functions, 0..) |f, i| out[i] = .{ .module = stdWasm.erlang_module, .name = f.symbol, .arity = f.arity, .rt = "rt_std_" ++ f.symbol };
+    var out: [stdWasm.exports.len]Bif = undefined;
+    for (stdWasm.exports, 0..) |e, i| out[i] = .{ .module = stdWasm.erlang_module, .name = e.symbol(), .arity = e.params.len, .rt = "rt_std_" ++ e.symbol() };
     break :blk out;
 };
 

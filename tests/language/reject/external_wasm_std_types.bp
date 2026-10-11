@@ -1,0 +1,11 @@
+//// Decision 440 (3) — a `std:` binding takes exactly its function's types.
+//// std-wasm's `hash.contentHash` is `(string) -> string`; a declaration of
+//// other types is refused at the annotation, on every target.
+
+#[@External.Node("String")]
+#[@External.Wasm("std:hash.contentHash")]
+declare fn digestOf(x: i32) -> string;
+
+pub fn main() {
+    @print(digestOf(7));
+}

@@ -61,7 +61,7 @@ Measured over `tests/language` (four targets, `--cold`), `zig build test` and `z
 
 | Cell | Where | Erlang template | Wasm cell |
 |---|---|---|---|
-| `hash.contentHash` (std) | `run/decorator_host_cells`, `run/comptime_std_host_function`, `modules/decorator_imported_host_function`, `modules/hole_imported_val_known_at_build` | djb2 template | `fn:contentHashBody` — served by std-wasm first, never translated |
+| `hash.contentHash` (std) | `run/decorator_host_cells`, `run/comptime_std_host_function`, `modules/decorator_imported_host_function`, `modules/hole_imported_val_known_at_build` | djb2 template | `std:hash.contentHash` (was `fn:contentHashBody`, deleted by decision 440) — served by std-wasm first, never translated |
 | `bang` (test cell) | `run/decorator_host_cells`, `modules/decorator_imported_host_function`, `modules/decorator_erlang_cell_only`, `comptime/tests/decorator_invocation.zig` | `<<($0)/binary, "!">>` | `fn:bangBody` (absent in `decorator_erlang_cell_only`) |
 | `wrap` (test cell) | `modules/decorator_imported_host_function` | `<<"<", ($0)/binary, ">">>` | `fn:wrapBody` |
 

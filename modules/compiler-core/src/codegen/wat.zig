@@ -84,6 +84,8 @@ const watEmitter = @import("./wat/wat_emitter.zig");
 const wasmBinary = @import("./wat/wasm_binary_emitter.zig");
 const prelude = @import("./wat/wat_prelude.zig");
 const hostBinding = @import("./wat/host_binding.zig");
+const stdWasmLink = @import("./wat/std_wasm_link.zig");
+const stdWasm = @import("std_wasm");
 const hostFnBinding = @import("./hostFnBinding.zig");
 const lexerMod = @import("../lexer.zig");
 
@@ -1354,6 +1356,7 @@ fn emitWat(
         }
     }
 
+    const memory_at = items.items.len;
     try items.append(ar, .{ .memory = .{ .@"export" = "memory", .min_pages = 1 } });
 
     // The function table a lambda value indexes into.
@@ -1376,6 +1379,7 @@ fn emitWat(
         } });
     }
 
+    const heap_ptr_at = items.items.len;
     try items.append(ar, .{ .global = .{
         .name = "__heap_ptr",
         .ty = .i32,
@@ -1392,6 +1396,8 @@ fn emitWat(
     }
     if (em.float_eq_used) try items.append(ar, .{ .func = try em.floatEqFunc() });
 
+    // Decision 440 (2) — std-wasm's functions call the program's allocator.
+    if (em.std_exports.count() > 0) em.b.helpers.require(.alloc);
     for (prelude.order) |group| {
         if (!em.b.helpers.has(group)) continue;
         // `$__print_tagged_raw` asks the module which of its types answers its
@@ -1423,6 +1429,23 @@ fn emitWat(
         try items.appendSlice(ar, prelude.items(group));
     }
 
+    // Decision 440 (2) — the std-wasm functions the module calls, transpiled
+    // into it: decoded from `std_wasm.wasm` into the same model, its data
+    // placed after the module's own, its stack after the data, the heap
+    // after both. `$__f64_to_str` is `Float.toString`'s cell.
+    if (em.b.helpers.has(.f64_to_str)) try em.std_exports.put(em.alloc, stdMethodExport("Float", "toString").?, {});
+    if (em.std_exports.count() > 0) {
+        var diag: stdWasmLink.Diag = .{};
+        const linked_std = stdWasmLink.link(ar, em.std_exports.keys(), @intCast(em.next_data_offset), &diag) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.Malformed, error.Unsupported => return em.refuse(null, "std-wasm's program face cannot be transpiled into the module ({s}): {s}", .{ @errorName(err), diag.message }),
+        };
+        try items.append(ar, .{ .comment = "std-wasm (decision 440): its functions, transpiled from std_wasm.wasm" });
+        try items.appendSlice(ar, linked_std.items);
+        items.items[heap_ptr_at].global.init = try std.fmt.allocPrint(ar, "{d}", .{linked_std.end});
+        items.items[memory_at].memory.min_pages = @max(1, (linked_std.end + 65535) / 65536);
+    }
+
     // One model, two renderings: the text the snapshot records and the binary
     // an engine instantiates (`wasm_binary_emitter.zig`).
     const lowered: wat.Module = .{ .items = items.items };
@@ -1444,6 +1467,27 @@ fn emitWat(
     const binary = try wasmBinary.encodeModule(alloc, module);
     errdefer alloc.free(binary);
     return .{ .text = try aw.toOwnedSlice(), .binary = binary };
+}
+
+/// Decision 440 (3) — the primitive methods `primitives.bp` binds with a
+/// `#[@External.Wasm("std:…")]` cell, by the std-wasm function the cell
+/// names: the wasm codegen lowers each to a call of that function
+/// (`lowerStringMethod`; `Float.toString` through `$__f64_to_str`, which every
+/// float-to-text path calls). `codegen/tests/wat.zig` holds this table and
+/// the cells `primitives.bp` writes to each other.
+pub const std_method_exports = [_]struct { behavior: []const u8, method: []const u8, export_name: []const u8 }{
+    .{ .behavior = "String", .method = "trim", .export_name = "text.trim" },
+    .{ .behavior = "String", .method = "trimStart", .export_name = "text.trimStart" },
+    .{ .behavior = "String", .method = "trimEnd", .export_name = "text.trimEnd" },
+    .{ .behavior = "Float", .method = "toString", .export_name = "number.floatToString" },
+};
+
+/// The std-wasm function `behavior.method`'s `std:` cell names, or null.
+pub fn stdMethodExport(behavior: []const u8, method: []const u8) ?[]const u8 {
+    for (std_method_exports) |e| {
+        if (std.mem.eql(u8, e.behavior, behavior) and std.mem.eql(u8, e.method, method)) return e.export_name;
+    }
+    return null;
 }
 
 /// What `emitWat` renders a module to: the `.wat` text and the binary module.
@@ -1956,10 +2000,14 @@ const Emitter = struct {
     /// written, not lowered to a trap (see `lowerPlainCall`).
     external_missing: std.StringHashMap(void),
     /// Decision 238 — the `declare fn`s whose `#[@External.Wasm("…")]` reads
-    /// as one of the three forms (`checkHostBindings`), by the name the
+    /// as one of the four forms (decisions 238, 440) (`checkHostBindings`), by the name the
     /// module emits them under. Each is registered and emitted like a bodied
     /// `fn` (`registerFn`, `emitHostBinding`).
     host_bindings: std.StringHashMapUnmanaged(HostBound) = .empty,
+    /// Decision 440 — the std-wasm functions the module calls, by their
+    /// `std:` name (`text.trim`): a `std:` binding's, a primitive method's.
+    /// `emitWat` transpiles them into the module (`std_wasm_link.zig`).
+    std_exports: std.StringArrayHashMapUnmanaged(void) = .empty,
     /// Decision 392 — the state machine whose body is being lowered: an
     /// asynchronous function (`-> @Task<T>`, an `async { }` block) suspends
     /// at its `await`s (`lowerAwait`) and re-enters its statements by
@@ -2225,6 +2273,7 @@ const Emitter = struct {
         self.host_fns.deinit();
         self.external_missing.deinit();
         self.host_bindings.deinit(self.alloc);
+        self.std_exports.deinit(self.alloc);
         self.task_kinds.deinit(self.alloc);
         self.task_syms.deinit(self.alloc);
         self.aliases.deinit();
@@ -4170,8 +4219,8 @@ const Emitter = struct {
         }
     }
 
-    /// One `#[@External.Wasm(…)]` of `f`, read and checked (decision 238's
-    /// three forms); `from` indexes `linked` for a linked module's `fn`.
+    /// One `#[@External.Wasm(…)]` of `f`, read and checked (decisions 238 and 440:
+    /// its four forms); `from` indexes `linked` for a linked module's `fn`.
     fn checkHostBinding(
         self: *Emitter,
         f: ast.FnDecl,
@@ -4185,7 +4234,7 @@ const Emitter = struct {
         const ar = self.arena();
         self.foreign_origin = if (from < linked.len) linked[from].via else null;
         if (ext.module.len > 0)
-            return self.refuse(ann_loc, "`#[@External.Wasm(…)]` on `{s}` takes one string — `op:<opcode>`, `fn:<private fn of this module>` or `wasi:<adapter>`", .{f.name});
+            return self.refuse(ann_loc, "`#[@External.Wasm(…)]` on `{s}` takes one string — `op:<opcode>`, `fn:<private fn of this module>`, `wasi:<adapter>` or `std:<module>.<function>`", .{f.name});
         var slots: std.ArrayListUnmanaged(?hostBinding.Slot) = .empty;
         for (f.params) |p| {
             if (std.mem.eql(u8, p.name, "self")) continue;
@@ -4213,6 +4262,20 @@ const Emitter = struct {
             .ok => |b| b,
         };
         var bound: HostBound = .{ .binding = binding };
+        if (binding == .std_) {
+            // Decision 440 (3): the declaration's types are the function's,
+            // exactly (the checker refuses a mismatch on every target).
+            var spelled: std.ArrayListUnmanaged([]const u8) = .empty;
+            for (f.params) |p| {
+                if (std.mem.eql(u8, p.name, "self")) continue;
+                try spelled.append(ar, stdSpelling(p.typeRef));
+            }
+            const r: ?[]const u8 = if (f.returnType) |rt| stdSpelling(rt) else null;
+            if (!stdWasm.matches(binding.std_, spelled.items, r)) {
+                var buf: [128]u8 = undefined;
+                return self.refuse(ann_loc, "`#[@External.Wasm(\"{s}\")]` on `{s}`: std-wasm's `{s}` is `{s}`, and the declared parameters and return must be exactly those types", .{ ext.symbol, f.name, binding.std_.name, stdWasm.signatureText(binding.std_, &buf) });
+            }
+        }
         if (binding == .fn_) {
             const name = binding.fn_;
             const prog = if (from < linked.len) linked[from].program else own_program;
@@ -4302,6 +4365,22 @@ const Emitter = struct {
         };
     }
 
+    /// A call of the std-wasm function `name` (`text.trim`), which the module
+    /// then links (decision 440, `std_wasm_link.zig`).
+    fn stdCall(self: *Emitter, name: []const u8) !Instr {
+        try self.std_exports.put(self.alloc, name, {});
+        return .{ .call = try stdWasmLink.entryName(self.arena(), name) };
+    }
+
+    /// A written type as a `std:` binding's check spells it (decision 440
+    /// (3), `std_wasm.matches`): a plain name, anything else `another type`.
+    fn stdSpelling(t: ast.TypeRef) []const u8 {
+        return switch (t) {
+            .named => |n| n,
+            else => "another type",
+        };
+    }
+
     /// The function a bound `declare fn` lowers to — its declared name and
     /// signature (`registerFn` registered both), the parameters passed in
     /// order: `op:` applies the instruction to them, `fn:` calls the private
@@ -4322,6 +4401,7 @@ const Emitter = struct {
         const call: wat.Instr = switch (hb.binding) {
             .op => |op| hostBinding.instrOf(op),
             .fn_ => .{ .call = hb.target },
+            .std_ => |e| try self.stdCall(e.name),
             .wasi => |ad| blk: {
                 if (std.mem.eql(u8, ad.name, "random_f64")) break :blk self.builder().helper(.wasi_random_f64);
                 if (std.mem.eql(u8, ad.name, "seed_u32")) break :blk self.builder().helper(.wasi_seed_u32);
@@ -9564,9 +9644,9 @@ const Emitter = struct {
             try self.emit(try self.constInt(if (upper) @as(i32, -32) else 32));
             try self.emit(b.helper(.str_case));
         } else if (eq(u8, name, "trim") or eq(u8, name, "trimStart") or eq(u8, name, "trimEnd")) {
-            const mode: i32 = if (eq(u8, name, "trimStart")) 1 else if (eq(u8, name, "trimEnd")) 2 else 3;
-            try self.emit(try self.constInt(mode));
-            try self.emit(b.helper(.str_trim));
+            // Decision 441 — std-wasm's trim, which `primitives.bp`'s `std:`
+            // cells name (`std_method_exports`).
+            try self.emit(try self.stdCall(stdMethodExport("String", name).?));
         } else if (eq(u8, name, "toString")) {
             // already the string
         } else if (eq(u8, name, "lines")) {

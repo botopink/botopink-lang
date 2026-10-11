@@ -19,8 +19,9 @@
 //! The scratch layout the print helpers assume, below the data section (which
 //! starts at 256): `0..8` the WASI iovec, `8` the newline byte — and `9` the
 //! space of §7's `, ` separator, written beside it in one call —, `16..32` the
-//! bool text, `64..128` the i32 digits. A float's text is built in the
-//! `$__dtoa_ws` workspace, allocated once (§ an f64 as text).
+//! bool text, `64..128` the i32 digits. An integer's text is built in the
+//! `$__int_ws` workspace, allocated once (§ an integer as text); a float's is
+//! std-wasm's (`$__f64_to_str`, transpiled into the module — decision 440).
 
 const std = @import("std");
 const ast = @import("wat_ast.zig");
@@ -52,7 +53,7 @@ pub fn items(g: ast.HelperGroup) []const ast.Item {
         .unknown => &.{ .{ .func = unknown_kind }, .{ .func = unknown_int_in }, .{ .func = unknown_as_i32 }, .{ .func = unknown_as_f64 }, .{ .func = unknown_eq } },
         .print_unknown => &.{ .{ .func = print_unknown_raw }, .{ .func = print_unknown } },
         .wasi_seed_state => &.{ .{ .global = seed_state_global }, .{ .global = seeded_global } },
-        .dtoa => &dtoa_items,
+        .int_fmt => &int_fmt_items,
         .task => &.{
             .{ .global = task_head_global }, .{ .global = task_tail_global }, .{ .global = task_suspended_global },
             .{ .func = task_new },           .{ .func = task_start },         .{ .func = task_pending },
@@ -895,14 +896,12 @@ const print_f64 = ast.Func{
     } },
 };
 
-/// A float as commonJS prints it: `Number.isInteger(x) ? x.toFixed(1) :
-/// String(x)` (`$__f64_fmt` mode 1) — `5.0`, `0.30000000000000004`,
-/// `1e+21`, `NaN`. It wrote an integer part and six fraction digits, so
-/// `0.26642920868471265` printed `0.266429` and a float past `2^31` trapped.
-const print_f64_raw = typedFunc("__print_f64_raw", &.{.{ .name = "x", .ty = .f64 }}, null, i32s(&.{"n"}), &.{
-    getF("x"),             c32(1),         call("__f64_fmt"), set("n"),
-    call("__dtoa_ws"),     c32(dtoa_text), op("add"),         get("n"),
-    call("__write_bytes"),
+/// A float as a wasm program writes it: std-wasm's text (decision 441,
+/// `$__f64_to_str`) — `5.0`, `0.30000000000000004`, `1.0e21`.
+const print_f64_raw = typedFunc("__print_f64_raw", &.{.{ .name = "x", .ty = .f64 }}, null, i32s(&.{"s"}), &.{
+    getF("x"), call("__f64_to_str"), set("s"),
+    get("s"),  c32(4),               op("add"),
+    get("s"),  load(0),              call("__write_bytes"),
 });
 
 const arr_at = ast.Func{
@@ -1447,19 +1446,6 @@ const str_at = func("__str_at", &.{ "s", "i" }, .i32, &.{}, &.{
     c32(1),                                                       op("add"),  call("__str_slice"),
 });
 
-/// `mode` bit 1 trims the start, bit 2 the end (whitespace: ' ' \t \n \r).
-const str_trim = func("__str_trim", &.{ "s", "mode" }, .i32, i32s(&.{ "a", "b", "ch" }), &.{
-    get("s"),            load(0),  set("b"),
-    get("mode"),         c32(1),   op("and"),
-    when(&.{loop(&([_]Instr{ get("a"), get("b"), op("ge_u"), brk, get("s"), get("a"), op("add"), load8(4), set("ch") } ++
-        isSpace("ch") ++ [_]Instr{ op("eqz"), brk, get("a"), c32(1), op("add"), set("a"), again }))}),
-    get("mode"),         c32(2),   op("and"),
-    when(&.{loop(&([_]Instr{ get("b"), get("a"), op("le_u"), brk, get("s"), get("b"), op("add"), load8(3), set("ch") } ++
-        isSpace("ch") ++ [_]Instr{ op("eqz"), brk, get("b"), c32(1), op("sub"), set("b"), again }))}),
-    get("s"),            get("a"), get("b"),
-    call("__str_slice"),
-});
-
 /// Whether byte `i` of string `s` starts a UTF-8 codepoint (it is not a
 /// `10xxxxxx` continuation byte).
 fn leadByte(comptime i: []const u8) [7]Instr {
@@ -1880,40 +1866,34 @@ fn getF(comptime n: []const u8) Instr {
     return .{ .local_get = n };
 }
 
-/// The text a float **concatenated into a string** takes (`"x" + 0.1`,
-/// `x.toString()`), as a fresh string: JavaScript's `Number#toString` — the
-/// shortest decimal that reads back as the same `f64` (`0.30000000000000004`,
-/// `1e+21`, `5e-324`, `5` for `5.0`), what commonJS answers for the same value.
-/// It wrote an integer part and six fraction digits, and trapped on a float
-/// past `2^31`.
-const f64_to_str = typedFunc("__f64_to_str", &.{.{ .name = "x", .ty = .f64 }}, .i32, i32s(&.{ "n", "p" }), &.{
-    getF("x"),      c32(0),    call("__f64_fmt"), set("n"),
-    get("n"),       c32(4),    op("add"),         call("__alloc"),
-    set("p"),       get("p"),  get("n"),          store(0),
-    get("p"),       c32(4),    op("add"),         call("__dtoa_ws"),
-    c32(dtoa_text), op("add"), get("n"),          copy,
-    get("p"),
+/// A float's text as a fresh string — `"x" + 0.1`, `"${x}"`, `x.toString()`,
+/// and what `@print` writes: std-wasm's (decisions 440, 441), the text of
+/// erlang, beam and the comptime — OTP's `float_to_binary(x, [short])`:
+/// `5.0`, `0.30000000000000004`, `1.0e21`, `5.0e-324`; `NaN`, `Infinity`,
+/// `-Infinity` for the values only a wasm program's arithmetic makes. The
+/// function `Float.toString`'s `std:` cell names, transpiled into the module
+/// (`std_wasm_link.zig`); a module that calls this links it.
+const f64_to_str = typedFunc("__f64_to_str", &.{.{ .name = "x", .ty = .f64 }}, .i32, &.{}, &.{
+    getF("x"), call(std_float_to_string),
 });
 
-// ── an f64 as text: V8's `BignumDtoa`, shortest mode ─────────────────────────
-//
-// commonJS prints a float as `Number.isInteger(v) ? v.toFixed(1) : String(v)`
-// and concatenates it as `String(v)`. `String(v)` is the shortest digit string
-// that reads back as `v`, the closest such when several are as short, a tie
-// going to the even digit — what V8's `bignum-dtoa.cc` computes, transcribed
-// here step for step over 40-limb (1280-bit) unsigned integers, enough for the
-// widest scaled value (`5e-324`'s denominator is `2^1076`). The workspace is
-// allocated once (`$__dtoa_ws`), so printing a float allocates nothing:
-//
-//     0 numerator · 160 denominator · 320 delta− · 480 delta+ · 640 a temporary
-//     800 the decimal point (i32) · 804 the digits · 832 the text · 896..920 an
-//     integer's digits, written backwards
+/// The program function std-wasm's `number.floatToString` is emitted as
+/// (`std_wasm_link.entryName`).
+pub const std_float_to_string = "__std_number_floatToString";
 
-const big_bytes = 160;
-const dtoa_point = 800;
-const dtoa_digits = 804;
-const dtoa_text = 832;
-const dtoa_ws_bytes = 920;
+// ── an integer as text ───────────────────────────────────────────────────────
+//
+// An `i64`'s and a `u64`'s decimal digits are written in a workspace allocated
+// once (`$__int_ws`), so printing one allocates nothing:
+//
+//     0 the text (a sign and at most 20 digits) · 28..48 the digits, written
+//     backwards
+//
+// A float's text is std-wasm's (`$__f64_to_str`, decisions 440, 441): the
+// transcription of V8's `BignumDtoa` that wrote commonJS's text here is gone.
+
+const int_text = 0;
+const int_ws_bytes = 48;
 
 fn cF(comptime text: []const u8) Instr {
     return .{ .@"const" = .{ .ty = .f64, .text = text } };
@@ -1938,235 +1918,22 @@ fn loopAs(comptime out: []const u8, comptime cont: []const u8, comptime body: []
     const inner: Instr = .{ .block = .{ .kind = .loop, .label = cont, .body = seqOf(body, .none) } };
     return .{ .block = .{ .kind = .block, .label = out, .body = seqOf(&.{inner}, .none) } };
 }
-/// `a *= m` — a bignum by a word.
-fn bigMul(comptime a: []const u8, comptime m: comptime_int) [3]Instr {
-    return .{ get(a), c64(m), call("__big_mul") };
-}
 /// The text cursor `q` writes `ch` and steps.
 fn putc(comptime ch: comptime_int) [7]Instr {
     return .{ get("q"), c32(ch), store8(0), get("q"), c32(1), op("add"), set("q") };
 }
 
-const dtoa_ws_global = ast.Global{ .name = "__dtoa_ws", .ty = .i32, .mutable = true, .init = "0" };
+const int_ws_global = ast.Global{ .name = "__int_ws", .ty = .i32, .mutable = true, .init = "0" };
 
-const dtoa_ws = func("__dtoa_ws", &.{}, .i32, &.{}, &.{
-    .{ .global_get = "__dtoa_ws" },                                                  op("eqz"),
-    when(&.{ c32(dtoa_ws_bytes), call("__alloc"), .{ .global_set = "__dtoa_ws" } }), .{ .global_get = "__dtoa_ws" },
-});
-
-/// `a = v`.
-const big_set = typedFunc("__big_set", &.{ p32("a"), p64("v") }, null, &.{l32("i")}, &.{
-    loop(&.{ get("i"), c32(big_bytes), op("ge_u"), brk, get("a"), get("i"), op("add"), c32(0), store(0), get("i"), c32(4), op("add"), set("i"), again }),
-    get("a"),
-    get("v"),
-    cv("i32.wrap_i64"),
-    store(0),
-    get("a"),
-    get("v"),
-    c64(32),
-    op64("shr_u"),
-    cv("i32.wrap_i64"),
-    store(4),
-});
-
-/// `a *= m`, `m < 2^32`.
-const big_mul = typedFunc("__big_mul", &.{ p32("a"), p64("m") }, null, &.{ l32("i"), l64("t"), l64("c") }, &.{
-    loop(&.{
-        get("i"),               c32(big_bytes), op("ge_u"),         brk,
-        get("a"),               get("i"),       op("add"),          load(0),
-        cv("i64.extend_i32_u"), get("m"),       op64("mul"),        get("c"),
-        op64("add"),            set("t"),       get("a"),           get("i"),
-        op("add"),              get("t"),       cv("i32.wrap_i64"), store(0),
-        get("t"),               c64(32),        op64("shr_u"),      set("c"),
-        get("i"),               c32(4),         op("add"),          set("i"),
-        again,
-    }),
-});
-
-/// `a += b`.
-const big_add = func("__big_add", &.{ "a", "b" }, null, &.{ l32("i"), l64("t"), l64("c") }, &.{
-    loop(&.{
-        get("i"),               c32(big_bytes),         op("ge_u"),         brk,
-        get("a"),               get("i"),               op("add"),          load(0),
-        cv("i64.extend_i32_u"), get("b"),               get("i"),           op("add"),
-        load(0),                cv("i64.extend_i32_u"), op64("add"),        get("c"),
-        op64("add"),            set("t"),               get("a"),           get("i"),
-        op("add"),              get("t"),               cv("i32.wrap_i64"), store(0),
-        get("t"),               c64(32),                op64("shr_u"),      set("c"),
-        get("i"),               c32(4),                 op("add"),          set("i"),
-        again,
-    }),
-});
-
-/// `a -= b`, `a >= b`. A negative difference borrows: its sign bit is the borrow.
-const big_sub = func("__big_sub", &.{ "a", "b" }, null, &.{ l32("i"), l64("t"), l64("c") }, &.{
-    loop(&.{
-        get("i"),               c32(big_bytes),         op("ge_u"),         brk,
-        get("a"),               get("i"),               op("add"),          load(0),
-        cv("i64.extend_i32_u"), get("b"),               get("i"),           op("add"),
-        load(0),                cv("i64.extend_i32_u"), op64("sub"),        get("c"),
-        op64("sub"),            set("t"),               get("a"),           get("i"),
-        op("add"),              get("t"),               cv("i32.wrap_i64"), store(0),
-        get("t"),               c64(63),                op64("shr_u"),      set("c"),
-        get("i"),               c32(4),                 op("add"),          set("i"),
-        again,
-    }),
-});
-
-/// `-1` / `0` / `1` as `a` is below, equal to or above `b`.
-const big_cmp = func("__big_cmp", &.{ "a", "b" }, .i32, i32s(&.{ "i", "x", "y" }), &.{
-    c32(big_bytes), set("i"),
-    loop(&.{
-        get("i"),                op("eqz"),  brk,
-        get("i"),                c32(4),     op("sub"),
-        set("i"),                get("a"),   get("i"),
-        op("add"),               load(0),    set("x"),
-        get("b"),                get("i"),   op("add"),
-        load(0),                 set("y"),   get("x"),
-        get("y"),                op("lt_u"), when(&.{ c32(-1), ret }),
-        get("x"),                get("y"),   op("gt_u"),
-        when(&.{ c32(1), ret }), again,
-    }),
-    c32(0),
-});
-
-/// `cmp(a + b, c)`, the sum built in `t`.
-const big_pcmp = func("__big_pcmp", &.{ "a", "b", "c", "t" }, .i32, &.{}, &.{
-    get("t"), get("a"),          c32(big_bytes),    copy,
-    get("t"), get("b"),          call("__big_add"), get("t"),
-    get("c"), call("__big_cmp"),
-});
-
-/// `a <<= n`.
-const big_shl = func("__big_shl", &.{ "a", "n" }, null, &.{}, &.{
-    loop(&.{ get("n"), c32(31), op("lt_s"), brk, get("a"), c64(2147483648), call("__big_mul"), get("n"), c32(31), op("sub"), set("n"), again }),
-    get("a"),
-    c64(1),
-    get("n"),
-    cv("i64.extend_i32_u"),
-    op64("shl"),
-    call("__big_mul"),
-});
-
-/// `a *= 10^n`.
-const big_pow10 = func("__big_pow10", &.{ "a", "n" }, null, &.{}, &.{
-    loop(&.{ get("n"), c32(9), op("lt_s"), brk, get("a"), c64(1000000000), call("__big_mul"), get("n"), c32(9), op("sub"), set("n"), again }),
-    loop(&.{ get("n"), op("eqz"), brk, get("a"), c64(10), call("__big_mul"), get("n"), c32(1), op("sub"), set("n"), again }),
-});
-
-/// The shortest digits of a finite `v > 0` (V8's `BignumDtoa`, shortest mode):
-/// the digits at `dtoa_digits`, their count answered, the decimal point at
-/// `dtoa_point` — `v = 0.d1d2… × 10^point`.
-const dtoa = typedFunc("__dtoa", &.{.{ .name = "v", .ty = .f64 }}, .i32, &.{
-    l32("w"),    l32("n"),    l32("d"),  l32("m"),   l32("p"),   l32("t"),  l32("bexp"), l32("e"),  l32("ne"),
-    l32("near"), l32("even"), l32("k"),  l32("len"), l32("dig"), l32("lo"), l32("hi"),   l32("cc"), l64("bits"),
-    l64("mant"), l64("f"),    l64("nf"),
-}, &.{
-    call("__dtoa_ws"),       tee("w"),                                                                                                                  set("n"),
-    get("w"),                c32(big_bytes),                                                                                                            op("add"),
-    set("d"),                get("w"),                                                                                                                  c32(2 * big_bytes),
-    op("add"),               set("m"),                                                                                                                  get("w"),
-    c32(3 * big_bytes),      op("add"),                                                                                                                 set("p"),
-    get("w"),                c32(4 * big_bytes),                                                                                                        op("add"),
-    set("t"),                getF("v"),                                                                                                                 cv("i64.reinterpret_f64"),
-    set("bits"),             get("bits"),                                                                                                               c64(52),
-    op64("shr_u"),           cv("i32.wrap_i64"),                                                                                                        c32(2047),
-    op("and"),               set("bexp"),                                                                                                               get("bits"),
-    c64(0xFFFFFFFFFFFFF),    op64("and"),                                                                                                               set("mant"),
-    get("bexp"),             op("eqz"),
-    whenElse(
-        &.{ get("mant"), set("f"), c32(-1074), set("e") },
-        &.{ get("mant"), c64(1 << 52), op64("or"), set("f"), get("bexp"), c32(1075), op("sub"), set("e") },
-    ),
-    // The lower boundary is half as far when `f` is a bare power of two above
-    // the smallest normal; a tie reads back as `v` when `f` is even.
-    get("mant"),             op64("eqz"),                                                                                                               get("bexp"),
-    c32(1),                  op("gt_s"),                                                                                                                op("and"),
-    set("near"),             get("f"),                                                                                                                  c64(1),
-    op64("and"),             op64("eqz"),                                                                                                               set("even"),
-    // `EstimatePower` over the normalised exponent: the decimal point, or one less.
-    get("f"),                set("nf"),                                                                                                                 get("e"),
-    set("ne"),
-    loop(&.{
-        get("nf"), c64(1 << 52), op64("and"), op64("eqz"), op("eqz"), brk,
-        get("nf"), c64(1),       op64("shl"), set("nf"),   get("ne"), c32(1),
-        op("sub"), set("ne"),    again,
-    }),
-    get("ne"),               c32(52),                                                                                                                   op("add"),
-    cv("f64.convert_i32_s"), cF("0.30102999566398114"),                                                                                                 opF("mul"),
-    cF("1e-10"),             opF("sub"),                                                                                                                opF("ceil"),
-    cv("i32.trunc_f64_s"),   set("k"),
-    // `InitialScaledStartValues`: numerator / denominator = v / 10^k, the
-    // deltas the distance to each boundary, all doubled.
-                                                                                                                     get("e"),
-    c32(0),                  op("ge_s"),
-    whenElse(&.{
-        get("n"),          get("f"),          call("__big_set"), get("n"),          get("e"),          c32(1),              op("add"),         call("__big_shl"),
-        get("d"),          c64(1),            call("__big_set"), get("d"),          get("k"),          call("__big_pow10"), get("d"),          c32(1),
-        call("__big_shl"), get("p"),          c64(1),            call("__big_set"), get("p"),          get("e"),            call("__big_shl"), get("m"),
-        c64(1),            call("__big_set"), get("m"),          get("e"),          call("__big_shl"),
-    }, &.{
-        get("k"), c32(0), op("ge_s"),
-        whenElse(&.{
-            get("n"), get("f"),          call("__big_set"), get("n"),  c32(1),            call("__big_shl"),
-            get("d"), c64(1),            call("__big_set"), get("d"),  get("k"),          call("__big_pow10"),
-            get("d"), c32(1),            get("e"),          op("sub"), call("__big_shl"), get("p"),
-            c64(1),   call("__big_set"), get("m"),          c64(1),    call("__big_set"),
-        }, &.{
-            get("p"), c64(1),            call("__big_set"), get("p"),            c32(0),   get("k"),  op("sub"),         call("__big_pow10"),
-            get("m"), get("p"),          c32(big_bytes),    copy,                get("n"), get("f"),  call("__big_set"), get("n"),
-            c32(0),   get("k"),          op("sub"),         call("__big_pow10"), get("n"), c32(1),    call("__big_shl"), get("d"),
-            c64(1),   call("__big_set"), get("d"),          c32(1),              get("e"), op("sub"), call("__big_shl"),
-        }),
-    }),
-    get("near"),             when(&.{ get("n"), c32(1), call("__big_shl"), get("d"), c32(1), call("__big_shl"), get("p"), c32(1), call("__big_shl") }),
-    // `FixupMultiply10`: the estimate was one short when numerator + delta+
-    // already reaches the denominator.
-    get("n"),
-    get("p"),                get("d"),                                                                                                                  get("t"),
-    call("__big_pcmp"),      get("even"),                                                                                                               op("add"),
-    c32(0),                  op("gt_s"),                                                                                                                whenElse(&.{ get("k"), c32(1), op("add"), set("k") }, &(bigMul("n", 10) ++ bigMul("m", 10) ++ bigMul("p", 10))),
-    // `GenerateShortestDigits`.
-    loopAs("gbrk", "gcont", &([_]Instr{
-        c32(0),                                                                                                                                                              set("dig"),
-        loop(&.{ get("n"), get("d"), call("__big_cmp"), c32(0), op("lt_s"), brk, get("n"), get("d"), call("__big_sub"), get("dig"), c32(1), op("add"), set("dig"), again }), get("w"),
-        c32(dtoa_digits),                                                                                                                                                    op("add"),
-        get("len"),                                                                                                                                                          op("add"),
-        get("dig"),                                                                                                                                                          c32('0'),
-        op("add"),                                                                                                                                                           store8(0),
-        get("len"),                                                                                                                                                          c32(1),
-        op("add"),                                                                                                                                                           set("len"),
-        get("n"),                                                                                                                                                            get("m"),
-        call("__big_cmp"),                                                                                                                                                   get("even"),
-        op("lt_s"),                                                                                                                                                          set("lo"),
-        get("n"),                                                                                                                                                            get("p"),
-        get("d"),                                                                                                                                                            get("t"),
-        call("__big_pcmp"),                                                                                                                                                  get("even"),
-        op("add"),                                                                                                                                                           c32(0),
-        op("gt_s"),                                                                                                                                                          set("hi"),
-        get("lo"),                                                                                                                                                           get("hi"),
-        op("or"),                                                                                                                                                            .{ .br_if = "gbrk" },
-    } ++ bigMul("n", 10) ++ bigMul("m", 10) ++ bigMul("p", 10) ++ [_]Instr{.{ .br = "gcont" }})),
-    // Both boundaries in reach: round by the remainder, a tie to the even digit.
-    get("lo"),               get("hi"),                                                                                                                 op("and"),
-    when(&.{
-        get("n"),  get("n"),  get("d"),   get("t"),  call("__big_pcmp"), set("cc"),
-        get("cc"), c32(0),    op("gt_s"), get("cc"), op("eqz"),          get("dig"),
-        c32(1),    op("and"), op("and"),  op("or"),  set("hi"),
-    }),
-    get("hi"),
-    when(&.{
-        get("w"), c32(dtoa_digits - 1), op("add"), get("len"), op("add"), tee("t"),
-        get("t"), load8(0),             c32(1),    op("add"),  store8(0),
-    }),
-    get("w"),                get("k"),                                                                                                                  store(dtoa_point),
-    get("len"),
+const int_ws = func("__int_ws", &.{}, .i32, &.{}, &.{
+    .{ .global_get = "__int_ws" },                                                 op("eqz"),
+    when(&.{ c32(int_ws_bytes), call("__alloc"), .{ .global_set = "__int_ws" } }), .{ .global_get = "__int_ws" },
 });
 
 /// The decimal digits of the unsigned `v` at `q`, zero-padded to `width`;
 /// answers the address past them.
 const fmt_u64 = typedFunc("__fmt_u64", &.{ p32("q"), p64("v"), p32("width") }, .i32, i32s(&.{ "t", "cnt" }), &.{
-    call("__dtoa_ws"), c32(dtoa_ws_bytes), op("add"),  set("t"),
+    call("__int_ws"), c32(int_ws_bytes), op("add"),  set("t"),
     loop(&.{
         get("t"),           c32(1),      op("sub"),     set("t"),
         get("t"),           get("v"),    c64(10),       op64("rem_u"),
@@ -2176,112 +1943,22 @@ const fmt_u64 = typedFunc("__fmt_u64", &.{ p32("q"), p64("v"), p32("width") }, .
         get("v"),           op64("eqz"), get("cnt"),    get("width"),
         op("ge_s"),         op("and"),   brk,           again,
     }),
-    get("q"),          get("t"),           get("cnt"), copy,
-    get("q"),          get("cnt"),         op("add"),
+    get("q"),         get("t"),          get("cnt"), copy,
+    get("q"),         get("cnt"),        op("add"),
 });
 
-/// `x` as text at `dtoa_text`, its length answered. `mode` 0 is
-/// `String(x)`; `mode` 1 is what `@print` writes on commonJS,
-/// `Number.isInteger(x) ? x.toFixed(1) : String(x)` — a whole number below
-/// `1e21` in all its digits and `.0` (`-0` is `0.0`), exact past `2^53`.
-const f64_fmt = typedFunc("__f64_fmt", &.{ .{ .name = "x", .ty = .f64 }, p32("mode") }, .i32, &.{
-    l32("w"), l32("q"), l32("len"), l32("pt"), l32("dig"), l32("i"), l32("e"), l64("bits"), l64("f"), l64("a"), l64("c"),
-}, &.{
-    call("__dtoa_ws"), tee("w"),     c32(dtoa_text),                                                    op("add"),                                                                                                                 set("q"),
-    getF("x"),         getF("x"),    opF("ne"),                                                         when(&(putc('N') ++ putc('a') ++ putc('N') ++ [_]Instr{ get("q"), get("w"), c32(dtoa_text), op("add"), op("sub"), ret })), get("mode"),
-    getF("x"),         opF("floor"), getF("x"),                                                         opF("eq"),                                                                                                                 op("and"),
-    getF("x"),         opF("abs"),   cF("1e21"),                                                        opF("lt"),                                                                                                                 op("and"),
-    when(&([_]Instr{
-        getF("x"), cF("0"),                   opF("lt"), when(&(putc('-') ++ [_]Instr{ getF("x"), opF("neg"), set("x") })),
-        getF("x"), cF("9223372036854775808"), opF("lt"),
-        whenElse(&.{ get("q"), getF("x"), cv("i64.trunc_f64_s"), c32(1), call("__fmt_u64"), set("q") }, &.{
-            // `f * 2^e` with `e <= 17`: split `f` at `10^10` so each half's
-            // product stays below `2^64`.
-            getF("x"),              cv("i64.reinterpret_f64"), set("bits"),
-            get("bits"),            c64(0xFFFFFFFFFFFFF),      op64("and"),
-            c64(1 << 52),           op64("or"),                set("f"),
-            get("bits"),            c64(52),                   op64("shr_u"),
-            cv("i32.wrap_i64"),     c32(1075),                 op("sub"),
-            set("e"),               get("f"),                  c64(10000000000),
-            op64("div_u"),          get("e"),                  cv("i64.extend_i32_u"),
-            op64("shl"),            set("a"),                  get("f"),
-            c64(10000000000),       op64("rem_u"),             get("e"),
-            cv("i64.extend_i32_u"), op64("shl"),               set("c"),
-            get("q"),               get("a"),                  get("c"),
-            c64(10000000000),       op64("div_u"),             op64("add"),
-            c32(1),                 call("__fmt_u64"),         set("q"),
-            get("q"),               get("c"),                  c64(10000000000),
-            op64("rem_u"),          c32(10),                   call("__fmt_u64"),
-            set("q"),
-        }),
-    } ++ putc('.') ++ putc('0') ++ [_]Instr{ get("q"), get("w"), c32(dtoa_text), op("add"), op("sub"), ret })),
-    getF("x"),         cF("0"),      opF("eq"),                                                         when(&(putc('0') ++ [_]Instr{ c32(1), ret })),                                                                             getF("x"),
-    cF("0"),           opF("lt"),    when(&(putc('-') ++ [_]Instr{ getF("x"), opF("neg"), set("x") })), getF("x"),                                                                                                                 cF("inf"),
-    opF("eq"),
-    whenElse(&(putc('I') ++ putc('n') ++ putc('f') ++ putc('i') ++ putc('n') ++ putc('i') ++ putc('t') ++ putc('y')), &.{
-        getF("x"),  call("__dtoa"),   set("len"),
-        get("w"),   load(dtoa_point), set("pt"),
-        get("w"),   c32(dtoa_digits), op("add"),
-        set("dig"), get("len"),       get("pt"),
-        op("le_s"), get("pt"),        c32(21),
-        op("le_s"), op("and"),
-        whenElse(&.{
-            // `123000`
-            get("q"),   get("dig"), get("len"),                                                                                                                         copy, get("q"), get("len"), op("add"), set("q"),
-            get("len"), set("i"),   loop(&([_]Instr{ get("i"), get("pt"), op("ge_s"), brk } ++ putc('0') ++ [_]Instr{ get("i"), c32(1), op("add"), set("i"), again })),
-        }, &.{
-            get("pt"), c32(0), op("gt_s"), get("pt"), c32(21), op("le_s"), op("and"),
-            whenElse(&([_]Instr{
-                // `12.5`
-                get("q"), get("dig"), get("pt"), copy, get("q"), get("pt"), op("add"), set("q"),
-            } ++ putc('.') ++ [_]Instr{
-                get("q"), get("dig"), get("pt"), op("add"), get("len"), get("pt"), op("sub"), copy,
-                get("q"), get("len"), get("pt"), op("sub"), op("add"),  set("q"),
-            }), &.{
-                get("pt"), c32(-6), op("gt_s"), get("pt"), c32(0), op("le_s"), op("and"),
-                whenElse(&(putc('0') ++ putc('.') ++ [_]Instr{
-                    // `0.000125`
-                    get("pt"),                                                                                                                       set("i"),
-                    loop(&([_]Instr{ get("i"), c32(0), op("ge_s"), brk } ++ putc('0') ++ [_]Instr{ get("i"), c32(1), op("add"), set("i"), again })), get("q"),
-                    get("dig"),                                                                                                                      get("len"),
-                    copy,                                                                                                                            get("q"),
-                    get("len"),                                                                                                                      op("add"),
-                    set("q"),
-                }), &([_]Instr{
-                    // `1.25e+21`, `5e-324`
-                    get("q"),   get("dig"), c32(1),     copy, get("q"), c32(1), op("add"), set("q"),
-                    get("len"), c32(1),     op("gt_s"),
-                    when(&(putc('.') ++ [_]Instr{
-                        get("q"), get("dig"), c32(1), op("add"), get("len"), c32(1),   op("sub"), copy,
-                        get("q"), get("len"), c32(1), op("sub"), op("add"),  set("q"),
-                    })),
-                } ++ putc('e') ++ [_]Instr{
-                    get("pt"),         c32(1),   op("sub"),              set("i"),
-                    get("i"),          c32(0),   op("lt_s"),             whenElse(&(putc('-') ++ [_]Instr{ c32(0), get("i"), op("sub"), set("i") }), &putc('+')),
-                    get("q"),          get("i"), cv("i64.extend_i32_u"), c32(1),
-                    call("__fmt_u64"), set("q"),
-                })),
-            }),
-        }),
-    }),
-    get("q"),          get("w"),     c32(dtoa_text),                                                    op("add"),                                                                                                                 op("sub"),
-});
-
-/// The `i64` `v` as decimal text at `dtoa_text`, its length answered — a
+/// The `i64` `v` as decimal text at `int_text`, its length answered — a
 /// `-` and the magnitude, which `$__fmt_u64` writes unsigned, so `-2^63`
 /// (its own negation) prints whole.
 const i64_fmt = typedFunc("__i64_fmt", &.{p64("v")}, .i32, i32s(&.{ "w", "q" }), &.{
-    call("__dtoa_ws"), tee("w"),  c32(dtoa_text),    op("add"),                                                                 set("q"),
-    get("v"),          c64(0),    op64("lt_s"),      when(&(putc('-') ++ [_]Instr{ c64(0), get("v"), op64("sub"), set("v") })), get("q"),
-    get("v"),          c32(1),    call("__fmt_u64"), get("w"),                                                                  c32(dtoa_text),
-    op("add"),         op("sub"),
+    call("__int_ws"), tee("w"),  c32(int_text),     op("add"),                                                                 set("q"),
+    get("v"),         c64(0),    op64("lt_s"),      when(&(putc('-') ++ [_]Instr{ c64(0), get("v"), op64("sub"), set("v") })), get("q"),
+    get("v"),         c32(1),    call("__fmt_u64"), get("w"),                                                                  c32(int_text),
+    op("add"),        op("sub"),
 });
 
-const dtoa_items = [_]ast.Item{
-    .{ .global = dtoa_ws_global }, .{ .func = dtoa_ws },   .{ .func = big_set }, .{ .func = big_mul },
-    .{ .func = big_add },          .{ .func = big_sub },   .{ .func = big_cmp }, .{ .func = big_pcmp },
-    .{ .func = big_shl },          .{ .func = big_pow10 }, .{ .func = dtoa },    .{ .func = fmt_u64 },
-    .{ .func = f64_fmt },          .{ .func = i64_fmt },
+const int_fmt_items = [_]ast.Item{
+    .{ .global = int_ws_global }, .{ .func = int_ws }, .{ .func = fmt_u64 }, .{ .func = i64_fmt },
 };
 
 // ── integer arithmetic that refuses to wrap ──────────────────────────────────
@@ -2344,8 +2021,8 @@ const int_chk_items = [_]ast.Item{
 /// An `i64` printed in all its digits. It was lowered as an `i32`:
 /// `val a: i64 = 4294967295` printed `-1`.
 const print_i64_raw = typedFunc("__print_i64_raw", &.{p64("v")}, null, i32s(&.{"n"}), &.{
-    get("v"),       call("__i64_fmt"), set("n"), call("__dtoa_ws"),
-    c32(dtoa_text), op("add"),         get("n"), call("__write_bytes"),
+    get("v"),      call("__i64_fmt"), set("n"), call("__int_ws"),
+    c32(int_text), op("add"),         get("n"), call("__write_bytes"),
 });
 const print_i64 = typedFunc("__print_i64", &.{p64("v")}, null, &.{}, &.{ get("v"), call("__print_i64_raw"), call("__print_nl") });
 
@@ -2355,8 +2032,8 @@ const i64_to_str = typedFunc("__i64_to_str", &.{p64("v")}, .i32, i32s(&.{ "n", "
     get("n"),        c32(4),            op("add"),
     call("__alloc"), set("p"),          get("p"),
     get("n"),        store(0),          get("p"),
-    c32(4),          op("add"),         call("__dtoa_ws"),
-    c32(dtoa_text),  op("add"),         get("n"),
+    c32(4),          op("add"),         call("__int_ws"),
+    c32(int_text),   op("add"),         get("n"),
     copy,            get("p"),
 });
 
@@ -2367,16 +2044,16 @@ const i64_to_str = typedFunc("__i64_to_str", &.{p64("v")}, .i32, i32s(&.{ "n", "
 // and `10^19 - 3·10^18` trapped in `$__i64_sub_chk`. Its digits, its checked
 // `+ - *` and (in `wat.zig`) its `/ % < > <= >=` read the bits unsigned.
 
-/// The `u64` `v` as decimal text at `dtoa_text`, its length answered.
+/// The `u64` `v` as decimal text at `int_text`, its length answered.
 const u64_fmt = typedFunc("__u64_fmt", &.{p64("v")}, .i32, i32s(&.{"w"}), &.{
-    call("__dtoa_ws"), tee("w"),  c32(dtoa_text),    op("add"),
-    get("v"),          c32(1),    call("__fmt_u64"), get("w"),
-    c32(dtoa_text),    op("add"), op("sub"),
+    call("__int_ws"), tee("w"),  c32(int_text),     op("add"),
+    get("v"),         c32(1),    call("__fmt_u64"), get("w"),
+    c32(int_text),    op("add"), op("sub"),
 });
 
 const print_u64_raw = typedFunc("__print_u64_raw", &.{p64("v")}, null, i32s(&.{"n"}), &.{
-    get("v"),       call("__u64_fmt"), set("n"), call("__dtoa_ws"),
-    c32(dtoa_text), op("add"),         get("n"), call("__write_bytes"),
+    get("v"),      call("__u64_fmt"), set("n"), call("__int_ws"),
+    c32(int_text), op("add"),         get("n"), call("__write_bytes"),
 });
 const print_u64 = typedFunc("__print_u64", &.{p64("v")}, null, &.{}, &.{ get("v"), call("__print_u64_raw"), call("__print_nl") });
 
@@ -2386,8 +2063,8 @@ const u64_to_str = typedFunc("__u64_to_str", &.{p64("v")}, .i32, i32s(&.{ "n", "
     get("n"),        c32(4),            op("add"),
     call("__alloc"), set("p"),          get("p"),
     get("n"),        store(0),          get("p"),
-    c32(4),          op("add"),         call("__dtoa_ws"),
-    c32(dtoa_text),  op("add"),         get("n"),
+    c32(4),          op("add"),         call("__int_ws"),
+    c32(int_text),   op("add"),         get("n"),
     copy,            get("p"),
 });
 

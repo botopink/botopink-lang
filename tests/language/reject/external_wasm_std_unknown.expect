@@ -1,0 +1,2 @@
+`#[@External.Wasm("std:math.floorOf")]` on `floorOf`: std-wasm implements no `math.floorOf` (decision 440)
+6:3

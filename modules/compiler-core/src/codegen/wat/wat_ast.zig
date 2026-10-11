@@ -79,15 +79,35 @@ pub const Stack = union(enum) {
 
 // ── instructions ─────────────────────────────────────────────────────────────
 
-/// The access width of a load/store. `.byte` is `…8_u` (load) / `…8` (store);
-/// there is no signed byte load in this backend.
-pub const Width = enum { full, byte };
+/// The access width of a load/store: the value type's own, or 8 / 16 / 32
+/// bits (`…8_u` / `…16_u` / `…32_u` on a load, `…8` / `…16` / `…32` on a
+/// store). The lowering only writes `.full` and `.byte`; the narrower ones
+/// and a signed load are std-wasm's code, decoded (decision 440 (2)).
+pub const Width = enum {
+    full,
+    byte,
+    half,
+    word,
+
+    /// The bits a narrow access moves, null for `.full`.
+    pub fn bits(w: Width) ?u8 {
+        return switch (w) {
+            .full => null,
+            .byte => 8,
+            .half => 16,
+            .word => 32,
+        };
+    }
+};
 
 /// The immediate of a memory access. `align=` is never spelled — every access
-/// this backend emits uses the natural alignment.
+/// takes the natural alignment of its width (an alignment is a hint; a
+/// narrower one is never needed for the access to be valid).
 pub const MemArg = struct {
     ty: ValType = .i32,
     width: Width = .full,
+    /// A narrow load that sign-extends (`…_s`); `…_u` otherwise.
+    signed: bool = false,
     offset: u32 = 0,
 };
 
@@ -119,6 +139,12 @@ pub const Instr = union(enum) {
     @"return",
     @"unreachable",
     memory_copy,
+    /// `memory.fill` — `dst`, `byte`, `len` (bulk memory, as `memory_copy`).
+    memory_fill,
+    /// `select` — the first operand if the third is non-zero, else the second.
+    select,
+    /// `br_table` — the label the popped index picks, `default` past the end.
+    br_table: BrTable,
     /// `memory.size` — the memory's size in 64 KiB pages (decision 261).
     memory_size,
     /// `memory.grow` — grow by the popped page count; answers the old size,
@@ -132,6 +158,7 @@ pub const Instr = union(enum) {
 
     pub const Const = struct { ty: ValType, text: []const u8 };
     pub const Op = struct { ty: ValType, name: []const u8 };
+    pub const BrTable = struct { labels: []const []const u8, default: []const u8 };
 };
 
 /// `(if [(result t)] (then …) [(else …)])`.
@@ -141,6 +168,9 @@ pub const Instr = union(enum) {
 /// zero-arm, and an arm that pushes nothing under a `(result …)` is exactly
 /// the "values left on the stack" class of defect.
 pub const If = struct {
+    /// `(if $label …)` — the name a branch out of the `if` uses. The lowering
+    /// never branches out of an `if`; decoded code may.
+    label: ?[]const u8 = null,
     result: ?ValType = null,
     then: Arm,
     @"else": ?Arm = null,
@@ -247,10 +277,12 @@ pub const Memory = struct {
 
 /// `(data (i32.const offset) "…")`. The emitter writes `len_prefix` as four
 /// escaped little-endian bytes and then escapes `bytes` — the length-prefixed
-/// string layout the whole backend assumes.
+/// string layout the whole backend assumes. A segment with no prefix (`null`)
+/// is raw bytes: std-wasm's data, placed where its code reads it (decision
+/// 440 (2)).
 pub const DataSegment = struct {
     offset: u32,
-    len_prefix: u32,
+    len_prefix: ?u32,
     bytes: []const u8,
 };
 
@@ -428,7 +460,6 @@ pub const HelperGroup = enum {
     str_index_of,
     str_starts_with,
     str_ends_with,
-    str_trim,
     str_split,
     str_repeat,
     arr_new,
@@ -529,10 +560,10 @@ pub const HelperGroup = enum {
     wasi_seed_u32,
     /// `$__wasi_seeded_f64()` — `wasi:seeded_f64`.
     wasi_seeded_f64,
-    /// An `f64` as text (V8's `BignumDtoa`, shortest): the `$__dtoa_ws`
-    /// workspace global, the bignum steps `$__big_*`, `$__dtoa`, `$__fmt_u64`
-    /// and `$__f64_fmt(x, mode)` — `String(x)` (`0`) or commonJS's print form (`1`).
-    dtoa,
+    /// An integer's decimal digits: the `$__int_ws` workspace global and
+    /// function, `$__fmt_u64` and `$__i64_fmt`. A float's text is std-wasm's
+    /// (`$__f64_to_str`, decisions 440, 441).
+    int_fmt,
     /// `$__box_f64(x)` — a float's 8-byte cell, the word a float slot holds.
     box_f64,
     /// `$__arr_index_of_f64` / `$__arr_last_index_of_f64` — `f64.eq` over the cells.
@@ -617,12 +648,12 @@ pub const HelperGroup = enum {
         return switch (g) {
             .print_str, .print_bool => &.{.print},
             .str_concat, .str_slice => &.{.alloc},
-            .print_f64 => &.{ .print, .dtoa },
-            .dtoa => &.{.alloc},
+            .print_f64 => &.{ .print, .f64_to_str },
+            .int_fmt => &.{.alloc},
             .box_f64 => &.{.alloc},
             .arr_join_f64 => &.{ .arr_new, .f64_to_str, .arr_join_str },
-            .print_i64 => &.{ .print, .dtoa },
-            .i64_to_str => &.{ .dtoa, .alloc },
+            .print_i64 => &.{ .print, .int_fmt },
+            .i64_to_str => &.{ .int_fmt, .alloc },
             .box_i64 => &.{.alloc},
             .print_opt_i64 => &.{ .print, .print_opt, .print_i64 },
             .print_arr_i32 => &.{.print},
@@ -635,9 +666,9 @@ pub const HelperGroup = enum {
             .assert_fail => &.{.print},
             .print_shaped => &.{ .print, .print_bool, .print_f64, .print_i64, .print_u64, .display_of },
             .i32_to_str, .str_case, .str_repeat, .arr_new => &.{.alloc},
-            .f64_to_str => &.{ .dtoa, .alloc },
+            .f64_to_str => &.{.alloc},
             .str_index_of, .str_starts_with, .str_ends_with => &.{.mem_eq},
-            .str_trim, .str_at => &.{.str_slice},
+            .str_at => &.{.str_slice},
             .str_split => &.{ .arr_new, .mem_eq, .str_slice },
             .arr_slice, .arr_reverse, .arr_prepend, .arr_push, .arr_concat => &.{.arr_new},
             .arr_zip => &.{ .arr_new, .alloc },
@@ -660,7 +691,7 @@ pub const HelperGroup = enum {
             .wasi_seed_u32 => &.{.wasi_seed_state},
             .wasi_seeded_f64 => &.{ .wasi_seed_state, .wasi_random_f64 },
             .str_from_cp => &.{.alloc},
-            .u64_fmt => &.{.dtoa},
+            .u64_fmt => &.{.int_fmt},
             .print_u64 => &.{ .print, .u64_fmt },
             .print_opt_u64 => &.{ .print, .print_opt, .print_u64 },
             .u64_to_str => &.{ .alloc, .u64_fmt },
@@ -707,7 +738,6 @@ pub const Helper = enum {
     str_index_of,
     str_starts_with,
     str_ends_with,
-    str_trim,
     str_split,
     str_repeat,
     arr_new,

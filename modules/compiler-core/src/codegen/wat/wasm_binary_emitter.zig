@@ -218,10 +218,12 @@ pub fn encodeModule(alloc: std.mem.Allocator, m: ast.Module) Error![]u8 {
                 try sec.append(ar, 0x41);
                 try sleb(ar, &sec, @as(i64, @as(i32, @bitCast(d.offset))));
                 try sec.append(ar, 0x0B);
-                try uleb(ar, &sec, 4 + d.bytes.len);
-                var prefix: [4]u8 = undefined;
-                std.mem.writeInt(u32, &prefix, d.len_prefix, .little);
-                try sec.appendSlice(ar, &prefix);
+                if (d.len_prefix) |len| {
+                    try uleb(ar, &sec, 4 + d.bytes.len);
+                    var prefix: [4]u8 = undefined;
+                    std.mem.writeInt(u32, &prefix, len, .little);
+                    try sec.appendSlice(ar, &prefix);
+                } else try uleb(ar, &sec, d.bytes.len);
                 try sec.appendSlice(ar, d.bytes);
             },
             else => {},
@@ -326,7 +328,7 @@ pub const Encoder = struct {
 
 /// One function body being encoded: its locals by index and the labels of the
 /// structured forms around the current instruction (innermost last; `null` for
-/// an `if`, which a branch can only reach by depth).
+/// an `if` without a label, which a branch can only reach by depth).
 const Body = struct {
     e: *Encoder,
     out: *Bytes,
@@ -393,6 +395,7 @@ const Body = struct {
                 try o.appendSlice(ar, try opcode(full[0..dot], full[dot + 1 ..]));
             },
             .load => |m| {
+                const s_: u8 = @intFromBool(m.signed);
                 try o.append(ar, switch (m.width) {
                     .full => switch (m.ty) {
                         .i32 => 0x28,
@@ -401,8 +404,17 @@ const Body = struct {
                         .f64 => 0x2B,
                     },
                     .byte => switch (m.ty) {
-                        .i32 => 0x2D,
-                        .i64 => 0x31,
+                        .i32 => 0x2D - s_,
+                        .i64 => 0x31 - s_,
+                        else => return error.UnknownOp,
+                    },
+                    .half => switch (m.ty) {
+                        .i32 => 0x2F - s_,
+                        .i64 => 0x33 - s_,
+                        else => return error.UnknownOp,
+                    },
+                    .word => switch (m.ty) {
+                        .i64 => 0x35 - s_,
                         else => return error.UnknownOp,
                     },
                 });
@@ -419,6 +431,15 @@ const Body = struct {
                     .byte => switch (m.ty) {
                         .i32 => 0x3A,
                         .i64 => 0x3C,
+                        else => return error.UnknownOp,
+                    },
+                    .half => switch (m.ty) {
+                        .i32 => 0x3B,
+                        .i64 => 0x3D,
+                        else => return error.UnknownOp,
+                    },
+                    .word => switch (m.ty) {
+                        .i64 => 0x3E,
                         else => return error.UnknownOp,
                     },
                 });
@@ -445,13 +466,21 @@ const Body = struct {
             .@"return" => try o.append(ar, 0x0F),
             .@"unreachable" => try o.append(ar, 0x00),
             .memory_copy => try o.appendSlice(ar, &.{ 0xFC, 0x0A, 0x00, 0x00 }),
+            .memory_fill => try o.appendSlice(ar, &.{ 0xFC, 0x0B, 0x00 }),
+            .select => try o.append(ar, 0x1B),
+            .br_table => |t| {
+                try o.append(ar, 0x0E);
+                try uleb(ar, o, t.labels.len);
+                for (t.labels) |l| try uleb(ar, o, try c.labelDepth(l));
+                try uleb(ar, o, try c.labelDepth(t.default));
+            },
             .memory_size => try o.appendSlice(ar, &.{ 0x3F, 0x00 }),
             .memory_grow => try o.appendSlice(ar, &.{ 0x40, 0x00 }),
             .comment => {},
             .@"if" => |n| {
                 try o.append(ar, 0x04);
                 try c.blockType(n.result);
-                try c.labels.append(ar, null);
+                try c.labels.append(ar, n.label);
                 try c.seq(n.then.seq);
                 if (n.@"else") |el| {
                     try o.append(ar, 0x05);
@@ -538,6 +567,8 @@ pub fn valType(t: ast.ValType) u8 {
 fn memArg(ar: std.mem.Allocator, out: *Bytes, m: ast.MemArg) Error!void {
     const log2_align: u8 = switch (m.width) {
         .byte => 0,
+        .half => 1,
+        .word => 2,
         .full => switch (m.ty) {
             .i32, .f32 => 2,
             .i64, .f64 => 3,
@@ -649,7 +680,7 @@ fn opcode(ty: []const u8, op: []const u8) Error![]const u8 {
     return error.UnknownOp;
 }
 
-const opcodes = [_]struct { []const u8, []const u8 }{
+pub const opcodes = [_]struct { []const u8, []const u8 }{
     .{ "i32.eqz", &.{0x45} },                     .{ "i32.eq", &.{0x46} },                      .{ "i32.ne", &.{0x47} },
     .{ "i32.lt_s", &.{0x48} },                    .{ "i32.lt_u", &.{0x49} },                    .{ "i32.gt_s", &.{0x4A} },
     .{ "i32.gt_u", &.{0x4B} },                    .{ "i32.le_s", &.{0x4C} },                    .{ "i32.le_u", &.{0x4D} },

@@ -279,11 +279,13 @@ test "hash.hmacSha256 produces a 64-hex-char digest" {
 // `contentHash("🎉")` is `djb2([127881])` everywhere — the Node cell walks
 // `Array.from(s)`, which iterates by code point, where `hashHex` still folds
 // UTF-16 units and so differs from it for a character above U+FFFF.
-// Collapsing `emilia.hashHex` onto std is an `emilia`-owned change.
+// Collapsing `emilia.hashHex` onto std is an `emilia`-owned change. On wasm,
+// and at comptime on every target, it is std-wasm's (`modules/std-wasm`,
+// decision 440): its `std:` cell is the one implementation both read.
 
 #[@External.Node("""(function(__S){ var __H = 5381; for (const __C of Array.from(__S)) { __H = (Math.imul(__H, 33) + __C.codePointAt(0)) >>> 0; } return __H.toString(16); })($0)""")]
 #[@External.Erlang("""(fun(__S) -> __H = lists:foldl(fun(__C, __A) -> (__A * 33 + __C) band 16#FFFFFFFF end, 5381, unicode:characters_to_list(__S)), list_to_binary(string:lowercase(integer_to_list(__H, 16))) end)($0)""")]
-#[@External.Wasm("fn:contentHashBody")]
+#[@External.Wasm("std:hash.contentHash")]
 pub declare fn contentHash(value: string) -> string;
 
 #[@External.Node("""require('crypto').createHash('sha256').update($0).digest('hex').slice(0, 32)""")]
@@ -581,21 +583,6 @@ fn pbkdf2DeriveBody(
     return base64Of(out.slice(0, length), true, false);
 }
 
-// djb2 as every target answers it (decision 260): h = h · 33 + c modulo
-// 2^32, from 5381, over the string's code points, lowercase hex without
-// padding.
-fn contentHashBody(value: string) -> string {
-    val cs = value.chars();
-    var h = 5381.0;
-    var i = 0;
-    while (i < cs.length) {
-        val cp = (cs.at(i) ?? "").charCodeAt(0);
-        h = wrap32(h * 33.0 + cp * 1.0);
-        i = i + 1;
-    }
-    return hexWord(h);
-}
-
 // ── bytes and text ──
 
 fn utf8Of(s: string) -> Array<i32> {
@@ -626,13 +613,6 @@ fn hexDigit(n: i32) -> string {
 
 fn hexOf(bytes: Array<i32>) -> string {
     return bytes.map({ b -> hexDigit(b / 16) + hexDigit(b % 16) }).join("");
-}
-
-// A word in lowercase hex without leading zeros (`toString(16)`).
-fn hexWord(w: f64) -> string {
-    if (w < 16.0) return hexDigit(smallInt(w));
-    val q = (w / 16.0).floor();
-    return hexWord(q) + hexDigit(smallInt(w - q * 16.0));
 }
 
 // RFC 4648 base64: §5's alphabet when `url`, `=` padding when `pad`.

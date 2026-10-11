@@ -1,12 +1,13 @@
 //! Decision 238 — what a `#[@External.Wasm("…")]` binding names: a closed
-//! vocabulary of three forms, read and checked here before anything is
-//! lowered.
+//! vocabulary of four forms (decision 440 added `std:`), read and checked
+//! here before anything is lowered.
 //!
 //! | Form | Means |
 //! |---|---|
 //! | `op:<opcode>` | one numeric wasm instruction over the declared parameters (`op:f64.floor`) |
 //! | `fn:<name>` | a private botopink `fn` of the same module, with the same signature |
 //! | `wasi:<adapter>` | a compiler adapter over the host (WASI preview 1 through the component, or the `browser` loader's JavaScript), from `adapters` |
+//! | `std:<module>.<function>` | a function std-wasm implements (`modules/std-wasm`, `std_wasm.exports`), transpiled into the program — the same cell the comptime runtime answers by (decision 440) |
 //!
 //! The arguments are always the declared parameters, in order — there are no
 //! markers, no expression text and no way to name an address: nothing a
@@ -24,6 +25,7 @@
 
 const std = @import("std");
 const wat = @import("wat_ast.zig");
+const stdWasm = @import("std_wasm");
 
 /// A numeric value type a binding's signature may spell, or `bool` — the
 /// `i32` a comparison answers, which a signature writes as `bool`.
@@ -111,6 +113,11 @@ pub const Binding = union(enum) {
     /// The private fn's name, as written.
     fn_: []const u8,
     wasi: Adapter,
+    /// The std-wasm function the program calls (decision 440 (3)). Its types
+    /// are checked against the declaration's by the caller, which spells
+    /// them (`std_wasm.matches`; the checker refuses a mismatch on every
+    /// target, `infer.refuseStdBinding`).
+    std_: stdWasm.Export,
 };
 
 /// The signature a binding is checked against: the declared parameters'
@@ -163,7 +170,12 @@ pub fn parse(alloc: std.mem.Allocator, text: []const u8, sig: Signature) !Result
         }
         return .{ .ok = .{ .wasi = ad } };
     }
-    return refused(alloc, "`#[@External.Wasm(\"{s}\")]` is none of the three forms a wasm binding takes: `op:<opcode>`, `fn:<private fn of this module>`, `wasi:<adapter>`", .{text});
+    if (std.mem.startsWith(u8, text, "std:")) {
+        const name = text["std:".len..];
+        const e = stdWasm.find(name) orelse return refused(alloc, "`#[@External.Wasm(\"{s}\")]`: std-wasm implements no `{s}` — a `std:` binding names one of its functions ({s})", .{ text, name, stdWasm.names });
+        return .{ .ok = .{ .std_ = e } };
+    }
+    return refused(alloc, "`#[@External.Wasm(\"{s}\")]` is none of the four forms a wasm binding takes: `op:<opcode>`, `fn:<private fn of this module>`, `wasi:<adapter>`, `std:<module>.<function>`", .{text});
 }
 
 fn refused(alloc: std.mem.Allocator, comptime f: []const u8, args: anytype) !Result {
@@ -425,6 +437,15 @@ test "host binding: the three forms and their refusals" {
     {
         const r = try parse(a, "$0 + 1", f64x1);
         defer a.free(r.refused.message);
-        try std.testing.expect(std.mem.indexOf(u8, r.refused.message, "none of the three forms") != null);
+        try std.testing.expect(std.mem.indexOf(u8, r.refused.message, "none of the four forms") != null);
+    }
+    {
+        const r = try parse(a, "std:hash.contentHash", .{ .params = &.{null}, .result = null, .result_other = true });
+        try std.testing.expectEqualStrings("hash.contentHash", r.ok.std_.name);
+    }
+    {
+        const r = try parse(a, "std:hash.sha256", .{ .params = &.{null}, .result = null, .result_other = true });
+        defer a.free(r.refused.message);
+        try std.testing.expect(std.mem.indexOf(u8, r.refused.message, "std-wasm implements no `hash.sha256`") != null);
     }
 }

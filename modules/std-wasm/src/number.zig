@@ -6,11 +6,21 @@ const std = @import("std");
 
 /// `float_to_binary(F, [short])`: the shortest digits that round-trip, written
 /// in fixed notation or as `D.DDDeE`, whichever is shorter (fixed on a tie);
-/// always one digit after the point at least.
+/// always one digit after the point at least. A value OTP has no float for —
+/// `NaN`, `Infinity`, `-Infinity`, which only a `--target wasm` program's
+/// arithmetic makes (erlang and beam raise `badarith` at the operation, and so
+/// does the comptime runtime) — is written as those words, the one text such a
+/// value has on any target.
+///
+/// Ryu's digits come from `std.fmt.float.render` and the exponent is written
+/// by hand: no `std.Io.Writer`, so the function needs no function table and
+/// no pointer in its data — what a `--target wasm` program links (144 B-00e).
 pub fn shortFloat(f: f64, buf: []u8) []const u8 {
+    if (std.math.isNan(f)) return "NaN";
+    if (std.math.isInf(f)) return if (f < 0) "-Infinity" else "Infinity";
     if (f == 0) return if (std.math.signbit(f)) "-0.0" else "0.0";
-    var sci: [64]u8 = undefined;
-    const e_text = std.fmt.bufPrint(&sci, "{e}", .{f}) catch unreachable;
+    var sci: [std.fmt.float.min_buffer_size]u8 = undefined;
+    const e_text = std.fmt.float.render(&sci, f, .{ .mode = .scientific }) catch unreachable;
     // e_text: [-]D[.DDD]e[-]X
     var neg = false;
     var s = e_text;
@@ -48,8 +58,9 @@ pub fn shortFloat(f: f64, buf: []u8) []const u8 {
         sbuf[sl] = '0';
         sl += 1;
     }
-    const et = std.fmt.bufPrint(sbuf[sl..], "e{d}", .{exp}) catch unreachable;
-    sl += et.len;
+    sbuf[sl] = 'e';
+    sl += 1;
+    sl += writeInt(sbuf[sl..], exp);
 
     // Fixed.
     var fbuf: [400]u8 = undefined;
@@ -96,16 +107,45 @@ pub fn shortFloat(f: f64, buf: []u8) []const u8 {
     return buf[0..pick.len];
 }
 
+/// The decimal digits of `v`, a `-` first when negative, into `out`; answers
+/// how many bytes it wrote.
+fn writeInt(out: []u8, v: i32) usize {
+    var n: usize = 0;
+    var m: u32 = @abs(v);
+    if (v < 0) {
+        out[0] = '-';
+        n = 1;
+    }
+    var tmp: [10]u8 = undefined;
+    var k: usize = 0;
+    while (true) {
+        tmp[k] = @intCast('0' + m % 10);
+        k += 1;
+        m /= 10;
+        if (m == 0) break;
+    }
+    for (0..k) |i| out[n + i] = tmp[k - 1 - i];
+    return n + k;
+}
+
 test "shortFloat: the shortest form, fixed on a tie" {
     const cases = [_]struct { f64, []const u8 }{
-        .{ 0.1, "0.1" },                                     .{ 1.0e21, "1.0e21" },           .{ 1.0e20, "1.0e20" },
-        .{ 123.0, "123.0" },                                 .{ 1.0e-5, "1.0e-5" },           .{ 0.0001, "0.0001" },
-        .{ 1.0e15, "1.0e15" },                               .{ 123456789.0, "123456789.0" }, .{ 0.30000000000000004, "0.30000000000000004" },
-        .{ 1.2345678901234567e19, "1.2345678901234567e19" }, .{ -0.0, "-0.0" },               .{ 2.0e-10, "2.0e-10" },
-        .{ 1.5, "1.5" },                                     .{ 100.0, "100.0" },
+        .{ 0.1, "0.1" },                                     .{ 1.0e21, "1.0e21" },                                 .{ 1.0e20, "1.0e20" },
+        .{ 123.0, "123.0" },                                 .{ 1.0e-5, "1.0e-5" },                                 .{ 0.0001, "0.0001" },
+        .{ 1.0e15, "1.0e15" },                               .{ 123456789.0, "123456789.0" },                       .{ 0.30000000000000004, "0.30000000000000004" },
+        .{ 1.2345678901234567e19, "1.2345678901234567e19" }, .{ -0.0, "-0.0" },                                     .{ 2.0e-10, "2.0e-10" },
+        .{ 1.5, "1.5" },                                     .{ 100.0, "100.0" },                                   .{ 5.0e-324, "5.0e-324" },
+        .{ -2.5e-7, "-2.5e-7" },                             .{ 1.7976931348623157e308, "1.7976931348623157e308" },
     };
     for (cases) |c| {
         var buf: [64]u8 = undefined;
         try std.testing.expectEqualStrings(c[1], shortFloat(c[0], &buf));
     }
+}
+
+test "shortFloat: the values OTP has no float for" {
+    var buf: [64]u8 = undefined;
+    try std.testing.expectEqualStrings("NaN", shortFloat(std.math.nan(f64), &buf));
+    try std.testing.expectEqualStrings("Infinity", shortFloat(std.math.inf(f64), &buf));
+    try std.testing.expectEqualStrings("-Infinity", shortFloat(-std.math.inf(f64), &buf));
 }

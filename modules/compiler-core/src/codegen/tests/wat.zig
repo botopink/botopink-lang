@@ -13,6 +13,7 @@ const GenerateResult = @import(".././moduleOutput.zig").GenerateResult;
 const comptimeMod = @import("../../comptime.zig");
 const validation = @import("../../comptime/error.zig");
 const h = @import("helpers.zig");
+const watCodegen = @import("../wat.zig");
 
 test {
     _ = @import("../wat/host_binding.zig");
@@ -1051,7 +1052,8 @@ test "wat: tail call ---- a self-call in return position runs in one frame" {
 // `00 · 05-wasm` step 6's audit of `primitives.bp` against `primCallRes`: the
 // `String` and `Float` members with a byte-level answer are lowered, each
 // answering what commonJS answers for the same program (measured side by
-// side). `5.0.toString()` is `5`, as on node; `charCodeAt` out of range is
+// side) — but a float's text, which is std-wasm's (decision 441):
+// `5.0.toString()` is `5.0`, as on erlang (node answers `5`); `charCodeAt` out of range is
 // `-1`, the answer both host templates give; the pad cycles as JavaScript's
 // does; an empty pattern matches before every byte.
 test "wat: prim method ---- the String and Float members step 6's audit lowered" {
@@ -1077,7 +1079,7 @@ test "wat: prim method ---- the String and Float members step 6's audit lowered"
         \\}
     ,
         \\2.5
-        \\5
+        \\5.0
         \\98
         \\-1
         \\3
@@ -1904,7 +1906,7 @@ test "wat: host binding ---- an unknown form, opcode, signature, fn or adapter i
         \\#[@External.Wasm("""(f64.floor $0)""")]
         \\declare fn down(x: f64) -> f64;
         \\fn main() { @print(down(1.5)); }
-    , "is none of the three forms", 1, 3);
+    , "is none of the four forms", 1, 3);
 }
 
 // `wat/host_binding.zig`'s `adapters` is the list `docs.md` § Host bindings
@@ -1944,13 +1946,126 @@ test "wat: host binding ---- the adapter list agrees with docs.md" {
     try std.testing.expectEqual(hb.adapters.len, rows);
 }
 
-// `00 · gate-wasm-wrong-answers`: a float prints as commonJS prints it —
-// `Number.isInteger(v) ? v.toFixed(1) : String(v)`, and `String(v)` for its
-// text — V8's shortest round-trip digits (`$__dtoa`). The forms erlang and
-// beam spell otherwise (`1.0e21`, `5.0e-324`), and the values erlang cannot
-// make (`Infinity`, `NaN`), are pinned here rather than in a four-target
-// cell. The formatter wrote six fraction digits and trapped past `2^31`.
-test "wat: print ---- a float prints its shortest round-trip text, as commonJS does" {
+// Decision 440 (2) — std-wasm's program face, decoded: every function it
+// implements turns into the model, links into a module beside a stand-in
+// `$__alloc`, validates and encodes. Anything the face must not use (here, a
+// module that is no side module at all) is refused by name.
+test "wat: std-wasm ---- every function std-wasm implements decodes, validates and encodes" {
+    const link = @import("../wat/std_wasm_link.zig");
+    const ast = @import("../wat/wat_ast.zig");
+    const binary = @import("../wat/wasm_binary_emitter.zig");
+    const stdWasm = @import("std_wasm");
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const ar = arena.allocator();
+    var names: [stdWasm.exports.len][]const u8 = undefined;
+    for (stdWasm.exports, 0..) |e, i| names[i] = e.name;
+    var diag: link.Diag = .{};
+    const l = link.link(ar, &names, 301, &diag) catch |err| {
+        std.debug.print("std-wasm: {s}\n", .{diag.message});
+        return err;
+    };
+    var items: std.ArrayListUnmanaged(ast.Item) = .empty;
+    try items.append(ar, .{ .memory = .{ .min_pages = 1 } });
+    try items.append(ar, .{ .func = .{
+        .name = "__alloc",
+        .params = &.{.{ .name = "n", .ty = .i32 }},
+        .result = .i32,
+        .body = .{ .lines = &.{.{ .instr = .{ .local_get = "n" } }}, .stack = .{ .value = .i32 } },
+    } });
+    try items.appendSlice(ar, l.items);
+    const m: ast.Module = .{ .items = items.items };
+    try ast.validateModule(m);
+    _ = try binary.encodeModule(ar, m);
+    for (stdWasm.exports) |e| try std.testing.expect(ast.declaresCall(m, try link.entryName(ar, e.name)));
+    // The data starts on its alignment at or past the floor; the heap after the stack.
+    var data_at: ?u32 = null;
+    for (l.items) |it| if (it == .data) {
+        data_at = data_at orelse it.data.offset;
+        try std.testing.expect(it.data.len_prefix == null);
+    };
+    try std.testing.expect(data_at.? >= 301 and data_at.? % 8 == 0);
+    try std.testing.expect(l.end > data_at.? and l.end % 16 == 0);
+    // `Float.toString`'s helper calls the function its cell names.
+    try std.testing.expectEqualStrings(@import("../wat/wat_prelude.zig").std_float_to_string, try link.entryName(ar, watCodegen.stdMethodExport("Float", "toString").?));
+
+    diag = .{};
+    try std.testing.expectError(error.Unsupported, link.linkModule(ar, &.{ 0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00 }, &.{}, 0, &diag));
+    try std.testing.expect(std.mem.indexOf(u8, diag.message, "dylink.0") != null);
+}
+
+// Decision 440 (3) — the `std:` cells `primitives.bp` writes are the ones the
+// wasm codegen lowers by (`wat.zig` `std_method_exports`), in both
+// directions: a method the table binds carries its cell, and every `std:`
+// cell of the prelude is a row of the table.
+test "wat: std-wasm ---- primitives.bp's std: cells agree with the codegen's table" {
+    const src = @import("std_prelude").primitives;
+    for (watCodegen.std_method_exports) |row| {
+        var head_buf: [64]u8 = undefined;
+        const head = try std.fmt.bufPrint(&head_buf, "behavior {s} ", .{row.behavior});
+        const at = std.mem.indexOf(u8, src, head) orelse return error.BehaviorMissing;
+        var fn_buf: [64]u8 = undefined;
+        const decl = try std.fmt.bufPrint(&fn_buf, "fn {s}(", .{row.method});
+        const f = std.mem.indexOfPos(u8, src, at, decl) orelse return error.MethodMissing;
+        var cell_buf: [96]u8 = undefined;
+        const cell = try std.fmt.bufPrint(&cell_buf, "#[@External.Wasm(\"std:{s}\")]", .{row.export_name});
+        // The cell sits in the annotation block right above the declaration.
+        const block_start = std.mem.lastIndexOf(u8, src[0..f], ";") orelse at;
+        if (std.mem.indexOf(u8, src[block_start..f], cell) == null) {
+            std.debug.print("primitives.bp: `{s}.{s}` carries no {s}\n", .{ row.behavior, row.method, cell });
+            return error.CellMissing;
+        }
+    }
+    var n: usize = 0;
+    var it = std.mem.splitSequence(u8, src, "#[@External.Wasm(\"std:");
+    _ = it.next();
+    while (it.next()) |rest| : (n += 1) {
+        const end = std.mem.indexOfScalar(u8, rest, '"') orelse return error.CellUnreadable;
+        var found = false;
+        for (watCodegen.std_method_exports) |row| {
+            if (std.mem.eql(u8, row.export_name, rest[0..end])) found = true;
+        }
+        if (!found) {
+            std.debug.print("primitives.bp binds `std:{s}` and wat.zig's std_method_exports has no row for it\n", .{rest[0..end]});
+            return error.CellNotLowered;
+        }
+    }
+    try std.testing.expectEqual(watCodegen.std_method_exports.len, n);
+}
+
+// Decisions 440, 441 — a `std:` binding, `trim` (space, tab, LF, CR, VT, FF;
+// a no-break space stays) and a float's text in a string answer std-wasm's,
+// transpiled into the module.
+test "wat: std-wasm ---- a std: binding, trim and a float's text answer std-wasm's" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\#[@External.Wasm("std:hash.contentHash")]
+        \\declare fn digest(s: string) -> string;
+        \\fn main() {
+        \\    @print(digest("Point"));
+        \\    @print("[" + " \t\na b\r ".trim() + "]");
+        \\    @print("[" + " a ".trimStart() + "]");
+        \\    @print("[" + " a ".trimEnd() + "]");
+        \\    @print("${2.5} ${100.0} ${1e22}");
+        \\}
+    ,
+        \\de553cf
+        \\[a b]
+        \\[a ]
+        \\[ a]
+        \\2.5 100.0 1.0e22
+        \\
+    );
+}
+
+// Decision 441: a wasm program prints std-wasm's text — the text of erlang,
+// beam and the comptime, OTP's `float_to_binary(F, [short])`: the shortest
+// round-trip digits, in fixed notation or as `D.DDDeE`, whichever is shorter
+// (`1.0e21`, `5.0e-324`, `1.0e-6`; `100000000000000000000.0` is `1.0e20`, and
+// `2^60` is `1.152921504606847e18`, its 16 shortest digits — OTP's own
+// answers). The values erlang cannot make
+// (`Infinity`, `NaN`) are written as those words. commonJS keeps the JS
+// engine's text (`1e+21`, `5`).
+test "wat: print ---- a float prints std-wasm's text, as erlang does (decision 441)" {
     try h.assertWasmRunLog(std.testing.allocator,
         \\fn id(x: f64) -> f64 {
         \\    return x;
@@ -1971,19 +2086,19 @@ test "wat: print ---- a float prints its shortest round-trip text, as commonJS d
         \\    @print("x" + 1e300);
         \\}
     ,
-        \\1e+21
-        \\1.7976931348623157e+308
-        \\5e-324
-        \\1e-7
-        \\0.000001
-        \\1152921504606846976.0
-        \\100000000000000000000.0
+        \\1.0e21
+        \\1.7976931348623157e308
+        \\5.0e-324
+        \\1.0e-7
+        \\1.0e-6
+        \\1.152921504606847e18
+        \\1.0e20
         \\Infinity
         \\-Infinity
         \\NaN
-        \\5
-        \\x0.000001
-        \\x1e+300
+        \\5.0
+        \\x1.0e-6
+        \\x1.0e300
         \\
     );
 }

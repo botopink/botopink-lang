@@ -1,73 +1,117 @@
-//! std-wasm compiled alone: `zig build std-wasm` → `zig-out/lib/std_wasm.wasm`
-//! (wasm32-freestanding, MVP). The C-ABI face of the package over linear
-//! memory: a text argument is `(ptr, len)`, a text answer is packed as
-//! `ptr << 32 | len` in a `u64` (`0xFFFF_FFFF_FFFF_FFFF` when refused), every
-//! answer lives in one bump arena `std_reset` empties. The comptime runtime
-//! does not link this file — it compiles the package into its own term
-//! library (`root.zig`) — this is the build a `--target wasm` program links
-//! (144 B-00e).
+//! std-wasm's program face: `zig build std-wasm` → `zig-out/lib/std_wasm.wasm`,
+//! a position-independent side module (wasm32-freestanding, MVP + bulk
+//! memory, `dylink.0`) whose functions the wasm codegen decodes into a
+//! `--target wasm` program (`compiler-core/src/codegen/wat/std_wasm_link.zig`,
+//! decision 440 (2)). The comptime runtime does not link this file — it
+//! compiles the package into its own term library (`root.zig`).
+//!
+//! Each entry of `root.exports` is exported under its cell's text,
+//! `std:<module>.<function>` (`std:hash.contentHash`) — never the bare
+//! `hash.contentHash`, which is the name Zig gives `hash.zig`'s own
+//! `contentHash`: an export of that name resolves to itself, and the
+//! optimizer, seeing the recursion, compiles the export to `unreachable`. Its
+//! values are the program's own: a `string` is the
+//! address of its `u32` length with the bytes behind it — the layout every
+//! string of a wasm program has — and an answer is a fresh string allocated
+//! through the program's bump allocator, imported as `env.bp_alloc` (the
+//! decoder binds it to `$__alloc`). The module's data, its function table and
+//! its stack are placed by the program (`__memory_base`, `__table_base`,
+//! `__stack_pointer`).
 const std = @import("std");
 const root = @import("root.zig");
 
-const refused: u64 = std.math.maxInt(u64);
+/// The program's allocator: `n` fresh bytes, 4-aligned; it grows the memory
+/// or traps.
+extern "env" fn bp_alloc(n: u32) u32;
 
-var arena_buf: [1 << 16]u8 = undefined;
-var arena_used: usize = 0;
-
-/// Room for `len` bytes, or 0 when the arena is full.
-export fn std_alloc(len: usize) usize {
-    const at = std.mem.alignForward(usize, arena_used, 8);
-    if (at + len > arena_buf.len) return 0;
-    arena_used = at + len;
-    return @intFromPtr(&arena_buf[at]);
+/// The bytes of the program string at `s`.
+fn arg(s: u32) []const u8 {
+    const len = @as(*const u32, @ptrFromInt(s)).*;
+    return @as([*]const u8, @ptrFromInt(s + 4))[0..len];
 }
 
-/// Every answer handed out so far is released.
-export fn std_reset() void {
-    arena_used = 0;
+/// `bytes` as a fresh program string.
+fn fresh(bytes: []const u8) u32 {
+    const p = bp_alloc(@intCast(bytes.len + 4));
+    @as(*u32, @ptrFromInt(p)).* = @intCast(bytes.len);
+    @memcpy(@as([*]u8, @ptrFromInt(p + 4))[0..bytes.len], bytes);
+    return p;
 }
 
-fn pack(s: []const u8) u64 {
-    return (@as(u64, @intFromPtr(s.ptr)) << 32) | s.len;
+/// `hash.contentHash`. A program string is valid UTF-8, so the refusal is
+/// unreachable from a program; it traps rather than answer.
+fn contentHash(s: u32) callconv(.c) u32 {
+    var buf: [8]u8 = undefined;
+    const h = root.hash.contentHash(&buf, arg(s)) catch @trap();
+    return fresh(h);
 }
 
-fn arg(ptr: [*]const u8, len: usize) []const u8 {
-    return ptr[0..len];
+fn trimmed(s: u32, dir: root.text.TrimDir) u32 {
+    const a = arg(s);
+    const t = root.text.trim(a, dir);
+    // Nothing trimmed: the string itself (strings are immutable).
+    if (t.len == a.len) return s;
+    return fresh(t);
 }
 
-/// `hash.contentHash`.
-export fn std_hash_contentHash(ptr: [*]const u8, len: usize) u64 {
-    const at = std_alloc(8);
-    if (at == 0) return refused;
-    const out: *[8]u8 = @ptrFromInt(at);
-    const h = root.hash.contentHash(out, arg(ptr, len)) catch return refused;
-    return pack(h);
+/// `String.trim`.
+fn trim(s: u32) callconv(.c) u32 {
+    return trimmed(s, .both);
 }
 
-/// `String.toUpper` (`upper` 1) / `toLower` (0) — ASCII; refused otherwise.
-export fn std_text_caseMap(ptr: [*]const u8, len: usize, upper: u32) u64 {
-    const at = std_alloc(len);
-    if (at == 0 and len > 0) return refused;
-    const out: [*]u8 = @ptrFromInt(if (len == 0) @intFromPtr(&arena_buf) else at);
-    const r = root.text.caseMap(out[0..len], arg(ptr, len), upper != 0) catch return refused;
-    return pack(r);
+/// `String.trimStart`.
+fn trimStart(s: u32) callconv(.c) u32 {
+    return trimmed(s, .leading);
 }
 
-/// `String.trim` (`dir` 2), `trimStart` (0), `trimEnd` (1).
-export fn std_text_trim(ptr: [*]const u8, len: usize, dir: u32) u64 {
-    const d: root.text.TrimDir = switch (dir) {
-        0 => .leading,
-        1 => .trailing,
-        2 => .both,
-        else => return refused,
+/// `String.trimEnd`.
+fn trimEnd(s: u32) callconv(.c) u32 {
+    return trimmed(s, .trailing);
+}
+
+/// `Float.toString`, and the text a wasm program writes for a float
+/// anywhere (decision 441).
+fn floatToString(f: f64) callconv(.c) u32 {
+    var buf: [64]u8 = undefined;
+    return fresh(root.number.shortFloat(f, &buf));
+}
+
+/// Each export by its `std:` name — the table the check below reads; the
+/// `@export`s after it spell the same pairs.
+const faces = .{
+    .{ "hash.contentHash", contentHash },
+    .{ "text.trim", trim },
+    .{ "text.trimStart", trimStart },
+    .{ "text.trimEnd", trimEnd },
+    .{ "number.floatToString", floatToString },
+};
+
+/// The wasm type a `root.Type` crosses as.
+fn wasmType(t: root.Type) type {
+    return switch (t) {
+        .string => u32,
+        .f64 => f64,
     };
-    return pack(root.text.trim(arg(ptr, len), d));
 }
 
-/// `Float.toString`.
-export fn std_number_floatToString(f: f64) u64 {
-    const at = std_alloc(64);
-    if (at == 0) return refused;
-    const out: *[64]u8 = @ptrFromInt(at);
-    return pack(root.number.shortFloat(f, out));
+comptime {
+    // Every export of `root.exports` is here, under its name, with the
+    // signature its types cross as — and nothing else is.
+    if (faces.len != root.exports.len) @compileError("wasm.zig exports a different set than root.exports");
+    for (root.exports) |e| {
+        var found = false;
+        for (faces) |face| if (std.mem.eql(u8, face[0], e.name)) {
+            found = true;
+            const info = @typeInfo(@TypeOf(face[1])).@"fn";
+            if (info.params.len != e.params.len) @compileError(e.name ++ ": wrong arity");
+            for (info.params, e.params) |p, t| if (p.type.? != wasmType(t)) @compileError(e.name ++ ": wrong parameter type");
+            if (info.return_type.? != wasmType(e.result)) @compileError(e.name ++ ": wrong result type");
+        };
+        if (!found) @compileError("std-wasm implements " ++ e.name ++ " but wasm.zig does not export it");
+    }
+    @export(&contentHash, .{ .name = "std:hash.contentHash" });
+    @export(&trim, .{ .name = "std:text.trim" });
+    @export(&trimStart, .{ .name = "std:text.trimStart" });
+    @export(&trimEnd, .{ .name = "std:text.trimEnd" });
+    @export(&floatToString, .{ .name = "std:number.floatToString" });
 }
