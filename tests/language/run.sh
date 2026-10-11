@@ -4,7 +4,7 @@
 # decorators, externals, generics, closures, modules (`zig build test-language`).
 #
 # Usage:
-#   tests/language/run.sh [--target commonJS|erlang|wasm|beam|all]
+#   tests/language/run.sh [--target commonJS|erlang|wasm|beam|all|<t>,<t>…]
 #                         [--compiler <botopink>]
 #                         [--lib-root <dir>] [--only <path>] [--jobs <n>] [--list]
 #   tests/language/run.sh --self-test [--compiler <botopink>] [--lib-root <dir>]
@@ -205,10 +205,24 @@ pool_check_jobs "$jobs" run.sh
 # A target a cell must be REFUSED on for a reason of its own — the claim is the
 # diagnostic — is not narrowed away: it is pinned with `<name>.<t>.expect`.
 ALL_TARGETS="commonJS erlang wasm beam"
+# `--target` takes `all`, one target, or a comma list (`wasm,beam`) — the subset the
+# step gate runs (decision 460); a list is read in the canonical order, so the plan
+# does not depend on how it was spelled.
 case "$target" in
     all) targets=(commonJS erlang wasm beam) ;;
-    commonJS|erlang|wasm|beam) targets=("$target") ;;
-    *) echo "run.sh: --target must be commonJS, erlang, wasm, beam or all (got '$target')" >&2; exit 2 ;;
+    *)
+        targets=()
+        IFS=',' read -r -a asked <<<"$target"
+        for t in "${asked[@]}"; do
+            case "$t" in commonJS|erlang|wasm|beam) ;; *)
+                echo "run.sh: --target must be commonJS, erlang, wasm, beam, a comma list of them or all (got '$target')" >&2; exit 2 ;;
+            esac
+        done
+        for t in $ALL_TARGETS; do
+            for a in "${asked[@]}"; do [ "$a" = "$t" ] && { targets+=("$t"); break; }; done
+        done
+        [ "${#targets[@]}" -eq "${#asked[@]}" ] || { echo "run.sh: --target names a target twice (got '$target')" >&2; exit 2; }
+        ;;
 esac
 for t in "${targets[@]}"; do
     [ "$t" = "beam" ] || continue

@@ -30,6 +30,7 @@ scripts/
 ├── codemod-optional-operators.py ← decision 330's migration: `.unwrapOr(d)` on a `?T` → `?? d`, `result.<op>(r, …)` → `r.<op>(…)` (§ below)
 ├── codemod-component-contexts.py ← decision 354's migration: `@Component<C, R>` → `@Component<R>`, `@Context<C>` → `@Renderable`, `use @getContext(T)` reported (§ below)
 ├── lib/
+│   ├── gate-mode.sh   ← which gate a checkout runs (`front/*` → step, anything else → full) and what a changed-file list reaches, from the backend partition (sourced by gate.sh; run directly it explains a branch and a file list)
 │   ├── pool.sh        ← the bounded worker pool the shell runners share (sourced by ../tests/language/run.sh and check-docs.sh)
 │   └── result-store.js ← the cell-result store of run.sh and check-docs.sh: keys, lookup, save (decision 229)
 └── git-hooks/
@@ -131,7 +132,8 @@ stage under it before a change to a script lands.
 
 ## gate.sh
 
-`scripts/gate.sh [--cold] [--staged]` — one ordered run, stopping at the first
+`scripts/gate.sh [--cold] [--staged]` — one ordered run (the STEP gate on a `front/*`
+branch, the FULL gate everywhere else — § Step gate and full gate), stopping at the first
 failing stage (stages 4b–12 run side by side and are reported in this order —
 § Where the gate's time goes): staged-file checks (`--staged`: conflict markers, `zig fmt
 --check` on staged `.zig`, no staged `*.snap.new` / `*.snap.md.new` candidate) and, every run,
@@ -277,6 +279,84 @@ runner's bash 3.2 has no `flock`) holding the holder's `pid`, `checkout` and
 prints `gate: another gate holds the lock — pid <n>, <checkout>, since <time>;
 waiting for it to finish` once and polls every 5 s; a lock whose pid is no
 longer alive (a killed gate) is taken over. No flag or variable skips the wait.
+
+### Step gate and full gate
+
+Decision 460 (front 144 B-29 step G). **The branch decides the mode, structurally**
+(decision 67): `gate.sh` reads the current branch and nothing else. There is no flag,
+variable or file a commit sets that turns a check off, and no `--full`. The first line
+of the run names the mode and why:
+
+```text
+gate: step gate (branch front/x): reaches wasm only; test-language on wasm, test-libs skipped, no library cell reached
+gate: step gate (branch front/x): reaches every backend (shared file: modules/compiler-core/src/comptime/infer.zig)
+gate: full gate (branch feat): every stage, every cell, every library
+gate: full gate (detached HEAD): every stage, every cell, every library
+```
+
+| Branch | Mode | What runs |
+|---|---|---|
+| `front/*` | step gate | every stage of the full gate; only the cells of stage 8 (`test-libs`) and stage 9 (`test-language`) are the step's reach |
+| `feat`, `main`, a detached HEAD, any other branch | full gate | every stage, every cell, every library |
+
+**The reach** is computed by `scripts/lib/gate-mode.sh` from the step's change: the
+working tree against the merge-base with `origin/feat` (committed, staged, unstaged
+and untracked files; renames count both paths), so a step gate covers the whole step,
+not its last commit. Each file is mapped by
+`modules/compiler-core/src/codegen/backend-partition.txt` (decision 249):
+
+- listed under `commonJS`, `wasm` or `beam` → that target alone. A change that lists
+  several files reaches the union of their targets (`--target wasm,beam` for
+  `tests/language/run.sh`).
+- a `*.md` outside `tests/` and `libs/` → nothing: `modules/source-stamp` leaves every
+  `*.md` out of every cell key. A change of only such files runs no cell (stages 8 and 9
+  print `skipped by the step gate`); `test-docs` and every other stage still run.
+- anything else → every cell, as today: the dispatcher (`codegen.zig`), the checker,
+  comptime, the lexer/parser, std and the bundled libs (`libs/`), the preludes, the CLI,
+  the runners, `build.zig`, the scripts, a snapshot, a `tests/` cell, a file the
+  partition does not list (`codegen/erlang.zig` … — the partition's header says why
+  the `erlang` target has no file of its own) and the partition file itself.
+- no changed file to measure, or no `origin/feat` ref → every cell. The doubt goes to
+  the wider run.
+
+`test-libs` runs on commonJS and erlang only (`beam` and `wasm` are `NOT RUNNABLE` there,
+in the full gate too), so a reach of `wasm`/`beam` alone skips stage 8 and a reach of
+`commonJS` runs `--target commonJS`. The two `--list` plans that hold stages 8 and 9 to
+their counts (§ Stage times, the plan, the budget) are read with the same `--target`, so
+a narrowed stage is held to its narrowed plan; `reject/` cells (target `*`) and the
+restriction audits stay in every plan. Every stage that is not a cell set — formatting,
+the OTP release, the build, `botopink format --check`, `zig build test`, `test-bpmp`,
+the beam export audit, `test-cli`, `test-docs`, `tsc-check`, `test-web` — runs in both
+modes. Only the full gate writes the green-tree record (§ Green-tree record): a step
+gate ran a subset, and a later `--staged` run on `feat` over the same bytes must not
+skip stages because of it.
+
+**A front's Conformance step and its landing run the FULL gate** — and on a `front/*`
+branch there is no way to ask for it, by design. The coordinator runs it on the main
+checkout at a detached HEAD of the commit (the same script, a different checkout):
+
+```sh
+cd <main checkout>/repository/botopink-lang
+git fetch <front worktree> front/<name> && git checkout --detach FETCH_HEAD   # or: git checkout --detach <commit>
+scripts/gate.sh --cold          # "gate: full gate (detached HEAD): …"
+```
+
+and lands it on `feat` (a `feat` commit or merge runs the full gate again through the
+hook). A front lands whole: the step gates of its steps are not evidence for the landing.
+
+**Measured** (2026-10-11, one clone of this tree with its own empty cell-result store, a
+`wat.zig` first-line comment as the only change; the library repositories' stores were
+shared and warm, so `test-libs` numbers understate the cold cost; a second gate from
+another thread began mid-way in the full run, load 7–14):
+
+| Run | Stages 8 / 9 | Wall |
+|---|---|---|
+| step gate, branch `front/measure` — `reaches wasm only` | `test-libs` skipped (no commonJS/erlang cell); `test-language` 927 of 2715 jobs (523 wasm + 404 `reject/` `*` jobs; 19 audits) | 4m32s (load < 2 at start) |
+| full gate, detached HEAD, same change | `test-libs` 164 jobs (5m40s), `test-language` 2715 jobs (7m21s) | 10m20s |
+| step gate reaching every backend (this commit: `scripts/gate.sh` is shared) | the full cell sets | 10m00s |
+
+No stage, cell or check of the full gate is dropped and no verdict changed: the full
+gate's plans and counts are the ones `--list` printed before.
 
 ### Green-tree record
 

@@ -1550,7 +1550,10 @@ meta workspace), OTP 28, node v25.
 | wasm | refused — "supports only the commonJS, erlang and beam targets" | yes, it executes | `run/` and `modules/` only |
 | beam | yes: every module of the run assembled beside itself (`erlc +from_asm`), each test module's runner run with `erl -pa` (`01 · 03-beam`) | yes: it builds `out/beam/*.S`, assembles each beside itself (`erlc +from_asm -o out/beam`) and runs the entry with `erl -pa out/beam` | every kind |
 
-`--target all` is the four of them. A machine without `erlc` or `erl` fails the run before any cell
+`--target all` is the four of them; `--target` also takes a comma list (`wasm,beam`) — a
+subset in canonical order, a name twice or unknown refused — which is what the step gate
+(`scripts/AGENTS.md` § Step gate and full gate) passes for a change that reaches those
+backends only. A machine without `erlc` or `erl` fails the run before any cell
 starts (`run.sh: the beam target needs erlc`); it never runs three targets and reports "all"
 (decision 67). The tool set is the gate's own — `node`, `erl`, `erlc`, `wasmtime` — and nothing
 else: the four-target run is green with `PATH=/usr/bin:/bin:~/.wasmtime/bin` and no other variable

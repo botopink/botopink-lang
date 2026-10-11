@@ -269,6 +269,16 @@ run is [`scripts/gate.sh`](scripts/gate.sh) — stages 1–4 one after the other
 10. `zig build test-docs` (every `botopink` fence of `docs.md` and `README.md` compiles);
 11. `scripts/tsc-check.sh` (every `.d.ts` a commonJS build of `libs/std` — the one package the compiler ships —, the example projects and `tests/language/modules` emits passes `tsc --noEmit --strict`, typescript pinned, through `npx`, and every `.js` it emits passes `node --check`).
 
+**Step gate and full gate** (decision 460). The branch decides, never a flag or a
+variable (decision 67): on a `front/*` branch `gate.sh` runs the STEP gate — every
+stage, but the cells of `test-libs` and `test-language` are only those the step's
+change reaches by the backend partition (a change in one backend's files runs that
+target's cells; a change in any shared file, std included, runs every cell); on
+`feat`, `main`, a detached HEAD or any other branch it runs the FULL gate. The first
+line printed says which and why. A front's Conformance step and its landing run the
+full gate on the main checkout at a detached HEAD of the commit (`scripts/gate.sh
+--cold` there); a front lands whole (`scripts/AGENTS.md` § Step gate and full gate).
+
 The side-by-side stages share one job budget: `gate.sh` computes it once
 (CPUs bounded by memory) and hands each stage its share through its `--jobs`
 flag — `test-libs` 50 %, `test-language` 30 %, `test-docs` 5 %, `tsc-check` 10 %,

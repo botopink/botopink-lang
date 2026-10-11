@@ -53,6 +53,13 @@
 # Usage:
 #   scripts/gate.sh [--cold] [--staged]
 #
+# Two modes, decided by the current branch alone (§ step gate and full gate;
+# decision 460) — there is no flag or variable for it. On a `front/*` branch the
+# STEP gate runs every stage but narrows stages 8 and 9 to the cells the step's
+# change reaches (the backend partition, decision 249); on `feat`, `main`, a
+# detached HEAD or any other branch the FULL gate runs every cell. The first
+# line the gate prints names the mode and why.
+#
 #   --cold    delete modules/compiler-core/.botopinkbuild/runtime-cache before
 #             `zig build test`, and every `.botopinkbuild/cache/` (decision 225:
 #             the erlang verdicts, the `.beam` cache, the cell durations, the
@@ -88,7 +95,7 @@ for a in "$@"; do
     case "$a" in
         --cold) cold=1 ;;
         --staged) staged=1 ;;
-        -h|--help) sed -n '2,70p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,78p' "$0"; exit 0 ;;
         *) echo "gate: unknown argument '$a'" >&2; exit 1 ;;
     esac
 done
@@ -173,6 +180,54 @@ gate_start="$(date +%s)"
 par="$(mktemp -d "${TMPDIR:-/tmp}/bp-gate.XXXXXX")"
 cleanup_dirs+=("$par")
 tdir="$par"
+
+# ── § step gate and full gate ────────────────────────────────────────────────
+# Decision 460: the branch decides the mode, structurally — a flag, a variable
+# or a file a commit sets cannot (decision 67). On a `front/*` branch the gate is
+# the STEP gate: every stage runs, and the cells of stages 8 (test-libs) and 9
+# (test-language) are the ones the step's change reaches, by the backend
+# partition of decision 249 (scripts/lib/gate-mode.sh). On `feat`, `main`, a
+# detached HEAD or any other branch it is the FULL gate: every stage, every cell,
+# every library. The step's change is the working tree against the merge-base
+# with `origin/feat` (committed, staged, unstaged and untracked files), so a step
+# gate covers the whole step, not the last commit. A front's Conformance step and
+# its landing run the full gate on the main checkout at a detached HEAD
+# (scripts/AGENTS.md § Step gate and full gate). One line says which mode and why.
+# shellcheck source=lib/gate-mode.sh
+. scripts/lib/gate-mode.sh
+gate_branch="$(git symbolic-ref --short -q HEAD || true)"
+gate_kind="$(gate_mode "$gate_branch")"
+lang_args=()   # test-language's target subset (empty: every target)
+libs_args=()   # test-libs' target subset (empty: its default targets)
+run_lang=1
+run_libs=1
+if [ "$gate_kind" = step ]; then
+    if gate_base="$(git merge-base HEAD refs/remotes/origin/feat 2>/dev/null)"; then
+        gate_changed="$({ git diff --no-renames --name-only "$gate_base"; git ls-files --others --exclude-standard; } | sort -u)"
+        # shellcheck disable=SC2046
+        gate_reach modules/compiler-core/src/codegen/backend-partition.txt $(printf '%s\n' "$gate_changed" | tr '\n' ' ')
+    else
+        reach_all=1
+        reach_targets=""
+        reach_why="no origin/feat to measure the step against"
+    fi
+    if [ "$reach_all" -eq 1 ]; then
+        printf 'gate: step gate (branch %s): reaches every backend (%s)\n' "$gate_branch" "$reach_why"
+    else
+        lib_targets=""
+        for t in ${reach_targets//,/ }; do
+            case "$t" in commonJS|erlang) lib_targets="${lib_targets:+$lib_targets,}$t" ;; esac
+        done
+        if [ -n "$reach_targets" ]; then lang_args=(--target "$reach_targets"); else run_lang=0; fi
+        if [ -n "$lib_targets" ]; then libs_args=(--target "$lib_targets"); else run_libs=0; fi
+        printf 'gate: step gate (branch %s): %s; test-language %s, test-libs %s\n' "$gate_branch" "$reach_why" \
+            "$([ "$run_lang" -eq 1 ] && echo "on $reach_targets" || echo 'skipped, no cell reached')" \
+            "$([ "$run_libs" -eq 1 ] && echo "on $lib_targets" || echo 'skipped, no library cell reached')"
+    fi
+else
+    if [ -n "$gate_branch" ]; then gate_where="branch $gate_branch"; else gate_where="detached HEAD"; fi
+    printf 'gate: full gate (%s): every stage, every cell, every library\n' "$gate_where"
+fi
 
 if [ "$staged" -eq 1 ]; then
     stage "staged files"
@@ -361,10 +416,14 @@ pass "zig build test — $(stage_time "$par/0.time")"
 # count it printed is held to its plan (§ counts), so a stage cannot be
 # narrowed to win time — a run that did fewer cells than the manifests and the
 # trees declare fails the gate, green or not.
-bash scripts/test-libs.sh --list >"$par/plan.libs" 2>"$par/plan.libs.err" ||
-    { cat "$par/plan.libs.err"; fail "scripts/test-libs.sh --list"; }
-bash tests/language/run.sh --list >"$par/plan.language" 2>"$par/plan.language.err" ||
-    { cat "$par/plan.language.err"; fail "tests/language/run.sh --list"; }
+if [ "$run_libs" -eq 1 ]; then
+    bash scripts/test-libs.sh --list ${libs_args[@]+"${libs_args[@]}"} >"$par/plan.libs" 2>"$par/plan.libs.err" ||
+        { cat "$par/plan.libs.err"; fail "scripts/test-libs.sh --list"; }
+fi
+if [ "$run_lang" -eq 1 ]; then
+    bash tests/language/run.sh --list ${lang_args[@]+"${lang_args[@]}"} >"$par/plan.language" 2>"$par/plan.language.err" ||
+        { cat "$par/plan.language.err"; fail "tests/language/run.sh --list"; }
+fi
 bash scripts/check-docs.sh --list >"$par/plan.docs" 2>"$par/plan.docs.err" ||
     { cat "$par/plan.docs.err"; fail "scripts/check-docs.sh --list"; }
 
@@ -417,8 +476,14 @@ share() { # <percent> — that part of the total, at least 1
 }
 echo "gate: job budget $budget_total — test-libs $(share 50), test-language $(share 30), test-docs $(share 5), tsc-check $(share 10)"
 launch 4 zig build test-cli "$opt"
-launch 5 zig build test-libs "$opt" -- --jobs "$(share 50)" ${cold_arg[@]+"${cold_arg[@]}"}
-launch 6 zig build test-language "$opt" -- --jobs "$(share 30)" ${cold_arg[@]+"${cold_arg[@]}"}
+# A stage the step gate skips because the step reaches none of its cells is not
+# launched; its report line says so (§ step gate and full gate).
+if [ "$run_libs" -eq 1 ]; then
+    launch 5 zig build test-libs "$opt" -- --jobs "$(share 50)" ${libs_args[@]+"${libs_args[@]}"} ${cold_arg[@]+"${cold_arg[@]}"}
+fi
+if [ "$run_lang" -eq 1 ]; then
+    launch 6 zig build test-language "$opt" -- --jobs "$(share 30)" ${lang_args[@]+"${lang_args[@]}"} ${cold_arg[@]+"${cold_arg[@]}"}
+fi
 launch 7 zig build test-docs "$opt" -- --jobs "$(share 5)" ${cold_arg[@]+"${cold_arg[@]}"}
 launch 8 bash scripts/tsc-check.sh --jobs "$(share 10)"
 launch 9 zig build test-web -j"$(share 10)"
@@ -479,6 +544,11 @@ check_counts() { # <n>
 
 report() { # <n> <stage title> <pass text> <fail text>
     stage "$2"
+    if { [ "$1" = 5 ] && [ "$run_libs" -eq 0 ]; } || { [ "$1" = 6 ] && [ "$run_lang" -eq 0 ]; }; then
+        echo "0 0 0" >"$par/$1.time"
+        pass "$3 — skipped by the step gate: the step reaches no cell of it ($reach_why)"
+        return 0
+    fi
     cat "$par/$1.out"
     [ "$(cat "$par/$1.rc" 2>/dev/null)" = 0 ] || fail "$4"
     check_counts "$1"
@@ -499,7 +569,9 @@ report 9 "zig build test-web (the compiler built for wasm32, smoke.js under node
     "zig build test-web (a wasm32 compile error or a smoke.js assertion above names the defect)"
 
 # Record the trees as green — only when nothing moved while the gate ran.
-if [ "$(tree_key)" = "$start_key" ]; then
+# Only the FULL gate records it: a step gate ran a subset of the cells, and the
+# record lets a later `--staged` run on the same bytes — on `feat` — skip stages 2–11.
+if [ "$gate_kind" = full ] && [ "$(tree_key)" = "$start_key" ]; then
     echo "$start_key" >"$green_record"
 fi
 
