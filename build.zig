@@ -190,11 +190,13 @@ pub fn build(b: *std.Build) void {
     const std_wasm_step = b.step("std-wasm", "Compile modules/std-wasm's program face alone to zig-out/lib/std_wasm.wasm");
     std_wasm_step.dependOn(&b.addInstallFileWithDir(std_wasm_bin, .lib, "std_wasm.wasm").step);
 
-    // ── beam-to-wasm (decision 434 (3)) ───────────────────────────────────────
+    // ── beam-to-wasm (decisions 434 (3), 438) ─────────────────────────────────
     // `.beam` bytecode translated to wasm functions over the comptime
-    // runtime's terms (`modules/beam-to-wasm`): compiler-core's wat comptime
-    // runtime runs a host function's Erlang cell through it
-    // (`comptime/runtime/wat/cells.zig`). `std` only.
+    // runtime's terms (`modules/beam-to-wasm`), whole module by module:
+    // compiler-core's wat comptime runtime runs a host function's Erlang cell
+    // — and any `.beam` set — through it (`comptime/runtime/wat/cells.zig`).
+    // Zig's `std` and std-wasm only: `requireStandalone`, at the end of
+    // `build`, fails the build on any other import.
     const beam_to_wasm_mod = b.createModule(.{ .root_source_file = b.path("modules/beam-to-wasm/src/root.zig") });
     const beam_to_wasm_tests = b.addTest(.{
         .root_module = b.createModule(.{
@@ -708,6 +710,25 @@ pub fn build(b: *std.Build) void {
 
     const run_step = b.step("run", "Build and run the botopink CLI");
     run_step.dependOn(&run_cmd.step);
+
+    // ── beam-to-wasm stands alone (decision 438 (3)) ────────────────────────
+    // Checked last, once every module of the graph is wired.
+    requireStandalone(beam_to_wasm_mod, "modules/beam-to-wasm");
+    requireStandalone(beam_to_wasm_tests.root_module, "modules/beam-to-wasm's tests");
+}
+
+/// Decision 438 (3): `modules/beam-to-wasm` is a utility that knows nothing
+/// of botopink the language — it imports Zig's `std` and std-wasm
+/// (`std_wasm`) only; no compiler-core, `manifest`, `bpmp` or anything else.
+/// Every module it can import by name is an entry of its import table (a file
+/// outside its own directory is no import at all: Zig refuses a path outside
+/// a module's root), so the table is the whole check: any other entry fails
+/// the build, named, before a step runs.
+fn requireStandalone(mod: *std.Build.Module, what: []const u8) void {
+    for (mod.import_table.keys()) |name| {
+        if (std.mem.eql(u8, name, "std_wasm")) continue;
+        std.debug.panic("{s} imports `{s}`: decision 438 (3) allows Zig's `std` and std-wasm (`std_wasm`) only", .{ what, name });
+    }
 }
 
 /// A `bash modules/compiler-cli/tests/<script>` run against the installed CLI.

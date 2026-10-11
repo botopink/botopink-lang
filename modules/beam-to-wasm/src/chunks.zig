@@ -1,7 +1,11 @@
 //! The `.beam` container: an IFF file `FOR1 <size> BEAM` of 4-byte-aligned
-//! chunks. This reads the ones a translation needs — `AtU8` (atoms), `Code`,
-//! `ImpT` (imports), `ExpT` (exports), `LitT` (literals, zlib) — and skips
-//! the rest (`StrT`, `Line`, `FunT`, `Attr`, `CInf`, `Dbgi`, `Docs` …).
+//! chunks. This reads the ones a translation needs — `AtU8` (atoms, in both
+//! the length-byte form and OTP 28's compact form), `Code`, `StrT` (the
+//! strings `bs_create_bin` copies), `ImpT` (imports), `ExpT` (exports),
+//! `LitT` (literals, zlib or stored) — and skips the rest (`Line`, `FunT`,
+//! `Attr`, `CInf`, `Dbgi`, `Docs`, `Meta`, `Type` …). Whatever compiler wrote
+//! the file — `erlc`, botopink's own assembler, Elixir's, Gleam's — the
+//! container is the same.
 const std = @import("std");
 
 pub const Error = error{ OutOfMemory, BadBeam };
@@ -26,6 +30,8 @@ pub const Beam = struct {
     atoms: []const []const u8,
     /// The `Code` chunk past its header: the instruction stream.
     code: []const u8,
+    /// `StrT`: the bytes a `string` segment names by offset and length.
+    strings: []const u8 = &.{},
     label_count: u32,
     function_count: u32,
     imports: []const Import,
@@ -75,6 +81,8 @@ pub fn read(arena: std.mem.Allocator, bytes: []const u8) Error!Beam {
             have_code = true;
         } else if (std.mem.eql(u8, id, "LitT")) {
             out.literals = try readLiterals(arena, body);
+        } else if (std.mem.eql(u8, id, "StrT")) {
+            out.strings = body;
         }
         at = body_at + std.mem.alignForward(usize, size, 4);
     }
@@ -110,16 +118,28 @@ pub fn read(arena: std.mem.Allocator, bytes: []const u8) Error!Beam {
 }
 
 fn readAtoms(arena: std.mem.Allocator, body: []const u8) Error![]const []const u8 {
-    const n = try be32(body, 0);
-    // OTP 28's compact form (a negative count) is not what the compiler's
-    // assembler writes; refused as a malformed file rather than misread.
+    const raw: i32 = @bitCast(try be32(body, 0));
+    // A negative count is OTP 28's compact form: each length a compact `u`
+    // term (tag 0 in the low bits), not one byte.
+    const compact = raw < 0;
+    const n: u32 = @abs(raw);
     if (n > body.len) return error.BadBeam;
     const atoms = try arena.alloc([]const u8, n);
     var at: usize = 4;
     for (atoms) |*a| {
         if (at >= body.len) return error.BadBeam;
-        const len = body[at];
+        var len: usize = body[at];
         at += 1;
+        if (compact) {
+            if (len & 7 != 0) return error.BadBeam;
+            if (len & 0x08 == 0) {
+                len >>= 4;
+            } else if (len & 0x10 == 0) {
+                if (at >= body.len) return error.BadBeam;
+                len = ((len & 0xE0) << 3) | body[at];
+                at += 1;
+            } else return error.BadBeam; // an atom of 2048 bytes or more: none exists
+        }
         if (at + len > body.len) return error.BadBeam;
         a.* = body[at..][0..len];
         at += len;
@@ -129,12 +149,18 @@ fn readAtoms(arena: std.mem.Allocator, body: []const u8) Error![]const []const u
 
 fn readLiterals(arena: std.mem.Allocator, body: []const u8) Error![]const Literal {
     const raw_len = try be32(body, 0);
-    const raw = try arena.alloc(u8, raw_len);
-    var in: std.Io.Reader = .fixed(body[4..]);
-    const window = try arena.alloc(u8, std.compress.flate.max_window_len);
-    var z = std.compress.flate.Decompress.init(&in, .zlib, window);
-    z.reader.readSliceAll(raw) catch return error.BadBeam;
+    // An uncompressed size of 0: the table is stored as is (OTP 28 writes a
+    // small table so).
+    const raw = if (raw_len == 0) body[4..] else blk: {
+        const buf = try arena.alloc(u8, raw_len);
+        var in: std.Io.Reader = .fixed(body[4..]);
+        const window = try arena.alloc(u8, std.compress.flate.max_window_len);
+        var z = std.compress.flate.Decompress.init(&in, .zlib, window);
+        z.reader.readSliceAll(buf) catch return error.BadBeam;
+        break :blk buf;
+    };
     const n = try be32(raw, 0);
+    if (n > raw.len) return error.BadBeam;
     const lits = try arena.alloc(Literal, n);
     var at: usize = 4;
     for (lits) |*l| {

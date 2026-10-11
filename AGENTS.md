@@ -31,7 +31,7 @@ botopink-lang/                 ← language core (this project)
 │   ├── manifest/              ← the shared `botopink.json` model (std only; imported by the four above)
 │   ├── source-stamp/          ← `source_stamp` — a library run refuses a binary older than its checkout's sources
 │   ├── std-wasm/              ← std's host functions in Zig, compiled to wasm: the comptime runtime's and a `--target wasm` program's, bound by `std:` cells (decisions 434, 440)
-│   ├── beam-to-wasm/          ← `.beam` bytecode translated to wasm: a host function's Erlang cell at comptime (decisions 434, 435)
+│   ├── beam-to-wasm/          ← a standalone utility: any `.beam` set translated to wasm whole, module by module (std + std-wasm only); a host function's Erlang cell at comptime (decisions 434, 438)
 │   ├── test-scratch/          ← `test_scratch` — per-process scratch paths; the test modules only
 │   ├── test-shard/            ← the compiler-core test runner: the suite split across processes (`-Dtest-shards`)
 │   └── wasm3/                 ← vendored wasm3 (C): the wat comptime runtime runs on it, in-process

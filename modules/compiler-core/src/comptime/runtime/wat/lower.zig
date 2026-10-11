@@ -248,6 +248,7 @@ const otp_bifs = [_]Bif{
     .{ .module = "string", .name = "is_empty", .arity = 1, .rt = "rt_string_is_empty" },
     .{ .module = "string", .name = "uppercase", .arity = 1, .rt = "rt_string_uppercase" },
     .{ .module = "string", .name = "lowercase", .arity = 1, .rt = "rt_string_lowercase" },
+    .{ .module = "string", .name = "titlecase", .arity = 1, .rt = "rt_string_titlecase" },
     .{ .module = "string", .name = "trim", .arity = 1, .rt = "rt_string_trim" },
     .{ .module = "string", .name = "trim", .arity = 2, .rt = "rt_string_trim2" },
     .{ .module = "string", .name = "find", .arity = 2, .rt = "rt_string_find" },
@@ -295,8 +296,21 @@ pub const beam_to_wasm_bifs: []const bw.Bif = blk: {
 };
 
 comptime {
-    // beam-to-wasm's view of the term ABI is this runtime's.
-    if (bw.runtime.kind_binary != @intFromEnum(Kind.binary)) @compileError("beam-to-wasm's binary kind is not rt.zig's");
+    // beam-to-wasm's view of the term ABI is this runtime's: each kind
+    // `rt_is` takes, and each export it names.
+    @setEvalBranchQuota(100_000);
+    for (@typeInfo(bw.runtime.Kind).@"enum".fields) |f| {
+        if (f.value != @intFromEnum(@field(Kind, f.name))) @compileError("beam-to-wasm's kind `" ++ f.name ++ "` is not rt.zig's");
+    }
+    for (@typeInfo(bw.runtime).@"struct".decls) |d| {
+        const v = @field(bw.runtime, d.name);
+        const info = @typeInfo(@TypeOf(v));
+        if (info != .pointer or @typeInfo(info.pointer.child) != .array or @typeInfo(info.pointer.child).array.child != u8) continue;
+        if (!rt_sigs.has(v)) @compileError("beam-to-wasm calls " ++ v ++ ", which the runtime's lowering does not know");
+    }
+    for (bw.runtime.operators) |op| {
+        if (!rt_sigs.has(op.rt)) @compileError("beam-to-wasm's operator export " ++ op.rt ++ " is not the runtime's");
+    }
 }
 
 fn findBif(module: []const u8, name: []const u8, arity: usize) ?Bif {
@@ -420,6 +434,8 @@ const Lowerer = struct {
             if (!std.mem.eql(u8, m.name, module)) continue;
             for (m.functions) |*f| {
                 if (f.arity != arity or !std.mem.startsWith(u8, f.name, name) or f.name.len <= name.len or f.name[name.len] != '/') continue;
+                // Reached, so refused (`cells.zig` checks before a module runs).
+                if (f.refused) |why| return l.refuse("beam-to-wasm does not convert {s} in `{s}:{s}`", .{ why, m.name, f.name });
                 const sym = try sanitize(l.ar, try std.fmt.allocPrint(l.ar, "{s}:{s}", .{ m.name, f.name }));
                 if (!l.cells_queued.contains(sym)) try l.cells_queued.put(l.ar, sym, f);
                 return sym;
@@ -1963,6 +1979,12 @@ fn cellInstrs(l: *Lowerer, c: *Code, instrs: []const bw.ir.Instr) Error!void {
             try l.useRt(name);
             try emit(c, ar, .{ .call = name });
         },
+        .call => |callee| {
+            const name = callee.function[0..std.mem.lastIndexOfScalar(u8, callee.function, '/').?];
+            const sym = (try l.cellFunction(callee.module, name, callee.arity)) orelse
+                return l.refuse("the translated module calls {s}:{s}, which is not among the modules given", .{ callee.module, callee.function });
+            try emit(c, ar, .{ .call = sym });
+        },
         .block => |b| {
             var inner: Code = .empty;
             try cellInstrs(l, &inner, b.body);
@@ -1971,6 +1993,10 @@ fn cellInstrs(l: *Lowerer, c: *Code, instrs: []const bw.ir.Instr) Error!void {
         .br => |lbl| try emit(c, ar, .{ .br = lbl }),
         .br_if => |lbl| try emit(c, ar, .{ .br_if = lbl }),
         .i32_eq => try emit(c, ar, .{ .op = .{ .ty = .i32, .name = "eq" } }),
+        .i32_ne => try emit(c, ar, .{ .op = .{ .ty = .i32, .name = "ne" } }),
+        .i32_lt_s => try emit(c, ar, .{ .op = .{ .ty = .i32, .name = "lt_s" } }),
+        .i32_ge_s => try emit(c, ar, .{ .op = .{ .ty = .i32, .name = "ge_s" } }),
+        .i32_eqz => try emit(c, ar, .{ .op = .{ .ty = .i32, .name = "eqz" } }),
         .drop => try emit(c, ar, .drop),
         .ret => try emit(c, ar, .@"return"),
         .trap => try emit(c, ar, .@"unreachable"),
@@ -1994,7 +2020,11 @@ pub fn lowerProgram(ar: std.mem.Allocator, prog: Program, failure: *Failure) Err
         try lowerFunction(&l, sym, k);
     }
 
-    for (l.cells_queued.keys(), l.cells_queued.values()) |sym, f| try emitCellFunction(&l, sym, f.*);
+    // A translated function's calls queue more as it is emitted: by index.
+    var ci: usize = 0;
+    while (ci < l.cells_queued.count()) : (ci += 1) {
+        try emitCellFunction(&l, l.cells_queued.keys()[ci], l.cells_queued.values()[ci].*);
+    }
 
     // bp_init(): the arena starts past the literals.
     {

@@ -18,7 +18,7 @@ std-wasm/
 └── src/
     ├── root.zig   ← the package: `exports` (each function by its `std:` name, its botopink types), `find`, `matches`, `signatureText`, `names`, `erlang_module`; re-exports the three below
     ├── hash.zig   ← `hash.contentHash`
-    ├── text.zig   ← the text algorithms behind std's string primitives (case, trim, graphemes, slice, reverse, find, split, replace)
+    ├── text.zig   ← the text algorithms behind std's string primitives (case, titlecase, trim, graphemes, slice, reverse, find, split, replace)
     ├── number.zig ← `shortFloat`: `float_to_binary(F, [short])`, std's `Float.toString` (`NaN`, `Infinity`, `-Infinity` for the values OTP has no float for)
     └── wasm.zig   ← the program face (`zig build std-wasm`): each export over a program's own strings, allocating through `env.bp_alloc`
 ```
@@ -56,7 +56,8 @@ letter (the comptime runtime's limit 3), so it is not the function a wasm progra
     `bp_std_wasm` family (`std_wasm_bifs`) to the exports. A comptime `@compileError` in `rt.zig`
     refuses an entry without its export;
   - the OTP BIFs the comptime module's primitive methods call — `string:uppercase/1`,
-    `lowercase/1`, `trim/1,2`, `find/2`, `prefix/2`, `split/2,3`, `slice/2,3`, `reverse/1`,
+    `lowercase/1`, `titlecase/1` (reached by a `.beam` beam-to-wasm translates: its `erlc`
+    fixture, decision 438 (2)), `trim/1,2`, `find/2`, `prefix/2`, `split/2,3`, `slice/2,3`, `reverse/1`,
     `length/1` (graphemes), `binary:replace/3,4`, `float_to_binary/2` (`[short]`), and the `~p` /
     `json:encode` float text — answer through `text` and `number`.
 - **Read by compiler-core** (`core_mod`, `core_test_mod`, the browser build's `web_core_mod`):

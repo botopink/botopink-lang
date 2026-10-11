@@ -2037,6 +2037,18 @@ export fn rt_string_lowercase(t: T) T {
     return caseMap(t, false);
 }
 
+/// `string:titlecase/1` — std-wasm's `text.titlecase`: the first character
+/// upper-cased (ASCII; a non-ASCII first letter is limit 3, as `caseMap`).
+export fn rt_string_titlecase(t: T) T {
+    const s = strArg(t) orelse return &nil_cell;
+    const out = alloc(s.len);
+    const mapped = stdWasm.text.titlecase(out[0..s.len], s) catch {
+        raiseWat("string case mapping of a non-ASCII character");
+        return &nil_cell;
+    };
+    return strResult(t, mapped);
+}
+
 fn trimBytes(s: []const u8, dir: T) []const u8 {
     return stdWasm.text.trim(s, if (dir == a_leading) .leading else if (dir == a_trailing) .trailing else .both);
 }

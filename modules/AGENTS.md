@@ -36,7 +36,7 @@ modules/
 ├── wasm3/                   ← vendored wasm3 (C, v0.5.0): the wat comptime runtime's engine, in-process
 ├── std-wasm/                ← std's host functions in Zig, compiled to wasm: the comptime runtime's and a `--target wasm` program's (decisions 434, 440)
 │   └── src/                 ← root.zig (`exports`, by `std:` name) + hash / text / number + wasm.zig (the program face, `zig build std-wasm`)
-├── beam-to-wasm/            ← `.beam` bytecode translated to wasm for the comptime runtime (decisions 434, 435)
+├── beam-to-wasm/            ← a standalone utility: any `.beam` set translated to wasm whole, for the comptime runtime (decisions 434, 438)
 │   └── src/                 ← root.zig (`translate`) + chunks / code / lower / ir + testdata/
 ├── test-scratch/            ← `test_scratch` — the one way a TEST spells a path it writes to
 │   └── src/root.zig         ← per-process scratch root; given to the test modules only
@@ -62,7 +62,7 @@ modules/
 | `test-scratch/` | library (`test_scratch` — per-process scratch paths for tests) | `std` only | [link](test-scratch/AGENTS.md) |
 | `source-stamp/` | library (`source_stamp` — the hash `build.zig` embeds in `botopink` and `botopink-lib-test`; a library run refuses a binary whose checkout moved) | `std` only | [link](source-stamp/AGENTS.md) |
 | `std-wasm/` | library compiled into the wat comptime runtime's `bp_wat_rt.wasm`, and its program face into `std_wasm.wasm` (a side module compiler-core embeds and the wasm codegen transpiles, `zig build std-wasm`) | `std` only | [link](std-wasm/AGENTS.md) |
-| `beam-to-wasm/` | library (`translate`: `.beam` → wasm functions over the comptime runtime's terms), imported by compiler-core | `std` only | [link](beam-to-wasm/AGENTS.md) |
+| `beam-to-wasm/` | library (`translateSet` / `translate`: `.beam` files → wasm functions over the comptime runtime's terms, a call between the modules given followed; `refusalReaching`), imported by compiler-core | `std` only — std-wasm the one other allowed, `build.zig` `requireStandalone` | [link](beam-to-wasm/AGENTS.md) |
 | `test-shard/` | the compiler-core test binary's runner (`build.zig` `.test_runner`), run as `-Dtest-shards` processes | `std` only | [link](test-shard/AGENTS.md) |
 | `wasm3/` | C sources linked into every native artifact that imports `compiler-core` (`link`), headers for its `@cImport` (`exposeHeaders`) | libc | [link](wasm3/AGENTS.md) |
 | `bpmp/` | `bpmp` executable | `manifest` only (spawns `botopink`) | [link](bpmp/AGENTS.md) |

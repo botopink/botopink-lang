@@ -34,13 +34,29 @@ pub const Instr = union(enum) {
     /// Call a runtime export by name. Its parameters are `i32` terms — but
     /// `rt_int`'s, an `i64` — and its result an `i32`.
     rt: []const u8,
+    /// Call a function of a translated module — this one's or another of the
+    /// set it was translated with: its `arity` arguments pushed, an `i32`
+    /// term answered (0 with an exception pending).
+    call: Call,
     block: Block,
     br: []const u8,
     br_if: []const u8,
     i32_eq,
+    i32_ne,
+    i32_lt_s,
+    i32_ge_s,
+    i32_eqz,
     drop,
     ret,
     trap,
+};
+
+pub const Call = struct {
+    /// The BEAM module's name.
+    module: []const u8,
+    /// `<name>/<arity>`, as `Function.name`.
+    function: []const u8,
+    arity: u32,
 };
 
 /// `block` (or `loop`, when `loop`) labelled `label` over `body`.
@@ -59,10 +75,22 @@ pub const Function = struct {
     x_regs: u32,
     y_regs: u32,
     body: []const Instr,
+    /// What is not converted in this function — an opcode
+    /// (`opcode 4 (call)`), a call (`` `re:run/3` ``), an operand — when it
+    /// is not; `body` is then empty. A function is refused where a caller
+    /// reaches it (`root.refusalReaching`), never for being in the module.
+    refused: ?[]const u8 = null,
 };
 
 pub const Module = struct {
     /// The BEAM module's name (atom 1).
     name: []const u8,
+    /// Every function of the module, in the order of its `Code` chunk.
     functions: []const Function,
+
+    /// Function `<name>/<arity>`, when the module has it.
+    pub fn find(m: Module, function: []const u8) ?*const Function {
+        for (m.functions) |*f| if (std.mem.eql(u8, f.name, function)) return f;
+        return null;
+    }
 };

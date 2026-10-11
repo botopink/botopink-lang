@@ -3292,8 +3292,9 @@ or an imported function — needs one of the three sources the comptime runtime
 answers by: a std-wasm implementation (its `std:` cell), the
 beam-to-wasm translation of its `@External.Erlang` cell, or its `@External.Wasm("fn:…")` cell. None is refused at the
 call (`comptime-host-cell-unavailable`), naming the function and the three
-sources; an Erlang cell beam-to-wasm does not convert — it converts a measured
-subset of opcodes and BIFs (decision 435) — is refused naming what is missing
+sources; an Erlang cell beam-to-wasm does not convert — it reads the cell's
+`.beam` whole, and refuses an opcode it has no lowering for or an OTP function
+the comptime runtime (std-wasm) does not serve (decisions 435, 438) — is refused naming what is missing
 (`comptime-beam-call-not-converted`: `` beam-to-wasm does not convert
 `re:replace/4` ``), even with an `@External.Wasm("fn:…")` cell after it: that
 cell is not tried (decision 439).

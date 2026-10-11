@@ -3,12 +3,29 @@
 > Path: `modules/beam-to-wasm/`
 > Parent: [`../AGENTS.md`](../AGENTS.md)
 
-`.beam` bytecode translated to wasm (decision 434 (3), front 144 B-00b): code that exists only as
-BEAM — a host function's `@External.Erlang` / `@External.Beam` cell, an `.erl` sidecar — runs at
-comptime on the one comptime runtime, wasm. It converts a **named subset** (decision 435): the
-opcodes and BIFs the measurement below lists, each BIF served by the comptime runtime (its term
-library and std-wasm); anything else is refused, named, and the compiler reports it at the call
-site of the function the code serves. The subset grows by a measured need, never by OTP's size.
+A standalone utility, `.beam` in, wasm out (decisions 434 (3), 438; front 144 B-00b). It takes any
+`.beam` files — erlc's output of a botopink cell or sidecar, the compiler's own assembler's, a
+module any BEAM compiler produced (Erlang, Elixir, Gleam …) — and translates them whole, module by
+module, a call from one module of the set to a function another exports followed. It reads
+bytecode, never the language it came from. A BIF or OTP function is bound to the export the
+caller's runtime table names — the comptime runtime's, whose OTP functions are std-wasm's
+implementations, never translated from OTP's own `.beam`. What it does not convert — an opcode, a
+call nothing serves, an operand or a literal of another kind — refuses the function that holds it,
+named; the refusal reaches a caller only when a call reaches that function, located
+(`` `re:run/3` in `mymod:f/1` ``). botopink's comptime is one caller
+(`compiler-core/src/comptime/runtime/wat/cells.zig`); the utility knows nothing of botopink the
+language.
+
+## Standalone (decision 438 (3))
+
+`modules/beam-to-wasm` imports Zig's `std` — and may import std-wasm (`std_wasm`) — and nothing
+else: no compiler-core, `manifest`, `bpmp`, AST, library resolution or diagnostic type. Root
+`build.zig` checks it once the module graph is wired (`requireStandalone`, the last thing `build`
+does): any other entry of the module's import table — or of its test module's — fails the build,
+named, before a step runs. A file outside `src/` cannot be imported at all (Zig refuses a path
+outside a module's root), so the import table is the whole check. Today it imports `std` alone:
+the BIF table is the caller's (`Bif`), since the term library that answers those calls lives in
+the caller's runtime.
 
 ## Tree
 
@@ -16,73 +33,139 @@ site of the function the code serves. The subset grows by a measured need, never
 beam-to-wasm/
 ├── AGENTS.md          ← you are here
 └── src/
-    ├── root.zig       ← `translate(arena, bytes, bifs) → Result{ ok: ir.Module, refused: what }`
-    ├── chunks.zig     ← the IFF container: `AtU8`, `Code`, `ImpT`, `ExpT`, `LitT` (zlib, `std.compress.flate`)
-    ├── code.zig       ← the instruction stream: opcodes (`genop.tab` numbers) and compact-term operands
+    ├── root.zig       ← `translateSet(arena, files, bifs) → SetResult{ ok: []ir.Module, refused: Refusal }`, `translate` (a set of one), `find`, `refusalReaching`, `testdata`
+    ├── chunks.zig     ← the IFF container: `AtU8` (both forms), `Code`, `StrT`, `ImpT`, `ExpT`, `LitT` (zlib or stored, `std.compress.flate`)
+    ├── code.zig       ← the instruction stream: every opcode of `genop.tab` (`genop`, OTP 28: 1–184) and the compact-term operands
     ├── lower.zig      ← BEAM instructions → `ir.Function`s; the runtime ABI it calls (`runtime`)
     ├── ir.zig         ← the answer: wasm functions as a structured instruction tree over `i32` terms
-    └── testdata/      ← `bp_cell_bang.beam`, `bp_cell_wrap.beam`: the two measured cells, assembled by the compiler
+    └── testdata/
+        ├── bp_cell_bang.beam, bp_cell_wrap.beam   ← the two measured cells, assembled by the compiler
+        └── erlc/greeting{,_text}.{erl,beam}       ← two modules compiled by `erlc` outside botopink (OTP 28, `erlc +deterministic`)
 ```
 
 ## How a translation works
 
-- **Input**: `.beam` bytes. At comptime the compiler produces them itself — a cell's template read
-  and lowered the way the beam target compiles every Erlang template
-  (`compiler-core/src/codegen/beam/erl_template.zig`) and assembled by
-  `codegen/beam/beam_file.zig`; no `erlc` runs while compiling
-  (`compiler-core/src/comptime/runtime/wat/cells.zig`).
-- **Refusals, in order**: a file that does not read as BEAM; an import (`ImpT`) the runtime has no
-  BIF for — `` `re:replace/4` `` (named first: what the code calls is what a reader can act on); an
-  opcode outside the subset — `opcode 8 (call_ext_last)` (decoding stops there: its arity is not
-  known); an operand or a literal of a kind it does not convert.
+- **Input**: `.beam` bytes, a set. At comptime the compiler produces a cell's itself — its template
+  read and lowered the way the beam target compiles every Erlang template
+  (`compiler-core/src/codegen/beam/erl_template.zig`) and assembled by `codegen/beam/beam_file.zig`;
+  no `erlc` runs while compiling. Any other `.beam` set is handed whole (`cells.zig` `ofModules`).
+- **The container**: `AtU8` in the length-byte form and OTP 28's compact form (a negative count,
+  each length a compact `u`), `StrT` (what a `string` segment of `bs_create_bin` copies), `LitT`
+  zlib-compressed or stored (an uncompressed size of 0, as OTP 28 writes a small table). The rest
+  (`Line`, `Meta`, `Type`, `Attr`, `CInf`, `Dbgi`, `Docs` …) is skipped.
+- **Decoding**: every opcode `genop.tab` numbers is read, with its operand count (`code.genop`), so a
+  module decodes whole; operands include the extended `list`, `fr`, `alloc`, `literal` and `tr`
+  (a typed register, read as its register). A number outside the table is a whole-module refusal
+  (`opcode 200, which genop.tab (OTP 28) does not number`): nothing after it can be read.
+- **Refusals**, per function, in order: a call nothing serves — `` `re:replace/4` `` (named first:
+  what the code calls is what a reader can act on); an opcode the lowering has none for —
+  `opcode 171 (make_fun3)`; an operand or a literal of a kind it does not convert. The function's
+  `refused` holds it and its body is empty; the module's other functions translate.
+  `refusalReaching(set, module, function)` walks the calls from a function through the set and
+  answers the first refused function it reaches (or a callee no module of the set has), located —
+  `Refusal{ what, module, function }`, formatted `` `what` in `module:function` ``. Whole-set
+  refusals: a file that does not read as BEAM, two files of one module.
+- **Calls**: `call` / `call_last` / `call_only` reach this module's function by its entry label;
+  `call_ext*` naming a module of the set reach the function it exports (an unexported one is a call
+  nothing serves); an `erlang` operator (`+`, `-`, `div`, `band` …, `runtime.operators`) or a BIF of
+  the caller's table (`Bif`) is a runtime export. A tail call is a call and a return (the stack, not
+  a jump: an Erlang loop's depth is its iteration count, as on the comptime runtime). `bif*` /
+  `gc_bif*` with a fail label clear the exception and jump there (a guard); with `{f,0}` it raises.
 - **Control flow**: a BEAM function is a graph of labels, wasm's control is structured. A function
   becomes `block $raise (loop $dispatch (block $L<n> … (block $L<first> <dispatch on pc>) <code of
   first> …) <code of last>)`: leaving block `$L` lands on label `L`'s code, which falls through
-  into the next label's as BEAM code does; a jump (and a failed test) sets the local `pc` and
-  branches to `$dispatch`. A call that leaves an exception pending (`rt_pending`) branches to
-  `$raise`, and the function answers 0 — its caller tests `rt_pending` in turn, the convention of
-  the comptime runtime's own lowering.
+  into the next label's as BEAM code does; a jump (and a failed test, and each `select_val` /
+  `select_tuple_arity` arm) sets the local `pc` and branches to `$dispatch`. A call that leaves an
+  exception pending (`rt_pending`) branches to `$raise`, and the function answers 0 — its caller
+  tests `rt_pending` in turn, the convention of the comptime runtime's own lowering.
 - **Registers** are locals `x<N>` (the first `arity` the parameters) and `y<N>`; the frame and
-  heap opcodes have nothing to do (a y register is a local of the call; terms live on the runtime's
-  arena).
-- **The runtime ABI** (`lower.runtime`): `rt_nil`, `rt_atom(ptr, len)`, `rt_bin(ptr, len)`,
-  `rt_int(i64)`, `rt_cons(h, t)`, `rt_is(t, kind)` (`kind_binary` = 1, checked against `rt.zig`'s
-  `Kind` at compiler-core's compile time), `rt_pending`, `rt_function_clause`; a BIF is the export
-  the caller's `Bif` table names (compiler-core passes its wat lowering's table,
-  `lower.beam_to_wasm_bifs`).
-- **Output**: `ir.Module{ name, functions }`; compiler-core's wat lowering emits each function a
-  comptime module calls (`bp_cell_<hash>:t/N`) into the program (`emitCellFunction`) and lists it
-  in the `COMPTIME WAT` section.
+  heap opcodes and `line` have nothing to do (a y register is a local of the call; terms live on
+  the runtime's arena).
+- **The runtime ABI** (`lower.runtime`): terms (`rt_nil`, `rt_atom`, `rt_bin`, `rt_int`,
+  `rt_cons`, `rt_hd`, `rt_tl`, `rt_tuple`, `rt_tset`, `rt_elem`, `rt_tuple_arity`), tests (`rt_is`
+  with `runtime.Kind`, `rt_eq`, `rt_eqx`, `rt_cmp`), the binary builder (`rt_bb_new`, `rt_bb_bin`,
+  `rt_bb_int`, `rt_bb_utf8`, `rt_bb_end`), exceptions (`rt_pending`, `rt_clear`,
+  `rt_function_clause`, `rt_badmatch`, `rt_case_clause`, `rt_if_clause`) and the operators.
+  compiler-core holds every name and kind to its `rt.zig` at its compile time
+  (`runtime/wat/lower.zig`).
+- **Output**: `ir.Module{ name, functions }` per file; compiler-core's wat lowering emits each
+  function a comptime module reaches (`bp_cell_<hash>:t/N`, or `<module>:<f>/N` of a set
+  `ofModules` kept, and every function those call) into the program (`emitCellFunction`) and lists
+  it in the `COMPTIME WAT` section.
 
-## Measured — what a comptime evaluation reaches (144 B-00b, 2026-10-11)
+## The opcodes converted
 
-Measured over `tests/language` (four targets, `--cold`), `zig build test` and `zig build test-libs`
-(every library repository) on botopink-lang `239f789f` (686 comptime modules recorded):
+`label`, `func_info`, `int_code_end`, `line`, `executable_line`; calls `call`, `call_last`,
+`call_only`, `call_ext`, `call_ext_last`, `call_ext_only`, `bif0`, `bif1`, `bif2`, `gc_bif1`,
+`gc_bif2`, `gc_bif3`; frames `allocate`, `allocate_heap`, `allocate_zero`, `allocate_heap_zero`,
+`test_heap`, `init`, `init_yregs`, `deallocate`, `return`; tests `is_lt`, `is_ge`, `is_eq`,
+`is_ne`, `is_eq_exact`, `is_ne_exact`, `is_integer`, `is_float`, `is_number`, `is_atom`, `is_nil`,
+`is_binary`, `is_list`, `is_nonempty_list`, `is_tuple`, `is_map`, `is_function`, `is_boolean`,
+`test_arity`, `is_tagged_tuple`, `select_val`, `select_tuple_arity`, `jump`; data `move`, `swap`,
+`get_list`, `get_hd`, `get_tl`, `get_tuple_element`, `put_list`, `put_tuple2`; errors `badmatch`,
+`case_end`, `if_end`; `bs_create_bin` with `string`, `binary` (size `all`), `integer` (whole bytes,
+no flags) and `utf8` segments. Everything else of `genop.tab` — funs (`make_fun3`, `call_fun2`),
+`try` / `catch`, receive and messages, binary matching (`bs_start_match4`, `bs_match` …), maps
+(`put_map_*`, `get_map_elements`), floats (`fmove` …), `trim`, `raise`, `apply` — is refused,
+named, in the function that holds it: the set grows by a measured need (decision 435).
 
-| Cell | Where | Erlang template | Wasm cell |
+## Measured — what a comptime evaluation reaches
+
+Two measurements (144 B-00b), each recording every comptime module's Erlang text
+(`runtime.evalWithArg`) and every host function `host_cells.forRuntime` carried with its cells.
+
+**Over `tests/language` (four targets, `--cold`), `zig build test` and `zig build test-libs`
+(botopink-lang before decision 434, 686 comptime modules)** — the cells:
+
+| Cell | Where | Erlang template | Served by |
 |---|---|---|---|
-| `hash.contentHash` (std) | `run/decorator_host_cells`, `run/comptime_std_host_function`, `modules/decorator_imported_host_function`, `modules/hole_imported_val_known_at_build` | djb2 template | `std:hash.contentHash` (was `fn:contentHashBody`, deleted by decision 440) — served by std-wasm first, never translated |
-| `bang` (test cell) | `run/decorator_host_cells`, `modules/decorator_imported_host_function`, `modules/decorator_erlang_cell_only`, `comptime/tests/decorator_invocation.zig` | `<<($0)/binary, "!">>` | `fn:bangBody` (absent in `decorator_erlang_cell_only`) |
-| `wrap` (test cell) | `modules/decorator_imported_host_function` | `<<"<", ($0)/binary, ">">>` | `fn:wrapBody` |
+| `hash.contentHash` (std) | `run/decorator_host_cells`, `run/comptime_std_host_function`, `modules/decorator_imported_host_function`, `modules/hole_imported_val_known_at_build` | djb2 template | std-wasm (`std:hash.contentHash`, decision 440) — never translated |
+| `bang` (test cell) | `run/decorator_host_cells`, `modules/decorator_imported_host_function`, `modules/decorator_erlang_cell_only`, `comptime/tests/decorator_invocation.zig` | `<<($0)/binary, "!">>` | beam-to-wasm |
+| `wrap` (test cell) | `modules/decorator_imported_host_function` | `<<"<", ($0)/binary, ">">>` | beam-to-wasm |
 
-- **`.erl` sidecars reached at comptime: none** — no comptime module calls a library module
-  (jhonstart's `jhonstart_render`, rakun's sidecars …); the BEAM comptime node never loaded one, so
-  such a call was `undef` before 434 as well. A sidecar call is refused, named, like any import the
-  runtime has no BIF for.
-- **`@External.Beam("module", "symbol")` host functions reached: none.**
-- **The opcode subset** — the compiler's BEAM lowering of the two cells' template modules:
-  `label` 1, `func_info` 2, `int_code_end` 3, `call_ext` 7, `allocate` 12, `test_heap` 16,
-  `deallocate` 18, `return` 19, `is_binary` 53, `jump` 61, `move` 64, `put_list` 69,
-  `init_yregs` 172; operands `x`, `y`, `atom`, `nil`, `integer`, `literal` (a binary, an atom, an
-  integer, `[]`), `f` labels, `{list, …}`.
-- **The BIFs** — every import of those modules: `erlang:iolist_to_binary/1`, `erlang:error/1`;
-  bound to the comptime runtime's whole BIF table, the same one its lowering of a comptime module
-  calls (`erlang`, `lists`, `maps`, `string`, `binary`, `unicode`, `math`, `io_lib`, `json`).
+Their `.beam` (the compiler's assembler): `label`, `func_info`, `int_code_end`, `call_ext`,
+`allocate`, `test_heap`, `deallocate`, `return`, `is_binary`, `jump`, `move`, `put_list`,
+`init_yregs`; imports `erlang:iolist_to_binary/1`, `erlang:error/1`.
+
+**Whole modules — every library repository under `repository/` at comptime (`zig build test-libs
+--cold`, every library and every rakun member × commonJS, erlang; botopink-lang with B-00a–f, 350
+comptime modules):**
+
+- **Host functions carried: none.** No library comptime module — decorator, template or
+  `comptime` body of erika, jhonstart, rakun, styled, css, emilia, onze, routing, validation, snap,
+  json, yaml, markdown, dbcontext, actions, http, log — reaches a host function: no `bp_cell_`
+  call, no `bp_std_wasm` call, no `@External.Erlang` cell to translate.
+- **`.erl` sidecars and library modules reached: none.** Every remote call a library comptime
+  module makes is OTP's, each already a BIF of the comptime runtime: `binary:match/2`, `part/3`,
+  `replace/4`; `erlang:atom_to_binary/1`, `element/2`, `erase/1`, `error/1`, `float/1`,
+  `integer_to_binary/1`, `is_atom/1` … `is_tuple/1`, `length/1`, `max/2`, `min/2`, `throw/1`,
+  `trunc/1`, `tuple_to_list/1`; `io_lib:format/2`; `json:encode/1`; `lists:filter/2`, `foldl/3`,
+  `foreach/2`, `join/2`, `map/2`, `member/2`, `nth/2`, `nthtail/2`, `reverse/1`, `sublist/2,3`,
+  `zipwith/3`; `maps:get/2`, `map/2`; `string:find/2`, `lowercase/1`, `prefix/2`, `split/3`,
+  `trim/1,2`, `uppercase/1`; `unicode:characters_to_binary/1`, `characters_to_list/1,2` — the
+  comptime module's own lowering, never a translated `.beam`.
+- So no library cell calls a function of another of its modules at comptime today: a whole-module
+  translation has no library caller yet. Its need is measured by the `erlc` fixture: two modules,
+  a call between them, the opcodes above plus `call`, `call_last`, `call_only`, `call_ext_last`,
+  `call_ext_only`, `gc_bif2` (`+`), `is_nil`, `is_nonempty_list`, `is_eq_exact`, `get_list`,
+  `get_tl`, `bs_create_bin`, `line`; OTP functions `lists:reverse/1`, `string:uppercase/1` and
+  `string:titlecase/1` — the last one added to std-wasm (`text.titlecase`) for it.
+  `erlang:get_module_info/1,2` (every `erlc` module's `module_info`) is served by nothing:
+  refused where reached.
 
 ## Tests
 
 `zig build test` runs `src/root.zig`'s tests: the chunk reader on a measured cell, each compact-term
-tag and value width, the extended `literal` / `list` terms, an unknown opcode stopping the stream,
-the two cells translated (one function, its BIF calls, `put_list` conses, `is_binary`, literals
-materialised), a call outside the BIF table refused by name, an opcode outside the subset refused
-by name, a file that is not BEAM. compiler-core's `runtime/wat/cells.zig` tests the producer side.
+tag and value width, the extended `literal` / `list` / `tr` / `fr` / `alloc` terms, every `genop`
+opcode decoding (and its table matching OTP's numbering), the two cells translated (one function,
+its BIF calls, `put_list` conses, `is_binary`, literals materialised), a call outside the BIF table
+and an opcode outside the converted ones refusing the function, by name and located, a file that is
+not BEAM; and `erlc`'s two modules translated as a set (`translateSet`: compact atoms, a stored
+`LitT`, `StrT`, the call from `greeting` into `greeting_text`, local and tail calls, `get_list`,
+`gc_bif` `+`, `is_eq_exact`, `bs_create_bin`), the `module_info` functions refused only where
+reached, a module left out of the set and an OTP function the table lacks refused where the call
+is made, two files of one module. compiler-core runs the same fixture on its comptime runtime
+(`comptime/runtime/persistent_wat.zig`: `erlc's modules run …`, the answer
+`["Hello, World!",["A","B"],3,"nobody"]`, a clause none matches raising `function_clause`, a
+refused function located) and tests the producer side (`runtime/wat/cells.zig`). Regenerate the
+fixture with `erlc +deterministic greeting.erl greeting_text.erl` in `src/testdata/erlc/`.

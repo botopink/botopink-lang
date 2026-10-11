@@ -20,6 +20,19 @@ pub fn caseMap(out: []u8, s: []const u8, upper: bool) CaseError![]u8 {
     return out[0..s.len];
 }
 
+/// `s` with its first character title-cased (`string:titlecase/1`), the rest
+/// as it is, into `out` (`out.len >= s.len`). The first character is mapped
+/// for ASCII only: a first byte at or above 0x80 is `error.NonAsciiLetter`,
+/// as `caseMap` refuses it (the comptime runtime's limit 3) — the bytes after
+/// it are never mapped, whatever they are.
+pub fn titlecase(out: []u8, s: []const u8) CaseError![]u8 {
+    if (s.len == 0) return out[0..0];
+    if (s[0] >= 0x80) return error.NonAsciiLetter;
+    @memcpy(out[0..s.len], s);
+    out[0] = std.ascii.toUpper(s[0]);
+    return out[0..s.len];
+}
+
 /// The whitespace `trim` removes: space, tab, LF, CR, VT, FF.
 pub fn isWhite(c: u8) bool {
     return c == ' ' or c == '\t' or c == '\n' or c == '\r' or c == 11 or c == 12;
@@ -133,6 +146,16 @@ test "caseMap: ASCII mapped, a non-ASCII letter refused" {
     try std.testing.expectEqualStrings("HELLO, WORLD 1", try caseMap(&buf, "Hello, world 1", true));
     try std.testing.expectEqualStrings("hello", try caseMap(&buf, "HeLLo", false));
     try std.testing.expectError(error.NonAsciiLetter, caseMap(&buf, "héllo", true));
+}
+
+test "titlecase: the first character, ASCII; the rest untouched" {
+    var buf: [32]u8 = undefined;
+    try std.testing.expectEqualStrings("World", try titlecase(&buf, "world"));
+    try std.testing.expectEqualStrings("HELLO wORLD", try titlecase(&buf, "hELLO wORLD"));
+    try std.testing.expectEqualStrings("1st", try titlecase(&buf, "1st"));
+    try std.testing.expectEqualStrings("Ana é", try titlecase(&buf, "ana é"));
+    try std.testing.expectEqualStrings("", try titlecase(&buf, ""));
+    try std.testing.expectError(error.NonAsciiLetter, titlecase(&buf, "élan"));
 }
 
 test "trim: each direction" {
