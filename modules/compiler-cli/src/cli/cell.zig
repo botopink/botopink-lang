@@ -683,17 +683,25 @@ fn firstErrorLine(text: []const u8) ?[]const u8 {
 pub fn refusalsOf(a: std.mem.Allocator, text: []const u8) !std.StringArrayHashMapUnmanaged(Snap) {
     var flat: std.ArrayListUnmanaged(snap.Refusal) = .empty;
     var open = false;
+    // The caret line of the open refusal is read once, right after its `-->`.
+    var caret_read = false;
     var lines = std.mem.splitScalar(u8, text, '\n');
     while (lines.next()) |raw| {
         const line = std.mem.trimEnd(u8, raw, " \r");
         if (isErrorLine(line)) {
             open = !isSummary(line);
+            caret_read = false;
             if (open) try flat.append(a, .{ .message = line });
         } else if (std.mem.startsWith(u8, line, "warning")) {
             open = false;
         } else if (open and flat.items[flat.items.len - 1].at == null) {
             const t = std.mem.trimStart(u8, line, " ");
             if (std.mem.startsWith(u8, t, "--> ")) flat.items[flat.items.len - 1].at = t["--> ".len..];
+        } else if (open and !caret_read) {
+            if (caretLabel(line)) |l| {
+                caret_read = true;
+                if (l.len > 0) flat.items[flat.items.len - 1].label = l;
+            }
         }
     }
     var grouped: std.StringArrayHashMapUnmanaged(std.ArrayListUnmanaged(snap.Refusal)) = .empty;
@@ -706,6 +714,17 @@ pub fn refusalsOf(a: std.mem.Allocator, text: []const u8) !std.StringArrayHashMa
     var out: std.StringArrayHashMapUnmanaged(Snap) = .empty;
     for (grouped.keys(), grouped.values()) |k, v| try out.put(a, k, .{ .refusals = v.items });
     return out;
+}
+
+/// The text beside the caret of a source-snippet line (`  |   ^^^ the label`):
+/// "" when the carets stand alone, null when the line is no caret line.
+fn caretLabel(line: []const u8) ?[]const u8 {
+    const bar = std.mem.indexOfScalar(u8, line, '|') orelse return null;
+    if (std.mem.trim(u8, line[0..bar], " 0123456789").len != 0) return null;
+    const after = std.mem.trimStart(u8, line[bar + 1 ..], " ");
+    if (after.len == 0 or after[0] != '^') return null;
+    const rest = std.mem.trimStart(u8, after, "^");
+    return std.mem.trim(u8, rest, " ");
 }
 
 /// `src/shapes/circle.bp:3:7` → `shapes/circle`.
@@ -903,6 +922,31 @@ test "refusalsOf files each located refusal under its module and skips the summa
     try testing.expect(main.refusals[1].at == null);
     const circle = got.get("shapes/circle").?;
     try testing.expectEqualStrings("src/shapes/circle.bp:21:12", circle.refusals[0].at.?);
+}
+
+test "refusalsOf reads the label beside the caret, and none when the caret stands alone" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const text =
+        \\error[case-bare-name-arm]: a name alone is not a pattern
+        \\ --> src/main.bp:7:9
+        \\  |
+        \\7 |         n { "other" }
+        \\  |         ^ use _ { n -> … } to bind the matched value
+        \\  |
+        \\  = hint: An arm names a type.
+        \\
+        \\error[x]: bare caret
+        \\ --> src/main.bp:9:1
+        \\  |
+        \\9 | foo
+        \\  | ^^^
+        \\
+    ;
+    const got = (try refusalsOf(a, text)).get("main").?;
+    try testing.expectEqualStrings("use _ { n -> … } to bind the matched value", got.refusals[0].label.?);
+    try testing.expect(got.refusals[1].label == null);
 }
 
 test "moduleOf reads the module off a location" {

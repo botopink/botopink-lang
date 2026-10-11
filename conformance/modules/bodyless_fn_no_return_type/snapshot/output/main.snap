@@ -1,3 +1,4 @@
 botopink-cell 1
 refused error[bodyless-fn-needs-return-type]: a declaration with no body must say what it answers
 at src/main.bp:5:23
+label add `-> void`, or give the fn a body

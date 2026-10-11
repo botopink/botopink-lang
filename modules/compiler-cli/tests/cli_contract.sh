@@ -1428,6 +1428,46 @@ if have node && have erl && have erlc && have wasmtime; then
   expect_out "a cell holds botopink.json — its own manifest" "names the missing manifest"
   rm -rf "$CELLS/another_reason" "$CELLS/beam_memory" "$CELLS/no_manifest"
 
+  # The label under the caret (decision 485): `label <text>` after `at`, compared
+  # exactly; a label that changes or disappears is a red, never overwritten.
+  mkdir -p "$CELLS/labelled/src" "$CELLS/labelled/snapshot/output"
+  printf '{ "name": "labelled", "version": "0.0.1", "src": "src/" }\n' >"$CELLS/labelled/botopink.json"
+  printf 'pub fn main() {\n    val x = 3;\n    val y = case x {\n        0 { "zero" }\n        n { "other" }\n    };\n    @print(y);\n}\n' >"$CELLS/labelled/src/main.bp"
+  LABELLED='botopink-cell 1\nrefused error[case-bare-name-arm]: a name alone is not a pattern\nat src/main.bp:5:9\n'
+  printf "${LABELLED}label use _ { n -> … } to bind the matched value\n" >"$CELLS/labelled/snapshot/output/main.snap"
+  run "$CELLS" cell check labelled
+  expect_code 0 "a refusal whose label is claimed passes"
+  printf "${LABELLED}label use something else\n" >"$CELLS/labelled/snapshot/output/main.snap"
+  run "$CELLS" cell check labelled
+  expect_code 1 "a label that changes"
+  expect_out "- label use something else" "shows the accepted label"
+  expect_out "+ label use _ { n -> … } to bind the matched value" "shows the printed label"
+  expect_file_out "$CELLS/labelled/snapshot/output/main.snap.new" "label use _ { n -> … } to bind the matched value" "the candidate holds the printed label"
+  [[ "$(cat "$CELLS/labelled/snapshot/output/main.snap")" == "$(printf "${LABELLED}label use something else")" ]] && ok "the accepted label is never overwritten" || fail "the accepted snapshot with a label was rewritten"
+  rm "$CELLS/labelled/snapshot/output/main.snap.new"
+  printf "${LABELLED}" >"$CELLS/labelled/snapshot/output/main.snap"
+  run "$CELLS" cell check labelled
+  expect_code 1 "a printed label the snapshot does not claim"
+  expect_out "+ label use _ { n -> … } to bind the matched value" "the unclaimed label is shown"
+  rm "$CELLS/labelled/snapshot/output/main.snap.new"
+  # The caret now carries no label: a claimed one disappears.
+  printf 'pub fn main() {\n    @print(nowhere);\n}\n' >"$CELLS/labelled/src/main.bp"
+  printf "botopink-cell 1\nrefused error: unbound variable 'nowhere'\nat src/main.bp:2:12\nlabel not in scope\n" >"$CELLS/labelled/snapshot/output/main.snap"
+  run "$CELLS" cell check labelled
+  expect_code 1 "a label that disappears"
+  expect_out "- label not in scope" "the vanished label is shown"
+  rm -f "$CELLS/labelled/snapshot/output/main.snap.new"
+  # A `label` record belongs to a refusal, after its `at`.
+  printf 'botopink-cell 1\nout ok\nlabel x\n' >"$CELLS/labelled/snapshot/output/main.snap"
+  run "$CELLS" cell check labelled
+  expect_code 1 "a label record in an output file"
+  expect_out "labelled/snapshot/output/main.snap:3: \`label\` follows its \`at\` line" "names the file, the line and the rule"
+  printf 'botopink-cell 1\nrefused error: x\nlabel x\n' >"$CELLS/labelled/snapshot/output/main.snap"
+  run "$CELLS" cell check labelled
+  expect_code 1 "a label before its at"
+  expect_out "labelled/snapshot/output/main.snap:3:" "names the line"
+  rm -rf "$CELLS/labelled"
+
   # A malformed .snap is located; so is a departure for a target not run.
   printf 'botopink-cell 1\nexit 0\n' >"$CELLS/prints/snapshot/output/main.snap"
   run "$CELLS" cell check prints

@@ -1,3 +1,4 @@
 botopink-cell 1
 refused error[implement-clause-for]: `for` in a type's `implement` clause
 at src/main.bp:9:17
+label the type is the receiver already

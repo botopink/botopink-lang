@@ -653,6 +653,8 @@ place it is written, read and compared:
 botopink-cell 1                 the format and its version — always line 1
 refused <message line>          the compiler refuses the module: its `error…` line
 at <file>:<line>:<col>          … and where, when the diagnostic is located
+label <text>                    after `at`: the label printed beside the caret, as printed (decision 485);
+                                absent when the caret has none; the `hint` lines are not claimed
 out <text>                      one line the program printed (`out` alone: an empty line)
 no-final-newline                the last `out` line ended without `\n`
 abort                           the program exits non-zero (the number is never pinned)
@@ -666,7 +668,9 @@ abort                                   at src/main.bp:7:15
 stderr integer overflow: + on i32 at src/main.bp:6:14
 ```
 
-The records come in that order; a refusal and an output never share a file;
+The records come in that order (`refused`, `at`, `label`); a `label` belongs to a refusal and follows its `at`
+(anywhere else it is a malformed `.snap`, located); a changed or vanished label is a red, a candidate
+beside the accepted file like any other difference. A refusal and an output never share a file;
 a record's text is never empty; a file parses only when rendering what it
 parsed gives back its bytes, so each answer has one spelling. The header alone
 is the empty answer — a module that compiles and, for `main`, a program that
@@ -679,7 +683,7 @@ candidate keeps the accepted claims that still hold.
 
 What a target answered, as `.snap`s: a build that fails gives every `error…`
 line it printed (the `N module(s) failed to compile` summary aside) with the
-first `--> <file>:<L>:<C>` under it, filed under the module that file is
+first `--> <file>:<L>:<C>` under it and the text beside the first caret line below that (`label`), filed under the module that file is
 (`src/shapes/circle.bp` → `shapes/circle.snap`; an unlocated refusal is
 `main`'s) — a refusal the compiler cascades into an importer is that
 importer's answer too; a build that succeeds gives `main.snap`: stdout, and

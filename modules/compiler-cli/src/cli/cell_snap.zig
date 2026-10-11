@@ -7,6 +7,10 @@
 //!     botopink-cell 1                 the format and its version, always line 1
 //!     refused <message line>          the compiler refuses the module: its
 //!     at <file>:<line>:<col>            `error…` line, and where (when located)
+//!     label <text>                    the label the compiler prints beside the
+//!                                       caret, as printed (absent when the
+//!                                       caret has none; `hint` lines are not
+//!                                       claimed)
 //!     out <text>                      one line the program printed (`out`
 //!                                       alone for an empty line)
 //!     no-final-newline                the last `out` line ended without `\n`
@@ -15,7 +19,7 @@
 //!     stderr <text>                   with `abort`: the program's stderr
 //!                                       contains this text
 //!
-//! The records come in that order — refusals, then the output, then `abort`,
+//! The records come in that order — refusals (`refused`, `at`, `label`), then the output, then `abort`,
 //! then the `stderr` claims — and a file has exactly one spelling: it parses
 //! only when rendering what it parsed gives back its bytes. A refusal and an
 //! output never share a file (a refused module does not run). An empty answer
@@ -40,6 +44,8 @@ pub const NEW_SUFFIX = ".new";
 pub const Refusal = struct {
     message: []const u8,
     at: ?[]const u8 = null,
+    /// The text printed beside the caret under `at`, when there is one.
+    label: ?[]const u8 = null,
 };
 
 /// One module's answer.
@@ -98,6 +104,11 @@ pub fn parse(arena: std.mem.Allocator, text: []const u8, why: *Malformed) ParseE
             if (phase != 0 or refusals.items.len == 0 or refusals.items[refusals.items.len - 1].at != null)
                 return fail(why, n, "`at` follows its `refused` line");
             refusals.items[refusals.items.len - 1].at = r;
+        } else if (std.mem.eql(u8, word, "label")) {
+            const r = rest orelse return fail(why, n, "`label` names the text printed beside the caret");
+            if (phase != 0 or refusals.items.len == 0 or refusals.items[refusals.items.len - 1].at == null or refusals.items[refusals.items.len - 1].label != null)
+                return fail(why, n, "`label` follows its `at` line");
+            refusals.items[refusals.items.len - 1].label = r;
         } else if (std.mem.eql(u8, word, "out")) {
             if (refusals.items.len > 0) return fail(why, n, "a refused module prints nothing");
             if (phase > 1) return fail(why, n, "`out` comes before `no-final-newline`, `abort` and `stderr`");
@@ -122,7 +133,7 @@ pub fn parse(arena: std.mem.Allocator, text: []const u8, why: *Malformed) ParseE
             if (!abort) return fail(why, n, "`stderr` names an abort: it follows `abort`");
             phase = 4;
             try stderr.append(arena, r);
-        } else return fail(why, n, "unknown record (refused, at, out, no-final-newline, abort, stderr)");
+        } else return fail(why, n, "unknown record (refused, at, label, out, no-final-newline, abort, stderr)");
     }
     const snap: Snap = .{ .refusals = refusals.items, .stdout = stdout.items, .abort = abort, .stderr = stderr.items };
     // One spelling: whatever the rules above let through must render back.
@@ -143,6 +154,7 @@ pub fn render(arena: std.mem.Allocator, snap: Snap) ![]u8 {
     for (snap.refusals) |r| {
         try out.print(arena, "refused {s}\n", .{r.message});
         if (r.at) |at| try out.print(arena, "at {s}\n", .{at});
+        if (r.label) |l| try out.print(arena, "label {s}\n", .{l});
     }
     if (snap.stdout.len > 0) {
         const ends = snap.stdout[snap.stdout.len - 1] == '\n';
@@ -166,6 +178,8 @@ pub fn matches(expected: Snap, observed: Snap, observed_stderr: []const u8) bool
         if (!std.mem.eql(u8, e.message, o.message)) return false;
         if ((e.at == null) != (o.at == null)) return false;
         if (e.at) |at| if (!std.mem.eql(u8, at, o.at.?)) return false;
+        if ((e.label == null) != (o.label == null)) return false;
+        if (e.label) |l| if (!std.mem.eql(u8, l, o.label.?)) return false;
     }
     if (!std.mem.eql(u8, expected.stdout, observed.stdout)) return false;
     if (expected.abort != observed.abort) return false;
@@ -276,6 +290,21 @@ test "an abort and its stderr claims, and a located refusal, round-trip" {
     try testing.expect(refused.refusals[1].at == null);
 }
 
+test "a label follows its `at`, round-trips, and is compared" {
+    var a = std.heap.ArenaAllocator.init(testing.allocator);
+    defer a.deinit();
+    const ar = a.allocator();
+    const back = try roundTrip(ar, .{ .refusals = &.{.{ .message = "error: no", .at = "src/main.bp:7:9", .label = "use _ { n -> … } to bind" }} });
+    try testing.expectEqualStrings("use _ { n -> … } to bind", back.refusals[0].label.?);
+    const accepted: Snap = .{ .refusals = &.{.{ .message = "error: no", .at = "src/main.bp:1:2", .label = "x" }} };
+    try testing.expect(matches(accepted, accepted, ""));
+    // a label that changes, and one that disappears
+    try testing.expect(!matches(accepted, .{ .refusals = &.{.{ .message = "error: no", .at = "src/main.bp:1:2", .label = "y" }} }, ""));
+    try testing.expect(!matches(accepted, .{ .refusals = &.{.{ .message = "error: no", .at = "src/main.bp:1:2" }} }, ""));
+    // a label that appears where none is accepted
+    try testing.expect(!matches(.{ .refusals = &.{.{ .message = "error: no", .at = "src/main.bp:1:2" }} }, accepted, ""));
+}
+
 test "the header alone is the empty answer" {
     var a = std.heap.ArenaAllocator.init(testing.allocator);
     defer a.deinit();
@@ -301,6 +330,11 @@ test "a malformed .snap names its line" {
         .{ .text = "botopink-cell 1\nabort 1\n", .line = 2 },
         .{ .text = "botopink-cell 1\nexit 0\n", .line = 2 },
         .{ .text = "botopink-cell 1\nabort\nabort\n", .line = 3 },
+        .{ .text = "botopink-cell 1\nout a\nlabel x\n", .line = 3 },
+        .{ .text = "botopink-cell 1\nlabel x\n", .line = 2 },
+        .{ .text = "botopink-cell 1\nrefused error: x\nlabel x\n", .line = 3 },
+        .{ .text = "botopink-cell 1\nrefused error: x\nat a:1:1\nlabel x\nlabel y\n", .line = 5 },
+        .{ .text = "botopink-cell 1\nrefused error: x\nat a:1:1\nlabel x\nat b:1:1\n", .line = 5 },
     };
     for (cases) |c| {
         var why: Malformed = .{};

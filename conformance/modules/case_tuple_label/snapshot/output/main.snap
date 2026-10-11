@@ -1,3 +1,4 @@
 botopink-cell 1
 refused error[pattern-tuple-label]: a tuple pattern is positional — it takes no label
 at src/main.bp:6:11
+label drop the label and match by position

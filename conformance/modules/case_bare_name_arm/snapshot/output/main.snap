@@ -1,3 +1,4 @@
 botopink-cell 1
-refused use _ {
+refused error[case-bare-name-arm]: a name alone is not a pattern
 at src/main.bp:7:9
+label use _ { n -> … } to bind the matched value

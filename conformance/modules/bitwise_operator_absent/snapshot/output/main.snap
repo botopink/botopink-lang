@@ -1,3 +1,4 @@
 botopink-cell 1
 refused error[bitwise-operator-absent]: the language has no bitwise operators
 at src/main.bp:6:15
+label not an operator `<<`

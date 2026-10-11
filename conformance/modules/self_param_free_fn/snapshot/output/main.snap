@@ -1,3 +1,4 @@
 botopink-cell 1
 refused error[self-param-outside-type]: `self` names a method's receiver, and a free function has none
 at src/main.bp:9:14
+label `self` outside a `type` or `behavior` body

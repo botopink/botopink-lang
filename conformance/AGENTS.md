@@ -45,7 +45,9 @@ conformance/
 | `test/<project>/` | a whole project with a `test/` tree, run by `botopink test --target <t> --json`; results keyed `test/<project>::<test>`; `"targets"` in its `botopink.json` narrows it (§ Narrowing a cell) | every test reports `ok` |
 
 A cell's `.snap` (`compiler-cli/src/cli/cell_snap.zig`, decision 475 (2)): `botopink-cell 1`, then
-`refused <the compiler's error… line>` / `at <file>:<line>:<col>` for a refused module, or `out <line>`
+`refused <the compiler's error… line>` / `at <file>:<line>:<col>` / `label <text>` (decision 485: the text the
+compiler prints beside the caret, as printed — absent when the caret has none, refused in an output file;
+the `hint` lines are not claimed) for a refused module, or `out <line>`
 (`out` alone for an empty line), `no-final-newline`, `abort` (the exit status never pinned) and
 `stderr <text>` (with `abort`: the stderr contains the text). A refusal is filed under the module its
 location names (`src/shapes/circle.bp` → `shapes/circle.snap`; `botopink.json:1:3` →

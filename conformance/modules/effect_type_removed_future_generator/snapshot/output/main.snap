@@ -1,3 +1,4 @@
 botopink-cell 1
 refused error[effect-type-removed]: `@FutureGenerator` was removed — the asynchronous sequence is `@Stream` (decision 122)
 at src/main.bp:6:21
+label write `@Stream<@Result<T, E>>` (or `@Stream<T>`)

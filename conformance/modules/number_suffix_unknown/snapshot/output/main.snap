@@ -1,3 +1,4 @@
 botopink-cell 1
 refused error[number-suffix-unknown]: the letters after this number are not a numeric suffix
 at src/main.bp:5:15
+label not a suffix: `px`

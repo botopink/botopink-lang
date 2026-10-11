@@ -1,3 +1,4 @@
 botopink-cell 1
 refused error[list-spread-dot-dot-dot]: `...` is a pattern's inclusive range, not a spread
 at src/main.bp:7:14
+label write `..`
