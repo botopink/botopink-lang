@@ -4837,6 +4837,7 @@ const Emitter = struct {
             .call => |c| switch (c.kind) {
                 .call => |cc| !(cc.is_builtin and
                     (std.mem.eql(u8, cc.callee, "print") or
+                        std.mem.eql(u8, cc.callee, "println") or
                         std.mem.eql(u8, cc.callee, "todo") or
                         std.mem.eql(u8, cc.callee, "panic"))),
                 .pipeline => true,
@@ -6300,6 +6301,7 @@ const Emitter = struct {
         if (!cc.is_builtin) return false;
         const eq = std.mem.eql;
         return eq(u8, cc.callee, "print") or
+            eq(u8, cc.callee, "println") or
             eq(u8, cc.callee, "panic") or
             eq(u8, cc.callee, "todo");
     }
@@ -6989,7 +6991,8 @@ const Emitter = struct {
             }
             return;
         }
-        if (std.mem.eql(u8, cc.callee, "print")) {
+        if (std.mem.eql(u8, cc.callee, "print") or std.mem.eql(u8, cc.callee, "println")) {
+            // `@println` is `@print`: both end the line on every target.
             // Marks the print helper group even for `@print()` with no
             // arguments, matching the historical `uses_print` flag.
             _ = self.builder().helper(.print_nl);

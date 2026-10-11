@@ -2452,3 +2452,11 @@ test "wat: arithmetic ---- an unannotated `val` over a `u64` literal or sum prin
         \\
     );
 }
+
+test "wat: print ---- @println lowers as @print does, with its newline" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    @println("a", 1);
+        \\}
+    );
+}

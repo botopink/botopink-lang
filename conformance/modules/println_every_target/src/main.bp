@@ -1,0 +1,10 @@
+//// `@println` ends its line on every target, as `@print` does: one argument,
+//// several arguments separated by a space, and an expression. The wasm
+//// backend had no lowering for it (`144 B-35`).
+
+pub fn main() {
+    @println("hello");
+    @println("a", 1, true);
+    @println(2 * 21);
+    @println(2.5);
+}
