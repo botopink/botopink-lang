@@ -1,0 +1,20 @@
+//// Decisions 451 (3), 456 — `random.float()` reached from a decorator body
+//// is an unseeded draw at build: refused, located at the annotation that
+//// runs it, with the seeded stream's message — a build has no entropy — as
+//// a `comptime` block's draw is (`comptime_random_float_unseeded`); never
+//// `comptime-host-cell-unavailable`, never the nested namespace `io.random`
+//// read as unbound (144 B-46).
+
+import {io} from "std";
+
+fn drawn(comptime decl: @Decl) {
+    val x = io.random.float();
+    @emit("pub fn label() -> string { return \"" + decl.name + " ${x}\"; }");
+}
+
+#[drawn]
+type Point(x: i32, y: i32)
+
+pub fn main() {
+    @print(label());
+}

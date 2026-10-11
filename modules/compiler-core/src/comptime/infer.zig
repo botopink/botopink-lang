@@ -5316,6 +5316,16 @@ fn runDeclDecorators(
                 // now — and the module's own helpers it reaches: a type
                 // error, located in the body, is the answer.
                 if (local) {
+                    // The module's `from "std"` imports are marked by pass 2,
+                    // which has not run: a std namespace the body reaches
+                    // (`io.random.float()`, its `__bp_ns_io_random` local)
+                    // would read as unbound in place of the run's failure.
+                    // Every path from here returns an error, so pass 2 never
+                    // marks them a second time.
+                    for (program.decls) |d| switch (d) {
+                        .use => |u| _ = try markStdImports(env, u),
+                        else => {},
+                    };
                     _ = try inferFnDecl(env, dfn);
                     for (support) |sf| if (std.mem.eql(u8, env.comptimeOwnerOf(sf), env.modulePath)) {
                         _ = try inferFnDecl(env, sf);
