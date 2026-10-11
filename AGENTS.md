@@ -1,5 +1,7 @@
 # botopink-lang · project AGENTS.md
 
+`decisions-taken.md` is generated — from the meta repository's `specs/<milestone>/decisions-taken.md` by `scripts/decisions-split.py`; edit it there, never here.
+
 Guidance for AI agents working on the botopink **language core** — the CLI,
 the LSP, the compiler, the lib-test-runner, `bpmp`, and the bundled `std` lib.
 The libraries (emilia/erika/jhonstart/onze/rakun) and the VS Code extension are
